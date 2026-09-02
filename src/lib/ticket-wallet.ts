@@ -1,10 +1,10 @@
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import type { BindingView, TicketView, TicketWallet } from '@/lib/backend/contracts/ticket';
 
 /** Active TicketBinding for a Dashboard / wallet agent card. Not ActiveBinding. */
 export function activeBindingForAgent(
   wallet: TicketWallet,
-  agentId: AgentId,
+  agentId: AgentKey,
 ): { ticket: TicketView; binding: BindingView } | null {
   const binding = wallet.bindings.find((b) => b.agentId === agentId && b.active);
   if (!binding) return null;
@@ -17,7 +17,7 @@ export function activeBindingForAgent(
 export function filterTicketsByAgentUsage(
   wallet: TicketWallet,
   tickets: readonly TicketView[],
-  agentId: AgentId | null,
+  agentId: AgentKey | null,
 ): TicketView[] {
   if (!agentId) return [...tickets];
   const ticketIds = new Set(
@@ -31,7 +31,7 @@ export function filterTicketsByAgentUsage(
 /** Connections tab chips: each login counts once, under its owner agent. */
 export function filterTicketsByOwner(
   tickets: readonly TicketView[],
-  agentId: AgentId | null,
+  agentId: AgentKey | null,
 ): TicketView[] {
   if (!agentId) return [...tickets];
   return tickets.filter((ticket) => ticket.agentId === agentId);

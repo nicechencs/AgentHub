@@ -12,7 +12,7 @@ import {
 import { Hint } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import { agentDisplayName } from '@/config/agents';
 import {
   resolveTokenImportProfile,
@@ -41,12 +41,12 @@ export function TokenImportToAgentButton({
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
-  const [busyId, setBusyId] = useState<AgentId | null>(null);
+  const [busyId, setBusyId] = useState<AgentKey | null>(null);
   const resolvedProfile = resolveTokenImportProfile(profile, row.profileId, siblingProfiles);
   const gate = tokenImportGate(row, installedAgents, t);
   const busy = busyId != null;
 
-  const runImport = async (agentId: AgentId) => {
+  const runImport = async (agentId: AgentKey) => {
     if (busy) return;
     if (!resolvedProfile) {
       toast({

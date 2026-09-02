@@ -9,7 +9,7 @@ import {
   extractProviderCredentialFiles,
   type CredentialFileView,
 } from '@/lib/credential-files';
-import type { Account, AgentId, AuthStatus, Provider } from '@/lib/types';
+import type { Account, AgentKey, AuthStatus, Provider } from '@/lib/types';
 import type {
   BindingRoute,
   BindingView,
@@ -151,7 +151,7 @@ export interface TicketBindingDetailLine {
 }
 
 export type TicketBindingRowView = {
-  agentId: AgentId;
+  agentId: AgentKey;
   agentLabel: string;
   status: string;
   routeLabel: string | null;
@@ -231,8 +231,8 @@ export function ticketCardTitle(
 
 /** Native 切换 applies to the ticket's owner Agent, not a foreign usage tab. */
 export function showsNativeSwitch(
-  ticketAgentId: AgentId,
-  agentFilterId?: AgentId | null,
+  ticketAgentId: AgentKey,
+  agentFilterId?: AgentKey | null,
 ): boolean {
   return !agentFilterId || agentFilterId === ticketAgentId;
 }

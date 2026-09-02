@@ -15,12 +15,12 @@ import {
   type RouteEndpointId,
 } from '@/lib/route-endpoints';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
-import type { AgentId, AgentStatus } from '@/lib/types';
+import type { AgentKey, AgentStatus } from '@/lib/types';
 import { agentConversationSurfaces } from '@/pages/agents/agent-detail-model';
 import type { LocalTokenRow } from './tokens-model';
 
 export type TokenImportAgentRef = {
-  id: AgentId;
+  id: AgentKey;
   /** Display name for menus; callers may pass catalog name or id. */
   name: string;
 };
@@ -89,7 +89,7 @@ export function eligibleAgentsForTokenImport(input: {
   const out: TokenImportAgentRef[] = [];
   for (const id of ids) {
     if (!agentCanReceiveTokenImport(id, input.kind)) continue;
-    out.push({ id: id as AgentId, name: nameOf(id) || id });
+    out.push({ id: id as AgentKey, name: nameOf(id) || id });
   }
   return out;
 }

@@ -8,7 +8,7 @@
  */
 import type { AccountAuthView } from '@/lib/backend/contracts/account-map';
 import { unwrapAccounts, wrapBareAccount } from '@/lib/backend/contracts/account-map';
-import type { Account, AgentId, Provider } from '@/lib/types';
+import type { Account, AgentKey, Provider } from '@/lib/types';
 import type { Backend } from '@/lib/backend/contracts';
 import { logger } from '@/lib/logger';
 
@@ -118,7 +118,7 @@ export function resetConnectionInventoryStore(): void {
  * the follow-up listAccounts/listProviders refresh is still in flight.
  */
 export function markConnectionCurrent(
-  agentId: AgentId,
+  agentId: AgentKey,
   source: 'account' | 'provider',
   id: string,
 ): void {
@@ -162,20 +162,20 @@ export function endConnectionInventoryMutation(
   return loadConnectionInventory(backend, { force: true });
 }
 
-export function accountsForAgent(accounts: Account[], agentId: AgentId): Account[] {
+export function accountsForAgent(accounts: Account[], agentId: AgentKey): Account[] {
   return accounts.filter((account) => account.agentId === agentId);
 }
 
-export function providersForAgent(providers: Provider[], agentId: AgentId): Provider[] {
+export function providersForAgent(providers: Provider[], agentId: AgentKey): Provider[] {
   return providers.filter((provider) => provider.agentId === agentId);
 }
 
 export function connectionCountsByAgent(
   accounts: Account[],
   providers: Provider[],
-  agentIds: readonly AgentId[],
-): Partial<Record<AgentId, number>> {
-  const counts: Partial<Record<AgentId, number>> = {};
+  agentIds: readonly AgentKey[],
+): Partial<Record<AgentKey, number>> {
+  const counts: Partial<Record<AgentKey, number>> = {};
   for (const agentId of agentIds) {
     counts[agentId] =
       accountsForAgent(accounts, agentId).length + providersForAgent(providers, agentId).length;

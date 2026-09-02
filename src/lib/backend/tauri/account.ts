@@ -12,7 +12,7 @@ import {
 } from '@/lib/backend/contracts/account-map';
 import { unsupportedError } from '@/lib/backend/contracts/errors';
 import { OAUTH_WAIT_TIMEOUT_SECS } from '@/lib/backend/contracts/oauth-constants';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import { logger } from '@/lib/logger';
 import { invoke } from './invoke';
 
@@ -46,7 +46,7 @@ export function createTauriAccountPort(): AccountPort {
 
     async probeLiveAuth(agentId) {
       try {
-        const raw = await invoke<AuthState & { agentId?: AgentId }>('probe_live_auth', { agentId });
+        const raw = await invoke<AuthState & { agentId?: AgentKey }>('probe_live_auth', { agentId });
         return normalizeAuthState(raw, agentId);
       } catch (e) {
         log.error('probe_live_auth failed', e);
@@ -156,7 +156,7 @@ export function createTauriAccountPort(): AccountPort {
     },
 
     async startDeviceOAuth(agentId, providerKey, poolOwned = false) {
-      const args: { agentId: AgentId; providerKey: string; poolOwned?: boolean } = {
+      const args: { agentId: AgentKey; providerKey: string; poolOwned?: boolean } = {
         agentId,
         providerKey,
       };
@@ -176,7 +176,7 @@ export function createTauriAccountPort(): AccountPort {
       return mapCoreAccountView(row).account;
     },
 
-    async completeOAuth(agentId: AgentId, providerKey) {
+    async completeOAuth(agentId: AgentKey, providerKey) {
       const supported = await this.oauthSupported(agentId);
       if (!supported) {
         throw unsupportedError(

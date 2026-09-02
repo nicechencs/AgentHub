@@ -16,7 +16,7 @@ import {
   localEndpointKindFromPool,
   type LocalEndpointKind,
 } from '@/lib/route-endpoints';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import type { TranslateFn } from '@/lib/i18n';
 import { isBridgeStopCapable } from '@/pages/routes/shared/adapter-view-model';
 import { localEndpointKindLabel } from '@/pages/routes/shared/route-pool-view-model';
@@ -45,7 +45,7 @@ export type RouteBoardRecentSummary = {
 export type RouteBoardStatusRow = {
   profileId: string;
   name: string;
-  targetAgentId: AgentId;
+  targetAgentId: AgentKey;
   memberCount: number;
   state: AdapterBridgeRuntimeState | undefined;
   endpoint: string | null;
@@ -286,7 +286,7 @@ function pickRuntimeProfile(
 function statusRowFromRuntime(input: {
   id: string;
   name: string;
-  targetAgentId: AgentId;
+  targetAgentId: AgentKey;
   memberCount: number;
   profile: AdapterProfile | null;
   portHint: number | null | undefined;

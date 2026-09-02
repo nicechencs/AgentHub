@@ -12,13 +12,13 @@ import {
   type AgentLivePathSet,
   type CredentialFileView,
 } from '@/lib/credential-files';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 
 export function TicketAuthFiles({
   agentId,
   files,
 }: {
-  agentId: AgentId;
+  agentId: AgentKey;
   files: readonly CredentialFileView[];
 }) {
   const { t } = useI18n();

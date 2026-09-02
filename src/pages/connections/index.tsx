@@ -39,7 +39,7 @@ import {
   oauthListAction,
   oauthListActionProbesQuota,
 } from '@/lib/backend/contracts/account-actions';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import { ApiKeyAccountDialog } from '@/components/connections/ApiKeyAccountDialog';
 import { ProviderEditDialog } from '@/components/connections/ProviderEditDialog';
 import { ConnectionTrashButton } from './ConnectionTrashButton';
@@ -96,8 +96,8 @@ import { importProviderLive } from '@/lib/api/provider';
 import type { Account, Provider } from '@/lib/types';
 
 type ConnectionInspect =
-  | { kind: 'provider'; agentId: AgentId; mode: 'add' | 'edit'; provider: Provider | null }
-  | { kind: 'account'; agentId: AgentId; account: Account | null }
+  | { kind: 'provider'; agentId: AgentKey; mode: 'add' | 'edit'; provider: Provider | null }
+  | { kind: 'account'; agentId: AgentKey; account: Account | null }
   | { kind: 'detail'; ticketId: string };
 
 function inspectActiveTicketId(target: ConnectionInspect | null): string | null {
@@ -114,8 +114,8 @@ function inspectActiveTicketId(target: ConnectionInspect | null): string | null 
 
 const CONNECTIONS_INSPECT_WIDTH_KEY = 'agenthub.connections.inspectWidth';
 
-function parseAgentParam(raw: string | null, allowed: AgentId[]): AgentId | null {
-  if (raw && allowed.includes(raw as AgentId)) return raw as AgentId;
+function parseAgentParam(raw: string | null, allowed: AgentKey[]): AgentKey | null {
+  if (raw && allowed.includes(raw as AgentKey)) return raw as AgentKey;
   return null;
 }
 
@@ -159,7 +159,7 @@ export default function ConnectionsPage() {
     (walletState === 'idle' || walletState === 'loading') && wallet == null;
 
   /** Agent context for add/import dialogs (deep-link or picker). */
-  const [addAgentId, setAddAgentId] = useState<AgentId>(
+  const [addAgentId, setAddAgentId] = useState<AgentKey>(
     () => highlightAgentId ?? allowedAgents[0] ?? 'claude',
   );
   const inspect = useSideSplit<ConnectionInspect>({ storageKey: CONNECTIONS_INSPECT_WIDTH_KEY });
@@ -198,7 +198,7 @@ export default function ConnectionsPage() {
     }
   }, [filterAgent, installedIds, loading]);
 
-  const discoveryAgentId: AgentId = filterAgent === 'all' ? addAgentId : filterAgent;
+  const discoveryAgentId: AgentKey = filterAgent === 'all' ? addAgentId : filterAgent;
 
   useEffect(() => {
     setDiscoveryDismissed(false);
@@ -435,7 +435,7 @@ export default function ConnectionsPage() {
     poolReload,
   });
 
-  const openTicketAdd = useCallback((kind: TicketAddKind, agentId: AgentId) => {
+  const openTicketAdd = useCallback((kind: TicketAddKind, agentId: AgentKey) => {
     const next = ticketAddDialogState(kind, agentId);
     setAddAgentId(next.addAgentId);
     ignoreMenuDialogDismissRef.current = true;

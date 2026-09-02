@@ -2,7 +2,7 @@
  * 供应商表单字段 ↔ 配置原文（JSON/TOML）读写。
  * 与 detectors 同属 provider-detect，供编辑弹窗统一调用。
  */
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import {
   defaultPiProviderApi,
   isPiAuthJsonSlot,
@@ -110,7 +110,7 @@ export function maskPasteSecrets(text: string): string {
 }
 
 export function maskConfigSecrets(
-  _agentId: AgentId,
+  _agentId: AgentKey,
   configText: string,
   format: 'json' | 'toml',
 ): string {
@@ -800,7 +800,7 @@ function isOpaqueRedactedToml(configText: string): boolean {
 
 /** 从配置原文提取表单变量 */
 export function extractFormVars(
-  agentId: AgentId,
+  agentId: AgentKey,
   configText: string,
   format: 'json' | 'toml',
 ): ProviderFormVars {
@@ -924,7 +924,7 @@ export function extractFormVars(
  * - TOML 全文若本就为 `***` 且无有效编辑：原样返回
  */
 export function applyFormVars(
-  agentId: AgentId,
+  agentId: AgentKey,
   configText: string,
   format: 'json' | 'toml',
   vars: ProviderFormVars,
@@ -1125,7 +1125,7 @@ export function applyFormVars(
   return text;
 }
 
-function defaultTomlScaffold(agentId: AgentId, vars: ProviderFormVars): string {
+function defaultTomlScaffold(agentId: AgentKey, vars: ProviderFormVars): string {
   const slug = (vars.providerSlug || 'custom').trim() || 'custom';
   if (agentId === 'codex') {
     return [
@@ -1177,7 +1177,7 @@ function defaultTomlScaffold(agentId: AgentId, vars: ProviderFormVars): string {
  * 不再依赖「预设 id」切换显隐。
  */
 export function formFieldVisibility(
-  agentId: AgentId,
+  agentId: AgentKey,
   _presetId = 'custom',
 ): Record<FormFieldKey, boolean> {
   const isClaude = agentId === 'claude';

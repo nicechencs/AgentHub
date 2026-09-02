@@ -26,7 +26,7 @@ import {
 } from '@/lib/backend/contracts';
 import { authDisplayForAccount } from '@/lib/backend/contracts/auth-state';
 import { ticketSurfaceSpeaks } from '@/lib/backend/contracts/ticket-speaks';
-import type { Account, AgentId, Provider } from '@/lib/types';
+import type { Account, AgentKey, Provider } from '@/lib/types';
 import type { ClassifyProductId } from '@/lib/backend/contracts/source-classify-contract';
 import { delay } from './delay';
 import { sourceProductOfPlan } from './adapter/source-product';
@@ -52,7 +52,7 @@ export interface MockTicketAdapter {
   planAdapter(request: {
     sourceKind: 'account' | 'provider';
     sourceId: string;
-    targetAgentId: AgentId;
+    targetAgentId: AgentKey;
   }): Promise<AdapterApplyPlan>;
   applyAdapter?(request: AdapterApplyRequest): Promise<AdapterApplyResult>;
   removeBinding?(profileId: string): void;
@@ -91,7 +91,7 @@ async function surfaceFromPlan(
   resolver: MockTicketWalletRuntime,
   sourceKind: 'account' | 'provider',
   sourceId: string,
-  targetAgentId: AgentId,
+  targetAgentId: AgentKey,
 ): Promise<TicketSurface> {
   const plan = await resolver.planAdapter({ sourceKind, sourceId, targetAgentId });
   return ticketSurfaceFromProduct(sourceProductOfPlan(plan));
@@ -315,7 +315,7 @@ async function buildWallet(resolver: MockTicketWalletRuntime): Promise<TicketWal
   }
 
   // agent → winning active candidate (provider current beats account current).
-  const activeByAgent = new Map<AgentId, BindingView>();
+  const activeByAgent = new Map<AgentKey, BindingView>();
   const activeProfileIds = new Set<string>();
 
   // (a) current accounts → native active candidates (loses to provider current).

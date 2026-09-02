@@ -3,7 +3,7 @@
  * state, not a per-page query.  Consumers subscribe to this store so route
  * changes do not turn one detect pass into several competing requests.
  */
-import type { AgentId, AgentStatus } from '@/lib/types';
+import type { AgentKey, AgentStatus } from '@/lib/types';
 import type { Backend } from '@/lib/backend/contracts';
 import {
   authDisplayForAgentStatus,
@@ -92,7 +92,7 @@ let snapshot: AgentStatusSnapshot = {
 let epoch = 0;
 let inflight: Promise<AgentStatus[]> | null = null;
 /** In-flight / unconfirmed visibility writes. Survives a stale listAgents. */
-const pendingHidden = new Map<AgentId, boolean>();
+const pendingHidden = new Map<AgentKey, boolean>();
 const listeners = new Set<Listener>();
 
 function emit(): void {
@@ -145,7 +145,7 @@ export function resetAgentStatusStore(): void {
  * A later listAgents that still carries the old bit cannot clobber this
  * until the backend result matches (or {@link revertAgentHidden} runs).
  */
-export function applyAgentHidden(agentId: AgentId, hidden: boolean): void {
+export function applyAgentHidden(agentId: AgentKey, hidden: boolean): void {
   pendingHidden.set(agentId, hidden);
   const current = snapshot.statuses.find((row) => row.agentId === agentId);
   if (!current || Boolean(current.hidden) === hidden) return;
@@ -158,7 +158,7 @@ export function applyAgentHidden(agentId: AgentId, hidden: boolean): void {
 }
 
 /** Undo {@link applyAgentHidden} when persist fails. */
-export function revertAgentHidden(agentId: AgentId, previous: boolean): void {
+export function revertAgentHidden(agentId: AgentKey, previous: boolean): void {
   pendingHidden.delete(agentId);
   setSnapshot({
     ...snapshot,

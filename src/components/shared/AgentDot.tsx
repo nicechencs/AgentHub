@@ -1,6 +1,6 @@
 import type * as React from 'react';
 import { AGENT_MAP } from '@/config/agents';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import { Hint } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
@@ -40,7 +40,7 @@ export function AgentDot({
   style: styleProp,
 }: {
   /** 优先用 agentId 从 AGENTS 取色 */
-  agentId?: AgentId;
+  agentId?: AgentKey;
   /** 无 agentId 时可用原始 CSS 变量 / 色值（如 meta.color） */
   color?: string;
   size?: keyof typeof SIZE;

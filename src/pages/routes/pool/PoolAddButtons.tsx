@@ -18,7 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import { attachPoolOwnedAuthorization, syncConnectionAuthorizations } from '@/lib/api/adapter';
 import type {
   AdapterSourceKind,
@@ -45,8 +45,8 @@ const OAUTH_AGENTS = ['claude', 'codex', 'grok'] as const satisfies readonly Poo
 
 /** Maps the fixed OAuth choices to their current installed/supported state. */
 export function poolOAuthChoices(
-  agents: readonly AgentId[],
-  oauthAgents: readonly AgentId[],
+  agents: readonly AgentKey[],
+  oauthAgents: readonly AgentKey[],
 ): PoolOAuthChoice[] {
   return OAUTH_AGENTS.map((agentId) => ({
     agentId,
@@ -60,7 +60,7 @@ export function poolSurfaceForOAuth(agentId: PoolAccessAgent): RoutePoolSurface 
 
 export type PoolSyncCandidate = SyncConnectionSource & {
   key: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   title: string;
   alreadySynced: boolean;
 };
@@ -177,8 +177,8 @@ export function PoolAddButtons({
   defaultPools = [],
   onChanged,
 }: {
-  agents: readonly AgentId[];
-  oauthAgents: readonly AgentId[];
+  agents: readonly AgentKey[];
+  oauthAgents: readonly AgentKey[];
   entries?: readonly ConnectionEntry[];
   defaultPools?: readonly DefaultRoutePoolOverview[];
   /** Called after an OAuth flow or API provider is saved. */

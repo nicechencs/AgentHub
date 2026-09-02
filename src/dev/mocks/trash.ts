@@ -1,5 +1,5 @@
 import type { ConnectionTrashItem, RouteMembershipTrashPayload, TrashPort } from '@/lib/backend/contracts';
-import type { Account, AgentId, Provider } from '@/lib/types';
+import type { Account, AgentKey, Provider } from '@/lib/types';
 
 let counter = 0;
 let mockTrash: ConnectionTrashItem[] = [];
@@ -51,7 +51,7 @@ export function moveMockProviderToTrash(provider: Provider): void {
 }
 
 export function moveMockMembershipToTrash(
-  agentId: AgentId,
+  agentId: AgentKey,
   label: string,
   payload: RouteMembershipTrashPayload,
 ): void {
@@ -80,7 +80,7 @@ export function createMockTrashPort({
   restoreMembership?: (payload: RouteMembershipTrashPayload) => void;
 }): TrashPort {
   return {
-    async list(agentId?: AgentId, home?: 'connections' | 'route_pool') {
+    async list(agentId?: AgentKey, home?: 'connections' | 'route_pool') {
       const now = Date.now();
       mockTrash = mockTrash.filter((item) => Date.parse(item.expiresAt) > now);
       return mockTrash

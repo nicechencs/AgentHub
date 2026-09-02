@@ -8,7 +8,7 @@ import { switchProvider } from '@/lib/api/provider';
 import { logGuiEvent } from '@/lib/api/settings';
 import { bindTicket, planTicket, ticketIdFor } from '@/lib/api/tickets';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import { switchWriteLast4 } from '@/pages/routes/shared/client-config-model';
 import { localBridgeSiblingForTarget } from '@/pages/routes/shared/route-graph-model';
 
@@ -36,7 +36,7 @@ type ImportProfile = Pick<
 function generatedForTarget(
   profiles: readonly ImportProfile[],
   source: ImportProfile,
-  agentId: AgentId,
+  agentId: AgentKey,
 ): string | null {
   const sibling = localBridgeSiblingForTarget(profiles, source, agentId)
     ?? (source.targetAgentId === agentId
@@ -57,7 +57,7 @@ function generatedForTarget(
 export async function importLocalTokenToAgent(
   input: {
     profile: ImportProfile;
-    agentId: AgentId;
+    agentId: AgentKey;
     localToken?: string | null;
     /** Pre-bind siblings; refreshed profiles are preferred after bind. */
     siblingProfiles?: readonly AdapterProfile[];

@@ -28,7 +28,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Hint, Tip } from '@/components/ui/tooltip';
 import { agentDisplayName } from '@/config/agents';
-import type { AgentId, Conversation } from '@/lib/types';
+import type { AgentKey, Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
   autoApproveFooter,
@@ -85,11 +85,11 @@ export function ChatComposer({
   sending: boolean;
   active: Conversation;
   connectionOptions: ChatConnectionOption[];
-  primaryAgent: AgentId | null;
+  primaryAgent: AgentKey | null;
   agentPickerLabel: string;
   connectionView: ChatConnectionPickerView;
   switchingProvider: boolean;
-  hiddenIds: Set<AgentId>;
+  hiddenIds: Set<AgentKey>;
   pickerRows: ChatAgentPickerRow[];
   agentsReady: boolean;
   blockers: ChatSendBlocker[];
@@ -99,7 +99,7 @@ export function ChatComposer({
   onRetryStatus?: () => void;
   onSend: () => void;
   onCancel: () => void;
-  onSelectAgent: (id: AgentId) => void;
+  onSelectAgent: (id: AgentKey) => void;
   onSwitchConnection: (ticketId: string) => void;
   modelOptions: string[];
   currentModel: string | null;
@@ -242,7 +242,7 @@ export function ChatComposer({
               <DropdownMenuSeparator />
               <DropdownMenuRadioGroup
                 value={selectedAgent}
-                onValueChange={(id) => onSelectAgent(id as AgentId)}
+                onValueChange={(id) => onSelectAgent(id as AgentKey)}
               >
                 {pickerRows.map((row) => (
                   <DropdownMenuRadioItem

@@ -1,5 +1,5 @@
 import { toHiddenIdSet } from '@/lib/agent-visibility';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 
 /**
  * Projects tabs: installed and not hidden only.
@@ -17,7 +17,7 @@ export function resolveProjectTabAgents<T extends { id: string }>(
 export function resolveProjectFetchAgentId(
   tabAgents: readonly { id: string }[],
   selectedId: string,
-): AgentId | null {
+): AgentKey | null {
   if (!selectedId) return null;
   // Detect may still be running: start the scan with URL / remembered id.
   if (tabAgents.length === 0) return selectedId;
@@ -33,7 +33,7 @@ export function resolveInitialProjectAgentId(
   agentFromUrl: string | null,
   tabAgents: readonly { id: string }[],
   remembered: string | null,
-): AgentId {
+): AgentKey {
   if (tabAgents.length === 0) {
     return agentFromUrl || remembered || '';
   }

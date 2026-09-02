@@ -38,7 +38,7 @@ import {
 } from '@/lib/api/skill';
 import { isCapabilityUsable } from '@/lib/capability';
 import type { AgentColumn } from '@/lib/hooks/useInstalledAgents';
-import type { AgentId, Skill, SkillMapStatus, SkillSyncState } from '@/lib/types';
+import type { AgentKey, Skill, SkillMapStatus, SkillSyncState } from '@/lib/types';
 import type { TranslateFn } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { skillCellTip, sharedRootPresence } from './copy';
@@ -123,7 +123,7 @@ export function isPrivateSourceRow(row: InstalledSkillDto): boolean {
 }
 
 /** 私有行归属的工具列；必须画在该列，不得塞进第一列（Claude）占位。 */
-export function privateRowOriginId(row: InstalledSkillDto): AgentId | null {
+export function privateRowOriginId(row: InstalledSkillDto): AgentKey | null {
   return privateRowCopies(row)[0]?.agentId ?? null;
 }
 
@@ -132,7 +132,7 @@ export function privateRowCopies(row: InstalledSkillDto): SkillCopyLocation[] {
   if (row.copies && row.copies.length > 0) return row.copies;
   return [
     {
-      agentId: row.origin as AgentId,
+      agentId: row.origin as AgentKey,
       sourceDir: row.sourceDir,
       rootDir: row.rootDir,
       rootLabel: row.rootLabel,
@@ -157,7 +157,7 @@ function mappedProjectionCopies(row: InstalledSkillDto): SkillPreviewCopy[] {
 
 export function previewTargetFromCatalogRow(
   row: InstalledSkillDto,
-  agentId?: AgentId,
+  agentId?: AgentKey,
 ): SkillPreviewTarget {
   if (isSharedCatalogRow(row)) {
     const copies = mappedProjectionCopies(row);
@@ -182,7 +182,7 @@ export function previewTargetFromCatalogRow(
   const selected =
     (agentId && copies.some((copy) => copy.agentId === agentId) ? agentId : undefined) ??
     copies[0]?.agentId ??
-    (row.origin as AgentId);
+    (row.origin as AgentKey);
   const loc = copies.find((copy) => copy.agentId === selected);
   return {
     skillId: row.id,
@@ -198,7 +198,7 @@ export function previewTargetFromCatalogRow(
 function mergePrivateGroup(members: InstalledSkillDto[]): InstalledSkillDto {
   const primary = members[0]!;
   const copies: SkillCopyLocation[] = members.map((member) => ({
-    agentId: member.origin as AgentId,
+    agentId: member.origin as AgentKey,
     sourceDir: member.sourceDir,
     rootDir: member.rootDir,
     rootLabel: member.rootLabel,
@@ -282,28 +282,28 @@ interface SkillMatrixProps {
   importingIds: Set<string>;
   onToggleSelect: (skillId: string) => void;
   onToggleSelectAll: () => void;
-  onCellClick: (skill: Skill, agentId: AgentId) => void;
+  onCellClick: (skill: Skill, agentId: AgentKey) => void;
   /** Right-click a projection cell: persist link/copy, or disable. */
   onCellProject?: (
     skill: Skill,
-    agentId: AgentId,
+    agentId: AgentKey,
     mode: 'link' | 'copy' | 'disable',
   ) => void;
   /** 预览本地 SKILL.md；私有行可带上要点亮的那一份 Agent */
-  onPreview?: (row: InstalledSkillDto, agentId?: AgentId) => void;
+  onPreview?: (row: InstalledSkillDto, agentId?: AgentKey) => void;
   /** 当前预览行 key（catalogRowKey），与 checkbox selected 分离 */
   activeKey?: string | null;
-  onAdopt: (skillId: string, agentId: AgentId, name: string) => void;
+  onAdopt: (skillId: string, agentId: AgentKey, name: string) => void;
   onOpenDir?: (path: string) => void;
   onDeleteShared?: (row: InstalledSkillDto) => void;
-  onDeleteFromTool?: (skillId: string, agentId: AgentId, name: string) => void;
+  onDeleteFromTool?: (skillId: string, agentId: AgentKey, name: string) => void;
   /**
    * 矩阵列：推荐传入「已安装」Agent（含不支持 skills 的，如 Kimi）。
    * 灰色单元格用后端 mapStatus 解释；未安装列仅在调用方显式传入时出现。
    */
   agents?: AgentColumn[];
   /** 已安装的 agent id 集合；缺省视为 props.agents 全部已安装 */
-  installedAgentIds?: ReadonlySet<AgentId> | AgentId[];
+  installedAgentIds?: ReadonlySet<AgentKey> | AgentKey[];
 }
 
 function StatusGlyph({
@@ -402,7 +402,7 @@ function PrivateOriginCell({
   onClick,
   onContextMenu,
 }: {
-  agentId: AgentId;
+  agentId: AgentKey;
   onClick?: () => void;
   onContextMenu?: (e: { preventDefault: () => void; clientX: number; clientY: number }) => void;
 }) {
@@ -543,7 +543,7 @@ export function SkillMatrix({
   const installedSet =
     installedAgentIds instanceof Set
       ? installedAgentIds
-      : new Set<AgentId>(installedAgentIds ?? columns.map((a) => a.id));
+      : new Set<AgentKey>(installedAgentIds ?? columns.map((a) => a.id));
 
   const { widths, onResizeStart } = useColumnWidths(
     MATRIX_WIDTH_SPECS,
@@ -564,7 +564,7 @@ export function SkillMatrix({
     x: number;
     y: number;
     skill: Skill;
-    agentId: AgentId;
+    agentId: AgentKey;
     state: SkillSyncState;
     folderPath: string | null;
   } | null>(null);
@@ -573,7 +573,7 @@ export function SkillMatrix({
     y: number;
     path: string;
     sharedRow?: InstalledSkillDto;
-    fromTool?: { skillId: string; agentId: AgentId; name: string };
+    fromTool?: { skillId: string; agentId: AgentKey; name: string };
   } | null>(null);
 
   const openFolder = (path: string | null | undefined) => {

@@ -404,7 +404,7 @@ describe('Bridges page', () => {
     expect(markup).not.toContain('运行中');
     expect(markup).toContain('本机入口');
     expect(markup).not.toContain('交给本机网关');
-    expect(markup).not.toContain('已接入的登录');
+    expect(markup).not.toContain('已加入的登录');
     expect(markup).not.toContain('入口 Key 已保存');
   });
 
@@ -430,7 +430,7 @@ describe('Bridges page', () => {
       routePoolV2: false,
       defaultPool: pool,
     });
-    expect(off).not.toContain('已接入的登录');
+    expect(off).not.toContain('已加入的登录');
     expect(off).not.toContain('入口 Key 已保存');
     const on = renderDetail({
       profile,
@@ -444,7 +444,7 @@ describe('Bridges page', () => {
     });
     expect(on).toContain('http://127.0.0.1:43121');
     expect(on).toContain('Responses');
-    expect(on).toContain('已接入的登录');
+    expect(on).toContain('已加入的登录');
     expect(on).toContain('OpenRouter');
     expect(on).toContain('入口 Key 已保存');
     expect(on).toContain('kimi-k2.5');

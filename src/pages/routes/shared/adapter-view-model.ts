@@ -7,7 +7,7 @@ import type {
   AdapterBridgeRuntimeStatus,
   AdapterProfile,
 } from '@/lib/backend/contracts/adapter';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import type { TranslateFn } from '@/lib/i18n';
 import { formatRouteEndpointHttpUrl, routeEndpointPathForBinding } from '@/lib/route-endpoints';
@@ -73,7 +73,7 @@ export function adapterStatusTextClass(tone: AdapterStatusTone): string {
 
 export type AdapterProfileSourceView = {
   title: string;
-  agentId: AgentId | null;
+  agentId: AgentKey | null;
   /** True when the source connection no longer exists in the pool. */
   missing: boolean;
 };

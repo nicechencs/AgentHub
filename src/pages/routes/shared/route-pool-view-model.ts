@@ -14,7 +14,7 @@ import { authHealthLabel, type AuthHealth } from '@/lib/backend/contracts/auth-s
 import type { TicketView } from '@/lib/backend/contracts/ticket';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import type { ConnectionKind } from '@/lib/connection-kind';
-import type { AgentId, AuthStatus } from '@/lib/types';
+import type { AgentKey, AuthStatus } from '@/lib/types';
 import type { TranslateFn } from '@/lib/i18n';
 import type { LocalEndpointKind } from '@/lib/route-endpoints';
 import {
@@ -130,14 +130,14 @@ export function routePoolMemberLabels(
   });
 }
 
-export function poolSurfaceForAgent(agentId: AgentId): RoutePoolSurface | null {
+export function poolSurfaceForAgent(agentId: AgentKey): RoutePoolSurface | null {
   if (agentId === 'claude') return 'messages';
   if (agentId === 'codex' || agentId === 'grok') return 'responses';
   if (agentId === 'kimi' || agentId === 'dsh') return 'chat_completions';
   return null;
 }
 
-function poolDialectForAgent(agentId: AgentId): RoutePoolDialect {
+function poolDialectForAgent(agentId: AgentKey): RoutePoolDialect {
   if (
     agentId === 'claude'
     || agentId === 'codex'
@@ -158,7 +158,7 @@ export type PoolAuthorizationItem = {
   key: string;
   sourceKind: AdapterSourceKind;
   sourceId: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   title: string;
   /** OAuth displays the authorized account when the provider exposed one. */
   identityLabel?: string;
@@ -207,7 +207,7 @@ function poolAuthorizationItem(
   sourceId: string,
   match: ConnectionEntry | undefined,
   fallback: {
-    agentId: AgentId;
+    agentId: AgentKey;
     kind: ConnectionKind;
     title: string;
     surface: RoutePoolSurface | null;

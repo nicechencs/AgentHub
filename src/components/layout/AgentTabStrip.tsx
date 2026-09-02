@@ -9,11 +9,11 @@ import {
 } from '@/components/ui/segmented-styles';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { AGENTS, type AgentMeta } from '@/config/agents';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 /** 页内 agent 切换条的取值；`all` 仅在 `showAll` 时出现。 */
-export type AgentTabId = AgentId | 'all';
+export type AgentTabId = AgentKey | 'all';
 
 /**
  * 普通数量何时展示：
@@ -24,7 +24,7 @@ export type AgentTabId = AgentId | 'all';
 export type AgentTabCountMode = 'positive' | 'defined' | 'always';
 
 type AgentTabStripBase = {
-  disabled?: AgentId[];
+  disabled?: AgentKey[];
   disabledReason?: string;
   /** 默认全量 AGENTS；非 Agents 页请传已安装子集 */
   agents?: readonly AgentMeta[];
@@ -52,8 +52,8 @@ type AgentTabStripBase = {
 export type AgentTabStripProps =
   | (AgentTabStripBase & {
       showAll?: false;
-      value: AgentId;
-      onChange: (id: AgentId) => void;
+      value: AgentKey;
+      onChange: (id: AgentKey) => void;
       allLabel?: never;
     })
   | (AgentTabStripBase & {
@@ -112,7 +112,7 @@ export function AgentTabStrip(props: AgentTabStripProps) {
     if (showAll) {
       (onChange as (id: AgentTabId) => void)(id);
     } else if (id !== 'all') {
-      (onChange as (id: AgentId) => void)(id);
+      (onChange as (id: AgentKey) => void)(id);
     }
   };
 

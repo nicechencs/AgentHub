@@ -1,6 +1,6 @@
 // 各 agent 供应商预设模板(对应 docs/architecture.md §4 config/presets/)
 // 字段结构对齐常见 CLI 配置（Claude env + model；Codex model_providers + wire_api）。
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 
 export interface ProviderPreset {
   id: string;
@@ -66,7 +66,7 @@ const GROK_COMPAT = [
   '',
 ].join('\n');
 
-export const PRESETS: Record<AgentId, ProviderPreset[]> = {
+export const PRESETS: Record<AgentKey, ProviderPreset[]> = {
   claude: [
     {
       id: 'anthropic',

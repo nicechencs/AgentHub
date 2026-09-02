@@ -8,7 +8,7 @@ import type {
 } from '@/lib/backend/contracts/skill-types';
 import {
   KNOWN_AGENT_IDS,
-  type AgentId,
+  type AgentKey,
   type Skill,
   type SkillLinkKind,
   type SkillProjection,
@@ -22,15 +22,15 @@ type MockSkill = Omit<Skill, 'sourceDir'> & { sourceDir: string };
 /** Last explicit projection mode per skill/agent; left-click reuses it (default copy). */
 const lastProjectionMode = new Map<string, 'link' | 'copy'>();
 
-function projectionModeKey(skillId: string, agentId: AgentId): string {
+function projectionModeKey(skillId: string, agentId: AgentKey): string {
   return `${skillId}:${agentId}`;
 }
 
-function rememberProjectionMode(skillId: string, agentId: AgentId, mode: 'link' | 'copy') {
+function rememberProjectionMode(skillId: string, agentId: AgentKey, mode: 'link' | 'copy') {
   lastProjectionMode.set(projectionModeKey(skillId, agentId), mode);
 }
 
-function lastStoredProjectionMode(skillId: string, agentId: AgentId): 'link' | 'copy' {
+function lastStoredProjectionMode(skillId: string, agentId: AgentKey): 'link' | 'copy' {
   return lastProjectionMode.get(projectionModeKey(skillId, agentId)) ?? 'copy';
 }
 
@@ -58,12 +58,12 @@ function seededRandom(seed: number) {
 
 const rand = seededRandom(42);
 /** Fixed list — do not use runtime AGENT_IDS here: module init runs before catalog seed. */
-const MOCK_AGENT_IDS: AgentId[] = [...KNOWN_AGENT_IDS];
-const SKILL_CAPABLE: AgentId[] = MOCK_AGENT_IDS.filter((id) => id !== 'kimi');
+const MOCK_AGENT_IDS: AgentKey[] = [...KNOWN_AGENT_IDS];
+const SKILL_CAPABLE: AgentKey[] = MOCK_AGENT_IDS.filter((id) => id !== 'kimi');
 
 function buildMockSkill(name: string): MockSkill {
-  const sync = {} as Record<AgentId, SkillSyncState>;
-  const conflicts: AgentId[] = [];
+  const sync = {} as Record<AgentKey, SkillSyncState>;
+  const conflicts: AgentKey[] = [];
   const projections: SkillProjection[] = [];
   for (const agentId of MOCK_AGENT_IDS) {
     if (!SKILL_CAPABLE.includes(agentId)) {

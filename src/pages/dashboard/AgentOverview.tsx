@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tip } from '@/components/ui/tooltip';
 import { AGENTS } from '@/config/agents';
 import { applyStoredAgentOrder } from '@/lib/agent-visibility';
-import type { AgentId, AgentStatus } from '@/lib/types';
+import type { AgentKey, AgentStatus } from '@/lib/types';
 import { StorageKey } from '@/lib/ui-preferences';
 import { cn } from '@/lib/utils';
 
@@ -29,9 +29,9 @@ export type { AgentCardBadgeInput };
 export interface AgentOverviewProps {
   agents: AgentStatus[];
   /** 未传时 connect 退化为 /connections?agent=X，不再打开总览弹窗 */
-  onConnectRequest?: (agentId: AgentId) => void;
+  onConnectRequest?: (agentId: AgentKey) => void;
   /** 当前正在用的授权；不传则只显示本机状态文案 */
-  badgeInputs?: Readonly<Partial<Record<AgentId, AgentCardBadgeInput>>>;
+  badgeInputs?: Readonly<Partial<Record<AgentKey, AgentCardBadgeInput>>>;
 }
 
 export function AgentOverview({

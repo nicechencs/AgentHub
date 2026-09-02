@@ -50,7 +50,7 @@ import {
   useProjectShowHidden,
 } from '@/lib/hooks/useProjects';
 import { normalizeOpenPath, verifiedProjectWorkspacePath } from '@/lib/path-open';
-import type { AgentId, AgentProject, AgentSession } from '@/lib/types';
+import type { AgentKey, AgentProject, AgentSession } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { nativeResumeCommand, nativeSessionId, shortSessionId } from './project-format';
 import { buildContinuePrompt, buildSummaryPrompt } from './project-prompts';
@@ -80,10 +80,10 @@ export default function ProjectsPage() {
   const { installedAgents, hiddenIds, loading: agentsLoading } = useInstalledAgents();
   const { showHidden, ready: hiddenReady, setShowHidden } = useProjectShowHidden();
 
-  const agentFromUrl = searchParams.get('agent') as AgentId | null;
+  const agentFromUrl = searchParams.get('agent') as AgentKey | null;
   const tabAgents = resolveProjectTabAgents(installedAgents, hiddenIds);
 
-  const [agentId, setAgentId] = useState<AgentId>(() =>
+  const [agentId, setAgentId] = useState<AgentKey>(() =>
     resolveInitialProjectAgentId(agentFromUrl, tabAgents, rememberedProjectAgent()),
   );
 
@@ -149,7 +149,7 @@ export default function ProjectsPage() {
   } = useAgentProjectList(fetchAgentId, showHidden, listEnabled);
   const projects = data ?? [];
   const projectCounts = useMemo(() => {
-    const next: Partial<Record<AgentId, number>> = {};
+    const next: Partial<Record<AgentKey, number>> = {};
     if (fetchAgentId && data) next[fetchAgentId] = data.length;
     return next;
   }, [fetchAgentId, data]);
@@ -169,7 +169,7 @@ export default function ProjectsPage() {
     preview.reset();
   }, [preview.reset]);
 
-  const setAgent = (id: AgentId) => {
+  const setAgent = (id: AgentKey) => {
     rememberProjectAgent(id);
     setAgentId(id);
     resetTree();

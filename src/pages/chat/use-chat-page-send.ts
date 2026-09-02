@@ -16,7 +16,7 @@ import {
   listConversations,
 } from '@/lib/api/chat';
 import { processKey, reduceProcessEvent, type ProcessMap } from '@/lib/chat-process';
-import type { AgentId, ChatEvent, ChatMessage, Conversation } from '@/lib/types';
+import type { AgentKey, ChatEvent, ChatMessage, Conversation } from '@/lib/types';
 import type { TurnGroup } from './chat-format';
 import { conversationTitle, retryTarget, sendBlockers } from './chat-model';
 import { isCurrentChatRequest } from './chat-request';
@@ -32,9 +32,9 @@ export function useChatPageSend(input: {
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
   setConversations: Dispatch<SetStateAction<Conversation[]>>;
   conversations: Conversation[];
-  hiddenIds: Set<AgentId>;
-  envNotReadyIds: Set<AgentId>;
-  unconfiguredAuthIds: Set<AgentId>;
+  hiddenIds: Set<AgentKey>;
+  envNotReadyIds: Set<AgentKey>;
+  unconfiguredAuthIds: Set<AgentKey>;
   agentsReady: boolean;
   activeIdRef: MutableRefObject<string | null>;
   activeGenerationRef: MutableRefObject<number>;

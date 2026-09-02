@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createTranslator } from '@/lib/i18n';
 
 import { AGENTS, type AgentMeta } from '@/config/agents';
-import type { AgentId, AgentStatus, AuthStatus } from '@/lib/types';
+import type { AgentKey, AgentStatus, AuthStatus } from '@/lib/types';
 
 import {
   AGENT_OVERVIEW_GRID,
@@ -20,7 +20,7 @@ import {
   summarizeAgentOverview,
 } from './agentOverviewModel';
 
-function meta(id: AgentId, name: string = id): AgentMeta {
+function meta(id: AgentKey, name: string = id): AgentMeta {
   return {
     id,
     name,
@@ -32,7 +32,7 @@ function meta(id: AgentId, name: string = id): AgentMeta {
 }
 
 function status(
-  agentId: AgentId,
+  agentId: AgentKey,
   overrides: Partial<AgentStatus> = {},
 ): AgentStatus {
   return {
@@ -132,8 +132,8 @@ describe('summarizeAgentOverview', () => {
     // 额外 id 用类型断言，仅验证汇总算法随列表长度变化
     const expanded: AgentMeta[] = [
       ...METAS,
-      { ...meta('claude', 'Extra-1'), id: 'extra1' as AgentId },
-      { ...meta('claude', 'Extra-2'), id: 'extra2' as AgentId },
+      { ...meta('claude', 'Extra-1'), id: 'extra1' as AgentKey },
+      { ...meta('claude', 'Extra-2'), id: 'extra2' as AgentKey },
     ];
     const n = METAS.length;
     const sExpanded = summarizeAgentOverview(expanded, METAS.map((m) => status(m.id)));
@@ -406,14 +406,14 @@ describe('buildAgentCardView', () => {
 
 describe('resolveAgentCardInteraction', () => {
   it('keeps navigate action unchanged even when a connect handler exists', () => {
-    const onConnect = (_id: AgentId) => undefined;
+    const onConnect = (_id: AgentKey) => undefined;
     expect(
       resolveAgentCardInteraction({ kind: 'navigate', to: '/agents' }, 'claude', onConnect),
     ).toEqual({ type: 'navigate', to: '/agents' });
   });
 
   it('connect with handler stays connect', () => {
-    const onConnect = (_id: AgentId) => undefined;
+    const onConnect = (_id: AgentKey) => undefined;
     expect(resolveAgentCardInteraction({ kind: 'connect' }, 'claude', onConnect)).toEqual({
       type: 'connect',
       agentId: 'claude',

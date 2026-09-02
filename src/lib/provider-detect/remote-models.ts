@@ -4,7 +4,7 @@
  * URL normalize + list parse are mirrored in
  * `crates/agenthub-core/src/utils/remote_openai_models.rs`.
  */
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import { officialApiDefaults } from '@/config/official-api';
 import { smartDetectUrlAndKey } from './detect';
 import { extractFormVars, looksRedactedOrPlaceholder } from './fields';
@@ -36,7 +36,7 @@ export function looksLikeGrokModel(id: string): boolean {
 }
 
 /** Drop models that belong to another product so Claude/Kimi do not list grok-*. */
-export function filterRemoteModelsForAgent(agentId: AgentId, ids: readonly string[]): string[] {
+export function filterRemoteModelsForAgent(agentId: AgentKey, ids: readonly string[]): string[] {
   const list = ids.map((id) => id.trim()).filter(Boolean);
   if (list.length === 0) return [];
   const kimi = (id: string) => /kimi|moonshot/i.test(id);
@@ -101,12 +101,12 @@ export function maskApiKeyLast4(key: string): string {
   return trimmed.slice(-4);
 }
 
-export function defaultModelForAgent(agentId: AgentId): string {
+export function defaultModelForAgent(agentId: AgentKey): string {
   return officialApiDefaults(agentId)?.model ?? FALLBACK_CUSTOM_MODEL;
 }
 
 export function resolveModelForSave(
-  agentId: AgentId,
+  agentId: AgentKey,
   model: string,
   useOfficial: boolean,
 ): string {
@@ -122,7 +122,7 @@ export function resolveModelForSave(
  * Custom connections keep an empty model empty — do not invent a default id.
  */
 export function withDefaultModel(
-  agentId: AgentId,
+  agentId: AgentKey,
   vars: ProviderFormVars,
   useOfficial: boolean,
 ): ProviderFormVars {
@@ -178,7 +178,7 @@ export function resolveUpstreamBaseUrl(args: {
   formBaseUrl: string;
   configText: string;
   configFormat: 'json' | 'toml';
-  agentId: AgentId;
+  agentId: AgentKey;
 }): string {
   const fromForm = args.formBaseUrl.trim();
   if (isHttpUrl(fromForm)) return fromForm;

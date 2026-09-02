@@ -4,7 +4,7 @@ import type {
   UsageOverviewDistributionSlice,
   UsageOverviewMetrics,
 } from '@/lib/backend/contracts/usage-types';
-import type { AgentId, UsageRecord } from '@/lib/types';
+import type { AgentKey, UsageRecord } from '@/lib/types';
 import { usageTokenParts } from '@/lib/usage-tokens';
 
 /** 日期筛选预设：today / 24h 均按 days=1 拉取，today 再按本地日历日收窄 */
@@ -13,7 +13,7 @@ export type DateRange = 'today' | '24h' | '7d' | '30d';
 /** 总览用量筛选：进程内记忆，关应用后回到默认 */
 export interface UsageOverviewFilters {
   dateRange: DateRange;
-  agentFilter: AgentId | 'all';
+  agentFilter: AgentKey | 'all';
   modelFilter: string;
 }
 
@@ -120,7 +120,7 @@ export function filterWindowUsage(
 
 export function filterByAgent(
   records: readonly UsageRecord[],
-  agentFilter: AgentId | 'all',
+  agentFilter: AgentKey | 'all',
 ): UsageRecord[] {
   if (agentFilter === 'all') return [...records];
   return records.filter((r) => r.agentId === agentFilter);
@@ -190,7 +190,7 @@ const FALLBACK_COLOR = 'var(--text-muted)';
 /** Attach catalog name/color to SQL distribution slices. */
 export function decorateUsageDistribution(
   slices: readonly UsageOverviewDistributionSlice[],
-  agentFilter: AgentId | 'all',
+  agentFilter: AgentKey | 'all',
   catalog: Readonly<Record<string, { name: string; color: string }>>,
 ): UsageDistributionSlice[] {
   return slices.map((slice) => {
@@ -208,7 +208,7 @@ export function decorateUsageDistribution(
 /** 全部 Agent 时按 agent 聚合；选中单个 Agent 时按模型聚合 */
 export function buildUsageDistribution(
   rows: readonly UsageRecord[],
-  agentFilter: AgentId | 'all',
+  agentFilter: AgentKey | 'all',
   catalog: Readonly<Record<string, { name: string; color: string }>>,
 ): UsageDistributionSlice[] {
   const byKey = new Map<string, UsageDistributionSlice>();

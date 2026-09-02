@@ -11,7 +11,7 @@ import type { AccountAction } from '@/lib/backend/contracts/account-actions';
 import type { SourceModelCatalog } from '@/lib/backend/contracts/adapter';
 import { connectionKindLabel } from '@/lib/connection-kind';
 import { localEndpointPath } from '@/lib/route-endpoints';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { adapterStatusTextClass } from '@/pages/routes/shared/adapter-view-model';
 import {
@@ -50,7 +50,7 @@ export function PoolAuthorizationDetail({
   toggling?: boolean;
   refreshing?: boolean;
   oauthAction?: AccountAction;
-  agents?: readonly AgentId[];
+  agents?: readonly AgentKey[];
   editTarget?: PoolApiEditTarget | null;
   onEnabledChange?: (enabled: boolean) => void;
   onRefresh?: () => void;
