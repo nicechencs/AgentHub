@@ -21,6 +21,7 @@ import {
   uniqueInstallVersions,
   agentListDetailsHint,
   agentLaunchTargets,
+  agentLinuxInstallUnsupported,
   agentUpgradeControl,
   agentUpgradeHint,
   programInstalls,
@@ -495,3 +496,35 @@ describe('agent-card install confirm', () => {
   });
 });
 
+
+
+describe('Linux unsupported for WorkBuddy / ZCode', () => {
+  it('flags workbuddy and zcode on Linux only', () => {
+    expect(agentLinuxInstallUnsupported('workbuddy', 'linux')).toBe(true);
+    expect(agentLinuxInstallUnsupported('zcode', 'linux')).toBe(true);
+    expect(agentLinuxInstallUnsupported('workbuddy', 'windows')).toBe(false);
+    expect(agentLinuxInstallUnsupported('zcode', 'macos')).toBe(false);
+    expect(agentLinuxInstallUnsupported('claude', 'linux')).toBe(false);
+  });
+
+  it('does not open official setup as the primary upgrade path on Linux', () => {
+    expect(
+      agentUpgradeControl({
+        installed: true,
+        updateVia: 'official',
+        setupUrl: 'https://zcode.z.ai/',
+        linuxUnsupported: true,
+      }),
+    ).toEqual({ show: true, muted: true, kind: 'hint_only' });
+    expect(
+      agentUpgradeHint(
+        { muted: true, kind: 'hint_only' },
+        {
+          updateVia: 'official',
+          linuxUnsupported: true,
+          t: (key) => key,
+        },
+      ),
+    ).toBe('agents.card.linuxUnsupportedHint');
+  });
+});
