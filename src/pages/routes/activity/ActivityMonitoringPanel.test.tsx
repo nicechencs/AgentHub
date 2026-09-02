@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ActivityMonitoringPanel } from './ActivityMonitoringPanel';
 import type { ActivityPageSnapshot } from './activity-view-model';
-import type { RouteTraceListItem } from '@/components/shared/RouteTraceList';
+import type { MergedRouteTraceRow } from './route-trace-feed-model';
 
 vi.mock('@/components/shared/RouteTracePipelineLegend', () => ({
   RouteTracePipelineLegend: ({ row }: { row?: { requestId: string } }) => createElement('div', {
@@ -32,7 +32,7 @@ function snapshot(partial: Partial<ActivityPageSnapshot> = {}): ActivityPageSnap
   };
 }
 
-function row(partial: Partial<RouteTraceListItem> = {}): RouteTraceListItem {
+function row(partial: Partial<MergedRouteTraceRow> = {}): MergedRouteTraceRow {
   return {
     requestId: 'req-1',
     at: '2026-01-01T00:00:00.000Z',
@@ -45,6 +45,8 @@ function row(partial: Partial<RouteTraceListItem> = {}): RouteTraceListItem {
     conversion: { status: 'ok', path: 'messages_to_anthropic' },
     upstreamAuth: { status: 'ok' },
     upstream: { status: 'ok' },
+    profileId: 'route-1',
+    sourceLabel: 'Route 1',
     ...partial,
   };
 }
