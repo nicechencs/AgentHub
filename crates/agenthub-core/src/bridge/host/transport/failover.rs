@@ -27,8 +27,8 @@ use super::super::surface::DownstreamSurface;
 use super::super::upstream::{
     extract_upstream_error_detail, grok_replay_model, join_upstream, map_upstream_http_error,
     map_v2_request_error, pool_exhausted_response, post_upstream_attempt,
-    read_bounded_upstream_error, replay_session, timeout_response, upstream_header_timeout,
-    UpstreamConnectError,
+    read_bounded_upstream_error, replay_session, timeout_response, unavailable_response,
+    upstream_header_timeout, UpstreamConnectError,
 };
 use super::super::pair_policy::identity_relay;
 use super::{
@@ -203,6 +203,21 @@ pub async fn send_upstream_v2(
                 }
                 Err(UpstreamConnectError::Unavailable) => {
                     // Transport failed before a usable response — safe to try another member.
+                    // Keep Transient last_fail so exhaustion becomes upstream_unavailable,
+                    // not a false pool_exhausted.
+                    if let Some(trace) = trace.as_deref_mut() {
+                        trace.pool_attempt_failed(
+                            &member,
+                            "upstream_unavailable",
+                            "Upstream transport unavailable.",
+                        );
+                    }
+                    last_fail = Some((
+                        UpstreamErrorClass::Transient,
+                        StatusCode::BAD_GATEWAY,
+                        None,
+                        Some("upstream unavailable".to_owned()),
+                    ));
                     exclude_member(&mut excluded, &member);
                     break;
                 }
@@ -602,6 +617,23 @@ fn exhausted_or_last_fail(
                 member,
                 failover_from,
             );
+        }
+        if *class == UpstreamErrorClass::Transient {
+            tracing::warn!(
+                target: "core.adapter",
+                profile_id = %state.profile_id,
+                request_id = %request_id,
+                failover = failover_from.is_some(),
+                failover_from = failover_from.unwrap_or(""),
+                op = "upstream",
+                code = "upstream_unavailable",
+                status = 502_u16,
+                elapsed_ms = started.elapsed().as_millis() as u64,
+                upstream_detail = detail.as_deref().unwrap_or(""),
+                "v2 route exhausted after upstream transport/transient failures"
+            );
+            state.record_upstream_failure();
+            return unavailable_response();
         }
     }
     exhausted(state, request_id, started, public_model, failover_from)
