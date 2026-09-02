@@ -1097,6 +1097,9 @@ function mockRouteTraces(): AdapterBridgeRuntimeStatus['recentRouteTraces'] {
       ok: true,
       model: 'gpt-5',
       latencyMs: 842,
+      ttftMs: 210,
+      inputTokens: 1200,
+      outputTokens: 340,
       localAuth: { status: 'ok', profileId: 'mock-profile', port: 32123 },
       pool: {
         status: 'ok',
@@ -1121,6 +1124,9 @@ function mockRouteTraces(): AdapterBridgeRuntimeStatus['recentRouteTraces'] {
       ok: false,
       model: 'claude-sonnet',
       latencyMs: 12,
+      ttftMs: null,
+      inputTokens: 80,
+      outputTokens: 0,
       localAuth: { status: 'ok', profileId: 'mock-profile', port: 32123 },
       pool: {
         status: 'ok',

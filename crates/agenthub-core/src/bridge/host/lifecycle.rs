@@ -146,6 +146,7 @@ impl BridgeRuntimeHost {
             force_shutdown,
             self.gateway.auth_reload.clone(),
             self.gateway.usage_spool.clone(),
+            self.gateway.route_traces.clone(),
         );
         let runtime = EdgeRuntime {
             spec,

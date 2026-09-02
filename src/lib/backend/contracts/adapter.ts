@@ -236,6 +236,9 @@ export interface AdapterBridgeRouteTrace {
   ok: boolean;
   model?: string | null;
   latencyMs?: number | null;
+  ttftMs?: number | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
   localAuth: RouteTraceLocalAuth;
   pool: RouteTracePool;
   conversion: RouteTraceConversion;

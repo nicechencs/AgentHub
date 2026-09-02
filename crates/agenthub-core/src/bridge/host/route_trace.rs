@@ -136,6 +136,12 @@ pub struct RouteRequestTrace {
     pub model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub latency_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttft_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_tokens: Option<u64>,
     pub local_auth: RouteTraceLocalAuth,
     pub pool: RouteTracePool,
     pub conversion: RouteTraceConversion,
@@ -156,9 +162,29 @@ pub struct RouteTraceLog {
     inner: Arc<Mutex<TraceStore>>,
 }
 
+#[derive(Clone, Copy, Default)]
+struct TraceUsagePatch {
+    ttft_ms: Option<u64>,
+    input_tokens: Option<u64>,
+    output_tokens: Option<u64>,
+}
+
+fn apply_usage_patch(trace: &mut RouteRequestTrace, patch: TraceUsagePatch) {
+    if patch.ttft_ms.is_some() {
+        trace.ttft_ms = patch.ttft_ms;
+    }
+    if patch.input_tokens.is_some() {
+        trace.input_tokens = patch.input_tokens;
+    }
+    if patch.output_tokens.is_some() {
+        trace.output_tokens = patch.output_tokens;
+    }
+}
+
 struct TraceStore {
     by_profile: HashMap<String, ProfileTraces>,
     unauthenticated: VecDeque<RouteRequestTrace>,
+    pending_usage: HashMap<String, TraceUsagePatch>,
 }
 
 impl Default for TraceStore {
@@ -166,6 +192,7 @@ impl Default for TraceStore {
         Self {
             by_profile: HashMap::new(),
             unauthenticated: VecDeque::new(),
+            pending_usage: HashMap::new(),
         }
     }
 }
@@ -179,8 +206,11 @@ impl RouteTraceLog {
         let Ok(mut store) = self.inner.lock() else {
             return;
         };
-        let record = trace.clone();
-        if let Some(profile_id) = trace.profile_id.as_deref().filter(|id| !id.is_empty()) {
+        let mut record = trace;
+        if let Some(patch) = store.pending_usage.remove(&record.request_id) {
+            apply_usage_patch(&mut record, patch);
+        }
+        if let Some(profile_id) = record.profile_id.as_deref().filter(|id| !id.is_empty()) {
             let entry = store.by_profile.entry(profile_id.to_owned()).or_default();
             entry.recent.push_front(record);
             entry.recent.truncate(ROUTE_TRACE_CAP);
@@ -188,6 +218,57 @@ impl RouteTraceLog {
             store.unauthenticated.push_front(record);
             store.unauthenticated.truncate(ROUTE_TRACE_CAP);
         }
+    }
+
+    pub fn patch_usage(
+        &self,
+        request_id: &str,
+        ttft_ms: Option<u64>,
+        input_tokens: Option<u64>,
+        output_tokens: Option<u64>,
+    ) {
+        let Ok(mut store) = self.inner.lock() else {
+            return;
+        };
+        let incoming = TraceUsagePatch {
+            ttft_ms,
+            input_tokens,
+            output_tokens,
+        };
+        for entry in store.by_profile.values_mut() {
+            if let Some(row) = entry
+                .recent
+                .iter_mut()
+                .find(|row| row.request_id == request_id)
+            {
+                apply_usage_patch(row, incoming);
+                return;
+            }
+        }
+        if let Some(row) = store
+            .unauthenticated
+            .iter_mut()
+            .find(|row| row.request_id == request_id)
+        {
+            apply_usage_patch(row, incoming);
+            return;
+        }
+        if let Some(pending) = store.pending_usage.get_mut(request_id) {
+            if incoming.ttft_ms.is_some() {
+                pending.ttft_ms = incoming.ttft_ms;
+            }
+            if incoming.input_tokens.is_some() {
+                pending.input_tokens = incoming.input_tokens;
+            }
+            if incoming.output_tokens.is_some() {
+                pending.output_tokens = incoming.output_tokens;
+            }
+            return;
+        }
+        if store.pending_usage.len() >= ROUTE_TRACE_CAP {
+            return;
+        }
+        store.pending_usage.insert(request_id.to_owned(), incoming);
     }
 
     pub fn recent(&self, profile_id: &str) -> Vec<RouteRequestTrace> {
@@ -245,6 +326,9 @@ impl RouteTraceBuilder {
                 ok: false,
                 model: None,
                 latency_ms: None,
+                ttft_ms: None,
+                input_tokens: None,
+                output_tokens: None,
                 local_auth: RouteTraceLocalAuth {
                     status: TraceStageStatus::Pending,
                     profile_id: None,
