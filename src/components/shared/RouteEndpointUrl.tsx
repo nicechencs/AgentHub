@@ -108,3 +108,34 @@ export function CopyableRouteEndpointUrl({
     </button>
   );
 }
+
+/** Absolute upstream URL: origin muted, path colored by surface/agent brand. */
+export function AbsoluteRouteEndpointUrl({
+  url,
+  endpointId,
+  brandAgentId,
+  className,
+}: {
+  url: string;
+  endpointId?: RouteEndpointId;
+  brandAgentId?: TokenAgentId;
+  className?: string;
+}) {
+  try {
+    const parsed = new URL(url);
+    const path = `${parsed.pathname}${parsed.search}`;
+    const origin = `${parsed.protocol}//${parsed.host}`;
+    const parts = routeEndpointHttpParts({ path, endpointId });
+    return (
+      <span className={cn('inline font-mono break-all', className)}>
+        <span className="text-secondary">{origin}</span>
+        <span style={{ color: routeEndpointTypeColor(parts.endpointId, brandAgentId) }}>
+          {path || '/'}
+        </span>
+      </span>
+    );
+  } catch {
+    return <span className={cn('font-mono break-all', className)}>{url}</span>;
+  }
+}
+
