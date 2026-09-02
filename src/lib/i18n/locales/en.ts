@@ -106,9 +106,9 @@ export const en = {
         'Only the Routes item auto-collapses the sidebar. Other pages, refresh, and moving inside Routes leave it as you left it. The collapse control always works.',
       routesNavVisibleLabel: 'Show Routes in sidebar',
       routesNavVisibleDescription:
-        'In development. Show the Routes entry in the left nav. Hiding it does not disable the page.',
+        'Show the Routes entry in the left nav. Hiding it does not disable the page.',
       routesNavVisibleTip:
-        'Hidden by default on a new install. When hidden, you can still open Routes via the URL or direct links.',
+        'Shown by default on a new install. When hidden, you can still open Routes via the URL or direct links.',
       pluginsNavVisibleLabel: 'Show Plugins in sidebar',
       pluginsNavVisibleDescription:
         'In development. Show the Plugins entry in the left nav. Hiding it does not disable the page.',
@@ -1652,6 +1652,7 @@ export const en = {
       addApiKey: "Add API Key",
       unused: "Not in use",
       unusedWithOwner: "{name} · not in use",
+      inUseWithOwner: "{name} · in use",
       usedFor: "In use:",
       runningSuffix: " · running",
       stoppedSuffix: " · stopped",

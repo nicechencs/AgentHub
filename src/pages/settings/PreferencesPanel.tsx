@@ -254,7 +254,6 @@ export function PreferencesPanel({
         </SettingsRow>
         <SettingsRow
           label={t('settings.general.routesNavVisibleLabel')}
-          badge={<Badge variant="default">{t('common.inDevelopment')}</Badge>}
           description={t('settings.general.routesNavVisibleDescription')}
           descriptionTip={t('settings.general.routesNavVisibleTip')}
         >
