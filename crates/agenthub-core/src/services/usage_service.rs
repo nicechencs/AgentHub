@@ -437,9 +437,10 @@ impl UsageService {
         model: Option<&str>,
         since: Option<&str>,
         exclude_agent_ids: &[AgentId],
+        until: Option<&str>,
     ) -> Result<Vec<UsageTrendPoint>> {
         self.repo
-            .trend(days, agent, model, since, exclude_agent_ids)
+            .trend(days, agent, model, since, exclude_agent_ids, until)
     }
 
     pub fn trend_by_model(
@@ -449,9 +450,10 @@ impl UsageService {
         model: Option<&str>,
         since: Option<&str>,
         exclude_agent_ids: &[AgentId],
+        until: Option<&str>,
     ) -> Result<Vec<UsageTrendPoint>> {
         self.repo
-            .trend_by_model(days, agent, model, since, exclude_agent_ids)
+            .trend_by_model(days, agent, model, since, exclude_agent_ids, until)
     }
 
     pub fn overview(
@@ -461,9 +463,10 @@ impl UsageService {
         model: Option<&str>,
         since: Option<&str>,
         exclude_agent_ids: &[AgentId],
+        until: Option<&str>,
     ) -> Result<UsageOverview> {
         self.repo
-            .overview(days, agent, model, since, exclude_agent_ids)
+            .overview(days, agent, model, since, exclude_agent_ids, until)
     }
 
     pub fn list_models(&self) -> Result<Vec<String>> {

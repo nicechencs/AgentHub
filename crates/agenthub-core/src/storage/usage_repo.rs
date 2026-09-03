@@ -277,6 +277,7 @@ impl UsageRepo {
         model: Option<&str>,
         since: Option<&str>,
         exclude_agent_ids: &[AgentId],
+        until: Option<&str>,
     ) -> Result<Vec<UsageTrendPoint>> {
         self.trend_grouped(
             days,
@@ -285,6 +286,7 @@ impl UsageRepo {
             since,
             exclude_agent_ids,
             UsageTrendGroup::Agent,
+            until,
         )
     }
 
@@ -295,6 +297,7 @@ impl UsageRepo {
         model: Option<&str>,
         since: Option<&str>,
         exclude_agent_ids: &[AgentId],
+        until: Option<&str>,
     ) -> Result<Vec<UsageTrendPoint>> {
         self.trend_grouped(
             days,
@@ -303,6 +306,7 @@ impl UsageRepo {
             since,
             exclude_agent_ids,
             UsageTrendGroup::Model,
+            until,
         )
     }
 
@@ -314,10 +318,11 @@ impl UsageRepo {
         since: Option<&str>,
         exclude_agent_ids: &[AgentId],
         group: UsageTrendGroup,
+        until: Option<&str>,
     ) -> Result<Vec<UsageTrendPoint>> {
-        let q = usage_query_from_parts(days, agent, model, since, exclude_agent_ids);
+        let q = usage_query_from_parts(days, agent, model, since, until, exclude_agent_ids);
         let days = q.days.max(1) as i64;
-        let grain = TrendGrain::from_days(days);
+        let grain = trend_grain_for_query(&q, days);
         let (series_col, group_sql) = match group {
             UsageTrendGroup::Agent => ("agent_id", " GROUP BY ts, agent_id"),
             UsageTrendGroup::Model => ("model", " GROUP BY ts, model"),
@@ -371,7 +376,13 @@ impl UsageRepo {
                 }
             }
             if !map.is_empty() {
-                fill_trend_window(&mut map, days, q.since.as_deref(), grain);
+                fill_trend_window(
+                    &mut map,
+                    days,
+                    q.since.as_deref(),
+                    q.until.as_deref(),
+                    grain,
+                );
             }
             Ok(map.into_values().collect())
         })
@@ -388,8 +399,9 @@ impl UsageRepo {
         model: Option<&str>,
         since: Option<&str>,
         exclude_agent_ids: &[AgentId],
+        until: Option<&str>,
     ) -> Result<UsageOverview> {
-        let q = usage_query_from_parts(days, agent, model, since, exclude_agent_ids);
+        let q = usage_query_from_parts(days, agent, model, since, until, exclude_agent_ids);
         self.db.with_conn(|conn| {
             let mut metrics_sql = String::from(
                 r#"
@@ -726,6 +738,22 @@ impl TrendGrain {
     }
 }
 
+fn trend_grain_for_query(q: &UsageQuery, days: i64) -> TrendGrain {
+    if let (Some(since), Some(until)) = (q.since.as_deref(), q.until.as_deref()) {
+        if let (Ok(start), Ok(end)) = (
+            chrono::DateTime::parse_from_rfc3339(since),
+            chrono::DateTime::parse_from_rfc3339(until),
+        ) {
+            return if end - start <= chrono::Duration::hours(24) {
+                TrendGrain::Hour
+            } else {
+                TrendGrain::Day
+            };
+        }
+    }
+    TrendGrain::from_days(days)
+}
+
 /// Local hour (`YYYY-MM-DD HH:00`) or calendar day (`YYYY-MM-DD`).
 /// UTC prefixes would split a local day around midnight; skip non-RFC3339 `ts`.
 fn local_trend_bucket(ts: &str, grain: TrendGrain) -> Option<String> {
@@ -754,6 +782,7 @@ fn fill_trend_window(
     map: &mut std::collections::BTreeMap<String, UsageTrendPoint>,
     days: i64,
     since: Option<&str>,
+    until: Option<&str>,
     grain: TrendGrain,
 ) {
     let now = chrono::Local::now();
@@ -763,11 +792,16 @@ fn fill_trend_window(
         .map(|dt| dt.with_timezone(&chrono::Local))
         .filter(|s| *s > rolling_start)
         .unwrap_or(rolling_start);
+    let end_instant = until
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&chrono::Local) - chrono::Duration::nanoseconds(1))
+        .unwrap_or(now);
+    let end_instant = if end_instant > now { now } else { end_instant };
 
     match grain {
         TrendGrain::Hour => {
             let mut t = truncate_local_hour(start);
-            let end = truncate_local_hour(now);
+            let end = truncate_local_hour(end_instant);
             let mut n = 0usize;
             while t <= end && n < 48 {
                 let key = t.format(grain.strftime()).to_string();
@@ -779,9 +813,9 @@ fn fill_trend_window(
         }
         TrendGrain::Day => {
             let mut d = start.date_naive();
-            let end = now.date_naive();
+            let end = end_instant.date_naive();
             let mut n = 0usize;
-            while d <= end && n < 40 {
+            while d <= end && n < 100 {
                 let key = d.format(grain.strftime()).to_string();
                 map.entry(key.clone())
                     .or_insert_with(|| UsageTrendPoint::new(key));
@@ -800,6 +834,7 @@ fn usage_query_from_parts(
     agent_id: Option<AgentId>,
     model: Option<&str>,
     since: Option<&str>,
+    until: Option<&str>,
     exclude_agent_ids: &[AgentId],
 ) -> UsageQuery {
     UsageQuery {
@@ -807,6 +842,7 @@ fn usage_query_from_parts(
         agent_id,
         model: model.map(str::to_string),
         since: since.map(str::to_string),
+        until: until.map(str::to_string),
         exclude_agent_ids: exclude_agent_ids.to_vec(),
         ..Default::default()
     }
@@ -842,12 +878,13 @@ fn merge_model_distribution(
     out
 }
 
-/// Shared WHERE for query / trend / overview: days, since, agent, model, exclude.
+/// Shared WHERE for query / trend / overview: days, since, until, agent, model, exclude.
 ///
-/// `days` is `max(1)` rolling `unixepoch('now', '-N days')`. `since` is AND-ed
-/// as instants (`unixepoch`); `Z` and `+00:00` match. Empty / `"all"` model is
-/// ignored. `include_model` is false for overview `models` so the dropdown
-/// stays populated while a model is selected. Exclude is `NOT IN` before LIMIT.
+/// `days` is `max(1)` rolling `unixepoch('now', '-N days')`. `since` / `until`
+/// are AND-ed as instants (`unixepoch`); `until` is exclusive. `Z` and `+00:00`
+/// match. Empty / `"all"` model is ignored. `include_model` is false for
+/// overview `models` so the dropdown stays populated while a model is selected.
+/// Exclude is `NOT IN` before LIMIT.
 fn append_usage_filter(
     sql: &mut String,
     args: &mut Vec<Box<dyn rusqlite::types::ToSql>>,
@@ -860,6 +897,10 @@ fn append_usage_filter(
     if let Some(since) = q.since.as_deref().filter(|s| !s.is_empty()) {
         sql.push_str(" AND unixepoch(ts) >= unixepoch(?)");
         args.push(Box::new(since.to_string()));
+    }
+    if let Some(until) = q.until.as_deref().filter(|s| !s.is_empty()) {
+        sql.push_str(" AND unixepoch(ts) < unixepoch(?)");
+        args.push(Box::new(until.to_string()));
     }
     if let Some(agent) = q.agent_id {
         sql.push_str(" AND agent_id = ?");

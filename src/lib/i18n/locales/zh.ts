@@ -1425,6 +1425,7 @@ export const zh = {
       last24h: "近 24 小时",
       last7d: "7 天",
       last30d: "一个月",
+      custom: "自定义",
     },
     page: {
       title: "总览",
@@ -1438,6 +1439,8 @@ export const zh = {
       allAgents: "全部 Agent",
       allModels: "全部模型",
       rangeAria: "时间范围",
+      customStart: "开始日期",
+      customEnd: "结束日期",
       collect: "采集",
       collecting: "采集中…",
       syncing: "同步中…",

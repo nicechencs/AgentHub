@@ -49,6 +49,15 @@ describe('denseTrendBuckets', () => {
     expect(keys.length).toBeGreaterThanOrEqual(7);
     expect(keys.length).toBeLessThanOrEqual(9);
   });
+
+  it('stops at until so a past custom range does not fill through today', () => {
+    const since = new Date(2026, 7, 10).toISOString();
+    const until = new Date(2026, 7, 13).toISOString();
+    const keys = denseTrendBuckets(30, since, now, until);
+    expect(keys[0]).toBe('2026-08-10');
+    expect(keys.at(-1)).toBe('2026-08-12');
+    expect(keys).toHaveLength(3);
+  });
 });
 
 describe('localTrendBucket', () => {

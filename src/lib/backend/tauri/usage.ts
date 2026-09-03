@@ -38,6 +38,7 @@ export function createTauriUsagePort(): UsagePort {
         model,
         limit: q.limit ?? null,
         since: q.since ?? null,
+        until: q.until ?? null,
         excludeAgentIds: q.excludeAgentIds ?? null,
       });
       return rows.map(mapCoreUsageRecord);
@@ -51,11 +52,12 @@ export function createTauriUsagePort(): UsagePort {
         agentId,
         model,
         since: q.since ?? null,
+        until: q.until ?? null,
         excludeAgentIds: q.excludeAgentIds ?? null,
       });
     },
 
-    async usageTrend(days, agentId, model, since, excludeAgentIds, groupBy): Promise<UsageTrendPoint[]> {
+    async usageTrend(days, agentId, model, since, excludeAgentIds, groupBy, until): Promise<UsageTrendPoint[]> {
       const id = !agentId || agentId === 'all' ? null : agentId;
       const modelFilter = !model || model === 'all' ? null : model;
       return invoke<UsageTrendPoint[]>('usage_trend', {
@@ -63,6 +65,7 @@ export function createTauriUsagePort(): UsagePort {
         agentId: id,
         model: modelFilter,
         since: since ?? null,
+        until: until ?? null,
         excludeAgentIds: excludeAgentIds ?? null,
         groupBy: groupBy === 'model' ? 'model' : null,
       });

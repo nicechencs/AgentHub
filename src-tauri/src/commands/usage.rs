@@ -41,12 +41,14 @@ pub async fn usage_query(
     limit: Option<u32>,
     since: Option<String>,
     exclude_agent_ids: Option<Vec<String>>,
+    until: Option<String>,
 ) -> Result<Vec<UsageRecord>, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
         let agent = parse_agent_opt(agent_id.as_deref())?;
         let model = model.filter(|m| !m.is_empty() && m != "all");
         let since = since.filter(|s| !s.is_empty());
+        let until = until.filter(|s| !s.is_empty());
         let exclude_agent_ids = parse_exclude_agent_ids(exclude_agent_ids);
         hub.usage()
             .query(UsageQuery {
@@ -55,6 +57,7 @@ pub async fn usage_query(
                 model,
                 limit,
                 since,
+                until,
                 exclude_agent_ids,
             })
             .map_err(|e| map_err_string("usage_query", e))
@@ -71,12 +74,14 @@ pub async fn usage_trend(
     since: Option<String>,
     exclude_agent_ids: Option<Vec<String>>,
     group_by: Option<String>,
+    until: Option<String>,
 ) -> Result<Vec<Value>, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
         let agent = parse_agent_opt(agent_id.as_deref())?;
         let model = model.filter(|m| !m.is_empty() && m != "all");
         let since = since.filter(|s| !s.is_empty());
+        let until = until.filter(|s| !s.is_empty());
         let exclude = parse_exclude_agent_ids(exclude_agent_ids);
         let by_model = group_by.as_deref() == Some("model");
         let points = if by_model {
@@ -86,6 +91,7 @@ pub async fn usage_trend(
                 model.as_deref(),
                 since.as_deref(),
                 &exclude,
+                until.as_deref(),
             )
         } else {
             hub.usage().trend(
@@ -94,6 +100,7 @@ pub async fn usage_trend(
                 model.as_deref(),
                 since.as_deref(),
                 &exclude,
+                until.as_deref(),
             )
         }
         .map_err(|e| map_err_string("usage_trend", e))?;
@@ -110,12 +117,14 @@ pub async fn usage_overview(
     model: Option<String>,
     since: Option<String>,
     exclude_agent_ids: Option<Vec<String>>,
+    until: Option<String>,
 ) -> Result<UsageOverview, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
         let agent = parse_agent_opt(agent_id.as_deref())?;
         let model = model.filter(|m| !m.is_empty() && m != "all");
         let since = since.filter(|s| !s.is_empty());
+        let until = until.filter(|s| !s.is_empty());
         let exclude = parse_exclude_agent_ids(exclude_agent_ids);
         hub.usage()
             .overview(
@@ -124,6 +133,7 @@ pub async fn usage_overview(
                 model.as_deref(),
                 since.as_deref(),
                 &exclude,
+                until.as_deref(),
             )
             .map_err(|e| map_err_string("usage_overview", e))
     })

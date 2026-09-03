@@ -38,8 +38,17 @@ export async function usageTrend(
   since?: string,
   excludeAgentIds?: AgentKey[],
   groupBy?: UsageTrendGroupBy,
+  until?: string,
 ): Promise<UsageTrendPoint[]> {
-  return getBackend().usage.usageTrend(days, agentId, model, since, excludeAgentIds, groupBy);
+  return getBackend().usage.usageTrend(
+    days,
+    agentId,
+    model,
+    since,
+    excludeAgentIds,
+    groupBy,
+    until,
+  );
 }
 
 export async function listModels(): Promise<string[]> {

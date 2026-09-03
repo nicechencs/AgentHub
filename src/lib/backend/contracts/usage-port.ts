@@ -28,6 +28,7 @@ export interface UsagePort {
     since?: string,
     excludeAgentIds?: AgentKey[],
     groupBy?: UsageTrendGroupBy,
+    until?: string,
   ): Promise<UsageTrendPoint[]>;
   listModels(): Promise<string[]>;
   parserHealth(): Promise<ParserHealth[]>;

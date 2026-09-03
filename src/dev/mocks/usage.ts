@@ -84,7 +84,7 @@ export function resetMockUsage(): void {
   records = buildRecords(Date.now());
 }
 
-function inUsageWindow(r: UsageRecord, days: number, since?: string): boolean {
+function inUsageWindow(r: UsageRecord, days: number, since?: string, until?: string): boolean {
   const t = new Date(r.timestamp).getTime();
   const cutoff = Date.now() - days * 24 * 3600 * 1000;
   if (t < cutoff) return false;
@@ -92,11 +92,15 @@ function inUsageWindow(r: UsageRecord, days: number, since?: string): boolean {
     const bound = new Date(since).getTime();
     if (!Number.isNaN(bound) && t < bound) return false;
   }
+  if (until) {
+    const bound = new Date(until).getTime();
+    if (!Number.isNaN(bound) && t >= bound) return false;
+  }
   return true;
 }
 
 function matchesUsageQuery(r: UsageRecord, q: UsageQuery, ignoreModel = false): boolean {
-  if (!inUsageWindow(r, q.days, q.since)) return false;
+  if (!inUsageWindow(r, q.days, q.since, q.until)) return false;
   if (q.agentId && q.agentId !== 'all' && r.agentId !== q.agentId) return false;
   if (q.excludeAgentIds?.includes(r.agentId)) return false;
   if (!ignoreModel && q.model && q.model !== 'all' && !usageModelsMatch(r.model, q.model)) {
@@ -188,9 +192,9 @@ export function createMockUsagePort(): UsagePort {
       return mockUsageOverview(q);
     },
 
-    async usageTrend(days, agentId, model, since, excludeAgentIds, groupBy) {
+    async usageTrend(days, agentId, model, since, excludeAgentIds, groupBy, until) {
       await delay(30 + Math.random() * 50);
-      const grain = trendGrain(days);
+      const grain = trendGrain(days, since, until);
       const byModel = groupBy === 'model';
       const emptyPoint = (key: string): UsageTrendPoint => {
         const point: UsageTrendPoint = { date: key };
@@ -201,7 +205,7 @@ export function createMockUsagePort(): UsagePort {
       };
       const byBucket = new Map<string, UsageTrendPoint>();
       for (const r of records) {
-        if (!inUsageWindow(r, days, since)) continue;
+        if (!inUsageWindow(r, days, since, until)) continue;
         if (agentId && agentId !== 'all' && r.agentId !== agentId) continue;
         if (excludeAgentIds?.includes(r.agentId)) continue;
         if (model && model !== 'all' && !usageModelsMatch(r.model, model)) continue;
@@ -222,7 +226,7 @@ export function createMockUsagePort(): UsagePort {
         }
       }
       if (byBucket.size > 0) {
-        for (const key of denseTrendBuckets(days, since)) {
+        for (const key of denseTrendBuckets(days, since, undefined, until)) {
           if (!byBucket.has(key)) byBucket.set(key, emptyPoint(key));
         }
       }

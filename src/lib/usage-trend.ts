@@ -5,7 +5,14 @@ export type TrendGrain = 'hour' | 'day';
 
 const HOURLY_BUCKET = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):00$/;
 
-export function trendGrain(days: number): TrendGrain {
+export function trendGrain(days: number, since?: string, until?: string): TrendGrain {
+  if (since && until) {
+    const start = new Date(since).getTime();
+    const end = new Date(until).getTime();
+    if (Number.isFinite(start) && Number.isFinite(end)) {
+      return end - start <= 24 * 3600 * 1000 ? 'hour' : 'day';
+    }
+  }
   return days <= 1 ? 'hour' : 'day';
 }
 
@@ -35,8 +42,13 @@ export function localTrendBucket(iso: string, grain: TrendGrain): string | null 
 }
 
 /** Dense x-axis keys for the selected window (local time). */
-export function denseTrendBuckets(days: number, since?: string, now = new Date()): string[] {
-  const grain = trendGrain(days);
+export function denseTrendBuckets(
+  days: number,
+  since?: string,
+  now = new Date(),
+  until?: string,
+): string[] {
+  const grain = trendGrain(days, since, until);
   const windowDays = Math.max(1, days);
   const rollingStart = new Date(now.getTime() - windowDays * 24 * 3600 * 1000);
   let start = rollingStart;
@@ -44,12 +56,20 @@ export function denseTrendBuckets(days: number, since?: string, now = new Date()
     const bound = new Date(since);
     if (!Number.isNaN(bound.getTime()) && bound > start) start = bound;
   }
+  let endAt = now;
+  if (until) {
+    const bound = new Date(until);
+    if (!Number.isNaN(bound.getTime())) {
+      endAt = new Date(bound.getTime() - 1);
+      if (endAt > now) endAt = now;
+    }
+  }
 
   const keys: string[] = [];
   if (grain === 'hour') {
     const t = new Date(start);
     t.setMinutes(0, 0, 0);
-    const end = new Date(now);
+    const end = new Date(endAt);
     end.setMinutes(0, 0, 0);
     while (t <= end && keys.length < 48) {
       keys.push(formatLocalBucket(t, 'hour'));
@@ -57,8 +77,8 @@ export function denseTrendBuckets(days: number, since?: string, now = new Date()
     }
   } else {
     const t = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    while (t <= end && keys.length < 40) {
+    const end = new Date(endAt.getFullYear(), endAt.getMonth(), endAt.getDate());
+    while (t <= end && keys.length < 100) {
       keys.push(formatLocalBucket(t, 'day'));
       t.setDate(t.getDate() + 1);
     }
