@@ -811,7 +811,7 @@ fn missing_package_manager_outcome_is_env_not_ready() {
         vec!["# install runtime nodejs via brew (node)".into()],
         "brew",
         RuntimeId::NodeJs,
-        "未找到 Homebrew。请先安装 Homebrew（https://brew.sh/）后重试。",
+        "未找到 Homebrew，无法一键安装。请先安装 Homebrew（https://brew.sh/），或从官网手动安装。完成后完全退出并重启 AgentHub 再检测。",
     );
     assert!(!out.ok);
     assert_eq!(out.code.as_deref(), Some("env.not_ready"));
@@ -838,10 +838,32 @@ fn missing_package_manager_outcome_is_env_not_ready() {
         .unwrap_or_default()
         .contains("Homebrew"));
     assert!(
-        out.logs
+        remediations.iter().any(|rem| {
+            rem["url"].as_str() == Some("https://brew.sh/")
+                || rem["url"].as_str() == Some("https://nodejs.org/")
+                || rem["command"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("Homebrew/install")
+        }),
+        "missing Homebrew must point at brew.sh or the official runtime page: {remediations:?}"
+    );
+    assert!(
+        remediations
             .iter()
-            .any(|line| line.contains("remediation") || line.contains("https://")),
-        "logs should print remediations: {:?}",
+            .all(|rem| rem["command"].as_str() != Some("brew install node")),
+        "must not suggest brew install when Homebrew is missing: {remediations:?}"
+    );
+    assert!(
+        out.logs.iter().any(|line| line.contains("https://")
+            || line.contains("可复制命令")
+            || line.contains("打开页面")),
+        "logs should print install steps: {:?}",
+        out.logs
+    );
+    assert!(
+        out.logs.iter().all(|line| !line.contains("remediation:")),
+        "logs must not use internal remediation prefixes: {:?}",
         out.logs
     );
 }
@@ -952,10 +974,10 @@ fn install_runtime_missing_winget_is_env_not_ready() {
             }
         }
         assert!(
-            out.logs
-                .iter()
-                .any(|line| line.contains("remediation") || line.contains("https://")),
-            "logs should print remediations: {:?}",
+            out.logs.iter().any(|line| line.contains("https://")
+                || line.contains("可复制命令")
+                || line.contains("打开页面")),
+            "logs should print install steps: {:?}",
             out.logs
         );
     } else {

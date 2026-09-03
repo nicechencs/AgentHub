@@ -2531,7 +2531,7 @@ export const zh = {
       runningWait: "进行中 · 已等待 {elapsed}（下载安装可能需数分钟）",
       running: "进行中…",
       done: "完成",
-      failed: "失败,请尝试手动执行上方命令",
+      failed: "无法自动完成，请按上方步骤操作",
       guided: "请到官网完成安装后重启 AgentHub",
     },
     installCopy: {
