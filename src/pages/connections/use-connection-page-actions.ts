@@ -2,8 +2,8 @@ import { useCallback, useRef, useState } from 'react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import type { AgentTabId } from '@/components/layout/AgentTabStrip';
-import { deleteAccount, switchAccount } from '@/lib/api/account';
-import { deleteProvider, switchPreview, switchProvider } from '@/lib/api/provider';
+import { deleteAccount, switchAccount, undoSwitchAccount } from '@/lib/api/account';
+import { deleteProvider, switchPreview, switchProvider, undoSwitch } from '@/lib/api/provider';
 import { logGuiEvent, guiErrorCode } from '@/lib/api/settings';
 import type { TranslateFn } from '@/lib/i18n';
 import {
@@ -86,6 +86,46 @@ export function useConnectionPageActions(input: {
   const switchGen = useRef(0);
   const [deleteTicket, setDeleteTicket] = useState<TicketView | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+
+  const handleRemoveFromCatalog = useCallback(async (ticket: TicketView) => {
+    if (!isCatalogAppendOccupancy(resolveAgentMeta(ticket.agentId).occupancy)) return;
+    if (!extrasForTicket(ticket)?.isCurrent) return;
+    const generation = ++switchGen.current;
+    setSwitchingTicketId(ticket.id);
+    try {
+      const undone = ticket.sourceKind === 'account'
+        ? await undoSwitchAccount(ticket.agentId)
+        : await undoSwitch(ticket.agentId);
+      if (switchGen.current !== generation) return;
+      if (!undone) {
+        toast({
+          title: t('connections.list.removeFromCatalogFail'),
+          variant: 'danger',
+        });
+        return;
+      }
+      void logGuiEvent('switch', { agent: ticket.agentId });
+      toast({
+        title: t('connections.list.removeFromCatalogOk'),
+        variant: 'success',
+      });
+      await poolReload().catch(() => {});
+      await loadWallet();
+    } catch (e) {
+      if (switchGen.current !== generation) return;
+      void logGuiEvent('switch_fail', {
+        agent: ticket.agentId,
+        code: guiErrorCode(e),
+      });
+      toast({
+        title: t('connections.list.removeFromCatalogFail'),
+        description: describeProviderSwitchError(ticket.agentId, e, t),
+        variant: 'danger',
+      });
+    } finally {
+      if (switchGen.current === generation) setSwitchingTicketId(null);
+    }
+  }, [extrasForTicket, loadWallet, poolReload, t, toast]);
 
   const handleSwitchTicket = useCallback(async (ticket: TicketView) => {
     const targetAgent = filterAgent === 'all' ? ticket.agentId : filterAgent;
@@ -173,6 +213,7 @@ export function useConnectionPageActions(input: {
   return {
     switchingTicketId,
     handleSwitchTicket,
+    handleRemoveFromCatalog,
     deleteTicket,
     setDeleteTicket,
     deleteBusy,

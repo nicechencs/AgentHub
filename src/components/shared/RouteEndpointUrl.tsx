@@ -9,6 +9,7 @@ import { agentCssVar, type TokenAgentId } from '@/styles/tokens';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
+import { Tip } from '@/components/ui/tooltip';
 
 /** Same `--agent-*` token the Agent logo/dot uses. Change colors in AGENT_COLORS. */
 export function routeEndpointTypeColor(
@@ -54,7 +55,7 @@ export function RouteEndpointUrl({
 }) {
   const parts = routeEndpointHttpParts({ path, port, host, endpointId });
   return (
-    <span className={cn('inline font-mono', className)}>
+    <span className={cn('inline-block min-w-0 max-w-full truncate font-mono', className)}>
       <span className="text-secondary">{parts.origin}</span>
       <span style={{ color: routeEndpointTypeColor(parts.endpointId, brandAgentId) }}>{parts.path}</span>
     </span>
@@ -90,22 +91,24 @@ export function CopyableRouteEndpointUrl({
     }
   };
   return (
-    <button
-      type="button"
-      className="inline-flex max-w-full items-center gap-1 rounded-btn px-1 py-0.5 text-left hover:bg-hover"
-      onClick={(event) => { void copy(event); }}
-      aria-label={t('routes.copyEndpointAria', { endpoint: copyText })}
-    >
-      <RouteEndpointUrl
-        path={path}
-        port={port}
-        host={host}
-        endpointId={endpointId}
-        brandAgentId={brandAgentId}
-        className={className}
-      />
-      <Copy className="h-3 w-3 shrink-0 text-muted" aria-hidden />
-    </button>
+    <Tip label={copyText} className="min-w-0 max-w-full">
+      <button
+        type="button"
+        className="inline-flex min-w-0 max-w-full items-center gap-1 overflow-hidden rounded-btn px-1 py-0.5 text-left hover:bg-hover"
+        onClick={(event) => { void copy(event); }}
+        aria-label={t('routes.copyEndpointAria', { endpoint: copyText })}
+      >
+        <RouteEndpointUrl
+          path={path}
+          port={port}
+          host={host}
+          endpointId={endpointId}
+          brandAgentId={brandAgentId}
+          className={className}
+        />
+        <Copy className="h-3 w-3 shrink-0 text-muted" aria-hidden />
+      </button>
+    </Tip>
   );
 }
 

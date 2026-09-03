@@ -85,6 +85,41 @@ fn lists_and_sets_default_pool_entry_keys() {
     let updated = service.set_local_token(&pool.id, "ahb_custom-key").unwrap();
     assert_eq!(updated.token, "ahb_custom-key");
     assert_eq!(service.list_local_tokens().unwrap()[0].token, "ahb_custom-key");
+    assert!(service.list_local_tokens().unwrap()[0].primary);
+    assert_eq!(service.list_local_tokens().unwrap()[0].id, pool.id);
+}
+
+#[test]
+fn named_extra_entry_keys_can_be_created_renamed_and_deleted() {
+    let (_dir, _db, service, _) = tmp();
+    let pool = service
+        .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
+        .unwrap();
+    let created = service.create_local_token(&pool.id, "工作电脑").unwrap();
+    assert!(!created.primary);
+    assert_eq!(created.pool_id, pool.id);
+    assert_eq!(created.name, "工作电脑");
+    assert!(created.token.starts_with("ahb_"));
+    assert_eq!(service.list_local_tokens().unwrap().len(), 2);
+    assert_eq!(service.list_extra_local_bearers().unwrap().len(), 1);
+
+    let renamed = service.set_local_token_name(&created.id, "家里").unwrap();
+    assert_eq!(renamed.name, "家里");
+    let primary = service.set_local_token_name(&pool.id, "默认").unwrap();
+    assert!(primary.primary);
+    assert_eq!(primary.name, "默认");
+
+    let rotated = service.set_local_token(&pool.id, "ahb_after-name").unwrap();
+    assert!(rotated.primary);
+    assert_eq!(rotated.token, "ahb_after-name");
+    assert_eq!(rotated.name, "默认");
+
+    service.delete_local_token(&created.id).unwrap();
+    let listed = service.list_local_tokens().unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].name, "默认");
+    assert_eq!(listed[0].token, "ahb_after-name");
+    assert!(service.delete_local_token(&pool.id).is_err());
 }
 
 #[test]

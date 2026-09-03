@@ -46,7 +46,11 @@ import {
   tokenLastPageDisplay,
   tokenUsageDisplay,
 } from './token-detail-model';
-import { localTokenEditKeyGate, type LocalTokenRow } from './tokens-model';
+import {
+  localTokenDeleteGate,
+  localTokenEditKeyGate,
+  type LocalTokenRow,
+} from './tokens-model';
 import { TokenImportToAgentButton } from './TokenImportToAgentButton';
 import type { TokenImportAgentRef } from './token-import-model';
 import { parseCustomModelList } from '@/pages/routes/pool/pool-authorization-detail';
@@ -56,12 +60,16 @@ export function TokenDetailPanel({
   width,
   onClose,
   onEditKey,
+  onSaveName,
+  onDelete,
   installedAgents,
 }: {
   row: LocalTokenRow;
   width?: number;
   onClose: () => void;
   onEditKey?: () => void;
+  onSaveName?: (name: string) => Promise<void> | void;
+  onDelete?: () => void;
   installedAgents?: readonly TokenImportAgentRef[];
 }) {
   const { t } = useI18n();
@@ -76,6 +84,8 @@ export function TokenDetailPanel({
   const [modelDraft, setModelDraft] = useState('');
   const [savingModels, setSavingModels] = useState(false);
   const [refreshingModels, setRefreshingModels] = useState(false);
+  const [nameDraft, setNameDraft] = useState(row.name);
+  const [savingName, setSavingName] = useState(false);
   const dropdownModels = testModel.trim() && !models.includes(testModel)
     ? [testModel.trim(), ...models]
     : models;
@@ -88,9 +98,12 @@ export function TokenDetailPanel({
   const canCopyToken = Boolean(tokenRow?.copyValue);
   const testGate = localTokenTestGate(row, t);
   const editGate = localTokenEditKeyGate(row, t);
+  const deleteGate = localTokenDeleteGate(row, t);
   const canRunTest = testGate.enabled && Boolean(testModel.trim()) && !testing;
 
   useEffect(() => {
+    setNameDraft(row.name);
+    setSavingName(false);
     setRevealed(false);
     setTesting(false);
     setTestOpen(false);
@@ -218,10 +231,37 @@ export function TokenDetailPanel({
     >
       <div className="flex flex-col gap-3 text-sm" data-token-detail={row.id}>
         <div className="space-y-1">
+          <p className="text-meta text-muted">{t('routes.tokens.fieldName')}</p>
+          <div className="flex min-w-0 items-center gap-2">
+            <Input
+              className="min-w-0 flex-1"
+              value={nameDraft}
+              onChange={(event) => setNameDraft(event.target.value)}
+              placeholder={t('routes.tokens.namePlaceholder')}
+              disabled={savingName || !onSaveName || row.unavailable}
+              aria-label={t('routes.tokens.fieldName')}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={savingName || !onSaveName || row.unavailable || !nameDraft.trim()}
+              onClick={() => {
+                if (!onSaveName || savingName) return;
+                setSavingName(true);
+                void Promise.resolve(onSaveName(nameDraft)).finally(() => {
+                  if (rowIdRef.current === row.id) setSavingName(false);
+                });
+              }}
+            >
+              {t('routes.tokens.saveName')}
+            </Button>
+          </div>
+        </div>
+        <div className="space-y-1">
           <p className="text-meta text-muted">{t('routes.tokens.fieldType')}</p>
           <p className="text-primary">{typeRow?.display}</p>
         </div>
-        <div className="space-y-1">
+        <div className="min-w-0 space-y-1">
           <p className="text-meta text-muted">{t('routes.tokens.fieldEndpoint')}</p>
           {endpoint.portPending ? (
             <p className="font-mono text-muted">{t('routes.pendingPort')}</p>
@@ -304,6 +344,22 @@ export function TokenDetailPanel({
                 row={row}
                 installedAgents={installedAgents}
               />
+            ) : null}
+            {onDelete ? (
+              <Button
+                variant="dangerOutline"
+                size="sm"
+                data-token-delete=""
+                disabled={!deleteGate.enabled}
+                onClick={() => {
+                  if (!deleteGate.enabled) return;
+                  onDelete();
+                }}
+                title={deleteGate.reason ?? t('routes.tokens.delete')}
+                aria-label={t('routes.tokens.delete')}
+              >
+                {t('routes.tokens.delete')}
+              </Button>
             ) : null}
           </div>
           {testResult ? (

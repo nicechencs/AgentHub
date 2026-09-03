@@ -19,6 +19,7 @@ import {
 } from './project-format';
 import { ProjectPathLink } from './ProjectPathLink';
 import { ProjectSessionRow } from './ProjectSessionRow';
+import { nestSessions } from './session-nest';
 
 export type ProjectTreeProps = {
   agentId: AgentKey;
@@ -31,8 +32,10 @@ export type ProjectTreeProps = {
   showDelete: boolean;
   deleteHint?: string | null;
   previewSessionId: string | null;
+  nestedOpen: Set<string>;
   visibleSessions: (projectId: string) => AgentSession[];
   onToggleExpand: (project: AgentProject) => void;
+  onToggleNested: (id: string) => void;
   onOpenProjectWorkspace: (p: AgentProject, e: ReactMouseEvent) => void;
   onToggleHideProject: (p: AgentProject, e: ReactMouseEvent) => void;
   onToggleOne: (id: string) => void;
@@ -55,8 +58,10 @@ export function ProjectTree({
   showDelete,
   deleteHint,
   previewSessionId,
+  nestedOpen,
   visibleSessions,
   onToggleExpand,
+  onToggleNested,
   onOpenProjectWorkspace,
   onToggleHideProject,
   onToggleOne,
@@ -159,24 +164,53 @@ export function ProjectTree({
                   </div>
                 ) : (
                   <ul>
-                    {kids.map((s) => (
-                      <ProjectSessionRow
-                        key={s.id}
-                        session={s}
-                        selected={selected.has(s.id)}
-                        busy={busy}
-                        showDelete={showDelete}
-                        deleteHint={deleteHint}
-                        previewOpen={previewSessionId === s.id}
-                        onToggleOne={onToggleOne}
-                        onPreviewSession={onPreviewSession}
-                        onCopySessionId={onCopySessionId}
-                        onCopyResumeCommand={onCopyResumeCommand}
-                        onOpenSessionRecord={onOpenSessionRecord}
-                        onGoContinue={onGoContinue}
-                        onRequestDelete={onRequestDelete}
-                      />
-                    ))}
+                    {nestSessions(kids).flatMap(({ session: s, children }) => {
+                      const openNested = nestedOpen.has(s.id);
+                      return [
+                        <ProjectSessionRow
+                          key={s.id}
+                          session={s}
+                          selected={selected.has(s.id)}
+                          busy={busy}
+                          showDelete={showDelete}
+                          deleteHint={deleteHint}
+                          nested={false}
+                          childCount={children.length}
+                          nestedOpen={openNested}
+                          onToggleNested={onToggleNested}
+                          previewOpen={previewSessionId === s.id}
+                          onToggleOne={onToggleOne}
+                          onPreviewSession={onPreviewSession}
+                          onCopySessionId={onCopySessionId}
+                          onCopyResumeCommand={onCopyResumeCommand}
+                          onOpenSessionRecord={onOpenSessionRecord}
+                          onGoContinue={onGoContinue}
+                          onRequestDelete={onRequestDelete}
+                        />,
+                        ...(openNested
+                          ? children.map((child) => (
+                              <ProjectSessionRow
+                                key={child.id}
+                                session={child}
+                                selected={selected.has(child.id)}
+                                busy={busy}
+                                showDelete={showDelete}
+                                deleteHint={deleteHint}
+                                nested
+                                nestedLabel={t('projects.tree.subSession')}
+                                previewOpen={previewSessionId === child.id}
+                                onToggleOne={onToggleOne}
+                                onPreviewSession={onPreviewSession}
+                                onCopySessionId={onCopySessionId}
+                                onCopyResumeCommand={onCopyResumeCommand}
+                                onOpenSessionRecord={onOpenSessionRecord}
+                                onGoContinue={onGoContinue}
+                                onRequestDelete={onRequestDelete}
+                              />
+                            ))
+                          : []),
+                      ];
+                    })}
                   </ul>
                 )}
               </div>

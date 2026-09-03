@@ -73,6 +73,21 @@ describe('dashboard layout wiring', () => {
     expect(tooltip).toContain("pointerEvents: 'auto'");
   });
 
+  it('marks Cursor overview cards as not managing authorization', () => {
+    const overview = source('AgentOverview.tsx');
+    const model = source('agentOverviewModel.ts');
+    expect(model).toContain("t('dashboard.overview.authUnsupported')");
+    expect(model).toContain("kind: 'none'");
+    expect(overview).toContain("view.action.kind !== 'none'");
+    expect(translate('zh', 'dashboard.overview.authUnsupported')).toBe('不支持管理授权');
+    expect(translate('zh', 'dashboard.overview.authUnsupported')).toBe(
+      translate('zh', 'connections.capability.authUnsupported'),
+    );
+    expect(translate('en', 'dashboard.overview.authUnsupported')).toBe(
+      translate('en', 'connections.capability.authUnsupported'),
+    );
+  });
+
   it('does not open a connect popup from overview cards or show quick actions', () => {
     const page = source('index.tsx');
     expect(page).not.toContain('onConnectRequest');

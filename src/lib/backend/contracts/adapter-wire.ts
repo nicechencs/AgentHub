@@ -721,8 +721,11 @@ export function mapLocalGatewayStatus(wire: LocalGatewayStatusWire): import('./a
 }
 
 export interface LocalTokenRecordWire {
+  id?: string;
   poolId: string;
   token: string;
+  name?: string;
+  primary?: boolean;
 }
 
 export function mapLocalTokenRecord(wire: LocalTokenRecordWire): LocalTokenRecord {
@@ -731,7 +734,15 @@ export function mapLocalTokenRecord(wire: LocalTokenRecordWire): LocalTokenRecor
   if (!poolId || !token) {
     return invalidWireValue('localToken', wire);
   }
-  return { poolId, token };
+  const id = typeof wire.id === 'string' && wire.id.trim() ? wire.id.trim() : poolId;
+  const name = typeof wire.name === 'string' ? wire.name.trim() : '';
+  return {
+    id,
+    poolId,
+    token,
+    name,
+    primary: wire.primary !== false,
+  };
 }
 
 const LOCAL_TOKEN_PROBE_OUTCOMES = new Set<LocalTokenProbeOutcome>([

@@ -43,7 +43,7 @@ agenthub agent capabilities --markdown
 | LiveBackup | Full | Full | Full | Full | Full | Full | Unsupported | Full | Full |
 | StructuredStream | Full | Full | Full | Full | Full | Unsupported | Unsupported | Planned | Unsupported |
 | DangerousMode | Full | Full | Partial | Full | Partial | Full | Full | Partial | Unsupported |
-| ProjectHistory | Full | Full | Full | Full | Full | Full | Partial | Full | Partial |
+| ProjectHistory | Full | Full | Full | Full | Full | Full | Full | Full | Partial |
 | ProjectDelete | Full | Full | Full | Full | Full | Full | Unsupported | Partial | Unsupported |
 | ProviderPresets | Full | Full | Full | Full | Unsupported | Unsupported | Unsupported | Partial | Unsupported |
 | Usage | Full | Full | Full | Full | Full | Full | Unsupported | Full | Full |

@@ -61,6 +61,7 @@ import {
 } from './project-tab-agents';
 import { ProjectConversationPreviewPanel } from './ProjectConversationPreviewPanel';
 import { ProjectTree } from './ProjectTree';
+import { nestSessions } from './session-nest';
 import {
   allVisibleSessionsSelected,
   collectSelectableSessions,
@@ -91,6 +92,7 @@ export default function ProjectsPage() {
   /** Lazy-loaded sessions keyed by project id */
   const [sessionsByProject, setSessionsByProject] = useState<Record<string, AgentSession[]>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [nestedOpen, setNestedOpen] = useState<Set<string>>(new Set());
   const [loadingProjectIds, setLoadingProjectIds] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -106,7 +108,6 @@ export default function ProjectsPage() {
 
   const agentCaps = installedAgents.find((a) => a.id === agentId)?.capabilities;
   const canDelete = isCapabilityUsable(agentCaps?.projectDelete);
-  const showSummarize = agentId !== 'cursor';
   const showDelete = canDelete;
   const agentMeta = AGENT_MAP[agentId];
   const deleteHint =
@@ -164,6 +165,7 @@ export default function ProjectsPage() {
 
   const resetTree = useCallback(() => {
     setExpanded(new Set());
+    setNestedOpen(new Set());
     setSessionsByProject({});
     setSelected(new Set());
     setLoadingProjectIds(new Set());
@@ -352,9 +354,35 @@ export default function ProjectsPage() {
   );
 
   const selectableSessions = useMemo(
-    () => collectSelectableSessions(visibleProjects, expanded, visibleSessions),
-    [visibleProjects, expanded, visibleSessions],
+    () => collectSelectableSessions(visibleProjects, expanded, visibleSessions, nestedOpen),
+    [visibleProjects, expanded, visibleSessions, nestedOpen],
   );
+
+  function toggleNested(id: string) {
+    setNestedOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  useEffect(() => {
+    if (!q) return;
+    setNestedOpen((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const p of visibleProjects) {
+        if (!expanded.has(p.id)) continue;
+        for (const { session, children } of nestSessions(visibleSessions(p.id))) {
+          if (children.length === 0 || next.has(session.id)) continue;
+          next.add(session.id);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [q, visibleProjects, expanded, visibleSessions]);
 
   const allVisibleSelected = allVisibleSessionsSelected(selectableSessions, selected);
 
@@ -529,21 +557,19 @@ export default function ProjectsPage() {
         <div className={pageRhythm.chromeActions}>
           {selected.size > 0 && (
             <>
-              {showSummarize && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => void handleSummarize()}
-                >
-                  {busy ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Sparkles className="h-3.5 w-3.5" />
-                  )}
-                  {t('projects.page.summarize', { n: selected.size })}
-                </Button>
-              )}
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => void handleSummarize()}
+              >
+                {busy ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="h-3.5 w-3.5" />
+                )}
+                {t('projects.page.summarize', { n: selected.size })}
+              </Button>
               {showDelete && (
                 <Button
                   size="sm"
@@ -619,8 +645,10 @@ export default function ProjectsPage() {
           showDelete={showDelete}
           deleteHint={deleteHint}
           previewSessionId={preview.target?.id ?? null}
+          nestedOpen={nestedOpen}
           visibleSessions={visibleSessions}
           onToggleExpand={(p) => void toggleExpand(p)}
+          onToggleNested={toggleNested}
           onOpenProjectWorkspace={(p, e) => void openProjectWorkspace(p, e)}
           onToggleHideProject={(p, e) => void toggleHideProject(p, e)}
           onToggleOne={toggleOne}

@@ -152,10 +152,7 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
       reason: 'Agent CLI 仅提供 text 输出',
     },
     dangerousMode: { level: 'full' },
-    projectHistory: {
-      level: 'partial',
-      reason: '仅工作区目录列表，无会话 transcript',
-    },
+    projectHistory: { level: 'full' },
     projectDelete: {
       level: 'unsupported',
       reason: '无安全浅删契约',

@@ -20,9 +20,12 @@ describe('connections layout wiring', () => {
       'const allowedAgents = installedIds.length > 0 || !loading ? installedIds : visibleIds',
     );
     expect(page).toContain('const tabAgentIds = allowedAgents');
-    expect(page).toContain('useOAuthLoginAgents(allowedAgents)');
-    expect(page).toContain('buildTicketAddMenu(allowedAgents, oauthLoginAgents)');
+    expect(page).toContain('useOAuthLoginAgents(manageAuthAgentIds)');
+    expect(page).toContain('buildTicketAddMenu(manageAuthAgentIds, oauthLoginAgents)');
     expect(page).toContain('oauthLoginAgents={oauthLoginAgents}');
+    expect(page).toContain('disabled={authBlockedIds}');
+    expect(page).toContain("t('connections.capability.authUnsupported')");
+    expect(page).toContain('isAuthorizationManagementBlocked');
   });
 
   it('uses leftover-inactive filtered length for chips and footer; header descriptionCount stays unfiltered', () => {
@@ -70,11 +73,14 @@ describe('connections layout wiring', () => {
     expect(page).toContain("{ kind: 'detail'; ticketId: string }");
     expect(page).toContain('onShowDetail');
     expect(page).toContain('<TicketDetailPanel');
-    expect(list).toContain('onOpen=');
+    expect(list).toContain('data-ticket-name');
+    expect(list).not.toContain('onOpen={onShowDetail');
     expect(list).not.toContain("t('connections.list.details')");
-    expect(list).toContain('ListRowBody');
-    expect(list).toContain('LIST_ROW_PAD');
+    expect(list).toContain('TableShell');
+    expect(list).toContain('TableRow');
     expect(list).toContain('AgentLogo');
+    expect(list).not.toContain('ListRowBody');
+    expect(list).not.toContain('LIST_ROW_PAD');
     expect(list).not.toContain('DetailsToggle');
     expect(list).toContain('asPanel');
     expect(list).toContain('{refreshButton}');
@@ -85,11 +91,12 @@ describe('connections layout wiring', () => {
     expect(page).toContain('inspectActiveTicketId');
   });
 
-  it('imports a login to the connection pool from the row action', () => {
+  it('imports a login to the connection pool from the row menu', () => {
     const page = source('index.tsx');
     const list = source('TicketWalletList.tsx');
     expect(page).toContain('useTicketPoolImport');
     expect(page).toContain('onImportToPool=');
+    expect(page).toContain('onRemoveFromCatalog=');
     expect(page).toContain('importActionForTicket={importActionForTicket}');
     expect(page).toContain('importingTicketId={importingTicketId}');
     expect(page).not.toContain('useConnectionShareRoute');
@@ -97,7 +104,10 @@ describe('connections layout wiring', () => {
     expect(page).not.toContain('onRouteTicket');
     expect(page).not.toContain('<ConnectFlowDialog');
     expect(page).not.toContain("{ kind: 'connect'");
+    expect(list).toContain('onContextMenu=');
+    expect(list).toContain('<ContextMenu');
     expect(list).toContain("t('connections.list.importToPool')");
+    expect(list).toContain("t('connections.list.removeFromCatalog')");
     expect(list).toContain('<Share2');
     expect(list).not.toContain('<Import');
     expect(list).not.toContain("t('connections.list.share')");

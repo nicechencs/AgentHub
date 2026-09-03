@@ -403,8 +403,11 @@ export type LocalGatewayStatus = {
 
 /** Loopback bearer for the tokens page. */
 export type LocalTokenRecord = {
+  id: string;
   poolId: string;
   token: string;
+  name: string;
+  primary: boolean;
 };
 
 /** Result of a tokens-page model-path probe with an entry key. */
@@ -460,6 +463,9 @@ export interface AdapterPort {
     model?: string | null,
   ): Promise<LocalTokenProbeResult>;
   setLocalToken(poolId: string, token: string): Promise<LocalTokenRecord>;
+  createLocalToken(poolId: string, name: string): Promise<LocalTokenRecord>;
+  setLocalTokenName(id: string, name: string): Promise<LocalTokenRecord>;
+  deleteLocalToken(id: string): Promise<void>;
   setChatCompletionsShared(shared: boolean): Promise<DefaultRoutePoolList>;
   attachPoolOwnedAuthorization(
     request: AttachPoolOwnedAuthorizationRequest,
