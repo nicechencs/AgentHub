@@ -64,11 +64,11 @@ export function seedMockProjects(): AgentProject[] {
       storagePath: 'C:\\Users\\demo\\.cursor\\projects\\d-demo-workspace-2026-AgentHub',
       actualPath: 'D:\\demo\\workspace\\2026\\AgentHub',
       relativePath: 'projects/d-demo-workspace-2026-AgentHub',
-      sessionCount: 0,
-      messageCount: null,
-      sizeBytes: 4096,
+      sessionCount: 2,
+      messageCount: 6,
+      sizeBytes: 26_000,
       updatedAt: new Date(now - 1 * d).toISOString(),
-      preview: null,
+      preview: '帮我改路由页…',
     },
   ];
 }
@@ -147,6 +147,36 @@ export function seedMockSessions(): AgentSession[] {
       preview: '分析冷启动耗时，给出优化建议…',
       messageCount: 14,
       sessionId: 'sess-g1',
+    },
+    {
+      id: 'cursor:projects/d-demo-workspace-2026-AgentHub/agent-transcripts/0e435bc1-cf05-4a9a-b036-8902f810bd86/0e435bc1-cf05-4a9a-b036-8902f810bd86.jsonl',
+      projectId: 'cursor:proj:d-demo-workspace-2026-AgentHub',
+      agentId: 'cursor',
+      title: '帮我改路由页',
+      cwd: 'D:\\demo\\workspace\\2026\\AgentHub',
+      path: 'C:\\Users\\demo\\.cursor\\projects\\d-demo-workspace-2026-AgentHub\\agent-transcripts\\0e435bc1-cf05-4a9a-b036-8902f810bd86\\0e435bc1-cf05-4a9a-b036-8902f810bd86.jsonl',
+      relativePath:
+        'projects/d-demo-workspace-2026-AgentHub/agent-transcripts/0e435bc1-cf05-4a9a-b036-8902f810bd86/0e435bc1-cf05-4a9a-b036-8902f810bd86.jsonl',
+      sizeBytes: 18_000,
+      updatedAt: new Date(now - 1 * d).toISOString(),
+      preview: '帮我改路由页…',
+      messageCount: 4,
+      sessionId: '0e435bc1-cf05-4a9a-b036-8902f810bd86',
+    },
+    {
+      id: 'cursor:projects/d-demo-workspace-2026-AgentHub/agent-transcripts/0e435bc1-cf05-4a9a-b036-8902f810bd86/subagents/deadbeef-0000-0000-0000-000000000001.jsonl',
+      projectId: 'cursor:proj:d-demo-workspace-2026-AgentHub',
+      agentId: 'cursor',
+      title: '探查项目状态',
+      cwd: 'D:\\demo\\workspace\\2026\\AgentHub',
+      path: 'C:\\Users\\demo\\.cursor\\projects\\d-demo-workspace-2026-AgentHub\\agent-transcripts\\0e435bc1-cf05-4a9a-b036-8902f810bd86\\subagents\\deadbeef-0000-0000-0000-000000000001.jsonl',
+      relativePath:
+        'projects/d-demo-workspace-2026-AgentHub/agent-transcripts/0e435bc1-cf05-4a9a-b036-8902f810bd86/subagents/deadbeef-0000-0000-0000-000000000001.jsonl',
+      sizeBytes: 8_000,
+      updatedAt: new Date(now - 1 * d).toISOString(),
+      preview: 'Explore the AgentHub project…',
+      messageCount: 2,
+      sessionId: 'deadbeef-0000-0000-0000-000000000001',
     },
   ];
 }

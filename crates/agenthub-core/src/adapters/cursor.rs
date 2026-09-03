@@ -8,6 +8,7 @@
 //! - headless: `agent -p "…" --output-format text` (+ `--force` when dangerous)
 //! - skills dir: `~/.cursor/skills-cursor`
 //! - projects: read-only workspace folders under `~/.cursor/projects`
+//!   plus `agent-transcripts/<id>/<id>.jsonl` sessions and `subagents/` children
 //! - auth: env `CURSOR_API_KEY` / login guidance only
 //!
 //! ## Explicitly out of scope
@@ -428,7 +429,7 @@ impl AgentAdapter for CursorAdapter {
             ApiKeyAccount => CapabilityState::partial("可用 API Key 或 cursor-agent login"),
             LiveBackup => CapabilityState::unsupported("无稳定配置/凭据文件"),
             StructuredStream => CapabilityState::unsupported("Agent CLI 仅提供 text 输出"),
-            ProjectHistory => CapabilityState::partial("仅工作区目录列表，无会话 transcript"),
+            ProjectHistory => CapabilityState::full(),
             ProjectDelete => CapabilityState::unsupported("无安全浅删契约"),
             ProviderPresets => CapabilityState::unsupported("无 provider 配置契约"),
             Usage => CapabilityState::unsupported("IDE 内部用量库，明确范围外"),

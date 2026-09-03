@@ -1,5 +1,6 @@
 import type { AgentProject, AgentSession } from '@/lib/types';
 import { projectMatches, sessionMatches } from './project-filter';
+import { cursorSubagentParentId, cursorTranscriptId } from './session-nest';
 
 /** Keep a parent when it matches, or when any already-loaded child matches the query. */
 export function filterVisibleProjects(
@@ -27,7 +28,15 @@ export function visibleSessionsForProject(
   if (!q) return kids;
   const proj = projects.find((p) => p.id === projectId);
   if (proj && projectMatches(proj, q)) return kids;
-  return kids.filter((s) => sessionMatches(s, q));
+  const matched = kids.filter((s) => sessionMatches(s, q));
+  if (matched.length === 0) return matched;
+  const matchedIds = new Set(matched.map((s) => s.id));
+  const extraParents = kids.filter((s) => {
+    if (matchedIds.has(s.id)) return false;
+    const tid = cursorTranscriptId(s);
+    return Boolean(tid && matched.some((m) => cursorSubagentParentId(m) === tid));
+  });
+  return [...extraParents, ...matched];
 }
 
 export function collectSelectableSessions(

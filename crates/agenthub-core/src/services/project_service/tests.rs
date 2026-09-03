@@ -362,6 +362,127 @@ fn list_cursor_workspace_folders_no_fake_excerpt() {
 }
 
 #[test]
+fn list_cursor_agent_transcripts_as_sessions() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".cursor");
+    let proj = home.join("projects").join("d-demo-workspace-2026-AgentHub");
+    let sid = "0e435bc1-cf05-4a9a-b036-8902f810bd86";
+    let sid2 = "12411b35-6081-425a-a07a-b776a24da27a";
+    write_session(
+        &proj
+            .join("agent-transcripts")
+            .join(sid)
+            .join(format!("{sid}.jsonl")),
+        &[
+            r#"{"role":"user","message":{"content":[{"type":"text","text":"<timestamp>Sunday, Aug 2, 2026, 8:16 PM (UTC+8)</timestamp>\n<user_query>\n帮我改路由页\n</user_query>"}]}}"#,
+            r#"{"role":"assistant","message":{"content":[{"type":"text","text":"先看现有实现。"}]}}"#,
+        ],
+    );
+    write_session(
+        &proj
+            .join("agent-transcripts")
+            .join(sid2)
+            .join(format!("{sid2}.jsonl")),
+        &[r#"{"role":"user","message":{"content":[{"type":"text","text":"第二段对话"}]}}"#],
+    );
+    let sub = "deadbeef-0000-0000-0000-000000000001";
+    let sub_flat = "aaaa1111-0000-0000-0000-000000000002";
+    write_session(
+        &proj
+            .join("agent-transcripts")
+            .join(sid)
+            .join("subagents")
+            .join(sub)
+            .join(format!("{sub}.jsonl")),
+        &[r#"{"role":"user","message":{"content":"nested subagent prompt"}}"#],
+    );
+    write_session(
+        &proj
+            .join("agent-transcripts")
+            .join(sid)
+            .join("subagents")
+            .join(format!("{sub_flat}.jsonl")),
+        &[r#"{"role":"user","message":{"content":"flat subagent prompt"}}"#],
+    );
+    fs::create_dir_all(home.join("projects").join("empty-window")).unwrap();
+
+    let projects = list_projects_for_agent_home(AgentId::Cursor, &home, None).unwrap();
+    assert_eq!(projects.len(), 2);
+    let hub = projects
+        .iter()
+        .find(|r| r.relative_path.contains("AgentHub"))
+        .expect("AgentHub folder");
+    assert_eq!(hub.session_count, 4);
+    assert!(hub
+        .preview
+        .as_deref()
+        .is_some_and(|p| p.contains("路由页") || p.contains("第二段")));
+    let empty = projects
+        .iter()
+        .find(|r| r.relative_path.contains("empty-window"))
+        .expect("empty-window");
+    assert_eq!(empty.session_count, 0);
+
+    let sessions = list_sessions_for_agent_home(AgentId::Cursor, &home, None).unwrap();
+    assert_eq!(
+        sessions.len(),
+        4,
+        "ids={:?}",
+        sessions.iter().map(|s| &s.id).collect::<Vec<_>>()
+    );
+    assert!(sessions.iter().all(|s| s.project_id == hub.id));
+    let mut native: Vec<_> = sessions
+        .iter()
+        .filter_map(|s| s.session_id.clone())
+        .collect();
+    native.sort();
+    assert_eq!(
+        native,
+        vec![
+            sid.to_string(),
+            sid2.to_string(),
+            sub_flat.to_string(),
+            sub.to_string(),
+        ]
+    );
+    let nested_child = sessions
+        .iter()
+        .find(|s| s.session_id.as_deref() == Some(sub))
+        .expect("nested subagent");
+    assert!(nested_child.relative_path.contains("subagents"));
+    assert!(nested_child
+        .preview
+        .as_deref()
+        .unwrap_or("")
+        .contains("nested subagent"));
+    let titled = sessions
+        .iter()
+        .find(|s| s.session_id.as_deref() == Some(sid))
+        .expect("first transcript");
+    assert!(
+        titled.preview.as_deref().unwrap_or("").contains("路由页"),
+        "preview={:?}",
+        titled.preview
+    );
+    assert!(!titled
+        .preview
+        .as_deref()
+        .unwrap_or("")
+        .contains("<user_query>"));
+
+    let (_, key) = parse_project_id(&hub.id).unwrap();
+    let only = list_sessions_for_project_home(AgentId::Cursor, &home, &hub.id, &key, None).unwrap();
+    assert_eq!(only.len(), 4);
+
+    let ex = load_excerpt(&titled.id, Some(&home)).unwrap();
+    assert_eq!(ex.id, titled.id);
+    assert!(ex.excerpt.contains("---turn:user---"));
+    assert!(ex.excerpt.contains("帮我改路由页"));
+    assert!(ex.excerpt.contains("---turn:assistant---"));
+    assert!(ex.excerpt.contains("先看现有实现"));
+}
+
+#[test]
 fn decode_helpers_still_work() {
     assert_eq!(
         decode_claude_project_dir("-C-Users-example-demo").unwrap(),

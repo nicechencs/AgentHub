@@ -125,15 +125,17 @@ describe('project API (browser mock)', () => {
     expect(restored[0].alias).toBeFalsy();
   });
 
-  it('cursor project has zero sessions', async () => {
+  it('cursor project lists sessions', async () => {
     const listP = listAgentProjects('cursor');
     await vi.runAllTimersAsync();
     const projects = await listP;
     expect(projects.length).toBeGreaterThanOrEqual(1);
-    expect(projects[0].sessionCount).toBe(0);
+    expect(projects[0].sessionCount).toBeGreaterThan(0);
     const sessP = listAgentProjectSessions(projects[0].id);
     await vi.runAllTimersAsync();
-    expect(await sessP).toEqual([]);
+    const sessions = await sessP;
+    expect(sessions.length).toBe(projects[0].sessionCount);
+    expect(sessions[0]?.agentId).toBe('cursor');
   });
 
   it('list filters by agent', async () => {

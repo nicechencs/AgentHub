@@ -2580,7 +2580,7 @@ export const en = {
       clearSearch: "Clear search",
     },
     toast: {
-      cursorNoTranscript: "Cursor only lists workspace folders; there is no session transcript",
+      cursorNoTranscript: "This workspace has no sessions yet",
       unhidden: "Unhidden",
       hidden: "Project hidden",
       pathInvalid: "Project path failed verification and cannot be opened",
@@ -2621,6 +2621,7 @@ export const en = {
       loadingSessions: "Loading sessions…",
       noSessionFiles: "This project has no session files",
       noMatch: "No matching sessions",
+      subSession: "Sub-session",
       selectSession: "Select {title}",
       lines: " · ~{n} lines",
       locateRecord: "Locate record file: {path}",
