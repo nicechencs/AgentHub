@@ -164,7 +164,6 @@ export function resetMockAgentStatuses(): void {
     current.authStatus = next.authStatus;
     current.authLabel = next.authLabel;
     current.running = next.running;
-    current.currentProvider = next.currentProvider;
     current.capabilities = next.capabilities;
   });
 }
@@ -360,7 +359,6 @@ export function createMockAgentPort(backend: Backend): AgentPort {
       s.channel = undefined;
       s.authStatus = 'none';
       s.authLabel = '未配置';
-      s.currentProvider = undefined;
     },
 
     async openAgentConfig() {

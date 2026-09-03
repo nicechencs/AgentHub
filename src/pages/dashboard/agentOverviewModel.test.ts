@@ -40,7 +40,6 @@ function status(
     installed: true,
     authStatus: 'valid',
     authLabel: '已登录',
-    currentProvider: '官方',
     effectiveKind: 'api',
     effectiveLabel: '官方',
     version: '1.0.0',
@@ -224,7 +223,6 @@ describe('buildAgentCardView', () => {
       status('claude', {
         effectiveKind: 'api',
         effectiveLabel: 'xx云中转 · relay.xxyun.example.com',
-        currentProvider: 'xx云中转 · relay.xxyun.example.com',
         version: '2.1.218',
         authLabel: 'API',
         authStatus: 'valid',
@@ -251,7 +249,6 @@ describe('buildAgentCardView', () => {
       status('claude', {
         effectiveKind: 'account',
         effectiveLabel: 'me@example.com',
-        currentProvider: 'me@example.com',
         version: '2.1.218',
         authLabel: 'Claude Pro',
         authStatus: 'valid',
@@ -269,7 +266,6 @@ describe('buildAgentCardView', () => {
       status('claude', {
         effectiveKind: 'none',
         effectiveLabel: '未配置',
-        currentProvider: undefined,
         version: undefined,
         authLabel: '',
       }),
@@ -288,7 +284,6 @@ describe('buildAgentCardView', () => {
       status('claude', {
         effectiveKind: 'none',
         effectiveLabel: '未配置',
-        currentProvider: undefined,
         version: '2.1.218',
         authLabel: '已验证',
       }),

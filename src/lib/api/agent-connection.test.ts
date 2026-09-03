@@ -170,7 +170,6 @@ describe('applyEffectiveConnection / enrichStatusesWithConnections', () => {
     const next = applyEffectiveConnection(status(), account(), undefined);
     expect(next.effectiveKind).toBe('account');
     expect(next.effectiveLabel).toBe('me@example.com');
-    expect(next.currentProvider).toBe('me@example.com');
     expect(next.authLabel).toBe('已登录');
     expect(next.authStatus).toBe('valid');
   });
@@ -196,8 +195,8 @@ describe('applyEffectiveConnection / enrichStatusesWithConnections', () => {
       provider(),
     );
     expect(next.effectiveKind).toBe('none');
+    expect(next.effectiveLabel).toBeUndefined();
     expect(next.authLabel).toBe('未配置');
-    expect(next.currentProvider).toBeUndefined();
   });
 
   it('maps current rows per agent', () => {
