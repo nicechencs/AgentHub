@@ -1,7 +1,9 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import {
+  CopyableRouteEndpointUrl,
   RouteEndpointTypeText,
   RouteEndpointUrl,
   routeEndpointTypeColor,
@@ -17,8 +19,30 @@ describe('RouteEndpointUrl', () => {
     expect(html).toContain('http://127.0.0.1:43121');
     expect(html).toContain('/v1/messages');
     expect(html).toContain('var(--agent-claude)');
+    expect(html).toContain('truncate');
     expect(html).not.toContain('>http://127.0.0.1:43121/v1/messages<');
   });
+
+  it('keeps a copyable endpoint inside its column instead of painting over neighbors',
+    () => {
+      const html = renderToStaticMarkup(
+        createElement(
+          TooltipProvider,
+          null,
+          createElement(CopyableRouteEndpointUrl, {
+            path: '/v1/chat/completions',
+            port: 43121,
+            endpointId: 'chat_completions',
+          }),
+        ),
+      );
+      expect(html).toContain('overflow-hidden');
+      expect(html).toContain('min-w-0');
+      expect(html).toContain('truncate');
+      expect(html).toContain('http://127.0.0.1:43121');
+      expect(html).toContain('/v1/chat/completions');
+    },
+  );
 
   it('colors Responses and Chat Completions with the Codex token', () => {
     const responses = renderToStaticMarkup(createElement(RouteEndpointUrl, {

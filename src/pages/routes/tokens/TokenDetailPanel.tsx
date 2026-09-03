@@ -221,7 +221,7 @@ export function TokenDetailPanel({
           <p className="text-meta text-muted">{t('routes.tokens.fieldType')}</p>
           <p className="text-primary">{typeRow?.display}</p>
         </div>
-        <div className="space-y-1">
+        <div className="min-w-0 space-y-1">
           <p className="text-meta text-muted">{t('routes.tokens.fieldEndpoint')}</p>
           {endpoint.portPending ? (
             <p className="font-mono text-muted">{t('routes.pendingPort')}</p>

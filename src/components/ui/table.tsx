@@ -32,8 +32,8 @@ export const tableStyles = {
   trWorkbench:
     'border-t border-border/40 last:border-0 hover:bg-hover data-[active=true]:bg-active data-[active=true]:hover:bg-active',
   thWorkbench: 'px-3 py-2 text-meta font-medium text-muted',
-  tdWorkbench: 'px-3 py-2',
-  td: 'px-3 py-2',
+  tdWorkbench: 'overflow-hidden px-3 py-2',
+  td: 'overflow-hidden px-3 py-2',
   footer:
     'flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-2 text-meta text-muted',
   resizeHandle:

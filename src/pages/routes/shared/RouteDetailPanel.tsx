@@ -608,7 +608,7 @@ function CopyableEndpoint({
     <Hint label={hint}>
       <button
         type="button"
-        className="inline-flex max-w-full items-center gap-1 rounded-btn px-1 py-0.5 text-left hover:bg-hover disabled:cursor-not-allowed disabled:opacity-60"
+        className="inline-flex min-w-0 max-w-full items-center gap-1 overflow-hidden rounded-btn px-1 py-0.5 text-left hover:bg-hover disabled:cursor-not-allowed disabled:opacity-60"
         disabled={!canCopy}
         aria-label={ariaLabel}
         onClick={() => {
@@ -626,7 +626,7 @@ function CopyableEndpoint({
           })();
         }}
       >
-        <span className={cn('truncate font-mono text-xs text-secondary', className)}>{text}</span>
+        <span className={cn('min-w-0 truncate font-mono text-xs text-secondary', className)}>{text}</span>
         <Copy className="h-3 w-3 shrink-0 text-muted" aria-hidden />
       </button>
     </Hint>
