@@ -7,12 +7,6 @@
  */
 export type AgentKey = string;
 
-/**
- * @deprecated Prefer {@link AgentKey}. Kept as an alias so existing imports keep
- * compiling while the closed union is removed — any catalog key is allowed.
- */
-export type AgentId = AgentKey;
-
 /** Known built-in keys (display tokens only; not the product set source of truth). */
 export const KNOWN_AGENT_IDS = [
   'claude',
@@ -128,11 +122,6 @@ export interface AgentStatus {
   /** Redacted source/revision metadata from the live auth probe. */
   authSource?: string;
   authRevision?: string;
-  /**
-   * @deprecated Compat display of the effective connection (account label or
-   * provider name · URL). Prefer {@link effectiveLabel} / {@link effectiveKind}.
-   */
-  currentProvider?: string;
   /** 当前生效鉴权类型 */
   effectiveKind?: EffectiveConnectionKind;
   /** 当前生效连接展示文案 */

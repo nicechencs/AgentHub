@@ -33,10 +33,14 @@ describe('runtime production barrel', () => {
     expect(runtime).toHaveProperty('markConnectionCurrent');
     expect(runtime).toHaveProperty('applyAgentHidden');
     expect(runtime).toHaveProperty('revertAgentHidden');
-    // N-03 deprecated aliases remain for external callers
-    expect(runtime).toHaveProperty('notifyConnectionPoolChanged');
-    expect(runtime).toHaveProperty('beginConnectionPoolMutation');
-    expect(runtime).toHaveProperty('endConnectionPoolMutation');
-    expect(runtime).toHaveProperty('useConnectionPool');
+    expect(runtime).toHaveProperty('useConnectionInventory');
+    // N-03 ConnectionPool* aliases removed
+    expect(runtime).not.toHaveProperty('notifyConnectionPoolChanged');
+    expect(runtime).not.toHaveProperty('beginConnectionPoolMutation');
+    expect(runtime).not.toHaveProperty('endConnectionPoolMutation');
+    expect(runtime).not.toHaveProperty('loadConnectionPool');
+    expect(runtime).not.toHaveProperty('useConnectionPool');
+    expect(runtime).not.toHaveProperty('getConnectionPoolSnapshot');
+    expect(runtime).not.toHaveProperty('subscribeConnectionPool');
   });
 });

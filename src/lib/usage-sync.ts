@@ -9,9 +9,6 @@ import { loadString, saveString, StorageKey } from '@/lib/ui-preferences';
 /** Dispatched after settings save so the provider reloads interval. */
 export const USAGE_SYNC_SETTINGS_CHANGED_EVENT = 'agenthub:usage-sync-settings';
 
-/** @deprecated Prefer {@link USAGE_SYNC_SETTINGS_CHANGED_EVENT}. */
-export const USAGE_SYNC_SETTINGS_CHANGED = USAGE_SYNC_SETTINGS_CHANGED_EVENT;
-
 /** Dispatched after a successful collect (manual or auto). */
 export const USAGE_COLLECTED_EVENT = 'agenthub:usage-collected';
 

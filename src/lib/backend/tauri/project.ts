@@ -53,14 +53,6 @@ export function createTauriProjectPort(): ProjectPort {
       return invoke<number>('delete_agent_sessions', { ids });
     },
 
-    async deleteAgentProject(id) {
-      await invoke('delete_agent_session', { id });
-    },
-
-    async deleteAgentProjects(ids) {
-      return invoke<number>('delete_agent_sessions', { ids });
-    },
-
     async getAgentProjectExcerpts(ids) {
       const rows = await invoke<CoreAgentProjectExcerpt[]>('get_agent_project_excerpts', {
         ids,

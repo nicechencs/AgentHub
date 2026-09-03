@@ -401,9 +401,6 @@ export type LocalGatewayStatus = {
   restarting: boolean;
 };
 
-/** @deprecated Prefer {@link LocalGatewayStatus}. */
-export type LocalEntryStatus = LocalGatewayStatus;
-
 /** Loopback bearer for the tokens page. */
 export type LocalTokenRecord = {
   poolId: string;

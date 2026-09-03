@@ -241,9 +241,6 @@ export function liveApiKeyImportGate(
 
 /** Discovery lifecycle for the connections inventory (not RoutePool). */
 export type ConnectionInventoryDiscoveryState = 'idle' | 'loading' | 'ready' | 'partial' | 'error';
-
-/** @deprecated Use {@link ConnectionInventoryDiscoveryState}. */
-export type ConnectionPoolDiscoveryState = ConnectionInventoryDiscoveryState;
 export type DiscoveredAuthKind = 'account' | 'provider';
 
 /**
