@@ -13,9 +13,9 @@ mod session_index;
 pub(crate) use scan::{
     aggregate_projects, extract_any_text, extract_userish_text, grok_session_dir_for_delete,
     kimi_session_dir_for_delete, list_claude_workbuddy_projects, list_claude_workbuddy_sessions,
-    list_codex_sessions, list_cursor_projects, list_dsh_sessions, list_grok_projects,
-    list_grok_sessions, list_kimi_projects, list_kimi_sessions, list_pi_projects, list_pi_sessions,
-    load_excerpt,
+    list_codex_sessions, list_cursor_projects, list_cursor_sessions, list_dsh_sessions,
+    list_grok_projects, list_grok_sessions, list_kimi_projects, list_kimi_sessions,
+    list_pi_projects, list_pi_sessions, load_excerpt,
 };
 
 #[cfg(test)]
@@ -356,7 +356,6 @@ impl ProjectService {
     }
 
     /// Flattened session list (delete / excerpt / transition helpers).
-    /// Cursor has no session transcripts → empty for that agent.
     pub fn list(&self, agent: Option<AgentId>) -> Result<Vec<AgentSession>> {
         let started = Instant::now();
         let filter = agent.map(|a| a.as_str()).unwrap_or("all");

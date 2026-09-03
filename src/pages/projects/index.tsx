@@ -106,7 +106,6 @@ export default function ProjectsPage() {
 
   const agentCaps = installedAgents.find((a) => a.id === agentId)?.capabilities;
   const canDelete = isCapabilityUsable(agentCaps?.projectDelete);
-  const showSummarize = agentId !== 'cursor';
   const showDelete = canDelete;
   const agentMeta = AGENT_MAP[agentId];
   const deleteHint =
@@ -529,21 +528,19 @@ export default function ProjectsPage() {
         <div className={pageRhythm.chromeActions}>
           {selected.size > 0 && (
             <>
-              {showSummarize && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => void handleSummarize()}
-                >
-                  {busy ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Sparkles className="h-3.5 w-3.5" />
-                  )}
-                  {t('projects.page.summarize', { n: selected.size })}
-                </Button>
-              )}
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => void handleSummarize()}
+              >
+                {busy ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="h-3.5 w-3.5" />
+                )}
+                {t('projects.page.summarize', { n: selected.size })}
+              </Button>
               {showDelete && (
                 <Button
                   size="sm"

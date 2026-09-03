@@ -925,7 +925,12 @@ fn native_session_id_from_path(agent: AgentId, path: &Path) -> Option<String> {
             }
             None
         }
-        AgentId::Cursor => None,
+        AgentId::Cursor => path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string()),
         AgentId::Dsh => path
             .file_stem()
             .and_then(|s| s.to_str())
@@ -956,6 +961,7 @@ fn build_session_from_meta(
             }
             None
         }
+        AgentId::Cursor => encoded_dir.and_then(cursor_actual_path),
         _ => None,
     });
     let title = title_from(meta.preview.as_deref(), cwd.as_deref(), path);
@@ -1321,34 +1327,155 @@ pub(crate) fn list_cursor_projects(home: &Path) -> Result<Vec<AgentProject>> {
             Ok(m) => m,
             Err(_) => continue,
         };
-        let updated = meta
-            .modified()
-            .ok()
-            .map(system_time_to_rfc3339)
-            .unwrap_or_else(|| Utc::now().to_rfc3339());
-        let size = dir_size_shallow(&path).unwrap_or(0);
+        let mut session_count = 0u32;
+        let mut size_bytes = 0u64;
+        let mut newest: Option<SystemTime> = None;
+        let mut newest_primary: Option<PathBuf> = None;
+        let mut newest_primary_mtime: Option<SystemTime> = None;
+        for_each_cursor_primary_transcript(&path, |jsonl| {
+            let Ok(file_meta) = fs::metadata(jsonl) else {
+                return;
+            };
+            session_count = session_count.saturating_add(1);
+            size_bytes = size_bytes.saturating_add(file_meta.len());
+            let mtime = file_meta.modified().ok();
+            bump_mtime(&mut newest, mtime);
+            let is_subagent = jsonl.components().any(|c| c.as_os_str() == "subagents");
+            if is_subagent {
+                return;
+            }
+            if let Some(t) = mtime {
+                if newest_primary_mtime.map(|cur| t >= cur).unwrap_or(true) {
+                    newest_primary_mtime = Some(t);
+                    newest_primary = Some(jsonl.to_path_buf());
+                }
+            } else if newest_primary.is_none() {
+                newest_primary = Some(jsonl.to_path_buf());
+            }
+        });
+        let updated = rfc3339_mtime(newest.or(meta.modified().ok()));
+        let size = if session_count == 0 {
+            dir_size_shallow(&path).unwrap_or(0)
+        } else {
+            size_bytes
+        };
         let decoded = cursor_actual_path(&name);
         let actual = decoded.as_ref().filter(|p| Path::new(p).exists()).cloned();
         let title = title_from_actual(decoded.as_deref(), &name);
-        let rel_str = format!("projects/{name}");
-        out.push(AgentProject {
-            id: make_project_id(AgentId::Cursor, &name),
-            agent_id: AgentId::Cursor,
+        let preview = newest_primary.as_deref().and_then(|p| scan_preview(p).0);
+        out.push(cheap_project(
+            AgentId::Cursor,
+            &name,
             title,
-            storage_path: path.display().to_string(),
-            actual_path: actual,
-            relative_path: rel_str,
-            session_count: 0,
-            message_count: None,
-            size_bytes: size,
-            updated_at: updated,
-            preview: None,
-            alias: None,
-            hidden: false,
-        });
+            path.display().to_string(),
+            actual,
+            format!("projects/{name}"),
+            session_count,
+            size,
+            updated,
+            preview,
+        ));
     }
     out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
     Ok(out)
+}
+
+/// Cursor: `projects/<workspace>/agent-transcripts/<id>/<id>.jsonl`
+/// plus `subagents/<id>.jsonl` or `subagents/<id>/<id>.jsonl`.
+pub(crate) fn list_cursor_sessions(
+    home: &Path,
+    only_key: Option<&str>,
+) -> Result<Vec<AgentSession>> {
+    let root = home.join("projects");
+    if !root.is_dir() {
+        return Ok(vec![]);
+    }
+    let mut out = Vec::new();
+    let entries = match fs::read_dir(&root) {
+        Ok(e) => e,
+        Err(_) => return Ok(vec![]),
+    };
+    for ent in entries.flatten() {
+        let proj_dir = ent.path();
+        if !proj_dir.is_dir() {
+            continue;
+        }
+        let name = match proj_dir.file_name().and_then(|n| n.to_str()) {
+            Some(n) if !n.is_empty() && !n.starts_with('.') => n.to_string(),
+            _ => continue,
+        };
+        if let Some(want) = only_key {
+            if name != want {
+                continue;
+            }
+        }
+        let project_id = make_project_id(AgentId::Cursor, &name);
+        for_each_cursor_primary_transcript(&proj_dir, |jsonl| {
+            if let Some(rec) = build_session(AgentId::Cursor, home, jsonl, &project_id, Some(&name))
+            {
+                out.push(rec);
+            }
+        });
+    }
+    Ok(out)
+}
+
+fn for_each_cursor_primary_transcript(proj_dir: &Path, mut visit: impl FnMut(&Path)) {
+    let root = proj_dir.join("agent-transcripts");
+    let Ok(entries) = fs::read_dir(&root) else {
+        return;
+    };
+    for ent in entries.flatten() {
+        let sess_dir = ent.path();
+        if !sess_dir.is_dir() {
+            continue;
+        }
+        let Some(id) = sess_dir.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if id.is_empty() || id.starts_with('.') {
+            continue;
+        }
+        let jsonl = sess_dir.join(format!("{id}.jsonl"));
+        if jsonl.is_file() {
+            visit(&jsonl);
+        }
+        for_each_cursor_subagent_transcript(&sess_dir, &mut visit);
+    }
+}
+
+fn for_each_cursor_subagent_transcript(sess_dir: &Path, visit: &mut impl FnMut(&Path)) {
+    let root = sess_dir.join("subagents");
+    let Ok(entries) = fs::read_dir(&root) else {
+        return;
+    };
+    for ent in entries.flatten() {
+        let path = ent.path();
+        if path.is_file() {
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if name.is_empty() || name.starts_with('.') {
+                continue;
+            }
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if ext.eq_ignore_ascii_case("jsonl") {
+                visit(&path);
+            }
+            continue;
+        }
+        if !path.is_dir() {
+            continue;
+        }
+        let Some(id) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if id.is_empty() || id.starts_with('.') {
+            continue;
+        }
+        let nested = path.join(format!("{id}.jsonl"));
+        if nested.is_file() {
+            visit(&nested);
+        }
+    }
 }
 
 /// Directory/stat listing for Claude + WorkBuddy. Peeks at most [`LIST_HEAD_BYTES`]
@@ -1831,7 +1958,21 @@ fn is_primary_session_file(agent: AgentId, path: &Path) -> bool {
                         | "rewind_points.jsonl"
                 )
         }
-        AgentId::Cursor => false,
+        AgentId::Cursor => {
+            if ext != "jsonl" {
+                return false;
+            }
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            if stem.is_empty() {
+                return false;
+            }
+            let parent = path
+                .parent()
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+            parent.eq_ignore_ascii_case(stem) || parent.eq_ignore_ascii_case("subagents")
+        }
         AgentId::Zcode => false,
     }
 }
@@ -2386,11 +2527,14 @@ fn infer_project_id_for_path(agent: AgentId, home: &Path, path: &Path) -> String
             make_project_id(agent, UNGROUPED_KEY)
         }
         AgentId::Cursor => {
-            let name = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(UNGROUPED_KEY);
-            make_project_id(agent, name)
+            let projects = home.join("projects");
+            if let Ok(rel) = path.strip_prefix(&projects) {
+                if let Some(encoded) = rel.components().next().and_then(|c| c.as_os_str().to_str())
+                {
+                    return make_project_id(agent, encoded);
+                }
+            }
+            make_project_id(agent, UNGROUPED_KEY)
         }
         AgentId::Grok => {
             let sessions = home.join("sessions");

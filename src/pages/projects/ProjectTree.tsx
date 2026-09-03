@@ -19,6 +19,7 @@ import {
 } from './project-format';
 import { ProjectPathLink } from './ProjectPathLink';
 import { ProjectSessionRow } from './ProjectSessionRow';
+import { nestSessions } from './session-nest';
 
 export type ProjectTreeProps = {
   agentId: AgentKey;
@@ -159,7 +160,7 @@ export function ProjectTree({
                   </div>
                 ) : (
                   <ul>
-                    {kids.map((s) => (
+                    {nestSessions(kids).flatMap(({ session: s, children }) => [
                       <ProjectSessionRow
                         key={s.id}
                         session={s}
@@ -167,6 +168,7 @@ export function ProjectTree({
                         busy={busy}
                         showDelete={showDelete}
                         deleteHint={deleteHint}
+                        nested={false}
                         previewOpen={previewSessionId === s.id}
                         onToggleOne={onToggleOne}
                         onPreviewSession={onPreviewSession}
@@ -175,8 +177,28 @@ export function ProjectTree({
                         onOpenSessionRecord={onOpenSessionRecord}
                         onGoContinue={onGoContinue}
                         onRequestDelete={onRequestDelete}
-                      />
-                    ))}
+                      />,
+                      ...children.map((child) => (
+                        <ProjectSessionRow
+                          key={child.id}
+                          session={child}
+                          selected={selected.has(child.id)}
+                          busy={busy}
+                          showDelete={showDelete}
+                          deleteHint={deleteHint}
+                          nested
+                          nestedLabel={t('projects.tree.subSession')}
+                          previewOpen={previewSessionId === child.id}
+                          onToggleOne={onToggleOne}
+                          onPreviewSession={onPreviewSession}
+                          onCopySessionId={onCopySessionId}
+                          onCopyResumeCommand={onCopyResumeCommand}
+                          onOpenSessionRecord={onOpenSessionRecord}
+                          onGoContinue={onGoContinue}
+                          onRequestDelete={onRequestDelete}
+                        />
+                      )),
+                    ])}
                   </ul>
                 )}
               </div>

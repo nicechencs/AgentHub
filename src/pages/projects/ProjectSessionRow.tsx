@@ -37,6 +37,8 @@ export function ProjectSessionRow({
   busy,
   showDelete,
   deleteHint,
+  nested = false,
+  nestedLabel,
   previewOpen,
   onToggleOne,
   onPreviewSession,
@@ -52,6 +54,8 @@ export function ProjectSessionRow({
   showDelete: boolean;
   /** When set, the delete control is visible but disabled (read-only agents). */
   deleteHint?: string | null;
+  nested?: boolean;
+  nestedLabel?: string;
   previewOpen: boolean;
   onToggleOne: (id: string) => void;
   onPreviewSession: (session: AgentSession) => void;
@@ -72,7 +76,8 @@ export function ProjectSessionRow({
     <li
       className={cn(
         projectSessionRowGrid(showDelete),
-        'px-3 py-2 pl-10',
+        'px-3 py-2',
+        nested ? 'pl-16' : 'pl-10',
         previewOpen && 'bg-active',
       )}
     >
@@ -93,6 +98,9 @@ export function ProjectSessionRow({
           aria-label={t('projects.tree.previewAria', { title: session.title })}
           onClick={() => onPreviewSession(session)}
         >
+          {nested && nestedLabel ? (
+            <span className="mr-1.5 text-xs text-muted">{nestedLabel}</span>
+          ) : null}
           {session.title}
         </button>
       </Tip>

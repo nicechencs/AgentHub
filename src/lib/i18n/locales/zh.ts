@@ -2563,7 +2563,7 @@ export const zh = {
       clearSearch: "清空搜索",
     },
     toast: {
-      cursorNoTranscript: "Cursor 仅提供工作区目录列表，无会话 transcript",
+      cursorNoTranscript: "这个工作区还没有会话",
       unhidden: "已取消隐藏",
       hidden: "已隐藏项目",
       pathInvalid: "项目路径未通过校验，无法打开",
@@ -2604,6 +2604,7 @@ export const zh = {
       loadingSessions: "加载会话…",
       noSessionFiles: "该项目下没有会话文件",
       noMatch: "没有匹配的会话",
+      subSession: "子会话",
       selectSession: "选择 {title}",
       lines: " · ~{n} 行",
       locateRecord: "定位记录文件：{path}",
