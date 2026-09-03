@@ -1,6 +1,7 @@
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import { Copy } from 'lucide-react';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { Hint } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 
@@ -31,19 +32,20 @@ export function CopyTextButton({
   };
 
   return (
-    <button
-      type="button"
-      aria-label={aria}
-      title={aria}
-      className={cn(
-        'absolute bottom-1 right-1 rounded-btn p-1 text-muted',
-        'opacity-0 transition-opacity hover:bg-panel hover:text-primary',
-        'group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100',
-        className,
-      )}
-      onClick={onClick}
-    >
-      <Copy className="h-3.5 w-3.5" />
-    </button>
+    <Hint label={aria}>
+      <button
+        type="button"
+        aria-label={aria}
+        className={cn(
+          'absolute bottom-1 right-1 rounded-btn p-1 text-muted',
+          'opacity-0 transition-opacity hover:bg-panel hover:text-primary',
+          'group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100',
+          className,
+        )}
+        onClick={onClick}
+      >
+        <Copy className="h-3.5 w-3.5" />
+      </button>
+    </Hint>
   );
 }

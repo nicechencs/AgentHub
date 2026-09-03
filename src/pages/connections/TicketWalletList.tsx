@@ -970,21 +970,23 @@ export function TicketWalletList({
 
       <ContextMenu open={rowMenu !== null} point={rowMenu} onClose={closeRowMenu}>
         {menuImport ? (
-          <span title={menuImport.reason} className="block">
-            <ContextMenuItem
-              disabled={menuImport.disabled}
-              aria-label={t('connections.list.importToPool')}
-              onSelect={() => {
-                if (!menuTicket || menuImport.disabled) return;
-                onImportToPool(menuTicket);
-                closeRowMenu();
-              }}
-            >
-              <Share2 className="h-3.5 w-3.5" />
-              {menuImport.busy ? t('connections.list.importingToPool') : t('connections.list.importToPool')}
-              {menuImport.reason ? <span className="sr-only">{menuImport.reason}</span> : null}
-            </ContextMenuItem>
-          </span>
+          <Hint label={menuImport.disabled ? menuImport.reason : undefined}>
+            <span className="block">
+              <ContextMenuItem
+                disabled={menuImport.disabled}
+                aria-label={t('connections.list.importToPool')}
+                onSelect={() => {
+                  if (!menuTicket || menuImport.disabled) return;
+                  onImportToPool(menuTicket);
+                  closeRowMenu();
+                }}
+              >
+                <Share2 className="h-3.5 w-3.5" />
+                {menuImport.busy ? t('connections.list.importingToPool') : t('connections.list.importToPool')}
+                {menuImport.reason ? <span className="sr-only">{menuImport.reason}</span> : null}
+              </ContextMenuItem>
+            </span>
+          </Hint>
         ) : null}
         {menuCanUnapply ? (
           <ContextMenuItem
