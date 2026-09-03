@@ -5,6 +5,7 @@ import type {
   UsageOverviewMetrics,
 } from '@/lib/backend/contracts/usage-types';
 import type { AgentKey, UsageRecord } from '@/lib/types';
+import { canonicalUsageModel, usageModelsMatch } from '@/lib/usage-model';
 import { usageTokenParts } from '@/lib/usage-tokens';
 import type { UsageTrendGroup } from './usageTrendChartModel';
 
@@ -134,7 +135,7 @@ export function filterByModel(
   modelFilter: string,
 ): UsageRecord[] {
   if (modelFilter === 'all' || modelFilter === '') return [...records];
-  return records.filter((r) => r.model === modelFilter);
+  return records.filter((r) => usageModelsMatch(r.model, modelFilter));
 }
 
 /** 当前模型不在窗口内时回退到全部，避免 Select 值悬空、图表空窗 */
@@ -216,11 +217,12 @@ export function buildUsageDistribution(
 ): UsageDistributionSlice[] {
   const byKey = new Map<string, UsageDistributionSlice>();
   for (const r of rows) {
-    const key = agentFilter === 'all' ? r.agentId : r.model;
+    const key =
+      agentFilter === 'all' ? r.agentId : canonicalUsageModel(r.model) || r.model;
     const meta = catalog[r.agentId];
     const entry = byKey.get(key) ?? {
       key,
-      label: agentFilter === 'all' ? (meta?.name ?? r.agentId) : r.model,
+      label: agentFilter === 'all' ? (meta?.name ?? r.agentId) : key,
       color: meta?.color ?? FALLBACK_COLOR,
       tokens: 0,
       cost: 0,

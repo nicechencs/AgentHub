@@ -4,8 +4,9 @@ use rusqlite::{params, OptionalExtension, Transaction, TransactionBehavior};
 
 use crate::error::Result;
 use crate::models::{
-    AgentId, CollectResult, ParserHealth, UsageDistributionSlice, UsageMetrics, UsageOverview,
-    UsageQuery, UsageRecord, UsageTrendPoint,
+    canonical_usage_model, unique_canonical_usage_models, usage_model_filter_aliases, AgentId,
+    CollectResult, ParserHealth, UsageDistributionSlice, UsageMetrics, UsageOverview, UsageQuery,
+    UsageRecord, UsageTrendPoint,
 };
 use crate::storage::Database;
 
@@ -181,7 +182,7 @@ impl UsageRepo {
             for r in rows {
                 out.push(r?);
             }
-            Ok(out)
+            Ok(unique_canonical_usage_models(out))
         })
     }
 
@@ -360,6 +361,7 @@ impl UsageRepo {
                         }
                     }
                     UsageTrendGroup::Model => {
+                        let series = canonical_usage_model(&series);
                         if series.is_empty() {
                             continue;
                         }
@@ -483,12 +485,16 @@ impl UsageRepo {
                 for r in rows {
                     out.push(r?);
                 }
-                out
+                unique_canonical_usage_models(out)
             };
 
             Ok(UsageOverview {
                 metrics,
-                distribution,
+                distribution: if q.agent_id.is_some() {
+                    merge_model_distribution(distribution)
+                } else {
+                    distribution
+                },
                 models,
             })
         })
@@ -508,7 +514,7 @@ impl UsageRepo {
             for r in rows {
                 out.push(r?);
             }
-            Ok(out)
+            Ok(unique_canonical_usage_models(out))
         })
     }
 
@@ -806,6 +812,36 @@ fn usage_query_from_parts(
     }
 }
 
+fn merge_model_distribution(
+    slices: Vec<UsageDistributionSlice>,
+) -> Vec<UsageDistributionSlice> {
+    let mut map = std::collections::BTreeMap::<String, UsageDistributionSlice>::new();
+    for slice in slices {
+        let key = canonical_usage_model(&slice.key);
+        if key.is_empty() {
+            continue;
+        }
+        let entry = map.entry(key.clone()).or_insert(UsageDistributionSlice {
+            key,
+            tokens: 0,
+            cost_usd: 0.0,
+            billable_input: 0,
+            output: 0,
+            cache_read: 0,
+            cache_write: 0,
+        });
+        entry.tokens += slice.tokens;
+        entry.cost_usd += slice.cost_usd;
+        entry.billable_input += slice.billable_input;
+        entry.output += slice.output;
+        entry.cache_read += slice.cache_read;
+        entry.cache_write += slice.cache_write;
+    }
+    let mut out: Vec<_> = map.into_values().collect();
+    out.sort_by(|a, b| b.tokens.cmp(&a.tokens).then_with(|| a.key.cmp(&b.key)));
+    out
+}
+
 /// Shared WHERE for query / trend / overview: days, since, agent, model, exclude.
 ///
 /// `days` is `max(1)` rolling `unixepoch('now', '-N days')`. `since` is AND-ed
@@ -831,8 +867,16 @@ fn append_usage_filter(
     }
     if include_model {
         if let Some(model) = q.model.as_deref().filter(|m| !m.is_empty() && *m != "all") {
-            sql.push_str(" AND model = ?");
-            args.push(Box::new(model.to_string()));
+            let aliases = usage_model_filter_aliases(model);
+            sql.push_str(" AND model IN (");
+            for (i, alias) in aliases.iter().enumerate() {
+                if i > 0 {
+                    sql.push(',');
+                }
+                sql.push('?');
+                args.push(Box::new(alias.clone()));
+            }
+            sql.push(')');
         }
     }
     if q.exclude_agent_ids.is_empty() {
@@ -865,7 +909,7 @@ fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<UsageRecord> {
         id: row.get(0)?,
         agent_id: agent,
         account_id: row.get(2)?,
-        model: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+        model: canonical_usage_model(&row.get::<_, Option<String>>(3)?.unwrap_or_default()),
         input_tokens: row.get(4)?,
         output_tokens: row.get(5)?,
         cache_read_tokens: row.get(6)?,

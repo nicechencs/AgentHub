@@ -10,6 +10,8 @@
 //! - Display totals: [`UsageMetrics`] / [`UsageOverview`]. Frontend
 //!   `usageTokenParts` must not peel cache again.
 
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -206,4 +208,60 @@ impl ParsedUsageEvent {
     pub fn cache_tokens_total(&self) -> i64 {
         self.cache_write_tokens() + self.cache_read_tokens
     }
+}
+
+fn is_grok_model_stem(s: &str) -> bool {
+    s == "grok" || s.starts_with("grok-")
+}
+
+/// Public usage model id: Grok session logs append `-build` (and sometimes a
+/// `[grok] ` / `xai/` prefix) to the same billable model.
+pub fn canonical_usage_model(raw: &str) -> String {
+    let mut s = raw.strip_prefix("[grok] ").unwrap_or(raw).trim();
+    s = s
+        .strip_prefix("xai/")
+        .or_else(|| s.strip_prefix("x-ai/"))
+        .unwrap_or(s)
+        .trim();
+    if let Some(base) = s.strip_suffix("-build") {
+        let base = base.trim();
+        if is_grok_model_stem(base) {
+            return base.to_string();
+        }
+    }
+    s.to_string()
+}
+
+/// Sorted unique public model ids for dropdowns / missing-pricing lists.
+pub fn unique_canonical_usage_models(
+    names: impl IntoIterator<Item = impl AsRef<str>>,
+) -> Vec<String> {
+    let mut set = BTreeSet::new();
+    for name in names {
+        let key = canonical_usage_model(name.as_ref());
+        if !key.is_empty() {
+            set.insert(key);
+        }
+    }
+    set.into_iter().collect()
+}
+
+/// Exact `model` column values that should match a dashboard model filter.
+pub fn usage_model_filter_aliases(selected: &str) -> Vec<String> {
+    let selected = selected.trim();
+    let canon = canonical_usage_model(selected);
+    let mut out = Vec::new();
+    let mut push = |value: String| {
+        if !value.is_empty() && !out.iter().any(|existing| existing == &value) {
+            out.push(value);
+        }
+    };
+    push(selected.to_string());
+    push(canon.clone());
+    if is_grok_model_stem(&canon) {
+        push(format!("{canon}-build"));
+        push(format!("[grok] {canon}"));
+        push(format!("[grok] {canon}-build"));
+    }
+    out
 }
