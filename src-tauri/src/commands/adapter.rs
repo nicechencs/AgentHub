@@ -294,29 +294,6 @@ pub async fn get_local_gateway_status(
         .map_err(adapter_error_from_string)
 }
 
-/// Compatibility alias for `start_local_gateway`.
-#[tauri::command]
-pub async fn start_local_entry(
-    app: AppHandle,
-    state: State<'_, AppState>,
-) -> Result<LocalGatewayStatus, GuiError> {
-    start_local_gateway(app, state).await
-}
-
-/// Compatibility alias for `stop_local_gateway`.
-#[tauri::command]
-pub async fn stop_local_entry(state: State<'_, AppState>) -> Result<LocalGatewayStatus, GuiError> {
-    stop_local_gateway(state).await
-}
-
-/// Compatibility alias for `get_local_gateway_status`.
-#[tauri::command]
-pub async fn get_local_entry_status(
-    state: State<'_, AppState>,
-) -> Result<LocalGatewayStatus, GuiError> {
-    get_local_gateway_status(state).await
-}
-
 /// Enable or disable background restore for an existing local bridge.
 #[tauri::command]
 pub async fn set_adapter_bridge_auto_start(

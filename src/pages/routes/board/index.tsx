@@ -217,8 +217,8 @@ export default function RoutesBoardPage() {
     [bridgeStatuses, defaultPools, hiddenTargetIds, localGatewayRestarting, profiles],
   );
   const localEntryBusy = localEntry.profileIds.some((id) => busyProfileIds[id])
-    || Boolean(busyProfileIds.__local_entry__);
-  const localGatewayError = profileErrors.__local_entry__
+    || Boolean(busyProfileIds.__local_gateway__);
+  const localGatewayError = profileErrors.__local_gateway__
     ?? localEntry.profileIds.map((id) => profileErrors[id]).find((error) => error != null)
     ?? null;
 

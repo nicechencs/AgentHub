@@ -97,21 +97,6 @@ pub async fn delete_agent_sessions(
     with_hub_blocking(hub, move |hub| delete_agent_sessions_inner(hub, ids)).await
 }
 
-/// Compatibility alias for `delete_agent_session` (pre-rename IPC).
-#[tauri::command]
-pub async fn delete_agent_project(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    delete_agent_session(state, id).await
-}
-
-/// Compatibility alias for `delete_agent_sessions` (pre-rename IPC).
-#[tauri::command]
-pub async fn delete_agent_projects(
-    state: State<'_, AppState>,
-    ids: Vec<String>,
-) -> Result<u32, String> {
-    delete_agent_sessions(state, ids).await
-}
-
 /// Invoke: `get_agent_project_excerpts`
 #[tauri::command]
 pub async fn get_agent_project_excerpts(

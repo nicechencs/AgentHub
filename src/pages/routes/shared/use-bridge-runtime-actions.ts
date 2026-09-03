@@ -204,13 +204,13 @@ export function useBridgeRuntimeActions(input: {
   ]);
 
   const handleStartLocalGateway = useCallback(async () => {
-    setProfileBusy('__local_entry__', true);
-    clearProfileError('__local_entry__');
+    setProfileBusy('__local_gateway__', true);
+    clearProfileError('__local_gateway__');
     try {
       const status = await startLocalGateway();
       for (const row of status.statuses) updateBridgeStatus(row);
       void logGuiEvent('bridge_start', { profileId: 'local-entry', route: 'local_bridge' });
-      reloadThenClearProfileErrors(['__local_entry__']);
+      reloadThenClearProfileErrors(['__local_gateway__']);
       return status.running;
     } catch (error) {
       void logGuiEvent('bridge_start_fail', {
@@ -220,11 +220,11 @@ export function useBridgeRuntimeActions(input: {
       });
       setProfileErrors((current) => ({
         ...current,
-        __local_entry__: surfaceAfterCompensation(error, []),
+        __local_gateway__: surfaceAfterCompensation(error, []),
       }));
       return false;
     } finally {
-      setProfileBusy('__local_entry__', false);
+      setProfileBusy('__local_gateway__', false);
     }
   }, [
     clearProfileError,
@@ -233,13 +233,13 @@ export function useBridgeRuntimeActions(input: {
   ]);
 
   const handleStopLocalGateway = useCallback(async () => {
-    setProfileBusy('__local_entry__', true);
-    clearProfileError('__local_entry__');
+    setProfileBusy('__local_gateway__', true);
+    clearProfileError('__local_gateway__');
     try {
       const status = await stopLocalGateway();
       for (const row of status.statuses) updateBridgeStatus(row);
       void logGuiEvent('bridge_stop', { profileId: 'local-entry', route: 'local_bridge' });
-      reloadThenClearProfileErrors(['__local_entry__']);
+      reloadThenClearProfileErrors(['__local_gateway__']);
       return !status.running;
     } catch (error) {
       void logGuiEvent('bridge_stop_fail', {
@@ -247,10 +247,10 @@ export function useBridgeRuntimeActions(input: {
         route: 'local_bridge',
         code: guiErrorCode(error),
       });
-      setProfileErrors((current) => ({ ...current, __local_entry__: error }));
+      setProfileErrors((current) => ({ ...current, __local_gateway__: error }));
       return false;
     } finally {
-      setProfileBusy('__local_entry__', false);
+      setProfileBusy('__local_gateway__', false);
     }
   }, [
     setProfileBusy,

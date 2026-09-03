@@ -18,10 +18,8 @@ export interface InstallOutcome {
 export interface InstallProgressPayload {
   agentId?: string | null;
   action?: string;
-  /** Canonical field: may be a partial line, empty string, or multi-line block. */
+  /** May be a partial line, empty string, or multi-line block. */
   chunk: string;
-  /** @deprecated Prefer {@link InstallProgressPayload.chunk}. */
-  line?: string;
 }
 
 /** Filter helper: only chunks for this agent (runtime-only chunks have a null agentId). */
@@ -34,9 +32,7 @@ export function isProgressForAgent(
 }
 
 export function installProgressChunk(payload: InstallProgressPayload): string {
-  if (typeof payload.chunk === 'string') return payload.chunk;
-  if (typeof payload.line === 'string') return payload.line;
-  return '';
+  return typeof payload.chunk === 'string' ? payload.chunk : '';
 }
 
 /** Mirrors core `catalog::InstallChannelPlan`. */

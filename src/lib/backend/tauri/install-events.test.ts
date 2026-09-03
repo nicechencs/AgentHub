@@ -32,8 +32,8 @@ describe('tauri install events', () => {
 
   it('forwards raw UTF-8 chunks including empty, whitespace, and newline-only payloads', async () => {
     isTauriMock.mockReturnValue(true);
-    let listener: ((event: { payload: { line?: string; chunk?: string } }) => void) | undefined;
-    listenMock.mockImplementation(async (_event: string, handler: (event: { payload: { line?: string; chunk?: string } }) => void) => {
+    let listener: ((event: { payload: { chunk?: string } }) => void) | undefined;
+    listenMock.mockImplementation(async (_event: string, handler: (event: { payload: { chunk?: string } }) => void) => {
       listener = handler;
       return () => {};
     });
@@ -43,11 +43,12 @@ describe('tauri install events', () => {
       seen.push(payload.chunk);
     });
 
-    listener?.({ payload: { line: '' } });
-    listener?.({ payload: { line: '   ' } });
+    listener?.({ payload: { chunk: '' } });
+    listener?.({ payload: { chunk: '   ' } });
     listener?.({ payload: { chunk: '\n' } });
     listener?.({ payload: { chunk: 'hel' } });
-    listener?.({ payload: { line: 'lo\n' } });
+    listener?.({ payload: { chunk: 'lo\n' } });
+    listener?.({ payload: {} });
 
     expect(seen).toEqual(['', '   ', '\n', 'hel', 'lo\n']);
   });

@@ -44,29 +44,3 @@ pub async fn disable_plugin(
     .await
     .map_err(|e| format!("disable_plugin join error: {e}"))?
 }
-
-/// Compatibility alias for `list_plugin_inventory`.
-#[tauri::command]
-pub async fn list_plugin_inventory_cmd() -> Result<PluginInventory, String> {
-    list_plugin_inventory().await
-}
-
-/// Compatibility alias for `enable_plugin`.
-#[tauri::command]
-pub async fn enable_plugin_cmd(
-    agent: String,
-    name: String,
-    marketplace: Option<String>,
-) -> Result<(), String> {
-    enable_plugin(agent, name, marketplace).await
-}
-
-/// Compatibility alias for `disable_plugin`.
-#[tauri::command]
-pub async fn disable_plugin_cmd(
-    agent: String,
-    name: String,
-    marketplace: Option<String>,
-) -> Result<(), String> {
-    disable_plugin(agent, name, marketplace).await
-}
