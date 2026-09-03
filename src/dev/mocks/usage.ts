@@ -10,6 +10,7 @@ import { delay } from '@/dev/mocks/delay';
 import { isCapabilityUsable } from '@/lib/capability';
 import type { AgentKey, ParserHealth, UsageRecord, UsageTrendPoint } from '@/lib/types';
 import { denseTrendBuckets, localTrendBucket, trendGrain } from '@/lib/usage-trend';
+import { canonicalUsageModel, usageModelsMatch } from '@/lib/usage-model';
 import { usageTokenParts } from '@/lib/usage-tokens';
 import { listMockAdapterProfiles } from './adapter';
 import { MOCK_CAPABILITIES } from './capabilities';
@@ -98,7 +99,9 @@ function matchesUsageQuery(r: UsageRecord, q: UsageQuery, ignoreModel = false): 
   if (!inUsageWindow(r, q.days, q.since)) return false;
   if (q.agentId && q.agentId !== 'all' && r.agentId !== q.agentId) return false;
   if (q.excludeAgentIds?.includes(r.agentId)) return false;
-  if (!ignoreModel && q.model && q.model !== 'all' && r.model !== q.model) return false;
+  if (!ignoreModel && q.model && q.model !== 'all' && !usageModelsMatch(r.model, q.model)) {
+    return false;
+  }
   return true;
 }
 
@@ -129,7 +132,7 @@ function mockUsageOverview(q: UsageQuery): UsageOverview {
     cacheRead += p.cacheRead;
     cacheWrite += p.cacheWrite;
     costUsd += r.costUsd;
-    const key = groupByAgent ? r.agentId : r.model;
+    const key = groupByAgent ? r.agentId : canonicalUsageModel(r.model) || r.model;
     const entry = byKey.get(key) ?? {
       key,
       tokens: 0,
@@ -151,7 +154,7 @@ function mockUsageOverview(q: UsageQuery): UsageOverview {
     ...new Set(
       records
         .filter((r) => matchesUsageQuery(r, q, true))
-        .map((r) => r.model)
+        .map((r) => canonicalUsageModel(r.model) || r.model)
         .filter((m) => m.length > 0),
     ),
   ].sort((a, b) => a.localeCompare(b));
@@ -172,7 +175,11 @@ export function createMockUsagePort(): UsagePort {
       await delay(200 + Math.random() * 400);
       const filtered = records
         .filter((r) => matchesUsageQuery(r, q))
-        .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+        .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+        .map((r) => {
+          const model = canonicalUsageModel(r.model);
+          return model && model !== r.model ? { ...r, model } : r;
+        });
       return q.limit != null ? filtered.slice(0, q.limit) : filtered;
     },
 
@@ -197,7 +204,7 @@ export function createMockUsagePort(): UsagePort {
         if (!inUsageWindow(r, days, since)) continue;
         if (agentId && agentId !== 'all' && r.agentId !== agentId) continue;
         if (excludeAgentIds?.includes(r.agentId)) continue;
-        if (model && model !== 'all' && r.model !== model) continue;
+        if (model && model !== 'all' && !usageModelsMatch(r.model, model)) continue;
         const key = localTrendBucket(r.timestamp, grain);
         if (!key) continue;
         if (!byBucket.has(key)) byBucket.set(key, emptyPoint(key));
@@ -205,9 +212,10 @@ export function createMockUsagePort(): UsagePort {
         const p = usageTokenParts(r);
         const tokens = p.billableInput + p.cache + r.outputTokens;
         if (byModel) {
-          if (!r.model) continue;
-          point[r.model] = (Number(point[r.model]) || 0) + tokens;
-          const costKey = `__cost__:${r.model}`;
+          const series = canonicalUsageModel(r.model) || r.model;
+          if (!series) continue;
+          point[series] = (Number(point[series]) || 0) + tokens;
+          const costKey = `__cost__:${series}`;
           point[costKey] = (Number(point[costKey]) || 0) + r.costUsd;
         } else {
           point[r.agentId] = (point[r.agentId] as number) + tokens;
@@ -223,7 +231,13 @@ export function createMockUsagePort(): UsagePort {
 
     async listModels() {
       await delay(100);
-      return [...new Set(records.map((r) => r.model))];
+      return [
+        ...new Set(
+          records
+            .map((r) => canonicalUsageModel(r.model) || r.model)
+            .filter((m) => m.length > 0),
+        ),
+      ].sort((a, b) => a.localeCompare(b));
     },
 
     async parserHealth(): Promise<ParserHealth[]> {

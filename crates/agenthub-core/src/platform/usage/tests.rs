@@ -1185,6 +1185,71 @@ fn usage_trend_by_model_includes_tokens_and_cost() {
 }
 
 #[test]
+fn usage_merges_grok_build_model_alias() {
+    let root = tempfile::tempdir().unwrap();
+    let db = Database::open(&root.path().join("usage.db")).unwrap();
+    let repo = UsageRepo::new(db);
+    let ts = recent_ts(1);
+    repo.insert_batch(&[
+        overview_row(AgentId::Grok, "grok-4.6", 100, 10, 0, 1.0, &ts, "plain"),
+        overview_row(
+            AgentId::Grok,
+            "grok-4.6-build",
+            50,
+            5,
+            0,
+            0.5,
+            &ts,
+            "build",
+        ),
+    ])
+    .unwrap();
+
+    let overview = repo
+        .overview(2, Some(AgentId::Grok), None, None, &[])
+        .unwrap();
+    assert_eq!(overview.models, vec!["grok-4.6".to_string()]);
+    assert_eq!(overview.distribution.len(), 1);
+    assert_eq!(overview.distribution[0].key, "grok-4.6");
+    assert_eq!(overview.distribution[0].tokens, 165);
+    assert!((overview.distribution[0].cost_usd - 1.5).abs() < 1e-9);
+
+    let filtered = repo
+        .overview(2, Some(AgentId::Grok), Some("grok-4.6"), None, &[])
+        .unwrap();
+    assert_eq!(filtered.metrics.billable_input, 150);
+
+    let trend = repo
+        .trend_by_model(2, Some(AgentId::Grok), None, None, &[])
+        .unwrap();
+    let tokens: i64 = trend
+        .iter()
+        .map(|p| p.0.get("grok-4.6").and_then(|v| v.as_i64()).unwrap_or(0))
+        .sum();
+    let build_tokens: i64 = trend
+        .iter()
+        .map(|p| {
+            p.0.get("grok-4.6-build")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0)
+        })
+        .sum();
+    assert_eq!(tokens, 165);
+    assert_eq!(build_tokens, 0);
+
+    let rows = repo
+        .query(&crate::models::UsageQuery {
+            days: 2,
+            agent_id: Some(AgentId::Grok),
+            model: Some("grok-4.6".into()),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(rows.len(), 2);
+    assert!(rows.iter().all(|r| r.model == "grok-4.6"));
+}
+
+#[test]
 fn since_filter_matches_offset_and_z_as_same_instant() {
     let root = tempfile::tempdir().unwrap();
     let db = Database::open(&root.path().join("usage.db")).unwrap();
