@@ -84,11 +84,7 @@ export function envSoftwareAction(
       return 'repair';
     case 'ok':
       if (update?.state === 'update_available') return 'upgrade';
-      return runtime.id === 'npm' &&
-        runtimes.some((item) => item.id === 'nodejs' && item.status === 'outdated') &&
-        canUpgrade
-        ? 'upgrade'
-        : null;
+      return null;
   }
 }
 

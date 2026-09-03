@@ -64,6 +64,7 @@ export default function AgentsPage() {
     runtimeId?: RuntimeId;
     autoStart: boolean;
     intent: EnvSoftwareIntent;
+    canAutoUpgrade?: boolean;
   } | null>(null);
   /** 真实安装中态(勿用 autoStart 充当 busy,失败后会永久卡住) */
   const [envInstallRunning, setEnvInstallRunning] = React.useState(false);
@@ -298,11 +299,12 @@ export default function AgentsPage() {
           runtimes={runtimes}
           loading={showAgentSkeleton || envLoading}
           onRefresh={() => void refreshEnv()}
-          onAction={(runtime, intent, autoStart = true) =>
+          onAction={(runtime, intent, canAutoUpgrade = true) =>
             setPageFix({
               runtimeId: runtime.id,
-              autoStart: intent !== 'repair' && autoStart,
+              autoStart: intent !== 'repair' && canAutoUpgrade,
               intent,
+              canAutoUpgrade,
             })
           }
           onOneClickFix={() => setPageFix({ autoStart: true, intent: 'install' })}
@@ -311,12 +313,13 @@ export default function AgentsPage() {
         />
         {showPagePanel && (
           <EnvRemediationPanel
-            key={`page-fix-${pageFix.runtimeId ?? 'all'}-${pageFix.autoStart}-${pageFix.intent}`}
+            key={`page-fix-${pageFix.runtimeId ?? 'all'}-${pageFix.autoStart}-${pageFix.intent}-${pageFix.canAutoUpgrade}`}
             runtime={pageFixRuntime}
             runtimes={runtimes}
             focusIds={pageFix.runtimeId ? [pageFix.runtimeId] : undefined}
             autoStart={pageFix.autoStart}
             intent={pageFix.intent}
+            canAutoUpgrade={pageFix.canAutoUpgrade}
             pageHasPrimaryCta
             onRunningChange={setEnvInstallRunning}
             onDismiss={() => {

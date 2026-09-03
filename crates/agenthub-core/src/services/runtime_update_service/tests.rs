@@ -27,6 +27,12 @@ fn compares_semver_after_normalizing_tool_output() {
 }
 
 #[test]
+fn parses_latest_stable_git_tag_from_official_tags_fixture() {
+    let fixture = include_str!("fixtures/git-tags.json");
+    assert_eq!(git_latest_stable_tag(fixture).as_deref(), Ok("2.52.0"));
+}
+
+#[test]
 fn missing_and_broken_runtimes_fail_closed() {
     let temp = tempfile::tempdir().unwrap();
     let rows = vec![
@@ -60,6 +66,12 @@ fn fresh_disk_cache_is_used_without_network() {
     assert_eq!(updates[0].state, RuntimeUpdateState::UpdateAvailable);
     assert_eq!(updates[0].latest_version.as_deref(), Some("2.51.0"));
     assert_eq!(updates[0].source.as_deref(), Some("git"));
+}
+
+#[test]
+fn npm_and_git_updates_are_manual_only() {
+    assert!(!supports_auto_upgrade(RuntimeId::Npm));
+    assert!(!supports_auto_upgrade(RuntimeId::Git));
 }
 
 #[test]

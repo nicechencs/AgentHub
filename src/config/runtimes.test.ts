@@ -48,6 +48,17 @@ describe('runtime remediation platform filtering', () => {
     }
   });
 
+  it('keeps npm and Git updates as manual steps', () => {
+    expect(RUNTIME_MAP.npm.upgradeRemediations).toContainEqual(
+      expect.objectContaining({ value: 'npm install -g npm@latest' }),
+    );
+    const gitMacSteps = runtimeRemediationsForPlatform(
+      RUNTIME_MAP.git.upgradeRemediations ?? [],
+      'macos',
+    );
+    expect(gitMacSteps).toContainEqual(expect.objectContaining({ value: 'brew upgrade git' }));
+  });
+
   it('omits PowerShell from host runtime list outside Windows', () => {
     expect(runtimesForPlatform('macos').map((r) => r.id)).not.toContain('powershell');
     expect(runtimesForPlatform('linux').map((r) => r.id)).not.toContain('powershell');

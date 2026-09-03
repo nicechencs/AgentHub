@@ -83,7 +83,7 @@ export function EnvSoftwareList({
   runtimes: RuntimeDetect[];
   loading?: boolean;
   onRefresh?: () => void;
-  onAction: (runtime: RuntimeDetect, intent: EnvSoftwareIntent, autoStart?: boolean) => void;
+  onAction: (runtime: RuntimeDetect, intent: EnvSoftwareIntent, canAutoUpgrade?: boolean) => void;
   onOneClickFix?: () => void;
   oneClickBusy?: boolean;
   runtimeUpdates?: Partial<Record<RuntimeDetect['id'], RuntimeUpdateInfo>>;
@@ -227,7 +227,7 @@ export function EnvSoftwareList({
                           onClick={() => onAction(
                             runtime,
                             action,
-                            !(action === 'upgrade' && update && !update.canAutoUpgrade),
+                            action !== 'upgrade' || update?.canAutoUpgrade !== false,
                           )}
                           title={actionTitle}
                           aria-label={actionTitle}

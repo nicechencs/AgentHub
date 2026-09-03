@@ -23,7 +23,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(4);
 const READ_TIMEOUT: Duration = Duration::from_secs(6);
 const NODE_INDEX_URL: &str = "https://nodejs.org/dist/index.json";
 const NPM_LATEST_URL: &str = "https://registry.npmjs.org/npm/latest";
-const GIT_LATEST_URL: &str = "https://api.github.com/repos/git/git/releases/latest";
+const GIT_TAGS_URL: &str = "https://api.github.com/repos/git/git/tags?per_page=100";
 const POWERSHELL_LATEST_URL: &str =
     "https://api.github.com/repos/PowerShell/PowerShell/releases/latest";
 
@@ -171,17 +171,11 @@ fn check_one(
 }
 
 fn supports_auto_upgrade(id: RuntimeId) -> bool {
-    if cfg!(windows) {
-        return matches!(id, RuntimeId::NodeJs | RuntimeId::Npm | RuntimeId::Git);
-    }
-    if cfg!(target_os = "macos") {
-        return match id {
-            RuntimeId::NodeJs | RuntimeId::Npm => true,
-            RuntimeId::Git => crate::runtime::resolve_binary(&["brew"]).is_some(),
-            RuntimeId::PowerShell => false,
-        };
-    }
-    false
+    // Node.js is installed through the official macOS package fallback or
+    // winget. npm and Git can be owned by another tool/package manager, so
+    // presenting either as one-click would make a successful Node/Git probe
+    // look like a successful upgrade of the requested runtime.
+    matches!(id, RuntimeId::NodeJs) && (cfg!(windows) || cfg!(target_os = "macos"))
 }
 
 fn resolve_remote(
@@ -252,13 +246,18 @@ fn fetch_latest(id: RuntimeId) -> std::result::Result<String, String> {
             let body = http_get(NPM_LATEST_URL, "application/json")?;
             json_version(&body)
         }
-        RuntimeId::Git | RuntimeId::PowerShell => {
-            let url = if id == RuntimeId::Git {
-                GIT_LATEST_URL
-            } else {
-                POWERSHELL_LATEST_URL
-            };
-            let body = http_get(url, "application/vnd.github+json, application/json;q=0.8")?;
+        RuntimeId::Git => {
+            let body = http_get(
+                GIT_TAGS_URL,
+                "application/vnd.github+json, application/json;q=0.8",
+            )?;
+            git_latest_stable_tag(&body)
+        }
+        RuntimeId::PowerShell => {
+            let body = http_get(
+                POWERSHELL_LATEST_URL,
+                "application/vnd.github+json, application/json;q=0.8",
+            )?;
             let value: Value =
                 serde_json::from_str(&body).map_err(|e| format!("invalid json: {e}"))?;
             value
@@ -269,6 +268,22 @@ fn fetch_latest(id: RuntimeId) -> std::result::Result<String, String> {
                 .ok_or_else(|| "official release feed missing tag_name".into())
         }
     }
+}
+
+/// Git does not publish GitHub Releases. Its official tags feed includes release
+/// candidates and maintenance branches, so accept only stable `vX.Y.Z` tags.
+fn git_latest_stable_tag(body: &str) -> std::result::Result<String, String> {
+    let tags: Vec<Value> = serde_json::from_str(body).map_err(|e| format!("invalid json: {e}"))?;
+    tags.iter()
+        .filter_map(|tag| tag.get("name").and_then(Value::as_str))
+        .filter_map(|tag| {
+            let version = tag.strip_prefix('v')?;
+            let parsed = semver::Version::parse(version).ok()?;
+            parsed.pre.is_empty().then_some(parsed)
+        })
+        .max()
+        .map(|version| version.to_string())
+        .ok_or_else(|| "Git tags feed missing a stable vX.Y.Z tag".into())
 }
 
 fn json_version(body: &str) -> std::result::Result<String, String> {

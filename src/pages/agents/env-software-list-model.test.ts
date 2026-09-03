@@ -68,12 +68,12 @@ describe('env software list model', () => {
     );
   });
 
-  it('upgrades outdated Node and maps npm through Node.js', () => {
+  it('upgrades outdated Node but does not present npm as a Node.js upgrade', () => {
     const outdated = [
       runtime('nodejs', 'outdated', { version: '16.0.0' }),
       runtime('npm', 'ok', { version: '8.0.0' }),
     ];
     expect(envSoftwareAction(outdated[0], outdated, 'windows')).toBe('upgrade');
-    expect(envSoftwareAction(outdated[1], outdated, 'windows')).toBe('upgrade');
+    expect(envSoftwareAction(outdated[1], outdated, 'windows')).toBeNull();
   });
 });

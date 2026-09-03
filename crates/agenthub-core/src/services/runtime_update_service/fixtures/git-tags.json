@@ -1,0 +1,6 @@
+[
+  {"name":"v2.52.0-rc1","commit":{"sha":"1111111111111111111111111111111111111111","url":"https://api.github.com/repos/git/git/commits/1111111111111111111111111111111111111111"},"zipball_url":"https://api.github.com/repos/git/git/zipball/refs/tags/v2.52.0-rc1","tarball_url":"https://api.github.com/repos/git/git/tarball/refs/tags/v2.52.0-rc1"},
+  {"name":"maint","commit":{"sha":"2222222222222222222222222222222222222222","url":"https://api.github.com/repos/git/git/commits/2222222222222222222222222222222222222222"},"zipball_url":"https://api.github.com/repos/git/git/zipball/refs/tags/maint","tarball_url":"https://api.github.com/repos/git/git/tarball/refs/tags/maint"},
+  {"name":"v2.51.2","commit":{"sha":"3333333333333333333333333333333333333333","url":"https://api.github.com/repos/git/git/commits/3333333333333333333333333333333333333333"},"zipball_url":"https://api.github.com/repos/git/git/zipball/refs/tags/v2.51.2","tarball_url":"https://api.github.com/repos/git/git/tarball/refs/tags/v2.51.2"},
+  {"name":"v2.52.0","commit":{"sha":"4444444444444444444444444444444444444444","url":"https://api.github.com/repos/git/git/commits/4444444444444444444444444444444444444444"},"zipball_url":"https://api.github.com/repos/git/git/zipball/refs/tags/v2.52.0","tarball_url":"https://api.github.com/repos/git/git/tarball/refs/tags/v2.52.0"}
+]

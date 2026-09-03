@@ -12,6 +12,8 @@ export interface RuntimeMeta {
   /** 是否支持在 App 内引导自动安装 */
   canAutoInstall: boolean;
   remediations: EnvRemediation[];
+  /** 已安装软件发现新版时使用的手动升级步骤。 */
+  upgradeRemediations?: EnvRemediation[];
 }
 
 /**
@@ -130,6 +132,17 @@ export const RUNTIMES: RuntimeMeta[] = [
         label: 'Reinstall Node.js LTS',
       },
     ],
+    upgradeRemediations: [
+      {
+        kind: 'command',
+        value: 'npm install -g npm@latest',
+        label: 'Upgrade npm',
+      },
+      {
+        kind: 'hint',
+        value: 'Run npm -v afterwards to confirm the installed version.',
+      },
+    ],
   },
   {
     id: 'powershell',
@@ -218,6 +231,25 @@ export const RUNTIMES: RuntimeMeta[] = [
         kind: 'hint',
         value:
           'After installing, fully quit and restart AgentHub, then click "Re-detect" (the GUI may still have the old PATH).',
+      },
+    ],
+    upgradeRemediations: [
+      {
+        kind: 'winget',
+        value: 'winget upgrade --id Git.Git -e --source winget',
+        label: 'Upgrade Git via winget',
+        platform: 'windows',
+      },
+      {
+        kind: 'brew',
+        value: 'brew upgrade git',
+        label: 'Upgrade Git via Homebrew',
+        platform: 'macos',
+      },
+      {
+        kind: 'url',
+        value: 'https://git-scm.com/downloads',
+        label: 'Open the Git website',
       },
     ],
   },

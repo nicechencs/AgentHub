@@ -37,6 +37,7 @@ export function EnvRemediationPanel({
   autoStart = false,
   pageHasPrimaryCta = false,
   intent = 'install',
+  canAutoUpgrade,
 }: {
   /** 主展示的 Runtime(兼容单点修复) */
   runtime?: RuntimeDetect;
@@ -55,6 +56,8 @@ export function EnvRemediationPanel({
   pageHasPrimaryCta?: boolean;
   /** 升级已装软件时包含就绪项，文案改为升级 */
   intent?: 'install' | 'upgrade' | 'repair';
+  /** 远端版本检测确认能在本机一键升级；false 时只展示手动步骤。 */
+  canAutoUpgrade?: boolean;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -75,7 +78,7 @@ export function EnvRemediationPanel({
     allRuntimes[0];
 
   const meta = primary ? RUNTIME_MAP[primary.id] : null;
-  const canOneClick = plan.targets.length > 0;
+  const canOneClick = plan.targets.length > 0 && (!upgrading || canAutoUpgrade !== false);
   const runtimeChannel = runtimeChannelForPlan(hostPlatform);
 
   const [lines, setLines] = React.useState<string[]>([]);
@@ -171,10 +174,10 @@ export function EnvRemediationPanel({
 
   if (!primary || !meta) return null;
 
-  const remediations = runtimeRemediationsForPlatform(
-    primary.remediations.length ? primary.remediations : meta.remediations,
-    hostPlatform,
-  );
+  const remediationSource = upgrading && meta.upgradeRemediations?.length
+    ? meta.upgradeRemediations
+    : primary.remediations.length ? primary.remediations : meta.remediations;
+  const remediations = runtimeRemediationsForPlatform(remediationSource, hostPlatform);
   const title = upgrading
     ? plan.targets.length > 1
       ? t('chrome.env.willUpgrade', { summary: plan.summary })
@@ -282,7 +285,7 @@ export function EnvRemediationPanel({
       {status !== 'running' && (
         <details className="mt-3" open={!canOneClick}>
           <summary className="cursor-pointer text-xs text-muted hover:text-secondary">
-            {canOneClick ? t('chrome.env.manualSteps') : t('chrome.env.fixSteps')}
+            {canOneClick ? t('chrome.env.manualSteps') : upgrading ? t('chrome.env.manualUpdate') : t('chrome.env.fixSteps')}
           </summary>
           <ul className="mt-2 space-y-2">
             {remediations.map((r, i) => (
