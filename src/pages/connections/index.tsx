@@ -430,6 +430,7 @@ export default function ConnectionsPage() {
   const {
     switchingTicketId,
     handleSwitchTicket,
+    handleRemoveFromCatalog,
     deleteTicket,
     setDeleteTicket,
     deleteBusy,
@@ -836,6 +837,7 @@ export default function ConnectionsPage() {
             onImportToPool={(ticket) => void handleImportToPool(ticket)}
             importActionForTicket={importActionForTicket}
             onSwitchTicket={handleSwitchTicket}
+            onRemoveFromCatalog={(ticket) => void handleRemoveFromCatalog(ticket)}
             switchingTicketId={switchingTicketId}
             importingTicketId={importingTicketId}
             extrasForTicket={extrasForTicket}

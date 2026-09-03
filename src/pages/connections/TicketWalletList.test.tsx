@@ -53,7 +53,7 @@ describe('TicketWalletList details', () => {
       }),
     );
     expect(markup).not.toContain('aria-expanded');
-    expect(markup).toContain('分享至连接池');
+    expect(markup).not.toContain('分享至连接池');
     expect(markup).not.toContain('用到其他工具');
     expect(markup).not.toContain('本机转发');
     expect(markup).not.toContain('接到…');
@@ -231,7 +231,7 @@ describe('TicketWalletList details', () => {
     );
     expect(markup).toContain('href="/routes/pool?profile=bridge-1"');
     expect(markup).toContain('本机路由');
-    expect(markup).toContain('分享至连接池');
+    expect(markup).not.toContain('分享至连接池');
     expect(markup).not.toContain('用到其他工具');
     expect(markup).not.toContain('本机转发');
     expect(markup).not.toContain('接到…');
@@ -1000,7 +1000,7 @@ describe('TicketWalletList switch action', () => {
     expect(markup).not.toContain('aria-label="切换"');
   });
 
-  it('shows 写入 ZCode / 已在模型列表里 for catalog-append occupancy', () => {
+  it('shows 写入 ZCode / 已添加 for catalog-append occupancy', () => {
     const wallet: TicketWallet = {
       tickets: [
         {
@@ -1042,74 +1042,11 @@ describe('TicketWalletList switch action', () => {
         onDeleteTicket() {},
       }),
     );
-    expect(current).toContain('aria-label="已在模型列表里"');
-    expect(current).toContain('>已在模型列表里<');
-    expect(current).toContain('这份登录已经出现在模型列表里');
+    expect(current).toContain('aria-label="已添加"');
+    expect(current).toContain('>已添加<');
+    expect(current).toContain('这份登录已经添加');
     expect(current).not.toContain('aria-label="使用中"');
-  });
-});
-
-describe('TicketWalletList pool import', () => {
-  it('disables 分享至连接池 and keeps the disable reason for hover', () => {
-    const markup = renderWithTooltip(
-      createElement(TicketWalletList, {
-        wallet: sampleWallet(),
-        onImportToPool() {},
-        importActionForTicket: () => ({
-          disabled: true,
-          reason: '这份登录目前不能分享至连接池',
-        }),
-        onEditTicket() {},
-        onDeleteTicket() {},
-      }),
-    );
-    expect(markup).toMatch(/\sdisabled(=""|\s)[^>]*aria-label="分享至连接池"/);
-    expect(markup).toContain('这份登录目前不能分享至连接池');
-  });
-
-  it('shows 已在连接池 as the disable reason', () => {
-    const markup = renderWithTooltip(
-      createElement(TicketWalletList, {
-        wallet: sampleWallet(),
-        onImportToPool() {},
-        importActionForTicket: () => ({
-          disabled: true,
-          reason: '已在连接池',
-        }),
-        onEditTicket() {},
-        onDeleteTicket() {},
-      }),
-    );
-    expect(markup).toMatch(/\sdisabled(=""|\s)[^>]*aria-label="分享至连接池"/);
-    expect(markup).toContain('已在连接池');
-  });
-
-  it('keeps 分享至连接池 enabled when the login can join the pool', () => {
-    const markup = renderWithTooltip(
-      createElement(TicketWalletList, {
-        wallet: sampleWallet(),
-        onImportToPool() {},
-        importActionForTicket: () => ({ disabled: false as const }),
-        onEditTicket() {},
-        onDeleteTicket() {},
-      }),
-    );
-    expect(markup).toContain('aria-label="分享至连接池"');
-    expect(markup).not.toMatch(/\sdisabled(=""|\s)[^>]*aria-label="分享至连接池"/);
-  });
-
-  it('shows 分享中… while this login is importing', () => {
-    const markup = renderWithTooltip(
-      createElement(TicketWalletList, {
-        wallet: sampleWallet(),
-        onImportToPool() {},
-        importingTicketId: 'provider:kimi-1',
-        onEditTicket() {},
-        onDeleteTicket() {},
-      }),
-    );
-    expect(markup).toContain('分享中…');
-    expect(markup).toMatch(/\sdisabled(=""|\s)[^>]*aria-label="分享至连接池"/);
+    expect(current).not.toContain('已在模型列表里');
   });
 });
 
