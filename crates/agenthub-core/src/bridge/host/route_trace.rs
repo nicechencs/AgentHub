@@ -50,6 +50,9 @@ pub struct RouteTraceMember {
     pub source_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ticket_id: Option<String>,
+    /// Last four characters of the selected upstream login only; never the secret.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_last4: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -69,6 +72,9 @@ pub struct RouteTraceLocalAuth {
     pub status: TraceStageStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile_id: Option<String>,
+    /// Last four characters of the accepted local entry key; never the secret.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_last4: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub port: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -459,6 +465,7 @@ impl RouteTraceBuilder {
                 local_auth: RouteTraceLocalAuth {
                     status: TraceStageStatus::Pending,
                     profile_id: None,
+                    key_last4: None,
                     port: None,
                     code: None,
                     message: None,
@@ -509,16 +516,22 @@ impl RouteTraceBuilder {
         self.trace.local_auth = RouteTraceLocalAuth {
             status: TraceStageStatus::Ok,
             profile_id: Some(profile_id.to_owned()),
+            key_last4: None,
             port,
             code: None,
             message: None,
         };
     }
 
+    pub fn local_auth_key_last4(&mut self, token: &str) {
+        self.trace.local_auth.key_last4 = secret_last4(token);
+    }
+
     pub fn local_auth_failed(&mut self, code: &str, message: &str) {
         self.trace.local_auth = RouteTraceLocalAuth {
             status: TraceStageStatus::Failed,
             profile_id: None,
+            key_last4: None,
             port: None,
             code: Some(code.to_owned()),
             message: Some(message.to_owned()),
@@ -541,6 +554,7 @@ impl RouteTraceBuilder {
             self.trace.local_auth = RouteTraceLocalAuth {
                 status: TraceStageStatus::Ok,
                 profile_id: Some(profile_id.to_owned()),
+                key_last4: None,
                 port,
                 code: None,
                 message: None,
@@ -780,7 +794,13 @@ pub fn trace_member(member: &PickedMember) -> RouteTraceMember {
         } else {
             Some(member.ticket_id.clone())
         },
+        key_last4: secret_last4(&member.auth.token()),
     }
+}
+
+fn secret_last4(token: &str) -> Option<String> {
+    let token = token.trim();
+    (token.len() >= 4).then(|| token[token.len() - 4..].to_owned())
 }
 
 pub fn conversion_path_id(

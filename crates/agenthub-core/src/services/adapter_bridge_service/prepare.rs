@@ -375,6 +375,36 @@ pub(super) fn openai_source_upstream(
     if rule.source != crate::models::AdapterSourceProduct::OpenaiApi {
         return (url, model, listed, protocol, context_window_tokens);
     }
+    if source_kind == AdapterSourceKind::Account {
+        let Ok(Some(account)) = service.secrets.accounts.get_by_id(source_id) else {
+            return (url, model, listed, protocol, context_window_tokens);
+        };
+        if account.kind != crate::models::AccountKind::ApiKey {
+            return (url, model, listed, protocol, context_window_tokens);
+        }
+
+        // WorkBuddy stores the complete Chat Completions endpoint on the
+        // account. The host appends `chat/completions` itself, so retain only
+        // the configured base path (including any custom URL prefix).
+        let mut account_base_url = None;
+        'blobs: for blob in [&account.credentials, &account.extra] {
+            for key in ["base_url", "baseUrl", "url", "endpoint"] {
+                let Some(raw) = blob.get(key).and_then(Value::as_str) else {
+                    continue;
+                };
+                if let Some(base) = account_openai_base_url(raw) {
+                    account_base_url = Some(base);
+                    break 'blobs;
+                }
+            }
+        }
+        if let Some(base) = account_base_url {
+            url = base;
+        }
+        model = account_openai_model(&account)
+            .unwrap_or_else(|| rule.default_model.to_owned());
+        return (url, model, listed, protocol, context_window_tokens);
+    }
     if source_kind != AdapterSourceKind::Provider {
         return (url, model, listed, protocol, context_window_tokens);
     }
@@ -411,4 +441,58 @@ pub(super) fn openai_source_upstream(
         protocol = crate::bridge::BridgeUpstreamProtocol::AnthropicMessages;
     }
     (url, model, listed, protocol, context_window_tokens)
+}
+
+/// Turn a WorkBuddy model endpoint into the base URL that the bridge host
+/// joins with its transport path. Invalid or non-HTTP values are ignored so a
+/// stale account field cannot replace a rule's safe default.
+fn account_openai_base_url(raw: &str) -> Option<String> {
+    let endpoint = crate::adapters::workbuddy::normalize_workbuddy_chat_url(raw).ok()?;
+    if crate::services::adapter_route_constants::normalized_http_host(&endpoint).is_none() {
+        return None;
+    }
+    let mut parsed = reqwest::Url::parse(&endpoint).ok()?;
+    let suffix = "/chat/completions";
+    let path = parsed.path();
+    let base_path = path
+        .get(..path.len().checked_sub(suffix.len())?)
+        .filter(|_| path.to_ascii_lowercase().ends_with(suffix))?
+        .to_owned();
+    parsed.set_path(if base_path.is_empty() {
+        "/"
+    } else {
+        &base_path
+    });
+    Some(parsed.to_string().trim_end_matches('/').to_owned())
+}
+
+/// Prefer WorkBuddy's explicit model slot fields. Its `id` is a model name,
+/// but unrelated account ids must never be treated as models.
+fn account_openai_model(account: &crate::models::Account) -> Option<String> {
+    let credentials = &account.credentials;
+    let extra = &account.extra;
+    let usable = |value: &Value| {
+        value
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+    };
+    for blob in [credentials, extra] {
+        for key in ["model_id", "modelId"] {
+            if let Some(model) = blob.get(key).and_then(usable) {
+                return Some(model);
+            }
+        }
+    }
+    if account.agent_id == crate::models::AgentId::WorkBuddy {
+        if let Some(model) = credentials.get("id").and_then(usable) {
+            return Some(model);
+        }
+        if let Some(model) = credentials.pointer("/catalog_row/id").and_then(usable) {
+            return Some(model);
+        }
+    }
+    crate::services::adapter_route_constants::openai_compat_pinned_model(credentials)
+        .or_else(|| crate::services::adapter_route_constants::openai_compat_pinned_model(extra))
 }

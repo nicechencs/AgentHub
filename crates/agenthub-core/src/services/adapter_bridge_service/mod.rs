@@ -1169,7 +1169,7 @@ impl AdapterBridgeService {
             port,
             token,
             BridgeUpstreamConfig {
-                base_url: url,
+                base_url: url.clone(),
                 model: {
                     let model = model.trim();
                     if model.is_empty() {
@@ -1193,45 +1193,71 @@ impl AdapterBridgeService {
             ),
         )
         .with_pair_adapter_flags(flags.0, flags.1);
+        // The v1 host has one upstream URL per listener. Never put a login
+        // for a different endpoint into its picker: v1 would send that login's
+        // key to the lead endpoint. The indexed host routes each member to its
+        // own endpoint; the legacy host deliberately keeps only same-endpoint
+        // members until it is upgraded.
         let member_specs = members
             .iter()
-            .map(|member| {
-                let is_lead =
-                    member.source_kind == lead.source_kind && member.source_id == lead.source_id;
-                let member_auth = if is_lead {
-                    auth.clone()
-                } else {
-                    rule.and_then(|rule| {
-                        self.resolve_member_auth(
-                            rule.rule_id,
-                            member.source_kind,
-                            &member.source_id,
-                        )
-                        .ok()
-                    })
+            .filter_map(|member| {
+                let member_product = self
+                    .routes
+                    .classify_source_product(member.source_kind, &member.source_id)
+                    .unwrap_or(AdapterSourceProduct::Other);
+                let member_rule = rule_for_member_product(member_product, pool.target_agent_id)?;
+                let (member_url, _, _, member_protocol, _) = prepare::openai_source_upstream(
+                    self,
+                    &member_rule,
+                    member.source_kind,
+                    &member.source_id,
+                );
+                if !same_upstream_endpoint(&url, protocol, &member_url, member_protocol) {
+                    tracing::warn!(
+                        target: "core.adapter",
+                        pool_id = %pool.id,
+                        source_id = %member.source_id,
+                        "skipping a different upstream endpoint in legacy pool listener"
+                    );
+                    return None;
+                }
+                let member_auth = self
+                    .resolve_member_auth(member_rule.rule_id, member.source_kind, &member.source_id)
+                    .ok()
                     .filter(|item| item.has_token())
-                    .unwrap_or_else(|| ResolvedAuth::bearer(""))
-                };
+                    .unwrap_or_else(|| ResolvedAuth::bearer(""));
                 let health = if member_auth.has_token() {
                     MemberHealth::Renewable
                 } else {
                     MemberHealth::NeedsLogin
                 };
-                BridgeMemberSpec {
+                Some(BridgeMemberSpec {
                     ticket_id: ticket_id(member.source_kind, &member.source_id),
                     source_kind: member.source_kind.as_str().to_owned(),
                     source_id: member.source_id.clone(),
-                    label: member.source_id.clone(),
+                    label: self.member_display_label(member),
                     auth: member_auth,
                     reload: None,
                     health,
                     priority: member.priority,
                     position: member.position,
-                }
+                })
             })
             .collect();
         spec = spec.with_members(member_specs);
         spec
+    }
+
+    fn member_display_label(&self, member: &RouteMember) -> String {
+        if member.source_kind == AdapterSourceKind::Account {
+            if let Ok(Some(account)) = self.secrets.accounts.get_by_id(&member.source_id) {
+                let label = account.label.trim();
+                if !label.is_empty() {
+                    return label.to_owned();
+                }
+            }
+        }
+        member.source_id.clone()
     }
 
     fn route_index_for_material(
@@ -1351,6 +1377,16 @@ impl AdapterBridgeService {
             snapshot_ok: true,
         }
     }
+}
+
+fn same_upstream_endpoint(
+    left_url: &str,
+    left_protocol: BridgeUpstreamProtocol,
+    right_url: &str,
+    right_protocol: BridgeUpstreamProtocol,
+) -> bool {
+    left_protocol == right_protocol
+        && left_url.trim_end_matches('/').eq_ignore_ascii_case(right_url.trim_end_matches('/'))
 }
 
 fn validate_route_pool_profile(

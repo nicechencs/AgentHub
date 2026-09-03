@@ -26,6 +26,10 @@ import {
   summarizeActivityTrace,
 } from './activity-trace-summary-model';
 
+function keyHint(last4?: string | null): string {
+  return last4?.trim() ? `••••${last4.trim()}` : '—';
+}
+
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-meta">
@@ -96,12 +100,21 @@ export function ActivityTraceDetailPanel({
               brandAgentId={localBrand}
             />
           </Field>
+          <Field label={t('routes.activity.localKey')}>
+            <span className="font-mono">{keyHint(row.localAuth.keyLast4)}</span>
+          </Field>
+          <Field label={t('routes.activity.selectedLogin')}>
+            {row.pool.selectedMember?.label || <span className="text-muted">—</span>}
+          </Field>
           <Field label={t('routes.activity.outboundEndpoint')}>
             {outbound ? (
               <AbsoluteRouteEndpointUrl url={outbound} brandAgentId={upstreamBrand} />
             ) : (
               <span className="text-muted">—</span>
             )}
+          </Field>
+          <Field label={t('routes.activity.upstreamKey')}>
+            <span className="font-mono">{keyHint(row.upstream.member?.keyLast4 ?? row.pool.selectedMember?.keyLast4)}</span>
           </Field>
           <Field label={t('routes.activity.conversion')}>
             {conversion || <span className="text-muted">—</span>}
