@@ -272,10 +272,9 @@ export function Sidebar() {
     cn(
       'group flex h-8 w-full items-center rounded-btn text-sm transition-colors duration-150',
       collapsed ? 'justify-center' : 'gap-2.5 px-2.5',
-      // 一级导航用轻量主色底，和路由区二级导航保持层级差异。
       isActive
-        ? 'bg-accent/10 font-medium text-primary [&_svg]:text-accent'
-        : 'text-secondary hover:bg-hover/70 hover:text-primary',
+        ? 'bg-active font-medium text-primary [&_svg]:text-accent'
+        : 'text-secondary hover:bg-hover hover:text-primary',
     );
 
   const { stored: agentCatalogOrder } = useStoredIdOrder(StorageKey.agentsCatalogOrder);

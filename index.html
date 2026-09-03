@@ -18,6 +18,8 @@
           document.documentElement.classList.toggle('light', !dark);
           var accent = localStorage.getItem('agenthub:accent') || 'indigo';
           document.documentElement.setAttribute('data-accent', accent);
+          var canvas = localStorage.getItem('agenthub:canvas') || 'gray';
+          document.documentElement.setAttribute('data-canvas', canvas);
         } catch (e) {
           document.documentElement.classList.add('light');
         }

@@ -9,6 +9,7 @@
  * Consumers:
  * - CSS / Tailwind → `var(--…)` (see `tailwind.config.ts`)
  * - Product accent → `--accent` from `ACCENT_PALETTES` + `html[data-accent]`
+ * - Page background → `--bg-canvas` / `--bg-subtle` from `CANVAS_PALETTES` + `html[data-canvas]` (light theme only)
  * - TS that needs hex (contrast, charts) → `agentHex()` / `THEME`
  * - Agent meta, dots, logos, endpoint paths → `agentCssVar(id)`
  *   (surfaces pick an Agent id; they do not copy hex)
@@ -37,6 +38,29 @@ export const ACCENT_IDS = Object.keys(ACCENT_PALETTES) as AccentId[];
 
 export function isAccentId(value: string): value is AccentId {
   return (ACCENT_IDS as readonly string[]).includes(value);
+}
+
+/**
+ * Light page backgrounds. Never used as a dark-theme override.
+ * `canvas` is the page; `subtle` is a slightly deeper strip of the same tint.
+ */
+export const CANVAS_PALETTES = {
+  gray: { canvas: '#f3f3f5', subtle: '#ececef' },
+  white: { canvas: '#fafafa', subtle: '#f0f0f0' },
+  paper: { canvas: '#f6f3ee', subtle: '#eee8e0' },
+  mist: { canvas: '#eef2f6', subtle: '#e4eaf0' },
+  sky: { canvas: '#eef5fb', subtle: '#e3eef8' },
+  mint: { canvas: '#eef8f3', subtle: '#e1f0e8' },
+  sand: { canvas: '#f6f0e6', subtle: '#eee6d8' },
+  lilac: { canvas: '#f4f1f8', subtle: '#ebe6f2' },
+} as const;
+
+export type CanvasId = keyof typeof CANVAS_PALETTES;
+export const DEFAULT_CANVAS_ID = 'gray' as const satisfies CanvasId;
+export const CANVAS_IDS = Object.keys(CANVAS_PALETTES) as CanvasId[];
+
+export function isCanvasId(value: string): value is CanvasId {
+  return (CANVAS_IDS as readonly string[]).includes(value);
 }
 
 /**
@@ -303,6 +327,19 @@ export function buildAccentOverrideCss(): string {
   ]).join('\n');
 }
 
+/** `[data-canvas]` overrides page gray in light theme only. */
+export function buildCanvasOverrideCss(): string {
+  return CANVAS_IDS.flatMap((id) => {
+    const swatch = CANVAS_PALETTES[id];
+    return [
+      `:root[data-canvas="${id}"] {`,
+      `  --bg-canvas: ${swatch.canvas};`,
+      `  --bg-subtle: ${swatch.subtle};`,
+      '}',
+    ];
+  }).join('\n');
+}
+
 /** Full design-token CSS for the app bundle (`:root` + `.dark`). */
 export function buildDesignTokensCss(): string {
   return [
@@ -316,6 +353,8 @@ export function buildDesignTokensCss(): string {
     '}',
     '',
     buildAccentOverrideCss(),
+    '',
+    buildCanvasOverrideCss(),
     '',
   ].join('\n');
 }
@@ -359,5 +398,6 @@ export function buildBootCriticalCss(): string {
     cssDecls(darkLines),
     '}',
     buildAccentOverrideCss(),
+    buildCanvasOverrideCss(),
   ].join('\n');
 }
