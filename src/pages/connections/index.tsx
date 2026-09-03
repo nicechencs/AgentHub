@@ -36,6 +36,7 @@ import {
   useConnectionInventory,
   useTicketWallet,
 } from '@/app/runtime';
+import { isAuthorizationManagementBlocked } from '@/lib/capability';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import {
   oauthListAction,
@@ -126,6 +127,7 @@ export default function ConnectionsPage() {
   const { t } = useI18n();
   const {
     installedIds,
+    installedAgents,
     visibleIds,
     omittedIds,
     loading,
@@ -141,9 +143,24 @@ export default function ConnectionsPage() {
   const [apiKeyDraft, setApiKeyDraft] = useState<ConnectApiKeyDraft | null>(null);
 
   const allowedAgents = installedIds.length > 0 || !loading ? installedIds : visibleIds;
-  const oauthLoginAgents = useOAuthLoginAgents(allowedAgents);
-  const omittedSet = useMemo(() => new Set(omittedIds), [omittedIds]);
-  const highlightAgentId = parseAgentParam(searchParams.get('agent'), allowedAgents);
+  const authBlockedIds = useMemo(
+    () => allowedAgents.filter((id) => {
+      const caps = installedAgents.find((agent) => agent.id === id)?.capabilities;
+      return isAuthorizationManagementBlocked(id, caps);
+    }),
+    [allowedAgents, installedAgents],
+  );
+  const authBlockedSet = useMemo(() => new Set(authBlockedIds), [authBlockedIds]);
+  const manageAuthAgentIds = useMemo(
+    () => allowedAgents.filter((id) => !authBlockedSet.has(id)),
+    [allowedAgents, authBlockedSet],
+  );
+  const oauthLoginAgents = useOAuthLoginAgents(manageAuthAgentIds);
+  const omittedSet = useMemo(
+    () => new Set([...omittedIds, ...authBlockedIds]),
+    [omittedIds, authBlockedIds],
+  );
+  const highlightAgentId = parseAgentParam(searchParams.get('agent'), manageAuthAgentIds);
   const resumeAgentId = parseResumeAgentId(searchParams.get('resume'), allowedAgents);
   const [filterAgent, setFilterAgent] = useState<AgentTabId>(highlightAgentId ?? 'all');
   const [refreshingTicketId, setRefreshingTicketId] = useState<string | null>(null);
@@ -198,10 +215,16 @@ export default function ConnectionsPage() {
 
   useEffect(() => {
     if (filterAgent === 'all' || loading) return;
-    if (!installedIds.includes(filterAgent)) {
+    if (!installedIds.includes(filterAgent) || authBlockedSet.has(filterAgent)) {
       setFilterAgent('all');
     }
-  }, [filterAgent, installedIds, loading]);
+  }, [authBlockedSet, filterAgent, installedIds, loading]);
+
+  useEffect(() => {
+    if (!authBlockedSet.has(addAgentId)) return;
+    const next = manageAuthAgentIds[0];
+    if (next) setAddAgentId(next);
+  }, [addAgentId, authBlockedSet, manageAuthAgentIds]);
 
   const discoveryAgentId: AgentKey = filterAgent === 'all' ? addAgentId : filterAgent;
 
@@ -757,6 +780,8 @@ export default function ConnectionsPage() {
           value={filterAgent}
           onChange={setFilterAgent}
           agents={tabAgents}
+          disabled={authBlockedIds}
+          disabledReason={t('connections.capability.authUnsupported')}
           counts={agentCounts}
           countMode="defined"
           countTitle={(id, n) =>
@@ -769,7 +794,7 @@ export default function ConnectionsPage() {
         />
         <div className={pageRhythm.chromeActions}>
           <TicketAddMenu
-            agents={buildTicketAddMenu(allowedAgents, oauthLoginAgents)}
+            agents={buildTicketAddMenu(manageAuthAgentIds, oauthLoginAgents)}
             focusedAgentId={filterAgent === 'all' ? null : filterAgent}
             onImportLogin={(id) => openTicketAdd('import-login', id)}
             onOauth={(id) => openTicketAdd('oauth', id)}
@@ -846,7 +871,7 @@ export default function ConnectionsPage() {
             onShowDetail={handleShowDetail}
             activeTicketId={inspectActiveTicketId(inspectTarget)}
             onClearAgentFilter={() => setFilterAgent('all')}
-            installedAgentIds={allowedAgents}
+            installedAgentIds={manageAuthAgentIds}
             oauthLoginAgents={oauthLoginAgents}
             onAddKey={(id) => openTicketAdd('api-key', id)}
             onImportLogin={(id) => openTicketAdd('import-login', id)}

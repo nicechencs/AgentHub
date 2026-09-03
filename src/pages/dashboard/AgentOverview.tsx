@@ -67,8 +67,10 @@ export function AgentOverview({
       ) : (
         <div className={AGENT_OVERVIEW_GRID}>
           {cards.map(({ meta, view }) => {
+            const interactive = view.action.kind !== 'none';
             const go = () => {
               const next = resolveAgentCardInteraction(view.action, meta.id, onConnectRequest);
+              if (next.type === 'none') return;
               if (next.type === 'connect') {
                 onConnectRequest?.(next.agentId);
                 return;
@@ -78,18 +80,21 @@ export function AgentOverview({
             return (
               <Card
                 key={meta.id}
-                role="button"
-                tabIndex={0}
+                role={interactive ? 'button' : undefined}
+                tabIndex={interactive ? 0 : undefined}
                 aria-label={view.ariaLabel}
-                onClick={go}
-                onKeyDown={(e) => {
+                aria-disabled={interactive ? undefined : true}
+                onClick={interactive ? go : undefined}
+                onKeyDown={interactive ? (e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
                     go();
                   }
-                }}
+                } : undefined}
                 className={cn(
-                  'cursor-pointer p-3 transition-colors hover:border-accent/40 hover:bg-hover/40',
+                  'p-3',
+                  interactive && 'cursor-pointer transition-colors hover:border-accent/40 hover:bg-hover/40',
+                  !interactive && 'cursor-default opacity-70',
                   view.missing && 'opacity-70',
                   view.envMissing && 'border-warning/40',
                 )}

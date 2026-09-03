@@ -1498,6 +1498,8 @@ export const en = {
       ariaMissing: "{name}, not installed, click to install",
       ariaInstalled: "{name}, {version}, {auth}, {hint} {effective}, click to manage connection",
       ariaBinding: ", currently using {label} ({route})",
+      authUnsupported: "Can't manage authorization here",
+      ariaAuthUnsupported: "{name}, {version}, can't manage authorization here",
     },
     alerts: {
       authExpired: "{name} login has expired; the connection may be unavailable",
@@ -1556,6 +1558,7 @@ export const en = {
     healConflict: "Local settings do not match the current login",
     capability: {
       configWriteUnsupported: "This agent does not support config writes",
+      authUnsupported: "Can't manage authorization here",
     },
     pi: {
       xaiCustomLabel: "xAI (custom)",
