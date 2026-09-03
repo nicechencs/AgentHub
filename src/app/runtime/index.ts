@@ -37,21 +37,12 @@ export {
   notifyConnectionInventoryChanged,
   providersForAgent,
   subscribeConnectionInventory,
-  // Deprecated N-03 aliases — prefer ConnectionInventory* names above.
-  beginConnectionPoolMutation,
-  endConnectionPoolMutation,
-  getConnectionPoolSnapshot,
-  loadConnectionPool,
-  notifyConnectionPoolChanged,
-  subscribeConnectionPool,
 } from './connection-inventory-store';
 export type {
   ConnectionInventoryLoadState,
   ConnectionInventorySnapshot,
-  ConnectionPoolLoadState,
-  ConnectionPoolSnapshot,
 } from './connection-inventory-store';
-export { useConnectionInventory, useConnectionPool } from './ConnectionInventoryProvider';
+export { useConnectionInventory } from './ConnectionInventoryProvider';
 
 export {
   getTicketWalletSnapshot,

@@ -99,15 +99,6 @@ export async function applySkillProjection(
   return getBackend().skill.applySkillProjection(skillId, agentId, mode);
 }
 
-/** @deprecated Prefer {@link applySkillProjection}. */
-export async function projectSkill(
-  skillId: string,
-  agentId: AgentKey,
-  mode: 'link' | 'copy' = 'link',
-): Promise<SkillProjectionResultDto> {
-  return applySkillProjection(skillId, agentId, mode);
-}
-
 export async function searchSkillMarket(query = ''): Promise<SkillListingDto[]> {
   return getBackend().skill.searchSkillMarket(query);
 }

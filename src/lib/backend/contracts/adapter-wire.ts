@@ -720,11 +720,6 @@ export function mapLocalGatewayStatus(wire: LocalGatewayStatusWire): import('./a
   };
 }
 
-/** @deprecated Prefer {@link LocalGatewayStatusWire}. */
-export type LocalEntryStatusWire = LocalGatewayStatusWire;
-/** @deprecated Prefer {@link mapLocalGatewayStatus}. */
-export const mapLocalEntryStatus = mapLocalGatewayStatus;
-
 export interface LocalTokenRecordWire {
   poolId: string;
   token: string;

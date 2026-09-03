@@ -123,14 +123,6 @@ export function createMockProjectPort(): ProjectPort {
       return n;
     },
 
-    async deleteAgentProject(id) {
-      return this.deleteAgentSession(id);
-    },
-
-    async deleteAgentProjects(ids) {
-      return this.deleteAgentSessions(ids);
-    },
-
     async getAgentProjectExcerpts(ids) {
       await delay(100);
       return mockSessions

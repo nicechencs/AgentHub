@@ -24,6 +24,3 @@ export function useConnectionInventory(): ConnectionInventorySnapshot & {
   }, []);
   return { ...snapshot, reload, ensureLoaded };
 }
-
-/** @deprecated Use useConnectionInventory */
-export const useConnectionPool = useConnectionInventory;

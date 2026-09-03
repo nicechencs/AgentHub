@@ -309,34 +309,3 @@ export function notifyConnectionInventoryChanged(
   }
   return loadConnectionInventory(backend, { force: true });
 }
-
-// ---------------------------------------------------------------------------
-// Deprecated aliases (N-03) — prefer ConnectionInventory* names above.
-// ---------------------------------------------------------------------------
-
-/** @deprecated Use ConnectionInventoryLoadState */
-export type ConnectionPoolLoadState = ConnectionInventoryLoadState;
-
-/** @deprecated Use ConnectionInventorySnapshot */
-export type ConnectionPoolSnapshot = ConnectionInventorySnapshot;
-
-/** @deprecated Use getConnectionInventorySnapshot */
-export const getConnectionPoolSnapshot = getConnectionInventorySnapshot;
-
-/** @deprecated Use subscribeConnectionInventory */
-export const subscribeConnectionPool = subscribeConnectionInventory;
-
-/** @deprecated Use resetConnectionInventoryStore */
-export const resetConnectionPoolStore = resetConnectionInventoryStore;
-
-/** @deprecated Use beginConnectionInventoryMutation */
-export const beginConnectionPoolMutation = beginConnectionInventoryMutation;
-
-/** @deprecated Use endConnectionInventoryMutation */
-export const endConnectionPoolMutation = endConnectionInventoryMutation;
-
-/** @deprecated Use loadConnectionInventory */
-export const loadConnectionPool = loadConnectionInventory;
-
-/** @deprecated Use notifyConnectionInventoryChanged */
-export const notifyConnectionPoolChanged = notifyConnectionInventoryChanged;

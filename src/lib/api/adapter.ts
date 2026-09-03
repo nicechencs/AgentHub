@@ -217,21 +217,6 @@ export async function getLocalGatewayStatus() {
   return getBackend().adapter.getLocalGatewayStatus();
 }
 
-/** @deprecated Prefer {@link startLocalGateway}. */
-export async function startLocalEntry() {
-  return startLocalGateway();
-}
-
-/** @deprecated Prefer {@link stopLocalGateway}. */
-export async function stopLocalEntry() {
-  return stopLocalGateway();
-}
-
-/** @deprecated Prefer {@link getLocalGatewayStatus}. */
-export async function getLocalEntryStatus() {
-  return getLocalGatewayStatus();
-}
-
 /** Stops the bridge listener without deleting its generated Connection. */
 export async function stopAdapterBridge(profileId: string): Promise<AdapterBridgeRuntimeStatus> {
   return getBackend().adapter.stopBridge(profileId);
