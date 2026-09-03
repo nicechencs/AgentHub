@@ -1561,8 +1561,16 @@ pub(crate) fn list_cursor_projects(home: &Path) -> Result<Vec<AgentProject>> {
             size_bytes
         };
         let decoded = cursor_actual_path(&name);
-        let actual = decoded.as_ref().filter(|p| Path::new(p).exists()).cloned();
-        let title = title_from_actual(decoded.as_deref(), &name);
+        let mut actual = decoded.as_ref().filter(|p| Path::new(p).exists()).cloned();
+        if actual.is_none() {
+            if let Some(path) = newest_primary.as_deref() {
+                let text = read_head(path, LIST_HEAD_BYTES).unwrap_or_default();
+                actual = extract_cwd_from_text(AgentId::Cursor, &text)
+                    .filter(|c| !c.is_empty() && Path::new(c).exists());
+            }
+        }
+        actual = native_existing_path(actual);
+        let title = title_from_actual(actual.as_deref().or(decoded.as_deref()), &name);
         let preview = newest_primary.as_deref().and_then(|p| scan_preview(p).0);
         out.push(cheap_project(
             AgentId::Cursor,
