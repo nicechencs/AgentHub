@@ -23,13 +23,7 @@ export interface AgentStatusView {
   };
   effectiveConnection: {
     kind: UnsetOr<EffectiveConnectionKind>;
-    /** Prefer this over currentProvider for display. */
     label: UnsetOr<string>;
-    /**
-     * @deprecated Compat projection of AgentStatus.currentProvider.
-     * Readers should use `label` (from effectiveLabel).
-     */
-    currentProvider: UnsetOr<string>;
   };
   env: {
     ready: UnknownOr<boolean>;
@@ -51,7 +45,6 @@ export function sliceAgentStatus(status: Partial<AgentStatus>): AgentStatusView 
     effectiveConnection: {
       kind: optionalKind(status.effectiveKind),
       label: optionalString(status.effectiveLabel),
-      currentProvider: optionalString(status.currentProvider),
     },
     env: {
       ready: optionalEnvReady(status.envReady),

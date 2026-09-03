@@ -23,7 +23,6 @@ describe('sliceAgentStatus', () => {
     expect(view.liveAuth.revision).toBe('unset');
     expect(view.effectiveConnection.kind).toBe('unset');
     expect(view.effectiveConnection.label).toBe('unset');
-    expect(view.effectiveConnection.currentProvider).toBe('unset');
     expect(view.env.ready).toBe('unknown');
     expect(view.env.missing).toBe('unset');
     expect(view.capabilities).toBe('unknown');
@@ -40,6 +39,9 @@ describe('sliceAgentStatus', () => {
 
   it('keeps written none/empty as facts, not omissions', () => {
     expect(sliceAgentStatus(row({ effectiveKind: 'none' })).effectiveConnection.kind).toBe('none');
+    expect(
+      sliceAgentStatus(row({ effectiveLabel: 'me@example.com' })).effectiveConnection.label,
+    ).toBe('me@example.com');
     expect(sliceAgentStatus(row({ capabilities: {} })).capabilities).toEqual({});
     expect(sliceAgentStatus(row({ envReady: true })).env.ready).toBe(true);
     expect(sliceAgentStatus(row({ envReady: false })).env.ready).toBe(false);

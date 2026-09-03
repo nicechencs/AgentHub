@@ -244,7 +244,6 @@ export function applyEffectiveConnection(
       ...status,
       effectiveKind: 'none',
       effectiveLabel: undefined,
-      currentProvider: undefined,
       authStatus: 'none',
       authLabel: '未配置',
       authHealth: 'missing',
@@ -262,9 +261,6 @@ export function applyEffectiveConnection(
     ...status,
     effectiveKind: eff.kind,
     effectiveLabel: eff.label,
-    // Compat only: mirrors effectiveLabel so old AgentStatus.currentProvider
-    // readers keep working. New readers must use effectiveLabel / effectiveKind.
-    currentProvider: eff.kind === 'none' ? undefined : eff.label,
     authStatus: liveDisplay?.legacyStatus ?? eff.authStatus,
     authLabel: liveDisplay?.label ?? eff.authLabel,
     authHealth: liveDisplay?.health ?? eff.authHealth,
