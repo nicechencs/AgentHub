@@ -7,7 +7,16 @@ import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { Hint } from '@/components/ui/tooltip';
 import { Switch } from '@/components/ui/switch';
-import { ensureSourceModelCatalog } from '@/lib/api/adapter';
+import { useToast } from '@/components/ui/toast';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { ensureSourceModelCatalog, setSourceCustomModels } from '@/lib/api/adapter';
 import type { AccountAction } from '@/lib/backend/contracts/account-actions';
 import type { SourceModelCatalog } from '@/lib/backend/contracts/adapter';
 import { connectionKindLabel } from '@/lib/connection-kind';
@@ -21,6 +30,11 @@ import {
 } from '@/pages/routes/shared/route-pool-view-model';
 import { ApiAccessForm } from './ApiAccessDialog';
 import type { PoolApiEditTarget } from './api-access-model';
+import { OauthLoginEditForm } from './OauthLoginEditForm';
+import {
+  poolAuthorizationOauthEditable,
+  type SaveOauthPoolLoginResult,
+} from './pool-authorization-edit';
 import { PoolEndpointTypeLine } from './PoolEndpointTypeLine';
 import { PoolLoginMark } from './PoolLoginMark';
 import {
@@ -56,10 +70,11 @@ export function PoolAuthorizationDetail({
   onEnabledChange?: (enabled: boolean) => void;
   onRefresh?: () => void;
   onDelete: () => void;
-  onSaved?: () => void;
+  onSaved?: (nextKey?: string) => void;
   onClose: () => void;
 }) {
   const { t } = useI18n();
+  const { toast } = useToast();
   const status = poolAuthorizationStatusView(item, t);
   const rows = poolAuthorizationDetailRows(item, t);
   const endpointKinds = poolAuthorizationEndpointKinds(item);
@@ -67,15 +82,29 @@ export function PoolAuthorizationDetail({
   const displayTitle = poolAuthorizationLoginLabel(item);
   const hasQuota = hasQuotaWindow(item.quota7dPct) || hasQuotaWindow(item.quota5hPct);
   const canEditKey = Boolean(editTarget?.provider.id) && item.kind === 'apikey';
-  const editLabel = canEditKey ? t('connections.list.editKey') : null;
+  const canEditOauth = poolAuthorizationOauthEditable(item);
+  const editLabel = canEditKey
+    ? t('connections.list.editKey')
+    : canEditOauth
+      ? t('routes.pool.page.editLogin')
+      : null;
   const refreshLabels = oauthAction ? poolAuthorizationRefreshLabels(oauthAction, t) : null;
   const [editing, setEditing] = useState(false);
   const [catalog, setCatalog] = useState<SourceModelCatalog | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogFailed, setCatalogFailed] = useState(false);
+  const [syncPrompt, setSyncPrompt] = useState<SaveOauthPoolLoginResult | null>(null);
+  const [syncBusy, setSyncBusy] = useState(false);
+
+  const finishOauthSave = (result: SaveOauthPoolLoginResult) => {
+    setSyncPrompt(null);
+    setEditing(false);
+    onSaved?.(result.copied ? `${result.sourceKind}:${result.sourceId}` : undefined);
+  };
 
   useEffect(() => {
     setEditing(false);
+    setSyncPrompt(null);
   }, [item.key]);
 
   useEffect(() => {
@@ -100,8 +129,11 @@ export function PoolAuthorizationDetail({
   }, [item.sourceKind, item.sourceId]);
 
   return (
+    <>
     <SideInspectPanel
-      title={editing ? t('routes.pool.page.apiDialogEditTitle') : t('routes.pool.detail.title')}
+      title={editing
+        ? (canEditOauth ? t('routes.pool.page.editLoginTitle') : t('routes.pool.page.apiDialogEditTitle'))
+        : t('routes.pool.detail.title')}
       description={displayTitle}
       onClose={onClose}
       width={width}
@@ -133,7 +165,20 @@ export function PoolAuthorizationDetail({
         </>
       )}
     >
-      {editing && editTarget ? (
+      {editing && canEditOauth ? (
+        <OauthLoginEditForm
+          item={item}
+          catalog={catalog}
+          onCancel={() => setEditing(false)}
+          onSaved={(result) => {
+            if (result.copied) {
+              setSyncPrompt(result);
+              return;
+            }
+            finishOauthSave(result);
+          }}
+        />
+      ) : editing && editTarget ? (
         <ApiAccessForm
           layout="inline"
           agents={agents}
@@ -233,5 +278,52 @@ export function PoolAuthorizationDetail({
       </div>
       )}
     </SideInspectPanel>
+    <Dialog open={Boolean(syncPrompt)}>
+      <DialogContent className="max-w-sm" hideClose>
+        <DialogHeader>
+          <DialogTitle>{t('routes.pool.page.syncToConnectionsTitle')}</DialogTitle>
+          <DialogDescription>{t('routes.pool.page.syncToConnectionsDescription')}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={syncBusy}
+            onClick={() => {
+              if (syncPrompt) finishOauthSave(syncPrompt);
+            }}
+          >
+            {t('routes.pool.page.syncToConnectionsSkip')}
+          </Button>
+          <Button
+            type="button"
+            disabled={syncBusy}
+            onClick={() => {
+              if (!syncPrompt) return;
+              setSyncBusy(true);
+              void setSourceCustomModels(
+                syncPrompt.sourceKind,
+                syncPrompt.originalSourceId,
+                syncPrompt.models,
+              )
+                .catch((error) => {
+                  toast({
+                    title: t('routes.pool.page.syncToConnectionsFailed'),
+                    description: error instanceof Error ? error.message : String(error),
+                    variant: 'danger',
+                  });
+                })
+                .finally(() => {
+                  setSyncBusy(false);
+                  finishOauthSave(syncPrompt);
+                });
+            }}
+          >
+            {t('routes.pool.page.syncToConnectionsConfirm')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

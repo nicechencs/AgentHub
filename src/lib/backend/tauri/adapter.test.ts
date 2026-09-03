@@ -298,6 +298,26 @@ describe('Tauri adapter route port', () => {
     expect(JSON.stringify(attached)).not.toContain('hubToken');
   });
 
+  it('forwards fork_connection_authorization', async () => {
+    invokeMock.mockResolvedValueOnce({
+      sourceKind: 'account',
+      sourceId: 'grok-copy',
+      originalSourceId: 'grok-1',
+      copied: true,
+    });
+    const port = createTauriAdapterPort();
+    await expect(port.forkConnectionAuthorization('account', 'grok-1')).resolves.toEqual({
+      sourceKind: 'account',
+      sourceId: 'grok-copy',
+      originalSourceId: 'grok-1',
+      copied: true,
+    });
+    expect(invokeMock).toHaveBeenCalledWith('fork_connection_authorization', {
+      sourceKind: 'account',
+      sourceId: 'grok-1',
+    });
+  });
+
   it('forwards set_route_authorization_enabled', async () => {
     invokeMock.mockResolvedValueOnce(1);
     const port = createTauriAdapterPort();

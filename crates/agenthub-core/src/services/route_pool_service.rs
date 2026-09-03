@@ -17,9 +17,10 @@ use crate::logging::targets;
 use crate::models::{
     authorization_is_route_pool_home, choose_default_pool_id, enroll_native_plan_is_open,
     feature_flag_enabled, generate_hub_token, list_local_bridge_models, product_flag_enabled,
-    set_authorization_route_pool_home, AdapterApplyPlan, AdapterProfile, AdapterProfileFilter,
+    set_authorization_route_pool_home, Account, AdapterApplyPlan, AdapterProfile, AdapterProfileFilter,
     AccountKind, AdapterRoute, AdapterRouteRequest, AdapterSourceKind, AdapterSourceProduct,
-    AgentId, ConnectionTrashKind, DefaultRoutePoolList, DefaultRoutePoolOverview, LocalTokenRecord,
+    AgentId, ConnectionTrashKind, DefaultRoutePoolList, DefaultRoutePoolOverview,
+    ForkedConnectionAuthorization, LocalTokenRecord,
     ModelRouteRule,
     RouteDownstreamDialect, RouteDownstreamSurface, RouteMember, RouteMemberOverview, RoutePool,
     RouteMembershipTrashMember, RouteMembershipTrashPayload, RouteSchedulePolicy,
@@ -496,6 +497,103 @@ impl RoutePoolService {
             return Err(error);
         }
         attached
+    }
+
+    /// Copy a Connections-managed official login into a pool-owned row, then
+    /// point default-pool membership at the copy. The Connections login stays.
+    pub fn fork_connection_authorization(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<ForkedConnectionAuthorization> {
+        self.require_enabled()?;
+        if source_kind != AdapterSourceKind::Account {
+            return Err(AppError::InvalidArg(
+                "only official logins can be copied for pool editing".into(),
+            ));
+        }
+        let account = self.accounts.get_by_id(source_id)?.ok_or_else(|| {
+            AppError::NotFound(format!("account not found: {source_id}"))
+        })?;
+        if account.kind != AccountKind::Oauth {
+            return Err(AppError::InvalidArg(
+                "only official logins can be copied for pool editing".into(),
+            ));
+        }
+        if authorization_is_route_pool_home(&account.extra) {
+            return Ok(ForkedConnectionAuthorization {
+                source_kind,
+                source_id: source_id.to_owned(),
+                original_source_id: source_id.to_owned(),
+                copied: false,
+            });
+        }
+
+        let mut members = Vec::new();
+        for pool in self.pools.list_pools(None, None)? {
+            if !pool.is_default {
+                continue;
+            }
+            for member in self.pools.list_members(&pool.id)? {
+                if member.source_kind == source_kind && member.source_id == source_id {
+                    members.push(member);
+                }
+            }
+        }
+        if members.is_empty() {
+            return Err(AppError::NotFound(format!(
+                "route authorization not found: {source_id}"
+            )));
+        }
+
+        let now = now();
+        let mut extra = account.extra.clone();
+        set_authorization_route_pool_home(&mut extra);
+        let copy = Account {
+            id: format!("{}-acc-{}", account.agent_id.as_str(), Uuid::new_v4()),
+            agent_id: account.agent_id,
+            kind: account.kind,
+            label: account.label.clone(),
+            credentials: account.credentials.clone(),
+            extra,
+            status: account.status.clone(),
+            is_current: false,
+            created_at: now.clone(),
+            updated_at: now,
+        };
+        let stored = self.accounts.create(&copy)?;
+        let attach = (|| -> Result<()> {
+            for member in &members {
+                let added = self.add_member(&member.route_pool_id, source_kind, &stored.id)?;
+                if added.enabled != member.enabled {
+                    self.set_member_enabled(&added.id, member.enabled)?;
+                }
+                if added.priority != member.priority {
+                    self.set_member_priority(&added.id, member.priority)?;
+                }
+                self.remove_member(&member.id)?;
+            }
+            Ok(())
+        })();
+        if let Err(error) = attach {
+            if let Err(cleanup) = self.accounts.delete(&stored.id) {
+                tracing::warn!(
+                    module = targets::ADAPTER,
+                    op = "fork_rollback",
+                    account_id = %stored.id,
+                    error_code = cleanup.code(),
+                    "failed to roll back copied official login after fork failure"
+                );
+            }
+            return Err(error);
+        }
+
+        Ok(ForkedConnectionAuthorization {
+            source_kind,
+            source_id: stored.id,
+            original_source_id: source_id.to_owned(),
+            copied: true,
+        })
     }
 
     /// Enroll existing Connections authorizations into the matching default

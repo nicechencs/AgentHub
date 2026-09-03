@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { applyPort, removePort, enrollPort, attachPort, syncPort, refreshRuntimeReadModels } = vi.hoisted(() => ({
+const { applyPort, removePort, enrollPort, attachPort, forkPort, syncPort, refreshRuntimeReadModels } = vi.hoisted(() => ({
   applyPort: vi.fn(),
   removePort: vi.fn(),
   enrollPort: vi.fn(),
   attachPort: vi.fn(),
+  forkPort: vi.fn(),
   syncPort: vi.fn(),
   refreshRuntimeReadModels: vi.fn(),
 }));
@@ -16,13 +17,14 @@ vi.mock('@/app/runtime', () => ({
       remove: removePort,
       enrollNativeToGateway: enrollPort,
       attachPoolOwnedAuthorization: attachPort,
+      forkConnectionAuthorization: forkPort,
       syncConnectionAuthorizations: syncPort,
     },
   }),
   refreshRuntimeReadModels,
 }));
 
-import { applyAdapter, attachPoolOwnedAuthorization, enrollNativeToGateway, removeAdapter, syncConnectionAuthorizations } from './adapter';
+import { applyAdapter, attachPoolOwnedAuthorization, enrollNativeToGateway, forkConnectionAuthorization, removeAdapter, syncConnectionAuthorizations } from './adapter';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -128,6 +130,23 @@ describe('adapter façade pool refresh', () => {
       targetAgentId: 'codex',
       surface: 'responses',
     })).resolves.toEqual({ id: 'pool-1', members: [] });
+    expectBindRefresh();
+  });
+
+  it('refreshes connection and ticket lists after copying an official login', async () => {
+    forkPort.mockResolvedValue({
+      sourceKind: 'account',
+      sourceId: 'grok-copy',
+      originalSourceId: 'grok-1',
+      copied: true,
+    });
+    refreshRuntimeReadModels.mockResolvedValue(undefined);
+    await expect(forkConnectionAuthorization('account', 'grok-1')).resolves.toEqual({
+      sourceKind: 'account',
+      sourceId: 'grok-copy',
+      originalSourceId: 'grok-1',
+      copied: true,
+    });
     expectBindRefresh();
   });
 

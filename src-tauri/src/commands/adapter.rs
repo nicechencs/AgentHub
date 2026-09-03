@@ -10,9 +10,9 @@ use agenthub_core::bridge::BridgeRuntimeHost;
 use agenthub_core::models::{
     ticket_id, AdapterApplyPlan, AdapterApplyResult, AdapterProfile, AdapterProfileFilter,
     AdapterProfileMode, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind,
-    AgentId, DefaultRoutePoolList, DefaultRoutePoolOverview, LocalTokenRecord,
-    RouteDownstreamSurface, SyncConnectionAuthorizationsResult, TicketBinding, TicketBindingRoute,
-    TicketPlanRequest, TicketWallet,
+    AgentId, DefaultRoutePoolList, DefaultRoutePoolOverview, ForkedConnectionAuthorization,
+    LocalTokenRecord, RouteDownstreamSurface, SyncConnectionAuthorizationsResult, TicketBinding,
+    TicketBindingRoute, TicketPlanRequest, TicketWallet,
 };
 use agenthub_core::utils::upstream_model_catalog::SourceModelCatalog;
 use agenthub_core::AgentHub;
@@ -618,6 +618,24 @@ pub async fn attach_pool_owned_authorization(
                 &source_id,
             )
             .map_err(|err| map_err_string("attach_pool_owned_authorization", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Copy a Connections-managed official login into a pool-owned row.
+#[tauri::command]
+pub async fn fork_connection_authorization(
+    state: State<'_, AppState>,
+    source_kind: String,
+    source_id: String,
+) -> Result<ForkedConnectionAuthorization, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        let source_kind = parse_source_kind(&source_kind)?;
+        hub.route_pools()
+            .fork_connection_authorization(source_kind, &source_id)
+            .map_err(|err| map_err_string("fork_connection_authorization", err))
     })
     .await
     .map_err(adapter_error_from_string)

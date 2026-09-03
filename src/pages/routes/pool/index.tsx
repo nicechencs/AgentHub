@@ -385,7 +385,10 @@ export default function RoutesPoolPage() {
           endpointKinds: authorizationItem.endpointKinds,
           priority: authorizationItem.priority,
         } : null}
-        onSaved={reloadAll}
+        onSaved={(nextKey) => {
+          reloadAll();
+          if (nextKey) inspect.open({ kind: 'authorization', key: nextKey });
+        }}
         onClose={() => inspect.close()}
       />
     ) : inspectTarget?.kind === 'write' && writeTarget ? (
