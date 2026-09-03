@@ -14,6 +14,7 @@ const LAYOUT_STORAGE_KEY = {
   projectsPreviewWidth: `${PREFIX}projects-preview-width`,
   pluginsPreviewWidth: `${PREFIX}plugins-preview-width`,
   agentsPreviewWidth: `${PREFIX}agents-preview-width`,
+  agentsColumnWidths: `${PREFIX}agents-column-widths`,
   mcpColumnWidths: `${PREFIX}mcp-column-widths`,
   connectionsInspectWidth: `${PREFIX}connections-inspect-width`,
   connectionsColumnWidths: `${PREFIX}connections-column-widths`,
@@ -53,6 +54,7 @@ export const StorageKey = {
   usageIntervalMigrated: `${PREFIX}usage-interval-migrated-v1`,
   connectionsTicketOrder: `${PREFIX}connections-ticket-order`,
   routesProfileOrder: `${PREFIX}routes-profile-order`,
+  routesPoolAuthorizationOrder: `${PREFIX}routes-pool-authorization-order`,
   agentsCatalogOrder: `${PREFIX}agents-catalog-order`,
   /** Last Projects tab; used to preload that agent's list on boot. */
   projectsLastAgent: `${PREFIX}projects-last-agent`,

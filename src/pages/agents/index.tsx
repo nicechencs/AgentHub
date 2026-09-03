@@ -11,9 +11,19 @@ import { EnvStatusBar } from '@/components/shared/EnvStatusBar';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { ListSkeleton } from '@/components/ui/skeleton';
+import {
+  ColumnResizeHandle,
+  Table,
+  TableBody,
+  TableHead,
+  TableHeader,
+  TableHeaderRow,
+  TableShell,
+  useColumnWidths,
+} from '@/components/ui/table';
 import { Tip } from '@/components/ui/tooltip';
 import { SortHandle } from '@/components/shared/SortHandle';
-import { useSortableDrag } from '@/components/shared/use-sortable-drag';
+import { SORTABLE_ID_ATTR, useSortableDrag } from '@/components/shared/use-sortable-drag';
 import { useStoredIdOrder } from '@/components/shared/use-stored-id-order';
 import { resolveAgentMeta } from '@/config/agents';
 import { applyStoredAgentOrder, sortAgentsForManagePage } from '@/lib/agent-visibility';
@@ -25,6 +35,14 @@ import { hasEnvIssues } from '@/lib/env';
 import type { AgentKey, AgentStatus, AgentUpdateInfo, RuntimeDetect, RuntimeId } from '@/lib/types';
 import { AgentCard } from './agent-card';
 import { AgentDetailPanel } from './AgentDetailPanel';
+import { cn } from '@/lib/utils';
+import {
+  AGENT_TABLE_COLUMN_SPECS,
+  AGENT_TABLE_FIXED_COLUMN_SPECS,
+  AGENT_TABLE_FLEX_COLUMN,
+  agentTableColumnLabel,
+  agentTableColumnSide,
+} from './agent-table';
 
 const AGENTS_PREVIEW_WIDTH_KEY = StorageKey.agentsPreviewWidth;
 
@@ -209,6 +227,10 @@ export default function AgentsPage() {
     agentOrder.seedIfEmpty(liveIds);
   }, [agentOrder.seedIfEmpty, liveIds]);
   const canReorder = liveIds.length > 1;
+  const { widths, onResizeStart, totalWidth } = useColumnWidths(
+    AGENT_TABLE_FIXED_COLUMN_SPECS,
+    StorageKey.agentsColumnWidths,
+  );
   const { onDragStartId, rowProps } = useSortableDrag((fromId, toId) => {
     agentOrder.moveInLive(liveIds, fromId, toId);
   });
@@ -303,12 +325,46 @@ export default function AgentsPage() {
           onAction={retry}
         />
       ) : (
-        <div className={pageRhythm.stackDense}>
+        <TableShell layout="split">
+          <Table className="w-full table-fixed" style={{ minWidth: totalWidth }}>
+            <colgroup>
+              {AGENT_TABLE_COLUMN_SPECS.map((spec) => (
+                <col
+                  key={spec.key}
+                  style={spec.key === AGENT_TABLE_FLEX_COLUMN ? undefined : { width: widths[spec.key] }}
+                />
+              ))}
+            </colgroup>
+            <TableHeader>
+              <TableHeaderRow>
+                {AGENT_TABLE_COLUMN_SPECS.map((spec) => {
+                  const label = agentTableColumnLabel(spec.key, t);
+                  const side = agentTableColumnSide(spec.key);
+                  return (
+                    <TableHead
+                      key={spec.key}
+                      className={cn('relative select-none', side === 'right' && 'text-right')}
+                      data-col={spec.key}
+                    >
+                      {label}
+                      {spec.key === AGENT_TABLE_FLEX_COLUMN ? null : (
+                        <ColumnResizeHandle
+                          columnKey={spec.key}
+                          label={label}
+                          onResizeStart={onResizeStart}
+                        />
+                      )}
+                    </TableHead>
+                  );
+                })}
+              </TableHeaderRow>
+            </TableHeader>
+            <TableBody>
           {orderedAgents.map((a) => {
             const sortable = rowProps(a.agentId);
             return (
-              <div key={a.agentId} {...sortable}>
                 <AgentCard
+                  key={a.agentId}
                   agent={a}
                   runtimes={runtimes}
                   selected={inspect.target === a.agentId}
@@ -316,6 +372,8 @@ export default function AgentsPage() {
                   onChanged={refreshAgents}
                   onEnvChanged={() => void refreshEnv()}
                   onRecheckUpdate={() => refreshAgentUpdate(a.agentId)}
+                  sortId={sortable[SORTABLE_ID_ATTR]}
+                  sortClassName={sortable.className}
                   sortHandle={canReorder ? (
                     <SortHandle
                       id={a.agentId}
@@ -325,10 +383,11 @@ export default function AgentsPage() {
                     />
                   ) : null}
                 />
-              </div>
             );
           })}
-        </div>
+            </TableBody>
+          </Table>
+        </TableShell>
       )}
     </WorkbenchSplitPage>
   );

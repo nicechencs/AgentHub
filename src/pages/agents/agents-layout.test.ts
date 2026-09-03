@@ -69,9 +69,11 @@ describe('agents layout wiring', () => {
     expect(page).toContain('runtimes={runtimes}');
     expect(card).toContain('onSelect?:');
     expect(card).toContain('selected?:');
-    expect(card).toContain('onOpen={onSelect}');
-    expect(card).toContain('ListRowBody');
-    expect(card).toContain('LIST_ROW_PAD');
+    expect(card).toContain('data-agent-name');
+    expect(card).not.toContain('onOpen={onSelect}');
+    expect(card).toContain('TableRow');
+    expect(card).not.toContain('ListRowBody');
+    expect(card).not.toContain('LIST_ROW_PAD');
     expect(card).toContain('size="sm"');
     expect(card).not.toContain('min-h-20');
     expect(card).toContain('uniqueInstallVersions');
@@ -81,7 +83,8 @@ describe('agents layout wiring', () => {
     expect(card).not.toContain("t('agents.detail.endpointTypes')");
     expect(card).not.toContain('formatAgentConversationEndpoints');
     expect(card).not.toContain('<Hint label={inst.location}');
-    expect(page).toContain('pageRhythm.stackDense');
+    expect(page).toContain('TableShell');
+    expect(page).not.toContain('pageRhythm.stackDense');
   });
 
   it('lets the uninstall type-to-confirm name copy with one click', () => {
@@ -105,7 +108,7 @@ describe('agents layout wiring', () => {
     expect(page).toContain('color={resolveAgentMeta(a.agentId).color}');
     const card = source('pages/agents/agent-card.tsx');
     expect(card).toContain('sortHandle?:');
-    expect(card).toContain('leading={sortHandle}');
+    expect(card).toContain('{sortHandle}');
   });
 
   it('applies the same remembered order on sidebar, dashboard, and installed lists', () => {

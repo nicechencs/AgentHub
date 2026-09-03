@@ -2409,6 +2409,17 @@ export const en = {
       installing: "Installing",
       upgrading: "Upgrading",
     },
+    table: {
+      agent: "Agent",
+      status: "Status",
+      version: "Version",
+      note: "Notes",
+      start: "Start",
+      upgrade: "Update",
+      hide: "Hide",
+      actions: "Actions",
+      installed: "Installed",
+    },
     detail: {
       installLocations: "Install locations",
       openFolder: "Folder",

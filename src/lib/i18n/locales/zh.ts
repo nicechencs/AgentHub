@@ -2399,6 +2399,17 @@ export const zh = {
       installing: "安装中",
       upgrading: "升级中",
     },
+    table: {
+      agent: "Agent",
+      status: "状态",
+      version: "版本",
+      note: "说明",
+      start: "启动",
+      upgrade: "更新",
+      hide: "隐藏",
+      actions: "操作",
+      installed: "已安装",
+    },
     detail: {
       installLocations: "安装位置",
       openFolder: "目录",
