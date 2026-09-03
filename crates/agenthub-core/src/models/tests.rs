@@ -38,10 +38,7 @@ fn agent_id_parse_as_str_roundtrip() {
 fn canonical_usage_model_merges_grok_build_alias() {
     assert_eq!(canonical_usage_model("grok-4.6-build"), "grok-4.6");
     assert_eq!(canonical_usage_model("grok-4.6"), "grok-4.6");
-    assert_eq!(
-        canonical_usage_model("[grok] grok-4.6-build"),
-        "grok-4.6"
-    );
+    assert_eq!(canonical_usage_model("[grok] grok-4.6-build"), "grok-4.6");
     assert_eq!(canonical_usage_model("xai/grok-4.6-build"), "grok-4.6");
     assert_eq!(canonical_usage_model("claude-opus-4"), "claude-opus-4");
     assert_eq!(canonical_usage_model("my-build"), "my-build");

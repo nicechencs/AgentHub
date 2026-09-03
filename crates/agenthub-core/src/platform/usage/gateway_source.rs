@@ -33,10 +33,7 @@ pub(crate) struct GatewaySpoolOutcome {
 }
 
 /// Ingest every `gateway-*.jsonl` spool file in `dir`, oldest first.
-pub(crate) fn ingest_spool_dir(
-    repo: &GatewayUsageRepo,
-    dir: &Path,
-) -> Result<GatewaySpoolOutcome> {
+pub(crate) fn ingest_spool_dir(repo: &GatewayUsageRepo, dir: &Path) -> Result<GatewaySpoolOutcome> {
     let mut outcome = GatewaySpoolOutcome::default();
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
@@ -74,10 +71,7 @@ pub(crate) fn ingest_spool_dir(
 
 /// Ingest one spool file from its stored cursor; returns
 /// (inserted, malformed, deleted).
-fn ingest_one_file(
-    repo: &GatewayUsageRepo,
-    path: &Path,
-) -> Result<(u64, u64, bool)> {
+fn ingest_one_file(repo: &GatewayUsageRepo, path: &Path) -> Result<(u64, u64, bool)> {
     let path_s = path.to_string_lossy().to_string();
     let meta = fs::metadata(path)?;
     let mtime = meta
@@ -143,13 +137,10 @@ fn ingest_one_file(
     let expired = mtime > 0
         && SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map(|now| {
-                now >= Duration::from_secs(mtime as u64) + retention_duration()
-            })
+            .map(|now| now >= Duration::from_secs(mtime as u64) + retention_duration())
             .unwrap_or(false);
     let delete_file = reached_eof && expired;
-    let inserted =
-        repo.insert_batch_and_cursor(&rows, &cursor, delete_file)?;
+    let inserted = repo.insert_batch_and_cursor(&rows, &cursor, delete_file)?;
     if delete_file {
         match fs::remove_file(path) {
             Ok(()) => {}

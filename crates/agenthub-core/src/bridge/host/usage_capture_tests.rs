@@ -59,20 +59,22 @@ async fn json_upstream() -> (u16, tokio::task::JoinHandle<()>) {
             .expect("bind mock json upstream");
     let port = listener.local_addr().expect("upstream addr").port();
     let task = tokio::spawn(async move {
-        axum::serve(listener, Router::new().route("/chat/completions", post(chat)))
-            .await
-            .expect("serve mock json upstream");
+        axum::serve(
+            listener,
+            Router::new().route("/chat/completions", post(chat)),
+        )
+        .await
+        .expect("serve mock json upstream");
     });
     (port, task)
 }
 
 async fn sse_upstream(chunks: Vec<&'static [u8]>) -> (u16, tokio::task::JoinHandle<()>) {
     async fn chat(State(chunks): State<Vec<&'static [u8]>>) -> Response {
-        let output = futures_util::stream::iter(
-            chunks
-                .into_iter()
-                .map(|chunk| Ok::<_, std::convert::Infallible>(axum::body::Bytes::from_static(chunk))),
-        );
+        let output =
+            futures_util::stream::iter(chunks.into_iter().map(|chunk| {
+                Ok::<_, std::convert::Infallible>(axum::body::Bytes::from_static(chunk))
+            }));
         (
             [(header::CONTENT_TYPE, "text/event-stream")],
             Body::from_stream(output),
@@ -137,8 +139,15 @@ fn spool_events(dir: &std::path::Path) -> Vec<GatewayUsageEvent> {
     let mut lines = Vec::new();
     for entry in std::fs::read_dir(dir).expect("spool dir") {
         let path = entry.expect("spool entry").path();
-        let name = path.file_name().expect("file name").to_string_lossy().to_string();
-        assert!(name.starts_with("gateway-") && name.ends_with(".jsonl"), "{name}");
+        let name = path
+            .file_name()
+            .expect("file name")
+            .to_string_lossy()
+            .to_string();
+        assert!(
+            name.starts_with("gateway-") && name.ends_with(".jsonl"),
+            "{name}"
+        );
         let raw = std::fs::read_to_string(&path).expect("spool file");
         for line in raw.lines() {
             lines.push(serde_json::from_str(line).expect("one JSON object per line"));
@@ -201,7 +210,10 @@ async fn capture_records_non_stream_and_stream_events_without_changing_frames() 
     assert_eq!(spied_json.status(), StatusCode::OK);
     let plain_body = plain_json.text().await.expect("plain body");
     let spied_body = spied_json.text().await.expect("spied body");
-    assert_eq!(normalize_request_ids(&plain_body), normalize_request_ids(&spied_body));
+    assert_eq!(
+        normalize_request_ids(&plain_body),
+        normalize_request_ids(&spied_body)
+    );
     assert!(spied_body.contains("\"text\":\"hello\""));
 
     // Stream: converted Responses SSE with a usage-bearing upstream chunk.
@@ -252,9 +264,15 @@ async fn capture_records_non_stream_and_stream_events_without_changing_frames() 
     assert_eq!(non_stream.profile_id, "capture-spied");
     assert_eq!(non_stream.surface, "responses");
     assert_eq!(non_stream.upstream_channel.as_deref(), Some("openai_chat"));
-    assert_eq!(non_stream.ticket_id.as_deref(), Some("account:connection-test"));
+    assert_eq!(
+        non_stream.ticket_id.as_deref(),
+        Some("account:connection-test")
+    );
     assert_eq!(non_stream.account_source_kind.as_deref(), Some("account"));
-    assert_eq!(non_stream.account_source_id.as_deref(), Some("connection-test"));
+    assert_eq!(
+        non_stream.account_source_id.as_deref(),
+        Some("connection-test")
+    );
     assert_eq!(non_stream.model.as_deref(), Some("test"));
     assert_eq!(non_stream.upstream_model.as_deref(), Some("kimi-test"));
     assert_eq!(non_stream.input_tokens, 11);
@@ -271,7 +289,10 @@ async fn capture_records_non_stream_and_stream_events_without_changing_frames() 
     assert_eq!(stream.output_tokens, 4);
     assert_eq!(stream.cached_input_tokens, Some(3));
     assert_eq!(stream.status, "ok");
-    assert!(stream.ttft_ms.is_some(), "stream records time to first frame");
+    assert!(
+        stream.ttft_ms.is_some(),
+        "stream records time to first frame"
+    );
 
     plain_host.shutdown().await.expect("plain shutdown");
     spied_host.shutdown().await.expect("spied shutdown");
@@ -337,12 +358,10 @@ async fn runtime_does_not_forward_anthropic_key_across_redirect() {
     }
 
     let forwarded_key = Arc::new(Mutex::new(None));
-    let target_listener = tokio::net::TcpListener::bind(SocketAddr::new(
-        IpAddr::V4(Ipv4Addr::LOCALHOST),
-        0,
-    ))
-    .await
-    .expect("bind redirect target");
+    let target_listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind redirect target");
     let target_port = target_listener.local_addr().expect("target addr").port();
     let target_task = tokio::spawn({
         let forwarded_key = forwarded_key.clone();
@@ -358,28 +377,29 @@ async fn runtime_does_not_forward_anthropic_key_across_redirect() {
         }
     });
 
-    let redirect_listener = tokio::net::TcpListener::bind(SocketAddr::new(
-        IpAddr::V4(Ipv4Addr::LOCALHOST),
-        0,
-    ))
-    .await
-    .expect("bind redirect source");
+    let redirect_listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind redirect source");
     let redirect_port = redirect_listener
         .local_addr()
         .expect("redirect addr")
         .port();
     let location = format!("http://127.0.0.1:{target_port}/messages");
     let redirect_task = tokio::spawn(async move {
-        let app = Router::new().route("/messages", post(move || {
-            let location = location.clone();
-            async move {
-                Response::builder()
-                    .status(StatusCode::FOUND)
-                    .header(axum::http::header::LOCATION, location)
-                    .body(axum::body::Body::empty())
-                    .unwrap()
-            }
-        }));
+        let app = Router::new().route(
+            "/messages",
+            post(move || {
+                let location = location.clone();
+                async move {
+                    Response::builder()
+                        .status(StatusCode::FOUND)
+                        .header(axum::http::header::LOCATION, location)
+                        .body(axum::body::Body::empty())
+                        .unwrap()
+                }
+            }),
+        );
         axum::serve(redirect_listener, app)
             .await
             .expect("serve redirect source");
@@ -405,14 +425,8 @@ async fn runtime_does_not_forward_anthropic_key_across_redirect() {
 
     let response = client()
         .await
-        .post(format!(
-            "http://127.0.0.1:{}/v1/messages",
-            runtime.port
-        ))
-        .header(
-            header::AUTHORIZATION,
-            "Bearer local-redirect-token",
-        )
+        .post(format!("http://127.0.0.1:{}/v1/messages", runtime.port))
+        .header(header::AUTHORIZATION, "Bearer local-redirect-token")
         .json(&json!({
             "model": "claude-test",
             "max_tokens": 16,

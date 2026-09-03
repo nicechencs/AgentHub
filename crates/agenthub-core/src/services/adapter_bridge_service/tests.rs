@@ -30,8 +30,7 @@ async fn health_upstream(status: StatusCode) -> (u16, tokio::task::JoinHandle<()
     (port, task)
 }
 
-async fn redirecting_health_upstream(
-) -> (
+async fn redirecting_health_upstream() -> (
     u16,
     Arc<Mutex<Option<String>>>,
     tokio::task::JoinHandle<()>,
@@ -72,16 +71,19 @@ async fn redirecting_health_upstream(
     let redirect_port = redirect_listener.local_addr().unwrap().port();
     let location = format!("http://127.0.0.1:{target_port}/models");
     let redirect_task = tokio::spawn(async move {
-        let app = Router::new().route("/models", get(move || {
-            let location = location.clone();
-            async move {
-                Response::builder()
-                    .status(StatusCode::FOUND)
-                    .header(header::LOCATION, location)
-                    .body(Body::empty())
-                    .unwrap()
-            }
-        }));
+        let app = Router::new().route(
+            "/models",
+            get(move || {
+                let location = location.clone();
+                async move {
+                    Response::builder()
+                        .status(StatusCode::FOUND)
+                        .header(header::LOCATION, location)
+                        .body(Body::empty())
+                        .unwrap()
+                }
+            }),
+        );
         axum::serve(redirect_listener, app).await.unwrap();
     });
 
@@ -366,10 +368,7 @@ fn prepare_project_finalize_and_restore_keep_source_secret_out_of_persistence() 
     assert_eq!(start.profile_id, prepared.profile().id);
     assert_eq!(start.port, 0);
     assert_eq!(start.upstream.base_url, KIMI_CHAT_BASE_URL);
-    assert_eq!(
-        start.upstream.source_id.as_deref(),
-        Some("kimi-membership")
-    );
+    assert_eq!(start.upstream.source_id.as_deref(), Some("kimi-membership"));
 
     let generated = create_projection(&db, &prepared, 43121);
     assert_eq!(generated.agent_id, AgentId::Codex);
@@ -1093,25 +1092,25 @@ async fn models_response_server(
         .unwrap();
     let port = listener.local_addr().unwrap().port();
     let chunks = Arc::new(chunks);
-    let app = Router::new().route("/models", get(move || {
-        let chunks = chunks.clone();
-        async move {
-            let chunks: Vec<_> = chunks.iter().cloned().collect();
-            let body = Body::from_stream(stream::iter(
-                chunks
-                    .into_iter()
-                    .map(Ok::<_, std::convert::Infallible>),
-            ));
-            let mut response = Response::new(body);
-            if let Some(length) = content_length {
-                response.headers_mut().insert(
-                    header::CONTENT_LENGTH,
-                    length.to_string().parse().unwrap(),
-                );
+    let app = Router::new().route(
+        "/models",
+        get(move || {
+            let chunks = chunks.clone();
+            async move {
+                let chunks: Vec<_> = chunks.iter().cloned().collect();
+                let body = Body::from_stream(stream::iter(
+                    chunks.into_iter().map(Ok::<_, std::convert::Infallible>),
+                ));
+                let mut response = Response::new(body);
+                if let Some(length) = content_length {
+                    response
+                        .headers_mut()
+                        .insert(header::CONTENT_LENGTH, length.to_string().parse().unwrap());
+                }
+                response
             }
-            response
-        }
-    }));
+        }),
+    );
     let task = tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     });
@@ -1120,15 +1119,9 @@ async fn models_response_server(
 
 #[tokio::test]
 async fn models_health_rejects_response_over_one_mib_from_content_length() {
-    let oversized = axum::body::Bytes::from(vec![
-        b'x';
-        MAX_UPSTREAM_MODELS_BODY_BYTES + 1
-    ]);
-    let (port, task) = models_response_server(
-        vec![oversized],
-        Some(MAX_UPSTREAM_MODELS_BODY_BYTES + 1),
-    )
-    .await;
+    let oversized = axum::body::Bytes::from(vec![b'x'; MAX_UPSTREAM_MODELS_BODY_BYTES + 1]);
+    let (port, task) =
+        models_response_server(vec![oversized], Some(MAX_UPSTREAM_MODELS_BODY_BYTES + 1)).await;
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()
@@ -1146,14 +1139,8 @@ async fn models_health_rejects_response_over_one_mib_from_content_length() {
 #[tokio::test]
 async fn models_health_rejects_chunked_response_over_one_mib() {
     let chunks = vec![
-        Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(vec![
-            b'x';
-            700 * 1024
-        ])),
-        Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(vec![
-            b'x';
-            400 * 1024
-        ])),
+        Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(vec![b'x'; 700 * 1024])),
+        Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(vec![b'x'; 400 * 1024])),
     ];
     let chunks = chunks.into_iter().map(|chunk| chunk.unwrap()).collect();
     let (port, task) = models_response_server(chunks, None).await;
@@ -2823,7 +2810,9 @@ fn production_index_uses_each_member_listed_models_not_the_lead_catalog() {
             "openai-b",
         )
         .unwrap();
-    pools.enroll_unified_gateway(&prepared.profile().id, 43155).unwrap();
+    pools
+        .enroll_unified_gateway(&prepared.profile().id, 43155)
+        .unwrap();
     let prepared = service
         .prepare(&openai_request(AdapterSourceKind::Provider, "openai-a"))
         .unwrap();
@@ -2903,7 +2892,9 @@ fn production_index_labels_members_by_their_own_provider() {
             Some("shared"),
         )
         .unwrap();
-    pools.enroll_unified_gateway(&prepared.profile().id, 43155).unwrap();
+    pools
+        .enroll_unified_gateway(&prepared.profile().id, 43155)
+        .unwrap();
     let prepared = service
         .prepare(&grok_codex_account_request("grok-subscription"))
         .unwrap();
@@ -2955,7 +2946,9 @@ fn production_index_omits_sibling_when_member_snapshot_fails() {
             "openai-missing",
         )
         .unwrap();
-    pools.enroll_unified_gateway(&prepared.profile().id, 43155).unwrap();
+    pools
+        .enroll_unified_gateway(&prepared.profile().id, 43155)
+        .unwrap();
     let prepared = service
         .prepare(&openai_request(AdapterSourceKind::Provider, "openai-a"))
         .unwrap();
@@ -3000,7 +2993,9 @@ fn attach_keeps_last_successful_sibling_when_prior_index_is_present() {
             "openai-b",
         )
         .unwrap();
-    pools.enroll_unified_gateway(&prepared.profile().id, 43155).unwrap();
+    pools
+        .enroll_unified_gateway(&prepared.profile().id, 43155)
+        .unwrap();
     let prepared = service
         .prepare(&openai_request(AdapterSourceKind::Provider, "openai-a"))
         .unwrap();

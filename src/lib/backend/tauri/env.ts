@@ -1,6 +1,7 @@
 import type { Backend, EnvPort } from '@/lib/backend/contracts';
 import { RuntimeInstallFailedError } from '@/lib/backend/contracts/agent-errors';
 import type { RuntimeDetect } from '@/lib/types';
+import { invoke } from './invoke';
 
 export { RuntimeInstallFailedError };
 
@@ -9,6 +10,13 @@ export function createTauriEnvPort(backend: Backend): EnvPort {
     async listRuntimes() {
       const doctor = await backend.doctor.loadDoctorMapped();
       return doctor.runtimes;
+    },
+
+    async checkRuntimeUpdates(runtimeIds, force = false) {
+      return invoke('check_runtime_updates', {
+        runtimeIds: runtimeIds?.length ? runtimeIds : null,
+        force,
+      });
     },
 
     async getRuntime(id) {

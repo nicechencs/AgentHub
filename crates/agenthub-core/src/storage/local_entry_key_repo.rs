@@ -87,15 +87,16 @@ impl LocalEntryKeyRepo {
     pub fn update(&self, row: &LocalEntryKey) -> Result<LocalEntryKey> {
         validate(row)?;
         self.db.with_conn(|conn| {
-            let changed = conn.execute(
-                r#"
+            let changed = conn
+                .execute(
+                    r#"
                 UPDATE local_entry_keys
                 SET pool_id = ?2, name = ?3, token = ?4, updated_at = ?5
                 WHERE id = ?1
                 "#,
-                params![row.id, row.pool_id, row.name, row.token, row.updated_at],
-            )
-            .map_err(map_constraint)?;
+                    params![row.id, row.pool_id, row.name, row.token, row.updated_at],
+                )
+                .map_err(map_constraint)?;
             if changed == 0 {
                 return Err(AppError::NotFound(format!(
                     "entry key not found: {}",
@@ -110,7 +111,8 @@ impl LocalEntryKeyRepo {
 
     pub fn delete(&self, id: &str) -> Result<()> {
         self.db.with_conn(|conn| {
-            let changed = conn.execute("DELETE FROM local_entry_keys WHERE id = ?1", params![id])?;
+            let changed =
+                conn.execute("DELETE FROM local_entry_keys WHERE id = ?1", params![id])?;
             if changed == 0 {
                 return Err(AppError::NotFound(format!("entry key not found: {id}")));
             }
@@ -121,7 +123,9 @@ impl LocalEntryKeyRepo {
 
 fn validate(row: &LocalEntryKey) -> Result<()> {
     if row.id.trim().is_empty() {
-        return Err(AppError::InvalidArg("entry key id must not be empty".into()));
+        return Err(AppError::InvalidArg(
+            "entry key id must not be empty".into(),
+        ));
     }
     if row.pool_id.trim().is_empty() {
         return Err(AppError::InvalidArg(

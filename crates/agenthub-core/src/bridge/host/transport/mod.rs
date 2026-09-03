@@ -275,7 +275,12 @@ pub(super) async fn send_upstream(
             let retry_after = response.headers().get(header::RETRY_AFTER).cloned();
             if status == StatusCode::UNAUTHORIZED {
                 if let Some(trace) = trace.as_deref_mut() {
-                    trace.upstream_auth_result(false, Some(status.as_u16()), Some("unauthorized"), None);
+                    trace.upstream_auth_result(
+                        false,
+                        Some(status.as_u16()),
+                        Some("unauthorized"),
+                        None,
+                    );
                 }
                 match switch_or_reload(
                     state,
@@ -295,7 +300,9 @@ pub(super) async fn send_upstream(
                                 &member,
                                 Some(status.as_u16()),
                                 "unauthorized",
-                                detail.as_deref().unwrap_or("Upstream authorization failed."),
+                                detail
+                                    .as_deref()
+                                    .unwrap_or("Upstream authorization failed."),
                             );
                         }
                         return Err(map_upstream_http_error(
@@ -318,7 +325,9 @@ pub(super) async fn send_upstream(
                                 &member,
                                 Some(status.as_u16()),
                                 "unauthorized",
-                                detail.as_deref().unwrap_or("Upstream authorization failed."),
+                                detail
+                                    .as_deref()
+                                    .unwrap_or("Upstream authorization failed."),
                             );
                         }
                         return Err(map_upstream_http_error(
@@ -342,9 +351,9 @@ pub(super) async fn send_upstream(
                 match read_bounded_upstream_error(response, &state.force_shutdown).await {
                     Ok(body) => body,
                     Err(UpstreamBodyError::Stopping) => return Err(stopping_response()),
-                    Err(UpstreamBodyError::InvalidOrTooLarge | UpstreamBodyError::IncompleteStream) => {
-                        Vec::new()
-                    }
+                    Err(
+                        UpstreamBodyError::InvalidOrTooLarge | UpstreamBodyError::IncompleteStream,
+                    ) => Vec::new(),
                 };
             if !can_recover {
                 let detail = extract_upstream_error_detail(&error_body);
@@ -354,7 +363,9 @@ pub(super) async fn send_upstream(
                         &member,
                         Some(status.as_u16()),
                         "upstream_error",
-                        detail.as_deref().unwrap_or("Upstream rejected the request."),
+                        detail
+                            .as_deref()
+                            .unwrap_or("Upstream rejected the request."),
                     );
                 }
                 return Err(map_upstream_http_error(

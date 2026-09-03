@@ -848,9 +848,7 @@ fn usage_query_from_parts(
     }
 }
 
-fn merge_model_distribution(
-    slices: Vec<UsageDistributionSlice>,
-) -> Vec<UsageDistributionSlice> {
+fn merge_model_distribution(slices: Vec<UsageDistributionSlice>) -> Vec<UsageDistributionSlice> {
     let mut map = std::collections::BTreeMap::<String, UsageDistributionSlice>::new();
     for slice in slices {
         let key = canonical_usage_model(&slice.key);

@@ -3,7 +3,9 @@
 use std::sync::Arc;
 
 use agenthub_core::logging::targets;
-use agenthub_core::models::{AgentId, AgentUpdateInfo, InstallOutcome, RuntimeId};
+use agenthub_core::models::{
+    AgentId, AgentUpdateInfo, InstallOutcome, RuntimeId, RuntimeUpdateInfo,
+};
 use agenthub_core::platform::install::{
     list_install_catalog as list_install_catalog_impl, AgentInstallCatalogEntry,
 };
@@ -186,6 +188,36 @@ pub async fn check_agent_updates(
         let slice = parsed.as_deref();
         hub.check_agent_updates(slice, force)
             .map_err(|e| map_err_string("check_agent_updates", e))
+    })
+    .await
+}
+
+/// Invoke: `check_runtime_updates`
+///
+/// Probe official latest versions for detected shared runtimes. Empty
+/// `runtime_ids` means all runtimes detected on this host.
+#[tauri::command]
+pub async fn check_runtime_updates(
+    state: State<'_, AppState>,
+    runtime_ids: Option<Vec<String>>,
+    force: Option<bool>,
+) -> Result<Vec<RuntimeUpdateInfo>, String> {
+    let hub = state.hub_arc()?;
+    let force = force.unwrap_or(false);
+    let parsed: Option<Vec<RuntimeId>> = match runtime_ids {
+        None => None,
+        Some(ids) if ids.is_empty() => None,
+        Some(ids) => {
+            let mut out = Vec::with_capacity(ids.len());
+            for raw in ids {
+                out.push(parse_runtime(&raw)?);
+            }
+            Some(out)
+        }
+    };
+    with_hub_blocking(hub, move |hub| {
+        hub.check_runtime_updates(parsed.as_deref(), force)
+            .map_err(|e| map_err_string("check_runtime_updates", e))
     })
     .await
 }

@@ -22,6 +22,8 @@ use crate::bridge::upstream_class::{
 
 use super::super::admission::AdmittedRequest;
 use super::super::http::{error_response, stopping_response, EdgeState};
+use super::super::pair_policy::identity_relay;
+use super::super::route_trace::RouteTraceBuilder;
 use super::super::stream::UpstreamBodyError;
 use super::super::surface::DownstreamSurface;
 use super::super::upstream::{
@@ -30,11 +32,9 @@ use super::super::upstream::{
     read_bounded_upstream_error, replay_session, timeout_response, unavailable_response,
     upstream_header_timeout, UpstreamConnectError,
 };
-use super::super::pair_policy::identity_relay;
 use super::{
     identity_for_member, log_serving_account, UpstreamChannel, UpstreamPrepare, UpstreamSendOutcome,
 };
-use super::super::route_trace::RouteTraceBuilder;
 
 const V2_MAX_ATTEMPTS: usize = 8;
 
@@ -265,9 +265,9 @@ pub async fn send_upstream_v2(
                 match read_bounded_upstream_error(response, &state.force_shutdown).await {
                     Ok(body) => body,
                     Err(UpstreamBodyError::Stopping) => return Err(stopping_response()),
-                    Err(UpstreamBodyError::InvalidOrTooLarge | UpstreamBodyError::IncompleteStream) => {
-                        Vec::new()
-                    }
+                    Err(
+                        UpstreamBodyError::InvalidOrTooLarge | UpstreamBodyError::IncompleteStream,
+                    ) => Vec::new(),
                 };
             let detail = extract_upstream_error_detail(&error_body);
             if status == StatusCode::UNAUTHORIZED {
@@ -318,7 +318,9 @@ pub async fn send_upstream_v2(
                             &member,
                             Some(status.as_u16()),
                             upstream_error_code(class),
-                            detail.as_deref().unwrap_or("Upstream rejected the request."),
+                            detail
+                                .as_deref()
+                                .unwrap_or("Upstream rejected the request."),
                         );
                     }
                     return Err(map_request_or_upstream(
@@ -351,7 +353,9 @@ pub async fn send_upstream_v2(
                         trace.pool_attempt_failed(
                             &member,
                             upstream_error_code(class),
-                            detail.as_deref().unwrap_or("Upstream authorization failed."),
+                            detail
+                                .as_deref()
+                                .unwrap_or("Upstream authorization failed."),
                         );
                     }
                     last_fail = Some((class, status, retry_after, detail));

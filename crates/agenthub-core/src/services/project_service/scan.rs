@@ -19,9 +19,8 @@ use crate::error::{AppError, Result};
 use crate::models::{AgentId, AgentProject, AgentProjectExcerpt, AgentSession};
 use crate::utils::paths::{agent_home, first_env_path};
 use crate::utils::project_path::{
-    best_cursor_path_for_folder, cursor_actual_path, cwd_storage_key,
-    decode_claude_project_dir, decode_pi_session_dir, extract_abs_fs_paths,
-    verified_actual_path, UNGROUPED_KEY,
+    best_cursor_path_for_folder, cursor_actual_path, cwd_storage_key, decode_claude_project_dir,
+    decode_pi_session_dir, extract_abs_fs_paths, verified_actual_path, UNGROUPED_KEY,
 };
 
 use super::session_index::{file_size_mtime, IndexEntry, SessionIndexStore};
@@ -1580,11 +1579,8 @@ pub(crate) fn list_cursor_projects(
                     .filter(|c| !c.is_empty() && Path::new(c).exists());
                 if actual.is_none() {
                     let found = extract_abs_fs_paths(&text);
-                    actual = best_cursor_path_for_folder(
-                        &name,
-                        found.iter().map(String::as_str),
-                    )
-                    .filter(|c| Path::new(c).exists());
+                    actual = best_cursor_path_for_folder(&name, found.iter().map(String::as_str))
+                        .filter(|c| Path::new(c).exists());
                 }
             }
         }

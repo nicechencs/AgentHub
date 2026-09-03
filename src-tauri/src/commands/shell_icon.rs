@@ -12,12 +12,12 @@ use tauri::{image::Image, AppHandle, Manager, State};
 use crate::state::AppState;
 use crate::tray;
 
+#[cfg(windows)]
+mod desktop;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod ico;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod shortcuts;
-#[cfg(windows)]
-mod desktop;
 
 pub(crate) const SHELL_ICON_MIN: u32 = 16;
 pub(crate) const SHELL_ICON_MAX: u32 = 256;

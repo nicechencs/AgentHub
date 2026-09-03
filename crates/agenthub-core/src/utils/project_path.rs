@@ -196,7 +196,10 @@ fn match_encoded_prefix(encoded_child: &str, parts: &[&str]) -> Option<usize> {
     if child_parts.is_empty() || child_parts.len() > parts.len() {
         return None;
     }
-    let ok = child_parts.iter().zip(parts.iter()).all(|(a, b)| cursor_seg_eq(a, b));
+    let ok = child_parts
+        .iter()
+        .zip(parts.iter())
+        .all(|(a, b)| cursor_seg_eq(a, b));
     ok.then_some(child_parts.len())
 }
 
@@ -295,7 +298,9 @@ pub fn extract_abs_fs_paths(text: &str) -> Vec<String> {
     let mut i = 0;
     while i + 2 < n {
         let drive = chars[i];
-        if drive.is_ascii_alphabetic() && chars[i + 1] == ':' && (chars[i + 2] == '\\' || chars[i + 2] == '/')
+        if drive.is_ascii_alphabetic()
+            && chars[i + 1] == ':'
+            && (chars[i + 2] == '\\' || chars[i + 2] == '/')
         {
             let mut j = i + 3;
             while j < n {
@@ -305,8 +310,7 @@ pub fn extract_abs_fs_paths(text: &str) -> Vec<String> {
                 }
                 j += 1;
             }
-            while j > i + 3 && matches!(chars[j - 1], ',' | '.' | ';' | ')' | ']' | '}' | ' ')
-            {
+            while j > i + 3 && matches!(chars[j - 1], ',' | '.' | ';' | ')' | ']' | '}' | ' ') {
                 j -= 1;
             }
             let s: String = chars[i..j].iter().collect();

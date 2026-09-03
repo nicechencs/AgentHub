@@ -25,9 +25,7 @@ use crate::bridge::protocol::responses::{
 };
 use crate::bridge::types::UPSTREAM_STREAM_INCOMPLETE_ZH;
 use crate::bridge::types::{BridgeEvent, IrEvent, ProtocolError, Usage};
-use crate::bridge::usage_capture::{
-    emit, CaptureContext, GatewayUsageEvent, StreamCaptureGuard,
-};
+use crate::bridge::usage_capture::{emit, CaptureContext, GatewayUsageEvent, StreamCaptureGuard};
 
 use super::http::{
     error_response, log_protocol_error, protocol_error_response, sse_data_payload,

@@ -1521,7 +1521,9 @@ fn list_trash_filtered_keeps_connections_and_pool_homes_apart() {
     let conn = ConnectionService::new(db.clone());
     let mut pool_owned = account("pool-acc", AgentId::Claude, false, "t1");
     pool_owned.extra = json!({ "home": "route_pool" });
-    accounts.create(&account("conn-acc", AgentId::Claude, false, "t1")).unwrap();
+    accounts
+        .create(&account("conn-acc", AgentId::Claude, false, "t1"))
+        .unwrap();
     accounts.create(&pool_owned).unwrap();
 
     conn.delete_account("conn-acc", AgentId::Claude).unwrap();

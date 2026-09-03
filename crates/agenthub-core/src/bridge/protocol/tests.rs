@@ -19,9 +19,9 @@ use super::{
         aggregate_responses_sse_to_json, apply_official_codex_model,
         client_message_for_upstream_detail, encode_responses_from_ir, looks_like_sse_body,
         parse_responses_request, prepare_official_codex_request, responses_output_to_ir,
-        to_grok_chat_request, to_grok_responses_request, to_kimi_chat_request, to_responses_request,
-        translate_responses_request, upstream_detail_requires_stream, IrToResponsesSse,
-        ResponsesStreamToIr,
+        to_grok_chat_request, to_grok_responses_request, to_kimi_chat_request,
+        to_responses_request, translate_responses_request, upstream_detail_requires_stream,
+        IrToResponsesSse, ResponsesStreamToIr,
     },
 };
 
@@ -1851,11 +1851,13 @@ fn aggregate_responses_sse_incomplete_is_chinese() {
 
 #[test]
 fn upstream_stream_required_error_is_chinese() {
-    assert!(upstream_detail_requires_stream("Stream must be set to true"));
+    assert!(upstream_detail_requires_stream(
+        "Stream must be set to true"
+    ));
     assert!(upstream_detail_requires_stream("stream is required"));
     assert!(!upstream_detail_requires_stream("model not found"));
-    let message = client_message_for_upstream_detail(Some("Stream must be set to true"))
-        .expect("mapped");
+    let message =
+        client_message_for_upstream_detail(Some("Stream must be set to true")).expect("mapped");
     assert!(message.contains("流式"), "{message}");
     assert!(message.contains("重试"), "{message}");
     assert!(client_message_for_upstream_detail(Some("unrelated 400")).is_none());

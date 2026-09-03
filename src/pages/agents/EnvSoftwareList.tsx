@@ -19,7 +19,7 @@ import { Hint, Tip } from '@/components/ui/tooltip';
 import { RUNTIME_MAP } from '@/config/runtimes';
 import { resolveAutoInstallPlan } from '@/lib/api/env';
 import { detectHostPlatform } from '@/lib/platform-detect';
-import type { EnvStatus, RuntimeDetect } from '@/lib/types';
+import type { EnvStatus, RuntimeDetect, RuntimeUpdateInfo } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
   envSoftwareAction,
@@ -78,13 +78,15 @@ export function EnvSoftwareList({
   onAction,
   onOneClickFix,
   oneClickBusy,
+  runtimeUpdates,
 }: {
   runtimes: RuntimeDetect[];
   loading?: boolean;
   onRefresh?: () => void;
-  onAction: (runtime: RuntimeDetect, intent: EnvSoftwareIntent) => void;
+  onAction: (runtime: RuntimeDetect, intent: EnvSoftwareIntent, autoStart?: boolean) => void;
   onOneClickFix?: () => void;
   oneClickBusy?: boolean;
+  runtimeUpdates?: Partial<Record<RuntimeDetect['id'], RuntimeUpdateInfo>>;
 }) {
   const { t } = useI18n();
   const platform = detectHostPlatform();
@@ -164,9 +166,19 @@ export function EnvSoftwareList({
                 </TableRow>
               ))
             : runtimes.map((runtime) => {
-                const action = envSoftwareAction(runtime, runtimes, platform);
+                const update = runtimeUpdates?.[runtime.id];
+                const action = envSoftwareAction(runtime, runtimes, platform, update);
                 const meta = RUNTIME_MAP[runtime.id];
                 const Icon = action ? actionIcon(action) : null;
+                const updateAvailable = update?.state === 'update_available';
+                const actionLabel = action ? envSoftwareActionLabel(action, t) : '';
+                const actionTitle = updateAvailable && !update?.canAutoUpgrade
+                  ? t('chrome.env.manualUpdate')
+                  : updateAvailable && update.latestVersion
+                    ? t('chrome.env.updateAvailable', { version: update.latestVersion })
+                  : action === 'upgrade' && runtime.status === 'ok'
+                    ? t('chrome.env.upgradeLatest')
+                    : actionLabel;
                 return (
                   <TableRow key={runtime.id}>
                     <TableCell className="font-medium">{envSoftwareName(runtime)}</TableCell>
@@ -204,23 +216,24 @@ export function EnvSoftwareList({
                     <TableCell className="text-right">
                       {action && Icon ? (
                         <Button
-                          size="sm"
+                          size={action === 'upgrade' ? 'icon' : 'sm'}
                           variant={
-                            action === 'upgrade' && runtime.status === 'ok'
-                              ? 'outline'
+                            action === 'upgrade'
+                              ? 'secondary'
                               : envOneClickInstallVariant(true)
                           }
-                          className={cn('h-7', action === 'upgrade' && runtime.status === 'ok' && 'text-muted')}
+                          className={cn('h-7', action === 'upgrade' && 'w-7')}
                           disabled={busy}
-                          onClick={() => onAction(runtime, action)}
-                          title={
-                            action === 'upgrade' && runtime.status === 'ok'
-                              ? t('chrome.env.upgradeLatest')
-                              : envSoftwareActionLabel(action, t)
-                          }
+                          onClick={() => onAction(
+                            runtime,
+                            action,
+                            !(action === 'upgrade' && update && !update.canAutoUpgrade),
+                          )}
+                          title={actionTitle}
+                          aria-label={actionTitle}
                         >
-                          <Icon className="h-3.5 w-3.5" />
-                          {envSoftwareActionLabel(action, t)}
+                          <Icon className={cn('h-3.5 w-3.5', action === 'upgrade' && 'text-success')} />
+                          {action === 'upgrade' ? null : actionLabel}
                         </Button>
                       ) : (
                         <TableEmptyCell />

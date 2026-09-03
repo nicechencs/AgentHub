@@ -212,10 +212,7 @@ impl GatewayUsageRepo {
     }
 }
 
-fn insert_rows(
-    tx: &Transaction<'_>,
-    rows: &[GatewayUsageRow],
-) -> rusqlite::Result<u64> {
+fn insert_rows(tx: &Transaction<'_>, rows: &[GatewayUsageRow]) -> rusqlite::Result<u64> {
     let mut inserted = 0u64;
     if rows.is_empty() {
         return Ok(inserted);

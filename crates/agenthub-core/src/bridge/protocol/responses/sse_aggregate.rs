@@ -25,7 +25,8 @@ pub fn looks_like_sse_body(body: &[u8]) -> bool {
 /// so usage and `id` match the upstream. Falls back to IR encoding when the
 /// terminal event has no embedded object.
 pub fn aggregate_responses_sse_to_json(body: &[u8]) -> ProtocolResult<Value> {
-    let text = std::str::from_utf8(body).map_err(|_| ProtocolError::upstream_stream_incomplete())?;
+    let text =
+        std::str::from_utf8(body).map_err(|_| ProtocolError::upstream_stream_incomplete())?;
     let mut translator = ResponsesStreamToIr::new();
     let mut events = Vec::new();
     let mut completed_response = None;
@@ -69,10 +70,8 @@ pub fn aggregate_responses_sse_to_json(body: &[u8]) -> ProtocolResult<Value> {
         }
         // Official streams often send `output: []` on completed and put text
         // only in deltas. Fold IR, then keep the upstream id / usage.
-        let mut encoded = encode_responses_from_ir(
-            &events,
-            response.get("id").and_then(Value::as_str),
-        )?;
+        let mut encoded =
+            encode_responses_from_ir(&events, response.get("id").and_then(Value::as_str))?;
         if let Some(id) = response.get("id") {
             encoded["id"] = id.clone();
         }

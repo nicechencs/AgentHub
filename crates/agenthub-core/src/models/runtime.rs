@@ -68,6 +68,76 @@ pub struct EnvStatus {
     pub notes: Vec<String>,
 }
 
+/// Result of comparing an installed shared runtime with its official latest
+/// release. Network failures are represented by `Unknown`; callers must not
+/// turn an unavailable probe into an "up to date" result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeUpdateState {
+    UpdateAvailable,
+    UpToDate,
+    Unknown,
+    Unsupported,
+    NotInstalled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeUpdateInfo {
+    pub runtime_id: RuntimeId,
+    pub state: RuntimeUpdateState,
+    pub current_version: Option<String>,
+    pub latest_version: Option<String>,
+    /// `nodejs.org`, `npm`, `git`, or `powershell`.
+    pub source: Option<String>,
+    /// ISO-8601 UTC when a remote version was read (cache or network).
+    pub checked_at: Option<String>,
+    pub note: Option<String>,
+    /// Whether the detected installation can be upgraded from AgentHub on this host.
+    #[serde(default)]
+    pub can_auto_upgrade: bool,
+    /// Official manual setup page when no in-app upgrade is possible.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub setup_url: Option<String>,
+}
+
+impl RuntimeUpdateInfo {
+    pub fn not_installed(runtime_id: RuntimeId) -> Self {
+        Self {
+            runtime_id,
+            state: RuntimeUpdateState::NotInstalled,
+            current_version: None,
+            latest_version: None,
+            source: None,
+            checked_at: None,
+            note: None,
+            can_auto_upgrade: false,
+            setup_url: None,
+        }
+    }
+
+    pub fn unknown(
+        runtime_id: RuntimeId,
+        current_version: Option<String>,
+        source: Option<String>,
+        note: impl Into<String>,
+        setup_url: Option<String>,
+        can_auto_upgrade: bool,
+    ) -> Self {
+        Self {
+            runtime_id,
+            state: RuntimeUpdateState::Unknown,
+            current_version,
+            latest_version: None,
+            source,
+            checked_at: None,
+            note: Some(note.into()),
+            can_auto_upgrade,
+            setup_url,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Remediation {

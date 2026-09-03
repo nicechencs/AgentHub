@@ -229,12 +229,7 @@ fn get_payload(
             SELECT payload FROM scan_entries
             WHERE agent = ?1 AND surface = ?2 AND source_id = ?3 AND parser_version = ?4
             "#,
-            params![
-                agent.as_str(),
-                surface,
-                source_id,
-                parser_version as i64
-            ],
+            params![agent.as_str(), surface, source_id, parser_version as i64],
             |row| row.get(0),
         )
         .optional()
@@ -289,9 +284,9 @@ fn retain_rows(conn: &Connection, agent: AgentId, surface: &str, keep: &HashSet<
         return;
     }
     let existing: Vec<String> = {
-        let Ok(mut rows) = conn.prepare(
-            "SELECT source_id FROM scan_entries WHERE agent = ?1 AND surface = ?2",
-        ) else {
+        let Ok(mut rows) =
+            conn.prepare("SELECT source_id FROM scan_entries WHERE agent = ?1 AND surface = ?2")
+        else {
             return;
         };
         rows.query_map(params![agent.as_str(), surface], |row| row.get(0))

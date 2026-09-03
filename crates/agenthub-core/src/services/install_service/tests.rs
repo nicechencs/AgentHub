@@ -5,8 +5,8 @@ use crate::catalog::install::{
 };
 use crate::error::AppError;
 use crate::models::{
-    AgentConfig, AuthState, Capability, CapabilityState, DetectResult, EnvStatusKind, InstallChannel,
-    RunOptions, RunSpec,
+    AgentConfig, AuthState, Capability, CapabilityState, DetectResult, EnvStatusKind,
+    InstallChannel, RunOptions, RunSpec,
 };
 use crate::platform::install::{builtin_install_registry, InstallContribution};
 use crate::platform::AgentKey;
@@ -783,8 +783,14 @@ fn runtime_package_action_upgrades_ready_or_outdated() {
         runtime_package_action(EnvStatusKind::BrokenPath),
         RuntimePackageAction::Install
     );
-    assert_eq!(package_manager_verb(RuntimePackageAction::Install), "install");
-    assert_eq!(package_manager_verb(RuntimePackageAction::Upgrade), "upgrade");
+    assert_eq!(
+        package_manager_verb(RuntimePackageAction::Install),
+        "install"
+    );
+    assert_eq!(
+        package_manager_verb(RuntimePackageAction::Upgrade),
+        "upgrade"
+    );
     assert_eq!(package_manager_zh(RuntimePackageAction::Install), "安装");
     assert_eq!(package_manager_zh(RuntimePackageAction::Upgrade), "升级");
 }

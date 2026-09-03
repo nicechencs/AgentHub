@@ -4,7 +4,7 @@
 import { getBackend } from '@/app/runtime';
 import type { InstallOutcome } from '@/lib/backend/contracts/install-types';
 import { resolveAutoInstallPlan, type AutoInstallPlan } from '@/lib/env-plan';
-import type { RuntimeDetect, RuntimeId } from '@/lib/types';
+import type { RuntimeDetect, RuntimeId, RuntimeUpdateInfo } from '@/lib/types';
 
 export type { AutoInstallPlan };
 export { resolveAutoInstallPlan };
@@ -13,6 +13,13 @@ export { RuntimeInstallFailedError } from '@/lib/backend/contracts/agent-errors'
 
 export async function listRuntimes(): Promise<RuntimeDetect[]> {
   return getBackend().env.listRuntimes();
+}
+
+export async function checkRuntimeUpdates(
+  runtimeIds?: RuntimeId[],
+  force = false,
+): Promise<RuntimeUpdateInfo[]> {
+  return getBackend().env.checkRuntimeUpdates(runtimeIds, force);
 }
 
 export async function getRuntime(id: RuntimeId): Promise<RuntimeDetect> {

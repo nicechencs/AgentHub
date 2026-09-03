@@ -1009,11 +1009,9 @@ fn install_runtime_inner(
                     match install_nodejs_official_macos_pkg(executor, &mut logs) {
                         Ok(res) => {
                             let out = finalize_runtime_install(id, logs, res.clone());
-                            let same_version = out
-                                .runtime
-                                .as_ref()
-                                .and_then(|row| row.version.as_deref())
-                                == before.version.as_deref();
+                            let same_version =
+                                out.runtime.as_ref().and_then(|row| row.version.as_deref())
+                                    == before.version.as_deref();
                             if !res.success() && out.ok && same_version {
                                 return Ok(InstallOutcome::failure(
                                     action,

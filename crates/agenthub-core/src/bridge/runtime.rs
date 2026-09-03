@@ -360,11 +360,7 @@ impl BridgeStartSpec {
     }
 
     fn lead_member(&self) -> PickedMember {
-        let source_id = self
-            .upstream
-            .source_id
-            .clone()
-            .unwrap_or_default();
+        let source_id = self.upstream.source_id.clone().unwrap_or_default();
         let ticket_id = if source_id.is_empty() {
             String::new()
         } else {
