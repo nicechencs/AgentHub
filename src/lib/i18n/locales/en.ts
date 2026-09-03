@@ -1435,6 +1435,7 @@ export const en = {
       last24h: "Last 24 hours",
       last7d: "7 days",
       last30d: "30 days",
+      custom: "Custom",
     },
     page: {
       title: "Dashboard",
@@ -1448,6 +1449,8 @@ export const en = {
       allAgents: "All agents",
       allModels: "All models",
       rangeAria: "Time range",
+      customStart: "Start date",
+      customEnd: "End date",
       collect: "Collect",
       collecting: "Collecting…",
       syncing: "Syncing…",

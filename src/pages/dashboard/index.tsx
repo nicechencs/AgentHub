@@ -18,6 +18,7 @@ import { SegmentedControl } from '@/components/shared/SegmentedControl';
 import { UsageParserHealth } from '@/components/shared/UsageParserHealth';
 import { useUsageSync } from '@/components/shared/UsageSyncProvider';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Tip } from '@/components/ui/tooltip';
@@ -92,25 +93,27 @@ import {
   resolveUsageModelFilter,
   sortUsageRowsDesc,
   usageModelSelectOptions,
-  formatUsageWindowLabel,
+  customRangeInputBounds,
+  normalizeCustomRange,
   usageWindowBound,
   type DateRange,
 } from './usageOverviewModel';
 
-const DATE_RANGE_OPTIONS: DateRange[] = ['today', '24h', '7d', '30d'];
+const DATE_RANGE_OPTIONS: DateRange[] = ['today', '24h', '7d', '30d', 'custom'];
 
 const DATE_RANGE_LABEL_KEYS: Record<DateRange, MessageKey> = {
   today: 'dashboard.range.today',
   '24h': 'dashboard.range.last24h',
   '7d': 'dashboard.range.last7d',
   '30d': 'dashboard.range.last30d',
+  custom: 'dashboard.range.custom',
 };
 
 export default function DashboardPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const { theme } = useTheme();
   const chartScheme = resolveTheme(theme);
   const usageSync = useUsageSync();
@@ -139,6 +142,12 @@ export default function DashboardPage() {
   const [dateRange, setDateRange] = useState<DateRange>(
     () => rememberedUsageFilters().dateRange,
   );
+  const [customStart, setCustomStart] = useState(
+    () => rememberedUsageFilters().customStart,
+  );
+  const [customEnd, setCustomEnd] = useState(
+    () => rememberedUsageFilters().customEnd,
+  );
   const [agentFilter, setAgentFilter] = useState<AgentKey | 'all'>(
     () => rememberedUsageFilters().agentFilter,
   );
@@ -161,10 +170,14 @@ export default function DashboardPage() {
   const [usageError, setUsageError] = useState<unknown>(null);
   const usageGenerationRef = useRef(0);
 
+  const customRange = useMemo(
+    () => ({ start: customStart, end: customEnd }),
+    [customStart, customEnd],
+  );
   const dayLabel = t(DATE_RANGE_LABEL_KEYS[dateRange]);
-  const windowLabel = useMemo(
-    () => formatUsageWindowLabel(dateRange, lang),
-    [dateRange, lang],
+  const customBounds = useMemo(
+    () => customRangeInputBounds(customStart, customEnd),
+    [customStart, customEnd],
   );
 
   // —— 采集（状态由 UsageSyncProvider 统一管理）——
@@ -298,16 +311,16 @@ export default function DashboardPage() {
       else setUsageRefreshing(true);
       setTableLoading(true);
       setUsageError(null);
-      const { days, since } = usageWindowBound(dateRange);
+      const { days, since, until } = usageWindowBound(dateRange, new Date(), customRange);
       const agentId = agentFilter === 'all' ? undefined : agentFilter;
       const model = modelFilter === 'all' || modelFilter === '' ? undefined : modelFilter;
       const excludeAgentIds = omittedIds.length > 0 ? omittedIds : undefined;
       try {
         const [availability, overview, trend, modelTrend] = await Promise.all([
           getUsageAvailability(),
-          fetchUsageOverview({ days, agentId, model, since, excludeAgentIds }),
-          usageTrend(days, agentId, model, since, excludeAgentIds),
-          usageTrend(days, agentId, model, since, excludeAgentIds, 'model'),
+          fetchUsageOverview({ days, agentId, model, since, until, excludeAgentIds }),
+          usageTrend(days, agentId, model, since, excludeAgentIds, undefined, until),
+          usageTrend(days, agentId, model, since, excludeAgentIds, 'model', until),
         ]);
         if (!isLatestUsageRequest(usageGenerationRef.current, generation)) return;
         setUsageAvailability(availability);
@@ -331,6 +344,7 @@ export default function DashboardPage() {
             agentId,
             model,
             since,
+            until,
             limit: 2000,
             excludeAgentIds,
           });
@@ -351,7 +365,7 @@ export default function DashboardPage() {
         }
       }
     },
-    [dateRange, agentFilter, modelFilter, omittedIds],
+    [dateRange, customRange, agentFilter, modelFilter, omittedIds],
   );
 
   useEffect(() => {
@@ -431,8 +445,15 @@ export default function DashboardPage() {
   }, [modelsReady, modelFilter, effectiveModelFilter]);
 
   useEffect(() => {
-    rememberUsageFilters({ dateRange, agentFilter, modelFilter, trendGroup });
-  }, [dateRange, agentFilter, modelFilter, trendGroup]);
+    rememberUsageFilters({
+      dateRange,
+      customStart,
+      customEnd,
+      agentFilter,
+      modelFilter,
+      trendGroup,
+    });
+  }, [dateRange, customStart, customEnd, agentFilter, modelFilter, trendGroup]);
 
   const rangedTrend = useMemo(() => {
     const visible = filterVisibleTrend(usageTrendPoints, omittedIds);
@@ -556,19 +577,6 @@ export default function DashboardPage() {
       {/* —— 用量总览：筛选 + 指标 + 趋势 + 分布 —— */}
       <PageSection>
         <div className={cn(pageRhythm.chromeRow)}>
-          <span className="inline-flex h-8 items-center rounded-full border border-border bg-panel px-3 text-meta text-secondary">
-            {windowLabel}
-          </span>
-          <SegmentedControl
-            size="sm"
-            aria-label={t('dashboard.page.rangeAria')}
-            value={dateRange}
-            onChange={setDateRange}
-            options={DATE_RANGE_OPTIONS.map((value) => ({
-              value,
-              label: t(DATE_RANGE_LABEL_KEYS[value]),
-            }))}
-          />
           <Select value={agentFilter} onValueChange={(v) => setAgentFilter(v as AgentKey | 'all')}>
             <SelectTrigger className="w-36">
               <SelectValue />
@@ -601,6 +609,45 @@ export default function DashboardPage() {
               ))}
             </SelectContent>
           </Select>
+          <SegmentedControl
+            size="sm"
+            aria-label={t('dashboard.page.rangeAria')}
+            value={dateRange}
+            onChange={(value) => {
+              if (value === 'custom') {
+                const next = normalizeCustomRange(customStart, customEnd, new Date(), dateRange);
+                setCustomStart(next.start);
+                setCustomEnd(next.end);
+              }
+              setDateRange(value);
+            }}
+            options={DATE_RANGE_OPTIONS.map((value) => ({
+              value,
+              label: t(DATE_RANGE_LABEL_KEYS[value]),
+            }))}
+          />
+          {dateRange === 'custom' ? (
+            <>
+              <Input
+                type="date"
+                className="w-[9.75rem]"
+                aria-label={t('dashboard.page.customStart')}
+                min={customBounds.minStart}
+                max={customBounds.maxStart}
+                value={customStart}
+                onChange={(event) => setCustomStart(event.target.value)}
+              />
+              <Input
+                type="date"
+                className="w-[9.75rem]"
+                aria-label={t('dashboard.page.customEnd')}
+                min={customBounds.minEnd}
+                max={customBounds.maxEnd}
+                value={customEnd}
+                onChange={(event) => setCustomEnd(event.target.value)}
+              />
+            </>
+          ) : null}
           <div className="ml-auto flex min-w-[12.5rem] max-w-full flex-col items-end gap-1.5 sm:min-w-[16rem]">
             <div className="flex flex-wrap items-center justify-end gap-2">
               {!collecting && (

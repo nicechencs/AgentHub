@@ -12,6 +12,8 @@ export interface UsageQuery {
   limit?: number;
   /** RFC3339 lower bound, AND-ed with the days window. */
   since?: string;
+  /** RFC3339 exclusive upper bound (`ts < until`). Custom range uses next local midnight. */
+  until?: string;
   /** Hidden agents; applied before LIMIT so the table cap is among visible rows. */
   excludeAgentIds?: AgentKey[];
 }

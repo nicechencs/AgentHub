@@ -55,6 +55,13 @@ describe('usageWindowBound', () => {
     expect(usageWindowBound('7d', now)).toEqual({ days: 7 });
     expect(usageWindowBound('30d', now)).toEqual({ days: 30 });
   });
+
+  it('uses local start/end midnight for a custom range', () => {
+    const bound = usageWindowBound('custom', now, { start: '2026-08-10', end: '2026-08-12' });
+    expect(bound.since).toBe(new Date(2026, 7, 10).toISOString());
+    expect(bound.until).toBe(new Date(2026, 7, 13).toISOString());
+    expect(bound.days).toBeGreaterThanOrEqual(14);
+  });
 });
 
 describe('usageWindowSpan / formatUsageWindowLabel', () => {
@@ -79,6 +86,9 @@ describe('usageWindowSpan / formatUsageWindowLabel', () => {
     expect(formatUsageWindowLabel('today', 'en', now)).toBe('Sep 3');
     expect(formatUsageWindowLabel('7d', 'zh', now)).toBe('8月27日 – 9月3日');
     expect(formatUsageWindowLabel('7d', 'en', now)).toBe('Aug 27 – Sep 3');
+    expect(
+      formatUsageWindowLabel('custom', 'zh', now, { start: '2026-08-01', end: '2026-08-12' }),
+    ).toBe('8月1日 – 8月12日');
   });
 });
 
@@ -305,13 +315,17 @@ describe('remembered usage filters', () => {
   it('starts from defaults and keeps the last in-process selection', () => {
     expect(rememberedUsageFilters()).toEqual(DEFAULT_USAGE_OVERVIEW_FILTERS);
     rememberUsageFilters({
-      dateRange: 'today',
+      dateRange: 'custom',
+      customStart: '2026-08-01',
+      customEnd: '2026-08-12',
       agentFilter: 'claude',
       modelFilter: 'opus',
       trendGroup: 'model',
     });
     expect(rememberedUsageFilters()).toEqual({
-      dateRange: 'today',
+      dateRange: 'custom',
+      customStart: '2026-08-01',
+      customEnd: '2026-08-12',
       agentFilter: 'claude',
       modelFilter: 'opus',
       trendGroup: 'model',

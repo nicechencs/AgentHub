@@ -62,6 +62,10 @@ pub struct UsageQuery {
     /// RFC3339 lower bound, AND-ed with the `days` window (`ts >= since`).
     #[serde(default)]
     pub since: Option<String>,
+    /// RFC3339 exclusive upper bound (`ts < until`). Dashboard custom range
+    /// passes local midnight of the day after the last included day.
+    #[serde(default)]
+    pub until: Option<String>,
     /// Hidden / omitted agents. Applied before LIMIT so the table cap is among visible rows.
     #[serde(default)]
     pub exclude_agent_ids: Vec<AgentId>,

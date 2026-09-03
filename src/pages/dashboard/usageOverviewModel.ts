@@ -11,11 +11,16 @@ import { usageTokenParts } from '@/lib/usage-tokens';
 import type { UsageTrendGroup } from './usageTrendChartModel';
 
 /** 日期筛选预设：today / 24h 均按 days=1 拉取，today 再按本地日历日收窄 */
-export type DateRange = 'today' | '24h' | '7d' | '30d';
+export type DateRange = 'today' | '24h' | '7d' | '30d' | 'custom';
+
+/** Inclusive custom range cap (local calendar days). */
+export const MAX_CUSTOM_USAGE_DAYS = 90;
 
 /** 总览用量筛选：进程内记忆，关应用后回到默认 */
 export interface UsageOverviewFilters {
   dateRange: DateRange;
+  customStart: string;
+  customEnd: string;
   agentFilter: AgentKey | 'all';
   modelFilter: string;
   trendGroup: UsageTrendGroup;
@@ -23,6 +28,8 @@ export interface UsageOverviewFilters {
 
 export const DEFAULT_USAGE_OVERVIEW_FILTERS: UsageOverviewFilters = {
   dateRange: '7d',
+  customStart: '',
+  customEnd: '',
   agentFilter: 'all',
   modelFilter: 'all',
   trendGroup: 'agent',
@@ -38,11 +45,90 @@ export function rememberUsageFilters(next: UsageOverviewFilters): void {
   rememberedFilters = { ...next };
 }
 
+export function formatLocalYmd(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+export function parseLocalYmd(value: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const date = new Date(year, month, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) {
+    return null;
+  }
+  return date;
+}
+
+function localDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+/** Seed empty/invalid custom dates from a preset, then clamp to today and 90 days. */
+export function normalizeCustomRange(
+  startYmd: string,
+  endYmd: string,
+  now = new Date(),
+  seedFrom: DateRange = '7d',
+): { start: string; end: string } {
+  const today = localDay(now);
+  const minStart = new Date(today);
+  minStart.setDate(minStart.getDate() - (MAX_CUSTOM_USAGE_DAYS - 1));
+
+  let start = parseLocalYmd(startYmd);
+  let end = parseLocalYmd(endYmd);
+  if (!start || !end) {
+    const seed = seedFrom === 'custom' ? '7d' : seedFrom;
+    const span = usageWindowSpan(seed, now);
+    start = localDay(span.start);
+    end = localDay(span.end);
+  }
+  if (end > today) end = today;
+  if (start > end) {
+    const swap = start;
+    start = end;
+    end = swap;
+  }
+  if (start < minStart) start = minStart;
+  return { start: formatLocalYmd(start), end: formatLocalYmd(end) };
+}
+
+export function customRangeInputBounds(
+  customStart: string,
+  customEnd: string,
+  now = new Date(),
+): { minStart: string; maxStart: string; minEnd: string; maxEnd: string } {
+  const today = formatLocalYmd(now);
+  const minStartDate = localDay(now);
+  minStartDate.setDate(minStartDate.getDate() - (MAX_CUSTOM_USAGE_DAYS - 1));
+  const minStart = formatLocalYmd(minStartDate);
+  const maxStart = customEnd && customEnd < today ? customEnd : today;
+  const minEnd = customStart && customStart > minStart ? customStart : minStart;
+  return { minStart, maxStart, minEnd, maxEnd: today };
+}
+
 /** SQL window for overview / trend / table. `today` AND-s local midnight. */
 export function usageWindowBound(
   dateRange: DateRange,
   now = new Date(),
-): { days: number; since?: string } {
+  custom?: { start: string; end: string },
+): { days: number; since?: string; until?: string } {
+  if (dateRange === 'custom') {
+    const { start, end } = normalizeCustomRange(custom?.start ?? '', custom?.end ?? '', now);
+    const startDate = parseLocalYmd(start) ?? localDay(now);
+    const endDate = parseLocalYmd(end) ?? localDay(now);
+    const untilDate = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate() + 1);
+    const days = Math.max(
+      1,
+      Math.ceil((now.getTime() - startDate.getTime()) / (24 * 3600 * 1000)) + 1,
+    );
+    return { days, since: startDate.toISOString(), until: untilDate.toISOString() };
+  }
   if (dateRange === 'today') {
     const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     return { days: 1, since: midnight.toISOString() };
@@ -55,7 +141,18 @@ export function usageWindowBound(
 export function usageWindowSpan(
   dateRange: DateRange,
   now = new Date(),
+  custom?: { start: string; end: string },
 ): { start: Date; end: Date } {
+  if (dateRange === 'custom') {
+    const { start, end } = normalizeCustomRange(custom?.start ?? '', custom?.end ?? '', now);
+    const startDate = parseLocalYmd(start) ?? localDay(now);
+    const endDate = parseLocalYmd(end) ?? localDay(now);
+    if (isSameLocalDay(endDate, now)) return { start: startDate, end: now };
+    return {
+      start: startDate,
+      end: new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59, 999),
+    };
+  }
   if (dateRange === 'today') {
     return { start: new Date(now.getFullYear(), now.getMonth(), now.getDate()), end: now };
   }
@@ -103,8 +200,9 @@ export function formatUsageWindowLabel(
   dateRange: DateRange,
   lang: UiLanguage,
   now = new Date(),
+  custom?: { start: string; end: string },
 ): string {
-  const { start, end } = usageWindowSpan(dateRange, now);
+  const { start, end } = usageWindowSpan(dateRange, now, custom);
   const left = formatUsageDate(start, lang);
   if (isSameLocalDay(start, end)) return left;
   return `${left} – ${formatUsageDate(end, lang)}`;

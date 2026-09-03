@@ -45,9 +45,23 @@ describe('dashboard layout wiring', () => {
     expect(page).toContain('rememberedUsageFilters');
     expect(page).toContain('rememberUsageFilters');
     expect(page).toContain('resolveUsageModelFilter');
-    expect(page).toContain('formatUsageWindowLabel');
+    expect(page).not.toContain('formatUsageWindowLabel');
+    expect(page).not.toContain('rounded-full border border-border bg-panel px-3 text-meta');
     expect(page).not.toContain("useState<DateRange>('7d')");
     expect(page).toContain('if (!modelsReady) return');
+  });
+
+  it('puts time range after agent and model filters and supports custom dates', () => {
+    const page = source('index.tsx');
+    const agentIdx = page.indexOf("t('dashboard.page.allAgents')");
+    const modelIdx = page.indexOf("t('dashboard.page.allModels')");
+    const rangeIdx = page.indexOf("t('dashboard.page.rangeAria')");
+    expect(agentIdx).toBeGreaterThan(-1);
+    expect(modelIdx).toBeGreaterThan(agentIdx);
+    expect(rangeIdx).toBeGreaterThan(modelIdx);
+    expect(page).toContain("'custom'");
+    expect(page).toContain('type="date"');
+    expect(page).toContain('dashboard.page.customStart');
   });
 
   it('plots agent series as overlay areas and model series as stacked cumulative fill', () => {
@@ -69,7 +83,9 @@ describe('dashboard layout wiring', () => {
     const page = source('index.tsx');
     const chart = source('UsageTrendChart.tsx');
     expect(page).toContain('UsageTrendChart');
-    expect(page).toContain("usageTrend(days, agentId, model, since, excludeAgentIds, 'model')");
+    expect(page).toContain(
+      "usageTrend(days, agentId, model, since, excludeAgentIds, 'model', until)",
+    );
     expect(chart).toContain('SegmentedControl');
     expect(chart).toContain('dashboard.page.trendGroupModel');
     expect(chart).not.toContain('dashboard.page.trendMetricCost');
