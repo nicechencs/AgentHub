@@ -321,6 +321,7 @@ pub(super) async fn handle_conversation(
     };
     let candidate = candidate_for_member(resolver_candidates.as_deref(), &member);
     trace.pool_selected(&member, candidate);
+    trace.upstream_model(admitted.state.upstream.model.as_deref());
     let continuation_locked = pair_active && required_member.is_some();
     admitted.member = Some(member);
     // Gateway usage capture identity: only fields the dispatch path already

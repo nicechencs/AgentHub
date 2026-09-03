@@ -599,6 +599,15 @@ impl RouteTraceBuilder {
         }
     }
 
+    pub fn upstream_model(&mut self, model: Option<&str>) {
+        if self.trace.upstream.upstream_model.is_none() {
+            self.trace.upstream.upstream_model = model
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned);
+        }
+    }
+
     pub fn pool_attempt_failed(&mut self, member: &PickedMember, code: &str, message: &str) {
         self.trace.pool.attempts.push(RouteTracePoolAttempt {
             member: trace_member(member),

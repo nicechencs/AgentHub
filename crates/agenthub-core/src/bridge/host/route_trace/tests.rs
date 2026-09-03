@@ -47,8 +47,18 @@ fn route_trace_records_only_key_last4_for_local_and_upstream_auth() {
         MemberHealth::Renewable,
     );
     builder.pool_selected(&member, None);
+    builder.upstream_model(Some("grok-4.6"));
     assert_eq!(builder.trace.local_auth.key_last4.as_deref(), Some("1234"));
-    assert_eq!(builder.trace.pool.selected_member.as_ref().and_then(|item| item.key_last4.as_deref()), Some("627a"));
+    assert_eq!(
+        builder
+            .trace
+            .pool
+            .selected_member
+            .as_ref()
+            .and_then(|item| item.key_last4.as_deref()),
+        Some("627a")
+    );
+    assert_eq!(builder.trace.upstream.upstream_model.as_deref(), Some("grok-4.6"));
 }
 
 #[test]
