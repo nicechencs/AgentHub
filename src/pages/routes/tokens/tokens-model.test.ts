@@ -3,12 +3,17 @@ import type { AdapterProfile, DefaultRoutePoolOverview } from '@/lib/backend/con
 import type { GatewayUsageRow } from '@/lib/backend/contracts/usage-types';
 import {
   attachTokenUsage,
+  agentSupportsLocalEndpointKind,
+  buildCreateTokenEndpointCards,
   buildLocalTokenRows,
+  defaultCreateTokenName,
+  firstCreateTokenPoolId,
   generateLocalToken,
   lastVisitFromStatuses,
   localTokenDeleteGate,
   localTokenEditKeyGate,
   maskLocalToken,
+  supportedAgentsForEndpointKind,
   tokenDisplayName,
   tokenTypeLabel,
   visibleTokenKinds,
@@ -560,5 +565,66 @@ describe('tokens-model', () => {
     expect(leftoverRows[0].token).toBeTruthy();
   });
 
+  it('lists Agents that speak each endpoint, with Grok only on Grok Responses',
+    () => {
+      expect(supportedAgentsForEndpointKind('messages')).toEqual([
+        'claude',
+        'kimi',
+        'pi',
+        'dsh',
+        'zcode',
+      ]);
+      expect(supportedAgentsForEndpointKind('responses_codex')).toEqual([
+        'codex',
+        'kimi',
+        'pi',
+        'dsh',
+        'zcode',
+      ]);
+      expect(supportedAgentsForEndpointKind('responses_grok')).toEqual(['grok']);
+      expect(supportedAgentsForEndpointKind('chat_completions')).toEqual([
+        'kimi',
+        'pi',
+        'workbuddy',
+        'dsh',
+        'zcode',
+      ]);
+      expect(agentSupportsLocalEndpointKind('grok', 'responses_codex')).toBe(false);
+      expect(agentSupportsLocalEndpointKind('codex', 'responses_grok')).toBe(false);
+      expect(agentSupportsLocalEndpointKind('cursor', 'messages')).toBe(false);
+    });
 
+  it('tiles four endpoint cards and only enables kinds with a pool',
+    () => {
+      const cards = buildCreateTokenEndpointCards([
+        { id: 'pool-claude', kind: 'messages' },
+        { id: 'pool-kimi', kind: 'chat_completions' },
+      ]);
+      expect(cards.map((card) => card.kind)).toEqual([
+        'messages',
+        'responses_codex',
+        'responses_grok',
+        'chat_completions',
+      ]);
+      expect(cards[0]).toMatchObject({
+        path: '/v1/messages',
+        poolId: 'pool-claude',
+      });
+      expect(cards[1]?.poolId).toBeNull();
+      expect(cards[2]?.poolId).toBeNull();
+      expect(cards[3]).toMatchObject({
+        path: '/v1/chat/completions',
+        poolId: 'pool-kimi',
+      });
+      expect(firstCreateTokenPoolId(cards)).toBe('pool-claude');
+      expect(firstCreateTokenPoolId([])).toBe('');
+    });
+
+  it('defaults an empty create name to the endpoint label plus a free number', () => {
+    expect(defaultCreateTokenName({ kind: 'messages' })).toBe('Messages 2');
+    expect(defaultCreateTokenName({
+      kind: 'chat_completions',
+      existingNames: ['Chat Completions 2', '家里'],
+    })).toBe('Chat Completions 3');
+  });
 });
