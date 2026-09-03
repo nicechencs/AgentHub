@@ -43,7 +43,7 @@ describe('formatChatSessionRecord', () => {
             agents: [
               chatMsg({
                 id: 'a1',
-                role: 'assistant',
+                role: 'agent',
                 agentId: 'claude',
                 content: '先看 token。',
               }),
