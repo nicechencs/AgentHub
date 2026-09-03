@@ -17,7 +17,17 @@ impl ProjectSource for CursorProjectSource {
         if empty_if_missing(ctx.home) {
             return Ok(vec![]);
         }
-        list_cursor_projects(ctx.home)
+        let rows = list_cursor_projects(ctx.home, ctx.data_dir)?;
+        // Desktop IDE windows (numeric ids / canvases) are not Cursor Agent CLI.
+        Ok(rows
+            .into_iter()
+            .filter(|p| {
+                ctx.home
+                    .join(&p.relative_path)
+                    .join("agent-transcripts")
+                    .is_dir()
+            })
+            .collect())
     }
 
     fn list_sessions(&self, ctx: &ProjectScanContext<'_>) -> Result<Vec<AgentSession>> {

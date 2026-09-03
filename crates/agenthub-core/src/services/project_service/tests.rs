@@ -382,37 +382,43 @@ fn list_cursor_workspace_folders_no_fake_excerpt() {
     let proj = home.join("projects").join("d-demo-workspace-2026-AgentHub");
     fs::create_dir_all(proj.join("agent-transcripts")).unwrap();
     fs::create_dir_all(home.join("projects").join("empty-window")).unwrap();
+    fs::create_dir_all(
+        home.join("projects")
+            .join("1785382907533")
+            .join("canvases"),
+    )
+    .unwrap();
 
     let rows = list_projects_for_agent_home(AgentId::Cursor, &home, None).unwrap();
-    assert_eq!(rows.len(), 2);
-    for rec in &rows {
-        assert_eq!(rec.agent_id, AgentId::Cursor);
-        assert!(rec.id.starts_with("cursor:proj:"));
-        assert_eq!(rec.session_count, 0);
-        assert!(rec.preview.is_none());
-        assert!(rec.message_count.is_none());
-    }
-    let agenthub = rows
-        .iter()
-        .find(|r| r.relative_path.contains("AgentHub"))
-        .expect("AgentHub folder");
-    assert!(
-        agenthub.title.contains("AgentHub") || agenthub.relative_path.contains("AgentHub"),
-        "title={} rel={}",
-        agenthub.title,
-        agenthub.relative_path
+    assert_eq!(
+        rows.len(),
+        1,
+        "desktop IDE windows must not list as Agent projects"
     );
-    if let Some(actual) = agenthub.actual_path.as_deref() {
+    let rec = &rows[0];
+    assert_eq!(rec.agent_id, AgentId::Cursor);
+    assert!(rec.id.starts_with("cursor:proj:"));
+    assert_eq!(rec.session_count, 0);
+    assert!(rec.preview.is_none());
+    assert!(rec.message_count.is_none());
+    assert!(
+        rec.title.contains("AgentHub") || rec.relative_path.contains("AgentHub"),
+        "title={} rel={}",
+        rec.title,
+        rec.relative_path
+    );
+    if let Some(actual) = rec.actual_path.as_deref() {
         assert!(
             Path::new(actual).exists(),
             "cursor actual_path must exist when set: {actual}"
         );
     }
-    let empty = rows
-        .iter()
-        .find(|r| r.relative_path.contains("empty-window"))
-        .expect("empty-window");
-    assert!(empty.actual_path.is_none());
+    assert!(
+        !rows.iter().any(|r| r.relative_path.contains("empty-window")
+            || r.relative_path.contains("1785382907533")),
+        "desktop-only folders leaked: {:?}",
+        rows.iter().map(|r| &r.relative_path).collect::<Vec<_>>()
+    );
 
     let sessions = list_sessions_for_agent_home(AgentId::Cursor, &home, None).unwrap();
     assert!(sessions.is_empty());
@@ -491,7 +497,7 @@ fn list_cursor_agent_transcripts_as_sessions() {
     fs::create_dir_all(home.join("projects").join("empty-window")).unwrap();
 
     let projects = list_projects_for_agent_home(AgentId::Cursor, &home, None).unwrap();
-    assert_eq!(projects.len(), 2);
+    assert_eq!(projects.len(), 1);
     let hub = projects
         .iter()
         .find(|r| r.relative_path.contains("AgentHub"))
@@ -501,11 +507,7 @@ fn list_cursor_agent_transcripts_as_sessions() {
         .preview
         .as_deref()
         .is_some_and(|p| p.contains("路由页") || p.contains("第二段")));
-    let empty = projects
-        .iter()
-        .find(|r| r.relative_path.contains("empty-window"))
-        .expect("empty-window");
-    assert_eq!(empty.session_count, 0);
+    assert!(!projects.iter().any(|r| r.relative_path.contains("empty-window")));
 
     let sessions = list_sessions_for_agent_home(AgentId::Cursor, &home, None).unwrap();
     assert_eq!(
@@ -689,6 +691,41 @@ fn list_codex_groups_by_payload_cwd_session_meta() {
     let projects2 = list_projects_for_agent_home(AgentId::Codex, &home, None).unwrap();
     assert_eq!(projects2.len(), 1);
     assert_eq!(projects2[0].session_count, 2);
+}
+
+#[test]
+fn list_codex_desktop_originator_uses_payload_id() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".codex");
+    let session = home
+        .join("sessions")
+        .join("2026")
+        .join("04")
+        .join("22")
+        .join("rollout-2026-04-22T16-38-17-019db457-0cbf-7362-8691-75cbbc664cbf.jsonl");
+    write_session(
+        &session,
+        &[
+            r#"{"timestamp":"2026-04-22T08:38:17.000Z","type":"session_meta","payload":{"id":"019db457-0cbf-7362-8691-75cbbc664cbf","cwd":"D:\\work\\desktop-app","originator":"Codex Desktop","cli_version":"0.122.0-alpha.13"}}"#,
+            r#"{"timestamp":"2026-04-22T08:38:18.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"from desktop app"}]}}"#,
+        ],
+    );
+
+    let sessions = list_sessions_for_agent_home(AgentId::Codex, &home, None).unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(
+        sessions[0].session_id.as_deref(),
+        Some("019db457-0cbf-7362-8691-75cbbc664cbf")
+    );
+    assert_eq!(sessions[0].project_id, "codex:proj:cwd/D:/work/desktop-app");
+    assert!(
+        sessions[0]
+            .preview
+            .as_deref()
+            .is_some_and(|p| p.contains("from desktop app")),
+        "preview={:?}",
+        sessions[0].preview
+    );
 }
 
 #[test]
@@ -1050,7 +1087,7 @@ fn codex_session_index_skips_reparse_on_second_list() {
     let first = list_sessions_for_agent_home(AgentId::Codex, &home, Some(data.path())).unwrap();
     assert_eq!(first.len(), 1);
     assert_eq!(first[0].project_id, "codex:proj:cwd/D:/idx/repo");
-    assert!(data.path().join("project_session_index.json").exists());
+    assert!(data.path().join("scan-cache.db").exists());
 
     // Second list should still return same grouping via index.
     let second = list_sessions_for_agent_home(AgentId::Codex, &home, Some(data.path())).unwrap();
@@ -2169,7 +2206,7 @@ fn session_index_roundtrip_and_freshness() {
     use super::session_index::{IndexEntry, SessionIndexStore};
 
     let dir = tempdir().unwrap();
-    let mut store = SessionIndexStore::load(dir.path());
+    let mut store = SessionIndexStore::load(dir.path()).expect("open cache");
     store.put(
         AgentId::Codex,
         "sessions/a.jsonl",
@@ -2186,9 +2223,9 @@ fn session_index_roundtrip_and_freshness() {
         },
     );
     store.save_if_dirty();
-    assert!(dir.path().join("project_session_index.json").exists());
+    assert!(dir.path().join("scan-cache.db").exists());
 
-    let store2 = SessionIndexStore::load(dir.path());
+    let store2 = SessionIndexStore::load(dir.path()).expect("reopen cache");
     assert!(store2
         .get_fresh(AgentId::Codex, "sessions/a.jsonl", 10, 100)
         .is_some());

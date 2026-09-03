@@ -19,7 +19,8 @@ use crate::error::{AppError, Result};
 use crate::models::{AgentId, AgentProject, AgentProjectExcerpt, AgentSession};
 use crate::utils::paths::{agent_home, first_env_path};
 use crate::utils::project_path::{
-    cursor_actual_path, cwd_storage_key, decode_claude_project_dir, decode_pi_session_dir,
+    best_cursor_path_for_folder, cursor_actual_path, cwd_storage_key,
+    decode_claude_project_dir, decode_pi_session_dir, extract_abs_fs_paths,
     verified_actual_path, UNGROUPED_KEY,
 };
 
@@ -742,7 +743,7 @@ fn list_sessions_tree(
     if !root.is_dir() {
         return Ok(vec![]);
     }
-    let mut index = data_dir.map(SessionIndexStore::load);
+    let mut index = data_dir.and_then(SessionIndexStore::load);
     let mut seen: HashSet<String> = HashSet::new();
     let mut out = Vec::new();
     let mut stack = vec![root];
@@ -1501,11 +1502,15 @@ fn title_from_actual(actual: Option<&str>, fallback: &str) -> String {
     fallback.rsplit('/').next().unwrap_or(fallback).to_string()
 }
 
-pub(crate) fn list_cursor_projects(home: &Path) -> Result<Vec<AgentProject>> {
+pub(crate) fn list_cursor_projects(
+    home: &Path,
+    data_dir: Option<&Path>,
+) -> Result<Vec<AgentProject>> {
     let root = home.join("projects");
     if !root.is_dir() {
         return Ok(vec![]);
     }
+    let mut store = data_dir.and_then(SessionIndexStore::load);
     let mut out = Vec::new();
     let entries = match fs::read_dir(&root) {
         Ok(e) => e,
@@ -1561,15 +1566,34 @@ pub(crate) fn list_cursor_projects(home: &Path) -> Result<Vec<AgentProject>> {
             size_bytes
         };
         let decoded = cursor_actual_path(&name);
-        let mut actual = decoded.as_ref().filter(|p| Path::new(p).exists()).cloned();
+        let mut actual = store
+            .as_ref()
+            .and_then(|s| s.cached_path(AgentId::Cursor, &name))
+            .filter(|p| Path::new(p).exists());
+        if actual.is_none() {
+            actual = decoded.as_ref().filter(|p| Path::new(p).exists()).cloned();
+        }
         if actual.is_none() {
             if let Some(path) = newest_primary.as_deref() {
                 let text = read_head(path, LIST_HEAD_BYTES).unwrap_or_default();
                 actual = extract_cwd_from_text(AgentId::Cursor, &text)
                     .filter(|c| !c.is_empty() && Path::new(c).exists());
+                if actual.is_none() {
+                    let found = extract_abs_fs_paths(&text);
+                    actual = best_cursor_path_for_folder(
+                        &name,
+                        found.iter().map(String::as_str),
+                    )
+                    .filter(|c| Path::new(c).exists());
+                }
             }
         }
         actual = native_existing_path(actual);
+        if let Some(a) = actual.as_deref() {
+            if let Some(st) = store.as_mut() {
+                st.put_path(AgentId::Cursor, &name, a);
+            }
+        }
         let title = title_from_actual(actual.as_deref().or(decoded.as_deref()), &name);
         let preview = newest_primary.as_deref().and_then(|p| scan_preview(p).0);
         out.push(cheap_project(
@@ -1584,6 +1608,9 @@ pub(crate) fn list_cursor_projects(home: &Path) -> Result<Vec<AgentProject>> {
             updated,
             preview,
         ));
+    }
+    if let Some(st) = store.as_mut() {
+        st.save_if_dirty();
     }
     out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
     Ok(out)
