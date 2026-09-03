@@ -1110,27 +1110,12 @@ fn finalize_runtime_install_does_not_set_business_code() {
         timed_out: false,
         spawn_error: None,
     };
-    // Prefer a runtime that is not ready so this stays on the execute-then-redetect
-    // failure path. If every runtime is already ok, success-after-nonzero also
-    // must not carry env.not_ready / unsupported.
-    let id = [
-        RuntimeId::PowerShell,
-        RuntimeId::Git,
-        RuntimeId::NodeJs,
-        RuntimeId::Npm,
-    ]
-    .into_iter()
-    .find(|id| runtime::detect_one(*id).status != EnvStatusKind::Ok)
-    .unwrap_or(RuntimeId::Git);
-    let out = finalize_runtime_install(id, vec!["# ran winget".into()], res);
-    if runtime::detect_one(id).status != EnvStatusKind::Ok && id != RuntimeId::NodeJs {
-        assert!(!out.ok, "redetect of missing {} must fail", id.as_str());
-    }
-    assert!(
-        out.code.is_none(),
-        "executed install path must stay install.failed, got {:?}",
-        out.code
-    );
+    // A non-zero command must fail even when the old runtime is still detected.
+    let out = finalize_runtime_install(RuntimeId::Git, vec!["# ran winget".into()], res);
+    assert!(!out.ok);
+    assert!(out.message.contains("未成功完成"));
+    assert!(out.logs.iter().any(|line| line.contains("不会覆盖该失败")));
+    assert!(out.code.is_none());
     assert!(out.details.is_none());
 }
 

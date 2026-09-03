@@ -878,6 +878,23 @@ fn finalize_runtime_install(
 ) -> InstallOutcome {
     runtime::invalidate_cache();
     let status = runtime::detect_one(id);
+    if !res.success() {
+        logs.push(format!(
+            "安装命令失败（exit={}）；重新检测结果不会覆盖该失败。",
+            res.exit_code
+                .map(|code| code.to_string())
+                .unwrap_or_else(|| "unknown".into())
+        ));
+        return InstallOutcome {
+            ok: false,
+            action: "env_install".into(),
+            logs,
+            message: format!("{} 安装命令未成功完成", id.as_str()),
+            agent: None,
+            runtime: Some(status),
+            ..Default::default()
+        };
+    }
     let node = runtime::detect_one(RuntimeId::NodeJs);
     let ok = match id {
         RuntimeId::Npm => node.status == EnvStatusKind::Ok && status.status == EnvStatusKind::Ok,
@@ -1012,7 +1029,7 @@ fn install_runtime_inner(
                             let same_version =
                                 out.runtime.as_ref().and_then(|row| row.version.as_deref())
                                     == before.version.as_deref();
-                            if !res.success() && out.ok && same_version {
+                            if !res.success() && same_version {
                                 return Ok(InstallOutcome::failure(
                                     action,
                                     out.logs,

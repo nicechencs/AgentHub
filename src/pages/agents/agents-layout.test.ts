@@ -69,7 +69,7 @@ describe('agents layout wiring', () => {
     expect(page).toContain('runtimes={runtimes}');
     expect(page).toContain('EnvSoftwareList');
     expect(page).not.toContain('<EnvStatusBar');
-    expect(page).toContain('onAction={(runtime, intent, autoStart = true)');
+    expect(page).toContain('onAction={(runtime, intent, canAutoUpgrade = true)');
     expect(page).toContain("intent: 'install'");
     expect(card).toContain('onSelect?:');
     expect(card).toContain('selected?:');
