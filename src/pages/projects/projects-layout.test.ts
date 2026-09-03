@@ -32,5 +32,8 @@ describe('projects split layout', () => {
     expect(preview).toContain('<AgentDot');
     expect(preview).toContain('rounded-composer bg-subtle');
     expect(preview).toContain('rounded-composer bg-hover/60');
+    expect(preview).toContain("t('projects.preview.copyRecord')");
+    expect(preview).toContain("t('projects.preview.copyTurn')");
+    expect(preview).toContain('CopyTextButton');
   });
 });

@@ -7,6 +7,7 @@ import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { chatMainColumnClass, chatStageClass } from './chat-model';
+import { formatChatSessionRecord } from './chat-format';
 import { ChatComposer } from './ChatComposer';
 import { ChatSessionHeader } from './ChatSessionHeader';
 import { ChatSessionRail } from './ChatSessionRail';
@@ -83,6 +84,7 @@ export default function ChatPage() {
         <ChatSessionHeader
           active={page.active}
           railOpen={page.railOpen}
+          recordText={formatChatSessionRecord(page.turns, t('common.you'))}
           onExpandRail={() => page.setRailOpen(true)}
           onRename={page.renameTitle}
           onOpenSettings={() => page.setSettingsOpen(true)}

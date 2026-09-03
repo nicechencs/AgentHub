@@ -13,6 +13,16 @@ export type ExcerptTurn = {
   text: string;
 };
 
+export function excerptTurnsToRecordLines(
+  turns: ExcerptTurn[],
+  labels: { user: string; assistant: string },
+): { speaker: string; text: string }[] {
+  return turns.map((turn) => ({
+    speaker: turn.role === 'user' ? labels.user : labels.assistant,
+    text: turn.text,
+  }));
+}
+
 const ROLE_MARKER = /^---turn:(user|assistant)---\s*$/;
 
 export function splitExcerptTurns(excerpt: string): ExcerptTurn[] {

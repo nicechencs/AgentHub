@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { FolderOpen, PanelLeftOpen, Settings2, ShieldAlert, Terminal } from 'lucide-react';
+import { Copy, FolderOpen, PanelLeftOpen, Settings2, ShieldAlert, Terminal } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
+import { copyTextToClipboard } from '@/components/shared/CopyTextButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
@@ -19,6 +20,7 @@ import {
 export function ChatSessionHeader({
   active,
   railOpen,
+  recordText,
   onExpandRail,
   onRename,
   onOpenSettings,
@@ -26,6 +28,7 @@ export function ChatSessionHeader({
 }: {
   active: Conversation | null;
   railOpen: boolean;
+  recordText?: string;
   onExpandRail: () => void;
   onRename: (next: string) => Promise<boolean>;
   onOpenSettings: () => void;
@@ -122,6 +125,26 @@ export function ChatSessionHeader({
       </div>
       {active && (
         <div className="flex min-w-0 shrink-0 items-center gap-1.5">
+          <Hint label={recordText ? t('common.copyRecord') : t('common.copyRecordEmpty')}>
+            <button
+              type="button"
+              className="flex h-7 w-7 items-center justify-center rounded-btn text-muted hover:bg-hover hover:text-primary disabled:opacity-40"
+              disabled={!recordText}
+              aria-label={t('common.copyRecord')}
+              onClick={() => {
+                if (!recordText) {
+                  toast({ title: t('common.copyRecordEmpty'), variant: 'danger' });
+                  return;
+                }
+                void copyTextToClipboard(recordText).then(
+                  () => toast({ title: t('common.copied'), variant: 'success' }),
+                  () => toast({ title: t('common.copyFailed'), variant: 'danger' }),
+                );
+              }}
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </button>
+          </Hint>
           <Hint label={active.cwd || t('chat.header.pickCwd')}>
             <button
               type="button"
