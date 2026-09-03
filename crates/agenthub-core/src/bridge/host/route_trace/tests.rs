@@ -33,6 +33,25 @@ fn sanitize_upstream_url_strips_query_and_fragment() {
 }
 
 #[test]
+fn route_trace_records_only_key_last4_for_local_and_upstream_auth() {
+    let mut builder = RouteTraceBuilder::begin("req-key-hints", "POST", "/v1/chat/completions");
+    builder.local_auth_ok("profile-a", Some(17034));
+    builder.local_auth_key_last4("ahb_local_1234");
+    let member = PickedMember::new(
+        "account:workbuddy",
+        "account",
+        "workbuddy",
+        "WorkBuddy Grok",
+        ResolvedAuth::bearer("sk-upstream-627a"),
+        None,
+        MemberHealth::Renewable,
+    );
+    builder.pool_selected(&member, None);
+    assert_eq!(builder.trace.local_auth.key_last4.as_deref(), Some("1234"));
+    assert_eq!(builder.trace.pool.selected_member.as_ref().and_then(|item| item.key_last4.as_deref()), Some("627a"));
+}
+
+#[test]
 fn route_trace_log_caps_per_profile() {
     let log = RouteTraceLog::new();
     for index in 0..(ROUTE_TRACE_CAP + 5) {

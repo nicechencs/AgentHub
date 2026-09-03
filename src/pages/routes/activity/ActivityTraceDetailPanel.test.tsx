@@ -18,8 +18,8 @@ function row(partial: Partial<RouteTraceListItem> = {}): RouteTraceListItem {
     ttftMs: 800,
     inputTokens: 1200,
     outputTokens: 340,
-    localAuth: { status: 'ok', port: 8787 },
-    pool: { status: 'ok', selectedMember: { label: 'acct-1', sourceKind: 'account', sourceId: 'acct-1' } },
+    localAuth: { status: 'ok', port: 8787, keyLast4: 'local' },
+    pool: { status: 'ok', selectedMember: { label: 'WorkBuddy Grok', sourceKind: 'account', sourceId: 'acct-1', keyLast4: '627a' } },
     conversion: { status: 'ok', path: 'messages_to_anthropic', result: 'converted' },
     upstreamAuth: { status: 'ok', httpStatus: 200 },
     upstream: {
@@ -57,6 +57,12 @@ describe('ActivityTraceDetailPanel', () => {
     expect(markup).toContain('Messages');
     expect(markup).toContain('Anthropic');
     expect(markup).toContain('--agent-claude');
+    expect(markup).toContain('入口 Key');
+    expect(markup).toContain('••••local');
+    expect(markup).toContain('选中的登录');
+    expect(markup).toContain('WorkBuddy Grok');
+    expect(markup).toContain('上游 API Key');
+    expect(markup).toContain('••••627a');
     expect(markup).toContain('本机鉴权');
     expect(markup).toContain('连接池');
     expect(markup).toContain('转换');

@@ -60,6 +60,7 @@ pub(super) async fn handle_conversation(
     };
     let listen_port = gateway.cited_port_for_profile(&state.profile_id);
     trace.local_auth_ok(&state.profile_id, listen_port);
+    trace.local_auth_key_last4(&state.local_token);
     if let Some(response) = surface.reject_if_unserved(&state, &request_id) {
         let mismatch =
             super::surface::surface_mismatch_message(surface, state.upstream.local_surface);

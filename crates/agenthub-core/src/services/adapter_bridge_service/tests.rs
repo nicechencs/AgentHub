@@ -2026,6 +2026,113 @@ fn prepare_openai_account_reuses_secret_resolver_and_projects_account_ref() {
 }
 
 #[test]
+fn prepare_openai_account_uses_its_saved_endpoint_and_model() {
+    let (_dir, db) = test_db();
+    let mut account = openai_account("workbuddy-account", "sk-workbuddy-account");
+    account.label = "Custom Grok".into();
+    account.credentials = json!({
+        "format": "api_key",
+        "api_key": "sk-workbuddy-account",
+        "base_url": "https://relay.example/custom/v1/chat/completions",
+        "model_id": "grok-4.6",
+    });
+    account.extra = json!({"provider": "openai"});
+    AccountRepo::new(db.clone()).create(&account).unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+
+    let prepared = service
+        .prepare(&openai_request(
+            AdapterSourceKind::Account,
+            "workbuddy-account",
+        ))
+        .unwrap();
+    let start = prepared.runtime_material().start_spec(None);
+    assert_eq!(start.upstream.base_url, "https://relay.example/custom/v1");
+    assert_eq!(start.upstream.model.as_deref(), Some("grok-4.6"));
+    assert!(!format!("{prepared:?}").contains("sk-workbuddy-account"));
+
+    create_projection(&db, &prepared, 43135);
+    service.finalize(&prepared, 43135).unwrap();
+    let restored = service
+        .resolve_restore_material(prepared.profile().id.as_str())
+        .unwrap();
+    let restored_start = restored.runtime_material().start_spec(None);
+    assert_eq!(
+        restored_start.upstream.base_url,
+        "https://relay.example/custom/v1"
+    );
+    assert_eq!(restored_start.upstream.model.as_deref(), Some("grok-4.6"));
+    assert!(!format!("{restored:?}").contains("sk-workbuddy-account"));
+}
+
+#[test]
+fn workbuddy_account_upstream_uses_its_saved_url_and_model_id() {
+    let (_dir, db) = test_db();
+    let mut account = openai_account("workbuddy-catalog", "sk-workbuddy-catalog");
+    account.agent_id = AgentId::WorkBuddy;
+    account.label = "WorkBuddy Grok".into();
+    account.credentials = json!({
+        "format": "api_key",
+        "api_key": "sk-workbuddy-catalog",
+        "url": "https://relay.example/custom/v1/chat/completions",
+        "id": "grok-4.6",
+    });
+    account.extra = json!({"provider": "workbuddy"});
+    AccountRepo::new(db.clone()).create(&account).unwrap();
+    let service = AdapterBridgeService::new(db);
+
+    let (url, model, ..) = super::prepare::openai_source_upstream(
+        &service,
+        &OPENAI_CODEX_RULE,
+        AdapterSourceKind::Account,
+        "workbuddy-catalog",
+    );
+    assert_eq!(url, "https://relay.example/custom/v1");
+    assert_eq!(model, "grok-4.6");
+}
+
+#[test]
+fn legacy_pool_does_not_mix_login_keys_across_upstream_endpoints() {
+    let (_dir, db) = test_db();
+    let mut lead = openai_account("workbuddy-qooo", "sk-qooo");
+    lead.agent_id = AgentId::WorkBuddy;
+    lead.label = "WorkBuddy Grok".into();
+    lead.credentials = json!({
+        "format": "api_key",
+        "api_key": "sk-qooo",
+        "url": "https://qooo.example/v1/chat/completions",
+        "base_url": "https://qooo.example/v1/chat/completions",
+        "id": "grok-4.6",
+    });
+    lead.extra = json!({"provider": "workbuddy"});
+    let mut other = lead.clone();
+    other.id = "workbuddy-other".into();
+    other.label = "Other relay".into();
+    other.credentials["api_key"] = json!("sk-other");
+    other.credentials["url"] = json!("https://other.example/v1/chat/completions");
+    other.credentials["base_url"] = json!("https://other.example/v1/chat/completions");
+    AccountRepo::new(db.clone()).create(&lead).unwrap();
+    AccountRepo::new(db.clone()).create(&other).unwrap();
+
+    let pools = RoutePoolService::new(db.clone());
+    let pool = pools
+        .ensure_default_pool(AgentId::Kimi, RouteDownstreamSurface::ChatCompletions)
+        .unwrap();
+    pools
+        .add_member(&pool.id, AdapterSourceKind::Account, "workbuddy-qooo")
+        .unwrap();
+    pools
+        .add_member(&pool.id, AdapterSourceKind::Account, "workbuddy-other")
+        .unwrap();
+
+    let spec = AdapterBridgeService::new(db).pool_listener_spec(&pool, (false, false));
+    assert_eq!(spec.upstream.base_url, "https://qooo.example/v1");
+    assert_eq!(spec.members.len(), 1, "different endpoint key must not enter v1 picker");
+    assert_eq!(spec.members[0].label, "WorkBuddy Grok");
+    assert_eq!(spec.members[0].auth.token(), "sk-qooo");
+}
+
+#[test]
 fn legacy_grok_claude_kind_is_migratable_on_prepare() {
     let (_dir, db) = test_db();
     AccountRepo::new(db.clone())

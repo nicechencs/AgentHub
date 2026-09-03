@@ -174,6 +174,8 @@ export interface RouteTraceMember {
   sourceKind: string;
   sourceId: string;
   ticketId?: string | null;
+  /** Last four characters only; never the upstream secret. */
+  keyLast4?: string | null;
 }
 
 export interface RouteTracePoolAttempt {
@@ -186,6 +188,8 @@ export interface RouteTracePoolAttempt {
 export interface RouteTraceLocalAuth {
   status: RouteTraceStageStatus;
   profileId?: string | null;
+  /** Last four characters only; never the local entry key. */
+  keyLast4?: string | null;
   port?: number | null;
   code?: string | null;
   message?: string | null;
