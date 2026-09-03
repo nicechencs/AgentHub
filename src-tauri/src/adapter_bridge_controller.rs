@@ -1057,7 +1057,7 @@ fn resolve_unified_gateway_pool_members(
         .iter()
         .any(|member| member.health.is_eligible() && member.auth.has_token())
     {
-        let source_id = material.source_connection_id().to_owned();
+        let source_id = material.source_id().to_owned();
         resolved.insert(
             0,
             BridgeMemberSpec {
@@ -1421,7 +1421,7 @@ fn stopped_runtime_status(profile: &AdapterProfile) -> BridgeRuntimeStatus {
         port: profile.local_port.unwrap_or_default(),
         running: false,
         started_at: SystemTime::now(),
-        source_connection_id: Some(profile.source_id.clone()),
+        source_id: Some(profile.source_id.clone()),
         state: BridgeRuntimeState::Stopped,
         upstream_status: BridgeUpstreamStatus::Stopped,
     }
@@ -1678,7 +1678,7 @@ fn placeholder_entry_spec(
         BridgeUpstreamConfig {
             base_url: "http://127.0.0.1/".into(),
             model: None,
-            source_connection_id: None,
+            source_id: None,
             auth: ResolvedAuth::bearer("pending"),
             protocol,
             local_surface: surface,

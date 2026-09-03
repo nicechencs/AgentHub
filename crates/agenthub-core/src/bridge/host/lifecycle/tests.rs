@@ -12,7 +12,7 @@ fn spec_with_profile(profile: Option<DownstreamResponsesProfile>) -> BridgeStart
         BridgeUpstreamConfig {
             base_url: "http://127.0.0.1/v1/".to_owned(),
             model: Some("model".to_owned()),
-            source_connection_id: None,
+            source_id: None,
             auth: ResolvedAuth::bearer("upstream-token"),
             protocol: BridgeUpstreamProtocol::XaiResponsesOauth,
             local_surface: BridgeLocalSurface::Responses,

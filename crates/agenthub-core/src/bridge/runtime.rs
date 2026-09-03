@@ -199,13 +199,13 @@ impl Default for BridgeUpstreamProtocol {
     }
 }
 
-/// Upstream provider configuration. `source_connection_id` is for status/audit
+/// Upstream provider configuration. `source_id` is for status/audit
 /// correlation only; the host neither resolves it nor touches AgentHub storage.
 #[derive(Debug, Clone)]
 pub struct BridgeUpstreamConfig {
     pub base_url: String,
     pub model: Option<String>,
-    pub source_connection_id: Option<String>,
+    pub source_id: Option<String>,
     pub auth: ResolvedAuth,
     pub protocol: BridgeUpstreamProtocol,
     pub local_surface: BridgeLocalSurface,
@@ -362,7 +362,7 @@ impl BridgeStartSpec {
     fn lead_member(&self) -> PickedMember {
         let source_id = self
             .upstream
-            .source_connection_id
+            .source_id
             .clone()
             .unwrap_or_default();
         let ticket_id = if source_id.is_empty() {
@@ -419,7 +419,7 @@ pub struct BridgeRuntimeStatus {
     pub port: u16,
     pub running: bool,
     pub started_at: SystemTime,
-    pub source_connection_id: Option<String>,
+    pub source_id: Option<String>,
     /// Listener lifecycle only. It deliberately does not infer that the upstream accepts a
     /// credential or is currently reachable.
     pub state: BridgeRuntimeState,
