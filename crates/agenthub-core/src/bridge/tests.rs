@@ -41,7 +41,7 @@ fn spec_with_token(
         BridgeUpstreamConfig {
             base_url: format!("http://127.0.0.1:{upstream_port}"),
             model: None,
-            source_connection_id: Some("connection-test".to_owned()),
+            source_id: Some("connection-test".to_owned()),
             auth: ResolvedAuth::bearer("upstream-test-token"),
             protocol: BridgeUpstreamProtocol::OpenAiChatCompletions,
             local_surface: BridgeLocalSurface::Responses,

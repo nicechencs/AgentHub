@@ -35,7 +35,7 @@ fn listener_state(
         upstream: BridgeUpstreamConfig {
             base_url: "http://127.0.0.1/v1/".to_owned(),
             model: Some("configured-model".to_owned()),
-            source_connection_id: None,
+            source_id: None,
             auth: ResolvedAuth::bearer("upstream-dummy-token"),
             protocol,
             local_surface,
@@ -70,7 +70,7 @@ fn listener_state(
             BridgeUpstreamConfig {
                 base_url: "http://127.0.0.1/v1/".to_owned(),
                 model: Some("configured-model".to_owned()),
-                source_connection_id: None,
+                source_id: None,
                 auth: ResolvedAuth::bearer("upstream-dummy-token"),
                 protocol,
                 local_surface,
@@ -121,7 +121,7 @@ fn edge_state_carries_explicit_downstream_responses_profile_from_start_spec() {
         BridgeUpstreamConfig {
             base_url: "http://127.0.0.1/v1/".to_owned(),
             model: Some("model".to_owned()),
-            source_connection_id: None,
+            source_id: None,
             auth: ResolvedAuth::bearer("upstream-token"),
             protocol: BridgeUpstreamProtocol::XaiResponsesOauth,
             local_surface: BridgeLocalSurface::Responses,

@@ -22,7 +22,7 @@ pub struct AdapterBridgeStatus {
     pub state: String,
     pub upstream_status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub source_connection_id: Option<String>,
+    pub source_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub started_at_unix_ms: Option<u128>,
     /// Newest first. Empty when no tool has connected since this process started.
@@ -57,7 +57,7 @@ impl AdapterBridgeStatus {
             running: false,
             state: "stopped".into(),
             upstream_status: "stopped".into(),
-            source_connection_id: Some(profile.source_id.clone()),
+            source_id: Some(profile.source_id.clone()),
             started_at_unix_ms: None,
             recent_inbound: Vec::new(),
             recent_route_traces: Vec::new(),
@@ -75,7 +75,7 @@ impl AdapterBridgeStatus {
             running: status.running,
             state: runtime_state_name(status.state).into(),
             upstream_status: upstream_status_name(status.upstream_status).into(),
-            source_connection_id: status.source_connection_id,
+            source_id: status.source_id,
             started_at_unix_ms: system_time_millis(status.started_at),
             recent_inbound: Vec::new(),
             recent_route_traces: Vec::new(),

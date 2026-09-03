@@ -709,7 +709,7 @@ fn same_spec(left: &BridgeStartSpec, right: &BridgeStartSpec) -> bool {
         && left.local_token == right.local_token
         && left.upstream.base_url == right.upstream.base_url
         && left.upstream.model == right.upstream.model
-        && left.upstream.source_connection_id == right.upstream.source_connection_id
+        && left.upstream.source_id == right.upstream.source_id
         && left.upstream.auth.token() == right.upstream.auth.token()
         && left.upstream.protocol == right.upstream.protocol
         && left.upstream.local_surface == right.upstream.local_surface

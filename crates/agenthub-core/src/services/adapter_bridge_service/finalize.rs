@@ -252,7 +252,7 @@ impl AdapterBridgeService {
         let material = self.attach_route_index(
             AdapterBridgeRuntimeMaterial {
                 profile_id: profile.id.clone(),
-                source_connection_id: profile.source_id.clone(),
+                source_id: profile.source_id.clone(),
                 preferred_port: Some(local_port),
                 upstream_base_url,
                 upstream_model: upstream_model.clone(),
