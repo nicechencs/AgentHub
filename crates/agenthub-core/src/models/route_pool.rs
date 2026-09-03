@@ -41,6 +41,9 @@ pub const SHARE_CHAT_COMPLETIONS: &str = "share_chat_completions";
 
 /// Shared local-entry switch. Absent means restore (legacy on). Explicit off
 /// keeps the entry stopped across process restart.
+///
+/// TODO(naming): rename persisted key to `local_gateway_desired_running` and
+/// read the legacy `local_entry_desired_running` value on load.
 pub const LOCAL_ENTRY_DESIRED_RUNNING: &str = "local_entry_desired_running";
 
 /// Fail-closed experimental flags. Absent / anything other than an explicit

@@ -225,17 +225,6 @@ pub async fn apply_skill_projection(
     .await
 }
 
-/// Compatibility alias for `apply_skill_projection`.
-#[tauri::command]
-pub async fn project_skill(
-    state: State<'_, AppState>,
-    skill_id: String,
-    agent_id: String,
-    mode: Option<String>,
-) -> Result<SkillProjectResult, String> {
-    apply_skill_projection(state, skill_id, agent_id, mode).await
-}
-
 /// Invoke: `search_skill_market` — skills.sh / skillhub.cn (settings-driven, auto fallback).
 #[tauri::command]
 pub async fn search_skill_market(

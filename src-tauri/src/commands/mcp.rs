@@ -11,9 +11,3 @@ pub async fn list_mcp_inventory() -> Result<McpInventory, String> {
         .await
         .map_err(|e| format!("list_mcp_inventory join error: {e}"))
 }
-
-/// Compatibility alias for `list_mcp_inventory` (pre-rename IPC).
-#[tauri::command]
-pub async fn list_mcp_inventory_cmd() -> Result<McpInventory, String> {
-    list_mcp_inventory().await
-}

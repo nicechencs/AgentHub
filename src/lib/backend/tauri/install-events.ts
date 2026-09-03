@@ -1,5 +1,4 @@
 import type { InstallProgressPayload } from '@/lib/backend/contracts/install-types';
-import { installProgressChunk } from '@/lib/backend/contracts/install-types';
 import { unavailableError } from '@/lib/backend/contracts/errors';
 import { isTauriApp } from '@/lib/platform';
 
@@ -24,12 +23,8 @@ export async function onInstallProgress(
     const { listen } = await import('@tauri-apps/api/event');
     const unlisten = await listen<InstallProgressPayload>(INSTALL_PROGRESS_EVENT, (event) => {
       const payload = event.payload;
-      if (!payload || typeof installProgressChunk(payload) !== 'string') return;
-      // Normalize so consumers can always read `chunk`.
-      handler({
-        ...payload,
-        chunk: installProgressChunk(payload),
-      });
+      if (!payload || typeof payload.chunk !== 'string') return;
+      handler(payload);
     });
     return unlisten;
   } catch (error) {

@@ -30,8 +30,6 @@ struct InstallProgressPayload {
     action: String,
     /// Raw UTF-8 output chunk (may be partial line, empty, or multi-line).
     chunk: String,
-    /// Compatibility alias of [`Self::chunk`] for older frontend listeners.
-    line: String,
 }
 
 fn install_progress_hook(
@@ -40,12 +38,10 @@ fn install_progress_hook(
     action: &'static str,
 ) -> agenthub_core::services::InstallLogHook {
     Arc::new(move |chunk: &str| {
-        let text = chunk.to_string();
         let payload = InstallProgressPayload {
             agent_id: agent_id.clone(),
             action: action.to_string(),
-            chunk: text.clone(),
-            line: text,
+            chunk: chunk.to_string(),
         };
         if let Err(e) = app.emit(INSTALL_PROGRESS_EVENT, &payload) {
             tracing::debug!(
@@ -64,12 +60,6 @@ fn install_progress_hook(
 #[tauri::command]
 pub fn list_install_catalog() -> Result<Vec<AgentInstallCatalogEntry>, String> {
     Ok(list_install_catalog_impl())
-}
-
-/// Compatibility alias for `list_install_catalog`.
-#[tauri::command]
-pub fn list_install_catalog_cmd() -> Result<Vec<AgentInstallCatalogEntry>, String> {
-    list_install_catalog()
 }
 
 fn parse_runtime(runtime: &str) -> Result<RuntimeId, String> {
