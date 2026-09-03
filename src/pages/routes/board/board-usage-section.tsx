@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Area,
@@ -239,6 +239,13 @@ export function BoardUsageSection({
     [trendSeries],
   );
   const trendHover = useUsageTrendHover(resolveTrendName);
+  const plotRef = useRef<HTMLDivElement>(null);
+  const onTrendMouseMove = useCallback(
+    (state: Parameters<typeof trendHover.onChartMouseMove>[0]) => {
+      trendHover.onChartMouseMove(state, plotRef.current);
+    },
+    [trendHover.onChartMouseMove],
+  );
 
   const rangedTrend = useMemo(() => {
     if (usage.status !== 'ready') return [];
@@ -377,12 +384,12 @@ export function BoardUsageSection({
               </p>
             </CardHeader>
             <CardContent>
-              <div className="relative h-56">
+              <div ref={plotRef} className="relative h-56">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart
                     data={rangedTrend}
                     margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
-                    onMouseMove={trendHover.onChartMouseMove}
+                    onMouseMove={onTrendMouseMove}
                     onMouseLeave={trendHover.onChartMouseLeave}
                   >
                     <defs>
@@ -447,6 +454,10 @@ export function BoardUsageSection({
                   <UsageTrendTooltipCard
                     label={trendHover.tip.label}
                     items={trendHover.tip.items}
+                    x={trendHover.tip.x}
+                    y={trendHover.tip.y}
+                    containerWidth={trendHover.tip.containerWidth}
+                    containerHeight={trendHover.tip.containerHeight}
                     onMouseEnter={trendHover.onTipMouseEnter}
                     onMouseLeave={trendHover.onTipMouseLeave}
                   />
