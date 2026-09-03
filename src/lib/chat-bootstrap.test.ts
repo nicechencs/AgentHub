@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { setChatBootstrap, takeChatBootstrap } from '@/lib/chat-bootstrap';
+import { LegacyStorageKey, StorageKey } from '@/lib/storage-key';
 
 function installMemoryStorage() {
   const store = new Map<string, string>();
@@ -61,6 +62,19 @@ describe('chat-bootstrap', () => {
     ).toBe(false);
   });
 
+  it('writes the canonical session key', () => {
+    expect(
+      setChatBootstrap({
+        agentIds: ['claude'],
+        cwd: 'D:\\demo',
+        title: 'from projects',
+        prompt: 'continue please',
+      }),
+    ).toBe(true);
+    expect(sessionStorage.getItem(StorageKey.chatBootstrap)).toContain('continue please');
+    expect(sessionStorage.getItem(LegacyStorageKey.chatBootstrap)).toBeNull();
+  });
+
   it('set then take returns payload once', () => {
     expect(setChatBootstrap({
       agentIds: ['claude'],
@@ -80,15 +94,43 @@ describe('chat-bootstrap', () => {
 
   it('rejects empty agentIds', () => {
     sessionStorage.setItem(
-      'agenthub.chat.bootstrap',
+      StorageKey.chatBootstrap,
       JSON.stringify({ agentIds: [], prompt: 'x' }),
     );
     expect(takeChatBootstrap()).toBeNull();
   });
 
-  it('clears corrupt payload', () => {
-    sessionStorage.setItem('agenthub.chat.bootstrap', '{not-json');
+  it('clears corrupt payload on the canonical key', () => {
+    sessionStorage.setItem(StorageKey.chatBootstrap, '{not-json');
     expect(takeChatBootstrap()).toBeNull();
-    expect(sessionStorage.getItem('agenthub.chat.bootstrap')).toBeNull();
+    expect(sessionStorage.getItem(StorageKey.chatBootstrap)).toBeNull();
+  });
+
+  it('consumes a leftover dotted session key once', () => {
+    sessionStorage.setItem(
+      LegacyStorageKey.chatBootstrap,
+      JSON.stringify({
+        agentIds: ['codex'],
+        cwd: null,
+        title: 'legacy',
+        prompt: 'old',
+      }),
+    );
+    expect(takeChatBootstrap()).toEqual({
+      agentIds: ['codex'],
+      cwd: null,
+      title: 'legacy',
+      prompt: 'old',
+    });
+    expect(sessionStorage.getItem(LegacyStorageKey.chatBootstrap)).toBeNull();
+    expect(sessionStorage.getItem(StorageKey.chatBootstrap)).toBeNull();
+    expect(takeChatBootstrap()).toBeNull();
+  });
+
+  it('clears a leftover dotted corrupt payload', () => {
+    sessionStorage.setItem(LegacyStorageKey.chatBootstrap, '{not-json');
+    expect(takeChatBootstrap()).toBeNull();
+    expect(sessionStorage.getItem(LegacyStorageKey.chatBootstrap)).toBeNull();
+    expect(sessionStorage.getItem(StorageKey.chatBootstrap)).toBeNull();
   });
 });

@@ -94,6 +94,7 @@ import {
 } from '@/lib/api/account';
 import { importProviderLive } from '@/lib/api/provider';
 import type { Account, Provider } from '@/lib/types';
+import { StorageKey } from '@/lib/ui-preferences';
 
 type ConnectionInspect =
   | { kind: 'provider'; agentId: AgentKey; mode: 'add' | 'edit'; provider: Provider | null }
@@ -112,7 +113,7 @@ function inspectActiveTicketId(target: ConnectionInspect | null): string | null 
   return null;
 }
 
-const CONNECTIONS_INSPECT_WIDTH_KEY = 'agenthub.connections.inspectWidth';
+const CONNECTIONS_INSPECT_WIDTH_KEY = StorageKey.connectionsInspectWidth;
 
 function parseAgentParam(raw: string | null, allowed: AgentKey[]): AgentKey | null {
   if (raw && allowed.includes(raw as AgentKey)) return raw as AgentKey;

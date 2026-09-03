@@ -22,8 +22,9 @@ import type { PluginEntry, PluginInventory } from '@/lib/backend/contracts/plugi
 import type { AgentKey } from '@/lib/types';
 import { PluginDetailPanel } from './PluginDetailPanel';
 import { PluginPackList } from './PluginPackList';
+import { StorageKey } from '@/lib/ui-preferences';
 
-const PLUGINS_PREVIEW_WIDTH_KEY = 'agenthub.plugins.previewWidth';
+const PLUGINS_PREVIEW_WIDTH_KEY = StorageKey.pluginsPreviewWidth;
 
 function agentName(id: AgentKey): string {
   return agentDisplayName(id);

@@ -4,6 +4,7 @@
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { Account, AgentKey, Provider } from '@/lib/types';
 import type { RouteGraphView } from './route-graph-model';
+import { StorageKey } from '@/lib/ui-preferences';
 
 export type WriteTarget = { profile: AdapterProfile; graph: RouteGraphView };
 
@@ -35,4 +36,4 @@ export function liveInspectProfile(
   return profiles.find((profile) => profile.id === snapshot.id) ?? snapshot;
 }
 
-export const ROUTES_INSPECT_WIDTH_KEY = 'agenthub.routes.inspectWidth';
+export const ROUTES_INSPECT_WIDTH_KEY = StorageKey.routesInspectWidth;

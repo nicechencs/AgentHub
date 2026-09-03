@@ -34,6 +34,7 @@ import {
   poolAuthorizationVisibleColumns,
   type PoolAuthorizationColumnKey,
 } from './pool-authorization-detail';
+import { StorageKey } from '@/lib/ui-preferences';
 
 const WIDTH_SPECS: ColumnWidthSpec<PoolAuthorizationColumnKey>[] = [
   { key: 'login', defaultWidth: 220, minWidth: 140 },
@@ -51,7 +52,7 @@ const WIDTH_BY_KEY = Object.fromEntries(
   WIDTH_SPECS.map((spec) => [spec.key, spec]),
 ) as Record<PoolAuthorizationColumnKey, ColumnWidthSpec<PoolAuthorizationColumnKey>>;
 
-const COLUMN_WIDTHS_STORAGE_KEY = 'agenthub.routes.pool.columnWidths';
+const COLUMN_WIDTHS_STORAGE_KEY = StorageKey.routesPoolColumnWidths;
 
 function cellValue(value: ReactNode): ReactNode {
   if (value == null || value === '') return <TableEmptyCell />;

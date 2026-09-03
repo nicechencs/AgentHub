@@ -19,8 +19,9 @@ import {
   resolveActivityPageSnapshot,
 } from '@/pages/routes/activity/activity-view-model';
 import { selectedActivityTrace } from '@/pages/routes/activity/activity-trace-summary-model';
+import { StorageKey } from '@/lib/ui-preferences';
 
-const ACTIVITY_PREVIEW_WIDTH_KEY = 'agenthub.routes.activity.previewWidth';
+const ACTIVITY_PREVIEW_WIDTH_KEY = StorageKey.routesActivityPreviewWidth;
 
 export default function RoutesActivityPage() {
   const { t } = useI18n();

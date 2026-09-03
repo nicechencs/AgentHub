@@ -29,6 +29,7 @@ import { tokenTypeLabel, type LocalTokenRow } from './tokens-model';
 import { TokenImportToAgentButton } from './TokenImportToAgentButton';
 import type { TokenImportAgentRef } from './token-import-model';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
+import { StorageKey } from '@/lib/ui-preferences';
 
 type TokenColumnKey = 'type' | 'endpoint' | 'token' | 'lastPage' | 'usage';
 
@@ -40,7 +41,7 @@ const WIDTH_SPECS: ColumnWidthSpec<TokenColumnKey>[] = [
   { key: 'usage', defaultWidth: 148, minWidth: 112 },
 ];
 
-const COLUMN_WIDTHS_STORAGE_KEY = 'agenthub.routes.tokens.columnWidths';
+const COLUMN_WIDTHS_STORAGE_KEY = StorageKey.routesTokensColumnWidths;
 
 function columnLabel(key: TokenColumnKey, t: ReturnType<typeof useI18n>['t']): string {
   if (key === 'type') return t('routes.tokens.fieldType');

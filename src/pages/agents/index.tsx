@@ -26,7 +26,7 @@ import type { AgentKey, AgentStatus, AgentUpdateInfo, RuntimeDetect, RuntimeId }
 import { AgentCard } from './agent-card';
 import { AgentDetailPanel } from './AgentDetailPanel';
 
-const AGENTS_PREVIEW_WIDTH_KEY = 'agenthub.agents.previewWidth';
+const AGENTS_PREVIEW_WIDTH_KEY = StorageKey.agentsPreviewWidth;
 
 /** Agents 安装管理页 — 环境检测 + Agent 安装（backend 由构建时 composition root 选择） */
 export default function AgentsPage() {
