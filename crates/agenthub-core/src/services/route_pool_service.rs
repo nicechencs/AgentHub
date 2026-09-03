@@ -30,8 +30,8 @@ use crate::models::{
 };
 use serde_json::Value;
 use crate::storage::{
-    binding_get_conn, AccountRepo, AdapterProfileRepo, ConnectionTrashRepo, Database, ProviderRepo,
-    RoutePoolRepo,
+    binding_get_conn, AccountRepo, AdapterProfileRepo, ConnectionTrashRepo, Database, LocalEntryKey,
+    LocalEntryKeyRepo, ProviderRepo, RoutePoolRepo,
 };
 
 #[cfg(test)]
@@ -43,6 +43,7 @@ pub struct RoutePoolService {
     profiles: AdapterProfileRepo,
     accounts: AccountRepo,
     providers: ProviderRepo,
+    entry_keys: LocalEntryKeyRepo,
 }
 
 impl RoutePoolService {
@@ -52,6 +53,7 @@ impl RoutePoolService {
             profiles: AdapterProfileRepo::new(db.clone()),
             accounts: AccountRepo::new(db.clone()),
             providers: ProviderRepo::new(db.clone()),
+            entry_keys: LocalEntryKeyRepo::new(db.clone()),
             db,
         }
     }
@@ -167,17 +169,47 @@ impl RoutePoolService {
 
     /// Loopback bearers for the tokens page. Empty when the pool flag is off.
     pub fn list_local_tokens(&self) -> Result<Vec<LocalTokenRecord>> {
-        Ok(self
+        let stored = self.entry_keys.list()?;
+        let mut name_by_pool = HashMap::new();
+        let mut extras = Vec::new();
+        for row in stored {
+            if row.token.trim().is_empty() {
+                name_by_pool.insert(row.pool_id.clone(), row.name);
+            } else {
+                extras.push(row);
+            }
+        }
+        let mut records: Vec<LocalTokenRecord> = self
             .list_default_pools()?
             .into_iter()
             .map(|pool| LocalTokenRecord {
-                pool_id: pool.id,
+                id: pool.id.clone(),
+                pool_id: pool.id.clone(),
                 token: pool.hub_token,
+                name: name_by_pool.remove(&pool.id).unwrap_or_default(),
+                primary: true,
             })
+            .collect();
+        for extra in extras {
+            if records.iter().any(|record| record.pool_id == extra.pool_id) {
+                records.push(to_extra_record(extra));
+            }
+        }
+        Ok(records)
+    }
+
+    /// Extra bearers the live gateway should accept besides each pool hub_token.
+    pub fn list_extra_local_bearers(&self) -> Result<Vec<(String, String)>> {
+        Ok(self
+            .entry_keys
+            .list()?
+            .into_iter()
+            .filter(|row| !row.token.trim().is_empty())
+            .map(|row| (row.token, row.pool_id))
             .collect())
     }
 
-    /// Replace one pool loopback bearer.
+    /// Replace one pool loopback bearer, or rotate a named extra key.
     ///
     /// Tokens UI also lists leftover local-bridge rows whose pools were enrolled
     /// without `is_default` (see `enroll_unified_gateway_after_bind`). Promote those pools so
@@ -188,6 +220,16 @@ impl RoutePoolService {
         if token.is_empty() {
             return Err(AppError::InvalidArg("entry key must not be empty".into()));
         }
+        if let Some(existing) = self.entry_keys.get(pool_id)? {
+            if !existing.token.trim().is_empty() {
+                let saved = self.entry_keys.update(&LocalEntryKey {
+                    token: token.to_owned(),
+                    updated_at: now(),
+                    ..existing
+                })?;
+                return Ok(to_extra_record(saved));
+            }
+        }
         let pool = self.pools.get_pool(pool_id)?.ok_or_else(|| {
             AppError::NotFound(format!("route pool not found: {pool_id}"))
         })?;
@@ -195,10 +237,89 @@ impl RoutePoolService {
             self.pools.set_default(pool_id)?;
         }
         let saved = self.pools.set_hub_token(pool_id, token, &now())?;
-        Ok(LocalTokenRecord {
-            pool_id: saved.id,
-            token: saved.hub_token,
-        })
+        Ok(self.primary_record(&saved)?)
+    }
+
+    pub fn create_local_token(&self, pool_id: &str, name: &str) -> Result<LocalTokenRecord> {
+        self.require_enabled()?;
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(AppError::InvalidArg("entry key name must not be empty".into()));
+        }
+        let pool = self.pools.get_pool(pool_id)?.ok_or_else(|| {
+            AppError::NotFound(format!("route pool not found: {pool_id}"))
+        })?;
+        if !pool.is_default {
+            self.pools.set_default(pool_id)?;
+        }
+        let stamp = now();
+        let saved = self.entry_keys.insert(&LocalEntryKey {
+            id: Uuid::new_v4().to_string(),
+            pool_id: pool.id,
+            name: name.to_owned(),
+            token: generate_hub_token()?,
+            created_at: stamp.clone(),
+            updated_at: stamp,
+        })?;
+        Ok(to_extra_record(saved))
+    }
+
+    pub fn set_local_token_name(&self, id: &str, name: &str) -> Result<LocalTokenRecord> {
+        self.require_enabled()?;
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(AppError::InvalidArg("entry key name must not be empty".into()));
+        }
+        if let Some(existing) = self.entry_keys.get(id)? {
+            let saved = self.entry_keys.update(&LocalEntryKey {
+                name: name.to_owned(),
+                updated_at: now(),
+                ..existing
+            })?;
+            if saved.token.trim().is_empty() {
+                let pool = self.pools.get_pool(&saved.pool_id)?.ok_or_else(|| {
+                    AppError::NotFound(format!("route pool not found: {}", saved.pool_id))
+                })?;
+                return Ok(named_primary_record(&pool, saved.name));
+            }
+            return Ok(to_extra_record(saved));
+        }
+        let pool = self.pools.get_pool(id)?.ok_or_else(|| {
+            AppError::NotFound(format!("route pool not found: {id}"))
+        })?;
+        let stamp = now();
+        let saved = self.entry_keys.insert(&LocalEntryKey {
+            id: pool.id.clone(),
+            pool_id: pool.id.clone(),
+            name: name.to_owned(),
+            token: String::new(),
+            created_at: stamp.clone(),
+            updated_at: stamp,
+        })?;
+        Ok(named_primary_record(&pool, saved.name))
+    }
+
+    pub fn delete_local_token(&self, id: &str) -> Result<()> {
+        self.require_enabled()?;
+        let existing = self.entry_keys.get(id)?.ok_or_else(|| {
+            AppError::NotFound(format!("entry key not found: {id}"))
+        })?;
+        if existing.token.trim().is_empty() {
+            return Err(AppError::InvalidArg(
+                "cannot delete the default entry key".into(),
+            ));
+        }
+        self.entry_keys.delete(id)
+    }
+
+    fn primary_record(&self, pool: &RoutePool) -> Result<LocalTokenRecord> {
+        let name = self
+            .entry_keys
+            .get(&pool.id)?
+            .filter(|row| row.token.trim().is_empty())
+            .map(|row| row.name)
+            .unwrap_or_default();
+        Ok(named_primary_record(pool, name))
     }
 
     pub fn chat_completions_shared(&self) -> Result<bool> {
@@ -1678,6 +1799,26 @@ impl RoutePoolService {
 
 fn now() -> String {
     Utc::now().to_rfc3339()
+}
+
+fn to_extra_record(row: LocalEntryKey) -> LocalTokenRecord {
+    LocalTokenRecord {
+        id: row.id,
+        pool_id: row.pool_id,
+        token: row.token,
+        name: row.name,
+        primary: false,
+    }
+}
+
+fn named_primary_record(pool: &RoutePool, name: String) -> LocalTokenRecord {
+    LocalTokenRecord {
+        id: pool.id.clone(),
+        pool_id: pool.id.clone(),
+        token: pool.hub_token.clone(),
+        name,
+        primary: true,
+    }
 }
 
 fn nonempty_json_str(blob: &Value, key: &str) -> Option<String> {

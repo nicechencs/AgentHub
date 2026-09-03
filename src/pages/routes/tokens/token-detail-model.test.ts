@@ -20,6 +20,8 @@ function row(partial: Partial<LocalTokenRow> = {}): LocalTokenRow {
   return {
     id: 'pool-kimi',
     poolBacked: true,
+    primary: true,
+    canDelete: false,
     profileId: 'bridge-1',
     name: 'kimi · /v1/chat/completions',
     kind: 'chat_completions',

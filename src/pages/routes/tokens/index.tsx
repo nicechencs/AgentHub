@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { KeyRound, Sparkles } from 'lucide-react';
+import { KeyRound, Plus, Sparkles } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageSection } from '@/components/layout/PageSection';
 import { WorkbenchSplitPage } from '@/components/layout/SideSplit';
@@ -20,10 +20,24 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { ROUTES_POOL_PATH } from '@/lib/routes-path';
-import { listLocalTokens, setLocalToken } from '@/lib/api/adapter';
+import {
+  createLocalToken,
+  deleteLocalToken,
+  listLocalTokens,
+  setLocalToken,
+  setLocalTokenName,
+} from '@/lib/api/adapter';
+import type { LocalTokenRecord } from '@/lib/backend/contracts/adapter';
 import { USAGE_COLLECTED_EVENT } from '@/lib/usage-sync';
 import { ROUTES_INSPECT_WIDTH_KEY } from '@/pages/routes/shared/route-inspect';
 import { useAdapterResources } from '@/pages/routes/shared/use-bridge-resources';
@@ -38,8 +52,10 @@ import {
   attachTokenUsage,
   buildLocalTokenRows,
   generateLocalToken,
+  localTokenDeleteGate,
   localTokenEditKeyGate,
   maskLocalToken,
+  tokenDisplayName,
   tokenTypeLabel,
   type LocalTokenRow,
 } from './tokens-model';
@@ -66,11 +82,17 @@ export default function RoutesTokensPage() {
   } = useAdapterResources();
   const [tokenTick, setTokenTick] = useState(0);
   const [collectKey, setCollectKey] = useState(0);
-  const [tokensByPoolId, setTokensByPoolId] = useState<Record<string, string>>({});
+  const [tokenRecords, setTokenRecords] = useState<LocalTokenRecord[]>([]);
   const [editRow, setEditRow] = useState<LocalTokenRow | null>(null);
   const [editValue, setEditValue] = useState('');
   const [editBusy, setEditBusy] = useState(false);
   const [importAfterSaveRow, setImportAfterSaveRow] = useState<LocalTokenRow | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState('');
+  const [createPoolId, setCreatePoolId] = useState('');
+  const [createBusy, setCreateBusy] = useState(false);
+  const [deleteRow, setDeleteRow] = useState<LocalTokenRow | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const {
     chatCompletionsShared,
     defaultPools,
@@ -91,12 +113,10 @@ export default function RoutesTokensPage() {
     void listLocalTokens()
       .then((records) => {
         if (cancelled) return;
-        const next: Record<string, string> = {};
-        for (const record of records) next[record.poolId] = record.token;
-        setTokensByPoolId(next);
+        setTokenRecords(records);
       })
       .catch(() => {
-        if (!cancelled) setTokensByPoolId({});
+        if (!cancelled) setTokenRecords([]);
       });
     return () => {
       cancelled = true;
@@ -110,7 +130,8 @@ export default function RoutesTokensPage() {
       errors.bridgeStatuses,
       defaultPools,
       chatCompletionsShared,
-      tokensByPoolId,
+      Object.fromEntries(tokenRecords.filter((record) => record.primary).map((record) => [record.poolId, record.token])),
+      tokenRecords,
     ),
     [
       bridgeStatuses,
@@ -118,7 +139,7 @@ export default function RoutesTokensPage() {
       defaultPools,
       errors.bridgeStatuses,
       profiles,
-      tokensByPoolId,
+      tokenRecords,
     ],
   );
   const usageWindow = useMemo(() => boardUsageWindow('7d'), []);
@@ -130,6 +151,10 @@ export default function RoutesTokensPage() {
   const listRows = useMemo(
     () => (usageState.status === 'ready' ? attachTokenUsage(rows, usageState.rows) : rows),
     [rows, usageState],
+  );
+  const createTargets = useMemo(
+    () => listRows.filter((row) => row.poolBacked && row.primary),
+    [listRows],
   );
 
   useEffect(() => {
@@ -182,6 +207,77 @@ export default function RoutesTokensPage() {
     }
   };
 
+  const openCreate = () => {
+    if (createTargets.length === 0) {
+      toast({ title: t('routes.tokens.createNeedPool'), variant: 'danger' });
+      return;
+    }
+    setCreatePoolId(createTargets[0]?.id ?? '');
+    setCreateName('');
+    setCreateOpen(true);
+  };
+
+  const saveCreate = async () => {
+    if (createBusy) return;
+    const name = createName.trim();
+    if (!name) {
+      toast({ title: t('routes.tokens.nameRequired'), variant: 'danger' });
+      return;
+    }
+    if (!createPoolId) {
+      toast({ title: t('routes.tokens.createNeedPool'), variant: 'danger' });
+      return;
+    }
+    setCreateBusy(true);
+    try {
+      const created = await createLocalToken(createPoolId, name);
+      setCreateOpen(false);
+      setTokenTick((tick) => tick + 1);
+      inspect.open(created.id);
+      void reload();
+    } catch {
+      toast({ title: t('routes.tokens.createFailed'), variant: 'danger' });
+    } finally {
+      setCreateBusy(false);
+    }
+  };
+
+  const saveName = async (row: LocalTokenRow, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      toast({ title: t('routes.tokens.nameRequired'), variant: 'danger' });
+      return;
+    }
+    try {
+      await setLocalTokenName(row.id, trimmed);
+      setTokenTick((tick) => tick + 1);
+    } catch {
+      toast({ title: t('routes.tokens.saveNameFailed'), variant: 'danger' });
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteRow || deleteBusy) return;
+    const gate = localTokenDeleteGate(deleteRow, t);
+    if (!gate.enabled) {
+      toast({ title: gate.reason ?? t('routes.tokens.deleteNeedExtra'), variant: 'danger' });
+      setDeleteRow(null);
+      return;
+    }
+    setDeleteBusy(true);
+    try {
+      await deleteLocalToken(deleteRow.id);
+      if (inspect.target === deleteRow.id) inspect.close();
+      setDeleteRow(null);
+      setTokenTick((tick) => tick + 1);
+      void reload();
+    } catch {
+      toast({ title: t('routes.tokens.deleteFailed'), variant: 'danger' });
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
   const detailRow = inspect.target
     ? listRows.find((row) => row.id === inspect.target) ?? null
     : null;
@@ -202,6 +298,16 @@ export default function RoutesTokensPage() {
             : t('routes.tokens.scopeNote')
         }</p>
         <div className={pageRhythm.chromeActions}>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={pageLoading || createTargets.length === 0}
+            onClick={openCreate}
+            title={createTargets.length === 0 ? t('routes.tokens.createNeedPool') : undefined}
+          >
+            <Plus className="h-3.5 w-3.5" aria-hidden />
+            {t('routes.tokens.create')}
+          </Button>
           <PageRefreshButton
             loading={pageLoading}
             onClick={() => {
@@ -241,6 +347,7 @@ export default function RoutesTokensPage() {
             rows={listRows}
             activeId={inspect.target}
             onShowDetail={(row) => inspect.open(row.id)}
+            onDelete={(row) => setDeleteRow(row)}
             installedAgents={installedAgentRefs}
           />
         </PageSection>
@@ -313,6 +420,71 @@ export default function RoutesTokensPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={createOpen} onOpenChange={(open) => { if (!open && !createBusy) setCreateOpen(false); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('routes.tokens.createTitle')}</DialogTitle>
+            <DialogDescription>{t('routes.tokens.createDescription')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <p className="text-meta text-muted">{t('routes.tokens.fieldType')}</p>
+              <Select value={createPoolId} onValueChange={setCreatePoolId} disabled={createBusy}>
+                <SelectTrigger aria-label={t('routes.tokens.fieldType')}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {createTargets.map((row) => (
+                    <SelectItem key={row.id} value={row.id}>
+                      {tokenTypeLabel(row, t)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <p className="text-meta text-muted">{t('routes.tokens.fieldName')}</p>
+              <Input
+                value={createName}
+                onChange={(event) => setCreateName(event.target.value)}
+                placeholder={t('routes.tokens.namePlaceholder')}
+                disabled={createBusy}
+                aria-label={t('routes.tokens.fieldName')}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setCreateOpen(false)} disabled={createBusy}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={() => { void saveCreate(); }} disabled={createBusy}>
+              {t('routes.tokens.create')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteRow != null} onOpenChange={(open) => { if (!open && !deleteBusy) setDeleteRow(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('routes.tokens.deleteTitle')}</DialogTitle>
+            <DialogDescription>
+              {deleteRow
+                ? `${tokenDisplayName(deleteRow, t)} · ${t('routes.tokens.deleteDescription')}`
+                : t('routes.tokens.deleteDescription')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="secondary" disabled={deleteBusy} onClick={() => setDeleteRow(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button variant="danger" disabled={deleteBusy} onClick={() => { void confirmDelete(); }}>
+              {t('routes.tokens.delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </RoutesPane>
   );
 
@@ -326,6 +498,8 @@ export default function RoutesTokensPage() {
           width={inspect.paneWidth}
           onClose={() => inspect.close()}
           onEditKey={() => openEdit(detailRow)}
+          onSaveName={detailRow.poolBacked ? (name) => saveName(detailRow, name) : undefined}
+          onDelete={detailRow.canDelete ? () => setDeleteRow(detailRow) : undefined}
           installedAgents={installedAgentRefs}
         />
       ) : null}

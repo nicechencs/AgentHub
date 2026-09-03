@@ -413,8 +413,13 @@ pub struct DefaultRoutePoolList {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalTokenRecord {
+    pub id: String,
     pub pool_id: String,
     pub token: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub primary: bool,
 }
 
 /// Pick the unique default pool among candidates for one Agent / surface.

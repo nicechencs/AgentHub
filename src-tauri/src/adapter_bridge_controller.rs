@@ -1516,8 +1516,9 @@ pub(crate) async fn start_local_gateway(
         local_gateway_status_from_host(&host, started, restarting.load(Ordering::SeqCst))?
     };
     if remember {
-        write_local_gateway_desired_running(hub, true).await;
+        write_local_gateway_desired_running(hub.clone(), true).await;
     }
+    sync_extra_local_bearers(hub, &host).await?;
     drop(_restarting_guard);
     status.restarting = restarting.load(Ordering::SeqCst);
     Ok(status)
@@ -1549,6 +1550,10 @@ pub(crate) async fn set_local_gateway_token(
             .map_err(|error| map_err_string("list_default_pools", error))
     })
     .await?;
+    if !record.primary {
+        sync_extra_local_bearers(hub, &host).await?;
+        return Ok(record);
+    }
     let Some(pool) = pools.into_iter().find(|pool| pool.id == record.pool_id) else {
         return Ok(record);
     };
@@ -1596,6 +1601,20 @@ pub(crate) async fn stop_local_gateway(
         local_gateway_status_from_host(&host, Vec::new(), restarting.load(Ordering::SeqCst))?;
     write_local_gateway_desired_running(hub, false).await;
     Ok(status)
+}
+
+pub(crate) async fn sync_extra_local_bearers(
+    hub: Arc<AgentHub>,
+    host: &BridgeRuntimeHost,
+) -> Result<(), String> {
+    let rows = with_hub_blocking(hub, move |hub| {
+        hub.route_pools()
+            .list_extra_local_bearers()
+            .map_err(|error| map_err_string("list_extra_local_bearers", error))
+    })
+    .await?;
+    host.set_extra_local_bearers(rows)
+        .map_err(map_bridge_host_error)
 }
 
 async fn write_local_gateway_desired_running(hub: Arc<AgentHub>, running: bool) {

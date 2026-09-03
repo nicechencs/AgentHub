@@ -21,7 +21,8 @@ use tauri::{AppHandle, State};
 use crate::adapter_bridge_controller::{
     local_gateway_status as read_local_gateway_status,
     start_local_gateway as start_shared_local_gateway,
-    stop_local_gateway as stop_shared_local_gateway, AdapterBridgeStatusDto,
+    stop_local_gateway as stop_shared_local_gateway, sync_extra_local_bearers,
+    AdapterBridgeStatusDto,
 };
 use crate::adapter_control_host::apply_result_from_binding;
 use crate::commands::{
@@ -534,6 +535,62 @@ pub async fn set_local_token(
     )
     .await
     .map_err(adapter_error_from_string)
+}
+
+#[tauri::command]
+pub async fn create_local_token(
+    state: State<'_, AppState>,
+    pool_id: String,
+    name: String,
+) -> Result<LocalTokenRecord, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    let host = state.bridge_host();
+    let record = with_hub_blocking(hub.clone(), move |hub| {
+        hub.route_pools()
+            .create_local_token(&pool_id, &name)
+            .map_err(|err| map_err_string("create_local_token", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)?;
+    sync_extra_local_bearers(hub, &host)
+        .await
+        .map_err(adapter_error_from_string)?;
+    Ok(record)
+}
+
+#[tauri::command]
+pub async fn set_local_token_name(
+    state: State<'_, AppState>,
+    id: String,
+    name: String,
+) -> Result<LocalTokenRecord, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        hub.route_pools()
+            .set_local_token_name(&id, &name)
+            .map_err(|err| map_err_string("set_local_token_name", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+#[tauri::command]
+pub async fn delete_local_token(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    let host = state.bridge_host();
+    with_hub_blocking(hub.clone(), move |hub| {
+        hub.route_pools()
+            .delete_local_token(&id)
+            .map_err(|err| map_err_string("delete_local_token", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)?;
+    sync_extra_local_bearers(hub, &host)
+        .await
+        .map_err(adapter_error_from_string)
 }
 
 /// Enroll a newly added authorization into the default auth pool and mark it
