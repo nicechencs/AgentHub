@@ -1,6 +1,6 @@
 import type { AgentProject, AgentSession } from '@/lib/types';
 import { projectMatches, sessionMatches } from './project-filter';
-import { cursorSubagentParentId, cursorTranscriptId } from './session-nest';
+import { cursorSubagentParentId, cursorTranscriptId, flattenVisibleSessions } from './session-nest';
 
 /** Keep a parent when it matches, or when any already-loaded child matches the query. */
 export function filterVisibleProjects(
@@ -43,11 +43,12 @@ export function collectSelectableSessions(
   visibleProjects: AgentProject[],
   expanded: Set<string>,
   visibleSessionsFn: (projectId: string) => AgentSession[],
+  nestedOpen: Set<string> = new Set(),
 ): AgentSession[] {
   const out: AgentSession[] = [];
   for (const p of visibleProjects) {
     if (!expanded.has(p.id)) continue;
-    out.push(...visibleSessionsFn(p.id));
+    out.push(...flattenVisibleSessions(visibleSessionsFn(p.id), nestedOpen));
   }
   return out;
 }
