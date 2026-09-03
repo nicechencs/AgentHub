@@ -166,7 +166,7 @@ describe('tokens-model', () => {
     expect(localTokenDeleteGate(rows[0]).enabled).toBe(false);
   });
 
-  it('lists named extra keys under the same type and keeps the default undeletable', () => {
+  it('lists named extra keys under the same type and lets the default be deleted', () => {
     const rows = buildLocalTokenRows(
       [
         profile({
@@ -209,8 +209,8 @@ describe('tokens-model', () => {
     );
     expect(rows).toHaveLength(2);
     expect(tokenDisplayName(rows[0])).toBe('默认');
-    expect(rows[0]).toMatchObject({ id: 'pool-codex', canDelete: false, primary: true });
-    expect(localTokenDeleteGate(rows[0]).enabled).toBe(false);
+    expect(rows[0]).toMatchObject({ id: 'pool-codex', canDelete: true, primary: true });
+    expect(localTokenDeleteGate(rows[0]).enabled).toBe(true);
     expect(rows[1]).toMatchObject({
       id: 'extra-home',
       name: '家里',
@@ -219,6 +219,31 @@ describe('tokens-model', () => {
       primary: false,
     });
     expect(localTokenDeleteGate(rows[1]).enabled).toBe(true);
+  });
+
+  it('omits the type default key when listLocalTokens did not return it', () => {
+    const rows = buildLocalTokenRows(
+      [profile({
+        id: 'codex-bridge',
+        name: 'Codex',
+        targetAgentId: 'codex',
+        sourceId: 'src-codex',
+      })],
+      {},
+      {},
+      [
+        pool({
+          id: 'pool-codex',
+          targetAgentId: 'codex',
+          dialect: 'codex',
+          members: [{ sourceKind: 'provider', sourceId: 'src-codex', enabled: true }],
+        }),
+      ],
+      false,
+      {},
+      [],
+    );
+    expect(rows).toHaveLength(0);
   });
 
   it('sorts rows by endpoint kind then name', () => {

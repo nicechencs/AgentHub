@@ -47,6 +47,7 @@ export interface MockAdapterState {
   localTokens: Map<string, string>;
   localTokenNames: Map<string, string>;
   extraLocalTokens: Array<{ id: string; poolId: string; name: string; token: string }>;
+  hiddenPrimaryIds: Set<string>;
   localGatewayRunning: boolean;
   localGatewayPort: number | null;
   sourceModelCatalogs: Map<string, SourceModelCatalog>;

@@ -180,19 +180,24 @@ impl RoutePoolService {
                 extras.push(row);
             }
         }
-        let mut records: Vec<LocalTokenRecord> = self
-            .list_default_pools()?
-            .into_iter()
-            .map(|pool| LocalTokenRecord {
+        let default_pools = self.list_default_pools()?;
+        let default_ids: HashSet<String> = default_pools.iter().map(|pool| pool.id.clone()).collect();
+        let mut records = Vec::new();
+        for pool in default_pools {
+            let name = name_by_pool.remove(&pool.id).unwrap_or_default();
+            if name == HIDDEN_PRIMARY_ENTRY_NAME {
+                continue;
+            }
+            records.push(LocalTokenRecord {
                 id: pool.id.clone(),
                 pool_id: pool.id.clone(),
                 token: pool.hub_token,
-                name: name_by_pool.remove(&pool.id).unwrap_or_default(),
+                name,
                 primary: true,
-            })
-            .collect();
+            });
+        }
         for extra in extras {
-            if records.iter().any(|record| record.pool_id == extra.pool_id) {
+            if default_ids.contains(&extra.pool_id) {
                 records.push(to_extra_record(extra));
             }
         }
@@ -238,6 +243,7 @@ impl RoutePoolService {
             self.pools.set_default(pool_id)?;
         }
         let saved = self.pools.set_hub_token(pool_id, token, &now())?;
+        self.unhide_primary_if_needed(pool_id)?;
         Ok(self.primary_record(&saved)?)
     }
 
@@ -302,15 +308,67 @@ impl RoutePoolService {
 
     pub fn delete_local_token(&self, id: &str) -> Result<()> {
         self.require_enabled()?;
-        let existing = self.entry_keys.get(id)?.ok_or_else(|| {
-            AppError::NotFound(format!("entry key not found: {id}"))
-        })?;
-        if existing.token.trim().is_empty() {
-            return Err(AppError::InvalidArg(
-                "cannot delete the default entry key".into(),
-            ));
+        if let Some(existing) = self.entry_keys.get(id)? {
+            if !existing.token.trim().is_empty() {
+                return self.entry_keys.delete(id);
+            }
+            return self.delete_primary_local_token(&existing.pool_id);
         }
-        self.entry_keys.delete(id)
+        if self.pools.get_pool(id)?.is_some() {
+            return self.delete_primary_local_token(id);
+        }
+        Err(AppError::NotFound(format!("entry key not found: {id}")))
+    }
+
+    fn delete_primary_local_token(&self, pool_id: &str) -> Result<()> {
+        let extras: Vec<LocalEntryKey> = self
+            .entry_keys
+            .list()?
+            .into_iter()
+            .filter(|row| row.pool_id == pool_id && !row.token.trim().is_empty())
+            .collect();
+        if let Some(extra) = extras.into_iter().next() {
+            self.pools.set_hub_token(pool_id, &extra.token, &now())?;
+            self.upsert_primary_name(pool_id, &extra.name)?;
+            return self.entry_keys.delete(&extra.id);
+        }
+        let rotated = generate_hub_token()?;
+        self.pools.set_hub_token(pool_id, &rotated, &now())?;
+        self.upsert_primary_name(pool_id, HIDDEN_PRIMARY_ENTRY_NAME)
+    }
+
+    fn upsert_primary_name(&self, pool_id: &str, name: &str) -> Result<()> {
+        let stamp = now();
+        if let Some(existing) = self.entry_keys.get(pool_id)? {
+            if existing.token.trim().is_empty() {
+                self.entry_keys.update(&LocalEntryKey {
+                    name: name.to_owned(),
+                    updated_at: stamp,
+                    ..existing
+                })?;
+                return Ok(());
+            }
+            return Err(AppError::InvalidArg("entry key already exists".into()));
+        }
+        self.entry_keys.insert(&LocalEntryKey {
+            id: pool_id.to_owned(),
+            pool_id: pool_id.to_owned(),
+            name: name.to_owned(),
+            token: String::new(),
+            created_at: stamp.clone(),
+            updated_at: stamp,
+        })?;
+        Ok(())
+    }
+
+    fn unhide_primary_if_needed(&self, pool_id: &str) -> Result<()> {
+        let Some(existing) = self.entry_keys.get(pool_id)? else {
+            return Ok(());
+        };
+        if existing.token.trim().is_empty() && existing.name == HIDDEN_PRIMARY_ENTRY_NAME {
+            self.entry_keys.delete(pool_id)?;
+        }
+        Ok(())
     }
 
     fn primary_record(&self, pool: &RoutePool) -> Result<LocalTokenRecord> {
@@ -1894,6 +1952,9 @@ impl RoutePoolService {
         }
     }
 }
+
+/// Display-name sentinel: the pool hub token is not listed as an entry key.
+const HIDDEN_PRIMARY_ENTRY_NAME: &str = "\u{2060}";
 
 fn now() -> String {
     Utc::now().to_rfc3339()

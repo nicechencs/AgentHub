@@ -10,7 +10,7 @@ function row(partial: Partial<LocalTokenRow> = {}): LocalTokenRow {
     id: 'pool-kimi',
     poolBacked: true,
     primary: true,
-    canDelete: false,
+    canDelete: true,
     profileId: 'bridge-1',
     name: 'kimi · /v1/chat/completions',
     kind: 'chat_completions',
@@ -57,7 +57,7 @@ describe('TokenDetailPanel', () => {
     expect(markup.indexOf('data-token-delete')).toBeLessThan(markup.indexOf('data-token-detail'));
     expect(markup.indexOf('data-token-edit-key')).toBeLessThan(markup.indexOf('data-token-detail'));
     expect(markup).not.toMatch(/data-token-test=""[^>]*\bdisabled\b/);
-    expect(markup).toMatch(/data-token-delete=""[^>]*\bdisabled\b/);
+    expect(markup).not.toMatch(/data-token-delete=""[^>]*\bdisabled\b/);
     expect(markup).not.toContain('ahb_secret');
     expect(markup).toContain('data-token-models');
     expect(markup).toContain('按连接池更新');

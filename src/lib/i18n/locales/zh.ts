@@ -1185,7 +1185,7 @@ export const zh = {
     tokens: {
       title: "入口 Key",
       description: "本机转发的入口 Key，可命名、新建和删除",
-      scopeNote: "入口 Key 按类型列出。可起名称、新建或删除。类型默认 Key 不能删，可修改。用量是近 7 天经本机转发的消耗。",
+      scopeNote: "入口 Key 按类型列出。可起名称、新建或删除。用量是近 7 天经本机转发的消耗。",
       copy: "复制",
       copied: "已复制入口 Key",
       copyFailed: "复制失败，请手动选择复制",
@@ -1262,6 +1262,9 @@ export const zh = {
       delete: "删除",
       deleteTitle: "删除入口 Key",
       deleteDescription: "删掉后，用这把 Key 的客户端会连不上。",
+      deleteAlsoConnections: "同时删除连接页上的入口 Key",
+      deleteAlsoConnectionsHint: "连接页有 {count} 份：{names}",
+      deleteAlsoConnectionsFailed: "入口 Key 已删除，但连接页上的没删掉",
       deleteFailed: "没法删除入口 Key",
       deleteNeedExtra: "类型默认入口 Key 不能删除，可修改",
     },

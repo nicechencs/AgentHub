@@ -43,6 +43,9 @@ describe('routes tokens layout wiring', () => {
     expect(panel).toContain('<Trash2');
     expect(page).toContain('onDelete={() => setDeleteRow(detailRow)}');
     expect(page).not.toContain('onDelete={detailRow.canDelete');
+    expect(page).toContain('deleteAlsoConnections');
+    expect(page).toContain('matchesConnectionEntryKeys');
+    expect(page).toContain('type="checkbox"');
   });
 
   it('puts eye and copy icons after the entry key, not text buttons', () => {

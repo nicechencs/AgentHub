@@ -579,18 +579,15 @@ pub async fn delete_local_token(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<(), GuiError> {
-    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
-    let host = state.bridge_host();
-    with_hub_blocking(hub.clone(), move |hub| {
-        hub.route_pools()
-            .delete_local_token(&id)
-            .map_err(|err| map_err_string("delete_local_token", err))
-    })
+    crate::adapter_bridge_controller::delete_local_gateway_token(
+        state.hub_arc().map_err(adapter_error_from_string)?,
+        state.bridge_host(),
+        state.bridge_saga_coordinator(),
+        state.lifecycle_shutdown_barrier(),
+        id,
+    )
     .await
-    .map_err(adapter_error_from_string)?;
-    sync_extra_local_bearers(hub, &host)
-        .await
-        .map_err(adapter_error_from_string)
+    .map_err(adapter_error_from_string)
 }
 
 /// Enroll a newly added authorization into the default auth pool and mark it

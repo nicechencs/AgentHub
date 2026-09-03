@@ -1195,7 +1195,7 @@ export const en = {
     tokens: {
       title: "Entry keys",
       description: "Local-route entry keys. You can name, add, and delete them.",
-      scopeNote: "Keys are listed by type. You can name, add, or delete them. The default key for a type cannot be deleted, only edited. Usage is the last 7 days through local forwarding.",
+      scopeNote: "Keys are listed by type. You can name, add, or delete them. Usage is the last 7 days through local forwarding.",
       copy: "Copy",
       copied: "Entry key copied",
       copyFailed: "Copy failed — select and copy manually",
@@ -1272,6 +1272,9 @@ export const en = {
       delete: "Delete",
       deleteTitle: "Delete entry key",
       deleteDescription: "Clients using this key will no longer connect.",
+      deleteAlsoConnections: "Also delete this entry key on Connections",
+      deleteAlsoConnectionsHint: "{count} on Connections: {names}",
+      deleteAlsoConnectionsFailed: "Entry key deleted, but the Connections copy could not be removed",
       deleteFailed: "Couldn't delete the entry key",
       deleteNeedExtra: "The default key for this type cannot be deleted — you can edit it",
     },
