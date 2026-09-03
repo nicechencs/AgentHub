@@ -419,6 +419,33 @@ fn list_cursor_workspace_folders_no_fake_excerpt() {
 }
 
 #[test]
+fn list_cursor_actual_path_falls_back_to_transcript_cwd() {
+    let dir = tempdir().unwrap();
+    let workspace = dir.path().join("real-workspace");
+    fs::create_dir_all(&workspace).unwrap();
+    let home = dir.path().join(".cursor");
+    let proj = home.join("projects").join("d-no-such-cursor-workspace-zzzz");
+    let sid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    write_jsonl(
+        &proj
+            .join("agent-transcripts")
+            .join(sid)
+            .join(format!("{sid}.jsonl")),
+        &[serde_json::json!({
+            "cwd": workspace,
+            "role": "user",
+            "message": { "content": "hi" }
+        })],
+    );
+
+    let projects = list_projects_for_agent_home(AgentId::Cursor, &home, None).unwrap();
+    assert_eq!(projects.len(), 1);
+    let actual = projects[0].actual_path.as_deref().expect("cwd fallback");
+    assert_eq!(Path::new(actual), workspace.as_path());
+    assert_eq!(projects[0].title, "real-workspace");
+}
+
+#[test]
 fn list_cursor_agent_transcripts_as_sessions() {
     let dir = tempdir().unwrap();
     let home = dir.path().join(".cursor");
