@@ -2,11 +2,10 @@
  * UiPreferencesStore — 真实 UI 本地偏好（theme / onboarding 等）。
  * 不是 backend mock；生产与 dev:mock 均可使用 localStorage。
  *
- * 持久化键约定（N-15）见 `@/lib/storage-key`：新键 `agenthub:` + kebab-case；
- * 历史 `agenthub.` + camelCase 布局键读旧写新。
+ * 持久化键约定（N-15）见 `@/lib/storage-key`：一律 `agenthub:` + kebab-case。
  */
 
-import { readLegacy } from '@/lib/storage-key';
+import { readStorageItem } from '@/lib/storage-key';
 
 export { StorageKey } from '@/lib/storage-key';
 
@@ -19,7 +18,7 @@ export const DEFAULT_PLUGINS_NAV_VISIBLE = false;
 
 export function loadJson<T>(key: string, fallback: T): T {
   try {
-    const raw = readLegacy(localStorage, key);
+    const raw = readStorageItem(localStorage, key);
     if (raw == null) return fallback;
     return JSON.parse(raw) as T;
   } catch {
@@ -37,7 +36,7 @@ export function saveJson(key: string, value: unknown): void {
 
 export function loadString(key: string, fallback: string): string {
   try {
-    return readLegacy(localStorage, key) ?? fallback;
+    return readStorageItem(localStorage, key) ?? fallback;
   } catch {
     return fallback;
   }
@@ -53,7 +52,7 @@ export function saveString(key: string, value: string): void {
 
 export function loadBool(key: string, fallback = false): boolean {
   try {
-    const raw = readLegacy(localStorage, key);
+    const raw = readStorageItem(localStorage, key);
     if (raw == null) return fallback;
     return raw === '1' || raw === 'true';
   } catch {

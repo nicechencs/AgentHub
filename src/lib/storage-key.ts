@@ -1,6 +1,5 @@
 /**
- * 持久化键约定（N-15）：新键一律 `agenthub:` + kebab-case。
- * 历史 `agenthub.` + camelCase 布局键不得作为主写键；迁移读旧写新，本波仍可读旧键一轮。
+ * 持久化键约定（N-15）：一律 `agenthub:` + kebab-case。
  *
  * `agenthub.db` 路径、`agenthub.YYYY-MM-DD.log` 日志文件名不是 localStorage 键，不在此模块。
  */
@@ -27,28 +26,6 @@ const LAYOUT_STORAGE_KEY = {
   chatComposerPaneHeight: `${PREFIX}chat-composer-pane-height`,
   chatBootstrap: `${PREFIX}chat-bootstrap`,
 } as const;
-
-/** 与 {@link LAYOUT_STORAGE_KEY} 一一对应的历史点号键；只用于读路径。 */
-export const LegacyStorageKey = {
-  skillsPreviewWidth: 'agenthub.skills.previewWidth',
-  skillsMatrixLegendOpen: 'agenthub.skills.matrixLegendOpen',
-  skillsMatrixColumnWidths: 'agenthub.skills.matrixColumnWidths',
-  skillsMarketColumnWidths: 'agenthub.skills.marketColumnWidths',
-  projectsPreviewWidth: 'agenthub.projects.previewWidth',
-  pluginsPreviewWidth: 'agenthub.plugins.previewWidth',
-  agentsPreviewWidth: 'agenthub.agents.previewWidth',
-  mcpColumnWidths: 'agenthub.mcp.columnWidths',
-  connectionsInspectWidth: 'agenthub.connections.inspectWidth',
-  settingsBackupsInspectWidth: 'agenthub.settings.backupsInspectWidth',
-  routesInspectWidth: 'agenthub.routes.inspectWidth',
-  routesTokensColumnWidths: 'agenthub.routes.tokens.columnWidths',
-  routesPoolColumnWidths: 'agenthub.routes.pool.columnWidths',
-  routesActivityPreviewWidth: 'agenthub.routes.activity.previewWidth',
-  routesActivityColumnWidths: 'agenthub.routes.activity.columnWidths',
-  dashboardUsageColumnWidths: 'agenthub.dashboard.usageColumnWidths',
-  chatComposerPaneHeight: 'agenthub.chat.composerPaneHeight',
-  chatBootstrap: 'agenthub.chat.bootstrap',
-} as const satisfies Record<keyof typeof LAYOUT_STORAGE_KEY, `agenthub.${string}`>;
 
 export const StorageKey = {
   theme: `${PREFIX}theme`,
@@ -83,65 +60,24 @@ export const StorageKey = {
   ...LAYOUT_STORAGE_KEY,
 } as const;
 
-type LayoutStorageName = keyof typeof LAYOUT_STORAGE_KEY;
-
-const LEGACY_BY_CANONICAL: Record<string, string> = Object.fromEntries(
-  (Object.keys(LAYOUT_STORAGE_KEY) as LayoutStorageName[]).map((name) => [
-    LAYOUT_STORAGE_KEY[name],
-    LegacyStorageKey[name],
-  ]),
-);
-
 export type StorageLike = {
   getItem(key: string): string | null;
   setItem?(key: string, value: string): void;
   removeItem?(key: string): void;
 };
 
-/** 旧键 `agenthub.foo` 对应的规范键；未登记的布局键返回 undefined。 */
-export function legacyKeyFor(canonicalKey: string): string | undefined {
-  return LEGACY_BY_CANONICAL[canonicalKey];
-}
-
-/**
- * 读规范键 `agenthub:foo`；没有则读旧键 `agenthub.foo` 并写回新键。
- * 主写路径不得再写旧键。
- */
-export function readLegacy(storage: StorageLike, canonicalKey: string): string | null {
+/** 只读规范键。 */
+export function readStorageItem(storage: StorageLike, key: string): string | null {
   try {
-    const current = storage.getItem(canonicalKey);
-    if (current != null) return current;
-  } catch {
-    /* ignore */
-  }
-  const legacyKey = LEGACY_BY_CANONICAL[canonicalKey];
-  if (!legacyKey) return null;
-  let old: string | null = null;
-  try {
-    old = storage.getItem(legacyKey);
+    return storage.getItem(key);
   } catch {
     return null;
   }
-  if (old == null) return null;
-  try {
-    storage.setItem?.(canonicalKey, old);
-  } catch {
-    /* quota / private mode */
-  }
-  return old;
 }
 
-/** 清掉规范键及其一轮旧键，避免删新键后回落到过期布局。 */
-export function removeStorageItem(storage: StorageLike, canonicalKey: string): void {
+export function removeStorageItem(storage: StorageLike, key: string): void {
   try {
-    storage.removeItem?.(canonicalKey);
-  } catch {
-    /* ignore */
-  }
-  const legacyKey = LEGACY_BY_CANONICAL[canonicalKey];
-  if (!legacyKey) return;
-  try {
-    storage.removeItem?.(legacyKey);
+    storage.removeItem?.(key);
   } catch {
     /* ignore */
   }

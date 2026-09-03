@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { LegacyStorageKey, StorageKey } from '@/lib/storage-key';
+import { StorageKey } from '@/lib/storage-key';
 import {
   clampSideSplitWidth,
   persistSideSplitWidth,
@@ -83,18 +83,10 @@ describe('side-split width persistence', () => {
     vi.stubGlobal('window', { localStorage });
   }
 
-  it('writes the canonical inspect width and not the leftover dotted key', () => {
+  it('writes and reads the canonical inspect width', () => {
     stubWindow();
     persistSideSplitWidth(StorageKey.connectionsInspectWidth, 520);
     expect(store.get(StorageKey.connectionsInspectWidth)).toBe('520');
-    expect(store.has(LegacyStorageKey.connectionsInspectWidth)).toBe(false);
     expect(readStoredSideSplitWidth(StorageKey.connectionsInspectWidth)).toBe(520);
-  });
-
-  it('reads a leftover dotted inspect width and write-through to the canonical key', () => {
-    stubWindow();
-    store.set(LegacyStorageKey.routesInspectWidth, '480');
-    expect(readStoredSideSplitWidth(StorageKey.routesInspectWidth)).toBe(480);
-    expect(store.get(StorageKey.routesInspectWidth)).toBe('480');
   });
 });

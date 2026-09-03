@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { LegacyStorageKey, StorageKey } from '@/lib/storage-key';
+import { StorageKey } from '@/lib/storage-key';
 import {
   mergeStoredColumnWidths,
   persistColumnWidths,
@@ -66,23 +66,9 @@ describe('column width persistence', () => {
     });
   });
 
-  it('writes the kebab StorageKey and not the leftover dotted key', () => {
+  it('writes the kebab StorageKey', () => {
     stubStorage();
     persistColumnWidths(StorageKey.mcpColumnWidths, { name: 240, endpoint: 400 });
-    expect(store.has(LegacyStorageKey.mcpColumnWidths)).toBe(false);
-    expect(JSON.parse(store.get(StorageKey.mcpColumnWidths)!)).toEqual({
-      name: 240,
-      endpoint: 400,
-    });
-  });
-
-  it('reads a leftover dotted key and write-through to the canonical key', () => {
-    stubStorage();
-    store.set(LegacyStorageKey.mcpColumnWidths, JSON.stringify({ name: 240, endpoint: 400 }));
-    expect(readStoredColumnWidths(StorageKey.mcpColumnWidths, defaults, minByKey)).toEqual({
-      name: 240,
-      endpoint: 400,
-    });
     expect(JSON.parse(store.get(StorageKey.mcpColumnWidths)!)).toEqual({
       name: 240,
       endpoint: 400,
@@ -117,7 +103,6 @@ describe('resizable table wiring', () => {
       const src = readFileSync(path.join(dir, '../../..', rel), 'utf8');
       expect(src, rel).toMatch(/useColumnWidths\([\s\S]*?,\s*COLUMN_WIDTHS_STORAGE_KEY\s*,?\s*\)/);
       expect(src, rel).toMatch(/COLUMN_WIDTHS_STORAGE_KEY = StorageKey\.\w+/);
-      expect(src, rel).not.toMatch(/COLUMN_WIDTHS_STORAGE_KEY = 'agenthub\./);
     }
   });
 });

@@ -295,11 +295,8 @@ export interface Skill {
   sourceDir?: string;
   /** 各 agent 投影行（含 linkKind / targetDir） */
   projections: SkillProjection[];
-  /**
-   * @deprecated 兼容旧 UI：由 projections 派生的扁平 map
-   * mapped(linked|copied) → linked/copied；其余原样
-   */
-  sync: Record<AgentKey, SkillSyncState>;
+  /** 由 projections 派生的扁平 map：各 Agent 的投影状态 */
+  projectionByAgent: Record<AgentKey, SkillSyncState>;
   /** foreign / conflict 的 agent 列表（覆盖确认用） */
   conflicts: AgentKey[];
 }

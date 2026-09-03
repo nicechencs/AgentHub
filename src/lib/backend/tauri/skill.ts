@@ -24,10 +24,10 @@ export function createTauriSkillPort(): SkillPort {
 
     async toggleSkillSync(skillId, agentId, opts = {}) {
       const current = (await listSkillsMapped()).find((s) => s.id === skillId);
-      if (!current || current.sync[agentId] === 'unsupported') {
+      if (!current || current.projectionByAgent[agentId] === 'unsupported') {
         return { state: 'unsupported' as const, conflict: false };
       }
-      const wasMapped = isMappedState(current.sync[agentId]);
+      const wasMapped = isMappedState(current.projectionByAgent[agentId]);
       if (wasMapped && !opts.mode) {
         await invoke('disable_skill', { skillId, agentId });
       } else {
@@ -49,7 +49,7 @@ export function createTauriSkillPort(): SkillPort {
       const after = (await listSkillsMapped()).find((s) => s.id === skillId);
       if (!after) throw new Error(`技能不存在: ${skillId}`);
       return {
-        state: after.sync[agentId],
+        state: after.projectionByAgent[agentId],
         conflict: after.conflicts.includes(agentId),
       };
     },
