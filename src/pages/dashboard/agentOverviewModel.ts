@@ -12,6 +12,7 @@ import {
   routeEndpointPathForBinding,
 } from '@/lib/route-endpoints';
 import { connectionStateRouteLabel } from '@/lib/ticket-wallet-labels';
+import { isAuthorizationManagementBlocked } from '@/lib/capability';
 import type { AgentKey, AgentStatus, AuthStatus } from '@/lib/types';
 
 /** Backend/store rows keep Chinese literals. Remap at display time when `t` is set. */
@@ -23,10 +24,11 @@ export function localizeStoredDashboardCopy(raw: string, t?: TranslateFn): strin
 export const AGENT_OVERVIEW_GRID =
   'grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(190px,1fr))]';
 
-/** 已安装 → 打开连接流程；未安装 / 环境未就绪 → 跳转 Agents 页 */
+/** 已安装 → 打开连接流程；未安装 / 环境未就绪 → 跳转 Agents 页；不支持管理授权 → 不可点 */
 export type AgentCardAction =
   | { kind: 'connect' }
-  | { kind: 'navigate'; to: string };
+  | { kind: 'navigate'; to: string }
+  | { kind: 'none' };
 
 /**
  * 当前正在用的授权。模型层只做映射，不读 provider.meta、不发请求。
@@ -90,6 +92,7 @@ export function isAgentIssue(status: AgentStatus | undefined): boolean {
   if (!status || !status.installed) return true;
   const view = sliceAgentStatus(status);
   if (view.env.ready === false) return true;
+  if (isAuthorizationManagementBlocked(status.agentId, status.capabilities)) return false;
   if (view.liveAuth.health === 'needs_login') return true;
   if (view.liveAuth.health !== 'unset') return false;
   if (status.authStatus === 'expired' || status.authStatus === 'expiring') return true;
@@ -195,11 +198,15 @@ export function buildAgentCardView(
 ): AgentCardView {
   const missing = !status || !status.installed;
   const envMissing = missing && status?.envReady === false;
+  const authUnsupported = !missing
+    && isAuthorizationManagementBlocked(meta.id, status?.capabilities);
 
-  // 已安装：打开连接流程；未安装 / 环境未就绪：保留跳转 /agents
+  // 已安装：打开连接流程；不支持管理授权：不可点；未安装 / 环境未就绪：跳转 /agents
   const action: AgentCardAction = missing
     ? { kind: 'navigate', to: '/agents' }
-    : { kind: 'connect' };
+    : authUnsupported
+      ? { kind: 'none' }
+      : { kind: 'connect' };
 
   const view = sliceAgentStatus(status ?? {});
   const kind = view.effectiveConnection.kind === 'unset' ? 'none' : view.effectiveConnection.kind;
@@ -226,6 +233,8 @@ export function buildAgentCardView(
     } else {
       metaText = t ? t('dashboard.overview.notInstalled') : '未安装 · 点击安装';
     }
+  } else if (authUnsupported) {
+    metaText = t ? t('dashboard.overview.authUnsupported') : '不支持管理授权';
   } else if (badges?.binding?.ticketLabel) {
     metaText = badges.binding.routeLabel
       ? `${badges.binding.ticketLabel} · ${badges.binding.routeLabel}`
@@ -236,11 +245,14 @@ export function buildAgentCardView(
 
   const titleFull = missing
     ? metaText
-    : badges?.binding?.ticketLabel
-      ? badges.binding.routeLabel
-        ? `${badges.binding.ticketLabel} · ${badges.binding.routeLabel} · ${authLabel}`
-        : `${badges.binding.ticketLabel} · ${authLabel}`
-      : `${effective} · ${authLabel}`;
+    : authUnsupported
+      ? metaText
+      : badges?.binding?.ticketLabel
+        ? badges.binding.routeLabel
+          ? `${badges.binding.ticketLabel} · ${badges.binding.routeLabel} · ${authLabel}`
+          : `${badges.binding.ticketLabel} · ${authLabel}`
+        : `${effective} · ${authLabel}`;
+  const showBinding = Boolean(badges?.binding?.ticketLabel) && !authUnsupported;
 
   const connectionHint =
     kind === 'account'
@@ -262,18 +274,25 @@ export function buildAgentCardView(
       : t
         ? t('dashboard.overview.ariaMissing', { name: meta.name })
         : `${meta.name}，未安装，点击安装`
-    : t
-      ? t('dashboard.overview.ariaInstalled', {
-          name: meta.name,
-          version: versionText ?? `v${version}`,
-          auth: authLabel,
-          hint: connectionHint,
-          effective,
-        })
-      : `${meta.name}，${versionText}，${authLabel}，${connectionHint} ${effective}，点击管理连接`;
+    : authUnsupported
+      ? t
+        ? t('dashboard.overview.ariaAuthUnsupported', {
+            name: meta.name,
+            version: versionText ?? `v${version}`,
+          })
+        : `${meta.name}，${versionText}，不支持管理授权`
+      : t
+        ? t('dashboard.overview.ariaInstalled', {
+            name: meta.name,
+            version: versionText ?? `v${version}`,
+            auth: authLabel,
+            hint: connectionHint,
+            effective,
+          })
+        : `${meta.name}，${versionText}，${authLabel}，${connectionHint} ${effective}，点击管理连接`;
 
-  const authStatus = cardAuthStatus(status, missing);
-  const binding = badges?.binding?.ticketLabel
+  const authStatus = authUnsupported ? 'none' : cardAuthStatus(status, missing);
+  const binding = showBinding && badges?.binding?.ticketLabel
     ? {
         ticketLabel: dashboardConnectionLabel(badges.binding.ticketLabel, t),
         routeLabel: dashboardConnectionLabel(badges.binding.routeLabel, t),
@@ -298,7 +317,9 @@ export function buildAgentCardView(
       : t
         ? t('dashboard.overview.notInstalledShort')
         : '未安装'
-    : authLabel;
+    : authUnsupported
+      ? (t ? t('dashboard.overview.authUnsupported') : '不支持管理授权')
+      : authLabel;
 
   return {
     missing,
@@ -329,7 +350,10 @@ export function resolveAgentCardInteraction(
   action: AgentCardAction,
   agentId: AgentKey,
   onConnectRequest?: (agentId: AgentKey) => void,
-): { type: 'connect'; agentId: AgentKey } | { type: 'navigate'; to: string } {
+): { type: 'connect'; agentId: AgentKey } | { type: 'navigate'; to: string } | { type: 'none' } {
+  if (action.kind === 'none') {
+    return { type: 'none' };
+  }
   if (action.kind === 'navigate') {
     return { type: 'navigate', to: action.to };
   }

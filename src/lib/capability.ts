@@ -38,6 +38,20 @@ export function isCapabilityBlocked(cap?: AgentCapability | null): boolean {
 }
 
 /**
+ * Connections / dashboard: this Agent cannot manage logins here.
+ * Cursor is product-locked; other agents follow explicit `accountSwitch`.
+ * Missing capability data fails open so loading does not disable every tab.
+ */
+export function isAuthorizationManagementBlocked(
+  agentId?: string | null,
+  capabilities?: AgentCapabilities | null,
+): boolean {
+  if (agentId === 'cursor') return true;
+  const accountSwitch = capabilities?.accountSwitch;
+  return accountSwitch != null && isCapabilityBlocked(accountSwitch);
+}
+
+/**
  * Provider controls in Connections have two distinct capability boundaries:
  * creating/editing a saved provider and switching it both need the live config
  * writer. Presets are an optional convenience contract and do not prevent a

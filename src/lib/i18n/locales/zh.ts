@@ -1488,6 +1488,8 @@ export const zh = {
       ariaMissing: "{name}，未安装，点击安装",
       ariaInstalled: "{name}，{version}，{auth}，{hint} {effective}，点击管理连接",
       ariaBinding: "，当前使用 {label}（{route}）",
+      authUnsupported: "不支持管理授权",
+      ariaAuthUnsupported: "{name}，{version}，不支持管理授权",
     },
     alerts: {
       authExpired: "{name} 登录已失效，连接可能不可用",
@@ -1546,6 +1548,7 @@ export const zh = {
     healConflict: "本机设置与当前登录不一致",
     capability: {
       configWriteUnsupported: "该 Agent 不支持配置写入",
+      authUnsupported: "不支持管理授权",
     },
     pi: {
       xaiCustomLabel: "xAI（自定义）",
