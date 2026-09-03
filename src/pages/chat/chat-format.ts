@@ -1,4 +1,6 @@
+import { agentDisplayName } from '@/config/agents';
 import { formatJsonPayload } from '@/lib/source-preview';
+import { formatSessionRecordText } from '@/lib/session-record-text';
 import type { MessageKey, TranslateFn } from '@/lib/i18n';
 
 const CHAT_FAILURE_KEY = {
@@ -43,6 +45,23 @@ export function isProcessActivePhase(phase: AgentProcessView['phase']): boolean 
 
 export function isProcessErrorPhase(phase: AgentProcessView['phase']): boolean {
   return phase === 'failed' || phase === 'timeout';
+}
+
+export function formatChatSessionRecord(turns: TurnGroup[], userLabel: string): string {
+  const lines = [];
+  for (const g of turns) {
+    const user = g.user?.content?.trim();
+    if (user) lines.push({ speaker: userLabel, text: user });
+    for (const m of g.agents) {
+      const text = m.content?.trim();
+      if (!text) continue;
+      lines.push({
+        speaker: m.agentId ? agentDisplayName(m.agentId) : '',
+        text,
+      });
+    }
+  }
+  return formatSessionRecordText(lines);
 }
 
 export function groupByTurn(messages: ChatMessage[]): TurnGroup[] {
