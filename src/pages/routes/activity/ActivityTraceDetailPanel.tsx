@@ -54,10 +54,12 @@ export function ActivityTraceDetailPanel({
     port: row.localAuth.port,
   });
   const outbound = row.upstream.url?.trim() || '';
+  const selectedLogin = row.upstream.member ?? row.pool.selectedMember;
   const localBrand = activityTraceLocalBrand(row);
   const upstreamBrand = activityTraceUpstreamBrand(row);
   const conversion = activityTraceConversionLabel(row, t);
   const model = activityTraceModelLabel(row);
+  const poolModel = row.upstream.upstreamModel?.trim() || model || '';
   const firstToken = formatTraceSeconds(row.ttftMs, t);
   const duration = formatTraceSeconds(row.latencyMs, t);
   const tokens = formatTraceTokens(row.inputTokens, row.outputTokens, t);
@@ -100,25 +102,6 @@ export function ActivityTraceDetailPanel({
               brandAgentId={localBrand}
             />
           </Field>
-          <Field label={t('routes.activity.localKey')}>
-            <span className="font-mono">{keyHint(row.localAuth.keyLast4)}</span>
-          </Field>
-          <Field label={t('routes.activity.selectedLogin')}>
-            {row.pool.selectedMember?.label || <span className="text-muted">—</span>}
-          </Field>
-          <Field label={t('routes.activity.outboundEndpoint')}>
-            {outbound ? (
-              <AbsoluteRouteEndpointUrl url={outbound} brandAgentId={upstreamBrand} />
-            ) : (
-              <span className="text-muted">—</span>
-            )}
-          </Field>
-          <Field label={t('routes.activity.upstreamKey')}>
-            <span className="font-mono">{keyHint(row.upstream.member?.keyLast4 ?? row.pool.selectedMember?.keyLast4)}</span>
-          </Field>
-          <Field label={t('routes.activity.conversion')}>
-            {conversion || <span className="text-muted">—</span>}
-          </Field>
           <Field label={t('routes.activity.colModel')}>
             {model || <span className="text-muted">—</span>}
           </Field>
@@ -139,6 +122,24 @@ export function ActivityTraceDetailPanel({
             {summary.errorMessage ? <p className="mt-1 break-all text-secondary">{summary.errorMessage}</p> : null}
           </section>
         ) : null}
+
+        <section className="space-y-2">
+          <h3 className="text-sm font-medium">{t('routes.activity.requestPath')}</h3>
+          <dl className="flex flex-col gap-1.5 rounded-card border border-border px-2.5 py-2">
+            <Field label={t('routes.trace.stageLocalAuth')}>
+              {t('routes.activity.localKey')} <span className="font-mono">{keyHint(row.localAuth.keyLast4)}</span>
+            </Field>
+            <Field label={t('routes.trace.stagePool')}>
+              {selectedLogin?.label || '—'} · {poolModel || '—'} · <span className="font-mono">{keyHint(selectedLogin?.keyLast4)}</span>
+            </Field>
+            <Field label={t('routes.trace.stageConversion')}>
+              {conversion || '—'}
+            </Field>
+            <Field label={t('routes.trace.stageUpstream')}>
+              {outbound ? <AbsoluteRouteEndpointUrl url={outbound} brandAgentId={upstreamBrand} /> : '—'} · {row.upstream.upstreamModel?.trim() || model || '—'} · {selectedLogin?.label || '—'} · <span className="font-mono">{keyHint(selectedLogin?.keyLast4)}</span>{row.upstreamAuth.httpStatus != null ? ` · ${row.upstreamAuth.httpStatus}` : ''}
+            </Field>
+          </dl>
+        </section>
 
         <section className="space-y-2">
           <h3 className="text-sm font-medium">{t('routes.activity.colStages')}</h3>

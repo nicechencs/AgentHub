@@ -25,6 +25,7 @@ function row(partial: Partial<RouteTraceListItem> = {}): RouteTraceListItem {
     upstream: {
       status: 'ok',
       url: 'https://api.anthropic.com/v1/messages',
+      upstreamModel: 'claude-sonnet-upstream',
       httpStatus: 200,
     },
     sourceLabel: 'Route A',
@@ -50,19 +51,22 @@ describe('ActivityTraceDetailPanel', () => {
     expect(markup).toContain('请求详情');
     expect(markup).toContain('本地调用端点');
     expect(markup).toContain('/v1/messages');
-    expect(markup).toContain('上游调用端点');
+    expect(markup).toContain('本次请求实际走向');
     expect(markup).toContain('https://api.anthropic.com');
     expect(markup).toContain('/v1/messages');
     expect(markup).toContain('转换');
     expect(markup).toContain('Messages');
     expect(markup).toContain('Anthropic');
     expect(markup).toContain('--agent-claude');
-    expect(markup).toContain('入口 Key');
+    expect(markup).toContain('本次请求实际走向');
+    expect(markup).toContain('本机鉴权');
     expect(markup).toContain('••••local');
-    expect(markup).toContain('选中的登录');
+    expect(markup).toContain('连接池');
     expect(markup).toContain('WorkBuddy Grok');
-    expect(markup).toContain('上游 API Key');
+    expect(markup).toContain('claude-sonnet-upstream');
     expect(markup).toContain('••••627a');
+    expect(markup).toContain('上游');
+    expect(markup).toContain('https://api.anthropic.com');
     expect(markup).toContain('本机鉴权');
     expect(markup).toContain('连接池');
     expect(markup).toContain('转换');
