@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   ACCENT_PALETTES,
   ACCENT_IDS,
+  CANVAS_PALETTES,
+  CANVAS_IDS,
+  DEFAULT_CANVAS_ID,
+  buildCanvasOverrideCss,
   AGENT_COLORS,
   AGENT_COLOR_VARS,
   AGENT_CSS_VAR_TO_HEX_LIGHT,
@@ -65,6 +69,17 @@ describe('design tokens SSOT', () => {
   it('keeps THEME.accent aligned with the default indigo palette', () => {
     expect(THEME.light.accent).toBe(ACCENT_PALETTES[DEFAULT_ACCENT_ID].light);
     expect(THEME.dark.accent).toBe(ACCENT_PALETTES[DEFAULT_ACCENT_ID].dark);
+  });
+
+  it('emits light-only data-canvas overrides and keeps the default aligned', () => {
+    expect(CANVAS_PALETTES[DEFAULT_CANVAS_ID].canvas).toBe(THEME.light['bg-canvas']);
+    expect(CANVAS_PALETTES[DEFAULT_CANVAS_ID].subtle).toBe(THEME.light['bg-subtle']);
+    const css = buildCanvasOverrideCss();
+    for (const id of CANVAS_IDS) {
+      expect(css).toContain(`:root[data-canvas="${id}"]`);
+      expect(css).toContain(`--bg-canvas: ${CANVAS_PALETTES[id].canvas};`);
+    }
+    expect(css).not.toContain('html.dark[data-canvas');
   });
 
   it('emits data-accent overrides for every palette', () => {

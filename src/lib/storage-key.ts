@@ -33,6 +33,8 @@ export const StorageKey = {
   theme: `${PREFIX}theme`,
   /** Product accent id (`indigo` | `blue` | `teal` | `rose` | `amber`) */
   accent: `${PREFIX}accent`,
+  /** Light page background id (`gray` | `white` | `paper` | …) */
+  canvas: `${PREFIX}canvas`,
   language: `${PREFIX}language`,
   /** One-shot: first-launch system language already seeded into core */
   languageSystemSeeded: `${PREFIX}language-system-seeded-v1`,
