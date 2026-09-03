@@ -146,14 +146,13 @@ fn default_overview_json_never_includes_hub_token() {
     assert!(!json.contains("hub_token"));
     assert!(!json.contains("ahb_"));
     assert!(json.contains("unifiedGatewayEnrolled"));
-    assert!(!json.contains("v2Enrolled"));
     assert!(json.contains("gatewayPort"));
     assert!(!json.contains("127.0.0.1"));
-    let from_legacy = serde_json::from_str::<crate::models::DefaultRoutePoolOverview>(
-        r#"{"id":"pool-1","targetAgentId":"codex","surface":"responses","dialect":"codex","v2Enrolled":true,"members":[]}"#,
+    let from_wire = serde_json::from_str::<crate::models::DefaultRoutePoolOverview>(
+        r#"{"id":"pool-1","targetAgentId":"codex","surface":"responses","dialect":"codex","unifiedGatewayEnrolled":true,"members":[]}"#,
     )
-    .expect("legacy wire");
-    assert!(from_legacy.unified_gateway_enrolled);
+    .expect("wire");
+    assert!(from_wire.unified_gateway_enrolled);
 }
 
 #[test]

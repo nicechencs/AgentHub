@@ -196,8 +196,6 @@ pub struct RoutePool {
     pub is_default: bool,
     /// Explicit switch onto the unified gateway. Unenrolled pools keep any
     /// historical `profile.local_port` until this becomes true.
-    /// Wire alias `v2Enrolled` stays readable for one compatibility window.
-    #[serde(alias = "v2Enrolled")]
     pub unified_gateway_enrolled: bool,
     pub policy_revision: i64,
     pub auto_start: bool,
@@ -367,8 +365,6 @@ pub struct DefaultRoutePoolOverview {
     pub target_agent_id: AgentId,
     pub surface: RouteDownstreamSurface,
     pub dialect: RouteDownstreamDialect,
-    /// Wire alias `v2Enrolled` stays readable for one compatibility window.
-    #[serde(alias = "v2Enrolled")]
     pub unified_gateway_enrolled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gateway_port: Option<u16>,
