@@ -1,6 +1,6 @@
 /**
  * Global ticket wallet list UI (Connections).
- * Data from listTicketWallet; per-row 分享至连接池 for true tickets.
+ * Data from listTicketWallet; 分享至连接池 / 取消添加 live on the row menu.
  * Click the card to open details in the workbench inspect pane; edit stays a button.
  */
 import * as React from 'react';
@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Share2,
   Trash2,
+  Undo2,
 } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
@@ -40,6 +41,11 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  ContextMenu,
+  ContextMenuItem,
+  type ContextMenuPoint,
+} from '@/components/ui/context-menu';
 import { Hint, Tip } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { RouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
@@ -58,6 +64,7 @@ import {
   ticketAddActionLabel,
   ticketAuthChip,
   ticketCardTitle,
+  showsCatalogUnapply,
   showsNativeSwitch,
   ticketSwitchChip,
   ticketCredentialClassChipLabel,
@@ -72,6 +79,7 @@ import {
   type TicketWalletRow,
 } from './ticket-wallet-model';
 import { TicketAuthFiles } from './ticket-auth-files';
+import { ticketPoolImportMenuState } from './ticket-pool-import';
 import { useOAuthLoginAgents } from './use-oauth-login-agents';
 
 function CredentialMark({
@@ -466,12 +474,10 @@ function TicketRow({
   extras,
   switchingId,
   nativeSwitch,
-  onImportToPool,
-  importAction,
-  importingId,
   onSwitch,
   onEdit,
   onShowDetail,
+  onContextMenu,
   active,
   suppressHighlight,
   sortHandle,
@@ -480,12 +486,10 @@ function TicketRow({
   extras: TicketDetailExtras | null;
   switchingId: string | null;
   nativeSwitch: boolean;
-  onImportToPool: (ticket: TicketView) => void;
-  importAction: TicketBindAction;
-  importingId: string | null;
   onSwitch?: (ticket: TicketView) => void;
   onEdit: (ticket: TicketView) => void;
   onShowDetail?: (ticket: TicketView) => void;
+  onContextMenu?: (event: React.MouseEvent) => void;
   active: boolean;
   suppressHighlight?: boolean;
   sortHandle?: React.ReactNode;
@@ -501,16 +505,6 @@ function TicketRow({
   });
   const switching = switchingId === ticket.id;
   const switchBusy = switchingId !== null;
-  const importing = importingId === ticket.id;
-  const importBusy = importingId !== null;
-  const importDisabled = importAction.disabled || importBusy;
-  const importReason = importing
-    ? t('connections.list.importingToPool')
-    : importBusy
-      ? t('connections.list.importToPoolBusy')
-      : importAction.disabled
-        ? importAction.reason
-        : undefined;
   const title = ticketCardTitle(ticket, extras);
 
   return (
@@ -519,6 +513,7 @@ function TicketRow({
       indicatorColor={resolveAgentMeta(ticket.agentId).color}
       className={LIST_ROW_PAD}
       onOpen={onShowDetail ? () => onShowDetail(ticket) : undefined}
+      onContextMenu={onContextMenu}
     >
       <ListRowBody
         leading={sortHandle}
@@ -580,15 +575,6 @@ function TicketRow({
                 {switching ? t('connections.list.switching') : switchChip.label}
               </DisabledReasonButton>
             ) : null}
-            <DisabledReasonButton
-              disabled={importDisabled}
-              reason={importReason}
-              ariaLabel={t('connections.list.importToPool')}
-              onClick={() => onImportToPool(ticket)}
-            >
-              <Share2 className="h-3.5 w-3.5" />
-              {importing ? t('connections.list.importingToPool') : t('connections.list.importToPool')}
-            </DisabledReasonButton>
             {editLabel ? (
               <Button size="sm" variant="outline" onClick={() => onEdit(ticket)}>
                 <Pencil className="h-3.5 w-3.5" /> {editLabel}
@@ -747,6 +733,7 @@ export function TicketWalletList({
   onImportToPool,
   importActionForTicket,
   onSwitchTicket,
+  onRemoveFromCatalog,
   switchingTicketId,
   importingTicketId,
   extrasForTicket,
@@ -767,6 +754,7 @@ export function TicketWalletList({
   onImportToPool: (ticket: TicketView) => void;
   importActionForTicket?: (ticket: TicketView) => TicketBindAction;
   onSwitchTicket?: (ticket: TicketView) => void;
+  onRemoveFromCatalog?: (ticket: TicketView) => void;
   switchingTicketId?: string | null;
   importingTicketId?: string | null;
   extrasForTicket?: (ticket: TicketView) => TicketDetailExtras | null;
@@ -782,6 +770,25 @@ export function TicketWalletList({
   oauthLoginAgents?: readonly AgentKey[] | null;
 }) {
   const { t } = useI18n();
+  const [rowMenu, setRowMenu] = React.useState<(ContextMenuPoint & { ticket: TicketView }) | null>(null);
+  const closeRowMenu = React.useCallback(() => setRowMenu(null), []);
+  const menuTicket = rowMenu?.ticket ?? null;
+  const menuImport = menuTicket
+    ? ticketPoolImportMenuState(
+      importActionForTicket?.(menuTicket) ?? { disabled: false },
+      importingTicketId ?? null,
+      menuTicket.id,
+      t,
+    )
+    : null;
+  const menuCanUnapply = menuTicket
+    ? showsCatalogUnapply(
+      resolveAgentMeta(menuTicket.agentId).occupancy,
+      extrasForTicket?.(menuTicket)?.isCurrent,
+    )
+    : false;
+  const menuUnapplyBusy = Boolean(switchingTicketId);
+  const menuUnapplyDisabled = menuUnapplyBusy || !onRemoveFromCatalog;
 
   const tickets = wallet?.tickets ?? [];
   const { stored: ticketOrder, moveInLive, seedIfEmpty } = useStoredIdOrder(StorageKey.connectionsTicketOrder);
@@ -877,12 +884,13 @@ export function TicketWalletList({
                   extras={extrasForTicket?.(row.ticket) ?? null}
                   switchingId={switchingTicketId ?? null}
                   nativeSwitch={showsNativeSwitch(row.ticket.agentId, agentFilterId)}
-                  onImportToPool={onImportToPool}
-                  importAction={importActionForTicket?.(row.ticket) ?? { disabled: false }}
-                  importingId={importingTicketId ?? null}
                   onSwitch={onSwitchTicket}
                   onEdit={onEditTicket}
                   onShowDetail={onShowDetail}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setRowMenu({ x: event.clientX, y: event.clientY, ticket: row.ticket });
+                  }}
                   active={activeTicketId === row.ticket.id}
                   suppressHighlight={activeTicketId != null}
                   sortHandle={canReorder ? (
@@ -907,6 +915,40 @@ export function TicketWalletList({
             : ''}
         </p>
       ) : null}
+
+      <ContextMenu open={rowMenu !== null} point={rowMenu} onClose={closeRowMenu}>
+        {menuImport ? (
+          <span title={menuImport.reason} className="block">
+            <ContextMenuItem
+              disabled={menuImport.disabled}
+              aria-label={t('connections.list.importToPool')}
+              onSelect={() => {
+                if (!menuTicket || menuImport.disabled) return;
+                onImportToPool(menuTicket);
+                closeRowMenu();
+              }}
+            >
+              <Share2 className="h-3.5 w-3.5" />
+              {menuImport.busy ? t('connections.list.importingToPool') : t('connections.list.importToPool')}
+              {menuImport.reason ? <span className="sr-only">{menuImport.reason}</span> : null}
+            </ContextMenuItem>
+          </span>
+        ) : null}
+        {menuCanUnapply ? (
+          <ContextMenuItem
+            disabled={menuUnapplyDisabled}
+            aria-label={t('connections.list.removeFromCatalog')}
+            onSelect={() => {
+              if (!menuTicket || menuUnapplyDisabled) return;
+              onRemoveFromCatalog?.(menuTicket);
+              closeRowMenu();
+            }}
+          >
+            <Undo2 className="h-3.5 w-3.5" />
+            {t('connections.list.removeFromCatalog')}
+          </ContextMenuItem>
+        ) : null}
+      </ContextMenu>
     </div>
   );
 }

@@ -43,6 +43,25 @@ export function importedSourceKeys(
   );
 }
 
+export function ticketPoolImportMenuState(
+  action: TicketBindAction,
+  importingId: string | null,
+  ticketId: string,
+  t?: TranslateFn,
+): { disabled: boolean; reason?: string; busy: boolean } {
+  const importing = importingId === ticketId;
+  const importBusy = importingId !== null;
+  const disabled = action.disabled || importBusy;
+  const reason = importing
+    ? (t ? t('connections.list.importingToPool') : '分享中…')
+    : importBusy
+      ? (t ? t('connections.list.importToPoolBusy') : '正在分享其他登录')
+      : action.disabled
+        ? action.reason
+        : undefined;
+  return { disabled, reason, busy: importing };
+}
+
 export function resolveTicketPoolImportAction(
   ticket: Pick<TicketView, 'agentId' | 'credentialClass'>,
   state: { poolEnabled: boolean; alreadyImported: boolean },

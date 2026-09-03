@@ -34,6 +34,7 @@ import {
   ticketAuthChip,
   ticketCardTitle,
   ticketSwitchChip,
+  showsCatalogUnapply,
   showsNativeSwitch,
   isUnrecognizedTicket,
   ticketBindingStatus,
@@ -859,7 +860,7 @@ describe('ticket detail fields', () => {
     expect(ticketSwitchChip({ isCurrent: true })).toEqual({ kind: 'in-use', label: '使用中' });
   });
 
-  it('uses 写入 / 已在模型列表里 for catalog-append occupancy', () => {
+  it('uses 写入 / 已添加 for catalog-append occupancy', () => {
     expect(ticketSwitchChip({ isCurrent: false }, undefined, {
       occupancy: 'catalogAppend',
       agentName: 'ZCode',
@@ -867,7 +868,10 @@ describe('ticket detail fields', () => {
     expect(ticketSwitchChip({ isCurrent: true }, undefined, {
       occupancy: 'catalogAppend',
       agentName: 'ZCode',
-    })).toEqual({ kind: 'in-use', label: '已在模型列表里' });
+    })).toEqual({ kind: 'in-use', label: '已添加' });
+    expect(showsCatalogUnapply('catalogAppend', true)).toBe(true);
+    expect(showsCatalogUnapply('catalogAppend', false)).toBe(false);
+    expect(showsCatalogUnapply('exclusive', true)).toBe(false);
   });
 
   it('keeps catalog-append logins in the model list after another row becomes current', () => {
@@ -896,9 +900,9 @@ describe('ticket detail fields', () => {
     expect(ticketSwitchChip(live, undefined, {
       occupancy: 'catalogAppend',
       agentName: 'WorkBuddy',
-    })).toEqual({ kind: 'in-use', label: '已在模型列表里' });
+    })).toEqual({ kind: 'in-use', label: '已添加' });
     expect(buildTicketDetailFields(wb, live).advanced).toEqual(expect.arrayContaining([
-      { label: '模型列表', value: '已在模型列表里' },
+      { label: '模型列表', value: '已添加' },
     ]));
 
     const pending = extrasFromPoolSource(wb, {
@@ -1526,7 +1530,7 @@ describe('row action disable reasons', () => {
       switchBusy: false,
       canSwitch: true,
       occupancy: 'catalogAppend',
-    })).toBe('这份登录已经出现在模型列表里');
+    })).toBe('这份登录已经添加');
   });
 
   it('explains refresh lock', () => {

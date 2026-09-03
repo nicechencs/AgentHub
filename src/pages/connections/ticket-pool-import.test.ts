@@ -5,6 +5,7 @@ import {
   isPoolShareableLogin,
   resolveTicketPoolImportAction,
   ticketPoolImportKey,
+  ticketPoolImportMenuState,
 } from './ticket-pool-import';
 
 describe('ticketPoolImportKey', () => {
@@ -81,5 +82,51 @@ describe('resolveTicketPoolImportAction', () => {
       { agentId: 'workbuddy', credentialClass: 'api_key' },
       { poolEnabled: true, alreadyImported: false },
     )).toEqual({ disabled: false });
+  });
+});
+
+describe('ticketPoolImportMenuState', () => {
+  it('keeps the disable reason when this login cannot join', () => {
+    expect(ticketPoolImportMenuState(
+      { disabled: true, reason: '这份登录目前不能分享至连接池' },
+      null,
+      'provider:kimi-1',
+    )).toEqual({
+      disabled: true,
+      reason: '这份登录目前不能分享至连接池',
+      busy: false,
+    });
+  });
+
+  it('shows 已在连接池 as the disable reason', () => {
+    expect(ticketPoolImportMenuState(
+      { disabled: true, reason: '已在连接池' },
+      null,
+      'provider:kimi-1',
+    )).toEqual({
+      disabled: true,
+      reason: '已在连接池',
+      busy: false,
+    });
+  });
+
+  it('stays enabled when the login can join', () => {
+    expect(ticketPoolImportMenuState(
+      { disabled: false },
+      null,
+      'provider:kimi-1',
+    )).toEqual({ disabled: false, reason: undefined, busy: false });
+  });
+
+  it('shows 分享中… while this login is importing', () => {
+    expect(ticketPoolImportMenuState(
+      { disabled: false },
+      'provider:kimi-1',
+      'provider:kimi-1',
+    )).toEqual({
+      disabled: true,
+      reason: '分享中…',
+      busy: true,
+    });
   });
 });
