@@ -45,6 +45,8 @@ describe('TokenList', () => {
     expect(markup).toContain('<table');
     expect(markup).toContain('data-col="type"');
     expect(markup).toContain('data-col="endpoint"');
+    expect(markup).toContain('overflow-hidden');
+    expect(markup).toContain('truncate');
     expect(markup).toContain('data-col="token"');
     expect(markup).toContain('data-col="lastPage"');
     expect(markup).toContain('data-col="usage"');

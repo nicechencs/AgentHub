@@ -133,7 +133,7 @@ function renderColumn(
 ): ReactNode {
   const { t } = ctx;
   if (key === 'type') {
-    return <span className="font-medium text-primary">{tokenTypeLabel(row, t)}</span>;
+    return <span className="block truncate font-medium text-primary">{tokenTypeLabel(row, t)}</span>;
   }
   if (key === 'lastPage') {
     const page = tokenLastPageDisplay(row);
@@ -152,19 +152,16 @@ function renderColumn(
   if (key === 'endpoint') {
     const endpoint = tokenEndpointParts(row);
     const brandAgentId = localEndpointBrandAgentId(row.kind);
-    if (endpoint.portPending) {
-      return (
-        <RouteEndpointUrl
-          path={row.path}
-          port={null}
-          host={endpoint.host}
-          endpointId={endpoint.endpointId}
-          brandAgentId={brandAgentId}
-          className="text-meta"
-        />
-      );
-    }
-    return (
+    const url = endpoint.portPending ? (
+      <RouteEndpointUrl
+        path={row.path}
+        port={null}
+        host={endpoint.host}
+        endpointId={endpoint.endpointId}
+        brandAgentId={brandAgentId}
+        className="text-meta"
+      />
+    ) : (
       <CopyableRouteEndpointUrl
         path={row.path}
         port={Number(endpoint.portLabel)}
@@ -174,6 +171,7 @@ function renderColumn(
         className="text-meta"
       />
     );
+    return <div className="min-w-0 max-w-full">{url}</div>;
   }
   if (row.unavailable && !row.maskedToken) {
     return <span className="text-meta text-muted">{t('routes.runtime.unavailable')}</span>;
