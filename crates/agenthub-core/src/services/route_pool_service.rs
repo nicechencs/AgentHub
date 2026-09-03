@@ -953,16 +953,6 @@ impl RoutePoolService {
         }
     }
 
-    #[deprecated(note = "use enroll_unified_gateway")]
-    pub fn enroll_v2(&self, pool_id: &str, gateway_port: u16) -> Result<RoutePool> {
-        self.enroll_unified_gateway(pool_id, gateway_port)
-    }
-
-    #[deprecated(note = "use enroll_unified_gateway_as_default")]
-    pub fn enroll_v2_as_default(&self, pool_id: &str, gateway_port: u16) -> Result<RoutePool> {
-        self.enroll_unified_gateway_as_default(pool_id, gateway_port)
-    }
-
     /// Bind the unified gateway first; persist enrollment only after bind.
     /// Occupancy / bind failure leaves the pool unenrolled and does not rewrite
     /// the client-facing port or Hub token.

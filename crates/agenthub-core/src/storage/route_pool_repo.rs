@@ -15,10 +15,9 @@ use crate::storage::Database;
 #[cfg(test)]
 mod tests;
 
-// SQLite column `v2_enrolled` is historical; Rust field is unified_gateway_enrolled.
 const POOL_COLUMNS: &str = r#"
     id, target_agent_id, downstream_surface, downstream_dialect, hub_token,
-    schedule_policy, is_default, v2_enrolled, policy_revision, auto_start,
+    schedule_policy, is_default, unified_gateway_enrolled, policy_revision, auto_start,
     gateway_port, created_at, updated_at
 "#;
 
@@ -433,7 +432,7 @@ fn insert_pool_conn(conn: &Connection, pool: &RoutePool) -> rusqlite::Result<usi
         r#"
         INSERT INTO route_pools (
             id, target_agent_id, downstream_surface, downstream_dialect, hub_token,
-            schedule_policy, is_default, v2_enrolled, policy_revision, auto_start,
+            schedule_policy, is_default, unified_gateway_enrolled, policy_revision, auto_start,
             gateway_port, created_at, updated_at
         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
         "#,
@@ -460,7 +459,7 @@ fn update_pool_conn(conn: &Connection, pool: &RoutePool) -> rusqlite::Result<usi
         r#"
         UPDATE route_pools
         SET target_agent_id = ?2, downstream_surface = ?3, downstream_dialect = ?4,
-            schedule_policy = ?5, is_default = ?6, v2_enrolled = ?7,
+            schedule_policy = ?5, is_default = ?6, unified_gateway_enrolled = ?7,
             policy_revision = ?8, auto_start = ?9, gateway_port = ?10,
             created_at = ?11, updated_at = ?12
         WHERE id = ?1
@@ -656,7 +655,6 @@ struct RawRoutePool {
     hub_token: String,
     schedule_policy: String,
     is_default: i64,
-    /// Maps SQLite column `v2_enrolled` (historical name).
     unified_gateway_enrolled: i64,
     policy_revision: i64,
     auto_start: i64,
@@ -696,7 +694,10 @@ impl RawRoutePool {
             hub_token: self.hub_token,
             schedule_policy,
             is_default: parse_bool(self.is_default, "is_default")?,
-            unified_gateway_enrolled: parse_bool(self.unified_gateway_enrolled, "v2_enrolled")?,
+            unified_gateway_enrolled: parse_bool(
+                self.unified_gateway_enrolled,
+                "unified_gateway_enrolled",
+            )?,
             policy_revision: self.policy_revision,
             auto_start: parse_bool(self.auto_start, "auto_start")?,
             gateway_port,

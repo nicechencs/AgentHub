@@ -1102,11 +1102,6 @@ impl AdapterBridgeService {
         Ok(true)
     }
 
-    #[deprecated(note = "use enroll_unified_gateway_after_bind")]
-    pub fn enroll_v2_after_bind(&self, profile: &AdapterProfile, port: u16) -> Result<bool> {
-        self.enroll_unified_gateway_after_bind(profile, port)
-    }
-
     /// Listener spec for the board switch. Does not bind logins to Agents.
     /// Enabled pool members supply listed models and upstream auth so a token
     /// test can reach a model; missing members stay a placeholder.

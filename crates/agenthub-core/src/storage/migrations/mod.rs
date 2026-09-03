@@ -92,6 +92,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "00026_share_chat_completions",
         include_str!("00026_share_chat_completions.sql"),
     ),
+    (
+        "00027_unified_gateway_enrolled",
+        include_str!("00027_unified_gateway_enrolled.sql"),
+    ),
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {

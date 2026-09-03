@@ -493,22 +493,7 @@ describe('Adapter Rust wire mappers', () => {
     expect(listed.pools[0]?.unifiedGatewayEnrolled).toBe(true);
   });
 
-  it('dual-reads legacy v2Enrolled when unifiedGatewayEnrolled is absent', () => {
-    const listed = mapDefaultRoutePoolList({
-      enabled: true,
-      pools: [{
-        id: 'pool-legacy',
-        targetAgentId: 'claude',
-        surface: 'messages',
-        dialect: 'claude',
-        v2Enrolled: true,
-        members: [],
-      }],
-    });
-    expect(listed.pools[0]?.unifiedGatewayEnrolled).toBe(true);
-  });
-
-  it('prefers unifiedGatewayEnrolled over legacy v2Enrolled false', () => {
+  it('maps unifiedGatewayEnrolled from wire', () => {
     const listed = mapDefaultRoutePoolList({
       enabled: true,
       pools: [{
@@ -517,11 +502,24 @@ describe('Adapter Rust wire mappers', () => {
         surface: 'messages',
         dialect: 'claude',
         unifiedGatewayEnrolled: true,
-        v2Enrolled: false,
         members: [],
       }],
     });
     expect(listed.pools[0]?.unifiedGatewayEnrolled).toBe(true);
+  });
+
+  it('treats missing unifiedGatewayEnrolled as false', () => {
+    const listed = mapDefaultRoutePoolList({
+      enabled: true,
+      pools: [{
+        id: 'pool-absent',
+        targetAgentId: 'claude',
+        surface: 'messages',
+        dialect: 'claude',
+        members: [],
+      }],
+    });
+    expect(listed.pools[0]?.unifiedGatewayEnrolled).toBe(false);
   });
 
   it('maps loopback entry keys for the tokens page', () => {
