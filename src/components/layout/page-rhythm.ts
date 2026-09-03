@@ -93,6 +93,7 @@ export const pageRhythm = {
   shell: `flex h-full min-h-0 ${pageCanvasTw.gap} bg-canvas ${pageCanvasTw.p}`,
   shellNav:
     'flex min-h-0 shrink-0 flex-col overflow-hidden rounded-card border border-border bg-panel shadow-xs',
+  /** Main column sits on canvas; cards/sidebar use panel (THEME in tokens.ts). */
   shellMain:
     'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-card border border-border bg-canvas shadow-xs',
   /** 常规页外壳：铺满主列，与 Skills / Projects 右缘对齐 */

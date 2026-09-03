@@ -55,6 +55,13 @@ describe('design tokens SSOT', () => {
     expect(resolveChartColor('#d97757')).toBe('#d97757');
   });
 
+  it('keeps page canvas quieter than card panel so one THEME change restyles the app', () => {
+    expect(THEME.light['bg-panel']).toBe('#ffffff');
+    expect(THEME.light['bg-canvas']).not.toBe(THEME.light['bg-panel']);
+    expect(THEME.light['bg-subtle']).not.toBe(THEME.light['bg-canvas']);
+    expect(THEME.dark['bg-canvas']).not.toBe(THEME.dark['bg-panel']);
+  });
+
   it('keeps THEME.accent aligned with the default indigo palette', () => {
     expect(THEME.light.accent).toBe(ACCENT_PALETTES[DEFAULT_ACCENT_ID].light);
     expect(THEME.dark.accent).toBe(ACCENT_PALETTES[DEFAULT_ACCENT_ID].dark);

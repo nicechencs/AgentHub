@@ -555,8 +555,7 @@ export default function DashboardPage() {
 
       {/* —— 用量总览：筛选 + 指标 + 趋势 + 分布 —— */}
       <PageSection>
-        <div className="rounded-card bg-subtle p-4 sm:p-5">
-        <div className={cn(pageRhythm.chromeRow, 'mb-4')}>
+        <div className={cn(pageRhythm.chromeRow)}>
           <span className="inline-flex h-8 items-center rounded-full border border-border bg-panel px-3 text-meta text-secondary">
             {windowLabel}
           </span>
@@ -571,7 +570,7 @@ export default function DashboardPage() {
             }))}
           />
           <Select value={agentFilter} onValueChange={(v) => setAgentFilter(v as AgentKey | 'all')}>
-            <SelectTrigger className="w-36 bg-panel">
+            <SelectTrigger className="w-36">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -590,7 +589,7 @@ export default function DashboardPage() {
             </SelectContent>
           </Select>
           <Select value={effectiveModelFilter} onValueChange={setModelFilter}>
-            <SelectTrigger className="w-44 bg-panel">
+            <SelectTrigger className="w-44">
               <SelectValue placeholder={t('dashboard.page.allModels')} />
             </SelectTrigger>
             <SelectContent>
@@ -741,7 +740,6 @@ export default function DashboardPage() {
             </Card>
           </div>
         )}
-        </div>
       </PageSection>
 
       {/* —— 用量明细（大段分割）—— */}
