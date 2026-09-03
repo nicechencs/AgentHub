@@ -169,4 +169,20 @@ describe('PoolAuthorizationDetail', () => {
     expect(markup).toContain('登录详情');
     expect(markup).not.toContain('添加时已定好，编辑时不能改');
   });
+
+  it('offers 编辑 in the detail pane for an official login', () => {
+    const markup = renderToStaticMarkup(
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(PoolAuthorizationDetail, {
+          item: item(),
+          onDelete() {},
+          onClose() {},
+        }),
+      ),
+    );
+    expect(markup).toContain('编辑');
+    expect(markup).not.toContain('编辑密钥');
+  });
 });

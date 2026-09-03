@@ -390,6 +390,14 @@ export interface SyncConnectionAuthorizationsResult {
   skipped: number;
 }
 
+/** Copy a Connections-managed official login into a pool-owned row. */
+export interface ForkedConnectionAuthorization {
+  sourceKind: AdapterSourceKind;
+  sourceId: string;
+  originalSourceId: string;
+  copied: boolean;
+}
+
 /** Shared local-gateway status for the board switch. */
 export type LocalGatewayStatus = {
   running: boolean;
@@ -470,6 +478,10 @@ export interface AdapterPort {
   attachPoolOwnedAuthorization(
     request: AttachPoolOwnedAuthorizationRequest,
   ): Promise<DefaultRoutePoolOverview>;
+  forkConnectionAuthorization(
+    sourceKind: AdapterSourceKind,
+    sourceId: string,
+  ): Promise<ForkedConnectionAuthorization>;
   setRouteAuthorizationEnabled(
     sourceKind: AdapterSourceKind,
     sourceId: string,

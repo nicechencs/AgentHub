@@ -2,6 +2,7 @@ import {
   adapterCommandError,
   isAdapterErrorCodeRetryable,
   type AdapterPort,
+  type ForkedConnectionAuthorization,
   type SourceModelCatalog,
   type SourceModelCatalogSource,
   type SyncConnectionAuthorizationsRequest,
@@ -200,6 +201,12 @@ export function createTauriAdapterPort(): AdapterPort {
         ...request,
       });
       return mapDefaultRoutePoolOverview(wire);
+    },
+    async forkConnectionAuthorization(sourceKind, sourceId) {
+      return invokeAdapter<ForkedConnectionAuthorization>('fork_connection_authorization', {
+        sourceKind,
+        sourceId,
+      });
     },
     async setRouteAuthorizationEnabled(sourceKind, sourceId, enabled) {
       return invokeAdapter<number>('set_route_authorization_enabled', {

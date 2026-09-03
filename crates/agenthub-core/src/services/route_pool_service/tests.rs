@@ -816,6 +816,94 @@ fn attach_pool_owned_authorization_creates_default_pool_and_hides_from_home_stam
 }
 
 #[test]
+fn fork_connection_authorization_copies_oauth_and_keeps_connections_login() {
+    let (_dir, db, service, _profiles) = tmp();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "grok-oauth".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "user@x.ai".into(),
+            credentials: json!({
+                "format": "auth_json",
+                "body": { "refresh_token": "rt-original", "access_token": "at-original" }
+            }),
+            extra: json!({ "source": "oauth_pkce" }),
+            status: "active".into(),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    let pool = service
+        .ensure_default_pool(AgentId::Grok, RouteDownstreamSurface::Responses)
+        .unwrap();
+    service
+        .add_member(&pool.id, AdapterSourceKind::Account, "grok-oauth")
+        .unwrap();
+
+    let forked = service
+        .fork_connection_authorization(AdapterSourceKind::Account, "grok-oauth")
+        .unwrap();
+    assert!(forked.copied);
+    assert_eq!(forked.original_source_id, "grok-oauth");
+    assert_ne!(forked.source_id, "grok-oauth");
+
+    let original = AccountRepo::new(db.clone())
+        .get_by_id("grok-oauth")
+        .unwrap()
+        .unwrap();
+    assert!(!authorization_is_route_pool_home(&original.extra));
+    assert_eq!(original.credentials["body"]["refresh_token"], "rt-original");
+
+    let copy = AccountRepo::new(db)
+        .get_by_id(&forked.source_id)
+        .unwrap()
+        .unwrap();
+    assert!(authorization_is_route_pool_home(&copy.extra));
+    assert!(!copy.is_current);
+    assert_eq!(copy.credentials["body"]["refresh_token"], "rt-original");
+
+    let listed = service.list_default_overviews().unwrap();
+    let member_ids: Vec<_> = listed
+        .pools
+        .iter()
+        .flat_map(|pool| pool.members.iter().map(|member| member.source_id.as_str()))
+        .collect();
+    assert!(member_ids.contains(&forked.source_id.as_str()));
+    assert!(!member_ids.contains(&"grok-oauth"));
+
+    let again = service
+        .fork_connection_authorization(AdapterSourceKind::Account, &forked.source_id)
+        .unwrap();
+    assert!(!again.copied);
+    assert_eq!(again.source_id, forked.source_id);
+}
+
+#[test]
+fn fork_connection_authorization_rejects_api_keys() {
+    let (_dir, db, service, _profiles) = tmp();
+    AccountRepo::new(db)
+        .create(&Account {
+            id: "grok-key".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::ApiKey,
+            label: "sk-test".into(),
+            credentials: json!({ "format": "api_key", "api_key": "sk-test" }),
+            extra: json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    let error = service
+        .fork_connection_authorization(AdapterSourceKind::Account, "grok-key")
+        .unwrap_err();
+    assert!(error.to_string().contains("official logins"));
+}
+
+#[test]
 fn attach_pool_owned_authorization_reuses_existing_default_pool() {
     let (_dir, db, service, profiles) = tmp();
     let profile = bridge_profile("profile-a", "acc-a", AgentId::Codex, true);

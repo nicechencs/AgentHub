@@ -11,6 +11,7 @@ import {
   type AdapterProfile,
   type AdapterProfileFilter,
   type DefaultRoutePoolOverview,
+  type ForkedConnectionAuthorization,
   type LocalGatewayStatus,
   type RoutePoolDialect,
   type RoutePoolSurface,
@@ -723,6 +724,76 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         ...pool,
         members: pool.members.map((member) => ({ ...member })),
         listedModels: [...(pool.listedModels ?? [])],
+      };
+    },
+    async forkConnectionAuthorization(sourceKind, sourceId) {
+      await delay(20);
+      if (!state.routePoolV2) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: 'route_pool_v2 is disabled',
+          retryable: false,
+        });
+      }
+      if (sourceKind !== 'account') {
+        throw adapterCommandError({
+          code: 'invalid_arg',
+          message: 'only official logins can be copied for pool editing',
+          retryable: false,
+        });
+      }
+      const account = getMockAccountById(sourceId);
+      if (!account) {
+        throw adapterCommandError({
+          code: 'not_found',
+          message: `account not found: ${sourceId}`,
+          retryable: false,
+        });
+      }
+      if (account.kind !== 'oauth') {
+        throw adapterCommandError({
+          code: 'invalid_arg',
+          message: 'only official logins can be copied for pool editing',
+          retryable: false,
+        });
+      }
+      if (account.home === 'route_pool') {
+        const result: ForkedConnectionAuthorization = {
+          sourceKind,
+          sourceId,
+          originalSourceId: sourceId,
+          copied: false,
+        };
+        return result;
+      }
+      const members = state.defaultPools.flatMap((pool) => pool.members.filter((member) => (
+        member.sourceKind === sourceKind && member.sourceId === sourceId
+      )));
+      if (members.length === 0) {
+        throw adapterCommandError({
+          code: 'not_found',
+          message: `route authorization not found: ${sourceId}`,
+          retryable: false,
+        });
+      }
+      const copy = upsertMockAccount({
+        ...account,
+        id: `${account.agentId}-acc-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        isCurrent: false,
+        home: 'route_pool',
+      });
+      for (const pool of state.defaultPools) {
+        for (const member of pool.members) {
+          if (member.sourceKind === sourceKind && member.sourceId === sourceId) {
+            member.sourceId = copy.id;
+          }
+        }
+      }
+      return {
+        sourceKind,
+        sourceId: copy.id,
+        originalSourceId: sourceId,
+        copied: true,
       };
     },
     async setRouteAuthorizationEnabled(sourceKind, sourceId, enabled) {

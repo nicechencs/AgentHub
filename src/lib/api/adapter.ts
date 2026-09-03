@@ -1,6 +1,6 @@
 /** Adapter route preview and the narrow, supported apply façade. */
 import { getBackend, refreshRuntimeReadModels } from '@/app/runtime';
-import type { AdapterApplyPlan, AdapterApplyRequest, AdapterApplyResult, AdapterBridgeRuntimeStatus, AdapterProfile, AdapterProfileFilter, AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind, AttachPoolOwnedAuthorizationRequest, DefaultRoutePoolList, DefaultRoutePoolOverview, SyncConnectionAuthorizationsRequest, SyncConnectionAuthorizationsResult } from '@/lib/backend/contracts/adapter';
+import type { AdapterApplyPlan, AdapterApplyRequest, AdapterApplyResult, AdapterBridgeRuntimeStatus, AdapterProfile, AdapterProfileFilter, AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind, AttachPoolOwnedAuthorizationRequest, DefaultRoutePoolList, DefaultRoutePoolOverview, ForkedConnectionAuthorization, SyncConnectionAuthorizationsRequest, SyncConnectionAuthorizationsResult } from '@/lib/backend/contracts/adapter';
 
 export type {
   AdapterAction,
@@ -22,6 +22,7 @@ export type {
   AdapterSourceKind,
   AdapterSupport,
   AttachPoolOwnedAuthorizationRequest,
+  ForkedConnectionAuthorization,
   SyncConnectionAuthorizationsRequest,
   SyncConnectionAuthorizationsResult,
 } from '@/lib/backend/contracts/adapter';
@@ -111,6 +112,20 @@ export async function attachPoolOwnedAuthorization(
   request: AttachPoolOwnedAuthorizationRequest,
 ): Promise<DefaultRoutePoolOverview> {
   const result = await getBackend().adapter.attachPoolOwnedAuthorization(request);
+  try {
+    await refreshRuntimeReadModels(getBackend(), { models: ['connectionInventory', 'ticketWallet'] });
+  } catch {
+    // Write succeeded; the pool store keeps previous rows if refresh fails.
+  }
+  return result;
+}
+
+/** Copy a Connections-managed official login into a pool-owned row. */
+export async function forkConnectionAuthorization(
+  sourceKind: AdapterSourceKind,
+  sourceId: string,
+): Promise<ForkedConnectionAuthorization> {
+  const result = await getBackend().adapter.forkConnectionAuthorization(sourceKind, sourceId);
   try {
     await refreshRuntimeReadModels(getBackend(), { models: ['connectionInventory', 'ticketWallet'] });
   } catch {
