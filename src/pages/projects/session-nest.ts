@@ -1,27 +1,35 @@
 import type { AgentSession } from '@/lib/types';
 
-const SUBAGENT_RE = /(?:^|\/)agent-transcripts\/([^/]+)\/subagents\//i;
-const TRANSCRIPT_RE = /(?:^|\/)agent-transcripts\/([^/]+)/i;
+/** Cursor / Claude: `…/<parentId>/subagents/…` */
+const SUBAGENT_DIR_RE = /(?:^|\/)([^/]+)\/subagents\//i;
+/** Kimi: `session_<uuid>/agents/<name>/` other than `main`. */
+const KIMI_AGENT_RE = /(?:^|\/)session_([^/]+)\/agents\/(?!main(?:\/|$))/i;
+const CURSOR_TRANSCRIPT_RE = /(?:^|\/)agent-transcripts\/([^/]+)/i;
 
 function slashPath(s: string): string {
   return s.replace(/\\/g, '/');
 }
 
-/** Parent transcript id when this row is a Cursor subagent file. */
+/** Parent transcript id when this row is a nested subagent file. */
 export function cursorSubagentParentId(s: Pick<AgentSession, 'relativePath' | 'path'>): string | null {
   const rel = slashPath(s.relativePath || s.path || '');
-  const m = rel.match(SUBAGENT_RE);
-  return m?.[1] ?? null;
+  const kimi = rel.match(KIMI_AGENT_RE);
+  if (kimi?.[1]) return kimi[1];
+  const sub = rel.match(SUBAGENT_DIR_RE);
+  return sub?.[1] ?? null;
 }
 
 export function cursorTranscriptId(
   s: Pick<AgentSession, 'sessionId' | 'relativePath' | 'path'>,
 ): string | null {
   const sid = s.sessionId?.trim();
-  if (sid && !cursorSubagentParentId(s)) return sid;
+  if (sid && !cursorSubagentParentId(s)) {
+    const slash = sid.indexOf('/');
+    return slash > 0 ? sid.slice(0, slash) : sid;
+  }
   const rel = slashPath(s.relativePath || s.path || '');
-  const m = rel.match(TRANSCRIPT_RE);
-  return m?.[1] ?? sid ?? null;
+  const m = rel.match(CURSOR_TRANSCRIPT_RE);
+  return m?.[1] ?? (sid || null);
 }
 
 export type NestedSession = {
@@ -29,7 +37,7 @@ export type NestedSession = {
   children: AgentSession[];
 };
 
-/** Hang Cursor subagent rows under their parent transcript. Other agents stay flat. */
+/** Hang subagent rows under their parent transcript. Other rows stay flat. */
 export function nestSessions(sessions: AgentSession[]): NestedSession[] {
   const childrenByParent = new Map<string, AgentSession[]>();
   const nestedIds = new Set<string>();
