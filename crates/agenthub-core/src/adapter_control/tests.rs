@@ -113,7 +113,7 @@ fn adapter_control_status_stopped_has_no_secrets() {
 }
 
 #[test]
-fn local_entry_status_serializes_restarting() {
+fn local_gateway_status_serializes_restarting() {
     use crate::adapter_control::LocalGatewayStatus;
 
     let restarting = LocalGatewayStatus {

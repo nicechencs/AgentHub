@@ -17,9 +17,6 @@ export type TicketBindAction =
   | { disabled: false }
   | { disabled: true; reason: string };
 
-/** @deprecated use TicketBindAction */
-export type TicketRouteAction = TicketBindAction;
-
 const ROUTE_DISABLED_FALLBACK = '这份登录目前不能走本机转发';
 const ROUTE_NO_TARGET_FALLBACK = '没有可转发的目标工具';
 const SHARE_DISABLED_FALLBACK = '这份登录目前不能直接用到其它工具';
@@ -106,6 +103,3 @@ export function resolveTicketDirectAction(
 ): TicketBindAction {
   return resolveTicketBindAction(hints, 'direct', t);
 }
-
-/** @deprecated Prefer {@link resolveTicketDirectAction}. */
-export const resolveTicketShareAction = resolveTicketDirectAction;

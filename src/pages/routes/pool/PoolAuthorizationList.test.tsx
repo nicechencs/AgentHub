@@ -52,7 +52,7 @@ describe('PoolAuthorizationList', () => {
     expect(markup).toContain('role="separator"');
     expect(markup).toContain('调整登录列宽');
     expect(markup).not.toContain('回复接口');
-    expect(markup).not.toContain('本机入口');
+    expect(markup).not.toContain('本机转发');
     expect(markup).not.toContain('本页添加');
     expect(markup).not.toContain('auth.json');
   });

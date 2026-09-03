@@ -68,7 +68,7 @@ describe('resolveActivityPageSnapshot', () => {
     expect(snapshot.kind).toBe('runningEmpty');
   });
 
-  it('merges traces from local entry status payload', () => {
+  it('merges traces from local gateway status payload', () => {
     const trace = {
       requestId: 'req-1',
       at: '2026-01-01T00:00:00.000Z',
@@ -98,7 +98,7 @@ describe('resolveActivityPageSnapshot', () => {
     expect(snapshot.feed).toHaveLength(1);
   });
 
-  it('merges unauthenticated traces from local entry status', () => {
+  it('merges unauthenticated traces from local gateway status', () => {
     const trace = {
       requestId: 'req-unauth',
       at: '2026-01-01T00:00:00.000Z',

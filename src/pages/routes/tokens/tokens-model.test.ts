@@ -186,7 +186,7 @@ describe('tokens-model', () => {
     )).toEqual(['messages']);
   });
 
-  it('shows the pool entry key when the local entry is stopped', () => {
+  it('shows the pool entry key when the local gateway is stopped', () => {
     const rows = buildLocalTokenRows(
       [],
       {},

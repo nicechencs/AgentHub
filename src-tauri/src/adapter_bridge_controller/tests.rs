@@ -80,27 +80,27 @@ fn status_dto_never_serializes_local_or_upstream_bearers() {
 }
 
 #[test]
-fn local_entry_restarting_flag_flips_without_app_handle() {
+fn local_gateway_restarting_flag_flips_without_app_handle() {
     let flag = AtomicBool::new(false);
-    set_local_entry_restarting(&flag, None, true);
+    set_local_gateway_restarting(&flag, None, true);
     assert!(flag.load(Ordering::SeqCst));
-    set_local_entry_restarting(&flag, None, true);
+    set_local_gateway_restarting(&flag, None, true);
     assert!(flag.load(Ordering::SeqCst));
-    set_local_entry_restarting(&flag, None, false);
+    set_local_gateway_restarting(&flag, None, false);
     assert!(!flag.load(Ordering::SeqCst));
 }
 
 #[test]
-fn local_entry_status_includes_restarting_flag() {
+fn local_gateway_status_includes_restarting_flag() {
     let host = BridgeRuntimeHost::new();
     let flag = AtomicBool::new(true);
-    let status = local_entry_status(&host, &flag).unwrap();
+    let status = local_gateway_status(&host, &flag).unwrap();
     assert!(status.restarting);
     assert!(!status.running);
     let json = serde_json::to_value(&status).unwrap();
     assert_eq!(json["restarting"], true);
     flag.store(false, Ordering::SeqCst);
-    let idle = local_entry_status(&host, &flag).unwrap();
+    let idle = local_gateway_status(&host, &flag).unwrap();
     assert!(!idle.restarting);
 }
 
@@ -800,7 +800,7 @@ fn restore_filter_only_keeps_active_auto_start_local_bridges() {
 #[test]
 fn saga_coordinator_serializes_same_profile_but_not_different_profiles() {
     tauri::async_runtime::block_on(async {
-        let coordinator = Arc::new(AdapterBridgeSagaCoordinator::new());
+        let coordinator = Arc::new(AdapterSagaCoordinator::new());
         let first = coordinator.lock_profile("one").await;
         let waiter = Arc::clone(&coordinator);
         let mut pending = tauri::async_runtime::spawn(async move {
@@ -822,7 +822,7 @@ fn saga_coordinator_serializes_same_profile_but_not_different_profiles() {
 #[test]
 fn saga_coordinator_serializes_same_target_without_blocking_other_agents() {
     tauri::async_runtime::block_on(async {
-        let coordinator = Arc::new(AdapterBridgeSagaCoordinator::new());
+        let coordinator = Arc::new(AdapterSagaCoordinator::new());
         let first = coordinator.lock_target(AgentId::Codex).await;
         let waiter = Arc::clone(&coordinator);
         let mut pending = tauri::async_runtime::spawn(async move {
@@ -869,7 +869,7 @@ fn direct_remove_waits_for_the_same_target_coordinator() {
             .create(&direct_profile)
             .unwrap();
 
-        let coordinator = Arc::new(AdapterBridgeSagaCoordinator::new());
+        let coordinator = Arc::new(AdapterSagaCoordinator::new());
         let target = coordinator.lock_target(AgentId::Claude).await;
         let exit = crate::exit_coordinator::ExitCoordinator::new();
         let waiter_hub = Arc::clone(&hub);
@@ -1615,7 +1615,7 @@ fn apply_local_bridge_from_grok_oauth_does_not_occupy_claude_current() {
         let source_auth_before = std::fs::read(&source_adapter.auth_path).unwrap();
         let hub = Arc::new(hub);
         let host = Arc::new(BridgeRuntimeHost::new());
-        let coordinator = Arc::new(AdapterBridgeSagaCoordinator::new());
+        let coordinator = Arc::new(AdapterSagaCoordinator::new());
         let exit = crate::exit_coordinator::ExitCoordinator::new();
         let result = apply_local_bridge(
             Arc::clone(&hub),

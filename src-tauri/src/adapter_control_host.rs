@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use agenthub_core::adapter_control::{
-    resolve_bind_action, resolve_unbind_action, AdapterBridgeSagaCoordinator, AdapterBridgeStatus,
+    resolve_bind_action, resolve_unbind_action, AdapterSagaCoordinator, AdapterBridgeStatus,
     AdapterControl, BindAction,
 };
 use agenthub_core::bridge::BridgeRuntimeHost;
@@ -29,7 +29,7 @@ use crate::exit_coordinator::LifecycleShutdownBarrier;
 pub(crate) struct DesktopAdapterControl {
     hub: Arc<AgentHub>,
     host: Arc<BridgeRuntimeHost>,
-    coordinator: Arc<AdapterBridgeSagaCoordinator>,
+    coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
 }
 
@@ -37,7 +37,7 @@ impl DesktopAdapterControl {
     pub(crate) fn new(
         hub: Arc<AgentHub>,
         host: Arc<BridgeRuntimeHost>,
-        coordinator: Arc<AdapterBridgeSagaCoordinator>,
+        coordinator: Arc<AdapterSagaCoordinator>,
         lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     ) -> Self {
         Self {

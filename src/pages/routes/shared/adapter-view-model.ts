@@ -44,15 +44,6 @@ export function bridgeRuntimeStatusView(input: {
   return { label: t ? t('routes.runtime.stopped') : '已停止', tone: 'muted' };
 }
 
-/** @deprecated Prefer {@link bridgeRuntimeStatusView}; same single-layer labels. */
-export function adapterServiceStatusView(input: {
-  route: AdapterProfile['route'];
-  bridgeState?: AdapterBridgeRuntimeState;
-  statusUnavailable?: boolean;
-}, t?: TranslateFn): AdapterStatusView | null {
-  return bridgeRuntimeStatusView(input, t);
-}
-
 export function adapterStatusDotClass(tone: AdapterStatusTone): string {
   if (tone === 'success') return 'bg-success';
   if (tone === 'warning') return 'bg-warning';
@@ -218,17 +209,6 @@ export function partitionLocalBridgeRuntimes<T extends AdapterProfile>(
     }
   }
   return { bound, orphan };
-}
-
-/** @deprecated Prefer {@link partitionLocalBridgeRuntimes}; this is `.bound` only. */
-export function filterBoundLocalBridgeRuntimes<T extends AdapterProfile>(
-  profiles: readonly T[],
-  input: {
-    entries: readonly Pick<ConnectionEntry, 'source' | 'id'>[];
-    bindingProfileIds?: ReadonlySet<string>;
-  },
-): T[] {
-  return partitionLocalBridgeRuntimes(profiles, input).bound;
 }
 
 export type RoutesPoolWalletView = {

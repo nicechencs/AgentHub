@@ -208,12 +208,12 @@ pub struct SkillSourceRecord {
 /// Projection mode requested by the user (link vs copy).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum SkillProjectMode {
+pub enum SkillProjectionMode {
     Link,
     Copy,
 }
 
-impl SkillProjectMode {
+impl SkillProjectionMode {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Link => "link",
@@ -233,11 +233,11 @@ impl SkillProjectMode {
 /// Result of projecting a skill onto one agent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SkillProjectResult {
+pub struct SkillProjectionResult {
     pub skill_id: String,
     pub agent: AgentId,
     /// Requested mode (`link` / `copy`).
-    pub requested_mode: SkillProjectMode,
+    pub requested_mode: SkillProjectionMode,
     /// Actual materialization used after fallbacks.
     pub applied_link_kind: SkillLinkKind,
     /// True when the operation fell back (e.g. junction → symlink → copy).

@@ -12,7 +12,7 @@ use crate::adapters::{AdapterRegistry, AgentAdapter};
 use crate::error::AppError;
 use crate::models::{
     AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectResult, DetectStatus,
-    InstallChannel, RunOptions, RunSpec, SkillProjectMode,
+    InstallChannel, RunOptions, RunSpec, SkillProjectionMode,
 };
 use crate::platform::skills::{
     SkillAssignmentService, SkillReconciler, SkillTargetRegistry, StaticSkillTarget,
@@ -346,7 +346,7 @@ fn sync_with_mode_link_converts_managed_copy() {
     assert!(!is_dir_symlink(&claude.join("demo")));
 
     let svc = make_svc_db(source, claude.clone(), db);
-    svc.sync_with_mode("demo", AgentId::Claude, false, Some(SkillProjectMode::Link))
+    svc.sync_with_mode("demo", AgentId::Claude, false, Some(SkillProjectionMode::Link))
         .unwrap();
     assert!(
         is_dir_symlink(&claude.join("demo")),
@@ -371,7 +371,7 @@ fn sync_with_mode_copy_replaces_correct_link() {
     );
 
     let svc = make_svc_db(source, claude.clone(), db);
-    svc.sync_with_mode("demo", AgentId::Claude, false, Some(SkillProjectMode::Copy))
+    svc.sync_with_mode("demo", AgentId::Claude, false, Some(SkillProjectionMode::Copy))
         .unwrap();
     assert!(
         !is_dir_symlink(&claude.join("demo")),

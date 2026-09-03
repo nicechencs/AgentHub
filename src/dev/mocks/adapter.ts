@@ -348,8 +348,8 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     shareChatCompletions: false,
     defaultPools: [],
     localTokens: new Map(),
-    localEntryRunning: false,
-    localEntryPort: null,
+    localGatewayRunning: false,
+    localGatewayPort: null,
     sourceModelCatalogs: new Map(),
   };
   adapterStates.add(state);
@@ -990,8 +990,8 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     },
     async startLocalGateway() {
       await delay(20);
-      state.localEntryRunning = true;
-      state.localEntryPort = 43121;
+      state.localGatewayRunning = true;
+      state.localGatewayPort = 43121;
       for (const pool of state.defaultPools) {
         pool.gatewayPort = 43121;
       }
@@ -999,8 +999,8 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     },
     async stopLocalGateway() {
       await delay(20);
-      state.localEntryRunning = false;
-      state.localEntryPort = null;
+      state.localGatewayRunning = false;
+      state.localGatewayPort = null;
       return mockLocalGatewayStatus(state);
     },
     async getLocalGatewayStatus() {
@@ -1012,10 +1012,10 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
 
 function mockLocalGatewayStatus(state: MockAdapterState): LocalGatewayStatus {
   return {
-    running: state.localEntryRunning,
-    port: state.localEntryPort,
+    running: state.localGatewayRunning,
+    port: state.localGatewayPort,
     restarting: false,
-    statuses: state.localEntryRunning
+    statuses: state.localGatewayRunning
       ? state.defaultPools.map((pool) => ({
         profileId: pool.id,
         state: 'running' as const,
@@ -1031,7 +1031,7 @@ function mockLocalGatewayStatus(state: MockAdapterState): LocalGatewayStatus {
         localToken: `ahb_${pool.id.slice(0, 8)}`,
       }))
       : [],
-    unauthenticatedTraces: state.localEntryRunning
+    unauthenticatedTraces: state.localGatewayRunning
       ? [{
         requestId: 'mock-req-unauth',
         at: '2026-08-12T00:00:00.000Z',

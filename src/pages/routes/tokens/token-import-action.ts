@@ -1,6 +1,6 @@
 /**
  * One-click import of a local-route token into an Agent.
- * Reuses the「写入 Agent」path: switchProvider on the generated local-entry
+ * Reuses the「写入 Agent」path: switchProvider on the generated local-gateway
  * provider (URL + ahb_ key). Bind only when that provider is not there yet.
  */
 import { listAdapterProfiles } from '@/lib/api/adapter';

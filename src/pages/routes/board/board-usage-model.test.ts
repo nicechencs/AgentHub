@@ -78,7 +78,7 @@ describe('boardUsageWindow', () => {
 });
 
 describe('buildBoardUsageEntries', () => {
-  it('keeps one local entry per listener, even when they share a login', () => {
+  it('keeps one local gateway per listener, even when they share a login', () => {
     const entries = buildBoardUsageEntries([
       profile('p1', 'src', 'claude', 'Kimi'),
       profile('p2', 'src', 'codex', 'Kimi Codex'),
@@ -131,7 +131,7 @@ describe('gateway row math', () => {
     })).toBe(10);
   });
 
-  it('filters by local entry, surface, and model', () => {
+  it('filters by local gateway, surface, and model', () => {
     const rows = [
       row({ requestId: 'a', ts: 't1', profileId: 'p1', surface: 'messages', model: 'opus' }),
       row({ requestId: 'b', ts: 't2', profileId: 'p2', surface: 'responses', model: 'gpt' }),
@@ -195,7 +195,7 @@ describe('gateway trend and distribution', () => {
     expect(trend.find((point) => point.date === responsesBucket)?.responses).toBe(50);
   });
 
-  it('groups distribution by local entry via profile map', () => {
+  it('groups distribution by local gateway via profile map', () => {
     const entries = buildBoardUsageEntries([
       profile('p1', 'src', 'claude', 'Kimi'),
       profile('p2', 'src', 'codex', 'Kimi'),

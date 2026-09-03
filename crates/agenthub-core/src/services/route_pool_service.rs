@@ -26,7 +26,7 @@ use crate::models::{
     SyncConnectionAuthorizationsResult, SyncConnectionSource, TicketProtocol, TicketSurface,
     FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
     FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
-    LOCAL_ENTRY_DESIRED_RUNNING, SHARE_CHAT_COMPLETIONS,
+    LOCAL_GATEWAY_DESIRED_RUNNING, SHARE_CHAT_COMPLETIONS,
 };
 use serde_json::Value;
 use crate::storage::{
@@ -152,7 +152,7 @@ impl RoutePoolService {
         })
     }
 
-    /// Default pools including Hub tokens, for starting the shared local entry.
+    /// Default pools including Hub tokens, for starting the shared local gateway.
     pub fn list_default_pools(&self) -> Result<Vec<RoutePool>> {
         if !self.enabled()? {
             return Ok(Vec::new());
@@ -207,17 +207,17 @@ impl RoutePoolService {
         ))
     }
 
-    /// Last local-entry switch. Unset stays on so existing auto-restore keeps working.
-    pub fn local_entry_desired_running(&self) -> Result<bool> {
+    /// Last local-gateway switch. Unset stays on so existing auto-restore keeps working.
+    pub fn local_gateway_desired_running(&self) -> Result<bool> {
         Ok(product_flag_enabled(
-            self.db.get_setting(LOCAL_ENTRY_DESIRED_RUNNING)?.as_deref(),
+            self.db.get_setting(LOCAL_GATEWAY_DESIRED_RUNNING)?.as_deref(),
         ))
     }
 
-    /// Remember the shared local-entry switch for the next process start.
-    pub fn set_local_entry_desired_running(&self, running: bool) -> Result<()> {
+    /// Remember the shared local-gateway switch for the next process start.
+    pub fn set_local_gateway_desired_running(&self, running: bool) -> Result<()> {
         self.db.set_setting(
-            LOCAL_ENTRY_DESIRED_RUNNING,
+            LOCAL_GATEWAY_DESIRED_RUNNING,
             if running { "true" } else { "false" },
         )
     }

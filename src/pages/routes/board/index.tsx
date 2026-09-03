@@ -206,7 +206,7 @@ export default function RoutesBoardPage() {
       cancelled = true;
     };
   }, [defaultPools, usageRefreshKey]);
-  const localEntry = useMemo(
+  const localGateway = useMemo(
     () => buildLocalGatewayControl(
       profiles,
       bridgeStatuses,
@@ -216,10 +216,10 @@ export default function RoutesBoardPage() {
     ),
     [bridgeStatuses, defaultPools, hiddenTargetIds, localGatewayRestarting, profiles],
   );
-  const localEntryBusy = localEntry.profileIds.some((id) => busyProfileIds[id])
+  const localGatewayBusy = localGateway.profileIds.some((id) => busyProfileIds[id])
     || Boolean(busyProfileIds.__local_gateway__);
   const localGatewayError = profileErrors.__local_gateway__
-    ?? localEntry.profileIds.map((id) => profileErrors[id]).find((error) => error != null)
+    ?? localGateway.profileIds.map((id) => profileErrors[id]).find((error) => error != null)
     ?? null;
 
   const tokenRows = useMemo(
@@ -259,12 +259,12 @@ export default function RoutesBoardPage() {
     : t('routes.board.endpointLoginsHintAll', { count: totals.keys });
   const pageLoading = loading || poolsLoading;
   const showStatusSkeleton = pageLoading && defaultPools.length === 0;
-  const entryRunning = localEntry.running || gatewayRunning;
+  const entryRunning = localGateway.running || gatewayRunning;
   const entryLabel = localGatewayStatusLabel(
-    { ...localEntry, running: entryRunning, action: entryRunning ? 'stop' : localEntry.action },
+    { ...localGateway, running: entryRunning, action: entryRunning ? 'stop' : localGateway.action },
     t,
   );
-  const entryBadge = localEntry.profileIds.length === 0
+  const entryBadge = localGateway.profileIds.length === 0
     ? null
     : (
       <Badge variant={entryRunning ? 'success' : 'default'}>
@@ -295,7 +295,7 @@ export default function RoutesBoardPage() {
           {localGatewayError ? (
             <AdapterErrorLines
               error={localGatewayError}
-              fallback={localEntry.action === 'stop'
+              fallback={localGateway.action === 'stop'
                 ? t('routes.board.entryStopFailed')
                 : t('routes.board.entryStartFailed')}
             />
@@ -330,14 +330,14 @@ export default function RoutesBoardPage() {
               />
               <Hint
                 label={
-                  localEntry.running || localEntry.action === 'start'
+                  localGateway.running || localGateway.action === 'start'
                     ? undefined
                     : entryLabel
                 }
               >
                 <Switch
                   checked={entryRunning}
-                  disabled={localEntryBusy || localEntry.transitioning}
+                  disabled={localGatewayBusy || localGateway.transitioning}
                   onCheckedChange={(on) => {
                     if (on) {
                       void handleStartLocalGateway().then((ok) => setGatewayRunning(ok));
@@ -363,14 +363,14 @@ export default function RoutesBoardPage() {
 
       <Dialog
         open={stopOpen}
-        onOpenChange={(open) => closeConfirmationOnOpenChange(open, localEntryBusy, () => setStopOpen(false))}
+        onOpenChange={(open) => closeConfirmationOnOpenChange(open, localGatewayBusy, () => setStopOpen(false))}
       >
         <DialogContent
           className="flex max-h-[calc(100vh-2rem)] flex-col overflow-hidden"
-          hideClose={localEntryBusy}
-          onEscapeKeyDown={(event) => preventBusyConfirmationDismissal(localEntryBusy, event)}
-          onPointerDownOutside={(event) => preventBusyConfirmationDismissal(localEntryBusy, event)}
-          onInteractOutside={(event) => preventBusyConfirmationDismissal(localEntryBusy, event)}
+          hideClose={localGatewayBusy}
+          onEscapeKeyDown={(event) => preventBusyConfirmationDismissal(localGatewayBusy, event)}
+          onPointerDownOutside={(event) => preventBusyConfirmationDismissal(localGatewayBusy, event)}
+          onInteractOutside={(event) => preventBusyConfirmationDismissal(localGatewayBusy, event)}
         >
           <DialogHeader className="shrink-0">
             <DialogTitle>{t('routes.board.entryStopTitle')}</DialogTitle>
@@ -380,13 +380,13 @@ export default function RoutesBoardPage() {
             <Button
               variant="secondary"
               onClick={() => setStopOpen(false)}
-              disabled={localEntryBusy}
+              disabled={localGatewayBusy}
             >
               {t('common.cancel')}
             </Button>
             <Button
               variant="danger"
-              disabled={localEntryBusy}
+              disabled={localGatewayBusy}
               onClick={() => {
                 void handleStopLocalGateway().then((ok) => {
                   if (ok) {
@@ -396,7 +396,7 @@ export default function RoutesBoardPage() {
                 });
               }}
             >
-              {localEntryBusy ? t('routes.stop.confirming') : t('routes.stop.confirm')}
+              {localGatewayBusy ? t('routes.stop.confirming') : t('routes.stop.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>
