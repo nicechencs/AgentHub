@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { createTranslator } from '@/lib/i18n';
+import type { ChatMessage } from '@/lib/types';
 import {
   chatModelOptions,
   extractModel,
   extractPiDefaultProvider,
   extractPiSlotModels,
+  formatChatSessionRecord,
   formatDurationMs,
   formatStepInput,
   isRetiredChatModel,
@@ -16,6 +18,43 @@ import {
 } from './chat-format';
 
 const t = createTranslator('zh');
+
+function chatMsg(
+  partial: Partial<ChatMessage> & Pick<ChatMessage, 'id' | 'role' | 'content'>,
+): ChatMessage {
+  return {
+    conversationId: 'c1',
+    turn: 1,
+    status: 'ok',
+    durationMs: 0,
+    createdAt: '2026-08-16T00:00:00.000Z',
+    ...partial,
+  };
+}
+
+describe('formatChatSessionRecord', () => {
+  it('formats user and agent turns as copyable text', () => {
+    expect(
+      formatChatSessionRecord(
+        [
+          {
+            turn: 1,
+            user: chatMsg({ id: 'u1', role: 'user', content: '修登录' }),
+            agents: [
+              chatMsg({
+                id: 'a1',
+                role: 'assistant',
+                agentId: 'claude',
+                content: '先看 token。',
+              }),
+            ],
+          },
+        ],
+        '你',
+      ),
+    ).toBe('你\n修登录\n\nClaude Code\n先看 token。');
+  });
+});
 
 describe('chat-format tool payload', () => {
   it('pretty-prints JSON tool input and does not mask session payloads', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyExcerptRows, splitExcerptTurns } from './session-excerpt';
+import { classifyExcerptRows, excerptTurnsToRecordLines, splitExcerptTurns } from './session-excerpt';
 
 describe('splitExcerptTurns', () => {
   it('returns empty for blank input', () => {
@@ -84,6 +84,23 @@ describe('splitExcerptTurns', () => {
         role: 'assistant',
         text: '## 结论\n\n先改解析。\n\n---\n\n再渲染正文。',
       },
+    ]);
+  });
+});
+
+describe('excerptTurnsToRecordLines', () => {
+  it('labels user and assistant turns for a copyable record', () => {
+    expect(
+      excerptTurnsToRecordLines(
+        [
+          { role: 'user', text: '修登录' },
+          { role: 'assistant', text: '先看 token。' },
+        ],
+        { user: '你', assistant: 'Claude' },
+      ),
+    ).toEqual([
+      { speaker: '你', text: '修登录' },
+      { speaker: 'Claude', text: '先看 token。' },
     ]);
   });
 });

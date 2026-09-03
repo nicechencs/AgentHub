@@ -1,15 +1,14 @@
-import { Copy, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
+import { CopyTextButton } from '@/components/shared/CopyTextButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { MarkdownView } from '@/components/shared/MarkdownView';
 import { Button } from '@/components/ui/button';
 import { Hint } from '@/components/ui/tooltip';
-import { useToast } from '@/components/ui/toast';
 import { agentDisplayName } from '@/config/agents';
 import { hasProcessDetails, processPhaseLabel } from '@/lib/chat-process';
 import type { AgentProcessView } from '@/lib/chat-process';
 import type { ChatMessage } from '@/lib/types';
-import { cn } from '@/lib/utils';
 import { formatDurationMs, localizeChatFailure } from './chat-format';
 import { messageStatusLabel } from './chat-model';
 import { ChatProcessPanel } from './ChatProcessPanel';
@@ -52,7 +51,7 @@ function UserBubble({ message }: { message: ChatMessage }) {
         className="group relative max-w-[85%] rounded-composer bg-subtle px-4 py-2 text-body text-primary"
       >
         <MarkdownView content={message.content} variant="chat" />
-        <CopyButton text={message.content} />
+        <CopyTextButton text={message.content} />
       </div>
     </div>
   );
@@ -140,33 +139,8 @@ function AgentBubble({
             <p className="mt-2 text-body text-danger">{displayError}</p>
           )}
         </div>
-        {!running && <CopyButton text={message.content} />}
+        {!running && <CopyTextButton text={message.content} />}
       </div>
     </div>
-  );
-}
-
-function CopyButton({ text }: { text: string }) {
-  const { t } = useI18n();
-  const { toast } = useToast();
-  if (!text) return null;
-  return (
-    <button
-      type="button"
-      aria-label={t('chat.bubble.copyAria')}
-      className={cn(
-        'absolute bottom-1 right-1 rounded-btn p-1 text-muted',
-        'opacity-0 transition-opacity hover:bg-panel hover:text-primary',
-        'group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100',
-      )}
-      onClick={() => {
-        void navigator.clipboard.writeText(text).then(
-          () => toast({ title: t('chat.bubble.copied'), variant: 'success' }),
-          () => toast({ title: t('chat.bubble.copyFailed'), variant: 'danger' }),
-        );
-      }}
-    >
-      <Copy className="h-3.5 w-3.5" />
-    </button>
   );
 }

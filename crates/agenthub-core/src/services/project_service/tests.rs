@@ -233,6 +233,63 @@ fn list_claude_aggregates_sessions_into_project() {
 }
 
 #[test]
+fn list_claude_subagent_jsonl_under_parent_session() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".claude");
+    let base = home.join("projects").join("-C-Users-demo-app");
+    let sid = "07bbb5e0-7b3e-4665-a743-4889b5efca3f";
+    write_session(
+        &base.join(format!("{sid}.jsonl")),
+        &[r#"{"type":"user","message":{"content":"fix the login bug"}}"#],
+    );
+    write_session(
+        &base
+            .join(sid)
+            .join("subagents")
+            .join("agent-a27525906b4487af6.jsonl"),
+        &[r#"{"type":"user","message":{"content":"explore logging"}}"#],
+    );
+    write_session(
+        &base
+            .join(sid)
+            .join("subagents")
+            .join("agent-a27525906b4487af6.meta.json"),
+        &[r#"{"ignored":true}"#],
+    );
+
+    let sessions = list_sessions_for_agent_home(AgentId::Claude, &home, None).unwrap();
+    assert_eq!(
+        sessions.len(),
+        2,
+        "ids={:?}",
+        sessions.iter().map(|s| &s.id).collect::<Vec<_>>()
+    );
+    let parent = sessions
+        .iter()
+        .find(|s| s.session_id.as_deref() == Some(sid))
+        .expect("parent jsonl");
+    let child = sessions
+        .iter()
+        .find(|s| s.relative_path.contains("subagents"))
+        .expect("subagent jsonl");
+    assert_eq!(child.project_id, parent.project_id);
+    assert!(child.preview.as_deref().unwrap_or("").contains("explore"));
+
+    let projects = list_projects_for_agent_home(AgentId::Claude, &home, None).unwrap();
+    assert_eq!(projects.len(), 1);
+    assert_eq!(projects[0].session_count, 2);
+    assert!(
+        projects[0]
+            .preview
+            .as_deref()
+            .unwrap_or("")
+            .contains("login"),
+        "project preview should stay on the parent transcript, got {:?}",
+        projects[0].preview
+    );
+}
+
+#[test]
 fn claude_actual_path_only_when_workspace_exists() {
     let dir = tempdir().unwrap();
     let home = dir.path().join(".claude");
@@ -325,40 +382,190 @@ fn list_cursor_workspace_folders_no_fake_excerpt() {
     let proj = home.join("projects").join("d-demo-workspace-2026-AgentHub");
     fs::create_dir_all(proj.join("agent-transcripts")).unwrap();
     fs::create_dir_all(home.join("projects").join("empty-window")).unwrap();
+    fs::create_dir_all(
+        home.join("projects")
+            .join("1785382907533")
+            .join("canvases"),
+    )
+    .unwrap();
 
     let rows = list_projects_for_agent_home(AgentId::Cursor, &home, None).unwrap();
-    assert_eq!(rows.len(), 2);
-    for rec in &rows {
-        assert_eq!(rec.agent_id, AgentId::Cursor);
-        assert!(rec.id.starts_with("cursor:proj:"));
-        assert_eq!(rec.session_count, 0);
-        assert!(rec.preview.is_none());
-        assert!(rec.message_count.is_none());
-    }
-    let agenthub = rows
-        .iter()
-        .find(|r| r.relative_path.contains("AgentHub"))
-        .expect("AgentHub folder");
-    assert!(
-        agenthub.title.contains("AgentHub") || agenthub.relative_path.contains("AgentHub"),
-        "title={} rel={}",
-        agenthub.title,
-        agenthub.relative_path
+    assert_eq!(
+        rows.len(),
+        1,
+        "desktop IDE windows must not list as Agent projects"
     );
-    if let Some(actual) = agenthub.actual_path.as_deref() {
+    let rec = &rows[0];
+    assert_eq!(rec.agent_id, AgentId::Cursor);
+    assert!(rec.id.starts_with("cursor:proj:"));
+    assert_eq!(rec.session_count, 0);
+    assert!(rec.preview.is_none());
+    assert!(rec.message_count.is_none());
+    assert!(
+        rec.title.contains("AgentHub") || rec.relative_path.contains("AgentHub"),
+        "title={} rel={}",
+        rec.title,
+        rec.relative_path
+    );
+    if let Some(actual) = rec.actual_path.as_deref() {
         assert!(
             Path::new(actual).exists(),
             "cursor actual_path must exist when set: {actual}"
         );
     }
-    let empty = rows
-        .iter()
-        .find(|r| r.relative_path.contains("empty-window"))
-        .expect("empty-window");
-    assert!(empty.actual_path.is_none());
+    assert!(
+        !rows.iter().any(|r| r.relative_path.contains("empty-window")
+            || r.relative_path.contains("1785382907533")),
+        "desktop-only folders leaked: {:?}",
+        rows.iter().map(|r| &r.relative_path).collect::<Vec<_>>()
+    );
 
     let sessions = list_sessions_for_agent_home(AgentId::Cursor, &home, None).unwrap();
     assert!(sessions.is_empty());
+}
+
+#[test]
+fn list_cursor_actual_path_falls_back_to_transcript_cwd() {
+    let dir = tempdir().unwrap();
+    let workspace = dir.path().join("real-workspace");
+    fs::create_dir_all(&workspace).unwrap();
+    let home = dir.path().join(".cursor");
+    let proj = home.join("projects").join("d-no-such-cursor-workspace-zzzz");
+    let sid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    write_jsonl(
+        &proj
+            .join("agent-transcripts")
+            .join(sid)
+            .join(format!("{sid}.jsonl")),
+        &[serde_json::json!({
+            "cwd": workspace,
+            "role": "user",
+            "message": { "content": "hi" }
+        })],
+    );
+
+    let projects = list_projects_for_agent_home(AgentId::Cursor, &home, None).unwrap();
+    assert_eq!(projects.len(), 1);
+    let actual = projects[0].actual_path.as_deref().expect("cwd fallback");
+    assert_eq!(Path::new(actual), workspace.as_path());
+    assert_eq!(projects[0].title, "real-workspace");
+}
+
+#[test]
+fn list_cursor_agent_transcripts_as_sessions() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".cursor");
+    let proj = home.join("projects").join("d-demo-workspace-2026-AgentHub");
+    let sid = "0e435bc1-cf05-4a9a-b036-8902f810bd86";
+    let sid2 = "12411b35-6081-425a-a07a-b776a24da27a";
+    write_session(
+        &proj
+            .join("agent-transcripts")
+            .join(sid)
+            .join(format!("{sid}.jsonl")),
+        &[
+            r#"{"role":"user","message":{"content":[{"type":"text","text":"<timestamp>Sunday, Aug 2, 2026, 8:16 PM (UTC+8)</timestamp>\n<user_query>\n帮我改路由页\n</user_query>"}]}}"#,
+            r#"{"role":"assistant","message":{"content":[{"type":"text","text":"先看现有实现。"}]}}"#,
+        ],
+    );
+    write_session(
+        &proj
+            .join("agent-transcripts")
+            .join(sid2)
+            .join(format!("{sid2}.jsonl")),
+        &[r#"{"role":"user","message":{"content":[{"type":"text","text":"第二段对话"}]}}"#],
+    );
+    let sub = "deadbeef-0000-0000-0000-000000000001";
+    let sub_flat = "aaaa1111-0000-0000-0000-000000000002";
+    write_session(
+        &proj
+            .join("agent-transcripts")
+            .join(sid)
+            .join("subagents")
+            .join(sub)
+            .join(format!("{sub}.jsonl")),
+        &[r#"{"role":"user","message":{"content":"nested subagent prompt"}}"#],
+    );
+    write_session(
+        &proj
+            .join("agent-transcripts")
+            .join(sid)
+            .join("subagents")
+            .join(format!("{sub_flat}.jsonl")),
+        &[r#"{"role":"user","message":{"content":"flat subagent prompt"}}"#],
+    );
+    fs::create_dir_all(home.join("projects").join("empty-window")).unwrap();
+
+    let projects = list_projects_for_agent_home(AgentId::Cursor, &home, None).unwrap();
+    assert_eq!(projects.len(), 1);
+    let hub = projects
+        .iter()
+        .find(|r| r.relative_path.contains("AgentHub"))
+        .expect("AgentHub folder");
+    assert_eq!(hub.session_count, 4);
+    assert!(hub
+        .preview
+        .as_deref()
+        .is_some_and(|p| p.contains("路由页") || p.contains("第二段")));
+    assert!(!projects.iter().any(|r| r.relative_path.contains("empty-window")));
+
+    let sessions = list_sessions_for_agent_home(AgentId::Cursor, &home, None).unwrap();
+    assert_eq!(
+        sessions.len(),
+        4,
+        "ids={:?}",
+        sessions.iter().map(|s| &s.id).collect::<Vec<_>>()
+    );
+    assert!(sessions.iter().all(|s| s.project_id == hub.id));
+    let mut native: Vec<_> = sessions
+        .iter()
+        .filter_map(|s| s.session_id.clone())
+        .collect();
+    native.sort();
+    assert_eq!(
+        native,
+        vec![
+            sid.to_string(),
+            sid2.to_string(),
+            sub_flat.to_string(),
+            sub.to_string(),
+        ]
+    );
+    let nested_child = sessions
+        .iter()
+        .find(|s| s.session_id.as_deref() == Some(sub))
+        .expect("nested subagent");
+    assert!(nested_child.relative_path.contains("subagents"));
+    assert!(nested_child
+        .preview
+        .as_deref()
+        .unwrap_or("")
+        .contains("nested subagent"));
+    let titled = sessions
+        .iter()
+        .find(|s| s.session_id.as_deref() == Some(sid))
+        .expect("first transcript");
+    assert!(
+        titled.preview.as_deref().unwrap_or("").contains("路由页"),
+        "preview={:?}",
+        titled.preview
+    );
+    assert!(!titled
+        .preview
+        .as_deref()
+        .unwrap_or("")
+        .contains("<user_query>"));
+
+    let (_, key) = parse_project_id(&hub.id).unwrap();
+    let only = list_sessions_for_project_home(AgentId::Cursor, &home, &hub.id, &key, None).unwrap();
+    assert_eq!(only.len(), 4);
+
+    let ex = load_excerpt(&titled.id, Some(&home)).unwrap();
+    assert_eq!(ex.id, titled.id);
+    assert!(ex.excerpt.contains("---turn:user---"));
+    assert!(ex.excerpt.contains("帮我改路由页"));
+    assert!(ex.excerpt.contains("---turn:assistant---"));
+    assert!(ex.excerpt.contains("先看现有实现"));
 }
 
 #[test]
@@ -484,6 +691,41 @@ fn list_codex_groups_by_payload_cwd_session_meta() {
     let projects2 = list_projects_for_agent_home(AgentId::Codex, &home, None).unwrap();
     assert_eq!(projects2.len(), 1);
     assert_eq!(projects2[0].session_count, 2);
+}
+
+#[test]
+fn list_codex_desktop_originator_uses_payload_id() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".codex");
+    let session = home
+        .join("sessions")
+        .join("2026")
+        .join("04")
+        .join("22")
+        .join("rollout-2026-04-22T16-38-17-019db457-0cbf-7362-8691-75cbbc664cbf.jsonl");
+    write_session(
+        &session,
+        &[
+            r#"{"timestamp":"2026-04-22T08:38:17.000Z","type":"session_meta","payload":{"id":"019db457-0cbf-7362-8691-75cbbc664cbf","cwd":"D:\\work\\desktop-app","originator":"Codex Desktop","cli_version":"0.122.0-alpha.13"}}"#,
+            r#"{"timestamp":"2026-04-22T08:38:18.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"from desktop app"}]}}"#,
+        ],
+    );
+
+    let sessions = list_sessions_for_agent_home(AgentId::Codex, &home, None).unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(
+        sessions[0].session_id.as_deref(),
+        Some("019db457-0cbf-7362-8691-75cbbc664cbf")
+    );
+    assert_eq!(sessions[0].project_id, "codex:proj:cwd/D:/work/desktop-app");
+    assert!(
+        sessions[0]
+            .preview
+            .as_deref()
+            .is_some_and(|p| p.contains("from desktop app")),
+        "preview={:?}",
+        sessions[0].preview
+    );
 }
 
 #[test]
@@ -845,7 +1087,7 @@ fn codex_session_index_skips_reparse_on_second_list() {
     let first = list_sessions_for_agent_home(AgentId::Codex, &home, Some(data.path())).unwrap();
     assert_eq!(first.len(), 1);
     assert_eq!(first[0].project_id, "codex:proj:cwd/D:/idx/repo");
-    assert!(data.path().join("project_session_index.json").exists());
+    assert!(data.path().join("scan-cache.db").exists());
 
     // Second list should still return same grouping via index.
     let second = list_sessions_for_agent_home(AgentId::Codex, &home, Some(data.path())).unwrap();
@@ -893,7 +1135,7 @@ fn list_kimi_uses_workspaces_and_one_row_per_session() {
             r#"{"type":"turn.prompt","input":[{"type":"text","text":"实现 projects 列表"}]}"#,
         ],
     );
-    // Subagent wire must NOT create an extra session row.
+    // Extra agent wires are listed as nested sessions under the main row.
     write_session(
         &sess.join("agents").join("agent-0").join("wire.jsonl"),
         &[r#"{"type":"turn.prompt","input":[{"type":"text","text":"subagent only"}]}"#],
@@ -902,49 +1144,58 @@ fn list_kimi_uses_workspaces_and_one_row_per_session() {
     let sessions = list_sessions_for_agent_home(AgentId::Kimi, &home, None).unwrap();
     assert_eq!(
         sessions.len(),
-        1,
+        2,
         "ids={:?}",
         sessions.iter().map(|s| &s.id).collect::<Vec<_>>()
     );
+    let parent = sessions
+        .iter()
+        .find(|s| s.session_id.as_deref() == Some("cc77e803-2743-4383-900d-4e2f4e054951"))
+        .expect("main session");
+    let child = sessions
+        .iter()
+        .find(|s| s.relative_path.contains("agent-0"))
+        .expect("agent-0 wire");
     assert_eq!(
-        sessions[0].project_id,
+        parent.project_id,
         "kimi:proj:cwd/D:/demo_chen/2026/AgentHub"
     );
+    assert_eq!(child.project_id, parent.project_id);
     assert!(
-        sessions[0].title.contains("规划")
-            || sessions[0].title.contains("AgentHub")
-            || sessions[0]
+        parent.title.contains("规划")
+            || parent.title.contains("AgentHub")
+            || parent
                 .preview
                 .as_ref()
                 .map(|p| p.contains("projects"))
                 .unwrap_or(false),
         "title={:?} preview={:?}",
-        sessions[0].title,
-        sessions[0].preview
+        parent.title,
+        parent.preview
     );
     assert_eq!(
-        sessions[0].cwd.as_deref().map(|c| c.replace('\\', "/")),
+        parent.cwd.as_deref().map(|c| c.replace('\\', "/")),
         Some("D:/demo_chen/2026/AgentHub".into())
     );
     assert_eq!(
-        sessions[0].session_id.as_deref(),
-        Some("cc77e803-2743-4383-900d-4e2f4e054951")
+        child.session_id.as_deref(),
+        Some("cc77e803-2743-4383-900d-4e2f4e054951/agent-0")
     );
 
     let projects = list_projects_for_agent_home(AgentId::Kimi, &home, None).unwrap();
     assert_eq!(projects.len(), 1);
     assert_eq!(projects[0].title, "AgentHub");
-    assert_eq!(projects[0].session_count, 1);
+    assert_eq!(projects[0].session_count, 2);
     assert_ne!(projects[0].title, "未分类会话");
 
     let (_, key) = parse_project_id(&projects[0].id).unwrap();
     let only =
         list_sessions_for_project_home(AgentId::Kimi, &home, &projects[0].id, &key, None).unwrap();
-    assert_eq!(only.len(), 1);
+    assert_eq!(only.len(), 2);
 
-    // Delete removes whole session dir (main + subagent wires).
+    // Delete on the main row still removes the whole session dir.
     let svc = ProjectService::default();
-    svc.delete_with_home(&sessions[0].id, &home).unwrap();
+    svc.delete_with_home(&parent.id, &home).unwrap();
     assert!(!sess.exists());
 }
 
@@ -1955,7 +2206,7 @@ fn session_index_roundtrip_and_freshness() {
     use super::session_index::{IndexEntry, SessionIndexStore};
 
     let dir = tempdir().unwrap();
-    let mut store = SessionIndexStore::load(dir.path());
+    let mut store = SessionIndexStore::load(dir.path()).expect("open cache");
     store.put(
         AgentId::Codex,
         "sessions/a.jsonl",
@@ -1972,9 +2223,9 @@ fn session_index_roundtrip_and_freshness() {
         },
     );
     store.save_if_dirty();
-    assert!(dir.path().join("project_session_index.json").exists());
+    assert!(dir.path().join("scan-cache.db").exists());
 
-    let store2 = SessionIndexStore::load(dir.path());
+    let store2 = SessionIndexStore::load(dir.path()).expect("reopen cache");
     assert!(store2
         .get_fresh(AgentId::Codex, "sessions/a.jsonl", 10, 100)
         .is_some());

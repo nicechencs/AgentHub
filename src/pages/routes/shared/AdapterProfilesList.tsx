@@ -244,17 +244,19 @@ function AdapterProfileRow({
         <div className="w-40 shrink-0">
           {runtimeStatus ? <StatusLine view={runtimeStatus} emphasis /> : null}
         </div>
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm font-medium">
+        <div className="min-w-0 flex-1 space-y-1 overflow-hidden">
+          <div className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
             {source.agentId ? <AgentDot agentId={source.agentId} size="sm" title={null} /> : null}
-            <span className="truncate">{source.title}</span>
+            <span className="min-w-0 truncate">{source.title}</span>
           </div>
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5 font-mono text-xs text-secondary">
-            <Tip label={source.baseUrl || undefined} className="truncate">
-              {source.baseUrl || t('routes.graph.upstreamUnknown')}
-            </Tip>
+          <div className="flex min-w-0 items-center gap-1.5 font-mono text-xs text-secondary">
+            <div className="min-w-0 flex-1">
+              <Tip label={source.baseUrl || undefined} className="block truncate">
+                {source.baseUrl || t('routes.graph.upstreamUnknown')}
+              </Tip>
+            </div>
             <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden />
-            <span className="truncate">{localLabel}</span>
+            <span className="min-w-0 max-w-[45%] truncate">{localLabel}</span>
           </div>
           {supportedAgents.length > 0 ? (
             <div className="flex min-w-0 flex-wrap items-center gap-1.5">

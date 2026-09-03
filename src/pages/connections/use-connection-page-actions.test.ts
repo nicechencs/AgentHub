@@ -88,6 +88,15 @@ describe('switch toast copy', () => {
     expect(src).toContain('extrasForTicket(ticket)?.isCurrent');
     expect(src).not.toContain('tabCurrentId');
   });
+
+  it('cancels catalog add by undoing the last write to that tool', () => {
+    const src = readFileSync(new URL('./use-connection-page-actions.ts', import.meta.url), 'utf8');
+    expect(src).toContain('handleRemoveFromCatalog');
+    expect(src).toContain('undoSwitchAccount(ticket.agentId)');
+    expect(src).toContain('undoSwitch(ticket.agentId)');
+    expect(src).toContain("t('connections.list.removeFromCatalogOk')");
+    expect(src).toContain("t('connections.list.removeFromCatalogFail')");
+  });
 });
 
 describe('guiErrorCode', () => {

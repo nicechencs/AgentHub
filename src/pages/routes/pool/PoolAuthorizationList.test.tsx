@@ -41,8 +41,10 @@ describe('PoolAuthorizationList', () => {
     expect(markup).toContain('data-pool-authorization="account:grok-1"');
     expect(markup).toContain('Grok · OAuth');
     expect(markup).toContain('data-pool-login-mark="oauth"');
+    expect(markup).toContain('data-pool-kind-mark="oauth"');
     expect(markup).toContain('官方登录');
     expect(markup).toContain('可续期');
+    expect(markup).not.toContain('拖动排序');
     expect(markup).not.toContain('data-col="bindings"');
     expect(markup).not.toContain('data-col="quota"');
     expect(markup).not.toContain('data-col="lastUsed"');
@@ -86,7 +88,7 @@ describe('PoolAuthorizationList', () => {
     expect(markup).toContain('优先级');
   });
 
-  it('marks the row as openable when a detail handler is provided', () => {
+  it('opens details from the login name, not the whole row', () => {
     const markup = renderToStaticMarkup(
       createElement(
         TooltipProvider,
@@ -99,8 +101,29 @@ describe('PoolAuthorizationList', () => {
       ),
     );
     expect(markup).toContain('data-active="true"');
-    expect(markup).toContain('tabindex="0"');
-    expect(markup).toContain('cursor-pointer');
+    expect(markup).toContain('data-pool-login-name="account:grok-1"');
+    expect(markup).not.toMatch(/<tr[^>]*tabindex="0"/);
+  });
+
+  it('shows a reorder handle when there are two logins', () => {
+    const markup = renderToStaticMarkup(
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(PoolAuthorizationList, {
+          items: [
+            item(),
+            item({
+              key: 'account:grok-2',
+              sourceId: 'grok-2',
+              title: 'Grok · spare',
+            }),
+          ],
+        }),
+      ),
+    );
+    expect(markup).toContain('拖动排序');
+    expect(markup).toContain('data-sortable-id');
   });
 
   it('shows a custom login as domain and wraps extra endpoint types', () => {
@@ -127,6 +150,8 @@ describe('PoolAuthorizationList', () => {
     expect(markup).not.toContain('OpenRouter · openrouter.ai/api/v1');
     expect(markup).not.toContain('Claude Code');
     expect(markup).toContain('data-pool-login-mark="url"');
+    expect(markup).toContain('data-pool-kind-mark="apikey"');
+    expect(markup).toContain('API Key');
     expect(markup).toContain('linearGradient');
     expect(markup).toContain('var(--agent-claude)');
     expect(markup).toContain('var(--agent-codex)');

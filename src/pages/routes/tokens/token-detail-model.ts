@@ -7,6 +7,7 @@ import { fmtTokens } from '@/lib/utils';
 import type { LocalTokenProbeOutcome, LocalTokenProbeResult } from '@/lib/backend/contracts/adapter';
 import {
   maskLocalToken,
+  tokenDisplayName,
   tokenListenPort,
   tokenTypeLabel,
   type LocalTokenRow,
@@ -72,7 +73,7 @@ export function buildTokenDetailCopyRows(
 }
 
 export function tokenDetailTitle(row: LocalTokenRow, t?: TranslateFn): string {
-  return tokenTypeLabel(row, t);
+  return tokenDisplayName(row, t);
 }
 
 export function formatTokenRelative(iso: string | null | undefined, t?: TranslateFn): string {

@@ -180,6 +180,17 @@ export function createTauriAdapterPort(): AdapterPort {
       const wire = await invokeAdapter<LocalTokenRecordWire>('set_local_token', { poolId, token });
       return mapLocalTokenRecord(wire);
     },
+    async createLocalToken(poolId, name) {
+      const wire = await invokeAdapter<LocalTokenRecordWire>('create_local_token', { poolId, name });
+      return mapLocalTokenRecord(wire);
+    },
+    async setLocalTokenName(id, name) {
+      const wire = await invokeAdapter<LocalTokenRecordWire>('set_local_token_name', { id, name });
+      return mapLocalTokenRecord(wire);
+    },
+    async deleteLocalToken(id) {
+      await invokeAdapter<void>('delete_local_token', { id });
+    },
     async setChatCompletionsShared(shared: boolean) {
       const wire = await invokeAdapter<DefaultRoutePoolListWire>('set_chat_completions_shared', { shared });
       return mapDefaultRoutePoolList(wire);

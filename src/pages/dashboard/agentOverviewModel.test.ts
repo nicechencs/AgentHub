@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createTranslator } from '@/lib/i18n';
 
 import { AGENTS, type AgentMeta } from '@/config/agents';
+import { MOCK_CAPABILITIES } from '@/dev/mocks/capabilities';
 import type { AgentKey, AgentStatus, AuthStatus } from '@/lib/types';
 
 import {
@@ -94,6 +95,16 @@ describe('isAgentIssue', () => {
     expect(isAgentIssue(status('claude', { authStatus: 'none', authLabel: '未配置' }))).toBe(
       false,
     );
+  });
+
+  it('does not treat Cursor login gaps as issues', () => {
+    expect(
+      isAgentIssue(status('cursor', {
+        authStatus: 'none',
+        authHealth: 'needs_login',
+        capabilities: MOCK_CAPABILITIES.cursor,
+      })),
+    ).toBe(false);
   });
 });
 
@@ -358,6 +369,41 @@ describe('buildAgentCardView', () => {
     expect(missing.twoLineLayout).toBe(true);
   });
 
+  it('installed Cursor shows 不支持管理授权 and is not clickable', () => {
+    const view = buildAgentCardView(
+      meta('cursor', 'Cursor Agent'),
+      status('cursor', {
+        effectiveKind: 'none',
+        effectiveLabel: '未配置',
+        version: '1.2.3',
+        capabilities: MOCK_CAPABILITIES.cursor,
+      }),
+    );
+    expect(view.metaText).toBe('不支持管理授权');
+    expect(view.titleFull).toBe('不支持管理授权');
+    expect(view.action).toEqual({ kind: 'none' });
+    expect(view.authStatus).toBe('none');
+    expect(view.statusDotTitle).toBe('不支持管理授权');
+    expect(view.ariaLabel).toBe('Cursor Agent，v1.2.3，不支持管理授权');
+    expect(view.ariaLabel).not.toContain('点击管理连接');
+    expect(view.binding).toBeUndefined();
+  });
+
+  it('translates Cursor auth-unsupported copy on English dashboard cards', () => {
+    const tEn = createTranslator('en');
+    const view = buildAgentCardView(
+      meta('cursor', 'Cursor Agent'),
+      status('cursor', { version: '1.2.3' }),
+      { binding: { ticketLabel: 'Cursor Key', routeLabel: '改配置' } },
+      tEn,
+    );
+    expect(view.metaText).toBe("Can't manage authorization here");
+    expect(view.action).toEqual({ kind: 'none' });
+    expect(view.binding).toBeUndefined();
+    expect(view.ariaLabel).toBe("Cursor Agent, v1.2.3, can't manage authorization here");
+    expect(view.ariaLabel).not.toMatch(/[\u4e00-\u9fff]/);
+  });
+
   it('omits binding when no badge input is provided', () => {
     const view = buildAgentCardView(claude, status('claude'));
     const withUndefined = buildAgentCardView(claude, status('claude'), undefined);
@@ -421,6 +467,13 @@ describe('resolveAgentCardInteraction', () => {
       to: '/connections?agent=claude',
     });
     expect(agentCardConnectFallback('kimi')).toBe('/connections?agent=kimi');
+  });
+
+  it('none action stays idle even with a connect handler', () => {
+    const onConnect = (_id: AgentKey) => undefined;
+    expect(resolveAgentCardInteraction({ kind: 'none' }, 'cursor', onConnect)).toEqual({
+      type: 'none',
+    });
   });
 });
 

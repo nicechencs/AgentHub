@@ -1,11 +1,13 @@
 import { useEffect, useId, useRef, useState, type RefObject } from 'react';
-import { MessageSquarePlus, PanelRightClose } from 'lucide-react';
+import { Copy, MessageSquarePlus, PanelRightClose } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { CopyableFileName } from '@/components/shared/CopyableFileName';
+import { copyTextToClipboard, CopyTextButton } from '@/components/shared/CopyTextButton';
 import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { MarkdownView } from '@/components/shared/MarkdownView';
 import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/toast';
 import { AGENT_MAP } from '@/config/agents';
 import { getAgentProjectExcerpts } from '@/lib/api/project';
 import { normalizeOpenPath } from '@/lib/path-open';
@@ -13,7 +15,8 @@ import { hasEscPriorityOverlay } from '@/lib/skills/preview-keys';
 import type { AgentSession } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { relativeTime } from './project-format';
-import { classifyExcerptRows, splitExcerptTurns } from './session-excerpt';
+import { formatSessionRecordText } from '@/lib/session-record-text';
+import { classifyExcerptRows, excerptTurnsToRecordLines, splitExcerptTurns } from './session-excerpt';
 
 function PreviewSkeleton() {
   return (
@@ -48,6 +51,7 @@ export function ProjectConversationPreviewPanel({
   contentRef?: RefObject<HTMLDivElement | null>;
 }) {
   const { t } = useI18n();
+  const { toast } = useToast();
   const titleId = useId();
   const requestSeq = useRef(0);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -103,6 +107,24 @@ export function ProjectConversationPreviewPanel({
   const agentMeta = AGENT_MAP[session.agentId];
   const record = normalizeOpenPath(session.path);
   const cwd = session.cwd?.trim() || null;
+  const recordText = formatSessionRecordText(
+    excerptTurnsToRecordLines(turns, {
+      user: t('common.you'),
+      assistant: t('projects.preview.roleAssistant', {
+        name: agentMeta?.name ?? session.agentId,
+      }),
+    }),
+  );
+  const copyRecord = () => {
+    if (!recordText) {
+      toast({ title: t('common.copyRecordEmpty'), variant: 'danger' });
+      return;
+    }
+    void copyTextToClipboard(recordText).then(
+      () => toast({ title: t('common.copied'), variant: 'success' }),
+      () => toast({ title: t('common.copyFailed'), variant: 'danger' }),
+    );
+  };
 
   return (
     <aside
@@ -127,6 +149,17 @@ export function ProjectConversationPreviewPanel({
             </span>
           </div>
         </div>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7 shrink-0"
+          disabled={!recordText}
+          aria-label={t('projects.preview.copyRecord')}
+          title={t('projects.preview.copyRecord')}
+          onClick={copyRecord}
+        >
+          <Copy className="h-3.5 w-3.5" />
+        </Button>
         <Button
           size="icon"
           variant="ghost"
@@ -218,10 +251,11 @@ export function ProjectConversationPreviewPanel({
                   >
                     {userish ? (
                       <div
-                        className="min-w-0 max-w-[92%] rounded-composer bg-subtle px-3 py-2 text-body text-primary"
+                        className="group relative min-w-0 max-w-[92%] rounded-composer bg-subtle px-3 py-2 text-body text-primary"
                         aria-label={t('projects.preview.roleUser')}
                       >
                         <MarkdownView content={turn.text} variant="chat" />
+                        <CopyTextButton text={turn.text} label={t('projects.preview.copyTurn')} />
                       </div>
                     ) : (
                       <>
@@ -236,8 +270,9 @@ export function ProjectConversationPreviewPanel({
                               name: agentMeta?.name ?? session.agentId,
                             })}
                           </p>
-                          <div className="rounded-composer bg-hover/60 px-3 py-2 text-body leading-relaxed text-primary">
+                          <div className="group relative rounded-composer bg-hover/60 px-3 py-2 text-body leading-relaxed text-primary">
                             <MarkdownView content={turn.text} variant="chat" />
+                            <CopyTextButton text={turn.text} label={t('projects.preview.copyTurn')} />
                           </div>
                         </div>
                       </>

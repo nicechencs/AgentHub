@@ -7,7 +7,9 @@
 //! - install / detect / uninstall (allowlisted shims; no full product uninstall claim)
 //! - headless: `agent -p "…" --output-format text` (+ `--force` when dangerous)
 //! - skills dir: `~/.cursor/skills-cursor`
-//! - projects: read-only workspace folders under `~/.cursor/projects`
+//! - projects: read-only CLI workspaces under `~/.cursor/projects/*/agent-transcripts`
+//!   (`<id>/<id>.jsonl` sessions and `subagents/` children). Desktop IDE windows
+//!   (numeric ids / canvases) are not this surface.
 //! - auth: env `CURSOR_API_KEY` / login guidance only
 //!
 //! ## Explicitly out of scope
@@ -25,8 +27,8 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{AppError, Result};
 use crate::models::{
-    AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectResult, DetectStatus,
-    LiveAccount, RunOptions, RunSpec,
+    AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectedBinaryCopy,
+    DetectResult, DetectStatus, LiveAccount, RunOptions, RunSpec,
 };
 use crate::runtime;
 use crate::utils::paths::{agent_home, home_dir};
@@ -198,7 +200,7 @@ pub(crate) fn detect_installation() -> DetectResult {
             version = version.as_deref().unwrap_or("-"),
             "Cursor Agent CLI detected"
         );
-        return DetectResult {
+        let mut result = DetectResult {
             agent: AgentId::Cursor,
             status: DetectStatus::Installed,
             version,
@@ -208,6 +210,8 @@ pub(crate) fn detect_installation() -> DetectResult {
             notes,
             extra_copies: Vec::new(),
         };
+        attach_cursor_desktop_copy(&mut result);
+        return result;
     }
 
     // Not installed: optional IDE-only tip (does NOT count as Installed).
@@ -236,7 +240,7 @@ pub(crate) fn detect_installation() -> DetectResult {
         "Cursor Agent CLI not found"
     );
 
-    DetectResult {
+    let mut result = DetectResult {
         agent: AgentId::Cursor,
         status: DetectStatus::NotFound,
         version: None,
@@ -245,7 +249,42 @@ pub(crate) fn detect_installation() -> DetectResult {
         env_ready,
         notes,
         extra_copies: Vec::new(),
+    };
+    attach_cursor_desktop_copy(&mut result);
+    result
+}
+
+/// Observe Cursor IDE / desktop app. Never the spawn target (not Agent CLI).
+fn attach_cursor_desktop_copy(result: &mut DetectResult) {
+    let Some((path, version)) = cursor_ide_bin() else {
+        return;
+    };
+    if result
+        .binary_path
+        .as_deref()
+        .is_some_and(|primary| paths_equal_ignore_case(primary, &path))
+    {
+        return;
     }
+    if result
+        .extra_copies
+        .iter()
+        .any(|c| paths_equal_ignore_case(&c.path, &path))
+    {
+        return;
+    }
+    result.extra_copies.push(DetectedBinaryCopy::from_kind(
+        AgentId::Cursor,
+        path,
+        "desktop",
+        version,
+        None,
+    ));
+}
+
+fn paths_equal_ignore_case(a: &Path, b: &Path) -> bool {
+    a.to_string_lossy()
+        .eq_ignore_ascii_case(&b.to_string_lossy())
 }
 
 impl AgentAdapter for CursorAdapter {
@@ -428,7 +467,7 @@ impl AgentAdapter for CursorAdapter {
             ApiKeyAccount => CapabilityState::partial("可用 API Key 或 cursor-agent login"),
             LiveBackup => CapabilityState::unsupported("无稳定配置/凭据文件"),
             StructuredStream => CapabilityState::unsupported("Agent CLI 仅提供 text 输出"),
-            ProjectHistory => CapabilityState::partial("仅工作区目录列表，无会话 transcript"),
+            ProjectHistory => CapabilityState::full(),
             ProjectDelete => CapabilityState::unsupported("无安全浅删契约"),
             ProviderPresets => CapabilityState::unsupported("无 provider 配置契约"),
             Usage => CapabilityState::unsupported("IDE 内部用量库，明确范围外"),
@@ -868,7 +907,7 @@ fn path_agent_rejected_as_non_cursor() -> Option<PathBuf> {
     None
 }
 
-fn detect_cursor_ide_version() -> Option<String> {
+fn cursor_ide_bin() -> Option<(PathBuf, Option<String>)> {
     #[cfg(windows)]
     {
         if let Ok(local) = std::env::var("LOCALAPPDATA") {
@@ -877,29 +916,34 @@ fn detect_cursor_ide_version() -> Option<String> {
                 .join("cursor")
                 .join("Cursor.exe");
             if exe.is_file() {
-                // Prefer package.json next to resources when present.
-                let pkg = exe
-                    .parent()?
-                    .join("resources")
-                    .join("app")
-                    .join("package.json");
-                if let Ok(text) = std::fs::read_to_string(&pkg) {
-                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
-                        if let Some(ver) = v.get("version").and_then(|x| x.as_str()) {
-                            return Some(ver.to_string());
-                        }
-                    }
-                }
-                return Some("installed".into());
+                let version = cursor_ide_version_from_exe(&exe);
+                return Some((exe, version));
             }
         }
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
     {
         let app = PathBuf::from("/Applications/Cursor.app");
         if app.is_dir() {
-            return Some("installed".into());
+            return Some((app, Some("installed".into())));
         }
+    }
+    None
+}
+
+fn cursor_ide_version_from_exe(exe: &Path) -> Option<String> {
+    let pkg = exe.parent()?.join("resources").join("app").join("package.json");
+    let text = std::fs::read_to_string(pkg).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    v.get("version")
+        .and_then(|x| x.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| Some("installed".into()))
+}
+
+fn detect_cursor_ide_version() -> Option<String> {
+    if let Some((_, version)) = cursor_ide_bin() {
+        return version.or(Some("installed".into()));
     }
     // PATH `cursor --version` may work but is IDE-only; still useful as presence signal.
     if let Ok(path) = which::which("cursor") {
@@ -1134,5 +1178,37 @@ FINAL_DIR="$HOME/.local/share/cursor-agent/versions/2026.07.23-e383d2b"
             // Notes should mention IDE or firefighting; must not claim installed via Grok.
             assert!(r.binary_path.is_none());
         }
+        assert!(
+            r.extra_copies.iter().all(|c| c.kind == "desktop"),
+            "IDE/desktop must stay extra, never another kind: {:?}",
+            r.extra_copies
+        );
+        assert!(
+            r.extra_copies
+                .iter()
+                .all(|c| r.binary_path.as_ref().is_none_or(|p| p != &c.path)),
+            "desktop copy must not be the spawn path: bin={:?} extras={:?}",
+            r.binary_path,
+            r.extra_copies
+        );
+    }
+
+    #[test]
+    fn desktop_ide_copy_does_not_count_as_installed() {
+        let mut result = DetectResult {
+            agent: AgentId::Cursor,
+            status: DetectStatus::NotFound,
+            version: None,
+            binary_path: None,
+            channel: None,
+            env_ready: true,
+            notes: Vec::new(),
+            extra_copies: Vec::new(),
+        };
+        attach_cursor_desktop_copy(&mut result);
+        assert_eq!(result.status, DetectStatus::NotFound);
+        assert!(result.binary_path.is_none());
+        assert!(result.channel.is_none());
+        assert!(result.extra_copies.iter().all(|c| c.kind == "desktop"));
     }
 }

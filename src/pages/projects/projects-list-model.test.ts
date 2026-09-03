@@ -159,6 +159,30 @@ describe('visibleSessionsForProject', () => {
     ).toEqual([appToken.id]);
   });
 
+  it('keeps the parent session when a Cursor subagent matches', () => {
+    const parent = session({
+      id: 'parent',
+      projectId: app.id,
+      title: '主会话',
+      sessionId: '0e435bc1-cf05-4a9a-b036-8902f810bd86',
+      relativePath:
+        'projects/ws/agent-transcripts/0e435bc1-cf05-4a9a-b036-8902f810bd86/0e435bc1-cf05-4a9a-b036-8902f810bd86.jsonl',
+    });
+    const child = session({
+      id: 'child',
+      projectId: app.id,
+      title: '探查项目状态',
+      sessionId: 'deadbeef-0000-0000-0000-000000000001',
+      relativePath:
+        'projects/ws/agent-transcripts/0e435bc1-cf05-4a9a-b036-8902f810bd86/subagents/deadbeef.jsonl',
+    });
+    const map = { [app.id]: [parent, child] };
+    expect(visibleSessionsForProject(app.id, projects, '探查', map).map((s) => s.id)).toEqual([
+      'parent',
+      'child',
+    ]);
+  });
+
   it('returns an empty list when the project has no loaded kids', () => {
     expect(visibleSessionsForProject(app.id, projects, 'token', {})).toEqual([]);
   });

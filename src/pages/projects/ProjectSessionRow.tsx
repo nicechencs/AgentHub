@@ -1,5 +1,5 @@
 import type { MouseEvent as ReactMouseEvent } from 'react';
-import { Copy, MessageSquarePlus, Terminal, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Copy, MessageSquarePlus, Terminal, Trash2 } from 'lucide-react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { Tip } from '@/components/ui/tooltip';
@@ -37,6 +37,11 @@ export function ProjectSessionRow({
   busy,
   showDelete,
   deleteHint,
+  nested = false,
+  nestedLabel,
+  childCount = 0,
+  nestedOpen = false,
+  onToggleNested,
   previewOpen,
   onToggleOne,
   onPreviewSession,
@@ -52,6 +57,11 @@ export function ProjectSessionRow({
   showDelete: boolean;
   /** When set, the delete control is visible but disabled (read-only agents). */
   deleteHint?: string | null;
+  nested?: boolean;
+  nestedLabel?: string;
+  childCount?: number;
+  nestedOpen?: boolean;
+  onToggleNested?: (id: string) => void;
   previewOpen: boolean;
   onToggleOne: (id: string) => void;
   onPreviewSession: (session: AgentSession) => void;
@@ -72,7 +82,8 @@ export function ProjectSessionRow({
     <li
       className={cn(
         projectSessionRowGrid(showDelete),
-        'px-3 py-2 pl-10',
+        'px-3 py-2',
+        nested ? 'pl-16' : 'pl-10',
         previewOpen && 'bg-active',
       )}
     >
@@ -85,17 +96,51 @@ export function ProjectSessionRow({
           aria-label={t('projects.tree.selectSession', { title: session.title })}
         />
       )}
-      <Tip label={titleHoverLabel(session.title, session.preview)} className="min-w-0 w-full">
-        <button
-          type="button"
-          className={cn(previewTextClass, 'text-sm text-primary')}
-          aria-current={previewOpen ? 'true' : undefined}
-          aria-label={t('projects.tree.previewAria', { title: session.title })}
-          onClick={() => onPreviewSession(session)}
-        >
-          {session.title}
-        </button>
-      </Tip>
+      <div className="flex min-w-0 w-full items-center gap-1">
+        {childCount > 0 ? (
+          <button
+            type="button"
+            className="flex h-5 w-5 shrink-0 items-center justify-center text-muted hover:text-primary"
+            aria-expanded={nestedOpen}
+            aria-label={
+              nestedOpen
+                ? t('projects.tree.collapseSubSessions')
+                : t('projects.tree.expandSubSessions')
+            }
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleNested?.(session.id);
+            }}
+          >
+            {nestedOpen ? (
+              <ChevronDown className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5" />
+            )}
+          </button>
+        ) : nested ? null : (
+          <span className="h-5 w-5 shrink-0" />
+        )}
+        <Tip label={titleHoverLabel(session.title, session.preview)} className="min-w-0 flex-1">
+          <button
+            type="button"
+            className={cn(previewTextClass, 'text-sm text-primary')}
+            aria-current={previewOpen ? 'true' : undefined}
+            aria-label={t('projects.tree.previewAria', { title: session.title })}
+            onClick={() => onPreviewSession(session)}
+          >
+            {nested && nestedLabel ? (
+              <span className="mr-1.5 text-xs text-muted">{nestedLabel}</span>
+            ) : null}
+            {session.title}
+          </button>
+        </Tip>
+        {childCount > 0 && !nestedOpen ? (
+          <span className="shrink-0 text-xs text-muted tabular-nums">
+            {t('projects.tree.subSessionCount', { n: childCount })}
+          </span>
+        ) : null}
+      </div>
       {fileName ? (
         <Tip label={record ?? fileName} className="min-w-0 w-full">
           {record ? (

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  isAuthorizationManagementBlocked,
   isCapabilityBlocked,
   isCapabilityUsable,
   providerCapabilityGate,
@@ -177,11 +178,31 @@ describe('MOCK_CAPABILITIES (dev/mocks)', () => {
 
   it('accountSwitch blocked agents match Connections TabStrip expectations', () => {
     const disabled = AGENT_IDS.filter((id) =>
-      isCapabilityBlocked(MOCK_CAPABILITIES[id]?.accountSwitch),
+      isAuthorizationManagementBlocked(id, MOCK_CAPABILITIES[id]),
     );
-    expect(disabled).toEqual(expect.arrayContaining(['cursor']));
+    expect(disabled).toEqual(['cursor']);
     expect(disabled).not.toContain('workbuddy');
     expect(disabled).not.toContain('claude');
     expect(disabled).not.toContain('kimi');
+  });
+});
+
+describe('isAuthorizationManagementBlocked', () => {
+  it('locks Cursor even when capability data is missing', () => {
+    expect(isAuthorizationManagementBlocked('cursor')).toBe(true);
+    expect(isAuthorizationManagementBlocked('cursor', undefined)).toBe(true);
+  });
+
+  it('fails open for other agents when accountSwitch is absent', () => {
+    expect(isAuthorizationManagementBlocked('claude')).toBe(false);
+    expect(isAuthorizationManagementBlocked('claude', {})).toBe(false);
+  });
+
+  it('blocks explicit unsupported accountSwitch', () => {
+    expect(
+      isAuthorizationManagementBlocked('pi', {
+        accountSwitch: { level: 'unsupported' },
+      }),
+    ).toBe(true);
   });
 });

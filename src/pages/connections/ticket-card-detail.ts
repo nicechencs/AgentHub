@@ -39,7 +39,7 @@ function bindingDashboardRouteLabel(route: BindingRoute, t?: TranslateFn): strin
 }
 
 const IN_USE_TIP_FALLBACK = '这份登录已在当前工具使用中';
-const IN_CATALOG_TIP_FALLBACK = '这份登录已经出现在模型列表里';
+const IN_CATALOG_TIP_FALLBACK = '这份登录已经添加';
 const SWITCH_BUSY_TIP_FALLBACK = '正在切换其他登录';
 const REFRESH_BUSY_TIP_FALLBACK = '正在刷新其他登录';
 
@@ -237,13 +237,21 @@ export function showsNativeSwitch(
   return !agentFilterId || agentFilterId === ticketAgentId;
 }
 
+/** Catalog-append rows that are already in the model list can 取消添加 from the row menu. */
+export function showsCatalogUnapply(
+  occupancy?: LiveOccupancyDto | null,
+  isCurrent?: boolean,
+): boolean {
+  return isCatalogAppendOccupancy(occupancy) && isCurrent === true;
+}
+
 export type TicketSwitchChipOpts = {
   occupancy?: LiveOccupancyDto | null;
   agentName?: string;
 };
 
 /** Card action: unused → 切换; current live grant → disabled 使用中.
- * Catalog-append occupancy uses 写入 {name} / 已在模型列表里. */
+ * Catalog-append occupancy uses 写入 {name} / 已添加. */
 export function ticketSwitchChip(
   extras?: Pick<TicketDetailExtras, 'isCurrent'> | null,
   t?: TranslateFn,
@@ -254,7 +262,7 @@ export function ticketSwitchChip(
     return {
       kind: 'in-use',
       label: catalog
-        ? (t ? t('connections.list.inCatalog') : '已在模型列表里')
+        ? (t ? t('connections.list.inCatalog') : '已添加')
         : (t ? t('connections.list.inUse') : '使用中'),
     };
   }
@@ -537,7 +545,7 @@ export function buildTicketDetailFields(
     advanced.push({
       label: t ? t('connections.list.catalogStatus') : '模型列表',
       value: extras?.isCurrent
-        ? (t ? t('connections.list.inCatalog') : '已在模型列表里')
+        ? (t ? t('connections.list.inCatalog') : '已添加')
         : (t ? t('connections.list.notInCatalog') : '未写入模型列表'),
     });
   }
