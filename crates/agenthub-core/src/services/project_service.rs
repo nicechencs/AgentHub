@@ -6,7 +6,8 @@
 //! Filesystem scanners live in [`scan`] (still owned here until further split).
 
 mod scan;
-mod session_index;
+pub(crate) mod scan_cache_store;
+pub(crate) use scan_cache_store as session_index;
 
 // Re-export scanners for unit tests (`use super::*`) and platform ProjectSource impls.
 #[allow(unused_imports)] // used via `use super::*` in tests.rs and platform::projects::sources
