@@ -3,7 +3,7 @@ title: UI 页面模式
 type: reference
 status: current
 owner: maintainers
-updated: 2026-08-31
+updated: 2026-09-03
 ---
 
 # UI Page Patterns
@@ -100,13 +100,13 @@ Dashboard is the overview for installed Agents and usage, not a second Connectio
 
 - Render only installed Agents. Use an auto-fit grid so the number of Agents is not encoded in the layout.
 - Agent cards show identity, readiness, and one primary “连接 / 切换” entry. That opens ConnectFlow on Dashboard (直连 / 用这份登录 / 本机路由 / 当前不支持). Do not duplicate that flow on Connections.
-- Usage filters are shared by summary metrics, trend, distribution, and details: time, Agent, and model. Model options are the distinct models in the selected records, not a model-management catalog. Leaving Dashboard and coming back in the same run keeps the last time / Agent / model selection; closing the app starts from the defaults.
+- Usage filters are shared by summary metrics, trend, distribution, and details: time, Agent, and model. The trend chart can switch between Agent (area) and Model (line); hover shows tokens then cost, plus that day's total, running total, and each series' share. Model options are the distinct models in the selected records, not a model-management catalog. Leaving Dashboard and coming back in the same run keeps the last time / Agent / model / trend-group selection; closing the app starts from the defaults.
 - Usage collection is explicit and shows last/next sync. A parser health block is compact and partial; it names the affected Agent and keeps the rest of the dashboard usable.
 - A usage-empty state guides the first manual collection. Routes health-empty is the exception described below.
 
 ## 5. Connections
 
-Connections is the general login list in a full-height workbench split. Logins created or imported here, including ones later selected into a local route, are Connections-managed. Routes-owned official login and API Key entries marked “仅用于本机路由” use `home=route_pool` and may not appear here. Connections is not a list of generated route providers and it does not expose internal binding implementation names.
+Connections is the general login list in a full-height workbench split. Logins created or imported here, including ones later selected into a local route, are Connections-managed. Editing a shared official login in the pool copies it to a Routes-owned row; the Connections original stays. Routes-owned official login and API Key entries marked “仅用于本机路由” use `home=route_pool` and may not appear here. Connections is not a list of generated route providers and it does not expose internal binding implementation names.
 
 - The top `AgentTabStrip` filters the list. Do not add a second row of “official / API key / unknown” filter chips.
 - The add menu is **导入授权** / **官方登录** / **添加 API Key**. Official login and API Key are stored as separate rows. WorkBuddy custom models and ZCode catalog providers split into one login per directory row; desktop package logins are not imported.
@@ -126,7 +126,7 @@ Routes nested paths use a shell-level secondary nav. The **board** (`/routes/boa
 
 ### 6.1 Connection pool
 
-The connection pool lists official logins and API Keys used for local forwarding in a field-aligned table. **All API Keys can join** (including keys configured on WorkBuddy / ZCode / Pi); domestic official logins cannot. It may contain a Connections-managed login enrolled with **分享至连接池** (or bulk **从连接同步** on this page) or a Routes-managed login marked “仅用于本机路由”; the latter uses `home=route_pool` and may not appear in Connections. Connections owns the login lifecycle for entries selected from Connections; Routes owns creation, editing, and deletion for route-only entries. Removing a member from the pool does not delete the Connections-managed login. Each page has its own recycle bin: Connections trash restores to Connections; pool trash restores to the pool. The table shows login, type, and status on every row; connection count, usage window, last used, and priority only when at least one row has that value; enable last. Column widths are dragged from the header edge and remembered. Selecting a row opens a detail panel. A route row can still be opened through `?profile=<id>`.
+The connection pool lists official logins and API Keys used for local forwarding in a field-aligned table. **All API Keys can join** (including keys configured on WorkBuddy / ZCode / Pi); domestic official logins cannot. It may contain a Connections-managed login enrolled with **分享至连接池** (or bulk **从连接同步** on this page) or a Routes-managed login marked “仅用于本机路由”; the latter uses `home=route_pool` and may not appear in Connections. Connections owns the login lifecycle for entries selected from Connections until you **编辑** a shared official login in the pool: saving copies it to a pool-owned row (the Connections login stays), then asks **同步到连接页？** to write models back. Routes owns creation, editing, and deletion for route-only entries. Removing a member from the pool does not delete the Connections-managed login. Each page has its own recycle bin: Connections trash restores to Connections; pool trash restores to the pool. The table shows login, type, and status on every row; connection count, usage window, last used, and priority only when at least one row has that value; enable last. Column widths are dragged from the header edge and remembered. Selecting a row opens a detail panel. A route row can still be opened through `?profile=<id>`.
 
 The page treats the following states separately:
 
@@ -145,7 +145,7 @@ Do not infer “running” from a durable database row when the runtime host is 
 
 The detail panel is a focused dialog or side surface opened from the connection pool. It shows route identity, loopback address and port, downstream surface, upstream summary, last health result, default-pool members, and the listed models the resolver currently serves. It never shows the local token value or refresh credentials.
 
-Official `native_endpoint` / `config_sync` rows are not auto-enrolled. When `plan()` still allows a local-bridge write, the detail offers **交给本机网关**. Routes may directly add and manage an official login or API Key marked “仅用于本机路由”; it uses `home=route_pool`, may not appear in Connections, and its lifecycle stays in Routes. A login selected from Connections remains Connections-managed even while its pool membership and runtime are shown here.
+Official `native_endpoint` / `config_sync` rows are not auto-enrolled. When `plan()` still allows a local-bridge write, the detail offers **交给本机网关**. Routes may directly add and manage an official login or API Key marked “仅用于本机路由”; it uses `home=route_pool`, may not appear in Connections, and its lifecycle stays in Routes. A login selected from Connections remains Connections-managed while shown here, until pool **编辑** copies that official login to a pool-owned row.
 
 The primary start/stop control for the shared local gateway is on the board, not on each pool login. Detail may still enroll a native row with **交给本机网关**, and leftover route cards may still expose start/stop. A stop or unbind confirmation explains listener impact and whether the current local configuration will be restored. A failed unbind remains retryable; it must not fall back to force deletion.
 
