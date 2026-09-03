@@ -7,7 +7,7 @@ import {
   adapterProfilePrimaryAction,
   adapterProfileRecoveryGuide,
   adapterServiceStatusView,
-  bridgesPageViewState,
+  routesPoolPageViewState,
   bridgeRuntimeStatusView,
   canonicalizeLocalBridgeOrderIds,
   filterBoundLocalBridgeRuntimes,
@@ -86,17 +86,17 @@ describe('local-bridge runtime partition', () => {
   });
 });
 
-describe('bridges page view state', () => {
+describe('routes pool page view state', () => {
   const emptyWallet = { settled: true, lastWalletBridgeCount: 0 };
 
   it('stays loading until profiles and wallet have both settled', () => {
-    expect(bridgesPageViewState({
+    expect(routesPoolPageViewState({
       profileState: 'ready',
       bound: [],
       orphan: [],
       wallet: { settled: false, lastWalletBridgeCount: 0 },
     })).toBe('loading');
-    expect(bridgesPageViewState({
+    expect(routesPoolPageViewState({
       profileState: 'loading',
       bound: [],
       orphan: [],
@@ -105,7 +105,7 @@ describe('bridges page view state', () => {
   });
 
   it('uses last-known wallet count so a later wallet failure cannot become healthy empty', () => {
-    expect(bridgesPageViewState({
+    expect(routesPoolPageViewState({
       profileState: 'ready',
       bound: [],
       orphan: [],
@@ -114,7 +114,7 @@ describe('bridges page view state', () => {
   });
 
   it('treats only-orphan as a list, not healthy empty', () => {
-    expect(bridgesPageViewState({
+    expect(routesPoolPageViewState({
       profileState: 'ready',
       bound: [],
       orphan: [bridgeProfile({ id: 'orphan', sourceId: 'deleted' })],
@@ -122,14 +122,14 @@ describe('bridges page view state', () => {
     })).toBe('list');
   });
 
-  it('shows healthy empty only after both sides settle with zero bridges', () => {
-    expect(bridgesPageViewState({
+  it('shows healthy empty only after both sides settle with zero runtimes', () => {
+    expect(routesPoolPageViewState({
       profileState: 'ready',
       bound: [],
       orphan: [],
       wallet: emptyWallet,
     })).toBe('healthy_empty');
-    expect(bridgesPageViewState({
+    expect(routesPoolPageViewState({
       profileState: 'error',
       bound: [],
       orphan: [],

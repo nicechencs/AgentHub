@@ -42,9 +42,9 @@ import {
 } from '@/pages/routes/shared/adapter-model';
 import {
   adapterProfileFlowLabel,
-  bridgesPageViewState,
   groupLocalBridgeProfiles,
   partitionLocalBridgeRuntimes,
+  routesPoolPageViewState,
 } from '@/pages/routes/shared/adapter-view-model';
 import { EditRouteDialog } from '@/pages/routes/shared/EditRouteDialog';
 import { RouteDetailPanel } from '@/pages/routes/shared/RouteDetailPanel';
@@ -239,7 +239,7 @@ export default function RoutesPoolPage() {
   const hasContent = groupedOrphan.length > 0
     || directProfiles.length > 0
     || authorizations.length > 0;
-  const pageView = bridgesPageViewState({
+  const pageView = routesPoolPageViewState({
     profileState: loading && profileState !== 'error' ? 'loading' : profileState,
     bound,
     orphan: groupedOrphan,

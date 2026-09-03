@@ -231,26 +231,26 @@ export function filterBoundLocalBridgeRuntimes<T extends AdapterProfile>(
   return partitionLocalBridgeRuntimes(profiles, input).bound;
 }
 
-export type BridgesWalletView = {
+export type RoutesPoolWalletView = {
   /** At least one wallet fetch finished (success, or failure with a last/empty snapshot). */
   settled: boolean;
   /** Last successful `route=bridge` count; a later failure must not write 0. */
   lastWalletBridgeCount: number;
 };
 
-export type BridgesPageViewState =
+export type RoutesPoolPageViewState =
   | 'loading'
   | 'list_error'
   | 'list'
   | 'wallet_without_runtime'
   | 'healthy_empty';
 
-export function bridgesPageViewState(input: {
+export function routesPoolPageViewState(input: {
   profileState: 'loading' | 'ready' | 'error';
   bound: readonly unknown[];
   orphan: readonly unknown[];
-  wallet: BridgesWalletView;
-}): BridgesPageViewState {
+  wallet: RoutesPoolWalletView;
+}): RoutesPoolPageViewState {
   if (input.profileState === 'loading' || !input.wallet.settled) return 'loading';
   if (input.profileState === 'error') return 'list_error';
   if (input.bound.length + input.orphan.length > 0) return 'list';
