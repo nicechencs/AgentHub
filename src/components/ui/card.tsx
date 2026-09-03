@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 export type CardVariant = 'default' | 'plain' | 'subtle';
 
 /**
- * 表面卡片。
+ * 表面卡片。底色只走 `bg-panel` / `bg-subtle`（src/styles/tokens.ts THEME）。
  * - `default`：panel + 边框 + 轻阴影 xs（独立内容块）
  * - `plain`：仅 panel 底，无边框阴影（嵌在已有框内或工具条，避免双重描边）
  * - `subtle`：弱底无边框（条带/批处理条）

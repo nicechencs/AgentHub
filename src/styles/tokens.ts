@@ -39,12 +39,18 @@ export function isAccentId(value: string): value is AccentId {
   return (ACCENT_IDS as readonly string[]).includes(value);
 }
 
-/** Semantic theme colors. Keys map to CSS vars `--{key}`. */
+/**
+ * Semantic theme colors. Keys map to CSS vars `--{key}`.
+ * Surfaces (change here, every page follows):
+ * - `bg-canvas` — page, main column, top bar
+ * - `bg-panel` — cards, sidebar, dialogs, raised chrome
+ * - `bg-subtle` — inset strips, table heads (not a second page color)
+ */
 export const THEME = {
   light: {
-    'bg-canvas': '#f7f7f8',
+    'bg-canvas': '#f3f3f5',
     'bg-panel': '#ffffff',
-    'bg-subtle': '#f1f1f3',
+    'bg-subtle': '#ececef',
     'bg-hover': '#ebebed',
     'bg-active': '#e4e4e7',
     border: '#e6e6e9',

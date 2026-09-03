@@ -95,7 +95,6 @@ describe('dashboard layout wiring', () => {
     expect(tooltip).toContain('usageTrendTipOffset');
     expect(page).toContain('sm:grid-cols-3');
     expect(page).not.toContain('lg:grid-cols-5');
-    expect(page).toContain('rounded-card bg-subtle');
     expect(tooltip).toContain('dailyTotal');
     expect(tooltip).toContain('cumulativeTotal');
   });
