@@ -170,7 +170,8 @@ export function UsageTrendChart({
     return todayTrendBucket(new Date(), trendPointGrain(sample));
   }, [data]);
   const showToday = Boolean(todayKey && data.some((point) => point.date === todayKey));
-  const todayIsLast = Boolean(todayKey && data.at(-1)?.date === todayKey);
+  const lastPoint = data.length > 0 ? data[data.length - 1] : undefined;
+  const todayIsLast = Boolean(todayKey && lastPoint?.date === todayKey);
 
   const axis = (
     <>

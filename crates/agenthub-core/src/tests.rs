@@ -13,7 +13,9 @@ fn open_isolated_hub(dir: &Path) -> AgentHub {
 fn agent_hub_open_doctor_has_all_runtimes_and_agents() {
     let dir = tempfile::tempdir().expect("tempdir");
     let hub = open_isolated_hub(dir.path());
-    assert_eq!(hub.data_dir(), dir.path());
+    let expected_data_dir = crate::utils::paths::normalize_data_dir(dir.path())
+        .expect("normalized temp data dir");
+    assert_eq!(hub.data_dir(), expected_data_dir.as_path());
 
     let report = hub.doctor();
     assert_eq!(
@@ -47,7 +49,7 @@ fn agent_hub_open_doctor_has_all_runtimes_and_agents() {
     assert_eq!(report.version, AgentHub::version());
     assert!(report.locks.is_empty());
     // Structure only: do not assert install status (machine-dependent).
-    assert_eq!(report.data_dir, dir.path().display().to_string());
+    assert_eq!(report.data_dir, expected_data_dir.display().to_string());
     assert_eq!(report.capabilities.len(), crate::models::AgentId::ALL.len());
     for agent in crate::models::AgentId::ALL {
         let row = report
