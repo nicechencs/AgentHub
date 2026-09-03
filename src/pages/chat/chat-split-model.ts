@@ -1,4 +1,4 @@
-import { readLegacy, removeStorageItem, StorageKey } from '@/lib/storage-key';
+import { readStorageItem, removeStorageItem, StorageKey } from '@/lib/storage-key';
 import { TYPE_SCALE, typeScalePx } from '@/styles/tokens';
 
 export const COMPOSER_LINE_PX = Math.round(
@@ -25,7 +25,7 @@ export const COMPOSER_PANE_HEIGHT_STORAGE_KEY = StorageKey.chatComposerPaneHeigh
 export function readStoredComposerPaneHeight(): number | null {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = readLegacy(window.localStorage, COMPOSER_PANE_HEIGHT_STORAGE_KEY);
+    const raw = readStorageItem(window.localStorage, COMPOSER_PANE_HEIGHT_STORAGE_KEY);
     if (raw == null || raw === '') return null;
     const n = Number(raw);
     if (Number.isFinite(n) && n > 0) return Math.round(n);

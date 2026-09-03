@@ -70,7 +70,7 @@ describe('skill mapStatus helpers', () => {
       ],
     };
     const ui = mapCoreSkill(core);
-    expect(ui.sync.claude).toBe('absent');
+    expect(ui.projectionByAgent.claude).toBe('absent');
     expect(ui.projections.find((p) => p.agent === 'claude')?.mapStatus).toBe('available');
     expect(ui.projections.find((p) => p.agent === 'kimi')?.mapStatus).toBe('agent_unsupported');
     expect(ui.projections.find((p) => p.agent === 'grok')?.mapStatus).toBe('conflict');

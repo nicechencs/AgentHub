@@ -780,7 +780,7 @@ export function SkillMatrix({
                         );
                       }
                       const matrixSkill = skill!;
-                      const state = matrixSkill.sync[agent.id] ?? 'unsupported';
+                      const state = matrixSkill.projectionByAgent[agent.id] ?? 'unsupported';
                       const proj = matrixSkill.projections?.find((p) => p.agent === agent.id);
                       const agentInstalled = installedSet.has(agent.id);
                       const skillsCap = agent.capabilities?.skills;

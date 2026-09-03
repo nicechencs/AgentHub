@@ -62,12 +62,12 @@ const MOCK_AGENT_IDS: AgentKey[] = [...KNOWN_AGENT_IDS];
 const SKILL_CAPABLE: AgentKey[] = MOCK_AGENT_IDS.filter((id) => id !== 'kimi');
 
 function buildMockSkill(name: string): MockSkill {
-  const sync = {} as Record<AgentKey, SkillSyncState>;
+  const projectionByAgent = {} as Record<AgentKey, SkillSyncState>;
   const conflicts: AgentKey[] = [];
   const projections: SkillProjection[] = [];
   for (const agentId of MOCK_AGENT_IDS) {
     if (!SKILL_CAPABLE.includes(agentId)) {
-      sync[agentId] = 'unsupported';
+      projectionByAgent[agentId] = 'unsupported';
       projections.push({
         agent: agentId,
         state: 'unsupported',
@@ -95,7 +95,7 @@ function buildMockSkill(name: string): MockSkill {
       state = 'conflict';
       conflicts.push(agentId);
     }
-    sync[agentId] = state;
+    projectionByAgent[agentId] = state;
     if (state === 'linked') rememberProjectionMode(name, agentId, 'link');
     else if (state === 'copied') rememberProjectionMode(name, agentId, 'copy');
     projections.push({
@@ -113,7 +113,7 @@ function buildMockSkill(name: string): MockSkill {
     description: `${name} demo skill`,
     sourceDir: `C:\\mock\\skills\\${name}`,
     projections,
-    sync,
+    projectionByAgent,
     conflicts,
   };
 }
@@ -291,7 +291,7 @@ export function createMockSkillPort(): SkillPort {
       await delay(randomLatency());
       return mockState.map((s) => ({
         ...s,
-        sync: { ...s.sync },
+        projectionByAgent: { ...s.projectionByAgent },
         conflicts: [...s.conflicts],
         projections: s.projections.map((p) => ({ ...p })),
       }));
@@ -300,10 +300,10 @@ export function createMockSkillPort(): SkillPort {
     async toggleSkillSync(skillId, agentId, opts = {}) {
       await delay(150);
       const skill = mockState.find((s) => s.id === skillId);
-      if (!skill || skill.sync[agentId] === 'unsupported') {
+      if (!skill || skill.projectionByAgent[agentId] === 'unsupported') {
         return { state: 'unsupported' as const, conflict: false };
       }
-      const current = skill.sync[agentId];
+      const current = skill.projectionByAgent[agentId];
       const next: SkillSyncState = opts.mode
         ? opts.mode === 'link'
           ? 'linked'
@@ -314,7 +314,7 @@ export function createMockSkillPort(): SkillPort {
             ? 'linked'
             : 'copied';
       if (opts.mode) rememberProjectionMode(skillId, agentId, opts.mode);
-      skill.sync[agentId] = next;
+      skill.projectionByAgent[agentId] = next;
       const proj = skill.projections.find((p) => p.agent === agentId);
       if (proj) {
         proj.state = next;
@@ -338,8 +338,8 @@ export function createMockSkillPort(): SkillPort {
       let synced = 0;
       for (const skill of mockState) {
         for (const agentId of SKILL_CAPABLE) {
-          if (!isMappedState(skill.sync[agentId])) {
-            skill.sync[agentId] = 'copied';
+          if (!isMappedState(skill.projectionByAgent[agentId])) {
+            skill.projectionByAgent[agentId] = 'copied';
             const proj = skill.projections.find((p) => p.agent === agentId);
             if (proj) {
               proj.state = 'copied';

@@ -1,5 +1,5 @@
 import { pageEdgePx } from '@/components/layout/page-rhythm';
-import { readLegacy } from '@/lib/storage-key';
+import { readStorageItem } from '@/lib/storage-key';
 
 export const SIDE_SPLIT_WIDTH_DEFAULT = 440;
 /** Comfortable drag / remembered minimum. */
@@ -27,7 +27,7 @@ export function readStoredSideSplitWidth(
 ): number {
   if (typeof window === 'undefined') return fallback;
   try {
-    const raw = readLegacy(window.localStorage, storageKey);
+    const raw = readStorageItem(window.localStorage, storageKey);
     const n = raw ? Number(raw) : NaN;
     if (Number.isFinite(n) && n >= SIDE_SPLIT_WIDTH_MIN) return Math.round(n);
   } catch {

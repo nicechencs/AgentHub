@@ -385,7 +385,7 @@ export default function SkillsPage() {
   };
 
   const handleCellClick = async (skill: Skill, agentId: AgentKey) => {
-    const state = skill.sync[agentId];
+    const state = skill.projectionByAgent[agentId];
     if (state === 'unsupported') return;
     const agentName = agentDisplayName(agentId);
     // 已同步 → 直接取消，结果由 doToggle 统一提示
@@ -420,7 +420,7 @@ export default function SkillsPage() {
     agentId: AgentKey,
     mode: 'link' | 'copy' | 'disable',
   ) => {
-    const state = skill.sync[agentId];
+    const state = skill.projectionByAgent[agentId];
     if (state === 'unsupported') return;
     if (mode === 'disable') {
       if (!isMappedState(state)) return;
@@ -530,7 +530,7 @@ export default function SkillsPage() {
         if (!isSharedCatalogRow(row) || !selected.has(row.id)) continue;
         const skill = mapCoreSkill(row);
         for (const agentId of targets) {
-          const state = skill.sync[agentId] ?? 'unsupported';
+          const state = skill.projectionByAgent[agentId] ?? 'unsupported';
           const proj = skill.projections?.find((p) => p.agent === agentId);
           const mapStatus = proj?.mapStatus;
           if (isMappedState(state)) continue;

@@ -32,17 +32,17 @@ export function mapMapStatus(
 
 /** Core Skill → UI Skill */
 export function mapCoreSkill(s: CoreSkill): Skill {
-  const sync = {} as Record<AgentKey, SkillSyncState>;
+  const projectionByAgent = {} as Record<AgentKey, SkillSyncState>;
   const conflicts: AgentKey[] = [];
   const projections: SkillProjection[] = [];
 
   for (const id of AGENT_IDS) {
-    sync[id] = 'unsupported';
+    projectionByAgent[id] = 'unsupported';
   }
 
   for (const proj of s.projections ?? []) {
     const state = proj.state as SkillSyncState;
-    sync[proj.agent] = state;
+    projectionByAgent[proj.agent] = state;
     if (state === 'foreign' || state === 'conflict') {
       conflicts.push(proj.agent);
     }
@@ -62,7 +62,7 @@ export function mapCoreSkill(s: CoreSkill): Skill {
     description: s.description,
     sourceDir: s.sourceDir,
     projections,
-    sync,
+    projectionByAgent,
     conflicts,
   };
 }
