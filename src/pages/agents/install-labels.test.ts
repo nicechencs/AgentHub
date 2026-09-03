@@ -47,7 +47,7 @@ describe('inlineTerminalStatusText', () => {
     expect(inlineTerminalStatusText('running', undefined, tEn)).toBe('In progress…');
     expect(inlineTerminalStatusText('running', 90, tEn)).toContain('waited 1m 30s');
     expect(inlineTerminalStatusText('failed', undefined, tEn)).toBe(
-      'Failed. Try running the command above yourself',
+      "Couldn't finish automatically. Follow the steps above",
     );
     expect(inlineTerminalStatusText('guided', undefined, tEn)).not.toMatch(/[\u4e00-\u9fff]/);
   });

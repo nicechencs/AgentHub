@@ -622,11 +622,14 @@ fn host_remediations(id: RuntimeId) -> Vec<Remediation> {
 
 fn push_remediation_logs(logs: &mut Vec<String>, remediations: &[Remediation]) {
     for rem in remediations {
+        if let Some(text) = &rem.text {
+            push_log(logs, text.clone());
+        }
         if let Some(command) = &rem.command {
-            push_log(logs, format!("remediation: {command}"));
+            push_log(logs, format!("可复制命令: {command}"));
         }
         if let Some(url) = &rem.url {
-            push_log(logs, format!("remediation url: {url}"));
+            push_log(logs, format!("打开页面: {url}"));
         }
     }
 }
@@ -640,7 +643,12 @@ fn missing_package_manager_outcome(
     message: impl Into<String>,
 ) -> InstallOutcome {
     let message = message.into();
-    let remediations = host_remediations(missing);
+    let remediations = match channel {
+        "brew" | "winget" => filter_host_remediations(
+            runtime::remediations_when_installer_missing(channel, missing),
+        ),
+        _ => host_remediations(missing),
+    };
     push_remediation_logs(&mut logs, &remediations);
     let details = serde_json::to_value(EnvNotReady {
         agent: None,
@@ -812,23 +820,22 @@ fn install_runtime_inner(
             let formula = brew_formula(target).ok_or_else(|| {
                 AppError::Unsupported(format!("runtime {} 暂不支持 Homebrew 安装", id.as_str()))
             })?;
-            logs.push(format!(
-                "# install runtime {} via brew ({formula})",
-                target.as_str()
-            ));
             let brew = match resolve_brew() {
                 Ok(path) => path,
-                Err(e) => {
-                    logs.push(e.to_string());
+                Err(_) => {
                     return Ok(missing_package_manager_outcome(
                         action,
                         logs,
                         "brew",
                         target,
-                        "未找到 Homebrew。请先安装 Homebrew（https://brew.sh/）后重试。",
+                        "未找到 Homebrew，无法一键安装。请先安装 Homebrew（https://brew.sh/），或从官网手动安装。完成后完全退出并重启 AgentHub 再检测。",
                     ));
                 }
             };
+            logs.push(format!(
+                "正在用 Homebrew 安装 {}（{formula}）…",
+                target.as_str()
+            ));
             let req = ExecRequest {
                 program: brew,
                 args: vec!["install".into(), formula.into()],

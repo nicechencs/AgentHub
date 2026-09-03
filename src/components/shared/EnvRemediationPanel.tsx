@@ -15,7 +15,7 @@ import {
   RuntimeInstallFailedError,
 } from '@/lib/api/env';
 import { formatMissingList } from '@/lib/env';
-import { runtimeChannelForPlan } from '@/lib/env-plan';
+import { formatRuntimeInstallFailureLines, runtimeChannelForPlan } from '@/lib/env-plan';
 import { detectHostPlatform } from '@/lib/platform-detect';
 import { openExternalLink } from '@/lib/open-external';
 import type { EnvRemediation, RuntimeDetect, RuntimeId } from '@/lib/types';
@@ -120,7 +120,8 @@ export function EnvRemediationPanel({
       if (String(e) === 'Error: cancelled' || (e instanceof Error && e.message === 'cancelled')) return;
       setStatus('failed');
       if (e instanceof RuntimeInstallFailedError) {
-        setLines(e.logs.length ? e.logs : [e.message]);
+        const failureLines = formatRuntimeInstallFailureLines(e.outcome);
+        setLines(failureLines.length ? failureLines : e.logs.length ? e.logs : [e.message]);
         toast({ title: t('chrome.env.oneClickFailed'), description: e.message, variant: 'danger' });
       } else {
         toast({ title: t('chrome.env.oneClickFailed'), description: String(e), variant: 'danger' });

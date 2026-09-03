@@ -2541,7 +2541,7 @@ export const en = {
       runningWait: "In progress · waited {elapsed} (download/install may take a few minutes)",
       running: "In progress…",
       done: "Done",
-      failed: "Failed. Try running the command above yourself",
+      failed: "Couldn't finish automatically. Follow the steps above",
       guided: "Finish setup on the official site, then restart AgentHub",
     },
     installCopy: {
