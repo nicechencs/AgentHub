@@ -45,22 +45,27 @@ describe('dashboard layout wiring', () => {
     expect(page).toContain('rememberedUsageFilters');
     expect(page).toContain('rememberUsageFilters');
     expect(page).toContain('resolveUsageModelFilter');
+    expect(page).toContain('formatUsageWindowLabel');
     expect(page).not.toContain("useState<DateRange>('7d')");
     expect(page).toContain('if (!modelsReady) return');
   });
 
-  it('plots overlay usage series in agent brand hex, not a stacked CSS-var area', () => {
+  it('plots agent series as overlay areas and model series as stacked cumulative fill', () => {
     const chart = source('UsageTrendChart.tsx');
     expect(chart).toContain('resolveChartColor');
     expect(chart).toContain('type="monotone"');
     expect(chart).toContain('isAnimationActive={false}');
-    expect(chart).not.toContain('stackId');
+    expect(chart).toContain('stackId="model-usage"');
+    expect(chart).toContain('accumulateTrendSeries');
+    expect(chart).toContain('foldTrendTail');
+    expect(chart).toContain('ReferenceLine');
+    expect(chart).not.toContain('<LineChart');
     expect(chart).not.toContain('type="linear"');
     expect(chart).not.toContain('stroke={meta.color}');
     expect(chart).not.toContain('stopColor={meta.color}');
   });
 
-  it('switches the middle trend between Agent areas and model lines with cost', () => {
+  it('switches the middle trend between Agent areas and stacked model usage with cost', () => {
     const page = source('index.tsx');
     const chart = source('UsageTrendChart.tsx');
     expect(page).toContain('UsageTrendChart');
@@ -68,12 +73,14 @@ describe('dashboard layout wiring', () => {
     expect(chart).toContain('SegmentedControl');
     expect(chart).toContain('dashboard.page.trendGroupModel');
     expect(chart).not.toContain('dashboard.page.trendMetricCost');
-    expect(chart).toContain('<LineChart');
     expect(chart).toContain('fmtTrendCost');
     expect(chart).toContain('costFromTrendPoint');
+    expect(chart).toContain('dashboard.page.trendOther');
+    expect(chart).toContain('dashboard.page.trendToday');
   });
 
   it('keeps trend y-axis labels in view and sorts the hover list by tokens', () => {
+    const page = source('index.tsx');
     const chart = source('UsageTrendChart.tsx');
     const tooltip = source('UsageTrendTooltip.tsx');
     expect(chart).toContain('USAGE_TREND_Y_AXIS_WIDTH');
@@ -84,6 +91,13 @@ describe('dashboard layout wiring', () => {
     expect(tooltip).toContain('USAGE_TREND_Y_AXIS_WIDTH = 64');
     expect(tooltip).toContain('tooltipSurfaceStyle()');
     expect(tooltip).toContain("pointerEvents: 'auto'");
+    expect(tooltip).toContain('usageTrendHoverPoint');
+    expect(tooltip).toContain('usageTrendTipOffset');
+    expect(page).toContain('sm:grid-cols-3');
+    expect(page).not.toContain('lg:grid-cols-5');
+    expect(page).toContain('rounded-card bg-subtle');
+    expect(tooltip).toContain('dailyTotal');
+    expect(tooltip).toContain('cumulativeTotal');
   });
 
   it('marks Cursor overview cards as not managing authorization', () => {

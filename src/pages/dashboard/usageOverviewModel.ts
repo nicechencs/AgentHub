@@ -5,6 +5,7 @@ import type {
   UsageOverviewMetrics,
 } from '@/lib/backend/contracts/usage-types';
 import type { AgentKey, UsageRecord } from '@/lib/types';
+import type { UiLanguage } from '@/lib/i18n';
 import { canonicalUsageModel, usageModelsMatch } from '@/lib/usage-model';
 import { usageTokenParts } from '@/lib/usage-tokens';
 import type { UsageTrendGroup } from './usageTrendChartModel';
@@ -48,6 +49,65 @@ export function usageWindowBound(
   }
   const days = dateRange === '24h' ? 1 : dateRange === '7d' ? 7 : 30;
   return { days };
+}
+
+/** Local start/end of the selected window (matches overview/trend bounds). */
+export function usageWindowSpan(
+  dateRange: DateRange,
+  now = new Date(),
+): { start: Date; end: Date } {
+  if (dateRange === 'today') {
+    return { start: new Date(now.getFullYear(), now.getMonth(), now.getDate()), end: now };
+  }
+  if (dateRange === '24h') {
+    return { start: new Date(now.getTime() - 24 * 3600 * 1000), end: now };
+  }
+  const days = dateRange === '7d' ? 7 : 30;
+  const rollingStart = new Date(now.getTime() - days * 24 * 3600 * 1000);
+  return {
+    start: new Date(rollingStart.getFullYear(), rollingStart.getMonth(), rollingStart.getDate()),
+    end: now,
+  };
+}
+
+const EN_MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+] as const;
+
+function formatUsageDate(date: Date, lang: UiLanguage): string {
+  if (lang === 'zh') return `${date.getMonth() + 1}月${date.getDate()}日`;
+  return `${EN_MONTHS[date.getMonth()]} ${date.getDate()}`;
+}
+
+function isSameLocalDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+/** Visible range next to the time presets, e.g. `8月28日 – 9月3日`. */
+export function formatUsageWindowLabel(
+  dateRange: DateRange,
+  lang: UiLanguage,
+  now = new Date(),
+): string {
+  const { start, end } = usageWindowSpan(dateRange, now);
+  const left = formatUsageDate(start, lang);
+  if (isSameLocalDay(start, end)) return left;
+  return `${left} – ${formatUsageDate(end, lang)}`;
 }
 
 /** Drop omitted-agent slices (hidden / uninstalled) when grouping by agent, then re-sum. */

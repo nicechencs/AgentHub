@@ -18,6 +18,15 @@ function formatLocalBucket(d: Date, grain: TrendGrain): string {
   return grain === 'day' ? day : `${day} ${pad2(d.getHours())}:00`;
 }
 
+/** Current local bucket for a Today marker (day or current hour). */
+export function todayTrendBucket(now = new Date(), grain: TrendGrain = 'day'): string {
+  return formatLocalBucket(now, grain);
+}
+
+export function trendPointGrain(date: string): TrendGrain {
+  return HOURLY_BUCKET.test(date) ? 'hour' : 'day';
+}
+
 /** Local hour (`YYYY-MM-DD HH:00`) or calendar day (`YYYY-MM-DD`). */
 export function localTrendBucket(iso: string, grain: TrendGrain): string | null {
   const d = new Date(iso);
@@ -79,6 +88,7 @@ export interface UsageTrendTooltipItem {
   tokens: number;
   formatted?: string;
   extra?: string;
+  share?: string;
   color?: string;
 }
 

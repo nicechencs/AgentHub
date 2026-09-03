@@ -6,7 +6,9 @@ import {
   formatTrendTooltipLabel,
   localTrendBucket,
   sortUsageTrendTooltipItems,
+  todayTrendBucket,
   trendGrain,
+  trendPointGrain,
   usageTrendTooltipItemsFromPayload,
   zeroFillTrendSeries,
 } from './usage-trend';
@@ -55,6 +57,16 @@ describe('localTrendBucket', () => {
     expect(localTrendBucket(iso, 'hour')).toBe('2026-08-26 09:00');
     expect(localTrendBucket(iso, 'day')).toBe('2026-08-26');
     expect(localTrendBucket('not-a-date', 'hour')).toBeNull();
+  });
+});
+
+describe('todayTrendBucket', () => {
+  it('formats the current local day or hour', () => {
+    const now = new Date(2026, 8, 3, 17, 38, 0);
+    expect(todayTrendBucket(now, 'day')).toBe('2026-09-03');
+    expect(todayTrendBucket(now, 'hour')).toBe('2026-09-03 17:00');
+    expect(trendPointGrain('2026-09-03')).toBe('day');
+    expect(trendPointGrain('2026-09-03 17:00')).toBe('hour');
   });
 });
 
