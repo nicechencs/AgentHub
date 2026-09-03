@@ -1,8 +1,8 @@
 //! Skill projection Tauri commands — thin wrappers over agenthub-core.
 
 use agenthub_core::models::{
-    AgentId, InstalledSkill, Skill, SkillListing, SkillMarkdownPreview, SkillProjectMode,
-    SkillProjectResult,
+    AgentId, InstalledSkill, Skill, SkillListing, SkillMarkdownPreview, SkillProjectionMode,
+    SkillProjectionResult,
 };
 use agenthub_core::AgentHub;
 use tauri::State;
@@ -198,29 +198,29 @@ pub async fn update_skill(state: State<'_, AppState>, skill_id: String) -> Resul
     .await
 }
 
-/// Invoke: `project_skill`
+/// Invoke: `apply_skill_projection` — sync a shared skill onto an Agent.
 #[tauri::command]
-pub async fn project_skill(
+pub async fn apply_skill_projection(
     state: State<'_, AppState>,
     skill_id: String,
     agent_id: String,
     mode: Option<String>,
-) -> Result<SkillProjectResult, String> {
+) -> Result<SkillProjectionResult, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
         let agent = parse_agent(&agent_id)?;
         let mode = match mode.as_deref() {
-            None | Some("") | Some("link") => SkillProjectMode::Link,
-            Some("copy") => SkillProjectMode::Copy,
+            None | Some("") | Some("link") => SkillProjectionMode::Link,
+            Some("copy") => SkillProjectionMode::Copy,
             Some(other) => {
                 let msg = format!("invalid project mode '{other}', expected: link|copy");
-                tracing::warn!(target: targets::GUI, op = "project_skill", "{msg}");
+                tracing::warn!(target: targets::GUI, op = "apply_skill_projection", "{msg}");
                 return Err(msg);
             }
         };
         hub.skills()
-            .project_skill(&skill_id, agent, mode)
-            .map_err(|e| map_err_string("project_skill", e))
+            .apply_skill_projection(&skill_id, agent, mode)
+            .map_err(|e| map_err_string("apply_skill_projection", e))
     })
     .await
 }
@@ -363,8 +363,8 @@ fn sync_skill_inner(
     let agent = parse_agent(agent_id)?;
     let mode = match mode.map(str::trim).filter(|s| !s.is_empty()) {
         None => None,
-        Some("link") => Some(SkillProjectMode::Link),
-        Some("copy") => Some(SkillProjectMode::Copy),
+        Some("link") => Some(SkillProjectionMode::Link),
+        Some("copy") => Some(SkillProjectionMode::Copy),
         Some(other) => {
             return Err(format!(
                 "invalid project mode '{other}', expected: link|copy"

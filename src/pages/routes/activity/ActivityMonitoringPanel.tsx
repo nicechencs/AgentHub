@@ -4,7 +4,7 @@ import { EmptyState } from '@/components/shared/EmptyState';
 import { RouteTracePipelineLegend } from '@/components/shared/RouteTracePipelineLegend';
 import { buttonVariants } from '@/components/ui/button';
 import { TableSkeleton } from '@/components/ui/skeleton';
-import { ROUTES_POOL_PATH } from '@/lib/bridges-path';
+import { ROUTES_POOL_PATH } from '@/lib/routes-path';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { uniquePoolDisplayLabels, uniqueTraceUpstreamUrls } from '@/components/shared/route-trace-visual-model';

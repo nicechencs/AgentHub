@@ -26,18 +26,21 @@ import {
   tokenUsageDisplay,
 } from './token-detail-model';
 import { tokenTypeLabel, type LocalTokenRow } from './tokens-model';
+import { TokenImportToAgentButton } from './TokenImportToAgentButton';
+import type { TokenImportAgentRef } from './token-import-model';
+import { StorageKey } from '@/lib/ui-preferences';
 
 type TokenColumnKey = 'type' | 'endpoint' | 'token' | 'lastPage' | 'usage';
 
 const WIDTH_SPECS: ColumnWidthSpec<TokenColumnKey>[] = [
   { key: 'type', defaultWidth: 168, minWidth: 112 },
   { key: 'endpoint', defaultWidth: 280, minWidth: 180 },
-  { key: 'token', defaultWidth: 220, minWidth: 148 },
+  { key: 'token', defaultWidth: 280, minWidth: 180 },
   { key: 'lastPage', defaultWidth: 180, minWidth: 120 },
   { key: 'usage', defaultWidth: 148, minWidth: 112 },
 ];
 
-const COLUMN_WIDTHS_STORAGE_KEY = 'agenthub.routes.tokens.columnWidths';
+const COLUMN_WIDTHS_STORAGE_KEY = StorageKey.routesTokensColumnWidths;
 
 function columnLabel(key: TokenColumnKey, t: ReturnType<typeof useI18n>['t']): string {
   if (key === 'type') return t('routes.tokens.fieldType');
@@ -51,10 +54,12 @@ export function TokenList({
   rows,
   activeId,
   onShowDetail,
+  installedAgents,
 }: {
   rows: readonly LocalTokenRow[];
   activeId?: string | null;
   onShowDetail?: (row: LocalTokenRow) => void;
+  installedAgents?: readonly TokenImportAgentRef[];
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -105,6 +110,7 @@ export function TokenList({
                   {renderColumn(spec.key, row, {
                     t,
                     toast,
+                    installedAgents,
                   })}
                 </TableCell>
               ))}
@@ -122,6 +128,7 @@ function renderColumn(
   ctx: {
     t: ReturnType<typeof useI18n>['t'];
     toast: ReturnType<typeof useToast>['toast'];
+    installedAgents?: readonly TokenImportAgentRef[];
   },
 ): ReactNode {
   const { t } = ctx;
@@ -200,6 +207,13 @@ function renderColumn(
         >
           <Copy className="h-3 w-3" aria-hidden />
         </Button>
+      ) : null}
+      {ctx.installedAgents ? (
+        <TokenImportToAgentButton
+          row={row}
+          installedAgents={ctx.installedAgents}
+          className="shrink-0"
+        />
       ) : null}
     </div>
   );

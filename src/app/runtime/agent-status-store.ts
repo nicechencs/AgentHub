@@ -3,7 +3,7 @@
  * state, not a per-page query.  Consumers subscribe to this store so route
  * changes do not turn one detect pass into several competing requests.
  */
-import type { AgentId, AgentStatus } from '@/lib/types';
+import type { AgentKey, AgentStatus } from '@/lib/types';
 import type { Backend } from '@/lib/backend/contracts';
 import {
   authDisplayForAgentStatus,
@@ -18,11 +18,49 @@ import type { LiveAuthProbe } from '@/lib/backend/contracts/ports';
 import { enrichStatusesWithConnections } from '@/lib/backend/contracts/agent-connection';
 import { logger } from '@/lib/logger';
 import {
-  getConnectionPoolSnapshot,
-  loadConnectionPool,
-} from './connection-pool-store';
+  getConnectionInventorySnapshot,
+  loadConnectionInventory,
+} from './connection-inventory-store';
 
 const log = logger.scope('runtime:agent-status');
+
+/** Cold start / hard refresh: IPC can fail once before the Rust side is ready. */
+const COLD_START_LIST_ATTEMPTS = 3;
+const COLD_START_RETRY_BASE_MS = 350;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+/**
+ * Retry only the initial probe. Forced refreshes stay fail-fast so focus
+ * handlers do not stretch a real outage into a multi-second hang.
+ */
+async function listAgentsWithColdStartRetry(
+  backend: Backend,
+  opts: { force?: boolean },
+): Promise<AgentStatus[]> {
+  const attempts = opts.force ? 1 : COLD_START_LIST_ATTEMPTS;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await backend.agent.listAgents();
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts) break;
+      log.warn('agent status load not ready yet; retrying', {
+        attempt,
+        attempts,
+        errorCode: errorCode(error),
+      });
+      await delay(COLD_START_RETRY_BASE_MS * attempt);
+    }
+  }
+  throw lastError;
+}
+
 
 export type AgentStatusLoadState = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -54,7 +92,7 @@ let snapshot: AgentStatusSnapshot = {
 let epoch = 0;
 let inflight: Promise<AgentStatus[]> | null = null;
 /** In-flight / unconfirmed visibility writes. Survives a stale listAgents. */
-const pendingHidden = new Map<AgentId, boolean>();
+const pendingHidden = new Map<AgentKey, boolean>();
 const listeners = new Set<Listener>();
 
 function emit(): void {
@@ -107,7 +145,7 @@ export function resetAgentStatusStore(): void {
  * A later listAgents that still carries the old bit cannot clobber this
  * until the backend result matches (or {@link revertAgentHidden} runs).
  */
-export function applyAgentHidden(agentId: AgentId, hidden: boolean): void {
+export function applyAgentHidden(agentId: AgentKey, hidden: boolean): void {
   pendingHidden.set(agentId, hidden);
   const current = snapshot.statuses.find((row) => row.agentId === agentId);
   if (!current || Boolean(current.hidden) === hidden) return;
@@ -120,7 +158,7 @@ export function applyAgentHidden(agentId: AgentId, hidden: boolean): void {
 }
 
 /** Undo {@link applyAgentHidden} when persist fails. */
-export function revertAgentHidden(agentId: AgentId, previous: boolean): void {
+export function revertAgentHidden(agentId: AgentKey, previous: boolean): void {
   pendingHidden.delete(agentId);
   setSnapshot({
     ...snapshot,
@@ -218,26 +256,26 @@ async function enrichWithLiveAuth(
   return { statuses: enriched, liveAuthProbes };
 }
 
-function canLoadConnectionPool(backend: Backend): boolean {
+function canLoadConnectionInventory(backend: Backend): boolean {
   return (
     typeof backend.account?.listAccounts === 'function' &&
     typeof backend.provider?.listProviders === 'function'
   );
 }
 
-async function mergeConnectionPool(
+async function mergeConnectionInventory(
   backend: Backend,
   statuses: AgentStatus[],
 ): Promise<AgentStatus[]> {
-  if (!canLoadConnectionPool(backend)) return statuses;
+  if (!canLoadConnectionInventory(backend)) return statuses;
   try {
-    const pool = await loadConnectionPool(backend);
+    const pool = await loadConnectionInventory(backend);
     return enrichStatusesWithConnections(statuses, pool.accounts, pool.providers);
   } catch (error) {
-    log.warn('connection pool merge failed; showing detect-only status', {
+    log.warn('connection inventory merge failed; showing detect-only status', {
       errorCode: errorCode(error),
     });
-    const pool = getConnectionPoolSnapshot();
+    const pool = getConnectionInventorySnapshot();
     return enrichStatusesWithConnections(statuses, pool.accounts, pool.providers);
   }
 }
@@ -294,8 +332,7 @@ export async function loadAgentStatuses(
   }
 
   let request!: Promise<AgentStatus[]>;
-  request = backend.agent
-    .listAgents()
+  request = listAgentsWithColdStartRetry(backend, opts)
     .then(async (statuses) => {
       if (startedEpoch !== epoch) return snapshot.statuses;
       // 三阶段：detect 先上屏；连接池复用共享 store；live-auth 最后补齐。
@@ -308,7 +345,7 @@ export async function loadAgentStatuses(
         error: null,
       });
 
-      const withPool = await mergeConnectionPool(backend, statuses);
+      const withPool = await mergeConnectionInventory(backend, statuses);
       if (startedEpoch !== epoch) return snapshot.statuses;
       setSnapshot({
         state: 'ready',

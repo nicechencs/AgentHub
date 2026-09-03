@@ -22,7 +22,7 @@ describe('importedSourceKeys', () => {
         targetAgentId: 'codex',
         surface: 'responses',
         dialect: 'codex',
-        v2Enrolled: false,
+        unifiedGatewayEnrolled: false,
         members: [{ sourceKind: 'account', sourceId: 'acc-1', enabled: true }],
       },
       {
@@ -30,7 +30,7 @@ describe('importedSourceKeys', () => {
         targetAgentId: 'claude',
         surface: 'messages',
         dialect: 'claude',
-        v2Enrolled: false,
+        unifiedGatewayEnrolled: false,
         members: [{ sourceKind: 'provider', sourceId: 'p-1', enabled: true }],
       },
     ];

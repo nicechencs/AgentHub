@@ -53,7 +53,7 @@ describe('sortable drag wiring', () => {
     expect(html).not.toContain('draggable="true"');
   });
 
-  it('paints the grip with a brand color when given one', () => {
+  it('keeps the grip neutral when a legacy brand color is given', () => {
     const html = renderToStaticMarkup(
       createElement(
         TooltipProvider,
@@ -65,8 +65,8 @@ describe('sortable drag wiring', () => {
         }),
       ),
     );
-    expect(html).toContain('var(--agent-claude)');
-    expect(html).not.toContain('text-muted');
+    expect(html).not.toContain('var(--agent-claude)');
+    expect(html).toContain('text-muted');
   });
 
   it('turns off Tauri HTML5 file-drop interception on the main window', () => {

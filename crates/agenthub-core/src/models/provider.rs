@@ -62,6 +62,70 @@ pub struct Provider {
     pub updated_at: String,
 }
 
+/// Kind of live-vs-pool binding notice after a read-side heal pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AdapterBindingHealKind {
+    Healed,
+    Conflict,
+}
+
+/// GUI/CLI notice when live settings realign or disagree with the current login.
+///
+/// `live_hint` is a probe URL only — never a bearer or API key.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterBindingHealNotice {
+    pub kind: AdapterBindingHealKind,
+    pub agent: AgentId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live_hint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_key: Option<String>,
+}
+
+impl AdapterBindingHealNotice {
+    pub fn healed(
+        agent: AgentId,
+        from_id: Option<String>,
+        from_name: Option<String>,
+        to_id: String,
+        to_name: String,
+    ) -> Self {
+        Self {
+            kind: AdapterBindingHealKind::Healed,
+            agent,
+            from_id,
+            from_name,
+            to_id: Some(to_id),
+            to_name: Some(to_name),
+            live_hint: None,
+            message_key: Some("connections.healAligned".into()),
+        }
+    }
+
+    pub fn conflict(agent: AgentId, live_hint: Option<String>) -> Self {
+        Self {
+            kind: AdapterBindingHealKind::Conflict,
+            agent,
+            from_id: None,
+            from_name: None,
+            to_id: None,
+            to_name: None,
+            live_hint,
+            message_key: Some("connections.healConflict".into()),
+        }
+    }
+}
+
 /// Write-side input for create / update / upsert.
 ///
 /// Timestamps are owned by core and intentionally absent here.

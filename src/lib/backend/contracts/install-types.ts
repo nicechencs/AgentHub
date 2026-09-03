@@ -1,4 +1,4 @@
-import type { AgentId, RuntimeId } from '@/lib/types';
+import type { AgentKey, RuntimeId } from '@/lib/types';
 import type { DoctorDetectResult, DoctorEnvStatus } from './doctor-types';
 
 export interface InstallOutcome {
@@ -14,20 +14,25 @@ export interface InstallOutcome {
   details?: unknown;
 }
 
-/** Live install/upgrade/uninstall log line from the desktop event stream. */
+/** Live install/upgrade/uninstall raw UTF-8 output chunk from the desktop event stream. */
 export interface InstallProgressPayload {
   agentId?: string | null;
   action?: string;
-  line: string;
+  /** May be a partial line, empty string, or multi-line block. */
+  chunk: string;
 }
 
-/** Filter helper: only lines for this agent (runtime-only lines have a null agentId). */
+/** Filter helper: only chunks for this agent (runtime-only chunks have a null agentId). */
 export function isProgressForAgent(
   payload: InstallProgressPayload,
-  agentId: AgentId,
+  agentId: AgentKey,
 ): boolean {
   if (!payload.agentId) return false;
   return payload.agentId === agentId;
+}
+
+export function installProgressChunk(payload: InstallProgressPayload): string {
+  return typeof payload.chunk === 'string' ? payload.chunk : '';
 }
 
 /** Mirrors core `catalog::InstallChannelPlan`. */
@@ -40,6 +45,6 @@ export interface InstallChannelPlanDto {
 
 /** Mirrors core `catalog::AgentInstallCatalogEntry`. */
 export interface AgentInstallCatalogEntryDto {
-  agentId: AgentId;
+  agentId: AgentKey;
   channels: InstallChannelPlanDto[];
 }

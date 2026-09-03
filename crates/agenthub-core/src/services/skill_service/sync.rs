@@ -6,7 +6,7 @@ use std::time::Instant;
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
-    AgentId, SkillAction, SkillFailure, SkillProjectMode, SkillSyncReport, SkillSyncState,
+    AgentId, SkillAction, SkillFailure, SkillProjectionMode, SkillSyncReport, SkillSyncState,
 };
 use crate::platform::skills::{
     chrono_now, ensure_no_symlink_in_ancestors, ensure_no_symlink_in_existing_prefix,
@@ -50,18 +50,18 @@ impl SkillService {
         skill_id: &str,
         agent: AgentId,
         force: bool,
-        mode: Option<SkillProjectMode>,
+        mode: Option<SkillProjectionMode>,
     ) -> Result<()> {
         let started = Instant::now();
         let result = (|| {
             let skill_id = validate_skill_id(skill_id)?;
             if self.db.is_some() {
                 self.sync_via_assignment(skill_id, agent, force, mode)
-            } else if mode == Some(SkillProjectMode::Link) {
-                self.project_skill(skill_id, agent, SkillProjectMode::Link)
+            } else if mode == Some(SkillProjectionMode::Link) {
+                self.apply_skill_projection(skill_id, agent, SkillProjectionMode::Link)
                     .map(|_| ())
             } else {
-                if mode == Some(SkillProjectMode::Copy) {
+                if mode == Some(SkillProjectionMode::Copy) {
                     self.replace_correct_link_with_copy_if_needed(skill_id, agent)?;
                 }
                 self.sync_projection(skill_id, agent, force)
@@ -306,7 +306,7 @@ impl SkillService {
         skill_id: &str,
         agent: AgentId,
         force: bool,
-        mode: Option<SkillProjectMode>,
+        mode: Option<SkillProjectionMode>,
     ) -> Result<()> {
         let now = chrono_now();
         let (assign, reconciler) = self.assignment_stack()?;
@@ -314,7 +314,7 @@ impl SkillService {
         let record = lock.get(skill_id);
         let agent_key = AgentKey::from_agent_id(agent);
         assign.ensure_package(skill_id, record, &now)?;
-        if mode == Some(SkillProjectMode::Copy) {
+        if mode == Some(SkillProjectionMode::Copy) {
             self.replace_correct_link_with_copy_if_needed(skill_id, agent)?;
         }
         assign.set_desired_enabled(skill_id, &agent_key, true, mode.map(|m| m.as_str()), &now)?;

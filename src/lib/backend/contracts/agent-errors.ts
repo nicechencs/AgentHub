@@ -1,13 +1,13 @@
 import type { InstallOutcome } from './install-types';
-import type { AgentId, RuntimeId } from '@/lib/types';
+import type { AgentKey, RuntimeId } from '@/lib/types';
 
 export class EnvNotReadyError extends Error {
   readonly code = 'env.not_ready';
   readonly missing: RuntimeId[];
   readonly channel: string;
-  readonly agent: AgentId;
+  readonly agent: AgentKey;
 
-  constructor(agent: AgentId, channel: string, missing: RuntimeId[]) {
+  constructor(agent: AgentKey, channel: string, missing: RuntimeId[]) {
     super(
       `环境未就绪:安装 ${agent}(${channel}) 需要 ${missing.join(', ')}。请先安装运行环境或使用 --install-deps。`,
     );

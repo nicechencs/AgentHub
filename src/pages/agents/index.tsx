@@ -22,18 +22,18 @@ import { StorageKey } from '@/lib/ui-preferences';
 import { tryRefreshDoctor } from '@/lib/api/doctor';
 import { listRuntimes, resolveAutoInstallPlan } from '@/lib/api/env';
 import { hasEnvIssues } from '@/lib/env';
-import type { AgentId, AgentStatus, AgentUpdateInfo, RuntimeDetect, RuntimeId } from '@/lib/types';
+import type { AgentKey, AgentStatus, AgentUpdateInfo, RuntimeDetect, RuntimeId } from '@/lib/types';
 import { AgentCard } from './agent-card';
 import { AgentDetailPanel } from './AgentDetailPanel';
 
-const AGENTS_PREVIEW_WIDTH_KEY = 'agenthub.agents.previewWidth';
+const AGENTS_PREVIEW_WIDTH_KEY = StorageKey.agentsPreviewWidth;
 
 /** Agents 安装管理页 — 环境检测 + Agent 安装（backend 由构建时 composition root 选择） */
 export default function AgentsPage() {
   const { t } = useI18n();
   const { state, statuses, error, reload } = useAgentStatuses();
   const [updateById, setUpdateById] = React.useState<
-    Partial<Record<AgentId, AgentUpdateInfo>>
+    Partial<Record<AgentKey, AgentUpdateInfo>>
   >({});
   const [runtimes, setRuntimes] = React.useState<RuntimeDetect[]>([]);
   const [envLoading, setEnvLoading] = React.useState(true);
@@ -139,7 +139,7 @@ export default function AgentsPage() {
     })();
   }, [reload, mergeUpdates]);
 
-  const refreshAgentUpdate = React.useCallback((agentId: AgentId) => {
+  const refreshAgentUpdate = React.useCallback((agentId: AgentKey) => {
     void (async () => {
       try {
         const updates = await checkAgentUpdates([agentId], true);
@@ -221,7 +221,7 @@ export default function AgentsPage() {
   const showAgentSkeleton = statuses.length === 0 && (state === 'idle' || state === 'loading');
   const pageError =
     statuses.length === 0 ? (state === 'error' ? error : envError) : null;
-  const inspect = useSideSplit<AgentId>({ storageKey: AGENTS_PREVIEW_WIDTH_KEY });
+  const inspect = useSideSplit<AgentKey>({ storageKey: AGENTS_PREVIEW_WIDTH_KEY });
   const inspectAgent = orderedAgents.find((row) => row.agentId === inspect.target);
 
   React.useEffect(() => {

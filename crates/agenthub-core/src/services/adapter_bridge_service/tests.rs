@@ -367,7 +367,7 @@ fn prepare_project_finalize_and_restore_keep_source_secret_out_of_persistence() 
     assert_eq!(start.port, 0);
     assert_eq!(start.upstream.base_url, KIMI_CHAT_BASE_URL);
     assert_eq!(
-        start.upstream.source_connection_id.as_deref(),
+        start.upstream.source_id.as_deref(),
         Some("kimi-membership")
     );
 
@@ -1008,7 +1008,7 @@ async fn bound_health_rejects_upstream_auth_before_a_provider_switch() {
     let (upstream_port, upstream_task) = health_upstream(StatusCode::UNAUTHORIZED).await;
     let mut material = AdapterBridgeRuntimeMaterial {
         profile_id: "health-profile".into(),
-        source_connection_id: "kimi-membership".into(),
+        source_id: "kimi-membership".into(),
         preferred_port: None,
         upstream_base_url: format!("http://127.0.0.1:{upstream_port}"),
         upstream_model: "kimi-k2.5".into(),
@@ -1046,7 +1046,7 @@ async fn bound_health_does_not_forward_anthropic_key_across_redirect() {
         redirecting_health_upstream().await;
     let mut material = AdapterBridgeRuntimeMaterial {
         profile_id: "redirect-health-profile".into(),
-        source_connection_id: "anthropic-source".into(),
+        source_id: "anthropic-source".into(),
         preferred_port: None,
         upstream_base_url: format!("http://127.0.0.1:{upstream_port}"),
         upstream_model: "claude-test".into(),
@@ -1175,7 +1175,7 @@ async fn models_health_rejects_chunked_response_over_one_mib() {
 async fn codex_responses_health_probe_does_not_request_models() {
     let mut material = AdapterBridgeRuntimeMaterial {
         profile_id: "codex-health-profile".into(),
-        source_connection_id: "codex-subscription".into(),
+        source_id: "codex-subscription".into(),
         preferred_port: None,
         upstream_base_url: "http://127.0.0.1:9/should-not-be-called".into(),
         upstream_model: CODEX_DEFAULT_MODEL.into(),
@@ -1209,7 +1209,7 @@ async fn codex_responses_health_probe_does_not_request_models() {
 async fn xai_responses_health_probe_does_not_request_models() {
     let mut material = AdapterBridgeRuntimeMaterial {
         profile_id: "grok-health-profile".into(),
-        source_connection_id: "grok-subscription".into(),
+        source_id: "grok-subscription".into(),
         preferred_port: None,
         upstream_base_url: "http://127.0.0.1:9/should-not-be-called".into(),
         upstream_model: crate::bridge::grok_cli::GROK_CLI_DEFAULT_MODEL.into(),
@@ -1243,7 +1243,7 @@ async fn xai_responses_health_probe_does_not_request_models() {
 async fn deepseek_health_probe_skips_upstream_models() {
     let mut material = AdapterBridgeRuntimeMaterial {
         profile_id: "deepseek-health-profile".into(),
-        source_connection_id: "deepseek-create".into(),
+        source_id: "deepseek-create".into(),
         preferred_port: None,
         upstream_base_url: "https://api.deepseek.com/anthropic".into(),
         upstream_model: "deepseek-chat".into(),
@@ -1277,7 +1277,7 @@ async fn deepseek_health_probe_skips_upstream_models() {
 fn start_spec_lists_codex_to_grok_dispatch_accepted_ids() {
     let material = AdapterBridgeRuntimeMaterial {
         profile_id: "codex-grok-models".into(),
-        source_connection_id: "codex-subscription".into(),
+        source_id: "codex-subscription".into(),
         preferred_port: None,
         upstream_base_url: CHATGPT_CODEX_BASE_URL.into(),
         upstream_model: String::new(),
@@ -1322,7 +1322,7 @@ fn start_spec_lists_codex_to_grok_dispatch_accepted_ids() {
 fn start_spec_lists_grok_default_when_mapping_entries_empty() {
     let material = AdapterBridgeRuntimeMaterial {
         profile_id: "grok-claude-models".into(),
-        source_connection_id: "grok-subscription".into(),
+        source_id: "grok-subscription".into(),
         preferred_port: None,
         upstream_base_url: crate::bridge::grok_cli::GROK_CLI_PROXY_BASE_URL.into(),
         upstream_model: crate::bridge::grok_cli::GROK_CLI_DEFAULT_MODEL.into(),
@@ -1351,7 +1351,7 @@ fn start_spec_lists_grok_default_when_mapping_entries_empty() {
 fn start_spec_lists_codex_to_kimi_dispatch_accepted_ids() {
     let material = AdapterBridgeRuntimeMaterial {
         profile_id: "codex-kimi-catalog-models".into(),
-        source_connection_id: "codex-subscription".into(),
+        source_id: "codex-subscription".into(),
         preferred_port: None,
         upstream_base_url: CHATGPT_CODEX_BASE_URL.into(),
         upstream_model: String::new(),
@@ -1380,7 +1380,7 @@ fn start_spec_lists_codex_to_kimi_dispatch_accepted_ids() {
 fn start_spec_codex_to_kimi_configured_default_merges_into_catalog() {
     let material = AdapterBridgeRuntimeMaterial {
         profile_id: "codex-kimi-default-models".into(),
-        source_connection_id: "codex-subscription".into(),
+        source_id: "codex-subscription".into(),
         preferred_port: None,
         upstream_base_url: CHATGPT_CODEX_BASE_URL.into(),
         upstream_model: "gpt-5.4".into(),
@@ -1409,7 +1409,7 @@ fn start_spec_codex_to_kimi_configured_default_merges_into_catalog() {
 fn start_spec_lists_openai_to_codex_without_kimi_ids() {
     let material = AdapterBridgeRuntimeMaterial {
         profile_id: "openai-codex-models".into(),
-        source_connection_id: "openai-api".into(),
+        source_id: "openai-api".into(),
         preferred_port: None,
         upstream_base_url: OPENAI_CHAT_BASE_URL.into(),
         upstream_model: OPENAI_DEFAULT_MODEL.into(),
@@ -2246,7 +2246,7 @@ fn legacy_toml_with_drifted_port_still_conflicts() {
 fn start_spec_does_not_inject_retired_openrouter_backup() {
     let material = AdapterBridgeRuntimeMaterial {
         profile_id: "openrouter-codex-models".into(),
-        source_connection_id: "openrouter".into(),
+        source_id: "openrouter".into(),
         preferred_port: None,
         upstream_base_url: "https://openrouter.ai/api/v1".into(),
         upstream_model: OPENAI_DEFAULT_MODEL.into(),
@@ -2276,7 +2276,7 @@ fn start_spec_does_not_inject_retired_openrouter_backup() {
 fn start_spec_keeps_every_user_listed_model() {
     let material = AdapterBridgeRuntimeMaterial {
         profile_id: "openrouter-listed".into(),
-        source_connection_id: "openrouter".into(),
+        source_id: "openrouter".into(),
         preferred_port: None,
         upstream_base_url: "https://openrouter.ai/api/v1".into(),
         upstream_model: "openai/gpt-4o".into(),
@@ -2307,7 +2307,7 @@ fn start_spec_keeps_every_user_listed_model() {
 fn start_spec_strips_claude_1m_marker_from_listed_models() {
     let material = AdapterBridgeRuntimeMaterial {
         profile_id: "openrouter-1m".into(),
-        source_connection_id: "openrouter".into(),
+        source_id: "openrouter".into(),
         preferred_port: None,
         upstream_base_url: "https://openrouter.ai/api/v1".into(),
         upstream_model: "stealth/ox-alpha".into(),
@@ -2335,7 +2335,7 @@ fn start_spec_strips_claude_1m_marker_from_listed_models() {
 fn start_spec_official_openai_does_not_list_stealth() {
     let material = AdapterBridgeRuntimeMaterial {
         profile_id: "openai-official".into(),
-        source_connection_id: "openai-api".into(),
+        source_id: "openai-api".into(),
         preferred_port: None,
         upstream_base_url: OPENAI_CHAT_BASE_URL.into(),
         upstream_model: OPENAI_DEFAULT_MODEL.into(),
@@ -2558,7 +2558,7 @@ fn production_start_spec_attaches_index_when_flags_on_and_pool_enrolled() {
         "unenrolled pool must not attach an index"
     );
     RoutePoolService::new(db.clone())
-        .enroll_v2(&prepared.profile().id, 43155)
+        .enroll_unified_gateway(&prepared.profile().id, 43155)
         .unwrap();
     let prepared = service.prepare(&request("kimi-membership")).unwrap();
     let spec = prepared.runtime_material().start_spec(Some(0));
@@ -2583,7 +2583,7 @@ fn production_start_spec_attaches_pool_schedule_policy() {
     let service = AdapterBridgeService::new(db.clone());
     let prepared = service.prepare(&request("kimi-membership")).unwrap();
     RoutePoolService::new(db.clone())
-        .enroll_v2(&prepared.profile().id, 43155)
+        .enroll_unified_gateway(&prepared.profile().id, 43155)
         .unwrap();
     let mut pool = RoutePoolService::new(db.clone())
         .get(&prepared.profile().id)
@@ -2752,7 +2752,7 @@ fn production_start_spec_skips_index_when_route_index_flag_is_off() {
     let service = AdapterBridgeService::new(db.clone());
     let prepared = service.prepare(&request("kimi-membership")).unwrap();
     RoutePoolService::new(db.clone())
-        .enroll_v2(&prepared.profile().id, 43155)
+        .enroll_unified_gateway(&prepared.profile().id, 43155)
         .unwrap();
     let prepared = service.prepare(&request("kimi-membership")).unwrap();
     assert!(
@@ -2823,7 +2823,7 @@ fn production_index_uses_each_member_listed_models_not_the_lead_catalog() {
             "openai-b",
         )
         .unwrap();
-    pools.enroll_v2(&prepared.profile().id, 43155).unwrap();
+    pools.enroll_unified_gateway(&prepared.profile().id, 43155).unwrap();
     let prepared = service
         .prepare(&openai_request(AdapterSourceKind::Provider, "openai-a"))
         .unwrap();
@@ -2903,7 +2903,7 @@ fn production_index_labels_members_by_their_own_provider() {
             Some("shared"),
         )
         .unwrap();
-    pools.enroll_v2(&prepared.profile().id, 43155).unwrap();
+    pools.enroll_unified_gateway(&prepared.profile().id, 43155).unwrap();
     let prepared = service
         .prepare(&grok_codex_account_request("grok-subscription"))
         .unwrap();
@@ -2955,7 +2955,7 @@ fn production_index_omits_sibling_when_member_snapshot_fails() {
             "openai-missing",
         )
         .unwrap();
-    pools.enroll_v2(&prepared.profile().id, 43155).unwrap();
+    pools.enroll_unified_gateway(&prepared.profile().id, 43155).unwrap();
     let prepared = service
         .prepare(&openai_request(AdapterSourceKind::Provider, "openai-a"))
         .unwrap();
@@ -3000,7 +3000,7 @@ fn attach_keeps_last_successful_sibling_when_prior_index_is_present() {
             "openai-b",
         )
         .unwrap();
-    pools.enroll_v2(&prepared.profile().id, 43155).unwrap();
+    pools.enroll_unified_gateway(&prepared.profile().id, 43155).unwrap();
     let prepared = service
         .prepare(&openai_request(AdapterSourceKind::Provider, "openai-a"))
         .unwrap();

@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Tip } from '@/components/ui/tooltip';
 import type { AgentMeta } from '@/config/agents';
 import { verifiedProjectWorkspacePath } from '@/lib/path-open';
-import type { AgentId, AgentProject, AgentSession } from '@/lib/types';
+import type { AgentKey, AgentProject, AgentSession } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
   displayTitle,
@@ -21,7 +21,7 @@ import { ProjectPathLink } from './ProjectPathLink';
 import { ProjectSessionRow } from './ProjectSessionRow';
 
 export type ProjectTreeProps = {
-  agentId: AgentId;
+  agentId: AgentKey;
   agentMeta: AgentMeta | undefined;
   projects: AgentProject[];
   expanded: Set<string>;

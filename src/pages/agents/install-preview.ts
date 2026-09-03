@@ -2,7 +2,7 @@ import { AGENT_MAP } from '@/config/agents';
 import { RUNTIME_MAP } from '@/config/runtimes';
 import { runtimeChannelForPlan } from '@/lib/env-plan';
 import { detectHostPlatform, type HostPlatform } from '@/lib/platform-detect';
-import type { AgentId, RuntimeId } from '@/lib/types';
+import type { AgentKey, RuntimeId } from '@/lib/types';
 
 /**
  * Feature-local install command preview (copy / display only).
@@ -13,7 +13,7 @@ import type { AgentId, RuntimeId } from '@/lib/types';
  * The CLI entrypoint remains `agenthub agent upgrade` on every host.
  */
 export function buildAgentInstallPreview(
-  agentId: AgentId,
+  agentId: AgentKey,
   action: 'install' | 'upgrade',
   channel?: string,
   platform: HostPlatform = detectHostPlatform(),

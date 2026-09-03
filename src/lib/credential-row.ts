@@ -22,7 +22,7 @@ import {
   type TicketView,
 } from '@/lib/backend/contracts/ticket';
 import type { TranslateFn } from '@/lib/i18n';
-import type { Account, AgentId, AuthStatus, Provider } from '@/lib/types';
+import type { Account, AgentKey, AuthStatus, Provider } from '@/lib/types';
 
 /** Stable auth summary shared by list / picker / wallet projections. */
 export type CredentialRowAuth = {
@@ -40,7 +40,7 @@ export type CredentialRow = {
   key: string;
   source: 'account' | 'provider';
   id: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   title: string;
   subtitle: string;
   isCurrent: boolean;

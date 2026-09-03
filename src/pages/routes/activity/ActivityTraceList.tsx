@@ -16,7 +16,7 @@ import {
   TableShell,
   useColumnWidths,
 } from '@/components/ui/table';
-import { formatInboundAt } from '@/pages/bridges/route-endpoint-copy';
+import { formatInboundAt } from '@/pages/routes/shared/route-endpoint-copy';
 import {
   ACTIVITY_TRACE_COLUMN_WIDTHS_STORAGE_KEY,
   ACTIVITY_TRACE_STAGES,

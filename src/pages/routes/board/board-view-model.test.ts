@@ -8,7 +8,7 @@ import {
   boardLifetimeSummaryLabel,
   boardRecentSummaryLabel,
   buildBoardEndpointTypeRows,
-  buildLocalEntryControl,
+  buildLocalGatewayControl,
   buildRouteBoardStatusRows,
   mergeRecentInbound,
   parseActivityFilter,
@@ -21,7 +21,7 @@ function pool(partial: Partial<DefaultRoutePoolOverview> & Pick<DefaultRoutePool
     targetAgentId: 'codex',
     surface: 'responses',
     dialect: 'codex',
-    v2Enrolled: false,
+    unifiedGatewayEnrolled: false,
     members: [{ sourceKind: 'account', sourceId: 'acc-1', enabled: true }],
     listedModels: [],
     ...partial,
@@ -46,9 +46,9 @@ function profile(partial: Partial<AdapterProfile> & Pick<AdapterProfile, 'id'>):
   };
 }
 
-describe('buildLocalEntryControl', () => {
-  it('has no master action when there is no local entry', () => {
-    expect(buildLocalEntryControl([], {})).toMatchObject({
+describe('buildLocalGatewayControl', () => {
+  it('has no master action when there is no local gateway', () => {
+    expect(buildLocalGatewayControl([], {})).toMatchObject({
       action: null,
       running: false,
       profileIds: [],
@@ -56,8 +56,8 @@ describe('buildLocalEntryControl', () => {
     });
   });
 
-  it('keeps the local-entry switch operable when pool logins exist without a listener', () => {
-    expect(buildLocalEntryControl([], {}, new Set(), [pool({ id: 'pool-1' })])).toMatchObject({
+  it('keeps the local-gateway switch operable when pool logins exist without a listener', () => {
+    expect(buildLocalGatewayControl([], {}, new Set(), [pool({ id: 'pool-1' })])).toMatchObject({
       action: 'start',
       running: false,
       startIds: [],
@@ -66,7 +66,7 @@ describe('buildLocalEntryControl', () => {
   });
 
   it('starts all stopped listeners and stops when any listener is up', () => {
-    const stopped = buildLocalEntryControl(
+    const stopped = buildLocalGatewayControl(
       [profile({ id: 'a' }), profile({ id: 'b', targetAgentId: 'codex' })],
       {
         a: { profileId: 'a', state: 'stopped' },
@@ -80,7 +80,7 @@ describe('buildLocalEntryControl', () => {
       startIds: ['a', 'b'],
       stopIds: [],
     });
-    const mixed = buildLocalEntryControl(
+    const mixed = buildLocalGatewayControl(
       [profile({ id: 'a' }), profile({ id: 'b', targetAgentId: 'codex' })],
       {
         a: { profileId: 'a', state: 'running' },
@@ -97,13 +97,28 @@ describe('buildLocalEntryControl', () => {
   });
 
   it('omits hidden target agents', () => {
-    const control = buildLocalEntryControl(
+    const control = buildLocalGatewayControl(
       [profile({ id: 'cursor', targetAgentId: 'cursor' })],
       { cursor: { profileId: 'cursor', state: 'stopped' } },
       new Set(['cursor']),
     );
     expect(control.action).toBeNull();
     expect(control.profileIds).toEqual([]);
+  });
+
+  it('treats restore restarting as transitioning', () => {
+    const control = buildLocalGatewayControl(
+      [profile({ id: 'a' })],
+      { a: { profileId: 'a', state: 'stopped' } },
+      new Set(),
+      [],
+      true,
+    );
+    expect(control).toMatchObject({
+      restarting: true,
+      transitioning: true,
+      running: false,
+    });
   });
 });
 

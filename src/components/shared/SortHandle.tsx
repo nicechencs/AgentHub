@@ -9,14 +9,13 @@ export function SortHandle({
   disabled,
   onDragStartId,
   onMoveNeighbor,
-  color,
   className,
 }: {
   id: string;
   disabled?: boolean;
   onDragStartId: (id: string, event: PointerEvent<HTMLSpanElement>) => void;
   onMoveNeighbor?: (id: string, direction: -1 | 1) => void;
-  /** Brand color for the six-dot grip; omit to keep the muted default. */
+  /** Kept for caller compatibility; sort grips intentionally stay neutral. */
   color?: string;
   className?: string;
 }) {
@@ -42,15 +41,19 @@ export function SortHandle({
         aria-label={t('common.reorder')}
         onPointerDown={(event) => onDragStartId(id, event)}
         onKeyDown={onKeyDown}
-        style={color ? { color } : undefined}
         className={cn(
-          'inline-flex h-7 w-5 shrink-0 cursor-grab touch-none select-none items-center justify-center rounded-btn',
-          color ? 'hover:bg-hover' : 'text-muted hover:bg-hover hover:text-primary',
+          'inline-flex h-7 w-5 shrink-0 cursor-grab touch-none select-none items-center justify-center rounded-btn text-muted transition-colors hover:bg-hover hover:text-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30',
           'active:cursor-grabbing',
           className,
         )}
       >
-        <GripVertical className="pointer-events-none h-4 w-4" aria-hidden />
+        <GripVertical
+          size={16}
+          strokeWidth={1.6}
+          absoluteStrokeWidth
+          className="pointer-events-none"
+          aria-hidden
+        />
       </span>
     </Hint>
   );

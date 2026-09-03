@@ -7,12 +7,6 @@
  */
 export type AgentKey = string;
 
-/**
- * @deprecated Prefer {@link AgentKey}. Kept as an alias so existing imports keep
- * compiling while the closed union is removed — any catalog key is allowed.
- */
-export type AgentId = AgentKey;
-
 /** Known built-in keys (display tokens only; not the product set source of truth). */
 export const KNOWN_AGENT_IDS = [
   'claude',
@@ -85,7 +79,7 @@ export type AgentUpdateState =
   | 'checking';
 
 export interface AgentUpdateInfo {
-  agentId: AgentId;
+  agentId: AgentKey;
   state: AgentUpdateState;
   currentVersion?: string;
   latestVersion?: string;
@@ -98,7 +92,7 @@ export interface AgentUpdateInfo {
 }
 
 export interface AgentStatus {
-  agentId: AgentId;
+  agentId: AgentKey;
   installed: boolean;
   version?: string;
   latestVersion?: string;
@@ -128,11 +122,6 @@ export interface AgentStatus {
   /** Redacted source/revision metadata from the live auth probe. */
   authSource?: string;
   authRevision?: string;
-  /**
-   * 兼容字段：当前生效连接的短展示（账号 label，或 供应商名 · URL）。
-   * 新代码优先读 effectiveLabel。
-   */
-  currentProvider?: string;
   /** 当前生效鉴权类型 */
   effectiveKind?: EffectiveConnectionKind;
   /** 当前生效连接展示文案 */
@@ -159,7 +148,7 @@ export interface AgentStatus {
 
 export interface Provider {
   id: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   name: string;
   /** 预设模板 id */
   preset: string;
@@ -193,7 +182,7 @@ export type AccountKind = 'oauth' | 'apikey';
 
 export interface Account {
   id: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   kind: AccountKind;
   /** 展示标签:邮箱或脱敏 key */
   label: string;
@@ -289,7 +278,7 @@ export type SkillMapStatus =
 export type SkillLinkKind = 'none' | 'symlink' | 'junction' | 'hardlink';
 
 export interface SkillProjection {
-  agent: AgentId;
+  agent: AgentKey;
   state: SkillSyncState;
   linkKind: SkillLinkKind;
   targetDir?: string | null;
@@ -306,19 +295,16 @@ export interface Skill {
   sourceDir?: string;
   /** 各 agent 投影行（含 linkKind / targetDir） */
   projections: SkillProjection[];
-  /**
-   * @deprecated 兼容旧 UI：由 projections 派生的扁平 map
-   * mapped(linked|copied) → linked/copied；其余原样
-   */
-  sync: Record<AgentId, SkillSyncState>;
+  /** 由 projections 派生的扁平 map：各 Agent 的投影状态 */
+  projectionByAgent: Record<AgentKey, SkillSyncState>;
   /** foreign / conflict 的 agent 列表（覆盖确认用） */
-  conflicts: AgentId[];
+  conflicts: AgentKey[];
 }
 
 export interface UsageRecord {
   id: string;
   timestamp: string; // ISO
-  agentId: AgentId;
+  agentId: AgentKey;
   model: string;
   inputTokens: number;
   outputTokens: number;
@@ -339,7 +325,7 @@ export interface UsageTrendPoint {
 }
 
 export interface ParserHealth {
-  agentId: AgentId;
+  agentId: AgentKey;
   supported: boolean;
   records: number;
   failRatePct?: number;
@@ -355,7 +341,7 @@ export type BackupKind =
 
 export interface BackupMeta {
   id: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   kind: BackupKind;
   createdAt: string; // ISO
   files: string[];
@@ -381,7 +367,7 @@ export interface BackupFileView {
 
 export interface BackupInspect {
   id: string;
-  agentId?: AgentId | null;
+  agentId?: AgentKey | null;
   kind: BackupKind;
   createdAt: string;
   size: number;
@@ -438,7 +424,7 @@ export interface DashboardAlert {
   message: string;
   actionLabel: string;
   actionKind: 'refresh-token' | 'upgrade';
-  agentId?: AgentId;
+  agentId?: AgentKey;
 }
 
 /** 切换确认对话框所需的三要素 */
@@ -467,7 +453,7 @@ export type OutputStream = 'stdout' | 'stderr';
 export interface Conversation {
   id: string;
   title: string;
-  agentIds: AgentId[];
+  agentIds: AgentKey[];
   cwd?: string | null;
   allowDangerous: boolean;
   createdAt: string;
@@ -483,7 +469,7 @@ export interface ChatMessage {
   conversationId: string;
   turn: number;
   role: ChatRole;
-  agentId?: AgentId | null;
+  agentId?: AgentKey | null;
   content: string;
   status: ChatMessageStatus;
   exitCode?: number | null;
@@ -510,11 +496,11 @@ export type ProcessStep =
 
 /** Streaming events from chat_send (externally tagged `type`) */
 export type ChatEvent =
-  | { type: 'started'; turn: number; agents: AgentId[] }
-  | { type: 'agentStarted'; turn: number; agent: AgentId; command: string }
-  | { type: 'agentChunk'; turn: number; agent: AgentId; stream: OutputStream; text: string }
-  | { type: 'agentProcess'; turn: number; agent: AgentId; step: ProcessStep }
-  | { type: 'agentFinished'; turn: number; agent: AgentId; message: ChatMessage }
+  | { type: 'started'; turn: number; agents: AgentKey[] }
+  | { type: 'agentStarted'; turn: number; agent: AgentKey; command: string }
+  | { type: 'agentChunk'; turn: number; agent: AgentKey; stream: OutputStream; text: string }
+  | { type: 'agentProcess'; turn: number; agent: AgentKey; step: ProcessStep }
+  | { type: 'agentFinished'; turn: number; agent: AgentKey; message: ChatMessage }
   | { type: 'finished'; turn: number; ok: boolean; cancelled?: boolean }
   | { type: 'error'; message: string };
 
@@ -525,7 +511,7 @@ export type ChatEvent =
 /** 项目容器（按工作区 / 存储目录聚合） */
 export interface AgentProject {
   id: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   title: string;
   storagePath: string;
   /** Workspace that exists on disk (decoded + verified). Only this is click-to-open. */
@@ -558,7 +544,7 @@ export interface ProjectMetadataFile {
 export interface AgentSession {
   id: string;
   projectId: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   title: string;
   cwd?: string | null;
   path: string;
@@ -574,7 +560,7 @@ export interface AgentSession {
 /** 多选总结用的摘录 */
 export interface AgentProjectExcerpt {
   id: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   title: string;
   cwd?: string | null;
   updatedAt: string;
@@ -583,7 +569,7 @@ export interface AgentProjectExcerpt {
 
 /** Chat 页 bootstrap（从 Projects 继续对话 / 总结） */
 export interface ChatBootstrap {
-  agentIds: AgentId[];
+  agentIds: AgentKey[];
   cwd?: string | null;
   title?: string;
   /** 创建会话后自动填入并发送的提示词 */

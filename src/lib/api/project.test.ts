@@ -4,8 +4,8 @@ import { resetProjectMock } from '@/dev/mocks/project';
 import { createBackend as createMockBackend } from '@/dev/mocks/create-backend';
 import { createBackend as createTauriBackend } from '@/lib/backend/tauri/create-backend';
 import {
-  deleteAgentProject,
-  deleteAgentProjects,
+  deleteAgentSession,
+  deleteAgentSessions,
   getAgentProjectExcerpts,
   getProjectMetadata,
   listAgentProjects,
@@ -172,7 +172,7 @@ describe('project API (browser mock)', () => {
     const sessions = await sessP;
     const id = sessions[0].id;
 
-    const delP = deleteAgentProject(id);
+    const delP = deleteAgentSession(id);
     await vi.runAllTimersAsync();
     await delP;
 
@@ -185,7 +185,7 @@ describe('project API (browser mock)', () => {
     const remaining = await remainingP;
     const ids = remaining.map((p) => p.id);
 
-    const batchP = deleteAgentProjects(ids);
+    const batchP = deleteAgentSessions(ids);
     await vi.runAllTimersAsync();
     expect(await batchP).toBe(ids.length);
 
@@ -195,7 +195,7 @@ describe('project API (browser mock)', () => {
   });
 
   it('delete missing throws', async () => {
-    const delP = deleteAgentProject('claude:projects/missing.jsonl');
+    const delP = deleteAgentSession('claude:projects/missing.jsonl');
     const assertion = expect(delP).rejects.toThrow(/not found/);
     await vi.runAllTimersAsync();
     await assertion;
@@ -299,12 +299,12 @@ describe('project API (tauri path)', () => {
 
   it('delete / batch / excerpts invoke corresponding commands', async () => {
     invokeMock.mockResolvedValueOnce(undefined);
-    await deleteAgentProject('id-1');
-    expect(invokeMock).toHaveBeenCalledWith('delete_agent_project', { id: 'id-1' });
+    await deleteAgentSession('id-1');
+    expect(invokeMock).toHaveBeenCalledWith('delete_agent_session', { id: 'id-1' });
 
     invokeMock.mockResolvedValueOnce(2);
-    await expect(deleteAgentProjects(['a', 'b'])).resolves.toBe(2);
-    expect(invokeMock).toHaveBeenCalledWith('delete_agent_projects', { ids: ['a', 'b'] });
+    await expect(deleteAgentSessions(['a', 'b'])).resolves.toBe(2);
+    expect(invokeMock).toHaveBeenCalledWith('delete_agent_sessions', { ids: ['a', 'b'] });
 
     invokeMock.mockResolvedValueOnce([
       {

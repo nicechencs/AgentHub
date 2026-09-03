@@ -208,7 +208,7 @@ export function liveConfigPaths(agentId: string, t?: TranslateFn): {
         openDir: '~/.claude',
         hint: hint(
           'connections.providerDialog.pathHintClaude',
-          '保存后会写进 settings.json。用 Claude 官方账号登录的，写在 .credentials.json。目录也可能由 CLAUDE_CONFIG_DIR 覆盖。',
+          '保存后会写进 settings.json。用 Claude 官方登录的，写在 .credentials.json。目录也可能由 CLAUDE_CONFIG_DIR 覆盖。',
         ),
       };
     case 'codex':
@@ -228,7 +228,7 @@ export function liveConfigPaths(agentId: string, t?: TranslateFn): {
         openDir: '~/.kimi-code',
         hint: hint(
           'connections.providerDialog.pathHintKimi',
-          'API Key 写在 config.toml。用官方登录的，凭据在 credentials/kimi-code.json。旧目录是 ~/.kimi。',
+          'API Key 写在 config.toml。用官方登录的，登录信息在 credentials/kimi-code.json。旧目录是 ~/.kimi。',
         ),
       };
     case 'grok':
@@ -259,7 +259,7 @@ export function liveConfigPaths(agentId: string, t?: TranslateFn): {
         openDir: openDirOr('~/.workbuddy', 'WORKBUDDY_CONFIG_DIR', '~/.workbuddy（或 WORKBUDDY_CONFIG_DIR）'),
         hint: hint(
           'connections.providerDialog.pathHintWorkbuddy',
-          '服务设置写在 models.json。暂不支持在这里切换账号。',
+          '服务设置写在 models.json。暂不支持在这里切换登录。',
         ),
       };
     case 'cursor':
@@ -289,7 +289,7 @@ export function liveConfigPaths(agentId: string, t?: TranslateFn): {
         openDir: openDirOr('~/.zcode', 'ZCODE_HOME', '~/.zcode（或 ZCODE_HOME）'),
         hint: hint(
           'connections.providerDialog.pathHintZcode',
-          '会作为一条供应商出现在 ZCode 的模型列表里，原来的条目还在。官方智谱地址写入已有的 BigModel 或 Z.ai 槽；自定义必须带模型名单。账号登录请在 ZCode 应用内完成。',
+          '会作为一条供应商出现在 ZCode 的模型列表里，原来的条目还在。官方智谱地址写入已有的 BigModel 或 Z.ai 槽；自定义必须带模型名单。登录请在 ZCode 应用内完成。',
         ),
       };
     default:

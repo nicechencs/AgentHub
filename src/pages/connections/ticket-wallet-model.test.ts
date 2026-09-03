@@ -42,7 +42,7 @@ import {
   ticketCredentialClassChipLabel,
   ticketSurfaceChipLabel,
   resolveTicketRouteAction,
-  resolveTicketShareAction,
+  resolveTicketDirectAction,
   ticketSwitchDisabledReason,
   ticketRefreshDisabledReason,
 } from './ticket-wallet-model';
@@ -1484,9 +1484,9 @@ describe('resolveTicketRouteAction', () => {
   });
 });
 
-describe('resolveTicketShareAction', () => {
+describe('resolveTicketDirectAction', () => {
   it('stays enabled when a direct or config-sync plan can apply', () => {
-    expect(resolveTicketShareAction([
+    expect(resolveTicketDirectAction([
       { status: 'ready', route: 'config_sync', canApply: true, reason: '会改配置' },
       { status: 'ready', route: 'local_bridge', canApply: false, reason: '需要本机转发' },
     ])).toEqual({ disabled: false });
@@ -1494,7 +1494,7 @@ describe('resolveTicketShareAction', () => {
 
   it('disables when the login can only local-forward', () => {
     const t = createTranslator('zh');
-    expect(resolveTicketShareAction([
+    expect(resolveTicketDirectAction([
       { status: 'ready', route: 'local_bridge', canApply: true, reason: '需要本机转发' },
       { status: 'ready', route: 'unsupported', canApply: false },
     ], t)).toEqual({
@@ -1504,7 +1504,7 @@ describe('resolveTicketShareAction', () => {
   });
 
   it('disables with the matching write-gate reason', () => {
-    expect(resolveTicketShareAction([
+    expect(resolveTicketDirectAction([
       { status: 'ready', route: 'config_sync', canApply: false, reason: '目标有槽、写入未开' },
     ])).toEqual({
       disabled: true,

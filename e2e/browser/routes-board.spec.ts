@@ -11,7 +11,7 @@ test('routes board follows dashboard layout and local-route usage', async ({ pag
   await expect(page.getByRole('button', { name: 'Chat Completions' })).toBeVisible();
   await expect(page.getByText(/共有 \d+ 个入口 Key/)).toBeVisible();
   await expect(page.getByText('用量统计')).toBeVisible();
-  await expect(page.getByLabel('按本机入口筛选用量')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByLabel('按本机转发筛选用量')).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText('请求次数')).toBeVisible();
   await expect(page.getByText('输入(7 天)')).toBeVisible();
   await expect(page.getByText('7 天 Token 用量')).toBeVisible();

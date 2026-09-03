@@ -34,7 +34,7 @@ import {
 } from '@/lib/api/provider';
 import { initFormFromConfig } from '@/lib/provider-detect/apply';
 import { applyFormVars, writableSecret } from '@/lib/provider-detect/fields';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import {
   attachPoolOwnedAuthorization,
   ensureSourceModelCatalog,
@@ -160,7 +160,7 @@ export function ApiAccessDialog({
   onSaved,
 }: {
   open: boolean;
-  agents: readonly AgentId[];
+  agents: readonly AgentKey[];
   edit?: PoolApiEditTarget | null;
   onOpenChange: (open: boolean) => void;
   onSaved?: () => void;
@@ -203,7 +203,7 @@ export function ApiAccessForm({
   onCancel,
   onSaved,
 }: {
-  agents: readonly AgentId[];
+  agents: readonly AgentKey[];
   edit?: PoolApiEditTarget | null;
   layout?: 'dialog' | 'inline';
   onCancel: () => void;

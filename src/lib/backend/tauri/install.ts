@@ -4,7 +4,7 @@ import type {
   InstallOutcome,
   InstallProgressPayload,
 } from '@/lib/backend/contracts/install-types';
-import type { AgentId, RuntimeId } from '@/lib/types';
+import type { AgentKey, RuntimeId } from '@/lib/types';
 import { logger } from '@/lib/logger';
 import { onInstallProgress } from './install-events';
 import { invoke } from './invoke';
@@ -15,7 +15,7 @@ export function createTauriInstallPort(): InstallPort {
   return {
     async listInstallCatalog() {
       try {
-        return await invoke<AgentInstallCatalogEntryDto[]>('list_install_catalog_cmd');
+        return await invoke<AgentInstallCatalogEntryDto[]>('list_install_catalog');
       } catch (e) {
         log.error('list_install_catalog failed', e);
         throw e;
@@ -34,7 +34,7 @@ export function createTauriInstallPort(): InstallPort {
       }
     },
 
-    async installAgentCmd(agentId: AgentId, channel: string, installDeps = false) {
+    async installAgentCmd(agentId: AgentKey, channel: string, installDeps = false) {
       try {
         return await invoke<InstallOutcome>('install_agent', {
           agentId,
@@ -47,7 +47,7 @@ export function createTauriInstallPort(): InstallPort {
       }
     },
 
-    async upgradeAgentCmd(agentId: AgentId) {
+    async upgradeAgentCmd(agentId: AgentKey) {
       try {
         return await invoke<InstallOutcome>('upgrade_agent', { agentId });
       } catch (e) {
@@ -56,7 +56,7 @@ export function createTauriInstallPort(): InstallPort {
       }
     },
 
-    async uninstallAgentCmd(agentId: AgentId, purgeConfig: boolean) {
+    async uninstallAgentCmd(agentId: AgentKey, purgeConfig: boolean) {
       try {
         return await invoke<InstallOutcome>('uninstall_agent', {
           agentId,
@@ -77,7 +77,7 @@ export function createTauriInstallPort(): InstallPort {
       }
     },
 
-    async openAgentConfigDir(agentId: AgentId) {
+    async openAgentConfigDir(agentId: AgentKey) {
       try {
         return await invoke<string>('open_agent_config_dir', { agentId });
       } catch (e) {
@@ -86,7 +86,7 @@ export function createTauriInstallPort(): InstallPort {
       }
     },
 
-    async getAgentLivePaths(agentId: AgentId) {
+    async getAgentLivePaths(agentId: AgentKey) {
       try {
         return await invoke<{
           config: string;

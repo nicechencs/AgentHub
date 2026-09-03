@@ -2,13 +2,7 @@
  * Project API façade — delegates to app runtime backend.
  */
 import { getBackend } from '@/app/runtime';
-import type {
-  AgentId,
-  AgentProject,
-  AgentProjectExcerpt,
-  AgentSession,
-  ProjectMetadataFile,
-} from '@/lib/types';
+import type { AgentKey, AgentProject, AgentProjectExcerpt, AgentSession, ProjectMetadataFile } from '@/lib/types';
 
 export type {
   CoreAgentProject,
@@ -24,7 +18,7 @@ export {
 } from '@/lib/backend/contracts/project-map';
 
 export async function listAgentProjects(
-  agentId?: AgentId | null,
+  agentId?: AgentKey | null,
   includeHidden = false,
 ): Promise<AgentProject[]> {
   return getBackend().project.listAgentProjects(agentId, includeHidden);
@@ -49,12 +43,12 @@ export async function setShowHiddenProjects(show: boolean): Promise<void> {
   return getBackend().project.setShowHiddenProjects(show);
 }
 
-export async function deleteAgentProject(id: string): Promise<void> {
-  return getBackend().project.deleteAgentProject(id);
+export async function deleteAgentSession(id: string): Promise<void> {
+  return getBackend().project.deleteAgentSession(id);
 }
 
-export async function deleteAgentProjects(ids: string[]): Promise<number> {
-  return getBackend().project.deleteAgentProjects(ids);
+export async function deleteAgentSessions(ids: string[]): Promise<number> {
+  return getBackend().project.deleteAgentSessions(ids);
 }
 
 export async function getAgentProjectExcerpts(ids: string[]): Promise<AgentProjectExcerpt[]> {

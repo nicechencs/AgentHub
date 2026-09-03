@@ -1,14 +1,14 @@
-import type { AgentId, ChatEvent, ChatMessage, Conversation } from '@/lib/types';
+import type { AgentKey, ChatEvent, ChatMessage, Conversation } from '@/lib/types';
 
 export interface ChatPort {
   listConversations(): Promise<Conversation[]>;
-  createConversation(agentIds: AgentId[], cwd?: string | null): Promise<Conversation>;
-  ensureDefaultConversation(agentIds: AgentId[], cwd?: string | null): Promise<Conversation>;
+  createConversation(agentIds: AgentKey[], cwd?: string | null): Promise<Conversation>;
+  ensureDefaultConversation(agentIds: AgentKey[], cwd?: string | null): Promise<Conversation>;
   updateConversation(
     id: string,
     patch: {
       title?: string;
-      agentIds?: AgentId[];
+      agentIds?: AgentKey[];
       cwd?: string | null;
       allowDangerous?: boolean;
     },
@@ -21,6 +21,6 @@ export interface ChatPort {
     onEvent: (ev: ChatEvent) => void,
   ): Promise<void>;
   chatCancel(conversationId: string): Promise<void>;
-  setChatModel(agentId: AgentId, model: string): Promise<void>;
-  getChatModel(agentId: AgentId): Promise<{ model: string | null; models: string[] }>;
+  setChatModel(agentId: AgentKey, model: string): Promise<void>;
+  getChatModel(agentId: AgentKey): Promise<{ model: string | null; models: string[] }>;
 }

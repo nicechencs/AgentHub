@@ -1,4 +1,4 @@
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import {
   normalizeAuthState,
   type AccountPort,
@@ -24,15 +24,15 @@ type ProbeCacheEntry = {
 };
 
 const LIVE_PROBE_CACHE_MS = 2500;
-const cache = new Map<AgentId, ProbeCacheEntry>();
-const generations = new Map<AgentId, number>();
+const cache = new Map<AgentKey, ProbeCacheEntry>();
+const generations = new Map<AgentKey, number>();
 let nextRequestToken = 0;
 
-function generationFor(agentId: AgentId): number {
+function generationFor(agentId: AgentKey): number {
   return generations.get(agentId) ?? 0;
 }
 
-function invalidateGeneration(agentId: AgentId): void {
+function invalidateGeneration(agentId: AgentKey): void {
   generations.set(agentId, generationFor(agentId) + 1);
   cache.delete(agentId);
 }
@@ -44,7 +44,7 @@ function invalidateGeneration(agentId: AgentId): void {
  */
 export function probeLiveAuthWithPort(
   port: Pick<AccountPort, 'probeLiveAuth'>,
-  agentId: AgentId,
+  agentId: AgentKey,
   options: ProbeLiveAuthOptions = {},
 ): Promise<LiveAuthProbe> {
   const now = Date.now();
@@ -98,13 +98,13 @@ export function probeLiveAuthWithPort(
 }
 
 /** Invalidate a single agent or all agents, superseding in-flight probes. */
-export function clearLiveAuthProbeCache(agentId?: AgentId): void {
+export function clearLiveAuthProbeCache(agentId?: AgentKey): void {
   if (agentId) {
     invalidateGeneration(agentId);
     return;
   }
 
-  const ids = new Set<AgentId>([...cache.keys(), ...generations.keys()]);
+  const ids = new Set<AgentKey>([...cache.keys(), ...generations.keys()]);
   for (const id of ids) invalidateGeneration(id);
   cache.clear();
 }

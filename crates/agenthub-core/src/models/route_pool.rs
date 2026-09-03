@@ -39,9 +39,9 @@ pub const FEATURE_MIXED_PROVIDER_POOL: &str = "feature.mixed_provider_pool";
 /// User choice: Kimi and DSH share one chat-completions token. Default off.
 pub const SHARE_CHAT_COMPLETIONS: &str = "share_chat_completions";
 
-/// Shared local-entry switch. Absent means restore (legacy on). Explicit off
-/// keeps the entry stopped across process restart.
-pub const LOCAL_ENTRY_DESIRED_RUNNING: &str = "local_entry_desired_running";
+/// Shared local-gateway switch. Absent means restore (default on). Explicit off
+/// keeps the gateway stopped across process restart.
+pub const LOCAL_GATEWAY_DESIRED_RUNNING: &str = "local_gateway_desired_running";
 
 /// Fail-closed experimental flags. Absent / anything other than an explicit
 /// on-value is off. Used by mixed-provider and pair-adapter flags.
@@ -196,7 +196,7 @@ pub struct RoutePool {
     pub is_default: bool,
     /// Explicit switch onto the unified gateway. Unenrolled pools keep any
     /// historical `profile.local_port` until this becomes true.
-    pub v2_enrolled: bool,
+    pub unified_gateway_enrolled: bool,
     pub policy_revision: i64,
     pub auto_start: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -216,7 +216,7 @@ impl fmt::Debug for RoutePool {
             .field("hub_token", &"REDACTED")
             .field("schedule_policy", &self.schedule_policy)
             .field("is_default", &self.is_default)
-            .field("v2_enrolled", &self.v2_enrolled)
+            .field("unified_gateway_enrolled", &self.unified_gateway_enrolled)
             .field("policy_revision", &self.policy_revision)
             .field("auto_start", &self.auto_start)
             .field("gateway_port", &self.gateway_port)
@@ -365,7 +365,7 @@ pub struct DefaultRoutePoolOverview {
     pub target_agent_id: AgentId,
     pub surface: RouteDownstreamSurface,
     pub dialect: RouteDownstreamDialect,
-    pub v2_enrolled: bool,
+    pub unified_gateway_enrolled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gateway_port: Option<u16>,
     pub members: Vec<RouteMemberOverview>,

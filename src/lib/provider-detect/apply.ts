@@ -4,7 +4,7 @@
  */
 import { parseContextWindowChoice } from '@/lib/claude-client-env';
 import type { TranslateFn } from '@/lib/i18n';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import { smartDetectUrlAndKey } from './detect';
 import { applyFormVars, extractFormVars } from './fields';
 import { extractGrokDetectFields, isGrokTomlPaste, stripGrokPasteNoise } from './grokToml';
@@ -18,7 +18,7 @@ import {
 } from './types';
 
 function ensureBaseText(
-  agentId: AgentId,
+  agentId: AgentKey,
   configText: string,
   format: 'json' | 'toml',
 ): { text: string; format: 'json' | 'toml' } {
@@ -61,7 +61,7 @@ function isJsonObjectPaste(text: string): boolean {
 export function isStructuredConfigPaste(
   detect: ReturnType<typeof smartDetectUrlAndKey>,
   paste: string,
-  agentId: AgentId,
+  agentId: AgentKey,
 ): boolean {
   if (detect.rawConfigText?.trim()) return true;
   if (detect.matchedDetectors?.some((id) => STRUCTURED_PASTE_DETECTORS.has(id))) {
@@ -134,7 +134,7 @@ export function mergeDetectIntoVars(
  * @param current 可选：当前编辑中的 config / vars（编辑模式）
  */
 export function applySmartPaste(
-  agentId: AgentId,
+  agentId: AgentKey,
   paste: string,
   current?: {
     configText?: string;
@@ -220,7 +220,7 @@ export function applySmartPaste(
 
 /** 从已有 Provider 配置初始化表单（含 authApiKey） */
 export function initFormFromConfig(
-  agentId: AgentId,
+  agentId: AgentKey,
   configText: string,
   configFormat: 'json' | 'toml',
   authApiKey?: string,

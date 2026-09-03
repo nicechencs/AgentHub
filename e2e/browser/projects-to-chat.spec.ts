@@ -4,7 +4,7 @@ import { goNav, openApp } from './helpers';
 test('Projects continue opens Chat with a mock session prompt', async ({ page }) => {
   await openApp(page);
 
-  await goNav(page, 'Projects');
+  await goNav(page, '项目');
   await expect(page.getByRole('heading', { name: '项目' })).toBeVisible();
   await page.getByRole('tab', { name: /^Claude / }).click();
 
@@ -14,7 +14,7 @@ test('Projects continue opens Chat with a mock session prompt', async ({ page })
     await projectRow.click();
   }
 
-  await page.getByRole('button', { name: '在 Chat 继续' }).first().click();
+  await page.getByRole('button', { name: '在对话继续' }).first().click();
   await expect(page).toHaveURL(/#\/chat/);
   await expect(page.getByRole('textbox', { name: '消息输入' })).toBeVisible({
     timeout: 20_000,

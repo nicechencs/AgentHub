@@ -22,9 +22,9 @@ describe('routes board layout wiring', () => {
     expect(page).toContain('defaultPools');
     expect(page).toContain('endpointLoginsHint');
     expect(page).toContain("title={t('routes.board.statusSection')}");
-    expect(page).toContain('buildLocalEntryControl');
-    expect(page).toContain('handleStartLocalEntry');
-    expect(page).toContain('handleStopLocalEntry');
+    expect(page).toContain('buildLocalGatewayControl');
+    expect(page).toContain('handleStartLocalGateway');
+    expect(page).toContain('handleStopLocalGateway');
     expect(page).toContain('<Switch');
     expect(page).toContain('routes.pool.entry');
     expect(page).not.toContain('AgentLogo');

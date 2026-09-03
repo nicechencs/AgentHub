@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import type { PoolAuthorizationItem } from '@/pages/bridges/route-pool-view-model';
+import type { PoolAuthorizationItem } from '@/pages/routes/shared/route-pool-view-model';
 import { PoolAuthorizationList } from './PoolAuthorizationList';
 
 function item(partial: Partial<PoolAuthorizationItem> = {}): PoolAuthorizationItem {
@@ -52,7 +52,7 @@ describe('PoolAuthorizationList', () => {
     expect(markup).toContain('role="separator"');
     expect(markup).toContain('调整登录列宽');
     expect(markup).not.toContain('回复接口');
-    expect(markup).not.toContain('本机入口');
+    expect(markup).not.toContain('本机转发');
     expect(markup).not.toContain('本页添加');
     expect(markup).not.toContain('auth.json');
   });

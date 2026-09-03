@@ -1,6 +1,6 @@
 import type { PluginPort } from '@/lib/backend/contracts';
 import type { PluginInventory } from '@/lib/backend/contracts/plugin-types';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import { delay } from '@/dev/mocks/delay';
 
 const DEMO: PluginInventory = {
@@ -67,13 +67,13 @@ export function resetMockPlugins(): void {
   inventory = structuredClone(DEMO);
 }
 
-function assertListedAgent(agent: AgentId): void {
+function assertListedAgent(agent: AgentKey): void {
   if (agent !== 'claude' && agent !== 'grok') {
     throw new Error('enable/disable is only available for listed Claude and Grok plugin packs');
   }
 }
 
-function setEnabled(agent: AgentId, name: string, marketplace: string | null | undefined, enabled: boolean) {
+function setEnabled(agent: AgentKey, name: string, marketplace: string | null | undefined, enabled: boolean) {
   assertListedAgent(agent);
   const row = inventory.plugins.find(
     (p) =>

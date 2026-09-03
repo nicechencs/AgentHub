@@ -3,14 +3,8 @@
  * PKCE and device-code stay the only grant types; this file maps both.
  */
 import type { MessageKey } from '@/lib/i18n';
-import type { Account, AgentId } from '@/lib/types';
-import type {
-  DeviceOAuthPollInfo,
-  DeviceOAuthStartInfo,
-  OAuthLoginOption,
-  OAuthStartInfo,
-  OAuthWaitInfo,
-} from './account-port';
+import type { Account, AgentKey } from '@/lib/types';
+import type { DeviceOAuthPollInfo, DeviceOAuthStartInfo, OAuthLoginOption, OAuthStartInfo, OAuthWaitInfo } from './account-port';
 import { OFFICIAL_LOGIN_SUPERSEDED, OAUTH_PKCE_LISTEN_TIMEOUT_SECS } from './oauth-constants';
 
 export type OfficialLoginFlow = 'pkce' | 'deviceCode';
@@ -56,7 +50,7 @@ export const IMPLEMENTED_OFFICIAL_LOGIN_IDS: Readonly<Record<string, readonly st
 export interface OfficialLoginSession {
   /** Backend session id. Never show this in the UI. */
   sessionId: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   optionId: string;
   flow: OfficialLoginFlow;
   authorizeUrl?: string | null;

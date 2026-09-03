@@ -19,13 +19,14 @@ import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { disablePlugin, enablePlugin, listPluginInventory } from '@/lib/api/plugins';
 import { openPathInFileManager } from '@/lib/api/skill';
 import type { PluginEntry, PluginInventory } from '@/lib/backend/contracts/plugin-types';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import { PluginDetailPanel } from './PluginDetailPanel';
 import { PluginPackList } from './PluginPackList';
+import { StorageKey } from '@/lib/ui-preferences';
 
-const PLUGINS_PREVIEW_WIDTH_KEY = 'agenthub.plugins.previewWidth';
+const PLUGINS_PREVIEW_WIDTH_KEY = StorageKey.pluginsPreviewWidth;
 
-function agentName(id: AgentId): string {
+function agentName(id: AgentKey): string {
   return agentDisplayName(id);
 }
 

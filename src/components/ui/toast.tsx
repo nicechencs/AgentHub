@@ -13,7 +13,7 @@ export interface ToastData {
   id: string;
   title: string;
   description?: string;
-  variant?: 'default' | 'success' | 'danger';
+  variant?: 'default' | 'success' | 'warning' | 'danger';
   /** 撤销等动作按钮 */
   actionLabel?: string;
   onAction?: () => void;
@@ -148,6 +148,7 @@ function ToastItem({
       className={cn(
         'pointer-events-auto flex items-start gap-3 rounded-card border border-border bg-panel px-4 py-3 shadow-md',
         t.variant === 'success' && 'border-success/40',
+        t.variant === 'warning' && 'border-warning/40',
         t.variant === 'danger' && 'border-danger/40',
       )}
     >

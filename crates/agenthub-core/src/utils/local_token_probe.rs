@@ -342,7 +342,7 @@ fn log_probe(result: &LocalTokenProbeResult) {
         outcome = ?result.outcome,
         http_status = ?result.http_status,
         latency_ms = result.latency_ms,
-        "local entry model test"
+        "local gateway model test"
     );
 }
 

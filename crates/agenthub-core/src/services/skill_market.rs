@@ -162,7 +162,7 @@ impl SkillMarketRegistry {
     pub fn with_skills_sh_and_builtin(catalog_dir: Option<PathBuf>) -> Self {
         Self {
             providers: vec![
-                Box::new(super::skillssh_market::SkillsShMarket::new()),
+                Box::new(super::skills_sh_market::SkillsShMarket::new()),
                 Box::new(BuiltinSkillMarket::new(catalog_dir)),
             ],
             fallback: false,
@@ -173,7 +173,7 @@ impl SkillMarketRegistry {
     pub fn from_source(source: SkillMarketSource) -> Self {
         match source {
             SkillMarketSource::SkillsSh => Self {
-                providers: vec![Box::new(super::skillssh_market::SkillsShMarket::new())],
+                providers: vec![Box::new(super::skills_sh_market::SkillsShMarket::new())],
                 fallback: false,
             },
             SkillMarketSource::SkillhubCn => Self {
@@ -184,7 +184,7 @@ impl SkillMarketRegistry {
                 // Primary: skills.sh (existing default). Fallback: skillhub.cn for
                 // regions / networks where skills.sh is unreachable.
                 providers: vec![
-                    Box::new(super::skillssh_market::SkillsShMarket::new()),
+                    Box::new(super::skills_sh_market::SkillsShMarket::new()),
                     Box::new(super::skillhub_market::SkillhubMarket::new()),
                 ],
                 fallback: true,

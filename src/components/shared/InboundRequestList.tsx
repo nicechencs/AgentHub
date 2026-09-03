@@ -1,6 +1,6 @@
 import { Tip } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
-import { formatInboundAt } from '@/pages/bridges/route-endpoint-copy';
+import { formatInboundAt } from '@/pages/routes/shared/route-endpoint-copy';
 import type { AdapterBridgeInboundRequest } from '@/lib/backend/contracts/adapter';
 import { cn } from '@/lib/utils';
 

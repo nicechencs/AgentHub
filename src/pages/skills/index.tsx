@@ -60,7 +60,7 @@ import {
 import { loadString, saveString, StorageKey } from '@/lib/ui-preferences';
 import { getSettings } from '@/lib/api/settings';
 import { FEATURE_NOT_WIRED } from '@/lib/platform';
-import type { AgentId, AgentProject, Skill, SkillMarketSource } from '@/lib/types';
+import type { AgentKey, AgentProject, Skill, SkillMarketSource } from '@/lib/types';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import {
   adoptFailedToast,
@@ -122,7 +122,7 @@ import {
   projectSkillRowKey,
 } from './skills-project-model';
 
-const SKILLS_PREVIEW_WIDTH_KEY = 'agenthub.skills.previewWidth';
+const SKILLS_PREVIEW_WIDTH_KEY = StorageKey.skillsPreviewWidth;
 
 export default function SkillsPage() {
   const { toast } = useToast();
@@ -187,13 +187,13 @@ export default function SkillsPage() {
   const [importingIds, setImportingIds] = useState<Set<string>>(new Set());
   const [importConflict, setImportConflict] = useState<{
     skillId: string;
-    agentId: AgentId;
+    agentId: AgentKey;
     name: string;
   } | null>(null);
   /** 从某工具目录删除技能（不删共享库） */
   const [removeFromTool, setRemoveFromTool] = useState<{
     skillId: string;
-    agentId: AgentId;
+    agentId: AgentKey;
     name: string;
     inLibrary: boolean;
   } | null>(null);
@@ -315,7 +315,7 @@ export default function SkillsPage() {
 
   const doToggle = async (
     skillId: string,
-    agentId: AgentId,
+    agentId: AgentKey,
     force = false,
     meta?: { name?: string; wasMapped?: boolean; mode?: 'link' | 'copy' },
   ) => {
@@ -384,8 +384,8 @@ export default function SkillsPage() {
     }
   };
 
-  const handleCellClick = async (skill: Skill, agentId: AgentId) => {
-    const state = skill.sync[agentId];
+  const handleCellClick = async (skill: Skill, agentId: AgentKey) => {
+    const state = skill.projectionByAgent[agentId];
     if (state === 'unsupported') return;
     const agentName = agentDisplayName(agentId);
     // 已同步 → 直接取消，结果由 doToggle 统一提示
@@ -417,10 +417,10 @@ export default function SkillsPage() {
 
   const handleCellProject = (
     skill: Skill,
-    agentId: AgentId,
+    agentId: AgentKey,
     mode: 'link' | 'copy' | 'disable',
   ) => {
-    const state = skill.sync[agentId];
+    const state = skill.projectionByAgent[agentId];
     if (state === 'unsupported') return;
     if (mode === 'disable') {
       if (!isMappedState(state)) return;
@@ -530,7 +530,7 @@ export default function SkillsPage() {
         if (!isSharedCatalogRow(row) || !selected.has(row.id)) continue;
         const skill = mapCoreSkill(row);
         for (const agentId of targets) {
-          const state = skill.sync[agentId] ?? 'unsupported';
+          const state = skill.projectionByAgent[agentId] ?? 'unsupported';
           const proj = skill.projections?.find((p) => p.agent === agentId);
           const mapStatus = proj?.mapStatus;
           if (isMappedState(state)) continue;
@@ -598,7 +598,7 @@ export default function SkillsPage() {
 
   const handleImportPrivate = async (
     skillId: string,
-    agentId: AgentId,
+    agentId: AgentKey,
     name: string,
     overwrite = false,
   ): Promise<boolean> => {
@@ -638,7 +638,7 @@ export default function SkillsPage() {
 
   const handleUninstallPrivate = (
     skillId: string,
-    agentId: AgentId,
+    agentId: AgentKey,
     name?: string,
     inLibrary?: boolean,
   ) => {
@@ -650,7 +650,7 @@ export default function SkillsPage() {
     });
   };
 
-  const handleDeleteFromTool = (skillId: string, agentId: AgentId, name: string) => {
+  const handleDeleteFromTool = (skillId: string, agentId: AgentKey, name: string) => {
     const inLibrary = Boolean(
       catalog?.some((row) => isSharedCatalogRow(row) && row.id === skillId),
     );
@@ -742,7 +742,7 @@ export default function SkillsPage() {
   const activeKey = previewTarget?.rowKey ?? null;
 
   const openCatalogPreview = useCallback(
-    (row: InstalledSkillDto, agentId?: AgentId) => {
+    (row: InstalledSkillDto, agentId?: AgentKey) => {
       preview.open(previewTargetFromCatalogRow(row, agentId));
     },
     [preview.open],
@@ -765,7 +765,7 @@ export default function SkillsPage() {
     [preview.open, selectedProject],
   );
 
-  const selectPreviewCopy = useCallback((agentId: AgentId | null) => {
+  const selectPreviewCopy = useCallback((agentId: AgentKey | null) => {
     const current = preview.target;
     if (!current) return;
     if (agentId == null) {

@@ -13,7 +13,7 @@ import { RouteEndpointTypeText, RouteEndpointUrl } from '@/components/shared/Rou
 import { agentDisplayName } from '@/config/agents';
 import { planMaturityLabel, planRouteSummary } from '@/lib/connect-flow/eligibility';
 import { ROUTE_ENDPOINTS } from '@/lib/route-endpoints';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import type {
   ConnectFlowEntry,
   PlanEligibility,
@@ -40,7 +40,7 @@ export function EffectiveSummary({
   label,
   authLabel,
 }: {
-  agentId: AgentId;
+  agentId: AgentKey;
   label: string;
   authLabel: string;
 }) {
@@ -62,8 +62,8 @@ export function FixedSourceSummary({
   providers,
 }: {
   entry: Extract<ConnectFlowEntry, { mode: 'for-source' }>;
-  accounts: { id: string; label: string; agentId: AgentId }[];
-  providers: { id: string; name: string; agentId: AgentId }[];
+  accounts: { id: string; label: string; agentId: AgentKey }[];
+  providers: { id: string; name: string; agentId: AgentKey }[];
 }) {
   const { t } = useI18n();
   const record = entry.source.kind === 'account'
@@ -75,7 +75,7 @@ export function FixedSourceSummary({
   const agentId = record?.agentId;
   const attach = entry.purpose === 'route'
     ? t('connect.dialog.attachRoute', { label })
-    : entry.purpose === 'share'
+    : entry.purpose === 'direct'
       ? t('connect.dialog.attachShare', { label })
       : t('connect.dialog.attachToOthers', { label });
   return (
@@ -117,17 +117,17 @@ export function ConnectFlowSelectStep({
   state: ConnectFlowState;
   options: SourceOption[];
   eligibilities: ReadonlyMap<string, PlanEligibility>;
-  targetAgentIds: AgentId[];
-  sourceAgentId: AgentId | null;
+  targetAgentIds: AgentKey[];
+  sourceAgentId: AgentKey | null;
   emptyKind: ReturnType<typeof resolveEmptyKind>;
   poolLoading: boolean;
   profilesReady: boolean;
   onSelectSource: (option: SourceOption) => void;
-  onSelectTarget: (agentId: AgentId) => void;
-  onRetryEligibility: (request: { source: SourceOption['ref']; targetAgentId: AgentId }) => void;
+  onSelectTarget: (agentId: AgentKey) => void;
+  onRetryEligibility: (request: { source: SourceOption['ref']; targetAgentId: AgentKey }) => void;
   onRetryResources: () => void;
   onGoImport: () => void;
-  onOauthGuide: (agentId: AgentId) => void;
+  onOauthGuide: (agentId: AgentKey) => void;
 }) {
   const { t } = useI18n();
   if (emptyKind.kind === 'partial_load_error') {
@@ -220,7 +220,7 @@ export function ConnectFlowSelectStep({
       {emptyKind.kind === 'all_infeasible' ? (
         <Notice tone="warning">
           {entry.mode === 'for-source'
-            ? entry.purpose === 'share'
+            ? entry.purpose === 'direct'
               ? t('connect.select.allInfeasibleShare')
               : entry.purpose === 'route'
                 ? t('connect.select.allInfeasibleRoute')
@@ -244,10 +244,10 @@ function SourceGroups({
   options: SourceOption[];
   state: ConnectFlowState;
   eligibilities: ReadonlyMap<string, PlanEligibility>;
-  targetAgentId: AgentId;
+  targetAgentId: AgentKey;
   onSelectSource: (option: SourceOption) => void;
-  onRetryEligibility: (request: { source: SourceOption['ref']; targetAgentId: AgentId }) => void;
-  onOauthGuide: (agentId: AgentId) => void;
+  onRetryEligibility: (request: { source: SourceOption['ref']; targetAgentId: AgentKey }) => void;
+  onOauthGuide: (agentId: AgentKey) => void;
 }) {
   const { t } = useI18n();
   const { native, cross } = splitSourceOptions(options);
@@ -402,14 +402,14 @@ function EndpointGrid({
   onRetryEligibility,
   onOauthGuide,
 }: {
-  targetAgentIds: AgentId[];
-  selected: AgentId | null;
+  targetAgentIds: AgentKey[];
+  selected: AgentKey | null;
   source: SourceOption['ref'];
-  sourceAgentId: AgentId | null;
+  sourceAgentId: AgentKey | null;
   eligibilities: ReadonlyMap<string, PlanEligibility>;
-  onSelect: (agentId: AgentId) => void;
-  onRetryEligibility: (request: { source: SourceOption['ref']; targetAgentId: AgentId }) => void;
-  onOauthGuide: (agentId: AgentId) => void;
+  onSelect: (agentId: AgentKey) => void;
+  onRetryEligibility: (request: { source: SourceOption['ref']; targetAgentId: AgentKey }) => void;
+  onOauthGuide: (agentId: AgentKey) => void;
 }) {
   const { t } = useI18n();
   return (
@@ -500,14 +500,14 @@ function TargetGrid({
   onRetryEligibility,
   onOauthGuide,
 }: {
-  targetAgentIds: AgentId[];
-  selected: AgentId | null;
+  targetAgentIds: AgentKey[];
+  selected: AgentKey | null;
   source: SourceOption['ref'];
-  sourceAgentId: AgentId | null;
+  sourceAgentId: AgentKey | null;
   eligibilities: ReadonlyMap<string, PlanEligibility>;
-  onSelect: (agentId: AgentId) => void;
-  onRetryEligibility: (request: { source: SourceOption['ref']; targetAgentId: AgentId }) => void;
-  onOauthGuide: (agentId: AgentId) => void;
+  onSelect: (agentId: AgentKey) => void;
+  onRetryEligibility: (request: { source: SourceOption['ref']; targetAgentId: AgentKey }) => void;
+  onOauthGuide: (agentId: AgentKey) => void;
 }) {
   const { t } = useI18n();
   if (targetAgentIds.length === 0) {

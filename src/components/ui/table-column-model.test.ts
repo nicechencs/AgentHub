@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { StorageKey } from '@/lib/storage-key';
 import {
   mergeStoredColumnWidths,
   persistColumnWidths,
@@ -27,6 +28,7 @@ function stubStorage() {
   });
 }
 
+const TEST_COLS_KEY = 'agenthub:test-cols';
 const defaults = { name: 200, endpoint: 360 };
 const minByKey = { name: 120, endpoint: 160 };
 
@@ -55,10 +57,19 @@ describe('mergeStoredColumnWidths', () => {
 });
 
 describe('column width persistence', () => {
-  it('round-trips a width map through localStorage', () => {
+  it('round-trips a width map through the canonical key', () => {
     stubStorage();
-    persistColumnWidths('agenthub.test.cols', { name: 240, endpoint: 400 });
-    expect(readStoredColumnWidths('agenthub.test.cols', defaults, minByKey)).toEqual({
+    persistColumnWidths(TEST_COLS_KEY, { name: 240, endpoint: 400 });
+    expect(readStoredColumnWidths(TEST_COLS_KEY, defaults, minByKey)).toEqual({
+      name: 240,
+      endpoint: 400,
+    });
+  });
+
+  it('writes the kebab StorageKey', () => {
+    stubStorage();
+    persistColumnWidths(StorageKey.mcpColumnWidths, { name: 240, endpoint: 400 });
+    expect(JSON.parse(store.get(StorageKey.mcpColumnWidths)!)).toEqual({
       name: 240,
       endpoint: 400,
     });
@@ -66,13 +77,13 @@ describe('column width persistence', () => {
 
   it('returns defaults when nothing is stored', () => {
     stubStorage();
-    expect(readStoredColumnWidths('agenthub.test.cols', defaults, minByKey)).toEqual(defaults);
+    expect(readStoredColumnWidths(TEST_COLS_KEY, defaults, minByKey)).toEqual(defaults);
   });
 
   it('returns defaults when stored JSON is invalid', () => {
     stubStorage();
-    store.set('agenthub.test.cols', '{');
-    expect(readStoredColumnWidths('agenthub.test.cols', defaults, minByKey)).toEqual(defaults);
+    store.set(TEST_COLS_KEY, '{');
+    expect(readStoredColumnWidths(TEST_COLS_KEY, defaults, minByKey)).toEqual(defaults);
   });
 });
 
@@ -83,14 +94,15 @@ describe('resizable table wiring', () => {
     'src/pages/skills/SkillMarketTable.tsx',
     'src/pages/skills/SkillMatrix.tsx',
     'src/pages/routes/pool/PoolAuthorizationList.tsx',
+    'src/pages/routes/tokens/TokenList.tsx',
   ];
 
-  it('every useColumnWidths call passes a storage key', () => {
+  it('every useColumnWidths call passes a StorageKey-backed constant', () => {
     const dir = path.dirname(fileURLToPath(import.meta.url));
     for (const rel of files) {
       const src = readFileSync(path.join(dir, '../../..', rel), 'utf8');
       expect(src, rel).toMatch(/useColumnWidths\([\s\S]*?,\s*COLUMN_WIDTHS_STORAGE_KEY\s*,?\s*\)/);
-      expect(src, rel).toContain("COLUMN_WIDTHS_STORAGE_KEY = 'agenthub.");
+      expect(src, rel).toMatch(/COLUMN_WIDTHS_STORAGE_KEY = StorageKey\.\w+/);
     }
   });
 });

@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useAgentStatusesOptional } from '@/app/runtime';
-import { useConnectionPool } from '@/app/runtime/ConnectionPoolProvider';
+import { useConnectionInventory } from '@/app/runtime/ConnectionInventoryProvider';
 import { AGENT_IDS, agentDisplayName } from '@/config/agents';
 import { hiddenAgentIdSet } from '@/lib/agent-visibility';
 import {
@@ -26,7 +26,7 @@ import {
 import type { AdapterProfile } from '@/lib/api/adapter';
 import { buildConnectionsGuideUrl } from '@/lib/connect-flow/connect-intent';
 import { guiErrorCode, logGuiEvent } from '@/lib/api/settings';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import type {
   ConnectFlowDialogProps,
   PlanEligibility,
@@ -74,8 +74,8 @@ import { ConnectFlowResultStep } from './ConnectFlowResultStep';
 
 const EMPTY_ELIGIBILITY: ReadonlyMap<string, PlanEligibility> = new Map();
 
-function uniquePoolAgentIds(accounts: { agentId: AgentId }[], providers: { agentId: AgentId }[]): AgentId[] {
-  const ids = new Set<AgentId>();
+function uniquePoolAgentIds(accounts: { agentId: AgentKey }[], providers: { agentId: AgentKey }[]): AgentKey[] {
+  const ids = new Set<AgentKey>();
   for (const item of accounts) ids.add(item.agentId);
   for (const item of providers) ids.add(item.agentId);
   return [...ids];
@@ -93,7 +93,7 @@ export function ConnectFlowDialog({
   const open = entry !== null;
   const key = connectFlowEntryKey(entry);
   const { t } = useI18n();
-  const pool = useConnectionPool();
+  const pool = useConnectionInventory();
   const { statuses } = useAgentStatusesOptional();
   const depsRef = React.useRef(deps);
   depsRef.current = deps;
@@ -397,7 +397,7 @@ export function ConnectFlowDialog({
       ? t('connect.dialog.titleAgent', { name: agentDisplayName(entry.targetAgentId) })
       : entry.purpose === 'route'
         ? t('connect.dialog.titleRoute')
-        : entry.purpose === 'share'
+        : entry.purpose === 'direct'
           ? t('connect.dialog.titleShare')
           : t('connect.dialog.titleSource');
 

@@ -2,15 +2,8 @@
  * Skill API façade — delegates to app runtime backend.
  */
 import { getBackend } from '@/app/runtime';
-import type {
-  CoreSkill,
-  InstalledSkillDto,
-  SkillListingDto,
-  SkillMarkdownPreviewDto,
-  SkillProjectResultDto,
-  SkillsFsChangedPayload,
-} from '@/lib/backend/contracts/skill-types';
-import type { AgentId, Skill, SkillMapStatus, SkillSyncState } from '@/lib/types';
+import type { CoreSkill, InstalledSkillDto, SkillListingDto, SkillMarkdownPreviewDto, SkillProjectionResultDto, SkillsFsChangedPayload } from '@/lib/backend/contracts/skill-types';
+import type { AgentKey, Skill, SkillMapStatus, SkillSyncState } from '@/lib/types';
 
 export type {
   CoreSkillSyncState,
@@ -23,7 +16,7 @@ export type {
   SkillCopyLocation,
   SkillListingDto,
   SkillMarkdownPreviewDto,
-  SkillProjectResultDto,
+  SkillProjectionResultDto,
   SkillsFsChangedPayload,
 } from '@/lib/backend/contracts/skill-types';
 
@@ -46,13 +39,13 @@ export async function listSkills(): Promise<Skill[]> {
 
 export async function toggleSkillSync(
   skillId: string,
-  agentId: AgentId,
+  agentId: AgentKey,
   opts: { force?: boolean; mode?: 'link' | 'copy' } = {},
 ): Promise<{ state: SkillSyncState; conflict: boolean }> {
   return getBackend().skill.toggleSkillSync(skillId, agentId, opts);
 }
 
-export async function checkConflict(skillId: string, agentId: AgentId): Promise<boolean> {
+export async function checkConflict(skillId: string, agentId: AgentKey): Promise<boolean> {
   return getBackend().skill.checkConflict(skillId, agentId);
 }
 
@@ -77,7 +70,7 @@ export async function installSkillFromSource(
 
 export async function importPrivateSkillToShared(
   skillId: string,
-  agentId: AgentId,
+  agentId: AgentKey,
   overwrite = false,
 ): Promise<Skill> {
   return getBackend().skill.importPrivateSkillToShared(skillId, agentId, overwrite);
@@ -89,7 +82,7 @@ export async function installSkill(source?: string): Promise<void> {
 
 export async function uninstallSkill(
   skillId: string,
-  privateAgent?: AgentId,
+  privateAgent?: AgentKey,
 ): Promise<void> {
   return getBackend().skill.uninstallSkill(skillId, privateAgent);
 }
@@ -98,12 +91,12 @@ export async function updateSkill(skillId: string): Promise<CoreSkill> {
   return getBackend().skill.updateSkill(skillId);
 }
 
-export async function projectSkill(
+export async function applySkillProjection(
   skillId: string,
-  agentId: AgentId,
+  agentId: AgentKey,
   mode: 'link' | 'copy' = 'link',
-): Promise<SkillProjectResultDto> {
-  return getBackend().skill.projectSkill(skillId, agentId, mode);
+): Promise<SkillProjectionResultDto> {
+  return getBackend().skill.applySkillProjection(skillId, agentId, mode);
 }
 
 export async function searchSkillMarket(query = ''): Promise<SkillListingDto[]> {
@@ -124,7 +117,7 @@ export async function openPathInFileManager(path: string): Promise<string> {
 /** Read local SKILL.md for markdown preview (shared library or private agent skill). */
 export async function readSkillMarkdown(
   skillId: string,
-  privateAgent?: AgentId | null,
+  privateAgent?: AgentKey | null,
 ): Promise<SkillMarkdownPreviewDto> {
   return getBackend().skill.readSkillMarkdown(skillId, privateAgent);
 }

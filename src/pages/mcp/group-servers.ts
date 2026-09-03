@@ -1,5 +1,5 @@
 import type { McpServerEntry } from '@/lib/backend/contracts/mcp-types';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 
 export type McpFileGroup = {
   sourcePath: string;
@@ -8,14 +8,14 @@ export type McpFileGroup = {
 };
 
 export type McpAgentGroup = {
-  agent: AgentId;
+  agent: AgentKey;
   servers: McpServerEntry[];
   files: McpFileGroup[];
 };
 
 /** Agent → source file → servers, for the MCP table. */
 export function groupMcpServersByAgentAndFile(servers: McpServerEntry[]): McpAgentGroup[] {
-  const byAgent = new Map<AgentId, McpServerEntry[]>();
+  const byAgent = new Map<AgentKey, McpServerEntry[]>();
   for (const s of servers) {
     const list = byAgent.get(s.agent);
     if (list) list.push(s);

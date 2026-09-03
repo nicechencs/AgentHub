@@ -61,6 +61,8 @@ pub fn run() {
                     app.state::<AppState>().bridge_host(),
                     app.state::<AppState>().bridge_saga_coordinator(),
                     app.state::<AppState>().lifecycle_shutdown_barrier(),
+                    app.state::<AppState>().local_gateway_restarting(),
+                    app.handle().clone(),
                 );
             }
             Ok(())
@@ -124,9 +126,9 @@ pub fn run() {
             commands::adapter::start_adapter_bridge,
             commands::adapter::stop_adapter_bridge,
             commands::adapter::get_adapter_bridge_status,
-            commands::adapter::start_local_entry,
-            commands::adapter::stop_local_entry,
-            commands::adapter::get_local_entry_status,
+            commands::adapter::start_local_gateway,
+            commands::adapter::stop_local_gateway,
+            commands::adapter::get_local_gateway_status,
             commands::adapter::set_adapter_bridge_auto_start,
             commands::adapter::remove_adapter,
             commands::lifecycle::request_controlled_restart,
@@ -141,7 +143,7 @@ pub fn run() {
             commands::configuration::plan_agent_config,
             commands::configuration::apply_agent_config,
             commands::configuration::materialize_agent_config,
-            commands::install::list_install_catalog_cmd,
+            commands::install::list_install_catalog,
             commands::install::install_runtime,
             commands::install::install_agent,
             commands::install::upgrade_agent,
@@ -154,11 +156,11 @@ pub fn run() {
             commands::agent_visibility::list_hidden_agents,
             commands::agent_visibility::set_agent_hidden,
             // MCP inventory (read-only)
-            commands::mcp::list_mcp_inventory_cmd,
+            commands::mcp::list_mcp_inventory,
             // Plugin / extension pack inventory + enable/disable (not MCP)
-            commands::plugins::list_plugin_inventory_cmd,
-            commands::plugins::enable_plugin_cmd,
-            commands::plugins::disable_plugin_cmd,
+            commands::plugins::list_plugin_inventory,
+            commands::plugins::enable_plugin,
+            commands::plugins::disable_plugin,
             // Provider
             commands::provider::list_provider_presets,
             commands::provider::list_providers,
@@ -188,7 +190,7 @@ pub fn run() {
             commands::skill::import_private_skill,
             commands::skill::uninstall_skill,
             commands::skill::update_skill,
-            commands::skill::project_skill,
+            commands::skill::apply_skill_projection,
             commands::skill::search_skill_market,
             commands::skill::install_market_skill,
             commands::skill::list_project_skills,
@@ -251,8 +253,8 @@ pub fn run() {
             commands::project::get_project_metadata,
             commands::project::upsert_project_meta,
             commands::project::set_show_hidden_projects,
-            commands::project::delete_agent_project,
-            commands::project::delete_agent_projects,
+            commands::project::delete_agent_session,
+            commands::project::delete_agent_sessions,
             commands::project::get_agent_project_excerpts,
             // Settings / paths / logs
             commands::settings::get_app_settings,

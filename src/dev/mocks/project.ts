@@ -86,10 +86,10 @@ export function createMockProjectPort(): ProjectPort {
       mockMeta.showHiddenProjects = show;
     },
 
-    async deleteAgentProject(id) {
+    async deleteAgentSession(id) {
       await delay(80);
       const i = mockSessions.findIndex((p) => p.id === id);
-      if (i < 0) throw new Error(`project not found: ${id}`);
+      if (i < 0) throw new Error(`session not found: ${id}`);
       const removed = mockSessions[i];
       mockSessions.splice(i, 1);
       const proj = mockProjects.find((p) => p.id === removed.projectId);
@@ -102,7 +102,7 @@ export function createMockProjectPort(): ProjectPort {
       }
     },
 
-    async deleteAgentProjects(ids) {
+    async deleteAgentSessions(ids) {
       await delay(100);
       let n = 0;
       for (const id of ids) {

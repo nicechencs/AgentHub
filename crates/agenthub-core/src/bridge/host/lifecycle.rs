@@ -513,10 +513,13 @@ fn prune_dead_sockets(registry: &mut GatewayRegistry) {
 }
 
 fn bind_loopback(port: u16) -> Result<TcpListener, BridgeHostError> {
+    // SO_REUSEADDR shortens the TIME_WAIT gap after tauri/dev hot-reload or
+    // graceful stop so the same loopback port can rebind without connection refused.
     let requested = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
-    let socket = std::net::TcpListener::bind(requested)?;
-    socket.set_nonblocking(true)?;
-    Ok(TcpListener::from_std(socket)?)
+    let socket = tokio::net::TcpSocket::new_v4()?;
+    socket.set_reuseaddr(true)?;
+    socket.bind(requested)?;
+    Ok(socket.listen(1024)?)
 }
 
 fn take_unbind_tasks(
@@ -706,7 +709,7 @@ fn same_spec(left: &BridgeStartSpec, right: &BridgeStartSpec) -> bool {
         && left.local_token == right.local_token
         && left.upstream.base_url == right.upstream.base_url
         && left.upstream.model == right.upstream.model
-        && left.upstream.source_connection_id == right.upstream.source_connection_id
+        && left.upstream.source_id == right.upstream.source_id
         && left.upstream.auth.token() == right.upstream.auth.token()
         && left.upstream.protocol == right.upstream.protocol
         && left.upstream.local_surface == right.upstream.local_surface

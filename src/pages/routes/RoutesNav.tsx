@@ -13,7 +13,7 @@ import {
   type RoutesNavItem,
 } from '@/pages/routes/routes-nav-items';
 
-const ICON_CLASS = 'h-4 w-4 shrink-0';
+const NAV_ICON_SIZE = 18;
 const LG_QUERY = '(min-width: 1024px)';
 
 function useIsLgUp() {
@@ -54,7 +54,12 @@ function RoutesNavLink({
       {({ isActive }) => {
         const node = (
           <span className={cn(itemClass(isActive), compact && 'justify-center px-0')}>
-            <item.icon className={ICON_CLASS} strokeWidth={1.8} />
+            <item.icon
+              size={NAV_ICON_SIZE}
+              strokeWidth={1.6}
+              absoluteStrokeWidth
+              className="shrink-0"
+            />
             {!compact && (
               <>
                 <span className="truncate">{label}</span>
@@ -91,7 +96,7 @@ export function RoutesNav() {
     cn(
       'group flex h-8 w-full items-center gap-2.5 rounded-btn px-2.5 text-sm transition-colors duration-150',
       isActive
-        ? 'bg-active font-medium text-primary'
+        ? 'bg-accent/5 font-medium text-primary ring-1 ring-inset ring-accent/10 [&_svg]:text-accent'
         : 'text-secondary hover:bg-hover/70 hover:text-primary',
     );
 
@@ -118,7 +123,7 @@ export function RoutesNav() {
             className="flex h-7 w-7 items-center justify-center rounded-btn text-muted transition-colors hover:bg-hover hover:text-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30"
             aria-label={t('nav.expandSidebar')}
           >
-            <PanelLeftOpen className="h-4 w-4" strokeWidth={1.8} />
+            <PanelLeftOpen size={18} strokeWidth={1.6} absoluteStrokeWidth />
           </button>
         </Hint>
         {isLg && (

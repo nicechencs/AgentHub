@@ -31,7 +31,7 @@ describe('account action policy', () => {
     (provider) => {
       expect(accountActionPolicy(account({ agentId: 'pi', provider }))).toEqual({
         kind: 'refresh-credentials',
-        label: '刷新凭据',
+        label: '刷新登录信息',
       });
     },
   );

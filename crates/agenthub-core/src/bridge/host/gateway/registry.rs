@@ -89,7 +89,7 @@ impl EdgeRuntime {
                 BridgeRuntimeState::Running | BridgeRuntimeState::Degraded
             ),
             started_at: self.started_at,
-            source_connection_id: self.spec.upstream.source_connection_id.clone(),
+            source_id: self.spec.upstream.source_id.clone(),
             state,
             upstream_status: self.public_upstream_status(state),
         }
@@ -101,7 +101,7 @@ impl EdgeRuntime {
             port: self.cited_port,
             running: false,
             started_at: self.started_at,
-            source_connection_id: self.spec.upstream.source_connection_id.clone(),
+            source_id: self.spec.upstream.source_id.clone(),
             state: BridgeRuntimeState::Stopped,
             upstream_status: BridgeUpstreamStatus::Stopped,
         }

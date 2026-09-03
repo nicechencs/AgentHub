@@ -4,7 +4,7 @@ import {
   hiddenAgentIdSet,
   visibleInstalledIds,
 } from '@/lib/agent-visibility';
-import type { AgentId, AgentStatus } from '@/lib/types';
+import type { AgentKey, AgentStatus } from '@/lib/types';
 
 type StatusRow = Pick<AgentStatus, 'agentId' | 'installed' | 'hidden'>;
 type UpdateRow = Pick<AgentStatus, 'installed' | 'version' | 'latestVersion'>;
@@ -21,7 +21,7 @@ export function agentHasCatalogUpdate(
 }
 
 export type SidebarInstallStats<T extends { id: string }> = {
-  hiddenIds: Set<AgentId>;
+  hiddenIds: Set<AgentKey>;
   installedCount: number;
   visibleTotal: number;
   orderedInstalledMetas: T[];

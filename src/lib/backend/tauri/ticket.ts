@@ -13,7 +13,7 @@ import {
   type PlanTicketResultWire,
   type TicketWalletWire,
 } from '@/lib/backend/contracts/ticket';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import { mapAdapterInvokeError } from './adapter';
 import { invoke } from './invoke';
 
@@ -32,21 +32,21 @@ export function createTauriTicketPort(): TicketPort {
       const wire = await invokeTicket<TicketWalletWire>('list_ticket_wallet');
       return mapTicketWallet(wire);
     },
-    async plan(ticketId: string, targetAgentId: AgentId): Promise<AdapterApplyPlan> {
+    async plan(ticketId: string, targetAgentId: AgentKey): Promise<AdapterApplyPlan> {
       const wire = await invokeTicket<PlanTicketResultWire>('plan_ticket', {
         ticketId,
         targetAgentId,
       });
       return mapPlanTicketResult(wire);
     },
-    async bind(ticketId: string, targetAgentId: AgentId): Promise<BindTicketResult> {
+    async bind(ticketId: string, targetAgentId: AgentKey): Promise<BindTicketResult> {
       const wire = await invokeTicket<BindTicketResultWire>('bind_ticket', {
         ticketId,
         targetAgentId,
       });
       return mapBindTicketResult(wire);
     },
-    async unbind(ticketId: string, agentId: AgentId): Promise<void> {
+    async unbind(ticketId: string, agentId: AgentKey): Promise<void> {
       const wire = await invokeTicket<unknown>('unbind_ticket', {
         ticketId,
         agentId,

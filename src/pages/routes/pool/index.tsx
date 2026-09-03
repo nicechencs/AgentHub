@@ -35,38 +35,38 @@ import { recycleRouteMembership, removeRouteAuthorization, setRouteAuthorization
 import { deleteProvider } from '@/lib/api/provider';
 import { guiErrorCode, logGuiEvent } from '@/lib/api/settings';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
-import { AdapterErrorLines, AdapterProfiles } from '@/pages/bridges/adapter-components';
+import { AdapterErrorLines, AdapterProfiles } from '@/pages/routes/shared/adapter-components';
 import {
   resolveBridgesProfileQuery,
   resourceFailureMessage,
-} from '@/pages/bridges/adapter-model';
+} from '@/pages/routes/shared/adapter-model';
 import {
   adapterProfileFlowLabel,
-  bridgesPageViewState,
   groupLocalBridgeProfiles,
   partitionLocalBridgeRuntimes,
-} from '@/pages/bridges/adapter-view-model';
-import { EditRouteDialog } from '@/pages/bridges/EditRouteDialog';
-import { RouteDetailPanel } from '@/pages/bridges/RouteDetailPanel';
-import { WriteClientConfigDialog } from '@/pages/bridges/WriteClientConfigDialog';
-import { buildRouteGraph } from '@/pages/bridges/route-graph-model';
+  routesPoolPageViewState,
+} from '@/pages/routes/shared/adapter-view-model';
+import { EditRouteDialog } from '@/pages/routes/shared/EditRouteDialog';
+import { RouteDetailPanel } from '@/pages/routes/shared/RouteDetailPanel';
+import { WriteClientConfigDialog } from '@/pages/routes/shared/WriteClientConfigDialog';
+import { buildRouteGraph } from '@/pages/routes/shared/route-graph-model';
 import {
   inspectAuthorizationKey,
   inspectProfileId,
   liveInspectProfile,
   ROUTES_INSPECT_WIDTH_KEY,
   type RouteInspect,
-} from '@/pages/bridges/route-inspect';
+} from '@/pages/routes/shared/route-inspect';
 import {
   collectPoolAuthorizations,
   directProfilesForRoutePoolV2,
   matchDefaultPoolForProfile,
   poolAuthorizationDeleteSteps,
   poolAuthorizationTicketView,
-} from '@/pages/bridges/route-pool-view-model';
-import { useAdapterResources } from '@/pages/bridges/use-bridge-resources';
-import { useBridgeRuntimeActions } from '@/pages/bridges/use-bridge-runtime-actions';
-import { useRoutePoolState } from '@/pages/bridges/use-route-pool-state';
+} from '@/pages/routes/shared/route-pool-view-model';
+import { useAdapterResources } from '@/pages/routes/shared/use-bridge-resources';
+import { useBridgeRuntimeActions } from '@/pages/routes/shared/use-bridge-runtime-actions';
+import { useRoutePoolState } from '@/pages/routes/shared/use-route-pool-state';
 import {
   deleteConnectionToastDescription,
 } from '@/pages/connections/connection-model';
@@ -239,7 +239,7 @@ export default function RoutesPoolPage() {
   const hasContent = groupedOrphan.length > 0
     || directProfiles.length > 0
     || authorizations.length > 0;
-  const pageView = bridgesPageViewState({
+  const pageView = routesPoolPageViewState({
     profileState: loading && profileState !== 'error' ? 'loading' : profileState,
     bound,
     orphan: groupedOrphan,

@@ -1,7 +1,7 @@
 import type { ChatPort } from '@/lib/backend/contracts';
 import { delay } from '@/dev/mocks/delay';
 import type {
-  AgentId,
+  AgentKey,
   ChatEvent,
   ChatMessage,
   ChatMessageStatus,
@@ -18,8 +18,8 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function requireSingleAgent(agentIds: AgentId[]): AgentId[] {
-  const seen: AgentId[] = [];
+function requireSingleAgent(agentIds: AgentKey[]): AgentKey[] {
+  const seen: AgentKey[] = [];
   for (const id of agentIds) {
     if (!seen.includes(id)) seen.push(id);
   }

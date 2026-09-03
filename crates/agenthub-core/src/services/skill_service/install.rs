@@ -8,7 +8,7 @@ use std::time::Instant;
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
-    AgentId, Capability, Skill, SkillLinkKind, SkillProjectMode, SkillProjectResult,
+    AgentId, Capability, Skill, SkillLinkKind, SkillProjectionMode, SkillProjectionResult,
     SkillSourceRecord,
 };
 use crate::platform::skills::{
@@ -433,12 +433,12 @@ impl SkillService {
     ///
     /// Windows link mode: junction → symlink → copy.
     /// Unix link mode: symlink → copy.
-    pub fn project_skill(
+    pub fn apply_skill_projection(
         &self,
         skill_id: &str,
         agent: AgentId,
-        mode: SkillProjectMode,
-    ) -> Result<SkillProjectResult> {
+        mode: SkillProjectionMode,
+    ) -> Result<SkillProjectionResult> {
         let started = Instant::now();
         let result = (|| {
             let skill_id = validate_skill_id(skill_id)?.to_string();
@@ -473,15 +473,15 @@ impl SkillService {
 
             let revision = self.projection_revision(&skill_id);
             let (applied, fell_back) = match mode {
-                SkillProjectMode::Copy => {
+                SkillProjectionMode::Copy => {
                     let files = validate_and_collect_source(&source_dir, &skill_id)?;
                     materialize_projection(&skills_root, &skill_id, &target_dir, &files, None)?;
                     // Marker write failure fails the op; assignment path would
-                    // not claim applied. Here project_skill returns Err.
+                    // not claim applied. Here apply_skill_projection returns Err.
                     record_copy_ownership(&skills_root, &skill_id, &target_dir, &revision)?;
                     (SkillLinkKind::None, false)
                 }
-                SkillProjectMode::Link => {
+                SkillProjectionMode::Link => {
                     let (applied, fell_back) = create_projection_link(&source_dir, &target_dir)?;
                     // True link: clear stale marker (errors must not be swallowed).
                     // SkillLinkKind::None = copy fallback → record ownership marker.
@@ -496,7 +496,7 @@ impl SkillService {
                 }
             };
 
-            Ok(SkillProjectResult {
+            Ok(SkillProjectionResult {
                 skill_id,
                 agent,
                 requested_mode: mode,

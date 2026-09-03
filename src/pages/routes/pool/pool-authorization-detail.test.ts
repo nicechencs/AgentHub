@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import type { PoolAuthorizationItem } from '@/pages/bridges/route-pool-view-model';
+import type { PoolAuthorizationItem } from '@/pages/routes/shared/route-pool-view-model';
 import {
   formatPoolTimestamp,
   hasQuotaWindow,

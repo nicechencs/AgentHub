@@ -16,10 +16,10 @@ import {
   localEndpointKindFromPool,
   type LocalEndpointKind,
 } from '@/lib/route-endpoints';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import type { TranslateFn } from '@/lib/i18n';
-import { isBridgeStopCapable } from '@/pages/bridges/adapter-view-model';
-import { localEndpointKindLabel } from '@/pages/bridges/route-pool-view-model';
+import { isBridgeStopCapable } from '@/pages/routes/shared/adapter-view-model';
+import { localEndpointKindLabel } from '@/pages/routes/shared/route-pool-view-model';
 
 export const BOARD_INBOUND_SNAPSHOT_LIMIT = 8;
 export const BOARD_INBOUND_WINDOW = 20;
@@ -45,7 +45,7 @@ export type RouteBoardRecentSummary = {
 export type RouteBoardStatusRow = {
   profileId: string;
   name: string;
-  targetAgentId: AgentId;
+  targetAgentId: AgentKey;
   memberCount: number;
   state: AdapterBridgeRuntimeState | undefined;
   endpoint: string | null;
@@ -54,7 +54,7 @@ export type RouteBoardStatusRow = {
   startedAt: string | null;
   statusUnavailable: boolean;
   profileStatus: AdapterProfileStatus;
-  /** Present when this local entry already has a listener to start/stop. */
+  /** Present when this local gateway already has a listener to start/stop. */
   profile: AdapterProfile | null;
   recent: RouteBoardRecentSummary;
   needsAttention: boolean;
@@ -73,8 +73,8 @@ export type BoardFleetSummary = {
   label: string;
 };
 
-/** Shared local-entry master switch (not per-login, not per-endpoint). */
-export type LocalEntryControl = {
+/** Shared local-gateway master switch (not per-login, not per-endpoint). */
+export type LocalGatewayControl = {
   profileIds: string[];
   startIds: string[];
   stopIds: string[];
@@ -84,16 +84,19 @@ export type LocalEntryControl = {
   starting: boolean;
   stopping: boolean;
   transitioning: boolean;
+  /** Process-local restore / start is bringing listeners back. */
+  restarting: boolean;
   /** Connection-pool logins exist; the switch still operates if they later fail. */
   hasEnrolledLogins: boolean;
 };
 
-export function buildLocalEntryControl(
+export function buildLocalGatewayControl(
   profiles: readonly Pick<AdapterProfile, 'id' | 'route' | 'sourceKind' | 'sourceId' | 'targetAgentId' | 'lastErrorCode'>[],
   bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus | undefined>,
   hiddenTargetIds: ReadonlySet<string> = new Set(),
   pools: readonly Pick<DefaultRoutePoolOverview, 'id' | 'targetAgentId' | 'members'>[] = [],
-): LocalEntryControl {
+  restarting = false,
+): LocalGatewayControl {
   const hasEnrolledLogins = pools.some((pool) => (
     !hiddenTargetIds.has(pool.targetAgentId)
     && pool.members.some((member) => member.enabled !== false)
@@ -140,7 +143,8 @@ export function buildLocalEntryControl(
     running,
     starting,
     stopping,
-    transitioning: starting || stopping,
+    restarting,
+    transitioning: starting || stopping || restarting,
     hasEnrolledLogins,
   };
 }
@@ -150,7 +154,7 @@ export type BoardEndpointTypeRow = {
   kind: LocalEndpointKind;
   surface: RoutePoolSurface;
   path: string;
-  /** Created local entry keys for this type; not upstream logins. */
+  /** Created local gateway keys for this type; not upstream logins. */
   keyCount: number;
 };
 
@@ -282,7 +286,7 @@ function pickRuntimeProfile(
 function statusRowFromRuntime(input: {
   id: string;
   name: string;
-  targetAgentId: AgentId;
+  targetAgentId: AgentKey;
   memberCount: number;
   profile: AdapterProfile | null;
   portHint: number | null | undefined;
@@ -326,7 +330,7 @@ function sortBoardRows(rows: RouteBoardStatusRow[]): RouteBoardStatusRow[] {
   });
 }
 
-/** One card per connection-pool local entry, plus leftover listeners. */
+/** One card per connection-pool local gateway, plus leftover listeners. */
 export function buildRouteBoardStatusRows(
   profiles: readonly AdapterProfile[],
   bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus | undefined>,

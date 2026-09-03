@@ -1,7 +1,7 @@
 use super::*;
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use agenthub_core::adapters::{AdapterRegistry, AgentAdapter};
@@ -57,7 +57,7 @@ fn start_spec(profile_id: &str) -> BridgeStartSpec {
         BridgeUpstreamConfig {
             base_url: "https://api.kimi.com/coding/v1".into(),
             model: Some("kimi-k2.5".into()),
-            source_connection_id: Some("kimi-connection".into()),
+            source_id: Some("kimi-connection".into()),
             auth: ResolvedAuth::bearer("upstream-bearer-that-must-never-serialize"),
             protocol: agenthub_core::bridge::BridgeUpstreamProtocol::OpenAiChatCompletions,
             local_surface: agenthub_core::bridge::BridgeLocalSurface::Responses,
@@ -77,6 +77,31 @@ fn status_dto_never_serializes_local_or_upstream_bearers() {
         assert!(!json.contains("base_url"));
         host.shutdown().await.unwrap();
     });
+}
+
+#[test]
+fn local_gateway_restarting_flag_flips_without_app_handle() {
+    let flag = AtomicBool::new(false);
+    set_local_gateway_restarting(&flag, None, true);
+    assert!(flag.load(Ordering::SeqCst));
+    set_local_gateway_restarting(&flag, None, true);
+    assert!(flag.load(Ordering::SeqCst));
+    set_local_gateway_restarting(&flag, None, false);
+    assert!(!flag.load(Ordering::SeqCst));
+}
+
+#[test]
+fn local_gateway_status_includes_restarting_flag() {
+    let host = BridgeRuntimeHost::new();
+    let flag = AtomicBool::new(true);
+    let status = local_gateway_status(&host, &flag).unwrap();
+    assert!(status.restarting);
+    assert!(!status.running);
+    let json = serde_json::to_value(&status).unwrap();
+    assert_eq!(json["restarting"], true);
+    flag.store(false, Ordering::SeqCst);
+    let idle = local_gateway_status(&host, &flag).unwrap();
+    assert!(!idle.restarting);
 }
 
 #[test]
@@ -335,7 +360,7 @@ fn occupancy_does_not_enroll_and_healthy_bind_attaches_index() {
                 .get(&profile.id)
                 .unwrap()
                 .unwrap()
-                .v2_enrolled
+                .unified_gateway_enrolled
                 == false
         );
 
@@ -348,7 +373,7 @@ fn occupancy_does_not_enroll_and_healthy_bind_attaches_index() {
             .await
             .is_err());
         let pool = hub.route_pools().get(&profile.id).unwrap().unwrap();
-        assert!(!pool.v2_enrolled);
+        assert!(!pool.unified_gateway_enrolled);
         assert_eq!(pool.gateway_port, None);
         drop(blocker);
 
@@ -359,11 +384,11 @@ fn occupancy_does_not_enroll_and_healthy_bind_attaches_index() {
         assert!(ensured.status.running);
         let still = hub.route_pools().get(&profile.id).unwrap().unwrap();
         assert!(
-            !still.v2_enrolled,
+            !still.unified_gateway_enrolled,
             "bind success without enroll helper must not enroll"
         );
 
-        let refreshed = enroll_v2_and_refresh_index(
+        let refreshed = enroll_unified_gateway_and_refresh_index(
             hub.clone(),
             &host,
             profile.clone(),
@@ -375,7 +400,7 @@ fn occupancy_does_not_enroll_and_healthy_bind_attaches_index() {
         .await
         .unwrap();
         let enrolled = hub.route_pools().get(&profile.id).unwrap().unwrap();
-        assert!(enrolled.v2_enrolled);
+        assert!(enrolled.unified_gateway_enrolled);
         assert_eq!(enrolled.gateway_port, Some(ensured.status.port));
         assert!(
             refreshed.material.start_spec(None).route_index.is_some(),
@@ -430,7 +455,7 @@ fn enroll_refresh_replace_of_reused_listener_is_compensated() {
             "second ensure of the unenrolled spec must be a reuse"
         );
 
-        let refresh = enroll_v2_and_refresh_index(
+        let refresh = enroll_unified_gateway_and_refresh_index(
             hub.clone(),
             &host,
             profile.clone(),
@@ -494,7 +519,7 @@ fn enroll_refresh_reuse_of_indexed_spec_is_not_compensated() {
         let first = ensure_bridge_listener(&host, &material, None, Vec::new(), false)
             .await
             .unwrap();
-        let first_refresh = enroll_v2_and_refresh_index(
+        let first_refresh = enroll_unified_gateway_and_refresh_index(
             hub.clone(),
             &host,
             profile.clone(),
@@ -507,7 +532,7 @@ fn enroll_refresh_reuse_of_indexed_spec_is_not_compensated() {
         .unwrap();
         assert!(first_refresh.listener.as_ref().unwrap().owned_by_saga);
 
-        let again = enroll_v2_and_refresh_index(
+        let again = enroll_unified_gateway_and_refresh_index(
             hub.clone(),
             &host,
             profile.clone(),
@@ -775,7 +800,7 @@ fn restore_filter_only_keeps_active_auto_start_local_bridges() {
 #[test]
 fn saga_coordinator_serializes_same_profile_but_not_different_profiles() {
     tauri::async_runtime::block_on(async {
-        let coordinator = Arc::new(AdapterBridgeSagaCoordinator::new());
+        let coordinator = Arc::new(AdapterSagaCoordinator::new());
         let first = coordinator.lock_profile("one").await;
         let waiter = Arc::clone(&coordinator);
         let mut pending = tauri::async_runtime::spawn(async move {
@@ -797,7 +822,7 @@ fn saga_coordinator_serializes_same_profile_but_not_different_profiles() {
 #[test]
 fn saga_coordinator_serializes_same_target_without_blocking_other_agents() {
     tauri::async_runtime::block_on(async {
-        let coordinator = Arc::new(AdapterBridgeSagaCoordinator::new());
+        let coordinator = Arc::new(AdapterSagaCoordinator::new());
         let first = coordinator.lock_target(AgentId::Codex).await;
         let waiter = Arc::clone(&coordinator);
         let mut pending = tauri::async_runtime::spawn(async move {
@@ -844,7 +869,7 @@ fn direct_remove_waits_for_the_same_target_coordinator() {
             .create(&direct_profile)
             .unwrap();
 
-        let coordinator = Arc::new(AdapterBridgeSagaCoordinator::new());
+        let coordinator = Arc::new(AdapterSagaCoordinator::new());
         let target = coordinator.lock_target(AgentId::Claude).await;
         let exit = crate::exit_coordinator::ExitCoordinator::new();
         let waiter_hub = Arc::clone(&hub);
@@ -1590,7 +1615,7 @@ fn apply_local_bridge_from_grok_oauth_does_not_occupy_claude_current() {
         let source_auth_before = std::fs::read(&source_adapter.auth_path).unwrap();
         let hub = Arc::new(hub);
         let host = Arc::new(BridgeRuntimeHost::new());
-        let coordinator = Arc::new(AdapterBridgeSagaCoordinator::new());
+        let coordinator = Arc::new(AdapterSagaCoordinator::new());
         let exit = crate::exit_coordinator::ExitCoordinator::new();
         let result = apply_local_bridge(
             Arc::clone(&hub),

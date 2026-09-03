@@ -1,4 +1,4 @@
-import type { Account, AgentId } from '@/lib/types';
+import type { Account, AgentKey } from '@/lib/types';
 import { isPiRefreshProvider } from './oauth-constants';
 
 export type AccountActionKind =
@@ -34,7 +34,7 @@ export function accountActionPolicy(account: Pick<
     account.refreshable === true &&
     isPiRefreshProvider(account.provider)
   ) {
-    return { kind: 'refresh-credentials', label: '刷新凭据' };
+    return { kind: 'refresh-credentials', label: '刷新登录信息' };
   }
   return undefined;
 }
@@ -78,7 +78,7 @@ export const getAccountActionPolicy = accountActionPolicy;
 
 /** Testable provider matrix without exposing mutable policy internals. */
 export function canRefreshAccountCredentials(
-  agentId: AgentId,
+  agentId: AgentKey,
   provider?: string,
   refreshable?: boolean,
 ): boolean {

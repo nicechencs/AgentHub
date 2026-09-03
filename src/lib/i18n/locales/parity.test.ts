@@ -43,6 +43,8 @@ describe('locale key parity', () => {
     expect(keys).toContain('settings.general.pluginsNavVisibleLabel');
     expect(keys).toContain('common.inDevelopment');
     expect(keys).toContain('nav.plugins');
+    expect(keys).toContain('connections.healAligned');
+    expect(keys).toContain('connections.healConflict');
     expect(keys).toContain('connections.providerDialog.useOfficial');
     expect(keys).toContain('connections.providerDialog.remoteModelsLoading');
     expect(keys).toContain('connections.providerDialog.remoteModelsFailed');
@@ -53,6 +55,7 @@ describe('locale key parity', () => {
     expect(keys).toContain('routes.endpoint.models');
     expect(keys).toContain('routes.inbound.title');
     expect(keys).toContain('routes.inbound.empty');
+    expect(keys).toContain('routes.localForward.restarting');
   });
 
   it('all user copy avoids banned jargon', () => {
@@ -94,6 +97,10 @@ describe('locale key parity', () => {
     expect(translate('en', 'routes.inbound.empty')).toBe('No tool has connected yet');
     expect(translate('zh', 'routes.endpointCopied')).toBe('地址已复制');
     expect(translate('en', 'routes.endpointCopied')).toBe('Address copied');
+    expect(translate('zh', 'routes.localForward.restarting')).toBe('本机转发重启中');
+    expect(translate('en', 'routes.localForward.restarting')).toBe(
+      'Local forwarding is restarting',
+    );
     expect(translate('zh', 'routes.endpointCopied')).not.toContain('端点');
     expect(translate('en', 'common.hideSecret')).toBe('Hide');
     expect(translate('en', 'agents.terminal.done')).toBe('Done');

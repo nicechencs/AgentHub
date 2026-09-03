@@ -21,12 +21,12 @@ import {
   skillPreviewActiveKey,
 } from '@/lib/skills/preview-keys';
 import { splitSkillMarkdown } from '@/lib/skills/skill-markdown';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { cn } from '@/lib/utils';
 
 export type SkillPreviewCopy = {
-  agentId: AgentId;
+  agentId: AgentKey;
   sourceDir: string;
 };
 
@@ -34,7 +34,7 @@ export type SkillPreviewTarget = {
   skillId: string;
   name?: string;
   /** Agent leaf being previewed; omit / null for the shared library. */
-  privateAgent?: AgentId | null;
+  privateAgent?: AgentKey | null;
   sourceDir?: string | null;
   libraryDir?: string | null;
   copies?: SkillPreviewCopy[];
@@ -83,7 +83,7 @@ export function SkillMarkdownPreviewPanel({
   open: boolean;
   onClose: () => void;
   onOpenDir?: (path: string) => void;
-  onSelectCopy?: (agentId: AgentId | null) => void;
+  onSelectCopy?: (agentId: AgentKey | null) => void;
   onRemoveCopy?: () => void;
   removeCopyLabel?: string;
   /** Pixel width when open (parent + resize handle own the split). */

@@ -22,7 +22,7 @@ import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import { addApiKeyAccount, updateApiKeyAccount } from '@/lib/api/account';
 import { resolveAgentMeta } from '@/config/agents';
-import type { Account, AgentId } from '@/lib/types';
+import type { Account, AgentKey } from '@/lib/types';
 
 const CLAUDE_ENV_KEYS = [
   { value: 'ANTHROPIC_AUTH_TOKEN' },
@@ -46,7 +46,7 @@ export function ApiKeyAccountDialog({
   asPanel = false,
   width,
 }: {
-  agentId: AgentId;
+  agentId: AgentKey;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   mode?: ApiKeyDialogMode;

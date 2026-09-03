@@ -45,7 +45,7 @@ import { useI18n } from '@/components/shared/LanguageProvider';
 import { RouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
 import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
 import type { BindingView, TicketView, TicketWallet } from '@/lib/backend/contracts/ticket';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
   buildTicketAddMenu,
@@ -79,7 +79,7 @@ function CredentialMark({
   agentId,
 }: {
   cls: TicketView['credentialClass'];
-  agentId: AgentId;
+  agentId: AgentKey;
 }) {
   const { t } = useI18n();
   const color = resolveAgentMeta(agentId).color;
@@ -332,7 +332,7 @@ function TicketDetailBody({
   bindingRows: TicketBindingRowView[];
   diagnostics: TicketDetailField[];
   showClients: boolean;
-  agentId?: AgentId;
+  agentId?: AgentKey;
   files?: TicketDetailExtras['credentialFiles'];
 }) {
   const { t } = useI18n();
@@ -610,15 +610,15 @@ export function TicketAddMenu({
   variant = 'default',
 }: {
   agents: TicketAddMenuAgent[];
-  focusedAgentId?: AgentId | null;
-  onImportLogin?: (agentId: AgentId) => void;
-  onOauth?: (agentId: AgentId) => void;
-  onAddKey?: (agentId: AgentId) => void;
+  focusedAgentId?: AgentKey | null;
+  onImportLogin?: (agentId: AgentKey) => void;
+  onOauth?: (agentId: AgentKey) => void;
+  onAddKey?: (agentId: AgentKey) => void;
   variant?: 'default' | 'outline' | 'secondary';
 }) {
   const { t } = useI18n();
   const [open, setOpen] = React.useState(false);
-  const [expandedId, setExpandedId] = React.useState<AgentId | null>(null);
+  const [expandedId, setExpandedId] = React.useState<AgentKey | null>(null);
   const focused = focusedTicketAddAgent(agents, focusedAgentId);
   const expanded = expandedId ? agents.find((agent) => agent.id === expandedId) ?? null : null;
 
@@ -762,8 +762,8 @@ export function TicketWalletList({
 }: {
   wallet: TicketWallet | null;
   loading?: boolean;
-  highlightAgentId?: AgentId | null;
-  agentFilterId?: AgentId | null;
+  highlightAgentId?: AgentKey | null;
+  agentFilterId?: AgentKey | null;
   onImportToPool: (ticket: TicketView) => void;
   importActionForTicket?: (ticket: TicketView) => TicketBindAction;
   onSwitchTicket?: (ticket: TicketView) => void;
@@ -774,12 +774,12 @@ export function TicketWalletList({
   onDeleteTicket: (ticket: TicketView) => void;
   onShowDetail?: (ticket: TicketView) => void;
   activeTicketId?: string | null;
-  onAddKey?: (agentId: AgentId) => void;
-  onImportLogin?: (agentId: AgentId) => void;
-  onOauth?: (agentId: AgentId) => void;
+  onAddKey?: (agentId: AgentKey) => void;
+  onImportLogin?: (agentId: AgentKey) => void;
+  onOauth?: (agentId: AgentKey) => void;
   onClearAgentFilter?: () => void;
-  installedAgentIds?: readonly AgentId[];
-  oauthLoginAgents?: readonly AgentId[] | null;
+  installedAgentIds?: readonly AgentKey[];
+  oauthLoginAgents?: readonly AgentKey[] | null;
 }) {
   const { t } = useI18n();
 

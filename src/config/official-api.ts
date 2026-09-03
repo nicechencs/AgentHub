@@ -2,7 +2,7 @@
  * 各 Agent「官方 API」默认 endpoint / 模型。
  * 用于 API Key 设置里勾选「官方」时一键带出，不再走中转占位模板。
  */
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 
 export type OfficialApiDefaults = {
   /** 展示名 */
@@ -31,7 +31,7 @@ export type OfficialApiDefaults = {
   scaffoldText: string;
 };
 
-const OFFICIAL: Partial<Record<AgentId, OfficialApiDefaults>> = {
+const OFFICIAL: Partial<Record<AgentKey, OfficialApiDefaults>> = {
   claude: {
     label: 'Anthropic 官方',
     baseUrl: '', // 不写 ANTHROPIC_BASE_URL，走 CLI 默认
@@ -129,18 +129,18 @@ const OFFICIAL: Partial<Record<AgentId, OfficialApiDefaults>> = {
   },
 };
 
-export function officialApiDefaults(agentId: AgentId): OfficialApiDefaults | null {
+export function officialApiDefaults(agentId: AgentKey): OfficialApiDefaults | null {
   return OFFICIAL[agentId] ?? null;
 }
 
 /** Agents that have a real official URL/model template (Pi does not). */
-export function agentHasOfficialApiTemplate(agentId: AgentId): boolean {
+export function agentHasOfficialApiTemplate(agentId: AgentKey): boolean {
   return officialApiDefaults(agentId) != null;
 }
 
 /** 是否像官方 endpoint（用于旧数据推断） */
 export function looksLikeOfficialEndpoint(
-  agentId: AgentId,
+  agentId: AgentKey,
   baseUrl: string | undefined,
 ): boolean {
   const off = officialApiDefaults(agentId);

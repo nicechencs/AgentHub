@@ -6,6 +6,7 @@ import {
   mapAdapterRouteAnalysis,
   mapDefaultRoutePoolList,
   mapInboundRequest,
+  mapLocalGatewayStatus,
   mapLocalTokenProbeResult,
   mapLocalTokenRecord,
   mapRouteTrace,
@@ -468,7 +469,7 @@ describe('Adapter Rust wire mappers', () => {
         targetAgentId: 'codex',
         surface: 'responses',
         dialect: 'codex',
-        v2Enrolled: true,
+        unifiedGatewayEnrolled: true,
         gatewayPort: 43121,
         members: [{
           sourceKind: 'account',
@@ -489,6 +490,36 @@ describe('Adapter Rust wire mappers', () => {
       refreshTokenTail: '**5678',
     });
     expect(JSON.stringify(listed)).not.toContain('hubToken');
+    expect(listed.pools[0]?.unifiedGatewayEnrolled).toBe(true);
+  });
+
+  it('maps unifiedGatewayEnrolled from wire', () => {
+    const listed = mapDefaultRoutePoolList({
+      enabled: true,
+      pools: [{
+        id: 'pool-new',
+        targetAgentId: 'claude',
+        surface: 'messages',
+        dialect: 'claude',
+        unifiedGatewayEnrolled: true,
+        members: [],
+      }],
+    });
+    expect(listed.pools[0]?.unifiedGatewayEnrolled).toBe(true);
+  });
+
+  it('treats missing unifiedGatewayEnrolled as false', () => {
+    const listed = mapDefaultRoutePoolList({
+      enabled: true,
+      pools: [{
+        id: 'pool-absent',
+        targetAgentId: 'claude',
+        surface: 'messages',
+        dialect: 'claude',
+        members: [],
+      }],
+    });
+    expect(listed.pools[0]?.unifiedGatewayEnrolled).toBe(false);
   });
 
   it('maps loopback entry keys for the tokens page', () => {
@@ -580,5 +611,27 @@ describe('Adapter Rust wire mappers', () => {
         ],
       }).recentRouteTraces,
     ).toHaveLength(1);
+  });
+
+  it('maps local gateway restarting from the Tauri DTO and defaults missing to false', () => {
+    expect(mapLocalGatewayStatus({
+      running: true,
+      port: 43121,
+      restarting: true,
+      statuses: [],
+    })).toMatchObject({
+      running: true,
+      port: 43121,
+      restarting: true,
+      statuses: [],
+    });
+    expect(mapLocalGatewayStatus({
+      running: false,
+      statuses: [],
+    })).toMatchObject({
+      running: false,
+      port: null,
+      restarting: false,
+    });
   });
 });

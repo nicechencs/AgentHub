@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { resolveAgentMeta } from '@/config/agents';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import { Hint } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { AGENT_COLORS, AGENT_CSS_VAR_TO_HEX_LIGHT, type TokenAgentId } from '@/styles/tokens';
@@ -26,7 +26,7 @@ function relativeLuminance(color: string): number {
   return 0.2126 * toLin(r) + 0.7152 * toLin(g) + 0.0722 * toLin(b);
 }
 
-function brandHex(agentId: AgentId): string | undefined {
+function brandHex(agentId: AgentKey): string | undefined {
   if (agentId in AGENT_COLORS) {
     return AGENT_COLORS[agentId as TokenAgentId].light;
   }
@@ -34,7 +34,7 @@ function brandHex(agentId: AgentId): string | undefined {
 }
 
 /** 展示 agent 本地 logo；未知 agent 或 logo 加载失败时回退为首字母圆标。 */
-export function AgentLogo({ agentId, size = 'md' }: { agentId: AgentId; size?: 'sm' | 'md' | 'lg' }) {
+export function AgentLogo({ agentId, size = 'md' }: { agentId: AgentKey; size?: 'sm' | 'md' | 'lg' }) {
   const meta = resolveAgentMeta(agentId);
   const sizeCls = {
     sm: 'h-6 w-6 text-meta',
@@ -50,7 +50,7 @@ export function AgentLogo({ agentId, size = 'md' }: { agentId: AgentId; size?: '
   const logoBackground = meta.logoBackground ?? '#ffffff';
 
   type LogoLoadState = {
-    agentId: AgentId;
+    agentId: AgentKey;
     svgSrc?: string;
     pngSrc?: string;
     svgFailed: boolean;

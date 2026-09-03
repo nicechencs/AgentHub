@@ -2,7 +2,7 @@
  * Chat API façade — delegates to app runtime backend.
  */
 import { getBackend } from '@/app/runtime';
-import type { AgentId, ChatEvent, ChatMessage, Conversation } from '@/lib/types';
+import type { AgentKey, ChatEvent, ChatMessage, Conversation } from '@/lib/types';
 
 export type {
   CoreConversation,
@@ -16,14 +16,14 @@ export async function listConversations(): Promise<Conversation[]> {
 }
 
 export async function createConversation(
-  agentIds: AgentId[],
+  agentIds: AgentKey[],
   cwd?: string | null,
 ): Promise<Conversation> {
   return getBackend().chat.createConversation(agentIds, cwd);
 }
 
 export async function ensureDefaultConversation(
-  agentIds: AgentId[],
+  agentIds: AgentKey[],
   cwd?: string | null,
 ): Promise<Conversation> {
   return getBackend().chat.ensureDefaultConversation(agentIds, cwd);
@@ -33,7 +33,7 @@ export async function updateConversation(
   id: string,
   patch: {
     title?: string;
-    agentIds?: AgentId[];
+    agentIds?: AgentKey[];
     cwd?: string | null;
     allowDangerous?: boolean;
   },
@@ -61,12 +61,12 @@ export async function chatCancel(conversationId: string): Promise<void> {
   return getBackend().chat.chatCancel(conversationId);
 }
 
-export async function setChatModel(agentId: AgentId, model: string): Promise<void> {
+export async function setChatModel(agentId: AgentKey, model: string): Promise<void> {
   return getBackend().chat.setChatModel(agentId, model);
 }
 
 export async function getChatModel(
-  agentId: AgentId,
+  agentId: AgentKey,
 ): Promise<{ model: string | null; models: string[] }> {
   return getBackend().chat.getChatModel(agentId);
 }

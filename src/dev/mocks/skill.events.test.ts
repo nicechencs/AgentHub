@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import { createMockSkillPort, resetMockSkills } from './skill';
 
 describe('mock SkillPort.onFsChanged', () => {
@@ -43,7 +43,7 @@ describe('resetMockSkills', () => {
 
     const restored = await port.listSkills();
     expect(restored.map((s) => s.id)).toEqual(originalIds);
-    expect(restored[0]?.sync).toEqual(originalSkills[0]?.sync);
+    expect(restored[0]?.projectionByAgent).toEqual(originalSkills[0]?.projectionByAgent);
     expect(restored[0]?.projections).toEqual(originalSkills[0]?.projections);
 
     const restoredInstalled = await port.listInstalledSkills();
@@ -58,11 +58,11 @@ describe('resetMockSkills', () => {
   it('clears projection-mode memory', async () => {
     const port = createMockSkillPort();
     const skills = await port.listSkills();
-    let hit: { skillId: string; agentId: AgentId } | undefined;
+    let hit: { skillId: string; agentId: AgentKey } | undefined;
     for (const skill of skills) {
-      for (const [agentId, state] of Object.entries(skill.sync)) {
+      for (const [agentId, state] of Object.entries(skill.projectionByAgent)) {
         if (state === 'absent') {
-          hit = { skillId: skill.id, agentId: agentId as AgentId };
+          hit = { skillId: skill.id, agentId: agentId as AgentKey };
           break;
         }
       }
@@ -78,7 +78,7 @@ describe('resetMockSkills', () => {
     resetMockSkills();
 
     const after = (await port.listSkills()).find((s) => s.id === skillId);
-    expect(after?.sync[agentId]).toBe('absent');
+    expect(after?.projectionByAgent[agentId]).toBe('absent');
     expect((await port.toggleSkillSync(skillId, agentId)).state).toBe('copied');
   }, 15_000);
 });

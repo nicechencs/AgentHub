@@ -24,12 +24,12 @@ import {
 } from '@/lib/backend/contracts/official-login-session';
 import { OAUTH_WAIT_TIMEOUT_SECS } from '@/lib/backend/contracts/oauth-constants';
 import type { OAuthLoginOption } from '@/lib/backend/contracts/account-port';
-import type { Account, AgentId } from '@/lib/types';
+import type { Account, AgentKey } from '@/lib/types';
 
 export type { OfficialLoginPoll, OfficialLoginSession };
 
 export async function startOfficialLogin(
-  agentId: AgentId,
+  agentId: AgentKey,
   option: Pick<OAuthLoginOption, 'id' | 'flow'>,
   openBrowser = true,
   poolOwned = false,

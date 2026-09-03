@@ -7,7 +7,7 @@ import {
 import { useI18n } from '@/components/shared/LanguageProvider';
 import type { RouteTraceListItem } from '@/components/shared/RouteTraceList';
 import { routeEndpointHttpParts } from '@/lib/route-endpoints';
-import { formatInboundAt } from '@/pages/bridges/route-endpoint-copy';
+import { formatInboundAt } from '@/pages/routes/shared/route-endpoint-copy';
 import {
   ACTIVITY_TRACE_STAGES,
   activityTraceConversionLabel,

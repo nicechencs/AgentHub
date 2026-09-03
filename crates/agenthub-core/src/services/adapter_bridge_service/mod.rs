@@ -493,7 +493,7 @@ fn default_auto_start() -> bool {
 #[derive(Clone)]
 pub struct AdapterBridgeRuntimeMaterial {
     profile_id: String,
-    source_connection_id: String,
+    source_id: String,
     preferred_port: Option<u16>,
     upstream_base_url: String,
     upstream_model: String,
@@ -520,7 +520,7 @@ impl std::fmt::Debug for AdapterBridgeRuntimeMaterial {
         formatter
             .debug_struct("AdapterBridgeRuntimeMaterial")
             .field("profile_id", &self.profile_id)
-            .field("source_connection_id", &self.source_connection_id)
+            .field("source_id", &self.source_id)
             .field("preferred_port", &self.preferred_port)
             .field("upstream_base_url", &self.upstream_base_url)
             .field("upstream_model", &self.upstream_model)
@@ -568,8 +568,8 @@ impl AdapterBridgeRuntimeMaterial {
         self.downstream_dialect
     }
 
-    pub fn source_connection_id(&self) -> &str {
-        &self.source_connection_id
+    pub fn source_id(&self) -> &str {
+        &self.source_id
     }
 
     /// Construct material for host/controller tests without a full prepare saga.
@@ -582,7 +582,7 @@ impl AdapterBridgeRuntimeMaterial {
     ) -> Self {
         Self {
             profile_id: profile_id.into(),
-            source_connection_id: "test-source".into(),
+            source_id: "test-source".into(),
             preferred_port,
             upstream_base_url: KIMI_CHAT_BASE_URL.into(),
             upstream_model: DEFAULT_MODEL.into(),
@@ -624,7 +624,7 @@ impl AdapterBridgeRuntimeMaterial {
             BridgeUpstreamConfig {
                 base_url: self.upstream_base_url.clone(),
                 model: Some(self.upstream_model.clone()),
-                source_connection_id: Some(self.source_connection_id.clone()),
+                source_id: Some(self.source_id.clone()),
                 auth: self.upstream_auth.clone(),
                 protocol: self.protocol,
                 local_surface: self.local_surface,
@@ -648,7 +648,7 @@ impl AdapterBridgeRuntimeMaterial {
                 .with_listed_models(index.list_models(index_endpoint_key(self.local_surface)))
                 .with_route_index(index.clone());
         }
-        let source_id = self.source_connection_id.clone();
+        let source_id = self.source_id.clone();
         let ticket_id = if source_id.is_empty() {
             String::new()
         } else {
@@ -1083,9 +1083,13 @@ impl AdapterBridgeService {
         Ok(material)
     }
 
-    /// Persist v2 enrollment only after the listener is already bound and
-    /// healthy. Occupancy / bind / health failures must not call this.
-    pub fn enroll_v2_after_bind(&self, profile: &AdapterProfile, port: u16) -> Result<bool> {
+    /// Persist unified-gateway enrollment only after the listener is already
+    /// bound and healthy. Occupancy / bind / health failures must not call this.
+    pub fn enroll_unified_gateway_after_bind(
+        &self,
+        profile: &AdapterProfile,
+        port: u16,
+    ) -> Result<bool> {
         if profile.route != AdapterRoute::LocalBridge {
             return Ok(false);
         }
@@ -1093,7 +1097,8 @@ impl AdapterBridgeService {
             return Ok(false);
         }
         self.route_pools.ensure_legacy_pool(profile)?;
-        self.route_pools.enroll_v2(&profile.id, port)?;
+        self.route_pools
+            .enroll_unified_gateway_as_default(&profile.id, port)?;
         Ok(true)
     }
 
@@ -1182,7 +1187,7 @@ impl AdapterBridgeService {
                         Some(model.to_owned())
                     }
                 },
-                source_connection_id: Some(lead.source_id.clone()),
+                source_id: Some(lead.source_id.clone()),
                 auth: auth.clone(),
                 protocol,
                 local_surface: surface,
@@ -1246,7 +1251,7 @@ impl AdapterBridgeService {
         let Some(pool) = pool else {
             return Ok(None);
         };
-        if !pool.v2_enrolled {
+        if !pool.unified_gateway_enrolled {
             return Ok(None);
         }
         let members = self.route_pools.list_members(&pool.id)?;
@@ -1292,7 +1297,7 @@ impl AdapterBridgeService {
             rule_for_member_product(product, profile.target_agent_id).unwrap_or(*rule);
         let provider = index_provider_key(product);
         let is_lead = member.source_kind == profile.source_kind
-            && member.source_id == material.source_connection_id;
+            && member.source_id == material.source_id;
         if is_lead {
             let custom = crate::services::adapter_route_constants::is_custom_openai_compat_url(
                 &material.upstream_base_url,
@@ -1414,7 +1419,7 @@ fn placeholder_pool_spec(
         BridgeUpstreamConfig {
             base_url: "http://127.0.0.1/".into(),
             model: None,
-            source_connection_id: None,
+            source_id: None,
             auth: ResolvedAuth::bearer("pending"),
             protocol,
             local_surface: surface,

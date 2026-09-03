@@ -1,7 +1,7 @@
 /**
- * 连接池页右上角的接入入口：先在浮动页面中选择接入方式，再打开对应的配置页面。
- * OAuth 只提供官方登录支持的三个 Agent；API 接入先填服务地址和 Key，再勾选接口类型。
- * 这里接入的登录只给连接池用，不会出现在连接页。
+ * 连接池页右上角的添加入口：先在浮动页面中选择添加方式，再打开对应的配置页面。
+ * 官方登录只提供支持的三个 Agent；添加 API Key 时先填服务地址和 Key，再勾选接口类型。
+ * 这里加入的登录只给连接池用，不会出现在连接页。
  */
 import { useMemo, useState, type ReactNode } from 'react';
 import { agentDisplayName } from '@/config/agents';
@@ -18,7 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import { attachPoolOwnedAuthorization, syncConnectionAuthorizations } from '@/lib/api/adapter';
 import type {
   AdapterSourceKind,
@@ -27,7 +27,7 @@ import type {
   SyncConnectionSource,
 } from '@/lib/backend/contracts';
 import type { ConnectionEntry } from '@/lib/connection-entry';
-import { sourceKindLabel } from '@/pages/bridges/adapter-create-flow';
+import { sourceKindLabel } from '@/pages/routes/shared/adapter-create-flow';
 import { isPoolShareableLogin } from '@/pages/connections/ticket-pool-import';
 import { cn } from '@/lib/utils';
 import { ApiAccessDialog } from './ApiAccessDialog';
@@ -45,8 +45,8 @@ const OAUTH_AGENTS = ['claude', 'codex', 'grok'] as const satisfies readonly Poo
 
 /** Maps the fixed OAuth choices to their current installed/supported state. */
 export function poolOAuthChoices(
-  agents: readonly AgentId[],
-  oauthAgents: readonly AgentId[],
+  agents: readonly AgentKey[],
+  oauthAgents: readonly AgentKey[],
 ): PoolOAuthChoice[] {
   return OAUTH_AGENTS.map((agentId) => ({
     agentId,
@@ -60,7 +60,7 @@ export function poolSurfaceForOAuth(agentId: PoolAccessAgent): RoutePoolSurface 
 
 export type PoolSyncCandidate = SyncConnectionSource & {
   key: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   title: string;
   alreadySynced: boolean;
 };
@@ -177,8 +177,8 @@ export function PoolAddButtons({
   defaultPools = [],
   onChanged,
 }: {
-  agents: readonly AgentId[];
-  oauthAgents: readonly AgentId[];
+  agents: readonly AgentKey[];
+  oauthAgents: readonly AgentKey[];
   entries?: readonly ConnectionEntry[];
   defaultPools?: readonly DefaultRoutePoolOverview[];
   /** Called after an OAuth flow or API provider is saved. */

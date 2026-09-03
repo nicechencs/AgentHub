@@ -165,7 +165,7 @@ describe('mock adapter projection', () => {
     });
     setMockRoutePoolV2(true);
     const enrolled = await adapter.enrollNativeToGateway(nativeId);
-    expect(enrolled.v2Enrolled).toBe(true);
+    expect(enrolled.unifiedGatewayEnrolled).toBe(true);
     expect(enrolled.gatewayPort).toBeGreaterThan(0);
     expect(JSON.stringify(enrolled)).not.toContain('must-not-leak');
     expect(JSON.stringify(enrolled)).not.toContain('hubToken');

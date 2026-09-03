@@ -1,9 +1,4 @@
-import type {
-  AgentProject,
-  AgentProjectExcerpt,
-  AgentSession,
-  ProjectMetadataFile,
-} from '@/lib/types';
+import type { AgentProject, AgentProjectExcerpt, AgentSession, ProjectMetadataFile } from '@/lib/types';
 
 export type CoreAgentProject = AgentProject;
 export type CoreAgentSession = AgentSession;

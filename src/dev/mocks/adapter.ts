@@ -11,7 +11,7 @@ import {
   type AdapterProfile,
   type AdapterProfileFilter,
   type DefaultRoutePoolOverview,
-  type LocalEntryStatus,
+  type LocalGatewayStatus,
   type RoutePoolDialect,
   type RoutePoolSurface,
 } from '@/lib/backend/contracts/adapter';
@@ -73,7 +73,7 @@ function mockChatPool(
     targetAgentId: agentId,
     surface: 'chat_completions',
     dialect: agentId,
-    v2Enrolled: false,
+    unifiedGatewayEnrolled: false,
     members: [],
     listedModels: [],
   };
@@ -348,8 +348,8 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     shareChatCompletions: false,
     defaultPools: [],
     localTokens: new Map(),
-    localEntryRunning: false,
-    localEntryPort: null,
+    localGatewayRunning: false,
+    localGatewayPort: null,
     sourceModelCatalogs: new Map(),
   };
   adapterStates.add(state);
@@ -626,7 +626,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
           targetAgentId: poolAgent,
           surface,
           dialect,
-          v2Enrolled: false,
+          unifiedGatewayEnrolled: false,
           members: [],
           listedModels: [],
         };
@@ -782,7 +782,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
               targetAgentId: target.agentId,
               surface: target.surface,
               dialect: target.dialect,
-              v2Enrolled: false,
+              unifiedGatewayEnrolled: false,
               members: [],
               listedModels: [],
             };
@@ -893,7 +893,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         targetAgentId: profile.targetAgentId,
         surface,
         dialect,
-        v2Enrolled: true,
+        unifiedGatewayEnrolled: true,
         gatewayPort: profile.localPort ?? 43121,
         members: [{
           sourceKind: profile.sourceKind,
@@ -988,33 +988,34 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
       profile.updatedAt = new Date().toISOString();
       return { ...profile };
     },
-    async startLocalEntry() {
+    async startLocalGateway() {
       await delay(20);
-      state.localEntryRunning = true;
-      state.localEntryPort = 43121;
+      state.localGatewayRunning = true;
+      state.localGatewayPort = 43121;
       for (const pool of state.defaultPools) {
         pool.gatewayPort = 43121;
       }
-      return mockLocalEntryStatus(state);
+      return mockLocalGatewayStatus(state);
     },
-    async stopLocalEntry() {
+    async stopLocalGateway() {
       await delay(20);
-      state.localEntryRunning = false;
-      state.localEntryPort = null;
-      return mockLocalEntryStatus(state);
+      state.localGatewayRunning = false;
+      state.localGatewayPort = null;
+      return mockLocalGatewayStatus(state);
     },
-    async getLocalEntryStatus() {
+    async getLocalGatewayStatus() {
       await delay(20);
-      return mockLocalEntryStatus(state);
+      return mockLocalGatewayStatus(state);
     },
   };
 }
 
-function mockLocalEntryStatus(state: MockAdapterState): LocalEntryStatus {
+function mockLocalGatewayStatus(state: MockAdapterState): LocalGatewayStatus {
   return {
-    running: state.localEntryRunning,
-    port: state.localEntryPort,
-    statuses: state.localEntryRunning
+    running: state.localGatewayRunning,
+    port: state.localGatewayPort,
+    restarting: false,
+    statuses: state.localGatewayRunning
       ? state.defaultPools.map((pool) => ({
         profileId: pool.id,
         state: 'running' as const,
@@ -1030,7 +1031,7 @@ function mockLocalEntryStatus(state: MockAdapterState): LocalEntryStatus {
         localToken: `ahb_${pool.id.slice(0, 8)}`,
       }))
       : [],
-    unauthenticatedTraces: state.localEntryRunning
+    unauthenticatedTraces: state.localGatewayRunning
       ? [{
         requestId: 'mock-req-unauth',
         at: '2026-08-12T00:00:00.000Z',

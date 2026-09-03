@@ -30,8 +30,8 @@ import { ListSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { AGENT_MAP } from '@/config/agents';
 import {
-  deleteAgentProject,
-  deleteAgentProjects,
+  deleteAgentSession,
+  deleteAgentSessions,
   getAgentProjectExcerpts,
   listAgentProjectSessions,
   setShowHiddenProjects,
@@ -50,7 +50,7 @@ import {
   useProjectShowHidden,
 } from '@/lib/hooks/useProjects';
 import { normalizeOpenPath, verifiedProjectWorkspacePath } from '@/lib/path-open';
-import type { AgentId, AgentProject, AgentSession } from '@/lib/types';
+import type { AgentKey, AgentProject, AgentSession } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { nativeResumeCommand, nativeSessionId, shortSessionId } from './project-format';
 import { buildContinuePrompt, buildSummaryPrompt } from './project-prompts';
@@ -69,8 +69,9 @@ import {
   toggleSelectedSession,
   visibleSessionsForProject,
 } from './projects-list-model';
+import { StorageKey } from '@/lib/ui-preferences';
 
-const PROJECTS_PREVIEW_WIDTH_KEY = 'agenthub.projects.previewWidth';
+const PROJECTS_PREVIEW_WIDTH_KEY = StorageKey.projectsPreviewWidth;
 
 export default function ProjectsPage() {
   const { t } = useI18n();
@@ -80,10 +81,10 @@ export default function ProjectsPage() {
   const { installedAgents, hiddenIds, loading: agentsLoading } = useInstalledAgents();
   const { showHidden, ready: hiddenReady, setShowHidden } = useProjectShowHidden();
 
-  const agentFromUrl = searchParams.get('agent') as AgentId | null;
+  const agentFromUrl = searchParams.get('agent') as AgentKey | null;
   const tabAgents = resolveProjectTabAgents(installedAgents, hiddenIds);
 
-  const [agentId, setAgentId] = useState<AgentId>(() =>
+  const [agentId, setAgentId] = useState<AgentKey>(() =>
     resolveInitialProjectAgentId(agentFromUrl, tabAgents, rememberedProjectAgent()),
   );
 
@@ -149,7 +150,7 @@ export default function ProjectsPage() {
   } = useAgentProjectList(fetchAgentId, showHidden, listEnabled);
   const projects = data ?? [];
   const projectCounts = useMemo(() => {
-    const next: Partial<Record<AgentId, number>> = {};
+    const next: Partial<Record<AgentKey, number>> = {};
     if (fetchAgentId && data) next[fetchAgentId] = data.length;
     return next;
   }, [fetchAgentId, data]);
@@ -169,7 +170,7 @@ export default function ProjectsPage() {
     preview.reset();
   }, [preview.reset]);
 
-  const setAgent = (id: AgentId) => {
+  const setAgent = (id: AgentKey) => {
     rememberProjectAgent(id);
     setAgentId(id);
     resetTree();
@@ -371,7 +372,7 @@ export default function ProjectsPage() {
     if (!deleteTarget) return;
     setBusy(true);
     try {
-      await deleteAgentProject(deleteTarget.id);
+      await deleteAgentSession(deleteTarget.id);
       const pid = deleteTarget.projectId;
       setSessionsByProject((prev) => {
         const kids = (prev[pid] ?? []).filter((s) => s.id !== deleteTarget.id);
@@ -410,7 +411,7 @@ export default function ProjectsPage() {
     if (ids.length === 0) return;
     setBusy(true);
     try {
-      const n = await deleteAgentProjects(ids);
+      const n = await deleteAgentSessions(ids);
       const idSet = new Set(ids);
       setSessionsByProject((prev) => {
         const next: Record<string, AgentSession[]> = {};

@@ -24,7 +24,6 @@ export interface AgentStatusView {
   effectiveConnection: {
     kind: UnsetOr<EffectiveConnectionKind>;
     label: UnsetOr<string>;
-    currentProvider: UnsetOr<string>;
   };
   env: {
     ready: UnknownOr<boolean>;
@@ -46,7 +45,6 @@ export function sliceAgentStatus(status: Partial<AgentStatus>): AgentStatusView 
     effectiveConnection: {
       kind: optionalKind(status.effectiveKind),
       label: optionalString(status.effectiveLabel),
-      currentProvider: optionalString(status.currentProvider),
     },
     env: {
       ready: optionalEnvReady(status.envReady),

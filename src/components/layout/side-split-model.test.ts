@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { StorageKey } from '@/lib/storage-key';
 import {
   clampSideSplitWidth,
+  persistSideSplitWidth,
+  readStoredSideSplitWidth,
   SIDE_SPLIT_FRAME_PAD_RIGHT,
   SIDE_SPLIT_MAIN_MIN,
   SIDE_SPLIT_MAX_SHARE,
@@ -56,5 +59,34 @@ describe('clampSideSplitWidth', () => {
 
   it('does not shrink a stored width before the workbench is measured', () => {
     expect(clampSideSplitWidth(700, 0)).toBe(700);
+  });
+});
+
+describe('side-split width persistence', () => {
+  const store = new Map<string, string>();
+  const localStorage = {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      store.set(key, value);
+    },
+    removeItem: (key: string) => {
+      store.delete(key);
+    },
+  };
+
+  afterEach(() => {
+    store.clear();
+    vi.unstubAllGlobals();
+  });
+
+  function stubWindow() {
+    vi.stubGlobal('window', { localStorage });
+  }
+
+  it('writes and reads the canonical inspect width', () => {
+    stubWindow();
+    persistSideSplitWidth(StorageKey.connectionsInspectWidth, 520);
+    expect(store.get(StorageKey.connectionsInspectWidth)).toBe('520');
+    expect(readStoredSideSplitWidth(StorageKey.connectionsInspectWidth)).toBe(520);
   });
 });

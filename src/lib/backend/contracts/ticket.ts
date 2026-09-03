@@ -3,7 +3,7 @@
  * Wire shapes match Tauri `list_ticket_wallet` / `plan_ticket` / `bind_ticket` / `unbind_ticket`.
  */
 import type { TranslateFn } from '@/lib/i18n';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import type { AdapterApplyPlan, AdapterRoute } from './adapter';
 import {
   mapAdapterApplyPlan,
@@ -49,12 +49,12 @@ export interface TicketView {
   sourceKind: TicketSourceKind;
   sourceId: string;
   /** Agent that owns the underlying account/provider row. */
-  agentId: AgentId;
+  agentId: AgentKey;
   label: string;
   surface: TicketSurface;
   credentialClass: TicketCredentialClass;
   speaks: string[];
-  importedFrom: AgentId | null;
+  importedFrom: AgentKey | null;
 }
 
 /** Optional bridge runtime snapshot on an active bridge binding. */
@@ -67,7 +67,7 @@ export interface BindingBridgeRuntime {
 /** One ticket→agent binding from the read model. */
 export interface BindingView {
   ticketId: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   route: BindingRoute;
   active: boolean;
   profileId: string | null;
@@ -85,7 +85,7 @@ export interface TicketSurfaceMemberView {
   ticketId: string;
   sourceKind: TicketSourceKind;
   sourceId: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   label: string;
   /** Present when mock / future live wire attaches picker health. */
   health?: TicketMemberHealth;
@@ -109,7 +109,7 @@ export interface TicketViewWire {
   id: string;
   sourceKind: string;
   sourceId: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   label: string;
   surface: string;
   credentialClass: string;
@@ -124,7 +124,7 @@ export interface BindingBridgeRuntimeWire {
 
 export interface BindingViewWire {
   ticketId: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   route: string;
   active: boolean;
   profileId?: string | null;
@@ -135,7 +135,7 @@ export interface TicketSurfaceMemberViewWire {
   ticketId: string;
   sourceKind: string;
   sourceId: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   label: string;
   health?: string;
 }
@@ -203,7 +203,7 @@ function mapBridge(wire: BindingBridgeRuntimeWire | null | undefined): BindingBr
 export function mapTicketView(wire: TicketViewWire): TicketView {
   const importedFrom =
     typeof wire.importedFrom === 'string' && wire.importedFrom.trim()
-      ? (wire.importedFrom as AgentId)
+      ? (wire.importedFrom as AgentKey)
       : null;
   return {
     id: wire.id,
@@ -429,7 +429,7 @@ export function ticketIdFor(sourceKind: TicketSourceKind, sourceId: string): str
 /** Success criterion for bind: this Agent's active binding. */
 export function isActiveBindingForAgent(
   binding: BindingView,
-  targetAgentId: AgentId,
+  targetAgentId: AgentKey,
 ): boolean {
   return binding.active === true && binding.agentId === targetAgentId;
 }
@@ -440,7 +440,7 @@ export function isActiveBindingForAgent(
  */
 export function isBindSuccessForAgent(
   binding: BindingView,
-  targetAgentId: AgentId,
+  targetAgentId: AgentKey,
 ): boolean {
   if (binding.agentId !== targetAgentId) return false;
   if (binding.active === true) return true;
@@ -451,11 +451,11 @@ export interface TicketPort {
   /** Global ticket wallet + bindings (read-only aggregation). */
   listWallet(): Promise<TicketWallet>;
   /** Plan bind(ticket, agent); same surface as adapter.plan. */
-  plan(ticketId: string, targetAgentId: AgentId): Promise<AdapterApplyPlan>;
+  plan(ticketId: string, targetAgentId: AgentKey): Promise<AdapterApplyPlan>;
   /** Bind ticket → agent. Success is the returned active binding. */
-  bind(ticketId: string, targetAgentId: AgentId): Promise<BindTicketResult>;
+  bind(ticketId: string, targetAgentId: AgentKey): Promise<BindTicketResult>;
   /** Unbind ticket from agent. Ticket remains; caller may listWallet. */
-  unbind(ticketId: string, agentId: AgentId): Promise<void>;
+  unbind(ticketId: string, agentId: AgentKey): Promise<void>;
 }
 
 /** Route label for Connections usage line and Dashboard card meta. */
