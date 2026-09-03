@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Copy, Eye, EyeOff, Loader2, Trash2 } from 'lucide-react';
 import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
 import { CopyableRouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
+import { Hint } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import {
   Dialog,
@@ -228,34 +229,93 @@ export function TokenDetailPanel({
       description={tokenDetailTitle(row, t)}
       onClose={onClose}
       width={width}
+      headerActions={
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            data-token-test=""
+            disabled={!testGate.enabled || testing}
+            onClick={openTest}
+            title={testGate.reason ?? t('routes.tokens.test')}
+            aria-label={t('routes.tokens.test')}
+          >
+            {testing ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+            ) : null}
+            {testing ? t('routes.tokens.testing') : t('routes.tokens.test')}
+          </Button>
+          {installedAgents ? (
+            <TokenImportToAgentButton
+              row={row}
+              installedAgents={installedAgents}
+            />
+          ) : null}
+          {onDelete ? (
+            <Button
+              variant="dangerOutline"
+              size="sm"
+              data-token-delete=""
+              disabled={!deleteGate.enabled}
+              onClick={() => {
+                if (!deleteGate.enabled) return;
+                onDelete();
+              }}
+              title={deleteGate.reason ?? t('routes.tokens.delete')}
+              aria-label={t('routes.tokens.delete')}
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden />
+              {t('routes.tokens.delete')}
+            </Button>
+          ) : null}
+          {onEditKey ? (
+            <Button
+              variant="outline"
+              size="sm"
+              data-token-edit-key=""
+              disabled={!editGate.enabled}
+              onClick={() => {
+                if (!editGate.enabled) return;
+                onEditKey();
+              }}
+              title={editGate.reason ?? t('routes.tokens.editKey')}
+              aria-label={t('routes.tokens.editKey')}
+            >
+              {t('routes.tokens.editKey')}
+            </Button>
+          ) : null}
+        </>
+      }
     >
       <div className="flex flex-col gap-3 text-sm" data-token-detail={row.id}>
         <div className="space-y-1">
           <p className="text-meta text-muted">{t('routes.tokens.fieldName')}</p>
-          <div className="flex min-w-0 items-center gap-2">
-            <Input
-              className="min-w-0 flex-1"
-              value={nameDraft}
-              onChange={(event) => setNameDraft(event.target.value)}
-              placeholder={t('routes.tokens.namePlaceholder')}
-              disabled={savingName || !onSaveName || row.unavailable}
-              aria-label={t('routes.tokens.fieldName')}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={savingName || !onSaveName || row.unavailable || !nameDraft.trim()}
-              onClick={() => {
-                if (!onSaveName || savingName) return;
-                setSavingName(true);
-                void Promise.resolve(onSaveName(nameDraft)).finally(() => {
-                  if (rowIdRef.current === row.id) setSavingName(false);
-                });
-              }}
-            >
-              {t('routes.tokens.saveName')}
-            </Button>
-          </div>
+          <Input
+            className="min-w-0 w-full"
+            value={nameDraft}
+            onChange={(event) => setNameDraft(event.target.value)}
+            placeholder={t('routes.tokens.namePlaceholder')}
+            disabled={savingName || !onSaveName || row.unavailable}
+            aria-label={t('routes.tokens.fieldName')}
+          />
+          {onSaveName ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={savingName || row.unavailable || !nameDraft.trim()}
+                onClick={() => {
+                  if (savingName) return;
+                  setSavingName(true);
+                  void Promise.resolve(onSaveName(nameDraft)).finally(() => {
+                    if (rowIdRef.current === row.id) setSavingName(false);
+                  });
+                }}
+              >
+                {t('routes.tokens.saveName')}
+              </Button>
+            </div>
+          ) : null}
         </div>
         <div className="space-y-1">
           <p className="text-meta text-muted">{t('routes.tokens.fieldType')}</p>
@@ -291,75 +351,39 @@ export function TokenDetailPanel({
         </div>
         <div className="space-y-1">
           <p className="text-meta text-muted">{t('routes.tokens.fieldToken')}</p>
-          <p className="min-w-0 break-all font-mono text-secondary">
-            {tokenRow?.display}
-          </p>
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex min-w-0 items-center gap-1">
+            <p className="min-w-0 flex-1 break-all font-mono text-secondary">
+              {tokenRow?.display}
+            </p>
             {canCopyToken ? (
               <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setRevealed((current) => !current)}
-                >
-                  {revealed ? t('common.hideSecret') : t('common.showSecret')}
-                </Button>
-                <Button variant="outline" size="sm" onClick={copyToken}>
-                  {t('routes.tokens.copy')}
-                </Button>
+                <Hint label={revealed ? t('common.hideSecret') : t('common.showSecret')}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 shrink-0 px-0"
+                    data-token-reveal=""
+                    onClick={() => setRevealed((current) => !current)}
+                    aria-label={revealed ? t('common.hideSecret') : t('common.showSecret')}
+                  >
+                    {revealed ? <EyeOff className="h-3 w-3" aria-hidden /> : <Eye className="h-3 w-3" aria-hidden />}
+                  </Button>
+                </Hint>
+                <Hint label={t('routes.tokens.copy')}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 shrink-0 px-0"
+                    data-token-copy=""
+                    onClick={copyToken}
+                    aria-label={t('routes.tokens.copy')}
+                  >
+                    <Copy className="h-3 w-3" aria-hidden />
+                  </Button>
+                </Hint>
               </>
-            ) : null}
-            <Button
-              variant="outline"
-              size="sm"
-              data-token-test=""
-              disabled={!testGate.enabled || testing}
-              onClick={openTest}
-              title={testGate.reason ?? t('routes.tokens.test')}
-              aria-label={t('routes.tokens.test')}
-            >
-              {testing ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-              ) : null}
-              {testing ? t('routes.tokens.testing') : t('routes.tokens.test')}
-            </Button>
-            {onEditKey ? (
-              <Button
-                variant="outline"
-                size="sm"
-                data-token-edit-key=""
-                disabled={!editGate.enabled}
-                onClick={() => {
-                  if (!editGate.enabled) return;
-                  onEditKey();
-                }}
-                title={editGate.reason ?? t('routes.tokens.editKey')}
-                aria-label={t('routes.tokens.editKey')}
-              >
-                {t('routes.tokens.editKey')}
-              </Button>
-            ) : null}
-            {installedAgents ? (
-              <TokenImportToAgentButton
-                row={row}
-                installedAgents={installedAgents}
-              />
-            ) : null}
-            {onDelete ? (
-              <Button
-                variant="dangerOutline"
-                size="sm"
-                data-token-delete=""
-                disabled={!deleteGate.enabled}
-                onClick={() => {
-                  if (!deleteGate.enabled) return;
-                  onDelete();
-                }}
-                title={deleteGate.reason ?? t('routes.tokens.delete')}
-                aria-label={t('routes.tokens.delete')}
-              >
-                {t('routes.tokens.delete')}
-              </Button>
             ) : null}
           </div>
           {testResult ? (

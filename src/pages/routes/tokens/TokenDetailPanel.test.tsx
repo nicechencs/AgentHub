@@ -31,7 +31,7 @@ function row(partial: Partial<LocalTokenRow> = {}): LocalTokenRow {
 
 function render(
   partial: Partial<LocalTokenRow> = {},
-  props: { onEditKey?: () => void } = {},
+  props: { onEditKey?: () => void; onDelete?: () => void } = {},
 ) {
   return renderToStaticMarkup(
     createElement(
@@ -41,18 +41,23 @@ function render(
         row: row(partial),
         onClose: () => {},
         onEditKey: props.onEditKey,
+        onDelete: props.onDelete,
       }),
     ),
   );
 }
 
 describe('TokenDetailPanel', () => {
-  it('shows a test button next to the entry key', () => {
-    const markup = render();
+  it('puts test, import, delete, and edit in the inspect header', () => {
+    const markup = render({}, { onEditKey: () => {}, onDelete: () => {} });
     expect(markup).toContain('data-token-detail="pool-kimi"');
     expect(markup).toContain('data-token-test');
     expect(markup).toContain('测试');
+    expect(markup.indexOf('data-token-test')).toBeLessThan(markup.indexOf('data-token-detail'));
+    expect(markup.indexOf('data-token-delete')).toBeLessThan(markup.indexOf('data-token-detail'));
+    expect(markup.indexOf('data-token-edit-key')).toBeLessThan(markup.indexOf('data-token-detail'));
     expect(markup).not.toMatch(/data-token-test=""[^>]*\bdisabled\b/);
+    expect(markup).toMatch(/data-token-delete=""[^>]*\bdisabled\b/);
     expect(markup).not.toContain('ahb_secret');
     expect(markup).toContain('data-token-models');
     expect(markup).toContain('按连接池更新');
@@ -66,7 +71,7 @@ describe('TokenDetailPanel', () => {
   });
 
   it('enables edit key for pool-backed rows and disables it for leftovers', () => {
-    const poolMarkup = render({}, { onEditKey: () => {} });
+    const poolMarkup = render({}, { onEditKey: () => {}, onDelete: () => {} });
     expect(poolMarkup).toContain('data-token-edit-key');
     expect(poolMarkup).not.toMatch(/data-token-edit-key=""[^>]*\bdisabled\b/);
 

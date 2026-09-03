@@ -20,13 +20,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { ROUTES_POOL_PATH } from '@/lib/routes-path';
@@ -46,11 +39,15 @@ import { boardUsageWindow } from '@/pages/routes/board/board-usage-model';
 import { useBoardUsageStats } from '@/pages/routes/board/use-board-usage';
 import { buildLocalGatewayControl } from '@/pages/routes/board/board-view-model';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
+import { CreateTokenEndpointCards } from './CreateTokenEndpointCards';
 import { TokenDetailPanel } from './TokenDetailPanel';
 import { TokenList } from './TokenList';
 import {
   attachTokenUsage,
+  buildCreateTokenEndpointCards,
   buildLocalTokenRows,
+  defaultCreateTokenName,
+  firstCreateTokenPoolId,
   generateLocalToken,
   localTokenDeleteGate,
   localTokenEditKeyGate,
@@ -156,6 +153,10 @@ export default function RoutesTokensPage() {
     () => listRows.filter((row) => row.poolBacked && row.primary),
     [listRows],
   );
+  const createCards = useMemo(
+    () => buildCreateTokenEndpointCards(createTargets),
+    [createTargets],
+  );
 
   useEffect(() => {
     const onCollected = () => setCollectKey((key) => key + 1);
@@ -212,20 +213,29 @@ export default function RoutesTokensPage() {
       toast({ title: t('routes.tokens.createNeedPool'), variant: 'danger' });
       return;
     }
-    setCreatePoolId(createTargets[0]?.id ?? '');
+    setCreatePoolId(firstCreateTokenPoolId(createCards));
     setCreateName('');
     setCreateOpen(true);
   };
 
   const saveCreate = async () => {
     if (createBusy) return;
-    const name = createName.trim();
-    if (!name) {
-      toast({ title: t('routes.tokens.nameRequired'), variant: 'danger' });
-      return;
-    }
     if (!createPoolId) {
       toast({ title: t('routes.tokens.createNeedPool'), variant: 'danger' });
+      return;
+    }
+    const typedName = createName.trim();
+    const kind = createCards.find((card) => card.poolId === createPoolId)?.kind
+      ?? createTargets.find((row) => row.id === createPoolId)?.kind;
+    const name = typedName || (kind
+      ? defaultCreateTokenName({
+        kind,
+        existingNames: listRows.filter((row) => row.kind === kind).map((row) => row.name),
+        t,
+      })
+      : '');
+    if (!name) {
+      toast({ title: t('routes.tokens.nameRequired'), variant: 'danger' });
       return;
     }
     setCreateBusy(true);
@@ -428,27 +438,19 @@ export default function RoutesTokensPage() {
             <DialogDescription>{t('routes.tokens.createDescription')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="space-y-1">
-              <p className="text-meta text-muted">{t('routes.tokens.fieldType')}</p>
-              <Select value={createPoolId} onValueChange={setCreatePoolId} disabled={createBusy}>
-                <SelectTrigger aria-label={t('routes.tokens.fieldType')}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {createTargets.map((row) => (
-                    <SelectItem key={row.id} value={row.id}>
-                      {tokenTypeLabel(row, t)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <CreateTokenEndpointCards
+              cards={createCards}
+              value={createPoolId}
+              onChange={setCreatePoolId}
+              disabled={createBusy}
+              unavailableReason={t('routes.tokens.createNeedPool')}
+            />
             <div className="space-y-1">
               <p className="text-meta text-muted">{t('routes.tokens.fieldName')}</p>
               <Input
                 value={createName}
                 onChange={(event) => setCreateName(event.target.value)}
-                placeholder={t('routes.tokens.namePlaceholder')}
+                placeholder={t('routes.tokens.createNamePlaceholder')}
                 disabled={createBusy}
                 aria-label={t('routes.tokens.fieldName')}
               />
@@ -499,7 +501,7 @@ export default function RoutesTokensPage() {
           onClose={() => inspect.close()}
           onEditKey={() => openEdit(detailRow)}
           onSaveName={detailRow.poolBacked ? (name) => saveName(detailRow, name) : undefined}
-          onDelete={detailRow.canDelete ? () => setDeleteRow(detailRow) : undefined}
+          onDelete={() => setDeleteRow(detailRow)}
           installedAgents={installedAgentRefs}
         />
       ) : null}

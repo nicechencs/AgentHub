@@ -10,12 +10,15 @@ import type {
 } from '@/lib/backend/contracts/adapter';
 import type { GatewayUsageRow } from '@/lib/backend/contracts/usage-types';
 import type { TranslateFn } from '@/lib/i18n';
+import { KNOWN_AGENT_IDS, type AgentKey } from '@/lib/types';
 import {
+  LOCAL_ENDPOINT_KINDS,
   localEndpointKindForTargetAgent,
   localEndpointKindFromPool,
   localEndpointPath,
   type LocalEndpointKind,
 } from '@/lib/route-endpoints';
+import { agentConversationSurfaces } from '@/pages/agents/agent-detail-model';
 import { localEndpointKindLabel } from '@/pages/routes/shared/route-pool-view-model';
 import {
   filterGatewayUsageRows,
@@ -120,6 +123,76 @@ export function tokenTypeLabel(
   t?: TranslateFn,
 ): string {
   return localEndpointKindLabel(row.kind, t);
+}
+
+/** Agents that speak this endpoint. Grok stays on Grok Responses only. */
+export function agentSupportsLocalEndpointKind(
+  agentId: string,
+  kind: LocalEndpointKind,
+): boolean {
+  if (kind === 'responses_grok') return agentId === 'grok';
+  if (agentId === 'grok') return false;
+  const surface = kind === 'messages'
+    ? 'messages'
+    : kind === 'chat_completions'
+      ? 'chat_completions'
+      : 'responses';
+  return agentConversationSurfaces(agentId).includes(surface);
+}
+
+export function supportedAgentsForEndpointKind(kind: LocalEndpointKind): AgentKey[] {
+  return KNOWN_AGENT_IDS.filter((id) => agentSupportsLocalEndpointKind(id, kind));
+}
+
+export type CreateTokenEndpointCard = {
+  kind: LocalEndpointKind;
+  path: string;
+  /** Primary pool id when this endpoint can receive a new key. */
+  poolId: string | null;
+  agentIds: readonly AgentKey[];
+};
+
+/** Four endpoint cards for 新建入口 Key; missing pools stay visible and unselectable. */
+export function buildCreateTokenEndpointCards(
+  targets: readonly Pick<LocalTokenRow, 'id' | 'kind'>[],
+): CreateTokenEndpointCard[] {
+  const poolByKind = new Map<LocalEndpointKind, string>();
+  for (const row of targets) {
+    if (!poolByKind.has(row.kind)) poolByKind.set(row.kind, row.id);
+  }
+  return LOCAL_ENDPOINT_KINDS.map((endpoint) => ({
+    kind: endpoint.kind,
+    path: endpoint.path,
+    poolId: poolByKind.get(endpoint.kind) ?? null,
+    agentIds: supportedAgentsForEndpointKind(endpoint.kind),
+  }));
+}
+
+export function firstCreateTokenPoolId(
+  cards: readonly CreateTokenEndpointCard[],
+): string {
+  return cards.find((card) => card.poolId)?.poolId ?? '';
+}
+
+/** Name used when 新建 leaves the field empty. Numbered from 2 because the type already has a default key. */
+export function defaultCreateTokenName(input: {
+  kind: LocalEndpointKind;
+  existingNames?: readonly string[];
+  t?: TranslateFn;
+}): string {
+  const label = localEndpointKindLabel(input.kind, input.t).trim();
+  const used = new Set(
+    (input.existingNames ?? [])
+      .map((name) => name.trim())
+      .filter(Boolean),
+  );
+  let n = 2;
+  let candidate = `${label} ${n}`;
+  while (used.has(candidate)) {
+    n += 1;
+    candidate = `${label} ${n}`;
+  }
+  return candidate;
 }
 
 /** Outbound entry-key kinds visible on the board; hidden Agents are omitted. */
