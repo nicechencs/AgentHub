@@ -55,7 +55,7 @@ export function createTauriUsagePort(): UsagePort {
       });
     },
 
-    async usageTrend(days, agentId, model, since, excludeAgentIds): Promise<UsageTrendPoint[]> {
+    async usageTrend(days, agentId, model, since, excludeAgentIds, groupBy): Promise<UsageTrendPoint[]> {
       const id = !agentId || agentId === 'all' ? null : agentId;
       const modelFilter = !model || model === 'all' ? null : model;
       return invoke<UsageTrendPoint[]>('usage_trend', {
@@ -64,6 +64,7 @@ export function createTauriUsagePort(): UsagePort {
         model: modelFilter,
         since: since ?? null,
         excludeAgentIds: excludeAgentIds ?? null,
+        groupBy: groupBy === 'model' ? 'model' : null,
       });
     },
 

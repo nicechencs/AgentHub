@@ -14,9 +14,10 @@ export type {
   UsageOverviewDistributionSlice,
   UsageOverviewMetrics,
   UsageQuery,
+  UsageTrendGroupBy,
 } from '@/lib/backend/contracts/usage-types';
 export type { UsageCollectResult };
-import type { GatewayUsageOverview, GatewayUsageQuery, GatewayUsageRow, UsageAvailability, UsageOverview, UsageQuery } from '@/lib/backend/contracts/usage-types';
+import type { GatewayUsageOverview, GatewayUsageQuery, GatewayUsageRow, UsageAvailability, UsageOverview, UsageQuery, UsageTrendGroupBy } from '@/lib/backend/contracts/usage-types';
 
 export async function getUsageAvailability(): Promise<UsageAvailability> {
   return getBackend().usage.getAvailability();
@@ -36,8 +37,9 @@ export async function usageTrend(
   model?: string,
   since?: string,
   excludeAgentIds?: AgentKey[],
+  groupBy?: UsageTrendGroupBy,
 ): Promise<UsageTrendPoint[]> {
-  return getBackend().usage.usageTrend(days, agentId, model, since, excludeAgentIds);
+  return getBackend().usage.usageTrend(days, agentId, model, since, excludeAgentIds, groupBy);
 }
 
 export async function listModels(): Promise<string[]> {

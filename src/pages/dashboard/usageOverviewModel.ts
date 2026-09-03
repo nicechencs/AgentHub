@@ -6,6 +6,7 @@ import type {
 } from '@/lib/backend/contracts/usage-types';
 import type { AgentKey, UsageRecord } from '@/lib/types';
 import { usageTokenParts } from '@/lib/usage-tokens';
+import type { UsageTrendGroup } from './usageTrendChartModel';
 
 /** 日期筛选预设：today / 24h 均按 days=1 拉取，today 再按本地日历日收窄 */
 export type DateRange = 'today' | '24h' | '7d' | '30d';
@@ -15,12 +16,14 @@ export interface UsageOverviewFilters {
   dateRange: DateRange;
   agentFilter: AgentKey | 'all';
   modelFilter: string;
+  trendGroup: UsageTrendGroup;
 }
 
 export const DEFAULT_USAGE_OVERVIEW_FILTERS: UsageOverviewFilters = {
   dateRange: '7d',
   agentFilter: 'all',
   modelFilter: 'all',
+  trendGroup: 'agent',
 };
 
 let rememberedFilters: UsageOverviewFilters = { ...DEFAULT_USAGE_OVERVIEW_FILTERS };

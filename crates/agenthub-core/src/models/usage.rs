@@ -102,13 +102,18 @@ pub struct UsageOverview {
     pub models: Vec<String>,
 }
 
-/// Trend chart point: `{ date, claude?: n, codex?: n, ... }` (dynamic agent keys).
+/// Trend chart point: `{ date, claude?: n, ... }` (dynamic series keys).
 ///
-/// `date` is local `YYYY-MM-DD` when `days > 1`, or local `YYYY-MM-DD HH:00`
-/// when `days <= 1` (dashboard today / last 24h). Empty buckets in the window
-/// are filled so a short range is not a single categorical point.
+/// Agent grouping uses agent ids; model grouping uses model names plus parallel
+/// `__cost__:{series}` floats. `date` is local `YYYY-MM-DD` when `days > 1`, or
+/// local `YYYY-MM-DD HH:00` when `days <= 1` (dashboard today / last 24h).
+/// Empty buckets in the window are filled so a short range is not a single
+/// categorical point.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UsageTrendPoint(pub Map<String, Value>);
+
+/// Prefix for per-series cost on a model-grouped trend point.
+pub const USAGE_TREND_COST_KEY_PREFIX: &str = "__cost__:";
 
 impl UsageTrendPoint {
     pub fn new(date: impl Into<String>) -> Self {
@@ -118,9 +123,26 @@ impl UsageTrendPoint {
     }
 
     pub fn add_tokens(&mut self, agent: AgentId, tokens: i64) {
-        let key = agent.as_str().to_string();
-        let prev = self.0.get(&key).and_then(|v| v.as_i64()).unwrap_or(0);
-        self.0.insert(key, Value::from(prev + tokens));
+        self.add_named_tokens(agent.as_str(), tokens);
+    }
+
+    pub fn add_named_tokens(&mut self, key: impl AsRef<str>, tokens: i64) {
+        let key = key.as_ref();
+        if key.is_empty() || key == "date" || key.starts_with(USAGE_TREND_COST_KEY_PREFIX) {
+            return;
+        }
+        let prev = self.0.get(key).and_then(|v| v.as_i64()).unwrap_or(0);
+        self.0.insert(key.to_string(), Value::from(prev + tokens));
+    }
+
+    pub fn add_named_cost(&mut self, series: impl AsRef<str>, cost: f64) {
+        let series = series.as_ref();
+        if series.is_empty() || series == "date" || !cost.is_finite() {
+            return;
+        }
+        let key = format!("{USAGE_TREND_COST_KEY_PREFIX}{series}");
+        let prev = self.0.get(&key).and_then(|v| v.as_f64()).unwrap_or(0.0);
+        self.0.insert(key, Value::from(prev + cost));
     }
 }
 

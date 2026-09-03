@@ -77,6 +77,8 @@ export interface UsageTrendTooltipItem {
   key: string;
   name: string;
   tokens: number;
+  formatted?: string;
+  extra?: string;
   color?: string;
 }
 
@@ -85,6 +87,7 @@ export interface UsageTrendTooltipPayloadEntry {
   name?: unknown;
   color?: string;
   dataKey?: unknown;
+  payload?: Record<string, unknown>;
 }
 
 /** Drop empty series, then highest token usage first. */

@@ -17,12 +17,24 @@ type ChartHoverState = {
   activePayload?: readonly UsageTrendTooltipPayloadEntry[];
 } | null;
 
-export function useUsageTrendHover(resolveName?: (key: string) => string) {
+export function useUsageTrendHover(
+  resolveName?: (key: string) => string,
+  options?: {
+    formatValue?: (value: number) => string;
+    extraFor?: (
+      key: string,
+      value: number,
+      payload?: Record<string, unknown>,
+    ) => string | undefined;
+  },
+) {
   const [tip, setTip] = useState<{ label: string; items: UsageTrendTooltipItem[] } | null>(
     null,
   );
   const pinnedRef = useRef(false);
   const leaveTimerRef = useRef<number | null>(null);
+  const formatValue = options?.formatValue;
+  const extraFor = options?.extraFor;
 
   const clearLeaveTimer = useCallback(() => {
     if (leaveTimerRef.current == null) return;
@@ -33,14 +45,26 @@ export function useUsageTrendHover(resolveName?: (key: string) => string) {
   const onChartMouseMove = useCallback(
     (state: ChartHoverState) => {
       if (pinnedRef.current) return;
-      const items = usageTrendTooltipItemsFromPayload(state?.activePayload, resolveName);
+      const payload = state?.activePayload;
+      const items = usageTrendTooltipItemsFromPayload(payload, resolveName).map((item) => {
+        const entry = payload?.find((row) => String(row.dataKey ?? row.name ?? '') === item.key);
+        const data =
+          entry?.payload && typeof entry.payload === 'object'
+            ? (entry.payload as Record<string, unknown>)
+            : undefined;
+        return {
+          ...item,
+          formatted: formatValue?.(item.tokens),
+          extra: extraFor?.(item.key, item.tokens, data),
+        };
+      });
       if (!items.length) {
         setTip(null);
         return;
       }
       setTip({ label: String(state?.activeLabel ?? ''), items });
     },
-    [resolveName],
+    [extraFor, formatValue, resolveName],
   );
 
   const onChartMouseLeave = useCallback(() => {
@@ -91,7 +115,10 @@ export function UsageTrendTooltipCard({
             style={item.color ? { color: item.color } : undefined}
           >
             <span>{item.name}</span>
-            <span>{fmtTokens(item.tokens)}</span>
+            <span className="flex gap-2 tabular-nums">
+              <span>{item.formatted ?? fmtTokens(item.tokens)}</span>
+              {item.extra ? <span className="text-muted">{item.extra}</span> : null}
+            </span>
           </li>
         ))}
       </ul>

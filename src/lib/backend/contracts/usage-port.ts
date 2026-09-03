@@ -1,5 +1,5 @@
 import type { AgentKey, ParserHealth, UsageRecord, UsageTrendPoint } from '@/lib/types';
-import type { GatewayUsageOverview, GatewayUsageQuery, GatewayUsageRow, UsageAvailability, UsageOverview, UsageQuery } from './usage-types';
+import type { GatewayUsageOverview, GatewayUsageQuery, GatewayUsageRow, UsageAvailability, UsageOverview, UsageQuery, UsageTrendGroupBy } from './usage-types';
 
 /** Result of a usage collect pass (mirrors core CollectResult). */
 export interface UsageCollectResult {
@@ -27,6 +27,7 @@ export interface UsagePort {
     model?: string,
     since?: string,
     excludeAgentIds?: AgentKey[],
+    groupBy?: UsageTrendGroupBy,
   ): Promise<UsageTrendPoint[]>;
   listModels(): Promise<string[]>;
   parserHealth(): Promise<ParserHealth[]>;

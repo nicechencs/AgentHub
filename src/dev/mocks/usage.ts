@@ -181,12 +181,15 @@ export function createMockUsagePort(): UsagePort {
       return mockUsageOverview(q);
     },
 
-    async usageTrend(days, agentId, model, since, excludeAgentIds) {
+    async usageTrend(days, agentId, model, since, excludeAgentIds, groupBy) {
       await delay(30 + Math.random() * 50);
       const grain = trendGrain(days);
+      const byModel = groupBy === 'model';
       const emptyPoint = (key: string): UsageTrendPoint => {
         const point: UsageTrendPoint = { date: key };
-        for (const a of DEMO_USAGE_AGENTS) point[a] = 0;
+        if (!byModel) {
+          for (const a of DEMO_USAGE_AGENTS) point[a] = 0;
+        }
         return point;
       };
       const byBucket = new Map<string, UsageTrendPoint>();
@@ -200,8 +203,15 @@ export function createMockUsagePort(): UsagePort {
         if (!byBucket.has(key)) byBucket.set(key, emptyPoint(key));
         const point = byBucket.get(key)!;
         const p = usageTokenParts(r);
-        point[r.agentId] =
-          (point[r.agentId] as number) + p.billableInput + p.cache + r.outputTokens;
+        const tokens = p.billableInput + p.cache + r.outputTokens;
+        if (byModel) {
+          if (!r.model) continue;
+          point[r.model] = (Number(point[r.model]) || 0) + tokens;
+          const costKey = `__cost__:${r.model}`;
+          point[costKey] = (Number(point[costKey]) || 0) + r.costUsd;
+        } else {
+          point[r.agentId] = (point[r.agentId] as number) + tokens;
+        }
       }
       if (byBucket.size > 0) {
         for (const key of denseTrendBuckets(days, since)) {

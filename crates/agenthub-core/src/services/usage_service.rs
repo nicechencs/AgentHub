@@ -442,6 +442,18 @@ impl UsageService {
             .trend(days, agent, model, since, exclude_agent_ids)
     }
 
+    pub fn trend_by_model(
+        &self,
+        days: u32,
+        agent: Option<AgentId>,
+        model: Option<&str>,
+        since: Option<&str>,
+        exclude_agent_ids: &[AgentId],
+    ) -> Result<Vec<UsageTrendPoint>> {
+        self.repo
+            .trend_by_model(days, agent, model, since, exclude_agent_ids)
+    }
+
     pub fn overview(
         &self,
         days: u32,
