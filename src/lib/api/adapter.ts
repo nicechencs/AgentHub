@@ -1,21 +1,6 @@
 /** Adapter route preview and the narrow, supported apply façade. */
 import { getBackend, refreshRuntimeReadModels } from '@/app/runtime';
-import type {
-  AdapterApplyPlan,
-  AdapterApplyRequest,
-  AdapterApplyResult,
-  AdapterBridgeRuntimeStatus,
-  AdapterProfile,
-  AdapterProfileFilter,
-  AdapterRouteAnalysis,
-  AdapterRouteRequest,
-  AdapterSourceKind,
-  AttachPoolOwnedAuthorizationRequest,
-  DefaultRoutePoolList,
-  DefaultRoutePoolOverview,
-  SyncConnectionAuthorizationsRequest,
-  SyncConnectionAuthorizationsResult,
-} from '@/lib/backend/contracts/adapter';
+import type { AdapterApplyPlan, AdapterApplyRequest, AdapterApplyResult, AdapterBridgeRuntimeStatus, AdapterProfile, AdapterProfileFilter, AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind, AttachPoolOwnedAuthorizationRequest, DefaultRoutePoolList, DefaultRoutePoolOverview, SyncConnectionAuthorizationsRequest, SyncConnectionAuthorizationsResult } from '@/lib/backend/contracts/adapter';
 
 export type {
   AdapterAction,
@@ -115,7 +100,7 @@ export async function attachPoolOwnedAuthorization(
 ): Promise<DefaultRoutePoolOverview> {
   const result = await getBackend().adapter.attachPoolOwnedAuthorization(request);
   try {
-    await refreshRuntimeReadModels(getBackend(), { models: ['connectionPool', 'ticketWallet'] });
+    await refreshRuntimeReadModels(getBackend(), { models: ['connectionInventory', 'ticketWallet'] });
   } catch {
     // Write succeeded; the pool store keeps previous rows if refresh fails.
   }
@@ -155,7 +140,7 @@ export async function recycleRouteMembership(
 ): Promise<number> {
   const result = await getBackend().adapter.recycleRouteMembership(sourceKind, sourceId);
   try {
-    await refreshRuntimeReadModels(getBackend(), { models: ['connectionPool', 'ticketWallet'] });
+    await refreshRuntimeReadModels(getBackend(), { models: ['connectionInventory', 'ticketWallet'] });
   } catch {
     // Write succeeded; the pool store keeps previous rows if refresh fails.
   }
@@ -168,7 +153,7 @@ export async function syncConnectionAuthorizations(
 ): Promise<SyncConnectionAuthorizationsResult> {
   const result = await getBackend().adapter.syncConnectionAuthorizations(request);
   try {
-    await refreshRuntimeReadModels(getBackend(), { models: ['connectionPool', 'ticketWallet'] });
+    await refreshRuntimeReadModels(getBackend(), { models: ['connectionInventory', 'ticketWallet'] });
   } catch {
     // Write succeeded; the pool store keeps previous rows if refresh fails.
   }
@@ -178,13 +163,13 @@ export async function syncConnectionAuthorizations(
 /** Convert a direct login into the target Agent default local route. */
 export async function enrollNativeToGateway(profileId: string): Promise<DefaultRoutePoolOverview> {
   const result = await getBackend().adapter.enrollNativeToGateway(profileId);
-  await refreshConnectionPoolAfterAdapterMutation();
+  await refreshConnectionInventoryAfterAdapterMutation();
   return result;
 }
 
-async function refreshConnectionPoolAfterAdapterMutation(): Promise<void> {
+async function refreshConnectionInventoryAfterAdapterMutation(): Promise<void> {
   try {
-    await refreshRuntimeReadModels(getBackend(), { models: ['connectionPool'] });
+    await refreshRuntimeReadModels(getBackend(), { models: ['connectionInventory'] });
   } catch {
     // The mutation itself succeeded. The pool store keeps previous rows and
     // exposes the refresh error instead of pretending the list is current.
@@ -199,7 +184,7 @@ async function refreshConnectionPoolAfterAdapterMutation(): Promise<void> {
 export async function applyAdapter(request: AdapterApplyRequest): Promise<AdapterApplyResult> {
   const result = await getBackend().adapter.apply(request);
   try {
-    await refreshRuntimeReadModels(getBackend(), { models: ['connectionPool', 'ticketWallet'] });
+    await refreshRuntimeReadModels(getBackend(), { models: ['connectionInventory', 'ticketWallet'] });
   } catch {
     // Same as bindTicket: write succeeded; read models keep the previous snapshot.
   }
@@ -209,7 +194,7 @@ export async function applyAdapter(request: AdapterApplyRequest): Promise<Adapte
 /** Removes the generated projection when it is not the active Connection. */
 export async function removeAdapter(profileId: string): Promise<void> {
   await getBackend().adapter.remove(profileId);
-  await refreshConnectionPoolAfterAdapterMutation();
+  await refreshConnectionInventoryAfterAdapterMutation();
 }
 
 /** Starts a previously-created local bridge on this machine. */
@@ -218,18 +203,18 @@ export async function startAdapterBridge(profileId: string): Promise<AdapterBrid
 }
 
 /** Start the shared local relay. Does not bind logins to Agents. */
-export async function startLocalEntry() {
-  return getBackend().adapter.startLocalEntry();
+export async function startLocalGateway() {
+  return getBackend().adapter.startLocalGateway();
 }
 
 /** Stop the shared local relay. */
-export async function stopLocalEntry() {
-  return getBackend().adapter.stopLocalEntry();
+export async function stopLocalGateway() {
+  return getBackend().adapter.stopLocalGateway();
 }
 
 /** Read whether the shared local relay is listening. */
-export async function getLocalEntryStatus() {
-  return getBackend().adapter.getLocalEntryStatus();
+export async function getLocalGatewayStatus() {
+  return getBackend().adapter.getLocalGatewayStatus();
 }
 
 /** Stops the bridge listener without deleting its generated Connection. */

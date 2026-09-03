@@ -159,26 +159,27 @@ describe('production module graph boundary (full src scan)', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('pages/bridges does not import pages/connections, and layout does not import bridges models', () => {
+  it('pages/routes/shared does not import pages/connections, and layout does not import routes-shared models', () => {
     const pageImport = (page: string) =>
       new RegExp(
         String.raw`(?:from|import)\s*\(?\s*['"](?:@/pages/${page}(?:/[^'"]*)?|(?:\.\./)+${page}(?:/[^'"]*)?)['"]`,
       );
-    const bridgesToConnections = pageImport('connections');
-    const connectionsToBridges = pageImport('bridges');
-    const layoutToBridgesModel = /(?:from|import)\s*\(?\s*['"](?:@\/pages\/bridges\/[^'"]+|(?:\.\.\/)+bridges\/[^'"]+)['"]/;
+    const routesSharedToConnections = pageImport('connections');
+    const connectionsToRoutesShared = pageImport('routes/shared');
+    const layoutToRoutesSharedModel =
+      /(?:from|import)\s*\(?\s*['"](?:@\/pages\/routes\/shared\/[^'"]+|(?:\.\.\/)+shared\/[^'"]+)['"]/;
     const offenders: string[] = [];
     for (const rel of productionFiles) {
       const src = sourceOf(rel);
-      if (rel.startsWith('pages/bridges/') && bridgesToConnections.test(src)) {
+      if (rel.startsWith('pages/routes/shared/') && routesSharedToConnections.test(src)) {
         offenders.push(rel);
       }
-      if (rel.startsWith('pages/connections/') && connectionsToBridges.test(src)) {
+      if (rel.startsWith('pages/connections/') && connectionsToRoutesShared.test(src)) {
         offenders.push(rel);
       }
       if (
         (rel === 'App.tsx' || rel.startsWith('components/layout/'))
-        && layoutToBridgesModel.test(src)
+        && layoutToRoutesSharedModel.test(src)
       ) {
         offenders.push(rel);
       }

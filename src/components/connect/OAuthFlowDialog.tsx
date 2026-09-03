@@ -41,7 +41,7 @@ import {
 import { OAUTH_PKCE_LISTEN_TIMEOUT_SECS } from '@/lib/backend/contracts/oauth-constants';
 import { AGENT_MAP } from '@/config/agents';
 import { openExternalLink } from '@/lib/open-external';
-import type { Account, AgentId } from '@/lib/types';
+import type { Account, AgentKey } from '@/lib/types';
 import type { TranslateFn } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
@@ -94,7 +94,7 @@ export function OAuthFlowDialog({
   poolOwned = false,
   successDescription,
 }: {
-  agentId: AgentId;
+  agentId: AgentKey;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onCompleted: (acc: Account) => void;

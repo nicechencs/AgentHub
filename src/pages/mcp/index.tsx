@@ -18,11 +18,11 @@ import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { listMcpInventory } from '@/lib/api/mcp';
 import { openPathInFileManager } from '@/lib/api/skill';
 import type { McpInventory, McpServerEntry } from '@/lib/backend/contracts/mcp-types';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import { groupMcpServersByAgentAndFile } from './group-servers';
 import { McpServerTable } from './McpServerTable';
 
-function agentName(id: AgentId): string {
+function agentName(id: AgentKey): string {
   return agentDisplayName(id);
 }
 

@@ -22,6 +22,6 @@ describe('CopyableFileName wiring', () => {
     expect(source('pages/projects/ProjectConversationPreviewPanel.tsx')).toContain('<CopyableFileName');
     expect(source('pages/settings/LocalPanel.tsx')).toContain('<CopyableFileName');
     expect(source('components/connections/ProviderEditDialog.tsx')).toContain('<CopyableFileName');
-    expect(source('pages/bridges/WriteClientConfigDialog.tsx')).toContain('<CopyableFileName');
+    expect(source('pages/routes/shared/WriteClientConfigDialog.tsx')).toContain('<CopyableFileName');
   });
 });

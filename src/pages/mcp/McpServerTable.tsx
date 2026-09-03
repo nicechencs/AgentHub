@@ -23,8 +23,9 @@ import {
 import { Tip } from '@/components/ui/tooltip';
 import { agentDisplayName } from '@/config/agents';
 import type { McpServerEntry } from '@/lib/backend/contracts/mcp-types';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import type { TranslateFn } from '@/lib/i18n';
+import { StorageKey } from '@/lib/ui-preferences';
 import type { McpAgentGroup } from './group-servers';
 
 type ColumnKey = 'name' | 'transport' | 'endpoint' | 'actions';
@@ -38,7 +39,7 @@ const WIDTH_SPECS: ColumnWidthSpec<ColumnKey>[] = [
 
 const COLUMN_KEYS: ColumnKey[] = ['name', 'transport', 'endpoint', 'actions'];
 
-const COLUMN_WIDTHS_STORAGE_KEY = 'agenthub.mcp.columnWidths';
+const COLUMN_WIDTHS_STORAGE_KEY = StorageKey.mcpColumnWidths;
 
 function columnLabels(t: TranslateFn): Record<ColumnKey, string> {
   return {
@@ -78,7 +79,7 @@ function FileGroupHeader({
   colSpan,
   onLocate,
 }: {
-  agent: AgentId;
+  agent: AgentKey;
   showAgent: boolean;
   path: string;
   colSpan: number;
@@ -225,7 +226,7 @@ function FragmentGroup({
   servers,
   onLocate,
 }: {
-  agent: AgentId;
+  agent: AgentKey;
   showAgent: boolean;
   path: string;
   servers: McpServerEntry[];

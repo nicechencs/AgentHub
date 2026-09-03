@@ -79,8 +79,8 @@ describe('translate / interpolate', () => {
     expect(zhNav('nav.routes')).toBe('路由');
     expect(zhNav('routes.page.title')).toBe('路由');
     expect(zhNav('nav.settings')).toBe('设置');
-    expect(zhNav('nav.chat')).toBe('Chat');
-    expect(zhNav('nav.agents')).toBe('Agents');
+    expect(zhNav('nav.chat')).toBe('对话');
+    expect(zhNav('nav.agents')).toBe('Agent');
     expect(zhNav('chrome.onboarding.enterDashboard')).toBe('进入总览');
     expect(zhNav('chat.blocker.goConnections')).toBe('去连接页');
     expect(zhNav('chat.connection.add')).toBe('去连接页添加');

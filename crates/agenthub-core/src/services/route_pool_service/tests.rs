@@ -46,13 +46,13 @@ fn bridge_profile(id: &str, source_id: &str, agent: AgentId, auto_start: bool) -
 }
 
 #[test]
-fn local_entry_desired_running_defaults_on_and_remembers_off() {
+fn local_gateway_desired_running_defaults_on_and_remembers_off() {
     let (_dir, _db, service, _) = tmp();
-    assert!(service.local_entry_desired_running().unwrap());
-    service.set_local_entry_desired_running(false).unwrap();
-    assert!(!service.local_entry_desired_running().unwrap());
-    service.set_local_entry_desired_running(true).unwrap();
-    assert!(service.local_entry_desired_running().unwrap());
+    assert!(service.local_gateway_desired_running().unwrap());
+    service.set_local_gateway_desired_running(false).unwrap();
+    assert!(!service.local_gateway_desired_running().unwrap());
+    service.set_local_gateway_desired_running(true).unwrap();
+    assert!(service.local_gateway_desired_running().unwrap());
 }
 
 #[test]
@@ -88,6 +88,42 @@ fn lists_and_sets_default_pool_entry_keys() {
 }
 
 #[test]
+fn set_local_token_promotes_non_default_pool() {
+    let (_dir, _db, service, profiles) = tmp();
+    let profile = bridge_profile("legacy-pool", "acc-legacy", AgentId::Claude, true);
+    profiles.create(&profile).unwrap();
+    let pool = service
+        .create_legacy_pool(&profile, "ahb_legacy-before", false)
+        .unwrap();
+    assert!(!pool.is_default);
+    assert!(service.list_local_tokens().unwrap().is_empty());
+
+    let updated = service
+        .set_local_token(&pool.id, "ahb_legacy-after")
+        .unwrap();
+    assert_eq!(updated.token, "ahb_legacy-after");
+    let saved = service.get(&pool.id).unwrap().expect("pool");
+    assert!(saved.is_default);
+    let listed = service.list_local_tokens().unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].pool_id, pool.id);
+    assert_eq!(listed[0].token, "ahb_legacy-after");
+}
+
+#[test]
+fn enroll_unified_gateway_as_default_marks_pool() {
+    let (_dir, _db, service, profiles) = tmp();
+    let profile = bridge_profile("enroll-pool", "acc-enroll", AgentId::Codex, true);
+    profiles.create(&profile).unwrap();
+    service.ensure_legacy_pool(&profile).unwrap();
+    let enrolled = service.enroll_unified_gateway_as_default(&profile.id, 44227).unwrap();
+    assert!(enrolled.is_default);
+    assert!(enrolled.unified_gateway_enrolled);
+    assert_eq!(enrolled.gateway_port, Some(44227));
+    assert_eq!(service.list_local_tokens().unwrap().len(), 1);
+}
+
+#[test]
 fn product_flags_default_on() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("flag-default-on.db")).unwrap();
@@ -111,7 +147,7 @@ fn legacy_projection_keeps_id_auto_start_and_single_lead() {
     assert_eq!(again[0].id, "profile-a");
     assert_eq!(again[0].hub_token, "ahb_stable-token");
     assert!(again[0].auto_start);
-    assert!(!again[0].v2_enrolled);
+    assert!(!again[0].unified_gateway_enrolled);
     let members = service.list_members("profile-a").unwrap();
     assert_eq!(members.len(), 1);
     assert_eq!(members[0].source_id, "acc-a");
@@ -320,31 +356,31 @@ fn duplicate_fingerprint_is_rejected() {
 }
 
 #[test]
-fn enroll_v2_writes_port_once_and_keeps_token() {
+fn enroll_unified_gateway_writes_port_once_and_keeps_token() {
     let (_dir, _db, service, profiles) = tmp();
     let profile = bridge_profile("profile-a", "acc-a", AgentId::Codex, true);
     profiles.create(&profile).unwrap();
     service
         .create_legacy_pool(&profile, "ahb_stable-token", true)
         .unwrap();
-    let enrolled = service.enroll_v2("profile-a", 43155).unwrap();
-    assert!(enrolled.v2_enrolled);
+    let enrolled = service.enroll_unified_gateway("profile-a", 43155).unwrap();
+    assert!(enrolled.unified_gateway_enrolled);
     assert_eq!(enrolled.gateway_port, Some(43155));
     assert_eq!(enrolled.hub_token, "ahb_stable-token");
-    let again = service.enroll_v2("profile-a", 43155).unwrap();
+    let again = service.enroll_unified_gateway("profile-a", 43155).unwrap();
     assert_eq!(again.policy_revision, enrolled.policy_revision);
 }
 
 #[test]
-fn enroll_v2_rejects_a_different_port() {
+fn enroll_unified_gateway_rejects_a_different_port() {
     let (_dir, _db, service, profiles) = tmp();
     let profile = bridge_profile("profile-a", "acc-a", AgentId::Codex, true);
     profiles.create(&profile).unwrap();
     service
         .create_legacy_pool(&profile, "ahb_stable-token", true)
         .unwrap();
-    let enrolled = service.enroll_v2("profile-a", 43155).unwrap();
-    let error = service.enroll_v2("profile-a", 43156).unwrap_err();
+    let enrolled = service.enroll_unified_gateway("profile-a", 43155).unwrap();
+    let error = service.enroll_unified_gateway("profile-a", 43156).unwrap_err();
     assert_eq!(error.code(), "invalid_arg");
     let stored = service.get("profile-a").unwrap().unwrap();
     assert_eq!(stored.gateway_port, Some(43155));
@@ -352,14 +388,14 @@ fn enroll_v2_rejects_a_different_port() {
 }
 
 #[test]
-fn create_legacy_pool_does_not_enroll_v2() {
+fn create_legacy_pool_does_not_enroll_unified_gateway() {
     let (_dir, _db, service, profiles) = tmp();
     let profile = bridge_profile("profile-a", "acc-a", AgentId::Codex, true);
     profiles.create(&profile).unwrap();
     let pool = service
         .create_legacy_pool(&profile, "ahb_stable-token", true)
         .unwrap();
-    assert!(!pool.v2_enrolled);
+    assert!(!pool.unified_gateway_enrolled);
     assert_eq!(
         profiles.get("profile-a").unwrap().unwrap().local_port,
         Some(43121)
@@ -379,7 +415,7 @@ fn native_endpoint_profiles_are_not_auto_enrolled() {
 }
 
 #[test]
-fn enroll_v2_rejects_native_endpoint_and_config_sync() {
+fn enroll_unified_gateway_rejects_native_endpoint_and_config_sync() {
     let (_dir, _db, service, profiles) = tmp();
     for (id, route) in [
         ("native", AdapterRoute::NativeEndpoint),
@@ -392,9 +428,9 @@ fn enroll_v2_rejects_native_endpoint_and_config_sync() {
         service
             .create_legacy_pool(&profile, &format!("ahb_stable-token-{id}"), false)
             .unwrap();
-        let error = service.enroll_v2(id, 43155).unwrap_err();
+        let error = service.enroll_unified_gateway(id, 43155).unwrap_err();
         assert_eq!(error.code(), "unsupported");
-        assert!(!service.get(id).unwrap().unwrap().v2_enrolled);
+        assert!(!service.get(id).unwrap().unwrap().unified_gateway_enrolled);
     }
 }
 
@@ -498,7 +534,7 @@ async fn occupancy_failure_does_not_enroll_or_rewrite_client() {
         .await
         .is_err());
     let pool = service.get("profile-a").unwrap().unwrap();
-    assert!(!pool.v2_enrolled);
+    assert!(!pool.unified_gateway_enrolled);
     assert_eq!(pool.gateway_port, None);
     assert_eq!(pool.hub_token, "ahb_stable-token");
     assert_eq!(
@@ -526,7 +562,7 @@ async fn bind_then_enroll_writes_port_only_after_bind() {
         .bind_then_enroll(&host, "profile-a", port)
         .await
         .unwrap();
-    assert!(enrolled.v2_enrolled);
+    assert!(enrolled.unified_gateway_enrolled);
     assert_eq!(enrolled.gateway_port, Some(port));
     assert_eq!(enrolled.hub_token, "ahb_stable-token");
     assert_eq!(
@@ -671,7 +707,7 @@ fn persist_enroll_after_native_bind_sets_v2_without_hub_token() {
     let overview = service
         .persist_enroll_after_native_bind(&bound, 43155)
         .unwrap();
-    assert!(overview.v2_enrolled);
+    assert!(overview.unified_gateway_enrolled);
     assert_eq!(overview.gateway_port, Some(43155));
     assert_eq!(overview.id, "bound-1");
     assert!(service.get("bound-1").unwrap().unwrap().is_default);
@@ -865,7 +901,7 @@ fn occupancy_fail_skips_persist_and_leaves_unenrolled() {
     let bind_failed: Result<(AdapterProfile, u16), String> = Err("adapter.port_in_use".into());
     assert!(bind_failed.is_err());
     let stored = service.get("bound-occ").unwrap().unwrap();
-    assert!(!stored.v2_enrolled);
+    assert!(!stored.unified_gateway_enrolled);
     assert_eq!(stored.gateway_port, None);
 }
 #[test]

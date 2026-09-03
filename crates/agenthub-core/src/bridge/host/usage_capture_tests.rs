@@ -32,7 +32,7 @@ fn spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeStartSpec {
         BridgeUpstreamConfig {
             base_url: format!("http://127.0.0.1:{upstream_port}"),
             model: Some("kimi-test".to_owned()),
-            source_connection_id: Some("connection-test".to_owned()),
+            source_id: Some("connection-test".to_owned()),
             auth: ResolvedAuth::bearer("upstream-test-token"),
             protocol: BridgeUpstreamProtocol::OpenAiChatCompletions,
             local_surface: BridgeLocalSurface::Responses,
@@ -394,7 +394,7 @@ async fn runtime_does_not_forward_anthropic_key_across_redirect() {
             BridgeUpstreamConfig {
                 base_url: format!("http://127.0.0.1:{redirect_port}"),
                 model: Some("claude-test".to_owned()),
-                source_connection_id: Some("anthropic-source".to_owned()),
+                source_id: Some("anthropic-source".to_owned()),
                 auth: ResolvedAuth::bearer("anthropic-upstream-secret"),
                 protocol: BridgeUpstreamProtocol::AnthropicMessages,
                 local_surface: BridgeLocalSurface::Messages,

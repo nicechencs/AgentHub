@@ -1,8 +1,8 @@
-import type { AgentId, Provider } from '@/lib/types';
+import type { AgentKey, Provider } from '@/lib/types';
 
 export interface CoreProvider {
   id: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   name: string;
   settingsConfig: Record<string, unknown>;
   meta: Record<string, unknown>;
@@ -13,7 +13,7 @@ export interface CoreProvider {
 
 export interface CoreProviderInput {
   id: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   name: string;
   settingsConfig: Record<string, unknown>;
   meta: Record<string, unknown>;

@@ -1,46 +1,9 @@
-import type { AgentId, Provider } from '@/lib/types';
+import type { AgentKey, Provider } from '@/lib/types';
 import {
   mapCoreProvider,
   type CoreProvider,
 } from './provider-map';
-import type {
-  AdapterAction,
-  AdapterApplyPlan,
-  AdapterApplyResult,
-  AdapterBridgeInboundRequest,
-  AdapterBridgeRouteTrace,
-  AdapterBridgeRuntimeState,
-  AdapterBridgeRuntimeStatus,
-  AdapterEvidence,
-  AdapterGateKind,
-  AdapterMaturity,
-  AdapterPlanChange,
-  AdapterProfile,
-  AdapterProfileMode,
-  AdapterProfileStatus,
-  AdapterReusePath,
-  AdapterRoute,
-  AdapterRouteAnalysis,
-  AdapterServiceImpact,
-  AdapterSourceKind,
-  AdapterSupport,
-  DefaultRoutePoolList,
-  DefaultRoutePoolOverview,
-  LocalTokenProbeOutcome,
-  LocalTokenProbeResult,
-  LocalTokenRecord,
-  RouteMemberOverview,
-  RouteTraceConversion,
-  RouteTraceLocalAuth,
-  RouteTraceMember,
-  RouteTracePool,
-  RouteTracePoolAttempt,
-  RouteTraceStageStatus,
-  RouteTraceUpstream,
-  RouteTraceUpstreamAuth,
-  RoutePoolDialect,
-  RoutePoolSurface,
-} from './adapter';
+import type { AdapterAction, AdapterApplyPlan, AdapterApplyResult, AdapterBridgeInboundRequest, AdapterBridgeRouteTrace, AdapterBridgeRuntimeState, AdapterBridgeRuntimeStatus, AdapterEvidence, AdapterGateKind, AdapterMaturity, AdapterPlanChange, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis, AdapterServiceImpact, AdapterSourceKind, AdapterSupport, DefaultRoutePoolList, DefaultRoutePoolOverview, LocalTokenProbeOutcome, LocalTokenProbeResult, LocalTokenRecord, RouteMemberOverview, RouteTraceConversion, RouteTraceLocalAuth, RouteTraceMember, RouteTracePool, RouteTracePoolAttempt, RouteTraceStageStatus, RouteTraceUpstream, RouteTraceUpstreamAuth, RoutePoolDialect, RoutePoolSurface } from './adapter';
 
 /** Exact camelCase shape serialized by Rust's `AdapterProfile`. */
 export interface AdapterProfileWire {
@@ -48,7 +11,7 @@ export interface AdapterProfileWire {
   name: string;
   sourceKind: AdapterSourceKind;
   sourceId: string;
-  targetAgentId: AgentId;
+  targetAgentId: AgentKey;
   route: string;
   mode: string;
   status: string;
@@ -65,7 +28,7 @@ export interface AdapterProfileWire {
 /** Exact camelCase shape serialized by Rust's `Provider`. */
 export interface CoreProviderWire {
   id: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   name: string;
   settingsConfig: Record<string, unknown>;
   meta: Record<string, unknown>;
@@ -173,7 +136,6 @@ export interface AdapterBridgeStatusDtoWire {
   running: boolean;
   state: string;
   upstreamStatus: string;
-  sourceConnectionId?: string;
   startedAtUnixMs?: number;
   recentInbound?: AdapterBridgeInboundRequestWire[];
   recentRouteTraces?: AdapterBridgeRouteTraceWire[];
@@ -217,7 +179,7 @@ export interface AdapterPlanChangeWire {
 
 export interface AdapterApplyPlanWire {
   analysis: AdapterRouteAnalysisWire;
-  targetAgentId: AgentId;
+  targetAgentId: AgentKey;
   canApply: boolean;
   maturity?: string;
   reusePath?: string;
@@ -739,20 +701,22 @@ export function mapAdapterBridgeStatusDto(
   };
 }
 
-export interface LocalEntryStatusWire {
+export interface LocalGatewayStatusWire {
   running: boolean;
   port?: number | null;
   statuses?: AdapterBridgeStatusDtoWire[];
   recentUnauthenticatedTraces?: AdapterBridgeRouteTraceWire[];
+  restarting?: boolean;
 }
 
-export function mapLocalEntryStatus(wire: LocalEntryStatusWire): import('./adapter').LocalEntryStatus {
+export function mapLocalGatewayStatus(wire: LocalGatewayStatusWire): import('./adapter').LocalGatewayStatus {
   const port = isLoopbackPort(wire.port ?? null) ? wire.port ?? null : null;
   return {
     running: wire.running === true && port != null,
     port,
     statuses: Array.isArray(wire.statuses) ? wire.statuses.map(mapAdapterBridgeStatusDto) : [],
     unauthenticatedTraces: mapRouteTraces(wire.recentUnauthenticatedTraces),
+    restarting: wire.restarting === true,
   };
 }
 
@@ -830,10 +794,10 @@ export interface RouteMemberOverviewWire {
 
 export interface DefaultRoutePoolOverviewWire {
   id: string;
-  targetAgentId: AgentId;
+  targetAgentId: AgentKey;
   surface: string;
   dialect: string;
-  v2Enrolled: boolean;
+  unifiedGatewayEnrolled?: boolean;
   gatewayPort?: number | null;
   members?: RouteMemberOverviewWire[];
   listedModels?: string[];
@@ -903,7 +867,7 @@ export function mapDefaultRoutePoolOverview(wire: DefaultRoutePoolOverviewWire):
     targetAgentId: wire.targetAgentId,
     surface: mapPoolSurface(wire.surface),
     dialect: mapPoolDialect(wire.dialect),
-    v2Enrolled: wire.v2Enrolled === true,
+    unifiedGatewayEnrolled: wire.unifiedGatewayEnrolled === true,
     gatewayPort: port,
     members: (wire.members ?? []).map(mapMemberOverview),
     listedModels: listed,

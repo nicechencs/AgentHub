@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use agenthub_core::logging::targets;
 use agenthub_core::models::{AgentId, AgentUpdateInfo, InstallOutcome, RuntimeId};
-use agenthub_core::platform::install::{list_install_catalog, AgentInstallCatalogEntry};
+use agenthub_core::platform::install::{
+    list_install_catalog as list_install_catalog_impl, AgentInstallCatalogEntry,
+};
 use agenthub_core::AgentKey;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
@@ -16,7 +18,7 @@ use crate::file_manager::{
 };
 use crate::state::AppState;
 
-/// Event name for live install/upgrade log lines (frontend InlineTerminal).
+/// Event name for live install/upgrade log chunks (frontend InlineTerminal).
 pub const INSTALL_PROGRESS_EVENT: &str = "install-progress";
 
 #[derive(Clone, Serialize)]
@@ -26,7 +28,8 @@ struct InstallProgressPayload {
     agent_id: Option<String>,
     /// `install` | `upgrade` | `uninstall` | `runtime`
     action: String,
-    line: String,
+    /// Raw UTF-8 output chunk (may be partial line, empty, or multi-line).
+    chunk: String,
 }
 
 fn install_progress_hook(
@@ -34,11 +37,11 @@ fn install_progress_hook(
     agent_id: Option<String>,
     action: &'static str,
 ) -> agenthub_core::services::InstallLogHook {
-    Arc::new(move |line: &str| {
+    Arc::new(move |chunk: &str| {
         let payload = InstallProgressPayload {
             agent_id: agent_id.clone(),
             action: action.to_string(),
-            line: line.to_string(),
+            chunk: chunk.to_string(),
         };
         if let Err(e) = app.emit(INSTALL_PROGRESS_EVENT, &payload) {
             tracing::debug!(
@@ -55,8 +58,8 @@ fn install_progress_hook(
 ///
 /// Read-only product install channels (npm packages / native URLs) from core catalog.
 #[tauri::command]
-pub fn list_install_catalog_cmd() -> Result<Vec<AgentInstallCatalogEntry>, String> {
-    Ok(list_install_catalog())
+pub fn list_install_catalog() -> Result<Vec<AgentInstallCatalogEntry>, String> {
+    Ok(list_install_catalog_impl())
 }
 
 fn parse_runtime(runtime: &str) -> Result<RuntimeId, String> {

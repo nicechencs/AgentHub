@@ -1,7 +1,7 @@
 //! `agenthub skill` — inspect and manage shared-skill projections.
 
 use agenthub_core::error::{AppError, Result};
-use agenthub_core::models::{AgentId, Skill, SkillProjectMode, SkillSyncReport};
+use agenthub_core::models::{AgentId, Skill, SkillProjectionMode, SkillSyncReport};
 use agenthub_core::AgentHub;
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 
@@ -257,12 +257,12 @@ pub fn project(
     agent_filter: Option<&str>,
 ) -> Result<()> {
     let agent = require_agent(agent_filter)?;
-    let mode = SkillProjectMode::parse(mode).ok_or_else(|| {
+    let mode = SkillProjectionMode::parse(mode).ok_or_else(|| {
         AppError::InvalidArg(format!(
             "invalid project mode '{mode}', expected: link|copy"
         ))
     })?;
-    let result = hub.skills().project_skill(skill_id, agent, mode)?;
+    let result = hub.skills().apply_skill_projection(skill_id, agent, mode)?;
     match format {
         OutputFormat::Quiet => Ok(()),
         OutputFormat::Json => print_json(&result),

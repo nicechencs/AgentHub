@@ -22,15 +22,15 @@ import {
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
-import { ROUTES_POOL_PATH } from '@/lib/bridges-path';
+import { ROUTES_POOL_PATH } from '@/lib/routes-path';
 import { listLocalTokens, setLocalToken } from '@/lib/api/adapter';
 import { USAGE_COLLECTED_EVENT } from '@/lib/usage-sync';
-import { ROUTES_INSPECT_WIDTH_KEY } from '@/pages/bridges/route-inspect';
-import { useAdapterResources } from '@/pages/bridges/use-bridge-resources';
-import { useRoutePoolState } from '@/pages/bridges/use-route-pool-state';
+import { ROUTES_INSPECT_WIDTH_KEY } from '@/pages/routes/shared/route-inspect';
+import { useAdapterResources } from '@/pages/routes/shared/use-bridge-resources';
+import { useRoutePoolState } from '@/pages/routes/shared/use-route-pool-state';
 import { boardUsageWindow } from '@/pages/routes/board/board-usage-model';
 import { useBoardUsageStats } from '@/pages/routes/board/use-board-usage';
-import { buildLocalEntryControl } from '@/pages/routes/board/board-view-model';
+import { buildLocalGatewayControl } from '@/pages/routes/board/board-view-model';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
 import { TokenDetailPanel } from './TokenDetailPanel';
 import { TokenList } from './TokenList';
@@ -38,16 +38,24 @@ import {
   attachTokenUsage,
   buildLocalTokenRows,
   generateLocalToken,
+  localTokenEditKeyGate,
+  maskLocalToken,
   tokenTypeLabel,
   type LocalTokenRow,
 } from './tokens-model';
+import { TokenImportToAgentButton } from './TokenImportToAgentButton';
+import type { TokenImportAgentRef } from './token-import-model';
 
 export default function RoutesTokensPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { hiddenIds } = useInstalledAgents();
+  const { hiddenIds, installedAgents } = useInstalledAgents();
   const hiddenTargetIds = useMemo(() => new Set(hiddenIds), [hiddenIds]);
+  const installedAgentRefs = useMemo<TokenImportAgentRef[]>(
+    () => installedAgents.map((agent) => ({ id: agent.id, name: agent.name })),
+    [installedAgents],
+  );
   const {
     profiles,
     bridgeStatuses,
@@ -62,6 +70,7 @@ export default function RoutesTokensPage() {
   const [editRow, setEditRow] = useState<LocalTokenRow | null>(null);
   const [editValue, setEditValue] = useState('');
   const [editBusy, setEditBusy] = useState(false);
+  const [importAfterSaveRow, setImportAfterSaveRow] = useState<LocalTokenRow | null>(null);
   const {
     chatCompletionsShared,
     defaultPools,
@@ -72,8 +81,8 @@ export default function RoutesTokensPage() {
     reloadKey: tokenTick,
   });
   const inspect = useSideSplit<string>({ storageKey: ROUTES_INSPECT_WIDTH_KEY });
-  const localEntry = useMemo(
-    () => buildLocalEntryControl(profiles, bridgeStatuses, hiddenTargetIds, defaultPools),
+  const localGateway = useMemo(
+    () => buildLocalGatewayControl(profiles, bridgeStatuses, hiddenTargetIds, defaultPools),
     [bridgeStatuses, defaultPools, hiddenTargetIds, profiles],
   );
 
@@ -130,12 +139,26 @@ export default function RoutesTokensPage() {
   }, []);
 
   const openEdit = (row: LocalTokenRow) => {
+    const gate = localTokenEditKeyGate(row, t);
+    if (!gate.enabled) {
+      toast({
+        title: gate.reason ?? t('routes.tokens.editKeyNeedPool'),
+        variant: 'danger',
+      });
+      return;
+    }
     setEditRow(row);
     setEditValue(row.token ?? '');
   };
 
   const saveEdit = async () => {
     if (!editRow || editBusy) return;
+    // setLocalToken requires a real pool id — never call it with a leftover profile id.
+    if (!editRow.poolBacked) {
+      toast({ title: t('routes.tokens.editKeyNeedPool'), variant: 'danger' });
+      setEditRow(null);
+      return;
+    }
     const token = editValue.trim();
     if (!token) {
       toast({ title: t('routes.tokens.keyRequired'), variant: 'danger' });
@@ -145,6 +168,11 @@ export default function RoutesTokensPage() {
     try {
       await setLocalToken(editRow.id, token);
       setEditRow(null);
+      setImportAfterSaveRow({
+        ...editRow,
+        token,
+        maskedToken: maskLocalToken(token),
+      });
       setTokenTick((tick) => tick + 1);
       void reload();
     } catch {
@@ -167,9 +195,9 @@ export default function RoutesTokensPage() {
       />
       <div className={pageRhythm.chromeRow}>
         <p className="min-w-0 truncate text-meta text-muted">{
-          !localEntry.running
-            && localEntry.profileIds.length === 0
-            && localEntry.hasEnrolledLogins
+          !localGateway.running
+            && localGateway.profileIds.length === 0
+            && localGateway.hasEnrolledLogins
             ? t('routes.board.entryNeedRoute')
             : t('routes.tokens.scopeNote')
         }</p>
@@ -213,6 +241,7 @@ export default function RoutesTokensPage() {
             rows={listRows}
             activeId={inspect.target}
             onShowDetail={(row) => inspect.open(row.id)}
+            installedAgents={installedAgentRefs}
           />
         </PageSection>
       )}
@@ -257,6 +286,33 @@ export default function RoutesTokensPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={importAfterSaveRow != null}
+        onOpenChange={(open) => { if (!open) setImportAfterSaveRow(null); }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('routes.tokens.importAfterSaveTitle')}</DialogTitle>
+            <DialogDescription>
+              {t('routes.tokens.importAfterSaveDescription')}
+            </DialogDescription>
+          </DialogHeader>
+          {importAfterSaveRow ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <TokenImportToAgentButton
+                row={importAfterSaveRow}
+                installedAgents={installedAgentRefs}
+              />
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setImportAfterSaveRow(null)}>
+              {t('routes.tokens.importAfterSaveSkip')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </RoutesPane>
   );
 
@@ -270,6 +326,7 @@ export default function RoutesTokensPage() {
           width={inspect.paneWidth}
           onClose={() => inspect.close()}
           onEditKey={() => openEdit(detailRow)}
+          installedAgents={installedAgentRefs}
         />
       ) : null}
     >

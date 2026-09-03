@@ -41,7 +41,7 @@ function skill(id: string): Skill {
     name: id,
     description: '',
     projections: [],
-    sync: {},
+    projectionByAgent: {},
     conflicts: [],
   };
 }

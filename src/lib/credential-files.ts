@@ -3,7 +3,7 @@
  * Paths are display paths (`~/...`); opening expands them in the file manager.
  * Preview text is not masked by field name — this is the user's own local file.
  */
-import type { AccountKind, AgentId, Provider } from '@/lib/types';
+import type { AccountKind, AgentKey, Provider } from '@/lib/types';
 
 export interface CredentialFileView {
   /** Basename, e.g. `auth.json`. */
@@ -104,7 +104,7 @@ export function resolveCredentialFilePath(
 }
 
 export function extractAccountCredentialFiles(input: {
-  agentId: AgentId | string;
+  agentId: AgentKey | string;
   kind: AccountKind;
   credentials?: Record<string, unknown>;
   source?: string;
@@ -235,7 +235,7 @@ function pickCredentialString(
  * Preview the native row, not a Hub `{ format, provider, api_key }` stub.
  */
 function catalogFileSnapshot(
-  agentId: AgentId | string,
+  agentId: AgentKey | string,
   credentials: Record<string, unknown>,
 ): { name: string; value: unknown } | undefined {
   if (agentId === 'zcode') {

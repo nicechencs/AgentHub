@@ -113,6 +113,35 @@ fn adapter_control_status_stopped_has_no_secrets() {
 }
 
 #[test]
+fn local_gateway_status_serializes_restarting() {
+    use crate::adapter_control::LocalGatewayStatus;
+
+    let restarting = LocalGatewayStatus {
+        running: false,
+        port: None,
+        statuses: Vec::new(),
+        recent_unauthenticated_traces: Vec::new(),
+        restarting: true,
+    };
+    let restarting_json = serde_json::to_value(&restarting).unwrap();
+    assert_eq!(restarting_json["running"], false);
+    assert_eq!(restarting_json["restarting"], true);
+    assert!(restarting_json.get("recentUnauthenticatedTraces").is_none());
+
+    let idle = LocalGatewayStatus {
+        running: true,
+        port: Some(43121),
+        statuses: Vec::new(),
+        recent_unauthenticated_traces: Vec::new(),
+        restarting: false,
+    };
+    let idle_json = serde_json::to_value(&idle).unwrap();
+    assert_eq!(idle_json["running"], true);
+    assert_eq!(idle_json["port"], 43121);
+    assert_eq!(idle_json["restarting"], false);
+}
+
+#[test]
 fn resolve_unbind_action_without_profile_skips_bridge_stop() {
     let dir = tempfile::tempdir().unwrap();
     let hub = crate::AgentHub::open(Some(dir.path())).unwrap();

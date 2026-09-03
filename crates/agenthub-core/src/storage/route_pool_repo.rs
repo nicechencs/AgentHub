@@ -17,7 +17,7 @@ mod tests;
 
 const POOL_COLUMNS: &str = r#"
     id, target_agent_id, downstream_surface, downstream_dialect, hub_token,
-    schedule_policy, is_default, v2_enrolled, policy_revision, auto_start,
+    schedule_policy, is_default, unified_gateway_enrolled, policy_revision, auto_start,
     gateway_port, created_at, updated_at
 "#;
 
@@ -313,7 +313,7 @@ impl RoutePoolRepo {
         })
     }
 
-    pub fn enroll_v2(
+    pub fn enroll_unified_gateway(
         &self,
         pool_id: &str,
         gateway_port: u16,
@@ -321,21 +321,21 @@ impl RoutePoolRepo {
     ) -> Result<RoutePool> {
         if gateway_port == 0 {
             return Err(AppError::InvalidArg(
-                "v2 gateway port must be between 1 and 65535".into(),
+                "unified gateway port must be between 1 and 65535".into(),
             ));
         }
         self.mutate(|conn| {
             let mut pool = get_pool_conn(conn, pool_id)?
                 .ok_or_else(|| AppError::NotFound(format!("route pool not found: {pool_id}")))?;
-            if pool.v2_enrolled {
+            if pool.unified_gateway_enrolled {
                 if pool.gateway_port == Some(gateway_port) {
                     return Ok(pool);
                 }
                 return Err(AppError::InvalidArg(
-                    "v2 gateway port is frozen after enroll".into(),
+                    "unified gateway port is frozen after enroll".into(),
                 ));
             }
-            pool.v2_enrolled = true;
+            pool.unified_gateway_enrolled = true;
             pool.gateway_port = Some(gateway_port);
             pool.updated_at = updated_at.to_owned();
             pool.policy_revision = pool.policy_revision.saturating_add(1);
@@ -432,7 +432,7 @@ fn insert_pool_conn(conn: &Connection, pool: &RoutePool) -> rusqlite::Result<usi
         r#"
         INSERT INTO route_pools (
             id, target_agent_id, downstream_surface, downstream_dialect, hub_token,
-            schedule_policy, is_default, v2_enrolled, policy_revision, auto_start,
+            schedule_policy, is_default, unified_gateway_enrolled, policy_revision, auto_start,
             gateway_port, created_at, updated_at
         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
         "#,
@@ -444,7 +444,7 @@ fn insert_pool_conn(conn: &Connection, pool: &RoutePool) -> rusqlite::Result<usi
             pool.hub_token,
             pool.schedule_policy.as_str(),
             i64::from(pool.is_default),
-            i64::from(pool.v2_enrolled),
+            i64::from(pool.unified_gateway_enrolled),
             pool.policy_revision,
             i64::from(pool.auto_start),
             pool.gateway_port.map(i64::from),
@@ -459,7 +459,7 @@ fn update_pool_conn(conn: &Connection, pool: &RoutePool) -> rusqlite::Result<usi
         r#"
         UPDATE route_pools
         SET target_agent_id = ?2, downstream_surface = ?3, downstream_dialect = ?4,
-            schedule_policy = ?5, is_default = ?6, v2_enrolled = ?7,
+            schedule_policy = ?5, is_default = ?6, unified_gateway_enrolled = ?7,
             policy_revision = ?8, auto_start = ?9, gateway_port = ?10,
             created_at = ?11, updated_at = ?12
         WHERE id = ?1
@@ -471,7 +471,7 @@ fn update_pool_conn(conn: &Connection, pool: &RoutePool) -> rusqlite::Result<usi
             pool.downstream_dialect.as_str(),
             pool.schedule_policy.as_str(),
             i64::from(pool.is_default),
-            i64::from(pool.v2_enrolled),
+            i64::from(pool.unified_gateway_enrolled),
             pool.policy_revision,
             i64::from(pool.auto_start),
             pool.gateway_port.map(i64::from),
@@ -655,7 +655,7 @@ struct RawRoutePool {
     hub_token: String,
     schedule_policy: String,
     is_default: i64,
-    v2_enrolled: i64,
+    unified_gateway_enrolled: i64,
     policy_revision: i64,
     auto_start: i64,
     gateway_port: Option<i64>,
@@ -694,7 +694,10 @@ impl RawRoutePool {
             hub_token: self.hub_token,
             schedule_policy,
             is_default: parse_bool(self.is_default, "is_default")?,
-            v2_enrolled: parse_bool(self.v2_enrolled, "v2_enrolled")?,
+            unified_gateway_enrolled: parse_bool(
+                self.unified_gateway_enrolled,
+                "unified_gateway_enrolled",
+            )?,
             policy_revision: self.policy_revision,
             auto_start: parse_bool(self.auto_start, "auto_start")?,
             gateway_port,
@@ -743,7 +746,7 @@ fn map_pool_row(row: &Row<'_>) -> rusqlite::Result<RawRoutePool> {
         hub_token: row.get(4)?,
         schedule_policy: row.get(5)?,
         is_default: row.get(6)?,
-        v2_enrolled: row.get(7)?,
+        unified_gateway_enrolled: row.get(7)?,
         policy_revision: row.get(8)?,
         auto_start: row.get(9)?,
         gateway_port: row.get(10)?,

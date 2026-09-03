@@ -1,13 +1,13 @@
 import type { InstalledSkillDto } from '@/lib/api/skill';
-import type { AgentId, SkillLinkKind, SkillSyncState } from '@/lib/types';
+import type { AgentKey, SkillLinkKind, SkillSyncState } from '@/lib/types';
 
-export const cellKey = (skillId: string, agentId: AgentId) => `${skillId}:${agentId}`;
+export const cellKey = (skillId: string, agentId: AgentKey) => `${skillId}:${agentId}`;
 
 /** 按真实写操作结果更新共享 catalog 行的投影 */
 export function applyCatalogCellState(
   rows: InstalledSkillDto[],
   skillId: string,
-  agentId: AgentId,
+  agentId: AgentKey,
   state: SkillSyncState,
 ): InstalledSkillDto[] {
   return rows.map((row) => {

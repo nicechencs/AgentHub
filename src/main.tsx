@@ -5,6 +5,7 @@ import App from './App';
 import { BootSplash } from '@/components/shared/BootSplash';
 import { AppErrorBoundary } from '@/components/shared/AppErrorBoundary';
 import { ToastProvider } from '@/components/ui/toast';
+import { ProviderHealToasts } from '@/components/layout/ProviderHealToasts';
 import { TooltipProvider, TOOLTIP } from '@/components/ui/tooltip';
 import { LanguageProvider } from '@/components/shared/LanguageProvider';
 import { ThemeProvider } from '@/components/shared/ThemeProvider';
@@ -15,7 +16,7 @@ import {
   getBackend,
   loadAgentCatalog,
   loadAgentStatuses,
-  loadConnectionPool,
+  loadConnectionInventory,
   loadTicketWallet,
 } from '@/app/runtime';
 import { fetchCatalogShared } from '@/lib/hooks/useSkills';
@@ -24,6 +25,7 @@ import { reconcileAccountPool } from '@/lib/api/account';
 import { applyLanguage, loadStoredLanguage } from '@/lib/i18n';
 import { applyAccent, loadStoredAccent, registerShellIconSync } from '@/lib/accent';
 import { applyShellAccentIconBestEffort } from '@/lib/backend/tauri/shell-icon';
+import { startProviderBindingHealListen } from '@/lib/backend/tauri/provider-heal-events';
 import { applyTheme, loadStoredTheme } from '@/lib/theme';
 import { isTauriApp } from '@/lib/platform';
 import { logger } from '@/lib/logger';
@@ -57,7 +59,7 @@ function startBackgroundPreload(): Promise<void> {
   void loadAgentStatuses(backend).catch((e) => {
     log.error('agent status load failed', e);
   });
-  void loadConnectionPool(backend)
+  void loadConnectionInventory(backend)
     .then(() => reconcileAccountPool())
     .catch((e) => {
       log.error('connection pool load failed', e);
@@ -141,6 +143,7 @@ function Root() {
           <LanguageProvider>
             <TooltipProvider delayDuration={TOOLTIP.delayMs} skipDelayDuration={0}>
               <ToastProvider>
+                <ProviderHealToasts />
                 <AgentCatalogProvider>
                   <AgentStatusProvider>
                     <UsageSyncProvider>
@@ -165,6 +168,9 @@ function boot() {
   if (isTauriApp()) {
     registerShellIconSync(applyShellAccentIconBestEffort);
     applyShellAccentIconBestEffort(loadStoredAccent());
+    void startProviderBindingHealListen().catch((error) => {
+      log.error('provider binding heal listen unavailable', error);
+    });
   }
 
   // 立刻挂载 React：由 Root 内 splash 覆盖预加载，不再阻塞在 createRoot 之前

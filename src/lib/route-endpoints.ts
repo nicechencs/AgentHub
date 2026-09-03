@@ -6,7 +6,7 @@
  * splits `/v1/responses` into Codex (generic OpenAI Responses) vs Grok
  * (Grok-native Responses) via {@link LocalEndpointKind}.
  */
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import type { TokenAgentId } from '@/styles/tokens';
 
 export type RouteEndpointId = 'messages' | 'responses' | 'chat_completions';
@@ -74,14 +74,14 @@ const LOCAL_BY_KIND: Record<LocalEndpointKind, LocalEndpointSpec> = {
 };
 
 /** Writer Agent → the loopback path that agent consumes. */
-export function routeEndpointIdForTargetAgent(agentId: AgentId | string): RouteEndpointId {
+export function routeEndpointIdForTargetAgent(agentId: AgentKey | string): RouteEndpointId {
   if (agentId === 'claude') return 'messages';
   if (agentId === 'codex' || agentId === 'grok') return 'responses';
   return 'chat_completions';
 }
 
 /** Writer Agent → UI endpoint kind (Codex vs Grok Responses split). */
-export function localEndpointKindForTargetAgent(agentId: AgentId | string): LocalEndpointKind {
+export function localEndpointKindForTargetAgent(agentId: AgentKey | string): LocalEndpointKind {
   if (agentId === 'claude') return 'messages';
   if (agentId === 'codex') return 'responses_codex';
   if (agentId === 'grok') return 'responses_grok';
@@ -135,7 +135,7 @@ export function routeEndpointIdForRuleId(ruleId: string | null | undefined): Rou
 }
 
 export function routeEndpointIdForBinding(input: {
-  agentId: AgentId | string;
+  agentId: AgentKey | string;
   ruleId?: string | null;
 }): RouteEndpointId {
   return routeEndpointIdForRuleId(input.ruleId) ?? routeEndpointIdForTargetAgent(input.agentId);
@@ -150,7 +150,7 @@ export function routeEndpointPath(id: RouteEndpointId): string {
 }
 
 export function routeEndpointPathForBinding(input: {
-  agentId: AgentId | string;
+  agentId: AgentKey | string;
   ruleId?: string | null;
 }): string {
   return routeEndpointPath(routeEndpointIdForBinding(input));

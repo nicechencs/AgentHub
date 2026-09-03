@@ -10,7 +10,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { getProjectMetadata, listAgentProjects } from '@/lib/api/project';
-import type { AgentId, AgentProject } from '@/lib/types';
+import type { AgentKey, AgentProject } from '@/lib/types';
 import { loadString, saveString, StorageKey } from '@/lib/ui-preferences';
 
 /** Guard cache writes against invalidate generation. */
@@ -36,7 +36,7 @@ export function shouldShowProjectListSkeleton(input: {
 }
 
 export function projectListCacheKey(
-  agentId: AgentId,
+  agentId: AgentKey,
   includeHidden: boolean,
 ): string {
   return `${agentId}|${includeHidden ? 1 : 0}`;
@@ -47,11 +47,11 @@ function allListCacheKey(includeHidden: boolean): string {
 }
 
 export function projectCountsFromCache(
-  agentIds: readonly AgentId[],
+  agentIds: readonly AgentKey[],
   includeHidden: boolean,
-): { counts: Partial<Record<AgentId, number>>; missing: AgentId[] } {
-  const counts: Partial<Record<AgentId, number>> = {};
-  const missing: AgentId[] = [];
+): { counts: Partial<Record<AgentKey, number>>; missing: AgentKey[] } {
+  const counts: Partial<Record<AgentKey, number>> = {};
+  const missing: AgentKey[] = [];
   for (const id of agentIds) {
     const rows = lists.get(projectListCacheKey(id, includeHidden));
     if (rows) counts[id] = rows.length;
@@ -67,7 +67,7 @@ let fetchGeneration = 0;
 let invalidateVersion = 0;
 let writeClock = 0;
 let showHiddenCache: boolean | null = null;
-let lastAgentIdCache: AgentId | null = null;
+let lastAgentIdCache: AgentKey | null = null;
 const lists = new Map<string, AgentProject[]>();
 const keyClock = new Map<string, number>();
 const listInflight = new Map<string, Promise<AgentProject[]>>();
@@ -85,7 +85,7 @@ function stampKey(key: string, clock: number) {
   keyClock.set(key, clock);
 }
 
-function writeAgentList(agentId: AgentId, includeHidden: boolean, rows: AgentProject[], clock: number) {
+function writeAgentList(agentId: AgentKey, includeHidden: boolean, rows: AgentProject[], clock: number) {
   const key = projectListCacheKey(agentId, includeHidden);
   stampKey(key, clock);
   lists.set(key, rows);
@@ -95,7 +95,7 @@ function writeAgentList(agentId: AgentId, includeHidden: boolean, rows: AgentPro
 export function ingestProjectsByAgent(
   rows: AgentProject[],
   includeHidden: boolean,
-  agentIds: readonly AgentId[],
+  agentIds: readonly AgentKey[],
   startedAt: number,
 ): void {
   const grouped = new Map<string, AgentProject[]>();
@@ -115,20 +115,20 @@ export function ingestProjectsByAgent(
 }
 
 export function readCachedProjectList(
-  agentId: AgentId,
+  agentId: AgentKey,
   includeHidden: boolean,
 ): AgentProject[] | null {
   return lists.get(projectListCacheKey(agentId, includeHidden)) ?? null;
 }
 
-export function rememberedProjectAgent(): AgentId | null {
+export function rememberedProjectAgent(): AgentKey | null {
   if (lastAgentIdCache) return lastAgentIdCache;
   const stored = loadString(StorageKey.projectsLastAgent, '');
   lastAgentIdCache = stored || null;
   return lastAgentIdCache;
 }
 
-export function rememberProjectAgent(id: AgentId) {
+export function rememberProjectAgent(id: AgentKey) {
   lastAgentIdCache = id || null;
   if (id) saveString(StorageKey.projectsLastAgent, id);
 }
@@ -170,7 +170,7 @@ export function clearProjectsDataCache() {
 
 export function getProjectsModuleCache(): {
   showHidden: boolean | null;
-  lastAgentId: AgentId | null;
+  lastAgentId: AgentKey | null;
   lists: Record<string, AgentProject[]>;
 } {
   return {
@@ -201,9 +201,9 @@ export function fetchProjectMetadataShared(): Promise<boolean> {
 }
 
 export function fetchAgentProjectsShared(
-  agentId: AgentId | null,
+  agentId: AgentKey | null,
   includeHidden: boolean,
-  ingestIds: readonly AgentId[] = [],
+  ingestIds: readonly AgentKey[] = [],
 ): Promise<AgentProject[]> {
   const key = agentId ? projectListCacheKey(agentId, includeHidden) : allListCacheKey(includeHidden);
   const existing = listInflight.get(key);
@@ -232,8 +232,8 @@ export function fetchAgentProjectsShared(
   return request;
 }
 
-function uniqueAgentIds(rows: AgentProject[]): AgentId[] {
-  const ids: AgentId[] = [];
+function uniqueAgentIds(rows: AgentProject[]): AgentKey[] {
+  const ids: AgentKey[] = [];
   const seen = new Set<string>();
   for (const row of rows) {
     if (seen.has(row.agentId)) continue;
@@ -302,7 +302,7 @@ export function useProjectShowHidden() {
 }
 
 export function useAgentProjectList(
-  agentId: AgentId | null,
+  agentId: AgentKey | null,
   includeHidden: boolean,
   enabled: boolean,
 ) {
@@ -376,7 +376,7 @@ export function useAgentProjectList(
 }
 
 export function useAgentProjectCounts(
-  agentIds: readonly AgentId[],
+  agentIds: readonly AgentKey[],
   includeHidden: boolean,
   enabled: boolean,
 ) {
@@ -386,13 +386,13 @@ export function useAgentProjectCounts(
 
   const reload = useCallback(async () => {
     if (!enabled || !agentKey) return;
-    const ids = agentKey.split(',') as AgentId[];
+    const ids = agentKey.split(',') as AgentKey[];
     await fetchAgentProjectsShared(null, includeHidden, ids);
   }, [enabled, agentKey, includeHidden]);
 
   useEffect(() => {
     if (!enabled || !agentKey) return;
-    const ids = agentKey.split(',') as AgentId[];
+    const ids = agentKey.split(',') as AgentKey[];
     if (projectCountsFromCache(ids, includeHidden).missing.length === 0) return;
     void reload().catch(() => {});
   }, [enabled, agentKey, includeHidden, reload]);

@@ -23,6 +23,7 @@ import { agentDisplayName } from '@/config/agents';
 import type { MessageKey } from '@/lib/i18n';
 import type { UsageRecord } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { StorageKey } from '@/lib/ui-preferences';
 
 const PAGE_SIZE = 50;
 
@@ -67,7 +68,7 @@ const WIDTH_SPECS: ColumnWidthSpec<ColumnKey>[] = COLUMNS.map(
   ({ key, defaultWidth, minWidth }) => ({ key, defaultWidth, minWidth }),
 );
 
-const COLUMN_WIDTHS_STORAGE_KEY = 'agenthub.dashboard.usageColumnWidths';
+const COLUMN_WIDTHS_STORAGE_KEY = StorageKey.dashboardUsageColumnWidths;
 
 function fmtTime(iso: string): string {
   const d = new Date(iso);

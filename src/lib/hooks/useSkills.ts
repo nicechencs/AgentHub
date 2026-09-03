@@ -18,7 +18,7 @@ import {
   listSkillCatalog,
   listSkills,
   onSkillsFsChanged,
-  projectSkill,
+  applySkillProjection,
   searchSkillMarket,
   syncAll,
   toggleSkillSync,
@@ -28,9 +28,9 @@ import {
   type CoreSkill,
   type InstalledSkillDto,
   type SkillListingDto,
-  type SkillProjectResultDto,
+  type SkillProjectionResultDto,
 } from '@/lib/api/skill';
-import type { AgentId, Skill } from '@/lib/types';
+import type { AgentKey, Skill } from '@/lib/types';
 
 export type SkillsCacheKey = 'skills' | 'catalog' | 'market';
 
@@ -491,7 +491,7 @@ export function useSkillMarket(query: string, opts: SkillsQueryOptions = {}) {
 
 export async function runToggleSkill(
   skillId: string,
-  agentId: AgentId,
+  agentId: AgentKey,
   opts?: { force?: boolean; mode?: 'link' | 'copy' },
 ) {
   const result = await toggleSkillSync(skillId, agentId, opts);
@@ -529,7 +529,7 @@ export async function runUninstallProjectSkill(
 
 export async function runImportPrivateSkill(
   skillId: string,
-  agentId: AgentId,
+  agentId: AgentKey,
   overwrite = false,
 ) {
   const skill = await importPrivateSkillToShared(skillId, agentId, overwrite);
@@ -537,7 +537,7 @@ export async function runImportPrivateSkill(
   return skill;
 }
 
-export async function runUninstallSkill(skillId: string, privateAgent?: AgentId) {
+export async function runUninstallSkill(skillId: string, privateAgent?: AgentKey) {
   await uninstallSkill(skillId, privateAgent);
   invalidateSkills(['skills', 'catalog', 'market']);
 }
@@ -550,10 +550,10 @@ export async function runUpdateSkill(skillId: string) {
 
 export async function runProjectSkill(
   skillId: string,
-  agentId: AgentId,
+  agentId: AgentKey,
   mode: 'link' | 'copy' = 'link',
-): Promise<SkillProjectResultDto> {
-  const result = await projectSkill(skillId, agentId, mode);
+): Promise<SkillProjectionResultDto> {
+  const result = await applySkillProjection(skillId, agentId, mode);
   invalidateSkills(['skills', 'catalog']);
   return result;
 }

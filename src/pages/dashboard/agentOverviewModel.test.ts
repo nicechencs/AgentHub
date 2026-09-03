@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createTranslator } from '@/lib/i18n';
 
 import { AGENTS, type AgentMeta } from '@/config/agents';
-import type { AgentId, AgentStatus, AuthStatus } from '@/lib/types';
+import type { AgentKey, AgentStatus, AuthStatus } from '@/lib/types';
 
 import {
   AGENT_OVERVIEW_GRID,
@@ -20,7 +20,7 @@ import {
   summarizeAgentOverview,
 } from './agentOverviewModel';
 
-function meta(id: AgentId, name: string = id): AgentMeta {
+function meta(id: AgentKey, name: string = id): AgentMeta {
   return {
     id,
     name,
@@ -32,7 +32,7 @@ function meta(id: AgentId, name: string = id): AgentMeta {
 }
 
 function status(
-  agentId: AgentId,
+  agentId: AgentKey,
   overrides: Partial<AgentStatus> = {},
 ): AgentStatus {
   return {
@@ -40,7 +40,6 @@ function status(
     installed: true,
     authStatus: 'valid',
     authLabel: '已登录',
-    currentProvider: '官方',
     effectiveKind: 'api',
     effectiveLabel: '官方',
     version: '1.0.0',
@@ -132,8 +131,8 @@ describe('summarizeAgentOverview', () => {
     // 额外 id 用类型断言，仅验证汇总算法随列表长度变化
     const expanded: AgentMeta[] = [
       ...METAS,
-      { ...meta('claude', 'Extra-1'), id: 'extra1' as AgentId },
-      { ...meta('claude', 'Extra-2'), id: 'extra2' as AgentId },
+      { ...meta('claude', 'Extra-1'), id: 'extra1' as AgentKey },
+      { ...meta('claude', 'Extra-2'), id: 'extra2' as AgentKey },
     ];
     const n = METAS.length;
     const sExpanded = summarizeAgentOverview(expanded, METAS.map((m) => status(m.id)));
@@ -224,7 +223,6 @@ describe('buildAgentCardView', () => {
       status('claude', {
         effectiveKind: 'api',
         effectiveLabel: 'xx云中转 · relay.xxyun.example.com',
-        currentProvider: 'xx云中转 · relay.xxyun.example.com',
         version: '2.1.218',
         authLabel: 'API',
         authStatus: 'valid',
@@ -251,7 +249,6 @@ describe('buildAgentCardView', () => {
       status('claude', {
         effectiveKind: 'account',
         effectiveLabel: 'me@example.com',
-        currentProvider: 'me@example.com',
         version: '2.1.218',
         authLabel: 'Claude Pro',
         authStatus: 'valid',
@@ -269,7 +266,6 @@ describe('buildAgentCardView', () => {
       status('claude', {
         effectiveKind: 'none',
         effectiveLabel: '未配置',
-        currentProvider: undefined,
         version: undefined,
         authLabel: '',
       }),
@@ -288,7 +284,6 @@ describe('buildAgentCardView', () => {
       status('claude', {
         effectiveKind: 'none',
         effectiveLabel: '未配置',
-        currentProvider: undefined,
         version: '2.1.218',
         authLabel: '已验证',
       }),
@@ -406,14 +401,14 @@ describe('buildAgentCardView', () => {
 
 describe('resolveAgentCardInteraction', () => {
   it('keeps navigate action unchanged even when a connect handler exists', () => {
-    const onConnect = (_id: AgentId) => undefined;
+    const onConnect = (_id: AgentKey) => undefined;
     expect(
       resolveAgentCardInteraction({ kind: 'navigate', to: '/agents' }, 'claude', onConnect),
     ).toEqual({ type: 'navigate', to: '/agents' });
   });
 
   it('connect with handler stays connect', () => {
-    const onConnect = (_id: AgentId) => undefined;
+    const onConnect = (_id: AgentKey) => undefined;
     expect(resolveAgentCardInteraction({ kind: 'connect' }, 'claude', onConnect)).toEqual({
       type: 'connect',
       agentId: 'claude',

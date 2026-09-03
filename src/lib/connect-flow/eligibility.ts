@@ -31,7 +31,7 @@ export function oauthIncompleteMessage(t?: TranslateFn): string {
  * Native switch reasons come from agent capability gates
  * (`accountSwitch` / `providerCapabilityGate`).
  */
-const ACCOUNT_SWITCH_BLOCKED_FALLBACK = '这个工具不能在这里切换账号';
+const ACCOUNT_SWITCH_BLOCKED_FALLBACK = '这个工具不能在这里切换登录';
 const PROVIDER_SWITCH_BLOCKED_FALLBACK = '这个工具现在不能写入服务配置';
 
 export function accountSwitchBlockedFallback(t?: TranslateFn): string {

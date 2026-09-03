@@ -1,19 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { BRIDGES_PATH } from '@/lib/bridges-path';
+import { ROUTES_PATH } from '@/lib/routes-path';
 import { collapsedAfterPrimaryNavClick } from './sidebar-collapse-override';
 
 describe('collapsedAfterPrimaryNavClick', () => {
   it('collapses only the Routes item when the setting is on', () => {
     expect(
       collapsedAfterPrimaryNavClick({
-        itemTo: BRIDGES_PATH,
+        itemTo: ROUTES_PATH,
         currentCollapsed: false,
         autoCollapseOnRoutes: true,
       }),
     ).toBe(true);
     expect(
       collapsedAfterPrimaryNavClick({
-        itemTo: BRIDGES_PATH,
+        itemTo: ROUTES_PATH,
         currentCollapsed: true,
         autoCollapseOnRoutes: true,
       }),
@@ -47,14 +47,14 @@ describe('collapsedAfterPrimaryNavClick', () => {
   it('does not auto-collapse Routes when the setting is off', () => {
     expect(
       collapsedAfterPrimaryNavClick({
-        itemTo: BRIDGES_PATH,
+        itemTo: ROUTES_PATH,
         currentCollapsed: false,
         autoCollapseOnRoutes: false,
       }),
     ).toBe(false);
     expect(
       collapsedAfterPrimaryNavClick({
-        itemTo: BRIDGES_PATH,
+        itemTo: ROUTES_PATH,
         currentCollapsed: true,
         autoCollapseOnRoutes: false,
       }),

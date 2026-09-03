@@ -18,11 +18,11 @@ import {
   type ColumnWidthSpec,
 } from '@/components/ui/table';
 import { connectionKindLabel } from '@/lib/connection-kind';
-import { adapterStatusTextClass } from '@/pages/bridges/adapter-view-model';
+import { adapterStatusTextClass } from '@/pages/routes/shared/adapter-view-model';
 import {
   poolAuthorizationStatusView,
   type PoolAuthorizationItem,
-} from '@/pages/bridges/route-pool-view-model';
+} from '@/pages/routes/shared/route-pool-view-model';
 import { PoolEndpointTypeLine } from './PoolEndpointTypeLine';
 import { PoolLoginMark } from './PoolLoginMark';
 import {
@@ -34,6 +34,7 @@ import {
   poolAuthorizationVisibleColumns,
   type PoolAuthorizationColumnKey,
 } from './pool-authorization-detail';
+import { StorageKey } from '@/lib/ui-preferences';
 
 const WIDTH_SPECS: ColumnWidthSpec<PoolAuthorizationColumnKey>[] = [
   { key: 'login', defaultWidth: 220, minWidth: 140 },
@@ -51,7 +52,7 @@ const WIDTH_BY_KEY = Object.fromEntries(
   WIDTH_SPECS.map((spec) => [spec.key, spec]),
 ) as Record<PoolAuthorizationColumnKey, ColumnWidthSpec<PoolAuthorizationColumnKey>>;
 
-const COLUMN_WIDTHS_STORAGE_KEY = 'agenthub.routes.pool.columnWidths';
+const COLUMN_WIDTHS_STORAGE_KEY = StorageKey.routesPoolColumnWidths;
 
 function cellValue(value: ReactNode): ReactNode {
   if (value == null || value === '') return <TableEmptyCell />;

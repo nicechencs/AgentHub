@@ -7,16 +7,16 @@ import type { DefaultRoutePoolOverview } from '@/lib/backend/contracts/adapter';
 import type { TicketView } from '@/lib/backend/contracts/ticket';
 import type { ConnectionKind } from '@/lib/connection-kind';
 import type { TranslateFn } from '@/lib/i18n';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import type { TicketBindAction } from './ticket-bind-action';
 
 export type { TicketBindAction };
 
-const POOL_SHAREABLE_OAUTH_AGENTS = new Set<AgentId>(['claude', 'codex', 'grok']);
+const POOL_SHAREABLE_OAUTH_AGENTS = new Set<AgentKey>(['claude', 'codex', 'grok']);
 
 /** True when this login can appear in「从连接同步」/「分享至连接池」. */
 export function isPoolShareableLogin(input: {
-  agentId: AgentId;
+  agentId: AgentKey;
   credentialClass?: string;
   kind?: ConnectionKind;
 }): boolean {

@@ -1,6 +1,6 @@
 import type { BackupPort } from '@/lib/backend/contracts';
 import { delay, randomLatency } from '@/dev/mocks/delay';
-import type { AgentId, BackupInspect, BackupKind, BackupMeta } from '@/lib/types';
+import type { AgentKey, BackupInspect, BackupKind, BackupMeta } from '@/lib/types';
 
 const now = Date.now();
 const h = 3600 * 1000;
@@ -8,7 +8,7 @@ const d = 24 * h;
 
 function mk(
   id: string,
-  agentId: AgentId,
+  agentId: AgentKey,
   kind: BackupKind,
   ageMs: number,
   files: string[],

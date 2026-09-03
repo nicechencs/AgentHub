@@ -26,7 +26,7 @@ use crate::models::{
     SyncConnectionAuthorizationsResult, SyncConnectionSource, TicketProtocol, TicketSurface,
     FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
     FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
-    LOCAL_ENTRY_DESIRED_RUNNING, SHARE_CHAT_COMPLETIONS,
+    LOCAL_GATEWAY_DESIRED_RUNNING, SHARE_CHAT_COMPLETIONS,
 };
 use serde_json::Value;
 use crate::storage::{
@@ -152,7 +152,7 @@ impl RoutePoolService {
         })
     }
 
-    /// Default pools including Hub tokens, for starting the shared local entry.
+    /// Default pools including Hub tokens, for starting the shared local gateway.
     pub fn list_default_pools(&self) -> Result<Vec<RoutePool>> {
         if !self.enabled()? {
             return Ok(Vec::new());
@@ -177,7 +177,11 @@ impl RoutePoolService {
             .collect())
     }
 
-    /// Replace one default-pool loopback bearer.
+    /// Replace one pool loopback bearer.
+    ///
+    /// Tokens UI also lists leftover local-bridge rows whose pools were enrolled
+    /// without `is_default` (see `enroll_unified_gateway_after_bind`). Promote those pools so
+    /// the key sticks and `list_local_tokens` can read it back.
     pub fn set_local_token(&self, pool_id: &str, token: &str) -> Result<LocalTokenRecord> {
         self.require_enabled()?;
         let token = token.trim();
@@ -188,9 +192,7 @@ impl RoutePoolService {
             AppError::NotFound(format!("route pool not found: {pool_id}"))
         })?;
         if !pool.is_default {
-            return Err(AppError::InvalidArg(
-                "only default pool entry keys can be changed".into(),
-            ));
+            self.pools.set_default(pool_id)?;
         }
         let saved = self.pools.set_hub_token(pool_id, token, &now())?;
         Ok(LocalTokenRecord {
@@ -205,17 +207,17 @@ impl RoutePoolService {
         ))
     }
 
-    /// Last local-entry switch. Unset stays on so existing auto-restore keeps working.
-    pub fn local_entry_desired_running(&self) -> Result<bool> {
+    /// Last local-gateway switch. Unset stays on so existing auto-restore keeps working.
+    pub fn local_gateway_desired_running(&self) -> Result<bool> {
         Ok(product_flag_enabled(
-            self.db.get_setting(LOCAL_ENTRY_DESIRED_RUNNING)?.as_deref(),
+            self.db.get_setting(LOCAL_GATEWAY_DESIRED_RUNNING)?.as_deref(),
         ))
     }
 
-    /// Remember the shared local-entry switch for the next process start.
-    pub fn set_local_entry_desired_running(&self, running: bool) -> Result<()> {
+    /// Remember the shared local-gateway switch for the next process start.
+    pub fn set_local_gateway_desired_running(&self, running: bool) -> Result<()> {
         self.db.set_setting(
-            LOCAL_ENTRY_DESIRED_RUNNING,
+            LOCAL_GATEWAY_DESIRED_RUNNING,
             if running { "true" } else { "false" },
         )
     }
@@ -264,7 +266,7 @@ impl RoutePoolService {
             target_agent_id: pool.target_agent_id,
             surface: pool.downstream_surface,
             dialect: pool.downstream_dialect,
-            v2_enrolled: pool.v2_enrolled,
+            unified_gateway_enrolled: pool.unified_gateway_enrolled,
             gateway_port: pool.gateway_port,
             members: member_overviews,
             listed_models,
@@ -284,7 +286,7 @@ impl RoutePoolService {
         Ok(plan)
     }
 
-    /// Persist v2 enrollment only after a healthy local-bridge bind.
+    /// Persist unified-gateway enrollment only after a healthy local-bridge bind.
     /// Occupancy / bind failure must not call this.
     pub fn persist_enroll_after_native_bind(
         &self,
@@ -310,7 +312,7 @@ impl RoutePoolService {
                     .map(|pool| pool.id)
             });
         self.ensure_legacy_pool(bound_profile)?;
-        let enrolled = self.enroll_v2(&bound_profile.id, port)?;
+        let enrolled = self.enroll_unified_gateway(&bound_profile.id, port)?;
         // Bind just made this login the Agent's active route; it is the default
         // pool for that surface. A leftover sibling default would hide this
         // overview from list_default_overviews.
@@ -538,7 +540,7 @@ impl RoutePoolService {
             hub_token: generate_hub_token()?,
             schedule_policy: RouteSchedulePolicy::PriorityFailover,
             is_default: true,
-            v2_enrolled: false,
+            unified_gateway_enrolled: false,
             policy_revision: 1,
             auto_start: true,
             gateway_port: None,
@@ -923,9 +925,9 @@ impl RoutePoolService {
         self.pools.remove_rule(rule_id)
     }
 
-    /// Persist the one-time v2 enrollment after the gateway port is already live.
+    /// Persist the one-time unified-gateway enrollment after the gateway port is already live.
     /// Occupancy failure must not call this; the historical client projection stays.
-    pub fn enroll_v2(&self, pool_id: &str, gateway_port: u16) -> Result<RoutePool> {
+    pub fn enroll_unified_gateway(&self, pool_id: &str, gateway_port: u16) -> Result<RoutePool> {
         self.require_enabled()?;
         if let Some(profile) = self.profiles.get(pool_id)? {
             if profile.route != AdapterRoute::LocalBridge {
@@ -934,7 +936,21 @@ impl RoutePoolService {
                 ));
             }
         }
-        self.pools.enroll_v2(pool_id, gateway_port, &now())
+        self.pools.enroll_unified_gateway(pool_id, gateway_port, &now())
+    }
+
+    /// Enroll after bind and make this pool the default for its Agent / surface.
+    ///
+    /// Ordinary bridge start/restore uses this path; without the default flag,
+    /// Tokens → `set_local_token` used to reject edits and `list_local_tokens`
+    /// stayed empty even while listeners were live.
+    pub fn enroll_unified_gateway_as_default(&self, pool_id: &str, gateway_port: u16) -> Result<RoutePool> {
+        let enrolled = self.enroll_unified_gateway(pool_id, gateway_port)?;
+        if enrolled.is_default {
+            Ok(enrolled)
+        } else {
+            self.pools.set_default(&enrolled.id)
+        }
     }
 
     /// Bind the unified gateway first; persist enrollment only after bind.
@@ -953,15 +969,15 @@ impl RoutePoolService {
             .map_err(|error| match error {
                 crate::bridge::BridgeHostError::Bind(io) => AppError::Io(io),
                 crate::bridge::BridgeHostError::InvalidGatewayPort => {
-                    AppError::InvalidArg("v2 gateway port must be between 1 and 65535".into())
+                    AppError::InvalidArg("unified gateway port must be between 1 and 65535".into())
                 }
                 other => AppError::message("adapter.bridge_start", other.to_string()),
             })?;
-        self.enroll_v2(pool_id, bound)
+        self.enroll_unified_gateway(pool_id, bound)
     }
 
     /// Project this local-bridge profile to a one-member unenrolled pool.
-    /// Does not enroll v2 and never hijacks native_endpoint / config_sync.
+    /// Does not enroll into the unified gateway and never hijacks native_endpoint / config_sync.
     pub fn ensure_legacy_pool(&self, profile: &AdapterProfile) -> Result<Option<RoutePool>> {
         if !self.enabled()? {
             return Ok(None);
@@ -1031,7 +1047,7 @@ impl RoutePoolService {
             hub_token: generate_hub_token()?,
             schedule_policy: RouteSchedulePolicy::PriorityFailover,
             is_default: false,
-            v2_enrolled: false,
+            unified_gateway_enrolled: false,
             policy_revision: 1,
             auto_start: profile.auto_start,
             gateway_port: None,
@@ -1066,7 +1082,7 @@ impl RoutePoolService {
             hub_token: hub_token.to_owned(),
             schedule_policy: RouteSchedulePolicy::PriorityFailover,
             is_default,
-            v2_enrolled: false,
+            unified_gateway_enrolled: false,
             policy_revision: 1,
             auto_start: profile.auto_start,
             gateway_port: None,

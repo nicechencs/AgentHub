@@ -101,7 +101,6 @@ describe('buildAlertsFromAgents', () => {
         authStatus: 'none',
         effectiveKind: 'account',
         effectiveLabel: 'user@x.com',
-        currentProvider: 'user@x.com',
       }),
     ]);
     expect(alerts.map((a) => a.id)).not.toContain('auth-none:grok');

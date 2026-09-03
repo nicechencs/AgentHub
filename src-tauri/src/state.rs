@@ -8,7 +8,7 @@ use agenthub_core::bridge::BridgeRuntimeHost;
 use agenthub_core::logging::{self, targets};
 use agenthub_core::AgentHub;
 
-use crate::adapter_bridge_controller::AdapterBridgeSagaCoordinator;
+use crate::adapter_bridge_controller::AdapterSagaCoordinator;
 use crate::adapter_control_host::DesktopAdapterControl;
 use crate::exit_coordinator::{ExitCoordinator, LifecycleShutdownBarrier};
 use crate::window_policy::{self, parse_bool_setting};
@@ -20,7 +20,7 @@ pub struct AppState {
     /// it can keep running in the tray after the main window is hidden.
     bridge_host: Arc<BridgeRuntimeHost>,
     /// Process-local authority for every adapter bridge lifecycle saga.
-    bridge_saga_coordinator: Arc<AdapterBridgeSagaCoordinator>,
+    bridge_saga_coordinator: Arc<AdapterSagaCoordinator>,
     /// Coordinates every controllable process exit through bridge shutdown.
     exit_coordinator: ExitCoordinator,
     /// Prevents a second tray click or window close from opening another
@@ -31,6 +31,8 @@ pub struct AppState {
     exit_requested: AtomicBool,
     /// When true, the window close button hides to tray instead of quitting.
     close_to_tray: AtomicBool,
+    /// True while restore / start_local_gateway is bringing loopback listeners back.
+    local_gateway_restarting: Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -75,11 +77,12 @@ impl AppState {
         Self {
             hub,
             bridge_host: Arc::new(bridge_host),
-            bridge_saga_coordinator: Arc::new(AdapterBridgeSagaCoordinator::new()),
+            bridge_saga_coordinator: Arc::new(AdapterSagaCoordinator::new()),
             exit_coordinator: ExitCoordinator::new(),
             exit_confirmation_pending: AtomicBool::new(false),
             exit_requested: AtomicBool::new(false),
             close_to_tray: AtomicBool::new(close_to_tray),
+            local_gateway_restarting: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -102,7 +105,7 @@ impl AppState {
         Arc::clone(&self.bridge_host)
     }
 
-    pub(crate) fn bridge_saga_coordinator(&self) -> Arc<AdapterBridgeSagaCoordinator> {
+    pub(crate) fn bridge_saga_coordinator(&self) -> Arc<AdapterSagaCoordinator> {
         Arc::clone(&self.bridge_saga_coordinator)
     }
 
@@ -125,6 +128,11 @@ impl AppState {
     /// before a profile or target guard.
     pub(crate) fn lifecycle_shutdown_barrier(&self) -> Arc<LifecycleShutdownBarrier> {
         self.exit_coordinator.lifecycle_barrier()
+    }
+
+    /// Process-local flag for the yellow local-forwarding restart banner.
+    pub(crate) fn local_gateway_restarting(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.local_gateway_restarting)
     }
 
     /// Claim the one outstanding bridge-impact confirmation dialog.

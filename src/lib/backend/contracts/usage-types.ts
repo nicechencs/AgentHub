@@ -1,16 +1,16 @@
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 
 export interface UsageQuery {
   /** 回看天数（后端按 now - days 过滤；UI 可映射 today/24h → 1） */
   days: number;
-  agentId?: AgentId | 'all';
+  agentId?: AgentKey | 'all';
   model?: string | 'all';
   /** Soft cap on raw rows (`ORDER BY ts DESC`). Dashboard table uses 2000. */
   limit?: number;
   /** RFC3339 lower bound, AND-ed with the days window. */
   since?: string;
   /** Hidden agents; applied before LIMIT so the table cap is among visible rows. */
-  excludeAgentIds?: AgentId[];
+  excludeAgentIds?: AgentKey[];
 }
 
 /** SQL-aggregate totals. `billableInput` = stored input; full prompt = billable + write + read. */

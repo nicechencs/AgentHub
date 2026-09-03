@@ -9,7 +9,7 @@ import { agentCssVar } from '@/styles/tokens';
 import {
   localEndpointKindLabel,
   type PoolAuthorizationItem,
-} from '@/pages/bridges/route-pool-view-model';
+} from '@/pages/routes/shared/route-pool-view-model';
 
 export type PoolAuthorizationDetailRow = {
   id: string;

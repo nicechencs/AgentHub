@@ -97,7 +97,7 @@ fn start_spec(profile_id: &str, local_token: &str) -> BridgeStartSpec {
         BridgeUpstreamConfig {
             base_url: "https://example.invalid/v1".into(),
             model: None,
-            source_connection_id: Some("connection-test".into()),
+            source_id: Some("connection-test".into()),
             auth: ResolvedAuth::bearer("upstream-test-token"),
             protocol: BridgeUpstreamProtocol::OpenAiChatCompletions,
             local_surface: BridgeLocalSurface::Responses,

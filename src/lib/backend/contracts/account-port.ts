@@ -1,4 +1,4 @@
-import type { Account, AgentId } from '@/lib/types';
+import type { Account, AgentKey } from '@/lib/types';
 import type { AccountAuthView } from './account-map';
 import { normalizeAuthHealth, type AuthHealth } from './auth-state';
 
@@ -7,7 +7,7 @@ export interface OAuthStartInfo {
   state: string;
   authorizeUrl: string;
   redirectUri: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   /** Pi multi-provider key when applicable. */
   providerKey?: string | null;
   browserOpened: boolean;
@@ -17,7 +17,7 @@ export interface OAuthStartInfo {
 
 export interface OAuthWaitInfo {
   state: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   status: 'waiting' | 'callbackReceived' | 'succeeded' | 'failed';
   error?: string | null;
 }
@@ -27,7 +27,7 @@ export type OAuthFlowKind = 'pkce' | 'deviceCode';
 /** One selectable OAuth login target (Pi has multiple). */
 export interface OAuthLoginOption {
   id: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   label: string;
   description: string;
   flow: OAuthFlowKind;
@@ -36,7 +36,7 @@ export interface OAuthLoginOption {
 
 export interface DeviceOAuthStartInfo {
   state: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   providerKey: string;
   userCode: string;
   verificationUri: string;
@@ -54,7 +54,7 @@ export interface DeviceOAuthPollInfo {
 /** Read-only live authentication probe; never contains credential material. */
 export interface AuthState {
   /** Core wire field. Older adapters may return agentId instead. */
-  agent: AgentId;
+  agent: AgentKey;
   kind?: string | null;
   summary: string;
   hasCredentials: boolean;
@@ -77,7 +77,7 @@ export const ADAPTER_PROJECTION_KIND = 'adapter_projection';
 
 /** Normalized probe consumed by browser pages; keeps agentId for old callers. */
 export interface LiveAuthProbe {
-  agentId: AgentId;
+  agentId: AgentKey;
   kind?: string | null;
   summary: string;
   hasCredentials: boolean;
@@ -109,8 +109,8 @@ export function probeIsAdapterProjection(
 
 /** Accept both current core AuthState (`agent`) and legacy JS probe (`agentId`). */
 export function normalizeAuthState(
-  raw: Partial<AuthState> & { agentId?: AgentId },
-  fallbackAgentId: AgentId,
+  raw: Partial<AuthState> & { agentId?: AgentKey },
+  fallbackAgentId: AgentKey,
 ): LiveAuthProbe {
   const agentId = raw.agentId ?? raw.agent ?? fallbackAgentId;
   const alsoPresent = normalizeAlsoPresent(raw.alsoPresent);
@@ -134,17 +134,17 @@ export function normalizeAuthState(
 }
 
 export interface AccountPort {
-  listAccounts(agentId?: AgentId): Promise<AccountAuthView[]>;
+  listAccounts(agentId?: AgentKey): Promise<AccountAuthView[]>;
   /**
    * Re-read live auth files into the pool. No upstream quota HTTP.
    * Optional so mocks can omit it.
    */
-  reconcileAccounts?(agentId?: AgentId): Promise<AccountAuthView[]>;
-  probeLiveAuth(agentId: AgentId): Promise<LiveAuthProbe>;
-  switchAccount(agentId: AgentId, accountId: string): Promise<void>;
-  undoSwitchAccount(agentId: AgentId): Promise<boolean>;
+  reconcileAccounts?(agentId?: AgentKey): Promise<AccountAuthView[]>;
+  probeLiveAuth(agentId: AgentKey): Promise<LiveAuthProbe>;
+  switchAccount(agentId: AgentKey, accountId: string): Promise<void>;
+  undoSwitchAccount(agentId: AgentKey): Promise<boolean>;
   addApiKeyAccount(
-    agentId: AgentId,
+    agentId: AgentKey,
     key: string,
     label?: string | null,
     envKey?: string | null,
@@ -153,18 +153,18 @@ export interface AccountPort {
   ): Promise<Account>;
   /** Update API Key account label and/or key. Omit/empty key keeps the stored secret. */
   updateApiKeyAccount(
-    agentId: AgentId,
+    agentId: AgentKey,
     accountId: string,
     opts: { label?: string | null; key?: string | null },
   ): Promise<Account>;
-  importCurrentLogin(agentId: AgentId): Promise<Account>;
+  importCurrentLogin(agentId: AgentKey): Promise<Account>;
   /** Whether any OAuth login option is available for this agent. */
-  oauthSupported(agentId: AgentId): Promise<boolean>;
+  oauthSupported(agentId: AgentKey): Promise<boolean>;
   /** List OAuth login options (Pi returns multi-provider catalog). */
-  listOAuthOptions(agentId: AgentId): Promise<OAuthLoginOption[]>;
+  listOAuthOptions(agentId: AgentKey): Promise<OAuthLoginOption[]>;
   /** Start loopback PKCE; opens system browser when openBrowser=true. */
   startOAuth(
-    agentId: AgentId,
+    agentId: AgentKey,
     openBrowser?: boolean,
     providerKey?: string | null,
   ): Promise<OAuthStartInfo>;
@@ -176,7 +176,7 @@ export interface AccountPort {
   cancelOAuth(state: string): Promise<void>;
   /** Device-code flow (Pi xAI). */
   startDeviceOAuth(
-    agentId: AgentId,
+    agentId: AgentKey,
     providerKey: string,
     poolOwned?: boolean,
   ): Promise<DeviceOAuthStartInfo>;
@@ -186,9 +186,9 @@ export interface AccountPort {
    * Convenience: start + wait + finish for agents that support OAuth.
    * Prefer start/wait/finish for UI progress. Mock may implement only this.
    */
-  completeOAuth(agentId: AgentId, providerKey?: string | null): Promise<Account>;
-  deleteAccount(agentId: AgentId, accountId: string): Promise<void>;
-  refreshToken(agentId: AgentId, accountId: string): Promise<void>;
+  completeOAuth(agentId: AgentKey, providerKey?: string | null): Promise<Account>;
+  deleteAccount(agentId: AgentKey, accountId: string): Promise<void>;
+  refreshToken(agentId: AgentKey, accountId: string): Promise<void>;
   /** Force-refresh upstream 5h/7d quota windows for OAuth (Codex/Claude). */
-  refreshQuota?(agentId: AgentId, accountId: string): Promise<Account>;
+  refreshQuota?(agentId: AgentKey, accountId: string): Promise<Account>;
 }

@@ -1,7 +1,7 @@
 import { createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import {
   PoolAddButtons,
@@ -12,7 +12,7 @@ import {
   poolSurfaceForOAuth,
 } from './PoolAddButtons';
 
-const AGENTS = ['claude', 'codex', 'grok'] as const satisfies readonly AgentId[];
+const AGENTS = ['claude', 'codex', 'grok'] as const satisfies readonly AgentKey[];
 
 function render(node: ReactElement): string {
   return renderToStaticMarkup(node);
@@ -49,7 +49,7 @@ describe('poolApiChoices', () => {
 });
 
 describe('poolSurfaceForOAuth', () => {
-  it('maps each OAuth Agent to its local entry surface', () => {
+  it('maps each OAuth Agent to its local gateway surface', () => {
     expect(poolSurfaceForOAuth('claude')).toBe('messages');
     expect(poolSurfaceForOAuth('codex')).toBe('responses');
     expect(poolSurfaceForOAuth('grok')).toBe('responses');
@@ -57,7 +57,7 @@ describe('poolSurfaceForOAuth', () => {
 });
 
 describe('poolSurfaceForApiChoice', () => {
-  it('maps each API endpoint to its local entry surface', () => {
+  it('maps each API endpoint to its local gateway surface', () => {
     expect(poolSurfaceForApiChoice({ endpoint: '/v1/messages' })).toBe('messages');
     expect(poolSurfaceForApiChoice({ endpoint: '/v1/responses' })).toBe('responses');
     expect(poolSurfaceForApiChoice({ endpoint: '/v1/chat/completions' })).toBe('chat_completions');
@@ -69,7 +69,7 @@ describe('poolSyncCandidates', () => {
     const entry = (
       source: 'account' | 'provider',
       id: string,
-      agentId: AgentId,
+      agentId: AgentKey,
       home?: 'route_pool',
       kind: ConnectionEntry['kind'] = source === 'account' ? 'oauth' : 'apikey',
     ) => ({
@@ -101,7 +101,7 @@ describe('poolSyncCandidates', () => {
         targetAgentId: 'codex',
         surface: 'responses',
         dialect: 'codex',
-        v2Enrolled: false,
+        unifiedGatewayEnrolled: false,
         members: [{ sourceKind: 'account', sourceId: 'account-synced', enabled: true }],
       }],
     );
@@ -123,8 +123,8 @@ describe('PoolAddButtons', () => {
     const markup = render(
       createElement(PoolAddButtons, { agents: [...AGENTS], oauthAgents: ['claude'] }),
     );
-    expect(markup).toContain('OAuth 接入');
-    expect(markup).toContain('API 接入');
+    expect(markup).toContain('官方登录');
+    expect(markup).toContain('添加 API Key');
     expect(markup).toContain('从连接同步');
     expect(markup).not.toContain('ChevronDown');
     expect(markup).not.toContain('data-radix-menu');

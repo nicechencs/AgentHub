@@ -6,7 +6,7 @@ import {
   type AgentStatusSnapshot,
 } from './agent-status-store';
 import { getBackend } from './backend-runtime';
-import { notifyConnectionPoolChanged } from './connection-pool-store';
+import { notifyConnectionInventoryChanged } from './connection-inventory-store';
 
 const AgentStatusContext = React.createContext<AgentStatusSnapshot | null>(null);
 
@@ -33,7 +33,7 @@ export function AgentStatusProvider({ children }: { children: React.ReactNode })
         if (backend.account.reconcileAccounts) {
           try {
             await backend.account.reconcileAccounts();
-            await notifyConnectionPoolChanged(backend);
+            await notifyConnectionInventoryChanged(backend);
           } catch {
             // Keep the last pool; agent status still re-detects.
           }

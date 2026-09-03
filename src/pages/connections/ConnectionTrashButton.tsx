@@ -22,7 +22,7 @@ import {
   restoreConnectionTrash,
 } from '@/lib/api/trash';
 import { agentDisplayName } from '@/config/agents';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import {
   claimConnectionTrashBusy,
   getConnectionTrashBusyIds,
@@ -43,7 +43,7 @@ export function ConnectionTrashButton({
   home = 'connections',
   onChanged,
 }: {
-  agentId?: AgentId;
+  agentId?: AgentKey;
   home?: ConnectionTrashHome;
   onChanged?: () => void;
 }) {

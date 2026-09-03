@@ -1,15 +1,15 @@
 /** Which installed Agents offer in-app official login. */
 import { useEffect, useState } from 'react';
 import { oauthSupported } from '@/lib/api/account';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 
-const EMPTY: readonly AgentId[] = [];
+const EMPTY: readonly AgentKey[] = [];
 
 export function useOAuthLoginAgents(
-  agentIds?: readonly AgentId[] | null,
-): readonly AgentId[] {
+  agentIds?: readonly AgentKey[] | null,
+): readonly AgentKey[] {
   const key = (agentIds ?? EMPTY).join('\0');
-  const [supported, setSupported] = useState<readonly AgentId[]>(EMPTY);
+  const [supported, setSupported] = useState<readonly AgentKey[]>(EMPTY);
 
   useEffect(() => {
     let cancelled = false;

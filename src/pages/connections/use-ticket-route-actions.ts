@@ -7,7 +7,7 @@ import { AGENT_IDS } from '@/config/agents';
 import type { ConnectFlowDeps, PlanEligibility, PlanFanoutRequest } from '@/lib/connect-flow/types';
 import { planFanoutKey } from '@/lib/connect-flow/types';
 import type { TranslateFn } from '@/lib/i18n';
-import type { Account, AgentId, Provider } from '@/lib/types';
+import type { Account, AgentKey, Provider } from '@/lib/types';
 import type { TicketView } from '@/lib/backend/contracts/ticket';
 import {
   resolveTicketBindAction,
@@ -22,8 +22,8 @@ function uniqueAgentIds(
   accounts: readonly Account[],
   providers: readonly Provider[],
   tickets: readonly TicketView[],
-): AgentId[] {
-  const ids = new Set<AgentId>();
+): AgentKey[] {
+  const ids = new Set<AgentKey>();
   for (const account of accounts) ids.add(account.agentId);
   for (const provider of providers) ids.add(provider.agentId);
   for (const ticket of tickets) ids.add(ticket.agentId);
@@ -31,11 +31,11 @@ function uniqueAgentIds(
 }
 
 export function catalogTargetsForRoute(
-  hiddenIds: ReadonlySet<AgentId> | readonly AgentId[],
+  hiddenIds: ReadonlySet<AgentKey> | readonly AgentKey[],
   accounts: readonly Account[],
   providers: readonly Provider[],
   tickets: readonly TicketView[],
-): AgentId[] {
+): AgentKey[] {
   const hidden = hiddenIds instanceof Set ? hiddenIds : new Set(hiddenIds);
   const ids = AGENT_IDS.length > 0
     ? [...AGENT_IDS]
@@ -65,12 +65,12 @@ export function useTicketBindActions(input: {
   tickets: readonly TicketView[];
   accounts: readonly Account[];
   providers: readonly Provider[];
-  hiddenIds: readonly AgentId[];
+  hiddenIds: readonly AgentKey[];
   poolReady: boolean;
   deps: Pick<ConnectFlowDeps, 'createPlanFanout'>;
   t: TranslateFn;
 }): {
-  shareActionForTicket: (ticket: TicketView) => TicketBindAction;
+  directActionForTicket: (ticket: TicketView) => TicketBindAction;
   routeActionForTicket: (ticket: TicketView) => TicketBindAction;
 } {
   const { tickets, accounts, providers, hiddenIds, poolReady, deps, t } = input;
@@ -126,7 +126,7 @@ export function useTicketBindActions(input: {
   }, [eligibilities, t, targetIds]);
 
   return {
-    shareActionForTicket: actionFor('share'),
+    directActionForTicket: actionFor('direct'),
     routeActionForTicket: actionFor('route'),
   };
 }

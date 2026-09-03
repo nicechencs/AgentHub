@@ -45,12 +45,12 @@ export function createTauriProjectPort(): ProjectPort {
       await invoke('set_show_hidden_projects', { show });
     },
 
-    async deleteAgentProject(id) {
-      await invoke('delete_agent_project', { id });
+    async deleteAgentSession(id) {
+      await invoke('delete_agent_session', { id });
     },
 
-    async deleteAgentProjects(ids) {
-      return invoke<number>('delete_agent_projects', { ids });
+    async deleteAgentSessions(ids) {
+      return invoke<number>('delete_agent_sessions', { ids });
     },
 
     async getAgentProjectExcerpts(ids) {

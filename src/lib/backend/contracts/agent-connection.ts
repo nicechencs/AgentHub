@@ -12,13 +12,7 @@ import {
 } from '@/lib/backend/contracts/auth-state';
 import type { TranslateFn } from '@/lib/i18n';
 import { truncateAtWord } from '@/lib/text-truncate';
-import type {
-  Account,
-  AgentStatus,
-  AuthStatus,
-  EffectiveConnectionKind,
-  Provider,
-} from '@/lib/types';
+import type { Account, AgentStatus, AuthStatus, EffectiveConnectionKind, Provider } from '@/lib/types';
 
 const log = logger.scope('contracts:agent-connection');
 
@@ -250,7 +244,6 @@ export function applyEffectiveConnection(
       ...status,
       effectiveKind: 'none',
       effectiveLabel: undefined,
-      currentProvider: undefined,
       authStatus: 'none',
       authLabel: '未配置',
       authHealth: 'missing',
@@ -268,8 +261,6 @@ export function applyEffectiveConnection(
     ...status,
     effectiveKind: eff.kind,
     effectiveLabel: eff.label,
-    // 兼容旧字段名：Dashboard 等曾用 currentProvider 表示副标题左侧
-    currentProvider: eff.kind === 'none' ? undefined : eff.label,
     authStatus: liveDisplay?.legacyStatus ?? eff.authStatus,
     authLabel: liveDisplay?.label ?? eff.authLabel,
     authHealth: liveDisplay?.health ?? eff.authHealth,

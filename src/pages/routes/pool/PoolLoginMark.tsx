@@ -2,7 +2,7 @@ import { Link } from 'lucide-react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { Hint } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
-import type { PoolAuthorizationItem } from '@/pages/bridges/route-pool-view-model';
+import type { PoolAuthorizationItem } from '@/pages/routes/shared/route-pool-view-model';
 import { poolAuthorizationLinkIconColors } from './pool-authorization-detail';
 
 function gradientId(key: string): string {

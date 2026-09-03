@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackendUnavailableError } from '@/lib/backend/contracts/errors';
-import { BRIDGES_PATH } from '@/lib/bridges-path';
+import { ROUTES_PATH } from '@/lib/routes-path';
 
 const { isTauriMock, listenMock } = vi.hoisted(() => ({
   isTauriMock: vi.fn(),
@@ -17,8 +17,8 @@ describe('trayNavigatePath', () => {
     expect(trayNavigatePath({ path: '/routes' })).toBe('/routes');
   });
 
-  it('accepts BRIDGES_PATH', () => {
-    expect(trayNavigatePath({ path: BRIDGES_PATH })).toBe('/routes');
+  it('accepts ROUTES_PATH', () => {
+    expect(trayNavigatePath({ path: ROUTES_PATH })).toBe('/routes');
   });
 
   it('rejects missing, empty, relative, and non-string paths', () => {

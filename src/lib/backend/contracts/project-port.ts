@@ -1,14 +1,8 @@
-import type {
-  AgentId,
-  AgentProject,
-  AgentProjectExcerpt,
-  AgentSession,
-  ProjectMetadataFile,
-} from '@/lib/types';
+import type { AgentKey, AgentProject, AgentProjectExcerpt, AgentSession, ProjectMetadataFile } from '@/lib/types';
 
 export interface ProjectPort {
   listAgentProjects(
-    agentId?: AgentId | null,
+    agentId?: AgentKey | null,
     includeHidden?: boolean,
   ): Promise<AgentProject[]>;
   listAgentProjectSessions(projectId: string): Promise<AgentSession[]>;
@@ -18,7 +12,7 @@ export interface ProjectPort {
     patch: { hidden?: boolean; alias?: string | null },
   ): Promise<void>;
   setShowHiddenProjects(show: boolean): Promise<void>;
-  deleteAgentProject(id: string): Promise<void>;
-  deleteAgentProjects(ids: string[]): Promise<number>;
+  deleteAgentSession(id: string): Promise<void>;
+  deleteAgentSessions(ids: string[]): Promise<number>;
   getAgentProjectExcerpts(ids: string[]): Promise<AgentProjectExcerpt[]>;
 }

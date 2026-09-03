@@ -8,7 +8,7 @@ import {
   routeEndpointPathForBinding,
   type RouteEndpointId,
 } from '@/lib/route-endpoints';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import type {
   BindingRoute,
   BindingView,
@@ -16,7 +16,7 @@ import type {
   TicketWallet,
 } from '@/lib/backend/contracts/ticket';
 import { surfaceGroupMemberCount } from '@/lib/backend/contracts/ticket';
-import { bridgesHrefForProfile } from '@/lib/bridges-path';
+import { routesHrefForProfile } from '@/lib/routes-path';
 import type { TranslateFn } from '@/lib/i18n';
 import { filterTicketsByOwner } from '@/lib/ticket-wallet';
 import { connectionStateRouteLabel } from '@/lib/ticket-wallet-labels';
@@ -83,7 +83,7 @@ export function formatBindingUsageParts(
     return [
       { kind: 'endpoint', path, port, endpointId },
       { kind: 'text', text: '（' },
-      { kind: 'bridge', label: route, href: bridgesHrefForProfile(binding.profileId) },
+      { kind: 'bridge', label: route, href: routesHrefForProfile(binding.profileId) },
       { kind: 'text', text: t ? t('connections.list.usageCloseWithSuffix', { suffix }) : `${suffix}）` },
     ];
   }
@@ -113,7 +113,7 @@ function usagePartPlainText(part: TicketUsagePart): string {
 
 export function formatTicketUsageParts(
   bindings: readonly BindingView[],
-  ownerAgentId?: AgentId,
+  ownerAgentId?: AgentKey,
   t?: TranslateFn,
   memberCount = 1,
   isCurrent = false,
@@ -159,7 +159,7 @@ export function formatTicketUsageParts(
 
 export function formatTicketUsageText(
   bindings: readonly BindingView[],
-  ownerAgentId?: AgentId,
+  ownerAgentId?: AgentKey,
   t?: TranslateFn,
   memberCount = 1,
   isCurrent = false,
@@ -174,9 +174,9 @@ export function buildTicketWalletRows(
   options: {
     filter?: TicketWalletFilter;
     /** Deep-link highlight for that Agent's active binding. */
-    highlightAgentId?: AgentId | null;
+    highlightAgentId?: AgentKey | null;
     /** Agent tab filter; omit for the full wallet. */
-    agentFilterId?: AgentId | null;
+    agentFilterId?: AgentKey | null;
     t?: TranslateFn;
     /** True when this ticket is the current login for its agent (even with no active bindings). */
     isCurrentForTicket?: (ticket: TicketView) => boolean;

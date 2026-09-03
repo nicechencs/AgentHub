@@ -22,7 +22,7 @@ import {
   toCredentialRow,
 } from '@/lib/credential-row';
 import type { TranslateFn } from '@/lib/i18n';
-import type { Account, AgentId, AuthStatus, Provider } from '@/lib/types';
+import type { Account, AgentKey, AuthStatus, Provider } from '@/lib/types';
 
 export type ConnectionEntry = {
   /** 列表稳定 key：`account:id` / `provider:id` */
@@ -30,7 +30,7 @@ export type ConnectionEntry = {
   source: 'account' | 'provider';
   kind: ConnectionKind;
   id: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   title: string;
   subtitle: string;
   isCurrent: boolean;

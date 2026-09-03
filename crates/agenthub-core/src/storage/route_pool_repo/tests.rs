@@ -20,7 +20,7 @@ fn pool(id: &str, agent: AgentId, is_default: bool, token: &str) -> RoutePool {
         hub_token: token.into(),
         schedule_policy: RouteSchedulePolicy::PriorityFailover,
         is_default,
-        v2_enrolled: false,
+        unified_gateway_enrolled: false,
         policy_revision: 1,
         auto_start: true,
         gateway_port: None,
@@ -222,26 +222,26 @@ fn member_mutations_bump_revision_and_reorder() {
 }
 
 #[test]
-fn enroll_v2_is_idempotent_for_the_same_port() {
+fn enroll_unified_gateway_is_idempotent_for_the_same_port() {
     let (_dir, _db, repo) = tmp();
     repo.create_pool(&pool("pool-a", AgentId::Codex, true, "ahb_token-a"))
         .unwrap();
-    let first = repo.enroll_v2("pool-a", 43121, "t1").unwrap();
-    assert!(first.v2_enrolled);
+    let first = repo.enroll_unified_gateway("pool-a", 43121, "t1").unwrap();
+    assert!(first.unified_gateway_enrolled);
     assert_eq!(first.gateway_port, Some(43121));
     let revision = first.policy_revision;
-    let second = repo.enroll_v2("pool-a", 43121, "t2").unwrap();
+    let second = repo.enroll_unified_gateway("pool-a", 43121, "t2").unwrap();
     assert_eq!(second.policy_revision, revision);
     assert_eq!(second.gateway_port, Some(43121));
 }
 
 #[test]
-fn enroll_v2_rejects_a_different_port() {
+fn enroll_unified_gateway_rejects_a_different_port() {
     let (_dir, _db, repo) = tmp();
     repo.create_pool(&pool("pool-a", AgentId::Codex, true, "ahb_token-a"))
         .unwrap();
-    let first = repo.enroll_v2("pool-a", 43121, "t1").unwrap();
-    let error = repo.enroll_v2("pool-a", 43122, "t2").unwrap_err();
+    let first = repo.enroll_unified_gateway("pool-a", 43121, "t1").unwrap();
+    let error = repo.enroll_unified_gateway("pool-a", 43122, "t2").unwrap_err();
     assert_eq!(error.code(), "invalid_arg");
     let stored = repo.get_pool("pool-a").unwrap().unwrap();
     assert_eq!(stored.gateway_port, Some(43121));

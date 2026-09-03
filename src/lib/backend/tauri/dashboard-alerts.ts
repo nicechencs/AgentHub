@@ -3,7 +3,7 @@
  * Dismiss is local-only (session/localStorage); alerts reappear when the
  * underlying condition changes (stable id + fingerprint).
  */
-import type { AgentId, AgentStatus, DashboardAlert } from '@/lib/types';
+import type { AgentKey, AgentStatus, DashboardAlert } from '@/lib/types';
 import { agentDisplayName } from '@/config/agents';
 import { createTranslator, type TranslateFn } from '@/lib/i18n';
 import { loadJson, saveJson } from '@/lib/ui-preferences';
@@ -13,7 +13,7 @@ const DISMISS_KEY = 'agenthub:dismissed-alerts';
 type DismissMap = Record<string, string>; // id -> fingerprint when dismissed
 
 function agentName(id: string): string {
-  return agentDisplayName(id as AgentId);
+  return agentDisplayName(id as AgentKey);
 }
 
 function fingerprint(alert: Omit<DashboardAlert, 'id'> & { id: string }): string {
@@ -29,7 +29,7 @@ function isUsefulConnectionLabel(value: string | undefined): boolean {
 /** Pool/route already configured — do not treat live probe authStatus none as empty. */
 function hasConfiguredConnection(a: AgentStatus): boolean {
   if (a.effectiveKind === 'account' || a.effectiveKind === 'api') return true;
-  if (isUsefulConnectionLabel(a.effectiveLabel) || isUsefulConnectionLabel(a.currentProvider)) {
+  if (isUsefulConnectionLabel(a.effectiveLabel)) {
     return true;
   }
   return a.authHealth === 'configured' || a.authHealth === 'renewable' || a.authHealth === 'verified';

@@ -28,21 +28,21 @@ export {
 
 export {
   accountsForAgent,
-  beginConnectionPoolMutation,
+  beginConnectionInventoryMutation,
   connectionCountsByAgent,
-  endConnectionPoolMutation,
-  getConnectionPoolSnapshot,
-  loadConnectionPool,
+  endConnectionInventoryMutation,
+  getConnectionInventorySnapshot,
+  loadConnectionInventory,
   markConnectionCurrent,
-  notifyConnectionPoolChanged,
+  notifyConnectionInventoryChanged,
   providersForAgent,
-  subscribeConnectionPool,
-} from './connection-pool-store';
+  subscribeConnectionInventory,
+} from './connection-inventory-store';
 export type {
-  ConnectionPoolLoadState,
-  ConnectionPoolSnapshot,
-} from './connection-pool-store';
-export { useConnectionPool } from './ConnectionPoolProvider';
+  ConnectionInventoryLoadState,
+  ConnectionInventorySnapshot,
+} from './connection-inventory-store';
+export { useConnectionInventory } from './ConnectionInventoryProvider';
 
 export {
   getTicketWalletSnapshot,

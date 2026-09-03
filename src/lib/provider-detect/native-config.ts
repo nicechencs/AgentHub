@@ -12,7 +12,7 @@
  * - Pi `~/.pi/agent/models.json` — providers.*.baseUrl
  */
 
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import { REDACTED_MARKER } from './types';
 
 function parseJsonObject(configText: string):
@@ -262,7 +262,7 @@ export function tomlSyntaxIssue(text: string): string | null {
 }
 
 export function validateNativeConfigText(
-  agentId: AgentId,
+  agentId: AgentKey,
   configText: string,
   format: 'json' | 'toml',
 ): NativeConfigIssue | null {

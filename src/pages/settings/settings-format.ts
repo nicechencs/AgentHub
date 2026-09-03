@@ -13,7 +13,7 @@ export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 /**
  * Legacy `?tab=` slugs → canonical tab.
- * `general` → Preferences; `security` → About (credential note);
+ * `general` → Preferences; `security` → About (login information note);
  * `data` → Local. `backups` is a canonical tab. Legacy `#backups` /
  * `?tab=local#backups` → Backups (see {@link resolveSettingsLocation}).
  */

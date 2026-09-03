@@ -7,10 +7,10 @@ import { useSideSplit } from '@/components/layout/use-side-split';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { PageRefreshButton } from '@/components/shared/PageRefreshButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
-import { getLocalEntryStatus } from '@/lib/api/adapter';
-import { ADAPTER_BRIDGE_STATUS_POLL_MS } from '@/pages/bridges/adapter-model';
-import { useAdapterResources } from '@/pages/bridges/use-bridge-resources';
-import { useRoutePoolState } from '@/pages/bridges/use-route-pool-state';
+import { getLocalGatewayStatus } from '@/lib/api/adapter';
+import { ADAPTER_BRIDGE_STATUS_POLL_MS } from '@/pages/routes/shared/adapter-model';
+import { useAdapterResources } from '@/pages/routes/shared/use-bridge-resources';
+import { useRoutePoolState } from '@/pages/routes/shared/use-route-pool-state';
 import { activityRouteOptions } from '@/pages/routes/activity/inbound-feed-model';
 import { ActivityMonitoringPanel } from '@/pages/routes/activity/ActivityMonitoringPanel';
 import { ActivityTraceDetailPanel } from '@/pages/routes/activity/ActivityTraceDetailPanel';
@@ -19,8 +19,9 @@ import {
   resolveActivityPageSnapshot,
 } from '@/pages/routes/activity/activity-view-model';
 import { selectedActivityTrace } from '@/pages/routes/activity/activity-trace-summary-model';
+import { StorageKey } from '@/lib/ui-preferences';
 
-const ACTIVITY_PREVIEW_WIDTH_KEY = 'agenthub.routes.activity.previewWidth';
+const ACTIVITY_PREVIEW_WIDTH_KEY = StorageKey.routesActivityPreviewWidth;
 
 export default function RoutesActivityPage() {
   const { t } = useI18n();
@@ -36,7 +37,7 @@ export default function RoutesActivityPage() {
   } = useAdapterResources();
   const { defaultPools } = useRoutePoolState({ profiles, detailTarget: null });
   const inspect = useSideSplit<string>({ storageKey: ACTIVITY_PREVIEW_WIDTH_KEY });
-  const [localEntryStatuses, setLocalEntryStatuses] = useState<
+  const [localGatewayStatuses, setLocalGatewayStatuses] = useState<
     import('@/lib/backend/contracts/adapter').AdapterBridgeRuntimeStatus[]
   >([]);
   const [unauthenticatedTraces, setUnauthenticatedTraces] = useState<
@@ -47,16 +48,16 @@ export default function RoutesActivityPage() {
     let cancelled = false;
     let received = false;
     const tick = () => {
-      void getLocalEntryStatus()
+      void getLocalGatewayStatus()
         .then((status) => {
           if (cancelled) return;
           received = true;
-          setLocalEntryStatuses(status.statuses ?? []);
+          setLocalGatewayStatuses(status.statuses ?? []);
           setUnauthenticatedTraces(status.unauthenticatedTraces ?? []);
         })
         .catch(() => {
           if (cancelled || received) return;
-          setLocalEntryStatuses([]);
+          setLocalGatewayStatuses([]);
           setUnauthenticatedTraces([]);
         });
     };
@@ -80,7 +81,7 @@ export default function RoutesActivityPage() {
     () => resolveActivityPageSnapshot({
       profiles,
       bridgeStatuses,
-      localEntryStatuses,
+      localGatewayStatuses,
       unauthenticatedTraces,
       unauthenticatedSourceLabel: t('routes.activity.unauthenticatedSource'),
       pools: defaultPools,
@@ -92,7 +93,7 @@ export default function RoutesActivityPage() {
     [
       profiles,
       bridgeStatuses,
-      localEntryStatuses,
+      localGatewayStatuses,
       unauthenticatedTraces,
       defaultPools,
       routeId,

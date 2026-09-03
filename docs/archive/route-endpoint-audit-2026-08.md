@@ -55,7 +55,7 @@ flowchart LR
 
 ### 2.2 `/routes` 页的真实职责
 
-归档时的 `src/pages/bridges/index.tsx` 页面注释已经写明：这是 **local-bridge runtime ops page**。当前代码已将入口拆分到 [`src/App.tsx`](../../src/App.tsx) 和 `src/pages/routes/*`，运行时列表组件为 [`src/pages/bridges/AdapterProfilesList.tsx`](../../src/pages/bridges/AdapterProfilesList.tsx)。以下职责结论仍是本审计快照当日的历史记录，不替代当前实现契约。它主要负责：
+归档时的 `src/pages/bridges/index.tsx` 页面注释已经写明：这是 **local-bridge runtime ops page**。当前代码已将入口拆分到 [`src/App.tsx`](../../src/App.tsx) 和 `src/pages/routes/*`，运行时列表组件为 [`src/pages/bridges/AdapterProfilesList.tsx`](../../src/pages/routes/shared/AdapterProfilesList.tsx)。以下职责结论仍是本审计快照当日的历史记录，不替代当前实现契约。它主要负责：
 
 - 查看已有 `local_bridge` profile；
 - 显示端口、运行状态、上游状态；
@@ -375,8 +375,8 @@ flowchart LR
 
 | 主题 | 证据 |
 |---|---|
-| 页面三端点、目标映射 | [`src/lib/route-endpoints.ts`](../../src/lib/route-endpoints.ts)、[`src/pages/bridges/create-route-flow.ts`](../../src/pages/bridges/create-route-flow.ts) |
-| `/routes` 职责 | [`src/App.tsx`](../../src/App.tsx)、[`AdapterProfilesList.tsx`](../../src/pages/bridges/AdapterProfilesList.tsx)、[`adapters-and-bridges.md`](../concepts/adapters-and-bridges.md) |
+| 页面三端点、目标映射 | [`src/lib/route-endpoints.ts`](../../src/lib/route-endpoints.ts)、[`src/pages/bridges/create-route-flow.ts`](../../src/pages/routes/shared/create-route-flow.ts) |
+| `/routes` 职责 | [`src/App.tsx`](../../src/App.tsx)、[`AdapterProfilesList.tsx`](../../src/pages/routes/shared/AdapterProfilesList.tsx)、[`adapters-and-bridges.md`](../concepts/adapters-and-bridges.md) |
 | HTTP 入口与 surface | [`crates/agenthub-core/src/bridge/host/http.rs`](../../crates/agenthub-core/src/bridge/host/http.rs)、[`surface.rs`](../../crates/agenthub-core/src/bridge/host/surface.rs) |
 | 转换矩阵 | [`transport/mod.rs`](../../crates/agenthub-core/src/bridge/host/transport/mod.rs)、[`protocol/mod.rs`](../../crates/agenthub-core/src/bridge/protocol/mod.rs) |
 | route edge 与 apply gate | [`local_bridge_edges.rs`](../../crates/agenthub-core/src/domain/protocol_graph/adapter_capability_matrix/local_bridge_edges.rs)、[`actions.rs`](../../crates/agenthub-core/src/services/adapter_route_service/actions.rs) |

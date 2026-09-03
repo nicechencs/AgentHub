@@ -8,7 +8,7 @@ import type { UpdateInfo } from '@/lib/api/update';
 import { GITHUB_NEW_ISSUE_URL, GITHUB_REPO_URL } from '@/lib/github';
 import { openExternalLink } from '@/lib/open-external';
 import type { AppSettings } from '@/lib/types';
-import { SecurityPanel } from './SecurityPanel';
+import { LoginInformationPanel } from './LoginInformationPanel';
 import { SettingsRow } from './settings-shared';
 
 export function AboutPanel({
@@ -114,7 +114,7 @@ export function AboutPanel({
         </CardContent>
       </Card>
       <div className="mt-4">
-        <SecurityPanel />
+        <LoginInformationPanel />
       </div>
       <p className="mt-3 text-xs text-muted">
         {t('settings.about.tagline')}

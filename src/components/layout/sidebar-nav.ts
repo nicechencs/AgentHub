@@ -1,26 +1,26 @@
 import {
   Blocks,
   Bot,
-  Cable,
-  FolderKanban,
+  FolderCode,
   Gauge,
   Key,
-  MessagesSquare,
+  MessageSquare,
   Plug,
   Puzzle,
+  Route,
   Settings2,
 } from 'lucide-react';
-import { BRIDGES_PATH } from '@/lib/bridges-path';
+import { ROUTES_PATH } from '@/lib/routes-path';
 
 export const PLUGINS_PATH = '/plugins';
 
 /** 工作区 */
 export const NAV_WORKSPACE = [
-  { to: '/chat', navKey: 'nav.chat', icon: MessagesSquare },
+  { to: '/chat', navKey: 'nav.chat', icon: MessageSquare },
   { to: '/agents', navKey: 'nav.agents', icon: Bot },
   { to: '/skills', navKey: 'nav.skills', icon: Blocks },
   { to: '/mcp', navKey: 'nav.mcp', icon: Plug, inDevelopment: true },
-  { to: '/projects', navKey: 'nav.projects', icon: FolderKanban },
+  { to: '/projects', navKey: 'nav.projects', icon: FolderCode },
   { to: '/plugins', navKey: 'nav.plugins', icon: Puzzle, inDevelopment: true },
 ] as const;
 
@@ -28,7 +28,7 @@ export const NAV_WORKSPACE = [
 export const NAV_MANAGE = [
   { to: '/', navKey: 'nav.dashboard', icon: Gauge },
   { to: '/connections', navKey: 'nav.connections', icon: Key },
-  { to: BRIDGES_PATH, navKey: 'nav.routes', icon: Cable },
+  { to: ROUTES_PATH, navKey: 'nav.routes', icon: Route },
   { to: '/settings', navKey: 'nav.settings', icon: Settings2 },
 ] as const;
 
@@ -44,7 +44,7 @@ export function filterManageNavItems<T extends { to: string }>(
   routesNavVisible: boolean,
 ): T[] {
   if (routesNavVisible) return [...items];
-  return items.filter((item) => item.to !== BRIDGES_PATH);
+  return items.filter((item) => item.to !== ROUTES_PATH);
 }
 
 /** 工作区导航：按「插件」可见性过滤（插件页仍可通过 URL 直接访问）。 */

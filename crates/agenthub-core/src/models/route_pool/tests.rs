@@ -4,7 +4,7 @@ use crate::models::{
     RouteDownstreamDialect, RouteDownstreamSurface, RouteSchedulePolicy,
     FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
     FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
-    LOCAL_ENTRY_DESIRED_RUNNING, SHARE_CHAT_COMPLETIONS,
+    LOCAL_GATEWAY_DESIRED_RUNNING, SHARE_CHAT_COMPLETIONS,
 };
 
 #[test]
@@ -28,7 +28,7 @@ fn feature_flags_are_fail_closed() {
     );
     assert_eq!(FEATURE_MIXED_PROVIDER_POOL, "feature.mixed_provider_pool");
     assert_eq!(SHARE_CHAT_COMPLETIONS, "share_chat_completions");
-    assert_eq!(LOCAL_ENTRY_DESIRED_RUNNING, "local_entry_desired_running");
+    assert_eq!(LOCAL_GATEWAY_DESIRED_RUNNING, "local_gateway_desired_running");
     assert!(feature_flag_enabled(Some("yes")));
 }
 
@@ -127,7 +127,7 @@ fn default_overview_json_never_includes_hub_token() {
         target_agent_id: AgentId::Codex,
         surface: RouteDownstreamSurface::Responses,
         dialect: RouteDownstreamDialect::Codex,
-        v2_enrolled: true,
+        unified_gateway_enrolled: true,
         gateway_port: Some(43121),
         members: vec![crate::models::RouteMemberOverview {
             id: "member-1".into(),
@@ -145,9 +145,14 @@ fn default_overview_json_never_includes_hub_token() {
     assert!(!json.contains("hubToken"));
     assert!(!json.contains("hub_token"));
     assert!(!json.contains("ahb_"));
-    assert!(json.contains("v2Enrolled"));
+    assert!(json.contains("unifiedGatewayEnrolled"));
     assert!(json.contains("gatewayPort"));
     assert!(!json.contains("127.0.0.1"));
+    let from_wire = serde_json::from_str::<crate::models::DefaultRoutePoolOverview>(
+        r#"{"id":"pool-1","targetAgentId":"codex","surface":"responses","dialect":"codex","unifiedGatewayEnrolled":true,"members":[]}"#,
+    )
+    .expect("wire");
+    assert!(from_wire.unified_gateway_enrolled);
 }
 
 #[test]
@@ -160,7 +165,7 @@ fn debug_redacts_hub_token() {
         hub_token: "ahb_secret-token-value".into(),
         schedule_policy: RouteSchedulePolicy::PriorityFailover,
         is_default: true,
-        v2_enrolled: false,
+        unified_gateway_enrolled: false,
         policy_revision: 1,
         auto_start: true,
         gateway_port: None,

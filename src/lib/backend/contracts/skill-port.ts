@@ -1,21 +1,14 @@
-import type { AgentId, Skill, SkillSyncState } from '@/lib/types';
-import type {
-  CoreSkill,
-  InstalledSkillDto,
-  SkillListingDto,
-  SkillMarkdownPreviewDto,
-  SkillProjectResultDto,
-  SkillsFsChangedPayload,
-} from './skill-types';
+import type { AgentKey, Skill, SkillSyncState } from '@/lib/types';
+import type { CoreSkill, InstalledSkillDto, SkillListingDto, SkillMarkdownPreviewDto, SkillProjectionResultDto, SkillsFsChangedPayload } from './skill-types';
 
 export interface SkillPort {
   listSkills(): Promise<Skill[]>;
   toggleSkillSync(
     skillId: string,
-    agentId: AgentId,
+    agentId: AgentKey,
     opts?: { force?: boolean; mode?: 'link' | 'copy' },
   ): Promise<{ state: SkillSyncState; conflict: boolean }>;
-  checkConflict(skillId: string, agentId: AgentId): Promise<boolean>;
+  checkConflict(skillId: string, agentId: AgentKey): Promise<boolean>;
   syncAll(): Promise<{ synced: number; skipped: number; failed: number }>;
   /** CLI / internal alignment. GUI catalog uses `listSkillCatalog`. */
   listInstalledSkills(): Promise<InstalledSkillDto[]>;
@@ -24,17 +17,17 @@ export interface SkillPort {
   installSkillFromSource(source: string, overwrite?: boolean): Promise<CoreSkill>;
   importPrivateSkillToShared(
     skillId: string,
-    agentId: AgentId,
+    agentId: AgentKey,
     overwrite?: boolean,
   ): Promise<Skill>;
   installSkill(source?: string): Promise<void>;
-  uninstallSkill(skillId: string, privateAgent?: AgentId): Promise<void>;
+  uninstallSkill(skillId: string, privateAgent?: AgentKey): Promise<void>;
   updateSkill(skillId: string): Promise<CoreSkill>;
-  projectSkill(
+  applySkillProjection(
     skillId: string,
-    agentId: AgentId,
+    agentId: AgentKey,
     mode?: 'link' | 'copy',
-  ): Promise<SkillProjectResultDto>;
+  ): Promise<SkillProjectionResultDto>;
   searchSkillMarket(query?: string): Promise<SkillListingDto[]>;
   /** Install from market listing id (e.g. owner/repo/skill from skills.sh). */
   installMarketSkill(skillId: string, overwrite?: boolean): Promise<CoreSkill>;
@@ -45,7 +38,7 @@ export interface SkillPort {
    */
   readSkillMarkdown(
     skillId: string,
-    privateAgent?: AgentId | null,
+    privateAgent?: AgentKey | null,
   ): Promise<SkillMarkdownPreviewDto>;
   /** Skills under a workspace (`.agents/skills` plus known project folders). */
   listProjectSkills(workspacePath: string): Promise<InstalledSkillDto[]>;

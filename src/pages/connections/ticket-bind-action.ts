@@ -11,14 +11,11 @@ export type TicketRoutePlanHint = {
   reason?: string;
 };
 
-export type TicketBindPurpose = 'share' | 'route';
+export type TicketBindPurpose = 'direct' | 'route';
 
 export type TicketBindAction =
   | { disabled: false }
   | { disabled: true; reason: string };
-
-/** @deprecated use TicketBindAction */
-export type TicketRouteAction = TicketBindAction;
 
 const ROUTE_DISABLED_FALLBACK = '这份登录目前不能走本机转发';
 const ROUTE_NO_TARGET_FALLBACK = '没有可转发的目标工具';
@@ -100,9 +97,9 @@ export function resolveTicketRouteAction(
   return resolveTicketBindAction(hints, 'route', t);
 }
 
-export function resolveTicketShareAction(
+export function resolveTicketDirectAction(
   hints: readonly TicketRoutePlanHint[],
   t?: TranslateFn,
 ): TicketBindAction {
-  return resolveTicketBindAction(hints, 'share', t);
+  return resolveTicketBindAction(hints, 'direct', t);
 }

@@ -8,7 +8,7 @@ import type {
 } from '@/lib/backend/contracts/usage-types';
 import { delay } from '@/dev/mocks/delay';
 import { isCapabilityUsable } from '@/lib/capability';
-import type { AgentId, ParserHealth, UsageRecord, UsageTrendPoint } from '@/lib/types';
+import type { AgentKey, ParserHealth, UsageRecord, UsageTrendPoint } from '@/lib/types';
 import { denseTrendBuckets, localTrendBucket, trendGrain } from '@/lib/usage-trend';
 import { usageTokenParts } from '@/lib/usage-tokens';
 import { listMockAdapterProfiles } from './adapter';
@@ -18,16 +18,16 @@ import { MOCK_CAPABILITIES } from './capabilities';
  * Demo agents with seeded usage. Fixed list — do not use runtime AGENT_IDS here:
  * module init runs before catalog seed, so AGENT_IDS may still be empty.
  */
-const DEMO_USAGE_AGENTS: AgentId[] = ['claude', 'codex', 'kimi', 'grok'];
+const DEMO_USAGE_AGENTS: AgentKey[] = ['claude', 'codex', 'kimi', 'grok'];
 
-const MODELS: Partial<Record<AgentId, string[]>> = {
+const MODELS: Partial<Record<AgentKey, string[]>> = {
   claude: ['claude-opus-4.5', 'claude-sonnet-4.5', 'claude-haiku-4'],
   codex: ['gpt-5.1-codex', 'gpt-5.1-codex-mini'],
   kimi: ['kimi-k2', 'kimi-k2-turbo'],
   grok: ['grok-code-fast-1'],
 };
 
-function usageCapable(agentId: AgentId): boolean {
+function usageCapable(agentId: AgentKey): boolean {
   const cap = MOCK_CAPABILITIES[agentId]?.usage;
   return isCapabilityUsable(cap) || (cap?.level === 'planned' && !!MODELS[agentId]?.length);
 }

@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import type { PoolAuthorizationItem } from '@/pages/bridges/route-pool-view-model';
+import type { PoolAuthorizationItem } from '@/pages/routes/shared/route-pool-view-model';
 import type { Provider } from '@/lib/types';
 import { PoolAuthorizationDetail } from './PoolAuthorizationDetail';
 
@@ -167,6 +167,6 @@ describe('PoolAuthorizationDetail', () => {
     );
     expect(markup).toContain('编辑密钥');
     expect(markup).toContain('登录详情');
-    expect(markup).not.toContain('接入时已定好，编辑时不能改');
+    expect(markup).not.toContain('添加时已定好，编辑时不能改');
   });
 });

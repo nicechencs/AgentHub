@@ -3,7 +3,7 @@
  */
 import { getBackend } from '@/app/runtime';
 import type { UsageCollectResult } from '@/lib/backend/contracts/ports';
-import type { AgentId, ParserHealth, UsageRecord, UsageTrendPoint } from '@/lib/types';
+import type { AgentKey, ParserHealth, UsageRecord, UsageTrendPoint } from '@/lib/types';
 
 export type {
   GatewayUsageOverview,
@@ -16,14 +16,7 @@ export type {
   UsageQuery,
 } from '@/lib/backend/contracts/usage-types';
 export type { UsageCollectResult };
-import type {
-  GatewayUsageOverview,
-  GatewayUsageQuery,
-  GatewayUsageRow,
-  UsageAvailability,
-  UsageOverview,
-  UsageQuery,
-} from '@/lib/backend/contracts/usage-types';
+import type { GatewayUsageOverview, GatewayUsageQuery, GatewayUsageRow, UsageAvailability, UsageOverview, UsageQuery } from '@/lib/backend/contracts/usage-types';
 
 export async function getUsageAvailability(): Promise<UsageAvailability> {
   return getBackend().usage.getAvailability();
@@ -39,10 +32,10 @@ export async function usageOverview(q: UsageQuery): Promise<UsageOverview> {
 
 export async function usageTrend(
   days: number,
-  agentId?: AgentId | 'all',
+  agentId?: AgentKey | 'all',
   model?: string,
   since?: string,
-  excludeAgentIds?: AgentId[],
+  excludeAgentIds?: AgentKey[],
 ): Promise<UsageTrendPoint[]> {
   return getBackend().usage.usageTrend(days, agentId, model, since, excludeAgentIds);
 }

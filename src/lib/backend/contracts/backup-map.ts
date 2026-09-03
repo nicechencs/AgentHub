@@ -1,8 +1,8 @@
-import type { AgentId, BackupInspect, BackupKind, BackupMeta } from '@/lib/types';
+import type { AgentKey, BackupInspect, BackupKind, BackupMeta } from '@/lib/types';
 
 export interface CoreBackupRecord {
   id: string;
-  agentId?: AgentId | null;
+  agentId?: AgentKey | null;
   kind: BackupKind;
   path: string;
   files: string[];

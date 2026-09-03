@@ -130,7 +130,7 @@ describe('detectedApiChoiceTypes', () => {
 });
 
 describe('poolSurfaceForApiChoice', () => {
-  it('maps each API endpoint to its local entry surface', () => {
+  it('maps each API endpoint to its local gateway surface', () => {
     expect(poolSurfaceForApiChoice({ endpoint: '/v1/messages' })).toBe('messages');
     expect(poolSurfaceForApiChoice({ endpoint: '/v1/responses' })).toBe('responses');
     expect(poolSurfaceForApiChoice({ endpoint: '/v1/chat/completions' })).toBe('chat_completions');

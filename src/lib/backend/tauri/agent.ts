@@ -8,14 +8,14 @@ import {
   InstallFailedError,
 } from '@/lib/backend/contracts/agent-errors';
 import { logger } from '@/lib/logger';
-import type { AgentId, AgentStatus, AgentUpdateInfo } from '@/lib/types';
+import type { AgentKey, AgentStatus, AgentUpdateInfo } from '@/lib/types';
 import { invoke } from './invoke';
 
 const log = logger.scope('backend:tauri:agent');
 
 export { EnvNotReadyError, InstallFailedError, mergeAgentListWithCatalog };
 
-function missingAgentStatus(id: AgentId): AgentStatus {
+function missingAgentStatus(id: AgentKey): AgentStatus {
   return {
     agentId: id,
     installed: false,
@@ -26,7 +26,7 @@ function missingAgentStatus(id: AgentId): AgentStatus {
   };
 }
 
-async function loadHiddenAgentIds(): Promise<Set<AgentId>> {
+async function loadHiddenAgentIds(): Promise<Set<AgentKey>> {
   try {
     const ids = await invoke<string[]>('list_hidden_agents');
     return new Set(ids);

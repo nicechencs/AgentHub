@@ -1,9 +1,9 @@
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 
 /** Stable identity for the open SKILL.md preview (shared vs private vs project). */
 export type SkillPreviewTargetLike = {
   skillId: string;
-  privateAgent?: AgentId | null;
+  privateAgent?: AgentKey | null;
   workspacePath?: string | null;
   originRoot?: string | null;
 };
@@ -28,7 +28,7 @@ export function sharedSkillActiveKey(skillId: string): string {
   return skillPreviewActiveKey({ skillId });
 }
 
-export function privateSkillActiveKey(agentId: AgentId, skillId: string): string {
+export function privateSkillActiveKey(agentId: AgentKey, skillId: string): string {
   return skillPreviewActiveKey({ skillId, privateAgent: agentId });
 }
 

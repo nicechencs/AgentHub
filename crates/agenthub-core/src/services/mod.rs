@@ -31,7 +31,7 @@ pub mod settings_service;
 pub mod skill_market;
 pub mod skill_service;
 pub mod skillhub_market;
-pub mod skillssh_market;
+pub mod skills_sh_market;
 pub mod switch_undo;
 pub mod ticket_bind_service;
 pub mod ticket_read_service;
@@ -82,7 +82,7 @@ pub use skillhub_market::{
     install_skillhub_listing, is_skillhub_listing_id, local_skill_id_from_skillhub_id,
     SkillhubMarket, SKILLHUB_ID_PREFIX,
 };
-pub use skillssh_market::{
+pub use skills_sh_market::{
     install_skills_sh_listing, local_skill_id_from_market_id, SkillsShMarket,
 };
 pub use ticket_bind_service::{ticket_binding_from_apply, TicketBindService};

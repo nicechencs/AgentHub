@@ -120,9 +120,9 @@ describe('agents layout wiring', () => {
     expect(dashboard).toContain('omittedIds');
     const hook = source('lib/hooks/useInstalledAgents.ts');
     expect(hook).toContain('StorageKey.agentsCatalogOrder');
-    const prefs = source('lib/ui-preferences.ts');
-    expect(prefs).toContain('agentsCatalogOrder');
-    expect(prefs).toContain('connectionsTicketOrder');
-    expect(prefs).toContain('routesProfileOrder');
+    const keys = source('lib/storage-key.ts');
+    expect(keys).toContain('agentsCatalogOrder');
+    expect(keys).toContain('connectionsTicketOrder');
+    expect(keys).toContain('routesProfileOrder');
   });
 });

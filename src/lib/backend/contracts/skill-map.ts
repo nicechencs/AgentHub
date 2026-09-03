@@ -1,12 +1,5 @@
 import { AGENT_IDS } from '@/config/agents';
-import type {
-  AgentId,
-  Skill,
-  SkillLinkKind,
-  SkillMapStatus,
-  SkillProjection,
-  SkillSyncState,
-} from '@/lib/types';
+import type { AgentKey, Skill, SkillLinkKind, SkillMapStatus, SkillProjection, SkillSyncState } from '@/lib/types';
 import type { CoreSkill, CoreSkillLinkKind, CoreSkillMapStatus } from './skill-types';
 
 function mapLinkKind(k?: CoreSkillLinkKind | null): SkillLinkKind {
@@ -39,17 +32,17 @@ export function mapMapStatus(
 
 /** Core Skill → UI Skill */
 export function mapCoreSkill(s: CoreSkill): Skill {
-  const sync = {} as Record<AgentId, SkillSyncState>;
-  const conflicts: AgentId[] = [];
+  const projectionByAgent = {} as Record<AgentKey, SkillSyncState>;
+  const conflicts: AgentKey[] = [];
   const projections: SkillProjection[] = [];
 
   for (const id of AGENT_IDS) {
-    sync[id] = 'unsupported';
+    projectionByAgent[id] = 'unsupported';
   }
 
   for (const proj of s.projections ?? []) {
     const state = proj.state as SkillSyncState;
-    sync[proj.agent] = state;
+    projectionByAgent[proj.agent] = state;
     if (state === 'foreign' || state === 'conflict') {
       conflicts.push(proj.agent);
     }
@@ -69,7 +62,7 @@ export function mapCoreSkill(s: CoreSkill): Skill {
     description: s.description,
     sourceDir: s.sourceDir,
     projections,
-    sync,
+    projectionByAgent,
     conflicts,
   };
 }

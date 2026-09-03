@@ -1,10 +1,10 @@
 import type { AccountPort } from '@/lib/backend/contracts';
 import { wrapBareAccount } from '@/lib/backend/contracts/account-map';
 import { delay, randomLatency } from '@/dev/mocks/delay';
-import type { Account, AgentId } from '@/lib/types';
+import type { Account, AgentKey } from '@/lib/types';
 import { moveMockAccountToTrash } from './trash';
 
-const mockState: Record<AgentId, Account[]> = {
+const mockState: Record<AgentKey, Account[]> = {
   claude: [],
   codex: [],
   kimi: [],
@@ -14,10 +14,10 @@ const mockState: Record<AgentId, Account[]> = {
   cursor: [],
 };
 
-let lastSwitch: { agentId: AgentId; fromId: string } | null = null;
+let lastSwitch: { agentId: AgentKey; fromId: string } | null = null;
 
 type MockOAuthSession = {
-  agentId: AgentId;
+  agentId: AgentKey;
   providerKey: string | null;
   flow: 'pkce' | 'device';
   poolOwned?: boolean;
@@ -36,7 +36,7 @@ function requireOAuthSession(state: string): MockOAuthSession {
 
 /** Clears browser-mock account-pool state so each backend factory starts clean. */
 export function resetMockAccounts(): void {
-  (Object.keys(mockState) as AgentId[]).forEach((agentId) => {
+  (Object.keys(mockState) as AgentKey[]).forEach((agentId) => {
     mockState[agentId].length = 0;
   });
   lastSwitch = null;
@@ -62,7 +62,7 @@ export function upsertMockAccount(account: Account): Account {
 
 /** Read-only lookup used by browser-only compatibility previews. */
 export function getMockAccountById(accountId: string): Account | undefined {
-  const found = (Object.keys(mockState) as AgentId[])
+  const found = (Object.keys(mockState) as AgentKey[])
     .flatMap((agentId) => mockState[agentId] ?? [])
     .find((account) => account.id === accountId);
   return found ? { ...found } : undefined;
@@ -70,7 +70,7 @@ export function getMockAccountById(accountId: string): Account | undefined {
 
 /** Snapshot of all mock accounts (ticket wallet aggregation). */
 export function listMockAccounts(): Account[] {
-  return (Object.keys(mockState) as AgentId[]).flatMap((agentId) =>
+  return (Object.keys(mockState) as AgentKey[]).flatMap((agentId) =>
     (mockState[agentId] ?? []).map((account) => ({ ...account })),
   );
 }
@@ -82,7 +82,7 @@ export function createMockAccountPort(): AccountPort {
       if (agentId) {
         return (mockState[agentId] ?? []).map((a) => wrapBareAccount({ ...a }));
       }
-      return (Object.keys(mockState) as AgentId[]).flatMap((id) =>
+      return (Object.keys(mockState) as AgentKey[]).flatMap((id) =>
         (mockState[id] ?? []).map((a) => wrapBareAccount({ ...a })),
       );
     },
