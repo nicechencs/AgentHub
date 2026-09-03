@@ -1,5 +1,8 @@
 import type { AgentKey } from '@/lib/types';
 
+/** Trend series grouping. Default `agent` keeps `{ date, claude?: n, ... }`. */
+export type UsageTrendGroupBy = 'agent' | 'model';
+
 export interface UsageQuery {
   /** 回看天数（后端按 now - days 过滤；UI 可映射 today/24h → 1） */
   days: number;

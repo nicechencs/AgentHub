@@ -28,6 +28,12 @@ const UPSERT_USAGE_SQL: &str = r#"
         fast = excluded.fast
 "#;
 
+#[derive(Debug, Clone, Copy)]
+enum UsageTrendGroup {
+    Agent,
+    Model,
+}
+
 pub struct UsageRepo {
     db: Database,
 }
@@ -271,14 +277,56 @@ impl UsageRepo {
         since: Option<&str>,
         exclude_agent_ids: &[AgentId],
     ) -> Result<Vec<UsageTrendPoint>> {
+        self.trend_grouped(
+            days,
+            agent,
+            model,
+            since,
+            exclude_agent_ids,
+            UsageTrendGroup::Agent,
+        )
+    }
+
+    pub fn trend_by_model(
+        &self,
+        days: u32,
+        agent: Option<AgentId>,
+        model: Option<&str>,
+        since: Option<&str>,
+        exclude_agent_ids: &[AgentId],
+    ) -> Result<Vec<UsageTrendPoint>> {
+        self.trend_grouped(
+            days,
+            agent,
+            model,
+            since,
+            exclude_agent_ids,
+            UsageTrendGroup::Model,
+        )
+    }
+
+    fn trend_grouped(
+        &self,
+        days: u32,
+        agent: Option<AgentId>,
+        model: Option<&str>,
+        since: Option<&str>,
+        exclude_agent_ids: &[AgentId],
+        group: UsageTrendGroup,
+    ) -> Result<Vec<UsageTrendPoint>> {
         let q = usage_query_from_parts(days, agent, model, since, exclude_agent_ids);
         let days = q.days.max(1) as i64;
         let grain = TrendGrain::from_days(days);
+        let (series_col, group_sql) = match group {
+            UsageTrendGroup::Agent => ("agent_id", " GROUP BY ts, agent_id"),
+            UsageTrendGroup::Model => ("model", " GROUP BY ts, model"),
+        };
         self.db.with_conn(|conn| {
-            let mut sql = String::from(
+            let mut sql = format!(
                 r#"
-                    SELECT ts, agent_id,
-                           SUM(input_tokens + cache_read_tokens + cache_write_tokens + output_tokens) AS tokens
+                    SELECT ts, {series_col},
+                           SUM(input_tokens + cache_read_tokens + cache_write_tokens + output_tokens) AS tokens,
+                           SUM(COALESCE(cost_usd, 0)) AS cost
                     FROM usage_records
                 "#,
             );
@@ -286,7 +334,7 @@ impl UsageRepo {
             append_usage_filter(&mut sql, &mut args, &q, true);
             // Local hour/day buckets need real timestamp parsing, which is
             // done below in Rust; SQL only pre-aggregates per raw ts value.
-            sql.push_str(" GROUP BY ts, agent_id");
+            sql.push_str(group_sql);
 
             let mut stmt = conn.prepare(&sql)?;
             let params_ref: Vec<&dyn rusqlite::types::ToSql> =
@@ -296,16 +344,28 @@ impl UsageRepo {
                 std::collections::BTreeMap::new();
             while let Some(row) = rows.next()? {
                 let ts: String = row.get(0)?;
-                let agent_s: String = row.get(1)?;
+                let series: String = row.get(1)?;
                 let tokens: i64 = row.get(2)?;
+                let cost: f64 = row.get(3)?;
                 let Some(bucket) = local_trend_bucket(&ts, grain) else {
                     continue;
                 };
                 let point = map
                     .entry(bucket.clone())
                     .or_insert_with(|| UsageTrendPoint::new(bucket));
-                if let Some(aid) = AgentId::parse(&agent_s) {
-                    point.add_tokens(aid, tokens);
+                match group {
+                    UsageTrendGroup::Agent => {
+                        if let Some(aid) = AgentId::parse(&series) {
+                            point.add_tokens(aid, tokens);
+                        }
+                    }
+                    UsageTrendGroup::Model => {
+                        if series.is_empty() {
+                            continue;
+                        }
+                        point.add_named_tokens(&series, tokens);
+                        point.add_named_cost(&series, cost);
+                    }
                 }
             }
             if !map.is_empty() {

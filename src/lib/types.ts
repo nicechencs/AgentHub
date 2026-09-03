@@ -320,8 +320,8 @@ export interface UsageRecord {
 export interface UsageTrendPoint {
   /** Local `YYYY-MM-DD`, or `YYYY-MM-DD HH:00` when the window is `days <= 1`. */
   date: string;
-  /** 各 agent 的 input + cache + output token 数 */
-  [agentId: string]: number | string;
+  /** Series values: agent ids or model names (tokens), plus `__cost__:{series}` on model grouping. */
+  [seriesKey: string]: number | string;
 }
 
 export interface ParserHealth {

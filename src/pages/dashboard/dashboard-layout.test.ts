@@ -50,24 +50,37 @@ describe('dashboard layout wiring', () => {
   });
 
   it('plots overlay usage series in agent brand hex, not a stacked CSS-var area', () => {
+    const chart = source('UsageTrendChart.tsx');
+    expect(chart).toContain('resolveChartColor');
+    expect(chart).toContain('type="monotone"');
+    expect(chart).toContain('isAnimationActive={false}');
+    expect(chart).not.toContain('stackId');
+    expect(chart).not.toContain('type="linear"');
+    expect(chart).not.toContain('stroke={meta.color}');
+    expect(chart).not.toContain('stopColor={meta.color}');
+  });
+
+  it('switches the middle trend between Agent areas and model lines with cost', () => {
     const page = source('index.tsx');
-    expect(page).toContain('resolveChartColor');
-    expect(page).toContain('type="monotone"');
-    expect(page).toContain('isAnimationActive={false}');
-    expect(page).not.toContain('stackId');
-    expect(page).not.toContain('type="linear"');
-    expect(page).not.toContain('stroke={meta.color}');
-    expect(page).not.toContain('stopColor={meta.color}');
+    const chart = source('UsageTrendChart.tsx');
+    expect(page).toContain('UsageTrendChart');
+    expect(page).toContain("usageTrend(days, agentId, model, since, excludeAgentIds, 'model')");
+    expect(chart).toContain('SegmentedControl');
+    expect(chart).toContain('dashboard.page.trendGroupModel');
+    expect(chart).not.toContain('dashboard.page.trendMetricCost');
+    expect(chart).toContain('<LineChart');
+    expect(chart).toContain('fmtTrendCost');
+    expect(chart).toContain('costFromTrendPoint');
   });
 
   it('keeps trend y-axis labels in view and sorts the hover list by tokens', () => {
-    const page = source('index.tsx');
+    const chart = source('UsageTrendChart.tsx');
     const tooltip = source('UsageTrendTooltip.tsx');
-    expect(page).toContain('USAGE_TREND_Y_AXIS_WIDTH');
-    expect(page).toContain('UsageTrendTooltipCard');
-    expect(page).toContain('useUsageTrendHover');
-    expect(page).not.toContain('width={48}');
-    expect(page).not.toContain('contentStyle={tooltipSurfaceStyle()}');
+    expect(chart).toContain('USAGE_TREND_Y_AXIS_WIDTH');
+    expect(chart).toContain('UsageTrendTooltipCard');
+    expect(chart).toContain('useUsageTrendHover');
+    expect(chart).not.toContain('width={48}');
+    expect(chart).not.toContain('contentStyle={tooltipSurfaceStyle()}');
     expect(tooltip).toContain('USAGE_TREND_Y_AXIS_WIDTH = 64');
     expect(tooltip).toContain('tooltipSurfaceStyle()');
     expect(tooltip).toContain("pointerEvents: 'auto'");

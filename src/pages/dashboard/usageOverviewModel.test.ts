@@ -281,11 +281,13 @@ describe('remembered usage filters', () => {
       dateRange: 'today',
       agentFilter: 'claude',
       modelFilter: 'opus',
+      trendGroup: 'model',
     });
     expect(rememberedUsageFilters()).toEqual({
       dateRange: 'today',
       agentFilter: 'claude',
       modelFilter: 'opus',
+      trendGroup: 'model',
     });
   });
 

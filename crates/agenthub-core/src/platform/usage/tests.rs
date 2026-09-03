@@ -1138,6 +1138,53 @@ fn usage_trend_includes_cache_tokens() {
 }
 
 #[test]
+fn usage_trend_by_model_includes_tokens_and_cost() {
+    let root = tempfile::tempdir().unwrap();
+    let db = Database::open(&root.path().join("usage.db")).unwrap();
+    let repo = UsageRepo::new(db);
+    let older = recent_ts(20);
+    let newer = recent_ts(1);
+    repo.insert_batch(&[
+        overview_row(AgentId::Claude, "opus", 100, 10, 0, 1.0, &newer, "opus"),
+        overview_row(AgentId::Claude, "sonnet", 50, 5, 0, 0.5, &newer, "sonnet"),
+        overview_row(AgentId::Kimi, "opus", 20, 2, 0, 0.2, &older, "old-opus"),
+    ])
+    .unwrap();
+
+    fn sum_i64(points: &[crate::models::UsageTrendPoint], key: &str) -> i64 {
+        points
+            .iter()
+            .map(|p| p.0.get(key).and_then(|v| v.as_i64()).unwrap_or(0))
+            .sum()
+    }
+    fn sum_f64(points: &[crate::models::UsageTrendPoint], key: &str) -> f64 {
+        points
+            .iter()
+            .map(|p| p.0.get(key).and_then(|v| v.as_f64()).unwrap_or(0.0))
+            .sum()
+    }
+
+    let all = repo.trend_by_model(2, None, None, None, &[]).unwrap();
+    assert_eq!(sum_i64(&all, "opus"), 132);
+    assert_eq!(sum_i64(&all, "sonnet"), 55);
+    assert_eq!(sum_i64(&all, "claude"), 0, "model grouping must not use agent ids");
+    assert!((sum_f64(&all, "__cost__:opus") - 1.2).abs() < 1e-9);
+    assert!((sum_f64(&all, "__cost__:sonnet") - 0.5).abs() < 1e-9);
+
+    let claude_only = repo
+        .trend_by_model(2, Some(AgentId::Claude), None, None, &[])
+        .unwrap();
+    assert_eq!(sum_i64(&claude_only, "opus"), 110);
+    assert_eq!(sum_i64(&claude_only, "sonnet"), 55);
+
+    let opus_only = repo
+        .trend_by_model(2, None, Some("opus"), None, &[])
+        .unwrap();
+    assert_eq!(sum_i64(&opus_only, "opus"), 132);
+    assert_eq!(sum_i64(&opus_only, "sonnet"), 0);
+}
+
+#[test]
 fn since_filter_matches_offset_and_z_as_same_instant() {
     let root = tempfile::tempdir().unwrap();
     let db = Database::open(&root.path().join("usage.db")).unwrap();

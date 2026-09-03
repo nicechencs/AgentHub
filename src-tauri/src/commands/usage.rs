@@ -70,6 +70,7 @@ pub async fn usage_trend(
     model: Option<String>,
     since: Option<String>,
     exclude_agent_ids: Option<Vec<String>>,
+    group_by: Option<String>,
 ) -> Result<Vec<Value>, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
@@ -77,16 +78,25 @@ pub async fn usage_trend(
         let model = model.filter(|m| !m.is_empty() && m != "all");
         let since = since.filter(|s| !s.is_empty());
         let exclude = parse_exclude_agent_ids(exclude_agent_ids);
-        let points = hub
-            .usage()
-            .trend(
+        let by_model = group_by.as_deref() == Some("model");
+        let points = if by_model {
+            hub.usage().trend_by_model(
                 days.max(1),
                 agent,
                 model.as_deref(),
                 since.as_deref(),
                 &exclude,
             )
-            .map_err(|e| map_err_string("usage_trend", e))?;
+        } else {
+            hub.usage().trend(
+                days.max(1),
+                agent,
+                model.as_deref(),
+                since.as_deref(),
+                &exclude,
+            )
+        }
+        .map_err(|e| map_err_string("usage_trend", e))?;
         Ok(points.into_iter().map(|p| Value::Object(p.0)).collect())
     })
     .await
