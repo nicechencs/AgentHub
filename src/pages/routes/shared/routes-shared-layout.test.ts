@@ -61,7 +61,8 @@ describe('routes layout wiring', () => {
     const connections = source('pages/connections/TicketWalletList.tsx');
     expect(connections).not.toContain('DetailsToggle');
     expect(connections).toContain('onShowDetail');
-    expect(connections).toContain('onOpen=');
+    expect(connections).toContain('data-ticket-name');
+    expect(connections).not.toContain('onOpen={onShowDetail');
     expect(connections).not.toContain("t('connections.list.details')");
     const importDialog = source('pages/routes/shared/ImportRouteDialog.tsx');
     expect(importDialog).toContain('DetailsToggle');

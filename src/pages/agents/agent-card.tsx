@@ -12,12 +12,16 @@ import {
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { EnvRemediationPanel } from '@/components/shared/EnvRemediationPanel';
 import { InlineTerminal } from '@/components/shared/InlineTerminal';
-import { LIST_ROW_PAD, ListRow, ListRowBody } from '@/components/shared/ListRow';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import {
+  TableCell,
+  TableEmptyCell,
+  TableRow,
+} from '@/components/ui/table';
 import { Tip } from '@/components/ui/tooltip';
+import { SORTABLE_ID_ATTR } from '@/components/shared/use-sortable-drag';
 import { AGENT_MAP, type InstallChannelMeta } from '@/config/agents';
 import { setAgentHidden } from '@/lib/api/agent';
 import { launchAgentProgram } from '@/lib/api/install';
@@ -46,6 +50,7 @@ import { AgentCardDialogs } from './AgentCardDialogs';
 import { AgentInstallButton } from './AgentInstallButton';
 import { localizeInstallCopy } from './install-labels';
 import { useAgentCardLifecycle } from './use-agent-card-lifecycle';
+import { AGENT_TABLE_COLUMN_SPECS } from './agent-table';
 
 export function AgentCard({
   agent,
@@ -54,6 +59,8 @@ export function AgentCard({
   onEnvChanged,
   onRecheckUpdate,
   sortHandle,
+  sortId,
+  sortClassName,
   selected = false,
   onSelect,
 }: {
@@ -64,8 +71,10 @@ export function AgentCard({
   /** After upgrade, parent may force-refresh update probe for this agent. */
   onRecheckUpdate?: () => void;
   sortHandle?: React.ReactNode;
+  sortId?: string;
+  sortClassName?: string;
   selected?: boolean;
-  /** Installed agents only — opens the right-hand inspect pane. */
+  /** Opens the right-hand inspect pane from the Agent name. */
   onSelect?: () => void;
 }) {
   const { t } = useI18n();
@@ -147,9 +156,11 @@ export function AgentCard({
 
   if (!meta) {
     return (
-      <Card className={`${LIST_ROW_PAD} text-sm text-muted`}>
-        {t('agents.card.unknown', { id: agent.agentId })}
-      </Card>
+      <TableRow>
+        <TableCell colSpan={AGENT_TABLE_COLUMN_SPECS.length} className="text-sm text-muted">
+          {t('agents.card.unknown', { id: agent.agentId })}
+        </TableCell>
+      </TableRow>
     );
   }
 
@@ -158,9 +169,11 @@ export function AgentCard({
 
   if (!selectedChannel) {
     return (
-      <Card className={`${LIST_ROW_PAD} text-sm text-muted`}>
-        {t('agents.card.channelLoading', { name: meta.name })}
-      </Card>
+      <TableRow>
+        <TableCell colSpan={AGENT_TABLE_COLUMN_SPECS.length} className="text-sm text-muted">
+          {t('agents.card.channelLoading', { name: meta.name })}
+        </TableCell>
+      </TableRow>
     );
   }
 
@@ -309,62 +322,87 @@ export function AgentCard({
     toast({ title: t('agents.env.commandCopied') });
   };
 
+  const extraColSpan = AGENT_TABLE_COLUMN_SPECS.length;
+
   return (
-    <ListRow
+    <>
+    <TableRow
+      data-agent-row={agent.agentId}
       active={selected}
-      indicatorColor={meta.color}
       className={cn(
-        LIST_ROW_PAD,
-        cardState === 'env_missing' && !hidden && 'border-warning/35',
+        sortClassName,
+        cardState === 'env_missing' && !hidden && 'bg-warning/5',
         hidden && 'opacity-60 grayscale',
       )}
-      onOpen={onSelect}
+      {...(sortId ? { [SORTABLE_ID_ATTR]: sortId } : {})}
     >
-      <ListRowBody
-        leading={sortHandle}
-        main={(
-          <>
-            <AgentLogo agentId={agent.agentId} size="sm" />
+      <TableCell data-col="agent" className="min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
+          {sortHandle}
+          <AgentLogo agentId={agent.agentId} size="sm" />
+          {onSelect ? (
+            <Tip className="min-w-0" label={meta.name}>
+              <button
+                type="button"
+                data-agent-name={agent.agentId}
+                className="max-w-full truncate text-left text-body font-medium text-primary hover:underline"
+                onClick={onSelect}
+              >
+                {meta.name}
+              </button>
+            </Tip>
+          ) : (
             <Tip className="truncate text-body font-medium" label={meta.name}>
               {meta.name}
             </Tip>
-            {hidden && <Badge>{t('agents.card.hidden')}</Badge>}
-            {agent.installed ? (
-              versions.map((version) => (
-                <span key={version} className="text-meta text-secondary">
-                  {version}
-                </span>
-              ))
-            ) : (
-              <span className="text-meta text-muted">{t('agents.card.notInstalled')}</span>
-            )}
-            {detailsHint ? (
-              <span
-                className={
-                  isLeftoverDetailsHint(detailsHint)
-                    ? 'text-meta text-warning'
-                    : 'text-meta text-muted'
-                }
-              >
-                {t(detailsHint.key, detailsHint.params)}
-              </span>
-            ) : null}
-          </>
-        )}
-        actions={hidden ? (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={hiding}
-            aria-label={t('agents.card.unhide')}
-            title={t('agents.card.unhideTitle')}
-            onClick={() => void toggleHidden()}
-          >
-            <Eye className="h-3.5 w-3.5" />
-            {t('agents.card.unhide')}
-          </Button>
+          )}
+        </div>
+      </TableCell>
+      <TableCell data-col="status" className="whitespace-nowrap">
+        {hidden ? (
+          <Badge>{t('agents.card.hidden')}</Badge>
         ) : agent.installed ? (
-          <>
+          <span className="text-meta text-secondary">{t('agents.table.installed')}</span>
+        ) : (
+          <span className="text-meta text-muted">{t('agents.card.notInstalled')}</span>
+        )}
+      </TableCell>
+      <TableCell data-col="version" className="min-w-0 overflow-hidden">
+        {agent.installed && versions.length > 0 ? (
+          <Tip
+            className="block min-w-0 truncate text-meta text-secondary"
+            label={versions.join(' · ')}
+          >
+            {versions.join(' · ')}
+          </Tip>
+        ) : (
+          <TableEmptyCell />
+        )}
+      </TableCell>
+      <TableCell data-col="note" className="min-w-0 overflow-hidden">
+        {detailsHint ? (
+          <Tip
+            className={
+              isLeftoverDetailsHint(detailsHint)
+                ? 'block min-w-0 truncate text-meta text-warning'
+                : 'block min-w-0 truncate text-meta text-muted'
+            }
+            label={t(detailsHint.key, detailsHint.params)}
+          >
+            {t(detailsHint.key, detailsHint.params)}
+          </Tip>
+        ) : (
+          <TableEmptyCell />
+        )}
+      </TableCell>
+      <TableCell
+        data-col="start"
+        className="whitespace-nowrap text-right"
+        onClick={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        {!hidden && agent.installed && (launch.cliPath || launch.appPath) ? (
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {launch.cliPath ? (
               <Button
                 size="sm"
@@ -387,129 +425,153 @@ export function AgentCard({
                 {t('agents.card.startApp')}
               </Button>
             ) : null}
-            {installAlongside ? (
-              <AgentInstallButton
-                status={task?.status}
-                busy={busy}
-                channelId={selectedChannel.id}
-                onClick={() =>
-                  installFailed
-                    ? retryAction()
-                    : installGuided
-                      ? redetectAfterGuide()
-                      : openConfirm('install')
-                }
-              />
-            ) : null}
-            {upgradeControl.show ? (
-                <Button
-                  size="icon"
-                  variant={upgradeControl.muted ? 'outline' : 'secondary'}
-                  className={upgradeControl.muted ? 'text-muted' : undefined}
-                  disabled={busy || checkingUpdate || upgradeControl.kind === 'hint_only'}
-                  title={upgradeTooltip}
-                  aria-label={
-                    upgradeControl.kind === 'open_setup'
-                      ? t('agents.card.openOfficialUpdate')
-                      : upgradeControl.muted
-                        ? t('agents.card.unsupportedUpdate')
-                        : upgradable
-                          ? t('agents.card.update')
-                          : t('agents.card.forceUpgrade')
-                  }
-                  onClick={
-                    upgradeControl.kind === 'open_setup'
-                      ? openOfficialSetup
-                      : upgradeControl.kind === 'in_app'
-                        ? onUpgradeClick
-                        : undefined
-                  }
-                >
-                  <ArrowUpCircle
-                    className={cn(
-                      'h-3.5 w-3.5',
-                      !upgradeControl.muted && upgradable && 'text-success',
-                      upgradeControl.muted && 'text-muted',
-                      checkingUpdate && 'animate-pulse opacity-70',
-                    )}
-                  />
-                </Button>
-            ) : null}
-            <Button
-              size="icon"
-              variant="outline"
-              disabled={actionsBusy}
-              aria-label={t('agents.card.hide')}
-              title={t('agents.card.hideTitle')}
-              onClick={() => void toggleHidden()}
-            >
-              <EyeOff className="h-3.5 w-3.5" />
-            </Button>
-          </>
-        ) : cardState === 'env_missing' ? (
-          <>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={canOneClickEnv ? () => openConfirm('oneclick') : startOneClickEnvOnly}
-              disabled={busy}
-              title={
-                canOneClickEnv
-                  ? t('agents.card.fixThenInstall')
-                  : t('agents.card.envOnlyThenInstall')
-              }
-            >
-              <Zap className="h-3.5 w-3.5" />
-              {canOneClickEnv ? t('agents.card.fixAndInstall') : t('agents.card.fixEnv')}
-            </Button>
-            <Button
-              size="icon"
-              variant="outline"
-              disabled={actionsBusy}
-              aria-label={t('agents.card.hide')}
-              title={t('agents.card.hideTitle')}
-              onClick={() => void toggleHidden()}
-            >
-              <EyeOff className="h-3.5 w-3.5" />
-            </Button>
-          </>
+          </div>
         ) : (
-          <>
+          <TableEmptyCell />
+        )}
+      </TableCell>
+      <TableCell
+        data-col="upgrade"
+        className="whitespace-nowrap text-right"
+        onClick={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        {!hidden && upgradeControl.show ? (
+          <Button
+            size="icon"
+            variant={upgradeControl.muted ? 'outline' : 'secondary'}
+            className={upgradeControl.muted ? 'text-muted' : undefined}
+            disabled={busy || checkingUpdate || upgradeControl.kind === 'hint_only'}
+            title={upgradeTooltip}
+            aria-label={
+              upgradeControl.kind === 'open_setup'
+                ? t('agents.card.openOfficialUpdate')
+                : upgradeControl.muted
+                  ? t('agents.card.unsupportedUpdate')
+                  : upgradable
+                    ? t('agents.card.update')
+                    : t('agents.card.forceUpgrade')
+            }
+            onClick={
+              upgradeControl.kind === 'open_setup'
+                ? openOfficialSetup
+                : upgradeControl.kind === 'in_app'
+                  ? onUpgradeClick
+                  : undefined
+            }
+          >
+            <ArrowUpCircle
+              className={cn(
+                'h-3.5 w-3.5',
+                !upgradeControl.muted && upgradable && 'text-success',
+                upgradeControl.muted && 'text-muted',
+                checkingUpdate && 'animate-pulse opacity-70',
+              )}
+            />
+          </Button>
+        ) : (
+          <TableEmptyCell />
+        )}
+      </TableCell>
+      <TableCell
+        data-col="hide"
+        className="whitespace-nowrap text-right"
+        onClick={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        {hidden ? (
+          <Button
+            size="icon"
+            variant="outline"
+            disabled={hiding}
+            aria-label={t('agents.card.unhide')}
+            title={t('agents.card.unhideTitle')}
+            onClick={() => void toggleHidden()}
+          >
+            <Eye className="h-3.5 w-3.5" />
+          </Button>
+        ) : (
+          <Button
+            size="icon"
+            variant="outline"
+            disabled={actionsBusy}
+            aria-label={t('agents.card.hide')}
+            title={t('agents.card.hideTitle')}
+            onClick={() => void toggleHidden()}
+          >
+            <EyeOff className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </TableCell>
+      <TableCell
+        data-col="actions"
+        className="whitespace-nowrap text-right"
+        onClick={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        {hidden ? (
+          <TableEmptyCell />
+        ) : agent.installed ? (
+          installAlongside ? (
             <AgentInstallButton
               status={task?.status}
               busy={busy}
               channelId={selectedChannel.id}
-              linuxUnsupported={linuxUnsupported}
-              onClick={() => {
-                if (linuxUnsupported) {
-                  toast({
-                    title: t('agents.card.linuxUnsupported'),
-                    description: t('agents.card.linuxUnsupportedHint'),
-                    variant: 'danger',
-                  });
-                  return;
-                }
-                if (installFailed) retryAction();
-                else if (installGuided) redetectAfterGuide();
-                else openConfirm('install');
-              }}
+              iconOnly
+              onClick={() =>
+                installFailed
+                  ? retryAction()
+                  : installGuided
+                    ? redetectAfterGuide()
+                    : openConfirm('install')
+              }
             />
-            <Button
-              size="icon"
-              variant="outline"
-              disabled={actionsBusy}
-              aria-label={t('agents.card.hide')}
-              title={t('agents.card.hideTitle')}
-              onClick={() => void toggleHidden()}
-            >
-              <EyeOff className="h-3.5 w-3.5" />
-            </Button>
-          </>
+          ) : (
+            <TableEmptyCell />
+          )
+        ) : cardState === 'env_missing' ? (
+          <Button
+            size="icon"
+            variant="secondary"
+            onClick={canOneClickEnv ? () => openConfirm('oneclick') : startOneClickEnvOnly}
+            disabled={busy}
+            aria-label={canOneClickEnv ? t('agents.card.fixAndInstall') : t('agents.card.fixEnv')}
+            title={
+              canOneClickEnv
+                ? t('agents.card.fixThenInstall')
+                : t('agents.card.envOnlyThenInstall')
+            }
+          >
+            <Zap className="h-3.5 w-3.5" />
+          </Button>
+        ) : (
+          <AgentInstallButton
+            status={task?.status}
+            busy={busy}
+            channelId={selectedChannel.id}
+            linuxUnsupported={linuxUnsupported}
+            iconOnly
+            onClick={() => {
+              if (linuxUnsupported) {
+                toast({
+                  title: t('agents.card.linuxUnsupported'),
+                  description: t('agents.card.linuxUnsupportedHint'),
+                  variant: 'danger',
+                });
+                return;
+              }
+              if (installFailed) retryAction();
+              else if (installGuided) redetectAfterGuide();
+              else openConfirm('install');
+            }}
+          />
         )}
-      />
+      </TableCell>
+    </TableRow>
 
-      {showEnvPanel && cardState === 'env_missing' && (
-        <div className="mt-3">
+      {showEnvPanel && cardState === 'env_missing' ? (
+        <TableRow>
+        <TableCell colSpan={extraColSpan} className="px-3 py-2">
           <EnvRemediationPanel
             key={`card-env-${agent.agentId}-${envAutoStart}`}
             compact
@@ -524,11 +586,13 @@ export function AgentCard({
               onEnvChanged();
             }}
           />
-        </div>
-      )}
+        </TableCell>
+        </TableRow>
+      ) : null}
 
-      {task && (
-        <div className="mt-3">
+      {task ? (
+        <TableRow>
+        <TableCell colSpan={extraColSpan} className="px-3 py-2">
           <div className="mb-1 flex items-center justify-between">
             <span className="text-xs text-muted">
               {t(agentTaskLogTitleKey(task.action, task.status))}
@@ -562,8 +626,9 @@ export function AgentCard({
             status={task.status}
             elapsedSec={task.status === 'running' ? elapsedSec : undefined}
           />
-        </div>
-      )}
+        </TableCell>
+        </TableRow>
+      ) : null}
 
       <AgentCardDialogs
         agentName={meta.name}
@@ -580,6 +645,6 @@ export function AgentCard({
         onConfirmOneClick={startOneClickFull}
         specialInstall={isSpecialInstallChannel(agent.channel)}
       />
-    </ListRow>
+    </>
   );
 }
