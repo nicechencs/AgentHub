@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentSession } from '@/lib/types';
-import { cursorSubagentParentId, nestSessions } from './session-nest';
+import { cursorSubagentParentId, flattenVisibleSessions, nestSessions } from './session-nest';
 
 function session(
   partial: Partial<AgentSession> & Pick<AgentSession, 'id' | 'relativePath'>,
@@ -54,6 +54,23 @@ describe('session-nest', () => {
     expect(nested.map((n) => n.session.id)).toEqual(['parent', 'other']);
     expect(nested[0]?.children.map((c) => c.id)).toEqual(['child']);
     expect(nested[1]?.children).toEqual([]);
+  });
+
+  it('hides nested children until the parent is open', () => {
+    const parent = session({
+      id: 'parent',
+      relativePath: parentRel,
+      sessionId: '0e435bc1-cf05-4a9a-b036-8902f810bd86',
+    });
+    const child = session({
+      id: 'child',
+      relativePath: childRel,
+      sessionId: 'deadbeef-0000-0000-0000-000000000001',
+    });
+    expect(flattenVisibleSessions([parent, child], new Set()).map((s) => s.id)).toEqual(['parent']);
+    expect(
+      flattenVisibleSessions([parent, child], new Set(['parent'])).map((s) => s.id),
+    ).toEqual(['parent', 'child']);
   });
 
   it('keeps a subagent as a root when the parent is missing', () => {

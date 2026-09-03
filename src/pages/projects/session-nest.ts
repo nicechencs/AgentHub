@@ -59,3 +59,18 @@ export function nestSessions(sessions: AgentSession[]): NestedSession[] {
   }
   return out;
 }
+
+/** Rows shown in the tree: parents always, children only when that parent is open. */
+export function flattenVisibleSessions(
+  sessions: AgentSession[],
+  nestedOpen: Set<string>,
+): AgentSession[] {
+  const out: AgentSession[] = [];
+  for (const { session, children } of nestSessions(sessions)) {
+    out.push(session);
+    if (children.length > 0 && nestedOpen.has(session.id)) {
+      out.push(...children);
+    }
+  }
+  return out;
+}
