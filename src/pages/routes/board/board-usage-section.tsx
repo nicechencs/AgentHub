@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Area,
@@ -97,12 +97,14 @@ export function BoardUsageSection({
   pools = [],
   refreshKey = 0,
   surface,
+  headerActions,
 }: {
   profiles: readonly AdapterProfile[];
   hiddenTargetIds: ReadonlySet<string>;
   pools?: readonly DefaultRoutePoolOverview[];
   refreshKey?: number;
   surface: string;
+  headerActions?: ReactNode;
 }) {
   const { t } = useI18n();
   const { theme } = useTheme();
@@ -262,7 +264,7 @@ export function BoardUsageSection({
         : t('routes.board.distByEntry');
 
   return (
-    <PageSection title={t('routes.board.usageSection')}>
+    <PageSection title={t('routes.board.usageSection')} actions={headerActions}>
       <div className={pageRhythm.chromeRow}>
         <Select value={entryId} onValueChange={setEntryId}>
           <SelectTrigger className="w-40" aria-label={t('routes.board.entryFilterAria')}>
