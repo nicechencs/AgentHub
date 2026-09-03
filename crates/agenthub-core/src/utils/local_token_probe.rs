@@ -90,7 +90,8 @@ pub fn probe_local_token(
             Some("not a local endpoint".into()),
         );
     };
-    let Some(surface) = conversation_path(path).or_else(|| conversation_path_from_endpoint(endpoint))
+    let Some(surface) =
+        conversation_path(path).or_else(|| conversation_path_from_endpoint(endpoint))
     else {
         return LocalTokenProbeResult::new(
             LocalTokenProbeOutcome::Invalid,
@@ -362,9 +363,10 @@ fn conversation_path(path: &str) -> Option<&'static str> {
     match raw.trim().trim_end_matches('/') {
         "/v1/messages" | "v1/messages" | "/messages" | "messages" => Some("/v1/messages"),
         "/v1/responses" | "v1/responses" | "/responses" | "responses" => Some("/v1/responses"),
-        "/v1/chat/completions" | "v1/chat/completions" | "/chat/completions" | "chat/completions" => {
-            Some("/v1/chat/completions")
-        }
+        "/v1/chat/completions"
+        | "v1/chat/completions"
+        | "/chat/completions"
+        | "chat/completions" => Some("/v1/chat/completions"),
         _ => None,
     }
 }

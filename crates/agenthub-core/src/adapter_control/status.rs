@@ -85,7 +85,6 @@ impl AdapterBridgeStatus {
             local_token: None,
         }
     }
-
 }
 
 /// Shared local-gateway (relay) status for the board switch.

@@ -152,6 +152,7 @@ pub fn run() {
             commands::install::install_agent,
             commands::install::upgrade_agent,
             commands::install::check_agent_updates,
+            commands::install::check_runtime_updates,
             commands::install::uninstall_agent,
             commands::install::open_agent_config_dir,
             commands::install::get_agent_live_paths,

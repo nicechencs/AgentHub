@@ -839,9 +839,7 @@ pub(crate) fn zcode_kind_for_url(url: Option<&str>) -> &'static str {
         return "anthropic";
     };
     let lower = url.to_ascii_lowercase();
-    if lower.contains("anthropic")
-        || lower.contains("/v1/messages")
-        || lower.ends_with("/messages")
+    if lower.contains("anthropic") || lower.contains("/v1/messages") || lower.ends_with("/messages")
     {
         return "anthropic";
     }

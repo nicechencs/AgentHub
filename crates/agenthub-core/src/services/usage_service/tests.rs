@@ -217,7 +217,9 @@ fn collect_ingests_gateway_spool_rows_into_the_separate_table() {
     );
 
     // Overview aggregates the ingested window.
-    let overview = service.gateway_usage_overview(GatewayUsageQuery::default()).unwrap();
+    let overview = service
+        .gateway_usage_overview(GatewayUsageQuery::default())
+        .unwrap();
     assert_eq!(overview.request_count, 2);
     assert_eq!(overview.ok_count, 2);
     assert_eq!(overview.input_tokens, 16);
@@ -256,7 +258,10 @@ fn gateway_usage_query_ingests_spool_without_a_prior_collect() {
     let spool = tempfile::tempdir().unwrap();
     std::fs::write(
         spool.path().join("gateway-20260830.jsonl"),
-        format!("{}\n", serde_json::to_string(&spool_event("req-board", 4)).unwrap()),
+        format!(
+            "{}\n",
+            serde_json::to_string(&spool_event("req-board", 4)).unwrap()
+        ),
     )
     .unwrap();
 

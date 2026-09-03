@@ -961,7 +961,9 @@ fn resolve_start_members(
     material: &AdapterBridgeRuntimeMaterial,
     lead_reload: Option<UpstreamAuthReload>,
 ) -> Vec<BridgeMemberSpec> {
-    if let Some(members) = resolve_unified_gateway_pool_members(hub, profile, material, lead_reload.clone()) {
+    if let Some(members) =
+        resolve_unified_gateway_pool_members(hub, profile, material, lead_reload.clone())
+    {
         return members;
     }
     resolve_pool_members(hub, profile, material, lead_reload)

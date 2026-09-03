@@ -150,6 +150,16 @@ describe('production runtime install channel forwarding', () => {
       channel: 'winget',
     });
   });
+
+  it('forwards runtime update checks through the dedicated desktop command', async () => {
+    invokeMock.mockResolvedValueOnce([]);
+    const backend = createTauriBackend();
+    await backend.env.checkRuntimeUpdates(['nodejs'], true);
+    expect(invokeMock).toHaveBeenCalledWith('check_runtime_updates', {
+      runtimeIds: ['nodejs'],
+      force: true,
+    });
+  });
 });
 
 describe('production Dashboard alerts', () => {

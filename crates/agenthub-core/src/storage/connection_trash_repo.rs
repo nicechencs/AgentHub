@@ -123,7 +123,9 @@ fn list_conn(
     };
     let mut stmt = conn.prepare(sql)?;
     let rows = match (agent, home) {
-        (Some(agent), Some(home)) => stmt.query_map(params![agent.as_str(), home], map_trash_row)?,
+        (Some(agent), Some(home)) => {
+            stmt.query_map(params![agent.as_str(), home], map_trash_row)?
+        }
         (Some(agent), None) => stmt.query_map(params![agent.as_str()], map_trash_row)?,
         (None, Some(home)) => stmt.query_map(params![home], map_trash_row)?,
         (None, None) => stmt.query_map([], map_trash_row)?,

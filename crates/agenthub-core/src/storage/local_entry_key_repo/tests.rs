@@ -38,8 +38,7 @@ fn inserts_lists_updates_and_deletes_named_keys() {
     let (_dir, repo) = tmp();
     repo.insert(&row("k1", "pool-a", "工作电脑", "ahb_one"))
         .unwrap();
-    repo.insert(&row("k2", "pool-a", "默认名", ""))
-        .unwrap();
+    repo.insert(&row("k2", "pool-a", "默认名", "")).unwrap();
     let listed = repo.list().unwrap();
     assert_eq!(listed.len(), 2);
     assert_eq!(listed[0].name, "工作电脑");

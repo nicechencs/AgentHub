@@ -36,13 +36,14 @@ use crate::bridge::{
 };
 use crate::error::{AppError, Result};
 use crate::models::{
-    list_local_bridge_models, ticket_id, AdapterCredentialClass, AdapterProfile, AdapterProfileFilter,
-    AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterRouteRequest, AdapterSourceKind,
-    AdapterSourceProduct, AdapterSupport, AdapterTargetProtocol, AdapterUpstreamTransport, AgentId,
-    LocalBridgeEdge, Provider, ProviderInput, RouteDownstreamDialect, RouteDownstreamSurface,
-    RouteMember, RoutePool, RouteSchedulePolicy, ANTHROPIC_CODEX_EDGE, CODEX_CLAUDE_RESPONSES_EDGE,
-    CODEX_DSH_EDGE, CODEX_GROK_EDGE, CODEX_KIMI_EDGE, GROK_CLAUDE_EDGE, GROK_CODEX_EDGE,
-    KIMI_CODEX_EDGE, OPENAI_CLAUDE_EDGE, OPENAI_CODEX_EDGE, OPENAI_GROK_BRIDGE_EDGE,
+    list_local_bridge_models, ticket_id, AdapterCredentialClass, AdapterProfile,
+    AdapterProfileFilter, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
+    AdapterRouteRequest, AdapterSourceKind, AdapterSourceProduct, AdapterSupport,
+    AdapterTargetProtocol, AdapterUpstreamTransport, AgentId, LocalBridgeEdge, Provider,
+    ProviderInput, RouteDownstreamDialect, RouteDownstreamSurface, RouteMember, RoutePool,
+    RouteSchedulePolicy, ANTHROPIC_CODEX_EDGE, CODEX_CLAUDE_RESPONSES_EDGE, CODEX_DSH_EDGE,
+    CODEX_GROK_EDGE, CODEX_KIMI_EDGE, GROK_CLAUDE_EDGE, GROK_CODEX_EDGE, KIMI_CODEX_EDGE,
+    OPENAI_CLAUDE_EDGE, OPENAI_CODEX_EDGE, OPENAI_GROK_BRIDGE_EDGE,
 };
 use crate::services::{AdapterRouteService, AdapterSecretResolver, RoutePoolService};
 use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
@@ -1105,11 +1106,7 @@ impl AdapterBridgeService {
     /// Listener spec for the board switch. Does not bind logins to Agents.
     /// Enabled pool members supply listed models and upstream auth so a token
     /// test can reach a model; missing members stay a placeholder.
-    pub fn pool_listener_spec(
-        &self,
-        pool: &RoutePool,
-        flags: (bool, bool),
-    ) -> BridgeStartSpec {
+    pub fn pool_listener_spec(&self, pool: &RoutePool, flags: (bool, bool)) -> BridgeStartSpec {
         let surface = match pool.downstream_surface {
             RouteDownstreamSurface::Messages => BridgeLocalSurface::Messages,
             RouteDownstreamSurface::ChatCompletions => BridgeLocalSurface::ChatCompletions,
@@ -1165,13 +1162,7 @@ impl AdapterBridgeService {
             .ok()
             .filter(|models| !models.is_empty())
             .unwrap_or_else(|| {
-                listed_models_for_bridge(
-                    product,
-                    pool.target_agent_id,
-                    &model,
-                    custom,
-                    &configured,
-                )
+                listed_models_for_bridge(product, pool.target_agent_id, &model, custom, &configured)
             });
         let mut spec = BridgeStartSpec::new(
             pool.id.clone(),
@@ -1211,8 +1202,12 @@ impl AdapterBridgeService {
                     auth.clone()
                 } else {
                     rule.and_then(|rule| {
-                        self.resolve_member_auth(rule.rule_id, member.source_kind, &member.source_id)
-                            .ok()
+                        self.resolve_member_auth(
+                            rule.rule_id,
+                            member.source_kind,
+                            &member.source_id,
+                        )
+                        .ok()
                     })
                     .filter(|item| item.has_token())
                     .unwrap_or_else(|| ResolvedAuth::bearer(""))
@@ -1296,8 +1291,8 @@ impl AdapterBridgeService {
         let member_rule =
             rule_for_member_product(product, profile.target_agent_id).unwrap_or(*rule);
         let provider = index_provider_key(product);
-        let is_lead = member.source_kind == profile.source_kind
-            && member.source_id == material.source_id;
+        let is_lead =
+            member.source_kind == profile.source_kind && member.source_id == material.source_id;
         if is_lead {
             let custom = crate::services::adapter_route_constants::is_custom_openai_compat_url(
                 &material.upstream_base_url,

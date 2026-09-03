@@ -338,6 +338,8 @@ export const zh = {
       upgrade: "升级",
       repair: "修复",
       upgradeLatest: "升级到最新",
+      updateAvailable: "可更新至 v{version}",
+      manualUpdate: "有新版本，按手动步骤升级",
       statusOk: "就绪",
       statusOutdated: "版本过旧",
       statusBrokenPath: "PATH 异常",

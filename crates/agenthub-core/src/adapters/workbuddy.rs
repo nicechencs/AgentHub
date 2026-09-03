@@ -818,8 +818,8 @@ fn merge_workbuddy_entries(
             .ok_or_else(|| {
                 AppError::InvalidArg("WorkBuddy model entry requires a non-empty id".into())
             })?;
-        let incoming_key = workbuddy_entry_api_key(desired_entry)
-            .filter(|key| *key != REDACTED_MARKER);
+        let incoming_key =
+            workbuddy_entry_api_key(desired_entry).filter(|key| *key != REDACTED_MARKER);
 
         // Same API key already in the list: update that row and keep its id.
         // Re-writing a login after a generic-id uniquify must not append again.
@@ -1700,7 +1700,11 @@ mod tests {
                 serde_json::from_str(&fs::read_to_string(dir.join("models.json")).unwrap())
                     .unwrap();
             let rows = written.as_array().unwrap();
-            assert_eq!(rows.len(), 2, "second generic id must not replace the first key");
+            assert_eq!(
+                rows.len(),
+                2,
+                "second generic id must not replace the first key"
+            );
             assert_eq!(rows[0]["apiKey"], "sk-first");
             assert_eq!(rows[1]["apiKey"], "sk-second");
             assert_ne!(rows[0]["id"], rows[1]["id"]);

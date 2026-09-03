@@ -38,8 +38,8 @@ pub(crate) use crate::platform::skills::parse_skill_frontmatter;
 #[allow(unused_imports)]
 use crate::models::{
     AgentId, Capability, InstalledSkill, SkillAction, SkillFailure, SkillLinkKind, SkillMapStatus,
-    SkillMarkdownPreview, SkillProjectionMode, SkillProjectionResult, SkillProjection, SkillSourceRecord,
-    SkillSyncReport, SkillSyncState,
+    SkillMarkdownPreview, SkillProjection, SkillProjectionMode, SkillProjectionResult,
+    SkillSourceRecord, SkillSyncReport, SkillSyncState,
 };
 #[cfg(test)]
 #[allow(unused_imports)]

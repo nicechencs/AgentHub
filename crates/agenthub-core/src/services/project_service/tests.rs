@@ -382,12 +382,7 @@ fn list_cursor_workspace_folders_no_fake_excerpt() {
     let proj = home.join("projects").join("d-demo-workspace-2026-AgentHub");
     fs::create_dir_all(proj.join("agent-transcripts")).unwrap();
     fs::create_dir_all(home.join("projects").join("empty-window")).unwrap();
-    fs::create_dir_all(
-        home.join("projects")
-            .join("1785382907533")
-            .join("canvases"),
-    )
-    .unwrap();
+    fs::create_dir_all(home.join("projects").join("1785382907533").join("canvases")).unwrap();
 
     let rows = list_projects_for_agent_home(AgentId::Cursor, &home, None).unwrap();
     assert_eq!(
@@ -430,7 +425,9 @@ fn list_cursor_actual_path_falls_back_to_transcript_cwd() {
     let workspace = dir.path().join("real-workspace");
     fs::create_dir_all(&workspace).unwrap();
     let home = dir.path().join(".cursor");
-    let proj = home.join("projects").join("d-no-such-cursor-workspace-zzzz");
+    let proj = home
+        .join("projects")
+        .join("d-no-such-cursor-workspace-zzzz");
     let sid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
     write_jsonl(
         &proj
@@ -507,7 +504,9 @@ fn list_cursor_agent_transcripts_as_sessions() {
         .preview
         .as_deref()
         .is_some_and(|p| p.contains("路由页") || p.contains("第二段")));
-    assert!(!projects.iter().any(|r| r.relative_path.contains("empty-window")));
+    assert!(!projects
+        .iter()
+        .any(|r| r.relative_path.contains("empty-window")));
 
     let sessions = list_sessions_for_agent_home(AgentId::Cursor, &home, None).unwrap();
     assert_eq!(

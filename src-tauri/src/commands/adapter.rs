@@ -275,7 +275,9 @@ pub async fn start_local_gateway(
 
 /// Stop the shared local gateway.
 #[tauri::command]
-pub async fn stop_local_gateway(state: State<'_, AppState>) -> Result<LocalGatewayStatus, GuiError> {
+pub async fn stop_local_gateway(
+    state: State<'_, AppState>,
+) -> Result<LocalGatewayStatus, GuiError> {
     stop_shared_local_gateway(
         state.hub_arc().map_err(adapter_error_from_string)?,
         state.bridge_host(),
@@ -575,10 +577,7 @@ pub async fn set_local_token_name(
 }
 
 #[tauri::command]
-pub async fn delete_local_token(
-    state: State<'_, AppState>,
-    id: String,
-) -> Result<(), GuiError> {
+pub async fn delete_local_token(state: State<'_, AppState>, id: String) -> Result<(), GuiError> {
     crate::adapter_bridge_controller::delete_local_gateway_token(
         state.hub_arc().map_err(adapter_error_from_string)?,
         state.bridge_host(),
@@ -608,12 +607,7 @@ pub async fn attach_pool_owned_authorization(
             "invalid route pool surface, expected: messages|responses|chat_completions".to_string()
         })?;
         hub.route_pools()
-            .attach_pool_owned_authorization(
-                target_agent_id,
-                surface,
-                source_kind,
-                &source_id,
-            )
+            .attach_pool_owned_authorization(target_agent_id, surface, source_kind, &source_id)
             .map_err(|err| map_err_string("attach_pool_owned_authorization", err))
     })
     .await
@@ -731,8 +725,7 @@ pub async fn sync_connection_authorizations(
                 .sync_connection_authorizations_selected(Some(&request.sources)),
             None => hub.route_pools().sync_connection_authorizations(),
         };
-        result
-            .map_err(|err| map_err_string("sync_connection_authorizations", err))
+        result.map_err(|err| map_err_string("sync_connection_authorizations", err))
     })
     .await
     .map_err(adapter_error_from_string)

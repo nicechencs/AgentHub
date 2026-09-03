@@ -8,7 +8,10 @@ use tokio::sync::OwnedSemaphorePermit;
 use super::admission::{admit_conversation, AdmittedRequest};
 use super::dispatch_trace::trace_response;
 use super::gateway::{Gateway, GatewayAuthError, ModelSwitchOutcome};
-use super::http::{error_response, model_unavailable_message, model_unavailable_response, reject_invalid_local_auth, stopping_response, EdgeState};
+use super::http::{
+    error_response, model_unavailable_message, model_unavailable_response,
+    reject_invalid_local_auth, stopping_response, EdgeState,
+};
 use super::pair_policy::{
     identity_relay, pair_adapter_active, pair_adapter_rejected, pair_direction, pair_model_servable,
 };
@@ -58,10 +61,8 @@ pub(super) async fn handle_conversation(
     let listen_port = gateway.cited_port_for_profile(&state.profile_id);
     trace.local_auth_ok(&state.profile_id, listen_port);
     if let Some(response) = surface.reject_if_unserved(&state, &request_id) {
-        let mismatch = super::surface::surface_mismatch_message(
-            surface,
-            state.upstream.local_surface,
-        );
+        let mismatch =
+            super::surface::surface_mismatch_message(surface, state.upstream.local_surface);
         trace.local_path_failed(
             &state.profile_id,
             listen_port,
@@ -93,11 +94,7 @@ pub(super) async fn handle_conversation(
         return trace_response(
             &mut trace,
             &trace_log,
-            pair_adapter_rejected_response(
-                &admitted.state,
-                &admitted.request_id,
-                admitted.started,
-            ),
+            pair_adapter_rejected_response(&admitted.state, &admitted.request_id, admitted.started),
         );
     }
     if let Some(serde_json::Value::String(model)) = admitted.body.get_mut("model") {
@@ -112,7 +109,11 @@ pub(super) async fn handle_conversation(
         .and_then(|value| value.as_str())
         .unwrap_or("")
         .to_owned();
-    trace.set_model(if model.is_empty() { None } else { Some(model.clone()) });
+    trace.set_model(if model.is_empty() {
+        None
+    } else {
+        Some(model.clone())
+    });
     let mut resolver_candidates = None;
     if let Some(index) = &admitted.state.route_index {
         let endpoint = DownstreamSurface::endpoint_key(admitted.state.upstream.local_surface);
@@ -210,11 +211,7 @@ pub(super) async fn handle_conversation(
         return trace_response(
             &mut trace,
             &trace_log,
-            pair_adapter_rejected_response(
-                &admitted.state,
-                &admitted.request_id,
-                admitted.started,
-            ),
+            pair_adapter_rejected_response(&admitted.state, &admitted.request_id, admitted.started),
         );
     }
     if pair_adapter_active(&admitted.state, channel)
@@ -293,9 +290,11 @@ pub(super) async fn handle_conversation(
         match &resolver_candidates {
             // v2: never fall back to pick_new() — that ignores cooldown,
             // auth isolation, and the resolver candidate set.
-            Some(candidates) => admitted
-                .state
-                .pick_v2(candidates, &model, &[], admitted.affinity_key.as_deref()),
+            Some(candidates) => {
+                admitted
+                    .state
+                    .pick_v2(candidates, &model, &[], admitted.affinity_key.as_deref())
+            }
             None => admitted.state.account_picker.pick_new(),
         }
     };
@@ -718,9 +717,9 @@ fn forward_stream(
         }
     }
     match surface {
-        DownstreamSurface::Responses => {
-            stream_response(state, response, request_id, started, permit, member, capture)
-        }
+        DownstreamSurface::Responses => stream_response(
+            state, response, request_id, started, permit, member, capture,
+        ),
         DownstreamSurface::Messages => messages_stream_response(
             state, response, request_id, started, permit, cache_seed, member, capture,
         ),

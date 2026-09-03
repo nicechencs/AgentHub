@@ -103,5 +103,8 @@ fn spool_slot_is_set_once_and_defaults_to_noop() {
     assert!(slot.get().is_some());
 
     // Unset slots never reach a spool: emit is a plain no-op.
-    emit(&UsageSpoolSlot::default(), event("req-none", "2026-08-30T10:00:00+00:00"));
+    emit(
+        &UsageSpoolSlot::default(),
+        event("req-none", "2026-08-30T10:00:00+00:00"),
+    );
 }

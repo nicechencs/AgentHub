@@ -348,6 +348,8 @@ export const en = {
       upgrade: "Upgrade",
       repair: "Repair",
       upgradeLatest: "Upgrade to latest",
+      updateAvailable: "Update available: v{version}",
+      manualUpdate: "Update available; follow the manual steps",
       statusOk: "Ready",
       statusOutdated: "Outdated",
       statusBrokenPath: "PATH issue",

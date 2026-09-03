@@ -56,6 +56,26 @@ export interface RuntimeDetect {
   notes?: string[];
 }
 
+/** 环境软件的远端版本检查结果；网络异常不能当作已是最新。 */
+export type RuntimeUpdateState =
+  | 'update_available'
+  | 'up_to_date'
+  | 'unknown'
+  | 'unsupported'
+  | 'not_installed';
+
+export interface RuntimeUpdateInfo {
+  runtimeId: RuntimeId;
+  state: RuntimeUpdateState;
+  currentVersion?: string;
+  latestVersion?: string;
+  source?: string;
+  checkedAt?: string;
+  note?: string;
+  canAutoUpgrade?: boolean;
+  setupUrl?: string;
+}
+
 /** 某安装渠道的前置环境检查结果 */
 export interface ChannelEnvCheck {
   channelId: string;

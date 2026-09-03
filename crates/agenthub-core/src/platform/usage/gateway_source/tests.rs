@@ -63,7 +63,11 @@ fn ingest_reads_all_files_oldest_first_and_advances_cursors() {
     write_spool(
         spool.path(),
         "20260830",
-        &[spool_line(&event("req-old", "2026-08-30T10:00:00+00:00", 5))],
+        &[spool_line(&event(
+            "req-old",
+            "2026-08-30T10:00:00+00:00",
+            5,
+        ))],
     );
     write_spool(
         spool.path(),
@@ -168,12 +172,20 @@ fn fully_ingested_old_files_are_deleted_and_their_cursors_removed() {
     let old_path = write_spool(
         spool.path(),
         "20260801",
-        &[spool_line(&event("req-old", "2026-08-01T10:00:00+00:00", 5))],
+        &[spool_line(&event(
+            "req-old",
+            "2026-08-01T10:00:00+00:00",
+            5,
+        ))],
     );
     let fresh_path = write_spool(
         spool.path(),
         "20260831",
-        &[spool_line(&event("req-new", "2026-08-31T10:00:00+00:00", 7))],
+        &[spool_line(&event(
+            "req-new",
+            "2026-08-31T10:00:00+00:00",
+            7,
+        ))],
     );
     backdate(&old_path, SPOOL_RETENTION_DAYS + 1);
 

@@ -1871,13 +1871,7 @@ fn list_wallet_merges_duplicate_claude_keys_and_drops_unusable_api_key() {
 #[test]
 fn route_pool_home_authorizations_are_not_connection_tickets() {
     let (_dir, db) = test_db();
-    let mut pool_provider = provider(
-        "pool-codex",
-        AgentId::Codex,
-        "Codex API",
-        "custom",
-        false,
-    );
+    let mut pool_provider = provider("pool-codex", AgentId::Codex, "Codex API", "custom", false);
     pool_provider.meta = serde_json::json!({
         "preset": "custom",
         "home": "route_pool"

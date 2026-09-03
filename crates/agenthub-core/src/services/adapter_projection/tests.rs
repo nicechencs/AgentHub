@@ -222,7 +222,6 @@ fn current_generated_on_claude_does_not_hide_unrelated_oauth() {
     );
 }
 
-
 #[test]
 fn exact_match_picks_live_bridge_over_stale_current() {
     let openai = provider(

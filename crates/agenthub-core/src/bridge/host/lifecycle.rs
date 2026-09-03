@@ -76,9 +76,9 @@ impl BridgeRuntimeHost {
     /// before edges start; later calls are ignored. Unset keeps capture a
     /// no-op, so CLI runs and tests never write spool files.
     pub fn set_usage_spool_dir(&self, dir: std::path::PathBuf) {
-        self.gateway
-            .usage_spool
-            .set(std::sync::Arc::new(crate::bridge::usage_capture::UsageSpool::new(dir)));
+        self.gateway.usage_spool.set(std::sync::Arc::new(
+            crate::bridge::usage_capture::UsageSpool::new(dir),
+        ));
     }
 
     /// Enable durable route-trace ring persistence (Activity monitor history).
@@ -219,7 +219,9 @@ impl BridgeRuntimeHost {
     }
 
     /// Failed local-auth attempts without a profile binding (newest first).
-    pub fn recent_unauthenticated_route_traces(&self) -> Vec<super::route_trace::RouteRequestTrace> {
+    pub fn recent_unauthenticated_route_traces(
+        &self,
+    ) -> Vec<super::route_trace::RouteRequestTrace> {
         self.gateway.route_traces.recent_unauthenticated()
     }
 

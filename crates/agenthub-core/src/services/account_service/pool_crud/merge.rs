@@ -3,9 +3,7 @@ use serde_json::Value;
 
 use crate::adapters::AgentAdapter;
 use crate::error::{AppError, Result};
-use crate::models::{
-    authorization_is_route_pool_home, Account, AccountKind, AgentId, Provider,
-};
+use crate::models::{authorization_is_route_pool_home, Account, AccountKind, AgentId, Provider};
 use crate::services::ConnectionService;
 use crate::storage::{
     account_get_by_id_conn, account_list_for_agent_conn, provider_get_by_id_conn,
@@ -217,14 +215,15 @@ impl AccountService {
                 let binding = get_binding_row(&tx, agent)?;
                 let trash = list_trash_conn(&tx, agent)?;
 
-                let duplicates = authorization_duplicates(adapter, agent, kind, &credentials, &accounts)
-                    .into_iter()
-                    .filter(|candidate| {
-                        !pool_owned_only
-                            || (!candidate.is_current
-                                && authorization_is_route_pool_home(&candidate.extra))
-                    })
-                    .collect::<Vec<_>>();
+                let duplicates =
+                    authorization_duplicates(adapter, agent, kind, &credentials, &accounts)
+                        .into_iter()
+                        .filter(|candidate| {
+                            !pool_owned_only
+                                || (!candidate.is_current
+                                    && authorization_is_route_pool_home(&candidate.extra))
+                        })
+                        .collect::<Vec<_>>();
                 let committed = if let Some(target_existing) =
                     pick_primary_authorization_match(duplicates.clone())
                 {

@@ -24,6 +24,9 @@ describe('mock env install platform paths', () => {
     const listed = await env.listRuntimes();
     expect(listed.map((item) => item.id)).toEqual(['nodejs', 'npm', 'git']);
     expect(listed.some((item) => item.id === 'powershell')).toBe(false);
+    await expect(env.checkRuntimeUpdates(['nodejs'])).resolves.toMatchObject([
+      { runtimeId: 'nodejs', state: 'not_installed' },
+    ]);
 
     const detailed = await env.installRuntimeDetailed('nodejs');
     expect(detailed.logs.some((line) => line.includes('brew install node'))).toBe(true);

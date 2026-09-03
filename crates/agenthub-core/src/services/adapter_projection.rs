@@ -205,7 +205,6 @@ fn text_contains_bridge_slug(text: &str) -> bool {
         .any(leftover::is_agenthub_bridge_slug)
 }
 
-
 /// Find the unique adapter-generated provider whose loopback URL + local bearer
 /// exactly match live config. Used to heal `is_current` / active binding when
 /// live settings still point at one bridge while the binding stuck on another
@@ -243,7 +242,8 @@ fn extract_local_bearer_token(value: &Value) -> Option<String> {
     match value {
         Value::String(text) => {
             let trimmed = text.trim();
-            if trimmed.starts_with(LOCAL_BEARER_PREFIX) && trimmed.len() > LOCAL_BEARER_PREFIX.len() {
+            if trimmed.starts_with(LOCAL_BEARER_PREFIX) && trimmed.len() > LOCAL_BEARER_PREFIX.len()
+            {
                 Some(trimmed.to_owned())
             } else {
                 None

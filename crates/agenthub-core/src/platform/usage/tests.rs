@@ -1071,7 +1071,14 @@ fn usage_trend_days1_rolling_includes_20h_unless_since_clips() {
         .with_timezone(&chrono::Utc)
         .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let today = repo
-        .trend(1, Some(AgentId::Claude), None, Some(since.as_str()), &[], None)
+        .trend(
+            1,
+            Some(AgentId::Claude),
+            None,
+            Some(since.as_str()),
+            &[],
+            None,
+        )
         .unwrap();
     let expected_today = [(&older, 22_i64), (&newer, 110)]
         .into_iter()
@@ -1184,7 +1191,11 @@ fn usage_trend_by_model_includes_tokens_and_cost() {
     let all = repo.trend_by_model(2, None, None, None, &[], None).unwrap();
     assert_eq!(sum_i64(&all, "opus"), 132);
     assert_eq!(sum_i64(&all, "sonnet"), 55);
-    assert_eq!(sum_i64(&all, "claude"), 0, "model grouping must not use agent ids");
+    assert_eq!(
+        sum_i64(&all, "claude"),
+        0,
+        "model grouping must not use agent ids"
+    );
     assert!((sum_f64(&all, "__cost__:opus") - 1.2).abs() < 1e-9);
     assert!((sum_f64(&all, "__cost__:sonnet") - 0.5).abs() < 1e-9);
 
@@ -1209,16 +1220,7 @@ fn usage_merges_grok_build_model_alias() {
     let ts = recent_ts(1);
     repo.insert_batch(&[
         overview_row(AgentId::Grok, "grok-4.6", 100, 10, 0, 1.0, &ts, "plain"),
-        overview_row(
-            AgentId::Grok,
-            "grok-4.6-build",
-            50,
-            5,
-            0,
-            0.5,
-            &ts,
-            "build",
-        ),
+        overview_row(AgentId::Grok, "grok-4.6-build", 50, 5, 0, 0.5, &ts, "build"),
     ])
     .unwrap();
 

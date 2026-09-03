@@ -51,7 +51,10 @@ fn insert_query_and_replay_are_idempotent() {
     let replayed = repo.insert_batch(&rows).expect("replay batch");
     assert_eq!(replayed, 0);
     let replayed_mixed = repo
-        .insert_batch(&[rows[0].clone(), row("req-2", "2026-08-30T10:00:01+00:00", 60)])
+        .insert_batch(&[
+            rows[0].clone(),
+            row("req-2", "2026-08-30T10:00:01+00:00", 60),
+        ])
         .expect("mixed replay batch");
     assert_eq!(replayed_mixed, 1);
 
@@ -156,7 +159,11 @@ fn cursor_roundtrip_and_removal() {
     };
 
     let inserted = repo
-        .insert_batch_and_cursor(&[row("req-1", "2026-08-30T10:00:00+00:00", 10)], &cursor, false)
+        .insert_batch_and_cursor(
+            &[row("req-1", "2026-08-30T10:00:00+00:00", 10)],
+            &cursor,
+            false,
+        )
         .expect("insert with cursor");
     assert_eq!(inserted, 1);
     let stored = repo.get_spool_cursor(&cursor.path).expect("get cursor");

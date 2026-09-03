@@ -7,8 +7,8 @@
 use std::sync::Arc;
 
 use agenthub_core::adapter_control::{
-    resolve_bind_action, resolve_unbind_action, AdapterSagaCoordinator, AdapterBridgeStatus,
-    AdapterControl, BindAction,
+    resolve_bind_action, resolve_unbind_action, AdapterBridgeStatus, AdapterControl,
+    AdapterSagaCoordinator, BindAction,
 };
 use agenthub_core::bridge::BridgeRuntimeHost;
 use agenthub_core::error::AppError;

@@ -13,8 +13,8 @@ use super::super::admission::AdmittedRequest;
 use super::super::surface::DownstreamSurface;
 use super::{
     models_surface_unreachable, overwrite_configured_model, parse_bridge_request,
-    passthrough_responses_object, require_responses_conversation_seed, RecoveryPolicy, UpstreamDecode, UpstreamPrepare,
-    UpstreamTransport,
+    passthrough_responses_object, require_responses_conversation_seed, RecoveryPolicy,
+    UpstreamDecode, UpstreamPrepare, UpstreamTransport,
 };
 
 /// Grok / xAI Responses has no official `stream: true` hard contract.

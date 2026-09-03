@@ -8,7 +8,7 @@ import {
   detectHostPlatform,
   type HostPlatform,
 } from '@/lib/platform-detect';
-import type { EnvStatus, RuntimeDetect } from '@/lib/types';
+import type { EnvStatus, RuntimeDetect, RuntimeUpdateInfo } from '@/lib/types';
 
 export type EnvSoftwareAction = 'install' | 'upgrade' | 'repair';
 
@@ -70,6 +70,7 @@ export function envSoftwareAction(
   runtime: RuntimeDetect,
   runtimes: RuntimeDetect[],
   platform: HostPlatform = detectHostPlatform(),
+  update?: RuntimeUpdateInfo,
 ): EnvSoftwareAction | null {
   const canInstall = envSoftwareCanAuto(runtimes, runtime, platform, false);
   const canUpgrade = envSoftwareCanAuto(runtimes, runtime, platform, true);
@@ -82,7 +83,12 @@ export function envSoftwareAction(
     case 'broken_path':
       return 'repair';
     case 'ok':
-      return canUpgrade ? 'upgrade' : null;
+      if (update?.state === 'update_available') return 'upgrade';
+      return runtime.id === 'npm' &&
+        runtimes.some((item) => item.id === 'nodejs' && item.status === 'outdated') &&
+        canUpgrade
+        ? 'upgrade'
+        : null;
   }
 }
 

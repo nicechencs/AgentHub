@@ -717,7 +717,6 @@ fn local_bridge_matrix_cells_are_exactly_the_catalog() {
     );
 }
 
-
 #[test]
 fn local_bridge_edges_declare_expected_downstream_surfaces() {
     // Keep support-matrix target protocols aligned with the local wire surfaces

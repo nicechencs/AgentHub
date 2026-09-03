@@ -146,7 +146,9 @@ pub async fn oauth_device_complete(
         }
         let result = if pool_owned {
             let surface = agenthub_core::models::RouteDownstreamSurface::for_agent(current)
-                .ok_or_else(|| "device OAuth target has no default route pool surface".to_string())?;
+                .ok_or_else(|| {
+                    "device OAuth target has no default route pool surface".to_string()
+                })?;
             oauth::complete_device_oauth_and_attach_pool(
                 hub.accounts(),
                 hub.route_pools(),

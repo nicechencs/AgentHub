@@ -437,7 +437,11 @@ pub struct RouteTraceBuilder {
 }
 
 impl RouteTraceBuilder {
-    pub fn begin(request_id: impl Into<String>, method: impl Into<String>, path: impl Into<String>) -> Self {
+    pub fn begin(
+        request_id: impl Into<String>,
+        method: impl Into<String>,
+        path: impl Into<String>,
+    ) -> Self {
         Self {
             trace: RouteRequestTrace {
                 request_id: request_id.into(),
@@ -525,7 +529,13 @@ impl RouteTraceBuilder {
 
     /// Token was accepted; this listener does not serve the requested path.
     /// Keep local auth Ok and fail the inbound endpoint, not the login step.
-    pub fn local_path_failed(&mut self, profile_id: &str, port: Option<u16>, code: &str, message: &str) {
+    pub fn local_path_failed(
+        &mut self,
+        profile_id: &str,
+        port: Option<u16>,
+        code: &str,
+        message: &str,
+    ) {
         self.trace.profile_id = Some(profile_id.to_owned());
         if self.trace.local_auth.status != TraceStageStatus::Ok {
             self.trace.local_auth = RouteTraceLocalAuth {
@@ -617,7 +627,13 @@ impl RouteTraceBuilder {
         self.skip_after_conversion();
     }
 
-    pub fn upstream_auth_result(&mut self, ok: bool, http_status: Option<u16>, code: Option<&str>, message: Option<&str>) {
+    pub fn upstream_auth_result(
+        &mut self,
+        ok: bool,
+        http_status: Option<u16>,
+        code: Option<&str>,
+        message: Option<&str>,
+    ) {
         self.trace.upstream_auth = RouteTraceUpstreamAuth {
             status: if ok {
                 TraceStageStatus::Ok
@@ -728,7 +744,6 @@ impl Drop for RouteTraceBuilder {
     }
 }
 
-
 /// One structured line per finished request so file logs share the monitor's
 /// five stage names + request_id (no secrets / bodies).
 fn log_route_trace_finalized(trace: &RouteRequestTrace) {
@@ -796,7 +811,11 @@ pub fn sanitize_upstream_url(url: &str) -> String {
     if trimmed.is_empty() {
         return String::new();
     }
-    trimmed.split(['?', '#']).next().unwrap_or(trimmed).to_owned()
+    trimmed
+        .split(['?', '#'])
+        .next()
+        .unwrap_or(trimmed)
+        .to_owned()
 }
 
 fn now_unix_ms() -> u128 {

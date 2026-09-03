@@ -33,7 +33,7 @@ describe('env software list model', () => {
     expect(envSoftwareVersion(runtime('git', 'ok', { version: '2.43.0' }))).toBe('2.43.0');
   });
 
-  it('installs missing Node/Git on macOS and upgrades when ready', () => {
+  it('installs missing Node/Git on macOS and only exposes ready upgrades after a remote match', () => {
     const missing = [runtime('nodejs', 'missing'), runtime('npm', 'missing'), runtime('git', 'missing')];
     expect(envSoftwareAction(missing[0], missing, 'macos')).toBe('install');
     expect(envSoftwareAction(missing[2], missing, 'macos')).toBe('install');
@@ -43,8 +43,14 @@ describe('env software list model', () => {
       runtime('npm', 'ok', { version: '10.2.4' }),
       runtime('git', 'ok', { version: '2.43.0' }),
     ];
-    expect(envSoftwareAction(ready[0], ready, 'macos')).toBe('upgrade');
-    expect(envSoftwareAction(ready[2], ready, 'macos')).toBe('upgrade');
+    expect(envSoftwareAction(ready[0], ready, 'macos')).toBeNull();
+    expect(envSoftwareAction(ready[2], ready, 'macos')).toBeNull();
+    expect(envSoftwareAction(ready[0], ready, 'macos', {
+      runtimeId: 'nodejs', state: 'update_available', latestVersion: '24.20.0',
+    })).toBe('upgrade');
+    expect(envSoftwareAction(ready[2], ready, 'macos', {
+      runtimeId: 'git', state: 'update_available', latestVersion: '2.55.0',
+    })).toBe('upgrade');
   });
 
   it('repairs PATH issues and Linux missing packages; PowerShell has no upgrade', () => {

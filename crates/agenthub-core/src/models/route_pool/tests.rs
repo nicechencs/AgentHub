@@ -28,7 +28,10 @@ fn feature_flags_are_fail_closed() {
     );
     assert_eq!(FEATURE_MIXED_PROVIDER_POOL, "feature.mixed_provider_pool");
     assert_eq!(SHARE_CHAT_COMPLETIONS, "share_chat_completions");
-    assert_eq!(LOCAL_GATEWAY_DESIRED_RUNNING, "local_gateway_desired_running");
+    assert_eq!(
+        LOCAL_GATEWAY_DESIRED_RUNNING,
+        "local_gateway_desired_running"
+    );
     assert!(feature_flag_enabled(Some("yes")));
 }
 

@@ -142,10 +142,7 @@ fn probe_posts_messages_and_responses_bodies() {
 
 #[test]
 fn probe_reports_unauthorized_empty_models_and_unreachable() {
-    let unauth_port = spawn_seq(vec![(
-        401,
-        r#"{"error":{"code":"invalid_api_key"}}"#,
-    )]);
+    let unauth_port = spawn_seq(vec![(401, r#"{"error":{"code":"invalid_api_key"}}"#)]);
     let unauth = probe_local_token(
         &format!("127.0.0.1:{unauth_port}"),
         "ahb_wrong",
@@ -169,7 +166,10 @@ fn probe_reports_unauthorized_empty_models_and_unreachable() {
         None,
     );
     assert_eq!(empty.outcome, LocalTokenProbeOutcome::Rejected);
-    assert_eq!(empty.error_message.as_deref(), Some("这条路由还没有可用模型"));
+    assert_eq!(
+        empty.error_message.as_deref(),
+        Some("这条路由还没有可用模型")
+    );
 
     let closed = TcpListener::bind("127.0.0.1:0").expect("bind closed");
     let closed_port = closed.local_addr().expect("addr").port();

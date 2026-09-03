@@ -81,7 +81,10 @@ impl InboundRequestLog {
         self.inner
             .lock()
             .ok()
-            .and_then(|map| map.get(profile_id).map(|entry| entry.recent.iter().cloned().collect()))
+            .and_then(|map| {
+                map.get(profile_id)
+                    .map(|entry| entry.recent.iter().cloned().collect())
+            })
             .unwrap_or_default()
     }
 

@@ -1,8 +1,8 @@
 //! Usage Tauri commands — collect / query / trend / models / health.
 
 use agenthub_core::models::{
-    AgentId, CollectResult, GatewayUsageOverview, GatewayUsageQuery, GatewayUsageRow,
-    ParserHealth, UsageOverview, UsageQuery, UsageRecord,
+    AgentId, CollectResult, GatewayUsageOverview, GatewayUsageQuery, GatewayUsageRow, ParserHealth,
+    UsageOverview, UsageQuery, UsageRecord,
 };
 use serde_json::Value;
 use tauri::State;

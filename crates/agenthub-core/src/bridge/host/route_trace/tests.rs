@@ -63,7 +63,10 @@ fn conversion_failed_skips_upstream_stages() {
     let log = RouteTraceLog::new();
     let mut builder = RouteTraceBuilder::begin("req-conv", "POST", "/v1/messages");
     builder.local_auth_ok("profile-a", Some(8787));
-    builder.conversion_failed("conversion_failed", "Could not convert this request for the upstream.");
+    builder.conversion_failed(
+        "conversion_failed",
+        "Could not convert this request for the upstream.",
+    );
     builder.finalize(400, &log);
     let trace = log.get("req-conv").expect("trace stored");
     assert_eq!(trace.failure_stage.as_deref(), Some("conversion"));
@@ -131,14 +134,34 @@ fn trace_serializes_camel_case_for_frontend() {
     let mut builder = RouteTraceBuilder::begin("req-json", "POST", "/v1/messages");
     builder.local_auth_ok("profile-a", Some(8787));
     builder.pool_selected(
-        &PickedMember::new("", "account", "acct-1", "acct-1", ResolvedAuth::bearer("x"), None, MemberHealth::Renewable),
+        &PickedMember::new(
+            "",
+            "account",
+            "acct-1",
+            "acct-1",
+            ResolvedAuth::bearer("x"),
+            None,
+            MemberHealth::Renewable,
+        ),
         None,
     );
-    builder.conversion_prepared(DownstreamSurface::Messages, UpstreamChannel::Anthropic, false);
+    builder.conversion_prepared(
+        DownstreamSurface::Messages,
+        UpstreamChannel::Anthropic,
+        false,
+    );
     builder.upstream_auth_result(true, Some(200), None, None);
     builder.upstream_success(
         "https://api.anthropic.com/v1/messages",
-        &PickedMember::new("", "account", "acct-1", "acct-1", ResolvedAuth::bearer("x"), None, MemberHealth::Renewable),
+        &PickedMember::new(
+            "",
+            "account",
+            "acct-1",
+            "acct-1",
+            ResolvedAuth::bearer("x"),
+            None,
+            MemberHealth::Renewable,
+        ),
         200,
         Some("claude-sonnet"),
     );
@@ -169,7 +192,6 @@ fn patch_usage_applies_before_and_after_push() {
     assert_eq!(second.input_tokens, Some(20));
     assert_eq!(second.output_tokens, Some(9));
 }
-
 
 #[test]
 fn route_trace_log_persists_and_restores_across_enable() {
@@ -227,7 +249,10 @@ fn route_trace_persist_second_enable_is_ignored() {
     builder.local_auth_ok("profile-a", None);
     builder.finalize(200, &log);
     assert!(path_a.is_file());
-    assert!(!path_b.exists(), "second enable_persist must not retarget writes");
+    assert!(
+        !path_b.exists(),
+        "second enable_persist must not retarget writes"
+    );
 }
 
 #[test]
@@ -245,10 +270,7 @@ fn route_trace_persist_keeps_ring_cap_on_reload() {
     restored.enable_persist(path);
     let recent = restored.recent("profile-a");
     assert_eq!(recent.len(), ROUTE_TRACE_CAP);
-    assert_eq!(
-        recent[0].request_id,
-        format!("req-{}", ROUTE_TRACE_CAP + 7)
-    );
+    assert_eq!(recent[0].request_id, format!("req-{}", ROUTE_TRACE_CAP + 7));
 }
 
 #[test]
@@ -288,4 +310,3 @@ fn finalize_keeps_five_stage_statuses_for_log_alignment() {
         );
     }
 }
-

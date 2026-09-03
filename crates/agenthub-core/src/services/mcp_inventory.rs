@@ -217,7 +217,10 @@ fn source_locations(agent: AgentId) -> Vec<SourceLoc> {
 fn unique_source_locations(locs: Vec<SourceLoc>) -> Vec<SourceLoc> {
     let mut unique = Vec::new();
     for loc in locs {
-        if unique.iter().any(|seen: &SourceLoc| same_source_path(&seen.path, &loc.path)) {
+        if unique
+            .iter()
+            .any(|seen: &SourceLoc| same_source_path(&seen.path, &loc.path))
+        {
             continue;
         }
         unique.push(loc);

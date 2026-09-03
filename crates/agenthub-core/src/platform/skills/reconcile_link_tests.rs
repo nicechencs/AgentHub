@@ -346,8 +346,13 @@ fn sync_with_mode_link_converts_managed_copy() {
     assert!(!is_dir_symlink(&claude.join("demo")));
 
     let svc = make_svc_db(source, claude.clone(), db);
-    svc.sync_with_mode("demo", AgentId::Claude, false, Some(SkillProjectionMode::Link))
-        .unwrap();
+    svc.sync_with_mode(
+        "demo",
+        AgentId::Claude,
+        false,
+        Some(SkillProjectionMode::Link),
+    )
+    .unwrap();
     assert!(
         is_dir_symlink(&claude.join("demo")),
         "explicit link mode must replace a managed copy"
@@ -371,8 +376,13 @@ fn sync_with_mode_copy_replaces_correct_link() {
     );
 
     let svc = make_svc_db(source, claude.clone(), db);
-    svc.sync_with_mode("demo", AgentId::Claude, false, Some(SkillProjectionMode::Copy))
-        .unwrap();
+    svc.sync_with_mode(
+        "demo",
+        AgentId::Claude,
+        false,
+        Some(SkillProjectionMode::Copy),
+    )
+    .unwrap();
     assert!(
         !is_dir_symlink(&claude.join("demo")),
         "explicit copy mode must replace a correct source link"
