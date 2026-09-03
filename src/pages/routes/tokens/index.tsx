@@ -64,9 +64,6 @@ export default function RoutesTokensPage() {
     loading,
     reload,
   } = useAdapterResources();
-  const profileForRow = (row: LocalTokenRow) => (
-    row.profileId ? profiles.find((item) => item.id === row.profileId) : null
-  );
   const [tokenTick, setTokenTick] = useState(0);
   const [collectKey, setCollectKey] = useState(0);
   const [tokensByPoolId, setTokensByPoolId] = useState<Record<string, string>>({});
@@ -244,13 +241,7 @@ export default function RoutesTokensPage() {
             rows={listRows}
             activeId={inspect.target}
             onShowDetail={(row) => inspect.open(row.id)}
-            profileForRow={profileForRow}
-            siblingProfiles={profiles}
             installedAgents={installedAgentRefs}
-            onImported={() => {
-              setTokenTick((tick) => tick + 1);
-              void reload();
-            }}
           />
         </PageSection>
       )}
@@ -311,14 +302,7 @@ export default function RoutesTokensPage() {
             <div className="flex flex-wrap items-center gap-2">
               <TokenImportToAgentButton
                 row={importAfterSaveRow}
-                profile={profileForRow(importAfterSaveRow)}
-                siblingProfiles={profiles}
                 installedAgents={installedAgentRefs}
-                onImported={() => {
-                  setImportAfterSaveRow(null);
-                  setTokenTick((tick) => tick + 1);
-                  void reload();
-                }}
               />
             </div>
           ) : null}
@@ -342,13 +326,7 @@ export default function RoutesTokensPage() {
           width={inspect.paneWidth}
           onClose={() => inspect.close()}
           onEditKey={() => openEdit(detailRow)}
-          profile={profileForRow(detailRow)}
-          siblingProfiles={profiles}
           installedAgents={installedAgentRefs}
-          onImported={() => {
-            setTokenTick((tick) => tick + 1);
-            void reload();
-          }}
         />
       ) : null}
     >

@@ -1,23 +1,30 @@
 /**
  * Eligibility for one-click「导入到 Agent」from a local-route token.
  *
- * Menu opens when the row has a key + local gateway + at least one installed Agent.
+ * Menu opens when the row has a key + at least one installed Agent.
  * An Agent is selectable only when this token kind is the loopback this Agent
  * actually writes (Claude←messages, Codex←responses_codex, Grok←responses_grok,
  * Kimi/DSH←chat_completions). Speaks-but-cannot-write stays visible and disabled.
+ * Choosing an Agent opens Connections 「添加 API Key」 with the current URL + key.
  */
 import { isAgentHidden, visibleInstalledIds } from '@/lib/agent-visibility';
+import {
+  buildConnectionsGuideUrl,
+  type ConnectApiKeyDraft,
+} from '@/lib/connect-flow/connect-intent';
 import type { TranslateFn } from '@/lib/i18n';
 import {
   localEndpointKindForTargetAgent,
   localEndpointSurface,
+  ROUTE_ENDPOINT_HOST,
+  routeEndpointHttpParts,
   type LocalEndpointKind,
   type RouteEndpointId,
 } from '@/lib/route-endpoints';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { AgentKey, AgentStatus } from '@/lib/types';
 import { agentConversationSurfaces } from '@/pages/agents/agent-detail-model';
-import type { LocalTokenRow } from './tokens-model';
+import { tokenListenPort, type LocalTokenRow } from './tokens-model';
 
 export type TokenImportAgentRef = {
   id: AgentKey;
@@ -136,7 +143,7 @@ export type TokenImportGate = {
  * stay visible and disabled with a short reason.
  */
 export function tokenImportGate(
-  row: Pick<LocalTokenRow, 'kind' | 'token' | 'profileId' | 'unavailable'>,
+  row: Pick<LocalTokenRow, 'kind' | 'token' | 'unavailable'>,
   agents: readonly TokenImportAgentRef[],
   t?: TranslateFn,
 ): TokenImportGate {
@@ -155,13 +162,6 @@ export function tokenImportGate(
       agents: choices,
     };
   }
-  if (!row.profileId?.trim()) {
-    return {
-      enabled: false,
-      reason: t ? t('routes.tokens.importNeedEntry') : '本机转发还没就绪',
-      agents: choices,
-    };
-  }
   if (agents.length === 0) {
     return {
       enabled: false,
@@ -170,6 +170,34 @@ export function tokenImportGate(
     };
   }
   return { enabled: true, reason: null, agents: choices };
+}
+
+export function tokenImportConnectionsUrl(agentId: AgentKey): string {
+  return buildConnectionsGuideUrl({ agentId, intent: 'add-key' });
+}
+
+export function tokenImportApiKeyDraft(
+  row: Pick<LocalTokenRow, 'kind' | 'token' | 'path' | 'endpoint' | 'listedModels'>,
+  agentId: AgentKey,
+): ConnectApiKeyDraft | null {
+  const apiKey = row.token?.trim();
+  if (!apiKey) return null;
+  if (!agentCanReceiveTokenImport(agentId, row.kind)) return null;
+  const parts = routeEndpointHttpParts({
+    path: row.path,
+    port: tokenListenPort(row.endpoint),
+    host: ROUTE_ENDPOINT_HOST,
+    endpointId: tokenImportSurface(row.kind),
+  });
+  const model = row.listedModels?.[0]?.trim() || '';
+  return {
+    ...(parts.portPending ? {} : { baseUrl: parts.origin }),
+    apiKey,
+    ...(model ? { model } : {}),
+    ...(agentId === 'grok'
+      ? { apiBackend: row.kind === 'chat_completions' ? 'chat_completions' : 'responses' }
+      : {}),
+  };
 }
 
 /** Prefer the live profile object; fall back to the row's entry in sibling list. */
