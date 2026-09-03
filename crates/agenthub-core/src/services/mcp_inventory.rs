@@ -208,7 +208,31 @@ fn source_locations(agent: AgentId) -> Vec<SourceLoc> {
             }
         }
     }
-    out
+    unique_source_locations(out)
+}
+
+/// Keep the first probe when two known locations resolve to the same file.
+/// Cursor's `~/.cursor/mcp.json` and `<cursor-home>/mcp.json` are the same path
+/// with the default home.
+fn unique_source_locations(locs: Vec<SourceLoc>) -> Vec<SourceLoc> {
+    let mut unique = Vec::new();
+    for loc in locs {
+        if unique.iter().any(|seen: &SourceLoc| same_source_path(&seen.path, &loc.path)) {
+            continue;
+        }
+        unique.push(loc);
+    }
+    unique
+}
+
+fn same_source_path(a: &Path, b: &Path) -> bool {
+    if a == b {
+        return true;
+    }
+    match (fs::canonicalize(a), fs::canonicalize(b)) {
+        (Ok(ca), Ok(cb)) => ca == cb,
+        _ => false,
+    }
 }
 
 struct ParsedSource {

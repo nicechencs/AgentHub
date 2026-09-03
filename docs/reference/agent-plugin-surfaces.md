@@ -133,7 +133,7 @@ updated: 2026-08-29
 - 安装/卸载：改 JSON 或 IDE「MCP 设置」；保存后 Reload / 重启。
 - 传输：stdio 的 `command`/`args`/`env`，远程 `url` + `headers`。插值：`${env:NAME}`、`${userHome}`、`${workspaceFolder}`。
 - 更新：改包版本或 URL；无独立 marketplace 升级流（相对 Claude/Codex/Grok）。
-- inventory 另外探测 `<cursor-home>/mcp.json`，与全局 `~/.cursor/mcp.json` 在默认 home 时是同一文件。
+- inventory 另外探测 `<cursor-home>/mcp.json`；默认 home 与全局 `~/.cursor/mcp.json` 是同一文件，只列一份。
 
 **技能**
 
