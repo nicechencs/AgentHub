@@ -46,8 +46,9 @@ export interface LocalTokenRow {
   /** Profiles whose gateway usage belongs to this entry key. */
   profileIds: string[];
   name: string;
-  /** True for the type's default pool key; extras can be deleted. */
+  /** True for the type's default pool key. */
   primary: boolean;
+  /** Pool-backed keys can be deleted; leftover listener rows cannot. */
   canDelete: boolean;
   kind: LocalEndpointKind;
   path: string;
@@ -343,7 +344,7 @@ export function buildLocalTokenRows(
   pools: readonly DefaultRoutePoolOverview[] = [],
   chatCompletionsShared = false,
   tokensByPoolId: Readonly<Record<string, string>> = {},
-  records: readonly LocalTokenRecord[] = [],
+  records?: readonly LocalTokenRecord[] | null,
 ): LocalTokenRow[] {
   const covered = new Set<string>();
   const rows: LocalTokenRow[] = [];
@@ -376,28 +377,34 @@ export function buildLocalTokenRows(
     for (const match of matches) covered.add(match.id);
     const profile = pickRuntimeProfile(matches, bridgeStatuses);
     const statusId = profile?.id ?? pool.id;
-    const primaryRecord = records.find((record) => record.primary && record.poolId === pool.id);
+    const recordsReady = records != null;
+    const primaryRecord = recordsReady
+      ? records.find((record) => record.primary && record.poolId === pool.id)
+      : undefined;
     const storedToken = primaryRecord?.token
       ?? tokensByPoolId[pool.id]
       ?? tokensByPoolId[statusId];
-    rows.push(rowFromRuntime({
-      id: pool.id,
-      poolBacked: true,
-      primary: true,
-      canDelete: false,
-      name: primaryRecord?.name ?? '',
-      kind,
-      targetAgentId: pool.targetAgentId,
-      profile,
-      profileIds,
-      portHint: pool.gatewayPort,
-      status: bridgeStatuses[statusId],
-      unavailable: Boolean(statusErrors[statusId]),
-      storedToken,
-      listedModels: pool.listedModels,
-      statuses: bridgeStatuses,
-    }));
-    for (const extra of records.filter((record) => !record.primary && record.poolId === pool.id)) {
+    if (!recordsReady || primaryRecord) {
+      rows.push(rowFromRuntime({
+        id: pool.id,
+        poolBacked: true,
+        primary: true,
+        canDelete: true,
+        name: primaryRecord?.name ?? '',
+        kind,
+        targetAgentId: pool.targetAgentId,
+        profile,
+        profileIds,
+        portHint: pool.gatewayPort,
+        status: bridgeStatuses[statusId],
+        unavailable: Boolean(statusErrors[statusId]),
+        storedToken,
+        listedModels: pool.listedModels,
+        statuses: bridgeStatuses,
+      }));
+    }
+    const extraRecords = recordsReady ? records : [];
+    for (const extra of extraRecords.filter((record) => !record.primary && record.poolId === pool.id)) {
       rows.push(rowFromRuntime({
         id: extra.id,
         poolBacked: true,
@@ -482,7 +489,7 @@ export type LocalTokenEditKeyGate = {
 };
 
 export function localTokenDeleteGate(
-  row: Pick<LocalTokenRow, 'canDelete' | 'unavailable'>,
+  row: Pick<LocalTokenRow, 'canDelete' | 'poolBacked' | 'unavailable'>,
   t?: TranslateFn,
 ): LocalTokenEditKeyGate {
   if (row.unavailable) {
@@ -491,12 +498,12 @@ export function localTokenDeleteGate(
       reason: t ? t('routes.runtime.unavailable') : '状态不可用',
     };
   }
-  if (!row.canDelete) {
+  if (!row.poolBacked || !row.canDelete) {
     return {
       enabled: false,
       reason: t
-        ? t('routes.tokens.deleteNeedExtra')
-        : '类型默认入口 Key 不能删除，可修改',
+        ? t('routes.tokens.editKeyNeedPool')
+        : '这条还不是连接池入口 Key，先从路由建入口',
     };
   }
   return { enabled: true, reason: null };

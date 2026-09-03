@@ -21,7 +21,11 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
+import { agentDisplayName } from '@/config/agents';
+import { deleteAccount, listAccounts } from '@/lib/api/account';
+import { deleteProvider, listProviders } from '@/lib/api/provider';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
+import { localEndpointKindFromPool } from '@/lib/route-endpoints';
 import { ROUTES_POOL_PATH } from '@/lib/routes-path';
 import {
   createLocalToken,
@@ -57,10 +61,16 @@ import {
   type LocalTokenRow,
 } from './tokens-model';
 import { TokenImportToAgentButton } from './TokenImportToAgentButton';
+import {
+  connectionMatchAgentNames,
+  hashLocalToken,
+  matchesConnectionEntryKeys,
+  type ConnectionEntryKeyMatch,
+} from './token-connection-matches';
 import type { TokenImportAgentRef } from './token-import-model';
 
 export default function RoutesTokensPage() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const navigate = useNavigate();
   const { toast } = useToast();
   const { hiddenIds, installedAgents } = useInstalledAgents();
@@ -79,7 +89,7 @@ export default function RoutesTokensPage() {
   } = useAdapterResources();
   const [tokenTick, setTokenTick] = useState(0);
   const [collectKey, setCollectKey] = useState(0);
-  const [tokenRecords, setTokenRecords] = useState<LocalTokenRecord[]>([]);
+  const [tokenRecords, setTokenRecords] = useState<LocalTokenRecord[] | null>(null);
   const [editRow, setEditRow] = useState<LocalTokenRow | null>(null);
   const [editValue, setEditValue] = useState('');
   const [editBusy, setEditBusy] = useState(false);
@@ -90,6 +100,9 @@ export default function RoutesTokensPage() {
   const [createBusy, setCreateBusy] = useState(false);
   const [deleteRow, setDeleteRow] = useState<LocalTokenRow | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [connectionMatches, setConnectionMatches] = useState<ConnectionEntryKeyMatch[]>([]);
+  const [connectionMatchesReady, setConnectionMatchesReady] = useState(true);
+  const [alsoDeleteConnections, setAlsoDeleteConnections] = useState(true);
   const {
     chatCompletionsShared,
     defaultPools,
@@ -127,7 +140,7 @@ export default function RoutesTokensPage() {
       errors.bridgeStatuses,
       defaultPools,
       chatCompletionsShared,
-      Object.fromEntries(tokenRecords.filter((record) => record.primary).map((record) => [record.poolId, record.token])),
+      Object.fromEntries((tokenRecords ?? []).filter((record) => record.primary).map((record) => [record.poolId, record.token])),
       tokenRecords,
     ),
     [
@@ -150,8 +163,12 @@ export default function RoutesTokensPage() {
     [rows, usageState],
   );
   const createTargets = useMemo(
-    () => listRows.filter((row) => row.poolBacked && row.primary),
-    [listRows],
+    () => defaultPools.flatMap((pool) => {
+      if (pool.members.length === 0) return [];
+      const kind = localEndpointKindFromPool(pool);
+      return kind ? [{ id: pool.id, kind }] : [];
+    }),
+    [defaultPools],
   );
   const createCards = useMemo(
     () => buildCreateTokenEndpointCards(createTargets),
@@ -266,17 +283,66 @@ export default function RoutesTokensPage() {
     }
   };
 
+  useEffect(() => {
+    if (!deleteRow) {
+      setConnectionMatches([]);
+      setAlsoDeleteConnections(true);
+      setConnectionMatchesReady(true);
+      return;
+    }
+    const token = deleteRow.token?.trim() ?? '';
+    if (!token) {
+      setConnectionMatches([]);
+      setConnectionMatchesReady(true);
+      return;
+    }
+    let cancelled = false;
+    setConnectionMatchesReady(false);
+    void Promise.all([listProviders(), listAccounts(), hashLocalToken(token)])
+      .then(([providers, accounts, tokenHash]) => {
+        if (cancelled) return;
+        const matches = matchesConnectionEntryKeys({ tokenHash, providers, accounts });
+        setConnectionMatches(matches);
+        setAlsoDeleteConnections(matches.length > 0);
+        setConnectionMatchesReady(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setConnectionMatches([]);
+        setConnectionMatchesReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [deleteRow]);
+
   const confirmDelete = async () => {
     if (!deleteRow || deleteBusy) return;
+    if (deleteRow.token?.trim() && !connectionMatchesReady) return;
     const gate = localTokenDeleteGate(deleteRow, t);
     if (!gate.enabled) {
-      toast({ title: gate.reason ?? t('routes.tokens.deleteNeedExtra'), variant: 'danger' });
+      toast({ title: gate.reason ?? t('routes.tokens.deleteFailed'), variant: 'danger' });
       setDeleteRow(null);
       return;
     }
+    const removeConnections = alsoDeleteConnections && connectionMatches.length > 0;
+    const matches = connectionMatches;
     setDeleteBusy(true);
     try {
       await deleteLocalToken(deleteRow.id);
+      if (removeConnections) {
+        try {
+          for (const match of matches) {
+            if (match.sourceKind === 'account') {
+              await deleteAccount(match.agentId, match.sourceId);
+            } else {
+              await deleteProvider(match.agentId, match.sourceId);
+            }
+          }
+        } catch {
+          toast({ title: t('routes.tokens.deleteAlsoConnectionsFailed'), variant: 'danger' });
+        }
+      }
       if (inspect.target === deleteRow.id) inspect.close();
       setDeleteRow(null);
       setTokenTick((tick) => tick + 1);
@@ -477,11 +543,31 @@ export default function RoutesTokensPage() {
                 : t('routes.tokens.deleteDescription')}
             </DialogDescription>
           </DialogHeader>
+          {connectionMatches.length > 0 ? (
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={alsoDeleteConnections}
+                disabled={deleteBusy}
+                onChange={(event) => setAlsoDeleteConnections(event.target.checked)}
+              />
+              <span className="min-w-0">
+                <span className="block">{t('routes.tokens.deleteAlsoConnections')}</span>
+                <span className="block text-meta text-muted">
+                  {t('routes.tokens.deleteAlsoConnectionsHint', {
+                    count: connectionMatches.length,
+                    names: connectionMatchAgentNames(connectionMatches, agentDisplayName).join(lang === 'zh' ? '、' : ', '),
+                  })}
+                </span>
+              </span>
+            </label>
+          ) : null}
           <DialogFooter>
             <Button variant="secondary" disabled={deleteBusy} onClick={() => setDeleteRow(null)}>
               {t('common.cancel')}
             </Button>
-            <Button variant="danger" disabled={deleteBusy} onClick={() => { void confirmDelete(); }}>
+            <Button variant="danger" disabled={deleteBusy || Boolean(deleteRow?.token?.trim() && !connectionMatchesReady)} onClick={() => { void confirmDelete(); }}>
               {t('routes.tokens.delete')}
             </Button>
           </DialogFooter>

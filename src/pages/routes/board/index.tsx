@@ -28,6 +28,7 @@ import { Hint, Tip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
 import { agentDisplayName } from '@/config/agents';
 import { getLocalGatewayStatus, listLocalTokens } from '@/lib/api/adapter';
+import type { LocalTokenRecord } from '@/lib/backend/contracts/adapter';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import {
   isLocalEndpointKind,
@@ -177,6 +178,7 @@ export default function RoutesBoardPage() {
     reloadKey: usageRefreshKey,
   });
   const [tokensByPoolId, setTokensByPoolId] = useState<Record<string, string>>({});
+  const [tokenRecords, setTokenRecords] = useState<LocalTokenRecord[] | null>(null);
   const {
     profileErrors,
     busyProfileIds,
@@ -212,9 +214,13 @@ export default function RoutesBoardPage() {
         const next: Record<string, string> = {};
         for (const record of records) next[record.poolId] = record.token;
         setTokensByPoolId(next);
+        setTokenRecords(records);
       })
       .catch(() => {
-        if (!cancelled) setTokensByPoolId({});
+        if (!cancelled) {
+          setTokensByPoolId({});
+          setTokenRecords([]);
+        }
       });
     return () => {
       cancelled = true;
@@ -244,6 +250,7 @@ export default function RoutesBoardPage() {
       defaultPools,
       chatCompletionsShared,
       tokensByPoolId,
+      tokenRecords,
     ),
     [
       bridgeStatuses,
@@ -251,6 +258,7 @@ export default function RoutesBoardPage() {
       defaultPools,
       errors.bridgeStatuses,
       profiles,
+      tokenRecords,
       tokensByPoolId,
     ],
   );

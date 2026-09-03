@@ -1579,6 +1579,55 @@ pub(crate) async fn set_local_gateway_token(
     Ok(record)
 }
 
+/// Delete a listed entry key. Restarts the pool edge when the default hub token changed.
+pub(crate) async fn delete_local_gateway_token(
+    hub: Arc<AgentHub>,
+    host: Arc<BridgeRuntimeHost>,
+    coordinator: Arc<AdapterSagaCoordinator>,
+    lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
+    id: String,
+) -> Result<(), String> {
+    let _lifecycle_permit = lifecycle_barrier.enter().await?;
+    let _gate = coordinator.lock_profile("local-gateway").await;
+    let pool_id = id.clone();
+    with_hub_blocking(hub.clone(), move |hub| {
+        hub.route_pools()
+            .delete_local_token(&id)
+            .map_err(|error| map_err_string("delete_local_token", error))
+    })
+    .await?;
+    sync_extra_local_bearers(hub.clone(), &host).await?;
+    let pools = with_hub_blocking(hub.clone(), move |hub| {
+        hub.route_pools()
+            .list_default_pools()
+            .map_err(|error| map_err_string("list_default_pools", error))
+    })
+    .await?;
+    let Some(pool) = pools.into_iter().find(|pool| pool.id == pool_id) else {
+        return Ok(());
+    };
+    let running = host
+        .status(&pool.id)
+        .map_err(map_bridge_host_error)?
+        .is_some();
+    if !running {
+        return Ok(());
+    }
+    match host.stop(&pool.id).await {
+        Ok(_) => {}
+        Err(BridgeHostError::NotRunning) => {}
+        Err(error) => return Err(map_bridge_host_error(error)),
+    }
+    let spec = with_hub_blocking(hub, move |hub| {
+        Ok(hub
+            .adapter_bridge()
+            .pool_listener_spec(&pool, hub.route_pools().pair_adapter_flags()))
+    })
+    .await?;
+    host.start(spec).await.map_err(map_bridge_host_error)?;
+    Ok(())
+}
+
 /// Stop every live relay edge. Does not use host shutdown (that blocks restart).
 pub(crate) async fn stop_local_gateway(
     hub: Arc<AgentHub>,

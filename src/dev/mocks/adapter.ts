@@ -200,6 +200,7 @@ export function resetMockAdapters(): void {
     state.localTokens.clear();
     state.localTokenNames.clear();
     state.extraLocalTokens.length = 0;
+    state.hiddenPrimaryIds.clear();
   });
 }
 
@@ -353,6 +354,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     localTokens: new Map(),
     localTokenNames: new Map(),
     extraLocalTokens: [],
+    hiddenPrimaryIds: new Set(),
     localGatewayRunning: false,
     localGatewayPort: null,
     sourceModelCatalogs: new Map(),
@@ -396,17 +398,18 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     async listLocalTokens() {
       await delay(20);
       if (!state.routePoolV2) return [];
-      const primaries = state.defaultPools.map((pool) => {
+      const primaries = state.defaultPools.flatMap((pool) => {
+        if (state.hiddenPrimaryIds.has(pool.id)) return [];
         const existing = state.localTokens.get(pool.id);
         const token = existing?.trim() || `ahb_${pool.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12) || 'token'}`;
         if (!existing) state.localTokens.set(pool.id, token);
-        return {
+        return [{
           id: pool.id,
           poolId: pool.id,
           token,
           name: state.localTokenNames.get(pool.id) ?? '',
           primary: true,
-        };
+        }];
       });
       const extras = state.extraLocalTokens
         .filter((row) => state.defaultPools.some((pool) => pool.id === row.poolId))
@@ -551,6 +554,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         });
       }
       state.localTokens.set(poolId, trimmed);
+      state.hiddenPrimaryIds.delete(poolId);
       return {
         id: poolId,
         poolId,
@@ -602,15 +606,29 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     },
     async deleteLocalToken(id) {
       await delay(20);
-      const index = state.extraLocalTokens.findIndex((row) => row.id === id);
-      if (index < 0) {
+      const extraIndex = state.extraLocalTokens.findIndex((row) => row.id === id);
+      if (extraIndex >= 0) {
+        state.extraLocalTokens.splice(extraIndex, 1);
+        return;
+      }
+      if (!state.defaultPools.some((pool) => pool.id === id)) {
         throw adapterCommandError({
-          code: 'invalid_arg',
-          message: 'cannot delete the default entry key',
+          code: 'not_found',
+          message: `entry key not found: ${id}`,
           retryable: false,
         });
       }
-      state.extraLocalTokens.splice(index, 1);
+      const extra = state.extraLocalTokens.find((row) => row.poolId === id);
+      if (extra) {
+        state.localTokens.set(id, extra.token);
+        state.localTokenNames.set(id, extra.name);
+        state.hiddenPrimaryIds.delete(id);
+        state.extraLocalTokens.splice(state.extraLocalTokens.indexOf(extra), 1);
+        return;
+      }
+      state.localTokens.set(id, `ahb_${Math.random().toString(36).slice(2, 12)}`);
+      state.localTokenNames.delete(id);
+      state.hiddenPrimaryIds.add(id);
     },
     async setChatCompletionsShared(shared: boolean) {
       await delay(20);
