@@ -55,7 +55,7 @@ describe('resolveAutoInstallPlan', () => {
     expect(plan.skipped).toEqual([]);
   });
 
-  it('skips one-click on macOS when Homebrew is missing', () => {
+  it('keeps one-click Node on macOS when Homebrew is missing (official pkg fallback)', () => {
     const manual = [
       { kind: 'url' as const, value: 'https://nodejs.org/' },
       { kind: 'hint' as const, value: '未找到 Homebrew，无法一键安装' },
@@ -65,11 +65,11 @@ describe('resolveAutoInstallPlan', () => {
       undefined,
       'macos',
     );
-    expect(plan.targets).toEqual([]);
-    expect(plan.skipped).toEqual(['nodejs', 'git']);
+    expect(plan.targets).toEqual(['nodejs']);
+    expect(plan.skipped).toEqual(['git']);
   });
 
-  it('skips one-click on macOS when steps include the Homebrew installer', () => {
+  it('keeps one-click Node on macOS when steps include the Homebrew installer', () => {
     const plan = resolveAutoInstallPlan(
       [
         missing('nodejs', [
@@ -80,8 +80,15 @@ describe('resolveAutoInstallPlan', () => {
       undefined,
       'macos',
     );
-    expect(plan.targets).toEqual([]);
-    expect(plan.skipped).toEqual(['nodejs']);
+    expect(plan.targets).toEqual(['nodejs']);
+    expect(plan.skipped).toEqual([]);
+  });
+
+  it('includes a ready runtime only when asked (upgrade)', () => {
+    const ready: RuntimeDetect = { id: 'nodejs', status: 'ok', remediations: [] };
+    expect(resolveAutoInstallPlan([ready], ['nodejs'], 'macos').targets).toEqual([]);
+    expect(resolveAutoInstallPlan([ready], ['nodejs'], 'macos', true).targets).toEqual(['nodejs']);
+    expect(resolveAutoInstallPlan([ready], undefined, 'macos', true).targets).toEqual(['nodejs']);
   });
 });
 

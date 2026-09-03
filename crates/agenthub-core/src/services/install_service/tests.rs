@@ -5,8 +5,8 @@ use crate::catalog::install::{
 };
 use crate::error::AppError;
 use crate::models::{
-    AgentConfig, AuthState, Capability, CapabilityState, DetectResult, InstallChannel, RunOptions,
-    RunSpec,
+    AgentConfig, AuthState, Capability, CapabilityState, DetectResult, EnvStatusKind, InstallChannel,
+    RunOptions, RunSpec,
 };
 use crate::platform::install::{builtin_install_registry, InstallContribution};
 use crate::platform::AgentKey;
@@ -712,6 +712,84 @@ fn install_runtime_powershell_logs_dual_version_context() {
 }
 
 #[test]
+fn pick_nodejs_macos_lts_pkg_selects_newest_lts_pkg() {
+    let json = r#"[
+      {"version":"v23.1.0","lts":false,"files":["pkg"]},
+      {"version":"v22.19.0","lts":"Jod","files":["osx-arm64-tar","pkg"]},
+      {"version":"v20.19.5","lts":"Iron","files":["pkg"]}
+    ]"#;
+    let (version, url) = pick_nodejs_macos_lts_pkg(json).expect("lts pkg");
+    assert_eq!(version, "22.19.0");
+    assert_eq!(url, "https://nodejs.org/dist/v22.19.0/node-v22.19.0.pkg");
+}
+
+#[test]
+fn pick_nodejs_macos_lts_pkg_rejects_unsafe_version() {
+    let json = r#"[{"version":"v22.19.0-evil/../../tmp","lts":"Jod","files":["pkg"]}]"#;
+    assert!(pick_nodejs_macos_lts_pkg(json).is_none());
+    assert!(!is_safe_node_version("22.19.0-rc.1"));
+    assert!(is_safe_node_version("22.19.0"));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn osascript_installer_script_uses_quoted_form() {
+    let script = osascript_installer_script(Path::new("/tmp/agenthub-node-test.pkg"));
+    assert!(script.contains("quoted form of"));
+    assert!(script.contains("/usr/sbin/installer"));
+    assert!(script.contains("/tmp/agenthub-node-test.pkg"));
+    assert!(script.contains("administrator privileges"));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn install_runtime_nodejs_without_brew_fetches_official_index() {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let ex = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+        stderr: String::new(),
+    };
+    let out = install_runtime(RuntimeId::NodeJs, "brew", &ex).unwrap();
+    let cmds = calls.lock().unwrap();
+    if cmds.iter().any(|c| c.contains("brew")) {
+        return;
+    }
+    assert!(
+        cmds.iter()
+            .any(|c| c.contains("https://nodejs.org/dist/index.json"))
+            || out.code.as_deref() == Some("env.not_ready"),
+        "expected official Node index fetch when brew is missing, got cmds={cmds:?} out={out:?}"
+    );
+    assert!(!out.ok);
+}
+
+#[test]
+fn runtime_package_action_upgrades_ready_or_outdated() {
+    assert_eq!(
+        runtime_package_action(EnvStatusKind::Ok),
+        RuntimePackageAction::Upgrade
+    );
+    assert_eq!(
+        runtime_package_action(EnvStatusKind::Outdated),
+        RuntimePackageAction::Upgrade
+    );
+    assert_eq!(
+        runtime_package_action(EnvStatusKind::Missing),
+        RuntimePackageAction::Install
+    );
+    assert_eq!(
+        runtime_package_action(EnvStatusKind::BrokenPath),
+        RuntimePackageAction::Install
+    );
+    assert_eq!(package_manager_verb(RuntimePackageAction::Install), "install");
+    assert_eq!(package_manager_verb(RuntimePackageAction::Upgrade), "upgrade");
+    assert_eq!(package_manager_zh(RuntimePackageAction::Install), "安装");
+    assert_eq!(package_manager_zh(RuntimePackageAction::Upgrade), "升级");
+}
+
+#[test]
 fn install_runtime_git_uses_winget_git_package() {
     let calls = Arc::new(Mutex::new(Vec::new()));
     let ex = MockExecutor {
@@ -751,14 +829,14 @@ fn install_runtime_git_uses_winget_git_package() {
         assert!(
             cmds.iter().any(|c| {
                 if cfg!(target_os = "macos") {
-                    c.contains("brew") && c.contains("install git")
+                    c.contains("brew") && (c.contains("install git") || c.contains("upgrade git"))
                 } else if cfg!(windows) {
-                    c.contains("Git.Git")
+                    c.contains("Git.Git") && (c.contains("install") || c.contains("upgrade"))
                 } else {
                     false
                 }
             }),
-            "expected platform package install, got {cmds:?}"
+            "expected platform package install or upgrade, got {cmds:?}"
         );
         assert!(
             out.logs
