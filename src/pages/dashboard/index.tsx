@@ -14,6 +14,7 @@ import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useTheme } from '@/components/shared/ThemeProvider';
 import { Notice } from '@/components/shared/Notice';
+import { SegmentedControl } from '@/components/shared/SegmentedControl';
 import { UsageParserHealth } from '@/components/shared/UsageParserHealth';
 import { useUsageSync } from '@/components/shared/UsageSyncProvider';
 import { Button } from '@/components/ui/button';
@@ -91,16 +92,12 @@ import {
   resolveUsageModelFilter,
   sortUsageRowsDesc,
   usageModelSelectOptions,
+  formatUsageWindowLabel,
   usageWindowBound,
   type DateRange,
 } from './usageOverviewModel';
 
-const DATE_RANGE_OPTIONS: { value: DateRange; days: number }[] = [
-  { value: 'today', days: 1 },
-  { value: '24h', days: 1 },
-  { value: '7d', days: 7 },
-  { value: '30d', days: 30 },
-];
+const DATE_RANGE_OPTIONS: DateRange[] = ['today', '24h', '7d', '30d'];
 
 const DATE_RANGE_LABEL_KEYS: Record<DateRange, MessageKey> = {
   today: 'dashboard.range.today',
@@ -113,7 +110,7 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { theme } = useTheme();
   const chartScheme = resolveTheme(theme);
   const usageSync = useUsageSync();
@@ -165,6 +162,10 @@ export default function DashboardPage() {
   const usageGenerationRef = useRef(0);
 
   const dayLabel = t(DATE_RANGE_LABEL_KEYS[dateRange]);
+  const windowLabel = useMemo(
+    () => formatUsageWindowLabel(dateRange, lang),
+    [dateRange, lang],
+  );
 
   // —— 采集（状态由 UsageSyncProvider 统一管理）——
   const collecting = usageSync.collecting;
@@ -554,9 +555,23 @@ export default function DashboardPage() {
 
       {/* —— 用量总览：筛选 + 指标 + 趋势 + 分布 —— */}
       <PageSection>
-        <div className={cn(pageRhythm.chromeRow)}>
+        <div className="rounded-card bg-subtle p-4 sm:p-5">
+        <div className={cn(pageRhythm.chromeRow, 'mb-4')}>
+          <span className="inline-flex h-8 items-center rounded-full border border-border bg-panel px-3 text-meta text-secondary">
+            {windowLabel}
+          </span>
+          <SegmentedControl
+            size="sm"
+            aria-label={t('dashboard.page.rangeAria')}
+            value={dateRange}
+            onChange={setDateRange}
+            options={DATE_RANGE_OPTIONS.map((value) => ({
+              value,
+              label: t(DATE_RANGE_LABEL_KEYS[value]),
+            }))}
+          />
           <Select value={agentFilter} onValueChange={(v) => setAgentFilter(v as AgentKey | 'all')}>
-            <SelectTrigger className="w-36">
+            <SelectTrigger className="w-36 bg-panel">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -575,7 +590,7 @@ export default function DashboardPage() {
             </SelectContent>
           </Select>
           <Select value={effectiveModelFilter} onValueChange={setModelFilter}>
-            <SelectTrigger className="w-44">
+            <SelectTrigger className="w-44 bg-panel">
               <SelectValue placeholder={t('dashboard.page.allModels')} />
             </SelectTrigger>
             <SelectContent>
@@ -583,18 +598,6 @@ export default function DashboardPage() {
               {modelSelectOptions.map((m) => (
                 <SelectItem key={m} value={m}>
                   {m}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRange)}>
-            <SelectTrigger className="w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {DATE_RANGE_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  {t(DATE_RANGE_LABEL_KEYS[o.value])}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -657,11 +660,11 @@ export default function DashboardPage() {
         ) : (
           <div
             className={cn(
-              pageRhythm.blocks,
+              'space-y-5',
               usageRefreshing ? 'opacity-60 transition-opacity' : 'transition-opacity',
             )}
           >
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <MetricCard
                 label={t('dashboard.page.metricInput', { range: dayLabel })}
                 value={metrics.input}
@@ -669,14 +672,6 @@ export default function DashboardPage() {
               <MetricCard
                 label={t('dashboard.page.metricOutput', { range: dayLabel })}
                 value={metrics.output}
-              />
-              <MetricCard
-                label={t('dashboard.page.metricCacheWrite', { range: dayLabel })}
-                value={metrics.cacheWrite}
-              />
-              <MetricCard
-                label={t('dashboard.page.metricCacheRead', { range: dayLabel })}
-                value={metrics.cacheRead}
               />
               <MetricCard label={t('dashboard.page.metricCost')} value={metrics.cost} />
             </div>
@@ -746,6 +741,7 @@ export default function DashboardPage() {
             </Card>
           </div>
         )}
+        </div>
       </PageSection>
 
       {/* —— 用量明细（大段分割）—— */}
@@ -821,19 +817,19 @@ export default function DashboardPage() {
 
 function MetricCard({ label, value }: { label: string; value: string }) {
   return (
-    <Card className="p-3">
-      <p className="text-xs text-muted">{label}</p>
-      <p className="mt-1 text-title font-semibold tracking-tight">{value}</p>
+    <Card className="px-6 py-5">
+      <p className="text-meta text-muted">{label}</p>
+      <p className="mt-3 text-title font-semibold tracking-tight tabular-nums">{value}</p>
     </Card>
   );
 }
 
 function UsageOverviewSkeleton() {
   return (
-    <div className={pageRhythm.blocks}>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={i} className="h-20" />
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-24" />
         ))}
       </div>
       <Card className="p-4">

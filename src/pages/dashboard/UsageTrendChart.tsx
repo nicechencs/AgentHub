@@ -1,10 +1,9 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import {
   Area,
   AreaChart,
   CartesianGrid,
-  Line,
-  LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -15,7 +14,13 @@ import { useI18n } from '@/components/shared/LanguageProvider';
 import { SegmentedControl } from '@/components/shared/SegmentedControl';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { AgentKey, UsageTrendPoint } from '@/lib/types';
-import { formatTrendTick, zeroFillTrendSeries } from '@/lib/usage-trend';
+import {
+  formatTrendTick,
+  sortUsageTrendTooltipItems,
+  todayTrendBucket,
+  trendPointGrain,
+  zeroFillTrendSeries,
+} from '@/lib/usage-trend';
 import { fmtTokens } from '@/lib/utils';
 import { resolveChartColor, typeScalePx, type ThemeScheme } from '@/styles/tokens';
 
@@ -23,13 +28,19 @@ import {
   USAGE_TREND_Y_AXIS_WIDTH,
   UsageTrendTooltipCard,
   useUsageTrendHover,
+  type ChartHoverState,
 } from './UsageTrendTooltip';
 import {
+  accumulateTrendSeries,
   costFromTrendPoint,
+  foldTrendTail,
   fmtTrendCost,
+  isModelOtherKey,
   listTrendSeriesKeys,
   modelSeriesColor,
   rankTrendSeriesKeys,
+  sumTrendSeriesTokens,
+  trendSharePct,
   type UsageTrendGroup,
 } from './usageTrendChartModel';
 
@@ -59,50 +70,107 @@ export function UsageTrendChart({
   chartScheme: ThemeScheme;
 }) {
   const { t } = useI18n();
-  const modelKeys = useMemo(() => {
+  const rankedModelKeys = useMemo(() => {
     const keys = listTrendSeriesKeys(modelPoints);
     return rankTrendSeriesKeys(modelPoints, keys);
   }, [modelPoints]);
-  const modelSeries = useMemo(
-    () =>
-      modelKeys.map((key, index) => ({
-        id: key,
-        name: key,
-        color: modelSeriesColor(index),
-      })),
-    [modelKeys],
+  const foldedModels = useMemo(
+    () => foldTrendTail(modelPoints, rankedModelKeys),
+    [modelPoints, rankedModelKeys],
+  );
+  const modelDailyPoints = useMemo(
+    () => zeroFillTrendSeries(foldedModels.points, foldedModels.keys),
+    [foldedModels],
   );
   const modelChartPoints = useMemo(
-    () => zeroFillTrendSeries(modelPoints, modelKeys),
-    [modelPoints, modelKeys],
+    () => accumulateTrendSeries(modelDailyPoints, foldedModels.keys),
+    [modelDailyPoints, foldedModels.keys],
+  );
+  const modelSeries = useMemo(
+    () =>
+      foldedModels.keys.map((key, index) => ({
+        id: key,
+        name: isModelOtherKey(key) ? t('dashboard.page.trendOther') : key,
+        color: modelSeriesColor(index),
+      })),
+    [foldedModels.keys, t],
   );
   const byModel = group === 'model';
   const series = byModel ? modelSeries : agentSeries;
   const data = byModel ? modelChartPoints : [...agentPoints];
   const title = t('dashboard.page.tokenUsageTitle', { range: dayLabel });
+  const chartSummary = byModel ? t('dashboard.page.tokenUsageCumulativeSummary') : summary;
 
   const resolveName = useCallback(
     (key: string) => {
-      if (byModel) return key;
+      if (byModel) {
+        if (isModelOtherKey(key)) return t('dashboard.page.trendOther');
+        return key;
+      }
       const hit = agentSeries.find((item) => item.id === key);
       return hit?.name ?? key;
     },
-    [agentSeries, byModel],
+    [agentSeries, byModel, t],
   );
-  const extraFor = useCallback(
-    (key: string, _value: number, payload?: Record<string, unknown>) => {
-      if (!byModel) return undefined;
-      const cost = costFromTrendPoint(
-        payload as UsageTrendPoint | undefined,
-        key,
+
+  const dailyByDate = useMemo(() => {
+    const src = byModel ? modelDailyPoints : agentPoints;
+    return new Map(src.map((point) => [point.date, point]));
+  }, [agentPoints, byModel, modelDailyPoints]);
+
+  const buildTip = useCallback(
+    (state: ChartHoverState) => {
+      const label = String(state?.activeLabel ?? '');
+      const daily = dailyByDate.get(label);
+      if (!daily) return null;
+      const keys = series.map((item) => item.id);
+      const dailyTotal = sumTrendSeriesTokens(daily, keys);
+      const items = sortUsageTrendTooltipItems(
+        series.map((item) => {
+          const tokens = Number(daily[item.id]) || 0;
+          const cost = byModel ? costFromTrendPoint(daily, item.id) : 0;
+          return {
+            key: item.id,
+            name: resolveName(item.id),
+            tokens,
+            color: byModel ? item.color : resolveChartColor(item.color, chartScheme),
+            extra: cost > 0 ? fmtTrendCost(cost) : undefined,
+            share: trendSharePct(tokens, dailyTotal),
+          };
+        }),
       );
-      return cost > 0 ? fmtTrendCost(cost) : undefined;
+      if (!items.length) return null;
+      return {
+        label,
+        items,
+        dailyTotal,
+        cumulativeTotal: byModel
+          ? sumTrendSeriesTokens(
+              data.find((point) => point.date === label),
+              keys,
+            )
+          : undefined,
+      };
     },
-    [byModel],
+    [byModel, chartScheme, dailyByDate, data, resolveName, series],
   );
-  const trendHover = useUsageTrendHover(resolveName, {
-    extraFor: byModel ? extraFor : undefined,
-  });
+
+  const trendHover = useUsageTrendHover(resolveName, { buildTip });
+  const plotRef = useRef<HTMLDivElement>(null);
+  const onPlotMouseMove = useCallback(
+    (state: ChartHoverState) => {
+      trendHover.onChartMouseMove(state, plotRef.current);
+    },
+    [trendHover.onChartMouseMove],
+  );
+
+  const todayKey = useMemo(() => {
+    const sample = data[0]?.date;
+    if (!sample) return null;
+    return todayTrendBucket(new Date(), trendPointGrain(sample));
+  }, [data]);
+  const showToday = Boolean(todayKey && data.some((point) => point.date === todayKey));
+  const todayIsLast = Boolean(todayKey && data.at(-1)?.date === todayKey);
 
   const axis = (
     <>
@@ -124,15 +192,18 @@ export function UsageTrendChart({
         width={USAGE_TREND_Y_AXIS_WIDTH}
       />
       <Tooltip cursor={{ stroke: 'var(--border)', strokeWidth: 1 }} content={() => null} />
+      {showToday && todayKey ? (
+        <ReferenceLine x={todayKey} stroke="var(--text-muted)" strokeDasharray="4 4" />
+      ) : null}
     </>
   );
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="px-5 py-4">
         <div className="min-w-0">
           <CardTitle>{title}</CardTitle>
-          <p className="text-xs text-muted">{summary}</p>
+          <p className="text-meta text-muted">{chartSummary}</p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1.5">
           <SegmentedControl
@@ -147,36 +218,38 @@ export function UsageTrendChart({
           />
         </div>
       </CardHeader>
-      <CardContent>
-        <div className="relative h-56">
+      <CardContent className="px-5 pb-5">
+        <div ref={plotRef} className="relative h-72">
           <ResponsiveContainer width="100%" height="100%">
             {byModel ? (
-              <LineChart
+              <AreaChart
                 data={data}
-                margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
-                onMouseMove={trendHover.onChartMouseMove}
+                margin={{ top: 16, right: 12, bottom: 0, left: 0 }}
+                onMouseMove={onPlotMouseMove}
                 onMouseLeave={trendHover.onChartMouseLeave}
               >
                 {axis}
                 {series.map((item) => (
-                  <Line
+                  <Area
                     key={item.id}
                     type="monotone"
                     dataKey={item.id}
                     name={item.name}
+                    stackId="model-usage"
                     stroke={item.color}
                     strokeWidth={1.5}
-                    dot={false}
+                    fill={item.color}
+                    fillOpacity={0.45}
                     isAnimationActive={false}
                     activeDot={{ r: 3, strokeWidth: 0 }}
                   />
                 ))}
-              </LineChart>
+              </AreaChart>
             ) : (
               <AreaChart
                 data={data}
-                margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
-                onMouseMove={trendHover.onChartMouseMove}
+                margin={{ top: 16, right: 12, bottom: 0, left: 0 }}
+                onMouseMove={onPlotMouseMove}
                 onMouseLeave={trendHover.onChartMouseLeave}
               >
                 <defs>
@@ -214,15 +287,48 @@ export function UsageTrendChart({
               </AreaChart>
             )}
           </ResponsiveContainer>
+          {todayIsLast ? (
+            <div className="pointer-events-none absolute right-2 top-1 rounded-full bg-subtle px-2 py-0.5 text-meta text-muted">
+              {t('dashboard.page.trendToday')}
+            </div>
+          ) : null}
           {trendHover.tip ? (
             <UsageTrendTooltipCard
               label={trendHover.tip.label}
               items={trendHover.tip.items}
+              dailyTotal={trendHover.tip.dailyTotal}
+              cumulativeTotal={trendHover.tip.cumulativeTotal}
+              dailyTotalLabel={t('dashboard.page.trendDailyTotal')}
+              cumulativeTotalLabel={t('dashboard.page.trendCumulativeTotal')}
+              x={trendHover.tip.x}
+              y={trendHover.tip.y}
+              containerWidth={trendHover.tip.containerWidth}
+              containerHeight={trendHover.tip.containerHeight}
               onMouseEnter={trendHover.onTipMouseEnter}
               onMouseLeave={trendHover.onTipMouseLeave}
             />
           ) : null}
         </div>
+        {series.length > 0 ? (
+          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
+            {series.map((item) => (
+              <span
+                key={item.id}
+                className="inline-flex items-center gap-1.5 text-meta text-secondary"
+              >
+                <span
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{
+                    backgroundColor: byModel
+                      ? item.color
+                      : resolveChartColor(item.color, chartScheme),
+                  }}
+                />
+                <span className="max-w-[12rem] truncate">{item.name}</span>
+              </span>
+            ))}
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );

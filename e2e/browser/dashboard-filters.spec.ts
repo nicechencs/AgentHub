@@ -18,9 +18,11 @@ test('Dashboard usage filters stay selected after leaving and returning', async 
   await expect(page.getByText(/Token 用量/)).toBeVisible({ timeout: 20_000 });
   await expect(await usageCombobox(page, '全部 Agent')).toBeVisible();
   await expect(await usageCombobox(page, '全部模型')).toBeVisible();
-  await expect(await usageCombobox(page, '7 天')).toBeVisible();
+  const sevenDays = page.getByRole('tab', { name: '7 天', exact: true });
+  await expect(sevenDays).toBeVisible();
+  await expect(sevenDays).toHaveAttribute('aria-selected', 'true');
 
-  await chooseOption(page, '7 天', '今天');
+  await page.getByRole('tab', { name: '今天', exact: true }).click();
   await chooseOption(page, '全部 Agent', 'Claude Code');
   await expect(page.getByText(/Token 用量/)).toBeVisible({ timeout: 20_000 });
 
@@ -34,7 +36,10 @@ test('Dashboard usage filters stay selected after leaving and returning', async 
 
   await expect(await usageCombobox(page, 'Claude Code')).toBeVisible();
   await expect(await usageCombobox(page, modelName)).toBeVisible();
-  await expect(await usageCombobox(page, '今天')).toBeVisible();
+  await expect(page.getByRole('tab', { name: '今天', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
 
   await goNav(page, '连接');
   await expect(page.getByRole('heading', { name: '连接' })).toBeVisible();
@@ -43,5 +48,8 @@ test('Dashboard usage filters stay selected after leaving and returning', async 
   await expect(page.getByRole('heading', { name: '总览' })).toBeVisible();
   await expect(await usageCombobox(page, 'Claude Code')).toBeVisible();
   await expect(await usageCombobox(page, modelName)).toBeVisible();
-  await expect(await usageCombobox(page, '今天')).toBeVisible();
+  await expect(page.getByRole('tab', { name: '今天', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
 });
