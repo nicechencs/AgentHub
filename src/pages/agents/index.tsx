@@ -7,7 +7,6 @@ import { WorkbenchSplitPage } from '@/components/layout/SideSplit';
 import { useSideSplit } from '@/components/layout/use-side-split';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { EnvRemediationPanel } from '@/components/shared/EnvRemediationPanel';
-import { EnvStatusBar } from '@/components/shared/EnvStatusBar';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { ListSkeleton } from '@/components/ui/skeleton';
@@ -35,6 +34,7 @@ import { hasEnvIssues } from '@/lib/env';
 import type { AgentKey, AgentStatus, AgentUpdateInfo, RuntimeDetect, RuntimeId } from '@/lib/types';
 import { AgentCard } from './agent-card';
 import { AgentDetailPanel } from './AgentDetailPanel';
+import { EnvSoftwareList, type EnvSoftwareIntent } from './EnvSoftwareList';
 import { cn } from '@/lib/utils';
 import {
   AGENT_TABLE_COLUMN_SPECS,
@@ -60,6 +60,7 @@ export default function AgentsPage() {
   const [pageFix, setPageFix] = React.useState<{
     runtimeId?: RuntimeId;
     autoStart: boolean;
+    intent: EnvSoftwareIntent;
   } | null>(null);
   /** 真实安装中态(勿用 autoStart 充当 busy,失败后会永久卡住) */
   const [envInstallRunning, setEnvInstallRunning] = React.useState(false);
@@ -213,7 +214,7 @@ export default function AgentsPage() {
     ? runtimes.find((r) => r.id === pageFix.runtimeId)
     : runtimes.find((r) => r.status !== 'ok');
 
-  const showPagePanel = pageFix != null && hasEnvIssues(runtimes);
+  const showPagePanel = pageFix != null;
   const agentOrder = useStoredIdOrder(StorageKey.agentsCatalogOrder);
   const orderedAgents = React.useMemo(() => {
     const baseline = sortAgentsForManagePage(agents);
@@ -274,21 +275,28 @@ export default function AgentsPage() {
         descriptionTip={t('agents.page.descriptionTip')}
       />
       <div className={pageRhythm.lead}>
-        <EnvStatusBar
+        <EnvSoftwareList
           runtimes={runtimes}
           loading={showAgentSkeleton || envLoading}
           onRefresh={() => void refreshEnv()}
-          onFix={(r) => setPageFix({ runtimeId: r.id, autoStart: false })}
-          onOneClickFix={() => setPageFix({ autoStart: true })}
+          onAction={(runtime, intent) =>
+            setPageFix({
+              runtimeId: runtime.id,
+              autoStart: intent !== 'repair',
+              intent,
+            })
+          }
+          onOneClickFix={() => setPageFix({ autoStart: true, intent: 'install' })}
           oneClickBusy={envInstallRunning}
         />
         {showPagePanel && (
           <EnvRemediationPanel
-            key={`page-fix-${pageFix.runtimeId ?? 'all'}-${pageFix.autoStart}`}
+            key={`page-fix-${pageFix.runtimeId ?? 'all'}-${pageFix.autoStart}-${pageFix.intent}`}
             runtime={pageFixRuntime}
             runtimes={runtimes}
             focusIds={pageFix.runtimeId ? [pageFix.runtimeId] : undefined}
             autoStart={pageFix.autoStart}
+            intent={pageFix.intent}
             pageHasPrimaryCta
             onRunningChange={setEnvInstallRunning}
             onDismiss={() => {

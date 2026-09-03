@@ -544,6 +544,38 @@ fn winget_package_id(id: RuntimeId) -> Option<&'static str> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(all(not(windows), not(target_os = "macos")), allow(dead_code))]
+enum RuntimePackageAction {
+    Install,
+    Upgrade,
+}
+
+/// Already-present Node/Git is upgraded; missing or PATH-broken is installed.
+#[cfg_attr(all(not(windows), not(target_os = "macos")), allow(dead_code))]
+fn runtime_package_action(status: EnvStatusKind) -> RuntimePackageAction {
+    match status {
+        EnvStatusKind::Ok | EnvStatusKind::Outdated => RuntimePackageAction::Upgrade,
+        EnvStatusKind::Missing | EnvStatusKind::BrokenPath => RuntimePackageAction::Install,
+    }
+}
+
+#[cfg_attr(all(not(windows), not(target_os = "macos")), allow(dead_code))]
+fn package_manager_verb(action: RuntimePackageAction) -> &'static str {
+    match action {
+        RuntimePackageAction::Install => "install",
+        RuntimePackageAction::Upgrade => "upgrade",
+    }
+}
+
+#[cfg_attr(all(not(windows), not(target_os = "macos")), allow(dead_code))]
+fn package_manager_zh(action: RuntimePackageAction) -> &'static str {
+    match action {
+        RuntimePackageAction::Install => "安装",
+        RuntimePackageAction::Upgrade => "升级",
+    }
+}
+
 /// The native runtime package manager for the current desktop platform.
 ///
 /// Keep Windows on winget for compatibility. macOS uses Homebrew because it is
@@ -579,6 +611,155 @@ fn resolve_brew() -> Result<String> {
             "command not found: brew (install Homebrew from https://brew.sh/)".into(),
         )
     })
+}
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const NODEJS_DIST_INDEX_URL: &str = "https://nodejs.org/dist/index.json";
+
+fn is_safe_node_version(version: &str) -> bool {
+    let mut parts = version.split('.');
+    let Some(major) = parts.next() else {
+        return false;
+    };
+    let Some(minor) = parts.next() else {
+        return false;
+    };
+    let Some(patch) = parts.next() else {
+        return false;
+    };
+    parts.next().is_none()
+        && !major.is_empty()
+        && major.chars().all(|c| c.is_ascii_digit())
+        && !minor.is_empty()
+        && minor.chars().all(|c| c.is_ascii_digit())
+        && !patch.is_empty()
+        && patch.chars().all(|c| c.is_ascii_digit())
+}
+
+/// First LTS release in nodejs.org `index.json` (newest-first) that ships a macOS `.pkg`.
+fn pick_nodejs_macos_lts_pkg(index_json: &str) -> Option<(String, String)> {
+    let releases: Vec<serde_json::Value> = serde_json::from_str(index_json).ok()?;
+    for rel in releases {
+        let lts = &rel["lts"];
+        let is_lts = lts.as_str().is_some() || lts.as_bool() == Some(true);
+        if !is_lts {
+            continue;
+        }
+        let version = rel["version"].as_str()?.trim_start_matches('v');
+        if !is_safe_node_version(version) {
+            continue;
+        }
+        let files = rel["files"].as_array()?;
+        let has_pkg = files.iter().any(|file| {
+            matches!(
+                file.as_str(),
+                Some("pkg") | Some("osx-arm64-pkg") | Some("osx-x64-pkg")
+            )
+        });
+        if !has_pkg {
+            continue;
+        }
+        let url = format!("https://nodejs.org/dist/v{version}/node-v{version}.pkg");
+        return Some((version.to_string(), url));
+    }
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn osascript_installer_script(pkg: &Path) -> String {
+    format!(
+        r#"do shell script "/usr/sbin/installer -pkg " & quoted form of "{}" & " -target /" with administrator privileges"#,
+        pkg.display()
+    )
+}
+
+/// Official macOS Node.js `.pkg` when Homebrew is not installed.
+///
+/// Many machines have Node from the nodejs.org installer (`/usr/local/bin/node`)
+/// and never install Homebrew. One-click upgrade must still work.
+#[cfg(target_os = "macos")]
+fn install_nodejs_official_macos_pkg(
+    executor: &dyn CommandExecutor,
+    logs: &mut Vec<String>,
+) -> Result<ExecResult> {
+    let curl = resolve_bin(&["curl"])?;
+    push_log(logs, "正在读取 Node.js 官网版本列表…");
+    let index_res = executor.run(&ExecRequest {
+        program: curl.clone(),
+        args: vec!["-fsSL".into(), NODEJS_DIST_INDEX_URL.into()],
+        timeout: ENV_TIMEOUT,
+        max_output_bytes: MAX_OUTPUT,
+    });
+    push_exec_logs(logs, &index_res, ENV_TIMEOUT.as_secs());
+    if !index_res.success() {
+        return Err(AppError::message(
+            "install.node_pkg",
+            "无法读取 Node.js 官网版本列表",
+        ));
+    }
+    let (version, url) = pick_nodejs_macos_lts_pkg(&index_res.stdout).ok_or_else(|| {
+        AppError::message("install.node_pkg", "无法从官网版本列表中解析 macOS 安装包")
+    })?;
+    if !url.starts_with("https://nodejs.org/dist/v") || !url.ends_with(".pkg") {
+        return Err(AppError::message(
+            "install.node_pkg",
+            "官网安装包地址不在允许范围",
+        ));
+    }
+    push_log(logs, format!("将安装 Node.js {version}（官网安装包）…"));
+    let tmp = tempfile::Builder::new()
+        .prefix("agenthub-node-")
+        .suffix(".pkg")
+        .tempfile()?;
+    let pkg_path = tmp.path().to_path_buf();
+    let download_res = executor.run(&ExecRequest {
+        program: curl,
+        args: vec![
+            "-fL".into(),
+            "--progress-bar".into(),
+            "-o".into(),
+            pkg_path.to_string_lossy().into_owned(),
+            url,
+        ],
+        timeout: ENV_TIMEOUT,
+        max_output_bytes: MAX_OUTPUT,
+    });
+    push_exec_logs(logs, &download_res, ENV_TIMEOUT.as_secs());
+    if !download_res.success() {
+        return Err(AppError::message(
+            "install.node_pkg",
+            "下载 Node.js 官网安装包失败",
+        ));
+    }
+
+    if let Ok(osascript) = resolve_bin(&["osascript"]) {
+        push_log(
+            logs,
+            "将请求本机密码以完成安装（系统对话框，不是 AgentHub 密码）…",
+        );
+        let res = executor.run(&ExecRequest {
+            program: osascript,
+            args: vec!["-e".into(), osascript_installer_script(&pkg_path)],
+            timeout: ENV_TIMEOUT,
+            max_output_bytes: MAX_OUTPUT,
+        });
+        push_exec_logs(logs, &res, ENV_TIMEOUT.as_secs());
+        return Ok(res);
+    }
+
+    let open = resolve_bin(&["open"])?;
+    push_log(
+        logs,
+        "将打开系统安装器。请在窗口中完成安装后回到 AgentHub 再检测。",
+    );
+    let res = executor.run(&ExecRequest {
+        program: open,
+        args: vec!["-W".into(), pkg_path.to_string_lossy().into_owned()],
+        timeout: ENV_TIMEOUT,
+        max_output_bytes: MAX_OUTPUT,
+    });
+    push_exec_logs(logs, &res, ENV_TIMEOUT.as_secs());
+    Ok(res)
 }
 
 #[cfg_attr(all(not(windows), not(target_os = "macos")), allow(dead_code))]
@@ -822,6 +1003,38 @@ fn install_runtime_inner(
             })?;
             let brew = match resolve_brew() {
                 Ok(path) => path,
+                Err(_) if target == RuntimeId::NodeJs => {
+                    logs.push("未找到 Homebrew，改用 Node.js 官网安装包。".into());
+                    let before = runtime::detect_one(RuntimeId::NodeJs);
+                    match install_nodejs_official_macos_pkg(executor, &mut logs) {
+                        Ok(res) => {
+                            let out = finalize_runtime_install(id, logs, res.clone());
+                            let same_version = out
+                                .runtime
+                                .as_ref()
+                                .and_then(|row| row.version.as_deref())
+                                == before.version.as_deref();
+                            if !res.success() && out.ok && same_version {
+                                return Ok(InstallOutcome::failure(
+                                    action,
+                                    out.logs,
+                                    "升级未完成。请在系统对话框中输入本机密码，或打开官网安装。完成后完全退出并重启 AgentHub 再检测。",
+                                ));
+                            }
+                            return Ok(out);
+                        }
+                        Err(e) => {
+                            logs.push(e.to_string());
+                            return Ok(missing_package_manager_outcome(
+                                action,
+                                logs,
+                                "brew",
+                                target,
+                                "未找到 Homebrew，官网安装包也未能完成。请打开 Node.js 官网安装后，完全退出并重启 AgentHub 再检测。",
+                            ));
+                        }
+                    }
+                }
                 Err(_) => {
                     return Ok(missing_package_manager_outcome(
                         action,
@@ -832,13 +1045,16 @@ fn install_runtime_inner(
                     ));
                 }
             };
+            let package_action = runtime_package_action(runtime::detect_one(target).status);
+            let verb = package_manager_verb(package_action);
             logs.push(format!(
-                "正在用 Homebrew 安装 {}（{formula}）…",
+                "正在用 Homebrew {} {}（{formula}）…",
+                package_manager_zh(package_action),
                 target.as_str()
             ));
             let req = ExecRequest {
                 program: brew,
-                args: vec!["install".into(), formula.into()],
+                args: vec![verb.into(), formula.into()],
                 timeout: ENV_TIMEOUT,
                 max_output_bytes: MAX_OUTPUT,
             };
@@ -867,8 +1083,10 @@ fn install_runtime_inner(
                 .with_code("unsupported", None));
             };
 
+            let package_action = runtime_package_action(runtime::detect_one(target).status);
+            let verb = package_manager_verb(package_action);
             logs.push(format!(
-                "# install runtime {} via {channel} ({package_id})",
+                "# {verb} runtime {} via {channel} ({package_id})",
                 target.as_str()
             ));
 
@@ -893,7 +1111,7 @@ fn install_runtime_inner(
             let req = ExecRequest {
                 program: winget,
                 args: vec![
-                    "install".into(),
+                    verb.into(),
                     "-e".into(),
                     "--id".into(),
                     package_id.into(),

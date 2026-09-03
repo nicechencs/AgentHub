@@ -50,7 +50,10 @@ function hasInstallerChannel(
   if (channel !== 'brew' && channel !== 'winget') return false;
   const row = runtimes.find((item) => item.id === id);
   if (!row || row.remediations.length === 0) return true;
-  if (row.remediations.some((item) => blocksAutoInstall(item.value))) return false;
+  if (row.remediations.some((item) => blocksAutoInstall(item.value))) {
+    // macOS can still install Node via the official pkg when Homebrew is missing.
+    return platform === 'macos' && (id === 'nodejs' || id === 'npm');
+  }
   return row.remediations.some((item) => item.kind === channel);
 }
 
@@ -58,10 +61,11 @@ export function resolveAutoInstallPlan(
   runtimes: RuntimeDetect[],
   onlyIds?: RuntimeId[],
   platform: HostPlatform = detectHostPlatform(),
+  includeReady = false,
 ): AutoInstallPlan {
   const filter = onlyIds ? new Set(onlyIds) : null;
   const issues = runtimes.filter(
-    (r) => r.status !== 'ok' && (!filter || filter.has(r.id)),
+    (r) => (includeReady || r.status !== 'ok') && (!filter || filter.has(r.id)),
   );
   const issueIds = new Set(issues.map((i) => i.id));
   const targets: RuntimeId[] = [];
