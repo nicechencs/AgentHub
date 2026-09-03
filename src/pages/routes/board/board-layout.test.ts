@@ -26,10 +26,14 @@ describe('routes board layout wiring', () => {
     expect(page).toContain('handleStartLocalGateway');
     expect(page).toContain('handleStopLocalGateway');
     expect(page).toContain('<Switch');
-    expect(page).toContain('routes.pool.entry');
-    expect(page).not.toContain('AgentLogo');
+    expect(page).toContain('routes.board.entrySwitch');
+    expect(page).toContain('AgentLogo');
+    expect(page).toContain('supportedAgentsForEndpointKind');
     expect(page).not.toContain('recharts');
+    expect(page).toContain('headerActions=');
     expect(page).toContain('routes.board.refresh');
+    expect(source('board-usage-section.tsx')).toContain('headerActions');
+    expect(source('board-usage-section.tsx')).toContain('actions={headerActions}');
     expect(source('board-usage-section.tsx')).not.toContain('routes.board.refresh');
   });
 
