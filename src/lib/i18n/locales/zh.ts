@@ -1740,6 +1740,13 @@ export const zh = {
       coexistKimi: "这台电脑上同时有 config.toml 里的 API Key 和官方 /login。导入只会收下现在正在用的那一份。",
       coexistCodex: "这台电脑上同时有 API Key 和 ChatGPT 登录。导入会收下现在正在用的那一份。",
       coexistCatalogDesktop: "自定义模型和桌面套餐登录不在一起。导入只会收下自定义模型，桌面登录留在应用内。",
+      table: {
+        login: "登录",
+        kind: "类型",
+        status: "状态",
+        agent: "Agent",
+        actions: "操作",
+      },
       authFilesTitle: "相关文件",
       copyFile: "复制",
       openedAuthFile: "已打开所在目录",

@@ -1750,6 +1750,13 @@ export const en = {
       coexistKimi: "This computer has both a config.toml API Key and an official /login. Import only takes the one currently in use.",
       coexistCodex: "This computer has both an API Key and a ChatGPT login. Import takes the one currently detected as in use.",
       coexistCatalogDesktop: "Custom models and the desktop plan login are separate. Import takes custom models only; the desktop login stays in the app.",
+      table: {
+        login: "Login",
+        kind: "Type",
+        status: "Status",
+        agent: "Agent",
+        actions: "Actions",
+      },
       authFilesTitle: "Related files",
       copyFile: "Copy",
       openedAuthFile: "Opened the folder",

@@ -50,6 +50,7 @@ describe('TicketWalletList details', () => {
         onImportToPool() {},
         onEditTicket() {},
         onDeleteTicket() {},
+        onShowDetail() {},
       }),
     );
     expect(markup).not.toContain('aria-expanded');
@@ -82,6 +83,15 @@ describe('TicketWalletList details', () => {
     expect(markup).not.toContain('移入回收站');
     expect(markup).not.toContain('编辑配置');
     expect(markup).not.toContain('编辑 API Key');
+    expect(markup).toContain('<table');
+    expect(markup).toContain('data-col="login"');
+    expect(markup).toContain('data-col="kind"');
+    expect(markup).toContain('data-col="status"');
+    expect(markup).toContain('data-col="agent"');
+    expect(markup).toContain('data-col="actions"');
+    expect(markup).toContain('data-table-layout="split"');
+    expect(markup).toContain('data-ticket-name="provider:kimi-1"');
+    expect(markup).not.toMatch(/<tr[^>]*tabindex="0"/);
   });
 
   it('marks the inspected ticket as selected', () => {
@@ -95,7 +105,7 @@ describe('TicketWalletList details', () => {
       }),
     );
     expect(markup).toContain('data-active="true"');
-    expect(markup).toContain('border-border-strong');
+    expect(markup).toContain('data-ticket-row="provider:kimi-1"');
   });
 
   it('shows a reorder handle when there are two logins', () => {
@@ -164,7 +174,7 @@ describe('TicketWalletList details', () => {
     expect(markup).not.toContain('>OpenAI<');
   });
 
-  it('puts usage on the same row and omits a second Codex label', () => {
+  it('shows Agent on the same row and omits a second Codex label', () => {
     const wallet: TicketWallet = {
       tickets: [{
         id: 'account:codex-1',
@@ -205,39 +215,14 @@ describe('TicketWalletList details', () => {
     expect(markup).toContain('var(--agent-codex)');
     expect(markup).toMatch(/color:\s*var\(--agent-codex\)/);
     expect(markup).toContain('Codex');
+    expect(markup).toContain('data-col="agent"');
     expect(markup).not.toContain('（直连）');
     expect(markup).not.toContain('(直连)');
     expect(markup).not.toContain('正用于：');
     expect(markup).not.toContain('mt-1 pl-5');
   });
 
-  it('links 本机路由 usage to /routes without opening ConnectFlow', () => {
-    const wallet = sampleWallet();
-    wallet.bindings = [{
-      ticketId: 'provider:kimi-1',
-      agentId: 'codex',
-      route: 'bridge',
-      active: true,
-      profileId: 'bridge-1',
-      bridge: { port: 43121, running: true },
-    }];
-    const markup = renderWithTooltip(
-      createElement(TicketWalletList, {
-        wallet,
-        onImportToPool() {},
-        onEditTicket() {},
-        onDeleteTicket() {},
-      }),
-    );
-    expect(markup).toContain('href="/routes/pool?profile=bridge-1"');
-    expect(markup).toContain('本机路由');
-    expect(markup).not.toContain('分享至连接池');
-    expect(markup).not.toContain('用到其他工具');
-    expect(markup).not.toContain('本机转发');
-    expect(markup).not.toContain('接到…');
-  });
-
-  it('shows N-member poll-pool copy on the bound ticket usage line', () => {
+  it('does not put 本机路由 or pool rotation copy on the Agent column', () => {
     const wallet = sampleWallet();
     wallet.bindings = [{
       ticketId: 'provider:kimi-1',
@@ -277,9 +262,15 @@ describe('TicketWalletList details', () => {
         onDeleteTicket() {},
       }),
     );
-    expect(markup).toContain('2 份同类登录可轮换');
-    expect(markup).toContain('本机路由');
-    expect(markup).toContain('运行中');
+    expect(markup).toContain('data-col="agent"');
+    expect(markup).toContain('Kimi');
+    expect(markup).not.toContain('href="/routes/pool?profile=bridge-1"');
+    expect(markup).not.toContain('本机路由');
+    expect(markup).not.toContain('2 份同类登录可轮换');
+    expect(markup).not.toContain('分享至连接池');
+    expect(markup).not.toContain('用到其他工具');
+    expect(markup).not.toContain('本机转发');
+    expect(markup).not.toContain('接到…');
     expect(markup).not.toContain('sk-');
   });
 
