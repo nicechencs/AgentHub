@@ -76,15 +76,14 @@ describe('agentWritesLocalTokenKind', () => {
 });
 
 describe('agentCanReceiveTokenImport', () => {
-  it('only enables the Agent whose loopback kind matches this token', () => {
+  it('enables Agents that speak this endpoint', () => {
     expect(agentCanReceiveTokenImport('claude', 'messages')).toBe(true);
-    expect(agentCanReceiveTokenImport('kimi', 'messages')).toBe(false);
-    expect(agentCanReceiveTokenImport('codex', 'responses_codex')).toBe(true);
-    expect(agentCanReceiveTokenImport('grok', 'responses_grok')).toBe(true);
-    expect(agentCanReceiveTokenImport('kimi', 'chat_completions')).toBe(true);
-    expect(agentCanReceiveTokenImport('dsh', 'chat_completions')).toBe(true);
-    expect(agentCanReceiveTokenImport('pi', 'chat_completions')).toBe(false);
-    expect(agentCanReceiveTokenImport('workbuddy', 'chat_completions')).toBe(false);
+    expect(agentCanReceiveTokenImport('kimi', 'messages')).toBe(true);
+    expect(agentCanReceiveTokenImport('pi', 'chat_completions')).toBe(true);
+    expect(agentCanReceiveTokenImport('workbuddy', 'chat_completions')).toBe(true);
+    expect(agentCanReceiveTokenImport('codex', 'messages')).toBe(false);
+    expect(agentCanReceiveTokenImport('cursor', 'chat_completions')).toBe(false);
+    expect(agentCanReceiveTokenImport('grok', 'responses_codex')).toBe(false);
   });
 });
 
@@ -104,7 +103,7 @@ describe('eligibleAgentsForTokenImport', () => {
       installedIds: ['codex', 'claude', 'pi', 'cursor'],
       agentName: (id) => id.toUpperCase(),
     });
-    expect(agents.map((a) => a.id)).toEqual(['claude']);
+    expect(agents.map((a) => a.id)).toEqual(['claude', 'pi']);
     expect(agents[0]?.name).toBe('CLAUDE');
   });
 
@@ -132,7 +131,7 @@ describe('eligibleAgentsForTokenImport', () => {
     expect(eligibleAgentsForTokenImport({
       kind: 'chat_completions',
       installedIds: ['claude', 'workbuddy', 'kimi', 'dsh'],
-    }).map((a) => a.id)).toEqual(['kimi', 'dsh']);
+    }).map((a) => a.id)).toEqual(['workbuddy', 'kimi', 'dsh']);
   });
 });
 
@@ -144,8 +143,9 @@ describe('tokenImportAgentChoice', () => {
       enabled: true,
       reason: null,
     });
+    expect(tokenImportAgentChoice('messages', { id: 'pi', name: 'Pi' }).enabled).toBe(true);
     expect(tokenImportAgentChoice('messages', { id: 'codex', name: 'Codex' }).reason).toBe('端点不匹配');
-    expect(tokenImportAgentChoice('messages', { id: 'pi', name: 'Pi' }).reason).toBe('还不能写入');
+    expect(tokenImportAgentChoice('messages', { id: 'cursor', name: 'Cursor' }).reason).toBe('没有可用端点');
   });
 });
 
@@ -163,7 +163,7 @@ describe('tokenImportGate', () => {
     expect(gate.agents.map((a) => a.id)).toEqual(['claude', 'codex', 'pi']);
     expect(gate.agents.find((a) => a.id === 'claude')?.enabled).toBe(true);
     expect(gate.agents.find((a) => a.id === 'codex')?.enabled).toBe(false);
-    expect(gate.agents.find((a) => a.id === 'pi')?.enabled).toBe(false);
+    expect(gate.agents.find((a) => a.id === 'pi')?.enabled).toBe(true);
   });
 
   it('still opens when nobody can receive this endpoint (items explain why)', () => {

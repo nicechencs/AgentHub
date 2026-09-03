@@ -3,8 +3,9 @@
  * Reuses the「写入 Agent」path: switchProvider on the generated local-gateway
  * provider (URL + ahb_ key). Bind only when that provider is not there yet.
  */
+import { switchAccount } from '@/lib/api/account';
 import { listAdapterProfiles } from '@/lib/api/adapter';
-import { switchProvider } from '@/lib/api/provider';
+import { switchPreview, switchProvider } from '@/lib/api/provider';
 import { logGuiEvent } from '@/lib/api/settings';
 import { bindTicket, planTicket, ticketIdFor } from '@/lib/api/tickets';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
@@ -98,4 +99,35 @@ export async function importLocalTokenToAgent(
     agent: input.agentId,
     last4: switchWriteLast4(input.localToken),
   });
+}
+
+export type ApplyImportedLoginDeps = {
+  switchAccount: typeof switchAccount;
+  switchPreview: typeof switchPreview;
+  switchProvider: typeof switchProvider;
+};
+
+const applyImportedLoginDeps: ApplyImportedLoginDeps = {
+  switchAccount,
+  switchPreview,
+  switchProvider,
+};
+
+/** After Connections add-key save: write live config when the new row is not current. */
+export async function applyImportedLogin(
+  input: {
+    agentId: AgentKey;
+    sourceKind: 'provider' | 'account';
+    sourceId: string;
+    isCurrent: boolean;
+  },
+  deps: ApplyImportedLoginDeps = applyImportedLoginDeps,
+): Promise<void> {
+  if (input.isCurrent) return;
+  if (input.sourceKind === 'account') {
+    await deps.switchAccount(input.agentId, input.sourceId);
+    return;
+  }
+  await deps.switchPreview(input.agentId, input.sourceId);
+  await deps.switchProvider(input.agentId, input.sourceId);
 }

@@ -21,9 +21,13 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
+import { ApiKeyAccountDialog } from '@/components/connections/ApiKeyAccountDialog';
+import { ProviderEditDialog } from '@/components/connections/ProviderEditDialog';
 import { agentDisplayName } from '@/config/agents';
 import { deleteAccount, listAccounts } from '@/lib/api/account';
 import { deleteProvider, listProviders } from '@/lib/api/provider';
+import type { ConnectApiKeyDraft } from '@/lib/connect-flow/connect-intent';
+import type { AgentKey } from '@/lib/types';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { localEndpointKindFromPool } from '@/lib/route-endpoints';
 import { ROUTES_POOL_PATH } from '@/lib/routes-path';
@@ -61,6 +65,7 @@ import {
   type LocalTokenRow,
 } from './tokens-model';
 import { TokenImportToAgentButton } from './TokenImportToAgentButton';
+import { applyImportedLogin } from './token-import-action';
 import {
   connectionMatchAgentNames,
   hashLocalToken,
@@ -103,6 +108,10 @@ export default function RoutesTokensPage() {
   const [connectionMatches, setConnectionMatches] = useState<ConnectionEntryKeyMatch[]>([]);
   const [connectionMatchesReady, setConnectionMatchesReady] = useState(true);
   const [alsoDeleteConnections, setAlsoDeleteConnections] = useState(true);
+  const [importSession, setImportSession] = useState<{
+    agentId: AgentKey;
+    draft: ConnectApiKeyDraft;
+  } | null>(null);
   const {
     chatCompletionsShared,
     defaultPools,
@@ -359,6 +368,31 @@ export default function RoutesTokensPage() {
     : null;
   const pageLoading = loading || poolsLoading;
 
+  const startImport = (row: LocalTokenRow, agentId: AgentKey, draft: ConnectApiKeyDraft) => {
+    inspect.open(row.id);
+    setImportAfterSaveRow(null);
+    setImportSession({ agentId, draft });
+  };
+
+  const finishImportedLogin = async (
+    sourceKind: 'provider' | 'account',
+    sourceId: string,
+    isCurrent: boolean,
+  ) => {
+    const agentId = importSession?.agentId;
+    setImportSession(null);
+    if (!agentId) return;
+    try {
+      await applyImportedLogin({ agentId, sourceKind, sourceId, isCurrent });
+      toast({
+        title: t('routes.tokens.importSuccess', { name: agentDisplayName(agentId) }),
+        variant: 'success',
+      });
+    } catch {
+      toast({ title: t('routes.tokens.importFailed'), variant: 'danger' });
+    }
+  };
+
   const list = (
     <RoutesPane>
       <PageHeader
@@ -425,6 +459,7 @@ export default function RoutesTokensPage() {
             onShowDetail={(row) => inspect.open(row.id)}
             onDelete={(row) => setDeleteRow(row)}
             installedAgents={installedAgentRefs}
+            onImport={startImport}
           />
         </PageSection>
       )}
@@ -486,6 +521,7 @@ export default function RoutesTokensPage() {
               <TokenImportToAgentButton
                 row={importAfterSaveRow}
                 installedAgents={installedAgentRefs}
+                onImport={(agentId, draft) => startImport(importAfterSaveRow, agentId, draft)}
               />
             </div>
           ) : null}
@@ -580,7 +616,44 @@ export default function RoutesTokensPage() {
     <WorkbenchSplitPage
       split={inspect}
       resizeAria={t('common.resizeSidePanel')}
-      panel={detailRow ? (
+      panel={importSession ? (
+        importSession.agentId === 'workbuddy' ? (
+          <ApiKeyAccountDialog
+            asPanel
+            open
+            width={inspect.paneWidth}
+            agentId="workbuddy"
+            mode="add"
+            initialApiKey={importSession.draft.apiKey}
+            initialBaseUrl={importSession.draft.baseUrl}
+            initialModel={importSession.draft.model}
+            onOpenChange={(open) => {
+              if (!open) setImportSession(null);
+            }}
+            onSaved={(account) => {
+              void finishImportedLogin('account', account.id, account.isCurrent);
+            }}
+          />
+        ) : (
+          <ProviderEditDialog
+            asPanel
+            open
+            width={inspect.paneWidth}
+            agentId={importSession.agentId}
+            mode="add"
+            initialBaseUrl={importSession.draft.baseUrl}
+            initialApiKey={importSession.draft.apiKey}
+            initialModel={importSession.draft.model}
+            compactGrokApiBackend={importSession.draft.apiBackend}
+            onOpenChange={(open) => {
+              if (!open) setImportSession(null);
+            }}
+            onSaved={(provider) => {
+              void finishImportedLogin('provider', provider.id, provider.isCurrent);
+            }}
+          />
+        )
+      ) : detailRow ? (
         <TokenDetailPanel
           row={detailRow}
           width={inspect.paneWidth}
@@ -589,6 +662,7 @@ export default function RoutesTokensPage() {
           onSaveName={detailRow.poolBacked ? (name) => saveName(detailRow, name) : undefined}
           onDelete={() => setDeleteRow(detailRow)}
           installedAgents={installedAgentRefs}
+          onImport={(agentId, draft) => startImport(detailRow, agentId, draft)}
         />
       ) : null}
     >

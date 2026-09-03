@@ -54,6 +54,8 @@ import {
 } from './tokens-model';
 import { TokenImportToAgentButton } from './TokenImportToAgentButton';
 import type { TokenImportAgentRef } from './token-import-model';
+import type { ConnectApiKeyDraft } from '@/lib/connect-flow/connect-intent';
+import type { AgentKey } from '@/lib/types';
 import { parseCustomModelList } from '@/pages/routes/pool/pool-authorization-detail';
 
 export function TokenDetailPanel({
@@ -64,6 +66,7 @@ export function TokenDetailPanel({
   onSaveName,
   onDelete,
   installedAgents,
+  onImport,
 }: {
   row: LocalTokenRow;
   width?: number;
@@ -72,6 +75,7 @@ export function TokenDetailPanel({
   onSaveName?: (name: string) => Promise<void> | void;
   onDelete?: () => void;
   installedAgents?: readonly TokenImportAgentRef[];
+  onImport?: (agentId: AgentKey, draft: ConnectApiKeyDraft) => void;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -245,10 +249,11 @@ export function TokenDetailPanel({
             ) : null}
             {testing ? t('routes.tokens.testing') : t('routes.tokens.test')}
           </Button>
-          {installedAgents ? (
+          {installedAgents && onImport ? (
             <TokenImportToAgentButton
               row={row}
               installedAgents={installedAgents}
+              onImport={onImport}
             />
           ) : null}
           {onDelete ? (

@@ -62,6 +62,8 @@ export {
   FALLBACK_CUSTOM_MODEL,
   defaultModelForAgent,
   filterRemoteModelsForAgent,
+  isLoopbackHttpUrl,
+  listRemoteModelsForPicker,
   looksLikeGrokModel,
   isLivePastedApiKey,
   looksLikeLast4Mask,

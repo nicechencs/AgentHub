@@ -1253,7 +1253,7 @@ export const en = {
       importNeedAgent: "Install an Agent first",
       importNoneEligible: "No installed Agent matches this endpoint",
       importEndpointMismatch: "Wrong endpoint",
-      importCannotWrite: "Can't write yet",
+      importCannotWrite: "No usable endpoint",
       importSuccess: "Imported to {name}",
       importFailed: "Couldn't import to Agent",
       importAfterSaveTitle: "Entry key saved",

@@ -72,7 +72,7 @@ import {
   defaultConfigScaffold,
   EMPTY_FORM_VARS,
   extractFormVars,
-  filterRemoteModelsForAgent,
+  listRemoteModelsForPicker,
   formFieldVisibility,
   initFormFromConfig,
   isLiveFilePath,
@@ -706,13 +706,14 @@ export function ProviderEditDialog({
         },
       );
       if (seq !== remoteModelsSeq.current) return;
-      setRemoteModels(filterRemoteModelsForAgent(agentId, ids));
+      const listed = listRemoteModelsForPicker(agentId, ids, resolvedBaseUrl);
+      setRemoteModels(listed);
       setRemoteModelsError(false);
       toast({
         title: t('connections.providerDialog.testModelsSuccess'),
         description:
-          ids.length > 0
-            ? t('connections.providerDialog.testModelsSuccessDesc', { count: ids.length })
+          listed.length > 0
+            ? t('connections.providerDialog.testModelsSuccessDesc', { count: listed.length })
             : t('connections.providerDialog.testModelsEmptyDesc'),
         variant: 'success',
       });
@@ -812,7 +813,7 @@ export function ProviderEditDialog({
       void request
         .then((ids) => {
           if (seq !== remoteModelsSeq.current) return;
-          setRemoteModels(filterRemoteModelsForAgent(agentId, ids));
+          setRemoteModels(listRemoteModelsForPicker(agentId, ids, resolvedBaseUrl));
           setRemoteModelsError(false);
         })
         .catch(() => {
