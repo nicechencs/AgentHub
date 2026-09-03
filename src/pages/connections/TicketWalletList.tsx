@@ -80,6 +80,7 @@ import {
   TICKET_WALLET_COLUMN_SPECS,
   ticketWalletColumnLabel,
   ticketDetailEditLabel,
+  oauthActionHoverTip,
   ticketRefreshDisabledReason,
   ticketSwitchDisabledReason,
   type TicketAddMenuAgent,
@@ -130,6 +131,7 @@ function CredentialMark({
 function DisabledReasonButton({
   disabled,
   reason,
+  tip,
   ariaLabel,
   onClick,
   children,
@@ -137,13 +139,14 @@ function DisabledReasonButton({
 }: {
   disabled: boolean;
   reason?: string;
+  tip?: string;
   ariaLabel: string;
   onClick: () => void;
   children: React.ReactNode;
   variant?: 'outline' | 'secondary' | 'dangerOutline';
 }) {
   return (
-    <Hint key={disabled ? `${ariaLabel}:${reason ?? 'disabled'}` : `${ariaLabel}:enabled`} label={disabled ? (reason || ariaLabel) : undefined}>
+    <Hint key={disabled ? `${ariaLabel}:${reason ?? 'disabled'}` : `${ariaLabel}:enabled`} label={disabled ? (reason || ariaLabel) : tip}>
       <Button
         size="sm"
         variant={variant}
@@ -240,6 +243,7 @@ export function TicketDetailPanel({
     <DisabledReasonButton
       variant="secondary"
       disabled={Boolean(refreshLocked || refreshing)}
+      tip={oauthActionHoverTip(extras.oauthAction, t)}
       reason={ticketRefreshDisabledReason({
         refreshing: Boolean(refreshing),
         refreshLocked: Boolean(refreshLocked),

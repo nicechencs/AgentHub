@@ -5,6 +5,7 @@ import { QuotaBar } from '@/components/shared/QuotaBar';
 import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
+import { Hint } from '@/components/ui/tooltip';
 import { Switch } from '@/components/ui/switch';
 import { ensureSourceModelCatalog } from '@/lib/api/adapter';
 import type { AccountAction } from '@/lib/backend/contracts/account-actions';
@@ -107,17 +108,19 @@ export function PoolAuthorizationDetail({
       headerActions={editing ? undefined : (
         <>
           {refreshLabels && onRefresh ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled={refreshing}
-              aria-label={refreshLabels.idle}
-              onClick={onRefresh}
-            >
-              <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
-              {refreshing ? refreshLabels.busy : refreshLabels.idle}
-            </Button>
+            <Hint label={refreshing ? refreshLabels.busy : refreshLabels.tip}>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={refreshing}
+                aria-label={refreshLabels.idle}
+                onClick={onRefresh}
+              >
+                <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
+                {refreshing ? refreshLabels.busy : refreshLabels.idle}
+              </Button>
+            </Hint>
           ) : null}
           <Button size="sm" variant="dangerOutline" onClick={onDelete}>
             <Trash2 className="h-3.5 w-3.5" /> {t('connections.list.moveToTrash')}

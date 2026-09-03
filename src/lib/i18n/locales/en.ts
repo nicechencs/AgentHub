@@ -1675,7 +1675,9 @@ export const en = {
       cursorLiveWriteUnsupportedFull:
         "Failed to write local config. Cursor can't write this login to its local config yet. Use Cursor's own sign-in, or set CURSOR_API_KEY.",
       refresh: "Refresh",
+      refreshTip: "Check this login's usage.",
       syncCurrentLogin: "Sync current login",
+      syncCurrentLoginTip: "Not a list refresh. Writes in the official login this machine is using, then checks usage.",
       refreshing: "Refreshing…",
       syncing: "Syncing…",
       refreshOk: "Refreshed",
