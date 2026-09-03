@@ -37,6 +37,7 @@ import {
   fmtAbsoluteI18n,
   fmtRelativeI18n,
 } from './backup-format';
+import { StorageKey } from '@/lib/ui-preferences';
 
 const KIND_VARIANT: Record<BackupKind, 'accent' | 'default' | 'warning'> = {
   'auto-switch': 'accent',
@@ -46,7 +47,7 @@ const KIND_VARIANT: Record<BackupKind, 'accent' | 'default' | 'warning'> = {
   'pre-skill-uninstall': 'warning',
 };
 
-const BACKUPS_INSPECT_WIDTH_KEY = 'agenthub.settings.backupsInspectWidth';
+const BACKUPS_INSPECT_WIDTH_KEY = StorageKey.settingsBackupsInspectWidth;
 
 function backupKindLabel(kind: BackupKind, t: TranslateFn): string {
   switch (kind) {

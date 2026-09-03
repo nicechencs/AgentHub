@@ -41,6 +41,7 @@ import type { AgentColumn } from '@/lib/hooks/useInstalledAgents';
 import type { AgentKey, Skill, SkillMapStatus, SkillSyncState } from '@/lib/types';
 import type { TranslateFn } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { loadBool, saveBool, StorageKey } from '@/lib/ui-preferences';
 import { skillCellTip, sharedRootPresence } from './copy';
 import type { SkillPreviewCopy, SkillPreviewTarget } from './SkillMarkdownPreviewPanel';
 
@@ -52,17 +53,7 @@ const MATRIX_WIDTH_SPECS: ColumnWidthSpec<'skill' | 'shared' | 'agent'>[] = [
   { key: 'agent', defaultWidth: 96, minWidth: 72 },
 ];
 
-const LEGEND_STORAGE_KEY = 'agenthub.skills.matrixLegendOpen';
-const COLUMN_WIDTHS_STORAGE_KEY = 'agenthub.skills.matrixColumnWidths';
-
-function readLegendOpen(): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    return window.localStorage.getItem(LEGEND_STORAGE_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
+const COLUMN_WIDTHS_STORAGE_KEY = StorageKey.skillsMatrixColumnWidths;
 
 /** 表头短名:Claude Code → Claude */
 function shortName(name: string) {
@@ -419,14 +410,10 @@ function PrivateOriginCell({
 /** 矩阵图标图例（默认折叠，记住用户选择） */
 export function SkillMatrixLegend({ className }: { className?: string }) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(readLegendOpen);
+  const [open, setOpen] = useState(() => loadBool(StorageKey.skillsMatrixLegendOpen));
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(LEGEND_STORAGE_KEY, open ? '1' : '0');
-    } catch {
-      // ignore
-    }
+    saveBool(StorageKey.skillsMatrixLegendOpen, open);
   }, [open]);
 
   const items: {

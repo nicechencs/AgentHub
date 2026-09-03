@@ -122,7 +122,7 @@ import {
   projectSkillRowKey,
 } from './skills-project-model';
 
-const SKILLS_PREVIEW_WIDTH_KEY = 'agenthub.skills.previewWidth';
+const SKILLS_PREVIEW_WIDTH_KEY = StorageKey.skillsPreviewWidth;
 
 export default function SkillsPage() {
   const { toast } = useToast();

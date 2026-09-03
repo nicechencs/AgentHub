@@ -69,8 +69,9 @@ import {
   toggleSelectedSession,
   visibleSessionsForProject,
 } from './projects-list-model';
+import { StorageKey } from '@/lib/ui-preferences';
 
-const PROJECTS_PREVIEW_WIDTH_KEY = 'agenthub.projects.previewWidth';
+const PROJECTS_PREVIEW_WIDTH_KEY = StorageKey.projectsPreviewWidth;
 
 export default function ProjectsPage() {
   const { t } = useI18n();

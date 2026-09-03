@@ -2,44 +2,13 @@
  * UiPreferencesStore — 真实 UI 本地偏好（theme / onboarding 等）。
  * 不是 backend mock；生产与 dev:mock 均可使用 localStorage。
  *
- * 持久化键约定（N-15）：新键一律通过下方 `StorageKey` 定义，格式为
- * `agenthub:` + kebab-case。历史 `agenthub.` + camelCase 键不得直接替换；
- * 迁移须读旧写新，确认升级覆盖后再清理旧键。
+ * 持久化键约定（N-15）见 `@/lib/storage-key`：新键 `agenthub:` + kebab-case；
+ * 历史 `agenthub.` + camelCase 布局键读旧写新。
  */
 
-const PREFIX = 'agenthub:';
+import { readLegacy } from '@/lib/storage-key';
 
-export const StorageKey = {
-  theme: `${PREFIX}theme`,
-  /** Product accent id (`indigo` | `blue` | `teal` | `rose` | `amber`) */
-  accent: `${PREFIX}accent`,
-  language: `${PREFIX}language`,
-  /** One-shot: first-launch system language already seeded into core */
-  languageSystemSeeded: `${PREFIX}language-system-seeded-v1`,
-  onboardingDone: `${PREFIX}onboarding-done`,
-  usageGuideDismissed: `${PREFIX}usage-guide-dismissed`,
-  dismissedAlertIds: `${PREFIX}dismissed-alert-ids`,
-  sidebarCollapsed: `${PREFIX}sidebar-collapsed`,
-  /** 点侧栏「路由」时是否自动折叠最左侧栏 */
-  sidebarAutoCollapseOnRoutes: `${PREFIX}sidebar-auto-collapse-on-routes`,
-  /** 侧栏是否显示「路由」入口；缺省显示（已稳定） */
-  routesNavVisible: `${PREFIX}routes-nav-visible`,
-  /** 侧栏是否显示「插件」入口；缺省隐藏（功能开发中） */
-  pluginsNavVisible: `${PREFIX}plugins-nav-visible`,
-  /** epoch ms of last successful usage collect (manual or auto) */
-  usageLastCollectAt: `${PREFIX}usage-last-collect-at`,
-  /** SemVer last dismissed via “稍后” on the update prompt */
-  updateDismissedVersion: `${PREFIX}update-dismissed-version`,
-  /** One-shot: localStorage usage interval migrated into SQLite */
-  usageIntervalMigrated: `${PREFIX}usage-interval-migrated-v1`,
-  connectionsTicketOrder: `${PREFIX}connections-ticket-order`,
-  routesProfileOrder: `${PREFIX}routes-profile-order`,
-  agentsCatalogOrder: `${PREFIX}agents-catalog-order`,
-  /** Last Projects tab; used to preload that agent's list on boot. */
-  projectsLastAgent: `${PREFIX}projects-last-agent`,
-  /** Last workspace chosen on the project-skills tab. */
-  skillsProjectWorkspace: `${PREFIX}skills-project-workspace`,
-} as const;
+export { StorageKey } from '@/lib/storage-key';
 
 /** 新安装：点「路由」时自动折叠最左侧栏。已保存的偏好优先。 */
 export const DEFAULT_SIDEBAR_AUTO_COLLAPSE_ON_ROUTES = true;
@@ -50,7 +19,7 @@ export const DEFAULT_PLUGINS_NAV_VISIBLE = false;
 
 export function loadJson<T>(key: string, fallback: T): T {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = readLegacy(localStorage, key);
     if (raw == null) return fallback;
     return JSON.parse(raw) as T;
   } catch {
@@ -68,7 +37,7 @@ export function saveJson(key: string, value: unknown): void {
 
 export function loadString(key: string, fallback: string): string {
   try {
-    return localStorage.getItem(key) ?? fallback;
+    return readLegacy(localStorage, key) ?? fallback;
   } catch {
     return fallback;
   }
@@ -84,7 +53,7 @@ export function saveString(key: string, value: string): void {
 
 export function loadBool(key: string, fallback = false): boolean {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = readLegacy(localStorage, key);
     if (raw == null) return fallback;
     return raw === '1' || raw === 'true';
   } catch {

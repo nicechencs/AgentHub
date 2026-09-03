@@ -20,6 +20,7 @@ import type { SkillListingDto } from '@/lib/api/skill';
 import { localizeSkillMarketDescription } from '@/lib/i18n/stored-copy';
 import { openExternalLink } from '@/lib/open-external';
 import { cn } from '@/lib/utils';
+import { StorageKey } from '@/lib/ui-preferences';
 
 type ColumnKey = 'name' | 'provider' | 'version' | 'actions';
 
@@ -32,7 +33,7 @@ const WIDTH_SPECS: ColumnWidthSpec<ColumnKey>[] = [
 
 const COLUMN_KEYS: ColumnKey[] = ['name', 'provider', 'version', 'actions'];
 
-const COLUMN_WIDTHS_STORAGE_KEY = 'agenthub.skills.marketColumnWidths';
+const COLUMN_WIDTHS_STORAGE_KEY = StorageKey.skillsMarketColumnWidths;
 
 /** Resolve market detail page URL (backend-provided, with client fallback). */
 export function resolveMarketDetailUrl(item: SkillListingDto): string | null {

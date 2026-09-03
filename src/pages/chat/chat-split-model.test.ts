@@ -11,6 +11,7 @@ import {
   persistComposerPaneHeight,
   readStoredComposerPaneHeight,
 } from './chat-split-model';
+import { LegacyStorageKey, StorageKey } from '@/lib/storage-key';
 
 describe('clampComposerPaneHeight', () => {
   it('sizes the drag floor from two body line boxes including leading', () => {
@@ -72,8 +73,25 @@ describe('composer pane height persistence', () => {
   it('round-trips a positive height and clears on null', () => {
     persistComposerPaneHeight(220);
     expect(readStoredComposerPaneHeight()).toBe(220);
+    expect(store.get(StorageKey.chatComposerPaneHeight)).toBe('220');
+    expect(store.has(LegacyStorageKey.chatComposerPaneHeight)).toBe(false);
     persistComposerPaneHeight(null);
     expect(readStoredComposerPaneHeight()).toBeNull();
+  });
+
+  it('reads a leftover dotted height and write-through to the canonical key', () => {
+    store.set(LegacyStorageKey.chatComposerPaneHeight, '260');
+    expect(readStoredComposerPaneHeight()).toBe(260);
+    expect(store.get(StorageKey.chatComposerPaneHeight)).toBe('260');
+  });
+
+  it('clears both canonical and leftover keys', () => {
+    store.set(StorageKey.chatComposerPaneHeight, '220');
+    store.set(LegacyStorageKey.chatComposerPaneHeight, '180');
+    persistComposerPaneHeight(null);
+    expect(readStoredComposerPaneHeight()).toBeNull();
+    expect(store.has(StorageKey.chatComposerPaneHeight)).toBe(false);
+    expect(store.has(LegacyStorageKey.chatComposerPaneHeight)).toBe(false);
   });
 
   it('ignores non-numeric storage', () => {

@@ -12,6 +12,7 @@ import {
 import { localEndpointBrandAgentId } from "@/lib/route-endpoints";
 import type { TokenAgentId } from "@/styles/tokens";
 import { fmtTokens } from "@/lib/utils";
+import { StorageKey } from "@/lib/ui-preferences";
 
 export type ActivityTraceColumnKey =
   | "time"
@@ -37,7 +38,7 @@ export const ACTIVITY_TRACE_WIDTH_SPECS: ColumnWidthSpec<ActivityTraceColumnKey>
 ];
 
 export const ACTIVITY_TRACE_COLUMN_WIDTHS_STORAGE_KEY =
-  "agenthub.routes.activity.columnWidths";
+  StorageKey.routesActivityColumnWidths;
 
 export const ACTIVITY_TRACE_STAGES = [
   "local_auth",
