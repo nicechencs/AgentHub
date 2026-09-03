@@ -31,7 +31,7 @@ updated: 2026-08-30
 | Codex | `<codex-home>/config.toml` | TOML | Codex config.toml |
 | WorkBuddy | `<workbuddy-config>/.mcp.json` | JSON | WorkBuddy .mcp.json |
 | Cursor | `~/.cursor/mcp.json` | JSON | Cursor ~/.cursor/mcp.json |
-| Cursor | `<cursor-home>/mcp.json` | JSON | Cursor agent mcp.json |
+| Cursor | `<cursor-home>/mcp.json`（与上一行相同则合并，只保留第一份） | JSON | Cursor agent mcp.json |
 | Pi | `<pi-config>/mcp.json` | JSON | Pi mcp.json |
 | Pi | `<pi-config>/.mcp.json` | JSON | Pi .mcp.json |
 | Grok / Kimi / DSH / ZCode | `<agent-home>/mcp.json` | JSON | 探测 mcp.json |

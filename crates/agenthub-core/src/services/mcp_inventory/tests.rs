@@ -164,6 +164,32 @@ env = {{ API_KEY = "sk-secret", DEBUG = "1" }}
 }
 
 #[test]
+fn cursor_source_locations_collapse_default_home_duplicate() {
+    let locs = source_locations(AgentId::Cursor);
+    assert_eq!(locs.len(), 1, "~/.cursor/mcp.json and cursor-home/mcp.json are the same file");
+    let path = &locs[0].path;
+    assert!(path.ends_with("mcp.json"), "{}", path.display());
+    assert_eq!(locs[0].label, "Cursor ~/.cursor/mcp.json");
+}
+
+#[test]
+fn source_locations_do_not_repeat_the_same_path() {
+    for agent in AgentId::ALL {
+        let locs = source_locations(agent);
+        for (i, a) in locs.iter().enumerate() {
+            for b in locs.iter().skip(i + 1) {
+                assert!(
+                    !same_source_path(&a.path, &b.path),
+                    "{} listed {} twice",
+                    agent.as_str(),
+                    a.path.display()
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn list_inventory_is_empty_in_isolated_tmpdir_homes() {
     // Smoke: function returns without panic; source list may be non-empty
     // (paths resolved) even when files are missing.
