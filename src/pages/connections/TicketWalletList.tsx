@@ -1,10 +1,9 @@
 /**
  * Global ticket wallet list UI (Connections).
  * Data from listTicketWallet; 分享至连接池 / 取消添加 live on the row menu.
- * Click the card to open details in the workbench inspect pane; edit stays a button.
+ * Click the login name to open details in the workbench inspect pane; edit stays a button.
  */
 import * as React from 'react';
-import { Link } from 'react-router-dom';
 import {
   ChevronDown,
   ChevronRight,
@@ -17,15 +16,13 @@ import {
   Trash2,
   Undo2,
 } from 'lucide-react';
-import { pageRhythm } from '@/components/layout/page-rhythm';
 import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { DetailRow } from '@/components/shared/DetailRow';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { AgentLogo } from '@/components/shared/AgentLogo';
-import { LIST_ROW_PAD, ListRow, ListRowBody } from '@/components/shared/ListRow';
 import { SortHandle } from '@/components/shared/SortHandle';
-import { useSortableDrag } from '@/components/shared/use-sortable-drag';
+import { SORTABLE_ID_ATTR, useSortableDrag } from '@/components/shared/use-sortable-drag';
 import { useStoredIdOrder } from '@/components/shared/use-stored-id-order';
 import { applyIdOrder } from '@/lib/list-order';
 import { StorageKey } from '@/lib/ui-preferences';
@@ -34,6 +31,19 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ListSkeleton } from '@/components/ui/skeleton';
+import {
+  ColumnResizeHandle,
+  Table,
+  TableBody,
+  TableCell,
+  TableEmptyCell,
+  TableHead,
+  TableHeader,
+  TableHeaderRow,
+  TableRow,
+  TableShell,
+  useColumnWidths,
+} from '@/components/ui/table';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,7 +58,6 @@ import {
 } from '@/components/ui/context-menu';
 import { Hint, Tip } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
-import { RouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
 import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
 import type { BindingView, TicketView, TicketWallet } from '@/lib/backend/contracts/ticket';
 import type { AgentKey } from '@/lib/types';
@@ -68,6 +77,8 @@ import {
   showsNativeSwitch,
   ticketSwitchChip,
   ticketCredentialClassChipLabel,
+  TICKET_WALLET_COLUMN_SPECS,
+  ticketWalletColumnLabel,
   ticketDetailEditLabel,
   ticketRefreshDisabledReason,
   ticketSwitchDisabledReason,
@@ -481,6 +492,8 @@ function TicketRow({
   active,
   suppressHighlight,
   sortHandle,
+  sortId,
+  sortClassName,
 }: {
   row: TicketWalletRow;
   extras: TicketDetailExtras | null;
@@ -493,9 +506,11 @@ function TicketRow({
   active: boolean;
   suppressHighlight?: boolean;
   sortHandle?: React.ReactNode;
+  sortId?: string;
+  sortClassName?: string;
 }) {
   const { t } = useI18n();
-  const { ticket, usageParts, highlighted } = row;
+  const { ticket, highlighted } = row;
   const editLabel = ticketDetailEditLabel(extras, t);
   const authChip = ticketAuthChip(extras, t);
   const occupancy = resolveAgentMeta(ticket.agentId).occupancy;
@@ -508,82 +523,88 @@ function TicketRow({
   const title = ticketCardTitle(ticket, extras);
 
   return (
-    <ListRow
+    <TableRow
+      data-ticket-row={ticket.id}
       active={active || (highlighted && !suppressHighlight)}
-      indicatorColor={resolveAgentMeta(ticket.agentId).color}
-      className={LIST_ROW_PAD}
-      onOpen={onShowDetail ? () => onShowDetail(ticket) : undefined}
       onContextMenu={onContextMenu}
+      className={sortClassName}
+      {...(sortId ? { [SORTABLE_ID_ATTR]: sortId } : {})}
     >
-      <ListRowBody
-        leading={sortHandle}
-        main={(
-          <>
-            <AgentLogo agentId={ticket.agentId} size="sm" />
-            <CredentialMark cls={ticket.credentialClass} agentId={ticket.agentId} />
+      <TableCell data-col="login" className="min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
+          {sortHandle}
+          <AgentLogo agentId={ticket.agentId} size="sm" />
+          {onShowDetail ? (
+            <Tip className="min-w-0" label={title}>
+              <button
+                type="button"
+                data-ticket-name={ticket.id}
+                className="max-w-full truncate text-left text-body font-medium text-primary hover:underline"
+                onClick={() => onShowDetail(ticket)}
+              >
+                {title}
+              </button>
+            </Tip>
+          ) : (
             <Tip className="truncate text-body font-medium" label={title}>
               {title}
             </Tip>
-            {authChip ? (
-              <Badge variant="default" className={authChip.mono ? 'font-mono' : undefined}>
-                {authChip.label}
-              </Badge>
-            ) : null}
-            <span className="text-meta text-secondary">
-              {(usageParts ?? []).map((part, index) => (
-                part.kind === 'bridge' ? (
-                  <Link
-                    key={`${part.href}:${index}`}
-                    to={part.href}
-                    className="text-info underline"
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    {part.label}
-                  </Link>
-                ) : part.kind === 'endpoint' ? (
-                  <RouteEndpointUrl
-                    key={`endpoint:${index}`}
-                    path={part.path}
-                    port={part.port}
-                    endpointId={part.endpointId}
-                    className="text-meta"
-                  />
-                ) : (
-                  <span key={`text:${index}`}>{part.text}</span>
-                )
-              ))}
-            </span>
-          </>
+          )}
+        </div>
+      </TableCell>
+      <TableCell data-col="kind" className="whitespace-nowrap">
+        <div className="flex items-center gap-1.5">
+          <CredentialMark cls={ticket.credentialClass} agentId={ticket.agentId} />
+          <span className="text-meta text-secondary">
+            {ticketCredentialClassChipLabel(ticket.credentialClass, t)}
+          </span>
+        </div>
+      </TableCell>
+      <TableCell data-col="status" className="whitespace-nowrap">
+        {authChip ? (
+          <Badge variant="default" className={authChip.mono ? 'font-mono' : undefined}>
+            {authChip.label}
+          </Badge>
+        ) : (
+          <TableEmptyCell />
         )}
-        actions={(
-          <>
-            {nativeSwitch ? (
-              <DisabledReasonButton
-                disabled={switchChip.kind === 'in-use' || switchBusy || !onSwitch}
-                reason={ticketSwitchDisabledReason({
-                  kind: switchChip.kind,
-                  switchBusy,
-                  canSwitch: Boolean(onSwitch),
-                  occupancy,
-                }, t)}
-                ariaLabel={switchChip.label}
-                onClick={() => {
-                  if (!onSwitch) return;
-                  onSwitch(ticket);
-                }}
-              >
-                {switching ? t('connections.list.switching') : switchChip.label}
-              </DisabledReasonButton>
-            ) : null}
-            {editLabel ? (
-              <Button size="sm" variant="outline" onClick={() => onEdit(ticket)}>
-                <Pencil className="h-3.5 w-3.5" /> {editLabel}
-              </Button>
-            ) : null}
-          </>
-        )}
-      />
-    </ListRow>
+      </TableCell>
+      <TableCell data-col="agent" className="whitespace-nowrap">
+        <span className="text-meta text-secondary">{agentDisplayName(ticket.agentId)}</span>
+      </TableCell>
+      <TableCell
+        data-col="actions"
+        className="whitespace-nowrap"
+        onClick={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          {nativeSwitch ? (
+            <DisabledReasonButton
+              disabled={switchChip.kind === 'in-use' || switchBusy || !onSwitch}
+              reason={ticketSwitchDisabledReason({
+                kind: switchChip.kind,
+                switchBusy,
+                canSwitch: Boolean(onSwitch),
+                occupancy,
+              }, t)}
+              ariaLabel={switchChip.label}
+              onClick={() => {
+                if (!onSwitch) return;
+                onSwitch(ticket);
+              }}
+            >
+              {switching ? t('connections.list.switching') : switchChip.label}
+            </DisabledReasonButton>
+          ) : null}
+          {editLabel ? (
+            <Button size="sm" variant="outline" onClick={() => onEdit(ticket)}>
+              <Pencil className="h-3.5 w-3.5" /> {editLabel}
+            </Button>
+          ) : null}
+        </div>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -770,6 +791,10 @@ export function TicketWalletList({
   oauthLoginAgents?: readonly AgentKey[] | null;
 }) {
   const { t } = useI18n();
+  const { widths, onResizeStart, totalWidth } = useColumnWidths(
+    TICKET_WALLET_COLUMN_SPECS,
+    StorageKey.connectionsColumnWidths,
+  );
   const [rowMenu, setRowMenu] = React.useState<(ContextMenuPoint & { ticket: TicketView }) | null>(null);
   const closeRowMenu = React.useCallback(() => setRowMenu(null), []);
   const menuTicket = rowMenu?.ticket ?? null;
@@ -874,12 +899,36 @@ export function TicketWalletList({
       ) : null}
 
       {rows.length > 0 ? (
-        <div className={pageRhythm.stackDense}>
+        <TableShell layout="split">
+          <Table className="table-fixed" style={{ minWidth: totalWidth }}>
+            <colgroup>
+              {TICKET_WALLET_COLUMN_SPECS.map((spec) => (
+                <col key={spec.key} style={{ width: widths[spec.key] }} />
+              ))}
+            </colgroup>
+            <TableHeader>
+              <TableHeaderRow>
+                {TICKET_WALLET_COLUMN_SPECS.map((spec) => {
+                  const label = ticketWalletColumnLabel(spec.key, t);
+                  return (
+                    <TableHead key={spec.key} className="relative select-none" data-col={spec.key}>
+                      {label}
+                      <ColumnResizeHandle
+                        columnKey={spec.key}
+                        label={label}
+                        onResizeStart={onResizeStart}
+                      />
+                    </TableHead>
+                  );
+                })}
+              </TableHeaderRow>
+            </TableHeader>
+            <TableBody>
           {rows.map((row) => {
             const sortable = rowProps(row.ticket.id);
             return (
-              <div key={row.ticket.id} {...sortable}>
                 <TicketRow
+                  key={row.ticket.id}
                   row={row}
                   extras={extrasForTicket?.(row.ticket) ?? null}
                   switchingId={switchingTicketId ?? null}
@@ -893,6 +942,8 @@ export function TicketWalletList({
                   }}
                   active={activeTicketId === row.ticket.id}
                   suppressHighlight={activeTicketId != null}
+                  sortId={sortable[SORTABLE_ID_ATTR]}
+                  sortClassName={sortable.className}
                   sortHandle={canReorder ? (
                     <SortHandle
                       id={row.ticket.id}
@@ -901,10 +952,11 @@ export function TicketWalletList({
                     />
                   ) : null}
                 />
-              </div>
             );
           })}
-        </div>
+            </TableBody>
+          </Table>
+        </TableShell>
       ) : null}
 
       {wallet ? (

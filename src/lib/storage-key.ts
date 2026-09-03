@@ -16,6 +16,7 @@ const LAYOUT_STORAGE_KEY = {
   agentsPreviewWidth: `${PREFIX}agents-preview-width`,
   mcpColumnWidths: `${PREFIX}mcp-column-widths`,
   connectionsInspectWidth: `${PREFIX}connections-inspect-width`,
+  connectionsColumnWidths: `${PREFIX}connections-column-widths`,
   settingsBackupsInspectWidth: `${PREFIX}settings-backups-inspect-width`,
   routesInspectWidth: `${PREFIX}routes-inspect-width`,
   routesTokensColumnWidths: `${PREFIX}routes-tokens-column-widths`,
