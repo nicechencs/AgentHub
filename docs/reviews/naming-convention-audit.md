@@ -138,7 +138,7 @@ updated: 2026-09-02
 - 当前名称（历史命名，当前仅应作为兼容范围）：`bridges-path.ts`、`BRIDGES_PATH`、`BRIDGES_NAV_LABEL`、`bridgesHrefForProfile`、泛用 `pages/bridges/`。
 - 推荐名称：`routes-path.ts`、`ROUTES_PATH`、`ROUTES_NAV_LABEL`、`routesHrefForProfile`；泛用页面模块迁入 `pages/routes/shared/`。
 
-[bridges-path.ts](../../src/lib/bridges-path.ts) 中常量的实际值是 `/routes`，导航文本也是 Routes；[App.tsx](../../src/App.tsx) 已把 `/bridges` 作为旧地址重定向。`bridge` 只是 `local_bridge` 这一种路由方式，不等同于整个 Routes 产品面。
+历史文件曾名为 `bridges-path.ts`；现规范入口为 [routes-path.ts](../../src/lib/routes-path.ts)（路径值仍是 `/routes`，导航文本也是 Routes）。[App.tsx](../../src/App.tsx) 把 `/bridges` 作为旧地址重定向。`bridge` 只是 `local_bridge` 这一种路由方式，不等同于整个 Routes 产品面。
 
 影响导航、深链、Routes 页面、页面 façade、导入路径和测试。`local_bridge` 生命周期、`useBridgeRuntimeActions` 及旧地址兼容跳转仍可保留 `bridge`；不应机械重命名所有包含 bridge 的符号。
 
@@ -151,7 +151,7 @@ updated: 2026-09-02
 
 [前端契约](../../src/lib/backend/contracts/adapter.ts) 和 Rust 注释将它描述为共享本机转发入口；核心运行时、端口和接入动作则已经稳定使用 `Gateway`。
 
-影响 Rust 状态 DTO、Tauri command、TypeScript Port、API façade、mock、Routes 页面和测试。旧 IPC command 应保留兼容别名。`LocalEntryStatus.statuses` 如继续存在，可同步明确为 `bridgeStatuses`。
+影响 Rust 状态 DTO、Tauri command、TypeScript Port、API façade、mock、Routes 页面和测试。本分支已去掉旧 IPC 别名；`LocalGatewayStatus.statuses` 明确为 bridge 运行态列表。
 
 ### N-06：v2 被当作长期领域名称
 
@@ -285,7 +285,7 @@ Rust 内部函数可继续使用后缀消歧，公开 IPC 不应泄露该细节�
 | 来源身份 | sourceConnectionId、account/provider | 使用 `sourceKind + sourceId` |
 | 项目与会话 | AgentProject、AgentSession、deleteAgentProject | 项目和会话使用各自实体名；删除操作必须写明 session |
 | 技能同步 | projectSkill、listProjectSkills | 同步到 Agent 使用 `applySkillProjection`；项目目录技能保留 `ProjectSkills` |
-| Agent 标识 | AgentId、AgentKey | 开放注册表和新 TypeScript API 使用 `AgentKey`；兼容层暂留 `AgentId` |
+| Agent 标识 | AgentId、AgentKey | 开放注册表和新 TypeScript API 使用 `AgentKey`；Rust 闭合枚举保留 `AgentId`；前端不再保留类型别名 |
 | share | 直接接入、分享至连接池 | `share` 只表示分享至连接池；直接接入使用 `direct` |
 | 用户授权方式 | 凭据、账号、OAuth/API 接入 | 界面固定使用“登录、官方登录、API Key、供应商” |
 
@@ -343,22 +343,25 @@ Rust 内部函数可继续使用后缀消歧，公开 IPC 不应泄露该细节�
 
 ## 核对后的分批整改计划（2026-09-02）
 
-以当前 `dev` 源码核对：审计 16 项均仍成立，推荐新名尚未落地。按 AGENTS.md 风险分级分批实施；每批改完跑过滤测试，最后同步文档并跑 `pnpm check:docs`。
+以当前 `dev` 源码为基线做了命名审计；本分支已按 A–K 落地，实施状态见下表（问题清单仍保留审查时原文，便于对照）。
 
 ### 实施状态（本分支）
 
 | 批次 | 状态 | 备注 |
 | --- | --- | --- |
 | A | 已完成 | `deleteAgentSession` + LoginInformation + Routes 文案 |
-| B | 已完成 | `ConnectionInventory`；`currentProvider` 读取方迁 `effectiveLabel` |
-| C | 已完成 | `routes-path` + `pages/routes/shared`；`bridges-path` 兼容层 |
-| D | 已完成 | `LocalGateway` IPC；TS wire 去掉死字段 `sourceConnectionId`（Rust 审计字段暂留） |
-| E | 已完成 | 无 `_cmd` 规范名；install `chunk`/`line` 双发；`applySkillProjection` |
-| F | 已完成 | 领域名 `unifiedGatewayEnrolled`；DB 列仍为 `v2_enrolled`；wire 双读 |
-| G | 已完成 | `ConnectBindPurpose=direct`；事件 `_EVENT`；`skills_sh_market`；`AgentKey` 渐进（project port） |
-| H | 已完成 | N-15 约定写入 `ui-preferences`；文档断链修复；`pnpm check:docs` 通过 |
-| **I** | 已完成 | 删除无引用兼容代理；port/API `AgentId`→`AgentKey`（别名保留）；去掉无用 `BRIDGES_*` 文案别名；`ConnectionInventoryDiscoveryState` |
-| **J** | 已完成 | `src/` 内类型名 `AgentId`→`AgentKey`（仅留 `types.ts` 别名）；顺带修正 U 文案相关测试断言 |
+| B | 已完成 | `ConnectionInventory`；`currentProvider` 投影字段已删除 |
+| C | 已完成 | `routes-path` + `pages/routes/shared`；`bridges-path` 模块已删除（仅保留 `/bridges` URL 重定向） |
+| D | 已完成 | `LocalGateway` IPC/内部 API；settings 键 `local_gateway_desired_running`（migration `00028`）；无 `*_local_entry` 别名 |
+| E | 已完成 | 无 `_cmd`；install 仅 `chunk`；`apply_skill_projection` / `SkillProjectionMode`；工作区 `*_project_skill*` 保留 |
+| F | 已完成 | DB 列 `unified_gateway_enrolled`（migration `00027`）；无 wire 双读 |
+| G | 已完成 | `ConnectBindPurpose=direct`；事件 `_EVENT`；`skills_sh_market`；TS 用 `AgentKey` |
+| H | 已完成 | 布局键 `agenthub:` kebab；无 Legacy 双读 |
+| I | 已完成 | 无引用代理删除；port/API `AgentKey`；无 `BRIDGES_*` 文案别名 |
+| J | 已完成 | 前端类型名 `AgentKey`；无 `AgentId` 类型别名 |
+| **K（零遗留）** | 已完成 | 卸尽故意暂留的兼容层：IPC/DB/settings/锁键/`local-entry` 埋点与用户文案「本机入口/local entry」→「本机转发/local forwarding」 |
+
+**明确非遗留（保留）：** 运行时 `local_bridge`、工作区 `list/install/..._project_skill*`、产品「入口 Key」、Rust 闭合枚举 `AgentId`、`/bridges`→`/routes` URL 重定向、历史 migration 建表 SQL。
 
 ### 核对调整
 
@@ -389,7 +392,7 @@ Rust 内部函数可继续使用后缀消歧，公开 IPC 不应泄露该细节�
 
 本轮只落地「新键走集中 `StorageKey`」与 `ui-preferences.ts` 注释约定，不做存量 `agenthub.` camelCase 键批量迁移（避免重置用户布局）。存量迁移可单独跟进。
 
-本文结论与问题清单仍保留审查时事实；实施以「实施状态」表为准。后续删除兼容别名前须再过一个版本窗口。
+本文结论与问题清单仍保留审查时事实；实施以「实施状态」表为准。**K 波次起不再保留「过版本窗口再删」的兼容别名**；历史 migration 与产品合理名见状态表「明确非遗留」。
 
 ### 每批验证命令（默认）
 
@@ -403,12 +406,11 @@ Rust 内部函数可继续使用后缀消歧，公开 IPC 不应泄露该细节�
 跨层改名统一采用以下顺序：
 
 1. 新增规范名称。
-2. 保留旧名称作为明确标记的兼容别名。
-3. 迁移仓库内部调用方。
-4. 为旧数据库值、持久化键和 IPC 参数提供兼容读取。
-5. 至少经过一个兼容版本后再删除旧名称。
+2. 迁移仓库内部调用方。
+3. 用 migration / 一次性改写落盘旧键与旧列（不在应用层长期双读）。
+4. 删除旧 IPC、旧类型别名与旧模块；不把「过版本再删」当作完成态。
 
-不得直接全文替换数据库字段、IPC command、持久化键或外部配置值。涉及用户文案的修改不应反向触发内部 `Account`、`Provider`、`Ticket` 模型重命名。
+不得在未迁移调用方的情况下直接丢掉落盘数据。涉及用户文案的修改不应反向触发内部 `Account`、`Provider`、`Ticket` 模型重命名。
 
 ## 验收标准
 

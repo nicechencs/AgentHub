@@ -84,7 +84,7 @@ export default function RoutesTokensPage() {
     reloadKey: tokenTick,
   });
   const inspect = useSideSplit<string>({ storageKey: ROUTES_INSPECT_WIDTH_KEY });
-  const localEntry = useMemo(
+  const localGateway = useMemo(
     () => buildLocalGatewayControl(profiles, bridgeStatuses, hiddenTargetIds, defaultPools),
     [bridgeStatuses, defaultPools, hiddenTargetIds, profiles],
   );
@@ -198,9 +198,9 @@ export default function RoutesTokensPage() {
       />
       <div className={pageRhythm.chromeRow}>
         <p className="min-w-0 truncate text-meta text-muted">{
-          !localEntry.running
-            && localEntry.profileIds.length === 0
-            && localEntry.hasEnrolledLogins
+          !localGateway.running
+            && localGateway.profileIds.length === 0
+            && localGateway.hasEnrolledLogins
             ? t('routes.board.entryNeedRoute')
             : t('routes.tokens.scopeNote')
         }</p>

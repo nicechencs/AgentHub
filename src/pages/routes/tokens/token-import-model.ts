@@ -1,7 +1,7 @@
 /**
  * Eligibility for one-click「导入到 Agent」from a local-route token.
  *
- * Menu opens when the row has a key + local entry + at least one installed Agent.
+ * Menu opens when the row has a key + local gateway + at least one installed Agent.
  * An Agent is selectable only when this token kind is the loopback this Agent
  * actually writes (Claude←messages, Codex←responses_codex, Grok←responses_grok,
  * Kimi/DSH←chat_completions). Speaks-but-cannot-write stays visible and disabled.
@@ -46,7 +46,7 @@ export function agentMatchesTokenSurface(
 }
 
 /**
- * Loopback writer kind for Agents that receive a generated local-entry provider.
+ * Loopback writer kind for Agents that receive a generated local-gateway provider.
  * Null when bind/switch cannot write this token into the Agent.
  */
 export function agentWritesLocalTokenKind(agentId: string): LocalEndpointKind | null {
@@ -158,7 +158,7 @@ export function tokenImportGate(
   if (!row.profileId?.trim()) {
     return {
       enabled: false,
-      reason: t ? t('routes.tokens.importNeedEntry') : '本机入口还没就绪',
+      reason: t ? t('routes.tokens.importNeedEntry') : '本机转发还没就绪',
       agents: choices,
     };
   }

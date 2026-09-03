@@ -19,8 +19,9 @@ use agenthub_core::AgentHub;
 use tauri::{AppHandle, State};
 
 use crate::adapter_bridge_controller::{
-    local_entry_status as read_local_entry_status, start_local_entry as start_shared_local_entry,
-    stop_local_entry as stop_shared_local_entry, AdapterBridgeStatusDto,
+    local_gateway_status as read_local_gateway_status,
+    start_local_gateway as start_shared_local_gateway,
+    stop_local_gateway as stop_shared_local_gateway, AdapterBridgeStatusDto,
 };
 use crate::adapter_control_host::apply_result_from_binding;
 use crate::commands::{
@@ -258,12 +259,12 @@ pub async fn start_local_gateway(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<LocalGatewayStatus, GuiError> {
-    start_shared_local_entry(
+    start_shared_local_gateway(
         state.hub_arc().map_err(adapter_error_from_string)?,
         state.bridge_host(),
         state.bridge_saga_coordinator(),
         state.lifecycle_shutdown_barrier(),
-        state.local_entry_restarting(),
+        state.local_gateway_restarting(),
         app,
         true,
     )
@@ -274,12 +275,12 @@ pub async fn start_local_gateway(
 /// Stop the shared local gateway.
 #[tauri::command]
 pub async fn stop_local_gateway(state: State<'_, AppState>) -> Result<LocalGatewayStatus, GuiError> {
-    stop_shared_local_entry(
+    stop_shared_local_gateway(
         state.hub_arc().map_err(adapter_error_from_string)?,
         state.bridge_host(),
         state.bridge_saga_coordinator(),
         state.lifecycle_shutdown_barrier(),
-        state.local_entry_restarting(),
+        state.local_gateway_restarting(),
     )
     .await
     .map_err(adapter_error_from_string)
@@ -290,7 +291,7 @@ pub async fn stop_local_gateway(state: State<'_, AppState>) -> Result<LocalGatew
 pub async fn get_local_gateway_status(
     state: State<'_, AppState>,
 ) -> Result<LocalGatewayStatus, GuiError> {
-    read_local_entry_status(&state.bridge_host(), &state.local_entry_restarting())
+    read_local_gateway_status(&state.bridge_host(), &state.local_gateway_restarting())
         .map_err(adapter_error_from_string)
 }
 
@@ -355,7 +356,7 @@ pub async fn list_local_tokens(
     .map_err(adapter_error_from_string)
 }
 
-/// Ensure the local entry is up, then `POST` a tiny request on the row path.
+/// Ensure the local gateway is up, then `POST` a tiny request on the row path.
 #[tauri::command]
 pub async fn test_local_token(
     app: AppHandle,
@@ -367,14 +368,14 @@ pub async fn test_local_token(
 ) -> Result<agenthub_core::utils::local_token_probe::LocalTokenProbeResult, GuiError> {
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
     let host = state.bridge_host();
-    let status = match read_local_entry_status(&host, &state.local_entry_restarting()) {
+    let status = match read_local_gateway_status(&host, &state.local_gateway_restarting()) {
         Ok(status) if status.running => status,
-        _ => start_shared_local_entry(
+        _ => start_shared_local_gateway(
             hub.clone(),
             host.clone(),
             state.bridge_saga_coordinator(),
             state.lifecycle_shutdown_barrier(),
-            state.local_entry_restarting(),
+            state.local_gateway_restarting(),
             app,
             false,
         )
@@ -523,7 +524,7 @@ pub async fn set_local_token(
     pool_id: String,
     token: String,
 ) -> Result<LocalTokenRecord, GuiError> {
-    crate::adapter_bridge_controller::set_local_entry_token(
+    crate::adapter_bridge_controller::set_local_gateway_token(
         state.hub_arc().map_err(adapter_error_from_string)?,
         state.bridge_host(),
         state.bridge_saga_coordinator(),

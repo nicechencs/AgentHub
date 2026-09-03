@@ -51,7 +51,7 @@ function bindResult(
 }
 
 describe('importLocalTokenToAgent', () => {
-  it('switches immediately when the local-entry provider is already on this Agent', async () => {
+  it('switches immediately when the local-gateway provider is already on this Agent', async () => {
     const planTicket = planMock();
     const bindTicket = vi.fn(async () => bindResult());
     const switchProvider = vi.fn(async () => undefined);

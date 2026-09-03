@@ -103,9 +103,6 @@ export type {
   GatewayUsageRow,
 } from '@/lib/backend/contracts/usage-types';
 
-/** @deprecated Prefer {@link GatewayUsageQuery}. */
-export type GatewayUsageQueryArgs = GatewayUsageQuery;
-
 /**
  * Per-request usage observed by the local gateway (bridge), stored in its own
  * table (separate from the agent-log-derived usage records).

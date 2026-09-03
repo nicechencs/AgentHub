@@ -903,7 +903,7 @@ where
 }
 
 /// Clear an existing target only when it is a verified managed projection
-/// (used by `project_skill` before re-projecting). Unmanaged → conflict.
+/// (used by `apply_skill_projection` before re-projecting). Unmanaged → conflict.
 pub(crate) fn clear_managed_target_for_reproject(
     skills_root: &Path,
     skill_id: &str,

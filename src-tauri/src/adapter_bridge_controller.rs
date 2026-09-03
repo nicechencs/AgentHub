@@ -68,8 +68,8 @@ struct LocalForwardLifecyclePayload {
 }
 
 /// Sets the process-local restarting flag and emits `local-forward-lifecycle`
-/// only when the value actually flips. `stop_local_entry` must not call this.
-pub(crate) fn set_local_entry_restarting(
+/// only when the value actually flips. `stop_local_gateway` must not call this.
+pub(crate) fn set_local_gateway_restarting(
     flag: &AtomicBool,
     app: Option<&AppHandle>,
     restarting: bool,
@@ -108,26 +108,26 @@ pub(crate) fn set_local_entry_restarting(
     }
 }
 
-struct LocalEntryRestartingGuard {
+struct LocalGatewayRestartingGuard {
     flag: Arc<AtomicBool>,
     app: Option<AppHandle>,
 }
 
-impl LocalEntryRestartingGuard {
+impl LocalGatewayRestartingGuard {
     fn begin(flag: Arc<AtomicBool>, app: Option<AppHandle>) -> Self {
-        set_local_entry_restarting(&flag, app.as_ref(), true);
+        set_local_gateway_restarting(&flag, app.as_ref(), true);
         Self { flag, app }
     }
 }
 
-impl Drop for LocalEntryRestartingGuard {
+impl Drop for LocalGatewayRestartingGuard {
     fn drop(&mut self) {
-        set_local_entry_restarting(&self.flag, self.app.as_ref(), false);
+        set_local_gateway_restarting(&self.flag, self.app.as_ref(), false);
     }
 }
 
 /// Process-local saga gates (Tauri-neutral; defined in core).
-pub(crate) use agenthub_core::adapter_control::AdapterBridgeSagaCoordinator;
+pub(crate) use agenthub_core::adapter_control::AdapterSagaCoordinator;
 
 /// Wire / test alias for the core credential-free bridge status DTO.
 pub(crate) type AdapterBridgeStatusDto = AdapterBridgeStatus;
@@ -139,7 +139,7 @@ pub(crate) type AdapterBridgeStatusDto = AdapterBridgeStatus;
 pub(crate) async fn apply_local_bridge(
     hub: Arc<AgentHub>,
     host: Arc<BridgeRuntimeHost>,
-    coordinator: Arc<AdapterBridgeSagaCoordinator>,
+    coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     request: AdapterBridgePrepareRequest,
 ) -> Result<AdapterApplyResult, String> {
@@ -152,7 +152,7 @@ pub(crate) async fn apply_local_bridge(
 async fn apply_local_bridge_locked(
     hub: Arc<AgentHub>,
     host: Arc<BridgeRuntimeHost>,
-    coordinator: Arc<AdapterBridgeSagaCoordinator>,
+    coordinator: Arc<AdapterSagaCoordinator>,
     request: AdapterBridgePrepareRequest,
 ) -> Result<AdapterApplyResult, String> {
     let target_agent_id = request.target_agent_id;
@@ -327,7 +327,7 @@ async fn apply_local_bridge_locked(
 pub(crate) async fn start_local_bridge(
     hub: Arc<AgentHub>,
     host: Arc<BridgeRuntimeHost>,
-    coordinator: Arc<AdapterBridgeSagaCoordinator>,
+    coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     profile_id: String,
 ) -> Result<AdapterBridgeStatusDto, String> {
@@ -367,7 +367,7 @@ pub(crate) async fn start_local_bridge(
 pub(crate) async fn unbind_local_bridge(
     hub: Arc<AgentHub>,
     host: Arc<BridgeRuntimeHost>,
-    coordinator: Arc<AdapterBridgeSagaCoordinator>,
+    coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     profile_id: String,
     request: agenthub_core::models::TicketUnbindRequest,
@@ -424,7 +424,7 @@ pub(crate) async fn unbind_local_bridge(
 pub(crate) async fn stop_local_bridge(
     hub: Arc<AgentHub>,
     host: Arc<BridgeRuntimeHost>,
-    coordinator: Arc<AdapterBridgeSagaCoordinator>,
+    coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     profile_id: String,
 ) -> Result<AdapterBridgeStatusDto, String> {
@@ -481,7 +481,7 @@ fn status_dto(
 /// desktop startup restoration only; it does not start or stop a listener.
 pub(crate) async fn set_local_bridge_auto_start(
     hub: Arc<AgentHub>,
-    coordinator: Arc<AdapterBridgeSagaCoordinator>,
+    coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     profile_id: String,
     auto_start: bool,
@@ -501,7 +501,7 @@ pub(crate) async fn set_local_bridge_auto_start(
 pub(crate) async fn remove_adapter_with_bridge_cleanup(
     hub: Arc<AgentHub>,
     host: Arc<BridgeRuntimeHost>,
-    coordinator: Arc<AdapterBridgeSagaCoordinator>,
+    coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     profile_id: String,
 ) -> Result<(), String> {
@@ -560,7 +560,7 @@ pub(crate) async fn remove_adapter_with_bridge_cleanup(
 pub(crate) fn restore_adapter_bridges(
     hub: Arc<AgentHub>,
     host: Arc<BridgeRuntimeHost>,
-    coordinator: Arc<AdapterBridgeSagaCoordinator>,
+    coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     restarting: Arc<AtomicBool>,
     app: AppHandle,
@@ -568,23 +568,23 @@ pub(crate) fn restore_adapter_bridges(
     tauri::async_runtime::spawn(async move {
         let desired_running = match with_hub_blocking(hub.clone(), |hub| {
             hub.route_pools()
-                .local_entry_desired_running()
-                .map_err(|error| map_err_string("local_entry_desired_running", error))
+                .local_gateway_desired_running()
+                .map_err(|error| map_err_string("local_gateway_desired_running", error))
         })
         .await
         {
             Ok(desired_running) => desired_running,
             Err(_) => {
-                tracing::warn!(target: "gui", op = "adapter_bridge_restore", code = "adapter.bridge_restore_desired", "adapter bridge restore could not read the local entry switch");
+                tracing::warn!(target: "gui", op = "adapter_bridge_restore", code = "adapter.bridge_restore_desired", "adapter bridge restore could not read the local gateway switch");
                 true
             }
         };
         if !desired_running {
-            tracing::info!(target: "gui", op = "adapter_bridge_restore", "local entry left off; skip restore");
+            tracing::info!(target: "gui", op = "adapter_bridge_restore", "local gateway left off; skip restore");
             return;
         }
 
-        let _restarting_guard = LocalEntryRestartingGuard::begin(restarting, Some(app));
+        let _restarting_guard = LocalGatewayRestartingGuard::begin(restarting, Some(app));
 
         let profiles = match with_hub_blocking(hub.clone(), |hub| {
             hub.adapter_bridge()
@@ -1453,18 +1453,18 @@ async fn bridge_profile_id_for_request(
 /// Start the shared local relay. Pool logins are not planned or bound here;
 /// unusable accounts/keys surface later on requests.
 /// `remember` writes the board switch for the next process start.
-pub(crate) async fn start_local_entry(
+pub(crate) async fn start_local_gateway(
     hub: Arc<AgentHub>,
     host: Arc<BridgeRuntimeHost>,
-    coordinator: Arc<AdapterBridgeSagaCoordinator>,
+    coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     restarting: Arc<AtomicBool>,
     app: AppHandle,
     remember: bool,
 ) -> Result<LocalGatewayStatus, String> {
-    let _restarting_guard = LocalEntryRestartingGuard::begin(restarting.clone(), Some(app));
+    let _restarting_guard = LocalGatewayRestartingGuard::begin(restarting.clone(), Some(app));
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
-    let _gate = coordinator.lock_profile("local-entry").await;
+    let _gate = coordinator.lock_profile("local-gateway").await;
     let pools = with_hub_blocking(hub.clone(), move |hub| {
         hub.route_pools()
             .list_default_pools()
@@ -1478,15 +1478,15 @@ pub(crate) async fn start_local_entry(
     let mut status = if pools.is_empty() {
         let started = host
             .start(placeholder_entry_spec(
-                "local-entry",
+                "local-gateway",
                 None,
-                "ahb_local_entry",
+                "ahb_local_gateway",
                 AgentId::Codex,
                 flags,
             ))
             .await
             .map_err(map_bridge_host_error)?;
-        local_entry_status_from_host(
+        local_gateway_status_from_host(
             &host,
             vec![started.profile_id],
             restarting.load(Ordering::SeqCst),
@@ -1509,14 +1509,14 @@ pub(crate) async fn start_local_entry(
             let _ = with_hub_blocking(hub.clone(), move |hub| {
                 hub.route_pools()
                     .enroll_unified_gateway(&pool_id, port)
-                    .map_err(|error| map_err_string("enroll_local_entry", error))
+                    .map_err(|error| map_err_string("enroll_local_gateway", error))
             })
             .await;
         }
-        local_entry_status_from_host(&host, started, restarting.load(Ordering::SeqCst))?
+        local_gateway_status_from_host(&host, started, restarting.load(Ordering::SeqCst))?
     };
     if remember {
-        write_local_entry_desired_running(hub, true).await;
+        write_local_gateway_desired_running(hub, true).await;
     }
     drop(_restarting_guard);
     status.restarting = restarting.load(Ordering::SeqCst);
@@ -1524,16 +1524,16 @@ pub(crate) async fn start_local_entry(
 }
 
 /// Persist a pool loopback bearer and restart that edge if it is live.
-pub(crate) async fn set_local_entry_token(
+pub(crate) async fn set_local_gateway_token(
     hub: Arc<AgentHub>,
     host: Arc<BridgeRuntimeHost>,
-    coordinator: Arc<AdapterBridgeSagaCoordinator>,
+    coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     pool_id: String,
     token: String,
 ) -> Result<LocalTokenRecord, String> {
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
-    let _gate = coordinator.lock_profile("local-entry").await;
+    let _gate = coordinator.lock_profile("local-gateway").await;
     let record = {
         let pool_id = pool_id.clone();
         with_hub_blocking(hub.clone(), move |hub| {
@@ -1575,15 +1575,15 @@ pub(crate) async fn set_local_entry_token(
 }
 
 /// Stop every live relay edge. Does not use host shutdown (that blocks restart).
-pub(crate) async fn stop_local_entry(
+pub(crate) async fn stop_local_gateway(
     hub: Arc<AgentHub>,
     host: Arc<BridgeRuntimeHost>,
-    coordinator: Arc<AdapterBridgeSagaCoordinator>,
+    coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     restarting: Arc<AtomicBool>,
 ) -> Result<LocalGatewayStatus, String> {
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
-    let _gate = coordinator.lock_profile("local-entry").await;
+    let _gate = coordinator.lock_profile("local-gateway").await;
     let ids = host.running_ids().map_err(map_bridge_host_error)?;
     for id in ids {
         match host.stop(&id).await {
@@ -1593,38 +1593,38 @@ pub(crate) async fn stop_local_entry(
         }
     }
     let status =
-        local_entry_status_from_host(&host, Vec::new(), restarting.load(Ordering::SeqCst))?;
-    write_local_entry_desired_running(hub, false).await;
+        local_gateway_status_from_host(&host, Vec::new(), restarting.load(Ordering::SeqCst))?;
+    write_local_gateway_desired_running(hub, false).await;
     Ok(status)
 }
 
-async fn write_local_entry_desired_running(hub: Arc<AgentHub>, running: bool) {
+async fn write_local_gateway_desired_running(hub: Arc<AgentHub>, running: bool) {
     if let Err(error) = with_hub_blocking(hub, move |hub| {
         hub.route_pools()
-            .set_local_entry_desired_running(running)
-            .map_err(|error| map_err_string("set_local_entry_desired_running", error))
+            .set_local_gateway_desired_running(running)
+            .map_err(|error| map_err_string("set_local_gateway_desired_running", error))
     })
     .await
     {
         tracing::warn!(
             target: "gui",
-            op = "local_entry_desired_running",
+            op = "local_gateway_desired_running",
             running,
             error = %error,
-            "could not persist local entry switch"
+            "could not persist local gateway switch"
         );
     }
 }
 
-pub(crate) fn local_entry_status(
+pub(crate) fn local_gateway_status(
     host: &BridgeRuntimeHost,
     restarting: &AtomicBool,
 ) -> Result<LocalGatewayStatus, String> {
     let ids = host.running_ids().map_err(map_bridge_host_error)?;
-    local_entry_status_from_host(host, ids, restarting.load(Ordering::SeqCst))
+    local_gateway_status_from_host(host, ids, restarting.load(Ordering::SeqCst))
 }
 
-fn local_entry_status_from_host(
+fn local_gateway_status_from_host(
     host: &BridgeRuntimeHost,
     ids: Vec<String>,
     restarting: bool,

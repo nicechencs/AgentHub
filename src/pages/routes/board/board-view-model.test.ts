@@ -47,7 +47,7 @@ function profile(partial: Partial<AdapterProfile> & Pick<AdapterProfile, 'id'>):
 }
 
 describe('buildLocalGatewayControl', () => {
-  it('has no master action when there is no local entry', () => {
+  it('has no master action when there is no local gateway', () => {
     expect(buildLocalGatewayControl([], {})).toMatchObject({
       action: null,
       running: false,
@@ -56,7 +56,7 @@ describe('buildLocalGatewayControl', () => {
     });
   });
 
-  it('keeps the local-entry switch operable when pool logins exist without a listener', () => {
+  it('keeps the local-gateway switch operable when pool logins exist without a listener', () => {
     expect(buildLocalGatewayControl([], {}, new Set(), [pool({ id: 'pool-1' })])).toMatchObject({
       action: 'start',
       running: false,

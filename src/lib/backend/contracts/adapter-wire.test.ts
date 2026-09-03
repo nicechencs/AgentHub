@@ -613,7 +613,7 @@ describe('Adapter Rust wire mappers', () => {
     ).toHaveLength(1);
   });
 
-  it('maps local entry restarting from the Tauri DTO and defaults missing to false', () => {
+  it('maps local gateway restarting from the Tauri DTO and defaults missing to false', () => {
     expect(mapLocalGatewayStatus({
       running: true,
       port: 43121,

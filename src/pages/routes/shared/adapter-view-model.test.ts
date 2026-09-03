@@ -6,11 +6,9 @@ import {
   adapterProfileFlowLabel,
   adapterProfilePrimaryAction,
   adapterProfileRecoveryGuide,
-  adapterServiceStatusView,
   routesPoolPageViewState,
   bridgeRuntimeStatusView,
   canonicalizeLocalBridgeOrderIds,
-  filterBoundLocalBridgeRuntimes,
   groupLocalBridgeProfiles,
   isLocalBridgeCardActive,
   localBridgeProfilesForSource,
@@ -53,10 +51,6 @@ describe('local-bridge runtime partition', () => {
     );
     expect(partitioned.bound.map((item) => item.id)).toEqual(['bridge-1']);
     expect(partitioned.orphan).toEqual([]);
-    expect(filterBoundLocalBridgeRuntimes(
-      [bridgeProfile(), bridgeProfile({ id: 'direct', route: 'native_endpoint', sourceId: 'kimi-1' })],
-      { entries },
-    ).map((item) => item.id)).toEqual(['bridge-1']);
   });
 
   it('keeps a missing-source bridge in bound when wallet binding.profileId hits', () => {
@@ -141,7 +135,7 @@ describe('routes pool page view state', () => {
 describe('bridge runtime status view', () => {
   it('keeps runtime state separate and never renders one for direct routes', () => {
     expect(bridgeRuntimeStatusView({ route: 'native_endpoint' })).toBeNull();
-    expect(adapterServiceStatusView({ route: 'config_sync' })).toBeNull();
+    expect(bridgeRuntimeStatusView({ route: 'config_sync' })).toBeNull();
     expect(bridgeRuntimeStatusView({ route: 'local_bridge', bridgeState: 'running' }))
       .toEqual({ label: '运行中', tone: 'success' });
     expect(bridgeRuntimeStatusView({ route: 'local_bridge', bridgeState: 'starting' }))

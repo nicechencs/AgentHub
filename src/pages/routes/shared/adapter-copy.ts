@@ -23,7 +23,7 @@ import type { TranslateFn } from '@/lib/i18n';
 export const ADAPTER_CREDENTIAL_FILTERS = CONNECTION_KIND_FILTERS.map((item) => item.value);
 export type AdapterCredentialFilter = ConnectionKindFilter;
 
-/** Legacy alias: old `?tab=api|oauth` deep links map onto the credential filter. */
+/** Legacy deep-link shape: old `?tab=api|oauth` values normalize onto the credential filter. */
 export type AdapterTab = Exclude<AdapterCredentialFilter, 'all'>;
 
 /**
@@ -34,17 +34,8 @@ export function parseAdapterCredentialFilter(raw: string | null | undefined): Ad
   return parseConnectionKindFilter(raw);
 }
 
-/** @deprecated Prefer {@link parseAdapterCredentialFilter}; unknown values now default to `all`. */
-export function parseAdapterTab(raw: string | null | undefined): AdapterCredentialFilter {
-  return parseAdapterCredentialFilter(raw);
-}
-
 export function adapterCredentialFilterLabel(filter: AdapterCredentialFilter): string {
   return connectionKindFilterLabel(filter);
-}
-
-export function adapterTabLabel(tab: AdapterTab | AdapterCredentialFilter): string {
-  return adapterCredentialFilterLabel(tab === 'all' ? 'all' : tab);
 }
 
 export const ROUTES_PAGE_TITLE = '路由';
@@ -72,16 +63,8 @@ export function adapterPageDescription(): string {
   return ROUTES_PAGE_DESCRIPTION;
 }
 
-export function adapterTabDescription(_tab?: AdapterTab | AdapterCredentialFilter): string {
-  return adapterPageDescription();
-}
-
 export function connectionKindForFilter(filter: Exclude<AdapterCredentialFilter, 'all'>): ConnectionKind {
   return filter;
-}
-
-export function connectionKindForTab(tab: AdapterTab): ConnectionKind {
-  return connectionKindForFilter(tab);
 }
 
 export function adapterCredentialKindLabel(mode: AdapterProfileMode, t?: TranslateFn): string {

@@ -102,7 +102,7 @@ describe('token-detail-model', () => {
   it('enables the one-click test only when the entry key and port are ready', () => {
     expect(localTokenTestGate(row()).enabled).toBe(true);
     expect(localTokenTestGate(row({ token: null })).enabled).toBe(false);
-    expect(localTokenTestGate(row({ endpoint: null })).reason).toBe('本机入口还没启动');
+    expect(localTokenTestGate(row({ endpoint: null })).reason).toBe('本机转发还没启动');
     expect(localTokenTestGate(row({ unavailable: true })).reason).toBe('状态不可用');
   });
 
@@ -136,7 +136,7 @@ describe('token-detail-model', () => {
       requestBody: null,
       responseBody: null,
       errorMessage: 'Connection refused',
-    }, { running: false, testing: false })).toBe('本机入口还没启动\nConnection refused');
+    }, { running: false, testing: false })).toBe('本机转发还没启动\nConnection refused');
     expect(localTokenTestOutputText({
       outcome: 'ok',
       httpStatus: 200,

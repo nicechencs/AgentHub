@@ -328,7 +328,7 @@ describe('Bridges page', () => {
     expect(markup).toContain('上游和本机');
     expect(markup).toContain('接到');
     expect(markup).toContain('上游');
-    expect(markup).toContain('本机入口');
+    expect(markup).toContain('本机转发');
     expect(markup).toContain('https://openrouter.ai/api/v1');
     expect(markup).toContain('http://127.0.0.1:43121');
     expect(markup).toContain('Claude');
@@ -402,7 +402,7 @@ describe('Bridges page', () => {
     expect(markup).not.toContain('删除适配');
     expect(markup).not.toContain('role="dialog"');
     expect(markup).not.toContain('运行中');
-    expect(markup).toContain('本机入口');
+    expect(markup).toContain('本机转发');
     expect(markup).not.toContain('交给本机网关');
     expect(markup).not.toContain('已加入的登录');
     expect(markup).not.toContain('入口 Key 已保存');

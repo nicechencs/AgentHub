@@ -48,7 +48,7 @@ export type RouteGraphRow = {
   link: RouteGraphLinkStyle;
   /** Declared/enabled on the source connection. */
   enabled: boolean;
-  /** Current live write for this agent points at this running local entry. */
+  /** Current live write for this agent points at this running local gateway. */
   applied: boolean;
   /** Stamp leftover after stop or rewrite — never shown as 已写入. */
   writeNote: RouteWriteNote;

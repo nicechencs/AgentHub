@@ -135,7 +135,7 @@ export function localTokenTestGate(
   if (tokenListenPort(row.endpoint) == null) {
     return {
       enabled: false,
-      reason: t ? t('routes.tokens.testNeedEndpoint') : '本机入口还没启动',
+      reason: t ? t('routes.tokens.testNeedEndpoint') : '本机转发还没启动',
     };
   }
   return { enabled: true, reason: null };
@@ -214,7 +214,7 @@ export function localTokenTestOutputText(
   }
   const lines: string[] = [];
   if (!options.running && result.outcome === 'unreachable') {
-    lines.push(t ? t('routes.tokens.testNeedEndpoint') : '本机入口还没启动');
+    lines.push(t ? t('routes.tokens.testNeedEndpoint') : '本机转发还没启动');
   }
   if (result.httpStatus != null) {
     lines.push(`HTTP ${result.httpStatus}`);

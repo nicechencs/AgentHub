@@ -46,13 +46,13 @@ fn bridge_profile(id: &str, source_id: &str, agent: AgentId, auto_start: bool) -
 }
 
 #[test]
-fn local_entry_desired_running_defaults_on_and_remembers_off() {
+fn local_gateway_desired_running_defaults_on_and_remembers_off() {
     let (_dir, _db, service, _) = tmp();
-    assert!(service.local_entry_desired_running().unwrap());
-    service.set_local_entry_desired_running(false).unwrap();
-    assert!(!service.local_entry_desired_running().unwrap());
-    service.set_local_entry_desired_running(true).unwrap();
-    assert!(service.local_entry_desired_running().unwrap());
+    assert!(service.local_gateway_desired_running().unwrap());
+    service.set_local_gateway_desired_running(false).unwrap();
+    assert!(!service.local_gateway_desired_running().unwrap());
+    service.set_local_gateway_desired_running(true).unwrap();
+    assert!(service.local_gateway_desired_running().unwrap());
 }
 
 #[test]

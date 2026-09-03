@@ -88,7 +88,7 @@ impl AdapterBridgeStatus {
 
 }
 
-/// Shared local-entry (relay) status for the board switch.
+/// Shared local-gateway (relay) status for the board switch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalGatewayStatus {

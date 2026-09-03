@@ -39,12 +39,9 @@ pub const FEATURE_MIXED_PROVIDER_POOL: &str = "feature.mixed_provider_pool";
 /// User choice: Kimi and DSH share one chat-completions token. Default off.
 pub const SHARE_CHAT_COMPLETIONS: &str = "share_chat_completions";
 
-/// Shared local-entry switch. Absent means restore (legacy on). Explicit off
-/// keeps the entry stopped across process restart.
-///
-/// TODO(naming): rename persisted key to `local_gateway_desired_running` and
-/// read the legacy `local_entry_desired_running` value on load.
-pub const LOCAL_ENTRY_DESIRED_RUNNING: &str = "local_entry_desired_running";
+/// Shared local-gateway switch. Absent means restore (default on). Explicit off
+/// keeps the gateway stopped across process restart.
+pub const LOCAL_GATEWAY_DESIRED_RUNNING: &str = "local_gateway_desired_running";
 
 /// Fail-closed experimental flags. Absent / anything other than an explicit
 /// on-value is off. Used by mixed-provider and pair-adapter flags.

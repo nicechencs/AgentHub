@@ -209,12 +209,12 @@ export function useBridgeRuntimeActions(input: {
     try {
       const status = await startLocalGateway();
       for (const row of status.statuses) updateBridgeStatus(row);
-      void logGuiEvent('bridge_start', { profileId: 'local-entry', route: 'local_bridge' });
+      void logGuiEvent('bridge_start', { profileId: 'local-gateway', route: 'local_bridge' });
       reloadThenClearProfileErrors(['__local_gateway__']);
       return status.running;
     } catch (error) {
       void logGuiEvent('bridge_start_fail', {
-        profileId: 'local-entry',
+        profileId: 'local-gateway',
         route: 'local_bridge',
         code: guiErrorCode(error),
       });
@@ -238,12 +238,12 @@ export function useBridgeRuntimeActions(input: {
     try {
       const status = await stopLocalGateway();
       for (const row of status.statuses) updateBridgeStatus(row);
-      void logGuiEvent('bridge_stop', { profileId: 'local-entry', route: 'local_bridge' });
+      void logGuiEvent('bridge_stop', { profileId: 'local-gateway', route: 'local_bridge' });
       reloadThenClearProfileErrors(['__local_gateway__']);
       return !status.running;
     } catch (error) {
       void logGuiEvent('bridge_stop_fail', {
-        profileId: 'local-entry',
+        profileId: 'local-gateway',
         route: 'local_bridge',
         code: guiErrorCode(error),
       });

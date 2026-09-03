@@ -54,7 +54,7 @@ export type RouteBoardStatusRow = {
   startedAt: string | null;
   statusUnavailable: boolean;
   profileStatus: AdapterProfileStatus;
-  /** Present when this local entry already has a listener to start/stop. */
+  /** Present when this local gateway already has a listener to start/stop. */
   profile: AdapterProfile | null;
   recent: RouteBoardRecentSummary;
   needsAttention: boolean;
@@ -73,7 +73,7 @@ export type BoardFleetSummary = {
   label: string;
 };
 
-/** Shared local-entry master switch (not per-login, not per-endpoint). */
+/** Shared local-gateway master switch (not per-login, not per-endpoint). */
 export type LocalGatewayControl = {
   profileIds: string[];
   startIds: string[];
@@ -154,7 +154,7 @@ export type BoardEndpointTypeRow = {
   kind: LocalEndpointKind;
   surface: RoutePoolSurface;
   path: string;
-  /** Created local entry keys for this type; not upstream logins. */
+  /** Created local gateway keys for this type; not upstream logins. */
   keyCount: number;
 };
 
@@ -330,7 +330,7 @@ function sortBoardRows(rows: RouteBoardStatusRow[]): RouteBoardStatusRow[] {
   });
 }
 
-/** One card per connection-pool local entry, plus leftover listeners. */
+/** One card per connection-pool local gateway, plus leftover listeners. */
 export function buildRouteBoardStatusRows(
   profiles: readonly AdapterProfile[],
   bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus | undefined>,

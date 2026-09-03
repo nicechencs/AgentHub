@@ -102,7 +102,7 @@ function isEdgeTarget(value: string): value is RouteDetailEdgeTarget {
 export type RouteWriteTruth = {
   /** Target agent → the provider id that is currently live (`isCurrent`). */
   currentProviderByAgent: Readonly<Partial<Record<string, string>>>;
-  /** Local-bridge profile ids whose local entry is running. */
+  /** Local-bridge profile ids whose local gateway is running. */
   runningProfileIds: ReadonlySet<string>;
 };
 
@@ -122,7 +122,7 @@ export function currentProviderIdsFromEntries(
   return out;
 }
 
-/** Profile ids whose local entry is actually running. */
+/** Profile ids whose local gateway is actually running. */
 export function runningAdapterProfileIds(
   statuses: Readonly<Record<string, { state?: string | null } | undefined>>,
 ): Set<string> {
@@ -145,7 +145,7 @@ export function routeWriteTruthFrom(
 
 /**
  * 「已写入」= this route's generated provider is the agent's current provider
- * **and** that local entry is running. A leftover stamp on a stopped or
+ * **and** that local gateway is running. A leftover stamp on a stopped or
  * rewritten route is not applied.
  */
 export function appliedTargetsFromProfiles(

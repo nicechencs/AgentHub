@@ -118,7 +118,7 @@ describe('appliedTargetsFromProfiles', () => {
     expect([...applied]).toEqual([]);
   });
 
-  it('marks 已写入 only when the generated provider is current and the local entry is running', () => {
+  it('marks 已写入 only when the generated provider is current and the local gateway is running', () => {
     const applied = appliedTargetsFromProfiles(
       [
         profile({ id: 'claude-live', targetAgentId: 'claude', generatedProviderId: 'g-claude' }),
@@ -145,7 +145,7 @@ describe('appliedTargetsFromProfiles', () => {
     expect([...applied].sort()).toEqual(['claude', 'codex', 'kimi']);
   });
 
-  it('clears 已写入 when the current provider moved to another local entry', () => {
+  it('clears 已写入 when the current provider moved to another local gateway', () => {
     const stale = profile({
       id: 'stopped-40661',
       targetAgentId: 'claude',
@@ -172,7 +172,7 @@ describe('appliedTargetsFromProfiles', () => {
     expect([...appliedTargetsFromProfiles([stale], source, truth)]).toEqual([]);
   });
 
-  it('clears 已写入 when the current write still points here but the local entry is stopped', () => {
+  it('clears 已写入 when the current write still points here but the local gateway is stopped', () => {
     const stopped = profile({
       id: 'stopped-44227',
       targetAgentId: 'claude',

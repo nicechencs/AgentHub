@@ -391,7 +391,7 @@ describe('route pool v2 view-model', () => {
     ]);
   });
 
-  it('maps each Agent to its default local entry surface', () => {
+  it('maps each Agent to its default local gateway surface', () => {
     expect(poolSurfaceForAgent('claude')).toBe('messages');
     expect(poolSurfaceForAgent('codex')).toBe('responses');
     expect(poolSurfaceForAgent('kimi')).toBe('chat_completions');

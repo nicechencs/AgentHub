@@ -60,7 +60,7 @@ describe('agentMatchesTokenSurface', () => {
 });
 
 describe('agentWritesLocalTokenKind', () => {
-  it('maps loopback writers and rejects Agents without a generated local-entry write', () => {
+  it('maps loopback writers and rejects Agents without a generated local-gateway write', () => {
     expect(agentWritesLocalTokenKind('claude')).toBe('messages');
     expect(agentWritesLocalTokenKind('codex')).toBe('responses_codex');
     expect(agentWritesLocalTokenKind('grok')).toBe('responses_grok');
@@ -176,7 +176,7 @@ describe('tokenImportGate', () => {
 
   it('disables without a key, profile, or installed Agent', () => {
     expect(tokenImportGate(row({ token: null }), installed).reason).toBe('先有入口 Key 才能导入');
-    expect(tokenImportGate(row({ profileId: null }), installed).reason).toBe('本机入口还没就绪');
+    expect(tokenImportGate(row({ profileId: null }), installed).reason).toBe('本机转发还没就绪');
     expect(tokenImportGate(row({ unavailable: true }), installed).reason).toBe('状态不可用');
     expect(tokenImportGate(row(), []).reason).toBe('先安装 Agent');
   });
