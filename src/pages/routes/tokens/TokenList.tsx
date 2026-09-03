@@ -29,6 +29,8 @@ import {
 import { tokenDisplayName, tokenTypeLabel, type LocalTokenRow } from './tokens-model';
 import { TokenImportToAgentButton } from './TokenImportToAgentButton';
 import type { TokenImportAgentRef } from './token-import-model';
+import type { ConnectApiKeyDraft } from '@/lib/connect-flow/connect-intent';
+import type { AgentKey } from '@/lib/types';
 import { StorageKey } from '@/lib/ui-preferences';
 
 type TokenColumnKey = 'name' | 'type' | 'endpoint' | 'token' | 'lastPage' | 'usage';
@@ -59,12 +61,14 @@ export function TokenList({
   onShowDetail,
   onDelete,
   installedAgents,
+  onImport,
 }: {
   rows: readonly LocalTokenRow[];
   activeId?: string | null;
   onShowDetail?: (row: LocalTokenRow) => void;
   onDelete?: (row: LocalTokenRow) => void;
   installedAgents?: readonly TokenImportAgentRef[];
+  onImport?: (row: LocalTokenRow, agentId: AgentKey, draft: ConnectApiKeyDraft) => void;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -117,6 +121,7 @@ export function TokenList({
                     toast,
                     installedAgents,
                     onDelete,
+                    onImport,
                   })}
                 </TableCell>
               ))}
@@ -136,6 +141,7 @@ function renderColumn(
     toast: ReturnType<typeof useToast>['toast'];
     installedAgents?: readonly TokenImportAgentRef[];
     onDelete?: (row: LocalTokenRow) => void;
+    onImport?: (row: LocalTokenRow, agentId: AgentKey, draft: ConnectApiKeyDraft) => void;
   },
 ): ReactNode {
   const { t } = ctx;
@@ -221,11 +227,12 @@ function renderColumn(
           <Copy className="h-3 w-3" aria-hidden />
         </Button>
       ) : null}
-      {ctx.installedAgents ? (
+      {ctx.installedAgents && ctx.onImport ? (
         <TokenImportToAgentButton
           row={row}
           installedAgents={ctx.installedAgents}
           className="shrink-0"
+          onImport={(agentId, draft) => ctx.onImport?.(row, agentId, draft)}
         />
       ) : null}
       {ctx.onDelete && row.canDelete ? (

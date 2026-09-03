@@ -1243,7 +1243,7 @@ export const zh = {
       importNeedAgent: "先安装 Agent",
       importNoneEligible: "没有已安装且匹配此端点的 Agent",
       importEndpointMismatch: "端点不匹配",
-      importCannotWrite: "还不能写入",
+      importCannotWrite: "没有可用端点",
       importSuccess: "已导入到 {name}",
       importFailed: "没法导入到 Agent",
       importAfterSaveTitle: "入口 Key 已保存",

@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AdapterApplyPlan } from '@/lib/backend/contracts/adapter';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { BindTicketResult } from '@/lib/backend/contracts/ticket';
-import { importLocalTokenToAgent, type ImportLocalTokenDeps } from './token-import-action';
+import {
+  applyImportedLogin,
+  importLocalTokenToAgent,
+  type ImportLocalTokenDeps,
+} from './token-import-action';
 
 function profile(partial: Partial<AdapterProfile> = {}): AdapterProfile {
   return {
@@ -147,5 +151,44 @@ describe('importLocalTokenToAgent', () => {
         logGuiEvent: vi.fn(async () => undefined),
       },
     )).rejects.toThrow('找不到写入目标工具的本机地址');
+  });
+});
+
+describe('applyImportedLogin', () => {
+  it('skips switch when the saved login is already current', async () => {
+    const switchAccount = vi.fn(async () => undefined);
+    const switchPreview = vi.fn(async () => undefined);
+    const switchProvider = vi.fn(async () => undefined);
+    await applyImportedLogin(
+      { agentId: 'claude', sourceKind: 'provider', sourceId: 'p-1', isCurrent: true },
+      { switchAccount, switchPreview, switchProvider },
+    );
+    expect(switchPreview).not.toHaveBeenCalled();
+    expect(switchProvider).not.toHaveBeenCalled();
+    expect(switchAccount).not.toHaveBeenCalled();
+  });
+
+  it('switches a provider into live config', async () => {
+    const switchAccount = vi.fn(async () => undefined);
+    const switchPreview = vi.fn(async () => undefined);
+    const switchProvider = vi.fn(async () => undefined);
+    await applyImportedLogin(
+      { agentId: 'claude', sourceKind: 'provider', sourceId: 'p-1', isCurrent: false },
+      { switchAccount, switchPreview, switchProvider },
+    );
+    expect(switchPreview).toHaveBeenCalledWith('claude', 'p-1');
+    expect(switchProvider).toHaveBeenCalledWith('claude', 'p-1');
+  });
+
+  it('switches an account into live config', async () => {
+    const switchAccount = vi.fn(async () => undefined);
+    const switchPreview = vi.fn(async () => undefined);
+    const switchProvider = vi.fn(async () => undefined);
+    await applyImportedLogin(
+      { agentId: 'workbuddy', sourceKind: 'account', sourceId: 'a-1', isCurrent: false },
+      { switchAccount, switchPreview, switchProvider },
+    );
+    expect(switchAccount).toHaveBeenCalledWith('workbuddy', 'a-1');
+    expect(switchProvider).not.toHaveBeenCalled();
   });
 });

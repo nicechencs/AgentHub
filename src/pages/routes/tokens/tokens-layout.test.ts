@@ -40,6 +40,10 @@ describe('routes tokens layout wiring', () => {
     expect(panel).toContain('data-token-delete');
     expect(panel).toContain('data-token-edit-key');
     expect(panel).toContain('TokenImportToAgentButton');
+    expect(source('TokenImportToAgentButton.tsx')).not.toContain('useNavigate');
+    expect(source('TokenImportToAgentButton.tsx')).not.toContain('ProviderEditDialog');
+    expect(page).toContain('ProviderEditDialog');
+    expect(page).toContain('asPanel');
     expect(panel).toContain('<Trash2');
     expect(page).toContain('onDelete={() => setDeleteRow(detailRow)}');
     expect(page).not.toContain('onDelete={detailRow.canDelete');
