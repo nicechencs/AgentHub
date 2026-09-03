@@ -1,7 +1,7 @@
 // Connections：全局票钱包（docs/connection-binding-model.md §5.2）
 // AgentTabStrip 筛选；?agent= 高亮并把 Tab 落到该 Agent。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Cable } from 'lucide-react';
 import { AgentTabStrip, type AgentTabId } from '@/components/layout/AgentTabStrip';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -24,7 +24,9 @@ import {
   buildResumeConnectUrl,
   consumeConnectIntent,
   parseResumeAgentId,
+  readConnectApiKeyDraft,
   readConnectGuide,
+  type ConnectApiKeyDraft,
   type ConnectGuide,
 } from '@/lib/connect-flow/connect-intent';
 import {
@@ -133,8 +135,10 @@ export default function ConnectionsPage() {
   } = useInstalledAgents();
   const pool = useConnectionInventory();
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [apiKeyDraft, setApiKeyDraft] = useState<ConnectApiKeyDraft | null>(null);
 
   const allowedAgents = installedIds.length > 0 || !loading ? installedIds : visibleIds;
   const oauthLoginAgents = useOAuthLoginAgents(allowedAgents);
@@ -264,6 +268,8 @@ export default function ConnectionsPage() {
   const poolReload = pool.reload;
 
   useEffect(() => {
+    const draft = readConnectApiKeyDraft(location.state);
+    if (draft) setApiKeyDraft(draft);
     const allowed = installedIds.length > 0 || !loading ? installedIds : visibleIds;
     const guide = readConnectGuide(searchParams, allowed);
     if (!guide) {
@@ -279,7 +285,7 @@ export default function ConnectionsPage() {
     const agentFromUrl = parseAgentParam(searchParams.get('agent'), allowed);
     if (agentFromUrl) setAddAgentId(agentFromUrl);
     setSearchParams(consumeConnectIntent(searchParams), { replace: true });
-  }, [installedIds, loading, visibleIds, searchParams, setSearchParams]);
+  }, [installedIds, loading, visibleIds, location.state, searchParams, setSearchParams]);
 
   useEffect(() => {
     const intent = pendingGuide?.intent ?? null;
@@ -597,16 +603,22 @@ export default function ConnectionsPage() {
         agentId={inspectTarget.agentId}
         mode={inspectTarget.mode}
         provider={inspectTarget.provider}
+        initialBaseUrl={inspectTarget.mode === 'add' ? apiKeyDraft?.baseUrl : undefined}
+        initialApiKey={inspectTarget.mode === 'add' ? apiKeyDraft?.apiKey : undefined}
+        initialModel={inspectTarget.mode === 'add' ? apiKeyDraft?.model : undefined}
+        compactGrokApiBackend={inspectTarget.mode === 'add' ? apiKeyDraft?.apiBackend : undefined}
         onOpenChange={(v) => {
           if (shouldIgnoreMenuDialogDismiss(ignoreMenuDialogDismissRef.current, v)) return;
           if (!v) {
             guideOpenedApiKeyRef.current = false;
+            setApiKeyDraft(null);
             inspect.close();
           }
         }}
         onSaved={() => {
           const fromGuide = guideOpenedApiKeyRef.current;
           guideOpenedApiKeyRef.current = false;
+          setApiKeyDraft(null);
           inspect.close();
           void loadWallet();
           void poolReload();

@@ -7,6 +7,8 @@ import {
   isTokenImportAgentVisible,
   resolveTokenImportProfile,
   tokenImportAgentChoice,
+  tokenImportApiKeyDraft,
+  tokenImportConnectionsUrl,
   tokenImportGate,
   tokenImportSurface,
 } from './token-import-model';
@@ -154,8 +156,8 @@ describe('tokenImportGate', () => {
     { id: 'pi' as const, name: 'Pi' },
   ];
 
-  it('opens the menu when key, profile, and any installed Agent are ready', () => {
-    const gate = tokenImportGate(row(), installed);
+  it('opens the menu when key and any installed Agent are ready', () => {
+    const gate = tokenImportGate(row({ profileId: null }), installed);
     expect(gate.enabled).toBe(true);
     expect(gate.reason).toBeNull();
     expect(gate.agents.map((a) => a.id)).toEqual(['claude', 'codex', 'pi']);
@@ -174,11 +176,49 @@ describe('tokenImportGate', () => {
     expect(gate.agents[0]?.reason).toBe('端点不匹配');
   });
 
-  it('disables without a key, profile, or installed Agent', () => {
+  it('disables without a key or installed Agent', () => {
     expect(tokenImportGate(row({ token: null }), installed).reason).toBe('先有入口 Key 才能导入');
-    expect(tokenImportGate(row({ profileId: null }), installed).reason).toBe('本机转发还没就绪');
     expect(tokenImportGate(row({ unavailable: true }), installed).reason).toBe('状态不可用');
     expect(tokenImportGate(row(), []).reason).toBe('先安装 Agent');
+  });
+});
+
+describe('tokenImportApiKeyDraft', () => {
+  it('fills origin + key for a matching Agent and skips the URL when the port is pending', () => {
+    expect(tokenImportApiKeyDraft({
+      kind: 'messages',
+      token: 'ahb_secret',
+      path: '/v1/messages',
+      endpoint: '127.0.0.1:17034',
+      listedModels: ['claude-sonnet-4'],
+    }, 'claude')).toEqual({
+      baseUrl: 'http://127.0.0.1:17034',
+      apiKey: 'ahb_secret',
+      model: 'claude-sonnet-4',
+    });
+    expect(tokenImportApiKeyDraft({
+      kind: 'responses_grok',
+      token: 'ahb_secret',
+      path: '/v1/responses',
+      endpoint: null,
+      listedModels: [],
+    }, 'grok')).toEqual({
+      apiKey: 'ahb_secret',
+      apiBackend: 'responses',
+    });
+    expect(tokenImportApiKeyDraft({
+      kind: 'messages',
+      token: 'ahb_secret',
+      path: '/v1/messages',
+      endpoint: '127.0.0.1:17034',
+      listedModels: [],
+    }, 'codex')).toBeNull();
+  });
+
+  it('opens Connections add-key without resume so the user stays on the settings panel', () => {
+    expect(tokenImportConnectionsUrl('claude')).toBe(
+      '/connections?agent=claude&mode=providers&intent=add-key',
+    );
   });
 });
 

@@ -26,6 +26,16 @@ export type ConnectGuide = {
   resumeAgentId: AgentKey | null;
 };
 
+/** Prefill for Connections 「添加 API Key」. Lives on location.state, never in the URL. */
+export type ConnectApiKeyDraft = {
+  baseUrl?: string;
+  apiKey?: string;
+  model?: string;
+  apiBackend?: 'responses' | 'chat_completions';
+};
+
+export const CONNECT_API_KEY_DRAFT_STATE = 'connectApiKeyDraft';
+
 const GUIDE_INTENTS = new Set<string>(['import-login', 'add-key', 'oauth']);
 
 export function parseConnectGuideIntent(raw: string | null | undefined): ConnectGuideIntent | null {
@@ -97,4 +107,30 @@ export function consumeConnectResume(search: URLSearchParams): URLSearchParams {
   const next = new URLSearchParams(search);
   next.delete('connect');
   return next;
+}
+
+export function connectApiKeyDraftState(draft: ConnectApiKeyDraft): {
+  [CONNECT_API_KEY_DRAFT_STATE]: ConnectApiKeyDraft;
+} {
+  return { [CONNECT_API_KEY_DRAFT_STATE]: draft };
+}
+
+export function readConnectApiKeyDraft(state: unknown): ConnectApiKeyDraft | null {
+  if (!state || typeof state !== 'object') return null;
+  const raw = (state as Record<string, unknown>)[CONNECT_API_KEY_DRAFT_STATE];
+  if (!raw || typeof raw !== 'object') return null;
+  const draft = raw as Record<string, unknown>;
+  const baseUrl = typeof draft.baseUrl === 'string' ? draft.baseUrl.trim() : '';
+  const apiKey = typeof draft.apiKey === 'string' ? draft.apiKey : '';
+  const model = typeof draft.model === 'string' ? draft.model.trim() : '';
+  const apiBackend = draft.apiBackend === 'responses' || draft.apiBackend === 'chat_completions'
+    ? draft.apiBackend
+    : undefined;
+  if (!baseUrl && !apiKey && !model && !apiBackend) return null;
+  return {
+    ...(baseUrl ? { baseUrl } : {}),
+    ...(apiKey ? { apiKey } : {}),
+    ...(model ? { model } : {}),
+    ...(apiBackend ? { apiBackend } : {}),
+  };
 }
