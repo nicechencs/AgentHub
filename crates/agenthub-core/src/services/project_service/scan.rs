@@ -85,7 +85,104 @@ fn push_claude_dir_sessions(
         if let Some(rec) = build_session(agent, home, &path, &project_id, Some(encoded)) {
             out.push(rec);
         }
+        if agent == AgentId::Claude {
+            push_claude_subagent_sessions(home, agent, dir, &path, &project_id, encoded, out);
+        }
     }
+}
+
+fn push_claude_subagent_sessions(
+    home: &Path,
+    agent: AgentId,
+    project_dir: &Path,
+    primary: &Path,
+    project_id: &str,
+    encoded: &str,
+    out: &mut Vec<AgentSession>,
+) {
+    let Some(stem) = primary.file_stem().and_then(|s| s.to_str()) else {
+        return;
+    };
+    if stem.is_empty() {
+        return;
+    }
+    let sub = project_dir.join(stem).join("subagents");
+    let Ok(entries) = fs::read_dir(&sub) else {
+        return;
+    };
+    for ent in entries.flatten() {
+        let path = ent.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if name.is_empty()
+            || name.starts_with('.')
+            || name.contains("meta")
+            || name.ends_with(".bak")
+        {
+            continue;
+        }
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if ext != "jsonl" {
+            continue;
+        }
+        if let Some(rec) = build_session(agent, home, &path, project_id, Some(encoded)) {
+            out.push(rec);
+        }
+    }
+}
+
+fn claude_subagent_stats(project_dir: &Path, primary: &Path) -> (u32, u64) {
+    let mut count = 0u32;
+    let mut size = 0u64;
+    let Some(stem) = primary.file_stem().and_then(|s| s.to_str()) else {
+        return (0, 0);
+    };
+    let sub = project_dir.join(stem).join("subagents");
+    let Ok(entries) = fs::read_dir(&sub) else {
+        return (0, 0);
+    };
+    for ent in entries.flatten() {
+        let path = ent.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if name.is_empty()
+            || name.starts_with('.')
+            || name.contains("meta")
+            || name.ends_with(".bak")
+        {
+            continue;
+        }
+        if path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.eq_ignore_ascii_case("jsonl"))
+            != Some(true)
+        {
+            continue;
+        }
+        let Ok(meta) = fs::metadata(&path) else {
+            continue;
+        };
+        count = count.saturating_add(1);
+        size = size.saturating_add(meta.len());
+    }
+    (count, size)
 }
 
 /// Codex: recursive under `sessions/`, primary `*.jsonl` (typically `rollout-*.jsonl`).
@@ -98,7 +195,8 @@ pub(crate) fn list_codex_sessions(
     list_sessions_tree(home, AgentId::Codex, "sessions", only_project_id, data_dir)
 }
 
-/// Kimi: `sessions/<wd_id>/session_<uuid>/` one row per session (not per subagent wire).
+/// Kimi: `sessions/<wd_id>/session_<uuid>/` one row for `agents/main`, plus extra
+/// rows for `agents/agent-*` wires nested under that session in the UI.
 /// Project cwd/title from `workspaces.json`; session title from `state.json`.
 pub(crate) fn list_kimi_sessions(home: &Path, only_key: Option<&str>) -> Result<Vec<AgentSession>> {
     let root = home.join("sessions");
@@ -155,6 +253,13 @@ pub(crate) fn list_kimi_sessions(home: &Path, only_key: Option<&str>) -> Result<
             ) {
                 out.push(rec);
             }
+            push_kimi_subagent_sessions(
+                home,
+                &sess_path,
+                &project_id,
+                cwd_opt.as_deref(),
+                &mut out,
+            );
         }
     }
     Ok(out)
@@ -288,6 +393,87 @@ fn build_kimi_session(
         rec.session_id = native_session_id_from_path(AgentId::Kimi, session_dir);
     }
     Some(rec)
+}
+
+fn kimi_primary_wire(session_dir: &Path) -> Option<PathBuf> {
+    let main_wire = session_dir.join("agents").join("main").join("wire.jsonl");
+    if main_wire.is_file() {
+        return Some(main_wire);
+    }
+    find_first_kimi_wire(session_dir)
+}
+
+fn kimi_extra_agent_count(session_dir: &Path) -> u32 {
+    let mut n = 0u32;
+    let primary = kimi_primary_wire(session_dir);
+    let agents = session_dir.join("agents");
+    let Ok(entries) = fs::read_dir(&agents) else {
+        return 0;
+    };
+    for ent in entries.flatten() {
+        let path = ent.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if name.is_empty() || name.starts_with('.') || name.eq_ignore_ascii_case("main") {
+            continue;
+        }
+        let wire = path.join("wire.jsonl");
+        if !wire.is_file() {
+            continue;
+        }
+        if primary.as_ref().is_some_and(|p| p == &wire) {
+            continue;
+        }
+        n = n.saturating_add(1);
+    }
+    n
+}
+
+fn push_kimi_subagent_sessions(
+    home: &Path,
+    session_dir: &Path,
+    project_id: &str,
+    workspace_cwd: Option<&str>,
+    out: &mut Vec<AgentSession>,
+) {
+    let primary = kimi_primary_wire(session_dir);
+    let parent_sid = native_session_id_from_path(AgentId::Kimi, session_dir);
+    let agents = session_dir.join("agents");
+    let Ok(entries) = fs::read_dir(&agents) else {
+        return;
+    };
+    for ent in entries.flatten() {
+        let path = ent.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) if !n.is_empty() && !n.starts_with('.') && !n.eq_ignore_ascii_case("main") => {
+                n.to_string()
+            }
+            _ => continue,
+        };
+        let wire = path.join("wire.jsonl");
+        if !wire.is_file() {
+            continue;
+        }
+        if primary.as_ref().is_some_and(|p| p == &wire) {
+            continue;
+        }
+        let Some(mut rec) = build_session(AgentId::Kimi, home, &wire, project_id, None) else {
+            continue;
+        };
+        if rec.cwd.is_none() {
+            rec.cwd = workspace_cwd.map(|s| s.to_string());
+        }
+        rec.session_id = Some(match parent_sid.as_deref() {
+            Some(sid) => format!("{sid}/{name}"),
+            None => name,
+        });
+        out.push(rec);
+    }
 }
 
 fn find_first_kimi_wire(session_dir: &Path) -> Option<PathBuf> {
@@ -694,7 +880,22 @@ pub(crate) fn grok_session_dir_for_delete(path: &Path) -> Option<PathBuf> {
 }
 
 /// Walk up until a `session_*` directory (Kimi layout).
+/// Extra agent wires (`agents/<name>/` other than `main`) delete only that folder.
 pub(crate) fn kimi_session_dir_for_delete(path: &Path) -> Option<PathBuf> {
+    if let Some(agent_dir) = path.parent() {
+        if let Some(agents) = agent_dir.parent() {
+            if agents
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.eq_ignore_ascii_case("agents"))
+            {
+                let name = agent_dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if !name.is_empty() && !name.eq_ignore_ascii_case("main") {
+                    return Some(agent_dir.to_path_buf());
+                }
+            }
+        }
+    }
     let mut cur = path.to_path_buf();
     for _ in 0..8 {
         if let Some(name) = cur.file_name().and_then(|n| n.to_str()) {
@@ -1524,6 +1725,11 @@ pub(crate) fn list_claude_workbuddy_projects(
             };
             session_count = session_count.saturating_add(1);
             size_bytes = size_bytes.saturating_add(meta.len());
+            if agent == AgentId::Claude {
+                let (extra, extra_size) = claude_subagent_stats(&dir, &path);
+                session_count = session_count.saturating_add(extra);
+                size_bytes = size_bytes.saturating_add(extra_size);
+            }
             if let Ok(mtime) = meta.modified() {
                 if newest_mtime.map(|t| mtime >= t).unwrap_or(true) {
                     newest_mtime = Some(mtime);
@@ -1688,6 +1894,7 @@ pub(crate) fn list_kimi_projects(home: &Path) -> Result<Vec<AgentProject>> {
                 continue;
             }
             session_count = session_count.saturating_add(1);
+            session_count = session_count.saturating_add(kimi_extra_agent_count(&sess_path));
             size_bytes = size_bytes.saturating_add(dir_size_shallow(&sess_path).unwrap_or(0));
             bump_mtime(&mut newest, mtime_of(&sess_path));
             bump_mtime(&mut newest, mtime_of(&sess_path.join("state.json")));
