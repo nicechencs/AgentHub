@@ -188,6 +188,14 @@ impl BridgeRuntimeHost {
             .map(|runtime| runtime.status(live)))
     }
 
+    /// Extra named loopback bearers accepted besides each edge's primary token.
+    pub fn set_extra_local_bearers(
+        &self,
+        rows: Vec<(String, String)>,
+    ) -> Result<(), BridgeHostError> {
+        self.gateway.set_extra_bearers(rows)
+    }
+
     /// The loopback bearer this listener actually accepts. Empty when not running.
     pub fn local_token(&self, profile_id: &str) -> Result<Option<String>, BridgeHostError> {
         let registry = self.gateway.lock()?;

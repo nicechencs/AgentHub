@@ -9,6 +9,8 @@ function row(partial: Partial<LocalTokenRow> = {}): LocalTokenRow {
   return {
     id: 'pool-kimi',
     poolBacked: true,
+    primary: true,
+    canDelete: false,
     profileId: 'bridge-1',
     name: 'kimi · /v1/chat/completions',
     kind: 'chat_completions',
@@ -43,6 +45,7 @@ describe('TokenList', () => {
       ),
     );
     expect(markup).toContain('<table');
+    expect(markup).toContain('data-col="name"');
     expect(markup).toContain('data-col="type"');
     expect(markup).toContain('data-col="endpoint"');
     expect(markup).toContain('overflow-hidden');

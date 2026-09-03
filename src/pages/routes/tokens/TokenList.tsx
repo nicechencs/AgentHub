@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react';
-import { Copy } from 'lucide-react';
+import { Copy, Trash2 } from 'lucide-react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { CopyableRouteEndpointUrl, RouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
+import { Hint, Tip } from '@/components/ui/tooltip';
 import {
   ColumnResizeHandle,
   Table,
@@ -25,14 +26,15 @@ import {
   tokenLastPageDisplay,
   tokenUsageDisplay,
 } from './token-detail-model';
-import { tokenTypeLabel, type LocalTokenRow } from './tokens-model';
+import { tokenDisplayName, tokenTypeLabel, type LocalTokenRow } from './tokens-model';
 import { TokenImportToAgentButton } from './TokenImportToAgentButton';
 import type { TokenImportAgentRef } from './token-import-model';
 import { StorageKey } from '@/lib/ui-preferences';
 
-type TokenColumnKey = 'type' | 'endpoint' | 'token' | 'lastPage' | 'usage';
+type TokenColumnKey = 'name' | 'type' | 'endpoint' | 'token' | 'lastPage' | 'usage';
 
 const WIDTH_SPECS: ColumnWidthSpec<TokenColumnKey>[] = [
+  { key: 'name', defaultWidth: 160, minWidth: 96 },
   { key: 'type', defaultWidth: 168, minWidth: 112 },
   { key: 'endpoint', defaultWidth: 280, minWidth: 180 },
   { key: 'token', defaultWidth: 280, minWidth: 180 },
@@ -43,6 +45,7 @@ const WIDTH_SPECS: ColumnWidthSpec<TokenColumnKey>[] = [
 const COLUMN_WIDTHS_STORAGE_KEY = StorageKey.routesTokensColumnWidths;
 
 function columnLabel(key: TokenColumnKey, t: ReturnType<typeof useI18n>['t']): string {
+  if (key === 'name') return t('routes.tokens.fieldName');
   if (key === 'type') return t('routes.tokens.fieldType');
   if (key === 'endpoint') return t('routes.tokens.fieldEndpoint');
   if (key === 'lastPage') return t('routes.tokens.fieldLastPage');
@@ -54,11 +57,13 @@ export function TokenList({
   rows,
   activeId,
   onShowDetail,
+  onDelete,
   installedAgents,
 }: {
   rows: readonly LocalTokenRow[];
   activeId?: string | null;
   onShowDetail?: (row: LocalTokenRow) => void;
+  onDelete?: (row: LocalTokenRow) => void;
   installedAgents?: readonly TokenImportAgentRef[];
 }) {
   const { t } = useI18n();
@@ -111,6 +116,7 @@ export function TokenList({
                     t,
                     toast,
                     installedAgents,
+                    onDelete,
                   })}
                 </TableCell>
               ))}
@@ -129,9 +135,18 @@ function renderColumn(
     t: ReturnType<typeof useI18n>['t'];
     toast: ReturnType<typeof useToast>['toast'];
     installedAgents?: readonly TokenImportAgentRef[];
+    onDelete?: (row: LocalTokenRow) => void;
   },
 ): ReactNode {
   const { t } = ctx;
+  if (key === 'name') {
+    const label = tokenDisplayName(row, t);
+    return (
+      <Tip className="block truncate font-medium text-primary" label={label}>
+        {label}
+      </Tip>
+    );
+  }
   if (key === 'type') {
     return <span className="block truncate font-medium text-primary">{tokenTypeLabel(row, t)}</span>;
   }
@@ -212,6 +227,23 @@ function renderColumn(
           installedAgents={ctx.installedAgents}
           className="shrink-0"
         />
+      ) : null}
+      {ctx.onDelete && row.canDelete ? (
+        <Hint label={t('routes.tokens.delete')}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 shrink-0 px-0"
+            onClick={(event) => {
+              event.stopPropagation();
+              ctx.onDelete?.(row);
+            }}
+            aria-label={t('routes.tokens.delete')}
+          >
+            <Trash2 className="h-3 w-3" aria-hidden />
+          </Button>
+        </Hint>
       ) : null}
     </div>
   );

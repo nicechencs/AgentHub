@@ -89,6 +89,18 @@ export async function setLocalToken(poolId: string, token: string) {
   return getBackend().adapter.setLocalToken(poolId, token);
 }
 
+export async function createLocalToken(poolId: string, name: string) {
+  return getBackend().adapter.createLocalToken(poolId, name);
+}
+
+export async function setLocalTokenName(id: string, name: string) {
+  return getBackend().adapter.setLocalTokenName(id, name);
+}
+
+export async function deleteLocalToken(id: string) {
+  return getBackend().adapter.deleteLocalToken(id);
+}
+
 /** Kimi and DSH share one chat-completions token, or keep separate keys. */
 export async function setChatCompletionsShared(shared: boolean): Promise<DefaultRoutePoolList> {
   return getBackend().adapter.setChatCompletionsShared(shared);

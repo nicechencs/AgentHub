@@ -100,6 +100,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "00028_local_gateway_desired_running",
         include_str!("00028_local_gateway_desired_running.sql"),
     ),
+    (
+        "00029_local_entry_keys",
+        include_str!("00029_local_entry_keys.sql"),
+    ),
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {

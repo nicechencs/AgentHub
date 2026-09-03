@@ -45,6 +45,8 @@ export interface MockAdapterState {
   shareChatCompletions: boolean;
   defaultPools: DefaultRoutePoolOverview[];
   localTokens: Map<string, string>;
+  localTokenNames: Map<string, string>;
+  extraLocalTokens: Array<{ id: string; poolId: string; name: string; token: string }>;
   localGatewayRunning: boolean;
   localGatewayPort: number | null;
   sourceModelCatalogs: Map<string, SourceModelCatalog>;

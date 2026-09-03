@@ -197,6 +197,8 @@ export function resetMockAdapters(): void {
     state.shareChatCompletions = false;
     state.defaultPools.length = 0;
     state.localTokens.clear();
+    state.localTokenNames.clear();
+    state.extraLocalTokens.length = 0;
   });
 }
 
@@ -348,6 +350,8 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     shareChatCompletions: false,
     defaultPools: [],
     localTokens: new Map(),
+    localTokenNames: new Map(),
+    extraLocalTokens: [],
     localGatewayRunning: false,
     localGatewayPort: null,
     sourceModelCatalogs: new Map(),
@@ -391,12 +395,22 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     async listLocalTokens() {
       await delay(20);
       if (!state.routePoolV2) return [];
-      return state.defaultPools.map((pool) => {
+      const primaries = state.defaultPools.map((pool) => {
         const existing = state.localTokens.get(pool.id);
         const token = existing?.trim() || `ahb_${pool.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12) || 'token'}`;
         if (!existing) state.localTokens.set(pool.id, token);
-        return { poolId: pool.id, token };
+        return {
+          id: pool.id,
+          poolId: pool.id,
+          token,
+          name: state.localTokenNames.get(pool.id) ?? '',
+          primary: true,
+        };
       });
+      const extras = state.extraLocalTokens
+        .filter((row) => state.defaultPools.some((pool) => pool.id === row.poolId))
+        .map((row) => ({ ...row, primary: false }));
+      return [...primaries, ...extras];
     },
     async ensureSourceModelCatalog(_sourceKind, sourceId) {
       await delay(20);
@@ -523,6 +537,11 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
           retryable: false,
         });
       }
+      const extra = state.extraLocalTokens.find((row) => row.id === poolId);
+      if (extra) {
+        extra.token = trimmed;
+        return { id: extra.id, poolId: extra.poolId, token: trimmed, name: extra.name, primary: false };
+      }
       if (!state.defaultPools.some((pool) => pool.id === poolId)) {
         throw adapterCommandError({
           code: 'not_found',
@@ -531,7 +550,66 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         });
       }
       state.localTokens.set(poolId, trimmed);
-      return { poolId, token: trimmed };
+      return {
+        id: poolId,
+        poolId,
+        token: trimmed,
+        name: state.localTokenNames.get(poolId) ?? '',
+        primary: true,
+      };
+    },
+    async createLocalToken(poolId, name) {
+      await delay(20);
+      const trimmedName = name.trim();
+      if (!state.routePoolV2) {
+        throw adapterCommandError({ code: 'unsupported', message: 'route_pool_v2 is disabled', retryable: false });
+      }
+      if (!trimmedName) {
+        throw adapterCommandError({ code: 'invalid_arg', message: 'entry key name must not be empty', retryable: false });
+      }
+      if (!state.defaultPools.some((pool) => pool.id === poolId)) {
+        throw adapterCommandError({
+          code: 'not_found',
+          message: `route pool not found: ${poolId}`,
+          retryable: false,
+        });
+      }
+      const token = `ahb_${Math.random().toString(36).slice(2, 12)}`;
+      const row = { id: `extra-${state.extraLocalTokens.length + 1}`, poolId, name: trimmedName, token };
+      state.extraLocalTokens.push(row);
+      return { ...row, primary: false };
+    },
+    async setLocalTokenName(id, name) {
+      await delay(20);
+      const trimmedName = name.trim();
+      if (!trimmedName) {
+        throw adapterCommandError({ code: 'invalid_arg', message: 'entry key name must not be empty', retryable: false });
+      }
+      const extra = state.extraLocalTokens.find((row) => row.id === id);
+      if (extra) {
+        extra.name = trimmedName;
+        return { id: extra.id, poolId: extra.poolId, token: extra.token, name: extra.name, primary: false };
+      }
+      if (!state.defaultPools.some((pool) => pool.id === id)) {
+        throw adapterCommandError({ code: 'not_found', message: `route pool not found: ${id}`, retryable: false });
+      }
+      const existing = state.localTokens.get(id);
+      const token = existing?.trim() || `ahb_${id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12) || 'token'}`;
+      if (!existing) state.localTokens.set(id, token);
+      state.localTokenNames.set(id, trimmedName);
+      return { id, poolId: id, token, name: trimmedName, primary: true };
+    },
+    async deleteLocalToken(id) {
+      await delay(20);
+      const index = state.extraLocalTokens.findIndex((row) => row.id === id);
+      if (index < 0) {
+        throw adapterCommandError({
+          code: 'invalid_arg',
+          message: 'cannot delete the default entry key',
+          retryable: false,
+        });
+      }
+      state.extraLocalTokens.splice(index, 1);
     },
     async setChatCompletionsShared(shared: boolean) {
       await delay(20);

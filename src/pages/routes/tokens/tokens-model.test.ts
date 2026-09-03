@@ -6,8 +6,10 @@ import {
   buildLocalTokenRows,
   generateLocalToken,
   lastVisitFromStatuses,
+  localTokenDeleteGate,
   localTokenEditKeyGate,
   maskLocalToken,
+  tokenDisplayName,
   tokenTypeLabel,
   visibleTokenKinds,
 } from './tokens-model';
@@ -156,6 +158,62 @@ describe('tokens-model', () => {
     });
     expect(localTokenEditKeyGate(rows[0]).enabled).toBe(false);
     expect(localTokenEditKeyGate(rows[0]).reason).toContain('连接池入口 Key');
+    expect(localTokenDeleteGate(rows[0]).enabled).toBe(false);
+  });
+
+  it('lists named extra keys under the same type and keeps the default undeletable', () => {
+    const rows = buildLocalTokenRows(
+      [
+        profile({
+          id: 'codex-bridge',
+          name: 'Codex',
+          targetAgentId: 'codex',
+          sourceId: 'src-codex',
+          localPort: 8101,
+        }),
+      ],
+      {},
+      {},
+      [
+        pool({
+          id: 'pool-codex',
+          targetAgentId: 'codex',
+          dialect: 'codex',
+          members: [{ sourceKind: 'provider', sourceId: 'src-codex', enabled: true }],
+          gatewayPort: 8101,
+        }),
+      ],
+      false,
+      {},
+      [
+        {
+          id: 'pool-codex',
+          poolId: 'pool-codex',
+          token: 'ahb_default',
+          name: '默认',
+          primary: true,
+        },
+        {
+          id: 'extra-home',
+          poolId: 'pool-codex',
+          token: 'ahb_home_key',
+          name: '家里',
+          primary: false,
+        },
+      ],
+    );
+    expect(rows).toHaveLength(2);
+    expect(tokenDisplayName(rows[0])).toBe('默认');
+    expect(rows[0]).toMatchObject({ id: 'pool-codex', canDelete: false, primary: true });
+    expect(localTokenDeleteGate(rows[0]).enabled).toBe(false);
+    expect(rows[1]).toMatchObject({
+      id: 'extra-home',
+      name: '家里',
+      token: 'ahb_home_key',
+      canDelete: true,
+      primary: false,
+    });
+    expect(localTokenDeleteGate(rows[1]).enabled).toBe(true);
   });
 
   it('sorts rows by endpoint kind then name', () => {

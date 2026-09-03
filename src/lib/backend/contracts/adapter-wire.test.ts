@@ -524,8 +524,24 @@ describe('Adapter Rust wire mappers', () => {
 
   it('maps loopback entry keys for the tokens page', () => {
     expect(mapLocalTokenRecord({ poolId: 'pool-1', token: 'ahb_secret' })).toEqual({
+      id: 'pool-1',
       poolId: 'pool-1',
       token: 'ahb_secret',
+      name: '',
+      primary: true,
+    });
+    expect(mapLocalTokenRecord({
+      id: 'extra-1',
+      poolId: 'pool-1',
+      token: 'ahb_extra',
+      name: '工作电脑',
+      primary: false,
+    })).toEqual({
+      id: 'extra-1',
+      poolId: 'pool-1',
+      token: 'ahb_extra',
+      name: '工作电脑',
+      primary: false,
     });
   });
 

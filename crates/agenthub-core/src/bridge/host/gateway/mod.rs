@@ -101,6 +101,8 @@ pub(super) struct Gateway {
     /// before edges start; edges clone the slot so capture stays a no-op
     /// (never an error) when unset.
     pub(super) usage_spool: UsageSpoolSlot,
+    /// Extra named loopback bearers: (token, pool/profile id).
+    extra_bearers: Arc<Mutex<Vec<(Arc<str>, Arc<str>)>>>,
 }
 
 pub(super) enum GatewayAuthError {
@@ -117,7 +119,24 @@ impl Gateway {
             inbound: InboundRequestLog::new(),
             route_traces: RouteTraceLog::new(),
             usage_spool: UsageSpoolSlot::default(),
+            extra_bearers: Arc::new(Mutex::new(Vec::new())),
         }
+    }
+
+    pub(super) fn set_extra_bearers(
+        &self,
+        rows: Vec<(String, String)>,
+    ) -> Result<(), BridgeHostError> {
+        let mut guard = self
+            .extra_bearers
+            .lock()
+            .map_err(|_| BridgeHostError::StatePoisoned)?;
+        *guard = rows
+            .into_iter()
+            .filter(|(token, pool_id)| !token.trim().is_empty() && !pool_id.trim().is_empty())
+            .map(|(token, pool_id)| (Arc::from(token), Arc::from(pool_id)))
+            .collect();
+        Ok(())
     }
 
     pub(super) fn lock(&self) -> Result<MutexGuard<'_, GatewayRegistry>, BridgeHostError> {
@@ -131,6 +150,11 @@ impl Gateway {
     /// would have been 404.
     pub(super) fn authenticate(&self, headers: &HeaderMap) -> Result<EdgeState, GatewayAuthError> {
         let presented = presented_local_token(headers);
+        let extras = self
+            .extra_bearers
+            .lock()
+            .map_err(|_| GatewayAuthError::Poisoned)?
+            .clone();
         let registry = self
             .registry
             .lock()
@@ -143,6 +167,13 @@ impl Gateway {
                 runtime.state.local_token.as_bytes(),
             ) {
                 matched = Some(runtime.state.clone());
+            }
+        }
+        for (token, pool_id) in extras {
+            if constant_time_eq(presented_bytes.as_bytes(), token.as_bytes()) {
+                if let Some(runtime) = registry.runtimes.get(pool_id.as_ref()) {
+                    matched = Some(runtime.state.clone());
+                }
             }
         }
         let Some(edge) = matched else {
