@@ -200,7 +200,7 @@ impl AccountService {
             ));
         }
 
-        if self.trash_has_live_authorization(adapter, agent, &live)? {
+        if self.matching_live_trash_id(adapter, agent, &live)?.is_some() {
             tracing::debug!(
                 module = targets::ACCOUNT,
                 agent = agent.as_str(),
@@ -613,20 +613,20 @@ impl AccountService {
     /// Recycle-bin rows stay there until the user restores that one login.
     /// Live catalog/auth files are not cleared on delete, so a later sync
     /// must not invent new pool rows for keys still in trash.
-    fn trash_has_live_authorization(
+    pub(super) fn matching_live_trash_id(
         &self,
         adapter: &dyn AgentAdapter,
         agent: AgentId,
         live: &LiveAccount,
-    ) -> Result<bool> {
+    ) -> Result<Option<String>> {
         let now = chrono::Utc::now()
             .format("%Y-%m-%d %H:%M:%S%.6f")
             .to_string();
         let items = ConnectionTrashRepo::new(self.db.clone()).list(Some(agent), None, &now)?;
-        Ok(items.iter().any(|item| {
-            item.account.as_ref().is_some_and(|account| {
-                accounts_same_authorization(adapter, live.kind, &live.credentials, account)
-            })
+        Ok(items.iter().find_map(|item| {
+            let account = item.account.as_ref()?;
+            accounts_same_authorization(adapter, live.kind, &live.credentials, account)
+                .then(|| item.id.clone())
         }))
     }
 

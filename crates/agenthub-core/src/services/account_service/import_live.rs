@@ -83,7 +83,8 @@ impl AccountService {
         let live = chosen_live.ok_or_else(|| {
             AppError::message("account.import", "live import produced no accounts")
         })?;
-        self.upsert_live_account(adapter.as_ref(), agent, live, name, true)
+        self.upsert_live_account(adapter.as_ref(), agent, live, name, true)?
+            .ok_or_else(|| AppError::message("account.import", "live import produced no accounts"))
     }
 
     /// Import each Pi auth.json provider as its own pool account.
@@ -128,13 +129,15 @@ impl AccountService {
         let mut last = None;
         for (i, live) in grants.into_iter().enumerate() {
             let display_name = if i + 1 == n { name } else { None };
-            last = Some(self.upsert_live_account(
+            if let Some(account) = self.upsert_live_account(
                 adapter.as_ref(),
                 AgentId::Pi,
                 live,
                 display_name,
                 false,
-            )?);
+            )? {
+                last = Some(account);
+            }
         }
         last.ok_or_else(|| AppError::message("account.import", "Pi import produced no accounts"))
     }
@@ -146,13 +149,25 @@ impl AccountService {
         live: LiveAccount,
         name: Option<&str>,
         make_current: bool,
-    ) -> Result<Account> {
+    ) -> Result<Option<Account>> {
         if live.agent != agent {
             return Err(AppError::InvalidArg(format!(
                 "adapter returned account for {}, expected {}",
                 live.agent.as_str(),
                 agent.as_str()
             )));
+        }
+
+        if let Some(trash_id) = self.matching_live_trash_id(adapter, agent, &live)? {
+            if !make_current {
+                tracing::debug!(
+                    module = crate::logging::targets::ACCOUNT,
+                    agent = agent.as_str(),
+                    "live import skipped a recycle-bin login"
+                );
+                return Ok(None);
+            }
+            self.connections.restore_trash(&trash_id)?;
         }
 
         let display = name
@@ -193,7 +208,7 @@ impl AccountService {
             row.extra.clone(),
             make_current,
         )
-        .map(|committed| committed.stored)
+        .map(|committed| Some(committed.stored))
         .map_err(|error| error.into_error())
     }
 
