@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from 'react';
 import { Copy, Trash2 } from 'lucide-react';
+import { AgentLogo } from '@/components/shared/AgentLogo';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { CopyableRouteEndpointUrl, RouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
 import { Button } from '@/components/ui/button';
@@ -25,6 +26,7 @@ import {
   buildLocalTokenGroups,
   localTokenDeleteGate,
   localTokenEmptyCreateGate,
+  supportedAgentsForEndpointKind,
   tokenDisplayName,
   tokenTypeLabel,
   type LocalTokenRow,
@@ -113,12 +115,22 @@ export function TokenList({
             });
             const brandAgentId = localEndpointBrandAgentId(group.kind);
             const typeLabel = tokenTypeLabel({ kind: group.kind }, t);
+            const agentIds = supportedAgentsForEndpointKind(group.kind);
             return (
               <Fragment key={group.kind}>
                 <TableRow data-token-group={group.kind}>
                   <TableCell colSpan={2} className="bg-subtle">
                     <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                      <p className="shrink-0 font-medium text-primary">{typeLabel}</p>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <p className="shrink-0 font-medium text-primary">{typeLabel}</p>
+                        {agentIds.length > 0 ? (
+                          <div className="flex flex-wrap items-center gap-1">
+                            {agentIds.map((agentId) => (
+                              <AgentLogo key={agentId} agentId={agentId} size="sm" />
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
                       <div className="min-w-0 max-w-full">
                         {endpoint.portPending ? (
                           <RouteEndpointUrl

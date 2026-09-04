@@ -51,6 +51,9 @@ describe('TokenList', () => {
     expect(markup).toContain('data-token-group="chat_completions"');
     expect(markup).toContain('data-token-row="pool-kimi"');
     expect(markup).toContain('Chat Completions');
+    expect(markup).toContain('aria-label="Kimi"');
+    expect(markup).toContain('aria-label="Pi"');
+    expect(markup).toContain('aria-label="WorkBuddy"');
     expect(markup).toContain('http://127.0.0.1:8123');
     expect(markup).toContain('/v1/chat/completions');
     expect(markup).toContain('ahb_••••cret');

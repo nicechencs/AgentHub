@@ -58,6 +58,8 @@ describe('routes tokens layout wiring', () => {
     expect(page).toContain('attachTokenUsage');
     expect(source('TokenList.tsx')).toContain('createForEndpoint');
     expect(source('TokenList.tsx')).toContain('emptyTitle');
+    expect(source('TokenList.tsx')).toContain('AgentLogo');
+    expect(source('TokenList.tsx')).toContain('supportedAgentsForEndpointKind');
   });
 
   it('puts eye and copy icons after the entry key, not text buttons', () => {
