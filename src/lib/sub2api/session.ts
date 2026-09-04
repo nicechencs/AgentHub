@@ -1,13 +1,17 @@
 /**
  * Sub2API JWT session — localStorage only (project: no credential disk encryption).
  * Long-term product state = gateway API Key in Connections.
+ * Logout clears session only; remembered accounts are separate.
  */
 import { loadJson, saveJson, StorageKey } from '@/lib/ui-preferences';
 import { removeStorageItem } from '@/lib/storage-key';
 import type { Sub2ApiSession, Sub2ApiUser } from './types';
-import { normalizeSiteUrl, sub2apiGatewayBaseUrl } from './url';
+import { normalizeHttpBaseUrl, normalizeSiteUrl, sub2apiGatewayBaseUrl } from './url';
 
 const SESSION_KEY = StorageKey.sub2apiSession;
+
+/** Refresh when within this window of expiry (or already expired). */
+const REFRESH_SKEW_MS = 60_000;
 
 export function loadSub2ApiSession(): Sub2ApiSession | null {
   const raw = loadJson<Sub2ApiSession | null>(SESSION_KEY, null);
@@ -16,7 +20,7 @@ export function loadSub2ApiSession(): Sub2ApiSession | null {
   return {
     ...raw,
     siteUrl,
-    gatewayBaseUrl: normalizeSiteUrl(raw.gatewayBaseUrl || siteUrl),
+    gatewayBaseUrl: normalizeHttpBaseUrl(raw.gatewayBaseUrl || siteUrl),
     accessToken: raw.accessToken.trim(),
     refreshToken: raw.refreshToken?.trim() || undefined,
   };
@@ -27,7 +31,7 @@ export function saveSub2ApiSession(session: Sub2ApiSession): void {
   const next: Sub2ApiSession = {
     ...session,
     siteUrl,
-    gatewayBaseUrl: normalizeSiteUrl(session.gatewayBaseUrl || siteUrl),
+    gatewayBaseUrl: normalizeHttpBaseUrl(session.gatewayBaseUrl || siteUrl),
     accessToken: session.accessToken.trim(),
     refreshToken: session.refreshToken?.trim() || undefined,
   };
@@ -55,12 +59,26 @@ export function sessionFromTokens(input: {
       : undefined);
   return {
     siteUrl,
-    gatewayBaseUrl: normalizeSiteUrl(input.gatewayBaseUrl || sub2apiGatewayBaseUrl(siteUrl)),
+    gatewayBaseUrl: normalizeHttpBaseUrl(
+      input.gatewayBaseUrl || sub2apiGatewayBaseUrl(siteUrl),
+    ),
     accessToken: input.accessToken.trim(),
     refreshToken: input.refreshToken?.trim() || undefined,
     expiresAt,
     user: input.user ?? null,
   };
+}
+
+/** True when access token should be refreshed soon (or has no expiry but we still try later). */
+export function sessionNeedsRefresh(
+  session: Sub2ApiSession,
+  now = Date.now(),
+): boolean {
+  if (!session.refreshToken) return false;
+  if (typeof session.expiresAt !== 'number' || !Number.isFinite(session.expiresAt)) {
+    return false;
+  }
+  return session.expiresAt <= now + REFRESH_SKEW_MS;
 }
 
 export function __setSub2ApiSessionForTests(session: Sub2ApiSession | null): void {

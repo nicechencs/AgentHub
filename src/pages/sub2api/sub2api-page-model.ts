@@ -1,9 +1,14 @@
 /** Pure helpers for the Sub2API routes page. */
 
 import type { Sub2ApiKey, Sub2ApiSession, Sub2ApiUser } from '@/lib/sub2api';
-import { SUB2API_DEFAULT_SITE_URL, normalizeSiteUrl } from '@/lib/sub2api';
+import {
+  SUB2API_DEFAULT_SITE_URL,
+  normalizeSiteUrl,
+  tryNormalizeSiteUrl,
+  type NormalizeSiteUrlResult,
+} from '@/lib/sub2api';
 
-export type Sub2ApiPagePhase = 'logged-out' | 'awaiting-2fa' | 'logged-in';
+export type Sub2ApiPagePhase = 'restoring' | 'logged-out' | 'awaiting-2fa' | 'logged-in';
 
 export type Sub2ApiKeyStatusKind =
   | 'active'
@@ -15,7 +20,9 @@ export type Sub2ApiKeyStatusKind =
 export function sub2apiPagePhase(
   session: Sub2ApiSession | null,
   awaiting2fa: boolean,
+  restoring = false,
 ): Sub2ApiPagePhase {
+  if (restoring) return 'restoring';
   if (session?.accessToken) return 'logged-in';
   if (awaiting2fa) return 'awaiting-2fa';
   return 'logged-out';
@@ -105,6 +112,21 @@ export function initialSiteUrlDraft(session: Sub2ApiSession | null): string {
 
 export function prepareSiteUrlForLogin(raw: string): string {
   return normalizeSiteUrl(raw || SUB2API_DEFAULT_SITE_URL);
+}
+
+/**
+ * Blur/paste helper: normalize to origin, report strip/invalid for UX.
+ * Empty input returns null (caller keeps draft / placeholder).
+ */
+export function applySiteUrlDraftInput(raw: string): {
+  draft: string | null;
+  result: NormalizeSiteUrlResult | null;
+} {
+  const trimmed = raw.trim();
+  if (!trimmed) return { draft: null, result: null };
+  const result = tryNormalizeSiteUrl(trimmed);
+  if (!result.ok) return { draft: raw, result };
+  return { draft: result.url, result };
 }
 
 export function sortSub2ApiKeys(keys: readonly Sub2ApiKey[]): Sub2ApiKey[] {
