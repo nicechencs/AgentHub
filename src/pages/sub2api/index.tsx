@@ -183,9 +183,13 @@ export default function Sub2ApiPage() {
     }
     setSubmitting(true);
     try {
+      let settings = publicSettings;
+      if (!settings) {
+        settings = await probeSite(siteUrl);
+      }
       let proof = captchaProof;
       const captchaKind =
-        captchaRef.current?.kind() ?? resolveCaptchaKind(publicSettings);
+        captchaRef.current?.kind() ?? resolveCaptchaKind(settings);
       const ensured = await captchaRef.current?.ensureProof();
       if (captchaKind !== 'none') {
         const nextProof = ensured ?? null;
@@ -231,6 +235,7 @@ export default function Sub2ApiPage() {
           captchaVerificationFailed: t('routes.sub2api.captchaVerificationFailed'),
           loginBadCredentials: t('routes.sub2api.loginBadCredentials'),
           loginFailed: t('routes.sub2api.loginFailed'),
+          siteUnreachable: t('routes.sub2api.siteProbeFailed'),
         }),
         variant: 'danger',
       });
@@ -270,6 +275,7 @@ export default function Sub2ApiPage() {
           captchaVerificationFailed: t('routes.sub2api.captchaVerificationFailed'),
           loginBadCredentials: t('routes.sub2api.loginBadCredentials'),
           loginFailed: t('routes.sub2api.totpFailed'),
+          siteUnreachable: t('routes.sub2api.siteProbeFailed'),
         }),
         variant: 'danger',
       });

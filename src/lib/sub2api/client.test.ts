@@ -181,6 +181,7 @@ describe('sub2api client', () => {
       captchaVerificationFailed: '请先完成验证码',
       loginBadCredentials: '邮箱或密码不正确',
       loginFailed: '登录未完成',
+      siteUnreachable: '无法连接该站点',
     };
     expect(
       mapSub2ApiLoginError(
@@ -202,6 +203,8 @@ describe('sub2api client', () => {
     expect(
       mapSub2ApiLoginError(new Sub2ApiError('rate limited', 200, 429, 'RATE_LIMITED'), messages),
     ).toBe('rate limited');
-    expect(mapSub2ApiLoginError(new Error('network'), messages)).toBe('登录未完成');
+    expect(mapSub2ApiLoginError(new Error('Failed to fetch'), messages)).toBe('无法连接该站点');
+    expect(mapSub2ApiLoginError(new Error('network error: dns'), messages)).toBe('无法连接该站点');
+    expect(mapSub2ApiLoginError(new Error('something else'), messages)).toBe('登录未完成');
   });
 });

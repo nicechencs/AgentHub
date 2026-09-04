@@ -1,6 +1,7 @@
 /**
  * Sub2API HTTP client — Bearer JWT, envelope `{ code, message, data }`.
- * Never logs tokens, passwords, or keys.
+ * Desktop (Tauri) uses Rust `sub2api_http_request` to bypass WebView CORS.
+ * Browser/vitest keeps `fetch`. Never logs tokens, passwords, or keys.
  */
 import type {
   Sub2ApiAuthContext,
@@ -17,6 +18,7 @@ import type {
   Sub2ApiUser,
 } from './types';
 import { sub2apiApiRoot } from './url';
+import { isTauriApp } from '@/lib/platform';
 
 export class Sub2ApiError extends Error {
   readonly status: number;
@@ -32,17 +34,38 @@ export class Sub2ApiError extends Error {
   }
 }
 
+/** Thrown when the site cannot be reached (CORS/network/transport). */
+export class Sub2ApiNetworkError extends Error {
+  constructor(message = 'network error') {
+    super(message);
+    this.name = 'Sub2ApiNetworkError';
+  }
+}
+
 export type Sub2ApiLoginErrorMessages = {
   captchaVerificationFailed: string;
   loginBadCredentials?: string;
   loginFailed: string;
+  /** Prefer siteProbeFailed / network unreachable copy. */
+  siteUnreachable?: string;
 };
+
+function looksLikeNetworkFailure(err: unknown): boolean {
+  if (err instanceof Sub2ApiNetworkError) return true;
+  const msg = err instanceof Error ? err.message : String(err ?? '');
+  return /failed to fetch|network error|networkerror|load failed|cors|unreachable|timed out|timeout|connection refused|name not resolved|dns|econnrefused|enotfound/i.test(
+    msg,
+  );
+}
 
 /** Map API login/2FA errors to user-facing copy. Never logs secrets. */
 export function mapSub2ApiLoginError(
   err: unknown,
   messages: Sub2ApiLoginErrorMessages,
 ): string {
+  if (looksLikeNetworkFailure(err)) {
+    return messages.siteUnreachable?.trim() || messages.loginFailed;
+  }
   if (!(err instanceof Sub2ApiError)) return messages.loginFailed;
   const reason = (err.reason ?? '').toUpperCase();
   const msg = err.message || '';
@@ -63,19 +86,62 @@ export function mapSub2ApiLoginError(
   return trimmed || messages.loginFailed;
 }
 
-async function parseEnvelope<T>(response: Response): Promise<T> {
+type RawHttpResult = { status: number; bodyText: string };
+
+async function desktopHttp(input: {
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  body?: string;
+}): Promise<RawHttpResult> {
+  const { invoke } = await import('@/lib/backend/tauri/invoke');
+  try {
+    const raw = await invoke<{ status: number; body: string }>('sub2api_http_request', {
+      method: input.method,
+      url: input.url,
+      headers: input.headers,
+      body: input.body ?? null,
+    });
+    return { status: raw.status, bodyText: raw.body ?? '' };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err ?? 'network error');
+    throw new Sub2ApiNetworkError(msg);
+  }
+}
+
+async function browserHttp(input: {
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  body?: string;
+}): Promise<RawHttpResult> {
+  try {
+    const response = await fetch(input.url, {
+      method: input.method,
+      headers: input.headers,
+      body: input.body,
+    });
+    const bodyText = await response.text();
+    return { status: response.status, bodyText };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err ?? 'network error');
+    throw new Sub2ApiNetworkError(msg);
+  }
+}
+
+function parseEnvelopeText<T>(status: number, bodyText: string): T {
   let body: Sub2ApiEnvelope<T> | null = null;
   try {
-    body = (await response.json()) as Sub2ApiEnvelope<T>;
+    body = JSON.parse(bodyText) as Sub2ApiEnvelope<T>;
   } catch {
     throw new Sub2ApiError(
-      response.ok ? 'Invalid response' : `HTTP ${response.status}`,
-      response.status,
+      status >= 200 && status < 300 ? 'Invalid response' : `HTTP ${status}`,
+      status,
       -1,
     );
   }
   if (!body || typeof body !== 'object' || !('code' in body)) {
-    throw new Sub2ApiError('Invalid response envelope', response.status, -1);
+    throw new Sub2ApiError('Invalid response envelope', status, -1);
   }
   if (body.code !== 0) {
     const reason = typeof body.reason === 'string' && body.reason.trim()
@@ -83,7 +149,7 @@ async function parseEnvelope<T>(response: Response): Promise<T> {
       : undefined;
     throw new Sub2ApiError(
       body.message || 'Request failed',
-      response.status,
+      status,
       body.code,
       reason,
     );
@@ -96,18 +162,30 @@ async function request<T>(
   path: string,
   init: RequestInit & { accessToken?: string | null } = {},
 ): Promise<T> {
-  const headers = new Headers(init.headers);
-  if (!headers.has('Content-Type') && init.body) {
-    headers.set('Content-Type', 'application/json');
+  const headers: Record<string, string> = {};
+  if (init.headers) {
+    const h = new Headers(init.headers);
+    h.forEach((value, key) => {
+      headers[key] = value;
+    });
+  }
+  const body =
+    typeof init.body === 'string'
+      ? init.body
+      : init.body != null
+        ? String(init.body)
+        : undefined;
+  if (!headers['Content-Type'] && !headers['content-type'] && body) {
+    headers['Content-Type'] = 'application/json';
   }
   const token = init.accessToken?.trim();
-  if (token) headers.set('Authorization', `Bearer ${token}`);
-  const { accessToken: _drop, ...rest } = init;
-  const response = await fetch(`${sub2apiApiRoot(siteUrl)}${path}`, {
-    ...rest,
-    headers,
-  });
-  return parseEnvelope<T>(response);
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const method = (init.method || 'GET').toUpperCase();
+  const url = `${sub2apiApiRoot(siteUrl)}${path}`;
+  const raw = isTauriApp()
+    ? await desktopHttp({ method, url, headers, body })
+    : await browserHttp({ method, url, headers, body });
+  return parseEnvelopeText<T>(raw.status, raw.bodyText);
 }
 
 export function fetchPublicSettings(input: { siteUrl: string }): Promise<Sub2ApiPublicSettings> {
