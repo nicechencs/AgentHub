@@ -1091,6 +1091,7 @@ export const zh = {
       statusOther: "不可用",
       keyCreated: "创建",
       keyUpdated: "更新",
+      keyLastUsed: "最近使用",
       keyExpires: "过期",
       keyGroup: "分组",
       keyQuota: "额度",

@@ -1103,6 +1103,7 @@ export const en = {
       statusOther: "Unavailable",
       keyCreated: "Created",
       keyUpdated: "Updated",
+      keyLastUsed: "Last used",
       keyExpires: "Expires",
       keyGroup: "Group",
       keyQuota: "Quota",
