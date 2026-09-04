@@ -1314,6 +1314,25 @@
       }
     },
     {
+      "id": "openai-api-to-dsh",
+      "source": {
+        "kind": "provider",
+        "agentId": "claude",
+        "preset": "openai"
+      },
+      "target": "dsh",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "openai-api-to-dsh-bridge-v1",
+        "gateKind": "none",
+        "reason": "这份 OpenAI 兼容登录接到 DeepSeek Harness 需要本机转发。",
+        "reusePath": "local_bridge"
+      }
+    },
+    {
       "id": "openai-api-to-grok",
       "source": {
         "kind": "provider",
@@ -1330,6 +1349,25 @@
         "ruleId": "openai-api-to-grok-bridge-v1",
         "gateKind": "none",
         "reason": "这份 OpenAI 兼容登录接到 Grok 需要本机转发。",
+        "reusePath": "local_bridge"
+      }
+    },
+    {
+      "id": "openai-api-to-kimi",
+      "source": {
+        "kind": "provider",
+        "agentId": "claude",
+        "preset": "openai"
+      },
+      "target": "kimi",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "openai-api-to-kimi-bridge-v1",
+        "gateKind": "none",
+        "reason": "这份 OpenAI 兼容登录接到 Kimi 需要本机转发。",
         "reusePath": "local_bridge"
       }
     },
