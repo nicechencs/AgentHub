@@ -29,6 +29,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2"
 tokio = { workspace = true }
 tracing = { workspace = true }
+ureq = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

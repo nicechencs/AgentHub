@@ -272,6 +272,7 @@ pub fn run() {
             commands::settings::open_external_url,
             commands::sub2api::sub2api_open_login,
             commands::sub2api::sub2api_close_login,
+            commands::sub2api::sub2api_http_request,
             commands::settings::pick_directory::pick_directory,
             commands::shell_icon::set_shell_icon,
         ])

@@ -22,7 +22,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost https: http: https://github.com https://*.github.com https://objects.githubusercontent.com https://release-assets.githubusercontent.com; img-src 'self' asset: http://asset.localhost data: blob:; font-src 'self' data:"
+      "csp": "default-src 'self'; script-src 'self' https://turing.captcha.qcloud.com https://turing.captcha.gtimg.com https://ca.turing.captcha.qcloud.com https://global.turing.captcha.gtimg.com https://www.tycaptcha.com https://cloudcache.tencentcs.com https://challenges.cloudflare.com https://*.alicdn.com https://o.alicdn.com; style-src 'self' 'unsafe-inline' https://*.captcha.gtimg.com https://*.alicdn.com; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost https: http: https://github.com https://*.github.com https://objects.githubusercontent.com https://release-assets.githubusercontent.com https://turing.captcha.qcloud.com https://www.tycaptcha.com https://rce.tencentrio.com; frame-src https://challenges.cloudflare.com https://turing.captcha.qcloud.com https://ca.turing.captcha.qcloud.com https://www.tycaptcha.com; img-src 'self' asset: http://asset.localhost data: blob: https:; font-src 'self' data:"
     }
   },
   "bundle": {

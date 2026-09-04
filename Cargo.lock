@@ -75,6 +75,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+ "ureq",
  "urlencoding",
 ]
 
