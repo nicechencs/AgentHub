@@ -18,6 +18,7 @@ pub mod provider;
 pub mod settings;
 pub mod shell_icon;
 pub mod skill;
+pub mod sub2api;
 pub mod trash;
 pub mod usage;
 

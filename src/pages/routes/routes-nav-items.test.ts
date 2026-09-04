@@ -7,6 +7,7 @@ import {
   isRoutesAreaPath,
   ROUTES_NAV_ITEMS,
   routesNavItemInDevelopment,
+  visibleRoutesNavItems,
 } from './routes-nav-items';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
@@ -26,11 +27,17 @@ describe('routes-nav-items', () => {
       '/routes/pool',
       '/routes/tokens',
       '/routes/activity',
+      '/routes/sub2api',
     ]);
   });
 
   it('does not mark any routes sub-nav item as in development', () => {
     expect(ROUTES_NAV_ITEMS.every((item) => !routesNavItemInDevelopment(item))).toBe(true);
+  });
+
+  it('hides Sub2API from secondary nav when preference is off', () => {
+    expect(visibleRoutesNavItems(false).map((item) => item.to)).not.toContain('/routes/sub2api');
+    expect(visibleRoutesNavItems(true).map((item) => item.to)).toContain('/routes/sub2api');
   });
 
   it('uses a network icon for the connection pool', () => {

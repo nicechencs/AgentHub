@@ -1,0 +1,118 @@
+/**
+ * Sub2API façade — HTTP helpers + login window via settings port.
+ */
+import { getBackend } from '@/app/runtime';
+import {
+  clearSub2ApiSession,
+  createApiKey,
+  fetchCurrentUser,
+  fetchPublicSettings,
+  listApiKeys,
+  loadSub2ApiSession,
+  logoutRemote,
+  refreshAuthTokens,
+  saveSub2ApiSession,
+  sessionFromTokens,
+  sub2apiGatewayBaseUrl,
+  sub2apiLoginUrl,
+  syncSub2ApiKeyToConnections,
+  SUB2API_DEFAULT_SITE_URL,
+  type Sub2ApiKey,
+  type Sub2ApiPublicSettings,
+  type Sub2ApiSession,
+  type Sub2ApiUser,
+} from '@/lib/sub2api';
+
+export type { Sub2ApiKey, Sub2ApiPublicSettings, Sub2ApiSession, Sub2ApiUser };
+export {
+  clearSub2ApiSession,
+  loadSub2ApiSession,
+  saveSub2ApiSession,
+  sessionFromTokens,
+  sub2apiLoginUrl,
+  sub2apiGatewayBaseUrl,
+  syncSub2ApiKeyToConnections,
+  SUB2API_DEFAULT_SITE_URL,
+};
+
+export async function openSub2ApiLoginWindow(loginUrl: string): Promise<{
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt?: number;
+}> {
+  return getBackend().settings.openSub2ApiLoginWindow(loginUrl);
+}
+
+export async function probeSub2ApiPublicSettings(siteUrl: string): Promise<Sub2ApiPublicSettings> {
+  return fetchPublicSettings({ siteUrl });
+}
+
+export async function loadSub2ApiUser(session: Sub2ApiSession): Promise<Sub2ApiUser> {
+  return fetchCurrentUser({ siteUrl: session.siteUrl, accessToken: session.accessToken });
+}
+
+export async function loadSub2ApiKeys(session: Sub2ApiSession): Promise<Sub2ApiKey[]> {
+  const list = await listApiKeys({ siteUrl: session.siteUrl, accessToken: session.accessToken });
+  return list.items ?? [];
+}
+
+export async function createSub2ApiKey(session: Sub2ApiSession, name: string): Promise<Sub2ApiKey> {
+  return createApiKey({ siteUrl: session.siteUrl, accessToken: session.accessToken }, name);
+}
+
+export async function refreshSub2ApiSession(session: Sub2ApiSession): Promise<Sub2ApiSession> {
+  if (!session.refreshToken) return session;
+  const tokens = await refreshAuthTokens(
+    { siteUrl: session.siteUrl, accessToken: session.accessToken },
+    session.refreshToken,
+  );
+  const next = sessionFromTokens({
+    siteUrl: session.siteUrl,
+    gatewayBaseUrl: session.gatewayBaseUrl,
+    accessToken: tokens.access_token,
+    refreshToken: tokens.refresh_token ?? session.refreshToken,
+    expiresIn: tokens.expires_in,
+    user: session.user,
+  });
+  saveSub2ApiSession(next);
+  return next;
+}
+
+export async function logoutSub2Api(session: Sub2ApiSession | null): Promise<void> {
+  if (session) {
+    await logoutRemote(
+      { siteUrl: session.siteUrl, accessToken: session.accessToken },
+      session.refreshToken,
+    );
+  }
+  clearSub2ApiSession();
+}
+
+export async function establishSessionFromTokens(input: {
+  siteUrl: string;
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt?: number;
+}): Promise<Sub2ApiSession> {
+  let gatewayBaseUrl = sub2apiGatewayBaseUrl(input.siteUrl);
+  try {
+    const pub = await fetchPublicSettings({ siteUrl: input.siteUrl });
+    gatewayBaseUrl = sub2apiGatewayBaseUrl(input.siteUrl, pub);
+  } catch {
+    /* keep root */
+  }
+  const draft = sessionFromTokens({
+    siteUrl: input.siteUrl,
+    gatewayBaseUrl,
+    accessToken: input.accessToken,
+    refreshToken: input.refreshToken,
+    expiresAt: input.expiresAt,
+  });
+  const user = await fetchCurrentUser({
+    siteUrl: draft.siteUrl,
+    accessToken: draft.accessToken,
+  });
+  const next = { ...draft, user };
+  saveSub2ApiSession(next);
+  return next;
+}

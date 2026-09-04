@@ -456,6 +456,20 @@ export function createTauriSettingsPort(): SettingsPort {
       }
     },
 
+    async openSub2ApiLoginWindow(loginUrl) {
+      try {
+        const raw = await invoke<{
+          accessToken: string;
+          refreshToken?: string;
+          expiresAt?: number;
+        }>('sub2api_open_login', { loginUrl });
+        return raw;
+      } catch (e) {
+        log.error('openSub2ApiLoginWindow failed', e);
+        throw e;
+      }
+    },
+
     async pickDirectory(options) {
       try {
         const picked = await invoke<string | null>('pick_directory', {
