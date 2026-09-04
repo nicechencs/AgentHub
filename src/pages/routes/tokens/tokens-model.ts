@@ -8,6 +8,7 @@ import type {
   DefaultRoutePoolOverview,
   LocalTokenRecord,
 } from '@/lib/backend/contracts/adapter';
+import type { GatewayUsageRow } from '@/lib/backend/contracts/usage-types';
 import type { TranslateFn } from '@/lib/i18n';
 import { KNOWN_AGENT_IDS, type AgentKey } from '@/lib/types';
 import {
@@ -20,6 +21,17 @@ import {
 import { agentConversationSurfaces } from '@/pages/agents/agent-detail-model';
 import { localEndpointKindLabel } from '@/pages/routes/shared/route-pool-view-model';
 import { profilesForPool } from '@/pages/routes/board/board-view-model';
+import {
+  filterGatewayUsageRows,
+  summarizeGatewayUsage,
+} from '@/pages/routes/board/board-usage-model';
+
+export interface LocalTokenUsage {
+  requestCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+}
 
 export interface LocalTokenRow {
   /** Stable list key: pool id (pool-backed) or profile id (leftover). */
@@ -50,8 +62,18 @@ export interface LocalTokenRow {
   unavailable: boolean;
   /** Pool/runtime writer this key belongs to; not a client-write target. */
   targetAgentId: string;
+  /** Last inbound path seen for this key (scoped). */
+  lastPath: string | null;
+  /** ISO time of the latest inbound request for this key (scoped). */
+  lastRequestAt: string | null;
+  /** Optional 7-day gateway usage for this key; omitted until ready. */
+  usage?: LocalTokenUsage;
+  /** True when visit/usage may use profile-scoped data for this key. */
+  usageEligible: boolean;
   /** Models this entry key can send; first item is the default test pick. */
   listedModels: string[];
+  /** True when Messages catalog was filled from Chat Completions sibling. */
+  modelsSharedFromChat?: boolean;
 }
 
 export function uniqueListedModels(
@@ -188,6 +210,68 @@ export function visibleTokenKinds(
     .map((row) => row.kind);
 }
 
+
+export function tokenUsageSurface(kind: LocalEndpointKind): 'messages' | 'responses' | 'chat' {
+  if (kind === 'messages') return 'messages';
+  if (kind === 'chat_completions') return 'chat';
+  return 'responses';
+}
+
+export function lastVisitFromStatuses(
+  profileIds: readonly string[],
+  statuses: Record<string, AdapterBridgeRuntimeStatus | undefined>,
+): { lastPath: string | null; lastRequestAt: string | null } {
+  let bestAt = '';
+  let bestPath: string | null = null;
+  for (const id of profileIds) {
+    const status = statuses[id];
+    const inbound = status?.recentInbound ?? [];
+    const at = status?.lastRequestAt?.trim() || inbound[0]?.at || '';
+    const path = inbound[0]?.path?.trim() || null;
+    if (!at && !path) continue;
+    if (!bestAt || at >= bestAt) {
+      bestAt = at;
+      bestPath = path;
+    }
+  }
+  return {
+    lastPath: bestPath,
+    lastRequestAt: bestAt || null,
+  };
+}
+
+export function attachTokenUsage(
+  rows: readonly LocalTokenRow[],
+  gatewayRows: readonly GatewayUsageRow[],
+): LocalTokenRow[] {
+  return rows.map((row) => {
+    if (!row.usageEligible) {
+      return {
+        ...row,
+        usage: {
+          requestCount: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          cachedInputTokens: 0,
+        },
+      };
+    }
+    const totals = summarizeGatewayUsage(filterGatewayUsageRows(gatewayRows, {
+      profileIds: row.profileIds,
+      surface: tokenUsageSurface(row.kind),
+    }));
+    return {
+      ...row,
+      usage: {
+        requestCount: totals.requestCount,
+        inputTokens: totals.inputTokens,
+        outputTokens: totals.outputTokens,
+        cachedInputTokens: totals.cachedInputTokens,
+      },
+    };
+  });
+}
+
 function pickRuntimeProfile(
   matches: readonly AdapterProfile[],
   statuses: Record<string, AdapterBridgeRuntimeStatus | undefined>,
@@ -262,6 +346,7 @@ function rowFromRuntime(input: {
   unavailable: boolean;
   storedToken?: string | null;
   listedModels?: readonly string[];
+  statuses: Record<string, AdapterBridgeRuntimeStatus | undefined>;
 }): LocalTokenRow {
   const port = input.unavailable
     ? null
@@ -278,6 +363,17 @@ function rowFromRuntime(input: {
   const token = useRuntimeToken && entryUp && !input.unavailable
     ? runtimeToken
     : (runtimeToken || storedToken);
+  const authenticating = input.status?.localToken?.trim() || null;
+  // Scope visit/usage to the entry key that currently authenticates.
+  // Primary may use profile scope when localToken is unknown; extras stay empty.
+  const usageEligible = Boolean(
+    token && authenticating
+      ? token === authenticating
+      : (input.primary && !authenticating),
+  );
+  const visit = usageEligible
+    ? lastVisitFromStatuses(input.profileIds, input.statuses)
+    : { lastPath: null, lastRequestAt: null };
   return {
     id: input.id,
     poolBacked: input.poolBacked,
@@ -294,6 +390,9 @@ function rowFromRuntime(input: {
     maskedToken: token ? maskLocalToken(token) : null,
     unavailable: input.unavailable,
     targetAgentId: input.targetAgentId,
+    lastPath: visit.lastPath,
+    lastRequestAt: visit.lastRequestAt,
+    usageEligible,
     listedModels: uniqueListedModels(input.listedModels ?? []),
   };
 }
@@ -368,6 +467,7 @@ export function buildLocalTokenRows(
         unavailable: Boolean(statusErrors[statusId]),
         storedToken,
         listedModels: pool.listedModels,
+        statuses: bridgeStatuses,
       }));
     } else if (extraRecords.length === 0) {
       rows.push(rowFromRuntime({
@@ -384,6 +484,7 @@ export function buildLocalTokenRows(
         status: bridgeStatuses[statusId],
         unavailable: Boolean(statusErrors[statusId]),
         listedModels: pool.listedModels,
+        statuses: bridgeStatuses,
       }));
     }
     for (const extra of extraRecords) {
@@ -402,6 +503,7 @@ export function buildLocalTokenRows(
         unavailable: Boolean(statusErrors[statusId]),
         storedToken: extra.token,
         listedModels: pool.listedModels,
+        statuses: bridgeStatuses,
       }));
     }
     if (kind === 'chat_completions') sharedChatRow = true;
@@ -432,6 +534,7 @@ export function buildLocalTokenRows(
       status,
       unavailable,
       storedToken: tokensByPoolId[profile.id],
+      statuses: bridgeStatuses,
     }));
     if (kind === 'chat_completions') sharedChatRow = true;
   }
@@ -439,11 +542,27 @@ export function buildLocalTokenRows(
   if (chatCompletionsShared && extraChatIds.length > 0) {
     for (const row of rows) {
       if (row.kind !== 'chat_completions') continue;
-      row.profileIds = [...new Set([...row.profileIds, ...extraChatIds])];
       row.listedModels = uniqueListedModels([
         ...row.listedModels,
         ...extraChatModels,
       ]);
+      // Keep usage profile scope on the primary key only — extras must not inherit pool totals.
+      if (row.primary) {
+        row.profileIds = [...new Set([...row.profileIds, ...extraChatIds])];
+      }
+    }
+  }
+
+  // H: share usable Chat Completions catalog onto empty Messages rows (same login family).
+  const chatModels = uniqueListedModels(
+    rows.filter((row) => row.kind === 'chat_completions').flatMap((row) => row.listedModels),
+  );
+  if (chatModels.length > 0) {
+    for (const row of rows) {
+      if (row.kind !== 'messages') continue;
+      if (row.listedModels.length > 0) continue;
+      row.listedModels = [...chatModels];
+      row.modelsSharedFromChat = true;
     }
   }
 

@@ -23,6 +23,9 @@ function row(partial: Partial<LocalTokenRow> = {}): LocalTokenRow {
     targetAgentId: 'kimi',
     profileIds: ['bridge-1'],
     listedModels: [],
+    lastPath: null,
+    lastRequestAt: null,
+    usageEligible: false,
     ...partial,
   };
 }
