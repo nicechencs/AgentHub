@@ -14,7 +14,7 @@ import {
 } from './sub2api-page-model';
 
 describe('sub2api page model', () => {
-  it('maps three page states: logged-out / awaiting-2fa / logged-in', () => {
+  it('maps page states including quiet restore', () => {
     expect(sub2apiPagePhase(null, true)).toBe('awaiting-2fa');
     expect(
       sub2apiPagePhase(
@@ -30,6 +30,14 @@ describe('sub2api page model', () => {
         true,
       ),
     ).toBe('logged-in');
+    // Restoring wins so the login form does not flash
+    expect(
+      sub2apiPagePhase(
+        { siteUrl: 'https://x', gatewayBaseUrl: 'https://x', accessToken: 't' },
+        false,
+        true,
+      ),
+    ).toBe('restoring');
   });
 
   it('prefers display name then username then email', () => {
