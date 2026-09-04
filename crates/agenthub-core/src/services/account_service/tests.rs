@@ -302,6 +302,79 @@ fn live_sync_does_not_recreate_logins_still_in_trash() {
 }
 
 #[test]
+fn import_live_does_not_restore_other_recycle_bin_logins() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    let first = svc
+        .add_api_key(AgentId::Grok, Some("one"), "xai-key-one-1234")
+        .unwrap();
+    let second = svc
+        .add_api_key(AgentId::Grok, Some("two"), "xai-key-two-5678")
+        .unwrap();
+    svc.delete(&first.id, AgentId::Grok).unwrap();
+    svc.delete(&second.id, AgentId::Grok).unwrap();
+
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::ApiKey,
+        credentials: json!({
+            "format": "api_key",
+            "api_key": "xai-key-two-5678",
+            "email": "two@x.ai",
+        }),
+        label_hint: Some("two".into()),
+        extra: json!({}),
+    });
+    let imported = svc.import_live(AgentId::Grok, None).unwrap();
+    assert_eq!(imported.id, second.id);
+
+    let pool = svc.repo.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(pool.len(), 1);
+    assert_eq!(pool[0].id, second.id);
+    let remaining: Vec<_> = svc
+        .connections
+        .list_trash(Some(AgentId::Grok))
+        .unwrap()
+        .into_iter()
+        .map(|item| item.source_id)
+        .collect();
+    assert_eq!(remaining, vec![first.id]);
+}
+
+#[test]
+fn import_live_skips_a_recycle_bin_sibling() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    let first = svc
+        .add_api_key(AgentId::Grok, Some("one"), "xai-key-one-1234")
+        .unwrap();
+    svc.delete(&first.id, AgentId::Grok).unwrap();
+
+    let skipped = svc
+        .upsert_live_account(
+            adapter.as_ref(),
+            AgentId::Grok,
+            LiveAccount {
+                agent: AgentId::Grok,
+                kind: AccountKind::ApiKey,
+                credentials: json!({
+                    "format": "api_key",
+                    "api_key": "xai-key-one-1234",
+                }),
+                label_hint: Some("one".into()),
+                extra: json!({}),
+            },
+            None,
+            false,
+        )
+        .unwrap();
+    assert!(skipped.is_none());
+    assert!(svc.repo.list(Some(AgentId::Grok)).unwrap().is_empty());
+    assert_eq!(
+        svc.connections.list_trash(Some(AgentId::Grok)).unwrap().len(),
+        1
+    );
+}
+
+#[test]
 fn list_recycles_api_key_row_persisted_without_a_usable_secret() {
     use crate::storage::AccountRepo;
     let (_root, svc, _) = live_svc(AgentId::Grok);

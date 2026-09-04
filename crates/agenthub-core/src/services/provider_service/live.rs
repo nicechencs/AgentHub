@@ -315,6 +315,11 @@ impl ProviderService {
         // metadata explicitly identifies `source = live` participate here.
         // Import adds/updates the pool only. It must not steal the current
         // official login; 用这份登录 / 切换 writes live via switch().
+        if self.find_live_import(agent)?.is_none() {
+            if let Some(trash_id) = self.matching_live_provider_trash_id(agent)? {
+                self.connections.restore_trash(&trash_id)?;
+            }
+        }
         let saved = if let Some(existing) = self.find_live_import(agent)? {
             let desired_name = name
                 .map(str::to_owned)
@@ -411,6 +416,23 @@ impl ProviderService {
             self.delete_inner(&other.id, agent)?;
         }
         Ok(())
+    }
+
+    fn matching_live_provider_trash_id(&self, agent: AgentId) -> Result<Option<String>> {
+        use crate::models::ConnectionTrashKind;
+        use crate::storage::ConnectionTrashRepo;
+        let now = chrono::Utc::now()
+            .format("%Y-%m-%d %H:%M:%S%.6f")
+            .to_string();
+        let items = ConnectionTrashRepo::new(self.db.clone()).list(Some(agent), None, &now)?;
+        Ok(items.iter().find_map(|item| {
+            if item.kind != ConnectionTrashKind::Provider {
+                return None;
+            }
+            let provider = item.provider.as_ref()?;
+            (provider.meta.get("source").and_then(|value| value.as_str()) == Some("live"))
+                .then(|| item.id.clone())
+        }))
     }
 
     /// Locate the canonical live-import row for one agent. Older databases may
