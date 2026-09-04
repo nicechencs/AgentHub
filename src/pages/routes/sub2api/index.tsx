@@ -178,13 +178,17 @@ export default function RoutesSub2ApiPage() {
     setKeys([]);
   };
 
-  const onCreateKey = async () => {
+  const onCreateKey = async (alsoSync = false) => {
     if (!session) return;
     setCreating(true);
     try {
       const created = await createSub2ApiKey(session, newKeyName.trim() || 'AgentHub');
       setCreateOpen(false);
       setKeys((prev) => [...prev, created]);
+      if (alsoSync) {
+        const agentId = syncAgents[0];
+        if (agentId) await syncKey(created, agentId);
+      }
     } catch {
       toast({ title: t('routes.sub2api.createKeyFailed'), variant: 'danger' });
     } finally {
@@ -406,9 +410,12 @@ export default function RoutesSub2ApiPage() {
             <span className="text-sm text-secondary">{t('routes.sub2api.createKeyName')}</span>
             <Input value={newKeyName} onChange={(e) => setNewKeyName(e.target.value)} />
           </label>
-          <DialogFooter>
-            <Button type="button" onClick={() => void onCreateKey()} disabled={creating}>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button type="button" variant="outline" onClick={() => void onCreateKey(false)} disabled={creating}>
               {t('routes.sub2api.createKeyConfirm')}
+            </Button>
+            <Button type="button" onClick={() => void onCreateKey(true)} disabled={creating || syncAgents.length === 0}>
+              {t('routes.sub2api.createAndSync')}
             </Button>
           </DialogFooter>
         </DialogContent>
