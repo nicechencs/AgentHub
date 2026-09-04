@@ -380,6 +380,73 @@ fn recycle_route_membership_keeps_connections_login_and_uses_pool_trash() {
 }
 
 #[test]
+fn restore_one_membership_leaves_the_other_source() {
+    let (_dir, db, service, _profiles) = tmp();
+    let providers = ProviderRepo::new(db.clone());
+    providers
+        .create(&Provider {
+            id: "pool-a".into(),
+            agent_id: AgentId::Codex,
+            name: "Key A".into(),
+            settings_config: json!({"apiKey": "secret-a"}),
+            meta: json!({}),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    providers
+        .create(&Provider {
+            id: "pool-b".into(),
+            agent_id: AgentId::Codex,
+            name: "Key B".into(),
+            settings_config: json!({"apiKey": "secret-b"}),
+            meta: json!({}),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    let pool = service
+        .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
+        .unwrap();
+    service
+        .add_member(&pool.id, AdapterSourceKind::Provider, "pool-a")
+        .unwrap();
+    service
+        .add_member(&pool.id, AdapterSourceKind::Provider, "pool-b")
+        .unwrap();
+
+    service
+        .recycle_route_membership(AdapterSourceKind::Provider, "pool-a")
+        .unwrap();
+    service
+        .recycle_route_membership(AdapterSourceKind::Provider, "pool-b")
+        .unwrap();
+    let conn = crate::services::ConnectionService::new(db);
+    let trash = conn.list_trash_filtered(None, Some("route_pool")).unwrap();
+    assert_eq!(trash.len(), 2);
+    let first = trash
+        .iter()
+        .find(|item| item.source_id == "pool-a")
+        .expect("pool-a trash");
+    service
+        .restore_membership_trash(first.membership.as_ref().expect("membership"))
+        .unwrap();
+
+    let members = service.list_members(&pool.id).unwrap();
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0].source_id, "pool-a");
+    let remaining: Vec<_> = conn
+        .list_trash_filtered(None, Some("route_pool"))
+        .unwrap()
+        .into_iter()
+        .map(|item| item.source_id)
+        .collect();
+    assert!(remaining.contains(&"pool-b".to_string()));
+}
+
+#[test]
 fn remove_route_authorization_removes_missing_source_from_all_default_pools() {
     let (_dir, db, service, _profiles) = tmp();
     let stale_source = "missing-connection";

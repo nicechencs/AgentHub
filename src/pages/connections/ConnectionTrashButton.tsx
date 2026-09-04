@@ -92,10 +92,11 @@ export function ConnectionTrashButton({
   }, [agentId, home, toast, t]);
 
   const restore = async (item: ConnectionTrashItem) => {
-    if (!claimConnectionTrashBusy(item.id)) return;
+    const id = item.id;
+    if (!id || !claimConnectionTrashBusy(id)) return;
     try {
-      await restoreConnectionTrash(item.id);
-      setItems((current) => current.filter((row) => row.id !== item.id));
+      await restoreConnectionTrash(id);
+      await load();
       toast({
         title: t(copy.restored),
         description: t(copy.restoredDesc),
@@ -108,18 +109,18 @@ export function ConnectionTrashButton({
         variant: 'danger',
       });
     } finally {
-      releaseConnectionTrashBusy(item.id);
+      releaseConnectionTrashBusy(id);
     }
   };
 
   const confirmPermanentDelete = async () => {
     if (!pendingPermanent) return;
-    const item = pendingPermanent;
-    if (!claimConnectionTrashBusy(item.id)) return;
+    const id = pendingPermanent.id;
+    if (!id || !claimConnectionTrashBusy(id)) return;
     try {
-      await permanentlyDeleteConnectionTrash(item.id);
-      setItems((current) => current.filter((row) => row.id !== item.id));
+      await permanentlyDeleteConnectionTrash(id);
       setPendingPermanent(null);
+      await load();
       toast({ title: t('connections.trash.permanentlyDeleted') });
     } catch (error) {
       toast({
@@ -128,7 +129,7 @@ export function ConnectionTrashButton({
         variant: 'danger',
       });
     } finally {
-      releaseConnectionTrashBusy(item.id);
+      releaseConnectionTrashBusy(id);
     }
   };
 
@@ -227,7 +228,10 @@ export function ConnectionTrashButton({
                         variant="outline"
                         size="sm"
                         disabled={trashBusy}
-                        onClick={() => void restore(item)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void restore(item);
+                        }}
                       >
                         <RotateCcw className="mr-1 h-3.5 w-3.5" />
                         {t('common.restore')}

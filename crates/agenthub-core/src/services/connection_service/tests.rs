@@ -997,6 +997,126 @@ fn delete_account_moves_to_trash_and_restore_does_not_reactivate() {
     assert!(conn.list_trash(Some(AgentId::Claude)).unwrap().is_empty());
 }
 
+#[test]
+fn restore_one_trash_row_leaves_the_others() {
+    let (_d, db) = tmp();
+    let accounts = AccountRepo::new(db.clone());
+    let conn = ConnectionService::new(db.clone());
+    let first = accounts
+        .create(&account("trash-a", AgentId::Claude, false, "t1"))
+        .unwrap();
+    let second = accounts
+        .create(&account("trash-b", AgentId::Claude, false, "t2"))
+        .unwrap();
+    let third = accounts
+        .create(&account("trash-c", AgentId::Claude, false, "t3"))
+        .unwrap();
+
+    conn.delete_account(&first.id, AgentId::Claude).unwrap();
+    conn.delete_account(&second.id, AgentId::Claude).unwrap();
+    conn.delete_account(&third.id, AgentId::Claude).unwrap();
+    let trash = conn.list_trash(Some(AgentId::Claude)).unwrap();
+    assert_eq!(trash.len(), 3);
+    let second_trash = trash
+        .iter()
+        .find(|item| item.source_id == second.id)
+        .expect("second trash row");
+
+    conn.restore_trash(&second_trash.id).unwrap();
+
+    let remaining: Vec<_> = conn
+        .list_trash(Some(AgentId::Claude))
+        .unwrap()
+        .into_iter()
+        .map(|item| item.source_id)
+        .collect();
+    let mut remaining = remaining;
+    remaining.sort();
+    assert_eq!(remaining, vec![first.id.clone(), third.id.clone()]);
+    let pool = accounts.list(Some(AgentId::Claude)).unwrap();
+    assert_eq!(pool.len(), 1);
+    assert_eq!(pool[0].id, second.id);
+    assert!(!pool[0].is_current);
+}
+
+#[test]
+fn restore_one_provider_trash_row_leaves_the_others() {
+    let (_d, db) = tmp();
+    let providers = ProviderRepo::new(db.clone());
+    let conn = ConnectionService::new(db.clone());
+    let first = providers
+        .create(&provider("prov-a", AgentId::Claude, false, "t1"))
+        .unwrap();
+    let second = providers
+        .create(&provider("prov-b", AgentId::Claude, false, "t2"))
+        .unwrap();
+    let third = providers
+        .create(&provider("prov-c", AgentId::Claude, false, "t3"))
+        .unwrap();
+
+    conn.delete_provider(&first.id, AgentId::Claude).unwrap();
+    conn.delete_provider(&second.id, AgentId::Claude).unwrap();
+    conn.delete_provider(&third.id, AgentId::Claude).unwrap();
+    let trash = conn.list_trash(Some(AgentId::Claude)).unwrap();
+    assert_eq!(trash.len(), 3);
+    let second_trash = trash
+        .iter()
+        .find(|item| item.source_id == second.id)
+        .expect("second trash row");
+
+    conn.restore_trash(&second_trash.id).unwrap();
+
+    let mut remaining: Vec<_> = conn
+        .list_trash(Some(AgentId::Claude))
+        .unwrap()
+        .into_iter()
+        .map(|item| item.source_id)
+        .collect();
+    remaining.sort();
+    assert_eq!(remaining, vec![first.id.clone(), third.id.clone()]);
+    let pool = providers.list(Some(AgentId::Claude)).unwrap();
+    assert_eq!(pool.len(), 1);
+    assert_eq!(pool[0].id, second.id);
+    assert!(!pool[0].is_current);
+}
+
+#[test]
+fn delete_one_trash_row_leaves_the_others() {
+    let (_d, db) = tmp();
+    let accounts = AccountRepo::new(db.clone());
+    let conn = ConnectionService::new(db.clone());
+    let first = accounts
+        .create(&account("del-a", AgentId::Claude, false, "t1"))
+        .unwrap();
+    let second = accounts
+        .create(&account("del-b", AgentId::Claude, false, "t2"))
+        .unwrap();
+    let third = accounts
+        .create(&account("del-c", AgentId::Claude, false, "t3"))
+        .unwrap();
+
+    conn.delete_account(&first.id, AgentId::Claude).unwrap();
+    conn.delete_account(&second.id, AgentId::Claude).unwrap();
+    conn.delete_account(&third.id, AgentId::Claude).unwrap();
+    let trash = conn.list_trash(Some(AgentId::Claude)).unwrap();
+    let second_trash = trash
+        .iter()
+        .find(|item| item.source_id == second.id)
+        .expect("second trash row");
+
+    conn.delete_trash(&second_trash.id).unwrap();
+
+    let mut remaining: Vec<_> = conn
+        .list_trash(Some(AgentId::Claude))
+        .unwrap()
+        .into_iter()
+        .map(|item| item.source_id)
+        .collect();
+    remaining.sort();
+    assert_eq!(remaining, vec![first.id.clone(), third.id.clone()]);
+    assert!(accounts.list(Some(AgentId::Claude)).unwrap().is_empty());
+}
+
 fn grok_mixed_account(id: &str, current: bool) -> Account {
     Account {
         id: id.into(),
@@ -1106,6 +1226,99 @@ fn restore_mixed_grok_trash_skips_family_already_in_pool() {
     assert_eq!(oauth[0].id, "grok-oauth-existing");
     assert_eq!(keys.len(), 1);
     assert_eq!(keys[0].credentials["api_key"], "xai-file-key-12345678");
+}
+
+fn grok_mixed_two_people(id: &str) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: AgentId::Grok,
+        kind: AccountKind::ApiKey,
+        label: "API Key".into(),
+        credentials: json!({
+            "format": "grok_bundle",
+            "api_key": "xai-file-key-12345678",
+            "content": "[model.\"grok\"]\napi_key = \"xai-file-key-12345678\"\n",
+            "auth": {
+                "https://auth.x.ai::slot-a": {
+                    "email": "a@example.com",
+                    "refresh_token": "rt-oauth-a",
+                    "access_token": "at-oauth-a"
+                },
+                "https://auth.x.ai::slot-b": {
+                    "email": "b@example.com",
+                    "refresh_token": "rt-oauth-b",
+                    "access_token": "at-oauth-b"
+                }
+            }
+        }),
+        extra: json!({ "source": "config.toml+auth.json" }),
+        status: "active".into(),
+        is_current: false,
+        created_at: "t1".into(),
+        updated_at: "t1".into(),
+    }
+}
+
+#[test]
+fn restore_mixed_trash_does_not_materialize_people_still_in_trash() {
+    let (_d, db) = tmp();
+    let accounts = AccountRepo::new(db.clone());
+    let conn = ConnectionService::new(db.clone());
+    let mixed = accounts
+        .create(&grok_mixed_two_people("grok-mixed-many"))
+        .unwrap();
+    conn.delete_account(&mixed.id, AgentId::Grok).unwrap();
+
+    let person_b = accounts
+        .create(&Account {
+            id: "grok-person-b".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "b@example.com".into(),
+            credentials: json!({
+                "format": "auth_json",
+                "refresh_token": "rt-oauth-b",
+                "access_token": "at-oauth-b",
+                "body": {
+                    "https://auth.x.ai::slot-b": {
+                        "email": "b@example.com",
+                        "refresh_token": "rt-oauth-b",
+                        "access_token": "at-oauth-b"
+                    }
+                }
+            }),
+            extra: json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "t2".into(),
+            updated_at: "t2".into(),
+        })
+        .unwrap();
+    conn.delete_account(&person_b.id, AgentId::Grok).unwrap();
+
+    let trash = conn.list_trash(Some(AgentId::Grok)).unwrap();
+    let mixed_trash = trash
+        .iter()
+        .find(|item| item.source_id == mixed.id)
+        .expect("mixed trash");
+    conn.restore_trash(&mixed_trash.id).unwrap();
+
+    let remaining: Vec<_> = conn
+        .list_trash(Some(AgentId::Grok))
+        .unwrap()
+        .into_iter()
+        .map(|item| item.source_id)
+        .collect();
+    assert_eq!(remaining, vec![person_b.id.clone()]);
+
+    let restored = accounts.list(Some(AgentId::Grok)).unwrap();
+    assert!(restored.iter().all(|row| row.id != person_b.id));
+    assert!(restored.iter().any(|row| row.kind == AccountKind::Oauth));
+    assert!(restored.iter().any(|row| row.kind == AccountKind::ApiKey
+        && row.credentials["api_key"] == "xai-file-key-12345678"));
+    assert!(!restored
+        .iter()
+        .any(|row| row.kind == AccountKind::Oauth && row.label.contains("b@example.com")));
 }
 
 #[test]
