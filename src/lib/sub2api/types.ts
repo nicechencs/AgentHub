@@ -65,6 +65,17 @@ export type Sub2ApiLogin2FARequest = {
   totp_code: string;
 };
 
+/** Embedded group when /keys returns group as an object (Sub2API / PinCC). */
+export type Sub2ApiKeyGroup = {
+  id?: number;
+  name?: string;
+  platform?: string;
+  description?: string | null;
+  status?: string;
+  models_list_config?: { enabled?: boolean; models?: string[] } | null;
+  [key: string]: unknown;
+};
+
 export type Sub2ApiKey = {
   id: number;
   user_id?: number;
@@ -73,18 +84,26 @@ export type Sub2ApiKey = {
   group_id?: number | null;
   /** Group display name when the API provides it. */
   group_name?: string | null;
-  /** Some relays use `group` as a string label. */
-  group?: string | null;
+  /** String label or embedded object (Sub2API / PinCC). */
+  group?: string | Sub2ApiKeyGroup | null;
   status: string;
   created_at?: string;
   updated_at?: string;
   expires_at?: string | null;
+  last_used_at?: string | null;
   /** Allowed models — array or comma-separated string depending on relay. */
   models?: string[] | string | null;
+  /** USD on Sub2API; 0 often = unlimited. */
   quota?: number | null;
+  /** PinCC / Sub2API used amount. */
+  quota_used?: number | null;
+  /** NewAPI-style aliases. */
   used_quota?: number | null;
   remain_quota?: number | null;
+  remaining?: number | null;
   unlimited_quota?: boolean | null;
+  ip_whitelist?: string[] | null;
+  ip_blacklist?: string[] | null;
   /** Extra fields from Sub2API / PinCC / NewAPI-style relays — ignored safely. */
   [key: string]: unknown;
 };

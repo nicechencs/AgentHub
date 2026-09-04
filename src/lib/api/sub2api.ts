@@ -17,32 +17,70 @@ import {
   refreshAuthTokens,
   saveSub2ApiSession,
   sessionFromTokens,
+  sessionNeedsRefresh,
   sub2apiGatewayBaseUrl,
   sub2apiLoginUrl,
   syncSub2ApiKeyToConnections,
   SUB2API_DEFAULT_SITE_URL,
   buildLoginBody,
+  clearAllRememberedAccounts,
+  clearAllRememberedAccountsAsync,
+  clearAllRememberedPasswords,
+  clearAllRememberedPasswordsAsync,
+  deleteRememberedAccount,
+  deleteRememberedAccountAsync,
+  getLastUsedRememberedAccount,
+  hydrateRememberedPasswordVault,
+  isSub2ApiRememberEnabled,
+  listRememberedAccounts,
+  loadRememberedCredentials,
+  saveRememberedAccount,
+  saveRememberedAccountAsync,
+  setSub2ApiRememberEnabled,
   type Sub2ApiAuthTokens,
   type Sub2ApiCaptchaProof,
   type Sub2ApiKey,
   type Sub2ApiLoginResult,
   type Sub2ApiPublicSettings,
+  type Sub2ApiRememberedAccountMeta,
   type Sub2ApiSession,
   type Sub2ApiUser,
 } from '@/lib/sub2api';
 
-export type { Sub2ApiKey, Sub2ApiPublicSettings, Sub2ApiSession, Sub2ApiUser, Sub2ApiCaptchaProof };
+export type {
+  Sub2ApiKey,
+  Sub2ApiPublicSettings,
+  Sub2ApiSession,
+  Sub2ApiUser,
+  Sub2ApiCaptchaProof,
+  Sub2ApiRememberedAccountMeta,
+};
 export {
   clearSub2ApiSession,
   loadSub2ApiSession,
   saveSub2ApiSession,
   sessionFromTokens,
+  sessionNeedsRefresh,
   sub2apiLoginUrl,
   sub2apiGatewayBaseUrl,
   syncSub2ApiKeyToConnections,
   SUB2API_DEFAULT_SITE_URL,
   isTotp2FARequired,
   buildLoginBody,
+  clearAllRememberedAccounts,
+  clearAllRememberedAccountsAsync,
+  clearAllRememberedPasswords,
+  clearAllRememberedPasswordsAsync,
+  deleteRememberedAccount,
+  deleteRememberedAccountAsync,
+  getLastUsedRememberedAccount,
+  hydrateRememberedPasswordVault,
+  isSub2ApiRememberEnabled,
+  listRememberedAccounts,
+  loadRememberedCredentials,
+  saveRememberedAccount,
+  saveRememberedAccountAsync,
+  setSub2ApiRememberEnabled,
 };
 
 /** @deprecated Native login is primary; kept for optional/legacy callers. */
@@ -92,6 +130,27 @@ export async function refreshSub2ApiSession(session: Sub2ApiSession): Promise<Su
   });
   saveSub2ApiSession(next);
   return next;
+}
+
+/**
+ * Quiet boot helper: keep a still-valid session, silently refresh when near
+ * expiry, or return null (caller clears UI to prefilled login) on failure.
+ * Does not clear remembered accounts.
+ */
+export async function ensureSub2ApiSessionFresh(
+  session: Sub2ApiSession | null,
+): Promise<Sub2ApiSession | null> {
+  if (!session?.accessToken?.trim()) return null;
+  if (!sessionNeedsRefresh(session)) {
+    // Still probe /auth/me lightly only when no expiry — keep token as-is.
+    return session;
+  }
+  try {
+    return await refreshSub2ApiSession(session);
+  } catch {
+    clearSub2ApiSession();
+    return null;
+  }
 }
 
 export async function logoutSub2Api(session: Sub2ApiSession | null): Promise<void> {

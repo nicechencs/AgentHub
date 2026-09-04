@@ -24,21 +24,34 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { agentDisplayName } from '@/config/agents';
 import {
+  clearAllRememberedAccountsAsync,
+  clearAllRememberedPasswordsAsync,
   createSub2ApiKey,
+  deleteRememberedAccountAsync,
+  ensureSub2ApiSessionFresh,
   establishSessionFromTokens,
+  getLastUsedRememberedAccount,
+  hydrateRememberedPasswordVault,
+  isSub2ApiRememberEnabled,
   isTotp2FARequired,
+  listRememberedAccounts,
+  loadRememberedCredentials,
   loadSub2ApiKeys,
   loadSub2ApiSession,
   logoutSub2Api,
   nativeSub2ApiLogin,
   nativeSub2ApiLogin2FA,
   probeSub2ApiPublicSettings,
+  refreshSub2ApiSession,
+  saveRememberedAccountAsync,
   saveSub2ApiSession,
+  setSub2ApiRememberEnabled,
   SUB2API_DEFAULT_SITE_URL,
   syncSub2ApiKeyToConnections,
   type Sub2ApiCaptchaProof,
   type Sub2ApiKey,
   type Sub2ApiPublicSettings,
+  type Sub2ApiRememberedAccountMeta,
   type Sub2ApiSession,
 } from '@/lib/api/sub2api';
 import { openExternalLink } from '@/lib/open-external';
@@ -47,14 +60,18 @@ import {
   mapSub2ApiLoginError,
   resolveCaptchaKind,
   selectableSub2ApiKeys,
+  Sub2ApiError,
 } from '@/lib/sub2api/client';
-import { maskApiKey } from '@/lib/sub2api/url';
+import { maskApiKey, maskEmail } from '@/lib/sub2api/url';
+import { Switch } from '@/components/ui/switch';
 import type { AgentKey } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
 import { Sub2ApiCaptcha, type Sub2ApiCaptchaHandle } from './Sub2ApiCaptcha';
 import {
-  formatKeyModels,
+  applySiteUrlDraftInput,
+  formatKeyModelsFromKey,
+  sub2apiKeyStatusBadgeVariant,
   formatKeyQuota,
   formatKeyTimestamp,
   initialSiteUrlDraft,
@@ -74,11 +91,19 @@ export default function Sub2ApiPage() {
   const { installedIds } = useInstalledAgents();
 
   const [session, setSession] = React.useState<Sub2ApiSession | null>(() => loadSub2ApiSession());
-  const [siteUrlDraft, setSiteUrlDraft] = React.useState(() =>
-    initialSiteUrlDraft(loadSub2ApiSession()),
-  );
-  const [email, setEmail] = React.useState('');
-  const [password, setPassword] = React.useState('');
+  const [restoring, setRestoring] = React.useState(() => Boolean(loadSub2ApiSession()?.accessToken));
+  const [siteUrlDraft, setSiteUrlDraft] = React.useState(() => {
+    const existing = loadSub2ApiSession();
+    if (existing?.siteUrl) return initialSiteUrlDraft(existing);
+    const last = getLastUsedRememberedAccount();
+    return last?.siteUrl || SUB2API_DEFAULT_SITE_URL;
+  });
+  const [email, setEmail] = React.useState(() => getLastUsedRememberedAccount()?.email ?? '');
+  const [password, setPassword] = React.useState(() => {
+    const last = getLastUsedRememberedAccount();
+    if (!last) return '';
+    return loadRememberedCredentials(last.id)?.password ?? '';
+  });
   const [totpCode, setTotpCode] = React.useState('');
   const [tempToken, setTempToken] = React.useState<string | null>(null);
   const [maskedEmail, setMaskedEmail] = React.useState<string | null>(null);
@@ -93,10 +118,26 @@ export default function Sub2ApiPage() {
   const [newKeyName, setNewKeyName] = React.useState('AgentHub');
   const [createOpen, setCreateOpen] = React.useState(false);
   const [syncingId, setSyncingId] = React.useState<number | null>(null);
+  const [rememberEnabled, setRememberEnabled] = React.useState(() => isSub2ApiRememberEnabled());
+  const [remembered, setRemembered] = React.useState<Sub2ApiRememberedAccountMeta[]>(() =>
+    listRememberedAccounts(),
+  );
+  const [rememberOffOpen, setRememberOffOpen] = React.useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = React.useState<string | null>(null);
+  const [forgetAllOpen, setForgetAllOpen] = React.useState(false);
   const captchaRef = React.useRef<Sub2ApiCaptchaHandle>(null);
+  const loginPasswordRef = React.useRef(password);
+
+  React.useEffect(() => {
+    loginPasswordRef.current = password;
+  }, [password]);
+
+  const refreshRemembered = React.useCallback(() => {
+    setRemembered(listRememberedAccounts());
+  }, []);
 
   const awaiting2fa = Boolean(tempToken);
-  const phase = sub2apiPagePhase(session, awaiting2fa);
+  const phase = sub2apiPagePhase(session, awaiting2fa, restoring);
   const sortedKeys = React.useMemo(() => sortSub2ApiKeys(selectableSub2ApiKeys(keys)), [keys]);
   const syncAgents = React.useMemo(() => [...installedIds], [installedIds]);
   const langZh = lang === 'zh';
@@ -112,20 +153,90 @@ export default function Sub2ApiPage() {
       setLoadingKeys(true);
       try {
         setKeys(await loadSub2ApiKeys(active));
-      } catch {
+      } catch (err) {
+        const unauthorized =
+          err instanceof Sub2ApiError && (err.status === 401 || err.code === 401);
+        if (unauthorized && active.refreshToken) {
+          try {
+            const next = await refreshSub2ApiSession(active);
+            applySession(next);
+            setKeys(await loadSub2ApiKeys(next));
+            return;
+          } catch {
+            await logoutSub2Api(active);
+            setSession(null);
+            setKeys([]);
+            const last = getLastUsedRememberedAccount();
+            if (last) {
+              const creds = loadRememberedCredentials(last.id);
+              setSiteUrlDraft(last.siteUrl);
+              setEmail(last.email);
+              setPassword(creds?.password ?? '');
+            }
+            toast({ title: t('routes.sub2api.sessionExpired'), variant: 'danger' });
+            return;
+          }
+        }
         toast({ title: t('routes.sub2api.loadKeysFailed'), variant: 'danger' });
         setKeys([]);
       } finally {
         setLoadingKeys(false);
       }
     },
-    [t, toast],
+    [applySession, t, toast],
   );
 
   React.useEffect(() => {
+    if (restoring) return;
     if (session?.accessToken) void refreshKeys(session);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.accessToken, session?.siteUrl]);
+  }, [session?.accessToken, session?.siteUrl, restoring]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const boot = async () => {
+      await hydrateRememberedPasswordVault();
+      if (cancelled) return;
+      const last = getLastUsedRememberedAccount();
+      if (last) {
+        const creds = loadRememberedCredentials(last.id);
+        setSiteUrlDraft((prev) => prev || last.siteUrl);
+        setEmail((prev) => prev || last.email);
+        if (creds?.password) setPassword((prev) => prev || creds.password);
+        refreshRemembered();
+      }
+      const existing = loadSub2ApiSession();
+      if (!existing?.accessToken) {
+        if (!cancelled) setRestoring(false);
+        return;
+      }
+      try {
+        const fresh = await ensureSub2ApiSessionFresh(existing);
+        if (cancelled) return;
+        if (fresh) {
+          applySession(fresh);
+          await refreshKeys(fresh);
+        } else {
+          setSession(null);
+          setKeys([]);
+          if (last) {
+            const creds = loadRememberedCredentials(last.id);
+            setSiteUrlDraft(last.siteUrl);
+            setEmail(last.email);
+            setPassword(creds?.password ?? '');
+          }
+          toast({ title: t('routes.sub2api.sessionExpired'), variant: 'danger' });
+        }
+      } finally {
+        if (!cancelled) setRestoring(false);
+      }
+    };
+    void boot();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const finishWithTokens = React.useCallback(
     async (input: {
@@ -135,9 +246,21 @@ export default function Sub2ApiPage() {
       expiresAt?: number;
       expiresIn?: number;
       user?: Sub2ApiSession['user'];
+      rememberEmail?: string;
+      rememberPassword?: string;
     }) => {
       try {
         const next = await establishSessionFromTokens(input);
+        const emailForSave = (input.rememberEmail || input.user?.email || email || '').trim();
+        const passwordForSave = input.rememberPassword ?? loginPasswordRef.current;
+        if (rememberEnabled && emailForSave && passwordForSave) {
+          await saveRememberedAccountAsync({
+            siteUrl: input.siteUrl,
+            email: emailForSave,
+            password: passwordForSave,
+          });
+          refreshRemembered();
+        }
         applySession(next);
         setPassword('');
         setTotpCode('');
@@ -151,7 +274,7 @@ export default function Sub2ApiPage() {
         toast({ title: t('routes.sub2api.sessionExpired'), variant: 'danger' });
       }
     },
-    [applySession, refreshKeys, t, toast],
+    [applySession, email, refreshKeys, refreshRemembered, rememberEnabled, t, toast],
   );
 
   const probeSite = React.useCallback(
@@ -233,6 +356,8 @@ export default function Sub2ApiPage() {
         refreshToken: result.refresh_token,
         expiresIn: result.expires_in,
         user: result.user,
+        rememberEmail: email.trim(),
+        rememberPassword: password,
       });
     } catch (err) {
       toast({
@@ -317,10 +442,81 @@ export default function Sub2ApiPage() {
     }
   };
 
+  const applySiteUrlFromInput = React.useCallback(
+    (raw: string, opts?: { fromPaste?: boolean }) => {
+      const { draft, result } = applySiteUrlDraftInput(raw);
+      if (!result) return;
+      if (!result.ok) {
+        toast({
+          title:
+            result.reason === 'empty'
+              ? t('routes.sub2api.urlEmpty')
+              : t('routes.sub2api.urlInvalid'),
+          variant: 'danger',
+        });
+        return;
+      }
+      setSiteUrlDraft(result.url);
+      if (result.stripped) {
+        toast({ title: t('routes.sub2api.urlNormalizedHint') });
+      } else if (opts?.fromPaste && draft && draft !== raw.trim()) {
+        /* normalized host only — silent */
+      }
+    },
+    [t, toast],
+  );
+
+  const fillRememberedAccount = React.useCallback((id: string) => {
+    const creds = loadRememberedCredentials(id);
+    if (!creds) return;
+    setSiteUrlDraft(creds.siteUrl);
+    setEmail(creds.email);
+    setPassword(creds.password);
+  }, []);
+
+  const onRememberToggle = (next: boolean) => {
+    if (next) {
+      setSub2ApiRememberEnabled(true);
+      setRememberEnabled(true);
+      return;
+    }
+    setRememberOffOpen(true);
+  };
+
+  const confirmRememberOff = (clearPasswords: boolean) => {
+    setSub2ApiRememberEnabled(false);
+    setRememberEnabled(false);
+    setRememberOffOpen(false);
+    if (clearPasswords) {
+      void clearAllRememberedPasswordsAsync().then(() => {
+        toast({ title: t('routes.sub2api.passwordsCleared') });
+      });
+    }
+  };
+
+  const confirmDeleteRemembered = () => {
+    if (!pendingDeleteId) return;
+    const id = pendingDeleteId;
+    setPendingDeleteId(null);
+    void deleteRememberedAccountAsync(id).then(() => {
+      refreshRemembered();
+      toast({ title: t('routes.sub2api.rememberedDeleted') });
+    });
+  };
+
+  const confirmForgetAll = () => {
+    setForgetAllOpen(false);
+    void clearAllRememberedAccountsAsync().then(() => {
+      refreshRemembered();
+      toast({ title: t('routes.sub2api.rememberedCleared') });
+    });
+  };
+
   const onLogout = async () => {
     await logoutSub2Api(session);
     setSession(null);
     setKeys([]);
+    toast({ title: t('routes.sub2api.logoutKeepsConnections') });
   };
 
   const onCreateKey = async (alsoSync = false) => {
@@ -402,6 +598,15 @@ export default function Sub2ApiPage() {
           </div>
         ) : null}
 
+        {phase === 'restoring' ? (
+          <Card className="mx-auto w-full max-w-lg space-y-3 p-5" data-sub2api-restoring="">
+            <div className="text-sm font-medium">{t('routes.sub2api.sessionRestoring')}</div>
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-24 w-full" />
+          </Card>
+        ) : null}
+
         {(phase === 'logged-out' || phase === 'awaiting-2fa') && (
           <Card className="mx-auto w-full max-w-lg space-y-4 p-5" data-sub2api-login-form="">
             <div>
@@ -426,6 +631,13 @@ export default function Sub2ApiPage() {
                   <Input
                     value={siteUrlDraft}
                     onChange={(e) => setSiteUrlDraft(e.target.value)}
+                    onBlur={(e) => applySiteUrlFromInput(e.target.value)}
+                    onPaste={(e) => {
+                      const pasted = e.clipboardData.getData('text');
+                      if (!pasted.trim()) return;
+                      e.preventDefault();
+                      applySiteUrlFromInput(pasted, { fromPaste: true });
+                    }}
                     placeholder={t('routes.sub2api.siteUrlPlaceholder')}
                     autoComplete="url"
                     data-sub2api-site-url=""
@@ -453,6 +665,68 @@ export default function Sub2ApiPage() {
                     data-sub2api-password=""
                   />
                 </label>
+                <div
+                  className="flex items-start justify-between gap-3 rounded-card border border-border bg-subtle/50 px-3 py-2.5"
+                  data-sub2api-remember=""
+                >
+                  <div className="min-w-0 space-y-0.5">
+                    <div className="text-sm font-medium">{t('routes.sub2api.rememberLabel')}</div>
+                    <p className="text-xs text-secondary">{t('routes.sub2api.rememberHint')}</p>
+                  </div>
+                  <Switch
+                    checked={rememberEnabled}
+                    onCheckedChange={onRememberToggle}
+                    aria-label={t('routes.sub2api.rememberLabel')}
+                  />
+                </div>
+                {remembered.length > 0 ? (
+                  <div className="space-y-2" data-sub2api-remembered-list="">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-sm font-medium">
+                        {t('routes.sub2api.rememberedAccountsTitle')}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => setForgetAllOpen(true)}
+                      >
+                        {t('routes.sub2api.rememberedForgetAll')}
+                      </Button>
+                    </div>
+                    <ul className="divide-y divide-border rounded-card border border-border">
+                      {remembered.map((row) => (
+                        <li
+                          key={row.id}
+                          className="flex flex-wrap items-center gap-2 px-3 py-2"
+                          data-sub2api-remembered-row=""
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm">{maskEmail(row.email)}</div>
+                            <div className="truncate text-xs text-secondary">{row.siteUrl}</div>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => fillRememberedAccount(row.id)}
+                          >
+                            {t('routes.sub2api.rememberedUseAccount')}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setPendingDeleteId(row.id)}
+                          >
+                            {t('routes.sub2api.rememberedDeleteAccount')}
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
                 <Sub2ApiCaptcha
                   ref={captchaRef}
                   settings={publicSettings}
@@ -580,12 +854,13 @@ export default function Sub2ApiPage() {
                       const statusKind = sub2apiKeyStatusKind(key.status);
                       const createdLabel = formatKeyTimestamp(key.created_at);
                       const updatedLabel = formatKeyTimestamp(key.updated_at);
+                      const lastUsedLabel = formatKeyTimestamp(key.last_used_at);
                       const expiresLabel = formatKeyTimestamp(key.expires_at);
                       const groupLabel = pickGroupLabel(key);
                       const quotaLabel = formatKeyQuota(key, {
                         unlimited: t('routes.sub2api.quotaUnlimited'),
                       });
-                      const modelsLabel = formatKeyModels(key.models);
+                      const modelsLabel = formatKeyModelsFromKey(key);
                       const metaItems: { label: string; value: string }[] = [];
                       if (createdLabel) {
                         metaItems.push({
@@ -597,6 +872,12 @@ export default function Sub2ApiPage() {
                         metaItems.push({
                           label: t('routes.sub2api.keyUpdated'),
                           value: updatedLabel,
+                        });
+                      }
+                      if (lastUsedLabel) {
+                        metaItems.push({
+                          label: t('routes.sub2api.keyLastUsed'),
+                          value: lastUsedLabel,
                         });
                       }
                       if (expiresLabel) {
@@ -647,18 +928,12 @@ export default function Sub2ApiPage() {
                             </div>
                           ) : null}
                         </div>
-                        <Badge
-                          variant={
-                            statusKind === 'active'
-                              ? 'success'
-                              : statusKind === 'disabled'
-                                ? 'warning'
-                                : 'default'
-                          }
-                        >
+                        <Badge variant={sub2apiKeyStatusBadgeVariant(statusKind)}>
                           {sub2apiKeyStatusLabel(key.status, {
                             active: t('routes.sub2api.statusActive'),
                             disabled: t('routes.sub2api.statusDisabled'),
+                            expired: t('routes.sub2api.statusExpired'),
+                            quotaExhausted: t('routes.sub2api.statusQuotaExhausted'),
                             other: t('routes.sub2api.statusOther'),
                           })}
                         </Badge>
@@ -735,6 +1010,60 @@ export default function Sub2ApiPage() {
             </Button>
             <Button type="button" onClick={() => void onCreateKey(true)} disabled={creating || syncAgents.length === 0}>
               {t('routes.sub2api.createAndSync')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={rememberOffOpen} onOpenChange={setRememberOffOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('routes.sub2api.rememberOffClearPasswordsTitle')}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-secondary">{t('routes.sub2api.rememberOffClearPasswordsBody')}</p>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button type="button" variant="outline" onClick={() => confirmRememberOff(false)}>
+              {t('routes.sub2api.rememberOffKeepPasswords')}
+            </Button>
+            <Button type="button" onClick={() => confirmRememberOff(true)}>
+              {t('routes.sub2api.rememberOffClearPasswordsConfirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={pendingDeleteId != null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteId(null);
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('routes.sub2api.rememberedDeleteConfirm')}</DialogTitle>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button type="button" variant="outline" onClick={() => setPendingDeleteId(null)}>
+              {t('routes.sub2api.cancelLogin')}
+            </Button>
+            <Button type="button" variant="danger" onClick={confirmDeleteRemembered}>
+              {t('routes.sub2api.rememberedDeleteAccount')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={forgetAllOpen} onOpenChange={setForgetAllOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('routes.sub2api.rememberedForgetAllConfirm')}</DialogTitle>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button type="button" variant="outline" onClick={() => setForgetAllOpen(false)}>
+              {t('routes.sub2api.cancelLogin')}
+            </Button>
+            <Button type="button" variant="danger" onClick={confirmForgetAll}>
+              {t('routes.sub2api.rememberedForgetAll')}
             </Button>
           </DialogFooter>
         </DialogContent>

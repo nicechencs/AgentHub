@@ -5,6 +5,7 @@ import {
   loadSub2ApiSession,
   saveSub2ApiSession,
   sessionFromTokens,
+  sessionNeedsRefresh,
 } from './session';
 
 describe('sub2api session store', () => {
@@ -32,5 +33,37 @@ describe('sub2api session store', () => {
     expect(localStorage.getItem(StorageKey.sub2apiSession)).toContain('v2.pincc.ai');
     clearSub2ApiSession();
     expect(loadSub2ApiSession()).toBeNull();
+  });
+
+  it('preserves gateway path while normalizing site to origin', () => {
+    const session = sessionFromTokens({
+      siteUrl: 'https://v2.pincc.ai/login',
+      accessToken: 'tok',
+      gatewayBaseUrl: 'https://gw.example/v1/',
+      refreshToken: 'ref',
+      expiresIn: 3600,
+    });
+    saveSub2ApiSession(session);
+    const loaded = loadSub2ApiSession();
+    expect(loaded?.siteUrl).toBe('https://v2.pincc.ai');
+    expect(loaded?.gatewayBaseUrl).toBe('https://gw.example/v1');
+    expect(loaded?.refreshToken).toBe('ref');
+  });
+
+  it('detects when a session needs refresh', () => {
+    const fresh = sessionFromTokens({
+      siteUrl: 'https://v2.pincc.ai',
+      accessToken: 'tok',
+      refreshToken: 'ref',
+      expiresAt: Date.now() + 120_000,
+    });
+    expect(sessionNeedsRefresh(fresh)).toBe(false);
+    const soon = sessionFromTokens({
+      siteUrl: 'https://v2.pincc.ai',
+      accessToken: 'tok',
+      refreshToken: 'ref',
+      expiresAt: Date.now() + 10_000,
+    });
+    expect(sessionNeedsRefresh(soon)).toBe(true);
   });
 });
