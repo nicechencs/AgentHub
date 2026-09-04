@@ -48,6 +48,12 @@ export const StorageKey = {
   routesNavVisible: `${PREFIX}routes-nav-visible`,
   /** 侧栏是否显示「插件」入口；缺省隐藏（功能开发中） */
   pluginsNavVisible: `${PREFIX}plugins-nav-visible`,
+  /** 路由二级导航是否显示 Sub2API；缺省隐藏 */
+  sub2apiNavVisible: `${PREFIX}sub2api-nav-visible`,
+  /** Sub2API 登录会话（不含导入到连接的 Key） */
+  sub2apiSession: `${PREFIX}sub2api-session`,
+  /** Last Sub2API site URL (even when logged out) */
+  sub2apiBaseUrl: `${PREFIX}sub2api-base-url`,
   /** epoch ms of last successful usage collect (manual or auto) */
   usageLastCollectAt: `${PREFIX}usage-last-collect-at`,
   /** SemVer last dismissed via “稍后” on the update prompt */

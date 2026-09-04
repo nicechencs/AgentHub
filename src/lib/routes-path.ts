@@ -7,6 +7,7 @@ export const ROUTES_BOARD_PATH = `${ROUTES_PATH}/board`;
 export const ROUTES_POOL_PATH = `${ROUTES_PATH}/pool`;
 export const ROUTES_TOKENS_PATH = `${ROUTES_PATH}/tokens`;
 export const ROUTES_ACTIVITY_PATH = `${ROUTES_PATH}/activity`;
+export const ROUTES_SUB2API_PATH = `${ROUTES_PATH}/sub2api`;
 
 function routesSearchParams(search: string): URLSearchParams {
   const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);

@@ -172,6 +172,7 @@ describe('workspaceNavItems / manageNavItems', () => {
     );
     expect(ctx).toContain('loadBool(StorageKey.routesNavVisible, DEFAULT_ROUTES_NAV_VISIBLE)');
     expect(ctx).toContain('loadBool(StorageKey.pluginsNavVisible, DEFAULT_PLUGINS_NAV_VISIBLE)');
+    expect(ctx).toContain('loadBool(StorageKey.sub2apiNavVisible, DEFAULT_SUB2API_NAV_VISIBLE)');
   });
 
   it('marks plugins and MCP as in development; routes are not', () => {

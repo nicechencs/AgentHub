@@ -24,6 +24,7 @@ import RoutesBoardPage from '@/pages/routes/board';
 import RoutesPoolPage from '@/pages/routes/pool';
 import RoutesTokensPage from '@/pages/routes/tokens';
 import RoutesActivityPage from '@/pages/routes/activity';
+import RoutesSub2ApiPage from '@/pages/routes/sub2api';
 import { isRoutesAreaPath } from '@/pages/routes/routes-nav-items';
 import { onTrayNavigate } from '@/lib/backend/tauri/tray-events';
 import { legacyBridgesRedirectTo } from '@/lib/routes-path';
@@ -148,6 +149,7 @@ export default function App() {
                     <Route path="pool" element={<RoutesPoolPage />} />
                     <Route path="tokens" element={<RoutesTokensPage />} />
                     <Route path="activity" element={<RoutesActivityPage />} />
+                    <Route path="sub2api" element={<RoutesSub2ApiPage />} />
                     <Route path="*" element={<RoutesUnknownRedirect />} />
                   </Route>
                   <Route path="/bridges" element={<LegacyBridgesRedirect />} />

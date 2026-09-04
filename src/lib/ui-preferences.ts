@@ -15,6 +15,8 @@ export const DEFAULT_SIDEBAR_AUTO_COLLAPSE_ON_ROUTES = true;
 export const DEFAULT_ROUTES_NAV_VISIBLE = true;
 /** 新安装：侧栏不显示插件入口。已保存的偏好优先。 */
 export const DEFAULT_PLUGINS_NAV_VISIBLE = false;
+/** 新安装：路由二级导航不显示 Sub2API。已保存的偏好优先。 */
+export const DEFAULT_SUB2API_NAV_VISIBLE = false;
 
 export function loadJson<T>(key: string, fallback: T): T {
   try {

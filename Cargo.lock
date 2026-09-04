@@ -75,6 +75,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+ "urlencoding",
 ]
 
 [[package]]
