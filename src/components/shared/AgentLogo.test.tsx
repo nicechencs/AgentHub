@@ -74,12 +74,12 @@ function logoHarness(initialAgentId: string) {
   return { render };
 }
 
-function logoCircle(tree: ReactElement): ReactElement {
+function logoMark(tree: ReactElement): ReactElement {
   return tree.props.children as ReactElement;
 }
 
 function logoImage(tree: ReactElement): ReactElement | null {
-  const child = logoCircle(tree).props.children;
+  const child = logoMark(tree).props.children;
   return React.isValidElement(child) && child.type === 'img' ? child : null;
 }
 
@@ -94,6 +94,8 @@ describe('AgentLogo', () => {
       expect(html, agentId).toContain('aria-hidden="true"');
       expect(html, agentId).toContain('.svg');
       expect(html, agentId).not.toContain('.png');
+      expect(html, agentId).toContain('rounded-mark');
+      expect(html, agentId).not.toContain('rounded-full');
     }
   });
 
@@ -108,21 +110,22 @@ describe('AgentLogo', () => {
   });
 
   it('uses contrasting logo backgrounds without changing letter fallback styling', () => {
-    const codexCircle = logoCircle(logoHarness('codex').render());
-    expect(codexCircle.props.style).toMatchObject({ backgroundColor: '#ffffff' });
+    const codexMark = logoMark(logoHarness('codex').render());
+    expect(codexMark.props.style).toMatchObject({ backgroundColor: '#ffffff' });
 
-    const kimiCircle = logoCircle(logoHarness('kimi').render());
-    expect(kimiCircle.props.style).toMatchObject({ backgroundColor: '#ffffff' });
+    const kimiMark = logoMark(logoHarness('kimi').render());
+    expect(kimiMark.props.style).toMatchObject({ backgroundColor: '#ffffff' });
 
-    const unknownCircle = logoCircle(logoHarness('unknown-agent').render());
-    expect(unknownCircle.props.style).toMatchObject({ backgroundColor: 'var(--text-muted)' });
+    const unknownMark = logoMark(logoHarness('unknown-agent').render());
+    expect(unknownMark.props.style).toMatchObject({ backgroundColor: 'var(--text-muted)' });
   });
 
-  it('keeps the circular initial fallback for an unknown agent', () => {
+  it('keeps the rounded-square initial fallback for an unknown agent', () => {
     const html = markup('unknown-agent');
 
     expect(html).toContain('aria-label="unknown-agent"');
-    expect(html).toContain('rounded-full');
+    expect(html).toContain('rounded-mark');
+    expect(html).not.toContain('rounded-full');
     expect(html).toContain('>U</span>');
     expect(html).not.toContain('<img');
   });
@@ -144,7 +147,7 @@ describe('AgentLogo', () => {
 
     const failed = harness.render();
     expect(logoImage(failed)).toBeNull();
-    expect(logoCircle(failed).props.children).toBe('C');
+    expect(logoMark(failed).props.children).toBe('C');
   });
 
   it('resets source failure state when switching agents', () => {
@@ -160,7 +163,7 @@ describe('AgentLogo', () => {
     switchedImage?.props.onError();
     const switchedFallback = harness.render('codex');
     expect(logoImage(switchedFallback)).toBeNull();
-    expect(logoCircle(switchedFallback).props.children).toBe('X');
+    expect(logoMark(switchedFallback).props.children).toBe('X');
   });
 
   it('maps the dsh agent to the DeepSeek logo asset', () => {

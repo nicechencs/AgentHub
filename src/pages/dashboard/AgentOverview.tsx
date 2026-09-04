@@ -143,7 +143,7 @@ export function AgentOverviewSkeleton({ count }: { count: number }) {
       {Array.from({ length: n }).map((_, i) => (
         <Card key={i} className="p-3">
           <div className="flex items-center gap-2">
-            <Skeleton className="h-6 w-6 shrink-0 rounded-full" />
+            <Skeleton className="h-6 w-6 shrink-0 rounded-mark" />
             <Skeleton className="h-4 w-20" />
             <Skeleton className="ml-auto h-2 w-2 shrink-0 rounded-full" />
           </div>
