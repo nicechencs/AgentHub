@@ -7,6 +7,7 @@ import {
   listApiKeys,
   loginWith2FA,
   loginWithPassword,
+  mapSub2ApiLoginError,
   resolveCaptchaKind,
 } from './client';
 import { maskApiKey } from './url';
@@ -144,5 +145,63 @@ describe('sub2api client', () => {
       tencent_captcha_ticket: 't',
       tencent_captcha_randstr: 'r',
     });
+  });
+
+  it('surfaces reason on non-0 envelope for friendlier mapping', async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          code: 400,
+          message: 'tencent captcha verification failed',
+          reason: 'TENCENT_CAPTCHA_VERIFICATION_FAILED',
+          data: null,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchImpl);
+    let caught: unknown;
+    try {
+      await loginWithPassword(
+        'https://v2.pincc.ai',
+        buildLoginBody('a@b.c', 'secret'),
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Sub2ApiError);
+    const apiErr = caught as Sub2ApiError;
+    expect(apiErr.message).toBe('tencent captcha verification failed');
+    expect(apiErr.reason).toBe('TENCENT_CAPTCHA_VERIFICATION_FAILED');
+    expect(apiErr.code).toBe(400);
+  });
+
+  it('maps captcha and credential errors for toast copy', () => {
+    const messages = {
+      captchaVerificationFailed: '请先完成验证码',
+      loginBadCredentials: '邮箱或密码不正确',
+      loginFailed: '登录未完成',
+    };
+    expect(
+      mapSub2ApiLoginError(
+        new Sub2ApiError(
+          'tencent captcha verification failed',
+          200,
+          400,
+          'TENCENT_CAPTCHA_VERIFICATION_FAILED',
+        ),
+        messages,
+      ),
+    ).toBe('请先完成验证码');
+    expect(
+      mapSub2ApiLoginError(
+        new Sub2ApiError('invalid email or password', 200, 401, 'INVALID_CREDENTIALS'),
+        messages,
+      ),
+    ).toBe('邮箱或密码不正确');
+    expect(
+      mapSub2ApiLoginError(new Sub2ApiError('rate limited', 200, 429, 'RATE_LIMITED'), messages),
+    ).toBe('rate limited');
+    expect(mapSub2ApiLoginError(new Error('network'), messages)).toBe('登录未完成');
   });
 });

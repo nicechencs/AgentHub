@@ -21,13 +21,46 @@ import { sub2apiApiRoot } from './url';
 export class Sub2ApiError extends Error {
   readonly status: number;
   readonly code: number;
+  readonly reason?: string;
 
-  constructor(message: string, status: number, code: number) {
+  constructor(message: string, status: number, code: number, reason?: string) {
     super(message);
     this.name = 'Sub2ApiError';
     this.status = status;
     this.code = code;
+    if (reason) this.reason = reason;
   }
+}
+
+export type Sub2ApiLoginErrorMessages = {
+  captchaVerificationFailed: string;
+  loginBadCredentials?: string;
+  loginFailed: string;
+};
+
+/** Map API login/2FA errors to user-facing copy. Never logs secrets. */
+export function mapSub2ApiLoginError(
+  err: unknown,
+  messages: Sub2ApiLoginErrorMessages,
+): string {
+  if (!(err instanceof Sub2ApiError)) return messages.loginFailed;
+  const reason = (err.reason ?? '').toUpperCase();
+  const msg = err.message || '';
+  if (reason.includes('CAPTCHA') || /captcha/i.test(msg)) {
+    return messages.captchaVerificationFailed;
+  }
+  if (
+    reason.includes('INVALID_CREDENTIAL')
+    || reason.includes('INVALID_PASSWORD')
+    || reason.includes('WRONG_PASSWORD')
+    || reason.includes('BAD_CREDENTIAL')
+    || reason.includes('UNAUTHORIZED')
+    || /invalid.*(password|credential|email)|wrong password|incorrect (password|email)/i.test(msg)
+  ) {
+    return messages.loginBadCredentials?.trim() || err.message || messages.loginFailed;
+  }
+  const trimmed = err.message?.trim();
+  return trimmed || messages.loginFailed;
 }
 
 async function parseEnvelope<T>(response: Response): Promise<T> {
@@ -45,7 +78,15 @@ async function parseEnvelope<T>(response: Response): Promise<T> {
     throw new Sub2ApiError('Invalid response envelope', response.status, -1);
   }
   if (body.code !== 0) {
-    throw new Sub2ApiError(body.message || 'Request failed', response.status, body.code);
+    const reason = typeof body.reason === 'string' && body.reason.trim()
+      ? body.reason.trim()
+      : undefined;
+    throw new Sub2ApiError(
+      body.message || 'Request failed',
+      response.status,
+      body.code,
+      reason,
+    );
   }
   return body.data;
 }
