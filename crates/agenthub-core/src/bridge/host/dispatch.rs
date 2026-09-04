@@ -72,6 +72,7 @@ pub(super) async fn handle_conversation(
         );
         return trace_response(&mut trace, &trace_log, response);
     }
+    trace.local_endpoint_ok();
     tracing::debug!(
         target: "core.adapter",
         profile_id = %state.profile_id,
@@ -81,14 +82,24 @@ pub(super) async fn handle_conversation(
     );
     let mut admitted = match admit_conversation(state, request, surface, request_id, started).await
     {
-        Ok(admitted) => admitted,
-        Err(response) => return trace_response(&mut trace, &trace_log, response),
+        Ok(admitted) => {
+            trace.admission_ok();
+            admitted
+        }
+        Err(response) => {
+            let message = format!(
+                "Request admission failed with HTTP {}.",
+                response.status().as_u16()
+            );
+            trace.admission_failed("admission_failed", &message);
+            return trace_response(&mut trace, &trace_log, response);
+        }
     };
     let initial_channel = UpstreamChannel::from_protocol(admitted.state.upstream.protocol);
     if surface == DownstreamSurface::Responses
         && pair_adapter_rejected(&admitted.state, initial_channel)
     {
-        trace.pool_failed(
+        trace.route_resolution_failed(
             "route_unavailable",
             "This route cannot serve the requested Responses format.",
         );
@@ -136,7 +147,7 @@ pub(super) async fn handle_conversation(
                 );
                 let response = model_unavailable_response(&available);
                 let message = model_unavailable_message(&available);
-                trace.pool_failed("model_unavailable", &message);
+                trace.route_resolution_failed("model_unavailable", &message);
                 return trace_response(&mut trace, &trace_log, response);
             }
         }
@@ -198,14 +209,14 @@ pub(super) async fn handle_conversation(
                     )
                 };
                 let message = model_unavailable_message(&available);
-                trace.pool_failed(code, &message);
+                trace.route_resolution_failed(code, &message);
                 return trace_response(&mut trace, &trace_log, response);
             }
         }
     }
     let channel = UpstreamChannel::from_protocol(admitted.state.upstream.protocol);
     if surface == DownstreamSurface::Responses && pair_adapter_rejected(&admitted.state, channel) {
-        trace.pool_failed(
+        trace.route_resolution_failed(
             "route_unavailable",
             "This route cannot serve the requested Responses format.",
         );
@@ -230,13 +241,14 @@ pub(super) async fn handle_conversation(
             "pair adapter has no upstream mapping for this model"
         );
         let message = model_unavailable_message(&available);
-        trace.pool_failed("model_unavailable", &message);
+        trace.route_resolution_failed("model_unavailable", &message);
         return trace_response(
             &mut trace,
             &trace_log,
             model_unavailable_response(&available),
         );
     }
+    trace.route_resolution_ok();
     let pair_active = pair_adapter_active(&admitted.state, channel);
     admitted.affinity_key = admitted
         .state
@@ -565,6 +577,7 @@ async fn forward_upstream_v2(
         capture,
     )
     .await;
+    trace.response_conversion_result(stream, response.status().as_u16(), surface, channel);
     trace_response(trace, trace_log, response)
 }
 
@@ -637,6 +650,12 @@ async fn forward_upstream(
         capture,
     )
     .await;
+    trace.response_conversion_result(
+        stream_requested,
+        response.status().as_u16(),
+        surface,
+        channel,
+    );
     trace_response(trace, trace_log, response)
 }
 

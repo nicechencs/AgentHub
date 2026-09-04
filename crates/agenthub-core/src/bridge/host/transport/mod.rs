@@ -245,7 +245,27 @@ pub(super) async fn send_upstream(
                 &token,
                 identity.as_ref(),
             );
-            let response = post_upstream(state, builder, request_id).await?;
+            let response = match post_upstream(state, builder, request_id).await {
+                Ok(response) => response,
+                Err(response) => {
+                    if let Some(trace) = trace.as_deref_mut() {
+                        let status = response.status().as_u16();
+                        let code = if response.status() == StatusCode::GATEWAY_TIMEOUT {
+                            "upstream_timeout"
+                        } else {
+                            "upstream_unavailable"
+                        };
+                        trace.upstream_failed(
+                            url_for_trace,
+                            &member,
+                            Some(status),
+                            code,
+                            "The upstream request could not be completed.",
+                        );
+                    }
+                    return Err(response);
+                }
+            };
             if response.status().is_success() {
                 log_serving_account(
                     state,
@@ -280,6 +300,11 @@ pub(super) async fn send_upstream(
                         Some(status.as_u16()),
                         Some("unauthorized"),
                         None,
+                    );
+                    trace.pool_attempt_failed(
+                        &member,
+                        "unauthorized",
+                        "Upstream authorization failed.",
                     );
                 }
                 match switch_or_reload(
@@ -382,6 +407,17 @@ pub(super) async fn send_upstream(
             let err_text = String::from_utf8_lossy(&error_body);
             if !is_reasoning_decode_failure(&err_text) {
                 let detail = extract_upstream_error_detail(&error_body);
+                if let Some(trace) = trace.as_deref_mut() {
+                    trace.upstream_failed(
+                        url_for_trace,
+                        &member,
+                        Some(status.as_u16()),
+                        "upstream_error",
+                        detail
+                            .as_deref()
+                            .unwrap_or("Upstream rejected the request."),
+                    );
+                }
                 return Err(map_upstream_http_error(
                     state,
                     request_id,

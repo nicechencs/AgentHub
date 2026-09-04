@@ -583,7 +583,10 @@ describe('Adapter Rust wire mappers', () => {
       ttftMs: 120,
       inputTokens: 11,
       outputTokens: 7,
-      localAuth: { status: 'ok', profileId: 'profile-1', port: 8787 },
+      localEndpoint: { status: 'ok' },
+      localAuth: { status: 'ok', profileId: 'profile-1', keyLast4: '1234', port: 8787 },
+      admission: { status: 'ok' },
+      routeResolution: { status: 'ok' },
       pool: {
         status: 'ok',
         selectedMember: { label: 'acct-1', sourceKind: 'account', sourceId: 'acct-1' },
@@ -595,13 +598,21 @@ describe('Adapter Rust wire mappers', () => {
         url: 'https://api.example.com/v1/chat/completions',
         httpStatus: 200,
       },
+      responseConversion: { status: 'ok', path: 'upstream_to_client', result: 'completed' },
+      delivery: { status: 'ok', httpStatus: 200, stream: false, completion: 'response_returned' },
     });
     expect(trace?.requestId).toBe('req-trace-1');
     expect(trace?.ttftMs).toBe(120);
     expect(trace?.inputTokens).toBe(11);
     expect(trace?.outputTokens).toBe(7);
+    expect(trace?.localEndpoint?.status).toBe('ok');
     expect(trace?.localAuth.status).toBe('ok');
+    expect(trace?.localAuth.keyLast4).toBe('1234');
+    expect(trace?.admission?.status).toBe('ok');
+    expect(trace?.routeResolution?.status).toBe('ok');
     expect(trace?.conversion.path).toBe('messages_to_openai_chat');
+    expect(trace?.responseConversion?.path).toBe('upstream_to_client');
+    expect(trace?.delivery).toMatchObject({ status: 'ok', httpStatus: 200, stream: false });
     expect(JSON.stringify(trace)).not.toMatch(/sk-|ahb_|Bearer/i);
     expect(
       mapAdapterBridgeStatusDto({

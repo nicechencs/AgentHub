@@ -3,7 +3,7 @@ import {
   mapCoreProvider,
   type CoreProvider,
 } from './provider-map';
-import type { AdapterAction, AdapterApplyPlan, AdapterApplyResult, AdapterBridgeInboundRequest, AdapterBridgeRouteTrace, AdapterBridgeRuntimeState, AdapterBridgeRuntimeStatus, AdapterEvidence, AdapterGateKind, AdapterMaturity, AdapterPlanChange, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis, AdapterServiceImpact, AdapterSourceKind, AdapterSupport, DefaultRoutePoolList, DefaultRoutePoolOverview, LocalTokenProbeOutcome, LocalTokenProbeResult, LocalTokenRecord, RouteMemberOverview, RouteTraceConversion, RouteTraceLocalAuth, RouteTraceMember, RouteTracePool, RouteTracePoolAttempt, RouteTraceStageStatus, RouteTraceUpstream, RouteTraceUpstreamAuth, RoutePoolDialect, RoutePoolSurface } from './adapter';
+import type { AdapterAction, AdapterApplyPlan, AdapterApplyResult, AdapterBridgeInboundRequest, AdapterBridgeRouteTrace, AdapterBridgeRuntimeState, AdapterBridgeRuntimeStatus, AdapterEvidence, AdapterGateKind, AdapterMaturity, AdapterPlanChange, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis, AdapterServiceImpact, AdapterSourceKind, AdapterSupport, DefaultRoutePoolList, DefaultRoutePoolOverview, LocalTokenProbeOutcome, LocalTokenProbeResult, LocalTokenRecord, RouteMemberOverview, RouteTraceConversion, RouteTraceLocalAuth, RouteTraceMember, RouteTracePool, RouteTracePoolAttempt, RouteTraceStageStatus, RouteTraceStep, RouteTraceDelivery, RouteTraceUpstream, RouteTraceUpstreamAuth, RoutePoolDialect, RoutePoolSurface } from './adapter';
 
 /** Exact camelCase shape serialized by Rust's `AdapterProfile`. */
 export interface AdapterProfileWire {
@@ -52,11 +52,24 @@ export interface AdapterBridgeInboundRequestWire {
   ok?: unknown;
 }
 
+export interface RouteTraceStepWire {
+  status?: unknown;
+  code?: unknown;
+  message?: unknown;
+}
+
+export interface RouteTraceDeliveryWire extends RouteTraceStepWire {
+  httpStatus?: unknown;
+  stream?: unknown;
+  completion?: unknown;
+}
+
 export interface RouteTraceMemberWire {
   label?: unknown;
   sourceKind?: unknown;
   sourceId?: unknown;
   ticketId?: unknown;
+  keyLast4?: unknown;
 }
 
 export interface RouteTracePoolAttemptWire {
@@ -69,6 +82,7 @@ export interface RouteTracePoolAttemptWire {
 export interface RouteTraceLocalAuthWire {
   status?: unknown;
   profileId?: unknown;
+  keyLast4?: unknown;
   port?: unknown;
   code?: unknown;
   message?: unknown;
@@ -121,11 +135,16 @@ export interface AdapterBridgeRouteTraceWire {
   ttftMs?: unknown;
   inputTokens?: unknown;
   outputTokens?: unknown;
+  localEndpoint?: RouteTraceStepWire;
   localAuth?: RouteTraceLocalAuthWire;
+  admission?: RouteTraceStepWire;
+  routeResolution?: RouteTraceStepWire;
   pool?: RouteTracePoolWire;
   conversion?: RouteTraceConversionWire;
   upstreamAuth?: RouteTraceUpstreamAuthWire;
   upstream?: RouteTraceUpstreamWire;
+  responseConversion?: RouteTraceConversionWire;
+  delivery?: RouteTraceDeliveryWire;
   failureStage?: unknown;
 }
 
@@ -550,6 +569,7 @@ function mapTraceMember(wire: RouteTraceMemberWire | undefined): RouteTraceMembe
     sourceKind,
     sourceId,
     ticketId: mapOptionalString(wire.ticketId),
+    keyLast4: mapOptionalString(wire.keyLast4),
   };
 }
 
@@ -564,10 +584,30 @@ function mapTracePoolAttempt(wire: RouteTracePoolAttemptWire): RouteTracePoolAtt
   };
 }
 
+function mapTraceStep(wire: RouteTraceStepWire | undefined): RouteTraceStep {
+  return {
+    status: mapTraceStageStatus(wire?.status),
+    code: mapOptionalString(wire?.code),
+    message: mapOptionalString(wire?.message),
+  };
+}
+
+function mapTraceDelivery(wire: RouteTraceDeliveryWire | undefined): RouteTraceDelivery {
+  return {
+    ...mapTraceStep(wire),
+    httpStatus: typeof wire?.httpStatus === 'number' && Number.isInteger(wire.httpStatus)
+      ? wire.httpStatus
+      : null,
+    stream: wire?.stream === true,
+    completion: mapOptionalString(wire?.completion),
+  };
+}
+
 function mapTraceLocalAuth(wire: RouteTraceLocalAuthWire | undefined): RouteTraceLocalAuth {
   return {
     status: mapTraceStageStatus(wire?.status),
     profileId: mapOptionalString(wire?.profileId),
+    keyLast4: mapOptionalString(wire?.keyLast4),
     port: typeof wire?.port === 'number' && Number.isInteger(wire.port) ? wire.port : null,
     code: mapOptionalString(wire?.code),
     message: mapOptionalString(wire?.message),
@@ -659,11 +699,18 @@ export function mapRouteTrace(wire: unknown): AdapterBridgeRouteTrace | null {
     ttftMs: mapOptionalCount(row.ttftMs),
     inputTokens: mapOptionalCount(row.inputTokens),
     outputTokens: mapOptionalCount(row.outputTokens),
+    localEndpoint: row.localEndpoint ? mapTraceStep(row.localEndpoint) : undefined,
     localAuth: mapTraceLocalAuth(row.localAuth),
+    admission: row.admission ? mapTraceStep(row.admission) : undefined,
+    routeResolution: row.routeResolution ? mapTraceStep(row.routeResolution) : undefined,
     pool: mapTracePool(row.pool),
     conversion: mapTraceConversion(row.conversion),
     upstreamAuth: mapTraceUpstreamAuth(row.upstreamAuth),
     upstream: mapTraceUpstream(row.upstream),
+    responseConversion: row.responseConversion
+      ? mapTraceConversion(row.responseConversion)
+      : undefined,
+    delivery: row.delivery ? mapTraceDelivery(row.delivery) : undefined,
     failureStage: mapOptionalString(row.failureStage),
   };
 }

@@ -1,7 +1,8 @@
 //! Credential-free route request traces for monitoring UI.
 //!
-//! Records localhost auth, pool member selection, conversion path/result,
-//! upstream auth outcome, and upstream URL/account — never bodies or secrets.
+//! Records the request lifecycle from local endpoint/auth through admission,
+//! route resolution, connection selection, request/response conversion, upstream,
+//! and client delivery — never bodies or secrets.
 //!
 //! When persistence is enabled (desktop GUI), the last [`ROUTE_TRACE_CAP`]
 //! traces per profile are flushed to a JSON ring under the data dir and
@@ -30,6 +31,12 @@ pub enum TraceStageStatus {
     Skipped,
 }
 
+impl Default for TraceStageStatus {
+    fn default() -> Self {
+        Self::Pending
+    }
+}
+
 impl TraceStageStatus {
     /// Stable lowercase label for structured logs / UI stage names.
     pub const fn as_str(self) -> &'static str {
@@ -40,6 +47,32 @@ impl TraceStageStatus {
             Self::Skipped => "skipped",
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RouteTraceStep {
+    pub status: TraceStageStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RouteTraceDelivery {
+    pub status: TraceStageStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_status: Option<u16>,
+    #[serde(default)]
+    pub stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completion: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -97,7 +130,7 @@ pub struct RouteTracePool {
     pub message: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct RouteTraceConversion {
     pub status: TraceStageStatus,
@@ -165,12 +198,22 @@ pub struct RouteRequestTrace {
     pub input_tokens: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_tokens: Option<u64>,
+    #[serde(default)]
+    pub local_endpoint: RouteTraceStep,
     pub local_auth: RouteTraceLocalAuth,
+    #[serde(default)]
+    pub admission: RouteTraceStep,
+    #[serde(default)]
+    pub route_resolution: RouteTraceStep,
     pub pool: RouteTracePool,
     pub conversion: RouteTraceConversion,
     pub upstream_auth: RouteTraceUpstreamAuth,
     pub upstream: RouteTraceUpstream,
-    /// First failed stage id for list summaries: `local_auth` | `pool` | `conversion` | `upstream_auth` | `upstream`.
+    #[serde(default)]
+    pub response_conversion: RouteTraceConversion,
+    #[serde(default)]
+    pub delivery: RouteTraceDelivery,
+    /// First failed lifecycle stage id, used by monitoring summaries.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failure_stage: Option<String>,
 }
@@ -332,6 +375,113 @@ impl RouteTraceLog {
         store.pending_usage.insert(request_id.to_owned(), incoming);
     }
 
+    pub fn patch_stream_completed(&self, request_id: &str, latency_ms: u64) {
+        let Ok(mut store) = self.inner.lock() else {
+            return;
+        };
+        let patch = |row: &mut RouteRequestTrace| {
+            row.response_conversion.status = TraceStageStatus::Ok;
+            row.response_conversion.result = Some("completed".to_owned());
+            row.delivery.status = TraceStageStatus::Ok;
+            row.delivery.completion = Some("stream_completed".to_owned());
+            row.latency_ms = Some(latency_ms);
+        };
+        for entry in store.by_profile.values_mut() {
+            if let Some(row) = entry
+                .recent
+                .iter_mut()
+                .find(|row| row.request_id == request_id)
+            {
+                patch(row);
+                flush_persist(&store);
+                return;
+            }
+        }
+        if let Some(row) = store
+            .unauthenticated
+            .iter_mut()
+            .find(|row| row.request_id == request_id)
+        {
+            patch(row);
+            flush_persist(&store);
+        }
+    }
+
+    pub fn patch_stream_conversion_failed(&self, request_id: &str, latency_ms: u64) {
+        let Ok(mut store) = self.inner.lock() else {
+            return;
+        };
+        let patch = |row: &mut RouteRequestTrace| {
+            row.ok = false;
+            row.response_conversion.status = TraceStageStatus::Failed;
+            row.response_conversion.result = Some("failed".to_owned());
+            row.response_conversion.code = Some("stream_error".to_owned());
+            row.delivery.status = TraceStageStatus::Failed;
+            row.delivery.completion = Some("stream_error".to_owned());
+            row.delivery.code = Some("stream_error".to_owned());
+            row.latency_ms = Some(latency_ms);
+            if row.failure_stage.is_none() {
+                row.failure_stage = Some("response_conversion".to_owned());
+            }
+        };
+        for entry in store.by_profile.values_mut() {
+            if let Some(row) = entry
+                .recent
+                .iter_mut()
+                .find(|row| row.request_id == request_id)
+            {
+                patch(row);
+                flush_persist(&store);
+                return;
+            }
+        }
+        if let Some(row) = store
+            .unauthenticated
+            .iter_mut()
+            .find(|row| row.request_id == request_id)
+        {
+            patch(row);
+            flush_persist(&store);
+        }
+    }
+
+    pub fn patch_stream_disconnected(&self, request_id: &str, latency_ms: u64) {
+        let Ok(mut store) = self.inner.lock() else {
+            return;
+        };
+        let patch = |row: &mut RouteRequestTrace| {
+            row.ok = false;
+            row.response_conversion.status = TraceStageStatus::Failed;
+            row.response_conversion.result = Some("interrupted".to_owned());
+            row.delivery.status = TraceStageStatus::Failed;
+            row.delivery.completion = Some("client_disconnected".to_owned());
+            row.delivery.code = Some("client_disconnected".to_owned());
+            row.latency_ms = Some(latency_ms);
+            if row.failure_stage.is_none() {
+                row.failure_stage = Some("delivery".to_owned());
+            }
+        };
+        for entry in store.by_profile.values_mut() {
+            if let Some(row) = entry
+                .recent
+                .iter_mut()
+                .find(|row| row.request_id == request_id)
+            {
+                patch(row);
+                flush_persist(&store);
+                return;
+            }
+        }
+        if let Some(row) = store
+            .unauthenticated
+            .iter_mut()
+            .find(|row| row.request_id == request_id)
+        {
+            patch(row);
+            flush_persist(&store);
+        }
+    }
+
     pub fn recent(&self, profile_id: &str) -> Vec<RouteRequestTrace> {
         self.inner
             .lock()
@@ -462,6 +612,7 @@ impl RouteTraceBuilder {
                 ttft_ms: None,
                 input_tokens: None,
                 output_tokens: None,
+                local_endpoint: RouteTraceStep::default(),
                 local_auth: RouteTraceLocalAuth {
                     status: TraceStageStatus::Pending,
                     profile_id: None,
@@ -470,6 +621,8 @@ impl RouteTraceBuilder {
                     code: None,
                     message: None,
                 },
+                admission: RouteTraceStep::default(),
+                route_resolution: RouteTraceStep::default(),
                 pool: RouteTracePool {
                     status: TraceStageStatus::Pending,
                     selected_member: None,
@@ -500,6 +653,14 @@ impl RouteTraceBuilder {
                     code: None,
                     message: None,
                 },
+                response_conversion: RouteTraceConversion {
+                    status: TraceStageStatus::Pending,
+                    path: String::new(),
+                    result: None,
+                    code: None,
+                    message: None,
+                },
+                delivery: RouteTraceDelivery::default(),
                 failure_stage: None,
             },
             started: Instant::now(),
@@ -509,6 +670,39 @@ impl RouteTraceBuilder {
 
     pub fn set_model(&mut self, model: Option<String>) {
         self.trace.model = model.filter(|value| !value.trim().is_empty());
+    }
+
+    pub fn local_endpoint_ok(&mut self) {
+        self.trace.local_endpoint.status = TraceStageStatus::Ok;
+    }
+
+    pub fn admission_ok(&mut self) {
+        self.trace.admission.status = TraceStageStatus::Ok;
+    }
+
+    pub fn admission_failed(&mut self, code: &str, message: &str) {
+        self.trace.admission = RouteTraceStep {
+            status: TraceStageStatus::Failed,
+            code: Some(code.to_owned()),
+            message: Some(message.to_owned()),
+        };
+        self.mark_failure("admission");
+        self.skip_after_admission();
+    }
+
+    pub fn route_resolution_ok(&mut self) {
+        self.trace.route_resolution.status = TraceStageStatus::Ok;
+    }
+
+    pub fn route_resolution_failed(&mut self, code: &str, message: &str) {
+        self.trace.route_resolution = RouteTraceStep {
+            status: TraceStageStatus::Failed,
+            code: Some(code.to_owned()),
+            message: Some(message.to_owned()),
+        };
+        self.trace.pool.status = TraceStageStatus::Skipped;
+        self.mark_failure("route_resolution");
+        self.skip_after_pool();
     }
 
     pub fn local_auth_ok(&mut self, profile_id: &str, port: Option<u16>) {
@@ -537,6 +731,9 @@ impl RouteTraceBuilder {
             message: Some(message.to_owned()),
         };
         self.mark_failure("local_auth");
+        self.trace.local_endpoint.status = TraceStageStatus::Skipped;
+        self.trace.admission.status = TraceStageStatus::Skipped;
+        self.trace.route_resolution.status = TraceStageStatus::Skipped;
         self.skip_after_local_auth();
     }
 
@@ -562,7 +759,14 @@ impl RouteTraceBuilder {
         } else if self.trace.local_auth.port.is_none() {
             self.trace.local_auth.port = port;
         }
+        self.trace.local_endpoint = RouteTraceStep {
+            status: TraceStageStatus::Failed,
+            code: Some(code.to_owned()),
+            message: Some(message.to_owned()),
+        };
         self.mark_failure("local_endpoint");
+        self.trace.admission.status = TraceStageStatus::Skipped;
+        self.trace.route_resolution.status = TraceStageStatus::Skipped;
         self.skip_after_local_auth();
         self.trace.conversion.code = Some(code.to_owned());
         self.trace.conversion.message = Some(message.to_owned());
@@ -582,16 +786,8 @@ impl RouteTraceBuilder {
 
     pub fn pool_selected(&mut self, member: &PickedMember, candidate: Option<&DispatchCandidate>) {
         let selected = trace_member(member);
-        self.trace.pool.selected_member = Some(selected.clone());
+        self.trace.pool.selected_member = Some(selected);
         self.trace.pool.status = TraceStageStatus::Ok;
-        if self.trace.pool.attempts.is_empty() {
-            self.trace.pool.attempts.push(RouteTracePoolAttempt {
-                member: selected,
-                status: TraceStageStatus::Ok,
-                code: None,
-                message: None,
-            });
-        }
         if let Some(candidate) = candidate {
             if !candidate.upstream_model.trim().is_empty() {
                 self.trace.upstream.upstream_model = Some(candidate.upstream_model.clone());
@@ -667,9 +863,6 @@ impl RouteTraceBuilder {
             code: code.map(str::to_owned),
             message: message.map(str::to_owned),
         };
-        if !ok {
-            self.mark_failure("upstream_auth");
-        }
     }
 
     pub fn upstream_success(
@@ -680,6 +873,14 @@ impl RouteTraceBuilder {
         upstream_model: Option<&str>,
     ) {
         let member = trace_member(member);
+        self.trace.pool.selected_member = Some(member.clone());
+        self.trace.pool.status = TraceStageStatus::Ok;
+        self.trace.pool.attempts.push(RouteTracePoolAttempt {
+            member: member.clone(),
+            status: TraceStageStatus::Ok,
+            code: None,
+            message: None,
+        });
         self.trace.upstream = RouteTraceUpstream {
             status: TraceStageStatus::Ok,
             url: Some(sanitize_upstream_url(url)),
@@ -709,17 +910,104 @@ impl RouteTraceBuilder {
         code: &str,
         message: &str,
     ) {
+        let failed_member = trace_member(member);
+        let already_recorded = self.trace.pool.attempts.last().is_some_and(|attempt| {
+            attempt.status == TraceStageStatus::Failed
+                && attempt.member.source_kind == failed_member.source_kind
+                && attempt.member.source_id == failed_member.source_id
+                && attempt.code.as_deref() == Some(code)
+        });
+        if !already_recorded {
+            self.trace.pool.attempts.push(RouteTracePoolAttempt {
+                member: failed_member.clone(),
+                status: TraceStageStatus::Failed,
+                code: Some(code.to_owned()),
+                message: Some(message.to_owned()),
+            });
+        }
         self.trace.upstream = RouteTraceUpstream {
             status: TraceStageStatus::Failed,
             url: Some(sanitize_upstream_url(url)),
-            member: Some(trace_member(member)),
+            member: Some(failed_member),
             model: self.trace.model.clone(),
             upstream_model: self.trace.upstream.upstream_model.clone(),
             http_status,
             code: Some(code.to_owned()),
             message: Some(message.to_owned()),
         };
-        self.mark_failure("upstream");
+        self.trace.response_conversion.status = TraceStageStatus::Skipped;
+        if code == "unauthorized" {
+            self.mark_failure("upstream_auth");
+        } else {
+            self.mark_failure("upstream");
+        }
+    }
+
+    pub fn attempts_exhausted(
+        &mut self,
+        url: Option<&str>,
+        member: &PickedMember,
+        http_status: Option<u16>,
+        code: &str,
+        message: &str,
+    ) {
+        let member = trace_member(member);
+        self.trace.pool.status = TraceStageStatus::Failed;
+        self.trace.pool.selected_member = Some(member.clone());
+        self.trace.pool.code = Some("pool_exhausted".to_owned());
+        self.trace.pool.message = Some("No healthy connection remained.".to_owned());
+        if code == "unauthorized" {
+            self.trace.upstream_auth = RouteTraceUpstreamAuth {
+                status: TraceStageStatus::Failed,
+                http_status,
+                code: Some(code.to_owned()),
+                message: Some(message.to_owned()),
+            };
+        } else if self.trace.upstream_auth.status == TraceStageStatus::Pending {
+            self.trace.upstream_auth.status = TraceStageStatus::Ok;
+            self.trace.upstream_auth.http_status = http_status;
+        }
+        self.trace.upstream = RouteTraceUpstream {
+            status: TraceStageStatus::Failed,
+            url: url.map(sanitize_upstream_url),
+            member: Some(member),
+            model: self.trace.model.clone(),
+            upstream_model: self.trace.upstream.upstream_model.clone(),
+            http_status,
+            code: Some(code.to_owned()),
+            message: Some(message.to_owned()),
+        };
+        self.trace.response_conversion.status = TraceStageStatus::Skipped;
+        if code == "unauthorized" {
+            self.mark_failure("upstream_auth");
+        } else {
+            self.mark_failure("upstream");
+        }
+    }
+
+    pub fn response_conversion_result(
+        &mut self,
+        stream: bool,
+        http_status: u16,
+        surface: DownstreamSurface,
+        channel: UpstreamChannel,
+    ) {
+        self.trace.delivery.stream = stream;
+        self.trace.response_conversion.path = format!("{}_to_{}", channel.name(), surface.op());
+        if stream {
+            self.trace.response_conversion.status = TraceStageStatus::Pending;
+            self.trace.response_conversion.result = Some("streaming".to_owned());
+        } else {
+            self.trace.response_conversion.status = if (200..400).contains(&http_status) {
+                TraceStageStatus::Ok
+            } else {
+                TraceStageStatus::Failed
+            };
+            self.trace.response_conversion.result = Some("completed".to_owned());
+            if self.trace.response_conversion.status == TraceStageStatus::Failed {
+                self.mark_failure("response_conversion");
+            }
+        }
     }
 
     pub fn finalize(&mut self, http_status: u16, log: &RouteTraceLog) {
@@ -728,6 +1016,20 @@ impl RouteTraceBuilder {
         }
         self.trace.http_status = http_status;
         self.trace.ok = (200..400).contains(&http_status);
+        self.trace.delivery.http_status = Some(http_status);
+        self.trace.delivery.status = if self.trace.delivery.stream {
+            TraceStageStatus::Pending
+        } else {
+            TraceStageStatus::Ok
+        };
+        self.trace.delivery.completion = Some(
+            if self.trace.delivery.stream {
+                "streaming"
+            } else {
+                "response_returned"
+            }
+            .to_owned(),
+        );
         self.trace.latency_ms = Some(self.started.elapsed().as_millis() as u64);
         log_route_trace_finalized(&self.trace);
         log.push(self.trace.clone());
@@ -745,17 +1047,25 @@ impl RouteTraceBuilder {
         self.trace.conversion.status = TraceStageStatus::Skipped;
         self.trace.upstream_auth.status = TraceStageStatus::Skipped;
         self.trace.upstream.status = TraceStageStatus::Skipped;
+        self.trace.response_conversion.status = TraceStageStatus::Skipped;
+    }
+
+    fn skip_after_admission(&mut self) {
+        self.trace.route_resolution.status = TraceStageStatus::Skipped;
+        self.skip_after_local_auth();
     }
 
     fn skip_after_pool(&mut self) {
         self.trace.conversion.status = TraceStageStatus::Skipped;
         self.trace.upstream_auth.status = TraceStageStatus::Skipped;
         self.trace.upstream.status = TraceStageStatus::Skipped;
+        self.trace.response_conversion.status = TraceStageStatus::Skipped;
     }
 
     fn skip_after_conversion(&mut self) {
         self.trace.upstream_auth.status = TraceStageStatus::Skipped;
         self.trace.upstream.status = TraceStageStatus::Skipped;
+        self.trace.response_conversion.status = TraceStageStatus::Skipped;
     }
 }
 

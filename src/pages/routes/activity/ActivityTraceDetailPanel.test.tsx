@@ -18,7 +18,10 @@ function row(partial: Partial<RouteTraceListItem> = {}): RouteTraceListItem {
     ttftMs: 800,
     inputTokens: 1200,
     outputTokens: 340,
+    localEndpoint: { status: 'ok' },
     localAuth: { status: 'ok', port: 8787, keyLast4: 'local' },
+    admission: { status: 'ok' },
+    routeResolution: { status: 'ok' },
     pool: { status: 'ok', selectedMember: { label: 'WorkBuddy Grok', sourceKind: 'account', sourceId: 'acct-1', keyLast4: '627a' } },
     conversion: { status: 'ok', path: 'messages_to_anthropic', result: 'converted' },
     upstreamAuth: { status: 'ok', httpStatus: 200 },
@@ -28,6 +31,8 @@ function row(partial: Partial<RouteTraceListItem> = {}): RouteTraceListItem {
       upstreamModel: 'claude-sonnet-upstream',
       httpStatus: 200,
     },
+    responseConversion: { status: 'ok', path: 'anthropic_to_messages', result: 'completed' },
+    delivery: { status: 'ok', httpStatus: 200, stream: false, completion: 'response_returned' },
     sourceLabel: 'Route A',
     ...partial,
   };
@@ -38,7 +43,7 @@ function render(node: ReactElement): string {
 }
 
 describe('ActivityTraceDetailPanel', () => {
-  it('shows inbound and outbound endpoints plus five-stage results', () => {
+  it('shows the eleven-node request chain as expandable status cards', () => {
     const markup = render(
       createElement(ActivityTraceDetailPanel, {
         row: row(),
@@ -49,31 +54,20 @@ describe('ActivityTraceDetailPanel', () => {
     expect(markup).toContain('data-side-inspect');
     expect(markup).toContain('data-activity-trace-detail="req-1"');
     expect(markup).toContain('请求详情');
-    expect(markup).toContain('本地调用端点');
-    expect(markup).toContain('/v1/messages');
     expect(markup).toContain('本次请求实际走向');
-    expect(markup).toContain('https://api.anthropic.com');
-    expect(markup).toContain('/v1/messages');
-    expect(markup).toContain('转换');
-    expect(markup).toContain('Messages');
-    expect(markup).toContain('Anthropic');
-    expect(markup).toContain('--agent-claude');
-    expect(markup).toContain('本次请求实际走向');
-    expect(markup).toContain('本机鉴权');
+    expect(markup).toContain('点开每个节点可查看具体数据');
+    for (const stage of [
+      'received', 'local_auth', 'local_endpoint', 'admission', 'route_resolution', 'pool',
+      'request_conversion', 'upstream_request', 'upstream_response', 'response_conversion', 'delivery',
+    ]) {
+      expect(markup).toContain(`data-detail-stage="${stage}"`);
+    }
+    expect(markup.match(/data-detail-stage=/g)).toHaveLength(11);
+    expect(markup).toContain('aria-expanded="true"');
+    expect(markup).toContain('请求 ID');
+    expect(markup).toContain('req-1');
     expect(markup).toContain('••••local');
-    expect(markup).toContain('连接池');
-    expect(markup).toContain('WorkBuddy Grok');
-    expect(markup).toContain('claude-sonnet-upstream');
-    expect(markup).toContain('••••627a');
-    expect(markup).toContain('上游');
-    expect(markup).toContain('https://api.anthropic.com');
-    expect(markup).toContain('本机鉴权');
-    expect(markup).toContain('连接池');
-    expect(markup).toContain('转换');
-    expect(markup).toContain('上游鉴权');
-    expect(markup).toContain('上游');
-    expect(markup).toContain('data-stage="local_auth"');
-    expect(markup).toContain('data-stage-status="ok"');
+    expect(markup).not.toContain('sk-deepseek');
   });
 
   it('shows a compact failure summary and marks later stages as not reached', () => {
@@ -84,6 +78,8 @@ describe('ActivityTraceDetailPanel', () => {
           httpStatus: 401,
           upstreamAuth: { status: 'failed', httpStatus: 401, code: 'unauthorized' },
           upstream: { status: 'pending' },
+          responseConversion: { status: 'skipped', path: '' },
+          delivery: { status: 'ok', httpStatus: 401, stream: false, completion: 'response_returned' },
           failureStage: 'upstream_auth',
         }),
         width: 360,
@@ -93,8 +89,10 @@ describe('ActivityTraceDetailPanel', () => {
     expect(markup).toContain('>失败</span>');
     expect(markup).toContain('上游鉴权失败');
     expect(markup).toContain('>401</p>');
-    expect(markup).not.toContain('unauthorized');
-    expect(markup).toContain('data-stage="upstream"');
+    expect(markup).toContain('unauthorized');
+    expect(markup).toContain('data-detail-stage="upstream_response"');
+    expect(markup).toContain('data-stage-status="failed"');
+    expect(markup).toContain('data-detail-stage="response_conversion"');
     expect(markup).toContain('data-stage-status="skipped"');
     expect(markup).toContain('未到达');
   });

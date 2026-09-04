@@ -103,6 +103,22 @@ describe('activity-trace-summary-model', () => {
     expect(activityTraceStageStatus(failed, 'conversion')).toBe('skipped');
   });
 
+  it('reports failures from the expanded lifecycle', () => {
+    const failed = row({
+      ok: false,
+      httpStatus: 400,
+      routeResolution: { status: 'failed', code: 'model_unavailable', message: 'No route' },
+      pool: { status: 'skipped' },
+      conversion: { status: 'skipped', path: '' },
+      upstreamAuth: { status: 'skipped' },
+      upstream: { status: 'skipped' },
+      failureStage: 'route_resolution',
+    });
+    const summary = summarizeActivityTrace(failed);
+    expect(summary).toMatchObject({ result: 'failed', failureStage: 'route_resolution', errorMessage: 'No route' });
+    expect(activityTraceResultLabel(summary, t)).toBe('失败于 模型与路由解析');
+  });
+
   it('keeps legacy failures unknown and never shows a completed request as waiting', () => {
     const legacy = row({
       ok: false,
