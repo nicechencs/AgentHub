@@ -96,6 +96,9 @@ async function desktopHttp(input: {
 }): Promise<RawHttpResult> {
   const { invoke } = await import('@/lib/backend/tauri/invoke');
   try {
+    // Tauri invoke args must be flat and match Rust param names
+    // (method/url/headers/body), same style as sub2api_open_login + loginUrl.
+    // Do not wrap as { args: { ... } } — that never reaches the command.
     const raw = await invoke<{ status: number; body: string }>('sub2api_http_request', {
       method: input.method,
       url: input.url,

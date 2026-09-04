@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 const WINDOW_LABEL: &str = "sub2api-login";
@@ -31,17 +31,6 @@ pub struct Sub2ApiLoginTokens {
     pub refresh_token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<u64>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Sub2ApiHttpRequestArgs {
-    pub method: String,
-    pub url: String,
-    #[serde(default)]
-    pub headers: Option<HashMap<String, String>>,
-    #[serde(default)]
-    pub body: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -220,8 +209,15 @@ pub async fn sub2api_close_login(app: AppHandle) -> Result<(), String> {
 /// Returns status + response text. Does not log Authorization, body secrets,
 /// captcha tickets, or tokens.
 #[tauri::command]
-pub async fn sub2api_http_request(args: Sub2ApiHttpRequestArgs) -> Result<Sub2ApiHttpResponse, String> {
-    let method = args.method.trim().to_ascii_uppercase();
+pub async fn sub2api_http_request(
+    method: String,
+    url: String,
+    headers: Option<HashMap<String, String>>,
+    body: Option<String>,
+) -> Result<Sub2ApiHttpResponse, String> {
+    // Flat params match frontend invoke({ method, url, headers, body }) — same style as
+    // sub2api_open_login(login_url) / { loginUrl }. Do not wrap in a single `args` struct.
+    let method = method.trim().to_ascii_uppercase();
     if method.is_empty() {
         return Err("method is empty".into());
     }
@@ -231,12 +227,11 @@ pub async fn sub2api_http_request(args: Sub2ApiHttpRequestArgs) -> Result<Sub2Ap
     ) {
         return Err(format!("method not allowed: {method}"));
     }
-    let url = validate_http_url(&args.url)?;
+    let url = validate_http_url(&url)?;
     let path_log = safe_path_for_log(&url);
     let method_log = method.clone();
     let path_log_outer = path_log.clone();
-    let headers = args.headers.unwrap_or_default();
-    let body = args.body;
+    let headers = headers.unwrap_or_default();
 
     let result = tauri::async_runtime::spawn_blocking(move || -> Result<Sub2ApiHttpResponse, String> {
         let agent = ureq::AgentBuilder::new()
