@@ -900,6 +900,121 @@ fn route_trace_persist_uses_settings_retention_days() {
 }
 
 #[test]
+fn route_trace_query_filters_pages_and_deletes() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("route-traces.db");
+    let log = RouteTraceLog::new();
+    log.enable_persist(path);
+
+    let now = super::now_unix_ms();
+    for index in 0..12 {
+        let mut messages = RouteTraceBuilder::begin(format!("msg-{index}"), "POST", "/v1/messages");
+        messages.local_auth_ok("pool-messages", None);
+        messages.local_auth_key_last4("ahb_xxxx1234");
+        messages.set_at_unix_ms(now.saturating_sub(12 - index as u128));
+        messages.finalize(200, &log);
+    }
+    let mut grok = RouteTraceBuilder::begin("grok-1", "POST", "/v1/responses");
+    grok.local_auth_ok("pool-grok", None);
+    grok.local_auth_key_last4("ahb_yyyy5678");
+    grok.conversion_prepared(
+        DownstreamSurface::Responses,
+        UpstreamChannel::Grok,
+        true,
+    );
+    grok.upstream_success(
+        "https://api.x.ai/v1/responses",
+        &PickedMember::new(
+            "",
+            "account",
+            "acct-grok",
+            "acct-grok",
+            ResolvedAuth::bearer("xai-test"),
+            None,
+            MemberHealth::Renewable,
+        ),
+        200,
+        Some("grok-4"),
+    );
+    grok.set_at_unix_ms(now.saturating_sub(2));
+    grok.finalize(200, &log);
+
+    let mut codex = RouteTraceBuilder::begin("codex-1", "POST", "/v1/responses");
+    codex.local_auth_ok("pool-codex", None);
+    codex.local_auth_key_last4("ahb_zzzz9999");
+    codex.conversion_prepared(
+        DownstreamSurface::Responses,
+        UpstreamChannel::CodexResponses,
+        false,
+    );
+    codex.set_at_unix_ms(now.saturating_sub(1));
+    codex.finalize(401, &log);
+
+    let by_key = log.query(RouteTraceQuery {
+        key_last4: Some("1234".into()),
+        pool_id: Some("pool-messages".into()),
+        limit: 5,
+        offset: 5,
+        ..RouteTraceQuery::default()
+    });
+    assert_eq!(by_key.total, 12);
+    assert_eq!(by_key.rows.len(), 5);
+    assert_eq!(by_key.rows[0].request_id, "msg-6");
+
+    let grok_page = log.query(RouteTraceQuery {
+        endpoint_kind: Some(RouteTraceEndpointKind::ResponsesGrok),
+        limit: 10,
+        ..RouteTraceQuery::default()
+    });
+    assert_eq!(grok_page.total, 1);
+    assert_eq!(grok_page.rows[0].request_id, "grok-1");
+
+    let failed = log.query(RouteTraceQuery {
+        failed_only: true,
+        limit: 10,
+        ..RouteTraceQuery::default()
+    });
+    assert_eq!(failed.total, 1);
+    assert_eq!(failed.rows[0].request_id, "codex-1");
+
+    let deleted = log.delete_ids(&["msg-11".into(), "grok-1".into(), "".into()]);
+    assert_eq!(deleted.deleted, 2);
+    let after = log.query(RouteTraceQuery {
+        limit: 50,
+        ..RouteTraceQuery::default()
+    });
+    assert_eq!(after.total, 12);
+    assert!(after.rows.iter().all(|row| row.request_id != "msg-11"));
+    assert!(after.rows.iter().all(|row| row.request_id != "grok-1"));
+}
+
+#[test]
+fn route_trace_query_works_without_persist() {
+    let log = RouteTraceLog::new();
+    let mut first = RouteTraceBuilder::begin("mem-1", "POST", "/v1/messages");
+    first.local_auth_ok("pool-a", None);
+    first.local_auth_key_last4("ahb_mem_abcd");
+    first.finalize(200, &log);
+    let mut second = RouteTraceBuilder::begin("mem-2", "POST", "/v1/chat/completions");
+    second.local_auth_ok("pool-b", None);
+    second.finalize(200, &log);
+
+    let page = log.query(RouteTraceQuery {
+        key_last4: Some("abcd".into()),
+        pool_id: Some("pool-a".into()),
+        limit: 10,
+        ..RouteTraceQuery::default()
+    });
+    assert_eq!(page.total, 1);
+    assert_eq!(page.rows[0].request_id, "mem-1");
+
+    let deleted = log.delete_ids(&["mem-1".into()]);
+    assert_eq!(deleted.deleted, 1);
+    assert!(log.get("mem-1").is_none());
+    assert_eq!(log.query(RouteTraceQuery::default()).total, 1);
+}
+
+#[test]
 fn trace_stage_status_as_str_matches_serde() {
     assert_eq!(TraceStageStatus::Pending.as_str(), "pending");
     assert_eq!(TraceStageStatus::Ok.as_str(), "ok");

@@ -244,6 +244,16 @@ export async function getLocalGatewayStatus() {
   return getBackend().adapter.getLocalGatewayStatus();
 }
 
+/** Monitoring table page: filter by key / endpoint type, then page. */
+export async function queryRouteTraces(query?: import('@/lib/backend/contracts/adapter').RouteTraceQuery) {
+  return getBackend().adapter.queryRouteTraces(query);
+}
+
+/** Remove selected monitoring rows. History only. */
+export async function deleteRouteTraces(requestIds: string[]) {
+  return getBackend().adapter.deleteRouteTraces(requestIds);
+}
+
 /** Stops the bridge listener without deleting its generated Connection. */
 export async function stopAdapterBridge(profileId: string): Promise<AdapterBridgeRuntimeStatus> {
   return getBackend().adapter.stopBridge(profileId);

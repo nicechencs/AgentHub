@@ -298,6 +298,42 @@ pub async fn get_local_gateway_status(
         .map_err(adapter_error_from_string)
 }
 
+#[tauri::command]
+pub async fn query_route_traces(
+    state: State<'_, AppState>,
+    key_last4: Option<String>,
+    pool_id: Option<String>,
+    endpoint_kind: Option<String>,
+    route_id: Option<String>,
+    failed_only: Option<bool>,
+    offset: Option<u32>,
+    limit: Option<u32>,
+) -> Result<agenthub_core::bridge::host::RouteTracePage, GuiError> {
+    use agenthub_core::bridge::host::{
+        RouteTraceEndpointKind, RouteTraceQuery, ROUTE_TRACE_QUERY_DEFAULT_LIMIT,
+    };
+    let query = RouteTraceQuery {
+        key_last4,
+        pool_id,
+        endpoint_kind: endpoint_kind
+            .as_deref()
+            .and_then(RouteTraceEndpointKind::parse),
+        route_id,
+        failed_only: failed_only.unwrap_or(false),
+        offset: offset.unwrap_or(0),
+        limit: limit.unwrap_or(ROUTE_TRACE_QUERY_DEFAULT_LIMIT),
+    };
+    Ok(state.bridge_host().query_route_traces(query))
+}
+
+#[tauri::command]
+pub async fn delete_route_traces(
+    state: State<'_, AppState>,
+    request_ids: Vec<String>,
+) -> Result<agenthub_core::bridge::host::RouteTraceDeleteResult, GuiError> {
+    Ok(state.bridge_host().delete_route_traces(&request_ids))
+}
+
 /// Enable or disable background restore for an existing local bridge.
 #[tauri::command]
 pub async fn set_adapter_bridge_auto_start(

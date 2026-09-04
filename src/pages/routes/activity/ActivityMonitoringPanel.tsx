@@ -20,15 +20,32 @@ export function ActivityMonitoringPanel({
   tokens = [],
   activeId,
   onShowDetail,
+  selectedIds,
+  onToggleRow,
+  onTogglePage,
+  page,
+  total,
+  pageSize,
+  onPageChange,
+  filtered = false,
 }: {
   snapshot: ActivityPageSnapshot;
   pools?: readonly { members: readonly { displayLabel?: string }[] }[];
   tokens?: readonly ActivityTraceKeyToken[];
   activeId?: string | null;
   onShowDetail?: (row: RouteTraceListItem) => void;
+  selectedIds?: ReadonlySet<string>;
+  onToggleRow?: (id: string) => void;
+  onTogglePage?: () => void;
+  page?: number;
+  total?: number;
+  pageSize?: number;
+  onPageChange?: (next: number) => void;
+  filtered?: boolean;
 }) {
   const { t } = useI18n();
   const activeRow = selectedActivityTrace(snapshot.feed, activeId);
+  const showLoginEmpty = snapshot.kind === 'noLogins' && snapshot.feed.length === 0;
 
   return (
     <div className="space-y-4" data-activity-monitoring>
@@ -40,7 +57,7 @@ export function ActivityMonitoringPanel({
       <ActivityStatusBanner snapshot={snapshot} />
       {snapshot.kind === 'loading' ? (
         <TableSkeleton rows={6} cols={10} />
-      ) : snapshot.kind === 'noLogins' ? (
+      ) : showLoginEmpty ? (
         <EmptyState
           icon={Boxes}
           title={t('routes.activity.noLoginsTitle')}
@@ -60,8 +77,15 @@ export function ActivityMonitoringPanel({
           tokens={tokens}
           activeId={activeId}
           onShowDetail={onShowDetail}
+          selectedIds={selectedIds}
+          onToggleRow={onToggleRow}
+          onTogglePage={onTogglePage}
+          page={page}
+          total={total}
+          pageSize={pageSize}
+          onPageChange={onPageChange}
           emptyLabel={
-            snapshot.kind === 'filteredEmpty'
+            filtered || snapshot.kind === 'filteredEmpty'
               ? t('routes.activity.emptyFilteredTitle')
               : t('routes.activity.emptyTitle')
           }
@@ -84,7 +108,7 @@ function ActivityStatusBanner({ snapshot }: { snapshot: ActivityPageSnapshot }) 
       case 'notRunning':
         return 'routes.activity.statusStopped';
       case 'noRoutes':
-        return 'routes.activity.statusAwaitingRoutes';
+        return null;
       case 'noLogins':
         return 'routes.activity.statusAwaitingLogins';
       default:

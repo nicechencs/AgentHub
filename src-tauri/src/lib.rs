@@ -133,6 +133,8 @@ pub fn run() {
             commands::adapter::start_local_gateway,
             commands::adapter::stop_local_gateway,
             commands::adapter::get_local_gateway_status,
+            commands::adapter::query_route_traces,
+            commands::adapter::delete_route_traces,
             commands::adapter::set_adapter_bridge_auto_start,
             commands::adapter::remove_adapter,
             commands::lifecycle::request_controlled_restart,

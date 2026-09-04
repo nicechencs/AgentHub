@@ -462,6 +462,28 @@ export type LocalGatewayStatus = {
   restarting: boolean;
 };
 
+/** Monitoring table query. `endpointKind` matches the four local endpoint types. */
+export type RouteTraceQuery = {
+  keyLast4?: string | null;
+  poolId?: string | null;
+  endpointKind?: 'messages' | 'responses_codex' | 'responses_grok' | 'chat_completions' | null;
+  routeId?: string | null;
+  failedOnly?: boolean;
+  offset?: number;
+  limit?: number;
+};
+
+export type RouteTracePage = {
+  rows: AdapterBridgeRouteTrace[];
+  total: number;
+  offset: number;
+  limit: number;
+};
+
+export type RouteTraceDeleteResult = {
+  deleted: number;
+};
+
 /** Loopback bearer for the tokens page. */
 export type LocalTokenRecord = {
   id: string;
@@ -566,4 +588,6 @@ export interface AdapterPort {
   startLocalGateway(): Promise<LocalGatewayStatus>;
   stopLocalGateway(): Promise<LocalGatewayStatus>;
   getLocalGatewayStatus(): Promise<LocalGatewayStatus>;
+  queryRouteTraces(query?: RouteTraceQuery): Promise<RouteTracePage>;
+  deleteRouteTraces(requestIds: string[]): Promise<RouteTraceDeleteResult>;
 }

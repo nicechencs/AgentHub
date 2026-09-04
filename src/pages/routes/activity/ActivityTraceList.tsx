@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Tip } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import type { RouteTraceListItem } from '@/components/shared/RouteTraceList';
@@ -9,6 +10,7 @@ import {
   TableBody,
   TableCell,
   TableEmptyCell,
+  TableFooterBar,
   TableHead,
   TableHeader,
   TableHeaderRow,
@@ -16,6 +18,10 @@ import {
   TableShell,
   useColumnWidths,
 } from '@/components/ui/table';
+import {
+  ACTIVITY_PAGE_SIZE,
+  buildActivityPageItems,
+} from './activity-query-model';
 import { formatInboundAt } from '@/pages/routes/shared/route-endpoint-copy';
 import {
   ACTIVITY_TRACE_COLUMN_WIDTHS_STORAGE_KEY,
@@ -43,35 +49,130 @@ import {
 } from './activity-trace-summary-model';
 import { ActivityTraceStageIcon } from './ActivityTraceStageDisplay';
 
+const SELECT_COL_WIDTH = 40;
+
 export function ActivityTraceList({
   rows,
   tokens = [],
   emptyLabel,
   activeId,
   onShowDetail,
+  selectedIds,
+  onToggleRow,
+  onTogglePage,
+  page,
+  total,
+  pageSize = ACTIVITY_PAGE_SIZE,
+  onPageChange,
 }: {
   rows: readonly RouteTraceListItem[];
   tokens?: readonly ActivityTraceKeyToken[];
   emptyLabel?: string;
   activeId?: string | null;
   onShowDetail?: (row: RouteTraceListItem) => void;
+  selectedIds?: ReadonlySet<string>;
+  onToggleRow?: (id: string) => void;
+  onTogglePage?: () => void;
+  page?: number;
+  total?: number;
+  pageSize?: number;
+  onPageChange?: (next: number) => void;
 }) {
   const { t } = useI18n();
   const { widths, onResizeStart, totalWidth } = useColumnWidths(
     ACTIVITY_TRACE_WIDTH_SPECS,
     ACTIVITY_TRACE_COLUMN_WIDTHS_STORAGE_KEY,
   );
+  const selectable = Boolean(onToggleRow);
+  const colCount = ACTIVITY_TRACE_WIDTH_SPECS.length + (selectable ? 1 : 0);
+  const pageIds = rows.map((row) => row.requestId);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds?.has(id));
+  const totalCount = total ?? rows.length;
+  const totalPages = Math.max(1, Math.ceil(Math.max(0, totalCount) / pageSize));
+  const safePage = Math.min(Math.max(1, page ?? 1), totalPages);
+  const pageItems = buildActivityPageItems(safePage, totalPages);
+  const showPager = Boolean(onPageChange) && totalCount > 0;
 
   return (
-    <TableShell layout="split">
-      <Table className="table-fixed" style={{ minWidth: totalWidth }}>
+    <TableShell
+      layout="split"
+      footer={showPager ? (
+        <TableFooterBar>
+          <p>
+            {t('routes.activity.total', { n: totalCount.toLocaleString() })}
+            {t('routes.activity.page', { page: safePage, pages: totalPages })}
+            <span className="text-muted/80">
+              {t('routes.activity.pageSize', { n: pageSize })}
+            </span>
+          </p>
+          {totalPages > 1 ? (
+            <div className="flex flex-wrap items-center gap-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={safePage <= 1}
+                aria-label={t('routes.activity.prevPage')}
+                onClick={() => onPageChange?.(Math.max(1, safePage - 1))}
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </Button>
+              {pageItems.map((item, idx) =>
+                item === 'ellipsis' ? (
+                  <span key={`e-${idx}`} className="px-1 text-xs text-muted" aria-hidden>
+                    …
+                  </span>
+                ) : (
+                  <Button
+                    key={item}
+                    type="button"
+                    variant={item === safePage ? 'default' : 'outline'}
+                    size="sm"
+                    aria-label={t('routes.activity.pageN', { n: item })}
+                    aria-current={item === safePage ? 'page' : undefined}
+                    className="min-w-7 px-2"
+                    onClick={() => onPageChange?.(item)}
+                  >
+                    {item}
+                  </Button>
+                ),
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={safePage >= totalPages}
+                aria-label={t('routes.activity.nextPage')}
+                onClick={() => onPageChange?.(Math.min(totalPages, safePage + 1))}
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ) : null}
+        </TableFooterBar>
+      ) : undefined}
+    >
+      <Table className="table-fixed" style={{ minWidth: totalWidth + (selectable ? SELECT_COL_WIDTH : 0) }}>
         <colgroup>
+          {selectable ? <col style={{ width: SELECT_COL_WIDTH }} /> : null}
           {ACTIVITY_TRACE_WIDTH_SPECS.map((spec) => (
             <col key={spec.key} style={{ width: widths[spec.key] }} />
           ))}
         </colgroup>
         <TableHeader>
           <TableHeaderRow>
+            {selectable ? (
+              <TableHead data-col="select" className="w-10">
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 accent-accent"
+                  checked={allPageSelected}
+                  disabled={pageIds.length === 0}
+                  onChange={() => onTogglePage?.()}
+                  aria-label={t('routes.activity.selectPageAria')}
+                />
+              </TableHead>
+            ) : null}
             {ACTIVITY_TRACE_WIDTH_SPECS.map((spec) => {
               const label = activityTraceColumnLabel(spec.key, t);
               return (
@@ -90,7 +191,7 @@ export function ActivityTraceList({
         <TableBody>
           {rows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={ACTIVITY_TRACE_WIDTH_SPECS.length} className="text-meta text-muted">
+              <TableCell colSpan={colCount} className="text-meta text-muted">
                 {emptyLabel || <TableEmptyCell />}
               </TableCell>
             </TableRow>
@@ -100,8 +201,20 @@ export function ActivityTraceList({
                 key={row.requestId}
                 data-activity-trace-row={row.requestId}
                 active={activeId === row.requestId}
+                selected={selectedIds?.has(row.requestId)}
                 onOpen={onShowDetail ? () => onShowDetail(row) : undefined}
               >
+                {selectable ? (
+                  <TableCell data-col="select" className="w-10">
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 accent-accent"
+                      checked={selectedIds?.has(row.requestId) === true}
+                      onChange={() => onToggleRow?.(row.requestId)}
+                      aria-label={t('routes.activity.selectRowAria')}
+                    />
+                  </TableCell>
+                ) : null}
                 {ACTIVITY_TRACE_WIDTH_SPECS.map((spec) => (
                   <TableCell
                     key={spec.key}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildRouteTraceFeed, mergeRecentRouteTraces, UNAUTHENTICATED_TRACE_PROFILE_ID } from './route-trace-feed-model';
+import { buildRouteTraceFeed, decorateRouteTraceRows, mergeRecentRouteTraces, UNAUTHENTICATED_TRACE_PROFILE_ID } from './route-trace-feed-model';
 import type { AdapterBridgeRuntimeStatus, AdapterProfile } from '@/lib/backend/contracts/adapter';
 
 const profiles: Pick<AdapterProfile, 'id' | 'name' | 'route' | 'targetAgentId'>[] = [
@@ -81,5 +81,15 @@ describe('route-trace-feed-model', () => {
     const failed = buildRouteTraceFeed(profiles, statuses, 'failed', 10);
     expect(failed).toHaveLength(1);
     expect(failed[0]?.requestId).toBe('req-1');
+  });
+
+  it('labels queried traces with the route name', () => {
+    const rows = decorateRouteTraceRows(
+      [{ ...trace, profileId: 'route-a' }],
+      profiles,
+      '未绑定路由',
+    );
+    expect(rows[0]?.sourceLabel).toBe('Route A');
+    expect(rows[0]?.unauthenticated).toBe(false);
   });
 });

@@ -822,6 +822,39 @@ function mapRouteTraces(wire: AdapterBridgeRouteTraceWire[] | undefined): Adapte
   return rows;
 }
 
+export interface RouteTracePageWire {
+  rows?: unknown[];
+  total?: unknown;
+  offset?: unknown;
+  limit?: unknown;
+}
+
+export function mapRouteTracePage(wire: RouteTracePageWire | null | undefined): import('./adapter').RouteTracePage {
+  const rawRows = Array.isArray(wire?.rows) ? wire.rows : [];
+  const rows: AdapterBridgeRouteTrace[] = [];
+  for (const item of rawRows) {
+    const mapped = mapRouteTrace(item);
+    if (mapped) rows.push(mapped);
+  }
+  const total = typeof wire?.total === 'number' && Number.isFinite(wire.total) && wire.total >= 0
+    ? Math.floor(wire.total)
+    : rows.length;
+  const offset = typeof wire?.offset === 'number' && Number.isFinite(wire.offset) && wire.offset >= 0
+    ? Math.floor(wire.offset)
+    : 0;
+  const limit = typeof wire?.limit === 'number' && Number.isFinite(wire.limit) && wire.limit > 0
+    ? Math.floor(wire.limit)
+    : rows.length || 50;
+  return { rows, total, offset, limit };
+}
+
+export function mapRouteTraceDeleteResult(wire: { deleted?: unknown } | null | undefined): import('./adapter').RouteTraceDeleteResult {
+  const deleted = typeof wire?.deleted === 'number' && Number.isFinite(wire.deleted) && wire.deleted >= 0
+    ? Math.floor(wire.deleted)
+    : 0;
+  return { deleted };
+}
+
 export function mapAdapterBridgeStatusDto(
   wire: AdapterBridgeStatusDtoWire,
 ): AdapterBridgeRuntimeStatus {
