@@ -52,10 +52,10 @@ describe('routes tokens layout wiring', () => {
     expect(page).toContain('deleteAlsoConnections');
     expect(page).toContain('matchesConnectionEntryKeys');
     expect(page).toContain('type="checkbox"');
-    expect(panel).not.toContain('data-token-models');
+    expect(panel).toContain('data-token-models');
     expect(panel).toContain('data-token-written-to');
-    expect(page).not.toContain('useBoardUsageStats');
-    expect(page).not.toContain('attachTokenUsage');
+    expect(page).toContain('useBoardUsageStats');
+    expect(page).toContain('attachTokenUsage');
     expect(source('TokenList.tsx')).toContain('createForEndpoint');
     expect(source('TokenList.tsx')).toContain('emptyTitle');
   });

@@ -23,6 +23,9 @@ function row(partial: Partial<LocalTokenRow> = {}): LocalTokenRow {
     targetAgentId: 'kimi',
     profileIds: ['bridge-1'],
     listedModels: ['kimi-k2'],
+    lastPath: null,
+    lastRequestAt: null,
+    usageEligible: true,
     ...partial,
   };
 }
@@ -66,8 +69,8 @@ describe('TokenDetailPanel', () => {
     expect(markup).not.toMatch(/data-token-test=""[^>]*\bdisabled\b/);
     expect(markup).not.toMatch(/data-token-delete=""[^>]*\bdisabled\b/);
     expect(markup).not.toContain('ahb_secret');
-    expect(markup).not.toContain('data-token-models');
-    expect(markup).not.toContain('按连接池更新');
+    expect(markup).toContain('data-token-models');
+    expect(markup).toContain('从连接池同步');
     expect(markup).toContain('写进了这些 Agent');
     const body = markup.slice(markup.indexOf('data-token-detail'));
     expect(body.indexOf('入口 Key')).toBeLessThan(body.indexOf('端点'));

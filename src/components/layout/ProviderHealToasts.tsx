@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import { onProviderBindingHeal } from '@/lib/backend/tauri/provider-heal-events';
@@ -8,13 +9,26 @@ import { logger } from '@/lib/logger';
 export function ProviderHealToasts() {
   const { t } = useI18n();
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   useEffect(() => {
     let cancelled = false;
     let unsub: (() => void) | undefined;
     void onProviderBindingHeal((payload) => {
       if (payload.kind === 'conflict') {
-        toast({ title: t('connections.healConflict'), variant: 'warning' });
+        const agent = payload.agent.trim();
+        toast({
+          title: t('connections.healConflict'),
+          variant: 'warning',
+          actionLabel: t('connections.healConflictAction'),
+          onAction: () => {
+            if (!agent) {
+              navigate('/connections');
+              return;
+            }
+            navigate(`/connections?agent=${encodeURIComponent(agent)}`);
+          },
+        });
         return;
       }
       toast({ title: t('connections.healAligned'), variant: 'success' });
@@ -33,7 +47,7 @@ export function ProviderHealToasts() {
       cancelled = true;
       unsub?.();
     };
-  }, [t, toast]);
+  }, [t, toast, navigate]);
 
   return null;
 }
