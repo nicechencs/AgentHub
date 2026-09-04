@@ -16,6 +16,8 @@ export interface SettingsPort {
     refreshToken?: string;
     expiresAt?: number;
   }>;
+  /** Close the Sub2API login WebviewWindow if open (e.g. user cancelled the dialog). */
+  closeSub2ApiLoginWindow(): Promise<void>;
   /** Native folder picker. `null` = cancelled. Value is a filesystem path, not a URI. */
   pickDirectory(options?: {
     title?: string;

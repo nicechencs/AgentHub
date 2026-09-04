@@ -30,6 +30,7 @@ import {
   loadSub2ApiKeys,
   loadSub2ApiSession,
   logoutSub2Api,
+  closeSub2ApiLoginWindow,
   openSub2ApiLoginWindow,
   probeSub2ApiPublicSettings,
   saveSub2ApiSession,
@@ -151,6 +152,7 @@ export default function RoutesSub2ApiPage() {
     loginAbortRef.current = true;
     setLoggingIn(false);
     setPasteToken('');
+    void closeSub2ApiLoginWindow();
   };
 
   const submitPasteToken = async () => {

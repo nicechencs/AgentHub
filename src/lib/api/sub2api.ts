@@ -43,6 +43,10 @@ export async function openSub2ApiLoginWindow(loginUrl: string): Promise<{
   return getBackend().settings.openSub2ApiLoginWindow(loginUrl);
 }
 
+export async function closeSub2ApiLoginWindow(): Promise<void> {
+  await getBackend().settings.closeSub2ApiLoginWindow();
+}
+
 export async function probeSub2ApiPublicSettings(siteUrl: string): Promise<Sub2ApiPublicSettings> {
   return fetchPublicSettings({ siteUrl });
 }
