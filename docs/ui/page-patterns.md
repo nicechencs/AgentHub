@@ -189,8 +189,8 @@ Skills, Projects, and Plugins are full-height workbenches with a left inventory 
 
 ### Plugins
 
-- Left column lists installed plugin / extension packs (Claude, Grok, and Pi today). The row keeps the name, at most one line of description, and exception badges (disabled / untrusted). Clicking a row opens the right-hand details pane.
-- Details lead with the pack components (bundled MCP is a component, not a list row). Identity fields (version, marketplace, scope, path) follow. Claude and Grok packs can be turned on or off; turning off is not uninstall. There is no install button.
+- Left column lists installed plugin / extension packs (Claude, Grok, and Pi today). The row keeps the name, the on-disk version when known, at most one line of description, and exception badges (disabled / untrusted / not installed / version mismatch). Clicking a row opens the right-hand details pane.
+- Details lead with the pack components (bundled MCP is a component, not a list row). Identity fields (version, marketplace, scope, path) follow. Pi also shows the specified version from settings when pinned, and a short note on how upgrade is judged (pinned npm specs are skipped by Pi updates; this page does not probe npm for a newer unpinned version). Claude and Grok packs can be turned on or off; turning off is not uninstall. There is no install button.
 - Empty copy depends on the Agent filter: wired-but-empty (install in that tool, then refresh), planned (list not wired yet), or unsupported (this tool has no pack system of this kind). Loading, empty, and error states stay in the list column. Diagnostic scan sources are not shown in the list. Hiding the sidebar item does not disable `/plugins`.
 
 ## 9. Agents and MCP

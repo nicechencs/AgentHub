@@ -42,6 +42,9 @@ pub struct PluginEntry {
     pub marketplace: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+    /// Pi spec pin / git ref (`npm:pkg@1.2.3`). Unpinned specs omit this.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requested_version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scope: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -719,6 +722,7 @@ fn plugin_from_json(
         name,
         marketplace,
         version,
+        requested_version: None,
         scope,
         enabled,
         trusted,
@@ -1203,7 +1207,12 @@ fn plugin_from_pi_spec(pi_config: &Path, user_home: &Path, spec: &str) -> Option
     let parsed = parse_pi_source(spec);
     let install_path = resolve_pi_install_path(pi_config, &parsed);
     let mut name = parsed.display_name.clone();
-    let mut version = parsed.version.clone();
+    let requested_version = parsed
+        .version
+        .clone()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let mut version = None;
     let mut description = None;
     let mut components = Vec::new();
     if let Some(path) = install_path.as_ref().filter(|p| p.is_dir()) {
@@ -1233,6 +1242,7 @@ fn plugin_from_pi_spec(pi_config: &Path, user_home: &Path, spec: &str) -> Option
         name,
         marketplace: Some(parsed.marketplace),
         version,
+        requested_version,
         scope: Some("user".into()),
         enabled: None,
         trusted: None,
@@ -1545,6 +1555,7 @@ fn plugin_from_dir(agent: AgentId, path: &Path, user_home: &Path) -> Option<Plug
         name,
         marketplace,
         version,
+        requested_version: None,
         scope: Some("user".into()),
         enabled: None,
         trusted: None,

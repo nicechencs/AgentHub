@@ -2822,6 +2822,8 @@ export const zh = {
     list: {
       disabled: '已停用',
       untrusted: '未信任',
+      notInstalled: '未安装',
+      versionMismatch: '版本不一致',
     },
     actions: {
       enable: '启用',
@@ -2839,6 +2841,13 @@ export const zh = {
       agent: 'Agent',
       marketplace: '市场',
       version: '版本',
+      requestedVersion: '指定版本',
+      versionHintPinned: '已指定版本。在 Pi 里更新扩展时会跳过这个包，这是正常的。',
+      versionHintUnpinned: '没有指定版本。本页只显示本机版本，不查线上是否有新版本。要升级请到 Pi 里更新扩展。',
+      versionHintMismatch: '本机版本和指定版本不同。',
+      versionHintMissing: '配置里有这个包，本机还没装上。',
+      versionHintGit: '来自 git。本页只显示本机版本。',
+      versionHintLocal: '本地包。更新请到 Pi 里做。',
       scope: '范围',
       scopeUser: '用户',
       scopeProject: '项目',

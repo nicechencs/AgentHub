@@ -9,6 +9,7 @@ import { agentDisplayName } from '@/config/agents';
 import type { PluginComponent, PluginEntry } from '@/lib/backend/contracts/plugin-types';
 import type { TranslateFn } from '@/lib/i18n';
 import { canToggleListedPlugin } from './can-toggle';
+import { pluginVersionView } from './plugin-version-model';
 
 function kindLabel(kind: string, t: TranslateFn): string {
   switch (kind) {
@@ -84,6 +85,17 @@ export function PluginDetailPanel({
   const canToggle = canToggleListedPlugin(plugin.agent) && Boolean(onToggle);
   const enabled = plugin.enabled === true;
   const description = plugin.description?.trim() || undefined;
+  const version = pluginVersionView(plugin);
+  const versionValue =
+    version.listBadge === 'notInstalled'
+      ? t('plugins.list.notInstalled')
+      : version.installed;
+  const showRequested =
+    Boolean(version.requested) &&
+    (version.kind === 'pinned' ||
+      version.kind === 'mismatch' ||
+      version.kind === 'missing' ||
+      version.kind === 'git');
 
   async function toggle(next: boolean) {
     if (!onToggle || busy || next === enabled) return;
@@ -159,7 +171,10 @@ export function PluginDetailPanel({
 
       <dl className="mt-4 flex flex-col gap-2">
         <Field label={t('plugins.detail.agent')} value={agentDisplayName(plugin.agent)} />
-        <Field label={t('plugins.detail.version')} value={plugin.version} />
+        <Field label={t('plugins.detail.version')} value={versionValue} />
+        {showRequested ? (
+          <Field label={t('plugins.detail.requestedVersion')} value={version.requested} />
+        ) : null}
         <Field label={t('plugins.detail.marketplace')} value={plugin.marketplace} />
         <Field
           label={t('plugins.detail.scope')}
@@ -188,6 +203,9 @@ export function PluginDetailPanel({
           </div>
         ) : null}
       </dl>
+      {version.hintKey ? (
+        <p className="mt-3 text-meta text-muted">{t(version.hintKey)}</p>
+      ) : null}
     </InspectSurface>
   );
 }

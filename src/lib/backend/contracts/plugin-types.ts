@@ -12,6 +12,8 @@ export interface PluginEntry {
   name: string;
   marketplace?: string | null;
   version?: string | null;
+  /** Pi spec pin / git ref (`npm:pkg@1.2.3`). Unpinned specs omit this. */
+  requestedVersion?: string | null;
   scope?: string | null;
   enabled?: boolean | null;
   trusted?: boolean | null;

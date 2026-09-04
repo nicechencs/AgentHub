@@ -30,7 +30,7 @@ Goose 把 MCP 叫做 “extension”。那是 Goose 的用词。AgentHub 的「�
 
 - **Skills**（`/skills`）管理用户技能（共享库与各工具目录）和项目技能（按项目页已识别的工作区选择）。`Capability::Skills` 由 adapter 声明；Kimi 为 Unsupported。
 - **MCP**（`/mcp`）列出已发现的 server 名、传输、命令/地址、来源文件。清单存在不等于能改配置，更不等于插件已安装。
-- **插件**（`/plugins`）列出 Claude / Grok / Pi 已装包：Claude / Grok 优先官方 CLI JSON，否则读 live 目录（`~/.claude/plugins/` + `enabledPlugins`，`~/.grok/plugins/`）。Pi 无 list JSON，读用户 `~/.pi/agent/settings.json` 的 `packages`（及 npm/git 安装目录）。Claude / Grok 已装包可启用/停用；Pi 装上即加载，没有包级启用。安装仍在各工具里做。设置「显示插件页面」只藏侧栏入口。附带 MCP 只作为包内组件。主栏不展示技能目录、MCP 配置或其他扫描来源。Codex 仍为 Planned；Cursor / Kimi / WorkBuddy / DSH / ZCode 明确不支持。
+- **插件**（`/plugins`）列出 Claude / Grok / Pi 已装包：Claude / Grok 优先官方 CLI JSON，否则读 live 目录（`~/.claude/plugins/` + `enabledPlugins`，`~/.grok/plugins/`）。Pi 无 list JSON，读用户 `~/.pi/agent/settings.json` 的 `packages`（及 npm/git 安装目录）。Pi 对照本机版本与配置里的指定版本；指定了版本的 npm 包在 Pi 更新时会跳过，本页不查线上最新。Claude / Grok 已装包可启用/停用；Pi 装上即加载，没有包级启用。安装仍在各工具里做。设置「显示插件页面」只藏侧栏入口。附带 MCP 只作为包内组件。主栏不展示技能目录、MCP 配置或其他扫描来源。Codex 仍为 Planned；Cursor / Kimi / WorkBuddy / DSH / ZCode 明确不支持。
 - 厂商 Plugin 市场也不是 Skills 市场（`skills.sh` / `skillhub.cn`）。
 
 ## 所有权

@@ -2839,6 +2839,8 @@ export const en = {
     list: {
       disabled: 'Disabled',
       untrusted: 'Untrusted',
+      notInstalled: 'Not installed',
+      versionMismatch: 'Version mismatch',
     },
     actions: {
       enable: 'Enable',
@@ -2856,6 +2858,15 @@ export const en = {
       agent: 'Agent',
       marketplace: 'Marketplace',
       version: 'Version',
+      requestedVersion: 'Specified version',
+      versionHintPinned:
+        'A version is specified. Pi skips this pack when updating extensions; that is expected.',
+      versionHintUnpinned:
+        'No version is specified. This page shows the copy on this computer and does not check whether a newer one exists. Update extensions in Pi.',
+      versionHintMismatch: 'The copy on this computer does not match the specified version.',
+      versionHintMissing: 'This pack is listed in Pi settings, but it is not on this computer.',
+      versionHintGit: 'This pack comes from git. This page only shows the local version.',
+      versionHintLocal: 'This is a local pack. Update it in Pi.',
       scope: 'Scope',
       scopeUser: 'User',
       scopeProject: 'Project',
