@@ -179,6 +179,64 @@ fn upsert_preserves_opaque_toml_when_content_is_marker() {
 }
 
 #[test]
+fn kimi_saved_toml_address_reaches_remote_models_request() {
+    let (_dir, hub) = hub_tmp();
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let address = format!("http://{}", listener.local_addr().unwrap());
+    let server = std::thread::spawn(move || {
+        use std::io::{Read, Write};
+
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = [0_u8; 2048];
+        let read = stream.read(&mut request).unwrap();
+        let request = String::from_utf8_lossy(&request[..read]);
+        assert!(
+            request.starts_with("GET /v1/models "),
+            "unexpected model-list path"
+        );
+        assert!(
+            request.contains("Authorization: Bearer sk-kimi-fixture"),
+            "stored key was not used"
+        );
+        let body = r#"{"data":[{"id":"grok-4.6"}]}"#;
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .unwrap();
+    });
+
+    upsert_provider_inner(
+        &hub,
+        ProviderInput {
+            id: "p-kimi-models".into(),
+            agent_id: AgentId::Kimi,
+            name: "Kimi local route".into(),
+            settings_config: json!({
+                "format": "toml",
+                "content": format!(r#"
+default_provider = "moonshot"
+
+[providers.moonshot]
+base_url = "{address}"
+api_key = "sk-kimi-fixture"
+"#)
+            }),
+            meta: json!({}),
+            is_current: false,
+        },
+    )
+    .unwrap();
+
+    let models =
+        list_remote_openai_models_for_provider_inner(&hub, "p-kimi-models", &address).unwrap();
+    server.join().unwrap();
+    assert_eq!(models, vec!["grok-4.6"]);
+}
+
+#[test]
 fn stored_api_key_for_remote_models_resolves_without_network() {
     let (_dir, hub) = hub_tmp();
 

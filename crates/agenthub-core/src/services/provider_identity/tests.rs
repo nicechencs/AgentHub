@@ -7,8 +7,8 @@ use crate::models::{
 use crate::utils::redact::secret_sha256_hex;
 
 use super::{
-    looks_like_uuid_provider_id, normalize_base_url, pick_identity_keeper, provider_identity,
-    retarget_profiles_from_loser, stamp_secret_hash,
+    looks_like_uuid_provider_id, normalize_base_url, normalize_provider_base_url,
+    pick_identity_keeper, provider_identity, retarget_profiles_from_loser, stamp_secret_hash,
 };
 
 fn row(id: &str, secret: &str, url: &str) -> Provider {
@@ -137,6 +137,55 @@ fn stamp_secret_hash_writes_meta_not_raw_secret() {
         secret_sha256_hex("sk-or-v1-fixture-aaaa6aa9-not-real")
     );
     assert!(!meta.to_string().contains("sk-or-v1-fixture"));
+}
+
+#[test]
+fn normalize_provider_base_url_reads_kimi_default_provider_toml() {
+    let settings = json!({
+        "format": "toml",
+        "content": r#"
+default_provider = "moonshot"
+
+[providers.moonshot]
+type = "openai"
+base_url = "http://127.0.0.1:17034/"
+api_key = "sk-fixture"
+"#
+    });
+    assert_eq!(
+        normalize_provider_base_url(&settings).as_deref(),
+        Some("http://127.0.0.1:17034")
+    );
+}
+
+#[test]
+fn normalize_provider_base_url_does_not_fall_back_when_named_provider_is_missing() {
+    let settings = json!({
+        "format": "toml",
+        "content": r#"
+default_provider = "missing"
+base_url = "https://also-wrong.example.com"
+
+[providers.other]
+base_url = "https://wrong.example.com"
+"#
+    });
+    assert_eq!(normalize_provider_base_url(&settings), None);
+}
+
+#[test]
+fn normalize_provider_base_url_rejects_ambiguous_provider_tables() {
+    let settings = json!({
+        "format": "toml",
+        "content": r#"
+[providers.first]
+base_url = "https://first.example.com"
+
+[providers.second]
+base_url = "https://second.example.com"
+"#
+    });
+    assert_eq!(normalize_provider_base_url(&settings), None);
 }
 
 #[test]
