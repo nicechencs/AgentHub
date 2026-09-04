@@ -198,6 +198,13 @@ fn missing_cli_reads_live_files_and_skips_mcp_servers() {
         }"#,
     )
     .unwrap();
+    let pack_dir = claude.join("plugins").join("cache").join("pack").join("3.0.0");
+    fs::create_dir_all(pack_dir.join("skills").join("ship")).unwrap();
+    fs::write(
+        pack_dir.join("plugin.json"),
+        r#"{"name":"pack","version":"3.0.0"}"#,
+    )
+    .unwrap();
     fs::write(
         claude.join("plugins").join("installed_plugins.json"),
         r#"{
@@ -259,8 +266,14 @@ fn missing_cli_reads_live_files_and_skips_mcp_servers() {
         .unwrap();
     assert_eq!(claude_plug.name, "pack");
     assert_eq!(claude_plug.marketplace.as_deref(), Some("official"));
+    assert_eq!(claude_plug.version.as_deref(), Some("3.0.0"));
     assert_eq!(claude_plug.enabled, Some(true));
     assert_eq!(claude_plug.source, "live");
+    let claude_path = claude_plug.path.as_deref().unwrap().replace('\\', "/");
+    assert!(
+        claude_path.contains("plugins/cache/pack/3.0.0"),
+        "{claude_path}"
+    );
 
     let grok_plug = inv
         .plugins
@@ -284,6 +297,66 @@ fn missing_cli_reads_live_files_and_skips_mcp_servers() {
         .find(|a| a.agent == AgentId::Claude)
         .unwrap();
     assert_eq!(claude_st.source.as_deref(), Some("live"));
+}
+
+#[test]
+fn claude_enabled_without_cache_has_no_install_path() {
+    let dir = tempdir().unwrap();
+    let claude = dir.path().join("claude");
+    fs::create_dir_all(claude.join("plugins")).unwrap();
+    fs::write(
+        claude.join("settings.json"),
+        r#"{"enabledPlugins":{"ghost@official":true}}"#,
+    )
+    .unwrap();
+    let runner = ScriptedCli {
+        by_bin: HashMap::new(),
+    };
+    let inv = list_plugin_inventory_with(&ctx(
+        claude,
+        dir.path().join("grok"),
+        PathBuf::from("/home/me"),
+        &runner,
+        None,
+        None,
+    ));
+    let ghost = inv
+        .plugins
+        .iter()
+        .find(|p| p.agent == AgentId::Claude && p.name == "ghost")
+        .unwrap();
+    assert!(ghost.path.is_none());
+    assert_eq!(ghost.enabled, Some(true));
+}
+
+#[test]
+fn grok_enabled_name_without_dir_is_listed() {
+    let dir = tempdir().unwrap();
+    let grok = dir.path().join("grok");
+    fs::create_dir_all(grok.join("plugins")).unwrap();
+    fs::write(
+        grok.join("config.toml"),
+        "[plugins]\nenabled = [\"missing-pack\"]\n",
+    )
+    .unwrap();
+    let runner = ScriptedCli {
+        by_bin: HashMap::new(),
+    };
+    let inv = list_plugin_inventory_with(&ctx(
+        dir.path().join("claude"),
+        grok,
+        PathBuf::from("/home/me"),
+        &runner,
+        None,
+        None,
+    ));
+    let missing = inv
+        .plugins
+        .iter()
+        .find(|p| p.agent == AgentId::Grok && p.name == "missing-pack")
+        .unwrap();
+    assert_eq!(missing.enabled, Some(true));
+    assert!(missing.path.is_none());
 }
 
 #[test]

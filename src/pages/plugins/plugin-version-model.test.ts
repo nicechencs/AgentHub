@@ -47,6 +47,43 @@ describe('plugin version judgment', () => {
     expect(view.hintKey).toBeNull();
   });
 
+  it('marks a live Claude or Grok pack without an install path as not installed', () => {
+    const claude = pluginVersionView(
+      pack({
+        agent: 'claude',
+        name: 'pack',
+        marketplace: 'official',
+        source: 'live',
+      }),
+    );
+    expect(claude.kind).toBe('missing');
+    expect(claude.listBadge).toBe('notInstalled');
+    expect(claude.hintKey).toBe('plugins.detail.versionHintMissing');
+
+    const grok = pluginVersionView(
+      pack({
+        agent: 'grok',
+        name: 'gdrive',
+        source: 'live',
+      }),
+    );
+    expect(grok.listBadge).toBe('notInstalled');
+  });
+
+  it('does not treat a CLI-listed Claude pack without a path as missing', () => {
+    const view = pluginVersionView(
+      pack({
+        agent: 'claude',
+        name: 'demo',
+        version: '1.2.0',
+        source: 'cli',
+      }),
+    );
+    expect(view.kind).toBe('current');
+    expect(view.versionLabel).toBe('1.2.0');
+    expect(view.listBadge).toBeNull();
+  });
+
   it('treats an unpinned Pi npm pack as installed, not upgradable on this page', () => {
     const view = pluginVersionView(
       pack({
