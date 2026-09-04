@@ -8,6 +8,7 @@ import {
   type ImportLocalTokenDeps,
 } from './token-import-action';
 
+import type { SwitchPreview } from '@/lib/types';
 function profile(partial: Partial<AdapterProfile> = {}): AdapterProfile {
   return {
     id: 'bridge-claude',
@@ -157,7 +158,7 @@ describe('importLocalTokenToAgent', () => {
 describe('applyImportedLogin', () => {
   it('skips switch when the saved login is already current', async () => {
     const switchAccount = vi.fn(async () => undefined);
-    const switchPreview = vi.fn(async () => undefined);
+    const switchPreview = vi.fn(async (): Promise<SwitchPreview> => ({ backfillSummary: "", backupPath: "" }));
     const switchProvider = vi.fn(async () => undefined);
     await applyImportedLogin(
       { agentId: 'claude', sourceKind: 'provider', sourceId: 'p-1', isCurrent: true },
@@ -170,7 +171,7 @@ describe('applyImportedLogin', () => {
 
   it('switches a provider into live config', async () => {
     const switchAccount = vi.fn(async () => undefined);
-    const switchPreview = vi.fn(async () => undefined);
+    const switchPreview = vi.fn(async (): Promise<SwitchPreview> => ({ backfillSummary: "", backupPath: "" }));
     const switchProvider = vi.fn(async () => undefined);
     await applyImportedLogin(
       { agentId: 'claude', sourceKind: 'provider', sourceId: 'p-1', isCurrent: false },
@@ -182,7 +183,7 @@ describe('applyImportedLogin', () => {
 
   it('switches an account into live config', async () => {
     const switchAccount = vi.fn(async () => undefined);
-    const switchPreview = vi.fn(async () => undefined);
+    const switchPreview = vi.fn(async (): Promise<SwitchPreview> => ({ backfillSummary: "", backupPath: "" }));
     const switchProvider = vi.fn(async () => undefined);
     await applyImportedLogin(
       { agentId: 'workbuddy', sourceKind: 'account', sourceId: 'a-1', isCurrent: false },
