@@ -145,7 +145,7 @@ export const RADIUS = {
   sm: '6px',
   DEFAULT: '8px',
   lg: '12px',
-  /** Product-mark squircle (AppLogo). Not a fourth px step. */
+  /** App-icon squircle (AppLogo, AgentLogo). Not a fourth px step. */
   mark: '22%',
 } as const;
 

@@ -12,7 +12,7 @@ export default {
       btn: 'var(--radius-sm)', // 6px：按钮、输入、菜单项、小控件
       card: 'var(--radius)', // 8px：卡片、弹层、嵌套面板、代码井、列表行
       composer: 'var(--radius-lg)', // 12px：Chat 输入壳、用户气泡
-      mark: 'var(--radius-mark)', // 22%：仅 AppLogo 产品标
+      mark: 'var(--radius-mark)', // 22%：产品标、Agent 图标
       full: '9999px',
     },
     extend: {
