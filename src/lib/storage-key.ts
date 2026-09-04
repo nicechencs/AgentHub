@@ -56,6 +56,8 @@ export const StorageKey = {
   sub2apiBaseUrl: `${PREFIX}sub2api-base-url`,
   /** Remembered Sub2API account metadata (no passwords) */
   sub2apiRememberedAccounts: `${PREFIX}sub2api-remembered-accounts`,
+  /** Remembered Sub2API site URLs for the login picker */
+  sub2apiRememberedSites: `${PREFIX}sub2api-remembered-sites`,
   /** @deprecated Legacy localStorage vault key; migrated into SQLite then removed */
   sub2apiRememberedSecrets: `${PREFIX}sub2api-remembered-secrets`,
   /** Remember-account toggle; default ON when missing */

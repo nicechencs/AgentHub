@@ -23,9 +23,11 @@ describe('sub2api layout wiring', () => {
     expect(page).toContain('data-sub2api-email');
     expect(page).toContain('data-sub2api-password');
     expect(page).toContain('data-sub2api-totp');
-    expect(page).toContain('openSiteInBrowser');
-    expect(page).toContain('data-sub2api-advanced');
-    expect(page).toContain('pasteToken');
+    expect(page).toContain('data-sub2api-site-picker');
+    expect(page).toContain('saveRememberedSite');
+    expect(page).not.toContain('openSiteInBrowser');
+    expect(page).not.toContain('data-sub2api-advanced');
+    expect(page).not.toContain('pasteToken');
     expect(page).toContain('Sub2ApiCaptcha');
     expect(page).toContain('syncSub2ApiKeyToConnections');
     expect(page).not.toContain('openSub2ApiLoginWindow');
