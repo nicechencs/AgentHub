@@ -5,8 +5,8 @@ use crate::catalog::install::{
 };
 use crate::error::AppError;
 use crate::models::{
-    AgentConfig, AuthState, Capability, CapabilityState, DetectResult, InstallChannel, RunOptions,
-    RunSpec,
+    AgentConfig, AuthState, Capability, CapabilityState, DetectResult, EnvStatusKind,
+    InstallChannel, RunOptions, RunSpec,
 };
 use crate::platform::install::{builtin_install_registry, InstallContribution};
 use crate::platform::AgentKey;
@@ -712,6 +712,90 @@ fn install_runtime_powershell_logs_dual_version_context() {
 }
 
 #[test]
+fn pick_nodejs_macos_lts_pkg_selects_newest_lts_pkg() {
+    let json = r#"[
+      {"version":"v23.1.0","lts":false,"files":["pkg"]},
+      {"version":"v22.19.0","lts":"Jod","files":["osx-arm64-tar","pkg"]},
+      {"version":"v20.19.5","lts":"Iron","files":["pkg"]}
+    ]"#;
+    let (version, url) = pick_nodejs_macos_lts_pkg(json).expect("lts pkg");
+    assert_eq!(version, "22.19.0");
+    assert_eq!(url, "https://nodejs.org/dist/v22.19.0/node-v22.19.0.pkg");
+}
+
+#[test]
+fn pick_nodejs_macos_lts_pkg_rejects_unsafe_version() {
+    let json = r#"[{"version":"v22.19.0-evil/../../tmp","lts":"Jod","files":["pkg"]}]"#;
+    assert!(pick_nodejs_macos_lts_pkg(json).is_none());
+    assert!(!is_safe_node_version("22.19.0-rc.1"));
+    assert!(is_safe_node_version("22.19.0"));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn osascript_installer_script_uses_quoted_form() {
+    let script = osascript_installer_script(Path::new("/tmp/agenthub-node-test.pkg"));
+    assert!(script.contains("quoted form of"));
+    assert!(script.contains("/usr/sbin/installer"));
+    assert!(script.contains("/tmp/agenthub-node-test.pkg"));
+    assert!(script.contains("administrator privileges"));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn install_runtime_nodejs_without_brew_fetches_official_index() {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let ex = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+        stderr: String::new(),
+    };
+    let out = install_runtime(RuntimeId::NodeJs, "brew", &ex).unwrap();
+    let cmds = calls.lock().unwrap();
+    if cmds.iter().any(|c| c.contains("brew")) {
+        return;
+    }
+    assert!(
+        cmds.iter()
+            .any(|c| c.contains("https://nodejs.org/dist/index.json"))
+            || out.code.as_deref() == Some("env.not_ready"),
+        "expected official Node index fetch when brew is missing, got cmds={cmds:?} out={out:?}"
+    );
+    assert!(!out.ok);
+}
+
+#[test]
+fn runtime_package_action_upgrades_ready_or_outdated() {
+    assert_eq!(
+        runtime_package_action(EnvStatusKind::Ok),
+        RuntimePackageAction::Upgrade
+    );
+    assert_eq!(
+        runtime_package_action(EnvStatusKind::Outdated),
+        RuntimePackageAction::Upgrade
+    );
+    assert_eq!(
+        runtime_package_action(EnvStatusKind::Missing),
+        RuntimePackageAction::Install
+    );
+    assert_eq!(
+        runtime_package_action(EnvStatusKind::BrokenPath),
+        RuntimePackageAction::Install
+    );
+    assert_eq!(
+        package_manager_verb(RuntimePackageAction::Install),
+        "install"
+    );
+    assert_eq!(
+        package_manager_verb(RuntimePackageAction::Upgrade),
+        "upgrade"
+    );
+    assert_eq!(package_manager_zh(RuntimePackageAction::Install), "安装");
+    assert_eq!(package_manager_zh(RuntimePackageAction::Upgrade), "升级");
+}
+
+#[test]
 fn install_runtime_git_uses_winget_git_package() {
     let calls = Arc::new(Mutex::new(Vec::new()));
     let ex = MockExecutor {
@@ -751,14 +835,14 @@ fn install_runtime_git_uses_winget_git_package() {
         assert!(
             cmds.iter().any(|c| {
                 if cfg!(target_os = "macos") {
-                    c.contains("brew") && c.contains("install git")
+                    c.contains("brew") && (c.contains("install git") || c.contains("upgrade git"))
                 } else if cfg!(windows) {
-                    c.contains("Git.Git")
+                    c.contains("Git.Git") && (c.contains("install") || c.contains("upgrade"))
                 } else {
                     false
                 }
             }),
-            "expected platform package install, got {cmds:?}"
+            "expected platform package install or upgrade, got {cmds:?}"
         );
         assert!(
             out.logs
@@ -811,7 +895,7 @@ fn missing_package_manager_outcome_is_env_not_ready() {
         vec!["# install runtime nodejs via brew (node)".into()],
         "brew",
         RuntimeId::NodeJs,
-        "未找到 Homebrew。请先安装 Homebrew（https://brew.sh/）后重试。",
+        "未找到 Homebrew，无法一键安装。请先安装 Homebrew（https://brew.sh/），或从官网手动安装。完成后完全退出并重启 AgentHub 再检测。",
     );
     assert!(!out.ok);
     assert_eq!(out.code.as_deref(), Some("env.not_ready"));
@@ -838,10 +922,32 @@ fn missing_package_manager_outcome_is_env_not_ready() {
         .unwrap_or_default()
         .contains("Homebrew"));
     assert!(
-        out.logs
+        remediations.iter().any(|rem| {
+            rem["url"].as_str() == Some("https://brew.sh/")
+                || rem["url"].as_str() == Some("https://nodejs.org/")
+                || rem["command"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("Homebrew/install")
+        }),
+        "missing Homebrew must point at brew.sh or the official runtime page: {remediations:?}"
+    );
+    assert!(
+        remediations
             .iter()
-            .any(|line| line.contains("remediation") || line.contains("https://")),
-        "logs should print remediations: {:?}",
+            .all(|rem| rem["command"].as_str() != Some("brew install node")),
+        "must not suggest brew install when Homebrew is missing: {remediations:?}"
+    );
+    assert!(
+        out.logs.iter().any(|line| line.contains("https://")
+            || line.contains("可复制命令")
+            || line.contains("打开页面")),
+        "logs should print install steps: {:?}",
+        out.logs
+    );
+    assert!(
+        out.logs.iter().all(|line| !line.contains("remediation:")),
+        "logs must not use internal remediation prefixes: {:?}",
         out.logs
     );
 }
@@ -952,10 +1058,10 @@ fn install_runtime_missing_winget_is_env_not_ready() {
             }
         }
         assert!(
-            out.logs
-                .iter()
-                .any(|line| line.contains("remediation") || line.contains("https://")),
-            "logs should print remediations: {:?}",
+            out.logs.iter().any(|line| line.contains("https://")
+                || line.contains("可复制命令")
+                || line.contains("打开页面")),
+            "logs should print install steps: {:?}",
             out.logs
         );
     } else {
@@ -1004,27 +1110,12 @@ fn finalize_runtime_install_does_not_set_business_code() {
         timed_out: false,
         spawn_error: None,
     };
-    // Prefer a runtime that is not ready so this stays on the execute-then-redetect
-    // failure path. If every runtime is already ok, success-after-nonzero also
-    // must not carry env.not_ready / unsupported.
-    let id = [
-        RuntimeId::PowerShell,
-        RuntimeId::Git,
-        RuntimeId::NodeJs,
-        RuntimeId::Npm,
-    ]
-    .into_iter()
-    .find(|id| runtime::detect_one(*id).status != EnvStatusKind::Ok)
-    .unwrap_or(RuntimeId::Git);
-    let out = finalize_runtime_install(id, vec!["# ran winget".into()], res);
-    if runtime::detect_one(id).status != EnvStatusKind::Ok && id != RuntimeId::NodeJs {
-        assert!(!out.ok, "redetect of missing {} must fail", id.as_str());
-    }
-    assert!(
-        out.code.is_none(),
-        "executed install path must stay install.failed, got {:?}",
-        out.code
-    );
+    // A non-zero command must fail even when the old runtime is still detected.
+    let out = finalize_runtime_install(RuntimeId::Git, vec!["# ran winget".into()], res);
+    assert!(!out.ok);
+    assert!(out.message.contains("未成功完成"));
+    assert!(out.logs.iter().any(|line| line.contains("不会覆盖该失败")));
+    assert!(out.code.is_none());
     assert!(out.details.is_none());
 }
 

@@ -398,6 +398,16 @@ pub struct SyncConnectionAuthorizationsResult {
     pub skipped: u32,
 }
 
+/// Copy a Connections-managed official login into a pool-owned row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForkedConnectionAuthorization {
+    pub source_kind: AdapterSourceKind,
+    pub source_id: String,
+    pub original_source_id: String,
+    pub copied: bool,
+}
+
 /// Flag-gated list of default pools. Flag off → `enabled=false` and no pools.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

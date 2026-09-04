@@ -7,7 +7,7 @@ use agenthub_core::services::{
 
 use super::parse_agent;
 
-/// Invoke: `list_plugin_inventory` — Claude/Grok plugin packs (not MCP).
+/// Invoke: `list_plugin_inventory` — Claude/Grok/Pi plugin packs (not MCP).
 #[tauri::command]
 pub async fn list_plugin_inventory() -> Result<PluginInventory, String> {
     tauri::async_runtime::spawn_blocking(list_plugin_inventory_impl)

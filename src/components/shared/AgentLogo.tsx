@@ -33,7 +33,7 @@ function brandHex(agentId: AgentKey): string | undefined {
   return undefined;
 }
 
-/** 展示 agent 本地 logo；未知 agent 或 logo 加载失败时回退为首字母圆标。 */
+/** 展示 agent 本地 logo；未知 agent 或 logo 加载失败时回退为首字母方标。 */
 export function AgentLogo({ agentId, size = 'md' }: { agentId: AgentKey; size?: 'sm' | 'md' | 'lg' }) {
   const meta = resolveAgentMeta(agentId);
   const sizeCls = {
@@ -80,7 +80,7 @@ export function AgentLogo({ agentId, size = 'md' }: { agentId: AgentKey; size?: 
     <Hint label={name}>
       <span
         className={cn(
-          'inline-flex shrink-0 items-center justify-center rounded-full font-bold',
+          'inline-flex shrink-0 items-center justify-center overflow-hidden rounded-mark font-bold',
           showLogo
             ? 'border border-border p-0.5'
             : lightBg
@@ -96,7 +96,7 @@ export function AgentLogo({ agentId, size = 'md' }: { agentId: AgentKey; size?: 
             src={logoSrc}
             alt=""
             aria-hidden="true"
-            className="h-full w-full rounded-full object-contain"
+            className="h-full w-full rounded-mark object-contain"
             onError={() => {
               setLogoState((previous) => {
                 // Ignore a stale error from an image that belonged to an

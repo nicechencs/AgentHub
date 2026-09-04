@@ -44,7 +44,7 @@ describe('trash façade pool refresh', () => {
     expect(settled).toBe(false);
     expect(refreshRuntimeReadModels).toHaveBeenCalledOnce();
     expect(refreshRuntimeReadModels).toHaveBeenCalledWith(expect.anything(), {
-      models: ['connectionInventory'],
+      models: ['connectionInventory', 'ticketWallet'],
     });
 
     pool.resolve();

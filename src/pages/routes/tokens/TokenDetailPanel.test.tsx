@@ -10,7 +10,7 @@ function row(partial: Partial<LocalTokenRow> = {}): LocalTokenRow {
     id: 'pool-kimi',
     poolBacked: true,
     primary: true,
-    canDelete: false,
+    canDelete: true,
     profileId: 'bridge-1',
     name: 'kimi · /v1/chat/completions',
     kind: 'chat_completions',
@@ -22,41 +22,67 @@ function row(partial: Partial<LocalTokenRow> = {}): LocalTokenRow {
     unavailable: false,
     targetAgentId: 'kimi',
     profileIds: ['bridge-1'],
-    lastPath: '/v1/models',
-    lastRequestAt: null,
     listedModels: ['kimi-k2'],
+    lastPath: null,
+    lastRequestAt: null,
+    usageEligible: true,
     ...partial,
   };
 }
 
 function render(
   partial: Partial<LocalTokenRow> = {},
-  props: { onEditKey?: () => void } = {},
+  props: {
+    onEditKey?: () => void;
+    onDelete?: () => void;
+    siblingRows?: LocalTokenRow[];
+  } = {},
 ) {
+  const current = row(partial);
   return renderToStaticMarkup(
     createElement(
       TooltipProvider,
       null,
       createElement(TokenDetailPanel, {
-        row: row(partial),
+        row: current,
         onClose: () => {},
         onEditKey: props.onEditKey,
+        onDelete: props.onDelete,
+        siblingRows: props.siblingRows ?? [
+          current,
+          row({ id: 'extra-home', primary: false, name: '家里', canDelete: true }),
+        ],
       }),
     ),
   );
 }
 
 describe('TokenDetailPanel', () => {
-  it('shows a test button next to the entry key', () => {
-    const markup = render();
+  it('puts test, import, delete, and edit in the inspect header', () => {
+    const markup = render({}, { onEditKey: () => {}, onDelete: () => {} });
     expect(markup).toContain('data-token-detail="pool-kimi"');
     expect(markup).toContain('data-token-test');
     expect(markup).toContain('测试');
+    expect(markup.indexOf('data-token-test')).toBeLessThan(markup.indexOf('data-token-detail'));
+    expect(markup.indexOf('data-token-delete')).toBeLessThan(markup.indexOf('data-token-detail'));
+    expect(markup.indexOf('data-token-edit-key')).toBeLessThan(markup.indexOf('data-token-detail'));
     expect(markup).not.toMatch(/data-token-test=""[^>]*\bdisabled\b/);
+    expect(markup).not.toMatch(/data-token-delete=""[^>]*\bdisabled\b/);
     expect(markup).not.toContain('ahb_secret');
     expect(markup).toContain('data-token-models');
-    expect(markup).toContain('按连接池更新');
-    expect(markup).toContain('kimi-k2');
+    expect(markup).toContain('从连接池同步');
+    expect(markup).toContain('写进了这些 Agent');
+    const body = markup.slice(markup.indexOf('data-token-detail'));
+    expect(body.indexOf('入口 Key')).toBeLessThan(body.indexOf('端点'));
+    expect(body.indexOf('端点')).toBeLessThan(body.indexOf('类型'));
+  });
+
+  it('disables delete when this is the only key of the type', () => {
+    const markup = render({}, {
+      onDelete: () => {},
+      siblingRows: [row()],
+    });
+    expect(markup).toMatch(/data-token-delete=""[^>]*\bdisabled\b/);
   });
 
   it('disables the test button when the entry is not ready', () => {
@@ -66,7 +92,7 @@ describe('TokenDetailPanel', () => {
   });
 
   it('enables edit key for pool-backed rows and disables it for leftovers', () => {
-    const poolMarkup = render({}, { onEditKey: () => {} });
+    const poolMarkup = render({}, { onEditKey: () => {}, onDelete: () => {} });
     expect(poolMarkup).toContain('data-token-edit-key');
     expect(poolMarkup).not.toMatch(/data-token-edit-key=""[^>]*\bdisabled\b/);
 

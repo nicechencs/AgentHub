@@ -36,9 +36,7 @@ fn hook_run_lock() -> &'static Mutex<()> {
 /// call installed (Arc pointer identity), so a raced clearer cannot wipe a
 /// newer scope's callback.
 pub fn with_install_log_hook<R>(hook: InstallLogHook, f: impl FnOnce() -> R) -> R {
-    let _run = hook_run_lock()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _run = hook_run_lock().lock().unwrap_or_else(|e| e.into_inner());
     {
         let mut g = hook_slot().lock().unwrap_or_else(|e| e.into_inner());
         *g = Some(Arc::clone(&hook));

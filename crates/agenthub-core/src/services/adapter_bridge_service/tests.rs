@@ -1,10 +1,11 @@
 use super::*;
 
 use crate::models::{
-    Account, AccountKind, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
-    AdapterSourceKind, AdapterSourceProduct, AdapterTargetProtocol, AdapterUpstreamTransport,
-    Provider, RouteDownstreamDialect, RouteDownstreamSurface, RouteSchedulePolicy,
-    FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2, LOCAL_BRIDGE_EDGES,
+    static_fallback_models, Account, AccountKind, AdapterProfile, AdapterProfileMode,
+    AdapterProfileStatus, AdapterRoute, AdapterSourceKind, AdapterSourceProduct,
+    AdapterTargetProtocol, AdapterUpstreamTransport, Provider, RouteDownstreamDialect,
+    RouteDownstreamSurface, RouteSchedulePolicy, FEATURE_MIXED_PROVIDER_POOL,
+    FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2, LOCAL_BRIDGE_EDGES,
 };
 use crate::services::{ProviderService, RoutePoolService};
 use crate::storage::{AccountRepo, AdapterProfileRepo, ProviderRepo, RoutePoolRepo};
@@ -30,8 +31,7 @@ async fn health_upstream(status: StatusCode) -> (u16, tokio::task::JoinHandle<()
     (port, task)
 }
 
-async fn redirecting_health_upstream(
-) -> (
+async fn redirecting_health_upstream() -> (
     u16,
     Arc<Mutex<Option<String>>>,
     tokio::task::JoinHandle<()>,
@@ -72,16 +72,19 @@ async fn redirecting_health_upstream(
     let redirect_port = redirect_listener.local_addr().unwrap().port();
     let location = format!("http://127.0.0.1:{target_port}/models");
     let redirect_task = tokio::spawn(async move {
-        let app = Router::new().route("/models", get(move || {
-            let location = location.clone();
-            async move {
-                Response::builder()
-                    .status(StatusCode::FOUND)
-                    .header(header::LOCATION, location)
-                    .body(Body::empty())
-                    .unwrap()
-            }
-        }));
+        let app = Router::new().route(
+            "/models",
+            get(move || {
+                let location = location.clone();
+                async move {
+                    Response::builder()
+                        .status(StatusCode::FOUND)
+                        .header(header::LOCATION, location)
+                        .body(Body::empty())
+                        .unwrap()
+                }
+            }),
+        );
         axum::serve(redirect_listener, app).await.unwrap();
     });
 
@@ -366,10 +369,7 @@ fn prepare_project_finalize_and_restore_keep_source_secret_out_of_persistence() 
     assert_eq!(start.profile_id, prepared.profile().id);
     assert_eq!(start.port, 0);
     assert_eq!(start.upstream.base_url, KIMI_CHAT_BASE_URL);
-    assert_eq!(
-        start.upstream.source_id.as_deref(),
-        Some("kimi-membership")
-    );
+    assert_eq!(start.upstream.source_id.as_deref(), Some("kimi-membership"));
 
     let generated = create_projection(&db, &prepared, 43121);
     assert_eq!(generated.agent_id, AgentId::Codex);
@@ -1093,25 +1093,25 @@ async fn models_response_server(
         .unwrap();
     let port = listener.local_addr().unwrap().port();
     let chunks = Arc::new(chunks);
-    let app = Router::new().route("/models", get(move || {
-        let chunks = chunks.clone();
-        async move {
-            let chunks: Vec<_> = chunks.iter().cloned().collect();
-            let body = Body::from_stream(stream::iter(
-                chunks
-                    .into_iter()
-                    .map(Ok::<_, std::convert::Infallible>),
-            ));
-            let mut response = Response::new(body);
-            if let Some(length) = content_length {
-                response.headers_mut().insert(
-                    header::CONTENT_LENGTH,
-                    length.to_string().parse().unwrap(),
-                );
+    let app = Router::new().route(
+        "/models",
+        get(move || {
+            let chunks = chunks.clone();
+            async move {
+                let chunks: Vec<_> = chunks.iter().cloned().collect();
+                let body = Body::from_stream(stream::iter(
+                    chunks.into_iter().map(Ok::<_, std::convert::Infallible>),
+                ));
+                let mut response = Response::new(body);
+                if let Some(length) = content_length {
+                    response
+                        .headers_mut()
+                        .insert(header::CONTENT_LENGTH, length.to_string().parse().unwrap());
+                }
+                response
             }
-            response
-        }
-    }));
+        }),
+    );
     let task = tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     });
@@ -1120,15 +1120,9 @@ async fn models_response_server(
 
 #[tokio::test]
 async fn models_health_rejects_response_over_one_mib_from_content_length() {
-    let oversized = axum::body::Bytes::from(vec![
-        b'x';
-        MAX_UPSTREAM_MODELS_BODY_BYTES + 1
-    ]);
-    let (port, task) = models_response_server(
-        vec![oversized],
-        Some(MAX_UPSTREAM_MODELS_BODY_BYTES + 1),
-    )
-    .await;
+    let oversized = axum::body::Bytes::from(vec![b'x'; MAX_UPSTREAM_MODELS_BODY_BYTES + 1]);
+    let (port, task) =
+        models_response_server(vec![oversized], Some(MAX_UPSTREAM_MODELS_BODY_BYTES + 1)).await;
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()
@@ -1146,14 +1140,8 @@ async fn models_health_rejects_response_over_one_mib_from_content_length() {
 #[tokio::test]
 async fn models_health_rejects_chunked_response_over_one_mib() {
     let chunks = vec![
-        Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(vec![
-            b'x';
-            700 * 1024
-        ])),
-        Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(vec![
-            b'x';
-            400 * 1024
-        ])),
+        Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(vec![b'x'; 700 * 1024])),
+        Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(vec![b'x'; 400 * 1024])),
     ];
     let chunks = chunks.into_iter().map(|chunk| chunk.unwrap()).collect();
     let (port, task) = models_response_server(chunks, None).await;
@@ -1315,7 +1303,11 @@ fn start_spec_lists_codex_to_grok_dispatch_accepted_ids() {
             "leftover listed: {model}"
         );
     }
-    assert_eq!(listed[0], "gpt-5.4");
+    assert_eq!(listed[0], "gpt-5.6-sol");
+    assert_eq!(
+        listed,
+        static_fallback_models(AdapterSourceProduct::CodexChatGptSubscription)
+    );
 }
 
 #[test]
@@ -1343,7 +1335,7 @@ fn start_spec_lists_grok_default_when_mapping_entries_empty() {
     };
     assert_eq!(
         material.start_spec(Some(0)).listed_models,
-        vec![crate::bridge::grok_cli::GROK_CLI_DEFAULT_MODEL.to_string()]
+        static_fallback_models(AdapterSourceProduct::XaiGrokSubscription)
     );
 }
 
@@ -1371,9 +1363,10 @@ fn start_spec_lists_codex_to_kimi_dispatch_accepted_ids() {
         schedule_policy: Default::default(),
     };
     let listed = material.start_spec(Some(0)).listed_models;
-    assert_eq!(listed[0], "gpt-5.4");
-    assert!(listed.iter().any(|model| model == "gpt-5.1-codex"));
-    assert!(listed.iter().any(|model| model == "gpt-5"));
+    assert_eq!(
+        listed,
+        static_fallback_models(AdapterSourceProduct::CodexChatGptSubscription)
+    );
 }
 
 #[test]
@@ -1400,9 +1393,10 @@ fn start_spec_codex_to_kimi_configured_default_merges_into_catalog() {
         schedule_policy: Default::default(),
     };
     let listed = material.start_spec(Some(0)).listed_models;
-    assert_eq!(listed[0], "gpt-5.4");
-    assert!(listed.iter().any(|model| model == "gpt-5.1-codex"));
-    assert!(listed.iter().any(|model| model == "gpt-5"));
+    let mut expected =
+        static_fallback_models(AdapterSourceProduct::CodexChatGptSubscription).to_vec();
+    expected.push("gpt-5.4".to_string());
+    assert_eq!(listed, expected);
 }
 
 #[test]
@@ -2036,6 +2030,240 @@ fn prepare_openai_account_reuses_secret_resolver_and_projects_account_ref() {
         OPENAI_CHAT_BASE_URL
     );
     assert!(!format!("{restored:?}").contains("sk-openai-account"));
+}
+
+#[test]
+fn prepare_openai_account_uses_its_saved_endpoint_and_model() {
+    let (_dir, db) = test_db();
+    let mut account = openai_account("workbuddy-account", "sk-workbuddy-account");
+    account.label = "Custom Grok".into();
+    account.credentials = json!({
+        "format": "api_key",
+        "api_key": "sk-workbuddy-account",
+        "base_url": "https://relay.example/custom/v1/chat/completions",
+        "model_id": "grok-4.6",
+    });
+    account.extra = json!({"provider": "openai"});
+    AccountRepo::new(db.clone()).create(&account).unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+
+    let prepared = service
+        .prepare(&openai_request(
+            AdapterSourceKind::Account,
+            "workbuddy-account",
+        ))
+        .unwrap();
+    let start = prepared.runtime_material().start_spec(None);
+    assert_eq!(start.upstream.base_url, "https://relay.example/custom/v1");
+    assert_eq!(start.upstream.model.as_deref(), Some("grok-4.6"));
+    assert!(!format!("{prepared:?}").contains("sk-workbuddy-account"));
+
+    create_projection(&db, &prepared, 43135);
+    service.finalize(&prepared, 43135).unwrap();
+    let restored = service
+        .resolve_restore_material(prepared.profile().id.as_str())
+        .unwrap();
+    let restored_start = restored.runtime_material().start_spec(None);
+    assert_eq!(
+        restored_start.upstream.base_url,
+        "https://relay.example/custom/v1"
+    );
+    assert_eq!(restored_start.upstream.model.as_deref(), Some("grok-4.6"));
+    assert!(!format!("{restored:?}").contains("sk-workbuddy-account"));
+}
+
+#[test]
+fn workbuddy_account_upstream_uses_its_saved_url_and_model_id() {
+    let (_dir, db) = test_db();
+    let mut account = openai_account("workbuddy-catalog", "sk-workbuddy-catalog");
+    account.agent_id = AgentId::WorkBuddy;
+    account.label = "WorkBuddy Grok".into();
+    account.credentials = json!({
+        "format": "api_key",
+        "api_key": "sk-workbuddy-catalog",
+        "url": "https://relay.example/custom/v1/chat/completions",
+        "id": "grok-4.6",
+    });
+    account.extra = json!({"provider": "workbuddy"});
+    AccountRepo::new(db.clone()).create(&account).unwrap();
+    let service = AdapterBridgeService::new(db);
+
+    let (url, model, ..) = super::prepare::openai_source_upstream(
+        &service,
+        &OPENAI_CODEX_RULE,
+        AdapterSourceKind::Account,
+        "workbuddy-catalog",
+    );
+    assert_eq!(url, "https://relay.example/custom/v1");
+    assert_eq!(model, "grok-4.6");
+}
+
+#[test]
+fn default_pool_routes_workbuddy_deepseek_to_real_upstream_for_all_supported_agents() {
+    for (target, surface, local_surface) in [
+        (
+            AgentId::Kimi,
+            RouteDownstreamSurface::ChatCompletions,
+            BridgeLocalSurface::ChatCompletions,
+        ),
+        (
+            AgentId::Dsh,
+            RouteDownstreamSurface::ChatCompletions,
+            BridgeLocalSurface::ChatCompletions,
+        ),
+        (
+            AgentId::Claude,
+            RouteDownstreamSurface::Messages,
+            BridgeLocalSurface::Messages,
+        ),
+        (
+            AgentId::Codex,
+            RouteDownstreamSurface::Responses,
+            BridgeLocalSurface::Responses,
+        ),
+        (
+            AgentId::Grok,
+            RouteDownstreamSurface::Responses,
+            BridgeLocalSurface::Responses,
+        ),
+    ] {
+        let (_dir, db) = test_db();
+        db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+        let mut account = openai_account("workbuddy-deepseek", "sk-deepseek");
+        account.agent_id = AgentId::WorkBuddy;
+        account.label = "DeepSeek-V4 Flash".into();
+        account.credentials = json!({
+            "format": "api_key",
+            "api_key": "sk-deepseek",
+            "endpoint": "https://api.deepseek.com/v1/chat/completions",
+            "model_id": "deepseek-v4-flash",
+        });
+        account.extra = json!({
+            "provider": "workbuddy",
+            "surface": "deepseek-api",
+            "model_id": "deepseek-v4-flash",
+        });
+        AccountRepo::new(db.clone()).create(&account).unwrap();
+
+        let pools = RoutePoolService::new(db.clone());
+        let pool = pools.ensure_default_pool(target, surface).unwrap();
+        pools
+            .add_member(&pool.id, AdapterSourceKind::Account, &account.id)
+            .unwrap();
+
+        let spec = AdapterBridgeService::new(db).pool_listener_spec(&pool, (false, false));
+        assert_eq!(spec.upstream.base_url, "https://api.deepseek.com/v1");
+        assert_eq!(spec.upstream.model.as_deref(), Some("deepseek-v4-flash"));
+        assert_eq!(spec.upstream.local_surface, local_surface);
+        assert_eq!(
+            spec.upstream.protocol,
+            BridgeUpstreamProtocol::OpenAiChatCompletions
+        );
+        assert!(spec.upstream.auth.has_token());
+        assert_ne!(spec.upstream.base_url, "http://127.0.0.1/");
+        assert_eq!(spec.members.len(), 1);
+    }
+}
+
+#[test]
+fn default_pool_resolves_provider_backed_openai_compatible_keys() {
+    for (preset, endpoint, model) in [
+        (
+            "deepseek-api",
+            "https://api.deepseek.com/v1",
+            "deepseek-chat",
+        ),
+        (
+            "glm-coding-plan",
+            "https://open.bigmodel.cn/api/coding/paas/v4",
+            "glm-4.6",
+        ),
+        ("xai-api", "https://api.x.ai/v1", "grok-4"),
+    ] {
+        for (target, surface) in [
+            (AgentId::Kimi, RouteDownstreamSurface::ChatCompletions),
+            (AgentId::Dsh, RouteDownstreamSurface::ChatCompletions),
+            (AgentId::Claude, RouteDownstreamSurface::Messages),
+            (AgentId::Codex, RouteDownstreamSurface::Responses),
+            (AgentId::Grok, RouteDownstreamSurface::Responses),
+        ] {
+            let (_dir, db) = test_db();
+            let source_id = format!("{preset}-{target}");
+            ProviderRepo::new(db.clone())
+                .create(&Provider {
+                    id: source_id.clone(),
+                    agent_id: AgentId::WorkBuddy,
+                    name: format!("{preset} provider"),
+                    settings_config: json!({
+                        "api_key": format!("sk-{preset}"),
+                        "base_url": endpoint,
+                        "model": model,
+                    }),
+                    meta: json!({"preset": preset}),
+                    is_current: false,
+                    created_at: "now".into(),
+                    updated_at: "now".into(),
+                })
+                .unwrap();
+
+            let pools = RoutePoolService::new(db.clone());
+            let pool = pools.ensure_default_pool(target, surface).unwrap();
+            pools
+                .add_member(&pool.id, AdapterSourceKind::Provider, &source_id)
+                .unwrap();
+
+            let spec = AdapterBridgeService::new(db).pool_listener_spec(&pool, (false, false));
+            assert_eq!(spec.upstream.base_url, endpoint, "{preset} -> {target}");
+            assert_eq!(spec.upstream.model.as_deref(), Some(model));
+            assert_eq!(spec.upstream.auth.token(), format!("sk-{preset}"));
+            assert_ne!(spec.upstream.auth.token(), "pending");
+        }
+    }
+}
+
+#[test]
+fn legacy_pool_does_not_mix_login_keys_across_upstream_endpoints() {
+    let (_dir, db) = test_db();
+    let mut lead = openai_account("workbuddy-qooo", "sk-qooo");
+    lead.agent_id = AgentId::WorkBuddy;
+    lead.label = "WorkBuddy Grok".into();
+    lead.credentials = json!({
+        "format": "api_key",
+        "api_key": "sk-qooo",
+        "url": "https://qooo.example/v1/chat/completions",
+        "base_url": "https://qooo.example/v1/chat/completions",
+        "id": "grok-4.6",
+    });
+    lead.extra = json!({"provider": "workbuddy"});
+    let mut other = lead.clone();
+    other.id = "workbuddy-other".into();
+    other.label = "Other relay".into();
+    other.credentials["api_key"] = json!("sk-other");
+    other.credentials["url"] = json!("https://other.example/v1/chat/completions");
+    other.credentials["base_url"] = json!("https://other.example/v1/chat/completions");
+    AccountRepo::new(db.clone()).create(&lead).unwrap();
+    AccountRepo::new(db.clone()).create(&other).unwrap();
+
+    let pools = RoutePoolService::new(db.clone());
+    let pool = pools
+        .ensure_default_pool(AgentId::Kimi, RouteDownstreamSurface::ChatCompletions)
+        .unwrap();
+    pools
+        .add_member(&pool.id, AdapterSourceKind::Account, "workbuddy-qooo")
+        .unwrap();
+    pools
+        .add_member(&pool.id, AdapterSourceKind::Account, "workbuddy-other")
+        .unwrap();
+
+    let spec = AdapterBridgeService::new(db).pool_listener_spec(&pool, (false, false));
+    assert_eq!(spec.upstream.base_url, "https://qooo.example/v1");
+    assert_eq!(
+        spec.members.len(),
+        1,
+        "different endpoint key must not enter v1 picker"
+    );
+    assert_eq!(spec.members[0].label, "WorkBuddy Grok");
+    assert_eq!(spec.members[0].auth.token(), "sk-qooo");
 }
 
 #[test]
@@ -2823,7 +3051,9 @@ fn production_index_uses_each_member_listed_models_not_the_lead_catalog() {
             "openai-b",
         )
         .unwrap();
-    pools.enroll_unified_gateway(&prepared.profile().id, 43155).unwrap();
+    pools
+        .enroll_unified_gateway(&prepared.profile().id, 43155)
+        .unwrap();
     let prepared = service
         .prepare(&openai_request(AdapterSourceKind::Provider, "openai-a"))
         .unwrap();
@@ -2903,7 +3133,9 @@ fn production_index_labels_members_by_their_own_provider() {
             Some("shared"),
         )
         .unwrap();
-    pools.enroll_unified_gateway(&prepared.profile().id, 43155).unwrap();
+    pools
+        .enroll_unified_gateway(&prepared.profile().id, 43155)
+        .unwrap();
     let prepared = service
         .prepare(&grok_codex_account_request("grok-subscription"))
         .unwrap();
@@ -2955,7 +3187,9 @@ fn production_index_omits_sibling_when_member_snapshot_fails() {
             "openai-missing",
         )
         .unwrap();
-    pools.enroll_unified_gateway(&prepared.profile().id, 43155).unwrap();
+    pools
+        .enroll_unified_gateway(&prepared.profile().id, 43155)
+        .unwrap();
     let prepared = service
         .prepare(&openai_request(AdapterSourceKind::Provider, "openai-a"))
         .unwrap();
@@ -3000,7 +3234,9 @@ fn attach_keeps_last_successful_sibling_when_prior_index_is_present() {
             "openai-b",
         )
         .unwrap();
-    pools.enroll_unified_gateway(&prepared.profile().id, 43155).unwrap();
+    pools
+        .enroll_unified_gateway(&prepared.profile().id, 43155)
+        .unwrap();
     let prepared = service
         .prepare(&openai_request(AdapterSourceKind::Provider, "openai-a"))
         .unwrap();

@@ -67,6 +67,10 @@ describe('agents layout wiring', () => {
     expect(detail).toContain('openPathInFileManager');
     expect(detail).toContain('openAgentConfig');
     expect(page).toContain('runtimes={runtimes}');
+    expect(page).toContain('EnvSoftwareList');
+    expect(page).not.toContain('<EnvStatusBar');
+    expect(page).toContain('onAction={(runtime, intent, canAutoUpgrade = true)');
+    expect(page).toContain("intent: 'install'");
     expect(card).toContain('onSelect?:');
     expect(card).toContain('selected?:');
     expect(card).toContain('data-agent-name');

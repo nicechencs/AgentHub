@@ -22,6 +22,7 @@ import type { PluginEntry, PluginInventory } from '@/lib/backend/contracts/plugi
 import type { AgentKey } from '@/lib/types';
 import { PluginDetailPanel } from './PluginDetailPanel';
 import { PluginPackList } from './PluginPackList';
+import { pluginEmptyCopy } from './plugin-empty';
 import { StorageKey } from '@/lib/ui-preferences';
 
 const PLUGINS_PREVIEW_WIDTH_KEY = StorageKey.pluginsPreviewWidth;
@@ -91,6 +92,13 @@ export default function PluginsPage() {
     }
     return counts;
   }, [installedAgents, visiblePlugins]);
+
+  const emptyCopy = pluginEmptyCopy(
+    filterAgent,
+    data?.agents,
+    filterAgent === 'all' ? '' : agentName(filterAgent),
+    t,
+  );
 
   useEffect(() => {
     if (!inspect.target) return;
@@ -193,16 +201,14 @@ export default function PluginsPage() {
       ) : plugins.length === 0 ? (
         <EmptyState
           icon={Puzzle}
-          title={t('plugins.empty.title')}
-          description={
-            filterAgent === 'all'
-              ? t('plugins.empty.all')
-              : t('plugins.empty.agent', { name: agentName(filterAgent) })
-          }
+          title={emptyCopy.title}
+          description={emptyCopy.description}
           action={
-            <Button size="sm" variant="outline" className="mt-2" onClick={() => void load()}>
-              {t('plugins.empty.refresh')}
-            </Button>
+            emptyCopy.showRefresh ? (
+              <Button size="sm" variant="outline" className="mt-2" onClick={() => void load()}>
+                {t('plugins.empty.refresh')}
+              </Button>
+            ) : undefined
           }
         />
       ) : (

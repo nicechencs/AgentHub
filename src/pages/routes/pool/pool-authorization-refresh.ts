@@ -16,6 +16,7 @@ import {
   liveAuthCoexistenceNotice,
   liveAuthImportGate,
 } from '@/pages/connections/connection-model';
+import { oauthActionHoverTip } from '@/pages/connections/ticket-card-detail';
 
 export type PoolAuthorizationRefreshToast = {
   title: string;
@@ -55,16 +56,19 @@ export function poolAuthorizationRefreshAction(
 export function poolAuthorizationRefreshLabels(
   action: AccountAction,
   t: TranslateFn,
-): { idle: string; busy: string } {
+): { idle: string; busy: string; tip: string } {
+  const tip = oauthActionHoverTip(action, t) ?? t('connections.list.refreshTip');
   if (action.kind === 'sync-current-login') {
     return {
       idle: t('connections.list.syncCurrentLogin'),
       busy: t('connections.list.syncing'),
+      tip,
     };
   }
   return {
     idle: t('connections.list.refresh'),
     busy: t('connections.list.refreshing'),
+    tip,
   };
 }
 

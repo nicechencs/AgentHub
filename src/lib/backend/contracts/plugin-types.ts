@@ -12,6 +12,8 @@ export interface PluginEntry {
   name: string;
   marketplace?: string | null;
   version?: string | null;
+  /** Pi spec pin / git ref (`npm:pkg@1.2.3`). Unpinned specs omit this. */
+  requestedVersion?: string | null;
   scope?: string | null;
   enabled?: boolean | null;
   trusted?: boolean | null;
@@ -32,9 +34,22 @@ export interface PluginAgentStatus {
   pluginCount: number;
 }
 
+export interface PluginSourceFile {
+  agent: AgentKey;
+  path: string;
+  exists: boolean;
+  readable: boolean;
+  error?: string | null;
+  /** plugin-tree | config | skills | mcp | cordis */
+  sourceKind: string;
+  itemCount: number;
+  label: string;
+}
+
 export interface PluginInventory {
   agents: PluginAgentStatus[];
   plugins: PluginEntry[];
+  sources?: PluginSourceFile[];
 }
 
 export interface PluginPort {

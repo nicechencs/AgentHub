@@ -58,12 +58,20 @@ describe('poolAuthorizationRefreshAction', () => {
 describe('poolAuthorizationRefreshLabels', () => {
   it('labels quota/credential refresh as 刷新', () => {
     expect(poolAuthorizationRefreshLabels({ kind: 'refresh-quota', label: '刷新' }, t))
-      .toEqual({ idle: '刷新', busy: '刷新中…' });
+      .toEqual({
+        idle: '刷新',
+        busy: '刷新中…',
+        tip: '查看这份登录的用量。',
+      });
   });
 
   it('labels sync-current-login as 同步当前登录', () => {
     expect(poolAuthorizationRefreshLabels({ kind: 'sync-current-login', label: '同步当前登录' }, t))
-      .toEqual({ idle: '同步当前登录', busy: '同步中…' });
+      .toEqual({
+        idle: '同步当前登录',
+        busy: '同步中…',
+        tip: '不是刷新列表。会把本机正在用的官方登录写进来，并查看用量。',
+      });
   });
 });
 

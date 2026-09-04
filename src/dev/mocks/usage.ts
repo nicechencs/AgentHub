@@ -10,6 +10,7 @@ import { delay } from '@/dev/mocks/delay';
 import { isCapabilityUsable } from '@/lib/capability';
 import type { AgentKey, ParserHealth, UsageRecord, UsageTrendPoint } from '@/lib/types';
 import { denseTrendBuckets, localTrendBucket, trendGrain } from '@/lib/usage-trend';
+import { canonicalUsageModel, usageModelsMatch } from '@/lib/usage-model';
 import { usageTokenParts } from '@/lib/usage-tokens';
 import { listMockAdapterProfiles } from './adapter';
 import { MOCK_CAPABILITIES } from './capabilities';
@@ -83,7 +84,7 @@ export function resetMockUsage(): void {
   records = buildRecords(Date.now());
 }
 
-function inUsageWindow(r: UsageRecord, days: number, since?: string): boolean {
+function inUsageWindow(r: UsageRecord, days: number, since?: string, until?: string): boolean {
   const t = new Date(r.timestamp).getTime();
   const cutoff = Date.now() - days * 24 * 3600 * 1000;
   if (t < cutoff) return false;
@@ -91,14 +92,20 @@ function inUsageWindow(r: UsageRecord, days: number, since?: string): boolean {
     const bound = new Date(since).getTime();
     if (!Number.isNaN(bound) && t < bound) return false;
   }
+  if (until) {
+    const bound = new Date(until).getTime();
+    if (!Number.isNaN(bound) && t >= bound) return false;
+  }
   return true;
 }
 
 function matchesUsageQuery(r: UsageRecord, q: UsageQuery, ignoreModel = false): boolean {
-  if (!inUsageWindow(r, q.days, q.since)) return false;
+  if (!inUsageWindow(r, q.days, q.since, q.until)) return false;
   if (q.agentId && q.agentId !== 'all' && r.agentId !== q.agentId) return false;
   if (q.excludeAgentIds?.includes(r.agentId)) return false;
-  if (!ignoreModel && q.model && q.model !== 'all' && r.model !== q.model) return false;
+  if (!ignoreModel && q.model && q.model !== 'all' && !usageModelsMatch(r.model, q.model)) {
+    return false;
+  }
   return true;
 }
 
@@ -129,7 +136,7 @@ function mockUsageOverview(q: UsageQuery): UsageOverview {
     cacheRead += p.cacheRead;
     cacheWrite += p.cacheWrite;
     costUsd += r.costUsd;
-    const key = groupByAgent ? r.agentId : r.model;
+    const key = groupByAgent ? r.agentId : canonicalUsageModel(r.model) || r.model;
     const entry = byKey.get(key) ?? {
       key,
       tokens: 0,
@@ -151,7 +158,7 @@ function mockUsageOverview(q: UsageQuery): UsageOverview {
     ...new Set(
       records
         .filter((r) => matchesUsageQuery(r, q, true))
-        .map((r) => r.model)
+        .map((r) => canonicalUsageModel(r.model) || r.model)
         .filter((m) => m.length > 0),
     ),
   ].sort((a, b) => a.localeCompare(b));
@@ -172,7 +179,11 @@ export function createMockUsagePort(): UsagePort {
       await delay(200 + Math.random() * 400);
       const filtered = records
         .filter((r) => matchesUsageQuery(r, q))
-        .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+        .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+        .map((r) => {
+          const model = canonicalUsageModel(r.model);
+          return model && model !== r.model ? { ...r, model } : r;
+        });
       return q.limit != null ? filtered.slice(0, q.limit) : filtered;
     },
 
@@ -181,30 +192,41 @@ export function createMockUsagePort(): UsagePort {
       return mockUsageOverview(q);
     },
 
-    async usageTrend(days, agentId, model, since, excludeAgentIds) {
+    async usageTrend(days, agentId, model, since, excludeAgentIds, groupBy, until) {
       await delay(30 + Math.random() * 50);
-      const grain = trendGrain(days);
+      const grain = trendGrain(days, since, until);
+      const byModel = groupBy === 'model';
       const emptyPoint = (key: string): UsageTrendPoint => {
         const point: UsageTrendPoint = { date: key };
-        for (const a of DEMO_USAGE_AGENTS) point[a] = 0;
+        if (!byModel) {
+          for (const a of DEMO_USAGE_AGENTS) point[a] = 0;
+        }
         return point;
       };
       const byBucket = new Map<string, UsageTrendPoint>();
       for (const r of records) {
-        if (!inUsageWindow(r, days, since)) continue;
+        if (!inUsageWindow(r, days, since, until)) continue;
         if (agentId && agentId !== 'all' && r.agentId !== agentId) continue;
         if (excludeAgentIds?.includes(r.agentId)) continue;
-        if (model && model !== 'all' && r.model !== model) continue;
+        if (model && model !== 'all' && !usageModelsMatch(r.model, model)) continue;
         const key = localTrendBucket(r.timestamp, grain);
         if (!key) continue;
         if (!byBucket.has(key)) byBucket.set(key, emptyPoint(key));
         const point = byBucket.get(key)!;
         const p = usageTokenParts(r);
-        point[r.agentId] =
-          (point[r.agentId] as number) + p.billableInput + p.cache + r.outputTokens;
+        const tokens = p.billableInput + p.cache + r.outputTokens;
+        if (byModel) {
+          const series = canonicalUsageModel(r.model) || r.model;
+          if (!series) continue;
+          point[series] = (Number(point[series]) || 0) + tokens;
+          const costKey = `__cost__:${series}`;
+          point[costKey] = (Number(point[costKey]) || 0) + r.costUsd;
+        } else {
+          point[r.agentId] = (point[r.agentId] as number) + tokens;
+        }
       }
       if (byBucket.size > 0) {
-        for (const key of denseTrendBuckets(days, since)) {
+        for (const key of denseTrendBuckets(days, since, undefined, until)) {
           if (!byBucket.has(key)) byBucket.set(key, emptyPoint(key));
         }
       }
@@ -213,7 +235,13 @@ export function createMockUsagePort(): UsagePort {
 
     async listModels() {
       await delay(100);
-      return [...new Set(records.map((r) => r.model))];
+      return [
+        ...new Set(
+          records
+            .map((r) => canonicalUsageModel(r.model) || r.model)
+            .filter((m) => m.length > 0),
+        ),
+      ].sort((a, b) => a.localeCompare(b));
     },
 
     async parserHealth(): Promise<ParserHealth[]> {

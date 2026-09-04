@@ -10,12 +10,14 @@ import {
 import type { AdapterBridgeRouteTrace } from '@/lib/backend/contracts/adapter';
 
 const baseTrace: AdapterBridgeRouteTrace = {
+  traceVersion: 2,
   requestId: 'req-1',
   at: '2026-01-01T00:00:00.000Z',
   method: 'POST',
   path: '/v1/messages',
   httpStatus: 200,
   ok: true,
+  localEndpoint: { status: 'ok' },
   localAuth: { status: 'ok', profileId: 'p1', port: 43121 },
   pool: {
     status: 'ok',
@@ -56,10 +58,10 @@ describe('route-trace-visual-model', () => {
     })).toBe('responses_grok');
   });
 
-  it('lights the active endpoint and matrix cell', () => {
+  it('marks the selected completed endpoint successful and lights the matrix cell', () => {
     const view = buildTraceFlowView(baseTrace);
     expect(view.activeEndpoint).toBe('messages');
-    expect(view.endpoints.find((node) => node.kind === 'messages')?.state).toBe('active');
+    expect(view.endpoints.find((node) => node.kind === 'messages')?.state).toBe('ok');
     expect(view.conversion.activeRow).toBe('messages');
     expect(view.conversion.activeCol).toBe('anthropic');
     expect(view.conversion.result).toBe('converted');

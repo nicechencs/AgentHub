@@ -1,5 +1,8 @@
 import type { AgentKey } from '@/lib/types';
 
+/** Trend series grouping. Default `agent` keeps `{ date, claude?: n, ... }`. */
+export type UsageTrendGroupBy = 'agent' | 'model';
+
 export interface UsageQuery {
   /** 回看天数（后端按 now - days 过滤；UI 可映射 today/24h → 1） */
   days: number;
@@ -9,6 +12,8 @@ export interface UsageQuery {
   limit?: number;
   /** RFC3339 lower bound, AND-ed with the days window. */
   since?: string;
+  /** RFC3339 exclusive upper bound (`ts < until`). Custom range uses next local midnight. */
+  until?: string;
   /** Hidden agents; applied before LIMIT so the table cap is among visible rows. */
   excludeAgentIds?: AgentKey[];
 }

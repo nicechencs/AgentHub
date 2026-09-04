@@ -452,7 +452,7 @@ function EndpointGrid({
               }
             }}
             className={cn(
-              'rounded-card border border-border bg-panel p-3 text-left transition-colors',
+              'rounded-card border border-border bg-panel p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
               active && selectable && 'border-border-strong bg-active',
               !selectable && 'opacity-60',
               selectable && 'hover:bg-hover/50',
@@ -536,7 +536,7 @@ function TargetGrid({
               }
             }}
             className={cn(
-              'rounded-card border border-border bg-panel p-3 text-left transition-colors',
+              'rounded-card border border-border bg-panel p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
               active && selectable && 'border-border-strong bg-active',
               !selectable && 'opacity-60',
               selectable && 'hover:bg-hover/50',

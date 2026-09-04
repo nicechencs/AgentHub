@@ -105,7 +105,7 @@ fn turn_completed_model_usage_maps_tokens_without_double_count() {
     let events = parse_line(&sample_turn_completed_line(), Some("grok-4.5"));
     assert_eq!(events.len(), 1);
     let ev = &events[0];
-    assert_eq!(ev.model, "grok-4.5-build");
+    assert_eq!(ev.model, "grok-4.5");
     assert_eq!(ev.input_tokens, 60);
     assert_eq!(ev.cache_read_tokens, 40);
     assert_eq!(ev.cache_creation_tokens, 0);
@@ -130,7 +130,7 @@ fn falls_back_to_top_level_usage_when_model_usage_is_absent() {
     let line = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-top","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":50,"outputTokens":5,"cachedReadTokens":10,"reasoningTokens":2}},"_meta":{"eventId":"evt-top"}}}"#;
     let events = extract_grok_events(line, None, None, Some("grok-4.5-build")).unwrap();
     assert_eq!(events.len(), 1);
-    assert_eq!(events[0].model, "grok-4.5-build");
+    assert_eq!(events[0].model, "grok-4.5");
     assert_eq!(events[0].input_tokens, 40);
     assert_eq!(events[0].cache_read_tokens, 10);
     assert_eq!(events[0].output_tokens, 5);
@@ -323,7 +323,7 @@ fn parse_file_through_usage_source_splits_tokens_and_reads_summary() {
     let repo = UsageRepo::new(db);
     let batch = parse_file_for_agent_id(AgentId::Grok, &sess.join("updates.jsonl"), &repo).unwrap();
     assert_eq!(batch.events.len(), 1);
-    assert_eq!(batch.events[0].model, "grok-4.5-build");
+    assert_eq!(batch.events[0].model, "grok-4.5");
     assert_eq!(batch.events[0].input_tokens, 60);
     assert_eq!(batch.events[0].cache_read_tokens, 40);
     assert_eq!(batch.events[0].output_tokens, 20);
@@ -414,7 +414,7 @@ fn parser_loads_summary_default_model_for_top_level_usage() {
     let mut parser = GrokParser::new(&path);
     let events = parser.extract_line(&line, Some("path-sess")).unwrap();
     assert_eq!(events.len(), 1);
-    assert_eq!(events[0].model, "grok-4.5-build");
+    assert_eq!(events[0].model, "grok-4.5");
 }
 
 #[test]
@@ -527,7 +527,7 @@ fn real_cli_turn_completed_shape_splits_and_reads_ticks() {
     let line = r#"{"timestamp":1785509402,"method":"_x.ai/session/update","params":{"sessionId":"019fb8a7-06a3-7cb2-83e6-980123542122","update":{"sessionUpdate":"turn_completed","prompt_id":"611f0423-83f4-4af6-9a6e-637904f342d5","stop_reason":"cancelled","usage":{"inputTokens":49057,"outputTokens":987,"totalTokens":50044,"cachedReadTokens":21504,"cacheCreationTokens":0,"reasoningTokens":586,"modelCalls":2,"apiDurationMs":19968,"costUsdTicks":674792000,"modelUsage":{"grok-4.5-build":{"inputTokens":49057,"outputTokens":987,"totalTokens":50044,"cachedReadTokens":21504,"cacheCreationTokens":0,"reasoningTokens":586,"modelCalls":2,"apiDurationMs":19968,"costUsdTicks":674792000}},"numTurns":2}},"_meta":{"eventId":"019fb8a7-06a3-7cb2-83e6-980123542122-228","agentTimestampMs":1785509402900}}}"#;
     let events = parse_line(line, None);
     assert_eq!(events.len(), 1);
-    assert_eq!(events[0].model, "grok-4.5-build");
+    assert_eq!(events[0].model, "grok-4.5");
     assert_eq!(events[0].input_tokens, 27553);
     assert_eq!(events[0].cache_read_tokens, 21504);
     assert_eq!(events[0].cache_creation_tokens, 0);

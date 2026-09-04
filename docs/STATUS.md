@@ -3,7 +3,7 @@ title: AgentHub 当前实现状态
 type: status
 status: current
 owner: maintainers
-updated: 2026-08-31
+updated: 2026-09-04
 ---
 
 # 当前实现状态
@@ -14,7 +14,7 @@ updated: 2026-08-31
 
 - 桌面端由 Tauri v2 承载，前端使用 React，核心业务和 CLI 使用 Rust。
 - 当前界面包含 Dashboard、Agents、Connections、Routes、Skills、MCP、Chat、Projects、Plugins 和 Settings。
-- Connections 是跨工具的登录列表。接到某个工具从 Dashboard「连接/切换」；连接页行入口是「分享至连接池」，登录仍留在连接页。**产品决策：所有 API Key 都可以分享（含 WorkBuddy / ZCode 等上配置的）；国产官方登录不能分享**，见 [产品边界](decisions/product-boundaries.md)。Routes 管理本机路由运行时，连接池也可以添加官方登录 / API Key（仅用于连接池，可不出现在连接页），并可用「从连接同步」一次加入多份登录。连接页与连接池相互独立，回收站也分开。登录按登录方式分行保存（官方登录与 API Key 分开），记下关键词和整份配置；详情列出记下的配置文件（可复制、打开所在目录），并补充套餐、有效期、时间线与完整端点。WorkBuddy 自定义模型和 ZCode 供应商按目录拆成多条登录，桌面套餐登录不导入；WorkBuddy 写入只认 `/v1/chat/completions`。
+- Connections 是跨工具的登录列表。接到某个工具从 Dashboard「连接/切换」；连接页行入口是「分享至连接池」，登录仍留在连接页。**产品决策：所有 API Key 都可以分享（含 WorkBuddy / ZCode 等上配置的）；国产官方登录不能分享**，见 [产品边界](decisions/product-boundaries.md)。Routes 管理本机路由运行时，连接池也可以添加官方登录 / API Key（仅用于连接池，可不出现在连接页），并可用「从连接同步」一次加入多份登录。在连接池里编辑从连接页分享来的官方登录并保存时，会先复制成连接池自己的一份（连接页那份还在），再问要不要把模型写回连接页。连接页与连接池相互独立，回收站也分开。登录按登录方式分行保存（官方登录与 API Key 分开），记下关键词和整份配置；详情列出记下的配置文件（可复制、打开所在目录），并补充套餐、有效期、时间线与完整端点。WorkBuddy 自定义模型和 ZCode 供应商按目录拆成多条登录，桌面套餐登录不导入；WorkBuddy 写入只认 `/v1/chat/completions`。
 - 当前内置适配包括 Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy、ZCode 和 DeepSeek Harness。**Cursor Agent 适配器仍在代码中，但 dev 线通过 store-stamp 默认软隐藏**（Agents 管理页可取消隐藏）；待登录写入、路由目标与结构化输出等兼容问题修复后再重新开放。
 - CLI 提供 doctor、env、agent、provider、account、skill、usage、backup、run、config 等命令；参数以 CLI 帮助和源码为准。
 
@@ -29,10 +29,10 @@ updated: 2026-08-31
 
 - 登录的来源、目标和可行写入动作由 `plan` / `bind` / `unbind` 契约表达；领域实现仍保留 Ticket / TicketPort 等内部名称。
 - 本机路由运行时在桌面进程内运行，面向兼容客户端提供 `/v1/messages`、`/v1/responses`、`/v1/chat/completions` 和 `GET /models` 等端点。Codex 与 Grok 都走 Responses 口，具体格式跟这条路由一起保存，由本机令牌选中，不根据请求正文猜测。接到 Codex / Grok 时写入的是本机令牌（按 API Key 方式）和 Responses 接口，不是上游官方登录。领域背景见 [连接与路由](concepts/connections-and-routing.md)。
-- Usage 只读解析本地 Agent 会话或日志；优先使用日志中的官方成本字段，否则使用离线内嵌价表估算。运行时不联网拉取价格，也不做汇率换算。
+- Usage 只读解析本地 Agent 会话或日志；优先使用日志中的官方成本字段，否则使用离线内嵌价表估算。运行时不联网拉取价格，也不做汇率换算。总览趋势可按 Agent 或模型切换；悬停同时看 token 和费用。Grok 用量把 `grok-4.6` 与 `grok-4.6-build`（以及 `[grok]` / `xai/` 前缀）当成同一个公开模型。
 - Skills 页分用户技能、项目技能和市场。用户技能仍用共享目录 `~/.agents/skills/`，并可启用到各工具；项目技能从项目页已识别的工作区下拉选择，读写该项目的 `.agents/skills/`（列表也会带上 `.claude/skills` 等已有目录）。配置切换在修改前创建备份。
 - MCP 页只读扫描已知 MCP server 配置；`Capability::Mcp` 对全部内置 Agent 仍为 Planned。见 [MCP inventory](reference/mcp-inventory.md)。
-- 插件页 `/plugins` 只读列出 Claude / Grok 的 plugin / extension 包（优先官方 CLI JSON，否则读 live 目录）。没有安装按钮，也没有 `Capability::Plugins`。Codex / Pi 仍为 Planned；Cursor / Kimi / WorkBuddy / DSH / ZCode 为 Unsupported。见 [插件、MCP 与技能](concepts/plugins-and-mcp.md)。
+- 插件页 `/plugins` 列出 Claude / Grok / Pi 的 plugin / extension 包。Claude / Grok 优先官方 CLI JSON，否则读 live 目录；Pi 读用户 `settings.json` 的 `packages`。Pi 对照本机版本与配置里的指定版本：指定了版本的 npm 包在 Pi 更新扩展时会跳过；未安装或两者不一致会在列表标出。Claude / Grok 配置里有、本机目录没有的包标未安装，不按 Pi 的指定版本规则判断，也不查商店里是否有新版本。本页不查线上最新。Claude / Grok 已装包可启用/停用。没有安装按钮，也没有 `Capability::Plugins`。Codex 仍为 Planned；Cursor / Kimi / WorkBuddy / DSH / ZCode 为 Unsupported。见 [插件、MCP 与技能](concepts/plugins-and-mcp.md)。
 
 ## 验证与发布
 
@@ -51,7 +51,7 @@ updated: 2026-08-31
 - `AdapterRouteService::plan()` 是 Adapter / route 的唯一产品决策者。`adapter-capability-contract.json` 是它对冻结入参的只读投影；Rust 测试在 JSON 与内核输出不一致时失败。browser mock 只按来源特征查表并维护内存状态；凭据可用性必须精确匹配；未命中 fail-closed 为 unsupported，不回退 classify。route / support / ruleId / gateKind / canApply 的产品正确性在 Rust；Vitest 覆盖查表、脱敏、内存 apply 和页面听从 plan。见 [Adapter 路线内核](architecture/adapter-route-kernel.md)。
 - 不落地 sccache，也不把 `agenthub-core` 拆成多个 crate。CI 使用 `Swatinem/rust-cache`。Windows worktree 不得共享 `target/`。2026-08-25 的热缓存过滤测试约 3.5 秒、冷 worktree 首次编译依赖约 42 秒是历史快照，不是当前固定规模；过程见 [单一内核提案归档](archive/single-kernel-projections.md)。
 - DeepSeek Harness 的 StructuredStream 仍是规划项；已落地部分以源码和集成文档为准。
-- 插件包的启用/安装/更新仍是提案，不从 MCP inventory 推导。见 [插件管理](proposals/plugin-management.md)。MCP 写入同样未做，且是另一条线。
+- 插件包的安装/卸载/更新仍是提案，不从 MCP inventory 推导。Claude / Grok 已装包可启用/停用；Pi 只列已装包。见 [插件管理](proposals/plugin-management.md)。MCP 写入同样未做，且是另一条线。
 - Codex 安装、外部渠道 Chat 调用与连接/路由模块化审查见 [Codex 安装与模块化审查](status/codex-install-modularity-review.md)（2026-08-27）。
 - npm 渠道安装写到检测会扫的用户前缀（`~/.npm-global`，Windows 为 `%APPDATA%\npm`）。`~/.agenthub` 以及其中的 `npm` 只是遗留，不是安装目标，也不是启动路径。
 - WorkBuddy 本机安装只打开官网安装页，界面给中文指引，不当成「安装失败」。真失败时「重试」是主按钮；失败面板先显示诊断，不把 npm 下载进度当正文。

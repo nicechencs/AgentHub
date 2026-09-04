@@ -27,6 +27,7 @@ pub mod provider_identity;
 pub mod provider_service;
 pub mod route_pool_service;
 pub mod run_service;
+pub mod runtime_update_service;
 pub mod settings_service;
 pub mod skill_market;
 pub mod skill_service;
@@ -68,11 +69,15 @@ pub use plugin_apply::{
 };
 pub use plugin_inventory::{
     list_plugin_inventory, PluginAgentStatus, PluginComponent, PluginEntry, PluginInventory,
+    PluginSourceFile,
 };
 pub use project_service::ProjectService;
 pub use provider_service::{ProviderLiveConfigSnapshot, ProviderLiveSagaGuard, ProviderService};
 pub use route_pool_service::RoutePoolService;
 pub use run_service::RunService;
+pub use runtime_update_service::{
+    check_runtime_updates, invalidate_runtime_latest_cache, DEFAULT_RUNTIME_LATEST_TTL,
+};
 pub use settings_service::SettingsService;
 pub use skill_market::{
     install_market_listing, search_market, BuiltinSkillMarket, SkillMarket, SkillMarketRegistry,

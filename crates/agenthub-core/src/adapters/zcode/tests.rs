@@ -762,10 +762,9 @@ fn kind_follows_endpoint_when_omitted() {
                 }),
             })
             .unwrap();
-        let disk: Value = serde_json::from_str(
-            &std::fs::read_to_string(v2_config_path(dir.path())).unwrap(),
-        )
-        .unwrap();
+        let disk: Value =
+            serde_json::from_str(&std::fs::read_to_string(v2_config_path(dir.path())).unwrap())
+                .unwrap();
         assert_eq!(
             disk.pointer("/provider/agenthub-managed/kind")
                 .and_then(Value::as_str),

@@ -64,7 +64,9 @@ pub fn list_chatgpt_codex_models(access_token: &str, account_id: &str) -> Result
         return Err(AppError::InvalidArg("access token is required".into()));
     }
     if account_id.is_empty() {
-        return Err(AppError::InvalidArg("chatgpt account id is required".into()));
+        return Err(AppError::InvalidArg(
+            "chatgpt account id is required".into(),
+        ));
     }
     let url = format!("{CHATGPT_CODEX_MODELS_URL}?client_version={CODEX_MODELS_CLIENT_VERSION}");
     let ua = format!("{CODEX_PROBE_ORIGINATOR}/{CODEX_MODELS_CLIENT_VERSION}");
@@ -86,7 +88,9 @@ pub fn list_chatgpt_codex_models(access_token: &str, account_id: &str) -> Result
     let body: Value = response.into_json().map_err(|err| {
         AppError::message(
             "chatgpt_codex_models.json",
-            redact_text(&format!("invalid JSON from {CHATGPT_CODEX_MODELS_URL}: {err}")),
+            redact_text(&format!(
+                "invalid JSON from {CHATGPT_CODEX_MODELS_URL}: {err}"
+            )),
         )
     })?;
     Ok(parse_chatgpt_codex_models(&body))

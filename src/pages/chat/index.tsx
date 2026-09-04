@@ -130,6 +130,7 @@ export default function ChatPage() {
                   draft={page.draft}
                   setDraft={page.setDraft}
                   sending={page.sendingHere}
+                  canceling={page.cancelingHere}
                   active={page.active}
                   connectionOptions={page.connectionOptions}
                   primaryAgent={page.primaryAgent}

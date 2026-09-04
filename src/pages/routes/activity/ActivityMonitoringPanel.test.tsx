@@ -34,6 +34,7 @@ function snapshot(partial: Partial<ActivityPageSnapshot> = {}): ActivityPageSnap
 
 function row(partial: Partial<MergedRouteTraceRow> = {}): MergedRouteTraceRow {
   return {
+    traceVersion: 2,
     requestId: 'req-1',
     at: '2026-01-01T00:00:00.000Z',
     method: 'POST',
@@ -57,7 +58,7 @@ describe('ActivityMonitoringPanel', () => {
     expect(markup).toContain('data-table-shell="default"');
     expect(markup).toContain('data-col="time"');
     expect(markup).toContain('还没有请求记录');
-    expect(markup).toContain('连接池已有登录，等待创建或启动本机路由');
+    expect(markup).not.toContain('连接池已有登录，等待创建或启动本机路由');
     expect(markup).not.toContain('连接池已有登录，但还没有本机路由');
     expect(markup).not.toContain('请打开路由概览');
     expect(markup).not.toContain('打开路由概览');
@@ -81,7 +82,7 @@ describe('ActivityMonitoringPanel', () => {
       httpStatus: 401,
       upstreamAuth: { status: 'failed', httpStatus: 401 },
       upstream: { status: 'pending' },
-      failureStage: 'upstream_auth',
+      failureStage: 'upstream_response',
     });
     const ready = snapshot({
       kind: 'ready',

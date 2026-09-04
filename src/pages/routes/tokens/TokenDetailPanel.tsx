@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { ChevronDown, Copy, Eye, EyeOff, Loader2, Trash2, X } from 'lucide-react';
 import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
 import { CopyableRouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
+import { Hint } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import {
   Dialog,
@@ -30,9 +31,13 @@ import {
 import type { LocalTokenProbeResult } from '@/lib/backend/contracts/adapter';
 import { localEndpointBrandAgentId } from '@/lib/route-endpoints';
 import { adapterStatusTextClass } from '@/pages/routes/shared/adapter-view-model';
+import { parseCustomModelList } from '@/pages/routes/pool/pool-authorization-detail';
 import {
   buildTokenDetailCopyRows,
+  diffModelLists,
   formatTokenRelative,
+  tokenLastPageDisplay,
+  tokenUsageDisplay,
   localTokenEntryRunning,
   localTokenTestGate,
   localTokenTestInputText,
@@ -43,8 +48,6 @@ import {
   localTokenTestWindowSummary,
   tokenDetailTitle,
   tokenEndpointParts,
-  tokenLastPageDisplay,
-  tokenUsageDisplay,
 } from './token-detail-model';
 import {
   localTokenDeleteGate,
@@ -53,7 +56,8 @@ import {
 } from './tokens-model';
 import { TokenImportToAgentButton } from './TokenImportToAgentButton';
 import type { TokenImportAgentRef } from './token-import-model';
-import { parseCustomModelList } from '@/pages/routes/pool/pool-authorization-detail';
+import type { ConnectApiKeyDraft } from '@/lib/connect-flow/connect-intent';
+import type { AgentKey } from '@/lib/types';
 
 export function TokenDetailPanel({
   row,
@@ -63,6 +67,10 @@ export function TokenDetailPanel({
   onSaveName,
   onDelete,
   installedAgents,
+  onImport,
+  siblingRows = [],
+  writtenToNames = [],
+  writtenToReady = true,
 }: {
   row: LocalTokenRow;
   width?: number;
@@ -71,19 +79,25 @@ export function TokenDetailPanel({
   onSaveName?: (name: string) => Promise<void> | void;
   onDelete?: () => void;
   installedAgents?: readonly TokenImportAgentRef[];
+  onImport?: (agentId: AgentKey, draft: ConnectApiKeyDraft) => void;
+  siblingRows?: readonly LocalTokenRow[];
+  writtenToNames?: readonly string[];
+  writtenToReady?: boolean;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { toast } = useToast();
   const [liveModels, setLiveModels] = useState<string[]>([]);
   const models = liveModels.length > 0 ? liveModels : localTokenTestModels(row);
+  const [modelDraft, setModelDraft] = useState('');
+  const [selectedModels, setSelectedModels] = useState<string[]>([]);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [savingModels, setSavingModels] = useState(false);
+  const [refreshingModels, setRefreshingModels] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testOpen, setTestOpen] = useState(false);
   const [testModel, setTestModel] = useState(models[0] ?? '');
   const [testResult, setTestResult] = useState<LocalTokenProbeResult | null>(null);
-  const [modelDraft, setModelDraft] = useState('');
-  const [savingModels, setSavingModels] = useState(false);
-  const [refreshingModels, setRefreshingModels] = useState(false);
   const [nameDraft, setNameDraft] = useState(row.name);
   const [savingName, setSavingName] = useState(false);
   const dropdownModels = testModel.trim() && !models.includes(testModel)
@@ -98,8 +112,13 @@ export function TokenDetailPanel({
   const canCopyToken = Boolean(tokenRow?.copyValue);
   const testGate = localTokenTestGate(row, t);
   const editGate = localTokenEditKeyGate(row, t);
-  const deleteGate = localTokenDeleteGate(row, t);
+  const deleteGate = localTokenDeleteGate(row, siblingRows, t);
   const canRunTest = testGate.enabled && Boolean(testModel.trim()) && !testing;
+  const writtenTo = writtenToReady
+    ? (writtenToNames.length > 0
+      ? writtenToNames.join(lang === 'zh' ? '、' : ', ')
+      : t('routes.tokens.writtenToNone'))
+    : '—';
 
   useEffect(() => {
     setNameDraft(row.name);
@@ -108,11 +127,14 @@ export function TokenDetailPanel({
     setTesting(false);
     setTestOpen(false);
     setTestResult(null);
-    setRefreshingModels(false);
     const fallback = localTokenTestModels(row);
     setLiveModels([]);
-    setTestModel(fallback[0] ?? '');
+    setSelectedModels(fallback);
     setModelDraft(fallback.join('\n'));
+    setAdvancedOpen(false);
+    setRefreshingModels(false);
+    setSavingModels(false);
+    setTestModel(fallback[0] ?? '');
     const token = row.token?.trim();
     if (!token) return;
     const requestId = row.id;
@@ -121,6 +143,7 @@ export function TokenDetailPanel({
       const listed = ids.map((item) => item.trim()).filter(Boolean);
       if (listed.length === 0) return;
       setLiveModels(listed);
+      setSelectedModels(listed);
       setModelDraft(listed.join('\n'));
       setTestModel((current) => current.trim() || listed[0] || '');
     }).catch(() => {});
@@ -140,55 +163,11 @@ export function TokenDetailPanel({
     );
   };
 
-  const applyListedModels = (listed: string[]) => {
-    setLiveModels(listed);
-    setModelDraft(listed.join('\n'));
-    setTestModel((current) => current.trim() || listed[0] || '');
-  };
-
   const openTest = () => {
     if (!testGate.enabled || testing) return;
     setTestResult(null);
     setTestOpen(true);
   };
-
-  const saveCustomModels = async () => {
-    const token = row.token?.trim();
-    if (!token) return;
-    const listed = parseCustomModelList(modelDraft);
-    setSavingModels(true);
-    try {
-      applyListedModels(await setLocalTokenCustomModels(token, listed));
-      toast({ title: t('common.save'), variant: 'success' });
-    } catch {
-      toast({ title: t('common.saveFailed'), variant: 'danger' });
-    } finally {
-      setSavingModels(false);
-    }
-  };
-
-  const refreshPoolModels = async () => {
-    const token = row.token?.trim();
-    if (!token) return;
-    const requestId = row.id;
-    setRefreshingModels(true);
-    try {
-      const listed = (await refreshLocalTokenModels(token))
-        .map((item) => item.trim())
-        .filter(Boolean);
-      if (rowIdRef.current !== requestId) return;
-      applyListedModels(listed);
-      toast({ title: t('routes.tokens.testModelsRefreshed'), variant: 'success' });
-    } catch {
-      if (rowIdRef.current !== requestId) return;
-      toast({ title: t('routes.tokens.testModelsRefreshFailed'), variant: 'danger' });
-    } finally {
-      if (rowIdRef.current === requestId) setRefreshingModels(false);
-    }
-  };
-
-  const modelsBusy = testing || savingModels || refreshingModels;
-  const canEditModels = Boolean(row.token?.trim()) && !modelsBusy;
 
   const runTest = async () => {
     if (!canRunTest) return;
@@ -222,44 +201,229 @@ export function TokenDetailPanel({
     }
   };
 
+
+  const modelsBusy = testing || savingModels || refreshingModels;
+  const canEditModels = Boolean(row.token?.trim()) && !modelsBusy;
+  const chipModels = (() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const model of [...selectedModels, ...models]) {
+      const trimmed = model.trim();
+      if (!trimmed || seen.has(trimmed)) continue;
+      seen.add(trimmed);
+      out.push(trimmed);
+    }
+    return out;
+  })();
+
+  const applyListedModels = (listed: string[]) => {
+    setLiveModels(listed);
+    setSelectedModels(listed);
+    setModelDraft(listed.join('\n'));
+    setTestModel((current) => current.trim() || listed[0] || '');
+  };
+
+  const toggleModel = (model: string) => {
+    if (!canEditModels) return;
+    setSelectedModels((current) => {
+      const next = current.includes(model)
+        ? current.filter((item) => item !== model)
+        : [...current, model];
+      setModelDraft(next.join('\n'));
+      return next;
+    });
+  };
+
+  const saveCustomModels = async () => {
+    const token = row.token?.trim();
+    if (!token) return;
+    const listed = parseCustomModelList(modelDraft);
+    setSavingModels(true);
+    try {
+      applyListedModels(await setLocalTokenCustomModels(token, listed));
+      toast({ title: t('common.save'), variant: 'success' });
+    } catch {
+      toast({ title: t('routes.tokens.modelsSaveFailed'), variant: 'danger' });
+    } finally {
+      setSavingModels(false);
+    }
+  };
+
+  const refreshPoolModels = async () => {
+    const token = row.token?.trim();
+    if (!token) return;
+    const requestId = row.id;
+    const before = [...selectedModels];
+    setRefreshingModels(true);
+    try {
+      const listed = (await refreshLocalTokenModels(token)).map((item) => item.trim()).filter(Boolean);
+      if (rowIdRef.current !== requestId) return;
+      applyListedModels(listed);
+      const diff = diffModelLists(before, listed);
+      if (diff.added.length === 0 && diff.removed.length === 0) {
+        toast({ title: t('routes.tokens.modelsSyncUnchanged'), variant: 'success' });
+      } else {
+        toast({
+          title: t('routes.tokens.modelsSyncToast', {
+            added: String(diff.added.length),
+            removed: String(diff.removed.length),
+          }),
+          variant: 'success',
+        });
+      }
+    } catch {
+      if (rowIdRef.current === requestId) {
+        toast({ title: t('routes.tokens.modelsSyncFailed'), variant: 'danger' });
+      }
+    } finally {
+      if (rowIdRef.current === requestId) setRefreshingModels(false);
+    }
+  };
+
   return (
     <SideInspectPanel
       title={t('routes.tokens.detailTitle')}
       description={tokenDetailTitle(row, t)}
       onClose={onClose}
       width={width}
+      headerActions={
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            data-token-test=""
+            disabled={!testGate.enabled || testing}
+            onClick={openTest}
+            title={testGate.reason ?? t('routes.tokens.test')}
+            aria-label={t('routes.tokens.test')}
+          >
+            {testing ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+            ) : null}
+            {testing ? t('routes.tokens.testing') : t('routes.tokens.test')}
+          </Button>
+          {installedAgents && onImport ? (
+            <TokenImportToAgentButton
+              row={row}
+              installedAgents={installedAgents}
+              onImport={onImport}
+            />
+          ) : null}
+          {onDelete ? (
+            <Button
+              variant="dangerOutline"
+              size="sm"
+              data-token-delete=""
+              disabled={!deleteGate.enabled}
+              onClick={() => {
+                if (!deleteGate.enabled) return;
+                onDelete();
+              }}
+              title={deleteGate.reason ?? t('routes.tokens.delete')}
+              aria-label={t('routes.tokens.delete')}
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden />
+              {t('routes.tokens.delete')}
+            </Button>
+          ) : null}
+          {onEditKey ? (
+            <Button
+              variant="outline"
+              size="sm"
+              data-token-edit-key=""
+              disabled={!editGate.enabled}
+              onClick={() => {
+                if (!editGate.enabled) return;
+                onEditKey();
+              }}
+              title={editGate.reason ?? t('routes.tokens.editKey')}
+              aria-label={t('routes.tokens.editKey')}
+            >
+              {t('routes.tokens.editKey')}
+            </Button>
+          ) : null}
+        </>
+      }
     >
       <div className="flex flex-col gap-3 text-sm" data-token-detail={row.id}>
         <div className="space-y-1">
           <p className="text-meta text-muted">{t('routes.tokens.fieldName')}</p>
-          <div className="flex min-w-0 items-center gap-2">
-            <Input
-              className="min-w-0 flex-1"
-              value={nameDraft}
-              onChange={(event) => setNameDraft(event.target.value)}
-              placeholder={t('routes.tokens.namePlaceholder')}
-              disabled={savingName || !onSaveName || row.unavailable}
-              aria-label={t('routes.tokens.fieldName')}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={savingName || !onSaveName || row.unavailable || !nameDraft.trim()}
-              onClick={() => {
-                if (!onSaveName || savingName) return;
-                setSavingName(true);
-                void Promise.resolve(onSaveName(nameDraft)).finally(() => {
-                  if (rowIdRef.current === row.id) setSavingName(false);
-                });
-              }}
-            >
-              {t('routes.tokens.saveName')}
-            </Button>
-          </div>
+          <Input
+            className="min-w-0 w-full"
+            value={nameDraft}
+            onChange={(event) => setNameDraft(event.target.value)}
+            placeholder={t('routes.tokens.namePlaceholder')}
+            disabled={savingName || !onSaveName || row.unavailable}
+            aria-label={t('routes.tokens.fieldName')}
+          />
+          {onSaveName ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={savingName || row.unavailable || !nameDraft.trim()}
+                onClick={() => {
+                  if (savingName) return;
+                  setSavingName(true);
+                  void Promise.resolve(onSaveName(nameDraft)).finally(() => {
+                    if (rowIdRef.current === row.id) setSavingName(false);
+                  });
+                }}
+              >
+                {t('routes.tokens.saveName')}
+              </Button>
+            </div>
+          ) : null}
         </div>
         <div className="space-y-1">
-          <p className="text-meta text-muted">{t('routes.tokens.fieldType')}</p>
-          <p className="text-primary">{typeRow?.display}</p>
+          <p className="text-meta text-muted">{t('routes.tokens.fieldToken')}</p>
+          <div className="flex min-w-0 items-center gap-1">
+            <p className="min-w-0 flex-1 break-all font-mono text-secondary">
+              {tokenRow?.display}
+            </p>
+            {canCopyToken ? (
+              <>
+                <Hint label={revealed ? t('common.hideSecret') : t('common.showSecret')}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 shrink-0 px-0"
+                    data-token-reveal=""
+                    onClick={() => setRevealed((current) => !current)}
+                    aria-label={revealed ? t('common.hideSecret') : t('common.showSecret')}
+                  >
+                    {revealed ? <EyeOff className="h-3 w-3" aria-hidden /> : <Eye className="h-3 w-3" aria-hidden />}
+                  </Button>
+                </Hint>
+                <Hint label={t('routes.tokens.copy')}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 shrink-0 px-0"
+                    data-token-copy=""
+                    onClick={copyToken}
+                    aria-label={t('routes.tokens.copy')}
+                  >
+                    <Copy className="h-3 w-3" aria-hidden />
+                  </Button>
+                </Hint>
+              </>
+            ) : null}
+          </div>
+          {testResult ? (
+            <p
+              className={adapterStatusTextClass(localTokenTestResultTone(testResult.outcome))}
+              data-token-test-result={testResult.outcome}
+            >
+              {localTokenTestResultLabel(testResult, t)}
+            </p>
+          ) : testGate.reason ? (
+            <p className="text-meta text-muted">{testGate.reason}</p>
+          ) : editGate.reason ? (
+            <p className="text-meta text-muted" data-token-edit-key-hint="">{editGate.reason}</p>
+          ) : null}
         </div>
         <div className="min-w-0 space-y-1">
           <p className="text-meta text-muted">{t('routes.tokens.fieldEndpoint')}</p>
@@ -277,136 +441,69 @@ export function TokenDetailPanel({
           )}
         </div>
         <div className="space-y-1">
-          <p className="text-meta text-muted">{t('routes.tokens.fieldLastPage')}</p>
-          <p className="font-mono text-secondary">{tokenLastPageDisplay(row) || '—'}</p>
-          {row.lastRequestAt ? (
-            <p className="text-meta text-muted">
-              {t('routes.tokens.fieldLastAt')} · {formatTokenRelative(row.lastRequestAt, t)}
-            </p>
-          ) : null}
+          <p className="text-meta text-muted">{t('routes.tokens.fieldType')}</p>
+          <p className="text-primary">{typeRow?.display}</p>
         </div>
-        <div className="space-y-1">
-          <p className="text-meta text-muted">{t('routes.tokens.fieldUsage')}</p>
-          <p className="text-secondary">{tokenUsageDisplay(row.usage, t) || '—'}</p>
-        </div>
-        <div className="space-y-1">
-          <p className="text-meta text-muted">{t('routes.tokens.fieldToken')}</p>
-          <p className="min-w-0 break-all font-mono text-secondary">
-            {tokenRow?.display}
+
+        <div className="space-y-1" data-token-last-visit="">
+          <p className="text-meta text-muted">{t('routes.tokens.fieldLastAt')}</p>
+          <p className="text-secondary">
+            {formatTokenRelative(row.lastRequestAt, t) || t('routes.tokens.neverVisited')}
+            {tokenLastPageDisplay(row) ? (
+              <span className="ml-2 font-mono text-meta text-muted">{tokenLastPageDisplay(row)}</span>
+            ) : null}
           </p>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {canCopyToken ? (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setRevealed((current) => !current)}
-                >
-                  {revealed ? t('common.hideSecret') : t('common.showSecret')}
-                </Button>
-                <Button variant="outline" size="sm" onClick={copyToken}>
-                  {t('routes.tokens.copy')}
-                </Button>
-              </>
-            ) : null}
-            <Button
-              variant="outline"
-              size="sm"
-              data-token-test=""
-              disabled={!testGate.enabled || testing}
-              onClick={openTest}
-              title={testGate.reason ?? t('routes.tokens.test')}
-              aria-label={t('routes.tokens.test')}
-            >
-              {testing ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-              ) : null}
-              {testing ? t('routes.tokens.testing') : t('routes.tokens.test')}
-            </Button>
-            {onEditKey ? (
-              <Button
-                variant="outline"
-                size="sm"
-                data-token-edit-key=""
-                disabled={!editGate.enabled}
-                onClick={() => {
-                  if (!editGate.enabled) return;
-                  onEditKey();
-                }}
-                title={editGate.reason ?? t('routes.tokens.editKey')}
-                aria-label={t('routes.tokens.editKey')}
-              >
-                {t('routes.tokens.editKey')}
-              </Button>
-            ) : null}
-            {installedAgents ? (
-              <TokenImportToAgentButton
-                row={row}
-                installedAgents={installedAgents}
-              />
-            ) : null}
-            {onDelete ? (
-              <Button
-                variant="dangerOutline"
-                size="sm"
-                data-token-delete=""
-                disabled={!deleteGate.enabled}
-                onClick={() => {
-                  if (!deleteGate.enabled) return;
-                  onDelete();
-                }}
-                title={deleteGate.reason ?? t('routes.tokens.delete')}
-                aria-label={t('routes.tokens.delete')}
-              >
-                {t('routes.tokens.delete')}
-              </Button>
-            ) : null}
-          </div>
-          {testResult ? (
-            <p
-              className={adapterStatusTextClass(localTokenTestResultTone(testResult.outcome))}
-              data-token-test-result={testResult.outcome}
-            >
-              {localTokenTestResultLabel(testResult, t)}
-            </p>
-          ) : testGate.reason ? (
-            <p className="text-meta text-muted">{testGate.reason}</p>
-          ) : editGate.reason ? (
-            <p className="text-meta text-muted" data-token-edit-key-hint="">{editGate.reason}</p>
-          ) : null}
+        </div>
+        <div className="space-y-1" data-token-usage="">
+          <p className="text-meta text-muted">{t('routes.tokens.fieldUsage')}</p>
+          <p className="text-secondary">{tokenUsageDisplay(row.usage, t) || '0 in / 0 out'}</p>
         </div>
         <div className="space-y-1" data-token-models="">
           <p className="text-meta text-muted">{t('routes.tokens.fieldModels')}</p>
-          {models.length > 0 ? (
-            <p className="text-sm text-primary">{models.join(', ')}</p>
+          {row.modelsSharedFromChat ? (
+            <p className="text-meta text-secondary">{t('routes.tokens.testModelsSharedFromChat')}</p>
+          ) : null}
+          {chipModels.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {chipModels.map((model) => {
+                const selected = selectedModels.includes(model);
+                return (
+                  <button
+                    key={model}
+                    type="button"
+                    disabled={!canEditModels}
+                    data-token-model-chip={model}
+                    onClick={() => toggleModel(model)}
+                    className={
+                      selected
+                        ? 'inline-flex max-w-full items-center gap-1 rounded-full border border-accent/50 bg-accent/10 px-2.5 py-0.5 font-mono text-meta text-accent'
+                        : 'inline-flex max-w-full items-center gap-1 rounded-full border border-border px-2.5 py-0.5 font-mono text-meta text-muted hover:border-accent/40'
+                    }
+                    aria-pressed={selected}
+                  >
+                    <span className="truncate">{model}</span>
+                    {selected ? <X className="h-3 w-3 shrink-0" aria-hidden /> : null}
+                  </button>
+                );
+              })}
+            </div>
           ) : (
-            <p className="text-meta text-secondary">{t('routes.tokens.testNoModels')}</p>
+            <p className="text-meta text-secondary" data-token-models-empty="">
+              {t('routes.tokens.testNoModels')}
+              <span className="mt-1 block">{t('routes.tokens.testNoModelsHint')}</span>
+            </p>
           )}
-          <p className="text-meta text-secondary">{t('routes.tokens.testModelsHint')}</p>
-          <textarea
-            value={modelDraft}
-            onChange={(event) => setModelDraft(event.target.value)}
-            disabled={!canEditModels}
-            placeholder={t('routes.tokens.testModelsPlaceholder')}
-            rows={4}
-            className="min-h-[5.5rem] w-full resize-y rounded-card border border-border bg-transparent px-3 py-2 font-mono text-xs text-primary"
-            data-token-models-draft=""
-          />
+          <p className="text-meta text-secondary">{t('routes.tokens.modelsHint')}</p>
           <div className="flex flex-wrap items-center gap-1.5">
             <Button
               type="button"
               size="sm"
-              variant="outline"
               disabled={!canEditModels}
               data-token-models-refresh=""
               onClick={() => { void refreshPoolModels(); }}
             >
-              {refreshingModels ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-              ) : null}
-              {refreshingModels
-                ? t('routes.tokens.testModelsRefreshing')
-                : t('routes.tokens.testModelsRefresh')}
+              {refreshingModels ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+              {refreshingModels ? t('routes.tokens.modelsSyncing') : t('routes.tokens.modelsSyncFromPool')}
             </Button>
             <Button
               type="button"
@@ -415,9 +512,36 @@ export function TokenDetailPanel({
               disabled={!canEditModels}
               onClick={() => { void saveCustomModels(); }}
             >
-              {savingModels ? t('common.saving') : t('routes.tokens.testModelsSave')}
+              {savingModels ? t('common.saving') : t('routes.tokens.modelsSave')}
             </Button>
           </div>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-meta text-secondary hover:text-primary"
+            data-token-models-advanced=""
+            onClick={() => setAdvancedOpen((open) => !open)}
+          >
+            <ChevronDown className={"h-3.5 w-3.5 transition" + (advancedOpen ? " rotate-180" : "")} aria-hidden />
+            {t('routes.tokens.modelsAdvanced')}
+          </button>
+          {advancedOpen ? (
+            <textarea
+              value={modelDraft}
+              onChange={(event) => {
+                setModelDraft(event.target.value);
+                setSelectedModels(parseCustomModelList(event.target.value));
+              }}
+              disabled={!canEditModels}
+              placeholder={t('routes.tokens.modelsPlaceholder')}
+              rows={4}
+              className="min-h-[5.5rem] w-full resize-y rounded-card border border-border bg-transparent px-3 py-2 font-mono text-xs text-primary"
+              data-token-models-draft=""
+            />
+          ) : null}
+        </div>
+        <div className="space-y-1" data-token-written-to="">
+          <p className="text-meta text-muted">{t('routes.tokens.fieldWrittenTo')}</p>
+          <p className="text-secondary">{writtenTo}</p>
         </div>
       </div>
       <Dialog open={testOpen} onOpenChange={(open) => { if (!testing) setTestOpen(open); }}>

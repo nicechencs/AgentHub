@@ -9,6 +9,7 @@
  * Consumers:
  * - CSS / Tailwind → `var(--…)` (see `tailwind.config.ts`)
  * - Product accent → `--accent` from `ACCENT_PALETTES` + `html[data-accent]`
+ * - Page background → `--bg-canvas` / `--bg-subtle` from `CANVAS_PALETTES` + `html[data-canvas]` (light theme only)
  * - TS that needs hex (contrast, charts) → `agentHex()` / `THEME`
  * - Agent meta, dots, logos, endpoint paths → `agentCssVar(id)`
  *   (surfaces pick an Agent id; they do not copy hex)
@@ -39,12 +40,41 @@ export function isAccentId(value: string): value is AccentId {
   return (ACCENT_IDS as readonly string[]).includes(value);
 }
 
-/** Semantic theme colors. Keys map to CSS vars `--{key}`. */
+/**
+ * Light page backgrounds. Never used as a dark-theme override.
+ * `canvas` is the page; `subtle` is a slightly deeper strip of the same tint.
+ */
+export const CANVAS_PALETTES = {
+  gray: { canvas: '#f3f3f5', subtle: '#ececef' },
+  white: { canvas: '#fafafa', subtle: '#f0f0f0' },
+  paper: { canvas: '#f6f3ee', subtle: '#eee8e0' },
+  mist: { canvas: '#eef2f6', subtle: '#e4eaf0' },
+  sky: { canvas: '#eef5fb', subtle: '#e3eef8' },
+  mint: { canvas: '#eef8f3', subtle: '#e1f0e8' },
+  sand: { canvas: '#f6f0e6', subtle: '#eee6d8' },
+  lilac: { canvas: '#f4f1f8', subtle: '#ebe6f2' },
+} as const;
+
+export type CanvasId = keyof typeof CANVAS_PALETTES;
+export const DEFAULT_CANVAS_ID = 'gray' as const satisfies CanvasId;
+export const CANVAS_IDS = Object.keys(CANVAS_PALETTES) as CanvasId[];
+
+export function isCanvasId(value: string): value is CanvasId {
+  return (CANVAS_IDS as readonly string[]).includes(value);
+}
+
+/**
+ * Semantic theme colors. Keys map to CSS vars `--{key}`.
+ * Surfaces (change here, every page follows):
+ * - `bg-canvas` — page, main column, top bar
+ * - `bg-panel` — cards, sidebar, dialogs, raised chrome
+ * - `bg-subtle` — inset strips, table heads (not a second page color)
+ */
 export const THEME = {
   light: {
-    'bg-canvas': '#f7f7f8',
+    'bg-canvas': '#f3f3f5',
     'bg-panel': '#ffffff',
-    'bg-subtle': '#f1f1f3',
+    'bg-subtle': '#ececef',
     'bg-hover': '#ebebed',
     'bg-active': '#e4e4e7',
     border: '#e6e6e9',
@@ -115,7 +145,7 @@ export const RADIUS = {
   sm: '6px',
   DEFAULT: '8px',
   lg: '12px',
-  /** Product-mark squircle (AppLogo). Not a fourth px step. */
+  /** App-icon squircle (AppLogo, AgentLogo). Not a fourth px step. */
   mark: '22%',
 } as const;
 
@@ -297,6 +327,19 @@ export function buildAccentOverrideCss(): string {
   ]).join('\n');
 }
 
+/** `[data-canvas]` overrides page gray in light theme only. */
+export function buildCanvasOverrideCss(): string {
+  return CANVAS_IDS.flatMap((id) => {
+    const swatch = CANVAS_PALETTES[id];
+    return [
+      `:root[data-canvas="${id}"] {`,
+      `  --bg-canvas: ${swatch.canvas};`,
+      `  --bg-subtle: ${swatch.subtle};`,
+      '}',
+    ];
+  }).join('\n');
+}
+
 /** Full design-token CSS for the app bundle (`:root` + `.dark`). */
 export function buildDesignTokensCss(): string {
   return [
@@ -310,6 +353,8 @@ export function buildDesignTokensCss(): string {
     '}',
     '',
     buildAccentOverrideCss(),
+    '',
+    buildCanvasOverrideCss(),
     '',
   ].join('\n');
 }
@@ -353,5 +398,6 @@ export function buildBootCriticalCss(): string {
     cssDecls(darkLines),
     '}',
     buildAccentOverrideCss(),
+    buildCanvasOverrideCss(),
   ].join('\n');
 }

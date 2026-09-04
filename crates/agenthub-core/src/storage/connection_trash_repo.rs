@@ -76,6 +76,14 @@ impl ConnectionTrashRepo {
         load_trash_payload_conn(conn, id)
     }
 
+    pub(crate) fn list_in_conn(
+        conn: &Connection,
+        agent: Option<AgentId>,
+        home: Option<&str>,
+    ) -> Result<Vec<ConnectionTrashItem>> {
+        list_conn(conn, agent, home)
+    }
+
     pub(crate) fn delete_conn(conn: &Connection, id: &str) -> Result<()> {
         delete_conn(conn, id)
     }
@@ -123,7 +131,9 @@ fn list_conn(
     };
     let mut stmt = conn.prepare(sql)?;
     let rows = match (agent, home) {
-        (Some(agent), Some(home)) => stmt.query_map(params![agent.as_str(), home], map_trash_row)?,
+        (Some(agent), Some(home)) => {
+            stmt.query_map(params![agent.as_str(), home], map_trash_row)?
+        }
         (Some(agent), None) => stmt.query_map(params![agent.as_str()], map_trash_row)?,
         (None, Some(home)) => stmt.query_map(params![home], map_trash_row)?,
         (None, None) => stmt.query_map([], map_trash_row)?,

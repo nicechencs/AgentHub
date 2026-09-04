@@ -17,10 +17,11 @@ import { useTheme } from '@/components/shared/ThemeProvider';
 import { invalidateSkills } from '@/lib/hooks/useSkills';
 import type { AppSettings } from '@/lib/types';
 import { loadStoredAccent, persistAccent } from '@/lib/accent';
+import { loadStoredCanvas, persistCanvas } from '@/lib/canvas';
 import { applyTheme } from '@/lib/theme';
 import { notifyUsageSettingsChanged } from '@/lib/usage-sync';
 import { cn } from '@/lib/utils';
-import { ACCENT_IDS, ACCENT_PALETTES } from '@/styles/tokens';
+import { ACCENT_IDS, ACCENT_PALETTES, CANVAS_IDS, CANVAS_PALETTES } from '@/styles/tokens';
 import {
   createSettingsPersistenceTracker,
   mergeSettingsResponse,
@@ -40,6 +41,17 @@ const ACCENT_NAME_KEY = {
   teal: 'settings.general.accentTeal',
   rose: 'settings.general.accentRose',
   amber: 'settings.general.accentAmber',
+} as const;
+
+const CANVAS_NAME_KEY = {
+  gray: 'settings.general.canvasGray',
+  white: 'settings.general.canvasWhite',
+  paper: 'settings.general.canvasPaper',
+  mist: 'settings.general.canvasMist',
+  sky: 'settings.general.canvasSky',
+  mint: 'settings.general.canvasMint',
+  sand: 'settings.general.canvasSand',
+  lilac: 'settings.general.canvasLilac',
 } as const;
 
 export function PreferencesPanel({
@@ -67,6 +79,7 @@ export function PreferencesPanel({
     setPluginsNavVisible,
   } = useSidebar();
   const [accent, setAccent] = useState(loadStoredAccent);
+  const [canvas, setCanvas] = useState(loadStoredCanvas);
   const usageBaselineRef = useRef(settings.usageCollectIntervalMin);
   const persistenceTrackerRef = useRef<ReturnType<typeof createSettingsPersistenceTracker> | null>(null);
 
@@ -143,7 +156,7 @@ export function PreferencesPanel({
               void persist({ language });
             }}
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger className="w-full" aria-label={t('settings.general.languageLabel')}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -167,7 +180,7 @@ export function PreferencesPanel({
               });
             }}
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger className="w-full" aria-label={t('settings.general.themeLabel')}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -204,6 +217,40 @@ export function PreferencesPanel({
                     onClick={() => {
                       setAccent(id);
                       persistAccent(id);
+                    }}
+                  />
+                </Hint>
+              );
+            })}
+          </div>
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.general.canvasLabel')}
+          description={t('settings.general.canvasDescription')}
+        >
+          <div
+            className="flex flex-wrap items-center justify-end gap-1.5"
+            role="radiogroup"
+            aria-label={t('settings.general.canvasLabel')}
+          >
+            {CANVAS_IDS.map((id) => {
+              const name = t(CANVAS_NAME_KEY[id]);
+              const selected = canvas === id;
+              return (
+                <Hint key={id} label={name}>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    aria-label={name}
+                    className={cn(
+                      'h-6 w-6 shrink-0 rounded-btn border border-black/10',
+                      selected && 'ring-2 ring-accent ring-offset-2 ring-offset-panel',
+                    )}
+                    style={{ backgroundColor: CANVAS_PALETTES[id].canvas }}
+                    onClick={() => {
+                      setCanvas(id);
+                      persistCanvas(id);
                     }}
                   />
                 </Hint>
@@ -320,7 +367,7 @@ export function PreferencesPanel({
               });
             }}
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger className="w-full" aria-label={t('settings.general.skillMarketLabel')}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

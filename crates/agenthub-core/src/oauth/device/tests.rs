@@ -370,7 +370,9 @@ fn grok_device_account_input_uses_official_cli_client() {
         input.extra.get("source").and_then(|v| v.as_str()),
         Some("oauth_pkce")
     );
-    assert!(!crate::models::authorization_is_route_pool_home(&input.extra));
+    assert!(!crate::models::authorization_is_route_pool_home(
+        &input.extra
+    ));
     assert!(!input.is_current);
 }
 

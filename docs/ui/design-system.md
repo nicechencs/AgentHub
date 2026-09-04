@@ -52,8 +52,8 @@ Use semantic surface roles:
 
 | Role | Token | Use |
 |---|---|---|
-| Canvas | `bg-canvas` | Main work area and quiet page background |
-| Panel | `bg-panel` | Sidebar, page panel, preview panel, dialog content |
+| Canvas | `bg-canvas` | Page, main column, and top bar |
+| Panel | `bg-panel` | Cards, sidebar, preview panel, dialog content |
 | Subtle | `bg-subtle` | Toolbars, table headings, secondary strips |
 | Hover | `bg-hover` | Pointer hover on an enabled item |
 | Active | `bg-active` | Current page item, current preview target, current connection |

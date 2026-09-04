@@ -27,8 +27,8 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{AppError, Result};
 use crate::models::{
-    AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectedBinaryCopy,
-    DetectResult, DetectStatus, LiveAccount, RunOptions, RunSpec,
+    AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectResult, DetectStatus,
+    DetectedBinaryCopy, LiveAccount, RunOptions, RunSpec,
 };
 use crate::runtime;
 use crate::utils::paths::{agent_home, home_dir};
@@ -932,7 +932,11 @@ fn cursor_ide_bin() -> Option<(PathBuf, Option<String>)> {
 }
 
 fn cursor_ide_version_from_exe(exe: &Path) -> Option<String> {
-    let pkg = exe.parent()?.join("resources").join("app").join("package.json");
+    let pkg = exe
+        .parent()?
+        .join("resources")
+        .join("app")
+        .join("package.json");
     let text = std::fs::read_to_string(pkg).ok()?;
     let v: serde_json::Value = serde_json::from_str(&text).ok()?;
     v.get("version")

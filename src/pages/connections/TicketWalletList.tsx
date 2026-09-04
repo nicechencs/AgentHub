@@ -9,6 +9,7 @@ import {
   ChevronRight,
   CircleUser,
   KeyRound,
+  MoreHorizontal,
   Pencil,
   Plus,
   RefreshCw,
@@ -80,6 +81,7 @@ import {
   TICKET_WALLET_COLUMN_SPECS,
   ticketWalletColumnLabel,
   ticketDetailEditLabel,
+  oauthActionHoverTip,
   ticketRefreshDisabledReason,
   ticketSwitchDisabledReason,
   type TicketAddMenuAgent,
@@ -130,6 +132,7 @@ function CredentialMark({
 function DisabledReasonButton({
   disabled,
   reason,
+  tip,
   ariaLabel,
   onClick,
   children,
@@ -137,13 +140,14 @@ function DisabledReasonButton({
 }: {
   disabled: boolean;
   reason?: string;
+  tip?: string;
   ariaLabel: string;
   onClick: () => void;
   children: React.ReactNode;
   variant?: 'outline' | 'secondary' | 'dangerOutline';
 }) {
   return (
-    <Hint key={disabled ? `${ariaLabel}:${reason ?? 'disabled'}` : `${ariaLabel}:enabled`} label={disabled ? (reason || ariaLabel) : undefined}>
+    <Hint key={disabled ? `${ariaLabel}:${reason ?? 'disabled'}` : `${ariaLabel}:enabled`} label={disabled ? (reason || ariaLabel) : tip}>
       <Button
         size="sm"
         variant={variant}
@@ -240,6 +244,7 @@ export function TicketDetailPanel({
     <DisabledReasonButton
       variant="secondary"
       disabled={Boolean(refreshLocked || refreshing)}
+      tip={oauthActionHoverTip(extras.oauthAction, t)}
       reason={ticketRefreshDisabledReason({
         refreshing: Boolean(refreshing),
         refreshLocked: Boolean(refreshLocked),
@@ -489,6 +494,7 @@ function TicketRow({
   onEdit,
   onShowDetail,
   onContextMenu,
+  onOpenMenu,
   active,
   suppressHighlight,
   sortHandle,
@@ -503,6 +509,7 @@ function TicketRow({
   onEdit: (ticket: TicketView) => void;
   onShowDetail?: (ticket: TicketView) => void;
   onContextMenu?: (event: React.MouseEvent) => void;
+  onOpenMenu?: (point: ContextMenuPoint) => void;
   active: boolean;
   suppressHighlight?: boolean;
   sortHandle?: React.ReactNode;
@@ -600,6 +607,20 @@ function TicketRow({
           {editLabel ? (
             <Button size="sm" variant="outline" onClick={() => onEdit(ticket)}>
               <Pencil className="h-3.5 w-3.5" /> {editLabel}
+            </Button>
+          ) : null}
+          {onOpenMenu ? (
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label={t('connections.list.moreActions')}
+              title={t('connections.list.moreActions')}
+              onClick={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect();
+                onOpenMenu({ x: rect.left, y: rect.bottom + 4 });
+              }}
+            >
+              <MoreHorizontal className="h-3.5 w-3.5" />
             </Button>
           ) : null}
         </div>
@@ -791,7 +812,7 @@ export function TicketWalletList({
   oauthLoginAgents?: readonly AgentKey[] | null;
 }) {
   const { t } = useI18n();
-  const { widths, onResizeStart, totalWidth } = useColumnWidths(
+  const { widths, onResizeStart, onResizeKeyDown, totalWidth } = useColumnWidths(
     TICKET_WALLET_COLUMN_SPECS,
     StorageKey.connectionsColumnWidths,
   );
@@ -917,6 +938,7 @@ export function TicketWalletList({
                         columnKey={spec.key}
                         label={label}
                         onResizeStart={onResizeStart}
+                          onResizeKeyDown={onResizeKeyDown}
                       />
                     </TableHead>
                   );
@@ -940,6 +962,7 @@ export function TicketWalletList({
                     event.preventDefault();
                     setRowMenu({ x: event.clientX, y: event.clientY, ticket: row.ticket });
                   }}
+                  onOpenMenu={(point) => setRowMenu({ ...point, ticket: row.ticket })}
                   active={activeTicketId === row.ticket.id}
                   suppressHighlight={activeTicketId != null}
                   sortId={sortable[SORTABLE_ID_ATTR]}

@@ -59,20 +59,22 @@ async fn json_upstream() -> (u16, tokio::task::JoinHandle<()>) {
             .expect("bind mock json upstream");
     let port = listener.local_addr().expect("upstream addr").port();
     let task = tokio::spawn(async move {
-        axum::serve(listener, Router::new().route("/chat/completions", post(chat)))
-            .await
-            .expect("serve mock json upstream");
+        axum::serve(
+            listener,
+            Router::new().route("/chat/completions", post(chat)),
+        )
+        .await
+        .expect("serve mock json upstream");
     });
     (port, task)
 }
 
 async fn sse_upstream(chunks: Vec<&'static [u8]>) -> (u16, tokio::task::JoinHandle<()>) {
     async fn chat(State(chunks): State<Vec<&'static [u8]>>) -> Response {
-        let output = futures_util::stream::iter(
-            chunks
-                .into_iter()
-                .map(|chunk| Ok::<_, std::convert::Infallible>(axum::body::Bytes::from_static(chunk))),
-        );
+        let output =
+            futures_util::stream::iter(chunks.into_iter().map(|chunk| {
+                Ok::<_, std::convert::Infallible>(axum::body::Bytes::from_static(chunk))
+            }));
         (
             [(header::CONTENT_TYPE, "text/event-stream")],
             Body::from_stream(output),
@@ -137,8 +139,15 @@ fn spool_events(dir: &std::path::Path) -> Vec<GatewayUsageEvent> {
     let mut lines = Vec::new();
     for entry in std::fs::read_dir(dir).expect("spool dir") {
         let path = entry.expect("spool entry").path();
-        let name = path.file_name().expect("file name").to_string_lossy().to_string();
-        assert!(name.starts_with("gateway-") && name.ends_with(".jsonl"), "{name}");
+        let name = path
+            .file_name()
+            .expect("file name")
+            .to_string_lossy()
+            .to_string();
+        assert!(
+            name.starts_with("gateway-") && name.ends_with(".jsonl"),
+            "{name}"
+        );
         let raw = std::fs::read_to_string(&path).expect("spool file");
         for line in raw.lines() {
             lines.push(serde_json::from_str(line).expect("one JSON object per line"));
@@ -201,7 +210,10 @@ async fn capture_records_non_stream_and_stream_events_without_changing_frames() 
     assert_eq!(spied_json.status(), StatusCode::OK);
     let plain_body = plain_json.text().await.expect("plain body");
     let spied_body = spied_json.text().await.expect("spied body");
-    assert_eq!(normalize_request_ids(&plain_body), normalize_request_ids(&spied_body));
+    assert_eq!(
+        normalize_request_ids(&plain_body),
+        normalize_request_ids(&spied_body)
+    );
     assert!(spied_body.contains("\"text\":\"hello\""));
 
     // Stream: converted Responses SSE with a usage-bearing upstream chunk.
@@ -252,9 +264,15 @@ async fn capture_records_non_stream_and_stream_events_without_changing_frames() 
     assert_eq!(non_stream.profile_id, "capture-spied");
     assert_eq!(non_stream.surface, "responses");
     assert_eq!(non_stream.upstream_channel.as_deref(), Some("openai_chat"));
-    assert_eq!(non_stream.ticket_id.as_deref(), Some("account:connection-test"));
+    assert_eq!(
+        non_stream.ticket_id.as_deref(),
+        Some("account:connection-test")
+    );
     assert_eq!(non_stream.account_source_kind.as_deref(), Some("account"));
-    assert_eq!(non_stream.account_source_id.as_deref(), Some("connection-test"));
+    assert_eq!(
+        non_stream.account_source_id.as_deref(),
+        Some("connection-test")
+    );
     assert_eq!(non_stream.model.as_deref(), Some("test"));
     assert_eq!(non_stream.upstream_model.as_deref(), Some("kimi-test"));
     assert_eq!(non_stream.input_tokens, 11);
@@ -271,7 +289,10 @@ async fn capture_records_non_stream_and_stream_events_without_changing_frames() 
     assert_eq!(stream.output_tokens, 4);
     assert_eq!(stream.cached_input_tokens, Some(3));
     assert_eq!(stream.status, "ok");
-    assert!(stream.ttft_ms.is_some(), "stream records time to first frame");
+    assert!(
+        stream.ttft_ms.is_some(),
+        "stream records time to first frame"
+    );
 
     plain_host.shutdown().await.expect("plain shutdown");
     spied_host.shutdown().await.expect("spied shutdown");
@@ -337,12 +358,10 @@ async fn runtime_does_not_forward_anthropic_key_across_redirect() {
     }
 
     let forwarded_key = Arc::new(Mutex::new(None));
-    let target_listener = tokio::net::TcpListener::bind(SocketAddr::new(
-        IpAddr::V4(Ipv4Addr::LOCALHOST),
-        0,
-    ))
-    .await
-    .expect("bind redirect target");
+    let target_listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind redirect target");
     let target_port = target_listener.local_addr().expect("target addr").port();
     let target_task = tokio::spawn({
         let forwarded_key = forwarded_key.clone();
@@ -358,28 +377,29 @@ async fn runtime_does_not_forward_anthropic_key_across_redirect() {
         }
     });
 
-    let redirect_listener = tokio::net::TcpListener::bind(SocketAddr::new(
-        IpAddr::V4(Ipv4Addr::LOCALHOST),
-        0,
-    ))
-    .await
-    .expect("bind redirect source");
+    let redirect_listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind redirect source");
     let redirect_port = redirect_listener
         .local_addr()
         .expect("redirect addr")
         .port();
     let location = format!("http://127.0.0.1:{target_port}/messages");
     let redirect_task = tokio::spawn(async move {
-        let app = Router::new().route("/messages", post(move || {
-            let location = location.clone();
-            async move {
-                Response::builder()
-                    .status(StatusCode::FOUND)
-                    .header(axum::http::header::LOCATION, location)
-                    .body(axum::body::Body::empty())
-                    .unwrap()
-            }
-        }));
+        let app = Router::new().route(
+            "/messages",
+            post(move || {
+                let location = location.clone();
+                async move {
+                    Response::builder()
+                        .status(StatusCode::FOUND)
+                        .header(axum::http::header::LOCATION, location)
+                        .body(axum::body::Body::empty())
+                        .unwrap()
+                }
+            }),
+        );
         axum::serve(redirect_listener, app)
             .await
             .expect("serve redirect source");
@@ -405,14 +425,8 @@ async fn runtime_does_not_forward_anthropic_key_across_redirect() {
 
     let response = client()
         .await
-        .post(format!(
-            "http://127.0.0.1:{}/v1/messages",
-            runtime.port
-        ))
-        .header(
-            header::AUTHORIZATION,
-            "Bearer local-redirect-token",
-        )
+        .post(format!("http://127.0.0.1:{}/v1/messages", runtime.port))
+        .header(header::AUTHORIZATION, "Bearer local-redirect-token")
         .json(&json!({
             "model": "claude-test",
             "max_tokens": 16,
@@ -431,4 +445,291 @@ async fn runtime_does_not_forward_anthropic_key_across_redirect() {
     host.shutdown().await.expect("shutdown redirect runtime");
     redirect_task.abort();
     target_task.abort();
+}
+
+fn chat_passthrough_spec(profile_id: &str, upstream_port: u16) -> BridgeStartSpec {
+    BridgeStartSpec::new(
+        profile_id,
+        0,
+        format!("local-capture-token-{profile_id}"),
+        BridgeUpstreamConfig {
+            base_url: format!("http://127.0.0.1:{upstream_port}"),
+            model: Some("kimi-test".to_owned()),
+            source_id: Some("connection-test".to_owned()),
+            auth: ResolvedAuth::bearer("upstream-test-token"),
+            protocol: BridgeUpstreamProtocol::OpenAiChatCompletions,
+            local_surface: BridgeLocalSurface::ChatCompletions,
+        },
+    )
+}
+
+fn grok_passthrough_spec(profile_id: &str, upstream_port: u16) -> BridgeStartSpec {
+    BridgeStartSpec::new(
+        profile_id,
+        0,
+        format!("local-capture-token-{profile_id}"),
+        BridgeUpstreamConfig {
+            base_url: format!("http://127.0.0.1:{upstream_port}"),
+            model: Some("grok-test".to_owned()),
+            source_id: Some("connection-test".to_owned()),
+            auth: ResolvedAuth::bearer("upstream-test-token"),
+            protocol: BridgeUpstreamProtocol::XaiResponsesOauth,
+            local_surface: BridgeLocalSurface::Responses,
+        },
+    )
+}
+
+async fn json_upstream_at(path: &'static str, body: Value) -> (u16, tokio::task::JoinHandle<()>) {
+    async fn echo(State(body): State<Value>) -> Json<Value> {
+        Json(body)
+    }
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind mock json upstream");
+    let port = listener.local_addr().expect("upstream addr").port();
+    let task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new().route(path, post(echo)).with_state(body),
+        )
+        .await
+        .expect("serve mock json upstream");
+    });
+    (port, task)
+}
+
+async fn sse_upstream_at(
+    path: &'static str,
+    chunks: Vec<&'static [u8]>,
+) -> (u16, tokio::task::JoinHandle<()>) {
+    async fn stream_chunks(State(chunks): State<Vec<&'static [u8]>>) -> Response {
+        let output =
+            futures_util::stream::iter(chunks.into_iter().map(|chunk| {
+                Ok::<_, std::convert::Infallible>(axum::body::Bytes::from_static(chunk))
+            }));
+        (
+            [(header::CONTENT_TYPE, "text/event-stream")],
+            Body::from_stream(output),
+        )
+            .into_response()
+    }
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind mock sse upstream");
+    let port = listener.local_addr().expect("upstream addr").port();
+    let task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route(path, post(stream_chunks))
+                .with_state(chunks),
+        )
+        .await
+        .expect("serve mock sse upstream");
+    });
+    (port, task)
+}
+
+#[tokio::test]
+async fn passthrough_chat_records_usage_without_changing_frames() {
+    let spool_dir = tempfile::tempdir().expect("spool tempdir");
+    let chat_json = json!({
+        "id": "chat-test",
+        "model": "kimi-test",
+        "created": 1,
+        "choices": [{ "message": { "role": "assistant", "content": "hello" }, "finish_reason": "stop" }],
+        "usage": {
+            "prompt_tokens": 11, "completion_tokens": 4, "total_tokens": 15,
+            "prompt_tokens_details": { "cached_tokens": 3 }
+        }
+    });
+    let (plain_port, plain_task) = json_upstream_at("/chat/completions", chat_json.clone()).await;
+    let (spied_port, spied_task) = json_upstream_at("/chat/completions", chat_json).await;
+    let plain_host = BridgeRuntimeHost::new();
+    let spied_host = BridgeRuntimeHost::new();
+    spied_host.set_usage_spool_dir(spool_dir.path().to_path_buf());
+
+    let plain = plain_host
+        .start(chat_passthrough_spec("pass-chat-plain", plain_port))
+        .await
+        .expect("start plain chat");
+    let spied = spied_host
+        .start(chat_passthrough_spec("pass-chat-spied", spied_port))
+        .await
+        .expect("start spied chat");
+
+    let http = client().await;
+    let request = |port: u16, profile: &'static str, body: Value| {
+        let http = http.clone();
+        async move {
+            http.post(format!("http://127.0.0.1:{port}/v1/chat/completions"))
+                .header(
+                    header::AUTHORIZATION,
+                    format!("Bearer local-capture-token-{profile}"),
+                )
+                .json(&body)
+                .send()
+                .await
+                .expect("bridge request")
+        }
+    };
+    let chat_body = json!({"model":"test","messages":[{"role":"user","content":"hello"}]});
+    let plain_json = request(plain.port, "pass-chat-plain", chat_body.clone()).await;
+    let spied_json = request(spied.port, "pass-chat-spied", chat_body).await;
+    assert_eq!(plain_json.status(), StatusCode::OK);
+    assert_eq!(spied_json.status(), StatusCode::OK);
+    let plain_body = plain_json.text().await.expect("plain body");
+    let spied_body = spied_json.text().await.expect("spied body");
+    assert_eq!(plain_body, spied_body);
+    assert!(spied_body.contains("\"prompt_tokens\":11"));
+
+    let chunks: Vec<&'static [u8]> = vec![
+        b"data: {\"id\":\"chat-stream\",\"choices\":[{\"delta\":{\"content\":\"hel\"}}]}\n\n",
+        b"data: {\"choices\":[{\"delta\":{\"content\":\"lo\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":4,\"total_tokens\":15,\"prompt_tokens_details\":{\"cached_tokens\":3}}}\n\n",
+        b"data: [DONE]\n\n",
+    ];
+    let (plain_sse_port, plain_sse_task) =
+        sse_upstream_at("/chat/completions", chunks.clone()).await;
+    let (spied_sse_port, spied_sse_task) = sse_upstream_at("/chat/completions", chunks).await;
+    let plain_stream = plain_host
+        .start(chat_passthrough_spec(
+            "pass-chat-plain-stream",
+            plain_sse_port,
+        ))
+        .await
+        .expect("start plain chat stream");
+    let spied_stream = spied_host
+        .start(chat_passthrough_spec(
+            "pass-chat-spied-stream",
+            spied_sse_port,
+        ))
+        .await
+        .expect("start spied chat stream");
+    let stream_body = json!({
+        "model": "test",
+        "messages": [{"role":"user","content":"hello"}],
+        "stream": true
+    });
+    let plain_sse = request(
+        plain_stream.port,
+        "pass-chat-plain-stream",
+        stream_body.clone(),
+    )
+    .await;
+    let spied_sse = request(spied_stream.port, "pass-chat-spied-stream", stream_body).await;
+    assert_eq!(plain_sse.status(), StatusCode::OK);
+    assert_eq!(spied_sse.status(), StatusCode::OK);
+    let plain_stream_body = plain_sse.text().await.expect("plain stream");
+    let spied_stream_body = spied_sse.text().await.expect("spied stream");
+    assert_eq!(plain_stream_body, spied_stream_body);
+    assert!(spied_stream_body.contains("data: [DONE]"));
+
+    let events = spool_events(spool_dir.path());
+    assert_eq!(events.len(), 2, "one json + one stream");
+    assert_eq!(events[0].input_tokens, 11);
+    assert_eq!(events[0].output_tokens, 4);
+    assert_eq!(events[0].cached_input_tokens, Some(3));
+    assert_eq!(events[0].surface, "chat");
+    assert_eq!(events[1].input_tokens, 11);
+    assert_eq!(events[1].output_tokens, 4);
+
+    let json_traces = spied_host.recent_route_traces("pass-chat-spied");
+    assert_eq!(json_traces[0].input_tokens, Some(11));
+    assert_eq!(json_traces[0].output_tokens, Some(4));
+    let stream_traces = spied_host.recent_route_traces("pass-chat-spied-stream");
+    assert_eq!(stream_traces[0].input_tokens, Some(11));
+    assert_eq!(stream_traces[0].output_tokens, Some(4));
+
+    plain_host.shutdown().await.expect("plain shutdown");
+    spied_host.shutdown().await.expect("spied shutdown");
+    plain_task.abort();
+    spied_task.abort();
+    plain_sse_task.abort();
+    spied_sse_task.abort();
+}
+
+#[tokio::test]
+async fn passthrough_grok_records_usage_from_json_and_sse() {
+    let spool_dir = tempfile::tempdir().expect("spool tempdir");
+    let grok_json = json!({
+        "id": "resp_test",
+        "model": "grok-test",
+        "status": "completed",
+        "output": [{
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": "hello"}]
+        }],
+        "usage": {
+            "input_tokens": 11,
+            "output_tokens": 4,
+            "total_tokens": 15,
+            "input_tokens_details": { "cached_tokens": 3 }
+        }
+    });
+    let (json_port, json_task) = json_upstream_at("/responses", grok_json).await;
+    let host = BridgeRuntimeHost::new();
+    host.set_usage_spool_dir(spool_dir.path().to_path_buf());
+    let json_edge = host
+        .start(grok_passthrough_spec("pass-grok-json", json_port))
+        .await
+        .expect("start grok json");
+
+    let http = client().await;
+    let json_response = http
+        .post(format!("http://127.0.0.1:{}/v1/responses", json_edge.port))
+        .header(
+            header::AUTHORIZATION,
+            "Bearer local-capture-token-pass-grok-json",
+        )
+        .json(&json!({"model":"test","input":"hello"}))
+        .send()
+        .await
+        .expect("grok json request");
+    assert_eq!(json_response.status(), StatusCode::OK);
+
+    let chunks: Vec<&'static [u8]> = vec![
+        b"event: response.created\ndata: {\"type\":\"response.created\",\"sequence_number\":0,\"response\":{\"id\":\"resp_test\",\"model\":\"grok-test\"}}\n\n",
+        b"event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":1,\"delta\":\"hello\"}\n\n",
+        b"event: response.completed\ndata: {\"type\":\"response.completed\",\"sequence_number\":2,\"response\":{\"id\":\"resp_test\",\"usage\":{\"input_tokens\":11,\"output_tokens\":4,\"total_tokens\":15,\"input_tokens_details\":{\"cached_tokens\":3}}}}\n\n",
+    ];
+    let (sse_port, sse_task) = sse_upstream_at("/responses", chunks).await;
+    let sse_edge = host
+        .start(grok_passthrough_spec("pass-grok-sse", sse_port))
+        .await
+        .expect("start grok sse");
+    let sse_response = http
+        .post(format!("http://127.0.0.1:{}/v1/responses", sse_edge.port))
+        .header(
+            header::AUTHORIZATION,
+            "Bearer local-capture-token-pass-grok-sse",
+        )
+        .json(&json!({"model":"test","input":"hello","stream":true}))
+        .send()
+        .await
+        .expect("grok sse request");
+    assert_eq!(sse_response.status(), StatusCode::OK);
+    let sse_body = sse_response.text().await.expect("grok sse body");
+    assert!(sse_body.contains("response.completed"));
+
+    let events = spool_events(spool_dir.path());
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0].input_tokens, 11);
+    assert_eq!(events[0].output_tokens, 4);
+    assert_eq!(events[0].cached_input_tokens, Some(3));
+    assert_eq!(events[1].input_tokens, 11);
+    assert_eq!(events[1].output_tokens, 4);
+
+    let json_traces = host.recent_route_traces("pass-grok-json");
+    assert_eq!(json_traces[0].input_tokens, Some(11));
+    assert_eq!(json_traces[0].output_tokens, Some(4));
+    let sse_traces = host.recent_route_traces("pass-grok-sse");
+    assert_eq!(sse_traces[0].input_tokens, Some(11));
+    assert_eq!(sse_traces[0].output_tokens, Some(4));
+
+    host.shutdown().await.expect("shutdown");
+    json_task.abort();
+    sse_task.abort();
 }

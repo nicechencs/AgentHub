@@ -7,7 +7,6 @@ import { WorkbenchSplitPage } from '@/components/layout/SideSplit';
 import { useSideSplit } from '@/components/layout/use-side-split';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { EnvRemediationPanel } from '@/components/shared/EnvRemediationPanel';
-import { EnvStatusBar } from '@/components/shared/EnvStatusBar';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { ListSkeleton } from '@/components/ui/skeleton';
@@ -30,11 +29,12 @@ import { applyStoredAgentOrder, sortAgentsForManagePage } from '@/lib/agent-visi
 import { applyAgentUpdates, checkAgentUpdates } from '@/lib/api/agent';
 import { StorageKey } from '@/lib/ui-preferences';
 import { tryRefreshDoctor } from '@/lib/api/doctor';
-import { listRuntimes, resolveAutoInstallPlan } from '@/lib/api/env';
+import { checkRuntimeUpdates, listRuntimes, resolveAutoInstallPlan } from '@/lib/api/env';
 import { hasEnvIssues } from '@/lib/env';
-import type { AgentKey, AgentStatus, AgentUpdateInfo, RuntimeDetect, RuntimeId } from '@/lib/types';
+import type { AgentKey, AgentStatus, AgentUpdateInfo, RuntimeDetect, RuntimeId, RuntimeUpdateInfo } from '@/lib/types';
 import { AgentCard } from './agent-card';
 import { AgentDetailPanel } from './AgentDetailPanel';
+import { EnvSoftwareList, type EnvSoftwareIntent } from './EnvSoftwareList';
 import { cn } from '@/lib/utils';
 import {
   AGENT_TABLE_COLUMN_SPECS,
@@ -56,14 +56,20 @@ export default function AgentsPage() {
   const [runtimes, setRuntimes] = React.useState<RuntimeDetect[]>([]);
   const [envLoading, setEnvLoading] = React.useState(true);
   const [envError, setEnvError] = React.useState<unknown>(null);
+  const [runtimeUpdates, setRuntimeUpdates] = React.useState<
+    Partial<Record<RuntimeId, RuntimeUpdateInfo>>
+  >({});
   /** 页级修复面板:focus + 是否自动开装 */
   const [pageFix, setPageFix] = React.useState<{
     runtimeId?: RuntimeId;
     autoStart: boolean;
+    intent: EnvSoftwareIntent;
+    canAutoUpgrade?: boolean;
   } | null>(null);
   /** 真实安装中态(勿用 autoStart 充当 busy,失败后会永久卡住) */
   const [envInstallRunning, setEnvInstallRunning] = React.useState(false);
   const updateSeq = React.useRef(0);
+  const runtimeUpdateSeq = React.useRef(0);
   const initialUpdatesStarted = React.useRef(false);
 
   const agents = React.useMemo(() => {
@@ -121,17 +127,31 @@ export default function AgentsPage() {
     }
   }, [t]);
 
+  const loadRuntimeUpdates = React.useCallback(async (list: RuntimeDetect[], force = false) => {
+    const seq = ++runtimeUpdateSeq.current;
+    try {
+      const updates = await checkRuntimeUpdates(list.map((runtime) => runtime.id), force);
+      if (seq !== runtimeUpdateSeq.current) return;
+      setRuntimeUpdates(Object.fromEntries(updates.map((update) => [update.runtimeId, update])));
+    } catch {
+      // Keep the previous result if the desktop command itself is unavailable.
+      // Core turns ordinary network errors into an explicit unknown state.
+    }
+  }, []);
+
   const loadRuntimes = React.useCallback(async () => {
     setEnvLoading(true);
     setEnvError(null);
     try {
-      setRuntimes(await listRuntimes());
+      const next = await listRuntimes();
+      setRuntimes(next);
+      void loadRuntimeUpdates(next);
     } catch (e) {
       setEnvError(e);
     } finally {
       setEnvLoading(false);
     }
-  }, []);
+  }, [loadRuntimeUpdates]);
 
   React.useEffect(() => {
     void loadRuntimes();
@@ -185,6 +205,7 @@ export default function AgentsPage() {
       const forced = await tryRefreshDoctor();
       const r = forced?.runtimes ?? (await listRuntimes());
       setRuntimes(r);
+      void loadRuntimeUpdates(r, true);
       setEnvError(null);
       try {
         await reload();
@@ -207,13 +228,13 @@ export default function AgentsPage() {
     } finally {
       setEnvLoading(false);
     }
-  }, [mergeUpdates, reload]);
+  }, [loadRuntimeUpdates, mergeUpdates, reload]);
 
   const pageFixRuntime = pageFix?.runtimeId
     ? runtimes.find((r) => r.id === pageFix.runtimeId)
     : runtimes.find((r) => r.status !== 'ok');
 
-  const showPagePanel = pageFix != null && hasEnvIssues(runtimes);
+  const showPagePanel = pageFix != null;
   const agentOrder = useStoredIdOrder(StorageKey.agentsCatalogOrder);
   const orderedAgents = React.useMemo(() => {
     const baseline = sortAgentsForManagePage(agents);
@@ -227,7 +248,7 @@ export default function AgentsPage() {
     agentOrder.seedIfEmpty(liveIds);
   }, [agentOrder.seedIfEmpty, liveIds]);
   const canReorder = liveIds.length > 1;
-  const { widths, onResizeStart, totalWidth } = useColumnWidths(
+  const { widths, onResizeStart, onResizeKeyDown, totalWidth } = useColumnWidths(
     AGENT_TABLE_FIXED_COLUMN_SPECS,
     StorageKey.agentsColumnWidths,
   );
@@ -274,21 +295,31 @@ export default function AgentsPage() {
         descriptionTip={t('agents.page.descriptionTip')}
       />
       <div className={pageRhythm.lead}>
-        <EnvStatusBar
+        <EnvSoftwareList
           runtimes={runtimes}
           loading={showAgentSkeleton || envLoading}
           onRefresh={() => void refreshEnv()}
-          onFix={(r) => setPageFix({ runtimeId: r.id, autoStart: false })}
-          onOneClickFix={() => setPageFix({ autoStart: true })}
+          onAction={(runtime, intent, canAutoUpgrade = true) =>
+            setPageFix({
+              runtimeId: runtime.id,
+              autoStart: intent !== 'repair' && canAutoUpgrade,
+              intent,
+              canAutoUpgrade,
+            })
+          }
+          onOneClickFix={() => setPageFix({ autoStart: true, intent: 'install' })}
           oneClickBusy={envInstallRunning}
+          runtimeUpdates={runtimeUpdates}
         />
         {showPagePanel && (
           <EnvRemediationPanel
-            key={`page-fix-${pageFix.runtimeId ?? 'all'}-${pageFix.autoStart}`}
+            key={`page-fix-${pageFix.runtimeId ?? 'all'}-${pageFix.autoStart}-${pageFix.intent}-${pageFix.canAutoUpgrade}`}
             runtime={pageFixRuntime}
             runtimes={runtimes}
             focusIds={pageFix.runtimeId ? [pageFix.runtimeId] : undefined}
             autoStart={pageFix.autoStart}
+            intent={pageFix.intent}
+            canAutoUpgrade={pageFix.canAutoUpgrade}
             pageHasPrimaryCta
             onRunningChange={setEnvInstallRunning}
             onDismiss={() => {
@@ -352,6 +383,7 @@ export default function AgentsPage() {
                           columnKey={spec.key}
                           label={label}
                           onResizeStart={onResizeStart}
+                          onResizeKeyDown={onResizeKeyDown}
                         />
                       )}
                     </TableHead>

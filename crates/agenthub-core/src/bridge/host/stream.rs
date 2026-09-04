@@ -25,14 +25,14 @@ use crate::bridge::protocol::responses::{
 };
 use crate::bridge::types::UPSTREAM_STREAM_INCOMPLETE_ZH;
 use crate::bridge::types::{BridgeEvent, IrEvent, ProtocolError, Usage};
-use crate::bridge::usage_capture::{
-    emit, CaptureContext, GatewayUsageEvent, StreamCaptureGuard,
-};
+use crate::bridge::usage_capture::{emit, CaptureContext, GatewayUsageEvent, StreamCaptureGuard};
 
 use super::http::{
     error_response, log_protocol_error, protocol_error_response, sse_data_payload,
     sse_frame_end_deque, stopping_response, stream_error_frame, EdgeState,
 };
+use super::passthrough_usage::PassthroughUsageObserver;
+use super::route_trace::RouteTraceLog;
 use super::surface::DownstreamSurface;
 use super::transport::{UpstreamChannel, UpstreamDecode};
 use super::upstream::{capture_grok_completed, capture_grok_sse, grok_upstream};
@@ -87,6 +87,8 @@ fn record_trace_usage(
         ttft_ms,
         usage.map(|row| row.input_tokens),
         usage.map(|row| row.output_tokens),
+        usage.and_then(|row| row.cached_input_tokens),
+        usage.map(|row| row.reasoning_tokens),
     );
 }
 
@@ -97,18 +99,61 @@ fn emit_ok_usage(state: &EdgeState, event: GatewayUsageEvent) {
         event.ttft_ms,
         has_tokens.then_some(event.input_tokens),
         has_tokens.then_some(event.output_tokens),
+        event.cached_input_tokens,
+        event.reasoning_tokens,
     );
     emit(&state.usage_spool, event);
+}
+
+struct RouteTraceStreamGuard {
+    log: RouteTraceLog,
+    request_id: String,
+    started: Instant,
+    completed: bool,
+}
+
+impl RouteTraceStreamGuard {
+    fn new(state: &EdgeState, request_id: &str, started: Instant) -> Self {
+        Self {
+            log: state.route_traces.clone(),
+            request_id: request_id.to_owned(),
+            started,
+            completed: false,
+        }
+    }
+
+    fn complete(&mut self) {
+        self.log
+            .patch_stream_completed(&self.request_id, since_ms(self.started));
+        self.completed = true;
+    }
+
+    fn fail_conversion(&mut self) {
+        self.log
+            .patch_stream_conversion_failed(&self.request_id, since_ms(self.started));
+        self.completed = true;
+    }
+}
+
+impl Drop for RouteTraceStreamGuard {
+    fn drop(&mut self) {
+        if !self.completed {
+            self.log
+                .patch_stream_disconnected(&self.request_id, since_ms(self.started));
+        }
+    }
 }
 
 fn finish_stream_usage(
     state: &EdgeState,
     request_id: &str,
+    trace_guard: &mut RouteTraceStreamGuard,
     guard: StreamCaptureGuard,
     ttft_ms: Option<u64>,
     usage: Option<&Usage>,
 ) {
     record_trace_usage(state, request_id, ttft_ms, usage);
+    trace_guard.complete();
     guard.succeed(ttft_ms, usage);
 }
 
@@ -582,6 +627,9 @@ pub(super) async fn passthrough_json_response(
     state
         .continuations
         .record_response(&value, replay_seed.as_deref(), &member.source_id);
+    let mut observer = PassthroughUsageObserver::new(upstream_decode(&state));
+    observer.observe_json(&value);
+    let passthrough_usage = observer.captured().cloned();
     let body = if let Some(direction) = pair {
         sanitize_pair_response(direction, &mut value);
         match serde_json::to_vec(&value) {
@@ -606,13 +654,14 @@ pub(super) async fn passthrough_json_response(
     };
     state.record_upstream_success();
     tracing::info!(target: "core.adapter.protocol", profile_id = %state.profile_id, request_id = %request_id, account_id = %member.source_id, ticket_id = %member.ticket_id, op = "passthrough", status = status.as_u16(), elapsed_ms = started.elapsed().as_millis() as u64, "bridge response completed");
-    // Bytes are relayed without protocol decoding: capture records identity,
-    // status, and latency only; token fields stay zero/NULL.
-    emit_ok_usage(
-        &state,
-        usage_event(&state, &request_id, started, &member, &capture)
-            .ok(Some(status.as_u16()), None),
-    );
+    // Bytes stay unmodified; usage is observed from the decoded JSON for
+    // monitoring / gateway capture only.
+    let mut event = usage_event(&state, &request_id, started, &member, &capture)
+        .ok(Some(status.as_u16()), None);
+    if let Some(usage) = passthrough_usage.as_ref() {
+        event = event.with_usage(usage);
+    }
+    emit_ok_usage(&state, event);
     let content_type = HeaderValue::from_str(&content_type)
         .unwrap_or_else(|_| HeaderValue::from_static("application/json"));
     (
@@ -922,10 +971,11 @@ pub(super) fn passthrough_sse_response(
         DownstreamSurface::Messages => "messages_passthrough_stream",
         _ => "responses_passthrough_stream",
     };
+    let mut trace_guard = RouteTraceStreamGuard::new(&observed, &request_id, started);
     let output = stream! {
         let _permit = permit;
-        // Bytes are relayed without protocol decoding: capture records
-        // identity, status, and latency only; token fields stay zero/NULL.
+        // Bytes are relayed without rewriting; usage is observed from SSE
+        // payloads for monitoring / gateway capture only.
         let capture_guard = StreamCaptureGuard::new(
             &observed.usage_spool,
             usage_event(&observed, &request_id, started, &member, &capture),
@@ -933,6 +983,7 @@ pub(super) fn passthrough_sse_response(
             Some(upstream_status),
         );
         let mut ttft_ms: Option<u64> = None;
+        let mut usage_observer = PassthroughUsageObserver::new(upstream_decode(&observed));
         let mut upstream_bytes = 0usize;
         let should_capture = grok_upstream(&observed);
         let mut capture = Vec::new();
@@ -948,6 +999,7 @@ pub(super) fn passthrough_sse_response(
                     if is_responses {
                         observed.record_upstream_failure();
                     }
+                    trace_guard.fail_conversion();
                     warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(stream_fail_frame(surface, next_sequence_number));
                     return;
@@ -956,6 +1008,7 @@ pub(super) fn passthrough_sse_response(
                     Ok(next) => next,
                     Err(_) => {
                         observed.record_upstream_failure();
+                        trace_guard.fail_conversion();
                         warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(stream_fail_frame(surface, next_sequence_number));
                         return;
@@ -965,12 +1018,14 @@ pub(super) fn passthrough_sse_response(
             let Some(chunk) = next else { break; };
             let Ok(chunk) = chunk else {
                 observed.record_upstream_failure();
+                trace_guard.fail_conversion();
                 warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(stream_fail_frame(surface, next_sequence_number));
                 return;
             };
             if upstream_bytes.saturating_add(chunk.len()) > STREAM_LIMIT_BYTES {
                 observed.record_upstream_failure();
+                trace_guard.fail_conversion();
                 warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(stream_fail_frame(surface, next_sequence_number));
                 return;
@@ -980,6 +1035,7 @@ pub(super) fn passthrough_sse_response(
                 capture.extend_from_slice(&chunk);
             }
             if !is_responses {
+                usage_observer.observe_sse_bytes(&chunk);
                 note_ttft(&mut ttft_ms, started);
                 yield Ok::<_, Infallible>(chunk);
                 continue;
@@ -993,6 +1049,7 @@ pub(super) fn passthrough_sse_response(
                     Ok(info) => info,
                     Err(()) => {
                         observed.record_upstream_failure();
+                        trace_guard.fail_conversion();
                         warn_stream_fail(&request_id, "stream_error");
                         yield Ok::<_, Infallible>(stream_fail_frame(
                             DownstreamSurface::Responses,
@@ -1003,6 +1060,7 @@ pub(super) fn passthrough_sse_response(
                 };
                 if saw_responses_terminal && info.has_data {
                     observed.record_upstream_failure();
+                    trace_guard.fail_conversion();
                     warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(stream_fail_frame(
                         DownstreamSurface::Responses,
@@ -1015,6 +1073,7 @@ pub(super) fn passthrough_sse_response(
                         .is_some_and(|last| sequence_number <= last)
                     {
                         observed.record_upstream_failure();
+                        trace_guard.fail_conversion();
                         warn_stream_fail(&request_id, "stream_error");
                         yield Ok::<_, Infallible>(stream_fail_frame(
                             DownstreamSurface::Responses,
@@ -1027,6 +1086,7 @@ pub(super) fn passthrough_sse_response(
                 }
                 if info.error_like {
                     observed.record_upstream_failure();
+                    trace_guard.fail_conversion();
                     warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(stream_fail_frame(
                         DownstreamSurface::Responses,
@@ -1041,6 +1101,7 @@ pub(super) fn passthrough_sse_response(
                             replay_seed.as_deref(),
                             &member_id,
                         );
+                        usage_observer.observe_json(&value);
                     }
                 }
                 let terminal = info.terminal;
@@ -1050,6 +1111,7 @@ pub(super) fn passthrough_sse_response(
                     Ok(frame) => frame,
                     Err(()) => {
                         observed.record_upstream_failure();
+                        trace_guard.fail_conversion();
                         warn_stream_fail(&request_id, "stream_error");
                         yield Ok::<_, Infallible>(stream_fail_frame(
                             DownstreamSurface::Responses,
@@ -1071,6 +1133,7 @@ pub(super) fn passthrough_sse_response(
         }
         if is_responses && (!responses_buffer.is_empty() || !saw_responses_terminal) {
             observed.record_upstream_failure();
+            trace_guard.fail_conversion();
             warn_stream_fail(&request_id, "stream_error");
             yield Ok::<_, Infallible>(stream_fail_frame(
                 DownstreamSurface::Responses,
@@ -1085,7 +1148,14 @@ pub(super) fn passthrough_sse_response(
         }
         observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op, status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
-        finish_stream_usage(&observed, &request_id, capture_guard, ttft_ms, None);
+        finish_stream_usage(
+            &observed,
+            &request_id,
+            &mut trace_guard,
+            capture_guard,
+            ttft_ms,
+            usage_observer.captured(),
+        );
     };
     event_stream_response(output)
 }
@@ -1108,6 +1178,7 @@ pub(super) fn stream_response(
     let decode_kind = upstream_decode(&state);
     let upstream_status = response.status().as_u16();
     let bytes = response.bytes_stream();
+    let mut trace_guard = RouteTraceStreamGuard::new(&observed, &request_id, started);
     let output = stream! {
         let mut translator = StreamCodec::new(decode_kind, request_id.clone(), model);
         // Gateway usage capture: failure outcomes are recorded by the guard's
@@ -1133,6 +1204,7 @@ pub(super) fn stream_response(
         'upstream: loop {
             let next = tokio::select! {
                 _ = force_shutdown.cancelled() => {
+                    trace_guard.fail_conversion();
                     warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(stream_fail_frame(DownstreamSurface::Responses, next_sequence_number));
                     return;
@@ -1141,6 +1213,7 @@ pub(super) fn stream_response(
                     Ok(next) => next,
                     Err(_) => {
                         observed.record_upstream_failure();
+                        trace_guard.fail_conversion();
                         warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(stream_fail_frame(DownstreamSurface::Responses, next_sequence_number));
                         return;
@@ -1150,12 +1223,14 @@ pub(super) fn stream_response(
             let Some(chunk) = next else { break; };
             let Ok(chunk) = chunk else {
                 observed.record_upstream_failure();
+                trace_guard.fail_conversion();
                 warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(stream_fail_frame(DownstreamSurface::Responses, next_sequence_number));
                 return;
             };
             if upstream_bytes.saturating_add(chunk.len()) > STREAM_LIMIT_BYTES {
                 observed.record_upstream_failure();
+                trace_guard.fail_conversion();
                 warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(stream_fail_frame(DownstreamSurface::Responses, next_sequence_number));
                 return;
@@ -1171,6 +1246,7 @@ pub(super) fn stream_response(
                     Ok(payload) => payload,
                     Err(()) => {
                         observed.record_upstream_failure();
+                        trace_guard.fail_conversion();
                         warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(stream_fail_frame(DownstreamSurface::Responses, next_sequence_number));
                         return;
@@ -1187,6 +1263,7 @@ pub(super) fn stream_response(
                 }
                 let Ok(value) = serde_json::from_str::<Value>(&payload) else {
                     observed.record_upstream_failure();
+                    trace_guard.fail_conversion();
                     warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(stream_fail_frame(DownstreamSurface::Responses, next_sequence_number));
                     return;
@@ -1196,6 +1273,7 @@ pub(super) fn stream_response(
                         let frame = crate::bridge::protocol::chat::sse_frame(&event);
                         if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
                             observed.record_upstream_failure();
+                            trace_guard.fail_conversion();
                             warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(stream_fail_frame(DownstreamSurface::Responses, next_sequence_number));
                             return;
@@ -1207,6 +1285,7 @@ pub(super) fn stream_response(
                     },
                     Err(_) => {
                         observed.record_upstream_failure();
+                        trace_guard.fail_conversion();
                         warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(stream_fail_frame(DownstreamSurface::Responses, next_sequence_number));
                         return;
@@ -1222,6 +1301,7 @@ pub(super) fn stream_response(
         // distinction matters to response clients, which otherwise persist a truncated answer.
         if !saw_done || !buffer.is_empty() {
             observed.record_upstream_failure();
+            trace_guard.fail_conversion();
             warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(stream_fail_frame(DownstreamSurface::Responses, next_sequence_number));
             return;
@@ -1232,6 +1312,7 @@ pub(super) fn stream_response(
                     let frame = crate::bridge::protocol::chat::sse_frame(&event);
                     if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
                         observed.record_upstream_failure();
+                        trace_guard.fail_conversion();
                         warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(stream_fail_frame(DownstreamSurface::Responses, next_sequence_number));
                         return;
@@ -1244,6 +1325,7 @@ pub(super) fn stream_response(
             }
             Err(_) => {
                 observed.record_upstream_failure();
+                trace_guard.fail_conversion();
                 warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(stream_fail_frame(DownstreamSurface::Responses, next_sequence_number));
                 return;
@@ -1251,7 +1333,7 @@ pub(super) fn stream_response(
         }
         observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op = "stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
-        finish_stream_usage(&observed, &request_id, capture_guard, ttft_ms, translator.captured_usage().as_ref());
+        finish_stream_usage(&observed, &request_id, &mut trace_guard, capture_guard, ttft_ms, translator.captured_usage().as_ref());
     };
     event_stream_response(output)
 }
@@ -1318,6 +1400,7 @@ pub(super) fn messages_stream_response(
     let upstream_status = response.status().as_u16();
     let bytes = response.bytes_stream();
     let error_frame = stream_fail_frame(DownstreamSurface::Messages, 0);
+    let mut trace_guard = RouteTraceStreamGuard::new(&observed, &request_id, started);
     let output = stream! {
         let model = state.upstream.model.clone().unwrap_or_default();
         let decode_kind = upstream_decode(&state);
@@ -1344,6 +1427,7 @@ pub(super) fn messages_stream_response(
         'upstream: loop {
             let next = tokio::select! {
                 _ = force_shutdown.cancelled() => {
+                    trace_guard.fail_conversion();
                     warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
                     return;
@@ -1352,6 +1436,7 @@ pub(super) fn messages_stream_response(
                     Ok(next) => next,
                     Err(_) => {
                         observed.record_upstream_failure();
+                        trace_guard.fail_conversion();
                         warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
                         return;
@@ -1361,12 +1446,14 @@ pub(super) fn messages_stream_response(
             let Some(chunk) = next else { break; };
             let Ok(chunk) = chunk else {
                 observed.record_upstream_failure();
+                trace_guard.fail_conversion();
                 warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
                 return;
             };
             if upstream_bytes.saturating_add(chunk.len()) > STREAM_LIMIT_BYTES {
                 observed.record_upstream_failure();
+                trace_guard.fail_conversion();
                 warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
                 return;
@@ -1385,6 +1472,7 @@ pub(super) fn messages_stream_response(
                     Ok(payload) => payload,
                     Err(()) => {
                         observed.record_upstream_failure();
+                        trace_guard.fail_conversion();
                         warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
                         return;
@@ -1401,6 +1489,7 @@ pub(super) fn messages_stream_response(
                 }
                 let Ok(value) = serde_json::from_str::<Value>(&payload) else {
                     observed.record_upstream_failure();
+                    trace_guard.fail_conversion();
                     warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
                     return;
@@ -1409,6 +1498,7 @@ pub(super) fn messages_stream_response(
                     Ok(events) => events,
                     Err(_) => {
                         observed.record_upstream_failure();
+                        trace_guard.fail_conversion();
                         warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
                         return;
@@ -1422,6 +1512,7 @@ pub(super) fn messages_stream_response(
                         Ok(frames) => frames,
                         Err(_) => {
                             observed.record_upstream_failure();
+                            trace_guard.fail_conversion();
                             warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
                             return;
@@ -1430,6 +1521,7 @@ pub(super) fn messages_stream_response(
                     for frame in frames {
                         if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
                             observed.record_upstream_failure();
+                            trace_guard.fail_conversion();
                             warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
                             return;
@@ -1447,6 +1539,7 @@ pub(super) fn messages_stream_response(
         }
         if !saw_done || !buffer.is_empty() {
             observed.record_upstream_failure();
+            trace_guard.fail_conversion();
             warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
             return;
@@ -1456,6 +1549,7 @@ pub(super) fn messages_stream_response(
                 Ok(frames) => frames,
                 Err(_) => {
                     observed.record_upstream_failure();
+                    trace_guard.fail_conversion();
                     warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
                     return;
@@ -1464,6 +1558,7 @@ pub(super) fn messages_stream_response(
             for frame in frames {
                 if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
                     observed.record_upstream_failure();
+                    trace_guard.fail_conversion();
                     warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
                     return;
@@ -1480,7 +1575,7 @@ pub(super) fn messages_stream_response(
         }
         observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op = "messages_stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
-        finish_stream_usage(&observed, &request_id, capture_guard, ttft_ms, translator.captured_usage().as_ref());
+        finish_stream_usage(&observed, &request_id, &mut trace_guard, capture_guard, ttft_ms, translator.captured_usage().as_ref());
     };
     event_stream_response(output)
 }
@@ -1504,6 +1599,7 @@ pub(super) fn chat_stream_response(
     let upstream_status = response.status().as_u16();
     let bytes = response.bytes_stream();
     let error_frame = stream_fail_frame(DownstreamSurface::ChatCompletions, 0);
+    let mut trace_guard = RouteTraceStreamGuard::new(&observed, &request_id, started);
     let output = stream! {
         let model = state.upstream.model.clone().unwrap_or_default();
         let decode_kind = upstream_decode(&state);
@@ -1530,6 +1626,7 @@ pub(super) fn chat_stream_response(
         'upstream: loop {
             let next = tokio::select! {
                 _ = force_shutdown.cancelled() => {
+                    trace_guard.fail_conversion();
                     warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
                     return;
@@ -1538,6 +1635,7 @@ pub(super) fn chat_stream_response(
                     Ok(next) => next,
                     Err(_) => {
                         observed.record_upstream_failure();
+                        trace_guard.fail_conversion();
                         warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
                         return;
@@ -1547,12 +1645,14 @@ pub(super) fn chat_stream_response(
             let Some(chunk) = next else { break; };
             let Ok(chunk) = chunk else {
                 observed.record_upstream_failure();
+                trace_guard.fail_conversion();
                 warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
                 return;
             };
             if upstream_bytes.saturating_add(chunk.len()) > STREAM_LIMIT_BYTES {
                 observed.record_upstream_failure();
+                trace_guard.fail_conversion();
                 warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
                 return;
@@ -1571,6 +1671,7 @@ pub(super) fn chat_stream_response(
                     Ok(payload) => payload,
                     Err(()) => {
                         observed.record_upstream_failure();
+                        trace_guard.fail_conversion();
                         warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
                         return;
@@ -1583,6 +1684,7 @@ pub(super) fn chat_stream_response(
                 }
                 let Ok(value) = serde_json::from_str::<Value>(&payload) else {
                     observed.record_upstream_failure();
+                    trace_guard.fail_conversion();
                     warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
                     return;
@@ -1591,6 +1693,7 @@ pub(super) fn chat_stream_response(
                     Ok(events) => events,
                     Err(_) => {
                         observed.record_upstream_failure();
+                        trace_guard.fail_conversion();
                         warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
                         return;
@@ -1604,6 +1707,7 @@ pub(super) fn chat_stream_response(
                         Ok(frames) => frames,
                         Err(_) => {
                             observed.record_upstream_failure();
+                            trace_guard.fail_conversion();
                             warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
                             return;
@@ -1612,6 +1716,7 @@ pub(super) fn chat_stream_response(
                     for frame in frames {
                         if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
                             observed.record_upstream_failure();
+                            trace_guard.fail_conversion();
                             warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
                             return;
@@ -1629,6 +1734,7 @@ pub(super) fn chat_stream_response(
         }
         if !saw_done || !buffer.is_empty() {
             observed.record_upstream_failure();
+            trace_guard.fail_conversion();
             warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
             return;
@@ -1638,6 +1744,7 @@ pub(super) fn chat_stream_response(
                 Ok(frames) => frames,
                 Err(_) => {
                     observed.record_upstream_failure();
+                    trace_guard.fail_conversion();
                     warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
                     return;
@@ -1646,6 +1753,7 @@ pub(super) fn chat_stream_response(
             for frame in frames {
                 if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
                     observed.record_upstream_failure();
+                    trace_guard.fail_conversion();
                     warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
                     return;
@@ -1659,6 +1767,7 @@ pub(super) fn chat_stream_response(
             Ok(frames) => frames,
             Err(_) => {
                 observed.record_upstream_failure();
+                trace_guard.fail_conversion();
                 warn_stream_fail(&request_id, "stream_error");
                 yield Ok::<_, Infallible>(error_frame.clone());
                 return;
@@ -1667,6 +1776,7 @@ pub(super) fn chat_stream_response(
         for frame in frames {
             if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
                 observed.record_upstream_failure();
+                trace_guard.fail_conversion();
                 warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
                 return;
@@ -1682,7 +1792,7 @@ pub(super) fn chat_stream_response(
         }
         observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op = "chat_stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
-        finish_stream_usage(&observed, &request_id, capture_guard, ttft_ms, translator.captured_usage().as_ref());
+        finish_stream_usage(&observed, &request_id, &mut trace_guard, capture_guard, ttft_ms, translator.captured_usage().as_ref());
     };
     event_stream_response(output)
 }

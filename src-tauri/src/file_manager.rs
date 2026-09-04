@@ -278,7 +278,10 @@ pub(crate) fn launch_cli(path: &std::path::Path) -> Result<(), String> {
 /// Unix (CI). Normalize before taking the basename so `Path::file_name`
 /// does not treat the whole Windows path as a single component on Linux.
 pub(crate) fn looks_like_codex_bundled_cli(path: &std::path::Path) -> bool {
-    let s = path.to_string_lossy().replace('\\', "/").to_ascii_lowercase();
+    let s = path
+        .to_string_lossy()
+        .replace('\\', "/")
+        .to_ascii_lowercase();
     let name = s.rsplit('/').next().unwrap_or("");
     if name != "codex.exe" && name != "codex" {
         return false;
@@ -322,7 +325,12 @@ pub(crate) fn codex_app_launch_kind(path: &std::path::Path) -> CodexAppLaunchKin
 }
 
 pub(crate) fn macos_codex_app_bundle_names() -> &'static [&'static str] {
-    &["ChatGPT.app", "Codex.app", "OpenAI Codex.app", "OpenAI.Codex.app"]
+    &[
+        "ChatGPT.app",
+        "Codex.app",
+        "OpenAI Codex.app",
+        "OpenAI.Codex.app",
+    ]
 }
 
 /// `OpenAI.Codex_26.831.1445.0_x64__2p2nqsd0c76g0` → `OpenAI.Codex_2p2nqsd0c76g0!App`.
@@ -359,8 +367,7 @@ pub(crate) fn parse_windows_codex_app_id_from_registry(output: &str) -> Option<S
 
 #[cfg(windows)]
 fn find_windows_codex_store_app_id() -> Option<String> {
-    const PACKAGES_KEY: &str =
-        r"HKCU\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages";
+    const PACKAGES_KEY: &str = r"HKCU\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages";
     for package_name in ["OpenAI.Codex_", "OpenAI.CodexBeta_", "OpenAI.ChatGPT_"] {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -413,13 +420,24 @@ fn find_windows_codex_app_id_from_windowsapps() -> Option<String> {
 fn find_windows_codex_gui_exe() -> Option<std::path::PathBuf> {
     let local = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from)?;
     let candidates = [
-        local.join("Programs").join("OpenAI").join("ChatGPT").join("ChatGPT.exe"),
+        local
+            .join("Programs")
+            .join("OpenAI")
+            .join("ChatGPT")
+            .join("ChatGPT.exe"),
         local.join("Programs").join("ChatGPT").join("ChatGPT.exe"),
         local.join("OpenAI").join("ChatGPT").join("ChatGPT.exe"),
-        local.join("Programs").join("OpenAI").join("Codex").join("Codex.exe"),
+        local
+            .join("Programs")
+            .join("OpenAI")
+            .join("Codex")
+            .join("Codex.exe"),
         local.join("Programs").join("Codex").join("Codex.exe"),
         local.join("OpenAI").join("Codex").join("Codex.exe"),
-        local.join("Microsoft").join("WindowsApps").join("ChatGPT.exe"),
+        local
+            .join("Microsoft")
+            .join("WindowsApps")
+            .join("ChatGPT.exe"),
     ];
     candidates.into_iter().find(|path| path.is_file())
 }
@@ -582,11 +600,14 @@ pub(crate) fn launch_app(path: &std::path::Path) -> Result<(), String> {
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        std::process::Command::new(path).spawn().map(|_| ()).map_err(|e| {
-            let msg = format!("launch app failed: {e}");
-            tracing::warn!(target: targets::GUI, op = "launch_app", "{msg}");
-            msg
-        })
+        std::process::Command::new(path)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| {
+                let msg = format!("launch app failed: {e}");
+                tracing::warn!(target: targets::GUI, op = "launch_app", "{msg}");
+                msg
+            })
     }
     #[cfg(not(any(windows, unix)))]
     {

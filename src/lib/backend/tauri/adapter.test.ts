@@ -298,6 +298,26 @@ describe('Tauri adapter route port', () => {
     expect(JSON.stringify(attached)).not.toContain('hubToken');
   });
 
+  it('forwards fork_connection_authorization', async () => {
+    invokeMock.mockResolvedValueOnce({
+      sourceKind: 'account',
+      sourceId: 'grok-copy',
+      originalSourceId: 'grok-1',
+      copied: true,
+    });
+    const port = createTauriAdapterPort();
+    await expect(port.forkConnectionAuthorization('account', 'grok-1')).resolves.toEqual({
+      sourceKind: 'account',
+      sourceId: 'grok-copy',
+      originalSourceId: 'grok-1',
+      copied: true,
+    });
+    expect(invokeMock).toHaveBeenCalledWith('fork_connection_authorization', {
+      sourceKind: 'account',
+      sourceId: 'grok-1',
+    });
+  });
+
   it('forwards set_route_authorization_enabled', async () => {
     invokeMock.mockResolvedValueOnce(1);
     const port = createTauriAdapterPort();
@@ -400,6 +420,52 @@ describe('mapAdapterInvokeError', () => {
         retryable: false,
       });
     }
+  });
+
+  it('forwards query_route_traces and delete_route_traces', async () => {
+    invokeMock.mockResolvedValueOnce({
+      rows: [{
+        requestId: 'req-1',
+        atUnixMs: 1_786_492_800_000,
+        method: 'POST',
+        path: '/v1/messages',
+        httpStatus: 200,
+        ok: true,
+        localAuth: { status: 'ok', keyLast4: '1234' },
+        pool: { status: 'ok' },
+        conversion: { status: 'ok', path: 'passthrough' },
+        upstreamAuth: { status: 'ok' },
+        upstream: { status: 'ok' },
+      }],
+      total: 12,
+      offset: 0,
+      limit: 50,
+    });
+    const port = createTauriAdapterPort();
+    const page = await port.queryRouteTraces({
+      keyLast4: '1234',
+      poolId: 'pool-1',
+      endpointKind: 'messages',
+      offset: 0,
+      limit: 50,
+    });
+    expect(invokeMock).toHaveBeenCalledWith('query_route_traces', {
+      keyLast4: '1234',
+      poolId: 'pool-1',
+      endpointKind: 'messages',
+      routeId: null,
+      failedOnly: false,
+      offset: 0,
+      limit: 50,
+    });
+    expect(page.total).toBe(12);
+    expect(page.rows).toHaveLength(1);
+
+    invokeMock.mockResolvedValueOnce({ deleted: 2 });
+    await expect(port.deleteRouteTraces(['req-1', 'req-2'])).resolves.toEqual({ deleted: 2 });
+    expect(invokeMock).toHaveBeenCalledWith('delete_route_traces', {
+      requestIds: ['req-1', 'req-2'],
+    });
   });
 
   it('defaults unstructured rejections to adapter.command and not retryable', () => {

@@ -584,7 +584,7 @@ pub(crate) fn restore_adapter_bridges(
             return;
         }
 
-        let _restarting_guard = LocalGatewayRestartingGuard::begin(restarting, Some(app));
+        let _restarting_guard = LocalGatewayRestartingGuard::begin(restarting.clone(), Some(app));
 
         let profiles = match with_hub_blocking(hub.clone(), |hub| {
             hub.adapter_bridge()
@@ -743,6 +743,34 @@ pub(crate) fn restore_adapter_bridges(
             {
                 tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, error = %error, "healthy bridge restored but retryable marker could not be cleared");
             }
+        }
+
+        // Current routes are represented by default pools, not legacy adapter
+        // profiles. Restore their shared loopback listener as part of startup
+        // even when there are no auto-start profiles to iterate above.
+        let shared_restore = async {
+            let _lifecycle_permit = lifecycle_barrier.enter().await?;
+            let _gate = coordinator.lock_profile("local-gateway").await;
+            let status = start_local_gateway_entries(
+                hub.clone(),
+                host.clone(),
+                restarting.load(Ordering::SeqCst),
+                true,
+            )
+            .await;
+            let bearer_sync = sync_extra_local_bearers(hub.clone(), &host).await;
+            status?;
+            bearer_sync?;
+            Ok::<(), String>(())
+        }
+        .await;
+        if let Err(error) = shared_restore {
+            tracing::warn!(
+                target: "gui",
+                op = "adapter_bridge_restore",
+                error = %error,
+                "shared local gateway could not be restored"
+            );
         }
     });
 }
@@ -961,7 +989,9 @@ fn resolve_start_members(
     material: &AdapterBridgeRuntimeMaterial,
     lead_reload: Option<UpstreamAuthReload>,
 ) -> Vec<BridgeMemberSpec> {
-    if let Some(members) = resolve_unified_gateway_pool_members(hub, profile, material, lead_reload.clone()) {
+    if let Some(members) =
+        resolve_unified_gateway_pool_members(hub, profile, material, lead_reload.clone())
+    {
         return members;
     }
     resolve_pool_members(hub, profile, material, lead_reload)
@@ -1465,6 +1495,28 @@ pub(crate) async fn start_local_gateway(
     let _restarting_guard = LocalGatewayRestartingGuard::begin(restarting.clone(), Some(app));
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gate = coordinator.lock_profile("local-gateway").await;
+    let mut status = start_local_gateway_entries(
+        hub.clone(),
+        host.clone(),
+        restarting.load(Ordering::SeqCst),
+        false,
+    )
+    .await?;
+    if remember {
+        write_local_gateway_desired_running(hub.clone(), true).await;
+    }
+    sync_extra_local_bearers(hub, &host).await?;
+    drop(_restarting_guard);
+    status.restarting = restarting.load(Ordering::SeqCst);
+    Ok(status)
+}
+
+async fn start_local_gateway_entries(
+    hub: Arc<AgentHub>,
+    host: Arc<BridgeRuntimeHost>,
+    restarting: bool,
+    isolate_pool_failures: bool,
+) -> Result<LocalGatewayStatus, String> {
     let pools = with_hub_blocking(hub.clone(), move |hub| {
         hub.route_pools()
             .list_default_pools()
@@ -1475,7 +1527,7 @@ pub(crate) async fn start_local_gateway(
         Ok(hub.route_pools().pair_adapter_flags())
     })
     .await?;
-    let mut status = if pools.is_empty() {
+    if pools.is_empty() {
         let started = host
             .start(placeholder_entry_spec(
                 "local-gateway",
@@ -1486,15 +1538,25 @@ pub(crate) async fn start_local_gateway(
             ))
             .await
             .map_err(map_bridge_host_error)?;
-        local_gateway_status_from_host(
-            &host,
-            vec![started.profile_id],
-            restarting.load(Ordering::SeqCst),
-        )?
-    } else {
-        let mut started = Vec::new();
-        for pool in pools {
-            let flags = flags;
+        return local_gateway_status_from_host(&host, vec![started.profile_id], restarting);
+    }
+
+    let mut started = Vec::new();
+    let mut first_error = None;
+    for pool in pools {
+        let pool_id = pool.id.clone();
+        let result = async {
+            // Legacy restoration may already have rebuilt and indexed this
+            // same pool. Its live spec is authoritative for this process.
+            if isolate_pool_failures
+                && host
+                    .status(&pool_id)
+                    .map_err(map_bridge_host_error)?
+                    .is_some()
+            {
+                return Ok(pool_id.clone());
+            }
+
             let pool_for_spec = pool.clone();
             let spec = with_hub_blocking(hub.clone(), move |hub| {
                 Ok(hub
@@ -1502,26 +1564,52 @@ pub(crate) async fn start_local_gateway(
                     .pool_listener_spec(&pool_for_spec, flags))
             })
             .await?;
+            let was_running = host
+                .status(&pool_id)
+                .map_err(map_bridge_host_error)?
+                .is_some();
             let runtime = host.start(spec).await.map_err(map_bridge_host_error)?;
             let port = runtime.port;
-            started.push(runtime.profile_id.clone());
-            let pool_id = pool.id.clone();
-            let _ = with_hub_blocking(hub.clone(), move |hub| {
-                hub.route_pools()
-                    .enroll_unified_gateway(&pool_id, port)
-                    .map_err(|error| map_err_string("enroll_local_gateway", error))
+            let enrollment = with_hub_blocking(hub.clone(), {
+                let pool_id = pool_id.clone();
+                move |hub| {
+                    hub.route_pools()
+                        .enroll_unified_gateway(&pool_id, port)
+                        .map_err(|error| map_err_string("enroll_local_gateway", error))
+                }
             })
             .await;
+            if let Err(error) = enrollment {
+                if !was_running {
+                    let _ = host.stop(&pool_id).await;
+                }
+                return Err(error);
+            }
+            Ok(runtime.profile_id)
         }
-        local_gateway_status_from_host(&host, started, restarting.load(Ordering::SeqCst))?
-    };
-    if remember {
-        write_local_gateway_desired_running(hub.clone(), true).await;
+        .await;
+
+        match result {
+            Ok(profile_id) => started.push(profile_id),
+            Err(error) if isolate_pool_failures => {
+                tracing::warn!(
+                    target: "gui",
+                    op = "adapter_bridge_restore",
+                    pool_id = %pool.id,
+                    error = %error,
+                    "local gateway pool could not be restored"
+                );
+                first_error.get_or_insert(error);
+            }
+            Err(error) => return Err(error),
+        }
     }
-    sync_extra_local_bearers(hub, &host).await?;
-    drop(_restarting_guard);
-    status.restarting = restarting.load(Ordering::SeqCst);
-    Ok(status)
+    if started.is_empty() {
+        if let Some(error) = first_error {
+            return Err(error);
+        }
+    }
+    local_gateway_status_from_host(&host, started, restarting)
 }
 
 /// Persist a pool loopback bearer and restart that edge if it is live.
@@ -1544,25 +1632,121 @@ pub(crate) async fn set_local_gateway_token(
         })
         .await?
     };
+    if !record.primary {
+        sync_extra_local_bearers(hub, &host).await?;
+        return Ok(record);
+    }
+    restart_pool_listener_if_running(hub, &host, record.pool_id.clone()).await?;
+    Ok(record)
+}
+
+/// Delete a listed entry key. Restarts the pool edge when the default hub token changed.
+pub(crate) async fn delete_local_gateway_token(
+    hub: Arc<AgentHub>,
+    host: Arc<BridgeRuntimeHost>,
+    coordinator: Arc<AdapterSagaCoordinator>,
+    lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
+    id: String,
+) -> Result<(), String> {
+    let _lifecycle_permit = lifecycle_barrier.enter().await?;
+    let _gate = coordinator.lock_profile("local-gateway").await;
+    let pool_id = id.clone();
+    with_hub_blocking(hub.clone(), move |hub| {
+        hub.route_pools()
+            .delete_local_token(&id)
+            .map_err(|error| map_err_string("delete_local_token", error))
+    })
+    .await?;
+    sync_extra_local_bearers(hub.clone(), &host).await?;
+    restart_pool_listener_if_running(hub, &host, pool_id).await?;
+    Ok(())
+}
+
+/// Re-read live catalogs, then rebuild the running listener so GET /models matches.
+pub(crate) async fn refresh_local_gateway_models(
+    hub: Arc<AgentHub>,
+    host: Arc<BridgeRuntimeHost>,
+    coordinator: Arc<AdapterSagaCoordinator>,
+    lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
+    token: String,
+) -> Result<Vec<String>, String> {
+    let _lifecycle_permit = lifecycle_barrier.enter().await?;
+    let _gate = coordinator.lock_profile("local-gateway").await;
+    let listed = {
+        let token = token.clone();
+        with_hub_blocking(hub.clone(), move |hub| {
+            hub.route_pools()
+                .refresh_local_token_models(&token)
+                .map_err(|error| map_err_string("refresh_local_token_models", error))
+        })
+        .await?
+    };
+    restart_pool_listener_for_token(hub, &host, &token).await?;
+    Ok(listed)
+}
+
+/// Persist a custom catalog, then rebuild the running listener so GET /models matches.
+pub(crate) async fn set_local_gateway_custom_models(
+    hub: Arc<AgentHub>,
+    host: Arc<BridgeRuntimeHost>,
+    coordinator: Arc<AdapterSagaCoordinator>,
+    lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
+    token: String,
+    models: Vec<String>,
+) -> Result<Vec<String>, String> {
+    let _lifecycle_permit = lifecycle_barrier.enter().await?;
+    let _gate = coordinator.lock_profile("local-gateway").await;
+    let listed = {
+        let token = token.clone();
+        with_hub_blocking(hub.clone(), move |hub| {
+            hub.route_pools()
+                .set_local_token_custom_models(&token, models)
+                .map_err(|error| map_err_string("set_local_token_custom_models", error))
+        })
+        .await?
+    };
+    restart_pool_listener_for_token(hub, &host, &token).await?;
+    Ok(listed)
+}
+
+async fn restart_pool_listener_for_token(
+    hub: Arc<AgentHub>,
+    host: &BridgeRuntimeHost,
+    token: &str,
+) -> Result<(), String> {
+    let token = token.to_owned();
+    let pool_id = with_hub_blocking(hub.clone(), move |hub| {
+        hub.route_pools()
+            .pool_id_for_token(&token)
+            .map_err(|error| map_err_string("pool_id_for_token", error))
+    })
+    .await?;
+    let Some(pool_id) = pool_id else {
+        return Ok(());
+    };
+    restart_pool_listener_if_running(hub, host, pool_id).await
+}
+
+async fn restart_pool_listener_if_running(
+    hub: Arc<AgentHub>,
+    host: &BridgeRuntimeHost,
+    pool_id: String,
+) -> Result<(), String> {
     let pools = with_hub_blocking(hub.clone(), move |hub| {
         hub.route_pools()
             .list_default_pools()
             .map_err(|error| map_err_string("list_default_pools", error))
     })
     .await?;
-    if !record.primary {
-        sync_extra_local_bearers(hub, &host).await?;
-        return Ok(record);
-    }
-    let Some(pool) = pools.into_iter().find(|pool| pool.id == record.pool_id) else {
-        return Ok(record);
+    let Some(pool) = pools.into_iter().find(|pool| pool.id == pool_id) else {
+        return Ok(());
     };
     let running = host
         .status(&pool.id)
         .map_err(map_bridge_host_error)?
         .is_some();
     if !running {
-        return Ok(record);
+        return Ok(());
     }
     match host.stop(&pool.id).await {
         Ok(_) => {}
@@ -1576,7 +1760,7 @@ pub(crate) async fn set_local_gateway_token(
     })
     .await?;
     host.start(spec).await.map_err(map_bridge_host_error)?;
-    Ok(record)
+    Ok(())
 }
 
 /// Stop every live relay edge. Does not use host shutdown (that blocks restart).

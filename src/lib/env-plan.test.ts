@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { resolveAutoInstallPlan, runtimeChannelForPlan } from './env-plan';
+import {
+  formatRuntimeInstallFailureLines,
+  resolveAutoInstallPlan,
+  runtimeChannelForPlan,
+} from './env-plan';
 import type { RuntimeDetect } from '@/lib/types';
 
-function missing(id: RuntimeDetect['id']): RuntimeDetect {
-  return { id, status: 'missing', remediations: [] };
+function missing(
+  id: RuntimeDetect['id'],
+  remediations: RuntimeDetect['remediations'] = [],
+): RuntimeDetect {
+  return { id, status: 'missing', remediations };
 }
 
 describe('runtimeChannelForPlan', () => {
@@ -29,5 +36,93 @@ describe('resolveAutoInstallPlan', () => {
     const plan = resolveAutoInstallPlan([missing('nodejs'), missing('git')], undefined, 'windows');
     expect(plan.targets).toEqual(['nodejs', 'git']);
     expect(plan.skipped).toEqual([]);
+  });
+
+  it('keeps one-click Node/Git on macOS when remediations are empty', () => {
+    const plan = resolveAutoInstallPlan([missing('nodejs'), missing('git')], undefined, 'macos');
+    expect(plan.targets).toEqual(['nodejs', 'git']);
+    expect(plan.skipped).toEqual([]);
+  });
+
+  it('keeps one-click Node/Git on macOS when doctor still offers Homebrew', () => {
+    const brew = { kind: 'brew' as const, value: 'brew install node' };
+    const plan = resolveAutoInstallPlan(
+      [missing('nodejs', [brew]), missing('git', [{ kind: 'brew', value: 'brew install git' }])],
+      undefined,
+      'macos',
+    );
+    expect(plan.targets).toEqual(['nodejs', 'git']);
+    expect(plan.skipped).toEqual([]);
+  });
+
+  it('keeps one-click Node on macOS when Homebrew is missing (official pkg fallback)', () => {
+    const manual = [
+      { kind: 'url' as const, value: 'https://nodejs.org/' },
+      { kind: 'hint' as const, value: '未找到 Homebrew，无法一键安装' },
+    ];
+    const plan = resolveAutoInstallPlan(
+      [missing('nodejs', manual), missing('git', [{ kind: 'url', value: 'https://git-scm.com/downloads' }])],
+      undefined,
+      'macos',
+    );
+    expect(plan.targets).toEqual(['nodejs']);
+    expect(plan.skipped).toEqual(['git']);
+  });
+
+  it('keeps one-click Node on macOS when steps include the Homebrew installer', () => {
+    const plan = resolveAutoInstallPlan(
+      [
+        missing('nodejs', [
+          { kind: 'command', value: '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"' },
+          { kind: 'url', value: 'https://brew.sh/' },
+        ]),
+      ],
+      undefined,
+      'macos',
+    );
+    expect(plan.targets).toEqual(['nodejs']);
+    expect(plan.skipped).toEqual([]);
+  });
+
+  it('includes a ready runtime only when asked (upgrade)', () => {
+    const ready: RuntimeDetect = { id: 'nodejs', status: 'ok', remediations: [] };
+    expect(resolveAutoInstallPlan([ready], ['nodejs'], 'macos').targets).toEqual([]);
+    expect(resolveAutoInstallPlan([ready], ['nodejs'], 'macos', true).targets).toEqual(['nodejs']);
+    expect(resolveAutoInstallPlan([ready], undefined, 'macos', true).targets).toEqual(['nodejs']);
+  });
+});
+
+describe('formatRuntimeInstallFailureLines', () => {
+  it('shows Homebrew/official steps instead of internal brew logs', () => {
+    const lines = formatRuntimeInstallFailureLines({
+      ok: false,
+      action: 'env_install',
+      logs: [
+        '# install runtime nodejs via brew (node)',
+        'not found: command not found: brew (install Homebrew from https://brew.sh/)',
+        'remediation: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"',
+      ],
+      message: '未找到 Homebrew，无法一键安装。请先安装 Homebrew（https://brew.sh/），或从官网手动安装。完成后完全退出并重启 AgentHub 再检测。',
+      code: 'env.not_ready',
+      details: {
+        hint: '未找到 Homebrew，无法一键安装。请先安装 Homebrew（https://brew.sh/），或从官网手动安装。完成后完全退出并重启 AgentHub 再检测。',
+        remediations: [
+          {
+            command:
+              '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"',
+            url: 'https://nodejs.org/',
+            text: '未找到 Homebrew，无法一键安装 Node.js。请先安装 Homebrew，或打开官网手动安装。',
+          },
+          { url: 'https://brew.sh/', text: '安装 Homebrew 后，完全退出并重启 AgentHub，即可使用一键安装。' },
+        ],
+      },
+    });
+    expect(lines[0]).toContain('未找到 Homebrew');
+    expect(lines.join('\n')).toContain('https://nodejs.org/');
+    expect(lines.join('\n')).toContain('https://brew.sh/');
+    expect(lines.join('\n')).toContain('Homebrew/install');
+    expect(lines.join('\n')).not.toContain('# install runtime');
+    expect(lines.join('\n')).not.toContain('command not found: brew');
+    expect(lines.join('\n')).not.toContain('remediation:');
   });
 });

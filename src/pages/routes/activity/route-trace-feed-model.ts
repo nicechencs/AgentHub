@@ -33,6 +33,7 @@ function inboundToLegacyTrace(
   index: number,
 ): AdapterBridgeRouteTrace {
   return {
+    traceVersion: 1,
     requestId: `legacy-${row.at}-${row.method}-${row.path}-${index}`,
     at: row.at,
     method: row.method,
@@ -44,7 +45,7 @@ function inboundToLegacyTrace(
     conversion: { ...skippedStage, path: '' },
     upstreamAuth: skippedStage,
     upstream: skippedStage,
-    failureStage: row.ok ? null : 'upstream',
+    failureStage: row.ok ? null : 'upstream_response',
   };
 }
 
@@ -94,6 +95,28 @@ export function mergeRecentRouteTraces(
   }
   rows.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
   return rows.slice(0, limit);
+}
+
+export function decorateRouteTraceRows(
+  rows: readonly AdapterBridgeRouteTrace[],
+  profiles: readonly Pick<AdapterProfile, 'id' | 'name' | 'targetAgentId'>[],
+  unauthenticatedLabel: string,
+): MergedRouteTraceRow[] {
+  const labelById = new Map(
+    profiles.map((profile) => [profile.id, profile.name.trim() || profile.targetAgentId]),
+  );
+  return rows.map((row) => {
+    const profileId = row.profileId?.trim() || UNAUTHENTICATED_TRACE_PROFILE_ID;
+    const unauthenticated = !row.profileId?.trim();
+    return {
+      ...row,
+      profileId,
+      sourceLabel: unauthenticated
+        ? unauthenticatedLabel
+        : (labelById.get(profileId) ?? profileId),
+      unauthenticated,
+    };
+  });
 }
 
 export function filterRouteTraceFeed(

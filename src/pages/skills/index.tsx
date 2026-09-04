@@ -29,6 +29,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
 import { Tip } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import {
+  closeConfirmationOnOpenChange,
+  preventBusyConfirmationDismissal,
+} from '@/components/shared/busy-confirmation';
 import { AGENTS, agentDisplayName } from '@/config/agents';
 import {
   checkConflict,
@@ -202,6 +206,7 @@ export default function SkillsPage() {
     name: string;
   } | null>(null);
   const [dangerBusy, setDangerBusy] = useState(false);
+  const [installBusy, setInstallBusy] = useState(false);
   const preview = useSideSplit<SkillPreviewTarget>({ storageKey: SKILLS_PREVIEW_WIDTH_KEY });
   const previewTarget = preview.target;
   const previewBodyRef = useRef<HTMLDivElement>(null);
@@ -450,10 +455,12 @@ export default function SkillsPage() {
   };
 
   const handleInstall = async () => {
+    if (installBusy) return;
     if (!installSource.trim()) {
       toast({ ...installNeedSourceToast(t), variant: 'danger' });
       return;
     }
+    setInstallBusy(true);
     try {
       if (installTarget === 'project') {
         if (!selectedProject) {
@@ -493,6 +500,8 @@ export default function SkillsPage() {
         ...installFailedToast(t, e instanceof Error ? e.message : String(e)),
         variant: 'danger',
       });
+    } finally {
+      setInstallBusy(false);
     }
   };
 
@@ -1228,8 +1237,16 @@ export default function SkillsPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={installOpen} onOpenChange={setInstallOpen}>
-        <DialogContent>
+      <Dialog
+        open={installOpen}
+        onOpenChange={(open) => closeConfirmationOnOpenChange(open, installBusy, () => setInstallOpen(false))}
+      >
+        <DialogContent
+          hideClose={installBusy}
+          onEscapeKeyDown={(event) => preventBusyConfirmationDismissal(installBusy, event)}
+          onPointerDownOutside={(event) => preventBusyConfirmationDismissal(installBusy, event)}
+          onInteractOutside={(event) => preventBusyConfirmationDismissal(installBusy, event)}
+        >
           <DialogHeader>
             <DialogTitle>
               {installTarget === 'project'
@@ -1246,13 +1263,14 @@ export default function SkillsPage() {
             value={installSource}
             onChange={(e) => setInstallSource(e.target.value)}
             placeholder={t('skills.dialog.installPlaceholder')}
+            disabled={installBusy}
           />
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setInstallOpen(false)}>
+            <Button variant="secondary" disabled={installBusy} onClick={() => setInstallOpen(false)}>
               {t('skills.dialog.conflictCancel')}
             </Button>
-            <Button onClick={() => void handleInstall()}>
-              {t('skills.dialog.installConfirm')}
+            <Button disabled={installBusy} onClick={() => void handleInstall()}>
+              {installBusy ? t('skills.dialog.busy') : t('skills.dialog.installConfirm')}
             </Button>
           </DialogFooter>
         </DialogContent>

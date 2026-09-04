@@ -4,6 +4,7 @@ import {
   getTicketWalletSnapshot,
   loadTicketWallet,
   notifyTicketWalletChanged,
+  removeTicketFromWalletSnapshot,
   resetTicketWalletStore,
 } from './ticket-wallet-store';
 
@@ -98,5 +99,16 @@ describe('ticket-wallet-store', () => {
     expect(failed.wallet?.tickets[0]?.label).toBe('keep');
     expect(failed.error).toBeInstanceOf(Error);
     expect(getTicketWalletSnapshot().wallet?.tickets[0]?.label).toBe('keep');
+  });
+
+  it('drops one ticket from the in-memory wallet without waiting for a reload', async () => {
+    const listWallet = vi.fn(async () => wallet('gone'));
+    await loadTicketWallet(walletBackend(listWallet));
+
+    removeTicketFromWalletSnapshot('account:gone');
+
+    expect(getTicketWalletSnapshot().wallet?.tickets).toEqual([]);
+    removeTicketFromWalletSnapshot('account:gone');
+    expect(getTicketWalletSnapshot().wallet?.tickets).toEqual([]);
   });
 });

@@ -15,6 +15,7 @@ import {
 import type { LiveOccupancyDto } from '@/lib/backend/contracts/agent-catalog-types';
 import { isCatalogAppendOccupancy } from '@/lib/backend/contracts/agent-catalog-types';
 import { resolveAgentMeta } from '@/config/agents';
+import { removeTicketFromWalletSnapshot } from '@/app/runtime';
 import { deleteConnectionToastDescription } from './connection-model';
 
 /** Success toast: switch wrote the login into this Agent's local files (Chinese fallback for callers without a translator). */
@@ -187,6 +188,7 @@ export function useConnectionPageActions(input: {
         await deleteProvider(deleteTicket.agentId, deleteTicket.sourceId);
       }
       void logGuiEvent('delete_connection', { agent: deleteTicket.agentId });
+      removeTicketFromWalletSnapshot(deleteTicket.id);
       setDeleteTicket(null);
       toast({
         title: t('connections.delete.toastOk'),

@@ -172,31 +172,51 @@ pub fn retarget_profiles_from_loser(
 
 fn extract_toml_base_url(content: &str) -> Option<String> {
     let doc: toml_edit::DocumentMut = content.parse().ok()?;
-    let slug = doc
+    let configured_slug = doc
         .get("model_provider")
+        .or_else(|| doc.get("default_provider"))
         .and_then(|item| item.as_str())
-        .map(str::to_string)
-        .filter(|slug| !slug.is_empty())
-        .or_else(|| {
-            doc.get("model_providers")
-                .and_then(|item| item.as_table())
-                .and_then(|table| table.iter().next().map(|(name, _)| name.to_string()))
-        })?;
-    doc.get("model_providers")
-        .and_then(|item| item.as_table())
-        .and_then(|table| table.get(slug.as_str()))
-        .and_then(|item| item.get("base_url"))
+        .map(str::trim)
+        .filter(|slug| !slug.is_empty());
+    let table_url = |table_name: &str, slug: Option<&str>| {
+        let table = doc.get(table_name)?.as_table()?;
+        let item = match slug {
+            Some(slug) => table.get(slug),
+            None => table.iter().next().map(|(_, item)| item),
+        }?;
+        item.get("base_url")
+            .and_then(|item| item.as_str())
+            .map(str::trim)
+            .filter(|url| !url.is_empty())
+            .map(str::to_owned)
+    };
+
+    // Codex writes `[model_providers.<name>]`; Kimi writes
+    // `[providers.<name>]` with `default_provider`. An explicit selector must
+    // resolve exactly; falling back could pair a saved key with another URL.
+    if let Some(slug) = configured_slug {
+        return table_url("model_providers", Some(slug))
+            .or_else(|| table_url("providers", Some(slug)));
+    }
+
+    // Legacy files without a selector are safe only when exactly one provider
+    // entry exists across both supported table shapes.
+    let provider_count = ["model_providers", "providers"]
+        .into_iter()
+        .filter_map(|name| doc.get(name).and_then(|item| item.as_table()))
+        .map(toml_edit::Table::len)
+        .sum::<usize>();
+    if provider_count > 0 {
+        return (provider_count == 1)
+            .then(|| table_url("model_providers", None).or_else(|| table_url("providers", None)))
+            .flatten();
+    }
+
+    doc.get("base_url")
         .and_then(|item| item.as_str())
         .map(str::trim)
         .filter(|url| !url.is_empty())
         .map(str::to_owned)
-        .or_else(|| {
-            doc.get("base_url")
-                .and_then(|item| item.as_str())
-                .map(str::trim)
-                .filter(|url| !url.is_empty())
-                .map(str::to_owned)
-        })
 }
 
 #[cfg(test)]

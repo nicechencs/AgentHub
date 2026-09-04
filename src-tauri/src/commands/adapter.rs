@@ -10,17 +10,17 @@ use agenthub_core::bridge::BridgeRuntimeHost;
 use agenthub_core::models::{
     ticket_id, AdapterApplyPlan, AdapterApplyResult, AdapterProfile, AdapterProfileFilter,
     AdapterProfileMode, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind,
-    AgentId, DefaultRoutePoolList, DefaultRoutePoolOverview, LocalTokenRecord,
-    RouteDownstreamSurface, SyncConnectionAuthorizationsResult, TicketBinding, TicketBindingRoute,
-    TicketPlanRequest, TicketWallet,
+    AgentId, DefaultRoutePoolList, DefaultRoutePoolOverview, ForkedConnectionAuthorization,
+    LocalTokenRecord, RouteDownstreamSurface, SyncConnectionAuthorizationsResult, TicketBinding,
+    TicketBindingRoute, TicketPlanRequest, TicketWallet,
 };
 use agenthub_core::utils::upstream_model_catalog::SourceModelCatalog;
 use agenthub_core::AgentHub;
 use tauri::{AppHandle, State};
 
 use crate::adapter_bridge_controller::{
-    local_gateway_status as read_local_gateway_status,
-    start_local_gateway as start_shared_local_gateway,
+    local_gateway_status as read_local_gateway_status, refresh_local_gateway_models,
+    set_local_gateway_custom_models, start_local_gateway as start_shared_local_gateway,
     stop_local_gateway as stop_shared_local_gateway, sync_extra_local_bearers,
     AdapterBridgeStatusDto,
 };
@@ -275,7 +275,9 @@ pub async fn start_local_gateway(
 
 /// Stop the shared local gateway.
 #[tauri::command]
-pub async fn stop_local_gateway(state: State<'_, AppState>) -> Result<LocalGatewayStatus, GuiError> {
+pub async fn stop_local_gateway(
+    state: State<'_, AppState>,
+) -> Result<LocalGatewayStatus, GuiError> {
     stop_shared_local_gateway(
         state.hub_arc().map_err(adapter_error_from_string)?,
         state.bridge_host(),
@@ -294,6 +296,42 @@ pub async fn get_local_gateway_status(
 ) -> Result<LocalGatewayStatus, GuiError> {
     read_local_gateway_status(&state.bridge_host(), &state.local_gateway_restarting())
         .map_err(adapter_error_from_string)
+}
+
+#[tauri::command]
+pub async fn query_route_traces(
+    state: State<'_, AppState>,
+    key_last4: Option<String>,
+    pool_id: Option<String>,
+    endpoint_kind: Option<String>,
+    route_id: Option<String>,
+    failed_only: Option<bool>,
+    offset: Option<u32>,
+    limit: Option<u32>,
+) -> Result<agenthub_core::bridge::host::RouteTracePage, GuiError> {
+    use agenthub_core::bridge::host::{
+        RouteTraceEndpointKind, RouteTraceQuery, ROUTE_TRACE_QUERY_DEFAULT_LIMIT,
+    };
+    let query = RouteTraceQuery {
+        key_last4,
+        pool_id,
+        endpoint_kind: endpoint_kind
+            .as_deref()
+            .and_then(RouteTraceEndpointKind::parse),
+        route_id,
+        failed_only: failed_only.unwrap_or(false),
+        offset: offset.unwrap_or(0),
+        limit: limit.unwrap_or(ROUTE_TRACE_QUERY_DEFAULT_LIMIT),
+    };
+    Ok(state.bridge_host().query_route_traces(query))
+}
+
+#[tauri::command]
+pub async fn delete_route_traces(
+    state: State<'_, AppState>,
+    request_ids: Vec<String>,
+) -> Result<agenthub_core::bridge::host::RouteTraceDeleteResult, GuiError> {
+    Ok(state.bridge_host().delete_route_traces(&request_ids))
 }
 
 /// Enable or disable background restore for an existing local bridge.
@@ -480,12 +518,14 @@ pub async fn set_local_token_custom_models(
     token: String,
     models: Vec<String>,
 ) -> Result<Vec<String>, GuiError> {
-    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
-    with_hub_blocking(hub, move |hub| {
-        hub.route_pools()
-            .set_local_token_custom_models(&token, models)
-            .map_err(|err| map_err_string("set_local_token_custom_models", err))
-    })
+    set_local_gateway_custom_models(
+        state.hub_arc().map_err(adapter_error_from_string)?,
+        state.bridge_host(),
+        state.bridge_saga_coordinator(),
+        state.lifecycle_shutdown_barrier(),
+        token,
+        models,
+    )
     .await
     .map_err(adapter_error_from_string)
 }
@@ -508,12 +548,13 @@ pub async fn refresh_local_token_models(
     state: State<'_, AppState>,
     token: String,
 ) -> Result<Vec<String>, GuiError> {
-    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
-    with_hub_blocking(hub, move |hub| {
-        hub.route_pools()
-            .refresh_local_token_models(&token)
-            .map_err(|err| map_err_string("refresh_local_token_models", err))
-    })
+    refresh_local_gateway_models(
+        state.hub_arc().map_err(adapter_error_from_string)?,
+        state.bridge_host(),
+        state.bridge_saga_coordinator(),
+        state.lifecycle_shutdown_barrier(),
+        token,
+    )
     .await
     .map_err(adapter_error_from_string)
 }
@@ -575,22 +616,16 @@ pub async fn set_local_token_name(
 }
 
 #[tauri::command]
-pub async fn delete_local_token(
-    state: State<'_, AppState>,
-    id: String,
-) -> Result<(), GuiError> {
-    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
-    let host = state.bridge_host();
-    with_hub_blocking(hub.clone(), move |hub| {
-        hub.route_pools()
-            .delete_local_token(&id)
-            .map_err(|err| map_err_string("delete_local_token", err))
-    })
+pub async fn delete_local_token(state: State<'_, AppState>, id: String) -> Result<(), GuiError> {
+    crate::adapter_bridge_controller::delete_local_gateway_token(
+        state.hub_arc().map_err(adapter_error_from_string)?,
+        state.bridge_host(),
+        state.bridge_saga_coordinator(),
+        state.lifecycle_shutdown_barrier(),
+        id,
+    )
     .await
-    .map_err(adapter_error_from_string)?;
-    sync_extra_local_bearers(hub, &host)
-        .await
-        .map_err(adapter_error_from_string)
+    .map_err(adapter_error_from_string)
 }
 
 /// Enroll a newly added authorization into the default auth pool and mark it
@@ -611,13 +646,26 @@ pub async fn attach_pool_owned_authorization(
             "invalid route pool surface, expected: messages|responses|chat_completions".to_string()
         })?;
         hub.route_pools()
-            .attach_pool_owned_authorization(
-                target_agent_id,
-                surface,
-                source_kind,
-                &source_id,
-            )
+            .attach_pool_owned_authorization(target_agent_id, surface, source_kind, &source_id)
             .map_err(|err| map_err_string("attach_pool_owned_authorization", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Copy a Connections-managed official login into a pool-owned row.
+#[tauri::command]
+pub async fn fork_connection_authorization(
+    state: State<'_, AppState>,
+    source_kind: String,
+    source_id: String,
+) -> Result<ForkedConnectionAuthorization, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        let source_kind = parse_source_kind(&source_kind)?;
+        hub.route_pools()
+            .fork_connection_authorization(source_kind, &source_id)
+            .map_err(|err| map_err_string("fork_connection_authorization", err))
     })
     .await
     .map_err(adapter_error_from_string)
@@ -716,8 +764,7 @@ pub async fn sync_connection_authorizations(
                 .sync_connection_authorizations_selected(Some(&request.sources)),
             None => hub.route_pools().sync_connection_authorizations(),
         };
-        result
-            .map_err(|err| map_err_string("sync_connection_authorizations", err))
+        result.map_err(|err| map_err_string("sync_connection_authorizations", err))
     })
     .await
     .map_err(adapter_error_from_string)

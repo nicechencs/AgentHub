@@ -8,7 +8,10 @@ use tokio::sync::OwnedSemaphorePermit;
 use super::admission::{admit_conversation, AdmittedRequest};
 use super::dispatch_trace::trace_response;
 use super::gateway::{Gateway, GatewayAuthError, ModelSwitchOutcome};
-use super::http::{error_response, model_unavailable_message, model_unavailable_response, reject_invalid_local_auth, stopping_response, EdgeState};
+use super::http::{
+    error_response, model_unavailable_message, model_unavailable_response,
+    reject_invalid_local_auth, stopping_response, EdgeState,
+};
 use super::pair_policy::{
     identity_relay, pair_adapter_active, pair_adapter_rejected, pair_direction, pair_model_servable,
 };
@@ -57,11 +60,10 @@ pub(super) async fn handle_conversation(
     };
     let listen_port = gateway.cited_port_for_profile(&state.profile_id);
     trace.local_auth_ok(&state.profile_id, listen_port);
+    trace.local_auth_key_last4(&state.local_token);
     if let Some(response) = surface.reject_if_unserved(&state, &request_id) {
-        let mismatch = super::surface::surface_mismatch_message(
-            surface,
-            state.upstream.local_surface,
-        );
+        let mismatch =
+            super::surface::surface_mismatch_message(surface, state.upstream.local_surface);
         trace.local_path_failed(
             &state.profile_id,
             listen_port,
@@ -70,6 +72,7 @@ pub(super) async fn handle_conversation(
         );
         return trace_response(&mut trace, &trace_log, response);
     }
+    trace.local_endpoint_ok();
     tracing::debug!(
         target: "core.adapter",
         profile_id = %state.profile_id,
@@ -79,25 +82,31 @@ pub(super) async fn handle_conversation(
     );
     let mut admitted = match admit_conversation(state, request, surface, request_id, started).await
     {
-        Ok(admitted) => admitted,
-        Err(response) => return trace_response(&mut trace, &trace_log, response),
+        Ok(admitted) => {
+            trace.admission_ok();
+            admitted
+        }
+        Err(response) => {
+            let message = format!(
+                "Request admission failed with HTTP {}.",
+                response.status().as_u16()
+            );
+            trace.admission_failed("admission_failed", &message);
+            return trace_response(&mut trace, &trace_log, response);
+        }
     };
     let initial_channel = UpstreamChannel::from_protocol(admitted.state.upstream.protocol);
     if surface == DownstreamSurface::Responses
         && pair_adapter_rejected(&admitted.state, initial_channel)
     {
-        trace.pool_failed(
+        trace.route_resolution_failed(
             "route_unavailable",
             "This route cannot serve the requested Responses format.",
         );
         return trace_response(
             &mut trace,
             &trace_log,
-            pair_adapter_rejected_response(
-                &admitted.state,
-                &admitted.request_id,
-                admitted.started,
-            ),
+            pair_adapter_rejected_response(&admitted.state, &admitted.request_id, admitted.started),
         );
     }
     if let Some(serde_json::Value::String(model)) = admitted.body.get_mut("model") {
@@ -112,7 +121,11 @@ pub(super) async fn handle_conversation(
         .and_then(|value| value.as_str())
         .unwrap_or("")
         .to_owned();
-    trace.set_model(if model.is_empty() { None } else { Some(model.clone()) });
+    trace.set_model(if model.is_empty() {
+        None
+    } else {
+        Some(model.clone())
+    });
     let mut resolver_candidates = None;
     if let Some(index) = &admitted.state.route_index {
         let endpoint = DownstreamSurface::endpoint_key(admitted.state.upstream.local_surface);
@@ -134,7 +147,7 @@ pub(super) async fn handle_conversation(
                 );
                 let response = model_unavailable_response(&available);
                 let message = model_unavailable_message(&available);
-                trace.pool_failed("model_unavailable", &message);
+                trace.route_resolution_failed("model_unavailable", &message);
                 return trace_response(&mut trace, &trace_log, response);
             }
         }
@@ -196,25 +209,21 @@ pub(super) async fn handle_conversation(
                     )
                 };
                 let message = model_unavailable_message(&available);
-                trace.pool_failed(code, &message);
+                trace.route_resolution_failed(code, &message);
                 return trace_response(&mut trace, &trace_log, response);
             }
         }
     }
     let channel = UpstreamChannel::from_protocol(admitted.state.upstream.protocol);
     if surface == DownstreamSurface::Responses && pair_adapter_rejected(&admitted.state, channel) {
-        trace.pool_failed(
+        trace.route_resolution_failed(
             "route_unavailable",
             "This route cannot serve the requested Responses format.",
         );
         return trace_response(
             &mut trace,
             &trace_log,
-            pair_adapter_rejected_response(
-                &admitted.state,
-                &admitted.request_id,
-                admitted.started,
-            ),
+            pair_adapter_rejected_response(&admitted.state, &admitted.request_id, admitted.started),
         );
     }
     if pair_adapter_active(&admitted.state, channel)
@@ -232,13 +241,14 @@ pub(super) async fn handle_conversation(
             "pair adapter has no upstream mapping for this model"
         );
         let message = model_unavailable_message(&available);
-        trace.pool_failed("model_unavailable", &message);
+        trace.route_resolution_failed("model_unavailable", &message);
         return trace_response(
             &mut trace,
             &trace_log,
             model_unavailable_response(&available),
         );
     }
+    trace.route_resolution_ok();
     let pair_active = pair_adapter_active(&admitted.state, channel);
     admitted.affinity_key = admitted
         .state
@@ -293,9 +303,11 @@ pub(super) async fn handle_conversation(
         match &resolver_candidates {
             // v2: never fall back to pick_new() — that ignores cooldown,
             // auth isolation, and the resolver candidate set.
-            Some(candidates) => admitted
-                .state
-                .pick_v2(candidates, &model, &[], admitted.affinity_key.as_deref()),
+            Some(candidates) => {
+                admitted
+                    .state
+                    .pick_v2(candidates, &model, &[], admitted.affinity_key.as_deref())
+            }
             None => admitted.state.account_picker.pick_new(),
         }
     };
@@ -321,6 +333,7 @@ pub(super) async fn handle_conversation(
     };
     let candidate = candidate_for_member(resolver_candidates.as_deref(), &member);
     trace.pool_selected(&member, candidate);
+    trace.upstream_model(admitted.state.upstream.model.as_deref());
     let continuation_locked = pair_active && required_member.is_some();
     admitted.member = Some(member);
     // Gateway usage capture identity: only fields the dispatch path already
@@ -564,6 +577,7 @@ async fn forward_upstream_v2(
         capture,
     )
     .await;
+    trace.response_conversion_result(stream, response.status().as_u16(), surface, channel);
     trace_response(trace, trace_log, response)
 }
 
@@ -597,7 +611,15 @@ async fn forward_upstream(
     } = prepared;
     let url = match join_upstream(&state, path) {
         Ok(url) => url,
-        Err(response) => return trace_response(trace, trace_log, response),
+        Err(response) => {
+            trace.upstream_request_failed(
+                None,
+                &member,
+                state.upstream.model.as_deref(),
+                "invalid_upstream_url",
+            );
+            return trace_response(trace, trace_log, response);
+        }
     };
     let url_for_trace = url.to_string();
     let UpstreamSendOutcome {
@@ -636,6 +658,12 @@ async fn forward_upstream(
         capture,
     )
     .await;
+    trace.response_conversion_result(
+        stream_requested,
+        response.status().as_u16(),
+        surface,
+        channel,
+    );
     trace_response(trace, trace_log, response)
 }
 
@@ -718,9 +746,9 @@ fn forward_stream(
         }
     }
     match surface {
-        DownstreamSurface::Responses => {
-            stream_response(state, response, request_id, started, permit, member, capture)
-        }
+        DownstreamSurface::Responses => stream_response(
+            state, response, request_id, started, permit, member, capture,
+        ),
         DownstreamSurface::Messages => messages_stream_response(
             state, response, request_id, started, permit, cache_seed, member, capture,
         ),

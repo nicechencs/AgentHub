@@ -29,6 +29,11 @@ describe('settings layout wiring', () => {
     expect(prefs.indexOf("t('settings.general.themeLabel')")).toBeLessThan(
       prefs.indexOf("t('settings.general.accentLabel')"),
     );
+    expect(prefs).toContain("t('settings.general.canvasLabel')");
+    expect(prefs).toContain('persistCanvas');
+    expect(prefs.indexOf("t('settings.general.accentLabel')")).toBeLessThan(
+      prefs.indexOf("t('settings.general.canvasLabel')"),
+    );
   });
 
   it('exposes auto-collapse then routes and plugins nav toggles', () => {

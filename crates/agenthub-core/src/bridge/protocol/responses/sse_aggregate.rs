@@ -6,7 +6,9 @@
 
 use serde_json::Value;
 
-use crate::bridge::types::{ProtocolError, ProtocolResult, UPSTREAM_STREAM_REQUIRED_ZH};
+use crate::bridge::types::{
+    ProtocolError, ProtocolResult, CHATGPT_CODEX_MODEL_UNSUPPORTED_ZH, UPSTREAM_STREAM_REQUIRED_ZH,
+};
 
 use super::{encode_responses_from_ir, ResponsesStreamToIr};
 
@@ -25,7 +27,8 @@ pub fn looks_like_sse_body(body: &[u8]) -> bool {
 /// so usage and `id` match the upstream. Falls back to IR encoding when the
 /// terminal event has no embedded object.
 pub fn aggregate_responses_sse_to_json(body: &[u8]) -> ProtocolResult<Value> {
-    let text = std::str::from_utf8(body).map_err(|_| ProtocolError::upstream_stream_incomplete())?;
+    let text =
+        std::str::from_utf8(body).map_err(|_| ProtocolError::upstream_stream_incomplete())?;
     let mut translator = ResponsesStreamToIr::new();
     let mut events = Vec::new();
     let mut completed_response = None;
@@ -69,10 +72,8 @@ pub fn aggregate_responses_sse_to_json(body: &[u8]) -> ProtocolResult<Value> {
         }
         // Official streams often send `output: []` on completed and put text
         // only in deltas. Fold IR, then keep the upstream id / usage.
-        let mut encoded = encode_responses_from_ir(
-            &events,
-            response.get("id").and_then(Value::as_str),
-        )?;
+        let mut encoded =
+            encode_responses_from_ir(&events, response.get("id").and_then(Value::as_str))?;
         if let Some(id) = response.get("id") {
             encoded["id"] = id.clone();
         }
@@ -94,13 +95,23 @@ fn response_has_output(response: &Value) -> bool {
         .is_some_and(|items| !items.is_empty())
 }
 
-/// Client-facing message when a redacted upstream detail is the stream-only contract.
+/// Client-facing message when a redacted upstream detail is a known contract.
 pub fn client_message_for_upstream_detail(detail: Option<&str>) -> Option<&'static str> {
     let detail = detail?;
+    if upstream_detail_chatgpt_codex_unsupported(detail) {
+        return Some(CHATGPT_CODEX_MODEL_UNSUPPORTED_ZH);
+    }
     if !upstream_detail_requires_stream(detail) {
         return None;
     }
     Some(UPSTREAM_STREAM_REQUIRED_ZH)
+}
+
+/// True when ChatGPT Codex rejected the model for this login.
+pub fn upstream_detail_chatgpt_codex_unsupported(detail: &str) -> bool {
+    detail
+        .to_ascii_lowercase()
+        .contains("not supported when using codex with a chatgpt account")
 }
 
 /// True when the upstream 400 is the official Codex stream-only contract.

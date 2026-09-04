@@ -4,7 +4,7 @@ description: AgentHub 用户界面、领域模型和内部实现术语的对应�
 type: reference
 audience: all
 status: current
-updated: 2026-08-31
+updated: 2026-09-03
 ---
 
 # 术语表
@@ -14,7 +14,7 @@ updated: 2026-08-31
 | 用户界面术语 | 内部/代码术语 | 含义 |
 |---|---|---|
 | Agent | `AgentId` / `AgentKey` / `AgentAdapter` | 被 AgentHub 检测、安装、配置或运行的第三方 CLI/runtime。开放注册表与新 TypeScript 契约优先 `AgentKey`；`AgentId` 为兼容别名 |
-| 登录 | account / credential / Ticket（内部） | 用户可选择的授权或 API key 记录。连接页与连接池各自管理自己添加的登录；从连接分享到池里的登录仍归连接页。实现中仍可能出现 Ticket，但 UI 不说“票” |
+| 登录 | account / credential / Ticket（内部） | 用户可选择的授权或 API key 记录。连接页与连接池各自管理自己添加的登录；从连接分享到池里的登录仍归连接页，直到在连接池里编辑该官方登录并保存：那时会复制成连接池自己的一份，连接页那份还在。实现中仍可能出现 Ticket，但 UI 不说“票” |
 | 官方登录 | oauth / 「官方登录」入口 | 浏览器或设备码订阅登录，与 API Key 分行保存 |
 | API Key | api_key / 「添加 API Key」 | 钥匙登录；本机若是官方登录则引导改用「导入授权」 |
 | 相关文件 | credential files | 登录详情里记下的配置/登录文件（打码后可复制、打开所在目录） |
@@ -28,7 +28,11 @@ updated: 2026-08-31
 | 入口 Key | Hub token / local bearer（内部亦称本机令牌） | 默认池给目标客户端用的本机钥匙；不等于上游 API Key。增删池内登录不改这把 Key。界面与子导航统一说「入口 Key」，不说泛称「令牌」 |
 | 连接池 | default RoutePool | Routes 里列出本机转发所用登录的页面，与连接页相互独立；每个目标 Agent/surface 一个默认池 |
 | 分享至连接池 | `syncConnectionAuthorizations`（按这份登录） | 连接页把这份登录加入默认连接池；登录仍留在连接页。API Key 都可以加入（不按所属 Agent 挡掉）；国产官方登录不能分享。已经在池里、或这份登录不能加入时按钮禁用 |
+| 同步当前登录 | `oauthListAction` `sync-current-login` | 不是刷新列表。把本机正在用的官方登录写进来，并查看用量 |
+| 刷新（官方登录） | `oauthListAction` 用量刷新 | 查看这份登录的用量，不改登录列表 |
 | 从连接同步 | `syncConnectionAuthorizations`（多选） | 连接池页一次加入连接页里可分享的登录（所有 API Key；Claude / Codex / Grok 官方登录仍按已登记的接法）。已经在池里的会跳过。国产官方登录不进入候选 |
+| 编辑登录 | `forkConnectionAuthorization` + 保存模型/优先级 | 连接池里编辑从连接页分享来的官方登录：保存时先复制成连接池自己的一份，连接页那份还在 |
+| 同步到连接页 | 把池里改过的模型写回连接页那份登录 | 复制保存之后的确认；可选，选「不同步」只留连接池这份 |
 | 登录回收站 | `connection_trash` `home=connections` | 连接页删除的登录，保留 30 天，可恢复到连接页 |
 | 连接池回收站 | `connection_trash` `home=route_pool` | 连接池移出的登录或成员关系，与连接页回收站分开 |
 | 默认池 | default RoutePool | 每个目标 Agent/surface 一个连接池；Routes 日常只展示默认池 |

@@ -210,22 +210,42 @@ export function useColumnWidths<K extends string>(
     [],
   );
 
+  const onResizeKeyDown = React.useCallback(
+    (key: K, e: React.KeyboardEvent) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Home') return;
+      e.preventDefault();
+      const step = e.shiftKey ? 32 : 16;
+      const minWidth = minByKey[key] ?? 48;
+      const current = widthsRef.current[key];
+      const nextWidth = e.key === 'Home'
+        ? minWidth
+        : Math.max(minWidth, current + (e.key === 'ArrowRight' ? step : -step));
+      const next = { ...widthsRef.current, [key]: nextWidth };
+      widthsRef.current = next;
+      setWidths(next);
+      persistColumnWidths(storageKey, next);
+    },
+    [minByKey, storageKey],
+  );
+
   const totalWidth = React.useMemo(
     () => specs.reduce((sum, s) => sum + widths[s.key], 0),
     [specs, widths],
   );
 
-  return { widths, onResizeStart, totalWidth, setWidths };
+  return { widths, onResizeStart, onResizeKeyDown, totalWidth, setWidths };
 }
 
 export function ColumnResizeHandle<K extends string>({
   columnKey,
   label,
   onResizeStart,
+  onResizeKeyDown,
 }: {
   columnKey: K;
   label: string;
   onResizeStart: (key: K, e: React.MouseEvent | React.PointerEvent) => void;
+  onResizeKeyDown?: (key: K, e: React.KeyboardEvent) => void;
 }) {
   const { t } = useI18n();
   return (
@@ -234,9 +254,11 @@ export function ColumnResizeHandle<K extends string>({
         role="separator"
         aria-orientation="vertical"
         aria-label={t('common.resizeColumnNamed', { label })}
+        tabIndex={0}
         onPointerDown={(e) => onResizeStart(columnKey, e)}
         onMouseDown={(e) => onResizeStart(columnKey, e)}
-        className={tableStyles.resizeHandle}
+        onKeyDown={(e) => onResizeKeyDown?.(columnKey, e)}
+        className={cn(tableStyles.resizeHandle, 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60')}
       />
     </Hint>
   );

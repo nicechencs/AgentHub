@@ -272,9 +272,10 @@ impl UsageSpool {
     }
 
     fn append_line(&self, day: &str, line: &str) -> std::io::Result<()> {
-        let mut guard = self.writer.lock().map_err(|_| {
-            std::io::Error::other("gateway usage spool writer lock poisoned")
-        })?;
+        let mut guard = self
+            .writer
+            .lock()
+            .map_err(|_| std::io::Error::other("gateway usage spool writer lock poisoned"))?;
         if guard.as_ref().map(|file| file.day.as_str()) != Some(day) {
             fs::create_dir_all(&self.dir)?;
             let path = self.dir.join(format!("gateway-{day}.jsonl"));

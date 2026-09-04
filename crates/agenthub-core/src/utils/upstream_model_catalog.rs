@@ -93,12 +93,7 @@ pub fn fingerprint_apikey(agent: &str, settings: &Value) -> String {
         .map(|(base, _)| base)
         .unwrap_or_default();
     let hash = api_key_secret_hash(settings).unwrap_or_default();
-    secret_sha256_hex(&format!(
-        "apikey|{}|{}|{}",
-        agent.trim(),
-        base.trim(),
-        hash
-    ))
+    secret_sha256_hex(&format!("apikey|{}|{}|{}", agent.trim(), base.trim(), hash))
 }
 
 pub fn cache_is_current(stored: &StoredModelCatalog, fingerprint: &str) -> bool {
