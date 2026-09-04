@@ -1086,6 +1086,8 @@ export const zh = {
       loginCancelled: "已取消登录",
       statusActive: "可用",
       statusDisabled: "已停用",
+      statusExpired: "已过期",
+      statusQuotaExhausted: "额度已用完",
       statusOther: "不可用",
       keyCreated: "创建",
       keyUpdated: "更新",
