@@ -2,14 +2,13 @@
  * Multi remembered Sub2API credentials.
  *
  * Metadata (site + email + timestamps) lives in localStorage.
- * Passwords live in AgentHub SQLite settings via Tauri
- * (`sub2api_remembered_password_vault`) — same DB as Connections API keys,
- * not ordinary localStorage. Never log passwords. UI list helpers never
- * return password values.
+ * Passwords live in AgentHub SQLite settings (same DB as Connections API
+ * keys) via an injectable vault transport wired by `@/lib/api/sub2api`.
+ * This module never imports the tauri backend layer. Never log passwords.
+ * UI list helpers never return password values.
  */
 import { loadBool, loadJson, saveBool, saveJson } from '@/lib/ui-preferences';
 import { removeStorageItem, StorageKey } from '@/lib/storage-key';
-import { isTauriApp } from '@/lib/platform';
 import { normalizeSiteUrl } from './url';
 
 export type Sub2ApiRememberedAccountMeta = {
@@ -29,7 +28,22 @@ const TOGGLE_KEY = StorageKey.sub2apiRememberEnabled;
 
 export const DEFAULT_SUB2API_REMEMBER_ENABLED = true;
 
-/** In-memory vault used by tests and non-Tauri runtimes. */
+/** Desktop/SQLite vault I/O — wired by the api façade (never import tauri here). */
+export type RememberedVaultTransport = {
+  get(): Promise<string | null>;
+  set(json: string): Promise<void>;
+};
+
+let vaultTransport: RememberedVaultTransport | null = null;
+
+/** Wire SQLite (or mock) persistence. Pass null to use memory only. */
+export function setRememberedVaultTransport(
+  transport: RememberedVaultTransport | null,
+): void {
+  vaultTransport = transport;
+}
+
+/** In-memory vault used by tests and when no transport is configured. */
 let memoryVault: PasswordVault = {};
 let memoryVaultReady = true;
 let hydratePromise: Promise<void> | null = null;
@@ -116,12 +130,9 @@ function readLegacyLocalVault(): PasswordVault {
 
 async function persistVault(vault: PasswordVault): Promise<void> {
   memoryVault = { ...vault };
-  if (!isTauriApp()) return;
+  if (!vaultTransport) return;
   try {
-    const { invoke } = await import('@/lib/backend/tauri/invoke');
-    await invoke('sub2api_remembered_vault_set', {
-      json: JSON.stringify(vault),
-    });
+    await vaultTransport.set(JSON.stringify(vault));
   } catch {
     /* desktop unavailable — keep memory only */
   }
@@ -136,10 +147,9 @@ export async function hydrateRememberedPasswordVault(): Promise<void> {
   hydratePromise = (async () => {
     memoryVaultReady = false;
     let vault: PasswordVault = {};
-    if (isTauriApp()) {
+    if (vaultTransport) {
       try {
-        const { invoke } = await import('@/lib/backend/tauri/invoke');
-        const raw = await invoke<string | null>('sub2api_remembered_vault_get');
+        const raw = await vaultTransport.get();
         vault = parseVaultJson(raw);
       } catch {
         vault = {};
