@@ -72,11 +72,29 @@ pub struct PluginAgentStatus {
     pub plugin_count: usize,
 }
 
+/// One scanned local source. A readable source does not necessarily mean a
+/// vendor plugin package was found; it may be a related skills/MCP/config clue.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginSourceFile {
+    pub agent: AgentId,
+    pub path: String,
+    pub exists: bool,
+    pub readable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// plugin-tree | config | skills | mcp | cordis
+    pub source_kind: String,
+    pub item_count: usize,
+    pub label: String,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginInventory {
     pub agents: Vec<PluginAgentStatus>,
     pub plugins: Vec<PluginEntry>,
+    pub sources: Vec<PluginSourceFile>,
 }
 
 /// Injectable scan roots + CLI runner (tests override binaries and homes).
@@ -84,6 +102,7 @@ pub struct PluginScanContext<'a> {
     pub user_home: PathBuf,
     pub claude_home: PathBuf,
     pub grok_home: PathBuf,
+    pub other_homes: Vec<(AgentId, PathBuf)>,
     pub claude_bin: Option<PathBuf>,
     pub grok_bin: Option<PathBuf>,
     pub runner: &'a dyn PluginCliRunner,
@@ -130,10 +149,16 @@ pub fn list_plugin_inventory() -> PluginInventory {
     let user_home = home_dir().unwrap_or_else(|_| PathBuf::from("/"));
     let claude_home = agent_home(AgentId::Claude).unwrap_or_else(|_| user_home.join(".claude"));
     let grok_home = agent_home(AgentId::Grok).unwrap_or_else(|_| user_home.join(".grok"));
+    let other_homes = AgentId::ALL
+        .into_iter()
+        .filter(|agent| !matches!(agent, AgentId::Claude | AgentId::Grok))
+        .filter_map(|agent| agent_home(agent).ok().map(|home| (agent, home)))
+        .collect();
     let ctx = PluginScanContext {
         user_home,
         claude_home,
         grok_home,
+        other_homes,
         claude_bin: which::which("claude").ok(),
         grok_bin: which::which("grok").ok(),
         runner: &SystemPluginCliRunner,
@@ -194,7 +219,18 @@ pub fn list_plugin_inventory_with(ctx: &PluginScanContext<'_>) -> PluginInventor
             .then(a.id.cmp(&b.id))
     });
     agents.sort_by(|a, b| a.agent.as_str().cmp(b.agent.as_str()));
-    PluginInventory { agents, plugins }
+    let mut sources = scan_plugin_sources(ctx);
+    sources.sort_by(|a, b| {
+        a.agent
+            .as_str()
+            .cmp(b.agent.as_str())
+            .then(a.path.cmp(&b.path))
+    });
+    PluginInventory {
+        agents,
+        plugins,
+        sources,
+    }
 }
 
 fn closed_status(agent: AgentId, code: &str) -> PluginAgentStatus {
@@ -206,6 +242,214 @@ fn closed_status(agent: AgentId, code: &str) -> PluginAgentStatus {
         error: None,
         plugin_count: 0,
     }
+}
+
+struct PluginSourceLoc {
+    agent: AgentId,
+    path: PathBuf,
+    kind: &'static str,
+    label: &'static str,
+}
+
+fn scan_plugin_sources(ctx: &PluginScanContext<'_>) -> Vec<PluginSourceFile> {
+    plugin_source_locations(ctx)
+        .into_iter()
+        .map(scan_plugin_source)
+        .collect()
+}
+
+fn plugin_source_locations(ctx: &PluginScanContext<'_>) -> Vec<PluginSourceLoc> {
+    let mut out = vec![
+        PluginSourceLoc {
+            agent: AgentId::Claude,
+            path: ctx.claude_home.join("plugins"),
+            kind: "plugin-tree",
+            label: "Claude plugins",
+        },
+        PluginSourceLoc {
+            agent: AgentId::Claude,
+            path: ctx
+                .claude_home
+                .join("plugins")
+                .join("installed_plugins.json"),
+            kind: "config",
+            label: "Claude installed plugins",
+        },
+        PluginSourceLoc {
+            agent: AgentId::Claude,
+            path: ctx.claude_home.join("settings.json"),
+            kind: "config",
+            label: "Claude settings enabledPlugins",
+        },
+        PluginSourceLoc {
+            agent: AgentId::Grok,
+            path: ctx.grok_home.join("plugins"),
+            kind: "plugin-tree",
+            label: "Grok plugins",
+        },
+        PluginSourceLoc {
+            agent: AgentId::Grok,
+            path: ctx.grok_home.join("config.toml"),
+            kind: "config",
+            label: "Grok plugin config",
+        },
+    ];
+
+    for (agent, rels) in [
+        (
+            AgentId::Codex,
+            vec![("config.toml", "config", "Codex config")],
+        ),
+        (
+            AgentId::Pi,
+            vec![
+                ("skills", "skills", "Pi skills"),
+                ("extensions", "plugin-tree", "Pi extensions"),
+            ],
+        ),
+        (
+            AgentId::Kimi,
+            vec![
+                ("skills", "skills", "Kimi skills"),
+                ("mcp.json", "mcp", "Kimi mcp.json"),
+                (".mcp.json", "mcp", "Kimi .mcp.json"),
+            ],
+        ),
+        (
+            AgentId::WorkBuddy,
+            vec![(".mcp.json", "mcp", "WorkBuddy MCP config")],
+        ),
+        (
+            AgentId::Cursor,
+            vec![
+                ("skills-cursor", "skills", "Cursor skills"),
+                ("mcp.json", "mcp", "Cursor agent mcp.json"),
+            ],
+        ),
+        (
+            AgentId::Dsh,
+            vec![
+                ("cordis.patch.yml", "cordis", "DSH Cordis patch"),
+                ("skills", "skills", "DSH skills"),
+            ],
+        ),
+        (AgentId::Zcode, vec![("skills", "skills", "ZCode skills")]),
+    ] {
+        let home = ctx
+            .other_homes
+            .iter()
+            .find_map(|(id, home)| (*id == agent).then_some(home.clone()))
+            .unwrap_or_else(|| ctx.user_home.join(format!(".{}", agent.as_str())));
+        for (rel, kind, label) in rels {
+            out.push(PluginSourceLoc {
+                agent,
+                path: home.join(rel),
+                kind,
+                label,
+            });
+        }
+    }
+
+    out.push(PluginSourceLoc {
+        agent: AgentId::Cursor,
+        path: ctx.user_home.join(".cursor").join("mcp.json"),
+        kind: "mcp",
+        label: "Cursor ~/.cursor/mcp.json",
+    });
+    out
+}
+
+fn scan_plugin_source(loc: PluginSourceLoc) -> PluginSourceFile {
+    let exists = loc.path.exists();
+    let mut out = PluginSourceFile {
+        agent: loc.agent,
+        path: loc.path.display().to_string(),
+        exists,
+        readable: false,
+        error: None,
+        source_kind: loc.kind.into(),
+        item_count: 0,
+        label: loc.label.into(),
+    };
+    if !exists {
+        return out;
+    }
+    if loc.path.is_dir() {
+        match fs::read_dir(&loc.path) {
+            Ok(entries) => {
+                out.readable = true;
+                out.item_count = entries
+                    .flatten()
+                    .filter(|ent| {
+                        ent.file_name()
+                            .to_str()
+                            .map(|name| !name.starts_with('.'))
+                            .unwrap_or(true)
+                    })
+                    .count();
+            }
+            Err(e) => out.error = Some(e.to_string()),
+        }
+    } else {
+        match fs::read_to_string(&loc.path) {
+            Ok(text) => {
+                out.readable = true;
+                out.item_count = count_source_items(&text, loc.kind);
+            }
+            Err(e) => out.error = Some(e.to_string()),
+        }
+    }
+    out
+}
+
+fn count_source_items(text: &str, kind: &str) -> usize {
+    if text.trim().is_empty() {
+        return 0;
+    }
+    if let Ok(value) = serde_json::from_str::<JsonValue>(text) {
+        if let Some(obj) = value.as_object() {
+            if let Some(plugins) = obj.get("plugins").or_else(|| obj.get("installedPlugins")) {
+                return plugins
+                    .as_array()
+                    .map(Vec::len)
+                    .or_else(|| plugins.as_object().map(JsonMap::len))
+                    .unwrap_or(0);
+            }
+            if let Some(enabled) = obj.get("enabledPlugins") {
+                return enabled
+                    .as_array()
+                    .map(Vec::len)
+                    .or_else(|| enabled.as_object().map(JsonMap::len))
+                    .unwrap_or(0);
+            }
+            if let Some(mcp) = obj.get("mcpServers") {
+                return mcp.as_object().map(JsonMap::len).unwrap_or(0);
+            }
+            return obj.len();
+        }
+        if let Some(arr) = value.as_array() {
+            return arr.len();
+        }
+    }
+    if let Ok(doc) = text.parse::<DocumentMut>() {
+        if let Some(arr) = doc
+            .get("plugins")
+            .and_then(|v| v.get("enabled"))
+            .and_then(|v| v.as_array())
+        {
+            return arr.len();
+        }
+        if let Some(table) = doc.get("plugins").and_then(|v| v.as_table()) {
+            return table.len();
+        }
+    }
+    if kind == "cordis" {
+        return text
+            .lines()
+            .filter(|line| line.contains("plugin") || line.contains("插件"))
+            .count();
+    }
+    0
 }
 
 fn scan_wired_agent(

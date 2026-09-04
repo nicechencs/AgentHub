@@ -17,6 +17,8 @@ describe('plugin inventory and enable/disable (browser mock)', () => {
     expect(grok?.components.some((c) => c.kind === 'mcp' && c.name === 'gdrive')).toBe(true);
     expect(inv.agents.find((a) => a.agent === 'claude')?.support).toBe('listed');
     expect(inv.agents.find((a) => a.agent === 'codex')?.support).toBe('planned');
+    expect(inv.sources?.some((s) => s.agent === 'cursor' && s.sourceKind === 'skills')).toBe(true);
+    expect(inv.sources?.some((s) => s.agent === 'dsh' && s.sourceKind === 'cordis')).toBe(true);
   });
 
   it('round-trips enable then disable for listed Claude and Grok packs', async () => {

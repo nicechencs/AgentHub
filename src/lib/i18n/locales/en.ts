@@ -2808,7 +2808,7 @@ export const en = {
       title: 'Plugins',
       description: 'Read-only view of installed plugin packs',
       descriptionTip:
-        'Plugins are each tool’s extension packs, not MCP. This lists Claude and Grok only; it does not install or change settings.',
+        'Plugins are each tool’s extension packs, not MCP. This prioritizes plugin packs and also shows read-only scan sources per Agent.',
       descriptionCount: '{n} plugin packs',
       refresh: 'Refresh',
       countAll: '{n} plugin packs',
@@ -2861,6 +2861,14 @@ export const en = {
       kindHooks: 'Hooks',
       kindMcp: 'Bundled MCP',
       kindLsp: 'LSP',
+    },
+    sources: {
+      title: 'Scan sources',
+      exists: 'Found',
+      missing: 'Missing',
+      readable: 'Readable',
+      unreadable: 'Unreadable',
+      items: '{n} items',
     },
     support: {
       planned: 'Plugin list is not wired for this tool yet',
