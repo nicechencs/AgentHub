@@ -76,7 +76,8 @@ describe('routes board layout wiring', () => {
     expect(section).toContain('deriveBoardGroupBy');
     expect(section).toContain('distBySurface');
     expect(section).toContain('pools');
-    expect(section).not.toContain('SegmentedControl');
+    expect(section).toContain('SegmentedControl');
+    expect(section).toContain('routes.board.rangeAria');
     expect(section).not.toContain('dashboard.page.allAgents');
     expect(section).not.toContain('dashboard.page.distByAgent');
     expect(section).not.toContain('routes.board.allSurfaces');

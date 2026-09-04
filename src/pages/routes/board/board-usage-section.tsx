@@ -14,6 +14,7 @@ import { pageRhythm } from '@/components/layout/page-rhythm';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { SegmentedControl } from '@/components/shared/SegmentedControl';
 import { routeEndpointTypeColor } from '@/components/shared/RouteEndpointUrl';
 import { useTheme } from '@/components/shared/ThemeProvider';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -63,12 +64,7 @@ import {
 } from './board-usage-model';
 import { useBoardUsageStats } from './use-board-usage';
 
-const DATE_RANGE_OPTIONS: { value: BoardUsageRange }[] = [
-  { value: 'today' },
-  { value: '24h' },
-  { value: '7d' },
-  { value: '30d' },
-];
+const DATE_RANGE_OPTIONS: BoardUsageRange[] = ['today', '24h', '7d', '30d'];
 
 const DATE_RANGE_LABEL_KEYS: Record<BoardUsageRange, MessageKey> = {
   today: 'dashboard.range.today',
@@ -299,21 +295,16 @@ export function BoardUsageSection({
             ))}
           </SelectContent>
         </Select>
-        <Select
+        <SegmentedControl
+          size="sm"
+          aria-label={t('routes.board.rangeAria')}
           value={dateRange}
-          onValueChange={(value) => setDateRange(value as BoardUsageRange)}
-        >
-          <SelectTrigger className="w-32" aria-label={t('routes.board.rangeAria')}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {DATE_RANGE_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {t(DATE_RANGE_LABEL_KEYS[option.value])}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          onChange={setDateRange}
+          options={DATE_RANGE_OPTIONS.map((value) => ({
+            value,
+            label: t(DATE_RANGE_LABEL_KEYS[value]),
+          }))}
+        />
         <div className={pageRhythm.chromeActions}>
           <Link to={activityHref({})} className="text-meta text-secondary hover:text-primary">
             {t('routes.board.openLog')}
