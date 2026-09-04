@@ -267,13 +267,17 @@ function rowFromRuntime(input: {
     ? null
     : (input.status?.port ?? input.portHint ?? input.profile?.localPort);
   // Live listener bearer authenticates; pool hub_token often differs and 401s.
-  // Prefer runtime localToken whenever the entry is up; fall back to stored key
-  // only when stopped / no runtime token (edit + offline display).
+  // Copy / import / test must use runtime localToken while the entry is up.
+  // Never fall back to a divergent stored hub_token on a live listener.
   const useRuntimeToken = input.primary || !input.poolBacked;
+  const entryUp = input.status?.state === 'running' || input.status?.state === 'degraded';
   const runtimeToken = input.unavailable || !useRuntimeToken
     ? null
     : (input.status?.localToken?.trim() || null);
-  const token = runtimeToken || input.storedToken?.trim() || null;
+  const storedToken = input.storedToken?.trim() || null;
+  const token = useRuntimeToken && entryUp && !input.unavailable
+    ? runtimeToken
+    : (runtimeToken || storedToken);
   return {
     id: input.id,
     poolBacked: input.poolBacked,
@@ -342,6 +346,9 @@ export function buildLocalTokenRows(
     const primaryRecord = recordsReady
       ? records.find((record) => record.primary && record.poolId === pool.id)
       : undefined;
+    const extraRecords = recordsReady
+      ? records.filter((record) => !record.primary && record.poolId === pool.id)
+      : [];
     const storedToken = primaryRecord?.token
       ?? tokensByPoolId[pool.id]
       ?? tokensByPoolId[statusId];
@@ -362,9 +369,24 @@ export function buildLocalTokenRows(
         storedToken,
         listedModels: pool.listedModels,
       }));
+    } else if (extraRecords.length === 0) {
+      rows.push(rowFromRuntime({
+        id: pool.id,
+        poolBacked: true,
+        primary: true,
+        canDelete: false,
+        name: '',
+        kind,
+        targetAgentId: pool.targetAgentId,
+        profile,
+        profileIds,
+        portHint: pool.gatewayPort,
+        status: bridgeStatuses[statusId],
+        unavailable: Boolean(statusErrors[statusId]),
+        listedModels: pool.listedModels,
+      }));
     }
-    const extraRecords = recordsReady ? records : [];
-    for (const extra of extraRecords.filter((record) => !record.primary && record.poolId === pool.id)) {
+    for (const extra of extraRecords) {
       rows.push(rowFromRuntime({
         id: extra.id,
         poolBacked: true,
@@ -472,6 +494,25 @@ export function localTokenDeleteGate(
     };
   }
   return { enabled: true, reason: null };
+}
+
+export function localTokenEmptyCreateGate(
+  row: Pick<LocalTokenRow, 'poolBacked' | 'kind'>,
+  createPoolIdByKind: Readonly<Partial<Record<LocalEndpointKind, string>>> = {},
+  t?: TranslateFn,
+  needRoute = false,
+): LocalTokenEditKeyGate {
+  if (row.poolBacked || createPoolIdByKind[row.kind]) {
+    return { enabled: true, reason: null };
+  }
+  return {
+    enabled: false,
+    reason: t
+      ? t(needRoute ? 'routes.board.entryNeedRoute' : 'routes.tokens.createNeedPool')
+      : (needRoute
+        ? '连接池已有登录。打开本机转发后，端点 Key 会出现在入口 Key 页'
+        : '先在连接池加入登录'),
+  };
 }
 
 export function localTokenEditKeyGate(

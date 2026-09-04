@@ -10,6 +10,7 @@ import {
   generateLocalToken,
   localTokenDeleteGate,
   localTokenEditKeyGate,
+  localTokenEmptyCreateGate,
   maskLocalToken,
   supportedAgentsForEndpointKind,
   tokenDisplayName,
@@ -277,7 +278,7 @@ describe('tokens-model', () => {
     });
   });
 
-  it('omits the type default key when listLocalTokens did not return it', () => {
+  it('keeps an empty pool row when listLocalTokens did not return a key', () => {
     const rows = buildLocalTokenRows(
       [profile({
         id: 'codex-bridge',
@@ -299,7 +300,13 @@ describe('tokens-model', () => {
       {},
       [],
     );
-    expect(rows).toHaveLength(0);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id: 'pool-codex',
+      poolBacked: true,
+      token: null,
+      maskedToken: null,
+    });
   });
 
   it('sorts rows by endpoint kind then name', () => {
@@ -463,6 +470,41 @@ describe('tokens-model', () => {
     expect(rows[0]?.maskedToken).toBe('ahb_••••Y5RM');
   });
 
+  it('does not expose the stored hub token while the listener is up without localToken', () => {
+    const rows = buildLocalTokenRows(
+      [
+        profile({
+          id: 'adapter-codex-kimi-bridge',
+          targetAgentId: 'kimi',
+          localPort: 44227,
+        }),
+      ],
+      {
+        'adapter-codex-kimi-bridge': {
+          profileId: 'adapter-codex-kimi-bridge',
+          state: 'running',
+          port: 44227,
+          upstreamStatus: 'connected',
+        },
+      },
+      {},
+      [
+        pool({
+          id: 'adapter-codex-kimi-bridge',
+          targetAgentId: 'kimi',
+          surface: 'chat_completions',
+          dialect: 'kimi',
+          gatewayPort: 44227,
+          members: [{ sourceKind: 'account', sourceId: 'codex-1', enabled: true }],
+        }),
+      ],
+      false,
+      { 'adapter-codex-kimi-bridge': 'ahb_hub_token_2zpU' },
+    );
+    expect(rows[0]?.token).toBeNull();
+    expect(rows[0]?.maskedToken).toBeNull();
+  });
+
 
   it('marks pool rows editable and leftover profile rows not editable for setLocalToken', () => {
     const poolRows = buildLocalTokenRows(
@@ -569,6 +611,22 @@ describe('tokens-model', () => {
       expect(firstCreateTokenPoolId(cards)).toBe('pool-claude');
       expect(firstCreateTokenPoolId([])).toBe('');
     });
+
+  it('enables 为此端点新建 on pool-backed empty rows and uses pool hints otherwise', () => {
+    expect(localTokenEmptyCreateGate({ poolBacked: true, kind: 'messages' }).enabled).toBe(true);
+    expect(localTokenEmptyCreateGate(
+      { poolBacked: false, kind: 'chat_completions' },
+      { chat_completions: 'pool-kimi' },
+    )).toEqual({ enabled: true, reason: null });
+    expect(localTokenEmptyCreateGate({ poolBacked: false, kind: 'messages' }).reason)
+      .toContain('连接池');
+    expect(localTokenEmptyCreateGate(
+      { poolBacked: false, kind: 'messages' },
+      {},
+      undefined,
+      true,
+    ).reason).toContain('本机转发');
+  });
 
   it('defaults an empty create name to the endpoint label plus a free number', () => {
     expect(defaultCreateTokenName({ kind: 'messages' })).toBe('Messages 2');

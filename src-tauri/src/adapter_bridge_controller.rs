@@ -1632,38 +1632,11 @@ pub(crate) async fn set_local_gateway_token(
         })
         .await?
     };
-    let pools = with_hub_blocking(hub.clone(), move |hub| {
-        hub.route_pools()
-            .list_default_pools()
-            .map_err(|error| map_err_string("list_default_pools", error))
-    })
-    .await?;
     if !record.primary {
         sync_extra_local_bearers(hub, &host).await?;
         return Ok(record);
     }
-    let Some(pool) = pools.into_iter().find(|pool| pool.id == record.pool_id) else {
-        return Ok(record);
-    };
-    let running = host
-        .status(&pool.id)
-        .map_err(map_bridge_host_error)?
-        .is_some();
-    if !running {
-        return Ok(record);
-    }
-    match host.stop(&pool.id).await {
-        Ok(_) => {}
-        Err(BridgeHostError::NotRunning) => {}
-        Err(error) => return Err(map_bridge_host_error(error)),
-    }
-    let spec = with_hub_blocking(hub, move |hub| {
-        Ok(hub
-            .adapter_bridge()
-            .pool_listener_spec(&pool, hub.route_pools().pair_adapter_flags()))
-    })
-    .await?;
-    host.start(spec).await.map_err(map_bridge_host_error)?;
+    restart_pool_listener_if_running(hub, &host, record.pool_id.clone()).await?;
     Ok(record)
 }
 
@@ -1685,6 +1658,80 @@ pub(crate) async fn delete_local_gateway_token(
     })
     .await?;
     sync_extra_local_bearers(hub.clone(), &host).await?;
+    restart_pool_listener_if_running(hub, &host, pool_id).await?;
+    Ok(())
+}
+
+/// Re-read live catalogs, then rebuild the running listener so GET /models matches.
+pub(crate) async fn refresh_local_gateway_models(
+    hub: Arc<AgentHub>,
+    host: Arc<BridgeRuntimeHost>,
+    coordinator: Arc<AdapterSagaCoordinator>,
+    lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
+    token: String,
+) -> Result<Vec<String>, String> {
+    let _lifecycle_permit = lifecycle_barrier.enter().await?;
+    let _gate = coordinator.lock_profile("local-gateway").await;
+    let listed = {
+        let token = token.clone();
+        with_hub_blocking(hub.clone(), move |hub| {
+            hub.route_pools()
+                .refresh_local_token_models(&token)
+                .map_err(|error| map_err_string("refresh_local_token_models", error))
+        })
+        .await?
+    };
+    restart_pool_listener_for_token(hub, &host, &token).await?;
+    Ok(listed)
+}
+
+/// Persist a custom catalog, then rebuild the running listener so GET /models matches.
+pub(crate) async fn set_local_gateway_custom_models(
+    hub: Arc<AgentHub>,
+    host: Arc<BridgeRuntimeHost>,
+    coordinator: Arc<AdapterSagaCoordinator>,
+    lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
+    token: String,
+    models: Vec<String>,
+) -> Result<Vec<String>, String> {
+    let _lifecycle_permit = lifecycle_barrier.enter().await?;
+    let _gate = coordinator.lock_profile("local-gateway").await;
+    let listed = {
+        let token = token.clone();
+        with_hub_blocking(hub.clone(), move |hub| {
+            hub.route_pools()
+                .set_local_token_custom_models(&token, models)
+                .map_err(|error| map_err_string("set_local_token_custom_models", error))
+        })
+        .await?
+    };
+    restart_pool_listener_for_token(hub, &host, &token).await?;
+    Ok(listed)
+}
+
+async fn restart_pool_listener_for_token(
+    hub: Arc<AgentHub>,
+    host: &BridgeRuntimeHost,
+    token: &str,
+) -> Result<(), String> {
+    let token = token.to_owned();
+    let pool_id = with_hub_blocking(hub.clone(), move |hub| {
+        hub.route_pools()
+            .pool_id_for_token(&token)
+            .map_err(|error| map_err_string("pool_id_for_token", error))
+    })
+    .await?;
+    let Some(pool_id) = pool_id else {
+        return Ok(());
+    };
+    restart_pool_listener_if_running(hub, host, pool_id).await
+}
+
+async fn restart_pool_listener_if_running(
+    hub: Arc<AgentHub>,
+    host: &BridgeRuntimeHost,
+    pool_id: String,
+) -> Result<(), String> {
     let pools = with_hub_blocking(hub.clone(), move |hub| {
         hub.route_pools()
             .list_default_pools()

@@ -75,6 +75,9 @@ pub const UPSTREAM_STREAM_REQUIRED_ZH: &str =
 /// Shown when a forced-stream upstream closes before a terminal event.
 pub const UPSTREAM_STREAM_INCOMPLETE_ZH: &str = "上游流式回复不完整或已中断，请点重试。";
 
+/// ChatGPT Codex subscription rejected the requested model id.
+pub const CHATGPT_CODEX_MODEL_UNSUPPORTED_ZH: &str = "当前 ChatGPT 登录不支持该模型";
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BridgeRequest {
     pub model: String,

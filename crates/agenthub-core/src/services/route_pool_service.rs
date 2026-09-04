@@ -445,7 +445,7 @@ impl RoutePoolService {
 
     pub fn overview_from_pool(&self, pool: &RoutePool) -> Result<DefaultRoutePoolOverview> {
         let members = self.pools.list_members(&pool.id)?;
-        let listed_models = self.listed_models_for_pool(pool, &members);
+        let listed_models = self.advertised_models_for_pool(pool, &members);
         let mut member_overviews = Vec::with_capacity(members.len());
         for member in members {
             let (display_label, refresh_token_tail) = self.member_display_fields(&member)?;
@@ -1559,14 +1559,8 @@ impl RoutePoolService {
         list_local_bridge_models(product, pool.target_agent_id, None)
     }
 
-    /// Live catalog for a pool's enabled logins. Empty live lists fall back to
-    /// the mapping table. Results are not written to the DB.
-    pub fn list_upstream_models_for_pool(&self, pool_id: &str) -> Result<Vec<String>> {
-        let pool = self
-            .pools
-            .get_pool(pool_id)?
-            .ok_or_else(|| AppError::NotFound(format!("route pool not found: {pool_id}")))?;
-        let members = self.pools.list_members(pool_id)?;
+    /// Live catalog first; empty live lists fall back to the mapping table.
+    fn advertised_models_for_pool(&self, pool: &RoutePool, members: &[RouteMember]) -> Vec<String> {
         let mut listed = Vec::new();
         let mut seen = HashSet::new();
         for member in members.iter().filter(|member| member.enabled) {
@@ -1577,9 +1571,21 @@ impl RoutePoolService {
             }
         }
         if listed.is_empty() {
-            return Ok(self.listed_models_for_pool(&pool, &members));
+            self.listed_models_for_pool(pool, members)
+        } else {
+            listed
         }
-        Ok(listed)
+    }
+
+    /// Live catalog for a pool's enabled logins. Empty live lists fall back to
+    /// the mapping table. Results are not written to the DB.
+    pub fn list_upstream_models_for_pool(&self, pool_id: &str) -> Result<Vec<String>> {
+        let pool = self
+            .pools
+            .get_pool(pool_id)?
+            .ok_or_else(|| AppError::NotFound(format!("route pool not found: {pool_id}")))?;
+        let members = self.pools.list_members(pool_id)?;
+        Ok(self.advertised_models_for_pool(&pool, &members))
     }
 
     fn live_models_for_member(&self, member: &RouteMember) -> Vec<String> {
@@ -1775,7 +1781,7 @@ impl RoutePoolService {
         self.list_upstream_models_for_pool(&pool_id)
     }
 
-    fn pool_id_for_token(&self, token: &str) -> Result<Option<String>> {
+    pub fn pool_id_for_token(&self, token: &str) -> Result<Option<String>> {
         Ok(self
             .list_local_tokens()?
             .into_iter()

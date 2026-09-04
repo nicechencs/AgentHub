@@ -1,10 +1,11 @@
 use super::*;
 
 use crate::models::{
-    Account, AccountKind, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
-    AdapterSourceKind, AdapterSourceProduct, AdapterTargetProtocol, AdapterUpstreamTransport,
-    Provider, RouteDownstreamDialect, RouteDownstreamSurface, RouteSchedulePolicy,
-    FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2, LOCAL_BRIDGE_EDGES,
+    static_fallback_models, Account, AccountKind, AdapterProfile, AdapterProfileMode,
+    AdapterProfileStatus, AdapterRoute, AdapterSourceKind, AdapterSourceProduct,
+    AdapterTargetProtocol, AdapterUpstreamTransport, Provider, RouteDownstreamDialect,
+    RouteDownstreamSurface, RouteSchedulePolicy, FEATURE_MIXED_PROVIDER_POOL,
+    FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2, LOCAL_BRIDGE_EDGES,
 };
 use crate::services::{ProviderService, RoutePoolService};
 use crate::storage::{AccountRepo, AdapterProfileRepo, ProviderRepo, RoutePoolRepo};
@@ -1302,7 +1303,11 @@ fn start_spec_lists_codex_to_grok_dispatch_accepted_ids() {
             "leftover listed: {model}"
         );
     }
-    assert_eq!(listed[0], "gpt-5.4");
+    assert_eq!(listed[0], "gpt-5.6-sol");
+    assert_eq!(
+        listed,
+        static_fallback_models(AdapterSourceProduct::CodexChatGptSubscription)
+    );
 }
 
 #[test]
@@ -1330,7 +1335,7 @@ fn start_spec_lists_grok_default_when_mapping_entries_empty() {
     };
     assert_eq!(
         material.start_spec(Some(0)).listed_models,
-        vec![crate::bridge::grok_cli::GROK_CLI_DEFAULT_MODEL.to_string()]
+        static_fallback_models(AdapterSourceProduct::XaiGrokSubscription)
     );
 }
 
@@ -1358,9 +1363,10 @@ fn start_spec_lists_codex_to_kimi_dispatch_accepted_ids() {
         schedule_policy: Default::default(),
     };
     let listed = material.start_spec(Some(0)).listed_models;
-    assert_eq!(listed[0], "gpt-5.4");
-    assert!(listed.iter().any(|model| model == "gpt-5.1-codex"));
-    assert!(listed.iter().any(|model| model == "gpt-5"));
+    assert_eq!(
+        listed,
+        static_fallback_models(AdapterSourceProduct::CodexChatGptSubscription)
+    );
 }
 
 #[test]
@@ -1387,9 +1393,10 @@ fn start_spec_codex_to_kimi_configured_default_merges_into_catalog() {
         schedule_policy: Default::default(),
     };
     let listed = material.start_spec(Some(0)).listed_models;
-    assert_eq!(listed[0], "gpt-5.4");
-    assert!(listed.iter().any(|model| model == "gpt-5.1-codex"));
-    assert!(listed.iter().any(|model| model == "gpt-5"));
+    let mut expected =
+        static_fallback_models(AdapterSourceProduct::CodexChatGptSubscription).to_vec();
+    expected.push("gpt-5.4".to_string());
+    assert_eq!(listed, expected);
 }
 
 #[test]
@@ -2161,7 +2168,11 @@ fn default_pool_routes_workbuddy_deepseek_to_real_upstream_for_all_supported_age
 #[test]
 fn default_pool_resolves_provider_backed_openai_compatible_keys() {
     for (preset, endpoint, model) in [
-        ("deepseek-api", "https://api.deepseek.com/v1", "deepseek-chat"),
+        (
+            "deepseek-api",
+            "https://api.deepseek.com/v1",
+            "deepseek-chat",
+        ),
         (
             "glm-coding-plan",
             "https://open.bigmodel.cn/api/coding/paas/v4",
@@ -2246,7 +2257,11 @@ fn legacy_pool_does_not_mix_login_keys_across_upstream_endpoints() {
 
     let spec = AdapterBridgeService::new(db).pool_listener_spec(&pool, (false, false));
     assert_eq!(spec.upstream.base_url, "https://qooo.example/v1");
-    assert_eq!(spec.members.len(), 1, "different endpoint key must not enter v1 picker");
+    assert_eq!(
+        spec.members.len(),
+        1,
+        "different endpoint key must not enter v1 picker"
+    );
     assert_eq!(spec.members[0].label, "WorkBuddy Grok");
     assert_eq!(spec.members[0].auth.token(), "sk-qooo");
 }
