@@ -693,6 +693,15 @@ fn validate_start_spec(spec: &BridgeStartSpec) -> Result<Url, BridgeHostError> {
     }
     let mut upstream =
         Url::parse(&spec.upstream.base_url).map_err(|_| BridgeHostError::InvalidUpstreamUrl)?;
+    // Empty gateways use this loopback value only as a dormant placeholder. A spec that already
+    // identifies a real source must never start with it, otherwise requests are forwarded to port
+    // 80 on this machine and surface later as a misleading upstream 404/502.
+    if spec.upstream.source_id.is_some()
+        && spec.upstream.auth.token() == "pending"
+        && spec.upstream.base_url.trim_end_matches('/') == "http://127.0.0.1"
+    {
+        return Err(BridgeHostError::InvalidUpstreamUrl);
+    }
     if upstream.host_str().is_none()
         || !upstream.username().is_empty()
         || upstream.password().is_some()

@@ -43,7 +43,8 @@ use crate::models::{
     ProviderInput, RouteDownstreamDialect, RouteDownstreamSurface, RouteMember, RoutePool,
     RouteSchedulePolicy, ANTHROPIC_CODEX_EDGE, CODEX_CLAUDE_RESPONSES_EDGE, CODEX_DSH_EDGE,
     CODEX_GROK_EDGE, CODEX_KIMI_EDGE, GROK_CLAUDE_EDGE, GROK_CODEX_EDGE, KIMI_CODEX_EDGE,
-    OPENAI_CLAUDE_EDGE, OPENAI_CODEX_EDGE, OPENAI_GROK_BRIDGE_EDGE,
+    OPENAI_CLAUDE_EDGE, OPENAI_CODEX_EDGE, OPENAI_DSH_BRIDGE_EDGE, OPENAI_GROK_BRIDGE_EDGE,
+    OPENAI_KIMI_BRIDGE_EDGE,
 };
 use crate::services::{AdapterRouteService, AdapterSecretResolver, RoutePoolService};
 use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
@@ -53,6 +54,8 @@ const ANTHROPIC_RULE_ID: &str = ANTHROPIC_CODEX_EDGE.rule_id;
 const OPENAI_RULE_ID: &str = OPENAI_CODEX_EDGE.rule_id;
 const OPENAI_CLAUDE_BRIDGE_RULE_ID: &str = OPENAI_CLAUDE_EDGE.rule_id;
 const OPENAI_GROK_LOCAL_RULE_ID: &str = OPENAI_GROK_BRIDGE_EDGE.rule_id;
+const OPENAI_KIMI_LOCAL_RULE_ID: &str = OPENAI_KIMI_BRIDGE_EDGE.rule_id;
+const OPENAI_DSH_LOCAL_RULE_ID: &str = OPENAI_DSH_BRIDGE_EDGE.rule_id;
 const CODEX_CLAUDE_RULE_ID: &str = CODEX_CLAUDE_RESPONSES_EDGE.rule_id;
 const GROK_CLAUDE_RULE_ID: &str = GROK_CLAUDE_EDGE.rule_id;
 const GROK_CODEX_RULE_ID: &str = GROK_CODEX_EDGE.rule_id;
@@ -238,6 +241,44 @@ const OPENAI_GROK_BRIDGE_RULE: CodexBridgeRule = CodexBridgeRule {
     mode: live_writer_mode(&OPENAI_GROK_BRIDGE_EDGE),
 };
 
+const OPENAI_KIMI_BRIDGE_RULE: CodexBridgeRule = CodexBridgeRule {
+    rule_id: OPENAI_KIMI_BRIDGE_EDGE.rule_id,
+    profile_prefix: "adapter-openai-kimi-bridge",
+    provider_prefix: "kimi-openai-adapter-bridge",
+    profile_name: "OpenAI → Kimi 本机路由",
+    provider_name: "OpenAI 本机路由",
+    toml_name: "AgentHub OpenAI Route",
+    provider_slug: "agenthub_openai_bridge",
+    upstream_base_url: OPENAI_CHAT_BASE_URL,
+    default_model: OPENAI_KIMI_BRIDGE_EDGE.default_model,
+    protocol: upstream_protocol_of(&OPENAI_KIMI_BRIDGE_EDGE),
+    local_surface: local_surface_of(&OPENAI_KIMI_BRIDGE_EDGE),
+    bridge_kind: "chat_completions_to_chat_completions",
+    legacy_bridge_kinds: &[],
+    source: OPENAI_KIMI_BRIDGE_EDGE.source,
+    target_agent: OPENAI_KIMI_BRIDGE_EDGE.target,
+    mode: live_writer_mode(&OPENAI_KIMI_BRIDGE_EDGE),
+};
+
+const OPENAI_DSH_BRIDGE_RULE: CodexBridgeRule = CodexBridgeRule {
+    rule_id: OPENAI_DSH_BRIDGE_EDGE.rule_id,
+    profile_prefix: "adapter-openai-dsh-bridge",
+    provider_prefix: "dsh-openai-adapter-bridge",
+    profile_name: "OpenAI → DeepSeek Harness 本机路由",
+    provider_name: "OpenAI 本机路由",
+    toml_name: "AgentHub OpenAI Route",
+    provider_slug: "agenthub_openai_bridge",
+    upstream_base_url: OPENAI_CHAT_BASE_URL,
+    default_model: OPENAI_DSH_BRIDGE_EDGE.default_model,
+    protocol: upstream_protocol_of(&OPENAI_DSH_BRIDGE_EDGE),
+    local_surface: local_surface_of(&OPENAI_DSH_BRIDGE_EDGE),
+    bridge_kind: "chat_completions_to_chat_completions",
+    legacy_bridge_kinds: &[],
+    source: OPENAI_DSH_BRIDGE_EDGE.source,
+    target_agent: OPENAI_DSH_BRIDGE_EDGE.target,
+    mode: live_writer_mode(&OPENAI_DSH_BRIDGE_EDGE),
+};
+
 const CODEX_CLAUDE_RULE: CodexBridgeRule = CodexBridgeRule {
     rule_id: CODEX_CLAUDE_RESPONSES_EDGE.rule_id,
     profile_prefix: "adapter-codex-claude-bridge",
@@ -360,6 +401,8 @@ const LIVE_BRIDGE_RULES: &[CodexBridgeRule] = &[
     OPENAI_CODEX_RULE,
     OPENAI_CLAUDE_RULE,
     OPENAI_GROK_BRIDGE_RULE,
+    OPENAI_KIMI_BRIDGE_RULE,
+    OPENAI_DSH_BRIDGE_RULE,
     CODEX_CLAUDE_RULE,
     GROK_CLAUDE_RULE,
     GROK_CODEX_RULE,
@@ -1470,14 +1513,24 @@ fn rule_for_member_product(
     product: AdapterSourceProduct,
     target_agent: AgentId,
 ) -> Option<CodexBridgeRule> {
+    let lookup_product = openai_compatible_pool_product(product);
     LIVE_BRIDGE_RULES
         .iter()
         .copied()
-        .find(|rule| rule.source == product && rule.target_agent == target_agent)
+        .find(|rule| rule.source == lookup_product && rule.target_agent == target_agent)
         .or_else(|| {
             LIVE_BRIDGE_RULES
                 .iter()
                 .copied()
-                .find(|rule| rule.source == product)
+                .find(|rule| rule.source == lookup_product)
         })
+}
+
+fn openai_compatible_pool_product(product: AdapterSourceProduct) -> AdapterSourceProduct {
+    match product {
+        AdapterSourceProduct::DeepseekApi
+        | AdapterSourceProduct::GlmCodingPlan
+        | AdapterSourceProduct::XaiApi => AdapterSourceProduct::OpenaiApi,
+        _ => product,
+    }
 }

@@ -2092,6 +2092,125 @@ fn workbuddy_account_upstream_uses_its_saved_url_and_model_id() {
 }
 
 #[test]
+fn default_pool_routes_workbuddy_deepseek_to_real_upstream_for_all_supported_agents() {
+    for (target, surface, local_surface) in [
+        (
+            AgentId::Kimi,
+            RouteDownstreamSurface::ChatCompletions,
+            BridgeLocalSurface::ChatCompletions,
+        ),
+        (
+            AgentId::Dsh,
+            RouteDownstreamSurface::ChatCompletions,
+            BridgeLocalSurface::ChatCompletions,
+        ),
+        (
+            AgentId::Claude,
+            RouteDownstreamSurface::Messages,
+            BridgeLocalSurface::Messages,
+        ),
+        (
+            AgentId::Codex,
+            RouteDownstreamSurface::Responses,
+            BridgeLocalSurface::Responses,
+        ),
+        (
+            AgentId::Grok,
+            RouteDownstreamSurface::Responses,
+            BridgeLocalSurface::Responses,
+        ),
+    ] {
+        let (_dir, db) = test_db();
+        db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+        let mut account = openai_account("workbuddy-deepseek", "sk-deepseek");
+        account.agent_id = AgentId::WorkBuddy;
+        account.label = "DeepSeek-V4 Flash".into();
+        account.credentials = json!({
+            "format": "api_key",
+            "api_key": "sk-deepseek",
+            "endpoint": "https://api.deepseek.com/v1/chat/completions",
+            "model_id": "deepseek-v4-flash",
+        });
+        account.extra = json!({
+            "provider": "workbuddy",
+            "surface": "deepseek-api",
+            "model_id": "deepseek-v4-flash",
+        });
+        AccountRepo::new(db.clone()).create(&account).unwrap();
+
+        let pools = RoutePoolService::new(db.clone());
+        let pool = pools.ensure_default_pool(target, surface).unwrap();
+        pools
+            .add_member(&pool.id, AdapterSourceKind::Account, &account.id)
+            .unwrap();
+
+        let spec = AdapterBridgeService::new(db).pool_listener_spec(&pool, (false, false));
+        assert_eq!(spec.upstream.base_url, "https://api.deepseek.com/v1");
+        assert_eq!(spec.upstream.model.as_deref(), Some("deepseek-v4-flash"));
+        assert_eq!(spec.upstream.local_surface, local_surface);
+        assert_eq!(
+            spec.upstream.protocol,
+            BridgeUpstreamProtocol::OpenAiChatCompletions
+        );
+        assert!(spec.upstream.auth.has_token());
+        assert_ne!(spec.upstream.base_url, "http://127.0.0.1/");
+        assert_eq!(spec.members.len(), 1);
+    }
+}
+
+#[test]
+fn default_pool_resolves_provider_backed_openai_compatible_keys() {
+    for (preset, endpoint, model) in [
+        ("deepseek-api", "https://api.deepseek.com/v1", "deepseek-chat"),
+        (
+            "glm-coding-plan",
+            "https://open.bigmodel.cn/api/coding/paas/v4",
+            "glm-4.6",
+        ),
+        ("xai-api", "https://api.x.ai/v1", "grok-4"),
+    ] {
+        for (target, surface) in [
+            (AgentId::Kimi, RouteDownstreamSurface::ChatCompletions),
+            (AgentId::Dsh, RouteDownstreamSurface::ChatCompletions),
+            (AgentId::Claude, RouteDownstreamSurface::Messages),
+            (AgentId::Codex, RouteDownstreamSurface::Responses),
+            (AgentId::Grok, RouteDownstreamSurface::Responses),
+        ] {
+            let (_dir, db) = test_db();
+            let source_id = format!("{preset}-{target}");
+            ProviderRepo::new(db.clone())
+                .create(&Provider {
+                    id: source_id.clone(),
+                    agent_id: AgentId::WorkBuddy,
+                    name: format!("{preset} provider"),
+                    settings_config: json!({
+                        "api_key": format!("sk-{preset}"),
+                        "base_url": endpoint,
+                        "model": model,
+                    }),
+                    meta: json!({"preset": preset}),
+                    is_current: false,
+                    created_at: "now".into(),
+                    updated_at: "now".into(),
+                })
+                .unwrap();
+
+            let pools = RoutePoolService::new(db.clone());
+            let pool = pools.ensure_default_pool(target, surface).unwrap();
+            pools
+                .add_member(&pool.id, AdapterSourceKind::Provider, &source_id)
+                .unwrap();
+
+            let spec = AdapterBridgeService::new(db).pool_listener_spec(&pool, (false, false));
+            assert_eq!(spec.upstream.base_url, endpoint, "{preset} -> {target}");
+            assert_eq!(spec.upstream.model.as_deref(), Some(model));
+            assert_eq!(spec.upstream.auth.token(), format!("sk-{preset}"));
+            assert_ne!(spec.upstream.auth.token(), "pending");
+        }
+    }
+}
+
+#[test]
 fn legacy_pool_does_not_mix_login_keys_across_upstream_endpoints() {
     let (_dir, db) = test_db();
     let mut lead = openai_account("workbuddy-qooo", "sk-qooo");

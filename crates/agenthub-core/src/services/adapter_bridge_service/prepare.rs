@@ -310,7 +310,22 @@ impl AdapterBridgeService {
         let rule = rule_for_id(rule_id).ok_or_else(|| {
             AppError::InvalidArg("这条本机路由已失效，无法启动。请删除后重建。".into())
         })?;
-        self.resolve_upstream_auth(&rule, source_kind, source_id)
+        let product = self
+            .routes
+            .classify_source_product(source_kind, source_id)?;
+        if rule.source == AdapterSourceProduct::OpenaiApi
+            && matches!(
+                product,
+                AdapterSourceProduct::DeepseekApi
+                    | AdapterSourceProduct::GlmCodingPlan
+                    | AdapterSourceProduct::XaiApi
+            )
+        {
+            self.secrets
+                .resolve_openai_compat_auth(source_kind, source_id)
+        } else {
+            self.resolve_upstream_auth(&rule, source_kind, source_id)
+        }
     }
 
     pub(super) fn bridge_profile(&self, profile_id: &str) -> Result<AdapterProfile> {
@@ -328,7 +343,9 @@ impl AdapterBridgeService {
             | ANTHROPIC_RULE_ID
             | OPENAI_RULE_ID
             | OPENAI_CLAUDE_BRIDGE_RULE_ID
-            | OPENAI_GROK_LOCAL_RULE_ID => matches!(
+            | OPENAI_GROK_LOCAL_RULE_ID
+            | OPENAI_KIMI_LOCAL_RULE_ID
+            | OPENAI_DSH_LOCAL_RULE_ID => matches!(
                 profile.source_kind,
                 AdapterSourceKind::Provider | AdapterSourceKind::Account
             ),
