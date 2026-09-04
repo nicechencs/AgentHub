@@ -250,6 +250,58 @@ fn add_list_delete_api_key() {
 }
 
 #[test]
+fn live_sync_does_not_recreate_logins_still_in_trash() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    let first = svc
+        .add_api_key(AgentId::Grok, Some("one"), "xai-key-one-1234")
+        .unwrap();
+    let second = svc
+        .add_api_key(AgentId::Grok, Some("two"), "xai-key-two-5678")
+        .unwrap();
+    svc.delete(&first.id, AgentId::Grok).unwrap();
+    svc.delete(&second.id, AgentId::Grok).unwrap();
+
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::ApiKey,
+        credentials: json!({
+            "format": "api_key",
+            "api_key": "xai-key-one-1234",
+            "email": "one@x.ai",
+        }),
+        label_hint: Some("one".into()),
+        extra: json!({}),
+    });
+    assert!(
+        svc.list(Some(AgentId::Grok)).unwrap().is_empty(),
+        "live sync must not resurrect a recycle-bin login"
+    );
+    assert_eq!(
+        svc.connections.list_trash(Some(AgentId::Grok)).unwrap().len(),
+        2
+    );
+
+    let trash = svc.connections.list_trash(Some(AgentId::Grok)).unwrap();
+    let second_trash = trash
+        .iter()
+        .find(|item| item.source_id == second.id)
+        .expect("second trash row");
+    svc.connections.restore_trash(&second_trash.id).unwrap();
+
+    let pool = svc.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(pool.len(), 1);
+    assert_eq!(pool[0].id, second.id);
+    let remaining: Vec<_> = svc
+        .connections
+        .list_trash(Some(AgentId::Grok))
+        .unwrap()
+        .into_iter()
+        .map(|item| item.source_id)
+        .collect();
+    assert_eq!(remaining, vec![first.id]);
+}
+
+#[test]
 fn list_recycles_api_key_row_persisted_without_a_usable_secret() {
     use crate::storage::AccountRepo;
     let (_root, svc, _) = live_svc(AgentId::Grok);
