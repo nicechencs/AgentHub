@@ -1027,7 +1027,7 @@ export const zh = {
     },
     sub2api: {
       title: "Sub2API",
-      description: "登录远端站点，把 API Key 同步到连接",
+      description: "登录中转站，把 Key 同步到连接列表",
       descriptionTip: "先填写站点地址并登录。退出只清除本页登录，已同步到连接的 Key 会保留。",
       siteUrlLabel: "站点地址",
       siteUrlPlaceholder: "https://v2.pincc.ai",
@@ -1043,7 +1043,7 @@ export const zh = {
       pasteTokenHint: "站点常禁止嵌入。桌面端会打开登录窗口并自动读取；失败时可在浏览器登录后粘贴访问凭证。",
       cancelLogin: "取消",
       loggedOutTitle: "尚未登录",
-      loggedOutDescription: "填写站点地址后登录，即可查看并同步 API Key。",
+      loggedOutDescription: "登录中转站把 Key 同步到连接列表。填写站点地址后登录即可。",
       keysTitle: "API Key",
       keysEmpty: "还没有同步任何 Key",
       keysEmptyHint: "登录后可新建，或在站点里创建后再刷新。",
