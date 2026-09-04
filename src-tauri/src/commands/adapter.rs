@@ -19,8 +19,8 @@ use agenthub_core::AgentHub;
 use tauri::{AppHandle, State};
 
 use crate::adapter_bridge_controller::{
-    local_gateway_status as read_local_gateway_status,
-    start_local_gateway as start_shared_local_gateway,
+    local_gateway_status as read_local_gateway_status, refresh_local_gateway_models,
+    set_local_gateway_custom_models, start_local_gateway as start_shared_local_gateway,
     stop_local_gateway as stop_shared_local_gateway, sync_extra_local_bearers,
     AdapterBridgeStatusDto,
 };
@@ -518,12 +518,14 @@ pub async fn set_local_token_custom_models(
     token: String,
     models: Vec<String>,
 ) -> Result<Vec<String>, GuiError> {
-    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
-    with_hub_blocking(hub, move |hub| {
-        hub.route_pools()
-            .set_local_token_custom_models(&token, models)
-            .map_err(|err| map_err_string("set_local_token_custom_models", err))
-    })
+    set_local_gateway_custom_models(
+        state.hub_arc().map_err(adapter_error_from_string)?,
+        state.bridge_host(),
+        state.bridge_saga_coordinator(),
+        state.lifecycle_shutdown_barrier(),
+        token,
+        models,
+    )
     .await
     .map_err(adapter_error_from_string)
 }
@@ -546,12 +548,13 @@ pub async fn refresh_local_token_models(
     state: State<'_, AppState>,
     token: String,
 ) -> Result<Vec<String>, GuiError> {
-    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
-    with_hub_blocking(hub, move |hub| {
-        hub.route_pools()
-            .refresh_local_token_models(&token)
-            .map_err(|err| map_err_string("refresh_local_token_models", err))
-    })
+    refresh_local_gateway_models(
+        state.hub_arc().map_err(adapter_error_from_string)?,
+        state.bridge_host(),
+        state.bridge_saga_coordinator(),
+        state.lifecycle_shutdown_barrier(),
+        token,
+    )
     .await
     .map_err(adapter_error_from_string)
 }

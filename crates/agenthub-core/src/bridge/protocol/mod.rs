@@ -17,8 +17,8 @@ pub use responses::{
     client_message_for_upstream_detail, encode_responses_from_ir, is_leftover_bridge_model,
     looks_like_sse_body, parse_responses_request, prepare_official_codex_request,
     responses_output_to_ir, to_grok_chat_request, to_grok_responses_request, to_kimi_chat_request,
-    to_responses_request, translate_responses_request, upstream_detail_requires_stream,
-    IrToResponsesSse, ResponsesStreamToIr,
+    to_responses_request, translate_responses_request, upstream_detail_chatgpt_codex_unsupported,
+    upstream_detail_requires_stream, IrToResponsesSse, ResponsesStreamToIr,
 };
 
 /// Claude subscription → Codex kernel fixtures.

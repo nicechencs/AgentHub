@@ -60,7 +60,7 @@ describe('TokenList', () => {
     expect(markup).toContain('调整名称列宽');
   });
 
-  it('shows a dash when the entry key is not ready', () => {
+  it('shows an empty-key prompt when the entry key is not ready', () => {
     const markup = renderToStaticMarkup(
       createElement(
         TooltipProvider,
@@ -70,7 +70,24 @@ describe('TokenList', () => {
         }),
       ),
     );
-    expect(markup).toContain('—');
+    expect(markup).toContain('还没有入口 Key');
+    expect(markup).not.toContain('ahb_');
+    expect(markup).not.toContain('为此端点新建');
+  });
+
+  it('offers 为此端点新建 on empty key rows', () => {
+    const markup = renderToStaticMarkup(
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(TokenList, {
+          rows: [row({ token: null, maskedToken: null })],
+          onCreateForEndpoint: () => {},
+        }),
+      ),
+    );
+    expect(markup).toContain('还没有入口 Key');
+    expect(markup).toContain('为此端点新建');
     expect(markup).not.toContain('ahb_');
   });
 

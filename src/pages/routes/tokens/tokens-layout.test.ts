@@ -17,6 +17,8 @@ describe('routes tokens layout wiring', () => {
     expect(page).toContain('firstCreateTokenPoolId');
     expect(page).toContain('defaultCreateTokenName');
     expect(page).toContain('createNamePlaceholder');
+    expect(page).toContain('setImportAfterSaveRow');
+    expect(page).toContain('onCreateForEndpoint');
     expect(page).not.toContain('SelectTrigger');
     expect(page).not.toContain('SelectItem');
     expect(page).not.toContain("from '@/components/ui/select'");
@@ -54,6 +56,8 @@ describe('routes tokens layout wiring', () => {
     expect(panel).toContain('data-token-written-to');
     expect(page).not.toContain('useBoardUsageStats');
     expect(page).not.toContain('attachTokenUsage');
+    expect(source('TokenList.tsx')).toContain('createForEndpoint');
+    expect(source('TokenList.tsx')).toContain('emptyTitle');
   });
 
   it('puts eye and copy icons after the entry key, not text buttons', () => {
