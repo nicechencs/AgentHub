@@ -251,9 +251,9 @@ export function formatKeyModelsFromKey(key: Sub2ApiKey, maxItems = 6): string | 
   if (group && typeof group === 'object') {
     const g = group as Record<string, unknown>;
     const cfg = g.models_list_config ?? g.modelsListConfig;
-    const nested =
-      g.models
-      ?? (cfg && typeof cfg === 'object' ? (cfg as Record<string, unknown>).models : undefined);
+    const cfgObj = cfg && typeof cfg === 'object' ? (cfg as Record<string, unknown>) : null;
+    const cfgModels = cfgObj && cfgObj.enabled !== false ? cfgObj.models : undefined;
+    const nested = g.models ?? cfgModels;
     return formatKeyModels(nested, maxItems);
   }
   return null;
