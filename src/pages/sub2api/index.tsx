@@ -54,11 +54,16 @@ import { cn } from '@/lib/utils';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
 import { Sub2ApiCaptcha, type Sub2ApiCaptchaHandle } from './Sub2ApiCaptcha';
 import {
+  formatKeyModels,
+  formatKeyQuota,
+  formatKeyTimestamp,
   initialSiteUrlDraft,
   normalizeTotpCode,
+  pickGroupLabel,
   prepareSiteUrlForLogin,
   sortSub2ApiKeys,
   sub2apiDisplayName,
+  sub2apiKeyStatusKind,
   sub2apiKeyStatusLabel,
   sub2apiPagePhase,
 } from './sub2api-page-model';
@@ -571,19 +576,89 @@ export default function Sub2ApiPage() {
                   </div>
                 ) : (
                   <ul className="divide-y divide-border">
-                    {sortedKeys.map((key) => (
-                      <li key={key.id} className="flex flex-wrap items-center gap-2 px-4 py-3">
-                        <div className="min-w-0 flex-1">
+                    {sortedKeys.map((key) => {
+                      const statusKind = sub2apiKeyStatusKind(key.status);
+                      const createdLabel = formatKeyTimestamp(key.created_at);
+                      const updatedLabel = formatKeyTimestamp(key.updated_at);
+                      const expiresLabel = formatKeyTimestamp(key.expires_at);
+                      const groupLabel = pickGroupLabel(key);
+                      const quotaLabel = formatKeyQuota(key, {
+                        unlimited: t('routes.sub2api.quotaUnlimited'),
+                      });
+                      const modelsLabel = formatKeyModels(key.models);
+                      const metaItems: { label: string; value: string }[] = [];
+                      if (createdLabel) {
+                        metaItems.push({
+                          label: t('routes.sub2api.keyCreated'),
+                          value: createdLabel,
+                        });
+                      }
+                      if (updatedLabel) {
+                        metaItems.push({
+                          label: t('routes.sub2api.keyUpdated'),
+                          value: updatedLabel,
+                        });
+                      }
+                      if (expiresLabel) {
+                        metaItems.push({
+                          label: t('routes.sub2api.keyExpires'),
+                          value: expiresLabel,
+                        });
+                      }
+                      if (groupLabel) {
+                        metaItems.push({
+                          label: t('routes.sub2api.keyGroup'),
+                          value: groupLabel,
+                        });
+                      }
+                      if (quotaLabel) {
+                        metaItems.push({
+                          label: t('routes.sub2api.keyQuota'),
+                          value: quotaLabel,
+                        });
+                      }
+                      if (modelsLabel) {
+                        metaItems.push({
+                          label: t('routes.sub2api.keyModels'),
+                          value: modelsLabel,
+                        });
+                      }
+                      return (
+                      <li key={key.id} className="flex flex-wrap items-start gap-2 px-4 py-3">
+                        <div className="min-w-0 flex-1 space-y-1">
                           <div className="truncate text-sm font-medium">
                             {key.name || `Key #${key.id}`}
                           </div>
                           <div className="truncate font-mono text-xs text-secondary">
                             {maskApiKey(key.key)}
                           </div>
+                          {metaItems.length > 0 ? (
+                            <div className="flex flex-wrap gap-x-3 gap-y-1 pt-0.5">
+                              {metaItems.map((item) => (
+                                <div
+                                  key={`${key.id}-${item.label}`}
+                                  className="max-w-full text-xs text-secondary"
+                                >
+                                  <span>{item.label}</span>
+                                  <span className="mx-1">·</span>
+                                  <span className="break-all text-primary">{item.value}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
                         </div>
-                        <Badge variant="default">
+                        <Badge
+                          variant={
+                            statusKind === 'active'
+                              ? 'success'
+                              : statusKind === 'disabled'
+                                ? 'warning'
+                                : 'default'
+                          }
+                        >
                           {sub2apiKeyStatusLabel(key.status, {
                             active: t('routes.sub2api.statusActive'),
+                            disabled: t('routes.sub2api.statusDisabled'),
                             other: t('routes.sub2api.statusOther'),
                           })}
                         </Badge>
@@ -616,7 +691,8 @@ export default function Sub2ApiPage() {
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </li>
-                    ))}
+                      );
+                    })}
                   </ul>
                 )}
               </div>

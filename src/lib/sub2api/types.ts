@@ -71,9 +71,22 @@ export type Sub2ApiKey = {
   key: string;
   name: string;
   group_id?: number | null;
+  /** Group display name when the API provides it. */
+  group_name?: string | null;
+  /** Some relays use `group` as a string label. */
+  group?: string | null;
   status: string;
   created_at?: string;
   updated_at?: string;
+  expires_at?: string | null;
+  /** Allowed models — array or comma-separated string depending on relay. */
+  models?: string[] | string | null;
+  quota?: number | null;
+  used_quota?: number | null;
+  remain_quota?: number | null;
+  unlimited_quota?: boolean | null;
+  /** Extra fields from Sub2API / PinCC / NewAPI-style relays — ignored safely. */
+  [key: string]: unknown;
 };
 
 export type Sub2ApiKeyList = {
