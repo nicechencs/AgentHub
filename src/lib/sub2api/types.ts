@@ -17,10 +17,50 @@ export type Sub2ApiUser = {
   status?: string;
 };
 
+/** Public settings used for login/captcha. Extra keys ignored. */
 export type Sub2ApiPublicSettings = {
   api_base_url?: string;
   version?: string;
+  site_name?: string;
+  turnstile_enabled?: boolean;
+  turnstile_site_key?: string;
+  tencent_captcha_enabled?: boolean;
+  tencent_captcha_app_id?: string;
+  tencent_captcha_region?: string;
+  aliyun_captcha_enabled?: boolean;
+  aliyun_captcha_scene_id?: string;
+  aliyun_captcha_prefix?: string;
+  aliyun_captcha_region?: string;
   [key: string]: unknown;
+};
+
+export type Sub2ApiLoginRequest = {
+  email: string;
+  password: string;
+  turnstile_token?: string;
+  tencent_captcha_ticket?: string;
+  tencent_captcha_randstr?: string;
+};
+
+export type Sub2ApiAuthTokens = {
+  access_token: string;
+  refresh_token?: string;
+  expires_in?: number;
+  token_type?: string;
+  user?: Sub2ApiUser;
+};
+
+export type Sub2ApiTotpLoginResponse = {
+  requires_2fa: true;
+  temp_token?: string;
+  user_email_masked?: string;
+};
+
+export type Sub2ApiLoginResult = Sub2ApiAuthTokens | Sub2ApiTotpLoginResponse;
+
+export type Sub2ApiLogin2FARequest = {
+  temp_token: string;
+  totp_code: string;
 };
 
 export type Sub2ApiKey = {
@@ -55,4 +95,12 @@ export type Sub2ApiSession = {
 export type Sub2ApiAuthContext = {
   siteUrl: string;
   accessToken: string;
+};
+
+export type Sub2ApiCaptchaKind = 'none' | 'turnstile' | 'tencent' | 'aliyun';
+
+export type Sub2ApiCaptchaProof = {
+  turnstile_token?: string;
+  tencent_captcha_ticket?: string;
+  tencent_captcha_randstr?: string;
 };

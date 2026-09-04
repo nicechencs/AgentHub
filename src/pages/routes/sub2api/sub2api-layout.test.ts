@@ -6,18 +6,25 @@ import { describe, expect, it } from 'vitest';
 const dir = path.dirname(fileURLToPath(import.meta.url));
 
 describe('sub2api layout wiring', () => {
-  it('keeps three page phases and paste-token fallback in the login dialog', () => {
+  it('uses native login form; webview open-login is not the primary UX', () => {
     const page = readFileSync(path.join(dir, 'index.tsx'), 'utf8');
     expect(page).toContain("phase === 'logged-out'");
     expect(page).toContain("phase === 'logged-in'");
-    expect(page).toContain("phase === 'logging-in'");
-    expect(page).toContain('openSub2ApiLoginWindow');
-    expect(page).toContain('closeSub2ApiLoginWindow');
+    expect(page).toContain("phase === 'awaiting-2fa'");
+    expect(page).toContain('nativeSub2ApiLogin');
+    expect(page).toContain('nativeSub2ApiLogin2FA');
+    expect(page).toContain('data-sub2api-login-form');
+    expect(page).toContain('data-sub2api-2fa-form');
+    expect(page).toContain('data-sub2api-email');
+    expect(page).toContain('data-sub2api-password');
+    expect(page).toContain('data-sub2api-totp');
+    expect(page).toContain('openSiteInBrowser');
+    expect(page).toContain('data-sub2api-advanced');
     expect(page).toContain('pasteToken');
-    expect(page).toContain('openExternalLink');
+    expect(page).toContain('Sub2ApiCaptcha');
     expect(page).toContain('syncSub2ApiKeyToConnections');
-    expect(page).toContain('syncedKeysEmpty');
-    expect(page).toContain('loginUrlLabel');
+    expect(page).not.toContain('openSub2ApiLoginWindow');
+    expect(page).not.toContain('closeSub2ApiLoginWindow');
     expect(page).not.toContain('<iframe');
   });
 });

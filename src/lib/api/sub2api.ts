@@ -1,5 +1,6 @@
 /**
- * Sub2API façade — HTTP helpers + login window via settings port.
+ * Sub2API façade — HTTP helpers. Native password login is primary;
+ * child webview open-login remains available on the settings port but is unused by UI.
  */
 import { getBackend } from '@/app/runtime';
 import {
@@ -7,8 +8,11 @@ import {
   createApiKey,
   fetchCurrentUser,
   fetchPublicSettings,
+  isTotp2FARequired,
   listApiKeys,
   loadSub2ApiSession,
+  loginWith2FA,
+  loginWithPassword,
   logoutRemote,
   refreshAuthTokens,
   saveSub2ApiSession,
@@ -17,13 +21,17 @@ import {
   sub2apiLoginUrl,
   syncSub2ApiKeyToConnections,
   SUB2API_DEFAULT_SITE_URL,
+  buildLoginBody,
+  type Sub2ApiAuthTokens,
+  type Sub2ApiCaptchaProof,
   type Sub2ApiKey,
+  type Sub2ApiLoginResult,
   type Sub2ApiPublicSettings,
   type Sub2ApiSession,
   type Sub2ApiUser,
 } from '@/lib/sub2api';
 
-export type { Sub2ApiKey, Sub2ApiPublicSettings, Sub2ApiSession, Sub2ApiUser };
+export type { Sub2ApiKey, Sub2ApiPublicSettings, Sub2ApiSession, Sub2ApiUser, Sub2ApiCaptchaProof };
 export {
   clearSub2ApiSession,
   loadSub2ApiSession,
@@ -33,8 +41,11 @@ export {
   sub2apiGatewayBaseUrl,
   syncSub2ApiKeyToConnections,
   SUB2API_DEFAULT_SITE_URL,
+  isTotp2FARequired,
+  buildLoginBody,
 };
 
+/** @deprecated Native login is primary; kept for optional/legacy callers. */
 export async function openSub2ApiLoginWindow(loginUrl: string): Promise<{
   accessToken: string;
   refreshToken?: string;
@@ -43,6 +54,7 @@ export async function openSub2ApiLoginWindow(loginUrl: string): Promise<{
   return getBackend().settings.openSub2ApiLoginWindow(loginUrl);
 }
 
+/** @deprecated Native login is primary; kept for optional/legacy callers. */
 export async function closeSub2ApiLoginWindow(): Promise<void> {
   await getBackend().settings.closeSub2ApiLoginWindow();
 }
@@ -97,6 +109,8 @@ export async function establishSessionFromTokens(input: {
   accessToken: string;
   refreshToken?: string;
   expiresAt?: number;
+  expiresIn?: number;
+  user?: Sub2ApiUser | null;
 }): Promise<Sub2ApiSession> {
   let gatewayBaseUrl = sub2apiGatewayBaseUrl(input.siteUrl);
   try {
@@ -111,12 +125,37 @@ export async function establishSessionFromTokens(input: {
     accessToken: input.accessToken,
     refreshToken: input.refreshToken,
     expiresAt: input.expiresAt,
+    expiresIn: input.expiresIn,
+    user: input.user,
   });
-  const user = await fetchCurrentUser({
-    siteUrl: draft.siteUrl,
-    accessToken: draft.accessToken,
-  });
+  const user =
+    input.user
+    ?? (await fetchCurrentUser({
+      siteUrl: draft.siteUrl,
+      accessToken: draft.accessToken,
+    }));
   const next = { ...draft, user };
   saveSub2ApiSession(next);
   return next;
+}
+
+export async function nativeSub2ApiLogin(input: {
+  siteUrl: string;
+  email: string;
+  password: string;
+  captcha?: Sub2ApiCaptchaProof | null;
+}): Promise<Sub2ApiLoginResult> {
+  const body = buildLoginBody(input.email, input.password, input.captcha);
+  return loginWithPassword(input.siteUrl, body);
+}
+
+export async function nativeSub2ApiLogin2FA(input: {
+  siteUrl: string;
+  tempToken: string;
+  totpCode: string;
+}): Promise<Sub2ApiAuthTokens> {
+  return loginWith2FA(input.siteUrl, {
+    temp_token: input.tempToken,
+    totp_code: input.totpCode,
+  });
 }
