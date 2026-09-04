@@ -22,12 +22,14 @@ agenthub-core = { workspace = true }
 notify = { version = "6", features = ["macos_fsevent"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+urlencoding = { workspace = true }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2"
 tokio = { workspace = true }
 tracing = { workspace = true }
+ureq = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

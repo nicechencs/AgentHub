@@ -3,6 +3,7 @@ import {
   DEFAULT_PLUGINS_NAV_VISIBLE,
   DEFAULT_ROUTES_NAV_VISIBLE,
   DEFAULT_SIDEBAR_AUTO_COLLAPSE_ON_ROUTES,
+  DEFAULT_SUB2API_NAV_VISIBLE,
   loadBool,
   saveBool,
   StorageKey,
@@ -21,6 +22,8 @@ interface SidebarContextValue {
   setRoutesNavVisible: (v: boolean) => void;
   pluginsNavVisible: boolean;
   setPluginsNavVisible: (v: boolean) => void;
+  sub2apiNavVisible: boolean;
+  setSub2apiNavVisible: (v: boolean) => void;
 }
 
 const SidebarContext = React.createContext<SidebarContextValue | undefined>(undefined);
@@ -48,6 +51,9 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const [pluginsNavVisible, setPluginsNavVisibleState] = React.useState(
     () => loadBool(StorageKey.pluginsNavVisible, DEFAULT_PLUGINS_NAV_VISIBLE),
   );
+  const [sub2apiNavVisible, setSub2apiNavVisibleState] = React.useState(
+    () => loadBool(StorageKey.sub2apiNavVisible, DEFAULT_SUB2API_NAV_VISIBLE),
+  );
 
   const setCollapsed = React.useCallback((v: boolean) => {
     setCollapsedState(v);
@@ -67,6 +73,11 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const setPluginsNavVisible = React.useCallback((v: boolean) => {
     setPluginsNavVisibleState(v);
     saveBool(StorageKey.pluginsNavVisible, v);
+  }, []);
+
+  const setSub2apiNavVisible = React.useCallback((v: boolean) => {
+    setSub2apiNavVisibleState(v);
+    saveBool(StorageKey.sub2apiNavVisible, v);
   }, []);
 
   const toggle = React.useCallback(() => {
@@ -93,6 +104,8 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       setRoutesNavVisible,
       pluginsNavVisible,
       setPluginsNavVisible,
+      sub2apiNavVisible,
+      setSub2apiNavVisible,
     }),
     [
       collapsed,
@@ -105,6 +118,8 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       setRoutesNavVisible,
       pluginsNavVisible,
       setPluginsNavVisible,
+      sub2apiNavVisible,
+      setSub2apiNavVisible,
     ],
   );
 

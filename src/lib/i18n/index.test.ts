@@ -76,6 +76,7 @@ describe('translate / interpolate', () => {
     const zhNav = createTranslator('zh');
     expect(zhNav('nav.dashboard')).toBe('总览');
     expect(zhNav('nav.connections')).toBe('连接');
+    expect(zhNav('nav.sub2api')).toBe('Sub2API');
     expect(zhNav('nav.routes')).toBe('路由');
     expect(zhNav('routes.page.title')).toBe('路由');
     expect(zhNav('nav.settings')).toBe('设置');
