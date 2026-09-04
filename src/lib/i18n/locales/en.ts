@@ -1098,6 +1098,8 @@ export const en = {
       loginCancelled: "Sign-in cancelled",
       statusActive: "Active",
       statusDisabled: "Disabled",
+      statusExpired: "Expired",
+      statusQuotaExhausted: "Quota used up",
       statusOther: "Unavailable",
       keyCreated: "Created",
       keyUpdated: "Updated",
