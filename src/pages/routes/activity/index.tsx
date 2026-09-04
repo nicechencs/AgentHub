@@ -7,7 +7,8 @@ import { useSideSplit } from '@/components/layout/use-side-split';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { PageRefreshButton } from '@/components/shared/PageRefreshButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
-import { getLocalGatewayStatus } from '@/lib/api/adapter';
+import { getLocalGatewayStatus, listLocalTokens } from '@/lib/api/adapter';
+import type { LocalTokenRecord } from '@/lib/backend/contracts/adapter';
 import { ADAPTER_BRIDGE_STATUS_POLL_MS } from '@/pages/routes/shared/adapter-model';
 import { useAdapterResources } from '@/pages/routes/shared/use-bridge-resources';
 import { useRoutePoolState } from '@/pages/routes/shared/use-route-pool-state';
@@ -43,6 +44,7 @@ export default function RoutesActivityPage() {
   const [unauthenticatedTraces, setUnauthenticatedTraces] = useState<
     import('@/lib/backend/contracts/adapter').AdapterBridgeRouteTrace[]
   >([]);
+  const [localTokens, setLocalTokens] = useState<LocalTokenRecord[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,6 +70,20 @@ export default function RoutesActivityPage() {
       window.clearInterval(timer);
     };
   }, [profiles, loading]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void listLocalTokens()
+      .then((rows) => {
+        if (!cancelled) setLocalTokens(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setLocalTokens([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, profiles]);
 
   const monitoredProfiles = useMemo(
     () => monitoredLocalProfiles(profiles, new Set(), defaultPools),
@@ -124,6 +140,7 @@ export default function RoutesActivityPage() {
       panel={detailRow ? (
         <ActivityTraceDetailPanel
           row={detailRow}
+          tokens={localTokens}
           width={inspect.paneWidth}
           onClose={() => inspect.close()}
         />
@@ -184,6 +201,7 @@ export default function RoutesActivityPage() {
         <ActivityMonitoringPanel
           snapshot={snapshot}
           pools={defaultPools}
+          tokens={localTokens}
           activeId={inspect.target}
           onShowDetail={(row) => inspect.open(row.requestId)}
         />

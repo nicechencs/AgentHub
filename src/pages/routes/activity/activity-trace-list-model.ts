@@ -9,14 +9,15 @@ import {
   parseConversionPath,
   type UpstreamChannelCol,
 } from "@/components/shared/route-trace-visual-model";
-import { localEndpointBrandAgentId } from "@/lib/route-endpoints";
+import { localEndpointBrandAgentId, ROUTE_ENDPOINT_HOST } from "@/lib/route-endpoints";
 import type { TokenAgentId } from "@/styles/tokens";
 import { fmtTokens } from "@/lib/utils";
 import { StorageKey } from "@/lib/ui-preferences";
 
 export type ActivityTraceColumnKey =
   | "time"
-  | "request"
+  | "key"
+  | "endpoint"
   | "model"
   | "firstToken"
   | "duration"
@@ -25,9 +26,16 @@ export type ActivityTraceColumnKey =
   | "route"
   | "details";
 
+export type ActivityTraceKeyToken = {
+  token: string;
+  name: string;
+  poolId?: string;
+};
+
 export const ACTIVITY_TRACE_WIDTH_SPECS: ColumnWidthSpec<ActivityTraceColumnKey>[] = [
   { key: "time", defaultWidth: 148, minWidth: 112 },
-  { key: "request", defaultWidth: 180, minWidth: 148 },
+  { key: "key", defaultWidth: 168, minWidth: 120 },
+  { key: "endpoint", defaultWidth: 236, minWidth: 176 },
   { key: "model", defaultWidth: 120, minWidth: 96 },
   { key: "firstToken", defaultWidth: 72, minWidth: 64 },
   { key: "duration", defaultWidth: 88, minWidth: 72 },
@@ -75,7 +83,8 @@ export function activityTraceColumnLabel(
   t: TranslateFn,
 ): string {
   if (key === "time") return t("routes.activity.colTime");
-  if (key === "request") return t("routes.activity.colRequest");
+  if (key === "key") return t("routes.activity.colKey");
+  if (key === "endpoint") return t("routes.activity.colEndpoint");
   if (key === "model") return t("routes.activity.colModel");
   if (key === "firstToken") return t("routes.activity.colFirstToken");
   if (key === "duration") return t("routes.activity.colDuration");
@@ -141,6 +150,100 @@ export function activityTraceModelLabel(row: {
     || row.upstream?.upstreamModel?.trim()
     || row.upstream?.model?.trim()
     || "";
+}
+
+function maskActivityTraceKey(token: string): string {
+  const trimmed = token.trim();
+  if (!trimmed) return "";
+  const tail = trimmed.slice(-4);
+  return trimmed.startsWith("ahb_") ? `ahb_••••${tail}` : `••••${tail}`;
+}
+
+function endpointProtocolPath(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("/")) {
+    const [path] = trimmed.split("?");
+    return path || trimmed;
+  }
+  try {
+    const href = trimmed.includes("://") ? trimmed : `https://${trimmed}`;
+    const path = new URL(href).pathname.trim();
+    return path && path !== "/" ? path : "";
+  } catch {
+    const slash = trimmed.indexOf("/");
+    if (slash < 0) return "";
+    const [path] = trimmed.slice(slash).split("?");
+    return path || "";
+  }
+}
+
+export function activityTraceKeyParts(
+  row: {
+    profileId?: string | null;
+    localAuth?: { keyLast4?: string | null; profileId?: string | null };
+  },
+  tokens: readonly ActivityTraceKeyToken[] = [],
+): { abbrev: string; name: string; label: string } {
+  const last4 = row.localAuth?.keyLast4?.trim() || "";
+  const profileId = row.localAuth?.profileId?.trim() || row.profileId?.trim() || "";
+  const matches = last4
+    ? tokens.filter((token) => token.token.trim().endsWith(last4))
+    : [];
+  const match = (profileId
+    ? matches.find((token) => token.poolId === profileId)
+    : undefined) ?? matches[0];
+  const abbrev = match
+    ? maskActivityTraceKey(match.token)
+    : last4
+      ? `••••${last4}`
+      : "";
+  const name = match?.name.trim() ?? "";
+  return {
+    abbrev,
+    name,
+    label: [abbrev, name].filter(Boolean).join(" "),
+  };
+}
+
+export function activityTraceInboundPath(row: {
+  path?: string | null;
+}): string {
+  return endpointProtocolPath(row.path ?? "");
+}
+
+export function activityTraceUpstreamPath(row: {
+  upstreamRequest?: { url?: string | null };
+  upstream?: { url?: string | null };
+}): string {
+  const url = row.upstreamRequest?.url?.trim() || row.upstream?.url?.trim() || "";
+  return endpointProtocolPath(url);
+}
+
+export function activityTraceInboundEndpoint(row: {
+  path?: string | null;
+  localAuth?: { port?: number | null };
+}): string {
+  const path = activityTraceInboundPath(row);
+  if (!path) return "";
+  const port = row.localAuth?.port;
+  if (typeof port === "number" && port > 0) {
+    return `http://${ROUTE_ENDPOINT_HOST}:${port}${path}`;
+  }
+  return path;
+}
+
+export function activityTraceUpstreamEndpoint(row: {
+  upstreamRequest?: { url?: string | null };
+  upstream?: { url?: string | null };
+}): string {
+  return row.upstreamRequest?.url?.trim() || row.upstream?.url?.trim() || "";
+}
+
+export function activityTraceHoverDetail(title: string, value: string): string {
+  const detail = value.trim();
+  if (!detail) return title;
+  return `${title} ${detail}`;
 }
 
 export function activityTraceLocalBrand(

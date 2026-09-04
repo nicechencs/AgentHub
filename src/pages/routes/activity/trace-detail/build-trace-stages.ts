@@ -5,17 +5,28 @@ import { routeEndpointHttpParts } from '@/lib/route-endpoints';
 import { formatInboundAt } from '@/pages/routes/shared/route-endpoint-copy';
 import {
   activityTraceConversionLabel,
+  activityTraceInboundEndpoint,
+  activityTraceKeyParts,
   activityTraceLocalBrand,
   activityTraceModelLabel,
   activityTraceStageStatusLabel,
+  activityTraceUpstreamEndpoint,
   formatTraceSeconds,
   formatTraceTokens,
+  type ActivityTraceKeyToken,
 } from '../activity-trace-list-model';
 import { TRACE_STAGE_REGISTRY } from './trace-stage-registry';
 import type { DetailStageStatus, TraceStageDetail, TraceStageViewModel } from './trace-stage-types';
 
 function keyHint(last4?: string | null): string {
   return last4?.trim() ? `••••${last4.trim()}` : '—';
+}
+
+function localKeyHint(
+  row: RouteTraceListItem,
+  keyTokens: readonly ActivityTraceKeyToken[],
+): string {
+  return activityTraceKeyParts(row, keyTokens).label || keyHint(row.localAuth.keyLast4);
 }
 
 function responseResultLabel(value: string | null | undefined, t: TranslateFn): string {
@@ -58,7 +69,11 @@ function authResultLabel(value: string | null | undefined, t: TranslateFn): stri
   return t('routes.trace.detail.unrecorded');
 }
 
-export function buildTraceStages(row: RouteTraceListItem, t: TranslateFn): TraceStageViewModel[] {
+export function buildTraceStages(
+  row: RouteTraceListItem,
+  t: TranslateFn,
+  keyTokens: readonly ActivityTraceKeyToken[] = [],
+): TraceStageViewModel[] {
   const inbound = routeEndpointHttpParts({ path: row.path, port: row.localAuth.port });
   const selectedLogin = row.upstream.member ?? row.pool.selectedMember;
   const model = activityTraceModelLabel(row);
@@ -74,7 +89,7 @@ export function buildTraceStages(row: RouteTraceListItem, t: TranslateFn): Trace
       text(t('routes.activity.colRequest'), `${row.method} ${row.path}`),
     ],
     local_auth: [
-      text(t('routes.activity.localKey'), keyHint(row.localAuth.keyLast4), true),
+      text(t('routes.activity.localKey'), localKeyHint(row, keyTokens), true),
       text(t('routes.trace.detail.port'), row.localAuth.port),
       text(t('routes.trace.detail.code'), row.localAuth.code),
       text(t('routes.trace.detail.message'), row.localAuth.message),
@@ -183,13 +198,13 @@ export function buildTraceStages(row: RouteTraceListItem, t: TranslateFn): Trace
   };
   const summaryById: Record<RouteTraceStageId, string | null | undefined> = {
     received: `${row.method} ${row.path}`,
-    local_auth: keyHint(row.localAuth.keyLast4),
-    local_endpoint: row.path,
+    local_auth: localKeyHint(row, keyTokens),
+    local_endpoint: activityTraceInboundEndpoint(row) || row.path,
     admission: row.admission?.message,
     route_resolution: model || null,
     pool: selectedLogin?.label,
     request_conversion: activityTraceConversionLabel(row, t),
-    upstream_request: row.upstreamRequest?.url,
+    upstream_request: activityTraceUpstreamEndpoint(row) || row.upstreamRequest?.url,
     upstream_response: row.upstream.httpStatus != null ? String(row.upstream.httpStatus) : null,
     response_conversion: responseResultLabel(row.responseConversion?.result, t),
     delivery: row.delivery ? completionLabel(row.delivery.completion, t) : null,

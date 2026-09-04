@@ -73,6 +73,12 @@ describe('ActivityTraceDetailPanel', () => {
     expect(markup).toContain('aria-expanded="true"');
     expect(markup).toContain('请求 ID');
     expect(markup).toContain('req-1');
+    expect(markup).toContain('密钥');
+    expect(markup).toContain('端点');
+    expect(markup).toContain('入站');
+    expect(markup).toContain('出站');
+    expect(markup).toContain('http://127.0.0.1:8787/v1/messages');
+    expect(markup).toContain('https://api.anthropic.com/v1/messages');
     expect(markup).toContain('••••local');
     expect(markup).not.toContain('sk-deepseek');
   });
