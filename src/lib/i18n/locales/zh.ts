@@ -1051,6 +1051,7 @@ export const zh = {
       createKeyName: "名称",
       createKeyConfirm: "创建",
       createAndSync: "新建 Key 并同步",
+      createAndSyncHint: "创建后写入连接列表（选用已安装的第一个 Agent）",
       syncToConnections: "同步到连接",
       syncPickAgent: "选择要写入的 Agent",
       syncDone: "已同步到连接",

@@ -1063,6 +1063,7 @@ export const en = {
       createKeyName: "Name",
       createKeyConfirm: "Create",
       createAndSync: "Create key and sync",
+      createAndSyncHint: "Creates the key then writes it into Connections (first installed Agent).",
       syncToConnections: "Sync to Connections",
       syncPickAgent: "Choose an Agent to write into",
       syncDone: "Synced to Connections",

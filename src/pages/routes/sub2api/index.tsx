@@ -350,11 +350,24 @@ export default function RoutesSub2ApiPage() {
                 )}
               </div>
             </Card>
-            <Card className="w-full shrink-0 space-y-2 p-4 lg:w-72">
-              <div className="text-sm font-medium">{t('routes.sub2api.siteUrlLabel')}</div>
-              <div className="break-all text-xs text-secondary">{session?.siteUrl}</div>
-              <div className="pt-2 text-sm font-medium">API</div>
-              <div className="break-all text-xs text-secondary">{session?.gatewayBaseUrl}</div>
+            <Card className="flex w-full shrink-0 flex-col gap-3 p-4 lg:w-72">
+              <div className="text-sm font-medium">{t('routes.sub2api.detailTitle')}</div>
+              <div className="space-y-1">
+                <div className="text-xs text-secondary">{t('routes.sub2api.siteUrlLabel')}</div>
+                <div className="break-all text-xs text-secondary">{session?.siteUrl}</div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-xs text-secondary">API</div>
+                <div className="break-all text-xs text-secondary">{session?.gatewayBaseUrl}</div>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-auto w-full"
+                onClick={() => setCreateOpen(true)}
+              >
+                {t('routes.sub2api.createAndSync')}
+              </Button>
             </Card>
           </div>
         )}
