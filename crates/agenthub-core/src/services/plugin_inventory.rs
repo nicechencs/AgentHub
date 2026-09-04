@@ -949,33 +949,112 @@ fn scan_claude_live(claude_home: &Path, user_home: &Path) -> Result<Vec<PluginEn
             }
         }
         if let Some(mut entry) = plugin_from_json(AgentId::Claude, &item, "live", user_home) {
-            if entry.path.is_none() {
-                if let Some(p) = item.get("installPath").and_then(JsonValue::as_str) {
-                    entry.path = Some(redact_home_path(p, user_home));
-                }
-            }
-            if let Some(path) = item
-                .get("installPath")
-                .and_then(JsonValue::as_str)
-                .map(PathBuf::from)
-            {
-                if entry.components.is_empty() && path.is_dir() {
-                    entry.components = discover_components(&path);
-                }
-            }
+            let raw_path = string_field(&item, &["installPath", "path", "directory", "location"]);
+            attach_claude_install(&mut entry, raw_path.as_deref(), claude_home, user_home);
             rows.push(entry);
         }
     }
 
     if rows.is_empty() {
+        // Cache holds versioned copies (`cache/<name>/<version>`). Skip data/marketplaces.
         rows.extend(scan_plugin_tree(
             AgentId::Claude,
             &claude_home.join("plugins"),
             user_home,
-            &["cache", "data", "marketplaces"],
+            &["data", "marketplaces"],
         ));
     }
     Ok(rows)
+}
+
+fn attach_claude_install(
+    entry: &mut PluginEntry,
+    raw_path: Option<&str>,
+    claude_home: &Path,
+    user_home: &Path,
+) {
+    let candidate = raw_path
+        .map(PathBuf::from)
+        .filter(|path| path.is_dir())
+        .or_else(|| resolve_claude_cache_dir(claude_home, &entry.name));
+    let Some(path) = candidate else {
+        entry.path = None;
+        return;
+    };
+    if entry.version.is_none() {
+        if let Some(pkg) = read_plugin_manifest(&path) {
+            entry.version = string_field(&pkg, &["version"]);
+        }
+        if entry.version.is_none() {
+            entry.version = version_from_path(&path);
+        }
+    }
+    if entry.components.is_empty() {
+        entry.components = discover_components(&path);
+    }
+    entry.path = Some(redact_home_path(&path.to_string_lossy(), user_home));
+}
+
+fn resolve_claude_cache_dir(claude_home: &Path, name: &str) -> Option<PathBuf> {
+    let cache = claude_home.join("plugins").join("cache").join(name);
+    if cache.join("plugin.json").is_file() || looks_like_plugin_dir(&cache) {
+        return Some(cache);
+    }
+    let entries = fs::read_dir(&cache).ok()?;
+    let mut best: Option<(String, PathBuf)> = None;
+    for ent in entries.flatten() {
+        let path = ent.path();
+        if !path.is_dir() {
+            continue;
+        }
+        if !(path.join("plugin.json").is_file() || looks_like_plugin_dir(&path)) {
+            continue;
+        }
+        let ver = path
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let take = match &best {
+            None => true,
+            Some((current, _)) => version_token_greater(&ver, current),
+        };
+        if take {
+            best = Some((ver, path));
+        }
+    }
+    best.map(|(_, path)| path)
+}
+
+fn version_from_path(path: &Path) -> Option<String> {
+    let name = path.file_name()?.to_string_lossy();
+    let token = name.trim().trim_start_matches(['v', 'V']);
+    let first = token.chars().next()?;
+    if first.is_ascii_digit() && token.contains('.') {
+        Some(name.to_string())
+    } else {
+        None
+    }
+}
+
+fn version_token_greater(left: &str, right: &str) -> bool {
+    let parse = |raw: &str| {
+        let token = raw.trim().trim_start_matches(['v', 'V']);
+        let mut parts = token.split('.');
+        let major = parts.next().and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
+        let minor = parts.next().and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
+        let patch = parts
+            .next()
+            .and_then(|s| {
+                s.chars()
+                    .take_while(|c| c.is_ascii_digit())
+                    .collect::<String>()
+                    .parse::<u64>()
+                    .ok()
+            })
+            .unwrap_or(0);
+        (major, minor, patch)
+    };
+    parse(left) > parse(right)
 }
 
 fn merge_installed_plugins(
@@ -1129,6 +1208,33 @@ fn scan_grok_live(grok_home: &Path, user_home: &Path) -> Result<Vec<PluginEntry>
         if row.scope.is_none() {
             row.scope = Some("user".into());
         }
+    }
+    for listed in &enabled {
+        if rows
+            .iter()
+            .any(|row| names_match(listed, &row.name, row.marketplace.as_deref()))
+        {
+            continue;
+        }
+        let (name, marketplace) = split_name_marketplace(listed);
+        if name.is_empty() || name == "mcpServers" {
+            continue;
+        }
+        rows.push(PluginEntry {
+            id: plugin_id(AgentId::Grok, &name, marketplace.as_deref(), None),
+            agent: AgentId::Grok,
+            name,
+            marketplace,
+            version: None,
+            requested_version: None,
+            scope: Some("user".into()),
+            enabled: Some(true),
+            trusted: Some(true),
+            path: None,
+            description: None,
+            source: "live".into(),
+            components: Vec::new(),
+        });
     }
     Ok(rows)
 }

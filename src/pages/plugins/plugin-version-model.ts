@@ -52,6 +52,17 @@ export function pluginVersionView(plugin: PluginEntry): PluginVersionView {
   const installed = onDisk ? rawVersion : null;
 
   if (plugin.agent !== 'pi') {
+    // CLI list is already "installed"; live rows without a path are settings-only.
+    if (!onDisk && plugin.source !== 'cli') {
+      return {
+        kind: 'missing',
+        installed: null,
+        requested: null,
+        versionLabel: null,
+        listBadge: 'notInstalled',
+        hintKey: 'plugins.detail.versionHintMissing',
+      };
+    }
     return {
       kind: 'current',
       installed: rawVersion,
