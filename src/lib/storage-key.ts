@@ -54,6 +54,12 @@ export const StorageKey = {
   sub2apiSession: `${PREFIX}sub2api-session`,
   /** Last Sub2API site URL (even when logged out) */
   sub2apiBaseUrl: `${PREFIX}sub2api-base-url`,
+  /** Remembered Sub2API account metadata (no passwords) */
+  sub2apiRememberedAccounts: `${PREFIX}sub2api-remembered-accounts`,
+  /** Sub2API remembered password vault (separate from metadata; never log) */
+  sub2apiRememberedSecrets: `${PREFIX}sub2api-remembered-secrets`,
+  /** Remember-account toggle; default ON when missing */
+  sub2apiRememberEnabled: `${PREFIX}sub2api-remember-enabled`,
   /** epoch ms of last successful usage collect (manual or auto) */
   usageLastCollectAt: `${PREFIX}usage-last-collect-at`,
   /** SemVer last dismissed via “稍后” on the update prompt */
