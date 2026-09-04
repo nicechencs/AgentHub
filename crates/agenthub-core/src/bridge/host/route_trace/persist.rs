@@ -10,14 +10,12 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection};
-use serde::{Deserialize, Serialize};
 
 use super::{RouteRequestTrace, ROUTE_TRACE_CAP};
 use crate::logging::{parse_retention_days, targets};
 use crate::storage::peek_settings;
 
 const SCHEMA_VERSION: i32 = 2;
-const LEGACY_JSON_NAME: &str = "route-traces.json";
 const UNAUTHENTICATED_PROFILE_ID: &str = "";
 const MS_PER_DAY: i64 = 86_400_000;
 
@@ -30,16 +28,6 @@ pub(super) struct RouteTraceDb {
 pub(super) struct PersistSnapshot {
     pub by_profile: HashMap<String, Vec<RouteRequestTrace>>,
     pub unauthenticated: Vec<RouteRequestTrace>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LegacyJsonFile {
-    version: u32,
-    #[serde(default)]
-    by_profile: HashMap<String, Vec<RouteRequestTrace>>,
-    #[serde(default)]
-    unauthenticated: Vec<RouteRequestTrace>,
 }
 
 impl RouteTraceDb {
@@ -133,7 +121,6 @@ fn open_inner(path: &Path, fallback_retention_days: u32) -> crate::error::Result
     conn.busy_timeout(Duration::from_millis(5000))?;
     let _ = conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;");
     init_schema(&conn)?;
-    import_legacy_json(&conn, path);
     let db = RouteTraceDb {
         conn,
         path: path.to_path_buf(),
@@ -145,7 +132,7 @@ fn open_inner(path: &Path, fallback_retention_days: u32) -> crate::error::Result
 
 fn init_schema(conn: &Connection) -> crate::error::Result<()> {
     let version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version != 0 && version != 1 && version != SCHEMA_VERSION {
+    if version != 0 && version != SCHEMA_VERSION {
         conn.execute_batch("DROP TABLE IF EXISTS route_traces;")?;
     }
     conn.execute_batch(
@@ -166,27 +153,7 @@ fn init_schema(conn: &Connection) -> crate::error::Result<()> {
             ON route_traces(at_unix_ms);
         "#,
     )?;
-    if version == 1 {
-        migrate_v1_token_columns(conn)?;
-    }
     conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
-    Ok(())
-}
-
-fn migrate_v1_token_columns(conn: &Connection) -> crate::error::Result<()> {
-    for column in [
-        "input_tokens",
-        "output_tokens",
-        "cached_input_tokens",
-        "reasoning_tokens",
-    ] {
-        let sql = format!("ALTER TABLE route_traces ADD COLUMN {column} INTEGER");
-        if let Err(error) = conn.execute(&sql, []) {
-            if !error.to_string().contains("duplicate column") {
-                return Err(error.into());
-            }
-        }
-    }
     Ok(())
 }
 
@@ -305,62 +272,6 @@ fn settings_db_for_traces(persist_path: &Path) -> Option<PathBuf> {
     }
     let db = cache_dir.parent()?.join("agenthub.db");
     db.is_file().then_some(db)
-}
-
-fn import_legacy_json(conn: &Connection, db_path: &Path) {
-    let json_path = db_path.with_file_name(LEGACY_JSON_NAME);
-    if !json_path.is_file() {
-        return;
-    }
-    let Ok(bytes) = fs::read(&json_path) else {
-        return;
-    };
-    let imported = match serde_json::from_slice::<LegacyJsonFile>(&bytes) {
-        Ok(snapshot) if snapshot.version == 1 => insert_legacy(conn, &snapshot),
-        Ok(_) | Err(_) => {
-            tracing::warn!(
-                target: targets::ADAPTER,
-                path = %json_path.display(),
-                "legacy route-traces.json unreadable; leaving monitoring sqlite empty"
-            );
-            let _ = fs::remove_file(&json_path);
-            false
-        }
-    };
-    if imported {
-        let _ = fs::remove_file(&json_path);
-    }
-}
-
-fn insert_legacy(conn: &Connection, snapshot: &LegacyJsonFile) -> bool {
-    let mut traces: Vec<&RouteRequestTrace> = snapshot
-        .by_profile
-        .values()
-        .flatten()
-        .chain(snapshot.unauthenticated.iter())
-        .collect();
-    traces.sort_by(|a, b| {
-        a.at_unix_ms
-            .cmp(&b.at_unix_ms)
-            .then(a.request_id.cmp(&b.request_id))
-    });
-    if conn.execute_batch("BEGIN IMMEDIATE").is_err() {
-        return false;
-    }
-    let mut ok = true;
-    for trace in traces {
-        if upsert_row(conn, trace).is_err() {
-            ok = false;
-            break;
-        }
-    }
-    if ok {
-        let _ = conn.execute_batch("COMMIT");
-        true
-    } else {
-        let _ = conn.execute_batch("ROLLBACK");
-        false
-    }
 }
 
 fn remove_db_files(path: &Path) {

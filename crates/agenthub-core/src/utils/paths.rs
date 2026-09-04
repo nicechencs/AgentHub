@@ -100,8 +100,7 @@ pub fn usage_gateway_dir() -> Result<PathBuf> {
 /// Disposable sqlite file for Activity / route monitoring traces.
 ///
 /// Lives under `{data_dir}/cache/route-traces.db`, separate from `agenthub.db`.
-/// Deleting it only clears monitoring history. A leftover
-/// `cache/route-traces.json` is imported once then removed.
+/// Deleting it only clears monitoring history.
 pub fn route_traces_persist_path() -> Result<PathBuf> {
     Ok(resolve_data_dir(None)?
         .join("cache")
