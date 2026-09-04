@@ -28,3 +28,16 @@ describe('sub2api layout wiring', () => {
     expect(page).not.toContain('<iframe');
   });
 });
+
+describe('sub2api primary route', () => {
+  it('mounts at /sub2api and redirects the old routes path', () => {
+    const app = readFileSync(path.resolve(dir, '../../App.tsx'), 'utf8');
+    expect(app).toContain("from '@/pages/sub2api'");
+    expect(app).toContain('path={SUB2API_PATH}');
+    expect(app).toContain('path={ROUTES_SUB2API_PATH}');
+    expect(app).toContain('to={SUB2API_PATH}');
+    expect(app).toContain('pathname === SUB2API_PATH');
+    expect(app).not.toContain('path="sub2api"');
+    expect(app).not.toContain("@/pages/routes/sub2api");
+  });
+});
