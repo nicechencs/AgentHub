@@ -104,7 +104,7 @@ export function PoolAuthorizationList({
   const { t } = useI18n();
   const columns = poolAuthorizationVisibleColumns(items);
   const specs = columns.map((key) => WIDTH_BY_KEY[key]);
-  const { widths, onResizeStart } = useColumnWidths(
+  const { widths, onResizeStart, onResizeKeyDown } = useColumnWidths(
     WIDTH_SPECS,
     COLUMN_WIDTHS_STORAGE_KEY,
   );
@@ -148,6 +148,7 @@ export function PoolAuthorizationList({
                     columnKey={key}
                     label={label}
                     onResizeStart={onResizeStart}
+                    onResizeKeyDown={onResizeKeyDown}
                   />
                 </TableHead>
               );

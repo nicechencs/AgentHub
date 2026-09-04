@@ -6,6 +6,7 @@ import {
   readStoredSideSplitWidth,
   SIDE_SPLIT_FRAME_PAD_RIGHT,
   SIDE_SPLIT_MAIN_MIN,
+  SIDE_SPLIT_MAIN_FLOOR,
   SIDE_SPLIT_MAX_SHARE,
   SIDE_SPLIT_SEPARATOR_W,
   SIDE_SPLIT_WIDTH_DEFAULT,
@@ -22,8 +23,10 @@ describe('clampSideSplitWidth', () => {
     expect(clampSideSplitWidth(SIDE_SPLIT_WIDTH_DEFAULT, 1200)).toBe(SIDE_SPLIT_WIDTH_DEFAULT);
   });
 
-  it('does not shrink below the floor even in a narrow pane', () => {
-    expect(clampSideSplitWidth(120, 400)).toBeGreaterThanOrEqual(SIDE_SPLIT_WIDTH_FLOOR);
+  it('prioritizes the list column over the pane floor in a narrow workbench', () => {
+    const width = clampSideSplitWidth(120, 400);
+    expect(width).toBeLessThan(SIDE_SPLIT_WIDTH_FLOOR);
+    expect(width).toBeLessThanOrEqual(usableWidth(400) - SIDE_SPLIT_MAIN_FLOOR);
   });
 
   it('reserves a list column on a medium workbench', () => {

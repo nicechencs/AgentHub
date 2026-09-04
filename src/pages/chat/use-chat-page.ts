@@ -172,9 +172,10 @@ export function useChatPage() {
   // messages 与 providers 独立并发（不再串在 loadList 之后的瀑布里）
   useEffect(() => {
     stickToBottomRef.current = true;
+    setMessages([]);
     if (!activeId) {
-      setMessages([]);
       setMessagesError(null);
+      setMessagesLoading(false);
       return;
     }
     let cancelled = false;
@@ -194,7 +195,7 @@ export function useChatPage() {
         }
       })
       .finally(() => {
-        if (!cancelled) setMessagesLoading(false);
+        if (!cancelled && activeIdRef.current === activeId) setMessagesLoading(false);
       });
     return () => {
       cancelled = true;
@@ -203,22 +204,26 @@ export function useChatPage() {
 
   const retryMessages = useCallback(() => {
     if (!activeId) return;
+    const requestedId = activeId;
+    setMessages([]);
     setMessagesLoading(true);
     setMessagesError(null);
-    loadMessages(activeId)
+    loadMessages(requestedId)
       .then((rows) => {
-        if (activeIdRef.current === activeId) {
+        if (activeIdRef.current === requestedId) {
           setMessages(rows);
           setMessagesError(null);
         }
       })
       .catch((e) => {
-        if (activeIdRef.current === activeId) {
+        if (activeIdRef.current === requestedId) {
           setMessages([]);
           setMessagesError(e);
         }
       })
-      .finally(() => setMessagesLoading(false));
+      .finally(() => {
+        if (activeIdRef.current === requestedId) setMessagesLoading(false);
+      });
   }, [activeId, loadMessages]);
 
   const onTranscriptScroll = useCallback(() => {
@@ -316,6 +321,7 @@ export function useChatPage() {
     retryMessages,
     sending: send.sending,
     sendingHere: send.sendingHere,
+    cancelingHere: send.cancelingHere,
     sendingConversationId: send.sendingConversationId,
     draft,
     setDraft,

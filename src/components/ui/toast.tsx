@@ -218,7 +218,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         {toasts.map((t) => (
           <ToastItem key={t.id} t={t} onRemove={remove} />
         ))}
-        <ToastPrimitive.Viewport className="fixed bottom-4 right-4 z-[100] flex w-96 max-w-full flex-col gap-2 outline-none" />
+        <ToastPrimitive.Viewport className="fixed bottom-4 left-4 right-4 z-[100] flex w-auto flex-col gap-2 outline-none sm:left-auto sm:w-96" />
       </ToastPrimitive.Provider>
     </ToastContext.Provider>
   );

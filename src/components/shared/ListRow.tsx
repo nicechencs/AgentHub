@@ -70,7 +70,7 @@ export function ListRow({
       data-active={active ? 'true' : undefined}
       tabIndex={onOpen ? (tabIndex ?? 0) : tabIndex}
       className={cn(
-        'relative rounded-card border border-border bg-panel transition-colors',
+        'relative rounded-card border border-border bg-panel transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
         !active && 'hover:bg-hover/50',
         active && 'border-border-strong bg-active',
         onOpen && 'cursor-pointer',

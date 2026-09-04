@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import { Hint } from '@/components/ui/tooltip';
 import {
   segmentedCountClass,
@@ -36,10 +36,32 @@ export function SegmentedControl<T extends string = string>({
   className?: string;
   'aria-label'?: string;
 }) {
+  const onTabListKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const tabs = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]:not(:disabled)'),
+    );
+    if (tabs.length === 0) return;
+    const current = document.activeElement instanceof HTMLButtonElement
+      ? tabs.indexOf(document.activeElement)
+      : -1;
+    const fallback = Math.max(0, tabs.findIndex((tab) => tab.getAttribute('aria-selected') === 'true'));
+    const index = current >= 0 ? current : fallback;
+    const nextIndex = event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? tabs.length - 1
+        : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+    event.preventDefault();
+    tabs[nextIndex]?.focus();
+    tabs[nextIndex]?.click();
+  };
+
   return (
     <div
       role="tablist"
       aria-label={ariaLabel}
+      onKeyDown={onTabListKeyDown}
       className={cn(segmentedTrackClass, className)}
     >
       {options.map((opt) => {
@@ -50,6 +72,7 @@ export function SegmentedControl<T extends string = string>({
               type="button"
               role="tab"
               aria-selected={active}
+              tabIndex={active ? 0 : -1}
               disabled={opt.disabled}
               onClick={() => onChange(opt.value)}
               className={cn(

@@ -23,8 +23,7 @@ test('routes board follows dashboard layout and local-route usage', async ({ pag
   await expect(page.getByText(/当前端点类型支持 /)).toBeVisible();
   await expect(page.getByRole('heading', { name: '按模型' })).toBeVisible({ timeout: 15_000 });
 
-  await page.getByLabel('统计时间范围').click();
-  await page.getByRole('option', { name: '今天' }).click();
+  await page.getByRole('tab', { name: '今天' }).click();
   await expect(page.getByText('输入(今天)')).toBeVisible({ timeout: 15_000 });
 
   await page.getByRole('link', { name: '打开监控' }).click();

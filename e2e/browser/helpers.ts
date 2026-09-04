@@ -42,7 +42,7 @@ async function waitForConnectionsReady(page: Page): Promise<void> {
 
 function loginRow(page: Page) {
   return page
-    .locator('div.relative.rounded-card')
+    .getByRole('row')
     .filter({ hasText: CLAUDE_LOGIN_LABEL })
     .filter({ has: page.getByRole('button', { name: /切换|使用中/ }) });
 }

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { Hint } from '@/components/ui/tooltip';
 import {
@@ -139,10 +139,32 @@ export function AgentTabStrip(props: AgentTabStripProps) {
     return extra ?? countNode;
   };
 
+  const onTabListKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const tabs = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]:not(:disabled)'),
+    );
+    if (tabs.length === 0) return;
+    const current = document.activeElement instanceof HTMLButtonElement
+      ? tabs.indexOf(document.activeElement)
+      : -1;
+    const fallback = Math.max(0, tabs.findIndex((tab) => tab.getAttribute('aria-selected') === 'true'));
+    const index = current >= 0 ? current : fallback;
+    const nextIndex = event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? tabs.length - 1
+        : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+    event.preventDefault();
+    tabs[nextIndex]?.focus();
+    tabs[nextIndex]?.click();
+  };
+
   return (
     <div
       role="tablist"
       aria-label={ariaLabel}
+      onKeyDown={onTabListKeyDown}
       className={cn(segmentedTrackClass, className)}
     >
       {showAll ? (
@@ -151,6 +173,7 @@ export function AgentTabStrip(props: AgentTabStripProps) {
             type="button"
             role="tab"
             aria-selected={value === 'all'}
+            tabIndex={value === 'all' ? 0 : -1}
             onClick={() => select('all')}
             className={tabClass(value === 'all', false)}
           >
@@ -171,6 +194,7 @@ export function AgentTabStrip(props: AgentTabStripProps) {
               type="button"
               role="tab"
               aria-selected={active}
+              tabIndex={active ? 0 : -1}
               disabled={isDisabled}
               onClick={() => select(meta.id)}
               className={tabClass(active, isDisabled)}

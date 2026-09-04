@@ -79,7 +79,7 @@ export function ActivityTraceList({
   onPageChange?: (next: number) => void;
 }) {
   const { t } = useI18n();
-  const { widths, onResizeStart, totalWidth } = useColumnWidths(
+  const { widths, onResizeStart, onResizeKeyDown, totalWidth } = useColumnWidths(
     ACTIVITY_TRACE_WIDTH_SPECS,
     ACTIVITY_TRACE_COLUMN_WIDTHS_STORAGE_KEY,
   );
@@ -182,6 +182,7 @@ export function ActivityTraceList({
                     columnKey={spec.key}
                     label={label}
                     onResizeStart={onResizeStart}
+                    onResizeKeyDown={onResizeKeyDown}
                   />
                 </TableHead>
               );
