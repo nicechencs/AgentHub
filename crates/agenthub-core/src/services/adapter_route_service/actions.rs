@@ -224,6 +224,20 @@ pub(crate) fn bind_implementation_open(
             AdapterSupport::Experimental,
         )
         | (
+            Some("openai-api-to-kimi-bridge-v1"),
+            AdapterSourceKind::Provider | AdapterSourceKind::Account,
+            AgentId::Kimi,
+            AdapterRoute::LocalBridge,
+            AdapterSupport::Experimental,
+        )
+        | (
+            Some("openai-api-to-dsh-bridge-v1"),
+            AdapterSourceKind::Provider | AdapterSourceKind::Account,
+            AgentId::Dsh,
+            AdapterRoute::LocalBridge,
+            AdapterSupport::Experimental,
+        )
+        | (
             Some("anthropic-api-to-pi-v1") | Some("openai-api-to-pi-v1") | Some("xai-api-to-pi-v1"),
             AdapterSourceKind::Provider | AdapterSourceKind::Account,
             AgentId::Pi,

@@ -276,7 +276,9 @@ impl AdapterBridgeService {
             (BridgeUpstreamProtocol::OpenAiChatCompletions, rule_id)
                 if rule_id == OPENAI_RULE_ID
                     || rule_id == OPENAI_CLAUDE_EDGE.rule_id
-                    || rule_id == OPENAI_GROK_BRIDGE_EDGE.rule_id =>
+                    || rule_id == OPENAI_GROK_BRIDGE_EDGE.rule_id
+                    || rule_id == OPENAI_KIMI_BRIDGE_EDGE.rule_id
+                    || rule_id == OPENAI_DSH_BRIDGE_EDGE.rule_id =>
             {
                 self.secrets.resolve_openai_auth(source_kind, source_id)
             }
