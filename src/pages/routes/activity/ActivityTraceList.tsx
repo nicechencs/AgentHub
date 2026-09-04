@@ -22,12 +22,19 @@ import {
   ACTIVITY_TRACE_STAGES,
   ACTIVITY_TRACE_WIDTH_SPECS,
   activityTraceColumnLabel,
+  activityTraceHoverDetail,
+  activityTraceInboundEndpoint,
+  activityTraceInboundPath,
+  activityTraceKeyParts,
   activityTraceModelLabel,
   activityTraceStageLabel,
   activityTraceStageStatusLabel,
+  activityTraceUpstreamEndpoint,
+  activityTraceUpstreamPath,
   formatTraceSeconds,
   formatTraceTokens,
   type ActivityTraceColumnKey,
+  type ActivityTraceKeyToken,
 } from './activity-trace-list-model';
 import {
   activityTraceResultLabel,
@@ -38,11 +45,13 @@ import { ActivityTraceStageIcon } from './ActivityTraceStageDisplay';
 
 export function ActivityTraceList({
   rows,
+  tokens = [],
   emptyLabel,
   activeId,
   onShowDetail,
 }: {
   rows: readonly RouteTraceListItem[];
+  tokens?: readonly ActivityTraceKeyToken[];
   emptyLabel?: string;
   activeId?: string | null;
   onShowDetail?: (row: RouteTraceListItem) => void;
@@ -97,12 +106,13 @@ export function ActivityTraceList({
                   <TableCell
                     key={spec.key}
                     data-col={spec.key}
-                    className={spec.key === 'request' || spec.key === 'route' || spec.key === 'model'
+                    className={spec.key === 'key' || spec.key === 'endpoint' || spec.key === 'route' || spec.key === 'model'
                       ? 'min-w-0'
                       : 'whitespace-nowrap'}
                   >
                     {renderColumn(spec.key, row, {
                       t,
+                      tokens,
                       open: activeId === row.requestId,
                       onShowDetail,
                     })}
@@ -117,11 +127,53 @@ export function ActivityTraceList({
   );
 }
 
+function HoverDetail({ title, value }: { title: string; value: string }) {
+  return (
+    <span className="block max-w-[22rem]">
+      <span className="block text-muted">{title}</span>
+      <span className="mt-0.5 block font-mono">{value}</span>
+    </span>
+  );
+}
+
+function EndpointLine({
+  mark,
+  path,
+  title,
+  full,
+  dir,
+}: {
+  mark: string;
+  path: string;
+  title: string;
+  full: string;
+  dir: 'in' | 'out';
+}) {
+  return (
+    <Tip label={full ? <HoverDetail title={`${mark} · ${title}`} value={full} /> : undefined}>
+      <span
+        className="flex min-w-0 items-baseline gap-1.5"
+        data-endpoint-dir={dir}
+        aria-label={full ? activityTraceHoverDetail(`${mark} · ${title}`, full) : mark}
+      >
+        <span className="w-8 shrink-0 text-caption text-muted">{mark}</span>
+        <span className={dir === 'in'
+          ? 'min-w-0 truncate font-mono text-meta text-primary'
+          : 'min-w-0 truncate font-mono text-meta text-muted'}
+        >
+          {path || '—'}
+        </span>
+      </span>
+    </Tip>
+  );
+}
+
 function renderColumn(
   key: ActivityTraceColumnKey,
   row: RouteTraceListItem,
   ctx: {
     t: ReturnType<typeof useI18n>['t'];
+    tokens: readonly ActivityTraceKeyToken[];
     open: boolean;
     onShowDetail?: (row: RouteTraceListItem) => void;
   },
@@ -130,15 +182,44 @@ function renderColumn(
   if (key === 'time') {
     return <span className="font-mono text-meta text-secondary">{formatInboundAt(row.at)}</span>;
   }
-  if (key === 'request') {
+  if (key === 'key') {
+    const keyParts = activityTraceKeyParts(row, ctx.tokens);
+    if (!keyParts.label) return <TableEmptyCell />;
     return (
-      <div className="min-w-0">
-        <p className="flex min-w-0 items-baseline gap-2 font-mono text-meta">
-          <span className="shrink-0 text-secondary">{row.method}</span>
-          <Tip label={row.path}>
-            <span className="min-w-0 truncate text-primary">{row.path}</span>
-          </Tip>
-        </p>
+      <Tip label={<HoverDetail title={t('routes.activity.localKey')} value={keyParts.label} />}>
+        <span
+          className="block min-w-0 truncate text-meta"
+          aria-label={activityTraceHoverDetail(t('routes.activity.localKey'), keyParts.label)}
+        >
+          {keyParts.abbrev ? (
+            <span className="font-mono text-secondary">{keyParts.abbrev}</span>
+          ) : null}
+          {keyParts.abbrev && keyParts.name ? ' ' : null}
+          {keyParts.name ? <span className="text-primary">{keyParts.name}</span> : null}
+        </span>
+      </Tip>
+    );
+  }
+  if (key === 'endpoint') {
+    const inbound = activityTraceInboundPath(row);
+    const upstream = activityTraceUpstreamPath(row);
+    if (!inbound && !upstream) return <TableEmptyCell />;
+    return (
+      <div className="min-w-0 leading-tight">
+        <EndpointLine
+          mark={t('routes.activity.inboundMark')}
+          path={inbound}
+          title={t('routes.activity.inboundEndpoint')}
+          full={activityTraceInboundEndpoint(row)}
+          dir="in"
+        />
+        <EndpointLine
+          mark={t('routes.activity.outboundMark')}
+          path={upstream}
+          title={t('routes.activity.outboundEndpoint')}
+          full={activityTraceUpstreamEndpoint(row)}
+          dir="out"
+        />
       </div>
     );
   }

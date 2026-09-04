@@ -5,9 +5,13 @@ import type { RouteTraceListItem } from '@/components/shared/RouteTraceList';
 import type { RouteTraceStageId } from '@/lib/backend/contracts/adapter';
 import { formatInboundAt } from '@/pages/routes/shared/route-endpoint-copy';
 import {
+  activityTraceInboundEndpoint,
+  activityTraceKeyParts,
   activityTraceModelLabel,
+  activityTraceUpstreamEndpoint,
   formatTraceSeconds,
   formatTraceTokens,
+  type ActivityTraceKeyToken,
 } from './activity-trace-list-model';
 import {
   activityTraceFailureHeadline,
@@ -27,10 +31,12 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 export function ActivityTraceDetailPanel({
   row,
+  tokens: keyTokens = [],
   width,
   onClose,
 }: {
   row: RouteTraceListItem;
+  tokens?: readonly ActivityTraceKeyToken[];
   width: number;
   onClose: () => void;
 }) {
@@ -49,7 +55,10 @@ export function ActivityTraceDetailPanel({
     setExpanded(new Set<RouteTraceStageId>(failureDefault ? ['received', failureDefault] : ['received']));
   }, [failureDefault, row.requestId]);
 
-  const stages = useMemo(() => buildTraceStages(row, t), [row, t]);
+  const stages = useMemo(() => buildTraceStages(row, t, keyTokens), [row, t, keyTokens]);
+  const keyParts = activityTraceKeyParts(row, keyTokens);
+  const inbound = activityTraceInboundEndpoint(row);
+  const upstream = activityTraceUpstreamEndpoint(row);
   const toggle = (id: RouteTraceStageId) => {
     setExpanded((current) => {
       const next = new Set(current);
@@ -72,6 +81,21 @@ export function ActivityTraceDetailPanel({
       <div className="flex flex-col gap-4" data-activity-trace-detail={row.requestId}>
         <dl className="flex flex-col gap-2">
           <Field label={t('routes.activity.colTime')}><span className="font-mono">{formatInboundAt(row.at)}</span></Field>
+          <Field label={t('routes.activity.colKey')}>
+            {keyParts.label ? <span className="font-mono">{keyParts.label}</span> : <span className="text-muted">—</span>}
+          </Field>
+          <Field label={t('routes.activity.colEndpoint')}>
+            <span className="block">
+              <span className="text-muted">{t('routes.activity.inboundMark')}</span>
+              {' '}
+              <span className="font-mono">{inbound || '—'}</span>
+            </span>
+            <span className="block">
+              <span className="text-muted">{t('routes.activity.outboundMark')}</span>
+              {' '}
+              <span className="font-mono text-muted">{upstream || '—'}</span>
+            </span>
+          </Field>
           <Field label={t('routes.activity.colModel')}>{model || <span className="text-muted">—</span>}</Field>
           <Field label={t('routes.activity.colDuration')}>{duration || <span className="text-muted">—</span>}</Field>
           <Field label={t('routes.activity.colTokens')}>{tokens || <span className="text-muted">—</span>}</Field>

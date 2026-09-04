@@ -1271,7 +1271,7 @@ function mockRouteTraces(): AdapterBridgeRuntimeStatus['recentRouteTraces'] {
       ttftMs: 210,
       inputTokens: 1200,
       outputTokens: 340,
-      localAuth: { status: 'ok', profileId: 'mock-profile', port: 32123 },
+      localAuth: { status: 'ok', profileId: 'mock-profile', port: 32123, keyLast4: '1234' },
       pool: {
         status: 'ok',
         selectedMember: { label: 'pool-acct-1', sourceKind: 'account', sourceId: 'acct-1' },
@@ -1299,7 +1299,7 @@ function mockRouteTraces(): AdapterBridgeRuntimeStatus['recentRouteTraces'] {
       ttftMs: null,
       inputTokens: 80,
       outputTokens: 0,
-      localAuth: { status: 'ok', profileId: 'mock-profile', port: 32123 },
+      localAuth: { status: 'ok', profileId: 'mock-profile', port: 32123, keyLast4: '5678' },
       pool: {
         status: 'ok',
         selectedMember: { label: 'pool-acct-2', sourceKind: 'account', sourceId: 'acct-2' },

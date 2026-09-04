@@ -20,11 +20,11 @@ function row(partial: Partial<RouteTraceListItem> = {}): RouteTraceListItem {
     ttftMs: 800,
     inputTokens: 1200,
     outputTokens: 340,
-    localAuth: { status: 'failed', code: 'invalid_api_key' },
+    localAuth: { status: 'failed', code: 'invalid_api_key', keyLast4: '1234', port: 8787 },
     pool: { status: 'skipped' },
     conversion: { status: 'skipped', path: '' },
     upstreamAuth: { status: 'skipped' },
-    upstream: { status: 'skipped' },
+    upstream: { status: 'skipped', url: 'https://api.anthropic.com/v1/messages' },
     failureStage: 'local_auth',
     sourceLabel: 'Route A',
     ...partial,
@@ -40,7 +40,8 @@ describe('ActivityTraceList', () => {
     const markup = render(createElement(ActivityTraceList, { rows: [row()] }));
     expect(markup).toContain('<table');
     expect(markup).toContain('data-col="time"');
-    expect(markup).toContain('data-col="request"');
+    expect(markup).toContain('data-col="key"');
+    expect(markup).toContain('data-col="endpoint"');
     expect(markup).toContain('data-col="model"');
     expect(markup).toContain('data-col="firstToken"');
     expect(markup).toContain('data-col="duration"');
@@ -53,8 +54,15 @@ describe('ActivityTraceList', () => {
     expect(markup).not.toContain('data-activity-trace-detail');
     expect(markup).toContain('data-activity-trace-row="req-1"');
     expect(markup).toContain('2026-01-01 00:00:00');
-    expect(markup).toContain('POST');
+    expect(markup).toContain('••••1234');
     expect(markup).toContain('/v1/messages');
+    expect(markup).toContain('入站');
+    expect(markup).toContain('出站');
+    expect(markup).toContain('data-endpoint-dir="in"');
+    expect(markup).toContain('data-endpoint-dir="out"');
+    expect(markup).toContain('aria-label="入站 · 本地调用端点 http://127.0.0.1:8787/v1/messages"');
+    expect(markup).toContain('aria-label="出站 · 最终上游调用端点 https://api.anthropic.com/v1/messages"');
+    expect(markup).toContain('aria-label="本机鉴权入口 Key ••••1234"');
     expect(markup).toContain('claude-sonnet');
     expect(markup).toContain('0.8s');
     expect(markup).toContain('4.2s');
@@ -78,9 +86,10 @@ describe('ActivityTraceList', () => {
   });
 
   it('reserves one line for the result text and all five stage icons', () => {
-    expect(ACTIVITY_TRACE_WIDTH_SPECS.slice(0, 7).map(({ key, defaultWidth }) => ({ key, defaultWidth }))).toEqual([
+    expect(ACTIVITY_TRACE_WIDTH_SPECS.slice(0, 8).map(({ key, defaultWidth }) => ({ key, defaultWidth }))).toEqual([
       { key: 'time', defaultWidth: 148 },
-      { key: 'request', defaultWidth: 180 },
+      { key: 'key', defaultWidth: 168 },
+      { key: 'endpoint', defaultWidth: 236 },
       { key: 'model', defaultWidth: 120 },
       { key: 'firstToken', defaultWidth: 72 },
       { key: 'duration', defaultWidth: 88 },
@@ -89,6 +98,15 @@ describe('ActivityTraceList', () => {
     ]);
     const stages = ACTIVITY_TRACE_WIDTH_SPECS.find((spec) => spec.key === 'stages');
     expect(stages).toMatchObject({ defaultWidth: 224, minWidth: 196 });
+  });
+
+  it('renders the key abbreviation with its name', () => {
+    const markup = render(createElement(ActivityTraceList, {
+      rows: [row()],
+      tokens: [{ token: 'ahb_local_1234', name: 'Claude 入口', poolId: 'pool-a' }],
+    }));
+    expect(markup).toContain('ahb_••••1234');
+    expect(markup).toContain('Claude 入口');
   });
 
   it('shows the empty label in the table body when there are no rows', () => {

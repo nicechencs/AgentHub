@@ -12,15 +12,18 @@ import { ActivityTraceList } from './ActivityTraceList';
 import type { RouteTraceListItem } from '@/components/shared/RouteTraceList';
 import type { ActivityPageSnapshot } from './activity-view-model';
 import { activityTraceDisplayRow, selectedActivityTrace } from './activity-trace-summary-model';
+import type { ActivityTraceKeyToken } from './activity-trace-list-model';
 
 export function ActivityMonitoringPanel({
   snapshot,
   pools = [],
+  tokens = [],
   activeId,
   onShowDetail,
 }: {
   snapshot: ActivityPageSnapshot;
   pools?: readonly { members: readonly { displayLabel?: string }[] }[];
+  tokens?: readonly ActivityTraceKeyToken[];
   activeId?: string | null;
   onShowDetail?: (row: RouteTraceListItem) => void;
 }) {
@@ -36,7 +39,7 @@ export function ActivityMonitoringPanel({
       />
       <ActivityStatusBanner snapshot={snapshot} />
       {snapshot.kind === 'loading' ? (
-        <TableSkeleton rows={6} cols={9} />
+        <TableSkeleton rows={6} cols={10} />
       ) : snapshot.kind === 'noLogins' ? (
         <EmptyState
           icon={Boxes}
@@ -54,6 +57,7 @@ export function ActivityMonitoringPanel({
       ) : (
         <ActivityTraceList
           rows={snapshot.feed}
+          tokens={tokens}
           activeId={activeId}
           onShowDetail={onShowDetail}
           emptyLabel={
