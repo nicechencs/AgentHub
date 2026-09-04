@@ -11,6 +11,7 @@ pub mod process;
 pub mod project_path;
 pub mod redact;
 pub mod remote_openai_models;
+pub mod secret_merge;
 pub mod stream_parse;
 pub mod upstream_model_catalog;
 
