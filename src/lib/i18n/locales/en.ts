@@ -170,7 +170,7 @@ export const en = {
       logLevel_trace: 'trace — very verbose',
       logRetentionLabel: 'Log retention',
       logRetentionDescription: 'Days; default 14',
-      logRetentionTip: 'Daily log files older than this are purged on launch (1–365).',
+      logRetentionTip: 'Daily log files and monitoring records older than this are purged (1–365).',
       logsDirLabel: 'Log directory',
       logsDirDescription: 'Daily files',
       logsDirTip: 'Files are named agenthub.YYYY-MM-DD.log. Open this folder when debugging.',

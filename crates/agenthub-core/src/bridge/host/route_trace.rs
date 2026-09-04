@@ -4,14 +4,18 @@
 //! route resolution, connection selection, request/response conversion, upstream,
 //! and client delivery — never bodies or secrets.
 //!
-//! When persistence is enabled (desktop GUI), the last [`ROUTE_TRACE_CAP`]
-//! traces per profile are flushed to a JSON ring under the data dir and
-//! restored on process restart so Activity/monitor history survives crashes.
+//! When persistence is enabled (desktop GUI), traces go to a disposable sqlite
+//! file next to — not inside — `agenthub.db`. Disk history is kept for
+//! `log_retention_days` and includes token counts. The live UI ring stays at
+//! [`ROUTE_TRACE_CAP`] per profile. Deleting the sqlite file does not touch
+//! logins or routes.
 
 use std::collections::{HashMap, VecDeque};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
+
+mod persist;
 
 use serde::{Deserialize, Serialize};
 
@@ -275,6 +279,10 @@ pub struct RouteRequestTrace {
     pub input_tokens: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cached_input_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_tokens: Option<u64>,
     #[serde(default)]
     pub local_endpoint: RouteTraceStep,
     pub local_auth: RouteTraceLocalAuth,
@@ -312,6 +320,8 @@ struct TraceUsagePatch {
     ttft_ms: Option<u64>,
     input_tokens: Option<u64>,
     output_tokens: Option<u64>,
+    cached_input_tokens: Option<u64>,
+    reasoning_tokens: Option<u64>,
 }
 
 fn apply_usage_patch(trace: &mut RouteRequestTrace, patch: TraceUsagePatch) {
@@ -324,26 +334,20 @@ fn apply_usage_patch(trace: &mut RouteRequestTrace, patch: TraceUsagePatch) {
     if patch.output_tokens.is_some() {
         trace.output_tokens = patch.output_tokens;
     }
-}
-
-/// On-disk ring snapshot (credential-free). Restored on GUI/process restart.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RouteTracePersistFile {
-    version: u32,
-    #[serde(default)]
-    by_profile: HashMap<String, Vec<RouteRequestTrace>>,
-    #[serde(default)]
-    unauthenticated: Vec<RouteRequestTrace>,
+    if patch.cached_input_tokens.is_some() {
+        trace.cached_input_tokens = patch.cached_input_tokens;
+    }
+    if patch.reasoning_tokens.is_some() {
+        trace.reasoning_tokens = patch.reasoning_tokens;
+    }
 }
 
 struct TraceStore {
     by_profile: HashMap<String, ProfileTraces>,
     unauthenticated: VecDeque<RouteRequestTrace>,
     pending_usage: HashMap<String, TraceUsagePatch>,
-    /// When set, finalized traces are flushed as a capped JSON ring under the
-    /// data dir so restart/crash does not wipe the monitoring list.
-    persist_path: Option<PathBuf>,
+    /// Disposable sqlite handle. Missing means in-memory ring only.
+    persist: Option<persist::RouteTraceDb>,
 }
 
 impl Default for TraceStore {
@@ -352,7 +356,7 @@ impl Default for TraceStore {
             by_profile: HashMap::new(),
             unauthenticated: VecDeque::new(),
             pending_usage: HashMap::new(),
-            persist_path: None,
+            persist: None,
         }
     }
 }
@@ -362,24 +366,32 @@ impl RouteTraceLog {
         Self::default()
     }
 
-    /// Enable durable ring persistence at `path`. Loads last N traces if the
-    /// file exists. Later calls are ignored (install once at process start).
-    /// Best-effort: corrupt/missing files start empty; write failures never
-    /// affect the request path.
+    /// Enable durable sqlite persistence at `path`. Loads the live UI ring if
+    /// the file exists. Later calls are ignored (install once at process start).
+    /// Best-effort: corrupt files are recreated; write failures never affect
+    /// the request path. Disk retention follows settings `log_retention_days`.
     pub fn enable_persist(&self, path: PathBuf) {
+        self.enable_persist_with_retention(
+            path,
+            crate::catalog::limits::DEFAULT_LOG_RETENTION_DAYS,
+        );
+    }
+
+    pub fn enable_persist_with_retention(&self, path: PathBuf, retention_days: u32) {
         let Ok(mut store) = self.inner.lock() else {
             return;
         };
-        if store.persist_path.is_some() {
+        if store.persist.is_some() {
             return;
         }
+        let Some(db) = persist::RouteTraceDb::open_with_retention(&path, retention_days) else {
+            return;
+        };
         let empty = store.by_profile.is_empty() && store.unauthenticated.is_empty();
         if empty {
-            if let Some(snapshot) = load_persist_file(&path) {
-                apply_snapshot(&mut store, snapshot);
-            }
+            apply_snapshot(&mut store, db.load_recent());
         }
-        store.persist_path = Some(path);
+        store.persist = Some(db);
     }
 
     pub fn push(&self, trace: RouteRequestTrace) {
@@ -390,6 +402,7 @@ impl RouteTraceLog {
         if let Some(patch) = store.pending_usage.remove(&record.request_id) {
             apply_usage_patch(&mut record, patch);
         }
+        flush_row(&store, &record);
         if let Some(profile_id) = record.profile_id.as_deref().filter(|id| !id.is_empty()) {
             let entry = store.by_profile.entry(profile_id.to_owned()).or_default();
             entry.recent.push_front(record);
@@ -398,7 +411,6 @@ impl RouteTraceLog {
             store.unauthenticated.push_front(record);
             store.unauthenticated.truncate(ROUTE_TRACE_CAP);
         }
-        flush_persist(&store);
     }
 
     pub fn patch_usage(
@@ -407,6 +419,8 @@ impl RouteTraceLog {
         ttft_ms: Option<u64>,
         input_tokens: Option<u64>,
         output_tokens: Option<u64>,
+        cached_input_tokens: Option<u64>,
+        reasoning_tokens: Option<u64>,
     ) {
         let Ok(mut store) = self.inner.lock() else {
             return;
@@ -415,6 +429,8 @@ impl RouteTraceLog {
             ttft_ms,
             input_tokens,
             output_tokens,
+            cached_input_tokens,
+            reasoning_tokens,
         };
         for entry in store.by_profile.values_mut() {
             if let Some(row) = entry
@@ -423,7 +439,8 @@ impl RouteTraceLog {
                 .find(|row| row.request_id == request_id)
             {
                 apply_usage_patch(row, incoming);
-                flush_persist(&store);
+                let persisted = row.clone();
+                flush_row(&store, &persisted);
                 return;
             }
         }
@@ -433,7 +450,8 @@ impl RouteTraceLog {
             .find(|row| row.request_id == request_id)
         {
             apply_usage_patch(row, incoming);
-            flush_persist(&store);
+            let persisted = row.clone();
+            flush_row(&store, &persisted);
             return;
         }
         if let Some(pending) = store.pending_usage.get_mut(request_id) {
@@ -445,6 +463,12 @@ impl RouteTraceLog {
             }
             if incoming.output_tokens.is_some() {
                 pending.output_tokens = incoming.output_tokens;
+            }
+            if incoming.cached_input_tokens.is_some() {
+                pending.cached_input_tokens = incoming.cached_input_tokens;
+            }
+            if incoming.reasoning_tokens.is_some() {
+                pending.reasoning_tokens = incoming.reasoning_tokens;
             }
             return;
         }
@@ -472,7 +496,8 @@ impl RouteTraceLog {
                 .find(|row| row.request_id == request_id)
             {
                 patch(row);
-                flush_persist(&store);
+                let persisted = row.clone();
+                flush_row(&store, &persisted);
                 return;
             }
         }
@@ -482,7 +507,8 @@ impl RouteTraceLog {
             .find(|row| row.request_id == request_id)
         {
             patch(row);
-            flush_persist(&store);
+            let persisted = row.clone();
+            flush_row(&store, &persisted);
         }
     }
 
@@ -510,7 +536,8 @@ impl RouteTraceLog {
                 .find(|row| row.request_id == request_id)
             {
                 patch(row);
-                flush_persist(&store);
+                let persisted = row.clone();
+                flush_row(&store, &persisted);
                 return;
             }
         }
@@ -520,7 +547,8 @@ impl RouteTraceLog {
             .find(|row| row.request_id == request_id)
         {
             patch(row);
-            flush_persist(&store);
+            let persisted = row.clone();
+            flush_row(&store, &persisted);
         }
     }
 
@@ -547,7 +575,8 @@ impl RouteTraceLog {
                 .find(|row| row.request_id == request_id)
             {
                 patch(row);
-                flush_persist(&store);
+                let persisted = row.clone();
+                flush_row(&store, &persisted);
                 return;
             }
         }
@@ -557,7 +586,8 @@ impl RouteTraceLog {
             .find(|row| row.request_id == request_id)
         {
             patch(row);
-            flush_persist(&store);
+            let persisted = row.clone();
+            flush_row(&store, &persisted);
         }
     }
 
@@ -595,9 +625,18 @@ impl RouteTraceLog {
             .find(|row| row.request_id == request_id)
             .cloned()
     }
+
+    #[cfg(test)]
+    fn persist_count(&self, profile_id: &str) -> usize {
+        self.inner
+            .lock()
+            .ok()
+            .and_then(|store| store.persist.as_ref().map(|db| db.count(profile_id)))
+            .unwrap_or(0)
+    }
 }
 
-fn apply_snapshot(store: &mut TraceStore, snapshot: RouteTracePersistFile) {
+fn apply_snapshot(store: &mut TraceStore, snapshot: persist::PersistSnapshot) {
     for (profile_id, traces) in snapshot.by_profile {
         if profile_id.trim().is_empty() {
             continue;
@@ -612,56 +651,9 @@ fn apply_snapshot(store: &mut TraceStore, snapshot: RouteTracePersistFile) {
         .collect();
 }
 
-fn load_persist_file(path: &Path) -> Option<RouteTracePersistFile> {
-    let bytes = std::fs::read(path).ok()?;
-    if bytes.is_empty() {
-        return None;
-    }
-    match serde_json::from_slice::<RouteTracePersistFile>(&bytes) {
-        Ok(snapshot) if snapshot.version == 1 => Some(snapshot),
-        Ok(_) => {
-            tracing::warn!(
-                target: "core.adapter",
-                path = %path.display(),
-                "route trace persist file has unsupported version; starting empty"
-            );
-            None
-        }
-        Err(error) => {
-            tracing::warn!(
-                target: "core.adapter",
-                path = %path.display(),
-                error = %error,
-                "route trace persist file unreadable; starting empty"
-            );
-            None
-        }
-    }
-}
-
-fn flush_persist(store: &TraceStore) {
-    let Some(path) = store.persist_path.as_ref() else {
-        return;
-    };
-    let snapshot = RouteTracePersistFile {
-        version: 1,
-        by_profile: store
-            .by_profile
-            .iter()
-            .map(|(id, entry)| (id.clone(), entry.recent.iter().cloned().collect()))
-            .collect(),
-        unauthenticated: store.unauthenticated.iter().cloned().collect(),
-    };
-    let Ok(bytes) = serde_json::to_vec(&snapshot) else {
-        return;
-    };
-    if let Err(error) = crate::utils::atomic::atomic_write(path, &bytes) {
-        tracing::warn!(
-            target: "core.adapter",
-            path = %path.display(),
-            error = %error,
-            "failed to persist route traces"
-        );
+fn flush_row(store: &TraceStore, trace: &RouteRequestTrace) {
+    if let Some(db) = store.persist.as_ref() {
+        db.upsert(trace);
     }
 }
 
@@ -692,6 +684,8 @@ impl RouteTraceBuilder {
                 ttft_ms: None,
                 input_tokens: None,
                 output_tokens: None,
+                cached_input_tokens: None,
+                reasoning_tokens: None,
                 local_endpoint: RouteTraceStep::default(),
                 local_auth: RouteTraceLocalAuth {
                     status: TraceStageStatus::Pending,
@@ -751,6 +745,11 @@ impl RouteTraceBuilder {
 
     pub fn set_model(&mut self, model: Option<String>) {
         self.trace.model = model.filter(|value| !value.trim().is_empty());
+    }
+
+    #[cfg(test)]
+    pub fn set_at_unix_ms(&mut self, at_unix_ms: u128) {
+        self.trace.at_unix_ms = at_unix_ms;
     }
 
     pub fn local_endpoint_ok(&mut self) {

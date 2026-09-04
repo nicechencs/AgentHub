@@ -163,7 +163,7 @@ export const zh = {
       logLevel_trace: 'trace — 极细',
       logRetentionLabel: '日志保留',
       logRetentionDescription: '天；默认 14',
-      logRetentionTip: '按日日志超过天数后，启动时自动清理（1–365）。',
+      logRetentionTip: '日志文件和监控记录超过天数后自动清理（1–365）。',
       logsDirLabel: '日志目录',
       logsDirDescription: '按日文件',
       logsDirTip: '文件名 agenthub.YYYY-MM-DD.log；排查问题时可打开此目录。',

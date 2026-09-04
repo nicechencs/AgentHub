@@ -617,7 +617,14 @@ fn old_persisted_trace_without_lifecycle_fields_still_loads() {
 #[test]
 fn patch_usage_applies_before_and_after_push() {
     let log = RouteTraceLog::new();
-    log.patch_usage("req-pending", Some(120), Some(11), Some(7));
+    log.patch_usage(
+        "req-pending",
+        Some(120),
+        Some(11),
+        Some(7),
+        Some(3),
+        Some(2),
+    );
     let mut builder = RouteTraceBuilder::begin("req-pending", "POST", "/v1/messages");
     builder.local_auth_ok("profile-a", None);
     builder.finalize(200, &log);
@@ -625,12 +632,23 @@ fn patch_usage_applies_before_and_after_push() {
     assert_eq!(first.ttft_ms, Some(120));
     assert_eq!(first.input_tokens, Some(11));
     assert_eq!(first.output_tokens, Some(7));
+    assert_eq!(first.cached_input_tokens, Some(3));
+    assert_eq!(first.reasoning_tokens, Some(2));
 
-    log.patch_usage("req-pending", Some(180), Some(20), Some(9));
+    log.patch_usage(
+        "req-pending",
+        Some(180),
+        Some(20),
+        Some(9),
+        Some(4),
+        Some(5),
+    );
     let second = log.get("req-pending").expect("updated");
     assert_eq!(second.ttft_ms, Some(180));
     assert_eq!(second.input_tokens, Some(20));
     assert_eq!(second.output_tokens, Some(9));
+    assert_eq!(second.cached_input_tokens, Some(4));
+    assert_eq!(second.reasoning_tokens, Some(5));
 }
 
 #[test]
@@ -717,7 +735,7 @@ fn stream_disconnect_only_fails_delivery() {
 #[test]
 fn route_trace_log_persists_and_restores_across_enable() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let path = dir.path().join("route-traces.json");
+    let path = dir.path().join("route-traces.db");
     let log = RouteTraceLog::new();
     log.enable_persist(path.clone());
 
@@ -748,18 +766,30 @@ fn route_trace_log_persists_and_restores_across_enable() {
 #[test]
 fn route_trace_persist_ignores_corrupt_file() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let path = dir.path().join("route-traces.json");
+    let path = dir.path().join("route-traces.db");
     std::fs::write(&path, b"{not-json").expect("write corrupt");
     let log = RouteTraceLog::new();
-    log.enable_persist(path);
+    log.enable_persist(path.clone());
     assert!(log.recent("profile-a").is_empty());
+
+    let mut builder = RouteTraceBuilder::begin("req-after-corrupt", "POST", "/v1/messages");
+    builder.local_auth_ok("profile-a", None);
+    builder.finalize(200, &log);
+    assert_eq!(log.recent("profile-a").len(), 1);
+
+    let restored = RouteTraceLog::new();
+    restored.enable_persist(path);
+    assert_eq!(
+        restored.recent("profile-a")[0].request_id,
+        "req-after-corrupt"
+    );
 }
 
 #[test]
 fn route_trace_persist_second_enable_is_ignored() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let path_a = dir.path().join("a.json");
-    let path_b = dir.path().join("b.json");
+    let path_a = dir.path().join("a.db");
+    let path_b = dir.path().join("b.db");
     let log = RouteTraceLog::new();
     log.enable_persist(path_a.clone());
     let mut builder = RouteTraceBuilder::begin("req-a", "POST", "/v1/messages");
@@ -779,7 +809,7 @@ fn route_trace_persist_second_enable_is_ignored() {
 #[test]
 fn route_trace_persist_keeps_ring_cap_on_reload() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let path = dir.path().join("route-traces.json");
+    let path = dir.path().join("route-traces.db");
     let log = RouteTraceLog::new();
     log.enable_persist(path.clone());
     for index in 0..(ROUTE_TRACE_CAP + 8) {
@@ -787,11 +817,125 @@ fn route_trace_persist_keeps_ring_cap_on_reload() {
         builder.local_auth_ok("profile-a", None);
         builder.finalize(200, &log);
     }
+    assert_eq!(log.persist_count("profile-a"), ROUTE_TRACE_CAP + 8);
     let restored = RouteTraceLog::new();
     restored.enable_persist(path);
     let recent = restored.recent("profile-a");
     assert_eq!(recent.len(), ROUTE_TRACE_CAP);
     assert_eq!(recent[0].request_id, format!("req-{}", ROUTE_TRACE_CAP + 7));
+    assert_eq!(restored.persist_count("profile-a"), ROUTE_TRACE_CAP + 8);
+}
+
+#[test]
+fn route_trace_persist_imports_legacy_json_then_removes_it() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db_path = dir.path().join("route-traces.db");
+    let json_path = dir.path().join("route-traces.json");
+    let payload = serde_json::json!({
+        "version": 1,
+        "byProfile": {
+            "profile-a": [{
+                "traceVersion": 2,
+                "requestId": "req-legacy",
+                "atUnixMs": super::now_unix_ms(),
+                "profileId": "profile-a",
+                "method": "POST",
+                "path": "/v1/messages",
+                "httpStatus": 200,
+                "ok": true,
+                "localAuth": { "status": "ok", "profileId": "profile-a" },
+                "pool": { "status": "ok" },
+                "conversion": { "status": "ok", "path": "passthrough" },
+                "upstreamAuth": { "status": "ok" },
+                "upstream": { "status": "ok" }
+            }]
+        },
+        "unauthenticated": []
+    });
+    std::fs::write(&json_path, serde_json::to_vec(&payload).expect("json")).expect("write json");
+
+    let log = RouteTraceLog::new();
+    log.enable_persist(db_path);
+    let recent = log.recent("profile-a");
+    assert_eq!(recent.len(), 1);
+    assert_eq!(recent[0].request_id, "req-legacy");
+    assert!(
+        !json_path.exists(),
+        "legacy json should be removed after import"
+    );
+}
+
+#[test]
+fn route_trace_persist_keeps_tokens_across_reload() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("route-traces.db");
+    let log = RouteTraceLog::new();
+    log.enable_persist(path.clone());
+    let mut builder = RouteTraceBuilder::begin("req-tokens", "POST", "/v1/messages");
+    builder.local_auth_ok("profile-a", None);
+    builder.finalize(200, &log);
+    log.patch_usage("req-tokens", Some(90), Some(11), Some(7), Some(3), Some(2));
+
+    let restored = RouteTraceLog::new();
+    restored.enable_persist(path);
+    let row = restored.get("req-tokens").expect("restored");
+    assert_eq!(row.input_tokens, Some(11));
+    assert_eq!(row.output_tokens, Some(7));
+    assert_eq!(row.cached_input_tokens, Some(3));
+    assert_eq!(row.reasoning_tokens, Some(2));
+}
+
+#[test]
+fn route_trace_persist_prunes_by_retention_days() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("route-traces.db");
+    let log = RouteTraceLog::new();
+    log.enable_persist_with_retention(path.clone(), 2);
+    let now = super::now_unix_ms();
+    let day_ms = 86_400_000u128;
+
+    let mut old = RouteTraceBuilder::begin("req-old", "POST", "/v1/messages");
+    old.local_auth_ok("profile-a", None);
+    old.set_at_unix_ms(now.saturating_sub(day_ms * 3));
+    old.finalize(200, &log);
+
+    let mut recent = RouteTraceBuilder::begin("req-recent", "POST", "/v1/messages");
+    recent.local_auth_ok("profile-a", None);
+    recent.set_at_unix_ms(now.saturating_sub(day_ms));
+    recent.finalize(200, &log);
+
+    assert_eq!(log.persist_count("profile-a"), 1);
+
+    let restored = RouteTraceLog::new();
+    restored.enable_persist_with_retention(path, 2);
+    let recent_rows = restored.recent("profile-a");
+    assert_eq!(recent_rows.len(), 1);
+    assert_eq!(recent_rows[0].request_id, "req-recent");
+}
+
+#[test]
+fn route_trace_persist_uses_settings_retention_days() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let data_dir = dir.path();
+    let db = crate::storage::Database::open(&data_dir.join("agenthub.db")).expect("settings db");
+    db.set_setting("log_retention_days", "1").expect("set days");
+    let path = data_dir.join("cache").join("route-traces.db");
+    let log = RouteTraceLog::new();
+    log.enable_persist(path.clone());
+    let now = super::now_unix_ms();
+    let day_ms = 86_400_000u128;
+
+    let mut old = RouteTraceBuilder::begin("req-old", "POST", "/v1/messages");
+    old.local_auth_ok("profile-a", None);
+    old.set_at_unix_ms(now.saturating_sub(day_ms * 2));
+    old.finalize(200, &log);
+
+    let mut recent = RouteTraceBuilder::begin("req-recent", "POST", "/v1/messages");
+    recent.local_auth_ok("profile-a", None);
+    recent.finalize(200, &log);
+
+    assert_eq!(log.persist_count("profile-a"), 1);
+    assert_eq!(log.recent("profile-a")[0].request_id, "req-recent");
 }
 
 #[test]
