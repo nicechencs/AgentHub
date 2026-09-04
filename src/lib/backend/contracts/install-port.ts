@@ -13,8 +13,8 @@ export interface InstallPort {
   upgradeAgentCmd(agentId: AgentKey): Promise<InstallOutcome>;
   uninstallAgentCmd(agentId: AgentKey, purgeConfig: boolean): Promise<InstallOutcome>;
   openAgentConfigDir(agentId: AgentKey): Promise<string>;
-  /** Start a CLI in a new terminal, or a desktop app. */
-  launchAgentProgram(kind: 'cli' | 'app', path: string): Promise<void>;
+  /** Start this Agent's CLI in a new terminal, or its desktop app. Path is resolved from detect. */
+  launchAgentProgram(agentId: AgentKey, kind: 'cli' | 'app'): Promise<void>;
   getAgentLivePaths(agentId: AgentKey): Promise<{
     config: string;
     auth?: string | null;

@@ -8,7 +8,7 @@ mod tests;
 pub(super) use cost::{cost_for_event, event_missing_pricing};
 
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use uuid::Uuid;
@@ -43,6 +43,8 @@ pub struct UsageService {
     gateway_repo: GatewayUsageRepo,
     registry: UsageSourceRegistry,
     collect_targets: Option<CollectTargetResolver>,
+    /// Serializes collect, including one-shot repairs, across concurrent callers.
+    collect_lock: Mutex<()>,
     /// Test-only spool dir override so unit tests never touch the real data
     /// dir. `None` in tests disables the gateway ingest step entirely.
     #[cfg(test)]
@@ -81,6 +83,7 @@ impl UsageService {
             gateway_repo: GatewayUsageRepo::new(db),
             registry,
             collect_targets,
+            collect_lock: Mutex::new(()),
             #[cfg(test)]
             gateway_spool_dir: None,
         }
@@ -149,6 +152,10 @@ impl UsageService {
 
     /// Scan agent session logs and insert new rows (dedup by raw_hash).
     pub fn collect(&self, agent: Option<AgentId>) -> Result<CollectResult> {
+        let _collect_guard = self
+            .collect_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let started = Instant::now();
         // One-time: reset file cursors so corrupted Codex rows (double-peel) are
         // re-parsed from logs and UPSERT'd with correct non-cached input.
@@ -569,8 +576,8 @@ impl UsageService {
         const KEY: &str = "usage_token_layout";
         // v5 = persist cache write vs read as separate columns (billing rates differ).
         const VER: &str = "5";
-        let cur = self.repo.get_meta(KEY)?;
-        if cur.as_deref() == Some(VER) {
+        let (deleted, n, already_current) = self.repo.repair_token_layout(KEY, VER)?;
+        if already_current {
             tracing::debug!(
                 module = targets::USAGE,
                 op = "token_layout_repair",
@@ -579,23 +586,11 @@ impl UsageService {
             );
             return Ok(());
         }
-        let from = cur.as_deref().unwrap_or("unset");
-        tracing::info!(
-            module = targets::USAGE,
-            op = "token_layout_repair",
-            from_version = from,
-            to_version = VER,
-            "usage token layout migration starting (clear rows + reset cursors)"
-        );
-        let deleted = self.repo.clear_all_records()?;
-        let n = self.repo.reset_all_cursors()?;
-        self.repo.set_meta(KEY, VER)?;
         tracing::info!(
             module = targets::USAGE,
             op = "token_layout_repair",
             rows_deleted = deleted,
             cursors_reset = n,
-            from_version = from,
             to_version = VER,
             "cleared usage rows and cursors; next scan rebuilds from session logs"
         );
@@ -610,27 +605,15 @@ impl UsageService {
     fn maybe_repair_grok_parser(&self) -> Result<()> {
         const KEY: &str = "usage_grok_parser";
         const VER: &str = "1";
-        let cur = self.repo.get_meta(KEY)?;
-        if cur.as_deref() == Some(VER) {
+        let (deleted, n, already_current) = self.repo.repair_grok_parser(KEY, VER)?;
+        if already_current {
             return Ok(());
         }
-        let from = cur.as_deref().unwrap_or("unset");
-        tracing::info!(
-            module = targets::USAGE,
-            op = "grok_parser_repair",
-            from_version = from,
-            to_version = VER,
-            "Grok usage parser migration starting (clear grok rows + reset grok cursors)"
-        );
-        let deleted = self.repo.clear_records_for_agent(AgentId::Grok)?;
-        let n = self.repo.reset_cursors_for_agent(AgentId::Grok)?;
-        self.repo.set_meta(KEY, VER)?;
         tracing::info!(
             module = targets::USAGE,
             op = "grok_parser_repair",
             rows_deleted = deleted,
             cursors_reset = n,
-            from_version = from,
             to_version = VER,
             "cleared Grok usage rows and cursors; next scan rebuilds from updates.jsonl"
         );

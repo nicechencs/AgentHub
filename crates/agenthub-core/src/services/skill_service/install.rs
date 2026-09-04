@@ -17,10 +17,9 @@ use crate::platform::skills::{
     ensure_skill_md, finalize_link_projection_ownership, inspect_projection_target, is_exact_child,
     is_link_or_reparse, materialize_projection, paths_equal_lexical, prepare_git_skill_staging,
     read_skill_metadata, record_copy_ownership, recycle_skill_dir, remove_projection_link,
-    resolve_link_path, skill_lock_load, skill_lock_remove, skill_lock_upsert,
-    validate_and_collect_source, validate_skill_id, validate_skills_root,
-    validate_tree_entries_safe, PreparedSkillTree, SkillCommitFaults, SkillPackageService,
-    SkillSourceService, TargetPresence,
+    resolve_link_path, skill_lock_load, skill_lock_remove, validate_and_collect_source,
+    validate_skill_id, validate_skills_root, validate_tree_entries_safe, PreparedSkillTree,
+    SkillCommitFaults, SkillPackageService, SkillSourceService, TargetPresence,
 };
 use crate::platform::AgentKey;
 use crate::storage::SkillRepo;
@@ -219,7 +218,7 @@ impl SkillService {
             let lock_dir = self.source_root.join(".locks");
             for key in target_keys {
                 let _agent_lock = AgentWriteLock::acquire_key(&lock_dir, &key)?;
-                self.disable_key(&skill_id, &key)?;
+                self.disable_after_skill_lock(&skill_id, &key)?;
             }
 
             // Remove source directory (must be a real dir).
@@ -628,9 +627,6 @@ impl SkillService {
                         dest.display()
                     )));
                 }
-                materialize_projection(&self.source_root, &skill_id, &dest, &files, Some(&dest))?;
-            } else {
-                materialize_projection(&self.source_root, &skill_id, &dest, &files, None)?;
             }
 
             let now = chrono_now();
@@ -638,10 +634,19 @@ impl SkillService {
                 kind: "local".into(),
                 locator: private_dir.to_string_lossy().into_owned(),
                 version: None,
-                installed_at: now,
+                installed_at: now.clone(),
                 updated_at: None,
             };
-            skill_lock_upsert(&self.source_root, &skill_id, record)?;
+            let repo = self.db.as_ref().map(|db| SkillRepo::new(db.clone()));
+            let committed = commit_skill_package(
+                &self.source_root,
+                &skill_id,
+                PreparedSkillTree::Files(&files),
+                record,
+                repo.as_ref(),
+                &now,
+                SkillCommitFaults::default(),
+            )?;
 
             // Private original must remain after copy.
             if !private_dir.exists() {
@@ -654,13 +659,13 @@ impl SkillService {
                 ));
             }
 
-            let (name, description) = read_skill_metadata(&dest, &skill_id);
-            let projections = self.project_matrix(&skill_id, &dest);
+            let (name, description) = read_skill_metadata(&committed.dest, &committed.skill_id);
+            let projections = self.project_matrix(&committed.skill_id, &committed.dest);
             Ok(Skill {
-                id: skill_id,
+                id: committed.skill_id,
                 name,
                 description,
-                source_dir: dest,
+                source_dir: committed.dest,
                 projections,
             })
         })();

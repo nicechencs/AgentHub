@@ -5,7 +5,9 @@ use crate::models::{
     AgentConfig, AuthState, Capability, CapabilityState, DetectResult, DetectStatus,
     InstallChannel, RunOptions, RunSpec,
 };
-use crate::platform::skills::replace_target_with_staging;
+use crate::platform::skills::{
+    acquire_skill_lock, acquire_skill_root_lock, replace_target_with_staging,
+};
 use crate::utils::test_temp::real_tempdir;
 use std::sync::Arc;
 
@@ -906,6 +908,79 @@ fn disable_removes_exact_target_preserves_siblings() {
 }
 
 #[test]
+fn sync_and_disable_fail_when_skill_lock_is_held() {
+    let (_tmp, source, claude, _x, _g, svc) = setup_write_fixture();
+    write_file(&source.join("demo").join("SKILL.md"), &skill_md("D", "d"));
+    svc.sync("demo", AgentId::Claude, false).unwrap();
+
+    {
+        let _held = acquire_skill_lock(&source, "demo").unwrap();
+        let sync_err = svc.sync("demo", AgentId::Claude, true).unwrap_err();
+        assert_eq!(sync_err.code(), "skill.lock");
+        let disable_err = svc.disable("demo", AgentId::Claude).unwrap_err();
+        assert_eq!(disable_err.code(), "skill.lock");
+        assert!(claude.join("demo").is_dir());
+    }
+
+    svc.disable("demo", AgentId::Claude).unwrap();
+    assert!(!claude.join("demo").exists());
+}
+
+#[test]
+fn sync_and_disable_fail_when_root_lock_is_held() {
+    let (_tmp, source, claude, _x, _g, svc) = setup_write_fixture();
+    write_file(&source.join("demo").join("SKILL.md"), &skill_md("D", "d"));
+    svc.sync("demo", AgentId::Claude, false).unwrap();
+
+    {
+        let _held = acquire_skill_root_lock(&source).unwrap();
+        let sync_err = svc.sync("demo", AgentId::Claude, true).unwrap_err();
+        assert_eq!(sync_err.code(), "skill.lock");
+        let disable_err = svc.disable("demo", AgentId::Claude).unwrap_err();
+        assert_eq!(disable_err.code(), "skill.lock");
+        assert!(claude.join("demo").is_dir());
+    }
+
+    svc.sync("demo", AgentId::Claude, true).unwrap();
+    assert!(claude.join("demo").is_dir());
+}
+
+#[test]
+fn assignment_sync_and_disable_fail_when_skill_lock_is_held() {
+    let tmp = real_tempdir();
+    let source = tmp.path().join("skills");
+    let claude = tmp.path().join("claude-skills");
+    let codex = tmp.path().join("codex-skills");
+    let grok = tmp.path().join("grok-skills");
+    fs::create_dir_all(&source).unwrap();
+    write_file(&source.join("demo").join("SKILL.md"), &skill_md("D", "d"));
+    let db_dir = real_tempdir();
+    let db = crate::storage::Database::open(&db_dir.path().join("t.db")).unwrap();
+    let svc = SkillService::with_db(
+        source.clone(),
+        make_registry(claude.clone(), codex, grok),
+        db,
+    );
+    svc.sync("demo", AgentId::Claude, false).unwrap();
+
+    {
+        let _held = acquire_skill_lock(&source, "demo").unwrap();
+        assert_eq!(
+            svc.sync("demo", AgentId::Claude, true).unwrap_err().code(),
+            "skill.lock"
+        );
+        assert_eq!(
+            svc.disable("demo", AgentId::Claude).unwrap_err().code(),
+            "skill.lock"
+        );
+        assert!(claude.join("demo").is_dir());
+    }
+
+    svc.disable("demo", AgentId::Claude).unwrap();
+    assert!(!claude.join("demo").exists());
+}
+
+#[test]
 fn disable_rejects_target_file() {
     let (_tmp, source, claude, _x, _g, svc) = setup_write_fixture();
     write_file(&source.join("demo").join("SKILL.md"), &skill_md("D", "d"));
@@ -1759,6 +1834,12 @@ fn import_private_to_shared_copies_without_deleting_private() {
         fs::read_to_string(claude.join("hatch-pet").join("extra.txt")).unwrap(),
         "keep-me"
     );
+    let lock = skill_lock_load(&source).unwrap();
+    assert!(
+        lock.contains_key("hatch-pet"),
+        "import must register the shared skill before returning"
+    );
+    assert_no_helper_dirs(&source);
 
     let installed = svc.list_installed().unwrap();
     let shared = installed

@@ -75,6 +75,17 @@ use rusqlite::Connection;
 use crate::error::{AppError, Result};
 use crate::models::AppSettings;
 
+pub fn set_setting_on_conn(conn: &Connection, key: &str, value: &str) -> Result<()> {
+    conn.execute(
+        r#"
+        INSERT INTO settings (key, value) VALUES (?1, ?2)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        "#,
+        [key, value],
+    )?;
+    Ok(())
+}
+
 /// Shared database handle.
 #[derive(Clone)]
 pub struct Database {
@@ -174,16 +185,7 @@ impl Database {
     }
 
     pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
-        self.with_conn(|conn| {
-            conn.execute(
-                r#"
-                INSERT INTO settings (key, value) VALUES (?1, ?2)
-                ON CONFLICT(key) DO UPDATE SET value = excluded.value
-                "#,
-                [key, value],
-            )?;
-            Ok(())
-        })
+        self.with_conn(|conn| set_setting_on_conn(conn, key, value))
     }
 
     pub fn load_app_settings(&self) -> Result<AppSettings> {

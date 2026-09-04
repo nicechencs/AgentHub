@@ -43,40 +43,31 @@ pub(crate) fn credentials_are_loopback(credentials: &Value) -> bool {
         .is_some_and(is_loopback_base_url)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn is_loopback_base_url_accepts_ipv4_localhost_and_ipv6() {
-        assert!(is_loopback_base_url("http://127.0.0.1:43081"));
-        assert!(is_loopback_base_url("http://localhost:44227/v1"));
-        assert!(is_loopback_base_url("http://[::1]:8080"));
-        assert!(is_loopback_base_url("  http://127.0.0.1  "));
-        assert!(credentials_are_loopback(&json!({
-            "format": "api_key",
-            "api_key": "tok",
-            "base_url": "http://127.0.0.1:43081"
-        })));
+/// HTTPS anywhere, or HTTP only to a loopback host. Rejects userinfo and
+/// fragments. Normalizes a trailing slash so `Url::join` keeps the last path
+/// segment.
+pub(crate) fn validate_upstream_base_url(raw: &str) -> Result<reqwest::Url, ()> {
+    let Ok(mut url) = reqwest::Url::parse(raw.trim()) else {
+        return Err(());
+    };
+    if url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(());
     }
-
-    #[test]
-    fn is_loopback_base_url_rejects_remote_or_invalid() {
-        assert!(!is_loopback_base_url("https://api.anthropic.com"));
-        assert!(!is_loopback_base_url("https://relay.example.com"));
-        assert!(!is_loopback_base_url("https://api.anthropic.com/v1"));
-        assert!(!is_loopback_base_url(""));
-        assert!(!is_loopback_base_url("not-a-url"));
-        assert!(!is_loopback_base_url("127.0.0.1:43081"));
-        assert!(!credentials_are_loopback(&json!({
-            "format": "api_key",
-            "api_key": "tok"
-        })));
-        assert!(!credentials_are_loopback(&json!({
-            "format": "api_key",
-            "api_key": "tok",
-            "base_url": "https://api.anthropic.com"
-        })));
+    match url.scheme() {
+        "https" => {}
+        "http" if is_loopback_host(url.host_str()) => {}
+        _ => return Err(()),
     }
+    if !url.path().ends_with('/') {
+        let path = format!("{}/", url.path());
+        url.set_path(&path);
+    }
+    Ok(url)
 }
+
+#[cfg(test)]
+mod tests;

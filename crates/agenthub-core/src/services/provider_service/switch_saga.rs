@@ -4,9 +4,7 @@ use std::time::Instant;
 
 use crate::error::{AppError, Result};
 use crate::models::{AgentConfig, AgentId, BackupKind, ProviderSwitchResult};
-use crate::services::switch_undo::{
-    clear_switch_undo, peek_switch_undo, record_switch_undo, PROVIDER_UNDO_PREFIX,
-};
+use crate::services::switch_undo::{clear_switch_undo, peek_switch_undo, PROVIDER_UNDO_PREFIX};
 
 use super::live::{hash_live_paths, log_live_switch_paths, require_live_config_write};
 use super::{
@@ -168,12 +166,13 @@ impl ProviderService {
             &before,
         );
         let now = now_ts();
-        // Single transaction: is_current + demote accounts + binding (B1 cleanup).
-        let provider = match self.connections.activate_provider(
+        // Single transaction: is_current + demote accounts + binding + undo slot.
+        let provider = match self.connections.activate_provider_with_undo(
             agent,
             &target.id,
             expected_target_updated_at,
             &now,
+            Some((PROVIDER_UNDO_PREFIX, previous_current_id.as_deref())),
         ) {
             Ok((provider, _binding)) => provider,
             Err(error) => {
@@ -182,22 +181,6 @@ impl ProviderService {
                 return Err(compensated_switch_error(error, live_rollback, db_rollback));
             }
         };
-
-        if let Some(from_id) = previous_current_id {
-            if from_id != provider.id {
-                record_switch_undo(
-                    &self.db,
-                    PROVIDER_UNDO_PREFIX,
-                    agent,
-                    &from_id,
-                    &provider.id,
-                )?;
-            } else {
-                clear_switch_undo(&self.db, PROVIDER_UNDO_PREFIX, agent)?;
-            }
-        } else {
-            clear_switch_undo(&self.db, PROVIDER_UNDO_PREFIX, agent)?;
-        }
 
         Ok(ProviderSwitchResult {
             provider,

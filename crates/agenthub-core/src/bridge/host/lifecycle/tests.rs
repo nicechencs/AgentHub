@@ -35,3 +35,27 @@ fn same_spec_detects_downstream_responses_profile_change() {
     assert!(!same_spec(&generic, &codex));
     assert!(!same_spec(&codex, &grok));
 }
+
+#[tokio::test]
+async fn bind_loopback_ephemeral_port() {
+    let listener = super::bind_loopback(0).expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    assert_eq!(
+        addr.ip(),
+        std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
+    );
+    assert_ne!(addr.port(), 0);
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn windows_bind_loopback_is_exclusive() {
+    let first = super::bind_loopback(0).expect("first bind");
+    let port = first.local_addr().expect("addr").port();
+    let second = super::bind_loopback(port);
+    assert!(
+        second.is_err(),
+        "second bind to the same loopback port must fail under SO_EXCLUSIVEADDRUSE"
+    );
+    drop(first);
+}

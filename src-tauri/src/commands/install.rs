@@ -1,10 +1,12 @@
 //! Install / upgrade / uninstall Tauri commands — thin wrappers over core.
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use agenthub_core::logging::targets;
 use agenthub_core::models::{
-    AgentId, AgentUpdateInfo, InstallOutcome, RuntimeId, RuntimeUpdateInfo,
+    install_lifecycle, AgentId, AgentUpdateInfo, DetectResult, DetectStatus, InstallOutcome,
+    RuntimeId, RuntimeUpdateInfo,
 };
 use agenthub_core::platform::install::{
     list_install_catalog as list_install_catalog_impl, AgentInstallCatalogEntry,
@@ -334,32 +336,163 @@ pub async fn open_path_in_file_manager(path: String) -> Result<String, String> {
     Err(msg)
 }
 
-/// Invoke: `launch_agent_program` — start a CLI in a terminal, or a desktop app.
-#[tauri::command]
-pub async fn launch_agent_program(kind: String, path: String) -> Result<(), String> {
-    let p = normalize_open_path_input(&path);
-    let target = if kind == "cli" {
-        resolve_cli_launch_path(&p)
+const NO_LAUNCH_TARGET: &str = "未找到可启动的程序";
+
+fn is_install_source(value: &str) -> bool {
+    matches!(
+        value,
+        "npm" | "native" | "ide" | "desktop" | "leftover-agenthub"
+    )
+}
+
+fn same_install_path(a: &Path, b: &Path) -> bool {
+    fn norm(path: &Path) -> String {
+        path.to_string_lossy()
+            .replace('\\', "/")
+            .to_ascii_lowercase()
+    }
+    norm(a) == norm(b)
+}
+
+fn launch_copy_source(agent: AgentId, kind: &str, source: &str) -> &'static str {
+    if is_install_source(source) {
+        return install_lifecycle(agent, source).source;
+    }
+    let fallback = if is_install_source(kind) {
+        kind
     } else {
-        p
+        "native"
     };
-    if !target.exists() {
-        let msg = format!("path does not exist: {path}");
-        tracing::warn!(target: targets::GUI, op = "launch_agent_program", "{msg}");
-        return Err(msg);
+    install_lifecycle(agent, fallback).source
+}
+
+/// Same rules as frontend `launchKindForInstall`.
+fn launch_kind_for_source(agent: AgentId, source: &str) -> Option<&'static str> {
+    match source {
+        "desktop" => Some("app"),
+        "npm" => Some("cli"),
+        "native" => {
+            if install_lifecycle(agent, "native").update_via == "official" {
+                Some("app")
+            } else {
+                Some("cli")
+            }
+        }
+        _ => None,
     }
-    tracing::info!(
-        target: targets::GUI,
-        op = "launch_agent_program",
-        kind = kind.as_str(),
-        path = %target.display(),
-        "launch requested"
-    );
-    match kind.as_str() {
-        "cli" => launch_cli(&target),
-        "app" => launch_app(&target),
-        other => Err(format!("unknown launch kind: {other}")),
+}
+
+/// Spawn copy first, then extra copies (mirrors `listAgentInstalls`).
+fn detected_launch_copies(agent: AgentId, detect: &DetectResult) -> Vec<(String, PathBuf)> {
+    let mut out = Vec::new();
+    let spawn = detect
+        .binary_path
+        .as_ref()
+        .filter(|path| !path.as_os_str().is_empty());
+    if detect.status == DetectStatus::Installed {
+        if let Some(spawn_path) = spawn {
+            let channel = detect.channel.as_deref().unwrap_or("");
+            let kind = if is_install_source(channel) {
+                channel
+            } else {
+                "native"
+            };
+            let matching = detect
+                .extra_copies
+                .iter()
+                .find(|copy| same_install_path(&copy.path, spawn_path));
+            let source = matching
+                .map(|copy| launch_copy_source(agent, &copy.kind, &copy.source))
+                .unwrap_or_else(|| install_lifecycle(agent, kind).source);
+            out.push((source.to_string(), spawn_path.clone()));
+        }
     }
+    for copy in &detect.extra_copies {
+        if copy.path.as_os_str().is_empty() {
+            continue;
+        }
+        if spawn.is_some_and(|path| same_install_path(path, &copy.path)) {
+            continue;
+        }
+        let raw_kind = if !copy.kind.is_empty() {
+            copy.kind.as_str()
+        } else if !copy.source.is_empty() {
+            copy.source.as_str()
+        } else {
+            "native"
+        };
+        let source = launch_copy_source(agent, raw_kind, &copy.source);
+        out.push((source.to_string(), copy.path.clone()));
+    }
+    out
+}
+
+/// Pick a discovered CLI or App path. `linux` mirrors `hideCodexAppLaunch`.
+pub(crate) fn resolve_agent_launch_path(
+    agent: AgentId,
+    detect: &DetectResult,
+    kind: &str,
+    linux: bool,
+) -> Result<PathBuf, String> {
+    if kind != "cli" && kind != "app" {
+        return Err(format!("unknown launch kind: {kind}"));
+    }
+    if kind == "app" && agent == AgentId::Codex && linux {
+        return Err(NO_LAUNCH_TARGET.into());
+    }
+    for (source, path) in detected_launch_copies(agent, detect) {
+        if launch_kind_for_source(agent, &source) == Some(kind) {
+            return Ok(path);
+        }
+    }
+    Err(NO_LAUNCH_TARGET.into())
+}
+
+/// Invoke: `launch_agent_program` — start this Agent's CLI or desktop app.
+/// Path comes from detect, never from the client.
+#[tauri::command]
+pub async fn launch_agent_program(
+    state: State<'_, AppState>,
+    agent_id: String,
+    kind: String,
+) -> Result<(), String> {
+    let hub = state.hub_arc()?;
+    let agent = parse_agent(&agent_id)?;
+    if kind != "cli" && kind != "app" {
+        return Err(format!("unknown launch kind: {kind}"));
+    }
+    with_hub_blocking(hub, move |hub| {
+        let detect = hub.agents().detect(agent).ok_or_else(|| {
+            let msg = NO_LAUNCH_TARGET.to_string();
+            tracing::warn!(target: targets::GUI, op = "launch_agent_program", "{msg}");
+            msg
+        })?;
+        let path = resolve_agent_launch_path(agent, &detect, &kind, cfg!(target_os = "linux"))?;
+        let target = if kind == "cli" {
+            resolve_cli_launch_path(&path)
+        } else {
+            path
+        };
+        if !target.exists() {
+            let msg = format!("path does not exist: {}", target.display());
+            tracing::warn!(target: targets::GUI, op = "launch_agent_program", "{msg}");
+            return Err(msg);
+        }
+        tracing::info!(
+            target: targets::GUI,
+            op = "launch_agent_program",
+            agent = agent.as_str(),
+            kind = kind.as_str(),
+            path = %target.display(),
+            "launch requested"
+        );
+        match kind.as_str() {
+            "cli" => launch_cli(&target),
+            "app" => launch_app(&target),
+            other => Err(format!("unknown launch kind: {other}")),
+        }
+    })
+    .await
 }
 
 #[cfg(test)]

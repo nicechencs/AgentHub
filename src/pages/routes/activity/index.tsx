@@ -38,7 +38,9 @@ import { activityRouteOptions } from '@/pages/routes/activity/inbound-feed-model
 import { ActivityMonitoringPanel } from '@/pages/routes/activity/ActivityMonitoringPanel';
 import { ActivityTraceDetailPanel } from '@/pages/routes/activity/ActivityTraceDetailPanel';
 import {
+  isTraceQueryErrorEmpty,
   monitoredLocalProfiles,
+  pageAfterTraceQueryFailure,
   resolveActivityPageSnapshot,
 } from '@/pages/routes/activity/activity-view-model';
 import { selectedActivityTrace } from '@/pages/routes/activity/activity-trace-summary-model';
@@ -86,6 +88,7 @@ export default function RoutesActivityPage() {
   const [localTokens, setLocalTokens] = useState<LocalTokenRecord[]>([]);
   const [tokensReady, setTokensReady] = useState(false);
   const [tracePage, setTracePage] = useState<RouteTracePage>(EMPTY_PAGE);
+  const [traceError, setTraceError] = useState<unknown | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -144,6 +147,7 @@ export default function RoutesActivityPage() {
     const offset = (page - 1) * ACTIVITY_PAGE_SIZE;
     const tick = () => {
       if (keyId && tokensReady && !keyQuery) {
+        setTraceError(null);
         setTracePage({ ...EMPTY_PAGE, offset });
         return;
       }
@@ -157,11 +161,13 @@ export default function RoutesActivityPage() {
       })
         .then((next) => {
           if (cancelled) return;
+          setTraceError(null);
           setTracePage(next);
         })
-        .catch(() => {
+        .catch((error: unknown) => {
           if (cancelled) return;
-          setTracePage((prev) => (prev.rows.length > 0 ? prev : { ...EMPTY_PAGE, offset }));
+          setTraceError(error ?? true);
+          setTracePage((prev) => pageAfterTraceQueryFailure(prev, { ...EMPTY_PAGE, offset }));
         });
     };
     tick();
@@ -416,6 +422,12 @@ export default function RoutesActivityPage() {
           error={errors.profiles ?? t('routes.loadError')}
           onRetry={() => void reload()}
         />
+      ) : isTraceQueryErrorEmpty(traceError, labeledRows.length) ? (
+        <ErrorState
+          title={t('routes.loadError')}
+          error={traceError instanceof Error ? traceError : t('routes.loadError')}
+          onRetry={() => setRefreshTick((value) => value + 1)}
+        />
       ) : (
         <ActivityMonitoringPanel
           snapshot={snapshot}
@@ -431,6 +443,8 @@ export default function RoutesActivityPage() {
           pageSize={ACTIVITY_PAGE_SIZE}
           onPageChange={setPage}
           filtered={hasFilters}
+          traceError={traceError}
+          onRetryTraces={() => setRefreshTick((value) => value + 1)}
         />
       )}
 

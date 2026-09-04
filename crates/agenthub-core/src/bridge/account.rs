@@ -14,9 +14,13 @@ use axum::http::HeaderValue;
 use sha2::{Digest, Sha256};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
+use super::bounded_ttl::BoundedTtlMap;
 use super::route_index::DispatchCandidate;
 use super::runtime::{ResolvedAuth, UpstreamAuthReload};
 use crate::models::RouteSchedulePolicy;
+
+const STICKY_MAX_ENTRIES: usize = 4096;
+const STICKY_IDLE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 
 #[cfg(test)]
 mod tests;
@@ -234,7 +238,7 @@ struct AccountPickerInner {
     isolate_sink: Option<MemberHealthSink>,
     cooldowns: Mutex<MemberCooldowns>,
     schedule_policy: RouteSchedulePolicy,
-    sticky: Mutex<HashMap<String, StickyBinding>>,
+    sticky: Mutex<BoundedTtlMap<String, StickyBinding>>,
     /// Round-robin cursors keyed by isomorphic group (priority + transport + dialect).
     /// Distinct from the v1 [`AccountPicker::pick_new`] cursor.
     rr_cursors: Mutex<HashMap<String, usize>>,
@@ -275,7 +279,7 @@ impl AccountPicker {
                     member: HashMap::new(),
                     member_model: HashMap::new(),
                 }),
-                sticky: Mutex::new(HashMap::new()),
+                sticky: Mutex::new(BoundedTtlMap::new(STICKY_MAX_ENTRIES, STICKY_IDLE_TTL)),
                 rr_cursors: Mutex::new(HashMap::new()),
             }),
         }
@@ -539,7 +543,7 @@ impl AccountPicker {
         key: &str,
     ) -> StickyLookup {
         let binding = {
-            let Ok(guard) = self.inner.sticky.lock() else {
+            let Ok(mut guard) = self.inner.sticky.lock() else {
                 return StickyLookup::Miss;
             };
             guard.get(key).cloned()
@@ -650,6 +654,24 @@ impl AccountPicker {
         if let Some(binding) = guard.get_mut(affinity_key) {
             binding.auth_fingerprint = fingerprint.to_owned();
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn sticky_len(&self) -> usize {
+        self.inner
+            .sticky
+            .lock()
+            .map(|guard| guard.len())
+            .unwrap_or(0)
+    }
+
+    #[cfg(test)]
+    pub(super) fn sticky_keys(&self) -> Vec<String> {
+        self.inner
+            .sticky
+            .lock()
+            .map(|guard| guard.keys())
+            .unwrap_or_default()
     }
 
     pub fn soonest_retry_after(&self, model: &str) -> Option<HeaderValue> {

@@ -8,7 +8,7 @@ use crate::models::{
     LiveAccount, RunOptions, RunSpec,
 };
 use crate::runtime;
-use crate::utils::atomic::atomic_write;
+use crate::utils::atomic::{atomic_write, with_restored_files};
 use crate::utils::paths::{agent_home, home_dir};
 
 use super::{
@@ -83,23 +83,25 @@ impl AgentAdapter for CodexAdapter {
     fn write_config(&self, config: &AgentConfig) -> Result<()> {
         let home = agent_home(AgentId::Codex)?;
         let path = home.join("config.toml");
-        write_toml_config(AgentId::Codex, &path, config)?;
         let auth_path = home.join("auth.json");
-        // API providers may also write live auth with OPENAI_API_KEY.
-        if let Some(api_key) = extract_settings_openai_api_key(&config.raw) {
-            write_codex_api_key_auth(&auth_path, &api_key)?;
-        } else if let Some(auth_text) = extract_live_auth_file(&config.raw) {
-            // Restore the pre-switch auth.json (OAuth blob or prior API key file).
-            let mut bytes = auth_text.into_bytes();
-            if !bytes.ends_with(b"\n") {
-                bytes.push(b'\n');
+        with_restored_files(&[&path, &auth_path], || {
+            write_toml_config(AgentId::Codex, &path, config)?;
+            // API providers may also write live auth with OPENAI_API_KEY.
+            if let Some(api_key) = extract_settings_openai_api_key(&config.raw) {
+                write_codex_api_key_auth(&auth_path, &api_key)?;
+            } else if let Some(auth_text) = extract_live_auth_file(&config.raw) {
+                // Restore the pre-switch auth.json (OAuth blob or prior API key file).
+                let mut bytes = auth_text.into_bytes();
+                if !bytes.ends_with(b"\n") {
+                    bytes.push(b'\n');
+                }
+                if let Some(parent) = auth_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                atomic_write(&auth_path, &bytes)?;
             }
-            if let Some(parent) = auth_path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            atomic_write(&auth_path, &bytes)?;
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
     fn read_auth(&self) -> Result<AuthState> {

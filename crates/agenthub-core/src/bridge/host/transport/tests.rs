@@ -814,5 +814,30 @@ fn grok_prepare_rejects_responses_without_conversation_seed() {
     assert_eq!(err.status(), axum::http::StatusCode::BAD_REQUEST);
 }
 
+#[test]
+fn join_candidate_endpoint_rejects_non_loopback_http() {
+    let state = listener_state(
+        BridgeUpstreamProtocol::OpenAiChatCompletions,
+        BridgeLocalSurface::ChatCompletions,
+    );
+    assert!(super::failover::join_candidate_endpoint(
+        &state,
+        "http://169.254.169.254",
+        "chat/completions"
+    )
+    .is_err());
+    assert!(super::failover::join_candidate_endpoint(
+        &state,
+        "http://example.com",
+        "chat/completions"
+    )
+    .is_err());
+    let joined =
+        super::failover::join_candidate_endpoint(&state, "http://127.0.0.1/v1", "chat/completions")
+            .expect("loopback candidate");
+    assert!(joined.as_str().contains("127.0.0.1"));
+    assert!(joined.path().ends_with("/chat/completions"));
+}
+
 #[path = "conversion_matrix.rs"]
 mod conversion_matrix;

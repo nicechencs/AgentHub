@@ -537,13 +537,69 @@ fn prune_dead_sockets(registry: &mut GatewayRegistry) {
 }
 
 fn bind_loopback(port: u16) -> Result<TcpListener, BridgeHostError> {
-    // SO_REUSEADDR shortens the TIME_WAIT gap after tauri/dev hot-reload or
-    // graceful stop so the same loopback port can rebind without connection refused.
     let requested = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
-    let socket = tokio::net::TcpSocket::new_v4()?;
-    socket.set_reuseaddr(true)?;
-    socket.bind(requested)?;
-    Ok(socket.listen(1024)?)
+    #[cfg(windows)]
+    {
+        // SO_EXCLUSIVEADDRUSE: another process cannot steal this port via SO_REUSEADDR.
+        let socket = socket2::Socket::new(
+            socket2::Domain::IPV4,
+            socket2::Type::STREAM,
+            Some(socket2::Protocol::TCP),
+        )?;
+        socket.set_reuse_address(false)?;
+        set_exclusiveaddruse(&socket)?;
+        socket.bind(&requested.into())?;
+        socket.listen(1024)?;
+        socket.set_nonblocking(true)?;
+        let std_listener: std::net::TcpListener = socket.into();
+        Ok(TcpListener::from_std(std_listener)?)
+    }
+    #[cfg(not(windows))]
+    {
+        // SO_REUSEADDR shortens the TIME_WAIT gap after tauri/dev hot-reload or
+        // graceful stop so the same loopback port can rebind without connection refused.
+        let socket = tokio::net::TcpSocket::new_v4()?;
+        socket.set_reuseaddr(true)?;
+        socket.bind(requested)?;
+        Ok(socket.listen(1024)?)
+    }
+}
+
+/// socket2 0.5 has no `set_exclusiveaddruse`; set SO_EXCLUSIVEADDRUSE via Winsock.
+#[cfg(windows)]
+fn set_exclusiveaddruse(socket: &socket2::Socket) -> std::io::Result<()> {
+    use std::os::windows::io::AsRawSocket;
+
+    const SOL_SOCKET: i32 = 0xffff;
+    const SO_EXCLUSIVEADDRUSE: i32 = !0x0004;
+    let enable: i32 = 1;
+    let ret = unsafe {
+        winsock_setsockopt(
+            socket.as_raw_socket() as usize,
+            SOL_SOCKET,
+            SO_EXCLUSIVEADDRUSE,
+            (&enable as *const i32).cast(),
+            std::mem::size_of::<i32>() as i32,
+        )
+    };
+    if ret == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(windows)]
+#[link(name = "ws2_32")]
+extern "system" {
+    #[link_name = "setsockopt"]
+    fn winsock_setsockopt(
+        s: usize,
+        level: i32,
+        optname: i32,
+        optval: *const core::ffi::c_char,
+        optlen: i32,
+    ) -> i32;
 }
 
 fn take_unbind_tasks(
@@ -705,8 +761,6 @@ fn validate_start_spec(spec: &BridgeStartSpec) -> Result<Url, BridgeHostError> {
     if spec.upstream.auth.token().trim().is_empty() {
         return Err(BridgeHostError::EmptyUpstreamToken);
     }
-    let mut upstream =
-        Url::parse(&spec.upstream.base_url).map_err(|_| BridgeHostError::InvalidUpstreamUrl)?;
     // Empty gateways use this loopback value only as a dormant placeholder. A spec that already
     // identifies a real source must never start with it, otherwise requests are forwarded to port
     // 80 on this machine and surface later as a misleading upstream 404/502.
@@ -716,25 +770,8 @@ fn validate_start_spec(spec: &BridgeStartSpec) -> Result<Url, BridgeHostError> {
     {
         return Err(BridgeHostError::InvalidUpstreamUrl);
     }
-    if upstream.host_str().is_none()
-        || !upstream.username().is_empty()
-        || upstream.password().is_some()
-        || upstream.fragment().is_some()
-    {
-        return Err(BridgeHostError::InvalidUpstreamUrl);
-    }
-    match upstream.scheme() {
-        "https" => {}
-        "http" if crate::utils::loopback::is_loopback_host(upstream.host_str()) => {}
-        _ => return Err(BridgeHostError::InvalidUpstreamUrl),
-    }
-    // `Url::join` treats a path without a trailing slash as a file. Normalize it so a configured
-    // provider base path such as `/coding/v1` is retained when appending `chat/completions`.
-    if !upstream.path().ends_with('/') {
-        let path = format!("{}/", upstream.path());
-        upstream.set_path(&path);
-    }
-    Ok(upstream)
+    crate::utils::loopback::validate_upstream_base_url(&spec.upstream.base_url)
+        .map_err(|()| BridgeHostError::InvalidUpstreamUrl)
 }
 
 fn same_spec(left: &BridgeStartSpec, right: &BridgeStartSpec) -> bool {

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { resolveActivityPageSnapshot } from './activity-view-model';
+import {
+  isTraceQueryErrorEmpty,
+  pageAfterTraceQueryFailure,
+  resolveActivityPageSnapshot,
+} from './activity-view-model';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 
 const profile: AdapterProfile = {
@@ -17,6 +21,23 @@ const profile: AdapterProfile = {
   createdAt: '',
   updatedAt: '',
 };
+
+describe('pageAfterTraceQueryFailure', () => {
+  const empty = { rows: [] as { id: string }[], total: 0, offset: 0, limit: 50 };
+
+  it('keeps the last good page when rows already exist', () => {
+    const prev = { rows: [{ id: 'req-1' }], total: 1, offset: 0, limit: 50 };
+    expect(pageAfterTraceQueryFailure(prev, empty)).toBe(prev);
+    expect(isTraceQueryErrorEmpty(new Error('down'), prev.rows.length)).toBe(false);
+  });
+
+  it('does not treat a failed empty fetch as a successful empty list', () => {
+    const nextEmpty = { ...empty, offset: 50 };
+    expect(pageAfterTraceQueryFailure(empty, nextEmpty)).toBe(nextEmpty);
+    expect(isTraceQueryErrorEmpty(new Error('down'), 0)).toBe(true);
+    expect(isTraceQueryErrorEmpty(null, 0)).toBe(false);
+  });
+});
 
 describe('resolveActivityPageSnapshot', () => {
   it('uses activity-specific noLogins state instead of board empty copy', () => {

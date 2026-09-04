@@ -205,10 +205,10 @@ export function AgentCard({
     linuxUnsupported,
   });
   const launch = agentLaunchTargets(agent);
-  const startProgram = async (kind: 'cli' | 'app', path: string) => {
+  const startProgram = async (kind: 'cli' | 'app') => {
     setLaunching(kind);
     try {
-      await launchAgentProgram(kind, path);
+      await launchAgentProgram(agent.agentId, kind);
     } catch (error) {
       toast({
         title: kind === 'cli' ? t('agents.card.startCliFailed') : t('agents.card.startAppFailed'),
@@ -408,7 +408,7 @@ export function AgentCard({
                 size="sm"
                 variant="outline"
                 disabled={actionsBusy || launching != null}
-                onClick={() => void startProgram('cli', launch.cliPath!)}
+                onClick={() => void startProgram('cli')}
               >
                 <Terminal className="h-3.5 w-3.5" />
                 {t('agents.card.startCli')}
@@ -419,7 +419,7 @@ export function AgentCard({
                 size="sm"
                 variant="outline"
                 disabled={actionsBusy || launching != null}
-                onClick={() => void startProgram('app', launch.appPath!)}
+                onClick={() => void startProgram('app')}
               >
                 <AppWindow className="h-3.5 w-3.5" />
                 {t('agents.card.startApp')}
