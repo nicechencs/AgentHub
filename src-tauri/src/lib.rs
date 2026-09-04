@@ -273,6 +273,8 @@ pub fn run() {
             commands::sub2api::sub2api_open_login,
             commands::sub2api::sub2api_close_login,
             commands::sub2api::sub2api_http_request,
+            commands::sub2api_remembered_vault::sub2api_remembered_vault_get,
+            commands::sub2api_remembered_vault::sub2api_remembered_vault_set,
             commands::settings::pick_directory::pick_directory,
             commands::shell_icon::set_shell_icon,
         ])

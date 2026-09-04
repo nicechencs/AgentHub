@@ -131,4 +131,16 @@ describe('sub2api page model', () => {
       }),
     ).toBe('a, b');
   });
+
+  it('skips nested models when models_list_config.enabled is false', () => {
+    expect(
+      formatKeyModelsFromKey({
+        id: 1,
+        key: 'k',
+        name: 'n',
+        status: 'active',
+        group: { models_list_config: { enabled: false, models: ['a', 'b'] } },
+      }),
+    ).toBeNull();
+  });
 });
