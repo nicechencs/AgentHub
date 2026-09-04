@@ -6,6 +6,7 @@ import type { RouteTraceFlowRow } from './RouteTraceFlowDiagram';
 import { RouteTracePipelineLegend } from './RouteTracePipelineLegend';
 
 const okRow: RouteTraceFlowRow = {
+  traceVersion: 2,
   requestId: 'req-1',
   at: '2026-01-01T00:00:00.000Z',
   method: 'POST',
@@ -85,7 +86,7 @@ describe('RouteTracePipelineLegend', () => {
             httpStatus: 401,
             upstreamAuth: { status: 'failed', httpStatus: 401 },
             upstream: { status: 'skipped' },
-            failureStage: 'upstream_auth',
+            failureStage: 'upstream_response',
           },
           upstreamUrls: ['https://api.anthropic.com/v1/messages'],
         }),

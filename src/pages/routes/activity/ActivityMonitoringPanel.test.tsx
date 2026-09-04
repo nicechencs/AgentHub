@@ -34,6 +34,7 @@ function snapshot(partial: Partial<ActivityPageSnapshot> = {}): ActivityPageSnap
 
 function row(partial: Partial<MergedRouteTraceRow> = {}): MergedRouteTraceRow {
   return {
+    traceVersion: 2,
     requestId: 'req-1',
     at: '2026-01-01T00:00:00.000Z',
     method: 'POST',
@@ -81,7 +82,7 @@ describe('ActivityMonitoringPanel', () => {
       httpStatus: 401,
       upstreamAuth: { status: 'failed', httpStatus: 401 },
       upstream: { status: 'pending' },
-      failureStage: 'upstream_auth',
+      failureStage: 'upstream_response',
     });
     const ready = snapshot({
       kind: 'ready',

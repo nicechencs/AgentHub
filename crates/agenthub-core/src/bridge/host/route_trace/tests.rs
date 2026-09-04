@@ -25,11 +25,170 @@ fn conversion_path_id_maps_surfaces() {
 }
 
 #[test]
-fn sanitize_upstream_url_strips_query_and_fragment() {
+fn sanitize_upstream_url_strips_userinfo_query_and_fragment() {
     assert_eq!(
-        sanitize_upstream_url("https://api.example.com/v1/chat/completions?foo=1#bar"),
+        sanitize_upstream_url("https://user:secret@api.example.com/v1/chat/completions?foo=1#bar"),
         "https://api.example.com/v1/chat/completions"
     );
+    assert_eq!(sanitize_upstream_url("not a url with secret"), "");
+}
+
+#[test]
+fn stage_ids_accept_legacy_aliases_and_unknown_values() {
+    assert_eq!(
+        serde_json::from_str::<RouteTraceStageId>("\"conversion\"").unwrap(),
+        RouteTraceStageId::RequestConversion
+    );
+    assert_eq!(
+        serde_json::from_str::<RouteTraceStageId>("\"upstream_auth\"").unwrap(),
+        RouteTraceStageId::UpstreamResponse
+    );
+    assert_eq!(
+        serde_json::from_str::<RouteTraceStageId>("\"future_stage\"").unwrap(),
+        RouteTraceStageId::Unknown
+    );
+}
+
+#[test]
+fn real_attempt_records_sanitized_url_status_auth_and_duration() {
+    let member = PickedMember::new(
+        "",
+        "account",
+        "acct-1",
+        "acct-1",
+        ResolvedAuth::bearer("sk-super-secret"),
+        None,
+        MemberHealth::Renewable,
+    );
+    let mut builder = RouteTraceBuilder::begin("req-attempt", "POST", "/v1/messages");
+    builder.pool_selected(&member, None);
+    builder.conversion_prepared(
+        DownstreamSurface::Messages,
+        UpstreamChannel::Anthropic,
+        false,
+    );
+    let attempt_id = builder.upstream_attempt_started(
+        "https://api.example.com/v1/messages?token=secret#fragment",
+        &member,
+        Some("claude-sonnet"),
+    );
+    builder.upstream_attempt_response(attempt_id, 401, 27, Some("unauthorized"));
+
+    let attempt = &builder.trace.pool.attempts[0];
+    assert_eq!(attempt.attempt_id, 1);
+    assert_eq!(
+        attempt.url.as_deref(),
+        Some("https://api.example.com/v1/messages")
+    );
+    assert_eq!(attempt.request_status, TraceStageStatus::Ok);
+    assert_eq!(attempt.response_status, TraceStageStatus::Failed);
+    assert_eq!(attempt.auth_result.as_deref(), Some("rejected"));
+    assert_eq!(attempt.http_status, Some(401));
+    assert_eq!(attempt.duration_ms, Some(27));
+    let json = serde_json::to_string(&builder.trace).unwrap();
+    assert!(!json.contains("sk-super-secret"));
+    assert!(!json.contains("token=secret"));
+}
+
+#[test]
+fn redirect_attempt_is_recorded_as_http_failure() {
+    let member = PickedMember::new(
+        "",
+        "account",
+        "acct-1",
+        "acct-1",
+        ResolvedAuth::bearer("sk-test"),
+        None,
+        MemberHealth::Renewable,
+    );
+    let mut builder = RouteTraceBuilder::begin("req-redirect", "POST", "/v1/messages");
+    let attempt =
+        builder.upstream_attempt_started("https://api.example.com/v1/messages", &member, None);
+    builder.upstream_attempt_response(attempt, 302, 4, Some("upstream_error"));
+
+    let attempt = &builder.trace.pool.attempts[0];
+    assert_eq!(attempt.status, TraceStageStatus::Failed);
+    assert_eq!(attempt.request_status, TraceStageStatus::Ok);
+    assert_eq!(attempt.response_status, TraceStageStatus::Failed);
+    assert_eq!(attempt.result.as_deref(), Some("http_error"));
+}
+
+#[test]
+fn upstream_request_failure_closes_all_later_nodes() {
+    let log = RouteTraceLog::new();
+    let member = PickedMember::new(
+        "",
+        "account",
+        "acct-1",
+        "acct-1",
+        ResolvedAuth::bearer("sk-test"),
+        None,
+        MemberHealth::Renewable,
+    );
+    let mut builder = RouteTraceBuilder::begin("req-url", "POST", "/v1/messages");
+    builder.local_auth_ok("profile-a", None);
+    builder.local_endpoint_ok();
+    builder.admission_ok();
+    builder.route_resolution_ok();
+    builder.pool_selected(&member, None);
+    builder.conversion_prepared(
+        DownstreamSurface::Messages,
+        UpstreamChannel::Anthropic,
+        false,
+    );
+    builder.upstream_request_failed(None, &member, None, "invalid_upstream_url");
+    builder.finalize(502, &log);
+
+    let trace = log.get("req-url").unwrap();
+    assert_eq!(
+        trace.failure_stage,
+        Some(RouteTraceStageId::UpstreamRequest)
+    );
+    assert_eq!(trace.upstream_request.status, TraceStageStatus::Failed);
+    assert!(pending_stage_ids(&trace).is_empty());
+}
+
+#[test]
+fn response_read_stopping_closes_all_later_nodes() {
+    let log = RouteTraceLog::new();
+    let member = PickedMember::new(
+        "",
+        "account",
+        "acct-1",
+        "acct-1",
+        ResolvedAuth::bearer("sk-test"),
+        None,
+        MemberHealth::Renewable,
+    );
+    let mut builder = RouteTraceBuilder::begin("req-stopping", "POST", "/v1/messages");
+    builder.local_auth_ok("profile-a", None);
+    builder.local_endpoint_ok();
+    builder.admission_ok();
+    builder.route_resolution_ok();
+    builder.pool_selected(&member, None);
+    builder.conversion_prepared(
+        DownstreamSurface::Messages,
+        UpstreamChannel::Anthropic,
+        false,
+    );
+    let attempt =
+        builder.upstream_attempt_started("https://api.example.com/v1/messages", &member, None);
+    builder.upstream_attempt_response(attempt, 500, 4, Some("upstream_error"));
+    builder.upstream_failed(
+        "https://api.example.com/v1/messages",
+        &member,
+        Some(500),
+        "stopping",
+        "stopped",
+    );
+    builder.finalize(503, &log);
+
+    let trace = log.get("req-stopping").unwrap();
+    assert_eq!(
+        trace.failure_stage,
+        Some(RouteTraceStageId::UpstreamResponse)
+    );
+    assert!(pending_stage_ids(&trace).is_empty());
 }
 
 #[test]
@@ -85,7 +244,7 @@ fn failure_stage_records_first_failed_node() {
     builder.pool_failed("pool_exhausted", "No eligible member");
     builder.finalize(503, &log);
     let trace = log.get("req-fail").expect("trace stored");
-    assert_eq!(trace.failure_stage.as_deref(), Some("pool"));
+    assert_eq!(trace.failure_stage, Some(RouteTraceStageId::Pool));
     assert_eq!(trace.pool.status, TraceStageStatus::Failed);
     assert_eq!(trace.conversion.status, TraceStageStatus::Skipped);
 }
@@ -101,7 +260,10 @@ fn conversion_failed_skips_upstream_stages() {
     );
     builder.finalize(400, &log);
     let trace = log.get("req-conv").expect("trace stored");
-    assert_eq!(trace.failure_stage.as_deref(), Some("conversion"));
+    assert_eq!(
+        trace.failure_stage,
+        Some(RouteTraceStageId::RequestConversion)
+    );
     assert_eq!(trace.conversion.status, TraceStageStatus::Failed);
     assert_eq!(trace.conversion.code.as_deref(), Some("conversion_failed"));
     assert_eq!(trace.upstream_auth.status, TraceStageStatus::Skipped);
@@ -124,7 +286,7 @@ fn surface_mismatch_keeps_local_auth_ok() {
     let trace = log.get("req-surface").expect("trace stored");
     assert_eq!(trace.local_auth.status, TraceStageStatus::Ok);
     assert_eq!(trace.local_auth.port, Some(8787));
-    assert_eq!(trace.failure_stage.as_deref(), Some("local_endpoint"));
+    assert_eq!(trace.failure_stage, Some(RouteTraceStageId::LocalEndpoint));
     assert_eq!(trace.pool.status, TraceStageStatus::Skipped);
     assert_eq!(trace.conversion.status, TraceStageStatus::Skipped);
     assert_eq!(trace.conversion.code.as_deref(), Some("surface_mismatch"));
@@ -161,7 +323,13 @@ fn pool_attempts_record_failover() {
     let mut builder = RouteTraceBuilder::begin("req-pool", "POST", "/v1/messages");
     builder.local_auth_ok("profile-a", None);
     builder.pool_selected(&member, None);
-    builder.pool_attempt_failed(&member, "upstream_error", "401 from upstream");
+    let first_attempt =
+        builder.upstream_attempt_started("https://api.example.com/v1/messages", &member, None);
+    builder.upstream_attempt_response(first_attempt, 500, 10, Some("upstream_error"));
+    builder.pool_attempt_failed(&member, "upstream_error", "Upstream attempt failed");
+    let second_attempt =
+        builder.upstream_attempt_started("https://api.example.com/v1/messages", &fallback, None);
+    builder.upstream_attempt_response(second_attempt, 200, 8, None);
     builder.upstream_success("https://api.example.com/v1/messages", &fallback, 200, None);
     builder.finalize(200, &log);
     let trace = log.get("req-pool").expect("trace stored");
@@ -206,8 +374,14 @@ fn recovered_auth_attempt_does_not_leave_request_failure() {
     let mut builder = RouteTraceBuilder::begin("req-auth-recovered", "POST", "/v1/messages");
     builder.local_auth_ok("profile-a", None);
     builder.pool_selected(&first, None);
+    let first_attempt =
+        builder.upstream_attempt_started("https://api.example.com/v1/messages", &first, None);
+    builder.upstream_attempt_response(first_attempt, 401, 10, Some("unauthorized"));
     builder.upstream_auth_result(false, Some(401), Some("unauthorized"), None);
     builder.pool_attempt_failed(&first, "unauthorized", "Unauthorized");
+    let second_attempt =
+        builder.upstream_attempt_started("https://api.example.com/v1/messages", &second, None);
+    builder.upstream_attempt_response(second_attempt, 200, 8, None);
     builder.upstream_auth_result(true, Some(200), None, None);
     builder.upstream_success("https://api.example.com/v1/messages", &second, 200, None);
     builder.finalize(200, &log);
@@ -240,6 +414,9 @@ fn exhausted_attempts_preserve_executed_conversion_and_upstream_failure() {
         UpstreamChannel::Anthropic,
         false,
     );
+    let attempt =
+        builder.upstream_attempt_started("https://api.example.com/v1/messages", &member, None);
+    builder.upstream_attempt_response(attempt, 429, 12, Some("quota_account"));
     builder.pool_attempt_failed(&member, "quota_account", "Rate limited");
     builder.attempts_exhausted(
         Some("https://api.example.com/v1/messages"),
@@ -251,12 +428,93 @@ fn exhausted_attempts_preserve_executed_conversion_and_upstream_failure() {
     builder.finalize(503, &log);
 
     let trace = log.get("req-exhausted").expect("trace stored");
-    assert_eq!(trace.pool.status, TraceStageStatus::Failed);
+    assert_eq!(trace.pool.status, TraceStageStatus::Ok);
     assert_eq!(trace.conversion.status, TraceStageStatus::Ok);
     assert_eq!(trace.upstream.status, TraceStageStatus::Failed);
     assert_eq!(trace.upstream.http_status, Some(429));
     assert_eq!(trace.response_conversion.status, TraceStageStatus::Skipped);
-    assert_eq!(trace.failure_stage.as_deref(), Some("upstream"));
+    assert_eq!(
+        trace.failure_stage,
+        Some(RouteTraceStageId::UpstreamResponse)
+    );
+}
+
+fn pending_stage_ids(trace: &RouteRequestTrace) -> Vec<RouteTraceStageId> {
+    [
+        (RouteTraceStageId::LocalAuth, trace.local_auth.status),
+        (
+            RouteTraceStageId::LocalEndpoint,
+            trace.local_endpoint.status,
+        ),
+        (RouteTraceStageId::Admission, trace.admission.status),
+        (
+            RouteTraceStageId::RouteResolution,
+            trace.route_resolution.status,
+        ),
+        (RouteTraceStageId::Pool, trace.pool.status),
+        (
+            RouteTraceStageId::RequestConversion,
+            trace.conversion.status,
+        ),
+        (
+            RouteTraceStageId::UpstreamRequest,
+            trace.upstream_request.status,
+        ),
+        (RouteTraceStageId::UpstreamResponse, trace.upstream.status),
+        (
+            RouteTraceStageId::ResponseConversion,
+            trace.response_conversion.status,
+        ),
+        (RouteTraceStageId::Delivery, trace.delivery.status),
+    ]
+    .into_iter()
+    .filter_map(|(id, status)| (status == TraceStageStatus::Pending).then_some(id))
+    .collect()
+}
+
+#[test]
+fn new_non_stream_terminal_trace_has_no_pending_nodes() {
+    let log = RouteTraceLog::new();
+    let member = PickedMember::new(
+        "",
+        "account",
+        "acct-1",
+        "acct-1",
+        ResolvedAuth::bearer("sk-first"),
+        None,
+        MemberHealth::Renewable,
+    );
+    let mut builder = RouteTraceBuilder::begin("req-terminal", "POST", "/v1/messages");
+    builder.local_auth_ok("profile-a", None);
+    builder.local_endpoint_ok();
+    builder.admission_ok();
+    builder.route_resolution_ok();
+    builder.pool_selected(&member, None);
+    builder.conversion_prepared(
+        DownstreamSurface::Messages,
+        UpstreamChannel::Anthropic,
+        false,
+    );
+    let attempt = builder.upstream_attempt_started(
+        "https://api.example.com/v1/messages",
+        &member,
+        Some("claude-sonnet"),
+    );
+    builder.upstream_attempt_response(attempt, 200, 5, None);
+    builder.upstream_auth_result(true, Some(200), None, None);
+    builder.upstream_success("https://api.example.com/v1/messages", &member, 200, None);
+    builder.response_conversion_result(
+        false,
+        200,
+        DownstreamSurface::Messages,
+        UpstreamChannel::Anthropic,
+    );
+    builder.finalize(200, &log);
+
+    let trace = log.get("req-terminal").unwrap();
+    assert_eq!(trace.trace_version, 2);
+    assert!(pending_stage_ids(&trace).is_empty());
+    assert!(trace.failure_stage.is_none());
 }
 
 #[test]
@@ -314,6 +572,8 @@ fn trace_serializes_camel_case_for_frontend() {
     assert!(json.contains("\"admission\""));
     assert!(json.contains("\"routeResolution\""));
     assert!(json.contains("\"upstreamAuth\""));
+    assert!(json.contains("\"upstreamRequest\""));
+    assert!(json.contains("\"traceVersion\":2"));
     assert!(json.contains("\"responseConversion\""));
     assert!(json.contains("anthropic_to_messages"));
     assert!(json.contains("\"delivery\""));
@@ -330,9 +590,11 @@ fn old_persisted_trace_without_lifecycle_fields_still_loads() {
     let mut value = serde_json::to_value(trace).expect("serialize trace");
     let object = value.as_object_mut().expect("trace object");
     for key in [
+        "traceVersion",
         "localEndpoint",
         "admission",
         "routeResolution",
+        "upstreamRequest",
         "responseConversion",
         "delivery",
     ] {
@@ -340,9 +602,11 @@ fn old_persisted_trace_without_lifecycle_fields_still_loads() {
     }
 
     let restored: RouteRequestTrace = serde_json::from_value(value).expect("old trace loads");
+    assert_eq!(restored.trace_version, 1);
     assert_eq!(restored.local_endpoint.status, TraceStageStatus::Pending);
     assert_eq!(restored.admission.status, TraceStageStatus::Pending);
     assert_eq!(restored.route_resolution.status, TraceStageStatus::Pending);
+    assert_eq!(restored.upstream_request.status, TraceStageStatus::Pending);
     assert_eq!(
         restored.response_conversion.status,
         TraceStageStatus::Pending
@@ -412,7 +676,10 @@ fn stream_failure_patches_response_and_delivery() {
     let failed = log.get("req-stream-fail").expect("failed stream");
     assert_eq!(failed.response_conversion.status, TraceStageStatus::Failed);
     assert_eq!(failed.delivery.status, TraceStageStatus::Failed);
-    assert_eq!(failed.failure_stage.as_deref(), Some("response_conversion"));
+    assert_eq!(
+        failed.failure_stage,
+        Some(RouteTraceStageId::ResponseConversion)
+    );
     assert_eq!(failed.latency_ms, Some(510));
 }
 
@@ -431,7 +698,10 @@ fn stream_disconnect_only_fails_delivery() {
 
     log.patch_stream_disconnected("req-disconnect", 300);
     let failed = log.get("req-disconnect").expect("disconnected stream");
-    assert_eq!(failed.response_conversion.status, TraceStageStatus::Failed);
+    assert_eq!(
+        failed.response_conversion.status,
+        TraceStageStatus::Interrupted
+    );
     assert_eq!(
         failed.response_conversion.result.as_deref(),
         Some("interrupted")
@@ -441,7 +711,7 @@ fn stream_disconnect_only_fails_delivery() {
         failed.delivery.completion.as_deref(),
         Some("client_disconnected")
     );
-    assert_eq!(failed.failure_stage.as_deref(), Some("delivery"));
+    assert_eq!(failed.failure_stage, Some(RouteTraceStageId::Delivery));
 }
 
 #[test]
@@ -530,6 +800,7 @@ fn trace_stage_status_as_str_matches_serde() {
     assert_eq!(TraceStageStatus::Ok.as_str(), "ok");
     assert_eq!(TraceStageStatus::Failed.as_str(), "failed");
     assert_eq!(TraceStageStatus::Skipped.as_str(), "skipped");
+    assert_eq!(TraceStageStatus::Interrupted.as_str(), "interrupted");
 }
 
 #[test]

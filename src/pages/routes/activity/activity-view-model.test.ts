@@ -70,6 +70,7 @@ describe('resolveActivityPageSnapshot', () => {
 
   it('merges traces from local gateway status payload', () => {
     const trace = {
+      traceVersion: 2,
       requestId: 'req-1',
       at: '2026-01-01T00:00:00.000Z',
       method: 'POST',
@@ -100,6 +101,7 @@ describe('resolveActivityPageSnapshot', () => {
 
   it('merges unauthenticated traces from local gateway status', () => {
     const trace = {
+      traceVersion: 2,
       requestId: 'req-unauth',
       at: '2026-01-01T00:00:00.000Z',
       method: 'POST',
@@ -111,7 +113,7 @@ describe('resolveActivityPageSnapshot', () => {
       conversion: { status: 'skipped' as const, path: '' },
       upstreamAuth: { status: 'skipped' as const },
       upstream: { status: 'skipped' as const },
-      failureStage: 'local_auth',
+      failureStage: 'local_auth' as const,
     };
     const snapshot = resolveActivityPageSnapshot({
       profiles: [profile],

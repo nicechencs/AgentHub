@@ -172,6 +172,8 @@ function mapStageStatus(status: RouteTraceStageStatus): TraceFlowStageState {
       return 'failed';
     case 'skipped':
       return 'skipped';
+    case 'interrupted':
+      return 'failed';
     case 'pending':
       return 'active';
     default:
@@ -187,11 +189,10 @@ function failureStageId(stage: string | null | undefined): TraceFlowStageId | nu
       return 'local_auth';
     case 'pool':
       return 'pool';
-    case 'conversion':
+    case 'request_conversion':
       return 'conversion';
-    case 'upstream_auth':
-      return 'upstream_auth';
-    case 'upstream':
+    case 'upstream_request':
+    case 'upstream_response':
       return 'upstream';
     default:
       return null;

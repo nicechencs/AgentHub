@@ -611,7 +611,15 @@ async fn forward_upstream(
     } = prepared;
     let url = match join_upstream(&state, path) {
         Ok(url) => url,
-        Err(response) => return trace_response(trace, trace_log, response),
+        Err(response) => {
+            trace.upstream_request_failed(
+                None,
+                &member,
+                state.upstream.model.as_deref(),
+                "invalid_upstream_url",
+            );
+            return trace_response(trace, trace_log, response);
+        }
     };
     let url_for_trace = url.to_string();
     let UpstreamSendOutcome {

@@ -3,7 +3,7 @@ import {
   mapCoreProvider,
   type CoreProvider,
 } from './provider-map';
-import type { AdapterAction, AdapterApplyPlan, AdapterApplyResult, AdapterBridgeInboundRequest, AdapterBridgeRouteTrace, AdapterBridgeRuntimeState, AdapterBridgeRuntimeStatus, AdapterEvidence, AdapterGateKind, AdapterMaturity, AdapterPlanChange, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis, AdapterServiceImpact, AdapterSourceKind, AdapterSupport, DefaultRoutePoolList, DefaultRoutePoolOverview, LocalTokenProbeOutcome, LocalTokenProbeResult, LocalTokenRecord, RouteMemberOverview, RouteTraceConversion, RouteTraceLocalAuth, RouteTraceMember, RouteTracePool, RouteTracePoolAttempt, RouteTraceStageStatus, RouteTraceStep, RouteTraceDelivery, RouteTraceUpstream, RouteTraceUpstreamAuth, RoutePoolDialect, RoutePoolSurface } from './adapter';
+import type { AdapterAction, AdapterApplyPlan, AdapterApplyResult, AdapterBridgeInboundRequest, AdapterBridgeRouteTrace, AdapterBridgeRuntimeState, AdapterBridgeRuntimeStatus, AdapterEvidence, AdapterGateKind, AdapterMaturity, AdapterPlanChange, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis, AdapterServiceImpact, AdapterSourceKind, AdapterSupport, DefaultRoutePoolList, DefaultRoutePoolOverview, LocalTokenProbeOutcome, LocalTokenProbeResult, LocalTokenRecord, RouteMemberOverview, RouteTraceConversion, RouteTraceLocalAuth, RouteTraceMember, RouteTracePool, RouteTracePoolAttempt, RouteTraceStageStatus, RouteTraceStep, RouteTraceDelivery, RouteTraceUpstream, RouteTraceUpstreamAuth, RouteTraceUpstreamRequest, RouteTraceStageId, RoutePoolDialect, RoutePoolSurface } from './adapter';
 
 /** Exact camelCase shape serialized by Rust's `AdapterProfile`. */
 export interface AdapterProfileWire {
@@ -75,6 +75,15 @@ export interface RouteTraceMemberWire {
 export interface RouteTracePoolAttemptWire {
   member?: RouteTraceMemberWire;
   status?: unknown;
+  attemptId?: unknown;
+  url?: unknown;
+  requestStatus?: unknown;
+  responseStatus?: unknown;
+  authResult?: unknown;
+  httpStatus?: unknown;
+  result?: unknown;
+  durationMs?: unknown;
+  conversionPath?: unknown;
   code?: unknown;
   message?: unknown;
 }
@@ -104,6 +113,12 @@ export interface RouteTraceConversionWire {
   message?: unknown;
 }
 
+export interface RouteTraceUpstreamRequestWire extends RouteTraceStepWire {
+  url?: unknown;
+  member?: RouteTraceMemberWire;
+  model?: unknown;
+}
+
 export interface RouteTraceUpstreamAuthWire {
   status?: unknown;
   httpStatus?: unknown;
@@ -123,6 +138,7 @@ export interface RouteTraceUpstreamWire {
 }
 
 export interface AdapterBridgeRouteTraceWire {
+  traceVersion?: unknown;
   requestId?: unknown;
   atUnixMs?: unknown;
   profileId?: unknown;
@@ -142,6 +158,7 @@ export interface AdapterBridgeRouteTraceWire {
   pool?: RouteTracePoolWire;
   conversion?: RouteTraceConversionWire;
   upstreamAuth?: RouteTraceUpstreamAuthWire;
+  upstreamRequest?: RouteTraceUpstreamRequestWire;
   upstream?: RouteTraceUpstreamWire;
   responseConversion?: RouteTraceConversionWire;
   delivery?: RouteTraceDeliveryWire;
@@ -525,7 +542,39 @@ function mapInboundRequests(wire: AdapterBridgeInboundRequestWire[] | undefined)
   return rows;
 }
 
-const TRACE_STAGE_STATUSES = new Set<RouteTraceStageStatus>(['pending', 'ok', 'failed', 'skipped']);
+const TRACE_STAGE_STATUSES = new Set<RouteTraceStageStatus>([
+  'pending',
+  'ok',
+  'failed',
+  'skipped',
+  'interrupted',
+]);
+
+const TRACE_STAGE_IDS = new Set<RouteTraceStageId>([
+  'received',
+  'local_auth',
+  'local_endpoint',
+  'admission',
+  'route_resolution',
+  'pool',
+  'request_conversion',
+  'upstream_request',
+  'upstream_response',
+  'response_conversion',
+  'delivery',
+]);
+
+function mapTraceStageId(raw: unknown): RouteTraceStageId | null {
+  const value = typeof raw === 'string' ? raw.toLowerCase() : '';
+  const canonical = value === 'conversion'
+    ? 'request_conversion'
+    : value === 'upstream' || value === 'upstream_auth'
+      ? 'upstream_response'
+      : value;
+  return TRACE_STAGE_IDS.has(canonical as RouteTraceStageId)
+    ? canonical as RouteTraceStageId
+    : null;
+}
 
 function mapTraceStageStatus(raw: unknown): RouteTraceStageStatus {
   const value = typeof raw === 'string' ? raw.toLowerCase() : '';
@@ -538,6 +587,22 @@ function mapOptionalString(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   const trimmed = raw.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function mapTraceUrl(raw: unknown): string | null {
+  const value = mapOptionalString(raw);
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    parsed.username = '';
+    parsed.password = '';
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString();
+  } catch {
+    return null;
+  }
 }
 
 function parseAtUnixMs(raw: unknown): number | undefined {
@@ -576,9 +641,23 @@ function mapTraceMember(wire: RouteTraceMemberWire | undefined): RouteTraceMembe
 function mapTracePoolAttempt(wire: RouteTracePoolAttemptWire): RouteTracePoolAttempt | null {
   const member = mapTraceMember(wire.member);
   if (!member) return null;
+  const authResult = wire.authResult === 'accepted'
+    || wire.authResult === 'rejected'
+    || wire.authResult === 'not_recorded'
+    ? wire.authResult
+    : null;
   return {
     member,
     status: mapTraceStageStatus(wire.status),
+    attemptId: mapOptionalCount(wire.attemptId),
+    url: mapTraceUrl(wire.url),
+    requestStatus: wire.requestStatus == null ? null : mapTraceStageStatus(wire.requestStatus),
+    responseStatus: wire.responseStatus == null ? null : mapTraceStageStatus(wire.responseStatus),
+    authResult,
+    httpStatus: mapOptionalCount(wire.httpStatus),
+    result: mapOptionalString(wire.result),
+    durationMs: mapOptionalCount(wire.durationMs),
+    conversionPath: mapOptionalString(wire.conversionPath),
     code: mapOptionalString(wire.code),
     message: mapOptionalString(wire.message),
   };
@@ -639,6 +718,17 @@ function mapTraceConversion(wire: RouteTraceConversionWire | undefined): RouteTr
   };
 }
 
+function mapTraceUpstreamRequest(
+  wire: RouteTraceUpstreamRequestWire | undefined,
+): RouteTraceUpstreamRequest {
+  return {
+    ...mapTraceStep(wire),
+    url: mapTraceUrl(wire?.url),
+    member: mapTraceMember(wire?.member),
+    model: mapOptionalString(wire?.model),
+  };
+}
+
 function mapTraceUpstreamAuth(wire: RouteTraceUpstreamAuthWire | undefined): RouteTraceUpstreamAuth {
   return {
     status: mapTraceStageStatus(wire?.status),
@@ -654,7 +744,7 @@ function mapTraceUpstreamAuth(wire: RouteTraceUpstreamAuthWire | undefined): Rou
 function mapTraceUpstream(wire: RouteTraceUpstreamWire | undefined): RouteTraceUpstream {
   return {
     status: mapTraceStageStatus(wire?.status),
-    url: mapOptionalString(wire?.url),
+    url: mapTraceUrl(wire?.url),
     member: mapTraceMember(wire?.member),
     model: mapOptionalString(wire?.model),
     upstreamModel: mapOptionalString(wire?.upstreamModel),
@@ -687,6 +777,9 @@ export function mapRouteTrace(wire: unknown): AdapterBridgeRouteTrace | null {
   const requestId = mapOptionalString(row.requestId);
   if (!requestId) return null;
   return {
+    traceVersion: typeof row.traceVersion === 'number' && Number.isInteger(row.traceVersion)
+      ? row.traceVersion
+      : 1,
     requestId,
     at: mappedInbound.at,
     profileId: mapOptionalString(row.profileId),
@@ -706,12 +799,15 @@ export function mapRouteTrace(wire: unknown): AdapterBridgeRouteTrace | null {
     pool: mapTracePool(row.pool),
     conversion: mapTraceConversion(row.conversion),
     upstreamAuth: mapTraceUpstreamAuth(row.upstreamAuth),
+    upstreamRequest: row.upstreamRequest
+      ? mapTraceUpstreamRequest(row.upstreamRequest)
+      : undefined,
     upstream: mapTraceUpstream(row.upstream),
     responseConversion: row.responseConversion
       ? mapTraceConversion(row.responseConversion)
       : undefined,
     delivery: row.delivery ? mapTraceDelivery(row.delivery) : undefined,
-    failureStage: mapOptionalString(row.failureStage),
+    failureStage: mapTraceStageId(row.failureStage),
   };
 }
 

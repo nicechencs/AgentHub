@@ -107,6 +107,7 @@ export function activityTraceStageStatusLabel(
   if (status === "ok") return t("routes.inbound.ok");
   if (status === "failed") return t("routes.inbound.fail");
   if (status === "skipped") return t("routes.trace.notReached");
+  if (status === "interrupted") return t("routes.trace.detail.interrupted");
   return t("routes.trace.flow.authPending");
 }
 

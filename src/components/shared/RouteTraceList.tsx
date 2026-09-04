@@ -27,12 +27,20 @@ function failureStageLabel(
       return t('routes.trace.stageId.local_auth');
     case 'pool':
       return t('routes.trace.stageId.pool');
-    case 'conversion':
-      return t('routes.trace.stageId.conversion');
-    case 'upstream_auth':
-      return t('routes.trace.stageId.upstream_auth');
-    case 'upstream':
-      return t('routes.trace.stageId.upstream');
+    case 'request_conversion':
+      return t('routes.trace.detailStage.requestConversion');
+    case 'upstream_request':
+      return t('routes.trace.detailStage.upstreamRequest');
+    case 'upstream_response':
+      return t('routes.trace.detailStage.upstreamResponse');
+    case 'admission':
+      return t('routes.trace.detailStage.admission');
+    case 'route_resolution':
+      return t('routes.trace.detailStage.routeResolution');
+    case 'response_conversion':
+      return t('routes.trace.detailStage.responseConversion');
+    case 'delivery':
+      return t('routes.trace.detailStage.delivery');
     default:
       return stage;
   }

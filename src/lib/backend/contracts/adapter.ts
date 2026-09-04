@@ -167,7 +167,20 @@ export interface AdapterBridgeInboundRequest {
   ok: boolean;
 }
 
-export type RouteTraceStageStatus = 'pending' | 'ok' | 'failed' | 'skipped';
+export type RouteTraceStageStatus = 'pending' | 'ok' | 'failed' | 'skipped' | 'interrupted';
+
+export type RouteTraceStageId =
+  | 'received'
+  | 'local_auth'
+  | 'local_endpoint'
+  | 'admission'
+  | 'route_resolution'
+  | 'pool'
+  | 'request_conversion'
+  | 'upstream_request'
+  | 'upstream_response'
+  | 'response_conversion'
+  | 'delivery';
 
 export interface RouteTraceStep {
   status: RouteTraceStageStatus;
@@ -193,6 +206,15 @@ export interface RouteTraceMember {
 export interface RouteTracePoolAttempt {
   member: RouteTraceMember;
   status: RouteTraceStageStatus;
+  attemptId?: number | null;
+  url?: string | null;
+  requestStatus?: RouteTraceStageStatus | null;
+  responseStatus?: RouteTraceStageStatus | null;
+  authResult?: 'accepted' | 'rejected' | 'not_recorded' | null;
+  httpStatus?: number | null;
+  result?: string | null;
+  durationMs?: number | null;
+  conversionPath?: string | null;
   code?: string | null;
   message?: string | null;
 }
@@ -223,6 +245,12 @@ export interface RouteTraceConversion {
   message?: string | null;
 }
 
+export interface RouteTraceUpstreamRequest extends RouteTraceStep {
+  url?: string | null;
+  member?: RouteTraceMember | null;
+  model?: string | null;
+}
+
 export interface RouteTraceUpstreamAuth {
   status: RouteTraceStageStatus;
   httpStatus?: number | null;
@@ -243,6 +271,7 @@ export interface RouteTraceUpstream {
 
 /** One completed local-route request trace for monitoring. Credential-free. */
 export interface AdapterBridgeRouteTrace {
+  traceVersion: number;
   requestId: string;
   at: string;
   profileId?: string | null;
@@ -262,10 +291,11 @@ export interface AdapterBridgeRouteTrace {
   pool: RouteTracePool;
   conversion: RouteTraceConversion;
   upstreamAuth: RouteTraceUpstreamAuth;
+  upstreamRequest?: RouteTraceUpstreamRequest;
   upstream: RouteTraceUpstream;
   responseConversion?: RouteTraceConversion;
   delivery?: RouteTraceDelivery;
-  failureStage?: string | null;
+  failureStage?: RouteTraceStageId | null;
 }
 
 /** Loopback listener status. `localToken` is the bearer that actually authenticates. */

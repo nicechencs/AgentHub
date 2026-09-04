@@ -239,6 +239,14 @@ pub(super) async fn send_upstream(
         }
 
         loop {
+            let attempt_started = Instant::now();
+            let trace_attempt_id = trace.as_deref_mut().map(|trace| {
+                trace.upstream_attempt_started(
+                    url_for_trace,
+                    &member,
+                    state.upstream.model.as_deref(),
+                )
+            });
             let token = member.auth.token();
             let builder = transport.apply_auth(
                 state.client.post(url.clone()).json(&body),
@@ -246,15 +254,42 @@ pub(super) async fn send_upstream(
                 identity.as_ref(),
             );
             let response = match post_upstream(state, builder, request_id).await {
-                Ok(response) => response,
+                Ok(response) => {
+                    if let (Some(trace), Some(attempt_id)) =
+                        (trace.as_deref_mut(), trace_attempt_id)
+                    {
+                        let status = response.status().as_u16();
+                        let code = (!response.status().is_success()).then_some(if status == 401 {
+                            "unauthorized"
+                        } else {
+                            "upstream_error"
+                        });
+                        trace.upstream_attempt_response(
+                            attempt_id,
+                            status,
+                            attempt_started.elapsed().as_millis() as u64,
+                            code,
+                        );
+                    }
+                    response
+                }
                 Err(response) => {
                     if let Some(trace) = trace.as_deref_mut() {
                         let status = response.status().as_u16();
-                        let code = if response.status() == StatusCode::GATEWAY_TIMEOUT {
+                        let timed_out = response.status() == StatusCode::GATEWAY_TIMEOUT;
+                        let code = if timed_out {
                             "upstream_timeout"
                         } else {
                             "upstream_unavailable"
                         };
+                        if let Some(attempt_id) = trace_attempt_id {
+                            trace.upstream_attempt_transport_failed(
+                                attempt_id,
+                                timed_out,
+                                attempt_started.elapsed().as_millis() as u64,
+                                code,
+                            );
+                        }
                         trace.upstream_failed(
                             url_for_trace,
                             &member,
@@ -294,6 +329,7 @@ pub(super) async fn send_upstream(
             let status = response.status();
             let retry_after = response.headers().get(header::RETRY_AFTER).cloned();
             if status == StatusCode::UNAUTHORIZED {
+                let attempted_member = member.clone();
                 if let Some(trace) = trace.as_deref_mut() {
                     trace.upstream_auth_result(
                         false,
@@ -318,11 +354,26 @@ pub(super) async fn send_upstream(
                 ) {
                     AuthFollowup::Reload => continue,
                     AuthFollowup::Switch if continuation_locked => {
-                        let detail = read_error_detail(response, &state.force_shutdown).await?;
+                        let detail = match read_error_detail(response, &state.force_shutdown).await
+                        {
+                            Ok(detail) => detail,
+                            Err(response) => {
+                                if let Some(trace) = trace.as_deref_mut() {
+                                    trace.upstream_failed(
+                                        url_for_trace,
+                                        &attempted_member,
+                                        Some(status.as_u16()),
+                                        "stopping",
+                                        "The local route stopped while reading the upstream response.",
+                                    );
+                                }
+                                return Err(response);
+                            }
+                        };
                         if let Some(trace) = trace.as_deref_mut() {
                             trace.upstream_failed(
                                 url_for_trace,
-                                &member,
+                                &attempted_member,
                                 Some(status.as_u16()),
                                 "unauthorized",
                                 detail
@@ -337,17 +388,32 @@ pub(super) async fn send_upstream(
                             status,
                             retry_after,
                             detail.as_deref(),
-                            Some(&member),
+                            Some(&attempted_member),
                             failover_from.as_deref(),
                         ));
                     }
                     AuthFollowup::Switch => break,
                     AuthFollowup::Fail => {
-                        let detail = read_error_detail(response, &state.force_shutdown).await?;
+                        let detail = match read_error_detail(response, &state.force_shutdown).await
+                        {
+                            Ok(detail) => detail,
+                            Err(response) => {
+                                if let Some(trace) = trace.as_deref_mut() {
+                                    trace.upstream_failed(
+                                        url_for_trace,
+                                        &attempted_member,
+                                        Some(status.as_u16()),
+                                        "stopping",
+                                        "The local route stopped while reading the upstream response.",
+                                    );
+                                }
+                                return Err(response);
+                            }
+                        };
                         if let Some(trace) = trace.as_deref_mut() {
                             trace.upstream_failed(
                                 url_for_trace,
-                                &member,
+                                &attempted_member,
                                 Some(status.as_u16()),
                                 "unauthorized",
                                 detail
@@ -362,7 +428,7 @@ pub(super) async fn send_upstream(
                             status,
                             retry_after,
                             detail.as_deref(),
-                            Some(&member),
+                            Some(&attempted_member),
                             failover_from.as_deref(),
                         ));
                     }
@@ -375,7 +441,18 @@ pub(super) async fn send_upstream(
             let error_body =
                 match read_bounded_upstream_error(response, &state.force_shutdown).await {
                     Ok(body) => body,
-                    Err(UpstreamBodyError::Stopping) => return Err(stopping_response()),
+                    Err(UpstreamBodyError::Stopping) => {
+                        if let Some(trace) = trace.as_deref_mut() {
+                            trace.upstream_failed(
+                                url_for_trace,
+                                &member,
+                                Some(status.as_u16()),
+                                "stopping",
+                                "The local route stopped while reading the upstream response.",
+                            );
+                        }
+                        return Err(stopping_response());
+                    }
                     Err(
                         UpstreamBodyError::InvalidOrTooLarge | UpstreamBodyError::IncompleteStream,
                     ) => Vec::new(),

@@ -10,6 +10,7 @@ import {
 import type { AdapterBridgeRouteTrace } from '@/lib/backend/contracts/adapter';
 
 const baseTrace: AdapterBridgeRouteTrace = {
+  traceVersion: 2,
   requestId: 'req-1',
   at: '2026-01-01T00:00:00.000Z',
   method: 'POST',
