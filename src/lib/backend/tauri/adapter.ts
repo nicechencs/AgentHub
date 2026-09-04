@@ -19,6 +19,8 @@ import {
   mapLocalGatewayStatus,
   mapLocalTokenProbeResult,
   mapLocalTokenRecord,
+  mapRouteTraceDeleteResult,
+  mapRouteTracePage,
   type AdapterApplyPlanWire,
   type AdapterApplyResultWireInput,
   type AdapterBridgeStatusDtoWire,
@@ -26,6 +28,7 @@ import {
   type LocalGatewayStatusWire,
   type LocalTokenProbeResultWire,
   type LocalTokenRecordWire,
+  type RouteTracePageWire,
   type AdapterRouteAnalysisWire,
   type DefaultRoutePoolListWire,
   type DefaultRoutePoolOverviewWire,
@@ -284,6 +287,27 @@ export function createTauriAdapterPort(): AdapterPort {
     async getLocalGatewayStatus() {
       const wire = await invokeAdapter<LocalGatewayStatusWire>('get_local_gateway_status', {});
       return mapLocalGatewayStatus(wire);
+    },
+    async queryRouteTraces(query = {}) {
+      const wire = await invokeAdapter<RouteTracePageWire>(
+        'query_route_traces',
+        {
+          keyLast4: query.keyLast4 ?? null,
+          poolId: query.poolId ?? null,
+          endpointKind: query.endpointKind ?? null,
+          routeId: query.routeId ?? null,
+          failedOnly: query.failedOnly === true,
+          offset: query.offset ?? 0,
+          limit: query.limit ?? 50,
+        },
+      );
+      return mapRouteTracePage(wire);
+    },
+    async deleteRouteTraces(requestIds) {
+      const wire = await invokeAdapter<{ deleted?: unknown }>('delete_route_traces', {
+        requestIds,
+      });
+      return mapRouteTraceDeleteResult(wire);
     },
   };
 }

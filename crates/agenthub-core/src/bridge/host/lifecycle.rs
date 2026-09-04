@@ -225,6 +225,20 @@ impl BridgeRuntimeHost {
         self.gateway.route_traces.recent_unauthenticated()
     }
 
+    pub fn query_route_traces(
+        &self,
+        query: super::route_trace::RouteTraceQuery,
+    ) -> super::route_trace::RouteTracePage {
+        self.gateway.route_traces.query(query)
+    }
+
+    pub fn delete_route_traces(
+        &self,
+        request_ids: &[String],
+    ) -> super::route_trace::RouteTraceDeleteResult {
+        self.gateway.route_traces.delete_ids(request_ids)
+    }
+
     /// Process-lifetime inbound counters for this profile (not capped by the ring).
     pub fn inbound_stats(&self, profile_id: &str) -> InboundRequestStats {
         self.gateway.inbound.stats(profile_id)

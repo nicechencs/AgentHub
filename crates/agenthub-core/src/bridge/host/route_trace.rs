@@ -10,7 +10,7 @@
 //! [`ROUTE_TRACE_CAP`] per profile. Deleting the sqlite file does not touch
 //! logins or routes.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -25,6 +25,95 @@ use crate::bridge::account::PickedMember;
 use crate::bridge::route_index::DispatchCandidate;
 
 pub const ROUTE_TRACE_CAP: usize = 30;
+pub const ROUTE_TRACE_QUERY_DEFAULT_LIMIT: u32 = 50;
+pub const ROUTE_TRACE_QUERY_MAX_LIMIT: u32 = 100;
+
+/// Monitoring table filter: local entry key tail, pool, endpoint kind, route.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RouteTraceQuery {
+    pub key_last4: Option<String>,
+    pub pool_id: Option<String>,
+    pub endpoint_kind: Option<RouteTraceEndpointKind>,
+    pub route_id: Option<String>,
+    pub failed_only: bool,
+    pub offset: u32,
+    pub limit: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RouteTraceEndpointKind {
+    Messages,
+    ResponsesCodex,
+    ResponsesGrok,
+    ChatCompletions,
+}
+
+impl RouteTraceEndpointKind {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim() {
+            "messages" => Some(Self::Messages),
+            "responses_codex" => Some(Self::ResponsesCodex),
+            "responses_grok" => Some(Self::ResponsesGrok),
+            "chat_completions" => Some(Self::ChatCompletions),
+            _ => None,
+        }
+    }
+}
+
+impl RouteTraceQuery {
+    pub fn normalized(self) -> Self {
+        let trim = |value: Option<String>| {
+            value.and_then(|raw| {
+                let next = raw.trim().to_owned();
+                if next.is_empty() {
+                    None
+                } else {
+                    Some(next)
+                }
+            })
+        };
+        let limit = if self.limit == 0 {
+            ROUTE_TRACE_QUERY_DEFAULT_LIMIT
+        } else {
+            self.limit.min(ROUTE_TRACE_QUERY_MAX_LIMIT)
+        };
+        Self {
+            key_last4: trim(self.key_last4),
+            pool_id: trim(self.pool_id),
+            endpoint_kind: self.endpoint_kind,
+            route_id: trim(self.route_id),
+            failed_only: self.failed_only,
+            offset: self.offset,
+            limit,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RouteTracePage {
+    pub rows: Vec<RouteRequestTrace>,
+    pub total: u64,
+    pub offset: u32,
+    pub limit: u32,
+}
+
+impl RouteTracePage {
+    fn empty(offset: u32, limit: u32) -> Self {
+        Self {
+            rows: Vec::new(),
+            total: 0,
+            offset,
+            limit,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RouteTraceDeleteResult {
+    pub deleted: u64,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -626,6 +715,58 @@ impl RouteTraceLog {
             .cloned()
     }
 
+    pub fn query(&self, query: RouteTraceQuery) -> RouteTracePage {
+        let query = query.normalized();
+        let persist_path = {
+            let Ok(store) = self.inner.lock() else {
+                return RouteTracePage::empty(query.offset, query.limit);
+            };
+            match store.persist.as_ref().map(|db| db.path().to_path_buf()) {
+                Some(path) => path,
+                None => return query_memory(&store, &query),
+            }
+        };
+        persist::query_at_path(&persist_path, &query)
+    }
+
+    pub fn delete_ids(&self, request_ids: &[String]) -> RouteTraceDeleteResult {
+        let ids: Vec<String> = request_ids
+            .iter()
+            .map(|id| id.trim())
+            .filter(|id| !id.is_empty())
+            .map(str::to_owned)
+            .collect();
+        if ids.is_empty() {
+            return RouteTraceDeleteResult { deleted: 0 };
+        }
+        let Ok(mut store) = self.inner.lock() else {
+            return RouteTraceDeleteResult { deleted: 0 };
+        };
+        let want: HashSet<&str> = ids.iter().map(String::as_str).collect();
+        let mut memory_deleted = 0usize;
+        for entry in store.by_profile.values_mut() {
+            let before = entry.recent.len();
+            entry.recent.retain(|row| !want.contains(row.request_id.as_str()));
+            memory_deleted += before.saturating_sub(entry.recent.len());
+        }
+        let before_unauth = store.unauthenticated.len();
+        store
+            .unauthenticated
+            .retain(|row| !want.contains(row.request_id.as_str()));
+        memory_deleted += before_unauth.saturating_sub(store.unauthenticated.len());
+        store
+            .pending_usage
+            .retain(|request_id, _| !want.contains(request_id.as_str()));
+        let persist_deleted = store
+            .persist
+            .as_ref()
+            .map(|db| db.delete_ids(&ids))
+            .unwrap_or(0);
+        RouteTraceDeleteResult {
+            deleted: persist_deleted.max(memory_deleted) as u64,
+        }
+    }
+
     #[cfg(test)]
     fn persist_count(&self, profile_id: &str) -> usize {
         self.inner
@@ -633,6 +774,88 @@ impl RouteTraceLog {
             .ok()
             .and_then(|store| store.persist.as_ref().map(|db| db.count(profile_id)))
             .unwrap_or(0)
+    }
+}
+
+fn query_memory(store: &TraceStore, query: &RouteTraceQuery) -> RouteTracePage {
+    let mut rows: Vec<RouteRequestTrace> = store
+        .by_profile
+        .values()
+        .flat_map(|entry| entry.recent.iter().cloned())
+        .chain(store.unauthenticated.iter().cloned())
+        .filter(|row| trace_matches_query(row, query))
+        .collect();
+    rows.sort_by(|a, b| {
+        b.at_unix_ms
+            .cmp(&a.at_unix_ms)
+            .then_with(|| b.request_id.cmp(&a.request_id))
+    });
+    let total = rows.len() as u64;
+    let start = (query.offset as usize).min(rows.len());
+    let end = start.saturating_add(query.limit as usize).min(rows.len());
+    RouteTracePage {
+        rows: rows[start..end].to_vec(),
+        total,
+        offset: query.offset,
+        limit: query.limit,
+    }
+}
+
+pub(super) fn trace_matches_query(trace: &RouteRequestTrace, query: &RouteTraceQuery) -> bool {
+    if let Some(last4) = query.key_last4.as_deref() {
+        if trace.local_auth.key_last4.as_deref() != Some(last4) {
+            return false;
+        }
+    }
+    if let Some(pool_id) = query.pool_id.as_deref() {
+        let profile_id = trace
+            .local_auth
+            .profile_id
+            .as_deref()
+            .or(trace.profile_id.as_deref())
+            .unwrap_or("");
+        if profile_id != pool_id {
+            return false;
+        }
+    }
+    if let Some(route_id) = query.route_id.as_deref() {
+        if trace.profile_id.as_deref() != Some(route_id) {
+            return false;
+        }
+    }
+    if query.failed_only && trace.ok {
+        return false;
+    }
+    if let Some(kind) = query.endpoint_kind {
+        if !trace_matches_endpoint_kind(trace, kind) {
+            return false;
+        }
+    }
+    true
+}
+
+fn trace_matches_endpoint_kind(trace: &RouteRequestTrace, kind: RouteTraceEndpointKind) -> bool {
+    let path = trace.path.trim();
+    let conversion = trace.conversion.path.to_ascii_lowercase();
+    let upstream = trace
+        .upstream
+        .url
+        .as_deref()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let grok = conversion.contains("grok")
+        || upstream.contains("grok")
+        || upstream.contains("x.ai")
+        || upstream.contains("xai.com");
+    match kind {
+        RouteTraceEndpointKind::Messages => {
+            path.starts_with("/v1/messages") || conversion.contains("messages_to")
+        }
+        RouteTraceEndpointKind::ChatCompletions => {
+            path.starts_with("/v1/chat/completions") || conversion.contains("chat_to")
+        }
+        RouteTraceEndpointKind::ResponsesGrok => path.starts_with("/v1/responses") && grok,
+        RouteTraceEndpointKind::ResponsesCodex => path.starts_with("/v1/responses") && !grok,
     }
 }
 

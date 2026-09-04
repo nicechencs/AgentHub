@@ -10,6 +10,8 @@ import {
   mapLocalTokenProbeResult,
   mapLocalTokenRecord,
   mapRouteTrace,
+  mapRouteTraceDeleteResult,
+  mapRouteTracePage,
 } from './adapter-wire';
 
 describe('Adapter Rust wire mappers', () => {
@@ -715,5 +717,32 @@ describe('Adapter Rust wire mappers', () => {
       port: null,
       restarting: false,
     });
+  });
+
+  it('maps a monitoring page without the live-ring cap', () => {
+    const traces = Array.from({ length: 40 }, (_, index) => ({
+      requestId: `req-${index}`,
+      atUnixMs: 1_786_492_800_000 + index,
+      method: 'POST',
+      path: '/v1/messages',
+      httpStatus: 200,
+      ok: true,
+      localAuth: { status: 'ok' },
+      pool: { status: 'ok' },
+      conversion: { status: 'ok', path: 'passthrough' },
+      upstreamAuth: { status: 'ok' },
+      upstream: { status: 'ok' },
+    }));
+    const page = mapRouteTracePage({
+      rows: traces,
+      total: 120,
+      offset: 50,
+      limit: 50,
+    });
+    expect(page.rows).toHaveLength(40);
+    expect(page.total).toBe(120);
+    expect(page.offset).toBe(50);
+    expect(page.limit).toBe(50);
+    expect(mapRouteTraceDeleteResult({ deleted: 3 })).toEqual({ deleted: 3 });
   });
 });

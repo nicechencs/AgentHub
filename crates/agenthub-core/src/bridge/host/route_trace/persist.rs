@@ -11,7 +11,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection};
 
-use super::{RouteRequestTrace, ROUTE_TRACE_CAP};
+use super::{
+    trace_matches_query, RouteRequestTrace, RouteTracePage, RouteTraceQuery, ROUTE_TRACE_CAP,
+};
 use crate::logging::{parse_retention_days, targets};
 use crate::storage::peek_settings;
 
@@ -82,6 +84,25 @@ impl RouteTraceDb {
                 error = %error,
                 "failed to prune expired route traces"
             );
+        }
+    }
+
+    pub(super) fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub(super) fn delete_ids(&self, ids: &[String]) -> usize {
+        match delete_ids(&self.conn, ids) {
+            Ok(count) => count,
+            Err(error) => {
+                tracing::warn!(
+                    target: targets::ADAPTER,
+                    path = %self.path.display(),
+                    error = %error,
+                    "failed to delete route traces"
+                );
+                0
+            }
         }
     }
 
@@ -240,6 +261,102 @@ fn prune_older_than(conn: &Connection, retention_days: u32) -> crate::error::Res
     let cutoff = cutoff_unix_ms(retention_days);
     conn.execute("DELETE FROM route_traces WHERE at_unix_ms < ?1", [cutoff])?;
     Ok(())
+}
+
+pub(super) fn query_at_path(path: &Path, query: &RouteTraceQuery) -> RouteTracePage {
+    match Connection::open(path) {
+        Ok(conn) => {
+            let _ = conn.busy_timeout(Duration::from_millis(5000));
+            query_or_empty(&conn, path, query)
+        }
+        Err(error) => {
+            tracing::warn!(
+                target: targets::ADAPTER,
+                path = %path.display(),
+                error = %error,
+                "failed to open route traces for query"
+            );
+            RouteTracePage {
+                rows: Vec::new(),
+                total: 0,
+                offset: query.offset,
+                limit: query.limit,
+            }
+        }
+    }
+}
+
+fn query_or_empty(conn: &Connection, path: &Path, query: &RouteTraceQuery) -> RouteTracePage {
+    match query_page(conn, query) {
+        Ok(page) => page,
+        Err(error) => {
+            tracing::warn!(
+                target: targets::ADAPTER,
+                path = %path.display(),
+                error = %error,
+                "failed to query route traces"
+            );
+            RouteTracePage {
+                rows: Vec::new(),
+                total: 0,
+                offset: query.offset,
+                limit: query.limit,
+            }
+        }
+    }
+}
+
+fn query_page(conn: &Connection, query: &RouteTraceQuery) -> crate::error::Result<RouteTracePage> {
+    let mut traces = Vec::new();
+    if let Some(profile_id) = query.route_id.as_deref().or(query.pool_id.as_deref()) {
+        let mut stmt = conn.prepare(
+            "SELECT payload FROM route_traces WHERE profile_id = ?1 ORDER BY at_unix_ms DESC, request_id DESC",
+        )?;
+        let rows = stmt.query_map([profile_id], |row| row.get::<_, String>(0))?;
+        push_payloads(rows, &mut traces);
+    } else {
+        let mut stmt = conn.prepare(
+            "SELECT payload FROM route_traces ORDER BY at_unix_ms DESC, request_id DESC",
+        )?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        push_payloads(rows, &mut traces);
+    }
+    traces.retain(|row| trace_matches_query(row, query));
+    let total = traces.len() as u64;
+    let start = (query.offset as usize).min(traces.len());
+    let end = start.saturating_add(query.limit as usize).min(traces.len());
+    Ok(RouteTracePage {
+        rows: traces[start..end].to_vec(),
+        total,
+        offset: query.offset,
+        limit: query.limit,
+    })
+}
+
+fn push_payloads(
+    rows: rusqlite::MappedRows<'_, impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<String>>,
+    traces: &mut Vec<RouteRequestTrace>,
+) {
+    for payload in rows.flatten() {
+        if let Ok(trace) = serde_json::from_str::<RouteRequestTrace>(&payload) {
+            traces.push(trace);
+        }
+    }
+}
+
+fn delete_ids(conn: &Connection, ids: &[String]) -> crate::error::Result<usize> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let mut deleted = 0usize;
+    for chunk in ids.chunks(200) {
+        let placeholders = vec!["?"; chunk.len()].join(",");
+        let sql = format!("DELETE FROM route_traces WHERE request_id IN ({placeholders})");
+        let mut stmt = conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::ToSql> = chunk.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+        deleted += stmt.execute(params.as_slice())?;
+    }
+    Ok(deleted)
 }
 
 fn cutoff_unix_ms(retention_days: u32) -> i64 {

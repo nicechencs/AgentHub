@@ -6,6 +6,7 @@ import {
   adapterCommandError,
   type AdapterApplyRequest,
   type AdapterApplyResult,
+  type AdapterBridgeRouteTrace,
   type AdapterBridgeRuntimeStatus,
   type AdapterPort,
   type AdapterProfile,
@@ -15,6 +16,8 @@ import {
   type LocalGatewayStatus,
   type RoutePoolDialect,
   type RoutePoolSurface,
+  type RouteTracePage,
+  type RouteTraceQuery,
 } from '@/lib/backend/contracts/adapter';
 import type { RouteMembershipTrashPayload } from '@/lib/backend/contracts';
 import { delay } from './delay';
@@ -358,6 +361,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     localGatewayRunning: false,
     localGatewayPort: null,
     sourceModelCatalogs: new Map(),
+    routeTraces: seedMockRouteTraces(),
   };
   adapterStates.add(state);
 
@@ -607,28 +611,41 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     async deleteLocalToken(id) {
       await delay(20);
       const extraIndex = state.extraLocalTokens.findIndex((row) => row.id === id);
-      if (extraIndex >= 0) {
-        state.extraLocalTokens.splice(extraIndex, 1);
-        return;
-      }
-      if (!state.defaultPools.some((pool) => pool.id === id)) {
+      const extra = extraIndex >= 0 ? state.extraLocalTokens[extraIndex] : undefined;
+      const poolId = extra?.poolId
+        ?? (state.defaultPools.some((pool) => pool.id === id) ? id : null);
+      if (!poolId) {
         throw adapterCommandError({
           code: 'not_found',
           message: `entry key not found: ${id}`,
           retryable: false,
         });
       }
-      const extra = state.extraLocalTokens.find((row) => row.poolId === id);
-      if (extra) {
-        state.localTokens.set(id, extra.token);
-        state.localTokenNames.set(id, extra.name);
-        state.hiddenPrimaryIds.delete(id);
-        state.extraLocalTokens.splice(state.extraLocalTokens.indexOf(extra), 1);
+      const extraCount = state.extraLocalTokens.filter((row) => row.poolId === poolId).length;
+      const listed = extraCount + (state.hiddenPrimaryIds.has(poolId) ? 0 : 1);
+      if (listed <= 1) {
+        throw adapterCommandError({
+          code: 'invalid_arg',
+          message: 'cannot delete the only entry key for this type',
+          retryable: false,
+        });
+      }
+      if (extraIndex >= 0) {
+        state.extraLocalTokens.splice(extraIndex, 1);
         return;
       }
-      state.localTokens.set(id, `ahb_${Math.random().toString(36).slice(2, 12)}`);
-      state.localTokenNames.delete(id);
-      state.hiddenPrimaryIds.add(id);
+      const promote = state.extraLocalTokens.find((row) => row.poolId === id);
+      if (!promote) {
+        throw adapterCommandError({
+          code: 'invalid_arg',
+          message: 'cannot delete the only entry key for this type',
+          retryable: false,
+        });
+      }
+      state.localTokens.set(id, promote.token);
+      state.localTokenNames.set(id, promote.name);
+      state.hiddenPrimaryIds.delete(id);
+      state.extraLocalTokens.splice(state.extraLocalTokens.indexOf(promote), 1);
     },
     async setChatCompletionsShared(shared: boolean) {
       await delay(20);
@@ -1174,6 +1191,17 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
       await delay(20);
       return mockLocalGatewayStatus(state);
     },
+    async queryRouteTraces(query = {}) {
+      await delay(20);
+      return queryMockRouteTraces(state.routeTraces, query);
+    },
+    async deleteRouteTraces(requestIds) {
+      await delay(20);
+      const want = new Set(requestIds.map((id) => id.trim()).filter(Boolean));
+      const before = state.routeTraces.length;
+      state.routeTraces = state.routeTraces.filter((row) => !want.has(row.requestId));
+      return { deleted: before - state.routeTraces.length };
+    },
   };
 }
 
@@ -1316,6 +1344,69 @@ function mockRouteTraces(): AdapterBridgeRuntimeStatus['recentRouteTraces'] {
       failureStage: 'upstream_response',
     },
   ];
+}
+
+function seedMockRouteTraces(): AdapterBridgeRouteTrace[] {
+  const base = mockRouteTraces() ?? [];
+  const template = base[0];
+  if (!template) return [];
+  const extra: AdapterBridgeRouteTrace[] = Array.from({ length: 60 }, (_, index) => ({
+    ...template,
+    requestId: `mock-req-extra-${index}`,
+    at: new Date(Date.parse('2026-08-11T23:59:00.000Z') - index * 1000).toISOString(),
+    path: index % 3 === 0 ? '/v1/messages' : index % 3 === 1 ? '/v1/chat/completions' : '/v1/responses',
+    conversion: {
+      ...template.conversion,
+      path: index % 3 === 0
+        ? 'messages_to_anthropic'
+        : index % 3 === 1
+          ? 'chat_to_openai_chat'
+          : index % 5 === 0
+            ? 'responses_to_grok'
+            : 'responses_to_codex_responses',
+    },
+    localAuth: {
+      ...template.localAuth,
+      keyLast4: index % 2 === 0 ? '1234' : '5678',
+    },
+  }));
+  return [...base, ...extra];
+}
+
+function queryMockRouteTraces(
+  rows: readonly AdapterBridgeRouteTrace[],
+  query: RouteTraceQuery,
+): RouteTracePage {
+  const keyLast4 = query.keyLast4?.trim() || '';
+  const poolId = query.poolId?.trim() || '';
+  const routeId = query.routeId?.trim() || '';
+  const endpointKind = query.endpointKind ?? null;
+  const failedOnly = query.failedOnly === true;
+  const offset = Math.max(0, query.offset ?? 0);
+  const limit = Math.min(100, Math.max(1, query.limit ?? 50));
+  const filtered = rows.filter((row) => {
+    if (keyLast4 && row.localAuth.keyLast4 !== keyLast4) return false;
+    if (!keyLast4 && poolId && (row.localAuth.profileId ?? row.profileId) !== poolId) return false;
+    if (routeId && row.profileId !== routeId) return false;
+    if (failedOnly && row.ok) return false;
+    if (endpointKind) {
+      const path = row.path;
+      const conversion = (row.conversion.path ?? '').toLowerCase();
+      const upstream = (row.upstream.url ?? '').toLowerCase();
+      const grok = conversion.includes('grok') || upstream.includes('grok');
+      if (endpointKind === 'messages' && !path.startsWith('/v1/messages')) return false;
+      if (endpointKind === 'chat_completions' && !path.startsWith('/v1/chat/completions')) return false;
+      if (endpointKind === 'responses_grok' && !(path.startsWith('/v1/responses') && grok)) return false;
+      if (endpointKind === 'responses_codex' && !(path.startsWith('/v1/responses') && !grok)) return false;
+    }
+    return true;
+  }).slice().sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  return {
+    rows: filtered.slice(offset, offset + limit),
+    total: filtered.length,
+    offset,
+    limit,
+  };
 }
 
 function runningBridgeStatus(profile: AdapterProfile): AdapterBridgeRuntimeStatus {

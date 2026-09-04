@@ -58,7 +58,7 @@ describe('ActivityMonitoringPanel', () => {
     expect(markup).toContain('data-table-shell="default"');
     expect(markup).toContain('data-col="time"');
     expect(markup).toContain('还没有请求记录');
-    expect(markup).toContain('连接池已有登录，等待创建或启动本机路由');
+    expect(markup).not.toContain('连接池已有登录，等待创建或启动本机路由');
     expect(markup).not.toContain('连接池已有登录，但还没有本机路由');
     expect(markup).not.toContain('请打开路由概览');
     expect(markup).not.toContain('打开路由概览');

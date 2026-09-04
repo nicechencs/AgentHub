@@ -77,6 +77,25 @@ describe('ActivityTraceList', () => {
     expect(markup).toContain('data-table-layout="split"');
   });
 
+  it('renders selection and pagination controls when asked', () => {
+    const markup = render(createElement(ActivityTraceList, {
+      rows: [row()],
+      selectedIds: new Set(['req-1']),
+      onToggleRow: () => {},
+      onTogglePage: () => {},
+      page: 1,
+      total: 120,
+      pageSize: 50,
+      onPageChange: () => {},
+    }));
+    expect(markup).toContain('data-col="select"');
+    expect(markup).toContain('aria-label="选择这条请求"');
+    expect(markup).toContain('aria-label="全选本页"');
+    expect(markup).toContain('共 120 条');
+    expect(markup).toContain('第 1/3 页');
+    expect(markup).toContain('aria-label="上一页"');
+  });
+
   it('shows success in the existing five-stage cell', () => {
     const markup = render(createElement(ActivityTraceList, {
       rows: [row({ ok: true, httpStatus: 200, localAuth: { status: 'ok' }, failureStage: null })],
