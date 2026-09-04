@@ -31,6 +31,7 @@ use super::http::{
     error_response, log_protocol_error, protocol_error_response, sse_data_payload,
     sse_frame_end_deque, stopping_response, stream_error_frame, EdgeState,
 };
+use super::passthrough_usage::PassthroughUsageObserver;
 use super::route_trace::RouteTraceLog;
 use super::surface::DownstreamSurface;
 use super::transport::{UpstreamChannel, UpstreamDecode};
@@ -86,6 +87,8 @@ fn record_trace_usage(
         ttft_ms,
         usage.map(|row| row.input_tokens),
         usage.map(|row| row.output_tokens),
+        usage.and_then(|row| row.cached_input_tokens),
+        usage.map(|row| row.reasoning_tokens),
     );
 }
 
@@ -96,6 +99,8 @@ fn emit_ok_usage(state: &EdgeState, event: GatewayUsageEvent) {
         event.ttft_ms,
         has_tokens.then_some(event.input_tokens),
         has_tokens.then_some(event.output_tokens),
+        event.cached_input_tokens,
+        event.reasoning_tokens,
     );
     emit(&state.usage_spool, event);
 }
@@ -622,6 +627,9 @@ pub(super) async fn passthrough_json_response(
     state
         .continuations
         .record_response(&value, replay_seed.as_deref(), &member.source_id);
+    let mut observer = PassthroughUsageObserver::new(upstream_decode(&state));
+    observer.observe_json(&value);
+    let passthrough_usage = observer.captured().cloned();
     let body = if let Some(direction) = pair {
         sanitize_pair_response(direction, &mut value);
         match serde_json::to_vec(&value) {
@@ -646,13 +654,14 @@ pub(super) async fn passthrough_json_response(
     };
     state.record_upstream_success();
     tracing::info!(target: "core.adapter.protocol", profile_id = %state.profile_id, request_id = %request_id, account_id = %member.source_id, ticket_id = %member.ticket_id, op = "passthrough", status = status.as_u16(), elapsed_ms = started.elapsed().as_millis() as u64, "bridge response completed");
-    // Bytes are relayed without protocol decoding: capture records identity,
-    // status, and latency only; token fields stay zero/NULL.
-    emit_ok_usage(
-        &state,
-        usage_event(&state, &request_id, started, &member, &capture)
-            .ok(Some(status.as_u16()), None),
-    );
+    // Bytes stay unmodified; usage is observed from the decoded JSON for
+    // monitoring / gateway capture only.
+    let mut event = usage_event(&state, &request_id, started, &member, &capture)
+        .ok(Some(status.as_u16()), None);
+    if let Some(usage) = passthrough_usage.as_ref() {
+        event = event.with_usage(usage);
+    }
+    emit_ok_usage(&state, event);
     let content_type = HeaderValue::from_str(&content_type)
         .unwrap_or_else(|_| HeaderValue::from_static("application/json"));
     (
@@ -965,8 +974,8 @@ pub(super) fn passthrough_sse_response(
     let mut trace_guard = RouteTraceStreamGuard::new(&observed, &request_id, started);
     let output = stream! {
         let _permit = permit;
-        // Bytes are relayed without protocol decoding: capture records
-        // identity, status, and latency only; token fields stay zero/NULL.
+        // Bytes are relayed without rewriting; usage is observed from SSE
+        // payloads for monitoring / gateway capture only.
         let capture_guard = StreamCaptureGuard::new(
             &observed.usage_spool,
             usage_event(&observed, &request_id, started, &member, &capture),
@@ -974,6 +983,7 @@ pub(super) fn passthrough_sse_response(
             Some(upstream_status),
         );
         let mut ttft_ms: Option<u64> = None;
+        let mut usage_observer = PassthroughUsageObserver::new(upstream_decode(&observed));
         let mut upstream_bytes = 0usize;
         let should_capture = grok_upstream(&observed);
         let mut capture = Vec::new();
@@ -1025,6 +1035,7 @@ pub(super) fn passthrough_sse_response(
                 capture.extend_from_slice(&chunk);
             }
             if !is_responses {
+                usage_observer.observe_sse_bytes(&chunk);
                 note_ttft(&mut ttft_ms, started);
                 yield Ok::<_, Infallible>(chunk);
                 continue;
@@ -1090,6 +1101,7 @@ pub(super) fn passthrough_sse_response(
                             replay_seed.as_deref(),
                             &member_id,
                         );
+                        usage_observer.observe_json(&value);
                     }
                 }
                 let terminal = info.terminal;
@@ -1136,7 +1148,14 @@ pub(super) fn passthrough_sse_response(
         }
         observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op, status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
-        finish_stream_usage(&observed, &request_id, &mut trace_guard, capture_guard, ttft_ms, None);
+        finish_stream_usage(
+            &observed,
+            &request_id,
+            &mut trace_guard,
+            capture_guard,
+            ttft_ms,
+            usage_observer.captured(),
+        );
     };
     event_stream_response(output)
 }

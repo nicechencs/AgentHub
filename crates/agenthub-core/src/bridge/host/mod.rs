@@ -12,6 +12,7 @@ mod http;
 pub(crate) mod inbound;
 mod lifecycle;
 mod pair_policy;
+mod passthrough_usage;
 mod route_trace;
 mod stream;
 mod surface;

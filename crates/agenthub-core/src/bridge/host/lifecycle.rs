@@ -81,8 +81,8 @@ impl BridgeRuntimeHost {
         ));
     }
 
-    /// Enable durable route-trace ring persistence (Activity monitor history).
-    /// Loads last N traces from `path` when present; later calls are ignored.
+    /// Enable disposable sqlite persistence for Activity monitor history.
+    /// Loads the live UI ring from `path` when present; later calls are ignored.
     /// Unset keeps an in-memory ring only (CLI / unit tests).
     pub fn set_route_trace_persist_path(&self, path: std::path::PathBuf) {
         self.gateway.route_traces.enable_persist(path);

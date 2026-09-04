@@ -284,6 +284,8 @@ export interface AdapterBridgeRouteTrace {
   ttftMs?: number | null;
   inputTokens?: number | null;
   outputTokens?: number | null;
+  cachedInputTokens?: number | null;
+  reasoningTokens?: number | null;
   localEndpoint?: RouteTraceStep;
   localAuth: RouteTraceLocalAuth;
   admission?: RouteTraceStep;
