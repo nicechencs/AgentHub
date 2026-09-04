@@ -2,7 +2,7 @@ import { getBackend } from '@/app/runtime';
 import type { PluginInventory } from '@/lib/backend/contracts/plugin-types';
 import type { AgentKey } from '@/lib/types';
 
-/** Scan of vendor plugin / extension packs (not MCP). */
+/** Scan of vendor plugin / extension packs (not MCP). Claude, Grok, and Pi. */
 export async function listPluginInventory(): Promise<PluginInventory> {
   return getBackend().plugins.listInventory();
 }
