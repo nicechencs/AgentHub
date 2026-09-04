@@ -171,6 +171,12 @@ const CODEX_CLAUDE_MODELS: &[AdapterModelMapEntry] = &[];
 /// Official ChatGPT / Codex ids Grok CLI may pick on the loopback Responses
 /// surface. Leftover prefixes (`grok-*` / `claude-*` / `kimi-*` / `deepseek-*`
 /// / `agenthub_*_bridge`) are omitted by dispatch, so they must not appear.
+///
+/// `gpt-5` / `gpt-5.1-codex` stay for [`AdapterModelMappingTable::map_model`].
+/// Static `GET /v1/models` fallback advertises `gpt-5.4` only — ChatGPT Codex
+/// subscriptions 400 those other ids ("not supported when using Codex with a
+/// ChatGPT account"). Live catalogs override this via
+/// `list_upstream_models_for_pool`.
 const CODEX_GROK_MODELS: &[AdapterModelMapEntry] = &[
     AdapterModelMapEntry {
         source_model: "gpt-5.4",
@@ -180,12 +186,12 @@ const CODEX_GROK_MODELS: &[AdapterModelMapEntry] = &[
     AdapterModelMapEntry {
         source_model: "gpt-5.1-codex",
         target_model: "gpt-5.1-codex",
-        notes: Some("Official Codex CLI model id"),
+        notes: Some("Official Codex CLI model id; ChatGPT account often rejects"),
     },
     AdapterModelMapEntry {
         source_model: "gpt-5",
         target_model: "gpt-5",
-        notes: Some("Official ChatGPT Responses model"),
+        notes: Some("Official ChatGPT Responses model; ChatGPT account often rejects"),
     },
 ];
 
@@ -391,7 +397,9 @@ pub fn map_adapter_model(
 ///
 /// Leftover prefixes 400 on official Codex Responses, so ChatGPT-subscription
 /// sources drop them. Other upstreams use those prefixes as real ids
-/// (`grok-4.5`, `kimi-k2.5`).
+/// (`grok-4.5`, `kimi-k2.5`). ChatGPT-subscription static fallback advertises
+/// only `default_target_model` (plus a non-leftover configured default) so
+/// dead ChatGPT-rejected ids stay in the mapping table for `map_model`.
 pub fn list_local_bridge_models(
     source: AdapterSourceProduct,
     target: AgentId,
@@ -409,11 +417,17 @@ pub fn list_local_bridge_models(
     };
 
     let mut listed = Vec::with_capacity(table.entries.len() + 2);
-    for entry in table.entries {
-        push_listed_model(&mut listed, entry.target_model, drop_leftover);
-    }
-    if let Some(model) = table.default_target_model {
-        push_listed_model(&mut listed, model, drop_leftover);
+    if drop_leftover {
+        if let Some(model) = table.default_target_model {
+            push_listed_model(&mut listed, model, drop_leftover);
+        }
+    } else {
+        for entry in table.entries {
+            push_listed_model(&mut listed, entry.target_model, drop_leftover);
+        }
+        if let Some(model) = table.default_target_model {
+            push_listed_model(&mut listed, model, drop_leftover);
+        }
     }
     if let Some(model) = configured {
         push_listed_model(&mut listed, model, drop_leftover);
@@ -655,9 +669,20 @@ mod tests {
                 "leftover {leftover} must not appear in {listed:?}"
             );
         }
-        assert_eq!(listed[0], "gpt-5.4");
-        assert!(listed.iter().any(|model| model == "gpt-5.1-codex"));
-        assert!(listed.iter().any(|model| model == "gpt-5"));
+        assert_eq!(listed, vec!["gpt-5.4".to_string()]);
+        let table = find_adapter_model_mapping(
+            AdapterSourceProduct::CodexChatGptSubscription,
+            AgentId::Grok,
+        )
+        .expect("codex→grok table");
+        assert_eq!(
+            table.map_model("gpt-5.1-codex"),
+            AdapterModelMapResult::Mapped("gpt-5.1-codex")
+        );
+        assert_eq!(
+            table.map_model("gpt-5"),
+            AdapterModelMapResult::Mapped("gpt-5")
+        );
     }
 
     #[test]
@@ -693,9 +718,20 @@ mod tests {
                 "leftover id must not be listed: {model}"
             );
         }
-        assert_eq!(listed[0], "gpt-5.4");
-        assert!(listed.iter().any(|model| model == "gpt-5.1-codex"));
-        assert!(listed.iter().any(|model| model == "gpt-5"));
+        assert_eq!(listed, vec!["gpt-5.4".to_string()]);
+        let table = find_adapter_model_mapping(
+            AdapterSourceProduct::CodexChatGptSubscription,
+            AgentId::Kimi,
+        )
+        .expect("codex→kimi table");
+        assert_eq!(
+            table.map_model("gpt-5.1-codex"),
+            AdapterModelMapResult::Mapped("gpt-5.1-codex")
+        );
+        assert_eq!(
+            table.map_model("gpt-5"),
+            AdapterModelMapResult::Mapped("gpt-5")
+        );
     }
 
     #[test]
