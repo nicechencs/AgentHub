@@ -1,5 +1,6 @@
 import type {
   AdapterBridgeRouteTrace,
+  RouteTraceStageId,
   RouteTraceStageStatus,
 } from '@/lib/backend/contracts/adapter';
 import type { TranslateFn } from '@/lib/i18n';
@@ -11,13 +12,15 @@ import {
 
 type ActivityTrace = Pick<
   AdapterBridgeRouteTrace,
-  'ok' | 'httpStatus' | 'failureStage' | 'localAuth' | 'pool' | 'conversion' | 'upstreamAuth' | 'upstream'
+  'ok' | 'httpStatus' | 'failureStage' | 'localEndpoint' | 'localAuth' | 'admission'
+  | 'routeResolution' | 'pool' | 'conversion' | 'upstreamAuth' | 'upstream'
+  | 'responseConversion' | 'delivery' | 'upstreamRequest' | 'traceVersion'
 > & {
   legacySummary?: boolean;
 };
 
 export type ActivityTraceResult = 'success' | 'failed' | 'failureUnknown';
-export type ActivityTraceFailureStageId = 'local_endpoint' | ActivityTraceStageId;
+export type ActivityTraceFailureStageId = RouteTraceStageId;
 
 export type ActivityTraceSummary = {
   result: ActivityTraceResult;
@@ -41,7 +44,17 @@ function isActivityTraceStage(stage: string | null | undefined): stage is Activi
 function isActivityTraceFailureStage(
   stage: string | null | undefined,
 ): stage is ActivityTraceFailureStageId {
-  return stage === 'local_endpoint' || isActivityTraceStage(stage);
+  return stage === 'received'
+    || stage === 'local_auth'
+    || stage === 'local_endpoint'
+    || stage === 'admission'
+    || stage === 'route_resolution'
+    || stage === 'pool'
+    || stage === 'request_conversion'
+    || stage === 'upstream_request'
+    || stage === 'upstream_response'
+    || stage === 'response_conversion'
+    || stage === 'delivery';
 }
 
 function rawStageStatus(trace: ActivityTrace, stage: ActivityTraceStageId): RouteTraceStageStatus {
@@ -55,21 +68,33 @@ function rawStageStatus(trace: ActivityTrace, stage: ActivityTraceStageId): Rout
 function recordedFailureStage(trace: ActivityTrace): ActivityTraceFailureStageId | null {
   if (trace.ok || trace.legacySummary) return null;
   if (isActivityTraceFailureStage(trace.failureStage)) return trace.failureStage;
-  return ACTIVITY_TRACE_STAGES.find((stage) => rawStageStatus(trace, stage) === 'failed') ?? null;
+  if (trace.traceVersion >= 2) return null;
+  const legacyStage = ACTIVITY_TRACE_STAGES.find((stage) => rawStageStatus(trace, stage) === 'failed');
+  if (legacyStage === 'conversion') return 'request_conversion';
+  if (legacyStage === 'upstream' || legacyStage === 'upstream_auth') return 'upstream_response';
+  return legacyStage ?? null;
 }
 
 function stageError(trace: ActivityTrace, stage: ActivityTraceFailureStageId): string | null {
   const detail = stage === 'local_endpoint'
-    ? trace.conversion
-    : stage === 'local_auth'
-      ? trace.localAuth
-    : stage === 'pool'
-      ? trace.pool
-      : stage === 'conversion'
-        ? trace.conversion
-        : stage === 'upstream_auth'
-          ? trace.upstreamAuth
-          : trace.upstream;
+    ? trace.localEndpoint ?? trace.conversion
+    : stage === 'admission'
+      ? trace.admission ?? trace.localAuth
+      : stage === 'route_resolution'
+        ? trace.routeResolution ?? trace.pool
+        : stage === 'local_auth'
+          ? trace.localAuth
+          : stage === 'pool'
+            ? trace.pool
+            : stage === 'request_conversion'
+              ? trace.conversion
+              : stage === 'upstream_request'
+                ? trace.upstreamRequest ?? trace.upstream
+                : stage === 'response_conversion'
+                  ? trace.responseConversion ?? trace.upstream
+                  : stage === 'delivery'
+                    ? trace.delivery ?? trace.upstream
+                    : trace.upstream;
   const message = detail.message?.trim();
   if (message) return message;
   if ('httpStatus' in detail && detail.httpStatus != null) return String(detail.httpStatus);
@@ -103,9 +128,14 @@ export function activityTraceStageStatus(
   const summary = summarizeActivityTrace(trace);
   const raw = rawStageStatus(trace, stage);
   if (summary.result === 'success') return raw === 'pending' ? 'skipped' : raw;
-  if (summary.failureStage && isActivityTraceStage(summary.failureStage)) {
+  const legacyFailureStage = summary.failureStage === 'request_conversion'
+    ? 'conversion'
+    : summary.failureStage === 'upstream_response'
+      ? trace.upstreamAuth.status === 'failed' ? 'upstream_auth' : 'upstream'
+      : summary.failureStage;
+  if (legacyFailureStage && isActivityTraceStage(legacyFailureStage)) {
     const stageIndex = ACTIVITY_TRACE_STAGES.indexOf(stage);
-    const failureIndex = ACTIVITY_TRACE_STAGES.indexOf(summary.failureStage);
+    const failureIndex = ACTIVITY_TRACE_STAGES.indexOf(legacyFailureStage);
     if (stageIndex === failureIndex) return 'failed';
     if (stageIndex > failureIndex || raw === 'pending') return 'skipped';
     return raw;
@@ -142,5 +172,13 @@ export function activityTraceFailureHeadline(summary: ActivityTraceSummary, t: T
 
 function activityTraceFailureStageLabel(stage: ActivityTraceFailureStageId, t: TranslateFn): string {
   if (stage === 'local_endpoint') return t('routes.trace.stageId.local_endpoint');
+  if (stage === 'admission') return t('routes.trace.detailStage.admission');
+  if (stage === 'route_resolution') return t('routes.trace.detailStage.routeResolution');
+  if (stage === 'request_conversion') return t('routes.trace.detailStage.requestConversion');
+  if (stage === 'upstream_request') return t('routes.trace.detailStage.upstreamRequest');
+  if (stage === 'upstream_response') return t('routes.trace.detailStage.upstreamResponse');
+  if (stage === 'response_conversion') return t('routes.trace.detailStage.responseConversion');
+  if (stage === 'delivery') return t('routes.trace.detailStage.delivery');
+  if (stage === 'received') return t('routes.trace.detailStage.received');
   return activityTraceStageLabel(stage, t);
 }

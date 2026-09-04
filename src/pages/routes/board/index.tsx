@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageSection } from '@/components/layout/PageSection';
 import { pageRhythm } from '@/components/layout/page-rhythm';
+import { AgentLogo } from '@/components/shared/AgentLogo';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import type { TranslateFn } from '@/lib/i18n';
@@ -25,7 +26,9 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Hint, Tip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
+import { agentDisplayName } from '@/config/agents';
 import { getLocalGatewayStatus, listLocalTokens } from '@/lib/api/adapter';
+import type { LocalTokenRecord } from '@/lib/backend/contracts/adapter';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import {
   isLocalEndpointKind,
@@ -49,7 +52,11 @@ import {
   type BoardEndpointTypeRow,
   type LocalGatewayControl,
 } from '@/pages/routes/board/board-view-model';
-import { buildLocalTokenRows, visibleTokenKinds } from '@/pages/routes/tokens/tokens-model';
+import {
+  buildLocalTokenRows,
+  supportedAgentsForEndpointKind,
+  visibleTokenKinds,
+} from '@/pages/routes/tokens/tokens-model';
 import {
   poolSurfaceToUsageSurface,
   rememberedBoardUsageFilters,
@@ -91,6 +98,7 @@ function BoardEndpointCard({
     count: row.keyCount,
   });
   const color = agentCssVar(localEndpointBrandAgentId(row.kind));
+  const agentIds = supportedAgentsForEndpointKind(row.kind);
 
   return (
     <Card
@@ -106,7 +114,7 @@ function BoardEndpointCard({
         }
       }}
       className={cn(
-        'cursor-pointer p-3 transition-colors hover:border-accent/40 hover:bg-hover/40',
+        'cursor-pointer p-3 transition-colors hover:border-accent/40 hover:bg-hover/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
         selected && 'border-accent bg-hover/40',
         row.keyCount === 0 && 'opacity-70',
       )}
@@ -115,6 +123,13 @@ function BoardEndpointCard({
         <span style={{ color }}>{row.path}</span>
       </Tip>
       <p className="mt-1 text-xs text-secondary">{label}</p>
+      {agentIds.length > 0 ? (
+        <div className="mt-2 flex flex-wrap items-center gap-1">
+          {agentIds.map((agentId) => (
+            <AgentLogo key={agentId} agentId={agentId} size="sm" />
+          ))}
+        </div>
+      ) : null}
       <p className="mt-1 text-xs text-muted">{keyLabel}</p>
     </Card>
   );
@@ -135,7 +150,7 @@ function BoardRouteSkeleton({ count }: { count: number }) {
 }
 
 export default function RoutesBoardPage() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { toast } = useToast();
   const {
     profiles,
@@ -163,6 +178,7 @@ export default function RoutesBoardPage() {
     reloadKey: usageRefreshKey,
   });
   const [tokensByPoolId, setTokensByPoolId] = useState<Record<string, string>>({});
+  const [tokenRecords, setTokenRecords] = useState<LocalTokenRecord[] | null>(null);
   const {
     profileErrors,
     busyProfileIds,
@@ -198,9 +214,13 @@ export default function RoutesBoardPage() {
         const next: Record<string, string> = {};
         for (const record of records) next[record.poolId] = record.token;
         setTokensByPoolId(next);
+        setTokenRecords(records);
       })
       .catch(() => {
-        if (!cancelled) setTokensByPoolId({});
+        if (!cancelled) {
+          setTokensByPoolId({});
+          setTokenRecords([]);
+        }
       });
     return () => {
       cancelled = true;
@@ -230,6 +250,7 @@ export default function RoutesBoardPage() {
       defaultPools,
       chatCompletionsShared,
       tokensByPoolId,
+      tokenRecords,
     ),
     [
       bridgeStatuses,
@@ -237,6 +258,7 @@ export default function RoutesBoardPage() {
       defaultPools,
       errors.bridgeStatuses,
       profiles,
+      tokenRecords,
       tokensByPoolId,
     ],
   );
@@ -255,7 +277,11 @@ export default function RoutesBoardPage() {
     ? t('routes.board.fleetLogins', { count: totals.keys })
     : t('routes.board.description');
   const keyHint = selectedRow
-    ? t('routes.board.endpointLoginsHint', { count: selectedRow.keyCount })
+    ? t('routes.board.endpointLoginsHint', {
+        agents: supportedAgentsForEndpointKind(selectedRow.kind)
+          .map((id) => agentDisplayName(id))
+          .join(lang === 'en' ? ', ' : '、'),
+      })
     : t('routes.board.endpointLoginsHintAll', { count: totals.keys });
   const pageLoading = loading || poolsLoading;
   const showStatusSkeleton = pageLoading && defaultPools.length === 0;
@@ -300,7 +326,35 @@ export default function RoutesBoardPage() {
                 : t('routes.board.entryStartFailed')}
             />
           ) : null}
-          <PageSection first title={t('routes.board.statusSection')}>
+          <PageSection
+            first
+            title={t('routes.board.statusSection')}
+            actions={
+              <div className="flex items-center gap-2">
+                <span className="text-meta text-secondary">{t('routes.board.entrySwitch')}</span>
+                <Hint
+                  label={
+                    localGateway.running || localGateway.action === 'start'
+                      ? undefined
+                      : entryLabel
+                  }
+                >
+                  <Switch
+                    checked={entryRunning}
+                    disabled={localGatewayBusy || localGateway.transitioning}
+                    onCheckedChange={(on) => {
+                      if (on) {
+                        void handleStartLocalGateway().then((ok) => setGatewayRunning(ok));
+                      } else {
+                        setStopOpen(true);
+                      }
+                    }}
+                    aria-label={t('routes.board.entrySwitch')}
+                  />
+                </Hint>
+              </div>
+            }
+          >
             {showStatusSkeleton ? (
               <BoardRouteSkeleton count={4} />
             ) : (
@@ -317,38 +371,7 @@ export default function RoutesBoardPage() {
                 ))}
               </div>
             )}
-            <div className="mt-3 flex items-center gap-2">
-              <p className="min-w-0 flex-1 text-sm text-secondary">{keyHint}</p>
-              <PageRefreshButton
-                className="ml-auto shrink-0"
-                loading={pageLoading}
-                onClick={() => {
-                  void reload();
-                  setUsageRefreshKey((key) => key + 1);
-                }}
-                label={t('routes.board.refresh')}
-              />
-              <Hint
-                label={
-                  localGateway.running || localGateway.action === 'start'
-                    ? undefined
-                    : entryLabel
-                }
-              >
-                <Switch
-                  checked={entryRunning}
-                  disabled={localGatewayBusy || localGateway.transitioning}
-                  onCheckedChange={(on) => {
-                    if (on) {
-                      void handleStartLocalGateway().then((ok) => setGatewayRunning(ok));
-                    } else {
-                      setStopOpen(true);
-                    }
-                  }}
-                  aria-label={t('routes.pool.entry')}
-                />
-              </Hint>
-            </div>
+            <p className="mt-3 text-sm text-secondary">{keyHint}</p>
           </PageSection>
 
           <BoardUsageSection
@@ -357,6 +380,16 @@ export default function RoutesBoardPage() {
             pools={defaultPools}
             refreshKey={usageRefreshKey}
             surface={usageSurface}
+            headerActions={
+              <PageRefreshButton
+                loading={pageLoading}
+                onClick={() => {
+                  void reload();
+                  setUsageRefreshKey((key) => key + 1);
+                }}
+                label={t('routes.board.refresh')}
+              />
+            }
           />
         </div>
       )}

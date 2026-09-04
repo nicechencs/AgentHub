@@ -96,7 +96,7 @@ export function buildPageItems(current: number, total: number): Array<number | '
 
 export function UsageDetailsTable({ rows }: { rows: UsageRecord[] }) {
   const { t } = useI18n();
-  const { widths, onResizeStart, totalWidth } = useColumnWidths(
+  const { widths, onResizeStart, onResizeKeyDown, totalWidth } = useColumnWidths(
     WIDTH_SPECS,
     COLUMN_WIDTHS_STORAGE_KEY,
   );
@@ -204,6 +204,7 @@ export function UsageDetailsTable({ rows }: { rows: UsageRecord[] }) {
                     columnKey={c.key}
                     label={label}
                     onResizeStart={onResizeStart}
+                    onResizeKeyDown={onResizeKeyDown}
                   />
                 </TableHead>
               );

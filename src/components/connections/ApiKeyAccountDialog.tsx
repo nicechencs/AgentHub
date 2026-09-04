@@ -45,6 +45,9 @@ export function ApiKeyAccountDialog({
   onSaved,
   asPanel = false,
   width,
+  initialApiKey,
+  initialBaseUrl,
+  initialModel,
 }: {
   agentId: AgentKey;
   open: boolean;
@@ -55,6 +58,9 @@ export function ApiKeyAccountDialog({
   onSaved: (acc: Account) => void;
   asPanel?: boolean;
   width?: number;
+  initialApiKey?: string;
+  initialBaseUrl?: string;
+  initialModel?: string;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -84,13 +90,13 @@ export function ApiKeyAccountDialog({
       setBaseUrl('');
     } else {
       setLabel('');
-      setKey('');
+      setKey(initialApiKey?.trim() ?? '');
       setEnvKey('ANTHROPIC_AUTH_TOKEN');
       setKimiProduct('kimi-api');
-      setModelId('');
-      setBaseUrl('');
+      setModelId(initialModel?.trim() ?? '');
+      setBaseUrl(initialBaseUrl?.trim() ?? '');
     }
-  }, [open, isEdit, account]);
+  }, [open, isEdit, account, initialApiKey, initialBaseUrl, initialModel]);
 
   const canSave = isEdit
     ? Boolean(label.trim() || key.trim())

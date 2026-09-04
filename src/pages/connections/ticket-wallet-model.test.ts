@@ -46,6 +46,7 @@ import {
   resolveTicketDirectAction,
   ticketSwitchDisabledReason,
   ticketRefreshDisabledReason,
+  oauthActionHoverTip,
 } from './ticket-wallet-model';
 
 function sampleWallet(): TicketWallet {
@@ -1540,5 +1541,15 @@ describe('row action disable reasons', () => {
       .toBe('正在刷新其他登录');
     expect(ticketRefreshDisabledReason({ refreshing: false, refreshLocked: false }))
       .toBeUndefined();
+  });
+
+  it('explains 同步当前登录 vs 刷新 on hover', () => {
+    expect(oauthActionHoverTip({ kind: 'sync-current-login', label: '同步当前登录' }))
+      .toBe('不是刷新列表。会把本机正在用的官方登录写进来，并查看用量。');
+    expect(oauthActionHoverTip({ kind: 'refresh-quota', label: '刷新' }))
+      .toBe('查看这份登录的用量。');
+    expect(oauthActionHoverTip({ kind: 'refresh-credentials', label: '刷新' }))
+      .toBe('查看这份登录的用量。');
+    expect(oauthActionHoverTip(undefined)).toBeUndefined();
   });
 });

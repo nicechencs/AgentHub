@@ -532,7 +532,7 @@ export function SkillMatrix({
       ? installedAgentIds
       : new Set<AgentKey>(installedAgentIds ?? columns.map((a) => a.id));
 
-  const { widths, onResizeStart } = useColumnWidths(
+  const { widths, onResizeStart, onResizeKeyDown } = useColumnWidths(
     MATRIX_WIDTH_SPECS,
     COLUMN_WIDTHS_STORAGE_KEY,
   );
@@ -598,6 +598,7 @@ export function SkillMatrix({
                   columnKey="skill"
                   label={t('skills.matrix.skillName')}
                   onResizeStart={onResizeStart}
+                    onResizeKeyDown={onResizeKeyDown}
                 />
               </TableHead>
               <TableHead className="relative select-none text-center">
@@ -606,6 +607,7 @@ export function SkillMatrix({
                   columnKey="shared"
                   label={sharedRootLabel}
                   onResizeStart={onResizeStart}
+                    onResizeKeyDown={onResizeKeyDown}
                 />
               </TableHead>
               {columns.map((agent) => (
@@ -622,6 +624,7 @@ export function SkillMatrix({
                     columnKey="agent"
                     label={t('skills.matrix.tool')}
                     onResizeStart={onResizeStart}
+                    onResizeKeyDown={onResizeKeyDown}
                   />
                 </TableHead>
               ))}

@@ -60,12 +60,12 @@ fn map_install_failure_missing_brew_is_env_not_ready() {
         "remediations": [
             { "kind": "brew", "command": "brew install git", "url": "https://git-scm.com/downloads" }
         ],
-        "hint": "未找到 Homebrew。请先安装 Homebrew（https://brew.sh/）后重试。"
+        "hint": "未找到 Homebrew，无法一键安装。请先安装 Homebrew（https://brew.sh/），或从官网手动安装。完成后完全退出并重启 AgentHub 再检测。"
     });
     let outcome = InstallOutcome::failure(
         "env_install",
         vec![],
-        "未找到 Homebrew。请先安装 Homebrew（https://brew.sh/）后重试。",
+        "未找到 Homebrew，无法一键安装。请先安装 Homebrew（https://brew.sh/），或从官网手动安装。完成后完全退出并重启 AgentHub 再检测。",
     )
     .with_code("env.not_ready", Some(details));
     let err = map_install_failure(&outcome);

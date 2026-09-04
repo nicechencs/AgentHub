@@ -579,7 +579,10 @@ fn official_codex_prepare_forces_upstream_stream_and_keeps_downstream_false() {
         .transport()
         .prepare(DownstreamSurface::Messages, &admitted)
         .expect("prepare");
-    assert!(!prepared.stream, "downstream asked for a complete JSON body");
+    assert!(
+        !prepared.stream,
+        "downstream asked for a complete JSON body"
+    );
     assert_eq!(prepared.body["stream"], true);
     assert_eq!(prepared.body["store"], false);
     assert!(UpstreamChannel::CodexResponses.forces_upstream_stream());

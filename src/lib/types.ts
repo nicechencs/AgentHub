@@ -56,6 +56,26 @@ export interface RuntimeDetect {
   notes?: string[];
 }
 
+/** 环境软件的远端版本检查结果；网络异常不能当作已是最新。 */
+export type RuntimeUpdateState =
+  | 'update_available'
+  | 'up_to_date'
+  | 'unknown'
+  | 'unsupported'
+  | 'not_installed';
+
+export interface RuntimeUpdateInfo {
+  runtimeId: RuntimeId;
+  state: RuntimeUpdateState;
+  currentVersion?: string;
+  latestVersion?: string;
+  source?: string;
+  checkedAt?: string;
+  note?: string;
+  canAutoUpgrade?: boolean;
+  setupUrl?: string;
+}
+
 /** 某安装渠道的前置环境检查结果 */
 export interface ChannelEnvCheck {
   channelId: string;
@@ -320,8 +340,8 @@ export interface UsageRecord {
 export interface UsageTrendPoint {
   /** Local `YYYY-MM-DD`, or `YYYY-MM-DD HH:00` when the window is `days <= 1`. */
   date: string;
-  /** 各 agent 的 input + cache + output token 数 */
-  [agentId: string]: number | string;
+  /** Series values: agent ids or model names (tokens), plus `__cost__:{series}` on model grouping. */
+  [seriesKey: string]: number | string;
 }
 
 export interface ParserHealth {

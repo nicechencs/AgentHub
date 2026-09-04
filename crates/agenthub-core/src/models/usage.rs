@@ -10,6 +10,8 @@
 //! - Display totals: [`UsageMetrics`] / [`UsageOverview`]. Frontend
 //!   `usageTokenParts` must not peel cache again.
 
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -60,6 +62,10 @@ pub struct UsageQuery {
     /// RFC3339 lower bound, AND-ed with the `days` window (`ts >= since`).
     #[serde(default)]
     pub since: Option<String>,
+    /// RFC3339 exclusive upper bound (`ts < until`). Dashboard custom range
+    /// passes local midnight of the day after the last included day.
+    #[serde(default)]
+    pub until: Option<String>,
     /// Hidden / omitted agents. Applied before LIMIT so the table cap is among visible rows.
     #[serde(default)]
     pub exclude_agent_ids: Vec<AgentId>,
@@ -102,13 +108,18 @@ pub struct UsageOverview {
     pub models: Vec<String>,
 }
 
-/// Trend chart point: `{ date, claude?: n, codex?: n, ... }` (dynamic agent keys).
+/// Trend chart point: `{ date, claude?: n, ... }` (dynamic series keys).
 ///
-/// `date` is local `YYYY-MM-DD` when `days > 1`, or local `YYYY-MM-DD HH:00`
-/// when `days <= 1` (dashboard today / last 24h). Empty buckets in the window
-/// are filled so a short range is not a single categorical point.
+/// Agent grouping uses agent ids; model grouping uses model names plus parallel
+/// `__cost__:{series}` floats. `date` is local `YYYY-MM-DD` when `days > 1`, or
+/// local `YYYY-MM-DD HH:00` when `days <= 1` (dashboard today / last 24h).
+/// Empty buckets in the window are filled so a short range is not a single
+/// categorical point.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UsageTrendPoint(pub Map<String, Value>);
+
+/// Prefix for per-series cost on a model-grouped trend point.
+pub const USAGE_TREND_COST_KEY_PREFIX: &str = "__cost__:";
 
 impl UsageTrendPoint {
     pub fn new(date: impl Into<String>) -> Self {
@@ -118,9 +129,26 @@ impl UsageTrendPoint {
     }
 
     pub fn add_tokens(&mut self, agent: AgentId, tokens: i64) {
-        let key = agent.as_str().to_string();
-        let prev = self.0.get(&key).and_then(|v| v.as_i64()).unwrap_or(0);
-        self.0.insert(key, Value::from(prev + tokens));
+        self.add_named_tokens(agent.as_str(), tokens);
+    }
+
+    pub fn add_named_tokens(&mut self, key: impl AsRef<str>, tokens: i64) {
+        let key = key.as_ref();
+        if key.is_empty() || key == "date" || key.starts_with(USAGE_TREND_COST_KEY_PREFIX) {
+            return;
+        }
+        let prev = self.0.get(key).and_then(|v| v.as_i64()).unwrap_or(0);
+        self.0.insert(key.to_string(), Value::from(prev + tokens));
+    }
+
+    pub fn add_named_cost(&mut self, series: impl AsRef<str>, cost: f64) {
+        let series = series.as_ref();
+        if series.is_empty() || series == "date" || !cost.is_finite() {
+            return;
+        }
+        let key = format!("{USAGE_TREND_COST_KEY_PREFIX}{series}");
+        let prev = self.0.get(&key).and_then(|v| v.as_f64()).unwrap_or(0.0);
+        self.0.insert(key, Value::from(prev + cost));
     }
 }
 
@@ -184,4 +212,60 @@ impl ParsedUsageEvent {
     pub fn cache_tokens_total(&self) -> i64 {
         self.cache_write_tokens() + self.cache_read_tokens
     }
+}
+
+fn is_grok_model_stem(s: &str) -> bool {
+    s == "grok" || s.starts_with("grok-")
+}
+
+/// Public usage model id: Grok session logs append `-build` (and sometimes a
+/// `[grok] ` / `xai/` prefix) to the same billable model.
+pub fn canonical_usage_model(raw: &str) -> String {
+    let mut s = raw.strip_prefix("[grok] ").unwrap_or(raw).trim();
+    s = s
+        .strip_prefix("xai/")
+        .or_else(|| s.strip_prefix("x-ai/"))
+        .unwrap_or(s)
+        .trim();
+    if let Some(base) = s.strip_suffix("-build") {
+        let base = base.trim();
+        if is_grok_model_stem(base) {
+            return base.to_string();
+        }
+    }
+    s.to_string()
+}
+
+/// Sorted unique public model ids for dropdowns / missing-pricing lists.
+pub fn unique_canonical_usage_models(
+    names: impl IntoIterator<Item = impl AsRef<str>>,
+) -> Vec<String> {
+    let mut set = BTreeSet::new();
+    for name in names {
+        let key = canonical_usage_model(name.as_ref());
+        if !key.is_empty() {
+            set.insert(key);
+        }
+    }
+    set.into_iter().collect()
+}
+
+/// Exact `model` column values that should match a dashboard model filter.
+pub fn usage_model_filter_aliases(selected: &str) -> Vec<String> {
+    let selected = selected.trim();
+    let canon = canonical_usage_model(selected);
+    let mut out = Vec::new();
+    let mut push = |value: String| {
+        if !value.is_empty() && !out.iter().any(|existing| existing == &value) {
+            out.push(value);
+        }
+    };
+    push(selected.to_string());
+    push(canon.clone());
+    if is_grok_model_stem(&canon) {
+        push(format!("{canon}-build"));
+        push(format!("[grok] {canon}"));
+        push(format!("[grok] {canon}-build"));
+    }
+    out
 }

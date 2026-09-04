@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildRouteTraceFeed, mergeRecentRouteTraces, UNAUTHENTICATED_TRACE_PROFILE_ID } from './route-trace-feed-model';
+import { buildRouteTraceFeed, decorateRouteTraceRows, mergeRecentRouteTraces, UNAUTHENTICATED_TRACE_PROFILE_ID } from './route-trace-feed-model';
 import type { AdapterBridgeRuntimeStatus, AdapterProfile } from '@/lib/backend/contracts/adapter';
 
 const profiles: Pick<AdapterProfile, 'id' | 'name' | 'route' | 'targetAgentId'>[] = [
@@ -7,6 +7,7 @@ const profiles: Pick<AdapterProfile, 'id' | 'name' | 'route' | 'targetAgentId'>[
 ];
 
 const trace = {
+  traceVersion: 2,
   requestId: 'req-1',
   at: '2026-01-01T00:00:00.000Z',
   method: 'POST',
@@ -18,7 +19,7 @@ const trace = {
   conversion: { status: 'skipped' as const, path: '' },
   upstreamAuth: { status: 'skipped' as const },
   upstream: { status: 'skipped' as const },
-  failureStage: 'local_auth',
+  failureStage: 'local_auth' as const,
 };
 
 describe('route-trace-feed-model', () => {
@@ -80,5 +81,15 @@ describe('route-trace-feed-model', () => {
     const failed = buildRouteTraceFeed(profiles, statuses, 'failed', 10);
     expect(failed).toHaveLength(1);
     expect(failed[0]?.requestId).toBe('req-1');
+  });
+
+  it('labels queried traces with the route name', () => {
+    const rows = decorateRouteTraceRows(
+      [{ ...trace, profileId: 'route-a' }],
+      profiles,
+      '未绑定路由',
+    );
+    expect(rows[0]?.sourceLabel).toBe('Route A');
+    expect(rows[0]?.unauthenticated).toBe(false);
   });
 });

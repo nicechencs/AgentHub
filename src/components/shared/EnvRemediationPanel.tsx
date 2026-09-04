@@ -15,7 +15,7 @@ import {
   RuntimeInstallFailedError,
 } from '@/lib/api/env';
 import { formatMissingList } from '@/lib/env';
-import { runtimeChannelForPlan } from '@/lib/env-plan';
+import { formatRuntimeInstallFailureLines, runtimeChannelForPlan } from '@/lib/env-plan';
 import { detectHostPlatform } from '@/lib/platform-detect';
 import { openExternalLink } from '@/lib/open-external';
 import type { EnvRemediation, RuntimeDetect, RuntimeId } from '@/lib/types';
@@ -36,6 +36,8 @@ export function EnvRemediationPanel({
   /** 打开后自动开始一键安装 */
   autoStart = false,
   pageHasPrimaryCta = false,
+  intent = 'install',
+  canAutoUpgrade,
 }: {
   /** 主展示的 Runtime(兼容单点修复) */
   runtime?: RuntimeDetect;
@@ -52,11 +54,22 @@ export function EnvRemediationPanel({
   autoStart?: boolean;
   /** 本页已有主 CTA 时，一键安装降为 secondary */
   pageHasPrimaryCta?: boolean;
+  /** 升级已装软件时包含就绪项，文案改为升级 */
+  intent?: 'install' | 'upgrade' | 'repair';
+  /** 远端版本检测确认能在本机一键升级；false 时只展示手动步骤。 */
+  canAutoUpgrade?: boolean;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
+  const upgrading = intent === 'upgrade';
   const allRuntimes = runtimes ?? (runtime ? [runtime] : []);
-  const plan = resolveAutoInstallPlan(allRuntimes, focusIds ?? (runtime ? [runtime.id] : undefined));
+  const hostPlatform = detectHostPlatform();
+  const plan = resolveAutoInstallPlan(
+    allRuntimes,
+    focusIds ?? (runtime ? [runtime.id] : undefined),
+    hostPlatform,
+    upgrading,
+  );
 
   const primary =
     runtime ??
@@ -65,8 +78,7 @@ export function EnvRemediationPanel({
     allRuntimes[0];
 
   const meta = primary ? RUNTIME_MAP[primary.id] : null;
-  const canOneClick = plan.targets.length > 0;
-  const hostPlatform = detectHostPlatform();
+  const canOneClick = plan.targets.length > 0 && (!upgrading || canAutoUpgrade !== false);
   const runtimeChannel = runtimeChannelForPlan(hostPlatform);
 
   const [lines, setLines] = React.useState<string[]>([]);
@@ -92,7 +104,7 @@ export function EnvRemediationPanel({
   const startOneClickInstall = React.useCallback(async () => {
     if (!canOneClick || inFlightRef.current) return;
     cancelRef.current = { cancelled: false };
-    setLines([t('chrome.env.installingLine')]);
+    setLines([t(upgrading ? 'chrome.env.upgradingLine' : 'chrome.env.installingLine')]);
     setStatus('running');
     setRunning(true);
     try {
@@ -108,7 +120,7 @@ export function EnvRemediationPanel({
       if (cancelRef.current.cancelled) return;
       setStatus('done');
       toast({
-        title: t('chrome.env.installedToast', { summary: plan.summary }),
+        title: t(upgrading ? 'chrome.env.upgradedToast' : 'chrome.env.installedToast', { summary: plan.summary }),
         description: plan.skipped.length
           ? t('chrome.env.stillManual', { list: formatMissingList(plan.skipped) })
           : t('chrome.env.restartHint'),
@@ -120,15 +132,24 @@ export function EnvRemediationPanel({
       if (String(e) === 'Error: cancelled' || (e instanceof Error && e.message === 'cancelled')) return;
       setStatus('failed');
       if (e instanceof RuntimeInstallFailedError) {
-        setLines(e.logs.length ? e.logs : [e.message]);
-        toast({ title: t('chrome.env.oneClickFailed'), description: e.message, variant: 'danger' });
+        const failureLines = formatRuntimeInstallFailureLines(e.outcome);
+        setLines(failureLines.length ? failureLines : e.logs.length ? e.logs : [e.message]);
+        toast({
+          title: t(upgrading ? 'chrome.env.upgradeFailed' : 'chrome.env.oneClickFailed'),
+          description: e.message,
+          variant: 'danger',
+        });
       } else {
-        toast({ title: t('chrome.env.oneClickFailed'), description: String(e), variant: 'danger' });
+        toast({
+          title: t(upgrading ? 'chrome.env.upgradeFailed' : 'chrome.env.oneClickFailed'),
+          description: String(e),
+          variant: 'danger',
+        });
       }
     } finally {
       setRunning(false);
     }
-  }, [canOneClick, plan.targets, plan.summary, plan.skipped, onDone, t, toast, setRunning, runtimeChannel]);
+  }, [canOneClick, plan.targets, plan.summary, plan.skipped, onDone, t, toast, setRunning, runtimeChannel, upgrading]);
 
   React.useEffect(() => {
     if (!autoStart || autoStartedRef.current || !canOneClick) return;
@@ -153,12 +174,15 @@ export function EnvRemediationPanel({
 
   if (!primary || !meta) return null;
 
-  const remediations = runtimeRemediationsForPlatform(
-    primary.remediations.length ? primary.remediations : meta.remediations,
-    hostPlatform,
-  );
-  const title =
-    focusIds && focusIds.length > 1
+  const remediationSource = upgrading && meta.upgradeRemediations?.length
+    ? meta.upgradeRemediations
+    : primary.remediations.length ? primary.remediations : meta.remediations;
+  const remediations = runtimeRemediationsForPlatform(remediationSource, hostPlatform);
+  const title = upgrading
+    ? plan.targets.length > 1
+      ? t('chrome.env.willUpgrade', { summary: plan.summary })
+      : t('chrome.env.upgradeName', { name: meta.name })
+    : focusIds && focusIds.length > 1
       ? t('chrome.env.notReadyList', { list: formatMissingList(focusIds) })
       : plan.targets.length > 1
         ? t('chrome.env.notReadyFix', { summary: plan.summary })
@@ -176,18 +200,24 @@ export function EnvRemediationPanel({
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium">{title}</span>
-            <Badge variant="warning">
-              {primary.status === 'outdated'
-                ? t('chrome.env.statusOutdated')
-                : primary.status === 'broken_path'
-                  ? t('chrome.env.statusBrokenPath')
-                  : t('chrome.env.statusMissing')}
+            <Badge variant={primary.status === 'ok' ? 'success' : 'warning'}>
+              {primary.status === 'ok'
+                ? t('chrome.env.statusOk')
+                : primary.status === 'outdated'
+                  ? t('chrome.env.statusOutdated')
+                  : primary.status === 'broken_path'
+                    ? t('chrome.env.statusBrokenPath')
+                    : t('chrome.env.statusMissing')}
             </Badge>
-            {canOneClick && <Badge variant="accent">{t('chrome.env.oneClickSupported')}</Badge>}
+            {canOneClick && (
+              <Badge variant="accent">
+                {upgrading ? t('chrome.env.upgradeSupported') : t('chrome.env.oneClickSupported')}
+              </Badge>
+            )}
           </div>
           <p className="mt-1 text-xs text-secondary">
             {canOneClick
-              ? `${t('chrome.env.willInstall', { summary: plan.summary })}${plan.skipped.length ? t('chrome.env.restManual', { list: formatMissingList(plan.skipped) }) : ''}`
+              ? `${t(upgrading ? 'chrome.env.willUpgrade' : 'chrome.env.willInstall', { summary: plan.summary })}${plan.skipped.length ? t('chrome.env.restManual', { list: formatMissingList(plan.skipped) }) : ''}`
               : t(runtimeDescriptionKey(meta.id))}
           </p>
         </div>
@@ -221,13 +251,15 @@ export function EnvRemediationPanel({
             onClick={() => void startOneClickInstall()}
           >
             <Download className="h-3.5 w-3.5" />
-            {t('chrome.env.oneClickInstallBtn', { summary: plan.summary })}
+            {t(upgrading ? 'chrome.env.oneClickUpgradeBtn' : 'chrome.env.oneClickInstallBtn', {
+              summary: plan.summary,
+            })}
           </Button>
         )}
         {status === 'running' && (
           <Button size="sm" variant={envOneClickInstallVariant(pageHasPrimaryCta ?? false)} disabled>
             <Download className="h-3.5 w-3.5 animate-pulse" />
-            {t('chrome.env.oneClickInstalling')}
+            {t(upgrading ? 'chrome.env.oneClickUpgrading' : 'chrome.env.oneClickInstalling')}
           </Button>
         )}
         <Button
@@ -253,7 +285,7 @@ export function EnvRemediationPanel({
       {status !== 'running' && (
         <details className="mt-3" open={!canOneClick}>
           <summary className="cursor-pointer text-xs text-muted hover:text-secondary">
-            {canOneClick ? t('chrome.env.manualSteps') : t('chrome.env.fixSteps')}
+            {canOneClick ? t('chrome.env.manualSteps') : upgrading ? t('chrome.env.manualUpdate') : t('chrome.env.fixSteps')}
           </summary>
           <ul className="mt-2 space-y-2">
             {remediations.map((r, i) => (

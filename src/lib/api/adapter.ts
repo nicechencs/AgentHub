@@ -1,6 +1,6 @@
 /** Adapter route preview and the narrow, supported apply façade. */
 import { getBackend, refreshRuntimeReadModels } from '@/app/runtime';
-import type { AdapterApplyPlan, AdapterApplyRequest, AdapterApplyResult, AdapterBridgeRuntimeStatus, AdapterProfile, AdapterProfileFilter, AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind, AttachPoolOwnedAuthorizationRequest, DefaultRoutePoolList, DefaultRoutePoolOverview, SyncConnectionAuthorizationsRequest, SyncConnectionAuthorizationsResult } from '@/lib/backend/contracts/adapter';
+import type { AdapterApplyPlan, AdapterApplyRequest, AdapterApplyResult, AdapterBridgeRuntimeStatus, AdapterProfile, AdapterProfileFilter, AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind, AttachPoolOwnedAuthorizationRequest, DefaultRoutePoolList, DefaultRoutePoolOverview, ForkedConnectionAuthorization, SyncConnectionAuthorizationsRequest, SyncConnectionAuthorizationsResult } from '@/lib/backend/contracts/adapter';
 
 export type {
   AdapterAction,
@@ -22,6 +22,7 @@ export type {
   AdapterSourceKind,
   AdapterSupport,
   AttachPoolOwnedAuthorizationRequest,
+  ForkedConnectionAuthorization,
   SyncConnectionAuthorizationsRequest,
   SyncConnectionAuthorizationsResult,
 } from '@/lib/backend/contracts/adapter';
@@ -111,6 +112,20 @@ export async function attachPoolOwnedAuthorization(
   request: AttachPoolOwnedAuthorizationRequest,
 ): Promise<DefaultRoutePoolOverview> {
   const result = await getBackend().adapter.attachPoolOwnedAuthorization(request);
+  try {
+    await refreshRuntimeReadModels(getBackend(), { models: ['connectionInventory', 'ticketWallet'] });
+  } catch {
+    // Write succeeded; the pool store keeps previous rows if refresh fails.
+  }
+  return result;
+}
+
+/** Copy a Connections-managed official login into a pool-owned row. */
+export async function forkConnectionAuthorization(
+  sourceKind: AdapterSourceKind,
+  sourceId: string,
+): Promise<ForkedConnectionAuthorization> {
+  const result = await getBackend().adapter.forkConnectionAuthorization(sourceKind, sourceId);
   try {
     await refreshRuntimeReadModels(getBackend(), { models: ['connectionInventory', 'ticketWallet'] });
   } catch {
@@ -227,6 +242,16 @@ export async function stopLocalGateway() {
 /** Read whether the shared local relay is listening. */
 export async function getLocalGatewayStatus() {
   return getBackend().adapter.getLocalGatewayStatus();
+}
+
+/** Monitoring table page: filter by key / endpoint type, then page. */
+export async function queryRouteTraces(query?: import('@/lib/backend/contracts/adapter').RouteTraceQuery) {
+  return getBackend().adapter.queryRouteTraces(query);
+}
+
+/** Remove selected monitoring rows. History only. */
+export async function deleteRouteTraces(requestIds: string[]) {
+  return getBackend().adapter.deleteRouteTraces(requestIds);
 }
 
 /** Stops the bridge listener without deleting its generated Connection. */

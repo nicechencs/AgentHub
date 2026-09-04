@@ -74,7 +74,10 @@ impl DownstreamSurface {
                 status = 404_u16,
                 "local surface does not serve this path"
             );
-            Some(surface_mismatch_response(self, state.upstream.local_surface))
+            Some(surface_mismatch_response(
+                self,
+                state.upstream.local_surface,
+            ))
         }
     }
 

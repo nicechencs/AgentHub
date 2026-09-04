@@ -109,10 +109,9 @@ pub(super) fn map_upstream_http_error(
     } else {
         StatusCode::BAD_GATEWAY
     };
-    let message = crate::bridge::protocol::responses::client_message_for_upstream_detail(
-        upstream_detail,
-    )
-    .unwrap_or("The upstream model provider returned an error.");
+    let message =
+        crate::bridge::protocol::responses::client_message_for_upstream_detail(upstream_detail)
+            .unwrap_or("The upstream model provider returned an error.");
     tracing::warn!(
         target: "core.adapter",
         profile_id = %state.profile_id,
@@ -130,12 +129,7 @@ pub(super) fn map_upstream_http_error(
         "bridge upstream returned an error"
     );
     state.record_upstream_failure();
-    error_response(
-        local_status,
-        "upstream_error",
-        message,
-        retry_after,
-    )
+    error_response(local_status, "upstream_error", message, retry_after)
 }
 
 pub(super) fn extract_upstream_error_detail(body: &[u8]) -> Option<String> {

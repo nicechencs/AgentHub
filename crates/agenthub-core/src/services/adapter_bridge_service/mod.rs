@@ -36,13 +36,15 @@ use crate::bridge::{
 };
 use crate::error::{AppError, Result};
 use crate::models::{
-    list_local_bridge_models, ticket_id, AdapterCredentialClass, AdapterProfile, AdapterProfileFilter,
-    AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterRouteRequest, AdapterSourceKind,
-    AdapterSourceProduct, AdapterSupport, AdapterTargetProtocol, AdapterUpstreamTransport, AgentId,
-    LocalBridgeEdge, Provider, ProviderInput, RouteDownstreamDialect, RouteDownstreamSurface,
-    RouteMember, RoutePool, RouteSchedulePolicy, ANTHROPIC_CODEX_EDGE, CODEX_CLAUDE_RESPONSES_EDGE,
-    CODEX_DSH_EDGE, CODEX_GROK_EDGE, CODEX_KIMI_EDGE, GROK_CLAUDE_EDGE, GROK_CODEX_EDGE,
-    KIMI_CODEX_EDGE, OPENAI_CLAUDE_EDGE, OPENAI_CODEX_EDGE, OPENAI_GROK_BRIDGE_EDGE,
+    list_local_bridge_models, ticket_id, AdapterCredentialClass, AdapterProfile,
+    AdapterProfileFilter, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
+    AdapterRouteRequest, AdapterSourceKind, AdapterSourceProduct, AdapterSupport,
+    AdapterTargetProtocol, AdapterUpstreamTransport, AgentId, LocalBridgeEdge, Provider,
+    ProviderInput, RouteDownstreamDialect, RouteDownstreamSurface, RouteMember, RoutePool,
+    RouteSchedulePolicy, ANTHROPIC_CODEX_EDGE, CODEX_CLAUDE_RESPONSES_EDGE, CODEX_DSH_EDGE,
+    CODEX_GROK_EDGE, CODEX_KIMI_EDGE, GROK_CLAUDE_EDGE, GROK_CODEX_EDGE, KIMI_CODEX_EDGE,
+    OPENAI_CLAUDE_EDGE, OPENAI_CODEX_EDGE, OPENAI_DSH_BRIDGE_EDGE, OPENAI_GROK_BRIDGE_EDGE,
+    OPENAI_KIMI_BRIDGE_EDGE,
 };
 use crate::services::{AdapterRouteService, AdapterSecretResolver, RoutePoolService};
 use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
@@ -52,6 +54,8 @@ const ANTHROPIC_RULE_ID: &str = ANTHROPIC_CODEX_EDGE.rule_id;
 const OPENAI_RULE_ID: &str = OPENAI_CODEX_EDGE.rule_id;
 const OPENAI_CLAUDE_BRIDGE_RULE_ID: &str = OPENAI_CLAUDE_EDGE.rule_id;
 const OPENAI_GROK_LOCAL_RULE_ID: &str = OPENAI_GROK_BRIDGE_EDGE.rule_id;
+const OPENAI_KIMI_LOCAL_RULE_ID: &str = OPENAI_KIMI_BRIDGE_EDGE.rule_id;
+const OPENAI_DSH_LOCAL_RULE_ID: &str = OPENAI_DSH_BRIDGE_EDGE.rule_id;
 const CODEX_CLAUDE_RULE_ID: &str = CODEX_CLAUDE_RESPONSES_EDGE.rule_id;
 const GROK_CLAUDE_RULE_ID: &str = GROK_CLAUDE_EDGE.rule_id;
 const GROK_CODEX_RULE_ID: &str = GROK_CODEX_EDGE.rule_id;
@@ -237,6 +241,44 @@ const OPENAI_GROK_BRIDGE_RULE: CodexBridgeRule = CodexBridgeRule {
     mode: live_writer_mode(&OPENAI_GROK_BRIDGE_EDGE),
 };
 
+const OPENAI_KIMI_BRIDGE_RULE: CodexBridgeRule = CodexBridgeRule {
+    rule_id: OPENAI_KIMI_BRIDGE_EDGE.rule_id,
+    profile_prefix: "adapter-openai-kimi-bridge",
+    provider_prefix: "kimi-openai-adapter-bridge",
+    profile_name: "OpenAI → Kimi 本机路由",
+    provider_name: "OpenAI 本机路由",
+    toml_name: "AgentHub OpenAI Route",
+    provider_slug: "agenthub_openai_bridge",
+    upstream_base_url: OPENAI_CHAT_BASE_URL,
+    default_model: OPENAI_KIMI_BRIDGE_EDGE.default_model,
+    protocol: upstream_protocol_of(&OPENAI_KIMI_BRIDGE_EDGE),
+    local_surface: local_surface_of(&OPENAI_KIMI_BRIDGE_EDGE),
+    bridge_kind: "chat_completions_to_chat_completions",
+    legacy_bridge_kinds: &[],
+    source: OPENAI_KIMI_BRIDGE_EDGE.source,
+    target_agent: OPENAI_KIMI_BRIDGE_EDGE.target,
+    mode: live_writer_mode(&OPENAI_KIMI_BRIDGE_EDGE),
+};
+
+const OPENAI_DSH_BRIDGE_RULE: CodexBridgeRule = CodexBridgeRule {
+    rule_id: OPENAI_DSH_BRIDGE_EDGE.rule_id,
+    profile_prefix: "adapter-openai-dsh-bridge",
+    provider_prefix: "dsh-openai-adapter-bridge",
+    profile_name: "OpenAI → DeepSeek Harness 本机路由",
+    provider_name: "OpenAI 本机路由",
+    toml_name: "AgentHub OpenAI Route",
+    provider_slug: "agenthub_openai_bridge",
+    upstream_base_url: OPENAI_CHAT_BASE_URL,
+    default_model: OPENAI_DSH_BRIDGE_EDGE.default_model,
+    protocol: upstream_protocol_of(&OPENAI_DSH_BRIDGE_EDGE),
+    local_surface: local_surface_of(&OPENAI_DSH_BRIDGE_EDGE),
+    bridge_kind: "chat_completions_to_chat_completions",
+    legacy_bridge_kinds: &[],
+    source: OPENAI_DSH_BRIDGE_EDGE.source,
+    target_agent: OPENAI_DSH_BRIDGE_EDGE.target,
+    mode: live_writer_mode(&OPENAI_DSH_BRIDGE_EDGE),
+};
+
 const CODEX_CLAUDE_RULE: CodexBridgeRule = CodexBridgeRule {
     rule_id: CODEX_CLAUDE_RESPONSES_EDGE.rule_id,
     profile_prefix: "adapter-codex-claude-bridge",
@@ -359,6 +401,8 @@ const LIVE_BRIDGE_RULES: &[CodexBridgeRule] = &[
     OPENAI_CODEX_RULE,
     OPENAI_CLAUDE_RULE,
     OPENAI_GROK_BRIDGE_RULE,
+    OPENAI_KIMI_BRIDGE_RULE,
+    OPENAI_DSH_BRIDGE_RULE,
     CODEX_CLAUDE_RULE,
     GROK_CLAUDE_RULE,
     GROK_CODEX_RULE,
@@ -1105,11 +1149,7 @@ impl AdapterBridgeService {
     /// Listener spec for the board switch. Does not bind logins to Agents.
     /// Enabled pool members supply listed models and upstream auth so a token
     /// test can reach a model; missing members stay a placeholder.
-    pub fn pool_listener_spec(
-        &self,
-        pool: &RoutePool,
-        flags: (bool, bool),
-    ) -> BridgeStartSpec {
+    pub fn pool_listener_spec(&self, pool: &RoutePool, flags: (bool, bool)) -> BridgeStartSpec {
         let surface = match pool.downstream_surface {
             RouteDownstreamSurface::Messages => BridgeLocalSurface::Messages,
             RouteDownstreamSurface::ChatCompletions => BridgeLocalSurface::ChatCompletions,
@@ -1165,20 +1205,14 @@ impl AdapterBridgeService {
             .ok()
             .filter(|models| !models.is_empty())
             .unwrap_or_else(|| {
-                listed_models_for_bridge(
-                    product,
-                    pool.target_agent_id,
-                    &model,
-                    custom,
-                    &configured,
-                )
+                listed_models_for_bridge(product, pool.target_agent_id, &model, custom, &configured)
             });
         let mut spec = BridgeStartSpec::new(
             pool.id.clone(),
             port,
             token,
             BridgeUpstreamConfig {
-                base_url: url,
+                base_url: url.clone(),
                 model: {
                     let model = model.trim();
                     if model.is_empty() {
@@ -1202,41 +1236,71 @@ impl AdapterBridgeService {
             ),
         )
         .with_pair_adapter_flags(flags.0, flags.1);
+        // The v1 host has one upstream URL per listener. Never put a login
+        // for a different endpoint into its picker: v1 would send that login's
+        // key to the lead endpoint. The indexed host routes each member to its
+        // own endpoint; the legacy host deliberately keeps only same-endpoint
+        // members until it is upgraded.
         let member_specs = members
             .iter()
-            .map(|member| {
-                let is_lead =
-                    member.source_kind == lead.source_kind && member.source_id == lead.source_id;
-                let member_auth = if is_lead {
-                    auth.clone()
-                } else {
-                    rule.and_then(|rule| {
-                        self.resolve_member_auth(rule.rule_id, member.source_kind, &member.source_id)
-                            .ok()
-                    })
+            .filter_map(|member| {
+                let member_product = self
+                    .routes
+                    .classify_source_product(member.source_kind, &member.source_id)
+                    .unwrap_or(AdapterSourceProduct::Other);
+                let member_rule = rule_for_member_product(member_product, pool.target_agent_id)?;
+                let (member_url, _, _, member_protocol, _) = prepare::openai_source_upstream(
+                    self,
+                    &member_rule,
+                    member.source_kind,
+                    &member.source_id,
+                );
+                if !same_upstream_endpoint(&url, protocol, &member_url, member_protocol) {
+                    tracing::warn!(
+                        target: "core.adapter",
+                        pool_id = %pool.id,
+                        source_id = %member.source_id,
+                        "skipping a different upstream endpoint in legacy pool listener"
+                    );
+                    return None;
+                }
+                let member_auth = self
+                    .resolve_member_auth(member_rule.rule_id, member.source_kind, &member.source_id)
+                    .ok()
                     .filter(|item| item.has_token())
-                    .unwrap_or_else(|| ResolvedAuth::bearer(""))
-                };
+                    .unwrap_or_else(|| ResolvedAuth::bearer(""));
                 let health = if member_auth.has_token() {
                     MemberHealth::Renewable
                 } else {
                     MemberHealth::NeedsLogin
                 };
-                BridgeMemberSpec {
+                Some(BridgeMemberSpec {
                     ticket_id: ticket_id(member.source_kind, &member.source_id),
                     source_kind: member.source_kind.as_str().to_owned(),
                     source_id: member.source_id.clone(),
-                    label: member.source_id.clone(),
+                    label: self.member_display_label(member),
                     auth: member_auth,
                     reload: None,
                     health,
                     priority: member.priority,
                     position: member.position,
-                }
+                })
             })
             .collect();
         spec = spec.with_members(member_specs);
         spec
+    }
+
+    fn member_display_label(&self, member: &RouteMember) -> String {
+        if member.source_kind == AdapterSourceKind::Account {
+            if let Ok(Some(account)) = self.secrets.accounts.get_by_id(&member.source_id) {
+                let label = account.label.trim();
+                if !label.is_empty() {
+                    return label.to_owned();
+                }
+            }
+        }
+        member.source_id.clone()
     }
 
     fn route_index_for_material(
@@ -1296,8 +1360,8 @@ impl AdapterBridgeService {
         let member_rule =
             rule_for_member_product(product, profile.target_agent_id).unwrap_or(*rule);
         let provider = index_provider_key(product);
-        let is_lead = member.source_kind == profile.source_kind
-            && member.source_id == material.source_id;
+        let is_lead =
+            member.source_kind == profile.source_kind && member.source_id == material.source_id;
         if is_lead {
             let custom = crate::services::adapter_route_constants::is_custom_openai_compat_url(
                 &material.upstream_base_url,
@@ -1356,6 +1420,16 @@ impl AdapterBridgeService {
             snapshot_ok: true,
         }
     }
+}
+
+fn same_upstream_endpoint(
+    left_url: &str,
+    left_protocol: BridgeUpstreamProtocol,
+    right_url: &str,
+    right_protocol: BridgeUpstreamProtocol,
+) -> bool {
+    left_protocol == right_protocol
+        && left_url.trim_end_matches('/').eq_ignore_ascii_case(right_url.trim_end_matches('/'))
 }
 
 fn validate_route_pool_profile(
@@ -1439,14 +1513,24 @@ fn rule_for_member_product(
     product: AdapterSourceProduct,
     target_agent: AgentId,
 ) -> Option<CodexBridgeRule> {
+    let lookup_product = openai_compatible_pool_product(product);
     LIVE_BRIDGE_RULES
         .iter()
         .copied()
-        .find(|rule| rule.source == product && rule.target_agent == target_agent)
+        .find(|rule| rule.source == lookup_product && rule.target_agent == target_agent)
         .or_else(|| {
             LIVE_BRIDGE_RULES
                 .iter()
                 .copied()
-                .find(|rule| rule.source == product)
+                .find(|rule| rule.source == lookup_product)
         })
+}
+
+fn openai_compatible_pool_product(product: AdapterSourceProduct) -> AdapterSourceProduct {
+    match product {
+        AdapterSourceProduct::DeepseekApi
+        | AdapterSourceProduct::GlmCodingPlan
+        | AdapterSourceProduct::XaiApi => AdapterSourceProduct::OpenaiApi,
+        _ => product,
+    }
 }

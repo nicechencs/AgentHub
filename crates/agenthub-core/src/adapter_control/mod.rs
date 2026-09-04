@@ -14,11 +14,11 @@ mod status;
 #[cfg(test)]
 mod tests;
 
+pub use crate::bridge::host::InboundRequestRecord;
 pub use contract::{
     resolve_bind_action, resolve_unbind_action, AdapterControl, BindAction, UnbindAction,
 };
 pub use coordinator::AdapterSagaCoordinator;
-pub use crate::bridge::host::InboundRequestRecord;
 pub use status::{AdapterBridgeStatus, LocalGatewayStatus};
 
 /// Unbind already failed. A failed restart must not disappear into `let _ =`.

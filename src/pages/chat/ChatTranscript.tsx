@@ -65,6 +65,10 @@ export function ChatTranscript({
     <div
       ref={scrollRef}
       onScroll={onScroll}
+      role="log"
+      aria-live="polite"
+      aria-relevant="additions text"
+      aria-busy={messagesLoading || sending ? 'true' : undefined}
       className="min-h-0 flex-1 overflow-y-auto bg-canvas"
     >
       {messagesLoading && turns.length === 0 ? (

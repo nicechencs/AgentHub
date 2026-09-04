@@ -12,7 +12,7 @@ export function TopBar() {
   return (
     <header
       className={cn(
-        'flex shrink-0 items-center gap-4 border-b border-border bg-panel',
+        'flex shrink-0 items-center gap-4 border-b border-border bg-canvas',
         pageRhythm.topChrome,
         pageRhythm.workbenchX,
       )}

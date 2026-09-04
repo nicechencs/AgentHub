@@ -1,0 +1,19 @@
+{
+  "chatgpt": {
+    "default": "gpt-5.6-sol",
+    "models": ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
+  },
+  "claude": {
+    "default": "claude-sonnet-5",
+    "models": [
+      "claude-sonnet-5",
+      "claude-opus-5",
+      "claude-haiku-4-5",
+      "claude-fable-5-1"
+    ]
+  },
+  "grok": {
+    "default": "grok-4.6",
+    "models": ["grok-4.6", "grok-4.5", "grok-build-0.1"]
+  }
+}

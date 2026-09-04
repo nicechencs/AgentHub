@@ -566,6 +566,14 @@ async fn start_rejects_unsafe_upstream_urls_and_keeps_loopback_base_paths() {
         );
     }
 
+    let mut unresolved = spec("unresolved", 0, 1);
+    unresolved.upstream.base_url = "http://127.0.0.1/".into();
+    unresolved.upstream.auth = ResolvedAuth::bearer("pending");
+    assert!(matches!(
+        host.start(unresolved).await,
+        Err(super::BridgeHostError::InvalidUpstreamUrl)
+    ));
+
     let (upstream_port, upstream_task) = upstream_at("/coding/v1/chat/completions").await;
     let mut scoped = spec("base-path", 0, upstream_port);
     scoped.upstream.base_url = format!("http://127.0.0.1:{upstream_port}/coding/v1");
@@ -852,7 +860,9 @@ async fn get_on_conversation_paths_returns_method_not_allowed_json() {
             .unwrap_or("")
             .to_owned();
         assert!(
-            allow.split(',').any(|m| m.trim().eq_ignore_ascii_case("POST")),
+            allow
+                .split(',')
+                .any(|m| m.trim().eq_ignore_ascii_case("POST")),
             "GET {path} Allow={allow:?}"
         );
         let body: Value = response.json().await.expect("method_not_allowed json");
@@ -1868,9 +1878,12 @@ async fn codex_responses_oauth_non_stream_stream_required_error_is_chinese() {
             .expect("bind stream-required Codex upstream");
     let port = listener.local_addr().expect("addr").port();
     let task = tokio::spawn(async move {
-        axum::serve(listener, Router::new().route("/v1/responses", post(reject_stream)))
-            .await
-            .expect("serve stream-required Codex upstream");
+        axum::serve(
+            listener,
+            Router::new().route("/v1/responses", post(reject_stream)),
+        )
+        .await
+        .expect("serve stream-required Codex upstream");
     });
     let host = BridgeRuntimeHost::new();
     let status = host
@@ -3818,8 +3831,7 @@ async fn two_profiles_two_bearers_two_surfaces_do_not_cross() {
         .as_str()
         .unwrap_or("");
     assert!(
-        cross_messages_msg.contains("/v1/responses")
-            && cross_messages_msg.contains("/v1/messages"),
+        cross_messages_msg.contains("/v1/responses") && cross_messages_msg.contains("/v1/messages"),
         "{cross_messages_msg}"
     );
 

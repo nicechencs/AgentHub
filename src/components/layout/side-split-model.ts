@@ -56,9 +56,9 @@ export function clampSideSplitWidth(width: number, containerWidth: number): numb
     usable >= SIDE_SPLIT_MAIN_MIN + SIDE_SPLIT_WIDTH_MIN
       ? SIDE_SPLIT_MAIN_MIN
       : Math.min(SIDE_SPLIT_MAIN_MIN, Math.max(SIDE_SPLIT_MAIN_FLOOR, Math.floor(usable * 0.48)));
-  const listCap = Math.max(SIDE_SPLIT_WIDTH_FLOOR, usable - mainReserve);
+  const listCap = Math.max(0, usable - mainReserve);
   const shareCap = Math.floor(usable * SIDE_SPLIT_MAX_SHARE);
-  const maxW = Math.max(SIDE_SPLIT_WIDTH_FLOOR, Math.min(listCap, shareCap));
+  const maxW = Math.max(0, Math.min(listCap, shareCap));
   const minW = Math.min(SIDE_SPLIT_WIDTH_MIN, maxW);
   return Math.min(maxW, Math.max(minW, requested));
 }

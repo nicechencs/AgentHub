@@ -207,6 +207,35 @@ describe('mock adapter projection', () => {
     expect(getMockProviderById(sourceId)).toBeTruthy();
   });
 
+  it('copies a Connections official login into a pool-owned row', async () => {
+    const sourceId = `grok-oauth-${Date.now()}-${Math.random()}`;
+    upsertMockAccount({
+      id: sourceId,
+      agentId: 'grok',
+      kind: 'oauth',
+      label: 'user@x.ai',
+      isCurrent: false,
+      tokenValid: true,
+    });
+    const adapter = createMockAdapterPort(resolver);
+    await adapter.syncConnectionAuthorizations({
+      sources: [{ sourceKind: 'account', sourceId }],
+    });
+    const forked = await adapter.forkConnectionAuthorization('account', sourceId);
+    expect(forked.copied).toBe(true);
+    expect(forked.originalSourceId).toBe(sourceId);
+    expect(forked.sourceId).not.toBe(sourceId);
+    expect(getMockAccountById(sourceId)?.home).not.toBe('route_pool');
+    expect(getMockAccountById(forked.sourceId)?.home).toBe('route_pool');
+    const listed = await adapter.listDefaultRoutePools();
+    expect(listed.pools.some((pool) => (
+      pool.members.some((member) => member.sourceId === forked.sourceId)
+    ))).toBe(true);
+    expect(listed.pools.every((pool) => (
+      pool.members.every((member) => member.sourceId !== sourceId)
+    ))).toBe(true);
+  });
+
   it('syncs Connections authorizations into the default pool without hiding them', async () => {
     const sourceId = `codex-conn-${Date.now()}-${Math.random()}`;
     await createMockProviderPort().upsertProvider({

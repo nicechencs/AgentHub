@@ -1,6 +1,4 @@
-use super::{
-    fill_missing_kimi_provider_type, kimi_provider_type_for_url, complete_kimi_live_toml,
-};
+use super::{complete_kimi_live_toml, fill_missing_kimi_provider_type, kimi_provider_type_for_url};
 use toml_edit::DocumentMut;
 
 #[test]
@@ -58,10 +56,7 @@ api_key = "sk-x"
     .parse()
     .unwrap();
     complete_kimi_live_toml(&mut doc).unwrap();
-    assert_eq!(
-        doc["providers"]["moonshot"]["type"].as_str(),
-        Some("kimi")
-    );
+    assert_eq!(doc["providers"]["moonshot"]["type"].as_str(), Some("kimi"));
 
     let mut kept: DocumentMut = r#"
 default_provider = "custom"

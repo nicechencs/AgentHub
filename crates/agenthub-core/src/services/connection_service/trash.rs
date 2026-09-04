@@ -219,7 +219,7 @@ impl ConnectionService {
                     if account.id != row.source_id || account.agent_id != row.agent_id {
                         return Err(AppError::InvalidArg("回收记录与账号内容不一致".into()));
                     }
-                    restore_account_payload(&tx, account)?;
+                    restore_account_payload(&tx, account, id)?;
                 }
                 ConnectionTrashKind::Provider => {
                     let mut provider: Provider = serde_json::from_value(row.payload)?;
@@ -255,7 +255,12 @@ impl ConnectionService {
 
 /// Restore a login row without applying it to the agent.
 /// Mixed official-login + API Key snapshots expand into one row per family.
-fn restore_account_payload(conn: &rusqlite::Connection, account: Account) -> Result<()> {
+/// Families that still have their own recycle-bin rows stay there.
+fn restore_account_payload(
+    conn: &rusqlite::Connection,
+    account: Account,
+    restoring_id: &str,
+) -> Result<()> {
     if account_get_by_id_conn(conn, &account.id)?.is_some() {
         return Err(AppError::InvalidArg(format!(
             "account already exists: {}",
@@ -273,12 +278,19 @@ fn restore_account_payload(conn: &rusqlite::Connection, account: Account) -> Res
 
     let split = split_mixed_account(&account);
     let existing = account_list_for_agent_conn(conn, agent)?;
+    let other_trash = ConnectionTrashRepo::list_in_conn(conn, Some(agent), None)?;
     let mut original_id_used = false;
     for mut row in split {
         row.is_current = false;
         if existing
             .iter()
             .any(|other| accounts_share_authorization(&row, other))
+        {
+            continue;
+        }
+        if other_trash
+            .iter()
+            .any(|item| item.id != restoring_id && trash_account_shares_authorization(item, &row))
         {
             continue;
         }
@@ -291,6 +303,12 @@ fn restore_account_payload(conn: &rusqlite::Connection, account: Account) -> Res
         account_create_conn(conn, &row)?;
     }
     Ok(())
+}
+
+fn trash_account_shares_authorization(item: &ConnectionTrashItem, account: &Account) -> bool {
+    item.account
+        .as_ref()
+        .is_some_and(|other| accounts_share_authorization(other, account))
 }
 
 fn extra_string_missing(extra: &serde_json::Value, key: &str) -> bool {

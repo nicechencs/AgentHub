@@ -45,32 +45,74 @@ describe('dashboard layout wiring', () => {
     expect(page).toContain('rememberedUsageFilters');
     expect(page).toContain('rememberUsageFilters');
     expect(page).toContain('resolveUsageModelFilter');
+    expect(page).not.toContain('formatUsageWindowLabel');
+    expect(page).not.toContain('rounded-full border border-border bg-panel px-3 text-meta');
     expect(page).not.toContain("useState<DateRange>('7d')");
     expect(page).toContain('if (!modelsReady) return');
   });
 
-  it('plots overlay usage series in agent brand hex, not a stacked CSS-var area', () => {
+  it('puts time range after agent and model filters and supports custom dates', () => {
     const page = source('index.tsx');
-    expect(page).toContain('resolveChartColor');
-    expect(page).toContain('type="monotone"');
-    expect(page).toContain('isAnimationActive={false}');
-    expect(page).not.toContain('stackId');
-    expect(page).not.toContain('type="linear"');
-    expect(page).not.toContain('stroke={meta.color}');
-    expect(page).not.toContain('stopColor={meta.color}');
+    const agentIdx = page.indexOf("t('dashboard.page.allAgents')");
+    const modelIdx = page.indexOf("t('dashboard.page.allModels')");
+    const rangeIdx = page.indexOf("t('dashboard.page.rangeAria')");
+    expect(agentIdx).toBeGreaterThan(-1);
+    expect(modelIdx).toBeGreaterThan(agentIdx);
+    expect(rangeIdx).toBeGreaterThan(modelIdx);
+    expect(page).toContain("'custom'");
+    expect(page).toContain('type="date"');
+    expect(page).toContain('dashboard.page.customStart');
+  });
+
+  it('plots agent series as overlay areas and model series as stacked cumulative fill', () => {
+    const chart = source('UsageTrendChart.tsx');
+    expect(chart).toContain('resolveChartColor');
+    expect(chart).toContain('type="monotone"');
+    expect(chart).toContain('isAnimationActive={false}');
+    expect(chart).toContain('stackId="model-usage"');
+    expect(chart).toContain('accumulateTrendSeries');
+    expect(chart).toContain('foldTrendTail');
+    expect(chart).toContain('ReferenceLine');
+    expect(chart).not.toContain('<LineChart');
+    expect(chart).not.toContain('type="linear"');
+    expect(chart).not.toContain('stroke={meta.color}');
+    expect(chart).not.toContain('stopColor={meta.color}');
+  });
+
+  it('switches the middle trend between Agent areas and stacked model usage with cost', () => {
+    const page = source('index.tsx');
+    const chart = source('UsageTrendChart.tsx');
+    expect(page).toContain('UsageTrendChart');
+    expect(page).toContain(
+      "usageTrend(days, agentId, model, since, excludeAgentIds, 'model', until)",
+    );
+    expect(chart).toContain('SegmentedControl');
+    expect(chart).toContain('dashboard.page.trendGroupModel');
+    expect(chart).not.toContain('dashboard.page.trendMetricCost');
+    expect(chart).toContain('fmtTrendCost');
+    expect(chart).toContain('costFromTrendPoint');
+    expect(chart).toContain('dashboard.page.trendOther');
+    expect(chart).toContain('dashboard.page.trendToday');
   });
 
   it('keeps trend y-axis labels in view and sorts the hover list by tokens', () => {
     const page = source('index.tsx');
+    const chart = source('UsageTrendChart.tsx');
     const tooltip = source('UsageTrendTooltip.tsx');
-    expect(page).toContain('USAGE_TREND_Y_AXIS_WIDTH');
-    expect(page).toContain('UsageTrendTooltipCard');
-    expect(page).toContain('useUsageTrendHover');
-    expect(page).not.toContain('width={48}');
-    expect(page).not.toContain('contentStyle={tooltipSurfaceStyle()}');
+    expect(chart).toContain('USAGE_TREND_Y_AXIS_WIDTH');
+    expect(chart).toContain('UsageTrendTooltipCard');
+    expect(chart).toContain('useUsageTrendHover');
+    expect(chart).not.toContain('width={48}');
+    expect(chart).not.toContain('contentStyle={tooltipSurfaceStyle()}');
     expect(tooltip).toContain('USAGE_TREND_Y_AXIS_WIDTH = 64');
     expect(tooltip).toContain('tooltipSurfaceStyle()');
     expect(tooltip).toContain("pointerEvents: 'auto'");
+    expect(tooltip).toContain('usageTrendHoverPoint');
+    expect(tooltip).toContain('usageTrendTipOffset');
+    expect(page).toContain('sm:grid-cols-3');
+    expect(page).not.toContain('lg:grid-cols-5');
+    expect(tooltip).toContain('dailyTotal');
+    expect(tooltip).toContain('cumulativeTotal');
   });
 
   it('marks Cursor overview cards as not managing authorization', () => {

@@ -42,6 +42,9 @@ const IN_USE_TIP_FALLBACK = '这份登录已在当前工具使用中';
 const IN_CATALOG_TIP_FALLBACK = '这份登录已经添加';
 const SWITCH_BUSY_TIP_FALLBACK = '正在切换其他登录';
 const REFRESH_BUSY_TIP_FALLBACK = '正在刷新其他登录';
+const REFRESH_TIP_FALLBACK = '查看这份登录的用量。';
+const SYNC_CURRENT_LOGIN_TIP_FALLBACK =
+  '不是刷新列表。会把本机正在用的官方登录写进来，并查看用量。';
 
 export function localizeQuotaResetIn(raw: string | undefined, t?: TranslateFn): string | undefined {
   if (!raw) return undefined;
@@ -312,6 +315,17 @@ export function ticketRefreshDisabledReason(
     return t ? t('connections.list.refreshBusyTip') : REFRESH_BUSY_TIP_FALLBACK;
   }
   return undefined;
+}
+
+export function oauthActionHoverTip(
+  action: AccountAction | undefined,
+  t?: TranslateFn,
+): string | undefined {
+  if (!action) return undefined;
+  if (action.kind === 'sync-current-login') {
+    return t ? t('connections.list.syncCurrentLoginTip') : SYNC_CURRENT_LOGIN_TIP_FALLBACK;
+  }
+  return t ? t('connections.list.refreshTip') : REFRESH_TIP_FALLBACK;
 }
 
 function endpointHostOnly(host: string): string {

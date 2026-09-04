@@ -35,6 +35,42 @@ export function looksLikeGrokModel(id: string): boolean {
   return /(^|\/)grok[-_.]/i.test(text) || /^xai\/grok/i.test(text);
 }
 
+export function isLoopbackHttpUrl(raw?: string | null): boolean {
+  const text = raw?.trim() ?? '';
+  if (!text) return false;
+  const candidates = /^[a-z][a-z0-9+.-]*:/i.test(text) ? [text] : [`http://${text}`];
+  for (const candidate of candidates) {
+    try {
+      const host = new URL(candidate).hostname.toLowerCase();
+      if (host === '127.0.0.1' || host === 'localhost' || host === '[::1]' || host === '::1') {
+        return true;
+      }
+    } catch {
+      /* try next */
+    }
+  }
+  return false;
+}
+
+/**
+ * Models shown in the add/edit picker. Brand-filter official catalogs, but if
+ * the address returned a list and none matched (local gateway, custom relay),
+ * keep the fetched ids so the dropdown matches the success toast.
+ */
+export function listRemoteModelsForPicker(
+  agentId: AgentKey,
+  ids: readonly string[],
+  baseUrl?: string | null,
+): string[] {
+  const list = ids.map((id) => id.trim()).filter(Boolean);
+  if (list.length === 0) return [];
+  if (isLoopbackHttpUrl(baseUrl)) return list;
+  const filtered = filterRemoteModelsForAgent(agentId, ids);
+  if (filtered.length > 0) return filtered;
+  if (list.every((id) => looksLikeGrokModel(id))) return [];
+  return list;
+}
+
 /** Drop models that belong to another product so Claude/Kimi do not list grok-*. */
 export function filterRemoteModelsForAgent(agentId: AgentKey, ids: readonly string[]): string[] {
   const list = ids.map((id) => id.trim()).filter(Boolean);

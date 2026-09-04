@@ -323,9 +323,7 @@ pub(super) fn model_unavailable_message(available_models: &[String]) -> String {
         "No running route can serve this model.".to_owned()
     } else {
         let list = available_models.join(", ");
-        format!(
-            "No running route can serve this model. Available: {list}. 当前登录只提供：{list}"
-        )
+        format!("No running route can serve this model. Available: {list}. 当前登录只提供：{list}")
     }
 }
 
@@ -357,7 +355,9 @@ mod model_unavailable_tests {
     async fn model_unavailable_includes_available_models_and_bilingual_hint() {
         let response = model_unavailable_response(&["gpt-5.4".to_owned()]);
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        let body = to_bytes(response.into_body(), usize::MAX).await.expect("body");
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
         let json: Value = serde_json::from_slice(&body).expect("json");
         assert_eq!(json["error"]["code"], "model_unavailable");
         assert_eq!(json["error"]["type"], "invalid_request_error");
@@ -377,7 +377,9 @@ mod model_unavailable_tests {
     #[tokio::test]
     async fn model_unavailable_empty_models_keeps_base_message() {
         let response = model_unavailable_response(&[]);
-        let body = to_bytes(response.into_body(), usize::MAX).await.expect("body");
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
         let json: Value = serde_json::from_slice(&body).expect("json");
         assert_eq!(
             json["error"]["message"],

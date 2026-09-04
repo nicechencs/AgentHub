@@ -215,10 +215,9 @@ pub(super) fn legacy_grok_bridge_toml(
 pub(super) fn kimi_bridge_toml(rule: &CodexBridgeRule, port: u16, local_bearer: &str) -> String {
     let (ty, base) = match rule.local_surface {
         BridgeLocalSurface::Messages => ("anthropic", format!("http://127.0.0.1:{port}")),
-        BridgeLocalSurface::Responses => (
-            "openai_responses",
-            format!("http://127.0.0.1:{port}/v1"),
-        ),
+        BridgeLocalSurface::Responses => {
+            ("openai_responses", format!("http://127.0.0.1:{port}/v1"))
+        }
         BridgeLocalSurface::ChatCompletions => ("openai", format!("http://127.0.0.1:{port}/v1")),
     };
     format!(

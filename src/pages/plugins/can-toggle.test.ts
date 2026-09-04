@@ -7,7 +7,7 @@ describe('canToggleListedPlugin', () => {
     expect(canToggleListedPlugin('grok')).toBe(true);
   });
 
-  it('hides buttons for planned and unsupported agents', () => {
+  it('hides the toggle for planned and unsupported agents', () => {
     expect(canToggleListedPlugin('codex')).toBe(false);
     expect(canToggleListedPlugin('pi')).toBe(false);
     expect(canToggleListedPlugin('cursor')).toBe(false);

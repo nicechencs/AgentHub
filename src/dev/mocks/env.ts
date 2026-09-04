@@ -7,7 +7,7 @@ import {
   type HostPlatform,
 } from '@/lib/platform-detect';
 import { loadJson, saveJson } from '@/lib/ui-preferences';
-import type { EnvStatus, RuntimeDetect, RuntimeId } from '@/lib/types';
+import type { EnvStatus, RuntimeDetect, RuntimeId, RuntimeUpdateInfo } from '@/lib/types';
 
 const STORAGE_KEY = 'agenthub:runtime-state';
 
@@ -179,6 +179,41 @@ export function createMockEnvPort(_backend: Backend): EnvPort {
       const state = readState();
       const hostRuntimes = runtimesForPlatform(detectHostPlatform());
       return hostRuntimes.map((m) => toDetect(m.id, state[m.id]));
+    },
+
+    async checkRuntimeUpdates(runtimeIds, _force = false): Promise<RuntimeUpdateInfo[]> {
+      await delay(randomLatency(80, 160));
+      const state = readState();
+      const platform = detectHostPlatform();
+      const ids = runtimeIds?.length
+        ? runtimeIds
+        : runtimesForPlatform(detectHostPlatform()).map((runtime) => runtime.id);
+      const latest: Record<RuntimeId, string> = {
+        nodejs: '24.20.0',
+        npm: '11.16.0',
+        git: '2.55.0',
+        powershell: '7.5.4',
+      };
+      return ids.map((id) => {
+        const current = state[id];
+        if (!current || current.status === 'missing') {
+          return { runtimeId: id, state: 'not_installed' };
+        }
+        const currentVersion = current.version;
+        const newest = latest[id];
+        const outdated = Boolean(currentVersion && currentVersion !== newest);
+        const canAutoUpgrade = platform === 'windows'
+          || (platform === 'macos'
+            && (id === 'nodejs' || id === 'npm' || current.path?.includes('homebrew')));
+        return {
+          runtimeId: id,
+          state: outdated ? 'update_available' : 'up_to_date',
+          currentVersion,
+          latestVersion: newest,
+          source: id === 'nodejs' ? 'nodejs.org' : id,
+          canAutoUpgrade,
+        };
+      });
     },
 
     async getRuntime(id) {

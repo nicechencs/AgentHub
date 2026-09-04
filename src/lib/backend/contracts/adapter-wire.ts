@@ -3,7 +3,7 @@ import {
   mapCoreProvider,
   type CoreProvider,
 } from './provider-map';
-import type { AdapterAction, AdapterApplyPlan, AdapterApplyResult, AdapterBridgeInboundRequest, AdapterBridgeRouteTrace, AdapterBridgeRuntimeState, AdapterBridgeRuntimeStatus, AdapterEvidence, AdapterGateKind, AdapterMaturity, AdapterPlanChange, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis, AdapterServiceImpact, AdapterSourceKind, AdapterSupport, DefaultRoutePoolList, DefaultRoutePoolOverview, LocalTokenProbeOutcome, LocalTokenProbeResult, LocalTokenRecord, RouteMemberOverview, RouteTraceConversion, RouteTraceLocalAuth, RouteTraceMember, RouteTracePool, RouteTracePoolAttempt, RouteTraceStageStatus, RouteTraceUpstream, RouteTraceUpstreamAuth, RoutePoolDialect, RoutePoolSurface } from './adapter';
+import type { AdapterAction, AdapterApplyPlan, AdapterApplyResult, AdapterBridgeInboundRequest, AdapterBridgeRouteTrace, AdapterBridgeRuntimeState, AdapterBridgeRuntimeStatus, AdapterEvidence, AdapterGateKind, AdapterMaturity, AdapterPlanChange, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis, AdapterServiceImpact, AdapterSourceKind, AdapterSupport, DefaultRoutePoolList, DefaultRoutePoolOverview, LocalTokenProbeOutcome, LocalTokenProbeResult, LocalTokenRecord, RouteMemberOverview, RouteTraceConversion, RouteTraceLocalAuth, RouteTraceMember, RouteTracePool, RouteTracePoolAttempt, RouteTraceStageStatus, RouteTraceStep, RouteTraceDelivery, RouteTraceUpstream, RouteTraceUpstreamAuth, RouteTraceUpstreamRequest, RouteTraceStageId, RoutePoolDialect, RoutePoolSurface } from './adapter';
 
 /** Exact camelCase shape serialized by Rust's `AdapterProfile`. */
 export interface AdapterProfileWire {
@@ -52,16 +52,38 @@ export interface AdapterBridgeInboundRequestWire {
   ok?: unknown;
 }
 
+export interface RouteTraceStepWire {
+  status?: unknown;
+  code?: unknown;
+  message?: unknown;
+}
+
+export interface RouteTraceDeliveryWire extends RouteTraceStepWire {
+  httpStatus?: unknown;
+  stream?: unknown;
+  completion?: unknown;
+}
+
 export interface RouteTraceMemberWire {
   label?: unknown;
   sourceKind?: unknown;
   sourceId?: unknown;
   ticketId?: unknown;
+  keyLast4?: unknown;
 }
 
 export interface RouteTracePoolAttemptWire {
   member?: RouteTraceMemberWire;
   status?: unknown;
+  attemptId?: unknown;
+  url?: unknown;
+  requestStatus?: unknown;
+  responseStatus?: unknown;
+  authResult?: unknown;
+  httpStatus?: unknown;
+  result?: unknown;
+  durationMs?: unknown;
+  conversionPath?: unknown;
   code?: unknown;
   message?: unknown;
 }
@@ -69,6 +91,7 @@ export interface RouteTracePoolAttemptWire {
 export interface RouteTraceLocalAuthWire {
   status?: unknown;
   profileId?: unknown;
+  keyLast4?: unknown;
   port?: unknown;
   code?: unknown;
   message?: unknown;
@@ -90,6 +113,12 @@ export interface RouteTraceConversionWire {
   message?: unknown;
 }
 
+export interface RouteTraceUpstreamRequestWire extends RouteTraceStepWire {
+  url?: unknown;
+  member?: RouteTraceMemberWire;
+  model?: unknown;
+}
+
 export interface RouteTraceUpstreamAuthWire {
   status?: unknown;
   httpStatus?: unknown;
@@ -109,6 +138,7 @@ export interface RouteTraceUpstreamWire {
 }
 
 export interface AdapterBridgeRouteTraceWire {
+  traceVersion?: unknown;
   requestId?: unknown;
   atUnixMs?: unknown;
   profileId?: unknown;
@@ -121,11 +151,17 @@ export interface AdapterBridgeRouteTraceWire {
   ttftMs?: unknown;
   inputTokens?: unknown;
   outputTokens?: unknown;
+  localEndpoint?: RouteTraceStepWire;
   localAuth?: RouteTraceLocalAuthWire;
+  admission?: RouteTraceStepWire;
+  routeResolution?: RouteTraceStepWire;
   pool?: RouteTracePoolWire;
   conversion?: RouteTraceConversionWire;
   upstreamAuth?: RouteTraceUpstreamAuthWire;
+  upstreamRequest?: RouteTraceUpstreamRequestWire;
   upstream?: RouteTraceUpstreamWire;
+  responseConversion?: RouteTraceConversionWire;
+  delivery?: RouteTraceDeliveryWire;
   failureStage?: unknown;
 }
 
@@ -506,7 +542,39 @@ function mapInboundRequests(wire: AdapterBridgeInboundRequestWire[] | undefined)
   return rows;
 }
 
-const TRACE_STAGE_STATUSES = new Set<RouteTraceStageStatus>(['pending', 'ok', 'failed', 'skipped']);
+const TRACE_STAGE_STATUSES = new Set<RouteTraceStageStatus>([
+  'pending',
+  'ok',
+  'failed',
+  'skipped',
+  'interrupted',
+]);
+
+const TRACE_STAGE_IDS = new Set<RouteTraceStageId>([
+  'received',
+  'local_auth',
+  'local_endpoint',
+  'admission',
+  'route_resolution',
+  'pool',
+  'request_conversion',
+  'upstream_request',
+  'upstream_response',
+  'response_conversion',
+  'delivery',
+]);
+
+function mapTraceStageId(raw: unknown): RouteTraceStageId | null {
+  const value = typeof raw === 'string' ? raw.toLowerCase() : '';
+  const canonical = value === 'conversion'
+    ? 'request_conversion'
+    : value === 'upstream' || value === 'upstream_auth'
+      ? 'upstream_response'
+      : value;
+  return TRACE_STAGE_IDS.has(canonical as RouteTraceStageId)
+    ? canonical as RouteTraceStageId
+    : null;
+}
 
 function mapTraceStageStatus(raw: unknown): RouteTraceStageStatus {
   const value = typeof raw === 'string' ? raw.toLowerCase() : '';
@@ -519,6 +587,22 @@ function mapOptionalString(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   const trimmed = raw.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function mapTraceUrl(raw: unknown): string | null {
+  const value = mapOptionalString(raw);
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    parsed.username = '';
+    parsed.password = '';
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString();
+  } catch {
+    return null;
+  }
 }
 
 function parseAtUnixMs(raw: unknown): number | undefined {
@@ -550,17 +634,51 @@ function mapTraceMember(wire: RouteTraceMemberWire | undefined): RouteTraceMembe
     sourceKind,
     sourceId,
     ticketId: mapOptionalString(wire.ticketId),
+    keyLast4: mapOptionalString(wire.keyLast4),
   };
 }
 
 function mapTracePoolAttempt(wire: RouteTracePoolAttemptWire): RouteTracePoolAttempt | null {
   const member = mapTraceMember(wire.member);
   if (!member) return null;
+  const authResult = wire.authResult === 'accepted'
+    || wire.authResult === 'rejected'
+    || wire.authResult === 'not_recorded'
+    ? wire.authResult
+    : null;
   return {
     member,
     status: mapTraceStageStatus(wire.status),
+    attemptId: mapOptionalCount(wire.attemptId),
+    url: mapTraceUrl(wire.url),
+    requestStatus: wire.requestStatus == null ? null : mapTraceStageStatus(wire.requestStatus),
+    responseStatus: wire.responseStatus == null ? null : mapTraceStageStatus(wire.responseStatus),
+    authResult,
+    httpStatus: mapOptionalCount(wire.httpStatus),
+    result: mapOptionalString(wire.result),
+    durationMs: mapOptionalCount(wire.durationMs),
+    conversionPath: mapOptionalString(wire.conversionPath),
     code: mapOptionalString(wire.code),
     message: mapOptionalString(wire.message),
+  };
+}
+
+function mapTraceStep(wire: RouteTraceStepWire | undefined): RouteTraceStep {
+  return {
+    status: mapTraceStageStatus(wire?.status),
+    code: mapOptionalString(wire?.code),
+    message: mapOptionalString(wire?.message),
+  };
+}
+
+function mapTraceDelivery(wire: RouteTraceDeliveryWire | undefined): RouteTraceDelivery {
+  return {
+    ...mapTraceStep(wire),
+    httpStatus: typeof wire?.httpStatus === 'number' && Number.isInteger(wire.httpStatus)
+      ? wire.httpStatus
+      : null,
+    stream: wire?.stream === true,
+    completion: mapOptionalString(wire?.completion),
   };
 }
 
@@ -568,6 +686,7 @@ function mapTraceLocalAuth(wire: RouteTraceLocalAuthWire | undefined): RouteTrac
   return {
     status: mapTraceStageStatus(wire?.status),
     profileId: mapOptionalString(wire?.profileId),
+    keyLast4: mapOptionalString(wire?.keyLast4),
     port: typeof wire?.port === 'number' && Number.isInteger(wire.port) ? wire.port : null,
     code: mapOptionalString(wire?.code),
     message: mapOptionalString(wire?.message),
@@ -599,6 +718,17 @@ function mapTraceConversion(wire: RouteTraceConversionWire | undefined): RouteTr
   };
 }
 
+function mapTraceUpstreamRequest(
+  wire: RouteTraceUpstreamRequestWire | undefined,
+): RouteTraceUpstreamRequest {
+  return {
+    ...mapTraceStep(wire),
+    url: mapTraceUrl(wire?.url),
+    member: mapTraceMember(wire?.member),
+    model: mapOptionalString(wire?.model),
+  };
+}
+
 function mapTraceUpstreamAuth(wire: RouteTraceUpstreamAuthWire | undefined): RouteTraceUpstreamAuth {
   return {
     status: mapTraceStageStatus(wire?.status),
@@ -614,7 +744,7 @@ function mapTraceUpstreamAuth(wire: RouteTraceUpstreamAuthWire | undefined): Rou
 function mapTraceUpstream(wire: RouteTraceUpstreamWire | undefined): RouteTraceUpstream {
   return {
     status: mapTraceStageStatus(wire?.status),
-    url: mapOptionalString(wire?.url),
+    url: mapTraceUrl(wire?.url),
     member: mapTraceMember(wire?.member),
     model: mapOptionalString(wire?.model),
     upstreamModel: mapOptionalString(wire?.upstreamModel),
@@ -647,6 +777,9 @@ export function mapRouteTrace(wire: unknown): AdapterBridgeRouteTrace | null {
   const requestId = mapOptionalString(row.requestId);
   if (!requestId) return null;
   return {
+    traceVersion: typeof row.traceVersion === 'number' && Number.isInteger(row.traceVersion)
+      ? row.traceVersion
+      : 1,
     requestId,
     at: mappedInbound.at,
     profileId: mapOptionalString(row.profileId),
@@ -659,12 +792,22 @@ export function mapRouteTrace(wire: unknown): AdapterBridgeRouteTrace | null {
     ttftMs: mapOptionalCount(row.ttftMs),
     inputTokens: mapOptionalCount(row.inputTokens),
     outputTokens: mapOptionalCount(row.outputTokens),
+    localEndpoint: row.localEndpoint ? mapTraceStep(row.localEndpoint) : undefined,
     localAuth: mapTraceLocalAuth(row.localAuth),
+    admission: row.admission ? mapTraceStep(row.admission) : undefined,
+    routeResolution: row.routeResolution ? mapTraceStep(row.routeResolution) : undefined,
     pool: mapTracePool(row.pool),
     conversion: mapTraceConversion(row.conversion),
     upstreamAuth: mapTraceUpstreamAuth(row.upstreamAuth),
+    upstreamRequest: row.upstreamRequest
+      ? mapTraceUpstreamRequest(row.upstreamRequest)
+      : undefined,
     upstream: mapTraceUpstream(row.upstream),
-    failureStage: mapOptionalString(row.failureStage),
+    responseConversion: row.responseConversion
+      ? mapTraceConversion(row.responseConversion)
+      : undefined,
+    delivery: row.delivery ? mapTraceDelivery(row.delivery) : undefined,
+    failureStage: mapTraceStageId(row.failureStage),
   };
 }
 
@@ -677,6 +820,39 @@ function mapRouteTraces(wire: AdapterBridgeRouteTraceWire[] | undefined): Adapte
     if (rows.length >= 30) break;
   }
   return rows;
+}
+
+export interface RouteTracePageWire {
+  rows?: unknown[];
+  total?: unknown;
+  offset?: unknown;
+  limit?: unknown;
+}
+
+export function mapRouteTracePage(wire: RouteTracePageWire | null | undefined): import('./adapter').RouteTracePage {
+  const rawRows = Array.isArray(wire?.rows) ? wire.rows : [];
+  const rows: AdapterBridgeRouteTrace[] = [];
+  for (const item of rawRows) {
+    const mapped = mapRouteTrace(item);
+    if (mapped) rows.push(mapped);
+  }
+  const total = typeof wire?.total === 'number' && Number.isFinite(wire.total) && wire.total >= 0
+    ? Math.floor(wire.total)
+    : rows.length;
+  const offset = typeof wire?.offset === 'number' && Number.isFinite(wire.offset) && wire.offset >= 0
+    ? Math.floor(wire.offset)
+    : 0;
+  const limit = typeof wire?.limit === 'number' && Number.isFinite(wire.limit) && wire.limit > 0
+    ? Math.floor(wire.limit)
+    : rows.length || 50;
+  return { rows, total, offset, limit };
+}
+
+export function mapRouteTraceDeleteResult(wire: { deleted?: unknown } | null | undefined): import('./adapter').RouteTraceDeleteResult {
+  const deleted = typeof wire?.deleted === 'number' && Number.isFinite(wire.deleted) && wire.deleted >= 0
+    ? Math.floor(wire.deleted)
+    : 0;
+  return { deleted };
 }
 
 export function mapAdapterBridgeStatusDto(

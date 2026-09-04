@@ -27,13 +27,14 @@ use std::sync::Arc;
 use adapters::AdapterRegistry;
 use error::Result;
 use models::{
-    AdapterSourceKind, AgentId, AgentUpdateInfo, ConnectionTrashKind, InstallOutcome, MultiRunReport,
-    RouteMembershipTrashPayload, RunOptions, RuntimeId, Skill, SkillListing, SwitchConfirmKind,
-    SwitchConfirmPreview, TRASH_HOME_ROUTE_POOL,
+    AdapterSourceKind, AgentId, AgentUpdateInfo, ConnectionTrashKind, InstallOutcome,
+    MultiRunReport, RouteMembershipTrashPayload, RunOptions, RuntimeId, RuntimeUpdateInfo, Skill,
+    SkillListing, SwitchConfirmKind, SwitchConfirmPreview, TRASH_HOME_ROUTE_POOL,
 };
 use platform::{LifecycleCoordinator, LifecycleResult};
 use services::{
-    check_agent_updates as probe_agent_updates, install_runtime_system, invalidate_latest_cache,
+    check_agent_updates as probe_agent_updates, check_runtime_updates as probe_runtime_updates,
+    install_runtime_system, invalidate_latest_cache, invalidate_runtime_latest_cache,
     AccountService, AdapterApplyService, AdapterBridgeService, AdapterRouteService,
     AdapterSecretResolver, AgentService, AgentVisibilityService, BackupService, ChatService,
     ConnectionService, EnvService, ProjectService, ProviderService, RoutePoolService, RunService,
@@ -369,7 +370,15 @@ impl AgentHub {
     /// Install a shared runtime (Node via winget/brew, or Linux remediations).
     /// Never fakes success without redetect.
     pub fn install_runtime(&self, id: RuntimeId, channel: &str) -> Result<InstallOutcome> {
-        install_runtime_system(id, channel)
+        let outcome = install_runtime_system(id, channel)?;
+        if outcome.ok {
+            invalidate_runtime_latest_cache(&self.data_dir, id);
+            if matches!(id, RuntimeId::NodeJs | RuntimeId::Npm) {
+                invalidate_runtime_latest_cache(&self.data_dir, RuntimeId::NodeJs);
+                invalidate_runtime_latest_cache(&self.data_dir, RuntimeId::Npm);
+            }
+        }
+        Ok(outcome)
     }
 
     /// Install an agent via allowlisted channel (`npm` / `native`).
@@ -523,6 +532,16 @@ impl AgentHub {
         force: bool,
     ) -> Result<Vec<AgentUpdateInfo>> {
         probe_agent_updates(&self.registry, &self.data_dir, agents, force)
+    }
+
+    /// Probe official latest versions for shared runtimes (disk-cached).
+    /// `runtimes = None` or empty means all runtimes detected on this host.
+    pub fn check_runtime_updates(
+        &self,
+        runtimes: Option<&[RuntimeId]>,
+        force: bool,
+    ) -> Result<Vec<RuntimeUpdateInfo>> {
+        probe_runtime_updates(&self.data_dir, &self.env.detect_all(), runtimes, force)
     }
 }
 

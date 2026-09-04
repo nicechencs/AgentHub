@@ -122,7 +122,8 @@ describe('nav model order', () => {
 
   it('keeps active labels readable while accenting 18px navigation icons', () => {
     const sidebar = readFileSync(path.join(dir, 'Sidebar.tsx'), 'utf8');
-    expect(sidebar).toContain('bg-accent/10 font-medium text-primary [&_svg]:text-accent');
+    expect(sidebar).toContain('bg-active font-medium text-primary [&_svg]:text-accent');
+    expect(sidebar).toContain('hover:bg-hover hover:text-primary');
     expect(sidebar).toContain('const NAV_ICON_SIZE = 18;');
     expect(sidebar).toContain('size={NAV_ICON_SIZE}');
     expect(sidebar).toContain('strokeWidth={1.6}');

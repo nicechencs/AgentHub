@@ -229,9 +229,17 @@ pub(crate) fn extract_grok_events(
             cache_create,
             row.reasoning_tokens,
         );
+        let model = {
+            let canonical = crate::models::canonical_usage_model(&raw_model);
+            if canonical.is_empty() {
+                raw_model.clone()
+            } else {
+                canonical
+            }
+        };
         events.push(ParsedUsageEvent {
             agent_id: AgentId::Grok,
-            model: raw_model,
+            model,
             input_tokens: uncached,
             output_tokens: row.output_tokens.max(0),
             cache_creation_tokens: cache_create,

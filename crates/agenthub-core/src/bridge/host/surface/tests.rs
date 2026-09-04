@@ -88,7 +88,10 @@ fn surface_mismatch_error_json_shape_matches_bridge_contract() {
         }
     });
     let error = value.get("error").expect("error object");
-    assert_eq!(error.get("code").and_then(|v| v.as_str()), Some("surface_mismatch"));
+    assert_eq!(
+        error.get("code").and_then(|v| v.as_str()),
+        Some("surface_mismatch")
+    );
     assert_eq!(
         error.get("type").and_then(|v| v.as_str()),
         Some("invalid_request_error")
@@ -109,7 +112,10 @@ fn method_not_allowed_message_is_bilingual_and_names_path() {
 #[test]
 fn method_not_allowed_response_is_405_json_with_allow_post() {
     let response = super::method_not_allowed_response("/v1/responses");
-    assert_eq!(response.status(), axum::http::StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(
+        response.status(),
+        axum::http::StatusCode::METHOD_NOT_ALLOWED
+    );
     let ctype = response
         .headers()
         .get(axum::http::header::CONTENT_TYPE)
@@ -125,7 +131,9 @@ fn method_not_allowed_response_is_405_json_with_allow_post() {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     assert!(
-        allow.split(',').any(|m| m.trim().eq_ignore_ascii_case("POST")),
+        allow
+            .split(',')
+            .any(|m| m.trim().eq_ignore_ascii_case("POST")),
         "expected Allow to include POST, got {allow:?}"
     );
 }

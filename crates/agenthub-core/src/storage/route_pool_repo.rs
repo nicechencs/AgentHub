@@ -122,9 +122,8 @@ impl RoutePoolRepo {
             ));
         }
         self.mutate(|conn| {
-            let _existing = get_pool_conn(conn, pool_id)?.ok_or_else(|| {
-                AppError::NotFound(format!("route pool not found: {pool_id}"))
-            })?;
+            let _existing = get_pool_conn(conn, pool_id)?
+                .ok_or_else(|| AppError::NotFound(format!("route pool not found: {pool_id}")))?;
             conn.execute(
                 "UPDATE route_pools SET hub_token = ?2, updated_at = ?3 WHERE id = ?1",
                 params![pool_id, hub_token, updated_at],

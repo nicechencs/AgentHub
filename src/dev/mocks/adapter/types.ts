@@ -7,6 +7,7 @@ import {
   type AdapterEvidence,
   type AdapterPlanChange,
   type AdapterProfile,
+  type AdapterBridgeRouteTrace,
   type DefaultRoutePoolOverview,
   type SourceModelCatalog,
 } from '@/lib/backend/contracts/adapter';
@@ -47,9 +48,11 @@ export interface MockAdapterState {
   localTokens: Map<string, string>;
   localTokenNames: Map<string, string>;
   extraLocalTokens: Array<{ id: string; poolId: string; name: string; token: string }>;
+  hiddenPrimaryIds: Set<string>;
   localGatewayRunning: boolean;
   localGatewayPort: number | null;
   sourceModelCatalogs: Map<string, SourceModelCatalog>;
+  routeTraces: AdapterBridgeRouteTrace[];
 }
 
 export interface MockAdapterSourceResolver {

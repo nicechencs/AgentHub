@@ -48,6 +48,7 @@ export {
   getTicketWalletSnapshot,
   loadTicketWallet,
   notifyTicketWalletChanged,
+  removeTicketFromWalletSnapshot,
   subscribeTicketWallet,
 } from './ticket-wallet-store';
 export type {

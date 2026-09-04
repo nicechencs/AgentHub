@@ -272,10 +272,9 @@ export function Sidebar() {
     cn(
       'group flex h-8 w-full items-center rounded-btn text-sm transition-colors duration-150',
       collapsed ? 'justify-center' : 'gap-2.5 px-2.5',
-      // 一级导航用轻量主色底，和路由区二级导航保持层级差异。
       isActive
-        ? 'bg-accent/10 font-medium text-primary [&_svg]:text-accent'
-        : 'text-secondary hover:bg-hover/70 hover:text-primary',
+        ? 'bg-active font-medium text-primary [&_svg]:text-accent'
+        : 'text-secondary hover:bg-hover hover:text-primary',
     );
 
   const { stored: agentCatalogOrder } = useStoredIdOrder(StorageKey.agentsCatalogOrder);
@@ -353,7 +352,7 @@ export function Sidebar() {
         {/* 工作区置顶；管理区 mt-auto 贴底（在 agent 状态条上方） */}
         <nav
           className={cn(
-            'flex min-h-0 flex-1 flex-col gap-1 pt-1',
+            'flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain pt-1',
             collapsed ? 'px-1.5' : 'px-2',
           )}
         >

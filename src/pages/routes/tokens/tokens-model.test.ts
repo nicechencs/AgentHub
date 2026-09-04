@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import type { AdapterProfile, DefaultRoutePoolOverview } from '@/lib/backend/contracts/adapter';
-import type { GatewayUsageRow } from '@/lib/backend/contracts/usage-types';
 import {
-  attachTokenUsage,
+  agentSupportsLocalEndpointKind,
+  buildCreateTokenEndpointCards,
+  buildLocalTokenGroups,
   buildLocalTokenRows,
+  defaultCreateTokenName,
+  firstCreateTokenPoolId,
   generateLocalToken,
-  lastVisitFromStatuses,
   localTokenDeleteGate,
   localTokenEditKeyGate,
+  localTokenEmptyCreateGate,
   maskLocalToken,
+  supportedAgentsForEndpointKind,
   tokenDisplayName,
   tokenTypeLabel,
   visibleTokenKinds,
@@ -28,19 +32,6 @@ function profile(partial: Partial<AdapterProfile> & Pick<AdapterProfile, 'id'>):
     autoStart: false,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
-    ...partial,
-  };
-}
-
-function usageRow(
-  partial: Partial<GatewayUsageRow> & Pick<GatewayUsageRow, 'requestId' | 'profileId'>,
-): GatewayUsageRow {
-  return {
-    ts: '2026-08-31T09:00:00.000Z',
-    surface: 'responses',
-    inputTokens: 0,
-    outputTokens: 0,
-    status: 'ok',
     ...partial,
   };
 }
@@ -161,7 +152,7 @@ describe('tokens-model', () => {
     expect(localTokenDeleteGate(rows[0]).enabled).toBe(false);
   });
 
-  it('lists named extra keys under the same type and keeps the default undeletable', () => {
+  it('lists named extra keys under the same type and blocks deleting the last key', () => {
     const rows = buildLocalTokenRows(
       [
         profile({
@@ -204,8 +195,8 @@ describe('tokens-model', () => {
     );
     expect(rows).toHaveLength(2);
     expect(tokenDisplayName(rows[0])).toBe('默认');
-    expect(rows[0]).toMatchObject({ id: 'pool-codex', canDelete: false, primary: true });
-    expect(localTokenDeleteGate(rows[0]).enabled).toBe(false);
+    expect(rows[0]).toMatchObject({ id: 'pool-codex', canDelete: true, primary: true });
+    expect(localTokenDeleteGate(rows[0], rows).enabled).toBe(true);
     expect(rows[1]).toMatchObject({
       id: 'extra-home',
       name: '家里',
@@ -213,7 +204,109 @@ describe('tokens-model', () => {
       canDelete: true,
       primary: false,
     });
-    expect(localTokenDeleteGate(rows[1]).enabled).toBe(true);
+    expect(localTokenDeleteGate(rows[1], rows).enabled).toBe(true);
+    expect(localTokenDeleteGate(rows[0], [rows[0]]).enabled).toBe(false);
+    expect(localTokenDeleteGate(rows[0], [rows[0]]).reason).toContain('只剩这一把');
+  });
+
+  it('names an empty default key 默认 instead of the type label', () => {
+    expect(tokenDisplayName({ name: '', kind: 'messages', primary: true })).toBe('默认');
+    expect(tokenDisplayName({ name: '工作电脑', kind: 'messages', primary: true })).toBe('工作电脑');
+    expect(tokenDisplayName({ name: '', kind: 'messages', primary: false })).toBe('Messages');
+  });
+
+  it('groups rows by endpoint type with the shared address on the group', () => {
+    const rows = buildLocalTokenRows(
+      [
+        profile({
+          id: 'codex-bridge',
+          name: 'Codex',
+          targetAgentId: 'codex',
+          sourceId: 'src-codex',
+          localPort: 8101,
+        }),
+        profile({
+          id: 'claude-bridge',
+          name: 'Claude',
+          targetAgentId: 'claude',
+          sourceId: 'src-claude',
+          localPort: 8100,
+        }),
+      ],
+      {
+        'codex-bridge': {
+          profileId: 'codex-bridge',
+          state: 'running',
+          port: 8101,
+          upstreamStatus: 'connected',
+          localToken: 'ahb_secret',
+        },
+        'claude-bridge': {
+          profileId: 'claude-bridge',
+          state: 'running',
+          port: 8100,
+          upstreamStatus: 'connected',
+          localToken: 'ahb_claude',
+        },
+      },
+      {},
+      [
+        pool({
+          id: 'pool-codex',
+          targetAgentId: 'codex',
+          dialect: 'codex',
+          members: [{ sourceKind: 'provider', sourceId: 'src-codex', enabled: true }],
+          gatewayPort: 8101,
+        }),
+        pool({
+          id: 'pool-claude',
+          targetAgentId: 'claude',
+          surface: 'messages',
+          dialect: 'claude',
+          members: [{ sourceKind: 'provider', sourceId: 'src-claude', enabled: true }],
+          gatewayPort: 8100,
+        }),
+      ],
+    );
+    expect(buildLocalTokenGroups(rows).map((group) => group.kind)).toEqual([
+      'messages',
+      'responses_codex',
+    ]);
+    expect(buildLocalTokenGroups(rows)[0]).toMatchObject({
+      path: '/v1/messages',
+      endpoint: '127.0.0.1:8100',
+    });
+  });
+
+  it('keeps an empty pool row when listLocalTokens did not return a key', () => {
+    const rows = buildLocalTokenRows(
+      [profile({
+        id: 'codex-bridge',
+        name: 'Codex',
+        targetAgentId: 'codex',
+        sourceId: 'src-codex',
+      })],
+      {},
+      {},
+      [
+        pool({
+          id: 'pool-codex',
+          targetAgentId: 'codex',
+          dialect: 'codex',
+          members: [{ sourceKind: 'provider', sourceId: 'src-codex', enabled: true }],
+        }),
+      ],
+      false,
+      {},
+      [],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id: 'pool-codex',
+      poolBacked: true,
+      token: null,
+      maskedToken: null,
+    });
   });
 
   it('sorts rows by endpoint kind then name', () => {
@@ -265,137 +358,6 @@ describe('tokens-model', () => {
     expect(rows[0]).toMatchObject({
       token: 'ahb_secretkey12',
       maskedToken: 'ahb_••••ey12',
-    });
-  });
-
-  it('records last visited page from the newest inbound request', () => {
-    expect(lastVisitFromStatuses(
-      ['a', 'b'],
-      {
-        a: {
-          profileId: 'a',
-          state: 'running',
-          lastRequestAt: '2026-08-31T10:00:00.000Z',
-          recentInbound: [{
-            at: '2026-08-31T10:00:00.000Z',
-            method: 'POST',
-            path: '/v1/messages',
-            status: 200,
-            ok: true,
-          }],
-        },
-        b: {
-          profileId: 'b',
-          state: 'running',
-          lastRequestAt: '2026-08-31T12:00:00.000Z',
-          recentInbound: [{
-            at: '2026-08-31T12:00:00.000Z',
-            method: 'GET',
-            path: '/v1/models',
-            status: 200,
-            ok: true,
-          }],
-        },
-      },
-    )).toEqual({
-      lastPath: '/v1/models',
-      lastRequestAt: '2026-08-31T12:00:00.000Z',
-    });
-  });
-
-  it('keeps last visit on pool rows from runtime status', () => {
-    const rows = buildLocalTokenRows(
-      [profile({
-        id: 'codex-bridge',
-        name: 'Codex',
-        targetAgentId: 'codex',
-        sourceId: 'src-codex',
-        localPort: 8101,
-      })],
-      {
-        'codex-bridge': {
-          profileId: 'codex-bridge',
-          state: 'running',
-          port: 8101,
-          upstreamStatus: 'connected',
-          localToken: 'ahb_secret',
-          lastRequestAt: '2026-08-31T09:00:00.000Z',
-          recentInbound: [{
-            at: '2026-08-31T09:00:00.000Z',
-            method: 'POST',
-            path: '/v1/responses',
-            status: 200,
-            ok: true,
-          }],
-        },
-      },
-      {},
-      [
-        pool({
-          id: 'pool-codex',
-          targetAgentId: 'codex',
-          dialect: 'codex',
-          members: [{ sourceKind: 'provider', sourceId: 'src-codex', enabled: true }],
-          gatewayPort: 8101,
-        }),
-      ],
-    );
-    expect(rows[0]).toMatchObject({
-      profileIds: ['pool-codex', 'codex-bridge'],
-      lastPath: '/v1/responses',
-      lastRequestAt: '2026-08-31T09:00:00.000Z',
-    });
-  });
-
-  it('sums token usage for the matching profiles and surface', () => {
-    const rows = attachTokenUsage(
-      buildLocalTokenRows(
-        [profile({
-          id: 'codex-bridge',
-          name: 'Codex',
-          targetAgentId: 'codex',
-          sourceId: 'src-codex',
-        })],
-        {},
-        {},
-        [
-          pool({
-            id: 'pool-codex',
-            targetAgentId: 'codex',
-            dialect: 'codex',
-            members: [{ sourceKind: 'provider', sourceId: 'src-codex', enabled: true }],
-          }),
-        ],
-      ),
-      [
-        usageRow({
-          requestId: 'keep',
-          profileId: 'codex-bridge',
-          surface: 'responses',
-          inputTokens: 100,
-          outputTokens: 40,
-        }),
-        usageRow({
-          requestId: 'other-surface',
-          profileId: 'codex-bridge',
-          surface: 'chat',
-          inputTokens: 999,
-          outputTokens: 999,
-        }),
-        usageRow({
-          requestId: 'other-profile',
-          profileId: 'other',
-          surface: 'responses',
-          inputTokens: 50,
-          outputTokens: 50,
-        }),
-      ],
-    );
-    expect(rows[0].usage).toEqual({
-      requestCount: 1,
-      inputTokens: 100,
-      outputTokens: 40,
-      cachedInputTokens: 0,
     });
   });
 
@@ -508,6 +470,41 @@ describe('tokens-model', () => {
     expect(rows[0]?.maskedToken).toBe('ahb_••••Y5RM');
   });
 
+  it('does not expose the stored hub token while the listener is up without localToken', () => {
+    const rows = buildLocalTokenRows(
+      [
+        profile({
+          id: 'adapter-codex-kimi-bridge',
+          targetAgentId: 'kimi',
+          localPort: 44227,
+        }),
+      ],
+      {
+        'adapter-codex-kimi-bridge': {
+          profileId: 'adapter-codex-kimi-bridge',
+          state: 'running',
+          port: 44227,
+          upstreamStatus: 'connected',
+        },
+      },
+      {},
+      [
+        pool({
+          id: 'adapter-codex-kimi-bridge',
+          targetAgentId: 'kimi',
+          surface: 'chat_completions',
+          dialect: 'kimi',
+          gatewayPort: 44227,
+          members: [{ sourceKind: 'account', sourceId: 'codex-1', enabled: true }],
+        }),
+      ],
+      false,
+      { 'adapter-codex-kimi-bridge': 'ahb_hub_token_2zpU' },
+    );
+    expect(rows[0]?.token).toBeNull();
+    expect(rows[0]?.maskedToken).toBeNull();
+  });
+
 
   it('marks pool rows editable and leftover profile rows not editable for setLocalToken', () => {
     const poolRows = buildLocalTokenRows(
@@ -560,5 +557,82 @@ describe('tokens-model', () => {
     expect(leftoverRows[0].token).toBeTruthy();
   });
 
+  it('lists Agents that speak each endpoint, with Grok only on Grok Responses',
+    () => {
+      expect(supportedAgentsForEndpointKind('messages')).toEqual([
+        'claude',
+        'kimi',
+        'pi',
+        'dsh',
+        'zcode',
+      ]);
+      expect(supportedAgentsForEndpointKind('responses_codex')).toEqual([
+        'codex',
+        'kimi',
+        'pi',
+        'dsh',
+        'zcode',
+      ]);
+      expect(supportedAgentsForEndpointKind('responses_grok')).toEqual(['grok']);
+      expect(supportedAgentsForEndpointKind('chat_completions')).toEqual([
+        'kimi',
+        'pi',
+        'workbuddy',
+        'dsh',
+        'zcode',
+      ]);
+      expect(agentSupportsLocalEndpointKind('grok', 'responses_codex')).toBe(false);
+      expect(agentSupportsLocalEndpointKind('codex', 'responses_grok')).toBe(false);
+      expect(agentSupportsLocalEndpointKind('cursor', 'messages')).toBe(false);
+    });
 
+  it('tiles four endpoint cards and only enables kinds with a pool',
+    () => {
+      const cards = buildCreateTokenEndpointCards([
+        { id: 'pool-claude', kind: 'messages' },
+        { id: 'pool-kimi', kind: 'chat_completions' },
+      ]);
+      expect(cards.map((card) => card.kind)).toEqual([
+        'messages',
+        'responses_codex',
+        'responses_grok',
+        'chat_completions',
+      ]);
+      expect(cards[0]).toMatchObject({
+        path: '/v1/messages',
+        poolId: 'pool-claude',
+      });
+      expect(cards[1]?.poolId).toBeNull();
+      expect(cards[2]?.poolId).toBeNull();
+      expect(cards[3]).toMatchObject({
+        path: '/v1/chat/completions',
+        poolId: 'pool-kimi',
+      });
+      expect(firstCreateTokenPoolId(cards)).toBe('pool-claude');
+      expect(firstCreateTokenPoolId([])).toBe('');
+    });
+
+  it('enables 为此端点新建 on pool-backed empty rows and uses pool hints otherwise', () => {
+    expect(localTokenEmptyCreateGate({ poolBacked: true, kind: 'messages' }).enabled).toBe(true);
+    expect(localTokenEmptyCreateGate(
+      { poolBacked: false, kind: 'chat_completions' },
+      { chat_completions: 'pool-kimi' },
+    )).toEqual({ enabled: true, reason: null });
+    expect(localTokenEmptyCreateGate({ poolBacked: false, kind: 'messages' }).reason)
+      .toContain('连接池');
+    expect(localTokenEmptyCreateGate(
+      { poolBacked: false, kind: 'messages' },
+      {},
+      undefined,
+      true,
+    ).reason).toContain('本机转发');
+  });
+
+  it('defaults an empty create name to the endpoint label plus a free number', () => {
+    expect(defaultCreateTokenName({ kind: 'messages' })).toBe('Messages 2');
+    expect(defaultCreateTokenName({
+      kind: 'chat_completions',
+      existingNames: ['Chat Completions 2', '家里'],
+    })).toBe('Chat Completions 3');
+  });
 });

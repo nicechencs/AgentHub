@@ -11,7 +11,7 @@ use crate::models::{
 use crate::services::adapter_projection::{
     classify_account_live, leftover_live_flag, should_skip_live_reconcile, LiveOrigin,
 };
-use crate::storage::{AdapterProfileRepo, ProviderRepo};
+use crate::storage::{AdapterProfileRepo, ConnectionTrashRepo, ProviderRepo};
 
 use super::surface::*;
 use super::{AccountService, MAX_ACCOUNT_LABEL_LEN};
@@ -198,6 +198,15 @@ impl AccountService {
             return Ok(Some(
                 self.persist_reconciled_live_row(agent, row, changed, activate)?,
             ));
+        }
+
+        if self.matching_live_trash_id(adapter, agent, &live)?.is_some() {
+            tracing::debug!(
+                module = targets::ACCOUNT,
+                agent = agent.as_str(),
+                "live login is in the recycle bin; not recreating"
+            );
+            return Ok(None);
         }
 
         if stable_live_identity(adapter, live.kind, &live.credentials).is_none() {
@@ -599,6 +608,26 @@ impl AccountService {
             &providers,
             leftover,
         ))
+    }
+
+    /// Recycle-bin rows stay there until the user restores that one login.
+    /// Live catalog/auth files are not cleared on delete, so a later sync
+    /// must not invent new pool rows for keys still in trash.
+    pub(super) fn matching_live_trash_id(
+        &self,
+        adapter: &dyn AgentAdapter,
+        agent: AgentId,
+        live: &LiveAccount,
+    ) -> Result<Option<String>> {
+        let now = chrono::Utc::now()
+            .format("%Y-%m-%d %H:%M:%S%.6f")
+            .to_string();
+        let items = ConnectionTrashRepo::new(self.db.clone()).list(Some(agent), None, &now)?;
+        Ok(items.iter().find_map(|item| {
+            let account = item.account.as_ref()?;
+            accounts_same_authorization(adapter, live.kind, &live.credentials, account)
+                .then(|| item.id.clone())
+        }))
     }
 
     pub(super) fn skip_projection_reconcile(&self, agent: AgentId, live: &LiveAccount) -> bool {

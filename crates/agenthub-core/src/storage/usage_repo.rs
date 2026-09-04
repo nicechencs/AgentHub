@@ -4,8 +4,9 @@ use rusqlite::{params, OptionalExtension, Transaction, TransactionBehavior};
 
 use crate::error::Result;
 use crate::models::{
-    AgentId, CollectResult, ParserHealth, UsageDistributionSlice, UsageMetrics, UsageOverview,
-    UsageQuery, UsageRecord, UsageTrendPoint,
+    canonical_usage_model, unique_canonical_usage_models, usage_model_filter_aliases, AgentId,
+    CollectResult, ParserHealth, UsageDistributionSlice, UsageMetrics, UsageOverview, UsageQuery,
+    UsageRecord, UsageTrendPoint,
 };
 use crate::storage::Database;
 
@@ -27,6 +28,12 @@ const UPSERT_USAGE_SQL: &str = r#"
         ts = excluded.ts,
         fast = excluded.fast
 "#;
+
+#[derive(Debug, Clone, Copy)]
+enum UsageTrendGroup {
+    Agent,
+    Model,
+}
 
 pub struct UsageRepo {
     db: Database,
@@ -175,7 +182,7 @@ impl UsageRepo {
             for r in rows {
                 out.push(r?);
             }
-            Ok(out)
+            Ok(unique_canonical_usage_models(out))
         })
     }
 
@@ -270,15 +277,62 @@ impl UsageRepo {
         model: Option<&str>,
         since: Option<&str>,
         exclude_agent_ids: &[AgentId],
+        until: Option<&str>,
     ) -> Result<Vec<UsageTrendPoint>> {
-        let q = usage_query_from_parts(days, agent, model, since, exclude_agent_ids);
+        self.trend_grouped(
+            days,
+            agent,
+            model,
+            since,
+            exclude_agent_ids,
+            UsageTrendGroup::Agent,
+            until,
+        )
+    }
+
+    pub fn trend_by_model(
+        &self,
+        days: u32,
+        agent: Option<AgentId>,
+        model: Option<&str>,
+        since: Option<&str>,
+        exclude_agent_ids: &[AgentId],
+        until: Option<&str>,
+    ) -> Result<Vec<UsageTrendPoint>> {
+        self.trend_grouped(
+            days,
+            agent,
+            model,
+            since,
+            exclude_agent_ids,
+            UsageTrendGroup::Model,
+            until,
+        )
+    }
+
+    fn trend_grouped(
+        &self,
+        days: u32,
+        agent: Option<AgentId>,
+        model: Option<&str>,
+        since: Option<&str>,
+        exclude_agent_ids: &[AgentId],
+        group: UsageTrendGroup,
+        until: Option<&str>,
+    ) -> Result<Vec<UsageTrendPoint>> {
+        let q = usage_query_from_parts(days, agent, model, since, until, exclude_agent_ids);
         let days = q.days.max(1) as i64;
-        let grain = TrendGrain::from_days(days);
+        let grain = trend_grain_for_query(&q, days);
+        let (series_col, group_sql) = match group {
+            UsageTrendGroup::Agent => ("agent_id", " GROUP BY ts, agent_id"),
+            UsageTrendGroup::Model => ("model", " GROUP BY ts, model"),
+        };
         self.db.with_conn(|conn| {
-            let mut sql = String::from(
+            let mut sql = format!(
                 r#"
-                    SELECT ts, agent_id,
-                           SUM(input_tokens + cache_read_tokens + cache_write_tokens + output_tokens) AS tokens
+                    SELECT ts, {series_col},
+                           SUM(input_tokens + cache_read_tokens + cache_write_tokens + output_tokens) AS tokens,
+                           SUM(COALESCE(cost_usd, 0)) AS cost
                     FROM usage_records
                 "#,
             );
@@ -286,7 +340,7 @@ impl UsageRepo {
             append_usage_filter(&mut sql, &mut args, &q, true);
             // Local hour/day buckets need real timestamp parsing, which is
             // done below in Rust; SQL only pre-aggregates per raw ts value.
-            sql.push_str(" GROUP BY ts, agent_id");
+            sql.push_str(group_sql);
 
             let mut stmt = conn.prepare(&sql)?;
             let params_ref: Vec<&dyn rusqlite::types::ToSql> =
@@ -296,20 +350,39 @@ impl UsageRepo {
                 std::collections::BTreeMap::new();
             while let Some(row) = rows.next()? {
                 let ts: String = row.get(0)?;
-                let agent_s: String = row.get(1)?;
+                let series: String = row.get(1)?;
                 let tokens: i64 = row.get(2)?;
+                let cost: f64 = row.get(3)?;
                 let Some(bucket) = local_trend_bucket(&ts, grain) else {
                     continue;
                 };
                 let point = map
                     .entry(bucket.clone())
                     .or_insert_with(|| UsageTrendPoint::new(bucket));
-                if let Some(aid) = AgentId::parse(&agent_s) {
-                    point.add_tokens(aid, tokens);
+                match group {
+                    UsageTrendGroup::Agent => {
+                        if let Some(aid) = AgentId::parse(&series) {
+                            point.add_tokens(aid, tokens);
+                        }
+                    }
+                    UsageTrendGroup::Model => {
+                        let series = canonical_usage_model(&series);
+                        if series.is_empty() {
+                            continue;
+                        }
+                        point.add_named_tokens(&series, tokens);
+                        point.add_named_cost(&series, cost);
+                    }
                 }
             }
             if !map.is_empty() {
-                fill_trend_window(&mut map, days, q.since.as_deref(), grain);
+                fill_trend_window(
+                    &mut map,
+                    days,
+                    q.since.as_deref(),
+                    q.until.as_deref(),
+                    grain,
+                );
             }
             Ok(map.into_values().collect())
         })
@@ -326,8 +399,9 @@ impl UsageRepo {
         model: Option<&str>,
         since: Option<&str>,
         exclude_agent_ids: &[AgentId],
+        until: Option<&str>,
     ) -> Result<UsageOverview> {
-        let q = usage_query_from_parts(days, agent, model, since, exclude_agent_ids);
+        let q = usage_query_from_parts(days, agent, model, since, until, exclude_agent_ids);
         self.db.with_conn(|conn| {
             let mut metrics_sql = String::from(
                 r#"
@@ -423,12 +497,16 @@ impl UsageRepo {
                 for r in rows {
                     out.push(r?);
                 }
-                out
+                unique_canonical_usage_models(out)
             };
 
             Ok(UsageOverview {
                 metrics,
-                distribution,
+                distribution: if q.agent_id.is_some() {
+                    merge_model_distribution(distribution)
+                } else {
+                    distribution
+                },
                 models,
             })
         })
@@ -448,7 +526,7 @@ impl UsageRepo {
             for r in rows {
                 out.push(r?);
             }
-            Ok(out)
+            Ok(unique_canonical_usage_models(out))
         })
     }
 
@@ -660,6 +738,22 @@ impl TrendGrain {
     }
 }
 
+fn trend_grain_for_query(q: &UsageQuery, days: i64) -> TrendGrain {
+    if let (Some(since), Some(until)) = (q.since.as_deref(), q.until.as_deref()) {
+        if let (Ok(start), Ok(end)) = (
+            chrono::DateTime::parse_from_rfc3339(since),
+            chrono::DateTime::parse_from_rfc3339(until),
+        ) {
+            return if end - start <= chrono::Duration::hours(24) {
+                TrendGrain::Hour
+            } else {
+                TrendGrain::Day
+            };
+        }
+    }
+    TrendGrain::from_days(days)
+}
+
 /// Local hour (`YYYY-MM-DD HH:00`) or calendar day (`YYYY-MM-DD`).
 /// UTC prefixes would split a local day around midnight; skip non-RFC3339 `ts`.
 fn local_trend_bucket(ts: &str, grain: TrendGrain) -> Option<String> {
@@ -688,6 +782,7 @@ fn fill_trend_window(
     map: &mut std::collections::BTreeMap<String, UsageTrendPoint>,
     days: i64,
     since: Option<&str>,
+    until: Option<&str>,
     grain: TrendGrain,
 ) {
     let now = chrono::Local::now();
@@ -697,11 +792,16 @@ fn fill_trend_window(
         .map(|dt| dt.with_timezone(&chrono::Local))
         .filter(|s| *s > rolling_start)
         .unwrap_or(rolling_start);
+    let end_instant = until
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&chrono::Local) - chrono::Duration::nanoseconds(1))
+        .unwrap_or(now);
+    let end_instant = if end_instant > now { now } else { end_instant };
 
     match grain {
         TrendGrain::Hour => {
             let mut t = truncate_local_hour(start);
-            let end = truncate_local_hour(now);
+            let end = truncate_local_hour(end_instant);
             let mut n = 0usize;
             while t <= end && n < 48 {
                 let key = t.format(grain.strftime()).to_string();
@@ -713,9 +813,9 @@ fn fill_trend_window(
         }
         TrendGrain::Day => {
             let mut d = start.date_naive();
-            let end = now.date_naive();
+            let end = end_instant.date_naive();
             let mut n = 0usize;
-            while d <= end && n < 40 {
+            while d <= end && n < 100 {
                 let key = d.format(grain.strftime()).to_string();
                 map.entry(key.clone())
                     .or_insert_with(|| UsageTrendPoint::new(key));
@@ -734,6 +834,7 @@ fn usage_query_from_parts(
     agent_id: Option<AgentId>,
     model: Option<&str>,
     since: Option<&str>,
+    until: Option<&str>,
     exclude_agent_ids: &[AgentId],
 ) -> UsageQuery {
     UsageQuery {
@@ -741,17 +842,47 @@ fn usage_query_from_parts(
         agent_id,
         model: model.map(str::to_string),
         since: since.map(str::to_string),
+        until: until.map(str::to_string),
         exclude_agent_ids: exclude_agent_ids.to_vec(),
         ..Default::default()
     }
 }
 
-/// Shared WHERE for query / trend / overview: days, since, agent, model, exclude.
+fn merge_model_distribution(slices: Vec<UsageDistributionSlice>) -> Vec<UsageDistributionSlice> {
+    let mut map = std::collections::BTreeMap::<String, UsageDistributionSlice>::new();
+    for slice in slices {
+        let key = canonical_usage_model(&slice.key);
+        if key.is_empty() {
+            continue;
+        }
+        let entry = map.entry(key.clone()).or_insert(UsageDistributionSlice {
+            key,
+            tokens: 0,
+            cost_usd: 0.0,
+            billable_input: 0,
+            output: 0,
+            cache_read: 0,
+            cache_write: 0,
+        });
+        entry.tokens += slice.tokens;
+        entry.cost_usd += slice.cost_usd;
+        entry.billable_input += slice.billable_input;
+        entry.output += slice.output;
+        entry.cache_read += slice.cache_read;
+        entry.cache_write += slice.cache_write;
+    }
+    let mut out: Vec<_> = map.into_values().collect();
+    out.sort_by(|a, b| b.tokens.cmp(&a.tokens).then_with(|| a.key.cmp(&b.key)));
+    out
+}
+
+/// Shared WHERE for query / trend / overview: days, since, until, agent, model, exclude.
 ///
-/// `days` is `max(1)` rolling `unixepoch('now', '-N days')`. `since` is AND-ed
-/// as instants (`unixepoch`); `Z` and `+00:00` match. Empty / `"all"` model is
-/// ignored. `include_model` is false for overview `models` so the dropdown
-/// stays populated while a model is selected. Exclude is `NOT IN` before LIMIT.
+/// `days` is `max(1)` rolling `unixepoch('now', '-N days')`. `since` / `until`
+/// are AND-ed as instants (`unixepoch`); `until` is exclusive. `Z` and `+00:00`
+/// match. Empty / `"all"` model is ignored. `include_model` is false for
+/// overview `models` so the dropdown stays populated while a model is selected.
+/// Exclude is `NOT IN` before LIMIT.
 fn append_usage_filter(
     sql: &mut String,
     args: &mut Vec<Box<dyn rusqlite::types::ToSql>>,
@@ -765,14 +896,26 @@ fn append_usage_filter(
         sql.push_str(" AND unixepoch(ts) >= unixepoch(?)");
         args.push(Box::new(since.to_string()));
     }
+    if let Some(until) = q.until.as_deref().filter(|s| !s.is_empty()) {
+        sql.push_str(" AND unixepoch(ts) < unixepoch(?)");
+        args.push(Box::new(until.to_string()));
+    }
     if let Some(agent) = q.agent_id {
         sql.push_str(" AND agent_id = ?");
         args.push(Box::new(agent.as_str().to_string()));
     }
     if include_model {
         if let Some(model) = q.model.as_deref().filter(|m| !m.is_empty() && *m != "all") {
-            sql.push_str(" AND model = ?");
-            args.push(Box::new(model.to_string()));
+            let aliases = usage_model_filter_aliases(model);
+            sql.push_str(" AND model IN (");
+            for (i, alias) in aliases.iter().enumerate() {
+                if i > 0 {
+                    sql.push(',');
+                }
+                sql.push('?');
+                args.push(Box::new(alias.clone()));
+            }
+            sql.push(')');
         }
     }
     if q.exclude_agent_ids.is_empty() {
@@ -805,7 +948,7 @@ fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<UsageRecord> {
         id: row.get(0)?,
         agent_id: agent,
         account_id: row.get(2)?,
-        model: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+        model: canonical_usage_model(&row.get::<_, Option<String>>(3)?.unwrap_or_default()),
         input_tokens: row.get(4)?,
         output_tokens: row.get(5)?,
         cache_read_tokens: row.get(6)?,

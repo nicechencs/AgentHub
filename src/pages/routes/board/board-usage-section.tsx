@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Area,
@@ -14,6 +14,7 @@ import { pageRhythm } from '@/components/layout/page-rhythm';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { SegmentedControl } from '@/components/shared/SegmentedControl';
 import { routeEndpointTypeColor } from '@/components/shared/RouteEndpointUrl';
 import { useTheme } from '@/components/shared/ThemeProvider';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -63,12 +64,7 @@ import {
 } from './board-usage-model';
 import { useBoardUsageStats } from './use-board-usage';
 
-const DATE_RANGE_OPTIONS: { value: BoardUsageRange }[] = [
-  { value: 'today' },
-  { value: '24h' },
-  { value: '7d' },
-  { value: '30d' },
-];
+const DATE_RANGE_OPTIONS: BoardUsageRange[] = ['today', '24h', '7d', '30d'];
 
 const DATE_RANGE_LABEL_KEYS: Record<BoardUsageRange, MessageKey> = {
   today: 'dashboard.range.today',
@@ -97,12 +93,14 @@ export function BoardUsageSection({
   pools = [],
   refreshKey = 0,
   surface,
+  headerActions,
 }: {
   profiles: readonly AdapterProfile[];
   hiddenTargetIds: ReadonlySet<string>;
   pools?: readonly DefaultRoutePoolOverview[];
   refreshKey?: number;
   surface: string;
+  headerActions?: ReactNode;
 }) {
   const { t } = useI18n();
   const { theme } = useTheme();
@@ -237,6 +235,13 @@ export function BoardUsageSection({
     [trendSeries],
   );
   const trendHover = useUsageTrendHover(resolveTrendName);
+  const plotRef = useRef<HTMLDivElement>(null);
+  const onTrendMouseMove = useCallback(
+    (state: Parameters<typeof trendHover.onChartMouseMove>[0]) => {
+      trendHover.onChartMouseMove(state, plotRef.current);
+    },
+    [trendHover.onChartMouseMove],
+  );
 
   const rangedTrend = useMemo(() => {
     if (usage.status !== 'ready') return [];
@@ -262,7 +267,7 @@ export function BoardUsageSection({
         : t('routes.board.distByEntry');
 
   return (
-    <PageSection title={t('routes.board.usageSection')}>
+    <PageSection title={t('routes.board.usageSection')} actions={headerActions}>
       <div className={pageRhythm.chromeRow}>
         <Select value={entryId} onValueChange={setEntryId}>
           <SelectTrigger className="w-40" aria-label={t('routes.board.entryFilterAria')}>
@@ -290,21 +295,16 @@ export function BoardUsageSection({
             ))}
           </SelectContent>
         </Select>
-        <Select
+        <SegmentedControl
+          size="sm"
+          aria-label={t('routes.board.rangeAria')}
           value={dateRange}
-          onValueChange={(value) => setDateRange(value as BoardUsageRange)}
-        >
-          <SelectTrigger className="w-32" aria-label={t('routes.board.rangeAria')}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {DATE_RANGE_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {t(DATE_RANGE_LABEL_KEYS[option.value])}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          onChange={setDateRange}
+          options={DATE_RANGE_OPTIONS.map((value) => ({
+            value,
+            label: t(DATE_RANGE_LABEL_KEYS[value]),
+          }))}
+        />
         <div className={pageRhythm.chromeActions}>
           <Link to={activityHref({})} className="text-meta text-secondary hover:text-primary">
             {t('routes.board.openLog')}
@@ -375,12 +375,12 @@ export function BoardUsageSection({
               </p>
             </CardHeader>
             <CardContent>
-              <div className="relative h-56">
+              <div ref={plotRef} className="relative h-56">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart
                     data={rangedTrend}
                     margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
-                    onMouseMove={trendHover.onChartMouseMove}
+                    onMouseMove={onTrendMouseMove}
                     onMouseLeave={trendHover.onChartMouseLeave}
                   >
                     <defs>
@@ -445,6 +445,10 @@ export function BoardUsageSection({
                   <UsageTrendTooltipCard
                     label={trendHover.tip.label}
                     items={trendHover.tip.items}
+                    x={trendHover.tip.x}
+                    y={trendHover.tip.y}
+                    containerWidth={trendHover.tip.containerWidth}
+                    containerHeight={trendHover.tip.containerHeight}
                     onMouseEnter={trendHover.onTipMouseEnter}
                     onMouseLeave={trendHover.onTipMouseLeave}
                   />

@@ -96,8 +96,8 @@ export function RoutesNav() {
     cn(
       'group flex h-8 w-full items-center gap-2.5 rounded-btn px-2.5 text-sm transition-colors duration-150',
       isActive
-        ? 'bg-accent/5 font-medium text-primary ring-1 ring-inset ring-accent/10 [&_svg]:text-accent'
-        : 'text-secondary hover:bg-hover/70 hover:text-primary',
+        ? 'bg-active font-medium text-primary [&_svg]:text-accent'
+        : 'text-secondary hover:bg-hover hover:text-primary',
     );
 
   return (

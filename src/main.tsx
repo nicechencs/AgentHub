@@ -24,6 +24,7 @@ import { fetchAgentProjectsShared, rememberedProjectAgent } from '@/lib/hooks/us
 import { reconcileAccountPool } from '@/lib/api/account';
 import { applyLanguage, loadStoredLanguage } from '@/lib/i18n';
 import { applyAccent, loadStoredAccent, registerShellIconSync } from '@/lib/accent';
+import { applyCanvas, loadStoredCanvas } from '@/lib/canvas';
 import { applyShellAccentIconBestEffort } from '@/lib/backend/tauri/shell-icon';
 import { startProviderBindingHealListen } from '@/lib/backend/tauri/provider-heal-events';
 import { applyTheme, loadStoredTheme } from '@/lib/theme';
@@ -164,6 +165,7 @@ function boot() {
   // 首屏前同步主题和主色,避免闪烁
   applyTheme(loadStoredTheme());
   applyAccent(loadStoredAccent());
+  applyCanvas(loadStoredCanvas());
   applyLanguage(loadStoredLanguage());
   if (isTauriApp()) {
     registerShellIconSync(applyShellAccentIconBestEffort);

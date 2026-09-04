@@ -1,30 +1,24 @@
-import type { ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
-import {
-  AbsoluteRouteEndpointUrl,
-  CopyableRouteEndpointUrl,
-} from '@/components/shared/RouteEndpointUrl';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import type { RouteTraceListItem } from '@/components/shared/RouteTraceList';
-import { routeEndpointHttpParts } from '@/lib/route-endpoints';
+import type { RouteTraceStageId } from '@/lib/backend/contracts/adapter';
 import { formatInboundAt } from '@/pages/routes/shared/route-endpoint-copy';
 import {
-  ACTIVITY_TRACE_STAGES,
-  activityTraceConversionLabel,
-  activityTraceLocalBrand,
+  activityTraceInboundEndpoint,
+  activityTraceKeyParts,
   activityTraceModelLabel,
-  activityTraceStageLabel,
-  activityTraceStageStatusLabel,
-  activityTraceUpstreamBrand,
+  activityTraceUpstreamEndpoint,
   formatTraceSeconds,
   formatTraceTokens,
+  type ActivityTraceKeyToken,
 } from './activity-trace-list-model';
-import { ActivityTraceStageIcon, activityTraceStageTone } from './ActivityTraceStageDisplay';
 import {
   activityTraceFailureHeadline,
-  activityTraceStageStatus,
   summarizeActivityTrace,
 } from './activity-trace-summary-model';
+import { buildTraceStages } from './trace-detail/build-trace-stages';
+import { TraceStageCard } from './trace-detail/TraceStageCard';
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -37,87 +31,74 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 export function ActivityTraceDetailPanel({
   row,
+  tokens: keyTokens = [],
   width,
   onClose,
 }: {
   row: RouteTraceListItem;
+  tokens?: readonly ActivityTraceKeyToken[];
   width: number;
   onClose: () => void;
 }) {
   const { t } = useI18n();
-  const inbound = routeEndpointHttpParts({
-    path: row.path,
-    port: row.localAuth.port,
-  });
-  const outbound = row.upstream.url?.trim() || '';
-  const localBrand = activityTraceLocalBrand(row);
-  const upstreamBrand = activityTraceUpstreamBrand(row);
-  const conversion = activityTraceConversionLabel(row, t);
   const model = activityTraceModelLabel(row);
-  const firstToken = formatTraceSeconds(row.ttftMs, t);
   const duration = formatTraceSeconds(row.latencyMs, t);
   const tokens = formatTraceTokens(row.inputTokens, row.outputTokens, t);
   const summary = summarizeActivityTrace(row);
   const failureHeadline = activityTraceFailureHeadline(summary, t);
-  const extra: string[] = [];
-  if (row.pool.attempts?.length) {
-    for (const [index, attempt] of row.pool.attempts.entries()) {
-      extra.push(
-        `${t('routes.trace.attempt', { n: index + 1 })}: ${attempt.member.label} · ${attempt.status}${attempt.code ? ` (${attempt.code})` : ''}`,
-      );
-    }
-  }
-  if (row.conversion.message) extra.push(row.conversion.message);
-  if (row.upstream.message) extra.push(row.upstream.message);
+  const failureDefault = row.failureStage ?? null;
+  const [expanded, setExpanded] = useState<Set<RouteTraceStageId>>(
+    () => new Set<RouteTraceStageId>(failureDefault ? ['received', failureDefault] : ['received']),
+  );
+
+  useEffect(() => {
+    setExpanded(new Set<RouteTraceStageId>(failureDefault ? ['received', failureDefault] : ['received']));
+  }, [failureDefault, row.requestId]);
+
+  const stages = useMemo(() => buildTraceStages(row, t, keyTokens), [row, t, keyTokens]);
+  const keyParts = activityTraceKeyParts(row, keyTokens);
+  const inbound = activityTraceInboundEndpoint(row);
+  const upstream = activityTraceUpstreamEndpoint(row);
+  const toggle = (id: RouteTraceStageId) => {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   return (
     <SideInspectPanel
       title={t('routes.activity.detailTitle')}
       description={`${row.method} ${row.path}`}
       headerActions={summary.result !== 'success' ? (
-        <span className="rounded-full border border-danger/30 bg-danger/5 px-1.5 py-0.5 text-meta font-medium text-danger">
-          {t('routes.inbound.fail')}
-        </span>
+        <span className="rounded-full border border-danger/30 bg-danger/5 px-1.5 py-0.5 text-meta font-medium text-danger">{t('routes.inbound.fail')}</span>
       ) : undefined}
       onClose={onClose}
       width={width}
     >
       <div className="flex flex-col gap-4" data-activity-trace-detail={row.requestId}>
         <dl className="flex flex-col gap-2">
-          <Field label={t('routes.activity.colTime')}>
-            <span className="font-mono">{formatInboundAt(row.at)}</span>
+          <Field label={t('routes.activity.colTime')}><span className="font-mono">{formatInboundAt(row.at)}</span></Field>
+          <Field label={t('routes.activity.colKey')}>
+            {keyParts.label ? <span className="font-mono">{keyParts.label}</span> : <span className="text-muted">—</span>}
           </Field>
-          <Field label={t('routes.activity.inboundEndpoint')}>
-            <CopyableRouteEndpointUrl
-              path={inbound.path}
-              port={row.localAuth.port}
-              host={inbound.host}
-              endpointId={inbound.endpointId}
-              brandAgentId={localBrand}
-            />
+          <Field label={t('routes.activity.colEndpoint')}>
+            <span className="block">
+              <span className="text-muted">{t('routes.activity.inboundMark')}</span>
+              {' '}
+              <span className="font-mono">{inbound || '—'}</span>
+            </span>
+            <span className="block">
+              <span className="text-muted">{t('routes.activity.outboundMark')}</span>
+              {' '}
+              <span className="font-mono text-muted">{upstream || '—'}</span>
+            </span>
           </Field>
-          <Field label={t('routes.activity.outboundEndpoint')}>
-            {outbound ? (
-              <AbsoluteRouteEndpointUrl url={outbound} brandAgentId={upstreamBrand} />
-            ) : (
-              <span className="text-muted">—</span>
-            )}
-          </Field>
-          <Field label={t('routes.activity.conversion')}>
-            {conversion || <span className="text-muted">—</span>}
-          </Field>
-          <Field label={t('routes.activity.colModel')}>
-            {model || <span className="text-muted">—</span>}
-          </Field>
-          <Field label={t('routes.activity.colFirstToken')}>
-            {firstToken || <span className="text-muted">—</span>}
-          </Field>
-          <Field label={t('routes.activity.colDuration')}>
-            {duration || <span className="text-muted">—</span>}
-          </Field>
-          <Field label={t('routes.activity.colTokens')}>
-            {tokens || <span className="text-muted">—</span>}
-          </Field>
+          <Field label={t('routes.activity.colModel')}>{model || <span className="text-muted">—</span>}</Field>
+          <Field label={t('routes.activity.colDuration')}>{duration || <span className="text-muted">—</span>}</Field>
+          <Field label={t('routes.activity.colTokens')}>{tokens || <span className="text-muted">—</span>}</Field>
         </dl>
 
         {failureHeadline ? (
@@ -128,37 +109,22 @@ export function ActivityTraceDetailPanel({
         ) : null}
 
         <section className="space-y-2">
-          <h3 className="text-sm font-medium">{t('routes.activity.colStages')}</h3>
-          <ul className="space-y-1.5" aria-label={t('routes.trace.pipelineAria')}>
-            {ACTIVITY_TRACE_STAGES.map((stage) => {
-              const status = activityTraceStageStatus(row, stage);
-              return (
-                <li
-                  key={stage}
-                  className="flex items-center gap-2 rounded-btn border border-border px-2 py-1.5"
-                  data-stage={stage}
-                  data-stage-status={status}
-                >
-                  <ActivityTraceStageIcon status={status} />
-                  <span className="min-w-0 flex-1 truncate text-meta text-primary">
-                    {activityTraceStageLabel(stage, t)}
-                  </span>
-                  <span className={`shrink-0 text-meta ${activityTraceStageTone(status)}`}>
-                    {activityTraceStageStatusLabel(status, t)}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-
-        {extra.length > 0 ? (
-          <ul className="space-y-0.5 border-t border-border pt-2 text-meta text-muted">
-            {extra.map((line) => (
-              <li key={line} className="break-all">{line}</li>
+          <div>
+            <h3 className="text-sm font-medium">{t('routes.activity.requestPath')}</h3>
+            <p className="mt-0.5 text-meta text-muted">{t('routes.trace.nodeDetailHint')}</p>
+          </div>
+          <ol className="space-y-2" aria-label={t('routes.trace.detailPipelineAria')}>
+            {stages.map((stage, index) => (
+              <TraceStageCard
+                key={stage.id}
+                stage={stage}
+                index={index}
+                expanded={expanded.has(stage.id)}
+                onToggle={() => toggle(stage.id)}
+              />
             ))}
-          </ul>
-        ) : null}
+          </ol>
+        </section>
       </div>
     </SideInspectPanel>
   );

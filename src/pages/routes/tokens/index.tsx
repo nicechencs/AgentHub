@@ -20,15 +20,17 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
+import { USAGE_COLLECTED_EVENT } from '@/lib/usage-sync';
+import { ApiKeyAccountDialog } from '@/components/connections/ApiKeyAccountDialog';
+import { ProviderEditDialog } from '@/components/connections/ProviderEditDialog';
+import { agentDisplayName } from '@/config/agents';
+import { deleteAccount, listAccounts } from '@/lib/api/account';
+import { deleteProvider, listProviders } from '@/lib/api/provider';
+import type { ConnectApiKeyDraft } from '@/lib/connect-flow/connect-intent';
+import type { AgentKey } from '@/lib/types';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
+import { localEndpointKindFromPool, localEndpointPath } from '@/lib/route-endpoints';
 import { ROUTES_POOL_PATH } from '@/lib/routes-path';
 import {
   createLocalToken,
@@ -38,7 +40,6 @@ import {
   setLocalTokenName,
 } from '@/lib/api/adapter';
 import type { LocalTokenRecord } from '@/lib/backend/contracts/adapter';
-import { USAGE_COLLECTED_EVENT } from '@/lib/usage-sync';
 import { ROUTES_INSPECT_WIDTH_KEY } from '@/pages/routes/shared/route-inspect';
 import { useAdapterResources } from '@/pages/routes/shared/use-bridge-resources';
 import { useRoutePoolState } from '@/pages/routes/shared/use-route-pool-state';
@@ -46,11 +47,15 @@ import { boardUsageWindow } from '@/pages/routes/board/board-usage-model';
 import { useBoardUsageStats } from '@/pages/routes/board/use-board-usage';
 import { buildLocalGatewayControl } from '@/pages/routes/board/board-view-model';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
+import { CreateTokenEndpointCards } from './CreateTokenEndpointCards';
 import { TokenDetailPanel } from './TokenDetailPanel';
 import { TokenList } from './TokenList';
 import {
+  buildCreateTokenEndpointCards,
   attachTokenUsage,
   buildLocalTokenRows,
+  defaultCreateTokenName,
+  firstCreateTokenPoolId,
   generateLocalToken,
   localTokenDeleteGate,
   localTokenEditKeyGate,
@@ -60,10 +65,17 @@ import {
   type LocalTokenRow,
 } from './tokens-model';
 import { TokenImportToAgentButton } from './TokenImportToAgentButton';
+import { applyImportedLogin } from './token-import-action';
+import {
+  connectionMatchAgentNames,
+  hashLocalToken,
+  matchesConnectionEntryKeys,
+  type ConnectionEntryKeyMatch,
+} from './token-connection-matches';
 import type { TokenImportAgentRef } from './token-import-model';
 
 export default function RoutesTokensPage() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const navigate = useNavigate();
   const { toast } = useToast();
   const { hiddenIds, installedAgents } = useInstalledAgents();
@@ -82,7 +94,7 @@ export default function RoutesTokensPage() {
   } = useAdapterResources();
   const [tokenTick, setTokenTick] = useState(0);
   const [collectKey, setCollectKey] = useState(0);
-  const [tokenRecords, setTokenRecords] = useState<LocalTokenRecord[]>([]);
+  const [tokenRecords, setTokenRecords] = useState<LocalTokenRecord[] | null>(null);
   const [editRow, setEditRow] = useState<LocalTokenRow | null>(null);
   const [editValue, setEditValue] = useState('');
   const [editBusy, setEditBusy] = useState(false);
@@ -93,6 +105,13 @@ export default function RoutesTokensPage() {
   const [createBusy, setCreateBusy] = useState(false);
   const [deleteRow, setDeleteRow] = useState<LocalTokenRow | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [connectionMatches, setConnectionMatches] = useState<ConnectionEntryKeyMatch[]>([]);
+  const [connectionMatchesReady, setConnectionMatchesReady] = useState(true);
+  const [alsoDeleteConnections, setAlsoDeleteConnections] = useState(true);
+  const [importSession, setImportSession] = useState<{
+    agentId: AgentKey;
+    draft: ConnectApiKeyDraft;
+  } | null>(null);
   const {
     chatCompletionsShared,
     defaultPools,
@@ -123,6 +142,12 @@ export default function RoutesTokensPage() {
     };
   }, [defaultPools, tokenTick]);
 
+  useEffect(() => {
+    const onCollected = () => setCollectKey((key) => key + 1);
+    window.addEventListener(USAGE_COLLECTED_EVENT, onCollected);
+    return () => window.removeEventListener(USAGE_COLLECTED_EVENT, onCollected);
+  }, []);
+
   const rows = useMemo(
     () => buildLocalTokenRows(
       profiles,
@@ -130,7 +155,7 @@ export default function RoutesTokensPage() {
       errors.bridgeStatuses,
       defaultPools,
       chatCompletionsShared,
-      Object.fromEntries(tokenRecords.filter((record) => record.primary).map((record) => [record.poolId, record.token])),
+      Object.fromEntries((tokenRecords ?? []).filter((record) => record.primary).map((record) => [record.poolId, record.token])),
       tokenRecords,
     ),
     [
@@ -142,26 +167,28 @@ export default function RoutesTokensPage() {
       tokenRecords,
     ],
   );
-  const usageWindow = useMemo(() => boardUsageWindow('7d'), []);
+  const usageWindow = useMemo(() => boardUsageWindow("7d"), []);
   const usageState = useBoardUsageStats({
     enabled: rows.length > 0,
     since: usageWindow.since,
     refreshKey: tokenTick + collectKey,
   });
   const listRows = useMemo(
-    () => (usageState.status === 'ready' ? attachTokenUsage(rows, usageState.rows) : rows),
+    () => (usageState.status === "ready" ? attachTokenUsage(rows, usageState.rows) : rows),
     [rows, usageState],
   );
   const createTargets = useMemo(
-    () => listRows.filter((row) => row.poolBacked && row.primary),
-    [listRows],
+    () => defaultPools.flatMap((pool) => {
+      if (pool.members.length === 0) return [];
+      const kind = localEndpointKindFromPool(pool);
+      return kind ? [{ id: pool.id, kind }] : [];
+    }),
+    [defaultPools],
   );
-
-  useEffect(() => {
-    const onCollected = () => setCollectKey((key) => key + 1);
-    window.addEventListener(USAGE_COLLECTED_EVENT, onCollected);
-    return () => window.removeEventListener(USAGE_COLLECTED_EVENT, onCollected);
-  }, []);
+  const createCards = useMemo(
+    () => buildCreateTokenEndpointCards(createTargets),
+    [createTargets],
+  );
 
   const openEdit = (row: LocalTokenRow) => {
     const gate = localTokenEditKeyGate(row, t);
@@ -212,26 +239,58 @@ export default function RoutesTokensPage() {
       toast({ title: t('routes.tokens.createNeedPool'), variant: 'danger' });
       return;
     }
-    setCreatePoolId(createTargets[0]?.id ?? '');
+    setCreatePoolId(firstCreateTokenPoolId(createCards));
     setCreateName('');
     setCreateOpen(true);
   };
 
   const saveCreate = async () => {
     if (createBusy) return;
-    const name = createName.trim();
-    if (!name) {
-      toast({ title: t('routes.tokens.nameRequired'), variant: 'danger' });
-      return;
-    }
     if (!createPoolId) {
       toast({ title: t('routes.tokens.createNeedPool'), variant: 'danger' });
+      return;
+    }
+    const typedName = createName.trim();
+    const kind = createCards.find((card) => card.poolId === createPoolId)?.kind
+      ?? createTargets.find((row) => row.id === createPoolId)?.kind;
+    const name = typedName || (kind
+      ? defaultCreateTokenName({
+        kind,
+        existingNames: listRows.filter((row) => row.kind === kind).map((row) => row.name),
+        t,
+      })
+      : '');
+    if (!name) {
+      toast({ title: t('routes.tokens.nameRequired'), variant: 'danger' });
       return;
     }
     setCreateBusy(true);
     try {
       const created = await createLocalToken(createPoolId, name);
+      const sibling = listRows.find((row) => row.id === createPoolId)
+        ?? listRows.find((row) => row.kind === kind && row.poolBacked);
       setCreateOpen(false);
+      setImportAfterSaveRow({
+        id: created.id,
+        poolBacked: true,
+        primary: created.primary,
+        canDelete: true,
+        profileId: sibling?.profileId ?? null,
+        profileIds: sibling?.profileIds ?? [],
+        name: created.name,
+        kind: kind ?? sibling?.kind ?? 'chat_completions',
+        path: sibling?.path ?? (kind ? localEndpointPath(kind) : '/v1/chat/completions'),
+        endpoint: sibling?.endpoint ?? null,
+        state: sibling?.state,
+        token: created.token,
+        maskedToken: maskLocalToken(created.token),
+        unavailable: sibling?.unavailable ?? false,
+        targetAgentId: sibling?.targetAgentId ?? '',
+        listedModels: sibling?.listedModels ?? [],
+        lastPath: null,
+        lastRequestAt: null,
+        usageEligible: false,
+      });
       setTokenTick((tick) => tick + 1);
       inspect.open(created.id);
       void reload();
@@ -256,17 +315,72 @@ export default function RoutesTokensPage() {
     }
   };
 
+  const detailRow = inspect.target
+    ? listRows.find((row) => row.id === inspect.target) ?? null
+    : null;
+  const matchRow = deleteRow ?? detailRow;
+  const matchTokenId = matchRow?.id ?? '';
+  const matchToken = matchRow?.token?.trim() ?? '';
+
+  useEffect(() => {
+    if (!matchTokenId) {
+      setConnectionMatches([]);
+      setAlsoDeleteConnections(true);
+      setConnectionMatchesReady(true);
+      return;
+    }
+    if (!matchToken) {
+      setConnectionMatches([]);
+      setConnectionMatchesReady(true);
+      return;
+    }
+    let cancelled = false;
+    setConnectionMatchesReady(false);
+    void Promise.all([listProviders(), listAccounts(), hashLocalToken(matchToken)])
+      .then(([providers, accounts, tokenHash]) => {
+        if (cancelled) return;
+        const matches = matchesConnectionEntryKeys({ tokenHash, providers, accounts });
+        setConnectionMatches(matches);
+        setAlsoDeleteConnections(matches.length > 0);
+        setConnectionMatchesReady(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setConnectionMatches([]);
+        setConnectionMatchesReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [matchTokenId, matchToken]);
+
   const confirmDelete = async () => {
     if (!deleteRow || deleteBusy) return;
-    const gate = localTokenDeleteGate(deleteRow, t);
+    if (deleteRow.token?.trim() && !connectionMatchesReady) return;
+    const gate = localTokenDeleteGate(deleteRow, listRows, t);
     if (!gate.enabled) {
-      toast({ title: gate.reason ?? t('routes.tokens.deleteNeedExtra'), variant: 'danger' });
+      toast({ title: gate.reason ?? t('routes.tokens.deleteFailed'), variant: 'danger' });
       setDeleteRow(null);
       return;
     }
+    const removeConnections = alsoDeleteConnections && connectionMatches.length > 0;
+    const matches = connectionMatches;
     setDeleteBusy(true);
     try {
       await deleteLocalToken(deleteRow.id);
+      if (removeConnections) {
+        try {
+          for (const match of matches) {
+            if (match.sourceKind === 'account') {
+              await deleteAccount(match.agentId, match.sourceId);
+            } else {
+              await deleteProvider(match.agentId, match.sourceId);
+            }
+          }
+        } catch {
+          toast({ title: t('routes.tokens.deleteAlsoConnectionsFailed'), variant: 'danger' });
+        }
+      }
       if (inspect.target === deleteRow.id) inspect.close();
       setDeleteRow(null);
       setTokenTick((tick) => tick + 1);
@@ -278,10 +392,32 @@ export default function RoutesTokensPage() {
     }
   };
 
-  const detailRow = inspect.target
-    ? listRows.find((row) => row.id === inspect.target) ?? null
-    : null;
   const pageLoading = loading || poolsLoading;
+
+  const startImport = (row: LocalTokenRow, agentId: AgentKey, draft: ConnectApiKeyDraft) => {
+    inspect.open(row.id);
+    setImportAfterSaveRow(null);
+    setImportSession({ agentId, draft });
+  };
+
+  const finishImportedLogin = async (
+    sourceKind: 'provider' | 'account',
+    sourceId: string,
+    isCurrent: boolean,
+  ) => {
+    const agentId = importSession?.agentId;
+    setImportSession(null);
+    if (!agentId) return;
+    try {
+      await applyImportedLogin({ agentId, sourceKind, sourceId, isCurrent });
+      toast({
+        title: t('routes.tokens.importSuccess', { name: agentDisplayName(agentId) }),
+        variant: 'success',
+      });
+    } catch {
+      toast({ title: t('routes.tokens.importFailed'), variant: 'danger' });
+    }
+  };
 
   const list = (
     <RoutesPane>
@@ -349,6 +485,30 @@ export default function RoutesTokensPage() {
             onShowDetail={(row) => inspect.open(row.id)}
             onDelete={(row) => setDeleteRow(row)}
             installedAgents={installedAgentRefs}
+            onImport={startImport}
+            createPoolIdByKind={Object.fromEntries(
+              createCards
+                .filter((card) => card.poolId)
+                .map((card) => [card.kind, card.poolId as string]),
+            )}
+            needRoute={!localGateway.running && localGateway.hasEnrolledLogins}
+            onCreateForEndpoint={(row) => {
+              const poolId = row.poolBacked
+                ? row.id
+                : (createCards.find((card) => card.kind === row.kind)?.poolId ?? '');
+              if (!poolId) {
+                toast({
+                  title: !localGateway.running && localGateway.hasEnrolledLogins
+                    ? t('routes.board.entryNeedRoute')
+                    : t('routes.tokens.createNeedPool'),
+                  variant: 'danger',
+                });
+                return;
+              }
+              setCreatePoolId(poolId);
+              setCreateName('');
+              setCreateOpen(true);
+            }}
           />
         </PageSection>
       )}
@@ -359,6 +519,11 @@ export default function RoutesTokensPage() {
             <DialogTitle>{t('routes.tokens.editKeyTitle')}</DialogTitle>
             <DialogDescription>
               {editRow ? tokenTypeLabel(editRow, t) : null}
+              {editRow ? (
+                <span className="mt-1 block text-meta text-secondary">
+                  {t('routes.tokens.editKeyConsequence')}
+                </span>
+              ) : null}
             </DialogDescription>
           </DialogHeader>
           <div className="flex items-center gap-2">
@@ -410,6 +575,7 @@ export default function RoutesTokensPage() {
               <TokenImportToAgentButton
                 row={importAfterSaveRow}
                 installedAgents={installedAgentRefs}
+                onImport={(agentId, draft) => startImport(importAfterSaveRow, agentId, draft)}
               />
             </div>
           ) : null}
@@ -428,27 +594,19 @@ export default function RoutesTokensPage() {
             <DialogDescription>{t('routes.tokens.createDescription')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="space-y-1">
-              <p className="text-meta text-muted">{t('routes.tokens.fieldType')}</p>
-              <Select value={createPoolId} onValueChange={setCreatePoolId} disabled={createBusy}>
-                <SelectTrigger aria-label={t('routes.tokens.fieldType')}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {createTargets.map((row) => (
-                    <SelectItem key={row.id} value={row.id}>
-                      {tokenTypeLabel(row, t)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <CreateTokenEndpointCards
+              cards={createCards}
+              value={createPoolId}
+              onChange={setCreatePoolId}
+              disabled={createBusy}
+              unavailableReason={t('routes.tokens.createNeedPool')}
+            />
             <div className="space-y-1">
               <p className="text-meta text-muted">{t('routes.tokens.fieldName')}</p>
               <Input
                 value={createName}
                 onChange={(event) => setCreateName(event.target.value)}
-                placeholder={t('routes.tokens.namePlaceholder')}
+                placeholder={t('routes.tokens.createNamePlaceholder')}
                 disabled={createBusy}
                 aria-label={t('routes.tokens.fieldName')}
               />
@@ -475,11 +633,31 @@ export default function RoutesTokensPage() {
                 : t('routes.tokens.deleteDescription')}
             </DialogDescription>
           </DialogHeader>
+          {connectionMatches.length > 0 ? (
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={alsoDeleteConnections}
+                disabled={deleteBusy}
+                onChange={(event) => setAlsoDeleteConnections(event.target.checked)}
+              />
+              <span className="min-w-0">
+                <span className="block">{t('routes.tokens.deleteAlsoConnections')}</span>
+                <span className="block text-meta text-muted">
+                  {t('routes.tokens.deleteAlsoConnectionsHint', {
+                    count: connectionMatches.length,
+                    names: connectionMatchAgentNames(connectionMatches, agentDisplayName).join(lang === 'zh' ? '、' : ', '),
+                  })}
+                </span>
+              </span>
+            </label>
+          ) : null}
           <DialogFooter>
             <Button variant="secondary" disabled={deleteBusy} onClick={() => setDeleteRow(null)}>
               {t('common.cancel')}
             </Button>
-            <Button variant="danger" disabled={deleteBusy} onClick={() => { void confirmDelete(); }}>
+            <Button variant="danger" disabled={deleteBusy || Boolean(deleteRow?.token?.trim() && !connectionMatchesReady)} onClick={() => { void confirmDelete(); }}>
               {t('routes.tokens.delete')}
             </Button>
           </DialogFooter>
@@ -492,15 +670,56 @@ export default function RoutesTokensPage() {
     <WorkbenchSplitPage
       split={inspect}
       resizeAria={t('common.resizeSidePanel')}
-      panel={detailRow ? (
+      panel={importSession ? (
+        importSession.agentId === 'workbuddy' ? (
+          <ApiKeyAccountDialog
+            asPanel
+            open
+            width={inspect.paneWidth}
+            agentId="workbuddy"
+            mode="add"
+            initialApiKey={importSession.draft.apiKey}
+            initialBaseUrl={importSession.draft.baseUrl}
+            initialModel={importSession.draft.model}
+            onOpenChange={(open) => {
+              if (!open) setImportSession(null);
+            }}
+            onSaved={(account) => {
+              void finishImportedLogin('account', account.id, account.isCurrent);
+            }}
+          />
+        ) : (
+          <ProviderEditDialog
+            asPanel
+            open
+            width={inspect.paneWidth}
+            agentId={importSession.agentId}
+            mode="add"
+            initialBaseUrl={importSession.draft.baseUrl}
+            initialApiKey={importSession.draft.apiKey}
+            initialModel={importSession.draft.model}
+            compactGrokApiBackend={importSession.draft.apiBackend}
+            onOpenChange={(open) => {
+              if (!open) setImportSession(null);
+            }}
+            onSaved={(provider) => {
+              void finishImportedLogin('provider', provider.id, provider.isCurrent);
+            }}
+          />
+        )
+      ) : detailRow ? (
         <TokenDetailPanel
           row={detailRow}
           width={inspect.paneWidth}
           onClose={() => inspect.close()}
           onEditKey={() => openEdit(detailRow)}
           onSaveName={detailRow.poolBacked ? (name) => saveName(detailRow, name) : undefined}
-          onDelete={detailRow.canDelete ? () => setDeleteRow(detailRow) : undefined}
+          onDelete={() => setDeleteRow(detailRow)}
           installedAgents={installedAgentRefs}
+          onImport={(agentId, draft) => startImport(detailRow, agentId, draft)}
+          siblingRows={listRows}
+          writtenToNames={connectionMatchAgentNames(connectionMatches, agentDisplayName)}
+          writtenToReady={connectionMatchesReady}
         />
       ) : null}
     >

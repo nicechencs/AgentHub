@@ -10,7 +10,9 @@ pub fn encode_ico_rgba(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>, 
     let px = (width as usize)
         .checked_mul(height as usize)
         .ok_or_else(|| "ico size overflow".to_string())?;
-    let expected = px.checked_mul(4).ok_or_else(|| "ico size overflow".to_string())?;
+    let expected = px
+        .checked_mul(4)
+        .ok_or_else(|| "ico size overflow".to_string())?;
     if rgba.len() != expected {
         return Err(format!("ico rgba length {} != {expected}", rgba.len()));
     }

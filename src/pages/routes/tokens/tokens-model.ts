@@ -10,18 +10,21 @@ import type {
 } from '@/lib/backend/contracts/adapter';
 import type { GatewayUsageRow } from '@/lib/backend/contracts/usage-types';
 import type { TranslateFn } from '@/lib/i18n';
+import { KNOWN_AGENT_IDS, type AgentKey } from '@/lib/types';
 import {
+  LOCAL_ENDPOINT_KINDS,
   localEndpointKindForTargetAgent,
   localEndpointKindFromPool,
   localEndpointPath,
   type LocalEndpointKind,
 } from '@/lib/route-endpoints';
+import { agentConversationSurfaces } from '@/pages/agents/agent-detail-model';
 import { localEndpointKindLabel } from '@/pages/routes/shared/route-pool-view-model';
+import { profilesForPool } from '@/pages/routes/board/board-view-model';
 import {
   filterGatewayUsageRows,
   summarizeGatewayUsage,
 } from '@/pages/routes/board/board-usage-model';
-import { profilesForPool } from '@/pages/routes/board/board-view-model';
 
 export interface LocalTokenUsage {
   requestCount: number;
@@ -43,8 +46,9 @@ export interface LocalTokenRow {
   /** Profiles whose gateway usage belongs to this entry key. */
   profileIds: string[];
   name: string;
-  /** True for the type's default pool key; extras can be deleted. */
+  /** True for the type's default pool key. */
   primary: boolean;
+  /** Pool-backed keys can be deleted; leftover listener rows cannot. */
   canDelete: boolean;
   kind: LocalEndpointKind;
   path: string;
@@ -58,14 +62,18 @@ export interface LocalTokenRow {
   unavailable: boolean;
   /** Pool/runtime writer this key belongs to; not a client-write target. */
   targetAgentId: string;
-  /** Last inbound path seen for this key. */
+  /** Last inbound path seen for this key (scoped). */
   lastPath: string | null;
-  /** ISO time of the latest inbound request. */
+  /** ISO time of the latest inbound request for this key (scoped). */
   lastRequestAt: string | null;
-  /** Optional 7-day gateway usage; omitted until the query is ready. */
+  /** Optional 7-day gateway usage for this key; omitted until ready. */
   usage?: LocalTokenUsage;
+  /** True when visit/usage may use profile-scoped data for this key. */
+  usageEligible: boolean;
   /** Models this entry key can send; first item is the default test pick. */
   listedModels: string[];
+  /** True when Messages catalog was filled from Chat Completions sibling. */
+  modelsSharedFromChat?: boolean;
 }
 
 export function uniqueListedModels(
@@ -122,6 +130,76 @@ export function tokenTypeLabel(
   return localEndpointKindLabel(row.kind, t);
 }
 
+/** Agents that speak this endpoint. Grok stays on Grok Responses only. */
+export function agentSupportsLocalEndpointKind(
+  agentId: string,
+  kind: LocalEndpointKind,
+): boolean {
+  if (kind === 'responses_grok') return agentId === 'grok';
+  if (agentId === 'grok') return false;
+  const surface = kind === 'messages'
+    ? 'messages'
+    : kind === 'chat_completions'
+      ? 'chat_completions'
+      : 'responses';
+  return agentConversationSurfaces(agentId).includes(surface);
+}
+
+export function supportedAgentsForEndpointKind(kind: LocalEndpointKind): AgentKey[] {
+  return KNOWN_AGENT_IDS.filter((id) => agentSupportsLocalEndpointKind(id, kind));
+}
+
+export type CreateTokenEndpointCard = {
+  kind: LocalEndpointKind;
+  path: string;
+  /** Primary pool id when this endpoint can receive a new key. */
+  poolId: string | null;
+  agentIds: readonly AgentKey[];
+};
+
+/** Four endpoint cards for 新建入口 Key; missing pools stay visible and unselectable. */
+export function buildCreateTokenEndpointCards(
+  targets: readonly Pick<LocalTokenRow, 'id' | 'kind'>[],
+): CreateTokenEndpointCard[] {
+  const poolByKind = new Map<LocalEndpointKind, string>();
+  for (const row of targets) {
+    if (!poolByKind.has(row.kind)) poolByKind.set(row.kind, row.id);
+  }
+  return LOCAL_ENDPOINT_KINDS.map((endpoint) => ({
+    kind: endpoint.kind,
+    path: endpoint.path,
+    poolId: poolByKind.get(endpoint.kind) ?? null,
+    agentIds: supportedAgentsForEndpointKind(endpoint.kind),
+  }));
+}
+
+export function firstCreateTokenPoolId(
+  cards: readonly CreateTokenEndpointCard[],
+): string {
+  return cards.find((card) => card.poolId)?.poolId ?? '';
+}
+
+/** Name used when 新建 leaves the field empty. Numbered from 2 because the type already has a default key. */
+export function defaultCreateTokenName(input: {
+  kind: LocalEndpointKind;
+  existingNames?: readonly string[];
+  t?: TranslateFn;
+}): string {
+  const label = localEndpointKindLabel(input.kind, input.t).trim();
+  const used = new Set(
+    (input.existingNames ?? [])
+      .map((name) => name.trim())
+      .filter(Boolean),
+  );
+  let n = 2;
+  let candidate = `${label} ${n}`;
+  while (used.has(candidate)) {
+    n += 1;
+    candidate = `${label} ${n}`;
+  }
+  return candidate;
+}
+
 /** Outbound entry-key kinds visible on the board; hidden Agents are omitted. */
 export function visibleTokenKinds(
   rows: readonly Pick<LocalTokenRow, 'kind' | 'targetAgentId'>[],
@@ -131,6 +209,7 @@ export function visibleTokenKinds(
     .filter((row) => !hiddenAgentIds.has(row.targetAgentId))
     .map((row) => row.kind);
 }
+
 
 export function tokenUsageSurface(kind: LocalEndpointKind): 'messages' | 'responses' | 'chat' {
   if (kind === 'messages') return 'messages';
@@ -166,6 +245,17 @@ export function attachTokenUsage(
   gatewayRows: readonly GatewayUsageRow[],
 ): LocalTokenRow[] {
   return rows.map((row) => {
+    if (!row.usageEligible) {
+      return {
+        ...row,
+        usage: {
+          requestCount: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          cachedInputTokens: 0,
+        },
+      };
+    }
     const totals = summarizeGatewayUsage(filterGatewayUsageRows(gatewayRows, {
       profileIds: row.profileIds,
       surface: tokenUsageSurface(row.kind),
@@ -202,10 +292,43 @@ function profileIdsForPool(
 }
 
 export function tokenDisplayName(
-  row: Pick<LocalTokenRow, 'name' | 'kind'>,
+  row: Pick<LocalTokenRow, 'name' | 'kind' | 'primary'>,
   t?: TranslateFn,
 ): string {
-  return row.name.trim() || tokenTypeLabel(row, t);
+  const name = row.name.trim();
+  if (name) return name;
+  if (row.primary) return t ? t('routes.tokens.defaultName') : '默认';
+  return tokenTypeLabel(row, t);
+}
+
+export type LocalTokenGroup = {
+  kind: LocalEndpointKind;
+  path: string;
+  /** Shared loopback address for this type; taken from the first row. */
+  endpoint: string | null;
+  rows: LocalTokenRow[];
+};
+
+/** Group list rows by endpoint type, keeping the existing kind / default / name order. */
+export function buildLocalTokenGroups(
+  rows: readonly LocalTokenRow[],
+): LocalTokenGroup[] {
+  const grouped = new Map<LocalEndpointKind, LocalTokenRow[]>();
+  for (const row of rows) {
+    const list = grouped.get(row.kind);
+    if (list) list.push(row);
+    else grouped.set(row.kind, [row]);
+  }
+  return LOCAL_ENDPOINT_KINDS.flatMap((spec) => {
+    const groupRows = grouped.get(spec.kind);
+    if (!groupRows || groupRows.length === 0) return [];
+    return [{
+      kind: spec.kind,
+      path: spec.path,
+      endpoint: groupRows[0]?.endpoint ?? null,
+      rows: groupRows,
+    }];
+  });
 }
 
 function rowFromRuntime(input: {
@@ -229,14 +352,28 @@ function rowFromRuntime(input: {
     ? null
     : (input.status?.port ?? input.portHint ?? input.profile?.localPort);
   // Live listener bearer authenticates; pool hub_token often differs and 401s.
-  // Prefer runtime localToken whenever the entry is up; fall back to stored key
-  // only when stopped / no runtime token (edit + offline display).
+  // Copy / import / test must use runtime localToken while the entry is up.
+  // Never fall back to a divergent stored hub_token on a live listener.
   const useRuntimeToken = input.primary || !input.poolBacked;
+  const entryUp = input.status?.state === 'running' || input.status?.state === 'degraded';
   const runtimeToken = input.unavailable || !useRuntimeToken
     ? null
     : (input.status?.localToken?.trim() || null);
-  const token = runtimeToken || input.storedToken?.trim() || null;
-  const visit = lastVisitFromStatuses(input.profileIds, input.statuses);
+  const storedToken = input.storedToken?.trim() || null;
+  const token = useRuntimeToken && entryUp && !input.unavailable
+    ? runtimeToken
+    : (runtimeToken || storedToken);
+  const authenticating = input.status?.localToken?.trim() || null;
+  // Scope visit/usage to the entry key that currently authenticates.
+  // Primary may use profile scope when localToken is unknown; extras stay empty.
+  const usageEligible = Boolean(
+    token && authenticating
+      ? token === authenticating
+      : (input.primary && !authenticating),
+  );
+  const visit = usageEligible
+    ? lastVisitFromStatuses(input.profileIds, input.statuses)
+    : { lastPath: null, lastRequestAt: null };
   return {
     id: input.id,
     poolBacked: input.poolBacked,
@@ -255,6 +392,7 @@ function rowFromRuntime(input: {
     targetAgentId: input.targetAgentId,
     lastPath: visit.lastPath,
     lastRequestAt: visit.lastRequestAt,
+    usageEligible,
     listedModels: uniqueListedModels(input.listedModels ?? []),
   };
 }
@@ -270,7 +408,7 @@ export function buildLocalTokenRows(
   pools: readonly DefaultRoutePoolOverview[] = [],
   chatCompletionsShared = false,
   tokensByPoolId: Readonly<Record<string, string>> = {},
-  records: readonly LocalTokenRecord[] = [],
+  records?: readonly LocalTokenRecord[] | null,
 ): LocalTokenRow[] {
   const covered = new Set<string>();
   const rows: LocalTokenRow[] = [];
@@ -303,28 +441,53 @@ export function buildLocalTokenRows(
     for (const match of matches) covered.add(match.id);
     const profile = pickRuntimeProfile(matches, bridgeStatuses);
     const statusId = profile?.id ?? pool.id;
-    const primaryRecord = records.find((record) => record.primary && record.poolId === pool.id);
+    const recordsReady = records != null;
+    const primaryRecord = recordsReady
+      ? records.find((record) => record.primary && record.poolId === pool.id)
+      : undefined;
+    const extraRecords = recordsReady
+      ? records.filter((record) => !record.primary && record.poolId === pool.id)
+      : [];
     const storedToken = primaryRecord?.token
       ?? tokensByPoolId[pool.id]
       ?? tokensByPoolId[statusId];
-    rows.push(rowFromRuntime({
-      id: pool.id,
-      poolBacked: true,
-      primary: true,
-      canDelete: false,
-      name: primaryRecord?.name ?? '',
-      kind,
-      targetAgentId: pool.targetAgentId,
-      profile,
-      profileIds,
-      portHint: pool.gatewayPort,
-      status: bridgeStatuses[statusId],
-      unavailable: Boolean(statusErrors[statusId]),
-      storedToken,
-      listedModels: pool.listedModels,
-      statuses: bridgeStatuses,
-    }));
-    for (const extra of records.filter((record) => !record.primary && record.poolId === pool.id)) {
+    if (!recordsReady || primaryRecord) {
+      rows.push(rowFromRuntime({
+        id: pool.id,
+        poolBacked: true,
+        primary: true,
+        canDelete: true,
+        name: primaryRecord?.name ?? '',
+        kind,
+        targetAgentId: pool.targetAgentId,
+        profile,
+        profileIds,
+        portHint: pool.gatewayPort,
+        status: bridgeStatuses[statusId],
+        unavailable: Boolean(statusErrors[statusId]),
+        storedToken,
+        listedModels: pool.listedModels,
+        statuses: bridgeStatuses,
+      }));
+    } else if (extraRecords.length === 0) {
+      rows.push(rowFromRuntime({
+        id: pool.id,
+        poolBacked: true,
+        primary: true,
+        canDelete: false,
+        name: '',
+        kind,
+        targetAgentId: pool.targetAgentId,
+        profile,
+        profileIds,
+        portHint: pool.gatewayPort,
+        status: bridgeStatuses[statusId],
+        unavailable: Boolean(statusErrors[statusId]),
+        listedModels: pool.listedModels,
+        statuses: bridgeStatuses,
+      }));
+    }
+    for (const extra of extraRecords) {
       rows.push(rowFromRuntime({
         id: extra.id,
         poolBacked: true,
@@ -379,14 +542,27 @@ export function buildLocalTokenRows(
   if (chatCompletionsShared && extraChatIds.length > 0) {
     for (const row of rows) {
       if (row.kind !== 'chat_completions') continue;
-      row.profileIds = [...new Set([...row.profileIds, ...extraChatIds])];
       row.listedModels = uniqueListedModels([
         ...row.listedModels,
         ...extraChatModels,
       ]);
-      const visit = lastVisitFromStatuses(row.profileIds, bridgeStatuses);
-      row.lastPath = visit.lastPath;
-      row.lastRequestAt = visit.lastRequestAt;
+      // Keep usage profile scope on the primary key only — extras must not inherit pool totals.
+      if (row.primary) {
+        row.profileIds = [...new Set([...row.profileIds, ...extraChatIds])];
+      }
+    }
+  }
+
+  // H: share usable Chat Completions catalog onto empty Messages rows (same login family).
+  const chatModels = uniqueListedModels(
+    rows.filter((row) => row.kind === 'chat_completions').flatMap((row) => row.listedModels),
+  );
+  if (chatModels.length > 0) {
+    for (const row of rows) {
+      if (row.kind !== 'messages') continue;
+      if (row.listedModels.length > 0) continue;
+      row.listedModels = [...chatModels];
+      row.modelsSharedFromChat = true;
     }
   }
 
@@ -409,7 +585,8 @@ export type LocalTokenEditKeyGate = {
 };
 
 export function localTokenDeleteGate(
-  row: Pick<LocalTokenRow, 'canDelete' | 'unavailable'>,
+  row: Pick<LocalTokenRow, 'canDelete' | 'poolBacked' | 'unavailable' | 'kind'>,
+  rows: readonly Pick<LocalTokenRow, 'kind' | 'poolBacked'>[] = [],
   t?: TranslateFn,
 ): LocalTokenEditKeyGate {
   if (row.unavailable) {
@@ -418,15 +595,43 @@ export function localTokenDeleteGate(
       reason: t ? t('routes.runtime.unavailable') : '状态不可用',
     };
   }
-  if (!row.canDelete) {
+  if (!row.poolBacked || !row.canDelete) {
+    return {
+      enabled: false,
+      reason: t
+        ? t('routes.tokens.editKeyNeedPool')
+        : '这条还不是连接池入口 Key，先从路由建入口',
+    };
+  }
+  const sameKind = rows.filter((item) => item.kind === row.kind && item.poolBacked);
+  if (sameKind.length <= 1) {
     return {
       enabled: false,
       reason: t
         ? t('routes.tokens.deleteNeedExtra')
-        : '类型默认入口 Key 不能删除，可修改',
+        : '这类型只剩这一把，不能删除，可修改',
     };
   }
   return { enabled: true, reason: null };
+}
+
+export function localTokenEmptyCreateGate(
+  row: Pick<LocalTokenRow, 'poolBacked' | 'kind'>,
+  createPoolIdByKind: Readonly<Partial<Record<LocalEndpointKind, string>>> = {},
+  t?: TranslateFn,
+  needRoute = false,
+): LocalTokenEditKeyGate {
+  if (row.poolBacked || createPoolIdByKind[row.kind]) {
+    return { enabled: true, reason: null };
+  }
+  return {
+    enabled: false,
+    reason: t
+      ? t(needRoute ? 'routes.board.entryNeedRoute' : 'routes.tokens.createNeedPool')
+      : (needRoute
+        ? '连接池已有登录。打开本机转发后，端点 Key 会出现在入口 Key 页'
+        : '先在连接池加入登录'),
+  };
 }
 
 export function localTokenEditKeyGate(

@@ -4,6 +4,7 @@ import {
   defaultModelForAgent,
   FALLBACK_CUSTOM_MODEL,
   filterRemoteModelsForAgent,
+  listRemoteModelsForPicker,
   looksLikeGrokModel,
   maskApiKeyLast4,
   openaiModelsUrl,
@@ -64,6 +65,19 @@ describe('filterRemoteModelsForAgent', () => {
   it('keeps moonshot/kimi names when a relay mixes them with xai/grok', () => {
     const ids = ['xai/grok-4.6', 'moonshot-v1-128k', 'kimi-latest'];
     expect(filterRemoteModelsForAgent('kimi', ids)).toEqual(['moonshot-v1-128k', 'kimi-latest']);
+  });
+
+  it('keeps the local-gateway catalog for loopback URLs', () => {
+    const ids = ['claude-sonnet-4', 'gpt-4.1', 'kimi-k2'];
+    expect(listRemoteModelsForPicker('kimi', ids, 'http://127.0.0.1:17034')).toEqual(ids);
+    expect(listRemoteModelsForPicker('kimi', ids, '127.0.0.1:17034')).toEqual(ids);
+    expect(listRemoteModelsForPicker('kimi', ids, 'https://api.moonshot.cn/v1')).toEqual(['kimi-k2']);
+  });
+
+  it('still offers fetched ids when none match the Agent family', () => {
+    const ids = ['claude-sonnet-4', 'gpt-4.1'];
+    expect(listRemoteModelsForPicker('kimi', ids, 'http://example.test/v1')).toEqual(ids);
+    expect(listRemoteModelsForPicker('kimi', ['xai/grok-4.6'], 'http://example.test/v1')).toEqual([]);
   });
 });
 

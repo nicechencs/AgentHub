@@ -1,15 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
-import {
   BarChart3,
   RefreshCw,
 } from 'lucide-react';
@@ -23,9 +14,11 @@ import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useTheme } from '@/components/shared/ThemeProvider';
 import { Notice } from '@/components/shared/Notice';
+import { SegmentedControl } from '@/components/shared/SegmentedControl';
 import { UsageParserHealth } from '@/components/shared/UsageParserHealth';
 import { useUsageSync } from '@/components/shared/UsageSyncProvider';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Tip } from '@/components/ui/tooltip';
@@ -72,16 +65,12 @@ import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { loadBool, saveBool, StorageKey } from '@/lib/ui-preferences';
 import { resolveTheme } from '@/lib/theme';
 import type { AgentKey, RuntimeDetect, UsageRecord, UsageTrendPoint } from '@/lib/types';
-import { resolveChartColor, typeScalePx } from '@/styles/tokens';
 import { USAGE_COLLECTED_EVENT } from '@/lib/usage-sync';
-import { formatTrendTick, zeroFillTrendSeries } from '@/lib/usage-trend';
+import { zeroFillTrendSeries } from '@/lib/usage-trend';
 import { cn, fmtTokens } from '@/lib/utils';
 import { AgentOverview, AgentOverviewSkeleton } from './AgentOverview';
-import {
-  USAGE_TREND_Y_AXIS_WIDTH,
-  UsageTrendTooltipCard,
-  useUsageTrendHover,
-} from './UsageTrendTooltip';
+import { agentTrendSeries, UsageTrendChart } from './UsageTrendChart';
+import type { UsageTrendGroup } from './usageTrendChartModel';
 import {
   dashboardBindingMeta,
   dashboardOverviewSkeletonCount,
@@ -104,22 +93,20 @@ import {
   resolveUsageModelFilter,
   sortUsageRowsDesc,
   usageModelSelectOptions,
+  customRangeInputBounds,
+  normalizeCustomRange,
   usageWindowBound,
   type DateRange,
 } from './usageOverviewModel';
 
-const DATE_RANGE_OPTIONS: { value: DateRange; days: number }[] = [
-  { value: 'today', days: 1 },
-  { value: '24h', days: 1 },
-  { value: '7d', days: 7 },
-  { value: '30d', days: 30 },
-];
+const DATE_RANGE_OPTIONS: DateRange[] = ['today', '24h', '7d', '30d', 'custom'];
 
 const DATE_RANGE_LABEL_KEYS: Record<DateRange, MessageKey> = {
   today: 'dashboard.range.today',
   '24h': 'dashboard.range.last24h',
   '7d': 'dashboard.range.last7d',
   '30d': 'dashboard.range.last30d',
+  custom: 'dashboard.range.custom',
 };
 
 export default function DashboardPage() {
@@ -155,25 +142,44 @@ export default function DashboardPage() {
   const [dateRange, setDateRange] = useState<DateRange>(
     () => rememberedUsageFilters().dateRange,
   );
+  const [customStart, setCustomStart] = useState(
+    () => rememberedUsageFilters().customStart,
+  );
+  const [customEnd, setCustomEnd] = useState(
+    () => rememberedUsageFilters().customEnd,
+  );
   const [agentFilter, setAgentFilter] = useState<AgentKey | 'all'>(
     () => rememberedUsageFilters().agentFilter,
   );
   const [modelFilter, setModelFilter] = useState(
     () => rememberedUsageFilters().modelFilter,
   );
+  const [trendGroup, setTrendGroup] = useState<UsageTrendGroup>(
+    () => rememberedUsageFilters().trendGroup,
+  );
 
   // —— 用量：overview/trend 先画图；明细表另拉 capped 页 ——
   const [usageAvailability, setUsageAvailability] = useState<UsageAvailability | null>(null);
   const [usageOverview, setUsageOverview] = useState<UsageOverview | null>(null);
   const [usageTrendPoints, setUsageTrendPoints] = useState<UsageTrendPoint[]>([]);
+  const [modelTrendPoints, setModelTrendPoints] = useState<UsageTrendPoint[]>([]);
   const [usage, setUsage] = useState<UsageRecord[] | null>(null);
   const [usageLoading, setUsageLoading] = useState(true);
   const [tableLoading, setTableLoading] = useState(true);
+  const [tableError, setTableError] = useState<unknown>(null);
   const [usageRefreshing, setUsageRefreshing] = useState(false);
   const [usageError, setUsageError] = useState<unknown>(null);
   const usageGenerationRef = useRef(0);
 
+  const customRange = useMemo(
+    () => ({ start: customStart, end: customEnd }),
+    [customStart, customEnd],
+  );
   const dayLabel = t(DATE_RANGE_LABEL_KEYS[dateRange]);
+  const customBounds = useMemo(
+    () => customRangeInputBounds(customStart, customEnd),
+    [customStart, customEnd],
+  );
 
   // —— 采集（状态由 UsageSyncProvider 统一管理）——
   const collecting = usageSync.collecting;
@@ -305,28 +311,33 @@ export default function DashboardPage() {
       if (initial) setUsageLoading(true);
       else setUsageRefreshing(true);
       setTableLoading(true);
+      setTableError(null);
       setUsageError(null);
-      const { days, since } = usageWindowBound(dateRange);
+      const { days, since, until } = usageWindowBound(dateRange, new Date(), customRange);
       const agentId = agentFilter === 'all' ? undefined : agentFilter;
       const model = modelFilter === 'all' || modelFilter === '' ? undefined : modelFilter;
       const excludeAgentIds = omittedIds.length > 0 ? omittedIds : undefined;
       try {
-        const [availability, overview, trend] = await Promise.all([
+        const [availability, overview, trend, modelTrend] = await Promise.all([
           getUsageAvailability(),
-          fetchUsageOverview({ days, agentId, model, since, excludeAgentIds }),
-          usageTrend(days, agentId, model, since, excludeAgentIds),
+          fetchUsageOverview({ days, agentId, model, since, until, excludeAgentIds }),
+          usageTrend(days, agentId, model, since, excludeAgentIds, undefined, until),
+          usageTrend(days, agentId, model, since, excludeAgentIds, 'model', until),
         ]);
         if (!isLatestUsageRequest(usageGenerationRef.current, generation)) return;
         setUsageAvailability(availability);
         if (availability.status === 'unavailable') {
           setUsageOverview(null);
           setUsageTrendPoints([]);
+          setModelTrendPoints([]);
           setUsage([]);
+          setTableError(null);
           setTableLoading(false);
           return;
         }
         setUsageOverview(overview);
         setUsageTrendPoints(trend);
+        setModelTrendPoints(modelTrend);
         setUsageLoading(false);
         setUsageRefreshing(false);
 
@@ -336,13 +347,17 @@ export default function DashboardPage() {
             agentId,
             model,
             since,
+            until,
             limit: 2000,
             excludeAgentIds,
           });
           if (!isLatestUsageRequest(usageGenerationRef.current, generation)) return;
           setUsage(records);
-        } catch {
-          if (isLatestUsageRequest(usageGenerationRef.current, generation)) setUsage([]);
+        } catch (e) {
+          if (isLatestUsageRequest(usageGenerationRef.current, generation)) {
+            setUsage([]);
+            setTableError(e);
+          }
         } finally {
           if (isLatestUsageRequest(usageGenerationRef.current, generation)) setTableLoading(false);
         }
@@ -356,7 +371,7 @@ export default function DashboardPage() {
         }
       }
     },
-    [dateRange, agentFilter, modelFilter, omittedIds],
+    [dateRange, customRange, agentFilter, modelFilter, omittedIds],
   );
 
   useEffect(() => {
@@ -436,8 +451,15 @@ export default function DashboardPage() {
   }, [modelsReady, modelFilter, effectiveModelFilter]);
 
   useEffect(() => {
-    rememberUsageFilters({ dateRange, agentFilter, modelFilter });
-  }, [dateRange, agentFilter, modelFilter]);
+    rememberUsageFilters({
+      dateRange,
+      customStart,
+      customEnd,
+      agentFilter,
+      modelFilter,
+      trendGroup,
+    });
+  }, [dateRange, customStart, customEnd, agentFilter, modelFilter, trendGroup]);
 
   const rangedTrend = useMemo(() => {
     const visible = filterVisibleTrend(usageTrendPoints, omittedIds);
@@ -489,18 +511,13 @@ export default function DashboardPage() {
   );
   const tableRows = useMemo(() => sortUsageRowsDesc(scopedUsage), [scopedUsage]);
 
-  const trendAgents = useMemo(() => {
-    if (agentFilter !== 'all') {
-      const meta = AGENT_MAP[agentFilter];
-      return meta ? [meta] : [];
-    }
-    return installedAgents;
+  const trendSeries = useMemo(() => {
+    const ids =
+      agentFilter !== 'all'
+        ? ([agentFilter] as AgentKey[])
+        : installedAgents.map((meta) => meta.id);
+    return agentTrendSeries(ids, AGENT_MAP);
   }, [agentFilter, installedAgents]);
-  const resolveTrendName = useCallback(
-    (key: string) => agentDisplayName(key as AgentKey),
-    [],
-  );
-  const trendHover = useUsageTrendHover(resolveTrendName);
   const maxTokens = distribution[0]?.tokens ?? 0;
   const installedCount = agents?.filter((a) => a.installed && !a.hidden).length ?? 0;
   const overviewSkeletonCount = dashboardOverviewSkeletonCount(
@@ -567,7 +584,7 @@ export default function DashboardPage() {
       <PageSection>
         <div className={cn(pageRhythm.chromeRow)}>
           <Select value={agentFilter} onValueChange={(v) => setAgentFilter(v as AgentKey | 'all')}>
-            <SelectTrigger className="w-36">
+            <SelectTrigger className="w-36" aria-label={t('dashboard.page.agentFilterAria')}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -586,7 +603,7 @@ export default function DashboardPage() {
             </SelectContent>
           </Select>
           <Select value={effectiveModelFilter} onValueChange={setModelFilter}>
-            <SelectTrigger className="w-44">
+            <SelectTrigger className="w-44" aria-label={t('dashboard.page.modelFilterAria')}>
               <SelectValue placeholder={t('dashboard.page.allModels')} />
             </SelectTrigger>
             <SelectContent>
@@ -598,18 +615,45 @@ export default function DashboardPage() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRange)}>
-            <SelectTrigger className="w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {DATE_RANGE_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  {t(DATE_RANGE_LABEL_KEYS[o.value])}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <SegmentedControl
+            size="sm"
+            aria-label={t('dashboard.page.rangeAria')}
+            value={dateRange}
+            onChange={(value) => {
+              if (value === 'custom') {
+                const next = normalizeCustomRange(customStart, customEnd, new Date(), dateRange);
+                setCustomStart(next.start);
+                setCustomEnd(next.end);
+              }
+              setDateRange(value);
+            }}
+            options={DATE_RANGE_OPTIONS.map((value) => ({
+              value,
+              label: t(DATE_RANGE_LABEL_KEYS[value]),
+            }))}
+          />
+          {dateRange === 'custom' ? (
+            <>
+              <Input
+                type="date"
+                className="w-[9.75rem]"
+                aria-label={t('dashboard.page.customStart')}
+                min={customBounds.minStart}
+                max={customBounds.maxStart}
+                value={customStart}
+                onChange={(event) => setCustomStart(event.target.value)}
+              />
+              <Input
+                type="date"
+                className="w-[9.75rem]"
+                aria-label={t('dashboard.page.customEnd')}
+                min={customBounds.minEnd}
+                max={customBounds.maxEnd}
+                value={customEnd}
+                onChange={(event) => setCustomEnd(event.target.value)}
+              />
+            </>
+          ) : null}
           <div className="ml-auto flex min-w-[12.5rem] max-w-full flex-col items-end gap-1.5 sm:min-w-[16rem]">
             <div className="flex flex-wrap items-center justify-end gap-2">
               {!collecting && (
@@ -668,11 +712,11 @@ export default function DashboardPage() {
         ) : (
           <div
             className={cn(
-              pageRhythm.blocks,
+              'space-y-5',
               usageRefreshing ? 'opacity-60 transition-opacity' : 'transition-opacity',
             )}
           >
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <MetricCard
                 label={t('dashboard.page.metricInput', { range: dayLabel })}
                 value={metrics.input}
@@ -681,103 +725,23 @@ export default function DashboardPage() {
                 label={t('dashboard.page.metricOutput', { range: dayLabel })}
                 value={metrics.output}
               />
-              <MetricCard
-                label={t('dashboard.page.metricCacheWrite', { range: dayLabel })}
-                value={metrics.cacheWrite}
-              />
-              <MetricCard
-                label={t('dashboard.page.metricCacheRead', { range: dayLabel })}
-                value={metrics.cacheRead}
-              />
               <MetricCard label={t('dashboard.page.metricCost')} value={metrics.cost} />
             </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>
-                  {t('dashboard.page.tokenUsageTitle', { range: dayLabel })}
-                </CardTitle>
-                <p className="text-xs text-muted">
-                  {t('dashboard.page.tokenUsageSummary', {
-                    in: fmtTokens(metrics.totalIn),
-                    out: fmtTokens(metrics.totalOut),
-                    cost: metrics.totalCost.toFixed(1),
-                  })}
-                </p>
-              </CardHeader>
-              <CardContent>
-                <div className="relative h-56">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart
-                        data={rangedTrend}
-                        margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
-                        onMouseMove={trendHover.onChartMouseMove}
-                        onMouseLeave={trendHover.onChartMouseLeave}
-                      >
-                        <defs>
-                          {trendAgents.map((meta) => {
-                            const color = resolveChartColor(meta.color, chartScheme);
-                            return (
-                              <linearGradient
-                                key={`grad-${meta.id}`}
-                                id={`usage-fill-${meta.id}`}
-                                x1="0"
-                                y1="0"
-                                x2="0"
-                                y2="1"
-                              >
-                                <stop offset="0%" stopColor={color} stopOpacity={0.18} />
-                                <stop offset="100%" stopColor={color} stopOpacity={0.02} />
-                              </linearGradient>
-                            );
-                          })}
-                        </defs>
-                        <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} strokeOpacity={0.6} />
-                        <XAxis
-                          dataKey="date"
-                          tick={{ fill: 'var(--text-muted)', fontSize: typeScalePx('meta') }}
-                          tickLine={false}
-                          axisLine={{ stroke: 'var(--border)' }}
-                          minTickGap={28}
-                          interval="preserveStartEnd"
-                          tickFormatter={(d: string) => formatTrendTick(d)}
-                        />
-                        <YAxis
-                          tick={{ fill: 'var(--text-muted)', fontSize: typeScalePx('meta') }}
-                          tickLine={false}
-                          axisLine={false}
-                          tickFormatter={(v: number) => fmtTokens(v)}
-                          width={USAGE_TREND_Y_AXIS_WIDTH}
-                        />
-                        <Tooltip
-                          cursor={{ stroke: 'var(--border)', strokeWidth: 1 }}
-                          content={() => null}
-                        />
-                        {trendAgents.map((meta) => (
-                          <Area
-                            key={meta.id}
-                            type="monotone"
-                            dataKey={meta.id}
-                            stroke={resolveChartColor(meta.color, chartScheme)}
-                            strokeWidth={1.5}
-                            fill={`url(#usage-fill-${meta.id})`}
-                            isAnimationActive={false}
-                            activeDot={{ r: 3, strokeWidth: 0 }}
-                          />
-                        ))}
-                      </AreaChart>
-                    </ResponsiveContainer>
-                    {trendHover.tip ? (
-                      <UsageTrendTooltipCard
-                        label={trendHover.tip.label}
-                        items={trendHover.tip.items}
-                        onMouseEnter={trendHover.onTipMouseEnter}
-                        onMouseLeave={trendHover.onTipMouseLeave}
-                      />
-                    ) : null}
-                  </div>
-              </CardContent>
-            </Card>
+            <UsageTrendChart
+              dayLabel={dayLabel}
+              summary={t('dashboard.page.tokenUsageSummary', {
+                in: fmtTokens(metrics.totalIn),
+                out: fmtTokens(metrics.totalOut),
+                cost: metrics.totalCost.toFixed(1),
+              })}
+              group={trendGroup}
+              onGroupChange={setTrendGroup}
+              agentPoints={rangedTrend}
+              agentSeries={trendSeries}
+              modelPoints={modelTrendPoints}
+              chartScheme={chartScheme}
+            />
 
             <Card>
               <CardHeader>
@@ -860,10 +824,10 @@ export default function DashboardPage() {
             title={t('dashboard.page.usageUnavailable')}
             description={usageUnavailableReason}
           />
-        ) : usageError ? (
+        ) : tableError ? (
           <ErrorState
             compact
-            error={usageError}
+            error={tableError}
             onRetry={() => void loadUsage(true)}
             title={t('dashboard.page.usageLoadFailed')}
           />
@@ -904,19 +868,19 @@ export default function DashboardPage() {
 
 function MetricCard({ label, value }: { label: string; value: string }) {
   return (
-    <Card className="p-3">
-      <p className="text-xs text-muted">{label}</p>
-      <p className="mt-1 text-title font-semibold tracking-tight">{value}</p>
+    <Card className="px-6 py-5">
+      <p className="text-meta text-muted">{label}</p>
+      <p className="mt-3 text-title font-semibold tracking-tight tabular-nums">{value}</p>
     </Card>
   );
 }
 
 function UsageOverviewSkeleton() {
   return (
-    <div className={pageRhythm.blocks}>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={i} className="h-20" />
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-24" />
         ))}
       </div>
       <Card className="p-4">

@@ -166,7 +166,11 @@ env = {{ API_KEY = "sk-secret", DEBUG = "1" }}
 #[test]
 fn cursor_source_locations_collapse_default_home_duplicate() {
     let locs = source_locations(AgentId::Cursor);
-    assert_eq!(locs.len(), 1, "~/.cursor/mcp.json and cursor-home/mcp.json are the same file");
+    assert_eq!(
+        locs.len(),
+        1,
+        "~/.cursor/mcp.json and cursor-home/mcp.json are the same file"
+    );
     let path = &locs[0].path;
     assert!(path.ends_with("mcp.json"), "{}", path.display());
     assert_eq!(locs[0].label, "Cursor ~/.cursor/mcp.json");

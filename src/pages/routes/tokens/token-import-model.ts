@@ -1,11 +1,9 @@
 /**
  * Eligibility for one-click「导入到 Agent」from a local-route token.
  *
- * Menu opens when the row has a key + at least one installed Agent.
- * An Agent is selectable only when this token kind is the loopback this Agent
- * actually writes (Claude←messages, Codex←responses_codex, Grok←responses_grok,
- * Kimi/DSH←chat_completions). Speaks-but-cannot-write stays visible and disabled.
- * Choosing an Agent opens Connections 「添加 API Key」 with the current URL + key.
+ * Confirm uses the Connections add-API-Key editor, then writes live config.
+ * The menu follows who speaks the key's endpoint. Grok Responses is Grok-only.
+ * Cursor has no public HTTP surface.
  */
 import { isAgentHidden, visibleInstalledIds } from '@/lib/agent-visibility';
 import {
@@ -24,7 +22,7 @@ import {
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { AgentKey, AgentStatus } from '@/lib/types';
 import { agentConversationSurfaces } from '@/pages/agents/agent-detail-model';
-import { tokenListenPort, type LocalTokenRow } from './tokens-model';
+import { agentSupportsLocalEndpointKind, tokenListenPort, type LocalTokenRow } from './tokens-model';
 
 export type TokenImportAgentRef = {
   id: AgentKey;
@@ -69,12 +67,12 @@ export function agentWritesLocalTokenKind(agentId: string): LocalEndpointKind | 
   return null;
 }
 
-/** True when importing this token writes the matching loopback into the Agent. */
+/** True when this Agent speaks the key's endpoint and can take it as an API Key. */
 export function agentCanReceiveTokenImport(
   agentId: string,
   kind: LocalEndpointKind,
 ): boolean {
-  return agentWritesLocalTokenKind(agentId) === kind;
+  return agentSupportsLocalEndpointKind(agentId, kind);
 }
 
 /**
@@ -116,11 +114,11 @@ export function tokenImportAgentChoice(
   if (agentCanReceiveTokenImport(agent.id, kind)) {
     return { ...agent, enabled: true, reason: null };
   }
-  if (agentWritesLocalTokenKind(agent.id) == null) {
+  if (agentConversationSurfaces(agent.id).length === 0) {
     return {
       ...agent,
       enabled: false,
-      reason: t ? t('routes.tokens.importCannotWrite') : '还不能写入',
+      reason: t ? t('routes.tokens.importCannotWrite') : '没有可用端点',
     };
   }
   return {

@@ -72,6 +72,27 @@ export function resetTicketWalletStore(): void {
   });
 }
 
+/** Drop one ticket from the in-memory wallet so a stale list cannot retry delete. */
+export function removeTicketFromWalletSnapshot(ticketId: string): void {
+  const wallet = snapshot.wallet;
+  if (!wallet || !ticketId) return;
+  if (!wallet.tickets.some((ticket) => ticket.id === ticketId)) return;
+  setSnapshot({
+    ...snapshot,
+    wallet: {
+      ...wallet,
+      tickets: wallet.tickets.filter((ticket) => ticket.id !== ticketId),
+      bindings: wallet.bindings.filter((binding) => binding.ticketId !== ticketId),
+      surfaceGroups: wallet.surfaceGroups
+        .map((group) => ({
+          ...group,
+          members: group.members.filter((member) => member.ticketId !== ticketId),
+        }))
+        .filter((group) => group.members.length > 0),
+    },
+  });
+}
+
 export async function loadTicketWallet(
   backend: Backend,
   opts: { force?: boolean } = {},

@@ -5,6 +5,8 @@ import { cn } from '@/lib/utils';
 export type PageSectionProps = HTMLAttributes<HTMLElement> & {
   title?: string;
   description?: string;
+  /** Right side of the title row (switch, refresh). */
+  actions?: ReactNode;
   /**
    * 顶部加分割线的主内容大段（如 Dashboard「用量明细」）。
    * 默认 false：仅 `mt-6` 段距。
@@ -27,6 +29,7 @@ export const PageSection = forwardRef<HTMLElement, PageSectionProps>(
     {
       title,
       description,
+      actions,
       ruled = false,
       first = false,
       className,
@@ -45,15 +48,22 @@ export const PageSection = forwardRef<HTMLElement, PageSectionProps>(
         )}
         {...props}
       >
-        {(title || description) && (
-          <div className={pageRhythm.sectionHead}>
-            {title ? (
-              <h2 className="text-body font-semibold tracking-tight text-primary">{title}</h2>
+        {(title || description || actions) && (
+          <div className={cn(pageRhythm.sectionHead, actions && 'flex items-center gap-2')}>
+            {title || description ? (
+              <div className={cn(actions && 'min-w-0 flex-1')}>
+                {title ? (
+                  <h2 className="text-body font-semibold tracking-tight text-primary">{title}</h2>
+                ) : null}
+                {description ? (
+                  <p className={cn(title ? 'mt-0.5' : undefined, 'text-meta text-secondary')}>
+                    {description}
+                  </p>
+                ) : null}
+              </div>
             ) : null}
-            {description ? (
-              <p className={cn(title ? 'mt-0.5' : undefined, 'text-meta text-secondary')}>
-                {description}
-              </p>
+            {actions ? (
+              <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div>
             ) : null}
           </div>
         )}

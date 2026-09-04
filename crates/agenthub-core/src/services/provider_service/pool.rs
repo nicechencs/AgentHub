@@ -19,6 +19,7 @@ use crate::storage::{
     account_get_by_id_conn, account_list_for_agent_conn, provider_get_by_id_conn,
     provider_list_for_agent_conn, AdapterProfileRepo,
 };
+use crate::utils::secret_merge::merge_preserving_secrets;
 
 use super::{
     log_provider_op, now_ts, sort_providers, validate_id, validate_provider_input,
@@ -312,12 +313,33 @@ impl ProviderService {
         Ok(self.commit_provider_mutation(input, true)?.stored)
     }
 
+    fn with_preserved_secrets(&self, input: &ProviderInput) -> Result<ProviderInput> {
+        let Some(existing) = self.repo.get_by_id(&input.id)? else {
+            return Ok(input.clone());
+        };
+        if existing.agent_id != input.agent_id {
+            return Ok(input.clone());
+        }
+        Ok(ProviderInput {
+            id: input.id.clone(),
+            agent_id: input.agent_id,
+            name: input.name.clone(),
+            settings_config: merge_preserving_secrets(
+                &existing.settings_config,
+                &input.settings_config,
+            ),
+            meta: merge_preserving_secrets(&existing.meta, &input.meta),
+            is_current: input.is_current,
+        })
+    }
+
     fn commit_provider_mutation(
         &self,
         input: &ProviderInput,
         upsert: bool,
     ) -> Result<ProviderCommittedMutation> {
-        validate_provider_input(input)?;
+        let input = self.with_preserved_secrets(input)?;
+        validate_provider_input(&input)?;
         let now = now_ts();
         // Surface classification may read adapter_profiles; do it before
         // BEGIN IMMEDIATE so we never re-enter the database mutex.
@@ -382,7 +404,7 @@ impl ProviderService {
             let mut row = prepared.clone();
             if let Some(existing) = &existing {
                 if !generated_projection {
-                    preserve_existing_provider_surface(input, existing, &mut row);
+                    preserve_existing_provider_surface(&input, existing, &mut row);
                 }
                 row.created_at = existing.created_at.clone();
             }

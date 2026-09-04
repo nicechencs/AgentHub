@@ -65,6 +65,7 @@ export function useChatPageSend(input: {
   } = input;
 
   const [sending, setSending] = useState(false);
+  const [canceling, setCanceling] = useState(false);
   const [sendingConversationId, setSendingConversationId] = useState<string | null>(null);
   const sendingConversationIdRef = useRef<string | null>(null);
   const streamingRef = useRef<Record<string, string>>({});
@@ -268,6 +269,7 @@ export function useChatPageSend(input: {
       if (sendingConversationIdRef.current === sendConvId) {
         sendingConversationIdRef.current = null;
         setSending(false);
+        setCanceling(false);
         setSendingConversationId(null);
       }
     }
@@ -284,7 +286,8 @@ export function useChatPageSend(input: {
   }
 
   async function handleCancel() {
-    if (!sendingConversationId) return;
+    if (!sendingConversationId || canceling) return;
+    setCanceling(true);
     try {
       await chatCancel(sendingConversationId);
       toast({
@@ -295,6 +298,8 @@ export function useChatPageSend(input: {
       });
     } catch (e) {
       toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
+    } finally {
+      setCanceling(false);
     }
   }
 
@@ -302,6 +307,7 @@ export function useChatPageSend(input: {
     if (!id) return;
     sendingConversationIdRef.current = id;
     setSendingConversationId(id);
+    setCanceling(false);
     setSending(true);
   }
 
@@ -310,14 +316,17 @@ export function useChatPageSend(input: {
     await chatCancel(id).catch(() => {});
     sendingConversationIdRef.current = null;
     setSending(false);
+    setCanceling(false);
     setSendingConversationId(null);
   }
 
   const sendingHere = Boolean(sending && sendingConversationId === active?.id);
+  const cancelingHere = Boolean(canceling && sendingConversationId === active?.id);
 
   return {
     sending,
     sendingHere,
+    cancelingHere,
     sendingConversationId: liveSendingConversationId,
     processMap,
     blockers,

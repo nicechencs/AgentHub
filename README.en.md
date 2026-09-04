@@ -44,7 +44,7 @@ Chat with an installed agent in the desktop app. The session list is on the left
 
 ### Agents
 
-Detect and fix the local runtime, then install or update each agent by **channel**. Open a card to see **endpoint type**, channel, and **config folder**, and to open that folder. Cursor Agent is hidden from the sidebar and Connections by default; you can unhide it here.
+Above the agent list, the software the environment needs is listed so you can install or upgrade it, then install or update each agent by **channel**. Open a card to see **endpoint type**, channel, and **config folder**, and to open that folder. Cursor Agent is hidden from the sidebar and Connections by default; you can unhide it here.
 
 ![Agents](docs/assets/screenshots/agents.png)
 
@@ -77,7 +77,7 @@ This page only scans and lists MCP that was already found. It does not install a
 
 ### Plugins
 
-Read-only view of plugin packs already installed in Claude and Grok. There is no install button, and this page does not change those packs.
+Lists plugin packs already installed in Claude, Grok, and Pi. Claude and Grok packs can be enabled or disabled here. There is no install button; install still happens in each tool.
 
 ### Routes
 
@@ -87,7 +87,7 @@ Manage local forwarding: fill clients with a local address. Login details stay o
 
 Local forwarding, plugins, and similar management will keep growing. These are currently **in development**.
 
-- **Plugins**: read-only list of Claude / Grok plugin packs; no install button.
+- **Plugins**: list of Claude / Grok / Pi plugin packs; Claude and Grok packs can be enabled or disabled. No install button.
 - **MCP**: read-only scan only; write and manage are not implemented yet.
 - **Routes**: some connections can already be forwarded; mixed vendors and some protocol conversions are still in progress. Do not treat this as a finished universal router.
 

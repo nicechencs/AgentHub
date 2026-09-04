@@ -35,6 +35,23 @@ fn agent_id_parse_as_str_roundtrip() {
 }
 
 #[test]
+fn canonical_usage_model_merges_grok_build_alias() {
+    assert_eq!(canonical_usage_model("grok-4.6-build"), "grok-4.6");
+    assert_eq!(canonical_usage_model("grok-4.6"), "grok-4.6");
+    assert_eq!(canonical_usage_model("[grok] grok-4.6-build"), "grok-4.6");
+    assert_eq!(canonical_usage_model("xai/grok-4.6-build"), "grok-4.6");
+    assert_eq!(canonical_usage_model("claude-opus-4"), "claude-opus-4");
+    assert_eq!(canonical_usage_model("my-build"), "my-build");
+    assert_eq!(
+        unique_canonical_usage_models(["grok-4.6-build", "grok-4.6", "opus"]),
+        vec!["grok-4.6".to_string(), "opus".to_string()]
+    );
+    let aliases = usage_model_filter_aliases("grok-4.6");
+    assert!(aliases.contains(&"grok-4.6".to_string()));
+    assert!(aliases.contains(&"grok-4.6-build".to_string()));
+}
+
+#[test]
 fn agent_id_parse_rejects_invalid() {
     assert_eq!(AgentId::parse(""), None);
     assert_eq!(AgentId::parse("unknown"), None);

@@ -84,9 +84,18 @@ fn apikey_fingerprint_changes_with_url_or_key() {
     let one = json!({"api_key": "sk-a", "base_url": "https://api.example.com/v1"});
     let url = json!({"api_key": "sk-a", "base_url": "https://other.example.com/v1"});
     let key = json!({"api_key": "sk-b", "base_url": "https://api.example.com/v1"});
-    assert_ne!(fingerprint_apikey("claude", &one), fingerprint_apikey("claude", &url));
-    assert_ne!(fingerprint_apikey("claude", &one), fingerprint_apikey("claude", &key));
-    assert_eq!(fingerprint_apikey("claude", &one), fingerprint_apikey("claude", &one));
+    assert_ne!(
+        fingerprint_apikey("claude", &one),
+        fingerprint_apikey("claude", &url)
+    );
+    assert_ne!(
+        fingerprint_apikey("claude", &one),
+        fingerprint_apikey("claude", &key)
+    );
+    assert_eq!(
+        fingerprint_apikey("claude", &one),
+        fingerprint_apikey("claude", &one)
+    );
 }
 
 #[test]

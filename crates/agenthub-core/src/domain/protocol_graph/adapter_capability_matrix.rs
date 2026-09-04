@@ -423,6 +423,13 @@ pub(super) const OPENAI_GROK_BRIDGE_LIMITS: &[&str] = &[
     "固定端口被占用时会尝试重新分配端口并写回配置。",
 ];
 
+pub(super) const OPENAI_CHAT_BRIDGE_LIMITS: &[&str] = &[
+    "将在本机地址启动本机转发，并切换目标 Agent 到该本地端点。",
+    "AgentHub 需保持在托盘运行；退出前会尝试排空监听。",
+    "本机转发：下游 Chat Completions，上游 OpenAI Chat Completions。",
+    "固定端口被占用时会尝试重新分配端口并写回配置。",
+];
+
 const XAI_PI_LIMITS: &[&str] = &[
     "将写入 Pi models.json 的 xai 位置与凭据引用标记；不会在预览中传输明文 Key。",
     "接上后会把自动生成的配置设成 Pi 当前在用的连接；请确认无其他进行中的配置写入。",
@@ -621,6 +628,8 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
     OPENAI_CODEX_EDGE.to_cell(),
     OPENAI_CLAUDE_EDGE.to_cell(),
     OPENAI_GROK_BRIDGE_EDGE.to_cell(),
+    OPENAI_KIMI_BRIDGE_EDGE.to_cell(),
+    OPENAI_DSH_BRIDGE_EDGE.to_cell(),
     AdapterCapabilityCell {
         key: AdapterCapabilityKey {
             source: AdapterSourceProduct::XaiApi,

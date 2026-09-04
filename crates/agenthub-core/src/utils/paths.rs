@@ -97,11 +97,14 @@ pub fn usage_gateway_dir() -> Result<PathBuf> {
     Ok(resolve_data_dir(None)?.join("usage-gateway"))
 }
 
-/// Durable ring snapshot for Activity / route monitoring traces.
+/// Disposable sqlite file for Activity / route monitoring traces.
 ///
-/// Lives under `{data_dir}/cache/route-traces.json` (credential-free JSON).
+/// Lives under `{data_dir}/cache/route-traces.db`, separate from `agenthub.db`.
+/// Deleting it only clears monitoring history.
 pub fn route_traces_persist_path() -> Result<PathBuf> {
-    Ok(resolve_data_dir(None)?.join("cache").join("route-traces.json"))
+    Ok(resolve_data_dir(None)?
+        .join("cache")
+        .join("route-traces.db"))
 }
 
 /// Typical live config roots per agent (may not exist yet).

@@ -10,6 +10,8 @@ import {
   mapLocalTokenProbeResult,
   mapLocalTokenRecord,
   mapRouteTrace,
+  mapRouteTraceDeleteResult,
+  mapRouteTracePage,
 } from './adapter-wire';
 
 describe('Adapter Rust wire mappers', () => {
@@ -572,6 +574,7 @@ describe('Adapter Rust wire mappers', () => {
 
   it('maps route trace stages without secrets', () => {
     const trace = mapRouteTrace({
+      traceVersion: 2,
       requestId: 'req-trace-1',
       atUnixMs: 1_786_492_800_000,
       method: 'POST',
@@ -583,26 +586,68 @@ describe('Adapter Rust wire mappers', () => {
       ttftMs: 120,
       inputTokens: 11,
       outputTokens: 7,
-      localAuth: { status: 'ok', profileId: 'profile-1', port: 8787 },
+      localEndpoint: { status: 'ok' },
+      localAuth: { status: 'ok', profileId: 'profile-1', keyLast4: '1234', port: 8787 },
+      admission: { status: 'ok' },
+      routeResolution: { status: 'ok' },
       pool: {
         status: 'ok',
         selectedMember: { label: 'acct-1', sourceKind: 'account', sourceId: 'acct-1' },
+        attempts: [{
+          attemptId: 1,
+          member: { label: 'acct-1', sourceKind: 'account', sourceId: 'acct-1' },
+          status: 'ok',
+          url: 'https://user:secret@api.example.com/v1/chat/completions?token=hidden#part',
+          requestStatus: 'ok',
+          responseStatus: 'ok',
+          authResult: 'accepted',
+          httpStatus: 200,
+          result: 'success',
+          durationMs: 42,
+        }],
       },
       conversion: { status: 'ok', path: 'messages_to_openai_chat', result: 'converted' },
       upstreamAuth: { status: 'ok', httpStatus: 200 },
+      upstreamRequest: {
+        status: 'ok',
+        url: 'https://user:secret@api.example.com/v1/chat/completions?token=hidden#part',
+        member: { label: 'acct-1', sourceKind: 'account', sourceId: 'acct-1' },
+        model: 'claude-sonnet',
+      },
       upstream: {
         status: 'ok',
         url: 'https://api.example.com/v1/chat/completions',
         httpStatus: 200,
       },
+      responseConversion: { status: 'ok', path: 'upstream_to_client', result: 'completed' },
+      delivery: { status: 'ok', httpStatus: 200, stream: false, completion: 'response_returned' },
     });
+    expect(trace?.traceVersion).toBe(2);
     expect(trace?.requestId).toBe('req-trace-1');
     expect(trace?.ttftMs).toBe(120);
     expect(trace?.inputTokens).toBe(11);
     expect(trace?.outputTokens).toBe(7);
+    expect(trace?.localEndpoint?.status).toBe('ok');
     expect(trace?.localAuth.status).toBe('ok');
+    expect(trace?.localAuth.keyLast4).toBe('1234');
+    expect(trace?.admission?.status).toBe('ok');
+    expect(trace?.routeResolution?.status).toBe('ok');
+    expect(trace?.pool.attempts?.[0]).toMatchObject({
+      attemptId: 1,
+      url: 'https://api.example.com/v1/chat/completions',
+      requestStatus: 'ok',
+      responseStatus: 'ok',
+      authResult: 'accepted',
+      durationMs: 42,
+    });
+    expect(trace?.upstreamRequest).toMatchObject({
+      status: 'ok',
+      url: 'https://api.example.com/v1/chat/completions',
+    });
     expect(trace?.conversion.path).toBe('messages_to_openai_chat');
-    expect(JSON.stringify(trace)).not.toMatch(/sk-|ahb_|Bearer/i);
+    expect(trace?.responseConversion?.path).toBe('upstream_to_client');
+    expect(trace?.delivery).toMatchObject({ status: 'ok', httpStatus: 200, stream: false });
+    expect(JSON.stringify(trace)).not.toMatch(/sk-|ahb_|Bearer|user:secret|token=hidden/i);
     expect(
       mapAdapterBridgeStatusDto({
         profileId: 'profile-1',
@@ -629,6 +674,29 @@ describe('Adapter Rust wire mappers', () => {
     ).toHaveLength(1);
   });
 
+  it('normalizes legacy and unknown failure stages safely', () => {
+    const base = {
+      requestId: 'legacy',
+      atUnixMs: 1_786_492_800_000,
+      method: 'POST',
+      path: '/v1/messages',
+      httpStatus: 502,
+      ok: false,
+      localAuth: { status: 'ok' },
+      pool: { status: 'ok' },
+      conversion: { status: 'ok', path: 'passthrough' },
+      upstreamAuth: { status: 'failed' },
+      upstream: { status: 'failed' },
+    };
+    expect(mapRouteTrace({ ...base, failureStage: 'conversion' })?.failureStage)
+      .toBe('request_conversion');
+    expect(mapRouteTrace({ ...base, failureStage: 'upstream_auth' })?.failureStage)
+      .toBe('upstream_response');
+    expect(mapRouteTrace({ ...base, failureStage: 'future_stage' })?.failureStage)
+      .toBeNull();
+    expect(mapRouteTrace(base)?.traceVersion).toBe(1);
+  });
+
   it('maps local gateway restarting from the Tauri DTO and defaults missing to false', () => {
     expect(mapLocalGatewayStatus({
       running: true,
@@ -649,5 +717,32 @@ describe('Adapter Rust wire mappers', () => {
       port: null,
       restarting: false,
     });
+  });
+
+  it('maps a monitoring page without the live-ring cap', () => {
+    const traces = Array.from({ length: 40 }, (_, index) => ({
+      requestId: `req-${index}`,
+      atUnixMs: 1_786_492_800_000 + index,
+      method: 'POST',
+      path: '/v1/messages',
+      httpStatus: 200,
+      ok: true,
+      localAuth: { status: 'ok' },
+      pool: { status: 'ok' },
+      conversion: { status: 'ok', path: 'passthrough' },
+      upstreamAuth: { status: 'ok' },
+      upstream: { status: 'ok' },
+    }));
+    const page = mapRouteTracePage({
+      rows: traces,
+      total: 120,
+      offset: 50,
+      limit: 50,
+    });
+    expect(page.rows).toHaveLength(40);
+    expect(page.total).toBe(120);
+    expect(page.offset).toBe(50);
+    expect(page.limit).toBe(50);
+    expect(mapRouteTraceDeleteResult({ deleted: 3 })).toEqual({ deleted: 3 });
   });
 });

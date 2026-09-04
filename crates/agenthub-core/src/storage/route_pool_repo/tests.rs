@@ -156,9 +156,7 @@ fn set_hub_token_replaces_the_loopback_bearer() {
     let (_dir, _db, repo) = tmp();
     repo.create_pool(&pool("pool-a", AgentId::Codex, true, "ahb_token-a"))
         .unwrap();
-    let saved = repo
-        .set_hub_token("pool-a", "ahb_token-b", "t1")
-        .unwrap();
+    let saved = repo.set_hub_token("pool-a", "ahb_token-b", "t1").unwrap();
     assert_eq!(saved.hub_token, "ahb_token-b");
     assert_eq!(saved.updated_at, "t1");
 }
@@ -241,7 +239,9 @@ fn enroll_unified_gateway_rejects_a_different_port() {
     repo.create_pool(&pool("pool-a", AgentId::Codex, true, "ahb_token-a"))
         .unwrap();
     let first = repo.enroll_unified_gateway("pool-a", 43121, "t1").unwrap();
-    let error = repo.enroll_unified_gateway("pool-a", 43122, "t2").unwrap_err();
+    let error = repo
+        .enroll_unified_gateway("pool-a", 43122, "t2")
+        .unwrap_err();
     assert_eq!(error.code(), "invalid_arg");
     let stored = repo.get_pool("pool-a").unwrap().unwrap();
     assert_eq!(stored.gateway_port, Some(43121));

@@ -6,7 +6,9 @@ import {
   formatTrendTooltipLabel,
   localTrendBucket,
   sortUsageTrendTooltipItems,
+  todayTrendBucket,
   trendGrain,
+  trendPointGrain,
   usageTrendTooltipItemsFromPayload,
   zeroFillTrendSeries,
 } from './usage-trend';
@@ -47,6 +49,15 @@ describe('denseTrendBuckets', () => {
     expect(keys.length).toBeGreaterThanOrEqual(7);
     expect(keys.length).toBeLessThanOrEqual(9);
   });
+
+  it('stops at until so a past custom range does not fill through today', () => {
+    const since = new Date(2026, 7, 10).toISOString();
+    const until = new Date(2026, 7, 13).toISOString();
+    const keys = denseTrendBuckets(30, since, now, until);
+    expect(keys[0]).toBe('2026-08-10');
+    expect(keys.at(-1)).toBe('2026-08-12');
+    expect(keys).toHaveLength(3);
+  });
 });
 
 describe('localTrendBucket', () => {
@@ -55,6 +66,16 @@ describe('localTrendBucket', () => {
     expect(localTrendBucket(iso, 'hour')).toBe('2026-08-26 09:00');
     expect(localTrendBucket(iso, 'day')).toBe('2026-08-26');
     expect(localTrendBucket('not-a-date', 'hour')).toBeNull();
+  });
+});
+
+describe('todayTrendBucket', () => {
+  it('formats the current local day or hour', () => {
+    const now = new Date(2026, 8, 3, 17, 38, 0);
+    expect(todayTrendBucket(now, 'day')).toBe('2026-09-03');
+    expect(todayTrendBucket(now, 'hour')).toBe('2026-09-03 17:00');
+    expect(trendPointGrain('2026-09-03')).toBe('day');
+    expect(trendPointGrain('2026-09-03 17:00')).toBe('hour');
   });
 });
 

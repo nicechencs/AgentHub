@@ -5,6 +5,7 @@ import { QuotaBar } from '@/components/shared/QuotaBar';
 import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
+import { Hint } from '@/components/ui/tooltip';
 import { Switch } from '@/components/ui/switch';
 import { ensureSourceModelCatalog } from '@/lib/api/adapter';
 import type { AccountAction } from '@/lib/backend/contracts/account-actions';
@@ -20,6 +21,11 @@ import {
 } from '@/pages/routes/shared/route-pool-view-model';
 import { ApiAccessForm } from './ApiAccessDialog';
 import type { PoolApiEditTarget } from './api-access-model';
+import { OauthLoginEditForm } from './OauthLoginEditForm';
+import {
+  poolAuthorizationOauthEditable,
+  type SaveOauthPoolLoginResult,
+} from './pool-authorization-edit';
 import { PoolEndpointTypeLine } from './PoolEndpointTypeLine';
 import { PoolLoginMark } from './PoolLoginMark';
 import {
@@ -30,6 +36,7 @@ import {
   poolAuthorizationTypeHref,
 } from './pool-authorization-detail';
 import { poolAuthorizationRefreshLabels } from './pool-authorization-refresh';
+import { PoolAuthorizationSyncPrompt } from './PoolAuthorizationSyncPrompt';
 
 export function PoolAuthorizationDetail({
   item,
@@ -55,7 +62,7 @@ export function PoolAuthorizationDetail({
   onEnabledChange?: (enabled: boolean) => void;
   onRefresh?: () => void;
   onDelete: () => void;
-  onSaved?: () => void;
+  onSaved?: (nextKey?: string) => void;
   onClose: () => void;
 }) {
   const { t } = useI18n();
@@ -66,15 +73,29 @@ export function PoolAuthorizationDetail({
   const displayTitle = poolAuthorizationLoginLabel(item);
   const hasQuota = hasQuotaWindow(item.quota7dPct) || hasQuotaWindow(item.quota5hPct);
   const canEditKey = Boolean(editTarget?.provider.id) && item.kind === 'apikey';
-  const editLabel = canEditKey ? t('connections.list.editKey') : null;
+  const canEditOauth = poolAuthorizationOauthEditable(item);
+  const editLabel = canEditKey
+    ? t('connections.list.editKey')
+    : canEditOauth
+      ? t('routes.pool.page.editLogin')
+      : null;
   const refreshLabels = oauthAction ? poolAuthorizationRefreshLabels(oauthAction, t) : null;
   const [editing, setEditing] = useState(false);
   const [catalog, setCatalog] = useState<SourceModelCatalog | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogFailed, setCatalogFailed] = useState(false);
+  const [syncPrompt, setSyncPrompt] = useState<SaveOauthPoolLoginResult | null>(null);
+
+
+  const finishOauthSave = (result: SaveOauthPoolLoginResult) => {
+    setSyncPrompt(null);
+    setEditing(false);
+    onSaved?.(result.copied ? `${result.sourceKind}:${result.sourceId}` : undefined);
+  };
 
   useEffect(() => {
     setEditing(false);
+    setSyncPrompt(null);
   }, [item.key]);
 
   useEffect(() => {
@@ -99,25 +120,30 @@ export function PoolAuthorizationDetail({
   }, [item.sourceKind, item.sourceId]);
 
   return (
+    <>
     <SideInspectPanel
-      title={editing ? t('routes.pool.page.apiDialogEditTitle') : t('routes.pool.detail.title')}
+      title={editing
+        ? (canEditOauth ? t('routes.pool.page.editLoginTitle') : t('routes.pool.page.apiDialogEditTitle'))
+        : t('routes.pool.detail.title')}
       description={displayTitle}
       onClose={onClose}
       width={width}
       headerActions={editing ? undefined : (
         <>
           {refreshLabels && onRefresh ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled={refreshing}
-              aria-label={refreshLabels.idle}
-              onClick={onRefresh}
-            >
-              <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
-              {refreshing ? refreshLabels.busy : refreshLabels.idle}
-            </Button>
+            <Hint label={refreshing ? refreshLabels.busy : refreshLabels.tip}>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={refreshing}
+                aria-label={refreshLabels.idle}
+                onClick={onRefresh}
+              >
+                <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
+                {refreshing ? refreshLabels.busy : refreshLabels.idle}
+              </Button>
+            </Hint>
           ) : null}
           <Button size="sm" variant="dangerOutline" onClick={onDelete}>
             <Trash2 className="h-3.5 w-3.5" /> {t('connections.list.moveToTrash')}
@@ -130,7 +156,20 @@ export function PoolAuthorizationDetail({
         </>
       )}
     >
-      {editing && editTarget ? (
+      {editing && canEditOauth ? (
+        <OauthLoginEditForm
+          item={item}
+          catalog={catalog}
+          onCancel={() => setEditing(false)}
+          onSaved={(result) => {
+            if (result.copied) {
+              setSyncPrompt(result);
+              return;
+            }
+            finishOauthSave(result);
+          }}
+        />
+      ) : editing && editTarget ? (
         <ApiAccessForm
           layout="inline"
           agents={agents}
@@ -230,5 +269,7 @@ export function PoolAuthorizationDetail({
       </div>
       )}
     </SideInspectPanel>
+    <PoolAuthorizationSyncPrompt prompt={syncPrompt} onFinish={finishOauthSave} />
+    </>
   );
 }

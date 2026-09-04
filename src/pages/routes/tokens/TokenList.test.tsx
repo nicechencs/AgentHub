@@ -22,21 +22,16 @@ function row(partial: Partial<LocalTokenRow> = {}): LocalTokenRow {
     unavailable: false,
     targetAgentId: 'kimi',
     profileIds: ['bridge-1'],
-    lastPath: '/v1/chat/completions',
-    lastRequestAt: '2026-08-31T12:00:00.000Z',
-    usage: {
-      requestCount: 4,
-      inputTokens: 1200,
-      outputTokens: 800,
-      cachedInputTokens: 0,
-    },
     listedModels: [],
+    lastPath: null,
+    lastRequestAt: null,
+    usageEligible: false,
     ...partial,
   };
 }
 
 describe('TokenList', () => {
-  it('renders a field table with type, endpoint, token, last page, and usage', () => {
+  it('groups keys by type and puts the endpoint on the group header', () => {
     const markup = renderToStaticMarkup(
       createElement(
         TooltipProvider,
@@ -46,28 +41,29 @@ describe('TokenList', () => {
     );
     expect(markup).toContain('<table');
     expect(markup).toContain('data-col="name"');
-    expect(markup).toContain('data-col="type"');
-    expect(markup).toContain('data-col="endpoint"');
+    expect(markup).toContain('data-col="token"');
+    expect(markup).not.toContain('data-col="type"');
+    expect(markup).not.toContain('data-col="endpoint"');
+    expect(markup).not.toContain('data-col="lastPage"');
+    expect(markup).not.toContain('data-col="usage"');
     expect(markup).toContain('overflow-hidden');
     expect(markup).toContain('truncate');
-    expect(markup).toContain('data-col="token"');
-    expect(markup).toContain('data-col="lastPage"');
-    expect(markup).toContain('data-col="usage"');
+    expect(markup).toContain('data-token-group="chat_completions"');
     expect(markup).toContain('data-token-row="pool-kimi"');
     expect(markup).toContain('Chat Completions');
     expect(markup).toContain('http://127.0.0.1:8123');
     expect(markup).toContain('/v1/chat/completions');
     expect(markup).toContain('ahb_••••cret');
-    expect(markup).toContain('1.2K in / 800 out');
+    expect(markup).not.toContain('1.2K in / 800 out');
     expect(markup).not.toContain('ahb_secret');
     expect(markup).not.toContain('修改');
     expect(markup).toContain('data-table-shell="default"');
     expect(markup).toContain('data-table-layout="split"');
     expect(markup).toContain('role="separator"');
-    expect(markup).toContain('调整类型列宽');
+    expect(markup).toContain('调整名称列宽');
   });
 
-  it('shows a dash when the entry key is not ready', () => {
+  it('shows an empty-key prompt when the entry key is not ready', () => {
     const markup = renderToStaticMarkup(
       createElement(
         TooltipProvider,
@@ -77,26 +73,37 @@ describe('TokenList', () => {
         }),
       ),
     );
-    expect(markup).toContain('—');
+    expect(markup).toContain('还没有入口 Key');
     expect(markup).not.toContain('ahb_');
+    expect(markup).not.toContain('为此端点新建');
   });
 
-  it('shows dashes when last page and usage are empty', () => {
+  it('offers 为此端点新建 on empty key rows', () => {
     const markup = renderToStaticMarkup(
       createElement(
         TooltipProvider,
         null,
         createElement(TokenList, {
-          rows: [row({
-            lastPath: null,
-            lastRequestAt: null,
-            usage: { requestCount: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 },
-          })],
+          rows: [row({ token: null, maskedToken: null })],
+          onCreateForEndpoint: () => {},
         }),
       ),
     );
-    expect(markup).toContain('data-col="lastPage"');
-    expect(markup).toContain('data-col="usage"');
-    expect(markup).not.toContain('in /');
+    expect(markup).toContain('还没有入口 Key');
+    expect(markup).toContain('为此端点新建');
+    expect(markup).not.toContain('ahb_');
+  });
+
+  it('labels an unnamed default key as 默认', () => {
+    const markup = renderToStaticMarkup(
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(TokenList, {
+          rows: [row({ name: '', primary: true })],
+        }),
+      ),
+    );
+    expect(markup).toContain('默认');
   });
 });

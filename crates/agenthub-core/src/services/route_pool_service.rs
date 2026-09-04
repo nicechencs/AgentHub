@@ -17,22 +17,22 @@ use crate::logging::targets;
 use crate::models::{
     authorization_is_route_pool_home, choose_default_pool_id, enroll_native_plan_is_open,
     feature_flag_enabled, generate_hub_token, list_local_bridge_models, product_flag_enabled,
-    set_authorization_route_pool_home, AdapterApplyPlan, AdapterProfile, AdapterProfileFilter,
-    AccountKind, AdapterRoute, AdapterRouteRequest, AdapterSourceKind, AdapterSourceProduct,
-    AgentId, ConnectionTrashKind, DefaultRoutePoolList, DefaultRoutePoolOverview, LocalTokenRecord,
-    ModelRouteRule,
-    RouteDownstreamDialect, RouteDownstreamSurface, RouteMember, RouteMemberOverview, RoutePool,
-    RouteMembershipTrashMember, RouteMembershipTrashPayload, RouteSchedulePolicy,
+    set_authorization_route_pool_home, Account, AccountKind, AdapterApplyPlan, AdapterProfile,
+    AdapterProfileFilter, AdapterRoute, AdapterRouteRequest, AdapterSourceKind,
+    AdapterSourceProduct, AgentId, ConnectionTrashKind, DefaultRoutePoolList,
+    DefaultRoutePoolOverview, ForkedConnectionAuthorization, LocalTokenRecord, ModelRouteRule,
+    RouteDownstreamDialect, RouteDownstreamSurface, RouteMember, RouteMemberOverview,
+    RouteMembershipTrashMember, RouteMembershipTrashPayload, RoutePool, RouteSchedulePolicy,
     SyncConnectionAuthorizationsResult, SyncConnectionSource, TicketProtocol, TicketSurface,
     FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
     FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
     LOCAL_GATEWAY_DESIRED_RUNNING, SHARE_CHAT_COMPLETIONS,
 };
-use serde_json::Value;
 use crate::storage::{
-    binding_get_conn, AccountRepo, AdapterProfileRepo, ConnectionTrashRepo, Database, LocalEntryKey,
-    LocalEntryKeyRepo, ProviderRepo, RoutePoolRepo,
+    binding_get_conn, AccountRepo, AdapterProfileRepo, ConnectionTrashRepo, Database,
+    LocalEntryKey, LocalEntryKeyRepo, ProviderRepo, RoutePoolRepo,
 };
+use serde_json::Value;
 
 #[cfg(test)]
 mod tests;
@@ -179,19 +179,25 @@ impl RoutePoolService {
                 extras.push(row);
             }
         }
-        let mut records: Vec<LocalTokenRecord> = self
-            .list_default_pools()?
-            .into_iter()
-            .map(|pool| LocalTokenRecord {
+        let default_pools = self.list_default_pools()?;
+        let default_ids: HashSet<String> =
+            default_pools.iter().map(|pool| pool.id.clone()).collect();
+        let mut records = Vec::new();
+        for pool in default_pools {
+            let name = name_by_pool.remove(&pool.id).unwrap_or_default();
+            if name == HIDDEN_PRIMARY_ENTRY_NAME {
+                continue;
+            }
+            records.push(LocalTokenRecord {
                 id: pool.id.clone(),
                 pool_id: pool.id.clone(),
                 token: pool.hub_token,
-                name: name_by_pool.remove(&pool.id).unwrap_or_default(),
+                name,
                 primary: true,
-            })
-            .collect();
+            });
+        }
         for extra in extras {
-            if records.iter().any(|record| record.pool_id == extra.pool_id) {
+            if default_ids.contains(&extra.pool_id) {
                 records.push(to_extra_record(extra));
             }
         }
@@ -230,13 +236,15 @@ impl RoutePoolService {
                 return Ok(to_extra_record(saved));
             }
         }
-        let pool = self.pools.get_pool(pool_id)?.ok_or_else(|| {
-            AppError::NotFound(format!("route pool not found: {pool_id}"))
-        })?;
+        let pool = self
+            .pools
+            .get_pool(pool_id)?
+            .ok_or_else(|| AppError::NotFound(format!("route pool not found: {pool_id}")))?;
         if !pool.is_default {
             self.pools.set_default(pool_id)?;
         }
         let saved = self.pools.set_hub_token(pool_id, token, &now())?;
+        self.unhide_primary_if_needed(pool_id)?;
         Ok(self.primary_record(&saved)?)
     }
 
@@ -244,11 +252,14 @@ impl RoutePoolService {
         self.require_enabled()?;
         let name = name.trim();
         if name.is_empty() {
-            return Err(AppError::InvalidArg("entry key name must not be empty".into()));
+            return Err(AppError::InvalidArg(
+                "entry key name must not be empty".into(),
+            ));
         }
-        let pool = self.pools.get_pool(pool_id)?.ok_or_else(|| {
-            AppError::NotFound(format!("route pool not found: {pool_id}"))
-        })?;
+        let pool = self
+            .pools
+            .get_pool(pool_id)?
+            .ok_or_else(|| AppError::NotFound(format!("route pool not found: {pool_id}")))?;
         if !pool.is_default {
             self.pools.set_default(pool_id)?;
         }
@@ -268,7 +279,9 @@ impl RoutePoolService {
         self.require_enabled()?;
         let name = name.trim();
         if name.is_empty() {
-            return Err(AppError::InvalidArg("entry key name must not be empty".into()));
+            return Err(AppError::InvalidArg(
+                "entry key name must not be empty".into(),
+            ));
         }
         if let Some(existing) = self.entry_keys.get(id)? {
             let saved = self.entry_keys.update(&LocalEntryKey {
@@ -284,9 +297,10 @@ impl RoutePoolService {
             }
             return Ok(to_extra_record(saved));
         }
-        let pool = self.pools.get_pool(id)?.ok_or_else(|| {
-            AppError::NotFound(format!("route pool not found: {id}"))
-        })?;
+        let pool = self
+            .pools
+            .get_pool(id)?
+            .ok_or_else(|| AppError::NotFound(format!("route pool not found: {id}")))?;
         let stamp = now();
         let saved = self.entry_keys.insert(&LocalEntryKey {
             id: pool.id.clone(),
@@ -301,15 +315,81 @@ impl RoutePoolService {
 
     pub fn delete_local_token(&self, id: &str) -> Result<()> {
         self.require_enabled()?;
-        let existing = self.entry_keys.get(id)?.ok_or_else(|| {
-            AppError::NotFound(format!("entry key not found: {id}"))
-        })?;
-        if existing.token.trim().is_empty() {
+        let pool_id = if let Some(existing) = self.entry_keys.get(id)? {
+            existing.pool_id.clone()
+        } else if self.pools.get_pool(id)?.is_some() {
+            id.to_string()
+        } else {
+            return Err(AppError::NotFound(format!("entry key not found: {id}")));
+        };
+        let listed = self
+            .list_local_tokens()?
+            .into_iter()
+            .filter(|record| record.pool_id == pool_id)
+            .count();
+        if listed <= 1 {
             return Err(AppError::InvalidArg(
-                "cannot delete the default entry key".into(),
+                "cannot delete the only entry key for this type".into(),
             ));
         }
-        self.entry_keys.delete(id)
+        if let Some(existing) = self.entry_keys.get(id)? {
+            if !existing.token.trim().is_empty() {
+                return self.entry_keys.delete(id);
+            }
+            return self.delete_primary_local_token(&existing.pool_id);
+        }
+        self.delete_primary_local_token(id)
+    }
+
+    fn delete_primary_local_token(&self, pool_id: &str) -> Result<()> {
+        let extras: Vec<LocalEntryKey> = self
+            .entry_keys
+            .list()?
+            .into_iter()
+            .filter(|row| row.pool_id == pool_id && !row.token.trim().is_empty())
+            .collect();
+        if let Some(extra) = extras.into_iter().next() {
+            self.pools.set_hub_token(pool_id, &extra.token, &now())?;
+            self.upsert_primary_name(pool_id, &extra.name)?;
+            return self.entry_keys.delete(&extra.id);
+        }
+        Err(AppError::InvalidArg(
+            "cannot delete the only entry key for this type".into(),
+        ))
+    }
+
+    fn upsert_primary_name(&self, pool_id: &str, name: &str) -> Result<()> {
+        let stamp = now();
+        if let Some(existing) = self.entry_keys.get(pool_id)? {
+            if existing.token.trim().is_empty() {
+                self.entry_keys.update(&LocalEntryKey {
+                    name: name.to_owned(),
+                    updated_at: stamp,
+                    ..existing
+                })?;
+                return Ok(());
+            }
+            return Err(AppError::InvalidArg("entry key already exists".into()));
+        }
+        self.entry_keys.insert(&LocalEntryKey {
+            id: pool_id.to_owned(),
+            pool_id: pool_id.to_owned(),
+            name: name.to_owned(),
+            token: String::new(),
+            created_at: stamp.clone(),
+            updated_at: stamp,
+        })?;
+        Ok(())
+    }
+
+    fn unhide_primary_if_needed(&self, pool_id: &str) -> Result<()> {
+        let Some(existing) = self.entry_keys.get(pool_id)? else {
+            return Ok(());
+        };
+        if existing.token.trim().is_empty() && existing.name == HIDDEN_PRIMARY_ENTRY_NAME {
+            self.entry_keys.delete(pool_id)?;
+        }
+        Ok(())
     }
 
     fn primary_record(&self, pool: &RoutePool) -> Result<LocalTokenRecord> {
@@ -331,7 +411,9 @@ impl RoutePoolService {
     /// Last local-gateway switch. Unset stays on so existing auto-restore keeps working.
     pub fn local_gateway_desired_running(&self) -> Result<bool> {
         Ok(product_flag_enabled(
-            self.db.get_setting(LOCAL_GATEWAY_DESIRED_RUNNING)?.as_deref(),
+            self.db
+                .get_setting(LOCAL_GATEWAY_DESIRED_RUNNING)?
+                .as_deref(),
         ))
     }
 
@@ -363,7 +445,7 @@ impl RoutePoolService {
 
     pub fn overview_from_pool(&self, pool: &RoutePool) -> Result<DefaultRoutePoolOverview> {
         let members = self.pools.list_members(&pool.id)?;
-        let listed_models = self.listed_models_for_pool(pool, &members);
+        let listed_models = self.advertised_models_for_pool(pool, &members);
         let mut member_overviews = Vec::with_capacity(members.len());
         for member in members {
             let (display_label, refresh_token_tail) = self.member_display_fields(&member)?;
@@ -466,18 +548,20 @@ impl RoutePoolService {
         let pool_agent = self.writer_agent_for_pool(target_agent_id, surface)?;
         let pool = self.ensure_default_pool(pool_agent, surface)?;
         let members = self.pools.list_members(&pool.id)?;
-        let added_member = if !members.iter().any(|member| {
-            member.source_kind == source_kind && member.source_id == source_id
-        }) {
+        let added_member = if !members
+            .iter()
+            .any(|member| member.source_kind == source_kind && member.source_id == source_id)
+        {
             Some(self.add_member(&pool.id, source_kind, source_id)?)
         } else {
             None
         };
         let attached = (|| -> Result<DefaultRoutePoolOverview> {
             self.stamp_route_pool_home(target_agent_id, source_kind, source_id)?;
-            let pool = self.pools.get_pool(&pool.id)?.ok_or_else(|| {
-                AppError::message("db.route_pool", "pool missing after attach")
-            })?;
+            let pool = self
+                .pools
+                .get_pool(&pool.id)?
+                .ok_or_else(|| AppError::message("db.route_pool", "pool missing after attach"))?;
             self.overview_from_pool(&pool)
         })();
         if let Err(error) = attached {
@@ -496,6 +580,104 @@ impl RoutePoolService {
             return Err(error);
         }
         attached
+    }
+
+    /// Copy a Connections-managed official login into a pool-owned row, then
+    /// point default-pool membership at the copy. The Connections login stays.
+    pub fn fork_connection_authorization(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<ForkedConnectionAuthorization> {
+        self.require_enabled()?;
+        if source_kind != AdapterSourceKind::Account {
+            return Err(AppError::InvalidArg(
+                "only official logins can be copied for pool editing".into(),
+            ));
+        }
+        let account = self
+            .accounts
+            .get_by_id(source_id)?
+            .ok_or_else(|| AppError::NotFound(format!("account not found: {source_id}")))?;
+        if account.kind != AccountKind::Oauth {
+            return Err(AppError::InvalidArg(
+                "only official logins can be copied for pool editing".into(),
+            ));
+        }
+        if authorization_is_route_pool_home(&account.extra) {
+            return Ok(ForkedConnectionAuthorization {
+                source_kind,
+                source_id: source_id.to_owned(),
+                original_source_id: source_id.to_owned(),
+                copied: false,
+            });
+        }
+
+        let mut members = Vec::new();
+        for pool in self.pools.list_pools(None, None)? {
+            if !pool.is_default {
+                continue;
+            }
+            for member in self.pools.list_members(&pool.id)? {
+                if member.source_kind == source_kind && member.source_id == source_id {
+                    members.push(member);
+                }
+            }
+        }
+        if members.is_empty() {
+            return Err(AppError::NotFound(format!(
+                "route authorization not found: {source_id}"
+            )));
+        }
+
+        let now = now();
+        let mut extra = account.extra.clone();
+        set_authorization_route_pool_home(&mut extra);
+        let copy = Account {
+            id: format!("{}-acc-{}", account.agent_id.as_str(), Uuid::new_v4()),
+            agent_id: account.agent_id,
+            kind: account.kind,
+            label: account.label.clone(),
+            credentials: account.credentials.clone(),
+            extra,
+            status: account.status.clone(),
+            is_current: false,
+            created_at: now.clone(),
+            updated_at: now,
+        };
+        let stored = self.accounts.create(&copy)?;
+        let attach = (|| -> Result<()> {
+            for member in &members {
+                let added = self.add_member(&member.route_pool_id, source_kind, &stored.id)?;
+                if added.enabled != member.enabled {
+                    self.set_member_enabled(&added.id, member.enabled)?;
+                }
+                if added.priority != member.priority {
+                    self.set_member_priority(&added.id, member.priority)?;
+                }
+                self.remove_member(&member.id)?;
+            }
+            Ok(())
+        })();
+        if let Err(error) = attach {
+            if let Err(cleanup) = self.accounts.delete(&stored.id) {
+                tracing::warn!(
+                    module = targets::ADAPTER,
+                    op = "fork_rollback",
+                    account_id = %stored.id,
+                    error_code = cleanup.code(),
+                    "failed to roll back copied official login after fork failure"
+                );
+            }
+            return Err(error);
+        }
+
+        Ok(ForkedConnectionAuthorization {
+            source_kind,
+            source_id: stored.id,
+            original_source_id: source_id.to_owned(),
+            copied: true,
+        })
     }
 
     /// Enroll existing Connections authorizations into the matching default
@@ -551,8 +733,7 @@ impl RoutePoolService {
                         skipped = skipped.saturating_add(1);
                         return Ok(());
                     }
-                    let product =
-                        AdapterRouteService::classify_account_source_product(account);
+                    let product = AdapterRouteService::classify_account_source_product(account);
                     let targets = pool_targets_for_source(
                         account.agent_id,
                         product,
@@ -580,8 +761,7 @@ impl RoutePoolService {
                         skipped = skipped.saturating_add(1);
                         return Ok(());
                     }
-                    let product =
-                        AdapterRouteService::classify_provider_source_product(provider);
+                    let product = AdapterRouteService::classify_provider_source_product(provider);
                     let targets = pool_targets_for_source(
                         provider.agent_id,
                         product,
@@ -648,7 +828,9 @@ impl RoutePoolService {
         surface: RouteDownstreamSurface,
     ) -> Result<RoutePool> {
         self.require_enabled()?;
-        let existing = self.pools.list_pools(Some(target_agent_id), Some(surface))?;
+        let existing = self
+            .pools
+            .list_pools(Some(target_agent_id), Some(surface))?;
         if let Some(pool) = existing.into_iter().find(|pool| pool.is_default) {
             return Ok(pool);
         }
@@ -1057,7 +1239,8 @@ impl RoutePoolService {
                 ));
             }
         }
-        self.pools.enroll_unified_gateway(pool_id, gateway_port, &now())
+        self.pools
+            .enroll_unified_gateway(pool_id, gateway_port, &now())
     }
 
     /// Enroll after bind and make this pool the default for its Agent / surface.
@@ -1065,7 +1248,11 @@ impl RoutePoolService {
     /// Ordinary bridge start/restore uses this path; without the default flag,
     /// Tokens → `set_local_token` used to reject edits and `list_local_tokens`
     /// stayed empty even while listeners were live.
-    pub fn enroll_unified_gateway_as_default(&self, pool_id: &str, gateway_port: u16) -> Result<RoutePool> {
+    pub fn enroll_unified_gateway_as_default(
+        &self,
+        pool_id: &str,
+        gateway_port: u16,
+    ) -> Result<RoutePool> {
         let enrolled = self.enroll_unified_gateway(pool_id, gateway_port)?;
         if enrolled.is_default {
             Ok(enrolled)
@@ -1271,9 +1458,10 @@ impl RoutePoolService {
                 self.providers.update(&provider)?;
             }
             AdapterSourceKind::Account => {
-                let mut account = self.accounts.get_by_id(source_id)?.ok_or_else(|| {
-                    AppError::NotFound(format!("account not found: {source_id}"))
-                })?;
+                let mut account = self
+                    .accounts
+                    .get_by_id(source_id)?
+                    .ok_or_else(|| AppError::NotFound(format!("account not found: {source_id}")))?;
                 if account.agent_id != target_agent_id {
                     return Err(AppError::InvalidArg(
                         "authorization does not belong to this Agent".into(),
@@ -1371,13 +1559,8 @@ impl RoutePoolService {
         list_local_bridge_models(product, pool.target_agent_id, None)
     }
 
-    /// Live catalog for a pool's enabled logins. Empty live lists fall back to
-    /// the mapping table. Results are not written to the DB.
-    pub fn list_upstream_models_for_pool(&self, pool_id: &str) -> Result<Vec<String>> {
-        let pool = self.pools.get_pool(pool_id)?.ok_or_else(|| {
-            AppError::NotFound(format!("route pool not found: {pool_id}"))
-        })?;
-        let members = self.pools.list_members(pool_id)?;
+    /// Live catalog first; empty live lists fall back to the mapping table.
+    fn advertised_models_for_pool(&self, pool: &RoutePool, members: &[RouteMember]) -> Vec<String> {
         let mut listed = Vec::new();
         let mut seen = HashSet::new();
         for member in members.iter().filter(|member| member.enabled) {
@@ -1388,9 +1571,21 @@ impl RoutePoolService {
             }
         }
         if listed.is_empty() {
-            return Ok(self.listed_models_for_pool(&pool, &members));
+            self.listed_models_for_pool(pool, members)
+        } else {
+            listed
         }
-        Ok(listed)
+    }
+
+    /// Live catalog for a pool's enabled logins. Empty live lists fall back to
+    /// the mapping table. Results are not written to the DB.
+    pub fn list_upstream_models_for_pool(&self, pool_id: &str) -> Result<Vec<String>> {
+        let pool = self
+            .pools
+            .get_pool(pool_id)?
+            .ok_or_else(|| AppError::NotFound(format!("route pool not found: {pool_id}")))?;
+        let members = self.pools.list_members(pool_id)?;
+        Ok(self.advertised_models_for_pool(&pool, &members))
     }
 
     fn live_models_for_member(&self, member: &RouteMember) -> Vec<String> {
@@ -1420,9 +1615,10 @@ impl RoutePoolService {
         };
         match source_kind {
             AdapterSourceKind::Account => {
-                let mut account = self.accounts.get_by_id(source_id)?.ok_or_else(|| {
-                    AppError::NotFound(format!("account not found: {source_id}"))
-                })?;
+                let mut account = self
+                    .accounts
+                    .get_by_id(source_id)?
+                    .ok_or_else(|| AppError::NotFound(format!("account not found: {source_id}")))?;
                 let fingerprint = self.catalog_fingerprint_for_account(&account);
                 if let Some(stored) = read_stored_catalog(&account.extra) {
                     if cache_is_current(&stored, &fingerprint)
@@ -1495,9 +1691,10 @@ impl RoutePoolService {
         };
         match source_kind {
             AdapterSourceKind::Account => {
-                let mut account = self.accounts.get_by_id(source_id)?.ok_or_else(|| {
-                    AppError::NotFound(format!("account not found: {source_id}"))
-                })?;
+                let mut account = self
+                    .accounts
+                    .get_by_id(source_id)?
+                    .ok_or_else(|| AppError::NotFound(format!("account not found: {source_id}")))?;
                 let fingerprint = self.catalog_fingerprint_for_account(&account);
                 let prior = read_stored_catalog(&account.extra).unwrap_or(StoredModelCatalog {
                     fingerprint: fingerprint.clone(),
@@ -1579,16 +1776,12 @@ impl RoutePoolService {
         };
         let members = self.pools.list_members(&pool_id)?;
         for member in members.iter().filter(|member| member.enabled) {
-            let _ = self.load_source_model_catalog(
-                member.source_kind,
-                &member.source_id,
-                true,
-            );
+            let _ = self.load_source_model_catalog(member.source_kind, &member.source_id, true);
         }
         self.list_upstream_models_for_pool(&pool_id)
     }
 
-    fn pool_id_for_token(&self, token: &str) -> Result<Option<String>> {
+    pub fn pool_id_for_token(&self, token: &str) -> Result<Option<String>> {
         Ok(self
             .list_local_tokens()?
             .into_iter()
@@ -1626,8 +1819,7 @@ impl RoutePoolService {
     fn live_models_for_official_login(&self, account: &crate::models::Account) -> Vec<String> {
         match account.agent_id {
             AgentId::Codex => {
-                let Some(access) =
-                    crate::services::account_quota::extract_access_token(account)
+                let Some(access) = crate::services::account_quota::extract_access_token(account)
                 else {
                     return Vec::new();
                 };
@@ -1636,18 +1828,15 @@ impl RoutePoolService {
                 else {
                     return Vec::new();
                 };
-                crate::utils::chatgpt_codex_models::list_chatgpt_codex_models(
-                    &access, &account_id,
-                )
-                .unwrap_or_default()
+                crate::utils::chatgpt_codex_models::list_chatgpt_codex_models(&access, &account_id)
+                    .unwrap_or_default()
             }
             _ => Vec::new(),
         }
     }
 
     fn live_models_from_settings(&self, blob: &Value) -> Vec<String> {
-        let embedded =
-            crate::utils::upstream_model_catalog::embedded_listed_models(blob);
+        let embedded = crate::utils::upstream_model_catalog::embedded_listed_models(blob);
         let remote = crate::utils::upstream_model_catalog::catalog_endpoint(blob)
             .and_then(|(base, key)| {
                 crate::utils::remote_openai_models::list_remote_openai_models(&base, &key).ok()
@@ -1719,13 +1908,17 @@ impl RoutePoolService {
     fn merge_chat_completions_pools(&self) -> Result<()> {
         let dsh = self
             .pools
-            .list_pools(Some(AgentId::Dsh), Some(RouteDownstreamSurface::ChatCompletions))?
+            .list_pools(
+                Some(AgentId::Dsh),
+                Some(RouteDownstreamSurface::ChatCompletions),
+            )?
             .into_iter()
             .find(|pool| pool.is_default);
         let Some(dsh) = dsh else {
             return Ok(());
         };
-        let kimi = self.ensure_default_pool(AgentId::Kimi, RouteDownstreamSurface::ChatCompletions)?;
+        let kimi =
+            self.ensure_default_pool(AgentId::Kimi, RouteDownstreamSurface::ChatCompletions)?;
         if kimi.id == dsh.id {
             return Ok(());
         }
@@ -1746,13 +1939,17 @@ impl RoutePoolService {
     fn split_chat_completions_pools(&self) -> Result<()> {
         let kimi = self
             .pools
-            .list_pools(Some(AgentId::Kimi), Some(RouteDownstreamSurface::ChatCompletions))?
+            .list_pools(
+                Some(AgentId::Kimi),
+                Some(RouteDownstreamSurface::ChatCompletions),
+            )?
             .into_iter()
             .find(|pool| pool.is_default);
         let Some(kimi) = kimi else {
             return Ok(());
         };
-        let dsh = self.ensure_default_pool(AgentId::Dsh, RouteDownstreamSurface::ChatCompletions)?;
+        let dsh =
+            self.ensure_default_pool(AgentId::Dsh, RouteDownstreamSurface::ChatCompletions)?;
         if kimi.id == dsh.id {
             return Ok(());
         }
@@ -1796,6 +1993,9 @@ impl RoutePoolService {
         }
     }
 }
+
+/// Display-name sentinel: the pool hub token is not listed as an entry key.
+const HIDDEN_PRIMARY_ENTRY_NAME: &str = "\u{2060}";
 
 fn now() -> String {
     Utc::now().to_rfc3339()
@@ -1977,7 +2177,9 @@ fn fallback_surfaces_for_source_agent(agent: AgentId) -> Vec<RouteDownstreamSurf
             RouteDownstreamSurface::ChatCompletions,
         ],
         AgentId::Cursor => Vec::new(),
-        other => RouteDownstreamSurface::for_agent(other).into_iter().collect(),
+        other => RouteDownstreamSurface::for_agent(other)
+            .into_iter()
+            .collect(),
     }
 }
 

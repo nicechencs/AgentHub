@@ -212,7 +212,7 @@ function groupingKeys(item: ConnectionTrashItem): string[] {
   if (item.sourceId) keys.push(`source:${item.sourceId}`);
   keys.push(`triple:${item.agentId}:${item.kind}:${item.sourceId}`);
   const last4 = trashItemSecretTail(item);
-  const host = normalizeTrashHost(trashItemEndpoint(item)) ?? item.label.trim().toLowerCase();
+  const host = normalizeTrashHost(trashItemEndpoint(item));
   if (last4 && host) {
     keys.push(`ident:${item.agentId}:${item.kind}:${last4}:${host}`);
   }

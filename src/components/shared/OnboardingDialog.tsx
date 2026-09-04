@@ -210,7 +210,7 @@ export function OnboardingDialog() {
             <div className="space-y-2">
               {AGENTS.map((m) => (
                 <div key={m.id} className="flex items-center gap-3">
-                  <Skeleton className="h-8 w-8 rounded-full" />
+                  <Skeleton className="h-8 w-8 rounded-mark" />
                   <Skeleton className="h-4 w-32" />
                 </div>
               ))}

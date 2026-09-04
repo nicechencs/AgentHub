@@ -15,6 +15,7 @@ const t = (key: Parameters<typeof translate>[1], params?: Parameters<typeof tran
 
 function row(partial: Partial<RouteTraceListItem> = {}): RouteTraceListItem {
   return {
+    traceVersion: 2,
     requestId: 'req-1',
     at: '2026-01-01T00:00:00.000Z',
     method: 'POST',
@@ -50,12 +51,12 @@ describe('activity-trace-summary-model', () => {
       httpStatus: 401,
       upstreamAuth: { status: 'failed', httpStatus: 401 },
       upstream: { status: 'pending' },
-      failureStage: 'upstream_auth',
+      failureStage: 'upstream_response',
     });
     const summary = summarizeActivityTrace(failed);
-    expect(summary).toMatchObject({ result: 'failed', failureStage: 'upstream_auth', errorMessage: '401' });
-    expect(activityTraceResultLabel(summary, t)).toBe('失败于 上游鉴权');
-    expect(activityTraceFailureHeadline(summary, t)).toBe('上游鉴权失败');
+    expect(summary).toMatchObject({ result: 'failed', failureStage: 'upstream_response', errorMessage: '401' });
+    expect(activityTraceResultLabel(summary, t)).toBe('失败于 接收上游响应');
+    expect(activityTraceFailureHeadline(summary, t)).toBe('接收上游响应失败');
     expect(activityTraceStageStatus(failed, 'upstream')).toBe('skipped');
     expect(activityTraceDisplayRow(failed)?.upstream.status).toBe('skipped');
   });
@@ -66,7 +67,7 @@ describe('activity-trace-summary-model', () => {
       httpStatus: 401,
       upstreamAuth: { status: 'failed', httpStatus: 401, code: 'unauthorized' },
       upstream: { status: 'pending' },
-      failureStage: 'upstream_auth',
+      failureStage: 'upstream_response',
     });
     expect(summarizeActivityTrace(failed).errorMessage).toBe('401');
   });
@@ -76,11 +77,11 @@ describe('activity-trace-summary-model', () => {
       ok: false,
       httpStatus: 502,
       upstream: { status: 'failed', httpStatus: 502, message: 'Bad gateway' },
-      failureStage: 'upstream',
+      failureStage: 'upstream_response',
     });
     const summary = summarizeActivityTrace(failed);
-    expect(summary).toMatchObject({ result: 'failed', failureStage: 'upstream', errorMessage: 'Bad gateway' });
-    expect(activityTraceResultLabel(summary, t)).toBe('失败于 上游');
+    expect(summary).toMatchObject({ result: 'failed', failureStage: 'upstream_response', errorMessage: 'Bad gateway' });
+    expect(activityTraceResultLabel(summary, t)).toBe('失败于 接收上游响应');
   });
 
   it('keeps a local endpoint failure explicit without changing the five-stage path', () => {
@@ -103,6 +104,22 @@ describe('activity-trace-summary-model', () => {
     expect(activityTraceStageStatus(failed, 'conversion')).toBe('skipped');
   });
 
+  it('reports failures from the expanded lifecycle', () => {
+    const failed = row({
+      ok: false,
+      httpStatus: 400,
+      routeResolution: { status: 'failed', code: 'model_unavailable', message: 'No route' },
+      pool: { status: 'skipped' },
+      conversion: { status: 'skipped', path: '' },
+      upstreamAuth: { status: 'skipped' },
+      upstream: { status: 'skipped' },
+      failureStage: 'route_resolution',
+    });
+    const summary = summarizeActivityTrace(failed);
+    expect(summary).toMatchObject({ result: 'failed', failureStage: 'route_resolution', errorMessage: 'No route' });
+    expect(activityTraceResultLabel(summary, t)).toBe('失败于 模型与路由解析');
+  });
+
   it('keeps legacy failures unknown and never shows a completed request as waiting', () => {
     const legacy = row({
       ok: false,
@@ -112,7 +129,7 @@ describe('activity-trace-summary-model', () => {
       conversion: { status: 'pending', path: '' },
       upstreamAuth: { status: 'pending' },
       upstream: { status: 'pending' },
-      failureStage: 'upstream',
+      failureStage: 'upstream_response',
       legacySummary: true,
     });
     const summary = summarizeActivityTrace(legacy);
@@ -123,7 +140,7 @@ describe('activity-trace-summary-model', () => {
 
   it('returns the same selected row for the header and detail consumers', () => {
     const success = row({ requestId: 'success' });
-    const failure = row({ requestId: 'failure', ok: false, failureStage: 'upstream' });
+    const failure = row({ requestId: 'failure', ok: false, failureStage: 'upstream_response' });
     expect(selectedActivityTrace([success, failure], 'failure')).toBe(failure);
     expect(selectedActivityTrace([success, failure], 'missing')).toBeNull();
   });

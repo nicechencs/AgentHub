@@ -25,11 +25,6 @@ fn parse_chatgpt_codex_models_reads_slugs() {
     });
     assert_eq!(
         parse_chatgpt_codex_models(&body),
-        vec![
-            "gpt-5.6-sol",
-            "gpt-5.4",
-            "codex-auto-review",
-            "plain-id"
-        ]
+        vec!["gpt-5.6-sol", "gpt-5.4", "codex-auto-review", "plain-id"]
     );
 }

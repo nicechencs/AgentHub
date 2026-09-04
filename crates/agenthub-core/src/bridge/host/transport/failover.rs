@@ -22,6 +22,8 @@ use crate::bridge::upstream_class::{
 
 use super::super::admission::AdmittedRequest;
 use super::super::http::{error_response, stopping_response, EdgeState};
+use super::super::pair_policy::identity_relay;
+use super::super::route_trace::RouteTraceBuilder;
 use super::super::stream::UpstreamBodyError;
 use super::super::surface::DownstreamSurface;
 use super::super::upstream::{
@@ -30,13 +32,61 @@ use super::super::upstream::{
     read_bounded_upstream_error, replay_session, timeout_response, unavailable_response,
     upstream_header_timeout, UpstreamConnectError,
 };
-use super::super::pair_policy::identity_relay;
 use super::{
     identity_for_member, log_serving_account, UpstreamChannel, UpstreamPrepare, UpstreamSendOutcome,
 };
-use super::super::route_trace::RouteTraceBuilder;
 
 const V2_MAX_ATTEMPTS: usize = 8;
+
+struct LastFail {
+    class: UpstreamErrorClass,
+    status: StatusCode,
+    retry_after: Option<HeaderValue>,
+    detail: Option<String>,
+    member: PickedMember,
+    url: String,
+}
+
+impl LastFail {
+    fn new(
+        class: UpstreamErrorClass,
+        status: StatusCode,
+        retry_after: Option<HeaderValue>,
+        detail: Option<String>,
+        member: &PickedMember,
+        url: &str,
+    ) -> Self {
+        Self {
+            class,
+            status,
+            retry_after,
+            detail,
+            member: member.clone(),
+            url: url.to_owned(),
+        }
+    }
+}
+
+fn record_exhausted_trace(trace: Option<&mut RouteTraceBuilder>, last_fail: Option<&LastFail>) {
+    let Some(trace) = trace else {
+        return;
+    };
+    if let Some(failure) = last_fail {
+        let code = upstream_error_code(failure.class);
+        trace.attempts_exhausted(
+            Some(&failure.url),
+            &failure.member,
+            Some(failure.status.as_u16()),
+            code,
+            failure
+                .detail
+                .as_deref()
+                .unwrap_or("The final upstream attempt failed."),
+        );
+    } else {
+        trace.pool_failed("pool_exhausted", "No healthy connection remained.");
+    }
+}
 
 fn upstream_error_code(class: UpstreamErrorClass) -> &'static str {
     match class {
@@ -71,26 +121,18 @@ pub async fn send_upstream_v2(
     let mut grok_strip_attempt = 0u8;
     let max_attempts = candidates.len().clamp(1, V2_MAX_ATTEMPTS);
     let mut attempts = 0usize;
-    let mut last_fail: Option<(
-        UpstreamErrorClass,
-        StatusCode,
-        Option<HeaderValue>,
-        Option<String>,
-    )> = None;
+    let mut last_fail: Option<LastFail> = None;
 
     loop {
         attempts += 1;
         if attempts > max_attempts {
-            if let Some(trace) = trace.as_deref_mut() {
-                trace.pool_failed("pool_exhausted", "No healthy connection remained.");
-            }
+            record_exhausted_trace(trace.as_deref_mut(), last_fail.as_ref());
             return Err(exhausted_or_last_fail(
                 state,
                 request_id,
                 started,
                 public_model,
                 failover_from.as_deref(),
-                &member,
                 last_fail.as_ref(),
             ));
         }
@@ -98,6 +140,7 @@ pub async fn send_upstream_v2(
         let Some(_member_permit) = member.try_acquire() else {
             exclude_member(&mut excluded, &member);
             if continuation_locked {
+                record_exhausted_trace(trace.as_deref_mut(), last_fail.as_ref());
                 return Err(exhausted(
                     state,
                     request_id,
@@ -113,6 +156,7 @@ pub async fn send_upstream_v2(
                 Some(member.source_id.as_str()),
                 affinity_key,
             ) else {
+                record_exhausted_trace(trace.as_deref_mut(), last_fail.as_ref());
                 return Err(exhausted(
                     state,
                     request_id,
@@ -137,11 +181,22 @@ pub async fn send_upstream_v2(
             public_model,
         ) {
             Ok(prepared) => prepared,
-            Err(response) => {
+            Err(CandidateAttemptError::Conversion(response)) => {
                 if let Some(trace) = trace.as_deref_mut() {
                     trace.conversion_failed(
                         "conversion_failed",
                         "Could not convert this request for the upstream.",
+                    );
+                }
+                return Err(response);
+            }
+            Err(CandidateAttemptError::Url(response)) => {
+                if let Some(trace) = trace.as_deref_mut() {
+                    trace.upstream_request_failed(
+                        None,
+                        &member,
+                        candidate.map(|row| row.upstream_model.as_str()),
+                        "invalid_upstream_url",
                     );
                 }
                 return Err(response);
@@ -191,6 +246,14 @@ pub async fn send_upstream_v2(
         );
 
         loop {
+            let attempt_started = Instant::now();
+            let trace_attempt_id = trace.as_deref_mut().map(|trace| {
+                trace.upstream_attempt_started(
+                    &attempt_url_string,
+                    &member,
+                    candidate.map(|row| row.upstream_model.as_str()),
+                )
+            });
             let token = member.auth.token();
             let builder = transport.apply_auth(
                 state.client.post(attempt_url.clone()).json(&body),
@@ -205,11 +268,65 @@ pub async fn send_upstream_v2(
             )
             .await
             {
-                Ok(response) => response,
-                Err(UpstreamConnectError::Stopping) => return Err(stopping_response()),
+                Ok(response) => {
+                    if let (Some(trace), Some(attempt_id)) =
+                        (trace.as_deref_mut(), trace_attempt_id)
+                    {
+                        let status = response.status().as_u16();
+                        let code = (!response.status().is_success()).then_some(if status == 401 {
+                            "unauthorized"
+                        } else {
+                            "upstream_error"
+                        });
+                        trace.upstream_attempt_response(
+                            attempt_id,
+                            status,
+                            attempt_started.elapsed().as_millis() as u64,
+                            code,
+                        );
+                    }
+                    response
+                }
+                Err(UpstreamConnectError::Stopping) => {
+                    if let Some(trace) = trace.as_deref_mut() {
+                        if let Some(attempt_id) = trace_attempt_id {
+                            trace.upstream_attempt_transport_failed(
+                                attempt_id,
+                                false,
+                                attempt_started.elapsed().as_millis() as u64,
+                                "stopping",
+                            );
+                        }
+                        trace.upstream_failed(
+                            &attempt_url_string,
+                            &member,
+                            None,
+                            "stopping",
+                            "The local route stopped before the upstream request completed.",
+                        );
+                    }
+                    return Err(stopping_response());
+                }
                 Err(UpstreamConnectError::Timeout) => {
                     // Headers timed out after the request was sent; upstream may
                     // already be generating/billing. Do not replay onto another member.
+                    if let Some(trace) = trace.as_deref_mut() {
+                        if let Some(attempt_id) = trace_attempt_id {
+                            trace.upstream_attempt_transport_failed(
+                                attempt_id,
+                                true,
+                                attempt_started.elapsed().as_millis() as u64,
+                                "upstream_timeout",
+                            );
+                        }
+                        trace.upstream_failed(
+                            &attempt_url_string,
+                            &member,
+                            None,
+                            "upstream_timeout",
+                            "Timed out waiting for upstream response headers.",
+                        );
+                    }
                     return Err(timeout_response());
                 }
                 Err(UpstreamConnectError::Unavailable) => {
@@ -217,17 +334,22 @@ pub async fn send_upstream_v2(
                     // Keep Transient last_fail so exhaustion becomes upstream_unavailable,
                     // not a false pool_exhausted.
                     if let Some(trace) = trace.as_deref_mut() {
-                        trace.pool_attempt_failed(
-                            &member,
-                            "upstream_unavailable",
-                            "Upstream transport unavailable.",
-                        );
+                        if let Some(attempt_id) = trace_attempt_id {
+                            trace.upstream_attempt_transport_failed(
+                                attempt_id,
+                                false,
+                                attempt_started.elapsed().as_millis() as u64,
+                                "upstream_unavailable",
+                            );
+                        }
                     }
-                    last_fail = Some((
+                    last_fail = Some(LastFail::new(
                         UpstreamErrorClass::Transient,
                         StatusCode::BAD_GATEWAY,
                         None,
                         Some("upstream unavailable".to_owned()),
+                        &member,
+                        &attempt_url_string,
                     ));
                     exclude_member(&mut excluded, &member);
                     break;
@@ -264,10 +386,21 @@ pub async fn send_upstream_v2(
             let error_body =
                 match read_bounded_upstream_error(response, &state.force_shutdown).await {
                     Ok(body) => body,
-                    Err(UpstreamBodyError::Stopping) => return Err(stopping_response()),
-                    Err(UpstreamBodyError::InvalidOrTooLarge | UpstreamBodyError::IncompleteStream) => {
-                        Vec::new()
+                    Err(UpstreamBodyError::Stopping) => {
+                        if let Some(trace) = trace.as_deref_mut() {
+                            trace.upstream_failed(
+                                &attempt_url_string,
+                                &member,
+                                Some(status.as_u16()),
+                                "stopping",
+                                "The local route stopped while reading the upstream response.",
+                            );
+                        }
+                        return Err(stopping_response());
                     }
+                    Err(
+                        UpstreamBodyError::InvalidOrTooLarge | UpstreamBodyError::IncompleteStream,
+                    ) => Vec::new(),
                 };
             let detail = extract_upstream_error_detail(&error_body);
             if status == StatusCode::UNAUTHORIZED {
@@ -318,7 +451,9 @@ pub async fn send_upstream_v2(
                             &member,
                             Some(status.as_u16()),
                             upstream_error_code(class),
-                            detail.as_deref().unwrap_or("Upstream rejected the request."),
+                            detail
+                                .as_deref()
+                                .unwrap_or("Upstream rejected the request."),
                         );
                     }
                     return Err(map_request_or_upstream(
@@ -351,10 +486,19 @@ pub async fn send_upstream_v2(
                         trace.pool_attempt_failed(
                             &member,
                             upstream_error_code(class),
-                            detail.as_deref().unwrap_or("Upstream authorization failed."),
+                            detail
+                                .as_deref()
+                                .unwrap_or("Upstream authorization failed."),
                         );
                     }
-                    last_fail = Some((class, status, retry_after, detail));
+                    last_fail = Some(LastFail::new(
+                        class,
+                        status,
+                        retry_after,
+                        detail,
+                        &member,
+                        &attempt_url_string,
+                    ));
                     state.isolate_authorization(&member);
                     exclude_member(&mut excluded, &member);
                     break;
@@ -367,7 +511,14 @@ pub async fn send_upstream_v2(
                             detail.as_deref().unwrap_or("Upstream attempt failed."),
                         );
                     }
-                    last_fail = Some((class, status, retry_after, detail));
+                    last_fail = Some(LastFail::new(
+                        class,
+                        status,
+                        retry_after,
+                        detail,
+                        &member,
+                        &attempt_url_string,
+                    ));
                     state.deny_member_model(&member.source_id, public_model);
                     exclude_member(&mut excluded, &member);
                     break;
@@ -388,7 +539,14 @@ pub async fn send_upstream_v2(
                             detail.as_deref().unwrap_or("Upstream attempt failed."),
                         );
                     }
-                    last_fail = Some((class, status, retry_after, detail));
+                    last_fail = Some(LastFail::new(
+                        class,
+                        status,
+                        retry_after,
+                        detail,
+                        &member,
+                        &attempt_url_string,
+                    ));
                     exclude_member(&mut excluded, &member);
                     break;
                 }
@@ -400,7 +558,14 @@ pub async fn send_upstream_v2(
                             detail.as_deref().unwrap_or("Upstream attempt failed."),
                         );
                     }
-                    last_fail = Some((class, status, retry_after, detail));
+                    last_fail = Some(LastFail::new(
+                        class,
+                        status,
+                        retry_after,
+                        detail,
+                        &member,
+                        &attempt_url_string,
+                    ));
                     exclude_member(&mut excluded, &member);
                     break;
                 }
@@ -408,16 +573,17 @@ pub async fn send_upstream_v2(
         }
 
         if continuation_locked {
-            if let Some((class, status, retry_after, detail)) = last_fail {
+            record_exhausted_trace(trace.as_deref_mut(), last_fail.as_ref());
+            if let Some(failure) = last_fail {
                 return Err(map_request_or_upstream(
                     state,
                     request_id,
                     started,
-                    class,
-                    status,
-                    retry_after,
-                    detail.as_deref(),
-                    &member,
+                    failure.class,
+                    failure.status,
+                    failure.retry_after,
+                    failure.detail.as_deref(),
+                    &failure.member,
                     failover_from.as_deref(),
                 ));
             }
@@ -436,13 +602,13 @@ pub async fn send_upstream_v2(
             Some(member.source_id.as_str()),
             affinity_key,
         ) else {
+            record_exhausted_trace(trace.as_deref_mut(), last_fail.as_ref());
             return Err(exhausted_or_last_fail(
                 state,
                 request_id,
                 started,
                 public_model,
                 failover_from.as_deref(),
-                &member,
                 last_fail.as_ref(),
             ));
         };
@@ -480,6 +646,11 @@ fn candidate_for_member<'a>(
     })
 }
 
+enum CandidateAttemptError {
+    Conversion(Response),
+    Url(Response),
+}
+
 fn prepare_candidate_attempt(
     state: &EdgeState,
     surface: DownstreamSurface,
@@ -490,7 +661,7 @@ fn prepare_candidate_attempt(
     member: &PickedMember,
     candidate: Option<&DispatchCandidate>,
     public_model: &str,
-) -> Result<(UpstreamChannel, reqwest::Url, UpstreamPrepare), Response> {
+) -> Result<(UpstreamChannel, reqwest::Url, UpstreamPrepare), CandidateAttemptError> {
     let lead = UpstreamChannel::from_protocol(state.upstream.protocol);
     let channel = candidate
         .and_then(|candidate| channel_from_transport_key(&candidate.transport_key))
@@ -510,8 +681,11 @@ fn prepare_candidate_attempt(
         member: Some(member.clone()),
         affinity_key: None,
     };
-    let prepared = channel.transport().prepare(surface, &admitted)?;
-    let url = attempt_url(state, prepared.path, candidate)?;
+    let prepared = channel
+        .transport()
+        .prepare(surface, &admitted)
+        .map_err(CandidateAttemptError::Conversion)?;
+    let url = attempt_url(state, prepared.path, candidate).map_err(CandidateAttemptError::Url)?;
     Ok((channel, url, prepared))
 }
 
@@ -604,32 +778,26 @@ fn exhausted_or_last_fail(
     started: Instant,
     public_model: &str,
     failover_from: Option<&str>,
-    member: &PickedMember,
-    last_fail: Option<&(
-        UpstreamErrorClass,
-        StatusCode,
-        Option<HeaderValue>,
-        Option<String>,
-    )>,
+    last_fail: Option<&LastFail>,
 ) -> Response {
-    if let Some((class, status, retry_after, detail)) = last_fail {
+    if let Some(failure) = last_fail {
         if matches!(
-            class,
+            failure.class,
             UpstreamErrorClass::Entitlement | UpstreamErrorClass::Request
         ) {
             return map_request_or_upstream(
                 state,
                 request_id,
                 started,
-                *class,
-                *status,
-                retry_after.clone(),
-                detail.as_deref(),
-                member,
+                failure.class,
+                failure.status,
+                failure.retry_after.clone(),
+                failure.detail.as_deref(),
+                &failure.member,
                 failover_from,
             );
         }
-        if *class == UpstreamErrorClass::Transient {
+        if failure.class == UpstreamErrorClass::Transient {
             tracing::warn!(
                 target: "core.adapter",
                 profile_id = %state.profile_id,
@@ -640,7 +808,7 @@ fn exhausted_or_last_fail(
                 code = "upstream_unavailable",
                 status = 502_u16,
                 elapsed_ms = started.elapsed().as_millis() as u64,
-                upstream_detail = detail.as_deref().unwrap_or(""),
+                upstream_detail = failure.detail.as_deref().unwrap_or(""),
                 "v2 route exhausted after upstream transport/transient failures"
             );
             state.record_upstream_failure();

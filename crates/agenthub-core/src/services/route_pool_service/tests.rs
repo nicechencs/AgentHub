@@ -3,8 +3,9 @@ use crate::models::{
     AdapterApplyPlan, AdapterGateKind, AdapterMaturity, AdapterProfile, AdapterProfileMode,
     AdapterProfileStatus, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis,
     AdapterServiceImpact, AdapterSourceKind, AdapterSupport, AgentId, Provider,
-    RouteDownstreamSurface, FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
-    FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
+    RouteDownstreamSurface, FEATURE_CODEX_INGRESS_GROK_UPSTREAM,
+    FEATURE_GROK_INGRESS_CODEX_UPSTREAM, FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2,
+    FEATURE_ROUTE_POOL_V2,
 };
 use crate::services::RoutePoolService;
 use crate::storage::{AccountRepo, AdapterProfileRepo, Database, ProviderRepo};
@@ -84,7 +85,10 @@ fn lists_and_sets_default_pool_entry_keys() {
     assert!(listed[0].token.starts_with("ahb_"));
     let updated = service.set_local_token(&pool.id, "ahb_custom-key").unwrap();
     assert_eq!(updated.token, "ahb_custom-key");
-    assert_eq!(service.list_local_tokens().unwrap()[0].token, "ahb_custom-key");
+    assert_eq!(
+        service.list_local_tokens().unwrap()[0].token,
+        "ahb_custom-key"
+    );
     assert!(service.list_local_tokens().unwrap()[0].primary);
     assert_eq!(service.list_local_tokens().unwrap()[0].id, pool.id);
 }
@@ -119,7 +123,40 @@ fn named_extra_entry_keys_can_be_created_renamed_and_deleted() {
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].name, "默认");
     assert_eq!(listed[0].token, "ahb_after-name");
-    assert!(service.delete_local_token(&pool.id).is_err());
+    let err = service.delete_local_token(&pool.id).unwrap_err();
+    assert!(err.to_string().contains("only entry key"));
+    assert_eq!(service.list_local_tokens().unwrap().len(), 1);
+}
+
+#[test]
+fn deleting_default_entry_key_promotes_the_oldest_extra() {
+    let (_dir, _db, service, _) = tmp();
+    let pool = service
+        .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
+        .unwrap();
+    let extra = service.create_local_token(&pool.id, "家里").unwrap();
+    service.delete_local_token(&pool.id).unwrap();
+    let listed = service.list_local_tokens().unwrap();
+    assert_eq!(listed.len(), 1);
+    assert!(listed[0].primary);
+    assert_eq!(listed[0].id, pool.id);
+    assert_eq!(listed[0].name, "家里");
+    assert_eq!(listed[0].token, extra.token);
+    assert!(service.list_extra_local_bearers().unwrap().is_empty());
+}
+
+#[test]
+fn deleting_the_last_entry_key_is_rejected() {
+    let (_dir, _db, service, _) = tmp();
+    let pool = service
+        .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
+        .unwrap();
+    let before = service.list_local_tokens().unwrap()[0].token.clone();
+    let err = service.delete_local_token(&pool.id).unwrap_err();
+    assert!(err.to_string().contains("only entry key"));
+    let listed = service.list_local_tokens().unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].token, before);
 }
 
 #[test]
@@ -151,7 +188,9 @@ fn enroll_unified_gateway_as_default_marks_pool() {
     let profile = bridge_profile("enroll-pool", "acc-enroll", AgentId::Codex, true);
     profiles.create(&profile).unwrap();
     service.ensure_legacy_pool(&profile).unwrap();
-    let enrolled = service.enroll_unified_gateway_as_default(&profile.id, 44227).unwrap();
+    let enrolled = service
+        .enroll_unified_gateway_as_default(&profile.id, 44227)
+        .unwrap();
     assert!(enrolled.is_default);
     assert!(enrolled.unified_gateway_enrolled);
     assert_eq!(enrolled.gateway_port, Some(44227));
@@ -328,12 +367,83 @@ fn recycle_route_membership_keeps_connections_login_and_uses_pool_trash() {
         .unwrap()
         .is_some());
     let conn = crate::services::ConnectionService::new(db);
-    let pool_trash = conn
-        .list_trash_filtered(None, Some("route_pool"))
-        .unwrap();
+    let pool_trash = conn.list_trash_filtered(None, Some("route_pool")).unwrap();
     assert_eq!(pool_trash.len(), 1);
-    assert_eq!(pool_trash[0].kind, crate::models::ConnectionTrashKind::Membership);
-    assert!(conn.list_trash_filtered(None, Some("connections")).unwrap().is_empty());
+    assert_eq!(
+        pool_trash[0].kind,
+        crate::models::ConnectionTrashKind::Membership
+    );
+    assert!(conn
+        .list_trash_filtered(None, Some("connections"))
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn restore_one_membership_leaves_the_other_source() {
+    let (_dir, db, service, _profiles) = tmp();
+    let providers = ProviderRepo::new(db.clone());
+    providers
+        .create(&Provider {
+            id: "pool-a".into(),
+            agent_id: AgentId::Codex,
+            name: "Key A".into(),
+            settings_config: json!({"apiKey": "secret-a"}),
+            meta: json!({}),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    providers
+        .create(&Provider {
+            id: "pool-b".into(),
+            agent_id: AgentId::Codex,
+            name: "Key B".into(),
+            settings_config: json!({"apiKey": "secret-b"}),
+            meta: json!({}),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    let pool = service
+        .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
+        .unwrap();
+    service
+        .add_member(&pool.id, AdapterSourceKind::Provider, "pool-a")
+        .unwrap();
+    service
+        .add_member(&pool.id, AdapterSourceKind::Provider, "pool-b")
+        .unwrap();
+
+    service
+        .recycle_route_membership(AdapterSourceKind::Provider, "pool-a")
+        .unwrap();
+    service
+        .recycle_route_membership(AdapterSourceKind::Provider, "pool-b")
+        .unwrap();
+    let conn = crate::services::ConnectionService::new(db);
+    let trash = conn.list_trash_filtered(None, Some("route_pool")).unwrap();
+    assert_eq!(trash.len(), 2);
+    let first = trash
+        .iter()
+        .find(|item| item.source_id == "pool-a")
+        .expect("pool-a trash");
+    service
+        .restore_membership_trash(first.membership.as_ref().expect("membership"))
+        .unwrap();
+
+    let members = service.list_members(&pool.id).unwrap();
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0].source_id, "pool-a");
+    let remaining: Vec<_> = conn
+        .list_trash_filtered(None, Some("route_pool"))
+        .unwrap()
+        .into_iter()
+        .map(|item| item.source_id)
+        .collect();
+    assert!(remaining.contains(&"pool-b".to_string()));
 }
 
 #[test]
@@ -415,7 +525,9 @@ fn enroll_unified_gateway_rejects_a_different_port() {
         .create_legacy_pool(&profile, "ahb_stable-token", true)
         .unwrap();
     let enrolled = service.enroll_unified_gateway("profile-a", 43155).unwrap();
-    let error = service.enroll_unified_gateway("profile-a", 43156).unwrap_err();
+    let error = service
+        .enroll_unified_gateway("profile-a", 43156)
+        .unwrap_err();
     assert_eq!(error.code(), "invalid_arg");
     let stored = service.get("profile-a").unwrap().unwrap();
     assert_eq!(stored.gateway_port, Some(43155));
@@ -770,8 +882,14 @@ fn persist_enroll_after_native_bind_promotes_over_sibling_default() {
     let listed = service.list_default_overviews().unwrap();
     assert_eq!(listed.pools.len(), 1);
     assert_eq!(listed.pools[0].id, "bound-new");
-    assert!(listed.pools[0].members.iter().any(|member| member.source_id == "acc-old"));
-    assert!(listed.pools[0].members.iter().any(|member| member.source_id == "acc-a"));
+    assert!(listed.pools[0]
+        .members
+        .iter()
+        .any(|member| member.source_id == "acc-old"));
+    assert!(listed.pools[0]
+        .members
+        .iter()
+        .any(|member| member.source_id == "acc-a"));
 }
 
 #[test]
@@ -801,7 +919,10 @@ fn attach_pool_owned_authorization_creates_default_pool_and_hides_from_home_stam
     assert_eq!(overview.surface, RouteDownstreamSurface::Responses);
     assert_eq!(overview.members.len(), 1);
     assert_eq!(overview.members[0].source_id, "codex-api");
-    let stored = ProviderRepo::new(db).get_by_id("codex-api").unwrap().unwrap();
+    let stored = ProviderRepo::new(db)
+        .get_by_id("codex-api")
+        .unwrap()
+        .unwrap();
     assert!(authorization_is_route_pool_home(&stored.meta));
     let again = service
         .attach_pool_owned_authorization(
@@ -813,6 +934,94 @@ fn attach_pool_owned_authorization_creates_default_pool_and_hides_from_home_stam
         .unwrap();
     assert_eq!(again.id, overview.id);
     assert_eq!(again.members.len(), 1);
+}
+
+#[test]
+fn fork_connection_authorization_copies_oauth_and_keeps_connections_login() {
+    let (_dir, db, service, _profiles) = tmp();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "grok-oauth".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "user@x.ai".into(),
+            credentials: json!({
+                "format": "auth_json",
+                "body": { "refresh_token": "rt-original", "access_token": "at-original" }
+            }),
+            extra: json!({ "source": "oauth_pkce" }),
+            status: "active".into(),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    let pool = service
+        .ensure_default_pool(AgentId::Grok, RouteDownstreamSurface::Responses)
+        .unwrap();
+    service
+        .add_member(&pool.id, AdapterSourceKind::Account, "grok-oauth")
+        .unwrap();
+
+    let forked = service
+        .fork_connection_authorization(AdapterSourceKind::Account, "grok-oauth")
+        .unwrap();
+    assert!(forked.copied);
+    assert_eq!(forked.original_source_id, "grok-oauth");
+    assert_ne!(forked.source_id, "grok-oauth");
+
+    let original = AccountRepo::new(db.clone())
+        .get_by_id("grok-oauth")
+        .unwrap()
+        .unwrap();
+    assert!(!authorization_is_route_pool_home(&original.extra));
+    assert_eq!(original.credentials["body"]["refresh_token"], "rt-original");
+
+    let copy = AccountRepo::new(db)
+        .get_by_id(&forked.source_id)
+        .unwrap()
+        .unwrap();
+    assert!(authorization_is_route_pool_home(&copy.extra));
+    assert!(!copy.is_current);
+    assert_eq!(copy.credentials["body"]["refresh_token"], "rt-original");
+
+    let listed = service.list_default_overviews().unwrap();
+    let member_ids: Vec<_> = listed
+        .pools
+        .iter()
+        .flat_map(|pool| pool.members.iter().map(|member| member.source_id.as_str()))
+        .collect();
+    assert!(member_ids.contains(&forked.source_id.as_str()));
+    assert!(!member_ids.contains(&"grok-oauth"));
+
+    let again = service
+        .fork_connection_authorization(AdapterSourceKind::Account, &forked.source_id)
+        .unwrap();
+    assert!(!again.copied);
+    assert_eq!(again.source_id, forked.source_id);
+}
+
+#[test]
+fn fork_connection_authorization_rejects_api_keys() {
+    let (_dir, db, service, _profiles) = tmp();
+    AccountRepo::new(db)
+        .create(&Account {
+            id: "grok-key".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::ApiKey,
+            label: "sk-test".into(),
+            credentials: json!({ "format": "api_key", "api_key": "sk-test" }),
+            extra: json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    let error = service
+        .fork_connection_authorization(AdapterSourceKind::Account, "grok-key")
+        .unwrap_err();
+    assert!(error.to_string().contains("official logins"));
 }
 
 #[test]
@@ -907,7 +1116,10 @@ fn sync_connection_authorizations_enrolls_connection_logins_without_hiding_them(
     assert!(members.contains(&"conn-codex"));
     assert!(members.contains(&"conn-oauth"));
     assert!(!members.contains(&"pool-only"));
-    let stored = ProviderRepo::new(db).get_by_id("conn-codex").unwrap().unwrap();
+    let stored = ProviderRepo::new(db)
+        .get_by_id("conn-codex")
+        .unwrap()
+        .unwrap();
     assert!(!authorization_is_route_pool_home(&stored.meta));
     let again = service.sync_connection_authorizations().unwrap();
     assert_eq!(again.added, 0);
@@ -965,8 +1177,12 @@ fn selected_connection_sync_enrolls_only_requested_sources() {
         created_at: "t0".into(),
         updated_at: "t0".into(),
     };
-    AccountRepo::new(db.clone()).create(&account("account-selected")).unwrap();
-    AccountRepo::new(db.clone()).create(&account("account-unselected")).unwrap();
+    AccountRepo::new(db.clone())
+        .create(&account("account-selected"))
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&account("account-unselected"))
+        .unwrap();
     ProviderRepo::new(db.clone())
         .create(&Provider {
             id: "provider-unselected".into(),
@@ -1067,8 +1283,9 @@ fn connection_sync_enrolls_api_keys_from_workbuddy_and_zcode() {
         .collect();
     assert!(members.iter().any(|(_, id)| *id == "wb-key"));
     assert!(members.iter().any(|(_, id)| *id == "zcode-key"));
-    assert!(members.iter().any(|(agent, id)| *id == "wb-key"
-        && matches!(*agent, AgentId::Kimi | AgentId::Dsh)));
+    assert!(members
+        .iter()
+        .any(|(agent, id)| *id == "wb-key" && matches!(*agent, AgentId::Kimi | AgentId::Dsh)));
     assert!(!members.iter().any(|(_, id)| *id == "kimi-oauth"));
 }
 
@@ -1165,8 +1382,7 @@ fn chat_member_ids(listed: &crate::models::DefaultRoutePoolList, agent: AgentId)
         .pools
         .iter()
         .filter(|pool| {
-            pool.target_agent_id == agent
-                && pool.surface == RouteDownstreamSurface::ChatCompletions
+            pool.target_agent_id == agent && pool.surface == RouteDownstreamSurface::ChatCompletions
         })
         .flat_map(|pool| pool.members.iter().map(|member| member.source_id.as_str()))
         .collect()
@@ -1182,7 +1398,11 @@ fn chat_completions_share_defaults_off_and_merges_kimi_dsh() {
         .create(&chat_api_account("dsh-key", AgentId::Dsh, "DSH key"))
         .unwrap();
     AccountRepo::new(db)
-        .create(&chat_api_account("wb-key", AgentId::WorkBuddy, "WorkBuddy key"))
+        .create(&chat_api_account(
+            "wb-key",
+            AgentId::WorkBuddy,
+            "WorkBuddy key",
+        ))
         .unwrap();
 
     service.sync_connection_authorizations().unwrap();
@@ -1221,7 +1441,11 @@ fn shared_chat_enrolls_workbuddy_and_dsh_into_kimi_pool() {
         .create(&chat_api_account("dsh-key", AgentId::Dsh, "DSH key"))
         .unwrap();
     AccountRepo::new(db)
-        .create(&chat_api_account("wb-key", AgentId::WorkBuddy, "WorkBuddy key"))
+        .create(&chat_api_account(
+            "wb-key",
+            AgentId::WorkBuddy,
+            "WorkBuddy key",
+        ))
         .unwrap();
 
     service.sync_connection_authorizations().unwrap();
@@ -1274,6 +1498,8 @@ fn custom_model_catalog_is_used_for_routing_and_not_refetched() {
     assert_eq!(saved.models, vec!["grok-4.5", "grok-4.6"]);
     let listed = service.list_upstream_models_for_pool(&pool.id).unwrap();
     assert_eq!(listed, vec!["grok-4.5", "grok-4.6"]);
+    let overview = service.overview_from_pool(&pool).unwrap();
+    assert_eq!(overview.listed_models, vec!["grok-4.5", "grok-4.6"]);
     let again = service
         .ensure_source_model_catalog(AdapterSourceKind::Account, "grok-oauth-1")
         .unwrap();
@@ -1302,8 +1528,12 @@ fn grok_apikey(id: &str, models: &[&str]) -> Account {
 fn refresh_local_token_models_unions_pool_logins_and_bypasses_live_cache() {
     let (_dir, db, service, _) = tmp();
     let accounts = AccountRepo::new(db);
-    accounts.create(&grok_apikey("grok-a", &["model-a"])).unwrap();
-    accounts.create(&grok_apikey("grok-b", &["model-b"])).unwrap();
+    accounts
+        .create(&grok_apikey("grok-a", &["model-a"]))
+        .unwrap();
+    accounts
+        .create(&grok_apikey("grok-b", &["model-b"]))
+        .unwrap();
     let pool = service
         .ensure_default_pool(AgentId::Grok, RouteDownstreamSurface::Responses)
         .unwrap();
@@ -1343,6 +1573,8 @@ fn refresh_local_token_models_unions_pool_logins_and_bypasses_live_cache() {
         .token;
     let listed = service.refresh_local_token_models(&token).unwrap();
     assert_eq!(listed, vec!["model-a2", "model-b-custom"]);
+    let overview = service.overview_from_pool(&pool).unwrap();
+    assert_eq!(overview.listed_models, vec!["model-a2", "model-b-custom"]);
     let custom = service
         .ensure_source_model_catalog(AdapterSourceKind::Account, "grok-b")
         .unwrap();

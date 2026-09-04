@@ -1,8 +1,9 @@
 use super::*;
 use crate::file_manager::{
-    applescript_terminal_do_script, codex_app_launch_kind, enclosing_app_bundle, explorer_select_arg,
-    file_manager_action, looks_like_codex_bundled_cli, macos_codex_app_bundle_names,
-    normalize_open_path_input, parse_windows_codex_app_id_from_registry, resolve_cli_launch_path,
+    applescript_terminal_do_script, codex_app_launch_kind, enclosing_app_bundle,
+    explorer_select_arg, file_manager_action, looks_like_codex_bundled_cli,
+    macos_codex_app_bundle_names, normalize_open_path_input,
+    parse_windows_codex_app_id_from_registry, resolve_cli_launch_path,
     windows_codex_app_id_from_package_full_name, CodexAppLaunchKind, FileManagerAction,
 };
 
@@ -139,10 +140,8 @@ fn windows_codex_store_app_id_from_package_and_registry() {
         Some("OpenAI.Codex_2p2nqsd0c76g0!App")
     );
     assert_eq!(
-        windows_codex_app_id_from_package_full_name(
-            "OpenAI.ChatGPT_1.2.3.4_arm64__2p2nqsd0c76g0"
-        )
-        .as_deref(),
+        windows_codex_app_id_from_package_full_name("OpenAI.ChatGPT_1.2.3.4_arm64__2p2nqsd0c76g0")
+            .as_deref(),
         Some("OpenAI.ChatGPT_2p2nqsd0c76g0!App")
     );
     assert!(windows_codex_app_id_from_package_full_name("Contoso.Other_1.0.0_x64__pub").is_none());

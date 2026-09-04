@@ -3,11 +3,13 @@ import { InspectSurface } from '@/components/layout/InspectSurface';
 import { CopyableFileName } from '@/components/shared/CopyableFileName';
 import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
-import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { agentDisplayName } from '@/config/agents';
 import type { PluginComponent, PluginEntry } from '@/lib/backend/contracts/plugin-types';
 import type { TranslateFn } from '@/lib/i18n';
 import { canToggleListedPlugin } from './can-toggle';
+import { pluginVersionView } from './plugin-version-model';
 
 function kindLabel(kind: string, t: TranslateFn): string {
   switch (kind) {
@@ -28,10 +30,19 @@ function kindLabel(kind: string, t: TranslateFn): string {
   }
 }
 
-function triState(value: boolean | null | undefined, t: TranslateFn): string {
-  if (value === true) return t('plugins.detail.yes');
-  if (value === false) return t('plugins.detail.no');
-  return t('plugins.detail.unknown');
+function scopeLabel(scope: string, t: TranslateFn): string {
+  switch (scope) {
+    case 'user':
+      return t('plugins.detail.scopeUser');
+    case 'project':
+      return t('plugins.detail.scopeProject');
+    case 'local':
+      return t('plugins.detail.scopeLocal');
+    case 'managed':
+      return t('plugins.detail.scopeManaged');
+    default:
+      return scope;
+  }
 }
 
 function Field({ label, value }: { label: string; value?: string | null }) {
@@ -72,42 +83,48 @@ export function PluginDetailPanel({
   const { t } = useI18n();
   const [busy, setBusy] = useState<'enable' | 'disable' | null>(null);
   const canToggle = canToggleListedPlugin(plugin.agent) && Boolean(onToggle);
-  const sourceLabel =
-    plugin.source === 'cli'
-      ? t('plugins.detail.sourceCli')
-      : plugin.source === 'live'
-        ? t('plugins.detail.sourceLive')
-        : plugin.source;
+  const enabled = plugin.enabled === true;
+  const description = plugin.description?.trim() || undefined;
+  const version = pluginVersionView(plugin);
+  const versionValue =
+    version.listBadge === 'notInstalled'
+      ? t('plugins.list.notInstalled')
+      : version.installed;
+  const showRequested =
+    Boolean(version.requested) &&
+    (version.kind === 'pinned' ||
+      version.kind === 'mismatch' ||
+      version.kind === 'missing' ||
+      version.kind === 'git');
 
-  async function toggle(enabled: boolean) {
-    if (!onToggle || busy) return;
-    setBusy(enabled ? 'enable' : 'disable');
+  async function toggle(next: boolean) {
+    if (!onToggle || busy || next === enabled) return;
+    setBusy(next ? 'enable' : 'disable');
     try {
-      await onToggle(plugin, enabled);
+      await onToggle(plugin, next);
     } finally {
       setBusy(null);
     }
   }
 
   const actions = canToggle ? (
-    <>
-      <Button
-        size="sm"
-        variant={plugin.enabled === true ? 'outline' : 'default'}
-        disabled={busy !== null || plugin.enabled === true}
-        onClick={() => void toggle(true)}
-      >
-        {busy === 'enable' ? t('plugins.actions.enabling') : t('plugins.actions.enable')}
-      </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={busy !== null || plugin.enabled === false}
-        onClick={() => void toggle(false)}
-      >
-        {busy === 'disable' ? t('plugins.actions.disabling') : t('plugins.actions.disable')}
-      </Button>
-    </>
+    <div className="flex items-center gap-2">
+      <span className="text-meta text-secondary">
+        {busy === 'enable'
+          ? t('plugins.actions.enabling')
+          : busy === 'disable'
+            ? t('plugins.actions.disabling')
+            : enabled
+              ? t('plugins.actions.enabled')
+              : t('plugins.actions.disabled')}
+      </span>
+      <Switch
+        checked={enabled}
+        disabled={busy !== null}
+        aria-label={t('plugins.actions.toggle')}
+        onCheckedChange={(next) => void toggle(next)}
+      />
+    </div>
   ) : undefined;
 
   return (
@@ -118,37 +135,16 @@ export function PluginDetailPanel({
         if (!open) onClose();
       }}
       title={plugin.name}
-      description={plugin.version ?? undefined}
+      description={description}
       showCancel={false}
       primary={actions}
       width={width}
     >
-      <dl className="flex flex-col gap-2">
-        <Field label={t('plugins.detail.name')} value={plugin.name} />
-        <Field label={t('plugins.detail.agent')} value={agentDisplayName(plugin.agent)} />
-        <Field label={t('plugins.detail.marketplace')} value={plugin.marketplace} />
-        <Field label={t('plugins.detail.version')} value={plugin.version} />
-        <Field label={t('plugins.detail.scope')} value={plugin.scope} />
-        <Field label={t('plugins.detail.enabled')} value={triState(plugin.enabled, t)} />
-        <Field label={t('plugins.detail.trusted')} value={triState(plugin.trusted, t)} />
-        <Field label={t('plugins.detail.source')} value={sourceLabel} />
-        {plugin.path ? (
-          <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-meta">
-            <dt className="text-muted">{t('plugins.detail.path')}</dt>
-            <dd className="min-w-0">
-              <CopyableFileName path={plugin.path} wrap="break" />
-              <OpenDirButton
-                labeled
-                className="mt-1"
-                title={plugin.path}
-                onClick={() => onLocate(plugin.path!)}
-              />
-            </dd>
-          </div>
-        ) : null}
-      </dl>
+      {canToggle ? (
+        <p className="mb-3 text-meta text-muted">{t('plugins.actions.disableHint')}</p>
+      ) : null}
 
-      <section className="mt-4">
+      <section>
         <h3 className="mb-2 text-body font-medium">{t('plugins.detail.components')}</h3>
         {plugin.components.length === 0 ? (
           <p className="text-meta text-muted">{t('plugins.detail.noComponents')}</p>
@@ -172,6 +168,44 @@ export function PluginDetailPanel({
           </div>
         )}
       </section>
+
+      <dl className="mt-4 flex flex-col gap-2">
+        <Field label={t('plugins.detail.agent')} value={agentDisplayName(plugin.agent)} />
+        <Field label={t('plugins.detail.version')} value={versionValue} />
+        {showRequested ? (
+          <Field label={t('plugins.detail.requestedVersion')} value={version.requested} />
+        ) : null}
+        <Field label={t('plugins.detail.marketplace')} value={plugin.marketplace} />
+        <Field
+          label={t('plugins.detail.scope')}
+          value={plugin.scope ? scopeLabel(plugin.scope, t) : null}
+        />
+        {plugin.trusted === false ? (
+          <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-meta">
+            <dt className="text-muted">{t('plugins.detail.trusted')}</dt>
+            <dd>
+              <Badge variant="warning">{t('plugins.list.untrusted')}</Badge>
+            </dd>
+          </div>
+        ) : null}
+        {plugin.path ? (
+          <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-meta">
+            <dt className="text-muted">{t('plugins.detail.path')}</dt>
+            <dd className="min-w-0">
+              <CopyableFileName path={plugin.path} wrap="break" />
+              <OpenDirButton
+                labeled
+                className="mt-1"
+                title={plugin.path}
+                onClick={() => onLocate(plugin.path!)}
+              />
+            </dd>
+          </div>
+        ) : null}
+      </dl>
+      {version.hintKey ? (
+        <p className="mt-3 text-meta text-muted">{t(version.hintKey)}</p>
+      ) : null}
     </InspectSurface>
   );
 }

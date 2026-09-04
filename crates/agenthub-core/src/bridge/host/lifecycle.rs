@@ -76,13 +76,13 @@ impl BridgeRuntimeHost {
     /// before edges start; later calls are ignored. Unset keeps capture a
     /// no-op, so CLI runs and tests never write spool files.
     pub fn set_usage_spool_dir(&self, dir: std::path::PathBuf) {
-        self.gateway
-            .usage_spool
-            .set(std::sync::Arc::new(crate::bridge::usage_capture::UsageSpool::new(dir)));
+        self.gateway.usage_spool.set(std::sync::Arc::new(
+            crate::bridge::usage_capture::UsageSpool::new(dir),
+        ));
     }
 
-    /// Enable durable route-trace ring persistence (Activity monitor history).
-    /// Loads last N traces from `path` when present; later calls are ignored.
+    /// Enable disposable sqlite persistence for Activity monitor history.
+    /// Loads the live UI ring from `path` when present; later calls are ignored.
     /// Unset keeps an in-memory ring only (CLI / unit tests).
     pub fn set_route_trace_persist_path(&self, path: std::path::PathBuf) {
         self.gateway.route_traces.enable_persist(path);
@@ -219,8 +219,24 @@ impl BridgeRuntimeHost {
     }
 
     /// Failed local-auth attempts without a profile binding (newest first).
-    pub fn recent_unauthenticated_route_traces(&self) -> Vec<super::route_trace::RouteRequestTrace> {
+    pub fn recent_unauthenticated_route_traces(
+        &self,
+    ) -> Vec<super::route_trace::RouteRequestTrace> {
         self.gateway.route_traces.recent_unauthenticated()
+    }
+
+    pub fn query_route_traces(
+        &self,
+        query: super::route_trace::RouteTraceQuery,
+    ) -> super::route_trace::RouteTracePage {
+        self.gateway.route_traces.query(query)
+    }
+
+    pub fn delete_route_traces(
+        &self,
+        request_ids: &[String],
+    ) -> super::route_trace::RouteTraceDeleteResult {
+        self.gateway.route_traces.delete_ids(request_ids)
     }
 
     /// Process-lifetime inbound counters for this profile (not capped by the ring).
@@ -691,6 +707,15 @@ fn validate_start_spec(spec: &BridgeStartSpec) -> Result<Url, BridgeHostError> {
     }
     let mut upstream =
         Url::parse(&spec.upstream.base_url).map_err(|_| BridgeHostError::InvalidUpstreamUrl)?;
+    // Empty gateways use this loopback value only as a dormant placeholder. A spec that already
+    // identifies a real source must never start with it, otherwise requests are forwarded to port
+    // 80 on this machine and surface later as a misleading upstream 404/502.
+    if spec.upstream.source_id.is_some()
+        && spec.upstream.auth.token() == "pending"
+        && spec.upstream.base_url.trim_end_matches('/') == "http://127.0.0.1"
+    {
+        return Err(BridgeHostError::InvalidUpstreamUrl);
+    }
     if upstream.host_str().is_none()
         || !upstream.username().is_empty()
         || upstream.password().is_some()

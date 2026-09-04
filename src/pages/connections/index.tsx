@@ -290,6 +290,10 @@ export default function ConnectionsPage() {
 
   const poolReload = pool.reload;
 
+  const handleTrashChanged = useCallback(() => {
+    void Promise.all([loadWallet(), poolReload().catch(() => {})]);
+  }, [loadWallet, poolReload]);
+
   useEffect(() => {
     const draft = readConnectApiKeyDraft(location.state);
     if (draft) setApiKeyDraft(draft);
@@ -691,7 +695,7 @@ export default function ConnectionsPage() {
     ) : null;
 
   const trashDock = (
-    <ConnectionTrashButton onChanged={() => void loadWallet()} />
+    <ConnectionTrashButton onChanged={handleTrashChanged} />
   );
 
   if (loading) {

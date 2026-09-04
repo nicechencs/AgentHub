@@ -2,8 +2,7 @@ use serde_json::json;
 
 use super::{
     api_endpoint_url, list_remote_openai_models, openai_models_url, openai_models_urls,
-    parse_openai_model_list,
-    ApiEndpointType,
+    parse_openai_model_list, ApiEndpointType,
 };
 use crate::error::AppError;
 
@@ -79,7 +78,10 @@ fn api_endpoint_url_normalizes_base_and_v1() {
         "https://api.example.com/v1/responses"
     );
     assert_eq!(
-        api_endpoint_url("https://api.example.com/v1/", ApiEndpointType::ChatCompletions),
+        api_endpoint_url(
+            "https://api.example.com/v1/",
+            ApiEndpointType::ChatCompletions
+        ),
         "https://api.example.com/v1/chat/completions"
     );
     assert_eq!(

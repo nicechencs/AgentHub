@@ -148,7 +148,7 @@ function OAuthChoiceCard({
         }
       }}
       className={cn(
-        'rounded-card border border-border bg-panel p-4 text-left transition-colors',
+        'rounded-card border border-border bg-panel p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
         available && 'cursor-pointer hover:bg-hover/50',
         !available && 'opacity-60',
       )}

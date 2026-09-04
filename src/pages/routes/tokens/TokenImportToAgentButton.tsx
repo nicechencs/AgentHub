@@ -1,4 +1,3 @@
-import { useNavigate } from 'react-router-dom';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
@@ -10,13 +9,12 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Hint } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
-import { connectApiKeyDraftState } from '@/lib/connect-flow/connect-intent';
+import type { ConnectApiKeyDraft } from '@/lib/connect-flow/connect-intent';
 import type { AgentKey } from '@/lib/types';
 import { agentDisplayName } from '@/config/agents';
 import {
   tokenImportAgentChoice,
   tokenImportApiKeyDraft,
-  tokenImportConnectionsUrl,
   tokenImportGate,
   type TokenImportAgentRef,
 } from './token-import-model';
@@ -25,17 +23,18 @@ import type { LocalTokenRow } from './tokens-model';
 export function TokenImportToAgentButton({
   row,
   installedAgents,
+  onImport,
   size = 'sm',
   className,
 }: {
   row: LocalTokenRow;
   installedAgents: readonly TokenImportAgentRef[];
+  onImport: (agentId: AgentKey, draft: ConnectApiKeyDraft) => void;
   size?: 'sm' | 'default';
   className?: string;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
-  const navigate = useNavigate();
   const gate = tokenImportGate(row, installedAgents, t);
 
   const runImport = (agentId: AgentKey) => {
@@ -50,9 +49,7 @@ export function TokenImportToAgentButton({
       });
       return;
     }
-    navigate(tokenImportConnectionsUrl(agentId), {
-      state: connectApiKeyDraftState(draft),
-    });
+    onImport(agentId, draft);
   };
 
   const label = t('routes.tokens.importToAgent');

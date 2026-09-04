@@ -3,6 +3,7 @@ import { RouteTraceFlowDiagram, type RouteTraceFlowRow } from '@/components/shar
 import { cn } from '@/lib/utils';
 
 const LEGEND_TRACE: RouteTraceFlowRow = {
+  traceVersion: 2,
   requestId: 'legend',
   at: '',
   method: 'POST',

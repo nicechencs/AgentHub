@@ -11,8 +11,9 @@ mod gateway;
 mod http;
 pub(crate) mod inbound;
 mod lifecycle;
-mod route_trace;
 mod pair_policy;
+mod passthrough_usage;
+mod route_trace;
 mod stream;
 mod surface;
 mod transport;
@@ -29,7 +30,12 @@ pub use inbound::InboundRequestRecord;
 pub use inbound::InboundRequestStats;
 pub use lifecycle::BridgeRuntimeHost;
 pub use route_trace::RouteRequestTrace;
+pub use route_trace::RouteTraceDeleteResult;
+pub use route_trace::RouteTraceEndpointKind;
 pub use route_trace::RouteTraceLog;
+pub use route_trace::RouteTracePage;
+pub use route_trace::RouteTraceQuery;
+pub use route_trace::ROUTE_TRACE_QUERY_DEFAULT_LIMIT;
 
 #[cfg(test)]
 pub(super) use http::sse_frame_end;

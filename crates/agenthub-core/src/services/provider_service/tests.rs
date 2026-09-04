@@ -1872,6 +1872,31 @@ fn upsert_same_secret_url_merges_into_existing_row() {
 }
 
 #[test]
+fn upsert_keeps_toml_api_key_when_client_sends_redacted_fields() {
+    let (_dir, svc) = svc();
+    let mut created = input("p-grok", AgentId::Grok, "Grok Relay", false);
+    created.settings_config = json!({
+        "format": "toml",
+        "content": "[model.\"grok\"]\nmodel = \"grok-4.5\"\nbase_url = \"https://relay.example.com/v1\"\napi_key = \"xai-secret\"\napi_backend = \"responses\"\n"
+    });
+    svc.create(&created).unwrap();
+
+    let mut updated = created.clone();
+    updated.name = "Grok Relay 2".into();
+    updated.settings_config = json!({
+        "format": "toml",
+        "content": "[model.\"grok\"]\nmodel = \"grok-4.6\"\nbase_url = \"https://relay.example.com/v1\"\napi_key = \"***\"\napi_backend = \"responses\"\n"
+    });
+    svc.upsert(&updated).unwrap();
+
+    let stored = svc.get("p-grok", None).unwrap();
+    let content = stored.settings_config["content"].as_str().unwrap();
+    assert!(content.contains("xai-secret"), "{content}");
+    assert!(content.contains("grok-4.6"), "{content}");
+    assert!(!content.contains("grok-4.5"), "{content}");
+}
+
+#[test]
 fn list_merges_claude_rows_that_only_differ_by_json_schema() {
     let secret = "sk-fixture-claude-mytokens-272fxxxx";
     let (_dir, svc) = svc();
