@@ -6,6 +6,8 @@ export type Sub2ApiEnvelope<T> = {
   code: number;
   message: string;
   data: T;
+  /** Present on some error envelopes (e.g. TENCENT_CAPTCHA_VERIFICATION_FAILED). */
+  reason?: string;
 };
 
 export type Sub2ApiUser = {

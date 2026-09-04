@@ -43,7 +43,11 @@ import {
 } from '@/lib/api/sub2api';
 import { openExternalLink } from '@/lib/open-external';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
-import { selectableSub2ApiKeys } from '@/lib/sub2api/client';
+import {
+  mapSub2ApiLoginError,
+  resolveCaptchaKind,
+  selectableSub2ApiKeys,
+} from '@/lib/sub2api/client';
 import { maskApiKey } from '@/lib/sub2api/url';
 import type { AgentKey } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -180,13 +184,23 @@ export default function Sub2ApiPage() {
     setSubmitting(true);
     try {
       let proof = captchaProof;
+      const captchaKind =
+        captchaRef.current?.kind() ?? resolveCaptchaKind(publicSettings);
       const ensured = await captchaRef.current?.ensureProof();
-      if (captchaRef.current && captchaRef.current.kind() !== 'none') {
-        if (!ensured) {
+      if (captchaKind !== 'none') {
+        const nextProof = ensured ?? null;
+        const hasProof = Boolean(
+          nextProof?.turnstile_token?.trim()
+            || (
+              nextProof?.tencent_captcha_ticket?.trim()
+              && nextProof?.tencent_captcha_randstr?.trim()
+            ),
+        );
+        if (!hasProof) {
           toast({ title: t('routes.sub2api.captchaRequired'), variant: 'danger' });
           return;
         }
-        proof = ensured;
+        proof = nextProof;
       }
       const result = await nativeSub2ApiLogin({
         siteUrl,
@@ -211,8 +225,15 @@ export default function Sub2ApiPage() {
         expiresIn: result.expires_in,
         user: result.user,
       });
-    } catch {
-      toast({ title: t('routes.sub2api.loginFailed'), variant: 'danger' });
+    } catch (err) {
+      toast({
+        title: mapSub2ApiLoginError(err, {
+          captchaVerificationFailed: t('routes.sub2api.captchaVerificationFailed'),
+          loginBadCredentials: t('routes.sub2api.loginBadCredentials'),
+          loginFailed: t('routes.sub2api.loginFailed'),
+        }),
+        variant: 'danger',
+      });
       captchaRef.current?.reset();
       setCaptchaProof(null);
     } finally {
@@ -243,8 +264,15 @@ export default function Sub2ApiPage() {
         expiresIn: result.expires_in,
         user: result.user,
       });
-    } catch {
-      toast({ title: t('routes.sub2api.totpFailed'), variant: 'danger' });
+    } catch (err) {
+      toast({
+        title: mapSub2ApiLoginError(err, {
+          captchaVerificationFailed: t('routes.sub2api.captchaVerificationFailed'),
+          loginBadCredentials: t('routes.sub2api.loginBadCredentials'),
+          loginFailed: t('routes.sub2api.totpFailed'),
+        }),
+        variant: 'danger',
+      });
     } finally {
       setSubmitting(false);
     }

@@ -182,6 +182,9 @@ export const Sub2ApiCaptcha = React.forwardRef<Sub2ApiCaptchaHandle, Props>(
         return null;
       }
       if (kind === 'tencent') {
+        if (proof?.tencent_captcha_ticket?.trim() && proof?.tencent_captcha_randstr?.trim()) {
+          return proof;
+        }
         const appId = settings?.tencent_captcha_app_id?.trim() || '';
         if (!appId) return null;
         try {
@@ -259,13 +262,29 @@ export const Sub2ApiCaptcha = React.forwardRef<Sub2ApiCaptchaHandle, Props>(
         ) : null}
 
         {kind === 'tencent' ? (
-          <p className="text-xs text-secondary">
-            {status === 'verified'
-              ? labels.actionVerified
-              : status === 'error'
-                ? labels.actionFailed
-                : labels.actionReady}
-          </p>
+          <div className="space-y-2" data-sub2api-captcha-tencent="">
+            <p className="text-xs text-secondary">
+              {status === 'verified'
+                ? labels.actionVerified
+                : status === 'error'
+                  ? labels.actionFailed
+                  : labels.actionReady}
+            </p>
+            {status !== 'verified' ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                data-sub2api-captcha-tencent-verify=""
+                disabled={status === 'loading'}
+                onClick={() => {
+                  void ensureProof();
+                }}
+              >
+                {status === 'error' ? labels.actionFailed : labels.actionNeeded}
+              </Button>
+            ) : null}
+          </div>
         ) : null}
 
         {kind === 'aliyun' ? (
