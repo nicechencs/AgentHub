@@ -203,11 +203,12 @@ function endpointNodeState(
   active: LocalEndpointKind | null,
   legacy: boolean,
   failureStage: TraceFlowStageId | null,
+  recordedStatus?: RouteTraceStageStatus,
 ): TraceFlowStageState {
   if (legacy) return 'skipped';
-  if (!active) return 'idle';
-  if (kind !== active) return 'idle';
-  return failureStage === 'local_endpoint' ? 'failed' : 'active';
+  if (!active || kind !== active) return 'idle';
+  if (failureStage === 'local_endpoint') return 'failed';
+  return recordedStatus ? mapStageStatus(recordedStatus) : 'idle';
 }
 
 function buildMatrix(
@@ -287,7 +288,13 @@ export function buildTraceFlowView(
       kind: spec.kind,
       path: spec.path,
       labelKey: ENDPOINT_LABEL_KEYS[spec.kind],
-      state: endpointNodeState(spec.kind, activeEndpoint, legacy, failureStage),
+      state: endpointNodeState(
+        spec.kind,
+        activeEndpoint,
+        legacy,
+        failureStage,
+        trace.localEndpoint?.status,
+      ),
     })),
     localAuth: {
       state: localAuthState,

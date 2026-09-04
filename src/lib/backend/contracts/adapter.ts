@@ -169,6 +169,18 @@ export interface AdapterBridgeInboundRequest {
 
 export type RouteTraceStageStatus = 'pending' | 'ok' | 'failed' | 'skipped';
 
+export interface RouteTraceStep {
+  status: RouteTraceStageStatus;
+  code?: string | null;
+  message?: string | null;
+}
+
+export interface RouteTraceDelivery extends RouteTraceStep {
+  httpStatus?: number | null;
+  stream: boolean;
+  completion?: string | null;
+}
+
 export interface RouteTraceMember {
   label: string;
   sourceKind: string;
@@ -243,11 +255,16 @@ export interface AdapterBridgeRouteTrace {
   ttftMs?: number | null;
   inputTokens?: number | null;
   outputTokens?: number | null;
+  localEndpoint?: RouteTraceStep;
   localAuth: RouteTraceLocalAuth;
+  admission?: RouteTraceStep;
+  routeResolution?: RouteTraceStep;
   pool: RouteTracePool;
   conversion: RouteTraceConversion;
   upstreamAuth: RouteTraceUpstreamAuth;
   upstream: RouteTraceUpstream;
+  responseConversion?: RouteTraceConversion;
+  delivery?: RouteTraceDelivery;
   failureStage?: string | null;
 }
 

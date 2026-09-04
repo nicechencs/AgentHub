@@ -58,7 +58,10 @@ fn route_trace_records_only_key_last4_for_local_and_upstream_auth() {
             .and_then(|item| item.key_last4.as_deref()),
         Some("627a")
     );
-    assert_eq!(builder.trace.upstream.upstream_model.as_deref(), Some("grok-4.6"));
+    assert_eq!(
+        builder.trace.upstream.upstream_model.as_deref(),
+        Some("grok-4.6")
+    );
 }
 
 #[test]
@@ -146,15 +149,114 @@ fn pool_attempts_record_failover() {
         None,
         MemberHealth::Renewable,
     );
+    let fallback = PickedMember::new(
+        "",
+        "account",
+        "acct-2",
+        "acct-2",
+        ResolvedAuth::bearer("sk-fallback"),
+        None,
+        MemberHealth::Renewable,
+    );
     let mut builder = RouteTraceBuilder::begin("req-pool", "POST", "/v1/messages");
     builder.local_auth_ok("profile-a", None);
     builder.pool_selected(&member, None);
     builder.pool_attempt_failed(&member, "upstream_error", "401 from upstream");
-    builder.upstream_success("https://api.example.com/v1/messages", &member, 200, None);
+    builder.upstream_success("https://api.example.com/v1/messages", &fallback, 200, None);
     builder.finalize(200, &log);
     let trace = log.get("req-pool").expect("trace stored");
     assert_eq!(trace.pool.attempts.len(), 2);
+    assert_eq!(trace.pool.attempts[0].member.source_id, "acct-1");
+    assert_eq!(trace.pool.attempts[0].status, TraceStageStatus::Failed);
+    assert_eq!(trace.pool.attempts[1].member.source_id, "acct-2");
+    assert_eq!(trace.pool.attempts[1].status, TraceStageStatus::Ok);
+    assert_eq!(
+        trace
+            .pool
+            .selected_member
+            .as_ref()
+            .map(|row| row.source_id.as_str()),
+        Some("acct-2")
+    );
+    assert_eq!(trace.upstream.member, trace.pool.selected_member);
     assert_eq!(trace.upstream.status, TraceStageStatus::Ok);
+}
+
+#[test]
+fn recovered_auth_attempt_does_not_leave_request_failure() {
+    let log = RouteTraceLog::new();
+    let first = PickedMember::new(
+        "",
+        "account",
+        "acct-1",
+        "acct-1",
+        ResolvedAuth::bearer("sk-first"),
+        None,
+        MemberHealth::Renewable,
+    );
+    let second = PickedMember::new(
+        "",
+        "account",
+        "acct-2",
+        "acct-2",
+        ResolvedAuth::bearer("sk-second"),
+        None,
+        MemberHealth::Renewable,
+    );
+    let mut builder = RouteTraceBuilder::begin("req-auth-recovered", "POST", "/v1/messages");
+    builder.local_auth_ok("profile-a", None);
+    builder.pool_selected(&first, None);
+    builder.upstream_auth_result(false, Some(401), Some("unauthorized"), None);
+    builder.pool_attempt_failed(&first, "unauthorized", "Unauthorized");
+    builder.upstream_auth_result(true, Some(200), None, None);
+    builder.upstream_success("https://api.example.com/v1/messages", &second, 200, None);
+    builder.finalize(200, &log);
+
+    let trace = log.get("req-auth-recovered").expect("trace stored");
+    assert!(trace.ok);
+    assert_eq!(trace.failure_stage, None);
+    assert_eq!(trace.upstream_auth.status, TraceStageStatus::Ok);
+    assert_eq!(trace.pool.attempts.len(), 2);
+}
+
+#[test]
+fn exhausted_attempts_preserve_executed_conversion_and_upstream_failure() {
+    let log = RouteTraceLog::new();
+    let member = PickedMember::new(
+        "",
+        "account",
+        "acct-1",
+        "acct-1",
+        ResolvedAuth::bearer("sk-first"),
+        None,
+        MemberHealth::Renewable,
+    );
+    let mut builder = RouteTraceBuilder::begin("req-exhausted", "POST", "/v1/messages");
+    builder.local_auth_ok("profile-a", None);
+    builder.route_resolution_ok();
+    builder.pool_selected(&member, None);
+    builder.conversion_prepared(
+        DownstreamSurface::Messages,
+        UpstreamChannel::Anthropic,
+        false,
+    );
+    builder.pool_attempt_failed(&member, "quota_account", "Rate limited");
+    builder.attempts_exhausted(
+        Some("https://api.example.com/v1/messages"),
+        &member,
+        Some(429),
+        "quota_account",
+        "Rate limited",
+    );
+    builder.finalize(503, &log);
+
+    let trace = log.get("req-exhausted").expect("trace stored");
+    assert_eq!(trace.pool.status, TraceStageStatus::Failed);
+    assert_eq!(trace.conversion.status, TraceStageStatus::Ok);
+    assert_eq!(trace.upstream.status, TraceStageStatus::Failed);
+    assert_eq!(trace.upstream.http_status, Some(429));
+    assert_eq!(trace.response_conversion.status, TraceStageStatus::Skipped);
+    assert_eq!(trace.failure_stage.as_deref(), Some("upstream"));
 }
 
 #[test]
@@ -162,6 +264,9 @@ fn trace_serializes_camel_case_for_frontend() {
     let log = RouteTraceLog::new();
     let mut builder = RouteTraceBuilder::begin("req-json", "POST", "/v1/messages");
     builder.local_auth_ok("profile-a", Some(8787));
+    builder.local_endpoint_ok();
+    builder.admission_ok();
+    builder.route_resolution_ok();
     builder.pool_selected(
         &PickedMember::new(
             "",
@@ -194,13 +299,55 @@ fn trace_serializes_camel_case_for_frontend() {
         200,
         Some("claude-sonnet"),
     );
+    builder.response_conversion_result(
+        false,
+        200,
+        DownstreamSurface::Messages,
+        UpstreamChannel::Anthropic,
+    );
     builder.finalize(200, &log);
     let trace = log.get("req-json").expect("trace");
     let json = serde_json::to_string(&trace).expect("json");
     assert!(json.contains("\"requestId\""));
+    assert!(json.contains("\"localEndpoint\""));
     assert!(json.contains("\"localAuth\""));
+    assert!(json.contains("\"admission\""));
+    assert!(json.contains("\"routeResolution\""));
     assert!(json.contains("\"upstreamAuth\""));
+    assert!(json.contains("\"responseConversion\""));
+    assert!(json.contains("anthropic_to_messages"));
+    assert!(json.contains("\"delivery\""));
     assert!(!json.contains("local_auth"));
+}
+
+#[test]
+fn old_persisted_trace_without_lifecycle_fields_still_loads() {
+    let log = RouteTraceLog::new();
+    let mut builder = RouteTraceBuilder::begin("req-old", "POST", "/v1/messages");
+    builder.local_auth_ok("profile-a", Some(8787));
+    builder.finalize(200, &log);
+    let trace = log.get("req-old").expect("trace");
+    let mut value = serde_json::to_value(trace).expect("serialize trace");
+    let object = value.as_object_mut().expect("trace object");
+    for key in [
+        "localEndpoint",
+        "admission",
+        "routeResolution",
+        "responseConversion",
+        "delivery",
+    ] {
+        object.remove(key);
+    }
+
+    let restored: RouteRequestTrace = serde_json::from_value(value).expect("old trace loads");
+    assert_eq!(restored.local_endpoint.status, TraceStageStatus::Pending);
+    assert_eq!(restored.admission.status, TraceStageStatus::Pending);
+    assert_eq!(restored.route_resolution.status, TraceStageStatus::Pending);
+    assert_eq!(
+        restored.response_conversion.status,
+        TraceStageStatus::Pending
+    );
+    assert_eq!(restored.delivery.status, TraceStageStatus::Pending);
 }
 
 #[test]
@@ -220,6 +367,81 @@ fn patch_usage_applies_before_and_after_push() {
     assert_eq!(second.ttft_ms, Some(180));
     assert_eq!(second.input_tokens, Some(20));
     assert_eq!(second.output_tokens, Some(9));
+}
+
+#[test]
+fn stream_completion_patches_response_and_delivery() {
+    let log = RouteTraceLog::new();
+    let mut builder = RouteTraceBuilder::begin("req-stream", "POST", "/v1/messages");
+    builder.local_auth_ok("profile-a", Some(8787));
+    builder.response_conversion_result(
+        true,
+        200,
+        DownstreamSurface::Messages,
+        UpstreamChannel::Anthropic,
+    );
+    builder.finalize(200, &log);
+    let pending = log.get("req-stream").expect("pending stream");
+    assert_eq!(pending.delivery.status, TraceStageStatus::Pending);
+
+    log.patch_stream_completed("req-stream", 420);
+    let complete = log.get("req-stream").expect("completed stream");
+    assert_eq!(complete.response_conversion.status, TraceStageStatus::Ok);
+    assert_eq!(complete.delivery.status, TraceStageStatus::Ok);
+    assert_eq!(
+        complete.delivery.completion.as_deref(),
+        Some("stream_completed")
+    );
+    assert_eq!(complete.latency_ms, Some(420));
+}
+
+#[test]
+fn stream_failure_patches_response_and_delivery() {
+    let log = RouteTraceLog::new();
+    let mut builder = RouteTraceBuilder::begin("req-stream-fail", "POST", "/v1/messages");
+    builder.local_auth_ok("profile-a", Some(8787));
+    builder.response_conversion_result(
+        true,
+        200,
+        DownstreamSurface::Messages,
+        UpstreamChannel::Anthropic,
+    );
+    builder.finalize(200, &log);
+
+    log.patch_stream_conversion_failed("req-stream-fail", 510);
+    let failed = log.get("req-stream-fail").expect("failed stream");
+    assert_eq!(failed.response_conversion.status, TraceStageStatus::Failed);
+    assert_eq!(failed.delivery.status, TraceStageStatus::Failed);
+    assert_eq!(failed.failure_stage.as_deref(), Some("response_conversion"));
+    assert_eq!(failed.latency_ms, Some(510));
+}
+
+#[test]
+fn stream_disconnect_only_fails_delivery() {
+    let log = RouteTraceLog::new();
+    let mut builder = RouteTraceBuilder::begin("req-disconnect", "POST", "/v1/messages");
+    builder.local_auth_ok("profile-a", Some(8787));
+    builder.response_conversion_result(
+        true,
+        200,
+        DownstreamSurface::Messages,
+        UpstreamChannel::Anthropic,
+    );
+    builder.finalize(200, &log);
+
+    log.patch_stream_disconnected("req-disconnect", 300);
+    let failed = log.get("req-disconnect").expect("disconnected stream");
+    assert_eq!(failed.response_conversion.status, TraceStageStatus::Failed);
+    assert_eq!(
+        failed.response_conversion.result.as_deref(),
+        Some("interrupted")
+    );
+    assert_eq!(failed.delivery.status, TraceStageStatus::Failed);
+    assert_eq!(
+        failed.delivery.completion.as_deref(),
+        Some("client_disconnected")
+    );
+    assert_eq!(failed.failure_stage.as_deref(), Some("delivery"));
 }
 
 #[test]

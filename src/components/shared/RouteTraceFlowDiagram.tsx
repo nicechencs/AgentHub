@@ -194,7 +194,7 @@ function LocalEndpointHub({ view }: { view: TraceFlowView }) {
     <StageShell title={t('routes.trace.flow.localHost')} state={view.activeEndpoint ? 'active' : 'idle'}>
       <div className="flex flex-col gap-1">
         {view.endpoints.map((node) => {
-          const lit = node.state === 'active';
+          const lit = node.kind === view.activeEndpoint;
           const endpointId = traceFlowEndpointSurface(node.kind);
           const brandId = traceFlowEndpointBrandAgentId(node.kind);
           return (
@@ -202,8 +202,9 @@ function LocalEndpointHub({ view }: { view: TraceFlowView }) {
               <div
                 className={cn(
                   'rounded-btn border px-1.5 py-1 transition-all',
-                  lit ? stageBorder('active') : stageBorder(node.state),
-                  lit ? stageBg('active') : stageBg(node.state),
+                  stageBorder(node.state),
+                  stageBg(node.state),
+                  lit && 'ring-1 ring-accent/50',
                 )}
                 data-endpoint={node.kind}
                 data-lit={lit ? 'true' : 'false'}
