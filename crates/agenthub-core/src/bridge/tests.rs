@@ -566,6 +566,14 @@ async fn start_rejects_unsafe_upstream_urls_and_keeps_loopback_base_paths() {
         );
     }
 
+    let mut unresolved = spec("unresolved", 0, 1);
+    unresolved.upstream.base_url = "http://127.0.0.1/".into();
+    unresolved.upstream.auth = ResolvedAuth::bearer("pending");
+    assert!(matches!(
+        host.start(unresolved).await,
+        Err(super::BridgeHostError::InvalidUpstreamUrl)
+    ));
+
     let (upstream_port, upstream_task) = upstream_at("/coding/v1/chat/completions").await;
     let mut scoped = spec("base-path", 0, upstream_port);
     scoped.upstream.base_url = format!("http://127.0.0.1:{upstream_port}/coding/v1");

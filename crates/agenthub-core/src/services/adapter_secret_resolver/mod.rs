@@ -26,7 +26,8 @@ pub use crate::services::adapter_route_constants::CONNECTION_SECRET_MARKER;
 
 use crate::services::adapter_route_constants::{
     DEEPSEEK_CLAUDE_RULE_ID, DEEPSEEK_CODEX_RULE_ID, DEEPSEEK_PI_RULE_ID, GLM_CLAUDE_RULE_ID,
-    GLM_CODEX_RULE_ID, GLM_PI_RULE_ID, KIMI_CLAUDE_RULE_ID,
+    GLM_CODEX_RULE_ID, GLM_PI_RULE_ID, KIMI_CLAUDE_RULE_ID, OPENAI_DSH_BRIDGE_RULE_ID,
+    OPENAI_KIMI_BRIDGE_RULE_ID,
 };
 
 pub(super) const GENERATED_BY: &str = "adapter";
@@ -40,6 +41,8 @@ pub(super) const ANTHROPIC_TO_CODEX_BRIDGE_RULE: &str = "anthropic-api-to-codex-
 pub(super) const OPENAI_TO_CODEX_BRIDGE_RULE: &str = "openai-api-to-codex-v1";
 pub(super) const OPENAI_TO_CLAUDE_BRIDGE_RULE: &str = "openai-api-to-claude-v1";
 pub(super) const OPENAI_TO_GROK_BRIDGE_RULE: &str = "openai-api-to-grok-bridge-v1";
+pub(super) const OPENAI_TO_KIMI_BRIDGE_RULE: &str = OPENAI_KIMI_BRIDGE_RULE_ID;
+pub(super) const OPENAI_TO_DSH_BRIDGE_RULE: &str = OPENAI_DSH_BRIDGE_RULE_ID;
 pub(super) const CODEX_TO_CLAUDE_BRIDGE_RULE: &str = "codex-subscription-to-claude-responses-v1";
 pub(super) const CODEX_TO_GROK_BRIDGE_RULE: &str = CODEX_GROK_RULE_ID;
 pub(super) const CODEX_TO_KIMI_BRIDGE_RULE: &str = CODEX_KIMI_RULE_ID;

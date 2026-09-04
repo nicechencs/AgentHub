@@ -145,6 +145,42 @@ pub const OPENAI_GROK_BRIDGE_EDGE: LocalBridgeEdge = LocalBridgeEdge {
     multi_account: false,
 };
 
+pub const OPENAI_KIMI_BRIDGE_EDGE: LocalBridgeEdge = LocalBridgeEdge {
+    rule_id: crate::services::adapter_route_constants::OPENAI_KIMI_BRIDGE_RULE_ID,
+    source: AdapterSourceProduct::OpenaiApi,
+    credential: AdapterCredentialClass::ApiKey,
+    transport: AdapterUpstreamTransport::LocalBridgeChatCompletions,
+    target: AgentId::Kimi,
+    protocol: AdapterTargetProtocol::OpenAiChatCompletions,
+    version: MATRIX_VERSION,
+    support: AdapterSupport::Experimental,
+    can_apply: true,
+    reason: "这份 OpenAI 兼容登录接到 Kimi 需要本机转发。",
+    limitations: OPENAI_CHAT_BRIDGE_LIMITS,
+    verified_at: "2026-09-04",
+    gates: AdapterCapabilityGates::all_open(),
+    default_model: "gpt-4o",
+    multi_account: false,
+};
+
+pub const OPENAI_DSH_BRIDGE_EDGE: LocalBridgeEdge = LocalBridgeEdge {
+    rule_id: crate::services::adapter_route_constants::OPENAI_DSH_BRIDGE_RULE_ID,
+    source: AdapterSourceProduct::OpenaiApi,
+    credential: AdapterCredentialClass::ApiKey,
+    transport: AdapterUpstreamTransport::LocalBridgeChatCompletions,
+    target: AgentId::Dsh,
+    protocol: AdapterTargetProtocol::OpenAiChatCompletions,
+    version: MATRIX_VERSION,
+    support: AdapterSupport::Experimental,
+    can_apply: true,
+    reason: "这份 OpenAI 兼容登录接到 DeepSeek Harness 需要本机转发。",
+    limitations: OPENAI_CHAT_BRIDGE_LIMITS,
+    verified_at: "2026-09-04",
+    gates: AdapterCapabilityGates::all_open(),
+    default_model: "gpt-4o",
+    multi_account: false,
+};
+
 pub const GROK_CLAUDE_EDGE: LocalBridgeEdge = LocalBridgeEdge {
     rule_id: "grok-subscription-to-claude-v1",
     source: AdapterSourceProduct::XaiGrokSubscription,
@@ -370,6 +406,8 @@ pub const LOCAL_BRIDGE_EDGES: &[LocalBridgeEdge] = &[
     OPENAI_CODEX_EDGE,
     OPENAI_CLAUDE_EDGE,
     OPENAI_GROK_BRIDGE_EDGE,
+    OPENAI_KIMI_BRIDGE_EDGE,
+    OPENAI_DSH_BRIDGE_EDGE,
     GROK_CLAUDE_EDGE,
     GROK_CODEX_EDGE,
     CODEX_CLAUDE_APP_SERVER_EDGE,

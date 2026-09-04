@@ -164,6 +164,12 @@ pub const OPENAI_GROK_BRIDGE_RULE_ID: &str = "openai-api-to-grok-bridge-v1";
 /// OpenAI-compat Chat Completions / OpenRouter → Codex local-bridge.
 pub const OPENAI_CODEX_RULE_ID: &str = "openai-api-to-codex-v1";
 
+/// OpenAI-compat Chat Completions → Kimi local-bridge.
+pub const OPENAI_KIMI_BRIDGE_RULE_ID: &str = "openai-api-to-kimi-bridge-v1";
+
+/// OpenAI-compat Chat Completions → DeepSeek Harness local-bridge.
+pub const OPENAI_DSH_BRIDGE_RULE_ID: &str = "openai-api-to-dsh-bridge-v1";
+
 /// Env key for a custom OpenAI-compat base URL.
 pub const OPENAI_BASE_URL_ENV: &str = "OPENAI_BASE_URL";
 
@@ -195,6 +201,8 @@ pub const PUBLISHED_ROUTE_RULE_IDS: &[&str] = &[
     OPENAI_CLAUDE_RULE_ID,
     OPENAI_GROK_BRIDGE_RULE_ID,
     OPENAI_CODEX_RULE_ID,
+    OPENAI_KIMI_BRIDGE_RULE_ID,
+    OPENAI_DSH_BRIDGE_RULE_ID,
     GROK_CLAUDE_RULE_ID,
     GROK_CODEX_RULE_ID,
     CODEX_GROK_RULE_ID,

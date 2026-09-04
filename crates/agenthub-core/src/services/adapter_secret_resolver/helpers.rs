@@ -396,8 +396,13 @@ pub(super) fn is_codex_local_token(provider: &Provider) -> bool {
         ) | (
             AgentId::Grok,
             Some(CODEX_TO_GROK_BRIDGE_RULE | OPENAI_TO_GROK_BRIDGE_RULE)
-        ) | (AgentId::Kimi, Some(CODEX_TO_KIMI_BRIDGE_RULE))
-            | (AgentId::Dsh, Some(CODEX_TO_DSH_BRIDGE_RULE))
+        ) | (
+            AgentId::Kimi,
+            Some(CODEX_TO_KIMI_BRIDGE_RULE | OPENAI_TO_KIMI_BRIDGE_RULE)
+        ) | (
+            AgentId::Dsh,
+            Some(CODEX_TO_DSH_BRIDGE_RULE | OPENAI_TO_DSH_BRIDGE_RULE)
+        )
     ) && provider
         .meta
         .get("adapterRuleVersion")
