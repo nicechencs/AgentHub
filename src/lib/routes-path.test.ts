@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   ROUTES_BOARD_PATH,
   ROUTES_POOL_PATH,
+  ROUTES_SUB2API_PATH,
+  SUB2API_PATH,
   legacyBridgesRedirectTo,
   routesHrefForProfile,
   routesIndexRedirectTo,
@@ -22,6 +24,11 @@ describe('routes-path', () => {
     expect(routesIndexRedirectTo('?tab=profiles&profile=p1')).toBe(
       `${ROUTES_POOL_PATH}?profile=p1`,
     );
+  });
+
+  it('keeps Sub2API on the primary path and the old nested path for redirects', () => {
+    expect(SUB2API_PATH).toBe('/sub2api');
+    expect(ROUTES_SUB2API_PATH).toBe('/routes/sub2api');
   });
 
   it('drops leftover tab= from legacy adapter/router/bridges bookmarks', () => {

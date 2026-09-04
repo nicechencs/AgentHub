@@ -46,6 +46,7 @@ export const en = {
     plugins: 'Plugins',
     dashboard: 'Dashboard',
     connections: 'Connections',
+    sub2api: 'Sub2API',
     routes: 'Routes',
     settings: 'Settings',
     expandSidebar: 'Expand sidebar',
@@ -125,9 +126,9 @@ export const en = {
         'Shown by default on a new install. When hidden, you can still open Routes via the URL or direct links.',
       sub2apiNavVisibleLabel: 'Show Sub2API page',
       sub2apiNavVisibleDescription:
-        'Show the Sub2API entry under Routes; the page still opens via link when off.',
+        'Show the Sub2API entry in the left nav. Hiding it does not disable the page.',
       sub2apiNavVisibleTip:
-        'Hidden by default on new installs. Hiding the entry does not disable the page.',
+        'Hidden by default on a new install. When hidden, you can still open Sub2API via the URL or direct links.',
       pluginsNavVisibleLabel: 'Show Plugins in sidebar',
       pluginsNavVisibleDescription:
         'In development. Show the Plugins entry in the left nav. Hiding it does not disable the page.',

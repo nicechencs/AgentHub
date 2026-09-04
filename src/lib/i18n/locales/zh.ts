@@ -45,6 +45,7 @@ export const zh = {
     plugins: '插件',
     dashboard: '总览',
     connections: '连接',
+    sub2api: 'Sub2API',
     routes: '路由',
     settings: '设置',
     expandSidebar: '展开侧栏',
@@ -123,8 +124,8 @@ export const zh = {
       pluginsNavVisibleDescription: '功能开发中。打开后在侧栏显示入口；关闭后仍可用链接打开。',
       pluginsNavVisibleTip: '新安装默认不显示。隐藏侧栏入口不禁用插件页；仍可通过链接打开。',
       sub2apiNavVisibleLabel: '显示 Sub2API 页面',
-      sub2apiNavVisibleDescription: '打开后在路由分区显示入口；关闭后仍可用链接打开。',
-      sub2apiNavVisibleTip: '新安装默认不显示。隐藏入口不禁用该页；仍可通过链接打开。',
+      sub2apiNavVisibleDescription: '打开后在侧栏显示入口；关闭后仍可用链接打开。',
+      sub2apiNavVisibleTip: '新安装默认不显示。隐藏侧栏入口不禁用该页；仍可通过链接打开。',
       warnDuplicateRouteCredentialLabel: '重复密钥提示',
       warnDuplicateRouteCredentialDescription: '路由里密钥或登录已用过时只提示',
       warnDuplicateRouteCredentialTip:

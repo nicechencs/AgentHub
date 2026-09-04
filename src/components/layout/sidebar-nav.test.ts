@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { FolderCode, MessageSquare, Route } from 'lucide-react';
-import { ROUTES_PATH } from '@/lib/routes-path';
+import { Cloud, FolderCode, MessageSquare, Route } from 'lucide-react';
+import { ROUTES_PATH, SUB2API_PATH } from '@/lib/routes-path';
 import {
   DEFAULT_PLUGINS_NAV_VISIBLE,
   DEFAULT_ROUTES_NAV_VISIBLE,
   DEFAULT_SIDEBAR_AUTO_COLLAPSE_ON_ROUTES,
+  DEFAULT_SUB2API_NAV_VISIBLE,
 } from '@/lib/ui-preferences';
 import {
   filterManageNavItems,
@@ -24,6 +25,7 @@ const dir = path.dirname(fileURLToPath(import.meta.url));
 const MANAGE = [
   { to: '/', navKey: 'nav.dashboard' },
   { to: '/connections', navKey: 'nav.connections' },
+  { to: SUB2API_PATH, navKey: 'nav.sub2api' },
   { to: '/routes', navKey: 'nav.routes' },
   { to: '/settings', navKey: 'nav.settings' },
 ] as const;
@@ -42,6 +44,7 @@ describe('filterManageNavItems', () => {
     expect(filterManageNavItems(MANAGE, true).map((item) => item.to)).toEqual([
       '/',
       '/connections',
+      SUB2API_PATH,
       '/routes',
       '/settings',
     ]);
@@ -51,6 +54,16 @@ describe('filterManageNavItems', () => {
     expect(filterManageNavItems(MANAGE, false).map((item) => item.to)).toEqual([
       '/',
       '/connections',
+      SUB2API_PATH,
+      '/settings',
+    ]);
+  });
+
+  it('hides Sub2API when preference is off', () => {
+    expect(filterManageNavItems(MANAGE, true, false).map((item) => item.to)).toEqual([
+      '/',
+      '/connections',
+      '/routes',
       '/settings',
     ]);
   });
@@ -99,16 +112,18 @@ describe('nav model order', () => {
     ]);
   });
 
-  it('keeps manage order: dashboard, connections, routes, settings', () => {
+  it('keeps manage order: dashboard, connections, Sub2API, routes, settings', () => {
     expect(NAV_MANAGE.map((item) => item.to)).toEqual([
       '/',
       '/connections',
+      SUB2API_PATH,
       ROUTES_PATH,
       '/settings',
     ]);
     expect(NAV_MANAGE.map((item) => item.navKey)).toEqual([
       'nav.dashboard',
       'nav.connections',
+      'nav.sub2api',
       'nav.routes',
       'nav.settings',
     ]);
@@ -118,6 +133,7 @@ describe('nav model order', () => {
     expect(NAV_WORKSPACE.find((item) => item.to === '/chat')?.icon).toBe(MessageSquare);
     expect(NAV_WORKSPACE.find((item) => item.to === '/projects')?.icon).toBe(FolderCode);
     expect(NAV_MANAGE.find((item) => item.to === ROUTES_PATH)?.icon).toBe(Route);
+    expect(NAV_MANAGE.find((item) => item.to === SUB2API_PATH)?.icon).toBe(Cloud);
   });
 
   it('keeps active labels readable while accenting 18px navigation icons', () => {
@@ -146,12 +162,19 @@ describe('workspaceNavItems / manageNavItems', () => {
   });
 
   it('wraps manage filter and still hides routes only in the nav model', () => {
-    expect(manageNavItems(true).map((item) => item.to)).toEqual(
-      filterManageNavItems(NAV_MANAGE, true).map((item) => item.to),
+    expect(manageNavItems(true, true).map((item) => item.to)).toEqual(
+      filterManageNavItems(NAV_MANAGE, true, true).map((item) => item.to),
     );
-    expect(manageNavItems(false).map((item) => item.to)).toEqual([
+    expect(manageNavItems(false, true).map((item) => item.to)).toEqual([
       '/',
       '/connections',
+      SUB2API_PATH,
+      '/settings',
+    ]);
+    expect(manageNavItems(true, false).map((item) => item.to)).toEqual([
+      '/',
+      '/connections',
+      ROUTES_PATH,
       '/settings',
     ]);
   });
@@ -163,9 +186,17 @@ describe('workspaceNavItems / manageNavItems', () => {
     expect(workspaceNavItems(DEFAULT_PLUGINS_NAV_VISIBLE).map((item) => item.to)).not.toContain(
       '/plugins',
     );
-    expect(manageNavItems(DEFAULT_ROUTES_NAV_VISIBLE).map((item) => item.to)).toContain(
-      ROUTES_PATH,
-    );
+    expect(
+      manageNavItems(DEFAULT_ROUTES_NAV_VISIBLE, DEFAULT_SUB2API_NAV_VISIBLE).map(
+        (item) => item.to,
+      ),
+    ).toContain(ROUTES_PATH);
+    expect(
+      manageNavItems(DEFAULT_ROUTES_NAV_VISIBLE, DEFAULT_SUB2API_NAV_VISIBLE).map(
+        (item) => item.to,
+      ),
+    ).not.toContain(SUB2API_PATH);
+    expect(DEFAULT_SUB2API_NAV_VISIBLE).toBe(false);
     const ctx = readFileSync(path.join(dir, 'SidebarContext.tsx'), 'utf8');
     expect(ctx).toContain(
       'loadBool(StorageKey.sidebarAutoCollapseOnRoutes, DEFAULT_SIDEBAR_AUTO_COLLAPSE_ON_ROUTES)',

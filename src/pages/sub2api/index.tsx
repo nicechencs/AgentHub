@@ -59,7 +59,7 @@ import {
   sub2apiPagePhase,
 } from './sub2api-page-model';
 
-export default function RoutesSub2ApiPage() {
+export default function Sub2ApiPage() {
   const { t, lang } = useI18n();
   const { toast } = useToast();
   const { installedIds } = useInstalledAgents();

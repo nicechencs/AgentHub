@@ -7,7 +7,6 @@ import {
   isRoutesAreaPath,
   ROUTES_NAV_ITEMS,
   routesNavItemInDevelopment,
-  visibleRoutesNavItems,
 } from './routes-nav-items';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
@@ -17,6 +16,7 @@ describe('routes-nav-items', () => {
     expect(isRoutesAreaPath('/routes')).toBe(true);
     expect(isRoutesAreaPath('/routes/board')).toBe(true);
     expect(isRoutesAreaPath('/connections')).toBe(false);
+    expect(isRoutesAreaPath('/sub2api')).toBe(false);
     expect(isRoutesAreaPath('/routes-extra')).toBe(false);
   });
 
@@ -27,17 +27,17 @@ describe('routes-nav-items', () => {
       '/routes/pool',
       '/routes/tokens',
       '/routes/activity',
-      '/routes/sub2api',
     ]);
+    expect(ROUTES_NAV_ITEMS.map((item) => item.to)).not.toContain('/routes/sub2api');
+    expect(ROUTES_NAV_ITEMS.map((item) => item.to)).not.toContain('/sub2api');
   });
 
   it('does not mark any routes sub-nav item as in development', () => {
     expect(ROUTES_NAV_ITEMS.every((item) => !routesNavItemInDevelopment(item))).toBe(true);
   });
 
-  it('hides Sub2API from secondary nav when preference is off', () => {
-    expect(visibleRoutesNavItems(false).map((item) => item.to)).not.toContain('/routes/sub2api');
-    expect(visibleRoutesNavItems(true).map((item) => item.to)).toContain('/routes/sub2api');
+  it('does not keep Sub2API in the routes secondary nav', () => {
+    expect(ROUTES_NAV_ITEMS.some((item) => item.labelKey === 'routes.nav.sub2api')).toBe(false);
   });
 
   it('uses a network icon for the connection pool', () => {

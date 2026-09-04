@@ -8,8 +8,8 @@ import { Hint } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { cn } from '@/lib/utils';
 import {
+  ROUTES_NAV_ITEMS,
   routesNavItemInDevelopment,
-  visibleRoutesNavItems,
   type RoutesNavItem,
 } from '@/pages/routes/routes-nav-items';
 
@@ -89,12 +89,9 @@ function RoutesNavLink({
  */
 export function RoutesNav() {
   const { t } = useI18n();
-  const { expandPrimarySidebar, sub2apiNavVisible } = useSidebar();
+  const { expandPrimarySidebar } = useSidebar();
   const isLg = useIsLgUp();
-  const navItems = React.useMemo(
-    () => visibleRoutesNavItems(sub2apiNavVisible),
-    [sub2apiNavVisible],
-  );
+  const navItems = ROUTES_NAV_ITEMS;
 
   const itemClass = (isActive: boolean) =>
     cn(
