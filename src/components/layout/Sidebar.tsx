@@ -243,7 +243,7 @@ function SidebarAgentStrip({
 
 /** 侧边导航:可折叠;底部为 agent 在线状态迷你条 */
 export function Sidebar() {
-  const { collapsed, setCollapsed, toggle, routesNavVisible, pluginsNavVisible } = useSidebar();
+  const { collapsed, setCollapsed, toggle, routesNavVisible, pluginsNavVisible, sub2apiNavVisible } = useSidebar();
   const { pathname } = useLocation();
   const { t } = useI18n();
   const { statuses: agents } = useAgentStatusesOptional();
@@ -288,9 +288,14 @@ export function Sidebar() {
   );
   // Deep-link into /routes* still shows the Routes entry so the primary nav
   // has an active item; preference remains off when leaving the area.
+  // Sub2API stays preference-gated (deep link still opens the page).
   const visibleManageNav = React.useMemo(
-    () => manageNavItems(routesNavVisible || isRoutesAreaPath(pathname)),
-    [pathname, routesNavVisible],
+    () =>
+      manageNavItems(
+        routesNavVisible || isRoutesAreaPath(pathname),
+        sub2apiNavVisible,
+      ),
+    [pathname, routesNavVisible, sub2apiNavVisible],
   );
 
   return (

@@ -141,6 +141,15 @@ export function createMockSettingsPort(): SettingsPort {
       }
     },
 
+    async openSub2ApiLoginWindow(_loginUrl) {
+      await delay(40);
+      throw new Error('cancelled');
+    },
+
+    async closeSub2ApiLoginWindow() {
+      // no-op in browser / mock — no child WebviewWindow
+    },
+
     async pickDirectory(options) {
       await delay(40);
       return promptForDirectoryPath(options?.title, options?.defaultPath);

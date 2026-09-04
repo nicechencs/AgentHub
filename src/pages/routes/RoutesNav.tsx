@@ -91,6 +91,7 @@ export function RoutesNav() {
   const { t } = useI18n();
   const { expandPrimarySidebar } = useSidebar();
   const isLg = useIsLgUp();
+  const navItems = ROUTES_NAV_ITEMS;
 
   const itemClass = (isActive: boolean) =>
     cn(
@@ -137,7 +138,7 @@ export function RoutesNav() {
         aria-label={t('routes.nav.aria')}
         className={cn('flex min-h-0 flex-1 flex-col gap-0.5 pt-1', isLg ? 'px-2' : 'px-1.5')}
       >
-        {ROUTES_NAV_ITEMS.map((item) => (
+        {navItems.map((item) => (
           <RoutesNavLink
             key={item.to}
             item={item}
