@@ -11,6 +11,11 @@ describe('sub2api layout wiring', () => {
     expect(page).toContain("phase === 'logged-out'");
     expect(page).toContain("phase === 'logged-in'");
     expect(page).toContain("phase === 'awaiting-2fa'");
+    expect(page).toContain("phase === 'restoring'");
+    expect(page).toContain('data-sub2api-remember');
+    expect(page).toContain('data-sub2api-remembered-list');
+    expect(page).toContain('saveRememberedAccount');
+    expect(page).toContain('ensureSub2ApiSessionFresh');
     expect(page).toContain('nativeSub2ApiLogin');
     expect(page).toContain('nativeSub2ApiLogin2FA');
     expect(page).toContain('data-sub2api-login-form');

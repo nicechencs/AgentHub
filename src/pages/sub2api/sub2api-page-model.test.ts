@@ -1,18 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatKeyModels,
+  formatKeyModelsFromKey,
   formatKeyQuota,
   formatKeyTimestamp,
   normalizeTotpCode,
   pickGroupLabel,
   sub2apiDisplayName,
+  sub2apiKeyStatusBadgeVariant,
   sub2apiKeyStatusKind,
   sub2apiKeyStatusLabel,
   sub2apiPagePhase,
 } from './sub2api-page-model';
 
 describe('sub2api page model', () => {
-  it('maps three page states: logged-out / awaiting-2fa / logged-in', () => {
+  it('maps page states including quiet restore', () => {
     expect(sub2apiPagePhase(null, true)).toBe('awaiting-2fa');
     expect(
       sub2apiPagePhase(
@@ -28,6 +30,14 @@ describe('sub2api page model', () => {
         true,
       ),
     ).toBe('logged-in');
+    // Restoring wins so the login form does not flash
+    expect(
+      sub2apiPagePhase(
+        { siteUrl: 'https://x', gatewayBaseUrl: 'https://x', accessToken: 't' },
+        false,
+        true,
+      ),
+    ).toBe('restoring');
   });
 
   it('prefers display name then username then email', () => {
@@ -48,7 +58,11 @@ describe('sub2api page model', () => {
     expect(sub2apiKeyStatusKind(1)).toBe('active');
     expect(sub2apiKeyStatusKind('disabled')).toBe('disabled');
     expect(sub2apiKeyStatusKind('2')).toBe('disabled');
+    expect(sub2apiKeyStatusKind('expired')).toBe('expired');
+    expect(sub2apiKeyStatusKind('quota_exhausted')).toBe('quota_exhausted');
     expect(sub2apiKeyStatusKind('weird')).toBe('other');
+    expect(sub2apiKeyStatusBadgeVariant('active')).toBe('success');
+    expect(sub2apiKeyStatusBadgeVariant('quota_exhausted')).toBe('danger');
     expect(
       sub2apiKeyStatusLabel('disabled', {
         active: 'Active',
@@ -56,6 +70,14 @@ describe('sub2api page model', () => {
         other: 'Other',
       }),
     ).toBe('Disabled');
+    expect(
+      sub2apiKeyStatusLabel('quota_exhausted', {
+        active: 'Active',
+        disabled: 'Disabled',
+        other: 'Other',
+        quotaExhausted: 'Quota used up',
+      }),
+    ).toBe('Quota used up');
   });
 
   it('formats key timestamps as local YYYY-MM-DD HH:mm', () => {
@@ -67,14 +89,18 @@ describe('sub2api page model', () => {
   });
 
   it('formats quota / usage labels', () => {
-    expect(formatKeyQuota({ unlimited_quota: true }, { unlimited: 'Unlimited' })).toBe(
+    expect(formatKeyQuota({ id: 1, key: 'k', name: 'n', status: 'active', unlimited_quota: true }, { unlimited: 'Unlimited' })).toBe(
       'Unlimited',
     );
     expect(
-      formatKeyQuota({ used_quota: 1000, quota: 5000 }, { unlimited: 'Unlimited' }),
+      formatKeyQuota({ id: 1, key: 'k', name: 'n', status: 'active', used_quota: 1000, quota: 5000 }, { unlimited: 'Unlimited' }),
     ).toBe('1,000 / 5,000');
-    expect(formatKeyQuota({ remain_quota: 42 }, { unlimited: 'Unlimited' })).toBe('42');
-    expect(formatKeyQuota({}, { unlimited: 'Unlimited' })).toBeNull();
+    expect(
+      formatKeyQuota({ id: 1, key: 'k', name: 'n', status: 'active', quota_used: 1.5, quota: 10 }, { unlimited: 'Unlimited' }),
+    ).toBe('1.5 / 10');
+    expect(formatKeyQuota({ id: 1, key: 'k', name: 'n', status: 'active', quota: 0 }, { unlimited: 'Unlimited' })).toBe('Unlimited');
+    expect(formatKeyQuota({ id: 1, key: 'k', name: 'n', status: 'active', remain_quota: 42 }, { unlimited: 'Unlimited' })).toBe('42');
+    expect(formatKeyQuota({ id: 1, key: 'k', name: 'n', status: 'active' }, { unlimited: 'Unlimited' })).toBeNull();
   });
 
   it('formats models list and truncates', () => {
@@ -87,9 +113,34 @@ describe('sub2api page model', () => {
   });
 
   it('picks group label from name, group, or id', () => {
-    expect(pickGroupLabel({ group_name: 'default', group_id: 1 })).toBe('default');
-    expect(pickGroupLabel({ group: 'vip', group_id: 2 })).toBe('vip');
-    expect(pickGroupLabel({ group_id: 9 })).toBe('9');
-    expect(pickGroupLabel({})).toBeNull();
+    expect(pickGroupLabel({ id: 1, key: 'k', name: 'n', status: 'active', group_name: 'default', group_id: 1 })).toBe('default');
+    expect(pickGroupLabel({ id: 1, key: 'k', name: 'n', status: 'active', group: 'vip', group_id: 2 })).toBe('vip');
+    expect(pickGroupLabel({ id: 1, key: 'k', name: 'n', status: 'active', group: { id: 3, name: 'Claude Pro' }, group_id: 3 })).toBe('Claude Pro');
+    expect(pickGroupLabel({ id: 1, key: 'k', name: 'n', status: 'active', group_id: 9 })).toBe('9');
+    expect(pickGroupLabel({ id: 1, key: 'k', name: 'n', status: 'active' })).toBeNull();
+  });
+
+  it('reads models from nested group config', () => {
+    expect(
+      formatKeyModelsFromKey({
+        id: 1,
+        key: 'k',
+        name: 'n',
+        status: 'active',
+        group: { models_list_config: { enabled: true, models: ['a', 'b'] } },
+      }),
+    ).toBe('a, b');
+  });
+
+  it('skips nested models when models_list_config.enabled is false', () => {
+    expect(
+      formatKeyModelsFromKey({
+        id: 1,
+        key: 'k',
+        name: 'n',
+        status: 'active',
+        group: { models_list_config: { enabled: false, models: ['a', 'b'] } },
+      }),
+    ).toBeNull();
   });
 });
