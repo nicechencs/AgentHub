@@ -123,8 +123,9 @@ fn named_extra_entry_keys_can_be_created_renamed_and_deleted() {
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].name, "默认");
     assert_eq!(listed[0].token, "ahb_after-name");
-    service.delete_local_token(&pool.id).unwrap();
-    assert!(service.list_local_tokens().unwrap().is_empty());
+    let err = service.delete_local_token(&pool.id).unwrap_err();
+    assert!(err.to_string().contains("only entry key"));
+    assert_eq!(service.list_local_tokens().unwrap().len(), 1);
 }
 
 #[test]
@@ -145,21 +146,17 @@ fn deleting_default_entry_key_promotes_the_oldest_extra() {
 }
 
 #[test]
-fn deleting_the_last_entry_key_hides_the_default() {
+fn deleting_the_last_entry_key_is_rejected() {
     let (_dir, _db, service, _) = tmp();
     let pool = service
         .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
         .unwrap();
     let before = service.list_local_tokens().unwrap()[0].token.clone();
-    service.delete_local_token(&pool.id).unwrap();
-    assert!(service.list_local_tokens().unwrap().is_empty());
-    let saved = service.get(&pool.id).unwrap().expect("pool");
-    assert_ne!(saved.hub_token, before);
-    let created = service.create_local_token(&pool.id, "新钥匙").unwrap();
-    assert!(!created.primary);
+    let err = service.delete_local_token(&pool.id).unwrap_err();
+    assert!(err.to_string().contains("only entry key"));
     let listed = service.list_local_tokens().unwrap();
     assert_eq!(listed.len(), 1);
-    assert_eq!(listed[0].id, created.id);
+    assert_eq!(listed[0].token, before);
 }
 
 #[test]

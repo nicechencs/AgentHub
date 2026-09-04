@@ -22,8 +22,6 @@ function row(partial: Partial<LocalTokenRow> = {}): LocalTokenRow {
     unavailable: false,
     targetAgentId: 'kimi',
     profileIds: ['bridge-1'],
-    lastPath: '/v1/models',
-    lastRequestAt: null,
     listedModels: ['kimi-k2'],
     ...partial,
   };
@@ -31,17 +29,26 @@ function row(partial: Partial<LocalTokenRow> = {}): LocalTokenRow {
 
 function render(
   partial: Partial<LocalTokenRow> = {},
-  props: { onEditKey?: () => void; onDelete?: () => void } = {},
+  props: {
+    onEditKey?: () => void;
+    onDelete?: () => void;
+    siblingRows?: LocalTokenRow[];
+  } = {},
 ) {
+  const current = row(partial);
   return renderToStaticMarkup(
     createElement(
       TooltipProvider,
       null,
       createElement(TokenDetailPanel, {
-        row: row(partial),
+        row: current,
         onClose: () => {},
         onEditKey: props.onEditKey,
         onDelete: props.onDelete,
+        siblingRows: props.siblingRows ?? [
+          current,
+          row({ id: 'extra-home', primary: false, name: '家里', canDelete: true }),
+        ],
       }),
     ),
   );
@@ -59,9 +66,20 @@ describe('TokenDetailPanel', () => {
     expect(markup).not.toMatch(/data-token-test=""[^>]*\bdisabled\b/);
     expect(markup).not.toMatch(/data-token-delete=""[^>]*\bdisabled\b/);
     expect(markup).not.toContain('ahb_secret');
-    expect(markup).toContain('data-token-models');
-    expect(markup).toContain('按连接池更新');
-    expect(markup).toContain('kimi-k2');
+    expect(markup).not.toContain('data-token-models');
+    expect(markup).not.toContain('按连接池更新');
+    expect(markup).toContain('写进了这些 Agent');
+    const body = markup.slice(markup.indexOf('data-token-detail'));
+    expect(body.indexOf('入口 Key')).toBeLessThan(body.indexOf('端点'));
+    expect(body.indexOf('端点')).toBeLessThan(body.indexOf('类型'));
+  });
+
+  it('disables delete when this is the only key of the type', () => {
+    const markup = render({}, {
+      onDelete: () => {},
+      siblingRows: [row()],
+    });
+    expect(markup).toMatch(/data-token-delete=""[^>]*\bdisabled\b/);
   });
 
   it('disables the test button when the entry is not ready', () => {

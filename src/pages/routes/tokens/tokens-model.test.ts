@@ -1,15 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { AdapterProfile, DefaultRoutePoolOverview } from '@/lib/backend/contracts/adapter';
-import type { GatewayUsageRow } from '@/lib/backend/contracts/usage-types';
 import {
-  attachTokenUsage,
   agentSupportsLocalEndpointKind,
   buildCreateTokenEndpointCards,
+  buildLocalTokenGroups,
   buildLocalTokenRows,
   defaultCreateTokenName,
   firstCreateTokenPoolId,
   generateLocalToken,
-  lastVisitFromStatuses,
   localTokenDeleteGate,
   localTokenEditKeyGate,
   maskLocalToken,
@@ -33,19 +31,6 @@ function profile(partial: Partial<AdapterProfile> & Pick<AdapterProfile, 'id'>):
     autoStart: false,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
-    ...partial,
-  };
-}
-
-function usageRow(
-  partial: Partial<GatewayUsageRow> & Pick<GatewayUsageRow, 'requestId' | 'profileId'>,
-): GatewayUsageRow {
-  return {
-    ts: '2026-08-31T09:00:00.000Z',
-    surface: 'responses',
-    inputTokens: 0,
-    outputTokens: 0,
-    status: 'ok',
     ...partial,
   };
 }
@@ -166,7 +151,7 @@ describe('tokens-model', () => {
     expect(localTokenDeleteGate(rows[0]).enabled).toBe(false);
   });
 
-  it('lists named extra keys under the same type and lets the default be deleted', () => {
+  it('lists named extra keys under the same type and blocks deleting the last key', () => {
     const rows = buildLocalTokenRows(
       [
         profile({
@@ -210,7 +195,7 @@ describe('tokens-model', () => {
     expect(rows).toHaveLength(2);
     expect(tokenDisplayName(rows[0])).toBe('默认');
     expect(rows[0]).toMatchObject({ id: 'pool-codex', canDelete: true, primary: true });
-    expect(localTokenDeleteGate(rows[0]).enabled).toBe(true);
+    expect(localTokenDeleteGate(rows[0], rows).enabled).toBe(true);
     expect(rows[1]).toMatchObject({
       id: 'extra-home',
       name: '家里',
@@ -218,7 +203,78 @@ describe('tokens-model', () => {
       canDelete: true,
       primary: false,
     });
-    expect(localTokenDeleteGate(rows[1]).enabled).toBe(true);
+    expect(localTokenDeleteGate(rows[1], rows).enabled).toBe(true);
+    expect(localTokenDeleteGate(rows[0], [rows[0]]).enabled).toBe(false);
+    expect(localTokenDeleteGate(rows[0], [rows[0]]).reason).toContain('只剩这一把');
+  });
+
+  it('names an empty default key 默认 instead of the type label', () => {
+    expect(tokenDisplayName({ name: '', kind: 'messages', primary: true })).toBe('默认');
+    expect(tokenDisplayName({ name: '工作电脑', kind: 'messages', primary: true })).toBe('工作电脑');
+    expect(tokenDisplayName({ name: '', kind: 'messages', primary: false })).toBe('Messages');
+  });
+
+  it('groups rows by endpoint type with the shared address on the group', () => {
+    const rows = buildLocalTokenRows(
+      [
+        profile({
+          id: 'codex-bridge',
+          name: 'Codex',
+          targetAgentId: 'codex',
+          sourceId: 'src-codex',
+          localPort: 8101,
+        }),
+        profile({
+          id: 'claude-bridge',
+          name: 'Claude',
+          targetAgentId: 'claude',
+          sourceId: 'src-claude',
+          localPort: 8100,
+        }),
+      ],
+      {
+        'codex-bridge': {
+          profileId: 'codex-bridge',
+          state: 'running',
+          port: 8101,
+          upstreamStatus: 'connected',
+          localToken: 'ahb_secret',
+        },
+        'claude-bridge': {
+          profileId: 'claude-bridge',
+          state: 'running',
+          port: 8100,
+          upstreamStatus: 'connected',
+          localToken: 'ahb_claude',
+        },
+      },
+      {},
+      [
+        pool({
+          id: 'pool-codex',
+          targetAgentId: 'codex',
+          dialect: 'codex',
+          members: [{ sourceKind: 'provider', sourceId: 'src-codex', enabled: true }],
+          gatewayPort: 8101,
+        }),
+        pool({
+          id: 'pool-claude',
+          targetAgentId: 'claude',
+          surface: 'messages',
+          dialect: 'claude',
+          members: [{ sourceKind: 'provider', sourceId: 'src-claude', enabled: true }],
+          gatewayPort: 8100,
+        }),
+      ],
+    );
+    expect(buildLocalTokenGroups(rows).map((group) => group.kind)).toEqual([
+      'messages',
+      'responses_codex',
+    ]);
+    expect(buildLocalTokenGroups(rows)[0]).toMatchObject({
+      path: '/v1/messages',
+      endpoint: '127.0.0.1:8100',
+    });
   });
 
   it('omits the type default key when listLocalTokens did not return it', () => {
@@ -295,137 +351,6 @@ describe('tokens-model', () => {
     expect(rows[0]).toMatchObject({
       token: 'ahb_secretkey12',
       maskedToken: 'ahb_••••ey12',
-    });
-  });
-
-  it('records last visited page from the newest inbound request', () => {
-    expect(lastVisitFromStatuses(
-      ['a', 'b'],
-      {
-        a: {
-          profileId: 'a',
-          state: 'running',
-          lastRequestAt: '2026-08-31T10:00:00.000Z',
-          recentInbound: [{
-            at: '2026-08-31T10:00:00.000Z',
-            method: 'POST',
-            path: '/v1/messages',
-            status: 200,
-            ok: true,
-          }],
-        },
-        b: {
-          profileId: 'b',
-          state: 'running',
-          lastRequestAt: '2026-08-31T12:00:00.000Z',
-          recentInbound: [{
-            at: '2026-08-31T12:00:00.000Z',
-            method: 'GET',
-            path: '/v1/models',
-            status: 200,
-            ok: true,
-          }],
-        },
-      },
-    )).toEqual({
-      lastPath: '/v1/models',
-      lastRequestAt: '2026-08-31T12:00:00.000Z',
-    });
-  });
-
-  it('keeps last visit on pool rows from runtime status', () => {
-    const rows = buildLocalTokenRows(
-      [profile({
-        id: 'codex-bridge',
-        name: 'Codex',
-        targetAgentId: 'codex',
-        sourceId: 'src-codex',
-        localPort: 8101,
-      })],
-      {
-        'codex-bridge': {
-          profileId: 'codex-bridge',
-          state: 'running',
-          port: 8101,
-          upstreamStatus: 'connected',
-          localToken: 'ahb_secret',
-          lastRequestAt: '2026-08-31T09:00:00.000Z',
-          recentInbound: [{
-            at: '2026-08-31T09:00:00.000Z',
-            method: 'POST',
-            path: '/v1/responses',
-            status: 200,
-            ok: true,
-          }],
-        },
-      },
-      {},
-      [
-        pool({
-          id: 'pool-codex',
-          targetAgentId: 'codex',
-          dialect: 'codex',
-          members: [{ sourceKind: 'provider', sourceId: 'src-codex', enabled: true }],
-          gatewayPort: 8101,
-        }),
-      ],
-    );
-    expect(rows[0]).toMatchObject({
-      profileIds: ['pool-codex', 'codex-bridge'],
-      lastPath: '/v1/responses',
-      lastRequestAt: '2026-08-31T09:00:00.000Z',
-    });
-  });
-
-  it('sums token usage for the matching profiles and surface', () => {
-    const rows = attachTokenUsage(
-      buildLocalTokenRows(
-        [profile({
-          id: 'codex-bridge',
-          name: 'Codex',
-          targetAgentId: 'codex',
-          sourceId: 'src-codex',
-        })],
-        {},
-        {},
-        [
-          pool({
-            id: 'pool-codex',
-            targetAgentId: 'codex',
-            dialect: 'codex',
-            members: [{ sourceKind: 'provider', sourceId: 'src-codex', enabled: true }],
-          }),
-        ],
-      ),
-      [
-        usageRow({
-          requestId: 'keep',
-          profileId: 'codex-bridge',
-          surface: 'responses',
-          inputTokens: 100,
-          outputTokens: 40,
-        }),
-        usageRow({
-          requestId: 'other-surface',
-          profileId: 'codex-bridge',
-          surface: 'chat',
-          inputTokens: 999,
-          outputTokens: 999,
-        }),
-        usageRow({
-          requestId: 'other-profile',
-          profileId: 'other',
-          surface: 'responses',
-          inputTokens: 50,
-          outputTokens: 50,
-        }),
-      ],
-    );
-    expect(rows[0].usage).toEqual({
-      requestCount: 1,
-      inputTokens: 100,
-      outputTokens: 40,
-      cachedInputTokens: 0,
     });
   });
 

@@ -24,8 +24,6 @@ import {
 import { useToast } from '@/components/ui/toast';
 import {
   listLocalTokenModels,
-  refreshLocalTokenModels,
-  setLocalTokenCustomModels,
   testLocalToken,
 } from '@/lib/api/adapter';
 import type { LocalTokenProbeResult } from '@/lib/backend/contracts/adapter';
@@ -33,7 +31,6 @@ import { localEndpointBrandAgentId } from '@/lib/route-endpoints';
 import { adapterStatusTextClass } from '@/pages/routes/shared/adapter-view-model';
 import {
   buildTokenDetailCopyRows,
-  formatTokenRelative,
   localTokenEntryRunning,
   localTokenTestGate,
   localTokenTestInputText,
@@ -44,8 +41,6 @@ import {
   localTokenTestWindowSummary,
   tokenDetailTitle,
   tokenEndpointParts,
-  tokenLastPageDisplay,
-  tokenUsageDisplay,
 } from './token-detail-model';
 import {
   localTokenDeleteGate,
@@ -56,7 +51,6 @@ import { TokenImportToAgentButton } from './TokenImportToAgentButton';
 import type { TokenImportAgentRef } from './token-import-model';
 import type { ConnectApiKeyDraft } from '@/lib/connect-flow/connect-intent';
 import type { AgentKey } from '@/lib/types';
-import { parseCustomModelList } from '@/pages/routes/pool/pool-authorization-detail';
 
 export function TokenDetailPanel({
   row,
@@ -67,6 +61,9 @@ export function TokenDetailPanel({
   onDelete,
   installedAgents,
   onImport,
+  siblingRows = [],
+  writtenToNames = [],
+  writtenToReady = true,
 }: {
   row: LocalTokenRow;
   width?: number;
@@ -76,8 +73,11 @@ export function TokenDetailPanel({
   onDelete?: () => void;
   installedAgents?: readonly TokenImportAgentRef[];
   onImport?: (agentId: AgentKey, draft: ConnectApiKeyDraft) => void;
+  siblingRows?: readonly LocalTokenRow[];
+  writtenToNames?: readonly string[];
+  writtenToReady?: boolean;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { toast } = useToast();
   const [liveModels, setLiveModels] = useState<string[]>([]);
   const models = liveModels.length > 0 ? liveModels : localTokenTestModels(row);
@@ -86,9 +86,6 @@ export function TokenDetailPanel({
   const [testOpen, setTestOpen] = useState(false);
   const [testModel, setTestModel] = useState(models[0] ?? '');
   const [testResult, setTestResult] = useState<LocalTokenProbeResult | null>(null);
-  const [modelDraft, setModelDraft] = useState('');
-  const [savingModels, setSavingModels] = useState(false);
-  const [refreshingModels, setRefreshingModels] = useState(false);
   const [nameDraft, setNameDraft] = useState(row.name);
   const [savingName, setSavingName] = useState(false);
   const dropdownModels = testModel.trim() && !models.includes(testModel)
@@ -103,8 +100,13 @@ export function TokenDetailPanel({
   const canCopyToken = Boolean(tokenRow?.copyValue);
   const testGate = localTokenTestGate(row, t);
   const editGate = localTokenEditKeyGate(row, t);
-  const deleteGate = localTokenDeleteGate(row, t);
+  const deleteGate = localTokenDeleteGate(row, siblingRows, t);
   const canRunTest = testGate.enabled && Boolean(testModel.trim()) && !testing;
+  const writtenTo = writtenToReady
+    ? (writtenToNames.length > 0
+      ? writtenToNames.join(lang === 'zh' ? '、' : ', ')
+      : t('routes.tokens.writtenToNone'))
+    : '—';
 
   useEffect(() => {
     setNameDraft(row.name);
@@ -113,11 +115,9 @@ export function TokenDetailPanel({
     setTesting(false);
     setTestOpen(false);
     setTestResult(null);
-    setRefreshingModels(false);
     const fallback = localTokenTestModels(row);
     setLiveModels([]);
     setTestModel(fallback[0] ?? '');
-    setModelDraft(fallback.join('\n'));
     const token = row.token?.trim();
     if (!token) return;
     const requestId = row.id;
@@ -126,7 +126,6 @@ export function TokenDetailPanel({
       const listed = ids.map((item) => item.trim()).filter(Boolean);
       if (listed.length === 0) return;
       setLiveModels(listed);
-      setModelDraft(listed.join('\n'));
       setTestModel((current) => current.trim() || listed[0] || '');
     }).catch(() => {});
   }, [row.id, row.token]);
@@ -145,55 +144,11 @@ export function TokenDetailPanel({
     );
   };
 
-  const applyListedModels = (listed: string[]) => {
-    setLiveModels(listed);
-    setModelDraft(listed.join('\n'));
-    setTestModel((current) => current.trim() || listed[0] || '');
-  };
-
   const openTest = () => {
     if (!testGate.enabled || testing) return;
     setTestResult(null);
     setTestOpen(true);
   };
-
-  const saveCustomModels = async () => {
-    const token = row.token?.trim();
-    if (!token) return;
-    const listed = parseCustomModelList(modelDraft);
-    setSavingModels(true);
-    try {
-      applyListedModels(await setLocalTokenCustomModels(token, listed));
-      toast({ title: t('common.save'), variant: 'success' });
-    } catch {
-      toast({ title: t('common.saveFailed'), variant: 'danger' });
-    } finally {
-      setSavingModels(false);
-    }
-  };
-
-  const refreshPoolModels = async () => {
-    const token = row.token?.trim();
-    if (!token) return;
-    const requestId = row.id;
-    setRefreshingModels(true);
-    try {
-      const listed = (await refreshLocalTokenModels(token))
-        .map((item) => item.trim())
-        .filter(Boolean);
-      if (rowIdRef.current !== requestId) return;
-      applyListedModels(listed);
-      toast({ title: t('routes.tokens.testModelsRefreshed'), variant: 'success' });
-    } catch {
-      if (rowIdRef.current !== requestId) return;
-      toast({ title: t('routes.tokens.testModelsRefreshFailed'), variant: 'danger' });
-    } finally {
-      if (rowIdRef.current === requestId) setRefreshingModels(false);
-    }
-  };
-
-  const modelsBusy = testing || savingModels || refreshingModels;
-  const canEditModels = Boolean(row.token?.trim()) && !modelsBusy;
 
   const runTest = async () => {
     if (!canRunTest) return;
@@ -323,38 +278,6 @@ export function TokenDetailPanel({
           ) : null}
         </div>
         <div className="space-y-1">
-          <p className="text-meta text-muted">{t('routes.tokens.fieldType')}</p>
-          <p className="text-primary">{typeRow?.display}</p>
-        </div>
-        <div className="min-w-0 space-y-1">
-          <p className="text-meta text-muted">{t('routes.tokens.fieldEndpoint')}</p>
-          {endpoint.portPending ? (
-            <p className="font-mono text-muted">{t('routes.pendingPort')}</p>
-          ) : (
-            <CopyableRouteEndpointUrl
-              path={row.path}
-              port={endpoint.portPending ? null : Number(endpoint.portLabel)}
-              host={endpoint.host}
-              endpointId={endpoint.endpointId}
-              brandAgentId={localEndpointBrandAgentId(row.kind)}
-              className="text-sm"
-            />
-          )}
-        </div>
-        <div className="space-y-1">
-          <p className="text-meta text-muted">{t('routes.tokens.fieldLastPage')}</p>
-          <p className="font-mono text-secondary">{tokenLastPageDisplay(row) || '—'}</p>
-          {row.lastRequestAt ? (
-            <p className="text-meta text-muted">
-              {t('routes.tokens.fieldLastAt')} · {formatTokenRelative(row.lastRequestAt, t)}
-            </p>
-          ) : null}
-        </div>
-        <div className="space-y-1">
-          <p className="text-meta text-muted">{t('routes.tokens.fieldUsage')}</p>
-          <p className="text-secondary">{tokenUsageDisplay(row.usage, t) || '—'}</p>
-        </div>
-        <div className="space-y-1">
           <p className="text-meta text-muted">{t('routes.tokens.fieldToken')}</p>
           <div className="flex min-w-0 items-center gap-1">
             <p className="min-w-0 flex-1 break-all font-mono text-secondary">
@@ -404,49 +327,28 @@ export function TokenDetailPanel({
             <p className="text-meta text-muted" data-token-edit-key-hint="">{editGate.reason}</p>
           ) : null}
         </div>
-        <div className="space-y-1" data-token-models="">
-          <p className="text-meta text-muted">{t('routes.tokens.fieldModels')}</p>
-          {models.length > 0 ? (
-            <p className="text-sm text-primary">{models.join(', ')}</p>
+        <div className="min-w-0 space-y-1">
+          <p className="text-meta text-muted">{t('routes.tokens.fieldEndpoint')}</p>
+          {endpoint.portPending ? (
+            <p className="font-mono text-muted">{t('routes.pendingPort')}</p>
           ) : (
-            <p className="text-meta text-secondary">{t('routes.tokens.testNoModels')}</p>
+            <CopyableRouteEndpointUrl
+              path={row.path}
+              port={endpoint.portPending ? null : Number(endpoint.portLabel)}
+              host={endpoint.host}
+              endpointId={endpoint.endpointId}
+              brandAgentId={localEndpointBrandAgentId(row.kind)}
+              className="text-sm"
+            />
           )}
-          <p className="text-meta text-secondary">{t('routes.tokens.testModelsHint')}</p>
-          <textarea
-            value={modelDraft}
-            onChange={(event) => setModelDraft(event.target.value)}
-            disabled={!canEditModels}
-            placeholder={t('routes.tokens.testModelsPlaceholder')}
-            rows={4}
-            className="min-h-[5.5rem] w-full resize-y rounded-card border border-border bg-transparent px-3 py-2 font-mono text-xs text-primary"
-            data-token-models-draft=""
-          />
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={!canEditModels}
-              data-token-models-refresh=""
-              onClick={() => { void refreshPoolModels(); }}
-            >
-              {refreshingModels ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-              ) : null}
-              {refreshingModels
-                ? t('routes.tokens.testModelsRefreshing')
-                : t('routes.tokens.testModelsRefresh')}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={!canEditModels}
-              onClick={() => { void saveCustomModels(); }}
-            >
-              {savingModels ? t('common.saving') : t('routes.tokens.testModelsSave')}
-            </Button>
-          </div>
+        </div>
+        <div className="space-y-1">
+          <p className="text-meta text-muted">{t('routes.tokens.fieldType')}</p>
+          <p className="text-primary">{typeRow?.display}</p>
+        </div>
+        <div className="space-y-1" data-token-written-to="">
+          <p className="text-meta text-muted">{t('routes.tokens.fieldWrittenTo')}</p>
+          <p className="text-secondary">{writtenTo}</p>
         </div>
       </div>
       <Dialog open={testOpen} onOpenChange={(open) => { if (!testing) setTestOpen(open); }}>
