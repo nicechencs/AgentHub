@@ -30,7 +30,8 @@ import {
   deleteRememberedAccount,
   deleteRememberedAccountAsync,
   getLastUsedRememberedAccount,
-  hydrateRememberedPasswordVault,
+  hydrateRememberedPasswordVault as hydrateRememberedPasswordVaultInner,
+  setRememberedVaultTransport,
   isSub2ApiRememberEnabled,
   listRememberedAccounts,
   loadRememberedCredentials,
@@ -74,7 +75,6 @@ export {
   deleteRememberedAccount,
   deleteRememberedAccountAsync,
   getLastUsedRememberedAccount,
-  hydrateRememberedPasswordVault,
   isSub2ApiRememberEnabled,
   listRememberedAccounts,
   loadRememberedCredentials,
@@ -95,6 +95,16 @@ export async function openSub2ApiLoginWindow(loginUrl: string): Promise<{
 /** @deprecated Native login is primary; kept for optional/legacy callers. */
 export async function closeSub2ApiLoginWindow(): Promise<void> {
   await getBackend().settings.closeSub2ApiLoginWindow();
+}
+
+/** Hydrate password vault via settings port (SQLite on desktop; memory in mock). */
+export async function hydrateRememberedPasswordVault(): Promise<void> {
+  const settings = getBackend().settings;
+  setRememberedVaultTransport({
+    get: () => settings.getSub2ApiRememberedVault(),
+    set: (json) => settings.setSub2ApiRememberedVault(json),
+  });
+  await hydrateRememberedPasswordVaultInner();
 }
 
 export async function probeSub2ApiPublicSettings(siteUrl: string): Promise<Sub2ApiPublicSettings> {
