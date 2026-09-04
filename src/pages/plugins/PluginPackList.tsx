@@ -3,8 +3,14 @@ import { ListRow } from '@/components/shared/ListRow';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Badge } from '@/components/ui/badge';
 import { Tip } from '@/components/ui/tooltip';
-import { agentDisplayName, AGENT_MAP } from '@/config/agents';
+import { AGENT_MAP } from '@/config/agents';
 import type { PluginEntry } from '@/lib/backend/contracts/plugin-types';
+
+function packDescription(plugin: PluginEntry): string | null {
+  const description = plugin.description?.trim() ?? '';
+  if (!description || description === plugin.name) return null;
+  return description;
+}
 
 export function PluginPackList({
   plugins,
@@ -23,47 +29,39 @@ export function PluginPackList({
       {plugins.map((plugin) => {
         const active = plugin.id === activeId;
         const meta = AGENT_MAP[plugin.agent];
+        const description = packDescription(plugin);
         return (
           <ListRow
             key={plugin.id}
             role="button"
-            tabIndex={0}
             active={active}
             indicatorColor={meta?.color}
-            className="cursor-pointer p-3"
-            onClick={() => onOpen(plugin)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                onOpen(plugin);
-              }
-            }}
+            className="p-3"
+            onOpen={() => onOpen(plugin)}
           >
-            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-              {showAgent ? <AgentDot agentId={plugin.agent} /> : null}
-              <Tip className="truncate text-body font-medium" label={plugin.name}>
-                {plugin.name}
-              </Tip>
-              {plugin.version ? (
-                <span className="font-mono text-meta text-muted">{plugin.version}</span>
-              ) : null}
-              {plugin.enabled === false ? (
-                <Badge>{t('plugins.list.disabled')}</Badge>
-              ) : plugin.enabled === true ? (
-                <Badge variant="success">{t('plugins.list.enabled')}</Badge>
-              ) : null}
-              {plugin.trusted === false ? (
-                <Badge variant="warning">{t('plugins.list.untrusted')}</Badge>
-              ) : null}
-              <span className="min-w-0 truncate text-meta text-secondary">
-                {[
-                  showAgent ? agentDisplayName(plugin.agent) : null,
-                  plugin.marketplace,
-                  plugin.scope,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </span>
+            <div className="flex min-w-0 items-start gap-2">
+              {showAgent ? <AgentDot agentId={plugin.agent} className="mt-0.5" /> : null}
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                  <Tip className="truncate text-body font-medium" label={plugin.name}>
+                    {plugin.name}
+                  </Tip>
+                  {plugin.enabled === false ? (
+                    <Badge>{t('plugins.list.disabled')}</Badge>
+                  ) : null}
+                  {plugin.trusted === false ? (
+                    <Badge variant="warning">{t('plugins.list.untrusted')}</Badge>
+                  ) : null}
+                </div>
+                {description ? (
+                  <Tip
+                    className="mt-0.5 line-clamp-1 truncate text-meta text-secondary"
+                    label={description}
+                  >
+                    {description}
+                  </Tip>
+                ) : null}
+              </div>
             </div>
           </ListRow>
         );

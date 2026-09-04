@@ -23,12 +23,13 @@ describe('plugins layout wiring', () => {
     expect(page).toContain('<ErrorState');
     expect(page).toContain('<EmptyState');
     expect(page.indexOf('<AgentTabStrip')).toBeLessThan(page.indexOf('<ListSkeleton'));
+    expect(page).toContain('pluginEmptyCopy');
     expect(page).not.toContain('onInstall');
     expect(page).not.toContain('installPlugin');
     expect(page).not.toContain('listMcpInventory');
     expect(page).toContain('filterByPageVisibleAgent');
-    expect(page).toContain('PluginSourceList');
-    expect(page).toContain("t('plugins.sources.title')");
+    expect(page).not.toContain('PluginSourceList');
+    expect(page).not.toContain("t('plugins.sources.title')");
   });
 
   it('opens pack details in the right-hand inspect pane', () => {
@@ -39,6 +40,9 @@ describe('plugins layout wiring', () => {
     expect(detail).toContain('InspectSurface');
     expect(detail).toContain("t('plugins.detail.components')");
     expect(detail).toContain("t('plugins.detail.kindMcp')");
+    expect(detail.indexOf("t('plugins.detail.components')")).toBeLessThan(
+      detail.indexOf("t('plugins.detail.version')"),
+    );
     expect(detail).not.toContain('onInstall');
     expect(detail).not.toContain('installPlugin');
   });
@@ -50,10 +54,22 @@ describe('plugins layout wiring', () => {
     expect(page).toContain('disablePlugin');
     expect(page).not.toContain('installPlugin');
     expect(page).not.toContain('uninstallPlugin');
-    expect(detail).toContain("t('plugins.actions.enable')");
-    expect(detail).toContain("t('plugins.actions.disable')");
+    expect(detail).toContain('<Switch');
+    expect(detail).toContain("t('plugins.actions.toggle')");
+    expect(detail).toContain("t('plugins.actions.disableHint')");
     expect(detail).toContain('canToggleListedPlugin');
     expect(detail).not.toContain('installPlugin');
     expect(detail).not.toContain('marketplaceInstall');
+  });
+
+  it('keeps the list to name, one-line description, and exception badges', () => {
+    const list = source('PluginPackList.tsx');
+    expect(list).toContain('plugin.description');
+    expect(list).toContain("t('plugins.list.disabled')");
+    expect(list).toContain("t('plugins.list.untrusted')");
+    expect(list).not.toContain('plugin.marketplace');
+    expect(list).not.toContain('plugin.scope');
+    expect(list).not.toContain('plugin.version');
+    expect(list).not.toContain("t('plugins.list.enabled')");
   });
 });

@@ -23,6 +23,7 @@ const DEMO: PluginInventory = {
     { agent: 'kimi', support: 'unsupported', errorCode: 'unsupported-no-cli', pluginCount: 0 },
     { agent: 'workbuddy', support: 'unsupported', errorCode: 'unsupported-no-cli', pluginCount: 0 },
     { agent: 'dsh', support: 'unsupported', errorCode: 'unsupported-dsh', pluginCount: 0 },
+    { agent: 'zcode', support: 'unsupported', errorCode: 'unsupported-zcode', pluginCount: 0 },
   ],
   sources: [
     {
