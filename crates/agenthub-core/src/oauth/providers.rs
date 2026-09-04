@@ -293,31 +293,14 @@ impl OAuthProvider {
             .map_err(|e| AppError::message("oauth.token", format!("invalid token JSON: {e}")))?;
 
         if !(200..300).contains(&status) {
-            return Err(Self::token_reject_error(self.id, status, &body));
+            return Err(token_reject_error("oauth.token", self.id, status, &body));
         }
         Ok(body)
     }
 
     fn token_status_error(provider_id: &str, status: u16, response: ureq::Response) -> AppError {
         let body: Value = response.into_json().unwrap_or(Value::Null);
-        Self::token_reject_error(provider_id, status, &body)
-    }
-
-    fn token_reject_error(provider_id: &str, status: u16, body: &Value) -> AppError {
-        let msg = body
-            .get("error_description")
-            .or_else(|| body.get("error"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("token request rejected");
-        tracing::warn!(
-            module = targets::OAUTH,
-            op = "token",
-            provider = provider_id,
-            status,
-            error = msg,
-            "token endpoint rejected"
-        );
-        AppError::message("oauth.token", format!("{msg} (HTTP {status})"))
+        token_reject_error("oauth.token", provider_id, status, &body)
     }
 
     pub(crate) fn bundle_from_token_json(&self, body: Value) -> Result<TokenBundle> {
@@ -411,6 +394,58 @@ impl OAuthProvider {
         })
     }
 }
+
+/// RFC 6749 / RFC 8628 `error` values safe to log or show. Never use `error_description`.
+const ALLOWED_OAUTH_TOKEN_ERRORS: &[&str] = &[
+    "invalid_grant",
+    "invalid_client",
+    "invalid_request",
+    "unauthorized_client",
+    "access_denied",
+    "unsupported_grant_type",
+    "invalid_scope",
+    "slow_down",
+    "authorization_pending",
+    "expired_token",
+    "unsupported_token_type",
+    "server_error",
+    "temporarily_unavailable",
+];
+
+fn allowlisted_oauth_error_code(body: &Value) -> Option<&'static str> {
+    let raw = body.get("error").and_then(Value::as_str)?.trim();
+    ALLOWED_OAUTH_TOKEN_ERRORS
+        .iter()
+        .copied()
+        .find(|code| raw.eq_ignore_ascii_case(code))
+}
+
+/// Token endpoint rejection. Logs provider/status/allowlisted `error` only.
+pub(crate) fn token_reject_error(
+    app_code: &'static str,
+    provider_id: &str,
+    status: u16,
+    body: &Value,
+) -> AppError {
+    let error_code = allowlisted_oauth_error_code(body);
+    tracing::warn!(
+        module = targets::OAUTH,
+        op = "token",
+        provider = provider_id,
+        status,
+        error = error_code.unwrap_or("rejected"),
+        "token endpoint rejected"
+    );
+    let message = match error_code {
+        Some(code) => format!("token request rejected (HTTP {status}): {code}"),
+        None => format!("token request rejected (HTTP {status})"),
+    };
+    AppError::message(app_code, crate::utils::redact::redact_text(&message))
+}
+
+#[cfg(test)]
+#[path = "providers_tests.rs"]
+mod token_reject_tests;
 
 #[cfg(test)]
 mod tests {

@@ -323,3 +323,68 @@ fn default_home_is_dot_dsh() {
     restore_env("DSH_HOME", prev);
     assert_eq!(home, home_dir().unwrap().join(".dsh"));
 }
+
+#[test]
+fn credentials_yaml_roundtrips_quotes_backslashes_and_markers() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(CREDENTIALS_FILE);
+    let value = r#"say "hi" \ : # spaced"#;
+    write_credential_value(&path, "keep", "plain").unwrap();
+    write_credential_value(&path, DEFAULT_API_KEY_ENV, value).unwrap();
+    assert_eq!(
+        read_credential_value(&path, DEFAULT_API_KEY_ENV)
+            .unwrap()
+            .as_deref(),
+        Some(value)
+    );
+    assert_eq!(
+        read_credential_value(&path, "keep").unwrap().as_deref(),
+        Some("plain")
+    );
+}
+
+#[test]
+fn credentials_yaml_reads_escaped_double_quotes() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(CREDENTIALS_FILE);
+    std::fs::write(&path, r#"key: "a\"b""#).unwrap();
+    assert_eq!(
+        read_credential_value(&path, "key").unwrap().as_deref(),
+        Some(r#"a"b"#)
+    );
+}
+
+#[test]
+fn credentials_yaml_newline_roundtrips_or_rejects() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(CREDENTIALS_FILE);
+    let value = "line1\nline2";
+    match write_credential_value(&path, DEFAULT_API_KEY_ENV, value) {
+        Ok(()) => {
+            assert_eq!(
+                read_credential_value(&path, DEFAULT_API_KEY_ENV)
+                    .unwrap()
+                    .as_deref(),
+                Some(value)
+            );
+        }
+        Err(err) => {
+            assert_eq!(err.code(), "invalid_arg");
+            assert!(!path.exists() || !std::fs::read_to_string(&path).unwrap().contains("line1"));
+        }
+    }
+}
+
+#[test]
+fn credentials_yaml_rejects_nested_maps() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(CREDENTIALS_FILE);
+    std::fs::write(&path, "nested:\n  inner: secret\n").unwrap();
+    let err = read_credential_value(&path, "nested").unwrap_err();
+    assert_eq!(err.code(), "invalid_arg");
+    let err = write_credential_value(&path, DEFAULT_API_KEY_ENV, "sk-new").unwrap_err();
+    assert_eq!(err.code(), "invalid_arg");
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("inner: secret"));
+    assert!(!text.contains("sk-new"));
+}

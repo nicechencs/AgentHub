@@ -1,7 +1,10 @@
 use std::collections::HashSet;
 
-use crate::models::{AgentId, DetectResult, DetectStatus, ParsedUsageEvent};
+use crate::models::{
+    AgentId, DetectResult, DetectStatus, ParsedUsageEvent, UsageQuery, UsageRecord,
+};
 use crate::services::AgentVisibilityService;
+use crate::storage::UsageRepo;
 
 use super::{cost_for_event, event_missing_pricing, visible_installed_agent_ids};
 
@@ -278,4 +281,88 @@ fn gateway_usage_query_ingests_spool_without_a_prior_collect() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].request_id, "req-board");
     assert_eq!(rows[0].input_tokens, 4);
+}
+
+fn seed_usage_row(repo: &UsageRepo, agent: AgentId, hash: &str) {
+    repo.insert_batch(&[UsageRecord {
+        id: uuid::Uuid::new_v4().to_string(),
+        agent_id: agent,
+        account_id: None,
+        model: "m".into(),
+        input_tokens: 10,
+        output_tokens: 1,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        cost_usd: Some(0.01),
+        session_id: Some("s1".into()),
+        ts: "2026-08-07T00:00:00.000Z".into(),
+        raw_hash: Some(hash.into()),
+        fast: false,
+    }])
+    .unwrap();
+}
+
+fn query_agent(repo: &UsageRepo, agent: AgentId) -> Vec<UsageRecord> {
+    repo.query(&UsageQuery {
+        days: 30,
+        agent_id: Some(agent),
+        model: None,
+        ..Default::default()
+    })
+    .unwrap()
+}
+
+#[test]
+fn repair_token_layout_runs_once_then_is_already_current() {
+    let root = tempfile::tempdir().unwrap();
+    let db = crate::storage::Database::open(&root.path().join("usage.db")).unwrap();
+    let repo = UsageRepo::new(db.clone());
+    seed_usage_row(&repo, AgentId::Codex, "layout-old");
+    assert_eq!(query_agent(&repo, AgentId::Codex).len(), 1);
+
+    let (deleted, _, already_current) =
+        repo.repair_token_layout("usage_token_layout", "5").unwrap();
+    assert!(!already_current);
+    assert_eq!(deleted, 1);
+    assert_eq!(
+        db.get_setting("usage_token_layout").unwrap().as_deref(),
+        Some("5")
+    );
+    assert!(query_agent(&repo, AgentId::Codex).is_empty());
+
+    seed_usage_row(&repo, AgentId::Codex, "layout-new");
+    let (deleted_again, cursors_reset, already_again) =
+        repo.repair_token_layout("usage_token_layout", "5").unwrap();
+    assert!(already_again);
+    assert_eq!(deleted_again, 0);
+    assert_eq!(cursors_reset, 0);
+    assert_eq!(query_agent(&repo, AgentId::Codex).len(), 1);
+}
+
+#[test]
+fn repair_grok_parser_runs_once_then_is_already_current() {
+    let root = tempfile::tempdir().unwrap();
+    let db = crate::storage::Database::open(&root.path().join("usage.db")).unwrap();
+    let repo = UsageRepo::new(db.clone());
+    seed_usage_row(&repo, AgentId::Grok, "grok-old");
+    seed_usage_row(&repo, AgentId::Claude, "claude-keep");
+
+    let (deleted, _, already_current) = repo.repair_grok_parser("usage_grok_parser", "1").unwrap();
+    assert!(!already_current);
+    assert_eq!(deleted, 1);
+    assert_eq!(
+        db.get_setting("usage_grok_parser").unwrap().as_deref(),
+        Some("1")
+    );
+    assert!(query_agent(&repo, AgentId::Grok).is_empty());
+    assert_eq!(query_agent(&repo, AgentId::Claude).len(), 1);
+
+    seed_usage_row(&repo, AgentId::Grok, "grok-new");
+    let (deleted_again, cursors_reset, already_again) =
+        repo.repair_grok_parser("usage_grok_parser", "1").unwrap();
+    assert!(already_again);
+    assert_eq!(deleted_again, 0);
+    assert_eq!(cursors_reset, 0);
+    assert_eq!(query_agent(&repo, AgentId::Grok).len(), 1);
+    assert_eq!(query_agent(&repo, AgentId::Claude).len(), 1);
 }

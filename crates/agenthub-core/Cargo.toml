@@ -8,6 +8,7 @@ description = "AgentHub business core — shared by GUI and CLI (no Tauri depend
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_yml = "0.0.12"
 thiserror = { workspace = true }
 dirs = { workspace = true }
 dunce = { workspace = true }
@@ -36,6 +37,9 @@ tower = { workspace = true }
 futures-util = { workspace = true }
 async-stream = { workspace = true }
 zip = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+socket2 = "0.5"
 
 [dev-dependencies]
 tempfile = { workspace = true }

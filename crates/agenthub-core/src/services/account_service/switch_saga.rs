@@ -7,9 +7,7 @@ use crate::models::{
     Account, AccountInput, AccountKind, AccountSwitchResult, AgentConfig, AgentId, BackupKind,
     Capability, LiveAccount,
 };
-use crate::services::switch_undo::{
-    clear_switch_undo, peek_switch_undo, record_switch_undo, ACCOUNT_UNDO_PREFIX,
-};
+use crate::services::switch_undo::{clear_switch_undo, peek_switch_undo, ACCOUNT_UNDO_PREFIX};
 
 use super::surface::*;
 use super::AccountService;
@@ -189,12 +187,13 @@ impl AccountService {
         }
 
         let now = now_ts();
-        // Single transaction: is_current + demote providers + binding (B1 cleanup).
-        let account = match self.connections.activate_account(
+        // Single transaction: is_current + demote providers + binding + undo slot.
+        let account = match self.connections.activate_account_with_undo(
             agent,
             &target.id,
             expected_target_updated_at,
             &now,
+            Some((ACCOUNT_UNDO_PREFIX, previous_current_id.as_deref())),
         ) {
             Ok((account, _binding)) => account,
             Err(error) => {
@@ -208,16 +207,6 @@ impl AccountService {
                 return Err(compensated_switch_error(error, live_rollback, db_rollback));
             }
         };
-
-        if let Some(from_id) = previous_current_id {
-            if from_id != account.id {
-                record_switch_undo(&self.db, ACCOUNT_UNDO_PREFIX, agent, &from_id, &account.id)?;
-            } else {
-                clear_switch_undo(&self.db, ACCOUNT_UNDO_PREFIX, agent)?;
-            }
-        } else {
-            clear_switch_undo(&self.db, ACCOUNT_UNDO_PREFIX, agent)?;
-        }
 
         Ok(AccountSwitchResult {
             account,

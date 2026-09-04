@@ -75,6 +75,11 @@ jobs:
       - name: Linux prereq script tests
         run: node --test scripts/check-linux-prereqs.test.mjs
 
+      - name: Release script tests
+        run: |
+          pnpm release:test
+          node --test scripts/release-update.test.mjs
+
       - name: Frontend tests (mock backend + contracts)
         run: pnpm test
 
@@ -86,6 +91,86 @@ jobs:
 
       - name: GUI Rust tests
         run: cargo test -p agenthub-gui --locked
+
+  check-windows:
+    if: github.event_name == 'pull_request'
+    name: Windows cargo check
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+
+      - name: Setup Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          version: 9
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: |
+            .
+            src-tauri
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Cargo check core
+        run: cargo check -p agenthub-core --locked
+
+      - name: Cargo check GUI
+        run: cargo check -p agenthub-gui --locked
+
+  check-macos:
+    if: github.event_name == 'pull_request'
+    name: macOS cargo check
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+
+      - name: Setup Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          version: 9
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: |
+            .
+            src-tauri
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Cargo check core
+        run: cargo check -p agenthub-core --locked
+
+      - name: Cargo check GUI
+        run: cargo check -p agenthub-gui --locked
 
   browser-e2e:
     if: github.event_name == 'pull_request'

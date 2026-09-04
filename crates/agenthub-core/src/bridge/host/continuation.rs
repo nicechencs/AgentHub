@@ -4,23 +4,31 @@
 //! member that produced them. They are not portable across Provider/member
 //! unless an adapter explicitly proves otherwise (default: not portable).
 
-use std::collections::HashMap;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use axum::http::HeaderMap;
 use serde_json::Value;
 
+use crate::bridge::bounded_ttl::BoundedTtlMap;
 use crate::bridge::grok_cli::extract_prompt_cache_seed;
 use crate::bridge::protocol::pair::completed_response_id;
 
-#[derive(Default)]
+const CONTINUATION_MAX_ENTRIES: usize = 8192;
+const CONTINUATION_IDLE_TTL: Duration = Duration::from_secs(2 * 60 * 60);
+
 pub(super) struct ContinuationBindings {
-    inner: Mutex<HashMap<String, String>>,
+    inner: Mutex<BoundedTtlMap<String, String>>,
 }
 
 impl ContinuationBindings {
     pub(super) fn new() -> Self {
-        Self::default()
+        Self {
+            inner: Mutex::new(BoundedTtlMap::new(
+                CONTINUATION_MAX_ENTRIES,
+                CONTINUATION_IDLE_TTL,
+            )),
+        }
     }
 
     pub(super) fn required_member(&self, body: &Value, headers: &HeaderMap) -> Option<String> {
@@ -28,7 +36,7 @@ impl ContinuationBindings {
         if keys.is_empty() {
             return None;
         }
-        let Ok(guard) = self.inner.lock() else {
+        let Ok(mut guard) = self.inner.lock() else {
             return None;
         };
         for key in keys {
@@ -97,37 +105,4 @@ fn continuation_keys(body: &Value, headers: &HeaderMap) -> Vec<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use axum::http::HeaderValue;
-    use serde_json::json;
-
-    #[test]
-    fn session_identifier_prefers_cache_seed_over_previous_response_id() {
-        let body = json!({
-            "previous_response_id": "resp_turn_2",
-            "prompt_cache_key": "cache-stable"
-        });
-        let id = session_identifier(&body, &HeaderMap::new()).expect("seed");
-        assert_eq!(id, "cache-stable");
-        assert!(!id.contains("resp_turn_2"));
-    }
-
-    #[test]
-    fn session_identifier_prefers_session_header_over_previous_response_id() {
-        let mut headers = HeaderMap::new();
-        headers.insert("x-session-id", HeaderValue::from_static("stable-session"));
-        let body = json!({ "previous_response_id": "resp_turn_2" });
-        let id = session_identifier(&body, &headers).expect("header");
-        assert_eq!(id, "stable-session");
-    }
-
-    #[test]
-    fn session_identifier_falls_back_to_previous_response_id() {
-        let body = json!({ "previous_response_id": "resp_only" });
-        assert_eq!(
-            session_identifier(&body, &HeaderMap::new()).as_deref(),
-            Some("resp_only")
-        );
-    }
-}
+mod tests;
