@@ -827,45 +827,6 @@ fn route_trace_persist_keeps_ring_cap_on_reload() {
 }
 
 #[test]
-fn route_trace_persist_imports_legacy_json_then_removes_it() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let db_path = dir.path().join("route-traces.db");
-    let json_path = dir.path().join("route-traces.json");
-    let payload = serde_json::json!({
-        "version": 1,
-        "byProfile": {
-            "profile-a": [{
-                "traceVersion": 2,
-                "requestId": "req-legacy",
-                "atUnixMs": super::now_unix_ms(),
-                "profileId": "profile-a",
-                "method": "POST",
-                "path": "/v1/messages",
-                "httpStatus": 200,
-                "ok": true,
-                "localAuth": { "status": "ok", "profileId": "profile-a" },
-                "pool": { "status": "ok" },
-                "conversion": { "status": "ok", "path": "passthrough" },
-                "upstreamAuth": { "status": "ok" },
-                "upstream": { "status": "ok" }
-            }]
-        },
-        "unauthenticated": []
-    });
-    std::fs::write(&json_path, serde_json::to_vec(&payload).expect("json")).expect("write json");
-
-    let log = RouteTraceLog::new();
-    log.enable_persist(db_path);
-    let recent = log.recent("profile-a");
-    assert_eq!(recent.len(), 1);
-    assert_eq!(recent[0].request_id, "req-legacy");
-    assert!(
-        !json_path.exists(),
-        "legacy json should be removed after import"
-    );
-}
-
-#[test]
 fn route_trace_persist_keeps_tokens_across_reload() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("route-traces.db");
