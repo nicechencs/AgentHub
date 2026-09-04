@@ -29,6 +29,7 @@ pub enum TraceStageStatus {
     Ok,
     Failed,
     Skipped,
+    Interrupted,
 }
 
 impl Default for TraceStageStatus {
@@ -45,6 +46,46 @@ impl TraceStageStatus {
             Self::Ok => "ok",
             Self::Failed => "failed",
             Self::Skipped => "skipped",
+            Self::Interrupted => "interrupted",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RouteTraceStageId {
+    Received,
+    LocalAuth,
+    LocalEndpoint,
+    Admission,
+    RouteResolution,
+    Pool,
+    #[serde(alias = "conversion")]
+    RequestConversion,
+    UpstreamRequest,
+    #[serde(alias = "upstream", alias = "upstream_auth")]
+    UpstreamResponse,
+    ResponseConversion,
+    Delivery,
+    #[serde(other)]
+    Unknown,
+}
+
+impl RouteTraceStageId {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Received => "received",
+            Self::LocalAuth => "local_auth",
+            Self::LocalEndpoint => "local_endpoint",
+            Self::Admission => "admission",
+            Self::RouteResolution => "route_resolution",
+            Self::Pool => "pool",
+            Self::RequestConversion => "request_conversion",
+            Self::UpstreamRequest => "upstream_request",
+            Self::UpstreamResponse => "upstream_response",
+            Self::ResponseConversion => "response_conversion",
+            Self::Delivery => "delivery",
+            Self::Unknown => "unknown",
         }
     }
 }
@@ -93,6 +134,24 @@ pub struct RouteTraceMember {
 pub struct RouteTracePoolAttempt {
     pub member: RouteTraceMember,
     pub status: TraceStageStatus,
+    #[serde(default)]
+    pub attempt_id: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub request_status: TraceStageStatus,
+    #[serde(default)]
+    pub response_status: TraceStageStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth_result: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_status: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conversion_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -144,6 +203,22 @@ pub struct RouteTraceConversion {
     pub message: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RouteTraceUpstreamRequest {
+    pub status: TraceStageStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub member: Option<RouteTraceMember>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RouteTraceUpstreamAuth {
@@ -180,6 +255,8 @@ pub struct RouteTraceUpstream {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RouteRequestTrace {
+    #[serde(default = "legacy_trace_version")]
+    pub trace_version: u8,
     pub request_id: String,
     pub at_unix_ms: u128,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -208,6 +285,8 @@ pub struct RouteRequestTrace {
     pub pool: RouteTracePool,
     pub conversion: RouteTraceConversion,
     pub upstream_auth: RouteTraceUpstreamAuth,
+    #[serde(default)]
+    pub upstream_request: RouteTraceUpstreamRequest,
     pub upstream: RouteTraceUpstream,
     #[serde(default)]
     pub response_conversion: RouteTraceConversion,
@@ -215,7 +294,7 @@ pub struct RouteRequestTrace {
     pub delivery: RouteTraceDelivery,
     /// First failed lifecycle stage id, used by monitoring summaries.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub failure_stage: Option<String>,
+    pub failure_stage: Option<RouteTraceStageId>,
 }
 
 #[derive(Default)]
@@ -421,7 +500,7 @@ impl RouteTraceLog {
             row.delivery.code = Some("stream_error".to_owned());
             row.latency_ms = Some(latency_ms);
             if row.failure_stage.is_none() {
-                row.failure_stage = Some("response_conversion".to_owned());
+                row.failure_stage = Some(RouteTraceStageId::ResponseConversion);
             }
         };
         for entry in store.by_profile.values_mut() {
@@ -451,14 +530,14 @@ impl RouteTraceLog {
         };
         let patch = |row: &mut RouteRequestTrace| {
             row.ok = false;
-            row.response_conversion.status = TraceStageStatus::Failed;
+            row.response_conversion.status = TraceStageStatus::Interrupted;
             row.response_conversion.result = Some("interrupted".to_owned());
             row.delivery.status = TraceStageStatus::Failed;
             row.delivery.completion = Some("client_disconnected".to_owned());
             row.delivery.code = Some("client_disconnected".to_owned());
             row.latency_ms = Some(latency_ms);
             if row.failure_stage.is_none() {
-                row.failure_stage = Some("delivery".to_owned());
+                row.failure_stage = Some(RouteTraceStageId::Delivery);
             }
         };
         for entry in store.by_profile.values_mut() {
@@ -600,6 +679,7 @@ impl RouteTraceBuilder {
     ) -> Self {
         Self {
             trace: RouteRequestTrace {
+                trace_version: 2,
                 request_id: request_id.into(),
                 at_unix_ms: now_unix_ms(),
                 profile_id: None,
@@ -643,6 +723,7 @@ impl RouteTraceBuilder {
                     code: None,
                     message: None,
                 },
+                upstream_request: RouteTraceUpstreamRequest::default(),
                 upstream: RouteTraceUpstream {
                     status: TraceStageStatus::Pending,
                     url: None,
@@ -686,7 +767,7 @@ impl RouteTraceBuilder {
             code: Some(code.to_owned()),
             message: Some(message.to_owned()),
         };
-        self.mark_failure("admission");
+        self.mark_failure(RouteTraceStageId::Admission);
         self.skip_after_admission();
     }
 
@@ -700,8 +781,8 @@ impl RouteTraceBuilder {
             code: Some(code.to_owned()),
             message: Some(message.to_owned()),
         };
-        self.trace.pool.status = TraceStageStatus::Skipped;
-        self.mark_failure("route_resolution");
+        skip_if_pending(&mut self.trace.pool.status);
+        self.mark_failure(RouteTraceStageId::RouteResolution);
         self.skip_after_pool();
     }
 
@@ -730,10 +811,10 @@ impl RouteTraceBuilder {
             code: Some(code.to_owned()),
             message: Some(message.to_owned()),
         };
-        self.mark_failure("local_auth");
-        self.trace.local_endpoint.status = TraceStageStatus::Skipped;
-        self.trace.admission.status = TraceStageStatus::Skipped;
-        self.trace.route_resolution.status = TraceStageStatus::Skipped;
+        self.mark_failure(RouteTraceStageId::LocalAuth);
+        skip_if_pending(&mut self.trace.local_endpoint.status);
+        skip_if_pending(&mut self.trace.admission.status);
+        skip_if_pending(&mut self.trace.route_resolution.status);
         self.skip_after_local_auth();
     }
 
@@ -764,15 +845,19 @@ impl RouteTraceBuilder {
             code: Some(code.to_owned()),
             message: Some(message.to_owned()),
         };
-        self.mark_failure("local_endpoint");
-        self.trace.admission.status = TraceStageStatus::Skipped;
-        self.trace.route_resolution.status = TraceStageStatus::Skipped;
+        self.mark_failure(RouteTraceStageId::LocalEndpoint);
+        skip_if_pending(&mut self.trace.admission.status);
+        skip_if_pending(&mut self.trace.route_resolution.status);
         self.skip_after_local_auth();
         self.trace.conversion.code = Some(code.to_owned());
         self.trace.conversion.message = Some(message.to_owned());
     }
 
     pub fn pool_failed(&mut self, code: &str, message: &str) {
+        if !self.trace.pool.attempts.is_empty() {
+            self.trace.pool.status = TraceStageStatus::Ok;
+            return;
+        }
         self.trace.pool = RouteTracePool {
             status: TraceStageStatus::Failed,
             selected_member: None,
@@ -780,7 +865,7 @@ impl RouteTraceBuilder {
             code: Some(code.to_owned()),
             message: Some(message.to_owned()),
         };
-        self.mark_failure("pool");
+        self.mark_failure(RouteTraceStageId::Pool);
         self.skip_after_pool();
     }
 
@@ -804,13 +889,180 @@ impl RouteTraceBuilder {
         }
     }
 
-    pub fn pool_attempt_failed(&mut self, member: &PickedMember, code: &str, message: &str) {
+    pub fn upstream_attempt_started(
+        &mut self,
+        url: &str,
+        member: &PickedMember,
+        model: Option<&str>,
+    ) -> u32 {
+        let attempt_id = self.trace.pool.attempts.len() as u32 + 1;
+        let member = trace_member(member);
+        let url = sanitize_upstream_url(url);
+        self.trace.upstream_request = RouteTraceUpstreamRequest {
+            status: TraceStageStatus::Pending,
+            url: Some(url.clone()),
+            member: Some(member.clone()),
+            model: model
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+                .or_else(|| self.trace.upstream.upstream_model.clone())
+                .or_else(|| self.trace.model.clone()),
+            code: None,
+            message: None,
+        };
         self.trace.pool.attempts.push(RouteTracePoolAttempt {
-            member: trace_member(member),
-            status: TraceStageStatus::Failed,
-            code: Some(code.to_owned()),
-            message: Some(message.to_owned()),
+            member,
+            status: TraceStageStatus::Pending,
+            attempt_id,
+            url: Some(url),
+            request_status: TraceStageStatus::Pending,
+            response_status: TraceStageStatus::Pending,
+            auth_result: None,
+            http_status: None,
+            result: None,
+            duration_ms: None,
+            conversion_path: (!self.trace.conversion.path.is_empty())
+                .then(|| self.trace.conversion.path.clone()),
+            code: None,
+            message: None,
         });
+        attempt_id
+    }
+
+    pub fn upstream_attempt_response(
+        &mut self,
+        attempt_id: u32,
+        http_status: u16,
+        duration_ms: u64,
+        code: Option<&str>,
+    ) {
+        let successful = (200..300).contains(&http_status);
+        if let Some(attempt) = self
+            .trace
+            .pool
+            .attempts
+            .iter_mut()
+            .find(|attempt| attempt.attempt_id == attempt_id)
+        {
+            attempt.status = if successful {
+                TraceStageStatus::Ok
+            } else {
+                TraceStageStatus::Failed
+            };
+            attempt.request_status = TraceStageStatus::Ok;
+            attempt.response_status = if successful {
+                TraceStageStatus::Ok
+            } else {
+                TraceStageStatus::Failed
+            };
+            attempt.auth_result = Some(
+                if successful {
+                    "accepted"
+                } else if http_status == 401 {
+                    "rejected"
+                } else {
+                    "not_recorded"
+                }
+                .to_owned(),
+            );
+            attempt.http_status = Some(http_status);
+            attempt.result = Some(if successful { "success" } else { "http_error" }.to_owned());
+            attempt.duration_ms = Some(duration_ms);
+            attempt.code = code.map(str::to_owned);
+            attempt.message = code.map(safe_attempt_message);
+        }
+        self.trace.upstream_request.status = TraceStageStatus::Ok;
+    }
+
+    pub fn upstream_request_failed(
+        &mut self,
+        url: Option<&str>,
+        member: &PickedMember,
+        model: Option<&str>,
+        code: &str,
+    ) {
+        self.trace.upstream_request = RouteTraceUpstreamRequest {
+            status: TraceStageStatus::Failed,
+            url: url
+                .map(sanitize_upstream_url)
+                .filter(|value| !value.is_empty()),
+            member: Some(trace_member(member)),
+            model: model
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+                .or_else(|| self.trace.upstream.upstream_model.clone())
+                .or_else(|| self.trace.model.clone()),
+            code: Some(code.to_owned()),
+            message: Some(safe_attempt_message(code)),
+        };
+        self.mark_failure(RouteTraceStageId::UpstreamRequest);
+        skip_if_pending(&mut self.trace.upstream_auth.status);
+        skip_if_pending(&mut self.trace.upstream.status);
+        skip_if_pending(&mut self.trace.response_conversion.status);
+        skip_if_pending(&mut self.trace.delivery.status);
+    }
+
+    pub fn upstream_attempt_transport_failed(
+        &mut self,
+        attempt_id: u32,
+        request_sent: bool,
+        duration_ms: u64,
+        code: &str,
+    ) {
+        if let Some(attempt) = self
+            .trace
+            .pool
+            .attempts
+            .iter_mut()
+            .find(|attempt| attempt.attempt_id == attempt_id)
+        {
+            attempt.status = TraceStageStatus::Failed;
+            attempt.request_status = if request_sent {
+                TraceStageStatus::Ok
+            } else {
+                TraceStageStatus::Failed
+            };
+            attempt.response_status = if request_sent {
+                TraceStageStatus::Failed
+            } else {
+                TraceStageStatus::Skipped
+            };
+            attempt.auth_result = Some("not_recorded".to_owned());
+            attempt.result = Some(
+                if request_sent {
+                    "timeout"
+                } else {
+                    "transport_error"
+                }
+                .to_owned(),
+            );
+            attempt.duration_ms = Some(duration_ms);
+            attempt.code = Some(code.to_owned());
+            attempt.message = Some(safe_attempt_message(code));
+        }
+        self.trace.upstream_request.status = if request_sent {
+            TraceStageStatus::Ok
+        } else {
+            TraceStageStatus::Failed
+        };
+        self.trace.upstream_request.code = (!request_sent).then(|| code.to_owned());
+        self.trace.upstream_request.message = (!request_sent).then(|| safe_attempt_message(code));
+    }
+
+    pub fn pool_attempt_failed(&mut self, member: &PickedMember, code: &str, _message: &str) {
+        if let Some(attempt) = self
+            .trace
+            .pool
+            .attempts
+            .last_mut()
+            .filter(|attempt| attempt.member.source_id == member.source_id)
+        {
+            attempt.status = TraceStageStatus::Failed;
+            attempt.code = Some(code.to_owned());
+            attempt.message = Some(safe_attempt_message(code));
+        }
     }
 
     pub fn conversion_prepared(
@@ -842,7 +1094,7 @@ impl RouteTraceBuilder {
             code: Some(code.to_owned()),
             message: Some(message.to_owned()),
         };
-        self.mark_failure("conversion");
+        self.mark_failure(RouteTraceStageId::RequestConversion);
         self.skip_after_conversion();
     }
 
@@ -851,7 +1103,7 @@ impl RouteTraceBuilder {
         ok: bool,
         http_status: Option<u16>,
         code: Option<&str>,
-        message: Option<&str>,
+        _message: Option<&str>,
     ) {
         self.trace.upstream_auth = RouteTraceUpstreamAuth {
             status: if ok {
@@ -861,7 +1113,7 @@ impl RouteTraceBuilder {
             },
             http_status,
             code: code.map(str::to_owned),
-            message: message.map(str::to_owned),
+            message: code.map(safe_attempt_message),
         };
     }
 
@@ -875,12 +1127,36 @@ impl RouteTraceBuilder {
         let member = trace_member(member);
         self.trace.pool.selected_member = Some(member.clone());
         self.trace.pool.status = TraceStageStatus::Ok;
-        self.trace.pool.attempts.push(RouteTracePoolAttempt {
-            member: member.clone(),
-            status: TraceStageStatus::Ok,
-            code: None,
-            message: None,
+        let has_success_attempt = self.trace.pool.attempts.last().is_some_and(|attempt| {
+            attempt.member.source_id == member.source_id && attempt.status == TraceStageStatus::Ok
         });
+        if !has_success_attempt {
+            let attempt_id = self.trace.pool.attempts.len() as u32 + 1;
+            self.trace.pool.attempts.push(RouteTracePoolAttempt {
+                member: member.clone(),
+                status: TraceStageStatus::Ok,
+                attempt_id,
+                url: Some(sanitize_upstream_url(url)),
+                request_status: TraceStageStatus::Ok,
+                response_status: TraceStageStatus::Ok,
+                auth_result: Some("accepted".to_owned()),
+                http_status: Some(http_status),
+                result: Some("success".to_owned()),
+                duration_ms: None,
+                conversion_path: (!self.trace.conversion.path.is_empty())
+                    .then(|| self.trace.conversion.path.clone()),
+                code: None,
+                message: None,
+            });
+        }
+        self.trace.upstream_request.status = TraceStageStatus::Ok;
+        self.trace.upstream_request.url = Some(sanitize_upstream_url(url));
+        self.trace.upstream_request.member = Some(member.clone());
+        self.trace.upstream_request.model = upstream_model
+            .filter(|value| !value.trim().is_empty())
+            .map(str::to_owned)
+            .or_else(|| self.trace.upstream_request.model.clone())
+            .or_else(|| self.trace.model.clone());
         self.trace.upstream = RouteTraceUpstream {
             status: TraceStageStatus::Ok,
             url: Some(sanitize_upstream_url(url)),
@@ -908,22 +1184,19 @@ impl RouteTraceBuilder {
         member: &PickedMember,
         http_status: Option<u16>,
         code: &str,
-        message: &str,
+        _message: &str,
     ) {
         let failed_member = trace_member(member);
-        let already_recorded = self.trace.pool.attempts.last().is_some_and(|attempt| {
-            attempt.status == TraceStageStatus::Failed
-                && attempt.member.source_kind == failed_member.source_kind
+        if let Some(attempt) = self.trace.pool.attempts.last_mut().filter(|attempt| {
+            attempt.member.source_kind == failed_member.source_kind
                 && attempt.member.source_id == failed_member.source_id
-                && attempt.code.as_deref() == Some(code)
-        });
-        if !already_recorded {
-            self.trace.pool.attempts.push(RouteTracePoolAttempt {
-                member: failed_member.clone(),
-                status: TraceStageStatus::Failed,
-                code: Some(code.to_owned()),
-                message: Some(message.to_owned()),
-            });
+        }) {
+            attempt.status = TraceStageStatus::Failed;
+            attempt.code = Some(code.to_owned());
+            attempt.message = Some(safe_attempt_message(code));
+        }
+        if code != "unauthorized" {
+            skip_if_pending(&mut self.trace.upstream_auth.status);
         }
         self.trace.upstream = RouteTraceUpstream {
             status: TraceStageStatus::Failed,
@@ -933,13 +1206,14 @@ impl RouteTraceBuilder {
             upstream_model: self.trace.upstream.upstream_model.clone(),
             http_status,
             code: Some(code.to_owned()),
-            message: Some(message.to_owned()),
+            message: Some(safe_attempt_message(code)),
         };
-        self.trace.response_conversion.status = TraceStageStatus::Skipped;
-        if code == "unauthorized" {
-            self.mark_failure("upstream_auth");
+        skip_if_pending(&mut self.trace.response_conversion.status);
+        skip_if_pending(&mut self.trace.delivery.status);
+        if self.trace.upstream_request.status == TraceStageStatus::Failed {
+            self.mark_failure(RouteTraceStageId::UpstreamRequest);
         } else {
-            self.mark_failure("upstream");
+            self.mark_failure(RouteTraceStageId::UpstreamResponse);
         }
     }
 
@@ -949,23 +1223,26 @@ impl RouteTraceBuilder {
         member: &PickedMember,
         http_status: Option<u16>,
         code: &str,
-        message: &str,
+        _message: &str,
     ) {
+        if self.trace.pool.attempts.is_empty() {
+            self.pool_failed("pool_exhausted", "No healthy connection remained.");
+            return;
+        }
         let member = trace_member(member);
-        self.trace.pool.status = TraceStageStatus::Failed;
+        self.trace.pool.status = TraceStageStatus::Ok;
         self.trace.pool.selected_member = Some(member.clone());
-        self.trace.pool.code = Some("pool_exhausted".to_owned());
-        self.trace.pool.message = Some("No healthy connection remained.".to_owned());
+        self.trace.pool.code = None;
+        self.trace.pool.message = None;
         if code == "unauthorized" {
             self.trace.upstream_auth = RouteTraceUpstreamAuth {
                 status: TraceStageStatus::Failed,
                 http_status,
                 code: Some(code.to_owned()),
-                message: Some(message.to_owned()),
+                message: Some(safe_attempt_message(code)),
             };
-        } else if self.trace.upstream_auth.status == TraceStageStatus::Pending {
-            self.trace.upstream_auth.status = TraceStageStatus::Ok;
-            self.trace.upstream_auth.http_status = http_status;
+        } else {
+            skip_if_pending(&mut self.trace.upstream_auth.status);
         }
         self.trace.upstream = RouteTraceUpstream {
             status: TraceStageStatus::Failed,
@@ -975,13 +1252,14 @@ impl RouteTraceBuilder {
             upstream_model: self.trace.upstream.upstream_model.clone(),
             http_status,
             code: Some(code.to_owned()),
-            message: Some(message.to_owned()),
+            message: Some(safe_attempt_message(code)),
         };
-        self.trace.response_conversion.status = TraceStageStatus::Skipped;
-        if code == "unauthorized" {
-            self.mark_failure("upstream_auth");
+        skip_if_pending(&mut self.trace.response_conversion.status);
+        skip_if_pending(&mut self.trace.delivery.status);
+        if self.trace.upstream_request.status == TraceStageStatus::Failed {
+            self.mark_failure(RouteTraceStageId::UpstreamRequest);
         } else {
-            self.mark_failure("upstream");
+            self.mark_failure(RouteTraceStageId::UpstreamResponse);
         }
     }
 
@@ -1005,7 +1283,7 @@ impl RouteTraceBuilder {
             };
             self.trace.response_conversion.result = Some("completed".to_owned());
             if self.trace.response_conversion.status == TraceStageStatus::Failed {
-                self.mark_failure("response_conversion");
+                self.mark_failure(RouteTraceStageId::ResponseConversion);
             }
         }
     }
@@ -1017,55 +1295,63 @@ impl RouteTraceBuilder {
         self.trace.http_status = http_status;
         self.trace.ok = (200..400).contains(&http_status);
         self.trace.delivery.http_status = Some(http_status);
-        self.trace.delivery.status = if self.trace.delivery.stream {
-            TraceStageStatus::Pending
-        } else {
-            TraceStageStatus::Ok
-        };
-        self.trace.delivery.completion = Some(
-            if self.trace.delivery.stream {
-                "streaming"
+        if self.trace.delivery.status == TraceStageStatus::Pending {
+            self.trace.delivery.status = if self.trace.delivery.stream {
+                TraceStageStatus::Pending
             } else {
-                "response_returned"
-            }
-            .to_owned(),
-        );
+                TraceStageStatus::Ok
+            };
+            self.trace.delivery.completion = Some(
+                if self.trace.delivery.stream {
+                    "streaming"
+                } else {
+                    "response_returned"
+                }
+                .to_owned(),
+            );
+        }
         self.trace.latency_ms = Some(self.started.elapsed().as_millis() as u64);
         log_route_trace_finalized(&self.trace);
         log.push(self.trace.clone());
         self.committed = true;
     }
 
-    fn mark_failure(&mut self, stage: &str) {
+    fn mark_failure(&mut self, stage: RouteTraceStageId) {
         if self.trace.failure_stage.is_none() {
-            self.trace.failure_stage = Some(stage.to_owned());
+            self.trace.failure_stage = Some(stage);
         }
     }
 
     fn skip_after_local_auth(&mut self) {
-        self.trace.pool.status = TraceStageStatus::Skipped;
-        self.trace.conversion.status = TraceStageStatus::Skipped;
-        self.trace.upstream_auth.status = TraceStageStatus::Skipped;
-        self.trace.upstream.status = TraceStageStatus::Skipped;
-        self.trace.response_conversion.status = TraceStageStatus::Skipped;
+        skip_if_pending(&mut self.trace.pool.status);
+        skip_if_pending(&mut self.trace.conversion.status);
+        skip_if_pending(&mut self.trace.upstream_request.status);
+        skip_if_pending(&mut self.trace.upstream_auth.status);
+        skip_if_pending(&mut self.trace.upstream.status);
+        skip_if_pending(&mut self.trace.response_conversion.status);
+        skip_if_pending(&mut self.trace.delivery.status);
     }
 
     fn skip_after_admission(&mut self) {
-        self.trace.route_resolution.status = TraceStageStatus::Skipped;
+        skip_if_pending(&mut self.trace.route_resolution.status);
         self.skip_after_local_auth();
     }
 
     fn skip_after_pool(&mut self) {
-        self.trace.conversion.status = TraceStageStatus::Skipped;
-        self.trace.upstream_auth.status = TraceStageStatus::Skipped;
-        self.trace.upstream.status = TraceStageStatus::Skipped;
-        self.trace.response_conversion.status = TraceStageStatus::Skipped;
+        skip_if_pending(&mut self.trace.conversion.status);
+        skip_if_pending(&mut self.trace.upstream_request.status);
+        skip_if_pending(&mut self.trace.upstream_auth.status);
+        skip_if_pending(&mut self.trace.upstream.status);
+        skip_if_pending(&mut self.trace.response_conversion.status);
+        skip_if_pending(&mut self.trace.delivery.status);
     }
 
     fn skip_after_conversion(&mut self) {
-        self.trace.upstream_auth.status = TraceStageStatus::Skipped;
-        self.trace.upstream.status = TraceStageStatus::Skipped;
-        self.trace.response_conversion.status = TraceStageStatus::Skipped;
+        skip_if_pending(&mut self.trace.upstream_request.status);
+        skip_if_pending(&mut self.trace.upstream_auth.status);
+        skip_if_pending(&mut self.trace.upstream.status);
+        skip_if_pending(&mut self.trace.response_conversion.status);
+        skip_if_pending(&mut self.trace.delivery.status);
     }
 }
 
@@ -1092,9 +1378,10 @@ fn log_route_trace_finalized(trace: &RouteRequestTrace) {
         local_auth = trace.local_auth.status.as_str(),
         pool = trace.pool.status.as_str(),
         conversion = trace.conversion.status.as_str(),
+        upstream_request = trace.upstream_request.status.as_str(),
         upstream_auth = trace.upstream_auth.status.as_str(),
         upstream = trace.upstream.status.as_str(),
-        failure_stage = trace.failure_stage.as_deref().unwrap_or(""),
+        failure_stage = trace.failure_stage.map(RouteTraceStageId::as_str).unwrap_or(""),
         "route trace finalized"
     );
 }
@@ -1115,6 +1402,27 @@ pub fn trace_member(member: &PickedMember) -> RouteTraceMember {
         },
         key_last4: secret_last4(&member.auth.token()),
     }
+}
+
+fn safe_attempt_message(code: &str) -> String {
+    match code {
+        "unauthorized" => "Upstream authorization failed.",
+        "upstream_timeout" => "Timed out waiting for the upstream response.",
+        "upstream_unavailable" => "Upstream transport unavailable.",
+        "invalid_request" => "Upstream rejected the request.",
+        _ => "Upstream attempt failed.",
+    }
+    .to_owned()
+}
+
+fn skip_if_pending(status: &mut TraceStageStatus) {
+    if *status == TraceStageStatus::Pending {
+        *status = TraceStageStatus::Skipped;
+    }
+}
+
+fn legacy_trace_version() -> u8 {
+    1
 }
 
 fn secret_last4(token: &str) -> Option<String> {
@@ -1150,11 +1458,14 @@ pub fn sanitize_upstream_url(url: &str) -> String {
     if trimmed.is_empty() {
         return String::new();
     }
-    trimmed
-        .split(['?', '#'])
-        .next()
-        .unwrap_or(trimmed)
-        .to_owned()
+    let Ok(mut parsed) = reqwest::Url::parse(trimmed) else {
+        return String::new();
+    };
+    let _ = parsed.set_username("");
+    let _ = parsed.set_password(None);
+    parsed.set_query(None);
+    parsed.set_fragment(None);
+    parsed.to_string()
 }
 
 fn now_unix_ms() -> u128 {

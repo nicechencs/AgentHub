@@ -33,6 +33,7 @@ function inboundToLegacyTrace(
   index: number,
 ): AdapterBridgeRouteTrace {
   return {
+    traceVersion: 1,
     requestId: `legacy-${row.at}-${row.method}-${row.path}-${index}`,
     at: row.at,
     method: row.method,
@@ -44,7 +45,7 @@ function inboundToLegacyTrace(
     conversion: { ...skippedStage, path: '' },
     upstreamAuth: skippedStage,
     upstream: skippedStage,
-    failureStage: row.ok ? null : 'upstream',
+    failureStage: row.ok ? null : 'upstream_response',
   };
 }
 

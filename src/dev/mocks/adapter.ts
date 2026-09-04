@@ -1200,6 +1200,7 @@ function mockLocalGatewayStatus(state: MockAdapterState): LocalGatewayStatus {
       : [],
     unauthenticatedTraces: state.localGatewayRunning
       ? [{
+        traceVersion: 2,
         requestId: 'mock-req-unauth',
         at: '2026-08-12T00:00:00.000Z',
         method: 'POST',
@@ -1258,6 +1259,7 @@ function mockInboundRows(): AdapterBridgeRuntimeStatus['recentInbound'] {
 function mockRouteTraces(): AdapterBridgeRuntimeStatus['recentRouteTraces'] {
   return [
     {
+      traceVersion: 2,
       requestId: 'mock-req-ok',
       at: '2026-08-12T00:00:02.000Z',
       method: 'POST',
@@ -1285,6 +1287,7 @@ function mockRouteTraces(): AdapterBridgeRuntimeStatus['recentRouteTraces'] {
       },
     },
     {
+      traceVersion: 2,
       requestId: 'mock-req-fail',
       at: '2026-08-12T00:00:01.000Z',
       method: 'POST',
@@ -1310,7 +1313,7 @@ function mockRouteTraces(): AdapterBridgeRuntimeStatus['recentRouteTraces'] {
         httpStatus: 401,
         code: 'unauthorized',
       },
-      failureStage: 'upstream_auth',
+      failureStage: 'upstream_response',
     },
   ];
 }

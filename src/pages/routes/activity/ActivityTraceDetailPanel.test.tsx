@@ -7,6 +7,7 @@ import { ActivityTraceDetailPanel } from './ActivityTraceDetailPanel';
 
 function row(partial: Partial<RouteTraceListItem> = {}): RouteTraceListItem {
   return {
+    traceVersion: 2,
     requestId: 'req-1',
     at: '2026-01-01T00:00:00.000Z',
     method: 'POST',
@@ -25,6 +26,12 @@ function row(partial: Partial<RouteTraceListItem> = {}): RouteTraceListItem {
     pool: { status: 'ok', selectedMember: { label: 'WorkBuddy Grok', sourceKind: 'account', sourceId: 'acct-1', keyLast4: '627a' } },
     conversion: { status: 'ok', path: 'messages_to_anthropic', result: 'converted' },
     upstreamAuth: { status: 'ok', httpStatus: 200 },
+    upstreamRequest: {
+      status: 'ok',
+      url: 'https://api.anthropic.com/v1/messages',
+      member: { label: 'WorkBuddy Grok', sourceKind: 'account', sourceId: 'acct-1', keyLast4: '627a' },
+      model: 'claude-sonnet-upstream',
+    },
     upstream: {
       status: 'ok',
       url: 'https://api.anthropic.com/v1/messages',
@@ -80,14 +87,14 @@ describe('ActivityTraceDetailPanel', () => {
           upstream: { status: 'pending' },
           responseConversion: { status: 'skipped', path: '' },
           delivery: { status: 'ok', httpStatus: 401, stream: false, completion: 'response_returned' },
-          failureStage: 'upstream_auth',
+          failureStage: 'upstream_response',
         }),
         width: 360,
         onClose() {},
       }),
     );
     expect(markup).toContain('>失败</span>');
-    expect(markup).toContain('上游鉴权失败');
+    expect(markup).toContain('接收上游响应失败');
     expect(markup).toContain('>401</p>');
     expect(markup).toContain('unauthorized');
     expect(markup).toContain('data-detail-stage="upstream_response"');

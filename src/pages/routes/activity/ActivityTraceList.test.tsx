@@ -8,6 +8,7 @@ import { ACTIVITY_TRACE_WIDTH_SPECS } from './activity-trace-list-model';
 
 function row(partial: Partial<RouteTraceListItem> = {}): RouteTraceListItem {
   return {
+    traceVersion: 2,
     requestId: 'req-1',
     at: '2026-01-01T00:00:00.000Z',
     method: 'POST',
