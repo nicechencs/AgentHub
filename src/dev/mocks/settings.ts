@@ -102,6 +102,8 @@ const LOG_LEVEL_OPTIONS: { value: LogLevel; label: string }[] = [
   { value: 'trace', label: 'trace — 极细' },
 ];
 
+let mockRememberedVault: string | null = null;
+
 export function createMockSettingsPort(): SettingsPort {
   return {
     logLevelOptions: LOG_LEVEL_OPTIONS,
@@ -148,6 +150,20 @@ export function createMockSettingsPort(): SettingsPort {
 
     async closeSub2ApiLoginWindow() {
       // no-op in browser / mock — no child WebviewWindow
+    },
+
+    async getSub2ApiRememberedVault() {
+      await delay(10);
+      return mockRememberedVault;
+    },
+
+    async setSub2ApiRememberedVault(json) {
+      await delay(10);
+      mockRememberedVault = json;
+    },
+
+    async sub2ApiHttpRequest() {
+      throw new Error('浏览器预览请使用 fetch；桌面版走 sub2api_http_request');
     },
 
     async pickDirectory(options) {
