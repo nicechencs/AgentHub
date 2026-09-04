@@ -12,7 +12,9 @@ export async function listConnectionTrash(
 export async function restoreConnectionTrash(id: string): Promise<void> {
   await getBackend().trash.restore(id);
   try {
-    await refreshRuntimeReadModels(getBackend(), { models: ['connectionInventory'] });
+    await refreshRuntimeReadModels(getBackend(), {
+      models: ['connectionInventory', 'ticketWallet'],
+    });
   } catch {
     // Restore succeeded. Refresh errors stay on the pool snapshot.
   }

@@ -403,6 +403,35 @@ describe('dedupTrashItems', () => {
     expect(kept[0].id).toBe('restore-new');
   });
 
+  it('does not collapse distinct API Key rows that only share a generic label', () => {
+    const first = trash({
+      id: 't-key-a',
+      sourceId: 'p-key-a',
+      label: 'API Key',
+      deletedAt: '2026-08-27T05:32:26.000Z',
+      provider: prov({
+        id: 'p-key-a',
+        name: 'API Key',
+        secretTail: '**272f',
+        configText: JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: 'sk-a' } }),
+      }),
+    });
+    const second = trash({
+      id: 't-key-b',
+      sourceId: 'p-key-b',
+      label: 'API Key',
+      deletedAt: '2026-08-27T15:03:29.000Z',
+      provider: prov({
+        id: 'p-key-b',
+        name: 'API Key',
+        secretTail: '**272f',
+        configText: JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: 'sk-b' } }),
+      }),
+    });
+    const kept = dedupTrashItems([first, second]);
+    expect(kept.map((row) => row.id).sort()).toEqual(['t-key-a', 't-key-b']);
+  });
+
   it('does not collapse the same email across agents without a shared grok-live id', () => {
     const grokAccount = trash({
       id: 'grok-acc-1-trash',

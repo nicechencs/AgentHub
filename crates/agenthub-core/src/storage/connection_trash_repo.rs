@@ -76,6 +76,14 @@ impl ConnectionTrashRepo {
         load_trash_payload_conn(conn, id)
     }
 
+    pub(crate) fn list_in_conn(
+        conn: &Connection,
+        agent: Option<AgentId>,
+        home: Option<&str>,
+    ) -> Result<Vec<ConnectionTrashItem>> {
+        list_conn(conn, agent, home)
+    }
+
     pub(crate) fn delete_conn(conn: &Connection, id: &str) -> Result<()> {
         delete_conn(conn, id)
     }
