@@ -54,7 +54,8 @@ import { cn } from '@/lib/utils';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
 import { Sub2ApiCaptcha, type Sub2ApiCaptchaHandle } from './Sub2ApiCaptcha';
 import {
-  formatKeyModels,
+  formatKeyModelsFromKey,
+  sub2apiKeyStatusBadgeVariant,
   formatKeyQuota,
   formatKeyTimestamp,
   initialSiteUrlDraft,
@@ -585,7 +586,7 @@ export default function Sub2ApiPage() {
                       const quotaLabel = formatKeyQuota(key, {
                         unlimited: t('routes.sub2api.quotaUnlimited'),
                       });
-                      const modelsLabel = formatKeyModels(key.models);
+                      const modelsLabel = formatKeyModelsFromKey(key);
                       const metaItems: { label: string; value: string }[] = [];
                       if (createdLabel) {
                         metaItems.push({
@@ -647,18 +648,12 @@ export default function Sub2ApiPage() {
                             </div>
                           ) : null}
                         </div>
-                        <Badge
-                          variant={
-                            statusKind === 'active'
-                              ? 'success'
-                              : statusKind === 'disabled'
-                                ? 'warning'
-                                : 'default'
-                          }
-                        >
+                        <Badge variant={sub2apiKeyStatusBadgeVariant(statusKind)}>
                           {sub2apiKeyStatusLabel(key.status, {
                             active: t('routes.sub2api.statusActive'),
                             disabled: t('routes.sub2api.statusDisabled'),
+                            expired: t('routes.sub2api.statusExpired'),
+                            quotaExhausted: t('routes.sub2api.statusQuotaExhausted'),
                             other: t('routes.sub2api.statusOther'),
                           })}
                         </Badge>
