@@ -315,16 +315,30 @@ impl RoutePoolService {
 
     pub fn delete_local_token(&self, id: &str) -> Result<()> {
         self.require_enabled()?;
+        let pool_id = if let Some(existing) = self.entry_keys.get(id)? {
+            existing.pool_id.clone()
+        } else if self.pools.get_pool(id)?.is_some() {
+            id.to_string()
+        } else {
+            return Err(AppError::NotFound(format!("entry key not found: {id}")));
+        };
+        let listed = self
+            .list_local_tokens()?
+            .into_iter()
+            .filter(|record| record.pool_id == pool_id)
+            .count();
+        if listed <= 1 {
+            return Err(AppError::InvalidArg(
+                "cannot delete the only entry key for this type".into(),
+            ));
+        }
         if let Some(existing) = self.entry_keys.get(id)? {
             if !existing.token.trim().is_empty() {
                 return self.entry_keys.delete(id);
             }
             return self.delete_primary_local_token(&existing.pool_id);
         }
-        if self.pools.get_pool(id)?.is_some() {
-            return self.delete_primary_local_token(id);
-        }
-        Err(AppError::NotFound(format!("entry key not found: {id}")))
+        self.delete_primary_local_token(id)
     }
 
     fn delete_primary_local_token(&self, pool_id: &str) -> Result<()> {
@@ -339,9 +353,9 @@ impl RoutePoolService {
             self.upsert_primary_name(pool_id, &extra.name)?;
             return self.entry_keys.delete(&extra.id);
         }
-        let rotated = generate_hub_token()?;
-        self.pools.set_hub_token(pool_id, &rotated, &now())?;
-        self.upsert_primary_name(pool_id, HIDDEN_PRIMARY_ENTRY_NAME)
+        Err(AppError::InvalidArg(
+            "cannot delete the only entry key for this type".into(),
+        ))
     }
 
     fn upsert_primary_name(&self, pool_id: &str, name: &str) -> Result<()> {

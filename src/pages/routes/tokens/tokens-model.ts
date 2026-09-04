@@ -8,7 +8,6 @@ import type {
   DefaultRoutePoolOverview,
   LocalTokenRecord,
 } from '@/lib/backend/contracts/adapter';
-import type { GatewayUsageRow } from '@/lib/backend/contracts/usage-types';
 import type { TranslateFn } from '@/lib/i18n';
 import { KNOWN_AGENT_IDS, type AgentKey } from '@/lib/types';
 import {
@@ -20,18 +19,7 @@ import {
 } from '@/lib/route-endpoints';
 import { agentConversationSurfaces } from '@/pages/agents/agent-detail-model';
 import { localEndpointKindLabel } from '@/pages/routes/shared/route-pool-view-model';
-import {
-  filterGatewayUsageRows,
-  summarizeGatewayUsage,
-} from '@/pages/routes/board/board-usage-model';
 import { profilesForPool } from '@/pages/routes/board/board-view-model';
-
-export interface LocalTokenUsage {
-  requestCount: number;
-  inputTokens: number;
-  outputTokens: number;
-  cachedInputTokens: number;
-}
 
 export interface LocalTokenRow {
   /** Stable list key: pool id (pool-backed) or profile id (leftover). */
@@ -62,12 +50,6 @@ export interface LocalTokenRow {
   unavailable: boolean;
   /** Pool/runtime writer this key belongs to; not a client-write target. */
   targetAgentId: string;
-  /** Last inbound path seen for this key. */
-  lastPath: string | null;
-  /** ISO time of the latest inbound request. */
-  lastRequestAt: string | null;
-  /** Optional 7-day gateway usage; omitted until the query is ready. */
-  usage?: LocalTokenUsage;
   /** Models this entry key can send; first item is the default test pick. */
   listedModels: string[];
 }
@@ -206,56 +188,6 @@ export function visibleTokenKinds(
     .map((row) => row.kind);
 }
 
-export function tokenUsageSurface(kind: LocalEndpointKind): 'messages' | 'responses' | 'chat' {
-  if (kind === 'messages') return 'messages';
-  if (kind === 'chat_completions') return 'chat';
-  return 'responses';
-}
-
-export function lastVisitFromStatuses(
-  profileIds: readonly string[],
-  statuses: Record<string, AdapterBridgeRuntimeStatus | undefined>,
-): { lastPath: string | null; lastRequestAt: string | null } {
-  let bestAt = '';
-  let bestPath: string | null = null;
-  for (const id of profileIds) {
-    const status = statuses[id];
-    const inbound = status?.recentInbound ?? [];
-    const at = status?.lastRequestAt?.trim() || inbound[0]?.at || '';
-    const path = inbound[0]?.path?.trim() || null;
-    if (!at && !path) continue;
-    if (!bestAt || at >= bestAt) {
-      bestAt = at;
-      bestPath = path;
-    }
-  }
-  return {
-    lastPath: bestPath,
-    lastRequestAt: bestAt || null,
-  };
-}
-
-export function attachTokenUsage(
-  rows: readonly LocalTokenRow[],
-  gatewayRows: readonly GatewayUsageRow[],
-): LocalTokenRow[] {
-  return rows.map((row) => {
-    const totals = summarizeGatewayUsage(filterGatewayUsageRows(gatewayRows, {
-      profileIds: row.profileIds,
-      surface: tokenUsageSurface(row.kind),
-    }));
-    return {
-      ...row,
-      usage: {
-        requestCount: totals.requestCount,
-        inputTokens: totals.inputTokens,
-        outputTokens: totals.outputTokens,
-        cachedInputTokens: totals.cachedInputTokens,
-      },
-    };
-  });
-}
-
 function pickRuntimeProfile(
   matches: readonly AdapterProfile[],
   statuses: Record<string, AdapterBridgeRuntimeStatus | undefined>,
@@ -276,10 +208,43 @@ function profileIdsForPool(
 }
 
 export function tokenDisplayName(
-  row: Pick<LocalTokenRow, 'name' | 'kind'>,
+  row: Pick<LocalTokenRow, 'name' | 'kind' | 'primary'>,
   t?: TranslateFn,
 ): string {
-  return row.name.trim() || tokenTypeLabel(row, t);
+  const name = row.name.trim();
+  if (name) return name;
+  if (row.primary) return t ? t('routes.tokens.defaultName') : '默认';
+  return tokenTypeLabel(row, t);
+}
+
+export type LocalTokenGroup = {
+  kind: LocalEndpointKind;
+  path: string;
+  /** Shared loopback address for this type; taken from the first row. */
+  endpoint: string | null;
+  rows: LocalTokenRow[];
+};
+
+/** Group list rows by endpoint type, keeping the existing kind / default / name order. */
+export function buildLocalTokenGroups(
+  rows: readonly LocalTokenRow[],
+): LocalTokenGroup[] {
+  const grouped = new Map<LocalEndpointKind, LocalTokenRow[]>();
+  for (const row of rows) {
+    const list = grouped.get(row.kind);
+    if (list) list.push(row);
+    else grouped.set(row.kind, [row]);
+  }
+  return LOCAL_ENDPOINT_KINDS.flatMap((spec) => {
+    const groupRows = grouped.get(spec.kind);
+    if (!groupRows || groupRows.length === 0) return [];
+    return [{
+      kind: spec.kind,
+      path: spec.path,
+      endpoint: groupRows[0]?.endpoint ?? null,
+      rows: groupRows,
+    }];
+  });
 }
 
 function rowFromRuntime(input: {
@@ -297,7 +262,6 @@ function rowFromRuntime(input: {
   unavailable: boolean;
   storedToken?: string | null;
   listedModels?: readonly string[];
-  statuses: Record<string, AdapterBridgeRuntimeStatus | undefined>;
 }): LocalTokenRow {
   const port = input.unavailable
     ? null
@@ -310,7 +274,6 @@ function rowFromRuntime(input: {
     ? null
     : (input.status?.localToken?.trim() || null);
   const token = runtimeToken || input.storedToken?.trim() || null;
-  const visit = lastVisitFromStatuses(input.profileIds, input.statuses);
   return {
     id: input.id,
     poolBacked: input.poolBacked,
@@ -327,8 +290,6 @@ function rowFromRuntime(input: {
     maskedToken: token ? maskLocalToken(token) : null,
     unavailable: input.unavailable,
     targetAgentId: input.targetAgentId,
-    lastPath: visit.lastPath,
-    lastRequestAt: visit.lastRequestAt,
     listedModels: uniqueListedModels(input.listedModels ?? []),
   };
 }
@@ -400,7 +361,6 @@ export function buildLocalTokenRows(
         unavailable: Boolean(statusErrors[statusId]),
         storedToken,
         listedModels: pool.listedModels,
-        statuses: bridgeStatuses,
       }));
     }
     const extraRecords = recordsReady ? records : [];
@@ -420,7 +380,6 @@ export function buildLocalTokenRows(
         unavailable: Boolean(statusErrors[statusId]),
         storedToken: extra.token,
         listedModels: pool.listedModels,
-        statuses: bridgeStatuses,
       }));
     }
     if (kind === 'chat_completions') sharedChatRow = true;
@@ -451,7 +410,6 @@ export function buildLocalTokenRows(
       status,
       unavailable,
       storedToken: tokensByPoolId[profile.id],
-      statuses: bridgeStatuses,
     }));
     if (kind === 'chat_completions') sharedChatRow = true;
   }
@@ -464,9 +422,6 @@ export function buildLocalTokenRows(
         ...row.listedModels,
         ...extraChatModels,
       ]);
-      const visit = lastVisitFromStatuses(row.profileIds, bridgeStatuses);
-      row.lastPath = visit.lastPath;
-      row.lastRequestAt = visit.lastRequestAt;
     }
   }
 
@@ -489,7 +444,8 @@ export type LocalTokenEditKeyGate = {
 };
 
 export function localTokenDeleteGate(
-  row: Pick<LocalTokenRow, 'canDelete' | 'poolBacked' | 'unavailable'>,
+  row: Pick<LocalTokenRow, 'canDelete' | 'poolBacked' | 'unavailable' | 'kind'>,
+  rows: readonly Pick<LocalTokenRow, 'kind' | 'poolBacked'>[] = [],
   t?: TranslateFn,
 ): LocalTokenEditKeyGate {
   if (row.unavailable) {
@@ -504,6 +460,15 @@ export function localTokenDeleteGate(
       reason: t
         ? t('routes.tokens.editKeyNeedPool')
         : '这条还不是连接池入口 Key，先从路由建入口',
+    };
+  }
+  const sameKind = rows.filter((item) => item.kind === row.kind && item.poolBacked);
+  if (sameKind.length <= 1) {
+    return {
+      enabled: false,
+      reason: t
+        ? t('routes.tokens.deleteNeedExtra')
+        : '这类型只剩这一把，不能删除，可修改',
     };
   }
   return { enabled: true, reason: null };

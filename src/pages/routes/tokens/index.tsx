@@ -39,19 +39,15 @@ import {
   setLocalTokenName,
 } from '@/lib/api/adapter';
 import type { LocalTokenRecord } from '@/lib/backend/contracts/adapter';
-import { USAGE_COLLECTED_EVENT } from '@/lib/usage-sync';
 import { ROUTES_INSPECT_WIDTH_KEY } from '@/pages/routes/shared/route-inspect';
 import { useAdapterResources } from '@/pages/routes/shared/use-bridge-resources';
 import { useRoutePoolState } from '@/pages/routes/shared/use-route-pool-state';
-import { boardUsageWindow } from '@/pages/routes/board/board-usage-model';
-import { useBoardUsageStats } from '@/pages/routes/board/use-board-usage';
 import { buildLocalGatewayControl } from '@/pages/routes/board/board-view-model';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
 import { CreateTokenEndpointCards } from './CreateTokenEndpointCards';
 import { TokenDetailPanel } from './TokenDetailPanel';
 import { TokenList } from './TokenList';
 import {
-  attachTokenUsage,
   buildCreateTokenEndpointCards,
   buildLocalTokenRows,
   defaultCreateTokenName,
@@ -93,7 +89,6 @@ export default function RoutesTokensPage() {
     reload,
   } = useAdapterResources();
   const [tokenTick, setTokenTick] = useState(0);
-  const [collectKey, setCollectKey] = useState(0);
   const [tokenRecords, setTokenRecords] = useState<LocalTokenRecord[] | null>(null);
   const [editRow, setEditRow] = useState<LocalTokenRow | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -161,16 +156,7 @@ export default function RoutesTokensPage() {
       tokenRecords,
     ],
   );
-  const usageWindow = useMemo(() => boardUsageWindow('7d'), []);
-  const usageState = useBoardUsageStats({
-    enabled: rows.length > 0,
-    since: usageWindow.since,
-    refreshKey: tokenTick + collectKey,
-  });
-  const listRows = useMemo(
-    () => (usageState.status === 'ready' ? attachTokenUsage(rows, usageState.rows) : rows),
-    [rows, usageState],
-  );
+  const listRows = rows;
   const createTargets = useMemo(
     () => defaultPools.flatMap((pool) => {
       if (pool.members.length === 0) return [];
@@ -183,12 +169,6 @@ export default function RoutesTokensPage() {
     () => buildCreateTokenEndpointCards(createTargets),
     [createTargets],
   );
-
-  useEffect(() => {
-    const onCollected = () => setCollectKey((key) => key + 1);
-    window.addEventListener(USAGE_COLLECTED_EVENT, onCollected);
-    return () => window.removeEventListener(USAGE_COLLECTED_EVENT, onCollected);
-  }, []);
 
   const openEdit = (row: LocalTokenRow) => {
     const gate = localTokenEditKeyGate(row, t);
@@ -292,22 +272,28 @@ export default function RoutesTokensPage() {
     }
   };
 
+  const detailRow = inspect.target
+    ? listRows.find((row) => row.id === inspect.target) ?? null
+    : null;
+  const matchRow = deleteRow ?? detailRow;
+  const matchTokenId = matchRow?.id ?? '';
+  const matchToken = matchRow?.token?.trim() ?? '';
+
   useEffect(() => {
-    if (!deleteRow) {
+    if (!matchTokenId) {
       setConnectionMatches([]);
       setAlsoDeleteConnections(true);
       setConnectionMatchesReady(true);
       return;
     }
-    const token = deleteRow.token?.trim() ?? '';
-    if (!token) {
+    if (!matchToken) {
       setConnectionMatches([]);
       setConnectionMatchesReady(true);
       return;
     }
     let cancelled = false;
     setConnectionMatchesReady(false);
-    void Promise.all([listProviders(), listAccounts(), hashLocalToken(token)])
+    void Promise.all([listProviders(), listAccounts(), hashLocalToken(matchToken)])
       .then(([providers, accounts, tokenHash]) => {
         if (cancelled) return;
         const matches = matchesConnectionEntryKeys({ tokenHash, providers, accounts });
@@ -323,12 +309,12 @@ export default function RoutesTokensPage() {
     return () => {
       cancelled = true;
     };
-  }, [deleteRow]);
+  }, [matchTokenId, matchToken]);
 
   const confirmDelete = async () => {
     if (!deleteRow || deleteBusy) return;
     if (deleteRow.token?.trim() && !connectionMatchesReady) return;
-    const gate = localTokenDeleteGate(deleteRow, t);
+    const gate = localTokenDeleteGate(deleteRow, listRows, t);
     if (!gate.enabled) {
       toast({ title: gate.reason ?? t('routes.tokens.deleteFailed'), variant: 'danger' });
       setDeleteRow(null);
@@ -363,9 +349,6 @@ export default function RoutesTokensPage() {
     }
   };
 
-  const detailRow = inspect.target
-    ? listRows.find((row) => row.id === inspect.target) ?? null
-    : null;
   const pageLoading = loading || poolsLoading;
 
   const startImport = (row: LocalTokenRow, agentId: AgentKey, draft: ConnectApiKeyDraft) => {
@@ -663,6 +646,9 @@ export default function RoutesTokensPage() {
           onDelete={() => setDeleteRow(detailRow)}
           installedAgents={installedAgentRefs}
           onImport={(agentId, draft) => startImport(detailRow, agentId, draft)}
+          siblingRows={listRows}
+          writtenToNames={connectionMatchAgentNames(connectionMatches, agentDisplayName)}
+          writtenToReady={connectionMatchesReady}
         />
       ) : null}
     >

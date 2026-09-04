@@ -50,6 +50,10 @@ describe('routes tokens layout wiring', () => {
     expect(page).toContain('deleteAlsoConnections');
     expect(page).toContain('matchesConnectionEntryKeys');
     expect(page).toContain('type="checkbox"');
+    expect(panel).not.toContain('data-token-models');
+    expect(panel).toContain('data-token-written-to');
+    expect(page).not.toContain('useBoardUsageStats');
+    expect(page).not.toContain('attachTokenUsage');
   });
 
   it('puts eye and copy icons after the entry key, not text buttons', () => {
