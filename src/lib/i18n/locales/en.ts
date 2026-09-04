@@ -1328,6 +1328,7 @@ export const en = {
       importAfterSaveTitle: "Entry key saved",
       importAfterSaveDescription: "Import this entry key into an installed Agent?",
       importAfterSaveSkip: "Later",
+      createForEndpoint: "Create for this endpoint",
       create: "New",
       createTitle: "New entry key",
       createDescription: "Pick an endpoint. Name is optional. Saving generates the key.",

@@ -19,11 +19,12 @@ import {
   useColumnWidths,
   type ColumnWidthSpec,
 } from '@/components/ui/table';
-import { localEndpointBrandAgentId } from '@/lib/route-endpoints';
+import { localEndpointBrandAgentId, type LocalEndpointKind } from '@/lib/route-endpoints';
 import { tokenEndpointParts } from './token-detail-model';
 import {
   buildLocalTokenGroups,
   localTokenDeleteGate,
+  localTokenEmptyCreateGate,
   tokenDisplayName,
   tokenTypeLabel,
   type LocalTokenRow,
@@ -55,6 +56,9 @@ export function TokenList({
   onDelete,
   installedAgents,
   onImport,
+  onCreateForEndpoint,
+  createPoolIdByKind,
+  needRoute,
 }: {
   rows: readonly LocalTokenRow[];
   activeId?: string | null;
@@ -62,6 +66,9 @@ export function TokenList({
   onDelete?: (row: LocalTokenRow) => void;
   installedAgents?: readonly TokenImportAgentRef[];
   onImport?: (row: LocalTokenRow, agentId: AgentKey, draft: ConnectApiKeyDraft) => void;
+  onCreateForEndpoint?: (row: LocalTokenRow) => void;
+  createPoolIdByKind?: Readonly<Partial<Record<LocalEndpointKind, string>>>;
+  needRoute?: boolean;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -155,6 +162,9 @@ export function TokenList({
                           installedAgents,
                           onDelete,
                           onImport,
+                          onCreateForEndpoint,
+                          createPoolIdByKind,
+                          needRoute,
                         })}
                       </TableCell>
                     ))}
@@ -179,6 +189,9 @@ function renderColumn(
     installedAgents?: readonly TokenImportAgentRef[];
     onDelete?: (row: LocalTokenRow) => void;
     onImport?: (row: LocalTokenRow, agentId: AgentKey, draft: ConnectApiKeyDraft) => void;
+    onCreateForEndpoint?: (row: LocalTokenRow) => void;
+    createPoolIdByKind?: Readonly<Partial<Record<LocalEndpointKind, string>>>;
+    needRoute?: boolean;
   },
 ): ReactNode {
   const { t } = ctx;
@@ -198,6 +211,42 @@ function renderColumn(
   }
   if (row.unavailable && !row.maskedToken) {
     return <span className="text-meta text-muted">{t('routes.runtime.unavailable')}</span>;
+  }
+  if (!row.token?.trim()) {
+    const createGate = localTokenEmptyCreateGate(
+      row,
+      ctx.createPoolIdByKind ?? {},
+      t,
+      ctx.needRoute,
+    );
+    return (
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <span className="text-meta text-muted">{t('routes.tokens.emptyTitle')}</span>
+        {ctx.onCreateForEndpoint ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 shrink-0"
+            disabled={!createGate.enabled}
+            title={createGate.reason ?? undefined}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (!createGate.enabled) {
+                ctx.toast({
+                  title: createGate.reason ?? t('routes.tokens.createNeedPool'),
+                  variant: 'danger',
+                });
+                return;
+              }
+              ctx.onCreateForEndpoint?.(row);
+            }}
+          >
+            {t('routes.tokens.createForEndpoint')}
+          </Button>
+        ) : null}
+      </div>
+    );
   }
   const copyKey = (event: { stopPropagation: () => void }) => {
     event.stopPropagation();

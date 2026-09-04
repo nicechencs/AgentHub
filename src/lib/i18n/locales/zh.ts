@@ -1318,6 +1318,7 @@ export const zh = {
       importAfterSaveTitle: "入口 Key 已保存",
       importAfterSaveDescription: "要不要把这个入口 Key 导入到已安装的 Agent？",
       importAfterSaveSkip: "稍后",
+      createForEndpoint: "为此端点新建",
       create: "新建",
       createTitle: "新建入口 Key",
       createDescription: "选端点，名称可不填，保存后会生成 Key。",

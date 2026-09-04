@@ -20,7 +20,8 @@ use super::{
         client_message_for_upstream_detail, encode_responses_from_ir, looks_like_sse_body,
         parse_responses_request, prepare_official_codex_request, responses_output_to_ir,
         to_grok_chat_request, to_grok_responses_request, to_kimi_chat_request,
-        to_responses_request, translate_responses_request, upstream_detail_requires_stream,
+        to_responses_request, translate_responses_request,
+        upstream_detail_chatgpt_codex_unsupported, upstream_detail_requires_stream,
         IrToResponsesSse, ResponsesStreamToIr,
     },
 };
@@ -1861,4 +1862,22 @@ fn upstream_stream_required_error_is_chinese() {
     assert!(message.contains("流式"), "{message}");
     assert!(message.contains("重试"), "{message}");
     assert!(client_message_for_upstream_detail(Some("unrelated 400")).is_none());
+}
+
+#[test]
+fn chatgpt_codex_unsupported_model_error_is_chinese() {
+    assert!(upstream_detail_chatgpt_codex_unsupported(
+        "gpt-5 is not supported when using Codex with a ChatGPT account"
+    ));
+    assert!(upstream_detail_chatgpt_codex_unsupported(
+        "Not supported when using Codex with a ChatGPT account"
+    ));
+    assert!(!upstream_detail_chatgpt_codex_unsupported(
+        "model not found"
+    ));
+    let message = client_message_for_upstream_detail(Some(
+        "gpt-5.1-codex is not supported when using Codex with a ChatGPT account",
+    ))
+    .expect("mapped");
+    assert_eq!(message, "当前 ChatGPT 登录不支持该模型");
 }

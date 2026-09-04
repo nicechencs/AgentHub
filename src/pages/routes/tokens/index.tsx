@@ -29,7 +29,7 @@ import { deleteProvider, listProviders } from '@/lib/api/provider';
 import type { ConnectApiKeyDraft } from '@/lib/connect-flow/connect-intent';
 import type { AgentKey } from '@/lib/types';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
-import { localEndpointKindFromPool } from '@/lib/route-endpoints';
+import { localEndpointKindFromPool, localEndpointPath } from '@/lib/route-endpoints';
 import { ROUTES_POOL_PATH } from '@/lib/routes-path';
 import {
   createLocalToken,
@@ -247,7 +247,27 @@ export default function RoutesTokensPage() {
     setCreateBusy(true);
     try {
       const created = await createLocalToken(createPoolId, name);
+      const sibling = listRows.find((row) => row.id === createPoolId)
+        ?? listRows.find((row) => row.kind === kind && row.poolBacked);
       setCreateOpen(false);
+      setImportAfterSaveRow({
+        id: created.id,
+        poolBacked: true,
+        primary: created.primary,
+        canDelete: true,
+        profileId: sibling?.profileId ?? null,
+        profileIds: sibling?.profileIds ?? [],
+        name: created.name,
+        kind: kind ?? sibling?.kind ?? 'chat_completions',
+        path: sibling?.path ?? (kind ? localEndpointPath(kind) : '/v1/chat/completions'),
+        endpoint: sibling?.endpoint ?? null,
+        state: sibling?.state,
+        token: created.token,
+        maskedToken: maskLocalToken(created.token),
+        unavailable: sibling?.unavailable ?? false,
+        targetAgentId: sibling?.targetAgentId ?? '',
+        listedModels: sibling?.listedModels ?? [],
+      });
       setTokenTick((tick) => tick + 1);
       inspect.open(created.id);
       void reload();
@@ -443,6 +463,29 @@ export default function RoutesTokensPage() {
             onDelete={(row) => setDeleteRow(row)}
             installedAgents={installedAgentRefs}
             onImport={startImport}
+            createPoolIdByKind={Object.fromEntries(
+              createCards
+                .filter((card) => card.poolId)
+                .map((card) => [card.kind, card.poolId as string]),
+            )}
+            needRoute={!localGateway.running && localGateway.hasEnrolledLogins}
+            onCreateForEndpoint={(row) => {
+              const poolId = row.poolBacked
+                ? row.id
+                : (createCards.find((card) => card.kind === row.kind)?.poolId ?? '');
+              if (!poolId) {
+                toast({
+                  title: !localGateway.running && localGateway.hasEnrolledLogins
+                    ? t('routes.board.entryNeedRoute')
+                    : t('routes.tokens.createNeedPool'),
+                  variant: 'danger',
+                });
+                return;
+              }
+              setCreatePoolId(poolId);
+              setCreateName('');
+              setCreateOpen(true);
+            }}
           />
         </PageSection>
       )}

@@ -12,10 +12,18 @@
 //! - Grok subscription → Claude Code
 //! - Codex ChatGPT subscription → Grok / Kimi (local GET /models)
 //!
+//! Subscription fallback catalogs (ChatGPT / Claude Code / Grok) live in
+//! [`subscription_fallback_models.json`]. Live login lists override them.
+//! Mapping entries may keep older ids for rewrite without advertising them.
+//!
 //! Request-scoped edge pick (`decide_model_switch`) lives in
 //! `bridge::model_switch`, not here. This file is the static table.
 
+use std::sync::OnceLock;
+
 use super::{AdapterSourceProduct, AdapterTargetProtocol, AgentId};
+
+const FALLBACK_MODELS_JSON: &str = include_str!("subscription_fallback_models.json");
 
 /// Retired OpenRouter stealth backup. Do not inject it into `/models` or pin
 /// it as a default — the upstream 404s (`GLM-5.3 Flash` testing period ended).
@@ -168,24 +176,39 @@ const DEEPSEEK_DSH_MODELS: &[AdapterModelMapEntry] = &[
 /// Future Codex → Claude table: structure only, no active mappings.
 const CODEX_CLAUDE_MODELS: &[AdapterModelMapEntry] = &[];
 
-/// Official ChatGPT / Codex ids Grok CLI may pick on the loopback Responses
-/// surface. Leftover prefixes (`grok-*` / `claude-*` / `kimi-*` / `deepseek-*`
-/// / `agenthub_*_bridge`) are omitted by dispatch, so they must not appear.
+/// Official ChatGPT / Codex ids the local Responses surface may rewrite.
+/// Listing uses [`static_fallback_models`], not this table. Older ids stay
+/// here so a leftover request still maps.
 const CODEX_GROK_MODELS: &[AdapterModelMapEntry] = &[
+    AdapterModelMapEntry {
+        source_model: "gpt-5.6-sol",
+        target_model: "gpt-5.6-sol",
+        notes: Some("ChatGPT Codex default"),
+    },
+    AdapterModelMapEntry {
+        source_model: "gpt-5.6-terra",
+        target_model: "gpt-5.6-terra",
+        notes: Some("ChatGPT Codex everyday"),
+    },
+    AdapterModelMapEntry {
+        source_model: "gpt-5.6-luna",
+        target_model: "gpt-5.6-luna",
+        notes: Some("ChatGPT Codex fast"),
+    },
     AdapterModelMapEntry {
         source_model: "gpt-5.4",
         target_model: "gpt-5.4",
-        notes: Some("ChatGPT Codex default; accepted by official Responses"),
+        notes: Some("Retired ChatGPT Codex id; still rewritten if requested"),
     },
     AdapterModelMapEntry {
         source_model: "gpt-5.1-codex",
         target_model: "gpt-5.1-codex",
-        notes: Some("Official Codex CLI model id"),
+        notes: Some("Retired Codex CLI id; still rewritten if requested"),
     },
     AdapterModelMapEntry {
         source_model: "gpt-5",
         target_model: "gpt-5",
-        notes: Some("Official ChatGPT Responses model"),
+        notes: Some("Retired ChatGPT Responses id; still rewritten if requested"),
     },
 ];
 
@@ -313,7 +336,7 @@ pub const ADAPTER_MODEL_MAPPING_TABLES: &[AdapterModelMappingTable] = &[
         source: AdapterSourceProduct::XaiGrokSubscription,
         target: AgentId::Claude,
         target_protocol: AdapterTargetProtocol::AnthropicMessages,
-        default_target_model: Some("grok-4.5"),
+        default_target_model: Some("grok-4.6"),
         entries: &[],
         allow_passthrough: false,
     },
@@ -322,7 +345,7 @@ pub const ADAPTER_MODEL_MAPPING_TABLES: &[AdapterModelMappingTable] = &[
         source: AdapterSourceProduct::XaiGrokSubscription,
         target: AgentId::Codex,
         target_protocol: AdapterTargetProtocol::OpenAiResponses,
-        default_target_model: Some("grok-4.5"),
+        default_target_model: Some("grok-4.6"),
         entries: &[],
         allow_passthrough: false,
     },
@@ -331,18 +354,18 @@ pub const ADAPTER_MODEL_MAPPING_TABLES: &[AdapterModelMappingTable] = &[
         source: AdapterSourceProduct::CodexChatGptSubscription,
         target: AgentId::Grok,
         target_protocol: AdapterTargetProtocol::OpenAiResponses,
-        default_target_model: Some("gpt-5.4"),
+        default_target_model: Some("gpt-5.6-sol"),
         entries: CODEX_GROK_MODELS,
         allow_passthrough: false,
     },
-    // Codex → Kimi local bridge: advertise official Codex Responses ids (not
+    // Codex → Kimi local bridge: advertise ChatGPT fallback ids (not
     // kimi-* leftovers). Same catalog shape as Codex → Grok.
     AdapterModelMappingTable {
         id: "codex-subscription-kimi-v1",
         source: AdapterSourceProduct::CodexChatGptSubscription,
         target: AgentId::Kimi,
         target_protocol: AdapterTargetProtocol::OpenAiChatCompletions,
-        default_target_model: Some("gpt-5.4"),
+        default_target_model: Some("gpt-5.6-sol"),
         entries: CODEX_GROK_MODELS,
         allow_passthrough: false,
     },
@@ -382,16 +405,67 @@ pub fn map_adapter_model(
     }
 }
 
+#[derive(Debug, Clone, serde::Deserialize)]
+struct FallbackFile {
+    chatgpt: FallbackEntry,
+    claude: FallbackEntry,
+    grok: FallbackEntry,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+struct FallbackEntry {
+    default: String,
+    models: Vec<String>,
+}
+
+fn fallback_file() -> &'static FallbackFile {
+    static FILE: OnceLock<FallbackFile> = OnceLock::new();
+    FILE.get_or_init(|| {
+        let mut file: FallbackFile = serde_json::from_str(FALLBACK_MODELS_JSON)
+            .expect("subscription_fallback_models.json must parse");
+        normalize_fallback_entry(&mut file.chatgpt);
+        normalize_fallback_entry(&mut file.claude);
+        normalize_fallback_entry(&mut file.grok);
+        file
+    })
+}
+
+fn normalize_fallback_entry(entry: &mut FallbackEntry) {
+    let default = entry.default.trim();
+    if default.is_empty() {
+        return;
+    }
+    if !entry.models.iter().any(|model| model.trim() == default) {
+        entry.models.insert(0, default.to_owned());
+    }
+}
+
+/// Static `GET /models` ids when a login's live catalog is empty.
+///
+/// Keyed by source product, not target agent. Loaded from
+/// `subscription_fallback_models.json`. Other sources have no fallback here
+/// and keep using mapping-table listing.
+pub fn static_fallback_models(source: AdapterSourceProduct) -> &'static [String] {
+    let file = fallback_file();
+    match source {
+        AdapterSourceProduct::CodexChatGptSubscription => file.chatgpt.models.as_slice(),
+        AdapterSourceProduct::ClaudeSubscription => file.claude.models.as_slice(),
+        AdapterSourceProduct::XaiGrokSubscription => file.grok.models.as_slice(),
+        _ => &[],
+    }
+}
+
 /// Model ids the local bridge may advertise on `GET /v1/models`.
 ///
-/// Union of mapping `entries[].target_model`, non-empty `default_target_model`,
-/// and a non-empty configured profile/upstream default. Dedup preserves first
-/// seen order. Missing tables fail closed: only a non-leftover configured
-/// default is returned.
+/// Subscription sources prefer [`static_fallback_models`]. Other sources union
+/// mapping `entries[].target_model`, non-empty `default_target_model`, and a
+/// non-empty configured profile/upstream default. Dedup preserves first-seen
+/// order. Missing tables fail closed: only a non-leftover configured default
+/// is returned.
 ///
 /// Leftover prefixes 400 on official Codex Responses, so ChatGPT-subscription
 /// sources drop them. Other upstreams use those prefixes as real ids
-/// (`grok-4.5`, `kimi-k2.5`).
+/// (`grok-4.6`, `kimi-k2.5`).
 pub fn list_local_bridge_models(
     source: AdapterSourceProduct,
     target: AgentId,
@@ -399,21 +473,20 @@ pub fn list_local_bridge_models(
 ) -> Vec<String> {
     let configured = nonempty_model(default_model);
     let drop_leftover = source == AdapterSourceProduct::CodexChatGptSubscription;
-    let Some(table) = find_adapter_model_mapping(source, target) else {
-        return match configured {
-            Some(model) if !(drop_leftover && is_leftover_bridge_model(model)) => {
-                vec![model.to_owned()]
-            }
-            _ => Vec::new(),
-        };
-    };
-
-    let mut listed = Vec::with_capacity(table.entries.len() + 2);
-    for entry in table.entries {
-        push_listed_model(&mut listed, entry.target_model, drop_leftover);
-    }
-    if let Some(model) = table.default_target_model {
+    let mut listed = Vec::new();
+    for model in static_fallback_models(source) {
         push_listed_model(&mut listed, model, drop_leftover);
+    }
+    if listed.is_empty() {
+        if let Some(table) = find_adapter_model_mapping(source, target) {
+            listed.reserve(table.entries.len() + 2);
+            for entry in table.entries {
+                push_listed_model(&mut listed, entry.target_model, drop_leftover);
+            }
+            if let Some(model) = table.default_target_model {
+                push_listed_model(&mut listed, model, drop_leftover);
+            }
+        }
     }
     if let Some(model) = configured {
         push_listed_model(&mut listed, model, drop_leftover);
@@ -630,6 +703,53 @@ mod tests {
     }
 
     #[test]
+    fn subscription_fallback_json_lists_current_chatgpt_claude_and_grok() {
+        assert_eq!(
+            static_fallback_models(AdapterSourceProduct::CodexChatGptSubscription),
+            &[
+                "gpt-5.6-sol".to_string(),
+                "gpt-5.6-terra".to_string(),
+                "gpt-5.6-luna".to_string()
+            ]
+        );
+        assert_eq!(
+            static_fallback_models(AdapterSourceProduct::ClaudeSubscription)[0],
+            "claude-sonnet-5"
+        );
+        assert!(
+            static_fallback_models(AdapterSourceProduct::ClaudeSubscription)
+                .iter()
+                .any(|model| model == "claude-opus-5")
+        );
+        assert_eq!(
+            static_fallback_models(AdapterSourceProduct::XaiGrokSubscription),
+            &[
+                "grok-4.6".to_string(),
+                "grok-4.5".to_string(),
+                "grok-build-0.1".to_string()
+            ]
+        );
+        assert!(static_fallback_models(AdapterSourceProduct::KimiCodeMembership).is_empty());
+        assert_eq!(
+            find_adapter_model_mapping(
+                AdapterSourceProduct::CodexChatGptSubscription,
+                AgentId::Grok,
+            )
+            .expect("codex→grok")
+            .default_target_model,
+            Some(
+                static_fallback_models(AdapterSourceProduct::CodexChatGptSubscription)[0].as_str()
+            )
+        );
+        assert_eq!(
+            find_adapter_model_mapping(AdapterSourceProduct::XaiGrokSubscription, AgentId::Claude)
+                .expect("grok→claude")
+                .default_target_model,
+            Some(static_fallback_models(AdapterSourceProduct::XaiGrokSubscription)[0].as_str())
+        );
+    }
+
+    #[test]
     fn codex_to_grok_listed_models_are_dispatch_accepted() {
         let listed = list_local_bridge_models(
             AdapterSourceProduct::CodexChatGptSubscription,
@@ -655,9 +775,28 @@ mod tests {
                 "leftover {leftover} must not appear in {listed:?}"
             );
         }
-        assert_eq!(listed[0], "gpt-5.4");
-        assert!(listed.iter().any(|model| model == "gpt-5.1-codex"));
-        assert!(listed.iter().any(|model| model == "gpt-5"));
+        assert_eq!(
+            listed,
+            static_fallback_models(AdapterSourceProduct::CodexChatGptSubscription)
+        );
+        assert!(!listed.iter().any(|model| model == "gpt-5.4"));
+        let table = find_adapter_model_mapping(
+            AdapterSourceProduct::CodexChatGptSubscription,
+            AgentId::Grok,
+        )
+        .expect("codex→grok table");
+        assert_eq!(
+            table.map_model("gpt-5.1-codex"),
+            AdapterModelMapResult::Mapped("gpt-5.1-codex")
+        );
+        assert_eq!(
+            table.map_model("gpt-5"),
+            AdapterModelMapResult::Mapped("gpt-5")
+        );
+        assert_eq!(
+            table.map_model(""),
+            AdapterModelMapResult::Mapped("gpt-5.6-sol")
+        );
     }
 
     #[test]
@@ -693,28 +832,50 @@ mod tests {
                 "leftover id must not be listed: {model}"
             );
         }
-        assert_eq!(listed[0], "gpt-5.4");
-        assert!(listed.iter().any(|model| model == "gpt-5.1-codex"));
-        assert!(listed.iter().any(|model| model == "gpt-5"));
+        let mut expected =
+            static_fallback_models(AdapterSourceProduct::CodexChatGptSubscription).to_vec();
+        expected.push("gpt-5.4".to_string());
+        assert_eq!(listed, expected);
+        let table = find_adapter_model_mapping(
+            AdapterSourceProduct::CodexChatGptSubscription,
+            AgentId::Kimi,
+        )
+        .expect("codex→kimi table");
+        assert_eq!(
+            table.map_model("gpt-5.1-codex"),
+            AdapterModelMapResult::Mapped("gpt-5.1-codex")
+        );
+        assert_eq!(
+            table.map_model("gpt-5"),
+            AdapterModelMapResult::Mapped("gpt-5")
+        );
     }
 
     #[test]
-    fn grok_edges_list_default_when_mapping_entries_empty() {
+    fn grok_and_claude_use_shared_fallback_catalog() {
         assert_eq!(
             list_local_bridge_models(
                 AdapterSourceProduct::XaiGrokSubscription,
                 AgentId::Claude,
                 Some("grok-4.5")
             ),
-            vec!["grok-4.5".to_string()]
+            static_fallback_models(AdapterSourceProduct::XaiGrokSubscription)
         );
         assert_eq!(
             list_local_bridge_models(
                 AdapterSourceProduct::XaiGrokSubscription,
                 AgentId::Codex,
-                Some("grok-4.5")
+                None
             ),
-            vec!["grok-4.5".to_string()]
+            static_fallback_models(AdapterSourceProduct::XaiGrokSubscription)
+        );
+        assert_eq!(
+            list_local_bridge_models(
+                AdapterSourceProduct::ClaudeSubscription,
+                AgentId::Codex,
+                None
+            ),
+            static_fallback_models(AdapterSourceProduct::ClaudeSubscription)
         );
     }
 }

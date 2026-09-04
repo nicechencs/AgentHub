@@ -1498,6 +1498,8 @@ fn custom_model_catalog_is_used_for_routing_and_not_refetched() {
     assert_eq!(saved.models, vec!["grok-4.5", "grok-4.6"]);
     let listed = service.list_upstream_models_for_pool(&pool.id).unwrap();
     assert_eq!(listed, vec!["grok-4.5", "grok-4.6"]);
+    let overview = service.overview_from_pool(&pool).unwrap();
+    assert_eq!(overview.listed_models, vec!["grok-4.5", "grok-4.6"]);
     let again = service
         .ensure_source_model_catalog(AdapterSourceKind::Account, "grok-oauth-1")
         .unwrap();
@@ -1571,6 +1573,8 @@ fn refresh_local_token_models_unions_pool_logins_and_bypasses_live_cache() {
         .token;
     let listed = service.refresh_local_token_models(&token).unwrap();
     assert_eq!(listed, vec!["model-a2", "model-b-custom"]);
+    let overview = service.overview_from_pool(&pool).unwrap();
+    assert_eq!(overview.listed_models, vec!["model-a2", "model-b-custom"]);
     let custom = service
         .ensure_source_model_catalog(AdapterSourceKind::Account, "grok-b")
         .unwrap();
