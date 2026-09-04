@@ -1,5 +1,6 @@
 use super::*;
 use agenthub_core::models::AgentId;
+use agenthub_core::utils::secret_merge::merge_preserving_secrets;
 use serde_json::json;
 use tempfile::tempdir;
 
@@ -176,6 +177,48 @@ fn upsert_preserves_opaque_toml_when_content_is_marker() {
         .as_str()
         .unwrap()
         .contains("xai-secret"));
+}
+
+#[test]
+fn upsert_preserves_inline_toml_api_key_when_other_fields_change() {
+    let (_dir, hub) = hub_tmp();
+    upsert_provider_inner(
+        &hub,
+        ProviderInput {
+            id: "p-grok".into(),
+            agent_id: AgentId::Grok,
+            name: "Grok Relay".into(),
+            settings_config: json!({
+                "format": "toml",
+                "content": "[model.\"grok\"]\nmodel = \"grok-4.5\"\nbase_url = \"https://relay.example.com/v1\"\napi_key = \"xai-secret\"\napi_backend = \"responses\"\n"
+            }),
+            meta: json!({ "preset": "xai" }),
+            is_current: false,
+        },
+    )
+    .unwrap();
+
+    upsert_provider_inner(
+        &hub,
+        ProviderInput {
+            id: "p-grok".into(),
+            agent_id: AgentId::Grok,
+            name: "Grok Relay 2".into(),
+            settings_config: json!({
+                "format": "toml",
+                "content": "[model.\"grok\"]\nmodel = \"grok-4.6\"\nbase_url = \"https://relay.example.com/v1\"\napi_key = \"***\"\napi_backend = \"responses\"\n"
+            }),
+            meta: json!({ "preset": "xai" }),
+            is_current: false,
+        },
+    )
+    .unwrap();
+
+    let stored = hub.providers().get("p-grok", None).unwrap();
+    let content = stored.settings_config["content"].as_str().unwrap();
+    assert!(content.contains("xai-secret"), "{content}");
+    assert!(content.contains("grok-4.6"), "{content}");
+    assert!(!content.contains("grok-4.5"), "{content}");
 }
 
 #[test]

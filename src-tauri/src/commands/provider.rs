@@ -12,10 +12,10 @@ use agenthub_core::models::{
 };
 use agenthub_core::presets;
 use agenthub_core::services::provider_identity::{normalize_base_url, normalize_provider_base_url};
-use agenthub_core::utils::redact::{api_key_secret, is_secret_key, mask_secret_tail};
+use agenthub_core::utils::redact::{api_key_secret, mask_secret_tail};
+use agenthub_core::utils::secret_merge::merge_preserving_secrets;
 use agenthub_core::AgentHub;
 use serde::Serialize;
-use serde_json::{Map, Value};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::commands::{map_err_string, parse_agent, parse_agent_opt, with_hub_blocking};
@@ -337,42 +337,6 @@ fn gui_switch_preview(preview: SwitchConfirmPreview) -> SwitchPreview {
         backup_path: preview.backup_dir.display().to_string(),
         process_warning: None,
     }
-}
-
-/// When `new` carries the redaction marker at secret keys (or opaque TOML
-/// content), keep the corresponding value from `old`.
-fn merge_preserving_secrets(old: &Value, new: &Value) -> Value {
-    match (old, new) {
-        (Value::Object(old_map), Value::Object(new_map)) => {
-            let opaque_toml = new_map.get("format").and_then(Value::as_str) == Some("toml")
-                && new_map.get("content").is_some_and(Value::is_string);
-            let mut out = Map::new();
-            for (k, new_v) in new_map {
-                let keep_old_secret = is_redacted_leaf(new_v)
-                    && (is_secret_key(k) || (opaque_toml && k == "content"));
-                if keep_old_secret {
-                    if let Some(old_v) = old_map.get(k) {
-                        out.insert(k.clone(), old_v.clone());
-                    }
-                    // No stored secret: omit the marker rather than write "***".
-                    continue;
-                }
-                if let Some(old_v) = old_map.get(k) {
-                    if new_v.is_object() && old_v.is_object() {
-                        out.insert(k.clone(), merge_preserving_secrets(old_v, new_v));
-                        continue;
-                    }
-                }
-                out.insert(k.clone(), new_v.clone());
-            }
-            Value::Object(out)
-        }
-        (_, new_v) => new_v.clone(),
-    }
-}
-
-fn is_redacted_leaf(value: &Value) -> bool {
-    matches!(value, Value::String(s) if s == REDACTED_MARKER)
 }
 
 /// Load the unredacted hub row and extract the stored API key.
