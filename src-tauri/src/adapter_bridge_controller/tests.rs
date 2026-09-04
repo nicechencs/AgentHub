@@ -105,6 +105,147 @@ fn local_gateway_status_includes_restarting_flag() {
 }
 
 #[test]
+fn startup_entry_restore_starts_default_pools_without_legacy_profiles() {
+    tauri::async_runtime::block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let hub = Arc::new(AgentHub::open(Some(dir.path())).unwrap());
+        hub.db().set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+        let pool = hub
+            .route_pools()
+            .ensure_default_pool(AgentId::Kimi, RouteDownstreamSurface::ChatCompletions)
+            .unwrap();
+        assert!(
+            AdapterProfileRepo::new(hub.db().clone())
+                .list_filtered(&Default::default())
+                .unwrap()
+                .is_empty(),
+            "regression requires no legacy auto-start profiles"
+        );
+
+        let host = Arc::new(BridgeRuntimeHost::new());
+        let status = start_local_gateway_entries(hub.clone(), host.clone(), true, true)
+            .await
+            .unwrap();
+
+        assert!(status.running);
+        assert!(status.restarting);
+        assert_eq!(status.statuses.len(), 1);
+        let port = status.port.expect("shared listener must bind");
+        assert_eq!(
+            hub.route_pools()
+                .get(&pool.id)
+                .unwrap()
+                .unwrap()
+                .gateway_port,
+            Some(port)
+        );
+
+        host.shutdown().await.unwrap();
+    });
+}
+
+#[test]
+fn startup_entry_restore_keeps_legacy_edge_and_starts_other_pools() {
+    tauri::async_runtime::block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let hub = Arc::new(AgentHub::open(Some(dir.path())).unwrap());
+        hub.db().set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+        let legacy_pool = hub
+            .route_pools()
+            .ensure_default_pool(AgentId::Kimi, RouteDownstreamSurface::ChatCompletions)
+            .unwrap();
+        let other_pool = hub
+            .route_pools()
+            .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
+            .unwrap();
+        let host = Arc::new(BridgeRuntimeHost::new());
+        let legacy = host.start(start_spec(&legacy_pool.id)).await.unwrap();
+        hub.route_pools()
+            .enroll_unified_gateway(&legacy_pool.id, legacy.port)
+            .unwrap();
+
+        let status = start_local_gateway_entries(hub.clone(), host.clone(), true, true)
+            .await
+            .unwrap();
+
+        assert!(status.running);
+        assert_eq!(status.statuses.len(), 2);
+        assert!(host.status(&legacy_pool.id).unwrap().is_some());
+        assert!(host.status(&other_pool.id).unwrap().is_some());
+        host.shutdown().await.unwrap();
+    });
+}
+
+#[test]
+fn startup_entry_restore_isolates_one_busy_pool() {
+    tauri::async_runtime::block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let hub = Arc::new(AgentHub::open(Some(dir.path())).unwrap());
+        hub.db().set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+        let busy_pool = hub
+            .route_pools()
+            .ensure_default_pool(AgentId::Kimi, RouteDownstreamSurface::ChatCompletions)
+            .unwrap();
+        let healthy_pool = hub
+            .route_pools()
+            .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
+            .unwrap();
+        let blocker = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let busy_port = blocker.local_addr().unwrap().port();
+        hub.route_pools()
+            .enroll_unified_gateway(&busy_pool.id, busy_port)
+            .unwrap();
+        let host = Arc::new(BridgeRuntimeHost::new());
+
+        let status = start_local_gateway_entries(hub.clone(), host.clone(), true, true)
+            .await
+            .unwrap();
+
+        assert!(status.running);
+        assert!(host.status(&busy_pool.id).unwrap().is_none());
+        assert!(host.status(&healthy_pool.id).unwrap().is_some());
+        host.shutdown().await.unwrap();
+        drop(blocker);
+    });
+}
+
+#[test]
+fn gateway_enrollment_failure_compensates_new_edge() {
+    tauri::async_runtime::block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let hub = Arc::new(AgentHub::open(Some(dir.path())).unwrap());
+        hub.db().set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+        let pool = hub
+            .route_pools()
+            .ensure_default_pool(AgentId::Kimi, RouteDownstreamSurface::ChatCompletions)
+            .unwrap();
+        install_sql_trigger(
+            &hub,
+            r#"
+            CREATE TRIGGER fail_gateway_enrollment
+            BEFORE UPDATE OF unified_gateway_enrolled ON route_pools
+            WHEN NEW.id = OLD.id
+            BEGIN
+                SELECT RAISE(ABORT, 'injected gateway enrollment failure');
+            END;
+            "#,
+        );
+        let host = Arc::new(BridgeRuntimeHost::new());
+
+        let error = start_local_gateway_entries(hub, host.clone(), false, false)
+            .await
+            .unwrap_err();
+
+        assert!(
+            error.contains("injected gateway enrollment failure"),
+            "{error}"
+        );
+        assert!(host.status(&pool.id).unwrap().is_none());
+        host.shutdown().await.unwrap();
+    });
+}
+
+#[test]
 fn status_dto_maps_observed_upstream_and_missing_instance_to_stopped() {
     tauri::async_runtime::block_on(async {
         let host = BridgeRuntimeHost::new();
