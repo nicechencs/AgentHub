@@ -1361,6 +1361,15 @@
     "outputAbove200k": 4,
     "cacheReadAbove200k": 0.4
   },
+  "grok-build-latest": {
+    "input": 2,
+    "output": 6,
+    "cacheCreate": 2,
+    "cacheRead": 0.3,
+    "inputAbove200k": 4,
+    "outputAbove200k": 12,
+    "cacheReadAbove200k": 0.6
+  },
   "grok-code-fast": {
     "input": 1,
     "output": 2,
@@ -2207,6 +2216,15 @@
     "inputAbove200k": 2,
     "outputAbove200k": 4,
     "cacheReadAbove200k": 0.4
+  },
+  "xai/grok-build-latest": {
+    "input": 2,
+    "output": 6,
+    "cacheCreate": 2,
+    "cacheRead": 0.3,
+    "inputAbove200k": 4,
+    "outputAbove200k": 12,
+    "cacheReadAbove200k": 0.6
   },
   "xai/grok-code-fast": {
     "input": 1,
