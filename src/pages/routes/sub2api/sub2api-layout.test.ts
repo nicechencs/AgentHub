@@ -12,6 +12,7 @@ describe('sub2api layout wiring', () => {
     expect(page).toContain("phase === 'logged-in'");
     expect(page).toContain("phase === 'logging-in'");
     expect(page).toContain('openSub2ApiLoginWindow');
+    expect(page).toContain('closeSub2ApiLoginWindow');
     expect(page).toContain('pasteToken');
     expect(page).toContain('openExternalLink');
     expect(page).toContain('syncSub2ApiKeyToConnections');

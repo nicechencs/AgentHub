@@ -144,3 +144,13 @@ pub async fn sub2api_open_login(
         tokio::time::sleep(Duration::from_millis(POLL_MS)).await;
     }
 }
+
+/// Invoke: `sub2api_close_login` — close the child login webview if open (dialog cancel).
+#[tauri::command]
+pub async fn sub2api_close_login(app: AppHandle) -> Result<(), String> {
+    if let Some(existing) = app.get_webview_window(WINDOW_LABEL) {
+        let _ = existing.close();
+    }
+    Ok(())
+}
+
