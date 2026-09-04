@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { ChevronDown } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { useI18n } from '@/components/shared/LanguageProvider';
@@ -28,6 +29,7 @@ import {
   clearAllRememberedPasswordsAsync,
   createSub2ApiKey,
   deleteRememberedAccountAsync,
+  deleteRememberedSite,
   ensureSub2ApiSessionFresh,
   establishSessionFromTokens,
   getLastUsedRememberedAccount,
@@ -35,6 +37,7 @@ import {
   isSub2ApiRememberEnabled,
   isTotp2FARequired,
   listRememberedAccounts,
+  listRememberedSites,
   loadRememberedCredentials,
   loadSub2ApiKeys,
   loadSub2ApiSession,
@@ -44,7 +47,9 @@ import {
   probeSub2ApiPublicSettings,
   refreshSub2ApiSession,
   saveRememberedAccountAsync,
+  saveRememberedSite,
   saveSub2ApiSession,
+  seedRememberedSitesIfUnset,
   setSub2ApiRememberEnabled,
   SUB2API_DEFAULT_SITE_URL,
   syncSub2ApiKeyToConnections,
@@ -54,7 +59,6 @@ import {
   type Sub2ApiRememberedAccountMeta,
   type Sub2ApiSession,
 } from '@/lib/api/sub2api';
-import { openExternalLink } from '@/lib/open-external';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import {
   mapSub2ApiLoginError,
@@ -110,8 +114,6 @@ export default function Sub2ApiPage() {
   const [publicSettings, setPublicSettings] = React.useState<Sub2ApiPublicSettings | null>(null);
   const [captchaProof, setCaptchaProof] = React.useState<Sub2ApiCaptchaProof | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
-  const [pasteToken, setPasteToken] = React.useState('');
-  const [advancedOpen, setAdvancedOpen] = React.useState(false);
   const [keys, setKeys] = React.useState<Sub2ApiKey[]>([]);
   const [loadingKeys, setLoadingKeys] = React.useState(false);
   const [creating, setCreating] = React.useState(false);
@@ -122,6 +124,7 @@ export default function Sub2ApiPage() {
   const [remembered, setRemembered] = React.useState<Sub2ApiRememberedAccountMeta[]>(() =>
     listRememberedAccounts(),
   );
+  const [rememberedSites, setRememberedSites] = React.useState<string[]>(() => listRememberedSites());
   const [rememberOffOpen, setRememberOffOpen] = React.useState(false);
   const [pendingDeleteId, setPendingDeleteId] = React.useState<string | null>(null);
   const [forgetAllOpen, setForgetAllOpen] = React.useState(false);
@@ -134,6 +137,7 @@ export default function Sub2ApiPage() {
 
   const refreshRemembered = React.useCallback(() => {
     setRemembered(listRememberedAccounts());
+    setRememberedSites(listRememberedSites());
   }, []);
 
   const awaiting2fa = Boolean(tempToken);
@@ -197,6 +201,12 @@ export default function Sub2ApiPage() {
     const boot = async () => {
       await hydrateRememberedPasswordVault();
       if (cancelled) return;
+      const existingForSeed = loadSub2ApiSession();
+      seedRememberedSitesIfUnset([
+        ...listRememberedAccounts().map((row) => row.siteUrl),
+        existingForSeed?.siteUrl ?? '',
+      ]);
+      refreshRemembered();
       const last = getLastUsedRememberedAccount();
       if (last) {
         const creds = loadRememberedCredentials(last.id);
@@ -253,20 +263,20 @@ export default function Sub2ApiPage() {
         const next = await establishSessionFromTokens(input);
         const emailForSave = (input.rememberEmail || input.user?.email || email || '').trim();
         const passwordForSave = input.rememberPassword ?? loginPasswordRef.current;
+        saveRememberedSite(input.siteUrl);
         if (rememberEnabled && emailForSave && passwordForSave) {
           await saveRememberedAccountAsync({
             siteUrl: input.siteUrl,
             email: emailForSave,
             password: passwordForSave,
           });
-          refreshRemembered();
         }
+        refreshRemembered();
         applySession(next);
         setPassword('');
         setTotpCode('');
         setTempToken(null);
         setMaskedEmail(null);
-        setPasteToken('');
         setCaptchaProof(null);
         captchaRef.current?.reset();
         await refreshKeys(next);
@@ -420,28 +430,6 @@ export default function Sub2ApiPage() {
     setTotpCode('');
   };
 
-  const submitPasteToken = async () => {
-    const token = pasteToken.trim();
-    if (!token) return;
-    setSubmitting(true);
-    try {
-      await finishWithTokens({
-        siteUrl: prepareSiteUrlForLogin(siteUrlDraft || SUB2API_DEFAULT_SITE_URL),
-        accessToken: token,
-      });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const openSiteInBrowser = async () => {
-    try {
-      await openExternalLink(prepareSiteUrlForLogin(siteUrlDraft || SUB2API_DEFAULT_SITE_URL));
-    } catch {
-      toast({ title: t('routes.sub2api.loginFailed'), variant: 'danger' });
-    }
-  };
-
   const applySiteUrlFromInput = React.useCallback(
     (raw: string, opts?: { fromPaste?: boolean }) => {
       const { draft, result } = applySiteUrlDraftInput(raw);
@@ -457,13 +445,15 @@ export default function Sub2ApiPage() {
         return;
       }
       setSiteUrlDraft(result.url);
+      saveRememberedSite(result.url);
+      refreshRemembered();
       if (result.stripped) {
         toast({ title: t('routes.sub2api.urlNormalizedHint') });
       } else if (opts?.fromPaste && draft && draft !== raw.trim()) {
         /* normalized host only — silent */
       }
     },
-    [t, toast],
+    [refreshRemembered, t, toast],
   );
 
   const fillRememberedAccount = React.useCallback((id: string) => {
@@ -473,6 +463,26 @@ export default function Sub2ApiPage() {
     setEmail(creds.email);
     setPassword(creds.password);
   }, []);
+
+  const fillRememberedSite = React.useCallback(
+    (siteUrl: string) => {
+      setSiteUrlDraft(siteUrl);
+      saveRememberedSite(siteUrl);
+      refreshRemembered();
+      const match = listRememberedAccounts().find((row) => row.siteUrl === siteUrl);
+      if (match) fillRememberedAccount(match.id);
+    },
+    [fillRememberedAccount, refreshRemembered],
+  );
+
+  const onDeleteRememberedSite = React.useCallback(
+    (siteUrl: string) => {
+      deleteRememberedSite(siteUrl);
+      refreshRemembered();
+      toast({ title: t('routes.sub2api.rememberedSiteDeleted') });
+    },
+    [refreshRemembered, t, toast],
+  );
 
   const onRememberToggle = (next: boolean) => {
     if (next) {
@@ -626,23 +636,66 @@ export default function Sub2ApiPage() {
 
             {phase === 'logged-out' ? (
               <form className="space-y-3" onSubmit={(ev) => void onNativeLogin(ev)}>
-                <label className="block space-y-1.5">
+                <div className="block space-y-1.5">
                   <span className="text-sm text-secondary">{t('routes.sub2api.siteUrlLabel')}</span>
-                  <Input
-                    value={siteUrlDraft}
-                    onChange={(e) => setSiteUrlDraft(e.target.value)}
-                    onBlur={(e) => applySiteUrlFromInput(e.target.value)}
-                    onPaste={(e) => {
-                      const pasted = e.clipboardData.getData('text');
-                      if (!pasted.trim()) return;
-                      e.preventDefault();
-                      applySiteUrlFromInput(pasted, { fromPaste: true });
-                    }}
-                    placeholder={t('routes.sub2api.siteUrlPlaceholder')}
-                    autoComplete="url"
-                    data-sub2api-site-url=""
-                  />
-                </label>
+                  <div className="flex gap-1.5" data-sub2api-site-picker="">
+                    <Input
+                      value={siteUrlDraft}
+                      onChange={(e) => setSiteUrlDraft(e.target.value)}
+                      onBlur={(e) => applySiteUrlFromInput(e.target.value)}
+                      onPaste={(e) => {
+                        const pasted = e.clipboardData.getData('text');
+                        if (!pasted.trim()) return;
+                        e.preventDefault();
+                        applySiteUrlFromInput(pasted, { fromPaste: true });
+                      }}
+                      placeholder={t('routes.sub2api.siteUrlPlaceholder')}
+                      autoComplete="url"
+                      className="min-w-0 flex-1"
+                      data-sub2api-site-url=""
+                    />
+                    {rememberedSites.length > 0 ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 w-7 shrink-0 px-0"
+                            aria-label={t('routes.sub2api.rememberedSitesLabel')}
+                            data-sub2api-site-picker-trigger=""
+                          >
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-72">
+                          {rememberedSites.map((url) => (
+                            <DropdownMenuItem
+                              key={url}
+                              className="justify-between gap-2"
+                              onSelect={() => fillRememberedSite(url)}
+                            >
+                              <span className="min-w-0 truncate">{url}</span>
+                              <button
+                                type="button"
+                                className="shrink-0 text-xs text-secondary hover:text-primary"
+                                data-sub2api-site-delete=""
+                                onPointerDown={(ev) => ev.preventDefault()}
+                                onClick={(ev) => {
+                                  ev.preventDefault();
+                                  ev.stopPropagation();
+                                  onDeleteRememberedSite(url);
+                                }}
+                              >
+                                {t('routes.sub2api.rememberedDeleteAccount')}
+                              </button>
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : null}
+                  </div>
+                </div>
                 <label className="block space-y-1.5">
                   <span className="text-sm text-secondary">{t('routes.sub2api.emailLabel')}</span>
                   <Input
@@ -774,49 +827,6 @@ export default function Sub2ApiPage() {
               </form>
             )}
 
-            <div className="space-y-2 border-t border-border pt-3">
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={() => void openSiteInBrowser()}
-                data-sub2api-open-site=""
-              >
-                {t('routes.sub2api.openSiteInBrowser')}
-              </Button>
-              <details
-                className="group rounded-card border border-border bg-subtle/60"
-                open={advancedOpen}
-                onToggle={(e) => setAdvancedOpen((e.target as HTMLDetailsElement).open)}
-                data-sub2api-advanced=""
-              >
-                <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-secondary marker:content-none [&::-webkit-details-marker]:hidden">
-                  {t('routes.sub2api.advancedPasteTitle')}
-                </summary>
-                <div className="space-y-2 border-t border-border px-3 py-3">
-                  <p className="text-xs text-secondary">{t('routes.sub2api.pasteTokenHint')}</p>
-                  <label className="block space-y-1.5">
-                    <span className="text-sm text-secondary">{t('routes.sub2api.pasteTokenLabel')}</span>
-                    <Input
-                      value={pasteToken}
-                      onChange={(e) => setPasteToken(e.target.value)}
-                      placeholder={t('routes.sub2api.pasteTokenPlaceholder')}
-                      autoComplete="off"
-                      spellCheck={false}
-                      data-sub2api-paste-token=""
-                    />
-                  </label>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => void submitPasteToken()}
-                    disabled={!pasteToken.trim() || submitting}
-                  >
-                    {t('routes.sub2api.pasteTokenConfirm')}
-                  </Button>
-                </div>
-              </details>
-            </div>
             <p className="text-sm text-secondary">{t('routes.sub2api.syncedKeysEmpty')}</p>
           </Card>
         )}
