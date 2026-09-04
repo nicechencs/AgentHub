@@ -24,13 +24,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { agentDisplayName } from '@/config/agents';
 import {
-  clearAllRememberedAccounts,
-  clearAllRememberedPasswords,
+  clearAllRememberedAccountsAsync,
+  clearAllRememberedPasswordsAsync,
   createSub2ApiKey,
-  deleteRememberedAccount,
+  deleteRememberedAccountAsync,
   ensureSub2ApiSessionFresh,
   establishSessionFromTokens,
   getLastUsedRememberedAccount,
+  hydrateRememberedPasswordVault,
   isSub2ApiRememberEnabled,
   isTotp2FARequired,
   listRememberedAccounts,
@@ -41,7 +42,8 @@ import {
   nativeSub2ApiLogin,
   nativeSub2ApiLogin2FA,
   probeSub2ApiPublicSettings,
-  saveRememberedAccount,
+  refreshSub2ApiSession,
+  saveRememberedAccountAsync,
   saveSub2ApiSession,
   setSub2ApiRememberEnabled,
   SUB2API_DEFAULT_SITE_URL,
@@ -58,6 +60,7 @@ import {
   mapSub2ApiLoginError,
   resolveCaptchaKind,
   selectableSub2ApiKeys,
+  Sub2ApiError,
 } from '@/lib/sub2api/client';
 import { maskApiKey, maskEmail } from '@/lib/sub2api/url';
 import { Switch } from '@/components/ui/switch';
@@ -150,14 +153,37 @@ export default function Sub2ApiPage() {
       setLoadingKeys(true);
       try {
         setKeys(await loadSub2ApiKeys(active));
-      } catch {
+      } catch (err) {
+        const unauthorized =
+          err instanceof Sub2ApiError && (err.status === 401 || err.code === 401);
+        if (unauthorized && active.refreshToken) {
+          try {
+            const next = await refreshSub2ApiSession(active);
+            applySession(next);
+            setKeys(await loadSub2ApiKeys(next));
+            return;
+          } catch {
+            await logoutSub2Api(active);
+            setSession(null);
+            setKeys([]);
+            const last = getLastUsedRememberedAccount();
+            if (last) {
+              const creds = loadRememberedCredentials(last.id);
+              setSiteUrlDraft(last.siteUrl);
+              setEmail(last.email);
+              setPassword(creds?.password ?? '');
+            }
+            toast({ title: t('routes.sub2api.sessionExpired'), variant: 'danger' });
+            return;
+          }
+        }
         toast({ title: t('routes.sub2api.loadKeysFailed'), variant: 'danger' });
         setKeys([]);
       } finally {
         setLoadingKeys(false);
       }
     },
-    [t, toast],
+    [applySession, t, toast],
   );
 
   React.useEffect(() => {
@@ -169,6 +195,16 @@ export default function Sub2ApiPage() {
   React.useEffect(() => {
     let cancelled = false;
     const boot = async () => {
+      await hydrateRememberedPasswordVault();
+      if (cancelled) return;
+      const last = getLastUsedRememberedAccount();
+      if (last) {
+        const creds = loadRememberedCredentials(last.id);
+        setSiteUrlDraft((prev) => prev || last.siteUrl);
+        setEmail((prev) => prev || last.email);
+        if (creds?.password) setPassword((prev) => prev || creds.password);
+        refreshRemembered();
+      }
       const existing = loadSub2ApiSession();
       if (!existing?.accessToken) {
         if (!cancelled) setRestoring(false);
@@ -183,7 +219,6 @@ export default function Sub2ApiPage() {
         } else {
           setSession(null);
           setKeys([]);
-          const last = getLastUsedRememberedAccount();
           if (last) {
             const creds = loadRememberedCredentials(last.id);
             setSiteUrlDraft(last.siteUrl);
@@ -219,7 +254,7 @@ export default function Sub2ApiPage() {
         const emailForSave = (input.rememberEmail || input.user?.email || email || '').trim();
         const passwordForSave = input.rememberPassword ?? loginPasswordRef.current;
         if (rememberEnabled && emailForSave && passwordForSave) {
-          saveRememberedAccount({
+          await saveRememberedAccountAsync({
             siteUrl: input.siteUrl,
             email: emailForSave,
             password: passwordForSave,
@@ -453,24 +488,28 @@ export default function Sub2ApiPage() {
     setRememberEnabled(false);
     setRememberOffOpen(false);
     if (clearPasswords) {
-      clearAllRememberedPasswords();
-      toast({ title: t('routes.sub2api.passwordsCleared') });
+      void clearAllRememberedPasswordsAsync().then(() => {
+        toast({ title: t('routes.sub2api.passwordsCleared') });
+      });
     }
   };
 
   const confirmDeleteRemembered = () => {
     if (!pendingDeleteId) return;
-    deleteRememberedAccount(pendingDeleteId);
+    const id = pendingDeleteId;
     setPendingDeleteId(null);
-    refreshRemembered();
-    toast({ title: t('routes.sub2api.rememberedDeleted') });
+    void deleteRememberedAccountAsync(id).then(() => {
+      refreshRemembered();
+      toast({ title: t('routes.sub2api.rememberedDeleted') });
+    });
   };
 
   const confirmForgetAll = () => {
-    clearAllRememberedAccounts();
     setForgetAllOpen(false);
-    refreshRemembered();
-    toast({ title: t('routes.sub2api.rememberedCleared') });
+    void clearAllRememberedAccountsAsync().then(() => {
+      refreshRemembered();
+      toast({ title: t('routes.sub2api.rememberedCleared') });
+    });
   };
 
   const onLogout = async () => {
@@ -815,6 +854,7 @@ export default function Sub2ApiPage() {
                       const statusKind = sub2apiKeyStatusKind(key.status);
                       const createdLabel = formatKeyTimestamp(key.created_at);
                       const updatedLabel = formatKeyTimestamp(key.updated_at);
+                      const lastUsedLabel = formatKeyTimestamp(key.last_used_at);
                       const expiresLabel = formatKeyTimestamp(key.expires_at);
                       const groupLabel = pickGroupLabel(key);
                       const quotaLabel = formatKeyQuota(key, {
@@ -832,6 +872,12 @@ export default function Sub2ApiPage() {
                         metaItems.push({
                           label: t('routes.sub2api.keyUpdated'),
                           value: updatedLabel,
+                        });
+                      }
+                      if (lastUsedLabel) {
+                        metaItems.push({
+                          label: t('routes.sub2api.keyLastUsed'),
+                          value: lastUsedLabel,
                         });
                       }
                       if (expiresLabel) {

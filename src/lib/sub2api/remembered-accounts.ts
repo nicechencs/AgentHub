@@ -2,12 +2,14 @@
  * Multi remembered Sub2API credentials.
  *
  * Metadata (site + email + timestamps) lives in localStorage.
- * Passwords live in a separate vault key — same persistence model as the
- * Sub2API JWT session (project: no credential disk encryption / keyring).
- * Never log passwords. UI list helpers never return password values.
+ * Passwords live in AgentHub SQLite settings via Tauri
+ * (`sub2api_remembered_password_vault`) — same DB as Connections API keys,
+ * not ordinary localStorage. Never log passwords. UI list helpers never
+ * return password values.
  */
 import { loadBool, loadJson, saveBool, saveJson } from '@/lib/ui-preferences';
 import { removeStorageItem, StorageKey } from '@/lib/storage-key';
+import { isTauriApp } from '@/lib/platform';
 import { normalizeSiteUrl } from './url';
 
 export type Sub2ApiRememberedAccountMeta = {
@@ -21,10 +23,16 @@ export type Sub2ApiRememberedAccountMeta = {
 type PasswordVault = Record<string, string>;
 
 const META_KEY = StorageKey.sub2apiRememberedAccounts;
-const VAULT_KEY = StorageKey.sub2apiRememberedSecrets;
+/** Legacy localStorage vault — migrated once into SQLite then removed. */
+const LEGACY_VAULT_KEY = StorageKey.sub2apiRememberedSecrets;
 const TOGGLE_KEY = StorageKey.sub2apiRememberEnabled;
 
 export const DEFAULT_SUB2API_REMEMBER_ENABLED = true;
+
+/** In-memory vault used by tests and non-Tauri runtimes. */
+let memoryVault: PasswordVault = {};
+let memoryVaultReady = true;
+let hydratePromise: Promise<void> | null = null;
 
 export function rememberedAccountId(siteUrl: string, email: string): string {
   const site = normalizeSiteUrl(siteUrl);
@@ -71,8 +79,33 @@ function saveMetaList(list: Sub2ApiRememberedAccountMeta[]): void {
   saveJson(META_KEY, list);
 }
 
-function loadVault(): PasswordVault {
-  const raw = loadJson<PasswordVault | null>(VAULT_KEY, null);
+function nextLastUsedAt(existing: Sub2ApiRememberedAccountMeta[]): number {
+  const now = Date.now();
+  let max = 0;
+  for (const row of existing) {
+    if (row.lastUsedAt > max) max = row.lastUsedAt;
+  }
+  return Math.max(now, max + 1);
+}
+
+
+function parseVaultJson(raw: string | null | undefined): PasswordVault {
+  if (!raw?.trim()) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out: PasswordVault = {};
+    for (const [id, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof value === 'string' && value.length > 0) out[id] = value;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function readLegacyLocalVault(): PasswordVault {
+  const raw = loadJson<PasswordVault | null>(LEGACY_VAULT_KEY, null);
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
   const out: PasswordVault = {};
   for (const [id, value] of Object.entries(raw)) {
@@ -81,12 +114,56 @@ function loadVault(): PasswordVault {
   return out;
 }
 
-function saveVault(vault: PasswordVault): void {
-  if (Object.keys(vault).length === 0) {
-    removeStorageItem(localStorage, VAULT_KEY);
-    return;
+async function persistVault(vault: PasswordVault): Promise<void> {
+  memoryVault = { ...vault };
+  if (!isTauriApp()) return;
+  try {
+    const { invoke } = await import('@/lib/backend/tauri/invoke');
+    await invoke('sub2api_remembered_vault_set', {
+      json: JSON.stringify(vault),
+    });
+  } catch {
+    /* desktop unavailable — keep memory only */
   }
-  saveJson(VAULT_KEY, vault);
+}
+
+/**
+ * Load password vault from SQLite (Tauri). Migrates legacy localStorage vault
+ * once. Safe to call multiple times; concurrent callers share one promise.
+ */
+export async function hydrateRememberedPasswordVault(): Promise<void> {
+  if (hydratePromise) return hydratePromise;
+  hydratePromise = (async () => {
+    memoryVaultReady = false;
+    let vault: PasswordVault = {};
+    if (isTauriApp()) {
+      try {
+        const { invoke } = await import('@/lib/backend/tauri/invoke');
+        const raw = await invoke<string | null>('sub2api_remembered_vault_get');
+        vault = parseVaultJson(raw);
+      } catch {
+        vault = {};
+      }
+    }
+    const legacy = readLegacyLocalVault();
+    if (Object.keys(legacy).length > 0) {
+      vault = { ...legacy, ...vault };
+      await persistVault(vault);
+      removeStorageItem(localStorage, LEGACY_VAULT_KEY);
+    } else {
+      memoryVault = vault;
+    }
+    memoryVaultReady = true;
+  })();
+  try {
+    await hydratePromise;
+  } finally {
+    /* keep hydratePromise so later calls no-op quickly */
+  }
+}
+
+function ensureVaultSync(): PasswordVault {
+  return { ...memoryVault };
 }
 
 /** Accounts for UI — sorted by last used, never includes passwords. */
@@ -100,8 +177,7 @@ export function getLastUsedRememberedAccount(): Sub2ApiRememberedAccountMeta | n
 }
 
 export function getRememberedPassword(id: string): string | null {
-  const vault = loadVault();
-  const value = vault[id];
+  const value = ensureVaultSync()[id];
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
@@ -122,7 +198,7 @@ export function loadRememberedCredentials(id: string): {
 
 /**
  * Upsert after successful login when remember is ON.
- * Never called with logging of `password`.
+ * Persists password to SQLite vault (async fire-and-follow).
  */
 export function saveRememberedAccount(input: {
   siteUrl: string;
@@ -136,9 +212,8 @@ export function saveRememberedAccount(input: {
   const siteUrl = normalizeSiteUrl(input.siteUrl);
   const id = rememberedAccountId(siteUrl, email);
   const existing = loadMetaList();
+  const now = nextLastUsedAt(existing);
   const prev = existing.find((row) => row.id === id);
-  const maxUsed = existing.reduce((m, row) => Math.max(m, row.lastUsedAt || 0), 0);
-  const now = Math.max(Date.now(), maxUsed + 1);
   const list = existing.filter((row) => row.id !== id);
   const next: Sub2ApiRememberedAccountMeta = {
     id,
@@ -149,9 +224,40 @@ export function saveRememberedAccount(input: {
   };
   list.push(next);
   saveMetaList(list);
-  const vault = loadVault();
+  const vault = ensureVaultSync();
   vault[id] = password;
-  saveVault(vault);
+  void persistVault(vault);
+  return next;
+}
+
+/** Async variant that awaits SQLite persistence (preferred for login success). */
+export async function saveRememberedAccountAsync(input: {
+  siteUrl: string;
+  email: string;
+  password: string;
+}): Promise<Sub2ApiRememberedAccountMeta | null> {
+  if (!isSub2ApiRememberEnabled()) return null;
+  const email = input.email.trim();
+  const password = input.password;
+  if (!email || !password) return null;
+  const siteUrl = normalizeSiteUrl(input.siteUrl);
+  const id = rememberedAccountId(siteUrl, email);
+  const existing = loadMetaList();
+  const now = nextLastUsedAt(existing);
+  const prev = existing.find((row) => row.id === id);
+  const list = existing.filter((row) => row.id !== id);
+  const next: Sub2ApiRememberedAccountMeta = {
+    id,
+    siteUrl,
+    email,
+    lastUsedAt: now,
+    createdAt: prev?.createdAt ?? now,
+  };
+  list.push(next);
+  saveMetaList(list);
+  const vault = ensureVaultSync();
+  vault[id] = password;
+  await persistVault(vault);
   return next;
 }
 
@@ -166,30 +272,64 @@ export function touchRememberedAccount(id: string): void {
 /** Delete one set (meta + password). */
 export function deleteRememberedAccount(id: string): void {
   saveMetaList(loadMetaList().filter((row) => row.id !== id));
-  const vault = loadVault();
+  const vault = ensureVaultSync();
   if (id in vault) {
     delete vault[id];
-    saveVault(vault);
+    void persistVault(vault);
+  }
+}
+
+export async function deleteRememberedAccountAsync(id: string): Promise<void> {
+  saveMetaList(loadMetaList().filter((row) => row.id !== id));
+  const vault = ensureVaultSync();
+  if (id in vault) {
+    delete vault[id];
+    await persistVault(vault);
   }
 }
 
 /** Remove all remembered sets. */
 export function clearAllRememberedAccounts(): void {
   removeStorageItem(localStorage, META_KEY);
-  removeStorageItem(localStorage, VAULT_KEY);
+  removeStorageItem(localStorage, LEGACY_VAULT_KEY);
+  void persistVault({});
+}
+
+export async function clearAllRememberedAccountsAsync(): Promise<void> {
+  removeStorageItem(localStorage, META_KEY);
+  removeStorageItem(localStorage, LEGACY_VAULT_KEY);
+  await persistVault({});
 }
 
 /** Clear passwords only — keep site/email for picker prefills. */
 export function clearAllRememberedPasswords(): void {
-  removeStorageItem(localStorage, VAULT_KEY);
+  removeStorageItem(localStorage, LEGACY_VAULT_KEY);
+  void persistVault({});
+}
+
+export async function clearAllRememberedPasswordsAsync(): Promise<void> {
+  removeStorageItem(localStorage, LEGACY_VAULT_KEY);
+  await persistVault({});
 }
 
 export function rememberedAccountHasPassword(id: string): boolean {
   return getRememberedPassword(id) != null;
 }
 
-/** Test helpers */
+/** Test helpers — memory vault only; never writes secrets to fixtures. */
 export function __resetRememberedAccountsForTests(): void {
   clearAllRememberedAccounts();
   removeStorageItem(localStorage, TOGGLE_KEY);
+  memoryVault = {};
+  memoryVaultReady = true;
+  hydratePromise = null;
+}
+
+export function __setRememberedVaultForTests(vault: PasswordVault): void {
+  memoryVault = { ...vault };
+  memoryVaultReady = true;
+}
+
+export function __isRememberedVaultReady(): boolean {
+  return memoryVaultReady;
 }
