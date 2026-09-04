@@ -43,6 +43,8 @@ describe('plugins layout wiring', () => {
     expect(detail.indexOf("t('plugins.detail.components')")).toBeLessThan(
       detail.indexOf("t('plugins.detail.version')"),
     );
+    expect(detail).toContain("t('plugins.detail.requestedVersion')");
+    expect(detail).toContain('pluginVersionView');
     expect(detail).not.toContain('onInstall');
     expect(detail).not.toContain('installPlugin');
   });
@@ -62,11 +64,14 @@ describe('plugins layout wiring', () => {
     expect(detail).not.toContain('marketplaceInstall');
   });
 
-  it('keeps the list to name, one-line description, and exception badges', () => {
+  it('keeps the list to name, version, one-line description, and exception badges', () => {
     const list = source('PluginPackList.tsx');
     expect(list).toContain('plugin.description');
+    expect(list).toContain('pluginVersionView');
     expect(list).toContain("t('plugins.list.disabled')");
     expect(list).toContain("t('plugins.list.untrusted')");
+    expect(list).toContain("t('plugins.list.notInstalled')");
+    expect(list).toContain("t('plugins.list.versionMismatch')");
     expect(list).not.toContain('plugin.marketplace');
     expect(list).not.toContain('plugin.scope');
     expect(list).not.toContain('plugin.version');

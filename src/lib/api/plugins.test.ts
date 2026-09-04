@@ -9,7 +9,13 @@ describe('plugin inventory and enable/disable (browser mock)', () => {
 
   it('returns plugin packs rather than MCP server rows', async () => {
     const inv = await listPluginInventory();
-    expect(inv.plugins.map((p) => p.name).sort()).toEqual(['demo', 'gdrive', 'pi-subagents']);
+    expect(inv.plugins.map((p) => p.name).sort()).toEqual([
+      'demo',
+      'gdrive',
+      'missing-pack',
+      'old-notes',
+      'pi-subagents',
+    ]);
     expect(inv.plugins.every((p) => p.name !== 'filesystem' && p.name !== 'mcpServers')).toBe(
       true,
     );
@@ -17,6 +23,8 @@ describe('plugin inventory and enable/disable (browser mock)', () => {
     expect(grok?.components.some((c) => c.kind === 'mcp' && c.name === 'gdrive')).toBe(true);
     expect(inv.agents.find((a) => a.agent === 'claude')?.support).toBe('listed');
     expect(inv.agents.find((a) => a.agent === 'pi')?.support).toBe('listed');
+    expect(inv.plugins.find((p) => p.name === 'old-notes')?.requestedVersion).toBe('1.4.0');
+    expect(inv.plugins.find((p) => p.name === 'missing-pack')?.path).toBeFalsy();
     expect(inv.agents.find((a) => a.agent === 'codex')?.support).toBe('planned');
     expect(inv.sources?.some((s) => s.agent === 'cursor' && s.sourceKind === 'skills')).toBe(true);
     expect(inv.sources?.some((s) => s.agent === 'dsh' && s.sourceKind === 'cordis')).toBe(true);

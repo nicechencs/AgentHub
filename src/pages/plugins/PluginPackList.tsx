@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tip } from '@/components/ui/tooltip';
 import { AGENT_MAP } from '@/config/agents';
 import type { PluginEntry } from '@/lib/backend/contracts/plugin-types';
+import { pluginVersionView } from './plugin-version-model';
 
 function packDescription(plugin: PluginEntry): string | null {
   const description = plugin.description?.trim() ?? '';
@@ -30,6 +31,7 @@ export function PluginPackList({
         const active = plugin.id === activeId;
         const meta = AGENT_MAP[plugin.agent];
         const description = packDescription(plugin);
+        const version = pluginVersionView(plugin);
         return (
           <ListRow
             key={plugin.id}
@@ -46,11 +48,20 @@ export function PluginPackList({
                   <Tip className="truncate text-body font-medium" label={plugin.name}>
                     {plugin.name}
                   </Tip>
+                  {version.versionLabel ? (
+                    <span className="text-meta text-muted">{version.versionLabel}</span>
+                  ) : null}
                   {plugin.enabled === false ? (
                     <Badge>{t('plugins.list.disabled')}</Badge>
                   ) : null}
                   {plugin.trusted === false ? (
                     <Badge variant="warning">{t('plugins.list.untrusted')}</Badge>
+                  ) : null}
+                  {version.listBadge === 'notInstalled' ? (
+                    <Badge variant="warning">{t('plugins.list.notInstalled')}</Badge>
+                  ) : null}
+                  {version.listBadge === 'versionMismatch' ? (
+                    <Badge variant="warning">{t('plugins.list.versionMismatch')}</Badge>
                   ) : null}
                 </div>
                 {description ? (

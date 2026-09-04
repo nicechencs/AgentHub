@@ -458,6 +458,7 @@ fn pi_settings_packages_are_listed_from_live_files() {
         .unwrap();
     assert_eq!(npm.marketplace.as_deref(), Some("npm"));
     assert_eq!(npm.version.as_deref(), Some("0.64.0"));
+    assert_eq!(npm.requested_version, None);
     assert_eq!(npm.source, "live");
     assert_eq!(npm.scope.as_deref(), Some("user"));
     assert!(npm
@@ -480,7 +481,8 @@ fn pi_settings_packages_are_listed_from_live_files() {
         .find(|p| p.agent == AgentId::Pi && p.name == "@scope/other")
         .unwrap();
     assert_eq!(scoped.marketplace.as_deref(), Some("npm"));
-    assert_eq!(scoped.version.as_deref(), Some("1.2.3"));
+    assert_eq!(scoped.version, None);
+    assert_eq!(scoped.requested_version.as_deref(), Some("1.2.3"));
     assert!(scoped.path.is_none());
 
     let git = inv
@@ -490,6 +492,7 @@ fn pi_settings_packages_are_listed_from_live_files() {
         .unwrap();
     assert_eq!(git.name, "repo");
     assert_eq!(git.version.as_deref(), Some("9.0.0"));
+    assert_eq!(git.requested_version.as_deref(), Some("v1"));
     assert!(git
         .components
         .iter()
@@ -501,6 +504,7 @@ fn pi_settings_packages_are_listed_from_live_files() {
         .find(|p| p.agent == AgentId::Pi && p.marketplace.as_deref() == Some("local"))
         .unwrap();
     assert_eq!(local.name, "local-ext");
+    assert_eq!(local.requested_version, None);
     assert!(local
         .components
         .iter()
@@ -513,6 +517,46 @@ fn pi_settings_packages_are_listed_from_live_files() {
         .unwrap();
     assert!(settings_src.exists);
     assert_eq!(settings_src.item_count, 5);
+}
+
+#[test]
+fn pi_pinned_npm_keeps_requested_version_when_installed_differs() {
+    let dir = tempdir().unwrap();
+    let user_home = dir.path().to_path_buf();
+    let pi = user_home.join(".pi").join("agent");
+    let pack = pi.join("npm").join("node_modules").join("pi-subagents");
+    fs::create_dir_all(&pack).unwrap();
+    fs::write(
+        pack.join("package.json"),
+        r#"{"name":"pi-subagents","version":"0.64.0"}"#,
+    )
+    .unwrap();
+    fs::write(
+        pi.join("settings.json"),
+        r#"{"packages":["npm:pi-subagents@0.70.0"]}"#,
+    )
+    .unwrap();
+
+    let runner = ScriptedCli {
+        by_bin: HashMap::from([("pi".into(), failed("should not run plugin list"))]),
+    };
+    let inv = list_plugin_inventory_with(&ctx(
+        dir.path().join("claude"),
+        dir.path().join("grok"),
+        user_home,
+        &runner,
+        None,
+        None,
+    ));
+
+    let npm = inv
+        .plugins
+        .iter()
+        .find(|p| p.agent == AgentId::Pi && p.name == "pi-subagents")
+        .unwrap();
+    assert_eq!(npm.version.as_deref(), Some("0.64.0"));
+    assert_eq!(npm.requested_version.as_deref(), Some("0.70.0"));
+    assert!(npm.path.is_some());
 }
 
 #[test]
