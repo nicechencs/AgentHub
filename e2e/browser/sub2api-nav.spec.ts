@@ -11,9 +11,17 @@ test('Sub2API secondary nav stays hidden until Settings toggle is on; deep link 
   await expect(routesNav.getByRole('link', { name: /^看板(?:$| — )/ })).toBeVisible();
   await expect(routesNav.getByRole('link', { name: /^Sub2API(?:$| — )/ })).toHaveCount(0);
 
+  // Deep link must render even when the Settings toggle (default off) hides the nav entry.
   await goPath(page, '/routes/sub2api');
+  await expect(page.getByRole('status', { name: 'AgentHub 正在启动' })).toBeHidden({
+    timeout: 20_000,
+  });
+  await expect(page).toHaveURL(/#\/routes\/sub2api/);
   await expect(page.getByRole('heading', { name: 'Sub2API' })).toBeVisible();
-  await expect(page.getByText('填写站点地址后登录，即可查看并同步 API Key。')).toBeVisible();
+  await expect(page.getByRole('heading', { name: '尚未登录' })).toBeVisible();
+  await expect(
+    page.getByText('登录中转站把 Key 同步到连接列表。填写站点地址后登录即可。'),
+  ).toBeVisible();
 
   await goNav(page, '设置');
   const toggle = page.getByRole('switch', { name: '显示 Sub2API 页面' });
