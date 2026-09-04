@@ -5,6 +5,8 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { WorkbenchSplitPage } from '@/components/layout/SideSplit';
 import { useSideSplit } from '@/components/layout/use-side-split';
+import { AgentDot } from '@/components/shared/AgentDot';
+import { CopyableFileName } from '@/components/shared/CopyableFileName';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
@@ -18,7 +20,11 @@ import { filterByPageVisibleAgent } from '@/lib/agent-visibility';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { disablePlugin, enablePlugin, listPluginInventory } from '@/lib/api/plugins';
 import { openPathInFileManager } from '@/lib/api/skill';
-import type { PluginEntry, PluginInventory } from '@/lib/backend/contracts/plugin-types';
+import type {
+  PluginEntry,
+  PluginInventory,
+  PluginSourceFile,
+} from '@/lib/backend/contracts/plugin-types';
 import type { AgentKey } from '@/lib/types';
 import { PluginDetailPanel } from './PluginDetailPanel';
 import { PluginPackList } from './PluginPackList';
@@ -28,6 +34,46 @@ const PLUGINS_PREVIEW_WIDTH_KEY = StorageKey.pluginsPreviewWidth;
 
 function agentName(id: AgentKey): string {
   return agentDisplayName(id);
+}
+
+function PluginSourceList({ sources }: { sources: PluginSourceFile[] }) {
+  const { t } = useI18n();
+  if (sources.length === 0) return null;
+  return (
+    <section className="mt-4 rounded-lg border border-border bg-panel/50 p-3">
+      <h2 className="mb-2 text-body font-medium">{t('plugins.sources.title')}</h2>
+      <div className="flex flex-col gap-2">
+        {sources.map((source) => (
+          <div
+            key={`${source.agent}:${source.path}:${source.label}`}
+            className="grid gap-2 rounded-md border border-border-subtle bg-card p-2 md:grid-cols-[minmax(9rem,12rem)_minmax(0,1fr)_auto] md:items-center"
+          >
+            <div className="min-w-0">
+              <AgentDot agentId={source.agent} />
+              <p className="mt-1 truncate text-meta text-secondary">{source.label}</p>
+            </div>
+            <CopyableFileName path={source.path} wrap="break" />
+            <div className="flex flex-wrap gap-1 md:justify-end">
+              <Badge variant={source.exists ? 'success' : 'default'}>
+                {source.exists ? t('plugins.sources.exists') : t('plugins.sources.missing')}
+              </Badge>
+              {source.exists ? (
+                <Badge variant={source.readable ? 'success' : 'warning'}>
+                  {source.readable
+                    ? t('plugins.sources.readable')
+                    : t('plugins.sources.unreadable')}
+                </Badge>
+              ) : null}
+              {source.itemCount > 0 ? (
+                <Badge>{t('plugins.sources.items', { n: source.itemCount })}</Badge>
+              ) : null}
+              {source.error ? <Badge variant="warning">{source.error}</Badge> : null}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 export default function PluginsPage() {
@@ -82,6 +128,18 @@ export default function PluginsPage() {
     if (filterAgent === 'all') return visiblePlugins;
     return visiblePlugins.filter((p) => p.agent === filterAgent);
   }, [filterAgent, visiblePlugins]);
+
+  const visibleSources = useMemo(() => {
+    const sources = data?.sources ?? [];
+    const scoped = filterByPageVisibleAgent(
+      sources,
+      (source) => source.agent,
+      hiddenIds,
+      installedIds,
+      !agentsLoading,
+    );
+    return filterAgent === 'all' ? scoped : scoped.filter((source) => source.agent === filterAgent);
+  }, [agentsLoading, data?.sources, filterAgent, hiddenIds, installedIds]);
 
   const agentCounts = useMemo(() => {
     const counts: Partial<Record<AgentTabId, number>> = { all: visiblePlugins.length };
@@ -190,28 +248,33 @@ export default function PluginsPage() {
         <ListSkeleton rows={4} />
       ) : error && !data ? (
         <ErrorState error={error} onRetry={() => void load()} />
-      ) : plugins.length === 0 ? (
-        <EmptyState
-          icon={Puzzle}
-          title={t('plugins.empty.title')}
-          description={
-            filterAgent === 'all'
-              ? t('plugins.empty.all')
-              : t('plugins.empty.agent', { name: agentName(filterAgent) })
-          }
-          action={
-            <Button size="sm" variant="outline" className="mt-2" onClick={() => void load()}>
-              {t('plugins.empty.refresh')}
-            </Button>
-          }
-        />
       ) : (
-        <PluginPackList
-          plugins={plugins}
-          showAgent={filterAgent === 'all'}
-          activeId={inspect.target?.id ?? null}
-          onOpen={(plugin) => inspect.open(plugin)}
-        />
+        <>
+          {plugins.length === 0 ? (
+            <EmptyState
+              icon={Puzzle}
+              title={t('plugins.empty.title')}
+              description={
+                filterAgent === 'all'
+                  ? t('plugins.empty.all')
+                  : t('plugins.empty.agent', { name: agentName(filterAgent) })
+              }
+              action={
+                <Button size="sm" variant="outline" className="mt-2" onClick={() => void load()}>
+                  {t('plugins.empty.refresh')}
+                </Button>
+              }
+            />
+          ) : (
+            <PluginPackList
+              plugins={plugins}
+              showAgent={filterAgent === 'all'}
+              activeId={inspect.target?.id ?? null}
+              onOpen={(plugin) => inspect.open(plugin)}
+            />
+          )}
+          <PluginSourceList sources={visibleSources} />
+        </>
       )}
     </WorkbenchSplitPage>
   );

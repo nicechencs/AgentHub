@@ -67,6 +67,7 @@ fn ctx<'a>(
         user_home,
         claude_home,
         grok_home,
+        other_homes: Vec::new(),
         claude_bin: claude_bin.map(PathBuf::from),
         grok_bin: grok_bin.map(PathBuf::from),
         runner,
@@ -118,6 +119,14 @@ fn cli_json_lists_claude_and_grok_plugins() {
         Some("/usr/bin/grok"),
     ));
     assert_eq!(inv.plugins.len(), 2);
+    assert!(inv
+        .sources
+        .iter()
+        .any(|s| s.agent == AgentId::Cursor && s.source_kind == "mcp"));
+    assert!(inv
+        .sources
+        .iter()
+        .any(|s| s.agent == AgentId::Dsh && s.source_kind == "cordis"));
     let claude = inv
         .plugins
         .iter()

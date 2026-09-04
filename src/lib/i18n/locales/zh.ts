@@ -2791,7 +2791,7 @@ export const zh = {
       title: '插件',
       description: '只读查看已安装的插件包',
       descriptionTip:
-        '插件是各工具自己的扩展包，不是 MCP。当前只列出 Claude 和 Grok；不会安装或改设置。',
+        '插件是各工具自己的扩展包，不是 MCP。当前优先列出插件包；也会显示各 Agent 的只读扫描来源。',
       descriptionCount: '{n} 个插件包',
       refresh: '刷新',
       countAll: '{n} 个插件包',
@@ -2844,6 +2844,14 @@ export const zh = {
       kindHooks: 'Hooks',
       kindMcp: '附带 MCP',
       kindLsp: 'LSP',
+    },
+    sources: {
+      title: '扫描来源',
+      exists: '已找到',
+      missing: '未找到',
+      readable: '可读取',
+      unreadable: '不可读取',
+      items: '{n} 项',
     },
     support: {
       planned: '此工具的插件列表尚未接线',

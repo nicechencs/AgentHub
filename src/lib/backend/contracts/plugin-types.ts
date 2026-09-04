@@ -32,9 +32,22 @@ export interface PluginAgentStatus {
   pluginCount: number;
 }
 
+export interface PluginSourceFile {
+  agent: AgentKey;
+  path: string;
+  exists: boolean;
+  readable: boolean;
+  error?: string | null;
+  /** plugin-tree | config | skills | mcp | cordis */
+  sourceKind: string;
+  itemCount: number;
+  label: string;
+}
+
 export interface PluginInventory {
   agents: PluginAgentStatus[];
   plugins: PluginEntry[];
+  sources?: PluginSourceFile[];
 }
 
 export interface PluginPort {

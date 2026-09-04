@@ -69,6 +69,7 @@ pub use plugin_apply::{
 };
 pub use plugin_inventory::{
     list_plugin_inventory, PluginAgentStatus, PluginComponent, PluginEntry, PluginInventory,
+    PluginSourceFile,
 };
 pub use project_service::ProjectService;
 pub use provider_service::{ProviderLiveConfigSnapshot, ProviderLiveSagaGuard, ProviderService};

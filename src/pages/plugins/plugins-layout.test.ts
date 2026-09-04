@@ -27,6 +27,8 @@ describe('plugins layout wiring', () => {
     expect(page).not.toContain('installPlugin');
     expect(page).not.toContain('listMcpInventory');
     expect(page).toContain('filterByPageVisibleAgent');
+    expect(page).toContain('PluginSourceList');
+    expect(page).toContain("t('plugins.sources.title')");
   });
 
   it('opens pack details in the right-hand inspect pane', () => {
