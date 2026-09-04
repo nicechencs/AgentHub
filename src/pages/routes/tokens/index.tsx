@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
+import { USAGE_COLLECTED_EVENT } from '@/lib/usage-sync';
 import { ApiKeyAccountDialog } from '@/components/connections/ApiKeyAccountDialog';
 import { ProviderEditDialog } from '@/components/connections/ProviderEditDialog';
 import { agentDisplayName } from '@/config/agents';
@@ -42,6 +43,8 @@ import type { LocalTokenRecord } from '@/lib/backend/contracts/adapter';
 import { ROUTES_INSPECT_WIDTH_KEY } from '@/pages/routes/shared/route-inspect';
 import { useAdapterResources } from '@/pages/routes/shared/use-bridge-resources';
 import { useRoutePoolState } from '@/pages/routes/shared/use-route-pool-state';
+import { boardUsageWindow } from '@/pages/routes/board/board-usage-model';
+import { useBoardUsageStats } from '@/pages/routes/board/use-board-usage';
 import { buildLocalGatewayControl } from '@/pages/routes/board/board-view-model';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
 import { CreateTokenEndpointCards } from './CreateTokenEndpointCards';
@@ -49,6 +52,7 @@ import { TokenDetailPanel } from './TokenDetailPanel';
 import { TokenList } from './TokenList';
 import {
   buildCreateTokenEndpointCards,
+  attachTokenUsage,
   buildLocalTokenRows,
   defaultCreateTokenName,
   firstCreateTokenPoolId,
@@ -89,6 +93,7 @@ export default function RoutesTokensPage() {
     reload,
   } = useAdapterResources();
   const [tokenTick, setTokenTick] = useState(0);
+  const [collectKey, setCollectKey] = useState(0);
   const [tokenRecords, setTokenRecords] = useState<LocalTokenRecord[] | null>(null);
   const [editRow, setEditRow] = useState<LocalTokenRow | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -137,6 +142,12 @@ export default function RoutesTokensPage() {
     };
   }, [defaultPools, tokenTick]);
 
+  useEffect(() => {
+    const onCollected = () => setCollectKey((key) => key + 1);
+    window.addEventListener(USAGE_COLLECTED_EVENT, onCollected);
+    return () => window.removeEventListener(USAGE_COLLECTED_EVENT, onCollected);
+  }, []);
+
   const rows = useMemo(
     () => buildLocalTokenRows(
       profiles,
@@ -156,7 +167,16 @@ export default function RoutesTokensPage() {
       tokenRecords,
     ],
   );
-  const listRows = rows;
+  const usageWindow = useMemo(() => boardUsageWindow("7d"), []);
+  const usageState = useBoardUsageStats({
+    enabled: rows.length > 0,
+    since: usageWindow.since,
+    refreshKey: tokenTick + collectKey,
+  });
+  const listRows = useMemo(
+    () => (usageState.status === "ready" ? attachTokenUsage(rows, usageState.rows) : rows),
+    [rows, usageState],
+  );
   const createTargets = useMemo(
     () => defaultPools.flatMap((pool) => {
       if (pool.members.length === 0) return [];
@@ -267,6 +287,9 @@ export default function RoutesTokensPage() {
         unavailable: sibling?.unavailable ?? false,
         targetAgentId: sibling?.targetAgentId ?? '',
         listedModels: sibling?.listedModels ?? [],
+        lastPath: null,
+        lastRequestAt: null,
+        usageEligible: false,
       });
       setTokenTick((tick) => tick + 1);
       inspect.open(created.id);
@@ -496,6 +519,11 @@ export default function RoutesTokensPage() {
             <DialogTitle>{t('routes.tokens.editKeyTitle')}</DialogTitle>
             <DialogDescription>
               {editRow ? tokenTypeLabel(editRow, t) : null}
+              {editRow ? (
+                <span className="mt-1 block text-meta text-secondary">
+                  {t('routes.tokens.editKeyConsequence')}
+                </span>
+              ) : null}
             </DialogDescription>
           </DialogHeader>
           <div className="flex items-center gap-2">

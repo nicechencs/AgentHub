@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Copy, Eye, EyeOff, Loader2, Trash2 } from 'lucide-react';
+import { ChevronDown, Copy, Eye, EyeOff, Loader2, Trash2, X } from 'lucide-react';
 import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
 import { CopyableRouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
 import { useI18n } from '@/components/shared/LanguageProvider';
@@ -24,13 +24,20 @@ import {
 import { useToast } from '@/components/ui/toast';
 import {
   listLocalTokenModels,
+  refreshLocalTokenModels,
+  setLocalTokenCustomModels,
   testLocalToken,
 } from '@/lib/api/adapter';
 import type { LocalTokenProbeResult } from '@/lib/backend/contracts/adapter';
 import { localEndpointBrandAgentId } from '@/lib/route-endpoints';
 import { adapterStatusTextClass } from '@/pages/routes/shared/adapter-view-model';
+import { parseCustomModelList } from '@/pages/routes/pool/pool-authorization-detail';
 import {
   buildTokenDetailCopyRows,
+  diffModelLists,
+  formatTokenRelative,
+  tokenLastPageDisplay,
+  tokenUsageDisplay,
   localTokenEntryRunning,
   localTokenTestGate,
   localTokenTestInputText,
@@ -81,6 +88,11 @@ export function TokenDetailPanel({
   const { toast } = useToast();
   const [liveModels, setLiveModels] = useState<string[]>([]);
   const models = liveModels.length > 0 ? liveModels : localTokenTestModels(row);
+  const [modelDraft, setModelDraft] = useState('');
+  const [selectedModels, setSelectedModels] = useState<string[]>([]);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [savingModels, setSavingModels] = useState(false);
+  const [refreshingModels, setRefreshingModels] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testOpen, setTestOpen] = useState(false);
@@ -117,6 +129,11 @@ export function TokenDetailPanel({
     setTestResult(null);
     const fallback = localTokenTestModels(row);
     setLiveModels([]);
+    setSelectedModels(fallback);
+    setModelDraft(fallback.join('\n'));
+    setAdvancedOpen(false);
+    setRefreshingModels(false);
+    setSavingModels(false);
     setTestModel(fallback[0] ?? '');
     const token = row.token?.trim();
     if (!token) return;
@@ -126,6 +143,8 @@ export function TokenDetailPanel({
       const listed = ids.map((item) => item.trim()).filter(Boolean);
       if (listed.length === 0) return;
       setLiveModels(listed);
+      setSelectedModels(listed);
+      setModelDraft(listed.join('\n'));
       setTestModel((current) => current.trim() || listed[0] || '');
     }).catch(() => {});
   }, [row.id, row.token]);
@@ -179,6 +198,85 @@ export function TokenDetailPanel({
       });
     } finally {
       if (rowIdRef.current === requestId) setTesting(false);
+    }
+  };
+
+
+  const modelsBusy = testing || savingModels || refreshingModels;
+  const canEditModels = Boolean(row.token?.trim()) && !modelsBusy;
+  const chipModels = (() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const model of [...selectedModels, ...models]) {
+      const trimmed = model.trim();
+      if (!trimmed || seen.has(trimmed)) continue;
+      seen.add(trimmed);
+      out.push(trimmed);
+    }
+    return out;
+  })();
+
+  const applyListedModels = (listed: string[]) => {
+    setLiveModels(listed);
+    setSelectedModels(listed);
+    setModelDraft(listed.join('\n'));
+    setTestModel((current) => current.trim() || listed[0] || '');
+  };
+
+  const toggleModel = (model: string) => {
+    if (!canEditModels) return;
+    setSelectedModels((current) => {
+      const next = current.includes(model)
+        ? current.filter((item) => item !== model)
+        : [...current, model];
+      setModelDraft(next.join('\n'));
+      return next;
+    });
+  };
+
+  const saveCustomModels = async () => {
+    const token = row.token?.trim();
+    if (!token) return;
+    const listed = parseCustomModelList(modelDraft);
+    setSavingModels(true);
+    try {
+      applyListedModels(await setLocalTokenCustomModels(token, listed));
+      toast({ title: t('common.save'), variant: 'success' });
+    } catch {
+      toast({ title: t('routes.tokens.modelsSaveFailed'), variant: 'danger' });
+    } finally {
+      setSavingModels(false);
+    }
+  };
+
+  const refreshPoolModels = async () => {
+    const token = row.token?.trim();
+    if (!token) return;
+    const requestId = row.id;
+    const before = [...selectedModels];
+    setRefreshingModels(true);
+    try {
+      const listed = (await refreshLocalTokenModels(token)).map((item) => item.trim()).filter(Boolean);
+      if (rowIdRef.current !== requestId) return;
+      applyListedModels(listed);
+      const diff = diffModelLists(before, listed);
+      if (diff.added.length === 0 && diff.removed.length === 0) {
+        toast({ title: t('routes.tokens.modelsSyncUnchanged'), variant: 'success' });
+      } else {
+        toast({
+          title: t('routes.tokens.modelsSyncToast', {
+            added: String(diff.added.length),
+            removed: String(diff.removed.length),
+          }),
+          variant: 'success',
+        });
+      }
+    } catch {
+      if (rowIdRef.current === requestId) {
+        toast({ title: t('routes.tokens.modelsSyncFailed'), variant: 'danger' });
+      }
+    } finally {
+      if (rowIdRef.current === requestId) setRefreshingModels(false);
     }
   };
 
@@ -345,6 +443,101 @@ export function TokenDetailPanel({
         <div className="space-y-1">
           <p className="text-meta text-muted">{t('routes.tokens.fieldType')}</p>
           <p className="text-primary">{typeRow?.display}</p>
+        </div>
+
+        <div className="space-y-1" data-token-last-visit="">
+          <p className="text-meta text-muted">{t('routes.tokens.fieldLastAt')}</p>
+          <p className="text-secondary">
+            {formatTokenRelative(row.lastRequestAt, t) || t('routes.tokens.neverVisited')}
+            {tokenLastPageDisplay(row) ? (
+              <span className="ml-2 font-mono text-meta text-muted">{tokenLastPageDisplay(row)}</span>
+            ) : null}
+          </p>
+        </div>
+        <div className="space-y-1" data-token-usage="">
+          <p className="text-meta text-muted">{t('routes.tokens.fieldUsage')}</p>
+          <p className="text-secondary">{tokenUsageDisplay(row.usage, t) || '0 in / 0 out'}</p>
+        </div>
+        <div className="space-y-1" data-token-models="">
+          <p className="text-meta text-muted">{t('routes.tokens.fieldModels')}</p>
+          {row.modelsSharedFromChat ? (
+            <p className="text-meta text-secondary">{t('routes.tokens.testModelsSharedFromChat')}</p>
+          ) : null}
+          {chipModels.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {chipModels.map((model) => {
+                const selected = selectedModels.includes(model);
+                return (
+                  <button
+                    key={model}
+                    type="button"
+                    disabled={!canEditModels}
+                    data-token-model-chip={model}
+                    onClick={() => toggleModel(model)}
+                    className={
+                      selected
+                        ? 'inline-flex max-w-full items-center gap-1 rounded-full border border-accent/50 bg-accent/10 px-2.5 py-0.5 font-mono text-meta text-accent'
+                        : 'inline-flex max-w-full items-center gap-1 rounded-full border border-border px-2.5 py-0.5 font-mono text-meta text-muted hover:border-accent/40'
+                    }
+                    aria-pressed={selected}
+                  >
+                    <span className="truncate">{model}</span>
+                    {selected ? <X className="h-3 w-3 shrink-0" aria-hidden /> : null}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-meta text-secondary" data-token-models-empty="">
+              {t('routes.tokens.testNoModels')}
+              <span className="mt-1 block">{t('routes.tokens.testNoModelsHint')}</span>
+            </p>
+          )}
+          <p className="text-meta text-secondary">{t('routes.tokens.modelsHint')}</p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              disabled={!canEditModels}
+              data-token-models-refresh=""
+              onClick={() => { void refreshPoolModels(); }}
+            >
+              {refreshingModels ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+              {refreshingModels ? t('routes.tokens.modelsSyncing') : t('routes.tokens.modelsSyncFromPool')}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!canEditModels}
+              onClick={() => { void saveCustomModels(); }}
+            >
+              {savingModels ? t('common.saving') : t('routes.tokens.modelsSave')}
+            </Button>
+          </div>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-meta text-secondary hover:text-primary"
+            data-token-models-advanced=""
+            onClick={() => setAdvancedOpen((open) => !open)}
+          >
+            <ChevronDown className={"h-3.5 w-3.5 transition" + (advancedOpen ? " rotate-180" : "")} aria-hidden />
+            {t('routes.tokens.modelsAdvanced')}
+          </button>
+          {advancedOpen ? (
+            <textarea
+              value={modelDraft}
+              onChange={(event) => {
+                setModelDraft(event.target.value);
+                setSelectedModels(parseCustomModelList(event.target.value));
+              }}
+              disabled={!canEditModels}
+              placeholder={t('routes.tokens.modelsPlaceholder')}
+              rows={4}
+              className="min-h-[5.5rem] w-full resize-y rounded-card border border-border bg-transparent px-3 py-2 font-mono text-xs text-primary"
+              data-token-models-draft=""
+            />
+          ) : null}
         </div>
         <div className="space-y-1" data-token-written-to="">
           <p className="text-meta text-muted">{t('routes.tokens.fieldWrittenTo')}</p>
