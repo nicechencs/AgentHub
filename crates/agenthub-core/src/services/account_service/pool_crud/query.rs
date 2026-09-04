@@ -10,7 +10,7 @@ use crate::services::account_split::{
     accounts_share_authorization, is_mixed_live_bundle, split_mixed_account,
 };
 use crate::services::adapter_route_constants::CONNECTION_SECRET_MARKER;
-use crate::storage::{account_create_conn, account_update_conn};
+use crate::storage::{account_create_conn, account_update_conn, ConnectionTrashRepo};
 use crate::utils::redact::api_key_secret;
 
 use super::super::surface::*;
@@ -37,11 +37,19 @@ fn persist_split_account_heal(
             return Ok(());
         };
         account_update_conn(&tx, &first)?;
+        let trash = ConnectionTrashRepo::list_in_conn(&tx, Some(original.agent_id), None)?;
         for piece in pieces {
             if existing
                 .iter()
                 .any(|other| other.id != original.id && accounts_share_authorization(&piece, other))
             {
+                continue;
+            }
+            if trash.iter().any(|item| {
+                item.account
+                    .as_ref()
+                    .is_some_and(|other| accounts_share_authorization(&piece, other))
+            }) {
                 continue;
             }
             account_create_conn(&tx, &piece)?;
