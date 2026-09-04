@@ -183,10 +183,15 @@ export function EnvSoftwareList({
                   <TableRow key={runtime.id}>
                     <TableCell className="font-medium">{envSoftwareName(runtime)}</TableCell>
                     <TableCell>
-                      <Badge variant={chipVariant(runtime.status)} className="gap-1">
-                        {runtime.status === 'missing' ? <StatusPin tone="muted" /> : statusIcon(runtime.status)}
-                        {envSoftwareStatusLabel(runtime.status, t)}
-                      </Badge>
+                      <Tip label={envSoftwareStatusLabel(runtime.status, t)}>
+                        <Badge
+                          variant={chipVariant(runtime.status)}
+                          className="px-1.5"
+                          aria-label={envSoftwareStatusLabel(runtime.status, t)}
+                        >
+                          {runtime.status === 'missing' ? <StatusPin tone="muted" /> : statusIcon(runtime.status)}
+                        </Badge>
+                      </Tip>
                     </TableCell>
                     <TableCell className="font-mono text-meta text-secondary">
                       {envSoftwareVersion(runtime)}
