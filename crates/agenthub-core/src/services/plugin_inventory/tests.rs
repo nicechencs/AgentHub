@@ -64,9 +64,10 @@ fn ctx<'a>(
     grok_bin: Option<&'a str>,
 ) -> PluginScanContext<'a> {
     PluginScanContext {
-        user_home,
+        user_home: user_home.clone(),
         claude_home,
         grok_home,
+        pi_config: user_home.join(".pi").join("agent"),
         other_homes: Vec::new(),
         claude_bin: claude_bin.map(PathBuf::from),
         grok_bin: grok_bin.map(PathBuf::from),
@@ -358,11 +359,16 @@ fn other_agents_are_not_listed_from_mcp() {
         None,
         None,
     ));
-    for agent in [AgentId::Codex, AgentId::Pi] {
-        let st = inv.agents.iter().find(|a| a.agent == agent).unwrap();
-        assert_eq!(st.support, "planned");
-        assert_eq!(st.plugin_count, 0);
-    }
+    let codex = inv
+        .agents
+        .iter()
+        .find(|a| a.agent == AgentId::Codex)
+        .unwrap();
+    assert_eq!(codex.support, "planned");
+    assert_eq!(codex.plugin_count, 0);
+    let pi = inv.agents.iter().find(|a| a.agent == AgentId::Pi).unwrap();
+    assert_eq!(pi.support, "listed");
+    assert_eq!(pi.plugin_count, 0);
     for agent in [
         AgentId::Cursor,
         AgentId::Kimi,
@@ -376,7 +382,137 @@ fn other_agents_are_not_listed_from_mcp() {
     assert!(!inv
         .plugins
         .iter()
-        .any(|p| !matches!(p.agent, AgentId::Claude | AgentId::Grok)));
+        .any(|p| !matches!(p.agent, AgentId::Claude | AgentId::Grok | AgentId::Pi)));
+}
+
+#[test]
+fn pi_settings_packages_are_listed_from_live_files() {
+    let dir = tempdir().unwrap();
+    let user_home = dir.path().to_path_buf();
+    let pi = user_home.join(".pi").join("agent");
+    let pack = pi.join("npm").join("node_modules").join("pi-subagents");
+    fs::create_dir_all(pack.join("skills").join("search")).unwrap();
+    fs::create_dir_all(pack.join("agents")).unwrap();
+    fs::write(pack.join("agents").join("delegate.md"), "# delegate\n").unwrap();
+    fs::write(
+        pack.join("package.json"),
+        r#"{
+            "name": "pi-subagents",
+            "version": "0.64.0",
+            "description": "Subagent workflows",
+            "pi": { "extensions": ["./index.ts"], "skills": ["./skills"] }
+        }"#,
+    )
+    .unwrap();
+    fs::write(
+        pi.join("settings.json"),
+        r#"{
+            "theme": "light",
+            "mcpServers": { "should-not-become-a-plugin": { "command": "npx" } },
+            "packages": [
+                "npm:pi-subagents",
+                { "source": "npm:@scope/other@1.2.3" },
+                "git:github.com/user/repo@v1",
+                "./local-ext",
+                "../escape"
+            ]
+        }"#,
+    )
+    .unwrap();
+    fs::create_dir_all(pi.join("local-ext").join("skills").join("ship")).unwrap();
+    let git_pack = pi.join("git").join("github.com").join("user").join("repo");
+    fs::create_dir_all(git_pack.join("skills").join("review")).unwrap();
+    fs::write(
+        git_pack.join("package.json"),
+        r#"{"name":"repo","version":"9.0.0","description":"Git pack"}"#,
+    )
+    .unwrap();
+
+    let runner = ScriptedCli {
+        by_bin: HashMap::from([("pi".into(), failed("should not run plugin list"))]),
+    };
+    let inv = list_plugin_inventory_with(&ctx(
+        dir.path().join("claude"),
+        dir.path().join("grok"),
+        user_home.clone(),
+        &runner,
+        None,
+        None,
+    ));
+
+    let pi_st = inv.agents.iter().find(|a| a.agent == AgentId::Pi).unwrap();
+    assert_eq!(pi_st.support, "listed");
+    assert_eq!(pi_st.source.as_deref(), Some("live"));
+    assert_eq!(pi_st.plugin_count, 4);
+    assert!(!inv
+        .plugins
+        .iter()
+        .any(|p| p.name == "should-not-become-a-plugin"
+            || p.name == "mcpServers"
+            || p.name.contains("escape")));
+
+    let npm = inv
+        .plugins
+        .iter()
+        .find(|p| p.agent == AgentId::Pi && p.name == "pi-subagents")
+        .unwrap();
+    assert_eq!(npm.marketplace.as_deref(), Some("npm"));
+    assert_eq!(npm.version.as_deref(), Some("0.64.0"));
+    assert_eq!(npm.source, "live");
+    assert_eq!(npm.scope.as_deref(), Some("user"));
+    assert!(npm
+        .path
+        .as_deref()
+        .unwrap()
+        .contains(".pi/agent/npm/node_modules/pi-subagents"));
+    assert!(npm
+        .components
+        .iter()
+        .any(|c| c.kind == "skills" && c.name == "search"));
+    assert!(npm
+        .components
+        .iter()
+        .any(|c| c.kind == "agents" && c.name == "delegate"));
+
+    let scoped = inv
+        .plugins
+        .iter()
+        .find(|p| p.agent == AgentId::Pi && p.name == "@scope/other")
+        .unwrap();
+    assert_eq!(scoped.marketplace.as_deref(), Some("npm"));
+    assert_eq!(scoped.version.as_deref(), Some("1.2.3"));
+    assert!(scoped.path.is_none());
+
+    let git = inv
+        .plugins
+        .iter()
+        .find(|p| p.agent == AgentId::Pi && p.marketplace.as_deref() == Some("git"))
+        .unwrap();
+    assert_eq!(git.name, "repo");
+    assert_eq!(git.version.as_deref(), Some("9.0.0"));
+    assert!(git
+        .components
+        .iter()
+        .any(|c| c.kind == "skills" && c.name == "review"));
+
+    let local = inv
+        .plugins
+        .iter()
+        .find(|p| p.agent == AgentId::Pi && p.marketplace.as_deref() == Some("local"))
+        .unwrap();
+    assert_eq!(local.name, "local-ext");
+    assert!(local
+        .components
+        .iter()
+        .any(|c| c.kind == "skills" && c.name == "ship"));
+
+    let settings_src = inv
+        .sources
+        .iter()
+        .find(|s| s.agent == AgentId::Pi && s.source_kind == "config")
+        .unwrap();
+    assert!(settings_src.exists);
+    assert_eq!(settings_src.item_count, 5);
 }
 
 #[test]

@@ -8,6 +8,7 @@ const t = ((key: string, params?: { name?: string | number }) =>
 
 const agents: PluginAgentStatus[] = [
   { agent: 'claude', support: 'listed', pluginCount: 0 },
+  { agent: 'pi', support: 'listed', source: 'live', pluginCount: 0 },
   { agent: 'codex', support: 'planned', errorCode: 'planned', pluginCount: 0 },
   { agent: 'cursor', support: 'unsupported', errorCode: 'unsupported-cursor', pluginCount: 0 },
   { agent: 'dsh', support: 'unsupported', errorCode: 'unsupported-dsh', pluginCount: 0 },
@@ -17,7 +18,7 @@ const agents: PluginAgentStatus[] = [
 ];
 
 describe('pluginEmptyCopy', () => {
-  it('tells the all-tab empty state to install in Claude or Grok, then refresh', () => {
+  it('tells the all-tab empty state to install in a wired tool, then refresh', () => {
     const copy = pluginEmptyCopy('all', agents, '', t);
     expect(copy).toEqual({
       title: 'plugins.empty.title',
@@ -31,6 +32,11 @@ describe('pluginEmptyCopy', () => {
     expect(copy).toEqual({
       title: 'plugins.empty.title',
       description: 'plugins.empty.agent:Claude',
+      showRefresh: true,
+    });
+    expect(pluginEmptyCopy('pi', agents, 'Pi', t)).toEqual({
+      title: 'plugins.empty.title',
+      description: 'plugins.empty.agentListOnly:Pi',
       showRefresh: true,
     });
   });

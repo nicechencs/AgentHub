@@ -1,5 +1,6 @@
 import type { PluginAgentStatus } from '@/lib/backend/contracts/plugin-types';
 import type { TranslateFn } from '@/lib/i18n';
+import { canToggleListedPlugin } from './can-toggle';
 
 export type PluginEmptyCopy = {
   title: string;
@@ -65,7 +66,9 @@ export function pluginEmptyCopy(
 
   return {
     title: t('plugins.empty.title'),
-    description: t('plugins.empty.agent', { name: agentLabel }),
+    description: canToggleListedPlugin(filterAgent)
+      ? t('plugins.empty.agent', { name: agentLabel })
+      : t('plugins.empty.agentListOnly', { name: agentLabel }),
     showRefresh: true,
   };
 }

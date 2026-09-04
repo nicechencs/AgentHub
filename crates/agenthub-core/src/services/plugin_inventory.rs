@@ -1,7 +1,8 @@
 //! Read-only vendor plugin / extension pack inventory.
 //!
-//! Lists Claude and Grok **plugin packages**, not MCP servers. Prefer official
-//! CLI `--json`; if the CLI is missing, read verified live files. Never treat
+//! Lists Claude, Grok, and Pi **plugin packages**, not MCP servers. Claude and
+//! Grok prefer official CLI `--json`; if that CLI is missing, read verified live
+//! files. Pi has no list JSON — read user `settings.json` `packages`. Never treat
 //! `mcpServers` as plugin rows. This does not install, enable, or write.
 
 use std::fs;
@@ -14,7 +15,7 @@ use serde_json::{Map as JsonMap, Value as JsonValue};
 use toml_edit::DocumentMut;
 
 use crate::models::AgentId;
-use crate::utils::paths::{agent_home, home_dir};
+use crate::utils::paths::{agent_config_dir, agent_home, home_dir};
 
 const CLI_TIMEOUT: Duration = Duration::from_secs(15);
 const CLI_ARGS: &[&str] = &["plugin", "list", "--json"];
@@ -56,7 +57,7 @@ pub struct PluginEntry {
     pub components: Vec<PluginComponent>,
 }
 
-/// Per-agent list attempt (Claude/Grok) or a closed/planned cell.
+/// Per-agent list attempt (Claude/Grok/Pi) or a closed/planned cell.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginAgentStatus {
@@ -102,6 +103,8 @@ pub struct PluginScanContext<'a> {
     pub user_home: PathBuf,
     pub claude_home: PathBuf,
     pub grok_home: PathBuf,
+    /// Pi live config root (`~/.pi/agent`, or `$PI_CODING_AGENT_DIR`).
+    pub pi_config: PathBuf,
     pub other_homes: Vec<(AgentId, PathBuf)>,
     pub claude_bin: Option<PathBuf>,
     pub grok_bin: Option<PathBuf>,
@@ -144,11 +147,13 @@ impl PluginCliRunner for SystemPluginCliRunner {
     }
 }
 
-/// Scan Claude + Grok plugin packs using official CLI when present.
+/// Scan Claude + Grok + Pi plugin packs using official CLI when present.
 pub fn list_plugin_inventory() -> PluginInventory {
     let user_home = home_dir().unwrap_or_else(|_| PathBuf::from("/"));
     let claude_home = agent_home(AgentId::Claude).unwrap_or_else(|_| user_home.join(".claude"));
     let grok_home = agent_home(AgentId::Grok).unwrap_or_else(|_| user_home.join(".grok"));
+    let pi_config =
+        agent_config_dir(AgentId::Pi).unwrap_or_else(|_| user_home.join(".pi").join("agent"));
     let other_homes = AgentId::ALL
         .into_iter()
         .filter(|agent| !matches!(agent, AgentId::Claude | AgentId::Grok))
@@ -158,6 +163,7 @@ pub fn list_plugin_inventory() -> PluginInventory {
         user_home,
         claude_home,
         grok_home,
+        pi_config,
         other_homes,
         claude_bin: which::which("claude").ok(),
         grok_bin: which::which("grok").ok(),
@@ -194,7 +200,12 @@ pub fn list_plugin_inventory_with(ctx: &PluginScanContext<'_>) -> PluginInventor
                 plugins.extend(rows);
                 agents.push(status);
             }
-            AgentId::Codex | AgentId::Pi => agents.push(PluginAgentStatus {
+            AgentId::Pi => {
+                let (status, rows) = scan_pi_agent(&ctx.pi_config, &ctx.user_home);
+                plugins.extend(rows);
+                agents.push(status);
+            }
+            AgentId::Codex => agents.push(PluginAgentStatus {
                 agent,
                 support: "planned".into(),
                 source: None,
@@ -303,6 +314,7 @@ fn plugin_source_locations(ctx: &PluginScanContext<'_>) -> Vec<PluginSourceLoc> 
         (
             AgentId::Pi,
             vec![
+                ("settings.json", "config", "Pi installed packages"),
                 ("skills", "skills", "Pi skills"),
                 ("extensions", "plugin-tree", "Pi extensions"),
             ],
@@ -335,11 +347,14 @@ fn plugin_source_locations(ctx: &PluginScanContext<'_>) -> Vec<PluginSourceLoc> 
         ),
         (AgentId::Zcode, vec![("skills", "skills", "ZCode skills")]),
     ] {
-        let home = ctx
-            .other_homes
-            .iter()
-            .find_map(|(id, home)| (*id == agent).then_some(home.clone()))
-            .unwrap_or_else(|| ctx.user_home.join(format!(".{}", agent.as_str())));
+        let home = if agent == AgentId::Pi {
+            ctx.pi_config.clone()
+        } else {
+            ctx.other_homes
+                .iter()
+                .find_map(|(id, home)| (*id == agent).then_some(home.clone()))
+                .unwrap_or_else(|| ctx.user_home.join(format!(".{}", agent.as_str())))
+        };
         for (rel, kind, label) in rels {
             out.push(PluginSourceLoc {
                 agent,
@@ -420,6 +435,13 @@ fn count_source_items(text: &str, kind: &str) -> usize {
                     .as_array()
                     .map(Vec::len)
                     .or_else(|| enabled.as_object().map(JsonMap::len))
+                    .unwrap_or(0);
+            }
+            if let Some(packages) = obj.get("packages") {
+                return packages
+                    .as_array()
+                    .map(Vec::len)
+                    .or_else(|| packages.as_object().map(JsonMap::len))
                     .unwrap_or(0);
             }
             if let Some(mcp) = obj.get("mcpServers") {
@@ -1105,6 +1127,293 @@ fn scan_grok_live(grok_home: &Path, user_home: &Path) -> Result<Vec<PluginEntry>
         }
     }
     Ok(rows)
+}
+
+fn scan_pi_agent(pi_config: &Path, user_home: &Path) -> (PluginAgentStatus, Vec<PluginEntry>) {
+    match scan_pi_live(pi_config, user_home) {
+        Ok(rows) => {
+            let count = rows.len();
+            let source = if count > 0 || pi_config.join("settings.json").is_file() {
+                Some("live".into())
+            } else {
+                None
+            };
+            (
+                PluginAgentStatus {
+                    agent: AgentId::Pi,
+                    support: "listed".into(),
+                    source,
+                    error_code: None,
+                    error: None,
+                    plugin_count: count,
+                },
+                rows,
+            )
+        }
+        Err(e) => (fail_status(AgentId::Pi, "live-unreadable", &e), Vec::new()),
+    }
+}
+
+/// User-scope Pi packages from `settings.json`. Project `.pi/settings.json` is not scanned.
+fn scan_pi_live(pi_config: &Path, user_home: &Path) -> Result<Vec<PluginEntry>, String> {
+    let settings_path = pi_config.join("settings.json");
+    if !settings_path.is_file() {
+        return Ok(Vec::new());
+    }
+    let text = fs::read_to_string(&settings_path).map_err(|e| e.to_string())?;
+    let value: JsonValue = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    let Some(packages) = value.get("packages") else {
+        return Ok(Vec::new());
+    };
+    let JsonValue::Array(items) = packages else {
+        return Ok(Vec::new());
+    };
+    let mut rows = Vec::new();
+    for item in items {
+        let Some(spec) = pi_package_source(item) else {
+            continue;
+        };
+        if let Some(entry) = plugin_from_pi_spec(pi_config, user_home, &spec) {
+            rows.push(entry);
+        }
+    }
+    Ok(rows)
+}
+
+fn pi_package_source(item: &JsonValue) -> Option<String> {
+    match item {
+        JsonValue::String(s) => {
+            let spec = s.trim();
+            (!spec.is_empty()).then(|| spec.to_string())
+        }
+        JsonValue::Object(map) => map
+            .get("source")
+            .and_then(JsonValue::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(ToString::to_string),
+        _ => None,
+    }
+}
+
+fn plugin_from_pi_spec(pi_config: &Path, user_home: &Path, spec: &str) -> Option<PluginEntry> {
+    if spec == "mcpServers" || is_unsafe_pi_spec(spec) {
+        return None;
+    }
+    let parsed = parse_pi_source(spec);
+    let install_path = resolve_pi_install_path(pi_config, &parsed);
+    let mut name = parsed.display_name.clone();
+    let mut version = parsed.version.clone();
+    let mut description = None;
+    let mut components = Vec::new();
+    if let Some(path) = install_path.as_ref().filter(|p| p.is_dir()) {
+        if let Some(pkg) = read_package_json(path) {
+            if let Some(pkg_name) = string_field(&pkg, &["name"]) {
+                name = pkg_name;
+            }
+            if let Some(pkg_ver) = string_field(&pkg, &["version"]) {
+                version = Some(pkg_ver);
+            }
+            description = string_field(&pkg, &["description"]);
+        }
+        components = discover_components(path);
+    }
+    let redacted = install_path
+        .as_ref()
+        .filter(|p| p.exists())
+        .map(|p| redact_home_path(&p.to_string_lossy(), user_home));
+    Some(PluginEntry {
+        id: plugin_id(
+            AgentId::Pi,
+            &name,
+            Some(parsed.marketplace.as_str()),
+            redacted.as_deref(),
+        ),
+        agent: AgentId::Pi,
+        name,
+        marketplace: Some(parsed.marketplace),
+        version,
+        scope: Some("user".into()),
+        enabled: None,
+        trusted: None,
+        path: redacted,
+        description,
+        source: "live".into(),
+        components,
+    })
+}
+
+struct PiSource {
+    marketplace: String,
+    display_name: String,
+    version: Option<String>,
+    npm_name: Option<String>,
+    git_host: Option<String>,
+    git_path: Option<String>,
+    local_path: Option<String>,
+}
+
+fn parse_pi_source(spec: &str) -> PiSource {
+    if let Some(rest) = spec.strip_prefix("npm:") {
+        let (name, version) = split_npm_name_version(rest.trim());
+        let display = if name.is_empty() {
+            spec.to_string()
+        } else {
+            name.clone()
+        };
+        return PiSource {
+            marketplace: "npm".into(),
+            display_name: display,
+            version,
+            npm_name: (!name.is_empty()).then_some(name),
+            git_host: None,
+            git_path: None,
+            local_path: None,
+        };
+    }
+    if let Some((host, path, version)) = parse_pi_git(spec) {
+        let display = path
+            .rsplit('/')
+            .find(|part| !part.is_empty())
+            .unwrap_or(&path)
+            .to_string();
+        return PiSource {
+            marketplace: "git".into(),
+            display_name: display,
+            version,
+            npm_name: None,
+            git_host: Some(host),
+            git_path: Some(path),
+            local_path: None,
+        };
+    }
+    let display = Path::new(spec)
+        .file_stem()
+        .or_else(|| Path::new(spec).file_name())
+        .map(|s| s.to_string_lossy().into_owned())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| spec.to_string());
+    PiSource {
+        marketplace: "local".into(),
+        display_name: display,
+        version: None,
+        npm_name: None,
+        git_host: None,
+        git_path: None,
+        local_path: Some(spec.to_string()),
+    }
+}
+
+fn split_npm_name_version(spec: &str) -> (String, Option<String>) {
+    let spec = spec.trim();
+    if spec.is_empty() {
+        return (String::new(), None);
+    }
+    if let Some(rest) = spec.strip_prefix('@') {
+        if let Some((name, version)) = rest.split_once('@') {
+            return (format!("@{name}"), Some(version.to_string()));
+        }
+        return (spec.to_string(), None);
+    }
+    if let Some((name, version)) = spec.split_once('@') {
+        return (name.to_string(), Some(version.to_string()));
+    }
+    (spec.to_string(), None)
+}
+
+fn parse_pi_git(spec: &str) -> Option<(String, String, Option<String>)> {
+    let trimmed = spec.trim();
+    let (raw, version) = if let Some(rest) = trimmed.strip_prefix("git:") {
+        strip_git_ref(rest.trim())
+    } else if looks_like_git_url(trimmed) {
+        strip_git_ref(trimmed)
+    } else {
+        return None;
+    };
+    let (host, path) = git_host_path(raw)?;
+    if host.is_empty() || path.is_empty() || is_unsafe_pi_spec(&host) || is_unsafe_pi_spec(&path) {
+        return None;
+    }
+    Some((host, path, version.map(str::to_string)))
+}
+
+fn looks_like_git_url(spec: &str) -> bool {
+    spec.starts_with("https://")
+        || spec.starts_with("http://")
+        || spec.starts_with("ssh://")
+        || spec.starts_with("git://")
+        || spec.starts_with("git@")
+}
+
+fn strip_git_ref(url: &str) -> (&str, Option<&str>) {
+    let Some(idx) = url.rfind('@') else {
+        return (url, None);
+    };
+    let before = &url[..idx];
+    let after = &url[idx + 1..];
+    if before == "git" && after.contains(':') {
+        return (url, None);
+    }
+    if before.ends_with("://git") || before.ends_with("://") {
+        return (url, None);
+    }
+    if after.is_empty() || after.contains('/') || after.contains(':') {
+        return (url, None);
+    }
+    (before, Some(after))
+}
+
+fn git_host_path(url: &str) -> Option<(String, String)> {
+    let url = url.trim().trim_end_matches('/').trim_end_matches(".git");
+    if let Some(rest) = url.strip_prefix("git@") {
+        let (host, path) = rest.split_once(':')?;
+        return Some((host.to_string(), path.trim_start_matches('/').to_string()));
+    }
+    let without_proto = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .or_else(|| url.strip_prefix("ssh://"))
+        .or_else(|| url.strip_prefix("git://"))
+        .unwrap_or(url);
+    let without_user = without_proto
+        .split_once('@')
+        .map(|(_, rest)| rest)
+        .unwrap_or(without_proto);
+    let (host, path) = without_user.split_once('/')?;
+    Some((host.to_string(), path.trim_start_matches('/').to_string()))
+}
+
+fn resolve_pi_install_path(pi_config: &Path, parsed: &PiSource) -> Option<PathBuf> {
+    if let Some(name) = parsed.npm_name.as_deref() {
+        return Some(pi_config.join("npm").join("node_modules").join(name));
+    }
+    if let (Some(host), Some(path)) = (parsed.git_host.as_deref(), parsed.git_path.as_deref()) {
+        let mut dir = pi_config.join("git").join(host);
+        for part in path.split('/') {
+            if part.is_empty() || part == "." || part == ".." {
+                continue;
+            }
+            dir.push(part);
+        }
+        return Some(dir);
+    }
+    parsed.local_path.as_ref().map(|raw| {
+        let path = PathBuf::from(raw);
+        if path.is_absolute() {
+            path
+        } else {
+            pi_config.join(path)
+        }
+    })
+}
+
+fn is_unsafe_pi_spec(spec: &str) -> bool {
+    spec.contains('\0') || spec.split(['/', '\\']).any(|part| part == "..")
+}
+
+fn read_package_json(dir: &Path) -> Option<JsonValue> {
+    let text = fs::read_to_string(dir.join("package.json")).ok()?;
+    serde_json::from_str(&text).ok()
 }
 
 fn names_match(listed: &str, name: &str, marketplace: Option<&str>) -> bool {

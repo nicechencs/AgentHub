@@ -9,13 +9,14 @@ describe('plugin inventory and enable/disable (browser mock)', () => {
 
   it('returns plugin packs rather than MCP server rows', async () => {
     const inv = await listPluginInventory();
-    expect(inv.plugins.map((p) => p.name).sort()).toEqual(['demo', 'gdrive']);
+    expect(inv.plugins.map((p) => p.name).sort()).toEqual(['demo', 'gdrive', 'pi-subagents']);
     expect(inv.plugins.every((p) => p.name !== 'filesystem' && p.name !== 'mcpServers')).toBe(
       true,
     );
     const grok = inv.plugins.find((p) => p.agent === 'grok');
     expect(grok?.components.some((c) => c.kind === 'mcp' && c.name === 'gdrive')).toBe(true);
     expect(inv.agents.find((a) => a.agent === 'claude')?.support).toBe('listed');
+    expect(inv.agents.find((a) => a.agent === 'pi')?.support).toBe('listed');
     expect(inv.agents.find((a) => a.agent === 'codex')?.support).toBe('planned');
     expect(inv.sources?.some((s) => s.agent === 'cursor' && s.sourceKind === 'skills')).toBe(true);
     expect(inv.sources?.some((s) => s.agent === 'dsh' && s.sourceKind === 'cordis')).toBe(true);
@@ -37,6 +38,7 @@ describe('plugin inventory and enable/disable (browser mock)', () => {
 
   it('rejects enable/disable for planned and unsupported agents', async () => {
     await expect(enablePlugin('codex', 'anything')).rejects.toThrow(/Claude and Grok/);
+    await expect(enablePlugin('pi', 'pi-subagents')).rejects.toThrow(/Claude and Grok/);
     await expect(disablePlugin('cursor', 'anything')).rejects.toThrow(/Claude and Grok/);
   });
 });

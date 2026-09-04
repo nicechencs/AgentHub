@@ -23,13 +23,13 @@ The application is organized by work and management, with Agent filtering inside
 | Workspace | Skills | `/skills` | User skills (shared library + this-tool), project skills by workspace, and market |
 | Workspace | MCP | `/mcp` | Read-only configuration inventory |
 | Workspace | Projects | `/projects` | Project/session tree and read-only preview |
-| Workspace | Plugins | `/plugins` | Installed vendor plugin / extension packs; Claude / Grok can enable or disable |
+| Workspace | Plugins | `/plugins` | Installed vendor plugin / extension packs; Claude / Grok can enable or disable; Pi is list-only |
 | Manage | Dashboard | `/` | Agent status, usage, and shortcuts |
 | Manage | Connections | `/connections` | General login list; route-only entries with `home=route_pool` may be absent |
 | Manage | Routes | `/routes` | Local route runtime and the connection pool. May add/manage route-only official login / API Key; `/routes` opens the board; secondary nav: board / pool / tokens / activity |
 | Manage | Settings | `/settings` | Preferences, local device, backups, and about |
 
-`Routes`, `Plugins`, and `MCP` are in development. New installs hide the Routes and Plugins sidebar entries (`routesNavVisible` / `pluginsNavVisible` default off). Turning the setting on shows those entries; the pages stay reachable at `/routes` and `/plugins`. MCP stays in the workspace nav. Settings (Routes / Plugins), the page titles, and the sidebar entries (when shown) carry an in-development mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / uninstall / update for plugin packs is still a [proposal](../proposals/plugin-management.md). The current page lists installed packs; Claude and Grok can enable or disable. There is no install button.
+`Routes`, `Plugins`, and `MCP` are in development. New installs hide the Routes and Plugins sidebar entries (`routesNavVisible` / `pluginsNavVisible` default off). Turning the setting on shows those entries; the pages stay reachable at `/routes` and `/plugins`. MCP stays in the workspace nav. Settings (Routes / Plugins), the page titles, and the sidebar entries (when shown) carry an in-development mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / uninstall / update for plugin packs is still a [proposal](../proposals/plugin-management.md). The current page lists installed packs for Claude, Grok, and Pi; Claude and Grok can enable or disable. There is no install button.
 
 The compatibility paths `/adapter` and `/router` replace-navigate to `/routes`. They are recovery paths for existing links, not current navigation labels.
 
@@ -189,7 +189,7 @@ Skills, Projects, and Plugins are full-height workbenches with a left inventory 
 
 ### Plugins
 
-- Left column lists installed plugin / extension packs (Claude and Grok today). The row keeps the name, at most one line of description, and exception badges (disabled / untrusted). Clicking a row opens the right-hand details pane.
+- Left column lists installed plugin / extension packs (Claude, Grok, and Pi today). The row keeps the name, at most one line of description, and exception badges (disabled / untrusted). Clicking a row opens the right-hand details pane.
 - Details lead with the pack components (bundled MCP is a component, not a list row). Identity fields (version, marketplace, scope, path) follow. Claude and Grok packs can be turned on or off; turning off is not uninstall. There is no install button.
 - Empty copy depends on the Agent filter: wired-but-empty (install in that tool, then refresh), planned (list not wired yet), or unsupported (this tool has no pack system of this kind). Loading, empty, and error states stay in the list column. Diagnostic scan sources are not shown in the list. Hiding the sidebar item does not disable `/plugins`.
 
