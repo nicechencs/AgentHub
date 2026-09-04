@@ -3,14 +3,14 @@
 import type { Sub2ApiKey, Sub2ApiSession, Sub2ApiUser } from '@/lib/sub2api';
 import { SUB2API_DEFAULT_SITE_URL, normalizeSiteUrl } from '@/lib/sub2api';
 
-export type Sub2ApiPagePhase = 'logged-out' | 'logging-in' | 'logged-in';
+export type Sub2ApiPagePhase = 'logged-out' | 'awaiting-2fa' | 'logged-in';
 
 export function sub2apiPagePhase(
   session: Sub2ApiSession | null,
-  loggingIn: boolean,
+  awaiting2fa: boolean,
 ): Sub2ApiPagePhase {
-  if (loggingIn) return 'logging-in';
   if (session?.accessToken) return 'logged-in';
+  if (awaiting2fa) return 'awaiting-2fa';
   return 'logged-out';
 }
 
@@ -46,4 +46,9 @@ export function sortSub2ApiKeys(keys: readonly Sub2ApiKey[]): Sub2ApiKey[] {
     if (an !== 0) return an;
     return a.id - b.id;
   });
+}
+
+/** 6-digit TOTP only — strip non-digits and cap length. */
+export function normalizeTotpCode(raw: string): string {
+  return raw.replace(/\D/g, '').slice(0, 6);
 }

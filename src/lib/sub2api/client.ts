@@ -1,12 +1,18 @@
 /**
  * Sub2API HTTP client — Bearer JWT, envelope `{ code, message, data }`.
- * Never logs tokens or keys.
+ * Never logs tokens, passwords, or keys.
  */
 import type {
   Sub2ApiAuthContext,
+  Sub2ApiAuthTokens,
+  Sub2ApiCaptchaKind,
+  Sub2ApiCaptchaProof,
   Sub2ApiEnvelope,
   Sub2ApiKey,
   Sub2ApiKeyList,
+  Sub2ApiLogin2FARequest,
+  Sub2ApiLoginRequest,
+  Sub2ApiLoginResult,
   Sub2ApiPublicSettings,
   Sub2ApiUser,
 } from './types';
@@ -65,6 +71,75 @@ async function request<T>(
 
 export function fetchPublicSettings(input: { siteUrl: string }): Promise<Sub2ApiPublicSettings> {
   return request<Sub2ApiPublicSettings>(input.siteUrl, '/settings/public');
+}
+
+export function isTotp2FARequired(
+  response: Sub2ApiLoginResult,
+): response is Extract<Sub2ApiLoginResult, { requires_2fa: true }> {
+  return (
+    typeof response === 'object'
+    && response !== null
+    && 'requires_2fa' in response
+    && response.requires_2fa === true
+  );
+}
+
+export function resolveCaptchaKind(settings: Sub2ApiPublicSettings | null | undefined): Sub2ApiCaptchaKind {
+  if (!settings) return 'none';
+  if (settings.turnstile_enabled && settings.turnstile_site_key?.trim()) return 'turnstile';
+  if (settings.tencent_captcha_enabled && settings.tencent_captcha_app_id?.trim()) return 'tencent';
+  if (
+    settings.aliyun_captcha_enabled
+    && settings.aliyun_captcha_scene_id?.trim()
+    && settings.aliyun_captcha_prefix?.trim()
+  ) {
+    return 'aliyun';
+  }
+  return 'none';
+}
+
+/** Merge password login body with optional captcha proof. Never include empty tokens. */
+export function buildLoginBody(
+  email: string,
+  password: string,
+  proof?: Sub2ApiCaptchaProof | null,
+): Sub2ApiLoginRequest {
+  const body: Sub2ApiLoginRequest = {
+    email: email.trim(),
+    password,
+  };
+  const turnstile = proof?.turnstile_token?.trim();
+  if (turnstile) body.turnstile_token = turnstile;
+  const ticket = proof?.tencent_captcha_ticket?.trim();
+  const randstr = proof?.tencent_captcha_randstr?.trim();
+  if (ticket && randstr) {
+    body.tencent_captcha_ticket = ticket;
+    body.tencent_captcha_randstr = randstr;
+  }
+  return body;
+}
+
+export function loginWithPassword(
+  siteUrl: string,
+  body: Sub2ApiLoginRequest,
+): Promise<Sub2ApiLoginResult> {
+  return request<Sub2ApiLoginResult>(siteUrl, '/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function loginWith2FA(
+  siteUrl: string,
+  body: Sub2ApiLogin2FARequest,
+): Promise<Sub2ApiAuthTokens> {
+  return request<Sub2ApiAuthTokens>(siteUrl, '/auth/login/2fa', {
+    method: 'POST',
+    body: JSON.stringify({
+      temp_token: body.temp_token.trim(),
+      totp_code: body.totp_code.trim(),
+    }),
+  });
 }
 
 export function fetchCurrentUser(ctx: Sub2ApiAuthContext): Promise<Sub2ApiUser> {

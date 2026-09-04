@@ -9,7 +9,6 @@ import { Card } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -27,17 +26,19 @@ import { agentDisplayName } from '@/config/agents';
 import {
   createSub2ApiKey,
   establishSessionFromTokens,
+  isTotp2FARequired,
   loadSub2ApiKeys,
   loadSub2ApiSession,
   logoutSub2Api,
-  closeSub2ApiLoginWindow,
-  openSub2ApiLoginWindow,
+  nativeSub2ApiLogin,
+  nativeSub2ApiLogin2FA,
   probeSub2ApiPublicSettings,
   saveSub2ApiSession,
   SUB2API_DEFAULT_SITE_URL,
-  sub2apiLoginUrl,
   syncSub2ApiKeyToConnections,
+  type Sub2ApiCaptchaProof,
   type Sub2ApiKey,
+  type Sub2ApiPublicSettings,
   type Sub2ApiSession,
 } from '@/lib/api/sub2api';
 import { openExternalLink } from '@/lib/open-external';
@@ -47,8 +48,10 @@ import { maskApiKey } from '@/lib/sub2api/url';
 import type { AgentKey } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
+import { Sub2ApiCaptcha, type Sub2ApiCaptchaHandle } from './Sub2ApiCaptcha';
 import {
   initialSiteUrlDraft,
+  normalizeTotpCode,
   prepareSiteUrlForLogin,
   sortSub2ApiKeys,
   sub2apiDisplayName,
@@ -57,7 +60,7 @@ import {
 } from './sub2api-page-model';
 
 export default function RoutesSub2ApiPage() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { toast } = useToast();
   const { installedIds } = useInstalledAgents();
 
@@ -65,19 +68,29 @@ export default function RoutesSub2ApiPage() {
   const [siteUrlDraft, setSiteUrlDraft] = React.useState(() =>
     initialSiteUrlDraft(loadSub2ApiSession()),
   );
-  const [loggingIn, setLoggingIn] = React.useState(false);
+  const [email, setEmail] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [totpCode, setTotpCode] = React.useState('');
+  const [tempToken, setTempToken] = React.useState<string | null>(null);
+  const [maskedEmail, setMaskedEmail] = React.useState<string | null>(null);
+  const [publicSettings, setPublicSettings] = React.useState<Sub2ApiPublicSettings | null>(null);
+  const [captchaProof, setCaptchaProof] = React.useState<Sub2ApiCaptchaProof | null>(null);
+  const [submitting, setSubmitting] = React.useState(false);
   const [pasteToken, setPasteToken] = React.useState('');
+  const [advancedOpen, setAdvancedOpen] = React.useState(false);
   const [keys, setKeys] = React.useState<Sub2ApiKey[]>([]);
   const [loadingKeys, setLoadingKeys] = React.useState(false);
   const [creating, setCreating] = React.useState(false);
   const [newKeyName, setNewKeyName] = React.useState('AgentHub');
   const [createOpen, setCreateOpen] = React.useState(false);
   const [syncingId, setSyncingId] = React.useState<number | null>(null);
-  const loginAbortRef = React.useRef(false);
+  const captchaRef = React.useRef<Sub2ApiCaptchaHandle>(null);
 
-  const phase = sub2apiPagePhase(session, loggingIn);
+  const awaiting2fa = Boolean(tempToken);
+  const phase = sub2apiPagePhase(session, awaiting2fa);
   const sortedKeys = React.useMemo(() => sortSub2ApiKeys(selectableSub2ApiKeys(keys)), [keys]);
   const syncAgents = React.useMemo(() => [...installedIds], [installedIds]);
+  const langZh = lang === 'zh';
 
   const applySession = React.useCallback((next: Sub2ApiSession) => {
     saveSub2ApiSession(next);
@@ -106,12 +119,24 @@ export default function RoutesSub2ApiPage() {
   }, [session?.accessToken, session?.siteUrl]);
 
   const finishWithTokens = React.useCallback(
-    async (input: { siteUrl: string; accessToken: string; refreshToken?: string; expiresAt?: number }) => {
+    async (input: {
+      siteUrl: string;
+      accessToken: string;
+      refreshToken?: string;
+      expiresAt?: number;
+      expiresIn?: number;
+      user?: Sub2ApiSession['user'];
+    }) => {
       try {
         const next = await establishSessionFromTokens(input);
         applySession(next);
-        setLoggingIn(false);
+        setPassword('');
+        setTotpCode('');
+        setTempToken(null);
+        setMaskedEmail(null);
         setPasteToken('');
+        setCaptchaProof(null);
+        captchaRef.current?.reset();
         await refreshKeys(next);
       } catch {
         toast({ title: t('routes.sub2api.sessionExpired'), variant: 'danger' });
@@ -120,55 +145,134 @@ export default function RoutesSub2ApiPage() {
     [applySession, refreshKeys, t, toast],
   );
 
-  const startLogin = async () => {
+  const probeSite = React.useCallback(
+    async (siteUrl: string) => {
+      try {
+        const pub = await probeSub2ApiPublicSettings(siteUrl);
+        setPublicSettings(pub);
+        return pub;
+      } catch {
+        setPublicSettings(null);
+        toast({ title: t('routes.sub2api.siteProbeFailed'), variant: 'danger' });
+        return null;
+      }
+    },
+    [t, toast],
+  );
+
+  React.useEffect(() => {
+    if (phase === 'logged-in') return;
+    const siteUrl = prepareSiteUrlForLogin(siteUrlDraft || SUB2API_DEFAULT_SITE_URL);
+    const handle = window.setTimeout(() => {
+      void probeSite(siteUrl);
+    }, 400);
+    return () => window.clearTimeout(handle);
+  }, [siteUrlDraft, phase, probeSite]);
+
+  const onNativeLogin = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     const siteUrl = prepareSiteUrlForLogin(siteUrlDraft || SUB2API_DEFAULT_SITE_URL);
     setSiteUrlDraft(siteUrl);
-    loginAbortRef.current = false;
-    setLoggingIn(true);
-    setPasteToken('');
-    try {
-      await probeSub2ApiPublicSettings(siteUrl);
-    } catch {
-      toast({ title: t('routes.sub2api.siteProbeFailed'), variant: 'danger' });
+    if (!email.trim() || !password) {
+      toast({ title: t('routes.sub2api.loginNeedCredentials'), variant: 'danger' });
+      return;
     }
+    setSubmitting(true);
     try {
-      const tokens = await openSub2ApiLoginWindow(sub2apiLoginUrl(siteUrl));
-      if (loginAbortRef.current) return;
+      let proof = captchaProof;
+      const ensured = await captchaRef.current?.ensureProof();
+      if (captchaRef.current && captchaRef.current.kind() !== 'none') {
+        if (!ensured) {
+          toast({ title: t('routes.sub2api.captchaRequired'), variant: 'danger' });
+          return;
+        }
+        proof = ensured;
+      }
+      const result = await nativeSub2ApiLogin({
+        siteUrl,
+        email: email.trim(),
+        password,
+        captcha: proof,
+      });
+      if (isTotp2FARequired(result)) {
+        setTempToken(result.temp_token || null);
+        setMaskedEmail(result.user_email_masked || email.trim());
+        setTotpCode('');
+        return;
+      }
+      if (!result.access_token) {
+        toast({ title: t('routes.sub2api.loginFailed'), variant: 'danger' });
+        return;
+      }
       await finishWithTokens({
         siteUrl,
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        expiresAt: tokens.expiresAt,
+        accessToken: result.access_token,
+        refreshToken: result.refresh_token,
+        expiresIn: result.expires_in,
+        user: result.user,
       });
-    } catch (e) {
-      if (loginAbortRef.current) return;
-      const msg = e instanceof Error ? e.message : String(e);
-      if (/cancelled/i.test(msg)) return;
+    } catch {
       toast({ title: t('routes.sub2api.loginFailed'), variant: 'danger' });
+      captchaRef.current?.reset();
+      setCaptchaProof(null);
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const cancelLogin = () => {
-    loginAbortRef.current = true;
-    setLoggingIn(false);
-    setPasteToken('');
-    void closeSub2ApiLoginWindow();
+  const onSubmit2FA = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!tempToken) return;
+    const code = normalizeTotpCode(totpCode);
+    if (code.length !== 6) {
+      toast({ title: t('routes.sub2api.totpInvalid'), variant: 'danger' });
+      return;
+    }
+    const siteUrl = prepareSiteUrlForLogin(siteUrlDraft || SUB2API_DEFAULT_SITE_URL);
+    setSubmitting(true);
+    try {
+      const result = await nativeSub2ApiLogin2FA({
+        siteUrl,
+        tempToken,
+        totpCode: code,
+      });
+      await finishWithTokens({
+        siteUrl,
+        accessToken: result.access_token,
+        refreshToken: result.refresh_token,
+        expiresIn: result.expires_in,
+        user: result.user,
+      });
+    } catch {
+      toast({ title: t('routes.sub2api.totpFailed'), variant: 'danger' });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const cancel2FA = () => {
+    setTempToken(null);
+    setMaskedEmail(null);
+    setTotpCode('');
   };
 
   const submitPasteToken = async () => {
     const token = pasteToken.trim();
     if (!token) return;
-    await finishWithTokens({
-      siteUrl: prepareSiteUrlForLogin(siteUrlDraft || SUB2API_DEFAULT_SITE_URL),
-      accessToken: token,
-    });
+    setSubmitting(true);
+    try {
+      await finishWithTokens({
+        siteUrl: prepareSiteUrlForLogin(siteUrlDraft || SUB2API_DEFAULT_SITE_URL),
+        accessToken: token,
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const openLoginInBrowser = async () => {
+  const openSiteInBrowser = async () => {
     try {
-      await openExternalLink(
-        sub2apiLoginUrl(prepareSiteUrlForLogin(siteUrlDraft || SUB2API_DEFAULT_SITE_URL)),
-      );
+      await openExternalLink(prepareSiteUrlForLogin(siteUrlDraft || SUB2API_DEFAULT_SITE_URL));
     } catch {
       toast({ title: t('routes.sub2api.loginFailed'), variant: 'danger' });
     }
@@ -220,6 +324,14 @@ export default function RoutesSub2ApiPage() {
   };
 
   const userLabel = sub2apiDisplayName(session?.user, session);
+  const captchaLabels = {
+    turnstileLoading: t('routes.sub2api.captchaLoading'),
+    turnstileFailed: t('routes.sub2api.captchaLoadFailed'),
+    actionReady: t('routes.sub2api.captchaActionReady'),
+    actionVerified: t('routes.sub2api.captchaVerified'),
+    actionFailed: t('routes.sub2api.captchaLoadFailed'),
+    actionNeeded: t('routes.sub2api.captchaClickToVerify'),
+  };
 
   return (
     <RoutesPane>
@@ -251,24 +363,147 @@ export default function RoutesSub2ApiPage() {
           </div>
         ) : null}
 
-        {phase === 'logged-out' && (
-          <Card className="mx-auto w-full max-w-lg space-y-4 p-5">
+        {(phase === 'logged-out' || phase === 'awaiting-2fa') && (
+          <Card className="mx-auto w-full max-w-lg space-y-4 p-5" data-sub2api-login-form="">
             <div>
-              <h2 className="text-base font-medium">{t('routes.sub2api.loggedOutTitle')}</h2>
-              <p className="mt-1 text-sm text-secondary">{t('routes.sub2api.loggedOutDescription')}</p>
+              <h2 className="text-base font-medium">
+                {phase === 'awaiting-2fa'
+                  ? t('routes.sub2api.totpTitle')
+                  : t('routes.sub2api.loggedOutTitle')}
+              </h2>
+              <p className="mt-1 text-sm text-secondary">
+                {phase === 'awaiting-2fa'
+                  ? t('routes.sub2api.totpDescription', {
+                      email: maskedEmail || email || '—',
+                    })
+                  : t('routes.sub2api.loggedOutDescription')}
+              </p>
             </div>
-            <label className="block space-y-1.5">
-              <span className="text-sm text-secondary">{t('routes.sub2api.siteUrlLabel')}</span>
-              <Input
-                value={siteUrlDraft}
-                onChange={(e) => setSiteUrlDraft(e.target.value)}
-                placeholder={t('routes.sub2api.siteUrlPlaceholder')}
-                autoComplete="url"
-              />
-            </label>
-            <Button type="button" onClick={() => void startLogin()}>
-              {t('routes.sub2api.login')}
-            </Button>
+
+            {phase === 'logged-out' ? (
+              <form className="space-y-3" onSubmit={(ev) => void onNativeLogin(ev)}>
+                <label className="block space-y-1.5">
+                  <span className="text-sm text-secondary">{t('routes.sub2api.siteUrlLabel')}</span>
+                  <Input
+                    value={siteUrlDraft}
+                    onChange={(e) => setSiteUrlDraft(e.target.value)}
+                    placeholder={t('routes.sub2api.siteUrlPlaceholder')}
+                    autoComplete="url"
+                    data-sub2api-site-url=""
+                  />
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="text-sm text-secondary">{t('routes.sub2api.emailLabel')}</span>
+                  <Input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder={t('routes.sub2api.emailPlaceholder')}
+                    autoComplete="username"
+                    data-sub2api-email=""
+                  />
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="text-sm text-secondary">{t('routes.sub2api.passwordLabel')}</span>
+                  <Input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={t('routes.sub2api.passwordPlaceholder')}
+                    autoComplete="current-password"
+                    data-sub2api-password=""
+                  />
+                </label>
+                <Sub2ApiCaptcha
+                  ref={captchaRef}
+                  settings={publicSettings}
+                  langZh={langZh}
+                  labels={captchaLabels}
+                  onProofChange={setCaptchaProof}
+                />
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={submitting}
+                  data-sub2api-login-submit=""
+                >
+                  {submitting ? t('routes.sub2api.loggingIn') : t('routes.sub2api.login')}
+                </Button>
+              </form>
+            ) : (
+              <form className="space-y-3" onSubmit={(ev) => void onSubmit2FA(ev)} data-sub2api-2fa-form="">
+                <label className="block space-y-1.5">
+                  <span className="text-sm text-secondary">{t('routes.sub2api.totpLabel')}</span>
+                  <Input
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    value={totpCode}
+                    onChange={(e) => setTotpCode(normalizeTotpCode(e.target.value))}
+                    placeholder={t('routes.sub2api.totpPlaceholder')}
+                    autoComplete="one-time-code"
+                    data-sub2api-totp=""
+                  />
+                </label>
+                <div className="flex gap-2">
+                  <Button type="button" variant="ghost" className="flex-1" onClick={cancel2FA}>
+                    {t('routes.sub2api.cancelLogin')}
+                  </Button>
+                  <Button
+                    type="submit"
+                    className="flex-1"
+                    disabled={submitting || normalizeTotpCode(totpCode).length !== 6}
+                    data-sub2api-2fa-submit=""
+                  >
+                    {submitting ? t('routes.sub2api.loggingIn') : t('routes.sub2api.totpConfirm')}
+                  </Button>
+                </div>
+              </form>
+            )}
+
+            <div className="space-y-2 border-t border-border pt-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => void openSiteInBrowser()}
+                data-sub2api-open-site=""
+              >
+                {t('routes.sub2api.openSiteInBrowser')}
+              </Button>
+              <details
+                className="group rounded-card border border-border bg-subtle/60"
+                open={advancedOpen}
+                onToggle={(e) => setAdvancedOpen((e.target as HTMLDetailsElement).open)}
+                data-sub2api-advanced=""
+              >
+                <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-secondary marker:content-none [&::-webkit-details-marker]:hidden">
+                  {t('routes.sub2api.advancedPasteTitle')}
+                </summary>
+                <div className="space-y-2 border-t border-border px-3 py-3">
+                  <p className="text-xs text-secondary">{t('routes.sub2api.pasteTokenHint')}</p>
+                  <label className="block space-y-1.5">
+                    <span className="text-sm text-secondary">{t('routes.sub2api.pasteTokenLabel')}</span>
+                    <Input
+                      value={pasteToken}
+                      onChange={(e) => setPasteToken(e.target.value)}
+                      placeholder={t('routes.sub2api.pasteTokenPlaceholder')}
+                      autoComplete="off"
+                      spellCheck={false}
+                      data-sub2api-paste-token=""
+                    />
+                  </label>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => void submitPasteToken()}
+                    disabled={!pasteToken.trim() || submitting}
+                  >
+                    {t('routes.sub2api.pasteTokenConfirm')}
+                  </Button>
+                </div>
+              </details>
+            </div>
             <p className="text-sm text-secondary">{t('routes.sub2api.syncedKeysEmpty')}</p>
           </Card>
         )}
@@ -374,47 +609,6 @@ export default function RoutesSub2ApiPage() {
           </div>
         )}
       </div>
-
-      <Dialog open={phase === 'logging-in'} onOpenChange={(open) => { if (!open) cancelLogin(); }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t('routes.sub2api.loggingInTitle')}</DialogTitle>
-            <DialogDescription>{t('routes.sub2api.loggingInDescription')}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <label className="block space-y-1.5">
-              <span className="text-sm text-secondary">{t('routes.sub2api.loginUrlLabel')}</span>
-              <Input
-                value={sub2apiLoginUrl(prepareSiteUrlForLogin(siteUrlDraft || SUB2API_DEFAULT_SITE_URL))}
-                readOnly
-                className="font-mono text-xs"
-              />
-            </label>
-            <Button type="button" variant="outline" className="w-full" onClick={() => void openLoginInBrowser()}>
-              {t('routes.sub2api.openBrowser')}
-            </Button>
-            <p className="text-xs text-secondary">{t('routes.sub2api.pasteTokenHint')}</p>
-            <label className="block space-y-1.5">
-              <span className="text-sm text-secondary">{t('routes.sub2api.pasteTokenLabel')}</span>
-              <Input
-                value={pasteToken}
-                onChange={(e) => setPasteToken(e.target.value)}
-                placeholder={t('routes.sub2api.pasteTokenPlaceholder')}
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </label>
-          </div>
-          <DialogFooter className="gap-2 sm:gap-2">
-            <Button type="button" variant="ghost" onClick={cancelLogin}>
-              {t('routes.sub2api.cancelLogin')}
-            </Button>
-            <Button type="button" onClick={() => void submitPasteToken()} disabled={!pasteToken.trim()}>
-              {t('routes.sub2api.pasteTokenConfirm')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-sm">

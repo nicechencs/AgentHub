@@ -20,7 +20,7 @@ test('Sub2API secondary nav stays hidden until Settings toggle is on; deep link 
   await expect(page.getByRole('heading', { name: 'Sub2API' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '尚未登录' })).toBeVisible();
   await expect(
-    page.getByText('登录中转站把 Key 同步到连接列表。填写站点地址后登录即可。'),
+    page.getByText('用中转站账号登录，再把 Key 同步到连接列表。'),
   ).toBeVisible();
 
   await goNav(page, '设置');
