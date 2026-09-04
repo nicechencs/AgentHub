@@ -298,6 +298,7 @@ export function useChatPageSessions(input: {
       if (activeId === id) {
         setActiveId(rest[0].id);
         setMessages([]);
+        setDraft('');
       }
     } catch (e) {
       toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
@@ -337,6 +338,10 @@ export function useChatPageSessions(input: {
 
   function focusConversation(id: string) {
     if (!conversations.some((c) => c.id === id)) return;
+    if (id !== activeId) {
+      setMessages([]);
+      setDraft('');
+    }
     setActiveId(id);
   }
 

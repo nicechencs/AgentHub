@@ -72,7 +72,7 @@ export function TokenList({
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
-  const { widths, onResizeStart, totalWidth } = useColumnWidths(
+  const { widths, onResizeStart, onResizeKeyDown, totalWidth } = useColumnWidths(
     WIDTH_SPECS,
     COLUMN_WIDTHS_STORAGE_KEY,
   );
@@ -97,6 +97,7 @@ export function TokenList({
                     columnKey={spec.key}
                     label={label}
                     onResizeStart={onResizeStart}
+                    onResizeKeyDown={onResizeKeyDown}
                   />
                 </TableHead>
               );

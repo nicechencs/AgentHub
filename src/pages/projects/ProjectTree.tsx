@@ -91,10 +91,18 @@ export function ProjectTree({
             <div
               className={cn(
                 'flex items-center gap-2 px-3 py-2',
-                canExpand && 'cursor-pointer hover:bg-hover/40',
+                canExpand && 'cursor-pointer hover:bg-hover/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
               )}
               onClick={() => canExpand && onToggleExpand(p)}
+              onKeyDown={(event) => {
+                if (!canExpand) return;
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onToggleExpand(p);
+                }
+              }}
               role={canExpand ? 'button' : undefined}
+              tabIndex={canExpand ? 0 : undefined}
               aria-expanded={canExpand ? open : undefined}
             >
               <span className="flex h-5 w-5 shrink-0 items-center justify-center text-muted">

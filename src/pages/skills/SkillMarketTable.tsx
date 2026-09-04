@@ -85,7 +85,7 @@ export function SkillMarketTable({
 }) {
   const { toast } = useToast();
   const { t } = useI18n();
-  const { widths, onResizeStart, totalWidth } = useColumnWidths(
+  const { widths, onResizeStart, onResizeKeyDown, totalWidth } = useColumnWidths(
     WIDTH_SPECS,
     COLUMN_WIDTHS_STORAGE_KEY,
   );
@@ -127,6 +127,7 @@ export function SkillMarketTable({
                   columnKey={key}
                   label={columnLabels[key]}
                   onResizeStart={onResizeStart}
+                    onResizeKeyDown={onResizeKeyDown}
                 />
               </TableHead>
             ))}

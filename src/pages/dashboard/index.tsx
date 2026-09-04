@@ -166,6 +166,7 @@ export default function DashboardPage() {
   const [usage, setUsage] = useState<UsageRecord[] | null>(null);
   const [usageLoading, setUsageLoading] = useState(true);
   const [tableLoading, setTableLoading] = useState(true);
+  const [tableError, setTableError] = useState<unknown>(null);
   const [usageRefreshing, setUsageRefreshing] = useState(false);
   const [usageError, setUsageError] = useState<unknown>(null);
   const usageGenerationRef = useRef(0);
@@ -310,6 +311,7 @@ export default function DashboardPage() {
       if (initial) setUsageLoading(true);
       else setUsageRefreshing(true);
       setTableLoading(true);
+      setTableError(null);
       setUsageError(null);
       const { days, since, until } = usageWindowBound(dateRange, new Date(), customRange);
       const agentId = agentFilter === 'all' ? undefined : agentFilter;
@@ -329,6 +331,7 @@ export default function DashboardPage() {
           setUsageTrendPoints([]);
           setModelTrendPoints([]);
           setUsage([]);
+          setTableError(null);
           setTableLoading(false);
           return;
         }
@@ -350,8 +353,11 @@ export default function DashboardPage() {
           });
           if (!isLatestUsageRequest(usageGenerationRef.current, generation)) return;
           setUsage(records);
-        } catch {
-          if (isLatestUsageRequest(usageGenerationRef.current, generation)) setUsage([]);
+        } catch (e) {
+          if (isLatestUsageRequest(usageGenerationRef.current, generation)) {
+            setUsage([]);
+            setTableError(e);
+          }
         } finally {
           if (isLatestUsageRequest(usageGenerationRef.current, generation)) setTableLoading(false);
         }
@@ -578,7 +584,7 @@ export default function DashboardPage() {
       <PageSection>
         <div className={cn(pageRhythm.chromeRow)}>
           <Select value={agentFilter} onValueChange={(v) => setAgentFilter(v as AgentKey | 'all')}>
-            <SelectTrigger className="w-36">
+            <SelectTrigger className="w-36" aria-label={t('dashboard.page.agentFilterAria')}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -597,7 +603,7 @@ export default function DashboardPage() {
             </SelectContent>
           </Select>
           <Select value={effectiveModelFilter} onValueChange={setModelFilter}>
-            <SelectTrigger className="w-44">
+            <SelectTrigger className="w-44" aria-label={t('dashboard.page.modelFilterAria')}>
               <SelectValue placeholder={t('dashboard.page.allModels')} />
             </SelectTrigger>
             <SelectContent>
@@ -818,10 +824,10 @@ export default function DashboardPage() {
             title={t('dashboard.page.usageUnavailable')}
             description={usageUnavailableReason}
           />
-        ) : usageError ? (
+        ) : tableError ? (
           <ErrorState
             compact
-            error={usageError}
+            error={tableError}
             onRetry={() => void loadUsage(true)}
             title={t('dashboard.page.usageLoadFailed')}
           />

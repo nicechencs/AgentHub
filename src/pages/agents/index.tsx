@@ -248,7 +248,7 @@ export default function AgentsPage() {
     agentOrder.seedIfEmpty(liveIds);
   }, [agentOrder.seedIfEmpty, liveIds]);
   const canReorder = liveIds.length > 1;
-  const { widths, onResizeStart, totalWidth } = useColumnWidths(
+  const { widths, onResizeStart, onResizeKeyDown, totalWidth } = useColumnWidths(
     AGENT_TABLE_FIXED_COLUMN_SPECS,
     StorageKey.agentsColumnWidths,
   );
@@ -383,6 +383,7 @@ export default function AgentsPage() {
                           columnKey={spec.key}
                           label={label}
                           onResizeStart={onResizeStart}
+                          onResizeKeyDown={onResizeKeyDown}
                         />
                       )}
                     </TableHead>

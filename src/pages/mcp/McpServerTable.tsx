@@ -174,7 +174,7 @@ export function McpServerTable({
 }) {
   const { t } = useI18n();
   const labels = columnLabels(t);
-  const { widths, onResizeStart, totalWidth } = useColumnWidths(
+  const { widths, onResizeStart, onResizeKeyDown, totalWidth } = useColumnWidths(
     WIDTH_SPECS,
     COLUMN_WIDTHS_STORAGE_KEY,
   );
@@ -195,6 +195,7 @@ export function McpServerTable({
                   columnKey={key}
                   label={labels[key]}
                   onResizeStart={onResizeStart}
+                    onResizeKeyDown={onResizeKeyDown}
                 />
               </TableHead>
             ))}

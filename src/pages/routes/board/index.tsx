@@ -114,7 +114,7 @@ function BoardEndpointCard({
         }
       }}
       className={cn(
-        'cursor-pointer p-3 transition-colors hover:border-accent/40 hover:bg-hover/40',
+        'cursor-pointer p-3 transition-colors hover:border-accent/40 hover:bg-hover/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
         selected && 'border-accent bg-hover/40',
         row.keyCount === 0 && 'opacity-70',
       )}

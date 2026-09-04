@@ -17,6 +17,10 @@ import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { PageRefreshButton } from '@/components/shared/PageRefreshButton';
 import { SearchField } from '@/components/shared/SearchField';
+import {
+  closeConfirmationOnOpenChange,
+  preventBusyConfirmationDismissal,
+} from '@/components/shared/busy-confirmation';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -693,8 +697,16 @@ export default function ProjectsPage() {
       {listPane}
     </WorkbenchSplitPage>
 
-      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <DialogContent>
+      <Dialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => closeConfirmationOnOpenChange(open, busy, () => setDeleteTarget(null))}
+      >
+        <DialogContent
+          hideClose={busy}
+          onEscapeKeyDown={(event) => preventBusyConfirmationDismissal(busy, event)}
+          onPointerDownOutside={(event) => preventBusyConfirmationDismissal(busy, event)}
+          onInteractOutside={(event) => preventBusyConfirmationDismissal(busy, event)}
+        >
           <DialogHeader>
             <DialogTitle>{t('projects.dialog.deleteTitle')}</DialogTitle>
             <DialogDescription>
@@ -728,8 +740,16 @@ export default function ProjectsPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={batchDeleteOpen} onOpenChange={setBatchDeleteOpen}>
-        <DialogContent>
+      <Dialog
+        open={batchDeleteOpen}
+        onOpenChange={(open) => closeConfirmationOnOpenChange(open, busy, () => setBatchDeleteOpen(false))}
+      >
+        <DialogContent
+          hideClose={busy}
+          onEscapeKeyDown={(event) => preventBusyConfirmationDismissal(busy, event)}
+          onPointerDownOutside={(event) => preventBusyConfirmationDismissal(busy, event)}
+          onInteractOutside={(event) => preventBusyConfirmationDismissal(busy, event)}
+        >
           <DialogHeader>
             <DialogTitle>{t('projects.dialog.batchTitle', { n: selected.size })}</DialogTitle>
             <DialogDescription>{t('projects.dialog.batchDesc')}</DialogDescription>

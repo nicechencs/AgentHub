@@ -352,7 +352,7 @@ export function Sidebar() {
         {/* 工作区置顶；管理区 mt-auto 贴底（在 agent 状态条上方） */}
         <nav
           className={cn(
-            'flex min-h-0 flex-1 flex-col gap-1 pt-1',
+            'flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain pt-1',
             collapsed ? 'px-1.5' : 'px-2',
           )}
         >

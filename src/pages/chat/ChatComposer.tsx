@@ -51,6 +51,7 @@ export function ChatComposer({
   draft,
   setDraft,
   sending,
+  canceling = false,
   active,
   connectionOptions,
   primaryAgent,
@@ -83,6 +84,7 @@ export function ChatComposer({
   draft: string;
   setDraft: (v: string) => void;
   sending: boolean;
+  canceling?: boolean;
   active: Conversation;
   connectionOptions: ChatConnectionOption[];
   primaryAgent: AgentKey | null;
@@ -429,7 +431,7 @@ export function ChatComposer({
           </Tip>
 
           {sending ? (
-            <Button size="sm" variant="dangerOutline" onClick={onCancel}>
+            <Button size="sm" variant="dangerOutline" disabled={canceling} onClick={onCancel}>
               <Square className="h-3.5 w-3.5" />
               {t('chat.composer.stop')}
             </Button>

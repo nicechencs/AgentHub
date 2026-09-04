@@ -156,7 +156,7 @@ export function PreferencesPanel({
               void persist({ language });
             }}
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger className="w-full" aria-label={t('settings.general.languageLabel')}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -180,7 +180,7 @@ export function PreferencesPanel({
               });
             }}
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger className="w-full" aria-label={t('settings.general.themeLabel')}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -367,7 +367,7 @@ export function PreferencesPanel({
               });
             }}
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger className="w-full" aria-label={t('settings.general.skillMarketLabel')}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

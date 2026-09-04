@@ -7,16 +7,7 @@ import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { Hint } from '@/components/ui/tooltip';
 import { Switch } from '@/components/ui/switch';
-import { useToast } from '@/components/ui/toast';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { ensureSourceModelCatalog, setSourceCustomModels } from '@/lib/api/adapter';
+import { ensureSourceModelCatalog } from '@/lib/api/adapter';
 import type { AccountAction } from '@/lib/backend/contracts/account-actions';
 import type { SourceModelCatalog } from '@/lib/backend/contracts/adapter';
 import { connectionKindLabel } from '@/lib/connection-kind';
@@ -45,6 +36,7 @@ import {
   poolAuthorizationTypeHref,
 } from './pool-authorization-detail';
 import { poolAuthorizationRefreshLabels } from './pool-authorization-refresh';
+import { PoolAuthorizationSyncPrompt } from './PoolAuthorizationSyncPrompt';
 
 export function PoolAuthorizationDetail({
   item,
@@ -74,7 +66,6 @@ export function PoolAuthorizationDetail({
   onClose: () => void;
 }) {
   const { t } = useI18n();
-  const { toast } = useToast();
   const status = poolAuthorizationStatusView(item, t);
   const rows = poolAuthorizationDetailRows(item, t);
   const endpointKinds = poolAuthorizationEndpointKinds(item);
@@ -94,7 +85,7 @@ export function PoolAuthorizationDetail({
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogFailed, setCatalogFailed] = useState(false);
   const [syncPrompt, setSyncPrompt] = useState<SaveOauthPoolLoginResult | null>(null);
-  const [syncBusy, setSyncBusy] = useState(false);
+
 
   const finishOauthSave = (result: SaveOauthPoolLoginResult) => {
     setSyncPrompt(null);
@@ -278,52 +269,7 @@ export function PoolAuthorizationDetail({
       </div>
       )}
     </SideInspectPanel>
-    <Dialog open={Boolean(syncPrompt)}>
-      <DialogContent className="max-w-sm" hideClose>
-        <DialogHeader>
-          <DialogTitle>{t('routes.pool.page.syncToConnectionsTitle')}</DialogTitle>
-          <DialogDescription>{t('routes.pool.page.syncToConnectionsDescription')}</DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={syncBusy}
-            onClick={() => {
-              if (syncPrompt) finishOauthSave(syncPrompt);
-            }}
-          >
-            {t('routes.pool.page.syncToConnectionsSkip')}
-          </Button>
-          <Button
-            type="button"
-            disabled={syncBusy}
-            onClick={() => {
-              if (!syncPrompt) return;
-              setSyncBusy(true);
-              void setSourceCustomModels(
-                syncPrompt.sourceKind,
-                syncPrompt.originalSourceId,
-                syncPrompt.models,
-              )
-                .catch((error) => {
-                  toast({
-                    title: t('routes.pool.page.syncToConnectionsFailed'),
-                    description: error instanceof Error ? error.message : String(error),
-                    variant: 'danger',
-                  });
-                })
-                .finally(() => {
-                  setSyncBusy(false);
-                  finishOauthSave(syncPrompt);
-                });
-            }}
-          >
-            {t('routes.pool.page.syncToConnectionsConfirm')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <PoolAuthorizationSyncPrompt prompt={syncPrompt} onFinish={finishOauthSave} />
     </>
   );
 }
