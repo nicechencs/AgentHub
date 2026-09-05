@@ -55,6 +55,7 @@ export function SecretInput({
           setRevealed((current) => !current);
         }}
         title={revealed ? t('common.hideSecret') : t('common.showSecret')}
+        aria-label={revealed ? t('common.hideSecret') : t('common.showSecret')}
       >
         {revealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
       </Button>
