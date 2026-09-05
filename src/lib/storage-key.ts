@@ -7,6 +7,8 @@
 const PREFIX = 'agenthub:';
 
 const LAYOUT_STORAGE_KEY = {
+  sidebarWidth: `${PREFIX}sidebar-width`,
+  routesNavWidth: `${PREFIX}routes-nav-width`,
   skillsPreviewWidth: `${PREFIX}skills-preview-width`,
   skillsMatrixLegendOpen: `${PREFIX}skills-matrix-legend-open`,
   skillsMatrixColumnWidths: `${PREFIX}skills-matrix-column-widths`,

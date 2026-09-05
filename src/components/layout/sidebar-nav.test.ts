@@ -145,6 +145,15 @@ describe('nav model order', () => {
     expect(sidebar).toContain('strokeWidth={1.6}');
     expect(sidebar).toContain('absoluteStrokeWidth');
   });
+
+  it('lets the expanded rail be dragged and remembers the width', () => {
+    const sidebar = readFileSync(path.join(dir, 'Sidebar.tsx'), 'utf8');
+    expect(sidebar).toContain('useSidebarWidth');
+    expect(sidebar).toContain('NavResizeHandle');
+    expect(sidebar).toContain("t('nav.resizeSidebar')");
+    expect(sidebar).not.toContain("'w-56'");
+    expect(sidebar).not.toContain('collapsed ? \'w-14\' : \'w-56\'');
+  });
 });
 
 describe('workspaceNavItems / manageNavItems', () => {
