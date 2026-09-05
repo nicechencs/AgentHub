@@ -1196,7 +1196,7 @@ export default function Sub2ApiPage() {
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-1.5">
-                              <span className="rounded-md bg-subtle px-1.5 py-0.5 font-mono text-xs text-secondary">
+                              <span className="rounded-btn bg-subtle px-1.5 py-0.5 font-mono text-xs text-secondary">
                                 {maskSub2ApiTableKey(key.key)}
                               </span>
                               <Button
@@ -1222,7 +1222,7 @@ export default function Sub2ApiPage() {
                             />
                           </TableCell>
                           <TableCell>
-                            <span className="inline-flex min-w-[1.75rem] justify-center rounded-md bg-subtle px-1.5 py-0.5 font-mono text-xs">
+                            <span className="inline-flex min-w-[1.75rem] justify-center rounded-btn bg-subtle px-1.5 py-0.5 font-mono text-xs">
                               {pickKeyConcurrency(key)}
                             </span>
                           </TableCell>

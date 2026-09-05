@@ -20,6 +20,7 @@ import { EnvStatusBar } from '@/components/shared/EnvStatusBar';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Notice } from '@/components/shared/Notice';
 import { StatusDot } from '@/components/shared/StatusDot';
+import { useSidebar } from '@/components/layout/SidebarContext';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { listAgents } from '@/lib/api/agent';
@@ -33,19 +34,29 @@ import { hasEnvIssues } from '@/lib/env';
 import { loadBool, saveBool, StorageKey } from '@/lib/ui-preferences';
 import type { AgentStatus, RuntimeDetect } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import {
+  EMPTY_ONBOARDING_USAGE,
+  hasOnboardingUsageChoice,
+  navVisibilityForUsage,
+  toggleOnboardingUsage,
+  type OnboardingUsageSelection,
+} from './onboarding-model';
+import { OnboardingUsageStep } from './OnboardingUsageStep';
 
-type Step = 'env' | 'detect' | 'import' | 'done';
+type Step = 'usage' | 'env' | 'detect' | 'import' | 'done';
 
 /**
- * 首次启动引导(docs/ui-design.md §7):
- * Step A 检测共享环境 → Step B 检测 agent → 导入登录态 → Dashboard。
+ * 首次启动引导:
+ * 选择本地路由 / Sub2API → 检测共享环境 → 检测 agent → 导入登录态。
  */
 export function OnboardingDialog() {
   const navigate = useNavigate();
   const { t } = useI18n();
   const { toast } = useToast();
+  const { setRoutesNavVisible, setSub2apiNavVisible } = useSidebar();
   const [open, setOpen] = React.useState(() => !loadBool(StorageKey.onboardingDone));
-  const [step, setStep] = React.useState<Step>('env');
+  const [step, setStep] = React.useState<Step>('usage');
+  const [usage, setUsage] = React.useState<OnboardingUsageSelection>(EMPTY_ONBOARDING_USAGE);
   const [runtimes, setRuntimes] = React.useState<RuntimeDetect[] | null>(null);
   const [agents, setAgents] = React.useState<AgentStatus[] | null>(null);
   const [importing, setImporting] = React.useState(false);
@@ -94,10 +105,23 @@ export function OnboardingDialog() {
     };
   }, [open, step]);
 
+  const applyUsage = (selection: OnboardingUsageSelection = usage) => {
+    if (!hasOnboardingUsageChoice(selection)) return;
+    const visibility = navVisibilityForUsage(selection);
+    setRoutesNavVisible(visibility.routesNavVisible);
+    setSub2apiNavVisible(visibility.sub2apiNavVisible);
+  };
+
   const finish = (go?: string) => {
+    applyUsage();
     saveBool(StorageKey.onboardingDone, true);
     setOpen(false);
     if (go) navigate(go);
+  };
+
+  const continueFromUsage = () => {
+    applyUsage();
+    setStep('env');
   };
 
   const refreshEnv = async () => {
@@ -157,9 +181,18 @@ export function OnboardingDialog() {
             {t('chrome.onboarding.title')}
           </DialogTitle>
           <DialogDescription>
-            {t('chrome.onboarding.description')}
+            {step === 'usage'
+              ? t('chrome.onboarding.usageDescription')
+              : t('chrome.onboarding.description')}
           </DialogDescription>
         </DialogHeader>
+
+        {step === 'usage' && (
+          <OnboardingUsageStep
+            selection={usage}
+            onToggle={(id) => setUsage((current) => toggleOnboardingUsage(current, id))}
+          />
+        )}
 
         {/* Step A: 环境 */}
         {step === 'env' && (
@@ -279,6 +312,21 @@ export function OnboardingDialog() {
         )}
 
         <DialogFooter>
+          {step === 'usage' && (
+            <>
+              {!hasOnboardingUsageChoice(usage) ? (
+                <p className="mr-auto self-center text-meta text-muted">
+                  {t('chrome.onboarding.usageNeedOne')}
+                </p>
+              ) : null}
+              <Button variant="ghost" onClick={() => finish()}>
+                {t('chrome.onboarding.skipGuide')}
+              </Button>
+              <Button onClick={continueFromUsage} disabled={!hasOnboardingUsageChoice(usage)}>
+                {t('chrome.onboarding.usageContinue')}
+              </Button>
+            </>
+          )}
           {step === 'env' && (
             <>
               <Button variant="ghost" onClick={() => finish()} disabled={envLoading}>
@@ -307,9 +355,14 @@ export function OnboardingDialog() {
             </>
           )}
           {step === 'detect' && (
-            <Button variant="ghost" disabled>
-              {t('chrome.onboarding.detecting')}
-            </Button>
+            <>
+              <Button variant="ghost" onClick={() => finish()}>
+                {t('chrome.onboarding.skipGuide')}
+              </Button>
+              <Button variant="ghost" disabled>
+                {t('chrome.onboarding.detecting')}
+              </Button>
+            </>
           )}
           {step === 'import' && (
             <>
