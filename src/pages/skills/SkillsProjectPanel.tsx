@@ -172,7 +172,12 @@ export function SkillsProjectPanel(props: SkillsProjectPanelProps) {
                 const key = projectSkillRowKey(row);
                 const active = activeKey === key;
                 return (
-                  <TableRow key={key} active={active}>
+                  <TableRow
+                    key={key}
+                    active={active}
+                    data-help="list-row"
+                    onOpen={() => onPreview(row)}
+                  >
                     <TableCell>
                       <button
                         type="button"

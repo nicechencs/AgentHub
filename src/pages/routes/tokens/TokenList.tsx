@@ -160,6 +160,7 @@ export function TokenList({
                   <TableRow
                     key={row.id}
                     data-token-row={row.id}
+                    data-help="list-row"
                     active={activeId === row.id}
                     onOpen={onShowDetail ? () => onShowDetail(row) : undefined}
                   >

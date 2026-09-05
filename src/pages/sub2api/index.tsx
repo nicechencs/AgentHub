@@ -191,7 +191,9 @@ export default function Sub2ApiPage() {
   const [keys, setKeys] = React.useState<Sub2ApiKey[]>([]);
   const [availableGroups, setAvailableGroups] = React.useState<Sub2ApiGroup[]>([]);
   const [groupFilter, setGroupFilter] = React.useState<Sub2ApiGroupFilter>('all');
-  const [loadingKeys, setLoadingKeys] = React.useState(false);
+  const [loadingKeys, setLoadingKeys] = React.useState(() =>
+    Boolean(loadSub2ApiSession()?.accessToken),
+  );
   const [creating, setCreating] = React.useState(false);
   const [newKeyName, setNewKeyName] = React.useState('AgentHub');
   const [newKeyGroupId, setNewKeyGroupId] = React.useState<number | null>(null);
@@ -1265,6 +1267,7 @@ export default function Sub2ApiPage() {
                         <TableRow
                           key={key.id}
                           data-sub2api-key-row={String(key.id)}
+                          data-help="list-row"
                           active={inspect.target === key.id}
                           onOpen={() => openEditKey(key)}
                         >

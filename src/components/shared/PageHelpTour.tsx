@@ -8,6 +8,7 @@ import {
   type PageHelpId,
 } from '@/components/shared/page-help-model';
 import {
+  dimPaneRects,
   filterVisibleHelpSteps,
   HELP_BUBBLE_WIDTH,
   pickHelpTargetRect,
@@ -67,7 +68,14 @@ export function PageHelpTour({
     };
     read();
     const frame = window.requestAnimationFrame(read);
-    return () => window.cancelAnimationFrame(frame);
+    const observer = new MutationObserver(() => {
+      window.requestAnimationFrame(read);
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
   }, [helpId, open]);
 
   useLayoutEffect(() => {
@@ -121,21 +129,34 @@ export function PageHelpTour({
   const last = cursor >= visible.length - 1;
   const body = copy.steps[step];
 
+  const dimPanes = dimPaneRects(
+    layout?.highlight ?? null,
+    typeof window === 'undefined'
+      ? { width: 0, height: 0 }
+      : { width: window.innerWidth, height: window.innerHeight },
+  );
+
   return createPortal(
     <div
-      className="fixed inset-0 z-50"
+      className="pointer-events-none fixed inset-0 z-50"
       data-page-help-tour={helpId}
       data-page-help-step={step}
     >
-      <button
-        type="button"
-        className={cn(
-          'absolute inset-0 cursor-default',
-          layout?.highlight ? 'bg-transparent' : 'bg-black/40',
-        )}
-        aria-label={t('chrome.pageHelp.skip')}
-        onClick={onClose}
-      />
+      {dimPanes.map((pane, i) => (
+        <button
+          key={i}
+          type="button"
+          className="pointer-events-auto absolute cursor-default bg-black/45"
+          style={{
+            top: pane.top,
+            left: pane.left,
+            width: pane.width,
+            height: pane.height,
+          }}
+          aria-label={t('chrome.pageHelp.skip')}
+          onClick={onClose}
+        />
+      ))}
       {layout?.highlight ? (
         <div
           className="pointer-events-none absolute rounded-card ring-2 ring-accent"
@@ -144,7 +165,6 @@ export function PageHelpTour({
             left: layout.highlight.left,
             width: layout.highlight.width,
             height: layout.highlight.height,
-            boxShadow: '0 0 0 9999px rgb(0 0 0 / 0.45)',
           }}
         />
       ) : null}
@@ -153,7 +173,7 @@ export function PageHelpTour({
         role="dialog"
         aria-modal="true"
         aria-labelledby="page-help-tour-title"
-        className="absolute rounded-card border border-border bg-panel px-3 py-2.5 shadow-md"
+        className="pointer-events-auto absolute rounded-card border border-border bg-panel px-3 py-2.5 shadow-md"
         style={{
           top: layout?.top ?? 48,
           left: layout?.left ?? 48,

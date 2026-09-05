@@ -139,6 +139,7 @@ export function ProjectSessionRow({
             type="button"
             className={cn(previewTextClass, 'text-sm text-primary')}
             aria-current={previewOpen ? 'true' : undefined}
+            data-help="list-row"
             aria-label={t('projects.tree.previewAria', { title: session.title })}
             onClick={() => onPreviewSession(session)}
           >

@@ -345,6 +345,7 @@ export function AgentCard({
               <button
                 type="button"
                 data-agent-name={agent.agentId}
+                data-help="list-row"
                 className="max-w-full truncate text-left text-body font-medium text-primary hover:underline"
                 onClick={onSelect}
               >
