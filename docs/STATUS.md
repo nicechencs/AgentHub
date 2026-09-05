@@ -18,6 +18,7 @@ updated: 2026-09-05
 - Sub2API 是独立站点管理页：密码登录站点（验证码 / 2FA 按站点要求），可记住多账号；密码经 settings 端口写入桌面 SQLite vault（mock 为内存）。登录后可按分组查看、创建、编辑、启用/禁用或删除 API Key，并把可用 Key 导入已安装的 Agent。侧栏入口默认隐藏，打开偏好中的「显示 Sub2API 页面」后显示；隐藏只影响入口，不影响页面本身。界面细节见 [页面模式](ui/page-patterns.md)。
 - 当前内置适配包括 Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy、ZCode 和 DeepSeek Harness。**Cursor Agent 适配器仍在代码中，但 dev 线通过 store-stamp 默认软隐藏**（Agents 管理页可取消隐藏）；待登录写入、路由目标与结构化输出等兼容问题修复后再重新开放。
 - CLI 提供 doctor、env、agent、provider、account、skill、usage、backup、run、config 等命令；参数以 CLI 帮助和源码为准。
+- Chat 新空 Codex 会话已接入 app-server：持续回复、确认/回答、补充/停止、保存与同机重开；旧会话与其他 Agent 保留原有发送方式。模型/菜单/附件/扩展的统一操作仍待 B2，其他 Agent 适配待 B3。macOS 上真实重开续聊已验证，全部桌面流程和其他平台尚未验收；见 [B1 实施与交接](status/chat-codex-b1.md)。
 
 ## Backend 边界
 
