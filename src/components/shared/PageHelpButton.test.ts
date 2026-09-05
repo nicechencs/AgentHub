@@ -23,9 +23,18 @@ describe('PageHelpButton', () => {
     const tour = source('PageHelpTour.tsx');
     expect(tour).toContain('createPortal');
     expect(tour).toContain('pickHelpTargetRect');
+    expect(tour).toContain('visibleOverlap');
     expect(tour).toContain('dimPaneRects');
     expect(tour).toContain('pointer-events-none fixed inset-0');
     expect(tour).toContain('chrome.pageHelp.next');
+    expect(tour).toContain('pageHelpKeyAction');
+    expect(tour).toContain('ArrowLeft');
+    expect(tour).toContain('<kbd');
+    expect(tour).toContain('Esc');
+    expect(tour).toContain('Enter');
+    expect(tour).toContain('previousDock');
+    expect(tour).toContain('disabled={cursor === 0}');
+    expect(tour).not.toContain('cursor > 0');
     expect(tour).not.toContain('DialogContent');
     expect(tour).not.toContain('list-decimal');
   });
