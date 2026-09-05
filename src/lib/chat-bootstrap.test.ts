@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { setChatBootstrap, takeChatBootstrap } from '@/lib/chat-bootstrap';
+import { setChatBootstrap, setChatBootstrapFitting, takeChatBootstrap } from '@/lib/chat-bootstrap';
 import { StorageKey } from '@/lib/storage-key';
 
 function installMemoryStorage() {
@@ -89,6 +89,28 @@ describe('chat-bootstrap', () => {
       prompt: 'continue please',
     });
     expect(takeChatBootstrap()).toBeNull();
+  });
+
+  it('shrinks the prompt until the write succeeds', () => {
+    let writes = 0;
+    Object.defineProperty(globalThis, 'sessionStorage', {
+      value: {
+        setItem(_key: string, value: string) {
+          writes += 1;
+          const parsed = JSON.parse(value) as { prompt?: string };
+          if ((parsed.prompt?.length ?? 0) > 10) throw new Error('quota');
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+    expect(
+      setChatBootstrapFitting(
+        { agentIds: ['claude'], prompt: 'x'.repeat(80) },
+        (limit) => 'p'.repeat(Math.min(limit, 8)),
+      ),
+    ).toBe(true);
+    expect(writes).toBeGreaterThan(1);
   });
 
   it('rejects empty agentIds', () => {

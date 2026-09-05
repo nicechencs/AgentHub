@@ -14,7 +14,7 @@ export function mapAgentSession(s: CoreAgentSession): AgentSession {
 }
 
 export function mapAgentProjectExcerpt(e: CoreAgentProjectExcerpt): AgentProjectExcerpt {
-  return { ...e };
+  return { ...e, truncated: e.truncated === true };
 }
 
 export function mapProjectMetadata(m: CoreProjectMetadataFile): ProjectMetadataFile {

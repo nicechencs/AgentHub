@@ -125,6 +125,12 @@ describe('classifyExcerptRows', () => {
         { id: 'sess-b', excerpt: 'nope' },
         { id: 'sess-a', excerpt: '  hello  ' },
       ]),
-    ).toEqual({ status: 'ready', excerpt: 'hello' });
+    ).toEqual({ status: 'ready', excerpt: 'hello', truncated: false });
+  });
+
+  it('passes through truncated when the file was not fully read', () => {
+    expect(
+      classifyExcerptRows('sess-a', [{ id: 'sess-a', excerpt: 'hello', truncated: true }]),
+    ).toEqual({ status: 'ready', excerpt: 'hello', truncated: true });
   });
 });

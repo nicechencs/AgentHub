@@ -58,9 +58,11 @@ pub const PROJECT_PREVIEW_CHARS: usize = 120;
 pub const PROJECT_MAX_PER_AGENT: usize = 500;
 /// When scanning a large jsonl, only read the first N bytes for list-row preview.
 pub const PROJECT_SCAN_BYTES: u64 = 256 * 1024;
-/// Bytes *scanned* from a jsonl while collecting excerpt turns.
+/// Bytes *scanned* from a jsonl while collecting excerpt turns (head window).
 /// Must exceed Codex rollouts / Grok `updates.jsonl` that bury later turns behind multi-MB tool dumps.
 /// Matching user/assistant lines are kept in full (tool dumps are skipped).
+/// Files larger than this also scan a trailing window of the same size so later
+/// turns are not dropped; a remaining middle gap is reported as `truncated`.
 pub const PROJECT_EXCERPT_READ_BYTES: u64 = 256 * 1024 * 1024;
 /// Cheap peek of a session file for list rows (cwd / preview / native id).
 /// Codex listing still uses [`PROJECT_SCAN_BYTES`] because session_meta can exceed 16 KiB.

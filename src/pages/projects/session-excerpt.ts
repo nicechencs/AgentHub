@@ -72,18 +72,18 @@ function splitRoleTaggedTurns(text: string): ExcerptTurn[] {
 }
 
 export type ExcerptLoadResult =
-  | { status: 'ready'; excerpt: string }
+  | { status: 'ready'; excerpt: string; truncated: boolean }
   | { status: 'empty' }
   | { status: 'error' };
 
 /** Core skips failed ids instead of rejecting; missing row is an error, blank body is empty. */
 export function classifyExcerptRows(
   sessionId: string,
-  rows: { id: string; excerpt?: string | null }[],
+  rows: { id: string; excerpt?: string | null; truncated?: boolean | null }[],
 ): ExcerptLoadResult {
   const row = rows.find((r) => r.id === sessionId);
   if (!row) return { status: 'error' };
   const text = row.excerpt?.trim() ?? '';
   if (!text) return { status: 'empty' };
-  return { status: 'ready', excerpt: text };
+  return { status: 'ready', excerpt: text, truncated: row.truncated === true };
 }
