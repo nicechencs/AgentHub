@@ -19,6 +19,16 @@ fn member(id: &str, token: &str, reload: crate::bridge::UpstreamAuthReload) -> P
     )
 }
 
+#[tokio::test]
+async fn reload_returning_current_token_is_already_fresh() {
+    let reload: crate::bridge::UpstreamAuthReload = Arc::new(|| Some("old".into()));
+    let picked = member("acc-a", "old", reload);
+    let coordinator = AuthReloadCoordinator::new();
+    let outcome = coordinator.reload_member(&picked).await;
+    assert_eq!(outcome, AuthReloadOutcome::AlreadyFresh);
+    assert_eq!(picked.auth.token(), "old");
+}
+
 #[test]
 fn stale_revision_does_not_clobber_newer_token() {
     let auth = ResolvedAuth::bearer("old");

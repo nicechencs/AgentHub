@@ -189,8 +189,13 @@ fn run_reload(member: &PickedMember) -> AuthReloadOutcome {
         return AuthReloadOutcome::Unchanged;
     };
     let next = next.trim();
-    if next.is_empty() || next == current {
+    if next.is_empty() {
         return AuthReloadOutcome::Unchanged;
+    }
+    if next == current {
+        // Cell already holds this token (prior rotation won, or refresh was a
+        // no-op). Retry with it instead of isolating a still-usable member.
+        return AuthReloadOutcome::AlreadyFresh;
     }
     if member.auth.replace_token_at_revision(observed, next) {
         AuthReloadOutcome::Rotated
