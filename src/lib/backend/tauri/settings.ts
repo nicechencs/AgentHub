@@ -456,6 +456,63 @@ export function createTauriSettingsPort(): SettingsPort {
       }
     },
 
+    async openSub2ApiLoginWindow(loginUrl) {
+      try {
+        const raw = await invoke<{
+          accessToken: string;
+          refreshToken?: string;
+          expiresAt?: number;
+        }>('sub2api_open_login', { loginUrl });
+        return raw;
+      } catch (e) {
+        log.error('openSub2ApiLoginWindow failed', e);
+        throw e;
+      }
+    },
+
+    async closeSub2ApiLoginWindow() {
+      try {
+        await invoke('sub2api_close_login');
+      } catch (e) {
+        log.error('closeSub2ApiLoginWindow failed', e);
+        throw e;
+      }
+    },
+
+    async getSub2ApiRememberedVault() {
+      try {
+        return await invoke<string | null>('sub2api_remembered_vault_get');
+      } catch (e) {
+        log.error('getSub2ApiRememberedVault failed', e);
+        throw e;
+      }
+    },
+
+    async setSub2ApiRememberedVault(json) {
+      try {
+        // Never log `json` — it may contain passwords.
+        await invoke('sub2api_remembered_vault_set', { json });
+      } catch (e) {
+        log.error('setSub2ApiRememberedVault failed', e);
+        throw e;
+      }
+    },
+
+    async sub2ApiHttpRequest(input) {
+      try {
+        const raw = await invoke<{ status: number; body: string }>('sub2api_http_request', {
+          method: input.method,
+          url: input.url,
+          headers: input.headers,
+          body: input.body ?? null,
+        });
+        return { status: raw.status, body: raw.body ?? '' };
+      } catch (e) {
+        log.error('sub2ApiHttpRequest failed', e);
+        throw e;
+      }
+    },
+
     async pickDirectory(options) {
       try {
         const picked = await invoke<string | null>('pick_directory', {

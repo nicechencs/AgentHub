@@ -111,6 +111,14 @@ export function ingestProjectsByAgent(
     stampKey(key, startedAt);
     lists.set(key, list);
   }
+  const allKey = allListCacheKey(includeHidden);
+  const newerMember = [...grouped.keys()].some(
+    (id) => (keyClock.get(projectListCacheKey(id, includeHidden)) ?? 0) > startedAt,
+  );
+  if (!newerMember && (keyClock.get(allKey) ?? 0) <= startedAt) {
+    stampKey(allKey, startedAt);
+    lists.set(allKey, rows);
+  }
   notifyData();
 }
 
@@ -119,6 +127,34 @@ export function readCachedProjectList(
   includeHidden: boolean,
 ): AgentProject[] | null {
   return lists.get(projectListCacheKey(agentId, includeHidden)) ?? null;
+}
+
+function filterProjectsForTabs(
+  rows: AgentProject[],
+  tabAgentIds: readonly AgentKey[],
+): AgentProject[] {
+  if (tabAgentIds.length === 0) return rows;
+  const allow = new Set(tabAgentIds);
+  return rows.filter((row) => allow.has(row.agentId));
+}
+
+/** Combined list for the 全部 tab: prefer complete per-agent caches. */
+export function readCachedCombinedProjectList(
+  tabAgentIds: readonly AgentKey[],
+  includeHidden: boolean,
+): AgentProject[] | null {
+  if (tabAgentIds.length > 0) {
+    const { missing } = projectCountsFromCache(tabAgentIds, includeHidden);
+    if (missing.length === 0) {
+      const rows: AgentProject[] = [];
+      for (const id of tabAgentIds) {
+        rows.push(...(readCachedProjectList(id, includeHidden) ?? []));
+      }
+      return rows;
+    }
+  }
+  const all = readCachedProjectList('all', includeHidden);
+  return all ? filterProjectsForTabs(all, tabAgentIds) : null;
 }
 
 export function rememberedProjectAgent(): AgentKey | null {
@@ -302,22 +338,33 @@ export function useProjectShowHidden() {
 }
 
 export function useAgentProjectList(
-  agentId: AgentKey | null,
+  agentId: AgentKey | 'all' | null,
   includeHidden: boolean,
   enabled: boolean,
+  tabAgentIds: readonly AgentKey[] = [],
 ) {
   const invalidate = useInvalidateVersion();
-  const cacheKey = agentId ? projectListCacheKey(agentId, includeHidden) : '';
-  const [data, setDataState] = useState<AgentProject[] | null>(() =>
-    agentId ? readCachedProjectList(agentId, includeHidden) : null,
-  );
+  const tabKey = tabAgentIds.join(',');
+  const cacheKey = agentId
+    ? agentId === 'all'
+      ? `${allListCacheKey(includeHidden)}|${tabKey}`
+      : projectListCacheKey(agentId, includeHidden)
+    : '';
+  const readScope = useCallback((): AgentProject[] | null => {
+    if (!agentId) return null;
+    const ids = tabKey ? (tabKey.split(',') as AgentKey[]) : [];
+    if (agentId === 'all') return readCachedCombinedProjectList(ids, includeHidden);
+    return readCachedProjectList(agentId, includeHidden);
+  }, [agentId, includeHidden, tabKey]);
+
+  const [data, setDataState] = useState<AgentProject[] | null>(() => readScope());
   const [error, setError] = useState<unknown>(null);
   const [fetching, setFetching] = useState(false);
   const [seenKey, setSeenKey] = useState(cacheKey);
 
   if (seenKey !== cacheKey) {
     setSeenKey(cacheKey);
-    setDataState(agentId ? readCachedProjectList(agentId, includeHidden) : null);
+    setDataState(readScope());
     setError(null);
   }
 
@@ -325,28 +372,35 @@ export function useAgentProjectList(
     (next: AgentProject[] | ((prev: AgentProject[]) => AgentProject[])) => {
       setDataState((prev) => {
         const rows = typeof next === 'function' ? next(prev ?? []) : next;
-        if (agentId) {
-          writeClock += 1;
+        writeClock += 1;
+        if (agentId === 'all') {
+          const ids = tabKey ? (tabKey.split(',') as AgentKey[]) : [];
+          ingestProjectsByAgent(rows, includeHidden, ids, writeClock);
+        } else if (agentId) {
           writeAgentList(agentId, includeHidden, rows, writeClock);
         }
         return rows;
       });
     },
-    [agentId, includeHidden],
+    [agentId, includeHidden, tabKey],
   );
 
   const reload = useCallback(async () => {
     if (!enabled || !agentId) return;
     const requestGeneration = fetchGeneration;
+    const ids = tabKey ? (tabKey.split(',') as AgentKey[]) : [];
     setFetching(true);
     try {
-      const rows = await fetchAgentProjectsShared(agentId, includeHidden);
+      const rows =
+        agentId === 'all'
+          ? await fetchAgentProjectsShared(null, includeHidden, ids)
+          : await fetchAgentProjectsShared(agentId, includeHidden);
       if (!isCurrentProjectsRequest(requestGeneration, fetchGeneration)) return;
-      setDataState(rows);
+      setDataState(agentId === 'all' ? filterProjectsForTabs(rows, ids) : rows);
       setError(null);
     } catch (err) {
       if (!isCurrentProjectsRequest(requestGeneration, fetchGeneration)) return;
-      if (readCachedProjectList(agentId, includeHidden) == null) {
+      if (readScope() == null) {
         setError(err);
       } else {
         console.error('[useProjects] refresh failed, keeping stale rows', err);
@@ -356,14 +410,14 @@ export function useAgentProjectList(
         setFetching(false);
       }
     }
-  }, [enabled, agentId, includeHidden]);
+  }, [enabled, agentId, includeHidden, tabKey, readScope]);
 
   useEffect(() => {
     if (!enabled || !agentId) return;
-    const cached = readCachedProjectList(agentId, includeHidden);
+    const cached = readScope();
     if (cached) setDataState(cached);
     void reload();
-  }, [enabled, agentId, includeHidden, invalidate, reload]);
+  }, [enabled, agentId, includeHidden, invalidate, reload, readScope]);
 
   return {
     data,

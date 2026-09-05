@@ -77,6 +77,8 @@ export function PreferencesPanel({
     setRoutesNavVisible,
     pluginsNavVisible,
     setPluginsNavVisible,
+    sub2apiNavVisible,
+    setSub2apiNavVisible,
   } = useSidebar();
   const [accent, setAccent] = useState(loadStoredAccent);
   const [canvas, setCanvas] = useState(loadStoredCanvas);
@@ -320,6 +322,17 @@ export function PreferencesPanel({
             checked={pluginsNavVisible}
             onCheckedChange={setPluginsNavVisible}
             aria-label={t('settings.general.pluginsNavVisibleLabel')}
+          />
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.general.sub2apiNavVisibleLabel')}
+          description={t('settings.general.sub2apiNavVisibleDescription')}
+          descriptionTip={t('settings.general.sub2apiNavVisibleTip')}
+        >
+          <Switch
+            checked={sub2apiNavVisible}
+            onCheckedChange={setSub2apiNavVisible}
+            aria-label={t('settings.general.sub2apiNavVisibleLabel')}
           />
         </SettingsRow>
       </SettingsGroup>

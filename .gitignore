@@ -72,3 +72,4 @@ latest.json
 temp-pic/
 /artifacts
 nul
+crates/agenthub-core/scan-cache.db

@@ -14,7 +14,7 @@ use crate::models::{
     LiveAccount, RunOptions, RunSpec,
 };
 use crate::runtime;
-use crate::utils::atomic::atomic_write;
+use crate::utils::atomic::{atomic_write, with_restored_files};
 
 pub struct PiAdapter;
 
@@ -960,16 +960,20 @@ fn write_pi_config(config: &AgentConfig) -> Result<()> {
     // A live snapshot contains settings + models + auth + paths.  `paths`
     // makes auth a complete-file restore; generated apply envelopes merge only
     // the provider keys they own.
-    if let Some(settings) = merged_settings {
-        write_json_value(&dir.join("settings.json"), &settings)?;
-    }
-    if let Some(models) = merged_models {
-        write_json_value(&models_path, &models)?;
-    }
-    if let Some(auth) = merged_auth {
-        write_json_value(&dir.join("auth.json"), &auth)?;
-    }
-    Ok(())
+    let settings_path = dir.join("settings.json");
+    let auth_path = dir.join("auth.json");
+    with_restored_files(&[&settings_path, &models_path, &auth_path], || {
+        if let Some(settings) = merged_settings {
+            write_json_value(&settings_path, &settings)?;
+        }
+        if let Some(models) = merged_models {
+            write_json_value(&models_path, &models)?;
+        }
+        if let Some(auth) = merged_auth {
+            write_json_value(&auth_path, &auth)?;
+        }
+        Ok(())
+    })
 }
 
 fn write_json_value(path: &Path, value: &serde_json::Value) -> Result<()> {

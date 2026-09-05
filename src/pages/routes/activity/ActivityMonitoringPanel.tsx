@@ -1,8 +1,9 @@
 import { Boxes } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { ErrorState } from '@/components/shared/ErrorState';
 import { RouteTracePipelineLegend } from '@/components/shared/RouteTracePipelineLegend';
-import { buttonVariants } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { TableSkeleton } from '@/components/ui/skeleton';
 import { ROUTES_POOL_PATH } from '@/lib/routes-path';
 import { cn } from '@/lib/utils';
@@ -28,6 +29,8 @@ export function ActivityMonitoringPanel({
   pageSize,
   onPageChange,
   filtered = false,
+  traceError = null,
+  onRetryTraces,
 }: {
   snapshot: ActivityPageSnapshot;
   pools?: readonly { members: readonly { displayLabel?: string }[] }[];
@@ -42,10 +45,14 @@ export function ActivityMonitoringPanel({
   pageSize?: number;
   onPageChange?: (next: number) => void;
   filtered?: boolean;
+  traceError?: unknown | null;
+  onRetryTraces?: () => void;
 }) {
   const { t } = useI18n();
   const activeRow = selectedActivityTrace(snapshot.feed, activeId);
   const showLoginEmpty = snapshot.kind === 'noLogins' && snapshot.feed.length === 0;
+  const loadErrorTitle = t('routes.loadError');
+  const loadError = traceError instanceof Error ? traceError : loadErrorTitle;
 
   return (
     <div className="space-y-4" data-activity-monitoring>
@@ -57,6 +64,12 @@ export function ActivityMonitoringPanel({
       <ActivityStatusBanner snapshot={snapshot} />
       {snapshot.kind === 'loading' ? (
         <TableSkeleton rows={6} cols={10} />
+      ) : traceError && snapshot.feed.length === 0 ? (
+        <ErrorState
+          title={loadErrorTitle}
+          error={loadError}
+          onRetry={() => onRetryTraces?.()}
+        />
       ) : showLoginEmpty ? (
         <EmptyState
           icon={Boxes}
@@ -72,24 +85,39 @@ export function ActivityMonitoringPanel({
           )}
         />
       ) : (
-        <ActivityTraceList
-          rows={snapshot.feed}
-          tokens={tokens}
-          activeId={activeId}
-          onShowDetail={onShowDetail}
-          selectedIds={selectedIds}
-          onToggleRow={onToggleRow}
-          onTogglePage={onTogglePage}
-          page={page}
-          total={total}
-          pageSize={pageSize}
-          onPageChange={onPageChange}
-          emptyLabel={
-            filtered || snapshot.kind === 'filteredEmpty'
-              ? t('routes.activity.emptyFilteredTitle')
-              : t('routes.activity.emptyTitle')
-          }
-        />
+        <>
+          {traceError ? (
+            <div
+              className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-danger/30 bg-danger/5 px-3 py-2 text-meta"
+              data-activity-trace-error
+            >
+              <p className="text-secondary">{loadErrorTitle}</p>
+              {onRetryTraces ? (
+                <Button type="button" size="sm" variant="outline" onClick={onRetryTraces}>
+                  {t('chrome.error.retry')}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+          <ActivityTraceList
+            rows={snapshot.feed}
+            tokens={tokens}
+            activeId={activeId}
+            onShowDetail={onShowDetail}
+            selectedIds={selectedIds}
+            onToggleRow={onToggleRow}
+            onTogglePage={onTogglePage}
+            page={page}
+            total={total}
+            pageSize={pageSize}
+            onPageChange={onPageChange}
+            emptyLabel={
+              filtered || snapshot.kind === 'filteredEmpty'
+                ? t('routes.activity.emptyFilteredTitle')
+                : t('routes.activity.emptyTitle')
+            }
+          />
+        </>
       )}
     </div>
   );

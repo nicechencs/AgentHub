@@ -76,12 +76,16 @@ describe('translate / interpolate', () => {
     const zhNav = createTranslator('zh');
     expect(zhNav('nav.dashboard')).toBe('总览');
     expect(zhNav('nav.connections')).toBe('连接');
+    expect(zhNav('nav.sub2api')).toBe('Sub2API');
     expect(zhNav('nav.routes')).toBe('路由');
     expect(zhNav('routes.page.title')).toBe('路由');
     expect(zhNav('nav.settings')).toBe('设置');
     expect(zhNav('nav.chat')).toBe('对话');
     expect(zhNav('nav.agents')).toBe('Agent');
     expect(zhNav('chrome.onboarding.enterDashboard')).toBe('进入总览');
+    expect(zhNav('chrome.onboarding.skipGuide')).toBe('跳过引导');
+    expect(zhNav('chrome.onboarding.usageRoutesTitle')).toBe('本地路由');
+    expect(zhNav('chrome.onboarding.usageSub2apiTitle')).toBe('Sub2API 站点');
     expect(zhNav('chat.blocker.goConnections')).toBe('去连接页');
     expect(zhNav('chat.connection.add')).toBe('去连接页添加');
     expect(zhNav('chat.connection.leftoverUnavailable')).toBe(

@@ -14,6 +14,7 @@ test('app boots on mock and primary navigation works', async ({ page }) => {
   // UX-10: Routes shown in main nav by default; Plugins still hidden.
   await expect(nav.getByRole('link', { name: /^路由(?:$| — )/ })).toBeVisible();
   await expect(nav.getByRole('link', { name: /^插件(?:$| — )/ })).toHaveCount(0);
+  await expect(nav.getByRole('link', { name: /^Sub2API(?:$| — )/ })).toHaveCount(0);
 
   await goNav(page, '项目');
   await expect(page).toHaveURL(/#\/projects/);
@@ -173,12 +174,14 @@ test('new install shows Routes by default; Plugins stay hidden until Settings', 
   // UX-10: Routes visible by default (no 开发中 mark); Plugins still opt-in.
   await expect(nav.getByRole('link', { name: /^路由(?:$| — )/ })).toBeVisible();
   await expect(nav.getByRole('link', { name: /^插件(?:$| — )/ })).toHaveCount(0);
+  await expect(nav.getByRole('link', { name: /^Sub2API(?:$| — )/ })).toHaveCount(0);
   await expect(nav.getByRole('link', { name: /^MCP — / })).toBeVisible();
 
   await goNav(page, '设置');
   await expect(page.getByRole('switch', { name: '打开路由时自动折叠' })).toBeChecked();
   await expect(page.getByRole('switch', { name: '显示路由页面' })).toBeChecked();
   await expect(page.getByRole('switch', { name: '显示插件页面' })).not.toBeChecked();
+  await expect(page.getByRole('switch', { name: '显示 Sub2API 页面' })).not.toBeChecked();
   await expect(
     page.getByText('显示路由页面', { exact: true }).locator('..').getByText('开发中'),
   ).toHaveCount(0);

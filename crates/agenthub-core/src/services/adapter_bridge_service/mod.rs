@@ -1429,7 +1429,9 @@ fn same_upstream_endpoint(
     right_protocol: BridgeUpstreamProtocol,
 ) -> bool {
     left_protocol == right_protocol
-        && left_url.trim_end_matches('/').eq_ignore_ascii_case(right_url.trim_end_matches('/'))
+        && left_url
+            .trim_end_matches('/')
+            .eq_ignore_ascii_case(right_url.trim_end_matches('/'))
 }
 
 fn validate_route_pool_profile(

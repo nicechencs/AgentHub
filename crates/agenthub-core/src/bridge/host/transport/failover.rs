@@ -725,18 +725,14 @@ fn attempt_url(
 /// Same trailing-slash rule as `validate_start_spec`: `Url::join` treats a
 /// last segment without `/` as a file, so `https://api.example/v1` + `responses`
 /// would drop `/v1`.
-fn join_candidate_endpoint(
+pub(super) fn join_candidate_endpoint(
     state: &EdgeState,
     endpoint: &str,
     path: &str,
 ) -> Result<reqwest::Url, Response> {
-    let Ok(mut base) = reqwest::Url::parse(endpoint) else {
+    let Ok(base) = crate::utils::loopback::validate_upstream_base_url(endpoint) else {
         return candidate_url_error(state);
     };
-    if !base.path().ends_with('/') {
-        let with_slash = format!("{}/", base.path());
-        base.set_path(&with_slash);
-    }
     match base.join(path) {
         Ok(url) => Ok(url),
         Err(_) => candidate_url_error(state),

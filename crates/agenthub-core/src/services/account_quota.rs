@@ -32,7 +32,7 @@ use crate::catalog::limits::{ACCOUNT_QUOTA_CACHE_TTL, ACCOUNT_QUOTA_HTTP_TIMEOUT
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{Account, AccountKind, AgentId};
-use crate::oauth::decode_jwt_payload;
+use crate::oauth::{chatgpt_account_id_from_token, decode_jwt_payload};
 
 const CHATGPT_USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
 /// Codex desktop probe — rate limits arrive in `x-codex-*` response headers.
@@ -1125,38 +1125,54 @@ fn extract_grok_profile_token(credentials: &Value) -> Option<String> {
 pub(crate) fn extract_chatgpt_account_id(account: &Account) -> Option<String> {
     let c = &account.credentials;
     let extra = &account.extra;
-    [
-        c.get("account_id").and_then(|v| v.as_str()),
-        c.get("chatgpt_account_id").and_then(|v| v.as_str()),
-        extra.get("accountId").and_then(|v| v.as_str()),
-        c.pointer("/body/tokens/account_id")
-            .and_then(|v| v.as_str()),
-        c.pointer("/body/account/id").and_then(|v| v.as_str()),
-    ]
-    .into_iter()
-    .flatten()
-    .map(str::trim)
-    .find(|s| !s.is_empty())
-    .map(|s| s.to_string())
-    .or_else(|| {
-        // From id_token JWT claims
-        let tok = c
-            .get("id_token")
-            .or_else(|| c.pointer("/body/tokens/id_token"))
-            .and_then(|v| v.as_str())?;
-        let claims = decode_jwt_payload(tok)?;
-        claims
-            .pointer("/https:~1~1api.openai.com~1auth/chatgpt_account_id")
-            .or_else(|| {
-                claims
-                    .get("https://api.openai.com/auth")
-                    .and_then(|a| a.get("chatgpt_account_id"))
-            })
-            .and_then(|v| v.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string())
-    })
+    let provider = c
+        .get("provider")
+        .and_then(|v| v.as_str())
+        .or_else(|| extra.get("provider").and_then(|v| v.as_str()));
+
+    let mut candidates: Vec<Option<&Value>> = vec![
+        c.get("account_id"),
+        c.get("chatgpt_account_id"),
+        extra.get("accountId"),
+        extra.get("account_id"),
+        extra.get("chatgpt_account_id"),
+        c.pointer("/body/tokens/account_id"),
+        c.pointer("/body/account/id"),
+    ];
+    if let Some(p) = provider {
+        candidates.push(c.pointer(&format!("/body/{p}/account_id")));
+        candidates.push(c.pointer(&format!("/body/{p}/chatgpt_account_id")));
+        candidates.push(c.pointer(&format!("/body/{p}/accountId")));
+    }
+    if let Some(id) = candidates
+        .into_iter()
+        .flatten()
+        .filter_map(|v| v.as_str())
+        .map(str::trim)
+        .find(|s| !s.is_empty())
+    {
+        return Some(id.to_string());
+    }
+
+    let mut tokens: Vec<Option<&Value>> = vec![
+        c.get("id_token"),
+        c.pointer("/body/tokens/id_token"),
+        c.get("access_token"),
+        c.get("access"),
+        c.pointer("/body/tokens/access_token"),
+    ];
+    if let Some(p) = provider {
+        for key in ["id_token", "idToken", "access", "access_token"] {
+            tokens.push(c.pointer(&format!("/body/{p}/{key}")));
+        }
+    }
+    tokens
+        .into_iter()
+        .flatten()
+        .filter_map(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .find_map(chatgpt_account_id_from_token)
 }
 
 // ── Token expiry heal (local, no network) ───────────────────────────────────
@@ -1966,5 +1982,91 @@ mod tests {
             acc.extra.get("quota7dPct").and_then(|v| v.as_i64()),
             Some(10)
         );
+    }
+
+    fn pi_codex_account(credentials: Value, extra: Value) -> Account {
+        Account {
+            id: "pi-1".into(),
+            agent_id: AgentId::Pi,
+            kind: AccountKind::Oauth,
+            label: "pi:openai-codex".into(),
+            credentials,
+            extra,
+            status: "active".into(),
+            is_current: true,
+            created_at: "t".into(),
+            updated_at: "t".into(),
+        }
+    }
+
+    fn openai_account_id_jwt() -> String {
+        make_jwt(json!({
+            "email": "pi-codex@example.com",
+            "https://api.openai.com/auth": { "chatgpt_account_id": "acc-pi" }
+        }))
+    }
+
+    #[test]
+    fn extract_chatgpt_account_id_from_pi_extra_and_credentials() {
+        let acc = pi_codex_account(
+            json!({
+                "format": "auth_json",
+                "provider": "openai-codex",
+                "access_token": "opaque"
+            }),
+            json!({ "provider": "openai-codex", "accountId": "acc-extra" }),
+        );
+        assert_eq!(
+            extract_chatgpt_account_id(&acc).as_deref(),
+            Some("acc-extra")
+        );
+
+        let acc = pi_codex_account(
+            json!({
+                "format": "auth_json",
+                "provider": "openai-codex",
+                "account_id": "acc-cred",
+                "access_token": "opaque"
+            }),
+            json!({ "provider": "openai-codex" }),
+        );
+        assert_eq!(
+            extract_chatgpt_account_id(&acc).as_deref(),
+            Some("acc-cred")
+        );
+    }
+
+    #[test]
+    fn extract_chatgpt_account_id_from_pi_codex_id_token() {
+        let id_token = openai_account_id_jwt();
+        let acc = pi_codex_account(
+            json!({
+                "format": "auth_json",
+                "provider": "openai-codex",
+                "access_token": "opaque",
+                "id_token": id_token,
+                "body": {
+                    "openai-codex": { "type": "oauth", "access": "opaque" }
+                }
+            }),
+            json!({ "provider": "openai-codex" }),
+        );
+        assert_eq!(extract_chatgpt_account_id(&acc).as_deref(), Some("acc-pi"));
+    }
+
+    #[test]
+    fn extract_chatgpt_account_id_from_pi_nested_access_jwt() {
+        let access = openai_account_id_jwt();
+        let acc = pi_codex_account(
+            json!({
+                "format": "auth_json",
+                "provider": "openai-codex",
+                "body": {
+                    "openai-codex": { "type": "oauth", "access": access }
+                }
+            }),
+            json!({ "provider": "openai-codex" }),
+        );
+        assert_eq!(extract_chatgpt_account_id(&acc).as_deref(), Some("acc-pi"));
     }
 }

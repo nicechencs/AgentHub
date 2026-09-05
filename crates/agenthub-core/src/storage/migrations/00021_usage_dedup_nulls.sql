@@ -5,6 +5,10 @@
 UPDATE usage_records SET session_id = '' WHERE session_id IS NULL;
 UPDATE usage_records SET raw_hash = '' WHERE raw_hash IS NULL;
 
+-- Rows missing both identifiers would otherwise share (agent_id, '', '') and
+-- collapse to one per agent. Stamp a stable unique sentinel first.
+UPDATE usage_records SET raw_hash = 'orphan:' || id WHERE session_id = '' AND raw_hash = '';
+
 DELETE FROM usage_records
 WHERE rowid NOT IN (
     SELECT MAX(rowid)

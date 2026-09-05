@@ -7,6 +7,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::{json, Value};
+use tokio_util::sync::CancellationToken;
 
 use crate::bridge::types::ProtocolError;
 
@@ -160,29 +161,35 @@ async fn conversation_method_not_allowed(request: Request) -> Response {
     super::surface::method_not_allowed_response(&path)
 }
 
-pub(super) async fn read_request_json(request: Request) -> Result<Value, Response> {
-    let body = match tokio::time::timeout(
-        REQUEST_BODY_TIMEOUT,
-        axum::body::to_bytes(request.into_body(), BODY_LIMIT_BYTES),
-    )
-    .await
-    {
-        Ok(Ok(body)) => body,
-        Ok(Err(_)) => {
-            return Err(error_response(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "The request body is invalid or too large.",
-                None,
-            ));
+pub(super) async fn read_request_json(
+    request: Request,
+    force_shutdown: &CancellationToken,
+) -> Result<Value, Response> {
+    let body = tokio::select! {
+        _ = force_shutdown.cancelled() => {
+            return Err(stopping_response());
         }
-        Err(_) => {
-            return Err(error_response(
-                StatusCode::REQUEST_TIMEOUT,
-                "request_timeout",
-                "The request body timed out.",
-                None,
-            ));
+        result = tokio::time::timeout(
+            REQUEST_BODY_TIMEOUT,
+            axum::body::to_bytes(request.into_body(), BODY_LIMIT_BYTES),
+        ) => match result {
+            Ok(Ok(body)) => body,
+            Ok(Err(_)) => {
+                return Err(error_response(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_request",
+                    "The request body is invalid or too large.",
+                    None,
+                ));
+            }
+            Err(_) => {
+                return Err(error_response(
+                    StatusCode::REQUEST_TIMEOUT,
+                    "request_timeout",
+                    "The request body timed out.",
+                    None,
+                ));
+            }
         }
     };
     serde_json::from_slice::<Value>(&body).map_err(|_| {

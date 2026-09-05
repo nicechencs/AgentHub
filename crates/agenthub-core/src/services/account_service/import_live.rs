@@ -129,13 +129,9 @@ impl AccountService {
         let mut last = None;
         for (i, live) in grants.into_iter().enumerate() {
             let display_name = if i + 1 == n { name } else { None };
-            if let Some(account) = self.upsert_live_account(
-                adapter.as_ref(),
-                AgentId::Pi,
-                live,
-                display_name,
-                false,
-            )? {
+            if let Some(account) =
+                self.upsert_live_account(adapter.as_ref(), AgentId::Pi, live, display_name, false)?
+            {
                 last = Some(account);
             }
         }

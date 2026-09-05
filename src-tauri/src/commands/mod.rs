@@ -18,6 +18,8 @@ pub mod provider;
 pub mod settings;
 pub mod shell_icon;
 pub mod skill;
+pub mod sub2api;
+pub mod sub2api_remembered_vault;
 pub mod trash;
 pub mod usage;
 

@@ -6,6 +6,8 @@ use crate::file_manager::{
     parse_windows_codex_app_id_from_registry, resolve_cli_launch_path,
     windows_codex_app_id_from_package_full_name, CodexAppLaunchKind, FileManagerAction,
 };
+use agenthub_core::models::{DetectResult, DetectStatus, DetectedBinaryCopy};
+use std::path::PathBuf;
 
 #[test]
 fn file_manager_action_reveals_files_and_opens_dirs() {
@@ -176,4 +178,112 @@ fn codex_app_launch_kind_is_platform_specific() {
     );
     assert!(macos_codex_app_bundle_names().contains(&"ChatGPT.app"));
     assert!(macos_codex_app_bundle_names().contains(&"Codex.app"));
+}
+
+fn detect_installed(
+    agent: AgentId,
+    channel: &str,
+    bin: &str,
+    extras: &[(&str, &str)],
+) -> DetectResult {
+    DetectResult {
+        agent,
+        status: DetectStatus::Installed,
+        version: Some("1".into()),
+        binary_path: Some(PathBuf::from(bin)),
+        channel: Some(channel.into()),
+        env_ready: true,
+        notes: vec![],
+        extra_copies: extras
+            .iter()
+            .map(|(kind, path)| {
+                DetectedBinaryCopy::from_kind(
+                    agent,
+                    PathBuf::from(path),
+                    kind,
+                    None,
+                    Some((*kind).into()),
+                )
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn resolve_agent_launch_path_matches_card_rules() {
+    let npm = detect_installed(AgentId::Codex, "npm", "/npm/codex", &[]);
+    assert_eq!(
+        resolve_agent_launch_path(AgentId::Codex, &npm, "cli", false).unwrap(),
+        PathBuf::from("/npm/codex")
+    );
+    assert!(resolve_agent_launch_path(AgentId::Codex, &npm, "app", false).is_err());
+
+    let desktop = detect_installed(AgentId::Codex, "desktop", r"C:\Store\codex.exe", &[]);
+    assert_eq!(
+        resolve_agent_launch_path(AgentId::Codex, &desktop, "app", false).unwrap(),
+        PathBuf::from(r"C:\Store\codex.exe")
+    );
+
+    let both = detect_installed(
+        AgentId::Codex,
+        "npm",
+        "/npm/codex",
+        &[("desktop", "/store/codex")],
+    );
+    assert_eq!(
+        resolve_agent_launch_path(AgentId::Codex, &both, "cli", false).unwrap(),
+        PathBuf::from("/npm/codex")
+    );
+    assert_eq!(
+        resolve_agent_launch_path(AgentId::Codex, &both, "app", false).unwrap(),
+        PathBuf::from("/store/codex")
+    );
+    assert_eq!(
+        resolve_agent_launch_path(AgentId::Codex, &both, "app", true).unwrap_err(),
+        "未找到可启动的程序"
+    );
+
+    let linux_desktop = detect_installed(AgentId::Codex, "desktop", "/opt/codex", &[]);
+    assert_eq!(
+        resolve_agent_launch_path(AgentId::Codex, &linux_desktop, "app", true).unwrap_err(),
+        "未找到可启动的程序"
+    );
+
+    let workbuddy = detect_installed(AgentId::WorkBuddy, "native", "/opt/WorkBuddy.exe", &[]);
+    assert_eq!(
+        resolve_agent_launch_path(AgentId::WorkBuddy, &workbuddy, "app", false).unwrap(),
+        PathBuf::from("/opt/WorkBuddy.exe")
+    );
+    assert_eq!(
+        resolve_agent_launch_path(AgentId::WorkBuddy, &workbuddy, "cli", false).unwrap_err(),
+        "未找到可启动的程序"
+    );
+
+    let zcode = detect_installed(
+        AgentId::Zcode,
+        "native",
+        "/Applications/ZCode.app/Contents/MacOS/ZCode",
+        &[],
+    );
+    assert_eq!(
+        resolve_agent_launch_path(AgentId::Zcode, &zcode, "app", false).unwrap(),
+        PathBuf::from("/Applications/ZCode.app/Contents/MacOS/ZCode")
+    );
+
+    let ide = detect_installed(AgentId::Codex, "ide", "/ide/codex", &[]);
+    assert_eq!(
+        resolve_agent_launch_path(AgentId::Codex, &ide, "cli", false).unwrap_err(),
+        "未找到可启动的程序"
+    );
+
+    let claude = detect_installed(AgentId::Claude, "native", "/usr/local/bin/claude", &[]);
+    assert_eq!(
+        resolve_agent_launch_path(AgentId::Claude, &claude, "cli", false).unwrap(),
+        PathBuf::from("/usr/local/bin/claude")
+    );
+
+    assert_eq!(
+        resolve_agent_launch_path(AgentId::Claude, &claude, "gui", false).unwrap_err(),
+        "unknown launch kind: gui"
+    );
 }

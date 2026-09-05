@@ -461,30 +461,30 @@ export function ProviderEditDialog({
     const hasDraft = Boolean(
       draftUrl || draftKey || draftModel || (agentId === 'grok' && compactGrokApiBackend),
     );
-    setUseOfficial(compact || hasDraft ? false : agentHasOfficialApiTemplate(agentId));
+    const customEndpoint = compact || hasDraft;
+    setUseOfficial(customEndpoint ? false : agentHasOfficialApiTemplate(agentId));
     setShowAdvanced(!compact);
-    applyOfficialDefaults();
-    if (hasDraft) {
-      setVars((current) => {
-        const next = {
-          ...current,
-          ...(draftUrl ? { baseUrl: draftUrl } : {}),
-          ...(draftKey ? { apiKey: writableSecret(draftKey) } : {}),
-          ...(draftModel ? { model: draftModel } : {}),
-          ...(agentId === 'grok' && compactGrokApiBackend
-            ? { apiBackend: compactGrokApiBackend }
-            : {}),
-        };
-        const scaffold = defaultConfigScaffold(agentId);
-        setConfigFormat(scaffold.format);
-        setConfigText(maskConfigSecrets(
-          agentId,
-          applyFormVars(agentId, scaffold.text, scaffold.format, next),
-          scaffold.format,
-        ));
-        setConfigError(null);
-        return next;
-      });
+    if (customEndpoint) {
+      const scaffold = defaultConfigScaffold(agentId);
+      const next: ProviderFormVars = {
+        ...EMPTY_FORM_VARS,
+        ...(draftUrl ? { baseUrl: draftUrl } : {}),
+        ...(draftKey ? { apiKey: writableSecret(draftKey) } : {}),
+        ...(draftModel ? { model: draftModel } : {}),
+        ...(agentId === 'grok' && compactGrokApiBackend
+          ? { apiBackend: compactGrokApiBackend }
+          : {}),
+      };
+      setVars(next);
+      setConfigFormat(scaffold.format);
+      setConfigText(maskConfigSecrets(
+        agentId,
+        applyFormVars(agentId, scaffold.text, scaffold.format, next),
+        scaffold.format,
+      ));
+      setConfigError(null);
+    } else {
+      applyOfficialDefaults();
     }
   }, [
     open,

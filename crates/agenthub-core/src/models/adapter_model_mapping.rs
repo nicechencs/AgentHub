@@ -196,6 +196,16 @@ const CODEX_GROK_MODELS: &[AdapterModelMapEntry] = &[
         notes: Some("ChatGPT Codex fast"),
     },
     AdapterModelMapEntry {
+        source_model: "gpt-5.6-cyber",
+        target_model: "gpt-5.6-cyber",
+        notes: Some("ChatGPT Codex security-focused tier"),
+    },
+    AdapterModelMapEntry {
+        source_model: "gpt-5.6",
+        target_model: "gpt-5.6",
+        notes: Some("ChatGPT Codex base alias"),
+    },
+    AdapterModelMapEntry {
         source_model: "gpt-5.4",
         target_model: "gpt-5.4",
         notes: Some("Retired ChatGPT Codex id; still rewritten if requested"),
@@ -709,7 +719,9 @@ mod tests {
             &[
                 "gpt-5.6-sol".to_string(),
                 "gpt-5.6-terra".to_string(),
-                "gpt-5.6-luna".to_string()
+                "gpt-5.6-luna".to_string(),
+                "gpt-5.6-cyber".to_string(),
+                "gpt-5.6".to_string(),
             ]
         );
         assert_eq!(
@@ -790,6 +802,14 @@ mod tests {
             AdapterModelMapResult::Mapped("gpt-5.1-codex")
         );
         assert_eq!(
+            table.map_model("gpt-5.6-cyber"),
+            AdapterModelMapResult::Mapped("gpt-5.6-cyber")
+        );
+        assert_eq!(
+            table.map_model("gpt-5.6"),
+            AdapterModelMapResult::Mapped("gpt-5.6")
+        );
+        assert_eq!(
             table.map_model("gpt-5"),
             AdapterModelMapResult::Mapped("gpt-5")
         );
@@ -844,6 +864,14 @@ mod tests {
         assert_eq!(
             table.map_model("gpt-5.1-codex"),
             AdapterModelMapResult::Mapped("gpt-5.1-codex")
+        );
+        assert_eq!(
+            table.map_model("gpt-5.6-cyber"),
+            AdapterModelMapResult::Mapped("gpt-5.6-cyber")
+        );
+        assert_eq!(
+            table.map_model("gpt-5.6"),
+            AdapterModelMapResult::Mapped("gpt-5.6")
         );
         assert_eq!(
             table.map_model("gpt-5"),

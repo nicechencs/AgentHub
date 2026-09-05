@@ -198,7 +198,11 @@ fn missing_cli_reads_live_files_and_skips_mcp_servers() {
         }"#,
     )
     .unwrap();
-    let pack_dir = claude.join("plugins").join("cache").join("pack").join("3.0.0");
+    let pack_dir = claude
+        .join("plugins")
+        .join("cache")
+        .join("pack")
+        .join("3.0.0");
     fs::create_dir_all(pack_dir.join("skills").join("ship")).unwrap();
     fs::write(
         pack_dir.join("plugin.json"),

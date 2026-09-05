@@ -9,11 +9,12 @@ use crate::models::{
     AgentId, SkillAction, SkillFailure, SkillProjectionMode, SkillSyncReport, SkillSyncState,
 };
 use crate::platform::skills::{
-    chrono_now, ensure_no_symlink_in_ancestors, ensure_no_symlink_in_existing_prefix,
-    inspect_projection_target, is_exact_child, link_resolves_to_source, package_revision,
-    project_copy_with_ownership, reject_source_target_overlap, skill_lock_load,
-    unproject_with_ownership, validate_and_collect_source, validate_skill_id, validate_skills_root,
-    SkillAssignmentService, SkillReconciler, TargetPresence,
+    acquire_skill_lock, acquire_skill_root_lock, chrono_now, ensure_no_symlink_in_ancestors,
+    ensure_no_symlink_in_existing_prefix, inspect_projection_target, is_exact_child,
+    link_resolves_to_source, package_revision, project_copy_with_ownership,
+    reject_source_target_overlap, skill_lock_load, unproject_with_ownership,
+    validate_and_collect_source, validate_skill_id, validate_skills_root, SkillAssignmentService,
+    SkillReconciler, TargetPresence,
 };
 use crate::platform::AgentKey;
 use crate::storage::SkillRepo;
@@ -61,10 +62,12 @@ impl SkillService {
                 self.apply_skill_projection(skill_id, agent, SkillProjectionMode::Link)
                     .map(|_| ())
             } else {
-                if mode == Some(SkillProjectionMode::Copy) {
-                    self.replace_correct_link_with_copy_if_needed(skill_id, agent)?;
-                }
-                self.sync_projection(skill_id, agent, force)
+                self.sync_projection_with_link_policy(
+                    skill_id,
+                    agent,
+                    force,
+                    mode == Some(SkillProjectionMode::Copy),
+                )
             }
         })();
         match &result {
@@ -149,11 +152,9 @@ impl SkillService {
         let started = Instant::now();
         let result = (|| {
             let skill_id = validate_skill_id(skill_id)?;
-            if self.db.is_some() {
-                self.disable_via_assignment_key(skill_id, agent_key)
-            } else {
-                self.disable_projection_key(skill_id, agent_key)
-            }
+            let _global = acquire_skill_root_lock(&self.source_root)?;
+            let _skill_lock = acquire_skill_lock(&self.source_root, skill_id)?;
+            self.disable_after_skill_lock(skill_id, agent_key)
         })();
         match &result {
             Ok(()) => {
@@ -181,12 +182,28 @@ impl SkillService {
 
     /// FS-only project (used when no DB). Ownership rules match
     /// [`SkillReconciler::project_copy`] via shared `project_copy_with_ownership`.
+    #[allow(dead_code)]
     pub(super) fn sync_projection(
         &self,
         skill_id: &str,
         agent: AgentId,
         force: bool,
     ) -> Result<()> {
+        self.sync_projection_with_link_policy(skill_id, agent, force, false)
+    }
+
+    fn sync_projection_with_link_policy(
+        &self,
+        skill_id: &str,
+        agent: AgentId,
+        force: bool,
+        replace_correct_link: bool,
+    ) -> Result<()> {
+        let _global = acquire_skill_root_lock(&self.source_root)?;
+        let _skill_lock = acquire_skill_lock(&self.source_root, skill_id)?;
+        if replace_correct_link {
+            self.replace_correct_link_with_copy_if_needed(skill_id, agent)?;
+        }
         let (source_dir, skills_root, target_dir) =
             self.resolve_projection_paths(skill_id, agent)?;
         let agent_key = AgentKey::from_agent_id(agent);
@@ -279,6 +296,22 @@ impl SkillService {
         }
     }
 
+    /// Disable after the caller already holds root + per-skill locks.
+    ///
+    /// [`Self::uninstall_skill`] acquires those locks for the whole uninstall,
+    /// so it must call this instead of [`Self::disable_key`].
+    pub(super) fn disable_after_skill_lock(
+        &self,
+        skill_id: &str,
+        agent_key: &AgentKey,
+    ) -> Result<()> {
+        if self.db.is_some() {
+            self.disable_via_assignment_key(skill_id, agent_key)
+        } else {
+            self.disable_projection_key(skill_id, agent_key)
+        }
+    }
+
     /// FS-only unproject — ownership proof required (same as reconciler).
     pub(super) fn disable_projection_key(
         &self,
@@ -308,6 +341,8 @@ impl SkillService {
         force: bool,
         mode: Option<SkillProjectionMode>,
     ) -> Result<()> {
+        let _global = acquire_skill_root_lock(&self.source_root)?;
+        let _skill_lock = acquire_skill_lock(&self.source_root, skill_id)?;
         let now = chrono_now();
         let (assign, reconciler) = self.assignment_stack()?;
         let lock = skill_lock_load(&self.source_root)?;

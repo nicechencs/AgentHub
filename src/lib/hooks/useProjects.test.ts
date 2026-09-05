@@ -25,6 +25,7 @@ import {
   isCurrentProjectsRequest,
   projectCountsFromCache,
   projectListCacheKey,
+  readCachedCombinedProjectList,
   readCachedShowHidden,
   rememberProjectAgent,
   rememberedProjectAgent,
@@ -186,6 +187,7 @@ describe('projects module cache', () => {
 
     expect(getProjectsModuleCache().lists['claude|0']).toEqual([project('c1', 'claude')]);
     expect(getProjectsModuleCache().lists['codex|0']).toEqual([]);
+    expect(getProjectsModuleCache().lists['all|0']).toEqual([project('c1', 'claude')]);
     expect(projectCountsFromCache(['claude', 'codex'], false)).toEqual({
       counts: { claude: 1, codex: 0 },
       missing: [],
@@ -207,6 +209,9 @@ describe('projects module cache', () => {
 
     expect(getProjectsModuleCache().lists['claude|0']).toEqual([project('fresh', 'claude')]);
     expect(getProjectsModuleCache().lists['codex|0']).toEqual([]);
+    expect(readCachedCombinedProjectList(['claude', 'codex'], false)).toEqual([
+      project('fresh', 'claude'),
+    ]);
   });
 
   it('skips ingest when the per-agent list was written after the scan started', () => {

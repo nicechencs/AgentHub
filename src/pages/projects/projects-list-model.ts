@@ -2,6 +2,9 @@ import type { AgentProject, AgentSession } from '@/lib/types';
 import { projectMatches, sessionMatches } from './project-filter';
 import { cursorSubagentParentId, cursorTranscriptId, flattenVisibleSessions } from './session-nest';
 
+/** One page of sessions in an expanded project. All rows stay available. */
+export const SESSION_PAGE_SIZE = 50;
+
 /** Keep a parent when it matches, or when any already-loaded child matches the query. */
 export function filterVisibleProjects(
   projects: AgentProject[],
@@ -40,7 +43,7 @@ export function visibleSessionsForProject(
 }
 
 export function collectSelectableSessions(
-  visibleProjects: AgentProject[],
+  visibleProjects: readonly { id: string }[],
   expanded: Set<string>,
   visibleSessionsFn: (projectId: string) => AgentSession[],
   nestedOpen: Set<string> = new Set(),
@@ -65,6 +68,44 @@ export function toggleSelectedSession(selected: Set<string>, id: string): Set<st
   if (next.has(id)) next.delete(id);
   else next.add(id);
   return next;
+}
+
+export function sessionPageCount(total: number, pageSize = SESSION_PAGE_SIZE): number {
+  if (total <= 0) return 1;
+  return Math.ceil(total / pageSize);
+}
+
+export function clampSessionPage(
+  page: number,
+  total: number,
+  pageSize = SESSION_PAGE_SIZE,
+): number {
+  const pages = sessionPageCount(total, pageSize);
+  if (page < 0) return 0;
+  if (page >= pages) return pages - 1;
+  return page;
+}
+
+export function sliceSessionPage<T>(
+  rows: readonly T[],
+  page: number,
+  pageSize = SESSION_PAGE_SIZE,
+): T[] {
+  const current = clampSessionPage(page, rows.length, pageSize);
+  const start = current * pageSize;
+  return rows.slice(start, start + pageSize);
+}
+
+/** Members of currently expanded groups — refresh reloads these session lists. */
+export function expandedProjectMembers<
+  T extends { id: string; members: readonly { id: string }[] },
+>(groups: readonly T[], expanded: Set<string>): T['members'][number][] {
+  const out: T['members'][number][] = [];
+  for (const group of groups) {
+    if (!expanded.has(group.id)) continue;
+    out.push(...group.members);
+  }
+  return out;
 }
 
 export function nextSelectedForToggleAllVisible(

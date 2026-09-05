@@ -1,7 +1,7 @@
 {
   "chatgpt": {
     "default": "gpt-5.6-sol",
-    "models": ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
+    "models": ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.6-cyber", "gpt-5.6"]
   },
   "claude": {
     "default": "claude-sonnet-5",

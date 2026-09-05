@@ -93,14 +93,14 @@ describe('connections layout wiring', () => {
     expect(page).toContain('inspectActiveTicketId');
   });
 
-  it('imports a login to the connection pool from the row menu', () => {
+  it('does not share a login to the connection pool from Connections', () => {
     const page = source('index.tsx');
     const list = source('TicketWalletList.tsx');
-    expect(page).toContain('useTicketPoolImport');
-    expect(page).toContain('onImportToPool=');
+    expect(page).not.toContain('useTicketPoolImport');
+    expect(page).not.toContain('onImportToPool=');
     expect(page).toContain('onRemoveFromCatalog=');
-    expect(page).toContain('importActionForTicket={importActionForTicket}');
-    expect(page).toContain('importingTicketId={importingTicketId}');
+    expect(page).not.toContain('importActionForTicket');
+    expect(page).not.toContain('importingTicketId');
     expect(page).not.toContain('useConnectionShareRoute');
     expect(page).not.toContain('onShareTicket');
     expect(page).not.toContain('onRouteTicket');
@@ -108,9 +108,9 @@ describe('connections layout wiring', () => {
     expect(page).not.toContain("{ kind: 'connect'");
     expect(list).toContain('onContextMenu=');
     expect(list).toContain('<ContextMenu');
-    expect(list).toContain("t('connections.list.importToPool')");
+    expect(list).not.toContain("t('connections.list.importToPool')");
     expect(list).toContain("t('connections.list.removeFromCatalog')");
-    expect(list).toContain('<Share2');
+    expect(list).not.toContain('<Share2');
     expect(list).not.toContain('<Import');
     expect(list).not.toContain("t('connections.list.share')");
     expect(list).not.toContain("t('connections.list.route')");

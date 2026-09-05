@@ -746,7 +746,9 @@ impl RouteTraceLog {
         let mut memory_deleted = 0usize;
         for entry in store.by_profile.values_mut() {
             let before = entry.recent.len();
-            entry.recent.retain(|row| !want.contains(row.request_id.as_str()));
+            entry
+                .recent
+                .retain(|row| !want.contains(row.request_id.as_str()));
             memory_deleted += before.saturating_sub(entry.recent.len());
         }
         let before_unauth = store.unauthenticated.len();

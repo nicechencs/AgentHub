@@ -2,7 +2,6 @@
 
 use std::path::Path;
 
-use crate::catalog::limits::PROJECT_MAX_PER_AGENT as MAX_PER_AGENT;
 use crate::models::AgentSession;
 use crate::platform::AgentKey;
 
@@ -16,8 +15,5 @@ pub(crate) fn empty_if_missing(home: &Path) -> bool {
 
 pub(crate) fn finish_sessions(mut rows: Vec<AgentSession>) -> Vec<AgentSession> {
     rows.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-    if rows.len() > MAX_PER_AGENT {
-        rows.truncate(MAX_PER_AGENT);
-    }
     rows
 }

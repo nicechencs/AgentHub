@@ -24,9 +24,10 @@ import RoutesBoardPage from '@/pages/routes/board';
 import RoutesPoolPage from '@/pages/routes/pool';
 import RoutesTokensPage from '@/pages/routes/tokens';
 import RoutesActivityPage from '@/pages/routes/activity';
+import Sub2ApiPage from '@/pages/sub2api';
 import { isRoutesAreaPath } from '@/pages/routes/routes-nav-items';
 import { onTrayNavigate } from '@/lib/backend/tauri/tray-events';
-import { legacyBridgesRedirectTo } from '@/lib/routes-path';
+import { legacyBridgesRedirectTo, ROUTES_SUB2API_PATH, SUB2API_PATH } from '@/lib/routes-path';
 import {
   checkForUpdate,
   isUpdateAvailable,
@@ -68,11 +69,12 @@ export default function App() {
   const navigate = useNavigate();
   const isChat = pathname === '/chat';
   const isRoutesArea = isRoutesAreaPath(pathname);
-  /** Skills / Projects / Connections / Routes / Agents / Plugins / Settings 左右分栏需要全高 overflow-hidden，不套 pageShell 内边距 */
+  /** Skills / Projects / Connections / Sub2API / Routes / Agents / Plugins / Settings 左右分栏需要全高 overflow-hidden，不套 pageShell 内边距 */
   const isWorkbenchSplit =
     pathname === '/skills' ||
     pathname === '/projects' ||
     pathname === '/connections' ||
+    pathname === SUB2API_PATH ||
     isRoutesArea ||
     pathname === '/agents' ||
     pathname === '/plugins' ||
@@ -142,6 +144,11 @@ export default function App() {
                   <Route path="/chat" element={<ChatPage />} />
                   <Route path="/agents" element={<AgentsPage />} />
                   <Route path="/connections" element={<ConnectionsPage />} />
+                  <Route path={SUB2API_PATH} element={<Sub2ApiPage />} />
+                  <Route
+                    path={ROUTES_SUB2API_PATH}
+                    element={<Navigate to={SUB2API_PATH} replace />}
+                  />
                   <Route path="/routes" element={<RoutesLayout />}>
                     <Route index element={<RoutesIndexRedirect />} />
                     <Route path="board" element={<RoutesBoardPage />} />

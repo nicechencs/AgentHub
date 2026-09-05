@@ -3,6 +3,7 @@ use rusqlite::{Connection, Transaction, TransactionBehavior};
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{Account, AgentId, Provider};
+use crate::services::switch_undo::apply_switch_undo_conn;
 use crate::storage::{
     account_clear_current_conn, account_force_sole_current_conn, account_get_by_id_conn,
     account_list_current_conn, account_select_current_conn, binding_clear_conn,
@@ -39,6 +40,21 @@ impl ConnectionService {
         expected_updated_at: &str,
         updated_at: &str,
     ) -> Result<(Account, ActiveBinding)> {
+        self.activate_account_with_undo(agent, account_id, expected_updated_at, updated_at, None)
+    }
+
+    /// Same as [`Self::activate_account`], writing the undo slot in the same Immediate tx.
+    ///
+    /// `undo` is `(prefix, previous_current_id)`. When `previous_current_id` is
+    /// Some and different from the target, record undo; otherwise clear it.
+    pub fn activate_account_with_undo(
+        &self,
+        agent: AgentId,
+        account_id: &str,
+        expected_updated_at: &str,
+        updated_at: &str,
+        undo: Option<(&str, Option<&str>)>,
+    ) -> Result<(Account, ActiveBinding)> {
         self.db.with_conn(|conn| {
             let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
             let account = account_select_current_conn(
@@ -56,6 +72,9 @@ impl ConnectionService {
                 None,
                 updated_at,
             )?;
+            if let Some((prefix, from_id)) = undo {
+                apply_switch_undo_conn(&tx, prefix, agent, from_id, &account.id)?;
+            }
             tx.commit()?;
             Ok((account, binding.into()))
         })
@@ -69,6 +88,18 @@ impl ConnectionService {
         provider_id: &str,
         expected_updated_at: &str,
         updated_at: &str,
+    ) -> Result<(Provider, ActiveBinding)> {
+        self.activate_provider_with_undo(agent, provider_id, expected_updated_at, updated_at, None)
+    }
+
+    /// Same as [`Self::activate_provider`], writing the undo slot in the same Immediate tx.
+    pub fn activate_provider_with_undo(
+        &self,
+        agent: AgentId,
+        provider_id: &str,
+        expected_updated_at: &str,
+        updated_at: &str,
+        undo: Option<(&str, Option<&str>)>,
     ) -> Result<(Provider, ActiveBinding)> {
         self.db.with_conn(|conn| {
             let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
@@ -87,6 +118,9 @@ impl ConnectionService {
                 Some(provider.id.clone()),
                 updated_at,
             )?;
+            if let Some((prefix, from_id)) = undo {
+                apply_switch_undo_conn(&tx, prefix, agent, from_id, &provider.id)?;
+            }
             tx.commit()?;
             Ok((provider, binding.into()))
         })

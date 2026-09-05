@@ -4,17 +4,50 @@
 //! Used by provider/account live switch so GUI toast "撤销" can re-apply the
 //! previous connection without a full backup restore.
 
+use rusqlite::Connection;
 use serde_json::json;
 
 use crate::error::{AppError, Result};
 use crate::models::AgentId;
-use crate::storage::Database;
+use crate::storage::{set_setting_on_conn, Database};
 
 pub const PROVIDER_UNDO_PREFIX: &str = "provider.undo";
 pub const ACCOUNT_UNDO_PREFIX: &str = "account.undo";
 
 fn setting_key(prefix: &str, agent: AgentId) -> String {
     format!("{prefix}.{}", agent.as_str())
+}
+
+pub fn record_switch_undo_conn(
+    conn: &Connection,
+    prefix: &str,
+    agent: AgentId,
+    from_id: &str,
+    to_id: &str,
+) -> Result<()> {
+    let value = json!({ "fromId": from_id, "toId": to_id }).to_string();
+    set_setting_on_conn(conn, &setting_key(prefix, agent), &value)
+}
+
+pub fn clear_switch_undo_conn(conn: &Connection, prefix: &str, agent: AgentId) -> Result<()> {
+    // Empty value keeps schema simple (no delete API on settings).
+    set_setting_on_conn(conn, &setting_key(prefix, agent), "")
+}
+
+/// Record undo when switching away from `from_id`; otherwise clear the slot.
+pub fn apply_switch_undo_conn(
+    conn: &Connection,
+    prefix: &str,
+    agent: AgentId,
+    from_id: Option<&str>,
+    to_id: &str,
+) -> Result<()> {
+    match from_id {
+        Some(from_id) if from_id != to_id => {
+            record_switch_undo_conn(conn, prefix, agent, from_id, to_id)
+        }
+        _ => clear_switch_undo_conn(conn, prefix, agent),
+    }
 }
 
 pub fn record_switch_undo(
@@ -24,13 +57,11 @@ pub fn record_switch_undo(
     from_id: &str,
     to_id: &str,
 ) -> Result<()> {
-    let value = json!({ "fromId": from_id, "toId": to_id }).to_string();
-    db.set_setting(&setting_key(prefix, agent), &value)
+    db.with_conn(|conn| record_switch_undo_conn(conn, prefix, agent, from_id, to_id))
 }
 
 pub fn clear_switch_undo(db: &Database, prefix: &str, agent: AgentId) -> Result<()> {
-    // Empty value keeps schema simple (no delete API on settings).
-    db.set_setting(&setting_key(prefix, agent), "")
+    db.with_conn(|conn| clear_switch_undo_conn(conn, prefix, agent))
 }
 
 /// Read the undo slot without clearing. Returns previous connection id (`fromId`).

@@ -35,6 +35,21 @@ export type ActivityPageSnapshot = {
   failedCount: number;
 };
 
+/** Keep last good rows on query failure; never treat a failed empty fetch as success. */
+export function pageAfterTraceQueryFailure<Page extends { rows: readonly unknown[] }>(
+  prev: Page,
+  emptyPage: Page,
+): Page {
+  return prev.rows.length > 0 ? prev : emptyPage;
+}
+
+export function isTraceQueryErrorEmpty(
+  traceError: unknown,
+  rowCount: number,
+): boolean {
+  return traceError != null && rowCount === 0;
+}
+
 export function monitoredLocalProfiles(
   profiles: readonly Pick<AdapterProfile, 'id' | 'name' | 'route' | 'targetAgentId' | 'sourceKind' | 'sourceId' | 'lastErrorCode'>[],
   hiddenTargetIds: ReadonlySet<string> = new Set(),

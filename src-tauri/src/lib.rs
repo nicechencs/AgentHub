@@ -243,6 +243,7 @@ pub fn run() {
             commands::usage::usage_missing_pricing,
             commands::usage::gateway_usage_query,
             commands::usage::gateway_usage_overview,
+            commands::usage::usage_connection_summaries,
             // Chat
             commands::chat::list_conversations,
             commands::chat::create_conversation,
@@ -270,6 +271,11 @@ pub fn run() {
             commands::settings::log_gui_event,
             commands::settings::open_logs_dir,
             commands::settings::open_external_url,
+            commands::sub2api::sub2api_open_login,
+            commands::sub2api::sub2api_close_login,
+            commands::sub2api::sub2api_http_request,
+            commands::sub2api_remembered_vault::sub2api_remembered_vault_get,
+            commands::sub2api_remembered_vault::sub2api_remembered_vault_set,
             commands::settings::pick_directory::pick_directory,
             commands::shell_icon::set_shell_icon,
         ])

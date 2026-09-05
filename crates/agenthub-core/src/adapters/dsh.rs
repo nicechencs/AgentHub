@@ -18,6 +18,7 @@
 //!   NDJSON contract is verified.
 //! - No OAuth. No invented danger flags.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde_json::{json, Map, Value};
@@ -28,7 +29,7 @@ use crate::models::{
     LiveAccount, RunOptions, RunSpec,
 };
 use crate::runtime;
-use crate::utils::atomic::atomic_write;
+use crate::utils::atomic::{atomic_write, with_restored_files};
 use crate::utils::paths::{agent_home, first_env_path};
 
 use super::{
@@ -393,13 +394,16 @@ pub(crate) fn write_dsh_config(config: &AgentConfig) -> Result<()> {
     if let Some(n) = raw.get("maxTokens").and_then(Value::as_u64) {
         fields.max_tokens = Some(n);
     }
-    write_llm_fields(&patch, &fields)?;
-    if let Some(key) = peeled_key {
-        if key != "$AGENTHUB_CONNECTION_SECRET$" {
-            write_credential_value(&home.join(CREDENTIALS_FILE), &fields.api_key_env, &key)?;
+    let creds = home.join(CREDENTIALS_FILE);
+    with_restored_files(&[&patch, &creds], || {
+        write_llm_fields(&patch, &fields)?;
+        if let Some(key) = peeled_key {
+            if key != "$AGENTHUB_CONNECTION_SECRET$" {
+                write_credential_value(&creds, &fields.api_key_env, &key)?;
+            }
         }
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 fn string_field(raw: &Map<String, Value>, key: &str) -> Option<String> {
@@ -464,9 +468,7 @@ pub(crate) fn read_credential_value(path: &Path, key: &str) -> Result<Option<Str
         return Ok(None);
     }
     let text = std::fs::read_to_string(path)?;
-    Ok(parse_flat_yaml_map(&text)
-        .remove(key)
-        .and_then(|v| v.as_str().map(str::to_string)))
+    Ok(parse_flat_yaml_map(&text)?.remove(key))
 }
 
 pub(crate) fn write_credential_value(path: &Path, key: &str, value: &str) -> Result<()> {
@@ -479,47 +481,33 @@ pub(crate) fn write_credential_value(path: &Path, key: &str, value: &str) -> Res
         std::fs::create_dir_all(parent)?;
     }
     let mut map = if path.exists() {
-        parse_flat_yaml_map(&std::fs::read_to_string(path)?)
+        parse_flat_yaml_map(&std::fs::read_to_string(path)?)?
     } else {
-        Map::new()
+        BTreeMap::new()
     };
-    map.insert(key.to_string(), Value::String(value.to_string()));
-    let rendered = render_flat_yaml_map(&map);
+    map.insert(key.to_string(), value.to_string());
+    let rendered = render_flat_yaml_map(&map)?;
     atomic_write(path, rendered.as_bytes())
 }
 
-fn parse_flat_yaml_map(text: &str) -> Map<String, Value> {
-    let mut out = Map::new();
-    for raw in text.lines() {
-        let line = raw.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let Some((key, rest)) = line.split_once(':') else {
-            continue;
-        };
-        let key = key.trim();
-        if key.is_empty() {
-            continue;
-        }
-        out.insert(key.to_string(), Value::String(unquote(rest.trim())));
+fn parse_flat_yaml_map(text: &str) -> Result<BTreeMap<String, String>> {
+    if text.trim().is_empty() {
+        return Ok(BTreeMap::new());
     }
-    out
+    let value: serde_yml::Value = serde_yml::from_str(text).map_err(|err| {
+        AppError::InvalidArg(format!("DSH credentials YAML must be a string map: {err}"))
+    })?;
+    if value.is_null() {
+        return Ok(BTreeMap::new());
+    }
+    serde_yml::from_value(value).map_err(|err| {
+        AppError::InvalidArg(format!("DSH credentials YAML must be a string map: {err}"))
+    })
 }
 
-fn render_flat_yaml_map(map: &Map<String, Value>) -> String {
-    let mut lines = Vec::new();
-    for (key, value) in map {
-        let Some(text) = value.as_str() else {
-            continue;
-        };
-        lines.push(format!("{key}: {}\n", yaml_quote(text)));
-    }
-    if lines.is_empty() {
-        String::new()
-    } else {
-        lines.concat()
-    }
+fn render_flat_yaml_map(map: &BTreeMap<String, String>) -> Result<String> {
+    serde_yml::to_string(map)
+        .map_err(|err| AppError::InvalidArg(format!("failed to write DSH credentials YAML: {err}")))
 }
 
 fn find_plugin_row(

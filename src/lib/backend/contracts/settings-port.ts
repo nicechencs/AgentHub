@@ -6,6 +6,34 @@ export interface SettingsPort {
   openLogsDir(): Promise<string>;
   /** Open http(s) URL in the system browser (Tauri cannot rely on window.open). */
   openExternalUrl(url: string): Promise<void>;
+  /**
+   * Open Sub2API `{base}/login` in a child webview and return session tokens
+   * when localStorage is readable. Rejects with `cancelled` when the user closes
+   * the window. Mock / browser builds should reject so the GUI uses paste fallback.
+   */
+  openSub2ApiLoginWindow(loginUrl: string): Promise<{
+    accessToken: string;
+    refreshToken?: string;
+    expiresAt?: number;
+  }>;
+  /** Close the Sub2API login WebviewWindow if open (e.g. user cancelled the dialog). */
+  closeSub2ApiLoginWindow(): Promise<void>;
+  /**
+   * Sub2API remembered-password vault JSON in SQLite settings.
+   * Never log the value. Mock keeps an in-memory string.
+   */
+  getSub2ApiRememberedVault(): Promise<string | null>;
+  setSub2ApiRememberedVault(json: string): Promise<void>;
+  /**
+   * Desktop HTTP for Sub2API (bypasses WebView CORS). Browser mock unused.
+   * Never log Authorization / body secrets.
+   */
+  sub2ApiHttpRequest(input: {
+    method: string;
+    url: string;
+    headers: Record<string, string>;
+    body?: string | null;
+  }): Promise<{ status: number; body: string }>;
   /** Native folder picker. `null` = cancelled. Value is a filesystem path, not a URI. */
   pickDirectory(options?: {
     title?: string;

@@ -14,6 +14,7 @@ The desktop UI is available in English and 简体中文. Switch under **Settings
 
 - Manage local agents such as Claude Code, Codex, Kimi, Grok, Pi, WorkBuddy, ZCode, Cursor Agent, and DeepSeek Harness. Cursor Agent is hidden from the sidebar and Connections by default; you can unhide it on Agents.
 - See logins and connections across tools. Prefer writing directly into the target tool’s config. **Local forwarding** is used only when there are published rules and a tested protocol conversion; otherwise the UI shows **Not supported now**, and nothing is forwarded silently.
+- Sign in to a Sub2API site, manage its API keys, and import usable keys into installed agents.
 - Manage shared Skills, inspect discovered MCP, and browse projects and sessions.
 - Start a local session in the desktop app and watch the streaming process. Usage and cost estimates are parsed from local session logs.
 - Use the CLI for `doctor`, `env`, `agent`, `provider`, `account`, `skill`, `usage`, `backup`, `run`, and `config`.
@@ -22,7 +23,7 @@ Current implementation limits and known gaps: [implementation status](docs/STATU
 
 ## UI preview
 
-These are the current desktop pages. Screenshots are from a real desktop window, with the system taskbar cropped. The same pages are available in English from **Settings → Preferences → Language**.
+These are the current desktop pages. Screenshots are from the real desktop app; email addresses, local paths, API keys, and other private details are redacted. The same pages are available in English from **Settings → Preferences → Language**.
 
 ### Dashboard
 
@@ -64,7 +65,7 @@ Browse local projects and sessions by agent. You can open a folder, preview an e
 
 Four tabs:
 
-- **Preferences**: language, theme, brand color, launch at login, close to tray, whether the sidebar shows Routes / Plugins, skill market, and related options
+- **Preferences**: language, theme, brand color, launch at login, close to tray, whether the sidebar shows Routes / Plugins / Sub2API, skill market, and related options
 - **This computer**: data directory and logs
 - **Backups**: config snapshots kept before a switch or import; restore or delete
 - **About**: version, check for updates, and the repository link
@@ -81,7 +82,15 @@ Lists plugin packs already installed in Claude, Grok, and Pi. Claude and Grok pa
 
 ### Routes
 
-Manage local forwarding: fill clients with a local address. Login details stay on Connections. Most connections can use Direct or Use this login. Mixed vendors and some protocol conversions are still in development; this is not a finished universal router.
+Manage local forwarding. The board shows connections and usage, Pools manage the logins used by local forwarding, Entry Keys let target tools connect, and Monitoring shows request records. Login details stay on Connections; share a login to a Pool when needed. Mixed vendors and some protocol conversions are still in development; this is not a finished universal router.
+
+![Routes board](docs/assets/screenshots/router-board.png)
+
+### Sub2API
+
+Sign in to a Sub2API site to view and manage API keys by group, then import usable keys into installed agents. The sidebar entry can be shown or hidden in Preferences.
+
+![Sub2API](docs/assets/screenshots/sub2api.png)
 
 ## Roadmap
 

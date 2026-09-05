@@ -3,6 +3,16 @@ import type { AgentKey } from '@/lib/types';
 /** Trend series grouping. Default `agent` keeps `{ date, claude?: n, ... }`. */
 export type UsageTrendGroupBy = 'agent' | 'model';
 
+/** Per-connection token totals from the sidecar store (not dashboard usage). */
+export interface ConnectionUsageSummary {
+  ticketId: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  lastUsedAt?: string | null;
+}
+
 export interface UsageQuery {
   /** 回看天数（后端按 now - days 过滤；UI 可映射 today/24h → 1） */
   days: number;
