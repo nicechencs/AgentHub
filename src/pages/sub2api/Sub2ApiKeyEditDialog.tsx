@@ -88,7 +88,7 @@ function RateUsage({
   const tone = rateUsageTone(used, limit);
   return (
     <div className="mt-2 space-y-1">
-      <div className="rounded-lg bg-subtle px-3 py-2 text-sm">
+      <div className="rounded-card bg-subtle px-3 py-2 text-sm">
         <span
           className={cn(
             'font-medium',
@@ -162,7 +162,7 @@ export function Sub2ApiKeyEditDialog({
   };
 
   const cancelButton = (
-    <Button type="button" variant="outline" size={asPanel ? 'sm' : undefined} onClick={onClose} disabled={busy}>
+    <Button type="button" variant="secondary" size={asPanel ? 'sm' : undefined} onClick={onClose} disabled={busy}>
       {t('common.cancel')}
     </Button>
   );
@@ -293,7 +293,7 @@ export function Sub2ApiKeyEditDialog({
                 <div className="space-y-1.5">
                   <FieldLabel>{t('routes.sub2api.quotaUsed')}</FieldLabel>
                   <div className="flex items-center gap-2">
-                    <div className="flex-1 rounded-lg bg-subtle px-3 py-2 text-sm">
+                    <div className="flex-1 rounded-card bg-subtle px-3 py-2 text-sm">
                       <span className="font-medium">{formatUsdFixed(quotaUsed, 4)}</span>
                       <span className="mx-2 text-muted">/</span>
                       <span className="text-secondary">{formatUsdFixed(quotaLimit, 2)}</span>
@@ -389,7 +389,7 @@ export function Sub2ApiKeyEditDialog({
                         disabled={busy}
                         onClick={() => extend(days)}
                         className={cn(
-                          'rounded-lg px-3 py-1.5 text-sm transition-colors',
+                          'rounded-btn px-3 py-1.5 text-sm transition-colors',
                           form.expirationPreset === String(days)
                             ? 'bg-accent/15 text-accent'
                             : 'bg-subtle text-secondary hover:bg-hover',
@@ -403,7 +403,7 @@ export function Sub2ApiKeyEditDialog({
                       disabled={busy}
                       onClick={() => patch({ expirationPreset: 'custom' })}
                       className={cn(
-                        'rounded-lg px-3 py-1.5 text-sm transition-colors',
+                        'rounded-btn px-3 py-1.5 text-sm transition-colors',
                         form.expirationPreset === 'custom'
                           ? 'bg-accent/15 text-accent'
                           : 'bg-subtle text-secondary hover:bg-hover',
@@ -499,7 +499,7 @@ export function Sub2ApiKeyEditDialog({
                 })}
           </p>
           <DialogFooter className="gap-2 sm:gap-2">
-            <Button type="button" variant="outline" onClick={() => setConfirm(null)} disabled={busy}>
+            <Button type="button" variant="secondary" onClick={() => setConfirm(null)} disabled={busy}>
               {t('common.cancel')}
             </Button>
             <Button
