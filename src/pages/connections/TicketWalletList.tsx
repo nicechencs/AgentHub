@@ -8,7 +8,6 @@ import * as React from 'react';
 import {
   ChevronDown,
   ChevronRight,
-  CircleUser,
   KeyRound,
   MoreHorizontal,
   Pencil,
@@ -19,8 +18,13 @@ import {
 } from 'lucide-react';
 import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
 import { AgentDot } from '@/components/shared/AgentDot';
+import {
+  CredentialKindMark,
+  credentialKindFromClass,
+} from '@/components/shared/CredentialKindMark';
 import { DetailRow } from '@/components/shared/DetailRow';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { ListNameButton } from '@/components/shared/ListNameButton';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { SortHandle } from '@/components/shared/SortHandle';
 import { SORTABLE_ID_ATTR, useSortableDrag } from '@/components/shared/use-sortable-drag';
@@ -94,40 +98,6 @@ import {
 } from './ticket-wallet-model';
 import { TicketAuthFiles } from './ticket-auth-files';
 import { useOAuthLoginAgents } from './use-oauth-login-agents';
-
-function CredentialMark({
-  cls,
-  agentId,
-}: {
-  cls: TicketView['credentialClass'];
-  agentId: AgentKey;
-}) {
-  const { t } = useI18n();
-  const color = resolveAgentMeta(agentId).color;
-  if (cls === 'oauth') {
-    const label = t('kind.oauth');
-    return (
-      <Hint label={label}>
-        <span className="inline-flex" style={{ color }} aria-label={label}>
-          <CircleUser className="h-4 w-4" strokeWidth={1.8} />
-        </span>
-      </Hint>
-    );
-  }
-  if (cls === 'api_key') {
-    const label = t('kind.apikey');
-    return (
-      <Hint label={label}>
-        <span className="inline-flex" style={{ color }} aria-label={label}>
-          <KeyRound className="h-4 w-4" strokeWidth={1.8} />
-        </span>
-      </Hint>
-    );
-  }
-  return (
-    <Badge variant="accent">{ticketCredentialClassChipLabel(cls, t)}</Badge>
-  );
-}
 
 function DisabledReasonButton({
   disabled,
@@ -539,6 +509,7 @@ function TicketRow({
   const has7d = hasOfficialQuotaWindow(extras?.quota7dPct);
   const has5h = hasOfficialQuotaWindow(extras?.quota5hPct);
   const tokenUsage = !has7d && !has5h ? ticketWalletTokenUsageText(extras, t) : null;
+  const kind = credentialKindFromClass(ticket.credentialClass);
 
   return (
     <TableRow
@@ -553,17 +524,14 @@ function TicketRow({
           {sortHandle}
           <AgentLogo agentId={ticket.agentId} size="sm" />
           {onShowDetail ? (
-            <Tip className="min-w-0" label={title}>
-              <button
-                type="button"
-                data-ticket-name={ticket.id}
-                data-help="list-row"
-                className="max-w-full truncate text-left text-body font-medium text-primary hover:underline"
-                onClick={() => onShowDetail(ticket)}
-              >
-                {title}
-              </button>
-            </Tip>
+            <ListNameButton
+              hint={title}
+              data-ticket-name={ticket.id}
+              data-help="list-row"
+              onClick={() => onShowDetail(ticket)}
+            >
+              {title}
+            </ListNameButton>
           ) : (
             <Tip className="truncate text-body font-medium" label={title}>
               {title}
@@ -573,7 +541,11 @@ function TicketRow({
       </TableCell>
       <TableCell data-col="kind" className="whitespace-nowrap">
         <div className="flex items-center gap-1.5">
-          <CredentialMark cls={ticket.credentialClass} agentId={ticket.agentId} />
+          {kind ? (
+            <CredentialKindMark kind={kind} agentId={ticket.agentId} />
+          ) : (
+            <Badge variant="accent">{ticketCredentialClassChipLabel(ticket.credentialClass, t)}</Badge>
+          )}
           <span className="text-meta text-secondary">
             {ticketCredentialClassChipLabel(ticket.credentialClass, t)}
           </span>
@@ -731,7 +703,7 @@ export function TicketAddMenu({
       }}
     >
       <DropdownMenuTrigger asChild>
-        <Button variant={variant} data-help="connections-add">
+        <Button size="sm" variant={variant} data-help="connections-add">
           <Plus className="h-3.5 w-3.5" /> {t('connections.list.add')} <ChevronDown className="h-3.5 w-3.5" />
         </Button>
       </DropdownMenuTrigger>

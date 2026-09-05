@@ -2,6 +2,7 @@ import { FolderKanban, PackageSearch, Trash2 } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { ListNameButton } from '@/components/shared/ListNameButton';
 import { SearchField } from '@/components/shared/SearchField';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,7 +26,6 @@ import { TableSkeleton } from '@/components/ui/skeleton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Hint } from '@/components/ui/tooltip';
 import type { InstalledSkillDto } from '@/lib/api/skill';
-import { cn } from '@/lib/utils';
 import type { ProjectSkillOption } from './skills-project-model';
 import { filterProjectSkillRows, projectSkillRowKey } from './skills-project-model';
 
@@ -179,21 +179,16 @@ export function SkillsProjectPanel(props: SkillsProjectPanelProps) {
                     onOpen={() => onPreview(row)}
                   >
                     <TableCell>
-                      <button
-                        type="button"
-                        className={cn(
-                          'block min-w-0 text-left',
-                          active ? 'text-primary' : 'text-primary hover:underline',
-                        )}
-                        onClick={() => onPreview(row)}
-                      >
-                        <span className="block truncate font-medium">{row.name}</span>
+                      <div className="min-w-0">
+                        <ListNameButton hint={row.name} onClick={() => onPreview(row)}>
+                          {row.name}
+                        </ListNameButton>
                         {row.description ? (
                           <span className="mt-0.5 block truncate text-meta text-muted">
                             {row.description}
                           </span>
                         ) : null}
-                      </button>
+                      </div>
                     </TableCell>
                     <TableCell className="font-mono text-meta text-muted">
                       {row.rootLabel}

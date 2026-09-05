@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, type ReactNode } from 'react';
-import { CircleUser, KeyRound } from 'lucide-react';
 import { SortHandle } from '@/components/shared/SortHandle';
 import { SORTABLE_ID_ATTR, useSortableDrag } from '@/components/shared/use-sortable-drag';
 import { useStoredIdOrder } from '@/components/shared/use-stored-id-order';
+import { CredentialKindMark } from '@/components/shared/CredentialKindMark';
+import { ListNameButton } from '@/components/shared/ListNameButton';
 import { StatusPin } from '@/components/shared/StatusPin';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Switch } from '@/components/ui/switch';
-import { Hint, Tip } from '@/components/ui/tooltip';
+import { Tip } from '@/components/ui/tooltip';
 import {
   ColumnResizeHandle,
   Table,
@@ -21,10 +22,8 @@ import {
   useColumnWidths,
   type ColumnWidthSpec,
 } from '@/components/ui/table';
-import { resolveAgentMeta } from '@/config/agents';
 import { applyIdOrder } from '@/lib/list-order';
-import { connectionKindLabel, type ConnectionKind } from '@/lib/connection-kind';
-import type { AgentKey } from '@/lib/types';
+import { connectionKindLabel } from '@/lib/connection-kind';
 import { adapterStatusTextClass } from '@/pages/routes/shared/adapter-view-model';
 import {
   poolAuthorizationStatusView,
@@ -65,27 +64,6 @@ const ORDER_STORAGE_KEY = StorageKey.routesPoolAuthorizationOrder;
 function cellValue(value: ReactNode): ReactNode {
   if (value == null || value === '') return <TableEmptyCell />;
   return value;
-}
-
-function KindMark({
-  kind,
-  agentId,
-}: {
-  kind: ConnectionKind;
-  agentId: AgentKey;
-}) {
-  const { t } = useI18n();
-  const color = resolveAgentMeta(agentId).color;
-  const oauth = kind === 'oauth';
-  const label = oauth ? t('kind.oauth') : t('kind.apikey');
-  const Icon = oauth ? CircleUser : KeyRound;
-  return (
-    <Hint label={label}>
-      <span className="inline-flex" style={{ color }} aria-label={label} data-pool-kind-mark={kind}>
-        <Icon className="h-4 w-4" strokeWidth={1.8} />
-      </span>
-    </Hint>
-  );
 }
 
 export function PoolAuthorizationList({
@@ -232,18 +210,15 @@ function renderColumn(
           {ctx.sortHandle}
           <PoolLoginMark item={item} />
           {ctx.onShowDetail ? (
-            <Tip className="min-w-0" label={loginLabel}>
-              <button
-                type="button"
-                data-pool-login-name={item.key}
-                className="max-w-full truncate text-left font-medium text-primary hover:underline"
-                onClick={() => ctx.onShowDetail?.(item)}
-              >
-                {loginLabel}
-              </button>
-            </Tip>
+            <ListNameButton
+              hint={loginLabel}
+              data-pool-login-name={item.key}
+              onClick={() => ctx.onShowDetail?.(item)}
+            >
+              {loginLabel}
+            </ListNameButton>
           ) : (
-            <Tip className="truncate font-medium" label={loginLabel}>
+            <Tip className="truncate text-body font-medium" label={loginLabel}>
               {loginLabel}
             </Tip>
           )}
@@ -253,7 +228,11 @@ function renderColumn(
     case 'kind':
       return (
         <div className="flex items-center gap-1.5">
-          <KindMark kind={item.kind} agentId={item.agentId} />
+          <CredentialKindMark
+            kind={item.kind}
+            agentId={item.agentId}
+            data-pool-kind-mark={item.kind}
+          />
           <span className="text-meta text-secondary">{connectionKindLabel(item.kind, ctx.t)}</span>
         </div>
       );

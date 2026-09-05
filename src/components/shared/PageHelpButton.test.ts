@@ -53,6 +53,8 @@ describe('PageHelpButton', () => {
     expect(button).toContain('aria-keyshortcuts="F1"');
     expect(button).toContain('<kbd');
     expect(button).toContain('F1');
+    expect(button).toContain('size="icon"');
+    expect(button).toContain('variant="ghost"');
     expect(button).not.toContain('DialogContent');
     expect(button).not.toContain('useState(true)');
   });

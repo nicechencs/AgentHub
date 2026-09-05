@@ -230,15 +230,17 @@ export function ChatComposer({
         <div className="flex shrink-0 items-center gap-1.5 border-t border-border/50 px-2 py-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button
+              <Button
                 type="button"
+                size="sm"
+                variant="outline"
                 disabled={sending || sendingElsewhere}
-                className="inline-flex h-7 max-w-36 items-center gap-1.5 rounded-btn border border-border bg-subtle px-2 text-meta text-secondary hover:bg-hover disabled:opacity-50"
+                className="max-w-36"
               >
                 {active.agentIds[0] && <AgentLogo agentId={active.agentIds[0]} size="sm" />}
                 <span className="truncate">{agentPickerLabel}</span>
                 <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
-              </button>
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-56">
               <DropdownMenuLabel>{t('chat.composer.selectAgent')}</DropdownMenuLabel>
@@ -292,8 +294,10 @@ export function ChatComposer({
           <DropdownMenu>
             <Hint label={connectionCaption ?? undefined}>
               <DropdownMenuTrigger asChild>
-                <button
+                <Button
                   type="button"
+                  size="sm"
+                  variant="outline"
                   disabled={
                     !primaryAgent ||
                     sending ||
@@ -301,7 +305,7 @@ export function ChatComposer({
                     switchingProvider ||
                     Boolean(primaryAgent && hiddenIds.has(primaryAgent))
                   }
-                  className="inline-flex h-7 max-w-44 items-center gap-1 rounded-btn border border-border bg-subtle px-2 text-meta text-secondary hover:bg-hover disabled:opacity-50"
+                  className="max-w-44"
                   aria-label={connectionCaption ?? t('chat.composer.switchConnection')}
                 >
                   <span className="min-w-0 truncate">
@@ -311,7 +315,7 @@ export function ChatComposer({
                     ) : null}
                   </span>
                   <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
-                </button>
+                </Button>
               </DropdownMenuTrigger>
             </Hint>
             <DropdownMenuContent align="start" className="w-64">
@@ -388,17 +392,19 @@ export function ChatComposer({
           {modelOptions.length > 0 ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button
+                <Button
                   type="button"
+                  size="sm"
+                  variant="outline"
                   disabled={sending || sendingElsewhere || switchingProvider || switchingModel}
-                  className="inline-flex h-7 max-w-40 items-center gap-1 rounded-btn border border-border bg-subtle px-2 text-meta text-secondary hover:bg-hover disabled:opacity-50"
+                  className="max-w-40"
                   aria-label={t('chat.composer.switchModel')}
                 >
                   <span className="min-w-0 truncate">
                     {currentModel || t('chat.composer.switchModel')}
                   </span>
                   <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
-                </button>
+                </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-64">
                 <DropdownMenuLabel>{t('chat.composer.switchModel')}</DropdownMenuLabel>

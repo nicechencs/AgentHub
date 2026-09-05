@@ -106,6 +106,7 @@ function AgentBubble({
               <Button
                 type="button"
                 size="sm"
+                variant="outline"
                 disabled={retryDisabled}
                 onClick={onRetry}
               >

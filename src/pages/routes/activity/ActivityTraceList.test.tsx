@@ -48,7 +48,7 @@ describe('ActivityTraceList', () => {
     expect(markup).toContain('data-col="tokens"');
     expect(markup).toContain('data-col="stages"');
     expect(markup).toContain('data-col="route"');
-    expect(markup).toContain('data-col="details"');
+    expect(markup).not.toContain('data-col="details"');
     expect(markup).not.toContain('data-col="result"');
     expect(markup).not.toContain('data-col="latency"');
     expect(markup).not.toContain('data-activity-trace-detail');
@@ -68,7 +68,6 @@ describe('ActivityTraceList', () => {
     expect(markup).toContain('4.2s');
     expect(markup).toContain('1.2K / 340');
     expect(markup).toContain('Route A');
-    expect(markup).toContain('详情');
     expect(markup).toContain('失败于 本机鉴权');
     expect(markup).toContain('data-activity-trace-result="failed"');
     expect(markup).toContain('min-w-max');

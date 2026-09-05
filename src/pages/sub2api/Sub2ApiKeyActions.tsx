@@ -1,49 +1,13 @@
-import type { ReactNode } from 'react';
-import { Ban, CheckCircle, Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import type { ConnectApiKeyDraft } from '@/lib/connect-flow/connect-intent';
 import type { Sub2ApiGroup, Sub2ApiKey } from '@/lib/sub2api';
 import type { AgentKey } from '@/lib/types';
-import { cn } from '@/lib/utils';
 import type { TokenImportAgentRef } from '@/pages/routes/tokens/token-import-model';
 import { Sub2ApiImportToAgentButton } from './Sub2ApiImportToAgentButton';
-import { nextSub2ApiKeyToggleStatus } from './sub2api-page-model';
-
-function ActionIconButton({
-  label,
-  disabled,
-  onClick,
-  tone = 'default',
-  testId,
-  children,
-}: {
-  label: string;
-  disabled?: boolean;
-  onClick: () => void;
-  tone?: 'default' | 'danger' | 'enable';
-  testId: string;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      data-sub2api-key-action={testId}
-      disabled={disabled}
-      aria-label={label}
-      onClick={onClick}
-      className={cn(
-        'inline-flex flex-col items-center gap-0.5 rounded-btn px-1.5 py-1 text-secondary transition-colors',
-        'hover:bg-hover disabled:pointer-events-none disabled:opacity-50',
-        tone === 'danger' && 'hover:text-danger',
-        tone === 'enable' && 'hover:text-success',
-        tone === 'default' && 'hover:text-primary',
-      )}
-    >
-      {children}
-      <span className="text-xs leading-none">{label}</span>
-    </button>
-  );
-}
+import { sub2apiKeyStatusKind } from './sub2api-page-model';
 
 export function Sub2ApiKeyActions({
   keyRow,
@@ -67,8 +31,8 @@ export function Sub2ApiKeyActions({
   busy?: boolean;
 }) {
   const { t } = useI18n();
-  const enabling = nextSub2ApiKeyToggleStatus(keyRow.status) === 'active';
-  const toggleLabel = enabling ? t('routes.sub2api.enableKey') : t('routes.sub2api.disableKey');
+  const active = sub2apiKeyStatusKind(keyRow.status) === 'active';
+  const toggleLabel = active ? t('routes.sub2api.disableKey') : t('routes.sub2api.enableKey');
 
   return (
     <div className="flex items-center gap-0.5" data-sub2api-key-actions="">
@@ -80,32 +44,38 @@ export function Sub2ApiKeyActions({
         onImport={onImport}
         busy={busy}
       />
-      <ActionIconButton
-        label={toggleLabel}
+      <Switch
+        checked={active}
         disabled={busy}
-        tone={enabling ? 'enable' : 'default'}
-        testId={enabling ? 'enable' : 'disable'}
-        onClick={() => onToggleStatus(keyRow)}
-      >
-        {enabling ? <CheckCircle className="h-3.5 w-3.5" /> : <Ban className="h-3.5 w-3.5" />}
-      </ActionIconButton>
-      <ActionIconButton
-        label={t('routes.sub2api.editKey')}
+        aria-label={toggleLabel}
+        data-sub2api-key-action={active ? 'disable' : 'enable'}
+        onCheckedChange={() => onToggleStatus(keyRow)}
+      />
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        data-sub2api-key-action="edit"
         disabled={busy}
-        testId="edit"
+        title={t('routes.sub2api.editKey')}
+        aria-label={t('routes.sub2api.editKey')}
         onClick={() => onEdit(keyRow)}
       >
         <Pencil className="h-3.5 w-3.5" />
-      </ActionIconButton>
-      <ActionIconButton
-        label={t('common.delete')}
+      </Button>
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="text-danger hover:text-danger"
+        data-sub2api-key-action="delete"
         disabled={busy}
-        tone="danger"
-        testId="delete"
+        title={t('common.delete')}
+        aria-label={t('common.delete')}
         onClick={() => onDelete(keyRow)}
       >
         <Trash2 className="h-3.5 w-3.5" />
-      </ActionIconButton>
+      </Button>
     </div>
   );
 }

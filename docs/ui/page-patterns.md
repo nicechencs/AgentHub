@@ -30,7 +30,7 @@ The application is organized by work and management, with Agent filtering inside
 | Manage | Routes | `/routes` | Local route runtime and the connection pool. May add/manage route-only official login / API Key; `/routes` opens the board; secondary nav: board / pool / tokens / activity |
 | Manage | Settings | `/settings` | Preferences, local device, backups, and about |
 
-`Routes`, `Plugins`, and `MCP` are in development. New installs hide the Routes, Plugins, and Sub2API sidebar entries (`routesNavVisible`, `pluginsNavVisible`, and `sub2apiNavVisible` default off). Turning a setting on shows its entry; the pages stay reachable at `/routes`, `/plugins`, and `/sub2api`. MCP stays in the workspace nav. Settings (Routes / Plugins), the page titles, and the sidebar entries (when shown) carry an in-development mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / uninstall / update for plugin packs is still a [proposal](../proposals/plugin-management.md). The current page lists installed packs for Claude, Grok, and Pi; Claude and Grok can enable or disable. There is no install button.
+`Routes`, `Plugins`, and `MCP` are in development. New installs hide the Routes, Plugins, and Sub2API sidebar entries (`routesNavVisible`, `pluginsNavVisible`, and `sub2apiNavVisible` default off). Turning a setting on shows its entry; the pages stay reachable at `/routes`, `/plugins`, and `/sub2api`. MCP stays in the workspace nav. The sidebar and page titles mark **MCP** and **Plugins** as in development; Routes and Sub2API are preference-gated without that mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / uninstall / update for plugin packs is still a [proposal](../proposals/plugin-management.md). The current page lists installed packs for Claude, Grok, and Pi; Claude and Grok can enable or disable. There is no install button.
 
 The compatibility paths `/adapter` and `/router` replace-navigate to `/routes`. They are recovery paths for existing links, not current navigation labels.
 
@@ -63,7 +63,7 @@ The page title is a single line: name, then short description. Distinguish them 
 
 ### 2.2 Full-height workbench
 
-Chat, Skills, Projects, Plugins, Connections, Sub2API, Routes, and Settings use `fullBleed` and manage their own vertical scrolling. Full-height does not create a third content width: Chat messages use the reading column; Skills, Projects, Plugins, Connections, Sub2API, and the Settings backups tab use the edge column with a split preview surface. Page-level commands stay in the list column, on the right of the same row as tabs or filters. They do not occupy a row of their own. The workbench list and the preview column share the same `pageEdge.inset` top and bottom so both edges line up. The page title itself stays in the top bar.
+Chat, Agents, Skills, Projects, Plugins, Connections, Sub2API, Routes, and Settings use `fullBleed` and manage their own vertical scrolling. Full-height does not create a third content width: Chat messages use the reading column; Agents, Skills, Projects, Plugins, Connections, Sub2API, and the Settings backups tab use the edge column with a split preview surface. Page-level commands stay in the list column, on the right of the same row as tabs or filters. They do not occupy a row of their own. The workbench list and the preview column share the same `pageEdge.inset` top and bottom so both edges line up. The page title itself stays in the top bar.
 
 ### 2.3 Settings
 
@@ -112,7 +112,7 @@ Connections is the general login list in a full-height workbench split. Logins c
 - The top `AgentTabStrip` filters the list. Do not add a second row of “official / API key / unknown” filter chips.
 - The add menu is **导入授权** / **官方登录** / **添加 API Key**. Official login and API Key are stored as separate rows. WorkBuddy custom models and ZCode catalog providers split into one login per directory row; desktop package logins are not imported.
 - OAuth rows use an identity/person icon; API key rows use a key icon. The icon has an accessible label and a short hint.
-- Selecting a row opens the right-hand detail: related config files (copyable, open-directory), package, expiry, timeline, and the full endpoint. The list uses masked labels; the file preview shows the stored snapshot.
+- Click the login **name** to open the right-hand detail: related config files (copyable, open-directory), package, expiry, timeline, and the full endpoint. The rest of the row (switch, edit, menu, sort) does not open inspect. The list uses masked labels; the file preview shows the stored snapshot.
 - The official-login wait page does not show internal status or login file paths; failure keeps **重试** as the primary action.
 - The row menu is only **取消添加** (when that login is already written into the tool). Adding a Connections login to the default connection pool is **从连接同步** on the pool page, not a Connections row action. Connections does not open ConnectFlow, and does not show **分享至连接池**, **用到其他工具**, or **本机转发**.
 - Missing data and a genuinely empty login list are different states.
@@ -127,7 +127,7 @@ Routes nested paths use a shell-level secondary nav. The **board** (`/routes/boa
 
 ### 6.1 Connection pool
 
-The connection pool lists official logins and API Keys used for local forwarding in a field-aligned table. **All API Keys can join** (including keys configured on WorkBuddy / ZCode / Pi); domestic official logins cannot. It may contain a Connections-managed login enrolled with **从连接同步** on this page, or a Routes-managed login marked “仅用于本机路由”; the latter uses `home=route_pool` and may not appear in Connections. Connections owns the login lifecycle for entries selected from Connections until you **编辑** a shared official login in the pool: saving copies it to a pool-owned row (the Connections login stays), then asks **同步到连接页？** to write models back. Routes owns creation, editing, and deletion for route-only entries. Removing a member from the pool does not delete the Connections-managed login. Each page has its own recycle bin: Connections trash restores to Connections; pool trash restores to the pool. The table shows login, type, and status on every row; connection count, usage window, last used, and priority only when at least one row has that value; enable last. Column widths are dragged from the header edge and remembered. Selecting a row opens a detail panel. A route row can still be opened through `?profile=<id>`.
+The connection pool lists official logins and API Keys used for local forwarding in a field-aligned table. **All API Keys can join** (including keys configured on WorkBuddy / ZCode / Pi); domestic official logins cannot. It may contain a Connections-managed login enrolled with **从连接同步** on this page, or a Routes-managed login marked “仅用于本机路由”; the latter uses `home=route_pool` and may not appear in Connections. Connections owns the login lifecycle for entries selected from Connections until you **编辑** a shared official login in the pool: saving copies it to a pool-owned row (the Connections login stays), then asks **同步到连接页？** to write models back. Routes owns creation, editing, and deletion for route-only entries. Removing a member from the pool does not delete the Connections-managed login. Each page has its own recycle bin: Connections trash restores to Connections; pool trash restores to the pool. The table shows login, type, and status on every row; connection count, usage window, last used, and priority only when at least one row has that value; enable last. Column widths are dragged from the header edge and remembered. Click the login **name** to open a detail panel; the enable switch does not. A route row can still be opened through `?profile=<id>`.
 
 The page treats the following states separately:
 
@@ -180,7 +180,7 @@ Skills, Projects, and Plugins are full-height workbenches with a left inventory 
 - User skills, Project skills, and Market are page-level tabs. Filtering and Agent scope stay in the chrome row.
 - User skills list the shared library plus this-tool-only skills, with the enablement matrix.
 - Project skills use a dropdown of workspaces already identified on the Projects page. After a project is selected, skills can be added or deleted for that workspace (canonical folder `.agents/skills`).
-- A skill name opens the preview; Enter is equivalent. Checkbox selection is only for batch operations and never opens the preview.
+- A skill name opens the preview (`ListNameButton`); Enter on the name is equivalent. Clicking empty row area on the library/project tables also opens the preview. Checkbox selection is only for batch operations and never opens the preview.
 - The preview identity is separate from checkbox selection. It remains open when filters hide the selected skill, with a short source label in the header.
 - The list keeps the name and at most one line of description. Absolute paths move to the preview footer or an explicit open-directory action.
 - The matrix represents supported/unavailable/unknown states without blanking the page. A missing skill directory is a partial state, not a global error.
@@ -202,7 +202,7 @@ Skills, Projects, and Plugins are full-height workbenches with a left inventory 
 
 ### Agents
 
-Agents is the lifecycle surface: installed state, runtime readiness, install/update, and environment remediation. A missing runtime is shown before Agent installation, with repair steps and a re-detect action. Do not offer a successful installation action while its prerequisite environment is known to be missing.
+Agents is the lifecycle surface: installed state, runtime readiness, install/update, and environment remediation. The catalog is a field table in a full-height split. Click the Agent **name** to open the right-hand detail; start / install / hide stay on the row. A missing runtime is shown before Agent installation, with repair steps and a re-detect action. Do not offer a successful installation action while its prerequisite environment is known to be missing. Uninstall entry in the detail pane is `dangerOutline`; the confirm dialog uses `danger`.
 
 ### MCP
 
