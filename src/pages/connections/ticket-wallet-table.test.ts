@@ -5,6 +5,7 @@ import {
   TICKET_WALLET_COLUMN_SPECS,
   ticketWalletColumnLabel,
   ticketWalletQuotaParts,
+  ticketWalletUsageParts,
   type TicketWalletColumnKey,
 } from './ticket-wallet-table';
 
@@ -63,5 +64,10 @@ describe('ticket wallet table columns', () => {
       '7d 89%',
       '5h 12%',
     ]);
+    expect(ticketWalletUsageParts({ quota7dPct: 22, tokenInput: 100, tokenOutput: 9 })).toEqual([
+      '7d 22%',
+    ]);
+    expect(ticketWalletUsageParts({ tokenInput: 12, tokenOutput: 3 })).toEqual(['12 / 3']);
+    expect(ticketWalletUsageParts(null)).toEqual([]);
   });
 });

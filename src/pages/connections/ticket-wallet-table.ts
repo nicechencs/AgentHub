@@ -60,3 +60,32 @@ export function ticketWalletQuotaParts(
   if (hasOfficialQuotaWindow(pct5h)) parts.push(`5h ${pct5h}%`);
   return parts;
 }
+
+export function ticketWalletTokenUsageText(
+  extras?: Pick<TicketDetailExtras, 'tokenInput' | 'tokenOutput'> | null,
+  t?: TranslateFn,
+): string | null {
+  const input = extras?.tokenInput;
+  const output = extras?.tokenOutput;
+  const hasInput = typeof input === 'number' && Number.isFinite(input);
+  const hasOutput = typeof output === 'number' && Number.isFinite(output);
+  if (!hasInput && !hasOutput) return null;
+  const inText = (hasInput ? input : 0).toLocaleString();
+  const outText = (hasOutput ? output : 0).toLocaleString();
+  if (t) return t('connections.list.tokenUsage', { in: inText, out: outText });
+  return `${inText} / ${outText}`;
+}
+
+/** Percents when the official window exists; otherwise token totals. */
+export function ticketWalletUsageParts(
+  extras?: Pick<
+    TicketDetailExtras,
+    'quota5hPct' | 'quota7dPct' | 'tokenInput' | 'tokenOutput'
+  > | null,
+  t?: TranslateFn,
+): string[] {
+  const quota = ticketWalletQuotaParts(extras);
+  if (quota.length > 0) return quota;
+  const tokens = ticketWalletTokenUsageText(extras, t);
+  return tokens ? [tokens] : [];
+}

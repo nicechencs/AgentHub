@@ -81,7 +81,8 @@ import {
   TICKET_WALLET_COLUMN_SPECS,
   formatDetailTimestamp,
   ticketWalletColumnLabel,
-  ticketWalletQuotaParts,
+  ticketWalletTokenUsageText,
+  ticketWalletUsageParts,
   ticketDetailEditLabel,
   oauthActionHoverTip,
   ticketRefreshDisabledReason,
@@ -226,6 +227,7 @@ export function TicketDetailPanel({
   const has7d = hasOfficialQuotaWindow(extras?.quota7dPct);
   const has5h = hasOfficialQuotaWindow(extras?.quota5hPct);
   const hasQuota = has7d || has5h;
+  const tokenUsage = !hasQuota ? ticketWalletTokenUsageText(extras, t) : null;
   const isSyncLogin = extras?.oauthAction?.kind === 'sync-current-login';
   const refreshLabel = isSyncLogin
     ? t('connections.list.syncCurrentLogin')
@@ -282,6 +284,7 @@ export function TicketDetailPanel({
       hasQuota={hasQuota}
       has7d={has7d}
       has5h={has5h}
+      tokenUsage={tokenUsage}
       overview={overview}
       timeline={timeline}
       tokenRemaining={tokenRemaining}
@@ -339,6 +342,7 @@ function TicketDetailBody({
   hasQuota,
   has7d,
   has5h,
+  tokenUsage,
   overview,
   timeline,
   tokenRemaining,
@@ -352,6 +356,7 @@ function TicketDetailBody({
   hasQuota: boolean;
   has7d: boolean;
   has5h: boolean;
+  tokenUsage: string | null;
   overview: TicketDetailField[];
   timeline: TicketDetailField[];
   tokenRemaining: string | null;
@@ -364,7 +369,7 @@ function TicketDetailBody({
   const { t } = useI18n();
   return (
     <div className="flex flex-col gap-3 text-xs">
-      {hasQuota || tokenRemaining ? (
+      {hasQuota || tokenRemaining || tokenUsage ? (
         <div>
           <p className="text-meta text-muted">{t('connections.list.usage')}</p>
           <div className="mt-1.5 flex flex-col gap-1.5">
@@ -381,6 +386,9 @@ function TicketDetailBody({
                 pct={extras?.quota5hPct}
                 resetIn={extras?.quotaResetIn}
               />
+            ) : null}
+            {tokenUsage ? (
+              <p className="text-meta text-secondary">{tokenUsage}</p>
             ) : null}
             {tokenRemaining ? (
               <DetailRow
@@ -530,8 +538,8 @@ function TicketRow({
   const switching = switchingId === ticket.id;
   const switchBusy = switchingId !== null;
   const title = ticketCardTitle(ticket, extras);
-  const lastUsed = formatDetailTimestamp(extras?.lastUsedAt);
-  const quotaParts = ticketWalletQuotaParts(extras);
+  const lastUsed = formatDetailTimestamp(extras?.tokenLastUsedAt ?? extras?.lastUsedAt);
+  const usageParts = ticketWalletUsageParts(extras, t);
 
   return (
     <TableRow
@@ -588,9 +596,9 @@ function TicketRow({
         )}
       </TableCell>
       <TableCell data-col="usage" className="whitespace-nowrap">
-        {quotaParts.length > 0 ? (
+        {usageParts.length > 0 ? (
           <div className="flex flex-col gap-0.5 text-meta text-secondary">
-            {quotaParts.map((part) => (
+            {usageParts.map((part) => (
               <span key={part}>{part}</span>
             ))}
           </div>

@@ -1975,6 +1975,7 @@ export const en = {
       currentlyActive: "Current",
       subscription: "Plan",
       lastUsedAt: "Last used",
+      tokenUsage: "{in} / {out}",
       createdAt: "Added",
       importedFrom: "Imported from",
       timelineTitle: "Timeline",

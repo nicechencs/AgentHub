@@ -82,6 +82,14 @@ pub fn db_path(data_dir: &Path) -> PathBuf {
     data_dir.join("agenthub.db")
 }
 
+/// Disposable sqlite for token / API usage history.
+///
+/// Lives next to, not inside, [`db_path`]. Deleting it only clears usage
+/// history; the next open recreates an empty file.
+pub fn cache_db_path(data_dir: &Path) -> PathBuf {
+    data_dir.join("cache.db")
+}
+
 pub fn backups_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("backups")
 }

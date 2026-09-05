@@ -12,7 +12,7 @@ pub use collect::{collect_for_agent_id, collect_with_source, collect_with_source
 pub use registry::{builtin_usage_registry, UsageSourceRegistry};
 pub use source::{RawUsageEvent, TokenAccounting, UsageFileParser, UsageLineOutcome, UsageSource};
 
-pub(crate) use gateway_source::{ingest_spool_dir, GatewaySpoolOutcome};
+pub(crate) use gateway_source::{ingest_spool_dir_with, GatewaySpoolOutcome};
 
 #[cfg(test)]
 pub(crate) use collect::parse_file_for_agent_id;

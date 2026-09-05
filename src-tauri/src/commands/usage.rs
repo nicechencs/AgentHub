@@ -1,8 +1,8 @@
 //! Usage Tauri commands — collect / query / trend / models / health.
 
 use agenthub_core::models::{
-    AgentId, CollectResult, GatewayUsageOverview, GatewayUsageQuery, GatewayUsageRow, ParserHealth,
-    UsageOverview, UsageQuery, UsageRecord,
+    AgentId, CollectResult, ConnectionUsageSummary, GatewayUsageOverview, GatewayUsageQuery,
+    GatewayUsageRow, ParserHealth, UsageOverview, UsageQuery, UsageRecord,
 };
 use serde_json::Value;
 use tauri::State;
@@ -229,4 +229,13 @@ pub async fn gateway_usage_overview(
             .map_err(|e| map_err_string("gateway_usage_overview", e))
     })
     .await
+}
+
+/// Per-connection token totals from the sidecar DB. Always succeeds (empty if missing).
+#[tauri::command]
+pub async fn usage_connection_summaries(
+    state: State<'_, AppState>,
+) -> Result<Vec<ConnectionUsageSummary>, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| Ok(hub.usage().connection_usage_summaries())).await
 }

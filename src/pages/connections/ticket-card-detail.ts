@@ -103,6 +103,10 @@ export interface TicketDetailExtras {
   quota7dPct?: number;
   quotaResetIn?: string;
   quota7dResetIn?: string;
+  /** Sidecar token totals for this login (not dashboard usage). */
+  tokenInput?: number;
+  tokenOutput?: number;
+  tokenLastUsedAt?: string;
   canEditKey?: boolean;
   canEditConfig?: boolean;
   isCurrent?: boolean;

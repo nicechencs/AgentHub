@@ -4,8 +4,10 @@ mod account_repo;
 mod adapter_profile_repo;
 mod backup_repo;
 mod binding_repo;
+pub(crate) mod cache;
 mod chat_repo;
 mod connection_trash_repo;
+pub(crate) mod connection_usage;
 pub(crate) mod gateway_usage_repo;
 pub(crate) mod live_fingerprint_repo;
 mod local_entry_key_repo;
@@ -48,6 +50,7 @@ pub(crate) use binding_repo::{
     clear_connection_refs_conn as binding_clear_connection_refs_conn,
     get_conn_pub as binding_get_conn, set_connection_refs_conn as binding_set_connection_refs_conn,
 };
+pub use connection_usage::ConnectionUsageStore;
 pub(crate) use provider_repo::{
     clear_current_conn as provider_clear_current_conn, create_conn as provider_create_conn,
     delete_for_agent_conn as provider_delete_for_agent_conn,
@@ -94,7 +97,7 @@ pub struct Database {
 
 impl Database {
     pub fn open(db_path: &Path) -> Result<Self> {
-        match Self::open_with_lock_retry(db_path) {
+        match Self::try_open(db_path) {
             Ok(db) => {
                 crate::logging::log_info(
                     crate::logging::targets::STORAGE,
@@ -110,7 +113,9 @@ impl Database {
         }
     }
 
-    fn open_with_lock_retry(db_path: &Path) -> Result<Self> {
+    /// Open without logging. Cache isolation uses this so a corrupt usage
+    /// file can be quarantined instead of failing hub open.
+    pub(crate) fn try_open(db_path: &Path) -> Result<Self> {
         for attempt in 0..migrations::MIGRATION_RETRY_ATTEMPTS {
             match Self::open_inner(db_path) {
                 Ok(db) => return Ok(db),
@@ -127,11 +132,18 @@ impl Database {
         unreachable!("database open retry loop always returns")
     }
 
+    pub(crate) fn open_in_memory() -> Result<Self> {
+        Self::from_connection(Connection::open_in_memory()?)
+    }
+
     fn open_inner(db_path: &Path) -> Result<Self> {
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let conn = Connection::open(db_path)?;
+        Self::from_connection(Connection::open(db_path)?)
+    }
+
+    fn from_connection(conn: Connection) -> Result<Self> {
         // The C busy handler is what SQLite actually waits on; keep the PRAGMA
         // as well so `PRAGMA busy_timeout` readers observe the same value.
         conn.busy_timeout(Duration::from_millis(5000))?;
