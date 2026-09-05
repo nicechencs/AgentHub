@@ -116,6 +116,23 @@ impl RunService {
         }
     }
 
+    /// Resolve the installed Codex executable for the app-server runtime.
+    /// Detection is kept in RunService so runtime startup uses the same
+    /// adapter registry and install semantics as legacy chat.
+    pub fn detect_codex_installation(&self) -> Result<std::path::PathBuf> {
+        let adapter = self
+            .registry
+            .get(AgentId::Codex)
+            .ok_or_else(|| AppError::NotFound("adapter not registered for codex".into()))?;
+        let detect = adapter.detect();
+        if detect.status != DetectStatus::Installed {
+            return Err(AppError::NotFound("Codex 未安装或不可用".into()));
+        }
+        detect
+            .binary_path
+            .ok_or_else(|| AppError::NotFound("Codex 可执行文件路径不可用".into()))
+    }
+
     /// Run the same prompt on one or more agents.
     pub fn run(
         &self,

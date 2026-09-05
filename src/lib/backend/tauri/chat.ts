@@ -7,6 +7,7 @@ import {
   type CoreConversation,
 } from '@/lib/backend/contracts/chat-map';
 import { Channel, invoke } from './invoke';
+import type { RuntimeSnapshot } from '@/lib/backend/contracts/chat-runtime';
 
 export function createTauriChatPort(): ChatPort {
   return {
@@ -61,6 +62,19 @@ export function createTauriChatPort(): ChatPort {
 
     async chatCancel(conversationId) {
       await invoke('chat_cancel', { conversationId });
+    },
+    async runtimeSnapshot(conversationId, afterSequence) {
+      return invoke<RuntimeSnapshot>('chat_runtime_snapshot', { conversationId, afterSequence });
+    },
+    async runtimeStart(conversationId, prompt, clientRequestId) {
+      return invoke<RuntimeSnapshot>('chat_runtime_start', { conversationId, prompt, clientRequestId });
+    },
+    async runtimeReply(reply) { await invoke('chat_runtime_reply', { reply }); },
+    async runtimeSteer(conversationId, runId, prompt, clientRequestId) {
+      await invoke('chat_runtime_steer', { conversationId, runId, prompt, clientRequestId });
+    },
+    async runtimeCancel(conversationId, runId) {
+      await invoke('chat_runtime_cancel', { conversationId, runId });
     },
 
     async setChatModel(agentId, model) {

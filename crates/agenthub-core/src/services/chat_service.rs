@@ -19,6 +19,8 @@ use crate::services::RunService;
 use crate::storage::{ChatRepo, Database};
 use crate::utils::process::CancelToken;
 
+use super::chat_runtime::ChatRuntime;
+
 // Re-export so existing `chat_service::CONTEXT_CHAR_LIMIT` callers keep working.
 pub use crate::catalog::limits::CONTEXT_CHAR_LIMIT;
 
@@ -29,16 +31,25 @@ fn elapsed_ms(started: Instant) -> u64 {
 pub struct ChatService {
     repo: ChatRepo,
     run: Arc<RunService>,
+    runtime: Arc<ChatRuntime>,
     active: Mutex<HashMap<String, CancelToken>>,
 }
 
 impl ChatService {
     pub fn new(db: Database, run: Arc<RunService>) -> Self {
+        let runtime = Arc::new(ChatRuntime::new(db.clone(), Arc::clone(&run)));
         Self {
             repo: ChatRepo::new(db),
             run,
+            runtime,
             active: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Durable Codex app-server runtime.  Legacy `send` remains owned by this
+    /// service and is intentionally independent of the runtime path.
+    pub fn runtime(&self) -> &Arc<ChatRuntime> {
+        &self.runtime
     }
 
     pub fn list_conversations(&self) -> Result<Vec<Conversation>> {
@@ -112,6 +123,11 @@ impl ChatService {
         cwd: Option<Option<String>>,
         allow_dangerous: Option<bool>,
     ) -> Result<Conversation> {
+        if self.runtime.is_enabled(id)? && (agent_ids.is_some() || cwd.is_some()) {
+            return Err(AppError::InvalidArg(
+                "持续聊天会话不能更换 Agent 或工作目录，请新建会话".into(),
+            ));
+        }
         let mut conv = self.get_conversation(id)?;
         if let Some(t) = title {
             conv.title = t;
@@ -146,6 +162,7 @@ impl ChatService {
         // cleared by the send path (or remove here if already gone).
         let result = (|| {
             let _ = self.cancel(id);
+            self.runtime.shutdown(id);
             if !self.repo.delete_conversation(id)? {
                 return Err(AppError::NotFound(format!("conversation not found: {id}")));
             }
@@ -279,6 +296,11 @@ impl ChatService {
         let user_input = user_input.trim();
         if user_input.is_empty() {
             return Err(AppError::InvalidArg("prompt must not be empty".into()));
+        }
+        if self.runtime.is_enabled(conversation_id)? {
+            return Err(AppError::InvalidArg(
+                "此会话使用持续聊天，请通过持续聊天入口发送".into(),
+            ));
         }
 
         let mut conv = self.get_conversation(conversation_id)?;

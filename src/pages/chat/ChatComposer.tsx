@@ -67,6 +67,7 @@ export function ChatComposer({
   onRetryWallet,
   onRetryStatus,
   onSend,
+  onSteer,
   onCancel,
   onSelectAgent,
   onSwitchConnection,
@@ -100,6 +101,7 @@ export function ChatComposer({
   onRetryWallet?: () => void;
   onRetryStatus?: () => void;
   onSend: () => void;
+  onSteer?: () => void;
   onCancel: () => void;
   onSelectAgent: (id: AgentKey) => void;
   onSwitchConnection: (ticketId: string) => void;
@@ -120,7 +122,7 @@ export function ChatComposer({
   const hiddenBlocked = firstBlocker?.kind === 'hiddenAgents' ||
     active.agentIds.some((id) => hiddenIds.has(id));
   const sendingElsewhere = blockers.some((b) => b.kind === 'sendingElsewhere');
-  const canSend = Boolean(draft.trim()) && blockers.length === 0 && !sending;
+  const canSend = Boolean(draft.trim()) && blockers.length === 0 && (!sending || Boolean(onSteer));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const syncTextareaHeight = useCallback(() => {
@@ -149,7 +151,7 @@ export function ChatComposer({
     return () => window.removeEventListener('resize', onResize);
   }, [syncTextareaHeight]);
 
-  const textareaDisabled = sending || hiddenBlocked || sendingElsewhere;
+  const textareaDisabled = hiddenBlocked || sendingElsewhere;
   const sendHint = firstBlocker ? blockerCopy(t, firstBlocker).text : t('chat.composer.send');
   const selectedAgent = active.agentIds[0] ?? '';
   const approveFooter = autoApproveFooter(t, active.allowDangerous, active.agentIds[0] ?? null);
@@ -222,7 +224,7 @@ export function ChatComposer({
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              if (canSend) onSend();
+              if (canSend) (sending && onSteer ? onSteer() : onSend());
             }
           }}
           aria-label={t('chat.composer.inputAria')}
@@ -234,7 +236,7 @@ export function ChatComposer({
                 type="button"
                 size="sm"
                 variant="outline"
-                disabled={sending || sendingElsewhere}
+              disabled={sending || sendingElsewhere}
                 className="max-w-36"
               >
                 {active.agentIds[0] && <AgentLogo agentId={active.agentIds[0]} size="sm" />}
@@ -396,7 +398,7 @@ export function ChatComposer({
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={sending || sendingElsewhere || switchingProvider || switchingModel}
+              disabled={sending || sendingElsewhere || switchingProvider || switchingModel}
                   className="max-w-40"
                   aria-label={t('chat.composer.switchModel')}
                 >
@@ -438,10 +440,17 @@ export function ChatComposer({
           </Tip>
 
           {sending ? (
-            <Button size="sm" variant="dangerOutline" disabled={canceling} onClick={onCancel}>
-              <Square className="h-3.5 w-3.5" />
-              {t('chat.composer.stop')}
-            </Button>
+            <>
+              {onSteer ? (
+                <Button size="sm" variant="outline" disabled={!draft.trim()} onClick={onSteer}>
+                  {t('chat.composer.add')}
+                </Button>
+              ) : null}
+              <Button size="sm" variant="dangerOutline" disabled={canceling} onClick={onCancel}>
+                <Square className="h-3.5 w-3.5" />
+                {t('chat.composer.stop')}
+              </Button>
+            </>
           ) : (
             <Button
               size="icon"

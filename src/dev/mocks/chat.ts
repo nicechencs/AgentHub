@@ -1,4 +1,5 @@
 import type { ChatPort } from '@/lib/backend/contracts';
+import type { RuntimeReply, RuntimeSnapshot } from '@/lib/backend/contracts/chat-runtime';
 import { delay } from '@/dev/mocks/delay';
 import type {
   AgentKey,
@@ -13,6 +14,7 @@ const mockConversations: Conversation[] = [];
 const mockMessages: Record<string, ChatMessage[]> = {};
 const mockCancel = new Set<string>();
 const mockInflight = new Set<string>();
+const runtimeSnapshots = new Map<string, RuntimeSnapshot>();
 
 function nowIso() {
   return new Date().toISOString();
@@ -43,6 +45,7 @@ export function resetChatMock() {
   for (const k of Object.keys(mockMessages)) delete mockMessages[k];
   mockCancel.clear();
   mockInflight.clear();
+  runtimeSnapshots.clear();
 }
 
 export function createMockChatPort(): ChatPort {
@@ -262,6 +265,67 @@ export function createMockChatPort(): ChatPort {
 
     async chatCancel(conversationId) {
       mockCancel.add(conversationId);
+    },
+
+    async runtimeSnapshot(conversationId, afterSequence) {
+      const conv = mockConversations.find((item) => item.id === conversationId);
+      if (!conv) throw new Error(`conversation not found: ${conversationId}`);
+      const current = runtimeSnapshots.get(conversationId) ?? {
+        conversationId,
+        enabled: conv.agentIds[0] === 'codex' && (mockMessages[conversationId] ?? []).length === 0,
+        runId: null,
+        phase: 'idle' as const,
+        lastSequence: 0,
+        events: [],
+        pendingRequests: [],
+        gap: false,
+        currentMessage: null,
+      };
+      return { ...current, events: afterSequence == null ? current.events : current.events.filter((item) => item.sequence > afterSequence) };
+    },
+    async runtimeStart(conversationId, prompt) {
+      const snapshot = await this.runtimeSnapshot(conversationId);
+      if (!snapshot.enabled) throw new Error('runtime is unavailable for this conversation');
+      const runId = `run-mock-${mockSeq++}`;
+      const agent = mockConversations.find((item) => item.id === conversationId)?.agentIds[0] ?? 'codex';
+      const turn = (mockMessages[conversationId] ?? []).length + 1;
+      const event: ChatEvent = { type: 'started', turn, agents: [agent] };
+      const currentMessage: ChatMessage = {
+        id: `runtime-agent-${mockSeq++}`,
+        conversationId,
+        turn,
+        role: 'agent',
+        agentId: agent,
+        content: '',
+        status: 'running',
+        durationMs: 0,
+        createdAt: nowIso(),
+      };
+      const next: RuntimeSnapshot = {
+        ...snapshot,
+        runId,
+        phase: 'running',
+        lastSequence: 1,
+        events: [{ sequence: 1, event }],
+        pendingRequests: [],
+        currentMessage,
+      };
+      runtimeSnapshots.set(conversationId, next);
+      void prompt;
+      return next;
+    },
+    async runtimeReply(_reply: RuntimeReply) {},
+    async runtimeSteer() {},
+    async runtimeCancel(conversationId, runId) {
+      const current = runtimeSnapshots.get(conversationId);
+      if (current?.runId !== runId) throw new Error('run is no longer active');
+      runtimeSnapshots.set(conversationId, {
+        ...current,
+        phase: 'cancelling',
+        currentMessage: current.currentMessage
+          ? { ...current.currentMessage, status: 'cancelled', error: 'cancelled' }
+          : null,
+      });
     },
 
     async setChatModel(_agentId, _model) {

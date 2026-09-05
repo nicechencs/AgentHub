@@ -30,6 +30,8 @@
     "test:pr": "pnpm typecheck && pnpm typecheck:test && pnpm test && cargo test -p agenthub-core --locked",
     "check:docs": "node scripts/check-docs.mjs",
     "test:docs": "node --test scripts/check-docs.test.mjs",
+    "chat:probe:codex": "node scripts/chat-codex-probe.mjs",
+    "test:chat:probe": "node --test scripts/chat-codex-probe.test.mjs",
     "pricing:update": "node scripts/update-embedded-pricing.mjs",
     "pricing:check": "node scripts/update-embedded-pricing.mjs --check",
     "icons": "node scripts/generate-desktop-icons.mjs",

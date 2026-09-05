@@ -253,6 +253,11 @@ pub fn run() {
             commands::chat::list_chat_messages,
             commands::chat::chat_send,
             commands::chat::chat_cancel,
+            commands::chat::chat_runtime_snapshot,
+            commands::chat::chat_runtime_start,
+            commands::chat::chat_runtime_reply,
+            commands::chat::chat_runtime_steer,
+            commands::chat::chat_runtime_cancel,
             commands::chat::set_chat_model,
             commands::chat::get_chat_model,
             // Agent projects / sessions
