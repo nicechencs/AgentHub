@@ -8,6 +8,7 @@ export const MOCK_CWD = 'C:\\mock\\e2e-workspace';
 export async function seedBrowserPrefs(page: Page): Promise<void> {
   await page.addInitScript(() => {
     window.localStorage.setItem('agenthub:onboarding-done', '1');
+    window.localStorage.setItem('agenthub:chrome-hint-dismissed', '1');
   });
 }
 

@@ -938,7 +938,7 @@ export default function Sub2ApiPage() {
           descriptionTip={t('routes.sub2api.descriptionTip')}
         />
         {phase === 'logged-in' ? (
-          <div className={cn(pageRhythm.chromeRow, 'flex-nowrap')}>
+          <div className={cn(pageRhythm.chromeRow, 'flex-nowrap')} data-help="page-chrome">
             <div className="flex min-w-0 items-center gap-2 overflow-hidden">
               <div className="flex min-w-0 items-center gap-2" data-sub2api-endpoints="">
                 {session?.siteUrl ? (
@@ -1013,7 +1013,7 @@ export default function Sub2ApiPage() {
         ) : null}
 
         {(phase === 'logged-out' || phase === 'awaiting-2fa') && (
-          <Card className="mx-auto w-full max-w-lg space-y-4 p-5" data-sub2api-login-form="">
+          <Card className="mx-auto w-full max-w-lg space-y-4 p-5" data-sub2api-login-form="" data-help="sub2api-login">
             <div>
               <h2 className="text-base font-medium">
                 {phase === 'awaiting-2fa'
@@ -1239,6 +1239,7 @@ export default function Sub2ApiPage() {
                 <p className="mt-1">{t('routes.sub2api.keysEmptyHint')}</p>
               </Card>
             ) : (
+              <div data-help="sub2api-keys">
               <TableShell className="min-h-0 flex-1" layout="split">
                 <Table className="min-w-[1200px]" data-sub2api-keys-table="">
                   <TableHeader>
@@ -1347,6 +1348,7 @@ export default function Sub2ApiPage() {
                   </TableBody>
                 </Table>
               </TableShell>
+              </div>
             )}
           </div>
         )}

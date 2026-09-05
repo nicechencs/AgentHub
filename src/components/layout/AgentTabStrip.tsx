@@ -166,6 +166,7 @@ export function AgentTabStrip(props: AgentTabStripProps) {
       aria-label={ariaLabel}
       onKeyDown={onTabListKeyDown}
       className={cn(segmentedTrackClass, className)}
+      data-help="agent-tabs"
     >
       {showAll ? (
         <Hint label={[allLabel, countHint('all')].filter(Boolean).join(' · ')}>

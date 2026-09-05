@@ -570,7 +570,7 @@ export function SkillMatrix({
   };
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" data-help="skills-matrix">
       <TableShell>
         <Table className="table-fixed" style={{ minWidth: tableMinWidth }}>
           <colgroup>

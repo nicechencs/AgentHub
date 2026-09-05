@@ -341,7 +341,7 @@ export default function RoutesActivityPage() {
         title={t('routes.activity.title')}
         description={t('routes.activity.description')}
       />
-      <div className={pageRhythm.chromeRow}>
+      <div className={pageRhythm.chromeRow} data-help="page-chrome">
         <label className="flex min-w-0 items-center gap-2 text-meta text-secondary">
           <span className="shrink-0">{t('routes.activity.keyFilterAria')}</span>
           <select

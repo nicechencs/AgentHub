@@ -81,6 +81,7 @@ export function TokenList({
   const groups = buildLocalTokenGroups(rows);
 
   return (
+    <div data-help="tokens-list">
     <TableShell layout="split">
       <Table className="table-fixed" style={{ minWidth: totalWidth }}>
         <colgroup>
@@ -189,6 +190,7 @@ export function TokenList({
         </TableBody>
       </Table>
     </TableShell>
+    </div>
   );
 }
 
@@ -287,6 +289,7 @@ function renderColumn(
           size="sm"
           className="h-7 w-7 shrink-0 px-0"
           onClick={copyKey}
+          data-help="tokens-copy"
           aria-label={t('routes.tokens.copy')}
         >
           <Copy className="h-3 w-3" aria-hidden />

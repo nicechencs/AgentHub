@@ -665,7 +665,7 @@ export default function ProjectsPage() {
 
   const listPane = (
     <>
-      <div className={cn(pageRhythm.chromeRow, 'gap-3')}>
+      <div className={cn(pageRhythm.chromeRow, 'gap-3')} data-help="page-chrome">
         {agentsLoading ? (
           <div className="h-9 w-64 animate-pulse rounded-card bg-hover" />
         ) : (
@@ -732,6 +732,7 @@ export default function ProjectsPage() {
 
       <div className={pageRhythm.chromeRow}>
         <SearchField
+          data-help="projects-search"
           className="min-w-[200px] max-w-sm flex-1"
           placeholder={t('projects.page.searchPlaceholder')}
           value={search}

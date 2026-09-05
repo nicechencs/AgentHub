@@ -425,7 +425,7 @@ export default function RoutesTokensPage() {
         title={t('routes.tokens.title')}
         description={t('routes.tokens.description')}
       />
-      <div className={pageRhythm.chromeRow}>
+      <div className={pageRhythm.chromeRow} data-help="page-chrome">
         <p className="min-w-0 truncate text-meta text-muted">{
           !localGateway.running
             && localGateway.profileIds.length === 0

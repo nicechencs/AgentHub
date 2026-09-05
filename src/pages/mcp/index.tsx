@@ -116,7 +116,7 @@ export default function McpPage() {
         descriptionTip={t('mcp.page.descriptionTip', { next: t('mcp.page.nextStep') })}
       />
 
-      <div className={pageRhythm.chromeRow}>
+      <div className={pageRhythm.chromeRow} data-help="page-chrome">
         <AgentTabStrip
           showAll
           allLabel={t('kind.all')}
@@ -142,7 +142,7 @@ export default function McpPage() {
         </div>
       </div>
 
-      <PageSection first>
+      <PageSection first data-help="mcp-list">
         {loading && !data ? (
           <TableSkeleton rows={6} cols={4} />
         ) : error && !data ? (

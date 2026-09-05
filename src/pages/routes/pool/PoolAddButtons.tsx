@@ -266,6 +266,7 @@ export function PoolAddButtons({
 
   return (
     <>
+      <div className="flex flex-wrap items-center gap-2" data-help="pool-add">
       <Button
         type="button"
         size="sm"
@@ -290,6 +291,7 @@ export function PoolAddButtons({
       >
         {t('routes.pool.page.syncFromConnections')}
       </Button>
+      </div>
 
       <Dialog open={syncOpen} onOpenChange={(open) => { if (!syncing) setSyncOpen(open); }}>
         <DialogContent className="max-w-md">

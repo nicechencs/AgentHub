@@ -187,6 +187,7 @@ export function ChatComposer({
       )}
       <div
         ref={paneRef}
+        data-help="chat-composer"
         className={cn(
           'flex min-h-0 flex-col',
           fillHeight ? 'overflow-hidden' : 'shrink-0',
@@ -442,6 +443,7 @@ export function ChatComposer({
               className="h-7 w-7 rounded-btn"
               disabled={!canSend}
               onClick={onSend}
+              data-help="chat-send"
               aria-label={t('chat.composer.send')}
               title={sendHint}
             >

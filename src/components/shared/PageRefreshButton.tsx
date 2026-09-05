@@ -24,6 +24,7 @@ export function PageRefreshButton({
       type="button"
       size="sm"
       variant="secondary"
+      data-help="page-refresh"
       className={cn(className)}
       disabled={disabled || loading}
       onClick={onClick}

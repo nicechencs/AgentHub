@@ -462,7 +462,7 @@ export default function RoutesPoolPage() {
           title={t('routes.pool.page.title')}
           description={t('routes.pool.page.description')}
         />
-        <div className={pageRhythm.chromeRow}>
+        <div className={pageRhythm.chromeRow} data-help="page-chrome">
           {connectionWarning ? (
             <Notice tone="warning" className="min-w-0 flex-1 items-center py-1">
               {connectionWarning}

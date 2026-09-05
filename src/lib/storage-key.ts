@@ -40,6 +40,8 @@ export const StorageKey = {
   /** One-shot: first-launch system language already seeded into core */
   languageSystemSeeded: `${PREFIX}language-system-seeded-v1`,
   onboardingDone: `${PREFIX}onboarding-done`,
+  /** One-shot: first-run hint on the help / feedback buttons */
+  chromeHintDismissed: `${PREFIX}chrome-hint-dismissed`,
   usageGuideDismissed: `${PREFIX}usage-guide-dismissed`,
   dismissedAlertIds: `${PREFIX}dismissed-alert-ids`,
   sidebarCollapsed: `${PREFIX}sidebar-collapsed`,

@@ -169,7 +169,7 @@ export default function PluginsPage() {
         }
         descriptionTip={t('plugins.page.descriptionTip')}
       />
-      <div className={pageRhythm.chromeRow}>
+      <div className={pageRhythm.chromeRow} data-help="page-chrome">
         <AgentTabStrip
           showAll
           allLabel={t('kind.all')}
