@@ -3,7 +3,7 @@ title: Future Proposals
 type: navigation
 status: current
 owner: maintainers
-updated: 2026-08-27
+updated: 2026-09-05
 ---
 
 # Proposals
@@ -24,6 +24,7 @@ Every proposal in this directory has `Status: proposed`. A proposal may be resea
 
 | Proposal | Status | Question it explores |
 |---|---|---|
+| [Chat 统一体验与跨环境开发](chat-unified-experience.md) | proposed | 如何共用聊天交互、逐家接入 Agent，并在换电脑或换开发 Agent 后复现和验收？ |
 | [adapter-sidecar.md](adapter-sidecar.md) | proposed | Could a user-level process own the long-lived local route runtime while GUI and CLI remain clients? |
 | [tray-background-modes.md](tray-background-modes.md) | proposed | Could closing the window reduce WebView memory without changing route ownership or exit semantics? |
 | [modularity.md](modularity.md) | proposed | Which single-source and use-case boundaries should be tightened before any larger process change? |
