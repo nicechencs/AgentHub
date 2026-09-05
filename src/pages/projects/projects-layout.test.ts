@@ -23,6 +23,20 @@ describe('projects split layout', () => {
     expect(page).not.toContain('previewShellMounted');
   });
 
+  it('offers 全部, merges same-path projects, and sorts the list', () => {
+    const page = source('index.tsx');
+    expect(page).toContain('showAll');
+    expect(page).toContain("t('kind.all')");
+    expect(page).toContain('groupProjectsByPath');
+    expect(page).toContain('sortProjectGroups');
+    expect(page).toContain("t('projects.page.sortTime')");
+    expect(page).toContain("t('projects.page.sortAgent')");
+    expect(page).toContain("t('projects.page.sortName')");
+    const tree = source('ProjectTree.tsx');
+    expect(tree).toContain('showSessionAgent');
+    expect(tree).toContain('group.agentIds');
+  });
+
   it('renders excerpt turns as a user/assistant conversation', () => {
     const preview = source('ProjectConversationPreviewPanel.tsx');
     expect(preview).toContain("t('projects.preview.roleUser')");

@@ -11,7 +11,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { WorkbenchSplitPage } from '@/components/layout/SideSplit';
 import { useSideSplit } from '@/components/layout/use-side-split';
-import { AgentTabStrip } from '@/components/layout/AgentTabStrip';
+import { AgentTabStrip, type AgentTabId } from '@/components/layout/AgentTabStrip';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
@@ -30,9 +30,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
-import { AGENT_MAP } from '@/config/agents';
+import { agentDisplayName } from '@/config/agents';
 import {
   deleteAgentSession,
   deleteAgentSessions,
@@ -47,6 +54,7 @@ import { isCapabilityUsable } from '@/lib/capability';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import {
   invalidateProjects,
+  readCachedProjectList,
   rememberProjectAgent,
   rememberedProjectAgent,
   shouldShowProjectListSkeleton,
@@ -54,6 +62,7 @@ import {
   useProjectShowHidden,
 } from '@/lib/hooks/useProjects';
 import { normalizeOpenPath, verifiedProjectWorkspacePath } from '@/lib/path-open';
+import { loadString, saveString, StorageKey } from '@/lib/ui-preferences';
 import type { AgentKey, AgentProject, AgentSession } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { nativeResumeCommand, nativeSessionId, shortSessionId } from './project-format';
@@ -63,6 +72,14 @@ import {
   resolveProjectFetchAgentId,
   resolveProjectTabAgents,
 } from './project-tab-agents';
+import {
+  groupProjectsByPath,
+  parseProjectSortKey,
+  sortProjectGroups,
+  sortSessions,
+  type ProjectGroup,
+  type ProjectSortKey,
+} from './project-groups';
 import { ProjectConversationPreviewPanel } from './ProjectConversationPreviewPanel';
 import { ProjectTree } from './ProjectTree';
 import { nestSessions } from './session-nest';
@@ -74,7 +91,7 @@ import {
   toggleSelectedSession,
   visibleSessionsForProject,
 } from './projects-list-model';
-import { StorageKey } from '@/lib/ui-preferences';
+
 
 const PROJECTS_PREVIEW_WIDTH_KEY = StorageKey.projectsPreviewWidth;
 
@@ -86,11 +103,18 @@ export default function ProjectsPage() {
   const { installedAgents, hiddenIds, loading: agentsLoading } = useInstalledAgents();
   const { showHidden, ready: hiddenReady, setShowHidden } = useProjectShowHidden();
 
-  const agentFromUrl = searchParams.get('agent') as AgentKey | null;
-  const tabAgents = resolveProjectTabAgents(installedAgents, hiddenIds);
+  const agentFromUrl = searchParams.get('agent') as AgentTabId | null;
+  const tabAgents = useMemo(
+    () => resolveProjectTabAgents(installedAgents, hiddenIds),
+    [installedAgents, hiddenIds],
+  );
+  const tabAgentIds = useMemo(() => tabAgents.map((agent) => agent.id), [tabAgents]);
 
-  const [agentId, setAgentId] = useState<AgentKey>(() =>
+  const [agentId, setAgentId] = useState<AgentTabId>(() =>
     resolveInitialProjectAgentId(agentFromUrl, tabAgents, rememberedProjectAgent()),
+  );
+  const [sortKey, setSortKey] = useState<ProjectSortKey>(() =>
+    parseProjectSortKey(loadString(StorageKey.projectsListSort, 'time')),
   );
 
   /** Lazy-loaded sessions keyed by project id */
@@ -110,17 +134,28 @@ export default function ProjectsPage() {
     if (agentId) rememberProjectAgent(agentId);
   }, [agentId]);
 
-  const agentCaps = installedAgents.find((a) => a.id === agentId)?.capabilities;
-  const canDelete = isCapabilityUsable(agentCaps?.projectDelete);
-  const showDelete = canDelete;
-  const agentMeta = AGENT_MAP[agentId];
-  const deleteHint =
-    agentId === 'zcode' && !canDelete
-      ? t('projects.tree.deleteInAgent', { name: agentMeta?.name ?? 'ZCode' })
-      : null;
+  const canDeleteFor = useCallback(
+    (id: AgentKey) => {
+      const caps = installedAgents.find((agent) => agent.id === id)?.capabilities;
+      return isCapabilityUsable(caps?.projectDelete);
+    },
+    [installedAgents],
+  );
+  const showDelete = tabAgents.some((agent) => canDeleteFor(agent.id));
+  const deleteHintFor = useCallback(
+    (id: AgentKey) => {
+      if (canDeleteFor(id)) return null;
+      if (id === 'zcode' || showDelete) {
+        return t('projects.tree.deleteInAgent', { name: agentDisplayName(id) });
+      }
+      return null;
+    },
+    [canDeleteFor, showDelete, t],
+  );
 
   useEffect(() => {
-    if (agentFromUrl && agentFromUrl !== agentId && tabAgents.some((a) => a.id === agentFromUrl)) {
+    if (!agentFromUrl || agentFromUrl === agentId) return;
+    if (agentFromUrl === 'all' || tabAgents.some((a) => a.id === agentFromUrl)) {
       rememberProjectAgent(agentFromUrl);
       setAgentId(agentFromUrl);
     }
@@ -129,36 +164,47 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     if (agentsLoading || tabAgents.length === 0) return;
-    if (!tabAgents.some((a) => a.id === agentId)) {
-      const nextId = resolveInitialProjectAgentId(
-        agentFromUrl,
-        tabAgents,
-        rememberedProjectAgent(),
-      );
-      rememberProjectAgent(nextId);
-      setAgentId(nextId);
-      const next = new URLSearchParams(searchParams);
-      next.set('agent', nextId);
-      setSearchParams(next, { replace: true });
-    }
+    if (agentId === 'all' || tabAgents.some((a) => a.id === agentId)) return;
+    const nextId = resolveInitialProjectAgentId(
+      agentFromUrl,
+      tabAgents,
+      rememberedProjectAgent(),
+    );
+    rememberProjectAgent(nextId);
+    setAgentId(nextId);
+    const next = new URLSearchParams(searchParams);
+    next.set('agent', nextId);
+    setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- URL write is a one-shot fallback
   }, [agentsLoading, tabAgents, agentId]);
 
-  const fetchAgentId = resolveProjectFetchAgentId(tabAgents, agentId);
-  const listEnabled = hiddenReady && !!fetchAgentId;
+  const fetchScope = resolveProjectFetchAgentId(tabAgents, agentId);
+  const listEnabled =
+    hiddenReady && Boolean(fetchScope) && (agentsLoading || tabAgentIds.length > 0);
   const {
     data,
     error,
     loading: listLoading,
     reload,
     replaceProjectListFromMutation,
-  } = useAgentProjectList(fetchAgentId, showHidden, listEnabled);
+  } = useAgentProjectList(fetchScope, showHidden, listEnabled, tabAgentIds);
   const projects = data ?? [];
   const projectCounts = useMemo(() => {
-    const next: Partial<Record<AgentKey, number>> = {};
-    if (fetchAgentId && data) next[fetchAgentId] = data.length;
+    const next: Partial<Record<AgentTabId, number | undefined>> = {};
+    for (const id of tabAgentIds) {
+      const rows = readCachedProjectList(id, showHidden);
+      if (rows) next[id] = rows.length;
+    }
+    if (fetchScope && fetchScope !== 'all' && data) next[fetchScope] = data.length;
+    const allRows =
+      fetchScope === 'all' && data
+        ? data
+        : tabAgentIds.every((id) => next[id] != null)
+          ? tabAgentIds.flatMap((id) => readCachedProjectList(id, showHidden) ?? [])
+          : null;
+    if (allRows) next.all = groupProjectsByPath(allRows, true).length;
     return next;
-  }, [fetchAgentId, data]);
+  }, [data, fetchScope, showHidden, tabAgentIds]);
   const showListSkeleton = shouldShowProjectListSkeleton({
     listLoading,
     data,
@@ -176,7 +222,7 @@ export default function ProjectsPage() {
     preview.reset();
   }, [preview.reset]);
 
-  const setAgent = (id: AgentKey) => {
+  const setAgent = (id: AgentTabId) => {
     rememberProjectAgent(id);
     setAgentId(id);
     resetTree();
@@ -186,8 +232,14 @@ export default function ProjectsPage() {
     setSearchParams(next, { replace: true });
   };
 
+  const changeSort = (value: string) => {
+    const next = parseProjectSortKey(value);
+    setSortKey(next);
+    saveString(StorageKey.projectsListSort, next);
+  };
+
   const reloadProjects = () => {
-    if (!fetchAgentId) return Promise.resolve();
+    if (!fetchScope) return Promise.resolve();
     invalidateProjects();
     return reload();
   };
@@ -217,23 +269,25 @@ export default function ProjectsPage() {
     }
   }, [toast]);
 
-  async function toggleExpand(project: AgentProject) {
-    if (project.agentId === 'cursor' && project.sessionCount === 0) {
+  async function toggleExpand(group: ProjectGroup) {
+    const expandable = group.members.filter(
+      (member) => member.sessionCount > 0 || member.agentId !== 'cursor',
+    );
+    if (expandable.length === 0) {
       toast({
         title: t('projects.toast.cursorNoTranscript'),
         variant: 'danger',
       });
       return;
     }
-    const isOpen = expanded.has(project.id);
+    const isOpen = expanded.has(group.id);
     if (isOpen) {
       setExpanded((prev) => {
         const next = new Set(prev);
-        next.delete(project.id);
+        next.delete(group.id);
         return next;
       });
-      // Drop selection under this project
-      const kids = sessionsByProject[project.id] ?? [];
+      const kids = group.members.flatMap((member) => sessionsByProject[member.id] ?? []);
       if (kids.length > 0) {
         setSelected((prev) => {
           const next = new Set(prev);
@@ -241,13 +295,17 @@ export default function ProjectsPage() {
           return next;
         });
       }
-      if (preview.target?.projectId === project.id) preview.close();
+      if (preview.target && group.members.some((member) => member.id === preview.target?.projectId)) {
+        preview.close();
+      }
       return;
     }
-    setExpanded((prev) => new Set(prev).add(project.id));
-    if (!(project.id in sessionsByProject)) {
-      await loadSessionsFor(project);
-    }
+    setExpanded((prev) => new Set(prev).add(group.id));
+    await Promise.all(
+      expandable
+        .filter((member) => !(member.id in sessionsByProject))
+        .map((member) => loadSessionsFor(member)),
+    );
   }
 
   async function toggleShowHidden() {
@@ -260,13 +318,16 @@ export default function ProjectsPage() {
     }
   }
 
-  async function toggleHideProject(p: AgentProject, e: React.MouseEvent) {
+  async function toggleHideProject(group: ProjectGroup, e: React.MouseEvent) {
     e.stopPropagation();
     setBusy(true);
+    const nextHidden = !group.hidden;
     try {
-      await upsertProjectMeta(p.id, { hidden: !p.hidden });
+      await Promise.all(
+        group.members.map((member) => upsertProjectMeta(member.id, { hidden: nextHidden })),
+      );
       toast({
-        title: p.hidden ? t('projects.toast.unhidden') : t('projects.toast.hidden'),
+        title: nextHidden ? t('projects.toast.hidden') : t('projects.toast.unhidden'),
         variant: 'success',
       });
       await reloadProjects();
@@ -277,9 +338,9 @@ export default function ProjectsPage() {
     }
   }
 
-  async function openProjectWorkspace(p: AgentProject, e: React.MouseEvent) {
+  async function openProjectWorkspace(group: ProjectGroup, e: React.MouseEvent) {
     e.stopPropagation();
-    const target = verifiedProjectWorkspacePath(p);
+    const target = verifiedProjectWorkspacePath(group.primary);
     if (!target) {
       toast({ title: t('projects.toast.pathInvalid'), variant: 'danger' });
       return;
@@ -345,21 +406,34 @@ export default function ProjectsPage() {
   }
 
   const q = search.trim().toLowerCase();
+  const mergeByPath = agentId === 'all';
 
   const visibleProjects = useMemo(
     () => filterVisibleProjects(projects, q, sessionsByProject),
     [projects, q, sessionsByProject],
   );
 
+  const visibleGroups = useMemo(
+    () => sortProjectGroups(groupProjectsByPath(visibleProjects, mergeByPath), sortKey),
+    [visibleProjects, mergeByPath, sortKey],
+  );
+
   const visibleSessions = useCallback(
-    (projectId: string) =>
-      visibleSessionsForProject(projectId, projects, q, sessionsByProject),
-    [sessionsByProject, q, projects],
+    (groupId: string) => {
+      const group = visibleGroups.find((item) => item.id === groupId);
+      const rows = group
+        ? group.members.flatMap((member) =>
+            visibleSessionsForProject(member.id, projects, q, sessionsByProject),
+          )
+        : visibleSessionsForProject(groupId, projects, q, sessionsByProject);
+      return sortSessions(rows, sortKey);
+    },
+    [visibleGroups, sessionsByProject, q, projects, sortKey],
   );
 
   const selectableSessions = useMemo(
-    () => collectSelectableSessions(visibleProjects, expanded, visibleSessions, nestedOpen),
-    [visibleProjects, expanded, visibleSessions, nestedOpen],
+    () => collectSelectableSessions(visibleGroups, expanded, visibleSessions, nestedOpen),
+    [visibleGroups, expanded, visibleSessions, nestedOpen],
   );
 
   function toggleNested(id: string) {
@@ -376,9 +450,9 @@ export default function ProjectsPage() {
     setNestedOpen((prev) => {
       const next = new Set(prev);
       let changed = false;
-      for (const p of visibleProjects) {
-        if (!expanded.has(p.id)) continue;
-        for (const { session, children } of nestSessions(visibleSessions(p.id))) {
+      for (const group of visibleGroups) {
+        if (!expanded.has(group.id)) continue;
+        for (const { session, children } of nestSessions(visibleSessions(group.id))) {
           if (children.length === 0 || next.has(session.id)) continue;
           next.add(session.id);
           changed = true;
@@ -386,7 +460,7 @@ export default function ProjectsPage() {
       }
       return changed ? next : prev;
     });
-  }, [q, visibleProjects, expanded, visibleSessions]);
+  }, [q, visibleGroups, expanded, visibleSessions]);
 
   const allVisibleSelected = allVisibleSessionsSelected(selectableSessions, selected);
 
@@ -439,7 +513,13 @@ export default function ProjectsPage() {
   }
 
   async function handleBatchDelete() {
-    const ids = [...selected];
+    const ids = [...selected].filter((id) => {
+      for (const kids of Object.values(sessionsByProject)) {
+        const hit = kids.find((session) => session.id === id);
+        if (hit) return canDeleteFor(hit.agentId);
+      }
+      return true;
+    });
     if (ids.length === 0) return;
     setBusy(true);
     try {
@@ -512,9 +592,12 @@ export default function ProjectsPage() {
       }
       const cwds = excerpts.map((e) => e.cwd).filter(Boolean) as string[];
       const cwd = cwds.length > 0 && cwds.every((c) => c === cwds[0]) ? cwds[0] : null;
-      const name = agentMeta?.name ?? agentId;
+      const selectedSessions = selectableSessions.filter((item) => selected.has(item.id));
+      const agentIds = [...new Set(selectedSessions.map((item) => item.agentId))];
+      const name =
+        agentIds.length === 1 ? agentDisplayName(agentIds[0]) : t('kind.all');
       const ok = setChatBootstrap({
-        agentIds: [agentId],
+        agentIds: agentIds.length > 0 ? agentIds : agentId === 'all' ? tabAgentIds : [agentId],
         cwd,
         title: t('projects.toast.summarizeTitle', { n: excerpts.length }),
         prompt: buildSummaryPrompt(name, excerpts),
@@ -538,6 +621,8 @@ export default function ProjectsPage() {
           <div className="h-9 w-64 animate-pulse rounded-card bg-hover" />
         ) : (
           <AgentTabStrip
+            showAll
+            allLabel={t('kind.all')}
             value={agentId}
             onChange={setAgent}
             agents={tabAgents}
@@ -545,6 +630,7 @@ export default function ProjectsPage() {
             counts={projectCounts}
             countMode="defined"
             countTitle={(_id, n) => t('projects.page.projectCount', { n })}
+            aria-label={t('projects.page.filterAria')}
           />
         )}
         {selected.size > 0 && (
@@ -602,6 +688,16 @@ export default function ProjectsPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        <Select value={sortKey} onValueChange={changeSort}>
+          <SelectTrigger className="w-[8.75rem]" aria-label={t('projects.page.sortAria')}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="time">{t('projects.page.sortTime')}</SelectItem>
+            <SelectItem value="agent">{t('projects.page.sortAgent')}</SelectItem>
+            <SelectItem value="name">{t('projects.page.sortName')}</SelectItem>
+          </SelectContent>
+        </Select>
         {selectableSessions.length > 0 && showDelete && (
           <Button size="sm" variant="ghost" onClick={toggleAllVisible}>
             {allVisibleSelected ? t('projects.page.deselectAll') : t('projects.page.selectAllExpanded')}
@@ -621,13 +717,15 @@ export default function ProjectsPage() {
           actionLabel={t('projects.empty.goAgents')}
           onAction={() => navigate('/agents')}
         />
-      ) : visibleProjects.length === 0 ? (
+      ) : visibleGroups.length === 0 ? (
         <EmptyState
           icon={FolderKanban}
           title={projects.length === 0 ? t('projects.empty.noProjects') : t('projects.empty.noMatch')}
           description={
             projects.length === 0
-              ? t('projects.empty.noProjectsDesc', { name: agentMeta?.name ?? agentId })
+              ? agentId === 'all'
+                ? t('projects.empty.noProjectsDescAll')
+                : t('projects.empty.noProjectsDesc', { name: agentDisplayName(agentId) })
               : t('projects.empty.noMatchDesc')
           }
           actionLabel={projects.length === 0 ? t('projects.empty.refresh') : t('projects.empty.clearSearch')}
@@ -639,22 +737,21 @@ export default function ProjectsPage() {
         />
       ) : (
         <ProjectTree
-          agentId={agentId}
-          agentMeta={agentMeta}
-          projects={visibleProjects}
+          groups={visibleGroups}
+          showSessionAgent={mergeByPath}
           expanded={expanded}
           loadingProjectIds={loadingProjectIds}
           selected={selected}
           busy={busy}
           showDelete={showDelete}
-          deleteHint={deleteHint}
+          deleteHintFor={deleteHintFor}
           previewSessionId={preview.target?.id ?? null}
           nestedOpen={nestedOpen}
           visibleSessions={visibleSessions}
-          onToggleExpand={(p) => void toggleExpand(p)}
+          onToggleExpand={(group) => void toggleExpand(group)}
           onToggleNested={toggleNested}
-          onOpenProjectWorkspace={(p, e) => void openProjectWorkspace(p, e)}
-          onToggleHideProject={(p, e) => void toggleHideProject(p, e)}
+          onOpenProjectWorkspace={(group, e) => void openProjectWorkspace(group, e)}
+          onToggleHideProject={(group, e) => void toggleHideProject(group, e)}
           onToggleOne={toggleOne}
           onPreviewSession={preview.open}
           onCopySessionId={(s, e) => void copySessionId(s, e)}

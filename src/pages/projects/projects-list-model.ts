@@ -40,7 +40,7 @@ export function visibleSessionsForProject(
 }
 
 export function collectSelectableSessions(
-  visibleProjects: AgentProject[],
+  visibleProjects: readonly { id: string }[],
   expanded: Set<string>,
   visibleSessionsFn: (projectId: string) => AgentSession[],
   nestedOpen: Set<string> = new Set(),

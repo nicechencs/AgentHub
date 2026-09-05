@@ -74,6 +74,8 @@ export const StorageKey = {
   agentsCatalogOrder: `${PREFIX}agents-catalog-order`,
   /** Last Projects tab; used to preload that agent's list on boot. */
   projectsLastAgent: `${PREFIX}projects-last-agent`,
+  /** Projects list sort: time | agent | name */
+  projectsListSort: `${PREFIX}projects-list-sort`,
   /** Last workspace chosen on the project-skills tab. */
   skillsProjectWorkspace: `${PREFIX}skills-project-workspace`,
   ...LAYOUT_STORAGE_KEY,
