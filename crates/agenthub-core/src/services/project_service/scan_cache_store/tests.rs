@@ -19,6 +19,8 @@ fn put_and_get_fresh_roundtrip() {
             message_count: Some(2),
             updated_at: "t0".into(),
             session_id: Some("sid-1".into()),
+            parent_session_id: None,
+            thread_kind: None,
         },
     );
     store.save_if_dirty();

@@ -20,7 +20,7 @@ const LEGACY_JSON: &str = "project_session_index.json";
 const SCHEMA_VERSION: i32 = 1;
 const SURFACE_SESSIONS: &str = "sessions";
 const SURFACE_PATHS: &str = "paths";
-const PARSER_SESSIONS: u32 = 2;
+const PARSER_SESSIONS: u32 = 3;
 const PARSER_PATHS: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,6 +39,10 @@ pub struct IndexEntry {
     pub updated_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_kind: Option<String>,
 }
 
 pub struct SessionIndexStore {

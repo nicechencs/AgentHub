@@ -82,7 +82,7 @@ import {
 } from './project-groups';
 import { ProjectConversationPreviewPanel } from './ProjectConversationPreviewPanel';
 import { ProjectTree } from './ProjectTree';
-import { nestSessions } from './session-nest';
+import { nestSessions, reviewsForParent } from './session-nest';
 import {
   allVisibleSessionsSelected,
   collectSelectableSessions,
@@ -816,9 +816,14 @@ export default function ProjectsPage() {
     </>
   );
 
+  const previewReviewSessions = preview.target
+    ? reviewsForParent(preview.target, sessionsByProject[preview.target.projectId] ?? [])
+    : [];
+
   const previewPanel = preview.target ? (
     <ProjectConversationPreviewPanel
       session={preview.target}
+      reviewSessions={previewReviewSessions}
       open
       width={preview.paneWidth}
       onClose={preview.close}

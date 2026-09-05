@@ -3,7 +3,9 @@
  *
  * Core now emits role-tagged blocks (`---turn:user---` / `---turn:assistant---`)
  * so markdown horizontal rules inside a reply are not treated as turn splits.
- * Legacy excerpts still join pieces with a `---` line; even index is user.
+ * Optional `---doc:convention---` holds project instructions pulled out of the
+ * first user turn. Legacy excerpts still join pieces with a `---` line; even
+ * index is user.
  */
 
 export type ExcerptTurnRole = 'user' | 'assistant';
@@ -11,6 +13,18 @@ export type ExcerptTurnRole = 'user' | 'assistant';
 export type ExcerptTurn = {
   role: ExcerptTurnRole;
   text: string;
+};
+
+export type ExcerptDocument = {
+  convention: string | null;
+  turns: ExcerptTurn[];
+};
+
+export type ApprovalDecision = {
+  outcome: string;
+  rationale: string;
+  riskLevel?: string;
+  raw: string;
 };
 
 export function excerptTurnsToRecordLines(
@@ -23,52 +37,104 @@ export function excerptTurnsToRecordLines(
   }));
 }
 
-const ROLE_MARKER = /^---turn:(user|assistant)---\s*$/;
+const TURN_MARKER = /^---turn:(user|assistant)---\s*$/;
+const DOC_MARKER = /^---doc:([a-z]+)---\s*$/;
 
 export function splitExcerptTurns(excerpt: string): ExcerptTurn[] {
+  return splitExcerptDocument(excerpt).turns;
+}
+
+export function splitExcerptDocument(excerpt: string): ExcerptDocument {
   const text = excerpt.replace(/\r\n/g, '\n').trim();
-  if (!text) return [];
-  if (hasRoleMarkers(text)) {
-    return splitRoleTaggedTurns(text);
+  if (!text) return { convention: null, turns: [] };
+  if (hasBlockMarkers(text)) {
+    return splitTaggedDocument(text);
   }
-  return text
-    .split(/^\s*---\s*$/m)
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part, index) => ({
-      role: (index % 2 === 0 ? 'user' : 'assistant') as ExcerptTurnRole,
-      text: part,
-    }));
+  return {
+    convention: null,
+    turns: text
+      .split(/^\s*---\s*$/m)
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part, index) => ({
+        role: (index % 2 === 0 ? 'user' : 'assistant') as ExcerptTurnRole,
+        text: part,
+      })),
+  };
 }
 
-function hasRoleMarkers(text: string): boolean {
-  return text.split('\n').some((line) => ROLE_MARKER.test(line));
+function hasBlockMarkers(text: string): boolean {
+  return text.split('\n').some((line) => TURN_MARKER.test(line) || DOC_MARKER.test(line));
 }
 
-function splitRoleTaggedTurns(text: string): ExcerptTurn[] {
+function splitTaggedDocument(text: string): ExcerptDocument {
   const turns: ExcerptTurn[] = [];
+  let convention: string | null = null;
+  let kind: 'turn' | 'doc' | null = null;
   let role: ExcerptTurnRole | null = null;
   const buf: string[] = [];
   const flush = () => {
-    if (!role) {
-      buf.length = 0;
-      return;
-    }
     const body = buf.join('\n').trim();
     buf.length = 0;
-    if (body) turns.push({ role, text: body });
+    if (!body) {
+      kind = null;
+      role = null;
+      return;
+    }
+    if (kind === 'doc') {
+      if (!convention) convention = body;
+    } else if (kind === 'turn' && role) {
+      turns.push({ role, text: body });
+    }
+    kind = null;
+    role = null;
   };
   for (const line of text.split('\n')) {
-    const marked = line.match(ROLE_MARKER);
-    if (marked) {
+    const turn = line.match(TURN_MARKER);
+    if (turn) {
       flush();
-      role = marked[1] as ExcerptTurnRole;
+      kind = 'turn';
+      role = turn[1] as ExcerptTurnRole;
+      continue;
+    }
+    const doc = line.match(DOC_MARKER);
+    if (doc) {
+      flush();
+      kind = 'doc';
+      role = null;
       continue;
     }
     buf.push(line);
   }
   flush();
-  return turns;
+  return { convention, turns };
+}
+
+export function parseApprovalDecisions(turns: ExcerptTurn[]): ApprovalDecision[] {
+  const out: ApprovalDecision[] = [];
+  for (const turn of turns) {
+    if (turn.role !== 'assistant') continue;
+    const parsed = parseApprovalJson(turn.text);
+    if (parsed) out.push(parsed);
+  }
+  return out;
+}
+
+function parseApprovalJson(text: string): ApprovalDecision | null {
+  const raw = text.trim();
+  if (!raw.startsWith('{') || !raw.includes('outcome')) return null;
+  try {
+    const value = JSON.parse(raw) as Record<string, unknown>;
+    if (typeof value.outcome !== 'string' || !value.outcome.trim()) return null;
+    return {
+      outcome: value.outcome.trim(),
+      rationale: typeof value.rationale === 'string' ? value.rationale.trim() : '',
+      riskLevel: typeof value.risk_level === 'string' ? value.risk_level : undefined,
+      raw,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export type ExcerptLoadResult =

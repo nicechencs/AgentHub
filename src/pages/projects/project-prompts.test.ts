@@ -50,6 +50,22 @@ describe('buildContinuePrompt', () => {
     expect(prompt).not.toContain('上次话题预览');
   });
 
+  it('does not put project instructions into the continue prompt', () => {
+    const excerpt = [
+      '---doc:convention---',
+      '# AGENTS.md',
+      '日常合入 dev',
+      '---turn:user---',
+      '帮我看看当前界面',
+      '---turn:assistant---',
+      '先看连接页。',
+    ].join('\n');
+    const prompt = buildContinuePrompt(session(), { excerpt });
+    expect(prompt).toContain('帮我看看当前界面');
+    expect(prompt).not.toContain('日常合入 dev');
+    expect(prompt).not.toContain('---doc:convention---');
+  });
+
   it('notes when the file was not fully read', () => {
     const prompt = buildContinuePrompt(session(), {
       excerpt: '---turn:user---\nhello\n---turn:assistant---\nworld',

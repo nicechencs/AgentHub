@@ -62,6 +62,9 @@ describe('projects split layout', () => {
     expect(preview).toContain("t('projects.preview.copyRecord')");
     expect(preview).toContain("t('projects.preview.copyTurn')");
     expect(preview).toContain("t('projects.preview.truncated')");
+    expect(preview).toContain("t('projects.preview.convention')");
+    expect(preview).toContain("t('projects.preview.approvals')");
+    expect(preview).toContain("t('projects.preview.backToConversation')");
     expect(preview).toContain('CopyTextButton');
     expect(preview).toContain('reloadKey');
   });

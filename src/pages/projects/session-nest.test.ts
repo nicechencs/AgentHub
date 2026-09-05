@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentSession } from '@/lib/types';
-import { cursorSubagentParentId, flattenVisibleSessions, nestSessions } from './session-nest';
+import {
+  cursorSubagentParentId,
+  flattenVisibleSessions,
+  nestSessions,
+  reviewsForParent,
+} from './session-nest';
 
 function session(
   partial: Partial<AgentSession> & Pick<AgentSession, 'id' | 'relativePath'>,
@@ -71,6 +76,30 @@ describe('session-nest', () => {
     expect(
       flattenVisibleSessions([parent, child], new Set(['parent'])).map((s) => s.id),
     ).toEqual(['parent', 'child']);
+  });
+
+  it('keeps Codex review threads off the visible list', () => {
+    const parent = session({
+      id: 'codex-parent',
+      agentId: 'codex',
+      relativePath: 'sessions/2026/09/05/rollout-parent.jsonl',
+      sessionId: 'parent-1',
+      title: '帮我看看当前界面',
+    });
+    const review = session({
+      id: 'codex-review',
+      agentId: 'codex',
+      relativePath: 'sessions/2026/09/05/rollout-review.jsonl',
+      sessionId: 'review-1',
+      parentSessionId: 'parent-1',
+      threadKind: 'review',
+      title: '# AGENTS.md instructions',
+    });
+    expect(nestSessions([parent, review]).map((n) => n.session.id)).toEqual(['codex-parent']);
+    expect(flattenVisibleSessions([parent, review], new Set()).map((s) => s.id)).toEqual([
+      'codex-parent',
+    ]);
+    expect(reviewsForParent(parent, [parent, review]).map((s) => s.id)).toEqual(['codex-review']);
   });
 
   it('hangs Claude and Kimi subagent paths under the parent id', () => {
