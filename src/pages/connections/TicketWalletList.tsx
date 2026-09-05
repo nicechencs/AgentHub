@@ -79,7 +79,9 @@ import {
   ticketSwitchChip,
   ticketCredentialClassChipLabel,
   TICKET_WALLET_COLUMN_SPECS,
+  formatDetailTimestamp,
   ticketWalletColumnLabel,
+  ticketWalletQuotaParts,
   ticketDetailEditLabel,
   oauthActionHoverTip,
   ticketRefreshDisabledReason,
@@ -528,6 +530,8 @@ function TicketRow({
   const switching = switchingId === ticket.id;
   const switchBusy = switchingId !== null;
   const title = ticketCardTitle(ticket, extras);
+  const lastUsed = formatDetailTimestamp(extras?.lastUsedAt);
+  const quotaParts = ticketWalletQuotaParts(extras);
 
   return (
     <TableRow
@@ -572,6 +576,24 @@ function TicketRow({
           <Badge variant="default" className={authChip.mono ? 'font-mono' : undefined}>
             {authChip.label}
           </Badge>
+        ) : (
+          <TableEmptyCell />
+        )}
+      </TableCell>
+      <TableCell data-col="lastUsed" className="whitespace-nowrap">
+        {lastUsed ? (
+          <span className="text-meta text-secondary">{lastUsed}</span>
+        ) : (
+          <TableEmptyCell />
+        )}
+      </TableCell>
+      <TableCell data-col="usage" className="whitespace-nowrap">
+        {quotaParts.length > 0 ? (
+          <div className="flex flex-col gap-0.5 text-meta text-secondary">
+            {quotaParts.map((part) => (
+              <span key={part}>{part}</span>
+            ))}
+          </div>
         ) : (
           <TableEmptyCell />
         )}

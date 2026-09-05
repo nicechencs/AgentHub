@@ -3,14 +3,27 @@
  */
 import type { ColumnWidthSpec } from '@/components/ui/table';
 import type { TranslateFn } from '@/lib/i18n';
+import {
+  hasOfficialQuotaWindow,
+  type TicketDetailExtras,
+} from './ticket-card-detail';
 
-export type TicketWalletColumnKey = 'login' | 'kind' | 'status' | 'agent' | 'actions';
+export type TicketWalletColumnKey =
+  | 'login'
+  | 'kind'
+  | 'status'
+  | 'lastUsed'
+  | 'usage'
+  | 'agent'
+  | 'actions';
 
 export const TICKET_WALLET_COLUMN_SPECS: ColumnWidthSpec<TicketWalletColumnKey>[] = [
-  { key: 'login', defaultWidth: 240, minWidth: 160 },
-  { key: 'kind', defaultWidth: 120, minWidth: 88 },
-  { key: 'status', defaultWidth: 120, minWidth: 88 },
-  { key: 'agent', defaultWidth: 140, minWidth: 96 },
+  { key: 'login', defaultWidth: 200, minWidth: 148 },
+  { key: 'kind', defaultWidth: 104, minWidth: 80 },
+  { key: 'status', defaultWidth: 104, minWidth: 80 },
+  { key: 'lastUsed', defaultWidth: 148, minWidth: 120 },
+  { key: 'usage', defaultWidth: 128, minWidth: 96 },
+  { key: 'agent', defaultWidth: 120, minWidth: 88 },
   { key: 'actions', defaultWidth: 176, minWidth: 128 },
 ];
 
@@ -25,9 +38,25 @@ export function ticketWalletColumnLabel(
       return t('connections.list.table.kind');
     case 'status':
       return t('connections.list.table.status');
+    case 'lastUsed':
+      return t('connections.list.lastUsedAt');
+    case 'usage':
+      return t('connections.list.usage');
     case 'agent':
       return t('connections.list.table.agent');
     case 'actions':
       return t('connections.list.table.actions');
   }
+}
+
+/** Compact 7d / 5h percents for the connections table. Empty when unknown. */
+export function ticketWalletQuotaParts(
+  extras?: Pick<TicketDetailExtras, 'quota5hPct' | 'quota7dPct'> | null,
+): string[] {
+  const parts: string[] = [];
+  const pct7d = extras?.quota7dPct;
+  const pct5h = extras?.quota5hPct;
+  if (hasOfficialQuotaWindow(pct7d)) parts.push(`7d ${pct7d}%`);
+  if (hasOfficialQuotaWindow(pct5h)) parts.push(`5h ${pct5h}%`);
+  return parts;
 }

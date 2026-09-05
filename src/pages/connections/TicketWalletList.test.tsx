@@ -87,8 +87,12 @@ describe('TicketWalletList details', () => {
     expect(markup).toContain('data-col="login"');
     expect(markup).toContain('data-col="kind"');
     expect(markup).toContain('data-col="status"');
+    expect(markup).toContain('data-col="lastUsed"');
+    expect(markup).toContain('data-col="usage"');
     expect(markup).toContain('data-col="agent"');
     expect(markup).toContain('data-col="actions"');
+    expect(markup).toContain('最近使用');
+    expect(markup).toContain('用量');
     expect(markup).toContain('data-table-layout="split"');
     expect(markup).toContain('data-ticket-name="provider:kimi-1"');
     expect(markup).not.toMatch(/<tr[^>]*tabindex="0"/);
@@ -220,6 +224,38 @@ describe('TicketWalletList details', () => {
     expect(markup).not.toContain('(直连)');
     expect(markup).not.toContain('正用于：');
     expect(markup).not.toContain('mt-1 pl-5');
+  });
+
+  it('shows last used and usage percents on the row', () => {
+    const wallet = sampleWallet();
+    wallet.tickets = [{
+      id: 'account:codex-1',
+      sourceKind: 'account',
+      sourceId: 'codex-1',
+      agentId: 'codex',
+      label: 'ChatGPT Plus',
+      surface: 'codex-chatgpt-subscription',
+      credentialClass: 'oauth',
+      speaks: ['openai-responses'],
+      importedFrom: 'codex',
+    }];
+    wallet.bindings = [];
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet,
+        onImportToPool() {},
+        extrasForTicket: () => ({
+          lastUsedAt: '2026-08-28T08:00:00.000Z',
+          quota7dPct: 40,
+          quota5hPct: 12,
+        }),
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(markup).toContain('7d 40%');
+    expect(markup).toContain('5h 12%');
+    expect(markup).toMatch(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
   });
 
   it('does not put 本机路由 or pool rotation copy on the Agent column', () => {
