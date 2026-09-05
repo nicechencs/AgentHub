@@ -16,7 +16,7 @@ import {
   projectGroupListTemplate,
   type ProjectCardColumnKey,
 } from './project-card-columns';
-import { groupCanExpand, type ProjectGroup } from './project-groups';
+import { groupCanExpand, type ProjectGroup, type ProjectSortKey } from './project-groups';
 import {
   displayTitle,
   fmtBytes,
@@ -31,7 +31,7 @@ import {
   sessionPageCount,
   sliceSessionPage,
 } from './projects-list-model';
-import { nestSessions, nestedSessionLabel } from './session-nest';
+import { nestedSessionLabel, nestedSessionRows } from './session-nest';
 
 const COLUMN_WIDTHS_STORAGE_KEY = StorageKey.projectsColumnWidths;
 
@@ -68,6 +68,7 @@ export type ProjectTreeProps = {
   onGoContinue: (s: AgentSession) => void;
   onRequestDelete: (s: AgentSession) => void;
   queryKey?: string;
+  sortKey?: ProjectSortKey;
 };
 
 export function ProjectTree(props: ProjectTreeProps) {
@@ -133,6 +134,7 @@ const ProjectGroupCard = memo(function ProjectGroupCard({
   onGoContinue,
   onRequestDelete,
   queryKey = '',
+  sortKey = 'time',
   resizeTabbable,
   onResizeStart,
   onResizeKeyDown,
@@ -148,10 +150,10 @@ const ProjectGroupCard = memo(function ProjectGroupCard({
 
   useEffect(() => {
     setPage(0);
-  }, [queryKey, group.id]);
+  }, [queryKey, sortKey, group.id]);
 
   const kids = keepPane ? visibleSessions(group.id) : [];
-  const nested = keepPane ? nestSessions(kids) : [];
+  const nested = keepPane ? nestedSessionRows(kids, sortKey) : [];
   const pages = sessionPageCount(nested.length);
   const currentPage = clampSessionPage(page, nested.length);
   const pageRows = keepPane ? sliceSessionPage(nested, currentPage) : [];
@@ -302,7 +304,7 @@ const ProjectGroupCard = memo(function ProjectGroupCard({
               </ul>
               {pages > 1 && (
                 <div
-                  className="flex items-center justify-end gap-2 border-t border-border px-3 py-2"
+                  className="flex items-center justify-start gap-2 border-t border-border px-3 py-2"
                   role="navigation"
                   aria-label={t('projects.tree.pageAria')}
                 >
@@ -351,6 +353,7 @@ const ProjectGroupCard = memo(function ProjectGroupCard({
     prev.showDelete === next.showDelete &&
     prev.showSessionAgent === next.showSessionAgent &&
     prev.queryKey === next.queryKey &&
+    prev.sortKey === next.sortKey &&
     prev.visibleSessions === next.visibleSessions &&
     prev.resizeTabbable === next.resizeTabbable &&
     prev.onResizeStart === next.onResizeStart &&

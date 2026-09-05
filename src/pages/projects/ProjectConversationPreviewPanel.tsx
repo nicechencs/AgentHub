@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import { relativeTime } from './project-format';
 import { formatSessionRecordText } from '@/lib/session-record-text';
 import {
+  buildPreviewTimeline,
   classifyExcerptRows,
   excerptTurnsToRecordLines,
   parseApprovalDecisions,
@@ -135,7 +136,10 @@ export function ProjectConversationPreviewPanel({
       (rows) => {
         if (session.id !== expectedId) return;
         const decisions = rows.flatMap((row) =>
-          parseApprovalDecisions(splitExcerptDocument(row.excerpt ?? '').turns),
+          parseApprovalDecisions(splitExcerptDocument(row.excerpt ?? '').turns).map((item) => ({
+            ...item,
+            at: item.at ?? row.updatedAt,
+          })),
         );
         setApprovals(decisions);
       },
@@ -167,8 +171,8 @@ export function ProjectConversationPreviewPanel({
   const parsed = phase === 'ready' ? splitExcerptDocument(excerpt) : { convention: null, turns: [] };
   const turns = parsed.turns;
   const convention = parsed.convention;
-  const showConvention = Boolean(convention);
-  const showApprovals = approvals.length > 0 || reviewSessions.length > 0;
+  const timeline =
+    phase === 'ready' ? buildPreviewTimeline(convention, turns, approvals) : [];
   const agentMeta = AGENT_MAP[session.agentId];
   const record = normalizeOpenPath(session.path);
   const cwd = session.cwd?.trim() || null;
@@ -386,37 +390,55 @@ export function ProjectConversationPreviewPanel({
                 {t('projects.preview.truncated')}
               </Notice>
             ) : null}
-            {showConvention || showApprovals ? (
-              <div className="flex flex-wrap gap-x-3 gap-y-1">
-                {showConvention ? (
-                  <button
-                    type="button"
-                    className="text-meta text-accent hover:underline"
-                    onClick={() => setLayer('convention')}
-                  >
-                    {t('projects.preview.convention')}
-                  </button>
-                ) : null}
-                {showApprovals ? (
-                  <button
-                    type="button"
-                    className="text-meta text-accent hover:underline"
-                    onClick={() => setLayer('approvals')}
-                  >
-                    {approvals.length > 0
-                      ? t('projects.preview.approvalsCount', { n: approvals.length })
-                      : t('projects.preview.approvals')}
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
             {turns.length > 0 ? (
               <p className="text-meta text-muted">{t('projects.preview.turns', { n: turns.length })}</p>
-            ) : (
+            ) : timeline.length === 0 ? (
               <p className="py-6 text-body text-muted">{t('projects.preview.empty')}</p>
-            )}
+            ) : null}
             <ol className="space-y-3">
-              {turns.map((turn, index) => {
+              {timeline.map((item, index) => {
+                if (item.kind === 'convention') {
+                  return (
+                    <li key={`convention:${index}`} className="flex justify-start">
+                      <button
+                        type="button"
+                        className="rounded-btn border border-border bg-subtle px-3 py-1.5 text-left text-meta text-accent hover:underline"
+                        onClick={() => setLayer('convention')}
+                      >
+                        {t('projects.preview.convention')}
+                      </button>
+                    </li>
+                  );
+                }
+                if (item.kind === 'approval') {
+                  const decision = item.decision;
+                  return (
+                    <li key={`approval:${index}:${decision.outcome}`} className="flex justify-start">
+                      <button
+                        type="button"
+                        className="max-w-[92%] rounded-btn border border-border bg-subtle px-3 py-1.5 text-left"
+                        onClick={() => setLayer('approvals')}
+                      >
+                        <span
+                          className={cn(
+                            'text-meta font-medium',
+                            decision.outcome === 'deny' ? 'text-danger' : 'text-accent',
+                          )}
+                        >
+                          {t('projects.preview.approvals')}
+                          {' · '}
+                          {approvalOutcomeLabel(decision.outcome, t)}
+                        </span>
+                        {decision.rationale ? (
+                          <span className="mt-0.5 block text-meta text-secondary line-clamp-2">
+                            {decision.rationale}
+                          </span>
+                        ) : null}
+                      </button>
+                    </li>
+                  );
+                }
+                const turn = item.turn;
                 const userish = turn.role === 'user';
                 return (
                   <li

@@ -20,6 +20,9 @@ const LEGACY_JSON: &str = "project_session_index.json";
 const SCHEMA_VERSION: i32 = 1;
 const SURFACE_SESSIONS: &str = "sessions";
 const SURFACE_PATHS: &str = "paths";
+/// Bump when `IndexEntry` fields or session-file parse meaning changes.
+/// `get_fresh` requires an exact match, so older rows miss and the file is read again.
+/// 2 = session id only; 3 = parent + thread kind; 4 = agent role (subagent / review).
 const PARSER_SESSIONS: u32 = 4;
 const PARSER_PATHS: u32 = 1;
 
@@ -398,6 +401,12 @@ struct LegacyEntry {
     updated_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parent_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    thread_kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    agent_role: Option<String>,
 }
 
 pub fn mtime_ms_from_system(t: SystemTime) -> u64 {
