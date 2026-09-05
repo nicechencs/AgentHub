@@ -106,7 +106,7 @@ The only base component family is `src/components/ui/` using the existing shadcn
 | Open folder | `OpenDirButton` | Ghost icon-only, or ghost + 「目录」 next to a path |
 | Search | `SearchField` | Use the shared icon, height, and focus behavior |
 
-Use lucide icons for familiar icon-only actions. Every unfamiliar icon button needs a `Hint`. A text button is appropriate when the command itself is the thing the user must scan, such as “添加登录” or “重试”. New chrome icon buttons use `Button size="icon" variant="ghost"` on a 28px target.
+Use lucide icons for familiar icon-only actions. Every `size="icon"` Button must have `aria-label` or `aria-labelledby`; `title` / `Hint` is the hover label, not the accessible name. Icon-only is for familiar tools: page help, feedback, notifications, overflow (more), overlay copy, open folder in a toolbar, close/collapse, chat send, show/hide (row or secret), session settings, in-row edit/delete in a dense table, and the Agents upgrade control. A labeled button is required when the command itself is the thing the user must scan, such as “添加登录” or “重试”. New chrome icon buttons use `Button size="icon" variant="ghost"` on a 28px target.
 
 ### 4.2 Surfaces and selection
 

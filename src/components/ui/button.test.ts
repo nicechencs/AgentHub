@@ -20,6 +20,55 @@ const VARIANTS = [
 
 const SIZES = ['default', 'sm', 'lg', 'icon'] as const;
 
+function buttonOpeningTags(text: string): string[] {
+  const tags: string[] = [];
+  let i = 0;
+  while (i < text.length) {
+    const start = text.indexOf('<Button', i);
+    if (start < 0) break;
+    const after = text[start + 7];
+    if (after && /[A-Za-z]/.test(after)) {
+      i = start + 7;
+      continue;
+    }
+    let j = start + 7;
+    let quote: string | null = null;
+    let depth = 0;
+    while (j < text.length) {
+      const ch = text[j];
+      if (quote) {
+        if (ch === quote) quote = null;
+        j += 1;
+        continue;
+      }
+      if (ch === '"' || ch === "'" || ch === '`') {
+        quote = ch;
+        j += 1;
+        continue;
+      }
+      if (ch === '{') depth += 1;
+      else if (ch === '}') depth = Math.max(0, depth - 1);
+      else if (ch === '>' && depth === 0) {
+        tags.push(text.slice(start, j + 1));
+        break;
+      }
+      j += 1;
+    }
+    i = start + 7;
+  }
+  return tags;
+}
+
+function isIconSizeTag(tag: string): boolean {
+  return (
+    /\bsize="icon"/.test(tag)
+    || /\bsize=\{'icon'\}/.test(tag)
+    || /\bsize=\{"icon"\}/.test(tag)
+    || /\?\s*'icon'/.test(tag)
+    || /\?\s*"icon"/.test(tag)
+  );
+}
+
 function walkSourceFiles(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
     if (name === 'node_modules') continue;
@@ -81,6 +130,26 @@ describe('buttonVariants (docs/ui-design.md §2 Button)', () => {
     expect(buttonVariants({ variant: 'outline' })).toContain('hover:bg-hover');
     expect(buttonVariants({ variant: 'danger' })).toContain('hover:bg-danger/90');
     expect(buttonVariants({ variant: 'dangerOutline' })).toContain('hover:bg-danger/10');
+  });
+});
+
+describe('icon-only buttons', () => {
+  it('gives every size=icon Button an accessible name', () => {
+    const files = walkSourceFiles(srcRoot);
+    const offenders: string[] = [];
+
+    for (const file of files) {
+      const text = readFileSync(file, 'utf8');
+      if (!text.includes('<Button')) continue;
+      for (const tag of buttonOpeningTags(text)) {
+        if (!isIconSizeTag(tag)) continue;
+        if (!/\baria-label=/.test(tag) && !/\baria-labelledby=/.test(tag)) {
+          offenders.push(`${path.relative(srcRoot, file)}: ${tag.replace(/\s+/g, ' ').slice(0, 120)}`);
+        }
+      }
+    }
+
+    expect(offenders).toEqual([]);
   });
 });
 
