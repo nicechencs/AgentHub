@@ -12,7 +12,9 @@ import {
 import type { AgentStatus } from '@/lib/types';
 import { Hint } from '@/components/ui/tooltip';
 import { collapsedAfterPrimaryNavClick } from '@/components/layout/sidebar-collapse-override';
+import { NavResizeHandle } from '@/components/layout/NavResizeHandle';
 import { useSidebar } from '@/components/layout/SidebarContext';
+import { useSidebarWidth } from '@/components/layout/use-sidebar-width';
 import {
   manageNavItems,
   navItemInDevelopment,
@@ -244,6 +246,7 @@ function SidebarAgentStrip({
 /** 侧边导航:可折叠;底部为 agent 在线状态迷你条 */
 export function Sidebar() {
   const { collapsed, setCollapsed, toggle, routesNavVisible, pluginsNavVisible, sub2apiNavVisible } = useSidebar();
+  const width = useSidebarWidth(collapsed);
   const { pathname } = useLocation();
   const { t } = useI18n();
   const { statuses: agents } = useAgentStatusesOptional();
@@ -301,11 +304,8 @@ export function Sidebar() {
   return (
     <>
       <aside
-        className={cn(
-          pageRhythm.shellNav,
-          collapsed ? 'w-14' : 'w-56',
-          'transition-[width] duration-200 ease-in-out',
-        )}
+        className={cn(pageRhythm.shellNav, 'relative', width.widthTransition)}
+        style={{ width: width.width }}
         onContextMenu={openRailMenu}
       >
         {/* 品牌 + 折叠按钮 */}
@@ -386,7 +386,8 @@ export function Sidebar() {
           visibleTotal={stats.visibleTotal}
           orderedInstalledMetas={stats.orderedInstalledMetas}
         />
-        </aside>
+        {!collapsed && <NavResizeHandle label={t('nav.resizeSidebar')} width={width} />}
+      </aside>
       <ContextMenu open={railMenu !== null} point={railMenu} onClose={closeRailMenu}>
         {collapsed ? (
           <ContextMenuItem onSelect={expandFromRailMenu}>

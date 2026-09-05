@@ -29,6 +29,8 @@ describe('StorageKey', () => {
 
   it('keeps layout keys on the kebab catalog', () => {
     expect({
+      sidebarWidth: StorageKey.sidebarWidth,
+      routesNavWidth: StorageKey.routesNavWidth,
       skillsPreviewWidth: StorageKey.skillsPreviewWidth,
       skillsMatrixLegendOpen: StorageKey.skillsMatrixLegendOpen,
       skillsMatrixColumnWidths: StorageKey.skillsMatrixColumnWidths,
@@ -51,6 +53,8 @@ describe('StorageKey', () => {
       chatComposerPaneHeight: StorageKey.chatComposerPaneHeight,
       chatBootstrap: StorageKey.chatBootstrap,
     }).toEqual({
+      sidebarWidth: 'agenthub:sidebar-width',
+      routesNavWidth: 'agenthub:routes-nav-width',
       skillsPreviewWidth: 'agenthub:skills-preview-width',
       skillsMatrixLegendOpen: 'agenthub:skills-matrix-legend-open',
       skillsMatrixColumnWidths: 'agenthub:skills-matrix-column-widths',

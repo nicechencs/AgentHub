@@ -53,4 +53,14 @@ describe('routes-nav-items', () => {
     expect(nav).toContain('strokeWidth={1.6}');
     expect(nav).toContain('absoluteStrokeWidth');
   });
+
+  it('lets the expanded secondary rail be dragged and remembers the width', () => {
+    const nav = readFileSync(path.join(dir, 'RoutesNav.tsx'), 'utf8');
+    expect(nav).toContain('useNavWidth');
+    expect(nav).toContain('ROUTES_NAV_WIDTH');
+    expect(nav).toContain('StorageKey.routesNavWidth');
+    expect(nav).toContain('NavResizeHandle');
+    expect(nav).toContain("t('routes.nav.resize')");
+    expect(nav).not.toContain('w-12 lg:w-48');
+  });
 });

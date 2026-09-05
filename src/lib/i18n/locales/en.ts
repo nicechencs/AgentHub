@@ -51,6 +51,7 @@ export const en = {
     settings: 'Settings',
     expandSidebar: 'Expand sidebar',
     collapseSidebar: 'Collapse sidebar',
+    resizeSidebar: 'Resize sidebar',
     updateAvailable: 'Update available v{version}',
     agentsInstalled: '{installed}/{total} agents installed',
     noAgentInstalled: 'No agent installed',
@@ -1200,6 +1201,7 @@ export const en = {
     nav: {
       title: "Routes",
       aria: "Routes section",
+      resize: "Resize width",
       list: "Route list",
       board: "Board",
       pool: "Connection pool",

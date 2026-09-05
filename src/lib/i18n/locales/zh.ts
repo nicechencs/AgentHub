@@ -50,6 +50,7 @@ export const zh = {
     settings: '设置',
     expandSidebar: '展开侧栏',
     collapseSidebar: '收起侧栏',
+    resizeSidebar: '拖动调整侧栏宽度',
     updateAvailable: '有可用更新 v{version}',
     agentsInstalled: '{installed}/{total} 个 Agent 已安装',
     noAgentInstalled: '未安装 Agent',
@@ -1188,6 +1189,7 @@ export const zh = {
     nav: {
       title: "路由",
       aria: "路由分区",
+      resize: "拖动调整宽度",
       list: "路由列表",
       board: "看板",
       pool: "连接池",
