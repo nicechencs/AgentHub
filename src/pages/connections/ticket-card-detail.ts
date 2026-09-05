@@ -337,7 +337,7 @@ function endpointHostOnly(host: string): string {
   return host;
 }
 
-function formatDetailTimestamp(raw?: string | null): string | null {
+export function formatDetailTimestamp(raw?: string | null): string | null {
   if (!raw?.trim()) return null;
   const value = raw.trim();
   const parsed = new Date(value.includes('T') ? value : value.replace(' ', 'T'));
