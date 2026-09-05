@@ -23,9 +23,16 @@ export type ProjectGroup = {
   hidden: boolean;
 };
 
-/** Slash-unify and lowercase so Windows paths from different agents can share a bucket. */
+/** Windows filesystems are case-insensitive; POSIX paths are not. */
+function isWindowsWorkspacePath(path: string): boolean {
+  return /^[a-z]:[\\/]/i.test(path) || /^\\\\/.test(path);
+}
+
+/** Unify separators and trailing slashes without conflating POSIX case variants. */
 export function normalizeProjectMergePath(path: string): string {
-  return path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  const slashUnified = path.replace(/\\/g, '/');
+  const normalized = slashUnified.replace(/\/+$/, '') || '/';
+  return isWindowsWorkspacePath(path) ? normalized.toLowerCase() : normalized;
 }
 
 /**
