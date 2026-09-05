@@ -1390,7 +1390,7 @@ export default function Sub2ApiPage() {
             </label>
           ) : null}
           <DialogFooter className="gap-2 sm:gap-2">
-            <Button type="button" variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>
+            <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)} disabled={creating}>
               {t('common.cancel')}
             </Button>
             <Button type="button" onClick={() => void onCreateKey()} disabled={creating}>
@@ -1418,7 +1418,7 @@ export default function Sub2ApiPage() {
           <DialogFooter className="gap-2 sm:gap-2">
             <Button
               type="button"
-              variant="outline"
+              variant="secondary"
               onClick={() => setPendingDeleteKey(null)}
               disabled={actingKeyId != null}
             >
