@@ -82,9 +82,29 @@ describe('groupProjectsByPath', () => {
     relativePath: 'sessions',
   });
 
-  it('normalizes slash, case, and trailing separators', () => {
+  it('normalizes Windows slash, case, and trailing separators', () => {
     expect(normalizeProjectMergePath('C:\\Users\\demo\\app\\')).toBe('c:/users/demo/app');
+    expect(normalizeProjectMergePath('\\\\Server\\Share\\App\\')).toBe('//server/share/app');
     expect(projectMergeKey(claudeApp)).toBe(projectMergeKey(grokApp));
+  });
+
+  it('keeps POSIX case variants separate', () => {
+    const upper = project({
+      id: 'claude:proj:App',
+      agentId: 'claude',
+      title: 'App',
+      actualPath: '/work/App',
+    });
+    const lower = project({
+      id: 'grok:proj:app',
+      agentId: 'grok',
+      title: 'app',
+      actualPath: '/work/app/',
+    });
+    expect(normalizeProjectMergePath('/work/App')).toBe('/work/App');
+    expect(normalizeProjectMergePath('/work/app/')).toBe('/work/app');
+    expect(projectMergeKey(upper)).not.toBe(projectMergeKey(lower));
+    expect(groupProjectsByPath([upper, lower], true)).toHaveLength(2);
   });
 
   it('keeps one card per project when merge is off', () => {
