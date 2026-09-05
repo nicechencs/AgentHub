@@ -175,7 +175,7 @@ test('new install shows Routes by default; Plugins stay hidden until Settings', 
   await expect(nav.getByRole('link', { name: /^路由(?:$| — )/ })).toBeVisible();
   await expect(nav.getByRole('link', { name: /^插件(?:$| — )/ })).toHaveCount(0);
   await expect(nav.getByRole('link', { name: /^Sub2API(?:$| — )/ })).toHaveCount(0);
-  await expect(nav.getByRole('link', { name: /^MCP — / })).toBeVisible();
+  await expect(nav.getByRole('link', { name: /^MCP(?:$| — )/ })).toBeVisible();
 
   await goNav(page, '设置');
   await expect(page.getByRole('switch', { name: '打开路由时自动折叠' })).toBeChecked();
@@ -212,7 +212,7 @@ test('new install shows Routes by default; Plugins stay hidden until Settings', 
   await goNav(page, 'MCP');
   await expect(page).toHaveURL(/#\/mcp/);
   await expect(page.getByRole('heading', { name: 'MCP' })).toBeVisible();
-  await expect(page.locator('header').getByText('开发中')).toBeVisible();
+  await expect(page.locator('header').getByText('开发中')).toHaveCount(0);
 });
 
 test('Routes secondary nav appears under /routes*; URL entry does not auto-collapse', async ({ page }) => {

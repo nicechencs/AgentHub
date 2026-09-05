@@ -215,14 +215,14 @@ describe('workspaceNavItems / manageNavItems', () => {
     expect(ctx).toContain('loadBool(StorageKey.sub2apiNavVisible, DEFAULT_SUB2API_NAV_VISIBLE)');
   });
 
-  it('marks plugins and MCP as in development; routes are not', () => {
+  it('marks plugins as in development; MCP and routes are not', () => {
     const mcp = NAV_WORKSPACE.find((item) => item.to === '/mcp');
     const plugins = NAV_WORKSPACE.find((item) => item.to === '/plugins');
     const routes = NAV_MANAGE.find((item) => item.to === ROUTES_PATH);
     expect(mcp).toBeDefined();
     expect(plugins).toBeDefined();
     expect(routes).toBeDefined();
-    expect(navItemInDevelopment(mcp!)).toBe(true);
+    expect(navItemInDevelopment(mcp!)).toBe(false);
     expect(navItemInDevelopment(plugins!)).toBe(true);
     expect(navItemInDevelopment(routes!)).toBe(false);
     expect(navItemInDevelopment(NAV_WORKSPACE[0])).toBe(false);

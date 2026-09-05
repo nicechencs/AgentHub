@@ -8,7 +8,6 @@ import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { PageRefreshButton } from '@/components/shared/PageRefreshButton';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { TableSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
@@ -111,7 +110,6 @@ export default function McpPage() {
     <div>
       <PageHeader
         title={t('mcp.page.title')}
-        badge={<Badge variant="default">{t('common.inDevelopment')}</Badge>}
         description={t('mcp.page.description')}
         descriptionTip={t('mcp.page.descriptionTip', { next: t('mcp.page.nextStep') })}
       />
