@@ -22,8 +22,9 @@ pub use device::{
     DeviceOAuthStart, DeviceOAuthStatus,
 };
 pub use identity::{
-    apply_identity_to_credentials, decode_jwt_payload, extract_oauth_identity, identity_extra,
-    identity_from_credentials, OAuthIdentity,
+    apply_identity_to_credentials, chatgpt_account_id_from_token, decode_jwt_payload,
+    extract_oauth_identity, identity_extra, identity_from_credentials,
+    is_openai_codex_identity_provider, OAuthIdentity,
 };
 pub use pi_refresh::refresh_pi_provider;
 #[cfg(test)]
