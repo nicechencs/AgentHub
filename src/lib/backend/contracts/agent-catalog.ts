@@ -10,6 +10,7 @@ export type { AgentCatalogEntryDto, LiveOccupancyDto } from './agent-catalog-typ
 export {
   catalogOccupancy,
   isCatalogAppendOccupancy,
+  isListOccupancy,
   mapCatalogCapabilities,
 } from './agent-catalog-types';
 
