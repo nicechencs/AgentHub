@@ -3,92 +3,63 @@
 **简体中文** · [English](README.en.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0078D6.svg)](#快速开始)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0078D6.svg)](#下载)
 [![Release](https://img.shields.io/github/v/release/nicechencs/AgentHub?label=version)](https://github.com/nicechencs/AgentHub/releases)
 
-AgentHub 是一个本地运行的多 Agent 桌面工具。它用一个 GUI 和 CLI 管理 AI coding agent 的安装环境、登录与连接、Skills、用量和本地会话。产品由 Tauri v2、React、Rust 组成，支持 Windows、macOS 和 Linux。
+AgentHub 是一个本地运行的多 Agent 桌面工具。一个 GUI 和 CLI 管理 AI coding agent 的安装、登录与连接、Skills、用量和本地会话。由 Tauri v2、React、Rust 组成，支持 Windows、macOS 和 Linux。
 
-## 功能概览
+## 能做什么
 
 - 管理 Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy、ZCode、Cursor Agent 和 DeepSeek Harness 等本机 Agent。Cursor Agent 默认不出现在侧栏和连接页，可在 Agents 里取消隐藏。
-- 查看跨工具的登录与连接，优先直接写入目标工具配置；只有存在开放规则和受测协议转换时才使用本机路由，否则明确显示“当前不支持”，不会静默转发。
+- 查看跨工具的登录与连接，优先直接写入目标工具配置；只有存在开放规则和受测协议转换时才使用本机路由，否则明确显示「当前不支持」，不会静默转发。
 - 登录 Sub2API 站点，管理站点 API Key，并将可用 Key 导入已安装的 Agent。
 - 管理共享 Skills、查看已发现的 MCP、浏览项目与会话。
 - 在桌面端启动本机会话并查看流式过程，解析本地会话日志中的用量与成本估算。
 - 通过 CLI 执行 `doctor`、`env`、`agent`、`provider`、`account`、`skill`、`usage`、`backup`、`run` 和 `config` 等操作。
 
-当前实现的边界与已知未实现项见 [实现状态](docs/STATUS.md)。产品决策与连接模型见 [文档索引](docs/README.md)。
+页面右上角问号或 <kbd>F1</kbd> 可看当前页说明。当前实现边界见 [实现状态](docs/STATUS.md)，产品决策见 [文档索引](docs/README.md)。
 
-## 界面预览
+## 界面
 
-当前桌面端有这些页面。截图来自真实桌面端；邮箱、本机路径、API Key 等隐私信息均已遮挡。
+截图来自真实桌面端；邮箱、本机路径、API Key 等已遮挡。
 
-### 总览
-
-看各 Agent 是否就绪，以及从本机日志解析出的用量和成本估算。需要登录或切换时，从这里进连接页。
+**总览** — 各 Agent 是否就绪，以及从本机日志解析出的用量和成本估算。
 
 ![总览](docs/assets/screenshots/dashboard.png)
 
-### 连接
+**连接** — 跨工具的登录列表：导入本机已有授权、用浏览器做官方登录，或添加 API Key。接到其他工具时优先直连；两边说的话不同、并且已有可用规则时才走本机路由，否则显示「当前不支持」。
 
-跨工具的**登录列表**。可以导入本机已有授权、用**浏览器登录**做官方登录，或添加 API Key。接到其他工具时，优先**直连**或**用这份登录**；两边说的话不同、并且已有可用规则时才走**本机路由**，否则会明确显示「当前不支持」。
+![连接](docs/assets/screenshots/connections.png)
 
-![连接 / 登录列表](docs/assets/screenshots/connections.png)
-
-### Chat
-
-在桌面里和已安装的 Agent 对话。左侧是会话列表，中间是对话，过程步骤可以展开看。先选 Agent 和工作目录再发送。
+**Chat** — 在桌面里和已安装的 Agent 对话。先选 Agent 和工作目录再发送。
 
 ![Chat](docs/assets/screenshots/chat.png)
 
-### Agents
-
-在 Agent 列表上方列出环境需要的软件，可安装或升级，再按**渠道**安装或升级各 Agent。点开一张卡片可以看到**端点类型**、渠道和**配置目录**，也能打开配置目录。Cursor Agent 默认不出现在侧栏和连接页，可在这里取消隐藏。
+**Agents** — 安装或升级环境需要的软件，再按渠道安装或升级各 Agent。Cursor Agent 可在这里取消隐藏。
 
 ![Agents](docs/assets/screenshots/agents.png)
 
-### Skills
-
-用户技能放在共享库，可以启用到各工具；项目技能按工作区管理。也可以从技能市场安装。
+**Skills** — 用户技能放在共享库，可以启用到各工具；项目技能按工作区管理。也可以从技能市场安装。
 
 ![Skills](docs/assets/screenshots/skills.png)
 
-### Projects
-
-按 Agent 浏览本机项目和会话。可以打开目录、预览摘录，或在 Chat 里继续。
+**Projects** — 按 Agent 浏览本机项目和会话。可以打开目录、预览摘录，或在 Chat 里继续。
 
 ![Projects](docs/assets/screenshots/projects.png)
 
-### 设置
+**设置** — 偏好（语言与外观、启动与关闭、侧栏是否显示路由 / 插件 / Sub2API）、本机数据目录与日志、备份、关于（版本与检查更新）。
 
-四个栏：
+![设置](docs/assets/screenshots/settings.png)
 
-- **偏好**：分组显示语言与外观、启动与关闭、侧栏（是否显示路由 / 插件 / Sub2API）、路由、技能市场、用量采集
-- **本机**：数据目录与日志
-- **备份**：切换或导入前留下的配置快照，可恢复或删除
-- **关于**：版本、检查更新与仓库入口
-
-![设置：偏好 / 本机 / 备份 / 关于](docs/assets/screenshots/settings.png)
-
-### MCP
-
-功能开发中。只扫描并列出已经发现的 MCP，不会安装，也不能在这里改各工具的设置。写入和管理还没做。
-
-### 插件
-
-查看 Claude、Grok 和 Pi 已经装好的插件包。Claude 和 Grok 的包可以启用或停用。没有安装按钮；安装仍在各工具里做。
-
-### 本机路由
-
-管理本机转发。看板显示连接与用量，连接池管理本机转发使用的登录，入口 Key 供目标工具接入，监控查看请求记录。登录信息仍在连接页，需要时在连接池「从连接同步」。混合供应商和部分协议转换仍在开发中，不是已经做完的万能路由。
+**本机路由** — 看板、连接池、入口 Key、监控。登录信息仍在连接页，需要时在连接池「从连接同步」。
 
 ![路由看板](docs/assets/screenshots/router-board.png)
 
-### Sub2API
-
-登录 Sub2API 站点后，可按分组查看和管理 API Key，并把可用 Key 导入已安装的 Agent。侧栏入口可在偏好中显示或隐藏。
+**Sub2API** — 登录站点后按分组管理 API Key，并把可用 Key 导入已安装的 Agent。侧栏入口可在偏好中显示或隐藏。
 
 ![Sub2API](docs/assets/screenshots/sub2api.png)
+
+**MCP** 目前只扫描并列出已经发现的项，不会安装，也不能在这里改各工具的设置。**插件**查看 Claude、Grok 和 Pi 已经装好的包；Claude 和 Grok 的包可以启用或停用，安装仍在各工具里做。
 
 ## 路线图
 
@@ -100,19 +71,17 @@ AgentHub 是一个本地运行的多 Agent 桌面工具。它用一个 GUI 和 C
 
 更细的实现边界见 [实现状态](docs/STATUS.md)。
 
-## 快速开始
-
-### 使用发布包
+## 下载
 
 从 [GitHub Releases](https://github.com/nicechencs/AgentHub/releases) 下载对应平台的安装包：
 
-| 平台 | 安装包 | 发布说明 |
+| 平台 | 安装包 | 说明 |
 | --- | --- | --- |
 | Windows | NSIS `.exe` 或 MSI | 安装包与 updater 已签名 |
 | macOS | `.dmg` | updater 已签名；Apple 公证不作承诺 |
 | Linux | `.deb` 或 AppImage | 安装包可以未签名；自动更新只在发布清单含签名 Linux 条目时启用 |
 
-### 从源码运行
+## 从源码运行
 
 需要 Node.js LTS、Rust、Git 和 pnpm。
 
@@ -140,22 +109,20 @@ pnpm dev:mock
 | `pnpm dev:mock` | 启动浏览器 mock 演示 |
 | `pnpm tauri:dev` | 启动真实 Tauri 桌面端 |
 | `pnpm typecheck` | 检查前端类型 |
-| `pnpm typecheck:test` | 检查测试类型 |
 | `pnpm test` | 运行前端测试 |
-| `pnpm test:e2e:browser` | 运行 Playwright 浏览器冒烟（仅 `dev:mock`） |
-| `pnpm build` | 运行生产前端构建，强制使用 Tauri adapter |
+| `pnpm build` | 运行生产前端构建，强制使用真实桌面后端 |
 | `pnpm tauri:build` | 构建桌面安装包 |
 | `cargo test -p agenthub-core --locked` | 运行 Rust 核心测试 |
 | `cargo run -p agenthub-cli -- --help` | 查看 CLI 帮助 |
 | `pnpm check:docs` | 检查文档链接、元数据、标题锚点和过时术语 |
 
-前端 backend 分层、mock 边界和 `invoke` 约束见 [架构文档](docs/architecture/overview.md)。完整验证矩阵见 [测试文档](docs/reference/testing.md)。路由能力边界见 [路由兼容性](docs/reference/route-compatibility.md)，真实桌面验证见 [Adapter dogfood](docs/guides/adapter-dogfood.md)。
+完整验证步骤见 [贡献指南](CONTRIBUTING.md)。
 
 ## 数据与隐私
 
-AgentHub 默认只处理本机数据。常见数据位置是 `~/.agenthub/`（状态、设置、日志和备份）、`~/.agents/skills/`（用户技能）与项目里的 `.agents/skills/`（项目技能）。Usage 只读解析本地会话或日志，不通过代理截取请求，也不上传云端；本机路由不记录请求或响应正文。
+AgentHub 默认只处理本机数据。常见位置是 `~/.agenthub/`（状态、设置、日志和备份）、`~/.agents/skills/`（用户技能）与项目里的 `.agents/skills/`（项目技能）。用量只读解析本地会话或日志，不通过代理截取请求，也不上传云端；本机路由不记录请求或响应正文。
 
-凭据沿用项目现有的本地存储方案，界面、CLI 和日志输出会脱敏。凭据落盘加密不在当前产品范围内。发布截图、测试数据、版本发布和禁止提交项见 [隐私与发布](docs/reference/privacy-and-release.md)，漏洞披露方式见 [安全策略](SECURITY.md)。
+登录信息沿用现有本地存储，界面、CLI 和日志会脱敏。登录信息落盘加密不在当前产品范围内。发布截图、测试数据和禁止提交项见 [隐私与发布](docs/reference/privacy-and-release.md)，漏洞披露见 [安全策略](SECURITY.md)。
 
 ## 开发与文档
 
@@ -163,9 +130,8 @@ AgentHub 默认只处理本机数据。常见数据位置是 `~/.agenthub/`（�
 - [项目约定](AGENTS.md)：架构红线、产品范围和协作要求。
 - [文档索引](docs/README.md)：按用途进入设计、实现、运维和历史文档。
 - [文档状态](docs/STATUS.md)：当前实现事实与未实现边界。
-- [文档风格](docs/STYLE.md)：元数据、分类、链接和维护规则。
 
-日常开发和 PR 使用 `dev` 分支。正式发布在 `dev` 升版并填写 `CHANGELOG.md`，合入 `release` 后在 `dev` 打 `vX.Y.Z` tag 触发 CI；详见 [贡献指南](CONTRIBUTING.md)。
+日常开发和 PR 使用 `dev` 分支。正式发布在 `dev` 升版并填写 `CHANGELOG.md`，合入 `release` 后在 `dev` 打 `vX.Y.Z` tag 触发 CI。
 
 ## 许可证
 
