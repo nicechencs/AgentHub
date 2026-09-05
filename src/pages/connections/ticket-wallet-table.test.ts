@@ -68,6 +68,9 @@ describe('ticket wallet table columns', () => {
       '7d 22%',
     ]);
     expect(ticketWalletUsageParts({ tokenInput: 12, tokenOutput: 3 })).toEqual(['12 / 3']);
+    expect(ticketWalletUsageParts({ tokenInput: 1_234_567, tokenOutput: 89_000 })).toEqual([
+      '1.2M / 89.0K',
+    ]);
     expect(ticketWalletUsageParts(null)).toEqual([]);
   });
 });

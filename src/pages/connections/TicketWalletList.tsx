@@ -82,7 +82,6 @@ import {
   formatDetailTimestamp,
   ticketWalletColumnLabel,
   ticketWalletTokenUsageText,
-  ticketWalletUsageParts,
   ticketDetailEditLabel,
   oauthActionHoverTip,
   ticketRefreshDisabledReason,
@@ -539,7 +538,9 @@ function TicketRow({
   const switchBusy = switchingId !== null;
   const title = ticketCardTitle(ticket, extras);
   const lastUsed = formatDetailTimestamp(extras?.tokenLastUsedAt ?? extras?.lastUsedAt);
-  const usageParts = ticketWalletUsageParts(extras, t);
+  const has7d = hasOfficialQuotaWindow(extras?.quota7dPct);
+  const has5h = hasOfficialQuotaWindow(extras?.quota5hPct);
+  const tokenUsage = !has7d && !has5h ? ticketWalletTokenUsageText(extras, t) : null;
 
   return (
     <TableRow
@@ -595,13 +596,14 @@ function TicketRow({
           <TableEmptyCell />
         )}
       </TableCell>
-      <TableCell data-col="usage" className="whitespace-nowrap">
-        {usageParts.length > 0 ? (
-          <div className="flex flex-col gap-0.5 text-meta text-secondary">
-            {usageParts.map((part) => (
-              <span key={part}>{part}</span>
-            ))}
+      <TableCell data-col="usage" className="min-w-0">
+        {has7d || has5h ? (
+          <div className="flex min-w-0 flex-col gap-1">
+            {has7d ? <QuotaBar label="7d" pct={extras?.quota7dPct} compact /> : null}
+            {has5h ? <QuotaBar label="5h" pct={extras?.quota5hPct} compact /> : null}
           </div>
+        ) : tokenUsage ? (
+          <span className="text-meta text-secondary tabular-nums">{tokenUsage}</span>
         ) : (
           <TableEmptyCell />
         )}
