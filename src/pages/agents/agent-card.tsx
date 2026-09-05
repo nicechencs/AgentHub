@@ -5,6 +5,7 @@ import {
   Copy,
   Eye,
   EyeOff,
+  RefreshCw,
   Terminal,
   X,
   Zap,
@@ -605,12 +606,14 @@ export function AgentCard({
                 <Copy className="h-3.5 w-3.5" /> {t('agents.card.copy')}
               </Button>
               {task.status === 'failed' && (
-                <Button size="sm" variant="default" onClick={retryAction}>
+                <Button size="sm" variant="secondary" onClick={retryAction}>
+                  <RefreshCw className="h-3.5 w-3.5" />
                   {t('agents.card.retry')}
                 </Button>
               )}
               {task.status === 'guided' && (
-                <Button size="sm" variant="default" onClick={redetectAfterGuide}>
+                <Button size="sm" variant="secondary" onClick={redetectAfterGuide}>
+                  <RefreshCw className="h-3.5 w-3.5" />
                   {t('agents.card.redetect')}
                 </Button>
               )}

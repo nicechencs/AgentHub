@@ -46,13 +46,13 @@ export function agentTaskLogTitleKey(
 }
 
 /**
- * Failed install → primary 重试.
- * Guided official-setup (agent still missing) → primary 重新检测 (not 安装).
+ * List/detail 安装 / 重试 / 重新检测 stay `secondary` so a repeating Agents row
+ * cannot mint a second page accent. Labels still follow {@link installPrimaryLabelKey}.
  */
 export function installRetryButtonVariant(
-  status: AgentCardTaskStatus | undefined,
-): 'default' | 'secondary' {
-  return status === 'failed' || status === 'guided' ? 'default' : 'secondary';
+  _status?: AgentCardTaskStatus,
+): 'secondary' {
+  return 'secondary';
 }
 
 /** Label for the list/detail install CTA after terminal install outcomes. */
