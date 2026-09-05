@@ -177,15 +177,24 @@ function pageHelpTypingTarget(target: EventTarget | null): boolean {
   return Boolean(el.isContentEditable);
 }
 
+export type PageHelpOpenKeyEvent = {
+  key: string;
+  altKey?: boolean;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  defaultPrevented?: boolean;
+};
+
+/** F1 opens the current-page tutorial. Ignores modified keys. */
+export function isPageHelpOpenKey(event: PageHelpOpenKeyEvent): boolean {
+  if (event.defaultPrevented) return false;
+  if (event.altKey || event.ctrlKey || event.metaKey) return false;
+  return event.key === 'F1';
+}
+
 /** Map a key to tour back / next / skip. Ignores typing and modified keys. */
 export function pageHelpKeyAction(
-  event: {
-    key: string;
-    altKey?: boolean;
-    ctrlKey?: boolean;
-    metaKey?: boolean;
-    defaultPrevented?: boolean;
-  },
+  event: PageHelpOpenKeyEvent,
   target: EventTarget | null = null,
 ): PageHelpKeyAction | null {
   if (event.defaultPrevented) return null;

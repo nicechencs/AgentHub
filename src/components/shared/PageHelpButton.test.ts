@@ -39,7 +39,7 @@ describe('PageHelpButton', () => {
     expect(tour).not.toContain('list-decimal');
   });
 
-  it('opens the current-page tutorial only after a click', () => {
+  it('opens the current-page tutorial after a click or F1', () => {
     const button = source('PageHelpButton.tsx');
     expect(button).toContain('useState(false)');
     expect(button).toContain('setOpen(true)');
@@ -49,6 +49,10 @@ describe('PageHelpButton', () => {
     expect(button).toContain('pathname, search');
     expect(button).toContain('dismissChromeHint');
     expect(button).toContain('PageHelpTour');
+    expect(button).toContain('isPageHelpOpenKey');
+    expect(button).toContain('aria-keyshortcuts="F1"');
+    expect(button).toContain('<kbd');
+    expect(button).toContain('F1');
     expect(button).not.toContain('DialogContent');
     expect(button).not.toContain('useState(true)');
   });

@@ -4,10 +4,16 @@ import { CircleHelp } from 'lucide-react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { dismissChromeHint } from '@/components/shared/chrome-hint-model';
 import { pageHelpIdFromPath } from '@/components/shared/page-help-model';
+import { isPageHelpOpenKey } from '@/components/shared/page-help-tour';
 import { PageHelpTour } from '@/components/shared/PageHelpTour';
 import { Hint } from '@/components/ui/tooltip';
 
-/** 顶栏问号：只在点击后开始当前页气泡指导，不主动弹出。 */
+function openPageHelp(setOpen: (open: boolean) => void) {
+  dismissChromeHint();
+  setOpen(true);
+}
+
+/** 顶栏问号：点击或按 F1 开始当前页气泡指导，不主动弹出。 */
 export function PageHelpButton() {
   const { t } = useI18n();
   const { pathname, search } = useLocation();
@@ -19,21 +25,38 @@ export function PageHelpButton() {
     setOpen(false);
   }, [pathname]);
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!isPageHelpOpenKey(event)) return;
+      event.preventDefault();
+      openPageHelp(setOpen);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   return (
     <>
-      <Hint label={label}>
+      <Hint
+        label={
+          <span className="inline-flex items-center gap-1.5">
+            {label}
+            <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded-btn border border-border bg-subtle px-1 text-meta leading-none text-muted">
+              F1
+            </kbd>
+          </span>
+        }
+      >
         <button
           type="button"
           className="relative rounded-btn p-1.5 text-secondary hover:bg-hover hover:text-primary"
           aria-label={label}
+          aria-keyshortcuts="F1"
           aria-haspopup="dialog"
           aria-expanded={open}
           data-page-help
           data-page-help-id={helpId}
-          onClick={() => {
-            dismissChromeHint();
-            setOpen(true);
-          }}
+          onClick={() => openPageHelp(setOpen)}
         >
           <CircleHelp className="h-4 w-4" />
         </button>
