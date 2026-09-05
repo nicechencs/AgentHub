@@ -4,9 +4,16 @@ import {
   useContext,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
+import {
+  removePageChromeEntry,
+  topPageChrome,
+  upsertPageChromeEntry,
+  type PageChromeEntry,
+} from '@/components/layout/page-chrome-model';
 
 /** 非对话页顶栏要展示的页身份（标题 + 一行说明）。 */
 export type PageChrome = {
@@ -17,25 +24,25 @@ export type PageChrome = {
 };
 
 type PageChromeSetters = {
-  setChrome: (next: PageChrome) => void;
-  clearChrome: () => void;
+  upsert: (id: number, next: PageChrome) => void;
+  remove: (id: number) => void;
 };
 
 const PageChromeStateContext = createContext<PageChrome | null>(null);
 const PageChromeSettersContext = createContext<PageChromeSetters | null>(null);
 
+let nextChromeId = 1;
+
 export function PageChromeProvider({ children }: { children: ReactNode }) {
-  const [chrome, setChromeState] = useState<PageChrome | null>(null);
-  const setChrome = useCallback((next: PageChrome) => {
-    setChromeState(next);
+  const [entries, setEntries] = useState<PageChromeEntry<PageChrome>[]>([]);
+  const upsert = useCallback((id: number, next: PageChrome) => {
+    setEntries((prev) => upsertPageChromeEntry(prev, id, next));
   }, []);
-  const clearChrome = useCallback(() => {
-    setChromeState(null);
+  const remove = useCallback((id: number) => {
+    setEntries((prev) => removePageChromeEntry(prev, id));
   }, []);
-  const setters = useMemo(
-    () => ({ setChrome, clearChrome }),
-    [setChrome, clearChrome],
-  );
+  const setters = useMemo(() => ({ upsert, remove }), [upsert, remove]);
+  const chrome = topPageChrome(entries);
 
   return (
     <PageChromeSettersContext.Provider value={setters}>
@@ -51,11 +58,14 @@ export function usePageChrome(): PageChrome | null {
 /** 由 PageHeader 在绘制前登记顶栏文案；无 Provider 时为 no-op（测试可单挂页面）。 */
 export function useRegisterPageChrome(chrome: PageChrome): void {
   const setters = useContext(PageChromeSettersContext);
+  const idRef = useRef(0);
+  if (idRef.current === 0) idRef.current = nextChromeId++;
   const { title, description, descriptionTip, badge } = chrome;
 
   useLayoutEffect(() => {
     if (!setters) return;
-    setters.setChrome({ title, description, descriptionTip, badge });
-    return () => setters.clearChrome();
+    const id = idRef.current;
+    setters.upsert(id, { title, description, descriptionTip, badge });
+    return () => setters.remove(id);
   }, [setters, title, description, descriptionTip, badge]);
 }
