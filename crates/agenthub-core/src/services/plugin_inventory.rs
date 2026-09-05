@@ -1040,8 +1040,14 @@ fn version_token_greater(left: &str, right: &str) -> bool {
     let parse = |raw: &str| {
         let token = raw.trim().trim_start_matches(['v', 'V']);
         let mut parts = token.split('.');
-        let major = parts.next().and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
-        let minor = parts.next().and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
+        let major = parts
+            .next()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(0);
+        let minor = parts
+            .next()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(0);
         let patch = parts
             .next()
             .and_then(|s| {

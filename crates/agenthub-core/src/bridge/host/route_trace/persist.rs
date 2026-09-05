@@ -353,7 +353,8 @@ fn delete_ids(conn: &Connection, ids: &[String]) -> crate::error::Result<usize> 
         let placeholders = vec!["?"; chunk.len()].join(",");
         let sql = format!("DELETE FROM route_traces WHERE request_id IN ({placeholders})");
         let mut stmt = conn.prepare(&sql)?;
-        let params: Vec<&dyn rusqlite::ToSql> = chunk.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+        let params: Vec<&dyn rusqlite::ToSql> =
+            chunk.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
         deleted += stmt.execute(params.as_slice())?;
     }
     Ok(deleted)
