@@ -3,7 +3,7 @@ title: AgentHub 文档风格与治理
 type: governance
 status: current
 owner: maintainers
-updated: 2026-08-25
+updated: 2026-09-05
 ---
 
 # 文档风格与治理
@@ -76,6 +76,20 @@ updated: 2026-08-25
 - 链接到标题时确认目标标题实际存在，并避免同一页面产生重复标题锚点。
 - 已废弃的用户路径或历史名称必须在同一段或同一行明确标注为旧路径、历史记录或兼容重定向；现行文档正文不得把它写成当前入口。
 - 归档文件可以保留历史术语，但归档索引仍应说明其状态。
+
+
+## 功能完成后的文档更新映射
+
+改完功能后，按改动类型更新对应真源（一事实一处；其他页只写短摘要并链接）。QA 笔记只放在 `/workspace/qa-issues/`，不要写入 `docs/`。
+
+| 改了什么 | 更新 |
+| --- | --- |
+| 某页交互/导航/工作流 | docs/ui/page-patterns.md |
+| 跨页实现事实与已知边界 | docs/STATUS.md |
+| 新 Agent / 能力变化 | docs/guides/adding-an-agent.md + docs/reference/capabilities.md |
+| 连接/路由/分享规则 | docs/concepts/connections-and-routing.md + docs/decisions/product-boundaries.md |
+| 产品文案/术语决策 | docs/decisions/product-boundaries.md |
+| 用户可见发版说明 | CHANGELOG.md |
 
 ## 外部方法来源
 

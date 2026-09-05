@@ -3,7 +3,7 @@ title: AgentHub 文档索引
 type: navigation
 status: current
 owner: maintainers
-updated: 2026-08-31
+updated: 2026-09-05
 ---
 
 # AgentHub 文档
@@ -61,6 +61,7 @@ updated: 2026-08-31
 - [决策记录索引](decisions/README.md)
 - [UI 设计系统](ui/design-system.md)
 - [页面模式](ui/page-patterns.md)
+- [功能完成后的文档更新映射](STYLE.md#功能完成后的文档更新映射)
 
 ## 审查与提案
 
