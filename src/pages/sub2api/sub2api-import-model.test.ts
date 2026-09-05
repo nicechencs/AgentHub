@@ -14,6 +14,31 @@ describe('sub2api import model', () => {
     expect(sub2apiImportKind(null)).toBe('any');
   });
 
+  it('only carries endpoint, key, model, and Grok API type — not Sub2API quota or IP fields', () => {
+    const draft = sub2apiImportDraft(
+      'https://v2.pincc.ai/',
+      {
+        id: 1,
+        key: 'sk-test',
+        name: 'n',
+        status: 'active',
+        models: ['grok-4'],
+        quota: 10,
+        ip_whitelist: ['1.1.1.1'],
+      },
+      'grok',
+      'responses_grok',
+    );
+    expect(draft).toEqual({
+      baseUrl: 'https://v2.pincc.ai',
+      apiKey: 'sk-test',
+      model: 'grok-4',
+      apiBackend: 'responses',
+    });
+    expect(draft).not.toHaveProperty('quota');
+    expect(draft).not.toHaveProperty('ip_whitelist');
+  });
+
   it('builds a gateway draft instead of a local loopback URL', () => {
     expect(
       sub2apiImportDraft(

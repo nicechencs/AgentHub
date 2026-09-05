@@ -57,10 +57,18 @@ describe('sub2api layout wiring', () => {
     expect(page).toContain("t('routes.sub2api.colCreated')");
     expect(page).toContain("t('routes.sub2api.colActions')");
     expect(page).toContain("t('routes.sub2api.deleteKey')");
+    expect(page).toContain('WorkbenchSplitPage');
+    expect(page).toContain('useSideSplit');
+    expect(page).toContain('asPanel');
+    expect(page).toContain('compact');
+    expect(page).toContain('onOpen={() => openEditKey(key)}');
     expect(page).toContain('Sub2ApiKeyEditDialog');
     expect(page).toContain('buildEditPatch');
+    expect(page).not.toContain('RoutesPane');
     const editDialog = readFileSync(path.join(dir, 'Sub2ApiKeyEditDialog.tsx'), 'utf8');
     expect(editDialog).toContain('data-sub2api-edit-form');
+    expect(editDialog).toContain('asPanel');
+    expect(editDialog).toContain('SideInspectPanel');
     expect(editDialog).toContain("t('routes.sub2api.ipRestriction')");
     expect(editDialog).toContain("t('routes.sub2api.quotaLimit')");
     expect(editDialog).toContain("t('routes.sub2api.rateLimitSection')");

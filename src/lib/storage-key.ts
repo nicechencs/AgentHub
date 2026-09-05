@@ -20,6 +20,7 @@ const LAYOUT_STORAGE_KEY = {
   connectionsColumnWidths: `${PREFIX}connections-column-widths`,
   settingsBackupsInspectWidth: `${PREFIX}settings-backups-inspect-width`,
   routesInspectWidth: `${PREFIX}routes-inspect-width`,
+  sub2apiInspectWidth: `${PREFIX}sub2api-inspect-width`,
   routesTokensColumnWidths: `${PREFIX}routes-tokens-column-widths`,
   routesPoolColumnWidths: `${PREFIX}routes-pool-column-widths`,
   routesActivityPreviewWidth: `${PREFIX}routes-activity-preview-width`,

@@ -20,6 +20,7 @@ describe('PageHeader', () => {
     expect(source('pages/routes/pool/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/plugins/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/agents/index.tsx')).toContain('WorkbenchSplitPage');
+    expect(source('pages/sub2api/index.tsx')).toContain('WorkbenchSplitPage');
   });
 
   it('uses the split-list inset when a preview pane is mounted', () => {
