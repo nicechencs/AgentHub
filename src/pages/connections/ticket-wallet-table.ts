@@ -3,6 +3,7 @@
  */
 import type { ColumnWidthSpec } from '@/components/ui/table';
 import type { TranslateFn } from '@/lib/i18n';
+import { fmtTokens } from '@/lib/utils';
 import {
   hasOfficialQuotaWindow,
   type TicketDetailExtras,
@@ -22,7 +23,7 @@ export const TICKET_WALLET_COLUMN_SPECS: ColumnWidthSpec<TicketWalletColumnKey>[
   { key: 'kind', defaultWidth: 104, minWidth: 80 },
   { key: 'status', defaultWidth: 104, minWidth: 80 },
   { key: 'lastUsed', defaultWidth: 148, minWidth: 120 },
-  { key: 'usage', defaultWidth: 128, minWidth: 96 },
+  { key: 'usage', defaultWidth: 168, minWidth: 128 },
   { key: 'agent', defaultWidth: 120, minWidth: 88 },
   { key: 'actions', defaultWidth: 176, minWidth: 128 },
 ];
@@ -70,8 +71,8 @@ export function ticketWalletTokenUsageText(
   const hasInput = typeof input === 'number' && Number.isFinite(input);
   const hasOutput = typeof output === 'number' && Number.isFinite(output);
   if (!hasInput && !hasOutput) return null;
-  const inText = (hasInput ? input : 0).toLocaleString();
-  const outText = (hasOutput ? output : 0).toLocaleString();
+  const inText = fmtTokens(hasInput ? input : 0);
+  const outText = fmtTokens(hasOutput ? output : 0);
   if (t) return t('connections.list.tokenUsage', { in: inText, out: outText });
   return `${inText} / ${outText}`;
 }

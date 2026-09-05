@@ -253,8 +253,11 @@ describe('TicketWalletList details', () => {
         onDeleteTicket() {},
       }),
     );
-    expect(markup).toContain('7d 40%');
-    expect(markup).toContain('5h 12%');
+    expect(markup).toContain('>7d<');
+    expect(markup).toContain('40%');
+    expect(markup).toContain('>5h<');
+    expect(markup).toContain('12%');
+    expect(markup).toContain('role="progressbar"');
     expect(markup).toMatch(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
   });
 
@@ -274,6 +277,25 @@ describe('TicketWalletList details', () => {
     );
     expect(markup).toContain('12 / 3');
     expect(markup).not.toContain('7d');
+  });
+
+  it('shortens large token totals on the row', () => {
+    const wallet = sampleWallet();
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet,
+        onImportToPool() {},
+        extrasForTicket: () => ({
+          tokenInput: 1_234_567,
+          tokenOutput: 89_000,
+        }),
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(markup).toContain('1.2M / 89.0K');
+    expect(markup).not.toContain('1234567');
+    expect(markup).not.toContain('1,234,567');
   });
 
   it('does not put 本机路由 or pool rotation copy on the Agent column', () => {
@@ -714,6 +736,20 @@ describe('TicketDetailPanel', () => {
     const protocolIndex = markup.indexOf('anthropic-messages');
     expect(usageIndex).toBeGreaterThan(-1);
     expect(protocolIndex).toBeGreaterThan(usageIndex);
+  });
+
+  it('shortens token totals in details', () => {
+    const markup = renderWithTooltip(
+      createElement(TicketDetailPanel, {
+        id: 'token-usage-detail',
+        advanced: [],
+        extras: { tokenInput: 1_234_567, tokenOutput: 89_000 },
+        onDelete() {},
+      }),
+    );
+    expect(markup).toContain('1.2M / 89.0K');
+    expect(markup).not.toContain('1234567');
+    expect(markup).not.toContain('1,234,567');
   });
 
   it('shows the Codex 5h quota bar only when upstream returned it', () => {
