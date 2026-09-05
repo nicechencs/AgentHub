@@ -53,6 +53,8 @@ describe('projects split layout', () => {
     expect(preview).toContain('rounded-composer bg-hover/60');
     expect(preview).toContain("t('projects.preview.copyRecord')");
     expect(preview).toContain("t('projects.preview.copyTurn')");
+    expect(preview).toContain("t('projects.preview.truncated')");
     expect(preview).toContain('CopyTextButton');
+    expect(preview).toContain('reloadKey');
   });
 });

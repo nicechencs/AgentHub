@@ -3,6 +3,7 @@ import type { AgentProject, AgentSession } from '@/lib/types';
 import {
   allVisibleSessionsSelected,
   collectSelectableSessions,
+  expandedProjectMembers,
   filterVisibleProjects,
   nextSelectedForToggleAllVisible,
   clampSessionPage,
@@ -217,6 +218,23 @@ describe('collectSelectableSessions', () => {
     expect(
       collectSelectableSessions(visible, new Set([app.id]), (id) => kidsFor(id, q)).map((s) => s.id),
     ).toEqual([appToken.id]);
+  });
+});
+
+describe('expandedProjectMembers', () => {
+  it('returns members of expanded groups only', () => {
+    const groups = [
+      { id: 'app', members: [{ id: 'claude:proj:app' }, { id: 'codex:proj:app' }] },
+      { id: 'docs', members: [{ id: 'claude:proj:docs' }] },
+    ];
+    expect(expandedProjectMembers(groups, new Set()).map((m) => m.id)).toEqual([]);
+    expect(expandedProjectMembers(groups, new Set(['app'])).map((m) => m.id)).toEqual([
+      'claude:proj:app',
+      'codex:proj:app',
+    ]);
+    expect(
+      expandedProjectMembers(groups, new Set(['app', 'docs'])).map((m) => m.id),
+    ).toEqual(['claude:proj:app', 'codex:proj:app', 'claude:proj:docs']);
   });
 });
 
