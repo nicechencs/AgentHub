@@ -20,6 +20,7 @@ export * from './provider-map';
 export * from './provider-heal-types';
 export * from './backup-map';
 export * from './chat-map';
+export * from './chat-runtime';
 export * from './project-map';
 export * from './skill-map';
 export * from './mcp-types';

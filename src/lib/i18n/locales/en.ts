@@ -2662,8 +2662,14 @@ export const en = {
       modelSwitchFail: "Couldn't change the model",
       modelUnavailable: "This login has no model to switch to",
       send: "Send",
+      add: "Add",
       stop: "Stop",
       resizeAria: "Resize conversation and composer",
+    },
+    runtime: {
+      submit: 'Submit',
+      allow: 'Allow',
+      deny: 'Deny',
     },
     bubble: {
       retry: "Retry",

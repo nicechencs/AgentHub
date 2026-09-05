@@ -1,6 +1,7 @@
 //! Chat Tauri commands — thin wrappers over agenthub-core ChatService.
 
 use agenthub_core::models::{AgentId, ChatEvent, ChatMessage, Conversation, LiveChatModel};
+use agenthub_core::services::chat_runtime::{RuntimeReply, RuntimeSnapshot};
 use agenthub_core::AgentHub;
 use tauri::ipc::Channel;
 use tauri::State;
@@ -103,6 +104,89 @@ pub async fn chat_send(
 #[tauri::command]
 pub fn chat_cancel(state: State<'_, AppState>, conversation_id: String) -> Result<(), String> {
     chat_cancel_inner(state.hub()?, &conversation_id)
+}
+
+/// Durable polling snapshot for interactive conversations; independent of WebView lifetime.
+#[tauri::command]
+pub async fn chat_runtime_snapshot(
+    state: State<'_, AppState>,
+    conversation_id: String,
+    after_sequence: Option<i64>,
+) -> Result<RuntimeSnapshot, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        hub.chat()
+            .runtime()
+            .snapshot(&conversation_id, after_sequence)
+            .map_err(|e| map_err_string("chat_runtime_snapshot", e))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn chat_runtime_start(
+    state: State<'_, AppState>,
+    conversation_id: String,
+    prompt: String,
+    client_request_id: String,
+) -> Result<RuntimeSnapshot, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        hub.chat()
+            .runtime()
+            .start(&conversation_id, &prompt, &client_request_id)
+            .map_err(|e| map_err_string("chat_runtime_start", e))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn chat_runtime_reply(
+    state: State<'_, AppState>,
+    reply: RuntimeReply,
+) -> Result<(), String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        hub.chat()
+            .runtime()
+            .reply(reply)
+            .map_err(|e| map_err_string("chat_runtime_reply", e))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn chat_runtime_steer(
+    state: State<'_, AppState>,
+    conversation_id: String,
+    run_id: String,
+    prompt: String,
+    client_request_id: String,
+) -> Result<(), String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        hub.chat()
+            .runtime()
+            .steer(&conversation_id, &run_id, &prompt, &client_request_id)
+            .map_err(|e| map_err_string("chat_runtime_steer", e))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn chat_runtime_cancel(
+    state: State<'_, AppState>,
+    conversation_id: String,
+    run_id: String,
+) -> Result<(), String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        hub.chat()
+            .runtime()
+            .cancel(&conversation_id, &run_id)
+            .map_err(|e| map_err_string("chat_runtime_cancel", e))
+    })
+    .await
 }
 
 /// Invoke: `set_chat_model` — write the live default model for Chat.

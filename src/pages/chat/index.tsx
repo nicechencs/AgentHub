@@ -13,6 +13,7 @@ import { ChatSessionHeader } from './ChatSessionHeader';
 import { ChatSessionRail } from './ChatSessionRail';
 import { ChatSettingsDialog } from './ChatSettingsDialog';
 import { ChatTranscript } from './ChatTranscript';
+import { ChatRuntimeRequests } from './ChatRuntimeRequests';
 import { useChatComposerSplit } from './use-chat-composer-split';
 import { useChatPage } from './use-chat-page';
 
@@ -111,6 +112,12 @@ export default function ChatPage() {
               onScroll={page.onTranscriptScroll}
               onRetry={() => void page.retryLast()}
             />
+            {page.runtime?.pendingRequests.length ? (
+              <ChatRuntimeRequests
+                requests={page.runtime.pendingRequests}
+                onReply={(request, decision, answers) => page.submitRuntimeRequest(request, decision, answers)}
+              />
+            ) : null}
 
             {page.active && (
               <>
@@ -146,6 +153,12 @@ export default function ChatPage() {
                   onRetryWallet={() => void page.reloadWallet()}
                   onRetryStatus={() => void page.refreshAgents().catch(() => {})}
                   onSend={() => void page.handleSend()}
+                  onSteer={page.runtime?.enabled && page.sendingHere ? () => {
+                    const value = page.draft;
+                    void page.steerRuntime(value)
+                      .then(() => page.setDraft(''))
+                      .catch(() => {});
+                  } : undefined}
                   onCancel={() => void page.cancelSending()}
                   onSelectAgent={(id) => void page.selectConversationAgentId(id)}
                   onSwitchConnection={(id) => void page.handleSwitchConnection(id)}

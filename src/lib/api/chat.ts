@@ -3,6 +3,8 @@
  */
 import { getBackend } from '@/app/runtime';
 import type { AgentKey, ChatEvent, ChatMessage, Conversation } from '@/lib/types';
+import type { RuntimeReply, RuntimeSnapshot } from '@/lib/backend/contracts/chat-runtime';
+export type { RuntimeQuestion, RuntimeRequest, RuntimeReply, RuntimeSnapshot } from '@/lib/backend/contracts/chat-runtime';
 
 export type {
   CoreConversation,
@@ -59,6 +61,19 @@ export async function chatSend(
 
 export async function chatCancel(conversationId: string): Promise<void> {
   return getBackend().chat.chatCancel(conversationId);
+}
+export async function runtimeSnapshot(conversationId: string, afterSequence?: number): Promise<RuntimeSnapshot> {
+  return getBackend().chat.runtimeSnapshot(conversationId, afterSequence);
+}
+export async function runtimeStart(conversationId: string, prompt: string, clientRequestId: string): Promise<RuntimeSnapshot> {
+  return getBackend().chat.runtimeStart(conversationId, prompt, clientRequestId);
+}
+export async function runtimeReply(reply: RuntimeReply): Promise<void> { return getBackend().chat.runtimeReply(reply); }
+export async function runtimeSteer(conversationId: string, runId: string, prompt: string, clientRequestId: string): Promise<void> {
+  return getBackend().chat.runtimeSteer(conversationId, runId, prompt, clientRequestId);
+}
+export async function runtimeCancel(conversationId: string, runId: string): Promise<void> {
+  return getBackend().chat.runtimeCancel(conversationId, runId);
 }
 
 export async function setChatModel(agentId: AgentKey, model: string): Promise<void> {

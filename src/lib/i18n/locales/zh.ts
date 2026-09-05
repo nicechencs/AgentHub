@@ -2650,8 +2650,14 @@ export const zh = {
       modelSwitchFail: "没法换模型",
       modelUnavailable: "当前登录还没有可换的模型",
       send: "发送",
+      add: "补充",
       stop: "停止",
       resizeAria: "调整对话记录与输入区高度",
+    },
+    runtime: {
+      submit: '提交',
+      allow: '允许',
+      deny: '拒绝',
     },
     bubble: {
       retry: "重试",
