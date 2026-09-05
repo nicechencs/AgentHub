@@ -5,16 +5,20 @@ status: current
 owner: maintainers
 audience: chat, adapter, and frontend contributors
 source-of-truth: ChatService/RunService, ChatEvent, stream parsers, Tauri Channel adapter, and chat process reducer
-updated: 2026-08-29
+updated: 2026-09-05
 ---
 
 # Chat 与 Agent 运行
 
 ## 产品形态
 
-Chat 是 AgentHub 里的运行工作台，不是统一替换各家 CLI 原生会话的协议层。当前一个会话对应一个 Agent；同一 turn 内的过程状态仍以 `(turn, agent)` 隔离，避免命令、stderr、tool/thinking 步骤混成一条时间线。Chat 没有独立模型选择器；模型与参数由目标 Agent 的配置/运行契约决定。
+Chat 是 AgentHub 里的运行工作台。当前一个会话对应一个 Agent；同一 turn 内的过程状态仍以 `(turn, agent)` 隔离。新空 Codex 会话使用 app-server 持续聊天，旧会话和其他 Agent 保留原有运行方式。Codex 会话级模型/思考强度选择和统一菜单尚未完成，不以其他 Agent 的现有设置入口代替。
 
 ## 当前数据流
+
+新空 Codex 会话：页面 → ChatPort runtime 操作 → Tauri blocking command → ChatRuntime 串行会话 → Codex app-server。后台将消息、事件与终态保存到 SQLite；页面读取带 sequence、待处理请求、currentMessage 与 gap 的快照。正文采用同一次读取中的完整 currentMessage，不能用字符串相似性猜测增量是否重复。页面关闭不拥有后台生命周期；重开使用持久化的原生 thread。详见 [B1 实施记录](../status/chat-codex-b1.md)。
+
+旧会话和其他 Agent：
 
 ```text
 页面 Chat composer
@@ -45,11 +49,11 @@ Tauri transport 使用 `ipc::Channel<ChatEvent>`，不是 SSE。阻塞进程执�
 
 Claude、Codex、Kimi、Grok、Pi 当前可走 `ProcessMode::Auto` 的结构化解析；WorkBuddy 与 ZCode 没有结构化 parser 时按 text 展示。ZCode 对话需要 PATH 上的 `zcode`；只装了桌面端时不能凭空当成命令行。DeepSeek Harness 的 StructuredStream 仍是 Planned。**Cursor Agent 默认软隐藏**，结构化输出与登录写入等兼容项修复完成前不在 Chat 等页面开放。解析失败降级为 raw/text 事件，不因某一行 JSON 不可识别而丢弃整次对话；CLI 不支持 flag 时不得静默重试成另一种语义。
 
-过程数据目前主要是内存视图：最终 assistant 文本和会话消息入库，命令、stderr、步骤在刷新后不保证可回放。过程步骤落库、过程内 usage、交互式 tool approval 和完整原生多轮 session 不属于当前契约。
+旧发送方式的过程数据主要是内存视图，最终正文和会话消息入库；刷新后不保证过程回放。Codex runtime 另有有限持久化事件、真实确认/问答回复及同机恢复；截断通过 gap 表达，不承诺无限过程历史。问答和文件审批的完整桌面真实验收仍待补，过程内 usage 也未完成。
 
 ## Codex 外部安装
 
-Chat **不**调用 VS Code 扩展或 Codex 桌面 App 的 UI/API；它 spawn 检测到的 `codex` CLI（`codex exec --skip-git-repo-check [--json] …`）。
+Chat 不调用 VS Code 扩展或 Codex 桌面 App 的界面；它启动检测到的 Codex 可执行文件。新会话调用 `codex app-server --stdio`，旧发送方式调用 `codex exec --skip-git-repo-check [--json] …`。检测到安装不等于协议与账号可用；失败明确返回，不静默切换发送方式。
 
 | 安装来源 | AgentHub 如何识别 | Chat 前置条件 |
 | --- | --- | --- |
