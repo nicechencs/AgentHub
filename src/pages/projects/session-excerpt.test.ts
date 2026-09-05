@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildPreviewTimeline,
   classifyExcerptRows,
   excerptTurnsToRecordLines,
   parseApprovalDecisions,
@@ -126,6 +127,65 @@ describe('splitExcerptDocument', () => {
       convention: '# 项目约定',
       turns: [{ role: 'user', text: '帮我看看当前界面' }],
     });
+  });
+
+  it('attaches timestamps that precede a turn marker', () => {
+    expect(
+      splitExcerptDocument(
+        [
+          '---ts:2026-09-03T21:42:05.000Z---',
+          '---turn:user---',
+          '清理已经合并至dev的分支',
+        ].join('\n'),
+      ),
+    ).toEqual({
+      convention: null,
+      turns: [
+        {
+          role: 'user',
+          text: '清理已经合并至dev的分支',
+          at: '2026-09-03T21:42:05.000Z',
+        },
+      ],
+    });
+  });
+});
+
+describe('buildPreviewTimeline', () => {
+  it('puts project instructions first and approvals among turns by time', () => {
+    const items = buildPreviewTimeline(
+      '# 约定',
+      [
+        { role: 'user', text: '先问', at: '2026-09-03T10:00:00.000Z' },
+        { role: 'assistant', text: '先答', at: '2026-09-03T10:05:00.000Z' },
+        { role: 'user', text: '再问', at: '2026-09-03T10:20:00.000Z' },
+      ],
+      [
+        {
+          outcome: 'allow',
+          rationale: '只读文件',
+          raw: '{}',
+          at: '2026-09-03T10:06:00.000Z',
+        },
+      ],
+    );
+    expect(items.map((item) => item.kind)).toEqual([
+      'convention',
+      'turn',
+      'turn',
+      'approval',
+      'turn',
+    ]);
+  });
+
+  it('falls back to after assistant replies when times are missing', () => {
+    const items = buildPreviewTimeline(null, [
+      { role: 'user', text: '问' },
+      { role: 'assistant', text: '答' },
+    ], [
+      { outcome: 'allow', rationale: '只读文件', raw: '{}' },
+    ]);
+    expect(items.map((item) => item.kind)).toEqual(['turn', 'turn', 'approval']);
   });
 });
 

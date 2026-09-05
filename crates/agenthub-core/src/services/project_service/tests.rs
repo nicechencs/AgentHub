@@ -1917,6 +1917,142 @@ fn kimi_excerpt_skips_wire_noise_to_reach_later_turns() {
 }
 
 #[test]
+fn claude_excerpt_skips_user_wrapped_tool_results_and_local_commands() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".claude");
+    let session = home
+        .join("projects")
+        .join("-C-Users-demo-app")
+        .join("sess-tool-as-user.jsonl");
+    write_jsonl(
+        &session,
+        &[
+            serde_json::json!({"type":"user","message":{"role":"user","content":"<local-command-caveat>Caveat: local commands</local-command-caveat>"}}),
+            serde_json::json!({"type":"user","message":{"role":"user","content":"<command-name>/model</command-name>"}}),
+            serde_json::json!({"type":"user","message":{"role":"user","content":[{"type":"text","text":"帮我更新 adapter 页面"}]}}),
+            serde_json::json!({"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"## Code Context\nProject Structure (313 files)"}]}}),
+            serde_json::json!({"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"先改列表。"}]}}),
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Claude, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert!(
+        rows[0].title.contains("帮我更新 adapter 页面"),
+        "title={}",
+        rows[0].title
+    );
+    let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert!(ex.excerpt.contains("帮我更新 adapter 页面"), "excerpt={}", ex.excerpt);
+    assert!(ex.excerpt.contains("先改列表。"), "excerpt={}", ex.excerpt);
+    assert!(!ex.excerpt.contains("Code Context"), "excerpt={}", ex.excerpt);
+    assert!(!ex.excerpt.contains("local-command"), "excerpt={}", ex.excerpt);
+    assert!(!ex.excerpt.contains("/model"), "excerpt={}", ex.excerpt);
+}
+
+#[test]
+fn kimi_excerpt_strips_git_context_from_user_turn() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".kimi-code");
+    let wd = "wd_git_context";
+    fs::create_dir_all(home.join("sessions").join(wd)).unwrap();
+    fs::write(
+        home.join("workspaces.json"),
+        r#"{
+          "version": 1,
+          "workspaces": {
+            "wd_git_context": {
+              "root": "D:/demo_chen/2026/AgentHub",
+              "name": "AgentHub",
+              "created_at": "2026-07-26T02:45:04.635Z"
+            }
+          }
+        }"#,
+    )
+    .unwrap();
+    let sess = home.join("sessions").join(wd).join("session_git-context");
+    fs::create_dir_all(sess.join("agents").join("agent-0")).unwrap();
+    write_jsonl(
+        &sess.join("agents").join("agent-0").join("wire.jsonl"),
+        &[
+            serde_json::json!({"type":"metadata","protocol_version":"1.4"}),
+            serde_json::json!({"type":"turn.prompt","input":[{"type":"text","text":"<git-context>\nWorking directory: D:/demo\nBranch: main\n</git-context>\n\nExplore the adapter page."}]}),
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Kimi, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert!(ex.excerpt.contains("Explore the adapter page."), "excerpt={}", ex.excerpt);
+    assert!(!ex.excerpt.contains("git-context"), "excerpt={}", ex.excerpt);
+    assert!(!ex.excerpt.contains("Working directory"), "excerpt={}", ex.excerpt);
+}
+
+#[test]
+fn workbuddy_excerpt_unwraps_user_query_inside_attributed_reminder() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".workbuddy");
+    let session = home
+        .join("projects")
+        .join("-C-Users-demo-app")
+        .join("sess-query.jsonl");
+    write_jsonl(
+        &session,
+        &[
+            serde_json::json!({
+                "type":"message",
+                "role":"user",
+                "content":[{"type":"input_text","text":"<system-reminder data-role=\"user-context\">\n<user_info>\nOS Version: win32\n</user_info>\n<user_query>你会干啥呢</user_query>\n</system-reminder>"}]
+            }),
+            serde_json::json!({
+                "type":"message",
+                "role":"assistant",
+                "content":[{"type":"output_text","text":"你说要什么，我尽量直接做出可交的结果。"}]
+            }),
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::WorkBuddy, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert!(ex.excerpt.contains("你会干啥呢"), "excerpt={}", ex.excerpt);
+    assert!(!ex.excerpt.contains("user_info"), "excerpt={}", ex.excerpt);
+    assert!(!ex.excerpt.contains("system-reminder"), "excerpt={}", ex.excerpt);
+}
+
+#[test]
+fn cursor_excerpt_skips_synthetic_followup_prompt() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".cursor");
+    let parent = "0e435bc1-cf05-4a9a-b036-8902f810bd86";
+    let session = home
+        .join("projects")
+        .join("d-demo-workspace-2026-AgentHub")
+        .join("agent-transcripts")
+        .join(parent)
+        .join(format!("{parent}.jsonl"));
+    write_jsonl(
+        &session,
+        &[
+            serde_json::json!({"role":"user","message":{"content":[{"type":"text","text":"帮我改路由页"}]}}),
+            serde_json::json!({"role":"assistant","message":{"content":[{"type":"text","text":"先看现有路由。"}]}}),
+            serde_json::json!({"role":"user","message":{"content":[{"type":"text","text":"Briefly inform the user about the task result and perform any follow-up actions (if needed)."}]}}),
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Cursor, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert!(ex.excerpt.contains("帮我改路由页"), "excerpt={}", ex.excerpt);
+    assert!(ex.excerpt.contains("先看现有路由。"), "excerpt={}", ex.excerpt);
+    assert!(
+        !ex.excerpt.contains("Briefly inform the user"),
+        "excerpt={}",
+        ex.excerpt
+    );
+}
+
+#[test]
 fn codex_excerpt_reads_assistant_from_response_item_payload() {
     let dir = tempdir().unwrap();
     let home = dir.path().join(".codex");
@@ -1988,8 +2124,8 @@ fn codex_excerpt_keeps_question_and_convention_without_injected_blocks() {
                     ]
                 }
             }),
-            serde_json::json!({"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"帮我看看当前界面"}]}}),
-            serde_json::json!({"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"先看连接页。"}]}}),
+            serde_json::json!({"timestamp":"2026-09-05T12:00:00.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"帮我看看当前界面"}]}}),
+            serde_json::json!({"timestamp":"2026-09-05T12:00:08.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"先看连接页。"}]}}),
         ],
     );
 
@@ -2014,6 +2150,11 @@ fn codex_excerpt_keeps_question_and_convention_without_injected_blocks() {
         ex.excerpt
     );
     assert!(ex.excerpt.contains("先看连接页。"), "excerpt={}", ex.excerpt);
+    assert!(
+        ex.excerpt.contains("---ts:2026-09-05T12:00:00.000Z---"),
+        "excerpt={}",
+        ex.excerpt
+    );
     assert!(
         !ex.excerpt.contains("recommended_plugins"),
         "excerpt={}",

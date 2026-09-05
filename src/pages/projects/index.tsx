@@ -76,7 +76,6 @@ import {
   groupProjectsByPath,
   parseProjectSortKey,
   sortProjectGroups,
-  sortSessions,
   type ProjectGroup,
   type ProjectSortKey,
 } from './project-groups';
@@ -221,7 +220,6 @@ export default function ProjectsPage() {
 
   const resetTree = useCallback(() => {
     setExpanded(new Set());
-    setNestedOpen(new Set());
     setSessionsByProject({});
     setSelected(new Set());
     setLoadingProjectIds(new Set());
@@ -439,14 +437,13 @@ export default function ProjectsPage() {
   const visibleSessions = useCallback(
     (groupId: string) => {
       const group = visibleGroups.find((item) => item.id === groupId);
-      const rows = group
+      return group
         ? group.members.flatMap((member) =>
             visibleSessionsForProject(member.id, projects, q, sessionsByProject),
           )
         : visibleSessionsForProject(groupId, projects, q, sessionsByProject);
-      return sortSessions(rows, sortKey);
     },
-    [visibleGroups, sessionsByProject, q, projects, sortKey],
+    [visibleGroups, sessionsByProject, q, projects],
   );
 
   const selectableSessions = useMemo(
@@ -811,6 +808,7 @@ export default function ProjectsPage() {
           onGoContinue={(s) => void goContinue(s)}
           onRequestDelete={setDeleteTarget}
           queryKey={q}
+          sortKey={sortKey}
         />
       )}
     </>

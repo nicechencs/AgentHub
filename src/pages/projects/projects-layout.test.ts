@@ -40,6 +40,7 @@ describe('projects split layout', () => {
     expect(tree).not.toContain('AgentDot');
     expect(tree).toContain('sessionPageCount');
     expect(tree).toContain("t('projects.tree.pageNext'");
+    expect(tree).toContain('justify-start gap-2 border-t');
     expect(tree).toContain('hidden={!open}');
     expect(tree).toContain('projectGroupListGrid');
     expect(tree).toContain('projectGroupCardGrid');

@@ -2621,9 +2621,15 @@ fn is_noisy_preview(text: &str) -> bool {
         || t.starts_with("<multi_agent")
         || t.starts_with("<image_resize_notice>")
         || t.starts_with("<collaboration_mode>")
+        || t.starts_with("<git-context>")
+        || t.starts_with("<local-command")
+        || t.starts_with("<command-name")
+        || t.starts_with("<command-message")
+        || t.starts_with("<command-args")
         || t.starts_with("You are Grok")
         || t.starts_with("You are Codex")
         || t.starts_with("You are Claude")
+        || t.starts_with("Briefly inform the user about the task result")
         || t.contains("base_instructions")
         || t.len() > 4000 && t.contains("<agent_skills>")
         || is_review_dump(t)
@@ -2656,12 +2662,20 @@ fn peel_injected_user_blocks(text: &str) -> PeeledUserText {
     rest = strip_tagged_block(&rest, "user_info");
     rest = strip_tagged_block(&rest, "system-reminder");
     rest = strip_tagged_block(&rest, "git_status");
+    rest = strip_tagged_block(&rest, "git-context");
+    rest = strip_tagged_block(&rest, "additional_data");
     rest = strip_tagged_block(&rest, "permissions instructions");
     rest = strip_tagged_block(&rest, "skills_instructions");
     rest = strip_tagged_block(&rest, "image_resize_notice");
     rest = strip_tagged_block(&rest, "collaboration_mode");
     rest = strip_tagged_block(&rest, "multi_agent_role");
     rest = strip_tagged_block(&rest, "multi_agent_mode");
+    rest = strip_tagged_block(&rest, "local-command-caveat");
+    rest = strip_tagged_block(&rest, "local-command-stdout");
+    rest = strip_tagged_block(&rest, "local-command-stderr");
+    rest = strip_tagged_block(&rest, "command-name");
+    rest = strip_tagged_block(&rest, "command-message");
+    rest = strip_tagged_block(&rest, "command-args");
     let convention = extract_convention_from(&rest);
     if convention.is_some() {
         rest = strip_convention_block(&rest);
@@ -2680,12 +2694,14 @@ fn peel_injected_user_blocks(text: &str) -> PeeledUserText {
 }
 
 fn extract_convention_from(text: &str) -> Option<String> {
-    if let Some(idx) = text.find("# AGENTS.md") {
-        let rest = &text[idx..];
-        let cut = convention_cut(rest);
-        let doc = rest[..cut].trim();
-        if !doc.is_empty() {
-            return Some(doc.to_string());
+    for heading in ["# AGENTS.md", "# CLAUDE.md"] {
+        if let Some(idx) = text.find(heading) {
+            let rest = &text[idx..];
+            let cut = convention_cut(rest);
+            let doc = rest[..cut].trim();
+            if !doc.is_empty() {
+                return Some(doc.to_string());
+            }
         }
     }
     unwrap_tagged_block(text, "INSTRUCTIONS")
@@ -2693,10 +2709,12 @@ fn extract_convention_from(text: &str) -> Option<String> {
 
 fn strip_convention_block(text: &str) -> String {
     let mut rest = text.to_string();
-    if let Some(idx) = rest.find("# AGENTS.md") {
-        let cut = convention_cut(&rest[idx..]);
-        let end = idx + cut;
-        rest = join_trimmed(&rest[..idx], &rest[end..]);
+    for heading in ["# AGENTS.md", "# CLAUDE.md"] {
+        if let Some(idx) = rest.find(heading) {
+            let cut = convention_cut(&rest[idx..]);
+            let end = idx + cut;
+            rest = join_trimmed(&rest[..idx], &rest[end..]);
+        }
     }
     strip_tagged_block(&rest, "INSTRUCTIONS")
 }
@@ -2718,17 +2736,38 @@ fn convention_cut(rest: &str) -> usize {
 }
 
 fn strip_tagged_block(text: &str, tag: &str) -> String {
-    let open = format!("<{tag}>");
-    let close = format!("</{tag}>");
-    let Some(start) = text.find(&open) else {
+    let Some((start, end)) = tagged_block_span(text, tag) else {
         return text.to_string();
     };
-    let after_open = start + open.len();
+    join_trimmed(&text[..start], &text[end..])
+}
+
+/// `<tag>` or `<tag attrs...>` … `</tag>`.
+fn tagged_block_span(text: &str, tag: &str) -> Option<(usize, usize)> {
+    let (start, after_open) = find_open_tag(text, tag)?;
+    let close = format!("</{tag}>");
     let end = text[after_open..]
         .find(&close)
         .map(|i| after_open + i + close.len())
         .unwrap_or(text.len());
-    join_trimmed(&text[..start], &text[end..])
+    Some((start, end))
+}
+
+fn find_open_tag(text: &str, tag: &str) -> Option<(usize, usize)> {
+    let needle = format!("<{tag}");
+    let mut search = 0usize;
+    while let Some(rel) = text[search..].find(&needle) {
+        let start = search + rel;
+        let after_name = start + needle.len();
+        let next = text[after_name..].chars().next().unwrap_or('\0');
+        if next != '>' && next != '/' && !next.is_whitespace() {
+            search = after_name;
+            continue;
+        }
+        let gt = text[after_name..].find('>')?;
+        return Some((start, after_name + gt + 1));
+    }
+    None
 }
 
 fn join_trimmed(left: &str, right: &str) -> String {
@@ -2752,12 +2791,10 @@ fn visible_transcript_text(text: &str) -> Option<String> {
 }
 
 fn unwrap_tagged_block(text: &str, tag: &str) -> Option<String> {
-    let open = format!("<{tag}>");
+    let (_start, after_open) = find_open_tag(text, tag)?;
     let close = format!("</{tag}>");
-    let start = text.find(&open)?;
-    let rest = &text[start + open.len()..];
-    let end = rest.find(&close)?;
-    let inner = rest[..end].trim();
+    let rel_end = text[after_open..].find(&close)?;
+    let inner = text[after_open..after_open + rel_end].trim();
     if inner.is_empty() {
         None
     } else {
@@ -2768,6 +2805,7 @@ fn unwrap_tagged_block(text: &str, tag: &str) -> Option<String> {
 struct ExcerptTurn {
     role: &'static str,
     text: String,
+    at: Option<String>,
 }
 
 struct TranscriptExcerpt {
@@ -2789,6 +2827,7 @@ fn extract_jsonl_transcript_turns(text: &str) -> TranscriptExcerpt {
                     turns.push(ExcerptTurn {
                         role: "user",
                         text: visible,
+                        at: jsonl_timestamp(line),
                     });
                 }
                 continue;
@@ -2801,6 +2840,7 @@ fn extract_jsonl_transcript_turns(text: &str) -> TranscriptExcerpt {
                 turns.push(ExcerptTurn {
                     role: "user",
                     text: visible,
+                    at: jsonl_timestamp(line),
                 });
             }
             continue;
@@ -2814,7 +2854,8 @@ fn extract_jsonl_transcript_turns(text: &str) -> TranscriptExcerpt {
         {
             continue;
         }
-        if let Some(turn) = extract_assistant_turn(&v) {
+        if let Some(mut turn) = extract_assistant_turn(&v) {
+            turn.at = jsonl_timestamp(line);
             turns.push(turn);
         }
     }
@@ -2896,6 +2937,7 @@ fn extract_assistant_turn(v: &serde_json::Value) -> Option<ExcerptTurn> {
     Some(ExcerptTurn {
         role: "assistant",
         text: t.to_string(),
+        at: None,
     })
 }
 
@@ -2919,7 +2961,11 @@ fn extract_grok_update_turns(text: &str) -> Vec<ExcerptTurn> {
                 continue;
             }
         }
-        turns.push(ExcerptTurn { role, text: piece });
+        turns.push(ExcerptTurn {
+            role,
+            text: piece,
+            at: jsonl_timestamp(line),
+        });
     }
     polish_excerpt_turns(turns)
 }
@@ -2972,7 +3018,11 @@ fn polish_excerpt_turns(turns: Vec<ExcerptTurn>) -> Vec<ExcerptTurn> {
         .filter_map(|t| {
             if t.role == "user" {
                 let text = visible_transcript_text(&t.text)?;
-                Some(ExcerptTurn { role: "user", text })
+                Some(ExcerptTurn {
+                    role: "user",
+                    text,
+                    at: t.at,
+                })
             } else if t.text.trim().is_empty() {
                 None
             } else {
@@ -3024,6 +3074,11 @@ fn format_excerpt_turns(turns: &[ExcerptTurn], convention: Option<&str>) -> Stri
         }
         if !body.is_empty() {
             body.push('\n');
+        }
+        if let Some(ts) = t.at.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            body.push_str("---ts:");
+            body.push_str(ts);
+            body.push_str("---\n");
         }
         body.push_str(&format!("---turn:{}---\n", t.role));
         body.push_str(text);
@@ -3265,6 +3320,34 @@ pub(crate) fn extract_any_text(line: &str) -> Option<String> {
     extract_text_from_value(&v)
 }
 
+fn jsonl_timestamp(line: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(line).ok()?;
+    v.get("timestamp")
+        .or_else(|| v.get("created_at"))
+        .or_else(|| v.get("time"))
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+fn content_item_is_tool_part(item: &serde_json::Value) -> bool {
+    let ty = item
+        .get("type")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    matches!(
+        ty.as_str(),
+        "tool_result"
+            | "tool_use"
+            | "tool_result_error"
+            | "server_tool_use"
+            | "function_call"
+            | "function_call_output"
+    )
+}
+
 fn extract_text_from_value(v: &serde_json::Value) -> Option<String> {
     for key in ["text", "content", "message", "prompt", "input"] {
         if let Some(s) = v.get(key).and_then(|x| x.as_str()) {
@@ -3276,6 +3359,9 @@ fn extract_text_from_value(v: &serde_json::Value) -> Option<String> {
         if let Some(arr) = v.get(key).and_then(|x| x.as_array()) {
             let mut parts = Vec::new();
             for item in arr {
+                if content_item_is_tool_part(item) {
+                    continue;
+                }
                 if let Some(s) = item.as_str() {
                     parts.push(s.to_string());
                 } else if let Some(s) = item.get("text").and_then(|t| t.as_str()) {
