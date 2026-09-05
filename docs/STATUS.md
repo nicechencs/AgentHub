@@ -63,7 +63,7 @@ updated: 2026-09-05
 - 「使用官方服务」默认勾选不禁用智能识别。高级编辑器不回显明文钥匙。同一工具切换成功 toast 说明已写入本机配置；接到本机路由则仍说已切换。备份标题是「切换前自动 / 手动 + 时间」。设置里的安全备份默认在切换/导入时保留本机配置副本（可关闭自动堆积；当次切换仍留一份以便失败回滚）；卡片左右分栏，点开在右侧展示打码后的文件内容。
 - 官方登录等待页不显示内部状态或登录文件路径；失败时「重试」是主按钮。Windows 上子进程统一无窗启动。
 - GUI 日志：智能识别 `gui`/`recognize`，勾选官方 `gui`/`use_official`，删进回收站 `core.provider`/`recycle`，切换写本机路径 `core.provider`/`switch_write`。连接页切换、Dashboard 连接流程和路由页成功失败另记 `gui`/`switch`·`bind`·`route_*`·`bridge_*`；核心绑定记 `core.adapter`/`bind`·`unbind`。只记 last4，不写明文钥匙。见 [日志参考](reference/logging.md)。
-- 凭据落盘加密不在产品范围内；国产 OAuth 适配以及 OAuth 转 API 也不在产品范围内。它们不是当前 backlog。产品上所有 API Key 都可以分享至连接池并接到其他工具，国产官方登录不能分享。**当前实现仍按所属 Agent 白名单入池**（claude / codex / grok / kimi / dsh）；WorkBuddy / ZCode / Pi / Cursor 上的 API Key 在连接页会被禁用。这与产品决策不一致，不是「这些 Key 不该分享」。见 [产品边界](decisions/product-boundaries.md)。
+- 凭据落盘加密不在产品范围内；国产 OAuth 适配以及 OAuth 转 API 也不在产品范围内。它们不是当前 backlog。入池候选由「从连接同步」决定（连接页无「分享至连接池」行入口）：**所有 API Key 都可同步**（含 WorkBuddy / ZCode / Pi / Cursor 上配置的）；官方 OAuth 仅 Claude / Codex / Grok；**国产官方登录不能分享**。实现见 `isPoolShareableLogin`（`src/pages/connections/ticket-pool-import.ts`），已与产品决策对齐，不再按 Agent 白名单挡 API Key。见 [产品边界](decisions/product-boundaries.md)。
 
 ## 真源优先级
 
