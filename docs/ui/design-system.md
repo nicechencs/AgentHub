@@ -23,7 +23,7 @@ updated: 2026-09-05
 ## 2. Design principles
 
 1. **Quiet desktop tool.** Use neutral surfaces and restrained emphasis. Agent brand colors are for small identity marks and charts, not large backgrounds.
-2. **One primary action.** A page has at most one `Button variant="default"` action. Secondary work uses `secondary`, `outline`, or `ghost`.
+2. **One primary action.** A page has at most one `Button variant="default"` action, in chrome, an empty state, an error state, or a dialog. Repeating list/table rows never use `default`. Secondary work uses `secondary`, `outline`, or `ghost`.
 3. **Actionable empty states.** Empty data normally provides one clear next step. The healthy empty state on Routes is intentionally informational because most connections do not require a running local route.
 4. **Progressive disclosure.** Keep the main column scannable. Put explanations in `Hint`, `Tip`, a short `Notice`, a first-run callout, or a confirmation dialog according to their importance.
 5. **Partial failure is normal.** One unavailable Agent or parser must not blank the rest of a page. Render the unaffected data and mark the affected block.
@@ -119,13 +119,15 @@ Use lucide icons for familiar icon-only actions. Every unfamiliar icon button ne
 
 | Page role | Component treatment |
 |---|---|
-| Page's one primary outcome | `default` / accent |
-| Safe secondary action | `secondary` or `outline` |
-| Toolbar, cancel, or low-weight action | `ghost` |
+| Page's one primary outcome | `default` / accent. At most one, in chrome, empty state, error state, or dialog confirm. Never in a repeating list/table row. |
+| Row's main safe verb (install, retry, redetect) | `secondary`, with the row's usual icon + label (icon-only only in an icon-sized column) |
+| Safe secondary action, including dialog cancel | `secondary` |
+| In-row lesser action | `outline` |
+| Toolbar or low-weight action | `ghost` |
 | Destructive confirmation | `danger` inside the confirmation dialog |
-| Destructive entry before confirmation | `dangerOutline` or `ghost` |
+| Destructive entry before confirmation | `dangerOutline` or `ghost`. Trash icon only on delete entries, not on stop. |
 
-The stop action for an active operation is `dangerOutline`, while the final delete or irreversible confirmation uses `danger`. Do not create a global switch-confirmation component; each page owns its dialog because the explanation differs.
+The stop action for an active operation is `dangerOutline`, while the final delete or irreversible confirmation uses `danger`. `PageRefreshButton` stays `secondary` and is not reused for collect / redetect / OAuth refresh. Do not create a global switch-confirmation component; each page owns its dialog because the explanation differs.
 
 ### 4.4 List, table, and inspect
 
@@ -215,7 +217,7 @@ Additional rules:
 ## 8. Review checklist
 
 - Is the page using `/routes`, Routes, and 路由 in current-facing copy?
-- Is there at most one accent primary action?
+- Is there at most one accent primary action, and did repeating rows avoid `default`?
 - Did a dense field table open inspect from `ListNameButton` rather than whole-row `onOpen`?
 - Is there at most one open-detail control per object (no extra 详情 button beside `onOpen`)?
 - Did the change use semantic type, surface, spacing, radius, and focus tokens?
