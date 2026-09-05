@@ -568,6 +568,35 @@ fn list_cursor_agent_transcripts_as_sessions() {
 }
 
 #[test]
+fn cursor_session_index_skips_reparse_on_second_list() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".cursor");
+    let data = tempdir().unwrap();
+    let sid = "0e435bc1-cf05-4a9a-b036-8902f810bd86";
+    let proj = home.join("projects").join("d-demo-workspace-2026-AgentHub");
+    write_session(
+        &proj
+            .join("agent-transcripts")
+            .join(sid)
+            .join(format!("{sid}.jsonl")),
+        &[
+            r#"{"role":"user","message":{"content":[{"type":"text","text":"<user_query>\n帮我改路由页\n</user_query>"}]}}"#,
+        ],
+    );
+
+    let first = list_sessions_for_agent_home(AgentId::Cursor, &home, Some(data.path())).unwrap();
+    assert_eq!(first.len(), 1);
+    assert!(data.path().join("scan-cache.db").exists());
+    assert!(first[0].preview.as_deref().unwrap_or("").contains("路由页"));
+
+    let second = list_sessions_for_agent_home(AgentId::Cursor, &home, Some(data.path())).unwrap();
+    assert_eq!(second.len(), 1);
+    assert_eq!(second[0].id, first[0].id);
+    assert_eq!(second[0].preview, first[0].preview);
+    assert_eq!(second[0].title, first[0].title);
+}
+
+#[test]
 fn decode_helpers_still_work() {
     assert_eq!(
         decode_claude_project_dir("-C-Users-example-demo").unwrap(),

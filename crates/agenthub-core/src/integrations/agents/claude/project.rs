@@ -30,6 +30,7 @@ impl ProjectSource for ClaudeProjectSource {
             ctx.home,
             AgentId::Claude,
             None,
+            ctx.data_dir,
         )?))
     }
 
@@ -46,6 +47,7 @@ impl ProjectSource for ClaudeProjectSource {
             ctx.home,
             AgentId::Claude,
             Some(key),
+            ctx.data_dir,
         )?))
     }
 }
