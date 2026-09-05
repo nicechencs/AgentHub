@@ -1,3 +1,4 @@
+import type { TranslateFn } from '@/lib/i18n';
 import type { AgentSession } from '@/lib/types';
 
 export const REVIEW_THREAD_KIND = 'review';
@@ -6,11 +7,47 @@ export function isReviewSession(s: Pick<AgentSession, 'threadKind'>): boolean {
   return s.threadKind === REVIEW_THREAD_KIND;
 }
 
+/** Codex spawned child (not a tool-approval record). */
+export function isSpawnedChildSession(
+  s: Pick<AgentSession, 'parentSessionId' | 'threadKind'>,
+): boolean {
+  return Boolean(s.parentSessionId?.trim()) && !isReviewSession(s);
+}
+
+/** Hang Codex children under the root conversation id. */
+export function spawnedChildParentKey(
+  s: Pick<AgentSession, 'sessionId' | 'parentSessionId' | 'threadKind'>,
+): string | null {
+  if (!isSpawnedChildSession(s)) return null;
+  return s.sessionId?.trim() || s.parentSessionId?.trim() || null;
+}
+
+export function nestedSessionLabel(
+  session: Pick<AgentSession, 'agentRole'>,
+  t: TranslateFn,
+): string {
+  switch (session.agentRole?.trim().toLowerCase()) {
+    case 'explorer':
+      return t('projects.tree.subSessionExplore');
+    case 'coder':
+    case 'implementer':
+      return t('projects.tree.subSessionCode');
+    case 'reviewer':
+    case 'review':
+      return t('projects.tree.subSessionCheck');
+    case 'planner':
+      return t('projects.tree.subSessionPlan');
+    default:
+      return t('projects.tree.subSession');
+  }
+}
+
 /** Codex tool-approval threads that belong to this conversation. */
 export function reviewsForParent(
-  parent: Pick<AgentSession, 'sessionId'>,
+  parent: Pick<AgentSession, 'sessionId' | 'parentSessionId'>,
   sessions: AgentSession[],
 ): AgentSession[] {
+  if (parent.parentSessionId?.trim()) return [];
   const sid = parent.sessionId?.trim();
   if (!sid) return [];
   return sessions.filter((s) => isReviewSession(s) && s.parentSessionId === sid);
@@ -58,22 +95,39 @@ export function nestSessions(sessions: AgentSession[]): NestedSession[] {
   const listed = sessions.filter((s) => !isReviewSession(s));
   const childrenByParent = new Map<string, AgentSession[]>();
   const nestedIds = new Set<string>();
-  for (const s of listed) {
-    const parentId = cursorSubagentParentId(s);
-    if (!parentId) continue;
+  const pushChild = (parentId: string, s: AgentSession) => {
     nestedIds.add(s.id);
     const list = childrenByParent.get(parentId) ?? [];
     list.push(s);
     childrenByParent.set(parentId, list);
+  };
+  for (const s of listed) {
+    const parentId = cursorSubagentParentId(s);
+    if (parentId) pushChild(parentId, s);
+  }
+  for (const s of listed) {
+    if (nestedIds.has(s.id)) continue;
+    const parentId = spawnedChildParentKey(s);
+    if (parentId) pushChild(parentId, s);
   }
 
   const out: NestedSession[] = [];
   const usedParents = new Set<string>();
   for (const s of listed) {
     if (nestedIds.has(s.id)) continue;
-    const tid = cursorTranscriptId(s);
-    const children = (tid && childrenByParent.get(tid)) || [];
-    if (tid) usedParents.add(tid);
+    const keys = [cursorTranscriptId(s), s.sessionId?.trim()].filter(
+      (key, index, all): key is string => Boolean(key) && all.indexOf(key) === index,
+    );
+    const children: AgentSession[] = [];
+    const seen = new Set<string>();
+    for (const key of keys) {
+      usedParents.add(key);
+      for (const child of childrenByParent.get(key) ?? []) {
+        if (seen.has(child.id)) continue;
+        seen.add(child.id);
+        children.push(child);
+      }
+    }
     out.push({ session: s, children });
   }
   for (const [key, children] of childrenByParent) {

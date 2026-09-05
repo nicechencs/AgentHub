@@ -21,6 +21,7 @@ fn put_and_get_fresh_roundtrip() {
             session_id: Some("sid-1".into()),
             parent_session_id: None,
             thread_kind: None,
+            agent_role: None,
         },
     );
     store.save_if_dirty();

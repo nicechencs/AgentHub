@@ -347,6 +347,7 @@ fn build_kimi_session(
             session_id: None,
             parent_session_id: None,
             thread_kind: None,
+            agent_role: None,
         }
     };
 
@@ -791,6 +792,7 @@ fn list_sessions_tree(
                         session_id: ent.session_id.clone(),
                         parent_session_id: ent.parent_session_id.clone(),
                         thread_kind: ent.thread_kind.clone(),
+                        agent_role: ent.agent_role.clone(),
                     });
                     continue;
                 }
@@ -823,6 +825,7 @@ fn list_sessions_tree(
                                 session_id: meta.session_id,
                                 parent_session_id: meta.parent_session_id,
                                 thread_kind: meta.thread_kind,
+                                agent_role: meta.agent_role,
                             },
                         );
                     }
@@ -846,6 +849,7 @@ fn list_sessions_tree(
                         session_id: meta.session_id.clone(),
                         parent_session_id: meta.parent_session_id.clone(),
                         thread_kind: meta.thread_kind.clone(),
+                        agent_role: meta.agent_role.clone(),
                     },
                 );
             }
@@ -930,6 +934,7 @@ struct SessionFileMeta {
     session_id: Option<String>,
     parent_session_id: Option<String>,
     thread_kind: Option<String>,
+    agent_role: Option<String>,
 }
 
 fn session_file_meta(agent: AgentId, path: &Path) -> SessionFileMeta {
@@ -971,12 +976,14 @@ fn session_file_meta_head(agent: AgentId, path: &Path, head_bytes: u64) -> Sessi
         session_id,
         parent_session_id: thread.parent_session_id,
         thread_kind: thread.thread_kind,
+        agent_role: thread.agent_role,
     }
 }
 
 struct ThreadMeta {
     parent_session_id: Option<String>,
     thread_kind: Option<String>,
+    agent_role: Option<String>,
     /// Review threads store the parent in `session_id`; use payload.id instead.
     own_session_id: Option<String>,
 }
@@ -985,6 +992,7 @@ fn extract_thread_meta(text: &str) -> ThreadMeta {
     let empty = ThreadMeta {
         parent_session_id: None,
         thread_kind: None,
+        agent_role: None,
         own_session_id: None,
     };
     for line in text.lines().take(8) {
@@ -1016,23 +1024,46 @@ fn extract_thread_meta(text: &str) -> ThreadMeta {
                 .pointer("/source/subagent/other")
                 .and_then(|x| x.as_str())
                 .is_some_and(|s| s.eq_ignore_ascii_case("guardian"));
-        if !guardian {
-            return ThreadMeta {
-                parent_session_id: parent,
-                thread_kind: None,
-                own_session_id: None,
-            };
-        }
-        let own = payload
-            .get("id")
+        let agent_role = payload
+            .get("agent_role")
+            .or_else(|| payload.get("agentRole"))
             .and_then(|x| x.as_str())
             .map(str::trim)
             .filter(|s| !s.is_empty())
-            .map(str::to_string);
+            .map(str::to_string)
+            .or_else(|| {
+                payload
+                    .pointer("/source/subagent/thread_spawn/agent_role")
+                    .and_then(|x| x.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+            });
+        if guardian {
+            let own = payload
+                .get("id")
+                .and_then(|x| x.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            return ThreadMeta {
+                parent_session_id: parent,
+                thread_kind: Some("review".into()),
+                agent_role,
+                own_session_id: own,
+            };
+        }
+        let subagent = thread_source.eq_ignore_ascii_case("subagent")
+            || payload.pointer("/source/subagent/thread_spawn").is_some();
         return ThreadMeta {
             parent_session_id: parent,
-            thread_kind: Some("review".into()),
-            own_session_id: own,
+            thread_kind: if subagent {
+                Some("subagent".into())
+            } else {
+                None
+            },
+            agent_role,
+            own_session_id: None,
         };
     }
     empty
@@ -1269,6 +1300,7 @@ fn build_session_from_meta(
         session_id,
         parent_session_id: meta.parent_session_id,
         thread_kind: meta.thread_kind,
+        agent_role: meta.agent_role,
     })
 }
 
@@ -1763,6 +1795,7 @@ fn session_from_candidate(
                 session_id: ent.session_id,
                 parent_session_id: ent.parent_session_id,
                 thread_kind: ent.thread_kind,
+                agent_role: ent.agent_role,
             });
         }
     }
@@ -1789,6 +1822,7 @@ fn session_from_candidate(
                 session_id: rec.session_id.clone(),
                 parent_session_id: rec.parent_session_id.clone(),
                 thread_kind: rec.thread_kind.clone(),
+                agent_role: rec.agent_role.clone(),
             },
         );
     }
@@ -3045,6 +3079,7 @@ pub(crate) fn load_excerpt_with_read_cap(
             session_id: native_session_id_from_path(agent, &abs_path),
             parent_session_id: None,
             thread_kind: None,
+            agent_role: None,
         }
     });
     let (filtered, mut truncated) =

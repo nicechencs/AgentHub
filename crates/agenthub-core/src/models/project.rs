@@ -69,8 +69,12 @@ pub struct AgentSession {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_session_id: Option<String>,
     /// `review` = Codex tool-approval thread; hidden from the main session list.
+    /// `subagent` = Codex spawned child; nested under the parent conversation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thread_kind: Option<String>,
+    /// Codex spawn role (`explorer` / `coder` / …), when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_role: Option<String>,
 }
 
 /// Conversation text for project preview / continue-chat context.

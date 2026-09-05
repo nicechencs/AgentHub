@@ -2072,6 +2072,43 @@ fn codex_review_session_is_marked_and_drops_transcript_dump() {
 }
 
 #[test]
+fn codex_subagent_session_keeps_parent_and_role() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".codex");
+    let session = home
+        .join("sessions")
+        .join("2026")
+        .join("09")
+        .join("03")
+        .join("rollout-subagent.jsonl");
+    write_jsonl(
+        &session,
+        &[
+            serde_json::json!({
+                "type":"session_meta",
+                "payload":{
+                    "session_id":"parent-1",
+                    "id":"child-1",
+                    "cwd":"D:\\work\\repo",
+                    "thread_source":"subagent",
+                    "parent_thread_id":"parent-1",
+                    "agent_role":"explorer",
+                    "source":{"subagent":{"thread_spawn":{"parent_thread_id":"parent-1","agent_role":"explorer"}}}
+                }
+            }),
+            serde_json::json!({"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"清理已经合并至dev的分支"}]}}),
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Codex, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].thread_kind.as_deref(), Some("subagent"));
+    assert_eq!(rows[0].parent_session_id.as_deref(), Some("parent-1"));
+    assert_eq!(rows[0].session_id.as_deref(), Some("parent-1"));
+    assert_eq!(rows[0].agent_role.as_deref(), Some("explorer"));
+}
+
+#[test]
 fn claude_excerpt_reads_nested_assistant_message_text() {
     let dir = tempdir().unwrap();
     let home = dir.path().join(".claude");
@@ -2456,6 +2493,7 @@ fn session_index_roundtrip_and_freshness() {
             session_id: Some("sid-1".into()),
             parent_session_id: None,
             thread_kind: None,
+            agent_role: None,
         },
     );
     store.save_if_dirty();
