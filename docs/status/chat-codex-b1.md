@@ -15,7 +15,9 @@ updated: 2026-09-05
 
 剩余工作合并为 B1 会话基础、B2 模型/菜单/附件/扩展操作、B3 Claude/其他 Agent 与平台验收。B1 不等于全部完成；B2/B3 不因同一套 UI 而自动获得原生能力。
 
-起点：`dev` / `db40f6fbf9c86a184707f7ff8259a5bac361bb24`，保留上一轮未提交的 S0 文件。本次没有自动提交或推送；换电脑前需将最终文件提交到可获取的分支，不能依赖 `temp/` 或聊天记录。
+起点：`dev` / `db40f6fbf9c86a184707f7ff8259a5bac361bb24`，保留上一轮未提交的 S0 文件。用户随后明确要求测试后提交，并生成开发/review 提示词；本次交付按此范围提交到 dev，不推送。换电脑前需取得该提交，不能依赖 `temp/` 或聊天记录。
+
+收尾时发现并行工作已提交 B1 代码：`c03acb540b0327cd3fb81a56060d930e7836585a`，父提交 `4eeaab10cdd3e66f6e794e30e1290a0a679cd8d0`；提示词与现行说明初版为 `357853762ac902808b6fac5636786abddefaa22c`。本轮保留这些提交，只追加最终测试/失败记录与交接索引。最初起点之后还存在其他功能/版本提交，不能将整个起点到 HEAD 的 diff 都归为 Chat。
 
 分工：Luna 实现 Codex 进程通信与后台会话；Terra 完成前端并独立审查后台；另一位 Luna 独立审查和修复前端；主 Agent 负责 IPC、联调、真实实验与最终验收。
 
@@ -65,20 +67,48 @@ B1 核心代码已落地，后台与前端的最终独立审查通过。启动�
 
 主线程实际执行结果：
 
+这些是当次工作区实跑结果；期间有其他并行提交，不等同于最终 SHA 在干净 CI 中的完整门禁记录。
+
 | 检查 | 结果 |
 | --- | --- |
 | `pnpm exec vitest run src/pages/chat src/dev/mocks/chat-runtime.test.ts src/lib/backend/tauri/chat-runtime.test.ts src/lib/backend/boundary-imports.test.ts src/lib/api/backend-features.test.ts` | 13 个文件、154 个测试通过 |
 | `pnpm typecheck` | 通过 |
-| `pnpm typecheck:test` | 未通过：未修改的 `page-chrome-model.test.ts` 两项、`page-help-tour.test.ts` 三项类型错误；没有本批新增文件错误 |
+| `pnpm typecheck:test` | 通过；提交前修正 `page-chrome-model.test.ts` 与 `page-help-tour.test.ts` 的 fixture 类型，未改断言语义 |
 | `cargo check -p agenthub-gui --locked` | 通过，存在 unused/dead-code warnings |
 | `cargo test -p agenthub-core --locked --lib chat_runtime` | 21 通过、1 默认忽略；包含备份测试；真实测试另按上文显式运行通过 |
 | `cargo test -p agenthub-core --locked --test chat_runtime_contract` | 5 通过 |
 | `cargo test -p agenthub-core --locked --lib services::chat_service` | 36 通过，旧发送行为回归检查 |
 | `cargo test -p agenthub-core --locked --lib storage::migrations::tests` | 6 通过，包括事务回滚与并发打开 |
+| `cargo test -p agenthub-gui --locked` | 150 通过，二进制及 doc-tests 均无失败 |
+| `pnpm test` | 2680 通过、6 失败，涉及 2 个测试文件；复跑 JSON 报告结果一致 |
+| `cargo test -p agenthub-core --locked` | lib tests：2582 通过、5 失败、1 忽略；因 lib 失败未继续此命令余下阶段 |
 | `pnpm check:docs` / `git diff --check` | 通过 |
 
-未运行全量应用测试和生产打包，也未完成桌面 GUI 全流程真人冒烟。B1 的核心实现与上述验证通过，不等于原方案全部 A01–A17 发布门槛通过。待补的真实场景包括文件审批、问答、不同权限/登录失败、崩溃与恢复失败的完整产品路径，以及 Windows/Linux。已有 fake/状态测试和 macOS 协议实验不能替代这些实际场景。
+未运行生产打包、浏览器 E2E，也未完成桌面 GUI 全流程真人冒烟。B1 的核心定向验证通过，不等于全量门禁或原方案全部 A01–A17 发布门槛通过。待补的真实场景包括文件审批、问答、不同权限/登录失败、崩溃与恢复失败的完整产品路径，以及 Windows/Linux。已有 fake/状态测试和 macOS 协议实验不能替代这些实际场景。
+
+### 用户要求后续处理的全量失败
+
+用户已明确要求“失败的先不用管，先记下来，后面再做”，因此停止扩大排查并保留失败记录。尚未完成基线提交对照，以下是观察结果，不断言全部与本次无关；提交不等于全量测试通过。
+
+前端：
+
+- `src/pages/agents/agent-detail-model.test.ts`：4 个 `AgentDetailPanel markup` 用例失败，分别为 Claude endpoint/channel/config path、Pi 三个路径、已安装 native path 与 npm 入口、未安装 Agent 空详情。
+- `src/pages/routes/shared/WriteClientConfigDialog.test.tsx`：2 个用例失败，分别为 Codex/Grok config files 文案、Claude settings.json/local address/token 文案。失败断言涉及 SSR markup 中的连续路径文本，实际原因仍待排查，不通过删除断言处理。
+
+Rust：
+
+| 完整测试名 | 当次错误现象 |
+| --- | --- |
+| `platform::lifecycle::tests::install_progress_events_share_one_nonempty_operation_id` | `bash not found; this official native installer explicitly requires bash` |
+| `platform::paths::tests::config_purge_accepts_safe_custom_temp_directory` | macOS 临时路径经过 `/var` 符号链接，被安全路径检查拒绝 |
+| `services::account_service::tests::grok_hub_pkce_refresh_writes_auth_json_when_same_identity_row_is_newer` | 本地 OAuth 模拟服务器的 HTTP status line 网络错误，`Invalid argument (os error 22)` |
+| `services::project_service::scan_cache_store::tests::imports_legacy_json_then_removes_it` | 期望导入内容处 panic：`imported` |
+| `utils::process::tests::detached_descendant_pipe_is_bounded_without_post_reap_group_signal` | `setsid: command not found`，未得到预期的 detached pipe 状态 |
+
+后续先单独复现并与基线比较，区分平台环境、全量并发状态污染、旧测试预期和本次回归。不要为这些失败修改用户级配置、跳过安全检查或无授权安装系统命令。
 
 后续 B2 优先：以会话参数接入模型与思考强度，统一菜单动作，按真实输入能力添加附件，区分 Skills/插件发现与实际调用。B3 单独核对 Claude 登录及接口边界；ZCode 保持待验证，不扩大国产 OAuth 范围。
 
 下一位开发 Agent 从 B2 开始，并将上述 B1 真实验收尾项并入后续批次验证，不需要重新设计已通过的会话底层；遇到具体失败时再定向扩大范围。不得将该安排解释为允许跳过发布门槛。
+
+可直接复制的交接内容：[B2 开发提示词](../guides/chat-b2-handoff.md)、[独立 review 提示词](../guides/chat-review-handoff.md)。

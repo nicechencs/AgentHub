@@ -14,8 +14,8 @@ updated: 2026-09-05
 请对 AgentHub Chat 的本次提交做独立、只读 review。先报告问题，不直接修改代码，不复述实现者的“已通过”作为审查证据。
 
 范围：
-- 优先采用用户提供的 B1 提交 SHA。未提供时，git log --diff-filter=A --format=%H -- docs/guides/chat-review-handoff.md 可定位首次新增本文的交付提交。
-- B1 之前基线是 db40f6fbf9c86a184707f7ff8259a5bac361bb24；看基线到目标提交的实际 diff。不要无意把后来的 B2 改动混入，也不要重置当前工作区。
+- B1 代码提交是 c03acb540b0327cd3fb81a56060d930e7836585a；其父提交是 4eeaab10cdd3e66f6e794e30e1290a0a679cd8d0。先审查这一笔实际 diff。
+- 提示词/现行说明初版在 357853762ac902808b6fac5636786abddefaa22c，之后另有最终验证记录补充。db40f6fbf9c86a184707f7ff8259a5bac361bb24 是任务最初起点，其后有其他并行功能提交；不要把整个 db40..HEAD 范围归为 B1，也不要重置当前工作区。
 - 读 AGENTS.md、docs/status/chat-codex-b1.md 和 docs/proposals/chat-unified-experience.md，再从 diff/调用方/相关测试进入；结构问题优先 CodeGraph，不可用时定向读取。
 
 重点审查：
@@ -27,6 +27,7 @@ updated: 2026-09-05
 6. 持久化：迁移前备份是否包括 WAL、失败不升级、不覆盖用户数据；事务回滚、恢复、中断、有限回放/gap；独立升级尝试可能多份 UUID 备份是已记录取舍，不假定最多一份。
 7. Backend 分层：invoke 只在 tauri adapter；mock 不进入生产；UI 禁用不能代替后端校验；活动会话的 Agent/目录不能混用旧原生 thread。
 8. 证据边界：真实 macOS 续聊、直接协议实验、fake 与纯状态测试分别覆盖什么；不能把 schema 存在或模型/插件列表当作可调用证明。检查跨平台命令/进程清理和路径边界。
+9. 提交范围：并行提交 c03acb54 还包含根目录 rust_out（本机 Mach-O 可执行文件）。本轮未执行或删除该文件，来源尚未确认；检查是否误把编译产物入库，提出处理建议，不把它当源码依赖。
 
 验证参考：
 pnpm typecheck
