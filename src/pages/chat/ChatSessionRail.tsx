@@ -72,6 +72,7 @@ export function ChatSessionRail({
         'flex shrink-0 flex-col border-r border-border bg-canvas transition-[width] duration-200',
         open ? 'w-60' : 'w-0 overflow-hidden border-r-0',
       )}
+      data-help="chat-rail"
     >
       <div className="flex items-center gap-1.5 p-2">
         <Hint label={t('chat.rail.collapseHistory')}>
@@ -90,6 +91,7 @@ export function ChatSessionRail({
             size="sm"
             variant="secondary"
             disabled={agentsReady && !hasUsableAgent}
+            data-help="chat-new"
             onClick={onNewChat}
           >
             <Plus className="h-3.5 w-3.5" />

@@ -17,6 +17,7 @@ describe('OnboardingDialog first-run usage', () => {
     expect(dialog).toContain('skipGuide');
     expect(dialog).toContain('continueFromUsage');
     expect(dialog).toContain('hasOnboardingUsageChoice');
+    expect(dialog).toContain('notifyOnboardingFinished');
     expect(dialog.indexOf("step === 'usage'")).toBeLessThan(dialog.indexOf("step === 'env'"));
   });
 

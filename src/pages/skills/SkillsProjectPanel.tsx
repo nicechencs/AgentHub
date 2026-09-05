@@ -89,7 +89,7 @@ export function SkillsProjectPanel(props: SkillsProjectPanelProps) {
           disabled={options.length === 0}
         >
           <Hint label={selectedOption?.subtitle} side="bottom">
-            <SelectTrigger className="w-72 max-w-full" aria-label={t('skills.filters.projectAria')}>
+            <SelectTrigger className="w-72 max-w-full" aria-label={t('skills.filters.projectAria')} data-help="skills-workspace">
               <SelectValue placeholder={t('skills.filters.projectPlaceholder')} />
             </SelectTrigger>
           </Hint>

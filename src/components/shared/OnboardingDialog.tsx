@@ -41,6 +41,7 @@ import {
   toggleOnboardingUsage,
   type OnboardingUsageSelection,
 } from './onboarding-model';
+import { notifyOnboardingFinished } from './chrome-hint-model';
 import { OnboardingUsageStep } from './OnboardingUsageStep';
 
 type Step = 'usage' | 'env' | 'detect' | 'import' | 'done';
@@ -115,6 +116,7 @@ export function OnboardingDialog() {
   const finish = (go?: string) => {
     applyUsage();
     saveBool(StorageKey.onboardingDone, true);
+    notifyOnboardingFinished();
     setOpen(false);
     if (go) navigate(go);
   };

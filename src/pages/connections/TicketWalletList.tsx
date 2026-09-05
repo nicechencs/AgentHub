@@ -730,7 +730,7 @@ export function TicketAddMenu({
       }}
     >
       <DropdownMenuTrigger asChild>
-        <Button variant={variant}>
+        <Button variant={variant} data-help="connections-add">
           <Plus className="h-3.5 w-3.5" /> {t('connections.list.add')} <ChevronDown className="h-3.5 w-3.5" />
         </Button>
       </DropdownMenuTrigger>

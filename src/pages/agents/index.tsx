@@ -294,7 +294,7 @@ export default function AgentsPage() {
         description={t('agents.page.description')}
         descriptionTip={t('agents.page.descriptionTip')}
       />
-      <div className={pageRhythm.lead}>
+      <div className={pageRhythm.lead} data-help="agents-env">
         <EnvSoftwareList
           runtimes={runtimes}
           loading={showAgentSkeleton || envLoading}
@@ -356,6 +356,7 @@ export default function AgentsPage() {
           onAction={retry}
         />
       ) : (
+        <div data-help="agents-list">
         <TableShell layout="split">
           <Table className="w-full table-fixed" style={{ minWidth: totalWidth }}>
             <colgroup>
@@ -376,6 +377,7 @@ export default function AgentsPage() {
                       key={spec.key}
                       className={cn('relative select-none', side === 'right' && 'text-right')}
                       data-col={spec.key}
+                      data-help={spec.key === 'hide' ? 'agents-hide' : undefined}
                     >
                       {label}
                       {spec.key === AGENT_TABLE_FLEX_COLUMN ? null : (
@@ -420,6 +422,7 @@ export default function AgentsPage() {
             </TableBody>
           </Table>
         </TableShell>
+        </div>
       )}
     </WorkbenchSplitPage>
   );

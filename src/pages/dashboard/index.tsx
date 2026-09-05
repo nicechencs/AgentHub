@@ -544,7 +544,7 @@ export default function DashboardPage() {
       />
 
       {/* —— 上半：Agent 总览（独立 loading / error）—— */}
-      <PageSection first>
+      <PageSection first data-help="dashboard-overview">
         {agentsLoading ? (
           <AgentOverviewSkeleton count={overviewSkeletonCount} />
         ) : showAgentError ? (
@@ -582,7 +582,7 @@ export default function DashboardPage() {
 
       {/* —— 用量总览：筛选 + 指标 + 趋势 + 分布 —— */}
       <PageSection>
-        <div className={cn(pageRhythm.chromeRow)}>
+        <div className={cn(pageRhythm.chromeRow)} data-help="dashboard-filters">
           <Select value={agentFilter} onValueChange={(v) => setAgentFilter(v as AgentKey | 'all')}>
             <SelectTrigger className="w-36" aria-label={t('dashboard.page.agentFilterAria')}>
               <SelectValue />
@@ -668,6 +668,7 @@ export default function DashboardPage() {
                 size="sm"
                 variant="outline"
                 className="shrink-0"
+                data-help="dashboard-collect"
                 onClick={() => void handleCollect()}
                 disabled={collecting || usageUnavailable || usageLoading}
                 title={
@@ -799,6 +800,7 @@ export default function DashboardPage() {
       <PageSection
         ref={usageSectionRef}
         id="usage"
+        data-help="dashboard-usage"
         ruled
         title={t('dashboard.page.detailsTitle')}
         description={t('dashboard.page.detailsDescription')}

@@ -244,9 +244,10 @@ export function BackupsPanel({ toolbar }: { toolbar?: ReactNode }) {
         resizeAria={t('common.resizeSidePanel')}
         panel={inspectPanel}
       >
-      <div className={pageRhythm.chromeRow}>
+      <div className={pageRhythm.chromeRow} data-help="page-chrome">
         {toolbar}
         <div className={pageRhythm.chromeActions}>
+          <span className="inline-flex items-center gap-2" data-help="backups-keep">
           <Tip className="max-w-[12rem] truncate text-meta text-secondary" label={t('settings.backups.keepCopiesTip')}>
             {t('settings.backups.keepCopiesLabel')}
           </Tip>
@@ -259,9 +260,11 @@ export function BackupsPanel({ toolbar }: { toolbar?: ReactNode }) {
               });
             }}
           />
+          </span>
           {agentMeta && (
             <Button
               size="sm"
+              data-help="backups-now"
               disabled={creating || !isInstalled}
               title={!isInstalled ? t('settings.backups.createTitleNotInstalled') : undefined}
               onClick={() => void handleCreate()}
@@ -272,7 +275,7 @@ export function BackupsPanel({ toolbar }: { toolbar?: ReactNode }) {
           )}
         </div>
       </div>
-      <div className={pageRhythm.chromeRow}>
+      <div className={pageRhythm.chromeRow} data-help="page-chrome">
         {pageLoading ? (
           <Skeleton className="h-9 w-64 rounded-card" />
         ) : (

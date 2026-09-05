@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Copy, FolderOpen, PanelLeftOpen, Settings2, ShieldAlert, Terminal } from 'lucide-react';
+import { ChromeActions } from '@/components/layout/ChromeActions';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { copyTextToClipboard } from '@/components/shared/CopyTextButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
@@ -72,6 +73,7 @@ export function ChatSessionHeader({
         'flex h-10 shrink-0 items-center gap-2 border-b border-border',
         pageRhythm.chatChromeX,
       )}
+      data-help="chat-header"
     >
       {!railOpen && (
         <Hint label={t('chat.rail.expandHistory')}>
@@ -149,6 +151,7 @@ export function ChatSessionHeader({
             <button
               type="button"
               onClick={onPickWorkingDirectory}
+              data-help="chat-cwd"
               className={cn(
                 'inline-flex h-7 max-w-[9rem] items-center gap-1 rounded-btn border border-border bg-subtle px-2 text-meta',
                 active.cwd ? 'text-secondary hover:bg-hover' : 'text-warning hover:bg-hover',
@@ -215,6 +218,7 @@ export function ChatSessionHeader({
           </Hint>
         </div>
       )}
+      <ChromeActions />
     </header>
   );
 }

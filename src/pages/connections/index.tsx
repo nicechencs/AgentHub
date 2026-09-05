@@ -804,7 +804,7 @@ export default function ConnectionsPage() {
         }
         descriptionTip={t('connections.page.descriptionTip')}
       />
-      <div className={pageRhythm.chromeRow}>
+      <div className={pageRhythm.chromeRow} data-help="page-chrome">
         <AgentTabStrip
           showAll
           allLabel={t('kind.all')}

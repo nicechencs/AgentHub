@@ -970,8 +970,8 @@ export default function SkillsPage() {
               }
             />
           <Tabs value={tab} onValueChange={(v) => setTab(parseSkillTab(v))}>
-            <div className={pageRhythm.chromeRow}>
-              <TabsList>
+            <div className={pageRhythm.chromeRow} data-help="page-chrome">
+              <TabsList data-help="skills-tabs">
                 <TabsTrigger value="library" className="gap-1.5">
                   {t('skills.tabs.library')}
                   {catalog != null ? (

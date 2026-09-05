@@ -110,6 +110,7 @@ export function WorkbenchSplitPage<T>({
             listFooter ? undefined : pageRhythm.workbenchY,
             pageRhythm.workbenchPadT,
           )}
+          data-help="workbench-list"
         >
           {children}
         </div>

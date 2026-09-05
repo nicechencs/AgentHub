@@ -328,6 +328,7 @@ export default function RoutesBoardPage() {
           ) : null}
           <PageSection
             first
+            data-help="routes-board-endpoints"
             title={t('routes.board.statusSection')}
             actions={
               <div className="flex items-center gap-2">
@@ -340,6 +341,7 @@ export default function RoutesBoardPage() {
                   }
                 >
                   <Switch
+                    data-help="routes-board-switch"
                     checked={entryRunning}
                     disabled={localGatewayBusy || localGateway.transitioning}
                     onCheckedChange={(on) => {
@@ -374,6 +376,7 @@ export default function RoutesBoardPage() {
             <p className="mt-3 text-sm text-secondary">{keyHint}</p>
           </PageSection>
 
+          <div data-help="routes-board-usage">
           <BoardUsageSection
             profiles={profiles}
             hiddenTargetIds={hiddenTargetIds}
@@ -391,6 +394,7 @@ export default function RoutesBoardPage() {
               />
             }
           />
+          </div>
         </div>
       )}
 
