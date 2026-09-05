@@ -16,6 +16,20 @@ export function setChatBootstrap(payload: ChatBootstrap): boolean {
   }
 }
 
+const BOOTSTRAP_FIT_LIMITS = [200_000, 80_000, 24_000, 4_000] as const;
+
+/** Write bootstrap; if quota fails, shrink the prompt until it fits. */
+export function setChatBootstrapFitting(
+  payload: ChatBootstrap,
+  shrinkPrompt: (limit: number) => string,
+): boolean {
+  if (setChatBootstrap(payload)) return true;
+  for (const limit of BOOTSTRAP_FIT_LIMITS) {
+    if (setChatBootstrap({ ...payload, prompt: shrinkPrompt(limit) })) return true;
+  }
+  return false;
+}
+
 /** 读取并清除，保证只消费一次 */
 export function takeChatBootstrap(): ChatBootstrap | null {
   try {

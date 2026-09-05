@@ -49,7 +49,7 @@ import {
   upsertProjectMeta,
 } from '@/lib/api/project';
 import { openPathInFileManager } from '@/lib/api/skill';
-import { setChatBootstrap } from '@/lib/chat-bootstrap';
+import { setChatBootstrapFitting } from '@/lib/chat-bootstrap';
 import { isCapabilityUsable } from '@/lib/capability';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import {
@@ -66,7 +66,7 @@ import { loadString, saveString, StorageKey } from '@/lib/ui-preferences';
 import type { AgentKey, AgentProject, AgentSession } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { nativeResumeCommand, nativeSessionId, shortSessionId } from './project-format';
-import { buildContinuePrompt, buildSummaryPrompt } from './project-prompts';
+import { buildContinuePrompt, buildSummaryPrompt, type ContinueRecord } from './project-prompts';
 import {
   resolveInitialProjectAgentId,
   resolveProjectFetchAgentId,
@@ -86,11 +86,13 @@ import { nestSessions } from './session-nest';
 import {
   allVisibleSessionsSelected,
   collectSelectableSessions,
+  expandedProjectMembers,
   filterVisibleProjects,
   nextSelectedForToggleAllVisible,
   toggleSelectedSession,
   visibleSessionsForProject,
 } from './projects-list-model';
+import { classifyExcerptRows } from './session-excerpt';
 
 
 const PROJECTS_PREVIEW_WIDTH_KEY = StorageKey.projectsPreviewWidth;
@@ -129,6 +131,10 @@ export default function ProjectsPage() {
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
   const preview = useSideSplit<AgentSession>({ storageKey: PROJECTS_PREVIEW_WIDTH_KEY });
   const previewBodyRef = useRef<HTMLDivElement>(null);
+  const [previewReloadSeq, setPreviewReloadSeq] = useState(0);
+  const [previewRecord, setPreviewRecord] = useState<
+    { id: string; excerpt: string; truncated: boolean } | null
+  >(null);
 
   useEffect(() => {
     if (agentId) rememberProjectAgent(agentId);
@@ -238,14 +244,8 @@ export default function ProjectsPage() {
     saveString(StorageKey.projectsListSort, next);
   };
 
-  const reloadProjects = () => {
-    if (!fetchScope) return Promise.resolve();
-    invalidateProjects();
-    return reload();
-  };
-
-  const loadSessionsFor = useCallback(async (project: AgentProject) => {
-    if (project.sessionCount === 0) {
+  const loadSessionsFor = useCallback(async (project: AgentProject, force = false) => {
+    if (!force && project.sessionCount === 0) {
       setSessionsByProject((prev) => ({ ...prev, [project.id]: [] }));
       return;
     }
@@ -421,6 +421,21 @@ export default function ProjectsPage() {
     [visibleProjects, mergeByPath, sortKey],
   );
 
+  const reloadProjects = async () => {
+    if (!fetchScope) return;
+    invalidateProjects();
+    const members = expandedProjectMembers(visibleGroups, expanded);
+    await Promise.all([
+      reload(),
+      ...members.map((member) => {
+        const project = projects.find((row) => row.id === member.id);
+        return project ? loadSessionsFor(project, true) : Promise.resolve();
+      }),
+    ]);
+    setPreviewRecord(null);
+    setPreviewReloadSeq((n) => n + 1);
+  };
+
   const visibleSessions = useCallback(
     (groupId: string) => {
       const group = visibleGroups.find((item) => item.id === groupId);
@@ -566,18 +581,37 @@ export default function ProjectsPage() {
     }
   }
 
-  function goContinue(p: AgentSession) {
-    const ok = setChatBootstrap({
-      agentIds: [p.agentId],
-      cwd: p.cwd ?? null,
-      title: p.title,
-      prompt: buildContinuePrompt(p),
-    });
-    if (!ok) {
-      toast({ title: t('projects.toast.handoffFailed'), variant: 'danger' });
-      return;
+  async function goContinue(p: AgentSession) {
+    setBusy(true);
+    let record: ContinueRecord | null =
+      previewRecord?.id === p.id ? previewRecord : null;
+    try {
+      if (!record) {
+        const rows = await getAgentProjectExcerpts([p.id]);
+        const classified = classifyExcerptRows(p.id, rows);
+        if (classified.status === 'ready') {
+          record = { excerpt: classified.excerpt, truncated: classified.truncated };
+        }
+      }
+      const payload = {
+        agentIds: [p.agentId],
+        cwd: p.cwd ?? null,
+        title: p.title,
+        prompt: buildContinuePrompt(p, record),
+      };
+      const ok = setChatBootstrapFitting(payload, (limit) =>
+        buildContinuePrompt(p, record, limit),
+      );
+      if (!ok) {
+        toast({ title: t('projects.toast.handoffFailed'), variant: 'danger' });
+        return;
+      }
+      navigate('/chat?from=projects');
+    } catch (e) {
+      toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
+    } finally {
+      setBusy(false);
     }
-    navigate('/chat?from=projects');
   }
 
   async function handleSummarize() {
@@ -599,12 +633,24 @@ export default function ProjectsPage() {
       const agentIds = [...new Set(selectedSessions.map((item) => item.agentId))];
       const name =
         agentIds.length === 1 ? agentDisplayName(agentIds[0]) : t('kind.all');
-      const ok = setChatBootstrap({
-        agentIds: agentIds.length > 0 ? agentIds : agentId === 'all' ? tabAgentIds : [agentId],
-        cwd,
-        title: t('projects.toast.summarizeTitle', { n: excerpts.length }),
-        prompt: buildSummaryPrompt(name, excerpts),
-      });
+      const ok = setChatBootstrapFitting(
+        {
+          agentIds: agentIds.length > 0 ? agentIds : agentId === 'all' ? tabAgentIds : [agentId],
+          cwd,
+          title: t('projects.toast.summarizeTitle', { n: excerpts.length }),
+          prompt: buildSummaryPrompt(name, excerpts),
+        },
+        (limit) => {
+          const fitted = excerpts.map((item, index) => ({
+            ...item,
+            excerpt:
+              index === 0
+                ? item.excerpt.slice(0, Math.max(80, Math.floor(limit / Math.max(1, excerpts.length))))
+                : item.excerpt.slice(0, Math.max(40, Math.floor(limit / Math.max(1, excerpts.length)))),
+          }));
+          return buildSummaryPrompt(name, fitted);
+        },
+      );
       if (!ok) {
         toast({ title: t('projects.toast.handoffFailed'), variant: 'danger' });
         return;
@@ -760,7 +806,7 @@ export default function ProjectsPage() {
           onCopySessionId={(s, e) => void copySessionId(s, e)}
           onCopyResumeCommand={(s, e) => void copyResumeCommand(s, e)}
           onOpenSessionRecord={(s, e) => void openSessionRecord(s, e)}
-          onGoContinue={goContinue}
+          onGoContinue={(s) => void goContinue(s)}
           onRequestDelete={setDeleteTarget}
           queryKey={q}
         />
@@ -774,9 +820,13 @@ export default function ProjectsPage() {
       open
       width={preview.paneWidth}
       onClose={preview.close}
-      onContinue={goContinue}
+      onContinue={(s) => void goContinue(s)}
       busy={busy}
       onOpenRecord={(s) => void openSessionRecord(s)}
+      reloadKey={previewReloadSeq}
+      onRecordLoaded={(sessionId, record) => {
+        setPreviewRecord(record ? { id: sessionId, ...record } : null);
+      }}
       contentRef={previewBodyRef}
       className="h-full min-w-0 shrink-0"
     />

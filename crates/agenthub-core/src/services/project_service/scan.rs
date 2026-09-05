@@ -7,7 +7,7 @@
 use chrono::Utc;
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -2779,6 +2779,15 @@ pub(crate) fn make_project_id(agent: AgentId, storage_key: &str) -> String {
 }
 
 pub(crate) fn load_excerpt(id: &str, home_override: Option<&Path>) -> Result<AgentProjectExcerpt> {
+    load_excerpt_with_read_cap(id, home_override, EXCERPT_READ_BYTES)
+}
+
+/// Same as [`load_excerpt`], with an explicit scan window for tests.
+pub(crate) fn load_excerpt_with_read_cap(
+    id: &str,
+    home_override: Option<&Path>,
+    read_cap: u64,
+) -> Result<AgentProjectExcerpt> {
     let (agent, rel) = parse_session_id(id)?;
     let abs = resolve_under_home(agent, &rel, home_override)?;
     if !abs.is_file() {
@@ -2812,11 +2821,13 @@ pub(crate) fn load_excerpt(id: &str, home_override: Option<&Path>) -> Result<Age
             session_id: native_session_id_from_path(agent, &abs_path),
         }
     });
-    let filtered =
-        read_jsonl_matching(&abs_path, transcript_line_might_be_turn, EXCERPT_READ_BYTES)
-            .unwrap_or_default();
+    let (filtered, mut truncated) =
+        read_jsonl_matching_windows(&abs_path, transcript_line_might_be_turn, read_cap);
     let chat_text = if filtered.trim().is_empty() {
-        read_head(&abs_path, SCAN_BYTES.saturating_mul(2)).unwrap_or_default()
+        let (fallback, fb_trunc) =
+            read_jsonl_matching_windows(&abs_path, |_| true, SCAN_BYTES.saturating_mul(2));
+        truncated |= fb_trunc;
+        fallback
     } else {
         filtered
     };
@@ -2824,13 +2835,10 @@ pub(crate) fn load_excerpt(id: &str, home_override: Option<&Path>) -> Result<Age
     let turns = if agent == AgentId::Grok {
         let updates = abs_path.with_file_name("updates.jsonl");
         let update_turns = if updates.is_file() {
-            read_jsonl_matching(
-                &updates,
-                grok_updates_line_might_be_message,
-                EXCERPT_READ_BYTES,
-            )
-            .map(|u| extract_grok_update_turns(&u))
-            .unwrap_or_default()
+            let (update_text, upd_trunc) =
+                read_jsonl_matching_windows(&updates, grok_updates_line_might_be_message, read_cap);
+            truncated |= upd_trunc;
+            extract_grok_update_turns(&update_text)
         } else {
             Vec::new()
         };
@@ -2850,6 +2858,7 @@ pub(crate) fn load_excerpt(id: &str, home_override: Option<&Path>) -> Result<Age
         cwd: rec.cwd,
         updated_at: rec.updated_at,
         excerpt: body,
+        truncated,
     })
 }
 
@@ -3076,15 +3085,68 @@ fn transcript_line_might_be_turn(line: &str) -> bool {
 
 const LINE_PREFIX_BYTES: usize = 2048;
 
-/// Stream a jsonl and keep every matching turn line, up to `max_read_bytes` of
-/// the file. Non-matching lines (tool dumps) are skipped after a small prefix.
-fn read_jsonl_matching(
+/// Read matching jsonl lines from the start window and, when the file is larger,
+/// from a trailing window so later turns are not dropped. `truncated` is true
+/// when a middle gap remains unread.
+fn read_jsonl_matching_windows(
     path: &Path,
     keep: impl Fn(&str) -> bool,
+    cap: u64,
+) -> (String, bool) {
+    let len = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    if len == 0 || cap == 0 {
+        return (String::new(), false);
+    }
+    if len <= cap.saturating_mul(2) {
+        return (
+            read_jsonl_matching_range(path, &keep, 0, len).unwrap_or_default(),
+            false,
+        );
+    }
+    let head = read_jsonl_matching_range(path, &keep, 0, cap).unwrap_or_default();
+    let tail =
+        read_jsonl_matching_range(path, &keep, len.saturating_sub(cap), cap).unwrap_or_default();
+    (join_jsonl_windows(&head, &tail), true)
+}
+
+fn join_jsonl_windows(head: &str, tail: &str) -> String {
+    if tail.is_empty() {
+        return head.to_string();
+    }
+    if head.is_empty() {
+        return tail.to_string();
+    }
+    let mut out = String::with_capacity(head.len() + tail.len() + 1);
+    out.push_str(head);
+    out.push('\n');
+    out.push_str(tail);
+    out
+}
+
+/// Stream a jsonl slice and keep every matching turn line. `start` is a byte
+/// offset; a mid-line start skips the partial first line. Non-matching lines
+/// (tool dumps) are skipped after a small prefix.
+fn read_jsonl_matching_range(
+    path: &Path,
+    keep: &impl Fn(&str) -> bool,
+    start: u64,
     max_read_bytes: u64,
 ) -> Option<String> {
-    let file = fs::File::open(path).ok()?;
+    if max_read_bytes == 0 {
+        return Some(String::new());
+    }
+    let mut file = fs::File::open(path).ok()?;
+    let mut skip_partial = false;
+    if start > 0 {
+        file.seek(SeekFrom::Start(start.saturating_sub(1))).ok()?;
+        let mut prev = [0u8; 1];
+        file.read_exact(&mut prev).ok()?;
+        skip_partial = prev[0] != b'\n' && prev[0] != b'\r';
+    }
     let mut reader = BufReader::new(file.take(max_read_bytes));
+    if skip_partial {
+        skip_rest_of_line(&mut reader);
+    }
     let mut out = String::new();
     loop {
         let (mut buf, had_nl) = read_line_prefix(&mut reader, LINE_PREFIX_BYTES)?;
