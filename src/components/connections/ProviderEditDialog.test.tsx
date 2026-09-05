@@ -489,6 +489,20 @@ describe('catalog occupancy on add', () => {
     if (result.ok) expect(result.provider.isCurrent).toBe(true);
   });
 
+  it('named-slot add marks isCurrent so the key writes immediately', async () => {
+    const deps = mockDeps();
+    const result = await runProviderSaveFlow(
+      baseInput({
+        agentId: 'pi',
+        schemaStatus: 'unsupported',
+        occupancy: 'namedSlots',
+      }),
+      deps,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.provider.isCurrent).toBe(true);
+  });
+
   it('exclusive add stays pool-only until 切换', async () => {
     const deps = mockDeps();
     const result = await runProviderSaveFlow(

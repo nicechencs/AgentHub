@@ -47,7 +47,7 @@ describe('TicketWalletList details', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
-        onImportToPool() {},
+
         onEditTicket() {},
         onDeleteTicket() {},
         onShowDetail() {},
@@ -102,7 +102,7 @@ describe('TicketWalletList details', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
-        onImportToPool() {},
+
         onEditTicket() {},
         onDeleteTicket() {},
         activeTicketId: 'provider:kimi-1',
@@ -126,7 +126,7 @@ describe('TicketWalletList details', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet,
-        onImportToPool() {},
+
         onEditTicket() {},
         onDeleteTicket() {},
       }),
@@ -140,7 +140,7 @@ describe('TicketWalletList details', () => {
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
         extrasForTicket: () => ({ canEditConfig: true }),
-        onImportToPool() {},
+
         onEditTicket() {},
         onDeleteTicket() {},
       }),
@@ -169,7 +169,7 @@ describe('TicketWalletList details', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet,
-        onImportToPool() {},
+
         onEditTicket() {},
         onDeleteTicket() {},
       }),
@@ -204,7 +204,7 @@ describe('TicketWalletList details', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet,
-        onImportToPool() {},
+
         extrasForTicket: () => ({
           oauthAction: { kind: 'refresh-credentials' as const, label: '刷新' },
           identity: 'user@example.com',
@@ -243,7 +243,7 @@ describe('TicketWalletList details', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet,
-        onImportToPool() {},
+
         extrasForTicket: () => ({
           lastUsedAt: '2026-08-28T08:00:00.000Z',
           quota7dPct: 40,
@@ -266,7 +266,7 @@ describe('TicketWalletList details', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet,
-        onImportToPool() {},
+
         extrasForTicket: () => ({
           tokenInput: 12,
           tokenOutput: 3,
@@ -284,7 +284,7 @@ describe('TicketWalletList details', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet,
-        onImportToPool() {},
+
         extrasForTicket: () => ({
           tokenInput: 1_234_567,
           tokenOutput: 89_000,
@@ -333,7 +333,7 @@ describe('TicketWalletList details', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet,
-        onImportToPool() {},
+
         onEditTicket() {},
         onDeleteTicket() {},
       }),
@@ -355,7 +355,7 @@ describe('TicketWalletList details', () => {
       createElement(TicketWalletList, {
         wallet: null,
         loading: true,
-        onImportToPool() {},
+
         onEditTicket() {},
         onDeleteTicket() {},
       }),
@@ -368,7 +368,7 @@ describe('TicketWalletList details', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet: { tickets: [], bindings: [], surfaceGroups: [] },
-        onImportToPool() {},
+
         onEditTicket() {},
         onDeleteTicket() {},
       }),
@@ -385,7 +385,7 @@ describe('TicketWalletList details', () => {
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
         agentFilterId: 'grok',
-        onImportToPool() {},
+
         onEditTicket() {},
         onDeleteTicket() {},
       }),
@@ -455,7 +455,7 @@ describe('TicketWalletList details', () => {
       createElement(TicketWalletList, {
         wallet,
         agentFilterId: 'claude',
-        onImportToPool() {},
+
         onEditTicket() {},
         onDeleteTicket() {},
       }),
@@ -469,7 +469,7 @@ describe('TicketWalletList details', () => {
       createElement(TicketWalletList, {
         wallet,
         agentFilterId: 'grok',
-        onImportToPool() {},
+
         onEditTicket() {},
         onDeleteTicket() {},
       }),
@@ -481,7 +481,7 @@ describe('TicketWalletList details', () => {
     const allMarkup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet,
-        onImportToPool() {},
+
         onEditTicket() {},
         onDeleteTicket() {},
       }),
@@ -542,7 +542,7 @@ describe('TicketWalletList details', () => {
       createElement(TicketWalletList, {
         wallet,
         agentFilterId: 'claude',
-        onImportToPool() {},
+
         onEditTicket() {},
         onDeleteTicket() {},
       }),
@@ -556,7 +556,7 @@ describe('TicketWalletList details', () => {
       createElement(TicketWalletList, {
         wallet,
         agentFilterId: 'grok',
-        onImportToPool() {},
+
         onEditTicket() {},
         onDeleteTicket() {},
       }),
@@ -568,7 +568,7 @@ describe('TicketWalletList details', () => {
     const allMarkup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet,
-        onImportToPool() {},
+
         onEditTicket() {},
         onDeleteTicket() {},
       }),
@@ -583,7 +583,7 @@ describe('TicketWalletList details', () => {
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
         installedAgentIds: ['claude'],
-        onImportToPool() {},
+
         onEditTicket() {},
         onDeleteTicket() {},
         onAddKey() {},
@@ -600,7 +600,7 @@ describe('TicketWalletList details', () => {
       createElement(TicketWalletList, {
         wallet: { tickets: [], bindings: [], surfaceGroups: [] },
         installedAgentIds: ['claude'],
-        onImportToPool() {},
+
         onEditTicket() {},
         onDeleteTicket() {},
         onAddKey() {},
@@ -670,7 +670,6 @@ describe('TicketWalletList details', () => {
         createElement(TicketWalletList, {
           wallet: mixed,
           agentFilterId: 'kimi',
-          onImportToPool() {},
           onEditTicket() {},
           onDeleteTicket() {},
         }),
@@ -682,7 +681,6 @@ describe('TicketWalletList details', () => {
         createElement(TicketWalletList, {
           wallet: mixed,
           agentFilterId: null,
-          onImportToPool() {},
           onEditTicket() {},
           onDeleteTicket() {},
         }),
@@ -693,7 +691,7 @@ describe('TicketWalletList details', () => {
       createElement(TicketWalletList, {
         wallet: mixed,
         agentFilterId: null,
-        onImportToPool() {},
+
         onEditTicket() {},
         onDeleteTicket() {},
       }),
@@ -1036,7 +1034,7 @@ describe('TicketWalletList switch action', () => {
         wallet: sampleWallet(),
         agentFilterId: 'codex',
         extrasForTicket: () => ({ isCurrent: false }),
-        onImportToPool() {},
+
         onSwitchTicket() {},
         onEditTicket() {},
         onDeleteTicket() {},
@@ -1051,7 +1049,7 @@ describe('TicketWalletList switch action', () => {
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
         extrasForTicket: () => ({ isCurrent: false }),
-        onImportToPool() {},
+
         onSwitchTicket() {},
         onEditTicket() {},
         onDeleteTicket() {},
@@ -1068,7 +1066,7 @@ describe('TicketWalletList switch action', () => {
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
         extrasForTicket: () => ({ isCurrent: true }),
-        onImportToPool() {},
+
         onSwitchTicket() {},
         onEditTicket() {},
         onDeleteTicket() {},
@@ -1081,7 +1079,7 @@ describe('TicketWalletList switch action', () => {
     expect(markup).not.toContain('aria-label="切换"');
   });
 
-  it('shows 写入 ZCode / 已添加 for catalog-append occupancy', () => {
+  it('shows 添加 / 切换 / 默认 for list occupancy', () => {
     const wallet: TicketWallet = {
       tickets: [
         {
@@ -1103,31 +1101,106 @@ describe('TicketWalletList switch action', () => {
       createElement(TicketWalletList, {
         wallet,
         extrasForTicket: () => ({ isCurrent: false }),
-        onImportToPool() {},
+
         onSwitchTicket() {},
         onEditTicket() {},
         onDeleteTicket() {},
       }),
     );
-    expect(idle).toContain('aria-label="写入 ZCode"');
-    expect(idle).toContain('>写入 ZCode<');
+    expect(idle).toContain('aria-label="添加"');
+    expect(idle).toContain('>添加<');
+    expect(idle).not.toContain('aria-label="写入 ZCode"');
     expect(idle).not.toContain('aria-label="切换"');
+
+    const listed = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet,
+        extrasForTicket: () => ({ isCurrent: false, inList: true }),
+
+        onSwitchTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(listed).toContain('aria-label="切换"');
+    expect(listed).toContain('>切换<');
+    expect(listed).not.toContain('aria-label="添加"');
 
     const current = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet,
-        extrasForTicket: () => ({ isCurrent: true }),
-        onImportToPool() {},
+        extrasForTicket: () => ({ isCurrent: true, inList: true }),
+
         onSwitchTicket() {},
         onEditTicket() {},
         onDeleteTicket() {},
       }),
     );
-    expect(current).toContain('aria-label="已添加"');
-    expect(current).toContain('>已添加<');
-    expect(current).toContain('这份登录已经添加');
+    expect(current).toContain('aria-label="默认"');
+    expect(current).toContain('>默认<');
+    expect(current).toContain('这份登录已是当前默认');
     expect(current).not.toContain('aria-label="使用中"');
-    expect(current).not.toContain('已在模型列表里');
+    expect(current).not.toContain('aria-label="已添加"');
+  });
+
+  it('shows 添加 / 切换 / 默认 for Pi named slots', () => {
+    const wallet: TicketWallet = {
+      tickets: [
+        {
+          id: 'provider:pi-1',
+          sourceKind: 'provider',
+          sourceId: 'pi-1',
+          agentId: 'pi',
+          label: 'xai',
+          surface: 'unknown',
+          credentialClass: 'api_key',
+          speaks: ['openai-chat'],
+          importedFrom: 'pi',
+        },
+      ],
+      bindings: [],
+      surfaceGroups: [],
+    };
+    const idle = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet,
+        extrasForTicket: () => ({ isCurrent: false }),
+
+        onSwitchTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(idle).toContain('aria-label="添加"');
+    expect(idle).toContain('>添加<');
+    expect(idle).not.toContain('aria-label="切换"');
+
+    const listed = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet,
+        extrasForTicket: () => ({ isCurrent: false, inList: true }),
+
+        onSwitchTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(listed).toContain('aria-label="切换"');
+    expect(listed).toContain('>切换<');
+
+    const current = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet,
+        extrasForTicket: () => ({ isCurrent: true, inList: true }),
+
+        onSwitchTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(current).toContain('aria-label="默认"');
+    expect(current).toContain('>默认<');
+    expect(current).not.toContain('aria-label="使用中"');
   });
 });
 
@@ -1137,7 +1210,7 @@ describe('TicketWalletList header health chip', () => {
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
         extrasForTicket: () => ({ authLabel: '可续期·未验证' }),
-        onImportToPool() {},
+
         onEditTicket() {},
         onDeleteTicket() {},
       }),
@@ -1153,7 +1226,7 @@ describe('TicketWalletList header health chip', () => {
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
         extrasForTicket: () => ({ authLabel: '可续期·未验证', secretTail: '**JF6Q' }),
-        onImportToPool() {},
+
         onEditTicket() {},
         onDeleteTicket() {},
       }),
@@ -1169,7 +1242,7 @@ describe('TicketWalletList header health chip', () => {
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
         extrasForTicket: () => ({ authLabel: '已配置', secretTail: '**wxyz' }),
-        onImportToPool() {},
+
         onEditTicket() {},
         onDeleteTicket() {},
       }),

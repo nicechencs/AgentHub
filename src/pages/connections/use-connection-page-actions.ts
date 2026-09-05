@@ -13,7 +13,10 @@ import {
   type TicketWallet,
 } from '@/lib/api/tickets';
 import type { LiveOccupancyDto } from '@/lib/backend/contracts/agent-catalog-types';
-import { isCatalogAppendOccupancy } from '@/lib/backend/contracts/agent-catalog-types';
+import {
+  isCatalogAppendOccupancy,
+  isListOccupancy,
+} from '@/lib/backend/contracts/agent-catalog-types';
 import { resolveAgentMeta } from '@/config/agents';
 import { removeTicketFromWalletSnapshot } from '@/app/runtime';
 import { deleteConnectionToastDescription } from './connection-model';
@@ -76,7 +79,7 @@ export function describeProviderSwitchError(
 export function useConnectionPageActions(input: {
   filterAgent: AgentTabId;
   wallet: TicketWallet | null;
-  extrasForTicket: (ticket: TicketView) => { isCurrent?: boolean } | null;
+  extrasForTicket: (ticket: TicketView) => { isCurrent?: boolean; inList?: boolean } | null;
   loadWallet: () => Promise<boolean>;
   poolReload: () => Promise<void>;
 }) {
@@ -89,7 +92,7 @@ export function useConnectionPageActions(input: {
   const [deleteBusy, setDeleteBusy] = useState(false);
 
   const handleRemoveFromCatalog = useCallback(async (ticket: TicketView) => {
-    if (!isCatalogAppendOccupancy(resolveAgentMeta(ticket.agentId).occupancy)) return;
+    if (!isListOccupancy(resolveAgentMeta(ticket.agentId).occupancy)) return;
     if (!extrasForTicket(ticket)?.isCurrent) return;
     const generation = ++switchGen.current;
     setSwitchingTicketId(ticket.id);
@@ -130,10 +133,10 @@ export function useConnectionPageActions(input: {
 
   const handleSwitchTicket = useCallback(async (ticket: TicketView) => {
     const targetAgent = filterAgent === 'all' ? ticket.agentId : filterAgent;
-    // Skip with the same "already written / already current" signal the chip
-    // uses. Catalog-append occupancy must not no-op just because another
-    // exclusive wallet pointer still names this ticket.
-    if (extrasForTicket(ticket)?.isCurrent) return;
+    const extras = extrasForTicket(ticket);
+    // Skip only when this login is already the default. In-list siblings
+    // stay listed; 切换 changes which one is default.
+    if (extras?.isCurrent) return;
     const generation = ++switchGen.current;
     setSwitchingTicketId(ticket.id);
     const wroteLocal = ticket.agentId === targetAgent;
@@ -155,7 +158,9 @@ export function useConnectionPageActions(input: {
       void logGuiEvent(wroteLocal ? 'switch' : 'bind', { agent: targetAgent });
       toast({
         title: wroteLocal
-          ? switchWroteLiveLabel(t, resolveAgentMeta(ticket.agentId).occupancy)
+          ? extras?.inList
+            ? t('connections.list.switchDefaultOk')
+            : switchWroteLiveLabel(t, resolveAgentMeta(ticket.agentId).occupancy)
           : t('connections.list.switchOk'),
         variant: 'success',
       });

@@ -861,17 +861,35 @@ describe('ticket detail fields', () => {
     expect(ticketSwitchChip({ isCurrent: true })).toEqual({ kind: 'in-use', label: '使用中' });
   });
 
-  it('uses 写入 / 已添加 for catalog-append occupancy', () => {
+  it('uses 添加 / 切换 / 默认 for list occupancy', () => {
     expect(ticketSwitchChip({ isCurrent: false }, undefined, {
       occupancy: 'catalogAppend',
       agentName: 'ZCode',
-    })).toEqual({ kind: 'switch', label: '写入 ZCode' });
+    })).toEqual({ kind: 'add', label: '添加' });
+    expect(ticketSwitchChip({ isCurrent: false, inList: true }, undefined, {
+      occupancy: 'catalogAppend',
+      agentName: 'ZCode',
+    })).toEqual({ kind: 'switch', label: '切换' });
     expect(ticketSwitchChip({ isCurrent: true }, undefined, {
       occupancy: 'catalogAppend',
       agentName: 'ZCode',
-    })).toEqual({ kind: 'in-use', label: '已添加' });
+    })).toEqual({ kind: 'in-use', label: '默认' });
+    expect(ticketSwitchChip({ isCurrent: false }, undefined, {
+      occupancy: 'namedSlots',
+      agentName: 'Pi',
+    })).toEqual({ kind: 'add', label: '添加' });
+    expect(ticketSwitchChip({ isCurrent: false, inList: true }, undefined, {
+      occupancy: 'namedSlots',
+      agentName: 'Pi',
+    })).toEqual({ kind: 'switch', label: '切换' });
+    expect(ticketSwitchChip({ isCurrent: true }, undefined, {
+      occupancy: 'namedSlots',
+      agentName: 'Pi',
+    })).toEqual({ kind: 'in-use', label: '默认' });
     expect(showsCatalogUnapply('catalogAppend', true)).toBe(true);
+    expect(showsCatalogUnapply('namedSlots', true)).toBe(true);
     expect(showsCatalogUnapply('catalogAppend', false)).toBe(false);
+    expect(showsCatalogUnapply('namedSlots', false)).toBe(false);
     expect(showsCatalogUnapply('exclusive', true)).toBe(false);
   });
 
@@ -897,11 +915,12 @@ describe('ticket detail fields', () => {
         source: 'live',
       }),
     }, undefined, 'account:wb-other');
-    expect(live.isCurrent).toBe(true);
+    expect(live.isCurrent).toBe(false);
+    expect(live.inList).toBe(true);
     expect(ticketSwitchChip(live, undefined, {
       occupancy: 'catalogAppend',
       agentName: 'WorkBuddy',
-    })).toEqual({ kind: 'in-use', label: '已添加' });
+    })).toEqual({ kind: 'switch', label: '切换' });
     expect(buildTicketDetailFields(wb, live).advanced).toEqual(expect.arrayContaining([
       { label: '模型列表', value: '已添加' },
     ]));
@@ -917,8 +936,64 @@ describe('ticket detail fields', () => {
       }),
     });
     expect(pending.isCurrent).toBe(false);
+    expect(pending.inList).toBe(false);
     expect(buildTicketDetailFields(wb, pending).advanced).toEqual(expect.arrayContaining([
       { label: '模型列表', value: '未写入模型列表' },
+    ]));
+  });
+
+  it('keeps Pi slots listed after another row becomes default', () => {
+    const pi = ticket({
+      id: 'account:pi-1',
+      sourceKind: 'account',
+      sourceId: 'pi-1',
+      agentId: 'pi',
+      label: 'xai',
+      surface: 'unknown',
+      credentialClass: 'api_key',
+      speaks: ['openai-chat'],
+      importedFrom: 'pi',
+    });
+    const live = extrasFromPoolSource(pi, {
+      account: account({
+        id: 'pi-1',
+        agentId: 'pi',
+        kind: 'apikey',
+        label: 'xai',
+        isCurrent: false,
+        source: 'live',
+      }),
+    }, undefined, 'account:pi-other');
+    expect(live.isCurrent).toBe(false);
+    expect(live.inList).toBe(true);
+    expect(ticketSwitchChip(live, undefined, {
+      occupancy: 'namedSlots',
+      agentName: 'Pi',
+    })).toEqual({ kind: 'switch', label: '切换' });
+    expect(showsCatalogUnapply('namedSlots', live.isCurrent)).toBe(false);
+    expect(buildTicketDetailFields(pi, live).advanced).toEqual(expect.arrayContaining([
+      { label: '本机配置', value: '已添加' },
+    ]));
+
+    const current = extrasFromPoolSource(pi, {
+      account: account({
+        id: 'pi-1',
+        agentId: 'pi',
+        kind: 'apikey',
+        label: 'xai',
+        isCurrent: true,
+        source: 'live',
+      }),
+    }, undefined, 'account:pi-1');
+    expect(current.isCurrent).toBe(true);
+    expect(current.inList).toBe(true);
+    expect(ticketSwitchChip(current, undefined, {
+      occupancy: 'namedSlots',
+      agentName: 'Pi',
+    })).toEqual({ kind: 'in-use', label: '默认' });
+    expect(showsCatalogUnapply('namedSlots', current.isCurrent)).toBe(true);
+    expect(buildTicketDetailFields(pi, current).advanced).toEqual(expect.arrayContaining([
+      { label: '本机配置', value: '默认' },
     ]));
   });
 
@@ -1531,7 +1606,13 @@ describe('row action disable reasons', () => {
       switchBusy: false,
       canSwitch: true,
       occupancy: 'catalogAppend',
-    })).toBe('这份登录已经添加');
+    })).toBe('这份登录已是当前默认');
+    expect(ticketSwitchDisabledReason({
+      kind: 'in-use',
+      switchBusy: false,
+      canSwitch: true,
+      occupancy: 'namedSlots',
+    })).toBe('这份登录已是当前默认');
   });
 
   it('explains refresh lock', () => {

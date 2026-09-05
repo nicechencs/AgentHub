@@ -63,7 +63,6 @@ import {
 import { useOAuthLoginAgents } from './use-oauth-login-agents';
 import { useConnectionImportProbe } from './use-connection-import-probe';
 import { useConnectionPageActions } from './use-connection-page-actions';
-import { useTicketPoolImport } from './use-ticket-pool-import';
 import {
   deleteConnectionDialogDescription,
   liveAuthCoexistenceNotice,
@@ -364,8 +363,6 @@ export default function ConnectionsPage() {
     setPendingGuide(null);
     if (resume) navigate(buildResumeConnectUrl(resume));
   }, [navigate, pendingGuide, resumeAgentId]);
-
-  const { importActionForTicket, handleImportToPool, importingTicketId } = useTicketPoolImport({ t });
 
   const handleRefreshTicket = useCallback(async (ticket: TicketView) => {
     if (refreshInFlightRef.current) return;
@@ -893,12 +890,9 @@ export default function ConnectionsPage() {
             loading={walletLoading}
             highlightAgentId={highlightAgentId}
             agentFilterId={filterAgent === 'all' ? null : filterAgent}
-            onImportToPool={(ticket) => void handleImportToPool(ticket)}
-            importActionForTicket={importActionForTicket}
             onSwitchTicket={handleSwitchTicket}
             onRemoveFromCatalog={(ticket) => void handleRemoveFromCatalog(ticket)}
             switchingTicketId={switchingTicketId}
-            importingTicketId={importingTicketId}
             extrasForTicket={extrasForTicket}
             onEditTicket={handleEditTicket}
             onDeleteTicket={setDeleteTicket}
