@@ -17,7 +17,7 @@ updated: 2026-09-05
 
 先确认：
 1. 阅读仓库 AGENTS.md、docs/proposals/chat-unified-experience.md、docs/status/chat-codex-b1.md。
-2. 检查当前分支、commit、工作区 diff；日常工作在 dev，保留已有修改。B1 之前的基线为 db40f6fbf9c86a184707f7ff8259a5bac361bb24。B1 交付提交由用户提供；未提供时可用 git log --diff-filter=A --format=%H -- docs/guides/chat-b2-handoff.md 定位首次新增本文件的提交。
+2. 检查当前分支、commit、工作区 diff；日常工作在 dev，保留已有修改。B1 代码已在 c03acb540b0327cd3fb81a56060d930e7836585a，提示词初版在 357853762ac902808b6fac5636786abddefaa22c。还需取得随后补充测试记录的提交。db40f6fbf9c86a184707f7ff8259a5bac361bb24 只是任务最初基线，其后存在其他并行功能提交，不要全部算成 B1。
 3. 结构问题优先 CodeGraph；不可用时定向读文件，不重复全仓探索。用户已允许 GPT-5.6 Terra/Luna 子 Agent；仅把文件不重叠的独立任务并行。
 
 已实现，不要重新设计：
