@@ -308,7 +308,7 @@ const ProjectGroupCard = memo(function ProjectGroupCard({
                   role="navigation"
                   aria-label={t('projects.tree.pageAria')}
                 >
-                  <span className="text-xs text-muted tabular-nums">
+                  <span className="text-xs text-accent tabular-nums">
                     {t('projects.tree.pageStatus', {
                       page: currentPage + 1,
                       pages,
@@ -317,6 +317,7 @@ const ProjectGroupCard = memo(function ProjectGroupCard({
                   <Button
                     size="sm"
                     variant="ghost"
+                    className="text-accent hover:text-accent"
                     disabled={currentPage <= 0}
                     onClick={() => setPage((prev) => Math.max(0, prev - 1))}
                   >
@@ -325,6 +326,7 @@ const ProjectGroupCard = memo(function ProjectGroupCard({
                   <Button
                     size="sm"
                     variant="ghost"
+                    className="text-accent hover:text-accent"
                     disabled={currentPage >= pages - 1}
                     onClick={() =>
                       setPage((prev) => clampSessionPage(prev + 1, nested.length))
