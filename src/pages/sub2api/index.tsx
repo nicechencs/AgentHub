@@ -5,6 +5,8 @@ import { pageRhythm } from '@/components/layout/page-rhythm';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { copyTextToClipboard } from '@/components/shared/CopyTextButton';
 import { PageRefreshButton } from '@/components/shared/PageRefreshButton';
+import { ApiKeyAccountDialog } from '@/components/connections/ApiKeyAccountDialog';
+import { ProviderEditDialog } from '@/components/connections/ProviderEditDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -22,6 +24,13 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
@@ -33,6 +42,7 @@ import {
   TableRow,
   TableShell,
 } from '@/components/ui/table';
+import { Hint } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
 import { agentDisplayName } from '@/config/agents';
 import {
@@ -50,6 +60,7 @@ import {
   listRememberedAccounts,
   listRememberedSites,
   loadRememberedCredentials,
+  loadSub2ApiGroups,
   loadSub2ApiKeys,
   loadSub2ApiSession,
   logoutSub2Api,
@@ -63,8 +74,9 @@ import {
   seedRememberedSitesIfUnset,
   setSub2ApiRememberEnabled,
   SUB2API_DEFAULT_SITE_URL,
-  syncSub2ApiKeyToConnections,
+  updateSub2ApiKeyGroup,
   type Sub2ApiCaptchaProof,
+  type Sub2ApiGroup,
   type Sub2ApiKey,
   type Sub2ApiPublicSettings,
   type Sub2ApiRememberedAccountMeta,
@@ -79,18 +91,28 @@ import {
 } from '@/lib/sub2api/client';
 import { maskEmail } from '@/lib/sub2api/url';
 import { Switch } from '@/components/ui/switch';
+import type { ConnectApiKeyDraft } from '@/lib/connect-flow/connect-intent';
 import type { AgentKey } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { applyImportedLogin } from '@/pages/routes/tokens/token-import-action';
+import type { TokenImportAgentRef } from '@/pages/routes/tokens/token-import-model';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
 import { Sub2ApiCaptcha, type Sub2ApiCaptchaHandle } from './Sub2ApiCaptcha';
+import { Sub2ApiGroupCell } from './Sub2ApiGroupCell';
+import { Sub2ApiImportToAgentButton } from './Sub2ApiImportToAgentButton';
 import {
+  applyGroupToKey,
   applySiteUrlDraftInput,
   formatKeyExpires,
   formatKeyTableTimestamp,
   formatUsdAmount,
   initialSiteUrlDraft,
+  keyMatchesGroupFilter,
   maskSub2ApiTableKey,
+  mergeSub2ApiGroups,
   normalizeTotpCode,
+  parseGroupFilter,
+  pickGroupId,
   pickGroupLabel,
   pickGroupRate,
   pickKeyConcurrency,
@@ -102,12 +124,40 @@ import {
   sub2apiKeyStatusKind,
   sub2apiKeyStatusLabel,
   sub2apiPagePhase,
+  type Sub2ApiGroupFilter,
 } from './sub2api-page-model';
+
+function CopyableEndpointChip({
+  label,
+  value,
+  copyAria,
+  onCopy,
+}: {
+  label: string;
+  value: string;
+  copyAria: string;
+  onCopy: (value: string) => void;
+}) {
+  return (
+    <Hint label={value}>
+      <button
+        type="button"
+        className="inline-flex min-w-0 max-w-[min(28rem,36vw)] items-center gap-1.5 rounded-full border border-border bg-panel px-2.5 py-1 text-left text-xs text-secondary hover:border-accent/40 hover:bg-hover"
+        aria-label={copyAria}
+        onClick={() => onCopy(value)}
+      >
+        <span className="shrink-0">{label}</span>
+        <span className="min-w-0 truncate font-mono text-primary">{value}</span>
+        <Copy className="h-3 w-3 shrink-0 text-muted" aria-hidden />
+      </button>
+    </Hint>
+  );
+}
 
 export default function Sub2ApiPage() {
   const { t, lang } = useI18n();
   const { toast } = useToast();
-  const { installedIds } = useInstalledAgents();
+  const { installedAgents } = useInstalledAgents();
 
   const [session, setSession] = React.useState<Sub2ApiSession | null>(() => loadSub2ApiSession());
   const [restoring, setRestoring] = React.useState(() => Boolean(loadSub2ApiSession()?.accessToken));
@@ -130,11 +180,18 @@ export default function Sub2ApiPage() {
   const [captchaProof, setCaptchaProof] = React.useState<Sub2ApiCaptchaProof | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
   const [keys, setKeys] = React.useState<Sub2ApiKey[]>([]);
+  const [availableGroups, setAvailableGroups] = React.useState<Sub2ApiGroup[]>([]);
+  const [groupFilter, setGroupFilter] = React.useState<Sub2ApiGroupFilter>('all');
   const [loadingKeys, setLoadingKeys] = React.useState(false);
   const [creating, setCreating] = React.useState(false);
   const [newKeyName, setNewKeyName] = React.useState('AgentHub');
+  const [newKeyGroupId, setNewKeyGroupId] = React.useState<number | null>(null);
   const [createOpen, setCreateOpen] = React.useState(false);
-  const [syncingId, setSyncingId] = React.useState<number | null>(null);
+  const [importSession, setImportSession] = React.useState<{
+    agentId: AgentKey;
+    draft: ConnectApiKeyDraft;
+  } | null>(null);
+  const [updatingGroupId, setUpdatingGroupId] = React.useState<number | null>(null);
   const [rememberEnabled, setRememberEnabled] = React.useState(() => isSub2ApiRememberEnabled());
   const [remembered, setRemembered] = React.useState<Sub2ApiRememberedAccountMeta[]>(() =>
     listRememberedAccounts(),
@@ -157,8 +214,18 @@ export default function Sub2ApiPage() {
 
   const awaiting2fa = Boolean(tempToken);
   const phase = sub2apiPagePhase(session, awaiting2fa, restoring);
-  const sortedKeys = React.useMemo(() => sortSub2ApiKeys(selectableSub2ApiKeys(keys)), [keys]);
-  const syncAgents = React.useMemo(() => [...installedIds], [installedIds]);
+  const groups = React.useMemo(
+    () => mergeSub2ApiGroups(availableGroups, keys),
+    [availableGroups, keys],
+  );
+  const sortedKeys = React.useMemo(() => {
+    const rows = sortSub2ApiKeys(selectableSub2ApiKeys(keys));
+    return rows.filter((key) => keyMatchesGroupFilter(key, groupFilter));
+  }, [groupFilter, keys]);
+  const importAgents = React.useMemo<TokenImportAgentRef[]>(
+    () => installedAgents.map((agent) => ({ id: agent.id, name: agent.name })),
+    [installedAgents],
+  );
   const langZh = lang === 'zh';
 
   const applySession = React.useCallback((next: Sub2ApiSession) => {
@@ -167,11 +234,20 @@ export default function Sub2ApiPage() {
     setSiteUrlDraft(next.siteUrl);
   }, []);
 
+  const loadGroups = React.useCallback(async (active: Sub2ApiSession) => {
+    try {
+      setAvailableGroups(await loadSub2ApiGroups(active));
+    } catch {
+      setAvailableGroups([]);
+    }
+  }, []);
+
   const refreshKeys = React.useCallback(
     async (active: Sub2ApiSession) => {
       setLoadingKeys(true);
       try {
-        setKeys(await loadSub2ApiKeys(active));
+        const [nextKeys] = await Promise.all([loadSub2ApiKeys(active), loadGroups(active)]);
+        setKeys(nextKeys);
       } catch (err) {
         const unauthorized =
           err instanceof Sub2ApiError && (err.status === 401 || err.code === 401);
@@ -179,12 +255,14 @@ export default function Sub2ApiPage() {
           try {
             const next = await refreshSub2ApiSession(active);
             applySession(next);
-            setKeys(await loadSub2ApiKeys(next));
+            const [nextKeys] = await Promise.all([loadSub2ApiKeys(next), loadGroups(next)]);
+            setKeys(nextKeys);
             return;
           } catch {
             await logoutSub2Api(active);
             setSession(null);
             setKeys([]);
+            setAvailableGroups([]);
             const last = getLastUsedRememberedAccount();
             if (last) {
               const creds = loadRememberedCredentials(last.id);
@@ -202,7 +280,7 @@ export default function Sub2ApiPage() {
         setLoadingKeys(false);
       }
     },
-    [applySession, t, toast],
+    [applySession, loadGroups, t, toast],
   );
 
   React.useEffect(() => {
@@ -244,6 +322,7 @@ export default function Sub2ApiPage() {
         } else {
           setSession(null);
           setKeys([]);
+          setAvailableGroups([]);
           if (last) {
             const creds = loadRememberedCredentials(last.id);
             setSiteUrlDraft(last.siteUrl);
@@ -541,20 +620,25 @@ export default function Sub2ApiPage() {
     await logoutSub2Api(session);
     setSession(null);
     setKeys([]);
+    setAvailableGroups([]);
     toast({ title: t('routes.sub2api.logoutKeepsConnections') });
   };
 
-  const onCreateKey = async (alsoSync = false) => {
+  const onCreateKey = async () => {
     if (!session) return;
+    if (groups.length > 0 && newKeyGroupId == null) {
+      toast({ title: t('routes.sub2api.groupRequired'), variant: 'danger' });
+      return;
+    }
     setCreating(true);
     try {
-      const created = await createSub2ApiKey(session, newKeyName.trim() || 'AgentHub');
+      const created = await createSub2ApiKey(
+        session,
+        newKeyName.trim() || 'AgentHub',
+        newKeyGroupId,
+      );
       setCreateOpen(false);
       setKeys((prev) => [...prev, created]);
-      if (alsoSync) {
-        const agentId = syncAgents[0];
-        if (agentId) await syncKey(created, agentId);
-      }
     } catch {
       toast({ title: t('routes.sub2api.createKeyFailed'), variant: 'danger' });
     } finally {
@@ -562,24 +646,44 @@ export default function Sub2ApiPage() {
     }
   };
 
-  const syncKey = async (key: Sub2ApiKey, agentId: AgentKey) => {
+  const startImport = (agentId: AgentKey, draft: ConnectApiKeyDraft) => {
+    setImportSession({ agentId, draft });
+  };
+
+  const onChangeGroup = async (key: Sub2ApiKey, groupId: number | null) => {
     if (!session) return;
-    setSyncingId(key.id);
+    if (pickGroupId(key) === groupId) return;
+    const group = groupId == null ? null : (groups.find((row) => row.id === groupId) ?? null);
+    setUpdatingGroupId(key.id);
     try {
-      const result = await syncSub2ApiKeyToConnections({
-        gatewayBaseUrl: session.gatewayBaseUrl,
-        apiKey: key.key,
-        name: key.name || `Sub2API #${key.id}`,
-        agentId,
-      });
+      const updated = await updateSub2ApiKeyGroup(session, key.id, groupId);
+      setKeys((prev) => prev.map((row) => (
+        row.id === key.id ? applyGroupToKey({ ...row, ...updated }, group) : row
+      )));
+      toast({ title: t('routes.sub2api.groupChanged'), variant: 'success' });
+    } catch {
+      toast({ title: t('routes.sub2api.groupChangeFailed'), variant: 'danger' });
+    } finally {
+      setUpdatingGroupId(null);
+    }
+  };
+
+  const finishImportedLogin = async (
+    sourceKind: 'provider' | 'account',
+    sourceId: string,
+    isCurrent: boolean,
+  ) => {
+    const agentId = importSession?.agentId;
+    setImportSession(null);
+    if (!agentId) return;
+    try {
+      await applyImportedLogin({ agentId, sourceKind, sourceId, isCurrent });
       toast({
-        title: result.ok ? t('routes.sub2api.syncDone') : t('routes.sub2api.syncFailed'),
-        variant: result.ok ? 'default' : 'danger',
+        title: t('routes.tokens.importSuccess', { name: agentDisplayName(agentId) }),
+        variant: 'success',
       });
     } catch {
-      toast({ title: t('routes.sub2api.syncFailed'), variant: 'danger' });
-    } finally {
-      setSyncingId(null);
+      toast({ title: t('routes.tokens.importFailed'), variant: 'danger' });
     }
   };
 
@@ -626,23 +730,66 @@ export default function Sub2ApiPage() {
           title={t('routes.sub2api.title')}
           description={
             phase === 'logged-in'
-              ? [t('routes.sub2api.userLabel'), userLabel || null, session?.siteUrl || null]
-                  .filter(Boolean)
-                  .join(' · ')
+              ? [t('routes.sub2api.userLabel'), userLabel || null].filter(Boolean).join(' · ')
               : t('routes.sub2api.description')
           }
           descriptionTip={t('routes.sub2api.descriptionTip')}
         />
         {phase === 'logged-in' ? (
-          <div className={pageRhythm.chromeRow}>
-            <div className="min-w-0" />
+          <div className={cn(pageRhythm.chromeRow, 'flex-nowrap')}>
+            <div className="flex min-w-0 items-center gap-2 overflow-hidden">
+              <div className="flex min-w-0 items-center gap-2" data-sub2api-endpoints="">
+                {session?.siteUrl ? (
+                  <CopyableEndpointChip
+                    label={t('routes.sub2api.apiEndpointLabel')}
+                    value={session.siteUrl}
+                    copyAria={t('routes.sub2api.copyEndpoint')}
+                    onCopy={copyKeySecret}
+                  />
+                ) : null}
+                {showDirectLine && session?.gatewayBaseUrl ? (
+                  <CopyableEndpointChip
+                    label={t('routes.sub2api.directLineLabel')}
+                    value={session.gatewayBaseUrl}
+                    copyAria={t('routes.sub2api.copyDirectLine')}
+                    onCopy={copyKeySecret}
+                  />
+                ) : null}
+              </div>
+              <Select
+                value={typeof groupFilter === 'number' ? String(groupFilter) : groupFilter}
+                onValueChange={(value) => setGroupFilter(parseGroupFilter(value))}
+              >
+                <SelectTrigger className="w-44 shrink-0" aria-label={t('routes.sub2api.selectGroup')} data-sub2api-group-filter="">
+                  <SelectValue placeholder={t('routes.sub2api.selectGroup')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t('routes.sub2api.allGroups')}</SelectItem>
+                  {groups.map((group) => (
+                    <SelectItem key={group.id} value={String(group.id)}>
+                      {group.name}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value="none">{t('routes.sub2api.groupNone')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className={pageRhythm.chromeActions}>
               <PageRefreshButton
                 onClick={() => session && void refreshKeys(session)}
                 loading={loadingKeys}
                 label={t('routes.sub2api.refresh')}
               />
-              <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  setNewKeyGroupId(
+                    typeof groupFilter === 'number' ? groupFilter : (groups[0]?.id ?? null),
+                  );
+                  setCreateOpen(true);
+                }}
+              >
                 {t('routes.sub2api.createKey')}
               </Button>
               <Button type="button" variant="outline" size="sm" onClick={() => void onLogout()}>
@@ -877,20 +1024,6 @@ export default function Sub2ApiPage() {
 
         {phase === 'logged-in' && (
           <div className="flex min-h-0 flex-1 flex-col gap-3">
-            <div className="flex flex-wrap gap-2" data-sub2api-endpoints="">
-              {session?.siteUrl ? (
-                <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-panel px-2.5 py-1 text-xs text-secondary">
-                  <span>{t('routes.sub2api.apiEndpointLabel')}</span>
-                  <span className="truncate font-mono text-primary">{session.siteUrl}</span>
-                </div>
-              ) : null}
-              {showDirectLine ? (
-                <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-panel px-2.5 py-1 text-xs text-secondary">
-                  <span>{t('routes.sub2api.directLineLabel')}</span>
-                  <span className="truncate font-mono text-primary">{session?.gatewayBaseUrl}</span>
-                </div>
-              ) : null}
-            </div>
             {loadingKeys ? (
               <Card className="space-y-2 p-4">
                 <Skeleton className="h-10 w-full" />
@@ -946,18 +1079,14 @@ export default function Sub2ApiPage() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            {groupLabel ? (
-                              <div className="flex flex-wrap items-center gap-1">
-                                <Badge variant="accent">{groupLabel}</Badge>
-                                {groupRate ? (
-                                  <Badge variant="default">{groupRate}</Badge>
-                                ) : null}
-                              </div>
-                            ) : (
-                              <span className="text-xs text-secondary">
-                                {t('routes.sub2api.groupNone')}
-                              </span>
-                            )}
+                            <Sub2ApiGroupCell
+                              label={groupLabel}
+                              rate={groupRate}
+                              groupId={pickGroupId(key)}
+                              groups={groups}
+                              disabled={updatingGroupId === key.id}
+                              onSelect={(groupId) => void onChangeGroup(key, groupId)}
+                            />
                           </TableCell>
                           <TableCell>
                             <span className="inline-flex min-w-[1.75rem] justify-center rounded-md bg-subtle px-1.5 py-0.5 font-mono text-xs">
@@ -991,34 +1120,13 @@ export default function Sub2ApiPage() {
                             {formatKeyTableTimestamp(key.created_at) ?? '—'}
                           </TableCell>
                           <TableCell>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  disabled={syncingId === key.id}
-                                >
-                                  {t('routes.sub2api.syncToConnections')}
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                {syncAgents.length === 0 ? (
-                                  <DropdownMenuItem disabled>
-                                    {t('routes.sub2api.syncPickAgent')}
-                                  </DropdownMenuItem>
-                                ) : (
-                                  syncAgents.map((agentId) => (
-                                    <DropdownMenuItem
-                                      key={agentId}
-                                      onClick={() => void syncKey(key, agentId)}
-                                    >
-                                      {agentDisplayName(agentId)}
-                                    </DropdownMenuItem>
-                                  ))
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                            <Sub2ApiImportToAgentButton
+                              keyRow={key}
+                              groups={groups}
+                              gatewayBaseUrl={session?.gatewayBaseUrl ?? ''}
+                              installedAgents={importAgents}
+                              onImport={startImport}
+                            />
                           </TableCell>
                         </TableRow>
                       );
@@ -1040,16 +1148,74 @@ export default function Sub2ApiPage() {
             <span className="text-sm text-secondary">{t('routes.sub2api.createKeyName')}</span>
             <Input value={newKeyName} onChange={(e) => setNewKeyName(e.target.value)} />
           </label>
+          {groups.length > 0 ? (
+            <label className="block space-y-1.5">
+              <span className="text-sm text-secondary">{t('routes.sub2api.selectGroup')}</span>
+              <Select
+                value={newKeyGroupId == null ? undefined : String(newKeyGroupId)}
+                onValueChange={(value) => {
+                  const n = Number(value);
+                  setNewKeyGroupId(Number.isFinite(n) ? n : null);
+                }}
+              >
+                <SelectTrigger data-sub2api-create-group="">
+                  <SelectValue placeholder={t('routes.sub2api.selectGroup')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {groups.map((group) => (
+                    <SelectItem key={group.id} value={String(group.id)}>
+                      {group.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </label>
+          ) : null}
           <DialogFooter className="gap-2 sm:gap-2">
-            <Button type="button" variant="outline" onClick={() => void onCreateKey(false)} disabled={creating}>
-              {t('routes.sub2api.createKeyConfirm')}
+            <Button type="button" variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>
+              {t('common.cancel')}
             </Button>
-            <Button type="button" onClick={() => void onCreateKey(true)} disabled={creating || syncAgents.length === 0}>
-              {t('routes.sub2api.createAndSync')}
+            <Button type="button" onClick={() => void onCreateKey()} disabled={creating}>
+              {t('routes.sub2api.createKeyConfirm')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {importSession ? (
+        importSession.agentId === 'workbuddy' ? (
+          <ApiKeyAccountDialog
+            open
+            agentId="workbuddy"
+            mode="add"
+            initialApiKey={importSession.draft.apiKey}
+            initialBaseUrl={importSession.draft.baseUrl}
+            initialModel={importSession.draft.model}
+            onOpenChange={(open) => {
+              if (!open) setImportSession(null);
+            }}
+            onSaved={(account) => {
+              void finishImportedLogin('account', account.id, account.isCurrent);
+            }}
+          />
+        ) : (
+          <ProviderEditDialog
+            open
+            agentId={importSession.agentId}
+            mode="add"
+            initialBaseUrl={importSession.draft.baseUrl}
+            initialApiKey={importSession.draft.apiKey}
+            initialModel={importSession.draft.model}
+            compactGrokApiBackend={importSession.draft.apiBackend}
+            onOpenChange={(open) => {
+              if (!open) setImportSession(null);
+            }}
+            onSaved={(provider) => {
+              void finishImportedLogin('provider', provider.id, provider.isCurrent);
+            }}
+          />
+        )
+      ) : null}
 
       <Dialog open={rememberOffOpen} onOpenChange={setRememberOffOpen}>
         <DialogContent className="max-w-sm">

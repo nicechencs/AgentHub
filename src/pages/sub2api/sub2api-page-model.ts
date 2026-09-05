@@ -1,6 +1,6 @@
 /** Pure helpers for the Sub2API routes page. */
 
-import type { Sub2ApiKey, Sub2ApiSession, Sub2ApiUser } from '@/lib/sub2api';
+import type { Sub2ApiGroup, Sub2ApiKey, Sub2ApiSession, Sub2ApiUser } from '@/lib/sub2api';
 import {
   SUB2API_DEFAULT_SITE_URL,
   normalizeSiteUrl,
@@ -260,6 +260,92 @@ export function formatKeyModels(raw: unknown, maxItems = 6): string | null {
   if (items.length <= maxItems) return items.join(', ');
   const shown = items.slice(0, maxItems).join(', ');
   return `${shown} (+${items.length - maxItems})`;
+}
+
+/** Numeric group id from the key or nested group object. */
+export function pickGroupId(key: Sub2ApiKey): number | null {
+  const record = key as unknown as Record<string, unknown>;
+  if (record.group_id != null && Number.isFinite(Number(record.group_id))) {
+    return Number(record.group_id);
+  }
+  const group = record.group;
+  if (group && typeof group === 'object') {
+    const id = (group as Record<string, unknown>).id;
+    if (id != null && Number.isFinite(Number(id))) return Number(id);
+  }
+  return null;
+}
+
+export function applyGroupToKey(key: Sub2ApiKey, group: Sub2ApiGroup | null): Sub2ApiKey {
+  if (!group) {
+    return { ...key, group_id: null, group_name: null, group: null };
+  }
+  const prev = typeof key.group === 'object' && key.group ? key.group : {};
+  return {
+    ...key,
+    group_id: group.id,
+    group_name: group.name,
+    group: {
+      ...prev,
+      id: group.id,
+      name: group.name,
+      ...(group.platform ? { platform: group.platform } : {}),
+      ...(typeof group.rate_multiplier === 'number' && Number.isFinite(group.rate_multiplier)
+        ? { rate_multiplier: group.rate_multiplier }
+        : {}),
+    },
+  };
+}
+
+export type Sub2ApiGroupFilter = 'all' | 'none' | number;
+
+export function parseGroupFilter(raw: string): Sub2ApiGroupFilter {
+  if (raw === 'none') return 'none';
+  if (raw === 'all' || raw === '') return 'all';
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 'all';
+}
+
+export function keyMatchesGroupFilter(key: Sub2ApiKey, filter: Sub2ApiGroupFilter): boolean {
+  if (filter === 'all') return true;
+  const id = pickGroupId(key);
+  if (filter === 'none') return id == null;
+  return id === filter;
+}
+
+/** Merge /groups/available with groups already present on keys. */
+export function mergeSub2ApiGroups(
+  available: readonly Sub2ApiGroup[],
+  keys: readonly Sub2ApiKey[],
+): Sub2ApiGroup[] {
+  const byId = new Map<number, Sub2ApiGroup>();
+  for (const group of available) {
+    if (!Number.isFinite(group.id)) continue;
+    const name = group.name?.trim() || String(group.id);
+    byId.set(group.id, { ...group, name });
+  }
+  for (const key of keys) {
+    const id = pickGroupId(key);
+    if (id == null || byId.has(id)) continue;
+    const label = pickGroupLabel(key);
+    byId.set(id, { id, name: label && label !== String(id) ? label : String(id) });
+  }
+  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+}
+
+export function pickGroupPlatform(
+  key: Sub2ApiKey,
+  groups: readonly Sub2ApiGroup[] = [],
+): string | null {
+  const group = (key as unknown as Record<string, unknown>).group;
+  if (group && typeof group === 'object') {
+    const platform = (group as Record<string, unknown>).platform;
+    if (typeof platform === 'string' && platform.trim()) return platform.trim().toLowerCase();
+  }
+  const id = pickGroupId(key);
+  if (id == null) return null;
+  const found = groups.find((row) => row.id === id)?.platform?.trim();
+  return found ? found.toLowerCase() : null;
 }
 
 /** Prefer group_name, then embedded group.name / string group, then numeric group_id. */

@@ -4,7 +4,10 @@ import {
   buildLoginBody,
   fetchPublicSettings,
   isTotp2FARequired,
+  createApiKey,
   listApiKeys,
+  listAvailableGroups,
+  updateApiKey,
   loginWith2FA,
   loginWithPassword,
   mapSub2ApiLoginError,
@@ -206,5 +209,52 @@ describe('sub2api client', () => {
     expect(mapSub2ApiLoginError(new Error('Failed to fetch'), messages)).toBe('无法连接该站点');
     expect(mapSub2ApiLoginError(new Error('network error: dns'), messages)).toBe('无法连接该站点');
     expect(mapSub2ApiLoginError(new Error('something else'), messages)).toBe('登录未完成');
+  });
+
+  it('lists available groups as a flat array', async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          code: 0,
+          message: 'ok',
+          data: [{ id: 2, name: 'Claude', platform: 'anthropic' }],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchImpl);
+    await expect(
+      listAvailableGroups({ siteUrl: 'https://v2.pincc.ai', accessToken: 'x' }),
+    ).resolves.toEqual([{ id: 2, name: 'Claude', platform: 'anthropic' }]);
+    expect(calledUrl(fetchImpl)).toContain('/groups/available');
+  });
+
+  it('posts group_id when creating a key', async () => {
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+      expect(body).toEqual({ name: 'AgentHub', group_id: 7 });
+      return new Response(
+        JSON.stringify({ code: 0, message: 'ok', data: { id: 1, key: 'sk', name: 'AgentHub', status: 'active' } }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    });
+    vi.stubGlobal('fetch', fetchImpl);
+    await createApiKey({ siteUrl: 'https://v2.pincc.ai', accessToken: 'x' }, 'AgentHub', 7);
+    expect(calledUrl(fetchImpl)).toContain('/keys');
+  });
+
+  it('puts group_id when changing a key group', async () => {
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+      expect(init?.method).toBe('PUT');
+      expect(body).toEqual({ group_id: 4 });
+      return new Response(
+        JSON.stringify({ code: 0, message: 'ok', data: { id: 9, key: 'sk', name: 'n', status: 'active', group_id: 4 } }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    });
+    vi.stubGlobal('fetch', fetchImpl);
+    await updateApiKey({ siteUrl: 'https://v2.pincc.ai', accessToken: 'x' }, 9, { group_id: 4 });
+    expect(calledUrl(fetchImpl)).toContain('/keys/9');
   });
 });

@@ -8,9 +8,15 @@ import {
   formatKeyTableTimestamp,
   formatKeyTimestamp,
   formatUsdAmount,
+  applyGroupToKey,
   maskSub2ApiTableKey,
   normalizeTotpCode,
+  keyMatchesGroupFilter,
+  mergeSub2ApiGroups,
+  parseGroupFilter,
+  pickGroupId,
   pickGroupLabel,
+  pickGroupPlatform,
   pickGroupRate,
   pickKeyConcurrency,
   pickKeyUsageUsd,
@@ -127,11 +133,45 @@ describe('sub2api page model', () => {
   });
 
   it('picks group label from name, group, or id', () => {
+    expect(pickGroupId({ id: 1, key: 'k', name: 'n', status: 'active', group_id: 8 })).toBe(8);
+    expect(pickGroupId({ id: 1, key: 'k', name: 'n', status: 'active', group: { id: 3, name: 'Claude Pro' } })).toBe(3);
     expect(pickGroupLabel({ id: 1, key: 'k', name: 'n', status: 'active', group_name: 'default', group_id: 1 })).toBe('default');
     expect(pickGroupLabel({ id: 1, key: 'k', name: 'n', status: 'active', group: 'vip', group_id: 2 })).toBe('vip');
     expect(pickGroupLabel({ id: 1, key: 'k', name: 'n', status: 'active', group: { id: 3, name: 'Claude Pro' }, group_id: 3 })).toBe('Claude Pro');
     expect(pickGroupLabel({ id: 1, key: 'k', name: 'n', status: 'active', group_id: 9 })).toBe('9');
     expect(pickGroupLabel({ id: 1, key: 'k', name: 'n', status: 'active' })).toBeNull();
+    expect(parseGroupFilter('all')).toBe('all');
+    expect(parseGroupFilter('none')).toBe('none');
+    expect(parseGroupFilter('12')).toBe(12);
+    expect(keyMatchesGroupFilter({ id: 1, key: 'k', name: 'n', status: 'active', group_id: 2 }, 'all')).toBe(true);
+    expect(keyMatchesGroupFilter({ id: 1, key: 'k', name: 'n', status: 'active', group_id: 2 }, 2)).toBe(true);
+    expect(keyMatchesGroupFilter({ id: 1, key: 'k', name: 'n', status: 'active', group_id: 2 }, 'none')).toBe(false);
+    expect(keyMatchesGroupFilter({ id: 1, key: 'k', name: 'n', status: 'active' }, 'none')).toBe(true);
+    expect(
+      mergeSub2ApiGroups(
+        [{ id: 2, name: 'VIP' }],
+        [{ id: 1, key: 'k', name: 'n', status: 'active', group: { id: 3, name: 'Claude Pro', platform: 'anthropic' } }],
+      ).map((g) => g.id),
+    ).toEqual([3, 2]);
+    expect(
+      pickGroupPlatform(
+        { id: 1, key: 'k', name: 'n', status: 'active', group_id: 2 },
+        [{ id: 2, name: 'Grok', platform: 'grok' }],
+      ),
+    ).toBe('grok');
+    expect(
+      applyGroupToKey(
+        { id: 1, key: 'k', name: 'n', status: 'active', group_id: 2, group_name: 'old' },
+        { id: 9, name: 'Claude Pro', platform: 'anthropic', rate_multiplier: 0.4 },
+      ),
+    ).toMatchObject({
+      group_id: 9,
+      group_name: 'Claude Pro',
+      group: { id: 9, name: 'Claude Pro', platform: 'anthropic', rate_multiplier: 0.4 },
+    });
+    expect(
+      applyGroupToKey({ id: 1, key: 'k', name: 'n', status: 'active', group_id: 2 }, null),
+    ).toMatchObject({ group_id: null, group_name: null, group: null });
   });
 
   it('reads models from nested group config', () => {

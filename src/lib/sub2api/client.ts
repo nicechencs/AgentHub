@@ -9,6 +9,7 @@ import type {
   Sub2ApiCaptchaKind,
   Sub2ApiCaptchaProof,
   Sub2ApiEnvelope,
+  Sub2ApiGroup,
   Sub2ApiKey,
   Sub2ApiKeyList,
   Sub2ApiLogin2FARequest,
@@ -276,10 +277,38 @@ export async function listApiKeys(
   });
 }
 
-export function createApiKey(ctx: Sub2ApiAuthContext, name: string): Promise<Sub2ApiKey> {
+export async function listAvailableGroups(ctx: Sub2ApiAuthContext): Promise<Sub2ApiGroup[]> {
+  const data = await request<Sub2ApiGroup[] | { items?: Sub2ApiGroup[] }>(
+    ctx.siteUrl,
+    '/groups/available',
+    { accessToken: ctx.accessToken },
+  );
+  if (Array.isArray(data)) return data;
+  return Array.isArray(data?.items) ? data.items : [];
+}
+
+export function createApiKey(
+  ctx: Sub2ApiAuthContext,
+  name: string,
+  groupId?: number | null,
+): Promise<Sub2ApiKey> {
+  const body: { name: string; group_id?: number } = { name: name.trim() || 'AgentHub' };
+  if (groupId != null && Number.isFinite(groupId)) body.group_id = groupId;
   return request<Sub2ApiKey>(ctx.siteUrl, '/keys', {
     method: 'POST',
-    body: JSON.stringify({ name: name.trim() || 'AgentHub' }),
+    body: JSON.stringify(body),
+    accessToken: ctx.accessToken,
+  });
+}
+
+export function updateApiKey(
+  ctx: Sub2ApiAuthContext,
+  id: number,
+  patch: { group_id?: number | null },
+): Promise<Sub2ApiKey> {
+  return request<Sub2ApiKey>(ctx.siteUrl, `/keys/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(patch),
     accessToken: ctx.accessToken,
   });
 }
