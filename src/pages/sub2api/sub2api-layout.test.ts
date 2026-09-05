@@ -82,9 +82,13 @@ describe('sub2api layout wiring', () => {
     expect(actions).toContain('data-sub2api-key-actions');
     expect(actions).toContain('data-sub2api-key-action');
     expect(actions).toContain('Sub2ApiImportToAgentButton');
+    expect(actions).toContain('<Switch');
+    expect(actions).not.toContain('function ActionIconButton');
     expect(actions).toContain("t('routes.sub2api.disableKey')");
     expect(actions).toContain("t('routes.sub2api.enableKey')");
     expect(actions).toContain("t('common.delete')");
+    expect(actions).toContain('size="icon"');
+    expect(actions).toContain('variant="ghost"');
     expect(page).not.toContain('openSub2ApiLoginWindow');
     expect(page).not.toContain('closeSub2ApiLoginWindow');
     expect(page).not.toContain('<iframe');

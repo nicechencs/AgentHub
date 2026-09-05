@@ -23,8 +23,7 @@ export type ActivityTraceColumnKey =
   | "duration"
   | "tokens"
   | "stages"
-  | "route"
-  | "details";
+  | "route";
 
 export type ActivityTraceKeyToken = {
   token: string;
@@ -42,7 +41,6 @@ export const ACTIVITY_TRACE_WIDTH_SPECS: ColumnWidthSpec<ActivityTraceColumnKey>
   { key: "tokens", defaultWidth: 104, minWidth: 88 },
   { key: "stages", defaultWidth: 224, minWidth: 196 },
   { key: "route", defaultWidth: 120, minWidth: 88 },
-  { key: "details", defaultWidth: 72, minWidth: 64 },
 ];
 
 export const ACTIVITY_TRACE_COLUMN_WIDTHS_STORAGE_KEY =
@@ -90,8 +88,7 @@ export function activityTraceColumnLabel(
   if (key === "duration") return t("routes.activity.colDuration");
   if (key === "tokens") return t("routes.activity.colTokens");
   if (key === "stages") return t("routes.activity.colStages");
-  if (key === "route") return t("routes.activity.colRoute");
-  return t("routes.activity.colDetails");
+  return t("routes.activity.colRoute");
 }
 
 export function activityTraceStageLabel(stage: ActivityTraceStageId, t: TranslateFn): string {

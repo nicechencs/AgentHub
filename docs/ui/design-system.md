@@ -3,7 +3,7 @@ title: UI 设计系统
 type: reference
 status: current
 owner: maintainers
-updated: 2026-08-31
+updated: 2026-09-05
 ---
 
 # UI Design System
@@ -99,10 +99,14 @@ The only base component family is `src/components/ui/` using the existing shadcn
 | Agent filtering | `AgentTabStrip` | Use the shared medium-density strip and Agent identity marks |
 | Overlay | `Dialog`, `DropdownMenu`, `ContextMenu` | Use the existing focus and dismissal behavior |
 | Management table | `TableShell` | Default variant is the card shell; business pages do not hand-write workbench classes |
-| Management row | `ListRow` | Use active background and optional leading bar; do not nest another card |
+| Management row | `ListRow` | Short identity cards without a stable column set; do not nest another card |
+| Open inspect from a name | `ListNameButton` | Dense field tables only; do not use `Button` inside a name cell |
+| Official login / API Key mark | `CredentialKindMark` | Person / key icon in the Agent color; pair with a text label |
+| Page list refresh | `PageRefreshButton` | `secondary` + icon + label. Do not reuse it for collect / redetect / OAuth refresh |
+| Open folder | `OpenDirButton` | Ghost icon-only, or ghost + 「目录」 next to a path |
 | Search | `SearchField` | Use the shared icon, height, and focus behavior |
 
-Use lucide icons for familiar icon-only actions. Every unfamiliar icon button needs a `Hint`. A text button is appropriate when the command itself is the thing the user must scan, such as “添加登录” or “重试”.
+Use lucide icons for familiar icon-only actions. Every unfamiliar icon button needs a `Hint`. A text button is appropriate when the command itself is the thing the user must scan, such as “添加登录” or “重试”. New chrome icon buttons use `Button size="icon" variant="ghost"` on a 28px target.
 
 ### 4.2 Surfaces and selection
 
@@ -122,6 +126,35 @@ Use lucide icons for familiar icon-only actions. Every unfamiliar icon button ne
 | Destructive entry before confirmation | `dangerOutline` or `ghost` |
 
 The stop action for an active operation is `dangerOutline`, while the final delete or irreversible confirmation uses `danger`. Do not create a global switch-confirmation component; each page owns its dialog because the explanation differs.
+
+### 4.4 List, table, and inspect
+
+Management lists are not one skin. Pick by data shape, then keep the open-detail rule that matches that skin.
+
+| Skin | Use when | Open details | Examples |
+|---|---|---|---|
+| Field table (`TableShell`) | Stable columns, optional resize / sort / switch | Click the **name** (`ListNameButton`). Do **not** set `TableRow onOpen`. | Agents, Connections, connection pool |
+| Field table + row open | Stable columns, few in-row commands | Click empty row area / Enter / Space (`TableRow onOpen`). Name is not a separate control. | Tokens, Sub2API keys, Activity, Skills library/project (name is also a `ListNameButton`; checkbox never opens) |
+| Identity card (`ListRow`) | Name + one line of meta, no column set | Click the **row** (`ListRow onOpen`) | Plugins, Backups |
+| Collapsible tree | Groups with nested sessions | Group header expands; **title** opens preview | Projects |
+| In-row disclosure (`DetailsToggle`) | No inspect pane; extra snippet stays in the list | Chevron toggle only | MCP, import-login rows |
+| External link | Market / outbound URL | Accent link, not inspect | Skills market |
+
+Shared rules:
+
+- Active preview uses `bg-active`. Batch checkboxes never open inspect and never paint the row with accent.
+- A page does not mix a 详情 button with row/`onOpen` for the same object. Activity opens from the row only.
+- Inspect lives in `InspectSurface` / `SideInspectPanel`. First-run, multi-step, and confirmations stay in `Dialog`.
+- Leftover local-route cards may still expose an outline **详情** until they join the pool table.
+
+### 4.5 Copy, enable, and chips
+
+- Overlay copy on a message/code block: `CopyTextButton` (hover-reveal + toast).
+- Path / file name: `CopyableFileName` (`Tip`, no native `title`).
+- Field value in a detail grid: `DetailRow` `copyable`.
+- Loopback URL: `CopyableRouteEndpointUrl`.
+- Durable on/off (pool member, plugin pack, local gateway, keep-copies): `Switch`. Do not invent a second enable button.
+- Exclusive in-page presets: `SegmentedControl`. Option chips that toggle: `Badge variant="chip"` / `chipActive`.
 
 ## 5. Information and feedback
 
@@ -182,6 +215,8 @@ Additional rules:
 
 - Is the page using `/routes`, Routes, and 路由 in current-facing copy?
 - Is there at most one accent primary action?
+- Did a dense field table open inspect from `ListNameButton` rather than whole-row `onOpen`?
+- Is there at most one open-detail control per object (no extra 详情 button beside `onOpen`)?
 - Did the change use semantic type, surface, spacing, radius, and focus tokens?
 - Are loading, empty, error, and partial states covered?
 - Are active preview and batch selection distinct?

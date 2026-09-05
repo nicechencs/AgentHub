@@ -71,4 +71,20 @@ describe('chat layout wiring', () => {
     expect(composer).toContain('text-left text-meta leading-none');
     expect(composer).not.toContain('mt-2 shrink-0 text-center text-meta');
   });
+
+  it('uses shared Button for chrome icons and composer chips', () => {
+    const header = source('ChatSessionHeader.tsx');
+    const rail = source('ChatSessionRail.tsx');
+    const composer = source('ChatComposer.tsx');
+    expect(header).toContain('size="icon"');
+    expect(header).toContain('variant="ghost"');
+    expect(header).toContain('variant="outline"');
+    expect(header).toContain('data-help="chat-settings"');
+    expect(header).not.toContain('hover:bg-hover hover:text-primary');
+    expect(rail).toContain('size="icon"');
+    expect(rail).toContain('variant="ghost"');
+    expect(composer).toContain('size="sm"');
+    expect(composer).toContain('variant="outline"');
+    expect(composer).not.toContain('bg-subtle px-2 text-meta text-secondary hover:bg-hover');
+  });
 });

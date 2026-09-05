@@ -13,6 +13,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
+import { ListNameButton } from '@/components/shared/ListNameButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { ContextMenu, ContextMenuItem } from '@/components/ui/context-menu';
 import {
@@ -673,24 +674,12 @@ export function SkillMatrix({
                   <TableCell className="min-w-0" onContextMenu={openRowMenu}>
                     <div className="min-w-0">
                       {onPreview ? (
-                        <button
-                          type="button"
-                          className={cn(
-                            'block max-w-full truncate text-left text-sm font-medium text-primary',
-                            'rounded-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
-                          )}
+                        <ListNameButton
+                          hint={row.name}
                           onClick={() => onPreview(row)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              onPreview(row);
-                            }
-                          }}
                         >
-                          <Tip className="truncate" label={row.name}>
-                            {row.name}
-                          </Tip>
-                        </button>
+                          {row.name}
+                        </ListNameButton>
                       ) : (
                         <Tip className="truncate font-medium text-primary" label={row.name}>
                           {row.name}

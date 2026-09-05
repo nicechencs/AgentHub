@@ -6,6 +6,7 @@ import { dismissChromeHint } from '@/components/shared/chrome-hint-model';
 import { pageHelpIdFromPath } from '@/components/shared/page-help-model';
 import { isPageHelpOpenKey } from '@/components/shared/page-help-tour';
 import { PageHelpTour } from '@/components/shared/PageHelpTour';
+import { Button } from '@/components/ui/button';
 import { Hint } from '@/components/ui/tooltip';
 
 function openPageHelp(setOpen: (open: boolean) => void) {
@@ -47,9 +48,11 @@ export function PageHelpButton() {
           </span>
         }
       >
-        <button
+        <Button
           type="button"
-          className="relative rounded-btn p-1.5 text-secondary hover:bg-hover hover:text-primary"
+          size="icon"
+          variant="ghost"
+          className="relative"
           aria-label={label}
           aria-keyshortcuts="F1"
           aria-haspopup="dialog"
@@ -59,7 +62,7 @@ export function PageHelpButton() {
           onClick={() => openPageHelp(setOpen)}
         >
           <CircleHelp className="h-4 w-4" />
-        </button>
+        </Button>
       </Hint>
       <PageHelpTour open={open} helpId={helpId} onClose={() => setOpen(false)} />
     </>

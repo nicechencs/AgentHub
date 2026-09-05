@@ -1,6 +1,7 @@
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import { ChevronDown, ChevronRight, Copy, MessageSquarePlus, Terminal, Trash2 } from 'lucide-react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
+import { ListNameButton } from '@/components/shared/ListNameButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { Tip } from '@/components/ui/tooltip';
@@ -15,9 +16,6 @@ import {
   sessionFileName,
   titleHoverLabel,
 } from './project-format';
-
-const previewTextClass =
-  'block w-full min-w-0 truncate text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60';
 
 /**
  * Packed tracks plus a shrinking spacer. The action cluster is `auto` so it
@@ -134,21 +132,21 @@ export function ProjectSessionRow({
         ) : nested ? null : (
           <span className="h-5 w-5 shrink-0" />
         )}
-        <Tip label={titleHoverLabel(session.title, session.preview)} className="min-w-0 flex-1">
-          <button
-            type="button"
-            className={cn(previewTextClass, 'text-sm text-primary')}
+        <div className="min-w-0 flex-1">
+          <ListNameButton
+            hint={titleHoverLabel(session.title, session.preview)}
+            className="w-full"
             aria-current={previewOpen ? 'true' : undefined}
             data-help="list-row"
             aria-label={t('projects.tree.previewAria', { title: session.title })}
             onClick={() => onPreviewSession(session)}
           >
             {nested && nestedLabel ? (
-              <span className="mr-1.5 text-xs text-muted">{nestedLabel}</span>
+              <span className="mr-1.5 text-meta text-muted">{nestedLabel}</span>
             ) : null}
             {session.title}
-          </button>
-        </Tip>
+          </ListNameButton>
+        </div>
         {childCount > 0 && !nestedOpen ? (
           <span className="shrink-0 text-xs text-muted tabular-nums">
             {t('projects.tree.subSessionCount', { n: childCount })}
@@ -160,7 +158,7 @@ export function ProjectSessionRow({
           {record ? (
             <button
               type="button"
-              className={cn(previewTextClass, 'font-mono text-meta text-muted')}
+              className="block w-full min-w-0 truncate text-left font-mono text-meta text-muted hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
               disabled={busy}
               aria-label={t('projects.tree.openRecordFolder', { path: record })}
               onClick={(e) => onOpenSessionRecord(session, e)}

@@ -14,6 +14,7 @@ describe('CopyableFileName wiring', () => {
   it('is the path label on login files, backups, MCP, plugins, Agents, settings, and previews', () => {
     expect(source('components/shared/CopyableFileName.tsx')).toContain("t('common.copyFileName')");
     expect(source('components/shared/CopyableFileName.tsx')).toContain("t('common.copiedFileName'");
+    expect(source('components/shared/CopyableFileName.tsx')).not.toContain('title={path');
     expect(source('components/shared/ConfigFileCard.tsx')).toContain('<CopyableFileName');
     expect(source('pages/mcp/McpServerTable.tsx')).toContain('<CopyableFileName');
     expect(source('pages/plugins/PluginDetailPanel.tsx')).toContain('<CopyableFileName');

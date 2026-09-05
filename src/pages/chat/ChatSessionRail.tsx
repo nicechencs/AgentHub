@@ -75,16 +75,17 @@ export function ChatSessionRail({
       data-help="chat-rail"
     >
       <div className="flex items-center gap-1.5 p-2">
-        <Hint label={t('chat.rail.collapseHistory')}>
-          <button
-            type="button"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-btn text-muted hover:bg-hover hover:text-primary"
-            onClick={onToggleRail}
-            aria-label={t('chat.rail.collapseHistory')}
-          >
-            <PanelLeftClose className="h-4 w-4" />
-          </button>
-        </Hint>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="shrink-0 text-muted"
+          onClick={onToggleRail}
+          title={t('chat.rail.collapseHistory')}
+          aria-label={t('chat.rail.collapseHistory')}
+        >
+          <PanelLeftClose className="h-4 w-4" />
+        </Button>
         <Hint label={agentsReady && !hasUsableAgent ? t('chat.rail.newChatDisabled') : undefined}>
           <Button
             className="min-w-0 flex-1 justify-start gap-1.5"
@@ -172,16 +173,17 @@ export function ChatSessionRail({
                           ) : null}
                         </span>
                       </button>
-                      <Hint label={t('chat.rail.deleteAria')}>
-                        <button
-                          type="button"
-                          className="mr-1 rounded-btn p-1 opacity-0 transition-opacity hover:bg-panel group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100"
-                          aria-label={t('chat.rail.deleteAria')}
-                          onClick={() => onRequestDelete(c.id)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5 text-muted hover:text-danger" />
-                        </button>
-                      </Hint>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="mr-1 text-muted opacity-0 transition-opacity hover:text-danger group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100"
+                        title={t('chat.rail.deleteAria')}
+                        aria-label={t('chat.rail.deleteAria')}
+                        onClick={() => onRequestDelete(c.id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
                     </div>
                   </Hint>
                 );

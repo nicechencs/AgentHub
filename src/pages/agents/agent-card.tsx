@@ -12,6 +12,7 @@ import {
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { EnvRemediationPanel } from '@/components/shared/EnvRemediationPanel';
 import { InlineTerminal } from '@/components/shared/InlineTerminal';
+import { ListNameButton } from '@/components/shared/ListNameButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -341,17 +342,14 @@ export function AgentCard({
           {sortHandle}
           <AgentLogo agentId={agent.agentId} size="sm" />
           {onSelect ? (
-            <Tip className="min-w-0" label={meta.name}>
-              <button
-                type="button"
-                data-agent-name={agent.agentId}
-                data-help="list-row"
-                className="max-w-full truncate text-left text-body font-medium text-primary hover:underline"
-                onClick={onSelect}
-              >
-                {meta.name}
-              </button>
-            </Tip>
+            <ListNameButton
+              hint={meta.name}
+              data-agent-name={agent.agentId}
+              data-help="list-row"
+              onClick={onSelect}
+            >
+              {meta.name}
+            </ListNameButton>
           ) : (
             <Tip className="truncate text-body font-medium" label={meta.name}>
               {meta.name}

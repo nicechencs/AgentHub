@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { Button } from '@/components/ui/button';
 import { Hint } from '@/components/ui/tooltip';
 import { listAlerts, dismissAlert } from '@/lib/api/dashboard';
 import type { DashboardAlert } from '@/lib/types';
@@ -65,9 +66,11 @@ export function NotificationBell() {
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <Hint label={t('chrome.bell.label')}>
         <DropdownMenuTrigger asChild>
-          <button
+          <Button
             type="button"
-            className="relative rounded-btn p-1.5 text-secondary hover:bg-hover hover:text-primary"
+            size="icon"
+            variant="ghost"
+            className="relative"
             aria-label={t('chrome.bell.label')}
           >
             <Bell className="h-4 w-4" />
@@ -76,23 +79,25 @@ export function NotificationBell() {
                 {alerts.length > 9 ? '9+' : alerts.length}
               </span>
             )}
-          </button>
+          </Button>
         </DropdownMenuTrigger>
       </Hint>
       <DropdownMenuContent align="end" className="w-80">
         <DropdownMenuLabel className="flex items-center justify-between">
           <span>{t('chrome.bell.title')}</span>
           {alerts.length > 0 && (
-            <button
+            <Button
               type="button"
-              className="text-xs font-normal text-muted hover:text-primary"
+              size="sm"
+              variant="ghost"
+              className="h-auto px-1.5 py-0.5 font-normal text-muted"
               onClick={(e) => {
                 e.preventDefault();
                 void handleDismissAll();
               }}
             >
               {t('chrome.bell.dismissAll')}
-            </button>
+            </Button>
           )}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
