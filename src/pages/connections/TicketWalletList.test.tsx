@@ -258,6 +258,24 @@ describe('TicketWalletList details', () => {
     expect(markup).toMatch(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
   });
 
+  it('shows token totals when official percents are missing', () => {
+    const wallet = sampleWallet();
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet,
+        onImportToPool() {},
+        extrasForTicket: () => ({
+          tokenInput: 12,
+          tokenOutput: 3,
+        }),
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(markup).toContain('12 / 3');
+    expect(markup).not.toContain('7d');
+  });
+
   it('does not put 本机路由 or pool rotation copy on the Agent column', () => {
     const wallet = sampleWallet();
     wallet.bindings = [{

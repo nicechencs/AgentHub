@@ -1963,6 +1963,7 @@ export const zh = {
       currentlyActive: "当前生效",
       subscription: "套餐",
       lastUsedAt: "最近使用",
+      tokenUsage: "{in} / {out}",
       createdAt: "添加时间",
       importedFrom: "导入来源",
       timelineTitle: "时间",

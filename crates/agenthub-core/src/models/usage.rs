@@ -17,6 +17,19 @@ use serde_json::{Map, Value};
 
 use super::AgentId;
 
+/// Per-connection token totals. Lives in `{data_dir}/cache.db` with other
+/// usage rows, never mixed into [`UsageRecord`] / the dashboard.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectionUsageSummary {
+    pub ticket_id: String,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_write_tokens: i64,
+    pub last_used_at: Option<String>,
+}
+
 /// Persisted usage row (from agent session logs) and camelCase wire DTO.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
