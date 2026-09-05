@@ -16,6 +16,10 @@ describe('sub2api layout wiring', () => {
     expect(page).toContain('data-sub2api-remembered-list');
     expect(page).toContain('saveRememberedAccount');
     expect(page).toContain('ensureSub2ApiSessionFresh');
+    expect(page).toContain('readSub2ApiKeysMemory');
+    expect(page).toContain('writeSub2ApiKeysMemory');
+    expect(page).toContain('refreshKeys(session, { showLoading: true })');
+    expect(page).not.toContain('[session?.accessToken, session?.siteUrl, restoring]');
     expect(page).toContain('nativeSub2ApiLogin');
     expect(page).toContain('nativeSub2ApiLogin2FA');
     expect(page).toContain('data-sub2api-login-form');
@@ -95,6 +99,8 @@ describe('sub2api primary route', () => {
     expect(app).toContain('path={ROUTES_SUB2API_PATH}');
     expect(app).toContain('to={SUB2API_PATH}');
     expect(app).toContain('pathname === SUB2API_PATH');
+    expect(app).toContain('sub2apiVisitedRef');
+    expect(app).toContain('hidden={!isSub2Api}');
     expect(app).not.toContain('path="sub2api"');
     expect(app).not.toContain("@/pages/routes/sub2api");
   });
