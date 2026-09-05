@@ -1,21 +1,28 @@
-import { memo, useEffect, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { memo, useEffect, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronDown, ChevronRight, EyeOff, Loader2 } from 'lucide-react';
-import { pageRhythm } from '@/components/layout/page-rhythm';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { ColumnResizeHandle, useColumnWidths } from '@/components/ui/table';
 import { Tip } from '@/components/ui/tooltip';
 import { verifiedProjectWorkspacePath } from '@/lib/path-open';
+import { StorageKey } from '@/lib/storage-key';
 import type { AgentKey, AgentSession } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import {
+  PROJECT_CARD_COLUMN_SPECS,
+  projectCardColumnLabel,
+  projectGroupListTemplate,
+  type ProjectCardColumnKey,
+} from './project-card-columns';
 import { groupCanExpand, type ProjectGroup } from './project-groups';
 import {
   displayTitle,
   fmtBytes,
   projectDisplayPath,
+  projectTitleHoverLabel,
   relativeTime,
-  titleHoverLabel,
 } from './project-format';
 import { ProjectPathLink } from './ProjectPathLink';
 import { ProjectSessionRow } from './ProjectSessionRow';
@@ -25,6 +32,16 @@ import {
   sliceSessionPage,
 } from './projects-list-model';
 import { nestSessions } from './session-nest';
+
+const COLUMN_WIDTHS_STORAGE_KEY = StorageKey.projectsColumnWidths;
+
+export function projectGroupListGrid(): string {
+  return 'grid min-w-0 gap-x-1.5 gap-y-2';
+}
+
+export function projectGroupCardGrid(): string {
+  return 'col-span-full grid min-w-0 grid-cols-subgrid';
+}
 
 export type ProjectTreeProps = {
   groups: ProjectGroup[];
@@ -54,14 +71,24 @@ export type ProjectTreeProps = {
 };
 
 export function ProjectTree(props: ProjectTreeProps) {
+  const { widths, onResizeStart, onResizeKeyDown } = useColumnWidths(
+    PROJECT_CARD_COLUMN_SPECS,
+    COLUMN_WIDTHS_STORAGE_KEY,
+  );
   return (
-    <div className={pageRhythm.stackDense}>
-      {props.groups.map((group) => (
+    <div
+      className={projectGroupListGrid()}
+      style={{ gridTemplateColumns: projectGroupListTemplate(widths) }}
+    >
+      {props.groups.map((group, index) => (
         <ProjectGroupCard
           key={group.id}
           group={group}
           open={props.expanded.has(group.id)}
           loadingKids={group.members.some((member) => props.loadingProjectIds.has(member.id))}
+          resizeTabbable={index === 0}
+          onResizeStart={onResizeStart}
+          onResizeKeyDown={onResizeKeyDown}
           {...props}
         />
       ))}
@@ -73,6 +100,12 @@ type GroupCardProps = ProjectTreeProps & {
   group: ProjectGroup;
   open: boolean;
   loadingKids: boolean;
+  resizeTabbable: boolean;
+  onResizeStart: (
+    key: ProjectCardColumnKey,
+    e: ReactMouseEvent | ReactPointerEvent,
+  ) => void;
+  onResizeKeyDown: (key: ProjectCardColumnKey, e: KeyboardEvent) => void;
 };
 
 const ProjectGroupCard = memo(function ProjectGroupCard({
@@ -100,6 +133,9 @@ const ProjectGroupCard = memo(function ProjectGroupCard({
   onGoContinue,
   onRequestDelete,
   queryKey = '',
+  resizeTabbable,
+  onResizeStart,
+  onResizeKeyDown,
 }: GroupCardProps) {
   const { t } = useI18n();
   const [page, setPage] = useState(0);
@@ -128,11 +164,16 @@ const ProjectGroupCard = memo(function ProjectGroupCard({
 
   return (
     <Card
-      className={cn('overflow-hidden transition-colors', group.hidden && 'opacity-70')}
+      className={cn(
+        projectGroupCardGrid(),
+        'gap-x-1.5 gap-y-0 overflow-hidden transition-colors',
+        group.hidden && 'opacity-70',
+      )}
     >
       <div
         className={cn(
-          'flex items-center gap-2 px-3 py-2',
+          projectGroupCardGrid(),
+          'items-stretch gap-x-1.5 gap-y-0 overflow-hidden py-2',
           canExpand && 'cursor-pointer hover:bg-hover/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
         )}
         onClick={() => canExpand && onToggleExpand(group)}
@@ -147,7 +188,7 @@ const ProjectGroupCard = memo(function ProjectGroupCard({
         tabIndex={canExpand ? 0 : undefined}
         aria-expanded={canExpand ? open : undefined}
       >
-        <span className="flex h-5 w-5 shrink-0 items-center justify-center text-muted">
+        <span className="flex h-5 w-full items-center justify-center self-center pl-3 text-muted">
           {!canExpand ? (
             <span className="w-3.5" />
           ) : loadingKids ? (
@@ -158,31 +199,28 @@ const ProjectGroupCard = memo(function ProjectGroupCard({
             <ChevronRight className="h-3.5 w-3.5" />
           )}
         </span>
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <Tip
-            label={titleHoverLabel(title, p.preview)}
-            className="min-w-0 max-w-[18rem] shrink"
-          >
-            <span className="block truncate text-sm font-medium text-primary">{title}</span>
-          </Tip>
-          {p.alias?.trim() && (
-            <span className="shrink-0 text-xs text-muted">({p.title})</span>
+        <div className="relative flex min-w-0 items-center gap-1.5">
+          <span className="min-w-0">
+            <Tip label={projectTitleHoverLabel(p)} className="min-w-0 max-w-full">
+              <span className="block truncate text-sm font-medium text-primary">{title}</span>
+            </Tip>
+          </span>
+          {group.hidden && (
+            <span className="shrink-0 text-xs text-muted">{t('projects.tree.hidden')}</span>
           )}
           <span className="flex shrink-0 items-center gap-0.5">
             {group.agentIds.map((id) => (
               <AgentLogo key={id} agentId={id} size="sm" />
             ))}
           </span>
-          {group.hidden && (
-            <span className="shrink-0 text-xs text-muted">{t('projects.tree.hidden')}</span>
-          )}
-          <span className="shrink-0 text-xs text-muted tabular-nums">
-            {t('projects.tree.sessionMeta', {
-              time: relativeTime(group.updatedAt, t),
-              count: group.sessionCount,
-              size: fmtBytes(group.sizeBytes),
-            })}
-          </span>
+          <CardColumnResizeHandle
+            columnKey="name"
+            tabbable={resizeTabbable}
+            onResizeStart={onResizeStart}
+            onResizeKeyDown={onResizeKeyDown}
+          />
+        </div>
+        <div className="relative min-w-0">
           {workspace ? (
             <ProjectPathLink
               path={workspace}
@@ -193,8 +231,24 @@ const ProjectGroupCard = memo(function ProjectGroupCard({
           ) : (
             <ProjectPathLink path={path} />
           )}
+          <CardColumnResizeHandle
+            columnKey="path"
+            tabbable={resizeTabbable}
+            onResizeStart={onResizeStart}
+            onResizeKeyDown={onResizeKeyDown}
+          />
         </div>
-        <div className="flex shrink-0 gap-1" onClick={(e) => e.stopPropagation()}>
+        <span className="whitespace-nowrap text-xs text-muted tabular-nums">
+          {relativeTime(group.updatedAt, t)}
+        </span>
+        <span className="whitespace-nowrap text-xs text-muted tabular-nums">
+          {t('projects.tree.sessionCount', { n: group.sessionCount })}
+        </span>
+        <span className="whitespace-nowrap text-xs text-muted tabular-nums">
+          {fmtBytes(group.sizeBytes)}
+        </span>
+        <span className="min-w-0" aria-hidden />
+        <div className="flex justify-end pr-3" onClick={(e) => e.stopPropagation()}>
           <Button
             size="icon"
             variant="ghost"
@@ -211,7 +265,7 @@ const ProjectGroupCard = memo(function ProjectGroupCard({
       {keepPane && (
         <div
           hidden={!open}
-          className={cn('border-t border-border bg-subtle/40', !open && 'hidden')}
+          className={cn('col-span-full border-t border-border bg-subtle/40', !open && 'hidden')}
         >
           {loadingKids && kids.length === 0 ? (
             <div className="px-3 py-3 text-xs text-muted">{t('projects.tree.loadingSessions')}</div>
@@ -297,9 +351,35 @@ const ProjectGroupCard = memo(function ProjectGroupCard({
     prev.showDelete === next.showDelete &&
     prev.showSessionAgent === next.showSessionAgent &&
     prev.queryKey === next.queryKey &&
-    prev.visibleSessions === next.visibleSessions
+    prev.visibleSessions === next.visibleSessions &&
+    prev.resizeTabbable === next.resizeTabbable &&
+    prev.onResizeStart === next.onResizeStart &&
+    prev.onResizeKeyDown === next.onResizeKeyDown
   );
 });
+
+function CardColumnResizeHandle({
+  columnKey,
+  tabbable,
+  onResizeStart,
+  onResizeKeyDown,
+}: {
+  columnKey: ProjectCardColumnKey;
+  tabbable: boolean;
+  onResizeStart: GroupCardProps['onResizeStart'];
+  onResizeKeyDown: GroupCardProps['onResizeKeyDown'];
+}) {
+  const { t } = useI18n();
+  return (
+    <ColumnResizeHandle
+      columnKey={columnKey}
+      label={projectCardColumnLabel(columnKey, t)}
+      onResizeStart={onResizeStart}
+      onResizeKeyDown={onResizeKeyDown}
+      tabIndex={tabbable ? 0 : -1}
+    />
+  );
+}
 
 function sessionRows({
   session: s,

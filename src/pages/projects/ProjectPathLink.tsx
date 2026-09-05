@@ -15,12 +15,12 @@ export function ProjectPathLink({
 }) {
   const text = shortPath(path, 40);
   return (
-    <span className="min-w-0 flex-1">
+    <span className="min-w-0 w-full">
       {onOpen ? (
         <Hint label={path}>
           <button
             type="button"
-            className="max-w-full truncate text-left font-mono text-meta text-accent underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-muted disabled:no-underline"
+            className="block w-full min-w-0 truncate text-left font-mono text-meta text-accent underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-muted disabled:no-underline"
             disabled={disabled}
             aria-label={ariaLabel}
             onClick={(e) => {
@@ -32,7 +32,7 @@ export function ProjectPathLink({
           </button>
         </Hint>
       ) : (
-        <Tip label={path} className="max-w-full truncate font-mono text-meta text-muted">
+        <Tip label={path} className="block min-w-0 w-full truncate font-mono text-meta text-muted">
           {text}
         </Tip>
       )}

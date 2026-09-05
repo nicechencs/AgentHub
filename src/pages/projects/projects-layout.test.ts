@@ -41,6 +41,13 @@ describe('projects split layout', () => {
     expect(tree).toContain('sessionPageCount');
     expect(tree).toContain("t('projects.tree.pageNext'");
     expect(tree).toContain('hidden={!open}');
+    expect(tree).toContain('projectGroupListGrid');
+    expect(tree).toContain('projectGroupCardGrid');
+    expect(tree).toContain('projectGroupListTemplate');
+    expect(tree).toContain('ColumnResizeHandle');
+    expect(tree).toContain('grid-cols-subgrid');
+    expect(tree).toContain("t('projects.tree.sessionCount'");
+    expect(tree).not.toContain('sessionMeta');
   });
 
   it('renders excerpt turns as a user/assistant conversation', () => {

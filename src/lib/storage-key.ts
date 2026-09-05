@@ -14,6 +14,7 @@ const LAYOUT_STORAGE_KEY = {
   skillsMatrixColumnWidths: `${PREFIX}skills-matrix-column-widths`,
   skillsMarketColumnWidths: `${PREFIX}skills-market-column-widths`,
   projectsPreviewWidth: `${PREFIX}projects-preview-width`,
+  projectsColumnWidths: `${PREFIX}projects-column-widths`,
   pluginsPreviewWidth: `${PREFIX}plugins-preview-width`,
   agentsPreviewWidth: `${PREFIX}agents-preview-width`,
   agentsColumnWidths: `${PREFIX}agents-column-widths`,

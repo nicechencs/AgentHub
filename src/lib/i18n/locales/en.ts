@@ -3117,7 +3117,9 @@ export const en = {
     },
     tree: {
       hidden: "Hidden",
-      sessionMeta: "{time} · {count} sessions · {size}",
+      sessionCount: "{n} sessions",
+      colName: "Name",
+      colPath: "Path",
       openFolder: "Open project folder: {path}",
       unhide: "Unhide",
       hide: "Hide",
