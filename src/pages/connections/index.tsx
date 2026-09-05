@@ -63,7 +63,6 @@ import {
 import { useOAuthLoginAgents } from './use-oauth-login-agents';
 import { useConnectionImportProbe } from './use-connection-import-probe';
 import { useConnectionPageActions } from './use-connection-page-actions';
-import { useTicketPoolImport } from './use-ticket-pool-import';
 import {
   deleteConnectionDialogDescription,
   liveAuthCoexistenceNotice,
@@ -95,6 +94,8 @@ import {
   switchAccount,
   type LiveAuthProbe,
 } from '@/lib/api/account';
+import { listConnectionUsage } from '@/lib/api/usage';
+import type { ConnectionUsageSummary } from '@/lib/backend/contracts/usage-types';
 import { importProviderLive } from '@/lib/api/provider';
 import type { Account, Provider } from '@/lib/types';
 import { StorageKey } from '@/lib/ui-preferences';
@@ -179,6 +180,24 @@ export default function ConnectionsPage() {
   } = useTicketWallet();
   const walletLoading =
     (walletState === 'idle' || walletState === 'loading') && wallet == null;
+  const [connectionUsage, setConnectionUsage] = useState<Map<string, ConnectionUsageSummary>>(
+    () => new Map(),
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void listConnectionUsage()
+      .then((rows) => {
+        if (cancelled) return;
+        setConnectionUsage(new Map(rows.map((row) => [row.ticketId, row])));
+      })
+      .catch(() => {
+        if (!cancelled) setConnectionUsage(new Map());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet]);
 
   /** Agent context for add/import dialogs (deep-link or picker). */
   const [addAgentId, setAddAgentId] = useState<AgentKey>(
@@ -345,8 +364,6 @@ export default function ConnectionsPage() {
     if (resume) navigate(buildResumeConnectUrl(resume));
   }, [navigate, pendingGuide, resumeAgentId]);
 
-  const { importActionForTicket, handleImportToPool, importingTicketId } = useTicketPoolImport({ t });
-
   const handleRefreshTicket = useCallback(async (ticket: TicketView) => {
     if (refreshInFlightRef.current) return;
     if (ticket.sourceKind !== 'account') return;
@@ -441,17 +458,27 @@ export default function ConnectionsPage() {
         const tabCurrentTicketId = filterAgent === 'all' || !wallet
           ? undefined
           : activeBindingForAgent(wallet, filterAgent)?.ticket.id ?? null;
-        return extrasFromPoolSource(
+        const extras = extrasFromPoolSource(
           ticket,
           findTicketPoolSource(ticket, pool.accounts, pool.providers),
           t,
           tabCurrentTicketId,
         );
+        const usage = connectionUsage.get(ticket.id);
+        if (usage) {
+          extras.tokenInput = usage.inputTokens;
+          extras.tokenOutput = usage.outputTokens;
+          if (usage.lastUsedAt) {
+            extras.tokenLastUsedAt = usage.lastUsedAt;
+            extras.lastUsedAt = usage.lastUsedAt;
+          }
+        }
+        return extras;
       } catch {
         return null;
       }
     },
-    [filterAgent, pool.accounts, pool.providers, t, wallet],
+    [connectionUsage, filterAgent, pool.accounts, pool.providers, t, wallet],
   );
 
   const {
@@ -863,12 +890,9 @@ export default function ConnectionsPage() {
             loading={walletLoading}
             highlightAgentId={highlightAgentId}
             agentFilterId={filterAgent === 'all' ? null : filterAgent}
-            onImportToPool={(ticket) => void handleImportToPool(ticket)}
-            importActionForTicket={importActionForTicket}
             onSwitchTicket={handleSwitchTicket}
             onRemoveFromCatalog={(ticket) => void handleRemoveFromCatalog(ticket)}
             switchingTicketId={switchingTicketId}
-            importingTicketId={importingTicketId}
             extrasForTicket={extrasForTicket}
             onEditTicket={handleEditTicket}
             onDeleteTicket={setDeleteTicket}

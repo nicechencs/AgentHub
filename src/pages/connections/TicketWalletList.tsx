@@ -1,6 +1,7 @@
 /**
  * Global ticket wallet list UI (Connections).
- * Data from listTicketWallet; 分享至连接池 / 取消添加 live on the row menu.
+ * Data from listTicketWallet; 取消添加 lives on the row menu.
+ * List occupancy (Pi / WorkBuddy / ZCode): 添加, 切换默认, 取消添加.
  * Click the login name to open details in the workbench inspect pane; edit stays a button.
  */
 import * as React from 'react';
@@ -13,7 +14,6 @@ import {
   Pencil,
   Plus,
   RefreshCw,
-  Share2,
   Trash2,
   Undo2,
 } from 'lucide-react';
@@ -79,20 +79,20 @@ import {
   ticketSwitchChip,
   ticketCredentialClassChipLabel,
   TICKET_WALLET_COLUMN_SPECS,
+  formatDetailTimestamp,
   ticketWalletColumnLabel,
+  ticketWalletTokenUsageText,
   ticketDetailEditLabel,
   oauthActionHoverTip,
   ticketRefreshDisabledReason,
   ticketSwitchDisabledReason,
   type TicketAddMenuAgent,
-  type TicketBindAction,
   type TicketBindingRowView,
   type TicketDetailExtras,
   type TicketDetailField,
   type TicketWalletRow,
 } from './ticket-wallet-model';
 import { TicketAuthFiles } from './ticket-auth-files';
-import { ticketPoolImportMenuState } from './ticket-pool-import';
 import { useOAuthLoginAgents } from './use-oauth-login-agents';
 
 function CredentialMark({
@@ -224,6 +224,7 @@ export function TicketDetailPanel({
   const has7d = hasOfficialQuotaWindow(extras?.quota7dPct);
   const has5h = hasOfficialQuotaWindow(extras?.quota5hPct);
   const hasQuota = has7d || has5h;
+  const tokenUsage = !hasQuota ? ticketWalletTokenUsageText(extras, t) : null;
   const isSyncLogin = extras?.oauthAction?.kind === 'sync-current-login';
   const refreshLabel = isSyncLogin
     ? t('connections.list.syncCurrentLogin')
@@ -280,6 +281,7 @@ export function TicketDetailPanel({
       hasQuota={hasQuota}
       has7d={has7d}
       has5h={has5h}
+      tokenUsage={tokenUsage}
       overview={overview}
       timeline={timeline}
       tokenRemaining={tokenRemaining}
@@ -337,6 +339,7 @@ function TicketDetailBody({
   hasQuota,
   has7d,
   has5h,
+  tokenUsage,
   overview,
   timeline,
   tokenRemaining,
@@ -350,6 +353,7 @@ function TicketDetailBody({
   hasQuota: boolean;
   has7d: boolean;
   has5h: boolean;
+  tokenUsage: string | null;
   overview: TicketDetailField[];
   timeline: TicketDetailField[];
   tokenRemaining: string | null;
@@ -362,7 +366,7 @@ function TicketDetailBody({
   const { t } = useI18n();
   return (
     <div className="flex flex-col gap-3 text-xs">
-      {hasQuota || tokenRemaining ? (
+      {hasQuota || tokenRemaining || tokenUsage ? (
         <div>
           <p className="text-meta text-muted">{t('connections.list.usage')}</p>
           <div className="mt-1.5 flex flex-col gap-1.5">
@@ -379,6 +383,9 @@ function TicketDetailBody({
                 pct={extras?.quota5hPct}
                 resetIn={extras?.quotaResetIn}
               />
+            ) : null}
+            {tokenUsage ? (
+              <p className="text-meta text-secondary">{tokenUsage}</p>
             ) : null}
             {tokenRemaining ? (
               <DetailRow
@@ -528,6 +535,10 @@ function TicketRow({
   const switching = switchingId === ticket.id;
   const switchBusy = switchingId !== null;
   const title = ticketCardTitle(ticket, extras);
+  const lastUsed = formatDetailTimestamp(extras?.tokenLastUsedAt ?? extras?.lastUsedAt);
+  const has7d = hasOfficialQuotaWindow(extras?.quota7dPct);
+  const has5h = hasOfficialQuotaWindow(extras?.quota5hPct);
+  const tokenUsage = !has7d && !has5h ? ticketWalletTokenUsageText(extras, t) : null;
 
   return (
     <TableRow
@@ -576,6 +587,25 @@ function TicketRow({
           <TableEmptyCell />
         )}
       </TableCell>
+      <TableCell data-col="lastUsed" className="whitespace-nowrap">
+        {lastUsed ? (
+          <span className="text-meta text-secondary">{lastUsed}</span>
+        ) : (
+          <TableEmptyCell />
+        )}
+      </TableCell>
+      <TableCell data-col="usage" className="min-w-0">
+        {has7d || has5h ? (
+          <div className="flex min-w-0 flex-col gap-1">
+            {has7d ? <QuotaBar label="7d" pct={extras?.quota7dPct} compact /> : null}
+            {has5h ? <QuotaBar label="5h" pct={extras?.quota5hPct} compact /> : null}
+          </div>
+        ) : tokenUsage ? (
+          <span className="text-meta text-secondary tabular-nums">{tokenUsage}</span>
+        ) : (
+          <TableEmptyCell />
+        )}
+      </TableCell>
       <TableCell data-col="agent" className="whitespace-nowrap">
         <span className="text-meta text-secondary">{agentDisplayName(ticket.agentId)}</span>
       </TableCell>
@@ -601,7 +631,11 @@ function TicketRow({
                 onSwitch(ticket);
               }}
             >
-              {switching ? t('connections.list.switching') : switchChip.label}
+              {switching
+                ? (switchChip.kind === 'add'
+                  ? t('connections.list.adding')
+                  : t('connections.list.switching'))
+                : switchChip.label}
             </DisabledReasonButton>
           ) : null}
           {editLabel ? (
@@ -772,12 +806,9 @@ export function TicketWalletList({
   loading,
   highlightAgentId,
   agentFilterId = null,
-  onImportToPool,
-  importActionForTicket,
   onSwitchTicket,
   onRemoveFromCatalog,
   switchingTicketId,
-  importingTicketId,
   extrasForTicket,
   onEditTicket,
   onShowDetail,
@@ -793,12 +824,9 @@ export function TicketWalletList({
   loading?: boolean;
   highlightAgentId?: AgentKey | null;
   agentFilterId?: AgentKey | null;
-  onImportToPool: (ticket: TicketView) => void;
-  importActionForTicket?: (ticket: TicketView) => TicketBindAction;
   onSwitchTicket?: (ticket: TicketView) => void;
   onRemoveFromCatalog?: (ticket: TicketView) => void;
   switchingTicketId?: string | null;
-  importingTicketId?: string | null;
   extrasForTicket?: (ticket: TicketView) => TicketDetailExtras | null;
   onEditTicket: (ticket: TicketView) => void;
   onDeleteTicket: (ticket: TicketView) => void;
@@ -819,14 +847,6 @@ export function TicketWalletList({
   const [rowMenu, setRowMenu] = React.useState<(ContextMenuPoint & { ticket: TicketView }) | null>(null);
   const closeRowMenu = React.useCallback(() => setRowMenu(null), []);
   const menuTicket = rowMenu?.ticket ?? null;
-  const menuImport = menuTicket
-    ? ticketPoolImportMenuState(
-      importActionForTicket?.(menuTicket) ?? { disabled: false },
-      importingTicketId ?? null,
-      menuTicket.id,
-      t,
-    )
-    : null;
   const menuCanUnapply = menuTicket
     ? showsCatalogUnapply(
       resolveAgentMeta(menuTicket.agentId).occupancy,
@@ -948,6 +968,10 @@ export function TicketWalletList({
             <TableBody>
           {rows.map((row) => {
             const sortable = rowProps(row.ticket.id);
+            const canUnapply = showsCatalogUnapply(
+              resolveAgentMeta(row.ticket.agentId).occupancy,
+              extrasForTicket?.(row.ticket)?.isCurrent,
+            );
             return (
                 <TicketRow
                   key={row.ticket.id}
@@ -958,11 +982,11 @@ export function TicketWalletList({
                   onSwitch={onSwitchTicket}
                   onEdit={onEditTicket}
                   onShowDetail={onShowDetail}
-                  onContextMenu={(event) => {
+                  onContextMenu={canUnapply ? (event) => {
                     event.preventDefault();
                     setRowMenu({ x: event.clientX, y: event.clientY, ticket: row.ticket });
-                  }}
-                  onOpenMenu={(point) => setRowMenu({ ...point, ticket: row.ticket })}
+                  } : undefined}
+                  onOpenMenu={canUnapply ? (point) => setRowMenu({ ...point, ticket: row.ticket }) : undefined}
                   active={activeTicketId === row.ticket.id}
                   suppressHighlight={activeTicketId != null}
                   sortId={sortable[SORTABLE_ID_ATTR]}
@@ -991,26 +1015,7 @@ export function TicketWalletList({
         </p>
       ) : null}
 
-      <ContextMenu open={rowMenu !== null} point={rowMenu} onClose={closeRowMenu}>
-        {menuImport ? (
-          <Hint label={menuImport.disabled ? menuImport.reason : undefined}>
-            <span className="block">
-              <ContextMenuItem
-                disabled={menuImport.disabled}
-                aria-label={t('connections.list.importToPool')}
-                onSelect={() => {
-                  if (!menuTicket || menuImport.disabled) return;
-                  onImportToPool(menuTicket);
-                  closeRowMenu();
-                }}
-              >
-                <Share2 className="h-3.5 w-3.5" />
-                {menuImport.busy ? t('connections.list.importingToPool') : t('connections.list.importToPool')}
-                {menuImport.reason ? <span className="sr-only">{menuImport.reason}</span> : null}
-              </ContextMenuItem>
-            </span>
-          </Hint>
-        ) : null}
+      <ContextMenu open={rowMenu !== null && menuCanUnapply} point={rowMenu} onClose={closeRowMenu}>
         {menuCanUnapply ? (
           <ContextMenuItem
             disabled={menuUnapplyDisabled}

@@ -102,6 +102,8 @@ const LOG_LEVEL_OPTIONS: { value: LogLevel; label: string }[] = [
   { value: 'trace', label: 'trace — 极细' },
 ];
 
+let mockRememberedVault: string | null = null;
+
 export function createMockSettingsPort(): SettingsPort {
   return {
     logLevelOptions: LOG_LEVEL_OPTIONS,
@@ -139,6 +141,29 @@ export function createMockSettingsPort(): SettingsPort {
         // Popup blocked — still resolve; user may allow and retry.
         throw new Error('浏览器拦截了弹窗，请允许本页打开新窗口后重试');
       }
+    },
+
+    async openSub2ApiLoginWindow(_loginUrl) {
+      await delay(40);
+      throw new Error('cancelled');
+    },
+
+    async closeSub2ApiLoginWindow() {
+      // no-op in browser / mock — no child WebviewWindow
+    },
+
+    async getSub2ApiRememberedVault() {
+      await delay(10);
+      return mockRememberedVault;
+    },
+
+    async setSub2ApiRememberedVault(json) {
+      await delay(10);
+      mockRememberedVault = json;
+    },
+
+    async sub2ApiHttpRequest() {
+      throw new Error('浏览器预览请使用 fetch；桌面版走 sub2api_http_request');
     },
 
     async pickDirectory(options) {

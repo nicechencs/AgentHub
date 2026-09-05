@@ -4,7 +4,7 @@ description: AgentHub 用户界面、领域模型和内部实现术语的对应�
 type: reference
 audience: all
 status: current
-updated: 2026-09-03
+updated: 2026-09-05
 ---
 
 # 术语表
@@ -27,10 +27,10 @@ updated: 2026-09-03
 | 本机转发 | `local_bridge` | 通过 loopback listener 转发或转换协议 |
 | 入口 Key | Hub token / local bearer（内部亦称本机令牌） | 默认池给目标客户端用的本机钥匙；不等于上游 API Key。增删池内登录不改这把 Key。界面与子导航统一说「入口 Key」，不说泛称「令牌」 |
 | 连接池 | default RoutePool | Routes 里列出本机转发所用登录的页面，与连接页相互独立；每个目标 Agent/surface 一个默认池 |
-| 分享至连接池 | `syncConnectionAuthorizations`（按这份登录） | 连接页把这份登录加入默认连接池；登录仍留在连接页。API Key 都可以加入（不按所属 Agent 挡掉）；国产官方登录不能分享。已经在池里、或这份登录不能加入时按钮禁用 |
+| Sub2API | `/sub2api` | 独立的 Sub2API 站点管理页：登录站点后按分组管理 API Key，并将可用 Key 导入已安装的 Agent |
 | 同步当前登录 | `oauthListAction` `sync-current-login` | 不是刷新列表。把本机正在用的官方登录写进来，并查看用量 |
 | 刷新（官方登录） | `oauthListAction` 用量刷新 | 查看这份登录的用量，不改登录列表 |
-| 从连接同步 | `syncConnectionAuthorizations`（多选） | 连接池页一次加入连接页里可分享的登录（所有 API Key；Claude / Codex / Grok 官方登录仍按已登记的接法）。已经在池里的会跳过。国产官方登录不进入候选 |
+| 从连接同步 | `syncConnectionAuthorizations` | 连接池页把连接页里可加入的登录拷进默认连接池（所有 API Key；Claude / Codex / Grok 官方登录仍按已登记的接法）。已经在池里的会跳过。国产官方登录不进入候选。连接页不再提供「分享至连接池」 |
 | 编辑登录 | `forkConnectionAuthorization` + 保存模型/优先级 | 连接池里编辑从连接页分享来的官方登录：保存时先复制成连接池自己的一份，连接页那份还在 |
 | 同步到连接页 | 把池里改过的模型写回连接页那份登录 | 复制保存之后的确认；可选，选「不同步」只留连接池这份 |
 | 登录回收站 | `connection_trash` `home=connections` | 连接页删除的登录，保留 30 天，可恢复到连接页 |

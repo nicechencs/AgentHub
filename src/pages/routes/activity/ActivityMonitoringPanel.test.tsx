@@ -74,6 +74,34 @@ describe('ActivityMonitoringPanel', () => {
     expect(markup).not.toContain('data-table-shell');
   });
 
+  it('does not use the empty-request copy when the query failed', () => {
+    const markup = render(createElement(ActivityMonitoringPanel, {
+      snapshot: snapshot({ kind: 'runningEmpty' }),
+      traceError: new Error('backend down'),
+      onRetryTraces: () => {},
+    }));
+    expect(markup).toContain('无法读取本机路由');
+    expect(markup).not.toContain('还没有请求记录');
+    expect(markup).not.toContain('data-table-shell');
+  });
+
+  it('keeps the table and shows a retry banner when a later query fails', () => {
+    const markup = render(createElement(ActivityMonitoringPanel, {
+      snapshot: snapshot({
+        kind: 'ready',
+        feed: [row()],
+        monitoredProfileIds: ['route-1'],
+        runningCount: 1,
+      }),
+      traceError: new Error('backend down'),
+      onRetryTraces: () => {},
+    }));
+    expect(markup).toContain('data-table-shell="default"');
+    expect(markup).toContain('data-activity-trace-error');
+    expect(markup).toContain('无法读取本机路由');
+    expect(markup).toContain('重试');
+  });
+
   it('uses the selected request for the top five stages and falls back only without a selection', () => {
     const newest = row({ requestId: 'newest' });
     const selectedFailure = row({

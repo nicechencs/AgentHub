@@ -10,7 +10,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "agenthub-cli"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "agenthub-core",
  "clap",
@@ -24,7 +24,7 @@ dependencies = [
 
 [[package]]
 name = "agenthub-core"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "async-stream",
  "axum",
@@ -40,7 +40,9 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "serde_yml",
  "sha2",
+ "socket2 0.5.10",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
@@ -60,7 +62,7 @@ dependencies = [
 
 [[package]]
 name = "agenthub-gui"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "agenthub-core",
  "notify",
@@ -75,6 +77,8 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+ "ureq",
+ "urlencoding",
 ]
 
 [[package]]
@@ -2010,7 +2014,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2",
+ "socket2 0.6.5",
  "tokio",
  "tower-service",
  "tracing",
@@ -2517,6 +2521,16 @@ dependencies = [
  "cc",
  "pkg-config",
  "vcpkg",
+]
+
+[[package]]
+name = "libyml"
+version = "0.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3302702afa434ffa30847a83305f0a69d6abd74293b6554c18ec85c7ef30c980"
+dependencies = [
+ "anyhow",
+ "version_check",
 ]
 
 [[package]]
@@ -3325,7 +3339,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2",
+ "socket2 0.6.5",
  "thiserror 2.0.20",
  "tokio",
  "tracing",
@@ -3363,7 +3377,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2",
+ "socket2 0.6.5",
  "tracing",
  "windows-sys 0.61.2",
 ]
@@ -4028,6 +4042,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_yml"
+version = "0.0.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59e2dd588bf1597a252c3b920e0143eb99b0f76e4e082f4c92ce34fbc9e71ddd"
+dependencies = [
+ "indexmap 2.14.0",
+ "itoa",
+ "libyml",
+ "memchr",
+ "ryu",
+ "serde",
+ "version_check",
+]
+
+[[package]]
 name = "serialize-to-javascript"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4139,6 +4168,16 @@ name = "smallvec"
 version = "1.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
+
+[[package]]
+name = "socket2"
+version = "0.5.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e22376abed350d73dd1cd119b57ffccad95b4e585a7cda43e286245ce23c0678"
+dependencies = [
+ "libc",
+ "windows-sys 0.52.0",
+]
 
 [[package]]
 name = "socket2"
@@ -4860,7 +4899,7 @@ dependencies = [
  "libc",
  "mio 1.2.2",
  "pin-project-lite",
- "socket2",
+ "socket2 0.6.5",
  "tokio-macros",
  "windows-sys 0.61.2",
 ]

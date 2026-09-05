@@ -30,6 +30,7 @@ impl ProjectSource for WorkBuddyProjectSource {
             ctx.home,
             AgentId::WorkBuddy,
             None,
+            ctx.data_dir,
         )?))
     }
 
@@ -46,6 +47,7 @@ impl ProjectSource for WorkBuddyProjectSource {
             ctx.home,
             AgentId::WorkBuddy,
             Some(key),
+            ctx.data_dir,
         )?))
     }
 }

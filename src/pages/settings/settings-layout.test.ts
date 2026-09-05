@@ -36,18 +36,23 @@ describe('settings layout wiring', () => {
     );
   });
 
-  it('exposes auto-collapse then routes and plugins nav toggles', () => {
+  it('exposes auto-collapse then routes, plugins, and Sub2API nav toggles', () => {
     const prefs = source('PreferencesPanel.tsx');
     expect(prefs).toContain("t('settings.general.autoCollapseOnRoutesLabel')");
     expect(prefs).toContain("t('settings.general.routesNavVisibleLabel')");
     expect(prefs).toContain("t('settings.general.pluginsNavVisibleLabel')");
+    expect(prefs).toContain("t('settings.general.sub2apiNavVisibleLabel')");
     expect(prefs).toContain('setAutoCollapseOnRoutes');
     expect(prefs).toContain('setPluginsNavVisible');
+    expect(prefs).toContain('setSub2apiNavVisible');
     expect(prefs.indexOf("t('settings.general.autoCollapseOnRoutesLabel')")).toBeLessThan(
       prefs.indexOf("t('settings.general.routesNavVisibleLabel')"),
     );
     expect(prefs.indexOf("t('settings.general.routesNavVisibleLabel')")).toBeLessThan(
       prefs.indexOf("t('settings.general.pluginsNavVisibleLabel')"),
+    );
+    expect(prefs.indexOf("t('settings.general.pluginsNavVisibleLabel')")).toBeLessThan(
+      prefs.indexOf("t('settings.general.sub2apiNavVisibleLabel')"),
     );
   });
 
@@ -59,6 +64,7 @@ describe('settings layout wiring', () => {
     expect(prefs).toContain("aria-label={t('settings.general.autoCollapseOnRoutesLabel')}");
     expect(prefs).toContain("aria-label={t('settings.general.routesNavVisibleLabel')}");
     expect(prefs).toContain("aria-label={t('settings.general.pluginsNavVisibleLabel')}");
+    expect(prefs).toContain("aria-label={t('settings.general.sub2apiNavVisibleLabel')}");
   });
 
   it('groups preference rows into labeled sections in a stable order', () => {

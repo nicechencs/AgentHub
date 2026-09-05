@@ -134,6 +134,7 @@ export function createMockProjectPort(): ProjectPort {
           cwd: p.cwd,
           updatedAt: p.updatedAt,
           excerpt: mockExcerpt(p),
+          truncated: false,
         }));
     },
   };

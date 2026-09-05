@@ -18,9 +18,11 @@ use crate::services::{
     ProjectService, ProviderService, RoutePoolService, RunService, SettingsService, SkillService,
     TicketBindService, TicketReadService, UsageService,
 };
+use crate::storage::cache::{isolate_usage_cache, open_cache};
 use crate::storage::{ChatRepo, Database};
 use crate::utils::paths::{
-    backups_dir, db_path, ensure_data_layout, home_dir, normalize_data_dir, resolve_data_dir,
+    backups_dir, cache_db_path, db_path, ensure_data_layout, home_dir, normalize_data_dir,
+    resolve_data_dir,
 };
 use crate::AgentHub;
 
@@ -32,6 +34,8 @@ pub(crate) fn open_with_skills_root(
     ensure_data_layout(&data_dir)?;
     // STORAGE module logs open success/failure (including migrate).
     let db = Database::open(&db_path(&data_dir))?;
+    let cache = open_cache(&cache_db_path(&data_dir));
+    isolate_usage_cache(&db, &cache, &db_path(&data_dir), &data_dir);
     recover_stale_lifecycle(&db);
     recover_stale_chat(&db);
     let registry = register_all();
@@ -79,7 +83,8 @@ pub(crate) fn open_with_skills_root(
     let projects = ProjectService::new(registry.clone(), data_dir.clone());
     let agent_visibility = AgentVisibilityService::new(data_dir.clone());
     agent_visibility.ensure_store_stamp()?;
-    let usage = UsageService::with_live_scope(db.clone(), agent_visibility.clone(), agents.clone());
+    let usage =
+        UsageService::with_live_scope(db.clone(), cache, agent_visibility.clone(), agents.clone());
     let route_pools = RoutePoolService::new(db.clone());
     tracing::info!(
         target: logging::targets::BOOT,

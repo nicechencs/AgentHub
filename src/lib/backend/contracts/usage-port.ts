@@ -1,5 +1,5 @@
 import type { AgentKey, ParserHealth, UsageRecord, UsageTrendPoint } from '@/lib/types';
-import type { GatewayUsageOverview, GatewayUsageQuery, GatewayUsageRow, UsageAvailability, UsageOverview, UsageQuery, UsageTrendGroupBy } from './usage-types';
+import type { ConnectionUsageSummary, GatewayUsageOverview, GatewayUsageQuery, GatewayUsageRow, UsageAvailability, UsageOverview, UsageQuery, UsageTrendGroupBy } from './usage-types';
 
 /** Result of a usage collect pass (mirrors core CollectResult). */
 export interface UsageCollectResult {
@@ -38,4 +38,6 @@ export interface UsagePort {
   /** Per-request usage observed by the local gateway; never mixed into usage_records. */
   gatewayUsageQuery(q?: GatewayUsageQuery): Promise<GatewayUsageRow[]>;
   gatewayUsageOverview(q?: GatewayUsageQuery): Promise<GatewayUsageOverview>;
+  /** Per-connection token totals. Empty when the sidecar file is missing. */
+  listConnectionUsage(): Promise<ConnectionUsageSummary[]>;
 }

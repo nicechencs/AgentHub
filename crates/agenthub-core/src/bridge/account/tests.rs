@@ -732,3 +732,20 @@ fn isolate_sink_receives_only_that_account_id() {
     picker.isolate("acc-a");
     assert_eq!(*seen.lock().expect("lock"), vec!["acc-a".to_owned()]);
 }
+
+#[test]
+fn sticky_evicts_when_over_cap() {
+    let picker = picker(MemberHealth::Renewable, MemberHealth::Renewable);
+    let bound = member("acc-a", "token-a", MemberHealth::Renewable);
+    let cand = candidate();
+    for i in 0..STICKY_MAX_ENTRIES {
+        picker.record_sticky(&format!("k{i}"), &bound, &cand);
+    }
+    assert_eq!(picker.sticky_len(), STICKY_MAX_ENTRIES);
+    let before = picker.sticky_keys();
+    picker.record_sticky("k-new", &bound, &cand);
+    assert_eq!(picker.sticky_len(), STICKY_MAX_ENTRIES);
+    let after = picker.sticky_keys();
+    assert!(after.iter().any(|key| key == "k-new"));
+    assert_eq!(before.iter().filter(|key| !after.contains(key)).count(), 1);
+}

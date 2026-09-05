@@ -3,7 +3,7 @@ title: UI 页面模式
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-04
+updated: 2026-09-05
 ---
 
 # UI Page Patterns
@@ -26,10 +26,11 @@ The application is organized by work and management, with Agent filtering inside
 | Workspace | Plugins | `/plugins` | Installed vendor plugin / extension packs; Claude / Grok can enable or disable; Pi is list-only |
 | Manage | Dashboard | `/` | Agent status, usage, and shortcuts |
 | Manage | Connections | `/connections` | General login list; route-only entries with `home=route_pool` may be absent |
+| Manage | Sub2API | `/sub2api` | Sign in to a Sub2API site, manage API keys by group, and import usable keys into an installed Agent |
 | Manage | Routes | `/routes` | Local route runtime and the connection pool. May add/manage route-only official login / API Key; `/routes` opens the board; secondary nav: board / pool / tokens / activity |
 | Manage | Settings | `/settings` | Preferences, local device, backups, and about |
 
-`Routes`, `Plugins`, and `MCP` are in development. New installs hide the Routes and Plugins sidebar entries (`routesNavVisible` / `pluginsNavVisible` default off). Turning the setting on shows those entries; the pages stay reachable at `/routes` and `/plugins`. MCP stays in the workspace nav. Settings (Routes / Plugins), the page titles, and the sidebar entries (when shown) carry an in-development mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / uninstall / update for plugin packs is still a [proposal](../proposals/plugin-management.md). The current page lists installed packs for Claude, Grok, and Pi; Claude and Grok can enable or disable. There is no install button.
+`Routes`, `Plugins`, and `MCP` are in development. New installs hide the Routes, Plugins, and Sub2API sidebar entries (`routesNavVisible`, `pluginsNavVisible`, and `sub2apiNavVisible` default off). Turning a setting on shows its entry; the pages stay reachable at `/routes`, `/plugins`, and `/sub2api`. MCP stays in the workspace nav. Settings (Routes / Plugins), the page titles, and the sidebar entries (when shown) carry an in-development mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / uninstall / update for plugin packs is still a [proposal](../proposals/plugin-management.md). The current page lists installed packs for Claude, Grok, and Pi; Claude and Grok can enable or disable. There is no install button.
 
 The compatibility paths `/adapter` and `/router` replace-navigate to `/routes`. They are recovery paths for existing links, not current navigation labels.
 
@@ -62,7 +63,7 @@ The page title is a single line: name, then short description. Distinguish them 
 
 ### 2.2 Full-height workbench
 
-Chat, Skills, Projects, Plugins, Connections, Routes, and Settings use `fullBleed` and manage their own vertical scrolling. Full-height does not create a third content width: Chat messages use the reading column; Skills, Projects, Plugins, Connections, and the Settings backups tab use the edge column with a split preview surface. Page-level commands stay in the list column, on the right of the same row as tabs or filters. They do not occupy a row of their own. The workbench list and the preview column share the same `pageEdge.inset` top and bottom so both edges line up. The page title itself stays in the top bar.
+Chat, Skills, Projects, Plugins, Connections, Sub2API, Routes, and Settings use `fullBleed` and manage their own vertical scrolling. Full-height does not create a third content width: Chat messages use the reading column; Skills, Projects, Plugins, Connections, Sub2API, and the Settings backups tab use the edge column with a split preview surface. Page-level commands stay in the list column, on the right of the same row as tabs or filters. They do not occupy a row of their own. The workbench list and the preview column share the same `pageEdge.inset` top and bottom so both edges line up. The page title itself stays in the top bar.
 
 ### 2.3 Settings
 
@@ -70,7 +71,7 @@ Settings uses the workbench header and four page tabs; the tab row stays at the 
 
 | Tab | Query | Contents |
 |---|---|---|
-| Preferences | `?tab=preferences` | Grouped cards: language and appearance; launch and close; sidebar (auto-collapse on Routes; Routes / Plugins visibility); Routes (duplicate-key tip and same-URL update); Skills (market source); Usage (collection interval) |
+| Preferences | `?tab=preferences` | Grouped cards: language and appearance; launch and close; sidebar (auto-collapse on Routes; Routes / Plugins / Sub2API visibility); Routes (duplicate-key tip and same-URL update); Skills (market source); Usage (collection interval) |
 | This computer | `?tab=local` | Data directory, log level, retention, log directory |
 | Backups | `?tab=backups` | Agent configuration snapshots; keep-copies switch; restore/delete; file inspect |
 | About | `?tab=about` | Version, update check, repository, and read-only credential-storage notes |
@@ -113,7 +114,7 @@ Connections is the general login list in a full-height workbench split. Logins c
 - OAuth rows use an identity/person icon; API key rows use a key icon. The icon has an accessible label and a short hint.
 - Selecting a row opens the right-hand detail: related config files (copyable, open-directory), package, expiry, timeline, and the full endpoint. The list uses masked labels; the file preview shows the stored snapshot.
 - The official-login wait page does not show internal status or login file paths; failure keeps **重试** as the primary action.
-- The row menu (right-click) includes **分享至连接池**. It enrolls this Connections-managed login into the default connection pool; the login stays on Connections. **API Keys can always join** (including keys configured on WorkBuddy / ZCode / Pi). Domestic official logins cannot be shared. A disabled action keeps the reason (already in the pool, or this login cannot join — typically a domestic official login). For catalog tools, an already-added login can **取消添加** from the same menu. Connections does not open ConnectFlow, and does not show **用到其他工具** or **本机转发**. Eligibility is by credential family (API Key vs domestic official login), not by home Agent.
+- The row menu is only **取消添加** (when that login is already written into the tool). Adding a Connections login to the default connection pool is **从连接同步** on the pool page, not a Connections row action. Connections does not open ConnectFlow, and does not show **分享至连接池**, **用到其他工具**, or **本机转发**.
 - Missing data and a genuinely empty login list are different states.
 
 ## 6. Routes
@@ -126,7 +127,7 @@ Routes nested paths use a shell-level secondary nav. The **board** (`/routes/boa
 
 ### 6.1 Connection pool
 
-The connection pool lists official logins and API Keys used for local forwarding in a field-aligned table. **All API Keys can join** (including keys configured on WorkBuddy / ZCode / Pi); domestic official logins cannot. It may contain a Connections-managed login enrolled with **分享至连接池** (or bulk **从连接同步** on this page) or a Routes-managed login marked “仅用于本机路由”; the latter uses `home=route_pool` and may not appear in Connections. Connections owns the login lifecycle for entries selected from Connections until you **编辑** a shared official login in the pool: saving copies it to a pool-owned row (the Connections login stays), then asks **同步到连接页？** to write models back. Routes owns creation, editing, and deletion for route-only entries. Removing a member from the pool does not delete the Connections-managed login. Each page has its own recycle bin: Connections trash restores to Connections; pool trash restores to the pool. The table shows login, type, and status on every row; connection count, usage window, last used, and priority only when at least one row has that value; enable last. Column widths are dragged from the header edge and remembered. Selecting a row opens a detail panel. A route row can still be opened through `?profile=<id>`.
+The connection pool lists official logins and API Keys used for local forwarding in a field-aligned table. **All API Keys can join** (including keys configured on WorkBuddy / ZCode / Pi); domestic official logins cannot. It may contain a Connections-managed login enrolled with **从连接同步** on this page, or a Routes-managed login marked “仅用于本机路由”; the latter uses `home=route_pool` and may not appear in Connections. Connections owns the login lifecycle for entries selected from Connections until you **编辑** a shared official login in the pool: saving copies it to a pool-owned row (the Connections login stays), then asks **同步到连接页？** to write models back. Routes owns creation, editing, and deletion for route-only entries. Removing a member from the pool does not delete the Connections-managed login. Each page has its own recycle bin: Connections trash restores to Connections; pool trash restores to the pool. The table shows login, type, and status on every row; connection count, usage window, last used, and priority only when at least one row has that value; enable last. Column widths are dragged from the header edge and remembered. Selecting a row opens a detail panel. A route row can still be opened through `?profile=<id>`.
 
 The page treats the following states separately:
 
@@ -153,7 +154,11 @@ The primary start/stop control for the shared local gateway is on the board, not
 
 The current `local_bridge` runtime is hosted in the Tauri process through the in-process control host. Routes may report unavailable when that host is not reachable. A future sidecar is a proposal and is not a current UI assumption.
 
-## 7. Chat
+## 7. Sub2API
+
+Sub2API is a separate site-management workbench, not a Routes subpage or a replacement for Connections. A signed-in user can filter keys by group; create, edit, enable, disable, or delete keys; and import a usable key into an installed Agent. The visible API key value stays masked. Site session and saved-account controls belong to this page, not the Connections list.
+
+## 8. Chat
 
 Chat is a one-conversation, one-Agent workbench with a session rail, transcript, process panel, and composer.
 
@@ -166,7 +171,7 @@ Chat is a one-conversation, one-Agent workbench with a session rail, transcript,
 - Switching conversations clears in-memory process buffers for the old view but does not cancel the active operation. The target conversation shows a “sending elsewhere” recovery line.
 - Copy is available for completed user/Agent messages. Running messages do not show copy or retry.
 
-## 8. Skills, Projects, and Plugins
+## 9. Skills, Projects, and Plugins
 
 Skills, Projects, and Plugins are full-height workbenches with a left inventory and an optional right preview.
 
@@ -193,7 +198,7 @@ Skills, Projects, and Plugins are full-height workbenches with a left inventory 
 - Details lead with the pack components (bundled MCP is a component, not a list row). Identity fields (version, marketplace, scope, path) follow. Pi also shows the specified version from settings when pinned, and a short note on how upgrade is judged (pinned npm specs are skipped by Pi updates; this page does not probe npm for a newer unpinned version). Claude and Grok packs can be turned on or off; turning off is not uninstall. There is no install button.
 - Empty copy depends on the Agent filter: wired-but-empty (install in that tool, then refresh), planned (list not wired yet), or unsupported (this tool has no pack system of this kind). Loading, empty, and error states stay in the list column. Diagnostic scan sources are not shown in the list. Hiding the sidebar item does not disable `/plugins`.
 
-## 9. Agents and MCP
+## 10. Agents and MCP
 
 ### Agents
 
@@ -203,7 +208,7 @@ Agents is the lifecycle surface: installed state, runtime readiness, install/upd
 
 MCP is a read-only inventory of known **MCP server** configuration files. It lists Agent, server, transport, source path, and enabled status. Parse errors, missing files, and an empty inventory each get their own recoverable state. Inventory does not imply that editing or injection is supported, and it is not the plugin/extension pack manager. The current page is a standard single-column table. Plugin / extension packs live on `/plugins`.
 
-## 10. Responsive and interaction constraints
+## 11. Responsive and interaction constraints
 
 - Use stable grid tracks (`auto-fit`/`minmax`) for Agent cards, tables, toolbars, and preview panes.
 - On narrow windows, wrap labels and metadata instead of shrinking type or allowing overlap. Icon-only actions remain available through an overflow menu when the row cannot fit.
@@ -211,7 +216,7 @@ MCP is a read-only inventory of known **MCP server** configuration files. It lis
 - Escape closes the topmost dialog/menu/popover before closing a preview. Focus order follows content, row actions, separator, preview tools, then document body.
 - Page-specific user copy belongs with the page pattern or locale dictionary. Do not embed implementation phase labels in visible UI.
 
-## 11. Current implementation references
+## 12. Current implementation references
 
 - Layout and routing composition: `src/App.tsx`, `src/components/layout/`, and `src/pages/`.
 - Shared component rules: `src/components/ui/`, `src/components/shared/`, and [design-system.md](design-system.md).

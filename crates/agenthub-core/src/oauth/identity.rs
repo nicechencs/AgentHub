@@ -83,8 +83,12 @@ pub fn extract_oauth_identity(
     }
 
     // 3) Provider-specific nested claim paths.
-    if provider_id.eq_ignore_ascii_case("codex") || provider_id.eq_ignore_ascii_case("openai") {
-        if let Some(tok) = id_token.or(access_token).filter(|s| !s.is_empty()) {
+    // Pi Codex uses canonical `openai-codex` / `pi-openai-codex`, not `codex`.
+    if is_openai_codex_identity_provider(provider_id) {
+        for tok in [id_token, access_token].into_iter().flatten() {
+            if tok.is_empty() {
+                continue;
+            }
             if let Some(claims) = decode_jwt_payload(tok) {
                 id.merge_missing(&identity_from_openai_auth_claims(&claims));
             }
@@ -92,6 +96,23 @@ pub fn extract_oauth_identity(
     }
 
     id
+}
+
+/// ChatGPT / Codex OAuth identity providers, including Pi's openai-codex slot.
+pub fn is_openai_codex_identity_provider(provider_id: &str) -> bool {
+    let p = provider_id.trim();
+    p.eq_ignore_ascii_case("codex")
+        || p.eq_ignore_ascii_case("openai")
+        || p.eq_ignore_ascii_case("openai-codex")
+        || p.eq_ignore_ascii_case("pi-openai-codex")
+}
+
+/// Best-effort ChatGPT account id from an access/id JWT (unverified payload).
+pub fn chatgpt_account_id_from_token(token: &str) -> Option<String> {
+    let claims = decode_jwt_payload(token)?;
+    identity_from_openai_auth_claims(&claims)
+        .account_id
+        .or_else(|| identity_from_jwt_claims(&claims).account_id)
 }
 
 /// Write identity into credentials map (display fields only; not secrets).
@@ -146,6 +167,9 @@ pub fn identity_extra(
         map.insert("subscription".into(), json!(plan));
     } else {
         map.insert("subscription".into(), Value::Null);
+    }
+    if let Some(ref account_id) = identity.account_id {
+        map.insert("accountId".into(), json!(account_id));
     }
     Value::Object(map)
 }
@@ -424,6 +448,43 @@ mod tests {
         assert_eq!(id.subscription.as_deref(), Some("plus"));
         assert_eq!(id.organization_id.as_deref(), Some("org-default"));
         assert_eq!(id.display_label().as_deref(), Some("codex@example.com"));
+    }
+
+    #[test]
+    fn extract_pi_openai_codex_from_id_token() {
+        let id_token = make_jwt(json!({
+            "email": "pi-codex@example.com",
+            "https://api.openai.com/auth": {
+                "chatgpt_account_id": "acc-pi",
+                "chatgpt_plan_type": "plus"
+            }
+        }));
+        let body = json!({
+            "access_token": "opaque",
+            "id_token": id_token,
+        });
+        for provider in ["openai-codex", "pi-openai-codex"] {
+            let id = extract_oauth_identity(
+                provider,
+                &body,
+                body.get("access_token").and_then(|v| v.as_str()),
+                body.get("id_token").and_then(|v| v.as_str()),
+            );
+            assert_eq!(
+                id.email.as_deref(),
+                Some("pi-codex@example.com"),
+                "{provider}"
+            );
+            assert_eq!(id.account_id.as_deref(), Some("acc-pi"), "{provider}");
+            assert_eq!(id.subscription.as_deref(), Some("plus"), "{provider}");
+        }
+        assert_eq!(
+            chatgpt_account_id_from_token(&id_token).as_deref(),
+            Some("acc-pi")
+        );
+        assert!(is_openai_codex_identity_provider("openai-codex"));
+        assert!(is_openai_codex_identity_provider("pi-openai-codex"));
+        assert!(!is_openai_codex_identity_provider("anthropic"));
     }
 
     #[test]

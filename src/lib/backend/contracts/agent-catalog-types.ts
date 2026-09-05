@@ -32,6 +32,13 @@ export function isCatalogAppendOccupancy(
   return occupancy === 'catalogAppend';
 }
 
+/** Sibling rows stay in live config (Pi slots, WorkBuddy / ZCode lists). */
+export function isListOccupancy(
+  occupancy?: LiveOccupancyDto | null,
+): boolean {
+  return occupancy === 'catalogAppend' || occupancy === 'namedSlots';
+}
+
 /** One agent directory row from Core `AgentDescriptor`. */
 export interface AgentCatalogEntryDto {
   key: AgentKey;

@@ -16,7 +16,7 @@ pub(crate) use scan::{
     kimi_session_dir_for_delete, list_claude_workbuddy_projects, list_claude_workbuddy_sessions,
     list_codex_sessions, list_cursor_projects, list_cursor_sessions, list_dsh_sessions,
     list_grok_projects, list_grok_sessions, list_kimi_projects, list_kimi_sessions,
-    list_pi_projects, list_pi_sessions, load_excerpt,
+    list_pi_projects, list_pi_sessions, load_excerpt, load_excerpt_with_read_cap,
 };
 
 #[cfg(test)]

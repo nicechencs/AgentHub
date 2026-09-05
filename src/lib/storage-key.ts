@@ -20,6 +20,7 @@ const LAYOUT_STORAGE_KEY = {
   connectionsColumnWidths: `${PREFIX}connections-column-widths`,
   settingsBackupsInspectWidth: `${PREFIX}settings-backups-inspect-width`,
   routesInspectWidth: `${PREFIX}routes-inspect-width`,
+  sub2apiInspectWidth: `${PREFIX}sub2api-inspect-width`,
   routesTokensColumnWidths: `${PREFIX}routes-tokens-column-widths`,
   routesPoolColumnWidths: `${PREFIX}routes-pool-column-widths`,
   routesActivityPreviewWidth: `${PREFIX}routes-activity-preview-width`,
@@ -48,6 +49,20 @@ export const StorageKey = {
   routesNavVisible: `${PREFIX}routes-nav-visible`,
   /** 侧栏是否显示「插件」入口；缺省隐藏（功能开发中） */
   pluginsNavVisible: `${PREFIX}plugins-nav-visible`,
+  /** 侧栏是否显示 Sub2API 入口；缺省隐藏 */
+  sub2apiNavVisible: `${PREFIX}sub2api-nav-visible`,
+  /** Sub2API 登录会话（不含导入到连接的 Key） */
+  sub2apiSession: `${PREFIX}sub2api-session`,
+  /** Last Sub2API site URL (even when logged out) */
+  sub2apiBaseUrl: `${PREFIX}sub2api-base-url`,
+  /** Remembered Sub2API account metadata (no passwords) */
+  sub2apiRememberedAccounts: `${PREFIX}sub2api-remembered-accounts`,
+  /** Remembered Sub2API site URLs for the login picker */
+  sub2apiRememberedSites: `${PREFIX}sub2api-remembered-sites`,
+  /** @deprecated Legacy localStorage vault key; migrated into SQLite then removed */
+  sub2apiRememberedSecrets: `${PREFIX}sub2api-remembered-secrets`,
+  /** Remember-account toggle; default ON when missing */
+  sub2apiRememberEnabled: `${PREFIX}sub2api-remember-enabled`,
   /** epoch ms of last successful usage collect (manual or auto) */
   usageLastCollectAt: `${PREFIX}usage-last-collect-at`,
   /** SemVer last dismissed via “稍后” on the update prompt */
@@ -60,6 +75,8 @@ export const StorageKey = {
   agentsCatalogOrder: `${PREFIX}agents-catalog-order`,
   /** Last Projects tab; used to preload that agent's list on boot. */
   projectsLastAgent: `${PREFIX}projects-last-agent`,
+  /** Projects list sort: time | agent | name */
+  projectsListSort: `${PREFIX}projects-list-sort`,
   /** Last workspace chosen on the project-skills tab. */
   skillsProjectWorkspace: `${PREFIX}skills-project-workspace`,
   ...LAYOUT_STORAGE_KEY,

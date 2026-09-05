@@ -6,18 +6,20 @@ const installRuntimePort = vi.fn(async () => ({
   logs: [],
   message: 'ok',
 }));
+const launchAgentProgramPort = vi.fn(async () => {});
 const onProgressPort = vi.fn(() => () => {});
 
 vi.mock('@/app/runtime', () => ({
   getBackend: () => ({
     install: {
       installRuntime: installRuntimePort,
+      launchAgentProgram: launchAgentProgramPort,
       onProgress: onProgressPort,
     },
   }),
 }));
 
-import { installRuntime, onInstallProgress } from './install';
+import { installRuntime, launchAgentProgram, onInstallProgress } from './install';
 
 describe('installRuntime façade', () => {
   it('omits channel so the host can pick brew on macOS or winget on Windows', async () => {
@@ -30,6 +32,16 @@ describe('installRuntime façade', () => {
     installRuntimePort.mockClear();
     await installRuntime('git', 'brew');
     expect(installRuntimePort).toHaveBeenCalledWith('git', 'brew');
+  });
+});
+
+describe('launchAgentProgram façade', () => {
+  it('forwards agentId and kind, not a client path', async () => {
+    launchAgentProgramPort.mockClear();
+    await launchAgentProgram('codex', 'cli');
+    expect(launchAgentProgramPort).toHaveBeenCalledWith('codex', 'cli');
+    await launchAgentProgram('workbuddy', 'app');
+    expect(launchAgentProgramPort).toHaveBeenCalledWith('workbuddy', 'app');
   });
 });
 

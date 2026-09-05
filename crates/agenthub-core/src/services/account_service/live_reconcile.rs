@@ -200,7 +200,10 @@ impl AccountService {
             ));
         }
 
-        if self.matching_live_trash_id(adapter, agent, &live)?.is_some() {
+        if self
+            .matching_live_trash_id(adapter, agent, &live)?
+            .is_some()
+        {
             tracing::debug!(
                 module = targets::ACCOUNT,
                 agent = agent.as_str(),

@@ -25,10 +25,20 @@ describe('ProjectSessionRow', () => {
   });
 
   it('keeps the action cluster on an auto track so icons cannot overlap the file name', () => {
-    for (const grid of [projectSessionRowGrid(true), projectSessionRowGrid(false)]) {
+    for (const grid of [
+      projectSessionRowGrid(true),
+      projectSessionRowGrid(false),
+      projectSessionRowGrid(true, true),
+      projectSessionRowGrid(false, true),
+    ]) {
       expect(grid).toContain('minmax(0,1fr)_auto');
       expect(grid).toContain('overflow-hidden');
     }
+    expect(projectSessionRowGrid(true, true)).toContain('1.25rem_1.5rem_minmax(0,22rem)');
+    expect(src).toContain('showAgent');
+    expect(src).toContain('AgentLogo');
+    expect(src).toContain('size="sm"');
+    expect(src).not.toContain('AgentDot');
   });
 
   it('aligns fields on a borderless grid and keeps continue as an icon', () => {

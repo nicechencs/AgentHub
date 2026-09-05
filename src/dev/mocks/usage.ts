@@ -283,6 +283,10 @@ export function createMockUsagePort(): UsagePort {
       await delay(30 + Math.random() * 50);
       return summarizeMockGatewayRows(filterMockGatewayRows(q));
     },
+
+    async listConnectionUsage() {
+      return [];
+    },
   };
 }
 

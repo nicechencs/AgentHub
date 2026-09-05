@@ -250,8 +250,10 @@ pub fn pi_oauth_entry_from_tokens(
 ) -> Value {
     let expires_ms = expires_at_to_ms(expires_at_rfc3339).or_else(|| {
         expires_in_secs.map(|s| {
-            chrono::Utc::now().timestamp_millis() + s.max(0) * 1000
-                - crate::catalog::limits::OAUTH_REFRESH_SKEW_MS
+            chrono::Utc::now()
+                .timestamp_millis()
+                .saturating_add(s.max(0).min(31_536_000).saturating_mul(1000))
+                .saturating_sub(crate::catalog::limits::OAUTH_REFRESH_SKEW_MS)
         })
     });
     let mut m = Map::new();
@@ -283,6 +285,9 @@ pub fn live_account_from_oauth_tokens(
     }
     let mut live = live_account_for_provider(provider, &entry)?;
     if let Some(obj) = live.credentials.as_object_mut() {
+        if let Some(idt) = id_token.map(str::trim).filter(|s| !s.is_empty()) {
+            obj.insert("id_token".into(), json!(idt));
+        }
         apply_identity_to_credentials(obj, &identity);
     }
     if let Some(obj) = live.extra.as_object_mut() {
@@ -293,6 +298,9 @@ pub fn live_account_from_oauth_tokens(
         }
         if let Some(ref plan) = identity.subscription {
             obj.insert("subscription".into(), json!(plan));
+        }
+        if let Some(ref account_id) = identity.account_id {
+            obj.insert("accountId".into(), json!(account_id));
         }
         obj.insert("source".into(), json!("oauth_pkce"));
     }
@@ -506,5 +514,56 @@ mod tests {
             Some("xai")
         );
         assert!(live.label_hint.unwrap().contains("xai"));
+    }
+
+    fn make_jwt(claims: Value) -> String {
+        use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        use base64::Engine;
+        let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"none","typ":"JWT"}"#);
+        let payload = URL_SAFE_NO_PAD.encode(claims.to_string().as_bytes());
+        format!("{header}.{payload}.sig")
+    }
+
+    #[test]
+    fn live_account_from_openai_codex_keeps_chatgpt_account_id() {
+        let id_token = make_jwt(json!({
+            "email": "pi-codex@example.com",
+            "https://api.openai.com/auth": {
+                "chatgpt_account_id": "acc-pi",
+                "chatgpt_plan_type": "plus"
+            }
+        }));
+        let live = live_account_from_oauth_tokens(
+            "openai-codex",
+            "opaque-access",
+            Some("rt"),
+            None,
+            Some(3600),
+            Some(&id_token),
+        )
+        .unwrap();
+        assert_eq!(
+            live.credentials.get("account_id").and_then(|v| v.as_str()),
+            Some("acc-pi")
+        );
+        assert_eq!(
+            live.credentials.get("id_token").and_then(|v| v.as_str()),
+            Some(id_token.as_str())
+        );
+        assert_eq!(
+            live.extra.get("accountId").and_then(|v| v.as_str()),
+            Some("acc-pi")
+        );
+        assert_eq!(
+            live.extra.get("subscription").and_then(|v| v.as_str()),
+            Some("plus")
+        );
+        assert_eq!(
+            live.credentials
+                .pointer("/body/openai-codex/id_token")
+                .and_then(|v| v.as_str()),
+            None,
+            "id_token must stay on the pool row, not Pi auth.json body"
+        );
     }
 }

@@ -1,15 +1,15 @@
-import type { MouseEvent as ReactMouseEvent } from 'react';
+import { memo, useEffect, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { ChevronDown, ChevronRight, EyeOff, Loader2 } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
-import { AgentDot } from '@/components/shared/AgentDot';
+import { AgentLogo } from '@/components/shared/AgentLogo';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tip } from '@/components/ui/tooltip';
-import type { AgentMeta } from '@/config/agents';
 import { verifiedProjectWorkspacePath } from '@/lib/path-open';
-import type { AgentKey, AgentProject, AgentSession } from '@/lib/types';
+import type { AgentKey, AgentSession } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { groupCanExpand, type ProjectGroup } from './project-groups';
 import {
   displayTitle,
   fmtBytes,
@@ -19,25 +19,29 @@ import {
 } from './project-format';
 import { ProjectPathLink } from './ProjectPathLink';
 import { ProjectSessionRow } from './ProjectSessionRow';
+import {
+  clampSessionPage,
+  sessionPageCount,
+  sliceSessionPage,
+} from './projects-list-model';
 import { nestSessions } from './session-nest';
 
 export type ProjectTreeProps = {
-  agentId: AgentKey;
-  agentMeta: AgentMeta | undefined;
-  projects: AgentProject[];
+  groups: ProjectGroup[];
+  showSessionAgent: boolean;
   expanded: Set<string>;
   loadingProjectIds: Set<string>;
   selected: Set<string>;
   busy: boolean;
   showDelete: boolean;
-  deleteHint?: string | null;
+  deleteHintFor?: (agentId: AgentKey) => string | null;
   previewSessionId: string | null;
   nestedOpen: Set<string>;
-  visibleSessions: (projectId: string) => AgentSession[];
-  onToggleExpand: (project: AgentProject) => void;
+  visibleSessions: (groupId: string) => AgentSession[];
+  onToggleExpand: (group: ProjectGroup) => void;
   onToggleNested: (id: string) => void;
-  onOpenProjectWorkspace: (p: AgentProject, e: ReactMouseEvent) => void;
-  onToggleHideProject: (p: AgentProject, e: ReactMouseEvent) => void;
+  onOpenProjectWorkspace: (group: ProjectGroup, e: ReactMouseEvent) => void;
+  onToggleHideProject: (group: ProjectGroup, e: ReactMouseEvent) => void;
   onToggleOne: (id: string) => void;
   onPreviewSession: (session: AgentSession) => void;
   onCopySessionId: (s: AgentSession, e?: ReactMouseEvent) => void;
@@ -45,18 +49,40 @@ export type ProjectTreeProps = {
   onOpenSessionRecord: (s: AgentSession, e: ReactMouseEvent) => void;
   onGoContinue: (s: AgentSession) => void;
   onRequestDelete: (s: AgentSession) => void;
+  queryKey?: string;
 };
 
-export function ProjectTree({
-  agentId,
-  agentMeta,
-  projects: visibleProjects,
-  expanded,
-  loadingProjectIds,
+export function ProjectTree(props: ProjectTreeProps) {
+  return (
+    <div className={pageRhythm.stackDense}>
+      {props.groups.map((group) => (
+        <ProjectGroupCard
+          key={group.id}
+          group={group}
+          open={props.expanded.has(group.id)}
+          loadingKids={group.members.some((member) => props.loadingProjectIds.has(member.id))}
+          {...props}
+        />
+      ))}
+    </div>
+  );
+}
+
+type GroupCardProps = ProjectTreeProps & {
+  group: ProjectGroup;
+  open: boolean;
+  loadingKids: boolean;
+};
+
+const ProjectGroupCard = memo(function ProjectGroupCard({
+  group,
+  open,
+  loadingKids,
+  showSessionAgent,
   selected,
   busy,
   showDelete,
-  deleteHint,
+  deleteHintFor,
   previewSessionId,
   nestedOpen,
   visibleSessions,
@@ -71,161 +97,290 @@ export function ProjectTree({
   onOpenSessionRecord,
   onGoContinue,
   onRequestDelete,
-}: ProjectTreeProps) {
+  queryKey = '',
+}: GroupCardProps) {
   const { t } = useI18n();
-  return (
-    <div className={pageRhythm.stackDense}>
-      {visibleProjects.map((p) => {
-        const open = expanded.has(p.id);
-        const loadingKids = loadingProjectIds.has(p.id);
-        const kids = open ? visibleSessions(p.id) : [];
-        const canExpand = p.sessionCount > 0 || p.agentId !== 'cursor';
-        const title = displayTitle(p);
-        const path = projectDisplayPath(p);
-        const workspace = verifiedProjectWorkspacePath(p);
-        return (
-          <Card
-            key={p.id}
-            className={cn('overflow-hidden transition-colors', p.hidden && 'opacity-70')}
-          >
-            <div
-              className={cn(
-                'flex items-center gap-2 px-3 py-2',
-                canExpand && 'cursor-pointer hover:bg-hover/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
-              )}
-              onClick={() => canExpand && onToggleExpand(p)}
-              onKeyDown={(event) => {
-                if (!canExpand) return;
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  onToggleExpand(p);
-                }
-              }}
-              role={canExpand ? 'button' : undefined}
-              tabIndex={canExpand ? 0 : undefined}
-              aria-expanded={canExpand ? open : undefined}
-            >
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center text-muted">
-                {!canExpand ? (
-                  <span className="w-3.5" />
-                ) : loadingKids ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : open ? (
-                  <ChevronDown className="h-3.5 w-3.5" />
-                ) : (
-                  <ChevronRight className="h-3.5 w-3.5" />
-                )}
-              </span>
-              <AgentDot agentId={agentId} color={agentMeta?.color} className="shrink-0" />
-              <div className="flex min-w-0 flex-1 items-center gap-2">
-                <Tip
-                  label={titleHoverLabel(title, p.preview)}
-                  className="min-w-0 max-w-[18rem] shrink"
-                >
-                  <span className="block truncate text-sm font-medium text-primary">{title}</span>
-                </Tip>
-                {p.alias?.trim() && (
-                  <span className="shrink-0 text-xs text-muted">({p.title})</span>
-                )}
-                {p.hidden && (
-                  <span className="shrink-0 text-xs text-muted">{t('projects.tree.hidden')}</span>
-                )}
-                <span className="shrink-0 text-xs text-muted tabular-nums">
-                  {t('projects.tree.sessionMeta', {
-                    time: relativeTime(p.updatedAt, t),
-                    count: p.sessionCount,
-                    size: fmtBytes(p.sizeBytes),
-                  })}
-                </span>
-                {workspace ? (
-                  <ProjectPathLink
-                    path={workspace}
-                    disabled={busy}
-                    ariaLabel={t('projects.tree.openFolder', { path: workspace })}
-                    onOpen={(e) => onOpenProjectWorkspace(p, e)}
-                  />
-                ) : (
-                  <ProjectPathLink path={path} />
-                )}
-              </div>
-              <div className="flex shrink-0 gap-1" onClick={(e) => e.stopPropagation()}>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  disabled={busy}
-                  aria-label={p.hidden ? t('projects.tree.unhide') : t('projects.tree.hide')}
-                  title={p.hidden ? t('projects.tree.unhide') : t('projects.tree.hide')}
-                  onClick={(e) => onToggleHideProject(p, e)}
-                >
-                  <EyeOff className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
+  const [page, setPage] = useState(0);
+  const [heldOpen, setHeldOpen] = useState(false);
+  const keepPane = open || heldOpen;
 
-            {open && (
-              <div className="border-t border-border bg-subtle/40">
-                {loadingKids ? (
-                  <div className="px-3 py-3 text-xs text-muted">{t('projects.tree.loadingSessions')}</div>
-                ) : kids.length === 0 ? (
-                  <div className="px-3 py-3 text-xs text-muted">
-                    {p.sessionCount === 0 ? t('projects.tree.noSessionFiles') : t('projects.tree.noMatch')}
-                  </div>
-                ) : (
-                  <ul>
-                    {nestSessions(kids).flatMap(({ session: s, children }) => {
-                      const openNested = nestedOpen.has(s.id);
-                      return [
-                        <ProjectSessionRow
-                          key={s.id}
-                          session={s}
-                          selected={selected.has(s.id)}
-                          busy={busy}
-                          showDelete={showDelete}
-                          deleteHint={deleteHint}
-                          nested={false}
-                          childCount={children.length}
-                          nestedOpen={openNested}
-                          onToggleNested={onToggleNested}
-                          previewOpen={previewSessionId === s.id}
-                          onToggleOne={onToggleOne}
-                          onPreviewSession={onPreviewSession}
-                          onCopySessionId={onCopySessionId}
-                          onCopyResumeCommand={onCopyResumeCommand}
-                          onOpenSessionRecord={onOpenSessionRecord}
-                          onGoContinue={onGoContinue}
-                          onRequestDelete={onRequestDelete}
-                        />,
-                        ...(openNested
-                          ? children.map((child) => (
-                              <ProjectSessionRow
-                                key={child.id}
-                                session={child}
-                                selected={selected.has(child.id)}
-                                busy={busy}
-                                showDelete={showDelete}
-                                deleteHint={deleteHint}
-                                nested
-                                nestedLabel={t('projects.tree.subSession')}
-                                previewOpen={previewSessionId === child.id}
-                                onToggleOne={onToggleOne}
-                                onPreviewSession={onPreviewSession}
-                                onCopySessionId={onCopySessionId}
-                                onCopyResumeCommand={onCopyResumeCommand}
-                                onOpenSessionRecord={onOpenSessionRecord}
-                                onGoContinue={onGoContinue}
-                                onRequestDelete={onRequestDelete}
-                              />
-                            ))
-                          : []),
-                      ];
-                    })}
-                  </ul>
+  useEffect(() => {
+    if (open) setHeldOpen(true);
+  }, [open]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [queryKey, group.id]);
+
+  const kids = keepPane ? visibleSessions(group.id) : [];
+  const nested = keepPane ? nestSessions(kids) : [];
+  const pages = sessionPageCount(nested.length);
+  const currentPage = clampSessionPage(page, nested.length);
+  const pageRows = keepPane ? sliceSessionPage(nested, currentPage) : [];
+
+  const canExpand = groupCanExpand(group);
+  const p = group.primary;
+  const title = displayTitle(p);
+  const path = projectDisplayPath(p);
+  const workspace = verifiedProjectWorkspacePath(p);
+
+  return (
+    <Card
+      className={cn('overflow-hidden transition-colors', group.hidden && 'opacity-70')}
+    >
+      <div
+        className={cn(
+          'flex items-center gap-2 px-3 py-2',
+          canExpand && 'cursor-pointer hover:bg-hover/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
+        )}
+        onClick={() => canExpand && onToggleExpand(group)}
+        onKeyDown={(event) => {
+          if (!canExpand) return;
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onToggleExpand(group);
+          }
+        }}
+        role={canExpand ? 'button' : undefined}
+        tabIndex={canExpand ? 0 : undefined}
+        aria-expanded={canExpand ? open : undefined}
+      >
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center text-muted">
+          {!canExpand ? (
+            <span className="w-3.5" />
+          ) : loadingKids ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : open ? (
+            <ChevronDown className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5" />
+          )}
+        </span>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <Tip
+            label={titleHoverLabel(title, p.preview)}
+            className="min-w-0 max-w-[18rem] shrink"
+          >
+            <span className="block truncate text-sm font-medium text-primary">{title}</span>
+          </Tip>
+          {p.alias?.trim() && (
+            <span className="shrink-0 text-xs text-muted">({p.title})</span>
+          )}
+          <span className="flex shrink-0 items-center gap-0.5">
+            {group.agentIds.map((id) => (
+              <AgentLogo key={id} agentId={id} size="sm" />
+            ))}
+          </span>
+          {group.hidden && (
+            <span className="shrink-0 text-xs text-muted">{t('projects.tree.hidden')}</span>
+          )}
+          <span className="shrink-0 text-xs text-muted tabular-nums">
+            {t('projects.tree.sessionMeta', {
+              time: relativeTime(group.updatedAt, t),
+              count: group.sessionCount,
+              size: fmtBytes(group.sizeBytes),
+            })}
+          </span>
+          {workspace ? (
+            <ProjectPathLink
+              path={workspace}
+              disabled={busy}
+              ariaLabel={t('projects.tree.openFolder', { path: workspace })}
+              onOpen={(e) => onOpenProjectWorkspace(group, e)}
+            />
+          ) : (
+            <ProjectPathLink path={path} />
+          )}
+        </div>
+        <div className="flex shrink-0 gap-1" onClick={(e) => e.stopPropagation()}>
+          <Button
+            size="icon"
+            variant="ghost"
+            disabled={busy}
+            aria-label={group.hidden ? t('projects.tree.unhide') : t('projects.tree.hide')}
+            title={group.hidden ? t('projects.tree.unhide') : t('projects.tree.hide')}
+            onClick={(e) => onToggleHideProject(group, e)}
+          >
+            <EyeOff className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      {keepPane && (
+        <div
+          hidden={!open}
+          className={cn('border-t border-border bg-subtle/40', !open && 'hidden')}
+        >
+          {loadingKids && kids.length === 0 ? (
+            <div className="px-3 py-3 text-xs text-muted">{t('projects.tree.loadingSessions')}</div>
+          ) : kids.length === 0 ? (
+            <div className="px-3 py-3 text-xs text-muted">
+              {group.sessionCount === 0 ? t('projects.tree.noSessionFiles') : t('projects.tree.noMatch')}
+            </div>
+          ) : (
+            <>
+              <ul>
+                {pageRows.flatMap(({ session: s, children }) =>
+                  sessionRows({
+                    session: s,
+                    children,
+                    nestedOpen,
+                    selected,
+                    busy,
+                    showDelete,
+                    deleteHintFor,
+                    showSessionAgent,
+                    previewSessionId,
+                    nestedLabel: t('projects.tree.subSession'),
+                    onToggleNested,
+                    onToggleOne,
+                    onPreviewSession,
+                    onCopySessionId,
+                    onCopyResumeCommand,
+                    onOpenSessionRecord,
+                    onGoContinue,
+                    onRequestDelete,
+                  }),
                 )}
-              </div>
-            )}
-          </Card>
-        );
-      })}
-    </div>
+              </ul>
+              {pages > 1 && (
+                <div
+                  className="flex items-center justify-end gap-2 border-t border-border px-3 py-2"
+                  role="navigation"
+                  aria-label={t('projects.tree.pageAria')}
+                >
+                  <span className="text-xs text-muted tabular-nums">
+                    {t('projects.tree.pageStatus', {
+                      page: currentPage + 1,
+                      pages,
+                    })}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={currentPage <= 0}
+                    onClick={() => setPage((prev) => Math.max(0, prev - 1))}
+                  >
+                    {t('projects.tree.pagePrev')}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={currentPage >= pages - 1}
+                    onClick={() =>
+                      setPage((prev) => clampSessionPage(prev + 1, nested.length))
+                    }
+                  >
+                    {t('projects.tree.pageNext')}
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </Card>
   );
+}, function groupCardPropsEqual(prev, next) {
+  return (
+    prev.open === next.open &&
+    prev.loadingKids === next.loadingKids &&
+    prev.group === next.group &&
+    prev.selected === next.selected &&
+    prev.nestedOpen === next.nestedOpen &&
+    prev.previewSessionId === next.previewSessionId &&
+    prev.busy === next.busy &&
+    prev.showDelete === next.showDelete &&
+    prev.showSessionAgent === next.showSessionAgent &&
+    prev.queryKey === next.queryKey &&
+    prev.visibleSessions === next.visibleSessions
+  );
+});
+
+function sessionRows({
+  session: s,
+  children,
+  nestedOpen,
+  selected,
+  busy,
+  showDelete,
+  deleteHintFor,
+  showSessionAgent,
+  previewSessionId,
+  nestedLabel,
+  onToggleNested,
+  onToggleOne,
+  onPreviewSession,
+  onCopySessionId,
+  onCopyResumeCommand,
+  onOpenSessionRecord,
+  onGoContinue,
+  onRequestDelete,
+}: {
+  session: AgentSession;
+  children: AgentSession[];
+  nestedOpen: Set<string>;
+  selected: Set<string>;
+  busy: boolean;
+  showDelete: boolean;
+  deleteHintFor?: (agentId: AgentKey) => string | null;
+  showSessionAgent: boolean;
+  previewSessionId: string | null;
+  nestedLabel: string;
+  onToggleNested: (id: string) => void;
+  onToggleOne: (id: string) => void;
+  onPreviewSession: (session: AgentSession) => void;
+  onCopySessionId: (s: AgentSession, e?: ReactMouseEvent) => void;
+  onCopyResumeCommand: (s: AgentSession, e?: ReactMouseEvent) => void;
+  onOpenSessionRecord: (s: AgentSession, e: ReactMouseEvent) => void;
+  onGoContinue: (s: AgentSession) => void;
+  onRequestDelete: (s: AgentSession) => void;
+}) {
+  const openNested = nestedOpen.has(s.id);
+  return [
+    <ProjectSessionRow
+      key={s.id}
+      session={s}
+      selected={selected.has(s.id)}
+      busy={busy}
+      showDelete={showDelete}
+      deleteHint={deleteHintFor?.(s.agentId) ?? null}
+      showAgent={showSessionAgent}
+      nested={false}
+      childCount={children.length}
+      nestedOpen={openNested}
+      onToggleNested={onToggleNested}
+      previewOpen={previewSessionId === s.id}
+      onToggleOne={onToggleOne}
+      onPreviewSession={onPreviewSession}
+      onCopySessionId={onCopySessionId}
+      onCopyResumeCommand={onCopyResumeCommand}
+      onOpenSessionRecord={onOpenSessionRecord}
+      onGoContinue={onGoContinue}
+      onRequestDelete={onRequestDelete}
+    />,
+    ...(openNested
+      ? children.map((child) => (
+          <ProjectSessionRow
+            key={child.id}
+            session={child}
+            selected={selected.has(child.id)}
+            busy={busy}
+            showDelete={showDelete}
+            deleteHint={deleteHintFor?.(child.agentId) ?? null}
+            showAgent={showSessionAgent}
+            nested
+            nestedLabel={nestedLabel}
+            previewOpen={previewSessionId === child.id}
+            onToggleOne={onToggleOne}
+            onPreviewSession={onPreviewSession}
+            onCopySessionId={onCopySessionId}
+            onCopyResumeCommand={onCopyResumeCommand}
+            onOpenSessionRecord={onOpenSessionRecord}
+            onGoContinue={onGoContinue}
+            onRequestDelete={onRequestDelete}
+          />
+        ))
+      : []),
+  ];
 }

@@ -34,7 +34,11 @@ impl ProjectSource for CursorProjectSource {
         if empty_if_missing(ctx.home) {
             return Ok(vec![]);
         }
-        Ok(finish_sessions(list_cursor_sessions(ctx.home, None)?))
+        Ok(finish_sessions(list_cursor_sessions(
+            ctx.home,
+            None,
+            ctx.data_dir,
+        )?))
     }
 
     fn list_sessions_in_project(
@@ -46,7 +50,11 @@ impl ProjectSource for CursorProjectSource {
         if empty_if_missing(ctx.home) {
             return Ok(vec![]);
         }
-        Ok(finish_sessions(list_cursor_sessions(ctx.home, Some(key))?))
+        Ok(finish_sessions(list_cursor_sessions(
+            ctx.home,
+            Some(key),
+            ctx.data_dir,
+        )?))
     }
 }
 

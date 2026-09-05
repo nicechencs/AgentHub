@@ -277,7 +277,10 @@ fn live_sync_does_not_recreate_logins_still_in_trash() {
         "live sync must not resurrect a recycle-bin login"
     );
     assert_eq!(
-        svc.connections.list_trash(Some(AgentId::Grok)).unwrap().len(),
+        svc.connections
+            .list_trash(Some(AgentId::Grok))
+            .unwrap()
+            .len(),
         2
     );
 
@@ -369,7 +372,10 @@ fn import_live_skips_a_recycle_bin_sibling() {
     assert!(skipped.is_none());
     assert!(svc.repo.list(Some(AgentId::Grok)).unwrap().is_empty());
     assert_eq!(
-        svc.connections.list_trash(Some(AgentId::Grok)).unwrap().len(),
+        svc.connections
+            .list_trash(Some(AgentId::Grok))
+            .unwrap()
+            .len(),
         1
     );
 }

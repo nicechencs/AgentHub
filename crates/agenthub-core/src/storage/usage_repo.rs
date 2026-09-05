@@ -29,6 +29,26 @@ const UPSERT_USAGE_SQL: &str = r#"
         fast = excluded.fast
 "#;
 
+fn setting_equals(tx: &Transaction<'_>, key: &str, version: &str) -> Result<bool> {
+    let current: Option<String> = tx
+        .query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
+            row.get(0)
+        })
+        .optional()?;
+    Ok(current.as_deref() == Some(version))
+}
+
+fn upsert_setting(tx: &Transaction<'_>, key: &str, value: &str) -> Result<()> {
+    tx.execute(
+        r#"
+        INSERT INTO settings (key, value) VALUES (?1, ?2)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        "#,
+        [key, value],
+    )?;
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy)]
 enum UsageTrendGroup {
     Agent,
@@ -92,6 +112,48 @@ impl UsageRepo {
 
     pub fn set_meta(&self, key: &str, value: &str) -> Result<()> {
         self.db.set_setting(key, value)
+    }
+
+    /// Clear every usage row, reset every cursor, and stamp `meta_key` in one
+    /// Immediate transaction. Returns `(deleted, cursors_reset, already_current)`.
+    pub fn repair_token_layout(&self, meta_key: &str, version: &str) -> Result<(u64, u64, bool)> {
+        self.db.with_conn(|conn| {
+            let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+            if setting_equals(&tx, meta_key, version)? {
+                return Ok((0, 0, true));
+            }
+            let deleted = tx.execute("DELETE FROM usage_records", [])? as u64;
+            let cursors_reset = tx.execute(
+                "UPDATE usage_cursors SET byte_offset = 0, file_mtime = 0, updated_at = datetime('now')",
+                [],
+            )? as u64;
+            upsert_setting(&tx, meta_key, version)?;
+            tx.commit()?;
+            Ok((deleted, cursors_reset, false))
+        })
+    }
+
+    /// Clear Grok usage rows, reset Grok cursors, and stamp `meta_key` in one
+    /// Immediate transaction. Returns `(deleted, cursors_reset, already_current)`.
+    pub fn repair_grok_parser(&self, meta_key: &str, version: &str) -> Result<(u64, u64, bool)> {
+        self.db.with_conn(|conn| {
+            let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+            if setting_equals(&tx, meta_key, version)? {
+                return Ok((0, 0, true));
+            }
+            let grok = AgentId::Grok.as_str();
+            let deleted = tx.execute(
+                "DELETE FROM usage_records WHERE agent_id = ?1",
+                [grok],
+            )? as u64;
+            let cursors_reset = tx.execute(
+                "UPDATE usage_cursors SET byte_offset = 0, file_mtime = 0, updated_at = datetime('now') WHERE agent_id = ?1",
+                [grok],
+            )? as u64;
+            upsert_setting(&tx, meta_key, version)?;
+            tx.commit()?;
+            Ok((deleted, cursors_reset, false))
+        })
     }
 
     /// Force next collect to re-read every session file from byte 0.

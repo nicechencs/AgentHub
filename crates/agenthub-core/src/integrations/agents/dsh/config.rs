@@ -16,6 +16,7 @@ use crate::adapters::dsh::{
 use crate::error::{AppError, Result};
 use crate::models::AgentId;
 use crate::platform::AgentKey;
+use crate::utils::atomic::with_restored_files;
 
 use crate::platform::config::sources::util::{
     field, finish_apply, get_str_map, plan_from_maps, redact_secrets, secret_unchanged, string_val,
@@ -168,23 +169,21 @@ impl DshConfigProjector {
         if let Some(n) = desired.get("maxTokens").and_then(Value::as_u64) {
             fields.max_tokens = Some(n);
         }
-        write_llm_fields(&patch, &fields)?;
-
-        let desired_key = get_str_map(desired, "apiKey");
-        if !secret_unchanged(desired_key.as_deref()) {
-            write_credential_value(
-                &home.join(CREDENTIALS_FILE),
-                &fields.api_key_env,
-                desired_key.unwrap().trim(),
-            )?;
-        } else if let Some(existing) = current
-            .get("apiKey")
-            .and_then(Value::as_str)
-            .filter(|s| !s.is_empty() && *s != SECRET_REDACTED)
-        {
-            write_credential_value(&home.join(CREDENTIALS_FILE), &fields.api_key_env, existing)?;
-        }
-        Ok(())
+        let creds = home.join(CREDENTIALS_FILE);
+        with_restored_files(&[&patch, &creds], || {
+            write_llm_fields(&patch, &fields)?;
+            let desired_key = get_str_map(desired, "apiKey");
+            if !secret_unchanged(desired_key.as_deref()) {
+                write_credential_value(&creds, &fields.api_key_env, desired_key.unwrap().trim())?;
+            } else if let Some(existing) = current
+                .get("apiKey")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty() && *s != SECRET_REDACTED)
+            {
+                write_credential_value(&creds, &fields.api_key_env, existing)?;
+            }
+            Ok(())
+        })
     }
 }
 

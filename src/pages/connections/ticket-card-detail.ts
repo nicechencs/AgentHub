@@ -3,7 +3,10 @@
  */
 import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
 import type { LiveOccupancyDto } from '@/lib/backend/contracts/agent-catalog-types';
-import { isCatalogAppendOccupancy } from '@/lib/backend/contracts/agent-catalog-types';
+import {
+  isCatalogAppendOccupancy,
+  isListOccupancy,
+} from '@/lib/backend/contracts/agent-catalog-types';
 import { oauthListAction, type AccountAction } from '@/lib/backend/contracts/account-actions';
 import {
   extractProviderCredentialFiles,
@@ -39,7 +42,7 @@ function bindingDashboardRouteLabel(route: BindingRoute, t?: TranslateFn): strin
 }
 
 const IN_USE_TIP_FALLBACK = '这份登录已在当前工具使用中';
-const IN_CATALOG_TIP_FALLBACK = '这份登录已经添加';
+const DEFAULT_LIVE_TIP_FALLBACK = '这份登录已是当前默认';
 const SWITCH_BUSY_TIP_FALLBACK = '正在切换其他登录';
 const REFRESH_BUSY_TIP_FALLBACK = '正在刷新其他登录';
 const REFRESH_TIP_FALLBACK = '查看这份登录的用量。';
@@ -103,9 +106,15 @@ export interface TicketDetailExtras {
   quota7dPct?: number;
   quotaResetIn?: string;
   quota7dResetIn?: string;
+  /** Sidecar token totals for this login (not dashboard usage). */
+  tokenInput?: number;
+  tokenOutput?: number;
+  tokenLastUsedAt?: string;
   canEditKey?: boolean;
   canEditConfig?: boolean;
   isCurrent?: boolean;
+  /** Present in this Agent's live list (slots / model list). Independent of default. */
+  inList?: boolean;
   oauthAction?: AccountAction;
   refreshTokenPreview?: string;
   /** `**XXXX` chip replacing 可续期 / 已配置 when a secret tail is known. */
@@ -197,7 +206,7 @@ export function ticketAuthChip(
 }
 
 export type TicketSwitchChip = {
-  kind: 'switch' | 'in-use';
+  kind: 'add' | 'switch' | 'in-use';
   label: string;
 };
 
@@ -240,12 +249,12 @@ export function showsNativeSwitch(
   return !agentFilterId || agentFilterId === ticketAgentId;
 }
 
-/** Catalog-append rows that are already in the model list can 取消添加 from the row menu. */
+/** List-occupancy rows that are the current default can 取消添加 from the row menu. */
 export function showsCatalogUnapply(
   occupancy?: LiveOccupancyDto | null,
   isCurrent?: boolean,
 ): boolean {
-  return isCatalogAppendOccupancy(occupancy) && isCurrent === true;
+  return isListOccupancy(occupancy) && isCurrent === true;
 }
 
 export type TicketSwitchChipOpts = {
@@ -253,28 +262,28 @@ export type TicketSwitchChipOpts = {
   agentName?: string;
 };
 
-/** Card action: unused → 切换; current live grant → disabled 使用中.
- * Catalog-append occupancy uses 写入 {name} / 已添加. */
+/** Card action: exclusive unused → 切换; current live grant → disabled 使用中.
+ * List occupancy (Pi / WorkBuddy / ZCode): 添加 / 切换默认 / 默认. */
 export function ticketSwitchChip(
-  extras?: Pick<TicketDetailExtras, 'isCurrent'> | null,
+  extras?: Pick<TicketDetailExtras, 'isCurrent' | 'inList'> | null,
   t?: TranslateFn,
   opts?: TicketSwitchChipOpts,
 ): TicketSwitchChip {
-  const catalog = isCatalogAppendOccupancy(opts?.occupancy);
+  const listOcc = isListOccupancy(opts?.occupancy);
+  const inList = extras?.inList ?? extras?.isCurrent === true;
   if (extras?.isCurrent) {
     return {
       kind: 'in-use',
-      label: catalog
-        ? (t ? t('connections.list.inCatalog') : '已添加')
+      label: listOcc
+        ? (t ? t('connections.list.defaultLive') : '默认')
         : (t ? t('connections.list.inUse') : '使用中'),
     };
   }
-  if (catalog) {
-    const name = opts?.agentName?.trim() || 'Agent';
-    return {
-      kind: 'switch',
-      label: t ? t('connections.list.writeCatalog', { name }) : `写入 ${name}`,
-    };
+  if (listOcc) {
+    if (inList) {
+      return { kind: 'switch', label: t ? t('connections.list.switch') : '切换' };
+    }
+    return { kind: 'add', label: t ? t('connections.list.addLive') : '添加' };
   }
   return { kind: 'switch', label: t ? t('connections.list.switch') : '切换' };
 }
@@ -290,8 +299,8 @@ export function ticketSwitchDisabledReason(
   t?: TranslateFn,
 ): string | undefined {
   if (input.kind === 'in-use') {
-    if (isCatalogAppendOccupancy(input.occupancy)) {
-      return t ? t('connections.list.inCatalogTip') : IN_CATALOG_TIP_FALLBACK;
+    if (isListOccupancy(input.occupancy)) {
+      return t ? t('connections.list.defaultLiveTip') : DEFAULT_LIVE_TIP_FALLBACK;
     }
     return t ? t('connections.list.inUseTip') : IN_USE_TIP_FALLBACK;
   }
@@ -337,7 +346,7 @@ function endpointHostOnly(host: string): string {
   return host;
 }
 
-function formatDetailTimestamp(raw?: string | null): string | null {
+export function formatDetailTimestamp(raw?: string | null): string | null {
   if (!raw?.trim()) return null;
   const value = raw.trim();
   const parsed = new Date(value.includes('T') ? value : value.replace(' ', 'T'));
@@ -404,19 +413,26 @@ export function extrasFromPoolSource(
 ): TicketDetailExtras {
   const poolCurrent = source.account?.isCurrent === true || source.provider?.isCurrent === true;
   const liveCatalog = source.account?.source === 'live';
-  const catalog = isCatalogAppendOccupancy(resolveAgentMeta(ticket.agentId).occupancy);
+  const occupancy = resolveAgentMeta(ticket.agentId).occupancy;
+  const listOcc = isListOccupancy(occupancy);
+  const exclusiveCurrent = tabCurrentTicketId === undefined
+    ? poolCurrent
+    : ticket.id === tabCurrentTicketId;
+  // List occupancy keeps sibling rows. inList = present in live config;
+  // isCurrent = the default pointer (switch changes this).
+  const inList = listOcc
+    ? poolCurrent
+      || liveCatalog
+      || (tabCurrentTicketId != null && ticket.id === tabCurrentTicketId)
+    : exclusiveCurrent;
   const extras: TicketDetailExtras = {
     canEditKey: ticket.sourceKind === 'account' && source.account?.kind === 'apikey',
     canEditConfig: ticket.sourceKind === 'provider' && Boolean(source.provider),
-    // Catalog-append tools keep many live rows. "in catalog" is not the
-    // exclusive current pointer: a previously written row stays listed.
-    isCurrent: catalog
+    inList,
+    isCurrent: listOcc
       ? poolCurrent
-        || liveCatalog
-        || (tabCurrentTicketId != null && ticket.id === tabCurrentTicketId)
-      : tabCurrentTicketId === undefined
-        ? poolCurrent
-        : ticket.id === tabCurrentTicketId,
+        || (tabCurrentTicketId !== undefined && ticket.id === tabCurrentTicketId)
+      : exclusiveCurrent,
   };
 
   if (source.account) {
@@ -555,12 +571,21 @@ export function buildTicketDetailFields(
 ): TicketDetailSections {
   const advanced: TicketDetailField[] = [];
 
-  if (isCatalogAppendOccupancy(resolveAgentMeta(ticket.agentId).occupancy)) {
+  const occupancy = resolveAgentMeta(ticket.agentId).occupancy;
+  if (isListOccupancy(occupancy)) {
+    const catalog = isCatalogAppendOccupancy(occupancy);
+    const inList = extras?.inList ?? extras?.isCurrent === true;
     advanced.push({
-      label: t ? t('connections.list.catalogStatus') : '模型列表',
+      label: catalog
+        ? (t ? t('connections.list.catalogStatus') : '模型列表')
+        : (t ? t('connections.list.liveStatus') : '本机配置'),
       value: extras?.isCurrent
-        ? (t ? t('connections.list.inCatalog') : '已添加')
-        : (t ? t('connections.list.notInCatalog') : '未写入模型列表'),
+        ? (t ? t('connections.list.defaultLive') : '默认')
+        : inList
+          ? (t ? t('connections.list.inCatalog') : '已添加')
+          : catalog
+            ? (t ? t('connections.list.notInCatalog') : '未写入模型列表')
+            : (t ? t('connections.list.notInList') : '未添加'),
     });
   }
 

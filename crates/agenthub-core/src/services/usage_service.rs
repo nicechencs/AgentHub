@@ -8,7 +8,7 @@ mod tests;
 pub(super) use cost::{cost_for_event, event_missing_pricing};
 
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use uuid::Uuid;
@@ -16,16 +16,18 @@ use uuid::Uuid;
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
-    AgentId, CollectResult, DetectResult, DetectStatus, GatewayUsageOverview, GatewayUsageQuery,
-    GatewayUsageRow, ParserHealth, UsageOverview, UsageQuery, UsageRecord, UsageTrendPoint,
+    AgentId, CollectResult, ConnectionUsageSummary, DetectResult, DetectStatus,
+    GatewayUsageOverview, GatewayUsageQuery, GatewayUsageRow, ParserHealth, UsageOverview,
+    UsageQuery, UsageRecord, UsageTrendPoint,
 };
 use crate::platform::usage::{
     builtin_usage_registry, collect_with_source, collect_with_source_for_agent_id,
-    ingest_spool_dir, GatewaySpoolOutcome, TokenAccounting, UsageSourceRegistry,
+    ingest_spool_dir_with, GatewaySpoolOutcome, TokenAccounting, UsageSourceRegistry,
 };
 use crate::platform::AgentKey;
+use crate::storage::connection_usage::current_ticket_id_for_agent;
 use crate::storage::gateway_usage_repo::GatewayUsageRepo;
-use crate::storage::{Database, UsageRepo};
+use crate::storage::{ConnectionUsageStore, Database, UsageRepo};
 use crate::usage::session_jsonl::CollectStats;
 use crate::usage::{
     codex_billable_tokens, estimate_cost_usd_for_agent_at, has_embedded_pricing_for, CostTokens,
@@ -39,10 +41,14 @@ use super::agent_visibility_service::AgentVisibilityService;
 type CollectTargetResolver = Arc<dyn Fn() -> Result<HashSet<AgentId>> + Send + Sync>;
 
 pub struct UsageService {
+    db: Database,
     repo: UsageRepo,
     gateway_repo: GatewayUsageRepo,
+    connection_usage: ConnectionUsageStore,
     registry: UsageSourceRegistry,
     collect_targets: Option<CollectTargetResolver>,
+    /// Serializes collect, including one-shot repairs, across concurrent callers.
+    collect_lock: Mutex<()>,
     /// Test-only spool dir override so unit tests never touch the real data
     /// dir. `None` in tests disables the gateway ingest step entirely.
     #[cfg(test)]
@@ -55,32 +61,50 @@ impl UsageService {
     }
 
     /// Production constructor: skip hidden (visibility file) and not-installed (detect).
+    ///
+    /// `db` is the product database (current login lookup). `cache` holds
+    /// token / API usage rows and can be deleted without breaking the app.
     pub fn with_live_scope(
         db: Database,
+        cache: Database,
         visibility: AgentVisibilityService,
         agents: AgentService,
     ) -> Self {
+        let connection_usage = ConnectionUsageStore::from_database(cache.clone());
         Self::with_registry_and_scope(
             db,
+            cache,
             builtin_usage_registry().clone(),
             Some(live_collect_target_resolver(visibility, agents)),
+            connection_usage,
         )
     }
 
     pub fn with_registry(db: Database, registry: UsageSourceRegistry) -> Self {
-        Self::with_registry_and_scope(db, registry, None)
+        Self::with_registry_and_scope(
+            db.clone(),
+            db,
+            registry,
+            None,
+            ConnectionUsageStore::disabled(),
+        )
     }
 
     fn with_registry_and_scope(
         db: Database,
+        cache: Database,
         registry: UsageSourceRegistry,
         collect_targets: Option<CollectTargetResolver>,
+        connection_usage: ConnectionUsageStore,
     ) -> Self {
         Self {
-            repo: UsageRepo::new(db.clone()),
-            gateway_repo: GatewayUsageRepo::new(db),
+            db,
+            repo: UsageRepo::new(cache.clone()),
+            gateway_repo: GatewayUsageRepo::new(cache),
+            connection_usage,
             registry,
             collect_targets,
+            collect_lock: Mutex::new(()),
             #[cfg(test)]
             gateway_spool_dir: None,
         }
@@ -103,7 +127,13 @@ impl UsageService {
     ) -> Self {
         let allowed: HashSet<AgentId> = visible_installed.into_iter().collect();
         let allowed = Arc::new(allowed);
-        Self::with_registry_and_scope(db, registry, Some(Arc::new(move || Ok((*allowed).clone()))))
+        Self::with_registry_and_scope(
+            db.clone(),
+            db,
+            registry,
+            Some(Arc::new(move || Ok((*allowed).clone()))),
+            ConnectionUsageStore::disabled(),
+        )
     }
 
     fn resolve_collect_agents(&self, requested: Option<AgentId>) -> Result<Vec<AgentId>> {
@@ -149,6 +179,10 @@ impl UsageService {
 
     /// Scan agent session logs and insert new rows (dedup by raw_hash).
     pub fn collect(&self, agent: Option<AgentId>) -> Result<CollectResult> {
+        let _collect_guard = self
+            .collect_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let started = Instant::now();
         // One-time: reset file cursors so corrupted Codex rows (double-peel) are
         // re-parsed from logs and UPSERT'd with correct non-cached input.
@@ -229,6 +263,9 @@ impl UsageService {
                     }
                     let n = self.repo.insert_batch_and_cursors(&rows, &cursors)?;
                     inserted += n;
+                    if let Some(ticket_id) = current_ticket_id_for_agent(&self.db, a) {
+                        self.connection_usage.record_log_rows(&ticket_id, &rows);
+                    }
                     // counts for this agent after insert
                     let total = self
                         .repo
@@ -383,8 +420,17 @@ impl UsageService {
         self.repo.query(&q)
     }
 
+    /// Per-connection token totals from the sidecar DB. Never errors: a missing
+    /// or deleted file looks like an empty list.
+    pub fn connection_usage_summaries(&self) -> Vec<ConnectionUsageSummary> {
+        let _ = self.collect_gateway_spool();
+        self.connection_usage.list_summaries()
+    }
+
     /// Ingest the gateway usage spool dir into the `gateway_usage` table.
     fn collect_gateway_spool(&self) -> Result<GatewaySpoolOutcome> {
+        let store = self.connection_usage.clone();
+        let mut on_rows = |rows: &[GatewayUsageRow]| store.record_gateway(rows);
         #[cfg(test)]
         {
             // Unit tests never touch the real data dir: an injected dir is
@@ -393,13 +439,13 @@ impl UsageService {
                 return Ok(GatewaySpoolOutcome::default());
             };
             std::fs::create_dir_all(&dir)?;
-            return ingest_spool_dir(&self.gateway_repo, &dir);
+            return ingest_spool_dir_with(&self.gateway_repo, &dir, &mut on_rows);
         }
         #[allow(unreachable_code)]
         {
             let dir = crate::utils::paths::usage_gateway_dir()?;
             std::fs::create_dir_all(&dir)?;
-            ingest_spool_dir(&self.gateway_repo, &dir)
+            ingest_spool_dir_with(&self.gateway_repo, &dir, &mut on_rows)
         }
     }
 
@@ -569,8 +615,8 @@ impl UsageService {
         const KEY: &str = "usage_token_layout";
         // v5 = persist cache write vs read as separate columns (billing rates differ).
         const VER: &str = "5";
-        let cur = self.repo.get_meta(KEY)?;
-        if cur.as_deref() == Some(VER) {
+        let (deleted, n, already_current) = self.repo.repair_token_layout(KEY, VER)?;
+        if already_current {
             tracing::debug!(
                 module = targets::USAGE,
                 op = "token_layout_repair",
@@ -579,23 +625,11 @@ impl UsageService {
             );
             return Ok(());
         }
-        let from = cur.as_deref().unwrap_or("unset");
-        tracing::info!(
-            module = targets::USAGE,
-            op = "token_layout_repair",
-            from_version = from,
-            to_version = VER,
-            "usage token layout migration starting (clear rows + reset cursors)"
-        );
-        let deleted = self.repo.clear_all_records()?;
-        let n = self.repo.reset_all_cursors()?;
-        self.repo.set_meta(KEY, VER)?;
         tracing::info!(
             module = targets::USAGE,
             op = "token_layout_repair",
             rows_deleted = deleted,
             cursors_reset = n,
-            from_version = from,
             to_version = VER,
             "cleared usage rows and cursors; next scan rebuilds from session logs"
         );
@@ -610,27 +644,15 @@ impl UsageService {
     fn maybe_repair_grok_parser(&self) -> Result<()> {
         const KEY: &str = "usage_grok_parser";
         const VER: &str = "1";
-        let cur = self.repo.get_meta(KEY)?;
-        if cur.as_deref() == Some(VER) {
+        let (deleted, n, already_current) = self.repo.repair_grok_parser(KEY, VER)?;
+        if already_current {
             return Ok(());
         }
-        let from = cur.as_deref().unwrap_or("unset");
-        tracing::info!(
-            module = targets::USAGE,
-            op = "grok_parser_repair",
-            from_version = from,
-            to_version = VER,
-            "Grok usage parser migration starting (clear grok rows + reset grok cursors)"
-        );
-        let deleted = self.repo.clear_records_for_agent(AgentId::Grok)?;
-        let n = self.repo.reset_cursors_for_agent(AgentId::Grok)?;
-        self.repo.set_meta(KEY, VER)?;
         tracing::info!(
             module = targets::USAGE,
             op = "grok_parser_repair",
             rows_deleted = deleted,
             cursors_reset = n,
-            from_version = from,
             to_version = VER,
             "cleared Grok usage rows and cursors; next scan rebuilds from updates.jsonl"
         );

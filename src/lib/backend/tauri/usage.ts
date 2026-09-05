@@ -6,6 +6,7 @@ import {
   type CoreUsageRecord,
 } from '@/lib/backend/contracts/usage-map';
 import type {
+  ConnectionUsageSummary,
   GatewayUsageOverview,
   GatewayUsageQuery,
   GatewayUsageRow,
@@ -97,6 +98,14 @@ export function createTauriUsagePort(): UsagePort {
 
     async gatewayUsageOverview(args = {}): Promise<GatewayUsageOverview> {
       return gatewayUsageOverview(args);
+    },
+
+    async listConnectionUsage(): Promise<ConnectionUsageSummary[]> {
+      try {
+        return await invoke<ConnectionUsageSummary[]>('usage_connection_summaries');
+      } catch {
+        return [];
+      }
     },
   };
 }

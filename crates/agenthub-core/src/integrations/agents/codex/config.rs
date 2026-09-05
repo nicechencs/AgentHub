@@ -15,7 +15,7 @@ use crate::platform::AgentKey;
 use crate::services::adapter_route_constants::{
     normalized_http_host, OPENAI_API_ENDPOINT_NEEDLE, OPENROUTER_API_ENDPOINT_NEEDLE,
 };
-use crate::utils::atomic::atomic_write;
+use crate::utils::atomic::{atomic_write, with_restored_files};
 use crate::utils::loopback::is_loopback_base_url;
 
 use crate::platform::config::sources::util::{
@@ -437,13 +437,16 @@ impl AgentConfigProjector for CodexConfigProjector {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        atomic_write(&path, merged.to_string().as_bytes())?;
-
-        if let Some(key) = get_str_map(desired, "apiKey") {
-            if !secret_unchanged(Some(&key)) {
-                Self::write_auth(&Self::auth_path(agent_home), key.trim())?;
+        let auth_path = Self::auth_path(agent_home);
+        with_restored_files(&[&path, &auth_path], || {
+            atomic_write(&path, merged.to_string().as_bytes())?;
+            if let Some(key) = get_str_map(desired, "apiKey") {
+                if !secret_unchanged(Some(&key)) {
+                    Self::write_auth(&auth_path, key.trim())?;
+                }
             }
-        }
+            Ok(())
+        })?;
 
         finish_apply(
             AgentKey::from_agent_id(AgentId::Codex),

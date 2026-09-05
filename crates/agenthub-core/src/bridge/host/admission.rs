@@ -41,7 +41,7 @@ pub(super) async fn admit_conversation(
         }
     };
     let headers = request.headers().clone();
-    let body = match read_request_json(request).await {
+    let body = match read_request_json(request, &state.force_shutdown).await {
         Ok(body) => body,
         Err(response) => return Err(response),
     };

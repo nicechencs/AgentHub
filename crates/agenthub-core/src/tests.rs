@@ -1,6 +1,6 @@
 use super::*;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Open a hub whose skills source is under `dir`, never `~/.agents/skills`.
 fn open_isolated_hub(dir: &Path) -> AgentHub {
@@ -13,8 +13,8 @@ fn open_isolated_hub(dir: &Path) -> AgentHub {
 fn agent_hub_open_doctor_has_all_runtimes_and_agents() {
     let dir = tempfile::tempdir().expect("tempdir");
     let hub = open_isolated_hub(dir.path());
-    let expected_data_dir = crate::utils::paths::normalize_data_dir(dir.path())
-        .expect("normalized temp data dir");
+    let expected_data_dir =
+        crate::utils::paths::normalize_data_dir(dir.path()).expect("normalized temp data dir");
     assert_eq!(hub.data_dir(), expected_data_dir.as_path());
 
     let report = hub.doctor();
@@ -134,4 +134,42 @@ fn parser_health_omits_hidden_installed_agents() {
         assert_eq!(shown.len(), 1);
         assert_eq!(shown[0].agent_id, id);
     }
+}
+
+#[test]
+fn usage_cache_db_can_be_deleted_without_breaking_open() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let cache_path;
+    {
+        let hub = open_isolated_hub(dir.path());
+        cache_path = crate::utils::paths::cache_db_path(hub.data_dir());
+        assert!(cache_path.exists(), "usage cache file should be created");
+        let usage_on_main = hub
+            .db()
+            .with_conn(|conn| {
+                let n: i64 = conn.query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'usage_records'",
+                    [],
+                    |row| row.get(0),
+                )?;
+                Ok(n)
+            })
+            .expect("sqlite_master");
+        assert_eq!(
+            usage_on_main, 0,
+            "usage tables must not stay on the product db"
+        );
+        assert!(hub.usage.parser_health().is_ok());
+        assert!(hub.doctor().db_ok);
+    }
+    let _ = fs::remove_file(&cache_path);
+    for extra in ["-wal", "-shm", "-journal"] {
+        let mut name = cache_path.as_os_str().to_os_string();
+        name.push(extra);
+        let _ = fs::remove_file(PathBuf::from(name));
+    }
+    let hub = open_isolated_hub(dir.path());
+    assert!(hub.doctor().db_ok);
+    assert!(hub.usage.parser_health().is_ok());
+    assert!(hub.usage.connection_usage_summaries().is_empty());
 }

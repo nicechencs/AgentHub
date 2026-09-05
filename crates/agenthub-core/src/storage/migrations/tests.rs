@@ -110,3 +110,106 @@ fn concurrent_database_open_serializes_migrations() {
         assert!(migration_exists(&conn, version));
     }
 }
+
+fn create_0001_usage_records(conn: &Connection) {
+    conn.execute_batch(
+        r#"
+        CREATE TABLE usage_records (
+            id          TEXT PRIMARY KEY,
+            agent_id    TEXT NOT NULL,
+            account_id  TEXT,
+            model       TEXT,
+            input_tokens  INTEGER NOT NULL DEFAULT 0,
+            output_tokens INTEGER NOT NULL DEFAULT 0,
+            cache_tokens  INTEGER NOT NULL DEFAULT 0,
+            cost_cny    REAL,
+            session_id  TEXT,
+            ts          TEXT NOT NULL,
+            raw_hash    TEXT,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        "#,
+    )
+    .unwrap();
+}
+
+fn apply_00021(conn: &Connection) {
+    let sql = MIGRATIONS
+        .iter()
+        .find(|(version, _)| *version == "00021_usage_dedup_nulls")
+        .expect("00021_usage_dedup_nulls is registered")
+        .1;
+    apply_migration(conn, "00021_usage_dedup_nulls", sql).unwrap();
+}
+
+fn usage_row_count(conn: &Connection) -> i64 {
+    conn.query_row("SELECT COUNT(*) FROM usage_records", [], |row| row.get(0))
+        .unwrap()
+}
+
+fn usage_raw_hash(conn: &Connection, id: &str) -> String {
+    conn.query_row(
+        "SELECT raw_hash FROM usage_records WHERE id = ?1",
+        [id],
+        |row| row.get(0),
+    )
+    .unwrap()
+}
+
+#[test]
+fn usage_dedup_00021_keeps_unidentified_orphan_rows() {
+    let conn = Connection::open_in_memory().unwrap();
+    prepare_migration_table(&conn);
+    create_0001_usage_records(&conn);
+
+    conn.execute(
+        "INSERT INTO usage_records (id, agent_id, input_tokens, ts, session_id, raw_hash)
+         VALUES ('orphan-a', 'codex', 10, '2026-01-01T00:00:00Z', NULL, NULL)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO usage_records (id, agent_id, input_tokens, ts, session_id, raw_hash)
+         VALUES ('orphan-b', 'codex', 20, '2026-01-01T00:00:00Z', NULL, NULL)",
+        [],
+    )
+    .unwrap();
+
+    apply_00021(&conn);
+
+    assert_eq!(usage_row_count(&conn), 2);
+    assert_eq!(usage_raw_hash(&conn, "orphan-a"), "orphan:orphan-a");
+    assert_eq!(usage_raw_hash(&conn, "orphan-b"), "orphan:orphan-b");
+}
+
+#[test]
+fn usage_dedup_00021_collapses_true_session_hash_duplicates() {
+    let conn = Connection::open_in_memory().unwrap();
+    prepare_migration_table(&conn);
+    create_0001_usage_records(&conn);
+
+    conn.execute(
+        "INSERT INTO usage_records (id, agent_id, input_tokens, ts, session_id, raw_hash)
+         VALUES ('dup-a', 'codex', 30, '2026-01-01T00:00:00Z', 'sess-1', 'hash-1')",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO usage_records (id, agent_id, input_tokens, ts, session_id, raw_hash)
+         VALUES ('dup-b', 'codex', 40, '2026-01-01T00:00:00Z', 'sess-1', 'hash-1')",
+        [],
+    )
+    .unwrap();
+
+    apply_00021(&conn);
+
+    assert_eq!(usage_row_count(&conn), 1);
+    let remaining: (String, String) = conn
+        .query_row(
+            "SELECT session_id, raw_hash FROM usage_records",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(remaining, ("sess-1".into(), "hash-1".into()));
+}

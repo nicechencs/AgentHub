@@ -917,11 +917,7 @@ fn route_trace_query_filters_pages_and_deletes() {
     let mut grok = RouteTraceBuilder::begin("grok-1", "POST", "/v1/responses");
     grok.local_auth_ok("pool-grok", None);
     grok.local_auth_key_last4("ahb_yyyy5678");
-    grok.conversion_prepared(
-        DownstreamSurface::Responses,
-        UpstreamChannel::Grok,
-        true,
-    );
+    grok.conversion_prepared(DownstreamSurface::Responses, UpstreamChannel::Grok, true);
     grok.upstream_success(
         "https://api.x.ai/v1/responses",
         &PickedMember::new(

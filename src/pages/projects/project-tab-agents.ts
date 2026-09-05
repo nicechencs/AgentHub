@@ -1,5 +1,5 @@
+import type { AgentTabId } from '@/components/layout/AgentTabStrip';
 import { toHiddenIdSet } from '@/lib/agent-visibility';
-import type { AgentKey } from '@/lib/types';
 
 /**
  * Projects tabs: installed and not hidden only.
@@ -14,34 +14,41 @@ export function resolveProjectTabAgents<T extends { id: string }>(
   return installedAgents.filter((agent) => !hidden.has(agent.id));
 }
 
+function isAllTab(id: string | null | undefined): id is 'all' {
+  return id === 'all';
+}
+
 export function resolveProjectFetchAgentId(
   tabAgents: readonly { id: string }[],
   selectedId: string,
-): AgentKey | null {
+): AgentTabId | null {
   if (!selectedId) return null;
+  if (isAllTab(selectedId)) return 'all';
   // Detect may still be running: start the scan with URL / remembered id.
   if (tabAgents.length === 0) return selectedId;
   return tabAgents.some((agent) => agent.id === selectedId) ? selectedId : null;
 }
 
 /**
- * URL `?agent=` wins; otherwise the last tab remembered in-process;
- * otherwise the first visible tab. Empty tab list keeps url/remembered so
- * the fallback can apply once detect finishes.
+ * URL `?agent=` wins (including `all`); otherwise the last tab remembered
+ * in-process; otherwise 全部. Empty tab list keeps url/remembered so the
+ * fallback can apply once detect finishes.
  */
 export function resolveInitialProjectAgentId(
   agentFromUrl: string | null,
   tabAgents: readonly { id: string }[],
   remembered: string | null,
-): AgentKey {
+): AgentTabId {
   if (tabAgents.length === 0) {
-    return agentFromUrl || remembered || '';
+    return (agentFromUrl || remembered || 'all') as AgentTabId;
   }
+  if (isAllTab(agentFromUrl)) return 'all';
   if (agentFromUrl && tabAgents.some((agent) => agent.id === agentFromUrl)) {
     return agentFromUrl;
   }
+  if (isAllTab(remembered)) return 'all';
   if (remembered && tabAgents.some((agent) => agent.id === remembered)) {
     return remembered;
   }
-  return tabAgents[0].id;
+  return 'all';
 }

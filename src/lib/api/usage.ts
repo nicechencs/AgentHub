@@ -6,6 +6,7 @@ import type { UsageCollectResult } from '@/lib/backend/contracts/ports';
 import type { AgentKey, ParserHealth, UsageRecord, UsageTrendPoint } from '@/lib/types';
 
 export type {
+  ConnectionUsageSummary,
   GatewayUsageOverview,
   GatewayUsageQuery,
   GatewayUsageRow,
@@ -17,7 +18,7 @@ export type {
   UsageTrendGroupBy,
 } from '@/lib/backend/contracts/usage-types';
 export type { UsageCollectResult };
-import type { GatewayUsageOverview, GatewayUsageQuery, GatewayUsageRow, UsageAvailability, UsageOverview, UsageQuery, UsageTrendGroupBy } from '@/lib/backend/contracts/usage-types';
+import type { ConnectionUsageSummary, GatewayUsageOverview, GatewayUsageQuery, GatewayUsageRow, UsageAvailability, UsageOverview, UsageQuery, UsageTrendGroupBy } from '@/lib/backend/contracts/usage-types';
 
 export async function getUsageAvailability(): Promise<UsageAvailability> {
   return getBackend().usage.getAvailability();
@@ -81,4 +82,12 @@ export async function gatewayUsageOverview(
   q: GatewayUsageQuery = {},
 ): Promise<GatewayUsageOverview> {
   return getBackend().usage.gatewayUsageOverview(q);
+}
+
+export async function listConnectionUsage(): Promise<ConnectionUsageSummary[]> {
+  try {
+    return await getBackend().usage.listConnectionUsage();
+  } catch {
+    return [];
+  }
 }

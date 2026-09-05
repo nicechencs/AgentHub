@@ -7,7 +7,7 @@
 use chrono::Utc;
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -30,18 +30,19 @@ pub(crate) fn list_claude_workbuddy_sessions(
     home: &Path,
     agent: AgentId,
     only_encoded: Option<&str>,
+    data_dir: Option<&Path>,
 ) -> Result<Vec<AgentSession>> {
     let root = home.join("projects");
     if !root.is_dir() {
         return Ok(vec![]);
     }
-    let mut out = Vec::new();
+    let mut files = Vec::new();
     if let Some(encoded) = only_encoded {
         let dir = root.join(encoded);
         if dir.is_dir() {
-            push_claude_dir_sessions(home, agent, &dir, encoded, &mut out);
+            collect_claude_dir_sessions(agent, &dir, encoded, &mut files);
         }
-        return Ok(out);
+        return Ok(build_sessions_from_candidates(home, agent, files, data_dir));
     }
     let entries = match fs::read_dir(&root) {
         Ok(e) => e,
@@ -60,17 +61,16 @@ pub(crate) fn list_claude_workbuddy_sessions(
         if encoded.is_empty() || encoded.starts_with('.') {
             continue;
         }
-        push_claude_dir_sessions(home, agent, &dir, &encoded, &mut out);
+        collect_claude_dir_sessions(agent, &dir, &encoded, &mut files);
     }
-    Ok(out)
+    Ok(build_sessions_from_candidates(home, agent, files, data_dir))
 }
 
-fn push_claude_dir_sessions(
-    home: &Path,
+fn collect_claude_dir_sessions(
     agent: AgentId,
     dir: &Path,
     encoded: &str,
-    out: &mut Vec<AgentSession>,
+    out: &mut Vec<SessionListCandidate>,
 ) {
     let project_id = make_project_id(agent, encoded);
     let dir_entries = match fs::read_dir(dir) {
@@ -82,23 +82,19 @@ fn push_claude_dir_sessions(
         if !path.is_file() || !is_primary_session_file(agent, &path) {
             continue;
         }
-        if let Some(rec) = build_session(agent, home, &path, &project_id, Some(encoded)) {
-            out.push(rec);
-        }
+        push_session_candidate(out, &path, project_id.clone(), encoded.to_string());
         if agent == AgentId::Claude {
-            push_claude_subagent_sessions(home, agent, dir, &path, &project_id, encoded, out);
+            collect_claude_subagent_sessions(dir, &path, &project_id, encoded, out);
         }
     }
 }
 
-fn push_claude_subagent_sessions(
-    home: &Path,
-    agent: AgentId,
+fn collect_claude_subagent_sessions(
     project_dir: &Path,
     primary: &Path,
     project_id: &str,
     encoded: &str,
-    out: &mut Vec<AgentSession>,
+    out: &mut Vec<SessionListCandidate>,
 ) {
     let Some(stem) = primary.file_stem().and_then(|s| s.to_str()) else {
         return;
@@ -135,9 +131,7 @@ fn push_claude_subagent_sessions(
         if ext != "jsonl" {
             continue;
         }
-        if let Some(rec) = build_session(agent, home, &path, project_id, Some(encoded)) {
-            out.push(rec);
-        }
+        push_session_candidate(out, &path, project_id.to_string(), encoded.to_string());
     }
 }
 
@@ -929,6 +923,18 @@ struct SessionFileMeta {
 }
 
 fn session_file_meta(agent: AgentId, path: &Path) -> SessionFileMeta {
+    session_file_meta_head(agent, path, SCAN_BYTES)
+}
+
+fn list_session_head_bytes(agent: AgentId) -> u64 {
+    match agent {
+        // Codex session_meta is often a single huge first line.
+        AgentId::Codex => SCAN_BYTES,
+        _ => LIST_HEAD_BYTES,
+    }
+}
+
+fn session_file_meta_head(agent: AgentId, path: &Path, head_bytes: u64) -> SessionFileMeta {
     let (size_bytes, updated_at) = match fs::metadata(path) {
         Ok(m) => (
             m.len(),
@@ -939,7 +945,7 @@ fn session_file_meta(agent: AgentId, path: &Path) -> SessionFileMeta {
         ),
         Err(_) => (0, Utc::now().to_rfc3339()),
     };
-    let text = read_head(path, SCAN_BYTES).unwrap_or_default();
+    let text = read_head(path, head_bytes).unwrap_or_default();
     let cwd = extract_cwd_from_text(agent, &text);
     let (preview, message_count) = scan_preview_from_text(&text);
     let session_id = extract_native_session_id(agent, path, &text);
@@ -1612,17 +1618,110 @@ pub(crate) fn list_cursor_projects(
     Ok(out)
 }
 
+struct SessionListCandidate {
+    path: PathBuf,
+    project_id: String,
+    encoded: String,
+}
+
+fn push_session_candidate(
+    out: &mut Vec<SessionListCandidate>,
+    path: &Path,
+    project_id: String,
+    encoded: String,
+) {
+    out.push(SessionListCandidate {
+        path: path.to_path_buf(),
+        project_id,
+        encoded,
+    });
+}
+
+/// Reuse `scan-cache.db` when size+mtime match. Misses parse a short head and write back.
+fn build_sessions_from_candidates(
+    home: &Path,
+    agent: AgentId,
+    files: Vec<SessionListCandidate>,
+    data_dir: Option<&Path>,
+) -> Vec<AgentSession> {
+    let mut index = data_dir.and_then(SessionIndexStore::load);
+    let mut out = Vec::new();
+    for item in files {
+        if let Some(rec) = session_from_candidate(home, agent, &item, index.as_mut()) {
+            out.push(rec);
+        }
+    }
+    if let Some(store) = index.as_mut() {
+        store.save_if_dirty();
+    }
+    out
+}
+
+fn session_from_candidate(
+    home: &Path,
+    agent: AgentId,
+    item: &SessionListCandidate,
+    index: Option<&mut SessionIndexStore>,
+) -> Option<AgentSession> {
+    let rel = item.path.strip_prefix(home).ok().map(path_to_rel)?;
+    let (size, mtime_ms, _st) = file_size_mtime(&item.path)?;
+    if let Some(store) = index.as_ref() {
+        if let Some(ent) = store.get_fresh(agent, &rel, size, mtime_ms) {
+            return Some(AgentSession {
+                id: format!("{}:{}", agent.as_str(), rel),
+                project_id: item.project_id.clone(),
+                agent_id: agent,
+                title: ent.title,
+                cwd: ent.cwd,
+                path: item.path.display().to_string(),
+                relative_path: rel,
+                size_bytes: size,
+                updated_at: ent.updated_at,
+                preview: ent.preview,
+                message_count: ent.message_count,
+                session_id: ent.session_id,
+            });
+        }
+    }
+    let rec = build_session(
+        agent,
+        home,
+        &item.path,
+        &item.project_id,
+        Some(&item.encoded),
+    )?;
+    if let Some(store) = index {
+        store.put(
+            agent,
+            &rel,
+            IndexEntry {
+                mtime_ms,
+                size,
+                project_key: item.encoded.clone(),
+                cwd: rec.cwd.clone(),
+                title: rec.title.clone(),
+                preview: rec.preview.clone(),
+                message_count: rec.message_count,
+                updated_at: rec.updated_at.clone(),
+                session_id: rec.session_id.clone(),
+            },
+        );
+    }
+    Some(rec)
+}
+
 /// Cursor: `projects/<workspace>/agent-transcripts/<id>/<id>.jsonl`
 /// plus `subagents/<id>.jsonl` or `subagents/<id>/<id>.jsonl`.
 pub(crate) fn list_cursor_sessions(
     home: &Path,
     only_key: Option<&str>,
+    data_dir: Option<&Path>,
 ) -> Result<Vec<AgentSession>> {
     let root = home.join("projects");
     if !root.is_dir() {
         return Ok(vec![]);
     }
-    let mut out = Vec::new();
+    let mut files = Vec::new();
     let entries = match fs::read_dir(&root) {
         Ok(e) => e,
         Err(_) => return Ok(vec![]),
@@ -1643,13 +1742,15 @@ pub(crate) fn list_cursor_sessions(
         }
         let project_id = make_project_id(AgentId::Cursor, &name);
         for_each_cursor_primary_transcript(&proj_dir, |jsonl| {
-            if let Some(rec) = build_session(AgentId::Cursor, home, jsonl, &project_id, Some(&name))
-            {
-                out.push(rec);
-            }
+            push_session_candidate(&mut files, jsonl, project_id.clone(), name.clone());
         });
     }
-    Ok(out)
+    Ok(build_sessions_from_candidates(
+        home,
+        AgentId::Cursor,
+        files,
+        data_dir,
+    ))
 }
 
 fn for_each_cursor_primary_transcript(proj_dir: &Path, mut visit: impl FnMut(&Path)) {
@@ -2228,7 +2329,7 @@ fn build_session(
     project_id: &str,
     encoded_dir: Option<&str>,
 ) -> Option<AgentSession> {
-    let mut meta = session_file_meta(agent, path);
+    let mut meta = session_file_meta_head(agent, path, list_session_head_bytes(agent));
     // Claude/WorkBuddy: directory encoding is the cwd source of truth.
     if matches!(agent, AgentId::Claude | AgentId::WorkBuddy) {
         if let Some(encoded) = encoded_dir {
@@ -2678,6 +2779,15 @@ pub(crate) fn make_project_id(agent: AgentId, storage_key: &str) -> String {
 }
 
 pub(crate) fn load_excerpt(id: &str, home_override: Option<&Path>) -> Result<AgentProjectExcerpt> {
+    load_excerpt_with_read_cap(id, home_override, EXCERPT_READ_BYTES)
+}
+
+/// Same as [`load_excerpt`], with an explicit scan window for tests.
+pub(crate) fn load_excerpt_with_read_cap(
+    id: &str,
+    home_override: Option<&Path>,
+    read_cap: u64,
+) -> Result<AgentProjectExcerpt> {
     let (agent, rel) = parse_session_id(id)?;
     let abs = resolve_under_home(agent, &rel, home_override)?;
     if !abs.is_file() {
@@ -2711,11 +2821,13 @@ pub(crate) fn load_excerpt(id: &str, home_override: Option<&Path>) -> Result<Age
             session_id: native_session_id_from_path(agent, &abs_path),
         }
     });
-    let filtered =
-        read_jsonl_matching(&abs_path, transcript_line_might_be_turn, EXCERPT_READ_BYTES)
-            .unwrap_or_default();
+    let (filtered, mut truncated) =
+        read_jsonl_matching_windows(&abs_path, transcript_line_might_be_turn, read_cap);
     let chat_text = if filtered.trim().is_empty() {
-        read_head(&abs_path, SCAN_BYTES.saturating_mul(2)).unwrap_or_default()
+        let (fallback, fb_trunc) =
+            read_jsonl_matching_windows(&abs_path, |_| true, SCAN_BYTES.saturating_mul(2));
+        truncated |= fb_trunc;
+        fallback
     } else {
         filtered
     };
@@ -2723,13 +2835,10 @@ pub(crate) fn load_excerpt(id: &str, home_override: Option<&Path>) -> Result<Age
     let turns = if agent == AgentId::Grok {
         let updates = abs_path.with_file_name("updates.jsonl");
         let update_turns = if updates.is_file() {
-            read_jsonl_matching(
-                &updates,
-                grok_updates_line_might_be_message,
-                EXCERPT_READ_BYTES,
-            )
-            .map(|u| extract_grok_update_turns(&u))
-            .unwrap_or_default()
+            let (update_text, upd_trunc) =
+                read_jsonl_matching_windows(&updates, grok_updates_line_might_be_message, read_cap);
+            truncated |= upd_trunc;
+            extract_grok_update_turns(&update_text)
         } else {
             Vec::new()
         };
@@ -2749,6 +2858,7 @@ pub(crate) fn load_excerpt(id: &str, home_override: Option<&Path>) -> Result<Age
         cwd: rec.cwd,
         updated_at: rec.updated_at,
         excerpt: body,
+        truncated,
     })
 }
 
@@ -2975,15 +3085,68 @@ fn transcript_line_might_be_turn(line: &str) -> bool {
 
 const LINE_PREFIX_BYTES: usize = 2048;
 
-/// Stream a jsonl and keep every matching turn line, up to `max_read_bytes` of
-/// the file. Non-matching lines (tool dumps) are skipped after a small prefix.
-fn read_jsonl_matching(
+/// Read matching jsonl lines from the start window and, when the file is larger,
+/// from a trailing window so later turns are not dropped. `truncated` is true
+/// when a middle gap remains unread.
+fn read_jsonl_matching_windows(
     path: &Path,
     keep: impl Fn(&str) -> bool,
+    cap: u64,
+) -> (String, bool) {
+    let len = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    if len == 0 || cap == 0 {
+        return (String::new(), false);
+    }
+    if len <= cap.saturating_mul(2) {
+        return (
+            read_jsonl_matching_range(path, &keep, 0, len).unwrap_or_default(),
+            false,
+        );
+    }
+    let head = read_jsonl_matching_range(path, &keep, 0, cap).unwrap_or_default();
+    let tail =
+        read_jsonl_matching_range(path, &keep, len.saturating_sub(cap), cap).unwrap_or_default();
+    (join_jsonl_windows(&head, &tail), true)
+}
+
+fn join_jsonl_windows(head: &str, tail: &str) -> String {
+    if tail.is_empty() {
+        return head.to_string();
+    }
+    if head.is_empty() {
+        return tail.to_string();
+    }
+    let mut out = String::with_capacity(head.len() + tail.len() + 1);
+    out.push_str(head);
+    out.push('\n');
+    out.push_str(tail);
+    out
+}
+
+/// Stream a jsonl slice and keep every matching turn line. `start` is a byte
+/// offset; a mid-line start skips the partial first line. Non-matching lines
+/// (tool dumps) are skipped after a small prefix.
+fn read_jsonl_matching_range(
+    path: &Path,
+    keep: &impl Fn(&str) -> bool,
+    start: u64,
     max_read_bytes: u64,
 ) -> Option<String> {
-    let file = fs::File::open(path).ok()?;
+    if max_read_bytes == 0 {
+        return Some(String::new());
+    }
+    let mut file = fs::File::open(path).ok()?;
+    let mut skip_partial = false;
+    if start > 0 {
+        file.seek(SeekFrom::Start(start.saturating_sub(1))).ok()?;
+        let mut prev = [0u8; 1];
+        file.read_exact(&mut prev).ok()?;
+        skip_partial = prev[0] != b'\n' && prev[0] != b'\r';
+    }
     let mut reader = BufReader::new(file.take(max_read_bytes));
+    if skip_partial {
+        skip_rest_of_line(&mut reader);
+    }
     let mut out = String::new();
     loop {
         let (mut buf, had_nl) = read_line_prefix(&mut reader, LINE_PREFIX_BYTES)?;
