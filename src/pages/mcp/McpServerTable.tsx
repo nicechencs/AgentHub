@@ -118,7 +118,7 @@ function ServerTableRow({ server }: { server: McpServerEntry }) {
   const hasSnippet = Boolean(server.snippet?.trim());
   return (
     <>
-      <TableRow>
+      <TableRow data-help="list-row">
         <TableCell className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate font-medium">{server.name}</span>

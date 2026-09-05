@@ -163,6 +163,7 @@ export function PoolAuthorizationList({
               <TableRow
                 key={item.key}
                 data-pool-authorization={item.key}
+                data-help="list-row"
                 active={activeKey === item.key}
                 className={sortable.className}
                 {...{ [SORTABLE_ID_ATTR]: sortable[SORTABLE_ID_ATTR] }}

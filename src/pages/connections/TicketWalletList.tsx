@@ -557,6 +557,7 @@ function TicketRow({
               <button
                 type="button"
                 data-ticket-name={ticket.id}
+                data-help="list-row"
                 className="max-w-full truncate text-left text-body font-medium text-primary hover:underline"
                 onClick={() => onShowDetail(ticket)}
               >

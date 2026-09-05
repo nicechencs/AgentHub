@@ -89,6 +89,23 @@ export type HelpBubbleLayout = {
   arrowOffset: number;
 };
 
+/** Dim panes around a click-through hole so the highlighted control stays usable. */
+export function dimPaneRects(
+  hole: HelpRect | null,
+  viewport: { width: number; height: number },
+): HelpRect[] {
+  const { width: vw, height: vh } = viewport;
+  if (!hole) return [{ top: 0, left: 0, width: vw, height: vh }];
+  const right = hole.left + hole.width;
+  const bottom = hole.top + hole.height;
+  return [
+    { top: 0, left: 0, width: vw, height: Math.max(0, hole.top) },
+    { top: hole.top, left: 0, width: Math.max(0, hole.left), height: hole.height },
+    { top: hole.top, left: right, width: Math.max(0, vw - right), height: hole.height },
+    { top: bottom, left: 0, width: vw, height: Math.max(0, vh - bottom) },
+  ].filter((pane) => pane.width > 0 && pane.height > 0);
+}
+
 /** Place a bubble next to a target, flipping if it would leave the viewport. */
 export function placeHelpBubble(input: {
   target: HelpRect | null;

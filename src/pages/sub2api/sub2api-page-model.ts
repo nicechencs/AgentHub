@@ -22,8 +22,9 @@ export function sub2apiPagePhase(
   awaiting2fa: boolean,
   restoring = false,
 ): Sub2ApiPagePhase {
-  if (restoring) return 'restoring';
+  // Saved sign-in stays on the logged-in page while restore runs in the background.
   if (session?.accessToken) return 'logged-in';
+  if (restoring) return 'restoring';
   if (awaiting2fa) return 'awaiting-2fa';
   return 'logged-out';
 }

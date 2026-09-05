@@ -4,6 +4,7 @@ import {
   HELP_BUBBLE_WIDTH,
   HELP_VIEW_PAD,
   capHighlight,
+  dimPaneRects,
   expandHighlight,
   filterVisibleHelpSteps,
   placeHelpBubble,
@@ -44,6 +45,24 @@ describe('placeHelpBubble', () => {
     expect(placed.highlight).toBeNull();
     expect(placed.left + bubble.width).toBeLessThanOrEqual(viewport.width - HELP_VIEW_PAD + 0.01);
     expect(placed.top).toBeGreaterThanOrEqual(HELP_VIEW_PAD);
+  });
+});
+
+describe('dimPaneRects', () => {
+  it('leaves a click-through hole around the highlight', () => {
+    const panes = dimPaneRects(
+      { top: 100, left: 50, width: 200, height: 40 },
+      { width: 1000, height: 800 },
+    );
+    expect(panes).toHaveLength(4);
+    expect(panes.some((pane) => pane.top === 0 && pane.height === 100)).toBe(true);
+    expect(panes.every((pane) => pane.width > 0 && pane.height > 0)).toBe(true);
+  });
+
+  it('covers the viewport when there is no hole', () => {
+    expect(dimPaneRects(null, { width: 800, height: 600 })).toEqual([
+      { top: 0, left: 0, width: 800, height: 600 },
+    ]);
   });
 });
 

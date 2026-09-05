@@ -47,14 +47,16 @@ describe('sub2api page model', () => {
         true,
       ),
     ).toBe('logged-in');
-    // Restoring wins so the login form does not flash
+    // Saved session stays logged-in; restore does not replace the page
     expect(
       sub2apiPagePhase(
         { siteUrl: 'https://x', gatewayBaseUrl: 'https://x', accessToken: 't' },
         false,
         true,
       ),
-    ).toBe('restoring');
+    ).toBe('logged-in');
+    // Restoring without a session hides the login form
+    expect(sub2apiPagePhase(null, false, true)).toBe('restoring');
   });
 
   it('prefers display name then username then email', () => {

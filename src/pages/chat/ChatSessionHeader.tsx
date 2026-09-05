@@ -210,6 +210,7 @@ export function ChatSessionHeader({
             <button
               type="button"
               className="flex h-7 w-7 items-center justify-center rounded-btn text-muted hover:bg-hover hover:text-primary"
+              data-help="chat-settings"
               aria-label={t('chat.header.sessionSettings')}
               onClick={onOpenSettings}
             >

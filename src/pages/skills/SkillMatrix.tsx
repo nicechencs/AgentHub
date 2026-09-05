@@ -653,7 +653,12 @@ export function SkillMatrix({
                   }
                 : undefined;
               return (
-                <TableRow key={catalogRowKey(row)} active={rowActive}>
+                <TableRow
+                  key={catalogRowKey(row)}
+                  active={rowActive}
+                  data-help="list-row"
+                  onOpen={onPreview ? () => onPreview(row) : undefined}
+                >
                   <TableCell>
                     {privateRow ? null : (
                       <input

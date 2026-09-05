@@ -201,6 +201,7 @@ export function ActivityTraceList({
               <TableRow
                 key={row.requestId}
                 data-activity-trace-row={row.requestId}
+                data-help="list-row"
                 active={activeId === row.requestId}
                 selected={selectedIds?.has(row.requestId)}
                 onOpen={onShowDetail ? () => onShowDetail(row) : undefined}

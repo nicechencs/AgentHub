@@ -23,6 +23,8 @@ describe('PageHelpButton', () => {
     const tour = source('PageHelpTour.tsx');
     expect(tour).toContain('createPortal');
     expect(tour).toContain('pickHelpTargetRect');
+    expect(tour).toContain('dimPaneRects');
+    expect(tour).toContain('pointer-events-none fixed inset-0');
     expect(tour).toContain('chrome.pageHelp.next');
     expect(tour).not.toContain('DialogContent');
     expect(tour).not.toContain('list-decimal');

@@ -347,6 +347,7 @@ export function BackupsPanel({ toolbar }: { toolbar?: ReactNode }) {
             return (
               <ListRow
                 key={bk.id}
+                data-help="list-row"
                 active={inspect.target === bk.id}
                 indicatorColor={agentMeta.color}
                 className={`${LIST_ROW_PAD} ${busy ? 'pointer-events-none opacity-60' : ''}`}

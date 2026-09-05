@@ -35,6 +35,7 @@ export function PluginPackList({
         return (
           <ListRow
             key={plugin.id}
+            data-help="list-row"
             role="button"
             active={active}
             indicatorColor={meta?.color}
