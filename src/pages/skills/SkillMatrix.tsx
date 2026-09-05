@@ -13,6 +13,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
+import { ListNameButton } from '@/components/shared/ListNameButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { ContextMenu, ContextMenuItem } from '@/components/ui/context-menu';
 import {
@@ -282,6 +283,8 @@ interface SkillMatrixProps {
   ) => void;
   /** 预览本地 SKILL.md；私有行可带上要点亮的那一份 Agent */
   onPreview?: (row: InstalledSkillDto, agentId?: AgentKey) => void;
+  /** Switch preview when the pane is already open. */
+  onFollow?: (row: InstalledSkillDto) => void;
   /** 当前预览行 key（catalogRowKey），与 checkbox selected 分离 */
   activeKey?: string | null;
   onAdopt: (skillId: string, agentId: AgentKey, name: string) => void;
@@ -513,6 +516,7 @@ export function SkillMatrix({
   onCellClick,
   onCellProject,
   onPreview,
+  onFollow,
   activeKey = null,
   onAdopt,
   onOpenDir,
@@ -570,7 +574,7 @@ export function SkillMatrix({
   };
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" data-help="skills-matrix">
       <TableShell>
         <Table className="table-fixed" style={{ minWidth: tableMinWidth }}>
           <colgroup>
@@ -653,7 +657,12 @@ export function SkillMatrix({
                   }
                 : undefined;
               return (
-                <TableRow key={catalogRowKey(row)} active={rowActive}>
+                <TableRow
+                  key={catalogRowKey(row)}
+                  active={rowActive}
+                  data-help="list-row"
+                  onOpen={onFollow ? () => onFollow(row) : undefined}
+                >
                   <TableCell>
                     {privateRow ? null : (
                       <input
@@ -668,24 +677,12 @@ export function SkillMatrix({
                   <TableCell className="min-w-0" onContextMenu={openRowMenu}>
                     <div className="min-w-0">
                       {onPreview ? (
-                        <button
-                          type="button"
-                          className={cn(
-                            'block max-w-full truncate text-left text-sm font-medium text-primary',
-                            'rounded-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
-                          )}
+                        <ListNameButton
+                          hint={row.name}
                           onClick={() => onPreview(row)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              onPreview(row);
-                            }
-                          }}
                         >
-                          <Tip className="truncate" label={row.name}>
-                            {row.name}
-                          </Tip>
-                        </button>
+                          {row.name}
+                        </ListNameButton>
                       ) : (
                         <Tip className="truncate font-medium text-primary" label={row.name}>
                           {row.name}

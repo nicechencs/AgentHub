@@ -12,6 +12,9 @@ use crate::storage::Database;
 
 /// Insert or repair by dedupe key. Token fields are overwritten so a full
 /// re-scan can fix corrupted Codex input after the double-peel bug.
+///
+/// `WHERE` skips the UPDATE when nothing changed so `changes()` (the collect
+/// "inserted" counter) is 0 for already-cached identical rows.
 const UPSERT_USAGE_SQL: &str = r#"
     INSERT INTO usage_records (
         id, agent_id, account_id, model,
@@ -27,6 +30,14 @@ const UPSERT_USAGE_SQL: &str = r#"
         cost_usd = excluded.cost_usd,
         ts = excluded.ts,
         fast = excluded.fast
+    WHERE model IS NOT excluded.model
+       OR input_tokens IS NOT excluded.input_tokens
+       OR output_tokens IS NOT excluded.output_tokens
+       OR cache_read_tokens IS NOT excluded.cache_read_tokens
+       OR cache_write_tokens IS NOT excluded.cache_write_tokens
+       OR cost_usd IS NOT excluded.cost_usd
+       OR ts IS NOT excluded.ts
+       OR fast IS NOT excluded.fast
 "#;
 
 fn setting_equals(tx: &Transaction<'_>, key: &str, version: &str) -> Result<bool> {
@@ -65,6 +76,7 @@ pub struct UsageCursor {
     pub agent_id: AgentId,
     pub byte_offset: i64,
     pub file_mtime: i64,
+    pub file_size: i64,
 }
 
 impl UsageRepo {
@@ -124,7 +136,7 @@ impl UsageRepo {
             }
             let deleted = tx.execute("DELETE FROM usage_records", [])? as u64;
             let cursors_reset = tx.execute(
-                "UPDATE usage_cursors SET byte_offset = 0, file_mtime = 0, updated_at = datetime('now')",
+                "UPDATE usage_cursors SET byte_offset = 0, file_mtime = 0, file_size = 0, updated_at = datetime('now')",
                 [],
             )? as u64;
             upsert_setting(&tx, meta_key, version)?;
@@ -147,7 +159,7 @@ impl UsageRepo {
                 [grok],
             )? as u64;
             let cursors_reset = tx.execute(
-                "UPDATE usage_cursors SET byte_offset = 0, file_mtime = 0, updated_at = datetime('now') WHERE agent_id = ?1",
+                "UPDATE usage_cursors SET byte_offset = 0, file_mtime = 0, file_size = 0, updated_at = datetime('now') WHERE agent_id = ?1",
                 [grok],
             )? as u64;
             upsert_setting(&tx, meta_key, version)?;
@@ -160,7 +172,7 @@ impl UsageRepo {
     pub fn reset_all_cursors(&self) -> Result<u64> {
         self.db.with_conn(|conn| {
             let n = conn.execute(
-                "UPDATE usage_cursors SET byte_offset = 0, file_mtime = 0, updated_at = datetime('now')",
+                "UPDATE usage_cursors SET byte_offset = 0, file_mtime = 0, file_size = 0, updated_at = datetime('now')",
                 [],
             )?;
             Ok(n as u64)
@@ -191,7 +203,7 @@ impl UsageRepo {
     pub fn reset_cursors_for_agent(&self, agent: AgentId) -> Result<u64> {
         self.db.with_conn(|conn| {
             let n = conn.execute(
-                "UPDATE usage_cursors SET byte_offset = 0, file_mtime = 0, updated_at = datetime('now') WHERE agent_id = ?1",
+                "UPDATE usage_cursors SET byte_offset = 0, file_mtime = 0, file_size = 0, updated_at = datetime('now') WHERE agent_id = ?1",
                 [agent.as_str()],
             )?;
             Ok(n as u64)
@@ -615,7 +627,7 @@ impl UsageRepo {
     pub fn get_cursor(&self, path: &str) -> Result<Option<UsageCursor>> {
         self.db.with_conn(|conn| {
             conn.query_row(
-                "SELECT path, agent_id, byte_offset, file_mtime FROM usage_cursors WHERE path = ?1",
+                "SELECT path, agent_id, byte_offset, file_mtime, file_size FROM usage_cursors WHERE path = ?1",
                 [path],
                 |row| {
                     let agent_s: String = row.get(1)?;
@@ -631,6 +643,7 @@ impl UsageRepo {
                         agent_id: agent,
                         byte_offset: row.get(2)?,
                         file_mtime: row.get(3)?,
+                        file_size: row.get(4)?,
                     })
                 },
             )
@@ -643,18 +656,20 @@ impl UsageRepo {
         self.db.with_conn(|conn| {
             conn.execute(
                 r#"
-                INSERT INTO usage_cursors (path, agent_id, byte_offset, file_mtime, updated_at)
-                VALUES (?1, ?2, ?3, ?4, datetime('now'))
+                INSERT INTO usage_cursors (path, agent_id, byte_offset, file_mtime, file_size, updated_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))
                 ON CONFLICT(path) DO UPDATE SET
                     byte_offset = excluded.byte_offset,
                     file_mtime = excluded.file_mtime,
+                    file_size = excluded.file_size,
                     updated_at = excluded.updated_at
                 "#,
                 params![
                     cursor.path,
                     cursor.agent_id.as_str(),
                     cursor.byte_offset,
-                    cursor.file_mtime
+                    cursor.file_mtime,
+                    cursor.file_size
                 ],
             )?;
             Ok(())
@@ -1061,18 +1076,20 @@ impl UsageRepo {
             for cursor in cursors {
                 tx.execute(
                     r#"
-                    INSERT INTO usage_cursors (path, agent_id, byte_offset, file_mtime, updated_at)
-                    VALUES (?1, ?2, ?3, ?4, datetime('now'))
+                    INSERT INTO usage_cursors (path, agent_id, byte_offset, file_mtime, file_size, updated_at)
+                    VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))
                     ON CONFLICT(path) DO UPDATE SET
                         byte_offset = excluded.byte_offset,
                         file_mtime = excluded.file_mtime,
+                        file_size = excluded.file_size,
                         updated_at = excluded.updated_at
                     "#,
                     params![
                         cursor.path,
                         cursor.agent_id.as_str(),
                         cursor.byte_offset,
-                        cursor.file_mtime
+                        cursor.file_mtime,
+                        cursor.file_size
                     ],
                 )?;
             }

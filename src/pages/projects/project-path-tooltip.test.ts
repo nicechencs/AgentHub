@@ -10,15 +10,18 @@ function source(name: string): string {
 }
 
 describe('project path hover trigger', () => {
-  it('keeps unverified paths on a content-sized trigger, not the flex leftover', () => {
+  it('keeps the path in its own grid track and truncates inside that cell', () => {
     const tree = source('ProjectTree.tsx');
     const link = source('ProjectPathLink.tsx');
 
     expect(tree).toContain('<ProjectPathLink path={path} />');
+    expect(tree).toContain('projectGroupListGrid');
+    expect(tree).toContain('projectGroupListTemplate');
+    expect(tree).toContain('grid-cols-subgrid');
     expect(tree).not.toMatch(/className="min-w-0 flex-1 truncate font-mono text-meta text-muted"/);
 
-    expect(link).toContain('min-w-0 flex-1');
-    expect(link).toContain('max-w-full truncate font-mono text-meta text-muted');
-    expect(link).not.toMatch(/<Tip[^>]*flex-1/);
+    expect(link).toContain('min-w-0 w-full');
+    expect(link).toContain('block min-w-0 w-full truncate font-mono text-meta text-muted');
+    expect(link).not.toContain('flex-1');
   });
 });

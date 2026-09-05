@@ -26,7 +26,7 @@ export function PluginPackList({
 }) {
   const { t } = useI18n();
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-2" data-help="plugins-list">
       {plugins.map((plugin) => {
         const active = plugin.id === activeId;
         const meta = AGENT_MAP[plugin.agent];
@@ -35,6 +35,7 @@ export function PluginPackList({
         return (
           <ListRow
             key={plugin.id}
+            data-help="list-row"
             role="button"
             active={active}
             indicatorColor={meta?.color}

@@ -18,16 +18,35 @@ export function resetProjectMock() {
 }
 
 function mockExcerpt(p: AgentSession): string {
+  if (p.threadKind === 'review') {
+    return [
+      '---turn:assistant---',
+      '{"risk_level":"low","outcome":"allow","rationale":"只读取项目内文件，用于继续分析。"}',
+      '---turn:assistant---',
+      '{"risk_level":"low","outcome":"deny","rationale":"会读到项目外的用户级文件。"}',
+    ].join('\n');
+  }
   const topic = p.preview?.trim() || p.title;
   const cwd = p.cwd ?? '未知';
-  return [
+  const turns = [
     '---turn:user---',
     topic,
     '---turn:assistant---',
     `工作目录：${cwd}`,
     '',
     '已按这条会话继续，下一步建议先核对现有实现再改。',
-  ].join('\n');
+  ];
+  if (p.sessionId === 'sess-c1') {
+    return [
+      '---doc:convention---',
+      '# AGENTS.md',
+      '',
+      '- 日常合入 **dev**',
+      '- 对用户说话用界面上的词',
+      ...turns,
+    ].join('\n');
+  }
+  return turns.join('\n');
 }
 
 function applyMeta(rows: AgentProject[]): AgentProject[] {

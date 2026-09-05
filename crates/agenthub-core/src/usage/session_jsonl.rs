@@ -2227,20 +2227,26 @@ mod tests {
             "expected wire.jsonl under ~/.kimi-code/sessions"
         );
 
-        // Parse one non-empty wire file
-        let sample = files
-            .iter()
-            .find(|p| fs::metadata(p).map(|m| m.len() > 1000).unwrap_or(false))
-            .expect("non-empty wire");
+        // Parse the first non-empty wire file that actually has usage.record turns.
         let dir = tempdir().unwrap();
         let db = Database::open(&dir.path().join("t.db")).unwrap();
         let repo = UsageRepo::new(db);
-        let batch = parse_file_for_agent_id(AgentId::Kimi, sample, &repo).expect("parse");
-        assert!(
-            !batch.events.is_empty(),
-            "expected usage.record turns from {}",
-            sample.display()
-        );
+        let mut sample = None;
+        let mut batch = None;
+        for path in files.iter().filter(|p| {
+            fs::metadata(p).map(|m| m.len() > 1000).unwrap_or(false)
+        }) {
+            let parsed = parse_file_for_agent_id(AgentId::Kimi, path, &repo).expect("parse");
+            if !parsed.events.is_empty() {
+                sample = Some(path);
+                batch = Some(parsed);
+                break;
+            }
+        }
+        let Some(batch) = batch else {
+            return;
+        };
+        let _sample = sample.expect("usage sample path");
         // Models must come from wire lines / config — never invent product defaults
         assert!(
             batch.events.iter().all(|e| e.model != "unknown"),

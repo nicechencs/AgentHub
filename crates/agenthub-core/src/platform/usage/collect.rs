@@ -3,7 +3,6 @@
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::Path;
-use std::time::SystemTime;
 
 use crate::error::{AppError, Result};
 use crate::logging::targets;
@@ -12,6 +11,7 @@ use crate::storage::{UsageCursor, UsageRepo};
 use crate::usage::session_jsonl::CollectStats;
 use crate::utils::redact::redact_text;
 
+use super::jsonl_cursor;
 use super::registry::builtin_usage_registry;
 use super::source::{UsageLineOutcome, UsageSource};
 
@@ -150,22 +150,18 @@ fn parse_one_file(
 ) -> Result<FileBatch> {
     let path_s = path.to_string_lossy().to_string();
     let meta = fs::metadata(path)?;
-    let mtime = meta
-        .modified()
-        .ok()
-        .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
+    let mtime = jsonl_cursor::mtime_secs(&meta);
     let len = meta.len() as i64;
 
     let mut offset = 0i64;
     if let Some(cur) = repo.get_cursor(&path_s)? {
-        if cur.file_mtime == mtime && cur.byte_offset <= len {
-            offset = cur.byte_offset;
-        }
-        if cur.byte_offset > len {
-            offset = 0;
-        }
+        offset = jsonl_cursor::resume_offset(
+            cur.byte_offset,
+            cur.file_mtime,
+            cur.file_size,
+            mtime,
+            len,
+        );
     }
 
     let session_id = crate::usage::session_jsonl::session_id_from_path(path);
@@ -204,6 +200,10 @@ fn parse_one_file(
         let mut f = File::open(path)?;
         f.seek(SeekFrom::End(0))? as i64
     };
+    let (save_mtime, save_size) = match fs::metadata(path) {
+        Ok(m) => (jsonl_cursor::mtime_secs(&m), m.len() as i64),
+        Err(_) => (mtime, new_offset),
+    };
 
     Ok(FileBatch {
         events,
@@ -211,7 +211,8 @@ fn parse_one_file(
             path: path_s,
             agent_id: agent,
             byte_offset: new_offset,
-            file_mtime: mtime,
+            file_mtime: save_mtime,
+            file_size: save_size,
         },
         skipped,
         failed,

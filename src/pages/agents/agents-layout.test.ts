@@ -74,7 +74,11 @@ describe('agents layout wiring', () => {
     expect(card).toContain('onSelect?:');
     expect(card).toContain('selected?:');
     expect(card).toContain('data-agent-name');
+    expect(card).toContain('<ListNameButton');
+    expect(card).toContain('onOpen={onFollow}');
     expect(card).not.toContain('onOpen={onSelect}');
+    expect(page).toContain('followInspectOpen');
+    expect(page).toContain('inspect.expanded');
     expect(card).toContain('TableRow');
     expect(card).not.toContain('ListRowBody');
     expect(card).not.toContain('LIST_ROW_PAD');

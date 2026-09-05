@@ -12,6 +12,7 @@ import {
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { EnvRemediationPanel } from '@/components/shared/EnvRemediationPanel';
 import { InlineTerminal } from '@/components/shared/InlineTerminal';
+import { ListNameButton } from '@/components/shared/ListNameButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -63,6 +64,7 @@ export function AgentCard({
   sortClassName,
   selected = false,
   onSelect,
+  onFollow,
 }: {
   agent: AgentStatus;
   runtimes: RuntimeDetect[];
@@ -76,6 +78,8 @@ export function AgentCard({
   selected?: boolean;
   /** Opens the right-hand inspect pane from the Agent name. */
   onSelect?: () => void;
+  /** Switch inspect when the pane is already open. */
+  onFollow?: () => void;
 }) {
   const { t } = useI18n();
   const meta = AGENT_MAP[agent.agentId];
@@ -329,6 +333,7 @@ export function AgentCard({
     <TableRow
       data-agent-row={agent.agentId}
       active={selected}
+      onOpen={onFollow}
       className={cn(
         sortClassName,
         cardState === 'env_missing' && !hidden && 'bg-warning/5',
@@ -341,16 +346,14 @@ export function AgentCard({
           {sortHandle}
           <AgentLogo agentId={agent.agentId} size="sm" />
           {onSelect ? (
-            <Tip className="min-w-0" label={meta.name}>
-              <button
-                type="button"
-                data-agent-name={agent.agentId}
-                className="max-w-full truncate text-left text-body font-medium text-primary hover:underline"
-                onClick={onSelect}
-              >
-                {meta.name}
-              </button>
-            </Tip>
+            <ListNameButton
+              hint={meta.name}
+              data-agent-name={agent.agentId}
+              data-help="list-row"
+              onClick={onSelect}
+            >
+              {meta.name}
+            </ListNameButton>
           ) : (
             <Tip className="truncate text-body font-medium" label={meta.name}>
               {meta.name}

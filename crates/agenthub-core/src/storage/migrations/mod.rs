@@ -104,6 +104,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "00029_local_entry_keys",
         include_str!("00029_local_entry_keys.sql"),
     ),
+    (
+        "00030_usage_cursor_file_size",
+        include_str!("00030_usage_cursor_file_size.sql"),
+    ),
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {

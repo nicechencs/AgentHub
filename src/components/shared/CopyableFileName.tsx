@@ -35,7 +35,7 @@ export function CopyableFileName({
   };
 
   return (
-    <Tip label={t('common.copyFileName')} className={cn('min-w-0', className)}>
+    <Tip label={path.trim() || display} className={cn('min-w-0', className)}>
       <button
         type="button"
         className={cn(
@@ -44,7 +44,6 @@ export function CopyableFileName({
           wrap === 'break' && 'break-all',
           align === 'end' && 'ml-auto',
         )}
-        title={path.trim() || display}
         aria-label={t('common.copyFileName')}
         onClick={onCopy}
       >

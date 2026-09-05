@@ -37,7 +37,7 @@ export default function ChatPage() {
     !page.hasUsableAgent
   ) {
     return (
-      <div className="flex h-full items-center justify-center p-6">
+      <div className="flex h-full items-center justify-center p-6" data-help="chat-empty">
         <EmptyState
           icon={MessagesSquare}
           title={t('chat.page.emptyTitle')}

@@ -144,7 +144,7 @@ export function PreferencesPanel({
 
   return (
     <>
-      <SettingsGroup first title={t('settings.general.sectionAppearance')}>
+      <SettingsGroup first title={t('settings.general.sectionAppearance')} help="settings-appearance">
         <SettingsRow
           label={t('settings.general.languageLabel')}
           description={t('settings.general.languageDescription')}
@@ -289,7 +289,7 @@ export function PreferencesPanel({
           />
         </SettingsRow>
       </SettingsGroup>
-      <SettingsGroup title={t('settings.general.sectionSidebar')}>
+      <SettingsGroup title={t('settings.general.sectionSidebar')} help="settings-sidebar">
         <SettingsRow
           label={t('settings.general.autoCollapseOnRoutesLabel')}
           description={t('settings.general.autoCollapseOnRoutesDescription')}
@@ -393,7 +393,7 @@ export function PreferencesPanel({
           </Select>
         </SettingsRow>
       </SettingsGroup>
-      <SettingsGroup title={t('settings.general.sectionUsage')}>
+      <SettingsGroup title={t('settings.general.sectionUsage')} help="settings-usage">
         <SettingsRow
           label={t('settings.data.usageIntervalLabel')}
           description={t('settings.data.usageIntervalDescription')}

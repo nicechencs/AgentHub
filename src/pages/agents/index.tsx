@@ -4,6 +4,7 @@ import { getAgentStatusSnapshot, useAgentStatuses } from '@/app/runtime';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { WorkbenchSplitPage } from '@/components/layout/SideSplit';
+import { followInspectOpen } from '@/components/layout/inspect-follow';
 import { useSideSplit } from '@/components/layout/use-side-split';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { EnvRemediationPanel } from '@/components/shared/EnvRemediationPanel';
@@ -294,7 +295,7 @@ export default function AgentsPage() {
         description={t('agents.page.description')}
         descriptionTip={t('agents.page.descriptionTip')}
       />
-      <div className={pageRhythm.lead}>
+      <div className={pageRhythm.lead} data-help="agents-env">
         <EnvSoftwareList
           runtimes={runtimes}
           loading={showAgentSkeleton || envLoading}
@@ -356,6 +357,7 @@ export default function AgentsPage() {
           onAction={retry}
         />
       ) : (
+        <div data-help="agents-list">
         <TableShell layout="split">
           <Table className="w-full table-fixed" style={{ minWidth: totalWidth }}>
             <colgroup>
@@ -376,6 +378,7 @@ export default function AgentsPage() {
                       key={spec.key}
                       className={cn('relative select-none', side === 'right' && 'text-right')}
                       data-col={spec.key}
+                      data-help={spec.key === 'hide' ? 'agents-hide' : undefined}
                     >
                       {label}
                       {spec.key === AGENT_TABLE_FLEX_COLUMN ? null : (
@@ -401,6 +404,7 @@ export default function AgentsPage() {
                   runtimes={runtimes}
                   selected={inspect.target === a.agentId}
                   onSelect={() => inspect.open(a.agentId)}
+                  onFollow={followInspectOpen(inspect.expanded, () => inspect.open(a.agentId))}
                   onChanged={refreshAgents}
                   onEnvChanged={() => void refreshEnv()}
                   onRecheckUpdate={() => refreshAgentUpdate(a.agentId)}
@@ -420,6 +424,7 @@ export default function AgentsPage() {
             </TableBody>
           </Table>
         </TableShell>
+        </div>
       )}
     </WorkbenchSplitPage>
   );

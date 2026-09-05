@@ -29,11 +29,14 @@ describe('StorageKey', () => {
 
   it('keeps layout keys on the kebab catalog', () => {
     expect({
+      sidebarWidth: StorageKey.sidebarWidth,
+      routesNavWidth: StorageKey.routesNavWidth,
       skillsPreviewWidth: StorageKey.skillsPreviewWidth,
       skillsMatrixLegendOpen: StorageKey.skillsMatrixLegendOpen,
       skillsMatrixColumnWidths: StorageKey.skillsMatrixColumnWidths,
       skillsMarketColumnWidths: StorageKey.skillsMarketColumnWidths,
       projectsPreviewWidth: StorageKey.projectsPreviewWidth,
+      projectsColumnWidths: StorageKey.projectsColumnWidths,
       pluginsPreviewWidth: StorageKey.pluginsPreviewWidth,
       agentsPreviewWidth: StorageKey.agentsPreviewWidth,
       agentsColumnWidths: StorageKey.agentsColumnWidths,
@@ -51,11 +54,14 @@ describe('StorageKey', () => {
       chatComposerPaneHeight: StorageKey.chatComposerPaneHeight,
       chatBootstrap: StorageKey.chatBootstrap,
     }).toEqual({
+      sidebarWidth: 'agenthub:sidebar-width',
+      routesNavWidth: 'agenthub:routes-nav-width',
       skillsPreviewWidth: 'agenthub:skills-preview-width',
       skillsMatrixLegendOpen: 'agenthub:skills-matrix-legend-open',
       skillsMatrixColumnWidths: 'agenthub:skills-matrix-column-widths',
       skillsMarketColumnWidths: 'agenthub:skills-market-column-widths',
       projectsPreviewWidth: 'agenthub:projects-preview-width',
+      projectsColumnWidths: 'agenthub:projects-column-widths',
       pluginsPreviewWidth: 'agenthub:plugins-preview-width',
       agentsPreviewWidth: 'agenthub:agents-preview-width',
       agentsColumnWidths: 'agenthub:agents-column-widths',

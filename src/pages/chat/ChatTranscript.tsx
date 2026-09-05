@@ -5,6 +5,7 @@ import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { StatusPin } from '@/components/shared/StatusPin';
 import { pageRhythm } from '@/components/layout/page-rhythm';
+import { Button } from '@/components/ui/button';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { agentDisplayName } from '@/config/agents';
 import { processKey, type ProcessMap } from '@/lib/chat-process';
@@ -156,10 +157,12 @@ function ComparisonBar({
     <div className="flex flex-wrap items-center gap-2 text-meta text-muted">
       <span>{t('chat.transcript.turnAgents', { n: chips.length })}</span>
       {chips.map((chip) => (
-        <button
+        <Button
           key={chip.messageId}
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-btn border border-border bg-subtle px-2 py-1 text-secondary hover:bg-hover"
+          size="sm"
+          variant="outline"
+          className="gap-1.5"
           onClick={() => {
             document
               .getElementById(`chat-msg-${chip.messageId}`)
@@ -170,7 +173,7 @@ function ComparisonBar({
           <span>{agentDisplayName(chip.agentId)}</span>
           <ChipStatus status={chip.status} />
           {chip.durationMs > 0 && <span>{formatDurationMs(chip.durationMs)}</span>}
-        </button>
+        </Button>
       ))}
     </div>
   );

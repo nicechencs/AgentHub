@@ -1,6 +1,7 @@
 /** Pure helpers for the Sub2API routes page. */
 
 import type { Sub2ApiGroup, Sub2ApiKey, Sub2ApiSession, Sub2ApiUser } from '@/lib/sub2api';
+import type { Sub2ApiKeysMemory } from './sub2api-keys-memory';
 import {
   SUB2API_DEFAULT_SITE_URL,
   normalizeSiteUrl,
@@ -22,10 +23,43 @@ export function sub2apiPagePhase(
   awaiting2fa: boolean,
   restoring = false,
 ): Sub2ApiPagePhase {
-  if (restoring) return 'restoring';
+  // Saved sign-in stays on the logged-in page while restore runs in the background.
   if (session?.accessToken) return 'logged-in';
+  if (restoring) return 'restoring';
   if (awaiting2fa) return 'awaiting-2fa';
   return 'logged-out';
+}
+
+export function sub2apiSessionUserKey(session: Sub2ApiSession | null | undefined): string {
+  if (!session?.user) return '';
+  const id = session.user.id;
+  if (typeof id === 'number' && Number.isFinite(id)) return String(id);
+  return (session.user.email ?? '').trim().toLowerCase();
+}
+
+export function sub2apiKeysMemoryMatches(
+  memory: Sub2ApiKeysMemory | null | undefined,
+  session: Sub2ApiSession | null | undefined,
+): memory is Sub2ApiKeysMemory {
+  if (!memory || !session?.accessToken || !session.siteUrl) return false;
+  if (memory.siteUrl !== session.siteUrl) return false;
+  const userKey = sub2apiSessionUserKey(session);
+  if (!userKey || !memory.userKey) return true;
+  return memory.userKey === userKey;
+}
+
+export function initialSub2ApiKeysView(
+  session: Sub2ApiSession | null,
+  memory: Sub2ApiKeysMemory | null,
+): { keys: Sub2ApiKey[]; groups: Sub2ApiGroup[]; loadingKeys: boolean } {
+  if (sub2apiKeysMemoryMatches(memory, session)) {
+    return { keys: memory.keys, groups: memory.groups, loadingKeys: false };
+  }
+  return {
+    keys: [],
+    groups: [],
+    loadingKeys: Boolean(session?.accessToken),
+  };
 }
 
 export function sub2apiDisplayName(

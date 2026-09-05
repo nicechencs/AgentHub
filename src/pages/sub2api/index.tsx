@@ -101,6 +101,11 @@ import { cn } from '@/lib/utils';
 import { StorageKey } from '@/lib/storage-key';
 import { applyImportedLogin } from '@/pages/routes/tokens/token-import-action';
 import type { TokenImportAgentRef } from '@/pages/routes/tokens/token-import-model';
+import {
+  clearSub2ApiKeysMemory,
+  readSub2ApiKeysMemory,
+  writeSub2ApiKeysMemory,
+} from './sub2api-keys-memory';
 import { Sub2ApiCaptcha, type Sub2ApiCaptchaHandle } from './Sub2ApiCaptcha';
 import { Sub2ApiGroupCell } from './Sub2ApiGroupCell';
 import { Sub2ApiKeyActions } from './Sub2ApiKeyActions';
@@ -127,7 +132,9 @@ import {
   pickKeyUsageUsd,
   prepareSiteUrlForLogin,
   sortSub2ApiKeys,
+  initialSub2ApiKeysView,
   sub2apiDisplayName,
+  sub2apiSessionUserKey,
   sub2apiKeyStatusBadgeVariant,
   sub2apiKeyStatusKind,
   sub2apiKeyStatusLabel,
@@ -188,10 +195,17 @@ export default function Sub2ApiPage() {
   const [publicSettings, setPublicSettings] = React.useState<Sub2ApiPublicSettings | null>(null);
   const [captchaProof, setCaptchaProof] = React.useState<Sub2ApiCaptchaProof | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
-  const [keys, setKeys] = React.useState<Sub2ApiKey[]>([]);
-  const [availableGroups, setAvailableGroups] = React.useState<Sub2ApiGroup[]>([]);
+  const [keys, setKeys] = React.useState<Sub2ApiKey[]>(
+    () => initialSub2ApiKeysView(loadSub2ApiSession(), readSub2ApiKeysMemory()).keys,
+  );
+  const [availableGroups, setAvailableGroups] = React.useState<Sub2ApiGroup[]>(
+    () => initialSub2ApiKeysView(loadSub2ApiSession(), readSub2ApiKeysMemory()).groups,
+  );
   const [groupFilter, setGroupFilter] = React.useState<Sub2ApiGroupFilter>('all');
-  const [loadingKeys, setLoadingKeys] = React.useState(false);
+  const [loadingKeys, setLoadingKeys] = React.useState(
+    () => initialSub2ApiKeysView(loadSub2ApiSession(), readSub2ApiKeysMemory()).loadingKeys,
+  );
+  const keysRef = React.useRef(keys);
   const [creating, setCreating] = React.useState(false);
   const [newKeyName, setNewKeyName] = React.useState('AgentHub');
   const [newKeyGroupId, setNewKeyGroupId] = React.useState<number | null>(null);
@@ -218,6 +232,24 @@ export default function Sub2ApiPage() {
   React.useEffect(() => {
     loginPasswordRef.current = password;
   }, [password]);
+
+  React.useEffect(() => {
+    keysRef.current = keys;
+  }, [keys]);
+
+  React.useEffect(() => {
+    if (!session?.accessToken) {
+      clearSub2ApiKeysMemory();
+      return;
+    }
+    if (keys.length === 0 && loadingKeys) return;
+    writeSub2ApiKeysMemory({
+      siteUrl: session.siteUrl,
+      userKey: sub2apiSessionUserKey(session),
+      keys,
+      groups: availableGroups,
+    });
+  }, [availableGroups, keys, loadingKeys, session]);
 
   const refreshRemembered = React.useCallback(() => {
     setRemembered(listRememberedAccounts());
@@ -250,13 +282,14 @@ export default function Sub2ApiPage() {
     try {
       setAvailableGroups(await loadSub2ApiGroups(active));
     } catch {
-      setAvailableGroups([]);
+      // Keep the last groups so a quiet refresh does not empty the filter.
     }
   }, []);
 
   const refreshKeys = React.useCallback(
-    async (active: Sub2ApiSession) => {
-      setLoadingKeys(true);
+    async (active: Sub2ApiSession, opts?: { showLoading?: boolean }) => {
+      const showLoading = opts?.showLoading === true || keysRef.current.length === 0;
+      if (showLoading) setLoadingKeys(true);
       try {
         const [nextKeys] = await Promise.all([loadSub2ApiKeys(active), loadGroups(active)]);
         setKeys(nextKeys);
@@ -272,6 +305,7 @@ export default function Sub2ApiPage() {
             return;
           } catch {
             await logoutSub2Api(active);
+            clearSub2ApiKeysMemory();
             setSession(null);
             setKeys([]);
             setAvailableGroups([]);
@@ -287,19 +321,13 @@ export default function Sub2ApiPage() {
           }
         }
         toast({ title: t('routes.sub2api.loadKeysFailed'), variant: 'danger' });
-        setKeys([]);
+        if (keysRef.current.length === 0) setKeys([]);
       } finally {
         setLoadingKeys(false);
       }
     },
     [applySession, loadGroups, t, toast],
   );
-
-  React.useEffect(() => {
-    if (restoring) return;
-    if (session?.accessToken) void refreshKeys(session);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.accessToken, session?.siteUrl, restoring]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -332,6 +360,7 @@ export default function Sub2ApiPage() {
           applySession(fresh);
           await refreshKeys(fresh);
         } else {
+          clearSub2ApiKeysMemory();
           setSession(null);
           setKeys([]);
           setAvailableGroups([]);
@@ -630,6 +659,7 @@ export default function Sub2ApiPage() {
 
   const onLogout = async () => {
     await logoutSub2Api(session);
+    clearSub2ApiKeysMemory();
     setSession(null);
     setKeys([]);
     setAvailableGroups([]);
@@ -938,7 +968,7 @@ export default function Sub2ApiPage() {
           descriptionTip={t('routes.sub2api.descriptionTip')}
         />
         {phase === 'logged-in' ? (
-          <div className={cn(pageRhythm.chromeRow, 'flex-nowrap')}>
+          <div className={cn(pageRhythm.chromeRow, 'flex-nowrap')} data-help="page-chrome">
             <div className="flex min-w-0 items-center gap-2 overflow-hidden">
               <div className="flex min-w-0 items-center gap-2" data-sub2api-endpoints="">
                 {session?.siteUrl ? (
@@ -978,7 +1008,7 @@ export default function Sub2ApiPage() {
             </div>
             <div className={pageRhythm.chromeActions}>
               <PageRefreshButton
-                onClick={() => session && void refreshKeys(session)}
+                onClick={() => session && void refreshKeys(session, { showLoading: true })}
                 loading={loadingKeys}
                 label={t('routes.sub2api.refresh')}
               />
@@ -1013,7 +1043,7 @@ export default function Sub2ApiPage() {
         ) : null}
 
         {(phase === 'logged-out' || phase === 'awaiting-2fa') && (
-          <Card className="mx-auto w-full max-w-lg space-y-4 p-5" data-sub2api-login-form="">
+          <Card className="mx-auto w-full max-w-lg space-y-4 p-5" data-sub2api-login-form="" data-help="sub2api-login">
             <div>
               <h2 className="text-base font-medium">
                 {phase === 'awaiting-2fa'
@@ -1239,6 +1269,7 @@ export default function Sub2ApiPage() {
                 <p className="mt-1">{t('routes.sub2api.keysEmptyHint')}</p>
               </Card>
             ) : (
+              <div data-help="sub2api-keys">
               <TableShell className="min-h-0 flex-1" layout="split">
                 <Table className="min-w-[1200px]" data-sub2api-keys-table="">
                   <TableHeader>
@@ -1264,6 +1295,7 @@ export default function Sub2ApiPage() {
                         <TableRow
                           key={key.id}
                           data-sub2api-key-row={String(key.id)}
+                          data-help="list-row"
                           active={inspect.target === key.id}
                           onOpen={() => openEditKey(key)}
                         >
@@ -1347,6 +1379,7 @@ export default function Sub2ApiPage() {
                   </TableBody>
                 </Table>
               </TableShell>
+              </div>
             )}
           </div>
         )}

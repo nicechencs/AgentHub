@@ -487,7 +487,7 @@ export function AgentDetailPanel({
         <h3 className="mb-2 text-body font-medium">{t('agents.detail.uninstall')}</h3>
         <Button
           size="sm"
-          variant="danger"
+          variant="dangerOutline"
           disabled={rowBusy}
           title={
             isSpecialInstallChannel(agent.channel)

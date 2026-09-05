@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { Check, Copy } from 'lucide-react';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { handleExternalLinkClick } from '@/lib/open-external';
 import { cn } from '@/lib/utils';
 
@@ -23,6 +24,7 @@ export function DetailRow({
   copyable?: boolean;
   className?: string;
 }) {
+  const { t } = useI18n();
   const [copied, setCopied] = React.useState(false);
   const extra = lines?.filter((line) => line.trim()) ?? [];
   const copyText = extra.length > 0 ? [value, ...extra].join('\n') : value;
@@ -68,11 +70,11 @@ export function DetailRow({
       {copyable ? (
         <button
           type="button"
-          className="mt-0.5 shrink-0 rounded p-0.5 text-muted hover:bg-subtle hover:text-secondary"
-          aria-label={`Copy ${label}`}
+          className="mt-0.5 shrink-0 rounded-btn p-0.5 text-muted hover:bg-subtle hover:text-secondary"
+          aria-label={t('common.copy')}
           onClick={onCopy}
         >
-          {copied ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
+          {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
         </button>
       ) : null}
     </span>

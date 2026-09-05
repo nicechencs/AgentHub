@@ -7,6 +7,7 @@ import { AgentTabStrip, type AgentTabId } from '@/components/layout/AgentTabStri
 import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { WorkbenchSplitPage } from '@/components/layout/SideSplit';
+import { followInspectOpen } from '@/components/layout/inspect-follow';
 import { useSideSplit } from '@/components/layout/use-side-split';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
@@ -804,7 +805,7 @@ export default function ConnectionsPage() {
         }
         descriptionTip={t('connections.page.descriptionTip')}
       />
-      <div className={pageRhythm.chromeRow}>
+      <div className={pageRhythm.chromeRow} data-help="page-chrome">
         <AgentTabStrip
           showAll
           allLabel={t('kind.all')}
@@ -897,6 +898,10 @@ export default function ConnectionsPage() {
             onEditTicket={handleEditTicket}
             onDeleteTicket={setDeleteTicket}
             onShowDetail={handleShowDetail}
+            onFollowDetail={followInspectOpen(
+              Boolean(inspect.expanded && inspectTarget?.kind === 'detail'),
+              handleShowDetail,
+            )}
             activeTicketId={inspectActiveTicketId(inspectTarget)}
             onClearAgentFilter={() => setFilterAgent('all')}
             installedAgentIds={manageAuthAgentIds}

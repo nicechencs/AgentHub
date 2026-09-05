@@ -32,7 +32,6 @@ describe('activity-trace-list-model', () => {
       'tokens',
       'stages',
       'route',
-      'details',
     ]);
     expect([...ACTIVITY_TRACE_STAGES]).toEqual([
       'local_auth',
@@ -50,7 +49,6 @@ describe('activity-trace-list-model', () => {
     expect(activityTraceColumnLabel('tokens', t)).toBe('Token');
     expect(activityTraceColumnLabel('stages', t)).toBe('五段');
     expect(activityTraceColumnLabel('route', t)).toBe('路由');
-    expect(activityTraceColumnLabel('details', t)).toBe('详情');
     expect(activityTraceStageLabel('local_auth', t)).toBe('本机鉴权');
     expect(activityTraceStageStatusLabel('ok', t)).toBe('成功');
     expect(activityTraceStageStatusLabel('failed', t)).toBe('失败');

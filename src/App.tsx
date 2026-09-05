@@ -80,6 +80,9 @@ export default function App() {
     pathname === '/plugins' ||
     pathname === '/settings';
   const fullBleed = isChat || isWorkbenchSplit;
+  const isSub2Api = pathname === SUB2API_PATH;
+  const sub2apiVisitedRef = useRef(isSub2Api);
+  if (isSub2Api) sub2apiVisitedRef.current = true;
   const updateHandleRef = useRef<UpdatePromptHandle | null>(null);
 
   useEffect(() => {
@@ -139,12 +142,20 @@ export default function App() {
             >
               {/* 常规页铺满主列 + pageRhythm.pageShell；chat 与左右分栏工作台全高自管 */}
               <div className={fullBleed ? 'h-full min-h-0' : pageRhythm.pageShell}>
+                {sub2apiVisitedRef.current ? (
+                  <div
+                    className={isSub2Api ? 'h-full min-h-0' : 'hidden'}
+                    hidden={!isSub2Api}
+                  >
+                    <Sub2ApiPage />
+                  </div>
+                ) : null}
                 <Routes>
                   <Route path="/" element={<DashboardPage />} />
                   <Route path="/chat" element={<ChatPage />} />
                   <Route path="/agents" element={<AgentsPage />} />
                   <Route path="/connections" element={<ConnectionsPage />} />
-                  <Route path={SUB2API_PATH} element={<Sub2ApiPage />} />
+                  <Route path={SUB2API_PATH} element={null} />
                   <Route
                     path={ROUTES_SUB2API_PATH}
                     element={<Navigate to={SUB2API_PATH} replace />}

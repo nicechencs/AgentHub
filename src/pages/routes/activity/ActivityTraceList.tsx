@@ -201,6 +201,7 @@ export function ActivityTraceList({
               <TableRow
                 key={row.requestId}
                 data-activity-trace-row={row.requestId}
+                data-help="list-row"
                 active={activeId === row.requestId}
                 selected={selectedIds?.has(row.requestId)}
                 onOpen={onShowDetail ? () => onShowDetail(row) : undefined}
@@ -227,8 +228,6 @@ export function ActivityTraceList({
                     {renderColumn(spec.key, row, {
                       t,
                       tokens,
-                      open: activeId === row.requestId,
-                      onShowDetail,
                     })}
                   </TableCell>
                 ))}
@@ -288,8 +287,6 @@ function renderColumn(
   ctx: {
     t: ReturnType<typeof useI18n>['t'];
     tokens: readonly ActivityTraceKeyToken[];
-    open: boolean;
-    onShowDetail?: (row: RouteTraceListItem) => void;
   },
 ): ReactNode {
   const { t } = ctx;
@@ -388,24 +385,10 @@ function renderColumn(
       </div>
     );
   }
-  if (key === 'route') {
-    if (!row.sourceLabel) return <TableEmptyCell />;
-    return (
-      <Tip label={row.sourceLabel}>
-        <span className="block min-w-0 truncate text-meta text-secondary">{row.sourceLabel}</span>
-      </Tip>
-    );
-  }
+  if (!row.sourceLabel) return <TableEmptyCell />;
   return (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      aria-label={t('routes.activity.openDetailAria')}
-      aria-expanded={ctx.open}
-      onClick={() => ctx.onShowDetail?.(row)}
-    >
-      {t('routes.activity.colDetails')}
-    </Button>
+    <Tip label={row.sourceLabel}>
+      <span className="block min-w-0 truncate text-meta text-secondary">{row.sourceLabel}</span>
+    </Tip>
   );
 }

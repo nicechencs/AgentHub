@@ -1,11 +1,15 @@
 import * as React from 'react';
 import { NavLink } from 'react-router-dom';
 import { PanelLeftOpen } from 'lucide-react';
+import { NavResizeHandle } from '@/components/layout/NavResizeHandle';
 import { pageRhythm } from '@/components/layout/page-rhythm';
+import { ROUTES_NAV_WIDTH } from '@/components/layout/sidebar-width-model';
 import { useSidebar } from '@/components/layout/SidebarContext';
+import { useNavWidth } from '@/components/layout/use-sidebar-width';
 import { Badge } from '@/components/ui/badge';
 import { Hint } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { StorageKey } from '@/lib/storage-key';
 import { cn } from '@/lib/utils';
 import {
   ROUTES_NAV_ITEMS,
@@ -91,6 +95,11 @@ export function RoutesNav() {
   const { t } = useI18n();
   const { expandPrimarySidebar } = useSidebar();
   const isLg = useIsLgUp();
+  const width = useNavWidth({
+    collapsed: !isLg,
+    storageKey: StorageKey.routesNavWidth,
+    policy: ROUTES_NAV_WIDTH,
+  });
   const navItems = ROUTES_NAV_ITEMS;
 
   const itemClass = (isActive: boolean) =>
@@ -103,11 +112,8 @@ export function RoutesNav() {
 
   return (
     <aside
-      className={cn(
-        pageRhythm.shellNav,
-        'w-12 lg:w-48',
-        'transition-[width] duration-200 ease-in-out motion-reduce:transition-none',
-      )}
+      className={cn(pageRhythm.shellNav, 'relative', width.widthTransition)}
+      style={{ width: width.width }}
       data-routes-nav
     >
       <div
@@ -147,6 +153,7 @@ export function RoutesNav() {
           />
         ))}
       </nav>
+      {isLg && <NavResizeHandle label={t('routes.nav.resize')} width={width} />}
     </aside>
   );
 }

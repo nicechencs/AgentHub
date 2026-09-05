@@ -37,6 +37,7 @@ pub(crate) struct GatewaySpoolCursor {
     pub path: String,
     pub byte_offset: i64,
     pub file_mtime: i64,
+    pub file_size: i64,
 }
 
 impl GatewayUsageRepo {
@@ -80,18 +81,20 @@ impl GatewayUsageRepo {
             } else {
                 tx.execute(
                     r#"
-                    INSERT INTO usage_cursors (path, agent_id, byte_offset, file_mtime, updated_at)
-                    VALUES (?1, ?2, ?3, ?4, datetime('now'))
+                    INSERT INTO usage_cursors (path, agent_id, byte_offset, file_mtime, file_size, updated_at)
+                    VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))
                     ON CONFLICT(path) DO UPDATE SET
                         byte_offset = excluded.byte_offset,
                         file_mtime = excluded.file_mtime,
+                        file_size = excluded.file_size,
                         updated_at = excluded.updated_at
                     "#,
                     params![
                         cursor.path,
                         GATEWAY_CURSOR_AGENT,
                         cursor.byte_offset,
-                        cursor.file_mtime
+                        cursor.file_mtime,
+                        cursor.file_size
                     ],
                 )?;
             }
@@ -104,7 +107,7 @@ impl GatewayUsageRepo {
         self.db.with_conn(|conn| {
             let row = conn
                 .query_row(
-                    "SELECT byte_offset, file_mtime FROM usage_cursors
+                    "SELECT byte_offset, file_mtime, file_size FROM usage_cursors
                      WHERE path = ?1 AND agent_id = ?2",
                     params![path, GATEWAY_CURSOR_AGENT],
                     |row| {
@@ -112,6 +115,7 @@ impl GatewayUsageRepo {
                             path: path.to_owned(),
                             byte_offset: row.get(0)?,
                             file_mtime: row.get(1)?,
+                            file_size: row.get(2)?,
                         })
                     },
                 )

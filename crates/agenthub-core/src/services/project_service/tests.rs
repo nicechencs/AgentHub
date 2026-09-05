@@ -1917,6 +1917,142 @@ fn kimi_excerpt_skips_wire_noise_to_reach_later_turns() {
 }
 
 #[test]
+fn claude_excerpt_skips_user_wrapped_tool_results_and_local_commands() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".claude");
+    let session = home
+        .join("projects")
+        .join("-C-Users-demo-app")
+        .join("sess-tool-as-user.jsonl");
+    write_jsonl(
+        &session,
+        &[
+            serde_json::json!({"type":"user","message":{"role":"user","content":"<local-command-caveat>Caveat: local commands</local-command-caveat>"}}),
+            serde_json::json!({"type":"user","message":{"role":"user","content":"<command-name>/model</command-name>"}}),
+            serde_json::json!({"type":"user","message":{"role":"user","content":[{"type":"text","text":"帮我更新 adapter 页面"}]}}),
+            serde_json::json!({"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"## Code Context\nProject Structure (313 files)"}]}}),
+            serde_json::json!({"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"先改列表。"}]}}),
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Claude, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert!(
+        rows[0].title.contains("帮我更新 adapter 页面"),
+        "title={}",
+        rows[0].title
+    );
+    let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert!(ex.excerpt.contains("帮我更新 adapter 页面"), "excerpt={}", ex.excerpt);
+    assert!(ex.excerpt.contains("先改列表。"), "excerpt={}", ex.excerpt);
+    assert!(!ex.excerpt.contains("Code Context"), "excerpt={}", ex.excerpt);
+    assert!(!ex.excerpt.contains("local-command"), "excerpt={}", ex.excerpt);
+    assert!(!ex.excerpt.contains("/model"), "excerpt={}", ex.excerpt);
+}
+
+#[test]
+fn kimi_excerpt_strips_git_context_from_user_turn() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".kimi-code");
+    let wd = "wd_git_context";
+    fs::create_dir_all(home.join("sessions").join(wd)).unwrap();
+    fs::write(
+        home.join("workspaces.json"),
+        r#"{
+          "version": 1,
+          "workspaces": {
+            "wd_git_context": {
+              "root": "D:/demo_chen/2026/AgentHub",
+              "name": "AgentHub",
+              "created_at": "2026-07-26T02:45:04.635Z"
+            }
+          }
+        }"#,
+    )
+    .unwrap();
+    let sess = home.join("sessions").join(wd).join("session_git-context");
+    fs::create_dir_all(sess.join("agents").join("agent-0")).unwrap();
+    write_jsonl(
+        &sess.join("agents").join("agent-0").join("wire.jsonl"),
+        &[
+            serde_json::json!({"type":"metadata","protocol_version":"1.4"}),
+            serde_json::json!({"type":"turn.prompt","input":[{"type":"text","text":"<git-context>\nWorking directory: D:/demo\nBranch: main\n</git-context>\n\nExplore the adapter page."}]}),
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Kimi, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert!(ex.excerpt.contains("Explore the adapter page."), "excerpt={}", ex.excerpt);
+    assert!(!ex.excerpt.contains("git-context"), "excerpt={}", ex.excerpt);
+    assert!(!ex.excerpt.contains("Working directory"), "excerpt={}", ex.excerpt);
+}
+
+#[test]
+fn workbuddy_excerpt_unwraps_user_query_inside_attributed_reminder() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".workbuddy");
+    let session = home
+        .join("projects")
+        .join("-C-Users-demo-app")
+        .join("sess-query.jsonl");
+    write_jsonl(
+        &session,
+        &[
+            serde_json::json!({
+                "type":"message",
+                "role":"user",
+                "content":[{"type":"input_text","text":"<system-reminder data-role=\"user-context\">\n<user_info>\nOS Version: win32\n</user_info>\n<user_query>你会干啥呢</user_query>\n</system-reminder>"}]
+            }),
+            serde_json::json!({
+                "type":"message",
+                "role":"assistant",
+                "content":[{"type":"output_text","text":"你说要什么，我尽量直接做出可交的结果。"}]
+            }),
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::WorkBuddy, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert!(ex.excerpt.contains("你会干啥呢"), "excerpt={}", ex.excerpt);
+    assert!(!ex.excerpt.contains("user_info"), "excerpt={}", ex.excerpt);
+    assert!(!ex.excerpt.contains("system-reminder"), "excerpt={}", ex.excerpt);
+}
+
+#[test]
+fn cursor_excerpt_skips_synthetic_followup_prompt() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".cursor");
+    let parent = "0e435bc1-cf05-4a9a-b036-8902f810bd86";
+    let session = home
+        .join("projects")
+        .join("d-demo-workspace-2026-AgentHub")
+        .join("agent-transcripts")
+        .join(parent)
+        .join(format!("{parent}.jsonl"));
+    write_jsonl(
+        &session,
+        &[
+            serde_json::json!({"role":"user","message":{"content":[{"type":"text","text":"帮我改路由页"}]}}),
+            serde_json::json!({"role":"assistant","message":{"content":[{"type":"text","text":"先看现有路由。"}]}}),
+            serde_json::json!({"role":"user","message":{"content":[{"type":"text","text":"Briefly inform the user about the task result and perform any follow-up actions (if needed)."}]}}),
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Cursor, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert!(ex.excerpt.contains("帮我改路由页"), "excerpt={}", ex.excerpt);
+    assert!(ex.excerpt.contains("先看现有路由。"), "excerpt={}", ex.excerpt);
+    assert!(
+        !ex.excerpt.contains("Briefly inform the user"),
+        "excerpt={}",
+        ex.excerpt
+    );
+}
+
+#[test]
 fn codex_excerpt_reads_assistant_from_response_item_payload() {
     let dir = tempdir().unwrap();
     let home = dir.path().join(".codex");
@@ -1960,6 +2096,157 @@ fn codex_excerpt_reads_assistant_from_response_item_payload() {
         ex.excerpt
     );
     assert!(!ex.excerpt.contains("read_file"), "excerpt={}", ex.excerpt);
+}
+
+#[test]
+fn codex_excerpt_keeps_question_and_convention_without_injected_blocks() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".codex");
+    let session = home
+        .join("sessions")
+        .join("2026")
+        .join("09")
+        .join("05")
+        .join("rollout-excerpt-injected.jsonl");
+    write_jsonl(
+        &session,
+        &[
+            serde_json::json!({"type":"session_meta","payload":{"session_id":"parent-1","id":"parent-1","cwd":"D:\\work\\repo","thread_source":"user"}}),
+            serde_json::json!({
+                "type":"response_item",
+                "payload":{
+                    "type":"message",
+                    "role":"user",
+                    "content":[
+                        {"type":"input_text","text":"<recommended_plugins>\nHere is a list of plugins that are available but not installed.\n</recommended_plugins>"},
+                        {"type":"input_text","text":"# AGENTS.md instructions for D:\\work\\repo\n\n<INSTRUCTIONS>\n# 项目约定\n\n- 日常合入 dev\n</INSTRUCTIONS>"},
+                        {"type":"input_text","text":"<environment_context>\n  <cwd>D:\\work\\repo</cwd>\n</environment_context>"}
+                    ]
+                }
+            }),
+            serde_json::json!({"timestamp":"2026-09-05T12:00:00.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"帮我看看当前界面"}]}}),
+            serde_json::json!({"timestamp":"2026-09-05T12:00:08.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"先看连接页。"}]}}),
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Codex, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].thread_kind, None);
+    assert!(
+        rows[0].title.contains("帮我看看当前界面"),
+        "title={}",
+        rows[0].title
+    );
+    let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert!(
+        ex.excerpt.contains("---doc:convention---"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(ex.excerpt.contains("日常合入 dev"), "excerpt={}", ex.excerpt);
+    assert!(
+        ex.excerpt.contains("帮我看看当前界面"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(ex.excerpt.contains("先看连接页。"), "excerpt={}", ex.excerpt);
+    assert!(
+        ex.excerpt.contains("---ts:2026-09-05T12:00:00.000Z---"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        !ex.excerpt.contains("recommended_plugins"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        !ex.excerpt.contains("environment_context"),
+        "excerpt={}",
+        ex.excerpt
+    );
+}
+
+#[test]
+fn codex_review_session_is_marked_and_drops_transcript_dump() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".codex");
+    let session = home
+        .join("sessions")
+        .join("2026")
+        .join("09")
+        .join("05")
+        .join("rollout-review.jsonl");
+    write_jsonl(
+        &session,
+        &[
+            serde_json::json!({
+                "type":"session_meta",
+                "payload":{
+                    "session_id":"parent-1",
+                    "id":"review-1",
+                    "cwd":"D:\\work\\repo",
+                    "thread_source":"guardian_review",
+                    "parent_thread_id":"parent-1",
+                    "source":{"subagent":{"other":"guardian"}}
+                }
+            }),
+            serde_json::json!({"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions\n\n<INSTRUCTIONS>\n约定正文\n</INSTRUCTIONS>"}]}}),
+            serde_json::json!({"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"The following is the Codex agent history whose request action you are assessing.\n>>> TRANSCRIPT START\n[1] user: hello"}]}}),
+            serde_json::json!({"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"risk_level\":\"low\",\"outcome\":\"allow\",\"rationale\":\"只读本地文件\"}"}]}}),
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Codex, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].thread_kind.as_deref(), Some("review"));
+    assert_eq!(rows[0].parent_session_id.as_deref(), Some("parent-1"));
+    assert_eq!(rows[0].session_id.as_deref(), Some("review-1"));
+    let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert!(
+        !ex.excerpt.contains("TRANSCRIPT START"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(ex.excerpt.contains("\"outcome\":\"allow\""), "excerpt={}", ex.excerpt);
+    assert!(ex.excerpt.contains("---doc:convention---"), "excerpt={}", ex.excerpt);
+}
+
+#[test]
+fn codex_subagent_session_keeps_parent_and_role() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".codex");
+    let session = home
+        .join("sessions")
+        .join("2026")
+        .join("09")
+        .join("03")
+        .join("rollout-subagent.jsonl");
+    write_jsonl(
+        &session,
+        &[
+            serde_json::json!({
+                "type":"session_meta",
+                "payload":{
+                    "session_id":"parent-1",
+                    "id":"child-1",
+                    "cwd":"D:\\work\\repo",
+                    "thread_source":"subagent",
+                    "parent_thread_id":"parent-1",
+                    "agent_role":"explorer",
+                    "source":{"subagent":{"thread_spawn":{"parent_thread_id":"parent-1","agent_role":"explorer"}}}
+                }
+            }),
+            serde_json::json!({"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"清理已经合并至dev的分支"}]}}),
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Codex, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].thread_kind.as_deref(), Some("subagent"));
+    assert_eq!(rows[0].parent_session_id.as_deref(), Some("parent-1"));
+    assert_eq!(rows[0].session_id.as_deref(), Some("parent-1"));
+    assert_eq!(rows[0].agent_role.as_deref(), Some("explorer"));
 }
 
 #[test]
@@ -2345,6 +2632,9 @@ fn session_index_roundtrip_and_freshness() {
             message_count: Some(2),
             updated_at: "t0".into(),
             session_id: Some("sid-1".into()),
+            parent_session_id: None,
+            thread_kind: None,
+            agent_role: None,
         },
     );
     store.save_if_dirty();

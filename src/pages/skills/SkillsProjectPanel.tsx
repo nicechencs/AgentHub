@@ -2,6 +2,7 @@ import { FolderKanban, PackageSearch, Trash2 } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { ListNameButton } from '@/components/shared/ListNameButton';
 import { SearchField } from '@/components/shared/SearchField';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,7 +26,6 @@ import { TableSkeleton } from '@/components/ui/skeleton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Hint } from '@/components/ui/tooltip';
 import type { InstalledSkillDto } from '@/lib/api/skill';
-import { cn } from '@/lib/utils';
 import type { ProjectSkillOption } from './skills-project-model';
 import { filterProjectSkillRows, projectSkillRowKey } from './skills-project-model';
 
@@ -44,6 +44,7 @@ export type SkillsProjectPanelProps = {
   onRetry: () => void;
   activeKey: string | null;
   onPreview: (row: InstalledSkillDto) => void;
+  onFollow?: (row: InstalledSkillDto) => void;
   onDelete: (row: InstalledSkillDto) => void;
 };
 
@@ -63,6 +64,7 @@ export function SkillsProjectPanel(props: SkillsProjectPanelProps) {
     onRetry,
     activeKey,
     onPreview,
+    onFollow,
     onDelete,
   } = props;
   const { t } = useI18n();
@@ -89,7 +91,7 @@ export function SkillsProjectPanel(props: SkillsProjectPanelProps) {
           disabled={options.length === 0}
         >
           <Hint label={selectedOption?.subtitle} side="bottom">
-            <SelectTrigger className="w-72 max-w-full" aria-label={t('skills.filters.projectAria')}>
+            <SelectTrigger className="w-72 max-w-full" aria-label={t('skills.filters.projectAria')} data-help="skills-workspace">
               <SelectValue placeholder={t('skills.filters.projectPlaceholder')} />
             </SelectTrigger>
           </Hint>
@@ -172,23 +174,23 @@ export function SkillsProjectPanel(props: SkillsProjectPanelProps) {
                 const key = projectSkillRowKey(row);
                 const active = activeKey === key;
                 return (
-                  <TableRow key={key} active={active}>
+                  <TableRow
+                    key={key}
+                    active={active}
+                    data-help="list-row"
+                    onOpen={onFollow ? () => onFollow(row) : undefined}
+                  >
                     <TableCell>
-                      <button
-                        type="button"
-                        className={cn(
-                          'block min-w-0 text-left',
-                          active ? 'text-primary' : 'text-primary hover:underline',
-                        )}
-                        onClick={() => onPreview(row)}
-                      >
-                        <span className="block truncate font-medium">{row.name}</span>
+                      <div className="min-w-0">
+                        <ListNameButton hint={row.name} onClick={() => onPreview(row)}>
+                          {row.name}
+                        </ListNameButton>
                         {row.description ? (
                           <span className="mt-0.5 block truncate text-meta text-muted">
                             {row.description}
                           </span>
                         ) : null}
-                      </button>
+                      </div>
                     </TableCell>
                     <TableCell className="font-mono text-meta text-muted">
                       {row.rootLabel}

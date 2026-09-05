@@ -195,7 +195,7 @@ export default function SettingsPage({
   );
 
   const settingsTabList = (
-    <TabsList>
+    <TabsList data-help="settings-tabs">
       <TabsTrigger value="preferences">{t('settings.page.tabPreferences')}</TabsTrigger>
       <TabsTrigger value="local">{t('settings.page.tabLocal')}</TabsTrigger>
       <TabsTrigger value="backups">{t('settings.page.tabBackups')}</TabsTrigger>
@@ -253,7 +253,7 @@ export default function SettingsPage({
             <div className={pageRhythm.chrome}>{settingsTabList}</div>
           </div>
           <div className={cn('min-h-0 flex-1 overflow-y-auto', pageRhythm.workbenchX, pageRhythm.workbenchY)}>
-            <div className={pageRhythm.readingColumn}>
+            <div className={pageRhythm.readingColumn} data-help="settings-body">
               <TabsContent value="preferences">
                 <PreferencesPanel
                   settings={settings}

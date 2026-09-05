@@ -6,11 +6,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use crate::error::Result;
-use crate::models::AgentId;
+use crate::models::{AgentId, ParsedUsageEvent, UsageRecord};
 use crate::platform::usage::{
     builtin_usage_registry, collect_with_source_for_agent_id, UsageFileParser, UsageLineOutcome,
     UsageSource, UsageSourceRegistry,
 };
+
+use super::jsonl_cursor;
 use crate::platform::AgentKey;
 use crate::services::UsageService;
 use crate::storage::{Database, UsageRepo};
@@ -196,6 +198,73 @@ impl UsageSource for MultiPathUsageSource {
     fn begin_file(&self, _path: &Path, _byte_offset: u64) -> Box<dyn UsageFileParser> {
         Box::new(SkipAllParser)
     }
+}
+
+/// Each line is `{hash} {input_tokens}`.
+struct HashLineParser;
+
+impl UsageFileParser for HashLineParser {
+    fn on_line(&mut self, line: &str, session_id: Option<&str>) -> UsageLineOutcome {
+        let Some((hash, rest)) = line.split_once(' ') else {
+            return UsageLineOutcome::Skipped;
+        };
+        let Ok(input) = rest.trim().parse::<i64>() else {
+            return UsageLineOutcome::Failed;
+        };
+        UsageLineOutcome::Event(ParsedUsageEvent {
+            agent_id: AgentId::Claude,
+            model: "m".into(),
+            input_tokens: input,
+            output_tokens: 1,
+            cache_creation_tokens: 0,
+            cache_creation_1h_tokens: 0,
+            cache_read_tokens: 0,
+            session_id: session_id.map(str::to_string),
+            ts: "2026-08-07T00:00:00.000Z".into(),
+            raw_hash: hash.to_string(),
+            cost_usd: Some(0.0),
+            fast: false,
+        })
+    }
+}
+
+struct HashLineSource {
+    files: Vec<PathBuf>,
+}
+
+impl UsageSource for HashLineSource {
+    fn agent_key(&self) -> AgentKey {
+        AgentKey::from_agent_id(AgentId::Claude)
+    }
+
+    fn discover_files(&self) -> Result<Vec<PathBuf>> {
+        Ok(self.files.clone())
+    }
+
+    fn begin_file(&self, _path: &Path, _byte_offset: u64) -> Box<dyn UsageFileParser> {
+        Box::new(HashLineParser)
+    }
+}
+
+fn records_from_events(events: &[ParsedUsageEvent]) -> Vec<UsageRecord> {
+    events
+        .iter()
+        .map(|ev| UsageRecord {
+            id: uuid::Uuid::new_v4().to_string(),
+            agent_id: ev.agent_id,
+            account_id: None,
+            model: ev.model.clone(),
+            input_tokens: ev.input_tokens,
+            output_tokens: ev.output_tokens,
+            cache_read_tokens: ev.cache_read_tokens,
+            cache_write_tokens: ev.cache_write_tokens(),
+            cost_usd: ev.cost_usd.or(Some(0.0)),
+            session_id: ev.session_id.clone(),
+            ts: ev.ts.clone(),
+            raw_hash: Some(ev.raw_hash.clone()),
+            fast: ev.fast,
+        })
+        .collect()
 }
 
 /// Token layout repair is one-shot: first collect migrates, second is a no-op.
@@ -400,12 +469,14 @@ fn usage_repo_clears_and_resets_one_agent() {
                 agent_id: AgentId::Grok,
                 byte_offset: 99,
                 file_mtime: 1,
+                file_size: 99,
             },
             UsageCursor {
                 path: "claude.jsonl".into(),
                 agent_id: AgentId::Claude,
                 byte_offset: 88,
                 file_mtime: 1,
+                file_size: 88,
             },
         ],
     )
@@ -646,6 +717,165 @@ fn usage_upsert_repairs_token_fields_on_conflict() {
     assert!((rows[0].cost_usd.unwrap() - 0.01).abs() < 1e-9);
     // Primary key may stay the original id (ON CONFLICT does not replace id).
     assert_eq!(rows[0].id, id1);
+}
+
+#[test]
+fn usage_upsert_identical_row_is_not_counted() {
+    use crate::models::UsageRecord;
+    use uuid::Uuid;
+
+    let root = tempfile::tempdir().unwrap();
+    let db = Database::open(&root.path().join("usage.db")).unwrap();
+    let repo = UsageRepo::new(db);
+
+    let row = UsageRecord {
+        id: Uuid::new_v4().to_string(),
+        agent_id: AgentId::Claude,
+        account_id: None,
+        model: "m".into(),
+        input_tokens: 10,
+        output_tokens: 2,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        cost_usd: Some(0.01),
+        session_id: Some("s".into()),
+        ts: "2026-08-07T00:00:00.000Z".into(),
+        raw_hash: Some("h".into()),
+        fast: false,
+    };
+    assert_eq!(repo.insert_batch(&[row.clone()]).unwrap(), 1);
+    assert_eq!(
+        repo.insert_batch(&[UsageRecord {
+            id: Uuid::new_v4().to_string(),
+            ..row
+        }])
+        .unwrap(),
+        0,
+        "unchanged cached row must not count as inserted"
+    );
+}
+
+#[test]
+fn resume_offset_requires_matching_size_and_mtime() {
+    assert_eq!(jsonl_cursor::resume_offset(80, 5, 80, 5, 80), 80);
+    assert_eq!(jsonl_cursor::resume_offset(40, 5, 80, 5, 80), 40);
+    assert_eq!(
+        jsonl_cursor::resume_offset(80, 5, 80, 9, 80),
+        0,
+        "mtime change rescans from 0"
+    );
+    assert_eq!(
+        jsonl_cursor::resume_offset(80, 5, 80, 5, 90),
+        0,
+        "size change rescans from 0"
+    );
+    assert_eq!(jsonl_cursor::resume_offset(100, 5, 100, 5, 80), 0);
+}
+
+#[test]
+fn collect_unchanged_file_does_not_reread() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("session.jsonl");
+    fs::write(&path, "a 1\nb 2\n").unwrap();
+
+    let source = HashLineSource {
+        files: vec![path.clone()],
+    };
+    let db = Database::open(&root.path().join("usage.db")).unwrap();
+    let repo = UsageRepo::new(db);
+
+    let first = collect_with_source_for_agent_id(&source, AgentId::Claude, &repo).unwrap();
+    assert_eq!(first.events.len(), 2);
+    let n = repo
+        .insert_batch_and_cursors(&records_from_events(&first.events), &first.cursors)
+        .unwrap();
+    assert_eq!(n, 2);
+    let cur = repo
+        .get_cursor(&path.to_string_lossy())
+        .unwrap()
+        .expect("cursor after first collect");
+    assert_eq!(cur.file_size, fs::metadata(&path).unwrap().len() as i64);
+    assert!(cur.file_mtime > 0);
+
+    let second = collect_with_source_for_agent_id(&source, AgentId::Claude, &repo).unwrap();
+    assert!(
+        second.events.is_empty(),
+        "unchanged size and mtime must not re-read"
+    );
+    let n = repo
+        .insert_batch_and_cursors(&records_from_events(&second.events), &second.cursors)
+        .unwrap();
+    assert_eq!(n, 0);
+}
+
+#[test]
+fn collect_mtime_or_size_change_rereads_whole_file() {
+    use std::io::Write;
+
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("session.jsonl");
+    fs::write(&path, "a 1\nb 2\n").unwrap();
+
+    let source = HashLineSource {
+        files: vec![path.clone()],
+    };
+    let db = Database::open(&root.path().join("usage.db")).unwrap();
+    let repo = UsageRepo::new(db);
+
+    let first = collect_with_source_for_agent_id(&source, AgentId::Claude, &repo).unwrap();
+    assert_eq!(first.events.len(), 2);
+    repo.insert_batch_and_cursors(&records_from_events(&first.events), &first.cursors)
+        .unwrap();
+
+    let mut f = fs::OpenOptions::new().append(true).open(&path).unwrap();
+    f.write_all(b"c 3\n").unwrap();
+    drop(f);
+
+    let second = collect_with_source_for_agent_id(&source, AgentId::Claude, &repo).unwrap();
+    assert_eq!(
+        second.events.len(),
+        3,
+        "size or mtime change re-reads the whole file"
+    );
+    assert_eq!(second.events[2].raw_hash, "c");
+    let n = repo
+        .insert_batch_and_cursors(&records_from_events(&second.events), &second.cursors)
+        .unwrap();
+    assert_eq!(n, 1, "cached rows that did not change are not counted");
+}
+
+#[test]
+fn collect_rewritten_file_rereads_and_updates() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("session.jsonl");
+    fs::write(&path, "a 1\n").unwrap();
+
+    let source = HashLineSource {
+        files: vec![path.clone()],
+    };
+    let db = Database::open(&root.path().join("usage.db")).unwrap();
+    let repo = UsageRepo::new(db);
+
+    let first = collect_with_source_for_agent_id(&source, AgentId::Claude, &repo).unwrap();
+    repo.insert_batch_and_cursors(&records_from_events(&first.events), &first.cursors)
+        .unwrap();
+
+    // Same length as `a 1\n`; force an mtime mismatch so the test does not
+    // depend on filesystem timestamp resolution.
+    let mut cur = repo
+        .get_cursor(&path.to_string_lossy())
+        .unwrap()
+        .expect("cursor");
+    cur.file_mtime = 0;
+    repo.insert_batch_and_cursors(&[], &[cur]).unwrap();
+    fs::write(&path, "a 9\n").unwrap();
+    let second = collect_with_source_for_agent_id(&source, AgentId::Claude, &repo).unwrap();
+    assert_eq!(second.events.len(), 1);
+    assert_eq!(second.events[0].input_tokens, 9);
+    let n = repo
+        .insert_batch_and_cursors(&records_from_events(&second.events), &second.cursors)
+        .unwrap();
+    assert_eq!(n, 1, "token change on the same hash counts as an update");
 }
 
 /// Missing discovered paths must increment `failed` and not abort the whole collect.

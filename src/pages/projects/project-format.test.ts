@@ -7,6 +7,7 @@ import {
   nativeResumeCommand,
   nativeSessionId,
   projectDisplayPath,
+  projectTitleHoverLabel,
   titleHoverLabel,
   relativeTime,
   sessionFileName,
@@ -106,6 +107,20 @@ describe('titleHoverLabel', () => {
         '修复登录页 token 过期问题，需要检查 refresh 流程…',
       ),
     ).toBe('修复登录页 token 过期问题\n需要检查 refresh 流程');
+  });
+});
+
+describe('projectTitleHoverLabel', () => {
+  it('puts the native title on its own line when an alias is shown', () => {
+    expect(
+      projectTitleHoverLabel({
+        title: 'app',
+        alias: '工作区',
+        preview: '工作区还要检查 refresh',
+      }),
+    ).toBe('工作区\napp\n还要检查 refresh');
+    expect(projectTitleHoverLabel({ title: 'app', alias: '  工作区  ' })).toBe('工作区\napp');
+    expect(projectTitleHoverLabel({ title: 'app', alias: '   ' })).toBe('app');
   });
 });
 

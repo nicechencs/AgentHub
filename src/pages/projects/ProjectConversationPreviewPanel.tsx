@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type RefObject } from 'react';
-import { Copy, MessageSquarePlus, PanelRightClose } from 'lucide-react';
+import { ChevronLeft, Copy, MessageSquarePlus, PanelRightClose } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { CopyableFileName } from '@/components/shared/CopyableFileName';
 import { copyTextToClipboard, CopyTextButton } from '@/components/shared/CopyTextButton';
@@ -12,12 +12,22 @@ import { useToast } from '@/components/ui/toast';
 import { AGENT_MAP } from '@/config/agents';
 import { getAgentProjectExcerpts } from '@/lib/api/project';
 import { normalizeOpenPath } from '@/lib/path-open';
+import type { TranslateFn } from '@/lib/i18n';
 import { hasEscPriorityOverlay } from '@/lib/skills/preview-keys';
 import type { AgentSession } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { relativeTime } from './project-format';
 import { formatSessionRecordText } from '@/lib/session-record-text';
-import { classifyExcerptRows, excerptTurnsToRecordLines, splitExcerptTurns } from './session-excerpt';
+import {
+  buildPreviewTimeline,
+  classifyExcerptRows,
+  excerptTurnsToRecordLines,
+  parseApprovalDecisions,
+  splitExcerptDocument,
+  type ApprovalDecision,
+} from './session-excerpt';
+
+type PreviewLayer = 'conversation' | 'convention' | 'approvals';
 
 function PreviewSkeleton() {
   return (
@@ -32,6 +42,7 @@ function PreviewSkeleton() {
 
 export function ProjectConversationPreviewPanel({
   session,
+  reviewSessions = [],
   open,
   onClose,
   onContinue,
@@ -44,6 +55,7 @@ export function ProjectConversationPreviewPanel({
   reloadKey = 0,
 }: {
   session: AgentSession;
+  reviewSessions?: AgentSession[];
   open: boolean;
   onClose: () => void;
   onContinue: (session: AgentSession) => void;
@@ -66,6 +78,9 @@ export function ProjectConversationPreviewPanel({
   const [phase, setPhase] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading');
   const [excerpt, setExcerpt] = useState('');
   const [truncated, setTruncated] = useState(false);
+  const [layer, setLayer] = useState<PreviewLayer>('conversation');
+  const [approvals, setApprovals] = useState<ApprovalDecision[]>([]);
+  const reviewKey = reviewSessions.map((item) => item.id).join('|');
 
   const applyRows = (sessionId: string, rows: { id: string; excerpt?: string | null; truncated?: boolean | null }[]) => {
     const result = classifyExcerptRows(sessionId, rows);
@@ -83,12 +98,18 @@ export function ProjectConversationPreviewPanel({
   };
 
   useEffect(() => {
+    setLayer('conversation');
+    setApprovals([]);
+  }, [session.id]);
+
+  useEffect(() => {
     if (!open) return;
     const seq = ++requestSeq.current;
     const expectedId = session.id;
     setPhase('loading');
     setExcerpt('');
     setTruncated(false);
+    setLayer('conversation');
     onRecordLoadedRef.current?.(expectedId, null);
     void getAgentProjectExcerpts([session.id]).then(
       (rows) => {
@@ -105,20 +126,53 @@ export function ProjectConversationPreviewPanel({
   }, [open, session.id, reloadKey]);
 
   useEffect(() => {
+    if (!open || !reviewKey) {
+      setApprovals([]);
+      return;
+    }
+    const ids = reviewKey.split('|').filter(Boolean);
+    const expectedId = session.id;
+    void getAgentProjectExcerpts(ids).then(
+      (rows) => {
+        if (session.id !== expectedId) return;
+        const decisions = rows.flatMap((row) =>
+          parseApprovalDecisions(splitExcerptDocument(row.excerpt ?? '').turns).map((item) => ({
+            ...item,
+            at: item.at ?? row.updatedAt,
+          })),
+        );
+        setApprovals(decisions);
+      },
+      () => {
+        if (session.id !== expectedId) return;
+        setApprovals([]);
+      },
+    );
+  }, [open, session.id, reloadKey, reviewKey]);
+
+  useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (hasEscPriorityOverlay()) return;
       e.preventDefault();
+      if (layer !== 'conversation') {
+        setLayer('conversation');
+        return;
+      }
       onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open, onClose, layer]);
 
   if (!open) return null;
 
-  const turns = phase === 'ready' ? splitExcerptTurns(excerpt) : [];
+  const parsed = phase === 'ready' ? splitExcerptDocument(excerpt) : { convention: null, turns: [] };
+  const turns = parsed.turns;
+  const convention = parsed.convention;
+  const timeline =
+    phase === 'ready' ? buildPreviewTimeline(convention, turns, approvals) : [];
   const agentMeta = AGENT_MAP[session.agentId];
   const record = normalizeOpenPath(session.path);
   const cwd = session.cwd?.trim() || null;
@@ -130,12 +184,27 @@ export function ProjectConversationPreviewPanel({
       }),
     }),
   );
+  const layerTitle =
+    layer === 'convention'
+      ? t('projects.preview.convention')
+      : layer === 'approvals'
+        ? t('projects.preview.approvals')
+        : session.title || t('projects.preview.titleFallback');
+  const copyText =
+    layer === 'convention'
+      ? convention ?? ''
+      : layer === 'approvals'
+        ? approvals
+            .map((item) => `${approvalOutcomeLabel(item.outcome, t)}\n${item.rationale}`.trim())
+            .filter(Boolean)
+            .join('\n\n')
+        : recordText;
   const copyRecord = () => {
-    if (!recordText) {
+    if (!copyText) {
       toast({ title: t('common.copyRecordEmpty'), variant: 'danger' });
       return;
     }
-    void copyTextToClipboard(recordText).then(
+    void copyTextToClipboard(copyText).then(
       () => toast({ title: t('common.copied'), variant: 'success' }),
       () => toast({ title: t('common.copyFailed'), variant: 'danger' }),
     );
@@ -151,24 +220,39 @@ export function ProjectConversationPreviewPanel({
       aria-labelledby={titleId}
     >
       <header className="flex h-10 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border px-3">
-        <AgentDot agentId={session.agentId} color={agentMeta?.color} className="shrink-0" />
+        {layer !== 'conversation' ? (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7 shrink-0"
+            aria-label={t('projects.preview.backToConversation')}
+            title={t('projects.preview.backToConversation')}
+            onClick={() => setLayer('conversation')}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+        ) : (
+          <AgentDot agentId={session.agentId} color={agentMeta?.color} className="shrink-0" />
+        )}
         <div className="min-w-0 flex-1 basis-16">
           <div className="flex min-w-0 items-baseline gap-2">
             <h2 id={titleId} className="truncate text-body font-semibold leading-tight text-primary">
-              {session.title || t('projects.preview.titleFallback')}
+              {layerTitle}
             </h2>
-            <span className="shrink-0 text-meta text-muted">
-              {agentMeta?.name ?? session.agentId}
-              {' · '}
-              {relativeTime(session.updatedAt, t)}
-            </span>
+            {layer === 'conversation' ? (
+              <span className="shrink-0 text-meta text-muted">
+                {agentMeta?.name ?? session.agentId}
+                {' · '}
+                {relativeTime(session.updatedAt, t)}
+              </span>
+            ) : null}
           </div>
         </div>
         <Button
           size="icon"
           variant="ghost"
           className="h-7 w-7 shrink-0"
-          disabled={!recordText}
+          disabled={!copyText}
           aria-label={t('projects.preview.copyRecord')}
           title={t('projects.preview.copyRecord')}
           onClick={copyRecord}
@@ -258,16 +342,103 @@ export function ProjectConversationPreviewPanel({
             </Button>
           </div>
         ) : null}
-        {phase === 'ready' ? (
+        {phase === 'ready' && layer === 'convention' ? (
+          convention ? (
+            <MarkdownView content={convention} variant="document" />
+          ) : (
+            <p className="py-6 text-body text-muted">{t('projects.preview.conventionEmpty')}</p>
+          )
+        ) : null}
+        {phase === 'ready' && layer === 'approvals' ? (
+          approvals.length > 0 ? (
+            <ol className="space-y-2">
+              {approvals.map((item, index) => (
+                <li
+                  key={`${index}:${item.outcome}:${item.rationale.slice(0, 24)}`}
+                  className="rounded-card border border-border bg-subtle px-3 py-2"
+                >
+                  <p
+                    className={cn(
+                      'text-meta font-medium',
+                      item.outcome === 'deny' ? 'text-danger' : 'text-accent',
+                    )}
+                  >
+                    {approvalOutcomeLabel(item.outcome, t)}
+                  </p>
+                  {item.rationale ? (
+                    <p className="mt-1 text-body text-primary">{item.rationale}</p>
+                  ) : null}
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-meta text-muted">
+                      {t('projects.preview.approvalRaw')}
+                    </summary>
+                    <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-words text-meta text-secondary">
+                      {item.raw}
+                    </pre>
+                  </details>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="py-6 text-body text-muted">{t('projects.preview.approvalsEmpty')}</p>
+          )
+        ) : null}
+        {phase === 'ready' && layer === 'conversation' ? (
           <div className="space-y-2">
             {truncated ? (
               <Notice tone="warning" className="text-meta">
                 {t('projects.preview.truncated')}
               </Notice>
             ) : null}
-            <p className="text-meta text-muted">{t('projects.preview.turns', { n: turns.length })}</p>
+            {turns.length > 0 ? (
+              <p className="text-meta text-muted">{t('projects.preview.turns', { n: turns.length })}</p>
+            ) : timeline.length === 0 ? (
+              <p className="py-6 text-body text-muted">{t('projects.preview.empty')}</p>
+            ) : null}
             <ol className="space-y-3">
-              {turns.map((turn, index) => {
+              {timeline.map((item, index) => {
+                if (item.kind === 'convention') {
+                  return (
+                    <li key={`convention:${index}`} className="flex justify-start">
+                      <button
+                        type="button"
+                        className="rounded-btn border border-border bg-subtle px-3 py-1.5 text-left text-meta text-accent hover:underline"
+                        onClick={() => setLayer('convention')}
+                      >
+                        {t('projects.preview.convention')}
+                      </button>
+                    </li>
+                  );
+                }
+                if (item.kind === 'approval') {
+                  const decision = item.decision;
+                  return (
+                    <li key={`approval:${index}:${decision.outcome}`} className="flex justify-start">
+                      <button
+                        type="button"
+                        className="max-w-[92%] rounded-btn border border-border bg-subtle px-3 py-1.5 text-left"
+                        onClick={() => setLayer('approvals')}
+                      >
+                        <span
+                          className={cn(
+                            'text-meta font-medium',
+                            decision.outcome === 'deny' ? 'text-danger' : 'text-accent',
+                          )}
+                        >
+                          {t('projects.preview.approvals')}
+                          {' · '}
+                          {approvalOutcomeLabel(decision.outcome, t)}
+                        </span>
+                        {decision.rationale ? (
+                          <span className="mt-0.5 block text-meta text-secondary line-clamp-2">
+                            {decision.rationale}
+                          </span>
+                        ) : null}
+                      </button>
+                    </li>
+                  );
+                }
+                const turn = item.turn;
                 const userish = turn.role === 'user';
                 return (
                   <li
@@ -318,4 +489,10 @@ export function ProjectConversationPreviewPanel({
       </footer>
     </aside>
   );
+}
+
+function approvalOutcomeLabel(outcome: string, t: TranslateFn): string {
+  if (outcome === 'allow') return t('projects.preview.approvalAllow');
+  if (outcome === 'deny') return t('projects.preview.approvalDeny');
+  return outcome;
 }

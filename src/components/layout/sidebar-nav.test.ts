@@ -145,6 +145,15 @@ describe('nav model order', () => {
     expect(sidebar).toContain('strokeWidth={1.6}');
     expect(sidebar).toContain('absoluteStrokeWidth');
   });
+
+  it('lets the expanded rail be dragged and remembers the width', () => {
+    const sidebar = readFileSync(path.join(dir, 'Sidebar.tsx'), 'utf8');
+    expect(sidebar).toContain('useSidebarWidth');
+    expect(sidebar).toContain('NavResizeHandle');
+    expect(sidebar).toContain("t('nav.resizeSidebar')");
+    expect(sidebar).not.toContain("'w-56'");
+    expect(sidebar).not.toContain('collapsed ? \'w-14\' : \'w-56\'');
+  });
 });
 
 describe('workspaceNavItems / manageNavItems', () => {
@@ -206,14 +215,14 @@ describe('workspaceNavItems / manageNavItems', () => {
     expect(ctx).toContain('loadBool(StorageKey.sub2apiNavVisible, DEFAULT_SUB2API_NAV_VISIBLE)');
   });
 
-  it('marks plugins and MCP as in development; routes are not', () => {
+  it('marks plugins as in development; MCP and routes are not', () => {
     const mcp = NAV_WORKSPACE.find((item) => item.to === '/mcp');
     const plugins = NAV_WORKSPACE.find((item) => item.to === '/plugins');
     const routes = NAV_MANAGE.find((item) => item.to === ROUTES_PATH);
     expect(mcp).toBeDefined();
     expect(plugins).toBeDefined();
     expect(routes).toBeDefined();
-    expect(navItemInDevelopment(mcp!)).toBe(true);
+    expect(navItemInDevelopment(mcp!)).toBe(false);
     expect(navItemInDevelopment(plugins!)).toBe(true);
     expect(navItemInDevelopment(routes!)).toBe(false);
     expect(navItemInDevelopment(NAV_WORKSPACE[0])).toBe(false);
