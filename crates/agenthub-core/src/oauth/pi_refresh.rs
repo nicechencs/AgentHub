@@ -97,12 +97,11 @@ pub fn refresh_pi_provider(credentials: &Value) -> Result<Value> {
         "expires": expires_ms,
     });
 
-    let mut identity = extract_oauth_identity(
-        canonical,
-        &token_json,
-        Some(&access),
-        token_json.get("id_token").and_then(|v| v.as_str()),
-    );
+    let id_token = token_json
+        .get("id_token")
+        .and_then(|v| v.as_str())
+        .or_else(|| credentials.get("id_token").and_then(|v| v.as_str()));
+    let mut identity = extract_oauth_identity(canonical, &token_json, Some(&access), id_token);
     identity.merge_missing(&identity_from_credentials(credentials));
 
     let mut body = serde_json::Map::new();
@@ -115,6 +114,9 @@ pub fn refresh_pi_provider(credentials: &Value) -> Result<Value> {
     cred.insert("access_token".into(), json!(access));
     cred.insert("refresh_token".into(), json!(new_refresh));
     cred.insert("expires_at".into(), json!(expires_at));
+    if let Some(idt) = id_token.map(str::trim).filter(|s| !s.is_empty()) {
+        cred.insert("id_token".into(), json!(idt));
+    }
     apply_identity_to_credentials(&mut cred, &identity);
 
     tracing::info!(
