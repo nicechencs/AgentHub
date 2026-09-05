@@ -31,7 +31,7 @@ import {
   sessionPageCount,
   sliceSessionPage,
 } from './projects-list-model';
-import { nestSessions } from './session-nest';
+import { nestSessions, nestedSessionLabel } from './session-nest';
 
 const COLUMN_WIDTHS_STORAGE_KEY = StorageKey.projectsColumnWidths;
 
@@ -288,7 +288,7 @@ const ProjectGroupCard = memo(function ProjectGroupCard({
                     showSessionAgent,
                     previewSessionId,
                     followPreview,
-                    nestedLabel: t('projects.tree.subSession'),
+                    nestedLabelFor: (child) => nestedSessionLabel(child, t),
                     onToggleNested,
                     onToggleOne,
                     onPreviewSession,
@@ -392,7 +392,7 @@ function sessionRows({
   showSessionAgent,
   previewSessionId,
   followPreview = false,
-  nestedLabel,
+  nestedLabelFor,
   onToggleNested,
   onToggleOne,
   onPreviewSession,
@@ -412,7 +412,7 @@ function sessionRows({
   showSessionAgent: boolean;
   previewSessionId: string | null;
   followPreview?: boolean;
-  nestedLabel: string;
+  nestedLabelFor: (session: AgentSession) => string;
   onToggleNested: (id: string) => void;
   onToggleOne: (id: string) => void;
   onPreviewSession: (session: AgentSession) => void;
@@ -457,7 +457,7 @@ function sessionRows({
             deleteHint={deleteHintFor?.(child.agentId) ?? null}
             showAgent={showSessionAgent}
             nested
-            nestedLabel={nestedLabel}
+            nestedLabel={nestedLabelFor(child)}
             previewOpen={previewSessionId === child.id}
             followPreview={followPreview}
             onToggleOne={onToggleOne}

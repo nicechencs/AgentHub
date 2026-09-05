@@ -577,8 +577,10 @@ export interface AgentSession {
   sessionId?: string | null;
   /** 父会话的原生 id（审查记录挂在主对话下） */
   parentSessionId?: string | null;
-  /** `review` = 工具审批记录，列表里不当正式对话 */
+  /** `review` = 工具审批记录，列表里不当正式对话；`subagent` = 折到主对话下的子任务 */
   threadKind?: string | null;
+  /** Codex 子任务角色（探索 / 实现等），有则用来标子会话 */
+  agentRole?: string | null;
 }
 
 /** 项目会话预览读到的「你 / 助手」轮次 */

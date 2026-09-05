@@ -1,6 +1,11 @@
 import type { AgentProject, AgentSession } from '@/lib/types';
 import { projectMatches, sessionMatches } from './project-filter';
-import { cursorSubagentParentId, cursorTranscriptId, flattenVisibleSessions } from './session-nest';
+import {
+  cursorSubagentParentId,
+  cursorTranscriptId,
+  flattenVisibleSessions,
+  spawnedChildParentKey,
+} from './session-nest';
 
 /** One page of sessions in an expanded project. All rows stay available. */
 export const SESSION_PAGE_SIZE = 50;
@@ -36,8 +41,14 @@ export function visibleSessionsForProject(
   const matchedIds = new Set(matched.map((s) => s.id));
   const extraParents = kids.filter((s) => {
     if (matchedIds.has(s.id)) return false;
-    const tid = cursorTranscriptId(s);
-    return Boolean(tid && matched.some((m) => cursorSubagentParentId(m) === tid));
+    const keys = [cursorTranscriptId(s), s.sessionId?.trim()].filter(Boolean);
+    return matched.some((m) => {
+      const pathParent = cursorSubagentParentId(m);
+      const spawnedParent = spawnedChildParentKey(m);
+      return Boolean(
+        (pathParent && keys.includes(pathParent)) || (spawnedParent && keys.includes(spawnedParent)),
+      );
+    });
   });
   return [...extraParents, ...matched];
 }

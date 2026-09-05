@@ -4,6 +4,7 @@ import {
   cursorSubagentParentId,
   flattenVisibleSessions,
   nestSessions,
+  nestedSessionLabel,
   reviewsForParent,
 } from './session-nest';
 
@@ -100,6 +101,55 @@ describe('session-nest', () => {
       'codex-parent',
     ]);
     expect(reviewsForParent(parent, [parent, review]).map((s) => s.id)).toEqual(['codex-review']);
+  });
+
+  it('hangs Codex spawned children under the root conversation', () => {
+    const parent = session({
+      id: 'codex-parent',
+      agentId: 'codex',
+      relativePath: 'sessions/2026/09/03/rollout-parent.jsonl',
+      sessionId: 'parent-1',
+      title: '清理已经合并至dev的分支',
+    });
+    const child = session({
+      id: 'codex-child',
+      agentId: 'codex',
+      relativePath: 'sessions/2026/09/03/rollout-child.jsonl',
+      sessionId: 'parent-1',
+      parentSessionId: 'parent-1',
+      threadKind: 'subagent',
+      agentRole: 'explorer',
+      title: '清理已经合并至dev的分支',
+    });
+    const nestedChild = session({
+      id: 'codex-grandchild',
+      agentId: 'codex',
+      relativePath: 'sessions/2026/09/03/rollout-grandchild.jsonl',
+      sessionId: 'parent-1',
+      parentSessionId: 'codex-child-native',
+      threadKind: 'subagent',
+      agentRole: 'coder',
+      title: '清理已经合并至dev的分支',
+    });
+    const nested = nestSessions([parent, child, nestedChild]);
+    expect(nested.map((n) => n.session.id)).toEqual(['codex-parent']);
+    expect(nested[0]?.children.map((c) => c.id)).toEqual(['codex-child', 'codex-grandchild']);
+    expect(flattenVisibleSessions([parent, child, nestedChild], new Set()).map((s) => s.id)).toEqual(
+      ['codex-parent'],
+    );
+    expect(
+      flattenVisibleSessions([parent, child, nestedChild], new Set(['codex-parent'])).map(
+        (s) => s.id,
+      ),
+    ).toEqual(['codex-parent', 'codex-child', 'codex-grandchild']);
+    expect(reviewsForParent(child, [parent, child])).toEqual([]);
+  });
+
+  it('labels Codex spawn roles for nested rows', () => {
+    const t = (key: string) => key;
+    expect(nestedSessionLabel({ agentRole: 'explorer' }, t)).toBe('projects.tree.subSessionExplore');
+    expect(nestedSessionLabel({ agentRole: 'coder' }, t)).toBe('projects.tree.subSessionCode');
+    expect(nestedSessionLabel({}, t)).toBe('projects.tree.subSession');
   });
 
   it('hangs Claude and Kimi subagent paths under the parent id', () => {
