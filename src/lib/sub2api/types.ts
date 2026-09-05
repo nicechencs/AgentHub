@@ -65,6 +65,16 @@ export type Sub2ApiLogin2FARequest = {
   totp_code: string;
 };
 
+/** User-bindable group from GET /groups/available. */
+export type Sub2ApiGroup = {
+  id: number;
+  name: string;
+  platform?: string;
+  description?: string | null;
+  status?: string;
+  rate_multiplier?: number;
+};
+
 /** Embedded group when /keys returns group as an object (Sub2API / PinCC). */
 export type Sub2ApiKeyGroup = {
   id?: number;

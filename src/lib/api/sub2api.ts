@@ -7,6 +7,8 @@ import {
   clearSub2ApiSession,
   createApiKey,
   fetchCurrentUser,
+  listAvailableGroups,
+  updateApiKey,
   fetchPublicSettings,
   isTotp2FARequired,
   listApiKeys,
@@ -44,6 +46,7 @@ import {
   setSub2ApiRememberEnabled,
   type Sub2ApiAuthTokens,
   type Sub2ApiCaptchaProof,
+  type Sub2ApiGroup,
   type Sub2ApiKey,
   type Sub2ApiLoginResult,
   type Sub2ApiPublicSettings,
@@ -53,6 +56,7 @@ import {
 } from '@/lib/sub2api';
 
 export type {
+  Sub2ApiGroup,
   Sub2ApiKey,
   Sub2ApiPublicSettings,
   Sub2ApiSession,
@@ -128,8 +132,32 @@ export async function loadSub2ApiKeys(session: Sub2ApiSession): Promise<Sub2ApiK
   return list.items ?? [];
 }
 
-export async function createSub2ApiKey(session: Sub2ApiSession, name: string): Promise<Sub2ApiKey> {
-  return createApiKey({ siteUrl: session.siteUrl, accessToken: session.accessToken }, name);
+export async function loadSub2ApiGroups(session: Sub2ApiSession): Promise<Sub2ApiGroup[]> {
+  return listAvailableGroups({ siteUrl: session.siteUrl, accessToken: session.accessToken });
+}
+
+export async function createSub2ApiKey(
+  session: Sub2ApiSession,
+  name: string,
+  groupId?: number | null,
+): Promise<Sub2ApiKey> {
+  return createApiKey(
+    { siteUrl: session.siteUrl, accessToken: session.accessToken },
+    name,
+    groupId,
+  );
+}
+
+export async function updateSub2ApiKeyGroup(
+  session: Sub2ApiSession,
+  id: number,
+  groupId: number | null,
+): Promise<Sub2ApiKey> {
+  return updateApiKey(
+    { siteUrl: session.siteUrl, accessToken: session.accessToken },
+    id,
+    { group_id: groupId },
+  );
 }
 
 export async function refreshSub2ApiSession(session: Sub2ApiSession): Promise<Sub2ApiSession> {
