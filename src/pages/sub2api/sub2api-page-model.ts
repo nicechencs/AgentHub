@@ -131,9 +131,10 @@ export function applySiteUrlDraftInput(raw: string): {
 
 export function sortSub2ApiKeys(keys: readonly Sub2ApiKey[]): Sub2ApiKey[] {
   return [...keys].sort((a, b) => {
-    const an = (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
-    if (an !== 0) return an;
-    return a.id - b.id;
+    const ad = parseKeyDate(a.created_at)?.getTime() ?? 0;
+    const bd = parseKeyDate(b.created_at)?.getTime() ?? 0;
+    if (ad !== bd) return bd - ad;
+    return b.id - a.id;
   });
 }
 
@@ -142,20 +143,59 @@ export function normalizeTotpCode(raw: string): string {
   return raw.replace(/\D/g, '').slice(0, 6);
 }
 
+/** Parse ISO / unix seconds / unix ms into a local Date. */
+export function parseKeyDate(raw: unknown): Date | null {
+  if (raw == null) return null;
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    if (raw <= 0) return null;
+    const ms = raw < 1e12 ? raw * 1000 : raw;
+    const d = new Date(ms);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof raw !== 'string') return null;
+  const s = raw.trim();
+  if (!s) return null;
+  if (/^-?\d+(\.\d+)?$/.test(s)) return parseKeyDate(Number(s));
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+function formatLocalDateParts(d: Date, withSeconds: boolean, sep: '-' | '/'): string {
+  const y = d.getFullYear();
+  const m = pad2(d.getMonth() + 1);
+  const day = pad2(d.getDate());
+  const hh = pad2(d.getHours());
+  const mm = pad2(d.getMinutes());
+  if (!withSeconds) return `${y}${sep}${m}${sep}${day} ${hh}:${mm}`;
+  return `${y}${sep}${m}${sep}${day} ${hh}:${mm}:${pad2(d.getSeconds())}`;
+}
+
 /** Format ISO / date-like strings as `YYYY-MM-DD HH:mm` (local). Empty when missing/invalid. */
 export function formatKeyTimestamp(raw: unknown): string | null {
-  if (raw == null) return null;
-  if (typeof raw !== 'string' && typeof raw !== 'number') return null;
-  const s = String(raw).trim();
-  if (!s) return null;
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return null;
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${y}-${m}-${day} ${hh}:${mm}`;
+  const d = parseKeyDate(raw);
+  if (!d) return null;
+  return formatLocalDateParts(d, false, '-');
+}
+
+/** Sub2API site table: `YYYY/MM/DD HH:mm:ss` (local). */
+export function formatKeyTableTimestamp(raw: unknown): string | null {
+  const d = parseKeyDate(raw);
+  if (!d) return null;
+  return formatLocalDateParts(d, true, '/');
+}
+
+export function formatKeyExpires(raw: unknown, neverLabel: string): string {
+  if (raw == null) return neverLabel;
+  if (typeof raw === 'number' && raw <= 0) return neverLabel;
+  if (typeof raw === 'string') {
+    const s = raw.trim().toLowerCase();
+    if (!s || s === 'null' || s === 'never' || s === '0' || s === '-1') return neverLabel;
+  }
+  return formatKeyTableTimestamp(raw) ?? neverLabel;
 }
 
 function asFiniteNumber(raw: unknown): number | null {
@@ -257,4 +297,115 @@ export function formatKeyModelsFromKey(key: Sub2ApiKey, maxItems = 6): string | 
     return formatKeyModels(nested, maxItems);
   }
   return null;
+}
+
+function readNumber(record: Record<string, unknown>, paths: readonly string[]): number | null {
+  for (const path of paths) {
+    const parts = path.split('.');
+    let cur: unknown = record;
+    for (const part of parts) {
+      if (!cur || typeof cur !== 'object') {
+        cur = undefined;
+        break;
+      }
+      cur = (cur as Record<string, unknown>)[part];
+    }
+    const n = asFiniteNumber(cur);
+    if (n != null) return n;
+  }
+  return null;
+}
+
+const CONCURRENCY_PATHS = [
+  'current_concurrency',
+  'concurrency',
+  'concurrent',
+  'concurrent_count',
+  'current_concurrent',
+  'currentConcurrent',
+] as const;
+
+const USAGE_TODAY_PATHS = [
+  'today_usage',
+  'today_consumed',
+  'today_cost',
+  'today_spent',
+  'usage_today',
+  'quota_today',
+  'used_today',
+  'today_amount',
+  'daily_usage',
+  'usage.today',
+  'usage.today_usd',
+  'stats.today',
+  'stats.today_usd',
+] as const;
+
+const USAGE_LAST_30_PATHS = [
+  'last_30_days_usage',
+  'last_30d_usage',
+  'usage_30d',
+  'last30days_usage',
+  'last_30_days_consumed',
+  'last_30_days_cost',
+  'month_usage',
+  'monthly_usage',
+  'cost_30d',
+  'usage.last_30_days',
+  'usage.last30Days',
+  'usage.last_30_days_usd',
+  'stats.last_30_days',
+] as const;
+
+const GROUP_RATE_KEYS = [
+  'rate',
+  'ratio',
+  'multiplier',
+  'rate_multiplier',
+  'billing_rate',
+  'price_rate',
+  'price_ratio',
+] as const;
+
+export function pickKeyConcurrency(key: Sub2ApiKey): number {
+  const n = readNumber(key as unknown as Record<string, unknown>, CONCURRENCY_PATHS);
+  return n == null ? 0 : n;
+}
+
+export function pickKeyUsageUsd(key: Sub2ApiKey): { today: number; last30Days: number } {
+  const record = key as unknown as Record<string, unknown>;
+  return {
+    today: readNumber(record, USAGE_TODAY_PATHS) ?? 0,
+    last30Days: readNumber(record, USAGE_LAST_30_PATHS) ?? 0,
+  };
+}
+
+export function formatUsdAmount(n: number): string {
+  return `$${n.toFixed(4)}`;
+}
+
+export function formatGroupRate(n: number): string {
+  const s = Number.isInteger(n)
+    ? String(n)
+    : n.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+  return `${s}x`;
+}
+
+export function pickGroupRate(key: Sub2ApiKey): string | null {
+  const group = (key as unknown as Record<string, unknown>).group;
+  if (!group || typeof group !== 'object') return null;
+  const g = group as Record<string, unknown>;
+  for (const k of GROUP_RATE_KEYS) {
+    const n = asFiniteNumber(g[k]);
+    if (n != null) return formatGroupRate(n);
+  }
+  return null;
+}
+
+/** Site table mask: `sk-c33...62e2`. */
+export function maskSub2ApiTableKey(key: string): string {
+  const value = key.trim();
+  if (!value) return '••••';
+  if (value.length <= 10) return `${value.slice(0, 2)}...${value.slice(-2)}`;
+  return `${value.slice(0, 6)}...${value.slice(-4)}`;
 }

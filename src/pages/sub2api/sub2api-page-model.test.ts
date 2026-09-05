@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
+  formatGroupRate,
+  formatKeyExpires,
   formatKeyModels,
   formatKeyModelsFromKey,
   formatKeyQuota,
+  formatKeyTableTimestamp,
   formatKeyTimestamp,
+  formatUsdAmount,
+  maskSub2ApiTableKey,
   normalizeTotpCode,
   pickGroupLabel,
+  pickGroupRate,
+  pickKeyConcurrency,
+  pickKeyUsageUsd,
+  sortSub2ApiKeys,
   sub2apiDisplayName,
   sub2apiKeyStatusBadgeVariant,
   sub2apiKeyStatusKind,
@@ -86,6 +95,11 @@ describe('sub2api page model', () => {
     expect(formatKeyTimestamp('not-a-date')).toBeNull();
     const formatted = formatKeyTimestamp('2026-09-04T04:00:00.000Z');
     expect(formatted).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+    const table = formatKeyTableTimestamp('2026-09-04T04:00:00.000Z');
+    expect(table).toMatch(/^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}$/);
+    expect(formatKeyExpires(null, 'Never')).toBe('Never');
+    expect(formatKeyExpires(-1, 'Never')).toBe('Never');
+    expect(formatKeyExpires('never', 'Never')).toBe('Never');
   });
 
   it('formats quota / usage labels', () => {
@@ -130,6 +144,44 @@ describe('sub2api page model', () => {
         group: { models_list_config: { enabled: true, models: ['a', 'b'] } },
       }),
     ).toBe('a, b');
+  });
+
+  it('sorts keys by created time newest first', () => {
+    const sorted = sortSub2ApiKeys([
+      { id: 1, key: 'a', name: 'old', status: 'active', created_at: '2026-01-01T00:00:00.000Z' },
+      { id: 2, key: 'b', name: 'new', status: 'active', created_at: '2026-09-01T00:00:00.000Z' },
+    ]);
+    expect(sorted.map((k) => k.id)).toEqual([2, 1]);
+  });
+
+  it('reads concurrency, USD usage, group rate, and table key mask', () => {
+    expect(pickKeyConcurrency({ id: 1, key: 'k', name: 'n', status: 'active' })).toBe(0);
+    expect(
+      pickKeyConcurrency({ id: 1, key: 'k', name: 'n', status: 'active', current_concurrency: 3 }),
+    ).toBe(3);
+    expect(
+      pickKeyUsageUsd({
+        id: 1,
+        key: 'k',
+        name: 'n',
+        status: 'active',
+        today_usage: 1.2,
+        last_30_days_usage: 4,
+      }),
+    ).toEqual({ today: 1.2, last30Days: 4 });
+    expect(formatUsdAmount(0)).toBe('$0.0000');
+    expect(formatGroupRate(2.1)).toBe('2.1x');
+    expect(formatGroupRate(0.4)).toBe('0.4x');
+    expect(
+      pickGroupRate({
+        id: 1,
+        key: 'k',
+        name: 'n',
+        status: 'active',
+        group: { name: 'Claude Max', rate: 2.1 },
+      }),
+    ).toBe('2.1x');
+    expect(maskSub2ApiTableKey('sk-c33abcdefgh62e2')).toBe('sk-c33...62e2');
   });
 
   it('skips nested models when models_list_config.enabled is false', () => {
