@@ -1,7 +1,7 @@
 use std::convert::Infallible;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use async_stream::stream;
@@ -4937,18 +4937,39 @@ async fn v2_stop_and_start_with_new_token_clears_host_isolation() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn v2_concurrent_401_reload_is_singleflight() {
     let hits = Arc::new(AtomicUsize::new(0));
+    let unauthorized = Arc::new(AtomicUsize::new(0));
+    let overlap = Arc::new((Mutex::new(()), Condvar::new()));
     let hits_cb = hits.clone();
+    let unauthorized_for_reload = unauthorized.clone();
+    let overlap_for_reload = overlap.clone();
     let reload: UpstreamAuthReload = Arc::new(move || {
         hits_cb.fetch_add(1, Ordering::SeqCst);
-        std::thread::sleep(Duration::from_millis(80));
+        // Park off-worker: a blocking sleep on the request worker starves the
+        // mock upstream, and the other request then returns 503. Hold until
+        // both 401s arrived and the second request can join the mutex.
+        tokio::task::block_in_place(|| {
+            let (lock, cvar) = &*overlap_for_reload;
+            let guard = lock.lock().expect("lock");
+            drop(
+                cvar.wait_timeout_while(guard, Duration::from_secs(2), |_| {
+                    unauthorized_for_reload.load(Ordering::SeqCst) < 2
+                })
+                .expect("wait for overlapping 401s"),
+            );
+            std::thread::sleep(Duration::from_millis(80));
+        });
         Some("rotated-token".into())
     });
     let mut member = pool_member("acc-a", "old-token");
     member.reload = Some(reload);
-    let callback: ChatCallback = Arc::new(|bearer, _body| {
+    let unauthorized_for_up = unauthorized.clone();
+    let overlap_for_up = overlap.clone();
+    let callback: ChatCallback = Arc::new(move |bearer, _body| {
         if bearer == "Bearer rotated-token" {
             chat_ok()
         } else {
+            unauthorized_for_up.fetch_add(1, Ordering::SeqCst);
+            overlap_for_up.1.notify_all();
             StatusCode::UNAUTHORIZED.into_response()
         }
     });
@@ -4969,9 +4990,11 @@ async fn v2_concurrent_401_reload_is_singleflight() {
         post_p5_model(port, "m1", false),
         post_p5_model(port, "m1", false)
     );
-    assert_eq!(left.status(), StatusCode::OK);
-    assert_eq!(right.status(), StatusCode::OK);
-    assert_eq!(hits.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        (left.status(), right.status(), hits.load(Ordering::SeqCst)),
+        (StatusCode::OK, StatusCode::OK, 1),
+        "concurrent 401 reload should share one rotation"
+    );
     let tokens = captured_tokens(&captured);
     assert!(tokens.iter().any(|token| token == "Bearer old-token"));
     assert!(tokens.iter().any(|token| token == "Bearer rotated-token"));
