@@ -156,6 +156,7 @@ fn cursor_roundtrip_and_removal() {
         path: "/tmp/spool/gateway-20260830.jsonl".to_owned(),
         byte_offset: 128,
         file_mtime: 1_786_492_800,
+        file_size: 128,
     };
 
     let inserted = repo
@@ -169,6 +170,7 @@ fn cursor_roundtrip_and_removal() {
     let stored = repo.get_spool_cursor(&cursor.path).expect("get cursor");
     assert_eq!(stored.as_ref().map(|c| c.byte_offset), Some(128));
     assert_eq!(stored.as_ref().map(|c| c.file_mtime), Some(1_786_492_800));
+    assert_eq!(stored.as_ref().map(|c| c.file_size), Some(128));
 
     // A zero-row advance still moves the cursor (e.g. all lines malformed).
     let advanced = GatewaySpoolCursor {
