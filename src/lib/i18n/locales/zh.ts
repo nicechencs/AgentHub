@@ -3098,7 +3098,9 @@ export const zh = {
     },
     tree: {
       hidden: "已隐藏",
-      sessionMeta: "{time} · {count} 会话 · {size}",
+      sessionCount: "{n} 会话",
+      colName: "名称",
+      colPath: "路径",
       openFolder: "打开项目文件夹：{path}",
       unhide: "取消隐藏",
       hide: "隐藏",

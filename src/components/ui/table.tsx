@@ -242,11 +242,13 @@ export function ColumnResizeHandle<K extends string>({
   label,
   onResizeStart,
   onResizeKeyDown,
+  tabIndex = 0,
 }: {
   columnKey: K;
   label: string;
   onResizeStart: (key: K, e: React.MouseEvent | React.PointerEvent) => void;
   onResizeKeyDown?: (key: K, e: React.KeyboardEvent) => void;
+  tabIndex?: number;
 }) {
   const { t } = useI18n();
   return (
@@ -255,7 +257,9 @@ export function ColumnResizeHandle<K extends string>({
         role="separator"
         aria-orientation="vertical"
         aria-label={t('common.resizeColumnNamed', { label })}
-        tabIndex={0}
+        aria-hidden={tabIndex < 0 ? true : undefined}
+        tabIndex={tabIndex}
+        onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => onResizeStart(columnKey, e)}
         onMouseDown={(e) => onResizeStart(columnKey, e)}
         onKeyDown={(e) => onResizeKeyDown?.(columnKey, e)}

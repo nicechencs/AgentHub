@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { projectGroupCardGrid } from './ProjectTree';
 import { projectSessionRowGrid } from './ProjectSessionRow';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
@@ -60,6 +61,25 @@ describe('ProjectSessionRow', () => {
     expect(tree).toContain('onToggleExpand');
     expect(tree).toContain('bg-subtle/40');
     expect(tree).not.toContain('divide-y');
+  });
+
+  it('splits project card fields onto separate tracks instead of one packed meta string', () => {
+    expect(projectGroupCardGrid()).toContain('grid-cols-subgrid');
+    expect(tree).toContain('projectGroupListGrid');
+    expect(tree).toContain('projectGroupListTemplate');
+    expect(tree).toContain('useColumnWidths');
+    expect(tree).toContain('ColumnResizeHandle');
+    expect(tree).toContain('COLUMN_WIDTHS_STORAGE_KEY');
+    expect(tree).toContain('grid-cols-subgrid');
+    expect(tree).toContain('projectTitleHoverLabel');
+    expect(tree).toContain("t('projects.tree.sessionCount'");
+    expect(tree).toContain('fmtBytes(group.sizeBytes)');
+    expect(tree).toContain('relativeTime(group.updatedAt, t)');
+    expect(tree).not.toContain('sessionMeta');
+    expect(tree).not.toContain('({p.title})');
+    expect(tree).not.toContain('flex min-w-0 flex-1 items-center gap-2');
+    expect(tree).not.toContain('min-w-0 flex-1');
+    expect(tree).not.toContain('pageRhythm.stackDense');
   });
 });
 
