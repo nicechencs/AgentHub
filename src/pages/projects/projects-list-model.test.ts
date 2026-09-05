@@ -5,6 +5,10 @@ import {
   collectSelectableSessions,
   filterVisibleProjects,
   nextSelectedForToggleAllVisible,
+  clampSessionPage,
+  sessionPageCount,
+  SESSION_PAGE_SIZE,
+  sliceSessionPage,
   toggleSelectedSession,
   visibleSessionsForProject,
 } from './projects-list-model';
@@ -213,6 +217,23 @@ describe('collectSelectableSessions', () => {
     expect(
       collectSelectableSessions(visible, new Set([app.id]), (id) => kidsFor(id, q)).map((s) => s.id),
     ).toEqual([appToken.id]);
+  });
+});
+
+describe('session pages', () => {
+  it('pages through every row without dropping any', () => {
+    const rows = Array.from({ length: 1536 }, (_, i) => i);
+    expect(sessionPageCount(rows.length)).toBe(Math.ceil(1536 / SESSION_PAGE_SIZE));
+    expect(clampSessionPage(-1, rows.length)).toBe(0);
+    expect(clampSessionPage(99, rows.length)).toBe(sessionPageCount(rows.length) - 1);
+
+    const seen = new Set<number>();
+    for (let page = 0; page < sessionPageCount(rows.length); page += 1) {
+      for (const id of sliceSessionPage(rows, page)) seen.add(id);
+    }
+    expect(seen.size).toBe(1536);
+    expect(sliceSessionPage(rows, 0)).toHaveLength(SESSION_PAGE_SIZE);
+    expect(sliceSessionPage(rows, sessionPageCount(rows.length) - 1).at(-1)).toBe(1535);
   });
 });
 

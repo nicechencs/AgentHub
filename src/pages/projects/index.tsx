@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   EyeOff,
@@ -288,16 +288,19 @@ export default function ProjectsPage() {
         return next;
       });
       const kids = group.members.flatMap((member) => sessionsByProject[member.id] ?? []);
-      if (kids.length > 0) {
-        setSelected((prev) => {
-          const next = new Set(prev);
-          for (const s of kids) next.delete(s.id);
-          return next;
-        });
-      }
-      if (preview.target && group.members.some((member) => member.id === preview.target?.projectId)) {
-        preview.close();
-      }
+      startTransition(() => {
+        if (kids.length > 0) {
+          setSelected((prev) => {
+            if (prev.size === 0) return prev;
+            const next = new Set(prev);
+            for (const session of kids) next.delete(session.id);
+            return next;
+          });
+        }
+        if (preview.target && kids.some((session) => session.id === preview.target?.id)) {
+          preview.close();
+        }
+      });
       return;
     }
     setExpanded((prev) => new Set(prev).add(group.id));
@@ -759,6 +762,7 @@ export default function ProjectsPage() {
           onOpenSessionRecord={(s, e) => void openSessionRecord(s, e)}
           onGoContinue={goContinue}
           onRequestDelete={setDeleteTarget}
+          queryKey={q}
         />
       )}
     </>

@@ -35,6 +35,11 @@ describe('projects split layout', () => {
     const tree = source('ProjectTree.tsx');
     expect(tree).toContain('showSessionAgent');
     expect(tree).toContain('group.agentIds');
+    expect(tree).toContain('AgentLogo');
+    expect(tree).not.toContain('AgentDot');
+    expect(tree).toContain('sessionPageCount');
+    expect(tree).toContain("t('projects.tree.pageNext'");
+    expect(tree).toContain('hidden={!open}');
   });
 
   it('renders excerpt turns as a user/assistant conversation', () => {
