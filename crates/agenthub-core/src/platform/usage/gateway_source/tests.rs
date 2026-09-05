@@ -128,6 +128,7 @@ fn cursor_replay_continues_from_a_partially_consumed_file() {
             path: path.to_string_lossy().to_string(),
             byte_offset: first_line_end,
             file_mtime: mtime,
+            file_size: fs::metadata(&path).expect("len").len() as i64,
         },
         false,
     )
@@ -227,6 +228,7 @@ fn fully_ingested_old_files_are_deleted_and_their_cursors_removed() {
             path: partial_path.to_string_lossy().to_string(),
             byte_offset: len - 1,
             file_mtime: mtime,
+            file_size: len,
         },
         false,
     )

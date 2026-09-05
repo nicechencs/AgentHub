@@ -54,14 +54,16 @@ export function SettingsRow({
 export function SettingsGroup({
   title,
   first = false,
+  help,
   children,
 }: {
   title: string;
   first?: boolean;
+  help?: string;
   children: ReactNode;
 }) {
   return (
-    <PageSection first={first} title={title}>
+    <PageSection first={first} title={title} data-help={help}>
       <Card>
         <CardContent className="divide-y divide-border pt-1">{children}</CardContent>
       </Card>

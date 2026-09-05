@@ -111,8 +111,9 @@ describe('WriteClientConfigDialog', () => {
     expect(markup).toContain(t('routes.pool.surface.responsesCodex'));
     expect(markup).toContain(t('routes.pool.surface.responsesGrok'));
     expect(markup).toContain(t('routes.endpoint.modelsLine'));
-    expect(markup).toContain('~/.codex/config.toml');
-    expect(markup).toContain('~/.grok/config.toml');
+    expect(markup).toContain('~/.codex/');
+    expect(markup).toContain('>config.toml</span>');
+    expect(markup).toContain('~/.grok/');
     expect(markup).not.toContain('wire_api');
     expect(markup).not.toContain('api_backend');
 
@@ -125,16 +126,18 @@ describe('WriteClientConfigDialog', () => {
     const codexOnly = body(render({ rows: [row('codex')] }));
     expect(codexOnly).toContain('http://127.0.0.1:43121/v1/responses');
     expect(codexOnly).not.toContain('/v1/messages');
-    expect(codexOnly).toContain('~/.codex/config.toml');
+    expect(codexOnly).toContain('~/.codex/');
+    expect(codexOnly).toContain('>config.toml</span>');
     expect(codexOnly).not.toContain('api_backend');
-    expect(codexOnly).not.toContain('~/.grok/config.toml');
+    expect(codexOnly).not.toContain('~/.grok/');
 
     const grokOnly = body(render({ rows: [row('grok')] }));
     expect(grokOnly).toContain('http://127.0.0.1:43121/v1/responses');
     expect(grokOnly).not.toContain('/v1/messages');
-    expect(grokOnly).toContain('~/.grok/config.toml');
+    expect(grokOnly).toContain('~/.grok/');
+    expect(grokOnly).toContain('>config.toml</span>');
     expect(grokOnly).not.toContain('wire_api');
-    expect(grokOnly).not.toContain('~/.codex/config.toml');
+    expect(grokOnly).not.toContain('~/.codex/');
   });
 
   it('previews Claude model and 1M window when the route declares them', () => {
@@ -152,7 +155,8 @@ describe('WriteClientConfigDialog', () => {
   it('names Claude settings.json with a local address and token, not env keys', () => {
     const markup = render({ rows: [row('claude'), row('codex'), row('grok')] });
 
-    expect(markup).toContain('~/.claude/settings.json');
+    expect(markup).toContain('~/.claude/');
+    expect(markup).toContain('>settings.json</span>');
     expect(markup).toContain(t('routes.write.fieldLocalAddress'));
     expect(markup).toContain(t('routes.write.fieldLocalToken'));
     expect(markup).toContain(t('routes.write.localToken'));

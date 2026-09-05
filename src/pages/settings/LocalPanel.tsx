@@ -54,6 +54,7 @@ export function LocalPanel({
   return (
     <Card>
       <CardContent className="divide-y divide-border pt-1">
+          <div data-help="settings-datadir">
           <SettingsRow
             wide
             label={t('settings.data.dataDirLabel')}
@@ -85,6 +86,8 @@ export function LocalPanel({
               }}
             />
           </SettingsRow>
+          </div>
+          <div data-help="settings-logs">
           <SettingsRow
             label={t('settings.data.logLevelLabel')}
             description={t('settings.data.logLevelDescription')}
@@ -152,6 +155,7 @@ export function LocalPanel({
               }}
             />
           </SettingsRow>
+          </div>
           <SettingsRow
             wide
             label={t('settings.data.logsDirLabel')}

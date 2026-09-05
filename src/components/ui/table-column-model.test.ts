@@ -95,6 +95,7 @@ describe('resizable table wiring', () => {
     'src/pages/skills/SkillMatrix.tsx',
     'src/pages/routes/pool/PoolAuthorizationList.tsx',
     'src/pages/routes/tokens/TokenList.tsx',
+    'src/pages/projects/ProjectTree.tsx',
   ];
 
   it('every useColumnWidths call passes a StorageKey-backed constant', () => {

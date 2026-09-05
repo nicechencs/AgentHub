@@ -16,6 +16,8 @@ describe('FeedbackButton', () => {
     expect(button).toContain('GITHUB_NEW_ISSUE_URL');
     expect(button).toContain("from '@/lib/open-external'");
     expect(button).toContain('chrome.feedback.label');
+    expect(button).toContain('size="icon"');
+    expect(button).toContain('variant="ghost"');
     expect(GITHUB_NEW_ISSUE_URL).toBe('https://github.com/nicechencs/AgentHub/issues/new');
   });
 });

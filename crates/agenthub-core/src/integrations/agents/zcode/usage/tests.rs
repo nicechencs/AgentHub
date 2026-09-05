@@ -129,3 +129,52 @@ fn collect_pipeline_harvests_registered_source() {
     assert_eq!(stats.events[0].input_tokens, 90);
     assert_eq!(stats.events[0].cache_read_tokens, 10);
 }
+
+#[test]
+fn collect_second_pass_counts_only_changed_harvest_rows() {
+    use crate::models::AgentId;
+    use crate::platform::usage::builtin_usage_registry;
+    use crate::services::UsageService;
+    use crate::utils::test_env::{lock_test_env, EnvVarGuard};
+
+    let _lock = lock_test_env();
+    let tmp = tempfile::tempdir().unwrap();
+    seed_model_usage(
+        tmp.path(),
+        &[(
+            "u1",
+            "sess_a",
+            "GLM-5.3",
+            100,
+            20,
+            0,
+            10,
+            1_787_916_973_108,
+            "completed",
+        )],
+    );
+    let _home = EnvVarGuard::set("ZCODE_HOME", tmp.path());
+    let dbdir = tempfile::tempdir().unwrap();
+    let db = crate::storage::Database::open(&dbdir.path().join("u.db")).unwrap();
+    let service = UsageService::with_registry(db, builtin_usage_registry().clone());
+
+    let first = service.collect(Some(AgentId::Zcode)).unwrap();
+    assert_eq!(first.inserted, 1);
+    let second = service.collect(Some(AgentId::Zcode)).unwrap();
+    assert_eq!(
+        second.inserted, 0,
+        "unchanged harvest must not count as new rows"
+    );
+
+    let conn = rusqlite::Connection::open(tmp.path().join("cli").join("db").join("db.sqlite"))
+        .unwrap();
+    conn.execute(
+        "UPDATE model_usage SET input_tokens = 200 WHERE id = 'u1'",
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    let third = service.collect(Some(AgentId::Zcode)).unwrap();
+    assert_eq!(third.inserted, 1, "token change on the same id is an update");
+}

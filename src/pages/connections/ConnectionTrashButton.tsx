@@ -140,6 +140,7 @@ export function ConnectionTrashButton({
         variant="outline"
         size="sm"
         className="gap-2"
+        data-help="connections-trash"
         onClick={() => {
           setOpen(true);
           void load();

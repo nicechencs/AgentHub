@@ -7,11 +7,14 @@
 const PREFIX = 'agenthub:';
 
 const LAYOUT_STORAGE_KEY = {
+  sidebarWidth: `${PREFIX}sidebar-width`,
+  routesNavWidth: `${PREFIX}routes-nav-width`,
   skillsPreviewWidth: `${PREFIX}skills-preview-width`,
   skillsMatrixLegendOpen: `${PREFIX}skills-matrix-legend-open`,
   skillsMatrixColumnWidths: `${PREFIX}skills-matrix-column-widths`,
   skillsMarketColumnWidths: `${PREFIX}skills-market-column-widths`,
   projectsPreviewWidth: `${PREFIX}projects-preview-width`,
+  projectsColumnWidths: `${PREFIX}projects-column-widths`,
   pluginsPreviewWidth: `${PREFIX}plugins-preview-width`,
   agentsPreviewWidth: `${PREFIX}agents-preview-width`,
   agentsColumnWidths: `${PREFIX}agents-column-widths`,
@@ -40,6 +43,8 @@ export const StorageKey = {
   /** One-shot: first-launch system language already seeded into core */
   languageSystemSeeded: `${PREFIX}language-system-seeded-v1`,
   onboardingDone: `${PREFIX}onboarding-done`,
+  /** One-shot: first-run hint on the help / feedback buttons */
+  chromeHintDismissed: `${PREFIX}chrome-hint-dismissed`,
   usageGuideDismissed: `${PREFIX}usage-guide-dismissed`,
   dismissedAlertIds: `${PREFIX}dismissed-alert-ids`,
   sidebarCollapsed: `${PREFIX}sidebar-collapsed`,

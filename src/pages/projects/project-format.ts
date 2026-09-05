@@ -51,6 +51,20 @@ export function titleHoverLabel(title: string, preview?: string | null): string 
   return extra ? `${title}\n${extra}` : title;
 }
 
+/** Card title hover: alias first, native title on its own line, then leftover preview. */
+export function projectTitleHoverLabel(
+  p: Pick<AgentProject, 'title' | 'alias' | 'preview'>,
+): string {
+  const shown = displayTitle(p);
+  const alias = p.alias?.trim();
+  const native = p.title.trim();
+  const extra = extraPreview(shown, p.preview);
+  const lines = [shown];
+  if (alias && native && native !== alias) lines.push(native);
+  if (extra) lines.push(extra);
+  return lines.join('\n');
+}
+
 export function fmtBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;

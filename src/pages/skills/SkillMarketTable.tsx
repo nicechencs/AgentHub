@@ -111,6 +111,7 @@ export function SkillMarketTable({
   };
 
   return (
+    <div data-help="skills-market">
     <TableShell>
       <Table className="table-fixed" style={{ minWidth: totalWidth }}>
         <colgroup>
@@ -214,5 +215,6 @@ export function SkillMarketTable({
         </TableBody>
       </Table>
     </TableShell>
+    </div>
   );
 }

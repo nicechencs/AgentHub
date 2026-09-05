@@ -76,13 +76,12 @@ import {
   groupProjectsByPath,
   parseProjectSortKey,
   sortProjectGroups,
-  sortSessions,
   type ProjectGroup,
   type ProjectSortKey,
 } from './project-groups';
 import { ProjectConversationPreviewPanel } from './ProjectConversationPreviewPanel';
 import { ProjectTree } from './ProjectTree';
-import { nestSessions } from './session-nest';
+import { nestSessions, reviewsForParent } from './session-nest';
 import {
   allVisibleSessionsSelected,
   collectSelectableSessions,
@@ -221,7 +220,6 @@ export default function ProjectsPage() {
 
   const resetTree = useCallback(() => {
     setExpanded(new Set());
-    setNestedOpen(new Set());
     setSessionsByProject({});
     setSelected(new Set());
     setLoadingProjectIds(new Set());
@@ -439,14 +437,13 @@ export default function ProjectsPage() {
   const visibleSessions = useCallback(
     (groupId: string) => {
       const group = visibleGroups.find((item) => item.id === groupId);
-      const rows = group
+      return group
         ? group.members.flatMap((member) =>
             visibleSessionsForProject(member.id, projects, q, sessionsByProject),
           )
         : visibleSessionsForProject(groupId, projects, q, sessionsByProject);
-      return sortSessions(rows, sortKey);
     },
-    [visibleGroups, sessionsByProject, q, projects, sortKey],
+    [visibleGroups, sessionsByProject, q, projects],
   );
 
   const selectableSessions = useMemo(
@@ -665,7 +662,7 @@ export default function ProjectsPage() {
 
   const listPane = (
     <>
-      <div className={cn(pageRhythm.chromeRow, 'gap-3')}>
+      <div className={cn(pageRhythm.chromeRow, 'gap-3')} data-help="page-chrome">
         {agentsLoading ? (
           <div className="h-9 w-64 animate-pulse rounded-card bg-hover" />
         ) : (
@@ -732,6 +729,7 @@ export default function ProjectsPage() {
 
       <div className={pageRhythm.chromeRow}>
         <SearchField
+          data-help="projects-search"
           className="min-w-[200px] max-w-sm flex-1"
           placeholder={t('projects.page.searchPlaceholder')}
           value={search}
@@ -795,6 +793,7 @@ export default function ProjectsPage() {
           showDelete={showDelete}
           deleteHintFor={deleteHintFor}
           previewSessionId={preview.target?.id ?? null}
+          followPreview={preview.expanded}
           nestedOpen={nestedOpen}
           visibleSessions={visibleSessions}
           onToggleExpand={(group) => void toggleExpand(group)}
@@ -809,14 +808,20 @@ export default function ProjectsPage() {
           onGoContinue={(s) => void goContinue(s)}
           onRequestDelete={setDeleteTarget}
           queryKey={q}
+          sortKey={sortKey}
         />
       )}
     </>
   );
 
+  const previewReviewSessions = preview.target
+    ? reviewsForParent(preview.target, sessionsByProject[preview.target.projectId] ?? [])
+    : [];
+
   const previewPanel = preview.target ? (
     <ProjectConversationPreviewPanel
       session={preview.target}
+      reviewSessions={previewReviewSessions}
       open
       width={preview.paneWidth}
       onClose={preview.close}

@@ -79,6 +79,7 @@ export function Sub2ApiImportToAgentButton({
           aria-label={label}
           disabled={busy}
           data-sub2api-import=""
+          data-help="sub2api-import"
         >
           {label}
         </Button>

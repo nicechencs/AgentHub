@@ -19,7 +19,8 @@ import {
  * - **workbench** / **flush**：无 Card 的贴边特例（目前业务侧不用；保留 API）
  *
  * 业务表只选 `TableShell variant`；表头/行/单元格密度由 Context 自动套用。
- * 左右分栏里的字段表再设 `layout="split"`（窄栏强制横向滚动）；点行打开详情用 `TableRow onOpen`。
+ * 左右分栏里的字段表再设 `layout="split"`（窄栏强制横向滚动）。
+ * 打开详情：密字段表用 `ListNameButton`；已展开时跟行切换用 `followInspectOpen` + `TableRow onOpen`；简单清单用 `TableRow onOpen`。
  */
 export const tableStyles = {
   table: 'w-full border-collapse text-body',
@@ -241,11 +242,13 @@ export function ColumnResizeHandle<K extends string>({
   label,
   onResizeStart,
   onResizeKeyDown,
+  tabIndex = 0,
 }: {
   columnKey: K;
   label: string;
   onResizeStart: (key: K, e: React.MouseEvent | React.PointerEvent) => void;
   onResizeKeyDown?: (key: K, e: React.KeyboardEvent) => void;
+  tabIndex?: number;
 }) {
   const { t } = useI18n();
   return (
@@ -254,7 +257,9 @@ export function ColumnResizeHandle<K extends string>({
         role="separator"
         aria-orientation="vertical"
         aria-label={t('common.resizeColumnNamed', { label })}
-        tabIndex={0}
+        aria-hidden={tabIndex < 0 ? true : undefined}
+        tabIndex={tabIndex}
+        onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => onResizeStart(columnKey, e)}
         onMouseDown={(e) => onResizeStart(columnKey, e)}
         onKeyDown={(e) => onResizeKeyDown?.(columnKey, e)}

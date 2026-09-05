@@ -76,7 +76,11 @@ describe('connections layout wiring', () => {
     expect(page).toContain('onShowDetail');
     expect(page).toContain('<TicketDetailPanel');
     expect(list).toContain('data-ticket-name');
+    expect(list).toContain('<ListNameButton');
+    expect(list).toContain('onOpen={onFollowDetail');
     expect(list).not.toContain('onOpen={onShowDetail');
+    expect(page).toContain('followInspectOpen');
+    expect(page).toContain("kind === 'detail'");
     expect(list).not.toContain("t('connections.list.details')");
     expect(list).toContain('TableShell');
     expect(list).toContain('TableRow');
@@ -177,10 +181,15 @@ describe('connections layout wiring', () => {
 
   it('labels official login and API Key as two kinds, not cryptic statuses', () => {
     const list = source('TicketWalletList.tsx');
-    expect(list).toContain("t('kind.oauth')");
-    expect(list).toContain("t('kind.apikey')");
+    const labels = source('ticket-card-detail.ts');
+    const mark = source('../../components/shared/CredentialKindMark.tsx');
+    expect(list).toContain('<CredentialKindMark');
+    expect(list).toContain('ticketCredentialClassChipLabel');
     expect(list).not.toContain("t('connections.list.oauthAccount')");
     expect(list).not.toContain("t('connections.list.apiKeyAuth')");
+    expect(labels).toContain("t('kind.oauth')");
+    expect(labels).toContain("t('kind.apikey')");
+    expect(mark).toContain('connectionKindLabel');
     expect(translate('zh', 'kind.oauth')).toBe('官方登录');
     expect(translate('zh', 'kind.apikey')).toBe('API Key');
     expect(translate('en', 'kind.oauth')).toBe('Official login');

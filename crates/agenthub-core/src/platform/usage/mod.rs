@@ -4,6 +4,7 @@
 
 mod collect;
 mod gateway_source;
+mod jsonl_cursor;
 mod registry;
 mod source;
 pub mod sources;

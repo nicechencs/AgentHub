@@ -4,7 +4,7 @@ description: 按稀疏端口、能力声明和目录注册把一个 Agent 接入
 type: guide
 audience: contributor
 status: current
-updated: 2026-08-29
+updated: 2026-09-05
 ---
 
 # 添加 Agent
@@ -75,6 +75,24 @@ updated: 2026-08-29
 3. 任何 Tauri 调用放在 `src/lib/backend/tauri/`；页面通过 backend contract 或 `lib/api` façade。
 4. mock fixture 只为 `pnpm dev:mock` 和测试准备，不进入生产 build。
 5. UI 说「登录」和「路由/Routes」；内部实现可使用 Ticket、Binding、bridge 等名称，但不要把内部名直接当用户文案。
+
+
+## 5a. 页面触点（UI awareness）
+
+接入新 Agent 时，先读 [页面模式](../ui/page-patterns.md) 里各页的 **Agent touchpoints**，再决定要不要改 catalog / 前端装饰：
+
+| 典型需要感知的页面 | 何时 |
+|---|---|
+| Agents | catalog / install / detect / 隐藏 |
+| Dashboard | Usage 解析器、ConnectFlow 直连/本机路由 |
+| Connections | 导入、官方登录、API Key 写入与占用方式 |
+| Routes（board/pool/tokens/activity） | `plan`/`bind`、入池、本机令牌写回 |
+| Skills / Projects / Plugins / MCP | Skills 矩阵、ProjectHistory/Delete、插件列表或只读 MCP 路径 |
+| Chat | StructuredStream / DangerousMode / SessionResume |
+| Settings → 备份 | LiveBackup 快照身份 |
+| Sub2API | 仅当要从站点导入 Key 到该 Agent |
+
+不要在页面里写死新的 `match AgentId` 分支；列表仍以 runtime catalog 为准。功能落地后的文档映射见 [STYLE.md](../STYLE.md#功能完成后的文档更新映射)。
 
 ## 6. 测试
 

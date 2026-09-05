@@ -53,6 +53,7 @@ export function SideInspectPanel({
       )}
       style={width != null ? { width } : undefined}
       data-side-inspect=""
+      data-help="inspect-panel"
       onTransitionEnd={onWidthTransitionEnd}
     >
       <header className="flex h-10 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border px-3">

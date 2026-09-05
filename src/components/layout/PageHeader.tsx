@@ -29,7 +29,7 @@ export function PageTitleBlock({
   ) : null;
 
   return (
-    <div className={pageRhythm.pageTitleBlock}>
+    <div className={pageRhythm.pageTitleBlock} data-help="page-title">
       <h1 className={cn(pageRhythm.pageTitle, 'shrink-0')}>{title}</h1>
       {badge ? <span className="self-center">{badge}</span> : null}
       {meta}

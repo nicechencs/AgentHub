@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentSession } from '@/lib/types';
-import { cursorSubagentParentId, flattenVisibleSessions, nestSessions } from './session-nest';
+import {
+  cursorSubagentParentId,
+  flattenVisibleSessions,
+  nestSessions,
+  nestedSessionLabel,
+  nestedSessionRows,
+  reviewsForParent,
+  sessionsOrderedForNesting,
+} from './session-nest';
 
 function session(
   partial: Partial<AgentSession> & Pick<AgentSession, 'id' | 'relativePath'>,
@@ -73,6 +81,90 @@ describe('session-nest', () => {
     ).toEqual(['parent', 'child']);
   });
 
+  it('keeps Codex review threads off the visible list', () => {
+    const parent = session({
+      id: 'codex-parent',
+      agentId: 'codex',
+      relativePath: 'sessions/2026/09/05/rollout-parent.jsonl',
+      sessionId: 'parent-1',
+      title: '帮我看看当前界面',
+    });
+    const review = session({
+      id: 'codex-review',
+      agentId: 'codex',
+      relativePath: 'sessions/2026/09/05/rollout-review.jsonl',
+      sessionId: 'review-1',
+      parentSessionId: 'parent-1',
+      threadKind: 'review',
+      title: '# AGENTS.md instructions',
+    });
+    expect(nestSessions([parent, review]).map((n) => n.session.id)).toEqual(['codex-parent']);
+    expect(flattenVisibleSessions([parent, review], new Set()).map((s) => s.id)).toEqual([
+      'codex-parent',
+    ]);
+    expect(reviewsForParent(parent, [parent, review]).map((s) => s.id)).toEqual(['codex-review']);
+    const otherAgentReview = session({
+      id: 'cursor-review',
+      agentId: 'cursor',
+      relativePath: 'projects/ws/agent-transcripts/parent-1/review.jsonl',
+      sessionId: 'cursor-review-1',
+      parentSessionId: 'parent-1',
+      threadKind: 'review',
+    });
+    expect(reviewsForParent(parent, [parent, review, otherAgentReview]).map((s) => s.id)).toEqual([
+      'codex-review',
+    ]);
+  });
+
+  it('hangs Codex spawned children under the root conversation', () => {
+    const parent = session({
+      id: 'codex-parent',
+      agentId: 'codex',
+      relativePath: 'sessions/2026/09/03/rollout-parent.jsonl',
+      sessionId: 'parent-1',
+      title: '清理已经合并至dev的分支',
+    });
+    const child = session({
+      id: 'codex-child',
+      agentId: 'codex',
+      relativePath: 'sessions/2026/09/03/rollout-child.jsonl',
+      sessionId: 'parent-1',
+      parentSessionId: 'parent-1',
+      threadKind: 'subagent',
+      agentRole: 'explorer',
+      title: '清理已经合并至dev的分支',
+    });
+    const nestedChild = session({
+      id: 'codex-grandchild',
+      agentId: 'codex',
+      relativePath: 'sessions/2026/09/03/rollout-grandchild.jsonl',
+      sessionId: 'parent-1',
+      parentSessionId: 'codex-child-native',
+      threadKind: 'subagent',
+      agentRole: 'coder',
+      title: '清理已经合并至dev的分支',
+    });
+    const nested = nestSessions([parent, child, nestedChild]);
+    expect(nested.map((n) => n.session.id)).toEqual(['codex-parent']);
+    expect(nested[0]?.children.map((c) => c.id)).toEqual(['codex-child', 'codex-grandchild']);
+    expect(flattenVisibleSessions([parent, child, nestedChild], new Set()).map((s) => s.id)).toEqual(
+      ['codex-parent'],
+    );
+    expect(
+      flattenVisibleSessions([parent, child, nestedChild], new Set(['codex-parent'])).map(
+        (s) => s.id,
+      ),
+    ).toEqual(['codex-parent', 'codex-child', 'codex-grandchild']);
+    expect(reviewsForParent(child, [parent, child])).toEqual([]);
+  });
+
+  it('labels Codex spawn roles for nested rows', () => {
+    const t = (key: string) => key;
+    expect(nestedSessionLabel({ agentRole: 'explorer' }, t)).toBe('projects.tree.subSessionExplore');
+    expect(nestedSessionLabel({ agentRole: 'coder' }, t)).toBe('projects.tree.subSessionCode');
+    expect(nestedSessionLabel({}, t)).toBe('projects.tree.subSession');
+  });
+
   it('hangs Claude and Kimi subagent paths under the parent id', () => {
     const claudeParent = session({
       id: 'claude-parent',
@@ -126,5 +218,108 @@ describe('session-nest', () => {
     expect(nested).toHaveLength(1);
     expect(nested[0]?.session.id).toBe('child');
     expect(nested[0]?.children).toEqual([]);
+  });
+
+  it('does not hang Codex spawn children under another agent with the same session id', () => {
+    const cursor = session({
+      id: 'cursor-same-id',
+      agentId: 'cursor',
+      relativePath: parentRel,
+      sessionId: 'parent-1',
+      title: 'Cursor 主会话',
+      updatedAt: '2026-09-05T12:00:00.000Z',
+    });
+    const parent = session({
+      id: 'codex-parent',
+      agentId: 'codex',
+      relativePath: 'sessions/2026/09/03/rollout-parent.jsonl',
+      sessionId: 'parent-1',
+      title: '清理已经合并至dev的分支',
+      updatedAt: '2026-09-03T10:00:00.000Z',
+    });
+    const child = session({
+      id: 'codex-child',
+      agentId: 'codex',
+      relativePath: 'sessions/2026/09/03/rollout-child.jsonl',
+      sessionId: 'parent-1',
+      parentSessionId: 'parent-1',
+      threadKind: 'subagent',
+      agentRole: 'explorer',
+      title: '清理已经合并至dev的分支',
+      updatedAt: '2026-09-05T12:05:00.000Z',
+    });
+    const nested = nestSessions([cursor, parent, child]);
+    expect(nested.map((n) => n.session.id)).toEqual(['cursor-same-id', 'codex-parent']);
+    expect(nested[0]?.children).toEqual([]);
+    expect(nested[1]?.children.map((c) => c.id)).toEqual(['codex-child']);
+  });
+
+  it('keeps a Codex parent with newer children above other agents when sorting by time', () => {
+    const claude = session({
+      id: 'claude-recent',
+      agentId: 'claude',
+      relativePath: 'projects/-app/claude.jsonl',
+      sessionId: 'claude-1',
+      title: '最近的 Claude 会话',
+      updatedAt: '2026-09-05T11:00:00.000Z',
+    });
+    const parent = session({
+      id: 'codex-parent',
+      agentId: 'codex',
+      relativePath: 'sessions/2026/09/03/rollout-parent.jsonl',
+      sessionId: 'parent-1',
+      title: '清理已经合并至dev的分支',
+      updatedAt: '2026-09-03T10:00:00.000Z',
+    });
+    const child = session({
+      id: 'codex-child',
+      agentId: 'codex',
+      relativePath: 'sessions/2026/09/03/rollout-child.jsonl',
+      sessionId: 'parent-1',
+      parentSessionId: 'parent-1',
+      threadKind: 'subagent',
+      agentRole: 'explorer',
+      title: '清理已经合并至dev的分支',
+      updatedAt: '2026-09-05T12:00:00.000Z',
+    });
+    const ordered = sessionsOrderedForNesting([claude, parent, child], 'time');
+    expect(ordered.map((s) => s.id)).toEqual(['codex-parent', 'codex-child', 'claude-recent']);
+    const rows = nestedSessionRows([claude, parent, child], 'time');
+    expect(rows.map((n) => n.session.id)).toEqual(['codex-parent', 'claude-recent']);
+    expect(rows[0]?.children.map((c) => c.id)).toEqual(['codex-child']);
+  });
+
+  it('does not let child activity override name sort', () => {
+    const alpha = session({
+      id: 'claude-alpha',
+      agentId: 'claude',
+      relativePath: 'projects/-app/alpha.jsonl',
+      sessionId: 'claude-1',
+      title: 'Alpha',
+      updatedAt: '2026-09-04T00:00:00.000Z',
+    });
+    const parent = session({
+      id: 'codex-z',
+      agentId: 'codex',
+      relativePath: 'sessions/2026/09/03/rollout-z.jsonl',
+      sessionId: 'parent-1',
+      title: 'Zulu',
+      updatedAt: '2026-09-03T00:00:00.000Z',
+    });
+    const child = session({
+      id: 'codex-z-child',
+      agentId: 'codex',
+      relativePath: 'sessions/2026/09/03/rollout-z-child.jsonl',
+      sessionId: 'parent-1',
+      parentSessionId: 'parent-1',
+      threadKind: 'subagent',
+      title: 'Zulu',
+      updatedAt: '2026-09-05T00:00:00.000Z',
+    });
+    expect(sessionsOrderedForNesting([alpha, parent, child], 'name').map((s) => s.id)).toEqual([
+      'claude-alpha',
+      'codex-z',
+      'codex-z-child',
+    ]);
   });
 });

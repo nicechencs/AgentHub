@@ -21,6 +21,7 @@ describe('projects split layout', () => {
     expect(page).toContain('<ProjectConversationPreviewPanel');
     expect(page).not.toContain('useProjectPreview');
     expect(page).not.toContain('previewShellMounted');
+    expect(page).toContain('followPreview={preview.expanded}');
   });
 
   it('offers 全部, merges same-path projects, and sorts the list', () => {
@@ -39,7 +40,17 @@ describe('projects split layout', () => {
     expect(tree).not.toContain('AgentDot');
     expect(tree).toContain('sessionPageCount');
     expect(tree).toContain("t('projects.tree.pageNext'");
+    expect(tree).toContain('justify-start gap-2 border-t');
+    expect(tree).toContain('text-xs text-accent tabular-nums');
+    expect(tree).toContain('className="text-accent hover:text-accent"');
     expect(tree).toContain('hidden={!open}');
+    expect(tree).toContain('projectGroupListGrid');
+    expect(tree).toContain('projectGroupCardGrid');
+    expect(tree).toContain('projectGroupListTemplate');
+    expect(tree).toContain('ColumnResizeHandle');
+    expect(tree).toContain('grid-cols-subgrid');
+    expect(tree).toContain("t('projects.tree.sessionCount'");
+    expect(tree).not.toContain('sessionMeta');
   });
 
   it('renders excerpt turns as a user/assistant conversation', () => {
@@ -54,6 +65,9 @@ describe('projects split layout', () => {
     expect(preview).toContain("t('projects.preview.copyRecord')");
     expect(preview).toContain("t('projects.preview.copyTurn')");
     expect(preview).toContain("t('projects.preview.truncated')");
+    expect(preview).toContain("t('projects.preview.convention')");
+    expect(preview).toContain("t('projects.preview.approvals')");
+    expect(preview).toContain("t('projects.preview.backToConversation')");
     expect(preview).toContain('CopyTextButton');
     expect(preview).toContain('reloadKey');
   });

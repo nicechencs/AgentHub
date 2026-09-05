@@ -1,7 +1,7 @@
 import { MessageSquarePlus } from 'lucide-react';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
-import { Hint } from '@/components/ui/tooltip';
 import { GITHUB_NEW_ISSUE_URL } from '@/lib/github';
 import { openExternalLink } from '@/lib/open-external';
 
@@ -22,15 +22,16 @@ export function FeedbackButton() {
   };
 
   return (
-    <Hint label={label}>
-      <button
-        type="button"
-        className="relative rounded-btn p-1.5 text-secondary hover:bg-hover hover:text-primary"
-        aria-label={label}
-        onClick={handleClick}
-      >
-        <MessageSquarePlus className="h-4 w-4" />
-      </button>
-    </Hint>
+    <Button
+      type="button"
+      size="icon"
+      variant="ghost"
+      className="relative"
+      title={label}
+      aria-label={label}
+      onClick={handleClick}
+    >
+      <MessageSquarePlus className="h-4 w-4" />
+    </Button>
   );
 }

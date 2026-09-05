@@ -80,6 +80,7 @@ export function AgentOverview({
             return (
               <Card
                 key={meta.id}
+                data-help="list-row"
                 role={interactive ? 'button' : undefined}
                 tabIndex={interactive ? 0 : undefined}
                 aria-label={view.ariaLabel}

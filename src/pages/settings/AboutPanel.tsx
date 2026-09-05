@@ -32,6 +32,7 @@ export function AboutPanel({
     <>
       <Card>
         <CardContent className="divide-y divide-border pt-1">
+          <div data-help="settings-version">
           <SettingsRow
             label={t('settings.about.versionLabel')}
             description={
@@ -53,6 +54,7 @@ export function AboutPanel({
               {checking ? t('settings.about.checking') : t('settings.about.checkUpdate')}
             </Button>
           </SettingsRow>
+          </div>
           {pendingUpdate && (
             <SettingsRow
               label={t('settings.about.newVersionLabel')}
@@ -89,6 +91,7 @@ export function AboutPanel({
               {t('settings.about.openRepo')}
             </Button>
           </SettingsRow>
+          <div data-help="settings-feedback">
           <SettingsRow
             label={t('settings.about.feedbackLabel')}
             description={t('settings.about.feedbackDescription')}
@@ -111,6 +114,7 @@ export function AboutPanel({
               {t('settings.about.openFeedback')}
             </Button>
           </SettingsRow>
+          </div>
         </CardContent>
       </Card>
       <div className="mt-4">

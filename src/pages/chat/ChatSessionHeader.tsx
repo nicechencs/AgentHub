@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Copy, FolderOpen, PanelLeftOpen, Settings2, ShieldAlert, Terminal } from 'lucide-react';
+import { ChromeActions } from '@/components/layout/ChromeActions';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { copyTextToClipboard } from '@/components/shared/CopyTextButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
-import { Hint } from '@/components/ui/tooltip';
 import type { Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
@@ -72,18 +73,20 @@ export function ChatSessionHeader({
         'flex h-10 shrink-0 items-center gap-2 border-b border-border',
         pageRhythm.chatChromeX,
       )}
+      data-help="chat-header"
     >
       {!railOpen && (
-        <Hint label={t('chat.rail.expandHistory')}>
-          <button
-            type="button"
-            className="flex h-7 w-7 items-center justify-center rounded-btn text-muted hover:bg-hover hover:text-primary"
-            onClick={onExpandRail}
-            aria-label={t('chat.rail.expandHistory')}
-          >
-            <PanelLeftOpen className="h-4 w-4" />
-          </button>
-        </Hint>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="text-muted"
+          onClick={onExpandRail}
+          title={t('chat.rail.expandHistory')}
+          aria-label={t('chat.rail.expandHistory')}
+        >
+          <PanelLeftOpen className="h-4 w-4" />
+        </Button>
       )}
       <div className="min-w-0 flex-1">
         {active && editing ? (
@@ -125,96 +128,99 @@ export function ChatSessionHeader({
       </div>
       {active && (
         <div className="flex min-w-0 shrink-0 items-center gap-1.5">
-          <Hint label={recordText ? t('common.copyRecord') : t('common.copyRecordEmpty')}>
-            <button
-              type="button"
-              className="flex h-7 w-7 items-center justify-center rounded-btn text-muted hover:bg-hover hover:text-primary disabled:opacity-40"
-              disabled={!recordText}
-              aria-label={t('common.copyRecord')}
-              onClick={() => {
-                if (!recordText) {
-                  toast({ title: t('common.copyRecordEmpty'), variant: 'danger' });
-                  return;
-                }
-                void copyTextToClipboard(recordText).then(
-                  () => toast({ title: t('common.copied'), variant: 'success' }),
-                  () => toast({ title: t('common.copyFailed'), variant: 'danger' }),
-                );
-              }}
-            >
-              <Copy className="h-3.5 w-3.5" />
-            </button>
-          </Hint>
-          <Hint label={active.cwd || t('chat.header.pickCwd')}>
-            <button
-              type="button"
-              onClick={onPickWorkingDirectory}
-              className={cn(
-                'inline-flex h-7 max-w-[9rem] items-center gap-1 rounded-btn border border-border bg-subtle px-2 text-meta',
-                active.cwd ? 'text-secondary hover:bg-hover' : 'text-warning hover:bg-hover',
-              )}
-            >
-              <FolderOpen className="h-3 w-3 shrink-0" />
-              <span className="truncate">
-                {active.cwd ? cwdShortName(active.cwd, t) : t('chat.header.cwdUnset')}
-              </span>
-            </button>
-          </Hint>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="text-muted"
+            disabled={!recordText}
+            title={recordText ? t('common.copyRecord') : t('common.copyRecordEmpty')}
+            aria-label={t('common.copyRecord')}
+            onClick={() => {
+              if (!recordText) {
+                toast({ title: t('common.copyRecordEmpty'), variant: 'danger' });
+                return;
+              }
+              void copyTextToClipboard(recordText).then(
+                () => toast({ title: t('common.copied'), variant: 'success' }),
+                () => toast({ title: t('common.copyFailed'), variant: 'danger' }),
+              );
+            }}
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={onPickWorkingDirectory}
+            data-help="chat-cwd"
+            title={active.cwd || t('chat.header.pickCwd')}
+            className={cn('max-w-[9rem]', !active.cwd && 'text-warning')}
+          >
+            <FolderOpen className="h-3 w-3 shrink-0" />
+            <span className="truncate">
+              {active.cwd ? cwdShortName(active.cwd, t) : t('chat.header.cwdUnset')}
+            </span>
+          </Button>
           {active.nativeSessionId && (
-            <Hint
-              label={t('chat.header.nativeSession', {
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="max-w-[11rem]"
+              title={t('chat.header.nativeSession', {
                 id: shortenId(active.nativeSessionId, 16),
               })}
+              onClick={() => {
+                const command = conversationResumeCommand(active);
+                if (!command) {
+                  toast({ title: t('chat.header.noResumeCommand'), variant: 'danger' });
+                  return;
+                }
+                void navigator.clipboard.writeText(command).then(
+                  () =>
+                    toast({
+                      title: t('chat.header.resumeCommandCopied'),
+                      description: t('chat.header.resumeCommandCopiedHint'),
+                    }),
+                  () => toast({ title: t('chat.bubble.copyFailed'), variant: 'danger' }),
+                );
+              }}
+              aria-label={t('chat.header.copyResumeCommand')}
             >
-              <button
-                type="button"
-                className="inline-flex h-7 max-w-[11rem] items-center gap-1 rounded-btn border border-border bg-subtle px-2 text-meta text-secondary hover:bg-hover"
-                onClick={() => {
-                  const command = conversationResumeCommand(active);
-                  if (!command) {
-                    toast({ title: t('chat.header.noResumeCommand'), variant: 'danger' });
-                    return;
-                  }
-                  void navigator.clipboard.writeText(command).then(
-                    () =>
-                      toast({
-                        title: t('chat.header.resumeCommandCopied'),
-                        description: t('chat.header.resumeCommandCopiedHint'),
-                      }),
-                    () => toast({ title: t('chat.bubble.copyFailed'), variant: 'danger' }),
-                  );
-                }}
-                aria-label={t('chat.header.copyResumeCommand')}
-              >
-                <Terminal className="h-3 w-3 shrink-0" />
-                <span className="truncate">{shortenId(active.nativeSessionId, 10)}</span>
-              </button>
-            </Hint>
+              <Terminal className="h-3 w-3 shrink-0" />
+              <span className="truncate">{shortenId(active.nativeSessionId, 10)}</span>
+            </Button>
           )}
           {approveOn && (
-            <Hint label={autoApproveHint(t, autoApproveEffect(selectedAgent))}>
-              <button
-                type="button"
-                onClick={onOpenSettings}
-                className="inline-flex h-7 items-center gap-1 rounded-btn border border-border bg-subtle px-2 text-meta text-warning hover:bg-hover"
-              >
-                <ShieldAlert className="h-3 w-3 shrink-0" />
-                {t('chat.header.autoApprove')}
-              </button>
-            </Hint>
-          )}
-          <Hint label={t('chat.header.sessionSettings')}>
-            <button
+            <Button
               type="button"
-              className="flex h-7 w-7 items-center justify-center rounded-btn text-muted hover:bg-hover hover:text-primary"
-              aria-label={t('chat.header.sessionSettings')}
+              size="sm"
+              variant="outline"
               onClick={onOpenSettings}
+              title={autoApproveHint(t, autoApproveEffect(selectedAgent))}
+              className="text-warning"
             >
-              <Settings2 className="h-4 w-4" />
-            </button>
-          </Hint>
+              <ShieldAlert className="h-3 w-3 shrink-0" />
+              {t('chat.header.autoApprove')}
+            </Button>
+          )}
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="text-muted"
+            data-help="chat-settings"
+            title={t('chat.header.sessionSettings')}
+            aria-label={t('chat.header.sessionSettings')}
+            onClick={onOpenSettings}
+          >
+            <Settings2 className="h-4 w-4" />
+          </Button>
         </div>
       )}
+      <ChromeActions />
     </header>
   );
 }

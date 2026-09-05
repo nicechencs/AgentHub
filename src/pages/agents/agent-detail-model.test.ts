@@ -232,7 +232,8 @@ describe('AgentDetailPanel markup', () => {
     expect(html).toContain('var(--agent-claude)');
     expect(html).toContain('>官方脚本</button>');
     expect(html).not.toMatch(/>native</);
-    expect(html).toContain('~/.claude');
+    expect(html).toContain('~/');
+    expect(html).toContain('.claude');
     expect(html).not.toMatch(/配置目录<\/span>/);
   });
 
@@ -246,7 +247,8 @@ describe('AgentDetailPanel markup', () => {
     expect(html).toContain('var(--agent-codex)');
     expect(html).not.toContain('var(--agent-kimi)');
     expect(html).not.toContain('随当前登录而定');
-    expect(html).toContain('~/.pi/agent');
+    expect(html).toContain('~/.pi/');
+    expect(html).toContain('>agent</span>');
     expect(html).toContain('打开该 Agent 的配置目录');
     expect(html).toContain('打开安装目录');
     expect(html).toContain('npm 包');
@@ -319,7 +321,8 @@ describe('AgentDetailPanel markup', () => {
 
   it('keeps the installed native path and still offers missing npm install', () => {
     const html = renderPanel(installed('codex', 'native'));
-    expect(html).toContain('/home/box/.local/bin/codex');
+    expect(html).toContain('/home/box/.local/bin/');
+    expect(html).toContain('>codex</span>');
     expect(html).toContain('打开安装目录');
     expect(html).toContain('仅卸载程序');
     expect(html).toContain('npm i -g @openai/codex');
@@ -344,7 +347,8 @@ describe('AgentDetailPanel markup', () => {
     expect(html).not.toContain('Kimi 等补全');
     expect(html).toContain('var(--agent-codex)');
     expect(html).not.toContain('随当前登录而定');
-    expect(html).toContain('~/.workbuddy');
+    expect(html).toContain('~/');
+    expect(html).toContain('.workbuddy');
     expect(html).toContain('卸载并删除配置');
     expect(html).not.toContain('仅卸载程序');
     expect(html).not.toMatch(/>native</);

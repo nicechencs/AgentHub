@@ -9,6 +9,8 @@ import {
   formatKeyTimestamp,
   formatUsdAmount,
   applyGroupToKey,
+  initialSub2ApiKeysView,
+  sub2apiKeysMemoryMatches,
   maskSub2ApiTableKey,
   mergeUpdatedSub2ApiKey,
   nextSub2ApiKeyToggleStatus,
@@ -47,14 +49,54 @@ describe('sub2api page model', () => {
         true,
       ),
     ).toBe('logged-in');
-    // Restoring wins so the login form does not flash
+    // Saved session stays logged-in; restore does not replace the page
     expect(
       sub2apiPagePhase(
         { siteUrl: 'https://x', gatewayBaseUrl: 'https://x', accessToken: 't' },
         false,
         true,
       ),
-    ).toBe('restoring');
+    ).toBe('logged-in');
+    // Restoring without a session hides the login form
+    expect(sub2apiPagePhase(null, false, true)).toBe('restoring');
+  });
+
+  it('reuses the last key list for the same site instead of starting empty',
+    () => {
+    const session = {
+      siteUrl: 'https://x',
+      gatewayBaseUrl: 'https://x',
+      accessToken: 't',
+      user: { id: 1, email: 'a@x' },
+    };
+    const memory = {
+      siteUrl: 'https://x',
+      userKey: '1',
+      keys: [{ id: 9, key: 'sk', name: 'n', status: 'active' }],
+      groups: [{ id: 2, name: 'VIP' }],
+    };
+    expect(sub2apiKeysMemoryMatches(memory, session)).toBe(true);
+    expect(
+      sub2apiKeysMemoryMatches({ ...memory, siteUrl: 'https://other' }, session),
+    ).toBe(false);
+    expect(
+      sub2apiKeysMemoryMatches({ ...memory, userKey: '2' }, session),
+    ).toBe(false);
+    expect(
+      initialSub2ApiKeysView(session, memory),
+    ).toEqual({
+      keys: memory.keys,
+      groups: memory.groups,
+      loadingKeys: false,
+    });
+    expect(
+      initialSub2ApiKeysView(session, null),
+    ).toEqual({ keys: [], groups: [], loadingKeys: true });
+    expect(initialSub2ApiKeysView(null, memory)).toEqual({
+      keys: [],
+      groups: [],
+      loadingKeys: false,
+    });
   });
 
   it('prefers display name then username then email', () => {

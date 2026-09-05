@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: product, design, frontend, and core contributors
 source-of-truth: root AGENTS.md, current planner contracts, and connection/account services
-updated: 2026-09-03
+updated: 2026-09-05
 ---
 
 # 产品边界与术语决策
@@ -14,7 +14,7 @@ updated: 2026-09-03
 
 - 页面说“登录”“Connections”“Routes”，不说“票”“钱包”“Binding”。
 - `Ticket`、`TicketBinding`、`Wallet`、`Binding` 是实现/领域术语，不能外溢到普通 UI 文案。
-- Connections 管通用登录，以及从 Connections 创建或导入的登录。行入口是「分享至连接池」；接到某个工具从 Dashboard「连接/切换」。**API Key 都可以分享**（含 WorkBuddy / ZCode 等上配置的）；**国产官方登录不能分享**。
+- Connections 管通用登录，以及从 Connections 创建或导入的登录。连接页**不提供**「分享至连接池」行入口；入池在 Routes 连接池用「从连接同步」。接到某个工具从 Dashboard「连接/切换」。**API Key 都可以同步入池**（含 WorkBuddy / ZCode / Pi / Cursor 上配置的）；官方 OAuth 仅 Claude / Codex / Grok；**国产官方登录不能分享**。
 - Routes 可以直接新增和管理“仅用于本机路由”的官方登录 / API Key。这类 login 使用 `home=route_pool`，可不出现在 Connections；其新增、编辑、删除生命周期由 Routes 管理。
 - 从 Connections 选入连接池的登录，登录本身仍由 Connections 管理；Routes 只管理它在本机路由中的成员关系和运行配置。在连接池里编辑这份官方登录并保存时，会先复制成连接池自己的一份（连接页那份还在），再问要不要把模型写回连接页。连接池页也可以「从连接同步」（所有 API Key 都可同步；国产官方登录不进入候选）。
 - 本机路由仍是登录的一种使用方式；从连接池移除成员不等于删除 Connections 管理的登录。连接页与连接池各有独立回收站；删除和恢复只回到原来那一页。

@@ -174,17 +174,23 @@ export function UsageSyncProvider({ children }: { children: ReactNode }) {
 
         if (source === 'manual') {
           const models = `${missing.slice(0, 4).join(', ')}${missing.length > 4 ? '…' : ''}`;
+          const insertedNote =
+            inserted != null && inserted > 0
+              ? t('dashboard.sync.toastInsertedParen', { n: inserted })
+              : '';
           toast({
             title: t('dashboard.sync.toastManualDone'),
             description:
               missing.length > 0
                 ? t('dashboard.sync.toastManualMissing', {
-                    inserted: inserted != null ? t('dashboard.sync.toastInsertedParen', { n: inserted }) : '',
+                    inserted: insertedNote,
                     models,
                   })
-                : inserted != null
+                : inserted != null && inserted > 0
                   ? t('dashboard.sync.toastManualInserted', { n: inserted })
-                  : t('dashboard.sync.toastManualGeneric'),
+                  : inserted === 0
+                    ? t('dashboard.sync.toastManualUnchanged')
+                    : t('dashboard.sync.toastManualGeneric'),
             variant: missing.length > 0 ? 'default' : 'success',
           });
         } else if (inserted != null && inserted > 0) {
