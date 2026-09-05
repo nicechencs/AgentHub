@@ -6,10 +6,11 @@ import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tip } from '@/components/ui/tooltip';
-import type { AgentMeta } from '@/config/agents';
+import { agentDisplayName } from '@/config/agents';
 import { verifiedProjectWorkspacePath } from '@/lib/path-open';
-import type { AgentKey, AgentProject, AgentSession } from '@/lib/types';
+import type { AgentKey, AgentSession } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { groupCanExpand, type ProjectGroup } from './project-groups';
 import {
   displayTitle,
   fmtBytes,
@@ -22,22 +23,21 @@ import { ProjectSessionRow } from './ProjectSessionRow';
 import { nestSessions } from './session-nest';
 
 export type ProjectTreeProps = {
-  agentId: AgentKey;
-  agentMeta: AgentMeta | undefined;
-  projects: AgentProject[];
+  groups: ProjectGroup[];
+  showSessionAgent: boolean;
   expanded: Set<string>;
   loadingProjectIds: Set<string>;
   selected: Set<string>;
   busy: boolean;
   showDelete: boolean;
-  deleteHint?: string | null;
+  deleteHintFor?: (agentId: AgentKey) => string | null;
   previewSessionId: string | null;
   nestedOpen: Set<string>;
-  visibleSessions: (projectId: string) => AgentSession[];
-  onToggleExpand: (project: AgentProject) => void;
+  visibleSessions: (groupId: string) => AgentSession[];
+  onToggleExpand: (group: ProjectGroup) => void;
   onToggleNested: (id: string) => void;
-  onOpenProjectWorkspace: (p: AgentProject, e: ReactMouseEvent) => void;
-  onToggleHideProject: (p: AgentProject, e: ReactMouseEvent) => void;
+  onOpenProjectWorkspace: (group: ProjectGroup, e: ReactMouseEvent) => void;
+  onToggleHideProject: (group: ProjectGroup, e: ReactMouseEvent) => void;
   onToggleOne: (id: string) => void;
   onPreviewSession: (session: AgentSession) => void;
   onCopySessionId: (s: AgentSession, e?: ReactMouseEvent) => void;
@@ -48,15 +48,14 @@ export type ProjectTreeProps = {
 };
 
 export function ProjectTree({
-  agentId,
-  agentMeta,
-  projects: visibleProjects,
+  groups,
+  showSessionAgent,
   expanded,
   loadingProjectIds,
   selected,
   busy,
   showDelete,
-  deleteHint,
+  deleteHintFor,
   previewSessionId,
   nestedOpen,
   visibleSessions,
@@ -75,30 +74,31 @@ export function ProjectTree({
   const { t } = useI18n();
   return (
     <div className={pageRhythm.stackDense}>
-      {visibleProjects.map((p) => {
-        const open = expanded.has(p.id);
-        const loadingKids = loadingProjectIds.has(p.id);
-        const kids = open ? visibleSessions(p.id) : [];
-        const canExpand = p.sessionCount > 0 || p.agentId !== 'cursor';
+      {groups.map((group) => {
+        const p = group.primary;
+        const open = expanded.has(group.id);
+        const loadingKids = group.members.some((member) => loadingProjectIds.has(member.id));
+        const kids = open ? visibleSessions(group.id) : [];
+        const canExpand = groupCanExpand(group);
         const title = displayTitle(p);
         const path = projectDisplayPath(p);
         const workspace = verifiedProjectWorkspacePath(p);
         return (
           <Card
-            key={p.id}
-            className={cn('overflow-hidden transition-colors', p.hidden && 'opacity-70')}
+            key={group.id}
+            className={cn('overflow-hidden transition-colors', group.hidden && 'opacity-70')}
           >
             <div
               className={cn(
                 'flex items-center gap-2 px-3 py-2',
                 canExpand && 'cursor-pointer hover:bg-hover/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
               )}
-              onClick={() => canExpand && onToggleExpand(p)}
+              onClick={() => canExpand && onToggleExpand(group)}
               onKeyDown={(event) => {
                 if (!canExpand) return;
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();
-                  onToggleExpand(p);
+                  onToggleExpand(group);
                 }
               }}
               role={canExpand ? 'button' : undefined}
@@ -116,7 +116,15 @@ export function ProjectTree({
                   <ChevronRight className="h-3.5 w-3.5" />
                 )}
               </span>
-              <AgentDot agentId={agentId} color={agentMeta?.color} className="shrink-0" />
+              <span className="flex shrink-0 items-center gap-0.5">
+                {group.agentIds.map((id) => (
+                  <AgentDot
+                    key={id}
+                    agentId={id}
+                    title={agentDisplayName(id)}
+                  />
+                ))}
+              </span>
               <div className="flex min-w-0 flex-1 items-center gap-2">
                 <Tip
                   label={titleHoverLabel(title, p.preview)}
@@ -127,14 +135,19 @@ export function ProjectTree({
                 {p.alias?.trim() && (
                   <span className="shrink-0 text-xs text-muted">({p.title})</span>
                 )}
-                {p.hidden && (
+                {group.agentIds.length > 1 && (
+                  <span className="shrink-0 text-xs text-muted">
+                    {group.agentIds.map((id) => agentDisplayName(id)).join(' · ')}
+                  </span>
+                )}
+                {group.hidden && (
                   <span className="shrink-0 text-xs text-muted">{t('projects.tree.hidden')}</span>
                 )}
                 <span className="shrink-0 text-xs text-muted tabular-nums">
                   {t('projects.tree.sessionMeta', {
-                    time: relativeTime(p.updatedAt, t),
-                    count: p.sessionCount,
-                    size: fmtBytes(p.sizeBytes),
+                    time: relativeTime(group.updatedAt, t),
+                    count: group.sessionCount,
+                    size: fmtBytes(group.sizeBytes),
                   })}
                 </span>
                 {workspace ? (
@@ -142,7 +155,7 @@ export function ProjectTree({
                     path={workspace}
                     disabled={busy}
                     ariaLabel={t('projects.tree.openFolder', { path: workspace })}
-                    onOpen={(e) => onOpenProjectWorkspace(p, e)}
+                    onOpen={(e) => onOpenProjectWorkspace(group, e)}
                   />
                 ) : (
                   <ProjectPathLink path={path} />
@@ -153,9 +166,9 @@ export function ProjectTree({
                   size="icon"
                   variant="ghost"
                   disabled={busy}
-                  aria-label={p.hidden ? t('projects.tree.unhide') : t('projects.tree.hide')}
-                  title={p.hidden ? t('projects.tree.unhide') : t('projects.tree.hide')}
-                  onClick={(e) => onToggleHideProject(p, e)}
+                  aria-label={group.hidden ? t('projects.tree.unhide') : t('projects.tree.hide')}
+                  title={group.hidden ? t('projects.tree.unhide') : t('projects.tree.hide')}
+                  onClick={(e) => onToggleHideProject(group, e)}
                 >
                   <EyeOff className="h-3.5 w-3.5" />
                 </Button>
@@ -168,7 +181,7 @@ export function ProjectTree({
                   <div className="px-3 py-3 text-xs text-muted">{t('projects.tree.loadingSessions')}</div>
                 ) : kids.length === 0 ? (
                   <div className="px-3 py-3 text-xs text-muted">
-                    {p.sessionCount === 0 ? t('projects.tree.noSessionFiles') : t('projects.tree.noMatch')}
+                    {group.sessionCount === 0 ? t('projects.tree.noSessionFiles') : t('projects.tree.noMatch')}
                   </div>
                 ) : (
                   <ul>
@@ -181,7 +194,8 @@ export function ProjectTree({
                           selected={selected.has(s.id)}
                           busy={busy}
                           showDelete={showDelete}
-                          deleteHint={deleteHint}
+                          deleteHint={deleteHintFor?.(s.agentId) ?? null}
+                          showAgent={showSessionAgent}
                           nested={false}
                           childCount={children.length}
                           nestedOpen={openNested}
@@ -203,7 +217,8 @@ export function ProjectTree({
                                 selected={selected.has(child.id)}
                                 busy={busy}
                                 showDelete={showDelete}
-                                deleteHint={deleteHint}
+                                deleteHint={deleteHintFor?.(child.agentId) ?? null}
+                                showAgent={showSessionAgent}
                                 nested
                                 nestedLabel={t('projects.tree.subSession')}
                                 previewOpen={previewSessionId === child.id}

@@ -2821,7 +2821,7 @@ export const en = {
       title: "Projects",
       description: "Local sessions and workspaces",
       descriptionTip:
-        "Browse local projects and sessions by agent. Open folders, copy the official resume command, continue in Chat, delete, or summarize in batch. Click a session to preview its excerpt in a right-hand pane. Continue in Chat uses an excerpt; it does not open the agent's TUI.",
+        "View all projects or browse by agent. Matching paths are merged and marked by agent. Sort by time, agent, or name. Open folders, copy the official resume command, continue in Chat, delete, or summarize in batch. Click a session to preview its excerpt in a right-hand pane. Continue in Chat uses an excerpt; it does not open the agent's TUI.",
       summarize: "Summarize ({n})",
       delete: "Delete ({n})",
       refresh: "Refresh",
@@ -2833,6 +2833,11 @@ export const en = {
       searchPlaceholder: "Search project names and paths; expanded items include sessions…",
       deselectAll: "Deselect all",
       selectAllExpanded: "Select all expanded sessions",
+      filterAria: "Filter projects by agent",
+      sortAria: "Sort",
+      sortTime: "By time",
+      sortAgent: "By agent",
+      sortName: "By name",
     },
     empty: {
       noAgentsTitle: "No agent to view yet",
@@ -2841,6 +2846,7 @@ export const en = {
       noProjects: "No projects yet",
       noMatch: "No matching projects",
       noProjectsDesc: "Chats in {name} will show up here",
+      noProjectsDescAll: "Chats in any agent will show up here",
       noMatchDesc: "Try another keyword or clear the search",
       refresh: "Refresh",
       clearSearch: "Clear search",

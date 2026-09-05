@@ -2802,7 +2802,7 @@ export const zh = {
       title: "项目",
       description: "本机会话与工作区",
       descriptionTip:
-        "按 Agent 浏览本地项目与会话；可打开目录、复制官方续接命令、在对话继续、删除或批量总结。单击会话在右侧分屏预览摘录。在对话继续仍走摘录，不直接打开对方 TUI。",
+        "可看全部或按 Agent 浏览。相同路径会合在一起并标出 Agent。可按时间、Agent 或名称排序。可打开目录、复制官方续接命令、在对话继续、删除或批量总结。单击会话在右侧分屏预览摘录。在对话继续仍走摘录，不直接打开对方 TUI。",
       summarize: "总结 ({n})",
       delete: "删除 ({n})",
       refresh: "刷新",
@@ -2814,6 +2814,11 @@ export const zh = {
       searchPlaceholder: "搜索项目名、路径；已展开时可搜会话…",
       deselectAll: "取消全选",
       selectAllExpanded: "全选已展开会话",
+      filterAria: "按 Agent 筛选项目",
+      sortAria: "排序",
+      sortTime: "按时间",
+      sortAgent: "按 Agent",
+      sortName: "按名称",
     },
     empty: {
       noAgentsTitle: "还没有可查看的 Agent",
@@ -2822,6 +2827,7 @@ export const zh = {
       noProjects: "暂无项目",
       noMatch: "没有匹配的项目",
       noProjectsDesc: "在 {name} 中对话后会出现在此",
+      noProjectsDescAll: "在各 Agent 中对话后会出现在此",
       noMatchDesc: "换关键词或清空搜索",
       refresh: "刷新",
       clearSearch: "清空搜索",

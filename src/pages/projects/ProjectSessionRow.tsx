@@ -1,5 +1,6 @@
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import { ChevronDown, ChevronRight, Copy, MessageSquarePlus, Terminal, Trash2 } from 'lucide-react';
+import { AgentLogo } from '@/components/shared/AgentLogo';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { Tip } from '@/components/ui/tooltip';
@@ -22,12 +23,16 @@ const previewTextClass =
  * Packed tracks plus a shrinking spacer. The action cluster is `auto` so it
  * never compresses into the file name while the splitter is dragged.
  */
-export function projectSessionRowGrid(showDelete: boolean): string {
+export function projectSessionRowGrid(showDelete: boolean, showAgent = false): string {
   return cn(
     'grid min-w-0 items-center gap-x-2 overflow-hidden',
-    showDelete
-      ? 'grid-cols-[1.25rem_minmax(0,22rem)_minmax(0,10rem)_minmax(0,6.5rem)_minmax(0,4.75rem)_minmax(0,1fr)_auto]'
-      : 'grid-cols-[minmax(0,22rem)_minmax(0,10rem)_minmax(0,6.5rem)_minmax(0,4.75rem)_minmax(0,1fr)_auto]',
+    showDelete && showAgent
+      ? 'grid-cols-[1.25rem_1.5rem_minmax(0,22rem)_minmax(0,10rem)_minmax(0,6.5rem)_minmax(0,4.75rem)_minmax(0,1fr)_auto]'
+      : showDelete
+        ? 'grid-cols-[1.25rem_minmax(0,22rem)_minmax(0,10rem)_minmax(0,6.5rem)_minmax(0,4.75rem)_minmax(0,1fr)_auto]'
+        : showAgent
+          ? 'grid-cols-[1.5rem_minmax(0,22rem)_minmax(0,10rem)_minmax(0,6.5rem)_minmax(0,4.75rem)_minmax(0,1fr)_auto]'
+          : 'grid-cols-[minmax(0,22rem)_minmax(0,10rem)_minmax(0,6.5rem)_minmax(0,4.75rem)_minmax(0,1fr)_auto]',
   );
 }
 
@@ -50,6 +55,7 @@ export function ProjectSessionRow({
   onOpenSessionRecord,
   onGoContinue,
   onRequestDelete,
+  showAgent = false,
 }: {
   session: AgentSession;
   selected: boolean;
@@ -70,6 +76,8 @@ export function ProjectSessionRow({
   onOpenSessionRecord: (s: AgentSession, e: ReactMouseEvent) => void;
   onGoContinue: (s: AgentSession) => void;
   onRequestDelete: (s: AgentSession) => void;
+  /** 全部 / 合并路径时在会话行标出 Agent。 */
+  showAgent?: boolean;
 }) {
   const { t } = useI18n();
   const record = normalizeOpenPath(session.path);
@@ -81,7 +89,7 @@ export function ProjectSessionRow({
   return (
     <li
       className={cn(
-        projectSessionRowGrid(showDelete),
+        projectSessionRowGrid(showDelete, showAgent),
         'px-3 py-2',
         nested ? 'pl-16' : 'pl-10',
         previewOpen && 'bg-active',
@@ -96,6 +104,11 @@ export function ProjectSessionRow({
           aria-label={t('projects.tree.selectSession', { title: session.title })}
         />
       )}
+      {showAgent ? (
+        <span className="flex justify-center">
+          <AgentLogo agentId={session.agentId} size="sm" />
+        </span>
+      ) : null}
       <div className="flex min-w-0 w-full items-center gap-1">
         {childCount > 0 ? (
           <button
