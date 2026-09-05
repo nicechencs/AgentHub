@@ -420,8 +420,7 @@ pub(super) fn openai_source_upstream(
         if let Some(base) = account_base_url {
             url = base;
         }
-        model = account_openai_model(&account)
-            .unwrap_or_else(|| rule.default_model.to_owned());
+        model = account_openai_model(&account).unwrap_or_else(|| rule.default_model.to_owned());
         return (url, model, listed, protocol, context_window_tokens);
     }
     if source_kind != AdapterSourceKind::Provider {
