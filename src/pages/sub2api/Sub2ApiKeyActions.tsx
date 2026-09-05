@@ -32,7 +32,7 @@ function ActionIconButton({
       aria-label={label}
       onClick={onClick}
       className={cn(
-        'inline-flex flex-col items-center gap-0.5 rounded-lg px-1.5 py-1 text-secondary transition-colors',
+        'inline-flex flex-col items-center gap-0.5 rounded-btn px-1.5 py-1 text-secondary transition-colors',
         'hover:bg-hover disabled:pointer-events-none disabled:opacity-50',
         tone === 'danger' && 'hover:text-danger',
         tone === 'enable' && 'hover:text-success',
