@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import {
@@ -116,6 +117,8 @@ export function Sub2ApiKeyEditDialog({
   keyRow,
   groups,
   busy = false,
+  asPanel = false,
+  width,
   onClose,
   onSave,
   onResetQuota,
@@ -124,6 +127,8 @@ export function Sub2ApiKeyEditDialog({
   keyRow: Sub2ApiKey;
   groups: readonly Sub2ApiGroup[];
   busy?: boolean;
+  asPanel?: boolean;
+  width?: number;
   onClose: () => void;
   onSave: (form: Sub2ApiKeyForm) => void;
   onResetQuota: () => void;
@@ -156,19 +161,23 @@ export function Sub2ApiKeyEditDialog({
     });
   };
 
-  return (
-    <>
-      <Dialog
-        open
-        onOpenChange={(open) => {
-          if (!open && confirm == null) onClose();
-        }}
-      >
-        <DialogContent className="max-w-lg" data-sub2api-edit-form="">
-          <DialogHeader>
-            <DialogTitle>{t('routes.sub2api.editKeyTitle')}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-5">
+  const cancelButton = (
+    <Button type="button" variant="outline" size={asPanel ? 'sm' : undefined} onClick={onClose} disabled={busy}>
+      {t('common.cancel')}
+    </Button>
+  );
+  const saveButton = (
+    <Button
+      type="button"
+      size={asPanel ? 'sm' : undefined}
+      disabled={busy}
+      onClick={() => onSave(form)}
+    >
+      {busy ? t('routes.sub2api.saving') : t('routes.sub2api.updateKey')}
+    </Button>
+  );
+  const fields = (
+          <div className="space-y-5" data-sub2api-edit-form="">
             <label className="block space-y-1.5">
               <FieldLabel>{t('routes.sub2api.createKeyName')}</FieldLabel>
               <Input
@@ -427,20 +436,45 @@ export function Sub2ApiKeyEditDialog({
               ) : null}
             </div>
           </div>
+  );
+  const headerActions = (
+    <>
+      {cancelButton}
+      {saveButton}
+    </>
+  );
+
+  return (
+    <>
+      {asPanel ? (
+        <SideInspectPanel
+          title={t('routes.sub2api.editKeyTitle')}
+          onClose={() => {
+            if (confirm == null) onClose();
+          }}
+          headerActions={headerActions}
+          width={width}
+        >
+          {fields}
+        </SideInspectPanel>
+      ) : (
+      <Dialog
+        open
+        onOpenChange={(open) => {
+          if (!open && confirm == null) onClose();
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t('routes.sub2api.editKeyTitle')}</DialogTitle>
+          </DialogHeader>
+          {fields}
           <DialogFooter className="gap-2 sm:gap-2">
-            <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
-              {t('common.cancel')}
-            </Button>
-            <Button
-              type="button"
-              disabled={busy}
-              onClick={() => onSave(form)}
-            >
-              {busy ? t('routes.sub2api.saving') : t('routes.sub2api.updateKey')}
-            </Button>
+            {headerActions}
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      )}
 
       <Dialog
         open={confirm != null}

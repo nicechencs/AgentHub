@@ -1,6 +1,8 @@
 import * as React from 'react';
 import { ChevronDown, Copy } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { WorkbenchSplitPage } from '@/components/layout/SideSplit';
+import { useSideSplit } from '@/components/layout/use-side-split';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { copyTextToClipboard } from '@/components/shared/CopyTextButton';
@@ -96,9 +98,9 @@ import { Switch } from '@/components/ui/switch';
 import type { ConnectApiKeyDraft } from '@/lib/connect-flow/connect-intent';
 import type { AgentKey } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { StorageKey } from '@/lib/storage-key';
 import { applyImportedLogin } from '@/pages/routes/tokens/token-import-action';
 import type { TokenImportAgentRef } from '@/pages/routes/tokens/token-import-model';
-import { RoutesPane } from '@/pages/routes/RoutesPane';
 import { Sub2ApiCaptcha, type Sub2ApiCaptchaHandle } from './Sub2ApiCaptcha';
 import { Sub2ApiGroupCell } from './Sub2ApiGroupCell';
 import { Sub2ApiKeyActions } from './Sub2ApiKeyActions';
@@ -164,6 +166,7 @@ export default function Sub2ApiPage() {
   const { t, lang } = useI18n();
   const { toast } = useToast();
   const { installedAgents } = useInstalledAgents();
+  const inspect = useSideSplit<number>({ storageKey: StorageKey.sub2apiInspectWidth });
 
   const [session, setSession] = React.useState<Sub2ApiSession | null>(() => loadSub2ApiSession());
   const [restoring, setRestoring] = React.useState(() => Boolean(loadSub2ApiSession()?.accessToken));
@@ -630,6 +633,7 @@ export default function Sub2ApiPage() {
     setSession(null);
     setKeys([]);
     setAvailableGroups([]);
+    closeInspect();
     toast({ title: t('routes.sub2api.logoutKeepsConnections') });
   };
 
@@ -690,7 +694,6 @@ export default function Sub2ApiPage() {
       const patch = buildEditPatch(form, editingKey);
       const updated = await updateSub2ApiKey(session, editingKey.id, patch);
       applyEditedKey(editingKey, { ...updated, name: patch.name ?? editingKey.name }, patch.group_id);
-      setEditingKey(null);
       toast({ title: t('routes.sub2api.keySaved'), variant: 'success' });
     } catch (err) {
       toastSub2ApiFailure(err, t('routes.sub2api.saveKeyFailed'));
@@ -756,9 +759,17 @@ export default function Sub2ApiPage() {
     }
   };
 
+  const closeInspect = () => {
+    setImportSession(null);
+    setEditingKey(null);
+    inspect.close();
+  };
+
   const openEditKey = (key: Sub2ApiKey) => {
     setCreateOpen(false);
+    setImportSession(null);
     setEditingKey(key);
+    inspect.open(key.id);
   };
 
   const onDeleteKey = async () => {
@@ -769,6 +780,7 @@ export default function Sub2ApiPage() {
       await deleteSub2ApiKey(session, target.id);
       setKeys((prev) => prev.filter((row) => row.id !== target.id));
       setPendingDeleteKey(null);
+      if (inspect.target === target.id) closeInspect();
       toast({ title: t('routes.sub2api.keyDeleted'), variant: 'success' });
     } catch (err) {
       toastSub2ApiFailure(err, t('routes.sub2api.deleteKeyFailed'));
@@ -777,7 +789,10 @@ export default function Sub2ApiPage() {
     }
   };
 
-  const startImport = (agentId: AgentKey, draft: ConnectApiKeyDraft) => {
+  const startImport = (agentId: AgentKey, draft: ConnectApiKeyDraft, keyRow: Sub2ApiKey) => {
+    setCreateOpen(false);
+    setEditingKey(keyRow);
+    inspect.open(keyRow.id);
     setImportSession({ agentId, draft });
   };
 
@@ -805,7 +820,7 @@ export default function Sub2ApiPage() {
     isCurrent: boolean,
   ) => {
     const agentId = importSession?.agentId;
-    setImportSession(null);
+    closeInspect();
     if (!agentId) return;
     try {
       await applyImportedLogin({ agentId, sourceKind, sourceId, isCurrent });
@@ -854,8 +869,64 @@ export default function Sub2ApiPage() {
     actionNeeded: t('routes.sub2api.captchaClickToVerify'),
   };
 
+  const inspectPanel = importSession ? (
+    importSession.agentId === 'workbuddy' ? (
+      <ApiKeyAccountDialog
+        asPanel
+        open
+        width={inspect.paneWidth}
+        agentId="workbuddy"
+        mode="add"
+        initialApiKey={importSession.draft.apiKey}
+        initialBaseUrl={importSession.draft.baseUrl}
+        initialModel={importSession.draft.model}
+        onOpenChange={(open) => {
+          if (!open) setImportSession(null);
+        }}
+        onSaved={(account) => {
+          void finishImportedLogin('account', account.id, account.isCurrent);
+        }}
+      />
+    ) : (
+      <ProviderEditDialog
+        asPanel
+        compact
+        open
+        width={inspect.paneWidth}
+        agentId={importSession.agentId}
+        mode="add"
+        initialBaseUrl={importSession.draft.baseUrl}
+        initialApiKey={importSession.draft.apiKey}
+        initialModel={importSession.draft.model}
+        compactGrokApiBackend={importSession.draft.apiBackend}
+        onOpenChange={(open) => {
+          if (!open) setImportSession(null);
+        }}
+        onSaved={(provider) => {
+          void finishImportedLogin('provider', provider.id, provider.isCurrent);
+        }}
+      />
+    )
+  ) : editingKey ? (
+    <Sub2ApiKeyEditDialog
+      asPanel
+      width={inspect.paneWidth}
+      keyRow={editingKey}
+      groups={groups}
+      busy={creating}
+      onClose={closeInspect}
+      onSave={(form) => void onSaveEditedKey(form)}
+      onResetQuota={() => void onResetQuota()}
+      onResetRateLimit={() => void onResetRateLimit()}
+    />
+  ) : null;
+
   return (
-    <RoutesPane>
+    <WorkbenchSplitPage
+      split={inspect}
+      resizeAria={t('common.resizeSidePanel')}
+      panel={phase === 'logged-in' ? inspectPanel : null}
+    >
       <div className={cn(pageRhythm.stack, 'min-h-0 flex-1')}>
         <PageHeader
           title={t('routes.sub2api.title')}
@@ -915,7 +986,7 @@ export default function Sub2ApiPage() {
                 type="button"
                 size="sm"
                 onClick={() => {
-                  setEditingKey(null);
+                  closeInspect();
                   setNewKeyName('AgentHub');
                   setNewKeyGroupId(
                     typeof groupFilter === 'number' ? groupFilter : (groups[0]?.id ?? null),
@@ -1168,7 +1239,7 @@ export default function Sub2ApiPage() {
                 <p className="mt-1">{t('routes.sub2api.keysEmptyHint')}</p>
               </Card>
             ) : (
-              <TableShell className="min-h-0 flex-1">
+              <TableShell className="min-h-0 flex-1" layout="split">
                 <Table className="min-w-[1200px]" data-sub2api-keys-table="">
                   <TableHeader>
                     <TableHeaderRow>
@@ -1190,7 +1261,12 @@ export default function Sub2ApiPage() {
                       const groupRate = pickGroupRate(key);
                       const usage = pickKeyUsageUsd(key);
                       return (
-                        <TableRow key={key.id} data-sub2api-key-row={String(key.id)}>
+                        <TableRow
+                          key={key.id}
+                          data-sub2api-key-row={String(key.id)}
+                          active={inspect.target === key.id}
+                          onOpen={() => openEditKey(key)}
+                        >
                           <TableCell className="whitespace-nowrap font-medium">
                             {key.name || `Key #${key.id}`}
                           </TableCell>
@@ -1258,7 +1334,7 @@ export default function Sub2ApiPage() {
                               groups={groups}
                               gatewayBaseUrl={session?.gatewayBaseUrl ?? ''}
                               installedAgents={importAgents}
-                              onImport={startImport}
+                              onImport={(agentId, draft) => startImport(agentId, draft, key)}
                               onToggleStatus={(row) => void onToggleKeyStatus(row)}
                               onEdit={openEditKey}
                               onDelete={setPendingDeleteKey}
@@ -1324,18 +1400,6 @@ export default function Sub2ApiPage() {
         </DialogContent>
       </Dialog>
 
-      {editingKey ? (
-        <Sub2ApiKeyEditDialog
-          keyRow={editingKey}
-          groups={groups}
-          busy={creating}
-          onClose={() => setEditingKey(null)}
-          onSave={(form) => void onSaveEditedKey(form)}
-          onResetQuota={() => void onResetQuota()}
-          onResetRateLimit={() => void onResetRateLimit()}
-        />
-      ) : null}
-
       <Dialog
         open={pendingDeleteKey != null}
         onOpenChange={(open) => {
@@ -1371,41 +1435,6 @@ export default function Sub2ApiPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {importSession ? (
-        importSession.agentId === 'workbuddy' ? (
-          <ApiKeyAccountDialog
-            open
-            agentId="workbuddy"
-            mode="add"
-            initialApiKey={importSession.draft.apiKey}
-            initialBaseUrl={importSession.draft.baseUrl}
-            initialModel={importSession.draft.model}
-            onOpenChange={(open) => {
-              if (!open) setImportSession(null);
-            }}
-            onSaved={(account) => {
-              void finishImportedLogin('account', account.id, account.isCurrent);
-            }}
-          />
-        ) : (
-          <ProviderEditDialog
-            open
-            agentId={importSession.agentId}
-            mode="add"
-            initialBaseUrl={importSession.draft.baseUrl}
-            initialApiKey={importSession.draft.apiKey}
-            initialModel={importSession.draft.model}
-            compactGrokApiBackend={importSession.draft.apiBackend}
-            onOpenChange={(open) => {
-              if (!open) setImportSession(null);
-            }}
-            onSaved={(provider) => {
-              void finishImportedLogin('provider', provider.id, provider.isCurrent);
-            }}
-          />
-        )
-      ) : null}
 
       <Dialog open={rememberOffOpen} onOpenChange={setRememberOffOpen}>
         <DialogContent className="max-w-sm">
@@ -1460,6 +1489,6 @@ export default function Sub2ApiPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </RoutesPane>
+    </WorkbenchSplitPage>
   );
 }
