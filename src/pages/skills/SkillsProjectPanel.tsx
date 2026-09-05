@@ -44,6 +44,7 @@ export type SkillsProjectPanelProps = {
   onRetry: () => void;
   activeKey: string | null;
   onPreview: (row: InstalledSkillDto) => void;
+  onFollow?: (row: InstalledSkillDto) => void;
   onDelete: (row: InstalledSkillDto) => void;
 };
 
@@ -63,6 +64,7 @@ export function SkillsProjectPanel(props: SkillsProjectPanelProps) {
     onRetry,
     activeKey,
     onPreview,
+    onFollow,
     onDelete,
   } = props;
   const { t } = useI18n();
@@ -176,7 +178,7 @@ export function SkillsProjectPanel(props: SkillsProjectPanelProps) {
                     key={key}
                     active={active}
                     data-help="list-row"
-                    onOpen={() => onPreview(row)}
+                    onOpen={onFollow ? () => onFollow(row) : undefined}
                   >
                     <TableCell>
                       <div className="min-w-0">

@@ -9,6 +9,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Plus, Store } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { WorkbenchSplitPage } from '@/components/layout/SideSplit';
+import { followInspectOpen } from '@/components/layout/inspect-follow';
 import { useSideSplit } from '@/components/layout/use-side-split';
 import {
   SkillMarkdownPreviewPanel,
@@ -1037,6 +1038,7 @@ export default function SkillsPage() {
                 onCellClick={handleCellClick}
                 onCellProject={handleCellProject}
                 onPreview={openCatalogPreview}
+                onFollow={followInspectOpen(preview.expanded, openCatalogPreview)}
                 activeKey={activeKey}
                 onAdopt={(skillId, agentId, name) => {
                   void handleImportPrivate(skillId, agentId, name, false);
@@ -1064,6 +1066,7 @@ export default function SkillsPage() {
                 onRetry={() => void projectSkills.reload()}
                 activeKey={previewTarget?.workspacePath ? previewTarget.rowKey ?? null : null}
                 onPreview={openProjectPreview}
+                onFollow={followInspectOpen(preview.expanded, openProjectPreview)}
                 onDelete={(row) =>
                   setRemoveProject({
                     skillId: row.id,

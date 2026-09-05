@@ -36,6 +36,7 @@ export type ProjectTreeProps = {
   showDelete: boolean;
   deleteHintFor?: (agentId: AgentKey) => string | null;
   previewSessionId: string | null;
+  followPreview?: boolean;
   nestedOpen: Set<string>;
   visibleSessions: (groupId: string) => AgentSession[];
   onToggleExpand: (group: ProjectGroup) => void;
@@ -84,6 +85,7 @@ const ProjectGroupCard = memo(function ProjectGroupCard({
   showDelete,
   deleteHintFor,
   previewSessionId,
+  followPreview = false,
   nestedOpen,
   visibleSessions,
   onToggleExpand,
@@ -231,6 +233,7 @@ const ProjectGroupCard = memo(function ProjectGroupCard({
                     deleteHintFor,
                     showSessionAgent,
                     previewSessionId,
+                    followPreview,
                     nestedLabel: t('projects.tree.subSession'),
                     onToggleNested,
                     onToggleOne,
@@ -289,6 +292,7 @@ const ProjectGroupCard = memo(function ProjectGroupCard({
     prev.selected === next.selected &&
     prev.nestedOpen === next.nestedOpen &&
     prev.previewSessionId === next.previewSessionId &&
+    prev.followPreview === next.followPreview &&
     prev.busy === next.busy &&
     prev.showDelete === next.showDelete &&
     prev.showSessionAgent === next.showSessionAgent &&
@@ -307,6 +311,7 @@ function sessionRows({
   deleteHintFor,
   showSessionAgent,
   previewSessionId,
+  followPreview = false,
   nestedLabel,
   onToggleNested,
   onToggleOne,
@@ -326,6 +331,7 @@ function sessionRows({
   deleteHintFor?: (agentId: AgentKey) => string | null;
   showSessionAgent: boolean;
   previewSessionId: string | null;
+  followPreview?: boolean;
   nestedLabel: string;
   onToggleNested: (id: string) => void;
   onToggleOne: (id: string) => void;
@@ -351,6 +357,7 @@ function sessionRows({
       nestedOpen={openNested}
       onToggleNested={onToggleNested}
       previewOpen={previewSessionId === s.id}
+      followPreview={followPreview}
       onToggleOne={onToggleOne}
       onPreviewSession={onPreviewSession}
       onCopySessionId={onCopySessionId}
@@ -372,6 +379,7 @@ function sessionRows({
             nested
             nestedLabel={nestedLabel}
             previewOpen={previewSessionId === child.id}
+            followPreview={followPreview}
             onToggleOne={onToggleOne}
             onPreviewSession={onPreviewSession}
             onCopySessionId={onCopySessionId}

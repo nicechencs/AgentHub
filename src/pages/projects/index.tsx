@@ -796,6 +796,7 @@ export default function ProjectsPage() {
           showDelete={showDelete}
           deleteHintFor={deleteHintFor}
           previewSessionId={preview.target?.id ?? null}
+          followPreview={preview.expanded}
           nestedOpen={nestedOpen}
           visibleSessions={visibleSessions}
           onToggleExpand={(group) => void toggleExpand(group)}

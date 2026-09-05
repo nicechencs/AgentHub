@@ -71,12 +71,14 @@ export function PoolAuthorizationList({
   activeKey,
   togglingKey,
   onShowDetail,
+  onFollowDetail,
   onEnabledChange,
 }: {
   items: readonly PoolAuthorizationItem[];
   activeKey?: string | null;
   togglingKey?: string | null;
   onShowDetail?: (item: PoolAuthorizationItem) => void;
+  onFollowDetail?: (item: PoolAuthorizationItem) => void;
   onEnabledChange?: (item: PoolAuthorizationItem, enabled: boolean) => void;
 }) {
   const { t } = useI18n();
@@ -143,6 +145,7 @@ export function PoolAuthorizationList({
                 data-pool-authorization={item.key}
                 data-help="list-row"
                 active={activeKey === item.key}
+                onOpen={onFollowDetail ? () => onFollowDetail(item) : undefined}
                 className={sortable.className}
                 {...{ [SORTABLE_ID_ATTR]: sortable[SORTABLE_ID_ATTR] }}
               >

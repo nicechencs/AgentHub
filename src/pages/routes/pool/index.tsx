@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { PageSection } from '@/components/layout/PageSection';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { WorkbenchSplitPage } from '@/components/layout/SideSplit';
+import { followInspectOpen } from '@/components/layout/inspect-follow';
 import { useSideSplit } from '@/components/layout/use-side-split';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
@@ -529,6 +530,10 @@ export default function RoutesPoolPage() {
                     activeKey={inspectAuthorizationKey(inspectTarget)}
                     togglingKey={togglingKey}
                     onShowDetail={(item) => inspect.open({ kind: 'authorization', key: item.key })}
+                    onFollowDetail={followInspectOpen(
+                      Boolean(inspect.expanded && inspectTarget?.kind === 'authorization'),
+                      (item) => inspect.open({ kind: 'authorization', key: item.key }),
+                    )}
                     onEnabledChange={(item, enabled) => {
                       void handleAuthorizationEnabled(item, enabled);
                     }}

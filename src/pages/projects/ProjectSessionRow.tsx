@@ -4,6 +4,7 @@ import { AgentLogo } from '@/components/shared/AgentLogo';
 import { ListNameButton } from '@/components/shared/ListNameButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
+import { shouldOpenTableRowFromClick } from '@/components/ui/table-row-model';
 import { Tip } from '@/components/ui/tooltip';
 import { normalizeOpenPath } from '@/lib/path-open';
 import type { AgentSession } from '@/lib/types';
@@ -46,6 +47,7 @@ export function ProjectSessionRow({
   nestedOpen = false,
   onToggleNested,
   previewOpen,
+  followPreview = false,
   onToggleOne,
   onPreviewSession,
   onCopySessionId,
@@ -67,6 +69,7 @@ export function ProjectSessionRow({
   nestedOpen?: boolean;
   onToggleNested?: (id: string) => void;
   previewOpen: boolean;
+  followPreview?: boolean;
   onToggleOne: (id: string) => void;
   onPreviewSession: (session: AgentSession) => void;
   onCopySessionId: (s: AgentSession, e?: ReactMouseEvent) => void;
@@ -91,7 +94,12 @@ export function ProjectSessionRow({
         'px-3 py-2',
         nested ? 'pl-16' : 'pl-10',
         previewOpen && 'bg-active',
+        followPreview && 'cursor-pointer',
       )}
+      onClick={(event) => {
+        if (!followPreview || !shouldOpenTableRowFromClick(event)) return;
+        onPreviewSession(session);
+      }}
     >
       {showDelete && (
         <input

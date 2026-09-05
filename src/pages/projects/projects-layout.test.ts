@@ -21,6 +21,7 @@ describe('projects split layout', () => {
     expect(page).toContain('<ProjectConversationPreviewPanel');
     expect(page).not.toContain('useProjectPreview');
     expect(page).not.toContain('previewShellMounted');
+    expect(page).toContain('followPreview={preview.expanded}');
   });
 
   it('offers 全部, merges same-path projects, and sorts the list', () => {

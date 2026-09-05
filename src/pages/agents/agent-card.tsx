@@ -64,6 +64,7 @@ export function AgentCard({
   sortClassName,
   selected = false,
   onSelect,
+  onFollow,
 }: {
   agent: AgentStatus;
   runtimes: RuntimeDetect[];
@@ -77,6 +78,8 @@ export function AgentCard({
   selected?: boolean;
   /** Opens the right-hand inspect pane from the Agent name. */
   onSelect?: () => void;
+  /** Switch inspect when the pane is already open. */
+  onFollow?: () => void;
 }) {
   const { t } = useI18n();
   const meta = AGENT_MAP[agent.agentId];
@@ -330,6 +333,7 @@ export function AgentCard({
     <TableRow
       data-agent-row={agent.agentId}
       active={selected}
+      onOpen={onFollow}
       className={cn(
         sortClassName,
         cardState === 'env_missing' && !hidden && 'bg-warning/5',

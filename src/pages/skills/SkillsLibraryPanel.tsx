@@ -41,6 +41,7 @@ export type SkillsLibraryPanelProps = {
     mode: 'link' | 'copy' | 'disable',
   ) => void;
   onPreview: (row: InstalledSkillDto, agentId?: AgentKey) => void;
+  onFollow?: (row: InstalledSkillDto) => void;
   activeKey: string | null;
   onAdopt: (skillId: string, agentId: AgentKey, name: string) => void;
   onOpenDir?: (path: string) => void;
@@ -55,7 +56,7 @@ export function SkillsLibraryPanel(props: SkillsLibraryPanelProps) {
     error, loading, onRetry, search, onSearchChange, filter, onFilterChange,
     filterCounts, selected, onClearSelected, batchSyncing, onBatchEnable,
     filtered, allSelected, pendingCells, importingIds, onToggleSelect, onToggleSelectAll,
-    onCellClick, onCellProject, onPreview, activeKey, onAdopt, onOpenDir, onDeleteShared, onDeleteFromTool, agents, installedAgentIds,
+    onCellClick, onCellProject, onPreview, onFollow, activeKey, onAdopt, onOpenDir, onDeleteShared, onDeleteFromTool, agents, installedAgentIds,
   } = props;
   const { t } = useI18n();
 
@@ -165,6 +166,7 @@ export function SkillsLibraryPanel(props: SkillsLibraryPanelProps) {
           onCellClick={onCellClick}
           onCellProject={onCellProject}
           onPreview={onPreview}
+          onFollow={onFollow}
           activeKey={activeKey}
           onAdopt={onAdopt}
           onOpenDir={onOpenDir}

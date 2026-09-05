@@ -12,6 +12,8 @@ describe('ProjectSessionRow', () => {
   it('opens preview from the title and reveals the record from the file-name field', () => {
     expect(src).toContain('sessionFileName');
     expect(src).toContain('onPreviewSession(session)');
+    expect(src).toContain('followPreview');
+    expect(src).toContain('shouldOpenTableRowFromClick');
     expect(src).toContain('onOpenSessionRecord(session, e)');
     expect(src).not.toContain('ProjectPathLink');
     expect(src).not.toContain('FolderOpen');
