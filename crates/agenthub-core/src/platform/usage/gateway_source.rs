@@ -19,6 +19,8 @@ use crate::models::GatewayUsageRow;
 use crate::storage::gateway_usage_repo::{GatewaySpoolCursor, GatewayUsageRepo};
 use crate::utils::redact::redact_text;
 
+use super::jsonl_cursor;
+
 /// Spool files are deleted only after a full ingest and once older than this.
 pub(crate) const SPOOL_RETENTION_DAYS: u64 = 7;
 
@@ -88,20 +90,18 @@ fn ingest_one_file(
 ) -> Result<(u64, u64, bool)> {
     let path_s = path.to_string_lossy().to_string();
     let meta = fs::metadata(path)?;
-    let mtime = meta
-        .modified()
-        .ok()
-        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
+    let mtime = jsonl_cursor::mtime_secs(&meta);
     let len = meta.len() as i64;
 
-    // A cursor is reused only when the file was not rotated/truncated.
     let mut offset = 0i64;
     if let Some(cursor) = repo.get_spool_cursor(&path_s)? {
-        if cursor.file_mtime == mtime && cursor.byte_offset <= len {
-            offset = cursor.byte_offset;
-        }
+        offset = jsonl_cursor::resume_offset(
+            cursor.byte_offset,
+            cursor.file_mtime,
+            cursor.file_size,
+            mtime,
+            len,
+        );
     }
 
     let file = File::open(path)?;
@@ -140,10 +140,15 @@ fn ingest_one_file(
         }
     }
 
+    let (save_mtime, save_size) = match fs::metadata(path) {
+        Ok(m) => (jsonl_cursor::mtime_secs(&m), m.len() as i64),
+        Err(_) => (mtime, consumed),
+    };
     let cursor = GatewaySpoolCursor {
         path: path_s,
         byte_offset: consumed,
-        file_mtime: mtime,
+        file_mtime: save_mtime,
+        file_size: save_size,
     };
     // Deletion is decided before the transaction so the cursor row is cleaned
     // up atomically with the advance; the file itself is unlinked after commit.
