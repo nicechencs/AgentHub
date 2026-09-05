@@ -20,7 +20,7 @@ export const NAV_WORKSPACE = [
   { to: '/chat', navKey: 'nav.chat', icon: MessageSquare },
   { to: '/agents', navKey: 'nav.agents', icon: Bot },
   { to: '/skills', navKey: 'nav.skills', icon: Blocks },
-  { to: '/mcp', navKey: 'nav.mcp', icon: Plug, inDevelopment: true },
+  { to: '/mcp', navKey: 'nav.mcp', icon: Plug },
   { to: '/projects', navKey: 'nav.projects', icon: FolderCode },
   { to: '/plugins', navKey: 'nav.plugins', icon: Puzzle, inDevelopment: true },
 ] as const;
