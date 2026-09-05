@@ -7,6 +7,7 @@ import {
   dockOrigin,
   expandHighlight,
   filterVisibleHelpSteps,
+  isPageHelpOpenKey,
   pageHelpKeyAction,
   pickHelpRect,
   placeHelpBubble,
@@ -132,6 +133,20 @@ describe('pickHelpRect', () => {
     const first = { top: 1200, left: 20, width: 240, height: 36 };
     const second = { top: 1240, left: 20, width: 240, height: 36 };
     expect(pickHelpRect([first, second], viewport)).toEqual(first);
+  });
+});
+
+describe('isPageHelpOpenKey', () => {
+  it('maps F1 to open the current-page tutorial', () => {
+    expect(isPageHelpOpenKey({ key: 'F1' })).toBe(true);
+  });
+
+  it('ignores modified or already-handled keys', () => {
+    expect(isPageHelpOpenKey({ key: 'F1', ctrlKey: true })).toBe(false);
+    expect(isPageHelpOpenKey({ key: 'F1', metaKey: true })).toBe(false);
+    expect(isPageHelpOpenKey({ key: 'F1', altKey: true })).toBe(false);
+    expect(isPageHelpOpenKey({ key: 'F1', defaultPrevented: true })).toBe(false);
+    expect(isPageHelpOpenKey({ key: 'Escape' })).toBe(false);
   });
 });
 
