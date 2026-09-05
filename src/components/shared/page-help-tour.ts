@@ -169,7 +169,9 @@ export function pickHelpTargetRect(
 
 export type PageHelpKeyAction = 'back' | 'next' | 'skip';
 
-function pageHelpTypingTarget(target: EventTarget | null): boolean {
+type PageHelpKeyTarget = EventTarget | { tagName?: string; isContentEditable?: boolean } | null;
+
+function pageHelpTypingTarget(target: PageHelpKeyTarget): boolean {
   if (!target || typeof target !== 'object') return false;
   const el = target as { tagName?: string; isContentEditable?: boolean };
   const tag = el.tagName?.toUpperCase();
@@ -195,7 +197,7 @@ export function isPageHelpOpenKey(event: PageHelpOpenKeyEvent): boolean {
 /** Map a key to tour back / next / skip. Ignores typing and modified keys. */
 export function pageHelpKeyAction(
   event: PageHelpOpenKeyEvent,
-  target: EventTarget | null = null,
+  target: PageHelpKeyTarget = null,
 ): PageHelpKeyAction | null {
   if (event.defaultPrevented) return null;
   if (event.altKey || event.ctrlKey || event.metaKey) return null;
