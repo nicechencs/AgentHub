@@ -114,6 +114,12 @@ export type Sub2ApiKey = {
   unlimited_quota?: boolean | null;
   ip_whitelist?: string[] | null;
   ip_blacklist?: string[] | null;
+  rate_limit_5h?: number | null;
+  rate_limit_1d?: number | null;
+  rate_limit_7d?: number | null;
+  usage_5h?: number | null;
+  usage_1d?: number | null;
+  usage_7d?: number | null;
   /** Extra fields from Sub2API / PinCC / NewAPI-style relays — ignored safely. */
   [key: string]: unknown;
 };
@@ -124,6 +130,23 @@ export type Sub2ApiKeyList = {
   page?: number;
   page_size?: number;
   pages?: number;
+};
+
+/** PUT /keys/:id — omit a field to leave it unchanged. */
+export type Sub2ApiKeyPatch = {
+  name?: string;
+  group_id?: number | null;
+  status?: 'active' | 'inactive';
+  ip_whitelist?: string[];
+  ip_blacklist?: string[];
+  quota?: number;
+  /** ISO timestamp; empty string clears expiration (Sub2API). */
+  expires_at?: string | null;
+  reset_quota?: boolean;
+  rate_limit_5h?: number;
+  rate_limit_1d?: number;
+  rate_limit_7d?: number;
+  reset_rate_limit_usage?: boolean;
 };
 
 /** Persisted JWT session only — gateway API Keys live in Connections. */

@@ -10,6 +10,8 @@ import {
   formatUsdAmount,
   applyGroupToKey,
   maskSub2ApiTableKey,
+  mergeUpdatedSub2ApiKey,
+  nextSub2ApiKeyToggleStatus,
   normalizeTotpCode,
   keyMatchesGroupFilter,
   mergeSub2ApiGroups,
@@ -76,6 +78,15 @@ describe('sub2api page model', () => {
     expect(sub2apiKeyStatusKind('expired')).toBe('expired');
     expect(sub2apiKeyStatusKind('quota_exhausted')).toBe('quota_exhausted');
     expect(sub2apiKeyStatusKind('weird')).toBe('other');
+    expect(nextSub2ApiKeyToggleStatus('active')).toBe('inactive');
+    expect(nextSub2ApiKeyToggleStatus('disabled')).toBe('active');
+    expect(nextSub2ApiKeyToggleStatus('expired')).toBe('active');
+    expect(
+      mergeUpdatedSub2ApiKey(
+        { id: 1, key: 'sk-old', name: 'old', status: 'active' },
+        { id: 1, key: '', name: 'new', status: 'inactive' },
+      ),
+    ).toEqual({ id: 1, key: 'sk-old', name: 'new', status: 'inactive' });
     expect(sub2apiKeyStatusBadgeVariant('active')).toBe('success');
     expect(sub2apiKeyStatusBadgeVariant('quota_exhausted')).toBe('danger');
     expect(

@@ -12,6 +12,7 @@ import type {
   Sub2ApiGroup,
   Sub2ApiKey,
   Sub2ApiKeyList,
+  Sub2ApiKeyPatch,
   Sub2ApiLogin2FARequest,
   Sub2ApiLoginRequest,
   Sub2ApiLoginResult,
@@ -304,11 +305,18 @@ export function createApiKey(
 export function updateApiKey(
   ctx: Sub2ApiAuthContext,
   id: number,
-  patch: { group_id?: number | null },
+  patch: Sub2ApiKeyPatch,
 ): Promise<Sub2ApiKey> {
   return request<Sub2ApiKey>(ctx.siteUrl, `/keys/${id}`, {
     method: 'PUT',
     body: JSON.stringify(patch),
+    accessToken: ctx.accessToken,
+  });
+}
+
+export async function deleteApiKey(ctx: Sub2ApiAuthContext, id: number): Promise<void> {
+  await request<unknown>(ctx.siteUrl, `/keys/${id}`, {
+    method: 'DELETE',
     accessToken: ctx.accessToken,
   });
 }

@@ -49,6 +49,7 @@ import {
   clearAllRememberedAccountsAsync,
   clearAllRememberedPasswordsAsync,
   createSub2ApiKey,
+  deleteSub2ApiKey,
   deleteRememberedAccountAsync,
   deleteRememberedSite,
   ensureSub2ApiSessionFresh,
@@ -74,6 +75,7 @@ import {
   seedRememberedSitesIfUnset,
   setSub2ApiRememberEnabled,
   SUB2API_DEFAULT_SITE_URL,
+  updateSub2ApiKey,
   updateSub2ApiKeyGroup,
   type Sub2ApiCaptchaProof,
   type Sub2ApiGroup,
@@ -99,7 +101,9 @@ import type { TokenImportAgentRef } from '@/pages/routes/tokens/token-import-mod
 import { RoutesPane } from '@/pages/routes/RoutesPane';
 import { Sub2ApiCaptcha, type Sub2ApiCaptchaHandle } from './Sub2ApiCaptcha';
 import { Sub2ApiGroupCell } from './Sub2ApiGroupCell';
-import { Sub2ApiImportToAgentButton } from './Sub2ApiImportToAgentButton';
+import { Sub2ApiKeyActions } from './Sub2ApiKeyActions';
+import { Sub2ApiKeyEditDialog } from './Sub2ApiKeyEditDialog';
+import { buildEditPatch, type Sub2ApiKeyForm } from './sub2api-key-form';
 import {
   applyGroupToKey,
   applySiteUrlDraftInput,
@@ -110,6 +114,8 @@ import {
   keyMatchesGroupFilter,
   maskSub2ApiTableKey,
   mergeSub2ApiGroups,
+  mergeUpdatedSub2ApiKey,
+  nextSub2ApiKeyToggleStatus,
   normalizeTotpCode,
   parseGroupFilter,
   pickGroupId,
@@ -187,6 +193,9 @@ export default function Sub2ApiPage() {
   const [newKeyName, setNewKeyName] = React.useState('AgentHub');
   const [newKeyGroupId, setNewKeyGroupId] = React.useState<number | null>(null);
   const [createOpen, setCreateOpen] = React.useState(false);
+  const [editingKey, setEditingKey] = React.useState<Sub2ApiKey | null>(null);
+  const [pendingDeleteKey, setPendingDeleteKey] = React.useState<Sub2ApiKey | null>(null);
+  const [actingKeyId, setActingKeyId] = React.useState<number | null>(null);
   const [importSession, setImportSession] = React.useState<{
     agentId: AgentKey;
     draft: ConnectApiKeyDraft;
@@ -624,6 +633,30 @@ export default function Sub2ApiPage() {
     toast({ title: t('routes.sub2api.logoutKeepsConnections') });
   };
 
+  const toastSub2ApiFailure = (err: unknown, fallback: string) => {
+    const message =
+      err instanceof Sub2ApiError && err.message.trim() ? err.message.trim() : fallback;
+    toast({ title: message, variant: 'danger' });
+  };
+
+  const applyEditedKey = (
+    key: Sub2ApiKey,
+    updated: Sub2ApiKey,
+    groupId: number | null | undefined,
+  ) => {
+    const group =
+      groupId == null ? null : (groups.find((row) => row.id === groupId) ?? null);
+    const next = (row: Sub2ApiKey) => {
+      if (row.id !== key.id) return row;
+      const merged = mergeUpdatedSub2ApiKey(row, updated);
+      if (groupId == null) return applyGroupToKey(merged, null);
+      if (group) return applyGroupToKey(merged, group);
+      return merged;
+    };
+    setKeys((prev) => prev.map(next));
+    setEditingKey((prev) => (prev && prev.id === key.id ? next(prev) : prev));
+  };
+
   const onCreateKey = async () => {
     if (!session) return;
     if (groups.length > 0 && newKeyGroupId == null) {
@@ -639,10 +672,108 @@ export default function Sub2ApiPage() {
       );
       setCreateOpen(false);
       setKeys((prev) => [...prev, created]);
-    } catch {
-      toast({ title: t('routes.sub2api.createKeyFailed'), variant: 'danger' });
+    } catch (err) {
+      toastSub2ApiFailure(err, t('routes.sub2api.createKeyFailed'));
     } finally {
       setCreating(false);
+    }
+  };
+
+  const onSaveEditedKey = async (form: Sub2ApiKeyForm) => {
+    if (!session || !editingKey) return;
+    if (groups.length > 0 && form.groupId == null) {
+      toast({ title: t('routes.sub2api.groupRequired'), variant: 'danger' });
+      return;
+    }
+    setCreating(true);
+    try {
+      const patch = buildEditPatch(form, editingKey);
+      const updated = await updateSub2ApiKey(session, editingKey.id, patch);
+      applyEditedKey(editingKey, { ...updated, name: patch.name ?? editingKey.name }, patch.group_id);
+      setEditingKey(null);
+      toast({ title: t('routes.sub2api.keySaved'), variant: 'success' });
+    } catch (err) {
+      toastSub2ApiFailure(err, t('routes.sub2api.saveKeyFailed'));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const onResetQuota = async () => {
+    if (!session || !editingKey) return;
+    setCreating(true);
+    try {
+      const updated = await updateSub2ApiKey(session, editingKey.id, { reset_quota: true });
+      applyEditedKey(editingKey, { ...updated, quota_used: 0, used_quota: 0 }, pickGroupId(editingKey));
+      toast({ title: t('routes.sub2api.quotaReset'), variant: 'success' });
+    } catch (err) {
+      toastSub2ApiFailure(err, t('routes.sub2api.quotaResetFailed'));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const onResetRateLimit = async () => {
+    if (!session || !editingKey) return;
+    setCreating(true);
+    try {
+      const updated = await updateSub2ApiKey(session, editingKey.id, { reset_rate_limit_usage: true });
+      applyEditedKey(
+        editingKey,
+        { ...updated, usage_5h: 0, usage_1d: 0, usage_7d: 0 },
+        pickGroupId(editingKey),
+      );
+      toast({ title: t('routes.sub2api.rateLimitReset'), variant: 'success' });
+    } catch (err) {
+      toastSub2ApiFailure(err, t('routes.sub2api.rateLimitResetFailed'));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const onToggleKeyStatus = async (key: Sub2ApiKey) => {
+    if (!session) return;
+    const status = nextSub2ApiKeyToggleStatus(key.status);
+    setActingKeyId(key.id);
+    try {
+      const updated = await updateSub2ApiKey(session, key.id, { status });
+      setKeys((prev) =>
+        prev.map((row) =>
+          row.id === key.id ? { ...mergeUpdatedSub2ApiKey(row, updated), status } : row,
+        ),
+      );
+      toast({
+        title:
+          status === 'active'
+            ? t('routes.sub2api.keyEnabled')
+            : t('routes.sub2api.keyDisabled'),
+        variant: 'success',
+      });
+    } catch (err) {
+      toastSub2ApiFailure(err, t('routes.sub2api.statusChangeFailed'));
+    } finally {
+      setActingKeyId(null);
+    }
+  };
+
+  const openEditKey = (key: Sub2ApiKey) => {
+    setCreateOpen(false);
+    setEditingKey(key);
+  };
+
+  const onDeleteKey = async () => {
+    if (!session || !pendingDeleteKey) return;
+    const target = pendingDeleteKey;
+    setActingKeyId(target.id);
+    try {
+      await deleteSub2ApiKey(session, target.id);
+      setKeys((prev) => prev.filter((row) => row.id !== target.id));
+      setPendingDeleteKey(null);
+      toast({ title: t('routes.sub2api.keyDeleted'), variant: 'success' });
+    } catch (err) {
+      toastSub2ApiFailure(err, t('routes.sub2api.deleteKeyFailed'));
+    } finally {
+      setActingKeyId(null);
     }
   };
 
@@ -784,6 +915,8 @@ export default function Sub2ApiPage() {
                 type="button"
                 size="sm"
                 onClick={() => {
+                  setEditingKey(null);
+                  setNewKeyName('AgentHub');
                   setNewKeyGroupId(
                     typeof groupFilter === 'number' ? groupFilter : (groups[0]?.id ?? null),
                   );
@@ -1036,7 +1169,7 @@ export default function Sub2ApiPage() {
               </Card>
             ) : (
               <TableShell className="min-h-0 flex-1">
-                <Table className="min-w-[1080px]" data-sub2api-keys-table="">
+                <Table className="min-w-[1200px]" data-sub2api-keys-table="">
                   <TableHeader>
                     <TableHeaderRow>
                       <TableHead>{t('routes.sub2api.colName')}</TableHead>
@@ -1120,12 +1253,16 @@ export default function Sub2ApiPage() {
                             {formatKeyTableTimestamp(key.created_at) ?? '—'}
                           </TableCell>
                           <TableCell>
-                            <Sub2ApiImportToAgentButton
+                            <Sub2ApiKeyActions
                               keyRow={key}
                               groups={groups}
                               gatewayBaseUrl={session?.gatewayBaseUrl ?? ''}
                               installedAgents={importAgents}
                               onImport={startImport}
+                              onToggleStatus={(row) => void onToggleKeyStatus(row)}
+                              onEdit={openEditKey}
+                              onDelete={setPendingDeleteKey}
+                              busy={actingKeyId === key.id || creating}
                             />
                           </TableCell>
                         </TableRow>
@@ -1139,7 +1276,12 @@ export default function Sub2ApiPage() {
         )}
       </div>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          if (!open) setCreateOpen(false);
+        }}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>{t('routes.sub2api.createKey')}</DialogTitle>
@@ -1177,6 +1319,54 @@ export default function Sub2ApiPage() {
             </Button>
             <Button type="button" onClick={() => void onCreateKey()} disabled={creating}>
               {t('routes.sub2api.createKeyConfirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {editingKey ? (
+        <Sub2ApiKeyEditDialog
+          keyRow={editingKey}
+          groups={groups}
+          busy={creating}
+          onClose={() => setEditingKey(null)}
+          onSave={(form) => void onSaveEditedKey(form)}
+          onResetQuota={() => void onResetQuota()}
+          onResetRateLimit={() => void onResetRateLimit()}
+        />
+      ) : null}
+
+      <Dialog
+        open={pendingDeleteKey != null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteKey(null);
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('routes.sub2api.deleteKey')}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-secondary">
+            {t('routes.sub2api.deleteKeyConfirm', {
+              name: pendingDeleteKey?.name || (pendingDeleteKey ? `Key #${pendingDeleteKey.id}` : ''),
+            })}
+          </p>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPendingDeleteKey(null)}
+              disabled={actingKeyId != null}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              onClick={() => void onDeleteKey()}
+              disabled={actingKeyId != null}
+            >
+              {t('common.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>
