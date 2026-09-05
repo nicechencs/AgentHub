@@ -4,7 +4,7 @@ description: AgentHub 能力键、四级状态和当前 Agent 能力快照。
 type: reference
 audience: contributor
 status: current
-updated: 2026-08-29
+updated: 2026-09-05
 ---
 
 # 能力参考
@@ -33,6 +33,8 @@ agenthub agent capabilities --markdown
 ## 当前快照
 
 下表是仓库当前 adapter 声明的摘要；变更后以 CLI 输出和 Rust 源码为准。
+
+> 2026-09-05：本环境未能成功运行 `agenthub agent capabilities --markdown`（CLI 构建未在此次文档 PR 中执行）。下表已对照 `crates/agenthub-core/src/adapters/*.rs` 的 `capability()` 核对，未见与既有快照漂移；合并前请在可构建环境重新生成并替换本表。
 
 | 能力 | claude | codex | kimi | grok | pi | workbuddy | cursor | dsh | zcode |
 |---|---|---|---|---|---|---|---|---|---|

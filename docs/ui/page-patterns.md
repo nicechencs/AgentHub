@@ -30,7 +30,7 @@ The application is organized by work and management, with Agent filtering inside
 | Manage | Routes | `/routes` | Local route runtime and the connection pool. May add/manage route-only official login / API Key; `/routes` opens the board; secondary nav: board / pool / tokens / activity |
 | Manage | Settings | `/settings` | Preferences, local device, backups, and about |
 
-`Routes`, `Plugins`, and `MCP` are in development. New installs hide the Routes, Plugins, and Sub2API sidebar entries (`routesNavVisible`, `pluginsNavVisible`, and `sub2apiNavVisible` default off). Turning a setting on shows its entry; the pages stay reachable at `/routes`, `/plugins`, and `/sub2api`. MCP stays in the workspace nav. The sidebar and page titles mark **MCP** and **Plugins** as in development; Routes and Sub2API are preference-gated without that mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / uninstall / update for plugin packs is still a [proposal](../proposals/plugin-management.md). The current page lists installed packs for Claude, Grok, and Pi; Claude and Grok can enable or disable. There is no install button.
+`Plugins` and `MCP` are in development. New installs hide the **Plugins** and **Sub2API** sidebar entries (`pluginsNavVisible` and `sub2apiNavVisible` default off). **Routes** defaults **on** (`routesNavVisible` default on) and can be hidden in Preferences. Turning a setting on shows its entry; the pages stay reachable at `/routes`, `/plugins`, and `/sub2api`. MCP stays in the workspace nav. The sidebar and page titles mark **MCP** and **Plugins** as in development; Routes and Sub2API are preference-gated without that mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / uninstall / update for plugin packs is still a [proposal](../proposals/plugin-management.md). The current page lists installed packs for Claude, Grok, and Pi; Claude and Grok can enable or disable. There is no install button.
 
 The compatibility paths `/adapter` and `/router` replace-navigate to `/routes`. They are recovery paths for existing links, not current navigation labels.
 
@@ -78,6 +78,26 @@ Settings uses the workbench header and four page tabs; the tab row stays at the 
 
 Invalid or old tab values replace to the nearest current tab. Tab changes use `replace` so normal navigation history does not fill with panel changes. The backups keep-copies switch (`keepLiveFileCopies`, default on) copies each Agent's live files into the backup directory on switch/import; turning it off stops piling historical copies, but the current switch still keeps one copy for rollback. Manual backups are unaffected. The backup list identity stays a short label (email or key tail). The file preview shows the snapshot as stored.
 
+### Features (Settings)
+
+- Four tabs via `?tab=`: Preferences, This computer (`local`), Backups, About. Invalid or legacy tab values replace to the nearest current tab.
+- Preferences: language and appearance; launch and close; sidebar auto-collapse on Routes; Routes / Plugins / Sub2API sidebar visibility; Routes duplicate-key tip and same-URL update; Skills market source; Usage collection interval.
+- This computer: data directory, log level, retention, and log directory.
+- Backups: Agent configuration snapshots with `AgentTabStrip`; keep-copies switch (`keepLiveFileCopies`); restore/delete; right-hand file inspect of the stored snapshot.
+- About: version, update check, repository link, and read-only credential-storage notes.
+
+### Agent touchpoints (Settings)
+
+- Backups depend on `LiveBackup` and per-Agent snapshot identity (email or key tail). Switch/import keep-copies follow Agent live files.
+- Preferences gate Routes / Plugins / Sub2API nav visibility and Skills market source used by those pages.
+- No ConnectFlow, route `plan`/`bind`, or usage parsers live on Settings itself.
+
+### Out of scope (Settings)
+
+- Not a login list, route runtime, or Agent install surface.
+- Does not encrypt credentials at rest or manage Sub2API site sessions (those stay on Sub2API via the settings port vault).
+- Does not install or update plugin packs.
+
 ## 3. Shared page behavior
 
 ### 3.1 Agent filtering
@@ -105,6 +125,25 @@ Dashboard is the overview for installed Agents and usage, not a second Connectio
 - Usage collection is explicit and shows last/next sync. A parser health block is compact and partial; it names the affected Agent and keeps the rest of the dashboard usable.
 - A usage-empty state guides the first manual collection. Routes health-empty is the exception described below.
 
+### Features (Dashboard)
+
+- Auto-fit cards for **installed** Agents only: identity, readiness, and one primary **连接 / 切换** entry.
+- Opens ConnectFlow on Dashboard (直连 / 用这份登录 / 本机路由 / 当前不支持); does not duplicate that flow on Connections.
+- Usage section: shared filters for time, Agent, and model across summary, trend, distribution, and details; trend switches Agent (area) vs Model (line); session remembers last filters until the app closes.
+- Explicit usage collection with last/next sync; compact parser-health block names the affected Agent and keeps the rest usable.
+- Empty usage guides first manual collection. `/usage` redirects to `/?section=usage`.
+
+### Agent touchpoints (Dashboard)
+
+- **Usage** parsers per Agent; a failed parser must not remove status cards.
+- ConnectFlow uses route `plan` / bind outcomes and login availability for 直连 / 用这份登录 / 本机路由.
+- Catalog + install/detect readiness for card state; links toward Agents when nothing is installed.
+
+### Out of scope (Dashboard)
+
+- Not a Connections workbench, login CRUD, or Routes start/stop surface.
+- Does not manage Skills, Plugins, MCP inventory, or Sub2API site keys.
+
 ## 5. Connections
 
 Connections is the general login list in a full-height workbench split. Logins created or imported here, including ones later selected into a local route, are Connections-managed. Editing a shared official login in the pool copies it to a Routes-owned row; the Connections original stays. Routes-owned official login and API Key entries marked “仅用于本机路由” use `home=route_pool` and may not appear here. Connections is not a list of generated route providers and it does not expose internal binding implementation names.
@@ -117,6 +156,25 @@ Connections is the general login list in a full-height workbench split. Logins c
 - The row menu is only **取消添加** (when that login is already written into the tool). Adding a Connections login to the default connection pool is **从连接同步** on the pool page, not a Connections row action. Connections does not open ConnectFlow, and does not show **分享至连接池**, **用到其他工具**, or **本机转发**.
 - Missing data and a genuinely empty login list are different states.
 
+### Features (Connections)
+
+- Full-height workbench split: `AgentTabStrip` filters; add menu **导入授权** / **官方登录** / **添加 API Key**.
+- Official login and API Key stored as separate rows; WorkBuddy custom models and ZCode catalog providers split one login per directory row; desktop package logins are not imported.
+- Click login **name** for right-hand detail (related config files, package, expiry, timeline, full endpoint). Row menu only **取消添加** when that login is already written into the tool.
+- Distinct states for missing data vs a genuinely empty login list. Recycle bin restores to Connections only.
+
+### Agent touchpoints (Connections)
+
+- **AccountSwitch** / **ApiKeyAccount** / **ConfigWrite** when a login is written into a tool (cancel-add reverses that write).
+- Import/probe paths per Agent; occupancy rules (exclusive slot vs directory-append for WorkBuddy / ZCode).
+- Pool enrollment is **从连接同步** on Routes pool — not a Connections row action. ConnectFlow stays on Dashboard.
+
+### Out of scope (Connections)
+
+- Does not open ConnectFlow, show **分享至连接池**, **用到其他工具**, or **本机转发**.
+- Does not list route-only `home=route_pool` entries or generated route providers.
+- Does not start/stop the local gateway or expose internal binding implementation names.
+
 ## 6. Routes
 
 Routes is the runtime management page for local loopback forwarding. It is not a general connection-binding editor.
@@ -125,9 +183,44 @@ Routes is the runtime management page for local loopback forwarding. It is not a
 
 Routes nested paths use a shell-level secondary nav. The **board** (`/routes/board`) is the health overview: four endpoint-kind cards (Messages, Responses · Codex, Responses · Grok, Chat completions), usage charts, and **one start/stop control for the shared local gateway**. Codex and Grok share the `/v1/responses` path on the wire; the cards split them in the UI and filter usage. They are not per-endpoint switches. Logins for local forwarding are listed on the connection pool (`/routes/pool`); request filtering stays on Activity. `/routes?profile=` opens pool detail. `/adapter`, `/router`, and `/bridges` redirect into this area.
 
+### Features (Board)
+
+- Four endpoint-kind cards (Messages, Responses · Codex, Responses · Grok, Chat completions), usage charts, and **one** shared local-gateway start/stop control.
+- Codex and Grok share `/v1/responses` on the wire; cards split them in the UI and filter usage. Not per-endpoint switches.
+- Bare `/routes` redirects here; secondary nav stays visible for board / pool / tokens / activity.
+
+### Agent touchpoints (Board)
+
+- Local gateway readiness for Agents that consume loopback entry keys (Codex / Grok Responses, Messages, Chat completions).
+- Board usage is route-side telemetry, not Agent **Usage** log parsers.
+- Deep links from Dashboard ConnectFlow **本机路由** land in this area after bind.
+
+### Out of scope (Board)
+
+- Does not list or edit logins (pool), mint entry keys (tokens), or filter the request feed (activity).
+- Does not replace Connections or Sub2API.
+
 ### 6.1 Connection pool
 
-The connection pool lists official logins and API Keys used for local forwarding in a field-aligned table. **All API Keys can join** (including keys configured on WorkBuddy / ZCode / Pi); domestic official logins cannot. It may contain a Connections-managed login enrolled with **从连接同步** on this page, or a Routes-managed login marked “仅用于本机路由”; the latter uses `home=route_pool` and may not appear in Connections. Connections owns the login lifecycle for entries selected from Connections until you **编辑** a shared official login in the pool: saving copies it to a pool-owned row (the Connections login stays), then asks **同步到连接页？** to write models back. Routes owns creation, editing, and deletion for route-only entries. Removing a member from the pool does not delete the Connections-managed login. Each page has its own recycle bin: Connections trash restores to Connections; pool trash restores to the pool. The table shows login, type, and status on every row; connection count, usage window, last used, and priority only when at least one row has that value; enable last. Column widths are dragged from the header edge and remembered. Click the login **name** to open a detail panel; the enable switch does not. If the detail pane is already open, clicking another row’s empty area switches the detail; a closed pane stays closed. A route row can still be opened through `?profile=<id>`.
+The connection pool lists official logins and API Keys used for local forwarding in a field-aligned table. **All API Keys can join** (any owning Agent, including WorkBuddy / ZCode / Pi / Cursor); official OAuth share is limited to Claude / Codex / Grok; domestic official logins cannot. See `isPoolShareableLogin`. It may contain a Connections-managed login enrolled with **从连接同步** on this page, or a Routes-managed login marked “仅用于本机路由”; the latter uses `home=route_pool` and may not appear in Connections. Connections owns the login lifecycle for entries selected from Connections until you **编辑** a shared official login in the pool: saving copies it to a pool-owned row (the Connections login stays), then asks **同步到连接页？** to write models back. Routes owns creation, editing, and deletion for route-only entries. Removing a member from the pool does not delete the Connections-managed login. Each page has its own recycle bin: Connections trash restores to Connections; pool trash restores to the pool. The table shows login, type, and status on every row; connection count, usage window, last used, and priority only when at least one row has that value; enable last. Column widths are dragged from the header edge and remembered. Click the login **name** to open a detail panel; the enable switch does not. If the detail pane is already open, clicking another row’s empty area switches the detail; a closed pane stays closed. A route row can still be opened through `?profile=<id>`.
+
+### Features (Pool)
+
+- Field-aligned table of official logins and API Keys used for local forwarding; **从连接同步**, route-only add/edit/delete, enable switch, column resize memory, name-click detail, `?profile=<id>`.
+- Editing a shared official login copies to a pool-owned row, then may ask **同步到连接页？**. Separate recycle bin from Connections.
+- Shareability for「从连接同步」: **all API Keys** can join (any owning Agent, including WorkBuddy / ZCode / Pi / Cursor); official OAuth only for Claude / Codex / Grok; domestic official logins cannot. Implemented by `isPoolShareableLogin` in `ticket-pool-import.ts` (aligned with product — no Agent API Key whitelist). Status/health states are distinct from durable DB rows (see table below).
+
+### Agent touchpoints (Pool)
+
+- Route `plan` / `bind` / `unbind` and **交给本机网关** when `plan()` still allows a local-bridge write.
+- Pool membership feeds default-pool resolver / `GET /models` for Agents using 本机路由.
+- Sync-back to Connections writes models through Agent **ConfigWrite** when the user confirms.
+
+### Out of scope (Pool)
+
+- Does not start/stop the shared local gateway (board owns that).
+- Does not mint or copy local entry tokens (tokens page).
+- Does not delete the Connections-managed original when removing a pool member.
 
 The page treats the following states separately:
 
@@ -150,6 +243,60 @@ Official `native_endpoint` / `config_sync` rows are not auto-enrolled. When `pla
 
 The primary start/stop control for the shared local gateway is on the board, not on each pool login. Detail may still enroll a native row with **交给本机网关**, and leftover route cards may still expose start/stop. A stop or unbind confirmation explains listener impact and whether the current local configuration will be restored. A failed unbind remains retryable; it must not fall back to force deletion.
 
+### Features (Route detail)
+
+- Shows route identity, loopback address/port, downstream surface, upstream summary, last health, default-pool members, and models the resolver currently serves.
+- May offer **交给本机网关** for eligible native rows; leftover route cards may still expose start/stop.
+- Stop/unbind confirmation explains listener impact and config restore; failed unbind stays retryable (no force-delete fallback).
+
+### Agent touchpoints (Route detail)
+
+- `plan()` gate for local-bridge enrollment; bind/unbind against the Agent’s route surface.
+- Model list is resolver output for Agents consuming the shared loopback entry — not `ModelSelect` capability.
+
+### Out of scope (Route detail)
+
+- Never shows the local token value or refresh credentials.
+- Not the primary start/stop control (board) and not the tokens minting UI.
+
+### 6.2a Local tokens
+
+Local tokens (`/routes/tokens`) are entry keys per endpoint. Keys appear after the local gateway starts. Users can copy a key or **write it into the matching Agent** (API Key style) for Codex / Grok Responses and other loopback surfaces.
+
+#### Features (Local tokens)
+
+- List and inspect entry keys per endpoint type; create/default naming; copy; import/write into an installed Agent.
+- Detail never shows upstream refresh credentials; local token value handling stays on this page’s copy/write actions.
+
+#### Agent touchpoints (Local tokens)
+
+- **ApiKeyAccount** / **ConfigWrite** / **AccountSwitch** when writing an entry key into an Agent.
+- Endpoint-type mapping must match the Agent surface (Messages vs Responses · Codex vs Responses · Grok vs Chat completions).
+
+#### Out of scope (Local tokens)
+
+- Does not manage upstream official logins or Sub2API site keys.
+- Does not start/stop the gateway or edit the connection pool.
+
+### 6.2b Activity
+
+Activity (`/routes/activity`) is the cross-route recent request feed with filters and trace detail (inbound/outbound endpoints, key, stages).
+
+#### Features (Activity)
+
+- Recent request list with filters; open a trace for stage timeline and endpoint summary.
+- Monitoring-oriented; complements board usage charts.
+
+#### Agent touchpoints (Activity)
+
+- Shows traffic for Agents using 本机路由 entry keys; not Agent session **Usage** parsers.
+- No bind/unbind or config write from this page.
+
+#### Out of scope (Activity)
+
+- Does not configure routes, pool membership, or Agent live files.
+- Does not replace Dashboard usage collection.
+
 ### 6.3 Runtime boundary
 
 The current `local_bridge` runtime is hosted in the Tauri process through the in-process control host. Routes may report unavailable when that host is not reachable. A future sidecar is a proposal and is not a current UI assumption.
@@ -157,6 +304,23 @@ The current `local_bridge` runtime is hosted in the Tauri process through the in
 ## 7. Sub2API
 
 Sub2API is a separate site-management workbench, not a Routes subpage or a replacement for Connections. A signed-in user can filter keys by group; create, edit, enable, disable, or delete keys; and import a usable key into an installed Agent. The visible API key value stays masked. Site session and saved-account controls belong to this page, not the Connections list.
+
+### Features (Sub2API)
+
+- Sign in to a Sub2API site (password login; captcha / 2FA when required); session refresh; multi-account **remember** with passwords in the desktop SQLite vault via the settings port (memory in mock).
+- After sign-in: filter keys by group; create, edit, enable/disable, or delete keys; masked key values; import a usable key into an installed Agent.
+- Sidebar entry defaults hidden (`sub2apiNavVisible`); hiding the nav does not disable `/sub2api`.
+
+### Agent touchpoints (Sub2API)
+
+- Import uses Agent **ApiKeyAccount** / **ConfigWrite** (and Connect/import helpers shared with Routes tokens).
+- Site session and remembered accounts belong here, not Connections.
+
+### Out of scope (Sub2API)
+
+- Not a Routes subpage and not a replacement for Connections.
+- Does not start the local gateway or enroll pool members by itself.
+- Child webview open-login on the settings port remains available but unused by the current UI.
 
 ## 8. Chat
 
@@ -170,6 +334,24 @@ Chat is a one-conversation, one-Agent workbench with a session rail, transcript,
 - Streaming process details use a compact summary and an expandable timeline. Commands, stderr, and exit codes stay in a secondary runtime-details disclosure.
 - Switching conversations clears in-memory process buffers for the old view but does not cancel the active operation. The target conversation shows a “sending elsewhere” recovery line.
 - Copy is available for completed user/Agent messages. Running messages do not show copy or retry.
+
+### Features (Chat)
+
+- Session rail: new conversation, search by title/cwd, day grouping, rename, delete confirmation.
+- Header: Agent identity, working directory, automatic-approval state, connection context.
+- Composer blocker order: hidden Agent → missing authorization → missing working directory → another conversation sending; send is the one accent action (becomes stop); retry creates a new turn.
+- Streaming process panel with expandable timeline; copy for completed messages only.
+
+### Agent touchpoints (Chat)
+
+- **StructuredStream** (and text fallbacks) for Chat send/stream; **DangerousMode** / automatic-approval where supported.
+- **SessionResume** where Partial (e.g. Claude / Codex print+resume); connection context from current login / 本机路由.
+- One active Agent per conversation; hidden/unauthorized Agents visible with reason but not selectable for a new send.
+
+### Out of scope (Chat)
+
+- Does not edit Agent project logs in place; does not manage Connections CRUD or Routes runtime.
+- Does not install Agents or skills.
 
 ## 9. Skills, Projects, and Plugins
 
@@ -185,6 +367,22 @@ Skills, Projects, and Plugins are full-height workbenches with a left inventory 
 - The list keeps the name and at most one line of description. Absolute paths move to the preview footer or an explicit open-directory action.
 - The matrix represents supported/unavailable/unknown states without blanking the page. A missing skill directory is a partial state, not a global error.
 
+### Features (Skills)
+
+- Tabs: User skills (shared library + this-tool), Project skills (workspace dropdown from Projects), Market.
+- Enablement matrix; name opens preview; checkbox selection only for batch ops; paths in preview footer / open-directory.
+
+### Agent touchpoints (Skills)
+
+- **Skills** capability and per-Agent enablement matrix; supported/unavailable/unknown without blanking the page.
+- Project skills read/write `.agents/skills` (and list existing `.claude/skills` etc.) for workspaces identified on Projects.
+- Market source preference lives in Settings → Preferences.
+
+### Out of scope (Skills)
+
+- Not the plugin/extension pack manager and not MCP server editing.
+- A missing skill directory is a partial state, not a global error page replacement for other tabs.
+
 ### Projects
 
 - The left tree is still a stack of collapsible project cards. Sessions under a project align in columns (title, file name, time, size, icon actions) without row dividers. Title opens the right-hand excerpt preview; the file-name field reveals the record in the file manager. If the preview is already open, clicking another session’s empty area switches it; a closed preview stays closed. Page actions (summarize, delete, refresh) stay in the list column, left of the separator, and travel with it while resizing.
@@ -192,11 +390,43 @@ Skills, Projects, and Plugins are full-height workbenches with a left inventory 
 - A project/session can bootstrap a new Chat conversation through the documented session storage handoff. It does not silently edit the original Agent log.
 - Agent capabilities such as transcript support are explicit. Unsupported actions are hidden or disabled with a hint.
 
+### Features (Projects)
+
+- Collapsible project cards with session columns (title, file name, time, size, actions); title opens excerpt preview; file-name reveals in file manager.
+- Search; summarize/delete with confirmation where supported; resizable name/path columns; handoff to bootstrap a new Chat conversation.
+
+### Agent touchpoints (Projects)
+
+- **ProjectHistory** for list/preview; **ProjectDelete** where supported (ZCode delete stays in ZCode; Cursor unsupported).
+- Transcript/session support is capability-gated; unsupported actions hidden or disabled with a hint.
+- Does not silently edit the original Agent log when handing off to Chat.
+
+### Out of scope (Projects)
+
+- Not a full IDE or Agent log editor.
+- Not Skills market or plugin management.
+
 ### Plugins
 
 - Left column lists installed plugin / extension packs (Claude, Grok, and Pi today). The row keeps the name, the on-disk version when known, at most one line of description, and exception badges (disabled / untrusted / not installed / version mismatch). Clicking a row opens the right-hand details pane.
 - Details lead with the pack components (bundled MCP is a component, not a list row). Identity fields (version, marketplace, scope, path) follow. Pi also shows the specified version from settings when pinned, and a short note on how upgrade is judged (pinned npm specs are skipped by Pi updates; this page does not probe npm for a newer unpinned version). Claude and Grok packs can be turned on or off; turning off is not uninstall. There is no install button.
 - Empty copy depends on the Agent filter: wired-but-empty (install in that tool, then refresh), planned (list not wired yet), or unsupported (this tool has no pack system of this kind). Loading, empty, and error states stay in the list column. Diagnostic scan sources are not shown in the list. Hiding the sidebar item does not disable `/plugins`.
+
+### Features (Plugins)
+
+- Lists installed plugin/extension packs for Claude, Grok, and Pi; row shows name, on-disk version, one-line description, exception badges.
+- Details: pack components (bundled MCP is a component), identity fields; Pi shows pinned version note.
+- Claude and Grok can enable/disable listed packs (not uninstall). No install button. Sidebar visibility gated by `pluginsNavVisible`.
+
+### Agent touchpoints (Plugins)
+
+- Claude / Grok toggle via that Agent’s plugin enable surface; Pi is list-only.
+- Empty copy depends on Agent filter: wired-but-empty, planned, or unsupported. Not `Capability::Plugins` (none exists); not `Capability::Mcp`.
+
+### Out of scope (Plugins)
+
+- Install / uninstall / update of packs remains a proposal.
+- Not the MCP inventory page; hiding the sidebar item does not disable `/plugins`.
 
 ## 10. Agents and MCP
 
@@ -204,9 +434,41 @@ Skills, Projects, and Plugins are full-height workbenches with a left inventory 
 
 Agents is the lifecycle surface: installed state, runtime readiness, install/update, and environment remediation. The catalog is a field table in a full-height split. Click the Agent **name** to open the right-hand detail; start / install / hide stay on the row. If the detail pane is already open, clicking another row’s empty area switches the detail; a closed pane stays closed. A missing runtime is shown before Agent installation, with repair steps and a re-detect action. Do not offer a successful installation action while its prerequisite environment is known to be missing. Uninstall entry in the detail pane is `dangerOutline`; the confirm dialog uses `danger`.
 
+### Features (Agents)
+
+- Lifecycle catalog table: installed state, runtime readiness, install/update, hide, environment remediation.
+- Click Agent **name** for detail; start/install/hide stay on the row; uninstall in detail is `dangerOutline` with `danger` confirm.
+- Missing runtime shown before Agent installation, with repair steps and re-detect.
+
+### Agent touchpoints (Agents)
+
+- Catalog / install registry / detect are the list truth; frontend `agents.ts` is display decoration only.
+- Install channels and Runtime prerequisites from the Agent’s sparse `install` / `lifecycle` ports.
+- Soft-hidden Agents (e.g. Cursor store-stamp) can be unhidden here without implying ConfigWrite support.
+
+### Out of scope (Agents)
+
+- Does not run Chat, manage logins, or configure Routes.
+- Must not offer successful install while a known prerequisite runtime is missing.
+
 ### MCP
 
 MCP is a read-only inventory of known **MCP server** configuration files. It lists Agent, server, transport, source path, and enabled status. Parse errors, missing files, and an empty inventory each get their own recoverable state. Inventory does not imply that editing or injection is supported, and it is not the plugin/extension pack manager. The current page is a standard single-column table. Plugin / extension packs live on `/plugins`.
+
+### Features (MCP)
+
+- Read-only table of known MCP server configuration files: Agent, server, transport, source path, enabled status.
+- Distinct recoverable states for parse errors, missing files, and empty inventory.
+
+### Agent touchpoints (MCP)
+
+- Inventory paths only where verified; **`Capability::Mcp` remains Planned** for all built-in Agents — inventory ≠ manage/inject.
+- Bundled MCP inside a plugin pack is shown on Plugins as a component, not as rows here.
+
+### Out of scope (MCP)
+
+- No editing or injection of MCP servers.
+- Not the plugin/extension pack manager (`/plugins`).
 
 ## 11. Responsive and interaction constraints
 
