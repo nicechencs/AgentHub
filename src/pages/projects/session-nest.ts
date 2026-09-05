@@ -1,5 +1,21 @@
 import type { AgentSession } from '@/lib/types';
 
+export const REVIEW_THREAD_KIND = 'review';
+
+export function isReviewSession(s: Pick<AgentSession, 'threadKind'>): boolean {
+  return s.threadKind === REVIEW_THREAD_KIND;
+}
+
+/** Codex tool-approval threads that belong to this conversation. */
+export function reviewsForParent(
+  parent: Pick<AgentSession, 'sessionId'>,
+  sessions: AgentSession[],
+): AgentSession[] {
+  const sid = parent.sessionId?.trim();
+  if (!sid) return [];
+  return sessions.filter((s) => isReviewSession(s) && s.parentSessionId === sid);
+}
+
 /** Cursor / Claude: `…/<parentId>/subagents/…` */
 const SUBAGENT_DIR_RE = /(?:^|\/)([^/]+)\/subagents\//i;
 /** Kimi: `session_<uuid>/agents/<name>/` other than `main`. */
@@ -39,9 +55,10 @@ export type NestedSession = {
 
 /** Hang subagent rows under their parent transcript. Other rows stay flat. */
 export function nestSessions(sessions: AgentSession[]): NestedSession[] {
+  const listed = sessions.filter((s) => !isReviewSession(s));
   const childrenByParent = new Map<string, AgentSession[]>();
   const nestedIds = new Set<string>();
-  for (const s of sessions) {
+  for (const s of listed) {
     const parentId = cursorSubagentParentId(s);
     if (!parentId) continue;
     nestedIds.add(s.id);
@@ -52,7 +69,7 @@ export function nestSessions(sessions: AgentSession[]): NestedSession[] {
 
   const out: NestedSession[] = [];
   const usedParents = new Set<string>();
-  for (const s of sessions) {
+  for (const s of listed) {
     if (nestedIds.has(s.id)) continue;
     const tid = cursorTranscriptId(s);
     const children = (tid && childrenByParent.get(tid)) || [];

@@ -345,6 +345,8 @@ fn build_kimi_session(
             size_bytes,
             updated_at,
             session_id: None,
+            parent_session_id: None,
+            thread_kind: None,
         }
     };
 
@@ -787,6 +789,8 @@ fn list_sessions_tree(
                         preview: ent.preview.clone(),
                         message_count: ent.message_count,
                         session_id: ent.session_id.clone(),
+                        parent_session_id: ent.parent_session_id.clone(),
+                        thread_kind: ent.thread_kind.clone(),
                     });
                     continue;
                 }
@@ -817,6 +821,8 @@ fn list_sessions_tree(
                                 message_count: meta.message_count,
                                 updated_at,
                                 session_id: meta.session_id,
+                                parent_session_id: meta.parent_session_id,
+                                thread_kind: meta.thread_kind,
                             },
                         );
                     }
@@ -838,6 +844,8 @@ fn list_sessions_tree(
                         message_count: meta.message_count,
                         updated_at: meta.updated_at.clone(),
                         session_id: meta.session_id.clone(),
+                        parent_session_id: meta.parent_session_id.clone(),
+                        thread_kind: meta.thread_kind.clone(),
                     },
                 );
             }
@@ -920,6 +928,8 @@ struct SessionFileMeta {
     updated_at: String,
     /// Native CLI session id when known from content / path.
     session_id: Option<String>,
+    parent_session_id: Option<String>,
+    thread_kind: Option<String>,
 }
 
 fn session_file_meta(agent: AgentId, path: &Path) -> SessionFileMeta {
@@ -948,7 +958,10 @@ fn session_file_meta_head(agent: AgentId, path: &Path, head_bytes: u64) -> Sessi
     let text = read_head(path, head_bytes).unwrap_or_default();
     let cwd = extract_cwd_from_text(agent, &text);
     let (preview, message_count) = scan_preview_from_text(&text);
-    let session_id = extract_native_session_id(agent, path, &text);
+    let thread = extract_thread_meta(&text);
+    let session_id = thread
+        .own_session_id
+        .or_else(|| extract_native_session_id(agent, path, &text));
     SessionFileMeta {
         cwd,
         preview,
@@ -956,7 +969,73 @@ fn session_file_meta_head(agent: AgentId, path: &Path, head_bytes: u64) -> Sessi
         size_bytes,
         updated_at,
         session_id,
+        parent_session_id: thread.parent_session_id,
+        thread_kind: thread.thread_kind,
     }
+}
+
+struct ThreadMeta {
+    parent_session_id: Option<String>,
+    thread_kind: Option<String>,
+    /// Review threads store the parent in `session_id`; use payload.id instead.
+    own_session_id: Option<String>,
+}
+
+fn extract_thread_meta(text: &str) -> ThreadMeta {
+    let empty = ThreadMeta {
+        parent_session_id: None,
+        thread_kind: None,
+        own_session_id: None,
+    };
+    for line in text.lines().take(8) {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if v.get("type").and_then(|x| x.as_str()) != Some("session_meta") {
+            continue;
+        }
+        let payload = v.get("payload").unwrap_or(&v);
+        let parent = payload
+            .get("parent_thread_id")
+            .or_else(|| payload.get("parentThreadId"))
+            .and_then(|x| x.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        let thread_source = payload
+            .get("thread_source")
+            .or_else(|| payload.get("threadSource"))
+            .and_then(|x| x.as_str())
+            .unwrap_or("");
+        let guardian = thread_source.eq_ignore_ascii_case("guardian_review")
+            || payload
+                .pointer("/source/subagent/other")
+                .and_then(|x| x.as_str())
+                .is_some_and(|s| s.eq_ignore_ascii_case("guardian"));
+        if !guardian {
+            return ThreadMeta {
+                parent_session_id: parent,
+                thread_kind: None,
+                own_session_id: None,
+            };
+        }
+        let own = payload
+            .get("id")
+            .and_then(|x| x.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        return ThreadMeta {
+            parent_session_id: parent,
+            thread_kind: Some("review".into()),
+            own_session_id: own,
+        };
+    }
+    empty
 }
 
 /// Native CLI session id: content field first, then path heuristics.
@@ -1188,6 +1267,8 @@ fn build_session_from_meta(
         preview: meta.preview,
         message_count: meta.message_count,
         session_id,
+        parent_session_id: meta.parent_session_id,
+        thread_kind: meta.thread_kind,
     })
 }
 
@@ -1680,6 +1761,8 @@ fn session_from_candidate(
                 preview: ent.preview,
                 message_count: ent.message_count,
                 session_id: ent.session_id,
+                parent_session_id: ent.parent_session_id,
+                thread_kind: ent.thread_kind,
             });
         }
     }
@@ -1704,6 +1787,8 @@ fn session_from_candidate(
                 message_count: rec.message_count,
                 updated_at: rec.updated_at.clone(),
                 session_id: rec.session_id.clone(),
+                parent_session_id: rec.parent_session_id.clone(),
+                thread_kind: rec.thread_kind.clone(),
             },
         );
     }
@@ -2493,11 +2578,135 @@ fn is_noisy_preview(text: &str) -> bool {
         || t.starts_with("<system-reminder>")
         || t.starts_with("<git_status>")
         || t.starts_with("<rules>")
+        || t.starts_with("<recommended_plugins>")
+        || t.starts_with("<environment_context>")
+        || t.starts_with("<INSTRUCTIONS>")
+        || t.starts_with("# AGENTS.md")
+        || t.starts_with("<permissions instructions>")
+        || t.starts_with("<skills_instructions>")
+        || t.starts_with("<multi_agent")
+        || t.starts_with("<image_resize_notice>")
+        || t.starts_with("<collaboration_mode>")
         || t.starts_with("You are Grok")
         || t.starts_with("You are Codex")
         || t.starts_with("You are Claude")
         || t.contains("base_instructions")
         || t.len() > 4000 && t.contains("<agent_skills>")
+        || is_review_dump(t)
+}
+
+fn is_review_dump(text: &str) -> bool {
+    let t = text.trim();
+    t.contains(">>> TRANSCRIPT START")
+        || t.contains(">>> TRANSCRIPT DELTA")
+        || t.contains(">>> APPROVAL REQUEST")
+        || t.contains("The following is the Codex agent history")
+}
+
+struct PeeledUserText {
+    visible: Option<String>,
+    convention: Option<String>,
+}
+
+/// Split Codex-injected system blocks out of a user turn.
+fn peel_injected_user_blocks(text: &str) -> PeeledUserText {
+    let mut rest = text.trim().to_string();
+    if rest.is_empty() {
+        return PeeledUserText {
+            visible: None,
+            convention: None,
+        };
+    }
+    rest = strip_tagged_block(&rest, "recommended_plugins");
+    rest = strip_tagged_block(&rest, "environment_context");
+    rest = strip_tagged_block(&rest, "user_info");
+    rest = strip_tagged_block(&rest, "system-reminder");
+    rest = strip_tagged_block(&rest, "git_status");
+    rest = strip_tagged_block(&rest, "permissions instructions");
+    rest = strip_tagged_block(&rest, "skills_instructions");
+    rest = strip_tagged_block(&rest, "image_resize_notice");
+    rest = strip_tagged_block(&rest, "collaboration_mode");
+    rest = strip_tagged_block(&rest, "multi_agent_role");
+    rest = strip_tagged_block(&rest, "multi_agent_mode");
+    let convention = extract_convention_from(&rest);
+    if convention.is_some() {
+        rest = strip_convention_block(&rest);
+    }
+    rest = rest.trim().to_string();
+    if rest.is_empty() || is_noisy_preview(&rest) || is_review_dump(&rest) {
+        return PeeledUserText {
+            visible: None,
+            convention,
+        };
+    }
+    PeeledUserText {
+        visible: Some(rest),
+        convention,
+    }
+}
+
+fn extract_convention_from(text: &str) -> Option<String> {
+    if let Some(idx) = text.find("# AGENTS.md") {
+        let rest = &text[idx..];
+        let cut = convention_cut(rest);
+        let doc = rest[..cut].trim();
+        if !doc.is_empty() {
+            return Some(doc.to_string());
+        }
+    }
+    unwrap_tagged_block(text, "INSTRUCTIONS")
+}
+
+fn strip_convention_block(text: &str) -> String {
+    let mut rest = text.to_string();
+    if let Some(idx) = rest.find("# AGENTS.md") {
+        let cut = convention_cut(&rest[idx..]);
+        let end = idx + cut;
+        rest = join_trimmed(&rest[..idx], &rest[end..]);
+    }
+    strip_tagged_block(&rest, "INSTRUCTIONS")
+}
+
+fn convention_cut(rest: &str) -> usize {
+    if let Some(i) = rest.find("</INSTRUCTIONS>") {
+        return i + "</INSTRUCTIONS>".len();
+    }
+    [
+        "<environment_context>",
+        "<recommended_plugins>",
+        ">>> TRANSCRIPT",
+        "The following is the Codex agent history",
+    ]
+    .iter()
+    .filter_map(|m| rest.find(m))
+    .min()
+    .unwrap_or(rest.len())
+}
+
+fn strip_tagged_block(text: &str, tag: &str) -> String {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let Some(start) = text.find(&open) else {
+        return text.to_string();
+    };
+    let after_open = start + open.len();
+    let end = text[after_open..]
+        .find(&close)
+        .map(|i| after_open + i + close.len())
+        .unwrap_or(text.len());
+    join_trimmed(&text[..start], &text[end..])
+}
+
+fn join_trimmed(left: &str, right: &str) -> String {
+    let left = left.trim_end();
+    let right = right.trim_start();
+    if left.is_empty() {
+        right.to_string()
+    } else if right.is_empty() {
+        left.to_string()
+    } else {
+        format!("{left}\n{right}")
+    }
 }
 
 /// Prefer `<user_query>` inner text (Grok chat_history wraps the real prompt).
@@ -2505,15 +2714,7 @@ fn visible_transcript_text(text: &str) -> Option<String> {
     if let Some(q) = unwrap_tagged_block(text, "user_query") {
         return Some(q);
     }
-    if is_noisy_preview(text) {
-        return None;
-    }
-    let t = text.trim();
-    if t.is_empty() {
-        None
-    } else {
-        Some(t.to_string())
-    }
+    peel_injected_user_blocks(text).visible
 }
 
 fn unwrap_tagged_block(text: &str, tag: &str) -> Option<String> {
@@ -2535,36 +2736,55 @@ struct ExcerptTurn {
     text: String,
 }
 
-fn extract_jsonl_transcript_turns(text: &str) -> Vec<ExcerptTurn> {
+struct TranscriptExcerpt {
+    turns: Vec<ExcerptTurn>,
+    convention: Option<String>,
+}
+
+fn extract_jsonl_transcript_turns(text: &str) -> TranscriptExcerpt {
     let mut turns = Vec::new();
+    let mut convention = None;
     for line in text.lines() {
         let line = line.trim();
         if line.is_empty() {
             continue;
         }
-        if let Some(turn) = extract_transcript_turn_from_line(line) {
+        if let Some(raw) = extract_userish_text(line) {
+            if unwrap_tagged_block(&raw, "user_query").is_some() {
+                if let Some(visible) = visible_transcript_text(&raw) {
+                    turns.push(ExcerptTurn {
+                        role: "user",
+                        text: visible,
+                    });
+                }
+                continue;
+            }
+            let peeled = peel_injected_user_blocks(&raw);
+            if convention.is_none() {
+                convention = peeled.convention;
+            }
+            if let Some(visible) = peeled.visible {
+                turns.push(ExcerptTurn {
+                    role: "user",
+                    text: visible,
+                });
+            }
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if v.get("synthetic_reason")
+            .and_then(|x| x.as_str())
+            .is_some_and(|s| !s.is_empty())
+        {
+            continue;
+        }
+        if let Some(turn) = extract_assistant_turn(&v) {
             turns.push(turn);
         }
     }
-    turns
-}
-
-fn extract_transcript_turn_from_line(line: &str) -> Option<ExcerptTurn> {
-    let v: serde_json::Value = serde_json::from_str(line).ok()?;
-    if v.get("synthetic_reason")
-        .and_then(|x| x.as_str())
-        .is_some_and(|s| !s.is_empty())
-    {
-        return None;
-    }
-    if let Some(t) = extract_userish_text(line) {
-        let visible = visible_transcript_text(&t)?;
-        return Some(ExcerptTurn {
-            role: "user",
-            text: visible,
-        });
-    }
-    extract_assistant_turn(&v)
+    TranscriptExcerpt { turns, convention }
 }
 
 fn extract_assistant_turn(v: &serde_json::Value) -> Option<ExcerptTurn> {
@@ -2757,8 +2977,12 @@ fn merge_grok_excerpt_turns(
 
 /// Role-tagged turns so markdown `---` inside a reply is not a splitter.
 /// Keep every extracted turn in full, including long sessions.
-fn format_excerpt_turns(turns: &[ExcerptTurn]) -> String {
+fn format_excerpt_turns(turns: &[ExcerptTurn], convention: Option<&str>) -> String {
     let mut body = String::new();
+    if let Some(doc) = convention.map(str::trim).filter(|s| !s.is_empty()) {
+        body.push_str("---doc:convention---\n");
+        body.push_str(doc);
+    }
     for t in turns {
         let text = t.text.trim();
         if text.is_empty() {
@@ -2819,6 +3043,8 @@ pub(crate) fn load_excerpt_with_read_cap(
             preview,
             message_count,
             session_id: native_session_id_from_path(agent, &abs_path),
+            parent_session_id: None,
+            thread_kind: None,
         }
     });
     let (filtered, mut truncated) =
@@ -2831,7 +3057,7 @@ pub(crate) fn load_excerpt_with_read_cap(
     } else {
         filtered
     };
-    let chat_turns = extract_jsonl_transcript_turns(&chat_text);
+    let extracted = extract_jsonl_transcript_turns(&chat_text);
     let turns = if agent == AgentId::Grok {
         let updates = abs_path.with_file_name("updates.jsonl");
         let update_turns = if updates.is_file() {
@@ -2842,15 +3068,11 @@ pub(crate) fn load_excerpt_with_read_cap(
         } else {
             Vec::new()
         };
-        merge_grok_excerpt_turns(update_turns, chat_turns)
+        merge_grok_excerpt_turns(update_turns, extracted.turns)
     } else {
-        chat_turns
+        extracted.turns
     };
-    let body = if turns.is_empty() {
-        String::new()
-    } else {
-        format_excerpt_turns(&turns)
-    };
+    let body = format_excerpt_turns(&turns, extracted.convention.as_deref());
     Ok(AgentProjectExcerpt {
         id: rec.id,
         agent_id: rec.agent_id,

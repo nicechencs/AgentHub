@@ -331,6 +331,8 @@ fn session_from_task(row: &TaskRow, project_key: &str) -> AgentSession {
         preview: Some(preview),
         message_count: None,
         session_id: Some(row.task_id.clone()),
+        parent_session_id: None,
+        thread_kind: None,
     }
 }
 

@@ -65,6 +65,12 @@ pub struct AgentSession {
     /// Native CLI session id (for resume / copy), when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
+    /// Native parent thread id when this file is a child (e.g. Codex review).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_session_id: Option<String>,
+    /// `review` = Codex tool-approval thread; hidden from the main session list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_kind: Option<String>,
 }
 
 /// Conversation text for project preview / continue-chat context.

@@ -1963,6 +1963,115 @@ fn codex_excerpt_reads_assistant_from_response_item_payload() {
 }
 
 #[test]
+fn codex_excerpt_keeps_question_and_convention_without_injected_blocks() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".codex");
+    let session = home
+        .join("sessions")
+        .join("2026")
+        .join("09")
+        .join("05")
+        .join("rollout-excerpt-injected.jsonl");
+    write_jsonl(
+        &session,
+        &[
+            serde_json::json!({"type":"session_meta","payload":{"session_id":"parent-1","id":"parent-1","cwd":"D:\\work\\repo","thread_source":"user"}}),
+            serde_json::json!({
+                "type":"response_item",
+                "payload":{
+                    "type":"message",
+                    "role":"user",
+                    "content":[
+                        {"type":"input_text","text":"<recommended_plugins>\nHere is a list of plugins that are available but not installed.\n</recommended_plugins>"},
+                        {"type":"input_text","text":"# AGENTS.md instructions for D:\\work\\repo\n\n<INSTRUCTIONS>\n# 项目约定\n\n- 日常合入 dev\n</INSTRUCTIONS>"},
+                        {"type":"input_text","text":"<environment_context>\n  <cwd>D:\\work\\repo</cwd>\n</environment_context>"}
+                    ]
+                }
+            }),
+            serde_json::json!({"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"帮我看看当前界面"}]}}),
+            serde_json::json!({"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"先看连接页。"}]}}),
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Codex, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].thread_kind, None);
+    assert!(
+        rows[0].title.contains("帮我看看当前界面"),
+        "title={}",
+        rows[0].title
+    );
+    let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert!(
+        ex.excerpt.contains("---doc:convention---"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(ex.excerpt.contains("日常合入 dev"), "excerpt={}", ex.excerpt);
+    assert!(
+        ex.excerpt.contains("帮我看看当前界面"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(ex.excerpt.contains("先看连接页。"), "excerpt={}", ex.excerpt);
+    assert!(
+        !ex.excerpt.contains("recommended_plugins"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        !ex.excerpt.contains("environment_context"),
+        "excerpt={}",
+        ex.excerpt
+    );
+}
+
+#[test]
+fn codex_review_session_is_marked_and_drops_transcript_dump() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".codex");
+    let session = home
+        .join("sessions")
+        .join("2026")
+        .join("09")
+        .join("05")
+        .join("rollout-review.jsonl");
+    write_jsonl(
+        &session,
+        &[
+            serde_json::json!({
+                "type":"session_meta",
+                "payload":{
+                    "session_id":"parent-1",
+                    "id":"review-1",
+                    "cwd":"D:\\work\\repo",
+                    "thread_source":"guardian_review",
+                    "parent_thread_id":"parent-1",
+                    "source":{"subagent":{"other":"guardian"}}
+                }
+            }),
+            serde_json::json!({"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions\n\n<INSTRUCTIONS>\n约定正文\n</INSTRUCTIONS>"}]}}),
+            serde_json::json!({"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"The following is the Codex agent history whose request action you are assessing.\n>>> TRANSCRIPT START\n[1] user: hello"}]}}),
+            serde_json::json!({"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"risk_level\":\"low\",\"outcome\":\"allow\",\"rationale\":\"只读本地文件\"}"}]}}),
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Codex, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].thread_kind.as_deref(), Some("review"));
+    assert_eq!(rows[0].parent_session_id.as_deref(), Some("parent-1"));
+    assert_eq!(rows[0].session_id.as_deref(), Some("review-1"));
+    let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert!(
+        !ex.excerpt.contains("TRANSCRIPT START"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(ex.excerpt.contains("\"outcome\":\"allow\""), "excerpt={}", ex.excerpt);
+    assert!(ex.excerpt.contains("---doc:convention---"), "excerpt={}", ex.excerpt);
+}
+
+#[test]
 fn claude_excerpt_reads_nested_assistant_message_text() {
     let dir = tempdir().unwrap();
     let home = dir.path().join(".claude");
@@ -2345,6 +2454,8 @@ fn session_index_roundtrip_and_freshness() {
             message_count: Some(2),
             updated_at: "t0".into(),
             session_id: Some("sid-1".into()),
+            parent_session_id: None,
+            thread_kind: None,
         },
     );
     store.save_if_dirty();

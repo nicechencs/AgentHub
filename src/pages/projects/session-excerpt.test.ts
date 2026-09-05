@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { classifyExcerptRows, excerptTurnsToRecordLines, splitExcerptTurns } from './session-excerpt';
+import {
+  classifyExcerptRows,
+  excerptTurnsToRecordLines,
+  parseApprovalDecisions,
+  splitExcerptDocument,
+  splitExcerptTurns,
+} from './session-excerpt';
 
 describe('splitExcerptTurns', () => {
   it('returns empty for blank input', () => {
@@ -65,6 +71,23 @@ describe('splitExcerptTurns', () => {
     ).toEqual([{ role: 'assistant', text: 'ok' }]);
   });
 
+  it('keeps a convention document out of visual turns', () => {
+    const excerpt = [
+      '---doc:convention---',
+      '# AGENTS.md',
+      '',
+      '- 日常合入 dev',
+      '---turn:user---',
+      '帮我看看当前界面',
+      '---turn:assistant---',
+      '先看连接页。',
+    ].join('\n');
+    expect(splitExcerptTurns(excerpt)).toEqual([
+      { role: 'user', text: '帮我看看当前界面' },
+      { role: 'assistant', text: '先看连接页。' },
+    ]);
+  });
+
   it('keeps markdown horizontal rules inside a role-tagged assistant turn', () => {
     const excerpt = [
       '---turn:user---',
@@ -83,6 +106,55 @@ describe('splitExcerptTurns', () => {
       {
         role: 'assistant',
         text: '## 结论\n\n先改解析。\n\n---\n\n再渲染正文。',
+      },
+    ]);
+  });
+});
+
+describe('splitExcerptDocument', () => {
+  it('returns the convention block and conversation turns', () => {
+    expect(
+      splitExcerptDocument(
+        [
+          '---doc:convention---',
+          '# 项目约定',
+          '---turn:user---',
+          '帮我看看当前界面',
+        ].join('\n'),
+      ),
+    ).toEqual({
+      convention: '# 项目约定',
+      turns: [{ role: 'user', text: '帮我看看当前界面' }],
+    });
+  });
+});
+
+describe('parseApprovalDecisions', () => {
+  it('reads allow/deny JSON from assistant turns', () => {
+    expect(
+      parseApprovalDecisions([
+        { role: 'user', text: 'ignored' },
+        {
+          role: 'assistant',
+          text: '{"risk_level":"low","outcome":"allow","rationale":"只读本地文件"}',
+        },
+        {
+          role: 'assistant',
+          text: '{"outcome":"deny","rationale":"超出范围"}',
+        },
+        { role: 'assistant', text: '先看连接页。' },
+      ]),
+    ).toEqual([
+      {
+        outcome: 'allow',
+        rationale: '只读本地文件',
+        riskLevel: 'low',
+        raw: '{"risk_level":"low","outcome":"allow","rationale":"只读本地文件"}',
+      },
+      {
+        outcome: 'deny',
+        rationale: '超出范围',
+        raw: '{"outcome":"deny","rationale":"超出范围"}',
       },
     ]);
   });
