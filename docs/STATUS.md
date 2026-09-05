@@ -13,9 +13,9 @@ updated: 2026-09-05
 ## 产品表面
 
 - 桌面端由 Tauri v2 承载，前端使用 React，核心业务和 CLI 使用 Rust。
-- 当前界面包含 Dashboard、Agents、Connections、Sub2API、Routes、Skills、MCP、Chat、Projects、Plugins 和 Settings。
-- Connections 是跨工具的登录列表。接到某个工具从 Dashboard「连接/切换」；连接页行入口是「分享至连接池」，登录仍留在连接页。**产品决策：所有 API Key 都可以分享（含 WorkBuddy / ZCode 等上配置的）；国产官方登录不能分享**，见 [产品边界](decisions/product-boundaries.md)。Routes 管理本机路由运行时，连接池也可以添加官方登录 / API Key（仅用于连接池，可不出现在连接页），并可用「从连接同步」一次加入多份登录。在连接池里编辑从连接页分享来的官方登录并保存时，会先复制成连接池自己的一份（连接页那份还在），再问要不要把模型写回连接页。连接页与连接池相互独立，回收站也分开。登录按登录方式分行保存（官方登录与 API Key 分开），记下关键词和整份配置；详情列出记下的配置文件（可复制、打开所在目录），并补充套餐、有效期、时间线与完整端点。WorkBuddy 自定义模型和 ZCode 供应商按目录拆成多条登录，桌面套餐登录不导入；WorkBuddy 写入只认 `/v1/chat/completions`。
-- Sub2API 是独立站点管理页：登录站点后可按分组查看、创建、编辑、启用/禁用或删除 API Key，并把可用 Key 导入已安装的 Agent。侧栏入口默认隐藏，打开偏好中的「显示 Sub2API 页面」后显示；隐藏只影响入口，不影响页面本身。
+- 当前界面包含 Dashboard、Agents、Connections、Sub2API、Routes、Skills、MCP、Chat、Projects、Plugins 和 Settings。Settings 四个页签为 **偏好 / 本机 / 备份 / 关于**（`?tab=preferences|local|backups|about`）。各页功能与 Agent 接入点见 [页面模式](ui/page-patterns.md)。
+- Connections 是跨工具的登录列表。接到某个工具从 Dashboard「连接/切换」。连接页不提供「分享至连接池」行入口；入池在 Routes 连接池用「从连接同步」。登录仍由连接页管理生命周期（除非在池里编辑官方登录并复制为池自有行）。**产品决策：所有 API Key 都可以分享（含 WorkBuddy / ZCode 等上配置的）；国产官方登录不能分享**，见 [产品边界](decisions/product-boundaries.md)。Routes 管理本机路由运行时，二级导航为 board / pool / tokens / activity（`/routes` 进看板）；连接池也可以添加官方登录 / API Key（仅用于连接池，可不出现在连接页），并可用「从连接同步」一次加入多份登录。界面契约见 [页面模式](ui/page-patterns.md)。在连接池里编辑从连接页分享来的官方登录并保存时，会先复制成连接池自己的一份（连接页那份还在），再问要不要把模型写回连接页。连接页与连接池相互独立，回收站也分开。登录按登录方式分行保存（官方登录与 API Key 分开），记下关键词和整份配置；详情列出记下的配置文件（可复制、打开所在目录），并补充套餐、有效期、时间线与完整端点。WorkBuddy 自定义模型和 ZCode 供应商按目录拆成多条登录，桌面套餐登录不导入；WorkBuddy 写入只认 `/v1/chat/completions`。
+- Sub2API 是独立站点管理页：密码登录站点（验证码 / 2FA 按站点要求），可记住多账号；密码经 settings 端口写入桌面 SQLite vault（mock 为内存）。登录后可按分组查看、创建、编辑、启用/禁用或删除 API Key，并把可用 Key 导入已安装的 Agent。侧栏入口默认隐藏，打开偏好中的「显示 Sub2API 页面」后显示；隐藏只影响入口，不影响页面本身。界面细节见 [页面模式](ui/page-patterns.md)。
 - 当前内置适配包括 Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy、ZCode 和 DeepSeek Harness。**Cursor Agent 适配器仍在代码中，但 dev 线通过 store-stamp 默认软隐藏**（Agents 管理页可取消隐藏）；待登录写入、路由目标与结构化输出等兼容问题修复后再重新开放。
 - CLI 提供 doctor、env、agent、provider、account、skill、usage、backup、run、config 等命令；参数以 CLI 帮助和源码为准。
 
@@ -63,7 +63,7 @@ updated: 2026-09-05
 - 「使用官方服务」默认勾选不禁用智能识别。高级编辑器不回显明文钥匙。同一工具切换成功 toast 说明已写入本机配置；接到本机路由则仍说已切换。备份标题是「切换前自动 / 手动 + 时间」。设置里的安全备份默认在切换/导入时保留本机配置副本（可关闭自动堆积；当次切换仍留一份以便失败回滚）；卡片左右分栏，点开在右侧展示打码后的文件内容。
 - 官方登录等待页不显示内部状态或登录文件路径；失败时「重试」是主按钮。Windows 上子进程统一无窗启动。
 - GUI 日志：智能识别 `gui`/`recognize`，勾选官方 `gui`/`use_official`，删进回收站 `core.provider`/`recycle`，切换写本机路径 `core.provider`/`switch_write`。连接页切换、Dashboard 连接流程和路由页成功失败另记 `gui`/`switch`·`bind`·`route_*`·`bridge_*`；核心绑定记 `core.adapter`/`bind`·`unbind`。只记 last4，不写明文钥匙。见 [日志参考](reference/logging.md)。
-- 凭据落盘加密不在产品范围内；国产 OAuth 适配以及 OAuth 转 API 也不在产品范围内。它们不是当前 backlog。产品上所有 API Key 都可以分享至连接池并接到其他工具，国产官方登录不能分享。**当前实现仍按所属 Agent 白名单入池**（claude / codex / grok / kimi / dsh）；WorkBuddy / ZCode / Pi / Cursor 上的 API Key 在连接页会被禁用。这与产品决策不一致，不是「这些 Key 不该分享」。见 [产品边界](decisions/product-boundaries.md)。
+- 凭据落盘加密不在产品范围内；国产 OAuth 适配以及 OAuth 转 API 也不在产品范围内。它们不是当前 backlog。入池候选由「从连接同步」决定（连接页无「分享至连接池」行入口）：**所有 API Key 都可同步**（含 WorkBuddy / ZCode / Pi / Cursor 上配置的）；官方 OAuth 仅 Claude / Codex / Grok；**国产官方登录不能分享**。实现见 `isPoolShareableLogin`（`src/pages/connections/ticket-pool-import.ts`），已与产品决策对齐，不再按 Agent 白名单挡 API Key。见 [产品边界](decisions/product-boundaries.md)。
 
 ## 真源优先级
 
