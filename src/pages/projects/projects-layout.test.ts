@@ -41,6 +41,8 @@ describe('projects split layout', () => {
     expect(tree).toContain('sessionPageCount');
     expect(tree).toContain("t('projects.tree.pageNext'");
     expect(tree).toContain('justify-start gap-2 border-t');
+    expect(tree).toContain('text-xs text-accent tabular-nums');
+    expect(tree).toContain('className="text-accent hover:text-accent"');
     expect(tree).toContain('hidden={!open}');
     expect(tree).toContain('projectGroupListGrid');
     expect(tree).toContain('projectGroupCardGrid');
