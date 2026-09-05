@@ -3,6 +3,7 @@ use crate::adapters::AdapterRegistry;
 use crate::models::ProjectUserMeta;
 use crate::platform::projects::ProjectSource;
 use crate::utils::project_path::{decode_claude_project_dir, decode_cursor_project_dir};
+use std::fs;
 use std::io::Write;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -2112,6 +2113,102 @@ fn excerpt_keeps_first_and_last_turns_in_long_session() {
         "excerpt={}",
         ex.excerpt
     );
+    assert!(
+        !ex.truncated,
+        "30-turn session should fit in the default window"
+    );
+}
+
+#[test]
+fn excerpt_reads_head_and_tail_when_file_exceeds_cap() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".claude");
+    let session = home
+        .join("projects")
+        .join("-C-Users-demo-app")
+        .join("sess-windowed.jsonl");
+    let pad = "x".repeat(80);
+    let mut lines = Vec::new();
+    for i in 0..12 {
+        lines.push(serde_json::json!({
+            "type": "user",
+            "message": {"content": [{"type": "text", "text": format!("TURN-{i}-USER {pad}")}]},
+        }));
+        lines.push(serde_json::json!({
+            "type": "assistant",
+            "text": format!("TURN-{i}-ASST {pad}"),
+        }));
+    }
+    write_jsonl(&session, &lines);
+    let file_len = fs::metadata(&session).unwrap().len();
+    let cap = (file_len / 3).max(120);
+    assert!(
+        file_len > cap.saturating_mul(2),
+        "need a middle gap: len={file_len} cap={cap}"
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Claude, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    let ex = load_excerpt_with_read_cap(&rows[0].id, Some(&home), cap).unwrap();
+    assert!(ex.truncated, "excerpt={}", ex.excerpt);
+    assert!(ex.excerpt.contains("TURN-0-USER"), "excerpt={}", ex.excerpt);
+    assert!(ex.excerpt.contains("TURN-0-ASST"), "excerpt={}", ex.excerpt);
+    assert!(
+        ex.excerpt.contains("TURN-11-USER"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        ex.excerpt.contains("TURN-11-ASST"),
+        "excerpt={}",
+        ex.excerpt
+    );
+}
+
+#[test]
+fn excerpt_covers_whole_file_when_tail_meets_head() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".claude");
+    let session = home
+        .join("projects")
+        .join("-C-Users-demo-app")
+        .join("sess-two-windows.jsonl");
+    let pad = "y".repeat(40);
+    let mut lines = Vec::new();
+    for i in 0..6 {
+        lines.push(serde_json::json!({
+            "type": "user",
+            "message": {"content": format!("TURN-{i}-USER {pad}")},
+        }));
+        lines.push(serde_json::json!({
+            "type": "assistant",
+            "text": format!("TURN-{i}-ASST {pad}"),
+        }));
+    }
+    write_jsonl(&session, &lines);
+    let file_len = fs::metadata(&session).unwrap().len();
+    let cap = (file_len * 2 / 3).max(80);
+    assert!(file_len > cap, "len={file_len} cap={cap}");
+    assert!(
+        file_len <= cap.saturating_mul(2),
+        "len={file_len} cap={cap}"
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Claude, &home, None).unwrap();
+    let ex = load_excerpt_with_read_cap(&rows[0].id, Some(&home), cap).unwrap();
+    assert!(!ex.truncated, "excerpt={}", ex.excerpt);
+    for i in 0..6 {
+        assert!(
+            ex.excerpt.contains(&format!("TURN-{i}-USER")),
+            "missing user {i}: {}",
+            ex.excerpt
+        );
+        assert!(
+            ex.excerpt.contains(&format!("TURN-{i}-ASST")),
+            "missing assistant {i}: {}",
+            ex.excerpt
+        );
+    }
 }
 
 #[test]

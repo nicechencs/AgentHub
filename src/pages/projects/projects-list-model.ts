@@ -96,6 +96,18 @@ export function sliceSessionPage<T>(
   return rows.slice(start, start + pageSize);
 }
 
+/** Members of currently expanded groups — refresh reloads these session lists. */
+export function expandedProjectMembers<
+  T extends { id: string; members: readonly { id: string }[] },
+>(groups: readonly T[], expanded: Set<string>): T['members'][number][] {
+  const out: T['members'][number][] = [];
+  for (const group of groups) {
+    if (!expanded.has(group.id)) continue;
+    out.push(...group.members);
+  }
+  return out;
+}
+
 export function nextSelectedForToggleAllVisible(
   selected: Set<string>,
   selectableSessions: AgentSession[],

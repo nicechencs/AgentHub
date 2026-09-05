@@ -82,9 +82,11 @@ describe('project API (browser mock)', () => {
       cwd: null,
       updatedAt: 't0',
       excerpt: 'body',
+      truncated: true,
     };
     expect(mapAgentProjectExcerpt(e)).toEqual(e);
     expect(mapAgentProjectExcerpt(e)).not.toBe(e);
+    expect(mapAgentProjectExcerpt({ ...e, truncated: undefined }).truncated).toBe(false);
   });
 
   it('hide and alias via metadata', async () => {

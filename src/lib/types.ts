@@ -577,7 +577,7 @@ export interface AgentSession {
   sessionId?: string | null;
 }
 
-/** 多选总结用的摘录 */
+/** 项目会话预览读到的「你 / 助手」轮次 */
 export interface AgentProjectExcerpt {
   id: string;
   agentId: AgentKey;
@@ -585,6 +585,8 @@ export interface AgentProjectExcerpt {
   cwd?: string | null;
   updatedAt: string;
   excerpt: string;
+  /** 文件太大，中间有一段没读到 */
+  truncated?: boolean;
 }
 
 /** Chat 页 bootstrap（从 Projects 继续对话 / 总结） */

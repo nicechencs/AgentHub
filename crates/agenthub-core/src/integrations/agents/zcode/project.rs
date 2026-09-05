@@ -130,6 +130,7 @@ pub(crate) fn load_zcode_excerpt(home: &Path, id: &str, rel: &str) -> Result<Age
         cwd,
         updated_at,
         excerpt: format_excerpt_turns(&turns),
+        truncated: false,
     })
 }
 

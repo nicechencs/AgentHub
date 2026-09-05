@@ -5,6 +5,7 @@ import { CopyableFileName } from '@/components/shared/CopyableFileName';
 import { copyTextToClipboard, CopyTextButton } from '@/components/shared/CopyTextButton';
 import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { Notice } from '@/components/shared/Notice';
 import { MarkdownView } from '@/components/shared/MarkdownView';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
@@ -35,20 +36,24 @@ export function ProjectConversationPreviewPanel({
   onClose,
   onContinue,
   onOpenRecord,
+  onRecordLoaded,
   busy,
   width,
   className,
   contentRef,
+  reloadKey = 0,
 }: {
   session: AgentSession;
   open: boolean;
   onClose: () => void;
   onContinue: (session: AgentSession) => void;
   onOpenRecord: (session: AgentSession) => void;
+  onRecordLoaded?: (sessionId: string, record: { excerpt: string; truncated: boolean } | null) => void;
   busy?: boolean;
   width?: number;
   className?: string;
   contentRef?: RefObject<HTMLDivElement | null>;
+  reloadKey?: number;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -56,18 +61,25 @@ export function ProjectConversationPreviewPanel({
   const requestSeq = useRef(0);
   const bodyRef = useRef<HTMLDivElement>(null);
   const resolvedBodyRef = contentRef ?? bodyRef;
+  const onRecordLoadedRef = useRef(onRecordLoaded);
+  onRecordLoadedRef.current = onRecordLoaded;
   const [phase, setPhase] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading');
   const [excerpt, setExcerpt] = useState('');
+  const [truncated, setTruncated] = useState(false);
 
-  const applyRows = (sessionId: string, rows: { id: string; excerpt?: string | null }[]) => {
+  const applyRows = (sessionId: string, rows: { id: string; excerpt?: string | null; truncated?: boolean | null }[]) => {
     const result = classifyExcerptRows(sessionId, rows);
     if (result.status === 'ready') {
       setExcerpt(result.excerpt);
+      setTruncated(result.truncated);
       setPhase('ready');
+      onRecordLoadedRef.current?.(sessionId, { excerpt: result.excerpt, truncated: result.truncated });
       return;
     }
     setExcerpt('');
+    setTruncated(false);
     setPhase(result.status);
+    onRecordLoadedRef.current?.(sessionId, null);
   };
 
   useEffect(() => {
@@ -76,6 +88,8 @@ export function ProjectConversationPreviewPanel({
     const expectedId = session.id;
     setPhase('loading');
     setExcerpt('');
+    setTruncated(false);
+    onRecordLoadedRef.current?.(expectedId, null);
     void getAgentProjectExcerpts([session.id]).then(
       (rows) => {
         if (requestSeq.current !== seq) return;
@@ -85,9 +99,10 @@ export function ProjectConversationPreviewPanel({
       () => {
         if (requestSeq.current !== seq) return;
         setPhase('error');
+        onRecordLoadedRef.current?.(expectedId, null);
       },
     );
-  }, [open, session.id]);
+  }, [open, session.id, reloadKey]);
 
   useEffect(() => {
     if (!open) return;
@@ -222,6 +237,9 @@ export function ProjectConversationPreviewPanel({
                 const seq = ++requestSeq.current;
                 const expectedId = session.id;
                 setPhase('loading');
+                setExcerpt('');
+                setTruncated(false);
+                onRecordLoadedRef.current?.(expectedId, null);
                 void getAgentProjectExcerpts([session.id]).then(
                   (rows) => {
                     if (requestSeq.current !== seq) return;
@@ -229,7 +247,9 @@ export function ProjectConversationPreviewPanel({
                     applyRows(expectedId, rows);
                   },
                   () => {
-                    if (requestSeq.current === seq) setPhase('error');
+                    if (requestSeq.current !== seq) return;
+                    setPhase('error');
+                    onRecordLoadedRef.current?.(expectedId, null);
                   },
                 );
               }}
@@ -240,6 +260,11 @@ export function ProjectConversationPreviewPanel({
         ) : null}
         {phase === 'ready' ? (
           <div className="space-y-2">
+            {truncated ? (
+              <Notice tone="warning" className="text-meta">
+                {t('projects.preview.truncated')}
+              </Notice>
+            ) : null}
             <p className="text-meta text-muted">{t('projects.preview.turns', { n: turns.length })}</p>
             <ol className="space-y-3">
               {turns.map((turn, index) => {

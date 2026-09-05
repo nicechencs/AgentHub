@@ -78,6 +78,9 @@ pub struct AgentProjectExcerpt {
     pub updated_at: String,
     /// Extracted user/assistant turns, kept in full.
     pub excerpt: String,
+    /// True when the session file was larger than the read windows, so a middle gap was skipped.
+    #[serde(default)]
+    pub truncated: bool,
 }
 
 /// Per-project user preferences (stored under AgentHub data_dir, not agent home).
