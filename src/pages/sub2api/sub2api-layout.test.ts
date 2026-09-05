@@ -30,6 +30,16 @@ describe('sub2api layout wiring', () => {
     expect(page).not.toContain('pasteToken');
     expect(page).toContain('Sub2ApiCaptcha');
     expect(page).toContain('syncSub2ApiKeyToConnections');
+    expect(page).toContain('data-sub2api-keys-table');
+    expect(page).toContain("t('routes.sub2api.colName')");
+    expect(page).toContain("t('routes.sub2api.colApiKey')");
+    expect(page).toContain("t('routes.sub2api.colGroup')");
+    expect(page).toContain("t('routes.sub2api.colConcurrency')");
+    expect(page).toContain("t('routes.sub2api.colUsage')");
+    expect(page).toContain("t('routes.sub2api.colExpires')");
+    expect(page).toContain("t('routes.sub2api.colStatus')");
+    expect(page).toContain("t('routes.sub2api.colCreated')");
+    expect(page).toContain("t('routes.sub2api.colActions')");
     expect(page).not.toContain('openSub2ApiLoginWindow');
     expect(page).not.toContain('closeSub2ApiLoginWindow');
     expect(page).not.toContain('<iframe');

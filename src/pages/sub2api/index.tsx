@@ -1,8 +1,9 @@
 import * as React from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Copy } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { copyTextToClipboard } from '@/components/shared/CopyTextButton';
 import { PageRefreshButton } from '@/components/shared/PageRefreshButton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,6 +23,16 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableHeaderRow,
+  TableRow,
+  TableShell,
+} from '@/components/ui/table';
 import { useToast } from '@/components/ui/toast';
 import { agentDisplayName } from '@/config/agents';
 import {
@@ -66,7 +77,7 @@ import {
   selectableSub2ApiKeys,
   Sub2ApiError,
 } from '@/lib/sub2api/client';
-import { maskApiKey, maskEmail } from '@/lib/sub2api/url';
+import { maskEmail } from '@/lib/sub2api/url';
 import { Switch } from '@/components/ui/switch';
 import type { AgentKey } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -74,16 +85,20 @@ import { RoutesPane } from '@/pages/routes/RoutesPane';
 import { Sub2ApiCaptcha, type Sub2ApiCaptchaHandle } from './Sub2ApiCaptcha';
 import {
   applySiteUrlDraftInput,
-  formatKeyModelsFromKey,
-  sub2apiKeyStatusBadgeVariant,
-  formatKeyQuota,
-  formatKeyTimestamp,
+  formatKeyExpires,
+  formatKeyTableTimestamp,
+  formatUsdAmount,
   initialSiteUrlDraft,
+  maskSub2ApiTableKey,
   normalizeTotpCode,
   pickGroupLabel,
+  pickGroupRate,
+  pickKeyConcurrency,
+  pickKeyUsageUsd,
   prepareSiteUrlForLogin,
   sortSub2ApiKeys,
   sub2apiDisplayName,
+  sub2apiKeyStatusBadgeVariant,
   sub2apiKeyStatusKind,
   sub2apiKeyStatusLabel,
   sub2apiPagePhase,
@@ -568,7 +583,33 @@ export default function Sub2ApiPage() {
     }
   };
 
+  const copyKeySecret = (value: string) => {
+    void copyTextToClipboard(value).then(
+      () => toast({ title: t('common.copied'), variant: 'success' }),
+      () => toast({ title: t('common.copyFailed'), variant: 'danger' }),
+    );
+  };
+
   const userLabel = sub2apiDisplayName(session?.user, session);
+  const siteOrigin = React.useMemo(() => {
+    const raw = session?.siteUrl?.trim() ?? '';
+    if (!raw) return '';
+    try {
+      return new URL(raw).origin;
+    } catch {
+      return raw.replace(/\/+$/, '');
+    }
+  }, [session?.siteUrl]);
+  const gatewayOrigin = React.useMemo(() => {
+    const raw = session?.gatewayBaseUrl?.trim() ?? '';
+    if (!raw) return '';
+    try {
+      return new URL(raw).origin;
+    } catch {
+      return raw.replace(/\/+$/, '');
+    }
+  }, [session?.gatewayBaseUrl]);
+  const showDirectLine = Boolean(gatewayOrigin && siteOrigin && gatewayOrigin !== siteOrigin);
   const captchaLabels = {
     turnstileLoading: t('routes.sub2api.captchaLoading'),
     turnstileFailed: t('routes.sub2api.captchaLoadFailed'),
@@ -601,6 +642,9 @@ export default function Sub2ApiPage() {
                 loading={loadingKeys}
                 label={t('routes.sub2api.refresh')}
               />
+              <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+                {t('routes.sub2api.createKey')}
+              </Button>
               <Button type="button" variant="outline" size="sm" onClick={() => void onLogout()}>
                 {t('routes.sub2api.logout')}
               </Button>
@@ -832,175 +876,157 @@ export default function Sub2ApiPage() {
         )}
 
         {phase === 'logged-in' && (
-          <div className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row">
-            <Card className="flex min-h-0 flex-1 flex-col overflow-hidden p-0">
-              <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium">{t('routes.sub2api.keysTitle')}</div>
-                  {userLabel ? (
-                    <div className="truncate text-xs text-secondary">
-                      {t('routes.sub2api.userLabel')} · {userLabel}
-                    </div>
-                  ) : null}
+          <div className="flex min-h-0 flex-1 flex-col gap-3">
+            <div className="flex flex-wrap gap-2" data-sub2api-endpoints="">
+              {session?.siteUrl ? (
+                <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-panel px-2.5 py-1 text-xs text-secondary">
+                  <span>{t('routes.sub2api.apiEndpointLabel')}</span>
+                  <span className="truncate font-mono text-primary">{session.siteUrl}</span>
                 </div>
-                <Button type="button" size="sm" variant="outline" onClick={() => setCreateOpen(true)}>
-                  {t('routes.sub2api.createKey')}
-                </Button>
-              </div>
-              <div className="min-h-0 flex-1 overflow-auto">
-                {loadingKeys ? (
-                  <div className="space-y-2 p-4">
-                    <Skeleton className="h-10 w-full" />
-                    <Skeleton className="h-10 w-full" />
-                  </div>
-                ) : sortedKeys.length === 0 ? (
-                  <div className="p-6 text-sm text-secondary">
-                    <div className="font-medium text-primary">{t('routes.sub2api.keysEmpty')}</div>
-                    <p className="mt-1">{t('routes.sub2api.keysEmptyHint')}</p>
-                  </div>
-                ) : (
-                  <ul className="divide-y divide-border">
+              ) : null}
+              {showDirectLine ? (
+                <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-panel px-2.5 py-1 text-xs text-secondary">
+                  <span>{t('routes.sub2api.directLineLabel')}</span>
+                  <span className="truncate font-mono text-primary">{session?.gatewayBaseUrl}</span>
+                </div>
+              ) : null}
+            </div>
+            {loadingKeys ? (
+              <Card className="space-y-2 p-4">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+              </Card>
+            ) : sortedKeys.length === 0 ? (
+              <Card className="p-6 text-sm text-secondary">
+                <div className="font-medium text-primary">{t('routes.sub2api.keysEmpty')}</div>
+                <p className="mt-1">{t('routes.sub2api.keysEmptyHint')}</p>
+              </Card>
+            ) : (
+              <TableShell className="min-h-0 flex-1">
+                <Table className="min-w-[1080px]" data-sub2api-keys-table="">
+                  <TableHeader>
+                    <TableHeaderRow>
+                      <TableHead>{t('routes.sub2api.colName')}</TableHead>
+                      <TableHead>{t('routes.sub2api.colApiKey')}</TableHead>
+                      <TableHead>{t('routes.sub2api.colGroup')}</TableHead>
+                      <TableHead>{t('routes.sub2api.colConcurrency')}</TableHead>
+                      <TableHead>{t('routes.sub2api.colUsage')}</TableHead>
+                      <TableHead>{t('routes.sub2api.colExpires')}</TableHead>
+                      <TableHead>{t('routes.sub2api.colStatus')}</TableHead>
+                      <TableHead>{t('routes.sub2api.colCreated')}</TableHead>
+                      <TableHead>{t('routes.sub2api.colActions')}</TableHead>
+                    </TableHeaderRow>
+                  </TableHeader>
+                  <TableBody>
                     {sortedKeys.map((key) => {
                       const statusKind = sub2apiKeyStatusKind(key.status);
-                      const createdLabel = formatKeyTimestamp(key.created_at);
-                      const updatedLabel = formatKeyTimestamp(key.updated_at);
-                      const lastUsedLabel = formatKeyTimestamp(key.last_used_at);
-                      const expiresLabel = formatKeyTimestamp(key.expires_at);
                       const groupLabel = pickGroupLabel(key);
-                      const quotaLabel = formatKeyQuota(key, {
-                        unlimited: t('routes.sub2api.quotaUnlimited'),
-                      });
-                      const modelsLabel = formatKeyModelsFromKey(key);
-                      const metaItems: { label: string; value: string }[] = [];
-                      if (createdLabel) {
-                        metaItems.push({
-                          label: t('routes.sub2api.keyCreated'),
-                          value: createdLabel,
-                        });
-                      }
-                      if (updatedLabel) {
-                        metaItems.push({
-                          label: t('routes.sub2api.keyUpdated'),
-                          value: updatedLabel,
-                        });
-                      }
-                      if (lastUsedLabel) {
-                        metaItems.push({
-                          label: t('routes.sub2api.keyLastUsed'),
-                          value: lastUsedLabel,
-                        });
-                      }
-                      if (expiresLabel) {
-                        metaItems.push({
-                          label: t('routes.sub2api.keyExpires'),
-                          value: expiresLabel,
-                        });
-                      }
-                      if (groupLabel) {
-                        metaItems.push({
-                          label: t('routes.sub2api.keyGroup'),
-                          value: groupLabel,
-                        });
-                      }
-                      if (quotaLabel) {
-                        metaItems.push({
-                          label: t('routes.sub2api.keyQuota'),
-                          value: quotaLabel,
-                        });
-                      }
-                      if (modelsLabel) {
-                        metaItems.push({
-                          label: t('routes.sub2api.keyModels'),
-                          value: modelsLabel,
-                        });
-                      }
+                      const groupRate = pickGroupRate(key);
+                      const usage = pickKeyUsageUsd(key);
                       return (
-                      <li key={key.id} className="flex flex-wrap items-start gap-2 px-4 py-3">
-                        <div className="min-w-0 flex-1 space-y-1">
-                          <div className="truncate text-sm font-medium">
+                        <TableRow key={key.id} data-sub2api-key-row={String(key.id)}>
+                          <TableCell className="whitespace-nowrap font-medium">
                             {key.name || `Key #${key.id}`}
-                          </div>
-                          <div className="truncate font-mono text-xs text-secondary">
-                            {maskApiKey(key.key)}
-                          </div>
-                          {metaItems.length > 0 ? (
-                            <div className="flex flex-wrap gap-x-3 gap-y-1 pt-0.5">
-                              {metaItems.map((item) => (
-                                <div
-                                  key={`${key.id}-${item.label}`}
-                                  className="max-w-full text-xs text-secondary"
-                                >
-                                  <span>{item.label}</span>
-                                  <span className="mx-1">·</span>
-                                  <span className="break-all text-primary">{item.value}</span>
-                                </div>
-                              ))}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1.5">
+                              <span className="rounded-md bg-subtle px-1.5 py-0.5 font-mono text-xs text-secondary">
+                                {maskSub2ApiTableKey(key.key)}
+                              </span>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0"
+                                aria-label={t('routes.sub2api.copyKey')}
+                                onClick={() => copyKeySecret(key.key)}
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </Button>
                             </div>
-                          ) : null}
-                        </div>
-                        <Badge variant={sub2apiKeyStatusBadgeVariant(statusKind)}>
-                          {sub2apiKeyStatusLabel(key.status, {
-                            active: t('routes.sub2api.statusActive'),
-                            disabled: t('routes.sub2api.statusDisabled'),
-                            expired: t('routes.sub2api.statusExpired'),
-                            quotaExhausted: t('routes.sub2api.statusQuotaExhausted'),
-                            other: t('routes.sub2api.statusOther'),
-                          })}
-                        </Badge>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              disabled={syncingId === key.id}
-                            >
-                              {t('routes.sub2api.syncToConnections')}
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            {syncAgents.length === 0 ? (
-                              <DropdownMenuItem disabled>
-                                {t('routes.sub2api.syncPickAgent')}
-                              </DropdownMenuItem>
+                          </TableCell>
+                          <TableCell>
+                            {groupLabel ? (
+                              <div className="flex flex-wrap items-center gap-1">
+                                <Badge variant="accent">{groupLabel}</Badge>
+                                {groupRate ? (
+                                  <Badge variant="default">{groupRate}</Badge>
+                                ) : null}
+                              </div>
                             ) : (
-                              syncAgents.map((agentId) => (
-                                <DropdownMenuItem
-                                  key={agentId}
-                                  onClick={() => void syncKey(key, agentId)}
-                                >
-                                  {agentDisplayName(agentId)}
-                                </DropdownMenuItem>
-                              ))
+                              <span className="text-xs text-secondary">
+                                {t('routes.sub2api.groupNone')}
+                              </span>
                             )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </li>
+                          </TableCell>
+                          <TableCell>
+                            <span className="inline-flex min-w-[1.75rem] justify-center rounded-md bg-subtle px-1.5 py-0.5 font-mono text-xs">
+                              {pickKeyConcurrency(key)}
+                            </span>
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-xs leading-5 text-secondary">
+                            <div>
+                              {t('routes.sub2api.usageToday')}: {formatUsdAmount(usage.today)}
+                            </div>
+                            <div>
+                              {t('routes.sub2api.usageLast30Days')}:{' '}
+                              {formatUsdAmount(usage.last30Days)}
+                            </div>
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-xs text-secondary">
+                            {formatKeyExpires(key.expires_at, t('routes.sub2api.expiresNever'))}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={sub2apiKeyStatusBadgeVariant(statusKind)}>
+                              {sub2apiKeyStatusLabel(key.status, {
+                                active: t('routes.sub2api.statusActive'),
+                                disabled: t('routes.sub2api.statusDisabled'),
+                                expired: t('routes.sub2api.statusExpired'),
+                                quotaExhausted: t('routes.sub2api.statusQuotaExhausted'),
+                                other: t('routes.sub2api.statusOther'),
+                              })}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-xs text-secondary">
+                            {formatKeyTableTimestamp(key.created_at) ?? '—'}
+                          </TableCell>
+                          <TableCell>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={syncingId === key.id}
+                                >
+                                  {t('routes.sub2api.syncToConnections')}
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {syncAgents.length === 0 ? (
+                                  <DropdownMenuItem disabled>
+                                    {t('routes.sub2api.syncPickAgent')}
+                                  </DropdownMenuItem>
+                                ) : (
+                                  syncAgents.map((agentId) => (
+                                    <DropdownMenuItem
+                                      key={agentId}
+                                      onClick={() => void syncKey(key, agentId)}
+                                    >
+                                      {agentDisplayName(agentId)}
+                                    </DropdownMenuItem>
+                                  ))
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
                       );
                     })}
-                  </ul>
-                )}
-              </div>
-            </Card>
-            <Card className="flex w-full shrink-0 flex-col gap-3 p-4 lg:w-72">
-              <div className="text-sm font-medium">{t('routes.sub2api.detailTitle')}</div>
-              <div className="space-y-1">
-                <div className="text-xs text-secondary">{t('routes.sub2api.siteUrlLabel')}</div>
-                <div className="break-all text-xs text-secondary">{session?.siteUrl}</div>
-              </div>
-              <div className="space-y-1">
-                <div className="text-xs text-secondary">API</div>
-                <div className="break-all text-xs text-secondary">{session?.gatewayBaseUrl}</div>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                className="mt-auto w-full"
-                onClick={() => setCreateOpen(true)}
-              >
-                {t('routes.sub2api.createAndSync')}
-              </Button>
-            </Card>
+                  </TableBody>
+                </Table>
+              </TableShell>
+            )}
           </div>
         )}
       </div>
