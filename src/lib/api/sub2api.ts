@@ -6,6 +6,7 @@ import { getBackend } from '@/app/runtime';
 import {
   clearSub2ApiSession,
   createApiKey,
+  deleteApiKey,
   fetchCurrentUser,
   listAvailableGroups,
   updateApiKey,
@@ -48,6 +49,7 @@ import {
   type Sub2ApiCaptchaProof,
   type Sub2ApiGroup,
   type Sub2ApiKey,
+  type Sub2ApiKeyPatch,
   type Sub2ApiLoginResult,
   type Sub2ApiPublicSettings,
   type Sub2ApiRememberedAccountMeta,
@@ -58,6 +60,7 @@ import {
 export type {
   Sub2ApiGroup,
   Sub2ApiKey,
+  Sub2ApiKeyPatch,
   Sub2ApiPublicSettings,
   Sub2ApiSession,
   Sub2ApiUser,
@@ -148,16 +151,28 @@ export async function createSub2ApiKey(
   );
 }
 
+export async function updateSub2ApiKey(
+  session: Sub2ApiSession,
+  id: number,
+  patch: Sub2ApiKeyPatch,
+): Promise<Sub2ApiKey> {
+  return updateApiKey(
+    { siteUrl: session.siteUrl, accessToken: session.accessToken },
+    id,
+    patch,
+  );
+}
+
 export async function updateSub2ApiKeyGroup(
   session: Sub2ApiSession,
   id: number,
   groupId: number | null,
 ): Promise<Sub2ApiKey> {
-  return updateApiKey(
-    { siteUrl: session.siteUrl, accessToken: session.accessToken },
-    id,
-    { group_id: groupId },
-  );
+  return updateSub2ApiKey(session, id, { group_id: groupId });
+}
+
+export async function deleteSub2ApiKey(session: Sub2ApiSession, id: number): Promise<void> {
+  await deleteApiKey({ siteUrl: session.siteUrl, accessToken: session.accessToken }, id);
 }
 
 export async function refreshSub2ApiSession(session: Sub2ApiSession): Promise<Sub2ApiSession> {

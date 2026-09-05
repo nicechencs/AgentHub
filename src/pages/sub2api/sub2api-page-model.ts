@@ -89,6 +89,20 @@ export function sub2apiKeyStatusLabel(
   return labels.other;
 }
 
+/** Sub2API toggle: active → inactive, anything else → active. */
+export function nextSub2ApiKeyToggleStatus(status: unknown): 'active' | 'inactive' {
+  return sub2apiKeyStatusKind(status) === 'active' ? 'inactive' : 'active';
+}
+
+export function mergeUpdatedSub2ApiKey(
+  prev: Sub2ApiKey,
+  updated: Sub2ApiKey | null | undefined,
+): Sub2ApiKey {
+  if (!updated || typeof updated !== 'object') return prev;
+  const key = typeof updated.key === 'string' && updated.key.trim() ? updated.key : prev.key;
+  return { ...prev, ...updated, id: prev.id, key };
+}
+
 export function sub2apiKeyStatusBadgeVariant(
   kind: Sub2ApiKeyStatusKind,
 ): 'success' | 'warning' | 'danger' | 'default' {

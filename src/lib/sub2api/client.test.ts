@@ -5,6 +5,7 @@ import {
   fetchPublicSettings,
   isTotp2FARequired,
   createApiKey,
+  deleteApiKey,
   listApiKeys,
   listAvailableGroups,
   updateApiKey,
@@ -255,6 +256,56 @@ describe('sub2api client', () => {
     });
     vi.stubGlobal('fetch', fetchImpl);
     await updateApiKey({ siteUrl: 'https://v2.pincc.ai', accessToken: 'x' }, 9, { group_id: 4 });
+    expect(calledUrl(fetchImpl)).toContain('/keys/9');
+  });
+
+  it('puts status when toggling a key', async () => {
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+      expect(init?.method).toBe('PUT');
+      expect(body).toEqual({ status: 'inactive' });
+      return new Response(
+        JSON.stringify({ code: 0, message: 'ok', data: { id: 9, key: 'sk', name: 'n', status: 'inactive' } }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    });
+    vi.stubGlobal('fetch', fetchImpl);
+    await updateApiKey({ siteUrl: 'https://v2.pincc.ai', accessToken: 'x' }, 9, { status: 'inactive' });
+    expect(calledUrl(fetchImpl)).toContain('/keys/9');
+  });
+
+  it('puts the Sub2API edit payload including quota and expiration', async () => {
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+      expect(body).toMatchObject({
+        name: 'demo',
+        quota: 8,
+        expires_at: '',
+        reset_quota: true,
+      });
+      return new Response(
+        JSON.stringify({ code: 0, message: 'ok', data: { id: 9, key: 'sk', name: 'demo', status: 'active' } }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    });
+    vi.stubGlobal('fetch', fetchImpl);
+    await updateApiKey(
+      { siteUrl: 'https://v2.pincc.ai', accessToken: 'x' },
+      9,
+      { name: 'demo', quota: 8, expires_at: '', reset_quota: true },
+    );
+  });
+
+  it('deletes a key', async () => {
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      expect(init?.method).toBe('DELETE');
+      return new Response(
+        JSON.stringify({ code: 0, message: 'ok', data: { message: 'deleted' } }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    });
+    vi.stubGlobal('fetch', fetchImpl);
+    await deleteApiKey({ siteUrl: 'https://v2.pincc.ai', accessToken: 'x' }, 9);
     expect(calledUrl(fetchImpl)).toContain('/keys/9');
   });
 });
