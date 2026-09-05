@@ -62,6 +62,7 @@ describe('routes layout wiring', () => {
     expect(connections).not.toContain('DetailsToggle');
     expect(connections).toContain('onShowDetail');
     expect(connections).toContain('data-ticket-name');
+    expect(connections).toContain('onOpen={onFollowDetail');
     expect(connections).not.toContain('onOpen={onShowDetail');
     expect(connections).not.toContain("t('connections.list.details')");
     const importDialog = source('pages/routes/shared/ImportRouteDialog.tsx');
@@ -99,6 +100,8 @@ describe('routes layout wiring', () => {
     expect(inspect).toContain("{ kind: 'edit'; profile: AdapterProfile }");
     expect(inspect).toContain("{ kind: 'detail'; profile: AdapterProfile }");
     expect(page).toContain('onShowDetail');
+    expect(page).toContain('followInspectOpen');
+    expect(page).toContain("kind === 'authorization'");
     expect(page).toContain("kind: 'detail'");
     expect(page).toContain('<RouteDetailPanel');
     expect(page).toContain('asPanel');

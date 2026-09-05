@@ -283,6 +283,8 @@ interface SkillMatrixProps {
   ) => void;
   /** 预览本地 SKILL.md；私有行可带上要点亮的那一份 Agent */
   onPreview?: (row: InstalledSkillDto, agentId?: AgentKey) => void;
+  /** Switch preview when the pane is already open. */
+  onFollow?: (row: InstalledSkillDto) => void;
   /** 当前预览行 key（catalogRowKey），与 checkbox selected 分离 */
   activeKey?: string | null;
   onAdopt: (skillId: string, agentId: AgentKey, name: string) => void;
@@ -514,6 +516,7 @@ export function SkillMatrix({
   onCellClick,
   onCellProject,
   onPreview,
+  onFollow,
   activeKey = null,
   onAdopt,
   onOpenDir,
@@ -658,7 +661,7 @@ export function SkillMatrix({
                   key={catalogRowKey(row)}
                   active={rowActive}
                   data-help="list-row"
-                  onOpen={onPreview ? () => onPreview(row) : undefined}
+                  onOpen={onFollow ? () => onFollow(row) : undefined}
                 >
                   <TableCell>
                     {privateRow ? null : (

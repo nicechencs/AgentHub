@@ -20,6 +20,10 @@ describe('skills split layout', () => {
     expect(page).toContain('<SkillMarkdownPreviewPanel');
     expect(page).not.toContain('previewShellMounted');
     expect(page).not.toContain('onPreviewResizeStart');
+    expect(page).toContain('followInspectOpen');
+    expect(page).toContain('preview.expanded');
+    expect(source('SkillMatrix.tsx')).toContain('onOpen={onFollow');
+    expect(source('SkillsProjectPanel.tsx')).toContain('onOpen={onFollow');
   });
 
   it('keeps the project picker trigger to a single line', () => {

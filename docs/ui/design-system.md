@@ -133,8 +133,8 @@ Management lists are not one skin. Pick by data shape, then keep the open-detail
 
 | Skin | Use when | Open details | Examples |
 |---|---|---|---|
-| Field table (`TableShell`) | Stable columns, optional resize / sort / switch | Click the **name** (`ListNameButton`). Do **not** set `TableRow onOpen`. | Agents, Connections, connection pool |
-| Field table + row open | Stable columns, few in-row commands | Click empty row area / Enter / Space (`TableRow onOpen`). Name is not a separate control. | Tokens, Sub2API keys, Activity, Skills library/project (name is also a `ListNameButton`; checkbox never opens) |
+| Field table (`TableShell`) | Stable columns, optional resize / sort / switch | Click the **name** (`ListNameButton`) to open. While inspect is already open, empty-row click / Enter / Space **switches** the pane (`TableRow onOpen` only then). Closed stays closed. | Agents, Connections, connection pool, Skills library/project |
+| Field table + row open | Stable columns, few in-row commands | Click empty row area / Enter / Space (`TableRow onOpen`). Name is not a separate control. | Tokens, Sub2API keys, Activity |
 | Identity card (`ListRow`) | Name + one line of meta, no column set | Click the **row** (`ListRow onOpen`) | Plugins, Backups |
 | Collapsible tree | Groups with nested sessions | Group header expands; **title** opens preview | Projects |
 | In-row disclosure (`DetailsToggle`) | No inspect pane; extra snippet stays in the list | Chevron toggle only | MCP, import-login rows |
@@ -144,6 +144,7 @@ Shared rules:
 
 - Active preview uses `bg-active`. Batch checkboxes never open inspect and never paint the row with accent.
 - A page does not mix a 详情 button with row/`onOpen` for the same object. Activity opens from the row only.
+- Name-click lists: opening is the name; following an already-open pane may use `followInspectOpen` + row `onOpen`. Do not use row `onOpen` to open a closed pane.
 - Inspect lives in `InspectSurface` / `SideInspectPanel`. First-run, multi-step, and confirmations stay in `Dialog`.
 - Leftover local-route cards may still expose an outline **详情** until they join the pool table.
 

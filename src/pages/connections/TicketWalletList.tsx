@@ -470,6 +470,7 @@ function TicketRow({
   onSwitch,
   onEdit,
   onShowDetail,
+  onFollowDetail,
   onContextMenu,
   onOpenMenu,
   active,
@@ -485,6 +486,7 @@ function TicketRow({
   onSwitch?: (ticket: TicketView) => void;
   onEdit: (ticket: TicketView) => void;
   onShowDetail?: (ticket: TicketView) => void;
+  onFollowDetail?: (ticket: TicketView) => void;
   onContextMenu?: (event: React.MouseEvent) => void;
   onOpenMenu?: (point: ContextMenuPoint) => void;
   active: boolean;
@@ -515,6 +517,7 @@ function TicketRow({
     <TableRow
       data-ticket-row={ticket.id}
       active={active || (highlighted && !suppressHighlight)}
+      onOpen={onFollowDetail ? () => onFollowDetail(ticket) : undefined}
       onContextMenu={onContextMenu}
       className={sortClassName}
       {...(sortId ? { [SORTABLE_ID_ATTR]: sortId } : {})}
@@ -785,6 +788,7 @@ export function TicketWalletList({
   extrasForTicket,
   onEditTicket,
   onShowDetail,
+  onFollowDetail,
   activeTicketId,
   onAddKey,
   onImportLogin,
@@ -804,6 +808,7 @@ export function TicketWalletList({
   onEditTicket: (ticket: TicketView) => void;
   onDeleteTicket: (ticket: TicketView) => void;
   onShowDetail?: (ticket: TicketView) => void;
+  onFollowDetail?: (ticket: TicketView) => void;
   activeTicketId?: string | null;
   onAddKey?: (agentId: AgentKey) => void;
   onImportLogin?: (agentId: AgentKey) => void;
@@ -955,6 +960,7 @@ export function TicketWalletList({
                   onSwitch={onSwitchTicket}
                   onEdit={onEditTicket}
                   onShowDetail={onShowDetail}
+                  onFollowDetail={onFollowDetail}
                   onContextMenu={canUnapply ? (event) => {
                     event.preventDefault();
                     setRowMenu({ x: event.clientX, y: event.clientY, ticket: row.ticket });

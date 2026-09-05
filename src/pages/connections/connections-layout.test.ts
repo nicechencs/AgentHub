@@ -77,7 +77,10 @@ describe('connections layout wiring', () => {
     expect(page).toContain('<TicketDetailPanel');
     expect(list).toContain('data-ticket-name');
     expect(list).toContain('<ListNameButton');
+    expect(list).toContain('onOpen={onFollowDetail');
     expect(list).not.toContain('onOpen={onShowDetail');
+    expect(page).toContain('followInspectOpen');
+    expect(page).toContain("kind === 'detail'");
     expect(list).not.toContain("t('connections.list.details')");
     expect(list).toContain('TableShell');
     expect(list).toContain('TableRow');

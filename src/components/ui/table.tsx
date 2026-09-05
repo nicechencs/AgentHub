@@ -20,7 +20,7 @@ import {
  *
  * 业务表只选 `TableShell variant`；表头/行/单元格密度由 Context 自动套用。
  * 左右分栏里的字段表再设 `layout="split"`（窄栏强制横向滚动）。
- * 打开详情：密字段表用 `ListNameButton`；简单清单用 `TableRow onOpen`。
+ * 打开详情：密字段表用 `ListNameButton`；已展开时跟行切换用 `followInspectOpen` + `TableRow onOpen`；简单清单用 `TableRow onOpen`。
  */
 export const tableStyles = {
   table: 'w-full border-collapse text-body',

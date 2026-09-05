@@ -33,9 +33,12 @@ describe('ListNameButton contract', () => {
     expect(source('pages/projects/ProjectSessionRow.tsx')).toContain('<ListNameButton');
   });
 
-  it('keeps Agents / Connections / Pool on name-click, not whole-row onOpen', () => {
+  it('opens inspect from the name; row onOpen only follows an already-open pane', () => {
     expect(source('pages/agents/agent-card.tsx')).not.toContain('onOpen={onSelect}');
+    expect(source('pages/agents/agent-card.tsx')).toContain('onOpen={onFollow}');
     expect(source('pages/connections/TicketWalletList.tsx')).not.toContain('onOpen={onShowDetail');
-    expect(source('pages/routes/pool/PoolAuthorizationList.tsx')).not.toContain('onOpen={');
+    expect(source('pages/connections/TicketWalletList.tsx')).toContain('onOpen={onFollowDetail');
+    expect(source('pages/routes/pool/PoolAuthorizationList.tsx')).toContain('onOpen={onFollowDetail');
+    expect(source('pages/routes/pool/PoolAuthorizationList.tsx')).not.toContain('onOpen={onShowDetail');
   });
 });
