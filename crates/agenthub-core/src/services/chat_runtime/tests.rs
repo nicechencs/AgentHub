@@ -468,3 +468,66 @@ fn set_settings_resets_effort_when_model_changes_without_effort() {
         .unwrap_err();
     assert!(rejected.to_string().contains("不支持思考强度"));
 }
+
+#[test]
+fn learn_from_thinking_unsupported_filters_over_reported_catalog() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "learn-spark", false);
+    let run = Arc::new(RunService::new(AdapterRegistry::default()));
+    let runtime = Arc::new(ChatRuntime::new(db, run));
+    runtime.store.enable_if_new("learn-spark").unwrap();
+    runtime.seed_catalog_cache_for_test(
+        "learn-spark",
+        vec![super::types::RuntimeModelOption {
+            id: "gpt-5.3-codex-spark".into(),
+            efforts: vec![
+                "low".into(),
+                "medium".into(),
+                "high".into(),
+                "xhigh".into(),
+            ],
+            default_effort: Some("high".into()),
+        }],
+        vec![],
+    );
+    runtime
+        .store
+        .set_turn_settings(
+            "learn-spark",
+            &super::types::RuntimeTurnSettings {
+                model: Some("gpt-5.3-codex-spark".into()),
+                effort: Some("medium".into()),
+            },
+        )
+        .unwrap();
+
+    // Before learning, over-reported medium is still offered.
+    let before = runtime.options("learn-spark").unwrap();
+    assert_eq!(
+        before.models[0].efforts,
+        vec!["low", "medium", "high", "xhigh"]
+    );
+
+    runtime
+        .store
+        .learn_thinking_unsupported(
+            "learn-spark",
+            "OpenAI API error (400): does not support parameter reasoningEffort=medium",
+        )
+        .unwrap();
+
+    let after = runtime.options("learn-spark").unwrap();
+    assert_eq!(after.models[0].efforts, vec!["low", "high", "xhigh"]);
+    assert_eq!(after.settings.effort.as_deref(), Some("high"));
+
+    let rejected = runtime
+        .set_settings(
+            "learn-spark",
+            super::types::RuntimeTurnSettings {
+                model: Some("gpt-5.3-codex-spark".into()),
+                effort: Some("medium".into()),
+            },
+        )
+        .unwrap_err();
+    assert!(rejected.to_string().contains("不支持思考强度"));
+}

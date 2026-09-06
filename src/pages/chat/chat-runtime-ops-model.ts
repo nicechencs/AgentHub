@@ -11,6 +11,87 @@ export type RuntimeCatalogMemory = {
   extensions: RuntimeExtensionItem[];
 };
 
+
+/** Session memory for efforts Codex rejected despite advertising them in model/list. */
+export type DeniedEffortMemory = Record<string, string[]>;
+
+const sessionDeniedEfforts: DeniedEffortMemory = {};
+
+export function resetDeniedEffortsForTests(): void {
+  for (const key of Object.keys(sessionDeniedEfforts)) {
+    delete sessionDeniedEfforts[key];
+  }
+}
+
+export function listDeniedEfforts(): DeniedEffortMemory {
+  const out: DeniedEffortMemory = {};
+  for (const [model, efforts] of Object.entries(sessionDeniedEfforts)) {
+    out[model] = [...efforts];
+  }
+  return out;
+}
+
+export function noteDeniedEffort(modelId: string, effort: string): boolean {
+  const model = modelId.trim();
+  const value = effort.trim();
+  if (!model || !value) return false;
+  const current = sessionDeniedEfforts[model] ?? [];
+  if (current.includes(value)) return false;
+  sessionDeniedEfforts[model] = [...current, value];
+  return true;
+}
+
+export function applyDeniedEfforts(
+  models: RuntimeModelOption[],
+  denied: DeniedEffortMemory = sessionDeniedEfforts,
+): RuntimeModelOption[] {
+  return models.map((option) => {
+    const blocked = new Set(denied[option.id] ?? []);
+    if (blocked.size === 0) return option;
+    const efforts = option.efforts.filter((item) => !blocked.has(item));
+    const fallback = option.defaultEffort?.trim();
+    const defaultEffort =
+      fallback && efforts.includes(fallback) ? fallback : efforts[0] ?? null;
+    return { ...option, efforts, defaultEffort };
+  });
+}
+
+/** True when failure text matches chat.failure.thinkingUnsupported mapping. */
+export function isThinkingUnsupportedFailure(text: string | null | undefined): boolean {
+  const hay = (text ?? '').toLowerCase();
+  return (
+    hay.includes('reasoningeffort')
+    || hay.includes('reasoning_effort')
+    || hay.includes('does not support parameter')
+    || hay.includes('不支持思考强度')
+    || hay.includes('不支持当前思考设置')
+  );
+}
+
+/**
+ * Learn from a thinkingUnsupported failure for the current settings pair.
+ * Returns coerced settings when the current effort was denied.
+ */
+export function learnFromThinkingUnsupported(
+  settings: RuntimeTurnSettings,
+  models: RuntimeModelOption[],
+  errorText: string | null | undefined,
+): { models: RuntimeModelOption[]; settings: RuntimeTurnSettings; learned: boolean } {
+  if (!isThinkingUnsupportedFailure(errorText)) {
+    return { models, settings, learned: false };
+  }
+  const model = settings.model?.trim() || '';
+  const effort = settings.effort?.trim() || '';
+  if (!model || !effort) {
+    return { models, settings, learned: false };
+  }
+  const learned = noteDeniedEffort(model, effort);
+  const nextModels = applyDeniedEfforts(models);
+  const nextSettings = coerceSettingsToCatalog(settings, nextModels);
+  return { models: nextModels, settings: nextSettings, learned };
+}
+
+
 /**
  * Keep the last non-empty catalog for the same conversation when a frozen
  * options read returns empty lists (never fetched / mid-turn no-spawn).
@@ -32,10 +113,12 @@ export function retainRuntimeCatalog(
 export function effortsForModel(
   models: RuntimeModelOption[],
   modelId: string | null | undefined,
+  denied: DeniedEffortMemory = sessionDeniedEfforts,
 ): string[] {
   const id = modelId?.trim();
   if (!id) return [];
-  return models.find((item) => item.id === id)?.efforts ?? [];
+  const effective = applyDeniedEfforts(models, denied);
+  return effective.find((item) => item.id === id)?.efforts ?? [];
 }
 
 /** Prefer catalog default when it is supported; otherwise first supported effort. */
@@ -65,8 +148,10 @@ export function isEffortCompatible(
 export function coerceSettingsToCatalog(
   settings: RuntimeTurnSettings,
   models: RuntimeModelOption[],
+  denied: DeniedEffortMemory = sessionDeniedEfforts,
 ): RuntimeTurnSettings {
-  if (models.length === 0) {
+  const effective = applyDeniedEfforts(models, denied);
+  if (effective.length === 0) {
     return {
       model: settings.model?.trim() || null,
       effort: settings.effort?.trim() || null,
@@ -76,7 +161,7 @@ export function coerceSettingsToCatalog(
   if (!model) {
     return { model: null, effort: null };
   }
-  const option = models.find((item) => item.id === model);
+  const option = effective.find((item) => item.id === model);
   if (!option) {
     return { model, effort: settings.effort?.trim() || null };
   }
@@ -91,9 +176,10 @@ export function coerceSettingsToCatalog(
 export function settingsForModelSwitch(
   modelId: string,
   models: RuntimeModelOption[],
+  denied: DeniedEffortMemory = sessionDeniedEfforts,
 ): RuntimeTurnSettings {
   const model = modelId.trim();
-  const option = models.find((item) => item.id === model);
+  const option = applyDeniedEfforts(models, denied).find((item) => item.id === model);
   return {
     model,
     effort: defaultEffortForModel(option),

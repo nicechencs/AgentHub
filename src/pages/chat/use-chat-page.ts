@@ -283,6 +283,11 @@ export function useChatPage() {
     [sending, turns],
   );
 
+  useEffect(() => {
+    if (turnOutcome?.kind !== 'failed') return;
+    void runtimeOps.noteThinkingFailure(turnOutcome.errorText);
+  }, [runtimeOps, turnOutcome]);
+
   const pickerRows = useMemo(
     () =>
       chatAgentPickerRows({

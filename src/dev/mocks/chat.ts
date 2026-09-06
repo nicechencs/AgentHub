@@ -16,6 +16,7 @@ const mockCancel = new Set<string>();
 const mockInflight = new Set<string>();
 const runtimeSnapshots = new Map<string, RuntimeSnapshot>();
 const runtimeSettings = new Map<string, RuntimeTurnSettings>();
+const runtimeDeniedEfforts = new Map<string, Set<string>>();
 const runtimeOptionsCache = new Map<string, RuntimeOptions>();
 
 function nowIso() {
@@ -41,6 +42,50 @@ function mockTitle(prompt: string) {
   return t.length <= 30 ? t : `${t.slice(0, 29)}…`;
 }
 
+
+function applyMockDeniedEfforts<T extends { id: string; efforts: string[]; defaultEffort?: string | null }>(
+  models: T[],
+): T[] {
+  return models.map((option) => {
+    const blocked = runtimeDeniedEfforts.get(option.id);
+    if (!blocked || blocked.size === 0) return option;
+    const efforts = option.efforts.filter((item) => !blocked.has(item));
+    const fallback = option.defaultEffort?.trim();
+    const defaultEffort =
+      fallback && efforts.includes(fallback) ? fallback : efforts[0] ?? null;
+    return { ...option, efforts, defaultEffort };
+  });
+}
+
+function learnMockThinkingUnsupported(conversationId: string, errorText: string) {
+  const hay = errorText.toLowerCase();
+  if (
+    !(
+      hay.includes('reasoningeffort')
+      || hay.includes('reasoning_effort')
+      || hay.includes('does not support parameter')
+      || hay.includes('不支持思考强度')
+      || hay.includes('不支持当前思考设置')
+    )
+  ) {
+    return;
+  }
+  const settings = runtimeSettings.get(conversationId) ?? {};
+  const model = settings.model?.trim();
+  const effort = settings.effort?.trim();
+  if (!model || !effort) return;
+  const set = runtimeDeniedEfforts.get(model) ?? new Set<string>();
+  set.add(effort);
+  runtimeDeniedEfforts.set(model, set);
+  const cached = runtimeOptionsCache.get(conversationId);
+  if (cached) {
+    runtimeOptionsCache.set(conversationId, {
+      ...cached,
+      models: applyMockDeniedEfforts(cached.models),
+    });
+  }
+}
+
 export function resetChatMock() {
   mockSeq = 1;
   mockConversations.length = 0;
@@ -50,6 +95,7 @@ export function resetChatMock() {
   runtimeSnapshots.clear();
   runtimeSettings.clear();
   runtimeOptionsCache.clear();
+  runtimeDeniedEfforts.clear();
 }
 
 export function createMockChatPort(): ChatPort {
@@ -294,9 +340,10 @@ export function createMockChatPort(): ChatPort {
       const frozen = ['starting', 'running', 'waiting', 'cancelling'].includes(snapshot.phase);
       const cached = runtimeOptionsCache.get(conversationId);
       if (cached) {
+        const models = applyMockDeniedEfforts(cached.models);
         let settings = runtimeSettings.get(conversationId) ?? cached.settings;
-        if (!frozen && cached.models.length > 0 && settings.model) {
-          const modelOption = cached.models.find((item) => item.id === settings.model);
+        if (!frozen && models.length > 0 && settings.model) {
+          const modelOption = models.find((item) => item.id === settings.model);
           const effort = settings.effort?.trim() || undefined;
           if (
             modelOption &&
@@ -313,6 +360,7 @@ export function createMockChatPort(): ChatPort {
         }
         return {
           ...cached,
+          models,
           settings,
           settingsFrozen: frozen,
         };
@@ -334,7 +382,8 @@ export function createMockChatPort(): ChatPort {
         settingsFrozen: false,
         models: [
           { id: 'gpt-mock', efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' },
-          { id: 'gpt-5.3-codex-spark', efforts: ['low', 'high'], defaultEffort: 'low' },
+          // Live Codex 0.150+ over-reports medium/xhigh for spark; learn-from-reject filters later.
+          { id: 'gpt-5.3-codex-spark', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high' },
         ],
         extensions: [
           {
@@ -350,6 +399,7 @@ export function createMockChatPort(): ChatPort {
         ],
         modelsFromCodex: false,
       };
+      options.models = applyMockDeniedEfforts(options.models);
       runtimeOptionsCache.set(conversationId, options);
       return options;
     },
@@ -412,6 +462,13 @@ export function createMockChatPort(): ChatPort {
             throw new Error(`模型 ${model} 不支持思考强度 ${effort}`);
           }
         }
+      }
+      // Simulate Codex rejecting over-reported spark+medium (live accept failure).
+      if (model === 'gpt-5.3-codex-spark' && effort === 'medium') {
+        const message =
+          'OpenAI API error (400): does not support parameter reasoningEffort=medium';
+        learnMockThinkingUnsupported(conversationId, message);
+        throw new Error(message);
       }
       const runId = `run-mock-${mockSeq++}`;
       const agent = mockConversations.find((item) => item.id === conversationId)?.agentIds[0] ?? 'codex';

@@ -188,6 +188,28 @@ pub(crate) fn validate_turn_settings(
     })
 }
 
+/// Extract one effort name from a model/list entry (string or object).
+/// Objects with `available: false` / `supported: false` are skipped.
+fn parse_effort_entry(item: &Value) -> Option<String> {
+    if let Some(s) = item.as_str() {
+        let trimmed = s.trim();
+        return (!trimmed.is_empty()).then(|| trimmed.to_string());
+    }
+    let obj = item.as_object()?;
+    // Prefer explicit unavailability markers when Codex encodes them.
+    if obj.get("available").and_then(Value::as_bool) == Some(false)
+        || obj.get("supported").and_then(Value::as_bool) == Some(false)
+    {
+        return None;
+    }
+    obj.get("reasoningEffort")
+        .or_else(|| obj.get("effort"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
 pub(crate) fn parse_model_list(value: &Value) -> Vec<RuntimeModelOption> {
     let rows = value
         .get("data")
@@ -203,21 +225,14 @@ pub(crate) fn parse_model_list(value: &Value) -> Vec<RuntimeModelOption> {
             .filter(|s| !s.is_empty())
             .map(str::to_string);
         let Some(id) = id else { continue };
+        let mut seen = std::collections::HashSet::new();
         let efforts = row
             .get("supportedReasoningEfforts")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|item| {
-                        if let Some(s) = item.as_str() {
-                            return Some(s.trim().to_string());
-                        }
-                        item.get("reasoningEffort")
-                            .or_else(|| item.get("effort"))
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.trim().to_string())
-                    })
-                    .filter(|s| !s.is_empty())
+                    .filter_map(parse_effort_entry)
+                    .filter(|s| seen.insert(s.clone()))
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
@@ -241,6 +256,50 @@ pub(crate) fn parse_model_list(value: &Value) -> Vec<RuntimeModelOption> {
         });
     }
     out
+}
+
+/// Drop previously denied efforts from a catalog (Codex may over-report support).
+pub(crate) fn apply_denied_efforts(
+    models: &[RuntimeModelOption],
+    denied: &std::collections::HashMap<String, std::collections::HashSet<String>>,
+) -> Vec<RuntimeModelOption> {
+    if denied.is_empty() {
+        return models.to_vec();
+    }
+    models
+        .iter()
+        .map(|option| {
+            let Some(blocked) = denied.get(&option.id) else {
+                return option.clone();
+            };
+            if blocked.is_empty() {
+                return option.clone();
+            }
+            let efforts: Vec<String> = option
+                .efforts
+                .iter()
+                .filter(|effort| !blocked.contains(effort.as_str()))
+                .cloned()
+                .collect();
+            let mut next = RuntimeModelOption {
+                id: option.id.clone(),
+                efforts,
+                default_effort: option.default_effort.clone(),
+            };
+            next.default_effort = resolved_default_effort(&next);
+            next
+        })
+        .collect()
+}
+
+/// Match the same upstream failure class that UI maps to thinkingUnsupported.
+pub(crate) fn looks_like_thinking_unsupported(message: &str) -> bool {
+    let hay = message.to_ascii_lowercase();
+    hay.contains("reasoningeffort")
+        || hay.contains("reasoning_effort")
+        || hay.contains("does not support parameter")
+        || hay.contains("不支持思考强度")
+        || hay.contains("不支持当前思考设置")
 }
 
 pub(crate) fn parse_skills_list(value: &Value) -> Vec<RuntimeExtensionItem> {
@@ -620,6 +679,74 @@ mod tests {
         assert_eq!(models.len(), 1);
         assert_eq!(models[0].efforts, vec!["low", "high"]);
         assert_eq!(models[0].default_effort.as_deref(), Some("low"));
+    }
+
+    #[test]
+    fn parse_model_list_matches_live_codex_spark_object_shape() {
+        // Codex 0.150+/0.153+ app-server list: objects with reasoningEffort + description.
+        // Live catalog over-reports medium/xhigh for spark even though turn/start may reject some.
+        let value = json!({
+            "data": [{
+                "id": "gpt-5.3-codex-spark",
+                "displayName": "GPT-5.3-Codex-Spark",
+                "supportedReasoningEfforts": [
+                    {"reasoningEffort": "low", "description": "Fast responses with lighter reasoning"},
+                    {"reasoningEffort": "medium", "description": "Balances speed and reasoning depth for everyday tasks"},
+                    {"reasoningEffort": "high", "description": "Greater reasoning depth for complex problems"},
+                    {"reasoningEffort": "xhigh", "description": "Extra high reasoning depth for complex problems"},
+                    {"effort": "medium", "available": false, "description": "duplicate marked unavailable"}
+                ],
+                "defaultReasoningEffort": "high"
+            }]
+        });
+        let models = parse_model_list(&value);
+        assert_eq!(models.len(), 1);
+        assert_eq!(
+            models[0].efforts,
+            vec!["low", "medium", "high", "xhigh"]
+        );
+        assert_eq!(models[0].default_effort.as_deref(), Some("high"));
+    }
+
+    #[test]
+    fn apply_denied_efforts_filters_over_reported_catalog() {
+        let models = vec![RuntimeModelOption {
+            id: "gpt-5.3-codex-spark".into(),
+            efforts: vec![
+                "low".into(),
+                "medium".into(),
+                "high".into(),
+                "xhigh".into(),
+            ],
+            default_effort: Some("high".into()),
+        }];
+        let mut denied = std::collections::HashMap::new();
+        denied.insert(
+            "gpt-5.3-codex-spark".into(),
+            ["medium".into()].into_iter().collect(),
+        );
+        let filtered = apply_denied_efforts(&models, &denied);
+        assert_eq!(filtered[0].efforts, vec!["low", "high", "xhigh"]);
+        assert_eq!(filtered[0].default_effort.as_deref(), Some("high"));
+
+        let repaired = reconcile_turn_settings(
+            &RuntimeTurnSettings {
+                model: Some("gpt-5.3-codex-spark".into()),
+                effort: Some("medium".into()),
+            },
+            &filtered,
+        )
+        .expect("should repair after deny");
+        assert_eq!(repaired.effort.as_deref(), Some("high"));
+    }
+
+    #[test]
+    fn looks_like_thinking_unsupported_matches_localized_and_upstream() {
+        assert!(looks_like_thinking_unsupported(
+            "OpenAI API error: does not support parameter reasoningEffort"
+        ));
+        assert!(looks_like_thinking_unsupported("这个模型不支持当前思考设置。请点重试。"));
+        assert!(!looks_like_thinking_unsupported("network timeout"));
     }
 
     #[test]

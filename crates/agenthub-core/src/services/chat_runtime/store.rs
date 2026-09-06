@@ -4,6 +4,8 @@
 //! tables remain the source for the normal conversation history; runtime rows
 //! only add the durable owner, replay sequence, and pending server requests.
 
+use std::collections::{HashMap, HashSet};
+
 use chrono::Utc;
 use rusqlite::{OptionalExtension, params};
 
@@ -872,6 +874,74 @@ impl RuntimeStore {
             },
             None => RuntimeTurnSettings::default(),
         })
+    }
+
+    pub(crate) fn list_denied_efforts(&self) -> Result<HashMap<String, HashSet<String>>> {
+        self.db.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT model_id, effort FROM chat_runtime_denied_efforts",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            let mut out: HashMap<String, HashSet<String>> = HashMap::new();
+            for row in rows {
+                let (model_id, effort) = row?;
+                out.entry(model_id).or_default().insert(effort);
+            }
+            Ok(out)
+        })
+    }
+
+    pub(crate) fn deny_model_effort(&self, model_id: &str, effort: &str) -> Result<bool> {
+        let model_id = model_id.trim();
+        let effort = effort.trim();
+        if model_id.is_empty() || effort.is_empty() {
+            return Ok(false);
+        }
+        let now = Utc::now().to_rfc3339();
+        self.db.with_conn(|conn| {
+            let changed = conn.execute(
+                r#"
+                INSERT INTO chat_runtime_denied_efforts (model_id, effort, denied_at)
+                VALUES (?1, ?2, ?3)
+                ON CONFLICT(model_id, effort) DO NOTHING
+                "#,
+                params![model_id, effort, now],
+            )?;
+            Ok(changed > 0)
+        })
+    }
+
+    /// Persist a denied (model, effort) when Codex rejects thinking settings.
+    /// Catalog filtering + idle options() reconcile clear the value from the menu.
+    pub(crate) fn learn_thinking_unsupported(
+        &self,
+        conversation_id: &str,
+        error: &str,
+    ) -> Result<()> {
+        if !super::ops::looks_like_thinking_unsupported(error) {
+            return Ok(());
+        }
+        let settings = self.turn_settings(conversation_id)?;
+        let Some(model) = settings
+            .model
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        else {
+            return Ok(());
+        };
+        let Some(effort) = settings
+            .effort
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        else {
+            return Ok(());
+        };
+        let _ = self.deny_model_effort(model, effort)?;
+        Ok(())
     }
 
     pub(crate) fn set_turn_settings(
