@@ -928,8 +928,8 @@ fn run_spec_streaming(
         )
     });
 
-    const MAX_LIVE_CHUNKS_PER_TICK: usize = 16;
-    let poll = Duration::from_millis(50);
+    const MAX_LIVE_CHUNKS_PER_TICK: usize = 4;
+    let poll = Duration::from_millis(16);
     let outcome = loop {
         if cancel.is_cancelled() {
             break StreamPoll::Cancelled;
@@ -1288,7 +1288,7 @@ pub(crate) fn read_pipe_capped<R: Read>(
     let Some(mut r) = stream else {
         return;
     };
-    const READ_CHUNK_BYTES: usize = 8192;
+    const READ_CHUNK_BYTES: usize = 2048;
     let mut chunk = [0u8; READ_CHUNK_BYTES];
     let mut decoder = Utf8ChunkDecoder::new();
     let mut capped = false;
