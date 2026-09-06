@@ -246,6 +246,40 @@ fn idle_enabled_runtime_allows_agent_and_cwd_changes() {
     assert!(!store.persisted_enabled(&conv.id).unwrap());
     let snapshot = chat.runtime().snapshot(&conv.id, None).unwrap();
     assert!(!snapshot.enabled);
+    let options = chat.runtime().options(&conv.id).unwrap();
+    assert!(options.models.is_empty());
+    assert!(!options.image_input);
+    assert!(!options.steer);
+    assert!(!store.persisted_enabled(&conv.id).unwrap());
+}
+
+#[test]
+fn options_for_pi_are_empty_and_do_not_enable_runtime() {
+    let db = Database::open_in_memory().unwrap();
+    let now = "2026-01-01T00:00:00Z".to_string();
+    ChatRepo::new(db.clone())
+        .create_conversation(&Conversation {
+            id: "pi-empty".into(),
+            title: String::new(),
+            agent_ids: vec![AgentId::Pi],
+            cwd: Some(std::env::temp_dir().to_string_lossy().into_owned()),
+            allow_dangerous: false,
+            created_at: now.clone(),
+            updated_at: now,
+            native_session_id: None,
+            sending: false,
+        })
+        .unwrap();
+    let run = Arc::new(RunService::new(AdapterRegistry::default()));
+    let runtime = Arc::new(ChatRuntime::new(db.clone(), run));
+    let options = runtime.options("pi-empty").unwrap();
+    assert_eq!(options.conversation_id, "pi-empty");
+    assert!(options.models.is_empty());
+    assert!(options.extensions.is_empty());
+    assert!(!options.image_input);
+    assert!(!options.steer);
+    assert!(!runtime.store.persisted_enabled("pi-empty").unwrap());
+    assert!(!runtime.snapshot("pi-empty", None).unwrap().enabled);
 }
 
 #[test]

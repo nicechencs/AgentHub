@@ -21,6 +21,26 @@ export function isRuntimeActive(phase: RuntimeSnapshot['phase']): boolean {
   return ['starting', 'running', 'waiting', 'cancelling'].includes(phase);
 }
 
+/** Continuous chat composer/send path is Codex and Grok only. */
+export function isRuntimeChatAgent(agentId: string | null | undefined): boolean {
+  return agentId === 'codex' || agentId === 'grok';
+}
+
+/**
+ * Composer chrome follows the conversation's current Agent.
+ * A leftover enabled snapshot from Codex / Grok must not keep Pi on that path.
+ */
+export function bindRuntimeSnapshotToAgent(
+  runtime: RuntimeSnapshot | null | undefined,
+  extras: { agentId?: string | null; conversationId?: string | null },
+): RuntimeSnapshot | null {
+  if (!runtime) return null;
+  if (!extras.conversationId || runtime.conversationId !== extras.conversationId) return null;
+  if (isRuntimeChatAgent(extras.agentId)) return runtime;
+  if (!runtime.enabled) return runtime;
+  return { ...runtime, enabled: false };
+}
+
 export type RuntimeSessionLockExtras = {
   conversationId?: string | null;
   nativeSessionId?: string | null;

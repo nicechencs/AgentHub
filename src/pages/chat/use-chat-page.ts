@@ -30,7 +30,7 @@ import {
   type ChatActionDef,
 } from './chat-actions';
 import { lastTurnOutcome } from './chat-turn-outcome';
-import { isRuntimeSessionLocked } from './chat-runtime-model';
+import { bindRuntimeSnapshotToAgent, isRuntimeSessionLocked } from './chat-runtime-model';
 
 export {
   conversationListState,
@@ -162,10 +162,10 @@ export function useChatPage() {
     cancelIfSending: send.cancelIfSending,
   };
   const sending = send.sending;
-  const activeRuntime =
-    send.runtime && active && send.runtime.conversationId === active.id
-      ? send.runtime
-      : null;
+  const activeRuntime = bindRuntimeSnapshotToAgent(send.runtime, {
+    agentId: active?.agentIds[0],
+    conversationId: active?.id,
+  });
   const runtimeOps = useChatRuntimeOps({
     active,
     runtimeEnabled: Boolean(activeRuntime?.enabled),
