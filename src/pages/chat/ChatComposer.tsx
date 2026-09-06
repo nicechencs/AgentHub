@@ -157,6 +157,13 @@ export function ChatComposer({
   }, [syncTextareaHeight]);
 
   const textareaDisabled = hiddenBlocked || sendingElsewhere;
+  const droppedImages = useCallback((files: FileList | null | undefined) => {
+    if (!onPasteImages) return false;
+    const images = Array.from(files ?? []).filter((file) => file.type.startsWith('image/'));
+    if (images.length === 0) return false;
+    onPasteImages(images);
+    return true;
+  }, [onPasteImages]);
   const sendHint = firstBlocker ? blockerCopy(t, firstBlocker).text : t('chat.composer.send');
   const selectedAgent = active.agentIds[0] ?? '';
   const approveFooter = autoApproveFooter(t, active.allowDangerous, active.agentIds[0] ?? null);
@@ -234,13 +241,19 @@ export function ChatComposer({
             }
           }}
           onPaste={(e) => {
+            if (droppedImages(e.clipboardData?.files)) e.preventDefault();
+          }}
+          onDragOver={(e) => {
             if (!onPasteImages) return;
-            const files = Array.from(e.clipboardData?.files ?? []).filter((file) =>
-              file.type.startsWith('image/'),
+            const hasImage = Array.from(e.dataTransfer?.items ?? []).some((item) =>
+              item.kind === 'file' && item.type.startsWith('image/'),
             );
-            if (files.length === 0) return;
+            if (!hasImage) return;
             e.preventDefault();
-            onPasteImages(files);
+            e.dataTransfer.dropEffect = 'copy';
+          }}
+          onDrop={(e) => {
+            if (droppedImages(e.dataTransfer?.files)) e.preventDefault();
           }}
           aria-label={t('chat.composer.inputAria')}
         />

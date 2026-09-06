@@ -22,15 +22,16 @@ export function ChatActionMenu(props: {
   commandOpen: boolean;
   selectedIndex?: number;
   actionContext: ChatActionContext;
+  extraActions?: ChatActionDef[];
   onRun: (action: ChatActionDef) => void;
   onHoverIndex?: (index: number) => void;
 }) {
   const { t } = useI18n();
-  const label = (key: string) => t(`chat.actions.${key}` as never);
+  const label = (action: ChatActionDef) => action.label ?? t(`chat.actions.${action.labelKey}` as never);
   const disabledCopy = (reason: ChatActionDisableReason) =>
     t(`chat.actions.disabled.${reason}` as never);
 
-  const slashItems = filterChatActions(props.draft);
+  const slashItems = filterChatActions(props.draft, props.extraActions ?? []);
   const selectedIndex = props.selectedIndex ?? 0;
 
   return (
@@ -54,7 +55,7 @@ export function ChatActionMenu(props: {
                 }}
               >
                 <span className="flex w-full flex-col gap-0.5">
-                  <span>{label(action.labelKey)}</span>
+                  <span>{label(action)}</span>
                   {reason ? (
                     <span className="text-meta text-muted">{disabledCopy(reason)}</span>
                   ) : null}
@@ -91,7 +92,10 @@ export function ChatActionMenu(props: {
                   props.onRun(action);
                 }}
               >
-                <span>{label(action.labelKey)}</span>
+                <span>{label(action)}</span>
+                {action.description ? (
+                  <span className="text-meta text-muted">{action.description}</span>
+                ) : null}
                 {reason ? (
                   <span className="text-meta text-muted">{disabledCopy(reason)}</span>
                 ) : null}

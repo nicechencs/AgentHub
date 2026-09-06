@@ -183,6 +183,53 @@ export function useChatPage() {
     [agentStatus, agentsReady, hasLatestReply],
   );
 
+  const runtimeCommandActions = useMemo<ChatActionDef[]>(() => {
+    if (!send.runtime?.enabled) return [];
+    const actions: ChatActionDef[] = [];
+    if (!runtimeOps.frozen) {
+      for (const model of runtimeOps.models) {
+        actions.push({
+          id: `runtime-model:${model.id}`,
+          kind: 'local',
+          label: `换模型：${model.id}`,
+          description: model.id === runtimeOps.settings.model ? '当前模型' : undefined,
+          keywords: ['model', '模型', '换模型', model.id],
+        });
+      }
+      if (runtimeOps.settings.model) {
+        for (const effort of runtimeOps.currentEfforts) {
+          actions.push({
+            id: `runtime-effort:${effort}`,
+            kind: 'local',
+            label: `思考强度：${effort}`,
+            description: effort === runtimeOps.settings.effort ? '当前设置' : undefined,
+            keywords: ['think', 'thinking', 'effort', '思考', '思考强度', effort],
+          });
+        }
+      }
+    }
+    for (const item of runtimeOps.extensions) {
+      if (item.kind !== 'skill' || !item.callable) continue;
+      actions.push({
+        id: `runtime-skill:${item.id}`,
+        kind: 'local',
+        label: `${runtimeOps.selectedSkillIds.includes(item.id) ? '取消用于本次' : '用于本次'}：${item.name}`,
+        description: '技能',
+        keywords: ['skill', '技能', '用于本次', item.name, item.id],
+      });
+    }
+    return actions;
+  }, [
+    runtimeOps.currentEfforts,
+    runtimeOps.extensions,
+    runtimeOps.frozen,
+    runtimeOps.models,
+    runtimeOps.selectedSkillIds,
+    runtimeOps.settings.effort,
+    runtimeOps.settings.model,
+    send.runtime?.enabled,
+  ]);
+
   const runChatAction = useCallback(
     (action: ChatActionDef) => {
       const reason = chatActionDisabledReason(action, actionContext);
@@ -193,6 +240,21 @@ export function useChatPage() {
       const clearCommandDraft = () => {
         if (isCommandSearchMode(draft)) setDraft('');
       };
+      if (action.id.startsWith('runtime-model:')) {
+        clearCommandDraft();
+        void runtimeOps.switchModel(action.id.slice('runtime-model:'.length));
+        return;
+      }
+      if (action.id.startsWith('runtime-effort:')) {
+        clearCommandDraft();
+        void runtimeOps.switchEffort(action.id.slice('runtime-effort:'.length));
+        return;
+      }
+      if (action.id.startsWith('runtime-skill:')) {
+        clearCommandDraft();
+        runtimeOps.toggleSkill(action.id.slice('runtime-skill:'.length));
+        return;
+      }
       if (action.kind === 'draft' && action.draftText) {
         setDraft(action.draftText);
         return;
@@ -241,10 +303,13 @@ export function useChatPage() {
         clearCommandDraft();
       }
     },
-    [actionContext, draft, handleNewChat, messages, navigate, setRailOpen, setSettingsOpen, t, toast],
+    [actionContext, draft, handleNewChat, messages, navigate, runtimeOps, setRailOpen, setSettingsOpen, t, toast],
   );
   const commandSearchOpen = isCommandSearchMode(draft);
-  const commandItems = useMemo(() => filterChatActions(draft), [draft]);
+  const commandItems = useMemo(
+    () => filterChatActions(draft, runtimeCommandActions),
+    [draft, runtimeCommandActions],
+  );
   useEffect(() => {
     setCommandIndex(0);
   }, [draft, commandItems.length]);
@@ -519,6 +584,7 @@ export function useChatPage() {
     handleCancel: send.handleCancel,
     runtime: send.runtime,
     runtimeOps,
+    runtimeCommandActions,
     commandSearchOpen,
     commandIndex,
     setCommandIndex,

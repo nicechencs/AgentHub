@@ -10,9 +10,11 @@ import {
 } from './chat-actions';
 
 describe('chat action command search', () => {
-  it('opens only for explicit / command tokens', () => {
+  it('opens only for explicit / or \\ command tokens', () => {
     expect(isCommandSearchMode('/')).toBe(true);
     expect(isCommandSearchMode('/new')).toBe(true);
+    expect(isCommandSearchMode('\\')).toBe(true);
+    expect(isCommandSearchMode('\\model')).toBe(true);
     expect(isCommandSearchMode('')).toBe(false);
     expect(isCommandSearchMode('path/to/file')).toBe(false);
     expect(isCommandSearchMode('use /tmp')).toBe(false);
@@ -28,6 +30,12 @@ describe('chat action command search', () => {
     expect(filterChatActions('/报错').some((item) => item.id === 'sample-explain-error')).toBe(true);
     expect(normalizeActionQuery('  新建  ')).toBe('新建');
     expect(actionMatchesQuery(CHAT_ACTIONS[0], 'new')).toBe(true);
+  });
+
+  it('mixes runtime commands into slash search', () => {
+    const extra = [{ id: 'runtime-model:gpt-spark', kind: 'local' as const, label: '换模型：gpt-spark', keywords: ['model', '模型', 'gpt-spark'] }];
+    expect(filterChatActions('/model', extra).map((item) => item.id)).toContain('runtime-model:gpt-spark');
+    expect(filterChatActions('\\模型', extra).map((item) => item.id)).toContain('runtime-model:gpt-spark');
   });
 
   it('exposes disabled reasons without wrapping as prompts', () => {

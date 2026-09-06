@@ -150,6 +150,7 @@ export default function ChatPage() {
                   commandSearchOpen={page.commandSearchOpen}
                   commandIndex={page.commandIndex}
                   actionContext={page.actionContext}
+                  extraActions={page.runtimeCommandActions}
                   onRunAction={page.runChatAction}
                   onHoverCommandIndex={page.setCommandIndex}
                   models={page.runtimeOps.models}
