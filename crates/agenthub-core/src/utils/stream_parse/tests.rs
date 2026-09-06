@@ -22,6 +22,7 @@ fn auto_enables_structured_agents() {
         AgentId::Kimi,
         AgentId::Pi,
         AgentId::Grok,
+        AgentId::Kiro,
     ] {
         assert!(
             StreamSession::new(agent, ProcessMode::Auto).is_structured(),
@@ -94,6 +95,30 @@ fn grok_acp_jsonrpc_reaches_assistant_text() {
         StreamOutput::Step(ProcessStep::Thinking { text, .. }) if text == "plan"
     )));
     assert_eq!(s.assistant_text(), "Hello world.");
+    assert!(!out.iter().any(|o| matches!(
+        o,
+        StreamOutput::Step(ProcessStep::Raw { note: Some(n), .. }) if n.contains("无法识别")
+    )));
+}
+
+#[test]
+fn kiro_v2_envelope_reaches_assistant_text_without_final_text_dup() {
+    let mut s = StreamSession::new(AgentId::Kiro, ProcessMode::Auto);
+    let ndjson = concat!(
+        r#"{"type":"runStarted","data":{"payloadSchema":"acp","engine":"v2"}}"#,
+        "\n",
+        r#"{"type":"sessionUpdate","data":{"sessionId":"s1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"hi"}}}}"#,
+        "\n",
+        r#"{"type":"runFinished","data":{"sessionId":"s1","status":"success","stopReason":"end_turn","finalText":"hi"}}"#,
+        "\n",
+    );
+    let out = s.feed(OutputStream::Stdout, ndjson);
+    assert_eq!(s.assistant_text(), "hi");
+    assert_eq!(s.native_session_id(), Some("s1"));
+    assert!(out.iter().any(|o| matches!(
+        o,
+        StreamOutput::Step(ProcessStep::Status { phase, .. }) if phase == "result"
+    )));
     assert!(!out.iter().any(|o| matches!(
         o,
         StreamOutput::Step(ProcessStep::Raw { note: Some(n), .. }) if n.contains("无法识别")
@@ -381,6 +406,14 @@ fn captures_claude_codex_and_grok_session_ids() {
 fn extract_native_session_id_rejects_noise() {
     assert!(extract_native_session_id("claude", "not-json").is_none());
     assert!(extract_native_session_id("kimi", r#"{"session_id":"x"}"#).is_none());
+    assert_eq!(
+        extract_native_session_id(
+            "kiro",
+            r#"{"type":"metadata","data":{"sessionId":"43829d57-18ca-483f-b0df-054a5e1c395e"}}"#,
+        )
+        .as_deref(),
+        Some("43829d57-18ca-483f-b0df-054a5e1c395e"),
+    );
     assert_eq!(
         extract_native_session_id("claude", r#"{"session_id":"  abc  "}"#).as_deref(),
         Some("abc")

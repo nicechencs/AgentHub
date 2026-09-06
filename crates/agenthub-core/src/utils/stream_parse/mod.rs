@@ -6,12 +6,15 @@
 //!
 //! Agents with structured capability emit NDJSON under `ProcessMode::Auto`:
 //! Claude `stream-json`, Codex `--json`, Kimi `stream-json`, Pi `--mode json`,
-//! Grok `streaming-json`. Text-only agents / CLI multi-run stay passthrough.
+//! Grok `streaming-json`, Kiro `stream-json` (v2 ACP envelope). Text-only
+//! agents / CLI multi-run stay passthrough.
 
+pub(crate) mod acp;
 pub(crate) mod claude;
 pub(crate) mod codex;
 pub(crate) mod grok;
 pub(crate) mod kimi;
+pub(crate) mod kiro;
 pub(crate) mod pi;
 
 use std::sync::Arc;
@@ -319,6 +322,9 @@ pub fn extract_native_session_id(agent_key: &str, line: &str) -> Option<String> 
         "grok" => {
             first_json_str(&v, &["session_id", "sessionId"]).or_else(|| grok_session_id_pointer(&v))
         }
+        "kiro" => {
+            first_json_str(&v, &["session_id", "sessionId"]).or_else(|| kiro_session_id_pointer(&v))
+        }
         _ => None,
     }?;
     crate::adapters::session_resume::valid_session_id(&raw).map(str::to_string)
@@ -338,12 +344,32 @@ fn first_json_str(v: &serde_json::Value, keys: &[&str]) -> Option<String> {
 
 /// ACP `session/update` and `session/new` put the id under params/result.
 fn grok_session_id_pointer(v: &serde_json::Value) -> Option<String> {
-    for path in [
-        "/params/sessionId",
-        "/params/session_id",
-        "/result/sessionId",
-        "/result/session_id",
-    ] {
+    json_pointer_str(
+        v,
+        &[
+            "/params/sessionId",
+            "/params/session_id",
+            "/result/sessionId",
+            "/result/session_id",
+        ],
+    )
+}
+
+/// Kiro stream-json puts the id under `data.sessionId` (v2/v3 envelope).
+fn kiro_session_id_pointer(v: &serde_json::Value) -> Option<String> {
+    json_pointer_str(
+        v,
+        &[
+            "/data/sessionId",
+            "/data/session_id",
+            "/params/sessionId",
+            "/params/session_id",
+        ],
+    )
+}
+
+fn json_pointer_str(v: &serde_json::Value, paths: &[&str]) -> Option<String> {
+    for path in paths {
         if let Some(s) = v.pointer(path).and_then(|x| x.as_str()) {
             let t = s.trim();
             if !t.is_empty() {

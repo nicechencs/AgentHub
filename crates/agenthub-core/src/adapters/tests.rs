@@ -1256,7 +1256,7 @@ fn matrix_matches_documented_boundary_cells() {
     assert!(supports_structured_stream(AgentId::Claude));
     assert!(!supports_structured_stream(AgentId::WorkBuddy));
     assert!(!supports_structured_stream(AgentId::Cursor));
-    assert!(!supports_structured_stream(AgentId::Kiro));
+    assert!(supports_structured_stream(AgentId::Kiro));
     assert_eq!(
         matrix[&AgentId::Kiro][&Capability::ConfigWrite].level,
         CapabilityLevel::Unsupported

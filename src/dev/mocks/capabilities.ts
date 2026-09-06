@@ -246,7 +246,10 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
     },
     skills: { level: 'planned', reason: '待路径核实' },
     liveBackup: { level: 'unsupported', reason: '无稳定配置/凭据文件' },
-    structuredStream: { level: 'planned', reason: 'stream-json 待验证' },
+    structuredStream: {
+      level: 'partial',
+      reason: '对话过程走 v2 stream-json；不能中途补充',
+    },
     dangerousMode: {
       level: 'partial',
       reason: '映射 --trust-all-tools；请确认风险后再开',
@@ -261,8 +264,8 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
     mcp: { level: 'planned', reason: '待路径核实' },
     modelSelect: { level: 'planned', reason: '待验证接入' },
     sessionResume: {
-      level: 'unsupported',
-      reason: 'headless 无中途输入；持续聊另立项',
+      level: 'partial',
+      reason: '后续轮次走 --resume-id；不能中途补充或点允许/拒绝',
     },
   },
 };
