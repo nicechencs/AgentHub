@@ -93,7 +93,7 @@ export default function ChatPage() {
           onRename={page.renameTitle}
           onOpenSettings={() => page.setSettingsOpen(true)}
           onPickWorkingDirectory={() => void page.pickWorkingDirectory()}
-          runtimeLocked={Boolean(page.runtime?.enabled)}
+          runtimeLocked={page.runtimeLocked}
         />
 
         <div className={cn(chatStageClass, pageRhythm.chatChromeX)}>
@@ -190,7 +190,7 @@ export default function ChatPage() {
                       ? (files) => void page.runtimeOps.pasteImages(files)
                       : undefined
                   }
-                  runtimeLocked={Boolean(page.runtime?.enabled)}
+                  runtimeLocked={page.runtimeLocked}
                   runtimeControls={
                     page.runtime?.enabled ? (
                       <ChatRuntimeExtras
@@ -236,7 +236,7 @@ export default function ChatPage() {
           dangerConfirm={page.dangerConfirm}
           onDangerConfirmChange={page.setDangerConfirm}
           onPatch={(patch) => void page.patchActive(patch)}
-          runtimeLocked={Boolean(page.runtime?.enabled)}
+          runtimeLocked={page.runtimeLocked}
         />
       </section>
     </div>

@@ -30,6 +30,7 @@ import {
   type ChatActionDef,
 } from './chat-actions';
 import { lastTurnOutcome } from './chat-turn-outcome';
+import { isRuntimeSessionLocked } from './chat-runtime-model';
 
 export {
   conversationListState,
@@ -584,6 +585,9 @@ export function useChatPage() {
     retryLast: send.retryLast,
     handleCancel: send.handleCancel,
     runtime: send.runtime,
+    runtimeLocked: isRuntimeSessionLocked(send.runtime, {
+      nativeSessionId: active?.nativeSessionId,
+    }),
     runtimeOps,
     runtimeCommandActions,
     commandSearchOpen,

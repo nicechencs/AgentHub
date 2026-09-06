@@ -75,6 +75,105 @@ fn public_snapshot_advertises_new_codex_conversations_as_runtime_enabled() {
 }
 
 #[test]
+fn idle_enabled_runtime_allows_agent_and_cwd_changes() {
+    let dir = tempdir().unwrap();
+    let work_a = dir.path().join("a");
+    let work_b = dir.path().join("b");
+    std::fs::create_dir_all(&work_a).unwrap();
+    std::fs::create_dir_all(&work_b).unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let run = Arc::new(RunService::new(AdapterRegistry::default()));
+    let chat = ChatService::new(db.clone(), run);
+    let conv = chat
+        .create_conversation(
+            vec![AgentId::Codex],
+            Some(work_a.to_string_lossy().into_owned()),
+        )
+        .unwrap();
+    let store = super::store::RuntimeStore::new(db);
+    store.enable_if_new(&conv.id).unwrap();
+    assert!(store.persisted_enabled(&conv.id).unwrap());
+
+    let moved = chat
+        .update_conversation(
+            &conv.id,
+            None,
+            None,
+            Some(Some(work_b.to_string_lossy().into_owned())),
+            None,
+        )
+        .unwrap();
+    assert_eq!(
+        moved.cwd.as_deref(),
+        Some(work_b.to_string_lossy().as_ref())
+    );
+    assert!(store.persisted_enabled(&conv.id).unwrap());
+
+    let switched = chat
+        .update_conversation(&conv.id, None, Some(vec![AgentId::Claude]), None, None)
+        .unwrap();
+    assert_eq!(switched.agent_ids, vec![AgentId::Claude]);
+    assert!(!store.persisted_enabled(&conv.id).unwrap());
+    let snapshot = chat.runtime().snapshot(&conv.id, None).unwrap();
+    assert!(!snapshot.enabled);
+}
+
+#[test]
+fn started_runtime_rejects_agent_and_cwd_changes() {
+    let dir = tempdir().unwrap();
+    let work = dir.path().join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let run = Arc::new(RunService::new(AdapterRegistry::default()));
+    let chat = ChatService::new(db.clone(), run);
+    let conv = chat
+        .create_conversation(
+            vec![AgentId::Codex],
+            Some(work.to_string_lossy().into_owned()),
+        )
+        .unwrap();
+    let store = super::store::RuntimeStore::new(db);
+    store.enable_if_new(&conv.id).unwrap();
+    store
+        .commit_event(
+            &conv.id,
+            RuntimePhase::Running,
+            Some("run-1"),
+            &ChatEvent::Error {
+                message: "started".into(),
+            },
+        )
+        .unwrap();
+
+    let cwd_err = chat
+        .update_conversation(
+            &conv.id,
+            None,
+            None,
+            Some(Some(work.to_string_lossy().into_owned())),
+            None,
+        )
+        .unwrap_err();
+    assert_eq!(cwd_err.code(), "invalid_arg");
+    assert!(cwd_err.to_string().contains("新建会话"));
+    assert!(
+        !cwd_err.to_string().contains("invalid argument"),
+        "GUI toast should not prefix this lock error, got {cwd_err}"
+    );
+
+    let agent_err = chat
+        .update_conversation(&conv.id, None, Some(vec![AgentId::Claude]), None, None)
+        .unwrap_err();
+    assert_eq!(agent_err.code(), "invalid_arg");
+    assert!(store.persisted_enabled(&conv.id).unwrap());
+
+    let renamed = chat
+        .update_conversation(&conv.id, Some("keep title".into()), None, None, None)
+        .unwrap();
+    assert_eq!(renamed.title, "keep title");
+}
+
+#[test]
 fn persisted_events_are_replayed_after_the_requested_sequence() {
     let db = Database::open_in_memory().unwrap();
     conversation(&db, "c1", false);

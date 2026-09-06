@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { RuntimeRequest, RuntimeSnapshot } from '@/lib/api/chat';
-import { acceptsRuntimeSnapshot, canSubmitRuntimeQuestions, isLatestRuntimeRead, isRuntimeActive, readRuntimeTransport, requestMatchesRuntime } from './chat-runtime-model';
+import {
+  acceptsRuntimeSnapshot,
+  canSubmitRuntimeQuestions,
+  isLatestRuntimeRead,
+  isRuntimeActive,
+  isRuntimeSessionLocked,
+  readRuntimeTransport,
+  requestMatchesRuntime,
+} from './chat-runtime-model';
 
 const snapshot = (enabled: boolean, phase: RuntimeSnapshot['phase'] = 'idle'): RuntimeSnapshot => ({
   conversationId: 'a', enabled, runId: phase === 'idle' ? null : 'run-a', phase,
@@ -31,6 +39,17 @@ describe('chat runtime transport guards', () => {
   it('keeps cancelling active until a terminal snapshot arrives', () => {
     expect(isRuntimeActive('cancelling')).toBe(true);
     expect(isRuntimeActive('cancelled')).toBe(false);
+  });
+  it('does not lock an empty Codex chat that is only runtime-eligible', () => {
+    expect(isRuntimeSessionLocked(snapshot(true, 'idle'))).toBe(false);
+    expect(isRuntimeSessionLocked(snapshot(false, 'idle'))).toBe(false);
+    expect(isRuntimeSessionLocked(null)).toBe(false);
+  });
+  it('locks once the continuous runtime session has started', () => {
+    expect(isRuntimeSessionLocked(snapshot(true, 'running'))).toBe(true);
+    expect(isRuntimeSessionLocked(snapshot(true, 'completed'))).toBe(true);
+    expect(isRuntimeSessionLocked({ ...snapshot(true, 'idle'), runId: 'run-a' })).toBe(true);
+    expect(isRuntimeSessionLocked(snapshot(true, 'idle'), { nativeSessionId: 'thread-1' })).toBe(true);
   });
   it('requires every runtime question to have an answer before submit', () => {
     const request: Pick<RuntimeRequest, 'kind' | 'questions'> = {

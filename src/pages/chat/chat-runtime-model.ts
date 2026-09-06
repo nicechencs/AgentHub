@@ -21,6 +21,20 @@ export function isRuntimeActive(phase: RuntimeSnapshot['phase']): boolean {
   return ['starting', 'running', 'waiting', 'cancelling'].includes(phase);
 }
 
+/**
+ * Codex empty chats advertise `enabled` so the first send uses the runtime
+ * path — that must not lock Agent / cwd. Lock only after the continuous
+ * session has actually started (or a native thread is already attached).
+ */
+export function isRuntimeSessionLocked(
+  runtime: Pick<RuntimeSnapshot, 'enabled' | 'phase' | 'runId'> | null | undefined,
+  extras?: { nativeSessionId?: string | null },
+): boolean {
+  if (!runtime?.enabled) return false;
+  if (extras?.nativeSessionId) return true;
+  return runtime.phase !== 'idle' || Boolean(runtime.runId);
+}
+
 /** A late poll for A must not alter the second visit to A after A → B → A. */
 export function acceptsRuntimeSnapshot(
   activeId: string | null,

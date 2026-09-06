@@ -117,6 +117,35 @@ impl ChatRuntime {
         self.store.persisted_enabled(conversation_id)
     }
 
+    /// Empty Codex chats advertise `enabled` so the first send uses this path.
+    /// Agent / cwd stay editable until a continuous session actually starts.
+    pub(crate) fn session_locked(
+        &self,
+        conversation_id: &str,
+        native_session_id: Option<&str>,
+    ) -> Result<bool> {
+        let Some(record) = self.store.record(conversation_id)? else {
+            return Ok(false);
+        };
+        if !record.enabled {
+            return Ok(false);
+        }
+        if native_session_id.is_some_and(|id| !id.trim().is_empty()) {
+            return Ok(true);
+        }
+        Ok(record.phase != RuntimePhase::Idle || record.run_id.is_some())
+    }
+
+    /// Drop an idle runtime row so switching away from Codex can use the
+    /// normal send path. Started sessions must be rejected by the caller.
+    pub(crate) fn abandon_unstarted(&self, conversation_id: &str) -> Result<()> {
+        self.shutdown(conversation_id);
+        if let Ok(mut catalogs) = self.catalogs.lock() {
+            catalogs.remove(conversation_id);
+        }
+        self.store.delete_unstarted(conversation_id)
+    }
+
     pub fn options(&self, conversation_id: &str) -> Result<RuntimeOptions> {
         self.store.enable_if_new(conversation_id)?;
         let frozen = self
