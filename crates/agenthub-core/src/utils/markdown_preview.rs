@@ -1,11 +1,11 @@
 //! Read a markdown file for in-app preview (chat right pane).
 //!
 //! The file must live under the conversation working directory, use a markdown
-//! extension, and not be reached through a symlink.
+//! extension, and not be reached through a symlink or Windows reparse point.
 
 use std::fs;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::catalog::limits::SKILL_MARKDOWN_PREVIEW_CHARS;
 use crate::error::{AppError, Result};
@@ -47,9 +47,9 @@ pub fn read_markdown_file_preview(path: &str, cwd: &str) -> Result<MarkdownFileP
         ));
     }
 
-    let cwd_canon = fs::canonicalize(&cwd_raw)?;
+    let cwd_canon = simplified_canon(&cwd_raw)?;
     let meta = fs::symlink_metadata(&candidate)?;
-    if meta.file_type().is_symlink() {
+    if is_denied_link(&meta) {
         return Err(AppError::InvalidArg(format!(
             "refusing to read via symlink: {}",
             candidate.display()
@@ -62,8 +62,8 @@ pub fn read_markdown_file_preview(path: &str, cwd: &str) -> Result<MarkdownFileP
         )));
     }
 
-    let file_canon = fs::canonicalize(&candidate)?;
-    if !file_canon.starts_with(&cwd_canon) {
+    let file_canon = simplified_canon(&candidate)?;
+    if !is_within_dir(&file_canon, &cwd_canon) {
         return Err(AppError::InvalidArg(
             "file is outside the working directory".into(),
         ));
@@ -91,4 +91,51 @@ pub fn read_markdown_file_preview(path: &str, cwd: &str) -> Result<MarkdownFileP
         content: buf,
         truncated,
     })
+}
+
+fn simplified_canon(path: &Path) -> std::io::Result<PathBuf> {
+    let canon = fs::canonicalize(path)?;
+    Ok(dunce::simplified(&canon).to_path_buf())
+}
+
+fn is_within_dir(file: &Path, dir: &Path) -> bool {
+    let file_keys = path_keys(file);
+    let dir_keys = path_keys(dir);
+    dir_keys.len() <= file_keys.len()
+        && dir_keys
+            .iter()
+            .zip(file_keys.iter())
+            .all(|(left, right)| left == right)
+}
+
+fn path_keys(path: &Path) -> Vec<String> {
+    path.components()
+        .map(|component| {
+            let value = component.as_os_str().to_string_lossy();
+            #[cfg(windows)]
+            {
+                value.to_ascii_lowercase()
+            }
+            #[cfg(not(windows))]
+            {
+                value.into_owned()
+            }
+        })
+        .collect()
+}
+
+fn is_denied_link(meta: &fs::Metadata) -> bool {
+    if meta.file_type().is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+        meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
 }

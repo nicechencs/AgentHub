@@ -1,6 +1,6 @@
 use super::*;
 use crate::catalog::limits::{NODE_MIN_MAJOR, PI_NODE_MIN_MAJOR, PI_NODE_MIN_MINOR};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[test]
 fn parse_major_ok() {
@@ -313,6 +313,27 @@ fn host_path_prepends_missing_dirs_without_duplicating() {
     assert_eq!(host_path_with_well_known_bins(&current, &[]), current);
 }
 
+#[cfg(windows)]
+#[test]
+fn host_path_skips_case_variant_duplicates_on_windows() {
+    let existing = PathBuf::from(r"C:\Program Files\nodejs");
+    let variant = PathBuf::from(r"c:\program files\nodejs");
+    let current = std::env::join_paths([&existing, Path::new(r"C:\Windows")])
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let next = host_path_with_well_known_bins(&current, &[variant]);
+    let parts: Vec<PathBuf> = std::env::split_paths(&next).collect();
+    let node_dirs = parts
+        .iter()
+        .filter(|p| {
+            p.to_string_lossy()
+                .eq_ignore_ascii_case(r"C:\Program Files\nodejs")
+        })
+        .count();
+    assert_eq!(node_dirs, 1, "case-only PATH duplicate: {next}");
+}
+
 #[test]
 fn extra_env_for_node_shebang_prefixes_cli_dir() {
     let env = extra_env_for_node_shebang(Path::new("/tmp/fake-npm-bin/npm"));
@@ -323,9 +344,7 @@ fn extra_env_for_node_shebang_prefixes_cli_dir() {
         .expect("PATH overlay");
     let parts: Vec<PathBuf> = std::env::split_paths(path).collect();
     assert!(
-        parts
-            .iter()
-            .any(|dir| dir == Path::new("/tmp/fake-npm-bin")),
+        parts.iter().any(|dir| dir.file_name().is_some_and(|n| n == "fake-npm-bin")),
         "CLI parent must be on PATH overlay: {path}"
     );
 }
