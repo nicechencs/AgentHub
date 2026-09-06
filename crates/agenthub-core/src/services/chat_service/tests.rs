@@ -1047,7 +1047,67 @@ fn persist_native_session_id_when_cwd_and_agent_unchanged() {
 }
 
 #[test]
-fn persist_skips_native_session_when_cwd_changes_during_send() {
+fn empty_conversation_allows_agent_and_cwd_changes() {
+    let dir = tempdir().unwrap();
+    let work_a = dir.path().join("a");
+    let work_b = dir.path().join("b");
+    std::fs::create_dir_all(&work_a).unwrap();
+    std::fs::create_dir_all(&work_b).unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(RecordingProcessRunner::new()),
+    ));
+    let chat = ChatService::new(db, run);
+    let cwd_a = work_a.to_string_lossy().into_owned();
+    let cwd_b = work_b.to_string_lossy().into_owned();
+    let conv = chat
+        .create_conversation(vec![AgentId::Claude], Some(cwd_a))
+        .unwrap();
+    let moved = chat
+        .update_conversation(
+            &conv.id,
+            None,
+            Some(vec![AgentId::Codex]),
+            Some(Some(cwd_b.clone())),
+            None,
+        )
+        .unwrap();
+    assert_eq!(moved.agent_ids, vec![AgentId::Codex]);
+    assert_eq!(moved.cwd.as_deref(), Some(cwd_b.as_str()));
+}
+
+#[test]
+fn first_send_locks_agent_and_cwd_changes() {
+    let dir = tempdir().unwrap();
+    let work = dir.path().join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(RecordingProcessRunner::new()),
+    ));
+    let chat = ChatService::new(db, run);
+    let cwd = work.to_string_lossy().into_owned();
+    let conv = chat
+        .create_conversation(vec![AgentId::Claude], Some(cwd.clone()))
+        .unwrap();
+    chat.send(&conv.id, "hello", &|_| {}).unwrap();
+
+    let agent_err = chat
+        .update_conversation(&conv.id, None, Some(vec![AgentId::Codex]), None, None)
+        .unwrap_err();
+    assert_eq!(agent_err.code(), "invalid_arg");
+    let cwd_err = chat
+        .update_conversation(&conv.id, None, None, Some(Some(cwd)), None)
+        .unwrap_err();
+    assert_eq!(cwd_err.code(), "invalid_arg");
+    let after = chat.get_conversation(&conv.id).unwrap();
+    assert_eq!(after.agent_ids, vec![AgentId::Claude]);
+}
+
+#[test]
+fn cwd_change_during_send_is_rejected() {
     let dir = tempdir().unwrap();
     let work_a = dir.path().join("a");
     let work_b = dir.path().join("b");
@@ -1062,32 +1122,27 @@ fn persist_skips_native_session_when_cwd_changes_during_send() {
     let cwd_a = work_a.to_string_lossy().into_owned();
     let cwd_b = work_b.to_string_lossy().into_owned();
     let conv = chat
-        .create_conversation(vec![AgentId::Claude], Some(cwd_a))
+        .create_conversation(vec![AgentId::Claude], Some(cwd_a.clone()))
         .unwrap();
 
     let chat2 = Arc::clone(&chat);
     let id = conv.id.clone();
-    let cwd_b_cb = cwd_b.clone();
     chat.send(&conv.id, "hello", &move |ev| {
         if matches!(ev, ChatEvent::AgentStarted { .. }) {
-            chat2
-                .update_conversation(&id, None, None, Some(Some(cwd_b_cb.clone())), None)
-                .unwrap();
+            let err = chat2
+                .update_conversation(&id, None, None, Some(Some(cwd_b.clone())), None)
+                .unwrap_err();
+            assert_eq!(err.code(), "invalid_arg");
         }
     })
     .unwrap();
 
     let after = chat.get_conversation(&conv.id).unwrap();
-    assert_eq!(after.cwd.as_deref(), Some(cwd_b.as_str()));
-    assert!(
-        after.native_session_id.is_none(),
-        "sid from old cwd must not be persisted, got {:?}",
-        after.native_session_id
-    );
+    assert_eq!(after.cwd.as_deref(), Some(cwd_a.as_str()));
 }
 
 #[test]
-fn persist_skips_native_session_when_agent_changes_during_send() {
+fn agent_change_during_send_is_rejected() {
     let dir = tempdir().unwrap();
     let db = Database::open(&dir.path().join("t.db")).unwrap();
     let run = Arc::new(RunService::with_runner(
@@ -1103,20 +1158,16 @@ fn persist_skips_native_session_when_agent_changes_during_send() {
     let id = conv.id.clone();
     chat.send(&conv.id, "hello", &move |ev| {
         if matches!(ev, ChatEvent::AgentStarted { .. }) {
-            chat2
+            let err = chat2
                 .update_conversation(&id, None, Some(vec![AgentId::Codex]), None, None)
-                .unwrap();
+                .unwrap_err();
+            assert_eq!(err.code(), "invalid_arg");
         }
     })
     .unwrap();
 
     let after = chat.get_conversation(&conv.id).unwrap();
-    assert_eq!(after.agent_ids, vec![AgentId::Codex]);
-    assert!(
-        after.native_session_id.is_none(),
-        "sid from old agent must not be persisted, got {:?}",
-        after.native_session_id
-    );
+    assert_eq!(after.agent_ids, vec![AgentId::Claude]);
 }
 
 fn insert_running_agent_message(repo: &crate::storage::ChatRepo, conversation_id: &str) {

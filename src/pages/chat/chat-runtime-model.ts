@@ -21,17 +21,28 @@ export function isRuntimeActive(phase: RuntimeSnapshot['phase']): boolean {
   return ['starting', 'running', 'waiting', 'cancelling'].includes(phase);
 }
 
+export type RuntimeSessionLockExtras = {
+  conversationId?: string | null;
+  nativeSessionId?: string | null;
+  hasMessages?: boolean;
+};
+
 /**
- * Codex empty chats advertise `enabled` so the first send uses the runtime
- * path — that must not lock Agent / cwd. Lock only after the continuous
- * session has actually started (or a native thread is already attached).
+ * Empty chats must keep Agent / cwd editable — including Codex rows that
+ * advertise `enabled` so the first send uses the runtime path, and a leftover
+ * snapshot from the previous conversation. Lock only after *this* conversation
+ * has a message, a native thread, or a started runtime session.
  */
 export function isRuntimeSessionLocked(
-  runtime: Pick<RuntimeSnapshot, 'enabled' | 'phase' | 'runId'> | null | undefined,
-  extras?: { nativeSessionId?: string | null },
+  runtime: Pick<RuntimeSnapshot, 'enabled' | 'phase' | 'runId' | 'conversationId'> | null | undefined,
+  extras?: RuntimeSessionLockExtras,
 ): boolean {
+  if (extras?.hasMessages) return true;
+  if (extras?.nativeSessionId?.trim()) return true;
   if (!runtime?.enabled) return false;
-  if (extras?.nativeSessionId) return true;
+  if (extras?.conversationId && runtime.conversationId !== extras.conversationId) {
+    return false;
+  }
   return runtime.phase !== 'idle' || Boolean(runtime.runId);
 }
 

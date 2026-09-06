@@ -269,7 +269,8 @@ export function ChatComposer({
                 type="button"
                 size="sm"
                 variant="outline"
-                disabled={sending || sendingElsewhere || runtimeLocked}
+                disabled={sending || runtimeLocked}
+                title={runtimeLocked ? t('chat.runtimeOps.sessionLocked') : undefined}
                 className="max-w-36"
               >
                 {active.agentIds[0] && <AgentLogo agentId={active.agentIds[0]} size="sm" />}
@@ -288,7 +289,7 @@ export function ChatComposer({
                   <DropdownMenuRadioItem
                     key={row.id}
                     value={row.id}
-                    disabled={sending || sendingElsewhere || !row.selectable}
+                    disabled={sending || !row.selectable}
                   >
                     <span
                       className={cn(

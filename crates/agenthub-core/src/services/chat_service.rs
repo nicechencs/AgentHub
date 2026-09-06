@@ -124,15 +124,22 @@ impl ChatService {
         allow_dangerous: Option<bool>,
     ) -> Result<Conversation> {
         let mut conv = self.get_conversation(id)?;
-        if (agent_ids.is_some() || cwd.is_some())
-            && self
-                .runtime
-                .session_locked(id, conv.native_session_id.as_deref())?
-        {
-            return Err(AppError::message(
-                "invalid_arg",
-                "持续聊天会话不能更换 Agent 或工作目录，请新建会话",
-            ));
+        if agent_ids.is_some() || cwd.is_some() {
+            let started = conv
+                .native_session_id
+                .as_deref()
+                .is_some_and(|sid| !sid.trim().is_empty())
+                || self.repo.has_messages(id)?;
+            if started
+                || self
+                    .runtime
+                    .session_locked(id, conv.native_session_id.as_deref())?
+            {
+                return Err(AppError::message(
+                    "invalid_arg",
+                    "持续聊天会话不能更换 Agent 或工作目录，请新建会话",
+                ));
+            }
         }
         if let Some(t) = title {
             conv.title = t;
