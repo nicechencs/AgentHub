@@ -5,6 +5,8 @@ use crate::models::{
     DetectStatus, RunOptions,
 };
 
+use crate::adapters::detect_binary::well_known_bin_paths;
+
 use super::*;
 
 #[test]
@@ -122,6 +124,29 @@ fn detect_does_not_treat_ide_as_cli() {
         "IDE/desktop must stay extra: {:?}",
         r.extra_copies
     );
+}
+
+#[test]
+fn well_known_paths_include_localappdata_kiro_cli() {
+    let paths = well_known_bin_paths(AgentId::Kiro);
+    assert!(
+        paths.iter().any(|(p, ch)| {
+            *ch == "native"
+                && p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.eq_ignore_ascii_case("kiro-cli") || n.eq_ignore_ascii_case("kiro-cli.exe"))
+        }),
+        "must look for kiro-cli, not kiro: {paths:?}"
+    );
+    #[cfg(windows)]
+    {
+        let local = std::env::var("LOCALAPPDATA").expect("LOCALAPPDATA");
+        let expected = PathBuf::from(local).join("Kiro-Cli").join("kiro-cli.exe");
+        assert!(
+            paths.iter().any(|(p, _)| p == &expected),
+            "must scan %LOCALAPPDATA%\\Kiro-Cli\\kiro-cli.exe so detect works without PATH: {paths:?}"
+        );
+    }
 }
 
 #[test]

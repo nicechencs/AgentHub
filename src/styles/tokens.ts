@@ -133,8 +133,8 @@ export const AGENT_COLORS = {
   dsh: { light: '#4d6bfe', dark: '#6b8cff' },
   /** ZCode mark is black; invert in dark. */
   zcode: { light: '#171717', dark: '#e5e5e5' },
-  /** Kiro product mark is warm orange. */
-  kiro: { light: '#e87722', dark: '#f59e0b' },
+  /** Kiro app icon fill `#9046FF`. */
+  kiro: { light: '#9046ff', dark: '#a78bfa' },
 } as const;
 
 export type TokenAgentId = keyof typeof AGENT_COLORS;
