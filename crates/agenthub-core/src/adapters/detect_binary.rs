@@ -555,6 +555,7 @@ pub(crate) fn well_known_bin_paths(agent: AgentId) -> Vec<(PathBuf, &'static str
         }
         AgentId::Kiro => {
             // Binary is `kiro-cli`, not AgentId as_str (`kiro`). Never treat the IDE as CLI.
+            // Official Windows script may print Program Files but land in %LOCALAPPDATA%\Kiro-Cli.
             let push_cli = |paths: &mut Vec<(PathBuf, &'static str)>, dir: PathBuf| {
                 #[cfg(windows)]
                 {
@@ -563,19 +564,26 @@ pub(crate) fn well_known_bin_paths(agent: AgentId) -> Vec<(PathBuf, &'static str
                 }
                 paths.push((dir.join("kiro-cli"), "native"));
             };
+            let push_cli_root = |paths: &mut Vec<(PathBuf, &'static str)>, dir: PathBuf| {
+                let nested_bin = dir.join("bin");
+                push_cli(paths, dir);
+                push_cli(paths, nested_bin);
+            };
             push_cli(&mut paths, home.join(".local").join("bin"));
             #[cfg(windows)]
             {
-                for key in ["ProgramFiles", "ProgramFiles(x86)"] {
+                for key in ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"] {
                     if let Ok(root) = std::env::var(key) {
-                        push_cli(&mut paths, PathBuf::from(root).join("Kiro-Cli"));
+                        if !root.trim().is_empty() {
+                            push_cli_root(&mut paths, PathBuf::from(root).join("Kiro-Cli"));
+                        }
                     }
                 }
                 if let Ok(local) = std::env::var("LOCALAPPDATA") {
-                    push_cli(
-                        &mut paths,
-                        PathBuf::from(local).join("Programs").join("Kiro-Cli"),
-                    );
+                    let local = PathBuf::from(local);
+                    // Verified layout: %LOCALAPPDATA%\Kiro-Cli\kiro-cli.exe (not under Programs).
+                    push_cli_root(&mut paths, local.join("Kiro-Cli"));
+                    push_cli_root(&mut paths, local.join("Programs").join("Kiro-Cli"));
                 }
             }
             #[cfg(target_os = "macos")]
@@ -979,6 +987,7 @@ fn infer_channel_from_path(path: &Path) -> Option<&'static str> {
             || s.contains("programs") && s.contains("workbuddy")
             || s.contains("cursor-agent")
             || s.contains(".cursor")
+            || s.contains("kiro-cli")
         {
             Some("native")
         } else {
