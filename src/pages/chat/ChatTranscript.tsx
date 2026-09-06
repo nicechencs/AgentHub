@@ -112,6 +112,7 @@ export function ChatTranscript({
                       multiAgent={g.agents.length > 1}
                       retryDisabled={retryDisabled || sending}
                       onRetry={onRetry}
+                      localBasePath={active.cwd ?? undefined}
                     />
                   )}
                   {chips.length > 0 && (
@@ -128,6 +129,7 @@ export function ChatTranscript({
                         multiAgent={g.agents.length > 1}
                         retryDisabled={retryDisabled || sending}
                         onRetry={onRetry}
+                        localBasePath={active.cwd ?? undefined}
                       />
                     );
                   })}

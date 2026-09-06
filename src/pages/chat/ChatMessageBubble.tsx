@@ -45,6 +45,7 @@ export function ChatMessageBubble({
   multiAgent,
   retryDisabled,
   onRetry,
+  localBasePath,
 }: {
   message: ChatMessage;
   process?: AgentProcessView;
@@ -52,9 +53,10 @@ export function ChatMessageBubble({
   multiAgent: boolean;
   retryDisabled: boolean;
   onRetry: () => void;
+  localBasePath?: string;
 }) {
   if (message.role === 'user') {
-    return <UserBubble message={message} />;
+    return <UserBubble message={message} localBasePath={localBasePath} />;
   }
   return (
     <AgentBubble
@@ -64,18 +66,25 @@ export function ChatMessageBubble({
       multiAgent={multiAgent}
       retryDisabled={retryDisabled}
       onRetry={onRetry}
+      localBasePath={localBasePath}
     />
   );
 }
 
-function UserBubble({ message }: { message: ChatMessage }) {
+function UserBubble({
+  message,
+  localBasePath,
+}: {
+  message: ChatMessage;
+  localBasePath?: string;
+}) {
   return (
     <div className="flex justify-end">
       <div
         id={`chat-msg-${message.id}`}
         className="group relative max-w-[85%] rounded-composer bg-subtle px-4 py-2 text-body text-primary"
       >
-        <MarkdownView content={message.content} variant="chat" />
+        <MarkdownView content={message.content} variant="chat" localBasePath={localBasePath} />
         <CopyTextButton text={message.content} />
       </div>
     </div>
@@ -89,6 +98,7 @@ function AgentBubble({
   multiAgent,
   retryDisabled,
   onRetry,
+  localBasePath,
 }: {
   message: ChatMessage;
   process?: AgentProcessView;
@@ -96,6 +106,7 @@ function AgentBubble({
   multiAgent: boolean;
   retryDisabled: boolean;
   onRetry: () => void;
+  localBasePath?: string;
 }) {
   const { t } = useI18n();
   const agent = message.agentId ?? 'claude';
@@ -156,7 +167,7 @@ function AgentBubble({
         ) : null}
         <div className="text-body leading-relaxed text-primary">
           {displayContent ? (
-            <MarkdownView content={displayContent} variant="chat" />
+            <MarkdownView content={displayContent} variant="chat" localBasePath={localBasePath} />
           ) : running ? (
             <span className="inline-flex items-center gap-2 text-muted">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />

@@ -1,8 +1,11 @@
 import type { MouseEvent } from 'react';
 import MarkdownPreview from '@uiw/react-markdown-preview';
 import rehypeRaw from 'rehype-raw';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { useTheme } from '@/components/shared/ThemeProvider';
-import { isHttpUrl, openExternalLink } from '@/lib/open-external';
+import { useToast } from '@/components/ui/toast';
+import { isHttpUrl, openExternalLink, openLocalPath } from '@/lib/open-external';
+import { isAbsoluteFsPath, normalizeOpenPath } from '@/lib/path-open';
 import { resolveTheme } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 
@@ -29,6 +32,8 @@ export interface MarkdownViewProps {
    * - `document` — skill / file preview (IDE-dense; not GitHub README scale)
    */
   variant?: MarkdownViewVariant;
+  /** Resolve relative file links against this directory (chat working directory). */
+  localBasePath?: string;
 }
 
 /** Minimal HAST element shape used by rehypeRewrite (avoids depending on `hast` types). */
@@ -89,6 +94,56 @@ export function isSafeMarkdownUrl(url: string): boolean {
   return true;
 }
 
+function markdownHrefPath(url: string): string {
+  return (url.trim().split('#')[0]?.split('?')[0] ?? '').trim();
+}
+
+/** Keep href only when a click can actually open or scroll something. */
+export function isActionableMarkdownHref(url: string): boolean {
+  if (!isSafeMarkdownUrl(url)) return false;
+  const href = url.trim();
+  if (href.startsWith('#')) return true;
+  if (isHttpUrl(href) || /^www\./i.test(href)) return true;
+  return looksLikeMarkdownLocalPath(href);
+}
+
+/** File/folder links in agent markdown — not site-style paths like `/docs/setup`. */
+export function looksLikeMarkdownLocalPath(url: string): boolean {
+  if (!isSafeMarkdownUrl(url)) return false;
+  const path = markdownHrefPath(url);
+  if (!path || path.startsWith('#') || isHttpUrl(path)) return false;
+  if (path === '~' || path.startsWith('~/')) return true;
+  if (path.startsWith('./') || path.startsWith('../')) return true;
+  if (isAbsoluteFsPath(path)) {
+    if (/\.[a-zA-Z0-9]{1,8}$/.test(path)) return true;
+    const segs = path.split(/[\\/]/).filter(Boolean);
+    return segs.length >= 3 || /^[A-Za-z]:/.test(path);
+  }
+  if (path.includes('/') || path.includes('\\')) return true;
+  return /\.[a-zA-Z0-9]{1,8}$/.test(path);
+}
+
+export function joinLocalBasePath(basePath: string, rel: string): string {
+  const base = basePath.trim().replace(/[\\/]+$/, '');
+  let relNorm = rel.trim().replace(/\\/g, '/');
+  while (relNorm.startsWith('./')) relNorm = relNorm.slice(2);
+  const win = /^[A-Za-z]:/.test(base) || base.includes('\\');
+  const sep = win ? '\\' : '/';
+  return `${base}${sep}${relNorm.replace(/\//g, sep)}`;
+}
+
+export function resolveMarkdownLocalPath(href: string, basePath?: string): string | null {
+  if (!looksLikeMarkdownLocalPath(href)) return null;
+  const path = markdownHrefPath(href);
+  if (!path) return null;
+  if (path === '~' || path.startsWith('~/')) return path;
+  if (isAbsoluteFsPath(path)) return normalizeOpenPath(path) ?? path;
+  const base = basePath?.trim();
+  if (!base) return null;
+  const joined = joinLocalBasePath(base, path);
+  return normalizeOpenPath(joined) ?? joined;
+}
+
 /** Remove unsafe URL/HTML properties from one HAST node. */
 export function sanitizeMarkdownNode(
   node: HastNode,
@@ -112,7 +167,8 @@ export function sanitizeMarkdownNode(
       continue;
     }
     if ((key === 'href' || key === 'src' || key === 'cite') && typeof value === 'string') {
-      if (!isSafeMarkdownUrl(value)) delete properties[key];
+      const ok = key === 'href' ? isActionableMarkdownHref(value) : isSafeMarkdownUrl(value);
+      if (!ok) delete properties[key];
     }
   }
 }
@@ -199,32 +255,57 @@ export function scrollMarkdownAnchor(href: string): boolean {
   return true;
 }
 
+function clickElement(target: EventTarget | null): Element | null {
+  if (!target) return null;
+  if (typeof (target as Element).closest === 'function') return target as Element;
+  return (target as Node).parentElement;
+}
+
+export type MarkdownClickOptions = {
+  localBasePath?: string;
+  onError?: (err: unknown) => void;
+};
+
 /** Handle clicks before the webview/browser gets a chance to navigate. */
-export function handleMarkdownClick(e: MouseEvent<HTMLDivElement>): void {
-  const target = e.target;
-  if (!target || typeof (target as Element).closest !== 'function') return;
-  const anchor = (target as Element).closest('a');
+export function handleMarkdownClick(
+  e: MouseEvent<HTMLElement>,
+  options?: MarkdownClickOptions,
+): void {
+  const el = clickElement(e.target);
+  if (!el) return;
+  const anchor = el.closest('a');
   if (!anchor || !e.currentTarget.contains(anchor)) return;
 
   const href = anchor.getAttribute('href')?.trim() ?? '';
-  // Every non-http(s) href is intercepted first. Unsafe, fragment, absolute
-  // local, and relative links must never fall through to webview navigation.
-  if (!href || !isSafeMarkdownUrl(href) || !isHttpUrl(href)) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (href.startsWith('#') && isSafeMarkdownUrl(href)) {
-      scrollMarkdownAnchor(href);
-    }
+  // Intercept every markdown anchor so the webview never navigates in-place.
+  e.preventDefault();
+  e.stopPropagation();
+  if (!href || !isSafeMarkdownUrl(href)) return;
+
+  if (href.startsWith('#')) {
+    scrollMarkdownAnchor(href);
     return;
   }
 
-  // Tauri webview: open http(s) in the system browser instead of navigating
-  // the app document.
-  e.preventDefault();
-  e.stopPropagation();
-  void openExternalLink(href).catch((err) => {
-    console.error('[MarkdownView] open external failed', err);
-  });
+  const http = isHttpUrl(href) ? href : /^www\./i.test(href) ? `https://${href}` : null;
+  if (http) {
+    void openExternalLink(http).catch((err) => {
+      console.error('[MarkdownView] open external failed', err);
+      options?.onError?.(err);
+    });
+    return;
+  }
+
+  const local = resolveMarkdownLocalPath(href, options?.localBasePath);
+  if (local) {
+    void openLocalPath(local).catch((err) => {
+      console.error('[MarkdownView] open local failed', err);
+      options?.onError?.(err);
+    });
+    return;
+  }
+
+  options?.onError?.(new Error(href));
 }
 
 /**
@@ -236,14 +317,24 @@ export function MarkdownView({
   content,
   className,
   variant = 'chat',
+  localBasePath,
 }: MarkdownViewProps) {
   const { theme } = useTheme();
+  const { t } = useI18n();
+  const { toast } = useToast();
   const colorMode = resolveTheme(theme);
   const text = content ?? '';
   if (!text.trim()) return null;
 
   return (
-    <div onClick={handleMarkdownClick}>
+    <div
+      onClickCapture={(event) => {
+        handleMarkdownClick(event, {
+          localBasePath,
+          onError: () => toast({ title: t('common.openLinkFailed'), variant: 'danger' }),
+        });
+      }}
+    >
       <MarkdownPreview
         source={text}
         // v5 inverts this prop before passing it to react-markdown. Combined
@@ -259,7 +350,8 @@ export function MarkdownView({
           // Reset library default canvas so it inherits chat/dialog backgrounds.
           '!bg-transparent',
           MARKDOWN_TOKEN_CHROME,
-          variant === 'chat' && 'text-body [&_pre]:text-meta',
+          variant === 'chat' &&
+            'text-body [&_pre]:text-meta [&_a]:!text-accent [&_a]:!no-underline hover:[&_a]:!underline',
           // document：三档字号；! 覆盖 @uiw 默认 2em h1 / 底部分割线，避免压过预览 chrome
           variant === 'document' &&
             [
