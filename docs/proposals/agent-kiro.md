@@ -31,7 +31,9 @@ Kiro 是 AWS 系 agentic 编码产品，同一套项目上下文可跨多种界�
 - CLI：<https://kiro.dev/docs/cli/>
 - 安装：<https://kiro.dev/docs/getting-started/installation/>
 - 登录：<https://kiro.dev/docs/getting-started/authentication/>
+- 交互式 Chat：<https://kiro.dev/docs/cli/chat/>
 - Headless：<https://kiro.dev/docs/cli/headless/>
+- Autocomplete / Inline：<https://kiro.dev/docs/cli/autocomplete/>
 - CLI 3.0：<https://kiro.dev/docs/cli/v3/>
 
 ### 1.2 本提案要解决什么
@@ -71,11 +73,55 @@ Kiro 是 AWS 系 agentic 编码产品，同一套项目上下文可跨多种界�
 | 登录 | API Key / login 指引 | 浏览器/设备码 + `KIRO_API_KEY` |
 | 配置写入 | fail-closed | 第一波同样 fail-closed |
 
-**明确不做（第一波）：** 假 `ChatRuntime`（允许/拒绝/补充按钮）、本机路由、配置表单写入、Usage 精算、插件管理页。
+**明确不做（第一波）：** 假 `ChatRuntime`（允许/拒绝/补充按钮）、本机路由、配置表单写入、Usage 精算、插件管理页、把终端 Autocomplete / Inline 说成对话页能力。
 
 Chat 持续通道后置：Kiro headless 无中途输入，与 Codex app-server 不是同一协议。有官方稳定双向协议或经验证 ACP 后再单独立项；先例见 [Claude Chat B3](../status/chat-claude-b3.md)。
 
 本机路由默认不做；若有稳定 writer 与备份策略，按 [添加 Route Adapter](../guides/adding-an-adapter.md) 另立项。
+
+### 3.1 对话页立场（第一波 = 一轮一发）
+
+官方把 CLI 分成两套体验，不能混谈：
+
+| 官方表面 | 入口 | 对话页能不能当成同一套 |
+| --- | --- | --- |
+| 交互式 Chat / TUI | `kiro-cli`、`kiro-cli chat`、`/model` `/agent` 选择器、中途输入 | **否**。第一波不接持续通道，也不做假选择器 |
+| Headless | `kiro-cli chat --no-interactive "…"`，需 `KIRO_API_KEY` | **是**。对标 Cursor `agent -p`，一轮发完等结果 |
+
+官方 Headless 限制（[headless](https://kiro.dev/docs/cli/headless/)）：必须带初始 prompt；**会话中途不能再输入**；交互式斜杠命令（`/model`、`/agent` 选择器）不可用；TUI 关闭。`--trust-all-tools` / `--trust-tools=…` 是发之前预先批准，不是中途点允许/拒绝。`--output-format stream-json` 要 V2/V3，第一波不当成已接入的过程流。
+
+因此第一波对话页对 `kiro`：
+
+- **就是一轮一发 / 发出去等结果**，走 headless，**不是**持续 `ChatRuntime`。
+- **不要**做中途允许/拒绝/补充界面；没有真实通道就不要假按钮（与 Claude B3 同一条红线）。
+- **不要**因为交互式 CLI 有 `/model`、`/agent` 选择器，就在 AgentHub 做一套假的。
+- `kiro` **不是** `isRuntimeChatAgent`（今天只有 `codex` / `grok`）。残留的持续会话快照不得给 Kiro 打开请求面板、补充或斜杠换模型。
+
+主 Agent 为 `kiro` 时，对话页应表现为：
+
+| 位置 | 行为 |
+| --- | --- |
+| 横幅 / 文案 | 说清：这里一轮一发、需要 API Key、不能中途补充或点允许/拒绝；终端里的模型/Agent 选择、命令补全和灰色提示不在本页 |
+| 输入框 | 有工作目录且已配置 API Key 就可写、可发；发送中只显示停止，不出现「补充」或「本轮结束后发送」 |
+| 自动批准 | 打开时映射 `--trust-all-tools`（或实现时再收窄到 `--trust-tools=…`）；文案说「跳过工具确认」，不要说成中途审批 |
+| API Key | Headless 官方要求 `KIRO_API_KEY`。未配置授权时沿用现有「未配置」拦截，不要假装已登录的交互式会话能在本页续聊 |
+| 这一轮结束 | 结果留在对话记录；失败/停止用现有结果条。再发是新的一轮，不是同一场交互式会话的下一句 |
+| 斜杠菜单 | 不要弹出暗示 Kiro 交互式 CLI 的 `/model`、`/agent` 选择器；用户打 `/model` 就当普通正文发出 |
+
+目录里还没有 `kiro` 时，不要在界面里假装已安装一家 Kiro。助手与测试按 id `kiro` 先落地；catalog 出现后再被选中。
+
+### 3.2 CLI Autocomplete / Inline（终端能力，不是对话页）
+
+官方 [Completions & autocomplete](https://kiro.dev/docs/cli/autocomplete/) 写的是 **`kiro-cli` 自己的终端/shell 能力**，和对话页、headless 发送不是同一件事：
+
+| 能力 | 是什么 | 开关 / 命令 |
+| --- | --- | --- |
+| Autocomplete 下拉 | 打命令时在光标右侧出现选项、子命令、参数，方向键选择，Tab / Enter 采纳 | 安装后默认开；`kiro-cli settings autocomplete.disable false\|true`；主题 `kiro-cli theme dark\|light\|system` |
+| Inline 灰色提示 | 输入时出现 ghost text，右方向键或 Tab 采纳 | 与下拉**互相独立**；`kiro-cli inline enable\|disable\|status\|set-customization\|show-customizations` |
+
+它们覆盖数百个命令行工具（`git` / `npm` / `docker` / `aws` 等），排错也是终端侧：查 `kiro-cli --version`、`settings autocomplete.disable`、重启终端、换 shell；Inline 查 `inline status` 后再 `enable`。
+
+**AgentHub 对话页不得宣称已有 Kiro 命令补全或灰色提示**，除非真的嵌了 PTY 终端（第一波明确不做）。可选后续：只提供「打开外部终端」或文档链接，仍不把这两项标成对话页已支持。
 
 ## 4. 公开事实（截至 2026-09-06；≠ 本仓库已验证）
 
@@ -116,7 +162,7 @@ kiro-cli chat --no-interactive --trust-all-tools "…"
 kiro-cli chat --no-interactive --trust-all-tools --output-format stream-json "…"
 ```
 
-官方限制：必须带初始 prompt；无会话中途输入；无 TUI；`stream-json` 需 engine V2/V3。与 Cursor `-p` 同级，**不等于**持续 ChatRuntime。
+官方限制：必须带初始 prompt；无会话中途输入；交互式 `/model`、`/agent` 选择器不可用；无 TUI；`stream-json` 需 engine V2/V3。与 Cursor `-p` 同级，**不等于**持续 ChatRuntime，也**不等于**终端 Autocomplete / Inline。
 
 诊断（探测时可用）：`kiro-cli doctor`、`whoami`、login 状态类；以本机实测为准。
 
@@ -132,7 +178,7 @@ kiro-cli chat --no-interactive --trust-all-tools --output-format stream-json "�
 
 ## 5. 分波与能力起点
 
-**第一波：** Agents 管理面 + headless 发送（推荐开干范围）。用户能安装/检测、看登录状态、用 API Key 或已登录态发一轮。
+**第一波：** Agents 管理面 + headless 发送（推荐开干范围）。用户能安装/检测、看登录状态；对话页发一轮走 headless，官方要求 `KIRO_API_KEY`。交互式登录只服务 Agents 页指引 / 本机终端，不当成对话页续聊。
 
 **第二波：** 路径证据齐全后，Skills / MCP / 项目只读；评估 `stream-json`。
 
@@ -146,9 +192,11 @@ kiro-cli chat --no-interactive --trust-all-tools --output-format stream-json "�
 | AccountSwitch | Unsupported | 由 Kiro 登录体系管理 |
 | ApiKeyAccount | Partial | `KIRO_API_KEY`；官方登录走指引 |
 | Skills / Mcp / Usage / ModelSelect / ProjectHistory / StructuredStream | Planned | 待路径与契约核实 |
-| DangerousMode | Partial / Full | 映射 trust 旗标；文案说清风险 |
+| DangerousMode | Partial / Full | 映射 trust 旗标（`--trust-all-tools` / `--trust-tools`）；文案说清风险 |
 | ProjectDelete / ProviderPresets / LiveBackup | Unsupported | 无安全契约前不做 |
 | SessionResume | Unsupported / Planned | headless 无中途输入；持续聊另立项 |
+| Autocomplete 下拉（对话页） | Unsupported / 范围外 | `kiro-cli` 终端补全，不是 AgentHub 对话 UI；未嵌 PTY 不得宣称支持 |
+| Inline 灰色提示（对话页） | Unsupported / 范围外 | 与下拉独立的终端 ghost text；同上，最多外链/打开终端 |
 
 ## 6. 开干前建议核实
 
@@ -168,7 +216,7 @@ kiro-cli chat --no-interactive --trust-all-tools --output-format stream-json "�
 
 - **2.x / 3.0 行为分裂** → detect 记版本，能力按版本降级
 - **IDE ≠ CLI** → 产品卡与 detect 只认 `kiro-cli`；文案区分 Applications 里的 Kiro IDE
-- **不要假能力** → 无协议不接线 Chat；ConfigWrite fail-closed
+- **不要假能力** → 无协议不接线持续 Chat；不做假 `/model` `/agent`；不把终端 Autocomplete / Inline 写成对话页能力；ConfigWrite fail-closed
 - 安装脚本管道、TTY/`open`/UAC 失败 → 与现有 native 渠道同样失败文案，勿谎称已装
 
 **非目标：** 凭据落盘加密、国产 OAuth、官方登录转 API Key、嵌入 IDE、Crew/Web 云沙箱托管。
@@ -178,7 +226,7 @@ kiro-cli chat --no-interactive --trust-all-tools --output-format stream-json "�
 1. **是否批准第一波范围**（半面：检测/安装/登录指引/API Key/headless 发送；含跨平台）？
 2. 展示文案用「Kiro」还是「Kiro CLI」？（建议：**Kiro**，副标题写命令行。）
 3. 云电脑默认登录走 **设备码** 是否接受？
-4. 第三波 Chat/ACP 是否进路线图，还是明确「仅 headless」？
+4. 第三波 Chat/ACP 是否进路线图，还是明确「仅 headless」？第一波对话页已定为一轮一发（§3.1），与此题独立。
 
 （安装 UX 细节——如自动 ps1 vs MSI 指引、自动 sh vs `setup_guide`——实现时可对齐 Cursor/WorkBuddy 惯例，不必在提案层钉死。）
 
@@ -192,3 +240,7 @@ kiro-cli chat --no-interactive --trust-all-tools --output-format stream-json "�
 - [Chat 统一体验](chat-unified-experience.md)
 - [Claude Chat B3](../status/chat-claude-b3.md)
 - Cursor 半面：`crates/agenthub-core/src/adapters/cursor.rs`
+- 官方 Headless：<https://kiro.dev/docs/cli/headless/>
+- 官方 Autocomplete / Inline：<https://kiro.dev/docs/cli/autocomplete/>
+- 官方交互式 Chat：<https://kiro.dev/docs/cli/chat/>
+- 官方 CLI 3.0：<https://kiro.dev/docs/cli/v3/>
