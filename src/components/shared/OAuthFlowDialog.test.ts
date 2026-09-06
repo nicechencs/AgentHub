@@ -110,5 +110,11 @@ describe('official login wait page copy', () => {
     expect(src).not.toContain('opt.authJsonKey');
     expect(src).toContain("officialLoginFooter(step");
     expect(src).toContain("t('chrome.error.retry')");
+    expect(src).toContain('startOfficialLogin(agentId, selected, false');
+    expect(src).toContain('officialLoginActionUrl');
+    expect(src).toContain("t('connect.oauth.copyAuthLink')");
+    expect(src).toContain("t('connect.oauth.openBrowser')");
+    expect(src).not.toContain('void openExternalLink(url).catch(() => {});');
+    expect(src).not.toContain("t('connect.oauth.openAuthPage')");
   });
 });

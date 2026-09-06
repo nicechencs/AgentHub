@@ -128,7 +128,7 @@ export async function listOAuthOptions(agentId: AgentKey): Promise<OAuthLoginOpt
 
 export async function startOAuth(
   agentId: AgentKey,
-  openBrowser = true,
+  openBrowser = false,
   providerKey?: string | null,
 ): Promise<OAuthStartInfo> {
   return getBackend().account.startOAuth(agentId, openBrowser, providerKey);
