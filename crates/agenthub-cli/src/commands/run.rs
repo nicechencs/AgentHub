@@ -52,6 +52,8 @@ pub fn run(hub: &AgentHub, args: RunArgs, format: OutputFormat) -> Result<()> {
         // CLI multi-run stays human-readable text (no NDJSON process parse).
         process_mode: agenthub_core::models::ProcessMode::Text,
         native_session_id: None,
+        model: None,
+        effort: None,
     };
 
     let report = hub.run_agents(&agents, &args.prompt, &opts)?;

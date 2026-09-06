@@ -6,6 +6,7 @@
  * (→ settings.openExternalUrl → `open_external_url` command).
  */
 import { openExternalUrl } from '@/lib/api/settings';
+import { openPathInFileManager } from '@/lib/api/skill';
 
 export function isHttpUrl(url: string): boolean {
   const u = url.trim().toLowerCase();
@@ -21,6 +22,15 @@ export async function openExternalLink(url: string): Promise<void> {
     throw new Error(`仅支持 http(s) 链接：${trimmed}`);
   }
   await openExternalUrl(trimmed);
+}
+
+/** Reveal a local file or open a folder in the system file manager. */
+export async function openLocalPath(path: string): Promise<void> {
+  const trimmed = path.trim();
+  if (!trimmed) {
+    throw new Error('路径为空');
+  }
+  await openPathInFileManager(trimmed);
 }
 
 /**

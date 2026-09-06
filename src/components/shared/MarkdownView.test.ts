@@ -1,20 +1,25 @@
 import { describe, expect, it, vi } from 'vitest';
 import rehypeRaw from 'rehype-raw';
 
-const { openExternalLinkMock } = vi.hoisted(() => ({
+const { openExternalLinkMock, openLocalPathMock } = vi.hoisted(() => ({
   openExternalLinkMock: vi.fn(),
+  openLocalPathMock: vi.fn(),
 }));
 
 vi.mock('@/lib/open-external', () => ({
   isHttpUrl: (url: string) => /^https?:\/\//i.test(url.trim()),
   openExternalLink: openExternalLinkMock,
+  openLocalPath: openLocalPathMock,
 }));
 
 import {
   MARKDOWN_TOKEN_CHROME,
   filterUnsafeMarkdownPlugins,
   handleMarkdownClick,
+  isActionableMarkdownHref,
   isSafeMarkdownUrl,
+  looksLikeMarkdownLocalPath,
+  resolveMarkdownLocalPath,
   sanitizeMarkdownNode,
   scrollMarkdownAnchor,
   wrapMarkdownTable,
@@ -140,6 +145,43 @@ describe('MarkdownView content safety', () => {
     expect(event.preventDefault).toHaveBeenCalledOnce();
     expect(event.stopPropagation).toHaveBeenCalledOnce();
     expect(openExternalLinkMock).toHaveBeenCalledWith('https://example.com/docs');
+  });
+
+  it('treats file-like markdown hrefs as local paths, not site paths', () => {
+    expect(looksLikeMarkdownLocalPath('src/pages/chat/index.tsx')).toBe(true);
+    expect(looksLikeMarkdownLocalPath('./README.md')).toBe(true);
+    expect(looksLikeMarkdownLocalPath('../docs/guide.md')).toBe(true);
+    expect(looksLikeMarkdownLocalPath('/Users/demo/app/src/foo.ts')).toBe(true);
+    expect(looksLikeMarkdownLocalPath('README.md')).toBe(true);
+    expect(looksLikeMarkdownLocalPath('/docs/setup')).toBe(false);
+    expect(isActionableMarkdownHref('/docs/setup')).toBe(false);
+    expect(isActionableMarkdownHref('https://example.com')).toBe(true);
+  });
+
+  it('resolves relative markdown paths against the working directory', () => {
+    expect(resolveMarkdownLocalPath('src/foo.ts', '/Users/demo/app')).toBe(
+      '/Users/demo/app/src/foo.ts',
+    );
+    expect(resolveMarkdownLocalPath('./README.md', 'D:\\demo')).toBe('D:\\demo\\README.md');
+    expect(resolveMarkdownLocalPath('src/foo.ts')).toBeNull();
+    expect(resolveMarkdownLocalPath('/docs/setup', '/Users/demo/app')).toBeNull();
+  });
+
+  it('opens local markdown links in the file manager', async () => {
+    openLocalPathMock.mockReset().mockResolvedValue(undefined);
+    const event = clickEvent('src/pages/chat/index.tsx');
+
+    handleMarkdownClick(event, { localBasePath: '/Users/demo/app' });
+    await Promise.resolve();
+
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(openLocalPathMock).toHaveBeenCalledWith('/Users/demo/app/src/pages/chat/index.tsx');
+  });
+
+  it('strips site-style hrefs that cannot be opened', () => {
+    const link = { tagName: 'a', properties: { href: '/docs/setup' } };
+    sanitizeMarkdownNode(link);
+    expect(link.properties).toEqual({});
   });
 
   it('does not mutate the hash when scrolling a missing or encoded anchor', () => {
