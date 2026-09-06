@@ -315,6 +315,7 @@ export function autoApproveEffect(agentId: AgentKey | null | undefined): AutoApp
     case 'grok':
     case 'workbuddy':
     case 'cursor':
+    case 'kiro':
       return 'skip';
     case 'pi':
       return 'project-trust';

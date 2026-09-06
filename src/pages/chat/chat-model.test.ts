@@ -73,6 +73,12 @@ describe('conversationResumeCommand', () => {
         nativeSessionId: null,
       }),
     ).toBeNull();
+    expect(
+      conversationResumeCommand({
+        agentIds: ['kiro'],
+        nativeSessionId: 'sess-1',
+      }),
+    ).toBeNull();
   });
 });
 
@@ -453,6 +459,7 @@ describe('autoApproveEffect', () => {
     expect(autoApproveEffect('grok')).toBe('skip');
     expect(autoApproveEffect('workbuddy')).toBe('skip');
     expect(autoApproveEffect('cursor')).toBe('skip');
+    expect(autoApproveEffect('kiro')).toBe('skip');
     expect(autoApproveEffect('pi')).toBe('project-trust');
     expect(autoApproveEffect('kimi')).toBe('none');
     expect(autoApproveEffect('dsh')).toBe('none');
@@ -461,6 +468,7 @@ describe('autoApproveEffect', () => {
 
   it('only treats stored allowDangerous as active when the agent can honor it', () => {
     expect(autoApproveActive(true, 'claude')).toBe(true);
+    expect(autoApproveActive(true, 'kiro')).toBe(true);
     expect(autoApproveActive(true, 'pi')).toBe(true);
     expect(autoApproveActive(true, 'kimi')).toBe(false);
     expect(autoApproveActive(false, 'claude')).toBe(false);

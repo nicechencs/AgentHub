@@ -2696,6 +2696,11 @@ export const zh = {
       stop: "停止",
       resizeAria: "调整对话记录与输入区高度",
     },
+    kiro: {
+      oneshotHint: "Kiro 在这里一轮一发：写完后发送，等这一轮结束。需要 API Key。",
+      oneshotDetail: "不能中途补充或点允许/拒绝。终端里的模型/Agent 选择、命令补全和灰色提示不在本页。",
+      placeholder: "写完需求后发送。这一轮发出后不能再补充。",
+    },
     runtime: {
       submit: '提交',
       allow: '允许',
