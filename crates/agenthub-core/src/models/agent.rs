@@ -14,7 +14,7 @@ pub enum AgentId {
     Grok,
     Pi,
     WorkBuddy,
-    /// Cursor Agent CLI (half-surface: install/detect/run/skills/projects; no vscdb account pool).
+    /// Cursor Agent CLI (half-surface: install/detect/run/skills/projects; import-only from IDE sqlite).
     Cursor,
     /// DeepSeek Harness (`dsh`) — npm coding agent, not the DeepSeek API ticket.
     Dsh,
