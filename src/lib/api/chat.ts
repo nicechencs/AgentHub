@@ -74,6 +74,9 @@ export async function runtimeSetSettings(conversationId: string, settings: Runti
 export async function runtimeNoteThinkingFailure(conversationId: string, settings: RuntimeTurnSettings, errorText: string): Promise<void> {
   return getBackend().chat.runtimeNoteThinkingFailure(conversationId, settings, errorText);
 }
+export async function runtimeContinueLegacy(conversationId: string): Promise<RuntimeSnapshot> {
+  return getBackend().chat.runtimeContinueLegacy(conversationId);
+}
 export async function runtimeStart(conversationId: string, prompt: string, clientRequestId: string, extras?: RuntimeStartExtras): Promise<RuntimeSnapshot> {
   return getBackend().chat.runtimeStart(conversationId, prompt, clientRequestId, extras);
 }

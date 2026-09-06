@@ -343,8 +343,86 @@ pub(crate) fn parse_grok_model_list(value: &Value) -> Vec<RuntimeModelOption> {
     out
 }
 
-pub(crate) fn grok_prompt_blocks(prompt: &str) -> Vec<Value> {
-    vec![serde_json::json!({ "type": "text", "text": prompt })]
+pub(crate) fn grok_model_rejects_thinking(model: &str) -> bool {
+    let id = model.trim().to_ascii_lowercase();
+    id == "grok-code-fast-1" || id.contains("grok-code-fast")
+}
+
+pub(crate) fn ensure_grok_catalog_efforts(
+    models: Vec<RuntimeModelOption>,
+) -> Vec<RuntimeModelOption> {
+    const DEFAULT_EFFORTS: [&str; 3] = ["low", "high", "xhigh"];
+    models
+        .into_iter()
+        .map(|mut option| {
+            if grok_model_rejects_thinking(&option.id) {
+                option.efforts.clear();
+                option.default_effort = None;
+                return option;
+            }
+            if option.efforts.is_empty() {
+                option.efforts = DEFAULT_EFFORTS.iter().map(|item| (*item).to_string()).collect();
+            }
+            let default_ok = option.default_effort.as_deref().is_some_and(|value| {
+                option.efforts.iter().any(|item| item == value)
+            });
+            if !default_ok {
+                option.default_effort = option
+                    .efforts
+                    .iter()
+                    .find(|item| *item == "high")
+                    .cloned()
+                    .or_else(|| option.efforts.first().cloned());
+            }
+            option
+        })
+        .collect()
+}
+
+pub(crate) fn grok_prompt_blocks(
+    prompt: &str,
+    images: &[RuntimeLocalImage],
+) -> Result<Vec<Value>> {
+    let mut blocks = vec![serde_json::json!({ "type": "text", "text": prompt })];
+    for image in images {
+        blocks.push(grok_image_block(&image.path)?);
+    }
+    Ok(blocks)
+}
+
+fn grok_image_mime(path: &str) -> Option<&'static str> {
+    let lower = path.to_ascii_lowercase();
+    if lower.ends_with(".png") {
+        Some("image/png")
+    } else if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
+        Some("image/jpeg")
+    } else if lower.ends_with(".gif") {
+        Some("image/gif")
+    } else if lower.ends_with(".webp") {
+        Some("image/webp")
+    } else if lower.ends_with(".bmp") {
+        Some("image/bmp")
+    } else {
+        None
+    }
+}
+
+fn grok_image_block(path: &str) -> Result<Value> {
+    let path = path.trim();
+    if path.is_empty() {
+        return Err(AppError::InvalidArg("图片路径不能为空".into()));
+    }
+    let mime = grok_image_mime(path).ok_or_else(|| {
+        AppError::InvalidArg(format!("不支持的图片类型: {path}"))
+    })?;
+    let bytes = std::fs::read(path)
+        .map_err(|err| AppError::InvalidArg(format!("无法读取图片: {path} ({err})")))?;
+    use base64::Engine;
+    Ok(serde_json::json!({
+        "type": "image",
+        "mimeType": mime,
+        "data": base64::engine::general_purpose::STANDARD.encode(bytes),
+    }))
 }
 
 /// Drop previously denied efforts from a catalog (Codex may over-report support).
@@ -940,5 +1018,48 @@ mod tests {
         assert_eq!(models[0].id, "grok-4.6");
         assert_eq!(models[0].efforts, vec!["xhigh", "high", "low"]);
         assert_eq!(models[0].default_effort.as_deref(), Some("high"));
+    }
+
+    #[test]
+    fn ensure_grok_catalog_efforts_fills_defaults_and_clears_code_fast() {
+        let models = ensure_grok_catalog_efforts(vec![
+            RuntimeModelOption {
+                id: "grok-4.6".into(),
+                efforts: Vec::new(),
+                default_effort: None,
+            },
+            RuntimeModelOption {
+                id: "grok-code-fast-1".into(),
+                efforts: vec!["high".into()],
+                default_effort: Some("high".into()),
+            },
+        ]);
+        assert_eq!(models[0].efforts, vec!["low", "high", "xhigh"]);
+        assert_eq!(models[0].default_effort.as_deref(), Some("high"));
+        assert!(models[1].efforts.is_empty());
+        assert_eq!(models[1].default_effort, None);
+    }
+
+    #[test]
+    fn grok_prompt_blocks_embed_local_image() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("shot.png");
+        std::fs::write(&path, b"png-bytes").unwrap();
+        let blocks = grok_prompt_blocks(
+            "look",
+            &[RuntimeLocalImage {
+                path: path.to_string_lossy().into_owned(),
+            }],
+        )
+        .unwrap();
+        assert_eq!(blocks[0]["type"], "text");
+        assert_eq!(blocks[0]["text"], "look");
+        assert_eq!(blocks[1]["type"], "image");
+        assert_eq!(blocks[1]["mimeType"], "image/png");
+        use base64::Engine;
+        assert_eq!(
+            blocks[1]["data"],
+            base64::engine::general_purpose::STANDARD.encode(b"png-bytes")
+        );
     }
 }

@@ -148,6 +148,29 @@ impl ChatRuntime {
         self.store.delete_unstarted(conversation_id)
     }
 
+    /// Switch an existing Grok print session onto continuous chat.
+    /// Requires a stored native session id; does not invent a new Grok session.
+    pub fn continue_legacy(&self, conversation_id: &str) -> Result<RuntimeSnapshot> {
+        let conversation = self.repo.get_conversation(conversation_id)?.ok_or_else(|| {
+            AppError::NotFound(format!("conversation not found: {conversation_id}"))
+        })?;
+        if conversation.agent_ids.first().copied() != Some(AgentId::Grok) {
+            return Err(AppError::Unsupported(
+                "只有 Grok 可以用新方式继续".into(),
+            ));
+        }
+        let session_id = conversation
+            .native_session_id
+            .as_deref()
+            .and_then(crate::adapters::session_resume::valid_session_id)
+            .ok_or_else(|| {
+                AppError::InvalidArg("这条对话没有可接上的会话，请新建对话".into())
+            })?;
+        self.store
+            .enable_legacy_with_session(conversation_id, session_id)?;
+        self.store.snapshot(conversation_id, None)
+    }
+
     pub fn options(&self, conversation_id: &str) -> Result<RuntimeOptions> {
         self.store.enable_if_new(conversation_id)?;
         let frozen = self
@@ -186,7 +209,7 @@ impl ChatRuntime {
             models,
             extensions: cache.extensions,
             models_from_codex: cache.from_codex,
-            image_input: !grok,
+            image_input: true,
             steer: !grok,
         })
     }
@@ -571,11 +594,11 @@ impl ChatRuntime {
 
     fn fetch_grok_catalog(&self, cwd: &PathBuf) -> CatalogCache {
         let Ok(program) = self.run.detect_grok_installation() else {
-            return CatalogCache::default();
+            return self.grok_fallback_catalog();
         };
         let mut transport = match CodexTransport::spawn_grok(&program, cwd, None, None) {
             Ok(t) => t,
-            Err(_) => return CatalogCache::default(),
+            Err(_) => return self.grok_fallback_catalog(),
         };
         let models = transport
             .request("_x.ai/models/list", json!({}), CODEX_REQUEST_TIMEOUT)
@@ -583,10 +606,33 @@ impl ChatRuntime {
             .map(|value| ops::parse_grok_model_list(&value))
             .unwrap_or_default();
         transport.shutdown();
+        let models = ops::ensure_grok_catalog_efforts(models);
+        if models.is_empty() {
+            return self.grok_fallback_catalog();
+        }
         CatalogCache {
             models,
             extensions: Vec::new(),
             from_codex: true,
+        }
+    }
+
+    fn grok_fallback_catalog(&self) -> CatalogCache {
+        let live = crate::adapters::grok::grok_live_chat_model();
+        let models = ops::ensure_grok_catalog_efforts(
+            live.models
+                .into_iter()
+                .map(|id| RuntimeModelOption {
+                    efforts: live.efforts.clone(),
+                    default_effort: live.effort.clone(),
+                    id,
+                })
+                .collect(),
+        );
+        CatalogCache {
+            models,
+            extensions: Vec::new(),
+            from_codex: false,
         }
     }
 
@@ -798,6 +844,9 @@ impl ActorWorker {
         if !record.enabled {
             return Err(AppError::Unsupported("持续聊天未启用".into()));
         }
+        if self.thread_id.is_none() {
+            self.thread_id = record.thread_id.clone();
+        }
         if self.last_start_request.as_deref() == Some(client_request_id) {
             return self.store.snapshot(&self.conversation_id, None);
         }
@@ -1001,11 +1050,6 @@ impl ActorWorker {
         prompt: &str,
         extras: &RuntimeStartExtras,
     ) -> Result<RuntimeSnapshot> {
-        if !extras.images.is_empty() {
-            return Err(AppError::Unsupported(
-                "Grok 目前不能在对话里添加图片".into(),
-            ));
-        }
         if !extras.skills.is_empty() {
             return Err(AppError::Unsupported(
                 "Grok 目前不能在本轮指定 Skill".into(),
@@ -1062,7 +1106,7 @@ impl ActorWorker {
                 "session/prompt",
                 json!({
                     "sessionId": session_id,
-                    "prompt": ops::grok_prompt_blocks(prompt)
+                    "prompt": ops::grok_prompt_blocks(prompt, &extras.images)?
                 }),
             )
             .map_err(transport_error)?;

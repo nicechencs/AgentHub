@@ -1023,8 +1023,18 @@ fn list_grok_cli_models() -> Vec<String> {
     parse_grok_models_cli(&String::from_utf8_lossy(&output.stdout)).1
 }
 
+pub(crate) fn grok_send_prefs() -> (Option<String>, Option<String>) {
+    let doc = read_grok_config_doc().unwrap_or_else(|_| DocumentMut::new());
+    let (model, effort) = grok_config_chat_prefs(&doc);
+    if model.as_deref().is_some_and(grok_model_rejects_thinking) {
+        (model, None)
+    } else {
+        (model, effort)
+    }
+}
+
 pub(crate) fn grok_live_chat_model() -> LiveChatModel {
-    let doc = read_grok_config_doc().unwrap_or_default();
+    let doc = read_grok_config_doc().unwrap_or_else(|_| DocumentMut::new());
     let (stored_model, stored_effort) = grok_config_chat_prefs(&doc);
     let models = merge_grok_chat_models(&list_grok_cli_models(), stored_model.as_deref());
     let model = stored_model

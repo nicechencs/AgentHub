@@ -453,11 +453,11 @@ impl ChatService {
                 jobs.push((agent, prompt));
             }
 
-            let grok_live = agents
+            let grok_prefs = agents
                 .first()
                 .copied()
                 .filter(|agent| *agent == AgentId::Grok)
-                .map(|_| crate::adapters::grok::grok_live_chat_model());
+                .map(|_| crate::adapters::grok::grok_send_prefs());
             let opts = RunOptions {
                 mode: RunMode::Parallel,
                 timeout: DEFAULT_RUN_TIMEOUT,
@@ -469,8 +469,8 @@ impl ChatService {
                 // Claude/Codex → stream-json / --json; others remain text.
                 process_mode: crate::models::ProcessMode::Auto,
                 native_session_id: resume_id.clone(),
-                model: grok_live.as_ref().and_then(|live| live.model.clone()),
-                effort: grok_live.as_ref().and_then(|live| live.effort.clone()),
+                model: grok_prefs.as_ref().and_then(|(model, _)| model.clone()),
+                effort: grok_prefs.as_ref().and_then(|(_, effort)| effort.clone()),
             };
             let max_out = opts.max_output_bytes;
             tracing::debug!(

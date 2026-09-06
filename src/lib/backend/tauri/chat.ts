@@ -75,6 +75,9 @@ export function createTauriChatPort(): ChatPort {
     async runtimeNoteThinkingFailure(conversationId, settings, errorText) {
       await invoke('chat_runtime_note_thinking_failure', { conversationId, settings, errorText });
     },
+    async runtimeContinueLegacy(conversationId) {
+      return invoke<RuntimeSnapshot>('chat_runtime_continue_legacy', { conversationId });
+    },
     async runtimeStart(conversationId, prompt, clientRequestId, extras) {
       return invoke<RuntimeSnapshot>('chat_runtime_start', {
         conversationId,

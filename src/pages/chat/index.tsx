@@ -3,11 +3,13 @@ import { MessagesSquare } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { Notice } from '@/components/shared/Notice';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { chatMainColumnClass, chatStageClass } from './chat-model';
 import { formatChatSessionRecord } from './chat-format';
+import { grokCanQueueFollowUp, grokLegacyContinueKind } from './chat-grok-follow-up';
 import { ChatRuntimeExtras } from './ChatRuntimeExtras';
 import { ChatTurnOutcomeBanner } from './ChatTurnOutcomeBanner';
 import { ChatComposer } from './ChatComposer';
@@ -146,6 +148,37 @@ export default function ChatPage() {
                   onKeyDown={split.onSeparatorKeyDown}
                   className="relative z-10 h-2 shrink-0 cursor-row-resize bg-transparent outline-none"
                 />
+                {(() => {
+                  const kind = grokLegacyContinueKind({
+                    agentId: page.primaryAgent,
+                    runtimeEnabled: page.runtime?.enabled,
+                    hasMessages: page.messages.length > 0,
+                    nativeSessionId: page.active.nativeSessionId,
+                  });
+                  if (!kind) return null;
+                  return (
+                    <Notice tone="warning" className="mb-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="min-w-0 text-meta text-secondary">
+                          {kind === 'continue'
+                            ? t('chat.composer.legacyContinueHint')
+                            : t('chat.composer.legacyNewChatHint')}
+                        </p>
+                        {kind === 'continue' ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            disabled={page.sendingHere}
+                            onClick={() => void page.continueLegacyGrok()}
+                          >
+                            {t('chat.composer.legacyContinueAction')}
+                          </Button>
+                        ) : null}
+                      </div>
+                    </Notice>
+                  );
+                })()}
                 <ChatComposer
                   draft={page.draft}
                   setDraft={page.setDraft}
@@ -172,6 +205,18 @@ export default function ChatPage() {
                       .then(() => page.setDraft(''))
                       .catch(() => {});
                   } : undefined}
+                  onQueueAfterTurn={
+                    grokCanQueueFollowUp({
+                      agentId: page.primaryAgent,
+                      runtimeEnabled: page.runtime?.enabled,
+                      phase: page.runtime?.phase,
+                      sending: page.sendingHere,
+                    })
+                      ? () => void page.handleSend()
+                      : undefined
+                  }
+                  queuedFollowUp={page.queuedFollowUp}
+                  onClearQueuedFollowUp={page.clearQueuedFollowUp}
                   onCancel={() => void page.cancelSending()}
                   onSelectAgent={(id) => void page.selectConversationAgentId(id)}
                   onSwitchConnection={(id) => void page.handleSwitchConnection(id)}

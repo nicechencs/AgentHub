@@ -595,6 +595,9 @@ export function useChatPage() {
     handleSend: send.handleSend,
     retryLast: send.retryLast,
     handleCancel: send.handleCancel,
+    queuedFollowUp: send.queuedFollowUp,
+    clearQueuedFollowUp: send.clearQueuedFollowUp,
+    continueLegacyGrok: send.continueLegacyGrok,
     runtime: activeRuntime,
     runtimeLocked: isRuntimeSessionLocked(activeRuntime, {
       conversationId: active?.id,
