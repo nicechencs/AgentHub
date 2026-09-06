@@ -32,6 +32,12 @@ describe('planNativeResume', () => {
       '--session',
       'pi-session',
     ]);
+    expect(planNativeResume('kiro', 'kiro-session')?.argv).toEqual([
+      'kiro-cli',
+      'chat',
+      '--resume-id',
+      'kiro-session',
+    ]);
   });
 
   it('uses cursor-agent.cmd only on Windows', () => {
@@ -53,7 +59,7 @@ describe('planNativeResume', () => {
     expect(planNativeResume('claude', 'x'.repeat(513))).toBeNull();
     expect(planNativeResume('workbuddy', 'wb')).toBeNull();
     expect(planNativeResume('dsh', 'dsh-session')).toBeNull();
-    expect(planNativeResume('kiro', 'kiro-session')).toBeNull();
+    expect(planNativeResume('zcode', 'zcode-session')).toBeNull();
   });
 
   it('trims whitespace around a valid id', () => {

@@ -26,7 +26,10 @@ pub fn plan_native_resume(agent: AgentId, session_id: &str) -> Option<NativeResu
 
 /// Whether Chat can continue this agent with print-mode resume (not TUI).
 pub fn supports_print_resume(agent: AgentId) -> bool {
-    matches!(agent, AgentId::Claude | AgentId::Codex | AgentId::Grok)
+    matches!(
+        agent,
+        AgentId::Claude | AgentId::Codex | AgentId::Grok | AgentId::Kiro
+    )
 }
 
 fn resume_argv(agent: AgentId, session_id: &str) -> Option<Vec<String>> {
@@ -41,7 +44,13 @@ fn resume_argv(agent: AgentId, session_id: &str) -> Option<Vec<String>> {
             "--resume".into(),
             session_id.into(),
         ],
-        AgentId::WorkBuddy | AgentId::Dsh | AgentId::Zcode | AgentId::Kiro => return None,
+        AgentId::Kiro => vec![
+            "kiro-cli".into(),
+            "chat".into(),
+            "--resume-id".into(),
+            session_id.into(),
+        ],
+        AgentId::WorkBuddy | AgentId::Dsh | AgentId::Zcode => return None,
     };
     Some(argv)
 }

@@ -179,6 +179,8 @@ describe('MOCK_CAPABILITIES (dev/mocks)', () => {
     expect(MOCK_CAPABILITIES.kiro!.accountSwitch!.level).toBe('unsupported');
     expect(MOCK_CAPABILITIES.kiro!.configWrite!.level).toBe('unsupported');
     expect(MOCK_CAPABILITIES.kiro!.apiKeyAccount!.level).toBe('partial');
+    expect(MOCK_CAPABILITIES.kiro!.structuredStream!.level).toBe('partial');
+    expect(MOCK_CAPABILITIES.kiro!.sessionResume!.level).toBe('partial');
   });
 
   it('accountSwitch blocked agents match Connections TabStrip expectations', () => {

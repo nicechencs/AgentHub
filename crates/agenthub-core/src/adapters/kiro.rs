@@ -3,16 +3,18 @@
 //! Product card: **Kiro**. Manages the public CLI (`kiro-cli`), **not** the
 //! Kiro IDE / Web / Crew surfaces.
 //!
-//! ## Scope (honest, wave 1)
+//! ## Scope
 //! - install / detect (official sh + ps1; IDE.app is never Installed)
 //! - headless: `kiro-cli chat --no-interactive --wrap never "…"`
 //!   (+ `--trust-all-tools` when dangerous; TERM=dumb so Unix color does not leak)
+//! - Chat Auto: `--agent-engine v2 --output-format stream-json` (v1 rejects it)
+//! - subsequent turns: `--resume-id` when a native session id is known
 //! - auth: env `KIRO_API_KEY` / import `kiro-cli login` (sqlite + SSO cache);
 //!   refresh compares expiry and can write sqlite
 //!
 //! ## Explicitly out of scope
 //! - Config write / API Key live apply / live backup
-//! - Chat continuous runtime / ACP
+//! - Chat continuous runtime (mid-turn allow/deny / steer)
 //! - Skills / MCP / usage / project history (no verified path yet)
 //! - Using Kiro IDE as the headless entry
 
@@ -297,7 +299,7 @@ impl AgentAdapter for KiroAdapter {
             ApiKeyAccount => CapabilityState::partial("可用 API Key 或 kiro-cli login"),
             Skills => CapabilityState::planned("待路径核实"),
             LiveBackup => CapabilityState::unsupported("无稳定配置/凭据文件"),
-            StructuredStream => CapabilityState::planned("stream-json 待验证"),
+            StructuredStream => CapabilityState::partial("对话过程走 v2 stream-json；不能中途补充"),
             DangerousMode => CapabilityState::partial("映射 --trust-all-tools；请确认风险后再开"),
             ProjectHistory => CapabilityState::planned("待路径核实"),
             ProjectDelete => CapabilityState::unsupported("无安全浅删契约"),
@@ -305,7 +307,9 @@ impl AgentAdapter for KiroAdapter {
             Usage => CapabilityState::planned("待日志字段核实"),
             Mcp => CapabilityState::planned("待路径核实"),
             ModelSelect => CapabilityState::planned("待验证接入"),
-            SessionResume => CapabilityState::unsupported("headless 无中途输入；持续聊另立项"),
+            SessionResume => {
+                CapabilityState::partial("后续轮次走 --resume-id；不能中途补充或点允许/拒绝")
+            }
         }
     }
 
@@ -326,6 +330,21 @@ impl AgentAdapter for KiroAdapter {
             "--wrap".into(),
             "never".into(),
         ];
+        // v1 rejects stream-json; pin v2 (v3 dumps extra logs onto stdout).
+        if super::wants_structured_for(opts.process_mode, AgentId::Kiro) {
+            args.push("--agent-engine".into());
+            args.push("v2".into());
+            args.push("--output-format".into());
+            args.push("stream-json".into());
+        }
+        if let Some(sid) = opts
+            .native_session_id
+            .as_deref()
+            .and_then(super::session_resume::valid_session_id)
+        {
+            args.push("--resume-id".into());
+            args.push(sid.to_string());
+        }
         if opts.allow_dangerous {
             args.push("--trust-all-tools".into());
         }

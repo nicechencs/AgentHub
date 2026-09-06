@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::models::{
     AccountKind, AgentConfig, AgentId, AuthHealth, Capability, CapabilityLevel, DetectResult,
-    DetectStatus, RunOptions,
+    DetectStatus, ProcessMode, RunOptions,
 };
 
 use crate::adapters::detect_binary::well_known_bin_paths;
@@ -22,10 +22,7 @@ fn build_run_spec_headless_chat() {
         spec.args,
         vec!["chat", "--no-interactive", "--wrap", "never", "hello"]
     );
-    assert!(spec
-        .env
-        .iter()
-        .any(|(k, v)| k == "TERM" && v == "dumb"));
+    assert!(spec.env.iter().any(|(k, v)| k == "TERM" && v == "dumb"));
     assert!(spec.env.iter().any(|(k, v)| k == "NO_COLOR" && v == "1"));
 }
 
@@ -53,17 +50,58 @@ fn write_config_is_fail_closed() {
 }
 
 #[test]
-fn account_switch_and_session_resume_blocked() {
+fn account_switch_blocked_stream_and_resume_partial() {
     assert!(KiroAdapter
         .capability(Capability::AccountSwitch)
         .is_blocked());
     assert!(KiroAdapter
+        .capability(Capability::StructuredStream)
+        .is_usable());
+    assert!(KiroAdapter
         .capability(Capability::SessionResume)
-        .is_blocked());
+        .is_usable());
     assert_eq!(
         KiroAdapter.capability(Capability::DangerousMode).level,
         CapabilityLevel::Partial
     );
+    assert_eq!(
+        KiroAdapter.capability(Capability::StructuredStream).level,
+        CapabilityLevel::Partial
+    );
+    assert_eq!(
+        KiroAdapter.capability(Capability::SessionResume).level,
+        CapabilityLevel::Partial
+    );
+}
+
+#[test]
+fn build_run_spec_chat_auto_adds_v2_stream_json() {
+    let mut opts = RunOptions::default();
+    opts.process_mode = ProcessMode::Auto;
+    let spec = KiroAdapter
+        .build_run_spec(Path::new("kiro-cli"), "hello", &opts)
+        .unwrap();
+    assert!(spec.args.windows(2).any(|w| w == ["--agent-engine", "v2"]));
+    assert!(spec
+        .args
+        .windows(2)
+        .any(|w| w == ["--output-format", "stream-json"]));
+    assert_eq!(spec.args.last().map(String::as_str), Some("hello"));
+}
+
+#[test]
+fn build_run_spec_resume_id_before_prompt() {
+    let mut opts = RunOptions::default();
+    opts.process_mode = ProcessMode::Auto;
+    opts.native_session_id = Some("43829d57-18ca-483f-b0df-054a5e1c395e".into());
+    let spec = KiroAdapter
+        .build_run_spec(Path::new("kiro-cli"), "ok", &opts)
+        .unwrap();
+    assert!(spec
+        .args
+        .windows(2)
+        .any(|w| w == ["--resume-id", "43829d57-18ca-483f-b0df-054a5e1c395e"]));
+    assert_eq!(spec.args.last().map(String::as_str), Some("ok"));
 }
 
 #[test]
@@ -140,9 +178,9 @@ fn well_known_paths_include_localappdata_kiro_cli() {
     assert!(
         paths.iter().any(|(p, ch)| {
             *ch == "native"
-                && p.file_name()
-                    .and_then(|n| n.to_str())
-                    .is_some_and(|n| n.eq_ignore_ascii_case("kiro-cli") || n.eq_ignore_ascii_case("kiro-cli.exe"))
+                && p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                    n.eq_ignore_ascii_case("kiro-cli") || n.eq_ignore_ascii_case("kiro-cli.exe")
+                })
         }),
         "must look for kiro-cli, not kiro: {paths:?}"
     );
@@ -186,7 +224,10 @@ fn normalize_token_accepts_sqlite_and_sso_shapes() {
     });
     let body = super::auth::normalize_kiro_token(&sqlite).expect("sqlite token");
     assert_eq!(body["provider"], "google");
-    assert_eq!(body["profile_arn"], "arn:aws:codewhisperer:us-east-1:1:profile/ABC");
+    assert_eq!(
+        body["profile_arn"],
+        "arn:aws:codewhisperer:us-east-1:1:profile/ABC"
+    );
 
     let cache = serde_json::json!({
         "accessToken": "aoa-cache",
@@ -228,8 +269,7 @@ fn read_social_token_from_sqlite_uses_auth_kv() {
     assert_eq!(live.agent, AgentId::Kiro);
     assert_eq!(live.kind, AccountKind::Oauth);
     assert_eq!(
-        super::auth::kiro_identity_label(&live.credentials, live.label_hint.as_deref())
-            .as_deref(),
+        super::auth::kiro_identity_label(&live.credentials, live.label_hint.as_deref()).as_deref(),
         Some("arn:aws:codewhisperer:us-east-1:1:profile/ABC")
     );
 }

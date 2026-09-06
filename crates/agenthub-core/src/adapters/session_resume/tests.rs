@@ -38,6 +38,11 @@ fn plans_herdr_compatible_resume_argv() {
         "pi-session",
         &["pi", "--session", "pi-session"],
     );
+    expect_argv(
+        AgentId::Kiro,
+        "kiro-session",
+        &["kiro-cli", "chat", "--resume-id", "kiro-session"],
+    );
 }
 
 #[test]
@@ -67,13 +72,14 @@ fn trims_whitespace_around_valid_ids() {
 fn unknown_resume_agents_return_none() {
     assert!(plan_native_resume(AgentId::WorkBuddy, "wb").is_none());
     assert!(plan_native_resume(AgentId::Dsh, "dsh-session").is_none());
-    assert!(plan_native_resume(AgentId::Kiro, "kiro-session").is_none());
+    assert!(plan_native_resume(AgentId::Zcode, "zcode-session").is_none());
 }
 
 #[test]
-fn print_resume_is_claude_codex_and_grok() {
+fn print_resume_includes_kiro() {
     assert!(super::supports_print_resume(AgentId::Claude));
     assert!(super::supports_print_resume(AgentId::Codex));
     assert!(super::supports_print_resume(AgentId::Grok));
+    assert!(super::supports_print_resume(AgentId::Kiro));
     assert!(!super::supports_print_resume(AgentId::Kimi));
 }
