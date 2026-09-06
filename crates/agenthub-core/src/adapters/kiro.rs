@@ -11,9 +11,10 @@
 //! - subsequent turns: `--resume-id` when a native session id is known
 //! - auth: env `KIRO_API_KEY` / import `kiro-cli login` (sqlite + SSO cache);
 //!   refresh compares expiry and can write sqlite
+//! - live backup of the sqlite login store and SSO cache copy
 //!
 //! ## Explicitly out of scope
-//! - Config write / API Key live apply / live backup
+//! - Config write / API Key live apply
 //! - Chat continuous runtime (mid-turn allow/deny / steer)
 //! - Skills / MCP / usage / project history (no verified path yet)
 //! - Using Kiro IDE as the headless entry
@@ -298,7 +299,7 @@ impl AgentAdapter for KiroAdapter {
             AccountSwitch => CapabilityState::unsupported("账号由 Kiro 登录管理"),
             ApiKeyAccount => CapabilityState::partial("可用 API Key 或 kiro-cli login"),
             Skills => CapabilityState::planned("待路径核实"),
-            LiveBackup => CapabilityState::unsupported("无稳定配置/凭据文件"),
+            LiveBackup => CapabilityState::full(),
             StructuredStream => CapabilityState::partial("对话过程走 v2 stream-json；不能中途补充"),
             DangerousMode => CapabilityState::partial("映射 --trust-all-tools；请确认风险后再开"),
             ProjectHistory => CapabilityState::planned("待路径核实"),
