@@ -523,8 +523,12 @@ fn channel_requires(
     Ok(ch.requires)
 }
 
-/// Install a shared runtime (Node.js / Git via winget on Windows or Homebrew
-/// on macOS). Linux uses the `manual` channel: remediations only, no spawn.
+/// Install or upgrade a shared runtime.
+///
+/// Node.js / Git use winget (Windows) or Homebrew (macOS; Node also has an
+/// official pkg fallback). Already-present npm upgrades via
+/// `npm install -g npm@latest` on every platform. Linux package-manager
+/// installs stay on the `manual` channel (remediations only, no spawn).
 /// Passing an empty channel selects the platform default.
 pub fn install_runtime(
     id: RuntimeId,
