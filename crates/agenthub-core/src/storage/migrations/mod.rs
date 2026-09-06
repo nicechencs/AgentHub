@@ -109,6 +109,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         include_str!("00030_usage_cursor_file_size.sql"),
     ),
     ("00031_chat_runtime", include_str!("00031_chat_runtime.sql")),
+    (
+        "00032_chat_runtime_turn_settings",
+        include_str!("00032_chat_runtime_turn_settings.sql"),
+    ),
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {

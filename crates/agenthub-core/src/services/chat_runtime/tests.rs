@@ -1,4 +1,5 @@
 use super::*;
+use super::types::RuntimeStartExtras;
 use crate::models::{AgentId, ChatEvent, Conversation};
 use crate::storage::{ChatRepo, Database};
 use crate::{
@@ -162,6 +163,7 @@ fn real_codex_runtime_start_and_resume() {
             &conversation.id,
             &format!("Remember this random marker for our next turn: AGENTHUB_RUNTIME_{nonce}. Reply with exactly that marker. Do not call any tools."),
             "real-1",
+            RuntimeStartExtras::default(),
         )
         .unwrap();
     let first_done = wait_for_terminal(&chat, &conversation.id, first.last_sequence);
@@ -177,6 +179,7 @@ fn real_codex_runtime_start_and_resume() {
             &conversation.id,
             "What was the exact random marker I asked you to remember in my previous message? Reply only with that marker. Do not call any tools.",
             "real-2",
+            RuntimeStartExtras::default(),
         )
         .unwrap();
     let second_done = wait_for_terminal(&chat, &conversation.id, second.last_sequence);

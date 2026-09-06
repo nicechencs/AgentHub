@@ -9,6 +9,7 @@ use agenthub_core::adapters::AdapterRegistry;
 use agenthub_core::models::{AgentId, ChatEvent, ChatMessage, ChatMessageStatus, ChatRole};
 use agenthub_core::services::chat_runtime::{
     RuntimeDecision, RuntimeEvent, RuntimePhase, RuntimeReply, RuntimeSnapshot,
+    RuntimeStartExtras,
 };
 use agenthub_core::services::{ChatService, RunService};
 use agenthub_core::storage::{ChatRepo, Database};
@@ -78,7 +79,7 @@ fn missing_cwd_start_failure_cannot_leave_a_running_snapshot_or_accept_an_old_re
     let (_dir, _db, chat) = chat();
     let id = conversation(&chat, AgentId::Codex, None);
 
-    assert!(chat.runtime().start(&id, "hello", "start-1").is_err());
+    assert!(chat.runtime().start(&id, "hello", "start-1", RuntimeStartExtras::default()).is_err());
     let snapshot = chat
         .runtime()
         .snapshot(&id, None)
@@ -124,7 +125,7 @@ fn persisted_running_state_rejects_a_second_start_without_spawning_codex() {
 
     let error = chat
         .runtime()
-        .start(&id, "must not spawn", "start-2")
+        .start(&id, "must not spawn", "start-2", RuntimeStartExtras::default())
         .unwrap_err();
     assert!(error.to_string().contains("active runtime turn"));
     let snapshot = chat.runtime().snapshot(&id, None).unwrap();
@@ -174,4 +175,55 @@ fn runtime_dtos_use_the_public_camel_case_wire_contract() {
     let reply_value = serde_json::to_value(reply).expect("serialize reply");
     assert_eq!(reply_value["clientRequestId"], "client-1");
     assert_eq!(reply_value["decision"], "deny");
+}
+
+
+#[test]
+fn set_settings_rejects_while_running_and_keeps_prior_values() {
+    let (_dir, db, chat) = chat();
+    let id = conversation(
+        &chat,
+        AgentId::Codex,
+        Some(std::env::temp_dir().display().to_string()),
+    );
+    let _ = chat.runtime().snapshot(&id, None).unwrap();
+    let first = chat
+        .runtime()
+        .set_settings(
+            &id,
+            agenthub_core::services::chat_runtime::RuntimeTurnSettings {
+                model: Some("gpt-mock".into()),
+                effort: Some("low".into()),
+            },
+        )
+        .unwrap();
+    assert_eq!(first.model.as_deref(), Some("gpt-mock"));
+
+    // Force an active phase without spawning Codex.
+    db.with_conn(|conn| {
+        conn.execute(
+            "UPDATE chat_runtime SET phase = 'running', run_id = 'run-live' WHERE conversation_id = ?1",
+            rusqlite::params![id],
+        )
+        .unwrap();
+        Ok::<(), agenthub_core::error::AppError>(())
+    })
+    .unwrap();
+
+    let err = chat
+        .runtime()
+        .set_settings(
+            &id,
+            agenthub_core::services::chat_runtime::RuntimeTurnSettings {
+                model: Some("other".into()),
+                effort: Some("high".into()),
+            },
+        )
+        .unwrap_err();
+    assert!(err.to_string().contains("进行中") || err.to_string().contains("active") || err.to_string().contains("轮次"));
+
+    let options = chat.runtime().options(&id).unwrap();
+    assert_eq!(options.settings.model.as_deref(), Some("gpt-mock"));
+    assert_eq!(options.settings.effort.as_deref(), Some("low"));
+    assert!(options.settings_frozen);
 }

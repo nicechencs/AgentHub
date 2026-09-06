@@ -7,7 +7,7 @@ import {
   type CoreConversation,
 } from '@/lib/backend/contracts/chat-map';
 import { Channel, invoke } from './invoke';
-import type { RuntimeSnapshot } from '@/lib/backend/contracts/chat-runtime';
+import type { RuntimeOptions, RuntimeSnapshot, RuntimeTurnSettings } from '@/lib/backend/contracts/chat-runtime';
 
 export function createTauriChatPort(): ChatPort {
   return {
@@ -66,8 +66,19 @@ export function createTauriChatPort(): ChatPort {
     async runtimeSnapshot(conversationId, afterSequence) {
       return invoke<RuntimeSnapshot>('chat_runtime_snapshot', { conversationId, afterSequence });
     },
-    async runtimeStart(conversationId, prompt, clientRequestId) {
-      return invoke<RuntimeSnapshot>('chat_runtime_start', { conversationId, prompt, clientRequestId });
+    async runtimeOptions(conversationId) {
+      return invoke<RuntimeOptions>('chat_runtime_options', { conversationId });
+    },
+    async runtimeSetSettings(conversationId, settings) {
+      return invoke<RuntimeTurnSettings>('chat_runtime_set_settings', { conversationId, settings });
+    },
+    async runtimeStart(conversationId, prompt, clientRequestId, extras) {
+      return invoke<RuntimeSnapshot>('chat_runtime_start', {
+        conversationId,
+        prompt,
+        clientRequestId,
+        extras: extras ?? null,
+      });
     },
     async runtimeReply(reply) { await invoke('chat_runtime_reply', { reply }); },
     async runtimeSteer(conversationId, runId, prompt, clientRequestId) {
@@ -90,6 +101,9 @@ export function createTauriChatPort(): ChatPort {
           ? row.models.filter((id): id is string => typeof id === 'string' && Boolean(id.trim()))
           : [],
       };
+    },
+    async pickChatImages(title) {
+      return invoke<string[]>('pick_chat_images', { title: title ?? null });
     },
   };
 }

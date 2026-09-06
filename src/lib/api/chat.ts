@@ -3,8 +3,8 @@
  */
 import { getBackend } from '@/app/runtime';
 import type { AgentKey, ChatEvent, ChatMessage, Conversation } from '@/lib/types';
-import type { RuntimeReply, RuntimeSnapshot } from '@/lib/backend/contracts/chat-runtime';
-export type { RuntimeQuestion, RuntimeRequest, RuntimeReply, RuntimeSnapshot } from '@/lib/backend/contracts/chat-runtime';
+import type { RuntimeOptions, RuntimeReply, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings } from '@/lib/backend/contracts/chat-runtime';
+export type { RuntimeQuestion, RuntimeRequest, RuntimeReply, RuntimeSnapshot, RuntimeOptions, RuntimeTurnSettings, RuntimeStartExtras, RuntimeModelOption, RuntimeExtensionItem } from '@/lib/backend/contracts/chat-runtime';
 
 export type {
   CoreConversation,
@@ -65,8 +65,14 @@ export async function chatCancel(conversationId: string): Promise<void> {
 export async function runtimeSnapshot(conversationId: string, afterSequence?: number): Promise<RuntimeSnapshot> {
   return getBackend().chat.runtimeSnapshot(conversationId, afterSequence);
 }
-export async function runtimeStart(conversationId: string, prompt: string, clientRequestId: string): Promise<RuntimeSnapshot> {
-  return getBackend().chat.runtimeStart(conversationId, prompt, clientRequestId);
+export async function runtimeOptions(conversationId: string): Promise<RuntimeOptions> {
+  return getBackend().chat.runtimeOptions(conversationId);
+}
+export async function runtimeSetSettings(conversationId: string, settings: RuntimeTurnSettings): Promise<RuntimeTurnSettings> {
+  return getBackend().chat.runtimeSetSettings(conversationId, settings);
+}
+export async function runtimeStart(conversationId: string, prompt: string, clientRequestId: string, extras?: RuntimeStartExtras): Promise<RuntimeSnapshot> {
+  return getBackend().chat.runtimeStart(conversationId, prompt, clientRequestId, extras);
 }
 export async function runtimeReply(reply: RuntimeReply): Promise<void> { return getBackend().chat.runtimeReply(reply); }
 export async function runtimeSteer(conversationId: string, runId: string, prompt: string, clientRequestId: string): Promise<void> {
@@ -84,4 +90,9 @@ export async function getChatModel(
   agentId: AgentKey,
 ): Promise<{ model: string | null; models: string[] }> {
   return getBackend().chat.getChatModel(agentId);
+}
+
+
+export async function pickChatImages(title?: string): Promise<string[]> {
+  return getBackend().chat.pickChatImages(title);
 }

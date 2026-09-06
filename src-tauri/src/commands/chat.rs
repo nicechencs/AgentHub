@@ -1,10 +1,11 @@
 //! Chat Tauri commands — thin wrappers over agenthub-core ChatService.
 
 use agenthub_core::models::{AgentId, ChatEvent, ChatMessage, Conversation, LiveChatModel};
-use agenthub_core::services::chat_runtime::{RuntimeReply, RuntimeSnapshot};
+use agenthub_core::services::chat_runtime::{RuntimeOptions, RuntimeReply, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings};
 use agenthub_core::AgentHub;
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
+use tauri_plugin_dialog::DialogExt;
 
 use agenthub_core::logging::targets;
 
@@ -124,17 +125,50 @@ pub async fn chat_runtime_snapshot(
 }
 
 #[tauri::command]
+pub async fn chat_runtime_options(
+    state: State<'_, AppState>,
+    conversation_id: String,
+) -> Result<RuntimeOptions, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        hub.chat()
+            .runtime()
+            .options(&conversation_id)
+            .map_err(|e| map_err_string("chat_runtime_options", e))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn chat_runtime_set_settings(
+    state: State<'_, AppState>,
+    conversation_id: String,
+    settings: RuntimeTurnSettings,
+) -> Result<RuntimeTurnSettings, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        hub.chat()
+            .runtime()
+            .set_settings(&conversation_id, settings)
+            .map_err(|e| map_err_string("chat_runtime_set_settings", e))
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn chat_runtime_start(
     state: State<'_, AppState>,
     conversation_id: String,
     prompt: String,
     client_request_id: String,
+    extras: Option<RuntimeStartExtras>,
 ) -> Result<RuntimeSnapshot, String> {
     let hub = state.hub_arc()?;
+    let extras = extras.unwrap_or_default();
     with_hub_blocking(hub, move |hub| {
         hub.chat()
             .runtime()
-            .start(&conversation_id, &prompt, &client_request_id)
+            .start(&conversation_id, &prompt, &client_request_id, extras)
             .map_err(|e| map_err_string("chat_runtime_start", e))
     })
     .await
@@ -325,3 +359,28 @@ fn parse_agent_ids(ids: Vec<String>) -> Result<Vec<AgentId>, String> {
 
 #[cfg(test)]
 mod tests;
+
+
+/// Invoke: `pick_chat_images` — select one or more local image paths for Codex localImage input.
+#[tauri::command]
+pub async fn pick_chat_images(
+    app: AppHandle,
+    title: Option<String>,
+) -> Result<Vec<String>, String> {
+    let mut dialog = app.dialog().file();
+    dialog = dialog.set_title(title.as_deref().unwrap_or("选择图片"));
+    dialog = dialog.add_filter("Images", &["png", "jpg", "jpeg", "gif", "webp", "bmp"]);
+    if let Some(window) = app.get_webview_window("main") {
+        dialog = dialog.set_parent(&window);
+    }
+    let picked = dialog.blocking_pick_files().unwrap_or_default();
+    let mut out = Vec::new();
+    for path in picked {
+        let buf = path
+            .simplified()
+            .into_path()
+            .map_err(|e| format!("invalid image path: {e}"))?;
+        out.push(buf.to_string_lossy().into_owned());
+    }
+    Ok(out)
+}

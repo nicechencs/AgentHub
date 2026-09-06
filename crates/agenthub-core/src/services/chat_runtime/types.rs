@@ -150,3 +150,78 @@ pub enum RuntimeDecision {
     Allow,
     Deny,
 }
+
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeTurnSettings {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeModelOption {
+    pub id: String,
+    #[serde(default)]
+    pub efforts: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_effort: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeLocalImage {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeSkillRef {
+    pub name: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum RuntimeExtensionKind {
+    Skill,
+    Plugin,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeExtensionItem {
+    pub id: String,
+    pub name: String,
+    pub kind: RuntimeExtensionKind,
+    pub installed: bool,
+    pub enabled: bool,
+    pub loaded: bool,
+    pub callable: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeStartExtras {
+    #[serde(default)]
+    pub images: Vec<RuntimeLocalImage>,
+    #[serde(default)]
+    pub skills: Vec<RuntimeSkillRef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeOptions {
+    pub conversation_id: String,
+    pub settings: RuntimeTurnSettings,
+    pub settings_frozen: bool,
+    pub models: Vec<RuntimeModelOption>,
+    pub extensions: Vec<RuntimeExtensionItem>,
+    /// True when model/list was fetched from a live Codex process this session.
+    pub models_from_codex: bool,
+}
