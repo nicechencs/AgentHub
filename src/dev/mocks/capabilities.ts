@@ -76,7 +76,10 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
     usage: { level: 'full' },
     mcp: { level: 'planned', reason: '待验证接入' },
     modelSelect: { level: 'planned', reason: '待验证接入' },
-    sessionResume: { level: 'planned', reason: '待验证接入' },
+    sessionResume: {
+      level: 'partial',
+      reason: 'Chat 后续轮次走 print+resume；终端可复制官方续接命令',
+    },
   },
   pi: {
     configWrite: { level: 'full' },
