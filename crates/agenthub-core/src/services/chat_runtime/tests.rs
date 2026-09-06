@@ -293,3 +293,241 @@ fn frozen_options_stay_empty_when_catalog_never_warmed() {
     assert!(options.extensions.is_empty());
     assert!(!options.models_from_codex);
 }
+
+#[test]
+fn idle_options_reconcile_unsupported_effort_to_model_default() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "spark", false);
+    let run = Arc::new(RunService::new(AdapterRegistry::default()));
+    let runtime = Arc::new(ChatRuntime::new(db, run));
+    runtime.store.enable_if_new("spark").unwrap();
+    runtime.seed_catalog_cache_for_test(
+        "spark",
+        vec![super::types::RuntimeModelOption {
+            id: "gpt-5.3-codex-spark".into(),
+            efforts: vec!["low".into(), "high".into()],
+            default_effort: Some("low".into()),
+        }],
+        vec![],
+    );
+    runtime
+        .store
+        .set_turn_settings(
+            "spark",
+            &super::types::RuntimeTurnSettings {
+                model: Some("gpt-5.3-codex-spark".into()),
+                effort: Some("medium".into()),
+            },
+        )
+        .unwrap();
+
+    let options = runtime.options("spark").unwrap();
+    assert!(!options.settings_frozen);
+    assert_eq!(options.settings.model.as_deref(), Some("gpt-5.3-codex-spark"));
+    assert_eq!(options.settings.effort.as_deref(), Some("low"));
+}
+
+#[test]
+fn frozen_options_keep_effective_unsupported_effort_pair() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "frozen-spark", false);
+    let run = Arc::new(RunService::new(AdapterRegistry::default()));
+    let runtime = Arc::new(ChatRuntime::new(db, run));
+    runtime.store.enable_if_new("frozen-spark").unwrap();
+    runtime.seed_catalog_cache_for_test(
+        "frozen-spark",
+        vec![super::types::RuntimeModelOption {
+            id: "gpt-5.3-codex-spark".into(),
+            efforts: vec!["low".into()],
+            default_effort: Some("low".into()),
+        }],
+        vec![],
+    );
+    runtime
+        .store
+        .set_turn_settings(
+            "frozen-spark",
+            &super::types::RuntimeTurnSettings {
+                model: Some("gpt-5.3-codex-spark".into()),
+                effort: Some("medium".into()),
+            },
+        )
+        .unwrap();
+    runtime
+        .store
+        .commit_event(
+            "frozen-spark",
+            RuntimePhase::Running,
+            Some("run-frozen"),
+            &ChatEvent::Error {
+                message: "marker".into(),
+            },
+        )
+        .unwrap();
+
+    let options = runtime.options("frozen-spark").unwrap();
+    assert!(options.settings_frozen);
+    assert_eq!(options.settings.effort.as_deref(), Some("medium"));
+}
+
+#[test]
+fn start_rejects_unsupported_model_effort_pair() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "start-spark", false);
+    let run = Arc::new(RunService::new(AdapterRegistry::default()));
+    let runtime = Arc::new(ChatRuntime::new(db, run));
+    runtime.store.enable_if_new("start-spark").unwrap();
+    runtime.seed_catalog_cache_for_test(
+        "start-spark",
+        vec![super::types::RuntimeModelOption {
+            id: "gpt-5.3-codex-spark".into(),
+            efforts: vec!["low".into(), "high".into()],
+            default_effort: Some("low".into()),
+        }],
+        vec![],
+    );
+    runtime
+        .store
+        .set_turn_settings(
+            "start-spark",
+            &super::types::RuntimeTurnSettings {
+                model: Some("gpt-5.3-codex-spark".into()),
+                effort: Some("medium".into()),
+            },
+        )
+        .unwrap();
+
+    let err = runtime
+        .start(
+            "start-spark",
+            "ping",
+            "client-spark-1",
+            RuntimeStartExtras::default(),
+        )
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("不支持思考强度"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn set_settings_resets_effort_when_model_changes_without_effort() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "switch", false);
+    let run = Arc::new(RunService::new(AdapterRegistry::default()));
+    let runtime = Arc::new(ChatRuntime::new(db, run));
+    runtime.store.enable_if_new("switch").unwrap();
+    runtime.seed_catalog_cache_for_test(
+        "switch",
+        vec![
+            super::types::RuntimeModelOption {
+                id: "gpt-full".into(),
+                efforts: vec!["low".into(), "medium".into(), "high".into()],
+                default_effort: Some("medium".into()),
+            },
+            super::types::RuntimeModelOption {
+                id: "gpt-5.3-codex-spark".into(),
+                efforts: vec!["low".into(), "high".into()],
+                default_effort: Some("low".into()),
+            },
+        ],
+        vec![],
+    );
+    let first = runtime
+        .set_settings(
+            "switch",
+            super::types::RuntimeTurnSettings {
+                model: Some("gpt-full".into()),
+                effort: Some("medium".into()),
+            },
+        )
+        .unwrap();
+    assert_eq!(first.effort.as_deref(), Some("medium"));
+
+    let switched = runtime
+        .set_settings(
+            "switch",
+            super::types::RuntimeTurnSettings {
+                model: Some("gpt-5.3-codex-spark".into()),
+                effort: None,
+            },
+        )
+        .unwrap();
+    assert_eq!(switched.model.as_deref(), Some("gpt-5.3-codex-spark"));
+    assert_eq!(switched.effort.as_deref(), Some("low"));
+
+    let rejected = runtime
+        .set_settings(
+            "switch",
+            super::types::RuntimeTurnSettings {
+                model: Some("gpt-5.3-codex-spark".into()),
+                effort: Some("medium".into()),
+            },
+        )
+        .unwrap_err();
+    assert!(rejected.to_string().contains("不支持思考强度"));
+}
+
+#[test]
+fn learn_from_thinking_unsupported_filters_over_reported_catalog() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "learn-spark", false);
+    let run = Arc::new(RunService::new(AdapterRegistry::default()));
+    let runtime = Arc::new(ChatRuntime::new(db, run));
+    runtime.store.enable_if_new("learn-spark").unwrap();
+    runtime.seed_catalog_cache_for_test(
+        "learn-spark",
+        vec![super::types::RuntimeModelOption {
+            id: "gpt-5.3-codex-spark".into(),
+            efforts: vec![
+                "low".into(),
+                "medium".into(),
+                "high".into(),
+                "xhigh".into(),
+            ],
+            default_effort: Some("high".into()),
+        }],
+        vec![],
+    );
+    runtime
+        .store
+        .set_turn_settings(
+            "learn-spark",
+            &super::types::RuntimeTurnSettings {
+                model: Some("gpt-5.3-codex-spark".into()),
+                effort: Some("medium".into()),
+            },
+        )
+        .unwrap();
+
+    // Before learning, over-reported medium is still offered.
+    let before = runtime.options("learn-spark").unwrap();
+    assert_eq!(
+        before.models[0].efforts,
+        vec!["low", "medium", "high", "xhigh"]
+    );
+
+    runtime
+        .store
+        .learn_thinking_unsupported(
+            "learn-spark",
+            "OpenAI API error (400): does not support parameter reasoningEffort=medium",
+        )
+        .unwrap();
+
+    let after = runtime.options("learn-spark").unwrap();
+    assert_eq!(after.models[0].efforts, vec!["low", "high", "xhigh"]);
+    assert_eq!(after.settings.effort.as_deref(), Some("high"));
+
+    let rejected = runtime
+        .set_settings(
+            "learn-spark",
+            super::types::RuntimeTurnSettings {
+                model: Some("gpt-5.3-codex-spark".into()),
+                effort: Some("medium".into()),
+            },
+        )
+        .unwrap_err();
+    assert!(rejected.to_string().contains("不支持思考强度"));
+}

@@ -48,7 +48,6 @@ export function ChatActionMenu(props: {
               <DropdownMenuItem
                 key={action.id}
                 disabled={Boolean(reason)}
-                title={reason ? disabledCopy(reason) : undefined}
                 onSelect={() => {
                   if (reason) return;
                   props.onRun(action);
@@ -67,7 +66,7 @@ export function ChatActionMenu(props: {
       </DropdownMenu>
       {props.commandOpen && slashItems.length > 0 ? (
         <div
-          className="absolute bottom-full left-0 z-20 mb-2 max-h-56 w-72 overflow-auto rounded-md border bg-popover p-1 shadow-md"
+          className="absolute bottom-full left-0 z-20 mb-2 max-h-56 w-72 overflow-auto rounded-card border bg-popover p-1 shadow-md"
           role="listbox"
           aria-label={t('chat.actions.menu')}
         >
@@ -81,9 +80,8 @@ export function ChatActionMenu(props: {
                 role="option"
                 aria-selected={active}
                 disabled={Boolean(reason)}
-                title={reason ? disabledCopy(reason) : undefined}
                 className={cn(
-                  'flex w-full flex-col rounded-sm px-2 py-1.5 text-left text-sm',
+                  'flex w-full flex-col rounded-btn px-2 py-1.5 text-left text-sm',
                   active ? 'bg-accent' : 'hover:bg-accent/70',
                   reason && 'cursor-not-allowed opacity-60',
                 )}
