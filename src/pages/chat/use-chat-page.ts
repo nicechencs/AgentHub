@@ -191,8 +191,8 @@ export function useChatPage() {
         actions.push({
           id: `runtime-model:${model.id}`,
           kind: 'local',
-          label: `换模型：${model.id}`,
-          description: model.id === runtimeOps.settings.model ? '当前模型' : undefined,
+          label: `${t('chat.composer.switchModel')}：${model.id}`,
+          description: model.id === runtimeOps.settings.model ? t('chat.runtimeOps.currentModel') : undefined,
           keywords: ['model', '模型', '换模型', model.id],
         });
       }
@@ -201,8 +201,8 @@ export function useChatPage() {
           actions.push({
             id: `runtime-effort:${effort}`,
             kind: 'local',
-            label: `思考强度：${effort}`,
-            description: effort === runtimeOps.settings.effort ? '当前设置' : undefined,
+            label: `${t('chat.runtimeOps.effort')}：${effort}`,
+            description: effort === runtimeOps.settings.effort ? t('chat.runtimeOps.currentSetting') : undefined,
             keywords: ['think', 'thinking', 'effort', '思考', '思考强度', effort],
           });
         }
@@ -213,8 +213,8 @@ export function useChatPage() {
       actions.push({
         id: `runtime-skill:${item.id}`,
         kind: 'local',
-        label: `${runtimeOps.selectedSkillIds.includes(item.id) ? '取消用于本次' : '用于本次'}：${item.name}`,
-        description: '技能',
+        label: `${runtimeOps.selectedSkillIds.includes(item.id) ? t('chat.runtimeOps.cancelUseForTurn') : t('chat.runtimeOps.useForTurn')}：${item.name}`,
+        description: t('chat.runtimeOps.skill'),
         keywords: ['skill', '技能', '用于本次', item.name, item.id],
       });
     }
@@ -228,6 +228,7 @@ export function useChatPage() {
     runtimeOps.settings.effort,
     runtimeOps.settings.model,
     send.runtime?.enabled,
+    t,
   ]);
 
   const runChatAction = useCallback(
