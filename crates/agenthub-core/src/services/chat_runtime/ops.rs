@@ -187,6 +187,11 @@ pub(crate) fn parse_skills_list(value: &Value) -> Vec<RuntimeExtensionItem> {
                 .get("enabled")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(true);
+            let loaded = skill
+                .get("loaded")
+                .or_else(|| skill.get("isLoaded"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             let callable = path.is_some();
             out.push(RuntimeExtensionItem {
                 id,
@@ -194,7 +199,7 @@ pub(crate) fn parse_skills_list(value: &Value) -> Vec<RuntimeExtensionItem> {
                 kind: RuntimeExtensionKind::Skill,
                 installed: true,
                 enabled,
-                loaded: false,
+                loaded,
                 callable,
                 path,
             });
@@ -237,13 +242,18 @@ pub(crate) fn parse_plugins_installed(value: &Value) -> Vec<RuntimeExtensionItem
                 .get("enabled")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
+            let loaded = plugin
+                .get("loaded")
+                .or_else(|| plugin.get("isLoaded"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             out.push(RuntimeExtensionItem {
                 id,
                 name,
                 kind: RuntimeExtensionKind::Plugin,
                 installed: true,
                 enabled,
-                loaded: false,
+                loaded,
                 // Plugins are not directly callable via turn input in B2.
                 callable: false,
                 path: None,

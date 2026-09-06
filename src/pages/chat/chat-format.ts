@@ -10,6 +10,7 @@ const CHAT_FAILURE_KEY = {
   modelRetired: 'chat.failure.modelRetired',
   thinkingUnsupported: 'chat.failure.thinkingUnsupported',
   sendFailed: 'chat.failure.sendFailed',
+  interrupted: 'chat.turnOutcome.interruptedHint',
 } as const satisfies Record<string, MessageKey>;
 import type { AgentProcessView } from '@/lib/chat-process';
 import type { ChatMessage } from '@/lib/types';
@@ -225,6 +226,14 @@ export function localizeChatFailure(text: string, t?: TranslateFn): string {
   const hay = text.toLowerCase();
   const copy = (key: keyof typeof CHAT_FAILURE_KEY, zh: string) =>
     t ? t(CHAT_FAILURE_KEY[key]) : zh;
+  if (
+    hay.includes('runtime interrupted')
+    || hay.includes('chat.runtime.interrupted')
+    || hay.includes('codex process stopped')
+    || hay.includes('codex thread is unavailable')
+  ) {
+    return copy('interrupted', 'Codex 进程或线程不可用，请开新一轮继续。');
+  }
   if (hay.includes('missing environment variable')) {
     return copy('missingEnv', '这份登录还在用另一份 API Key 配置，没法发。请点重试。');
   }

@@ -105,5 +105,12 @@ export function createTauriChatPort(): ChatPort {
     async pickChatImages(title) {
       return invoke<string[]>('pick_chat_images', { title: title ?? null });
     },
+    async saveChatPasteImage(input) {
+      return invoke<string>('save_chat_paste_image', {
+        base64: input.base64,
+        extension: input.extension,
+        byteLength: input.byteLength ?? null,
+      });
+    },
   };
 }

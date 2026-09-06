@@ -96,3 +96,11 @@ export async function getChatModel(
 export async function pickChatImages(title?: string): Promise<string[]> {
   return getBackend().chat.pickChatImages(title);
 }
+
+export async function saveChatPasteImage(input: {
+  base64: string;
+  extension: string;
+  byteLength?: number;
+}): Promise<string> {
+  return getBackend().chat.saveChatPasteImage(input);
+}

@@ -417,5 +417,10 @@ export function createMockChatPort(): ChatPort {
       await delay(10);
       return ['/tmp/mock-chat.png'];
     },
+    async saveChatPasteImage(input) {
+      await delay(5);
+      const ext = input.extension.replace(/^\./, '') || 'png';
+      return `/tmp/mock-paste.${ext}`;
+    },
   };
 }
