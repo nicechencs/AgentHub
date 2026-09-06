@@ -45,3 +45,51 @@ export interface RuntimeReply {
   decision?: 'allow' | 'deny';
   answers?: Record<string, string[]>;
 }
+
+
+export interface RuntimeTurnSettings {
+  model?: string | null;
+  effort?: string | null;
+}
+
+export interface RuntimeModelOption {
+  id: string;
+  efforts: string[];
+  defaultEffort?: string | null;
+}
+
+export interface RuntimeLocalImage {
+  path: string;
+}
+
+export interface RuntimeSkillRef {
+  name: string;
+  path: string;
+}
+
+export type RuntimeExtensionKind = 'skill' | 'plugin';
+
+export interface RuntimeExtensionItem {
+  id: string;
+  name: string;
+  kind: RuntimeExtensionKind;
+  installed: boolean;
+  enabled: boolean;
+  loaded: boolean;
+  callable: boolean;
+  path?: string | null;
+}
+
+export interface RuntimeStartExtras {
+  images?: RuntimeLocalImage[];
+  skills?: RuntimeSkillRef[];
+}
+
+export interface RuntimeOptions {
+  conversationId: string;
+  settings: RuntimeTurnSettings;
+  settingsFrozen: boolean;
+  models: RuntimeModelOption[];
+  extensions: RuntimeExtensionItem[];
+  modelsFromCodex: boolean;
+}

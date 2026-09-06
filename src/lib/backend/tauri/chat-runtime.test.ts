@@ -35,7 +35,7 @@ describe('Tauri durable chat boundary', () => {
     await port.runtimeSteer('chat-a', 'run-a', '只解释', 'steer-1');
     await port.runtimeCancel('chat-a', 'run-a');
     expect(invokeMock.mock.calls).toEqual([
-      ['chat_runtime_start', { conversationId: 'chat-a', prompt: '你好', clientRequestId: 'send-1' }],
+      ['chat_runtime_start', { conversationId: 'chat-a', prompt: '你好', clientRequestId: 'send-1', extras: null }],
       ['chat_runtime_reply', { reply }],
       ['chat_runtime_steer', { conversationId: 'chat-a', runId: 'run-a', prompt: '只解释', clientRequestId: 'steer-1' }],
       ['chat_runtime_cancel', { conversationId: 'chat-a', runId: 'run-a' }],

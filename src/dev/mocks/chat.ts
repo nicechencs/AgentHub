@@ -1,5 +1,5 @@
 import type { ChatPort } from '@/lib/backend/contracts';
-import type { RuntimeReply, RuntimeSnapshot } from '@/lib/backend/contracts/chat-runtime';
+import type { RuntimeOptions, RuntimeReply, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings } from '@/lib/backend/contracts/chat-runtime';
 import { delay } from '@/dev/mocks/delay';
 import type {
   AgentKey,
@@ -15,6 +15,8 @@ const mockMessages: Record<string, ChatMessage[]> = {};
 const mockCancel = new Set<string>();
 const mockInflight = new Set<string>();
 const runtimeSnapshots = new Map<string, RuntimeSnapshot>();
+const runtimeSettings = new Map<string, RuntimeTurnSettings>();
+const runtimeOptionsCache = new Map<string, RuntimeOptions>();
 
 function nowIso() {
   return new Date().toISOString();
@@ -46,6 +48,8 @@ export function resetChatMock() {
   mockCancel.clear();
   mockInflight.clear();
   runtimeSnapshots.clear();
+  runtimeSettings.clear();
+  runtimeOptionsCache.clear();
 }
 
 export function createMockChatPort(): ChatPort {
@@ -283,9 +287,71 @@ export function createMockChatPort(): ChatPort {
       };
       return { ...current, events: afterSequence == null ? current.events : current.events.filter((item) => item.sequence > afterSequence) };
     },
-    async runtimeStart(conversationId, prompt) {
+
+    async runtimeOptions(conversationId) {
       const snapshot = await this.runtimeSnapshot(conversationId);
       if (!snapshot.enabled) throw new Error('runtime is unavailable for this conversation');
+      const cached = runtimeOptionsCache.get(conversationId);
+      if (cached) {
+        return {
+          ...cached,
+          settings: runtimeSettings.get(conversationId) ?? cached.settings,
+          settingsFrozen: ['starting', 'running', 'waiting', 'cancelling'].includes(snapshot.phase),
+        };
+      }
+      const options: RuntimeOptions = {
+        conversationId,
+        settings: runtimeSettings.get(conversationId) ?? {},
+        settingsFrozen: ['starting', 'running', 'waiting', 'cancelling'].includes(snapshot.phase),
+        models: [
+          { id: 'gpt-mock', efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' },
+        ],
+        extensions: [
+          {
+            id: '/mock/skills/demo/SKILL.md',
+            name: 'demo',
+            kind: 'skill',
+            installed: true,
+            enabled: true,
+            loaded: false,
+            callable: true,
+            path: '/mock/skills/demo/SKILL.md',
+          },
+        ],
+        modelsFromCodex: false,
+      };
+      runtimeOptionsCache.set(conversationId, options);
+      return options;
+    },
+    async runtimeSetSettings(conversationId, settings) {
+      const snapshot = await this.runtimeSnapshot(conversationId);
+      if (!snapshot.enabled) throw new Error('runtime is unavailable for this conversation');
+      if (['starting', 'running', 'waiting', 'cancelling'].includes(snapshot.phase)) {
+        throw new Error('当前轮次进行中，不能修改模型或思考强度');
+      }
+      const options = await this.runtimeOptions(conversationId);
+      const model = settings.model?.trim() || undefined;
+      const effort = settings.effort?.trim() || undefined;
+      if (model && !options.models.some((item) => item.id === model)) {
+        throw new Error(`模型不可用: ${model}`);
+      }
+      const modelOption = options.models.find((item) => item.id === model);
+      if (model && effort && modelOption && modelOption.efforts.length > 0 && !modelOption.efforts.includes(effort)) {
+        throw new Error(`模型 ${model} 不支持思考强度 ${effort}`);
+      }
+      const next: RuntimeTurnSettings = {
+        model: model ?? null,
+        effort: effort ?? modelOption?.defaultEffort ?? null,
+      };
+      runtimeSettings.set(conversationId, next);
+      return next;
+    },
+    async runtimeStart(conversationId, prompt, _clientRequestId, extras?: RuntimeStartExtras) {
+      const snapshot = await this.runtimeSnapshot(conversationId);
+      if (!snapshot.enabled) throw new Error('runtime is unavailable for this conversation');
+      for (const image of extras?.images ?? []) {
+        if (!image.path.trim()) throw new Error('图片路径不能为空');
+      }
       const runId = `run-mock-${mockSeq++}`;
       const agent = mockConversations.find((item) => item.id === conversationId)?.agentIds[0] ?? 'codex';
       const turn = (mockMessages[conversationId] ?? []).length + 1;
@@ -334,6 +400,10 @@ export function createMockChatPort(): ChatPort {
     async getChatModel(_agentId) {
       await delay(20);
       return { model: null, models: [] };
+    },
+    async pickChatImages() {
+      await delay(10);
+      return ['/tmp/mock-chat.png'];
     },
   };
 }
