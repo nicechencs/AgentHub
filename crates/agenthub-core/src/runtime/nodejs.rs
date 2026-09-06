@@ -475,13 +475,15 @@ pub fn prefixed_path_env(bin_dir: Option<&Path>) -> Vec<(String, String)> {
 /// without mutating the process environment.
 pub fn extra_env_for_node_shebang(cli_path: &Path) -> Vec<(String, String)> {
     let mut dirs = Vec::new();
-    if let Some(node) = resolve_binary(&["node", "node.exe"]) {
+    if let Some(node) = resolve_binary(&["node", "node.exe"])
+        .or_else(|| resolve_node_at_least(NODE_MIN_MAJOR).map(|n| n.path))
+    {
         if let Some(dir) = node.parent() {
             dirs.push(dir.to_path_buf());
         }
     }
     if let Some(parent) = cli_path.parent() {
-        if !dirs.iter().any(|dir| dir == parent) {
+        if !dirs.iter().any(|dir| path_dir_same(dir, parent)) {
             dirs.push(parent.to_path_buf());
         }
     }
@@ -495,19 +497,37 @@ pub fn extra_env_for_node_shebang(cli_path: &Path) -> Vec<(String, String)> {
     vec![("PATH".into(), current)]
 }
 
+fn path_dir_same(left: &Path, right: &Path) -> bool {
+    let left: Vec<_> = left.components().collect();
+    let right: Vec<_> = right.components().collect();
+    if left.len() != right.len() {
+        return false;
+    }
+    left.iter().zip(right.iter()).all(|(a, b)| {
+        #[cfg(windows)]
+        {
+            a.as_os_str().eq_ignore_ascii_case(b.as_os_str())
+        }
+        #[cfg(not(windows))]
+        {
+            a == b
+        }
+    })
+}
+
 /// Prepend missing well-known bin dirs to a PATH string. Does not dedupe
 /// existing entries besides skipping dirs already present as a component.
 pub fn host_path_with_well_known_bins(current_path: &str, extra_dirs: &[PathBuf]) -> String {
     let existing: Vec<PathBuf> = std::env::split_paths(current_path).collect();
-    let mut to_prepend = Vec::new();
+    let mut to_prepend: Vec<PathBuf> = Vec::new();
     for dir in extra_dirs {
         if dir.as_os_str().is_empty() {
             continue;
         }
-        if existing.iter().any(|entry| entry == dir) {
+        if existing.iter().any(|entry| path_dir_same(entry, dir)) {
             continue;
         }
-        if to_prepend.iter().any(|entry: &PathBuf| entry == dir) {
+        if to_prepend.iter().any(|entry| path_dir_same(entry, dir)) {
             continue;
         }
         to_prepend.push(dir.clone());
@@ -523,7 +543,7 @@ pub fn host_path_with_well_known_bins(current_path: &str, extra_dirs: &[PathBuf]
 }
 
 fn push_existing_dir(dirs: &mut Vec<PathBuf>, dir: PathBuf) {
-    if dir.is_dir() && !dirs.iter().any(|existing| existing == &dir) {
+    if dir.is_dir() && !dirs.iter().any(|existing| path_dir_same(existing, &dir)) {
         dirs.push(dir);
     }
 }
@@ -538,6 +558,11 @@ pub fn well_known_host_bin_dirs() -> Vec<PathBuf> {
             push_existing_dir(&mut dirs, parent.to_path_buf());
         }
     }
+    if let Some(resolved) = resolve_node_at_least(NODE_MIN_MAJOR) {
+        if let Some(dir) = resolved.bin_dir() {
+            push_existing_dir(&mut dirs, dir);
+        }
+    }
     #[cfg(windows)]
     {
         for key in ["ProgramFiles", "ProgramFiles(x86)"] {
@@ -549,7 +574,15 @@ pub fn well_known_host_bin_dirs() -> Vec<PathBuf> {
             push_existing_dir(&mut dirs, PathBuf::from(appdata).join("npm"));
         }
         if let Ok(local) = std::env::var("LOCALAPPDATA") {
-            push_existing_dir(&mut dirs, PathBuf::from(local).join("npm"));
+            let local = PathBuf::from(local);
+            push_existing_dir(&mut dirs, local.join("npm"));
+            push_existing_dir(&mut dirs, local.join("Volta").join("bin"));
+        }
+        if let Ok(symlink) = std::env::var("NVM_SYMLINK") {
+            push_existing_dir(&mut dirs, PathBuf::from(symlink));
+        }
+        if let Ok(home) = crate::utils::paths::home_dir() {
+            push_existing_dir(&mut dirs, home.join("scoop").join("shims"));
         }
     }
     #[cfg(not(windows))]

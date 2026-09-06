@@ -63,15 +63,9 @@ const BLOCKED_TAGS = new Set([
   'video',
 ]);
 
-/**
- * Markdown links/images are untrusted input. Allow ordinary web URLs and
- * same-document/relative links, but reject every other URI scheme (including
- * javascript:, data:, file:, and custom protocol handlers).
- */
-export function isSafeMarkdownUrl(url: string): boolean {
+function decodeMarkdownHref(url: string): string | null {
   let candidate = url.trim();
-  if (!candidate) return false;
-
+  if (!candidate) return null;
   // Decode a couple of layers so encoded `javascript:` cannot bypass the
   // scheme check. Invalid percent escapes are treated as unsafe.
   for (let i = 0; i < 2; i += 1) {
@@ -80,14 +74,40 @@ export function isSafeMarkdownUrl(url: string): boolean {
       if (decoded === candidate) break;
       candidate = decoded;
     } catch {
-      return false;
+      return null;
     }
   }
   candidate = candidate.replace(/[\u0000-\u001f\u007f]/g, '').trim();
-  // Browsers normalize backslashes in special URLs, so `\\\\host` can act
+  return candidate || null;
+}
+
+function isUncOrProtocolRelative(candidate: string): boolean {
+  return candidate.startsWith('//') || candidate.startsWith('\\\\');
+}
+
+function isWindowsDriveHref(candidate: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(candidate);
+}
+
+/**
+ * Markdown links/images are untrusted input. Allow ordinary web URLs,
+ * same-document/relative links, and Windows drive paths. Reject every other
+ * URI scheme (javascript:, data:, file:, custom handlers) and UNC / protocol-
+ * relative hosts (`\\server` / `//host`).
+ */
+export function isSafeMarkdownUrl(url: string): boolean {
+  const candidate = decodeMarkdownHref(url);
+  if (!candidate) return false;
+  // Browsers normalize backslashes in special URLs, so `\\host` can act
   // like a protocol-relative URL. Reject them before the webview resolves the
   // relative href.
-  if (!candidate || candidate.startsWith('//') || candidate.includes('\\')) return false;
+  if (isUncOrProtocolRelative(candidate)) return false;
+  // `C:` / `D:` look like URI schemes. Treat drive paths as local files.
+  if (isWindowsDriveHref(candidate)) return true;
+  // Relative Windows paths (`src\foo.md`) are local, not network shares.
+  if (candidate.includes('\\')) {
+    return !/^[a-z][a-z\d+.-]*:/i.test(candidate.replace(/\\/g, '/'));
+  }
 
   const scheme = candidate.match(/^([a-z][a-z\d+.-]*):/i)?.[1]?.toLowerCase();
   if (scheme) {

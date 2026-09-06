@@ -169,6 +169,28 @@ describe('MarkdownView content safety', () => {
     expect(resolveMarkdownLocalPath('/docs/setup', '/Users/demo/app')).toBeNull();
   });
 
+  it('treats Windows drive paths as local files, not URI schemes', () => {
+    expect(isSafeMarkdownUrl('D:\\demo\\README.md')).toBe(true);
+    expect(isSafeMarkdownUrl('D:/demo/README.md')).toBe(true);
+    expect(looksLikeMarkdownLocalPath('D:\\demo\\README.md')).toBe(true);
+    expect(looksLikeMarkdownLocalPath('D:/demo/docs/guide.md')).toBe(true);
+    expect(looksLikeMarkdownLocalPath('src\\pages\\chat\\index.tsx')).toBe(true);
+    expect(isSafeMarkdownUrl('\\\\external.example.com\\share\\file.md')).toBe(false);
+    expect(looksLikeMarkdownLocalPath('\\\\external.example.com\\share\\file.md')).toBe(false);
+    expect(isActionableMarkdownHref('D:\\demo\\README.md')).toBe(true);
+    expect(resolveMarkdownLocalPath('D:/demo/README.md')).toBe('D:\\demo\\README.md');
+    expect(resolveMarkdownLocalPath('D:\\demo\\README.md')).toBe('D:\\demo\\README.md');
+  });
+
+  it('opens Windows drive markdown links in the file manager', async () => {
+    openLocalPathMock.mockReset().mockResolvedValue(undefined);
+    const event = clickEvent('D:\\demo\\README.md');
+    handleMarkdownClick(event);
+    await Promise.resolve();
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(openLocalPathMock).toHaveBeenCalledWith('D:\\demo\\README.md');
+  });
+
   it('detects markdown files for in-app preview', () => {
     expect(isMarkdownFilePath('README.md')).toBe(true);
     expect(isMarkdownFilePath('/Users/demo/app/docs/guide.MDX')).toBe(true);

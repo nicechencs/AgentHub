@@ -70,6 +70,43 @@ fn truncates_large_body() {
 }
 
 #[test]
+fn returns_path_without_verbatim_prefix() {
+    let dir = real_tempdir();
+    let file = dir.path().join("README.md");
+    fs::write(&file, "ok").unwrap();
+    let preview = read_markdown_file_preview(file.to_str().unwrap(), dir.path().to_str().unwrap())
+        .unwrap();
+    let shown = preview.path.to_string_lossy();
+    assert!(
+        !shown.starts_with(r"\\?\"),
+        "preview path must be user-facing: {shown}"
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn containment_is_case_insensitive_on_windows() {
+    let dir = real_tempdir();
+    let file = dir.path().join("README.md");
+    fs::write(&file, "ok").unwrap();
+    let cwd = dir.path().to_str().unwrap();
+    let flipped: String = cwd
+        .chars()
+        .map(|c| {
+            if c.is_ascii_uppercase() {
+                c.to_ascii_lowercase()
+            } else if c.is_ascii_lowercase() {
+                c.to_ascii_uppercase()
+            } else {
+                c
+            }
+        })
+        .collect();
+    let preview = read_markdown_file_preview(file.to_str().unwrap(), &flipped).unwrap();
+    assert_eq!(preview.content, "ok");
+}
+
+#[test]
 fn rejects_symlink() {
     let dir = real_tempdir();
     let real = dir.path().join("real.md");
@@ -82,7 +119,23 @@ fn rejects_symlink() {
             .unwrap_err();
         assert!(err.to_string().contains("symlink"));
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        match std::os::windows::fs::symlink_file(&real, &link) {
+            Ok(()) => {
+                let err = read_markdown_file_preview(
+                    link.to_str().unwrap(),
+                    dir.path().to_str().unwrap(),
+                )
+                .unwrap_err();
+                assert!(err.to_string().contains("symlink"));
+            }
+            Err(_) => {
+                let _ = link;
+            }
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
     {
         let _ = (real, link);
     }
