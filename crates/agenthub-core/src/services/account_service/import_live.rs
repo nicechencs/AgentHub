@@ -33,8 +33,8 @@ impl AccountService {
             return self.import_pi_providers_inner(name);
         }
 
-        // Kiro can import the local kiro-cli login without writing it back.
-        let adapter = if agent == AgentId::Kiro {
+        // Kiro / Cursor can import a local login without writing it back.
+        let adapter = if matches!(agent, AgentId::Kiro | AgentId::Cursor) {
             self.registry.get(agent).ok_or_else(|| {
                 AppError::NotFound(format!("adapter not registered: {}", agent.as_str()))
             })?

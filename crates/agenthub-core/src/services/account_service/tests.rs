@@ -1430,6 +1430,30 @@ fn unsupported_agent_returns_clear_error() {
 }
 
 #[test]
+fn import_live_cursor_does_not_require_account_switch() {
+    let (_root, svc, adapter) = live_svc(AgentId::Cursor);
+    adapter.supports.store(false, Ordering::SeqCst);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Cursor,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {
+                "access_token": "cursor-access",
+                "refresh_token": "cursor-refresh",
+                "email": "demo@example.com"
+            }
+        }),
+        label_hint: Some("demo@example.com".into()),
+        extra: json!({ "source": "state.vscdb" }),
+    });
+    let imported = svc.import_live(AgentId::Cursor, None).unwrap();
+    assert_eq!(imported.agent_id, AgentId::Cursor);
+    assert_eq!(imported.kind, AccountKind::Oauth);
+    assert!(imported.is_current);
+}
+
+#[test]
 fn import_live_kiro_does_not_require_account_switch() {
     let (_root, svc, adapter) = live_svc(AgentId::Kiro);
     adapter.supports.store(false, Ordering::SeqCst);

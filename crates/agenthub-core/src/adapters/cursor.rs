@@ -10,11 +10,12 @@
 //! - projects: read-only CLI workspaces under `~/.cursor/projects/*/agent-transcripts`
 //!   (`<id>/<id>.jsonl` sessions and `subagents/` children). Desktop IDE windows
 //!   (numeric ids / canvases) are not this surface.
-//! - auth: env `CURSOR_API_KEY` / login guidance only
+//! - auth: env `CURSOR_API_KEY` / import Cursor login from IDE `state.vscdb`;
+//!   no live apply
 //!
 //! ## Explicitly out of scope
 //! - Providers / Base URL templates (`write_config` fail-closed)
-//! - Account pool switch via IDE private account stores (forbidden)
+//! - Writing back into IDE private account stores (`apply_account` forbidden)
 //! - Token usage from IDE-internal usage databases
 //! - Using IDE `cursor` / `Cursor.exe` as headless entry
 //!
@@ -27,8 +28,8 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{AppError, Result};
 use crate::models::{
-    AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectResult, DetectStatus,
-    DetectedBinaryCopy, LiveAccount, RunOptions, RunSpec,
+    AccountKind, AgentConfig, AgentId, AuthHealth, AuthState, Capability, CapabilityState,
+    DetectResult, DetectStatus, DetectedBinaryCopy, LiveAccount, RunOptions, RunSpec,
 };
 use crate::runtime;
 use crate::utils::paths::{agent_home, home_dir};
@@ -38,6 +39,8 @@ use super::{
     api_key_live_account, looks_like_version_line, require_api_key, AgentAdapter,
     NOT_FOUND_FIREFIGHTING_NOTE,
 };
+
+mod auth;
 
 /// Official Windows native installer (PowerShell: `irm … | iex`).
 pub const NATIVE_PS1_URL: &str = "https://cursor.com/install?win32=true";
@@ -307,7 +310,7 @@ impl AgentAdapter for CursorAdapter {
             "auth".into(),
             serde_json::json!({
                 "cursorApiKeyEnvSet": api_key_set,
-                "note": "Use CURSOR_API_KEY or `cursor-agent login`; no provider template file",
+                "note": "Use CURSOR_API_KEY, `cursor-agent login`, or import the Cursor login already on this computer",
             }),
         );
         raw.insert(
@@ -344,6 +347,19 @@ impl AgentAdapter for CursorAdapter {
     }
 
     fn read_auth(&self) -> Result<AuthState> {
+        if let Some(mut state) = auth::cursor_oauth_auth_state() {
+            if cursor_cli_status_verified() {
+                state.health = AuthHealth::Verified;
+            }
+            let api_key_set = std::env::var_os("CURSOR_API_KEY")
+                .map(|v| !v.is_empty())
+                .unwrap_or(false);
+            return Ok(if api_key_set {
+                state.with_also_present(["api_key"])
+            } else {
+                state
+            });
+        }
         let api_key_set = std::env::var_os("CURSOR_API_KEY")
             .map(|v| !v.is_empty())
             .unwrap_or(false);
@@ -353,7 +369,7 @@ impl AgentAdapter for CursorAdapter {
                 kind: Some("env-CURSOR_API_KEY".into()),
                 summary: "CURSOR_API_KEY is set in the environment".into(),
                 has_credentials: true,
-                health: crate::models::AuthHealth::Configured,
+                health: AuthHealth::Configured,
                 source: Some("env:CURSOR_API_KEY".into()),
                 revision: None,
                 also_present: Vec::new(),
@@ -374,7 +390,7 @@ impl AgentAdapter for CursorAdapter {
                     String::from_utf8_lossy(&out.stderr)
                 );
                 let health = cursor_status_health(&text);
-                if health == crate::models::AuthHealth::Verified {
+                if health == AuthHealth::Verified {
                     return Ok(AuthState {
                         agent: AgentId::Cursor,
                         kind: Some("cli-status".into()),
@@ -387,7 +403,7 @@ impl AgentAdapter for CursorAdapter {
                         secret_hash: None,
                     });
                 }
-                if health == crate::models::AuthHealth::NeedsLogin {
+                if health == AuthHealth::NeedsLogin {
                     return Ok(AuthState {
                         agent: AgentId::Cursor,
                         kind: Some("cli-status".into()),
@@ -418,12 +434,28 @@ impl AgentAdapter for CursorAdapter {
             kind: None,
             summary: "no CURSOR_API_KEY; run `cursor-agent login` or set CURSOR_API_KEY".into(),
             has_credentials: false,
-            health: crate::models::AuthHealth::Missing,
+            health: AuthHealth::Missing,
             source: Some("cursor-agent".into()),
             revision: None,
             also_present: Vec::new(),
             secret_hash: None,
         })
+    }
+
+    fn read_account(&self) -> Result<LiveAccount> {
+        auth::read_cursor_live_account()
+    }
+
+    fn identity_label(
+        &self,
+        kind: AccountKind,
+        credentials: &serde_json::Value,
+        label_hint: Option<&str>,
+    ) -> Option<String> {
+        if kind == AccountKind::Oauth {
+            return auth::cursor_identity_label(credentials, label_hint);
+        }
+        super::default_identity_label(kind, credentials, label_hint)
     }
 
     fn build_api_key_account(&self, api_key: &str) -> Result<LiveAccount> {
@@ -1214,5 +1246,95 @@ FINAL_DIR="$HOME/.local/share/cursor-agent/versions/2026.07.23-e383d2b"
         assert!(result.binary_path.is_none());
         assert!(result.channel.is_none());
         assert!(result.extra_copies.iter().all(|c| c.kind == "desktop"));
+    }
+
+    #[test]
+    fn read_cursor_auth_from_sqlite_uses_item_table() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.vscdb");
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute(
+            "CREATE TABLE ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO ItemTable (key, value) VALUES (?1, ?2)",
+            rusqlite::params!["cursorAuth/accessToken", "cursor-access-token"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO ItemTable (key, value) VALUES (?1, ?2)",
+            rusqlite::params!["cursorAuth/refreshToken", "cursor-refresh-token"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO ItemTable (key, value) VALUES (?1, ?2)",
+            rusqlite::params!["cursorAuth/cachedEmail", "demo@example.com"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO ItemTable (key, value) VALUES (?1, ?2)",
+            rusqlite::params![
+                "cursorAuth/cachedScopedProfile",
+                r#"{"displayName":"Demo User"}"#,
+            ],
+        )
+        .unwrap();
+        drop(conn);
+
+        let body = super::auth::read_cursor_auth_from_sqlite(&path).expect("token in sqlite");
+        assert_eq!(body["access_token"], "cursor-access-token");
+        assert_eq!(body["refresh_token"], "cursor-refresh-token");
+        assert_eq!(body["email"], "demo@example.com");
+        assert_eq!(body["display_name"], "Demo User");
+        let live = super::auth::live_account_from_auth(body, "state.vscdb");
+        assert_eq!(live.agent, AgentId::Cursor);
+        assert_eq!(live.kind, AccountKind::Oauth);
+        assert_eq!(
+            super::auth::cursor_identity_label(&live.credentials, live.label_hint.as_deref())
+                .as_deref(),
+            Some("demo@example.com")
+        );
+    }
+
+    #[test]
+    fn read_cursor_auth_from_sqlite_unquotes_json_strings() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.vscdb");
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute(
+            "CREATE TABLE ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO ItemTable (key, value) VALUES (?1, ?2)",
+            rusqlite::params!["cursorAuth/accessToken", r#""quoted-access""#],
+        )
+        .unwrap();
+        drop(conn);
+
+        let body = super::auth::read_cursor_auth_from_sqlite(&path).expect("quoted token");
+        assert_eq!(body["access_token"], "quoted-access");
+    }
+
+    #[test]
+    fn read_cursor_auth_from_sqlite_missing_access_is_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.vscdb");
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute(
+            "CREATE TABLE ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO ItemTable (key, value) VALUES (?1, ?2)",
+            rusqlite::params!["cursorAuth/cachedEmail", "demo@example.com"],
+        )
+        .unwrap();
+        drop(conn);
+        assert!(super::auth::read_cursor_auth_from_sqlite(&path).is_none());
     }
 }
