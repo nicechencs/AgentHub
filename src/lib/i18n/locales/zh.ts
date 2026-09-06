@@ -2153,7 +2153,7 @@ export const zh = {
       switchWroteCatalog: "已写入模型列表",
       failedToWriteLive: "未能写入本机配置",
       cursorLiveWriteUnsupportedFull:
-        "未能写入本机配置。Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录，或设置 CURSOR_API_KEY。",
+        "未能写入本机配置。Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录。",
       refresh: "刷新",
       refreshTip: "查看这份登录的用量。",
       syncCurrentLogin: "同步当前登录",

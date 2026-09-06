@@ -184,7 +184,8 @@ describe('MOCK_CAPABILITIES (dev/mocks)', () => {
     const disabled = AGENT_IDS.filter((id) =>
       isAuthorizationManagementBlocked(id, MOCK_CAPABILITIES[id]),
     );
-    expect(disabled).toEqual(['cursor']);
+    expect(disabled).toEqual([]);
+    expect(disabled).not.toContain('cursor');
     expect(disabled).not.toContain('kiro');
     expect(disabled).not.toContain('workbuddy');
     expect(disabled).not.toContain('claude');
@@ -193,12 +194,9 @@ describe('MOCK_CAPABILITIES (dev/mocks)', () => {
 });
 
 describe('isAuthorizationManagementBlocked', () => {
-  it('locks Cursor even when capability data is missing', () => {
-    expect(isAuthorizationManagementBlocked('cursor')).toBe(true);
-    expect(isAuthorizationManagementBlocked('cursor', undefined)).toBe(true);
-  });
-
-  it('fails open for other agents when accountSwitch is absent', () => {
+  it('fails open when capability data is missing', () => {
+    expect(isAuthorizationManagementBlocked('cursor')).toBe(false);
+    expect(isAuthorizationManagementBlocked('cursor', undefined)).toBe(false);
     expect(isAuthorizationManagementBlocked('claude')).toBe(false);
     expect(isAuthorizationManagementBlocked('claude', {})).toBe(false);
   });
@@ -221,12 +219,13 @@ describe('isAuthorizationManagementBlocked', () => {
     ).toBe(false);
   });
 
-  it('still locks Cursor when API Key is marked usable', () => {
+  it('keeps Cursor available for import even without API Key configuration', () => {
+    expect(isAuthorizationManagementBlocked('cursor', MOCK_CAPABILITIES.cursor)).toBe(false);
     expect(
       isAuthorizationManagementBlocked('cursor', {
         accountSwitch: { level: 'unsupported' },
-        apiKeyAccount: { level: 'partial' },
+        apiKeyAccount: { level: 'unsupported' },
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 });

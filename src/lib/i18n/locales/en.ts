@@ -2165,7 +2165,7 @@ export const en = {
       switchWroteCatalog: "Wrote to the model list",
       failedToWriteLive: "Failed to write local config",
       cursorLiveWriteUnsupportedFull:
-        "Failed to write local config. Cursor can't write this login to its local config yet. Use Cursor's own sign-in, or set CURSOR_API_KEY.",
+        "Failed to write local config. Cursor can't write this login to its local config yet. Use Cursor's own sign-in.",
       refresh: "Refresh",
       refreshTip: "Check this login's usage.",
       syncCurrentLogin: "Sync current login",

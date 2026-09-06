@@ -25,11 +25,19 @@ export const TICKET_ADD_ACTIONS: Array<{ kind: TicketAddKind; label: string }> =
   { kind: 'api-key', label: 'Add API Key' },
 ];
 
+export function agentSupportsTicketApiKey(id: AgentKey): boolean {
+  return id !== 'cursor';
+}
+
 export function ticketAddActionsForAgent(
   oauthLogin = false,
+  apiKey = true,
 ): Array<{ kind: TicketAddKind; label: string }> {
-  if (oauthLogin) return TICKET_ADD_ACTIONS;
-  return TICKET_ADD_ACTIONS.filter((item) => item.kind !== 'oauth');
+  return TICKET_ADD_ACTIONS.filter((item) => {
+    if (item.kind === 'oauth') return oauthLogin;
+    if (item.kind === 'api-key') return apiKey;
+    return true;
+  });
 }
 
 export function ticketAddActionLabel(kind: TicketAddKind, t?: TranslateFn): string {
@@ -63,7 +71,7 @@ export function buildTicketAddMenu(
   return agentIds.map((id) => ({
     id,
     name: agentDisplayName(id),
-    actions: ticketAddActionsForAgent(oauth.has(id)),
+    actions: ticketAddActionsForAgent(oauth.has(id), agentSupportsTicketApiKey(id)),
   }));
 }
 

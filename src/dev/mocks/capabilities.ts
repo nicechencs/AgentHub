@@ -145,8 +145,8 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
       reason: '账号由 Cursor 管理',
     },
     apiKeyAccount: {
-      level: 'partial',
-      reason: '可用 API Key 或 cursor-agent login',
+      level: 'unsupported',
+      reason: '无本机 API Key 配置',
     },
     skills: { level: 'full' },
     liveBackup: { level: 'unsupported', reason: '无稳定配置/凭据文件' },

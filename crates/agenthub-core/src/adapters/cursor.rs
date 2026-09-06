@@ -10,8 +10,8 @@
 //! - projects: read-only CLI workspaces under `~/.cursor/projects/*/agent-transcripts`
 //!   (`<id>/<id>.jsonl` sessions and `subagents/` children). Desktop IDE windows
 //!   (numeric ids / canvases) are not this surface.
-//! - auth: env `CURSOR_API_KEY` / import Cursor login from IDE `state.vscdb`;
-//!   no live apply
+//! - auth: import Cursor login from IDE `state.vscdb`; env `CURSOR_API_KEY` is
+//!   CLI-only (no AgentHub API Key configuration); no live apply
 //!
 //! ## Explicitly out of scope
 //! - Providers / Base URL templates (`write_config` fail-closed)
@@ -35,10 +35,7 @@ use crate::runtime;
 use crate::utils::paths::{agent_home, home_dir};
 use crate::utils::process::{run_capture, stdout_first_line};
 
-use super::{
-    api_key_live_account, looks_like_version_line, require_api_key, AgentAdapter,
-    NOT_FOUND_FIREFIGHTING_NOTE,
-};
+use super::{looks_like_version_line, AgentAdapter, NOT_FOUND_FIREFIGHTING_NOTE};
 
 mod auth;
 
@@ -310,7 +307,7 @@ impl AgentAdapter for CursorAdapter {
             "auth".into(),
             serde_json::json!({
                 "cursorApiKeyEnvSet": api_key_set,
-                "note": "Use CURSOR_API_KEY, `cursor-agent login`, or import the Cursor login already on this computer",
+                "note": "Import the Cursor login already on this computer, or run `cursor-agent login`",
             }),
         );
         raw.insert(
@@ -341,7 +338,7 @@ impl AgentAdapter for CursorAdapter {
         // Fail-closed: no models.json / config.toml, and never an ANTHROPIC_* or
         // OpenAI-style /v1 writer.
         Err(AppError::Unsupported(
-            "Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录，或设置 CURSOR_API_KEY。"
+            "Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录。"
                 .into(),
         ))
     }
@@ -458,27 +455,15 @@ impl AgentAdapter for CursorAdapter {
         super::default_identity_label(kind, credentials, label_hint)
     }
 
-    fn build_api_key_account(&self, api_key: &str) -> Result<LiveAccount> {
-        // Pool-only: apply to live remains Unsupported (set env / cursor-agent login).
-        let key = require_api_key(api_key)?;
-        Ok(api_key_live_account(
-            AgentId::Cursor,
-            key,
-            serde_json::json!({
-                "format": "api_key",
-                "api_key": key,
-            }),
-            "CURSOR_API_KEY",
-            serde_json::json!({
-                "source": "manual",
-                "note": "pool-only; apply live is unsupported — set CURSOR_API_KEY or run `cursor-agent login`"
-            }),
+    fn build_api_key_account(&self, _api_key: &str) -> Result<LiveAccount> {
+        Err(AppError::Unsupported(
+            "Cursor 不能配置 API Key。请导入本机已有登录。".into(),
         ))
     }
 
     fn apply_account(&self, _account: &LiveAccount) -> Result<()> {
         Err(AppError::Unsupported(
-            "Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录，或设置 CURSOR_API_KEY。"
+            "Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录。"
                 .into(),
         ))
     }
@@ -496,7 +481,7 @@ impl AgentAdapter for CursorAdapter {
             ConfigWrite => CapabilityState::unsupported("无稳定配置写入契约，fail-closed"),
             // UI 文案保持短句；IDE 私有库禁写见模块注释 / capability 矩阵
             AccountSwitch => CapabilityState::unsupported("账号由 Cursor 管理"),
-            ApiKeyAccount => CapabilityState::partial("可用 API Key 或 cursor-agent login"),
+            ApiKeyAccount => CapabilityState::unsupported("无本机 API Key 配置"),
             LiveBackup => CapabilityState::unsupported("无稳定配置/凭据文件"),
             StructuredStream => CapabilityState::unsupported("Agent CLI 仅提供 text 输出"),
             ProjectHistory => CapabilityState::full(),
@@ -1176,14 +1161,12 @@ FINAL_DIR="$HOME/.local/share/cursor-agent/versions/2026.07.23-e383d2b"
     }
 
     #[test]
-    fn build_api_key_account_pool_only() {
-        let acc = CursorAdapter
+    fn build_api_key_account_is_unsupported() {
+        let err = CursorAdapter
             .build_api_key_account("cursor-secret-key")
-            .unwrap();
-        assert_eq!(acc.agent, AgentId::Cursor);
-        assert_eq!(acc.kind, AccountKind::ApiKey);
-        let err = CursorAdapter.apply_account(&acc).unwrap_err();
+            .unwrap_err();
         assert_eq!(err.code(), "unsupported");
+        assert!(err.to_string().contains("不能配置 API Key"));
     }
 
     #[test]

@@ -144,7 +144,7 @@
       "cursor": {
         "configWrite": "无稳定配置写入契约，fail-closed",
         "accountSwitch": "账号由 Cursor 管理",
-        "apiKeyAccount": "可用 API Key 或 cursor-agent login",
+        "apiKeyAccount": "无本机 API Key 配置",
         "skills": null,
         "liveBackup": "无稳定配置/凭据文件",
         "structuredStream": "Agent CLI 仅提供 text 输出",
@@ -306,7 +306,7 @@
       "cursor": {
         "configWrite": "无稳定配置写入契约，fail-closed",
         "accountSwitch": "账号由 Cursor 管理",
-        "apiKeyAccount": "可用 API Key 或 cursor-agent login",
+        "apiKeyAccount": "无本机 API Key 配置",
         "skills": null,
         "liveBackup": "无稳定配置/凭据文件",
         "structuredStream": "Agent CLI 仅提供 text 输出",

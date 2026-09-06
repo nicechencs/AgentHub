@@ -30,7 +30,7 @@ use super::{
 pub(super) fn live_write_unsupported(agent: AgentId) -> AppError {
     match agent {
         AgentId::Cursor => AppError::Unsupported(
-            "Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录，或设置 CURSOR_API_KEY。"
+            "Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录。"
                 .into(),
         ),
         other => AppError::Unsupported(format!(

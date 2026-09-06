@@ -13,7 +13,7 @@ import { invoke } from './invoke';
 const log = logger.scope('backend:tauri:provider');
 
 export const CURSOR_LIVE_WRITE_UNSUPPORTED =
-  'Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录，或设置 CURSOR_API_KEY。';
+  'Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录。';
 
 function errorPayloadText(error: unknown): string {
   if (typeof error === 'string') return error;
