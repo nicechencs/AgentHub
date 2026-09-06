@@ -78,6 +78,10 @@ export function defaultLivePathForFile(agentId: string, fileName: string): strin
     cursor: {
       'auth.json': '~/.cursor/auth.json',
     },
+    kiro: {
+      'kiro-auth-token.json': '~/.aws/sso/cache/kiro-auth-token.json',
+      'auth.json': '~/.aws/sso/cache/kiro-auth-token.json',
+    },
   };
   const mapped = known[agentId]?.[fileName];
   if (mapped) return mapped;

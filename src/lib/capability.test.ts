@@ -184,7 +184,8 @@ describe('MOCK_CAPABILITIES (dev/mocks)', () => {
     const disabled = AGENT_IDS.filter((id) =>
       isAuthorizationManagementBlocked(id, MOCK_CAPABILITIES[id]),
     );
-    expect(disabled).toEqual(['cursor', 'kiro']);
+    expect(disabled).toEqual(['cursor']);
+    expect(disabled).not.toContain('kiro');
     expect(disabled).not.toContain('workbuddy');
     expect(disabled).not.toContain('claude');
     expect(disabled).not.toContain('kimi');
@@ -206,6 +207,25 @@ describe('isAuthorizationManagementBlocked', () => {
     expect(
       isAuthorizationManagementBlocked('pi', {
         accountSwitch: { level: 'unsupported' },
+      }),
+    ).toBe(true);
+  });
+
+  it('keeps Kiro available when API Key can enter the pool', () => {
+    expect(isAuthorizationManagementBlocked('kiro', MOCK_CAPABILITIES.kiro)).toBe(false);
+    expect(
+      isAuthorizationManagementBlocked('kiro', {
+        accountSwitch: { level: 'unsupported' },
+        apiKeyAccount: { level: 'partial' },
+      }),
+    ).toBe(false);
+  });
+
+  it('still locks Cursor when API Key is marked usable', () => {
+    expect(
+      isAuthorizationManagementBlocked('cursor', {
+        accountSwitch: { level: 'unsupported' },
+        apiKeyAccount: { level: 'partial' },
       }),
     ).toBe(true);
   });

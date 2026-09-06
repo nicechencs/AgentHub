@@ -1430,6 +1430,31 @@ fn unsupported_agent_returns_clear_error() {
 }
 
 #[test]
+fn import_live_kiro_does_not_require_account_switch() {
+    let (_root, svc, adapter) = live_svc(AgentId::Kiro);
+    adapter.supports.store(false, Ordering::SeqCst);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Kiro,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {
+                "access_token": "aoa-import",
+                "refresh_token": "aor-import",
+                "provider": "google",
+                "profile_arn": "arn:aws:codewhisperer:us-east-1:1:profile/ABC"
+            }
+        }),
+        label_hint: Some("Google".into()),
+        extra: json!({ "source": "data.sqlite3" }),
+    });
+    let imported = svc.import_live(AgentId::Kiro, None).unwrap();
+    assert_eq!(imported.agent_id, AgentId::Kiro);
+    assert_eq!(imported.kind, AccountKind::Oauth);
+    assert!(imported.is_current);
+}
+
+#[test]
 fn import_live_dedupes_identical_credentials() {
     let (_root, svc, adapter) = live_svc(AgentId::Codex);
     adapter.set_live(LiveAccount {

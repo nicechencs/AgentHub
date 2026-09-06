@@ -6,7 +6,7 @@
 //! ## Scope (honest, wave 1)
 //! - install / detect (official sh + ps1; IDE.app is never Installed)
 //! - headless: `kiro-cli chat --no-interactive "…"` (+ `--trust-all-tools` when dangerous)
-//! - auth: env `KIRO_API_KEY` / `kiro-cli login` guidance; pool-only API Key
+//! - auth: env `KIRO_API_KEY` / import `kiro-cli login` (sqlite + SSO cache); no live apply
 //!
 //! ## Explicitly out of scope
 //! - Config write / account apply / live backup
@@ -18,8 +18,8 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{AppError, Result};
 use crate::models::{
-    AgentConfig, AgentId, AuthHealth, AuthState, Capability, CapabilityState, DetectResult,
-    DetectStatus, DetectedBinaryCopy, LiveAccount, RunOptions, RunSpec,
+    AccountKind, AgentConfig, AgentId, AuthHealth, AuthState, Capability, CapabilityState,
+    DetectResult, DetectStatus, DetectedBinaryCopy, LiveAccount, RunOptions, RunSpec,
 };
 use crate::runtime;
 use crate::utils::paths::agent_home;
@@ -28,6 +28,8 @@ use crate::utils::process::{run_capture, stdout_first_line};
 use super::{
     api_key_live_account, detect_binary, looks_like_version_line, require_api_key, AgentAdapter,
 };
+
+mod auth;
 
 /// Official Windows native installer (PowerShell: `irm … | iex`).
 pub const NATIVE_PS1_URL: &str = "https://cli.kiro.dev/install.ps1";
@@ -147,6 +149,19 @@ impl AgentAdapter for KiroAdapter {
     }
 
     fn read_auth(&self) -> Result<AuthState> {
+        if let Some(mut state) = auth::kiro_oauth_auth_state() {
+            if kiro_cli_status_verified() {
+                state.health = AuthHealth::Verified;
+            }
+            let api_key_set = std::env::var_os("KIRO_API_KEY")
+                .map(|v| !v.is_empty())
+                .unwrap_or(false);
+            return Ok(if api_key_set {
+                state.with_also_present(["api_key"])
+            } else {
+                state
+            });
+        }
         let api_key_set = std::env::var_os("KIRO_API_KEY")
             .map(|v| !v.is_empty())
             .unwrap_or(false);
@@ -221,6 +236,22 @@ impl AgentAdapter for KiroAdapter {
             also_present: Vec::new(),
             secret_hash: None,
         })
+    }
+
+    fn read_account(&self) -> Result<LiveAccount> {
+        auth::read_kiro_live_account()
+    }
+
+    fn identity_label(
+        &self,
+        kind: AccountKind,
+        credentials: &serde_json::Value,
+        label_hint: Option<&str>,
+    ) -> Option<String> {
+        if kind == AccountKind::Oauth {
+            return auth::kiro_identity_label(credentials, label_hint);
+        }
+        super::default_identity_label(kind, credentials, label_hint)
     }
 
     fn build_api_key_account(&self, api_key: &str) -> Result<LiveAccount> {

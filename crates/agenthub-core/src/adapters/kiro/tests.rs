@@ -166,3 +166,62 @@ fn install_channels_native_only() {
         "macOS/Linux native channel must not require PowerShell"
     );
 }
+
+#[test]
+fn normalize_token_accepts_sqlite_and_sso_shapes() {
+    let sqlite = serde_json::json!({
+        "access_token": "aoa-live",
+        "refresh_token": "aor-live",
+        "expires_at": "2026-09-06T15:05:03Z",
+        "provider": "Google",
+        "profile_arn": "arn:aws:codewhisperer:us-east-1:1:profile/ABC"
+    });
+    let body = super::auth::normalize_kiro_token(&sqlite).expect("sqlite token");
+    assert_eq!(body["provider"], "google");
+    assert_eq!(body["profile_arn"], "arn:aws:codewhisperer:us-east-1:1:profile/ABC");
+
+    let cache = serde_json::json!({
+        "accessToken": "aoa-cache",
+        "refreshToken": "aor-cache",
+        "profileArn": "arn:aws:codewhisperer:us-east-1:1:profile/ABC",
+        "expiresAt": "2026-09-06T15:05:03Z",
+        "authMethod": "social",
+        "provider": "Google"
+    });
+    let body = super::auth::normalize_kiro_token(&cache).expect("cache token");
+    assert_eq!(body["access_token"], "aoa-cache");
+    assert_eq!(body["refresh_token"], "aor-cache");
+    assert_eq!(body["auth_method"], "social");
+}
+
+#[test]
+fn read_social_token_from_sqlite_uses_auth_kv() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("data.sqlite3");
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute(
+        "CREATE TABLE auth_kv (key TEXT PRIMARY KEY, value TEXT)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO auth_kv (key, value) VALUES (?1, ?2)",
+        rusqlite::params![
+            "kirocli:social:token",
+            r#"{"access_token":"aoa-db","refresh_token":"aor-db","provider":"google","profile_arn":"arn:aws:codewhisperer:us-east-1:1:profile/ABC"}"#,
+        ],
+    )
+    .unwrap();
+    drop(conn);
+
+    let body = super::auth::read_social_token_from_sqlite(&path).expect("token in sqlite");
+    assert_eq!(body["access_token"], "aoa-db");
+    let live = super::auth::live_account_from_token_body(body, "data.sqlite3");
+    assert_eq!(live.agent, AgentId::Kiro);
+    assert_eq!(live.kind, AccountKind::Oauth);
+    assert_eq!(
+        super::auth::kiro_identity_label(&live.credentials, live.label_hint.as_deref())
+            .as_deref(),
+        Some("arn:aws:codewhisperer:us-east-1:1:profile/ABC")
+    );
+}
