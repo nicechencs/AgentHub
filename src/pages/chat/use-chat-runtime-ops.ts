@@ -12,7 +12,12 @@ import {
 } from '@/lib/api/chat';
 import type { Conversation } from '@/lib/types';
 import {
+  applyDeniedEfforts,
+  coerceSettingsToCatalog,
+  effortsForModel,
+  learnFromThinkingUnsupported,
   retainRuntimeCatalog,
+  settingsForModelSwitch,
   type RuntimeCatalogMemory,
 } from './chat-runtime-ops-model';
 
@@ -87,14 +92,39 @@ export function useChatRuntimeOps(input: {
     try {
       const options = await runtimeOptions(active.id);
       const retained = retainRuntimeCatalog(catalogRef.current, options, active.id);
+      const effectiveModels = applyDeniedEfforts(retained.models);
       catalogRef.current = {
         conversationId: active.id,
-        models: retained.models,
+        models: effectiveModels,
         extensions: retained.extensions,
       };
-      setModels(retained.models);
-      setSettings(options.settings ?? {});
-      setSettingsFrozen(options.settingsFrozen || turnActive);
+      setModels(effectiveModels);
+      const frozenNow = options.settingsFrozen || turnActive;
+      // Idle: never keep an unsupported effort in controls. Frozen: show the
+      // effective pair that started the turn (backend skips reconcile too).
+      const incoming = options.settings ?? {};
+      let nextSettings =
+        !frozenNow && effectiveModels.length > 0
+          ? coerceSettingsToCatalog(incoming, effectiveModels)
+          : incoming;
+      // Persist only when repairing an explicit unsupported effort. Do not
+      // write merely because coerce filled a default for an omitted effort.
+      const incomingEffort = incoming.effort?.trim() || null;
+      const coercedEffort = nextSettings.effort?.trim() || null;
+      if (
+        !frozenNow &&
+        effectiveModels.length > 0 &&
+        incomingEffort &&
+        incomingEffort !== coercedEffort
+      ) {
+        try {
+          nextSettings = await runtimeSetSettings(active.id, nextSettings);
+        } catch {
+          // Keep local coerce even if persistence races; start still rejects.
+        }
+      }
+      setSettings(nextSettings);
+      setSettingsFrozen(frozenNow);
       setExtensions(retained.extensions);
     } catch (error) {
       toast({
@@ -119,21 +149,20 @@ export function useChatRuntimeOps(input: {
 
   const frozen = settingsFrozen || turnActive;
 
-  const currentEfforts = useMemo(() => {
-    const model = settings.model;
-    if (!model) return [] as string[];
-    return models.find((item) => item.id === model)?.efforts ?? [];
-  }, [models, settings.model]);
+  const currentEfforts = useMemo(
+    () => effortsForModel(models, settings.model),
+    [models, settings.model],
+  );
 
   const switchModel = useCallback(
     async (model: string) => {
       if (!active || frozen) return;
       const prior = settingsRef.current;
+      // Reset effort to the new model's default / first supported — never keep
+      // an unsupported value from the previous model silently.
+      const requested = settingsForModelSwitch(model, models);
       try {
-        const next = await runtimeSetSettings(active.id, {
-          model,
-          effort: undefined,
-        });
+        const next = await runtimeSetSettings(active.id, requested);
         setSettings(next);
       } catch (error) {
         setSettings(prior);
@@ -145,7 +174,7 @@ export function useChatRuntimeOps(input: {
         await refresh();
       }
     },
-    [active, frozen, refresh, t, toast],
+    [active, frozen, models, refresh, t, toast],
   );
 
   const switchEffort = useCallback(
@@ -280,6 +309,33 @@ export function useChatRuntimeOps(input: {
     };
   }, [extensions, images, selectedSkillIds]);
 
+
+  const noteThinkingFailure = useCallback(
+    async (errorText: string | null | undefined) => {
+      if (!active || frozen) return;
+      const learned = learnFromThinkingUnsupported(settingsRef.current, models, errorText);
+      if (!learned.learned) return;
+      setModels(learned.models);
+      catalogRef.current = {
+        conversationId: active.id,
+        models: learned.models,
+        extensions: catalogRef.current.extensions,
+      };
+      setSettings(learned.settings);
+      const nextEffort = learned.settings.effort?.trim() || null;
+      const priorEffort = settingsRef.current.effort?.trim() || null;
+      if (nextEffort && nextEffort !== priorEffort) {
+        try {
+          const persisted = await runtimeSetSettings(active.id, learned.settings);
+          setSettings(persisted);
+        } catch {
+          // Local deny still hides the effort; start/options enforce too.
+        }
+      }
+    },
+    [active, frozen, models],
+  );
+
   return {
     loading,
     models,
@@ -298,5 +354,6 @@ export function useChatRuntimeOps(input: {
     toggleSkill,
     startExtras,
     refresh,
+    noteThinkingFailure,
   };
 }

@@ -58,3 +58,54 @@ describe('mock chat runtime', () => {
     });
   });
 });
+
+
+  it('defaults spark on switch; learns to hide over-reported medium after start reject', async () => {
+    const chat = createMockChatPort();
+    const conversation = await chat.createConversation(['codex']);
+    const catalog = await chat.runtimeOptions(conversation.id);
+    const spark = catalog.models.find((item) => item.id === 'gpt-5.3-codex-spark');
+    expect(spark?.efforts).toEqual(['low', 'medium', 'high', 'xhigh']);
+
+    const switched = await chat.runtimeSetSettings(conversation.id, {
+      model: 'gpt-5.3-codex-spark',
+      effort: null,
+    });
+    expect(switched).toMatchObject({
+      model: 'gpt-5.3-codex-spark',
+      effort: 'high',
+    });
+
+    // Catalog over-reports medium, so setSettings still accepts it before learning.
+    await expect(
+      chat.runtimeSetSettings(conversation.id, {
+        model: 'gpt-5.3-codex-spark',
+        effort: 'medium',
+      }),
+    ).resolves.toMatchObject({ effort: 'medium' });
+
+    await expect(chat.runtimeStart(conversation.id, 'ping', 'client-spark-medium')).rejects.toThrow(
+      /reasoningEffort/,
+    );
+
+    const after = await chat.runtimeOptions(conversation.id);
+    expect(after.models.find((item) => item.id === 'gpt-5.3-codex-spark')?.efforts).toEqual([
+      'low',
+      'high',
+      'xhigh',
+    ]);
+    await expect(
+      chat.runtimeSetSettings(conversation.id, {
+        model: 'gpt-5.3-codex-spark',
+        effort: 'medium',
+      }),
+    ).rejects.toThrow(/不支持思考强度/);
+
+    const ok = await chat.runtimeSetSettings(conversation.id, {
+      model: 'gpt-5.3-codex-spark',
+      effort: 'high',
+    });
+    const started = await chat.runtimeStart(conversation.id, 'ping', 'client-effort-ok');
+    expect(ok.effort).toBe('high');
+    expect(started.phase).not.toBe('idle');
+  });
