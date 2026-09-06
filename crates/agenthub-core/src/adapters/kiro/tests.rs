@@ -18,7 +18,15 @@ fn build_run_spec_headless_chat() {
         .unwrap();
     assert_eq!(spec.agent, AgentId::Kiro);
     assert_eq!(spec.program, bin);
-    assert_eq!(spec.args, vec!["chat", "--no-interactive", "hello"]);
+    assert_eq!(
+        spec.args,
+        vec!["chat", "--no-interactive", "--wrap", "never", "hello"]
+    );
+    assert!(spec
+        .env
+        .iter()
+        .any(|(k, v)| k == "TERM" && v == "dumb"));
+    assert!(spec.env.iter().any(|(k, v)| k == "NO_COLOR" && v == "1"));
 }
 
 #[test]
