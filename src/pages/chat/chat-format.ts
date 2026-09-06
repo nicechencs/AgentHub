@@ -49,6 +49,22 @@ export function isProcessErrorPhase(phase: AgentProcessView['phase']): boolean {
   return phase === 'failed' || phase === 'timeout';
 }
 
+const PROCESS_TEXT_LIMIT = 4000;
+
+/** Pin a process/thinking overflow pane to the newest line. */
+export function pinElementScrollToBottom(
+  el: { scrollTop: number; scrollHeight: number } | null,
+): void {
+  if (!el) return;
+  el.scrollTop = el.scrollHeight;
+}
+
+/** Keep the newest process/thinking text when the log is too long. */
+export function clipProcessTail(text: string, limit = PROCESS_TEXT_LIMIT): string {
+  if (text.length <= limit) return text;
+  return `…${text.slice(-limit)}`;
+}
+
 export function formatChatSessionRecord(turns: TurnGroup[], userLabel: string): string {
   const lines = [];
   for (const g of turns) {

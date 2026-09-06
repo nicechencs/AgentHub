@@ -453,7 +453,7 @@ export function useChatPage() {
   useEffect(() => {
     if (!stickToBottomRef.current) return;
     bottomRef.current?.scrollIntoView({ block: 'nearest' });
-  }, [messages, sending]);
+  }, [messages, sending, send.processMap]);
 
   const railGroups = useMemo(() => {
     const filtered = filterConversations(conversations, railQuery);
