@@ -89,9 +89,13 @@ export async function setChatModel(agentId: AgentKey, model: string): Promise<vo
   return getBackend().chat.setChatModel(agentId, model);
 }
 
+export async function setChatEffort(agentId: AgentKey, effort: string): Promise<void> {
+  return getBackend().chat.setChatEffort(agentId, effort);
+}
+
 export async function getChatModel(
   agentId: AgentKey,
-): Promise<{ model: string | null; models: string[] }> {
+): Promise<{ model: string | null; models: string[]; effort?: string | null; efforts?: string[] }> {
   return getBackend().chat.getChatModel(agentId);
 }
 

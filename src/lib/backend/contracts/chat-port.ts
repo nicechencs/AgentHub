@@ -31,7 +31,13 @@ export interface ChatPort {
   runtimeSteer(conversationId: string, runId: string, prompt: string, clientRequestId: string): Promise<void>;
   runtimeCancel(conversationId: string, runId: string): Promise<void>;
   setChatModel(agentId: AgentKey, model: string): Promise<void>;
-  getChatModel(agentId: AgentKey): Promise<{ model: string | null; models: string[] }>;
+  setChatEffort(agentId: AgentKey, effort: string): Promise<void>;
+  getChatModel(agentId: AgentKey): Promise<{
+    model: string | null;
+    models: string[];
+    effort?: string | null;
+    efforts?: string[];
+  }>;
   pickChatImages(title?: string): Promise<string[]>;
   saveChatPasteImage(input: { base64: string; extension: string; byteLength?: number }): Promise<string>;
 }

@@ -94,14 +94,26 @@ export function createTauriChatPort(): ChatPort {
     async setChatModel(agentId, model) {
       await invoke('set_chat_model', { agentId, model });
     },
+    async setChatEffort(agentId, effort) {
+      await invoke('set_chat_effort', { agentId, effort });
+    },
     async getChatModel(agentId) {
-      const row = await invoke<{ model?: string | null; models?: string[] }>('get_chat_model', {
+      const row = await invoke<{
+        model?: string | null;
+        models?: string[];
+        effort?: string | null;
+        efforts?: string[];
+      }>('get_chat_model', {
         agentId,
       });
       return {
         model: typeof row.model === 'string' && row.model.trim() ? row.model.trim() : null,
         models: Array.isArray(row.models)
           ? row.models.filter((id): id is string => typeof id === 'string' && Boolean(id.trim()))
+          : [],
+        effort: typeof row.effort === 'string' && row.effort.trim() ? row.effort.trim() : null,
+        efforts: Array.isArray(row.efforts)
+          ? row.efforts.filter((id): id is string => typeof id === 'string' && Boolean(id.trim()))
           : [],
       };
     },

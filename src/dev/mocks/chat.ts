@@ -522,9 +522,20 @@ export function createMockChatPort(): ChatPort {
     async setChatModel(_agentId, _model) {
       await delay(40);
     },
-    async getChatModel(_agentId) {
+    async setChatEffort(_agentId, _effort) {
+      await delay(40);
+    },
+    async getChatModel(agentId) {
       await delay(20);
-      return { model: null, models: [] };
+      if (agentId === 'grok') {
+        return {
+          model: 'grok-4.6',
+          models: ['grok-4.6', 'grok-4.5'],
+          effort: 'high',
+          efforts: ['low', 'high', 'xhigh'],
+        };
+      }
+      return { model: null, models: [], effort: null, efforts: [] };
     },
     async pickChatImages() {
       await delay(10);

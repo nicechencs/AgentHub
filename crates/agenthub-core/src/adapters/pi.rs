@@ -1003,6 +1003,8 @@ pub(crate) fn pi_live_chat_model() -> crate::models::LiveChatModel {
     let empty = crate::models::LiveChatModel {
         model: None,
         models: Vec::new(),
+        effort: None,
+        efforts: Vec::new(),
     };
     let Ok(dir) = pi_config_dir() else {
         return empty;
@@ -1040,6 +1042,8 @@ pub(crate) fn pi_live_chat_model() -> crate::models::LiveChatModel {
     crate::models::LiveChatModel {
         model: current,
         models,
+        effort: None,
+        efforts: Vec::new(),
     }
 }
 
