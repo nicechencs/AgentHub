@@ -24,7 +24,7 @@ import type { RuntimeRequest, RuntimeSnapshot } from '@/lib/api/chat';
 import type { ProcessMap } from '@/lib/chat-process';
 import type { AgentKey, ChatEvent, ChatMessage, Conversation } from '@/lib/types';
 import type { TurnGroup } from './chat-format';
-import { conversationTitle, retryTarget, sendBlockers } from './chat-model';
+import { busyAgentsForSends, liveSendingIds, retryTarget, sendBlockers } from './chat-model';
 import { isCurrentChatRequest } from './chat-request';
 import { acceptsRuntimeSnapshot, isLatestRuntimeRead, isRuntimeActive, readRuntimeTransport, requestMatchesRuntime } from './chat-runtime-model';
 import {
@@ -32,7 +32,6 @@ import {
   acceptRuntimeSnapshotVersion,
   advanceRuntimeWatermark,
   enqueueRuntimeSnapshot as enqueueRuntimeSnapshotSource,
-  isRuntimeTerminal,
   isLatestRuntimeSnapshot,
   rememberRuntimeSnapshot,
   reduceRuntimeConversationEvent,
@@ -51,7 +50,7 @@ function titleFromPrompt(prompt: string): string {
 
 /**
  * Chat 发送 / 取消 / 流式事件 / 过程面板。
- * 世代判定仍走 isCurrentChatRequest；不改发送、取消、切会话语义。
+ * 世代判定仍走 isCurrentChatRequest。发送按会话隔离，允许多个会话同时进行。
  */
 export function useChatPageSend(input: {
   active: Conversation | null;
@@ -96,11 +95,10 @@ export function useChatPageSend(input: {
     clearStartExtras,
   } = input;
 
-  const [sending, setSending] = useState(false);
-  const [canceling, setCanceling] = useState(false);
-  const [sendingConversationId, setSendingConversationId] = useState<string | null>(null);
-  const sendingConversationIdRef = useRef<string | null>(null);
-  const sendingOperationRef = useRef(0);
+  const sendingIdsRef = useRef(new Set<string>());
+  const [sendingIds, setSendingIds] = useState<string[]>([]);
+  const cancelingIdsRef = useRef(new Set<string>());
+  const [cancelingIds, setCancelingIds] = useState<string[]>([]);
   const [processMap, setProcessMap] = useState<ProcessMap>({});
   const [runtime, setRuntime] = useState<RuntimeSnapshot | null>(null);
   const runtimeSequenceRef = useRef(new Map<string, number>());
@@ -147,13 +145,23 @@ export function useChatPageSend(input: {
     );
   };
 
+  const publishSendingIds = () => {
+    setSendingIds([...sendingIdsRef.current]);
+  };
+
+  const markSending = (conversationId: string) => {
+    if (sendingIdsRef.current.has(conversationId)) return;
+    sendingIdsRef.current.add(conversationId);
+    publishSendingIds();
+  };
+
   const clearSendingFor = (conversationId: string) => {
-    if (sendingConversationIdRef.current !== conversationId) return;
-    sendingOperationRef.current += 1;
-    sendingConversationIdRef.current = null;
-    setSending(false);
-    setCanceling(false);
-    setSendingConversationId(null);
+    if (!sendingIdsRef.current.has(conversationId)) return;
+    sendingIdsRef.current.delete(conversationId);
+    if (cancelingIdsRef.current.delete(conversationId)) {
+      setCancelingIds([...cancelingIdsRef.current]);
+    }
+    publishSendingIds();
   };
 
   const recordRuntimeSnapshot = (snapshot: RuntimeSnapshot) => {
@@ -185,6 +193,7 @@ export function useChatPageSend(input: {
       )
     ) return;
     const sequence = runtimeSequence(conversationId);
+    const previousPhase = runtimeRecordsRef.current.get(conversationId)?.phase;
     recordRuntimeSnapshot(snapshot);
     const canRender =
       applyUi &&
@@ -196,6 +205,13 @@ export function useChatPageSend(input: {
       if (item.sequence > sequence) applyEvent(item.event, conversationId, generation, applyUi, 'runtime');
     }
     advanceRuntimeWatermark(runtimeSequenceRef.current, conversationId, snapshot.lastSequence);
+    const activePhase = isRuntimeActive(snapshot.phase);
+    const wasSending = sendingIdsRef.current.has(conversationId);
+    if (activePhase) {
+      markSending(conversationId);
+    } else if (canRender || (previousPhase != null && isRuntimeActive(previousPhase))) {
+      clearSendingFor(conversationId);
+    }
     if (!canRender) return;
     if (snapshot.gap) {
       void loadMessages(conversationId).then((rows) => {
@@ -210,16 +226,7 @@ export function useChatPageSend(input: {
     }
     runtimeIdRef.current = snapshot.runId;
     setRuntime(snapshot);
-    const activePhase = isRuntimeActive(snapshot.phase);
-    if (activePhase) {
-      sendingConversationIdRef.current = conversationId;
-      setSendingConversationId(conversationId);
-      setSending(true);
-    } else if (sendingConversationIdRef.current === conversationId) {
-      sendingConversationIdRef.current = null;
-      setSendingConversationId(null);
-      setSending(false);
-      setCanceling(false);
+    if (!activePhase && wasSending) {
       void loadMessages(conversationId).then((rows) => {
         if (
           isCurrentChatRequest(activeIdRef.current, activeGenerationRef.current, conversationId, generation) &&
@@ -229,8 +236,6 @@ export function useChatPageSend(input: {
           setMessages(currentMessage ? upsertRuntimeMessage(rows, currentMessage) : rows);
         }
       });
-    } else if (isRuntimeTerminal(runtimeRecordsRef.current.get(conversationId))) {
-      clearSendingFor(conversationId);
     }
   };
 
@@ -273,17 +278,16 @@ export function useChatPageSend(input: {
     return () => { disposed = true; window.clearInterval(timer); };
   }, [activeId, runtime?.enabled, runtime?.phase]);
 
-  // A run remains owned by its conversation while another session is selected.
-  // Poll it lightly so a terminal state releases the page-wide sending guard.
+  // Background runs stay owned by their conversations. Poll them so a terminal
+  // snapshot can release that session without a page-wide sending lock.
   useEffect(() => {
-    const id = sendingConversationId;
-    if (!id || id === activeId) return;
+    const ids = sendingIds.filter((id) => id !== activeId);
+    if (ids.length === 0) return;
     let disposed = false;
-    let inFlight = false;
-    const read = async () => {
-      if (inFlight) return;
-      inFlight = true;
-      const readId = nextRuntimeRead(id);
+    const inFlight = new Set<string>();
+    const read = async (id: string) => {
+      if (inFlight.has(id)) return;
+      inFlight.add(id);
       try {
         await enqueueRuntimeSnapshot(
           id,
@@ -296,34 +300,33 @@ export function useChatPageSend(input: {
               sourceVersion,
               false,
             );
-            if (!disposed && isLatestRuntimeRead(readId, runtimeReadRef.current.get(id) ?? 0) && isRuntimeTerminal(runtimeRecordsRef.current.get(id))) {
-              clearSendingFor(id);
-            }
           },
         );
       } catch {
         // The active session will surface a current error when it is revisited.
       } finally {
-        inFlight = false;
+        inFlight.delete(id);
       }
     };
-    void read();
-    const timer = window.setInterval(() => void read(), 400);
+    const tick = () => {
+      if (disposed) return;
+      for (const id of ids) void read(id);
+    };
+    tick();
+    const timer = window.setInterval(tick, 400);
     return () => { disposed = true; window.clearInterval(timer); };
-  }, [activeId, sendingConversationId]);
+  }, [activeId, sendingIds]);
 
-  const liveSendingConversationId = useMemo(() => {
-    if (!sendingConversationId) return null;
-    return conversations.some((c) => c.id === sendingConversationId)
-      ? sendingConversationId
-      : null;
-  }, [conversations, sendingConversationId]);
-
-  const sendingTitle = useMemo(() => {
-    if (!liveSendingConversationId) return '';
-    const row = conversations.find((c) => c.id === liveSendingConversationId);
-    return conversationTitle(t, row?.title ?? '');
-  }, [conversations, liveSendingConversationId, t]);
+  const liveSendingConversationIds = useMemo(
+    () => liveSendingIds(sendingIds, conversations),
+    [conversations, sendingIds],
+  );
+  const busyAgentIds = useMemo(
+    () => busyAgentsForSends(conversations, liveSendingConversationIds),
+    [conversations, liveSendingConversationIds],
+  );
+  const sendingHere = Boolean(active?.id && liveSendingConversationIds.includes(active.id));
+  const cancelingHere = Boolean(active?.id && cancelingIds.includes(active.id));
 
   const blockers = useMemo(() => {
     if (!active) return [];
@@ -333,12 +336,10 @@ export function useChatPageSend(input: {
       envNotReadyIds,
       unconfiguredAuthIds,
       agentsReady,
-      sendingConversationId: liveSendingConversationId,
-      sendingTitle,
     });
-  }, [active, hiddenIds, envNotReadyIds, unconfiguredAuthIds, agentsReady, liveSendingConversationId, sendingTitle]);
+  }, [active, hiddenIds, envNotReadyIds, unconfiguredAuthIds, agentsReady]);
 
-  const retry = useMemo(() => retryTarget(turns, sending), [turns, sending]);
+  const retry = useMemo(() => retryTarget(turns, sendingHere), [turns, sendingHere]);
 
   function applyEvent(
     ev: ChatEvent,
@@ -449,14 +450,12 @@ export function useChatPageSend(input: {
   }
 
   async function sendPrompt(prompt: string, clearDraft: boolean) {
-    if (!active || sending) return;
+    if (!active || sendingIdsRef.current.has(active.id)) return;
     if (sendBlockers({
       conversation: active,
       hiddenIds,
       envNotReadyIds,
       unconfiguredAuthIds,
-      sendingConversationId: liveSendingConversationId,
-      sendingTitle,
     }).length > 0) {
       return;
     }
@@ -464,11 +463,7 @@ export function useChatPageSend(input: {
 
     const sendConvId = active.id;
     const sendGeneration = activeGenerationRef.current;
-    const operationId = sendingOperationRef.current + 1;
-    sendingOperationRef.current = operationId;
-    sendingConversationIdRef.current = sendConvId;
-    setSending(true);
-    setSendingConversationId(sendConvId);
+    markSending(sendConvId);
     if (clearDraft) setDraft('');
     const turnGuess = messages.reduce((max, m) => Math.max(max, m.turn), 0) + 1;
     const localUserId = `local-user-${Date.now()}`;
@@ -585,7 +580,7 @@ export function useChatPageSend(input: {
             );
           },
         ).catch(() => null);
-        if (!recovered && sendingOperationRef.current === operationId) {
+        if (!recovered) {
           runtimeRecordsRef.current.delete(sendConvId);
           clearSendingFor(sendConvId);
         }
@@ -648,9 +643,7 @@ export function useChatPageSend(input: {
         }
       }
     } finally {
-      if (sendingOperationRef.current === operationId && sendingConversationIdRef.current === sendConvId) {
-        clearSendingFor(sendConvId);
-      }
+      clearSendingFor(sendConvId);
     }
   }
 
@@ -659,7 +652,7 @@ export function useChatPageSend(input: {
   }
 
   async function retryLast() {
-    const target = retryTarget(turns, sending);
+    const target = retryTarget(turns, sendingHere);
     if (!target) return;
     await sendPrompt(target.prompt, false);
   }
@@ -704,10 +697,12 @@ export function useChatPageSend(input: {
   }
 
   async function handleCancel() {
-    if (!sendingConversationId || canceling) return;
-    setCanceling(true);
+    const id = active?.id;
+    if (!id || !sendingIdsRef.current.has(id) || cancelingIdsRef.current.has(id)) return;
+    cancelingIdsRef.current.add(id);
+    setCancelingIds([...cancelingIdsRef.current]);
     try {
-      await cancelRuntimeTarget(sendingConversationId);
+      await cancelRuntimeTarget(id);
       toast({
         title: t('chat.toast.cancelRequested'),
         description: t('chat.toast.cancelRequestedDesc'),
@@ -717,26 +712,27 @@ export function useChatPageSend(input: {
     } catch (e) {
       toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
     } finally {
-      setCanceling(false);
+      if (cancelingIdsRef.current.delete(id)) {
+        setCancelingIds([...cancelingIdsRef.current]);
+      }
     }
   }
 
-  function adoptInflight(id: string | null) {
-    if (!id) return;
-    sendingConversationIdRef.current = id;
-    setSendingConversationId(id);
-    setCanceling(false);
-    setSending(true);
+  function adoptInflight(ids: string[]) {
+    let changed = false;
+    for (const id of ids) {
+      if (!id || sendingIdsRef.current.has(id)) continue;
+      sendingIdsRef.current.add(id);
+      changed = true;
+    }
+    if (changed) publishSendingIds();
   }
 
   async function cancelIfSending(id: string) {
-    if (sendingConversationId !== id) return;
+    if (!sendingIdsRef.current.has(id)) return;
     await cancelRuntimeTarget(id).catch(() => {});
     clearSendingFor(id);
   }
-
-  const sendingHere = Boolean(sending && sendingConversationId === active?.id);
-  const cancelingHere = Boolean(canceling && sendingConversationId === active?.id);
 
   async function submitRuntimeRequest(request: RuntimeRequest, decision?: 'allow' | 'deny', answers?: Record<string, string[]>) {
     if (!active || !requestMatchesRuntime(request, runtimeIdRef.current)) {
@@ -769,10 +765,11 @@ export function useChatPageSend(input: {
   }
 
   return {
-    sending,
+    sending: sendingHere,
     sendingHere,
     cancelingHere,
-    sendingConversationId: liveSendingConversationId,
+    sendingConversationIds: liveSendingConversationIds,
+    busyAgentIds,
     processMap,
     blockers,
     retry,

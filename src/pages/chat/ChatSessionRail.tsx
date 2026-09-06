@@ -34,7 +34,7 @@ export function ChatSessionRail({
   query,
   onQueryChange,
   activeId,
-  sendingConversationId,
+  sendingConversationIds,
   agentsReady,
   hasUsableAgent,
   deleteConfirmId,
@@ -54,7 +54,7 @@ export function ChatSessionRail({
   query: string;
   onQueryChange: (q: string) => void;
   activeId: string | null;
-  sendingConversationId: string | null;
+  sendingConversationIds: readonly string[];
   agentsReady: boolean;
   hasUsableAgent: boolean;
   deleteConfirmId: string | null;
@@ -143,7 +143,7 @@ export function ChatSessionRail({
               {group.items.map((c) => {
                 const selected = activeId === c.id;
                 const dots = visibleAgentDots(c.agentIds);
-                const sending = sendingConversationId === c.id;
+                const sending = sendingConversationIds.includes(c.id);
                 return (
                   <Hint
                     key={c.id}

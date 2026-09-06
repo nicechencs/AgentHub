@@ -79,10 +79,10 @@ export function ChatComposer({
   onSwitchModel,
   onOpenSettings,
   onPickWorkingDirectory,
-  onFocusConversation,
   onDraftKeyDown,
   onPasteImages,
   runtimeControls,
+  connectionLocked = false,
   runtimeLocked = false,
   fillHeight = false,
   paneHeight = null,
@@ -117,10 +117,10 @@ export function ChatComposer({
   onSwitchModel: (model: string) => void;
   onOpenSettings: () => void;
   onPickWorkingDirectory: () => void;
-  onFocusConversation: (id: string) => void;
   onDraftKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => boolean;
   onPasteImages?: (files: File[]) => void;
   runtimeControls?: ReactNode;
+  connectionLocked?: boolean;
   runtimeLocked?: boolean;
   fillHeight?: boolean;
   paneHeight?: number | null;
@@ -131,7 +131,6 @@ export function ChatComposer({
   const firstBlocker = blockers[0] ?? null;
   const hiddenBlocked = firstBlocker?.kind === 'hiddenAgents' ||
     active.agentIds.some((id) => hiddenIds.has(id));
-  const sendingElsewhere = blockers.some((b) => b.kind === 'sendingElsewhere');
   const canSend = Boolean(draft.trim()) && blockers.length === 0 && (!sending || Boolean(onSteer));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -161,7 +160,7 @@ export function ChatComposer({
     return () => window.removeEventListener('resize', onResize);
   }, [syncTextareaHeight]);
 
-  const textareaDisabled = hiddenBlocked || sendingElsewhere;
+  const textareaDisabled = hiddenBlocked;
   const droppedImages = useCallback((files: FileList | null | undefined) => {
     if (!onPasteImages) return false;
     const images = Array.from(files ?? []).filter((file) => file.type.startsWith('image/'));
@@ -197,10 +196,7 @@ export function ChatComposer({
           onGoConnections={() =>
             navigate(primaryAgent ? `/connections?agent=${primaryAgent}` : '/connections')
           }
-          onOpenSettings={onOpenSettings}
           onPickWorkingDirectory={onPickWorkingDirectory}
-          onFocusConversation={onFocusConversation}
-          onCancel={onCancel}
           onRetryStatus={onRetryStatus}
         />
       )}
@@ -337,7 +333,7 @@ export function ChatComposer({
                   disabled={
                     !primaryAgent ||
                     sending ||
-                    sendingElsewhere ||
+                    connectionLocked ||
                     switchingProvider ||
                     Boolean(primaryAgent && hiddenIds.has(primaryAgent))
                   }
@@ -432,7 +428,7 @@ export function ChatComposer({
                   type="button"
                   size="sm"
                   variant="outline"
-              disabled={sending || sendingElsewhere || switchingProvider || switchingModel}
+              disabled={sending || connectionLocked || switchingProvider || switchingModel}
                   className="max-w-40"
                   aria-label={t('chat.composer.switchModel')}
                 >
@@ -453,7 +449,7 @@ export function ChatComposer({
                     <DropdownMenuRadioItem
                       key={model}
                       value={model}
-                      disabled={sending || sendingElsewhere || switchingModel}
+                      disabled={sending || connectionLocked || switchingModel}
                     >
                       <span className="truncate">{model}</span>
                     </DropdownMenuRadioItem>
@@ -518,48 +514,17 @@ function BlockerNotice({
   blocker,
   onGoAgents,
   onGoConnections,
-  onOpenSettings,
   onPickWorkingDirectory,
-  onFocusConversation,
-  onCancel,
   onRetryStatus,
 }: {
   blocker: ChatSendBlocker;
   onGoAgents: () => void;
   onGoConnections: () => void;
-  onOpenSettings: () => void;
   onPickWorkingDirectory: () => void;
-  onFocusConversation: (id: string) => void;
-  onCancel: () => void;
   onRetryStatus?: () => void;
 }) {
   const { t } = useI18n();
   const copy = blockerCopy(t, blocker);
-  if (blocker.kind === 'sendingElsewhere') {
-    return (
-      <Notice tone="warning" className="mb-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span>{copy.text}</span>
-          <span className="flex items-center gap-1">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => onFocusConversation(blocker.conversationId)}
-            >
-              {copy.primaryAction}
-            </Button>
-            <Button
-              size="sm"
-              variant="dangerOutline"
-              onClick={onCancel}
-            >
-              {copy.secondaryAction}
-            </Button>
-          </span>
-        </div>
-      </Notice>
-    );
-  }
   return (
     <Notice
       tone="warning"
@@ -570,7 +535,6 @@ function BlockerNotice({
           agents: onGoAgents,
           connections: onGoConnections,
           'pick-directory': onPickWorkingDirectory,
-          settings: onOpenSettings,
           retry: onRetryStatus,
         }[blockerPrimaryTarget(blocker)]
       }

@@ -21,21 +21,22 @@ import {
 } from '@/lib/api/chat';
 import { takeChatBootstrap } from '@/lib/chat-bootstrap';
 import type { AgentKey, AgentStatus, ChatMessage, Conversation } from '@/lib/types';
-import { isChatAgentSelectable, newConversationDefaults, singleAgentConversationPatch } from './chat-model';
+import { draftForFocusedConversation, isChatAgentSelectable, newConversationDefaults, singleAgentConversationPatch } from './chat-model';
 import { conversationListState, createSingleFlight } from './chat-request';
 
 /**
  * Chat 会话列表：加载、空列表补建、项目跳转、新建 / 删除。
  * 单飞与列表提交仍走 createSingleFlight / conversationListState。
- * 不改发送、取消、切会话、连接切换语义。
+ * 切会话保留各会话草稿；进行中的发送按会话恢复，不互相打断。
  */
 export function useChatPageSessions(input: {
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
+  draft: string;
   setDraft: Dispatch<SetStateAction<string>>;
   deleteConfirmId: string | null;
   setDeleteConfirmId: Dispatch<SetStateAction<string | null>>;
   sendRef: MutableRefObject<{
-    adoptInflight: (id: string | null) => void;
+    adoptInflight: (ids: string[]) => void;
     cancelIfSending: (id: string) => Promise<void>;
   }>;
 }) {
@@ -44,11 +45,13 @@ export function useChatPageSessions(input: {
   const [searchParams, setSearchParams] = useSearchParams();
   const {
     setMessages,
+    draft,
     setDraft,
     deleteConfirmId,
     setDeleteConfirmId,
     sendRef,
   } = input;
+  const draftsRef = useRef(new Map<string, string>());
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -128,9 +131,8 @@ export function useChatPageSessions(input: {
         const agents = await refreshAgents();
         next = await ensureConversation(convs, agents);
       }
-      // 以服务端 sending 为准恢复页级 Stop；list 尚未带上 sending 时不要清掉进行中的本地 send
-      const inflight = next.find((c) => c.sending)?.id ?? null;
-      sendRef.current.adoptInflight(inflight);
+      // 以服务端 sending 为准恢复进行中的会话；list 尚未带上 sending 时不要清掉本地 send
+      sendRef.current.adoptInflight(next.filter((c) => c.sending).map((c) => c.id));
       return next;
     });
   }, [ensureConversation, refreshAgents]);
@@ -263,6 +265,7 @@ export function useChatPageSessions(input: {
     const defaults = newConversationDefaults(active, status);
     if (defaults.agentIds.length === 0) return;
     try {
+      if (activeId) draftsRef.current.set(activeId, draft);
       const conv = await createConversation(defaults.agentIds, defaults.cwd);
       setConversations((prev) => [conv, ...prev]);
       setActiveId(conv.id);
@@ -277,6 +280,7 @@ export function useChatPageSessions(input: {
     try {
       await sendRef.current.cancelIfSending(id);
       await deleteConversation(id);
+      draftsRef.current.delete(id);
       const rest = conversations.filter((c) => c.id !== id);
       if (rest.length === 0) {
         const defaults = newConversationDefaults(active, agentStatus);
@@ -298,7 +302,7 @@ export function useChatPageSessions(input: {
       if (activeId === id) {
         setActiveId(rest[0].id);
         setMessages([]);
-        setDraft('');
+        setDraft(draftsRef.current.get(rest[0].id) ?? '');
       }
     } catch (e) {
       toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
@@ -340,7 +344,7 @@ export function useChatPageSessions(input: {
     if (!conversations.some((c) => c.id === id)) return;
     if (id !== activeId) {
       setMessages([]);
-      setDraft('');
+      setDraft(draftForFocusedConversation(draftsRef.current, activeId, id, draft));
     }
     setActiveId(id);
   }

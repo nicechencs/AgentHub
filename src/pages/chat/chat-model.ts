@@ -31,8 +31,7 @@ export type ChatSendBlocker =
   | { kind: 'envNotReady'; agentIds: AgentKey[] }
   | { kind: 'unconfiguredAuth'; agentIds: AgentKey[] }
   | { kind: 'statusUnknown' }
-  | { kind: 'noCwd' }
-  | { kind: 'sendingElsewhere'; conversationId: string; title: string };
+  | { kind: 'noCwd' };
 
 export type ChatAgentPickerReason = 'noAuth' | 'envNotReady';
 
@@ -224,8 +223,6 @@ export function sendBlockers(input: {
   envNotReadyIds?: Set<AgentKey>;
   unconfiguredAuthIds?: Set<AgentKey>;
   agentsReady?: boolean;
-  sendingConversationId: string | null;
-  sendingTitle?: string;
 }): ChatSendBlocker[] {
   const out: ChatSendBlocker[] = [];
   if (input.agentsReady === false) {
@@ -251,14 +248,43 @@ export function sendBlockers(input: {
   if (!input.conversation.cwd) {
     out.push({ kind: 'noCwd' });
   }
-  if (input.sendingConversationId && input.sendingConversationId !== input.conversation.id) {
-    out.push({
-      kind: 'sendingElsewhere',
-      conversationId: input.sendingConversationId,
-      title: input.sendingTitle ?? '',
-    });
-  }
   return out;
+}
+
+/** Keep page-local sending ids that still exist in the conversation list. */
+export function liveSendingIds(
+  sendingIds: readonly string[],
+  conversations: readonly Pick<Conversation, 'id'>[],
+): string[] {
+  const known = new Set(conversations.map((conversation) => conversation.id));
+  return sendingIds.filter((id) => known.has(id));
+}
+
+/** Agents with at least one in-flight send. Connection/model switches stay locked for them. */
+export function busyAgentsForSends(
+  conversations: readonly Pick<Conversation, 'id' | 'agentIds'>[],
+  sendingIds: readonly string[],
+): Set<AgentKey> {
+  const sending = new Set(sendingIds);
+  const agents = new Set<AgentKey>();
+  for (const conversation of conversations) {
+    if (!sending.has(conversation.id)) continue;
+    const agentId = conversation.agentIds[0];
+    if (agentId) agents.add(agentId);
+  }
+  return agents;
+}
+
+/** Persist the leaving session's draft and restore the focused session's draft. */
+export function draftForFocusedConversation(
+  drafts: Map<string, string>,
+  fromId: string | null,
+  toId: string,
+  currentDraft: string,
+): string {
+  if (fromId) drafts.set(fromId, currentDraft);
+  if (fromId === toId) return currentDraft;
+  return drafts.get(toId) ?? '';
 }
 
 /**
@@ -672,7 +698,6 @@ export type ChatBlockerPrimaryTarget =
   | 'agents'
   | 'connections'
   | 'pick-directory'
-  | 'settings'
   | 'retry';
 
 export function blockerPrimaryTarget(
@@ -688,8 +713,6 @@ export function blockerPrimaryTarget(
       return 'retry';
     case 'noCwd':
       return 'pick-directory';
-    case 'sendingElsewhere':
-      return 'settings';
   }
 }
 
@@ -723,12 +746,6 @@ export function blockerCopy(t: TranslateFn, blocker: ChatSendBlocker): {
       return {
         text: t('chat.blocker.noCwd'),
         primaryAction: t('chat.blocker.setCwd'),
-      };
-    case 'sendingElsewhere':
-      return {
-        text: t('chat.blocker.generating', { title: conversationTitle(t, blocker.title) }),
-        primaryAction: t('chat.blocker.backToSession'),
-        secondaryAction: t('chat.blocker.stop'),
       };
   }
 }
