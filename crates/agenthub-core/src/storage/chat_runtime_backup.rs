@@ -54,7 +54,7 @@ pub(super) fn before_upgrade(conn: &Connection, database_path: &Path) -> Result<
         let _ = std::fs::remove_file(&backup);
         return Err(error.into());
     }
-    std::fs::File::open(&backup)?.sync_all()?;
+    sync_backup_file(&backup)?;
     #[cfg(unix)]
     {
         let parent = backup
@@ -64,6 +64,13 @@ pub(super) fn before_upgrade(conn: &Connection, database_path: &Path) -> Result<
         std::fs::File::open(parent)?.sync_all()?;
     }
     Ok(Some(backup))
+}
+
+/// Flush the backup to disk. Open writeable because Windows `FlushFileBuffers`
+/// rejects a read-only handle with ACCESS_DENIED (os error 5).
+fn sync_backup_file(path: &Path) -> Result<()> {
+    OpenOptions::new().write(true).open(path)?.sync_all()?;
+    Ok(())
 }
 
 #[cfg(test)]
