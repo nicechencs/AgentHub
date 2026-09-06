@@ -389,6 +389,21 @@ describe('buildAgentCardView', () => {
     expect(view.binding).toBeUndefined();
   });
 
+  it('installed Kiro can manage authorization even without live account switch', () => {
+    const view = buildAgentCardView(
+      meta('kiro', 'Kiro'),
+      status('kiro', {
+        effectiveKind: 'none',
+        effectiveLabel: '未配置',
+        version: '1.0.0',
+        capabilities: MOCK_CAPABILITIES.kiro,
+      }),
+    );
+    expect(view.metaText).not.toBe('不支持管理授权');
+    expect(view.action).toEqual({ kind: 'connect' });
+    expect(view.ariaLabel).toContain('点击管理连接');
+  });
+
   it('translates Cursor auth-unsupported copy on English dashboard cards', () => {
     const tEn = createTranslator('en');
     const view = buildAgentCardView(

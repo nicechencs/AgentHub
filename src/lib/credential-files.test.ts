@@ -30,6 +30,15 @@ describe('credential file names', () => {
     );
   });
 
+  it('maps Kiro login files to the kiro-cli stores', () => {
+    expect(defaultLivePathForFile('kiro', 'kiro-auth-token.json')).toBe(
+      '~/.aws/sso/cache/kiro-auth-token.json',
+    );
+    expect(defaultLivePathForFile('kiro', 'auth.json')).toBe(
+      '~/.aws/sso/cache/kiro-auth-token.json',
+    );
+  });
+
   it('maps ZCode live files to v2/config.json, not config.toml', () => {
     expect(defaultLivePathForFile('zcode', 'config.json')).toBe(
       '~/.zcode/v2/config.json',

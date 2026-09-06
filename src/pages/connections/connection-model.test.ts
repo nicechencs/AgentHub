@@ -289,6 +289,13 @@ describe('connection-model', () => {
         'claude',
       ),
     ).toEqual({ enabled: true, reason: '' });
+    expect(
+      liveAuthImportGate(
+        { agentId: 'kiro', kind: 'oauth', hasCredentials: true },
+        false,
+        'kiro',
+      ),
+    ).toEqual({ enabled: true, reason: '' });
   });
 
   it('does not authorize an import while the selected agent has changed', () => {
