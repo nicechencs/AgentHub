@@ -256,6 +256,7 @@ pub fn run() {
             commands::chat::chat_runtime_snapshot,
             commands::chat::chat_runtime_options,
             commands::chat::chat_runtime_set_settings,
+            commands::chat::chat_runtime_note_thinking_failure,
             commands::chat::chat_runtime_start,
             commands::chat::chat_runtime_reply,
             commands::chat::chat_runtime_steer,

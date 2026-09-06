@@ -282,11 +282,15 @@ export function useChatPage() {
     () => lastTurnOutcome(turns, sending),
     [sending, turns],
   );
+  const notedThinkingFailureRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (turnOutcome?.kind !== 'failed') return;
+    const key = `${activeId ?? ''}\n${turnOutcome.prompt}\n${turnOutcome.errorText ?? ''}`;
+    if (notedThinkingFailureRef.current === key) return;
+    notedThinkingFailureRef.current = key;
     void runtimeOps.noteThinkingFailure(turnOutcome.errorText);
-  }, [runtimeOps, turnOutcome]);
+  }, [activeId, runtimeOps, turnOutcome]);
 
   const pickerRows = useMemo(
     () =>

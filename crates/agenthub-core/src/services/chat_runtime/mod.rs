@@ -25,7 +25,7 @@ use std::thread;
 use std::time::Duration;
 
 use chrono::Utc;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
@@ -164,6 +164,19 @@ impl ChatRuntime {
         let models = self.effective_models(&cache.models);
         let effective = ops::validate_turn_settings(&requested, &models, &prior)?;
         self.store.set_turn_settings(conversation_id, &effective)
+    }
+
+    pub fn note_thinking_failure(
+        &self,
+        conversation_id: &str,
+        settings: RuntimeTurnSettings,
+        error: &str,
+    ) -> Result<()> {
+        self.store.ensure_conversation(conversation_id)?;
+        let _ = self
+            .store
+            .learn_denied_effort_from_error(&settings, error)?;
+        Ok(())
     }
 
     pub fn start(
@@ -406,8 +419,6 @@ impl ChatRuntime {
         }
     }
 
-
-
     fn effective_models(&self, models: &[RuntimeModelOption]) -> Vec<RuntimeModelOption> {
         let denied = self.store.list_denied_efforts().unwrap_or_default();
         ops::apply_denied_efforts(models, &denied)
@@ -485,7 +496,8 @@ impl ChatRuntime {
             .ok()
             .map(|value| ops::parse_skills_list(&value))
             .unwrap_or_default();
-        if let Ok(plugins) = transport.request("plugin/installed", json!({}), CODEX_REQUEST_TIMEOUT) {
+        if let Ok(plugins) = transport.request("plugin/installed", json!({}), CODEX_REQUEST_TIMEOUT)
+        {
             extensions.extend(ops::parse_plugins_installed(&plugins));
         }
         transport.shutdown();
@@ -497,7 +509,6 @@ impl ChatRuntime {
     }
 
     fn actor(&self, conversation_id: &str) -> Result<ActorHandle> {
-
         let mut actors = self
             .actors
             .lock()
@@ -829,18 +840,24 @@ impl ActorWorker {
                     "networkAccess": false
                 }
             });
-            if let Some(model) = settings.model.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            if let Some(model) = settings
+                .model
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
                 params["model"] = json!(model);
             }
-            if let Some(effort) = settings.effort.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            if let Some(effort) = settings
+                .effort
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
                 params["effort"] = json!(effort);
             }
             let result = transport
-                .request(
-                    "turn/start",
-                    params,
-                    CODEX_REQUEST_TIMEOUT,
-                )
+                .request("turn/start", params, CODEX_REQUEST_TIMEOUT)
                 .map_err(transport_error);
             let result = result?;
             self.turn_id = extract_id(&result, "turn").or_else(|| extract_id(&result, "id"));
@@ -862,6 +879,21 @@ impl ActorWorker {
             self.transport = Some(transport);
             self.store.snapshot(&self.conversation_id, None)
         })();
+        if let Err(error) = start_result {
+            let message = redact_text(&error.to_string());
+            let _ = self.terminalize(
+                ChatMessageStatus::Failed,
+                Some(&message),
+                RuntimePhase::Failed,
+                false,
+                false,
+            );
+            if let Some(transport) = self.transport.as_mut() {
+                transport.shutdown();
+            }
+            self.transport = None;
+            return Err(error);
+        }
         start_result
     }
 

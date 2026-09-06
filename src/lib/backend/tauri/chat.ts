@@ -72,6 +72,9 @@ export function createTauriChatPort(): ChatPort {
     async runtimeSetSettings(conversationId, settings) {
       return invoke<RuntimeTurnSettings>('chat_runtime_set_settings', { conversationId, settings });
     },
+    async runtimeNoteThinkingFailure(conversationId, settings, errorText) {
+      await invoke('chat_runtime_note_thinking_failure', { conversationId, settings, errorText });
+    },
     async runtimeStart(conversationId, prompt, clientRequestId, extras) {
       return invoke<RuntimeSnapshot>('chat_runtime_start', {
         conversationId,

@@ -7,7 +7,7 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{params, OptionalExtension};
 
 use crate::error::{AppError, Result};
 use crate::models::{AgentId, ChatEvent, ChatMessage, ChatMessageStatus, ChatRole};
@@ -878,9 +878,8 @@ impl RuntimeStore {
 
     pub(crate) fn list_denied_efforts(&self) -> Result<HashMap<String, HashSet<String>>> {
         self.db.with_conn(|conn| {
-            let mut stmt = conn.prepare(
-                "SELECT model_id, effort FROM chat_runtime_denied_efforts",
-            )?;
+            let mut stmt =
+                conn.prepare("SELECT model_id, effort FROM chat_runtime_denied_efforts")?;
             let rows = stmt.query_map([], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })?;
@@ -913,24 +912,21 @@ impl RuntimeStore {
         })
     }
 
-    /// Persist a denied (model, effort) when Codex rejects thinking settings.
-    /// Catalog filtering + idle options() reconcile clear the value from the menu.
-    pub(crate) fn learn_thinking_unsupported(
+    pub(crate) fn learn_denied_effort_from_error(
         &self,
-        conversation_id: &str,
+        settings: &RuntimeTurnSettings,
         error: &str,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         if !super::ops::looks_like_thinking_unsupported(error) {
-            return Ok(());
+            return Ok(false);
         }
-        let settings = self.turn_settings(conversation_id)?;
         let Some(model) = settings
             .model
             .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty())
         else {
-            return Ok(());
+            return Ok(false);
         };
         let Some(effort) = settings
             .effort
@@ -938,9 +934,20 @@ impl RuntimeStore {
             .map(str::trim)
             .filter(|s| !s.is_empty())
         else {
-            return Ok(());
+            return Ok(false);
         };
-        let _ = self.deny_model_effort(model, effort)?;
+        self.deny_model_effort(model, effort)
+    }
+
+    /// Persist a denied (model, effort) when Codex rejects thinking settings.
+    /// Catalog filtering + idle options() reconcile clear the value from the menu.
+    pub(crate) fn learn_thinking_unsupported(
+        &self,
+        conversation_id: &str,
+        error: &str,
+    ) -> Result<()> {
+        let settings = self.turn_settings(conversation_id)?;
+        let _ = self.learn_denied_effort_from_error(&settings, error)?;
         Ok(())
     }
 
