@@ -120,7 +120,6 @@ export function ChatRuntimeExtras(props: {
                 variant="outline"
                 disabled={Boolean(modelDisabledReason)}
                 className="max-w-40"
-                title={modelDisabledReason ?? undefined}
               >
                 <span className="truncate">
                   {props.settings.model || t('chat.composer.switchModel')}
@@ -153,7 +152,6 @@ export function ChatRuntimeExtras(props: {
                 size="sm"
                 variant="outline"
                 disabled={Boolean(effortDisabledReason)}
-                title={effortDisabledReason ?? undefined}
               >
                 {props.settings.effort || t('chat.runtimeOps.effort')}
               </Button>
@@ -188,22 +186,20 @@ export function ChatRuntimeExtras(props: {
       {props.images.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {props.images.map((path) => (
-            <span
-              key={path}
-              className="inline-flex max-w-full items-center gap-1 rounded-md border px-2 py-1 text-meta"
-              title={path}
-            >
-              <span className="truncate">{path.split(/[/\\]/).pop()}</span>
-              <button type="button" aria-label={t('chat.runtimeOps.removeImage')} onClick={() => props.onRemoveImage(path)}>
-                <X className="size-3.5" />
-              </button>
-            </span>
+            <Hint key={path} label={path}>
+              <span className="inline-flex max-w-full items-center gap-1 rounded-card border px-2 py-1 text-meta">
+                <span className="truncate">{path.split(/[/\\]/).pop()}</span>
+                <button type="button" aria-label={t('chat.runtimeOps.removeImage')} onClick={() => props.onRemoveImage(path)}>
+                  <X className="size-3.5" />
+                </button>
+              </span>
+            </Hint>
           ))}
         </div>
       ) : null}
 
       {props.extensions.length > 0 ? (
-        <div className="rounded-md border p-2 text-meta">
+        <div className="rounded-card border p-2 text-meta">
           <div className="mb-1 font-medium">{t('chat.runtimeOps.extensions')}</div>
           <ul className="space-y-1">
             {props.extensions.map((item) => {
