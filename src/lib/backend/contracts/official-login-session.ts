@@ -266,6 +266,25 @@ export function sessionFromDeviceStart(start: DeviceOAuthStartInfo): OfficialLog
   };
 }
 
+/** Login URL the wait page should show. Do not auto-open; the user copies or opens it. */
+export function officialLoginActionUrl(
+  session:
+    | Pick<
+        OfficialLoginSession,
+        'flow' | 'authorizeUrl' | 'verificationUri' | 'verificationUriComplete'
+      >
+    | null
+    | undefined,
+): string | null {
+  if (!session) return null;
+  if (session.flow === 'deviceCode') {
+    const url = session.verificationUriComplete?.trim() || session.verificationUri?.trim();
+    return url || null;
+  }
+  const url = session.authorizeUrl?.trim();
+  return url || null;
+}
+
 export function officialLoginRetryStep(optionCount: number): Extract<OfficialLoginDialogStep, 'pick' | 'start'> {
   return optionCount > 1 ? 'pick' : 'start';
 }

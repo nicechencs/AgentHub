@@ -292,8 +292,8 @@ export function createMockAccountPort(): AccountPort {
         redirectUri: 'http://127.0.0.1:34567/callback',
         agentId,
         providerKey: providerKey ?? null,
-        // Mock cannot open a system browser; keep the wait page in view.
-        browserOpened: true,
+        // Mock never opens a system browser; the wait page shows the link.
+        browserOpened: false,
         expiresInSecs: 900,
       };
     },

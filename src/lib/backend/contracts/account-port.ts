@@ -162,7 +162,7 @@ export interface AccountPort {
   oauthSupported(agentId: AgentKey): Promise<boolean>;
   /** List OAuth login options (Pi returns multi-provider catalog). */
   listOAuthOptions(agentId: AgentKey): Promise<OAuthLoginOption[]>;
-  /** Start loopback PKCE; opens system browser when openBrowser=true. */
+  /** Start loopback PKCE. Opens the system browser only when openBrowser=true; default is not to open. */
   startOAuth(
     agentId: AgentKey,
     openBrowser?: boolean,

@@ -25,6 +25,7 @@ import {
   waitOfficialLogin,
 } from '@/lib/api/official-login';
 import {
+  officialLoginActionUrl,
   officialLoginCopyId,
   officialLoginErrorDisplay,
   officialLoginFooter,
@@ -218,21 +219,14 @@ export function OAuthFlowDialog({
     setCountdown(selected.flow === 'deviceCode' ? 900 : OAUTH_PKCE_LISTEN_TIMEOUT_SECS);
     try {
       const started = poolOwned
-        ? await startOfficialLogin(agentId, selected, true, true)
-        : await startOfficialLogin(agentId, selected, true);
+        ? await startOfficialLogin(agentId, selected, false, true)
+        : await startOfficialLogin(agentId, selected, false);
       if (!isCurrent()) {
         void cancelOfficialLogin(started).catch(() => {});
         return;
       }
       adoptSession(started);
       setCountdown(started.expiresInSecs || OAUTH_PKCE_LISTEN_TIMEOUT_SECS);
-      if (started.flow === 'deviceCode') {
-        const url = started.verificationUriComplete || started.verificationUri;
-        if (url) void openExternalLink(url).catch(() => {});
-      } else if (!started.browserOpened && started.authorizeUrl) {
-        toast({ title: t('connect.oauth.openAuthPage') });
-        void openExternalLink(started.authorizeUrl).catch(() => {});
-      }
       const poll = await waitOfficialLogin(started, isCurrent);
       if (!isCurrent()) return;
       if (!officialLoginShouldFinish(poll.phase)) {
@@ -286,10 +280,25 @@ export function OAuthFlowDialog({
     }
   };
 
-  const copyAuthorizeUrl = () => {
-    if (!session?.authorizeUrl) return;
-    navigator.clipboard.writeText(session.authorizeUrl).catch(() => {});
+  const copyActionUrl = () => {
+    const url = officialLoginActionUrl(session);
+    if (!url) return;
+    navigator.clipboard.writeText(url).catch(() => {});
     toast({ title: t('connect.oauth.copiedLink') });
+  };
+
+  const openActionUrl = () => {
+    const url = officialLoginActionUrl(session);
+    const token = flowTokenRef.current;
+    if (!url || !token) return;
+    void openExternalLink(url).catch((e) => {
+      if (!isOAuthFlowTokenCurrent(flowTokenRef.current, token)) return;
+      toast({
+        title: t('connect.oauth.cannotOpen'),
+        description: e instanceof Error ? e.message : String(e),
+        variant: 'danger',
+      });
+    });
   };
 
   const copyUserCode = () => {
@@ -317,6 +326,21 @@ export function OAuthFlowDialog({
   const footer = officialLoginFooter(step, step === 'waiting');
   const startIsDevice = selected?.flow === 'deviceCode';
   const waitingFlow = session?.flow ?? selected?.flow;
+  const actionUrl = officialLoginActionUrl(session);
+  const loginLinkCard = actionUrl ? (
+    <Card variant="plain" className="w-full bg-canvas p-3 text-left">
+      <p className="mb-1 text-xs text-muted">{t('connect.oauth.authLink')}</p>
+      <p className="mb-2 select-all break-all font-mono text-xs text-primary">{actionUrl}</p>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" onClick={copyActionUrl}>
+          <Copy className="h-3.5 w-3.5" /> {t('connect.oauth.copyAuthLink')}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={openActionUrl}>
+          <ExternalLink className="h-3.5 w-3.5" /> {t('connect.oauth.openBrowser')}
+        </Button>
+      </div>
+    </Card>
+  ) : null;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -386,13 +410,7 @@ export function OAuthFlowDialog({
               </Button>
             ) : null}
             <Button onClick={() => void startSelectedFlow()}>
-              {startIsDevice ? (
-                t('connect.oauth.startDevice')
-              ) : (
-                <>
-                  <ExternalLink className="h-4 w-4" /> {t('connect.oauth.openBrowser')}
-                </>
-              )}
+              {startIsDevice ? t('connect.oauth.startDevice') : t('connect.oauth.startLogin')}
             </Button>
           </div>
         )}
@@ -410,20 +428,10 @@ export function OAuthFlowDialog({
             <p className="font-mono text-title tabular-nums text-primary">
               {mm}:{ss}
             </p>
+            {loginLinkCard}
             <div className="flex flex-wrap justify-center gap-2">
               <Button size="sm" variant="outline" onClick={copyUserCode} disabled={!session?.userCode}>
                 <Copy className="h-3.5 w-3.5" /> {t('connect.oauth.copyDeviceCode')}
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={!session?.verificationUriComplete && !session?.verificationUri}
-                onClick={() => {
-                  const url = session?.verificationUriComplete || session?.verificationUri;
-                  if (url) void openExternalLink(url).catch(() => {});
-                }}
-              >
-                <ExternalLink className="h-3.5 w-3.5" /> {t('connect.oauth.openVerify')}
               </Button>
             </div>
           </div>
@@ -438,35 +446,7 @@ export function OAuthFlowDialog({
             </p>
             <div className="w-full space-y-2 text-left">
               <Notice tone="info">{t('connect.oauth.waitingNotice')}</Notice>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={!session?.authorizeUrl}
-                  onClick={copyAuthorizeUrl}
-                >
-                  <Copy className="h-3.5 w-3.5" /> {t('connect.oauth.copyAuthLink')}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={!session?.authorizeUrl}
-                  onClick={() => {
-                    const token = flowTokenRef.current;
-                    if (!session?.authorizeUrl || !token) return;
-                    void openExternalLink(session.authorizeUrl).catch((e) => {
-                      if (!isOAuthFlowTokenCurrent(flowTokenRef.current, token)) return;
-                      toast({
-                        title: t('connect.oauth.cannotOpen'),
-                        description: e instanceof Error ? e.message : String(e),
-                        variant: 'danger',
-                      });
-                    });
-                  }}
-                >
-                  <ExternalLink className="h-3.5 w-3.5" /> {t('connect.oauth.reopenAuth')}
-                </Button>
-              </div>
+              {loginLinkCard}
               <Card variant="plain" className="bg-canvas p-3">
                 <p className="mb-2 text-xs text-muted">{t('connect.oauth.pasteCallback')}</p>
                 <div className="flex gap-2">

@@ -10,6 +10,7 @@ import {
   isUnimplementedPiOauth,
   mapDevicePollStatus,
   mapPkceWaitStatus,
+  officialLoginActionUrl,
   officialLoginAdapter,
   officialLoginCopyId,
   officialLoginCopyLeaksInternals,
@@ -135,6 +136,18 @@ describe('official login status mapping', () => {
       flow: 'deviceCode',
       userCode: 'ABCD-EFGH',
     });
+    expect(officialLoginActionUrl(pkce)).toBe('https://example.test/auth');
+    expect(officialLoginActionUrl(device)).toBe(
+      'https://auth.x.ai/device?user_code=ABCD-EFGH',
+    );
+    expect(
+      officialLoginActionUrl({
+        flow: 'deviceCode',
+        verificationUri: 'https://auth.x.ai/device',
+        verificationUriComplete: null,
+      }),
+    ).toBe('https://auth.x.ai/device');
+    expect(officialLoginActionUrl(null)).toBeNull();
   });
 
   it('maps superseded and timeout onto wait-page copy without leaking internals', () => {
@@ -232,6 +245,10 @@ describe('official login user copy', () => {
     expect(translate('en', 'connect.oauth.writtenPi')).not.toContain('auth.json');
     expect(lookupLeaf(zh, 'connect.oauth.expectedPrefix')).toBeUndefined();
     expect(lookupLeaf(en, 'connect.oauth.option.piXai.label')).toBe('xAI (Grok subscription)');
+    expect(translate('zh', 'connect.oauth.waitingNotice')).toContain('不会自动打开浏览器');
+    expect(translate('en', 'connect.oauth.waitingNotice')).toContain('will not open automatically');
+    expect(translate('zh', 'connect.oauth.startLogin')).toBe('开始登录');
+    expect(translate('zh', 'connect.oauth.openBrowser')).toBe('打开浏览器');
   });
 });
 
