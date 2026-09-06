@@ -261,13 +261,27 @@ fn promote_spawnable_extra_copy_if_missing(result: &mut DetectResult) {
     refresh_channel_extra_copies_note(result);
 }
 
+/// Keep an explicit PATH overlay (Pi Node 22). Otherwise give `env node` a dir.
+fn probe_env_for_bin(path: &Path, extra_env: &[(String, String)]) -> Vec<(String, String)> {
+    if extra_env
+        .iter()
+        .any(|(key, _)| key.eq_ignore_ascii_case("PATH"))
+    {
+        return extra_env.to_vec();
+    }
+    let mut env = extra_env.to_vec();
+    env.extend(crate::runtime::extra_env_for_node_shebang(path));
+    env
+}
+
 fn probe_bin_version(
     path: &Path,
     version_args: &[&str],
     extra_env: &[(String, String)],
 ) -> Option<String> {
     use crate::utils::process::{run_capture_with_env, stdout_first_line};
-    let output = run_capture_with_env(path, version_args, extra_env).ok()?;
+    let probe_env = probe_env_for_bin(path, extra_env);
+    let output = run_capture_with_env(path, version_args, &probe_env).ok()?;
     stdout_first_line(&output)
         .filter(|l| looks_like_version_line(l))
         .map(|l| extract_version_token(&l))
@@ -781,15 +795,6 @@ fn push_latest_nvm_node_bin(dirs: &mut Vec<PathBuf>, nvm_root: &Path) {
     }
 }
 
-fn path_with_dir_prepended(dir: &Path) -> std::ffi::OsString {
-    let mut out = dir.as_os_str().to_os_string();
-    if let Some(rest) = std::env::var_os("PATH") {
-        out.push(if cfg!(windows) { ";" } else { ":" });
-        out.push(rest);
-    }
-    out
-}
-
 fn find_npm_cli(home: &Path) -> Option<PathBuf> {
     use which::which;
     if let Ok(path) = which("npm").or_else(|_| which("npm.cmd")) {
@@ -829,16 +834,8 @@ fn npm_global_bin_dirs_from_cli_uncached(home: &Path) -> Vec<PathBuf> {
     let Some(npm) = find_npm_cli(home) else {
         return Vec::new();
     };
-    // npm.cmd / `#!/usr/bin/env node` need sibling `node` even when GUI PATH is empty.
-    let extra_env: Vec<(String, String)> = npm
-        .parent()
-        .map(|dir| {
-            vec![(
-                "PATH".to_string(),
-                path_with_dir_prepended(dir).to_string_lossy().into_owned(),
-            )]
-        })
-        .unwrap_or_default();
+    // npm.cmd / `#!/usr/bin/env node` need Node on PATH even when GUI PATH is empty.
+    let extra_env = crate::runtime::extra_env_for_node_shebang(&npm);
     let output = match run_capture_with_env(&npm, &["prefix", "-g"], &extra_env) {
         Ok(output) if output.status.success() => output,
         _ => return Vec::new(),
@@ -1039,7 +1036,8 @@ fn finish_detect(
         ));
     }
 
-    let version = match run_capture_with_env(&path, version_args, extra_env) {
+    let probe_env = probe_env_for_bin(&path, extra_env);
+    let version = match run_capture_with_env(&path, version_args, &probe_env) {
         Ok(o) => {
             if o.status.success() {
                 stdout_first_line(&o)

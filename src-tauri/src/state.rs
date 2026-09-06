@@ -44,6 +44,9 @@ impl AppState {
             // Keep starting; surface via hub error path if needed.
             eprintln!("warning: logging init failed: {e}");
         }
+        // GUI-launched apps inherit a minimal PATH. Prepend Node/npm bin dirs so
+        // `env node` shebangs (npm, Codex, dsh, …) work without a restart.
+        agenthub_core::runtime::ensure_host_path();
         let hub = AgentHub::open(None).map(Arc::new).map_err(|error| {
             logging::log_app_error(targets::GUI, "open", &error);
             error.to_string()
