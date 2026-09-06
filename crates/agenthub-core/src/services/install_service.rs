@@ -581,7 +581,7 @@ fn package_manager_verb(action: RuntimePackageAction) -> &'static str {
     }
 }
 
-#[cfg_attr(all(not(windows), not(target_os = "macos")), allow(dead_code))]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn package_manager_zh(action: RuntimePackageAction) -> &'static str {
     match action {
         RuntimePackageAction::Install => "安装",
@@ -629,6 +629,7 @@ fn resolve_brew() -> Result<String> {
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const NODEJS_DIST_INDEX_URL: &str = "https://nodejs.org/dist/index.json";
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn is_safe_node_version(version: &str) -> bool {
     let mut parts = version.split('.');
     let Some(major) = parts.next() else {
@@ -650,6 +651,7 @@ fn is_safe_node_version(version: &str) -> bool {
 }
 
 /// First LTS release in nodejs.org `index.json` (newest-first) that ships a macOS `.pkg`.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn pick_nodejs_macos_lts_pkg(index_json: &str) -> Option<(String, String)> {
     let releases: Vec<serde_json::Value> = serde_json::from_str(index_json).ok()?;
     for rel in releases {

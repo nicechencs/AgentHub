@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use tempfile::tempdir;
 
-use crate::error::{AppError, Result};
+use crate::error::Result;
 use crate::integrations::agents::demo_agent;
 use crate::integrations::ProductionIntegrations;
 use crate::models::{Capability, CapabilityLevel, DetectStatus, InstallOutcome};

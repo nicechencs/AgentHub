@@ -104,6 +104,7 @@ pub struct CodexTransport {
     wire_rx: Receiver<WireEvent>,
     wire_thread: Option<JoinHandle<()>>,
     stderr_thread: Option<JoinHandle<()>>,
+    #[allow(dead_code)]
     stderr: Arc<Mutex<Vec<u8>>>,
     stop: Arc<AtomicBool>,
     events: VecDeque<CodexEvent>,
@@ -342,6 +343,7 @@ impl CodexTransport {
 
     /// Return the bounded stderr captured so far. The transport never logs it
     /// or includes it in protocol errors.
+    #[allow(dead_code)]
     pub fn stderr(&self) -> String {
         let bytes = self.stderr.lock().expect("stderr capture lock poisoned");
         String::from_utf8_lossy(&bytes).into_owned()

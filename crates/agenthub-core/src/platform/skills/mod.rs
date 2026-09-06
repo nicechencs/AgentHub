@@ -65,7 +65,9 @@ pub(crate) use fs_safe::{
 pub(crate) use git_update::prepare_git_skill_staging;
 pub(crate) use hash::{fingerprint_skill_tree, hash_skill_root_shallow};
 pub(crate) use journal::journal_path as skill_commit_journal_path;
-pub(crate) use lockfile::{skill_lock_load, skill_lock_remove, skill_lock_upsert};
+pub(crate) use lockfile::{skill_lock_load, skill_lock_remove};
+#[cfg(test)]
+pub(crate) use lockfile::skill_lock_upsert;
 pub(crate) use ownership::{
     clear_managed_target_for_reproject, finalize_link_projection_ownership,
     project_copy_with_ownership, record_copy_ownership, recycle_skill_dir,

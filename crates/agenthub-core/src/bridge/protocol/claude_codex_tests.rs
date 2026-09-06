@@ -18,6 +18,7 @@ use super::{
 
 fn assert_codex_completed_usage(usage: &Value) {
     #[derive(serde::Deserialize)]
+    #[allow(dead_code)]
     struct CodexCompletedUsage {
         input_tokens: i64,
         output_tokens: i64,
