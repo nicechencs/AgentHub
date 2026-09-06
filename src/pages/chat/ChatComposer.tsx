@@ -77,6 +77,9 @@ export function ChatComposer({
   currentModel,
   switchingModel,
   onSwitchModel,
+  effortOptions = [],
+  currentEffort = null,
+  onSwitchEffort,
   onOpenSettings,
   onPickWorkingDirectory,
   onDraftKeyDown,
@@ -115,6 +118,9 @@ export function ChatComposer({
   currentModel: string | null;
   switchingModel: boolean;
   onSwitchModel: (model: string) => void;
+  effortOptions?: string[];
+  currentEffort?: string | null;
+  onSwitchEffort?: (effort: string) => void;
   onOpenSettings: () => void;
   onPickWorkingDirectory: () => void;
   onDraftKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => boolean;
@@ -452,6 +458,44 @@ export function ChatComposer({
                       disabled={sending || connectionLocked || switchingModel}
                     >
                       <span className="truncate">{model}</span>
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
+
+          {effortOptions.length > 0 && onSwitchEffort ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={sending || connectionLocked || switchingProvider || switchingModel}
+                  className="max-w-32"
+                  aria-label={t('chat.runtimeOps.effort')}
+                >
+                  <span className="min-w-0 truncate">
+                    {currentEffort || t('chat.runtimeOps.effort')}
+                  </span>
+                  <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-48">
+                <DropdownMenuLabel>{t('chat.runtimeOps.effort')}</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuRadioGroup
+                  value={currentEffort ?? ''}
+                  onValueChange={(id) => onSwitchEffort(id)}
+                >
+                  {effortOptions.map((effort) => (
+                    <DropdownMenuRadioItem
+                      key={effort}
+                      value={effort}
+                      disabled={sending || connectionLocked || switchingModel}
+                    >
+                      <span className="truncate">{effort}</span>
                     </DropdownMenuRadioItem>
                   ))}
                 </DropdownMenuRadioGroup>
