@@ -226,6 +226,8 @@ export interface Account {
   liveAuthHealth?: import('@/lib/backend/contracts/auth-state').AuthHealth;
   liveAuthSource?: string;
   liveAuthRevision?: string;
+  /** Cursor only: which local login file this row came from. */
+  cursorLoginKind?: 'cli' | 'window' | 'both';
   /** OAuth has a refresh credential and can renew an expired access token. */
   refreshable?: boolean;
   /** core 原始 status（如 active） */

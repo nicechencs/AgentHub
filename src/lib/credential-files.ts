@@ -77,7 +77,8 @@ export function defaultLivePathForFile(agentId: string, fileName: string): strin
       'cli/config.json': '~/.zcode/cli/config.json',
     },
     cursor: {
-      'auth.json': '~/.cursor/auth.json',
+      'auth.json': '~/AppData/Roaming/Cursor/auth.json',
+      'state.vscdb': '~/AppData/Roaming/Cursor/User/globalStorage/state.vscdb',
     },
     kiro: {
       'data.sqlite3': '~/AppData/Local/Kiro-Cli/data.sqlite3',
@@ -114,6 +115,7 @@ export function extractAccountCredentialFiles(input: {
   credentials?: Record<string, unknown>;
   source?: string;
   format?: string;
+  cursorLoginKind?: 'cli' | 'window' | 'both';
 }): CredentialFileView[] {
   const credentials = input.credentials ?? {};
   const format =
@@ -133,7 +135,10 @@ export function extractAccountCredentialFiles(input: {
     files.push({ name, content: text });
   };
 
-  const authName = fileNameFromSource(input.source, 'auth') ?? authFileName(input.agentId);
+  const authName =
+    cursorAuthFileName(input.agentId, input.cursorLoginKind, input.source)
+    ?? fileNameFromSource(input.source, 'auth')
+    ?? authFileName(input.agentId);
   const configName = fileNameFromSource(input.source, 'config') ?? configFileName(input.agentId);
 
   const body = credentials.body;
@@ -176,7 +181,22 @@ export function extractAccountCredentialFiles(input: {
     pushJson(name, snapshot);
   }
 
+  if (input.agentId === 'cursor' && input.cursorLoginKind === 'both' && body && typeof body === 'object') {
+    pushJson('state.vscdb', body);
+  }
+
   return files;
+}
+
+function cursorAuthFileName(
+  agentId: AgentKey | string,
+  kind: 'cli' | 'window' | 'both' | undefined,
+  source?: string,
+): string | undefined {
+  if (agentId !== 'cursor') return undefined;
+  if (kind === 'window') return 'state.vscdb';
+  if (kind === 'cli' || kind === 'both') return 'auth.json';
+  return fileNameFromSource(source, 'auth');
 }
 
 export function extractProviderCredentialFiles(provider: Pick<

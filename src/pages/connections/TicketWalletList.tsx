@@ -80,6 +80,7 @@ import {
   hasOfficialQuotaWindow,
   ticketAddActionLabel,
   ticketAuthChip,
+  cursorLoginKindLabel,
   ticketCardTitle,
   showsCatalogUnapply,
   showsNativeSwitch,
@@ -587,6 +588,7 @@ function TicketRow({
   const switching = switchingId === ticket.id;
   const switchBusy = switchingId !== null;
   const title = ticketCardTitle(ticket, extras);
+  const cursorLogin = cursorLoginKindLabel(extras?.cursorLoginKind, t);
   const lastUsed = formatDetailTimestamp(extras?.tokenLastUsedAt ?? extras?.lastUsedAt);
   const has7d = hasOfficialQuotaWindow(extras?.quota7dPct);
   const has5h = hasOfficialQuotaWindow(extras?.quota5hPct);
@@ -606,20 +608,25 @@ function TicketRow({
         <div className="flex min-w-0 items-center gap-2">
           {sortHandle}
           <AgentLogo agentId={ticket.agentId} size="sm" />
-          {onShowDetail ? (
-            <ListNameButton
-              hint={title}
-              data-ticket-name={ticket.id}
-              data-help="list-row"
-              onClick={() => onShowDetail(ticket)}
-            >
-              {title}
-            </ListNameButton>
-          ) : (
-            <Tip className="truncate text-body font-medium" label={title}>
-              {title}
-            </Tip>
-          )}
+          <div className="min-w-0 flex-1">
+            {onShowDetail ? (
+              <ListNameButton
+                hint={title}
+                data-ticket-name={ticket.id}
+                data-help="list-row"
+                onClick={() => onShowDetail(ticket)}
+              >
+                {title}
+              </ListNameButton>
+            ) : (
+              <Tip className="truncate text-body font-medium" label={title}>
+                {title}
+              </Tip>
+            )}
+            {cursorLogin ? (
+              <div className="truncate text-meta text-secondary">{cursorLogin}</div>
+            ) : null}
+          </div>
         </div>
       </TableCell>
       <TableCell data-col="kind" className="whitespace-nowrap">

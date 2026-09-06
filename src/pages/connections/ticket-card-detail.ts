@@ -128,6 +128,8 @@ export interface TicketDetailExtras {
   importedFrom?: string | null;
   /** Associated login files shown under the detail pane. */
   credentialFiles?: CredentialFileView[];
+  /** Cursor only: CLI `auth.json` vs window `state.vscdb`. */
+  cursorLoginKind?: 'cli' | 'window' | 'both';
 }
 
 /** Opened OAuth details with no 5h/7d percent yet — fetch quota once. */
@@ -241,11 +243,28 @@ export function ticketCardTitle(
   return ticket.label;
 }
 
-/** Native 切换 applies to the ticket's owner Agent, not a foreign usage tab. */
+export function cursorLoginKindLabel(
+  kind: TicketDetailExtras['cursorLoginKind'],
+  t?: TranslateFn,
+): string | null {
+  if (!kind) return null;
+  if (!t) {
+    if (kind === 'cli') return 'Cursor Agent CLI';
+    if (kind === 'window') return 'Cursor 窗口';
+    return 'Cursor Agent CLI 和 Cursor 窗口';
+  }
+  if (kind === 'cli') return t('connections.list.cursorLoginKindCli');
+  if (kind === 'window') return t('connections.list.cursorLoginKindWindow');
+  return t('connections.list.cursorLoginKindBoth');
+}
+
+/** Native 切换 applies to the ticket's owner Agent, not a foreign usage tab.
+ * Cursor cannot write this login back, so the row only keeps import. */
 export function showsNativeSwitch(
   ticketAgentId: AgentKey,
   agentFilterId?: AgentKey | null,
 ): boolean {
+  if (ticketAgentId === 'cursor') return false;
   return !agentFilterId || agentFilterId === ticketAgentId;
 }
 
@@ -509,6 +528,9 @@ export function extrasFromPoolSource(
     if (source.account.credentialFiles?.length) {
       extras.credentialFiles = source.account.credentialFiles;
     }
+    if (source.account.cursorLoginKind) {
+      extras.cursorLoginKind = source.account.cursorLoginKind;
+    }
   }
 
   if (source.provider) {
@@ -595,6 +617,13 @@ export function buildTicketDetailFields(
   const advanced: TicketDetailField[] = [];
 
   const occupancy = resolveAgentMeta(ticket.agentId).occupancy;
+  const cursorLogin = cursorLoginKindLabel(extras?.cursorLoginKind, t);
+  if (cursorLogin) {
+    advanced.push({
+      label: t ? t('connections.list.cursorLoginKindLabel') : '本机来源',
+      value: cursorLogin,
+    });
+  }
   if (isListOccupancy(occupancy)) {
     const catalog = isCatalogAppendOccupancy(occupancy);
     const inList = extras?.inList ?? extras?.isCurrent === true;

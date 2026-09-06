@@ -156,6 +156,7 @@ impl AgentAdapter for FakeAdapter {
             AgentId::Grok => Ok(crate::adapters::expand_grok_auth_to_live_accounts(snapshot)),
             AgentId::Kimi => Ok(crate::adapters::expand_kimi_live_accounts(snapshot)),
             AgentId::Claude => Ok(crate::adapters::expand_claude_live_accounts(snapshot)),
+            AgentId::Cursor => Ok(crate::adapters::expand_cursor_live_accounts(snapshot)),
             AgentId::Pi => {
                 let body = snapshot.credentials.get("body").ok_or_else(|| {
                     AppError::InvalidArg(
@@ -1445,12 +1446,68 @@ fn import_live_cursor_does_not_require_account_switch() {
             }
         }),
         label_hint: Some("demo@example.com".into()),
-        extra: json!({ "source": "state.vscdb" }),
+        extra: json!({ "source": "state.vscdb", "cursorLoginKind": "window" }),
     });
     let imported = svc.import_live(AgentId::Cursor, None).unwrap();
     assert_eq!(imported.agent_id, AgentId::Cursor);
     assert_eq!(imported.kind, AccountKind::Oauth);
     assert!(imported.is_current);
+    assert_eq!(imported.extra["source"], "live");
+    assert_eq!(imported.extra["cursorLoginKind"], "window");
+}
+
+#[test]
+fn import_live_cursor_keeps_cli_and_window_logins_separate() {
+    let (_root, svc, adapter) = live_svc(AgentId::Cursor);
+    adapter.supports.store(false, Ordering::SeqCst);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Cursor,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "cursorLoginKind": "cli",
+            "body": {
+                "access_token": "cli-access",
+                "refresh_token": "cli-refresh",
+                "email": "demo@example.com"
+            }
+        }),
+        label_hint: Some("demo@example.com".into()),
+        extra: json!({
+            "source": "auth.json",
+            "cursorLoginKind": "cli",
+            "cursorStores": [
+                {
+                    "source": "auth.json",
+                    "kind": "cli",
+                    "body": {
+                        "access_token": "cli-access",
+                        "refresh_token": "cli-refresh",
+                        "email": "demo@example.com"
+                    }
+                },
+                {
+                    "source": "state.vscdb",
+                    "kind": "window",
+                    "body": {
+                        "access_token": "window-access",
+                        "refresh_token": "window-refresh",
+                        "email": "demo@example.com"
+                    }
+                }
+            ]
+        }),
+    });
+    let imported = svc.import_live(AgentId::Cursor, None).unwrap();
+    let rows = svc.list(Some(AgentId::Cursor)).unwrap();
+    assert_eq!(rows.len(), 2, "CLI and window logins must stay two rows");
+    let kinds: Vec<_> = rows
+        .iter()
+        .map(|row| row.extra["cursorLoginKind"].as_str().unwrap().to_string())
+        .collect();
+    assert!(kinds.contains(&"cli".to_string()));
+    assert!(kinds.contains(&"window".to_string()));
+    assert!(rows.iter().any(|row| row.id == imported.id));
 }
 
 #[test]
@@ -1515,7 +1572,10 @@ fn refresh_kiro_keeps_the_later_expiry() {
     });
     let refreshed = svc.refresh_token(&imported.id, AgentId::Kiro).unwrap();
     assert_eq!(refreshed.credentials["body"]["access_token"], "aoa-new");
-    assert_eq!(refreshed.credentials["body"]["expires_at"], "2026-09-06T17:00:00Z");
+    assert_eq!(
+        refreshed.credentials["body"]["expires_at"],
+        "2026-09-06T17:00:00Z"
+    );
 }
 
 #[test]

@@ -169,6 +169,10 @@ fn scan_cursor_version_end(bytes: &[u8], start: usize) -> Option<usize> {
 
 pub struct CursorAdapter;
 
+pub(crate) fn expand_cursor_live_accounts(snapshot: &LiveAccount) -> Vec<LiveAccount> {
+    auth::expand_cursor_live_accounts(snapshot)
+}
+
 /// Standalone install probe used by platform detectors (no full adapter required).
 pub(crate) fn detect_installation() -> DetectResult {
     let requires = crate::catalog::install::adapter_install_channels(AgentId::Cursor)
@@ -338,8 +342,7 @@ impl AgentAdapter for CursorAdapter {
         // Fail-closed: no models.json / config.toml, and never an ANTHROPIC_* or
         // OpenAI-style /v1 writer.
         Err(AppError::Unsupported(
-            "Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录。"
-                .into(),
+            "Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录。".into(),
         ))
     }
 
@@ -443,6 +446,10 @@ impl AgentAdapter for CursorAdapter {
         auth::read_cursor_live_account()
     }
 
+    fn expand_live_accounts(&self, snapshot: &LiveAccount) -> Result<Vec<LiveAccount>> {
+        Ok(expand_cursor_live_accounts(snapshot))
+    }
+
     fn identity_label(
         &self,
         kind: AccountKind,
@@ -463,8 +470,7 @@ impl AgentAdapter for CursorAdapter {
 
     fn apply_account(&self, _account: &LiveAccount) -> Result<()> {
         Err(AppError::Unsupported(
-            "Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录。"
-                .into(),
+            "Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录。".into(),
         ))
     }
 
@@ -1274,11 +1280,86 @@ FINAL_DIR="$HOME/.local/share/cursor-agent/versions/2026.07.23-e383d2b"
         let live = super::auth::live_account_from_auth(body, "state.vscdb");
         assert_eq!(live.agent, AgentId::Cursor);
         assert_eq!(live.kind, AccountKind::Oauth);
+        assert_eq!(live.extra["source"], "state.vscdb");
+        assert_eq!(live.extra["cursorLoginKind"], "window");
+        assert_eq!(live.credentials["cursorLoginKind"], "window");
         assert_eq!(
             super::auth::cursor_identity_label(&live.credentials, live.label_hint.as_deref())
                 .as_deref(),
             Some("demo@example.com")
         );
+    }
+
+    #[test]
+    fn read_cursor_auth_from_json_maps_camel_case_tokens() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.json");
+        std::fs::write(
+            &path,
+            r#"{"accessToken":"cli-access","refreshToken":"cli-refresh"}"#,
+        )
+        .unwrap();
+        let body = super::auth::read_cursor_auth_from_json(&path).expect("cli token");
+        assert_eq!(body["access_token"], "cli-access");
+        assert_eq!(body["refresh_token"], "cli-refresh");
+        let live = super::auth::live_account_from_auth(body, "auth.json");
+        assert_eq!(live.extra["cursorLoginKind"], "cli");
+    }
+
+    #[test]
+    fn expand_cursor_live_accounts_splits_different_cli_and_window_grants() {
+        let snapshot = super::auth::live_account_from_auth(
+            serde_json::json!({
+                "access_token": "cli-access",
+                "refresh_token": "cli-refresh",
+                "email": "cli@example.com",
+            }),
+            "auth.json",
+        );
+        let mut snapshot = snapshot;
+        snapshot.extra["cursorStores"] = serde_json::json!([
+            {
+                "source": "auth.json",
+                "kind": "cli",
+                "body": {
+                    "access_token": "cli-access",
+                    "refresh_token": "cli-refresh",
+                    "email": "cli@example.com"
+                }
+            },
+            {
+                "source": "state.vscdb",
+                "kind": "window",
+                "body": {
+                    "access_token": "window-access",
+                    "refresh_token": "window-refresh",
+                    "email": "window@example.com"
+                }
+            }
+        ]);
+        let expanded = super::auth::expand_cursor_live_accounts(&snapshot);
+        assert_eq!(expanded.len(), 2);
+        assert_eq!(expanded[0].extra["cursorLoginKind"], "cli");
+        assert_eq!(expanded[1].extra["cursorLoginKind"], "window");
+        assert_eq!(expanded[0].credentials["body"]["email"], "cli@example.com");
+        assert_eq!(
+            expanded[1].credentials["body"]["email"],
+            "window@example.com"
+        );
+    }
+
+    #[test]
+    fn expand_cursor_live_accounts_keeps_single_snapshot() {
+        let snapshot = super::auth::live_account_from_auth(
+            serde_json::json!({
+                "access_token": "only-access",
+                "email": "only@example.com",
+            }),
+            "auth.json",
+        );
+        let expanded = super::auth::expand_cursor_live_accounts(&snapshot);
+        assert_eq!(expanded.len(), 1);
+        assert_eq!(expanded[0].extra["cursorLoginKind"], "cli");
     }
 
     #[test]

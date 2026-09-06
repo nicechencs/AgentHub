@@ -300,6 +300,30 @@ fn collect_oauth_identity_fields(value: &Value, marks: &mut OauthIdentityMarks) 
     }
 }
 
+fn cursor_login_kind(credentials: &Value, extra: Option<&Value>) -> Option<String> {
+    credentials
+        .get("cursorLoginKind")
+        .and_then(Value::as_str)
+        .or_else(|| extra.and_then(|value| value.get("cursorLoginKind").and_then(Value::as_str)))
+        .filter(|kind| matches!(*kind, "cli" | "window" | "both"))
+        .map(ToOwned::to_owned)
+}
+
+/// Cursor CLI and window logins can share an email but are not the same row.
+fn cursor_identity_can_merge(agent: AgentId, incoming: &Value, existing: &Account) -> bool {
+    if agent != AgentId::Cursor {
+        return true;
+    }
+    match (
+        cursor_login_kind(incoming, None),
+        cursor_login_kind(&existing.credentials, Some(&existing.extra)),
+    ) {
+        (Some(left), Some(right)) => left == right,
+        (None, None) => true,
+        _ => false,
+    }
+}
+
 /// Same-agent rows to upsert: token fingerprint, loopback slot, or OAuth identity.
 pub(super) fn authorization_duplicates(
     adapter: &dyn AgentAdapter,
@@ -319,7 +343,8 @@ pub(super) fn authorization_duplicates(
                 } else {
                     !credentials_are_loopback(&candidate.credentials)
                         && (accounts_same_authorization(adapter, kind, credentials, candidate)
-                            || accounts_same_oauth_identity(kind, credentials, candidate))
+                            || (cursor_identity_can_merge(agent, credentials, candidate)
+                                && accounts_same_oauth_identity(kind, credentials, candidate)))
                 }
         })
         .cloned()

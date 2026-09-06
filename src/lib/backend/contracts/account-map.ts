@@ -180,12 +180,14 @@ export function mapCoreAccount(a: CoreAccount): Account {
     source,
     envKey,
     credentialSummary,
+    cursorLoginKind: cursorLoginKindFrom(extra, credentials),
     credentialFiles: extractAccountCredentialFiles({
       agentId: a.agentId,
       kind: a.kind,
       credentials,
       source,
       format: credentialFormat,
+      cursorLoginKind: cursorLoginKindFrom(extra, credentials),
     }),
     refreshTokenPreview: a.kind === 'oauth' ? pickString(extra.refreshTokenPreview) : undefined,
     secretTail: recoveredSecretTail,
@@ -200,6 +202,15 @@ export function mapCoreAccount(a: CoreAccount): Account {
       ?? pickString(credentials.url)
       ?? catalogRowEndpoint(credentials),
   };
+}
+
+function cursorLoginKindFrom(
+  extra: Record<string, unknown>,
+  credentials: Record<string, unknown>,
+): Account['cursorLoginKind'] {
+  const raw = pickString(extra.cursorLoginKind) ?? pickString(credentials.cursorLoginKind);
+  if (raw === 'cli' || raw === 'window' || raw === 'both') return raw;
+  return undefined;
 }
 
 function pickString(v: unknown): string | undefined {
