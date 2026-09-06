@@ -14,7 +14,8 @@ export interface ChatTurnOutcome {
 const OUTCOME_STATUSES = new Set<ChatMessageStatus>(['failed', 'cancelled', 'timeout']);
 
 function looksInterrupted(message: ChatMessage): boolean {
-  const hay = `${message.error ?? ''}\n${message.content ?? ''}`.toLowerCase();
+  // Only structured error text — never assistant prose.
+  const hay = (message.error ?? '').toLowerCase();
   return (
     hay.includes('runtime interrupted') ||
     hay.includes('chat.runtime.interrupted') ||

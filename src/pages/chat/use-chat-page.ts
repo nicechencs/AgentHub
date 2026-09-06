@@ -190,36 +190,42 @@ export function useChatPage() {
         toast({ title: t(`chat.actions.disabled.${reason}` as never), variant: 'danger' });
         return;
       }
+      const clearCommandDraft = () => {
+        if (isCommandSearchMode(draft)) setDraft('');
+      };
       if (action.kind === 'draft' && action.draftText) {
         setDraft(action.draftText);
         return;
       }
       if (action.id === 'new-session') {
+        clearCommandDraft();
         void handleNewChat();
         return;
       }
       if (action.id === 'open-history') {
+        clearCommandDraft();
         setRailOpen(true);
         return;
       }
       if (action.id === 'focus-history-search') {
         setRailOpen(true);
         setSearchFocusNonce((n) => n + 1);
-        setDraft('');
+        clearCommandDraft();
         return;
       }
       if (action.id === 'open-settings') {
+        clearCommandDraft();
         setSettingsOpen(true);
         return;
       }
       if (action.id === 'open-agents') {
+        clearCommandDraft();
         navigate('/agents');
-        setDraft('');
         return;
       }
       if (action.id === 'open-connections') {
+        clearCommandDraft();
         navigate('/connections');
-        setDraft('');
         return;
       }
       if (action.id === 'copy-latest-reply') {
@@ -232,10 +238,10 @@ export function useChatPage() {
           () => toast({ title: t('chat.bubble.copied') }),
           () => toast({ title: t('chat.bubble.copyFailed'), variant: 'danger' }),
         );
-        setDraft('');
+        clearCommandDraft();
       }
     },
-    [actionContext, handleNewChat, messages, navigate, setRailOpen, setSettingsOpen, t, toast],
+    [actionContext, draft, handleNewChat, messages, navigate, setRailOpen, setSettingsOpen, t, toast],
   );
   const commandSearchOpen = isCommandSearchMode(draft);
   const commandItems = useMemo(() => filterChatActions(draft), [draft]);
