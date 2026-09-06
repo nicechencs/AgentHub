@@ -17,6 +17,7 @@ const mockState: Record<AgentKey, Provider[]> = {
   pi: [],
   workbuddy: [],
   cursor: [],
+  kiro: [],
 };
 
 let lastSwitch: { agentId: AgentKey; fromId: string; toId: string } | null = null;

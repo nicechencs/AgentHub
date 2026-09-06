@@ -16,7 +16,7 @@ updated: 2026-09-06
 - 当前界面包含 Dashboard、Agents、Connections、Sub2API、Routes、Skills、MCP、Chat、Projects、Plugins 和 Settings。Settings 四个页签为 **偏好 / 本机 / 备份 / 关于**（`?tab=preferences|local|backups|about`）。各页功能与 Agent 接入点见 [页面模式](ui/page-patterns.md)。
 - Connections 是跨工具的登录列表。接到某个工具从 Dashboard「连接/切换」。连接页不提供「分享至连接池」行入口；入池在 Routes 连接池用「从连接同步」。登录仍由连接页管理生命周期（除非在池里编辑官方登录并复制为池自有行）。**产品决策：所有 API Key 都可以分享（含 WorkBuddy / ZCode 等上配置的）；国产官方登录不能分享**，见 [产品边界](decisions/product-boundaries.md)。Routes 管理本机路由运行时，二级导航为 board / pool / tokens / activity（`/routes` 进看板）；连接池也可以添加官方登录 / API Key（仅用于连接池，可不出现在连接页），并可用「从连接同步」一次加入多份登录。界面契约见 [页面模式](ui/page-patterns.md)。在连接池里编辑从连接页分享来的官方登录并保存时，会先复制成连接池自己的一份（连接页那份还在），再问要不要把模型写回连接页。连接页与连接池相互独立，回收站也分开。登录按登录方式分行保存（官方登录与 API Key 分开），记下关键词和整份配置；详情列出记下的配置文件（可复制、打开所在目录），并补充套餐、有效期、时间线与完整端点。WorkBuddy 自定义模型和 ZCode 供应商按目录拆成多条登录，桌面套餐登录不导入；WorkBuddy 写入只认 `/v1/chat/completions`。
 - Sub2API 是独立站点管理页：密码登录站点（验证码 / 2FA 按站点要求），可记住多账号；密码经 settings 端口写入桌面 SQLite vault（mock 为内存）。登录后可按分组查看、创建、编辑、启用/禁用或删除 API Key，并把可用 Key 导入已安装的 Agent。侧栏入口默认隐藏，打开偏好中的「显示 Sub2API 页面」后显示；隐藏只影响入口，不影响页面本身。界面细节见 [页面模式](ui/page-patterns.md)。
-- 当前内置适配包括 Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy、ZCode 和 DeepSeek Harness。**Cursor Agent 适配器仍在代码中，但 dev 线通过 store-stamp 默认软隐藏**（Agents 管理页可取消隐藏）；待登录写入、路由目标与结构化输出等兼容问题修复后再重新开放。
+- 当前内置适配包括 Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy、ZCode、DeepSeek Harness 和 Kiro。**Cursor Agent 适配器仍在代码中，但 dev 线通过 store-stamp 默认软隐藏**（Agents 管理页可取消隐藏）；待登录写入、路由目标与结构化输出等兼容问题修复后再重新开放。Kiro 第一波只管理 `kiro-cli`（检测/安装/登录指引/API Key/headless 发送），不把编辑器当成已安装，也不接持续聊或本机路由。
 - CLI 提供 doctor、env、agent、provider、account、skill、usage、backup、run、config 等命令；参数以 CLI 帮助和源码为准。
 - Chat 新空 Codex 会话已接入 app-server：持续回复、确认/回答、补充/停止、保存与同机重开；旧会话与其他 Agent 保留原有发送方式。B2 已落地会话 model/effort、最小操作菜单、localImage 附件与 Skills/插件发现状态（不含计划模式与完整扩展管理）；其他 Agent 适配待 B3。macOS 上真实重开续聊已验证，带附件/模型的桌面端到端与其他平台尚未验收；见 [B1](status/chat-codex-b1.md)、[B2](status/chat-codex-b2.md)。
 
@@ -34,7 +34,7 @@ updated: 2026-09-06
 - Usage 只读解析本地 Agent 会话或日志；优先使用日志中的官方成本字段，否则使用离线内嵌价表估算。运行时不联网拉取价格，也不做汇率换算。总览趋势可按 Agent 或模型切换；悬停同时看 token 和费用。Grok 用量把 `grok-4.6` 与 `grok-4.6-build`（以及 `[grok]` / `xai/` 前缀）当成同一个公开模型。
 - Skills 页分用户技能、项目技能和市场。用户技能仍用共享目录 `~/.agents/skills/`，并可启用到各工具；项目技能从项目页已识别的工作区下拉选择，读写该项目的 `.agents/skills/`（列表也会带上 `.claude/skills` 等已有目录）。配置切换在修改前创建备份。
 - MCP 页只读扫描已知 MCP server 配置；`Capability::Mcp` 对全部内置 Agent 仍为 Planned。见 [MCP inventory](reference/mcp-inventory.md)。
-- 插件页 `/plugins` 列出 Claude / Grok / Pi 的 plugin / extension 包。Claude / Grok 优先官方 CLI JSON，否则读 live 目录；Pi 读用户 `settings.json` 的 `packages`。Pi 对照本机版本与配置里的指定版本：指定了版本的 npm 包在 Pi 更新扩展时会跳过；未安装或两者不一致会在列表标出。Claude / Grok 配置里有、本机目录没有的包标未安装，不按 Pi 的指定版本规则判断，也不查商店里是否有新版本。本页不查线上最新。Claude / Grok 已装包可启用/停用。没有安装按钮，也没有 `Capability::Plugins`。Codex 仍为 Planned；Cursor / Kimi / WorkBuddy / DSH / ZCode 为 Unsupported。见 [插件、MCP 与技能](concepts/plugins-and-mcp.md)。
+- 插件页 `/plugins` 列出 Claude / Grok / Pi 的 plugin / extension 包。Claude / Grok 优先官方 CLI JSON，否则读 live 目录；Pi 读用户 `settings.json` 的 `packages`。Pi 对照本机版本与配置里的指定版本：指定了版本的 npm 包在 Pi 更新扩展时会跳过；未安装或两者不一致会在列表标出。Claude / Grok 配置里有、本机目录没有的包标未安装，不按 Pi 的指定版本规则判断，也不查商店里是否有新版本。本页不查线上最新。Claude / Grok 已装包可启用/停用。没有安装按钮，也没有 `Capability::Plugins`。Codex 仍为 Planned；Cursor / Kimi / WorkBuddy / DSH / ZCode / Kiro 为 Unsupported。见 [插件、MCP 与技能](concepts/plugins-and-mcp.md)。
 
 ## 验证与发布
 

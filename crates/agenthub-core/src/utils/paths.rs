@@ -225,6 +225,12 @@ pub fn agent_live_paths(agent: AgentId) -> Result<AgentLivePaths> {
             extra: vec![join(&home, "cli/config.json")?],
             open_dir,
         },
+        AgentId::Kiro => AgentLivePaths {
+            config: "无稳定 provider 配置文件".into(),
+            auth: None,
+            extra: Vec::new(),
+            open_dir,
+        },
     })
 }
 

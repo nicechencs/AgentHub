@@ -553,6 +553,45 @@ pub(crate) fn well_known_bin_paths(agent: AgentId) -> Vec<(PathBuf, &'static str
             push_native(&mut paths, home.join(".local").join("bin"));
             let _ = home;
         }
+        AgentId::Kiro => {
+            // Binary is `kiro-cli`, not AgentId as_str (`kiro`). Never treat the IDE as CLI.
+            let push_cli = |paths: &mut Vec<(PathBuf, &'static str)>, dir: PathBuf| {
+                #[cfg(windows)]
+                {
+                    paths.push((dir.join("kiro-cli.exe"), "native"));
+                    paths.push((dir.join("kiro-cli.cmd"), "native"));
+                }
+                paths.push((dir.join("kiro-cli"), "native"));
+            };
+            push_cli(&mut paths, home.join(".local").join("bin"));
+            #[cfg(windows)]
+            {
+                for key in ["ProgramFiles", "ProgramFiles(x86)"] {
+                    if let Ok(root) = std::env::var(key) {
+                        push_cli(&mut paths, PathBuf::from(root).join("Kiro-Cli"));
+                    }
+                }
+                if let Ok(local) = std::env::var("LOCALAPPDATA") {
+                    push_cli(
+                        &mut paths,
+                        PathBuf::from(local).join("Programs").join("Kiro-Cli"),
+                    );
+                }
+            }
+            #[cfg(target_os = "macos")]
+            {
+                paths.push((
+                    PathBuf::from("/Applications/Kiro CLI.app/Contents/MacOS/kiro-cli"),
+                    "native",
+                ));
+                push_cli(&mut paths, PathBuf::from("/usr/local/bin"));
+                push_cli(&mut paths, PathBuf::from("/opt/homebrew/bin"));
+            }
+            #[cfg(all(unix, not(target_os = "macos")))]
+            {
+                push_cli(&mut paths, PathBuf::from("/usr/local/bin"));
+            }
+        }
     }
 
     paths

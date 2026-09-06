@@ -2742,9 +2742,8 @@ fn native_sh_shell_requirement(builtin_agent: Option<AgentId>) -> NativeShellReq
     // `bash` inside the pipeline.
     // Contribution-only (non-AgentId) installs default to Bash.
     match builtin_agent {
-        Some(AgentId::Claude | AgentId::Kimi | AgentId::Grok | AgentId::Cursor) | None => {
-            NativeShellRequirement::Bash
-        }
+        Some(AgentId::Claude | AgentId::Kimi | AgentId::Grok | AgentId::Cursor | AgentId::Kiro)
+        | None => NativeShellRequirement::Bash,
         Some(_) => NativeShellRequirement::Posix,
     }
 }

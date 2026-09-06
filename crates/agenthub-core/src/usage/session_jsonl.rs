@@ -159,7 +159,7 @@ fn discover_usage_files(agent: AgentId) -> Result<Vec<PathBuf>> {
         AgentId::Kimi => discover_kimi_files(),
         AgentId::Pi => discover_pi_files(),
         AgentId::Grok => discover_grok_files(),
-        AgentId::Cursor => Ok(Vec::new()),
+        AgentId::Cursor | AgentId::Kiro => Ok(Vec::new()),
         AgentId::Dsh => discover_dsh_files(),
         AgentId::Zcode => Ok(Vec::new()),
     }

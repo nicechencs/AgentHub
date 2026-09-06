@@ -41,7 +41,7 @@ fn resume_argv(agent: AgentId, session_id: &str) -> Option<Vec<String>> {
             "--resume".into(),
             session_id.into(),
         ],
-        AgentId::WorkBuddy | AgentId::Dsh | AgentId::Zcode => return None,
+        AgentId::WorkBuddy | AgentId::Dsh | AgentId::Zcode | AgentId::Kiro => return None,
     };
     Some(argv)
 }

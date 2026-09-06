@@ -20,6 +20,7 @@ const DISPLAY_NAMES: Record<string, string> = {
   cursor: 'Cursor Agent',
   dsh: 'DeepSeek Harness',
   zcode: 'ZCode',
+  kiro: 'Kiro',
 };
 
 function capsToDto(
@@ -51,7 +52,7 @@ const PROJECTOR_SCHEMA_VERSION: Record<string, number> = {
 };
 
 /** Agents without projector: explicit null (legacy applyFormVars path). */
-const NO_PROJECTOR = new Set(['cursor', 'pi', 'workbuddy', 'zcode']);
+const NO_PROJECTOR = new Set(['cursor', 'pi', 'workbuddy', 'zcode', 'kiro']);
 
 function configSchemaVersionFor(agentId: string): number | null {
   if (agentId in PROJECTOR_SCHEMA_VERSION) {

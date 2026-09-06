@@ -144,6 +144,14 @@ function defaultMockAgentStatuses(): Record<AgentKey, AgentStatus> {
       running: false,
       capabilities: MOCK_CAPABILITIES.dsh,
     },
+    kiro: {
+      agentId: 'kiro',
+      installed: false,
+      authStatus: 'none',
+      authLabel: '未配置',
+      running: false,
+      capabilities: MOCK_CAPABILITIES.kiro,
+    },
   };
 }
 

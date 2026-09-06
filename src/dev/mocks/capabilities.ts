@@ -231,4 +231,38 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
     modelSelect: { level: 'planned', reason: '待验证接入' },
     sessionResume: { level: 'planned', reason: '待验证接入' },
   },
+  kiro: {
+    configWrite: {
+      level: 'unsupported',
+      reason: '无稳定配置写入契约，fail-closed',
+    },
+    accountSwitch: {
+      level: 'unsupported',
+      reason: '账号由 Kiro 登录管理',
+    },
+    apiKeyAccount: {
+      level: 'partial',
+      reason: '可用 API Key 或 kiro-cli login',
+    },
+    skills: { level: 'planned', reason: '待路径核实' },
+    liveBackup: { level: 'unsupported', reason: '无稳定配置/凭据文件' },
+    structuredStream: { level: 'planned', reason: 'stream-json 待验证' },
+    dangerousMode: {
+      level: 'partial',
+      reason: '映射 --trust-all-tools；请确认风险后再开',
+    },
+    projectHistory: { level: 'planned', reason: '待路径核实' },
+    projectDelete: {
+      level: 'unsupported',
+      reason: '无安全浅删契约',
+    },
+    providerPresets: { level: 'unsupported', reason: '无 provider 配置契约' },
+    usage: { level: 'planned', reason: '待日志字段核实' },
+    mcp: { level: 'planned', reason: '待路径核实' },
+    modelSelect: { level: 'planned', reason: '待验证接入' },
+    sessionResume: {
+      level: 'unsupported',
+      reason: 'headless 无中途输入；持续聊另立项',
+    },
+  },
 };

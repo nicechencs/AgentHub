@@ -67,6 +67,7 @@ fn trims_whitespace_around_valid_ids() {
 fn unknown_resume_agents_return_none() {
     assert!(plan_native_resume(AgentId::WorkBuddy, "wb").is_none());
     assert!(plan_native_resume(AgentId::Dsh, "dsh-session").is_none());
+    assert!(plan_native_resume(AgentId::Kiro, "kiro-session").is_none());
 }
 
 #[test]
