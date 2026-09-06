@@ -58,3 +58,29 @@ describe('mock chat runtime', () => {
     });
   });
 });
+
+
+  it('rejects unsupported model×effort pairs and fills default on model switch', async () => {
+    const chat = createMockChatPort();
+    const conversation = await chat.createConversation(['codex']);
+    await chat.runtimeOptions(conversation.id);
+
+    await expect(
+      chat.runtimeSetSettings(conversation.id, {
+        model: 'gpt-5.3-codex-spark',
+        effort: 'medium',
+      }),
+    ).rejects.toThrow(/不支持思考强度/);
+
+    const switched = await chat.runtimeSetSettings(conversation.id, {
+      model: 'gpt-5.3-codex-spark',
+      effort: null,
+    });
+    expect(switched).toMatchObject({
+      model: 'gpt-5.3-codex-spark',
+      effort: 'low',
+    });
+
+    const started = await chat.runtimeStart(conversation.id, 'ping', 'client-effort-ok');
+    expect(started.phase).not.toBe('idle');
+  });

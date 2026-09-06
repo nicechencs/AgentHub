@@ -25,25 +25,122 @@ pub(crate) fn may_fetch_catalog(phase: Option<super::types::RuntimePhase>) -> bo
     !phase.is_some_and(phase_freezes_settings)
 }
 
+/// Default / first supported effort for a model/list row.
+/// Ignores a defaultReasoningEffort that is not in supportedReasoningEfforts.
+pub(crate) fn resolved_default_effort(option: &RuntimeModelOption) -> Option<String> {
+    if let Some(default) = option
+        .default_effort
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        if option.efforts.iter().any(|item| item == default) {
+            return Some(default.to_string());
+        }
+    }
+    option.efforts.first().cloned()
+}
+
+fn trim_setting(value: &Option<String>) -> Option<String> {
+    value
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+/// Soft repair for idle options(): replace an unsupported effort with the model
+/// default / first supported value. Returns `None` when no write is needed.
+pub(crate) fn reconcile_turn_settings(
+    stored: &RuntimeTurnSettings,
+    catalog: &[RuntimeModelOption],
+) -> Option<RuntimeTurnSettings> {
+    if catalog.is_empty() {
+        return None;
+    }
+    let model = trim_setting(&stored.model);
+    let effort = trim_setting(&stored.effort);
+    let Some(model_id) = model else {
+        if effort.is_some() || stored.model.is_some() || stored.effort.is_some() {
+            return Some(RuntimeTurnSettings {
+                model: None,
+                effort: None,
+            });
+        }
+        return None;
+    };
+    let Some(option) = catalog.iter().find(|item| item.id == model_id) else {
+        return None;
+    };
+    let compatible = match effort.as_deref() {
+        None => true,
+        Some(_) if option.efforts.is_empty() => false,
+        Some(value) => option.efforts.iter().any(|item| item == value),
+    };
+    if compatible {
+        let normalized = RuntimeTurnSettings {
+            model: Some(model_id),
+            effort,
+        };
+        return if &normalized == stored {
+            None
+        } else {
+            Some(normalized)
+        };
+    }
+    Some(RuntimeTurnSettings {
+        model: Some(model_id),
+        effort: resolved_default_effort(option),
+    })
+}
+
+/// Strict check used by `start`: reject unsupported (model, effort) pairs.
+/// Omitted effort is allowed (Codex uses its own default). Empty catalog skips.
+pub(crate) fn assert_settings_supported(
+    settings: &RuntimeTurnSettings,
+    catalog: &[RuntimeModelOption],
+) -> Result<()> {
+    if catalog.is_empty() {
+        return Ok(());
+    }
+    let model = trim_setting(&settings.model);
+    let effort = trim_setting(&settings.effort);
+    if model.is_none() && effort.is_some() {
+        return Err(AppError::InvalidArg(
+            "选择思考强度前需要先选择模型".into(),
+        ));
+    }
+    let Some(model_id) = model else {
+        return Ok(());
+    };
+    let option = catalog.iter().find(|item| item.id == model_id).ok_or_else(|| {
+        AppError::InvalidArg(format!("模型不可用: {model_id}"))
+    })?;
+    if let Some(value) = effort {
+        if option.efforts.is_empty() {
+            return Err(AppError::InvalidArg(format!(
+                "模型 {model_id} 不支持思考强度"
+            )));
+        }
+        if !option.efforts.iter().any(|item| item == &value) {
+            return Err(AppError::InvalidArg(format!(
+                "模型 {model_id} 不支持思考强度 {value}"
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Validate requested settings against a model/list catalog.
 /// Empty catalog: only reject obviously empty model ids; effort may be set with model.
+/// When effort is omitted, fill the model's default or first supported effort.
 pub(crate) fn validate_turn_settings(
     requested: &RuntimeTurnSettings,
     catalog: &[RuntimeModelOption],
     prior: &RuntimeTurnSettings,
 ) -> Result<RuntimeTurnSettings> {
-    let model = requested
-        .model
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string);
-    let effort = requested
-        .effort
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string);
+    let model = trim_setting(&requested.model);
+    let effort = trim_setting(&requested.effort);
 
     if model.is_none() && effort.is_some() {
         return Err(AppError::InvalidArg(
@@ -67,7 +164,7 @@ pub(crate) fn validate_turn_settings(
     })?;
 
     let effort = match effort {
-        None => option.default_effort.clone(),
+        None => resolved_default_effort(option),
         Some(value) => {
             if option.efforts.is_empty() {
                 // Model advertises no efforts; reject non-empty effort.
@@ -130,9 +227,16 @@ pub(crate) fn parse_model_list(value: &Value) -> Vec<RuntimeModelOption> {
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .map(str::to_string);
-        out.push(RuntimeModelOption {
+        let option = RuntimeModelOption {
             id,
             efforts,
+            default_effort,
+        };
+        // Keep stored default only when it is actually supported; otherwise first effort.
+        let default_effort = resolved_default_effort(&option);
+        out.push(RuntimeModelOption {
+            id: option.id,
+            efforts: option.efforts,
             default_effort,
         });
     }
@@ -418,6 +522,89 @@ mod tests {
         )
         .unwrap();
         assert_eq!(ok.effort.as_deref(), Some("high"));
+    }
+
+    #[test]
+    fn fills_first_effort_when_default_missing_or_invalid() {
+        let catalog = vec![RuntimeModelOption {
+            id: "spark".into(),
+            efforts: vec!["low".into(), "high".into()],
+            default_effort: Some("medium".into()),
+        }];
+        let ok = validate_turn_settings(
+            &RuntimeTurnSettings {
+                model: Some("spark".into()),
+                effort: None,
+            },
+            &catalog,
+            &RuntimeTurnSettings::default(),
+        )
+        .unwrap();
+        assert_eq!(ok.effort.as_deref(), Some("low"));
+        assert_eq!(
+            resolved_default_effort(&catalog[0]).as_deref(),
+            Some("low")
+        );
+    }
+
+    #[test]
+    fn reconcile_resets_unsupported_effort_for_model() {
+        let catalog = vec![RuntimeModelOption {
+            id: "gpt-5.3-codex-spark".into(),
+            efforts: vec!["low".into(), "high".into()],
+            default_effort: Some("low".into()),
+        }];
+        let repaired = reconcile_turn_settings(
+            &RuntimeTurnSettings {
+                model: Some("gpt-5.3-codex-spark".into()),
+                effort: Some("medium".into()),
+            },
+            &catalog,
+        )
+        .expect("should repair");
+        assert_eq!(repaired.model.as_deref(), Some("gpt-5.3-codex-spark"));
+        assert_eq!(repaired.effort.as_deref(), Some("low"));
+        assert!(reconcile_turn_settings(&repaired, &catalog).is_none());
+    }
+
+    #[test]
+    fn assert_settings_supported_rejects_bad_pair() {
+        let catalog = vec![RuntimeModelOption {
+            id: "gpt-5.3-codex-spark".into(),
+            efforts: vec!["low".into()],
+            default_effort: Some("low".into()),
+        }];
+        let err = assert_settings_supported(
+            &RuntimeTurnSettings {
+                model: Some("gpt-5.3-codex-spark".into()),
+                effort: Some("medium".into()),
+            },
+            &catalog,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("不支持思考强度"));
+        assert!(assert_settings_supported(
+            &RuntimeTurnSettings {
+                model: Some("gpt-5.3-codex-spark".into()),
+                effort: None,
+            },
+            &catalog,
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn parse_model_list_drops_unsupported_default_effort() {
+        let value = json!({
+            "data": [{
+                "id": "spark",
+                "supportedReasoningEfforts": ["low", "high"],
+                "defaultReasoningEffort": "medium"
+            }]
+        });
+        let models = parse_model_list(&value);
+        assert_eq!(models[0].efforts, vec!["low", "high"]);
+        assert_eq!(models[0].default_effort.as_deref(), Some("low"));
     }
 
     #[test]

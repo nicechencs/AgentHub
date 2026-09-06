@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { RuntimeOptions } from '@/lib/api/chat';
-import { retainRuntimeCatalog } from './chat-runtime-ops-model';
+import {
+  coerceSettingsToCatalog,
+  defaultEffortForModel,
+  effortsForModel,
+  isEffortCompatible,
+  retainRuntimeCatalog,
+  settingsForModelSwitch,
+} from './chat-runtime-ops-model';
 
 const options = (
   partial: Partial<RuntimeOptions> & Pick<RuntimeOptions, 'settingsFrozen' | 'models' | 'extensions'>,
@@ -80,5 +87,70 @@ describe('retainRuntimeCatalog', () => {
       extensions: [],
     });
     expect(retainRuntimeCatalog(prior, next, 'c1').models[0]?.id).toBe('gpt-b');
+  });
+});
+
+describe('model × effort compatibility', () => {
+  const spark = {
+    id: 'gpt-5.3-codex-spark',
+    efforts: ['low', 'high'],
+    defaultEffort: 'low',
+  };
+  const full = {
+    id: 'gpt-full',
+    efforts: ['low', 'medium', 'high'],
+    defaultEffort: 'medium',
+  };
+
+  it('filters efforts to the selected model only', () => {
+    expect(effortsForModel([spark, full], 'gpt-5.3-codex-spark')).toEqual(['low', 'high']);
+    expect(effortsForModel([spark, full], 'missing')).toEqual([]);
+    expect(effortsForModel([spark, full], null)).toEqual([]);
+  });
+
+  it('prefers supported default then first effort', () => {
+    expect(defaultEffortForModel(spark)).toBe('low');
+    expect(
+      defaultEffortForModel({
+        id: 'x',
+        efforts: ['low', 'high'],
+        defaultEffort: 'medium',
+      }),
+    ).toBe('low');
+    expect(defaultEffortForModel({ id: 'none', efforts: [], defaultEffort: 'medium' })).toBeNull();
+  });
+
+  it('detects incompatible effort pairs', () => {
+    expect(isEffortCompatible(spark, 'medium')).toBe(false);
+    expect(isEffortCompatible(spark, 'low')).toBe(true);
+    expect(isEffortCompatible(spark, null)).toBe(true);
+    expect(isEffortCompatible({ id: 'n', efforts: [], defaultEffort: null }, 'low')).toBe(false);
+  });
+
+  it('resets unsupported effort when coercing to the catalog', () => {
+    expect(
+      coerceSettingsToCatalog(
+        { model: 'gpt-5.3-codex-spark', effort: 'medium' },
+        [spark, full],
+      ),
+    ).toEqual({ model: 'gpt-5.3-codex-spark', effort: 'low' });
+  });
+
+  it('keeps an omitted effort omitted when the pair is otherwise compatible', () => {
+    expect(coerceSettingsToCatalog({ model: 'gpt-full' }, [spark, full])).toEqual({
+      model: 'gpt-full',
+      effort: null,
+    });
+  });
+
+  it('resets effort on model switch instead of keeping the prior value', () => {
+    expect(settingsForModelSwitch('gpt-5.3-codex-spark', [spark, full])).toEqual({
+      model: 'gpt-5.3-codex-spark',
+      effort: 'low',
+    });
+    expect(settingsForModelSwitch('gpt-full', [spark, full])).toEqual({
+      model: 'gpt-full',
+      effort: 'medium',
+    });
   });
 });

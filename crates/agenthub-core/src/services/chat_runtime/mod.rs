@@ -119,13 +119,21 @@ impl ChatRuntime {
 
     pub fn options(&self, conversation_id: &str) -> Result<RuntimeOptions> {
         self.store.enable_if_new(conversation_id)?;
-        let settings = self.store.turn_settings(conversation_id)?;
         let frozen = self
             .store
             .record(conversation_id)?
             .map(|record| ops::phase_freezes_settings(record.phase))
             .unwrap_or(false);
         let cache = self.load_catalog(conversation_id);
+        let mut settings = self.store.turn_settings(conversation_id)?;
+        // Idle only: quietly repair a stale unsupported effort so the UI menu
+        // never keeps offering an incompatible value after a model switch.
+        // Frozen turns keep the effective pair that started the turn.
+        if !frozen {
+            if let Some(repaired) = ops::reconcile_turn_settings(&settings, &cache.models) {
+                settings = self.store.set_turn_settings(conversation_id, &repaired)?;
+            }
+        }
         Ok(RuntimeOptions {
             conversation_id: conversation_id.to_string(),
             settings,
@@ -177,6 +185,8 @@ impl ChatRuntime {
         // Prefetch while still idle so mid-turn options() can serve cached lists
         // without spawning a second Codex process during a frozen phase.
         let cache = self.load_catalog(conversation_id);
+        let settings = self.store.turn_settings(conversation_id)?;
+        ops::assert_settings_supported(&settings, &cache.models)?;
         if !extras.skills.is_empty() {
             ops::validate_skill_refs(&extras.skills, &cache.extensions)?;
         }

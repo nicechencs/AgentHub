@@ -294,9 +294,26 @@ export function createMockChatPort(): ChatPort {
       const frozen = ['starting', 'running', 'waiting', 'cancelling'].includes(snapshot.phase);
       const cached = runtimeOptionsCache.get(conversationId);
       if (cached) {
+        let settings = runtimeSettings.get(conversationId) ?? cached.settings;
+        if (!frozen && cached.models.length > 0 && settings.model) {
+          const modelOption = cached.models.find((item) => item.id === settings.model);
+          const effort = settings.effort?.trim() || undefined;
+          if (
+            modelOption &&
+            effort &&
+            (modelOption.efforts.length === 0 || !modelOption.efforts.includes(effort))
+          ) {
+            const defaultEffort =
+              modelOption.defaultEffort && modelOption.efforts.includes(modelOption.defaultEffort)
+                ? modelOption.defaultEffort
+                : modelOption.efforts[0] ?? null;
+            settings = { model: settings.model, effort: defaultEffort };
+            runtimeSettings.set(conversationId, settings);
+          }
+        }
         return {
           ...cached,
-          settings: runtimeSettings.get(conversationId) ?? cached.settings,
+          settings,
           settingsFrozen: frozen,
         };
       }
@@ -317,6 +334,7 @@ export function createMockChatPort(): ChatPort {
         settingsFrozen: false,
         models: [
           { id: 'gpt-mock', efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' },
+          { id: 'gpt-5.3-codex-spark', efforts: ['low', 'high'], defaultEffort: 'low' },
         ],
         extensions: [
           {
@@ -344,16 +362,28 @@ export function createMockChatPort(): ChatPort {
       const options = await this.runtimeOptions(conversationId);
       const model = settings.model?.trim() || undefined;
       const effort = settings.effort?.trim() || undefined;
+      if (!model && effort) {
+        throw new Error('选择思考强度前需要先选择模型');
+      }
       if (model && !options.models.some((item) => item.id === model)) {
         throw new Error(`模型不可用: ${model}`);
       }
       const modelOption = options.models.find((item) => item.id === model);
-      if (model && effort && modelOption && modelOption.efforts.length > 0 && !modelOption.efforts.includes(effort)) {
-        throw new Error(`模型 ${model} 不支持思考强度 ${effort}`);
+      const defaultEffort =
+        modelOption && modelOption.defaultEffort && modelOption.efforts.includes(modelOption.defaultEffort)
+          ? modelOption.defaultEffort
+          : modelOption?.efforts[0] ?? null;
+      if (model && effort) {
+        if (!modelOption || modelOption.efforts.length === 0) {
+          throw new Error(`模型 ${model} 不支持思考强度`);
+        }
+        if (!modelOption.efforts.includes(effort)) {
+          throw new Error(`模型 ${model} 不支持思考强度 ${effort}`);
+        }
       }
       const next: RuntimeTurnSettings = {
         model: model ?? null,
-        effort: effort ?? modelOption?.defaultEffort ?? null,
+        effort: model ? (effort ?? defaultEffort) : null,
       };
       runtimeSettings.set(conversationId, next);
       return next;
@@ -363,6 +393,25 @@ export function createMockChatPort(): ChatPort {
       if (!snapshot.enabled) throw new Error('runtime is unavailable for this conversation');
       for (const image of extras?.images ?? []) {
         if (!image.path.trim()) throw new Error('图片路径不能为空');
+      }
+      // Validate against an already-warmed catalog only — do not fetch/cache here
+      // or cold mid-turn options() would stop matching core's empty-catalog behavior.
+      const warmed = runtimeOptionsCache.get(conversationId);
+      const settings = runtimeSettings.get(conversationId) ?? warmed?.settings ?? {};
+      const model = settings.model?.trim() || undefined;
+      const effort = settings.effort?.trim() || undefined;
+      const catalog = warmed?.models ?? [];
+      if (catalog.length > 0 && model) {
+        const modelOption = catalog.find((item) => item.id === model);
+        if (!modelOption) throw new Error(`模型不可用: ${model}`);
+        if (effort) {
+          if (modelOption.efforts.length === 0) {
+            throw new Error(`模型 ${model} 不支持思考强度`);
+          }
+          if (!modelOption.efforts.includes(effort)) {
+            throw new Error(`模型 ${model} 不支持思考强度 ${effort}`);
+          }
+        }
       }
       const runId = `run-mock-${mockSeq++}`;
       const agent = mockConversations.find((item) => item.id === conversationId)?.agentIds[0] ?? 'codex';
