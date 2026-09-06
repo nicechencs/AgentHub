@@ -69,8 +69,18 @@ updated: 2026-09-06
 
 真实验收曾出现：`gpt-5.3-codex-spark` + `medium` 发送后失败（「这个模型不支持当前思考设置」），控件仍展示不兼容强度。
 
+根因（2026-09-06 复核）：不是解析形状漏字段。本机 Codex `models_cache.json`（client 0.150.1）里 spark 的 `supported_reasoning_levels` 明确列出 `low/medium/high/xhigh`（default `high`），app-server `model/list` 同形对象（`reasoningEffort` + `description`）。目录**多报**了会在 turn/start 失败的 effort；`effortsForModel` 无法单靠 catalog 去掉 medium。
+
 已补整包：
 
-- UI effort 菜单只来自该模型的 `supportedReasoningEfforts`；切换模型时重置为 default / 首个支持值。
-- 空闲 `runtimeOptions` 会 reconcile 掉库存里的不兼容 pair；冻结轮次仍展示当轮有效 pair，不提供无效选项。
-- `runtimeSetSettings` / `start` 一致拒绝不支持的 (model, effort)；`defaultReasoningEffort` 若不在支持列表则回退到首个支持值。
+- 解析：`supportedReasoningEfforts` 支持 string / `{reasoningEffort|effort}`；`available:false` / `supported:false` 跳过；去重保序。
+- UI effort 菜单来自 **effective** 支持集（catalog − 已学习拒绝）；切换模型时重置为 default / 首个有效值。
+- 空闲 `runtimeOptions` reconcile 不兼容 pair；冻结轮次仍展示当轮有效 pair。
+- `runtimeSetSettings` / `start` 仍拒绝 effective 集外的 pair。
+- **Learn-from-reject**：turn 失败文案命中 thinkingUnsupported（含「不支持当前思考设置」）时，把该 model×effort 写入 sqlite `chat_runtime_denied_efforts`（+ 前端 session），之后菜单不再提供；并 coerce 到 default/剩余首项。
+
+agenthub-2 复测要点：
+
+1. 切到 `gpt-5.3-codex-spark` → effort 自动落到 `high`（PASS 项保持）。
+2. 若首次仍见 medium：选 medium 发送应失败一次；失败后菜单应去掉 medium，当前 effort 回到 high/low/xhigh 之一；再发应成功。
+3. 重启应用后 medium 仍应被过滤（sqlite 持久化）。

@@ -125,12 +125,13 @@ impl ChatRuntime {
             .map(|record| ops::phase_freezes_settings(record.phase))
             .unwrap_or(false);
         let cache = self.load_catalog(conversation_id);
+        let models = self.effective_models(&cache.models);
         let mut settings = self.store.turn_settings(conversation_id)?;
         // Idle only: quietly repair a stale unsupported effort so the UI menu
         // never keeps offering an incompatible value after a model switch.
         // Frozen turns keep the effective pair that started the turn.
         if !frozen {
-            if let Some(repaired) = ops::reconcile_turn_settings(&settings, &cache.models) {
+            if let Some(repaired) = ops::reconcile_turn_settings(&settings, &models) {
                 settings = self.store.set_turn_settings(conversation_id, &repaired)?;
             }
         }
@@ -138,7 +139,7 @@ impl ChatRuntime {
             conversation_id: conversation_id.to_string(),
             settings,
             settings_frozen: frozen,
-            models: cache.models,
+            models,
             extensions: cache.extensions,
             models_from_codex: cache.from_codex,
         })
@@ -160,7 +161,8 @@ impl ChatRuntime {
         }
         let prior = self.store.turn_settings(conversation_id)?;
         let cache = self.load_catalog(conversation_id);
-        let effective = ops::validate_turn_settings(&requested, &cache.models, &prior)?;
+        let models = self.effective_models(&cache.models);
+        let effective = ops::validate_turn_settings(&requested, &models, &prior)?;
         self.store.set_turn_settings(conversation_id, &effective)
     }
 
@@ -185,8 +187,9 @@ impl ChatRuntime {
         // Prefetch while still idle so mid-turn options() can serve cached lists
         // without spawning a second Codex process during a frozen phase.
         let cache = self.load_catalog(conversation_id);
+        let models = self.effective_models(&cache.models);
         let settings = self.store.turn_settings(conversation_id)?;
-        ops::assert_settings_supported(&settings, &cache.models)?;
+        ops::assert_settings_supported(&settings, &models)?;
         if !extras.skills.is_empty() {
             ops::validate_skill_refs(&extras.skills, &cache.extensions)?;
         }
@@ -403,6 +406,12 @@ impl ChatRuntime {
         }
     }
 
+
+
+    fn effective_models(&self, models: &[RuntimeModelOption]) -> Vec<RuntimeModelOption> {
+        let denied = self.store.list_denied_efforts().unwrap_or_default();
+        ops::apply_denied_efforts(models, &denied)
+    }
 
     fn load_catalog(&self, conversation_id: &str) -> CatalogCache {
         if let Ok(guard) = self.catalogs.lock() {
@@ -1438,6 +1447,17 @@ impl ActorWorker {
         ok: bool,
         cancelled: bool,
     ) -> Result<()> {
+        if let Some(message) = error {
+            if let Err(learn_err) = self
+                .store
+                .learn_thinking_unsupported(&self.conversation_id, message)
+            {
+                tracing::warn!(
+                    error = %learn_err,
+                    "failed to persist denied reasoning effort"
+                );
+            }
+        }
         let mut agent_message = self.current_message()?;
         if let Some(message) = agent_message.as_mut() {
             message.status = status;

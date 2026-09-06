@@ -113,6 +113,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "00032_chat_runtime_turn_settings",
         include_str!("00032_chat_runtime_turn_settings.sql"),
     ),
+    (
+        "00033_chat_runtime_denied_efforts",
+        include_str!("00033_chat_runtime_denied_efforts.sql"),
+    ),
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {
