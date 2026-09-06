@@ -92,4 +92,6 @@ export interface RuntimeOptions {
   models: RuntimeModelOption[];
   extensions: RuntimeExtensionItem[];
   modelsFromCodex: boolean;
+  imageInput?: boolean;
+  steer?: boolean;
 }

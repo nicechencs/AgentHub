@@ -116,9 +116,61 @@ impl CodexTransport {
     /// Spawn `program app-server` in `cwd` and complete the app-server
     /// initialize handshake.
     pub fn spawn(program: &Path, cwd: &Path) -> Result<Self, CodexTransportError> {
+        Self::spawn_with(
+            program,
+            &["app-server".to_string()],
+            cwd,
+            json!({
+                "clientInfo": {
+                    "name": "agenthub-chat",
+                    "version": env!("CARGO_PKG_VERSION"),
+                }
+            }),
+        )
+    }
+
+    pub fn spawn_grok(
+        program: &Path,
+        cwd: &Path,
+        model: Option<&str>,
+        effort: Option<&str>,
+    ) -> Result<Self, CodexTransportError> {
+        let mut args = vec!["agent".to_string(), "--no-leader".to_string()];
+        if let Some(model) = model.map(str::trim).filter(|s| !s.is_empty()) {
+            args.push("-m".into());
+            args.push(model.to_string());
+        }
+        if let Some(effort) = effort.map(str::trim).filter(|s| !s.is_empty()) {
+            args.push("--reasoning-effort".into());
+            args.push(effort.to_string());
+        }
+        args.push("stdio".into());
+        Self::spawn_with(
+            program,
+            &args,
+            cwd,
+            json!({
+                "protocolVersion": 1,
+                "clientInfo": {
+                    "name": "agenthub-chat",
+                    "version": env!("CARGO_PKG_VERSION"),
+                },
+                "capabilities": {
+                    "fs": { "readTextFile": false, "writeTextFile": false }
+                }
+            }),
+        )
+    }
+
+    fn spawn_with(
+        program: &Path,
+        args: &[String],
+        cwd: &Path,
+        initialize_params: Value,
+    ) -> Result<Self, CodexTransportError> {
         let mut command = std::process::Command::new(program);
         command
-            .arg("app-server")
+            .args(args)
             .current_dir(cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -199,12 +251,6 @@ impl CodexTransport {
             shutdown: false,
         };
 
-        let initialize_params = json!({
-            "clientInfo": {
-                "name": "agenthub-chat",
-                "version": env!("CARGO_PKG_VERSION"),
-            }
-        });
         transport.request_inner("initialize", initialize_params, HANDSHAKE_TIMEOUT)?;
         transport.send_notification("initialized", None)?;
         Ok(transport)
@@ -220,6 +266,23 @@ impl CodexTransport {
         timeout: Duration,
     ) -> Result<Value, CodexTransportError> {
         self.request_inner(method, params, timeout)
+    }
+
+    pub fn begin_request(
+        &mut self,
+        method: &str,
+        params: Value,
+    ) -> Result<Value, CodexTransportError> {
+        if self.exited || self.shutdown {
+            return Err(CodexTransportError::Exited);
+        }
+        let id = Value::from(self.next_id);
+        self.next_id = self
+            .next_id
+            .checked_add(1)
+            .ok_or_else(|| CodexTransportError::Protocol("request id exhausted".into()))?;
+        self.send_value(json!({ "id": id.clone(), "method": method, "params": params }))?;
+        Ok(id)
     }
 
     /// Receive one queued server event, waiting up to `timeout` for a new

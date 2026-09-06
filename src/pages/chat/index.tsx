@@ -165,7 +165,7 @@ export default function ChatPage() {
                   onRetryWallet={() => void page.reloadWallet()}
                   onRetryStatus={() => void page.refreshAgents().catch(() => {})}
                   onSend={() => void page.handleSend()}
-                  onSteer={page.runtime?.enabled && page.sendingHere ? () => {
+                  onSteer={page.runtime?.enabled && page.runtimeOps.steer && page.sendingHere ? () => {
                     const value = page.draft;
                     void page.steerRuntime(value)
                       .then(() => page.setDraft(''))
@@ -185,7 +185,7 @@ export default function ChatPage() {
                   onPickWorkingDirectory={() => void page.pickWorkingDirectory()}
                   onDraftKeyDown={page.handleComposerKeyDown}
                   onPasteImages={
-                    page.runtime?.enabled
+                    page.runtime?.enabled && page.runtimeOps.imageInput
                       ? (files) => void page.runtimeOps.pasteImages(files)
                       : undefined
                   }
@@ -211,6 +211,7 @@ export default function ChatPage() {
                         onSwitchModel={(id) => void page.runtimeOps.switchModel(id)}
                         onSwitchEffort={(id) => void page.runtimeOps.switchEffort(id)}
                         images={page.runtimeOps.images}
+                        imageInput={page.runtimeOps.imageInput}
                         onAddImages={() => void page.runtimeOps.addImages()}
                         onRemoveImage={page.runtimeOps.removeImage}
                         onPasteImages={(files) => void page.runtimeOps.pasteImages(files)}

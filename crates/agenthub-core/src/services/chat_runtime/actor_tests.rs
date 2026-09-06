@@ -31,6 +31,7 @@ fn worker(db: &Database, id: &str) -> ActorWorker {
         store: store::RuntimeStore::new(db.clone()),
         repo: ChatRepo::new(db.clone()),
         run: Arc::new(RunService::new(AdapterRegistry::default())),
+        agent: AgentId::Codex,
         transport: None,
         thread_id: None,
         turn_id: None,
@@ -38,6 +39,7 @@ fn worker(db: &Database, id: &str) -> ActorWorker {
         message_id: None,
         run_id: None,
         last_start_request: None,
+        pending_prompt_id: None,
     }
 }
 
