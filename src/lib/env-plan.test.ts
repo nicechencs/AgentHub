@@ -90,6 +90,21 @@ describe('resolveAutoInstallPlan', () => {
     expect(resolveAutoInstallPlan([ready], ['nodejs'], 'macos', true).targets).toEqual(['nodejs']);
     expect(resolveAutoInstallPlan([ready], undefined, 'macos', true).targets).toEqual(['nodejs']);
   });
+
+  it('upgrades ready npm itself instead of reinstalling Node', () => {
+    const ready: RuntimeDetect[] = [
+      { id: 'nodejs', status: 'ok', remediations: [] },
+      { id: 'npm', status: 'ok', remediations: [] },
+    ];
+    expect(resolveAutoInstallPlan(ready, ['npm'], 'macos', true).targets).toEqual(['npm']);
+    expect(resolveAutoInstallPlan(ready, ['npm'], 'linux', true).targets).toEqual(['npm']);
+    expect(resolveAutoInstallPlan(ready, ['npm'], 'windows', true).targets).toEqual(['npm']);
+  });
+
+  it('still installs Node when npm is missing', () => {
+    const rows = [missing('nodejs'), missing('npm')];
+    expect(resolveAutoInstallPlan(rows, ['npm'], 'macos').targets).toEqual(['nodejs']);
+  });
 });
 
 describe('formatRuntimeInstallFailureLines', () => {

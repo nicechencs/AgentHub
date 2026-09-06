@@ -964,7 +964,36 @@ fn install_runtime_inner(
         let mut logs = Vec::new();
         let action = "env_install";
 
-        // npm is bundled with Node — install Node instead.
+        // Already-present npm: upgrade via npm itself so the npm row is a real
+        // one-click for beginners. Missing npm still installs Node below.
+        if id == RuntimeId::Npm {
+            let npm = runtime::detect_one(RuntimeId::Npm);
+            if matches!(npm.status, EnvStatusKind::Ok | EnvStatusKind::Outdated) {
+                logs.push("正在用 npm 升级到最新…".into());
+                let npm_bin = match resolve_bin(&["npm", "npm.cmd", "npm.exe"]) {
+                    Ok(path) => path,
+                    Err(error) => {
+                        logs.push(error.to_string());
+                        return Ok(InstallOutcome::failure(
+                            action,
+                            logs,
+                            "已检测到 npm，但无法执行升级命令。请打开终端运行：npm install -g npm@latest",
+                        ));
+                    }
+                };
+                let req = ExecRequest {
+                    program: npm_bin,
+                    args: vec!["install".into(), "-g".into(), "npm@latest".into()],
+                    timeout: ENV_TIMEOUT,
+                    max_output_bytes: MAX_OUTPUT,
+                };
+                let res = executor.run(&req);
+                push_exec_logs(&mut logs, &res, ENV_TIMEOUT.as_secs());
+                return Ok(finalize_runtime_install(id, logs, res));
+            }
+        }
+
+        // npm is bundled with Node — install Node instead when npm is missing.
         let target = match id {
             RuntimeId::Npm => RuntimeId::NodeJs,
             other => other,

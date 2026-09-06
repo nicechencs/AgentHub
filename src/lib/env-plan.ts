@@ -73,7 +73,18 @@ export function resolveAutoInstallPlan(
   const canAuto = supportsRuntimeAutoInstall(platform);
 
   if (issueIds.has('nodejs') || issueIds.has('npm')) {
-    if (
+    const npmRow = runtimes.find((row) => row.id === 'npm');
+    // Ready npm with an update: upgrade npm itself. Missing npm still installs Node.
+    const npmOnlyUpgrade =
+      includeReady &&
+      issueIds.has('npm') &&
+      !issueIds.has('nodejs') &&
+      npmRow != null &&
+      (npmRow.status === 'ok' || npmRow.status === 'outdated');
+
+    if (npmOnlyUpgrade) {
+      targets.push('npm');
+    } else if (
       canAuto &&
       RUNTIME_MAP.nodejs.canAutoInstall &&
       hasInstallerChannel(runtimes, 'nodejs', platform)

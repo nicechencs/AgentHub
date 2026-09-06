@@ -202,9 +202,12 @@ export function createMockEnvPort(_backend: Backend): EnvPort {
         const currentVersion = current.version;
         const newest = latest[id];
         const outdated = Boolean(currentVersion && currentVersion !== newest);
-        const canAutoUpgrade = platform === 'windows'
-          || (platform === 'macos'
-            && (id === 'nodejs' || id === 'npm' || current.path?.includes('homebrew')));
+        const canAutoUpgrade =
+          id === 'powershell'
+            ? false
+            : id === 'npm'
+              ? true
+              : platform === 'windows' || platform === 'macos';
         return {
           runtimeId: id,
           state: outdated ? 'update_available' : 'up_to_date',

@@ -171,11 +171,15 @@ fn check_one(
 }
 
 fn supports_auto_upgrade(id: RuntimeId) -> bool {
-    // Node.js is installed through the official macOS package fallback or
-    // winget. npm and Git can be owned by another tool/package manager, so
-    // presenting either as one-click would make a successful Node/Git probe
-    // look like a successful upgrade of the requested runtime.
-    matches!(id, RuntimeId::NodeJs) && (cfg!(windows) || cfg!(target_os = "macos"))
+    // Beginner path: offer one-click wherever core can actually upgrade.
+    // - npm → `npm install -g npm@latest` once npm is on PATH (any desktop OS)
+    // - Node.js / Git → winget (Windows) or Homebrew / Node pkg (macOS)
+    // PowerShell and Linux Node/Git stay manual (no safe package-manager spawn).
+    match id {
+        RuntimeId::Npm => true,
+        RuntimeId::NodeJs | RuntimeId::Git => cfg!(windows) || cfg!(target_os = "macos"),
+        RuntimeId::PowerShell => false,
+    }
 }
 
 fn resolve_remote(
