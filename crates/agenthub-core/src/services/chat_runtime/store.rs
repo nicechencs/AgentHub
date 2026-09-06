@@ -13,7 +13,7 @@ use crate::storage::Database;
 
 use super::types::{
     RuntimeEvent, RuntimePhase, RuntimeQuestion, RuntimeRequest, RuntimeRequestKind,
-    RuntimeSnapshot,
+    RuntimeSnapshot, RuntimeTurnSettings,
 };
 
 #[derive(Clone)]
@@ -34,6 +34,8 @@ pub(crate) struct RuntimeRecord {
     pub message_id: Option<String>,
     pub last_client_request_id: Option<String>,
     pub last_steer_client_request_id: Option<String>,
+    pub next_model: Option<String>,
+    pub next_effort: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -861,6 +863,52 @@ impl RuntimeStore {
         Ok(out)
     }
 
+    pub(crate) fn turn_settings(&self, conversation_id: &str) -> Result<RuntimeTurnSettings> {
+        let record = self.record(conversation_id)?;
+        Ok(match record {
+            Some(record) => RuntimeTurnSettings {
+                model: record.next_model,
+                effort: record.next_effort,
+            },
+            None => RuntimeTurnSettings::default(),
+        })
+    }
+
+    pub(crate) fn set_turn_settings(
+        &self,
+        conversation_id: &str,
+        settings: &RuntimeTurnSettings,
+    ) -> Result<RuntimeTurnSettings> {
+        self.ensure_conversation(conversation_id)?;
+        self.enable_if_new(conversation_id)?;
+        let record = self
+            .record(conversation_id)?
+            .ok_or_else(|| AppError::NotFound("runtime conversation not found".into()))?;
+        if super::ops::phase_freezes_settings(record.phase) {
+            return Err(AppError::InvalidArg(
+                "当前轮次进行中，不能修改模型或思考强度".into(),
+            ));
+        }
+        let now = Utc::now().to_rfc3339();
+        self.db.with_conn(|conn| {
+            conn.execute(
+                r#"
+                UPDATE chat_runtime
+                SET next_model = ?2, next_effort = ?3, updated_at = ?4
+                WHERE conversation_id = ?1
+                "#,
+                params![
+                    conversation_id,
+                    settings.model.as_deref(),
+                    settings.effort.as_deref(),
+                    now
+                ],
+            )?;
+            Ok(())
+        })?;
+        Ok(settings.clone())
+    }
+
     fn record_conn(
         &self,
         conn: &rusqlite::Connection,
@@ -870,7 +918,8 @@ impl RuntimeStore {
             r#"
             SELECT conversation_id, enabled, run_id, phase, last_sequence,
                    thread_id, turn_id, chat_turn, message_id,
-                   last_client_request_id, last_steer_client_request_id
+                   last_client_request_id, last_steer_client_request_id,
+                   next_model, next_effort
             FROM chat_runtime WHERE conversation_id = ?1
             "#,
             params![conversation_id],
@@ -898,6 +947,8 @@ impl RuntimeStore {
                     message_id: row.get(8)?,
                     last_client_request_id: row.get(9)?,
                     last_steer_client_request_id: row.get(10)?,
+                    next_model: row.get(11)?,
+                    next_effort: row.get(12)?,
                 })
             },
         )
