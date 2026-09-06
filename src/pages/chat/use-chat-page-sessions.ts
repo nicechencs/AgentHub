@@ -36,7 +36,7 @@ export function useChatPageSessions(input: {
   deleteConfirmId: string | null;
   setDeleteConfirmId: Dispatch<SetStateAction<string | null>>;
   sendRef: MutableRefObject<{
-    adoptInflight: (ids: string[]) => void;
+    adoptInflight: (ids?: string[] | string | null) => void;
     cancelIfSending: (id: string) => Promise<void>;
   }>;
 }) {
@@ -131,8 +131,13 @@ export function useChatPageSessions(input: {
         const agents = await refreshAgents();
         next = await ensureConversation(convs, agents);
       }
-      // 以服务端 sending 为准恢复进行中的会话；list 尚未带上 sending 时不要清掉本地 send
-      sendRef.current.adoptInflight(next.filter((c) => c.sending).map((c) => c.id));
+      // 以服务端 sending 为准恢复进行中的会话；list 尚未带上 sending 时不要清掉本地 send。
+      // 恢复失败不得把整份会话列表当成加载失败。
+      try {
+        sendRef.current.adoptInflight(next.filter((c) => c.sending).map((c) => c.id));
+      } catch (e) {
+        console.error('[chat] adoptInflight failed', e);
+      }
       return next;
     });
   }, [ensureConversation, refreshAgents]);

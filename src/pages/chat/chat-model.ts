@@ -251,11 +251,26 @@ export function sendBlockers(input: {
   return out;
 }
 
+/** Normalize restored in-flight ids. Null/legacy single id must not throw. */
+export function incomingSendingIds(ids: unknown): string[] {
+  if (typeof ids === 'string') return ids ? [ids] : [];
+  if (!Array.isArray(ids)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const id of ids) {
+    if (typeof id !== 'string' || !id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
 /** Keep page-local sending ids that still exist in the conversation list. */
 export function liveSendingIds(
-  sendingIds: readonly string[],
+  sendingIds: readonly string[] | null | undefined,
   conversations: readonly Pick<Conversation, 'id'>[],
 ): string[] {
+  if (!sendingIds?.length) return [];
   const known = new Set(conversations.map((conversation) => conversation.id));
   return sendingIds.filter((id) => known.has(id));
 }

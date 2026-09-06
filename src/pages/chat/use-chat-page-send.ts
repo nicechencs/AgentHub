@@ -24,7 +24,7 @@ import type { RuntimeRequest, RuntimeSnapshot } from '@/lib/api/chat';
 import type { ProcessMap } from '@/lib/chat-process';
 import type { AgentKey, ChatEvent, ChatMessage, Conversation } from '@/lib/types';
 import type { TurnGroup } from './chat-format';
-import { busyAgentsForSends, liveSendingIds, retryTarget, sendBlockers } from './chat-model';
+import { busyAgentsForSends, incomingSendingIds, liveSendingIds, retryTarget, sendBlockers } from './chat-model';
 import { isCurrentChatRequest } from './chat-request';
 import { acceptsRuntimeSnapshot, isLatestRuntimeRead, isRuntimeActive, readRuntimeTransport, requestMatchesRuntime } from './chat-runtime-model';
 import {
@@ -718,10 +718,10 @@ export function useChatPageSend(input: {
     }
   }
 
-  function adoptInflight(ids: string[]) {
+  function adoptInflight(ids?: string[] | string | null) {
     let changed = false;
-    for (const id of ids) {
-      if (!id || sendingIdsRef.current.has(id)) continue;
+    for (const id of incomingSendingIds(ids)) {
+      if (sendingIdsRef.current.has(id)) continue;
       sendingIdsRef.current.add(id);
       changed = true;
     }
