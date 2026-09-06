@@ -71,6 +71,11 @@ describe('agents layout wiring', () => {
     expect(page).not.toContain('<EnvStatusBar');
     expect(page).toContain('onAction={(runtime, intent, canAutoUpgrade = true)');
     expect(page).toContain("intent: 'install'");
+    expect(page).toContain('updatesLoading={runtimeUpdatesLoading}');
+    const envList = source('pages/agents/EnvSoftwareList.tsx');
+    expect(envList).toContain("t('chrome.env.forceUpgradeTitle'");
+    expect(envList).toContain("t('chrome.env.confirmForceUpgrade')");
+    expect(envList).toContain('envSoftwareControl');
     expect(card).toContain('onSelect?:');
     expect(card).toContain('selected?:');
     expect(card).toContain('data-agent-name');

@@ -5,7 +5,9 @@ import {
   envSoftwareAction,
   envSoftwareActionLabel,
   envSoftwareColumnLabel,
+  envSoftwareControl,
   envSoftwareStatusLabel,
+  envSoftwareUpgradeTitle,
   envSoftwareVersion,
 } from './env-software-list-model';
 
@@ -33,7 +35,7 @@ describe('env software list model', () => {
     expect(envSoftwareVersion(runtime('git', 'ok', { version: '2.43.0' }))).toBe('2.43.0');
   });
 
-  it('installs missing Node/Git on macOS and only exposes ready upgrades after a remote match', () => {
+  it('installs missing Node/Git on macOS and keeps a gray force-upgrade on ready rows', () => {
     const missing = [runtime('nodejs', 'missing'), runtime('npm', 'missing'), runtime('git', 'missing')];
     expect(envSoftwareAction(missing[0], missing, 'macos')).toBe('install');
     expect(envSoftwareAction(missing[2], missing, 'macos')).toBe('install');
@@ -43,14 +45,24 @@ describe('env software list model', () => {
       runtime('npm', 'ok', { version: '10.2.4' }),
       runtime('git', 'ok', { version: '2.43.0' }),
     ];
-    expect(envSoftwareAction(ready[0], ready, 'macos')).toBeNull();
-    expect(envSoftwareAction(ready[2], ready, 'macos')).toBeNull();
-    expect(envSoftwareAction(ready[0], ready, 'macos', {
+    expect(envSoftwareControl(ready[0], ready, 'macos')).toEqual({
+      action: 'upgrade',
+      muted: false,
+      kind: 'in_app',
+      upgradable: false,
+    });
+    expect(envSoftwareControl(ready[2], ready, 'macos')).toEqual({
+      action: 'upgrade',
+      muted: false,
+      kind: 'in_app',
+      upgradable: false,
+    });
+    expect(envSoftwareControl(ready[0], ready, 'macos', {
       runtimeId: 'nodejs', state: 'update_available', latestVersion: '24.20.0',
-    })).toBe('upgrade');
-    expect(envSoftwareAction(ready[2], ready, 'macos', {
+    })).toMatchObject({ action: 'upgrade', muted: false, kind: 'in_app', upgradable: true });
+    expect(envSoftwareControl(ready[2], ready, 'macos', {
       runtimeId: 'git', state: 'update_available', latestVersion: '2.55.0',
-    })).toBe('upgrade');
+    })).toMatchObject({ action: 'upgrade', muted: false, kind: 'in_app', upgradable: true });
   });
 
   it('repairs PATH issues and Linux missing packages; PowerShell has no upgrade', () => {
@@ -61,8 +73,32 @@ describe('env software list model', () => {
     expect(envSoftwareAction(linuxMissing[0], linuxMissing, 'linux')).toBe('repair');
     expect(envSoftwareAction(linuxMissing[1], linuxMissing, 'linux')).toBe('repair');
 
+    const linuxReady = [runtime('nodejs', 'ok', { version: '20.11.1' }), runtime('git', 'ok', { version: '2.43.0' })];
+    expect(envSoftwareControl(linuxReady[0], linuxReady, 'linux')).toEqual({
+      action: 'upgrade',
+      muted: true,
+      kind: 'hint_only',
+      upgradable: false,
+    });
+
     const ps = [runtime('powershell', 'ok', { version: '5.1' })];
-    expect(envSoftwareAction(ps[0], ps, 'windows')).toBeNull();
+    expect(envSoftwareControl(ps[0], ps, 'windows')).toEqual({
+      action: 'upgrade',
+      muted: true,
+      kind: 'hint_only',
+      upgradable: false,
+    });
+    expect(envSoftwareControl(ps[0], ps, 'windows', {
+      runtimeId: 'powershell',
+      state: 'up_to_date',
+      setupUrl: 'https://learn.microsoft.com/powershell',
+      canAutoUpgrade: false,
+    })).toEqual({
+      action: 'upgrade',
+      muted: true,
+      kind: 'open_setup',
+      upgradable: false,
+    });
     expect(envSoftwareAction(runtime('powershell', 'missing'), [runtime('powershell', 'missing')], 'windows')).toBe(
       'repair',
     );
@@ -73,7 +109,35 @@ describe('env software list model', () => {
       runtime('nodejs', 'outdated', { version: '16.0.0' }),
       runtime('npm', 'ok', { version: '8.0.0' }),
     ];
-    expect(envSoftwareAction(outdated[0], outdated, 'windows')).toBe('upgrade');
-    expect(envSoftwareAction(outdated[1], outdated, 'windows')).toBeNull();
+    expect(envSoftwareControl(outdated[0], outdated, 'windows')).toMatchObject({
+      action: 'upgrade',
+      muted: false,
+      kind: 'in_app',
+      upgradable: true,
+    });
+    expect(envSoftwareControl(outdated[1], outdated, 'windows')).toMatchObject({
+      action: 'upgrade',
+      muted: false,
+      kind: 'in_app',
+      upgradable: false,
+    });
+  });
+
+  it('uses Agent-style force-upgrade copy when no newer version is available', () => {
+    const t = createTranslator('zh');
+    const ready = envSoftwareControl(
+      runtime('nodejs', 'ok', { version: '20.11.1' }),
+      [runtime('nodejs', 'ok', { version: '20.11.1' })],
+      'macos',
+      { runtimeId: 'nodejs', state: 'up_to_date', latestVersion: '20.11.1' },
+    );
+    expect(envSoftwareUpgradeTitle(ready, t, {
+      runtimeId: 'nodejs',
+      state: 'up_to_date',
+      latestVersion: '20.11.1',
+    })).toBe('已是最新 20.11.1 · 点击可强制升级');
+    expect(envSoftwareUpgradeTitle(ready, t, { runtimeId: 'nodejs', state: 'unknown' })).toBe(
+      '未能检测更新 · 点击可强制升级',
+    );
   });
 });

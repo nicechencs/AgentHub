@@ -60,6 +60,7 @@ export default function AgentsPage() {
   const [runtimeUpdates, setRuntimeUpdates] = React.useState<
     Partial<Record<RuntimeId, RuntimeUpdateInfo>>
   >({});
+  const [runtimeUpdatesLoading, setRuntimeUpdatesLoading] = React.useState(false);
   /** 页级修复面板:focus + 是否自动开装 */
   const [pageFix, setPageFix] = React.useState<{
     runtimeId?: RuntimeId;
@@ -130,6 +131,7 @@ export default function AgentsPage() {
 
   const loadRuntimeUpdates = React.useCallback(async (list: RuntimeDetect[], force = false) => {
     const seq = ++runtimeUpdateSeq.current;
+    setRuntimeUpdatesLoading(true);
     try {
       const updates = await checkRuntimeUpdates(list.map((runtime) => runtime.id), force);
       if (seq !== runtimeUpdateSeq.current) return;
@@ -137,6 +139,8 @@ export default function AgentsPage() {
     } catch {
       // Keep the previous result if the desktop command itself is unavailable.
       // Core turns ordinary network errors into an explicit unknown state.
+    } finally {
+      if (seq === runtimeUpdateSeq.current) setRuntimeUpdatesLoading(false);
     }
   }, []);
 
@@ -311,6 +315,7 @@ export default function AgentsPage() {
           onOneClickFix={() => setPageFix({ autoStart: true, intent: 'install' })}
           oneClickBusy={envInstallRunning}
           runtimeUpdates={runtimeUpdates}
+          updatesLoading={runtimeUpdatesLoading}
         />
         {showPagePanel && (
           <EnvRemediationPanel
