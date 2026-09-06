@@ -268,6 +268,85 @@ pub(crate) fn parse_model_list(value: &Value) -> Vec<RuntimeModelOption> {
     out
 }
 
+pub(crate) fn parse_grok_model_list(value: &Value) -> Vec<RuntimeModelOption> {
+    let body = value.get("result").unwrap_or(value);
+    let rows = body
+        .get("availableModels")
+        .or_else(|| body.get("models"))
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mut out = Vec::new();
+    for row in rows {
+        let id = row
+            .get("modelId")
+            .or_else(|| row.get("id"))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        let Some(id) = id else { continue };
+        let meta = row.get("_meta").unwrap_or(&row);
+        let mut seen = std::collections::HashSet::new();
+        let efforts = meta
+            .get("reasoningEfforts")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|item| {
+                        item.get("value")
+                            .or_else(|| item.get("id"))
+                            .and_then(|v| v.as_str())
+                            .map(str::trim)
+                            .filter(|s| !s.is_empty())
+                            .map(str::to_string)
+                    })
+                    .filter(|s| seen.insert(s.clone()))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let default_effort = meta
+            .get("reasoningEfforts")
+            .and_then(|v| v.as_array())
+            .and_then(|arr| {
+                arr.iter().find_map(|item| {
+                    if item.get("default").and_then(|v| v.as_bool()) != Some(true) {
+                        return None;
+                    }
+                    item.get("value")
+                        .or_else(|| item.get("id"))
+                        .and_then(|v| v.as_str())
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string)
+                })
+            })
+            .or_else(|| {
+                meta.get("reasoningEffort")
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+            });
+        let option = RuntimeModelOption {
+            id,
+            efforts,
+            default_effort,
+        };
+        let default_effort = resolved_default_effort(&option);
+        out.push(RuntimeModelOption {
+            id: option.id,
+            efforts: option.efforts,
+            default_effort,
+        });
+    }
+    out
+}
+
+pub(crate) fn grok_prompt_blocks(prompt: &str) -> Vec<Value> {
+    vec![serde_json::json!({ "type": "text", "text": prompt })]
+}
+
 /// Drop previously denied efforts from a catalog (Codex may over-report support).
 pub(crate) fn apply_denied_efforts(
     models: &[RuntimeModelOption],
@@ -836,5 +915,30 @@ mod tests {
         assert!(!may_fetch_catalog(Some(RuntimePhase::Running)));
         assert!(!may_fetch_catalog(Some(RuntimePhase::Waiting)));
         assert!(!may_fetch_catalog(Some(RuntimePhase::Cancelling)));
+    }
+
+    #[test]
+    fn parse_grok_model_list_reads_nested_result_and_effort_objects() {
+        let value = json!({
+            "result": {
+                "currentModelId": "grok-4.6",
+                "availableModels": [{
+                    "modelId": "grok-4.6",
+                    "_meta": {
+                        "reasoningEffort": "high",
+                        "reasoningEfforts": [
+                            { "id": "xhigh", "value": "xhigh", "default": false },
+                            { "id": "high", "value": "high", "default": true },
+                            { "id": "low", "value": "low", "default": false }
+                        ]
+                    }
+                }]
+            }
+        });
+        let models = parse_grok_model_list(&value);
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].id, "grok-4.6");
+        assert_eq!(models[0].efforts, vec!["xhigh", "high", "low"]);
+        assert_eq!(models[0].default_effort.as_deref(), Some("high"));
     }
 }

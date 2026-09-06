@@ -93,10 +93,11 @@ impl RuntimeStore {
                 return Ok(());
             }
 
-            let codex =
-                self.conversation_agent_conn(conn, conversation_id)? == Some(AgentId::Codex);
-            if !codex {
-                return Err(AppError::Unsupported("持续聊天目前只支持 Codex".into()));
+            let agent = self.conversation_agent_conn(conn, conversation_id)?;
+            if !is_runtime_chat_agent(agent) {
+                return Err(AppError::Unsupported(
+                    "持续聊天目前只支持 Codex 和 Grok".into(),
+                ));
             }
             let has_messages: bool = conn.query_row(
                 "SELECT EXISTS(SELECT 1 FROM chat_messages WHERE conversation_id = ?1)",
@@ -105,7 +106,7 @@ impl RuntimeStore {
             )?;
             if has_messages {
                 return Err(AppError::Unsupported(
-                    "已有会话继续使用原来的聊天方式，请新建 Codex 会话".into(),
+                    "已有会话继续使用原来的聊天方式，请新建会话".into(),
                 ));
             }
 
@@ -257,7 +258,7 @@ impl RuntimeStore {
                     params![conversation_id],
                     |row| row.get(0),
                 )?;
-                if agent == Some(AgentId::Codex) && !has_messages {
+                if is_runtime_chat_agent(agent) && !has_messages {
                     return Ok(RuntimeSnapshot {
                         conversation_id: conversation_id.to_string(),
                         enabled: true,
@@ -1145,6 +1146,11 @@ impl RuntimeStore {
         .map_err(Into::into)
     }
 
+    pub(crate) fn conversation_agent(&self, conversation_id: &str) -> Result<Option<AgentId>> {
+        self.db
+            .with_conn(|conn| self.conversation_agent_conn(conn, conversation_id))
+    }
+
     fn conversation_agent_conn(
         &self,
         conn: &rusqlite::Connection,
@@ -1294,6 +1300,10 @@ fn finish_transaction<T>(conn: &rusqlite::Connection, result: Result<T>) -> Resu
             Err(error)
         }
     }
+}
+
+pub(crate) fn is_runtime_chat_agent(agent: Option<AgentId>) -> bool {
+    matches!(agent, Some(AgentId::Codex | AgentId::Grok))
 }
 
 impl RuntimeRequestKind {

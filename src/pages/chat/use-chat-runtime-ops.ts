@@ -72,6 +72,8 @@ export function useChatRuntimeOps(input: {
   const [extensions, setExtensions] = useState<RuntimeExtensionItem[]>([]);
   const [images, setImages] = useState<string[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
+  const [imageInput, setImageInput] = useState(true);
+  const [steer, setSteer] = useState(true);
   const [loading, setLoading] = useState(false);
   const catalogRef = useRef<RuntimeCatalogMemory>({
     conversationId: null,
@@ -88,6 +90,8 @@ export function useChatRuntimeOps(input: {
       setSettings({});
       setSettingsFrozen(false);
       setExtensions([]);
+      setImageInput(true);
+      setSteer(true);
       return;
     }
     setLoading(true);
@@ -128,6 +132,8 @@ export function useChatRuntimeOps(input: {
       setSettings(nextSettings);
       setSettingsFrozen(frozenNow);
       setExtensions(retained.extensions);
+      setImageInput(options.imageInput !== false);
+      setSteer(options.steer !== false);
     } catch (error) {
       toast({
         title: t('chat.runtimeOps.optionsFail'),
@@ -227,7 +233,7 @@ export function useChatRuntimeOps(input: {
   );
 
   const addImages = useCallback(async () => {
-    if (!runtimeEnabled) return;
+    if (!runtimeEnabled || !imageInput) return;
     try {
       const picked = await pickChatImages(t('chat.runtimeOps.pickImages'));
       mergeImagePaths(picked);
@@ -238,11 +244,11 @@ export function useChatRuntimeOps(input: {
         variant: 'danger',
       });
     }
-  }, [mergeImagePaths, runtimeEnabled, t, toast]);
+  }, [imageInput, mergeImagePaths, runtimeEnabled, t, toast]);
 
   const pasteImages = useCallback(
     async (files: File[]) => {
-      if (!runtimeEnabled || files.length === 0) return;
+      if (!runtimeEnabled || !imageInput || files.length === 0) return;
       const saved: string[] = [];
       for (const file of files) {
         const ext = mimeToExt(file.type) ?? (IMAGE_EXT.test(file.name) ? file.name.split('.').pop() : null);
@@ -280,7 +286,7 @@ export function useChatRuntimeOps(input: {
       }
       if (saved.length > 0) mergeImagePaths(saved);
     },
-    [mergeImagePaths, runtimeEnabled, t, toast],
+    [imageInput, mergeImagePaths, runtimeEnabled, t, toast],
   );
 
   const removeImage = useCallback((path: string) => {
@@ -352,6 +358,8 @@ export function useChatRuntimeOps(input: {
     currentEfforts,
     extensions,
     images,
+    imageInput,
+    steer,
     selectedSkillIds,
     switchModel,
     switchEffort,

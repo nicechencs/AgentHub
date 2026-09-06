@@ -59,6 +59,55 @@ fn empty_codex_conversation_enables_runtime_but_legacy_stays_legacy() {
 }
 
 #[test]
+fn empty_grok_conversation_enables_runtime() {
+    let db = Database::open_in_memory().unwrap();
+    let now = "2026-01-01T00:00:00Z".to_string();
+    let empty = Conversation {
+        id: "grok-empty".into(),
+        title: String::new(),
+        agent_ids: vec![AgentId::Grok],
+        cwd: Some(std::env::temp_dir().to_string_lossy().into_owned()),
+        allow_dangerous: false,
+        created_at: now.clone(),
+        updated_at: now.clone(),
+        native_session_id: None,
+        sending: false,
+    };
+    let legacy = Conversation {
+        id: "grok-legacy".into(),
+        title: String::new(),
+        agent_ids: vec![AgentId::Grok],
+        cwd: empty.cwd.clone(),
+        allow_dangerous: false,
+        created_at: now.clone(),
+        updated_at: now,
+        native_session_id: None,
+        sending: false,
+    };
+    let repo = ChatRepo::new(db.clone());
+    repo.create_conversation(&empty).unwrap();
+    repo.create_conversation(&legacy).unwrap();
+    repo.insert_message(&crate::models::ChatMessage {
+        id: "legacy-user".into(),
+        conversation_id: "grok-legacy".into(),
+        turn: 1,
+        role: crate::models::ChatRole::User,
+        agent_id: None,
+        content: "legacy".into(),
+        status: crate::models::ChatMessageStatus::Ok,
+        exit_code: None,
+        duration_ms: 0,
+        error: None,
+        created_at: "2026-01-01T00:00:00Z".into(),
+    })
+    .unwrap();
+    let store = super::store::RuntimeStore::new(db);
+    store.enable_if_new("grok-empty").unwrap();
+    assert!(store.snapshot("grok-empty", None).unwrap().enabled);
+    assert!(store.enable_if_new("grok-legacy").is_err());
+}
+
+#[test]
 fn public_snapshot_advertises_new_codex_conversations_as_runtime_enabled() {
     let db = Database::open_in_memory().unwrap();
     let run = Arc::new(RunService::new(AdapterRegistry::default()));

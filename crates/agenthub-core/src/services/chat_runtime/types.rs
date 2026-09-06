@@ -224,4 +224,8 @@ pub struct RuntimeOptions {
     pub extensions: Vec<RuntimeExtensionItem>,
     /// True when model/list was fetched from a live Codex process this session.
     pub models_from_codex: bool,
+    #[serde(default)]
+    pub image_input: bool,
+    #[serde(default)]
+    pub steer: bool,
 }

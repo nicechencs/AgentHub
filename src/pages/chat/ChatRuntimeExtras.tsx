@@ -33,6 +33,7 @@ export function ChatRuntimeExtras(props: {
   onSwitchModel: (model: string) => void;
   onSwitchEffort: (effort: string) => void;
   images: string[];
+  imageInput?: boolean;
   onAddImages: () => void;
   onRemoveImage: (path: string) => void;
   onPasteImages?: (files: File[]) => void;
@@ -184,12 +185,14 @@ export function ChatRuntimeExtras(props: {
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}
+        {props.imageInput !== false ? (
         <Hint label={t('chat.runtimeOps.pasteImageHint')}>
           <Button type="button" size="sm" variant="outline" onClick={props.onAddImages}>
             <ImagePlus className="mr-1 size-3.5" />
             {t('chat.runtimeOps.addImage')}{props.images.length > 0 ? ` · ${props.images.length}` : ''}
           </Button>
         </Hint>
+        ) : null}
         {!props.inline ? (
           <span className="text-meta text-muted">{t('chat.runtimeOps.otherAttachmentsBlocked')}</span>
         ) : null}

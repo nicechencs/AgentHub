@@ -144,11 +144,12 @@ impl ChatService {
         if let Some(t) = title {
             conv.title = t;
         }
-        let mut leaving_codex = false;
+        let mut leaving_runtime = false;
         if let Some(agents) = agent_ids {
             let next = require_single_agent(agents)?;
-            leaving_codex = conv.agent_ids.first() == Some(&AgentId::Codex)
-                && next.first() != Some(&AgentId::Codex);
+            leaving_runtime = crate::services::chat_runtime::is_runtime_chat_agent(
+                conv.agent_ids.first().copied(),
+            ) && next.first() != conv.agent_ids.first();
             if next != conv.agent_ids {
                 conv.native_session_id = None;
             }
@@ -166,7 +167,7 @@ impl ChatService {
         if let Some(d) = allow_dangerous {
             conv.allow_dangerous = d;
         }
-        if leaving_codex {
+        if leaving_runtime {
             self.runtime.abandon_unstarted(id)?;
         }
         conv.updated_at = Utc::now().to_rfc3339();
