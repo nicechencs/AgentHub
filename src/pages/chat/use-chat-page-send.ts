@@ -65,6 +65,8 @@ export function useChatPageSend(input: {
   draft: string;
   setDraft: Dispatch<SetStateAction<string>>;
   turns: TurnGroup[];
+  getStartExtras?: () => { images?: { path: string }[]; skills?: { name: string; path: string }[] };
+  clearStartExtras?: () => void;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -85,6 +87,8 @@ export function useChatPageSend(input: {
     draft,
     setDraft,
     turns,
+    getStartExtras,
+    clearStartExtras,
   } = input;
 
   const [sending, setSending] = useState(false);
@@ -526,7 +530,7 @@ export function useChatPageSend(input: {
       try {
         await enqueueRuntimeSnapshot(
           sendConvId,
-          () => runtimeStart(sendConvId, prompt, crypto.randomUUID()),
+          () => runtimeStart(sendConvId, prompt, crypto.randomUUID(), getStartExtras?.()),
           async (nextSnapshot, sourceVersion) => {
             const currentStartRecord = runtimeRecordsRef.current.get(sendConvId);
             if (currentStartRecord?.cancelRequested && nextSnapshot.runId && isRuntimeActive(nextSnapshot.phase)) {
@@ -541,6 +545,7 @@ export function useChatPageSend(input: {
             );
           },
         );
+        clearStartExtras?.();
       } catch (e) {
         const current = isCurrentChatRequest(
           activeIdRef.current,
