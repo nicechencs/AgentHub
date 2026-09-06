@@ -2662,6 +2662,7 @@ export const zh = {
     },
     preview: {
       titleFallback: "预览",
+      back: "返回",
       modePreview: "预览",
       modeSource: "源码",
       collapse: "收起预览",

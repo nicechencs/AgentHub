@@ -24,6 +24,8 @@ describe('chat layout wiring', () => {
     expect(page).toContain('ChatMarkdownPreviewPanel');
     expect(page).toContain('isMarkdownFilePath');
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('readMarkdownPreview');
+    expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('chat.preview.back');
+    expect(source('index.tsx')).toContain('pushChatPreview');
   });
 
   it('grows the composer textarea with a shared cap and panel-colored shell', () => {

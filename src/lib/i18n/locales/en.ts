@@ -2674,6 +2674,7 @@ export const en = {
     },
     preview: {
       titleFallback: "Preview",
+      back: "Back",
       modePreview: "Preview",
       modeSource: "Source",
       collapse: "Collapse preview",

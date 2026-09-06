@@ -4,7 +4,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Code2, Eye, PanelRightClose } from 'lucide-react';
+import { ChevronLeft, Code2, Eye, PanelRightClose } from 'lucide-react';
 import { MarkdownView, isMarkdownFilePath, localParentDir } from '@/components/shared/MarkdownView';
 import { CopyableFileName } from '@/components/shared/CopyableFileName';
 import { OpenDirButton } from '@/components/shared/OpenDirButton';
@@ -40,13 +40,17 @@ export function ChatMarkdownPreviewPanel({
   open,
   width,
   onClose,
+  onBack,
   onOpenLocal,
+  canBack = false,
   className,
 }: {
   path: string;
   cwd: string;
   open: boolean;
   width?: number;
+  canBack?: boolean;
+  onBack?: () => void;
   onClose: () => void;
   onOpenLocal: (nextPath: string) => void;
   className?: string;
@@ -101,11 +105,12 @@ export function ChatMarkdownPreviewPanel({
       if (e.key !== 'Escape') return;
       if (hasEscPriorityOverlay()) return;
       e.preventDefault();
-      onClose();
+      if (canBack && onBack) onBack();
+      else onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open, canBack, onBack, onClose]);
 
   if (!open) return null;
 
@@ -122,6 +127,18 @@ export function ChatMarkdownPreviewPanel({
     >
       <header className="shrink-0 border-b border-border">
         <div className="flex h-10 items-center gap-1.5 overflow-x-auto px-3">
+          {canBack ? (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7 shrink-0"
+              aria-label={t('chat.preview.back')}
+              title={t('chat.preview.back')}
+              onClick={onBack}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+          ) : null}
           <h2
             id={titleId}
             className="min-w-0 flex-1 truncate text-sm font-semibold leading-tight text-primary"
