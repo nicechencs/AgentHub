@@ -699,16 +699,59 @@ fn fail_remaining(
     Ok(())
 }
 
+fn looks_like_stream_protocol(text: &str) -> bool {
+    let Some(first) = text
+        .trim_start()
+        .lines()
+        .find(|line| !line.trim().is_empty())
+    else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(first) else {
+        return false;
+    };
+    match value.get("type").and_then(|t| t.as_str()) {
+        Some(
+            "session"
+            | "agent_start"
+            | "turn_start"
+            | "message_start"
+            | "message_update"
+            | "message_end"
+            | "agent_end"
+            | "turn_end"
+            | "agent_settled",
+        ) => true,
+        _ => value.get("jsonrpc").is_some() && value.get("method").is_some(),
+    }
+}
+
+fn stdout_as_message_content(stdout: &str) -> Option<&str> {
+    if stdout.is_empty() || looks_like_stream_protocol(stdout) {
+        None
+    } else {
+        Some(stdout)
+    }
+}
+
 fn finalize_agent_message(
     map: &mut HashMap<AgentId, ChatMessage>,
     result: &AgentRunResult,
 ) -> Option<ChatMessage> {
     let mut msg = map.remove(&result.agent)?;
     // When streaming was capped, prefer the runner's capped stdout over partial stream.
+    // Never backfill Pi/Grok NDJSON — cancel-before-text used to dump the whole protocol.
     if result.truncated {
-        msg.content = result.stdout.clone();
-    } else if msg.content.is_empty() && !result.stdout.is_empty() {
-        msg.content = result.stdout.clone();
+        if let Some(stdout) = stdout_as_message_content(&result.stdout) {
+            msg.content = stdout.to_string();
+        }
+    } else if msg.content.is_empty() {
+        if let Some(stdout) = stdout_as_message_content(&result.stdout) {
+            msg.content = stdout.to_string();
+        }
+    }
+    if looks_like_stream_protocol(&msg.content) {
+        msg.content.clear();
     }
     msg.status = map_run_status(result.status);
     msg.exit_code = result.exit_code;
