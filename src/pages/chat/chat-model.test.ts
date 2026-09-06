@@ -422,7 +422,7 @@ describe('autoApproveEffect', () => {
   });
 
   it('uses honest footer and confirm copy per effect', () => {
-    expect(autoApproveFooter(t, false, 'claude').warning).toBe(false);
+    expect(autoApproveFooter(t, false, 'claude')).toEqual({ text: '', warning: false });
     expect(autoApproveFooter(t, true, 'claude')).toEqual({
       text: '自动批准已开启 · Agent 将不经确认修改文件',
       warning: true,

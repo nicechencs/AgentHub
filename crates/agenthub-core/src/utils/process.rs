@@ -1272,7 +1272,7 @@ fn read_lines_capped<R: Read>(
     });
 }
 
-/// Read a pipe into a capped accumulator and emit ~8KiB UTF-8 prefixes.
+/// Read a pipe into a capped accumulator and emit UTF-8 text as each OS read arrives.
 ///
 /// `on_text` returning `false` means the live consumer dropped the chunk
 /// (lossless paths must treat that as incomplete). After the cap, further
@@ -1289,9 +1289,7 @@ pub(crate) fn read_pipe_capped<R: Read>(
         return;
     };
     const READ_CHUNK_BYTES: usize = 8192;
-    const EMIT_CHUNK_BYTES: usize = 8192;
     let mut chunk = [0u8; READ_CHUNK_BYTES];
-    let mut output = Vec::with_capacity(EMIT_CHUNK_BYTES);
     let mut decoder = Utf8ChunkDecoder::new();
     let mut capped = false;
     loop {
@@ -1318,13 +1316,9 @@ pub(crate) fn read_pipe_capped<R: Read>(
                 if accepted == 0 {
                     continue;
                 }
-                output.extend_from_slice(&chunk[..accepted]);
-                while output.len() >= EMIT_CHUNK_BYTES {
-                    let text = decoder.push(&output[..EMIT_CHUNK_BYTES]);
-                    output.drain(..EMIT_CHUNK_BYTES);
-                    if !text.is_empty() && !on_text(text) {
-                        mark_flag(incomplete);
-                    }
+                let text = decoder.push(&chunk[..accepted]);
+                if !text.is_empty() && !on_text(text) {
+                    mark_flag(incomplete);
                 }
             }
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
@@ -1332,12 +1326,6 @@ pub(crate) fn read_pipe_capped<R: Read>(
                 mark_flag(incomplete);
                 break;
             }
-        }
-    }
-    if !output.is_empty() {
-        let text = decoder.push(&output);
-        if !text.is_empty() && !on_text(text) {
-            mark_flag(incomplete);
         }
     }
     let text = decoder.finish();

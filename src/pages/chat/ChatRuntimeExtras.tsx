@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -38,8 +39,10 @@ export function ChatRuntimeExtras(props: {
   extensions: RuntimeExtensionItem[];
   selectedSkillIds: string[];
   onToggleSkill: (id: string) => void;
+  inline?: boolean;
 }) {
   const { t } = useI18n();
+  const callableSkills = props.extensions.filter((item) => item.kind === 'skill' && item.callable);
   const modelDisabledReason = props.frozen
     ? t('chat.runtimeOps.frozenDuringTurn')
     : props.catalogLoading
@@ -73,7 +76,7 @@ export function ChatRuntimeExtras(props: {
 
   return (
     <div
-      className="space-y-2 px-1 pb-1"
+      className={props.inline ? 'contents' : 'space-y-2 px-1 pb-1'}
       onPaste={(event) => {
         if (!props.onPasteImages) return;
         const files = Array.from(event.clipboardData?.files ?? []).filter((file) =>
@@ -157,16 +160,42 @@ export function ChatRuntimeExtras(props: {
             ) : null}
           </DropdownMenu>
         </Hint>
+        {callableSkills.length > 0 ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" size="sm" variant="outline" className="max-w-32">
+                <span className="truncate">
+                  {t('chat.runtimeOps.skill')}
+                  {props.selectedSkillIds.length > 0 ? ` · ${props.selectedSkillIds.length}` : ''}
+                </span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-64">
+              <DropdownMenuLabel>{t('chat.runtimeOps.skill')}</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {callableSkills.map((item) => (
+                <DropdownMenuItem key={item.id} onClick={() => props.onToggleSkill(item.id)}>
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="w-4 shrink-0">{props.selectedSkillIds.includes(item.id) ? '✓' : ''}</span>
+                    <span className="truncate">{item.name}</span>
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
         <Hint label={t('chat.runtimeOps.pasteImageHint')}>
           <Button type="button" size="sm" variant="outline" onClick={props.onAddImages}>
             <ImagePlus className="mr-1 size-3.5" />
-            {t('chat.runtimeOps.addImage')}
+            {t('chat.runtimeOps.addImage')}{props.images.length > 0 ? ` · ${props.images.length}` : ''}
           </Button>
         </Hint>
-        <span className="text-meta text-muted">{t('chat.runtimeOps.otherAttachmentsBlocked')}</span>
+        {!props.inline ? (
+          <span className="text-meta text-muted">{t('chat.runtimeOps.otherAttachmentsBlocked')}</span>
+        ) : null}
       </div>
 
-      {props.images.length > 0 ? (
+      {!props.inline && props.images.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {props.images.map((path) => (
             <Hint key={path} label={path}>
@@ -181,7 +210,7 @@ export function ChatRuntimeExtras(props: {
         </div>
       ) : null}
 
-      {props.selectedSkillIds.length > 0 ? (
+      {!props.inline && props.selectedSkillIds.length > 0 ? (
         <div className="flex flex-wrap gap-2 text-meta">
           {props.selectedSkillIds.map((id) => {
             const item = props.extensions.find((extension) => extension.id === id);
