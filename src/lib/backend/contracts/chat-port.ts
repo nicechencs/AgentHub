@@ -23,7 +23,7 @@ export interface ChatPort {
   ): Promise<void>;
   chatCancel(conversationId: string): Promise<void>;
   runtimeSnapshot(conversationId: string, afterSequence?: number): Promise<RuntimeSnapshot>;
-  runtimeOptions(conversationId: string): Promise<RuntimeOptions>;
+  runtimeOptions(conversationId: string, opts?: { refresh?: boolean }): Promise<RuntimeOptions>;
   runtimeSetSettings(conversationId: string, settings: RuntimeTurnSettings): Promise<RuntimeTurnSettings>;
   runtimeNoteThinkingFailure(conversationId: string, settings: RuntimeTurnSettings, errorText: string): Promise<void>;
   runtimeContinueLegacy(conversationId: string): Promise<RuntimeSnapshot>;

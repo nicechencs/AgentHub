@@ -91,6 +91,20 @@ describe('retainRuntimeCatalog', () => {
     });
     expect(retainRuntimeCatalog(prior, next, 'c1').models[0]?.id).toBe('gpt-b');
   });
+
+  it('replaces a warmed catalog when idle returns a different login list', () => {
+    const prior = {
+      conversationId: 'c1',
+      models: [{ id: 'gpt-old-login', efforts: ['xhigh'], defaultEffort: 'xhigh' }],
+      extensions: [],
+    };
+    const next = options({
+      settingsFrozen: false,
+      models: [{ id: 'gpt-new-login', efforts: ['low'], defaultEffort: 'low' }],
+      extensions: [],
+    });
+    expect(retainRuntimeCatalog(prior, next, 'c1').models[0]?.id).toBe('gpt-new-login');
+  });
 });
 
 describe('model × effort compatibility', () => {

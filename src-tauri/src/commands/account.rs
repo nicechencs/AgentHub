@@ -6,7 +6,7 @@ use agenthub_core::models::{Account, AccountSwitchResult, AuthState};
 use agenthub_core::AgentHub;
 use tauri::State;
 
-use crate::commands::{map_err_string, parse_agent, with_hub_blocking};
+use crate::commands::{invalidate_runtime_catalogs, map_err_string, parse_agent, with_hub_blocking};
 use crate::state::AppState;
 
 /// Invoke: `list_accounts`
@@ -128,9 +128,14 @@ pub async fn undo_switch_account(
     let agent = parse_agent(&agent_id)?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     with_hub_blocking(hub, move |hub| {
-        hub.accounts()
+        let undone = hub
+            .accounts()
             .undo_switch(agent)
-            .map_err(|e| map_err_string("undo_switch_account", e))
+            .map_err(|e| map_err_string("undo_switch_account", e))?;
+        if undone {
+            invalidate_runtime_catalogs(hub);
+        }
+        Ok(undone)
     })
     .await
 }
@@ -328,6 +333,7 @@ fn switch_account_inner(
         .accounts()
         .switch(id_or_label, agent)
         .map_err(|e| map_err_string("switch_account", e))?;
+    invalidate_runtime_catalogs(hub);
     Ok(result.redacted())
 }
 

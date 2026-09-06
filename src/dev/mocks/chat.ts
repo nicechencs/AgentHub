@@ -338,10 +338,11 @@ export function createMockChatPort(): ChatPort {
       return { ...current, events: afterSequence == null ? current.events : current.events.filter((item) => item.sequence > afterSequence) };
     },
 
-    async runtimeOptions(conversationId) {
+    async runtimeOptions(conversationId, opts) {
       const snapshot = await this.runtimeSnapshot(conversationId);
       if (!snapshot.enabled) throw new Error('runtime is unavailable for this conversation');
       const frozen = ['starting', 'running', 'waiting', 'cancelling'].includes(snapshot.phase);
+      if (opts?.refresh && !frozen) runtimeOptionsCache.delete(conversationId);
       const cached = runtimeOptionsCache.get(conversationId);
       if (cached) {
         const models = applyMockDeniedEfforts(cached.models);

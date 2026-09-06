@@ -52,6 +52,12 @@ impl ChatService {
         &self.runtime
     }
 
+    /// Drop warmed model/skills catalogs after a live login change.
+    /// Codex and Grok both serve `options()` from this cache.
+    pub fn invalidate_runtime_catalogs(&self) {
+        self.runtime.invalidate_catalogs();
+    }
+
     pub fn list_conversations(&self) -> Result<Vec<Conversation>> {
         self.repo.list_conversations()
     }

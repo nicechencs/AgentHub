@@ -130,13 +130,18 @@ pub async fn chat_runtime_snapshot(
 pub async fn chat_runtime_options(
     state: State<'_, AppState>,
     conversation_id: String,
+    refresh: Option<bool>,
 ) -> Result<RuntimeOptions, String> {
     let hub = state.hub_arc()?;
+    let refresh = refresh.unwrap_or(false);
     with_hub_blocking(hub, move |hub| {
-        hub.chat()
-            .runtime()
-            .options(&conversation_id)
-            .map_err(|e| map_err_string("chat_runtime_options", e))
+        let runtime = hub.chat().runtime();
+        let options = if refresh {
+            runtime.refresh_options(&conversation_id)
+        } else {
+            runtime.options(&conversation_id)
+        };
+        options.map_err(|e| map_err_string("chat_runtime_options", e))
     })
     .await
 }
