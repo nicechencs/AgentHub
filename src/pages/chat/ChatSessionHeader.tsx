@@ -26,6 +26,7 @@ export function ChatSessionHeader({
   onRename,
   onOpenSettings,
   onPickWorkingDirectory,
+  runtimeLocked = false,
 }: {
   active: Conversation | null;
   railOpen: boolean;
@@ -34,6 +35,7 @@ export function ChatSessionHeader({
   onRename: (next: string) => Promise<boolean>;
   onOpenSettings: () => void;
   onPickWorkingDirectory: () => void;
+  runtimeLocked?: boolean;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -154,8 +156,9 @@ export function ChatSessionHeader({
             size="sm"
             variant="outline"
             onClick={onPickWorkingDirectory}
+            disabled={runtimeLocked}
             data-help="chat-cwd"
-            title={active.cwd || t('chat.header.pickCwd')}
+            title={runtimeLocked ? t('chat.runtimeOps.sessionLocked') : active.cwd || t('chat.header.pickCwd')}
             className={cn('max-w-[9rem]', !active.cwd && 'text-warning')}
           >
             <FolderOpen className="h-3 w-3 shrink-0" />

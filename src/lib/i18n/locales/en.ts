@@ -2708,6 +2708,7 @@ export const en = {
       catalogEmpty: 'No model catalog available yet',
       needModelFirst: 'Choose a model first',
       effortUnavailable: 'This model has no effort options',
+      sessionLocked: 'This session is connected to the current agent and working directory. Start a new chat to change them.',
     },
     actions: {
       menu: 'More actions',

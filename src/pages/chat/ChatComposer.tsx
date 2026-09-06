@@ -83,6 +83,7 @@ export function ChatComposer({
   onDraftKeyDown,
   onPasteImages,
   runtimeControls,
+  runtimeLocked = false,
   fillHeight = false,
   paneHeight = null,
   paneRef,
@@ -120,6 +121,7 @@ export function ChatComposer({
   onDraftKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => boolean;
   onPasteImages?: (files: File[]) => void;
   runtimeControls?: ReactNode;
+  runtimeLocked?: boolean;
   fillHeight?: boolean;
   paneHeight?: number | null;
   paneRef?: Ref<HTMLDivElement>;
@@ -267,7 +269,7 @@ export function ChatComposer({
                 type="button"
                 size="sm"
                 variant="outline"
-              disabled={sending || sendingElsewhere}
+                disabled={sending || sendingElsewhere || runtimeLocked}
                 className="max-w-36"
               >
                 {active.agentIds[0] && <AgentLogo agentId={active.agentIds[0]} size="sm" />}

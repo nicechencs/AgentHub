@@ -30,6 +30,7 @@ export function ChatSettingsDialog({
   dangerConfirm,
   onDangerConfirmChange,
   onPatch,
+  runtimeLocked = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -37,6 +38,7 @@ export function ChatSettingsDialog({
   dangerConfirm: boolean;
   onDangerConfirmChange: (open: boolean) => void;
   onPatch: (patch: { cwd?: string | null; allowDangerous?: boolean }) => void;
+  runtimeLocked?: boolean;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -52,11 +54,13 @@ export function ChatSettingsDialog({
   }, [active?.id, active?.cwd]);
 
   function commitCwd(raw: string) {
+    if (runtimeLocked) return;
     const v = raw.trim();
     onPatch({ cwd: v || null });
   }
 
   async function handleBrowse() {
+    if (runtimeLocked) return;
     setPicking(true);
     try {
       const picked = await pickDirectory({
@@ -98,13 +102,16 @@ export function ChatSettingsDialog({
                     value={cwdDraft}
                     placeholder={t('chat.settings.cwdPlaceholder')}
                     aria-label={t('chat.settings.cwd')}
+                    disabled={runtimeLocked}
+                    title={runtimeLocked ? t('chat.runtimeOps.sessionLocked') : undefined}
                     onChange={(e) => setCwdDraft(e.target.value)}
                     onBlur={(e) => commitCwd(e.target.value)}
                   />
                   <Button
                     type="button"
                     variant="outline"
-                    disabled={picking}
+                    disabled={picking || runtimeLocked}
+                    title={runtimeLocked ? t('chat.runtimeOps.sessionLocked') : undefined}
                     onClick={() => void handleBrowse()}
                   >
                     {picking ? t('chat.settings.picking') : t('chat.settings.pickDir')}

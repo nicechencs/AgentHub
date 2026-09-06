@@ -2696,6 +2696,7 @@ export const zh = {
       catalogEmpty: '暂时没有可用模型列表',
       needModelFirst: '请先选择模型',
       effortUnavailable: '当前模型没有思考强度选项',
+      sessionLocked: '持续会话已接到当前 Agent 和工作目录；如需更换，请新建会话',
     },
     actions: {
       menu: '更多操作',
