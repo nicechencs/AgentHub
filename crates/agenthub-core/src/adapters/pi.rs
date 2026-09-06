@@ -225,6 +225,7 @@ impl AgentAdapter for PiAdapter {
                 write_verified_auth_json(&pi_config_dir()?.join("auth.json"), &merged)?;
                 if let Some(slot) = pi_slot_from_account(account) {
                     pin_pi_live_slot(&slot)?;
+                    assign_pi_default_model_for_slot(&slot)?;
                 }
                 Ok(())
             }
@@ -244,6 +245,7 @@ impl AgentAdapter for PiAdapter {
                 apply_pi_api_key_to_dir(&pi_config_dir()?, provider, key)?;
                 if !provider.trim().is_empty() {
                     pin_pi_live_slot(provider.trim())?;
+                    assign_pi_default_model_for_slot(provider.trim())?;
                 }
                 Ok(())
             }
@@ -460,14 +462,19 @@ fn pi_cli_provider_args() -> Vec<String> {
     let settings =
         read_json_object_or_empty(&dir.join("settings.json")).unwrap_or(serde_json::json!({}));
     let provider = nonempty_json_str(&settings, "defaultProvider");
-    let model = nonempty_json_str(&settings, "defaultModel");
+    let model = nonempty_json_str(&settings, "defaultModel").filter(|id| {
+        !crate::models::is_openrouter_backup_model(id)
+            && provider
+                .as_deref()
+                .map_or(true, |slot| pi_model_belongs_to_slot(slot, id))
+    });
     if provider.is_some() || model.is_some() {
         let mut args = Vec::new();
         if let Some(provider) = provider {
             args.push("--provider".into());
             args.push(provider);
         }
-        if let Some(model) = model.filter(|id| !crate::models::is_openrouter_backup_model(id)) {
+        if let Some(model) = model {
             args.push("--model".into());
             args.push(model);
         }
@@ -563,7 +570,7 @@ fn read_json_object_or_empty(path: &Path) -> Result<serde_json::Value> {
 
 const REDACTED_MARKER: &str = "***";
 
-fn pi_slot_from_account(account: &LiveAccount) -> Option<String> {
+pub(crate) fn pi_slot_from_account(account: &LiveAccount) -> Option<String> {
     account
         .credentials
         .get("provider")
@@ -601,13 +608,149 @@ pub(crate) fn pi_oauth_live_slot_mismatch(current: &crate::models::Account) -> b
     let default_provider = nonempty_json_str(&settings, "defaultProvider");
     let default_model = nonempty_json_str(&settings, "defaultModel");
     default_provider.as_deref() != Some(slot)
-        || default_model
-            .as_deref()
-            .is_some_and(crate::models::is_openrouter_backup_model)
+        || default_model.as_deref().is_some_and(|id| {
+            crate::models::is_openrouter_backup_model(id) || !pi_model_belongs_to_slot(slot, id)
+        })
 }
 
-/// Make this auth.json slot the only live Pi default. Drop leftover
-/// OpenRouter stealth models; do not invent a replacement model id.
+fn pi_model_family(model: &str) -> Option<&'static str> {
+    let raw = model.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    if crate::models::is_openrouter_backup_model(raw) {
+        return Some("retired");
+    }
+    let id = raw
+        .rsplit('/')
+        .next()
+        .unwrap_or(raw)
+        .to_ascii_lowercase();
+    if id.starts_with("grok") {
+        return Some("xai");
+    }
+    if id.starts_with("claude") {
+        return Some("anthropic");
+    }
+    if id.starts_with("gpt-oss") {
+        return None;
+    }
+    if id.starts_with("gpt-")
+        || id.starts_with("chatgpt")
+        || id.starts_with("o1")
+        || id.starts_with("o3")
+        || id.starts_with("o4")
+        || id == "codex"
+        || id.starts_with("codex-")
+    {
+        return Some("openai");
+    }
+    None
+}
+
+fn pi_model_belongs_to_slot(slot: &str, model: &str) -> bool {
+    let slot = slot.trim();
+    if slot.is_empty() || model.trim().is_empty() {
+        return false;
+    }
+    match pi_model_family(model) {
+        Some("retired") => false,
+        Some("xai") => slot == "xai",
+        Some("anthropic") => slot == "anthropic",
+        Some("openai") => slot == "openai" || slot == "openai-codex",
+        _ => true,
+    }
+}
+
+fn should_drop_pi_default_model(slot: &str, prev: Option<&str>, model: &str) -> bool {
+    if !pi_model_belongs_to_slot(slot, model) {
+        return true;
+    }
+    prev != Some(slot) && (model.contains('/') || model.starts_with("stealth/"))
+}
+
+fn clear_pi_default_model(dir: &Path) -> Result<()> {
+    let mut settings = read_json_object_or_empty(&dir.join("settings.json"))?;
+    if nonempty_json_str(&settings, "defaultModel").is_none() {
+        return Ok(());
+    }
+    if let Some(obj) = settings.as_object_mut() {
+        obj.remove("defaultModel");
+    }
+    write_json_value(&dir.join("settings.json"), &settings)
+}
+
+fn pi_slot_model_catalog(
+    slot: &str,
+    models_doc: &serde_json::Value,
+    auth: &serde_json::Value,
+) -> Vec<String> {
+    let mut models = remote_pi_slot_models(slot, auth);
+    if models.is_empty() {
+        models = collect_pi_slot_model_ids(models_doc, slot);
+    }
+    if models.is_empty() {
+        models = official_pi_slot_models(slot);
+    }
+    models
+}
+
+/// After a login is removed or switched, keep defaultProvider/defaultModel on a
+/// remaining slot and a model from that slot's catalog.
+pub(crate) fn reconcile_pi_default_for_remaining_slots(slots: &[String]) -> Result<()> {
+    let mut seen = std::collections::HashSet::new();
+    let slots: Vec<String> = slots
+        .iter()
+        .map(|slot| slot.trim().to_string())
+        .filter(|slot| !slot.is_empty() && seen.insert(slot.clone()))
+        .collect();
+    if slots.is_empty() {
+        return Ok(());
+    }
+    let dir = pi_config_dir()?;
+    let settings =
+        read_json_object_or_empty(&dir.join("settings.json")).unwrap_or(serde_json::json!({}));
+    let current = nonempty_json_str(&settings, "defaultProvider");
+    let chosen = current
+        .filter(|slot| slots.iter().any(|remaining| remaining == slot))
+        .unwrap_or_else(|| slots[0].clone());
+    pin_pi_live_slot(&chosen)?;
+    assign_pi_default_model_for_slot(&chosen)
+}
+
+/// Pick a catalog model for this slot. Keeps the stored default when it is in
+/// the list; otherwise uses the slot catalog. Does not invent a model id when
+/// the catalog is empty — only drops leftover names that cannot belong here.
+pub(crate) fn assign_pi_default_model_for_slot(slot: &str) -> Result<()> {
+    let slot = slot.trim();
+    if slot.is_empty() {
+        return Ok(());
+    }
+    let dir = pi_config_dir()?;
+    let settings =
+        read_json_object_or_empty(&dir.join("settings.json")).unwrap_or(serde_json::json!({}));
+    let models_doc =
+        read_json_object_or_empty(&dir.join("models.json")).unwrap_or(serde_json::json!({}));
+    let auth = read_auth_json().unwrap_or(serde_json::json!({}));
+    let catalog = pi_slot_model_catalog(slot, &models_doc, &auth);
+    let stored = nonempty_json_str(&settings, "defaultModel");
+    let leftover = stored.as_deref().filter(|id| {
+        !crate::models::is_openrouter_backup_model(id) && pi_model_belongs_to_slot(slot, id)
+    });
+    if let Some(next) = prefer_pi_catalog_model(&catalog, leftover) {
+        write_pi_default_model_if_changed(&dir, &next)
+    } else if stored
+        .as_deref()
+        .is_some_and(|id| should_drop_pi_default_model(slot, Some(slot), id))
+    {
+        clear_pi_default_model(&dir)
+    } else {
+        Ok(())
+    }
+}
+
+/// Make this auth.json slot the only live Pi default. Drop leftover models that
+/// cannot belong to the slot; do not invent a replacement model id.
 pub(crate) fn pin_pi_live_slot(slot: &str) -> Result<()> {
     let slot = slot.trim();
     if slot.is_empty() {
@@ -620,10 +763,9 @@ pub(crate) fn pin_pi_live_slot(slot: &str) -> Result<()> {
     let prev = nonempty_json_str(&settings, "defaultProvider");
     let model = nonempty_json_str(&settings, "defaultModel");
     settings["defaultProvider"] = serde_json::json!(slot);
-    let drop_model = model.as_deref().is_some_and(|id| {
-        crate::models::is_openrouter_backup_model(id)
-            || (prev.as_deref() != Some(slot) && (id.contains('/') || id.starts_with("stealth/")))
-    });
+    let drop_model = model
+        .as_deref()
+        .is_some_and(|id| should_drop_pi_default_model(slot, prev.as_deref(), id));
     if drop_model {
         if let Some(obj) = settings.as_object_mut() {
             obj.remove("defaultModel");
@@ -871,26 +1013,28 @@ pub(crate) fn pi_live_chat_model() -> crate::models::LiveChatModel {
         read_json_object_or_empty(&dir.join("models.json")).unwrap_or(serde_json::json!({}));
     let auth = read_auth_json().unwrap_or(serde_json::json!({}));
     let slot = nonempty_json_str(&settings, "defaultProvider").unwrap_or_default();
-    let leftover = nonempty_json_str(&settings, "defaultModel")
-        .filter(|id| !crate::models::is_openrouter_backup_model(id));
+    let stored = nonempty_json_str(&settings, "defaultModel");
+    let leftover = stored.as_deref().filter(|id| {
+        !crate::models::is_openrouter_backup_model(id)
+            && (slot.is_empty() || pi_model_belongs_to_slot(&slot, id))
+    });
 
-    let mut models = if slot.is_empty() {
+    let models = if slot.is_empty() {
         Vec::new()
     } else {
-        remote_pi_slot_models(&slot, &auth)
+        pi_slot_model_catalog(&slot, &models_doc, &auth)
     };
-    if models.is_empty() && !slot.is_empty() {
-        models = collect_pi_slot_model_ids(&models_doc, &slot);
-    }
-    if models.is_empty() && !slot.is_empty() {
-        models = official_pi_slot_models(&slot);
-    }
 
-    let current = prefer_pi_catalog_model(&models, leftover.as_deref());
+    let current = prefer_pi_catalog_model(&models, leftover);
     if let Some(next) = current.as_deref() {
-        if leftover.as_deref() != Some(next) {
+        if leftover != Some(next) {
             let _ = write_pi_default_model_if_changed(&dir, next);
         }
+    } else if stored
+        .as_deref()
+        .is_some_and(|id| !slot.is_empty() && should_drop_pi_default_model(&slot, Some(&slot), id))
+    {
+        let _ = clear_pi_default_model(&dir);
     }
 
     crate::models::LiveChatModel {
@@ -1364,6 +1508,134 @@ mod tests {
                     .unwrap();
             assert_eq!(settings["defaultModel"], "grok-code-fast-1");
             assert_eq!(settings["defaultThinkingLevel"], "off");
+        });
+    }
+
+    #[test]
+    fn pin_pi_live_slot_drops_bare_gpt_even_when_already_on_xai() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "defaultProvider": "xai",
+                    "defaultModel": "gpt-5.5"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            pin_pi_live_slot("xai").unwrap();
+            let settings: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
+                    .unwrap();
+            assert_eq!(settings["defaultProvider"], "xai");
+            assert!(settings.get("defaultModel").is_none(), "{settings}");
+        });
+    }
+
+    #[test]
+    fn pin_pi_live_slot_keeps_gpt_on_openai_codex() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "defaultProvider": "openai-codex",
+                    "defaultModel": "gpt-5.5"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            pin_pi_live_slot("openai-codex").unwrap();
+            let settings: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
+                    .unwrap();
+            assert_eq!(settings["defaultModel"], "gpt-5.5");
+        });
+    }
+
+    #[test]
+    fn reconcile_remaining_xai_replaces_gpt_with_catalog_model() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "defaultProvider": "openai-codex",
+                    "defaultModel": "gpt-5.5"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            with_pi_official_catalog(
+                vec![
+                    "grok-4.3".into(),
+                    "grok-4.5".into(),
+                    "grok-4.6".into(),
+                    "grok-build-0.1".into(),
+                ],
+                || {
+                    reconcile_pi_default_for_remaining_slots(&["xai".into()]).unwrap();
+                    let settings: serde_json::Value = serde_json::from_str(
+                        &std::fs::read_to_string(dir.join("settings.json")).unwrap(),
+                    )
+                    .unwrap();
+                    assert_eq!(settings["defaultProvider"], "xai");
+                    assert_eq!(settings["defaultModel"], "grok-4.6");
+                },
+            );
+        });
+    }
+
+    #[test]
+    fn pi_cli_provider_args_skips_foreign_gpt_on_xai() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "defaultProvider": "xai",
+                    "defaultModel": "gpt-5.5"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            let spec = build_pi_run_spec(
+                Path::new("pi"),
+                "ping",
+                &RunOptions::default(),
+                Some(&fake_node22()),
+            )
+            .unwrap();
+            let idx = spec
+                .args
+                .iter()
+                .position(|a| a == "--provider")
+                .expect("--provider");
+            assert_eq!(spec.args[idx + 1], "xai");
+            assert!(!spec.args.iter().any(|a| a == "--model"), "{:?}", spec.args);
+        });
+    }
+
+    #[test]
+    fn pi_live_chat_model_drops_foreign_gpt_without_inventing() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "defaultProvider": "xai",
+                    "defaultModel": "gpt-5.5"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(dir.join("models.json"), b"{}\n").unwrap();
+            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            let live = pi_live_chat_model();
+            assert_eq!(live.model, None);
+            assert!(live.models.is_empty(), "{live:?}");
+            let settings: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
+                    .unwrap();
+            assert!(settings.get("defaultModel").is_none(), "{settings}");
+            assert_eq!(settings["defaultProvider"], "xai");
         });
     }
 
