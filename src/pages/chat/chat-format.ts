@@ -165,6 +165,15 @@ export function extractPiDefaultModel(configText: string): string | null {
   return extractModel(configText);
 }
 
+/** Live settings.json is the current Pi model. Envelope leftover must not win. */
+export function resolvePiChatCurrentModel(
+  liveChatModel: string | null | undefined,
+): string | null {
+  const id = liveChatModel?.trim() || null;
+  if (!id || isRetiredChatModel(id)) return null;
+  return id;
+}
+
 /** Official xAI OpenAI-compatible catalog. Same URL `list_remote_openai_models` uses. */
 export const OFFICIAL_XAI_MODELS_BASE = 'https://api.x.ai/v1';
 
