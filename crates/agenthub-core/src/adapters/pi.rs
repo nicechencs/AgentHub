@@ -78,14 +78,7 @@ pub(crate) fn build_pi_run_spec(
     // `--thinking off` never reaches the CLI and leftover
     // `defaultThinkingLevel` is still mapped to `reasoningEffort`.
     let mut args = pi_cli_provider_args();
-    if pi_send_model_id(&args)
-        .as_deref()
-        .is_some_and(pi_model_rejects_thinking)
-    {
-        pin_pi_thinking_off_for_send();
-        args.push("--thinking".into());
-        args.push("off".into());
-    }
+    append_pi_thinking_args(&mut args);
     args.push("-p".into());
     args.push(prompt.to_string());
     args.push("--mode".into());
@@ -529,8 +522,35 @@ fn pi_settings_default_model() -> Option<String> {
         .filter(|id| !crate::models::is_openrouter_backup_model(id))
 }
 
-/// Neutralize leftover `defaultThinkingLevel` so Pi cannot map `low` →
-/// `reasoningEffort` if it ignores `--thinking` for this send.
+const PI_CHAT_THINKING_LEVELS: &[&str] =
+    &["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+fn pi_thinking_level_ok(level: &str) -> bool {
+    PI_CHAT_THINKING_LEVELS.iter().any(|item| *item == level)
+}
+
+fn pi_settings_thinking_level() -> Option<String> {
+    let dir = pi_config_dir().ok()?;
+    let settings = read_json_object_or_empty(&dir.join("settings.json")).ok()?;
+    nonempty_json_str(&settings, "defaultThinkingLevel").filter(|level| pi_thinking_level_ok(level))
+}
+
+fn append_pi_thinking_args(args: &mut Vec<String>) {
+    if pi_send_model_id(args)
+        .as_deref()
+        .is_some_and(pi_model_rejects_thinking)
+    {
+        pin_pi_thinking_off_for_send();
+        args.push("--thinking".into());
+        args.push("off".into());
+        return;
+    }
+    if let Some(level) = pi_settings_thinking_level() {
+        args.push("--thinking".into());
+        args.push(level);
+    }
+}
+
 fn pin_pi_thinking_off_for_send() {
     let Ok(dir) = pi_config_dir() else {
         return;
@@ -543,6 +563,32 @@ fn pin_pi_thinking_off_for_send() {
     }
     settings["defaultThinkingLevel"] = serde_json::json!("off");
     let _ = write_json_value(&dir.join("settings.json"), &settings);
+}
+
+/// Write Pi `settings.json` `defaultThinkingLevel` without touching auth.json.
+pub(crate) fn set_pi_default_thinking(level: &str) -> Result<()> {
+    let level = level.trim();
+    if !pi_thinking_level_ok(level) {
+        return Err(AppError::InvalidArg(format!("不支持的思考等级: {level}")));
+    }
+    if pi_settings_default_model().as_deref().is_some_and(pi_model_rejects_thinking) {
+        return Err(AppError::InvalidArg("这个模型不支持思考等级".into()));
+    }
+    let dir = pi_config_dir()?;
+    let mut settings = read_json_object_or_empty(&dir.join("settings.json"))?;
+    settings["defaultThinkingLevel"] = serde_json::json!(level);
+    write_json_value(&dir.join("settings.json"), &settings)
+}
+
+fn pi_live_thinking(model: Option<&str>) -> (Option<String>, Vec<String>) {
+    if model.is_some_and(pi_model_rejects_thinking) {
+        return (None, Vec::new());
+    }
+    let efforts = PI_CHAT_THINKING_LEVELS
+        .iter()
+        .map(|item| (*item).to_string())
+        .collect();
+    (pi_settings_thinking_level(), efforts)
 }
 
 fn nonempty_json_str(v: &serde_json::Value, key: &str) -> Option<String> {
@@ -1039,11 +1085,12 @@ pub(crate) fn pi_live_chat_model() -> crate::models::LiveChatModel {
         let _ = clear_pi_default_model(&dir);
     }
 
+    let (effort, efforts) = pi_live_thinking(current.as_deref().or(leftover));
     crate::models::LiveChatModel {
         model: current,
         models,
-        effort: None,
-        efforts: Vec::new(),
+        effort,
+        efforts,
     }
 }
 
@@ -1416,11 +1463,14 @@ mod tests {
                 Some(&fake_node22()),
             )
             .unwrap();
-            assert!(
-                !spec.args.iter().any(|a| a == "--thinking"),
-                "{:?}",
-                spec.args
-            );
+            let think = spec
+                .args
+                .iter()
+                .position(|a| a == "--thinking")
+                .expect("--thinking");
+            let dash_p = spec.args.iter().position(|a| a == "-p").expect("-p");
+            assert_eq!(spec.args[think + 1], "low");
+            assert!(think < dash_p, "{:?}", spec.args);
             let settings: serde_json::Value =
                 serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
                     .unwrap();
@@ -1512,6 +1562,60 @@ mod tests {
                     .unwrap();
             assert_eq!(settings["defaultModel"], "grok-code-fast-1");
             assert_eq!(settings["defaultThinkingLevel"], "off");
+        });
+    }
+
+    #[test]
+    fn set_pi_default_thinking_writes_settings_and_rejects_code_fast() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "defaultProvider": "xai",
+                    "defaultModel": "grok-4"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            set_pi_default_thinking("high").unwrap();
+            let settings: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
+                    .unwrap();
+            assert_eq!(settings["defaultThinkingLevel"], "high");
+            assert_eq!(settings["defaultModel"], "grok-4");
+            let err = set_pi_default_thinking("turbo").unwrap_err();
+            assert!(err.to_string().contains("不支持的思考等级"), "{err}");
+
+            set_pi_default_model("grok-code-fast-1").unwrap();
+            let err = set_pi_default_thinking("high").unwrap_err();
+            assert!(err.to_string().contains("不支持思考等级"), "{err}");
+            let live = pi_live_chat_model();
+            assert!(live.efforts.is_empty(), "{live:?}");
+            assert_eq!(live.effort, None);
+        });
+    }
+
+    #[test]
+    fn pi_live_chat_model_exposes_thinking_levels() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "defaultProvider": "xai",
+                    "defaultModel": "grok-4",
+                    "defaultThinkingLevel": "minimal"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            let live = pi_live_chat_model();
+            assert_eq!(live.effort.as_deref(), Some("minimal"));
+            assert_eq!(
+                live.efforts,
+                vec!["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+            );
         });
     }
 

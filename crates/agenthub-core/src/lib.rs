@@ -255,12 +255,17 @@ impl AgentHub {
         }
     }
 
-    /// Write the live Chat thinking level. Grok stores it in config.toml.
+    /// Write the live Chat thinking level. Grok stores it in config.toml;
+    /// Pi stores it in settings.json.
     pub fn set_live_chat_effort(&self, agent: AgentId, effort: &str) -> Result<()> {
         match agent {
             AgentId::Grok => {
                 let _guard = self.backups.acquire_live_write(agent)?;
                 crate::adapters::grok::set_grok_default_effort(effort)
+            }
+            AgentId::Pi => {
+                let _guard = self.backups.acquire_live_write(agent)?;
+                crate::adapters::pi::set_pi_default_thinking(effort)
             }
             _ => Err(error::AppError::Unsupported(
                 "思考等级请用当前登录的配置".into(),
