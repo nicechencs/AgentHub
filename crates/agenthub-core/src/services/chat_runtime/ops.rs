@@ -41,6 +41,21 @@ pub(crate) fn resolved_default_effort(option: &RuntimeModelOption) -> Option<Str
     option.efforts.first().cloned()
 }
 
+/// Idle options should fill a catalog default when the stored model is missing
+/// or is not in this login's list. Empty catalogs must not wipe a stored model.
+pub(crate) fn settings_need_catalog_default(
+    settings: &RuntimeTurnSettings,
+    catalog: &[RuntimeModelOption],
+) -> bool {
+    if catalog.is_empty() {
+        return false;
+    }
+    match trim_setting(&settings.model) {
+        None => true,
+        Some(id) => !catalog.iter().any(|item| item.id == id),
+    }
+}
+
 /// When the user has not picked a model, use the first catalog row instead of
 /// inheriting a Codex config.toml default that may not work with this login.
 pub(crate) fn default_turn_settings(catalog: &[RuntimeModelOption]) -> Option<RuntimeTurnSettings> {

@@ -50,10 +50,12 @@ export function useChatPageConnection(input: {
   hiddenIds: Set<AgentKey>;
   agentStatus: AgentStatus[];
   refreshAgents: (opts?: { force?: boolean }) => Promise<AgentStatus[]>;
+  /** Codex / Grok keep the model list in the session runtime, not the login picker. */
+  refreshRuntimeCatalog?: (opts?: { refresh?: boolean }) => Promise<void>;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
-  const { primaryAgent, active, hiddenIds, agentStatus, refreshAgents } = input;
+  const { primaryAgent, active, hiddenIds, agentStatus, refreshAgents, refreshRuntimeCatalog } = input;
   const ticketWallet = useTicketWallet();
   const [providers, setProviders] = useState<Provider[]>([]);
   const [remoteModels, setRemoteModels] = useState<string[]>([]);
@@ -278,6 +280,8 @@ export function useChatPageConnection(input: {
         loadLiveChatModel(primaryAgent),
         refreshAgents({ force: true }).catch(() => []),
       ]);
+      // After the live login is written: drop the previous account's model list.
+      await refreshRuntimeCatalog?.({ refresh: true });
       toast({
         title: wroteLocal ? switchWroteLiveLabel(t) : t('chat.connection.switched'),
         variant: 'success',

@@ -386,6 +386,7 @@ export function useChatPage() {
     hiddenIds,
     agentStatus,
     refreshAgents,
+    refreshRuntimeCatalog: runtimeOps.refresh,
   });
 
   // messages 与 providers 独立并发（不再串在 loadList 之后的瀑布里）

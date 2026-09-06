@@ -66,8 +66,11 @@ export function createTauriChatPort(): ChatPort {
     async runtimeSnapshot(conversationId, afterSequence) {
       return invoke<RuntimeSnapshot>('chat_runtime_snapshot', { conversationId, afterSequence });
     },
-    async runtimeOptions(conversationId) {
-      return invoke<RuntimeOptions>('chat_runtime_options', { conversationId });
+    async runtimeOptions(conversationId, opts) {
+      return invoke<RuntimeOptions>('chat_runtime_options', {
+        conversationId,
+        refresh: opts?.refresh === true,
+      });
     },
     async runtimeSetSettings(conversationId, settings) {
       return invoke<RuntimeTurnSettings>('chat_runtime_set_settings', { conversationId, settings });

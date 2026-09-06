@@ -148,6 +148,22 @@ impl ChatRuntime {
         self.store.delete_unstarted(conversation_id)
     }
 
+    /// Forget warmed model/skills lists so the next idle `options()` refetch
+    /// sees the login that is live now (Codex ChatGPT vs API, Grok slots).
+    pub fn invalidate_catalogs(&self) {
+        if let Ok(mut catalogs) = self.catalogs.lock() {
+            catalogs.clear();
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_catalog_cache_for_test(&self, conversation_id: &str) -> bool {
+        self.catalogs
+            .lock()
+            .map(|guard| guard.contains_key(conversation_id))
+            .unwrap_or(false)
+    }
+
     /// Switch an existing Grok print session onto continuous chat.
     /// Requires a stored native session id; does not invent a new Grok session.
     pub fn continue_legacy(&self, conversation_id: &str) -> Result<RuntimeSnapshot> {
@@ -172,26 +188,30 @@ impl ChatRuntime {
     }
 
     pub fn options(&self, conversation_id: &str) -> Result<RuntimeOptions> {
+        self.options_with(conversation_id, false)
+    }
+
+    /// Drop the warmed catalog for this conversation and fetch again.
+    /// Used after a live login change on an idle Codex / Grok chat.
+    pub fn refresh_options(&self, conversation_id: &str) -> Result<RuntimeOptions> {
+        self.options_with(conversation_id, true)
+    }
+
+    fn options_with(&self, conversation_id: &str, refresh: bool) -> Result<RuntimeOptions> {
         self.store.enable_if_new(conversation_id)?;
         let frozen = self
             .store
             .record(conversation_id)?
             .map(|record| ops::phase_freezes_settings(record.phase))
             .unwrap_or(false);
-        let cache = self.load_catalog(conversation_id);
+        let cache = self.load_catalog(conversation_id, refresh);
         let models = self.effective_models(&cache.models);
         let mut settings = self.store.turn_settings(conversation_id)?;
         // Idle only: quietly repair a stale unsupported effort so the UI menu
         // never keeps offering an incompatible value after a model switch.
         // Frozen turns keep the effective pair that started the turn.
         if !frozen {
-            if settings
-                .model
-                .as_deref()
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .is_none()
-            {
+            if ops::settings_need_catalog_default(&settings, &models) {
                 if let Some(defaults) = ops::default_turn_settings(&models) {
                     settings = self.store.set_turn_settings(conversation_id, &defaults)?;
                 }
@@ -229,7 +249,7 @@ impl ChatRuntime {
             }
         }
         let prior = self.store.turn_settings(conversation_id)?;
-        let cache = self.load_catalog(conversation_id);
+        let cache = self.load_catalog(conversation_id, false);
         let models = self.effective_models(&cache.models);
         let effective = ops::validate_turn_settings(&requested, &models, &prior)?;
         self.store.set_turn_settings(conversation_id, &effective)
@@ -268,16 +288,10 @@ impl ChatRuntime {
         self.store.enable_if_new(conversation_id)?;
         // Prefetch while still idle so mid-turn options() can serve cached lists
         // without spawning a second Codex process during a frozen phase.
-        let cache = self.load_catalog(conversation_id);
+        let cache = self.load_catalog(conversation_id, false);
         let models = self.effective_models(&cache.models);
         let mut settings = self.store.turn_settings(conversation_id)?;
-        if settings
-            .model
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .is_none()
-        {
+        if ops::settings_need_catalog_default(&settings, &models) {
             if let Some(defaults) = ops::default_turn_settings(&models) {
                 settings = self.store.set_turn_settings(conversation_id, &defaults)?;
             }
@@ -504,21 +518,25 @@ impl ChatRuntime {
         ops::apply_denied_efforts(models, &denied)
     }
 
-    fn load_catalog(&self, conversation_id: &str) -> CatalogCache {
-        if let Ok(guard) = self.catalogs.lock() {
-            if let Some(cache) = guard.get(conversation_id) {
-                return cache.clone();
-            }
-        }
+    fn load_catalog(&self, conversation_id: &str, refresh: bool) -> CatalogCache {
         let phase = self
             .store
             .record(conversation_id)
             .ok()
             .flatten()
             .map(|record| record.phase);
-        // Avoid competing with an in-flight turn's Codex process.
-        if !ops::may_fetch_catalog(phase) {
-            return CatalogCache::default();
+        let frozen = !ops::may_fetch_catalog(phase);
+        // Idle refresh after a login change must not reuse the previous account's list.
+        // Frozen turns still serve the warmed cache and never spawn.
+        if !refresh || frozen {
+            if let Ok(guard) = self.catalogs.lock() {
+                if let Some(cache) = guard.get(conversation_id) {
+                    return cache.clone();
+                }
+            }
+            if frozen {
+                return CatalogCache::default();
+            }
         }
         let fetched = self.fetch_catalog(conversation_id);
         if let Ok(mut guard) = self.catalogs.lock() {

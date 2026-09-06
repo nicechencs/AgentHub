@@ -83,7 +83,7 @@ export function useChatRuntimeOps(input: {
   const settingsRef = useRef<RuntimeTurnSettings>({});
   settingsRef.current = settings;
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (opts?: { refresh?: boolean }) => {
     if (!active || !runtimeEnabled) {
       catalogRef.current = { conversationId: null, models: [], extensions: [] };
       setModels([]);
@@ -94,9 +94,12 @@ export function useChatRuntimeOps(input: {
       setSteer(true);
       return;
     }
+    if (opts?.refresh) {
+      catalogRef.current = { conversationId: active.id, models: [], extensions: [] };
+    }
     setLoading(true);
     try {
-      const options = await runtimeOptions(active.id);
+      const options = await runtimeOptions(active.id, opts);
       const retained = retainRuntimeCatalog(catalogRef.current, options, active.id);
       const effectiveModels = applyDeniedEfforts(retained.models);
       catalogRef.current = {

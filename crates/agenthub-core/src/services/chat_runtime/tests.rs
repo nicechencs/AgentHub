@@ -1085,6 +1085,96 @@ fn frozen_options_stay_empty_when_catalog_never_warmed() {
 }
 
 #[test]
+fn invalidate_catalogs_drops_warmed_idle_cache() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "stale", false);
+    let run = Arc::new(RunService::new(AdapterRegistry::default()));
+    let runtime = Arc::new(ChatRuntime::new(db, run));
+    runtime.store.enable_if_new("stale").unwrap();
+    runtime.seed_catalog_cache_for_test(
+        "stale",
+        vec![super::types::RuntimeModelOption {
+            id: "gpt-old-login".into(),
+            efforts: vec!["low".into()],
+            default_effort: Some("low".into()),
+        }],
+        vec![],
+    );
+    assert!(runtime.has_catalog_cache_for_test("stale"));
+    runtime.invalidate_catalogs();
+    assert!(!runtime.has_catalog_cache_for_test("stale"));
+}
+
+#[test]
+fn refresh_options_skips_warmed_catalog_when_idle() {
+    let db = Database::open_in_memory().unwrap();
+    let now = "2026-01-01T00:00:00Z".to_string();
+    ChatRepo::new(db.clone())
+        .create_conversation(&Conversation {
+            id: "no-cwd".into(),
+            title: String::new(),
+            agent_ids: vec![AgentId::Codex],
+            cwd: None,
+            allow_dangerous: false,
+            created_at: now.clone(),
+            updated_at: now,
+            native_session_id: None,
+            sending: false,
+        })
+        .unwrap();
+    let run = Arc::new(RunService::new(AdapterRegistry::default()));
+    let runtime = Arc::new(ChatRuntime::new(db, run));
+    runtime.store.enable_if_new("no-cwd").unwrap();
+    runtime.seed_catalog_cache_for_test(
+        "no-cwd",
+        vec![super::types::RuntimeModelOption {
+            id: "gpt-old-login".into(),
+            efforts: vec!["low".into()],
+            default_effort: Some("low".into()),
+        }],
+        vec![],
+    );
+    assert_eq!(
+        runtime.options("no-cwd").unwrap().models[0].id,
+        "gpt-old-login"
+    );
+    let refreshed = runtime.refresh_options("no-cwd").unwrap();
+    assert!(refreshed.models.is_empty());
+}
+
+#[test]
+fn idle_options_replace_model_missing_from_new_login_catalog() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "switch-login", false);
+    let run = Arc::new(RunService::new(AdapterRegistry::default()));
+    let runtime = Arc::new(ChatRuntime::new(db, run));
+    runtime.store.enable_if_new("switch-login").unwrap();
+    runtime
+        .store
+        .set_turn_settings(
+            "switch-login",
+            &super::types::RuntimeTurnSettings {
+                model: Some("gpt-old-login".into()),
+                effort: Some("xhigh".into()),
+            },
+        )
+        .unwrap();
+    runtime.seed_catalog_cache_for_test(
+        "switch-login",
+        vec![super::types::RuntimeModelOption {
+            id: "gpt-new-login".into(),
+            efforts: vec!["low".into(), "high".into()],
+            default_effort: Some("high".into()),
+        }],
+        vec![],
+    );
+
+    let options = runtime.options("switch-login").unwrap();
+    assert_eq!(options.settings.model.as_deref(), Some("gpt-new-login"));
+    assert_eq!(options.settings.effort.as_deref(), Some("high"));
+}
+
+#[test]
 fn idle_options_fill_first_catalog_model_when_unset() {
     let db = Database::open_in_memory().unwrap();
     conversation(&db, "unset", false);

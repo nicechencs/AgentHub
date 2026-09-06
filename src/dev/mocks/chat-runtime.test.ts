@@ -57,6 +57,17 @@ describe('mock chat runtime', () => {
       extensions: [],
     });
   });
+
+  it('rebuilds an idle catalog when refresh is requested', async () => {
+    const chat = createMockChatPort();
+    const conversation = await chat.createConversation(['codex']);
+    const first = await chat.runtimeOptions(conversation.id);
+    expect(first.models.length).toBeGreaterThan(0);
+    await expect(chat.runtimeOptions(conversation.id, { refresh: true })).resolves.toMatchObject({
+      settingsFrozen: false,
+      conversationId: conversation.id,
+    });
+  });
 });
 
 

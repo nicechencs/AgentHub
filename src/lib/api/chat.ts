@@ -65,8 +65,11 @@ export async function chatCancel(conversationId: string): Promise<void> {
 export async function runtimeSnapshot(conversationId: string, afterSequence?: number): Promise<RuntimeSnapshot> {
   return getBackend().chat.runtimeSnapshot(conversationId, afterSequence);
 }
-export async function runtimeOptions(conversationId: string): Promise<RuntimeOptions> {
-  return getBackend().chat.runtimeOptions(conversationId);
+export async function runtimeOptions(
+  conversationId: string,
+  opts?: { refresh?: boolean },
+): Promise<RuntimeOptions> {
+  return getBackend().chat.runtimeOptions(conversationId, opts);
 }
 export async function runtimeSetSettings(conversationId: string, settings: RuntimeTurnSettings): Promise<RuntimeTurnSettings> {
   return getBackend().chat.runtimeSetSettings(conversationId, settings);

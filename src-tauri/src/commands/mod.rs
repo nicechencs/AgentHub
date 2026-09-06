@@ -237,3 +237,9 @@ where
     }
     result
 }
+
+/// Codex / Grok chat model lists are warmed per conversation. A live login
+/// change must drop that cache so the next options() fetch sees the new account.
+pub(crate) fn invalidate_runtime_catalogs(hub: &AgentHub) {
+    hub.chat().invalidate_runtime_catalogs();
+}

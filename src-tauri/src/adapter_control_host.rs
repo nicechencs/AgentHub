@@ -22,7 +22,7 @@ use crate::adapter_bridge_controller::{
     apply_local_bridge, local_bridge_status, remove_adapter_with_bridge_cleanup,
     set_local_bridge_auto_start, start_local_bridge, stop_local_bridge, unbind_local_bridge,
 };
-use crate::commands::{map_err_string, with_hub_blocking};
+use crate::commands::{invalidate_runtime_catalogs, map_err_string, with_hub_blocking};
 use crate::exit_coordinator::LifecycleShutdownBarrier;
 
 /// In-process desktop AdapterControl: TicketBindService + bridge saga.
@@ -77,6 +77,7 @@ impl AdapterControl for DesktopAdapterControl {
                     request,
                 )
                 .await?;
+                invalidate_runtime_catalogs(&self.hub);
                 Ok(ticket_binding_from_apply(&ticket_id, &result))
             }
             BindAction::Reshape(request) | BindAction::NativeSelf(request) => {
@@ -85,9 +86,12 @@ impl AdapterControl for DesktopAdapterControl {
                 let _target_guard = self.coordinator.lock_target(target_agent_id).await;
                 let hub = Arc::clone(&self.hub);
                 with_hub_blocking(hub, move |hub| {
-                    hub.ticket_bind()
+                    let binding = hub
+                        .ticket_bind()
                         .bind(&request)
-                        .map_err(|err| map_err_string("bind_ticket", err))
+                        .map_err(|err| map_err_string("bind_ticket", err))?;
+                    invalidate_runtime_catalogs(hub);
+                    Ok(binding)
                 })
                 .await
             }
@@ -109,7 +113,7 @@ impl AdapterControl for DesktopAdapterControl {
             agent_id: action.request.agent_id,
         };
         if let Some(profile_id) = action.stop_bridge_profile_id {
-            return unbind_local_bridge(
+            unbind_local_bridge(
                 Arc::clone(&self.hub),
                 Arc::clone(&self.host),
                 Arc::clone(&self.coordinator),
@@ -117,7 +121,9 @@ impl AdapterControl for DesktopAdapterControl {
                 profile_id,
                 request,
             )
-            .await;
+            .await?;
+            invalidate_runtime_catalogs(&self.hub);
+            return Ok(());
         }
         let _target_guard = match action.lock_target {
             Some(target) => Some(self.coordinator.lock_target(target).await),
@@ -127,7 +133,9 @@ impl AdapterControl for DesktopAdapterControl {
         with_hub_blocking(hub, move |hub| {
             hub.ticket_bind()
                 .unbind(&request)
-                .map_err(|err| map_err_string("unbind_ticket", err))
+                .map_err(|err| map_err_string("unbind_ticket", err))?;
+            invalidate_runtime_catalogs(hub);
+            Ok(())
         })
         .await
     }
