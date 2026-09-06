@@ -295,7 +295,8 @@ fn seed_usage_row(repo: &UsageRepo, agent: AgentId, hash: &str) {
         cache_write_tokens: 0,
         cost_usd: Some(0.01),
         session_id: Some("s1".into()),
-        ts: "2026-08-07T00:00:00.000Z".into(),
+        ts: (chrono::Utc::now() - chrono::Duration::hours(1))
+            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
         raw_hash: Some(hash.into()),
         fast: false,
     }])
