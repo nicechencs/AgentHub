@@ -176,6 +176,7 @@ export function useChatPage() {
 
   const navigate = useNavigate();
   const [searchFocusNonce, setSearchFocusNonce] = useState(0);
+  const [historyRevealNonce, setHistoryRevealNonce] = useState(0);
   const [commandIndex, setCommandIndex] = useState(0);
   const hasLatestReply = useMemo(
     () => messages.some((m) => m.role === 'agent' && m.content.trim()),
@@ -274,6 +275,7 @@ export function useChatPage() {
       if (action.id === 'open-history') {
         clearCommandDraft();
         setRailOpen(true);
+        setHistoryRevealNonce((n) => n + 1);
         return;
       }
       if (action.id === 'focus-history-search') {
@@ -608,6 +610,7 @@ export function useChatPage() {
     runChatAction,
     handleComposerKeyDown,
     searchFocusNonce,
+    historyRevealNonce,
     turnOutcome,
     submitRuntimeRequest: send.submitRuntimeRequest,
     steerRuntime: send.steerRuntime,

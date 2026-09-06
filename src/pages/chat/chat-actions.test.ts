@@ -26,6 +26,8 @@ describe('chat action command search', () => {
     expect(filterChatActions('/').length).toBe(CHAT_ACTIONS.length);
     expect(filterChatActions('/新建').some((item) => item.id === 'new-session')).toBe(true);
     expect(filterChatActions('/搜索').some((item) => item.id === 'focus-history-search')).toBe(true);
+    expect(filterChatActions('/搜索历史会话').some((item) => item.id === 'focus-history-search')).toBe(true);
+    expect(filterChatActions('/打开历史会话').some((item) => item.id === 'open-history')).toBe(true);
     expect(filterChatActions('/copy').some((item) => item.id === 'copy-latest-reply')).toBe(true);
     expect(filterChatActions('/报错').some((item) => item.id === 'sample-explain-error')).toBe(true);
     expect(normalizeActionQuery('  新建  ')).toBe('新建');

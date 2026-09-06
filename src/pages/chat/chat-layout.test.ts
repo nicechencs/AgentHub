@@ -72,6 +72,21 @@ describe('chat layout wiring', () => {
     expect(composer).not.toContain('mt-2 shrink-0 text-center text-meta');
   });
 
+  it('keeps history actions visible and focusable for runtime composers', () => {
+    const actions = source('ChatActionMenu.tsx');
+    const rail = source('ChatSessionRail.tsx');
+    const page = source('index.tsx');
+    const hook = source('use-chat-page.ts');
+    expect(actions).toContain('createPortal');
+    expect(actions).toContain('onCloseAutoFocus');
+    expect(rail).toContain('historyRevealNonce');
+    expect(rail).toContain('window.setTimeout');
+    expect(rail).toContain('data-session-id');
+    expect(page).toContain('historyRevealNonce={page.historyRevealNonce}');
+    expect(hook).toContain("action.id === 'open-history'");
+    expect(hook).toContain('setHistoryRevealNonce');
+  });
+
   it('uses shared Button for chrome icons and composer chips', () => {
     const header = source('ChatSessionHeader.tsx');
     const rail = source('ChatSessionRail.tsx');

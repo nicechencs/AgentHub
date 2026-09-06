@@ -28,13 +28,13 @@ export const CHAT_ACTIONS: ChatActionDef[] = [
     id: 'open-history',
     kind: 'local',
     labelKey: 'openHistory',
-    keywords: ['history', '历史', '记录', '会话列表', 'rail'],
+    keywords: ['history', '历史', '记录', '会话列表', 'rail', '打开历史', '打开历史会话', 'open history'],
   },
   {
     id: 'focus-history-search',
     kind: 'local',
     labelKey: 'focusHistorySearch',
-    keywords: ['search', '搜索', '查找', '历史搜索', 'find history'],
+    keywords: ['search', '搜索', '查找', '历史搜索', 'find history', '搜索历史会话', '历史会话'],
   },
   {
     id: 'copy-latest-reply',

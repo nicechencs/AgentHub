@@ -82,6 +82,7 @@ export default function ChatPage() {
         onCancelDelete={() => page.setDeleteConfirmId(null)}
         onConfirmDelete={() => void page.confirmDelete()}
         searchFocusNonce={page.searchFocusNonce}
+        historyRevealNonce={page.historyRevealNonce}
       />
 
       <section className="relative flex min-w-0 flex-1 flex-col bg-canvas">
