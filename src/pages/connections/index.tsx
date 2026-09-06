@@ -64,6 +64,7 @@ import {
 import { useOAuthLoginAgents } from './use-oauth-login-agents';
 import { useConnectionImportProbe } from './use-connection-import-probe';
 import { useConnectionPageActions } from './use-connection-page-actions';
+import { usePiDefaultModel } from './use-pi-default-model';
 import {
   deleteConnectionDialogDescription,
   liveAuthCoexistenceNotice,
@@ -633,6 +634,10 @@ export default function ConnectionsPage() {
   const detailTicket = inspectTarget?.kind === 'detail'
     ? visibleWallet?.tickets.find((ticket) => ticket.id === inspectTarget.ticketId) ?? null
     : null;
+  const piDefault = usePiDefaultModel({
+    ticket: detailTicket,
+    isCurrent: detailTicket ? extrasForTicket(detailTicket)?.isCurrent === true : false,
+  });
   const probedQuotaTicketIds = useRef(new Set<string>());
   useEffect(() => {
     if (!detailTicket) return;
@@ -718,6 +723,8 @@ export default function ConnectionsPage() {
         onEdit={ticketDetailEditLabel(extrasForTicket(detailTicket), t)
           ? () => handleEditTicket(detailTicket)
           : undefined}
+        piDefaultModel={piDefault.view}
+        onSwitchPiDefaultModel={(model) => void piDefault.switchModel(model)}
         onOpenChange={(next) => { if (!next) inspect.close(); }}
       />
     ) : null;
@@ -891,7 +898,12 @@ export default function ConnectionsPage() {
             loading={walletLoading}
             highlightAgentId={highlightAgentId}
             agentFilterId={filterAgent === 'all' ? null : filterAgent}
-            onSwitchTicket={handleSwitchTicket}
+            onSwitchTicket={(ticket) => {
+              void (async () => {
+                await handleSwitchTicket(ticket);
+                if (ticket.agentId === 'pi') await piDefault.reload();
+              })();
+            }}
             onRemoveFromCatalog={(ticket) => void handleRemoveFromCatalog(ticket)}
             switchingTicketId={switchingTicketId}
             extrasForTicket={extrasForTicket}

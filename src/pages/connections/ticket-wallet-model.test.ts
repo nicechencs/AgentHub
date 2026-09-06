@@ -34,6 +34,7 @@ import {
   ticketAuthChip,
   ticketCardTitle,
   ticketSwitchChip,
+  piDefaultModelView,
   showsCatalogUnapply,
   showsNativeSwitch,
   isUnrecognizedTicket,
@@ -887,6 +888,19 @@ describe('ticket detail fields', () => {
       agentName: 'Pi',
     })).toEqual({ kind: 'in-use', label: '默认' });
     expect(showsCatalogUnapply('catalogAppend', true)).toBe(true);
+    expect(piDefaultModelView({ agentId: 'kimi', isCurrent: true })).toEqual({ kind: 'hidden' });
+    expect(piDefaultModelView({ agentId: 'pi', isCurrent: false })).toEqual({ kind: 'need-default' });
+    expect(piDefaultModelView({
+      agentId: 'pi',
+      isCurrent: true,
+      model: 'grok-4.6',
+      models: ['grok-4.5', 'grok-4.6'],
+    })).toEqual({
+      kind: 'picker',
+      model: 'grok-4.6',
+      models: ['grok-4.5', 'grok-4.6'],
+      switching: false,
+    });
     expect(showsCatalogUnapply('namedSlots', true)).toBe(true);
     expect(showsCatalogUnapply('catalogAppend', false)).toBe(false);
     expect(showsCatalogUnapply('namedSlots', false)).toBe(false);
