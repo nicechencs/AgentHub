@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import { AGENT_IDS } from '@/config/agents';
@@ -20,6 +20,17 @@ import { useChatPageChrome } from './use-chat-page-chrome';
 import { useChatPageConnection } from './use-chat-page-connection';
 import { useChatPageSend } from './use-chat-page-send';
 import { useChatPageSessions } from './use-chat-page-sessions';
+import { useChatRuntimeOps } from './use-chat-runtime-ops';
+import { useNavigate } from 'react-router-dom';
+import {
+  chatActionDisabledReason,
+  clampActionIndex,
+  filterChatActions,
+  isCommandSearchMode,
+  type ChatActionDef,
+} from './chat-actions';
+import { lastTurnOutcome } from './chat-turn-outcome';
+import { bindRuntimeSnapshotToAgent, isRuntimeSessionLocked } from './chat-runtime-model';
 
 export {
   conversationListState,
@@ -56,7 +67,7 @@ export function useChatPage() {
   const activeGenerationRef = useRef(0);
   const generationActiveIdRef = useRef<string | null>(null);
   const sendRef = useRef<{
-    adoptInflight: (id: string | null) => void;
+    adoptInflight: (ids?: string[] | string | null) => void;
     cancelIfSending: (id: string) => Promise<void>;
   }>({
     adoptInflight: () => {},
@@ -65,6 +76,7 @@ export function useChatPage() {
 
   const sessions = useChatPageSessions({
     setMessages,
+    draft,
     setDraft,
     deleteConfirmId,
     setDeleteConfirmId,
@@ -122,6 +134,8 @@ export function useChatPage() {
   }, []);
 
   const turns = useMemo(() => groupByTurn(messages), [messages]);
+  const startExtrasRef = useRef<{ images?: { path: string }[]; skills?: { name: string; path: string }[] }>({});
+  const runtimeOpsClearRef = useRef<() => void>(() => {});
 
   const send = useChatPageSend({
     active,
@@ -140,12 +154,217 @@ export function useChatPage() {
     draft,
     setDraft,
     turns,
+    getStartExtras: () => startExtrasRef.current,
+    clearStartExtras: () => runtimeOpsClearRef.current(),
   });
   sendRef.current = {
     adoptInflight: send.adoptInflight,
     cancelIfSending: send.cancelIfSending,
   };
   const sending = send.sending;
+  const activeRuntime = bindRuntimeSnapshotToAgent(send.runtime, {
+    agentId: active?.agentIds[0],
+    conversationId: active?.id,
+  });
+  const runtimeOps = useChatRuntimeOps({
+    active,
+    runtimeEnabled: Boolean(activeRuntime?.enabled),
+    turnActive: send.sendingHere,
+  });
+  startExtrasRef.current = runtimeOps.startExtras;
+  runtimeOpsClearRef.current = runtimeOps.clearAttachments;
+
+  const navigate = useNavigate();
+  const [searchFocusNonce, setSearchFocusNonce] = useState(0);
+  const [historyRevealNonce, setHistoryRevealNonce] = useState(0);
+  const [commandIndex, setCommandIndex] = useState(0);
+  const hasLatestReply = useMemo(
+    () => messages.some((m) => m.role === 'agent' && m.content.trim()),
+    [messages],
+  );
+  const actionContext = useMemo(
+    () => ({
+      hasLatestReply,
+      newChatAllowed: !(agentsReady && !agentStatus.some((a) => isChatAgentSelectable(a))),
+    }),
+    [agentStatus, agentsReady, hasLatestReply],
+  );
+
+  const runtimeCommandActions = useMemo<ChatActionDef[]>(() => {
+    if (!send.runtime?.enabled) return [];
+    const actions: ChatActionDef[] = [];
+    if (!runtimeOps.frozen) {
+      for (const model of runtimeOps.models) {
+        actions.push({
+          id: `runtime-model:${model.id}`,
+          kind: 'local',
+          label: `${t('chat.composer.switchModel')}：${model.id}`,
+          description: model.id === runtimeOps.settings.model ? t('chat.runtimeOps.currentModel') : undefined,
+          keywords: ['model', '模型', '换模型', model.id],
+        });
+      }
+      if (runtimeOps.settings.model) {
+        for (const effort of runtimeOps.currentEfforts) {
+          actions.push({
+            id: `runtime-effort:${effort}`,
+            kind: 'local',
+            label: `${t('chat.runtimeOps.effort')}：${effort}`,
+            description: effort === runtimeOps.settings.effort ? t('chat.runtimeOps.currentSetting') : undefined,
+            keywords: ['think', 'thinking', 'effort', '思考', '思考强度', effort],
+          });
+        }
+      }
+    }
+    for (const item of runtimeOps.extensions) {
+      if (item.kind !== 'skill' || !item.callable) continue;
+      actions.push({
+        id: `runtime-skill:${item.id}`,
+        kind: 'local',
+        label: `${runtimeOps.selectedSkillIds.includes(item.id) ? t('chat.runtimeOps.cancelUseForTurn') : t('chat.runtimeOps.useForTurn')}：${item.name}`,
+        description: t('chat.runtimeOps.skill'),
+        keywords: ['skill', '技能', '用于本次', item.name, item.id],
+      });
+    }
+    return actions;
+  }, [
+    runtimeOps.currentEfforts,
+    runtimeOps.extensions,
+    runtimeOps.frozen,
+    runtimeOps.models,
+    runtimeOps.selectedSkillIds,
+    runtimeOps.settings.effort,
+    runtimeOps.settings.model,
+    send.runtime?.enabled,
+    t,
+  ]);
+
+  const runChatAction = useCallback(
+    (action: ChatActionDef) => {
+      const reason = chatActionDisabledReason(action, actionContext);
+      if (reason) {
+        toast({ title: t(`chat.actions.disabled.${reason}` as never), variant: 'danger' });
+        return;
+      }
+      const clearCommandDraft = () => {
+        if (isCommandSearchMode(draft)) setDraft('');
+      };
+      if (action.id.startsWith('runtime-model:')) {
+        clearCommandDraft();
+        void runtimeOps.switchModel(action.id.slice('runtime-model:'.length));
+        return;
+      }
+      if (action.id.startsWith('runtime-effort:')) {
+        clearCommandDraft();
+        void runtimeOps.switchEffort(action.id.slice('runtime-effort:'.length));
+        return;
+      }
+      if (action.id.startsWith('runtime-skill:')) {
+        clearCommandDraft();
+        runtimeOps.toggleSkill(action.id.slice('runtime-skill:'.length));
+        return;
+      }
+      if (action.kind === 'draft' && action.draftText) {
+        setDraft(action.draftText);
+        return;
+      }
+      if (action.id === 'new-session') {
+        clearCommandDraft();
+        void handleNewChat();
+        return;
+      }
+      if (action.id === 'open-history') {
+        clearCommandDraft();
+        setRailOpen(true);
+        setHistoryRevealNonce((n) => n + 1);
+        return;
+      }
+      if (action.id === 'focus-history-search') {
+        setRailOpen(true);
+        setSearchFocusNonce((n) => n + 1);
+        clearCommandDraft();
+        return;
+      }
+      if (action.id === 'open-settings') {
+        clearCommandDraft();
+        setSettingsOpen(true);
+        return;
+      }
+      if (action.id === 'open-agents') {
+        clearCommandDraft();
+        navigate('/agents');
+        return;
+      }
+      if (action.id === 'open-connections') {
+        clearCommandDraft();
+        navigate('/connections');
+        return;
+      }
+      if (action.id === 'copy-latest-reply') {
+        const latest = [...messages].reverse().find((m) => m.role === 'agent' && m.content.trim());
+        if (!latest) {
+          toast({ title: t('chat.actions.disabled.noReply'), variant: 'danger' });
+          return;
+        }
+        void navigator.clipboard.writeText(latest.content).then(
+          () => toast({ title: t('chat.bubble.copied') }),
+          () => toast({ title: t('chat.bubble.copyFailed'), variant: 'danger' }),
+        );
+        clearCommandDraft();
+      }
+    },
+    [actionContext, draft, handleNewChat, messages, navigate, runtimeOps, setRailOpen, setSettingsOpen, t, toast],
+  );
+  const commandSearchOpen = isCommandSearchMode(draft);
+  const commandItems = useMemo(
+    () => filterChatActions(draft, runtimeCommandActions),
+    [draft, runtimeCommandActions],
+  );
+  useEffect(() => {
+    setCommandIndex(0);
+  }, [draft, commandItems.length]);
+
+  const handleComposerKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (!commandSearchOpen || commandItems.length === 0) return false;
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setCommandIndex((index) => clampActionIndex(index + 1, commandItems.length));
+        return true;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setCommandIndex((index) => clampActionIndex(index - 1, commandItems.length));
+        return true;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setDraft('');
+        return true;
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const action = commandItems[clampActionIndex(commandIndex, commandItems.length)];
+        if (action) runChatAction(action);
+        return true;
+      }
+      return false;
+    },
+    [commandIndex, commandItems, commandSearchOpen, runChatAction],
+  );
+
+  const turnOutcome = useMemo(
+    () => lastTurnOutcome(turns, sending),
+    [sending, turns],
+  );
+  const notedThinkingFailureRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (turnOutcome?.kind !== 'failed') return;
+    const key = `${activeId ?? ''}\n${turnOutcome.prompt}\n${turnOutcome.errorText ?? ''}`;
+    if (notedThinkingFailureRef.current === key) return;
+    notedThinkingFailureRef.current = key;
+    void runtimeOps.noteThinkingFailure(turnOutcome.errorText);
+  }, [activeId, runtimeOps, turnOutcome]);
 
   const pickerRows = useMemo(
     () =>
@@ -167,6 +386,7 @@ export function useChatPage() {
     hiddenIds,
     agentStatus,
     refreshAgents,
+    refreshRuntimeCatalog: runtimeOps.refresh,
   });
 
   // messages 与 providers 独立并发（不再串在 loadList 之后的瀑布里）
@@ -236,7 +456,7 @@ export function useChatPage() {
   useEffect(() => {
     if (!stickToBottomRef.current) return;
     bottomRef.current?.scrollIntoView({ block: 'nearest' });
-  }, [messages, sending]);
+  }, [messages, sending, send.processMap]);
 
   const railGroups = useMemo(() => {
     const filtered = filterConversations(conversations, railQuery);
@@ -261,7 +481,7 @@ export function useChatPage() {
   }
 
   async function pickWorkingDirectory() {
-    if (!active) return;
+    if (!active || send.sendingHere) return;
     try {
       const picked = await pickDirectory({
         title: t('chat.settings.pickDirTitle'),
@@ -293,7 +513,7 @@ export function useChatPage() {
   }
 
   async function selectConversationAgentId(id: AgentKey) {
-    if (!active || sending) return;
+    if (!active || send.sendingHere) return;
     const row = pickerRows.find((r) => r.id === id);
     if (!row?.selectable) return;
     const next = selectConversationAgent({
@@ -322,7 +542,8 @@ export function useChatPage() {
     sending: send.sending,
     sendingHere: send.sendingHere,
     cancelingHere: send.cancelingHere,
-    sendingConversationId: send.sendingConversationId,
+    sendingConversationIds: send.sendingConversationIds,
+    connectionLocked: Boolean(primaryAgent && send.busyAgentIds.has(primaryAgent)),
     draft,
     setDraft,
     railOpen,
@@ -366,12 +587,37 @@ export function useChatPage() {
     selectConversationAgentId,
     handleSwitchConnection: connection.handleSwitchConnection,
     handleSwitchModel: connection.handleSwitchModel,
+    handleSwitchEffort: connection.handleSwitchEffort,
     modelOptions: connection.modelOptions,
     currentModel: connection.currentModel,
+    effortOptions: connection.effortOptions,
+    currentEffort: connection.currentEffort,
     switchingModel: connection.switchingModel,
     handleSend: send.handleSend,
     retryLast: send.retryLast,
     handleCancel: send.handleCancel,
+    queuedFollowUp: send.queuedFollowUp,
+    clearQueuedFollowUp: send.clearQueuedFollowUp,
+    continueLegacyGrok: send.continueLegacyGrok,
+    runtime: activeRuntime,
+    runtimeLocked: isRuntimeSessionLocked(activeRuntime, {
+      conversationId: active?.id,
+      nativeSessionId: active?.nativeSessionId,
+      hasMessages: messages.length > 0,
+    }),
+    runtimeOps,
+    runtimeCommandActions,
+    commandSearchOpen,
+    commandIndex,
+    setCommandIndex,
+    actionContext,
+    runChatAction,
+    handleComposerKeyDown,
+    searchFocusNonce,
+    historyRevealNonce,
+    turnOutcome,
+    submitRuntimeRequest: send.submitRuntimeRequest,
+    steerRuntime: send.steerRuntime,
     cancelSending: send.handleCancel,
     retryLoad,
     focusConversation,

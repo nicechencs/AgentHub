@@ -52,6 +52,20 @@ fn grok_thought_and_text() {
 }
 
 #[test]
+fn grok_nested_data_text_streams() {
+    let mut s = StreamSession::new(AgentId::Grok, ProcessMode::Auto);
+    let out = s.feed(
+        OutputStream::Stdout,
+        "{\"type\":\"text\",\"data\":{\"content\":[{\"text\":\"hi\"}]}}\n",
+    );
+    assert!(out.iter().any(|o| matches!(
+        o,
+        StreamOutput::Chunk { text, .. } if text == "hi"
+    )));
+    assert_eq!(s.assistant_text(), "hi");
+}
+
+#[test]
 fn grok_recognized_noop_is_not_raw_fallback() {
     let mut s = StreamSession::new(AgentId::Grok, ProcessMode::Auto);
     let out = s.feed(
@@ -340,7 +354,7 @@ fn structured_requested_without_parser_falls_back_to_text() {
 }
 
 #[test]
-fn captures_claude_and_codex_session_ids() {
+fn captures_claude_codex_and_grok_session_ids() {
     let mut claude = StreamSession::new(AgentId::Claude, ProcessMode::Auto);
     claude.feed(
         OutputStream::Stdout,
@@ -354,6 +368,13 @@ fn captures_claude_and_codex_session_ids() {
         "{\"type\":\"thread.started\",\"thread_id\":\"sess-codex\"}\n",
     );
     assert_eq!(codex.native_session_id(), Some("sess-codex"));
+
+    let mut grok = StreamSession::new(AgentId::Grok, ProcessMode::Auto);
+    grok.feed(
+        OutputStream::Stdout,
+        "{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"agent-sess-1\",\"update\":{\"sessionUpdate\":\"agent_message_chunk\",\"content\":{\"type\":\"text\",\"text\":\"hi\"}}}}\n",
+    );
+    assert_eq!(grok.native_session_id(), Some("agent-sess-1"));
 }
 
 #[test]
@@ -364,4 +385,17 @@ fn extract_native_session_id_rejects_noise() {
         extract_native_session_id("claude", r#"{"session_id":"  abc  "}"#).as_deref(),
         Some("abc")
     );
+    assert_eq!(
+        extract_native_session_id(
+            "grok",
+            r#"{"jsonrpc":"2.0","id":1,"result":{"sessionId":"sess-new"}}"#
+        )
+        .as_deref(),
+        Some("sess-new")
+    );
+    assert!(extract_native_session_id(
+        "grok",
+        r#"{"jsonrpc":"2.0","method":"session/update","params":{"update":{"toolCallId":"t1"}}}"#
+    )
+    .is_none());
 }

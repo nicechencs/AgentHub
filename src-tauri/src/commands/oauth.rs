@@ -20,7 +20,7 @@ pub async fn oauth_list_options(
     Ok(oauth::list_oauth_options(agent))
 }
 
-/// Invoke: `oauth_start`
+/// Invoke: `oauth_start` — omit `open_browser` to leave the URL for the wait page.
 #[tauri::command]
 pub async fn oauth_start(
     state: State<'_, AppState>,
@@ -29,7 +29,7 @@ pub async fn oauth_start(
     provider_key: Option<String>,
 ) -> Result<StartOAuthResult, String> {
     let hub = state.hub_arc()?;
-    let open = open_browser.unwrap_or(true);
+    let open = open_browser.unwrap_or(false);
     with_hub_blocking(hub, move |_hub| {
         let agent = parse_agent(&agent_id)?;
         oauth::start_oauth(agent, open, provider_key.as_deref())

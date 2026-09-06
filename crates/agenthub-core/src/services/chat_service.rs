@@ -19,6 +19,8 @@ use crate::services::RunService;
 use crate::storage::{ChatRepo, Database};
 use crate::utils::process::CancelToken;
 
+use super::chat_runtime::ChatRuntime;
+
 // Re-export so existing `chat_service::CONTEXT_CHAR_LIMIT` callers keep working.
 pub use crate::catalog::limits::CONTEXT_CHAR_LIMIT;
 
@@ -29,16 +31,31 @@ fn elapsed_ms(started: Instant) -> u64 {
 pub struct ChatService {
     repo: ChatRepo,
     run: Arc<RunService>,
+    runtime: Arc<ChatRuntime>,
     active: Mutex<HashMap<String, CancelToken>>,
 }
 
 impl ChatService {
     pub fn new(db: Database, run: Arc<RunService>) -> Self {
+        let runtime = Arc::new(ChatRuntime::new(db.clone(), Arc::clone(&run)));
         Self {
             repo: ChatRepo::new(db),
             run,
+            runtime,
             active: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Durable Codex app-server runtime.  Legacy `send` remains owned by this
+    /// service and is intentionally independent of the runtime path.
+    pub fn runtime(&self) -> &Arc<ChatRuntime> {
+        &self.runtime
+    }
+
+    /// Drop warmed model/skills catalogs after a live login change.
+    /// Codex and Grok both serve `options()` from this cache.
+    pub fn invalidate_runtime_catalogs(&self) {
+        self.runtime.invalidate_catalogs();
     }
 
     pub fn list_conversations(&self) -> Result<Vec<Conversation>> {
@@ -113,11 +130,32 @@ impl ChatService {
         allow_dangerous: Option<bool>,
     ) -> Result<Conversation> {
         let mut conv = self.get_conversation(id)?;
+        if agent_ids.is_some() || cwd.is_some() {
+            let started = conv
+                .native_session_id
+                .as_deref()
+                .is_some_and(|sid| !sid.trim().is_empty())
+                || self.repo.has_messages(id)?;
+            if started
+                || self
+                    .runtime
+                    .session_locked(id, conv.native_session_id.as_deref())?
+            {
+                return Err(AppError::message(
+                    "invalid_arg",
+                    "持续聊天会话不能更换 Agent 或工作目录，请新建会话",
+                ));
+            }
+        }
         if let Some(t) = title {
             conv.title = t;
         }
+        let mut leaving_runtime = false;
         if let Some(agents) = agent_ids {
             let next = require_single_agent(agents)?;
+            leaving_runtime = crate::services::chat_runtime::is_runtime_chat_agent(
+                conv.agent_ids.first().copied(),
+            ) && next.first() != conv.agent_ids.first();
             if next != conv.agent_ids {
                 conv.native_session_id = None;
             }
@@ -135,6 +173,9 @@ impl ChatService {
         if let Some(d) = allow_dangerous {
             conv.allow_dangerous = d;
         }
+        if leaving_runtime {
+            self.runtime.abandon_unstarted(id)?;
+        }
         conv.updated_at = Utc::now().to_rfc3339();
         self.repo.update_conversation(&conv)?;
         Ok(conv)
@@ -146,6 +187,7 @@ impl ChatService {
         // cleared by the send path (or remove here if already gone).
         let result = (|| {
             let _ = self.cancel(id);
+            self.runtime.shutdown(id);
             if !self.repo.delete_conversation(id)? {
                 return Err(AppError::NotFound(format!("conversation not found: {id}")));
             }
@@ -280,6 +322,11 @@ impl ChatService {
         if user_input.is_empty() {
             return Err(AppError::InvalidArg("prompt must not be empty".into()));
         }
+        if self.runtime.is_enabled(conversation_id)? {
+            return Err(AppError::InvalidArg(
+                "此会话使用持续聊天，请通过持续聊天入口发送".into(),
+            ));
+        }
 
         let mut conv = self.get_conversation(conversation_id)?;
         if let Some(ref c) = conv.cwd {
@@ -412,6 +459,11 @@ impl ChatService {
                 jobs.push((agent, prompt));
             }
 
+            let grok_prefs = agents
+                .first()
+                .copied()
+                .filter(|agent| *agent == AgentId::Grok)
+                .map(|_| crate::adapters::grok::grok_send_prefs());
             let opts = RunOptions {
                 mode: RunMode::Parallel,
                 timeout: DEFAULT_RUN_TIMEOUT,
@@ -423,6 +475,8 @@ impl ChatService {
                 // Claude/Codex → stream-json / --json; others remain text.
                 process_mode: crate::models::ProcessMode::Auto,
                 native_session_id: resume_id.clone(),
+                model: grok_prefs.as_ref().and_then(|(model, _)| model.clone()),
+                effort: grok_prefs.as_ref().and_then(|(_, effort)| effort.clone()),
             };
             let max_out = opts.max_output_bytes;
             tracing::debug!(

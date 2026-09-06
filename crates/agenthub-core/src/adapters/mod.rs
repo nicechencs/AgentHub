@@ -15,7 +15,7 @@ mod codex;
 mod codex_copies;
 pub(crate) mod cursor;
 pub(crate) mod dsh;
-mod grok;
+pub(crate) mod grok;
 mod kimi;
 pub(crate) mod pi;
 pub mod pi_auth;

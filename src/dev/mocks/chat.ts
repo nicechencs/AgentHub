@@ -1,4 +1,5 @@
 import type { ChatPort } from '@/lib/backend/contracts';
+import type { RuntimeOptions, RuntimeReply, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings } from '@/lib/backend/contracts/chat-runtime';
 import { delay } from '@/dev/mocks/delay';
 import type {
   AgentKey,
@@ -13,6 +14,10 @@ const mockConversations: Conversation[] = [];
 const mockMessages: Record<string, ChatMessage[]> = {};
 const mockCancel = new Set<string>();
 const mockInflight = new Set<string>();
+const runtimeSnapshots = new Map<string, RuntimeSnapshot>();
+const runtimeSettings = new Map<string, RuntimeTurnSettings>();
+const runtimeDeniedEfforts = new Map<string, Set<string>>();
+const runtimeOptionsCache = new Map<string, RuntimeOptions>();
 
 function nowIso() {
   return new Date().toISOString();
@@ -37,12 +42,64 @@ function mockTitle(prompt: string) {
   return t.length <= 30 ? t : `${t.slice(0, 29)}…`;
 }
 
+
+function applyMockDeniedEfforts<T extends { id: string; efforts: string[]; defaultEffort?: string | null }>(
+  models: T[],
+): T[] {
+  return models.map((option) => {
+    const blocked = runtimeDeniedEfforts.get(option.id);
+    if (!blocked || blocked.size === 0) return option;
+    const efforts = option.efforts.filter((item) => !blocked.has(item));
+    const fallback = option.defaultEffort?.trim();
+    const defaultEffort =
+      fallback && efforts.includes(fallback) ? fallback : efforts[0] ?? null;
+    return { ...option, efforts, defaultEffort };
+  });
+}
+
+function learnMockThinkingUnsupported(
+  conversationId: string,
+  errorText: string,
+  explicitSettings?: RuntimeTurnSettings,
+) {
+  const hay = errorText.toLowerCase();
+  if (
+    !(
+      hay.includes('reasoningeffort')
+      || hay.includes('reasoning_effort')
+      || hay.includes('does not support parameter')
+      || hay.includes('不支持思考强度')
+      || hay.includes('不支持当前思考设置')
+    )
+  ) {
+    return;
+  }
+  const settings = explicitSettings ?? runtimeSettings.get(conversationId) ?? {};
+  const model = settings.model?.trim();
+  const effort = settings.effort?.trim();
+  if (!model || !effort) return;
+  const set = runtimeDeniedEfforts.get(model) ?? new Set<string>();
+  set.add(effort);
+  runtimeDeniedEfforts.set(model, set);
+  const cached = runtimeOptionsCache.get(conversationId);
+  if (cached) {
+    runtimeOptionsCache.set(conversationId, {
+      ...cached,
+      models: applyMockDeniedEfforts(cached.models),
+    });
+  }
+}
+
 export function resetChatMock() {
   mockSeq = 1;
   mockConversations.length = 0;
   for (const k of Object.keys(mockMessages)) delete mockMessages[k];
   mockCancel.clear();
   mockInflight.clear();
+  runtimeSnapshots.clear();
+  runtimeSettings.clear();
+  runtimeOptionsCache.clear();
+  runtimeDeniedEfforts.clear();
 }
 
 export function createMockChatPort(): ChatPort {
@@ -264,12 +321,251 @@ export function createMockChatPort(): ChatPort {
       mockCancel.add(conversationId);
     },
 
+    async runtimeSnapshot(conversationId, afterSequence) {
+      const conv = mockConversations.find((item) => item.id === conversationId);
+      if (!conv) throw new Error(`conversation not found: ${conversationId}`);
+      const current = runtimeSnapshots.get(conversationId) ?? {
+        conversationId,
+        enabled: conv.agentIds[0] === 'codex' && (mockMessages[conversationId] ?? []).length === 0,
+        runId: null,
+        phase: 'idle' as const,
+        lastSequence: 0,
+        events: [],
+        pendingRequests: [],
+        gap: false,
+        currentMessage: null,
+      };
+      return { ...current, events: afterSequence == null ? current.events : current.events.filter((item) => item.sequence > afterSequence) };
+    },
+
+    async runtimeOptions(conversationId, opts) {
+      const snapshot = await this.runtimeSnapshot(conversationId);
+      if (!snapshot.enabled) throw new Error('runtime is unavailable for this conversation');
+      const frozen = ['starting', 'running', 'waiting', 'cancelling'].includes(snapshot.phase);
+      if (opts?.refresh && !frozen) runtimeOptionsCache.delete(conversationId);
+      const cached = runtimeOptionsCache.get(conversationId);
+      if (cached) {
+        const models = applyMockDeniedEfforts(cached.models);
+        let settings = runtimeSettings.get(conversationId) ?? cached.settings;
+        if (!frozen && models.length > 0 && settings.model) {
+          const modelOption = models.find((item) => item.id === settings.model);
+          const effort = settings.effort?.trim() || undefined;
+          if (
+            modelOption &&
+            effort &&
+            (modelOption.efforts.length === 0 || !modelOption.efforts.includes(effort))
+          ) {
+            const defaultEffort =
+              modelOption.defaultEffort && modelOption.efforts.includes(modelOption.defaultEffort)
+                ? modelOption.defaultEffort
+                : modelOption.efforts[0] ?? null;
+            settings = { model: settings.model, effort: defaultEffort };
+            runtimeSettings.set(conversationId, settings);
+          }
+        }
+        return {
+          ...cached,
+          models,
+          settings,
+          settingsFrozen: frozen,
+        };
+      }
+      // Match core: never invent a catalog mid-turn when nothing was prefetched.
+      if (frozen) {
+        return {
+          conversationId,
+          settings: runtimeSettings.get(conversationId) ?? {},
+          settingsFrozen: true,
+          models: [],
+          extensions: [],
+          modelsFromCodex: false,
+        };
+      }
+      const options: RuntimeOptions = {
+        conversationId,
+        settings: runtimeSettings.get(conversationId) ?? {},
+        settingsFrozen: false,
+        models: [
+          { id: 'gpt-mock', efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' },
+          // Live Codex 0.150+ over-reports medium/xhigh for spark; learn-from-reject filters later.
+          { id: 'gpt-5.3-codex-spark', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high' },
+        ],
+        extensions: [
+          {
+            id: '/mock/skills/demo/SKILL.md',
+            name: 'demo',
+            kind: 'skill',
+            installed: true,
+            enabled: true,
+            loaded: false,
+            callable: true,
+            path: '/mock/skills/demo/SKILL.md',
+          },
+        ],
+        modelsFromCodex: false,
+      };
+      options.models = applyMockDeniedEfforts(options.models);
+      runtimeOptionsCache.set(conversationId, options);
+      return options;
+    },
+    async runtimeSetSettings(conversationId, settings) {
+      const snapshot = await this.runtimeSnapshot(conversationId);
+      if (!snapshot.enabled) throw new Error('runtime is unavailable for this conversation');
+      if (['starting', 'running', 'waiting', 'cancelling'].includes(snapshot.phase)) {
+        throw new Error('当前轮次进行中，不能修改模型或思考强度');
+      }
+      const options = await this.runtimeOptions(conversationId);
+      const model = settings.model?.trim() || undefined;
+      const effort = settings.effort?.trim() || undefined;
+      if (!model && effort) {
+        throw new Error('选择思考强度前需要先选择模型');
+      }
+      if (model && !options.models.some((item) => item.id === model)) {
+        throw new Error(`模型不可用: ${model}`);
+      }
+      const modelOption = options.models.find((item) => item.id === model);
+      const defaultEffort =
+        modelOption && modelOption.defaultEffort && modelOption.efforts.includes(modelOption.defaultEffort)
+          ? modelOption.defaultEffort
+          : modelOption?.efforts[0] ?? null;
+      if (model && effort) {
+        if (!modelOption || modelOption.efforts.length === 0) {
+          throw new Error(`模型 ${model} 不支持思考强度`);
+        }
+        if (!modelOption.efforts.includes(effort)) {
+          throw new Error(`模型 ${model} 不支持思考强度 ${effort}`);
+        }
+      }
+      const next: RuntimeTurnSettings = {
+        model: model ?? null,
+        effort: model ? (effort ?? defaultEffort) : null,
+      };
+      runtimeSettings.set(conversationId, next);
+      return next;
+    },
+    async runtimeNoteThinkingFailure(conversationId, settings, errorText) {
+      learnMockThinkingUnsupported(conversationId, errorText, settings);
+    },
+    async runtimeStart(conversationId, prompt, _clientRequestId, extras?: RuntimeStartExtras) {
+      const snapshot = await this.runtimeSnapshot(conversationId);
+      if (!snapshot.enabled) throw new Error('runtime is unavailable for this conversation');
+      for (const image of extras?.images ?? []) {
+        if (!image.path.trim()) throw new Error('图片路径不能为空');
+      }
+      // Validate against an already-warmed catalog only — do not fetch/cache here
+      // or cold mid-turn options() would stop matching core's empty-catalog behavior.
+      const warmed = runtimeOptionsCache.get(conversationId);
+      const settings = runtimeSettings.get(conversationId) ?? warmed?.settings ?? {};
+      const model = settings.model?.trim() || undefined;
+      const effort = settings.effort?.trim() || undefined;
+      const catalog = warmed?.models ?? [];
+      if (catalog.length > 0 && model) {
+        const modelOption = catalog.find((item) => item.id === model);
+        if (!modelOption) throw new Error(`模型不可用: ${model}`);
+        if (effort) {
+          if (modelOption.efforts.length === 0) {
+            throw new Error(`模型 ${model} 不支持思考强度`);
+          }
+          if (!modelOption.efforts.includes(effort)) {
+            throw new Error(`模型 ${model} 不支持思考强度 ${effort}`);
+          }
+        }
+      }
+      // Simulate Codex rejecting over-reported spark+medium (live accept failure).
+      if (model === 'gpt-5.3-codex-spark' && effort === 'medium') {
+        const message =
+          'OpenAI API error (400): does not support parameter reasoningEffort=medium';
+        learnMockThinkingUnsupported(conversationId, message);
+        throw new Error(message);
+      }
+      const runId = `run-mock-${mockSeq++}`;
+      const agent = mockConversations.find((item) => item.id === conversationId)?.agentIds[0] ?? 'codex';
+      const turn = (mockMessages[conversationId] ?? []).length + 1;
+      const event: ChatEvent = { type: 'started', turn, agents: [agent] };
+      const currentMessage: ChatMessage = {
+        id: `runtime-agent-${mockSeq++}`,
+        conversationId,
+        turn,
+        role: 'agent',
+        agentId: agent,
+        content: '',
+        status: 'running',
+        durationMs: 0,
+        createdAt: nowIso(),
+      };
+      const next: RuntimeSnapshot = {
+        ...snapshot,
+        runId,
+        phase: 'running',
+        lastSequence: 1,
+        events: [{ sequence: 1, event }],
+        pendingRequests: [],
+        currentMessage,
+      };
+      runtimeSnapshots.set(conversationId, next);
+      void prompt;
+      return next;
+    },
+    async runtimeReply(_reply: RuntimeReply) {},
+    async runtimeSteer() {},
+    async runtimeContinueLegacy(conversationId) {
+      const conv = mockConversations.find((item) => item.id === conversationId);
+      if (!conv) throw new Error(`conversation not found: ${conversationId}`);
+      if (conv.agentIds[0] !== 'grok') throw new Error('只有 Grok 可以用新方式继续');
+      if (!conv.nativeSessionId?.trim()) throw new Error('这条对话没有可接上的会话，请新建对话');
+      const current = runtimeSnapshots.get(conversationId);
+      const next = {
+        conversationId,
+        enabled: true,
+        runId: current?.runId ?? null,
+        phase: current?.phase ?? 'idle',
+        lastSequence: current?.lastSequence ?? 0,
+        events: current?.events ?? [],
+        pendingRequests: current?.pendingRequests ?? [],
+        gap: current?.gap ?? false,
+        currentMessage: current?.currentMessage ?? null,
+      };
+      runtimeSnapshots.set(conversationId, next);
+      return next;
+    },
+    async runtimeCancel(conversationId, runId) {
+      const current = runtimeSnapshots.get(conversationId);
+      if (current?.runId !== runId) throw new Error('run is no longer active');
+      runtimeSnapshots.set(conversationId, {
+        ...current,
+        phase: 'cancelling',
+        currentMessage: current.currentMessage
+          ? { ...current.currentMessage, status: 'cancelled', error: 'cancelled' }
+          : null,
+      });
+    },
+
     async setChatModel(_agentId, _model) {
       await delay(40);
     },
-    async getChatModel(_agentId) {
+    async setChatEffort(_agentId, _effort) {
+      await delay(40);
+    },
+    async getChatModel(agentId) {
       await delay(20);
-      return { model: null, models: [] };
+      if (agentId === 'grok') {
+        return {
+          model: 'grok-4.6',
+          models: ['grok-4.6', 'grok-4.5'],
+          effort: 'high',
+          efforts: ['low', 'high', 'xhigh'],
+        };
+      }
+      return { model: null, models: [], effort: null, efforts: [] };
+    },
+    async pickChatImages() {
+      await delay(10);
+      return ['/tmp/mock-chat.png'];
+    },
+    async saveChatPasteImage(input) {
+      await delay(5);
+      const ext = input.extension.replace(/^\./, '') || 'png';
+      return `/tmp/mock-paste.${ext}`;
     },
   };
 }

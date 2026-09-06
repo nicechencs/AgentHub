@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
-  type PageChromeEntry,
   removePageChromeEntry,
   topPageChrome,
   upsertPageChromeEntry,
 } from './page-chrome-model';
+import type { PageChromeEntry, PageChromeFields } from './page-chrome-model';
 
 describe('page chrome stack', () => {
   it('keeps a hidden page title after the visible page unregisters', () => {
-    let entries: PageChromeEntry[] = upsertPageChromeEntry([], 1, { title: 'Sub2API' });
+    let entries: PageChromeEntry<PageChromeFields>[] = upsertPageChromeEntry([], 1, { title: 'Sub2API' });
     entries = upsertPageChromeEntry(entries, 2, { title: '连接' });
     expect(topPageChrome(entries)?.title).toBe('连接');
 

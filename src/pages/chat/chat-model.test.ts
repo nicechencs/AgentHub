@@ -34,9 +34,13 @@ import {
   conversationResumeCommand,
   conversationTitle,
   cwdShortName,
+  draftForFocusedConversation,
   filterConversations,
   groupConversationsByDay,
   isChatAgentSelectable,
+  liveSendingIds,
+  incomingSendingIds,
+  busyAgentsForSends,
   messageStatusLabel,
   newConversationDefaults,
   autoApproveActive,
@@ -221,21 +225,18 @@ describe('sendBlockers', () => {
     cwd: 'D:\\work',
   });
 
-  it('returns hiddenAgents before envNotReady before unconfiguredAuth before noCwd before sendingElsewhere', () => {
+  it('returns hiddenAgents before envNotReady before unconfiguredAuth before noCwd', () => {
     const blockers = sendBlockers({
       conversation: { ...base, cwd: null, agentIds: ['claude', 'kimi', 'pi', 'grok'] },
       hiddenIds: new Set<AgentKey>(['kimi']),
       envNotReadyIds: new Set<AgentKey>(['pi', 'kimi']),
       unconfiguredAuthIds: new Set<AgentKey>(['grok']),
-      sendingConversationId: 'other',
-      sendingTitle: '别的会话',
     });
     expect(blockers.map((b) => b.kind)).toEqual([
       'hiddenAgents',
       'envNotReady',
       'unconfiguredAuth',
       'noCwd',
-      'sendingElsewhere',
     ]);
     expect(blockers[0]).toEqual({ kind: 'hiddenAgents', agentIds: ['kimi'] });
     expect(blockers[1]).toEqual({ kind: 'envNotReady', agentIds: ['pi'] });
@@ -248,7 +249,6 @@ describe('sendBlockers', () => {
       hiddenIds: new Set<AgentKey>(['kimi']),
       envNotReadyIds: new Set<AgentKey>(['kimi']),
       unconfiguredAuthIds: new Set<AgentKey>(['kimi']),
-      sendingConversationId: null,
     });
     expect(blockers.map((b) => b.kind)).toEqual(['hiddenAgents']);
   });
@@ -258,7 +258,6 @@ describe('sendBlockers', () => {
       sendBlockers({
         conversation: base,
         hiddenIds: new Set(),
-        sendingConversationId: null,
       }),
     ).toEqual([]);
   });
@@ -268,20 +267,65 @@ describe('sendBlockers', () => {
       sendBlockers({
         conversation: base,
         hiddenIds: new Set(),
-        sendingConversationId: null,
         agentsReady: false,
       }),
     ).toEqual([{ kind: 'statusUnknown' }]);
   });
+});
 
-  it('ignores sendingElsewhere when the active conversation is the sender', () => {
+describe('incomingSendingIds', () => {
+  it('treats null, undefined, and non-arrays as empty', () => {
+    expect(incomingSendingIds(null)).toEqual([]);
+    expect(incomingSendingIds(undefined)).toEqual([]);
+    expect(incomingSendingIds(1)).toEqual([]);
+  });
+
+  it('keeps a legacy single id and ignores empty strings', () => {
+    expect(incomingSendingIds('sess-1')).toEqual(['sess-1']);
+    expect(incomingSendingIds('')).toEqual([]);
+    expect(incomingSendingIds(['a', '', 'a', 1, 'b'])).toEqual(['a', 'b']);
+  });
+});
+
+describe('liveSendingIds', () => {
+  it('drops ids that are no longer in the conversation list', () => {
+    expect(liveSendingIds(['a', 'gone', 'b'], [conv({ id: 'b' }), conv({ id: 'a' })])).toEqual([
+      'a',
+      'b',
+    ]);
+  });
+
+  it('treats a missing sending list as empty', () => {
+    expect(liveSendingIds(null, [conv({ id: 'a' })])).toEqual([]);
+  });
+});
+
+describe('busyAgentsForSends', () => {
+  it('collects the primary agent of each in-flight conversation', () => {
     expect(
-      sendBlockers({
-        conversation: base,
-        hiddenIds: new Set(),
-        sendingConversationId: 'cur',
-      }),
-    ).toEqual([]);
+      busyAgentsForSends(
+        [
+          conv({ id: 'a', agentIds: ['claude'] }),
+          conv({ id: 'b', agentIds: ['codex'] }),
+          conv({ id: 'c', agentIds: ['claude'] }),
+        ],
+        ['a', 'c'],
+      ),
+    ).toEqual(new Set<AgentKey>(['claude']));
+  });
+});
+
+describe('draftForFocusedConversation', () => {
+  it('saves the leaving draft and restores the focused one', () => {
+    const drafts = new Map<string, string>([['b', 'hello B']]);
+    expect(draftForFocusedConversation(drafts, 'a', 'b', 'hello A')).toBe('hello B');
+    expect(drafts.get('a')).toBe('hello A');
+  });
+
+  it('returns an empty draft when the focused session has none', () => {
+    const drafts = new Map<string, string>();
+    expect(draftForFocusedConversation(drafts, 'a', 'b', 'keep A')).toBe('');
+    expect(drafts.get('a')).toBe('keep A');
   });
 });
 
@@ -422,7 +466,7 @@ describe('autoApproveEffect', () => {
   });
 
   it('uses honest footer and confirm copy per effect', () => {
-    expect(autoApproveFooter(t, false, 'claude').warning).toBe(false);
+    expect(autoApproveFooter(t, false, 'claude')).toEqual({ text: '', warning: false });
     expect(autoApproveFooter(t, true, 'claude')).toEqual({
       text: '自动批准已开启 · Agent 将不经确认修改文件',
       warning: true,
@@ -527,13 +571,6 @@ describe('blockerCopy', () => {
       text: '未设置工作目录 — Agent 需要在指定目录内工作',
       primaryAction: '设置工作目录',
     });
-    expect(
-      blockerCopy(t, { kind: 'sendingElsewhere', conversationId: 'x', title: '对比方案' }),
-    ).toEqual({
-      text: '「对比方案」正在生成',
-      primaryAction: '回到该会话',
-      secondaryAction: '停止',
-    });
   });
 });
 
@@ -543,7 +580,6 @@ describe('blockerPrimaryTarget', () => {
     expect(blockerPrimaryTarget({ kind: 'envNotReady' })).toBe('agents');
     expect(blockerPrimaryTarget({ kind: 'unconfiguredAuth' })).toBe('connections');
     expect(blockerPrimaryTarget({ kind: 'noCwd' })).toBe('pick-directory');
-    expect(blockerPrimaryTarget({ kind: 'sendingElsewhere' })).toBe('settings');
   });
 });
 

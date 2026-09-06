@@ -16,6 +16,24 @@ use crate::utils::redact::api_key_secret;
 use super::super::surface::*;
 use super::super::AccountService;
 
+fn remaining_pi_slots(svc: &AccountService) -> Result<Vec<String>> {
+    let mut slots = Vec::new();
+    for row in svc.repo.list(Some(AgentId::Pi))? {
+        let Some(slot) = crate::adapters::pi::pi_slot_from_account(&row.to_live()) else {
+            continue;
+        };
+        if !slots.iter().any(|existing| existing == &slot) {
+            slots.push(slot);
+        }
+    }
+    Ok(slots)
+}
+
+fn reconcile_pi_default_after_delete(svc: &AccountService) -> Result<()> {
+    let slots = remaining_pi_slots(svc)?;
+    crate::adapters::pi::reconcile_pi_default_for_remaining_slots(&slots)
+}
+
 fn account_has_usable_api_key(account: &Account) -> bool {
     let Some(secret) = api_key_secret(&account.credentials) else {
         return false;
@@ -231,7 +249,18 @@ impl AccountService {
         let result = (|| {
             let account = self.get(id_or_label, Some(agent))?;
             // Clear active binding in the same transaction when deleting the active row.
-            self.connections.delete_account(&account.id, agent)
+            self.connections.delete_account(&account.id, agent)?;
+            if agent == AgentId::Pi {
+                if let Err(error) = reconcile_pi_default_after_delete(self) {
+                    tracing::warn!(
+                        module = targets::ACCOUNT,
+                        op = "pi_default_after_delete",
+                        error = %error,
+                        "failed to update Pi default model after removing a login"
+                    );
+                }
+            }
+            Ok(())
         })();
         log_account_op("delete", agent, started, &result);
         result

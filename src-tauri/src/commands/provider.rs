@@ -18,7 +18,7 @@ use agenthub_core::AgentHub;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
-use crate::commands::{map_err_string, parse_agent, parse_agent_opt, with_hub_blocking};
+use crate::commands::{invalidate_runtime_catalogs, map_err_string, parse_agent, parse_agent_opt, with_hub_blocking};
 use crate::state::AppState;
 
 const REDACTED_MARKER: &str = "***";
@@ -169,9 +169,14 @@ pub async fn undo_switch_provider(
     let hub = state.hub_arc()?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     with_hub_blocking(hub, move |hub| {
-        hub.providers()
+        let undone = hub
+            .providers()
             .undo_switch(agent)
-            .map_err(|e| map_err_string("undo_switch_provider", e))
+            .map_err(|e| map_err_string("undo_switch_provider", e))?;
+        if undone {
+            invalidate_runtime_catalogs(hub);
+        }
+        Ok(undone)
     })
     .await
 }
@@ -306,6 +311,7 @@ fn switch_provider_inner(
         .providers()
         .switch(id_or_name, agent)
         .map_err(|e| map_err_string("switch_provider", e))?;
+    invalidate_runtime_catalogs(hub);
     Ok(result.redacted())
 }
 

@@ -332,7 +332,7 @@ Chat is a one-conversation, one-Agent workbench with a session rail, transcript,
 - The composer validates blockers in order: hidden Agent, missing authorization, missing working directory, then another conversation currently sending. It renders only the first blocker with a recovery action.
 - The send button is the page's one accent action. Sending changes it to a stop action. Retry creates a new turn using the same validation path.
 - Streaming process details use a compact summary and an expandable timeline. Commands, stderr, and exit codes stay in a secondary runtime-details disclosure.
-- Switching conversations clears in-memory process buffers for the old view but does not cancel the active operation. The target conversation shows a “sending elsewhere” recovery line.
+- Switching conversations does not cancel the active operation. Codex runtime keeps per-conversation process state and a replay cursor; its snapshot supplies the authoritative current reply. Legacy sends retain their existing in-memory process behavior.
 - Copy is available for completed user/Agent messages. Running messages do not show copy or retry.
 
 ### Features (Chat)
@@ -341,6 +341,7 @@ Chat is a one-conversation, one-Agent workbench with a session rail, transcript,
 - Header: Agent identity, working directory, automatic-approval state, connection context.
 - Composer blocker order: hidden Agent → missing authorization → missing working directory → another conversation sending; send is the one accent action (becomes stop); retry creates a new turn.
 - Streaming process panel with expandable timeline; copy for completed messages only.
+- New Codex conversations use durable app-server snapshots and show actual approval/question requests as controls. Replies and stop target the exact run; snapshot failure does not fall back to legacy send. Model/effort, unified actions, attachments and extension discovery remain B2 work. See [B1 handoff](../status/chat-codex-b1.md) for verified scope and outstanding real desktop scenarios.
 
 ### Agent touchpoints (Chat)
 

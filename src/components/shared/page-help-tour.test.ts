@@ -17,6 +17,7 @@ import {
 
 const viewport = { width: 1200, height: 800 };
 const bubble = { width: HELP_BUBBLE_WIDTH, height: 120 };
+const eventTarget = (tagName: string) => ({ tagName }) as unknown as EventTarget;
 
 describe('placeHelpBubble', () => {
   it('docks in the middle for a top-of-page target and does not cover it', () => {
@@ -161,10 +162,10 @@ describe('pageHelpKeyAction', () => {
   });
 
   it('does not steal keys while typing or when a button already handles Enter', () => {
-    expect(pageHelpKeyAction({ key: 'ArrowLeft' }, { tagName: 'INPUT' })).toBeNull();
-    expect(pageHelpKeyAction({ key: 'Enter' }, { tagName: 'BUTTON' })).toBeNull();
+    expect(pageHelpKeyAction({ key: 'ArrowLeft' }, eventTarget('INPUT'))).toBeNull();
+    expect(pageHelpKeyAction({ key: 'Enter' }, eventTarget('BUTTON'))).toBeNull();
     expect(pageHelpKeyAction({ key: 'ArrowRight', metaKey: true })).toBeNull();
-    expect(pageHelpKeyAction({ key: 'Escape' }, { tagName: 'INPUT' })).toBe('skip');
+    expect(pageHelpKeyAction({ key: 'Escape' }, eventTarget('INPUT'))).toBe('skip');
   });
 });
 

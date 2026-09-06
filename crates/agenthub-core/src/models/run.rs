@@ -119,6 +119,10 @@ pub struct RunOptions {
     pub process_mode: ProcessMode,
     /// When set, print-capable agents resume this official CLI session.
     pub native_session_id: Option<String>,
+    /// Optional model id for agents that accept `-m` / `--model` on this send.
+    pub model: Option<String>,
+    /// Optional reasoning effort for agents that accept `--reasoning-effort`.
+    pub effort: Option<String>,
 }
 
 impl Default for RunOptions {
@@ -133,6 +137,8 @@ impl Default for RunOptions {
             max_output_bytes: 2 * 1024 * 1024,
             process_mode: ProcessMode::Text,
             native_session_id: None,
+            model: None,
+            effort: None,
         }
     }
 }

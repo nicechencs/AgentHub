@@ -51,6 +51,8 @@ describe('AgentInstallButton', () => {
     const html = renderButton();
     expect(html).toContain('data-icon="download"');
     expect(html).toContain('aria-label="安装"');
+    expect(html).toContain('data-btn="secondary"');
+    expect(html).not.toContain('data-btn="default"');
     expectIconMetrics(html);
   });
 
@@ -61,6 +63,8 @@ describe('AgentInstallButton', () => {
     const html = renderButton(status);
     expect(html).toContain('data-icon="wrench"');
     expect(html).toContain(`aria-label="${label}"`);
+    expect(html).toContain('data-btn="secondary"');
+    expect(html).not.toContain('data-btn="default"');
     expectIconMetrics(html);
   });
 });

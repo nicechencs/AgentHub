@@ -316,6 +316,9 @@ pub fn extract_native_session_id(agent_key: &str, line: &str) -> Option<String> 
                 .and_then(|x| x.as_str())
                 .map(str::to_string)
         }),
+        "grok" => {
+            first_json_str(&v, &["session_id", "sessionId"]).or_else(|| grok_session_id_pointer(&v))
+        }
         _ => None,
     }?;
     crate::adapters::session_resume::valid_session_id(&raw).map(str::to_string)
@@ -324,6 +327,24 @@ pub fn extract_native_session_id(agent_key: &str, line: &str) -> Option<String> 
 fn first_json_str(v: &serde_json::Value, keys: &[&str]) -> Option<String> {
     for key in keys {
         if let Some(s) = v.get(*key).and_then(|x| x.as_str()) {
+            let t = s.trim();
+            if !t.is_empty() {
+                return Some(t.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// ACP `session/update` and `session/new` put the id under params/result.
+fn grok_session_id_pointer(v: &serde_json::Value) -> Option<String> {
+    for path in [
+        "/params/sessionId",
+        "/params/session_id",
+        "/result/sessionId",
+        "/result/session_id",
+    ] {
+        if let Some(s) = v.pointer(path).and_then(|x| x.as_str()) {
             let t = s.trim();
             if !t.is_empty() {
                 return Some(t.to_string());

@@ -1172,14 +1172,18 @@ fn require_blocks_unsupported_and_allows_full() {
 #[test]
 fn require_planned_uses_distinct_copy_from_unsupported() {
     let reg = register_all();
-    // Claude Usage is Full; SessionResume is Partial (print+resume). Grok SessionResume stays Planned.
+    // Claude Usage is Full; SessionResume is Partial (print+resume). Grok MCP stays Planned.
     // Cursor Usage stays Unsupported (IDE-internal usage store is out of scope).
     assert!(reg.require(AgentId::Claude, Capability::Usage).is_ok());
     assert!(reg
         .require(AgentId::Claude, Capability::SessionResume)
         .is_ok());
-    let planned = match reg.require(AgentId::Grok, Capability::SessionResume) {
-        Ok(_) => panic!("grok session resume should be planned/blocked"),
+    assert!(reg
+        .require(AgentId::Grok, Capability::SessionResume)
+        .is_ok());
+    assert!(reg.require(AgentId::Grok, Capability::ModelSelect).is_ok());
+    let planned = match reg.require(AgentId::Grok, Capability::Mcp) {
+        Ok(_) => panic!("grok mcp should be planned/blocked"),
         Err(e) => e,
     };
     let unsupported = match reg.require(AgentId::Cursor, Capability::Usage) {

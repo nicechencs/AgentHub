@@ -8,7 +8,8 @@ use crate::models::{ProcessMode, RunOptions};
 
 use super::{
     clear_grok_field, expand_grok_auth_to_live_accounts, grok_auth_state, grok_cli_args,
-    grok_live_uses_default_auth_slot, grok_supports_no_auto_update, read_grok_api_key,
+    grok_live_chat_model, grok_live_uses_default_auth_slot, grok_supports_no_auto_update,
+    parse_grok_models_cli, read_grok_api_key, set_grok_default_effort, set_grok_default_model,
     write_grok_api_key, GrokAdapter, GROK_CLI_AUTH_SLOT, GROK_CLI_OIDC_CLIENT_ID,
     GROK_LEGACY_AUTH_SLOT,
 };
@@ -259,6 +260,123 @@ fn grok_cli_args_omit_no_auto_update_for_old_cli() {
         grok_cli_args("hi", &opts, Some("0.2.116")),
         vec!["-p", "hi", "--output-format", "streaming-json"]
     );
+}
+
+#[test]
+fn grok_cli_args_resume_before_prompt() {
+    let opts = RunOptions {
+        process_mode: ProcessMode::Auto,
+        native_session_id: Some("agent-sess-1".into()),
+        ..RunOptions::default()
+    };
+    assert_eq!(
+        grok_cli_args("next", &opts, None),
+        vec![
+            "--no-auto-update",
+            "--resume",
+            "agent-sess-1",
+            "-p",
+            "next",
+            "--output-format",
+            "streaming-json"
+        ]
+    );
+}
+
+#[test]
+fn grok_cli_args_ignores_blank_resume_id() {
+    let opts = RunOptions {
+        process_mode: ProcessMode::Auto,
+        native_session_id: Some("  ".into()),
+        ..RunOptions::default()
+    };
+    assert_eq!(
+        grok_cli_args("hi", &opts, None),
+        vec![
+            "--no-auto-update",
+            "-p",
+            "hi",
+            "--output-format",
+            "streaming-json"
+        ]
+    );
+}
+
+#[test]
+fn grok_cli_args_model_and_effort_before_prompt() {
+    let opts = RunOptions {
+        process_mode: ProcessMode::Auto,
+        native_session_id: Some("sess-1".into()),
+        model: Some("grok-4.6".into()),
+        effort: Some("high".into()),
+        ..RunOptions::default()
+    };
+    assert_eq!(
+        grok_cli_args("next", &opts, None),
+        vec![
+            "--no-auto-update",
+            "-m",
+            "grok-4.6",
+            "--reasoning-effort",
+            "high",
+            "--resume",
+            "sess-1",
+            "-p",
+            "next",
+            "--output-format",
+            "streaming-json",
+        ]
+    );
+}
+
+#[test]
+fn grok_cli_args_omit_effort_for_code_fast() {
+    let opts = RunOptions {
+        process_mode: ProcessMode::Auto,
+        model: Some("grok-code-fast-1".into()),
+        effort: Some("high".into()),
+        ..RunOptions::default()
+    };
+    let args = grok_cli_args("hi", &opts, None);
+    assert!(args.windows(2).any(|pair| pair == ["-m", "grok-code-fast-1"]));
+    assert!(!args.iter().any(|item| item == "--reasoning-effort"));
+}
+
+#[test]
+fn parse_grok_models_cli_reads_default_and_available_rows() {
+    let stdout = "You are logged in with grok.com.\n\nDefault model: grok-4.6\n\nAvailable models:\n  * grok-4.6 (default)\n  - grok-4.5\n";
+    let (default, models) = parse_grok_models_cli(stdout);
+    assert_eq!(default.as_deref(), Some("grok-4.6"));
+    assert_eq!(models, vec!["grok-4.6", "grok-4.5"]);
+}
+
+#[test]
+fn grok_live_chat_prefs_read_and_write_config() {
+    let _guard = GROK_HOME_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let dir = tempdir().unwrap();
+    let prev = std::env::var_os("GROK_HOME");
+    std::env::set_var("GROK_HOME", dir.path());
+    fs::write(
+        dir.path().join("config.toml"),
+        "[models]\ndefault = \"grok-4.5\"\ndefault_reasoning_effort = \"low\"\n",
+    )
+    .unwrap();
+    let live = grok_live_chat_model();
+    assert_eq!(live.model.as_deref(), Some("grok-4.5"));
+    assert!(live.models.contains(&"grok-4.5".to_string()));
+    assert_eq!(live.effort.as_deref(), Some("low"));
+    assert_eq!(live.efforts, vec!["low", "high", "xhigh"]);
+    set_grok_default_model("grok-4.6").unwrap();
+    set_grok_default_effort("high").unwrap();
+    let text = fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    assert!(text.contains("default = \"grok-4.6\""), "{text}");
+    assert!(text.contains("default_reasoning_effort = \"high\""), "{text}");
+    match prev {
+        Some(value) => std::env::set_var("GROK_HOME", value),
+        None => std::env::remove_var("GROK_HOME"),
+    }
 }
 
 #[test]

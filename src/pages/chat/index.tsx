@@ -3,16 +3,21 @@ import { MessagesSquare } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { Notice } from '@/components/shared/Notice';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { chatMainColumnClass, chatStageClass } from './chat-model';
 import { formatChatSessionRecord } from './chat-format';
+import { grokCanQueueFollowUp, grokLegacyContinueKind } from './chat-grok-follow-up';
+import { ChatRuntimeExtras } from './ChatRuntimeExtras';
+import { ChatTurnOutcomeBanner } from './ChatTurnOutcomeBanner';
 import { ChatComposer } from './ChatComposer';
 import { ChatSessionHeader } from './ChatSessionHeader';
 import { ChatSessionRail } from './ChatSessionRail';
 import { ChatSettingsDialog } from './ChatSettingsDialog';
 import { ChatTranscript } from './ChatTranscript';
+import { ChatRuntimeRequests } from './ChatRuntimeRequests';
 import { useChatComposerSplit } from './use-chat-composer-split';
 import { useChatPage } from './use-chat-page';
 
@@ -68,7 +73,7 @@ export default function ChatPage() {
         query={page.railQuery}
         onQueryChange={page.setRailQuery}
         activeId={page.activeId}
-        sendingConversationId={page.sendingConversationId}
+        sendingConversationIds={page.sendingConversationIds}
         agentsReady={page.agentsReady}
         hasUsableAgent={page.hasUsableAgent}
         deleteConfirmId={page.deleteConfirmId}
@@ -78,6 +83,8 @@ export default function ChatPage() {
         onRequestDelete={page.setDeleteConfirmId}
         onCancelDelete={() => page.setDeleteConfirmId(null)}
         onConfirmDelete={() => void page.confirmDelete()}
+        searchFocusNonce={page.searchFocusNonce}
+        historyRevealNonce={page.historyRevealNonce}
       />
 
       <section className="relative flex min-w-0 flex-1 flex-col bg-canvas">
@@ -89,6 +96,7 @@ export default function ChatPage() {
           onRename={page.renameTitle}
           onOpenSettings={() => page.setSettingsOpen(true)}
           onPickWorkingDirectory={() => void page.pickWorkingDirectory()}
+          runtimeLocked={page.runtimeLocked || page.sendingHere}
         />
 
         <div className={cn(chatStageClass, pageRhythm.chatChromeX)}>
@@ -111,9 +119,23 @@ export default function ChatPage() {
               onScroll={page.onTranscriptScroll}
               onRetry={() => void page.retryLast()}
             />
+            {page.runtime?.pendingRequests.length ? (
+              <ChatRuntimeRequests
+                requests={page.runtime.pendingRequests}
+                onReply={(request, decision, answers) => page.submitRuntimeRequest(request, decision, answers)}
+              />
+            ) : null}
 
             {page.active && (
               <>
+                {page.turnOutcome ? (
+                  <ChatTurnOutcomeBanner
+                    outcome={page.turnOutcome}
+                    retryDisabled={page.blockers.length > 0 || page.sending}
+                    onRetry={() => void page.retryLast()}
+                    onRestoreDraft={() => page.setDraft(page.turnOutcome?.prompt ?? '')}
+                  />
+                ) : null}
                 <div
                   role="separator"
                   aria-orientation="horizontal"
@@ -126,6 +148,37 @@ export default function ChatPage() {
                   onKeyDown={split.onSeparatorKeyDown}
                   className="relative z-10 h-2 shrink-0 cursor-row-resize bg-transparent outline-none"
                 />
+                {(() => {
+                  const kind = grokLegacyContinueKind({
+                    agentId: page.primaryAgent,
+                    runtimeEnabled: page.runtime?.enabled,
+                    hasMessages: page.messages.length > 0,
+                    nativeSessionId: page.active.nativeSessionId,
+                  });
+                  if (!kind) return null;
+                  return (
+                    <Notice tone="warning" className="mb-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="min-w-0 text-meta text-secondary">
+                          {kind === 'continue'
+                            ? t('chat.composer.legacyContinueHint')
+                            : t('chat.composer.legacyNewChatHint')}
+                        </p>
+                        {kind === 'continue' ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            disabled={page.sendingHere}
+                            onClick={() => void page.continueLegacyGrok()}
+                          >
+                            {t('chat.composer.legacyContinueAction')}
+                          </Button>
+                        ) : null}
+                      </div>
+                    </Notice>
+                  );
+                })()}
                 <ChatComposer
                   draft={page.draft}
                   setDraft={page.setDraft}
@@ -146,16 +199,80 @@ export default function ChatPage() {
                   onRetryWallet={() => void page.reloadWallet()}
                   onRetryStatus={() => void page.refreshAgents().catch(() => {})}
                   onSend={() => void page.handleSend()}
+                  onSteer={page.runtime?.enabled && page.runtimeOps.steer && page.sendingHere ? () => {
+                    const value = page.draft;
+                    void page.steerRuntime(value)
+                      .then(() => page.setDraft(''))
+                      .catch(() => {});
+                  } : undefined}
+                  onQueueAfterTurn={
+                    grokCanQueueFollowUp({
+                      agentId: page.primaryAgent,
+                      runtimeEnabled: page.runtime?.enabled,
+                      phase: page.runtime?.phase,
+                      sending: page.sendingHere,
+                    })
+                      ? () => void page.handleSend()
+                      : undefined
+                  }
+                  queuedFollowUp={page.queuedFollowUp}
+                  onClearQueuedFollowUp={page.clearQueuedFollowUp}
                   onCancel={() => void page.cancelSending()}
                   onSelectAgent={(id) => void page.selectConversationAgentId(id)}
                   onSwitchConnection={(id) => void page.handleSwitchConnection(id)}
-                  modelOptions={page.modelOptions}
-                  currentModel={page.currentModel}
-                  switchingModel={page.switchingModel}
-                  onSwitchModel={(id) => void page.handleSwitchModel(id)}
+                  modelOptions={page.runtime?.enabled ? [] : page.modelOptions}
+                  currentModel={page.runtime?.enabled ? null : page.currentModel}
+                  switchingModel={page.runtime?.enabled ? false : page.switchingModel}
+                  onSwitchModel={(id) => {
+                    if (page.runtime?.enabled) return;
+                    void page.handleSwitchModel(id);
+                  }}
+                  effortOptions={page.runtime?.enabled ? [] : page.effortOptions}
+                  currentEffort={page.runtime?.enabled ? null : page.currentEffort}
+                  onSwitchEffort={(id) => {
+                    if (page.runtime?.enabled) return;
+                    void page.handleSwitchEffort(id);
+                  }}
                   onOpenSettings={() => page.setSettingsOpen(true)}
                   onPickWorkingDirectory={() => void page.pickWorkingDirectory()}
-                  onFocusConversation={page.focusConversation}
+                  onDraftKeyDown={page.handleComposerKeyDown}
+                  onPasteImages={
+                    page.runtime?.enabled && page.runtimeOps.imageInput
+                      ? (files) => void page.runtimeOps.pasteImages(files)
+                      : undefined
+                  }
+                  connectionLocked={page.connectionLocked}
+                  runtimeLocked={page.runtimeLocked}
+                  runtimeControls={
+                    page.runtime?.enabled ? (
+                      <ChatRuntimeExtras
+                        enabled
+                        inline
+                        draft={page.draft}
+                        commandSearchOpen={page.commandSearchOpen}
+                        commandIndex={page.commandIndex}
+                        actionContext={page.actionContext}
+                        extraActions={page.runtimeCommandActions}
+                        onRunAction={page.runChatAction}
+                        onHoverCommandIndex={page.setCommandIndex}
+                        models={page.runtimeOps.models}
+                        settings={page.runtimeOps.settings}
+                        frozen={page.runtimeOps.frozen}
+                        catalogLoading={page.runtimeOps.loading}
+                        efforts={page.runtimeOps.currentEfforts}
+                        onSwitchModel={(id) => void page.runtimeOps.switchModel(id)}
+                        onSwitchEffort={(id) => void page.runtimeOps.switchEffort(id)}
+                        images={page.runtimeOps.images}
+                        imageInput={page.runtimeOps.imageInput}
+                        onAddImages={() => void page.runtimeOps.addImages()}
+                        onRemoveImage={page.runtimeOps.removeImage}
+                        onPasteImages={(files) => void page.runtimeOps.pasteImages(files)}
+                        extensions={page.runtimeOps.extensions}
+                        selectedSkillIds={page.runtimeOps.selectedSkillIds}
+                        onToggleSkill={page.runtimeOps.toggleSkill}
+                      />
+                    ) : undefined
+                  }
                   fillHeight={split.paneHeight != null}
                   paneHeight={split.paneHeight}
                   paneRef={split.composerPaneRef}
@@ -172,6 +289,7 @@ export default function ChatPage() {
           dangerConfirm={page.dangerConfirm}
           onDangerConfirmChange={page.setDangerConfirm}
           onPatch={(patch) => void page.patchActive(patch)}
+          runtimeLocked={page.runtimeLocked || page.sendingHere}
         />
       </section>
     </div>

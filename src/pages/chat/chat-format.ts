@@ -9,7 +9,9 @@ const CHAT_FAILURE_KEY = {
   loginExpired: 'chat.failure.loginExpired',
   modelRetired: 'chat.failure.modelRetired',
   thinkingUnsupported: 'chat.failure.thinkingUnsupported',
+  usageLimit: 'chat.failure.usageLimit',
   sendFailed: 'chat.failure.sendFailed',
+  interrupted: 'chat.turnOutcome.interruptedHint',
 } as const satisfies Record<string, MessageKey>;
 import type { AgentProcessView } from '@/lib/chat-process';
 import type { ChatMessage } from '@/lib/types';
@@ -45,6 +47,22 @@ export function isProcessActivePhase(phase: AgentProcessView['phase']): boolean 
 
 export function isProcessErrorPhase(phase: AgentProcessView['phase']): boolean {
   return phase === 'failed' || phase === 'timeout';
+}
+
+const PROCESS_TEXT_LIMIT = 4000;
+
+/** Pin a process/thinking overflow pane to the newest line. */
+export function pinElementScrollToBottom(
+  el: { scrollTop: number; scrollHeight: number } | null,
+): void {
+  if (!el) return;
+  el.scrollTop = el.scrollHeight;
+}
+
+/** Keep the newest process/thinking text when the log is too long. */
+export function clipProcessTail(text: string, limit = PROCESS_TEXT_LIMIT): string {
+  if (text.length <= limit) return text;
+  return `…${text.slice(-limit)}`;
 }
 
 export function formatChatSessionRecord(turns: TurnGroup[], userLabel: string): string {
@@ -163,6 +181,15 @@ export function extractPiDefaultModel(configText: string): string | null {
   return extractModel(configText);
 }
 
+/** Live settings.json is the current Pi model. Envelope leftover must not win. */
+export function resolvePiChatCurrentModel(
+  liveChatModel: string | null | undefined,
+): string | null {
+  const id = liveChatModel?.trim() || null;
+  if (!id || isRetiredChatModel(id)) return null;
+  return id;
+}
+
 /** Official xAI OpenAI-compatible catalog. Same URL `list_remote_openai_models` uses. */
 export const OFFICIAL_XAI_MODELS_BASE = 'https://api.x.ai/v1';
 
@@ -225,11 +252,30 @@ export function localizeChatFailure(text: string, t?: TranslateFn): string {
   const hay = text.toLowerCase();
   const copy = (key: keyof typeof CHAT_FAILURE_KEY, zh: string) =>
     t ? t(CHAT_FAILURE_KEY[key]) : zh;
+  if (
+    hay.includes('runtime interrupted')
+    || hay.includes('chat.runtime.interrupted')
+    || hay.includes('codex process stopped')
+    || hay.includes('codex thread is unavailable')
+  ) {
+    return copy('interrupted', 'Codex 进程或线程不可用，请开新一轮继续。');
+  }
   if (hay.includes('missing environment variable')) {
     return copy('missingEnv', '这份登录还在用另一份 API Key 配置，没法发。请点重试。');
   }
-  if (hay.includes('is not supported by any configured account') || hay.includes('model_unavailable')) {
+  if (
+    hay.includes('is not supported by any configured account')
+    || hay.includes('model_unavailable')
+    || (hay.includes('not supported') && hay.includes('chatgpt account'))
+  ) {
     return copy('modelUnavailable', '这个模型当前登录用不了。请换一个模型后重试。');
+  }
+  if (
+    hay.includes('usagelimitexceeded')
+    || hay.includes('usage limit')
+    || hay.includes('hit your usage limit')
+  ) {
+    return copy('usageLimit', '这份登录暂时没法继续，请稍后再试。');
   }
   if (
     hay.includes('oauth refresh failed')

@@ -9,10 +9,13 @@ import {
   formatChatSessionRecord,
   formatDurationMs,
   formatStepInput,
+  clipProcessTail,
   isRetiredChatModel,
   localizeChatFailure,
   officialPiModelsBaseUrl,
   piChatModelOptions,
+  pinElementScrollToBottom,
+  resolvePiChatCurrentModel,
   shouldFetchChatRemoteModels,
   thinkingChromeLabel,
 } from './chat-format';
@@ -82,6 +85,18 @@ describe('chat-format thinking chrome', () => {
     expect(thinkingChromeLabel(true, 3200, t)).toBe('思考了 3.2s');
     expect(thinkingChromeLabel(true, 0, t)).toBe('思考完成');
   });
+
+  it('pins process/thinking overflow to the newest line', () => {
+    const el = { scrollTop: 0, scrollHeight: 480 };
+    pinElementScrollToBottom(el);
+    expect(el.scrollTop).toBe(480);
+    pinElementScrollToBottom(null);
+  });
+
+  it('keeps the newest process/thinking text when clipping', () => {
+    expect(clipProcessTail('short')).toBe('short');
+    expect(clipProcessTail(`old-${'x'.repeat(4000)}-newest`)).toBe(`…${'x'.repeat(3993)}-newest`);
+  });
 });
 
 describe('chat model options', () => {
@@ -115,6 +130,18 @@ describe('chat model options', () => {
         t,
       ),
     ).toBe('这个模型不支持当前思考设置。请点重试。');
+    expect(
+      localizeChatFailure(
+        "The 'gpt-6-astra' model is not supported when using Codex with a ChatGPT account.",
+        t,
+      ),
+    ).toContain('换一个模型');
+    expect(
+      localizeChatFailure(
+        '{"message":"You have hit your usage limit.","codexErrorInfo":"usageLimitExceeded"}',
+        t,
+      ),
+    ).toBe('这份登录暂时没法继续，请稍后再试。');
     const tEn = createTranslator('en');
     expect(
       localizeChatFailure('Missing environment variable: `OPENROUTER_API_KEY`.', tEn),
@@ -171,5 +198,12 @@ describe('chat model options', () => {
         currentModel: 'grok-code-fast-1',
       }),
     ).not.toContain('grok-code-fast-1');
+  });
+
+  it('does not show leftover envelope GPT as the current Pi model', () => {
+    expect(resolvePiChatCurrentModel('grok-4.6')).toBe('grok-4.6');
+    expect(resolvePiChatCurrentModel('gpt-5.5')).toBe('gpt-5.5');
+    expect(resolvePiChatCurrentModel(null)).toBeNull();
+    expect(resolvePiChatCurrentModel('stealth/ox-alpha')).toBeNull();
   });
 });

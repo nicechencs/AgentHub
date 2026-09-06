@@ -14,6 +14,16 @@ $env:Path = (@($extra + $machinePath + $userPath + $env:Path) | Where-Object { $
 
 $runtime = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'scripts\dev-runtime.json') -Raw | ConvertFrom-Json
 $DevPort = [int]$runtime.port
+$AutoFreePort = $false
+$StopOnly = $false
+$forwardArgs = @()
+foreach ($a in $args) {
+    switch -Regex ($a) {
+        '^--restart$|^-Restart$' { $AutoFreePort = $true }
+        '^--stop$|^-Stop$' { $StopOnly = $true; $AutoFreePort = $true }
+        default { $forwardArgs += $a }
+    }
+}
 
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  AgentHub Desktop Launcher" -ForegroundColor Cyan
@@ -60,7 +70,7 @@ function Get-ListenersOnPort([int]$Port) {
     $rows | Sort-Object Pid -Unique
 }
 
-function Ensure-DevPortFree([int]$Port) {
+function Ensure-DevPortFree([int]$Port, [bool]$Force = $false) {
     $holders = @(Get-ListenersOnPort $Port)
     if ($holders.Count -eq 0) { return }
 
@@ -69,11 +79,15 @@ function Ensure-DevPortFree([int]$Port) {
         Write-Host ("  - PID {0}  {1}  {2}" -f $h.Pid, $h.Name, $h.Path) -ForegroundColor DarkYellow
     }
     Write-Host ""
-    Write-Host "Common causes: previous tauri:dev still running, or pnpm dev / dev:mock." -ForegroundColor DarkGray
-    Write-Host "Press Y to stop those process(es) and continue, or any other key to abort." -ForegroundColor Yellow
-    $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-    if ($key.Character -ne 'y' -and $key.Character -ne 'Y') {
-        Fail "Aborted: free port $Port then retry (e.g. stop old node/vite / close other AgentHub dev)."
+    if (-not $Force) {
+        Write-Host "Common causes: previous tauri:dev still running, or pnpm dev / dev:mock." -ForegroundColor DarkGray
+        Write-Host "Press Y to stop those process(es) and continue, or any other key to abort." -ForegroundColor Yellow
+        $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+        if ($key.Character -ne 'y' -and $key.Character -ne 'Y') {
+            Fail "Aborted: free port $Port then retry (e.g. stop old node/vite / close other AgentHub dev)."
+        }
+    } else {
+        Write-Host "[INFO] -Restart/-Stop: stopping those process(es)." -ForegroundColor DarkGray
     }
 
     foreach ($h in $holders) {
@@ -110,13 +124,24 @@ if (-not (Test-Path "node_modules")) {
 }
 
 Write-Host ("[INFO] node {0} | pnpm {1}" -f (node -v), (pnpm -v)) -ForegroundColor DarkGray
-Ensure-DevPortFree -Port $DevPort
+Ensure-DevPortFree -Port $DevPort -Force $AutoFreePort
 
 # Installed release app may already be open; single-instance plugin focuses it.
 $runningGui = Get-Process -Name "agenthub-gui" -ErrorAction SilentlyContinue
 if ($runningGui) {
-    Write-Host "[WARN] agenthub-gui already running (PID(s): $($runningGui.Id -join ', '))." -ForegroundColor Yellow
-    Write-Host "       Second instances may exit immediately (single-instance). Close it if dev fails to open." -ForegroundColor DarkGray
+    if ($AutoFreePort) {
+        Write-Host "[INFO] Stopping agenthub-gui (PID(s): $($runningGui.Id -join ', '))." -ForegroundColor DarkGray
+        $runningGui | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Milliseconds 400
+    } else {
+        Write-Host "[WARN] agenthub-gui already running (PID(s): $($runningGui.Id -join ', '))." -ForegroundColor Yellow
+        Write-Host "       Second instances may exit immediately (single-instance). Close it if dev fails to open." -ForegroundColor DarkGray
+    }
+}
+
+if ($StopOnly) {
+    Write-Host "[INFO] Stopped leftover desktop/dev processes." -ForegroundColor Green
+    exit 0
 }
 
 Write-Host "[START] pnpm tauri:dev" -ForegroundColor Green
