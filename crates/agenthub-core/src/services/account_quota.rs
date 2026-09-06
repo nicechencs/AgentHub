@@ -1321,6 +1321,14 @@ fn resolve_expires_at(agent: AgentId, credentials: &Value) -> Option<String> {
             return Some(n);
         }
     }
+    if let Some(s) = credentials
+        .pointer("/body/expires_at")
+        .and_then(|v| v.as_str())
+    {
+        if let Some(n) = normalize_expires_str(s) {
+            return Some(n);
+        }
+    }
     if let Some(v) = credentials.get("expires_at") {
         if let Some(n) = normalize_expires_value(v) {
             return Some(n);

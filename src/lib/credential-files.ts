@@ -24,6 +24,7 @@ export function authFileName(agentId: string): string {
   if (agentId === 'kimi') return 'kimi-code.json';
   if (agentId === 'dsh') return '.credentials.yaml';
   if (agentId === 'zcode') return 'config.json';
+  if (agentId === 'kiro') return 'data.sqlite3';
   return 'auth.json';
 }
 
@@ -79,8 +80,8 @@ export function defaultLivePathForFile(agentId: string, fileName: string): strin
       'auth.json': '~/.cursor/auth.json',
     },
     kiro: {
+      'data.sqlite3': '~/AppData/Local/Kiro-Cli/data.sqlite3',
       'kiro-auth-token.json': '~/.aws/sso/cache/kiro-auth-token.json',
-      'auth.json': '~/.aws/sso/cache/kiro-auth-token.json',
     },
   };
   const mapped = known[agentId]?.[fileName];
@@ -210,8 +211,8 @@ function fileNameFromSource(
     return undefined;
   }
   const base = trimmed.replace(/\\/g, '/').split('/').pop() ?? trimmed;
-  if (!/\.(json|toml|ya?ml)$/i.test(base)) return undefined;
-  const isAuth = /auth|credential/i.test(base);
+  if (!/\.(json|toml|ya?ml|sqlite3)$/i.test(base)) return undefined;
+  const isAuth = /auth|credential|sqlite/i.test(base);
   if (kind === 'auth' && isAuth) return base;
   if (kind === 'config' && !isAuth) return base;
   return undefined;

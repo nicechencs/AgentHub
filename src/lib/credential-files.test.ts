@@ -31,10 +31,11 @@ describe('credential file names', () => {
   });
 
   it('maps Kiro login files to the kiro-cli stores', () => {
-    expect(defaultLivePathForFile('kiro', 'kiro-auth-token.json')).toBe(
-      '~/.aws/sso/cache/kiro-auth-token.json',
+    expect(authFileName('kiro')).toBe('data.sqlite3');
+    expect(defaultLivePathForFile('kiro', 'data.sqlite3')).toBe(
+      '~/AppData/Local/Kiro-Cli/data.sqlite3',
     );
-    expect(defaultLivePathForFile('kiro', 'auth.json')).toBe(
+    expect(defaultLivePathForFile('kiro', 'kiro-auth-token.json')).toBe(
       '~/.aws/sso/cache/kiro-auth-token.json',
     );
   });
@@ -50,6 +51,28 @@ describe('credential file names', () => {
 });
 
 describe('extractAccountCredentialFiles', () => {
+  it('shows data.sqlite3 for an imported Kiro login', () => {
+    const files = extractAccountCredentialFiles({
+      agentId: 'kiro',
+      kind: 'oauth',
+      format: 'auth_json',
+      source: 'data.sqlite3',
+      credentials: {
+        format: 'auth_json',
+        body: {
+          access_token: 'aoa-preview',
+          refresh_token: 'aor-preview',
+          expires_at: '2026-09-06T15:05:03Z',
+          provider: 'google',
+        },
+      },
+    });
+    expect(files).toHaveLength(1);
+    expect(files[0]!.name).toBe('data.sqlite3');
+    expect(files[0]!.content).toContain('aoa-preview');
+    expect(files[0]!.name).not.toBe('auth.json');
+  });
+
   it('shows auth.json from an official Grok login body', () => {
     const files = extractAccountCredentialFiles({
       agentId: 'grok',

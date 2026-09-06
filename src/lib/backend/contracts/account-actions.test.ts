@@ -128,6 +128,16 @@ describe('oauthListAction', () => {
     expect(oauthListAction(account({ agentId: 'kimi' }))).toBeUndefined();
   });
 
+  it('refreshes Kiro by comparing the local kiro-cli login', () => {
+    expect(oauthListAction(account({
+      agentId: 'kiro',
+      source: 'data.sqlite3',
+    }))).toEqual({
+      kind: 'refresh-credentials',
+      label: '刷新',
+    });
+  });
+
   it('probes quota after every visible list-row action, including current Codex sync', () => {
     expect(oauthListActionProbesQuota('refresh-quota')).toBe(true);
     expect(oauthListActionProbesQuota('refresh-credentials')).toBe(true);

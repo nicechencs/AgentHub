@@ -6,10 +6,11 @@
 //! ## Scope (honest, wave 1)
 //! - install / detect (official sh + ps1; IDE.app is never Installed)
 //! - headless: `kiro-cli chat --no-interactive "…"` (+ `--trust-all-tools` when dangerous)
-//! - auth: env `KIRO_API_KEY` / import `kiro-cli login` (sqlite + SSO cache); no live apply
+//! - auth: env `KIRO_API_KEY` / import `kiro-cli login` (sqlite + SSO cache);
+//!   refresh compares expiry and can write sqlite
 //!
 //! ## Explicitly out of scope
-//! - Config write / account apply / live backup
+//! - Config write / API Key live apply / live backup
 //! - Chat continuous runtime / ACP
 //! - Skills / MCP / usage / project history (no verified path yet)
 //! - Using Kiro IDE as the headless entry
@@ -30,6 +31,8 @@ use super::{
 };
 
 mod auth;
+
+pub(crate) use auth::kiro_grant_is_newer;
 
 /// Official Windows native installer (PowerShell: `irm … | iex`).
 pub const NATIVE_PS1_URL: &str = "https://cli.kiro.dev/install.ps1";
@@ -271,11 +274,14 @@ impl AgentAdapter for KiroAdapter {
         ))
     }
 
-    fn apply_account(&self, _account: &LiveAccount) -> Result<()> {
-        Err(AppError::Unsupported(
-            "Kiro 暂时不能把这份登录写到本机配置。请用 Kiro 自己的登录，或设置 KIRO_API_KEY。"
-                .into(),
-        ))
+    fn apply_account(&self, account: &LiveAccount) -> Result<()> {
+        if account.kind == AccountKind::ApiKey {
+            return Err(AppError::Unsupported(
+                "Kiro 暂时不能把这份登录写到本机配置。请用 Kiro 自己的登录，或设置 KIRO_API_KEY。"
+                    .into(),
+            ));
+        }
+        auth::write_kiro_live_account(account)
     }
 
     fn skills_dir(&self) -> Option<PathBuf> {
@@ -303,7 +309,10 @@ impl AgentAdapter for KiroAdapter {
     }
 
     fn live_backup_paths(&self) -> Vec<PathBuf> {
-        Vec::new()
+        crate::utils::paths::kiro_cli_sqlite_path()
+            .into_iter()
+            .chain(crate::utils::paths::kiro_sso_cache_path())
+            .collect()
     }
 
     fn build_run_spec(&self, binary: &Path, prompt: &str, opts: &RunOptions) -> Result<RunSpec> {
