@@ -258,6 +258,22 @@ pub async fn set_chat_model(
     .await
 }
 
+/// Invoke: `set_chat_effort` — write the live thinking level for Chat.
+#[tauri::command]
+pub async fn set_chat_effort(
+    state: State<'_, AppState>,
+    agent_id: String,
+    effort: String,
+) -> Result<(), String> {
+    let hub = state.hub_arc()?;
+    let agent = parse_agent(&agent_id)?;
+    with_hub_blocking(hub, move |hub| {
+        hub.set_live_chat_effort(agent, &effort)
+            .map_err(|e| map_err_string("set_chat_effort", e))
+    })
+    .await
+}
+
 /// Invoke: `get_chat_model` — read the live default model and picker ids.
 #[tauri::command]
 pub async fn get_chat_model(

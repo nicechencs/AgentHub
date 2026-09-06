@@ -15,6 +15,8 @@ fn opts() -> RunOptions {
         max_output_bytes: 1024,
         process_mode: crate::models::ProcessMode::Text,
         native_session_id: None,
+        model: None,
+        effort: None,
     }
 }
 
