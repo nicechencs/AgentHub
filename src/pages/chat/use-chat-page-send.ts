@@ -739,14 +739,29 @@ export function useChatPageSend(input: {
   const cancelingHere = Boolean(canceling && sendingConversationId === active?.id);
 
   async function submitRuntimeRequest(request: RuntimeRequest, decision?: 'allow' | 'deny', answers?: Record<string, string[]>) {
-    if (!active || !requestMatchesRuntime(request, runtimeIdRef.current)) return;
-    await runtimeReply({ conversationId: active.id, runId: request.runId, requestId: request.id, clientRequestId: crypto.randomUUID(), decision, answers });
+    if (!active || !requestMatchesRuntime(request, runtimeIdRef.current)) {
+      throw new Error('stale runtime request');
+    }
+    try {
+      await runtimeReply({
+        conversationId: active.id,
+        runId: request.runId,
+        requestId: request.id,
+        clientRequestId: crypto.randomUUID(),
+        decision,
+        answers,
+      });
+    } catch (error) {
+      toast({ title: error instanceof Error ? error.message : String(error), variant: 'danger' });
+      throw error;
+    }
   }
 
   async function steerRuntime(prompt: string) {
     if (!active || !runtime?.enabled || !runtimeIdRef.current || !prompt.trim()) return;
     try {
       await runtimeSteer(active.id, runtimeIdRef.current, prompt.trim(), crypto.randomUUID());
+      toast({ title: t('chat.toast.steered'), variant: 'success', duration: 2500 });
     } catch (error) {
       toast({ title: error instanceof Error ? error.message : String(error), variant: 'danger' });
       throw error;

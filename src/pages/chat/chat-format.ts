@@ -9,6 +9,7 @@ const CHAT_FAILURE_KEY = {
   loginExpired: 'chat.failure.loginExpired',
   modelRetired: 'chat.failure.modelRetired',
   thinkingUnsupported: 'chat.failure.thinkingUnsupported',
+  usageLimit: 'chat.failure.usageLimit',
   sendFailed: 'chat.failure.sendFailed',
   interrupted: 'chat.turnOutcome.interruptedHint',
 } as const satisfies Record<string, MessageKey>;
@@ -237,8 +238,19 @@ export function localizeChatFailure(text: string, t?: TranslateFn): string {
   if (hay.includes('missing environment variable')) {
     return copy('missingEnv', '这份登录还在用另一份 API Key 配置，没法发。请点重试。');
   }
-  if (hay.includes('is not supported by any configured account') || hay.includes('model_unavailable')) {
+  if (
+    hay.includes('is not supported by any configured account')
+    || hay.includes('model_unavailable')
+    || (hay.includes('not supported') && hay.includes('chatgpt account'))
+  ) {
     return copy('modelUnavailable', '这个模型当前登录用不了。请换一个模型后重试。');
+  }
+  if (
+    hay.includes('usagelimitexceeded')
+    || hay.includes('usage limit')
+    || hay.includes('hit your usage limit')
+  ) {
+    return copy('usageLimit', '这份登录暂时没法继续，请稍后再试。');
   }
   if (
     hay.includes('oauth refresh failed')

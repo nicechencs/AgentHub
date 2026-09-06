@@ -115,6 +115,18 @@ describe('chat model options', () => {
         t,
       ),
     ).toBe('这个模型不支持当前思考设置。请点重试。');
+    expect(
+      localizeChatFailure(
+        "The 'gpt-6-astra' model is not supported when using Codex with a ChatGPT account.",
+        t,
+      ),
+    ).toContain('换一个模型');
+    expect(
+      localizeChatFailure(
+        '{"message":"You have hit your usage limit.","codexErrorInfo":"usageLimitExceeded"}',
+        t,
+      ),
+    ).toBe('这份登录暂时没法继续，请稍后再试。');
     const tEn = createTranslator('en');
     expect(
       localizeChatFailure('Missing environment variable: `OPENROUTER_API_KEY`.', tEn),
