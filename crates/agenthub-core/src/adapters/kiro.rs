@@ -5,7 +5,8 @@
 //!
 //! ## Scope (honest, wave 1)
 //! - install / detect (official sh + ps1; IDE.app is never Installed)
-//! - headless: `kiro-cli chat --no-interactive "…"` (+ `--trust-all-tools` when dangerous)
+//! - headless: `kiro-cli chat --no-interactive --wrap never "…"`
+//!   (+ `--trust-all-tools` when dangerous; TERM=dumb so Unix color does not leak)
 //! - auth: env `KIRO_API_KEY` / import `kiro-cli login` (sqlite + SSO cache);
 //!   refresh compares expiry and can write sqlite
 //!
@@ -316,12 +317,24 @@ impl AgentAdapter for KiroAdapter {
     }
 
     fn build_run_spec(&self, binary: &Path, prompt: &str, opts: &RunOptions) -> Result<RunSpec> {
-        let mut args = vec!["chat".into(), "--no-interactive".into()];
+        // `--wrap never`: piped stdout on macOS/Linux still auto-wraps at 80 cols.
+        // TERM/NO_COLOR: inherited Terminal.app / Linux TERM=xterm makes kiro emit CSI
+        // even when stdout is a pipe. Windows kiro still colors; chat sanitizes CSI.
+        let mut args = vec![
+            "chat".into(),
+            "--no-interactive".into(),
+            "--wrap".into(),
+            "never".into(),
+        ];
         if opts.allow_dangerous {
             args.push("--trust-all-tools".into());
         }
         args.push(prompt.to_string());
-        let mut env = Vec::new();
+        let mut env = vec![
+            ("TERM".into(), "dumb".into()),
+            ("NO_COLOR".into(), "1".into()),
+            ("CLICOLOR".into(), "0".into()),
+        ];
         if let Ok(key) = std::env::var("KIRO_API_KEY") {
             if !key.is_empty() {
                 env.push(("KIRO_API_KEY".into(), key));
