@@ -233,7 +233,6 @@ export default function ChatPage() {
                     if (page.runtime?.enabled) return;
                     void page.handleSwitchEffort(id);
                   }}
-                  onOpenSettings={() => page.setSettingsOpen(true)}
                   onPickWorkingDirectory={() => void page.pickWorkingDirectory()}
                   onDraftKeyDown={page.handleComposerKeyDown}
                   onPasteImages={

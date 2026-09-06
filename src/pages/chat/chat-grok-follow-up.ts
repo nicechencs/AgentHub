@@ -1,10 +1,11 @@
+import type { RuntimePhase } from '@/lib/backend/contracts/chat-runtime';
 import { isRuntimeActive } from './chat-runtime-model';
 
 /** Grok has no mid-turn inject. Queue only while a continuous session is generating. */
 export function grokCanQueueFollowUp(input: {
   agentId?: string | null;
   runtimeEnabled?: boolean;
-  phase?: string | null;
+  phase?: RuntimePhase | null;
   sending: boolean;
 }): boolean {
   if (input.agentId !== 'grok' || !input.runtimeEnabled || !input.sending) return false;
@@ -24,8 +25,8 @@ export function grokLegacyContinueKind(input: {
 }
 
 export function grokShouldFlushFollowUp(
-  previousPhase: string | null | undefined,
-  nextPhase: string,
+  previousPhase: RuntimePhase | null | undefined,
+  nextPhase: RuntimePhase,
 ): boolean {
   if (!previousPhase || !isRuntimeActive(previousPhase)) return false;
   return nextPhase === 'completed';
