@@ -20,6 +20,8 @@ import { useChatPageChrome } from './use-chat-page-chrome';
 import { useChatPageConnection } from './use-chat-page-connection';
 import { useChatPageSend } from './use-chat-page-send';
 import { useChatPageSessions } from './use-chat-page-sessions';
+import { useChatRuntimeOps } from './use-chat-runtime-ops';
+import { isCommandSearchMode, type ChatActionDef } from './chat-actions';
 
 export {
   conversationListState,
@@ -122,6 +124,8 @@ export function useChatPage() {
   }, []);
 
   const turns = useMemo(() => groupByTurn(messages), [messages]);
+  const startExtrasRef = useRef<{ images?: { path: string }[]; skills?: { name: string; path: string }[] }>({});
+  const runtimeOpsClearRef = useRef<() => void>(() => {});
 
   const send = useChatPageSend({
     active,
@@ -140,12 +144,55 @@ export function useChatPage() {
     draft,
     setDraft,
     turns,
+    getStartExtras: () => startExtrasRef.current,
+    clearStartExtras: () => runtimeOpsClearRef.current(),
   });
   sendRef.current = {
     adoptInflight: send.adoptInflight,
     cancelIfSending: send.cancelIfSending,
   };
   const sending = send.sending;
+  const runtimeOps = useChatRuntimeOps({
+    active,
+    runtimeEnabled: Boolean(send.runtime?.enabled),
+    turnActive: sending,
+  });
+  startExtrasRef.current = runtimeOps.startExtras;
+  runtimeOpsClearRef.current = runtimeOps.clearAttachments;
+
+  const runChatAction = useCallback(
+    (action: ChatActionDef) => {
+      if (action.kind === 'draft' && action.draftText) {
+        setDraft(action.draftText);
+        return;
+      }
+      if (action.id === 'new-session') {
+        void handleNewChat();
+        return;
+      }
+      if (action.id === 'open-history') {
+        setRailOpen(true);
+        return;
+      }
+      if (action.id === 'open-settings') {
+        setSettingsOpen(true);
+        return;
+      }
+      if (action.id === 'copy-latest-reply') {
+        const latest = [...messages].reverse().find((m) => m.role === 'agent' && m.content.trim());
+        if (!latest) {
+          toast({ title: t('chat.header.noResumeCommand') });
+          return;
+        }
+        void navigator.clipboard.writeText(latest.content).then(
+          () => toast({ title: t('chat.bubble.copied') }),
+          () => toast({ title: t('chat.bubble.copyFailed'), variant: 'danger' }),
+        );
+      }
+    },
+    [handleNewChat, messages, t, toast],
+  );
+  const commandSearchOpen = isCommandSearchMode(draft);
 
   const pickerRows = useMemo(
     () =>
@@ -373,6 +420,9 @@ export function useChatPage() {
     retryLast: send.retryLast,
     handleCancel: send.handleCancel,
     runtime: send.runtime,
+    runtimeOps,
+    commandSearchOpen,
+    runChatAction,
     submitRuntimeRequest: send.submitRuntimeRequest,
     steerRuntime: send.steerRuntime,
     cancelSending: send.handleCancel,
