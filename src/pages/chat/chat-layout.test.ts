@@ -104,6 +104,17 @@ describe('chat layout wiring', () => {
     expect(hook).toContain('setHistoryRevealNonce');
   });
 
+  it('wires a one-shot honesty banner for Kiro without runtime request panels', () => {
+    const page = source('index.tsx');
+    expect(page).toContain('kiroChatStance');
+    expect(page).toContain('kiroChatBannerCopy');
+    expect(page).toContain('chatShowsRuntimeRequestPanels');
+    expect(page).toContain('chatComposerChoiceOptions');
+    expect(page).toContain('data-help="chat-kiro-oneshot"');
+    expect(source('ChatComposer.tsx')).toContain('kiroChatComposerPlaceholder');
+    expect(source('use-chat-page.ts')).toContain('kiroChatAllowsCommandSearch');
+  });
+
   it('uses shared Button for chrome icons and composer chips', () => {
     const header = source('ChatSessionHeader.tsx');
     const rail = source('ChatSessionRail.tsx');
