@@ -2,27 +2,16 @@
 
 export type ChatActionKind = 'local' | 'draft';
 
-export type ChatActionId =
-  | 'new-session'
-  | 'open-history'
-  | 'focus-history-search'
-  | 'copy-latest-reply'
-  | 'open-settings'
-  | 'open-agents'
-  | 'open-connections'
-  | 'sample-understand-project'
-  | 'sample-check-issues'
-  | 'sample-summarize'
-  | 'sample-write-tests'
-  | 'sample-explain-error'
-  | 'sample-refactor-safe'
-  | 'sample-git-status';
+export type ChatActionId = string;
 
 export interface ChatActionDef {
   id: ChatActionId;
   kind: ChatActionKind;
   /** i18n key under chat.actions.* */
-  labelKey: string;
+  labelKey?: string;
+  /** Literal label for dynamic command items such as model / skill entries. */
+  label?: string;
+  description?: string;
   /** Optional draft text for sample tasks. */
   draftText?: string;
   keywords: string[];
@@ -129,16 +118,17 @@ export interface ChatActionContext {
   newChatAllowed: boolean;
 }
 
-/** True only for explicit command-search mode: empty draft or a single leading `/…` token. */
+/** True only for explicit command-search mode: empty draft or a single leading `/…` or `\\…` token. */
 export function isCommandSearchMode(draft: string): boolean {
   const value = draft;
-  if (value === '/') return true;
-  if (!value.startsWith('/')) return false;
+  if (value === '/' || value === '\\') return true;
+  const lead = value[0];
+  if (lead !== '/' && lead !== '\\') return false;
   // Mid-prose, paths, and code with `/` elsewhere must not open the menu.
   if (/\s/.test(value)) return false;
   if (value.includes('://')) return false;
-  if (value.length > 1 && value[1] === '/') return false; // UNC / absolute-ish
-  return /^\/[^\/\s]*$/.test(value);
+  if (value.length > 1 && (value[1] === '/' || value[1] === '\\')) return false;
+  return lead === '/' ? /^\/[^\/\s]*$/.test(value) : /^\\[^\\\s]*$/.test(value);
 }
 
 export function normalizeActionQuery(raw: string): string {
@@ -153,18 +143,26 @@ export function commandSearchQuery(draft: string): string {
 export function actionMatchesQuery(action: ChatActionDef, query: string): boolean {
   if (!query) return true;
   const hay = normalizeActionQuery(
-    [action.id, action.labelKey, action.draftText ?? '', ...action.keywords].join('\u0000'),
+    [
+      action.id,
+      action.labelKey ?? '',
+      action.label ?? '',
+      action.description ?? '',
+      action.draftText ?? '',
+      ...action.keywords,
+    ].join('\u0000'),
   );
   const tokens = query.split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return true;
   return tokens.every((token) => hay.includes(token));
 }
 
-export function filterChatActions(draft: string): ChatActionDef[] {
+export function filterChatActions(draft: string, extraActions: ChatActionDef[] = []): ChatActionDef[] {
   if (!isCommandSearchMode(draft)) return [];
+  const actions = [...extraActions, ...CHAT_ACTIONS];
   const query = commandSearchQuery(draft);
-  if (!query) return CHAT_ACTIONS;
-  return CHAT_ACTIONS.filter((action) => actionMatchesQuery(action, query));
+  if (!query) return actions;
+  return actions.filter((action) => actionMatchesQuery(action, query));
 }
 
 export function chatActionDisabledReason(

@@ -41,6 +41,7 @@ export function ChatRuntimeExtras(props: {
   commandSearchOpen: boolean;
   commandIndex?: number;
   actionContext: ChatActionContext;
+  extraActions?: ChatActionDef[];
   onRunAction: (action: ChatActionDef) => void;
   onHoverCommandIndex?: (index: number) => void;
   models: RuntimeModelOption[];
@@ -82,6 +83,7 @@ export function ChatRuntimeExtras(props: {
           commandOpen={props.commandSearchOpen}
           selectedIndex={props.commandIndex}
           actionContext={props.actionContext}
+          extraActions={props.extraActions}
           onRun={props.onRunAction}
           onHoverIndex={props.onHoverCommandIndex}
         />
@@ -108,6 +110,7 @@ export function ChatRuntimeExtras(props: {
           commandOpen={props.commandSearchOpen}
           selectedIndex={props.commandIndex}
           actionContext={props.actionContext}
+          extraActions={props.extraActions}
           onRun={props.onRunAction}
           onHoverIndex={props.onHoverCommandIndex}
         />
