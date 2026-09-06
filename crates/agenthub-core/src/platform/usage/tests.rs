@@ -292,7 +292,7 @@ fn token_layout_repair_runs_once_then_skips() {
             cache_write_tokens: 0,
             cost_usd: Some(0.01),
             session_id: Some("s1".into()),
-            ts: "2026-08-07T00:00:00.000Z".into(),
+            ts: recent_ts(1),
             raw_hash: Some(format!("hash-{}", Uuid::new_v4())),
             fast: false,
         };
@@ -376,7 +376,7 @@ fn grok_parser_repair_clears_only_grok_rows_once() {
             cache_write_tokens: 0,
             cost_usd: Some(0.01),
             session_id: Some("s1".into()),
-            ts: "2026-08-07T00:00:00.000Z".into(),
+            ts: recent_ts(1),
             raw_hash: Some(hash.into()),
             fast: false,
         }])
@@ -455,7 +455,7 @@ fn usage_repo_clears_and_resets_one_agent() {
         cache_write_tokens: 0,
         cost_usd: Some(0.01),
         session_id: Some("s".into()),
-        ts: "2026-08-07T00:00:00.000Z".into(),
+        ts: recent_ts(1),
         raw_hash: Some(hash.into()),
         fast: false,
     };
@@ -541,7 +541,7 @@ fn recompute_costs_preserves_codex_billable_input() {
         cache_write_tokens: 0,
         cost_usd: Some(0.0),
         session_id: Some("s1".into()),
-        ts: "2026-08-07T00:00:00.000Z".into(),
+        ts: recent_ts(1),
         raw_hash: Some("hash-peel".into()),
         fast: false,
     };
@@ -588,7 +588,7 @@ fn recompute_keeps_codex_fast_multiplier() {
         cache_write_tokens: 0,
         cost_usd: Some(0.0),
         session_id: Some("s1".into()),
-        ts: "2026-08-07T00:00:00.000Z".into(),
+        ts: recent_ts(1),
         raw_hash: Some("hash-fast".into()),
         fast: true,
     };
@@ -645,7 +645,7 @@ fn recompute_preserves_log_cost_for_unknown_model() {
         cache_write_tokens: 0,
         cost_usd: Some(1.23),
         session_id: Some("s1".into()),
-        ts: "2026-08-07T00:00:00.000Z".into(),
+        ts: recent_ts(1),
         raw_hash: Some("hash-log-cost".into()),
         fast: false,
     };
@@ -687,7 +687,7 @@ fn usage_upsert_repairs_token_fields_on_conflict() {
         cache_write_tokens: 0,
         cost_usd: Some(0.001),
         session_id: Some("sess".into()),
-        ts: "2026-08-07T00:00:00.000Z".into(),
+        ts: recent_ts(1),
         raw_hash: Some("same-hash".into()),
         fast: false,
     };
@@ -739,7 +739,7 @@ fn usage_upsert_identical_row_is_not_counted() {
         cache_write_tokens: 0,
         cost_usd: Some(0.01),
         session_id: Some("s".into()),
-        ts: "2026-08-07T00:00:00.000Z".into(),
+        ts: recent_ts(1),
         raw_hash: Some("h".into()),
         fast: false,
     };

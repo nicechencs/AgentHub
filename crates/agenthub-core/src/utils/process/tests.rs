@@ -514,8 +514,10 @@ fn streaming_newline_storm_has_bounded_live_callbacks() {
         },
     );
 
+    // Live chunks emit on each OS read (not 8KiB batches). 2MiB of `y\n`
+    // still must not approach one-callback-per-line.
     assert!(
-        callbacks.load(std::sync::atomic::Ordering::SeqCst) <= 300,
+        callbacks.load(std::sync::atomic::Ordering::SeqCst) <= 4096,
         "newline storm produced too many callbacks"
     );
 }
