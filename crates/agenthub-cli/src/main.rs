@@ -371,6 +371,7 @@ fn main() -> ExitCode {
         eprintln!("warning: logging init failed: {e}");
         init_tracing(cli.verbose);
     }
+    agenthub_core::runtime::ensure_host_path();
 
     if cli.verbose {
         agenthub_core::logging::log_debug(

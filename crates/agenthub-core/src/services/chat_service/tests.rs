@@ -840,6 +840,71 @@ fn finalize_marks_zero_exit_openai_reasoning_error_as_failed() {
     assert_eq!(msg.content, err);
 }
 
+fn running_pi_message(content: &str) -> ChatMessage {
+    ChatMessage {
+        id: "m-cancel".into(),
+        conversation_id: "c1".into(),
+        turn: 1,
+        role: ChatRole::Agent,
+        agent_id: Some(AgentId::Pi),
+        content: content.into(),
+        status: ChatMessageStatus::Running,
+        duration_ms: 0,
+        exit_code: None,
+        error: None,
+        created_at: "t0".into(),
+    }
+}
+
+fn cancelled_result(stdout: &str, truncated: bool) -> AgentRunResult {
+    AgentRunResult {
+        agent: AgentId::Pi,
+        status: RunStatus::Cancelled,
+        exit_code: None,
+        duration_ms: 800,
+        stdout: stdout.into(),
+        stderr: String::new(),
+        command: "pi -p".into(),
+        error: Some("cancelled".into()),
+        truncated,
+        native_session_id: None,
+    }
+}
+
+#[test]
+fn finalize_cancel_does_not_dump_pi_protocol_stdout() {
+    let mut map = HashMap::new();
+    map.insert(AgentId::Pi, running_pi_message(""));
+    let stdout = concat!(
+        r#"{"type":"session","version":3,"id":"s1"}"#, "\n",
+        r#"{"type":"agent_start"}"#, "\n",
+        r#"{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","delta":"The"}}"#, "\n",
+    );
+    let msg = finalize_agent_message(&mut map, &cancelled_result(stdout, true)).unwrap();
+    assert_eq!(msg.status, ChatMessageStatus::Cancelled);
+    assert!(msg.content.is_empty(), "protocol dump leaked: {}", msg.content);
+}
+
+#[test]
+fn finalize_still_uses_plain_stdout_when_stream_was_empty() {
+    let mut map = HashMap::new();
+    map.insert(AgentId::Pi, running_pi_message(""));
+    let result = AgentRunResult {
+        agent: AgentId::Pi,
+        status: RunStatus::Ok,
+        exit_code: Some(0),
+        duration_ms: 20,
+        stdout: "hello from cli".into(),
+        stderr: String::new(),
+        command: "echo".into(),
+        error: None,
+        truncated: false,
+        native_session_id: None,
+    };
+    let msg = finalize_agent_message(&mut map, &result).unwrap();
+    assert_eq!(msg.content, "hello from cli");
+}
+
 #[test]
 fn map_run_status_covers_all_variants() {
     assert_eq!(map_run_status(RunStatus::Ok), ChatMessageStatus::Ok);

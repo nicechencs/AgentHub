@@ -1,6 +1,7 @@
 //! Chat Tauri commands — thin wrappers over agenthub-core ChatService.
 
-use agenthub_core::models::{AgentId, ChatEvent, ChatMessage, Conversation, LiveChatModel};
+use agenthub_core::models::{AgentId, ChatEvent, ChatMessage, Conversation, LiveChatModel, MarkdownFilePreview};
+use agenthub_core::utils::markdown_preview::read_markdown_file_preview;
 use agenthub_core::services::chat_runtime::{
     RuntimeOptions, RuntimeReply, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings,
 };
@@ -491,6 +492,15 @@ fn save_chat_paste_image_inner(
     let path = dir.join(name);
     std::fs::write(&path, bytes).map_err(|e| format!("write paste image: {e}"))?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+/// Invoke: `read_markdown_preview` — load a markdown file under the chat working directory.
+#[tauri::command]
+pub async fn read_markdown_preview(
+    path: String,
+    cwd: String,
+) -> Result<MarkdownFilePreview, String> {
+    read_markdown_file_preview(&path, &cwd).map_err(|e| map_err_string("read_markdown_preview", e))
 }
 
 #[cfg(test)]
