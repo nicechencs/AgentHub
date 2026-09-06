@@ -66,11 +66,15 @@ describe('chat runtime transport guards', () => {
     expect(isRuntimeChatAgent('grok')).toBe(true);
     expect(isRuntimeChatAgent('pi')).toBe(false);
     expect(isRuntimeChatAgent('claude')).toBe(false);
+    expect(isRuntimeChatAgent('cursor')).toBe(false);
+    expect(isRuntimeChatAgent('kiro')).toBe(false);
     expect(isRuntimeChatAgent(null)).toBe(false);
   });
   it('drops leftover enabled snapshot when the conversation is no longer Codex or Grok', () => {
     const leftover = snapshot(true, 'idle');
     expect(bindRuntimeSnapshotToAgent(leftover, { agentId: 'pi', conversationId: 'a' })?.enabled).toBe(false);
+    expect(bindRuntimeSnapshotToAgent(leftover, { agentId: 'kiro', conversationId: 'a' })?.enabled).toBe(false);
+    expect(bindRuntimeSnapshotToAgent(leftover, { agentId: 'cursor', conversationId: 'a' })?.enabled).toBe(false);
     expect(bindRuntimeSnapshotToAgent(leftover, { agentId: 'codex', conversationId: 'a' })?.enabled).toBe(true);
     expect(bindRuntimeSnapshotToAgent(leftover, { agentId: 'grok', conversationId: 'a' })?.enabled).toBe(true);
     expect(bindRuntimeSnapshotToAgent(leftover, { agentId: 'pi', conversationId: 'b' })).toBeNull();

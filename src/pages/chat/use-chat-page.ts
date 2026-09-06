@@ -30,6 +30,7 @@ import {
   type ChatActionDef,
 } from './chat-actions';
 import { lastTurnOutcome } from './chat-turn-outcome';
+import { kiroChatAllowsCommandSearch, kiroChatStance } from './chat-kiro-model';
 import { bindRuntimeSnapshotToAgent, isRuntimeSessionLocked } from './chat-runtime-model';
 
 export {
@@ -191,7 +192,7 @@ export function useChatPage() {
   );
 
   const runtimeCommandActions = useMemo<ChatActionDef[]>(() => {
-    if (!send.runtime?.enabled) return [];
+    if (!send.runtime?.enabled || kiroChatStance(active?.agentIds[0])) return [];
     const actions: ChatActionDef[] = [];
     if (!runtimeOps.frozen) {
       for (const model of runtimeOps.models) {
@@ -235,6 +236,7 @@ export function useChatPage() {
     runtimeOps.settings.effort,
     runtimeOps.settings.model,
     send.runtime?.enabled,
+    active?.agentIds,
     t,
   ]);
 
@@ -314,7 +316,8 @@ export function useChatPage() {
     },
     [actionContext, draft, handleNewChat, messages, navigate, runtimeOps, setRailOpen, setSettingsOpen, t, toast],
   );
-  const commandSearchOpen = isCommandSearchMode(draft);
+  const commandSearchOpen =
+    isCommandSearchMode(draft) && kiroChatAllowsCommandSearch(active?.agentIds[0]);
   const commandItems = useMemo(
     () => filterChatActions(draft, runtimeCommandActions),
     [draft, runtimeCommandActions],

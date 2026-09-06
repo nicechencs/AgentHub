@@ -21,7 +21,11 @@ export function isRuntimeActive(phase: RuntimeSnapshot['phase']): boolean {
   return ['starting', 'running', 'waiting', 'cancelling'].includes(phase);
 }
 
-/** Continuous chat composer/send path is Codex and Grok only. */
+/**
+ * Continuous chat composer/send path is Codex and Grok only.
+ * Half-surface agents (`cursor`, `kiro`, Claude print, …) stay off this list —
+ * do not invent ChatRuntime just because their interactive CLI has pickers.
+ */
 export function isRuntimeChatAgent(agentId: string | null | undefined): boolean {
   return agentId === 'codex' || agentId === 'grok';
 }
