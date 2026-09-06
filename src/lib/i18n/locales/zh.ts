@@ -18,6 +18,7 @@ export const zh = {
     copiedFileName: '已复制 {name}',
     copyMessage: '复制消息',
     copyFailed: '复制失败',
+    openLinkFailed: '无法打开链接',
     copyRecord: '复制全部记录',
     copyRecordEmpty: '还没有可复制的记录',
     you: '你',
