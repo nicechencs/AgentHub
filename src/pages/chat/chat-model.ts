@@ -307,7 +307,7 @@ export function autoApproveFooter(
 ): { text: string; warning: boolean } {
   const effect = autoApproveEffect(agentId);
   if (!allowDangerous) {
-    return { text: t('chat.autoApprove.footerOff'), warning: false };
+    return { text: '', warning: false };
   }
   if (effect === 'skip') {
     return { text: t('chat.autoApprove.footerSkip'), warning: true };

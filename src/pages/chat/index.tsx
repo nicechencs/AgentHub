@@ -144,30 +144,6 @@ export default function ChatPage() {
                   onKeyDown={split.onSeparatorKeyDown}
                   className="relative z-10 h-2 shrink-0 cursor-row-resize bg-transparent outline-none"
                 />
-                <ChatRuntimeExtras
-                  enabled={Boolean(page.runtime?.enabled)}
-                  draft={page.draft}
-                  commandSearchOpen={page.commandSearchOpen}
-                  commandIndex={page.commandIndex}
-                  actionContext={page.actionContext}
-                  extraActions={page.runtimeCommandActions}
-                  onRunAction={page.runChatAction}
-                  onHoverCommandIndex={page.setCommandIndex}
-                  models={page.runtimeOps.models}
-                  settings={page.runtimeOps.settings}
-                  frozen={page.runtimeOps.frozen}
-                  catalogLoading={page.runtimeOps.loading}
-                  efforts={page.runtimeOps.currentEfforts}
-                  onSwitchModel={(id) => void page.runtimeOps.switchModel(id)}
-                  onSwitchEffort={(id) => void page.runtimeOps.switchEffort(id)}
-                  images={page.runtimeOps.images}
-                  onAddImages={() => void page.runtimeOps.addImages()}
-                  onRemoveImage={page.runtimeOps.removeImage}
-                  onPasteImages={(files) => void page.runtimeOps.pasteImages(files)}
-                  extensions={page.runtimeOps.extensions}
-                  selectedSkillIds={page.runtimeOps.selectedSkillIds}
-                  onToggleSkill={page.runtimeOps.toggleSkill}
-                />
                 <ChatComposer
                   draft={page.draft}
                   setDraft={page.setDraft}
@@ -212,6 +188,35 @@ export default function ChatPage() {
                     page.runtime?.enabled
                       ? (files) => void page.runtimeOps.pasteImages(files)
                       : undefined
+                  }
+                  runtimeControls={
+                    page.runtime?.enabled ? (
+                      <ChatRuntimeExtras
+                        enabled
+                        inline
+                        draft={page.draft}
+                        commandSearchOpen={page.commandSearchOpen}
+                        commandIndex={page.commandIndex}
+                        actionContext={page.actionContext}
+                        extraActions={page.runtimeCommandActions}
+                        onRunAction={page.runChatAction}
+                        onHoverCommandIndex={page.setCommandIndex}
+                        models={page.runtimeOps.models}
+                        settings={page.runtimeOps.settings}
+                        frozen={page.runtimeOps.frozen}
+                        catalogLoading={page.runtimeOps.loading}
+                        efforts={page.runtimeOps.currentEfforts}
+                        onSwitchModel={(id) => void page.runtimeOps.switchModel(id)}
+                        onSwitchEffort={(id) => void page.runtimeOps.switchEffort(id)}
+                        images={page.runtimeOps.images}
+                        onAddImages={() => void page.runtimeOps.addImages()}
+                        onRemoveImage={page.runtimeOps.removeImage}
+                        onPasteImages={(files) => void page.runtimeOps.pasteImages(files)}
+                        extensions={page.runtimeOps.extensions}
+                        selectedSkillIds={page.runtimeOps.selectedSkillIds}
+                        onToggleSkill={page.runtimeOps.toggleSkill}
+                      />
+                    ) : undefined
                   }
                   fillHeight={split.paneHeight != null}
                   paneHeight={split.paneHeight}

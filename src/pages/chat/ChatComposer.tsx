@@ -4,6 +4,7 @@ import {
   useLayoutEffect,
   useRef,
   type KeyboardEvent,
+  type ReactNode,
   type Ref,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -81,6 +82,7 @@ export function ChatComposer({
   onFocusConversation,
   onDraftKeyDown,
   onPasteImages,
+  runtimeControls,
   fillHeight = false,
   paneHeight = null,
   paneRef,
@@ -117,6 +119,7 @@ export function ChatComposer({
   onFocusConversation: (id: string) => void;
   onDraftKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => boolean;
   onPasteImages?: (files: File[]) => void;
+  runtimeControls?: ReactNode;
   fillHeight?: boolean;
   paneHeight?: number | null;
   paneRef?: Ref<HTMLDivElement>;
@@ -335,7 +338,7 @@ export function ChatComposer({
                     switchingProvider ||
                     Boolean(primaryAgent && hiddenIds.has(primaryAgent))
                   }
-                  className="max-w-44"
+                  className="max-w-32"
                   aria-label={connectionCaption ?? t('chat.composer.switchConnection')}
                 >
                   <span className="min-w-0 truncate">
@@ -457,15 +460,23 @@ export function ChatComposer({
             </DropdownMenu>
           ) : null}
 
-          <Tip
-            className={cn(
-              'min-w-0 flex-1 truncate text-left text-meta leading-none',
-              approveFooter.warning ? 'text-warning/50' : 'text-muted/35',
-            )}
-            label={approveFooter.text}
-          >
-            {approveFooter.text}
-          </Tip>
+          {runtimeControls ? (
+            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+              {runtimeControls}
+            </div>
+          ) : approveFooter.text ? (
+            <Tip
+              className={cn(
+                'min-w-0 flex-1 truncate text-left text-meta leading-none',
+                approveFooter.warning ? 'text-warning/50' : 'text-muted/35',
+              )}
+              label={approveFooter.text}
+            >
+              {approveFooter.text}
+            </Tip>
+          ) : (
+            <div className="min-w-0 flex-1" />
+          )}
 
           {sending ? (
             <>

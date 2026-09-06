@@ -44,6 +44,11 @@ import {
   type RuntimeSnapshotVersion,
 } from './runtime-run-state';
 
+function titleFromPrompt(prompt: string): string {
+  const trimmed = prompt.trim();
+  return trimmed.length > 30 ? `${trimmed.slice(0, 30)}…` : trimmed;
+}
+
 /**
  * Chat 发送 / 取消 / 流式事件 / 过程面板。
  * 世代判定仍走 isCurrentChatRequest；不改发送、取消、切会话语义。
@@ -480,6 +485,12 @@ export function useChatPageSend(input: {
         createdAt: new Date().toISOString(),
       },
     ]);
+    if (!active.title.trim()) {
+      const title = titleFromPrompt(prompt);
+      setConversations((prev) => prev.map((item) => (
+        item.id === sendConvId ? { ...item, title } : item
+      )));
+    }
 
     // A runtime-enabled snapshot is the sole decision point.  Failure to read
     // it is surfaced and never silently changes a new Codex chat to legacy.

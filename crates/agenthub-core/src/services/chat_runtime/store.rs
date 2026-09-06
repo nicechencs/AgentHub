@@ -424,6 +424,18 @@ impl RuntimeStore {
                 agent.conversation_id = conversation_id.to_string();
                 insert_chat_message_conn(conn, user)?;
                 insert_chat_message_conn(conn, agent)?;
+                let current_title: String = conn.query_row(
+                    "SELECT title FROM conversations WHERE id = ?1",
+                    params![conversation_id],
+                    |row| row.get(0),
+                )?;
+                if current_title.trim().is_empty() {
+                    let title = truncate_conversation_title(&user.content, 30);
+                    conn.execute(
+                        "UPDATE conversations SET title = ?2, updated_at = ?3 WHERE id = ?1",
+                        params![conversation_id, title, now],
+                    )?;
+                }
                 let current: i64 = conn.query_row(
                     "SELECT last_sequence FROM chat_runtime WHERE conversation_id = ?1",
                     params![conversation_id],
@@ -1241,6 +1253,15 @@ fn insert_event_conn(
         params![conversation_id],
     )?;
     Ok(sequence)
+}
+
+fn truncate_conversation_title(input: &str, max: usize) -> String {
+    let trimmed = input.trim();
+    let mut out: String = trimmed.chars().take(max).collect();
+    if trimmed.chars().count() > max {
+        out.push('…');
+    }
+    out
 }
 
 fn finish_transaction<T>(conn: &rusqlite::Connection, result: Result<T>) -> Result<T> {

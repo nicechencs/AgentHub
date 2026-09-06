@@ -157,6 +157,41 @@ fn streaming_cancel_kills_long_process() {
     assert_eq!(r.status, RunStatus::Cancelled);
 }
 
+#[cfg(not(windows))]
+#[test]
+fn streaming_runner_emits_small_chunks_before_process_exit() {
+    let spec = RunSpec {
+        agent: AgentId::Grok,
+        program: PathBuf::from("sh"),
+        args: vec!["-c".into(), "printf a; sleep 0.5; printf b".into()],
+        cwd: None,
+        env: vec![],
+    };
+    let started = Instant::now();
+    let first = std::sync::Arc::new(Mutex::new(None::<Duration>));
+    let first_cb = std::sync::Arc::clone(&first);
+    let result = SystemProcessRunner.run_streaming(
+        &spec,
+        Duration::from_secs(5),
+        64 * 1024,
+        &CancelToken::new(),
+        &move |stream, text| {
+            if stream == OutputStream::Stdout && text.contains('a') {
+                let mut guard = first_cb.lock().unwrap();
+                if guard.is_none() {
+                    *guard = Some(started.elapsed());
+                }
+            }
+        },
+    );
+    assert_eq!(result.status, RunStatus::Ok);
+    let first_elapsed = first.lock().unwrap().expect("first stdout callback");
+    assert!(
+        first_elapsed < Duration::from_millis(450),
+        "small stdout chunk waited until process exit: {first_elapsed:?}"
+    );
+}
+
 #[test]
 fn read_lines_capped_stops_emitting_after_max() {
     use std::io::Cursor;
