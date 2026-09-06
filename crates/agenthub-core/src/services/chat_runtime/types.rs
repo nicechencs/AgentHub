@@ -229,3 +229,20 @@ pub struct RuntimeOptions {
     #[serde(default)]
     pub steer: bool,
 }
+
+impl RuntimeOptions {
+    /// Read surface for a conversation that does not use continuous chat.
+    /// Must not persist a runtime row or surface as a catalog failure.
+    pub(crate) fn inactive(conversation_id: impl Into<String>) -> Self {
+        Self {
+            conversation_id: conversation_id.into(),
+            settings: RuntimeTurnSettings::default(),
+            settings_frozen: false,
+            models: Vec::new(),
+            extensions: Vec::new(),
+            models_from_codex: false,
+            image_input: false,
+            steer: false,
+        }
+    }
+}

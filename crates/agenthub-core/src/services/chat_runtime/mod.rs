@@ -198,6 +198,11 @@ impl ChatRuntime {
     }
 
     fn options_with(&self, conversation_id: &str, refresh: bool) -> Result<RuntimeOptions> {
+        self.store.ensure_conversation(conversation_id)?;
+        let agent = self.store.conversation_agent(conversation_id)?;
+        if !is_runtime_chat_agent(agent) {
+            return Ok(RuntimeOptions::inactive(conversation_id));
+        }
         self.store.enable_if_new(conversation_id)?;
         let frozen = self
             .store

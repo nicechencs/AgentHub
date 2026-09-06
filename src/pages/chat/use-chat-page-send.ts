@@ -266,6 +266,8 @@ export function useChatPageSend(input: {
     }
   };
 
+  const activeAgentId = active?.agentIds[0] ?? null;
+
   useEffect(() => {
     if (!activeId) return;
     let disposed = false;
@@ -303,7 +305,7 @@ export function useChatPageSend(input: {
     if (!shouldPoll) return () => { disposed = true; };
     const timer = window.setInterval(() => void read(), 400);
     return () => { disposed = true; window.clearInterval(timer); };
-  }, [activeId, runtime?.enabled, runtime?.phase]);
+  }, [activeId, activeAgentId, runtime?.enabled, runtime?.phase]);
 
   // Background runs stay owned by their conversations. Poll them so a terminal
   // snapshot can release that session without a page-wide sending lock.

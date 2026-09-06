@@ -80,12 +80,18 @@ export function useChatRuntimeOps(input: {
     models: [],
     extensions: [],
   });
+  const catalogAgentRef = useRef<string | null>(null);
   const settingsRef = useRef<RuntimeTurnSettings>({});
+  const activeRef = useRef(active);
+  const runtimeEnabledRef = useRef(runtimeEnabled);
   settingsRef.current = settings;
+  activeRef.current = active;
+  runtimeEnabledRef.current = runtimeEnabled;
 
   const refresh = useCallback(async (opts?: { refresh?: boolean }) => {
     if (!active || !runtimeEnabled) {
       catalogRef.current = { conversationId: null, models: [], extensions: [] };
+      catalogAgentRef.current = null;
       setModels([]);
       setSettings({});
       setSettingsFrozen(false);
@@ -94,12 +100,25 @@ export function useChatRuntimeOps(input: {
       setSteer(true);
       return;
     }
-    if (opts?.refresh) {
+    const conversationId = active.id;
+    const agentId = active.agentIds[0] ?? null;
+    const agentChanged =
+      catalogAgentRef.current != null && catalogAgentRef.current !== agentId;
+    catalogAgentRef.current = agentId;
+    const refreshCatalog = opts?.refresh === true || agentChanged;
+    if (refreshCatalog) {
       catalogRef.current = { conversationId: active.id, models: [], extensions: [] };
     }
     setLoading(true);
     try {
-      const options = await runtimeOptions(active.id, opts);
+      const options = await runtimeOptions(conversationId, { refresh: refreshCatalog });
+      if (
+        activeRef.current?.id !== conversationId
+        || (activeRef.current.agentIds[0] ?? null) !== agentId
+        || !runtimeEnabledRef.current
+      ) {
+        return;
+      }
       const retained = retainRuntimeCatalog(catalogRef.current, options, active.id);
       const effectiveModels = applyDeniedEfforts(retained.models);
       catalogRef.current = {
@@ -127,10 +146,17 @@ export function useChatRuntimeOps(input: {
         incomingEffort !== coercedEffort
       ) {
         try {
-          nextSettings = await runtimeSetSettings(active.id, nextSettings);
+          nextSettings = await runtimeSetSettings(conversationId, nextSettings);
         } catch {
           // Keep local coerce even if persistence races; start still rejects.
         }
+      }
+      if (
+        activeRef.current?.id !== conversationId
+        || (activeRef.current.agentIds[0] ?? null) !== agentId
+        || !runtimeEnabledRef.current
+      ) {
+        return;
       }
       setSettings(nextSettings);
       setSettingsFrozen(frozenNow);
@@ -138,6 +164,13 @@ export function useChatRuntimeOps(input: {
       setImageInput(options.imageInput !== false);
       setSteer(options.steer !== false);
     } catch (error) {
+      if (
+        activeRef.current?.id !== conversationId
+        || (activeRef.current.agentIds[0] ?? null) !== agentId
+        || !runtimeEnabledRef.current
+      ) {
+        return;
+      }
       toast({
         title: t('chat.runtimeOps.optionsFail'),
         description: error instanceof Error ? error.message : String(error),
