@@ -169,6 +169,7 @@ describe('MOCK_CAPABILITIES (dev/mocks)', () => {
     expect(MOCK_CAPABILITIES.kimi!.skills!.level).toBe('partial');
     expect(MOCK_CAPABILITIES.workbuddy!.accountSwitch!.level).toBe('partial');
     expect(MOCK_CAPABILITIES.cursor!.accountSwitch!.level).toBe('unsupported');
+    expect(MOCK_CAPABILITIES.cursor!.apiKeyAccount!.level).toBe('unsupported');
     expect(MOCK_CAPABILITIES.cursor!.providerPresets!.level).toBe('unsupported');
     expect(MOCK_CAPABILITIES.claude!.accountSwitch!.level).toBe('full');
     expect(MOCK_CAPABILITIES.dsh!.apiKeyAccount!.level).toBe('full');
