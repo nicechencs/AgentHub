@@ -22,12 +22,12 @@ import { filterRemoteModelsForAgent } from '@/lib/provider-detect/remote-models'
 import {
   chatModelOptions,
   extractModel,
-  extractPiDefaultModel,
   extractPiDefaultProvider,
   extractPiSlotModels,
   isRetiredChatModel,
   officialPiModelsBaseUrl,
   piChatModelOptions,
+  resolvePiChatCurrentModel,
   shouldFetchChatRemoteModels,
 } from './chat-format';
 import {
@@ -163,10 +163,7 @@ export function useChatPageConnection(input: {
   const currentModel = useMemo(() => {
     if (leftoverCurrent) return null;
     if (primaryAgent === 'pi') {
-      if (liveChatModel && !isRetiredChatModel(liveChatModel)) return liveChatModel;
-      const fromEnvelope = currentProvider ? extractPiDefaultModel(currentProvider.configText) : null;
-      if (fromEnvelope && !isRetiredChatModel(fromEnvelope)) return fromEnvelope;
-      return null;
+      return resolvePiChatCurrentModel(liveChatModel);
     }
     const fromProvider = currentProvider ? extractModel(currentProvider.configText) : null;
     if (fromProvider && !isRetiredChatModel(fromProvider)) return fromProvider;

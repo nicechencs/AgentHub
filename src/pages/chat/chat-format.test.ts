@@ -13,6 +13,7 @@ import {
   localizeChatFailure,
   officialPiModelsBaseUrl,
   piChatModelOptions,
+  resolvePiChatCurrentModel,
   shouldFetchChatRemoteModels,
   thinkingChromeLabel,
 } from './chat-format';
@@ -183,5 +184,12 @@ describe('chat model options', () => {
         currentModel: 'grok-code-fast-1',
       }),
     ).not.toContain('grok-code-fast-1');
+  });
+
+  it('does not show leftover envelope GPT as the current Pi model', () => {
+    expect(resolvePiChatCurrentModel('grok-4.6')).toBe('grok-4.6');
+    expect(resolvePiChatCurrentModel('gpt-5.5')).toBe('gpt-5.5');
+    expect(resolvePiChatCurrentModel(null)).toBeNull();
+    expect(resolvePiChatCurrentModel('stealth/ox-alpha')).toBeNull();
   });
 });
