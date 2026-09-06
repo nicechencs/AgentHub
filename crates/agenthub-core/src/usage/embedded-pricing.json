@@ -115,6 +115,18 @@
     "cacheCreate": 12.5,
     "cacheRead": 1
   },
+  "claude-mythos-5-1": {
+    "input": 10,
+    "output": 50,
+    "cacheCreate": 12.5,
+    "cacheRead": 0.25
+  },
+  "claude-mythos-5.1": {
+    "input": 10,
+    "output": 50,
+    "cacheCreate": 12.5,
+    "cacheRead": 0.25
+  },
   "claude-mythos-preview": {
     "input": 10,
     "output": 50,
@@ -1469,17 +1481,32 @@
     "cacheCreate": 0.95,
     "cacheRead": 0.16
   },
+  "Kimi-K2.6": {
+    "input": 0.95,
+    "output": 4,
+    "cacheCreate": 0.95
+  },
   "kimi-k2.7-code": {
     "input": 0.95,
     "output": 4,
     "cacheCreate": 0.95,
     "cacheRead": 0.19
   },
+  "Kimi-K2.7-Code": {
+    "input": 0.95,
+    "output": 4,
+    "cacheCreate": 0.95
+  },
   "kimi-k3": {
     "input": 3,
     "output": 15,
     "cacheCreate": 3,
     "cacheRead": 0.3
+  },
+  "Kimi-K3": {
+    "input": 3,
+    "output": 15,
+    "cacheCreate": 3
   },
   "kimi-latest": {
     "input": 2,
@@ -1664,6 +1691,21 @@
     "input": 2,
     "output": 5,
     "cacheCreate": 2
+  },
+  "nebius/moonshotai/Kimi-K2.6": {
+    "input": 0.95,
+    "output": 4,
+    "cacheCreate": 0.95
+  },
+  "nebius/moonshotai/Kimi-K2.7-Code": {
+    "input": 0.95,
+    "output": 4,
+    "cacheCreate": 0.95
+  },
+  "nebius/moonshotai/Kimi-K3": {
+    "input": 3,
+    "output": 15,
+    "cacheCreate": 3
   },
   "o1": {
     "input": 15,
