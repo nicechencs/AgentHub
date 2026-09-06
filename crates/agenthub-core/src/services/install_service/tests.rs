@@ -1144,6 +1144,70 @@ fn finalize_runtime_install_does_not_set_business_code() {
     assert!(out.details.is_none());
 }
 
+fn winget_no_upgrade_result() -> ExecResult {
+    ExecResult {
+        command: "winget upgrade -e --id OpenJS.NodeJS.LTS".into(),
+        exit_code: Some(WINGET_NO_APPLICABLE_UPGRADE),
+        stdout: "找不到可用的升级。\n配置的源中没有可用的较新的包版本。\n".into(),
+        stderr: String::new(),
+        timed_out: false,
+        spawn_error: None,
+    }
+}
+
+#[test]
+fn winget_no_applicable_upgrade_is_already_latest() {
+    assert!(is_already_latest_upgrade(&winget_no_upgrade_result()));
+    assert!(is_already_latest_upgrade(&ExecResult {
+        command: "winget upgrade -e --id Git.Git".into(),
+        exit_code: Some(1),
+        stdout: "No applicable upgrade found.\nNo newer package versions are available from the configured sources.\n".into(),
+        stderr: String::new(),
+        timed_out: false,
+        spawn_error: None,
+    }));
+    assert!(!is_already_latest_upgrade(&ExecResult {
+        command: "winget upgrade -e --id Git.Git".into(),
+        exit_code: Some(1),
+        stdout: String::new(),
+        stderr: "failed".into(),
+        timed_out: false,
+        spawn_error: None,
+    }));
+    assert!(!is_already_latest_upgrade(&ExecResult {
+        command: "winget upgrade -e --id Git.Git".into(),
+        exit_code: Some(0),
+        stdout: String::new(),
+        stderr: String::new(),
+        timed_out: false,
+        spawn_error: None,
+    }));
+}
+
+#[test]
+fn finalize_runtime_install_already_latest_is_not_a_command_failure() {
+    let out = finalize_runtime_install(
+        RuntimeId::Git,
+        vec!["# upgrade runtime git via winget".into()],
+        winget_no_upgrade_result(),
+    );
+    assert!(
+        !out.logs.iter().any(|line| line.contains("不会覆盖该失败")),
+        "already-latest must not be treated as a failed command: {:?}",
+        out.logs
+    );
+    assert!(
+        !out.message.contains("未成功完成"),
+        "unexpected failure message: {}",
+        out.message
+    );
+    if out.ok {
+        assert!(out.message.contains("已是最新"));
+    } else {
+        assert!(out.message.contains("仍未就绪"));
+    }
+}
+
 #[test]
 fn grok_native_url_is_official_cli_allowlist() {
     let url = native_ps1_url(AgentId::Grok).unwrap();
