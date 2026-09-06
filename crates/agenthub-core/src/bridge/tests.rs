@@ -2890,6 +2890,7 @@ fn responses_error_data(body: &str) -> Value {
 
 fn assert_codex_completed_usage(usage: &Value) {
     #[derive(serde::Deserialize)]
+    #[allow(dead_code)]
     struct CodexCompletedUsage {
         input_tokens: i64,
         output_tokens: i64,

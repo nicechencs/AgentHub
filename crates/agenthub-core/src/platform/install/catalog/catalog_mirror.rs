@@ -42,6 +42,7 @@ struct ReasonMismatch {
 
 #[derive(Debug, Deserialize)]
 struct CatalogChannels {
+    #[cfg_attr(windows, allow(dead_code))]
     unix: BTreeMap<String, Vec<String>>,
     #[allow(dead_code)]
     windows: BTreeMap<String, Vec<String>>,
