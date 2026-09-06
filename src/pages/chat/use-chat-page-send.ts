@@ -15,6 +15,7 @@ import {
   listChatMessages,
   listConversations,
   runtimeCancel,
+  runtimeContinueLegacy,
   runtimeReply,
   runtimeSnapshot,
   runtimeStart,
@@ -26,6 +27,7 @@ import type { AgentKey, ChatEvent, ChatMessage, Conversation } from '@/lib/types
 import type { TurnGroup } from './chat-format';
 import { busyAgentsForSends, incomingSendingIds, liveSendingIds, retryTarget, sendBlockers } from './chat-model';
 import { isCurrentChatRequest } from './chat-request';
+import { grokCanQueueFollowUp, grokShouldFlushFollowUp } from './chat-grok-follow-up';
 import { acceptsRuntimeSnapshot, isLatestRuntimeRead, isRuntimeActive, readRuntimeTransport, requestMatchesRuntime } from './chat-runtime-model';
 import {
   beginRuntimeStart,
@@ -112,6 +114,8 @@ export function useChatPageSend(input: {
   const runtimeReadRef = useRef(new Map<string, number>());
   const runtimeProbeRef = useRef(new Set<string>());
   const runtimeProbeCancelRef = useRef(new Set<string>());
+  const followUpsRef = useRef(new Map<string, string>());
+  const [followUpById, setFollowUpById] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setProcessMap({});
@@ -126,6 +130,17 @@ export function useChatPageSend(input: {
     const next = (runtimeReadRef.current.get(conversationId) ?? 0) + 1;
     runtimeReadRef.current.set(conversationId, next);
     return next;
+  };
+
+  const publishFollowUps = () => {
+    setFollowUpById(Object.fromEntries(followUpsRef.current));
+  };
+
+  const setFollowUp = (conversationId: string, prompt: string | null) => {
+    const next = prompt?.trim() ?? '';
+    if (next) followUpsRef.current.set(conversationId, next);
+    else followUpsRef.current.delete(conversationId);
+    publishFollowUps();
   };
 
   const runtimeSequence = (conversationId: string) =>
@@ -226,6 +241,18 @@ export function useChatPageSend(input: {
     }
     runtimeIdRef.current = snapshot.runId;
     setRuntime(snapshot);
+    if (
+      !activePhase &&
+      wasSending &&
+      grokShouldFlushFollowUp(previousPhase, snapshot.phase)
+    ) {
+      const queued = followUpsRef.current.get(conversationId)?.trim();
+      if (queued) {
+        followUpsRef.current.delete(conversationId);
+        publishFollowUps();
+        void dispatchQueuedFollowUp(conversationId, queued);
+      }
+    }
     if (!activePhase && wasSending) {
       void loadMessages(conversationId).then((rows) => {
         if (
@@ -449,8 +476,58 @@ export function useChatPageSend(input: {
     }
   }
 
+  async function dispatchQueuedFollowUp(conversationId: string, prompt: string) {
+    const text = prompt.trim();
+    if (!text) return;
+    markSending(conversationId);
+    const generation = activeGenerationRef.current;
+    try {
+      await enqueueRuntimeSnapshot(
+        conversationId,
+        () => runtimeStart(conversationId, text, crypto.randomUUID()),
+        (snapshot, sourceVersion) => {
+          applyRuntimeSnapshot(
+            snapshot,
+            conversationId,
+            generation,
+            sourceVersion,
+            conversationId === activeIdRef.current,
+          );
+        },
+      );
+    } catch (error) {
+      clearSendingFor(conversationId);
+      setFollowUp(conversationId, text);
+      if (conversationId === activeIdRef.current) {
+        toast({
+          title: error instanceof Error ? error.message : String(error),
+          variant: 'danger',
+        });
+      }
+    }
+  }
+
   async function sendPrompt(prompt: string, clearDraft: boolean) {
-    if (!active || sendingIdsRef.current.has(active.id)) return;
+    if (!active) return;
+    if (sendingIdsRef.current.has(active.id)) {
+      if (
+        grokCanQueueFollowUp({
+          agentId: active.agentIds[0],
+          runtimeEnabled: runtime?.enabled && runtime.conversationId === active.id,
+          phase: runtime?.phase,
+          sending: true,
+        })
+      ) {
+        setFollowUp(active.id, prompt);
+        if (clearDraft) setDraft('');
+        toast({
+          title: t('chat.toast.queuedAfterTurn'),
+          variant: 'success',
+          duration: 2500,
+        });
+      }
+      return;
+    }
     if (sendBlockers({
       conversation: active,
       hiddenIds,
@@ -699,6 +776,9 @@ export function useChatPageSend(input: {
   async function handleCancel() {
     const id = active?.id;
     if (!id || !sendingIdsRef.current.has(id) || cancelingIdsRef.current.has(id)) return;
+    const queued = followUpsRef.current.get(id);
+    if (queued && !draft.trim()) setDraft(queued);
+    setFollowUp(id, null);
     cancelingIdsRef.current.add(id);
     setCancelingIds([...cancelingIdsRef.current]);
     try {
@@ -753,6 +833,33 @@ export function useChatPageSend(input: {
     }
   }
 
+  async function continueLegacyGrok() {
+    if (!active) return;
+    try {
+      const snapshot = await runtimeContinueLegacy(active.id);
+      const sourceVersion = (runtimeSourceVersionRef.current.get(active.id) ?? 0) + 1;
+      runtimeSourceVersionRef.current.set(active.id, sourceVersion);
+      applyRuntimeSnapshot(
+        snapshot,
+        active.id,
+        activeGenerationRef.current,
+        sourceVersion,
+        true,
+      );
+      toast({
+        title: t('chat.toast.legacyContinued'),
+        variant: 'success',
+        duration: 2500,
+      });
+    } catch (error) {
+      toast({
+        title: t('chat.toast.legacyContinueFail'),
+        description: error instanceof Error ? error.message : String(error),
+        variant: 'danger',
+      });
+    }
+  }
+
   async function steerRuntime(prompt: string) {
     if (!active || !runtime?.enabled || !runtimeIdRef.current || !prompt.trim()) return;
     try {
@@ -776,6 +883,11 @@ export function useChatPageSend(input: {
     handleSend,
     retryLast,
     handleCancel,
+    queuedFollowUp: activeId ? followUpById[activeId] ?? null : null,
+    clearQueuedFollowUp: () => {
+      if (activeId) setFollowUp(activeId, null);
+    },
+    continueLegacyGrok,
     adoptInflight,
     cancelIfSending,
     runtime,

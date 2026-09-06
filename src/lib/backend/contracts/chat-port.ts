@@ -26,6 +26,7 @@ export interface ChatPort {
   runtimeOptions(conversationId: string): Promise<RuntimeOptions>;
   runtimeSetSettings(conversationId: string, settings: RuntimeTurnSettings): Promise<RuntimeTurnSettings>;
   runtimeNoteThinkingFailure(conversationId: string, settings: RuntimeTurnSettings, errorText: string): Promise<void>;
+  runtimeContinueLegacy(conversationId: string): Promise<RuntimeSnapshot>;
   runtimeStart(conversationId: string, prompt: string, clientRequestId: string, extras?: RuntimeStartExtras): Promise<RuntimeSnapshot>;
   runtimeReply(reply: RuntimeReply): Promise<void>;
   runtimeSteer(conversationId: string, runId: string, prompt: string, clientRequestId: string): Promise<void>;

@@ -70,6 +70,9 @@ export function ChatComposer({
   onRetryStatus,
   onSend,
   onSteer,
+  onQueueAfterTurn,
+  queuedFollowUp = null,
+  onClearQueuedFollowUp,
   onCancel,
   onSelectAgent,
   onSwitchConnection,
@@ -111,6 +114,9 @@ export function ChatComposer({
   onRetryStatus?: () => void;
   onSend: () => void;
   onSteer?: () => void;
+  onQueueAfterTurn?: () => void;
+  queuedFollowUp?: string | null;
+  onClearQueuedFollowUp?: () => void;
   onCancel: () => void;
   onSelectAgent: (id: AgentKey) => void;
   onSwitchConnection: (ticketId: string) => void;
@@ -137,7 +143,10 @@ export function ChatComposer({
   const firstBlocker = blockers[0] ?? null;
   const hiddenBlocked = firstBlocker?.kind === 'hiddenAgents' ||
     active.agentIds.some((id) => hiddenIds.has(id));
-  const canSend = Boolean(draft.trim()) && blockers.length === 0 && (!sending || Boolean(onSteer));
+  const canSend =
+    Boolean(draft.trim()) &&
+    blockers.length === 0 &&
+    (!sending || Boolean(onSteer) || Boolean(onQueueAfterTurn));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const syncTextareaHeight = useCallback(() => {
@@ -244,7 +253,10 @@ export function ChatComposer({
             if (onDraftKeyDown?.(e)) return;
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              if (canSend) (sending && onSteer ? onSteer() : onSend());
+              if (canSend) {
+                if (sending && onSteer) onSteer();
+                else onSend();
+              }
             }
           }}
           onPaste={(e) => {
@@ -264,6 +276,18 @@ export function ChatComposer({
           }}
           aria-label={t('chat.composer.inputAria')}
         />
+        {queuedFollowUp ? (
+          <div className="flex items-center gap-2 px-4 pb-1">
+            <p className="min-w-0 flex-1 truncate text-meta text-muted">
+              {t('chat.composer.queuedFollowUp')}：{queuedFollowUp}
+            </p>
+            {onClearQueuedFollowUp ? (
+              <Button type="button" size="sm" variant="ghost" onClick={onClearQueuedFollowUp}>
+                {t('chat.composer.clearQueuedFollowUp')}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex shrink-0 items-center gap-1.5 border-t border-border/50 px-2 py-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -526,6 +550,10 @@ export function ChatComposer({
               {onSteer ? (
                 <Button size="sm" variant="outline" disabled={!draft.trim()} onClick={onSteer}>
                   {t('chat.composer.add')}
+                </Button>
+              ) : onQueueAfterTurn ? (
+                <Button size="sm" variant="outline" disabled={!draft.trim()} onClick={onQueueAfterTurn}>
+                  {t('chat.composer.sendAfterTurn')}
                 </Button>
               ) : null}
               <Button size="sm" variant="dangerOutline" disabled={canceling} onClick={onCancel}>

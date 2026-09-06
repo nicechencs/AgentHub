@@ -507,6 +507,26 @@ export function createMockChatPort(): ChatPort {
     },
     async runtimeReply(_reply: RuntimeReply) {},
     async runtimeSteer() {},
+    async runtimeContinueLegacy(conversationId) {
+      const conv = mockConversations.find((item) => item.id === conversationId);
+      if (!conv) throw new Error(`conversation not found: ${conversationId}`);
+      if (conv.agentIds[0] !== 'grok') throw new Error('只有 Grok 可以用新方式继续');
+      if (!conv.nativeSessionId?.trim()) throw new Error('这条对话没有可接上的会话，请新建对话');
+      const current = runtimeSnapshots.get(conversationId);
+      const next = {
+        conversationId,
+        enabled: true,
+        runId: current?.runId ?? null,
+        phase: current?.phase ?? 'idle',
+        lastSequence: current?.lastSequence ?? 0,
+        events: current?.events ?? [],
+        pendingRequests: current?.pendingRequests ?? [],
+        gap: current?.gap ?? false,
+        currentMessage: current?.currentMessage ?? null,
+      };
+      runtimeSnapshots.set(conversationId, next);
+      return next;
+    },
     async runtimeCancel(conversationId, runId) {
       const current = runtimeSnapshots.get(conversationId);
       if (current?.runId !== runId) throw new Error('run is no longer active');

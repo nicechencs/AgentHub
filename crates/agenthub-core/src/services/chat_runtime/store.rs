@@ -126,6 +126,51 @@ impl RuntimeStore {
         })
     }
 
+    /// Enable continuous chat for an existing Grok conversation that already
+    /// has a native session id. Does not silently rewrite a live turn.
+    pub(crate) fn enable_legacy_with_session(
+        &self,
+        conversation_id: &str,
+        session_id: &str,
+    ) -> Result<()> {
+        self.ensure_conversation(conversation_id)?;
+        let session_id = crate::adapters::session_resume::valid_session_id(session_id)
+            .ok_or_else(|| AppError::InvalidArg("这条对话没有可接上的会话，请新建对话".into()))?
+            .to_string();
+        self.db.with_conn(|conn| {
+            let agent = self.conversation_agent_conn(conn, conversation_id)?;
+            if agent != Some(AgentId::Grok) {
+                return Err(AppError::Unsupported(
+                    "只有 Grok 可以用新方式继续".into(),
+                ));
+            }
+            let existing: Option<(bool, Option<String>)> = conn
+                .query_row(
+                    "SELECT enabled != 0, thread_id FROM chat_runtime WHERE conversation_id = ?1",
+                    params![conversation_id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+            if existing.as_ref().is_some_and(|(enabled, _)| *enabled) {
+                return Ok(());
+            }
+            let now = Utc::now().to_rfc3339();
+            conn.execute(
+                r#"
+                INSERT INTO chat_runtime (
+                    conversation_id, enabled, phase, last_sequence, thread_id, updated_at
+                ) VALUES (?1, 1, 'idle', 0, ?2, ?3)
+                ON CONFLICT(conversation_id) DO UPDATE SET
+                    enabled = 1,
+                    thread_id = COALESCE(chat_runtime.thread_id, excluded.thread_id),
+                    updated_at = excluded.updated_at
+                "#,
+                params![conversation_id, session_id, now],
+            )?;
+            Ok(())
+        })
+    }
+
     pub(crate) fn recover_active(&self) -> Result<()> {
         self.db.with_conn(|conn| {
             let mut stmt = conn.prepare(

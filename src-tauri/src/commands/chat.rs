@@ -175,6 +175,21 @@ pub async fn chat_runtime_note_thinking_failure(
 }
 
 #[tauri::command]
+pub async fn chat_runtime_continue_legacy(
+    state: State<'_, AppState>,
+    conversation_id: String,
+) -> Result<RuntimeSnapshot, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        hub.chat()
+            .runtime()
+            .continue_legacy(&conversation_id)
+            .map_err(|e| map_err_string("chat_runtime_continue_legacy", e))
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn chat_runtime_start(
     state: State<'_, AppState>,
     conversation_id: String,
