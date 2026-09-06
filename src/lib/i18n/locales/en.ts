@@ -2672,6 +2672,18 @@ export const en = {
       resumeCommandCopiedHint: "Paste in the terminal to continue this chat",
       noResumeCommand: "No session to copy",
     },
+    preview: {
+      titleFallback: "Preview",
+      modePreview: "Preview",
+      modeSource: "Source",
+      collapse: "Collapse preview",
+      openDir: "Open folder",
+      resizeAria: "Resize preview",
+      retry: "Retry",
+      failed: "Couldn't open",
+      emptyBody: "Nothing to show",
+      truncatedSuffix: " · Truncated",
+    },
     composer: {
       placeholder: "Message an agent… (Shift+Enter for a new line)",
       inputAria: "Message input",

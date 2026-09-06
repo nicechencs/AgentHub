@@ -46,6 +46,7 @@ export function ChatMessageBubble({
   retryDisabled,
   onRetry,
   localBasePath,
+  onOpenLocal,
 }: {
   message: ChatMessage;
   process?: AgentProcessView;
@@ -54,9 +55,12 @@ export function ChatMessageBubble({
   retryDisabled: boolean;
   onRetry: () => void;
   localBasePath?: string;
+  onOpenLocal?: (path: string) => boolean;
 }) {
   if (message.role === 'user') {
-    return <UserBubble message={message} localBasePath={localBasePath} />;
+    return (
+      <UserBubble message={message} localBasePath={localBasePath} onOpenLocal={onOpenLocal} />
+    );
   }
   return (
     <AgentBubble
@@ -67,6 +71,7 @@ export function ChatMessageBubble({
       retryDisabled={retryDisabled}
       onRetry={onRetry}
       localBasePath={localBasePath}
+      onOpenLocal={onOpenLocal}
     />
   );
 }
@@ -74,9 +79,11 @@ export function ChatMessageBubble({
 function UserBubble({
   message,
   localBasePath,
+  onOpenLocal,
 }: {
   message: ChatMessage;
   localBasePath?: string;
+  onOpenLocal?: (path: string) => boolean;
 }) {
   return (
     <div className="flex justify-end">
@@ -84,7 +91,12 @@ function UserBubble({
         id={`chat-msg-${message.id}`}
         className="group relative max-w-[85%] rounded-composer bg-subtle px-4 py-2 text-body text-primary"
       >
-        <MarkdownView content={message.content} variant="chat" localBasePath={localBasePath} />
+        <MarkdownView
+          content={message.content}
+          variant="chat"
+          localBasePath={localBasePath}
+          onOpenLocal={onOpenLocal}
+        />
         <CopyTextButton text={message.content} />
       </div>
     </div>
@@ -99,6 +111,7 @@ function AgentBubble({
   retryDisabled,
   onRetry,
   localBasePath,
+  onOpenLocal,
 }: {
   message: ChatMessage;
   process?: AgentProcessView;
@@ -107,6 +120,7 @@ function AgentBubble({
   retryDisabled: boolean;
   onRetry: () => void;
   localBasePath?: string;
+  onOpenLocal?: (path: string) => boolean;
 }) {
   const { t } = useI18n();
   const agent = message.agentId ?? 'claude';
@@ -167,7 +181,12 @@ function AgentBubble({
         ) : null}
         <div className="text-body leading-relaxed text-primary">
           {displayContent ? (
-            <MarkdownView content={displayContent} variant="chat" localBasePath={localBasePath} />
+            <MarkdownView
+              content={displayContent}
+              variant="chat"
+              localBasePath={localBasePath}
+              onOpenLocal={onOpenLocal}
+            />
           ) : running ? (
             <span className="inline-flex items-center gap-2 text-muted">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />

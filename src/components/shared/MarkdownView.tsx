@@ -34,6 +34,8 @@ export interface MarkdownViewProps {
   variant?: MarkdownViewVariant;
   /** Resolve relative file links against this directory (chat working directory). */
   localBasePath?: string;
+  /** Return true when the local path was handled (e.g. opened in the preview pane). */
+  onOpenLocal?: (path: string) => boolean;
 }
 
 /** Minimal HAST element shape used by rehypeRewrite (avoids depending on `hast` types). */
@@ -142,6 +144,24 @@ export function resolveMarkdownLocalPath(href: string, basePath?: string): strin
   if (!base) return null;
   const joined = joinLocalBasePath(base, path);
   return normalizeOpenPath(joined) ?? joined;
+}
+
+export function isMarkdownFilePath(path: string): boolean {
+  return /\.(md|mdx|markdown)$/i.test(markdownHrefPath(path));
+}
+
+export function localParentDir(path: string): string {
+  const raw = path.trim();
+  if (!raw) return '';
+  const win = /^[A-Za-z]:/.test(raw) || raw.includes('\\');
+  const sep = win ? '\\' : '/';
+  const normalized = win ? raw.replace(/\//g, '\\') : raw.replace(/\\/g, '/');
+  const i = normalized.lastIndexOf(sep);
+  if (i <= 0) return normalized;
+  if (win && /^[A-Za-z]:\\$/.test(normalized.slice(0, i + 1))) {
+    return normalized.slice(0, i + 1);
+  }
+  return normalized.slice(0, i);
 }
 
 /** Remove unsafe URL/HTML properties from one HAST node. */
@@ -264,6 +284,7 @@ function clickElement(target: EventTarget | null): Element | null {
 export type MarkdownClickOptions = {
   localBasePath?: string;
   onError?: (err: unknown) => void;
+  onOpenLocal?: (path: string) => boolean;
 };
 
 /** Handle clicks before the webview/browser gets a chance to navigate. */
@@ -298,6 +319,7 @@ export function handleMarkdownClick(
 
   const local = resolveMarkdownLocalPath(href, options?.localBasePath);
   if (local) {
+    if (options?.onOpenLocal?.(local)) return;
     void openLocalPath(local).catch((err) => {
       console.error('[MarkdownView] open local failed', err);
       options?.onError?.(err);
@@ -318,6 +340,7 @@ export function MarkdownView({
   className,
   variant = 'chat',
   localBasePath,
+  onOpenLocal,
 }: MarkdownViewProps) {
   const { theme } = useTheme();
   const { t } = useI18n();
@@ -331,6 +354,7 @@ export function MarkdownView({
       onClickCapture={(event) => {
         handleMarkdownClick(event, {
           localBasePath,
+          onOpenLocal,
           onError: () => toast({ title: t('common.openLinkFailed'), variant: 'danger' }),
         });
       }}

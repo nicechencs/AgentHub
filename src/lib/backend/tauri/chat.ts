@@ -1,4 +1,4 @@
-import type { ChatPort } from '@/lib/backend/contracts';
+import type { ChatPort, MarkdownFilePreviewDto } from '@/lib/backend/contracts';
 import {
   mapChatMessage,
   mapConversation,
@@ -132,6 +132,9 @@ export function createTauriChatPort(): ChatPort {
         extension: input.extension,
         byteLength: input.byteLength ?? null,
       });
+    },
+    async readMarkdownPreview(path, cwd) {
+      return invoke<MarkdownFilePreviewDto>('read_markdown_preview', { path, cwd });
     },
   };
 }

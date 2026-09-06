@@ -567,5 +567,15 @@ export function createMockChatPort(): ChatPort {
       const ext = input.extension.replace(/^\./, '') || 'png';
       return `/tmp/mock-paste.${ext}`;
     },
+    async readMarkdownPreview(path) {
+      await delay(10);
+      const name = path.split(/[/\\]/).pop() || 'preview.md';
+      return {
+        path,
+        name,
+        content: `# ${name}\n\nMock preview.`,
+        truncated: false,
+      };
+    },
   };
 }

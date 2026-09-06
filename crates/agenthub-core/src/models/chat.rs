@@ -1,5 +1,7 @@
 //! Chat conversation / message payloads + streaming events.
 
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 
 use super::AgentId;
@@ -244,6 +246,16 @@ pub struct LiveChatModel {
     pub effort: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub efforts: Vec<String>,
+}
+
+/// Local markdown file opened from a chat message link.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkdownFilePreview {
+    pub path: PathBuf,
+    pub name: String,
+    pub content: String,
+    pub truncated: bool,
 }
 
 #[cfg(test)]

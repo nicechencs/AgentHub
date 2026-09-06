@@ -1,6 +1,13 @@
 import type { AgentKey, ChatEvent, ChatMessage, Conversation } from '@/lib/types';
 import type { RuntimeOptions, RuntimeReply, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings } from './chat-runtime';
 
+export type MarkdownFilePreviewDto = {
+  path: string;
+  name: string;
+  content: string;
+  truncated: boolean;
+};
+
 export interface ChatPort {
   listConversations(): Promise<Conversation[]>;
   createConversation(agentIds: AgentKey[], cwd?: string | null): Promise<Conversation>;
@@ -41,4 +48,6 @@ export interface ChatPort {
   }>;
   pickChatImages(title?: string): Promise<string[]>;
   saveChatPasteImage(input: { base64: string; extension: string; byteLength?: number }): Promise<string>;
+  /** Read a markdown file under the conversation working directory for the right-hand preview. */
+  readMarkdownPreview(path: string, cwd: string): Promise<MarkdownFilePreviewDto>;
 }

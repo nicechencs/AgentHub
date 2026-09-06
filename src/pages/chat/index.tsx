@@ -1,15 +1,21 @@
+import { useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MessagesSquare } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
+import { SideSplitFrame } from '@/components/layout/SideSplit';
+import { useSideSplit } from '@/components/layout/use-side-split';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { Notice } from '@/components/shared/Notice';
+import { isMarkdownFilePath } from '@/components/shared/MarkdownView';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
+import { StorageKey } from '@/lib/storage-key';
 import { cn } from '@/lib/utils';
 import { chatMainColumnClass, chatStageClass } from './chat-model';
 import { formatChatSessionRecord } from './chat-format';
 import { grokCanQueueFollowUp, grokLegacyContinueKind } from './chat-grok-follow-up';
+import { ChatMarkdownPreviewPanel } from './ChatMarkdownPreviewPanel';
 import { ChatRuntimeExtras } from './ChatRuntimeExtras';
 import { ChatTurnOutcomeBanner } from './ChatTurnOutcomeBanner';
 import { ChatComposer } from './ChatComposer';
@@ -24,8 +30,21 @@ import { useChatPage } from './use-chat-page';
 export default function ChatPage() {
   const page = useChatPage();
   const split = useChatComposerSplit();
+  const preview = useSideSplit<{ path: string }>({ storageKey: StorageKey.chatPreviewWidth });
   const navigate = useNavigate();
   const { t } = useI18n();
+  const openMarkdownPreview = useCallback(
+    (next: string) => {
+      if (!isMarkdownFilePath(next)) return false;
+      preview.open({ path: next });
+      return true;
+    },
+    [preview.open],
+  );
+
+  useEffect(() => {
+    preview.reset();
+  }, [page.active?.id, preview.reset]);
 
   if (page.error && page.conversations.length === 0 && !page.listLoading) {
     return (
@@ -87,6 +106,7 @@ export default function ChatPage() {
         historyRevealNonce={page.historyRevealNonce}
       />
 
+      <div ref={preview.splitRef} className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
       <section className="relative flex min-w-0 flex-1 flex-col bg-canvas">
         <ChatSessionHeader
           active={page.active}
@@ -118,6 +138,7 @@ export default function ChatPage() {
               bottomRef={page.bottomRef}
               onScroll={page.onTranscriptScroll}
               onRetry={() => void page.retryLast()}
+              onOpenLocal={openMarkdownPreview}
             />
             {page.runtime?.pendingRequests.length ? (
               <ChatRuntimeRequests
@@ -291,6 +312,20 @@ export default function ChatPage() {
           runtimeLocked={page.runtimeLocked || page.sendingHere}
         />
       </section>
+        <SideSplitFrame split={preview} resizeAria={t('chat.preview.resizeAria')}>
+          {preview.target ? (
+            <ChatMarkdownPreviewPanel
+              path={preview.target.path}
+              cwd={page.active?.cwd ?? ''}
+              open={preview.expanded}
+              width={preview.paneWidth}
+              onClose={preview.close}
+              onOpenLocal={(next) => preview.open({ path: next })}
+              className="h-full min-w-0"
+            />
+          ) : null}
+        </SideSplitFrame>
+      </div>
     </div>
   );
 }

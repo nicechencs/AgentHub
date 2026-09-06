@@ -17,6 +17,15 @@ describe('chat layout wiring', () => {
     expect(page).not.toContain('flex min-w-0 flex-1 flex-col bg-panel');
   });
 
+  it('opens markdown files in a right-hand preview pane', () => {
+    const page = source('index.tsx');
+    expect(page).toContain('useSideSplit');
+    expect(page).toContain('SideSplitFrame');
+    expect(page).toContain('ChatMarkdownPreviewPanel');
+    expect(page).toContain('isMarkdownFilePath');
+    expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('readMarkdownPreview');
+  });
+
   it('grows the composer textarea with a shared cap and panel-colored shell', () => {
     const composer = source('ChatComposer.tsx');
     expect(composer).toContain('[field-sizing:content]');
