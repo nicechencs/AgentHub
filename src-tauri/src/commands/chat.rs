@@ -1,7 +1,9 @@
 //! Chat Tauri commands — thin wrappers over agenthub-core ChatService.
 
 use agenthub_core::models::{AgentId, ChatEvent, ChatMessage, Conversation, LiveChatModel};
-use agenthub_core::services::chat_runtime::{RuntimeOptions, RuntimeReply, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings};
+use agenthub_core::services::chat_runtime::{
+    RuntimeOptions, RuntimeReply, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings,
+};
 use agenthub_core::AgentHub;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
@@ -151,6 +153,23 @@ pub async fn chat_runtime_set_settings(
             .runtime()
             .set_settings(&conversation_id, settings)
             .map_err(|e| map_err_string("chat_runtime_set_settings", e))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn chat_runtime_note_thinking_failure(
+    state: State<'_, AppState>,
+    conversation_id: String,
+    settings: RuntimeTurnSettings,
+    error_text: String,
+) -> Result<(), String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        hub.chat()
+            .runtime()
+            .note_thinking_failure(&conversation_id, settings, &error_text)
+            .map_err(|e| map_err_string("chat_runtime_note_thinking_failure", e))
     })
     .await
 }
@@ -360,7 +379,6 @@ fn parse_agent_ids(ids: Vec<String>) -> Result<Vec<AgentId>, String> {
 #[cfg(test)]
 mod tests;
 
-
 /// Invoke: `pick_chat_images` — select one or more local image paths for Codex localImage input.
 #[tauri::command]
 pub async fn pick_chat_images(
@@ -402,7 +420,10 @@ fn save_chat_paste_image_inner(
 ) -> Result<String, String> {
     use base64::Engine;
     const MAX_BYTES: u64 = 10 * 1024 * 1024;
-    let ext = extension.trim().trim_start_matches('.').to_ascii_lowercase();
+    let ext = extension
+        .trim()
+        .trim_start_matches('.')
+        .to_ascii_lowercase();
     let allowed = ["png", "jpg", "jpeg", "gif", "webp", "bmp"];
     if !allowed.iter().any(|item| *item == ext) {
         return Err(format!("unsupported image type: {ext}"));

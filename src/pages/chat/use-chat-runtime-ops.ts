@@ -3,6 +3,7 @@ import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import {
   pickChatImages,
+  runtimeNoteThinkingFailure,
   runtimeOptions,
   runtimeSetSettings,
   saveChatPasteImage,
@@ -15,6 +16,7 @@ import {
   applyDeniedEfforts,
   coerceSettingsToCatalog,
   effortsForModel,
+  isThinkingUnsupportedFailure,
   learnFromThinkingUnsupported,
   retainRuntimeCatalog,
   settingsForModelSwitch,
@@ -312,28 +314,34 @@ export function useChatRuntimeOps(input: {
 
   const noteThinkingFailure = useCallback(
     async (errorText: string | null | undefined) => {
-      if (!active || frozen) return;
-      const learned = learnFromThinkingUnsupported(settingsRef.current, models, errorText);
-      if (!learned.learned) return;
-      setModels(learned.models);
-      catalogRef.current = {
-        conversationId: active.id,
-        models: learned.models,
-        extensions: catalogRef.current.extensions,
-      };
-      setSettings(learned.settings);
-      const nextEffort = learned.settings.effort?.trim() || null;
-      const priorEffort = settingsRef.current.effort?.trim() || null;
-      if (nextEffort && nextEffort !== priorEffort) {
-        try {
-          const persisted = await runtimeSetSettings(active.id, learned.settings);
-          setSettings(persisted);
-        } catch {
-          // Local deny still hides the effort; start/options enforce too.
-        }
+      if (!active || !isThinkingUnsupportedFailure(errorText)) return;
+      // Capture the pair that produced the failed turn before local coerce or
+      // refresh can replace it. Failure can arrive while controls are still
+      // frozen, so learning must not use the normal settings-write path.
+      const failedSettings = settingsRef.current;
+      const failedModel = failedSettings.model?.trim() || null;
+      const failedEffort = failedSettings.effort?.trim() || null;
+      if (!failedModel || !failedEffort) return;
+
+      const learned = learnFromThinkingUnsupported(failedSettings, models, errorText);
+      if (learned.learned) {
+        setModels(learned.models);
+        catalogRef.current = {
+          conversationId: active.id,
+          models: learned.models,
+          extensions: catalogRef.current.extensions,
+        };
+        setSettings(learned.settings);
       }
+      try {
+        await runtimeNoteThinkingFailure(active.id, failedSettings, errorText ?? '');
+      } catch {
+        // Session deny still hides the effort; backend terminalize also learns
+        // when the failed turn reaches the store.
+      }
+      await refresh();
     },
-    [active, frozen, models],
+    [active, models, refresh],
   );
 
   return {

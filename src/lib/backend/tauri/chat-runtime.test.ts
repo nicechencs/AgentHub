@@ -24,9 +24,14 @@ describe('Tauri durable chat boundary', () => {
     });
   });
 
-  it('forwards start, reply, steer and stop identities without losing nested answers', async () => {
+  it('forwards start, learning, reply, steer and stop identities without losing nested answers', async () => {
     const port = createTauriChatPort();
     await port.runtimeStart('chat-a', '你好', 'send-1');
+    await port.runtimeNoteThinkingFailure(
+      'chat-a',
+      { model: 'gpt-5.3-codex-spark', effort: 'medium' },
+      '这个模型不支持当前思考设置。请点重试。',
+    );
     const reply = {
       conversationId: 'chat-a', runId: 'run-a', requestId: 'question-1',
       clientRequestId: 'answer-1', answers: { language: ['中文'] },
@@ -36,6 +41,11 @@ describe('Tauri durable chat boundary', () => {
     await port.runtimeCancel('chat-a', 'run-a');
     expect(invokeMock.mock.calls).toEqual([
       ['chat_runtime_start', { conversationId: 'chat-a', prompt: '你好', clientRequestId: 'send-1', extras: null }],
+      ['chat_runtime_note_thinking_failure', {
+        conversationId: 'chat-a',
+        settings: { model: 'gpt-5.3-codex-spark', effort: 'medium' },
+        errorText: '这个模型不支持当前思考设置。请点重试。',
+      }],
       ['chat_runtime_reply', { reply }],
       ['chat_runtime_steer', { conversationId: 'chat-a', runId: 'run-a', prompt: '只解释', clientRequestId: 'steer-1' }],
       ['chat_runtime_cancel', { conversationId: 'chat-a', runId: 'run-a' }],

@@ -57,7 +57,11 @@ function applyMockDeniedEfforts<T extends { id: string; efforts: string[]; defau
   });
 }
 
-function learnMockThinkingUnsupported(conversationId: string, errorText: string) {
+function learnMockThinkingUnsupported(
+  conversationId: string,
+  errorText: string,
+  explicitSettings?: RuntimeTurnSettings,
+) {
   const hay = errorText.toLowerCase();
   if (
     !(
@@ -70,7 +74,7 @@ function learnMockThinkingUnsupported(conversationId: string, errorText: string)
   ) {
     return;
   }
-  const settings = runtimeSettings.get(conversationId) ?? {};
+  const settings = explicitSettings ?? runtimeSettings.get(conversationId) ?? {};
   const model = settings.model?.trim();
   const effort = settings.effort?.trim();
   if (!model || !effort) return;
@@ -437,6 +441,9 @@ export function createMockChatPort(): ChatPort {
       };
       runtimeSettings.set(conversationId, next);
       return next;
+    },
+    async runtimeNoteThinkingFailure(conversationId, settings, errorText) {
+      learnMockThinkingUnsupported(conversationId, errorText, settings);
     },
     async runtimeStart(conversationId, prompt, _clientRequestId, extras?: RuntimeStartExtras) {
       const snapshot = await this.runtimeSnapshot(conversationId);

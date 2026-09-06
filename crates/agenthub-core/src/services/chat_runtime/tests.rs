@@ -1,5 +1,5 @@
-use super::*;
 use super::types::RuntimeStartExtras;
+use super::*;
 use crate::models::{AgentId, ChatEvent, Conversation};
 use crate::storage::{ChatRepo, Database};
 use crate::{
@@ -120,13 +120,11 @@ fn persisted_request_is_removed_only_after_explicit_resolution() {
     assert_eq!(snapshot.phase, RuntimePhase::Waiting);
     assert_eq!(snapshot.pending_requests, vec![request]);
     assert!(store.remove_request("c2", "req-1").unwrap());
-    assert!(
-        store
-            .snapshot("c2", None)
-            .unwrap()
-            .pending_requests
-            .is_empty()
-    );
+    assert!(store
+        .snapshot("c2", None)
+        .unwrap()
+        .pending_requests
+        .is_empty());
 }
 
 /// Real Codex app-server smoke test.  It is deliberately ignored: the caller
@@ -221,7 +219,6 @@ fn wait_for_terminal(chat: &ChatService, conversation_id: &str, after: i64) -> R
         std::thread::sleep(Duration::from_millis(400));
     }
 }
-
 
 #[test]
 fn frozen_options_serve_warmed_catalog_without_refetch() {
@@ -323,7 +320,10 @@ fn idle_options_reconcile_unsupported_effort_to_model_default() {
 
     let options = runtime.options("spark").unwrap();
     assert!(!options.settings_frozen);
-    assert_eq!(options.settings.model.as_deref(), Some("gpt-5.3-codex-spark"));
+    assert_eq!(
+        options.settings.model.as_deref(),
+        Some("gpt-5.3-codex-spark")
+    );
     assert_eq!(options.settings.effort.as_deref(), Some("low"));
 }
 
@@ -480,12 +480,7 @@ fn learn_from_thinking_unsupported_filters_over_reported_catalog() {
         "learn-spark",
         vec![super::types::RuntimeModelOption {
             id: "gpt-5.3-codex-spark".into(),
-            efforts: vec![
-                "low".into(),
-                "medium".into(),
-                "high".into(),
-                "xhigh".into(),
-            ],
+            efforts: vec!["low".into(), "medium".into(), "high".into(), "xhigh".into()],
             default_effort: Some("high".into()),
         }],
         vec![],
@@ -509,9 +504,12 @@ fn learn_from_thinking_unsupported_filters_over_reported_catalog() {
     );
 
     runtime
-        .store
-        .learn_thinking_unsupported(
+        .note_thinking_failure(
             "learn-spark",
+            super::types::RuntimeTurnSettings {
+                model: Some("gpt-5.3-codex-spark".into()),
+                effort: Some("medium".into()),
+            },
             "OpenAI API error (400): does not support parameter reasoningEffort=medium",
         )
         .unwrap();
