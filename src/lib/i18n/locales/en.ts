@@ -19,6 +19,7 @@ export const en = {
     copiedFileName: 'Copied {name}',
     copyMessage: 'Copy message',
     copyFailed: 'Copy failed',
+    openLinkFailed: "Couldn't open the link",
     copyRecord: 'Copy full record',
     copyRecordEmpty: 'Nothing to copy yet',
     you: 'You',

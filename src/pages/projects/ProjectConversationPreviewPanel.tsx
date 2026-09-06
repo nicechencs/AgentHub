@@ -450,7 +450,11 @@ export function ProjectConversationPreviewPanel({
                         className="group relative min-w-0 max-w-[92%] rounded-composer bg-subtle px-3 py-2 text-body text-primary"
                         aria-label={t('projects.preview.roleUser')}
                       >
-                        <MarkdownView content={turn.text} variant="chat" />
+                        <MarkdownView
+                          content={turn.text}
+                          variant="chat"
+                          localBasePath={cwd ?? undefined}
+                        />
                         <CopyTextButton text={turn.text} label={t('projects.preview.copyTurn')} />
                       </div>
                     ) : (
@@ -467,7 +471,11 @@ export function ProjectConversationPreviewPanel({
                             })}
                           </p>
                           <div className="group relative rounded-composer bg-hover/60 px-3 py-2 text-body leading-relaxed text-primary">
-                            <MarkdownView content={turn.text} variant="chat" />
+                            <MarkdownView
+                              content={turn.text}
+                              variant="chat"
+                              localBasePath={cwd ?? undefined}
+                            />
                             <CopyTextButton text={turn.text} label={t('projects.preview.copyTurn')} />
                           </div>
                         </div>
