@@ -16,6 +16,14 @@ import { chatMainColumnClass, chatStageClass } from './chat-model';
 import { formatChatSessionRecord } from './chat-format';
 import { grokCanQueueFollowUp, grokLegacyContinueKind } from './chat-grok-follow-up';
 import { ChatMarkdownPreviewPanel } from './ChatMarkdownPreviewPanel';
+import {
+  chatPreviewCanBack,
+  chatPreviewPath,
+  openChatPreviewRoot,
+  popChatPreview,
+  pushChatPreview,
+  type ChatPreviewTarget,
+} from './chat-preview-model';
 import { ChatRuntimeExtras } from './ChatRuntimeExtras';
 import { ChatTurnOutcomeBanner } from './ChatTurnOutcomeBanner';
 import { ChatComposer } from './ChatComposer';
@@ -30,17 +38,34 @@ import { useChatPage } from './use-chat-page';
 export default function ChatPage() {
   const page = useChatPage();
   const split = useChatComposerSplit();
-  const preview = useSideSplit<{ path: string }>({ storageKey: StorageKey.chatPreviewWidth });
+  const preview = useSideSplit<ChatPreviewTarget>({
+    storageKey: StorageKey.chatPreviewWidth,
+  });
   const navigate = useNavigate();
   const { t } = useI18n();
   const openMarkdownPreview = useCallback(
     (next: string) => {
       if (!isMarkdownFilePath(next)) return false;
-      preview.open({ path: next });
+      preview.open(openChatPreviewRoot(next));
       return true;
     },
     [preview.open],
   );
+  const openNestedMarkdown = useCallback(
+    (next: string) => {
+      if (!isMarkdownFilePath(next)) return;
+      preview.open(pushChatPreview(preview.target, next));
+    },
+    [preview.open, preview.target],
+  );
+  const backMarkdownPreview = useCallback(() => {
+    const previous = popChatPreview(preview.target);
+    if (!previous) {
+      preview.close();
+      return;
+    }
+    preview.open(previous);
+  }, [preview.close, preview.open, preview.target]);
 
   useEffect(() => {
     preview.reset();
@@ -315,12 +340,14 @@ export default function ChatPage() {
         <SideSplitFrame split={preview} resizeAria={t('chat.preview.resizeAria')}>
           {preview.target ? (
             <ChatMarkdownPreviewPanel
-              path={preview.target.path}
+              path={chatPreviewPath(preview.target)}
               cwd={page.active?.cwd ?? ''}
               open={preview.expanded}
               width={preview.paneWidth}
+              canBack={chatPreviewCanBack(preview.target)}
+              onBack={backMarkdownPreview}
               onClose={preview.close}
-              onOpenLocal={(next) => preview.open({ path: next })}
+              onOpenLocal={openNestedMarkdown}
               className="h-full min-w-0"
             />
           ) : null}
