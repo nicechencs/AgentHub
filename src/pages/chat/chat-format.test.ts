@@ -12,6 +12,7 @@ import {
   clipProcessTail,
   isRetiredChatModel,
   localizeChatFailure,
+  looksLikeChatProtocolDump,
   officialPiModelsBaseUrl,
   piChatModelOptions,
   pinElementScrollToBottom,
@@ -107,6 +108,16 @@ describe('chat model options', () => {
       'openrouter/auto',
     ]);
     expect(chatModelOptions(['grok-4.5', 'gpt-4o'], 'kimi-k2')).toEqual(['grok-4.5', 'gpt-4o']);
+  });
+
+  it('hides Pi session dumps that used to appear after cancel', () => {
+    const dump = [
+      '{"type":"session","version":3,"id":"01a0765e"}',
+      '{"type":"agent_start"}',
+      '{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","delta":"The"}}',
+    ].join('\n');
+    expect(looksLikeChatProtocolDump(dump)).toBe(true);
+    expect(looksLikeChatProtocolDump('你好，这是正常回复。')).toBe(false);
   });
 
   it('localizes leftover API Key and retired-model failures without dumping English', () => {

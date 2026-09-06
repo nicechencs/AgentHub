@@ -247,6 +247,34 @@ export function chatModelOptions(ids: readonly string[], current?: string | null
   return [];
 }
 
+const PROTOCOL_EVENT_TYPES = new Set([
+  'session',
+  'agent_start',
+  'turn_start',
+  'message_start',
+  'message_update',
+  'message_end',
+  'agent_end',
+  'turn_end',
+  'agent_settled',
+]);
+
+/** True when assistant content is a Pi/Grok NDJSON dump, not a reply. */
+export function looksLikeChatProtocolDump(text: string): boolean {
+  const first = text
+    .trim()
+    .split(/\r?\n/)
+    .find((line) => line.trim().length > 0);
+  if (!first?.startsWith('{')) return false;
+  try {
+    const value = JSON.parse(first) as { type?: unknown; jsonrpc?: unknown; method?: unknown };
+    if (typeof value.type === 'string' && PROTOCOL_EVENT_TYPES.has(value.type)) return true;
+    return Boolean(value.jsonrpc && value.method);
+  } catch {
+    return false;
+  }
+}
+
 /** Surface a localized failure instead of the raw provider dump. Never include the user prompt. */
 export function localizeChatFailure(text: string, t?: TranslateFn): string {
   const hay = text.toLowerCase();
