@@ -18,6 +18,7 @@ export const KNOWN_AGENT_IDS = [
   'cursor',
   'dsh',
   'zcode',
+  'kiro',
 ] as const;
 
 export type KnownAgentId = (typeof KNOWN_AGENT_IDS)[number];

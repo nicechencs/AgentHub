@@ -178,5 +178,6 @@ pub fn register_all() -> AdapterRegistry {
     reg.register(Arc::new(super::cursor::CursorAdapter));
     reg.register(Arc::new(super::dsh::DshAdapter));
     reg.register(Arc::new(super::zcode::ZcodeAdapter));
+    reg.register(Arc::new(super::kiro::KiroAdapter));
     reg
 }

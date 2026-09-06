@@ -20,10 +20,12 @@ pub enum AgentId {
     Dsh,
     /// ZCode — Zhipu ADE desktop (+ optional `zcode` CLI); API keys in `~/.zcode/v2/config.json`.
     Zcode,
+    /// Kiro CLI (`kiro-cli`) — half-surface: install/detect/headless; not the IDE.
+    Kiro,
 }
 
 impl AgentId {
-    pub const ALL: [AgentId; 9] = [
+    pub const ALL: [AgentId; 10] = [
         AgentId::Claude,
         AgentId::Codex,
         AgentId::Kimi,
@@ -33,6 +35,7 @@ impl AgentId {
         AgentId::Cursor,
         AgentId::Dsh,
         AgentId::Zcode,
+        AgentId::Kiro,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -46,6 +49,7 @@ impl AgentId {
             Self::Cursor => "cursor",
             Self::Dsh => "dsh",
             Self::Zcode => "zcode",
+            Self::Kiro => "kiro",
         }
     }
 
@@ -61,6 +65,8 @@ impl AgentId {
             "cursor" | "cursor-agent" => Some(Self::Cursor),
             "dsh" | "deepseek-harness" => Some(Self::Dsh),
             "zcode" => Some(Self::Zcode),
+            // Alias: CLI binary name; serialize id stays `kiro`.
+            "kiro" | "kiro-cli" => Some(Self::Kiro),
             _ => None,
         }
     }
@@ -97,6 +103,7 @@ impl AgentId {
             Self::Cursor => "Cursor Agent",
             Self::Dsh => "DeepSeek Harness",
             Self::Zcode => "ZCode",
+            Self::Kiro => "Kiro",
         }
     }
 

@@ -136,6 +136,11 @@ export const AGENT_DISPLAY: Readonly<
     logoSrc: zcodeLogo,
     logoBackground: '#ffffff',
   },
+  kiro: {
+    letter: 'K',
+    colorKey: 'kiro',
+    logoBackground: '#111111',
+  },
 });
 
 const FALLBACK_COLOR = 'var(--text-muted)';

@@ -53,6 +53,7 @@ describe('planNativeResume', () => {
     expect(planNativeResume('claude', 'x'.repeat(513))).toBeNull();
     expect(planNativeResume('workbuddy', 'wb')).toBeNull();
     expect(planNativeResume('dsh', 'dsh-session')).toBeNull();
+    expect(planNativeResume('kiro', 'kiro-session')).toBeNull();
   });
 
   it('trims whitespace around a valid id', () => {

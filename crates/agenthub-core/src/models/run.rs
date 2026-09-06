@@ -181,7 +181,9 @@ impl RunSpec {
                 continue;
             }
             if last_prompt_index == Some(index)
-                && (self.agent == AgentId::Codex || self.agent == AgentId::Dsh)
+                && (self.agent == AgentId::Codex
+                    || self.agent == AgentId::Dsh
+                    || self.agent == AgentId::Kiro)
             {
                 parts.push("<prompt>".into());
                 continue;

@@ -39,6 +39,7 @@ const AGENT_IDS: AgentKey[] = [
   'cursor',
   'dsh',
   'zcode',
+  'kiro',
 ];
 
 describe('isCapabilityUsable / isCapabilityBlocked', () => {
@@ -174,13 +175,16 @@ describe('MOCK_CAPABILITIES (dev/mocks)', () => {
     expect(MOCK_CAPABILITIES.dsh!.usage!.level).toBe('full');
     expect(MOCK_CAPABILITIES.dsh!.structuredStream!.level).toBe('planned');
     expect(MOCK_CAPABILITIES.dsh!.configWrite!.level).toBe('partial');
+    expect(MOCK_CAPABILITIES.kiro!.accountSwitch!.level).toBe('unsupported');
+    expect(MOCK_CAPABILITIES.kiro!.configWrite!.level).toBe('unsupported');
+    expect(MOCK_CAPABILITIES.kiro!.apiKeyAccount!.level).toBe('partial');
   });
 
   it('accountSwitch blocked agents match Connections TabStrip expectations', () => {
     const disabled = AGENT_IDS.filter((id) =>
       isAuthorizationManagementBlocked(id, MOCK_CAPABILITIES[id]),
     );
-    expect(disabled).toEqual(['cursor']);
+    expect(disabled).toEqual(['cursor', 'kiro']);
     expect(disabled).not.toContain('workbuddy');
     expect(disabled).not.toContain('claude');
     expect(disabled).not.toContain('kimi');
