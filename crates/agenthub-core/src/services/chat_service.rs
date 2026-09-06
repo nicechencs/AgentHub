@@ -123,17 +123,25 @@ impl ChatService {
         cwd: Option<Option<String>>,
         allow_dangerous: Option<bool>,
     ) -> Result<Conversation> {
-        if self.runtime.is_enabled(id)? && (agent_ids.is_some() || cwd.is_some()) {
-            return Err(AppError::InvalidArg(
-                "持续聊天会话不能更换 Agent 或工作目录，请新建会话".into(),
+        let mut conv = self.get_conversation(id)?;
+        if (agent_ids.is_some() || cwd.is_some())
+            && self
+                .runtime
+                .session_locked(id, conv.native_session_id.as_deref())?
+        {
+            return Err(AppError::message(
+                "invalid_arg",
+                "持续聊天会话不能更换 Agent 或工作目录，请新建会话",
             ));
         }
-        let mut conv = self.get_conversation(id)?;
         if let Some(t) = title {
             conv.title = t;
         }
+        let mut leaving_codex = false;
         if let Some(agents) = agent_ids {
             let next = require_single_agent(agents)?;
+            leaving_codex = conv.agent_ids.first() == Some(&AgentId::Codex)
+                && next.first() != Some(&AgentId::Codex);
             if next != conv.agent_ids {
                 conv.native_session_id = None;
             }
@@ -150,6 +158,9 @@ impl ChatService {
         }
         if let Some(d) = allow_dangerous {
             conv.allow_dangerous = d;
+        }
+        if leaving_codex {
+            self.runtime.abandon_unstarted(id)?;
         }
         conv.updated_at = Utc::now().to_rfc3339();
         self.repo.update_conversation(&conv)?;

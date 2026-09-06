@@ -212,6 +212,22 @@ impl RuntimeStore {
             .is_some_and(|record| record.enabled))
     }
 
+    pub(crate) fn delete_unstarted(&self, conversation_id: &str) -> Result<()> {
+        self.db.with_conn(|conn| {
+            let Some(record) = self.record_conn(conn, conversation_id)? else {
+                return Ok(());
+            };
+            if !record.enabled || record.phase != RuntimePhase::Idle || record.run_id.is_some() {
+                return Ok(());
+            }
+            conn.execute(
+                "DELETE FROM chat_runtime WHERE conversation_id = ?1",
+                params![conversation_id],
+            )?;
+            Ok(())
+        })
+    }
+
     pub(crate) fn snapshot(
         &self,
         conversation_id: &str,
