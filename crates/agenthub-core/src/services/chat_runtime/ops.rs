@@ -41,6 +41,16 @@ pub(crate) fn resolved_default_effort(option: &RuntimeModelOption) -> Option<Str
     option.efforts.first().cloned()
 }
 
+/// When the user has not picked a model, use the first catalog row instead of
+/// inheriting a Codex config.toml default that may not work with this login.
+pub(crate) fn default_turn_settings(catalog: &[RuntimeModelOption]) -> Option<RuntimeTurnSettings> {
+    let option = catalog.first()?;
+    Some(RuntimeTurnSettings {
+        model: Some(option.id.clone()),
+        effort: resolved_default_effort(option),
+    })
+}
+
 fn trim_setting(value: &Option<String>) -> Option<String> {
     value
         .as_deref()
@@ -106,16 +116,15 @@ pub(crate) fn assert_settings_supported(
     let model = trim_setting(&settings.model);
     let effort = trim_setting(&settings.effort);
     if model.is_none() && effort.is_some() {
-        return Err(AppError::InvalidArg(
-            "选择思考强度前需要先选择模型".into(),
-        ));
+        return Err(AppError::InvalidArg("选择思考强度前需要先选择模型".into()));
     }
     let Some(model_id) = model else {
         return Ok(());
     };
-    let option = catalog.iter().find(|item| item.id == model_id).ok_or_else(|| {
-        AppError::InvalidArg(format!("模型不可用: {model_id}"))
-    })?;
+    let option = catalog
+        .iter()
+        .find(|item| item.id == model_id)
+        .ok_or_else(|| AppError::InvalidArg(format!("模型不可用: {model_id}")))?;
     if let Some(value) = effort {
         if option.efforts.is_empty() {
             return Err(AppError::InvalidArg(format!(
@@ -143,9 +152,7 @@ pub(crate) fn validate_turn_settings(
     let effort = trim_setting(&requested.effort);
 
     if model.is_none() && effort.is_some() {
-        return Err(AppError::InvalidArg(
-            "选择思考强度前需要先选择模型".into(),
-        ));
+        return Err(AppError::InvalidArg("选择思考强度前需要先选择模型".into()));
     }
 
     if catalog.is_empty() {
@@ -159,9 +166,10 @@ pub(crate) fn validate_turn_settings(
         });
     };
 
-    let option = catalog.iter().find(|item| item.id == model_id).ok_or_else(|| {
-        AppError::InvalidArg(format!("模型不可用: {model_id}"))
-    })?;
+    let option = catalog
+        .iter()
+        .find(|item| item.id == model_id)
+        .ok_or_else(|| AppError::InvalidArg(format!("模型不可用: {model_id}")))?;
 
     let effort = match effort {
         None => resolved_default_effort(option),
@@ -213,8 +221,10 @@ fn parse_effort_entry(item: &Value) -> Option<String> {
 pub(crate) fn parse_model_list(value: &Value) -> Vec<RuntimeModelOption> {
     let rows = value
         .get("data")
+        .or_else(|| value.get("models"))
         .and_then(|v| v.as_array())
         .cloned()
+        .or_else(|| value.as_array().cloned())
         .unwrap_or_default();
     let mut out = Vec::new();
     for row in rows {
@@ -345,7 +355,9 @@ pub(crate) fn parse_skills_list(value: &Value) -> Vec<RuntimeExtensionItem> {
                 .or_else(|| path.clone())
                 .or_else(|| name.clone());
             let Some(id) = id else { continue };
-            let Some(name) = name.or_else(|| Some(id.clone())) else { continue };
+            let Some(name) = name.or_else(|| Some(id.clone())) else {
+                continue;
+            };
             let enabled = skill
                 .get("enabled")
                 .and_then(|v| v.as_bool())
@@ -476,7 +488,10 @@ pub(crate) fn validate_skill_refs(
         });
         if !matched {
             // When catalog is empty (Codex unavailable), still require name+path but cannot prove callability.
-            if catalog.iter().any(|item| item.kind == RuntimeExtensionKind::Skill) {
+            if catalog
+                .iter()
+                .any(|item| item.kind == RuntimeExtensionKind::Skill)
+            {
                 return Err(AppError::InvalidArg(format!(
                     "Skill 不可用于本轮调用: {name}"
                 )));
@@ -499,15 +514,14 @@ pub(crate) fn validate_local_images(images: &[RuntimeLocalImage]) -> Result<()> 
             return Err(AppError::InvalidArg("图片路径不能为空".into()));
         }
         let lower = path.to_ascii_lowercase();
-        let ok_ext = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"].iter().any(|ext| lower.ends_with(ext));
+        let ok_ext = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]
+            .iter()
+            .any(|ext| lower.ends_with(ext));
         if !ok_ext {
-            return Err(AppError::InvalidArg(format!(
-                "不支持的图片类型: {path}"
-            )));
+            return Err(AppError::InvalidArg(format!("不支持的图片类型: {path}")));
         }
-        let meta = std::fs::metadata(path).map_err(|err| {
-            AppError::InvalidArg(format!("无法读取图片: {path} ({err})"))
-        })?;
+        let meta = std::fs::metadata(path)
+            .map_err(|err| AppError::InvalidArg(format!("无法读取图片: {path} ({err})")))?;
         if !meta.is_file() {
             return Err(AppError::InvalidArg(format!("不是图片文件: {path}")));
         }
@@ -565,6 +579,26 @@ mod tests {
     }
 
     #[test]
+    fn default_turn_settings_uses_first_catalog_model() {
+        let catalog = vec![
+            RuntimeModelOption {
+                id: "gpt-first".into(),
+                efforts: vec!["low".into(), "high".into()],
+                default_effort: Some("high".into()),
+            },
+            RuntimeModelOption {
+                id: "gpt-second".into(),
+                efforts: vec!["low".into()],
+                default_effort: Some("low".into()),
+            },
+        ];
+        let defaults = default_turn_settings(&catalog).unwrap();
+        assert_eq!(defaults.model.as_deref(), Some("gpt-first"));
+        assert_eq!(defaults.effort.as_deref(), Some("high"));
+        assert!(default_turn_settings(&[]).is_none());
+    }
+
+    #[test]
     fn fills_default_effort_when_omitted() {
         let catalog = vec![RuntimeModelOption {
             id: "gpt-test".into(),
@@ -600,10 +634,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(ok.effort.as_deref(), Some("low"));
-        assert_eq!(
-            resolved_default_effort(&catalog[0]).as_deref(),
-            Some("low")
-        );
+        assert_eq!(resolved_default_effort(&catalog[0]).as_deref(), Some("low"));
     }
 
     #[test]
@@ -667,6 +698,20 @@ mod tests {
     }
 
     #[test]
+    fn parse_model_list_accepts_models_key() {
+        let value = json!({
+            "models": [{
+                "id": "gpt-reserve",
+                "supportedReasoningEfforts": ["low", "high"],
+                "defaultReasoningEffort": "high"
+            }]
+        });
+        let models = parse_model_list(&value);
+        assert_eq!(models[0].id, "gpt-reserve");
+        assert_eq!(models[0].default_effort.as_deref(), Some("high"));
+    }
+
+    #[test]
     fn parses_model_list_efforts() {
         let value = json!({
             "data": [{
@@ -701,10 +746,7 @@ mod tests {
         });
         let models = parse_model_list(&value);
         assert_eq!(models.len(), 1);
-        assert_eq!(
-            models[0].efforts,
-            vec!["low", "medium", "high", "xhigh"]
-        );
+        assert_eq!(models[0].efforts, vec!["low", "medium", "high", "xhigh"]);
         assert_eq!(models[0].default_effort.as_deref(), Some("high"));
     }
 
@@ -712,12 +754,7 @@ mod tests {
     fn apply_denied_efforts_filters_over_reported_catalog() {
         let models = vec![RuntimeModelOption {
             id: "gpt-5.3-codex-spark".into(),
-            efforts: vec![
-                "low".into(),
-                "medium".into(),
-                "high".into(),
-                "xhigh".into(),
-            ],
+            efforts: vec!["low".into(), "medium".into(), "high".into(), "xhigh".into()],
             default_effort: Some("high".into()),
         }];
         let mut denied = std::collections::HashMap::new();
@@ -745,7 +782,9 @@ mod tests {
         assert!(looks_like_thinking_unsupported(
             "OpenAI API error: does not support parameter reasoningEffort"
         ));
-        assert!(looks_like_thinking_unsupported("这个模型不支持当前思考设置。请点重试。"));
+        assert!(looks_like_thinking_unsupported(
+            "这个模型不支持当前思考设置。请点重试。"
+        ));
         assert!(!looks_like_thinking_unsupported("network timeout"));
     }
 
@@ -753,7 +792,9 @@ mod tests {
     fn build_input_uses_local_image_not_path_text() {
         let input = build_turn_input(
             "see this",
-            &[RuntimeLocalImage { path: "/tmp/a.png".into() }],
+            &[RuntimeLocalImage {
+                path: "/tmp/a.png".into(),
+            }],
             &[],
         )
         .unwrap();
