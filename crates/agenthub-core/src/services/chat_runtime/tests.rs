@@ -391,6 +391,30 @@ fn frozen_options_stay_empty_when_catalog_never_warmed() {
 }
 
 #[test]
+fn idle_options_fill_first_catalog_model_when_unset() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "unset", false);
+    let run = Arc::new(RunService::new(AdapterRegistry::default()));
+    let runtime = Arc::new(ChatRuntime::new(db, run));
+    runtime.store.enable_if_new("unset").unwrap();
+    runtime.seed_catalog_cache_for_test(
+        "unset",
+        vec![super::types::RuntimeModelOption {
+            id: "gpt-first".into(),
+            efforts: vec!["low".into(), "high".into()],
+            default_effort: Some("high".into()),
+        }],
+        vec![],
+    );
+
+    let options = runtime.options("unset").unwrap();
+    assert_eq!(options.settings.model.as_deref(), Some("gpt-first"));
+    assert_eq!(options.settings.effort.as_deref(), Some("high"));
+    let persisted = runtime.store.turn_settings("unset").unwrap();
+    assert_eq!(persisted.model.as_deref(), Some("gpt-first"));
+}
+
+#[test]
 fn idle_options_reconcile_unsupported_effort_to_model_default() {
     let db = Database::open_in_memory().unwrap();
     conversation(&db, "spark", false);

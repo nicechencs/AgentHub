@@ -160,6 +160,17 @@ impl ChatRuntime {
         // never keeps offering an incompatible value after a model switch.
         // Frozen turns keep the effective pair that started the turn.
         if !frozen {
+            if settings
+                .model
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .is_none()
+            {
+                if let Some(defaults) = ops::default_turn_settings(&models) {
+                    settings = self.store.set_turn_settings(conversation_id, &defaults)?;
+                }
+            }
             if let Some(repaired) = ops::reconcile_turn_settings(&settings, &models) {
                 settings = self.store.set_turn_settings(conversation_id, &repaired)?;
             }
@@ -230,7 +241,18 @@ impl ChatRuntime {
         // without spawning a second Codex process during a frozen phase.
         let cache = self.load_catalog(conversation_id);
         let models = self.effective_models(&cache.models);
-        let settings = self.store.turn_settings(conversation_id)?;
+        let mut settings = self.store.turn_settings(conversation_id)?;
+        if settings
+            .model
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .is_none()
+        {
+            if let Some(defaults) = ops::default_turn_settings(&models) {
+                settings = self.store.set_turn_settings(conversation_id, &defaults)?;
+            }
+        }
         ops::assert_settings_supported(&settings, &models)?;
         if !extras.skills.is_empty() {
             ops::validate_skill_refs(&extras.skills, &cache.extensions)?;
