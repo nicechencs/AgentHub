@@ -2708,6 +2708,11 @@ export const en = {
       stop: "Stop",
       resizeAria: "Resize conversation and composer",
     },
+    kiro: {
+      oneshotHint: "Kiro here is one send at a time: write, send, wait. Needs an API key.",
+      oneshotDetail: "You can't add more or tap allow/deny mid-run. Terminal model/agent pickers, command completion, and ghost text are not on this page.",
+      placeholder: "Write the request, then send. You can't add more after this run starts.",
+    },
     runtime: {
       submit: 'Submit',
       allow: 'Allow',
