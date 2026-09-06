@@ -246,7 +246,9 @@ export function ChatProcessPanel({
             ))}
           </div>
         ) : isProcessActivePhase(effectivePhase) ? (
-          <p className="text-muted">{t('chat.process.waitingLogs')}</p>
+          <p className="text-muted">
+            {view.stdout.trim() ? t('chat.process.streamingText') : t('chat.process.waitingLogs')}
+          </p>
         ) : null}
         {hasRunDetails && (
           <details
