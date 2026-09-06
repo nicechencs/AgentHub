@@ -2713,9 +2713,9 @@ export const en = {
       resizeAria: "Resize conversation and composer",
     },
     kiro: {
-      oneshotHint: "Kiro here is one send at a time: write, send, wait. Needs an API key.",
-      oneshotDetail: "You can't add more or tap allow/deny mid-run. Terminal model/agent pickers, command completion, and ghost text are not on this page.",
-      placeholder: "Write the request, then send. You can't add more after this run starts.",
+      oneshotHint: "Kiro here is one send at a time: write, send, wait. Sign in locally (kiro-cli login) or use an API key.",
+      oneshotDetail: "You can't add more, queue, or tap allow/deny mid-run; later turns can still continue. Terminal model/agent pickers, command completion, and ghost text are not on this page.",
+      placeholder: "Write, send, and wait for this turn. You can continue on the next turn.",
     },
     runtime: {
       submit: 'Submit',

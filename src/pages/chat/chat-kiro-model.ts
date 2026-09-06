@@ -1,5 +1,6 @@
 /**
- * Kiro Chat honesty: one-shot headless, not ChatRuntime.
+ * Kiro Chat honesty: per-turn headless send/wait (not ChatRuntime).
+ * Later turns may resume via `--resume-id`; there is no mid-run steer/queue/allow-deny.
  * Catalog may not include `kiro` yet — helpers key off the id only.
  */
 import type { TranslateFn } from '@/lib/i18n';
@@ -9,7 +10,7 @@ export function isKiroChatAgent(agentId: string | null | undefined): boolean {
   return agentId === 'kiro';
 }
 
-/** Cursor-style half-surface: fire-and-forget CLI, not a continuous session. */
+/** Per-turn CLI send/wait (no mid-run steer); resume across turns may still apply. */
 export function isOneShotHeadlessChatAgent(agentId: string | null | undefined): boolean {
   return agentId === 'kiro' || agentId === 'cursor';
 }

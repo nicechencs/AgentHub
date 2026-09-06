@@ -15,7 +15,7 @@ import {
 const t = createTranslator('zh');
 
 describe('Kiro chat honesty helpers', () => {
-  it('treats kiro as a half-surface id, never a continuous-chat agent', () => {
+  it('treats kiro as a half-surface id, not a ChatRuntime continuous agent', () => {
     expect(isKiroChatAgent('kiro')).toBe(true);
     expect(isKiroChatAgent('cursor')).toBe(false);
     expect(isKiroChatAgent(null)).toBe(false);
@@ -43,11 +43,13 @@ describe('Kiro chat honesty helpers', () => {
     });
     expect(kiroChatComposerPlaceholder(t, 'kiro', 'fallback')).toBe(t('chat.kiro.placeholder'));
     expect(kiroChatComposerPlaceholder(t, 'claude', 'fallback')).toBe('fallback');
+    expect(t('chat.kiro.oneshotHint')).toContain('本机登录');
     expect(t('chat.kiro.oneshotHint')).toContain('API Key');
     expect(t('chat.kiro.oneshotHint')).toContain('一轮一发');
     expect(t('chat.kiro.oneshotDetail')).toContain('不能中途补充');
     expect(t('chat.kiro.oneshotDetail')).toContain('不在本页');
-    expect(t('chat.kiro.placeholder')).toContain('不能再补充');
+    expect(t('chat.kiro.oneshotDetail')).toContain('下一轮');
+    expect(t('chat.kiro.placeholder')).toContain('下一轮');
   });
 
   it('does not keep slash pickers, model chips, or runtime request panels', () => {
