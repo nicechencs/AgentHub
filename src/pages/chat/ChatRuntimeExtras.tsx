@@ -15,26 +15,6 @@ import { ChatActionMenu } from './ChatActionMenu';
 import type { ChatActionContext, ChatActionDef } from './chat-actions';
 import type { RuntimeExtensionItem, RuntimeModelOption, RuntimeTurnSettings } from '@/lib/api/chat';
 
-function extensionBadges(
-  item: RuntimeExtensionItem,
-  t: (key: never) => string,
-): string[] {
-  const badges: string[] = [];
-  badges.push(item.installed ? t('chat.runtimeOps.installed' as never) : t('chat.runtimeOps.notInstalled' as never));
-  if (item.enabled) badges.push(t('chat.runtimeOps.enabled' as never));
-  else badges.push(t('chat.runtimeOps.disabledExt' as never));
-  if (item.loaded) badges.push(t('chat.runtimeOps.loaded' as never));
-  else badges.push(t('chat.runtimeOps.loadedUnknown' as never));
-  if (item.kind === 'plugin') {
-    badges.push(t('chat.runtimeOps.pluginStatusOnly' as never));
-  } else if (item.callable) {
-    badges.push(t('chat.runtimeOps.callable' as never));
-  } else {
-    badges.push(t('chat.runtimeOps.needPath' as never));
-  }
-  return badges;
-}
-
 export function ChatRuntimeExtras(props: {
   enabled: boolean;
   draft: string;
@@ -201,35 +181,22 @@ export function ChatRuntimeExtras(props: {
         </div>
       ) : null}
 
-      {props.extensions.length > 0 ? (
-        <details className="rounded-card border p-2 text-meta">
-          <summary className="cursor-pointer list-none font-medium text-secondary marker:content-none [&::-webkit-details-marker]:hidden">
-            ▸ {t('chat.runtimeOps.extensions')}
-            {props.selectedSkillIds.length > 0 ? ` · ${props.selectedSkillIds.length}` : ''}
-          </summary>
-          <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto pr-1">
-            {props.extensions.map((item) => {
-              const badges = extensionBadges(item, t as never);
-              return (
-                <li key={item.id} className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">{item.name}</span>
-                  <span className="text-muted">{item.kind === 'plugin' ? t('chat.runtimeOps.plugin') : t('chat.runtimeOps.skill')}</span>
-                  <span className="text-muted">{badges.join(' · ')}</span>
-                  {item.kind === 'skill' && item.callable ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={props.selectedSkillIds.includes(item.id) ? 'default' : 'outline'}
-                      onClick={() => props.onToggleSkill(item.id)}
-                    >
-                      {t('chat.runtimeOps.useForTurn')}
-                    </Button>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
-        </details>
+      {props.selectedSkillIds.length > 0 ? (
+        <div className="flex flex-wrap gap-2 text-meta">
+          {props.selectedSkillIds.map((id) => {
+            const item = props.extensions.find((extension) => extension.id === id);
+            return (
+              <span key={id} className="inline-flex max-w-full items-center gap-1 rounded-card border px-2 py-1">
+                <span className="truncate">
+                  {t('chat.runtimeOps.skill')} · {item?.name ?? id}
+                </span>
+                <button type="button" aria-label={t('chat.runtimeOps.removeSkill')} onClick={() => props.onToggleSkill(id)}>
+                  <X className="size-3.5" />
+                </button>
+              </span>
+            );
+          })}
+        </div>
       ) : null}
     </div>
   );
