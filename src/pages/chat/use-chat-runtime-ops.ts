@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import {
@@ -10,6 +10,10 @@ import {
   type RuntimeTurnSettings,
 } from '@/lib/api/chat';
 import type { Conversation } from '@/lib/types';
+import {
+  retainRuntimeCatalog,
+  type RuntimeCatalogMemory,
+} from './chat-runtime-ops-model';
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp)$/i;
 
@@ -29,9 +33,15 @@ export function useChatRuntimeOps(input: {
   const [images, setImages] = useState<string[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const catalogRef = useRef<RuntimeCatalogMemory>({
+    conversationId: null,
+    models: [],
+    extensions: [],
+  });
 
   const refresh = useCallback(async () => {
     if (!active || !runtimeEnabled) {
+      catalogRef.current = { conversationId: null, models: [], extensions: [] };
       setModels([]);
       setSettings({});
       setSettingsFrozen(false);
@@ -41,10 +51,16 @@ export function useChatRuntimeOps(input: {
     setLoading(true);
     try {
       const options = await runtimeOptions(active.id);
-      setModels(options.models);
+      const retained = retainRuntimeCatalog(catalogRef.current, options, active.id);
+      catalogRef.current = {
+        conversationId: active.id,
+        models: retained.models,
+        extensions: retained.extensions,
+      };
+      setModels(retained.models);
       setSettings(options.settings ?? {});
       setSettingsFrozen(options.settingsFrozen || turnActive);
-      setExtensions(options.extensions);
+      setExtensions(retained.extensions);
     } catch (error) {
       toast({
         title: t('chat.runtimeOps.optionsFail'),

@@ -47,3 +47,9 @@ updated: 2026-09-06
 - Windows/Linux 与 B1 尾项真实验收仍属后续批次。
 - 目录缓存按会话驻留；活动轮次不二次拉起 Codex 进程拉目录。
 - 插件仍为状态展示，不可伪装为本轮可调用。
+
+## Follow-up（本仓 `feat/chat-b2-followup`）
+
+- 空闲进入 runtime 会话 / `start` 前预热目录缓存；冻结轮次只读缓存、不中途 spawn。
+- 前端在冻结且目录为空时保留同会话上次非空列表，避免 UI 被刷空。
+- Claude B3：探测后 **不接线**；见 [chat-claude-b3.md](chat-claude-b3.md)。

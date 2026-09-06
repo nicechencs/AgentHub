@@ -173,11 +173,13 @@ impl ChatRuntime {
             ));
         }
         ops::validate_local_images(&extras.images)?;
+        self.store.enable_if_new(conversation_id)?;
+        // Prefetch while still idle so mid-turn options() can serve cached lists
+        // without spawning a second Codex process during a frozen phase.
+        let cache = self.load_catalog(conversation_id);
         if !extras.skills.is_empty() {
-            let cache = self.load_catalog(conversation_id);
             ops::validate_skill_refs(&extras.skills, &cache.extensions)?;
         }
-        self.store.enable_if_new(conversation_id)?;
         match self
             .store
             .begin_operation(conversation_id, "start", client_request_id, None)?
@@ -398,17 +400,40 @@ impl ChatRuntime {
                 return cache.clone();
             }
         }
+        let phase = self
+            .store
+            .record(conversation_id)
+            .ok()
+            .flatten()
+            .map(|record| record.phase);
         // Avoid competing with an in-flight turn's Codex process.
-        if let Ok(Some(record)) = self.store.record(conversation_id) {
-            if ops::phase_freezes_settings(record.phase) {
-                return CatalogCache::default();
-            }
+        if !ops::may_fetch_catalog(phase) {
+            return CatalogCache::default();
         }
         let fetched = self.fetch_catalog(conversation_id);
         if let Ok(mut guard) = self.catalogs.lock() {
             guard.insert(conversation_id.to_string(), fetched.clone());
         }
         fetched
+    }
+
+    #[cfg(test)]
+    pub(crate) fn seed_catalog_cache_for_test(
+        &self,
+        conversation_id: &str,
+        models: Vec<RuntimeModelOption>,
+        extensions: Vec<RuntimeExtensionItem>,
+    ) {
+        if let Ok(mut guard) = self.catalogs.lock() {
+            guard.insert(
+                conversation_id.to_string(),
+                CatalogCache {
+                    models,
+                    extensions,
+                    from_codex: true,
+                },
+            );
+        }
     }
 
     fn fetch_catalog(&self, conversation_id: &str) -> CatalogCache {
