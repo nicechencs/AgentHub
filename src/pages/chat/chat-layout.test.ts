@@ -17,6 +17,12 @@ describe('chat layout wiring', () => {
     expect(page).not.toContain('flex min-w-0 flex-1 flex-col bg-panel');
   });
 
+  it('lets Escape stop an in-flight turn', () => {
+    expect(source('index.tsx')).toContain('chatEscapeShouldCancel');
+    expect(source('index.tsx')).toContain("e.key");
+    expect(source('ChatComposer.tsx')).toContain('chat.composer.stop');
+  });
+
   it('opens markdown files in a right-hand preview pane', () => {
     const page = source('index.tsx');
     expect(page).toContain('useSideSplit');

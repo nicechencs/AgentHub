@@ -10,9 +10,10 @@ import { Notice } from '@/components/shared/Notice';
 import { isMarkdownFilePath } from '@/components/shared/MarkdownView';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
+import { hasEscPriorityOverlay } from '@/lib/skills/preview-keys';
 import { StorageKey } from '@/lib/storage-key';
 import { cn } from '@/lib/utils';
-import { chatMainColumnClass, chatStageClass } from './chat-model';
+import { chatEscapeShouldCancel, chatMainColumnClass, chatStageClass } from './chat-model';
 import { formatChatSessionRecord } from './chat-format';
 import { grokCanQueueFollowUp, grokLegacyContinueKind } from './chat-grok-follow-up';
 import { ChatMarkdownPreviewPanel } from './ChatMarkdownPreviewPanel';
@@ -70,6 +71,34 @@ export default function ChatPage() {
   useEffect(() => {
     preview.reset();
   }, [page.active?.id, preview.reset]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (
+        !chatEscapeShouldCancel({
+          key: e.key,
+          sending: page.sendingHere,
+          canceling: page.cancelingHere,
+          previewOpen: preview.expanded || preview.mounted,
+          overlayOpen: hasEscPriorityOverlay(),
+          defaultPrevented: e.defaultPrevented,
+          composing: e.isComposing,
+        })
+      ) {
+        return;
+      }
+      e.preventDefault();
+      void page.cancelSending();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [
+    page.cancelSending,
+    page.cancelingHere,
+    page.sendingHere,
+    preview.expanded,
+    preview.mounted,
+  ]);
 
   if (page.error && page.conversations.length === 0 && !page.listLoading) {
     return (
