@@ -9,10 +9,12 @@ import {
   formatChatSessionRecord,
   formatDurationMs,
   formatStepInput,
+  clipProcessTail,
   isRetiredChatModel,
   localizeChatFailure,
   officialPiModelsBaseUrl,
   piChatModelOptions,
+  pinElementScrollToBottom,
   resolvePiChatCurrentModel,
   shouldFetchChatRemoteModels,
   thinkingChromeLabel,
@@ -82,6 +84,18 @@ describe('chat-format thinking chrome', () => {
     expect(thinkingChromeLabel(false, 3200, t)).toBe('思考中 · 3.2s');
     expect(thinkingChromeLabel(true, 3200, t)).toBe('思考了 3.2s');
     expect(thinkingChromeLabel(true, 0, t)).toBe('思考完成');
+  });
+
+  it('pins process/thinking overflow to the newest line', () => {
+    const el = { scrollTop: 0, scrollHeight: 480 };
+    pinElementScrollToBottom(el);
+    expect(el.scrollTop).toBe(480);
+    pinElementScrollToBottom(null);
+  });
+
+  it('keeps the newest process/thinking text when clipping', () => {
+    expect(clipProcessTail('short')).toBe('short');
+    expect(clipProcessTail(`old-${'x'.repeat(4000)}-newest`)).toBe(`…${'x'.repeat(3993)}-newest`);
   });
 });
 
