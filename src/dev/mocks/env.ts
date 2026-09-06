@@ -226,6 +226,25 @@ export function createMockEnvPort(_backend: Backend): EnvPort {
     },
 
     async installRuntimeDetailed(id, channel = defaultChannel()) {
+      const platform = detectHostPlatform();
+      const state = readState();
+      // Ready npm upgrades via `npm install -g npm@latest` on every platform.
+      if (
+        id === 'npm' &&
+        state.npm &&
+        state.npm.status !== 'missing' &&
+        state.npm.status !== 'broken_path'
+      ) {
+        await delay(randomLatency(80, 160));
+        state.npm = mockInstalledRuntime('npm', platform);
+        writeState(state);
+        return {
+          ok: true,
+          action: 'install_runtime',
+          logs: mockEnvInstallLogs(id, channel),
+          message: 'mock ok',
+        };
+      }
       if (channel === 'manual') {
         await delay(randomLatency(80, 160));
         return {
@@ -256,6 +275,16 @@ export function createMockEnvPort(_backend: Backend): EnvPort {
       const state = readState();
       const meta = RUNTIME_MAP[id];
       const platform = detectHostPlatform();
+      if (
+        id === 'npm' &&
+        state.npm &&
+        state.npm.status !== 'missing' &&
+        state.npm.status !== 'broken_path'
+      ) {
+        state.npm = mockInstalledRuntime('npm', platform);
+        writeState(state);
+        return toDetect(id, state.npm);
+      }
       if (channel === 'manual') {
         throw new Error(
           'Linux 不提供一键包管理安装,请按修复步骤用发行版包管理器或官网安装后重新检测',
