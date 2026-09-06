@@ -199,9 +199,12 @@ export function ChatRuntimeExtras(props: {
       ) : null}
 
       {props.extensions.length > 0 ? (
-        <div className="rounded-card border p-2 text-meta">
-          <div className="mb-1 font-medium">{t('chat.runtimeOps.extensions')}</div>
-          <ul className="space-y-1">
+        <details className="rounded-card border p-2 text-meta">
+          <summary className="cursor-pointer list-none font-medium text-secondary marker:content-none [&::-webkit-details-marker]:hidden">
+            ▸ {t('chat.runtimeOps.extensions')}
+            {props.selectedSkillIds.length > 0 ? ` · ${props.selectedSkillIds.length}` : ''}
+          </summary>
+          <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto pr-1">
             {props.extensions.map((item) => {
               const badges = extensionBadges(item, t as never);
               return (
@@ -223,7 +226,7 @@ export function ChatRuntimeExtras(props: {
               );
             })}
           </ul>
-        </div>
+        </details>
       ) : null}
     </div>
   );
