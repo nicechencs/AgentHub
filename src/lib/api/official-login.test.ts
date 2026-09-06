@@ -56,7 +56,8 @@ describe('official login session façade', () => {
     finishOAuth.mockResolvedValue({ id: 'acc-1', agentId: 'claude', kind: 'oauth' });
 
     const session = await startOfficialLogin('claude', { id: 'claude', flow: 'pkce' });
-    expect(startOAuth).toHaveBeenCalledWith('claude', true, 'claude');
+    expect(startOAuth).toHaveBeenCalledWith('claude', false, 'claude');
+    expect(session.authorizeUrl).toBe('https://example.test/auth');
     expect(startDeviceOAuth).not.toHaveBeenCalled();
     expect(session.flow).toBe('pkce');
     expect(session.sessionId).toBe('pkce-1');

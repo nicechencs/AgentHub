@@ -249,6 +249,29 @@ export function showsNativeSwitch(
   return !agentFilterId || agentFilterId === ticketAgentId;
 }
 
+export type PiDefaultModelView =
+  | { kind: 'hidden' }
+  | { kind: 'need-default' }
+  | { kind: 'picker'; model: string | null; models: string[]; switching: boolean };
+
+/** Pi only: default model follows the current default login. */
+export function piDefaultModelView(input: {
+  agentId?: AgentKey | null;
+  isCurrent?: boolean;
+  model?: string | null;
+  models?: readonly string[];
+  switching?: boolean;
+}): PiDefaultModelView {
+  if (input.agentId !== 'pi') return { kind: 'hidden' };
+  if (!input.isCurrent) return { kind: 'need-default' };
+  return {
+    kind: 'picker',
+    model: input.model?.trim() || null,
+    models: [...(input.models ?? [])],
+    switching: Boolean(input.switching),
+  };
+}
+
 /** List-occupancy rows that are the current default can 取消添加 from the row menu. */
 export function showsCatalogUnapply(
   occupancy?: LiveOccupancyDto | null,

@@ -1,9 +1,13 @@
 //! Chat Tauri commands — thin wrappers over agenthub-core ChatService.
 
 use agenthub_core::models::{AgentId, ChatEvent, ChatMessage, Conversation, LiveChatModel};
+use agenthub_core::services::chat_runtime::{
+    RuntimeOptions, RuntimeReply, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings,
+};
 use agenthub_core::AgentHub;
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
+use tauri_plugin_dialog::DialogExt;
 
 use agenthub_core::logging::targets;
 
@@ -105,6 +109,159 @@ pub fn chat_cancel(state: State<'_, AppState>, conversation_id: String) -> Resul
     chat_cancel_inner(state.hub()?, &conversation_id)
 }
 
+/// Durable polling snapshot for interactive conversations; independent of WebView lifetime.
+#[tauri::command]
+pub async fn chat_runtime_snapshot(
+    state: State<'_, AppState>,
+    conversation_id: String,
+    after_sequence: Option<i64>,
+) -> Result<RuntimeSnapshot, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        hub.chat()
+            .runtime()
+            .snapshot(&conversation_id, after_sequence)
+            .map_err(|e| map_err_string("chat_runtime_snapshot", e))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn chat_runtime_options(
+    state: State<'_, AppState>,
+    conversation_id: String,
+    refresh: Option<bool>,
+) -> Result<RuntimeOptions, String> {
+    let hub = state.hub_arc()?;
+    let refresh = refresh.unwrap_or(false);
+    with_hub_blocking(hub, move |hub| {
+        let runtime = hub.chat().runtime();
+        let options = if refresh {
+            runtime.refresh_options(&conversation_id)
+        } else {
+            runtime.options(&conversation_id)
+        };
+        options.map_err(|e| map_err_string("chat_runtime_options", e))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn chat_runtime_set_settings(
+    state: State<'_, AppState>,
+    conversation_id: String,
+    settings: RuntimeTurnSettings,
+) -> Result<RuntimeTurnSettings, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        hub.chat()
+            .runtime()
+            .set_settings(&conversation_id, settings)
+            .map_err(|e| map_err_string("chat_runtime_set_settings", e))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn chat_runtime_note_thinking_failure(
+    state: State<'_, AppState>,
+    conversation_id: String,
+    settings: RuntimeTurnSettings,
+    error_text: String,
+) -> Result<(), String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        hub.chat()
+            .runtime()
+            .note_thinking_failure(&conversation_id, settings, &error_text)
+            .map_err(|e| map_err_string("chat_runtime_note_thinking_failure", e))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn chat_runtime_continue_legacy(
+    state: State<'_, AppState>,
+    conversation_id: String,
+) -> Result<RuntimeSnapshot, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        hub.chat()
+            .runtime()
+            .continue_legacy(&conversation_id)
+            .map_err(|e| map_err_string("chat_runtime_continue_legacy", e))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn chat_runtime_start(
+    state: State<'_, AppState>,
+    conversation_id: String,
+    prompt: String,
+    client_request_id: String,
+    extras: Option<RuntimeStartExtras>,
+) -> Result<RuntimeSnapshot, String> {
+    let hub = state.hub_arc()?;
+    let extras = extras.unwrap_or_default();
+    with_hub_blocking(hub, move |hub| {
+        hub.chat()
+            .runtime()
+            .start(&conversation_id, &prompt, &client_request_id, extras)
+            .map_err(|e| map_err_string("chat_runtime_start", e))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn chat_runtime_reply(
+    state: State<'_, AppState>,
+    reply: RuntimeReply,
+) -> Result<(), String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        hub.chat()
+            .runtime()
+            .reply(reply)
+            .map_err(|e| map_err_string("chat_runtime_reply", e))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn chat_runtime_steer(
+    state: State<'_, AppState>,
+    conversation_id: String,
+    run_id: String,
+    prompt: String,
+    client_request_id: String,
+) -> Result<(), String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        hub.chat()
+            .runtime()
+            .steer(&conversation_id, &run_id, &prompt, &client_request_id)
+            .map_err(|e| map_err_string("chat_runtime_steer", e))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn chat_runtime_cancel(
+    state: State<'_, AppState>,
+    conversation_id: String,
+    run_id: String,
+) -> Result<(), String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        hub.chat()
+            .runtime()
+            .cancel(&conversation_id, &run_id)
+            .map_err(|e| map_err_string("chat_runtime_cancel", e))
+    })
+    .await
+}
+
 /// Invoke: `set_chat_model` — write the live default model for Chat.
 #[tauri::command]
 pub async fn set_chat_model(
@@ -117,6 +274,22 @@ pub async fn set_chat_model(
     with_hub_blocking(hub, move |hub| {
         hub.set_live_chat_model(agent, &model)
             .map_err(|e| map_err_string("set_chat_model", e))
+    })
+    .await
+}
+
+/// Invoke: `set_chat_effort` — write the live thinking level for Chat.
+#[tauri::command]
+pub async fn set_chat_effort(
+    state: State<'_, AppState>,
+    agent_id: String,
+    effort: String,
+) -> Result<(), String> {
+    let hub = state.hub_arc()?;
+    let agent = parse_agent(&agent_id)?;
+    with_hub_blocking(hub, move |hub| {
+        hub.set_live_chat_effort(agent, &effort)
+            .map_err(|e| map_err_string("set_chat_effort", e))
     })
     .await
 }
@@ -241,3 +414,102 @@ fn parse_agent_ids(ids: Vec<String>) -> Result<Vec<AgentId>, String> {
 
 #[cfg(test)]
 mod tests;
+
+/// Invoke: `pick_chat_images` — select one or more local image paths for Codex localImage input.
+#[tauri::command]
+pub async fn pick_chat_images(
+    app: AppHandle,
+    title: Option<String>,
+) -> Result<Vec<String>, String> {
+    let mut dialog = app.dialog().file();
+    dialog = dialog.set_title(title.as_deref().unwrap_or("选择图片"));
+    dialog = dialog.add_filter("Images", &["png", "jpg", "jpeg", "gif", "webp", "bmp"]);
+    if let Some(window) = app.get_webview_window("main") {
+        dialog = dialog.set_parent(&window);
+    }
+    let picked = dialog.blocking_pick_files().unwrap_or_default();
+    let mut out = Vec::new();
+    for path in picked {
+        let buf = path
+            .simplified()
+            .into_path()
+            .map_err(|e| format!("invalid image path: {e}"))?;
+        out.push(buf.to_string_lossy().into_owned());
+    }
+    Ok(out)
+}
+
+/// Invoke: `save_chat_paste_image` — persist a clipboard/paste image for Codex localImage.
+#[tauri::command]
+pub async fn save_chat_paste_image(
+    base64: String,
+    extension: String,
+    byte_length: Option<u64>,
+) -> Result<String, String> {
+    save_chat_paste_image_inner(&base64, &extension, byte_length)
+}
+
+fn save_chat_paste_image_inner(
+    base64: &str,
+    extension: &str,
+    byte_length: Option<u64>,
+) -> Result<String, String> {
+    use base64::Engine;
+    const MAX_BYTES: u64 = 10 * 1024 * 1024;
+    let ext = extension
+        .trim()
+        .trim_start_matches('.')
+        .to_ascii_lowercase();
+    let allowed = ["png", "jpg", "jpeg", "gif", "webp", "bmp"];
+    if !allowed.iter().any(|item| *item == ext) {
+        return Err(format!("unsupported image type: {ext}"));
+    }
+    if let Some(declared) = byte_length {
+        if declared > MAX_BYTES {
+            return Err("image too large (max 10MB)".into());
+        }
+    }
+    let cleaned: String = base64.chars().filter(|ch| !ch.is_whitespace()).collect();
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(cleaned.as_bytes())
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(cleaned.as_bytes()))
+        .map_err(|e| format!("invalid base64 image payload: {e}"))?;
+    if bytes.len() as u64 > MAX_BYTES {
+        return Err("image too large (max 10MB)".into());
+    }
+    let dir = std::env::temp_dir().join("agenthub-chat-paste");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create paste dir: {e}"))?;
+    let name = format!(
+        "paste-{}-{}.{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0),
+        std::process::id(),
+        if ext == "jpeg" { "jpg" } else { &ext }
+    );
+    let path = dir.join(name);
+    std::fs::write(&path, bytes).map_err(|e| format!("write paste image: {e}"))?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+#[cfg(test)]
+mod paste_image_tests {
+    use super::save_chat_paste_image_inner;
+
+    #[test]
+    fn rejects_unknown_extension() {
+        let err = save_chat_paste_image_inner("AQID", "exe", None).unwrap_err();
+        assert!(err.contains("unsupported"));
+    }
+
+    #[test]
+    fn writes_small_png_bytes() {
+        // 1x1 PNG
+        let b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+        let path = save_chat_paste_image_inner(b64, "png", Some(68)).unwrap();
+        assert!(path.ends_with(".png"));
+        assert!(std::path::Path::new(&path).is_file());
+        let _ = std::fs::remove_file(path);
+    }
+}

@@ -14,16 +14,45 @@ import {
   chatSend,
   listChatMessages,
   listConversations,
+  runtimeCancel,
+  runtimeContinueLegacy,
+  runtimeReply,
+  runtimeSnapshot,
+  runtimeStart,
+  runtimeSteer,
 } from '@/lib/api/chat';
-import { processKey, reduceProcessEvent, type ProcessMap } from '@/lib/chat-process';
+import type { RuntimeRequest, RuntimeSnapshot } from '@/lib/api/chat';
+import type { ProcessMap } from '@/lib/chat-process';
 import type { AgentKey, ChatEvent, ChatMessage, Conversation } from '@/lib/types';
 import type { TurnGroup } from './chat-format';
-import { conversationTitle, retryTarget, sendBlockers } from './chat-model';
+import { busyAgentsForSends, incomingSendingIds, liveSendingIds, retryTarget, sendBlockers } from './chat-model';
 import { isCurrentChatRequest } from './chat-request';
+import { grokCanQueueFollowUp, grokShouldFlushFollowUp } from './chat-grok-follow-up';
+import { acceptsRuntimeSnapshot, isLatestRuntimeRead, isRuntimeActive, readRuntimeTransport, requestMatchesRuntime } from './chat-runtime-model';
+import {
+  beginRuntimeStart,
+  acceptRuntimeSnapshotVersion,
+  advanceRuntimeWatermark,
+  enqueueRuntimeSnapshot as enqueueRuntimeSnapshotSource,
+  isLatestRuntimeSnapshot,
+  rememberRuntimeSnapshot,
+  reduceRuntimeConversationEvent,
+  runtimeConversationView,
+  requestRuntimeCancel,
+  upsertRuntimeMessage,
+  type RuntimeConversationView,
+  type RuntimeRunRecord,
+  type RuntimeSnapshotVersion,
+} from './runtime-run-state';
+
+function titleFromPrompt(prompt: string): string {
+  const trimmed = prompt.trim();
+  return trimmed.length > 30 ? `${trimmed.slice(0, 30)}…` : trimmed;
+}
 
 /**
  * Chat 发送 / 取消 / 流式事件 / 过程面板。
- * 世代判定仍走 isCurrentChatRequest；不改发送、取消、切会话语义。
+ * 世代判定仍走 isCurrentChatRequest。发送按会话隔离，允许多个会话同时进行。
  */
 export function useChatPageSend(input: {
   active: Conversation | null;
@@ -42,6 +71,8 @@ export function useChatPageSend(input: {
   draft: string;
   setDraft: Dispatch<SetStateAction<string>>;
   turns: TurnGroup[];
+  getStartExtras?: () => { images?: { path: string }[]; skills?: { name: string; path: string }[] };
+  clearStartExtras?: () => void;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -62,32 +93,269 @@ export function useChatPageSend(input: {
     draft,
     setDraft,
     turns,
+    getStartExtras,
+    clearStartExtras,
   } = input;
 
-  const [sending, setSending] = useState(false);
-  const [canceling, setCanceling] = useState(false);
-  const [sendingConversationId, setSendingConversationId] = useState<string | null>(null);
-  const sendingConversationIdRef = useRef<string | null>(null);
-  const streamingRef = useRef<Record<string, string>>({});
+  const sendingIdsRef = useRef(new Set<string>());
+  const [sendingIds, setSendingIds] = useState<string[]>([]);
+  const cancelingIdsRef = useRef(new Set<string>());
+  const [cancelingIds, setCancelingIds] = useState<string[]>([]);
   const [processMap, setProcessMap] = useState<ProcessMap>({});
+  const [runtime, setRuntime] = useState<RuntimeSnapshot | null>(null);
+  const runtimeSequenceRef = useRef(new Map<string, number>());
+  const runtimeRecordsRef = useRef(new Map<string, RuntimeRunRecord>());
+  const runtimeViewsRef = useRef(new Map<string, RuntimeConversationView>());
+  const runtimeSnapshotVersionsRef = useRef(new Map<string, RuntimeSnapshotVersion>());
+  const runtimeCurrentMessagesRef = useRef(new Map<string, ChatMessage | null>());
+  const runtimeSnapshotLaneRef = useRef(new Map<string, Promise<void>>());
+  const runtimeSourceVersionRef = useRef(new Map<string, number>());
+  const runtimeIdRef = useRef<string | null>(null);
+  const runtimeReadRef = useRef(new Map<string, number>());
+  const runtimeProbeRef = useRef(new Set<string>());
+  const runtimeProbeCancelRef = useRef(new Set<string>());
+  const followUpsRef = useRef(new Map<string, string>());
+  const [followUpById, setFollowUpById] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setProcessMap({});
-    streamingRef.current = {};
+    if (activeId) {
+      setProcessMap(runtimeConversationView(runtimeViewsRef.current, activeId).processMap);
+    }
+    runtimeIdRef.current = runtimeRecordsRef.current.get(activeId ?? '')?.runId ?? null;
+    setRuntime(null);
   }, [activeId]);
 
-  const liveSendingConversationId = useMemo(() => {
-    if (!sendingConversationId) return null;
-    return conversations.some((c) => c.id === sendingConversationId)
-      ? sendingConversationId
-      : null;
-  }, [conversations, sendingConversationId]);
+  const nextRuntimeRead = (conversationId: string) => {
+    const next = (runtimeReadRef.current.get(conversationId) ?? 0) + 1;
+    runtimeReadRef.current.set(conversationId, next);
+    return next;
+  };
 
-  const sendingTitle = useMemo(() => {
-    if (!liveSendingConversationId) return '';
-    const row = conversations.find((c) => c.id === liveSendingConversationId);
-    return conversationTitle(t, row?.title ?? '');
-  }, [conversations, liveSendingConversationId, t]);
+  const publishFollowUps = () => {
+    setFollowUpById(Object.fromEntries(followUpsRef.current));
+  };
+
+  const setFollowUp = (conversationId: string, prompt: string | null) => {
+    const next = prompt?.trim() ?? '';
+    if (next) followUpsRef.current.set(conversationId, next);
+    else followUpsRef.current.delete(conversationId);
+    publishFollowUps();
+  };
+
+  const runtimeSequence = (conversationId: string) =>
+    runtimeSequenceRef.current.get(conversationId) ?? 0;
+
+  const enqueueRuntimeSnapshot = (
+    conversationId: string,
+    source: () => Promise<RuntimeSnapshot>,
+    handle: (snapshot: RuntimeSnapshot, sourceVersion: number) => void | Promise<void>,
+  ) => {
+    return enqueueRuntimeSnapshotSource(
+      runtimeSnapshotLaneRef.current,
+      runtimeSourceVersionRef.current,
+      conversationId,
+      source,
+      handle,
+    );
+  };
+
+  const publishSendingIds = () => {
+    setSendingIds([...sendingIdsRef.current]);
+  };
+
+  const markSending = (conversationId: string) => {
+    if (sendingIdsRef.current.has(conversationId)) return;
+    sendingIdsRef.current.add(conversationId);
+    publishSendingIds();
+  };
+
+  const clearSendingFor = (conversationId: string) => {
+    if (!sendingIdsRef.current.has(conversationId)) return;
+    sendingIdsRef.current.delete(conversationId);
+    if (cancelingIdsRef.current.delete(conversationId)) {
+      setCancelingIds([...cancelingIdsRef.current]);
+    }
+    publishSendingIds();
+  };
+
+  const recordRuntimeSnapshot = (snapshot: RuntimeSnapshot) => {
+    const record = rememberRuntimeSnapshot(runtimeRecordsRef.current, snapshot);
+    if ('currentMessage' in snapshot) {
+      runtimeCurrentMessagesRef.current.set(snapshot.conversationId, snapshot.currentMessage ?? null);
+    }
+    advanceRuntimeWatermark(
+      runtimeSequenceRef.current,
+      snapshot.conversationId,
+      snapshot.lastSequence,
+    );
+    if (snapshot.conversationId === activeIdRef.current) runtimeIdRef.current = record.runId;
+    return record;
+  };
+
+  const applyRuntimeSnapshot = (
+    snapshot: RuntimeSnapshot,
+    conversationId: string,
+    generation: number,
+    sourceVersion: number,
+    applyUi: boolean,
+  ) => {
+    if (
+      !acceptRuntimeSnapshotVersion(
+        runtimeSnapshotVersionsRef.current,
+        snapshot,
+        sourceVersion,
+      )
+    ) return;
+    const sequence = runtimeSequence(conversationId);
+    const previousPhase = runtimeRecordsRef.current.get(conversationId)?.phase;
+    recordRuntimeSnapshot(snapshot);
+    const canRender =
+      applyUi &&
+      acceptsRuntimeSnapshot(activeIdRef.current, activeGenerationRef.current, conversationId, generation);
+    if (canRender && snapshot.currentMessage) {
+      setMessages((previous) => upsertRuntimeMessage(previous, snapshot.currentMessage!));
+    }
+    for (const item of snapshot.events) {
+      if (item.sequence > sequence) applyEvent(item.event, conversationId, generation, applyUi, 'runtime');
+    }
+    advanceRuntimeWatermark(runtimeSequenceRef.current, conversationId, snapshot.lastSequence);
+    const activePhase = isRuntimeActive(snapshot.phase);
+    const wasSending = sendingIdsRef.current.has(conversationId);
+    if (activePhase) {
+      markSending(conversationId);
+    } else if (canRender || (previousPhase != null && isRuntimeActive(previousPhase))) {
+      clearSendingFor(conversationId);
+    }
+    if (!canRender) return;
+    if (snapshot.gap) {
+      void loadMessages(conversationId).then((rows) => {
+        if (
+          isCurrentChatRequest(activeIdRef.current, activeGenerationRef.current, conversationId, generation) &&
+          isLatestRuntimeSnapshot(runtimeSnapshotVersionsRef.current, conversationId, sourceVersion)
+        ) {
+          const currentMessage = runtimeCurrentMessagesRef.current.get(conversationId);
+          setMessages(currentMessage ? upsertRuntimeMessage(rows, currentMessage) : rows);
+        }
+      });
+    }
+    runtimeIdRef.current = snapshot.runId;
+    setRuntime(snapshot);
+    if (
+      !activePhase &&
+      wasSending &&
+      grokShouldFlushFollowUp(previousPhase, snapshot.phase)
+    ) {
+      const queued = followUpsRef.current.get(conversationId)?.trim();
+      if (queued) {
+        followUpsRef.current.delete(conversationId);
+        publishFollowUps();
+        void dispatchQueuedFollowUp(conversationId, queued);
+      }
+    }
+    if (!activePhase && wasSending) {
+      void loadMessages(conversationId).then((rows) => {
+        if (
+          isCurrentChatRequest(activeIdRef.current, activeGenerationRef.current, conversationId, generation) &&
+          isLatestRuntimeSnapshot(runtimeSnapshotVersionsRef.current, conversationId, sourceVersion)
+        ) {
+          const currentMessage = runtimeCurrentMessagesRef.current.get(conversationId);
+          setMessages(currentMessage ? upsertRuntimeMessage(rows, currentMessage) : rows);
+        }
+      });
+    }
+  };
+
+  const activeAgentId = active?.agentIds[0] ?? null;
+
+  useEffect(() => {
+    if (!activeId) return;
+    let disposed = false;
+    let inFlight = false;
+    const id = activeId;
+    const generation = activeGenerationRef.current;
+    const read = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      const readId = nextRuntimeRead(id);
+      try {
+        await enqueueRuntimeSnapshot(
+          id,
+          () => runtimeSnapshot(id, runtimeSequence(id)),
+          (snapshot, sourceVersion) => {
+            applyRuntimeSnapshot(
+              snapshot,
+              id,
+              generation,
+              sourceVersion,
+              !disposed && isLatestRuntimeRead(readId, runtimeReadRef.current.get(id) ?? 0),
+            );
+          },
+        );
+      } catch (error) {
+        if (!disposed && isLatestRuntimeRead(readId, runtimeReadRef.current.get(id) ?? 0) && runtime?.enabled) {
+          toast({ title: error instanceof Error ? error.message : String(error), variant: 'danger' });
+        }
+      } finally {
+        inFlight = false;
+      }
+    };
+    void read();
+    const shouldPoll = runtime?.enabled && isRuntimeActive(runtime.phase);
+    if (!shouldPoll) return () => { disposed = true; };
+    const timer = window.setInterval(() => void read(), 400);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [activeId, activeAgentId, runtime?.enabled, runtime?.phase]);
+
+  // Background runs stay owned by their conversations. Poll them so a terminal
+  // snapshot can release that session without a page-wide sending lock.
+  useEffect(() => {
+    const ids = sendingIds.filter((id) => id !== activeId);
+    if (ids.length === 0) return;
+    let disposed = false;
+    const inFlight = new Set<string>();
+    const read = async (id: string) => {
+      if (inFlight.has(id)) return;
+      inFlight.add(id);
+      try {
+        await enqueueRuntimeSnapshot(
+          id,
+          () => runtimeSnapshot(id, runtimeSequence(id)),
+          (snapshot, sourceVersion) => {
+            applyRuntimeSnapshot(
+              snapshot,
+              id,
+              activeGenerationRef.current,
+              sourceVersion,
+              false,
+            );
+          },
+        );
+      } catch {
+        // The active session will surface a current error when it is revisited.
+      } finally {
+        inFlight.delete(id);
+      }
+    };
+    const tick = () => {
+      if (disposed) return;
+      for (const id of ids) void read(id);
+    };
+    tick();
+    const timer = window.setInterval(tick, 400);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [activeId, sendingIds]);
+
+  const liveSendingConversationIds = useMemo(
+    () => liveSendingIds(sendingIds, conversations),
+    [conversations, sendingIds],
+  );
+  const busyAgentIds = useMemo(
+    () => busyAgentsForSends(conversations, liveSendingConversationIds),
+    [conversations, liveSendingConversationIds],
+  );
+  const sendingHere = Boolean(active?.id && liveSendingConversationIds.includes(active.id));
+  const cancelingHere = Boolean(active?.id && cancelingIds.includes(active.id));
 
   const blockers = useMemo(() => {
     if (!active) return [];
@@ -97,37 +365,48 @@ export function useChatPageSend(input: {
       envNotReadyIds,
       unconfiguredAuthIds,
       agentsReady,
-      sendingConversationId: liveSendingConversationId,
-      sendingTitle,
     });
-  }, [active, hiddenIds, envNotReadyIds, unconfiguredAuthIds, agentsReady, liveSendingConversationId, sendingTitle]);
+  }, [active, hiddenIds, envNotReadyIds, unconfiguredAuthIds, agentsReady]);
 
-  const retry = useMemo(() => retryTarget(turns, sending), [turns, sending]);
+  const retry = useMemo(() => retryTarget(turns, sendingHere), [turns, sendingHere]);
 
-  function applyEvent(ev: ChatEvent, sendConvId: string, sendGeneration: number) {
+  function applyEvent(
+    ev: ChatEvent,
+    sendConvId: string,
+    sendGeneration: number,
+    render = true,
+    mode: 'runtime' | 'legacy' = 'legacy',
+  ) {
+    const isCurrent = isCurrentChatRequest(
+      activeIdRef.current,
+      activeGenerationRef.current,
+      sendConvId,
+      sendGeneration,
+    );
+    const shouldRender = render && isCurrent;
+    const view = reduceRuntimeConversationEvent(
+      runtimeViewsRef.current,
+      sendConvId,
+      ev,
+      shouldRender ? messages : [],
+      mode,
+    );
     if (
-      !isCurrentChatRequest(
-        activeIdRef.current,
-        activeGenerationRef.current,
-        sendConvId,
-        sendGeneration,
-      )
+      !shouldRender
     ) {
-      if (ev.type === 'error') toast({ title: ev.message, variant: 'danger' });
       return;
     }
     // 过程面板状态（命令 / stderr / 细状态）与 messages 并行维护
-    setProcessMap((prev) => reduceProcessEvent(prev, ev));
+    setProcessMap(view.processMap);
 
     if (ev.type === 'started') {
-      streamingRef.current = {};
+      if (mode === 'runtime') return;
       for (const agent of ev.agents) {
-        streamingRef.current[processKey(ev.turn, agent)] = '';
         setMessages((prev) => {
-          const hasRunning = prev.some(
+          const hasAgent = prev.some(
             (m) => m.turn === ev.turn && m.role === 'agent' && m.agentId === agent,
           );
-          if (hasRunning) return prev;
+          if (hasAgent) return prev;
           return [
             ...prev,
             {
@@ -147,9 +426,8 @@ export function useChatPageSend(input: {
       return;
     }
     if (ev.type === 'agentChunk' && ev.stream === 'stdout') {
-      const key = processKey(ev.turn, ev.agent);
-      streamingRef.current[key] = (streamingRef.current[key] ?? '') + ev.text;
-      const content = streamingRef.current[key];
+      if (mode === 'runtime') return;
+      const content = view.streams[`${ev.turn}:${ev.agent}`] ?? '';
       setMessages((prev) =>
         prev.map((m) =>
           m.role === 'agent' &&
@@ -173,6 +451,24 @@ export function useChatPageSend(input: {
               (m.status === 'running' || m.id.startsWith('local-'))
             ),
         );
+        const existingById = withoutLocal.findIndex((m) => m.id === ev.message.id);
+        if (existingById >= 0) {
+          return withoutLocal.map((message, index) =>
+            index === existingById ? ev.message : message,
+          );
+        }
+        // Historical runtime events can be replayed after the DB message has
+        // already been loaded. Keep that final row instead of appending it a
+        // second time under a different message id.
+        if (withoutLocal.some(
+          (m) =>
+            m.role === 'agent' &&
+            m.agentId === ev.agent &&
+            m.turn === ev.turn &&
+            m.status !== 'running',
+        )) {
+          return withoutLocal;
+        }
         return [...withoutLocal, ev.message];
       });
       return;
@@ -182,15 +478,63 @@ export function useChatPageSend(input: {
     }
   }
 
+  async function dispatchQueuedFollowUp(conversationId: string, prompt: string) {
+    const text = prompt.trim();
+    if (!text) return;
+    markSending(conversationId);
+    const generation = activeGenerationRef.current;
+    try {
+      await enqueueRuntimeSnapshot(
+        conversationId,
+        () => runtimeStart(conversationId, text, crypto.randomUUID()),
+        (snapshot, sourceVersion) => {
+          applyRuntimeSnapshot(
+            snapshot,
+            conversationId,
+            generation,
+            sourceVersion,
+            conversationId === activeIdRef.current,
+          );
+        },
+      );
+    } catch (error) {
+      clearSendingFor(conversationId);
+      setFollowUp(conversationId, text);
+      if (conversationId === activeIdRef.current) {
+        toast({
+          title: error instanceof Error ? error.message : String(error),
+          variant: 'danger',
+        });
+      }
+    }
+  }
+
   async function sendPrompt(prompt: string, clearDraft: boolean) {
-    if (!active || sending) return;
+    if (!active) return;
+    if (sendingIdsRef.current.has(active.id)) {
+      if (
+        grokCanQueueFollowUp({
+          agentId: active.agentIds[0],
+          runtimeEnabled: runtime?.enabled && runtime.conversationId === active.id,
+          phase: runtime?.phase,
+          sending: true,
+        })
+      ) {
+        setFollowUp(active.id, prompt);
+        if (clearDraft) setDraft('');
+        toast({
+          title: t('chat.toast.queuedAfterTurn'),
+          variant: 'success',
+          duration: 2500,
+        });
+      }
+      return;
+    }
     if (sendBlockers({
       conversation: active,
       hiddenIds,
       envNotReadyIds,
       unconfiguredAuthIds,
-      sendingConversationId: liveSendingConversationId,
-      sendingTitle,
     }).length > 0) {
       return;
     }
@@ -198,15 +542,14 @@ export function useChatPageSend(input: {
 
     const sendConvId = active.id;
     const sendGeneration = activeGenerationRef.current;
-    sendingConversationIdRef.current = sendConvId;
-    setSending(true);
-    setSendingConversationId(sendConvId);
+    markSending(sendConvId);
     if (clearDraft) setDraft('');
     const turnGuess = messages.reduce((max, m) => Math.max(max, m.turn), 0) + 1;
+    const localUserId = `local-user-${Date.now()}`;
     setMessages((prev) => [
       ...prev,
       {
-        id: `local-user-${Date.now()}`,
+        id: localUserId,
         conversationId: sendConvId,
         turn: turnGuess,
         role: 'user',
@@ -216,6 +559,113 @@ export function useChatPageSend(input: {
         createdAt: new Date().toISOString(),
       },
     ]);
+    if (!active.title.trim()) {
+      const title = titleFromPrompt(prompt);
+      setConversations((prev) => prev.map((item) => (
+        item.id === sendConvId ? { ...item, title } : item
+      )));
+    }
+
+    // A runtime-enabled snapshot is the sole decision point.  Failure to read
+    // it is surfaced and never silently changes a new Codex chat to legacy.
+    runtimeProbeRef.current.add(sendConvId);
+    const transport = await readRuntimeTransport(() =>
+      enqueueRuntimeSnapshot(
+        sendConvId,
+        () => runtimeSnapshot(sendConvId),
+        (snapshot, sourceVersion) => {
+          applyRuntimeSnapshot(
+            snapshot,
+            sendConvId,
+            sendGeneration,
+            sourceVersion,
+            false,
+          );
+        },
+      ),
+    );
+    runtimeProbeRef.current.delete(sendConvId);
+    if (transport.kind === 'unavailable') {
+      runtimeProbeCancelRef.current.delete(sendConvId);
+      const e = new Error('无法连接聊天服务');
+      if (isCurrentChatRequest(activeIdRef.current, activeGenerationRef.current, sendConvId, sendGeneration)) {
+        toast({ title: e.message, variant: 'danger' });
+        setMessages((prev) => prev.filter((message) => message.id !== localUserId));
+        setDraft(prompt);
+      }
+      clearSendingFor(sendConvId);
+      return;
+    }
+    if (runtimeProbeCancelRef.current.delete(sendConvId)) {
+      // The request was cancelled while the transport decision was pending.
+      // No new runtime turn or legacy process has been started yet.
+      clearSendingFor(sendConvId);
+      if (isCurrentChatRequest(activeIdRef.current, activeGenerationRef.current, sendConvId, sendGeneration)) {
+        setDraft(prompt);
+        setMessages((prev) => prev.filter((message) => message.id !== localUserId));
+      }
+      return;
+    }
+    if (transport.kind === 'runtime') {
+      beginRuntimeStart(
+        runtimeRecordsRef.current,
+        sendConvId,
+        runtimeSequence(sendConvId),
+      );
+      try {
+        await enqueueRuntimeSnapshot(
+          sendConvId,
+          () => runtimeStart(sendConvId, prompt, crypto.randomUUID(), getStartExtras?.()),
+          async (nextSnapshot, sourceVersion) => {
+            const currentStartRecord = runtimeRecordsRef.current.get(sendConvId);
+            if (currentStartRecord?.cancelRequested && nextSnapshot.runId && isRuntimeActive(nextSnapshot.phase)) {
+              await runtimeCancel(sendConvId, nextSnapshot.runId);
+            }
+            applyRuntimeSnapshot(
+              nextSnapshot,
+              sendConvId,
+              sendGeneration,
+              sourceVersion,
+              true,
+            );
+          },
+        );
+        clearStartExtras?.();
+      } catch (e) {
+        const current = isCurrentChatRequest(
+          activeIdRef.current,
+          activeGenerationRef.current,
+          sendConvId,
+          sendGeneration,
+        );
+        if (current) {
+          toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
+          setDraft(prompt);
+        }
+        const rows = await loadMessages(sendConvId).catch(() => null);
+        if (rows && isCurrentChatRequest(activeIdRef.current, activeGenerationRef.current, sendConvId, sendGeneration)) {
+          setMessages(rows);
+        }
+        const recovered = await enqueueRuntimeSnapshot(
+          sendConvId,
+          () => runtimeSnapshot(sendConvId, runtimeSequence(sendConvId)),
+          (nextSnapshot, sourceVersion) => {
+            applyRuntimeSnapshot(
+              nextSnapshot,
+              sendConvId,
+              sendGeneration,
+              sourceVersion,
+              true,
+            );
+          },
+        ).catch(() => null);
+        if (!recovered) {
+          runtimeRecordsRef.current.delete(sendConvId);
+          clearSendingFor(sendConvId);
+        }
+      }
+      return;
+    }
 
     try {
       await chatSend(sendConvId, prompt, (ev) => applyEvent(ev, sendConvId, sendGeneration));
@@ -249,8 +699,14 @@ export function useChatPageSend(input: {
         setMessages(rows);
       }
     } catch (e) {
-      toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
-      if (activeIdRef.current === sendConvId) {
+      const current = isCurrentChatRequest(
+        activeIdRef.current,
+        activeGenerationRef.current,
+        sendConvId,
+        sendGeneration,
+      );
+      if (current) {
+        toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
         const refreshGeneration = activeGenerationRef.current;
         const rows = await loadMessages(sendConvId).catch(() => null);
         if (
@@ -266,12 +722,7 @@ export function useChatPageSend(input: {
         }
       }
     } finally {
-      if (sendingConversationIdRef.current === sendConvId) {
-        sendingConversationIdRef.current = null;
-        setSending(false);
-        setCanceling(false);
-        setSendingConversationId(null);
-      }
+      clearSendingFor(sendConvId);
     }
   }
 
@@ -280,16 +731,60 @@ export function useChatPageSend(input: {
   }
 
   async function retryLast() {
-    const target = retryTarget(turns, sending);
+    const target = retryTarget(turns, sendingHere);
     if (!target) return;
     await sendPrompt(target.prompt, false);
   }
 
+  async function cancelRuntimeTarget(conversationId: string): Promise<'pending' | 'requested' | 'none'> {
+    if (runtimeProbeRef.current.has(conversationId)) {
+      runtimeProbeCancelRef.current.add(conversationId);
+      return 'pending';
+    }
+    let target = requestRuntimeCancel(runtimeRecordsRef.current, conversationId);
+    // A server-owned run may have been restored from the conversation list
+    // before this hook has read its runtime snapshot. Resolve that state once
+    // before falling back to the legacy cancellation command.
+    if (target.kind === 'legacy') {
+      const transport = await readRuntimeTransport(() =>
+        enqueueRuntimeSnapshot(
+          conversationId,
+          () => runtimeSnapshot(conversationId),
+          (snapshot, sourceVersion) => {
+            applyRuntimeSnapshot(
+              snapshot,
+              conversationId,
+              activeGenerationRef.current,
+              sourceVersion,
+              false,
+            );
+          },
+        ),
+      );
+      if (transport.kind === 'runtime') {
+        target = requestRuntimeCancel(runtimeRecordsRef.current, conversationId);
+      }
+    }
+    if (target.kind === 'pending') return 'pending';
+    if (target.kind === 'none') return 'none';
+    if (target.kind === 'runtime') {
+      await runtimeCancel(conversationId, target.runId);
+      return 'requested';
+    }
+    await chatCancel(conversationId);
+    return 'requested';
+  }
+
   async function handleCancel() {
-    if (!sendingConversationId || canceling) return;
-    setCanceling(true);
+    const id = active?.id;
+    if (!id || !sendingIdsRef.current.has(id) || cancelingIdsRef.current.has(id)) return;
+    const queued = followUpsRef.current.get(id);
+    if (queued && !draft.trim()) setDraft(queued);
+    setFollowUp(id, null);
+    cancelingIdsRef.current.add(id);
+    setCancelingIds([...cancelingIdsRef.current]);
     try {
-      await chatCancel(sendingConversationId);
+      await cancelRuntimeTarget(id);
       toast({
         title: t('chat.toast.cancelRequested'),
         description: t('chat.toast.cancelRequestedDesc'),
@@ -299,42 +794,106 @@ export function useChatPageSend(input: {
     } catch (e) {
       toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
     } finally {
-      setCanceling(false);
+      if (cancelingIdsRef.current.delete(id)) {
+        setCancelingIds([...cancelingIdsRef.current]);
+      }
     }
   }
 
-  function adoptInflight(id: string | null) {
-    if (!id) return;
-    sendingConversationIdRef.current = id;
-    setSendingConversationId(id);
-    setCanceling(false);
-    setSending(true);
+  function adoptInflight(ids?: string[] | string | null) {
+    let changed = false;
+    for (const id of incomingSendingIds(ids)) {
+      if (sendingIdsRef.current.has(id)) continue;
+      sendingIdsRef.current.add(id);
+      changed = true;
+    }
+    if (changed) publishSendingIds();
   }
 
   async function cancelIfSending(id: string) {
-    if (sendingConversationId !== id) return;
-    await chatCancel(id).catch(() => {});
-    sendingConversationIdRef.current = null;
-    setSending(false);
-    setCanceling(false);
-    setSendingConversationId(null);
+    if (!sendingIdsRef.current.has(id)) return;
+    await cancelRuntimeTarget(id).catch(() => {});
+    clearSendingFor(id);
   }
 
-  const sendingHere = Boolean(sending && sendingConversationId === active?.id);
-  const cancelingHere = Boolean(canceling && sendingConversationId === active?.id);
+  async function submitRuntimeRequest(request: RuntimeRequest, decision?: 'allow' | 'deny', answers?: Record<string, string[]>) {
+    if (!active || !requestMatchesRuntime(request, runtimeIdRef.current)) {
+      throw new Error('stale runtime request');
+    }
+    try {
+      await runtimeReply({
+        conversationId: active.id,
+        runId: request.runId,
+        requestId: request.id,
+        clientRequestId: crypto.randomUUID(),
+        decision,
+        answers,
+      });
+    } catch (error) {
+      toast({ title: error instanceof Error ? error.message : String(error), variant: 'danger' });
+      throw error;
+    }
+  }
+
+  async function continueLegacyGrok() {
+    if (!active) return;
+    try {
+      const snapshot = await runtimeContinueLegacy(active.id);
+      const sourceVersion = (runtimeSourceVersionRef.current.get(active.id) ?? 0) + 1;
+      runtimeSourceVersionRef.current.set(active.id, sourceVersion);
+      applyRuntimeSnapshot(
+        snapshot,
+        active.id,
+        activeGenerationRef.current,
+        sourceVersion,
+        true,
+      );
+      toast({
+        title: t('chat.toast.legacyContinued'),
+        variant: 'success',
+        duration: 2500,
+      });
+    } catch (error) {
+      toast({
+        title: t('chat.toast.legacyContinueFail'),
+        description: error instanceof Error ? error.message : String(error),
+        variant: 'danger',
+      });
+    }
+  }
+
+  async function steerRuntime(prompt: string) {
+    if (!active || !runtime?.enabled || !runtimeIdRef.current || !prompt.trim()) return;
+    try {
+      await runtimeSteer(active.id, runtimeIdRef.current, prompt.trim(), crypto.randomUUID());
+      toast({ title: t('chat.toast.steered'), variant: 'success', duration: 2500 });
+    } catch (error) {
+      toast({ title: error instanceof Error ? error.message : String(error), variant: 'danger' });
+      throw error;
+    }
+  }
 
   return {
-    sending,
+    sending: sendingHere,
     sendingHere,
     cancelingHere,
-    sendingConversationId: liveSendingConversationId,
+    sendingConversationIds: liveSendingConversationIds,
+    busyAgentIds,
     processMap,
     blockers,
     retry,
     handleSend,
     retryLast,
     handleCancel,
+    queuedFollowUp: activeId ? followUpById[activeId] ?? null : null,
+    clearQueuedFollowUp: () => {
+      if (activeId) setFollowUp(activeId, null);
+    },
+    continueLegacyGrok,
     adoptInflight,
     cancelIfSending,
+    runtime,
+    submitRuntimeRequest,
+    steerRuntime,
   };
 }

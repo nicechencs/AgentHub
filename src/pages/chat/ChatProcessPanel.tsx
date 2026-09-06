@@ -12,10 +12,12 @@ import type { TranslateFn } from '@/lib/i18n';
 import type { ProcessStep } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
+  clipProcessTail,
   formatDurationMs,
   formatStepInput,
   isProcessActivePhase,
   isProcessErrorPhase,
+  pinElementScrollToBottom,
   thinkingChromeLabel,
 } from './chat-format';
 
@@ -50,8 +52,7 @@ function PayloadPreview({
       />
     );
   }
-  const clipped = text.length > 4000 ? `${text.slice(0, 4000)}…` : text;
-  return <pre className={className}>{clipped}</pre>;
+  return <pre className={className}>{clipProcessTail(text)}</pre>;
 }
 
 /** Render tool/stderr text; highlight unified-diff style lines when present. */
@@ -143,7 +144,7 @@ function ThinkingStepRow({ text, done }: { text: string; done: boolean }) {
 
   const label = thinkingChromeLabel(done, elapsedMs, t);
 
-  const body = text.length > 4000 ? `${text.slice(0, 4000)}…` : text;
+  const body = clipProcessTail(text);
 
   return (
     <details
@@ -158,7 +159,9 @@ function ThinkingStepRow({ text, done }: { text: string; done: boolean }) {
       <summary className="cursor-pointer list-none text-secondary marker:content-none [&::-webkit-details-marker]:hidden">
         ✳ {label}
       </summary>
-      {body ? <div className="mt-0.5 italic text-muted">{body}</div> : null}
+      {body ? (
+        <div className="mt-0.5 whitespace-pre-wrap break-words italic text-muted">{body}</div>
+      ) : null}
     </details>
   );
 }
@@ -221,6 +224,16 @@ export function ChatProcessPanel({
 
   const open = userOpen ?? autoOpen;
   const hasRunDetails = Boolean(view.command || view.stderr || exitCode != null);
+  const timelineRef = useRef<HTMLDivElement>(null);
+  const stderrRef = useRef<HTMLPreElement>(null);
+
+  useLayoutEffect(() => {
+    pinElementScrollToBottom(timelineRef.current);
+  }, [view.steps]);
+
+  useLayoutEffect(() => {
+    pinElementScrollToBottom(stderrRef.current);
+  }, [view.stderr]);
 
   return (
     <details
@@ -240,13 +253,18 @@ export function ChatProcessPanel({
       </summary>
       <div className="space-y-2 pb-1">
         {timeline.length > 0 ? (
-          <div className="max-h-48 space-y-0 overflow-y-auto border-l-2 border-border pl-3">
+          <div
+            ref={timelineRef}
+            className="max-h-48 space-y-0 overflow-y-auto [overflow-anchor:none] border-l-2 border-border pl-3"
+          >
             {timeline.map((step, i) => (
               <ProcessStepRow key={`${step.type}-${i}`} step={step} />
             ))}
           </div>
         ) : isProcessActivePhase(effectivePhase) ? (
-          <p className="text-muted">{t('chat.process.waitingLogs')}</p>
+          <p className="text-muted">
+            {view.stdout.trim() ? t('chat.process.streamingText') : t('chat.process.waitingLogs')}
+          </p>
         ) : null}
         {hasRunDetails && (
           <details
@@ -267,7 +285,10 @@ export function ChatProcessPanel({
               {view.stderr ? (
                 <div>
                   <div className="mb-0.5 text-muted">stderr</div>
-                  <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-all rounded-card bg-subtle px-2 py-1.5 font-mono text-meta leading-relaxed text-danger/90">
+                  <pre
+                    ref={stderrRef}
+                    className="max-h-36 overflow-auto [overflow-anchor:none] whitespace-pre-wrap break-all rounded-card bg-subtle px-2 py-1.5 font-mono text-meta leading-relaxed text-danger/90"
+                  >
                     {view.stderr}
                   </pre>
                 </div>

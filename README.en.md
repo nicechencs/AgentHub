@@ -92,7 +92,7 @@ pnpm install
 pnpm tauri:dev
 ```
 
-On Windows you can also run `.\run.ps1`; on macOS/Linux you can run `./run.sh`. These scripts check desktop dependencies and start the real Tauri backend. If Linux system libraries are missing, run `./scripts/check-linux-prereqs.sh --print-packages` for the matching distro install hints.
+On Windows you can also run `.\run.ps1`; on macOS/Linux you can run `./run.sh`. These scripts check desktop dependencies and start the real Tauri backend. If the Vite port is already in use, run `./restart.sh` (or `./run.sh --restart`) on macOS/Linux, or `.\run.ps1 -Restart` on Windows, to stop leftover dev processes and start again. If Linux system libraries are missing, run `./scripts/check-linux-prereqs.sh --print-packages` for the matching distro install hints.
 
 To browse demo data in the browser only:
 

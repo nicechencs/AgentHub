@@ -129,7 +129,7 @@ export function createTauriAccountPort(): AccountPort {
       return invoke('oauth_list_options', { agentId });
     },
 
-    async startOAuth(agentId, openBrowser = true, providerKey) {
+    async startOAuth(agentId, openBrowser = false, providerKey) {
       return invoke<OAuthStartInfo>('oauth_start', {
         agentId,
         openBrowser,

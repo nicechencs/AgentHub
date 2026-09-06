@@ -26,7 +26,7 @@ pub fn plan_native_resume(agent: AgentId, session_id: &str) -> Option<NativeResu
 
 /// Whether Chat can continue this agent with print-mode resume (not TUI).
 pub fn supports_print_resume(agent: AgentId) -> bool {
-    matches!(agent, AgentId::Claude | AgentId::Codex)
+    matches!(agent, AgentId::Claude | AgentId::Codex | AgentId::Grok)
 }
 
 fn resume_argv(agent: AgentId, session_id: &str) -> Option<Vec<String>> {

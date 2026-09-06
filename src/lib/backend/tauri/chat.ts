@@ -7,6 +7,7 @@ import {
   type CoreConversation,
 } from '@/lib/backend/contracts/chat-map';
 import { Channel, invoke } from './invoke';
+import type { RuntimeOptions, RuntimeSnapshot, RuntimeTurnSettings } from '@/lib/backend/contracts/chat-runtime';
 
 export function createTauriChatPort(): ChatPort {
   return {
@@ -62,12 +63,53 @@ export function createTauriChatPort(): ChatPort {
     async chatCancel(conversationId) {
       await invoke('chat_cancel', { conversationId });
     },
+    async runtimeSnapshot(conversationId, afterSequence) {
+      return invoke<RuntimeSnapshot>('chat_runtime_snapshot', { conversationId, afterSequence });
+    },
+    async runtimeOptions(conversationId, opts) {
+      return invoke<RuntimeOptions>('chat_runtime_options', {
+        conversationId,
+        refresh: opts?.refresh === true,
+      });
+    },
+    async runtimeSetSettings(conversationId, settings) {
+      return invoke<RuntimeTurnSettings>('chat_runtime_set_settings', { conversationId, settings });
+    },
+    async runtimeNoteThinkingFailure(conversationId, settings, errorText) {
+      await invoke('chat_runtime_note_thinking_failure', { conversationId, settings, errorText });
+    },
+    async runtimeContinueLegacy(conversationId) {
+      return invoke<RuntimeSnapshot>('chat_runtime_continue_legacy', { conversationId });
+    },
+    async runtimeStart(conversationId, prompt, clientRequestId, extras) {
+      return invoke<RuntimeSnapshot>('chat_runtime_start', {
+        conversationId,
+        prompt,
+        clientRequestId,
+        extras: extras ?? null,
+      });
+    },
+    async runtimeReply(reply) { await invoke('chat_runtime_reply', { reply }); },
+    async runtimeSteer(conversationId, runId, prompt, clientRequestId) {
+      await invoke('chat_runtime_steer', { conversationId, runId, prompt, clientRequestId });
+    },
+    async runtimeCancel(conversationId, runId) {
+      await invoke('chat_runtime_cancel', { conversationId, runId });
+    },
 
     async setChatModel(agentId, model) {
       await invoke('set_chat_model', { agentId, model });
     },
+    async setChatEffort(agentId, effort) {
+      await invoke('set_chat_effort', { agentId, effort });
+    },
     async getChatModel(agentId) {
-      const row = await invoke<{ model?: string | null; models?: string[] }>('get_chat_model', {
+      const row = await invoke<{
+        model?: string | null;
+        models?: string[];
+        effort?: string | null;
+        efforts?: string[];
+      }>('get_chat_model', {
         agentId,
       });
       return {
@@ -75,7 +117,21 @@ export function createTauriChatPort(): ChatPort {
         models: Array.isArray(row.models)
           ? row.models.filter((id): id is string => typeof id === 'string' && Boolean(id.trim()))
           : [],
+        effort: typeof row.effort === 'string' && row.effort.trim() ? row.effort.trim() : null,
+        efforts: Array.isArray(row.efforts)
+          ? row.efforts.filter((id): id is string => typeof id === 'string' && Boolean(id.trim()))
+          : [],
       };
+    },
+    async pickChatImages(title) {
+      return invoke<string[]>('pick_chat_images', { title: title ?? null });
+    },
+    async saveChatPasteImage(input) {
+      return invoke<string>('save_chat_paste_image', {
+        base64: input.base64,
+        extension: input.extension,
+        byteLength: input.byteLength ?? null,
+      });
     },
   };
 }

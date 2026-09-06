@@ -1032,7 +1032,8 @@ fn install_runtime_missing_winget_is_env_not_ready() {
         stdout: String::new(),
         stderr: String::new(),
     };
-    let out = install_runtime(RuntimeId::Npm, "winget", &ex).unwrap();
+    // Use NodeJs (not Npm): already-present npm takes the self-upgrade path.
+    let out = install_runtime(RuntimeId::NodeJs, "winget", &ex).unwrap();
     let cmds = calls.lock().unwrap();
     if cfg!(not(windows)) {
         assert!(cmds.is_empty());
@@ -1069,6 +1070,30 @@ fn install_runtime_missing_winget_is_env_not_ready() {
         assert_ne!(out.code.as_deref(), Some("env.not_ready"));
         assert_ne!(out.code.as_deref(), Some("unsupported"));
     }
+}
+
+#[test]
+fn install_runtime_npm_upgrades_via_npm_when_present() {
+    if !matches!(
+        runtime::detect_one(RuntimeId::Npm).status,
+        EnvStatusKind::Ok | EnvStatusKind::Outdated
+    ) {
+        return;
+    }
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let ex = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+        stderr: String::new(),
+    };
+    let out = install_runtime(RuntimeId::Npm, "winget", &ex).unwrap();
+    let cmds = calls.lock().unwrap();
+    assert!(
+        cmds.iter().any(|cmd| cmd.contains("npm") && cmd.contains("npm@latest")),
+        "expected npm self-upgrade, got {cmds:?}; outcome={out:?}"
+    );
+    assert!(out.logs.iter().any(|line| line.contains("npm")));
 }
 
 #[cfg(target_os = "macos")]

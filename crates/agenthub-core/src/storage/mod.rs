@@ -6,6 +6,7 @@ mod backup_repo;
 mod binding_repo;
 pub(crate) mod cache;
 mod chat_repo;
+mod chat_runtime_backup;
 mod connection_trash_repo;
 pub(crate) mod connection_usage;
 pub(crate) mod gateway_usage_repo;
@@ -116,6 +117,17 @@ impl Database {
     /// Open without logging. Cache isolation uses this so a corrupt usage
     /// file can be quarantined instead of failing hub open.
     pub(crate) fn try_open(db_path: &Path) -> Result<Self> {
+        if let Some(parent) = db_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        // Keep the pre-upgrade copy outside the migration busy-retry loop.
+        // A later, separate open after a failed upgrade takes a new snapshot
+        // rather than trusting a potentially outdated backup.
+        {
+            let conn = Connection::open(db_path)?;
+            conn.busy_timeout(Duration::from_millis(5000))?;
+            chat_runtime_backup::before_upgrade(&conn, db_path)?;
+        }
         for attempt in 0..migrations::MIGRATION_RETRY_ATTEMPTS {
             match Self::open_inner(db_path) {
                 Ok(db) => return Ok(db),

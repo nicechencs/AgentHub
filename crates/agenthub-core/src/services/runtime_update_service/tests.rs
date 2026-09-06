@@ -66,12 +66,24 @@ fn fresh_disk_cache_is_used_without_network() {
     assert_eq!(updates[0].state, RuntimeUpdateState::UpdateAvailable);
     assert_eq!(updates[0].latest_version.as_deref(), Some("2.51.0"));
     assert_eq!(updates[0].source.as_deref(), Some("git"));
+    assert_eq!(
+        updates[0].can_auto_upgrade,
+        cfg!(windows) || cfg!(target_os = "macos")
+    );
 }
 
 #[test]
-fn npm_and_git_updates_are_manual_only() {
-    assert!(!supports_auto_upgrade(RuntimeId::Npm));
-    assert!(!supports_auto_upgrade(RuntimeId::Git));
+fn node_git_and_npm_offer_one_click_upgrade_where_supported() {
+    assert!(supports_auto_upgrade(RuntimeId::Npm));
+    assert_eq!(
+        supports_auto_upgrade(RuntimeId::Git),
+        cfg!(windows) || cfg!(target_os = "macos")
+    );
+    assert_eq!(
+        supports_auto_upgrade(RuntimeId::NodeJs),
+        cfg!(windows) || cfg!(target_os = "macos")
+    );
+    assert!(!supports_auto_upgrade(RuntimeId::PowerShell));
 }
 
 #[test]

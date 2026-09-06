@@ -117,6 +117,7 @@ test('run.sh --help documents Linux source-run, Releases, and --check', { skip: 
   const result = run(launcher, ['--help']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /--check/);
+  assert.match(result.stdout, /--restart/);
   assert.match(result.stdout, /Linux/);
   assert.match(result.stdout, /check-linux-prereqs/);
   assert.match(result.stdout, /GitHub Releases/);

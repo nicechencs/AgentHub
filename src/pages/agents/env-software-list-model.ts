@@ -65,27 +65,121 @@ export function envSoftwareCanAuto(
   return plan.targets.length > 0;
 }
 
+export type EnvSoftwareUpgradeKind = 'in_app' | 'open_setup' | 'hint_only';
+
+export type EnvSoftwareControl = {
+  action: EnvSoftwareAction;
+  /** Not an in-app upgrade — gray the button. */
+  muted: boolean;
+  kind: EnvSoftwareUpgradeKind;
+  /** Green arrow: a newer version is available. */
+  upgradable: boolean;
+};
+
+function hasHttpsUrl(value?: string): boolean {
+  const url = value?.trim();
+  return Boolean(url && /^https:\/\//i.test(url));
+}
+
+function envSoftwareCanAutoUpgrade(
+  canUpgrade: boolean,
+  update?: RuntimeUpdateInfo,
+): boolean {
+  if (update?.canAutoUpgrade === false) return false;
+  if (update?.canAutoUpgrade === true) return true;
+  return canUpgrade;
+}
+
+/** Per-row action on the Agents environment list. */
+export function envSoftwareControl(
+  runtime: RuntimeDetect,
+  runtimes: RuntimeDetect[],
+  platform: HostPlatform = detectHostPlatform(),
+  update?: RuntimeUpdateInfo,
+): EnvSoftwareControl {
+  const canInstall = envSoftwareCanAuto(runtimes, runtime, platform, false);
+  const canUpgrade = envSoftwareCanAuto(runtimes, runtime, platform, true);
+  const kind = hasHttpsUrl(update?.setupUrl) ? 'open_setup' : 'hint_only';
+
+  switch (runtime.status) {
+    case 'missing':
+      return {
+        action: canInstall ? 'install' : 'repair',
+        muted: false,
+        kind: 'in_app',
+        upgradable: false,
+      };
+    case 'broken_path':
+      return {
+        action: 'repair',
+        muted: false,
+        kind: 'in_app',
+        upgradable: false,
+      };
+    case 'outdated':
+    case 'ok': {
+      const auto = envSoftwareCanAutoUpgrade(canUpgrade, update);
+      const upgradable =
+        runtime.status === 'outdated' || update?.state === 'update_available';
+      if (auto) {
+        return {
+          action: 'upgrade',
+          muted: false,
+          kind: 'in_app',
+          upgradable,
+        };
+      }
+      return {
+        action: runtime.status === 'outdated' && !canUpgrade ? 'repair' : 'upgrade',
+        muted: runtime.status !== 'outdated' || canUpgrade,
+        kind: runtime.status === 'outdated' && !canUpgrade ? 'in_app' : kind,
+        upgradable: false,
+      };
+    }
+  }
+}
+
 /** Per-row action on the Agents environment list. */
 export function envSoftwareAction(
   runtime: RuntimeDetect,
   runtimes: RuntimeDetect[],
   platform: HostPlatform = detectHostPlatform(),
   update?: RuntimeUpdateInfo,
-): EnvSoftwareAction | null {
-  const canInstall = envSoftwareCanAuto(runtimes, runtime, platform, false);
-  const canUpgrade = envSoftwareCanAuto(runtimes, runtime, platform, true);
+): EnvSoftwareAction {
+  return envSoftwareControl(runtime, runtimes, platform, update).action;
+}
 
-  switch (runtime.status) {
-    case 'missing':
-      return canInstall ? 'install' : 'repair';
-    case 'outdated':
-      return canUpgrade ? 'upgrade' : 'repair';
-    case 'broken_path':
-      return 'repair';
-    case 'ok':
-      if (update?.state === 'update_available') return 'upgrade';
-      return null;
+export function envSoftwareUpgradeTitle(
+  control: EnvSoftwareControl,
+  t: TranslateFn,
+  update?: RuntimeUpdateInfo,
+  checking = false,
+): string {
+  if (checking) return t('chrome.env.checkingUpdate');
+  if (control.action !== 'upgrade') return envSoftwareActionLabel(control.action, t);
+  if (control.muted) {
+    const note = update?.note?.trim();
+    if (control.kind === 'open_setup') {
+      return t('chrome.env.clickOfficial', {
+        note: note || t('chrome.env.manualUpdate'),
+      });
+    }
+    return note || t('chrome.env.unsupportedUpgrade');
   }
+  if (control.upgradable) {
+    return update?.latestVersion
+      ? t('chrome.env.updateAvailable', { version: update.latestVersion })
+      : t('chrome.env.upgradeLatest');
+  }
+  if (update?.state === 'up_to_date') {
+    return update.latestVersion
+      ? t('chrome.env.latestForceVersion', { version: update.latestVersion })
+      : t('chrome.env.latestForce');
+  }
+  if (update?.note) {
+    return t('chrome.env.unknownForceNote', { note: update.note });
+  }
+  return t('chrome.env.unknownForce');
 }
 
 export function envSoftwareActionLabel(

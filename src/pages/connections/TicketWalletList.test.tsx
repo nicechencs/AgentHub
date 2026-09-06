@@ -1025,6 +1025,47 @@ describe('TicketDetailPanel', () => {
     expect(markup.indexOf('auth.json')).toBeLessThan(markup.indexOf('config.toml'));
     expect(markup).not.toContain(secret);
   });
+
+  it('lets Pi default login change the default model', () => {
+    const ticket = {
+      id: 'account:pi-xai',
+      sourceKind: 'account' as const,
+      sourceId: 'pi-xai',
+      agentId: 'pi' as const,
+      label: 'xAI',
+      surface: 'xai-api' as const,
+      credentialClass: 'oauth' as const,
+    };
+    const current = renderWithTooltip(
+      createElement(TicketDetailPanel, {
+        id: 'pi-default-model',
+        ticket,
+        extras: { isCurrent: true },
+        piDefaultModel: {
+          kind: 'picker',
+          model: 'grok-4.6',
+          models: ['grok-4.5', 'grok-4.6'],
+          switching: false,
+        },
+        onDelete() {},
+      }),
+    );
+    expect(current).toContain('默认模型');
+    expect(current).toContain('grok-4.6');
+    expect(current).toContain('新开会话会用这个模型');
+    expect(current).not.toContain('先把这份登录设为默认');
+
+    const other = renderWithTooltip(
+      createElement(TicketDetailPanel, {
+        id: 'pi-need-default',
+        ticket,
+        extras: { isCurrent: false },
+        piDefaultModel: { kind: 'need-default' },
+        onDelete() {},
+      }),
+    );
+    expect(other).toContain('先把这份登录设为默认，再改默认模型');
+  });
 });
 
 describe('TicketWalletList switch action', () => {

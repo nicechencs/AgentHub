@@ -494,10 +494,10 @@ describe('agent-card install confirm', () => {
     expect(dialogs).toContain('uninstallConfigKeepsApp');
   });
 
-  it('makes retry / redetect the primary CTA after failure or guided setup', () => {
+  it('keeps retry / redetect as the row verb after failure or guided setup, without a page accent', () => {
     const card = readFileSync(path.join(dir, 'agent-card.tsx'), 'utf8');
-    expect(installRetryButtonVariant('failed')).toBe('default');
-    expect(installRetryButtonVariant('guided')).toBe('default');
+    expect(installRetryButtonVariant('failed')).toBe('secondary');
+    expect(installRetryButtonVariant('guided')).toBe('secondary');
     expect(installRetryButtonVariant('done')).toBe('secondary');
     expect(installRetryButtonVariant(undefined)).toBe('secondary');
     expect(installPrimaryLabelKey('failed')).toBe('agents.card.retry');
@@ -508,7 +508,9 @@ describe('agent-card install confirm', () => {
     expect(card).toContain('redetectAfterGuide');
     expect(card).toContain('<AgentInstallButton');
     expect(card).toContain('status={task?.status}');
-    expect(card).toContain('variant="default"');
+    expect(card).not.toContain('variant="default"');
+    expect(card).toContain('variant="secondary"');
+    expect(card).toContain('RefreshCw');
     expect(card).toContain('agents.card.retry');
     expect(card).toContain('agents.card.redetect');
     expect(card).toContain('retryAction');

@@ -1,12 +1,13 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use serde_json::{json, Map, Value};
 
 use crate::error::{AppError, Result};
 use crate::models::{
-    AccountKind, AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectResult,
-    LiveAccount, RunOptions, RunSpec,
+    static_fallback_models, AccountKind, AdapterSourceProduct, AgentConfig, AgentId, AuthState,
+    Capability, CapabilityState, DetectResult, LiveAccount, LiveChatModel, RunOptions, RunSpec,
 };
 use crate::runtime;
 use crate::utils::atomic::atomic_write;
@@ -210,7 +211,11 @@ impl AgentAdapter for GrokAdapter {
             | StructuredStream | DangerousMode | ProjectHistory | ProjectDelete
             | ProviderPresets => CapabilityState::full(),
             Usage => CapabilityState::full(),
-            Mcp | ModelSelect | SessionResume => CapabilityState::planned("待验证接入"),
+            SessionResume => {
+                CapabilityState::partial("Chat 后续轮次走 print+resume；终端可复制官方续接命令")
+            }
+            Mcp => CapabilityState::planned("待验证接入"),
+            ModelSelect => CapabilityState::partial("对话页可选模型和思考等级"),
         }
     }
 
@@ -227,6 +232,7 @@ impl AgentAdapter for GrokAdapter {
     fn build_run_spec(&self, binary: &Path, prompt: &str, opts: &RunOptions) -> Result<RunSpec> {
         // text: grok -p <prompt>
         // structured (Chat): --output-format streaming-json (ACP NDJSON ≥ 0.2.117)
+        // subsequent turns: grok --resume <id> -p <prompt>
         // --no-auto-update: same guard Grok App uses so a mid-turn CLI
         // self-update cannot kill the headless child. Old CLIs (< 0.2.117)
         // reject the flag, so only emit it when version is unknown or modern.
@@ -884,10 +890,265 @@ fn grok_supports_no_auto_update(version: Option<&str>) -> bool {
     }
 }
 
+const GROK_CHAT_EFFORTS: &[&str] = &["low", "high", "xhigh"];
+
+fn grok_model_rejects_thinking(model: &str) -> bool {
+    let id = model.trim().to_ascii_lowercase();
+    id == "grok-code-fast-1" || id.starts_with("grok-code-fast")
+}
+
+fn grok_cli_model_id(raw: &str) -> Option<String> {
+    let token = raw
+        .trim()
+        .trim_start_matches(['*', '-'])
+        .trim()
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .trim();
+    if token.is_empty() {
+        return None;
+    }
+    let lower = token.to_ascii_lowercase();
+    if lower.starts_with("grok") || lower.starts_with("xai/") {
+        Some(token.to_string())
+    } else {
+        None
+    }
+}
+
+pub(crate) fn parse_grok_models_cli(stdout: &str) -> (Option<String>, Vec<String>) {
+    let mut default = None;
+    let mut models = Vec::new();
+    let mut seen = HashSet::new();
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("Default model:") {
+            default = grok_cli_model_id(rest);
+            continue;
+        }
+        let Some(id) = grok_cli_model_id(trimmed) else {
+            continue;
+        };
+        if seen.insert(id.clone()) {
+            models.push(id);
+        }
+    }
+    if let Some(id) = default.as_ref() {
+        if seen.insert(id.clone()) {
+            models.insert(0, id.clone());
+        }
+    }
+    (default, models)
+}
+
+fn grok_fallback_models() -> Vec<String> {
+    static_fallback_models(AdapterSourceProduct::XaiGrokSubscription).to_vec()
+}
+
+fn merge_grok_chat_models(cli: &[String], current: Option<&str>) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    for id in cli.iter().map(|s| s.as_str()).chain(current.into_iter()) {
+        let id = id.trim();
+        if id.is_empty() || !seen.insert(id.to_string()) {
+            continue;
+        }
+        out.push(id.to_string());
+    }
+    if out.is_empty() {
+        for id in grok_fallback_models() {
+            if seen.insert(id.clone()) {
+                out.push(id);
+            }
+        }
+    }
+    out
+}
+
+fn grok_config_chat_prefs(doc: &DocumentMut) -> (Option<String>, Option<String>) {
+    let alias = active_model_alias(doc);
+    let nested = doc
+        .get("model")
+        .and_then(Item::as_table)
+        .and_then(|models| models.get(&alias))
+        .and_then(Item::as_table)
+        .and_then(|entry| entry.get("model"))
+        .and_then(Item::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned);
+    let model = nested.or_else(|| grok_cli_model_id(&alias));
+    let effort = doc
+        .get("models")
+        .and_then(Item::as_table)
+        .and_then(|models| models.get("default_reasoning_effort"))
+        .and_then(Item::as_str)
+        .map(str::trim)
+        .filter(|s| GROK_CHAT_EFFORTS.iter().any(|item| *item == *s))
+        .map(str::to_owned);
+    (model, effort)
+}
+
+fn read_grok_config_doc() -> Result<DocumentMut> {
+    let path = agent_home(AgentId::Grok)?.join("config.toml");
+    let live = match std::fs::read_to_string(&path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(error.into()),
+    };
+    if live.trim().is_empty() {
+        return Ok(DocumentMut::new());
+    }
+    live.parse::<DocumentMut>()
+        .map_err(|e| AppError::InvalidArg(format!("invalid Grok config.toml: {e}")))
+}
+
+fn write_grok_config_doc(doc: &DocumentMut) -> Result<()> {
+    let path = agent_home(AgentId::Grok)?.join("config.toml");
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    atomic_write(&path, doc.to_string().as_bytes())
+}
+
+fn list_grok_cli_models() -> Vec<String> {
+    let Some(binary) = detect_installation().binary_path else {
+        return Vec::new();
+    };
+    let output = Command::new(binary).arg("models").output().ok();
+    let Some(output) = output.filter(|item| item.status.success()) else {
+        return Vec::new();
+    };
+    parse_grok_models_cli(&String::from_utf8_lossy(&output.stdout)).1
+}
+
+pub(crate) fn grok_send_prefs() -> (Option<String>, Option<String>) {
+    let doc = read_grok_config_doc().unwrap_or_else(|_| DocumentMut::new());
+    let (model, effort) = grok_config_chat_prefs(&doc);
+    if model.as_deref().is_some_and(grok_model_rejects_thinking) {
+        (model, None)
+    } else {
+        (model, effort)
+    }
+}
+
+pub(crate) fn grok_live_chat_model() -> LiveChatModel {
+    let doc = read_grok_config_doc().unwrap_or_else(|_| DocumentMut::new());
+    let (stored_model, stored_effort) = grok_config_chat_prefs(&doc);
+    let models = merge_grok_chat_models(&list_grok_cli_models(), stored_model.as_deref());
+    let model = stored_model
+        .filter(|id| models.iter().any(|item| item == id))
+        .or_else(|| models.first().cloned());
+    let rejects = model.as_deref().is_some_and(grok_model_rejects_thinking);
+    let efforts = if rejects {
+        Vec::new()
+    } else {
+        GROK_CHAT_EFFORTS
+            .iter()
+            .map(|item| (*item).to_string())
+            .collect()
+    };
+    let effort = if rejects {
+        None
+    } else {
+        stored_effort
+            .filter(|value| efforts.iter().any(|item| item == value))
+            .or_else(|| efforts.iter().find(|item| *item == "high").cloned())
+            .or_else(|| efforts.first().cloned())
+    };
+    LiveChatModel {
+        model,
+        models,
+        effort,
+        efforts,
+    }
+}
+
+pub(crate) fn set_grok_default_model(model: &str) -> Result<()> {
+    let model = model.trim();
+    if model.is_empty() {
+        return Err(AppError::InvalidArg("model must not be empty".into()));
+    }
+    let mut doc = read_grok_config_doc()?;
+    let alias = active_model_alias(&doc);
+    let has_nested = doc
+        .get("model")
+        .and_then(Item::as_table)
+        .and_then(|models| models.get(&alias))
+        .and_then(Item::as_table)
+        .is_some();
+    if has_nested {
+        crate::utils::grok_toml::ensure_grok_model_shape(
+            &mut doc,
+            &alias,
+            crate::utils::grok_toml::EnsureGrokModelShapeOptions {
+                migrate_legacy_api_key: false,
+                strip_root_env_key: false,
+            },
+        )?;
+        if let Some(entry) = doc
+            .get_mut("model")
+            .and_then(Item::as_table_mut)
+            .and_then(|models| models.get_mut(&alias))
+            .and_then(Item::as_table_mut)
+        {
+            entry["model"] = toml_edit::value(model);
+        }
+    } else {
+        if doc.get("models").is_none() {
+            doc["models"] = toml_edit::table();
+        }
+        doc["models"]["default"] = toml_edit::value(model);
+    }
+    if grok_model_rejects_thinking(model) {
+        if let Some(models) = doc.get_mut("models").and_then(Item::as_table_mut) {
+            models.remove("default_reasoning_effort");
+        }
+    }
+    write_grok_config_doc(&doc)
+}
+
+pub(crate) fn set_grok_default_effort(effort: &str) -> Result<()> {
+    let effort = effort.trim();
+    if !GROK_CHAT_EFFORTS.iter().any(|item| *item == effort) {
+        return Err(AppError::InvalidArg(format!("不支持的思考等级: {effort}")));
+    }
+    let live = grok_live_chat_model();
+    if live.model.as_deref().is_some_and(grok_model_rejects_thinking) {
+        return Err(AppError::InvalidArg("这个模型不支持思考等级".into()));
+    }
+    let mut doc = read_grok_config_doc()?;
+    if doc.get("models").is_none() {
+        doc["models"] = toml_edit::table();
+    }
+    doc["models"]["default_reasoning_effort"] = toml_edit::value(effort);
+    write_grok_config_doc(&doc)
+}
+
 fn grok_cli_args(prompt: &str, opts: &RunOptions, version: Option<&str>) -> Vec<String> {
     let mut args = Vec::new();
     if grok_supports_no_auto_update(version) {
         args.push("--no-auto-update".into());
+    }
+    if let Some(model) = opts.model.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        args.push("-m".into());
+        args.push(model.to_string());
+    }
+    if let Some(effort) = opts.effort.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        if !grok_model_rejects_thinking(opts.model.as_deref().unwrap_or("")) {
+            args.push("--reasoning-effort".into());
+            args.push(effort.to_string());
+        }
+    }
+    // `--resume` before `-p`: `-p` takes the next value as the prompt.
+    if let Some(sid) = opts
+        .native_session_id
+        .as_deref()
+        .and_then(super::session_resume::valid_session_id)
+    {
+        args.push("--resume".into());
+        args.push(sid.to_string());
     }
     args.push("-p".into());
     args.push(prompt.to_string());

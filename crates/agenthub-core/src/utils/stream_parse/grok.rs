@@ -246,9 +246,14 @@ fn text_steps(v: &Value) -> Vec<ProcessStep> {
 }
 
 fn extract_data_text(v: &Value) -> String {
-    v.get("data")
-        .and_then(|d| d.as_str())
-        .or_else(|| v.get("text").and_then(|t| t.as_str()))
+    if let Some(data) = v.get("data") {
+        let text = collect_text(data, 0);
+        if !text.is_empty() {
+            return text;
+        }
+    }
+    v.get("text")
+        .and_then(|t| t.as_str())
         .or_else(|| v.get("content").and_then(|c| c.as_str()))
         .or_else(|| v.pointer("/content/text").and_then(|t| t.as_str()))
         .unwrap_or("")

@@ -14,11 +14,13 @@ export function SearchField({
   onChange,
   onKeyDown,
   clearLabel = '清空搜索',
+  inputRef,
   ...props
 }: Omit<React.ComponentPropsWithoutRef<typeof Input>, 'className'> & {
   className?: string;
   inputClassName?: string;
   clearLabel?: string;
+  inputRef?: React.Ref<HTMLInputElement>;
 }) {
   const hasValue = String(value ?? '').length > 0;
   const clear = () => {
@@ -31,6 +33,7 @@ export function SearchField({
     <div className={cn('relative min-w-0', className)}>
       <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
       <Input
+        ref={inputRef}
         className={cn('pl-8', hasValue && 'pr-8', inputClassName)}
         value={value}
         onChange={onChange}

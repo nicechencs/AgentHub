@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { Loader2, PanelLeftClose, Plus, Terminal, Trash2 } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { AgentDot } from '@/components/shared/AgentDot';
@@ -33,7 +34,7 @@ export function ChatSessionRail({
   query,
   onQueryChange,
   activeId,
-  sendingConversationId,
+  sendingConversationIds,
   agentsReady,
   hasUsableAgent,
   deleteConfirmId,
@@ -43,6 +44,8 @@ export function ChatSessionRail({
   onRequestDelete,
   onCancelDelete,
   onConfirmDelete,
+  searchFocusNonce = 0,
+  historyRevealNonce = 0,
 }: {
   open: boolean;
   listLoading: boolean;
@@ -52,7 +55,7 @@ export function ChatSessionRail({
   query: string;
   onQueryChange: (q: string) => void;
   activeId: string | null;
-  sendingConversationId: string | null;
+  sendingConversationIds: readonly string[];
   agentsReady: boolean;
   hasUsableAgent: boolean;
   deleteConfirmId: string | null;
@@ -62,12 +65,36 @@ export function ChatSessionRail({
   onRequestDelete: (id: string) => void;
   onCancelDelete: () => void;
   onConfirmDelete: () => void;
+  searchFocusNonce?: number;
+  historyRevealNonce?: number;
 }) {
   const { t } = useI18n();
   const pending = conversations.find((c) => c.id === deleteConfirmId) ?? null;
+  const railRef = useRef<HTMLElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!open || !searchFocusNonce) return;
+    const timer = window.setTimeout(() => {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [open, searchFocusNonce]);
+  useEffect(() => {
+    if (!open || !historyRevealNonce) return;
+    const timer = window.setTimeout(() => {
+      const selected = railRef.current?.querySelector<HTMLElement>(
+        '[data-session-id][data-selected="true"]',
+      );
+      const fallback = railRef.current?.querySelector<HTMLElement>('[data-session-id]');
+      (selected ?? fallback)?.focus();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [open, historyRevealNonce]);
 
   return (
     <aside
+      ref={railRef}
       className={cn(
         'flex shrink-0 flex-col border-r border-border bg-canvas transition-[width] duration-200',
         open ? 'w-60' : 'w-0 overflow-hidden border-r-0',
@@ -102,6 +129,7 @@ export function ChatSessionRail({
       </div>
       <div className="px-2 pb-2">
         <SearchField
+          inputRef={searchInputRef}
           placeholder={t('chat.rail.searchPlaceholder')}
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
@@ -133,7 +161,7 @@ export function ChatSessionRail({
               {group.items.map((c) => {
                 const selected = activeId === c.id;
                 const dots = visibleAgentDots(c.agentIds);
-                const sending = sendingConversationId === c.id;
+                const sending = sendingConversationIds.includes(c.id);
                 return (
                   <Hint
                     key={c.id}
@@ -148,6 +176,9 @@ export function ChatSessionRail({
                     >
                       <button
                         type="button"
+                        data-session-id={c.id}
+                        data-selected={selected ? 'true' : undefined}
+                        aria-current={selected ? 'true' : undefined}
                         onClick={() => onFocus(c.id)}
                         className={cn(
                           'min-w-0 flex-1 px-2 py-1.5 text-left text-body',

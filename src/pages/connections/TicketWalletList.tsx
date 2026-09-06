@@ -54,6 +54,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -81,6 +84,7 @@ import {
   showsCatalogUnapply,
   showsNativeSwitch,
   ticketSwitchChip,
+  type PiDefaultModelView,
   ticketCredentialClassChipLabel,
   TICKET_WALLET_COLUMN_SPECS,
   formatDetailTimestamp,
@@ -148,6 +152,8 @@ export function TicketDetailPanel({
   onRefresh,
   onDelete,
   onEdit,
+  piDefaultModel,
+  onSwitchPiDefaultModel,
   asPanel = false,
   open = true,
   onOpenChange,
@@ -163,6 +169,8 @@ export function TicketDetailPanel({
   onRefresh?: () => void;
   onDelete: () => void;
   onEdit?: () => void;
+  piDefaultModel?: PiDefaultModelView | null;
+  onSwitchPiDefaultModel?: (model: string) => void;
   asPanel?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -247,6 +255,8 @@ export function TicketDetailPanel({
   );
   const body = (
     <TicketDetailBody
+      piDefaultModel={piDefaultModel}
+      onSwitchPiDefaultModel={onSwitchPiDefaultModel}
       extras={extras}
       hasQuota={hasQuota}
       has7d={has7d}
@@ -304,7 +314,71 @@ export function TicketDetailPanel({
   );
 }
 
+function PiDefaultModelSection({
+  view,
+  onSwitch,
+}: {
+  view?: PiDefaultModelView | null;
+  onSwitch?: (model: string) => void;
+}) {
+  const { t } = useI18n();
+  if (!view || view.kind === 'hidden') return null;
+  if (view.kind === 'need-default') {
+    return (
+      <p className="text-meta text-muted">{t('connections.list.defaultModelNeedDefault')}</p>
+    );
+  }
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <p className="text-meta text-muted">{t('connections.list.defaultModel')}</p>
+      {view.models.length > 0 ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={view.switching || !onSwitch}
+              className="max-w-64 justify-between"
+              aria-label={t('connections.list.defaultModel')}
+            >
+              <span className="min-w-0 truncate">
+                {view.model || t('connections.list.defaultModel')}
+              </span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-64">
+            <DropdownMenuLabel>{t('connections.list.defaultModel')}</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuRadioGroup
+              value={view.model ?? ''}
+              onValueChange={(id) => onSwitch?.(id)}
+            >
+              {view.models.map((model) => (
+                <DropdownMenuRadioItem
+                  key={model}
+                  value={model}
+                  disabled={view.switching}
+                >
+                  <span className="truncate">{model}</span>
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : (
+        <p className="text-meta text-secondary">
+          {view.model || t('connections.list.defaultModelEmpty')}
+        </p>
+      )}
+      <p className="text-meta text-muted">{t('connections.list.defaultModelTip')}</p>
+    </div>
+  );
+}
+
 function TicketDetailBody({
+  piDefaultModel,
+  onSwitchPiDefaultModel,
   extras,
   hasQuota,
   has7d,
@@ -320,6 +394,8 @@ function TicketDetailBody({
   files,
 }: {
   extras?: TicketDetailExtras | null;
+  piDefaultModel?: PiDefaultModelView | null;
+  onSwitchPiDefaultModel?: (model: string) => void;
   hasQuota: boolean;
   has7d: boolean;
   has5h: boolean;
@@ -336,6 +412,10 @@ function TicketDetailBody({
   const { t } = useI18n();
   return (
     <div className="flex flex-col gap-3 text-xs">
+      <PiDefaultModelSection
+        view={piDefaultModel}
+        onSwitch={onSwitchPiDefaultModel}
+      />
       {hasQuota || tokenRemaining || tokenUsage ? (
         <div>
           <p className="text-meta text-muted">{t('connections.list.usage')}</p>

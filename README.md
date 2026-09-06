@@ -90,7 +90,7 @@ pnpm install
 pnpm tauri:dev
 ```
 
-Windows 也可以运行 `.\run.ps1`；macOS/Linux 可以运行 `./run.sh`。这些脚本会检查桌面端依赖并启动真实 Tauri 后端。Linux 系统库缺项时，运行 `./scripts/check-linux-prereqs.sh --print-packages` 查看对应发行版的安装提示。
+Windows 也可以运行 `.\run.ps1`；macOS/Linux 可以运行 `./run.sh`。这些脚本会检查桌面端依赖并启动真实 Tauri 后端。端口被占用时，macOS/Linux 运行 `./restart.sh`（或 `./run.sh --restart`），Windows 运行 `.\run.ps1 -Restart`，会先关掉已有开发进程再打开。Linux 系统库缺项时，运行 `./scripts/check-linux-prereqs.sh --print-packages` 查看对应发行版的安装提示。
 
 只想在浏览器中查看演示数据时：
 

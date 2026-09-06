@@ -237,6 +237,17 @@ impl ChatRepo {
         })
     }
 
+    pub fn has_messages(&self, conversation_id: &str) -> Result<bool> {
+        self.db.with_conn(|conn| {
+            let exists: bool = conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM chat_messages WHERE conversation_id = ?1)",
+                params![conversation_id],
+                |row| row.get(0),
+            )?;
+            Ok(exists)
+        })
+    }
+
     /// Next turn number for a conversation (max+1, or 1 if empty).
     pub fn next_turn(&self, conversation_id: &str) -> Result<i64> {
         self.db

@@ -31,7 +31,7 @@ export type { OfficialLoginPoll, OfficialLoginSession };
 export async function startOfficialLogin(
   agentId: AgentKey,
   option: Pick<OAuthLoginOption, 'id' | 'flow'>,
-  openBrowser = true,
+  openBrowser = false,
   poolOwned = false,
 ): Promise<OfficialLoginSession> {
   if (officialLoginAdapter(option.flow) === 'deviceCode') {
