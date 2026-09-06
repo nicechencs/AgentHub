@@ -32,4 +32,5 @@ export interface ChatPort {
   setChatModel(agentId: AgentKey, model: string): Promise<void>;
   getChatModel(agentId: AgentKey): Promise<{ model: string | null; models: string[] }>;
   pickChatImages(title?: string): Promise<string[]>;
+  saveChatPasteImage(input: { base64: string; extension: string; byteLength?: number }): Promise<string>;
 }
