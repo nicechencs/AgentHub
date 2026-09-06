@@ -67,7 +67,7 @@ export function useChatPage() {
   const activeGenerationRef = useRef(0);
   const generationActiveIdRef = useRef<string | null>(null);
   const sendRef = useRef<{
-    adoptInflight: (id: string | null) => void;
+    adoptInflight: (ids: string[]) => void;
     cancelIfSending: (id: string) => Promise<void>;
   }>({
     adoptInflight: () => {},
@@ -76,6 +76,7 @@ export function useChatPage() {
 
   const sessions = useChatPageSessions({
     setMessages,
+    draft,
     setDraft,
     deleteConfirmId,
     setDeleteConfirmId,
@@ -477,7 +478,7 @@ export function useChatPage() {
   }
 
   async function pickWorkingDirectory() {
-    if (!active) return;
+    if (!active || send.sendingHere) return;
     try {
       const picked = await pickDirectory({
         title: t('chat.settings.pickDirTitle'),
@@ -538,7 +539,8 @@ export function useChatPage() {
     sending: send.sending,
     sendingHere: send.sendingHere,
     cancelingHere: send.cancelingHere,
-    sendingConversationId: send.sendingConversationId,
+    sendingConversationIds: send.sendingConversationIds,
+    connectionLocked: Boolean(primaryAgent && send.busyAgentIds.has(primaryAgent)),
     draft,
     setDraft,
     railOpen,

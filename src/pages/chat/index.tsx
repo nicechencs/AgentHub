@@ -71,7 +71,7 @@ export default function ChatPage() {
         query={page.railQuery}
         onQueryChange={page.setRailQuery}
         activeId={page.activeId}
-        sendingConversationId={page.sendingConversationId}
+        sendingConversationIds={page.sendingConversationIds}
         agentsReady={page.agentsReady}
         hasUsableAgent={page.hasUsableAgent}
         deleteConfirmId={page.deleteConfirmId}
@@ -93,7 +93,7 @@ export default function ChatPage() {
           onRename={page.renameTitle}
           onOpenSettings={() => page.setSettingsOpen(true)}
           onPickWorkingDirectory={() => void page.pickWorkingDirectory()}
-          runtimeLocked={page.runtimeLocked}
+          runtimeLocked={page.runtimeLocked || page.sendingHere}
         />
 
         <div className={cn(chatStageClass, pageRhythm.chatChromeX)}>
@@ -183,13 +183,13 @@ export default function ChatPage() {
                   }}
                   onOpenSettings={() => page.setSettingsOpen(true)}
                   onPickWorkingDirectory={() => void page.pickWorkingDirectory()}
-                  onFocusConversation={page.focusConversation}
                   onDraftKeyDown={page.handleComposerKeyDown}
                   onPasteImages={
                     page.runtime?.enabled
                       ? (files) => void page.runtimeOps.pasteImages(files)
                       : undefined
                   }
+                  connectionLocked={page.connectionLocked}
                   runtimeLocked={page.runtimeLocked}
                   runtimeControls={
                     page.runtime?.enabled ? (
@@ -236,7 +236,7 @@ export default function ChatPage() {
           dangerConfirm={page.dangerConfirm}
           onDangerConfirmChange={page.setDangerConfirm}
           onPatch={(patch) => void page.patchActive(patch)}
-          runtimeLocked={page.runtimeLocked}
+          runtimeLocked={page.runtimeLocked || page.sendingHere}
         />
       </section>
     </div>
