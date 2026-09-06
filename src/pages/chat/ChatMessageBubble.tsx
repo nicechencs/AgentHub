@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { CopyTextButton } from '@/components/shared/CopyTextButton';
@@ -12,6 +13,30 @@ import type { ChatMessage } from '@/lib/types';
 import { formatDurationMs, localizeChatFailure } from './chat-format';
 import { messageStatusLabel } from './chat-model';
 import { ChatProcessPanel } from './ChatProcessPanel';
+
+function useStreamingDisplayContent(content: string, running: boolean): string {
+  const [visible, setVisible] = useState(content);
+
+  useEffect(() => {
+    if (!running) {
+      setVisible(content);
+      return;
+    }
+    setVisible((prev) => (content.startsWith(prev) ? prev : content));
+    const timer = window.setInterval(() => {
+      setVisible((prev) => {
+        if (!content.startsWith(prev)) return content;
+        if (prev.length >= content.length) return prev;
+        const remaining = content.length - prev.length;
+        const step = Math.min(Math.max(Math.ceil(remaining / 8), 1), 12);
+        return content.slice(0, prev.length + step);
+      });
+    }, 24);
+    return () => window.clearInterval(timer);
+  }, [content, running]);
+
+  return visible;
+}
 
 export function ChatMessageBubble({
   message,
@@ -74,7 +99,8 @@ function AgentBubble({
 }) {
   const { t } = useI18n();
   const agent = message.agentId ?? 'claude';
-  const displayContent = message.content ? localizeChatFailure(message.content, t) : '';
+  const rawDisplayContent = message.content ? localizeChatFailure(message.content, t) : '';
+  const displayContent = useStreamingDisplayContent(rawDisplayContent, message.status === 'running');
   const displayError = message.error ? localizeChatFailure(message.error, t) : '';
   const looksFailed =
     message.status === 'failed' ||
@@ -88,6 +114,11 @@ function AgentBubble({
   );
   const running = message.status === 'running';
   const showRetry = isLastTurn && looksFailed;
+  const showProcessPanel = Boolean(
+    process &&
+      hasProcessDetails(process) &&
+      (!running || !displayContent || process.steps.length > 0 || Boolean(process.stderr)),
+  );
 
   return (
     <div id={`chat-msg-${message.id}`} className="group flex gap-3">
@@ -115,7 +146,7 @@ function AgentBubble({
             </Hint>
           )}
         </div>
-        {hasProcessDetails(process) && process ? (
+        {showProcessPanel && process ? (
           <ChatProcessPanel
             view={process}
             messageStatus={looksFailed && message.status === 'ok' ? 'failed' : message.status}
