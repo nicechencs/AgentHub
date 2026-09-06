@@ -161,10 +161,14 @@ export function useChatPage() {
     cancelIfSending: send.cancelIfSending,
   };
   const sending = send.sending;
+  const activeRuntime =
+    send.runtime && active && send.runtime.conversationId === active.id
+      ? send.runtime
+      : null;
   const runtimeOps = useChatRuntimeOps({
     active,
-    runtimeEnabled: Boolean(send.runtime?.enabled),
-    turnActive: sending,
+    runtimeEnabled: Boolean(activeRuntime?.enabled),
+    turnActive: send.sendingHere,
   });
   startExtrasRef.current = runtimeOps.startExtras;
   runtimeOpsClearRef.current = runtimeOps.clearAttachments;
@@ -505,7 +509,7 @@ export function useChatPage() {
   }
 
   async function selectConversationAgentId(id: AgentKey) {
-    if (!active || sending) return;
+    if (!active || send.sendingHere) return;
     const row = pickerRows.find((r) => r.id === id);
     if (!row?.selectable) return;
     const next = selectConversationAgent({
@@ -584,9 +588,11 @@ export function useChatPage() {
     handleSend: send.handleSend,
     retryLast: send.retryLast,
     handleCancel: send.handleCancel,
-    runtime: send.runtime,
-    runtimeLocked: isRuntimeSessionLocked(send.runtime, {
+    runtime: activeRuntime,
+    runtimeLocked: isRuntimeSessionLocked(activeRuntime, {
+      conversationId: active?.id,
       nativeSessionId: active?.nativeSessionId,
+      hasMessages: messages.length > 0,
     }),
     runtimeOps,
     runtimeCommandActions,

@@ -44,12 +44,20 @@ describe('chat runtime transport guards', () => {
     expect(isRuntimeSessionLocked(snapshot(true, 'idle'))).toBe(false);
     expect(isRuntimeSessionLocked(snapshot(false, 'idle'))).toBe(false);
     expect(isRuntimeSessionLocked(null)).toBe(false);
+    expect(isRuntimeSessionLocked(snapshot(true, 'idle'), { conversationId: 'a' })).toBe(false);
   });
-  it('locks once the continuous runtime session has started', () => {
+  it('does not lock a new empty chat using another conversation runtime snapshot', () => {
+    expect(isRuntimeSessionLocked(snapshot(true, 'completed'), { conversationId: 'b' })).toBe(false);
+    expect(isRuntimeSessionLocked(snapshot(true, 'running'), { conversationId: 'new' })).toBe(false);
+  });
+  it('locks once this conversation has a message or a started session', () => {
+    expect(isRuntimeSessionLocked(null, { hasMessages: true })).toBe(true);
+    expect(isRuntimeSessionLocked(snapshot(false, 'idle'), { nativeSessionId: 'thread-1' })).toBe(true);
     expect(isRuntimeSessionLocked(snapshot(true, 'running'))).toBe(true);
     expect(isRuntimeSessionLocked(snapshot(true, 'completed'))).toBe(true);
     expect(isRuntimeSessionLocked({ ...snapshot(true, 'idle'), runId: 'run-a' })).toBe(true);
     expect(isRuntimeSessionLocked(snapshot(true, 'idle'), { nativeSessionId: 'thread-1' })).toBe(true);
+    expect(isRuntimeSessionLocked(snapshot(true, 'completed'), { conversationId: 'a' })).toBe(true);
   });
   it('requires every runtime question to have an answer before submit', () => {
     const request: Pick<RuntimeRequest, 'kind' | 'questions'> = {
