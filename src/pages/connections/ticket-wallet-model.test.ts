@@ -1261,6 +1261,12 @@ describe('buildTicketAddMenu', () => {
     ).toEqual(['import-login', 'oauth', 'api-key']);
   });
 
+  it('hides API Key for Cursor', () => {
+    expect(
+      buildTicketAddMenu(['cursor']).map((item) => item.actions.map((a) => a.kind)),
+    ).toEqual([['import-login']]);
+  });
+
   it('is empty when no Agent is installed', () => {
     expect(buildTicketAddMenu([])).toEqual([]);
     expect(buildTicketAddMenu(null)).toEqual([]);

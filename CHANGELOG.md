@@ -25,6 +25,8 @@
 - 连接：Cursor 可导入本机已有登录（不写回 Cursor）
 
 ### 修复
+- 总览：已安装的 Cursor 可点进去管理登录，不再显示「不支持管理授权」
+- 连接：Cursor 不能添加 API Key，只导入本机已有登录
 - Agents：Kiro 装到本机用户目录后能被检测到（不只认 Program Files）
 - Agents：Kiro 用官方紫色幽灵标，不再显示成橙色字母 K
 
