@@ -3,7 +3,7 @@ import { useTicketWallet } from '@/app/runtime';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import { switchAccount } from '@/lib/api/account';
-import { getChatModel, setChatModel } from '@/lib/api/chat';
+import { getChatModel, setChatEffort, setChatModel } from '@/lib/api/chat';
 import {
   listProviders,
   listRemoteOpenAiModelsForProvider,
@@ -59,7 +59,10 @@ export function useChatPageConnection(input: {
   const [remoteModels, setRemoteModels] = useState<string[]>([]);
   const [liveChatModel, setLiveChatModel] = useState<string | null>(null);
   const [liveChatModels, setLiveChatModels] = useState<string[]>([]);
+  const [liveChatEffort, setLiveChatEffort] = useState<string | null>(null);
+  const [liveChatEfforts, setLiveChatEfforts] = useState<string[]>([]);
   const [switchingModel, setSwitchingModel] = useState(false);
+  const [switchingEffort, setSwitchingEffort] = useState(false);
   const wallet = ticketWallet.wallet;
   const walletReady = ticketWallet.state === 'ready' || ticketWallet.state === 'error';
   const providersGenRef = useRef(0);
@@ -103,30 +106,40 @@ export function useChatPageConnection(input: {
 
   const leftoverCurrent = leftoverProviderIsCurrent(providers);
 
+  const usesLiveChatModel = primaryAgent === 'pi' || primaryAgent === 'grok';
+
   const loadLiveChatModel = useCallback(async (agentId: AgentKey) => {
-    if (agentId !== 'pi') {
+    if (agentId !== 'pi' && agentId !== 'grok') {
       setLiveChatModel(null);
       setLiveChatModels([]);
+      setLiveChatEffort(null);
+      setLiveChatEfforts([]);
       return;
     }
     try {
       const live = await getChatModel(agentId);
       setLiveChatModel(live.model && !isRetiredChatModel(live.model) ? live.model : null);
       setLiveChatModels(live.models.filter((id) => !isRetiredChatModel(id)));
+      setLiveChatEffort(live.effort?.trim() || null);
+      setLiveChatEfforts((live.efforts ?? []).map((id) => id.trim()).filter(Boolean));
     } catch {
       setLiveChatModel(null);
       setLiveChatModels([]);
+      setLiveChatEffort(null);
+      setLiveChatEfforts([]);
     }
   }, []);
 
   useEffect(() => {
-    if (primaryAgent !== 'pi') {
+    if (!usesLiveChatModel || !primaryAgent) {
       setLiveChatModel(null);
       setLiveChatModels([]);
+      setLiveChatEffort(null);
+      setLiveChatEfforts([]);
       return;
     }
-    void loadLiveChatModel('pi');
-  }, [primaryAgent, currentProvider, loadLiveChatModel]);
+    void loadLiveChatModel(primaryAgent);
+  }, [primaryAgent, currentProvider, loadLiveChatModel, usesLiveChatModel]);
 
   useEffect(() => {
     if (!currentProvider?.id) {
@@ -162,7 +175,7 @@ export function useChatPageConnection(input: {
 
   const currentModel = useMemo(() => {
     if (leftoverCurrent) return null;
-    if (primaryAgent === 'pi') {
+    if (primaryAgent === 'pi' || primaryAgent === 'grok') {
       return resolvePiChatCurrentModel(liveChatModel);
     }
     const fromProvider = currentProvider ? extractModel(currentProvider.configText) : null;
@@ -179,8 +192,14 @@ export function useChatPageConnection(input: {
         currentModel,
       });
     }
+    if (primaryAgent === 'grok') {
+      return chatModelOptions(liveChatModels, currentModel);
+    }
     return chatModelOptions(remoteModels, currentModel);
   }, [currentModel, currentProvider, liveChatModels, primaryAgent, remoteModels]);
+
+  const effortOptions = primaryAgent === 'grok' ? liveChatEfforts : [];
+  const currentEffort = primaryAgent === 'grok' ? liveChatEffort : null;
 
   const connectionOptions = useMemo(
     () =>
@@ -280,8 +299,8 @@ export function useChatPageConnection(input: {
     if (!next || isRetiredChatModel(next) || next === currentModel) return;
     setSwitchingModel(true);
     try {
-      if (primaryAgent === 'pi') {
-        await setChatModel('pi', next);
+      if (primaryAgent === 'pi' || primaryAgent === 'grok') {
+        await setChatModel(primaryAgent, next);
         setLiveChatModel(next);
       } else if (currentProvider && currentProvider.agentId === primaryAgent) {
         const vars = extractFormVars(
@@ -316,12 +335,39 @@ export function useChatPageConnection(input: {
     }
   }
 
+  async function handleSwitchEffort(effort: string) {
+    if (!primaryAgent || primaryAgent !== 'grok' || switchingProvider || switchingModel || switchingEffort || hiddenIds.has(primaryAgent)) return;
+    const next = effort.trim();
+    if (!next || next === currentEffort) return;
+    setSwitchingEffort(true);
+    try {
+      await setChatEffort('grok', next);
+      setLiveChatEffort(next);
+      await loadLiveChatModel('grok');
+      toast({
+        title: t('chat.composer.modelSwitched'),
+        variant: 'success',
+      });
+    } catch (e) {
+      toast({
+        title: t('chat.composer.modelSwitchFail'),
+        description: e instanceof Error ? e.message : String(e),
+        variant: 'danger',
+      });
+    } finally {
+      setSwitchingEffort(false);
+    }
+  }
+
   return {
     providers,
     switchingProvider,
-    switchingModel,
+    switchingModel: switchingModel || switchingEffort,
     modelOptions,
     currentModel,
+    effortOptions,
+    currentEffort,
+    handleSwitchEffort,
     connectionView,
     connectionOptions,
     connectionCaption,
