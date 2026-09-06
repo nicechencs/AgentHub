@@ -19,6 +19,12 @@ pub(crate) fn phase_freezes_settings(phase: super::types::RuntimePhase) -> bool 
     )
 }
 
+/// Idle / unknown phases may spawn a short-lived Codex process for model/skills lists.
+/// Active turns must never fetch — only serve an already-warmed per-conversation cache.
+pub(crate) fn may_fetch_catalog(phase: Option<super::types::RuntimePhase>) -> bool {
+    !phase.is_some_and(phase_freezes_settings)
+}
+
 /// Validate requested settings against a model/list catalog.
 /// Empty catalog: only reject obviously empty model ids; effort may be set with model.
 pub(crate) fn validate_turn_settings(
@@ -181,6 +187,11 @@ pub(crate) fn parse_skills_list(value: &Value) -> Vec<RuntimeExtensionItem> {
                 .get("enabled")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(true);
+            let loaded = skill
+                .get("loaded")
+                .or_else(|| skill.get("isLoaded"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             let callable = path.is_some();
             out.push(RuntimeExtensionItem {
                 id,
@@ -188,7 +199,7 @@ pub(crate) fn parse_skills_list(value: &Value) -> Vec<RuntimeExtensionItem> {
                 kind: RuntimeExtensionKind::Skill,
                 installed: true,
                 enabled,
-                loaded: false,
+                loaded,
                 callable,
                 path,
             });
@@ -231,13 +242,18 @@ pub(crate) fn parse_plugins_installed(value: &Value) -> Vec<RuntimeExtensionItem
                 .get("enabled")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
+            let loaded = plugin
+                .get("loaded")
+                .or_else(|| plugin.get("isLoaded"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             out.push(RuntimeExtensionItem {
                 id,
                 name,
                 kind: RuntimeExtensionKind::Plugin,
                 installed: true,
                 enabled,
-                loaded: false,
+                loaded,
                 // Plugins are not directly callable via turn input in B2.
                 callable: false,
                 path: None,
@@ -453,5 +469,17 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("不可用于本轮"));
+    }
+
+    #[test]
+    fn may_fetch_catalog_only_when_idle() {
+        use super::super::types::RuntimePhase;
+        assert!(may_fetch_catalog(None));
+        assert!(may_fetch_catalog(Some(RuntimePhase::Idle)));
+        assert!(may_fetch_catalog(Some(RuntimePhase::Completed)));
+        assert!(!may_fetch_catalog(Some(RuntimePhase::Starting)));
+        assert!(!may_fetch_catalog(Some(RuntimePhase::Running)));
+        assert!(!may_fetch_catalog(Some(RuntimePhase::Waiting)));
+        assert!(!may_fetch_catalog(Some(RuntimePhase::Cancelling)));
     }
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import { AGENT_IDS } from '@/config/agents';
@@ -21,7 +21,15 @@ import { useChatPageConnection } from './use-chat-page-connection';
 import { useChatPageSend } from './use-chat-page-send';
 import { useChatPageSessions } from './use-chat-page-sessions';
 import { useChatRuntimeOps } from './use-chat-runtime-ops';
-import { isCommandSearchMode, type ChatActionDef } from './chat-actions';
+import { useNavigate } from 'react-router-dom';
+import {
+  chatActionDisabledReason,
+  clampActionIndex,
+  filterChatActions,
+  isCommandSearchMode,
+  type ChatActionDef,
+} from './chat-actions';
+import { lastTurnOutcome } from './chat-turn-outcome';
 
 export {
   conversationListState,
@@ -160,39 +168,120 @@ export function useChatPage() {
   startExtrasRef.current = runtimeOps.startExtras;
   runtimeOpsClearRef.current = runtimeOps.clearAttachments;
 
+  const navigate = useNavigate();
+  const [searchFocusNonce, setSearchFocusNonce] = useState(0);
+  const [commandIndex, setCommandIndex] = useState(0);
+  const hasLatestReply = useMemo(
+    () => messages.some((m) => m.role === 'agent' && m.content.trim()),
+    [messages],
+  );
+  const actionContext = useMemo(
+    () => ({
+      hasLatestReply,
+      newChatAllowed: !(agentsReady && !agentStatus.some((a) => isChatAgentSelectable(a))),
+    }),
+    [agentStatus, agentsReady, hasLatestReply],
+  );
+
   const runChatAction = useCallback(
     (action: ChatActionDef) => {
+      const reason = chatActionDisabledReason(action, actionContext);
+      if (reason) {
+        toast({ title: t(`chat.actions.disabled.${reason}` as never), variant: 'danger' });
+        return;
+      }
+      const clearCommandDraft = () => {
+        if (isCommandSearchMode(draft)) setDraft('');
+      };
       if (action.kind === 'draft' && action.draftText) {
         setDraft(action.draftText);
         return;
       }
       if (action.id === 'new-session') {
+        clearCommandDraft();
         void handleNewChat();
         return;
       }
       if (action.id === 'open-history') {
+        clearCommandDraft();
         setRailOpen(true);
         return;
       }
+      if (action.id === 'focus-history-search') {
+        setRailOpen(true);
+        setSearchFocusNonce((n) => n + 1);
+        clearCommandDraft();
+        return;
+      }
       if (action.id === 'open-settings') {
+        clearCommandDraft();
         setSettingsOpen(true);
+        return;
+      }
+      if (action.id === 'open-agents') {
+        clearCommandDraft();
+        navigate('/agents');
+        return;
+      }
+      if (action.id === 'open-connections') {
+        clearCommandDraft();
+        navigate('/connections');
         return;
       }
       if (action.id === 'copy-latest-reply') {
         const latest = [...messages].reverse().find((m) => m.role === 'agent' && m.content.trim());
         if (!latest) {
-          toast({ title: t('chat.header.noResumeCommand') });
+          toast({ title: t('chat.actions.disabled.noReply'), variant: 'danger' });
           return;
         }
         void navigator.clipboard.writeText(latest.content).then(
           () => toast({ title: t('chat.bubble.copied') }),
           () => toast({ title: t('chat.bubble.copyFailed'), variant: 'danger' }),
         );
+        clearCommandDraft();
       }
     },
-    [handleNewChat, messages, t, toast],
+    [actionContext, draft, handleNewChat, messages, navigate, setRailOpen, setSettingsOpen, t, toast],
   );
   const commandSearchOpen = isCommandSearchMode(draft);
+  const commandItems = useMemo(() => filterChatActions(draft), [draft]);
+  useEffect(() => {
+    setCommandIndex(0);
+  }, [draft, commandItems.length]);
+
+  const handleComposerKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (!commandSearchOpen || commandItems.length === 0) return false;
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setCommandIndex((index) => clampActionIndex(index + 1, commandItems.length));
+        return true;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setCommandIndex((index) => clampActionIndex(index - 1, commandItems.length));
+        return true;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setDraft('');
+        return true;
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const action = commandItems[clampActionIndex(commandIndex, commandItems.length)];
+        if (action) runChatAction(action);
+        return true;
+      }
+      return false;
+    },
+    [commandIndex, commandItems, commandSearchOpen, runChatAction],
+  );
+
+  const turnOutcome = useMemo(
+    () => lastTurnOutcome(turns, sending),
+    [sending, turns],
+  );
 
   const pickerRows = useMemo(
     () =>
@@ -422,7 +511,13 @@ export function useChatPage() {
     runtime: send.runtime,
     runtimeOps,
     commandSearchOpen,
+    commandIndex,
+    setCommandIndex,
+    actionContext,
     runChatAction,
+    handleComposerKeyDown,
+    searchFocusNonce,
+    turnOutcome,
     submitRuntimeRequest: send.submitRuntimeRequest,
     steerRuntime: send.steerRuntime,
     cancelSending: send.handleCancel,

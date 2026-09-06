@@ -384,3 +384,75 @@ pub async fn pick_chat_images(
     }
     Ok(out)
 }
+
+/// Invoke: `save_chat_paste_image` — persist a clipboard/paste image for Codex localImage.
+#[tauri::command]
+pub async fn save_chat_paste_image(
+    base64: String,
+    extension: String,
+    byte_length: Option<u64>,
+) -> Result<String, String> {
+    save_chat_paste_image_inner(&base64, &extension, byte_length)
+}
+
+fn save_chat_paste_image_inner(
+    base64: &str,
+    extension: &str,
+    byte_length: Option<u64>,
+) -> Result<String, String> {
+    use base64::Engine;
+    const MAX_BYTES: u64 = 10 * 1024 * 1024;
+    let ext = extension.trim().trim_start_matches('.').to_ascii_lowercase();
+    let allowed = ["png", "jpg", "jpeg", "gif", "webp", "bmp"];
+    if !allowed.iter().any(|item| *item == ext) {
+        return Err(format!("unsupported image type: {ext}"));
+    }
+    if let Some(declared) = byte_length {
+        if declared > MAX_BYTES {
+            return Err("image too large (max 10MB)".into());
+        }
+    }
+    let cleaned: String = base64.chars().filter(|ch| !ch.is_whitespace()).collect();
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(cleaned.as_bytes())
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(cleaned.as_bytes()))
+        .map_err(|e| format!("invalid base64 image payload: {e}"))?;
+    if bytes.len() as u64 > MAX_BYTES {
+        return Err("image too large (max 10MB)".into());
+    }
+    let dir = std::env::temp_dir().join("agenthub-chat-paste");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create paste dir: {e}"))?;
+    let name = format!(
+        "paste-{}-{}.{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0),
+        std::process::id(),
+        if ext == "jpeg" { "jpg" } else { &ext }
+    );
+    let path = dir.join(name);
+    std::fs::write(&path, bytes).map_err(|e| format!("write paste image: {e}"))?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+#[cfg(test)]
+mod paste_image_tests {
+    use super::save_chat_paste_image_inner;
+
+    #[test]
+    fn rejects_unknown_extension() {
+        let err = save_chat_paste_image_inner("AQID", "exe", None).unwrap_err();
+        assert!(err.contains("unsupported"));
+    }
+
+    #[test]
+    fn writes_small_png_bytes() {
+        // 1x1 PNG
+        let b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+        let path = save_chat_paste_image_inner(b64, "png", Some(68)).unwrap();
+        assert!(path.ends_with(".png"));
+        assert!(std::path::Path::new(&path).is_file());
+        let _ = std::fs::remove_file(path);
+    }
+}

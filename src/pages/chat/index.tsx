@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { chatMainColumnClass, chatStageClass } from './chat-model';
 import { formatChatSessionRecord } from './chat-format';
 import { ChatRuntimeExtras } from './ChatRuntimeExtras';
+import { ChatTurnOutcomeBanner } from './ChatTurnOutcomeBanner';
 import { ChatComposer } from './ChatComposer';
 import { ChatSessionHeader } from './ChatSessionHeader';
 import { ChatSessionRail } from './ChatSessionRail';
@@ -80,6 +81,7 @@ export default function ChatPage() {
         onRequestDelete={page.setDeleteConfirmId}
         onCancelDelete={() => page.setDeleteConfirmId(null)}
         onConfirmDelete={() => void page.confirmDelete()}
+        searchFocusNonce={page.searchFocusNonce}
       />
 
       <section className="relative flex min-w-0 flex-1 flex-col bg-canvas">
@@ -122,6 +124,14 @@ export default function ChatPage() {
 
             {page.active && (
               <>
+                {page.turnOutcome ? (
+                  <ChatTurnOutcomeBanner
+                    outcome={page.turnOutcome}
+                    retryDisabled={page.blockers.length > 0 || page.sending}
+                    onRetry={() => void page.retryLast()}
+                    onRestoreDraft={() => page.setDraft(page.turnOutcome?.prompt ?? '')}
+                  />
+                ) : null}
                 <div
                   role="separator"
                   aria-orientation="horizontal"
@@ -138,16 +148,21 @@ export default function ChatPage() {
                   enabled={Boolean(page.runtime?.enabled)}
                   draft={page.draft}
                   commandSearchOpen={page.commandSearchOpen}
+                  commandIndex={page.commandIndex}
+                  actionContext={page.actionContext}
                   onRunAction={page.runChatAction}
+                  onHoverCommandIndex={page.setCommandIndex}
                   models={page.runtimeOps.models}
                   settings={page.runtimeOps.settings}
                   frozen={page.runtimeOps.frozen}
+                  catalogLoading={page.runtimeOps.loading}
                   efforts={page.runtimeOps.currentEfforts}
                   onSwitchModel={(id) => void page.runtimeOps.switchModel(id)}
                   onSwitchEffort={(id) => void page.runtimeOps.switchEffort(id)}
                   images={page.runtimeOps.images}
                   onAddImages={() => void page.runtimeOps.addImages()}
                   onRemoveImage={page.runtimeOps.removeImage}
+                  onPasteImages={(files) => void page.runtimeOps.pasteImages(files)}
                   extensions={page.runtimeOps.extensions}
                   selectedSkillIds={page.runtimeOps.selectedSkillIds}
                   onToggleSkill={page.runtimeOps.toggleSkill}
@@ -191,6 +206,12 @@ export default function ChatPage() {
                   onOpenSettings={() => page.setSettingsOpen(true)}
                   onPickWorkingDirectory={() => void page.pickWorkingDirectory()}
                   onFocusConversation={page.focusConversation}
+                  onDraftKeyDown={page.handleComposerKeyDown}
+                  onPasteImages={
+                    page.runtime?.enabled
+                      ? (files) => void page.runtimeOps.pasteImages(files)
+                      : undefined
+                  }
                   fillHeight={split.paneHeight != null}
                   paneHeight={split.paneHeight}
                   paneRef={split.composerPaneRef}
