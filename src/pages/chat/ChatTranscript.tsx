@@ -34,6 +34,7 @@ export function ChatTranscript({
   bottomRef,
   onScroll,
   onRetry,
+  onOpenLocal,
 }: {
   active: Conversation | null;
   turns: TurnGroup[];
@@ -48,6 +49,7 @@ export function ChatTranscript({
   bottomRef: RefObject<HTMLDivElement>;
   onScroll: () => void;
   onRetry: () => void;
+  onOpenLocal?: (path: string) => boolean;
 }) {
   const { t } = useI18n();
   if (listLoading && !active) {
@@ -113,6 +115,7 @@ export function ChatTranscript({
                       retryDisabled={retryDisabled || sending}
                       onRetry={onRetry}
                       localBasePath={active.cwd ?? undefined}
+                      onOpenLocal={onOpenLocal}
                     />
                   )}
                   {chips.length > 0 && (
@@ -130,6 +133,7 @@ export function ChatTranscript({
                         retryDisabled={retryDisabled || sending}
                         onRetry={onRetry}
                         localBasePath={active.cwd ?? undefined}
+                        onOpenLocal={onOpenLocal}
                       />
                     );
                   })}

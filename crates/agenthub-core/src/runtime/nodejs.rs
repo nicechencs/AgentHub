@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use which::which;
 
 use crate::models::{EnvStatus, EnvStatusKind, RuntimeId};
-use crate::utils::process::{run_capture, stdout_first_line};
+use crate::utils::process::{run_capture, run_capture_with_env, stdout_first_line};
 
 use crate::catalog::limits::{NODE_MIN_MAJOR, PI_NODE_MIN_MAJOR, PI_NODE_MIN_MINOR};
 
@@ -73,26 +73,29 @@ pub fn detect_nodejs() -> EnvStatus {
 
 pub fn detect_npm() -> EnvStatus {
     match resolve_binary(&["npm", "npm.cmd", "npm.exe"]) {
-        Some(path) => match run_capture(&path, &["-v"]) {
-            Ok(out) if out.status.success() => EnvStatus {
-                id: RuntimeId::Npm,
-                status: EnvStatusKind::Ok,
-                version: stdout_first_line(&out),
-                path: Some(path),
-                min_required: None,
-                remediation: None,
-                notes: vec![],
-            },
-            _ => EnvStatus {
-                id: RuntimeId::Npm,
-                status: EnvStatusKind::BrokenPath,
-                version: None,
-                path: Some(path),
-                min_required: None,
-                remediation: None,
-                notes: vec![],
-            },
-        },
+        Some(path) => {
+            let extra = extra_env_for_node_shebang(&path);
+            match run_capture_with_env(&path, &["-v"], &extra) {
+                Ok(out) if out.status.success() => EnvStatus {
+                    id: RuntimeId::Npm,
+                    status: EnvStatusKind::Ok,
+                    version: stdout_first_line(&out),
+                    path: Some(path),
+                    min_required: None,
+                    remediation: None,
+                    notes: vec![],
+                },
+                _ => EnvStatus {
+                    id: RuntimeId::Npm,
+                    status: EnvStatusKind::BrokenPath,
+                    version: None,
+                    path: Some(path),
+                    min_required: None,
+                    remediation: None,
+                    notes: vec![],
+                },
+            }
+        }
         None => EnvStatus {
             id: RuntimeId::Npm,
             status: EnvStatusKind::Missing,
@@ -462,6 +465,157 @@ pub fn prefixed_path_env(bin_dir: Option<&Path>) -> Vec<(String, String)> {
     };
     let current = std::env::var("PATH").unwrap_or_default();
     vec![("PATH".into(), path_with_prefixed_bin(dir, &current))]
+}
+
+/// PATH for `#!/usr/bin/env node` scripts (npm and npm-global CLIs).
+///
+/// GUI apps often omit Node's bin dir from process PATH. The binary is still
+/// found via well-known paths, but the shebang then fails with `env: node`.
+/// Prepend the resolved Node dir and the CLI's parent so probes/installs work
+/// without mutating the process environment.
+pub fn extra_env_for_node_shebang(cli_path: &Path) -> Vec<(String, String)> {
+    let mut dirs = Vec::new();
+    if let Some(node) = resolve_binary(&["node", "node.exe"])
+        .or_else(|| resolve_node_at_least(NODE_MIN_MAJOR).map(|n| n.path))
+    {
+        if let Some(dir) = node.parent() {
+            dirs.push(dir.to_path_buf());
+        }
+    }
+    if let Some(parent) = cli_path.parent() {
+        if !dirs.iter().any(|dir| path_dir_same(dir, parent)) {
+            dirs.push(parent.to_path_buf());
+        }
+    }
+    if dirs.is_empty() {
+        return Vec::new();
+    }
+    let mut current = std::env::var("PATH").unwrap_or_default();
+    for dir in dirs.iter().rev() {
+        current = path_with_prefixed_bin(dir, &current);
+    }
+    vec![("PATH".into(), current)]
+}
+
+fn path_dir_same(left: &Path, right: &Path) -> bool {
+    let left: Vec<_> = left.components().collect();
+    let right: Vec<_> = right.components().collect();
+    if left.len() != right.len() {
+        return false;
+    }
+    left.iter().zip(right.iter()).all(|(a, b)| {
+        #[cfg(windows)]
+        {
+            a.as_os_str().eq_ignore_ascii_case(b.as_os_str())
+        }
+        #[cfg(not(windows))]
+        {
+            a == b
+        }
+    })
+}
+
+/// Prepend missing well-known bin dirs to a PATH string. Does not dedupe
+/// existing entries besides skipping dirs already present as a component.
+pub fn host_path_with_well_known_bins(current_path: &str, extra_dirs: &[PathBuf]) -> String {
+    let existing: Vec<PathBuf> = std::env::split_paths(current_path).collect();
+    let mut to_prepend: Vec<PathBuf> = Vec::new();
+    for dir in extra_dirs {
+        if dir.as_os_str().is_empty() {
+            continue;
+        }
+        if existing.iter().any(|entry| path_dir_same(entry, dir)) {
+            continue;
+        }
+        if to_prepend.iter().any(|entry| path_dir_same(entry, dir)) {
+            continue;
+        }
+        to_prepend.push(dir.clone());
+    }
+    if to_prepend.is_empty() {
+        return current_path.to_string();
+    }
+    let mut parts = to_prepend;
+    parts.extend(existing);
+    std::env::join_paths(parts)
+        .map(|value| value.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| current_path.to_string())
+}
+
+fn push_existing_dir(dirs: &mut Vec<PathBuf>, dir: PathBuf) {
+    if dir.is_dir() && !dirs.iter().any(|existing| path_dir_same(existing, &dir)) {
+        dirs.push(dir);
+    }
+}
+
+/// Existing bin directories the GUI PATH often omits.
+///
+/// Never includes leftover `~/.agenthub/npm` (not an install target).
+pub fn well_known_host_bin_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(node) = resolve_binary(&["node", "node.exe"]) {
+        if let Some(parent) = node.parent() {
+            push_existing_dir(&mut dirs, parent.to_path_buf());
+        }
+    }
+    if let Some(resolved) = resolve_node_at_least(NODE_MIN_MAJOR) {
+        if let Some(dir) = resolved.bin_dir() {
+            push_existing_dir(&mut dirs, dir);
+        }
+    }
+    #[cfg(windows)]
+    {
+        for key in ["ProgramFiles", "ProgramFiles(x86)"] {
+            if let Ok(prefix) = std::env::var(key) {
+                push_existing_dir(&mut dirs, PathBuf::from(prefix).join("nodejs"));
+            }
+        }
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            push_existing_dir(&mut dirs, PathBuf::from(appdata).join("npm"));
+        }
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            let local = PathBuf::from(local);
+            push_existing_dir(&mut dirs, local.join("npm"));
+            push_existing_dir(&mut dirs, local.join("Volta").join("bin"));
+        }
+        if let Ok(symlink) = std::env::var("NVM_SYMLINK") {
+            push_existing_dir(&mut dirs, PathBuf::from(symlink));
+        }
+        if let Ok(home) = crate::utils::paths::home_dir() {
+            push_existing_dir(&mut dirs, home.join("scoop").join("shims"));
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        push_existing_dir(&mut dirs, PathBuf::from("/opt/homebrew/bin"));
+        push_existing_dir(&mut dirs, PathBuf::from("/usr/local/bin"));
+        if let Ok(home) = crate::utils::paths::home_dir() {
+            push_existing_dir(&mut dirs, home.join(".npm-global").join("bin"));
+            push_existing_dir(&mut dirs, home.join(".local").join("bin"));
+        }
+    }
+    dirs
+}
+
+/// Prepend well-known bin dirs onto this process PATH when they are missing.
+///
+/// Call from GUI/CLI entry only. Do not call from detect or install tests:
+/// those mutate PATH in parallel.
+pub fn ensure_host_path() {
+    let current = std::env::var("PATH").unwrap_or_default();
+    let dirs = well_known_host_bin_dirs();
+    let next = host_path_with_well_known_bins(&current, &dirs);
+    if next == current {
+        return;
+    }
+    tracing::info!(
+        target: crate::logging::targets::BOOT,
+        module = crate::logging::targets::BOOT,
+        op = "ensure_host_path",
+        added = dirs.len(),
+        "prepended well-known bin dirs to process PATH"
+    );
+    std::env::set_var("PATH", next);
 }
 
 /// Well-known Node 22+ locations under `home` (no env, so tests stay hermetic).

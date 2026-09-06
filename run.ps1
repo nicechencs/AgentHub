@@ -19,8 +19,8 @@ $StopOnly = $false
 $forwardArgs = @()
 foreach ($a in $args) {
     switch -Regex ($a) {
-        '^--restart$|^-Restart$' { $AutoFreePort = $true }
-        '^--stop$|^-Stop$' { $StopOnly = $true; $AutoFreePort = $true }
+        '^(?i)(--restart|-restart)$' { $AutoFreePort = $true }
+        '^(?i)(--stop|-stop)$' { $StopOnly = $true; $AutoFreePort = $true }
         default { $forwardArgs += $a }
     }
 }

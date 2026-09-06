@@ -5,6 +5,7 @@ pub mod command_exec;
 pub mod expiry;
 pub mod grok_toml;
 pub mod local_token_probe;
+pub mod markdown_preview;
 pub mod loopback;
 pub mod paths;
 pub mod process;
@@ -17,6 +18,9 @@ pub mod upstream_model_catalog;
 
 #[cfg(test)]
 mod command_exec_tests;
+
+#[cfg(test)]
+mod markdown_preview_tests;
 
 #[cfg(test)]
 pub mod test_temp;

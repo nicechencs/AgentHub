@@ -1,15 +1,30 @@
+import { useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MessagesSquare } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
+import { SideSplitFrame } from '@/components/layout/SideSplit';
+import { useSideSplit } from '@/components/layout/use-side-split';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { Notice } from '@/components/shared/Notice';
+import { isMarkdownFilePath } from '@/components/shared/MarkdownView';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
+import { hasEscPriorityOverlay } from '@/lib/skills/preview-keys';
+import { StorageKey } from '@/lib/storage-key';
 import { cn } from '@/lib/utils';
-import { chatMainColumnClass, chatStageClass } from './chat-model';
+import { chatEscapeShouldCancel, chatMainColumnClass, chatStageClass } from './chat-model';
 import { formatChatSessionRecord } from './chat-format';
 import { grokCanQueueFollowUp, grokLegacyContinueKind } from './chat-grok-follow-up';
+import { ChatMarkdownPreviewPanel } from './ChatMarkdownPreviewPanel';
+import {
+  chatPreviewCanBack,
+  chatPreviewPath,
+  openChatPreviewRoot,
+  popChatPreview,
+  pushChatPreview,
+  type ChatPreviewTarget,
+} from './chat-preview-model';
 import { ChatRuntimeExtras } from './ChatRuntimeExtras';
 import { ChatTurnOutcomeBanner } from './ChatTurnOutcomeBanner';
 import { ChatComposer } from './ChatComposer';
@@ -24,8 +39,66 @@ import { useChatPage } from './use-chat-page';
 export default function ChatPage() {
   const page = useChatPage();
   const split = useChatComposerSplit();
+  const preview = useSideSplit<ChatPreviewTarget>({
+    storageKey: StorageKey.chatPreviewWidth,
+  });
   const navigate = useNavigate();
   const { t } = useI18n();
+  const openMarkdownPreview = useCallback(
+    (next: string) => {
+      if (!isMarkdownFilePath(next)) return false;
+      preview.open(openChatPreviewRoot(next));
+      return true;
+    },
+    [preview.open],
+  );
+  const openNestedMarkdown = useCallback(
+    (next: string) => {
+      if (!isMarkdownFilePath(next)) return;
+      preview.open(pushChatPreview(preview.target, next));
+    },
+    [preview.open, preview.target],
+  );
+  const backMarkdownPreview = useCallback(() => {
+    const previous = popChatPreview(preview.target);
+    if (!previous) {
+      preview.close();
+      return;
+    }
+    preview.open(previous);
+  }, [preview.close, preview.open, preview.target]);
+
+  useEffect(() => {
+    preview.reset();
+  }, [page.active?.id, preview.reset]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (
+        !chatEscapeShouldCancel({
+          key: e.key,
+          sending: page.sendingHere,
+          canceling: page.cancelingHere,
+          previewOpen: preview.expanded || preview.mounted,
+          overlayOpen: hasEscPriorityOverlay(),
+          defaultPrevented: e.defaultPrevented,
+          composing: e.isComposing,
+        })
+      ) {
+        return;
+      }
+      e.preventDefault();
+      void page.cancelSending();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [
+    page.cancelSending,
+    page.cancelingHere,
+    page.sendingHere,
+    preview.expanded,
+    preview.mounted,
+  ]);
 
   if (page.error && page.conversations.length === 0 && !page.listLoading) {
     return (
@@ -87,6 +160,7 @@ export default function ChatPage() {
         historyRevealNonce={page.historyRevealNonce}
       />
 
+      <div ref={preview.splitRef} className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
       <section className="relative flex min-w-0 flex-1 flex-col bg-canvas">
         <ChatSessionHeader
           active={page.active}
@@ -118,6 +192,7 @@ export default function ChatPage() {
               bottomRef={page.bottomRef}
               onScroll={page.onTranscriptScroll}
               onRetry={() => void page.retryLast()}
+              onOpenLocal={openMarkdownPreview}
             />
             {page.runtime?.pendingRequests.length ? (
               <ChatRuntimeRequests
@@ -291,6 +366,22 @@ export default function ChatPage() {
           runtimeLocked={page.runtimeLocked || page.sendingHere}
         />
       </section>
+        <SideSplitFrame split={preview} resizeAria={t('chat.preview.resizeAria')}>
+          {preview.target ? (
+            <ChatMarkdownPreviewPanel
+              path={chatPreviewPath(preview.target)}
+              cwd={page.active?.cwd ?? ''}
+              open={preview.expanded}
+              width={preview.paneWidth}
+              canBack={chatPreviewCanBack(preview.target)}
+              onBack={backMarkdownPreview}
+              onClose={preview.close}
+              onOpenLocal={openNestedMarkdown}
+              className="h-full min-w-0"
+            />
+          ) : null}
+        </SideSplitFrame>
+      </div>
     </div>
   );
 }

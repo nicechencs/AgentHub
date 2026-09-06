@@ -1,6 +1,6 @@
 use super::*;
 use crate::catalog::limits::{NODE_MIN_MAJOR, PI_NODE_MIN_MAJOR, PI_NODE_MIN_MINOR};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[test]
 fn parse_major_ok() {
@@ -292,6 +292,72 @@ fn path_prefix_puts_node22_bin_first() {
         path_with_prefixed_bin(Path::new("/n22/bin"), ""),
         "/n22/bin"
     );
+}
+
+#[test]
+fn host_path_prepends_missing_dirs_without_duplicating() {
+    let local = PathBuf::from("/usr/local/bin");
+    let usr_bin = PathBuf::from("/usr/bin");
+    let current = std::env::join_paths([&usr_bin, Path::new("/bin")])
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let next = host_path_with_well_known_bins(&current, &[local.clone(), usr_bin.clone()]);
+    let parts: Vec<PathBuf> = std::env::split_paths(&next).collect();
+    assert_eq!(parts.first(), Some(&local));
+    assert_eq!(
+        parts.iter().filter(|p| *p == &usr_bin).count(),
+        1,
+        "existing PATH component must not be duplicated: {next}"
+    );
+    assert_eq!(host_path_with_well_known_bins(&current, &[]), current);
+}
+
+#[cfg(windows)]
+#[test]
+fn host_path_skips_case_variant_duplicates_on_windows() {
+    let existing = PathBuf::from(r"C:\Program Files\nodejs");
+    let variant = PathBuf::from(r"c:\program files\nodejs");
+    let current = std::env::join_paths([&existing, Path::new(r"C:\Windows")])
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let next = host_path_with_well_known_bins(&current, &[variant]);
+    let parts: Vec<PathBuf> = std::env::split_paths(&next).collect();
+    let node_dirs = parts
+        .iter()
+        .filter(|p| {
+            p.to_string_lossy()
+                .eq_ignore_ascii_case(r"C:\Program Files\nodejs")
+        })
+        .count();
+    assert_eq!(node_dirs, 1, "case-only PATH duplicate: {next}");
+}
+
+#[test]
+fn extra_env_for_node_shebang_prefixes_cli_dir() {
+    let env = extra_env_for_node_shebang(Path::new("/tmp/fake-npm-bin/npm"));
+    let path = env
+        .iter()
+        .find(|(key, _)| key == "PATH")
+        .map(|(_, value)| value.as_str())
+        .expect("PATH overlay");
+    let parts: Vec<PathBuf> = std::env::split_paths(path).collect();
+    assert!(
+        parts.iter().any(|dir| dir.file_name().is_some_and(|n| n == "fake-npm-bin")),
+        "CLI parent must be on PATH overlay: {path}"
+    );
+}
+
+#[test]
+fn well_known_host_bin_dirs_only_existing() {
+    for dir in well_known_host_bin_dirs() {
+        assert!(
+            dir.is_dir(),
+            "well-known PATH dir must exist: {}",
+            dir.display()
+        );
+    }
 }
 
 #[test]
