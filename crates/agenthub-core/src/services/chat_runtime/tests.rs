@@ -1,6 +1,6 @@
-use super::types::RuntimeStartExtras;
+use super::types::{RuntimeLocalImage, RuntimeStartExtras};
 use super::*;
-use crate::models::{AgentId, ChatEvent, Conversation};
+use crate::models::{AgentId, ChatEvent, ChatRole, Conversation};
 use crate::storage::{ChatRepo, Database};
 use crate::{
     adapters::AdapterRegistry,
@@ -226,24 +226,19 @@ fn persisted_request_is_removed_only_after_explicit_resolution() {
         .is_empty());
 }
 
-/// Real Codex app-server smoke test.  It is deliberately ignored: the caller
-/// must opt in with `AGENTHUB_RUN_CODEX_RUNTIME_TEST=1`.  Only the AgentHub
-/// database and working directory are temporary; the caller's existing Codex
-/// login is used without printing or changing it.
-#[test]
-#[ignore = "uses the caller's Codex login and creates native sessions; explicit opt-in required"]
-fn real_codex_runtime_start_and_resume() {
+fn require_real_codex_opt_in() {
     assert_eq!(
         std::env::var("AGENTHUB_RUN_CODEX_RUNTIME_TEST").ok().as_deref(),
         Some("1"),
         "set AGENTHUB_RUN_CODEX_RUNTIME_TEST=1 to use the existing Codex login; no live test was run"
     );
-    let root = tempdir().unwrap();
+}
+
+fn open_real_chat(root: &tempfile::TempDir) -> (ChatService, String, std::path::PathBuf) {
     let data_dir = root.path().join("agenthub");
     let cwd = root.path().join("workspace");
     std::fs::create_dir_all(&data_dir).unwrap();
     std::fs::create_dir_all(&cwd).unwrap();
-
     let db = Database::open(&data_dir.join("agenthub.sqlite")).unwrap();
     let run = Arc::new(RunService::new(AdapterRegistry::default()));
     let chat = ChatService::new(db, run);
@@ -253,48 +248,23 @@ fn real_codex_runtime_start_and_resume() {
             Some(cwd.to_string_lossy().into_owned()),
         )
         .unwrap();
-    let nonce = uuid::Uuid::new_v4().simple().to_string();
-    let first = chat
-        .runtime()
-        .start(
-            &conversation.id,
-            &format!("Remember this random marker for our next turn: AGENTHUB_RUNTIME_{nonce}. Reply with exactly that marker. Do not call any tools."),
-            "real-1",
-            RuntimeStartExtras::default(),
-        )
-        .unwrap();
-    let first_done = wait_for_terminal(&chat, &conversation.id, first.last_sequence);
-    assert!(matches!(first_done.phase, RuntimePhase::Completed));
-
-    drop(chat);
-    let db = Database::open(&data_dir.join("agenthub.sqlite")).unwrap();
-    let run = Arc::new(RunService::new(AdapterRegistry::default()));
-    let chat = ChatService::new(db, run);
-    let second = chat
-        .runtime()
-        .start(
-            &conversation.id,
-            "What was the exact random marker I asked you to remember in my previous message? Reply only with that marker. Do not call any tools.",
-            "real-2",
-            RuntimeStartExtras::default(),
-        )
-        .unwrap();
-    let second_done = wait_for_terminal(&chat, &conversation.id, second.last_sequence);
-    assert!(matches!(second_done.phase, RuntimePhase::Completed));
-    let messages = chat.list_messages(&conversation.id).unwrap();
-    let answer = messages
-        .iter()
-        .filter(|m| m.role == ChatRole::Agent)
-        .last()
-        .unwrap();
-    assert!(
-        answer.content.contains(&nonce),
-        "resumed turn did not remember the previous marker"
-    );
+    (chat, conversation.id, data_dir)
 }
 
-fn wait_for_terminal(chat: &ChatService, conversation_id: &str, after: i64) -> RuntimeSnapshot {
-    let deadline = Instant::now() + Duration::from_secs(90);
+fn reopen_real_chat(data_dir: &std::path::Path) -> ChatService {
+    let db = Database::open(&data_dir.join("agenthub.sqlite")).unwrap();
+    let run = Arc::new(RunService::new(AdapterRegistry::default()));
+    ChatService::new(db, run)
+}
+
+fn wait_for_snapshot(
+    chat: &ChatService,
+    conversation_id: &str,
+    after: i64,
+    timeout: Duration,
+    mut pred: impl FnMut(&RuntimeSnapshot) -> bool,
+) -> RuntimeSnapshot {
+    let deadline = Instant::now() + timeout;
     let mut sequence = after;
     loop {
         let snapshot = chat
@@ -302,21 +272,615 @@ fn wait_for_terminal(chat: &ChatService, conversation_id: &str, after: i64) -> R
             .snapshot(conversation_id, Some(sequence))
             .unwrap();
         sequence = snapshot.last_sequence;
-        if matches!(
-            snapshot.phase,
-            RuntimePhase::Completed
-                | RuntimePhase::Failed
-                | RuntimePhase::Cancelled
-                | RuntimePhase::Interrupted
-        ) {
+        if pred(&snapshot) {
             return snapshot;
         }
         assert!(
             Instant::now() < deadline,
-            "Codex runtime did not reach a terminal phase"
+            "Codex runtime condition not met before timeout (phase={:?})",
+            snapshot.phase
         );
         std::thread::sleep(Duration::from_millis(400));
     }
+}
+
+fn wait_for_terminal(chat: &ChatService, conversation_id: &str, after: i64) -> RuntimeSnapshot {
+    wait_for_snapshot(chat, conversation_id, after, Duration::from_secs(90), |s| {
+        matches!(
+            s.phase,
+            RuntimePhase::Completed
+                | RuntimePhase::Failed
+                | RuntimePhase::Cancelled
+                | RuntimePhase::Interrupted
+        )
+    })
+}
+
+fn wait_for_waiting(chat: &ChatService, conversation_id: &str, after: i64) -> RuntimeSnapshot {
+    wait_for_snapshot(chat, conversation_id, after, Duration::from_secs(90), |s| {
+        (matches!(s.phase, RuntimePhase::Waiting) && !s.pending_requests.is_empty())
+            || matches!(
+                s.phase,
+                RuntimePhase::Completed
+                    | RuntimePhase::Failed
+                    | RuntimePhase::Cancelled
+                    | RuntimePhase::Interrupted
+            )
+    })
+}
+
+fn last_agent_content(chat: &ChatService, conversation_id: &str) -> String {
+    chat.list_messages(conversation_id)
+        .unwrap()
+        .into_iter()
+        .filter(|m| m.role == ChatRole::Agent)
+        .last()
+        .map(|m| m.content)
+        .unwrap_or_default()
+}
+
+fn snapshot_error(snapshot: &RuntimeSnapshot) -> String {
+    snapshot
+        .current_message
+        .as_ref()
+        .and_then(|message| message.error.clone())
+        .unwrap_or_default()
+}
+
+fn is_usage_limited(snapshot: &RuntimeSnapshot) -> bool {
+    let hay = snapshot_error(snapshot).to_ascii_lowercase();
+    hay.contains("usagelimitexceeded") || hay.contains("usage limit")
+}
+
+fn abort_if_limited(snapshot: &RuntimeSnapshot) -> bool {
+    if !is_usage_limited(snapshot) {
+        return false;
+    }
+    eprintln!("skip: Codex usage limit");
+    true
+}
+
+/// Real Codex app-server smoke test.  It is deliberately ignored: the caller
+/// must opt in with `AGENTHUB_RUN_CODEX_RUNTIME_TEST=1`.  Only the AgentHub
+/// database and working directory are temporary; the caller's existing Codex
+/// login is used without printing or changing it.
+#[test]
+#[ignore = "uses the caller's Codex login and creates native sessions; explicit opt-in required"]
+fn real_codex_runtime_start_and_resume() {
+    require_real_codex_opt_in();
+    let root = tempdir().unwrap();
+    let (chat, conversation_id, data_dir) = open_real_chat(&root);
+    let nonce = uuid::Uuid::new_v4().simple().to_string();
+    let first = chat
+        .runtime()
+        .start(
+            &conversation_id,
+            &format!("Remember this random marker for our next turn: AGENTHUB_RUNTIME_{nonce}. Reply with exactly that marker. Do not call any tools."),
+            "real-1",
+            RuntimeStartExtras::default(),
+        )
+        .unwrap();
+    let first_done = wait_for_terminal(&chat, &conversation_id, first.last_sequence);
+    if abort_if_limited(&first_done) {
+        return;
+    }
+    assert_eq!(
+        first_done.phase,
+        RuntimePhase::Completed,
+        "first turn error: {}",
+        snapshot_error(&first_done)
+    );
+
+    drop(chat);
+    let chat = reopen_real_chat(&data_dir);
+    let second = chat
+        .runtime()
+        .start(
+            &conversation_id,
+            "What was the exact random marker I asked you to remember in my previous message? Reply only with that marker. Do not call any tools.",
+            "real-2",
+            RuntimeStartExtras::default(),
+        )
+        .unwrap();
+    let second_done = wait_for_terminal(&chat, &conversation_id, second.last_sequence);
+    let second_err = second_done
+        .current_message
+        .as_ref()
+        .and_then(|m| m.error.clone())
+        .unwrap_or_default();
+    assert_eq!(
+        second_done.phase,
+        RuntimePhase::Completed,
+        "resume turn ended as {:?} err={second_err}",
+        second_done.phase
+    );
+    assert!(
+        last_agent_content(&chat, &conversation_id).contains(&nonce),
+        "resumed turn did not remember the previous marker"
+    );
+}
+
+/// Product path: command approval allow + deny via ChatRuntime reply.
+#[test]
+#[ignore = "uses the caller's Codex login and creates native sessions; explicit opt-in required"]
+fn real_codex_runtime_command_approval_allow_and_deny() {
+    require_real_codex_opt_in();
+    let root = tempdir().unwrap();
+    let (chat, conversation_id, _) = open_real_chat(&root);
+
+    // Deny path first: request a harmless command and decline it.
+    let deny_start = chat
+        .runtime()
+        .start(
+            &conversation_id,
+            "Run this exact shell command once and show its stdout: printf 'AGENTHUB_DENY_PROBE'. Do not invent the output; you must execute the command.",
+            "real-deny-1",
+            RuntimeStartExtras::default(),
+        )
+        .unwrap();
+    let waiting = wait_for_waiting(&chat, &conversation_id, deny_start.last_sequence);
+    if abort_if_limited(&waiting) {
+        return;
+    }
+    assert_eq!(
+        waiting.phase,
+        RuntimePhase::Waiting,
+        "expected command approval before tools run; got {:?} ({})",
+        waiting.phase,
+        snapshot_error(&waiting)
+    );
+    let request = waiting
+        .pending_requests
+        .iter()
+        .find(|r| matches!(r.kind, RuntimeRequestKind::Command))
+        .cloned()
+        .expect("expected a command approval request");
+    chat.runtime()
+        .reply(RuntimeReply {
+            conversation_id: conversation_id.clone(),
+            run_id: request.run_id.clone(),
+            request_id: request.id.clone(),
+            client_request_id: "real-deny-reply".into(),
+            decision: Some(RuntimeDecision::Deny),
+            answers: None,
+        })
+        .unwrap();
+    let denied = wait_for_terminal(&chat, &conversation_id, waiting.last_sequence);
+    assert!(
+        matches!(
+            denied.phase,
+            RuntimePhase::Completed | RuntimePhase::Failed | RuntimePhase::Cancelled
+        ),
+        "deny path ended unexpectedly: {:?}",
+        denied.phase
+    );
+
+    // Allow path: request another harmless command and accept it.
+    let allow_start = chat
+        .runtime()
+        .start(
+            &conversation_id,
+            "Run this exact shell command once and reply with only its stdout: printf 'AGENTHUB_ALLOW_OK'. Do not invent the output.",
+            "real-allow-1",
+            RuntimeStartExtras::default(),
+        )
+        .unwrap();
+    let waiting = wait_for_waiting(&chat, &conversation_id, allow_start.last_sequence);
+    assert_eq!(
+        waiting.phase,
+        RuntimePhase::Waiting,
+        "expected command approval before tools run; got {:?}",
+        waiting.phase
+    );
+    let request = waiting
+        .pending_requests
+        .iter()
+        .find(|r| matches!(r.kind, RuntimeRequestKind::Command))
+        .cloned()
+        .expect("expected a command approval request");
+    chat.runtime()
+        .reply(RuntimeReply {
+            conversation_id: conversation_id.clone(),
+            run_id: request.run_id.clone(),
+            request_id: request.id.clone(),
+            client_request_id: "real-allow-reply".into(),
+            decision: Some(RuntimeDecision::Allow),
+            answers: None,
+        })
+        .unwrap();
+    let allowed = wait_for_terminal(&chat, &conversation_id, waiting.last_sequence);
+    assert_eq!(allowed.phase, RuntimePhase::Completed);
+    assert!(
+        last_agent_content(&chat, &conversation_id).contains("AGENTHUB_ALLOW_OK"),
+        "allow path did not surface command output"
+    );
+}
+
+/// Product path: mid-turn steer + interrupt.
+#[test]
+#[ignore = "uses the caller's Codex login and creates native sessions; explicit opt-in required"]
+fn real_codex_runtime_steer_and_interrupt() {
+    require_real_codex_opt_in();
+    let root = tempdir().unwrap();
+    let (chat, conversation_id, _) = open_real_chat(&root);
+    let steer_marker = format!("AGENTHUB_STEER_{}", uuid::Uuid::new_v4().simple());
+
+    let started = chat
+        .runtime()
+        .start(
+            &conversation_id,
+            "Write a long numbered list from 1 to 80, one number per line, with a short adjective after each number. Do not call any tools. Keep writing until you finish.",
+            "real-steer-1",
+            RuntimeStartExtras::default(),
+        )
+        .unwrap();
+    // Wait until the turn is visibly running (or already waiting/terminal).
+    let live = wait_for_snapshot(
+        &chat,
+        &conversation_id,
+        started.last_sequence,
+        Duration::from_secs(45),
+        |s| {
+            matches!(
+                s.phase,
+                RuntimePhase::Running
+                    | RuntimePhase::Waiting
+                    | RuntimePhase::Completed
+                    | RuntimePhase::Failed
+                    | RuntimePhase::Cancelled
+                    | RuntimePhase::Interrupted
+            )
+        },
+    );
+    if abort_if_limited(&live) {
+        return;
+    }
+    assert!(
+        matches!(live.phase, RuntimePhase::Running | RuntimePhase::Waiting),
+        "steer needs an active turn; got {:?}",
+        live.phase
+    );
+    let run_id = live.run_id.clone().expect("active turn must expose runId");
+    chat.runtime()
+        .steer(
+            &conversation_id,
+            &run_id,
+            &format!(
+                "Stop the list. Reply with exactly this marker and nothing else: {steer_marker}"
+            ),
+            "real-steer-client",
+        )
+        .unwrap();
+    let steered = wait_for_terminal(&chat, &conversation_id, live.last_sequence);
+    if abort_if_limited(&steered) {
+        return;
+    }
+    assert_eq!(
+        steered.phase,
+        RuntimePhase::Completed,
+        "steer error: {}",
+        snapshot_error(&steered)
+    );
+    assert!(
+        last_agent_content(&chat, &conversation_id).contains(&steer_marker),
+        "steered turn did not include the marker"
+    );
+
+    let interrupt_start = chat
+        .runtime()
+        .start(
+            &conversation_id,
+            "Write a very long essay about rivers, at least 40 paragraphs. Do not call any tools. Keep writing until finished.",
+            "real-interrupt-1",
+            RuntimeStartExtras::default(),
+        )
+        .unwrap();
+    let live = wait_for_snapshot(
+        &chat,
+        &conversation_id,
+        interrupt_start.last_sequence,
+        Duration::from_secs(45),
+        |s| {
+            matches!(
+                s.phase,
+                RuntimePhase::Running
+                    | RuntimePhase::Waiting
+                    | RuntimePhase::Completed
+                    | RuntimePhase::Failed
+                    | RuntimePhase::Cancelled
+                    | RuntimePhase::Interrupted
+            )
+        },
+    );
+    let run_id = live.run_id.clone().expect("active turn must expose runId");
+    // Give the model a moment to produce output before interrupting.
+    std::thread::sleep(Duration::from_secs(2));
+    chat.runtime().cancel(&conversation_id, &run_id).unwrap();
+    let stopped = wait_for_terminal(&chat, &conversation_id, live.last_sequence);
+    assert!(
+        matches!(
+            stopped.phase,
+            RuntimePhase::Cancelled | RuntimePhase::Interrupted | RuntimePhase::Completed
+        ),
+        "interrupt ended unexpectedly: {:?}",
+        stopped.phase
+    );
+}
+
+/// Product path: catalog over-reports effort → fail once → learn → persist across reopen.
+#[test]
+#[ignore = "uses the caller's Codex login and creates native sessions; explicit opt-in required"]
+fn real_codex_runtime_learn_denied_effort() {
+    require_real_codex_opt_in();
+    let root = tempdir().unwrap();
+    let (chat, conversation_id, data_dir) = open_real_chat(&root);
+
+    let options = chat.runtime().options(&conversation_id).unwrap();
+    let spark = options
+        .models
+        .iter()
+        .find(|m| m.id == "gpt-5.3-codex-spark")
+        .cloned();
+    let Some(spark) = spark else {
+        eprintln!("skip: gpt-5.3-codex-spark not in live model/list");
+        return;
+    };
+    // Prefer the historically broken pair when the live catalog still offers it.
+    let can_request_medium = spark.efforts.iter().any(|e| e == "medium");
+    if can_request_medium {
+        chat.runtime()
+            .set_settings(
+                &conversation_id,
+                RuntimeTurnSettings {
+                    model: Some(spark.id.clone()),
+                    effort: Some("medium".into()),
+                },
+            )
+            .unwrap();
+    } else {
+        // Catalog already dropped medium; seed the deny table and verify persistence/retry.
+        chat.runtime()
+            .note_thinking_failure(
+                &conversation_id,
+                RuntimeTurnSettings {
+                    model: Some(spark.id.clone()),
+                    effort: Some("medium".into()),
+                },
+                "does not support parameter reasoningEffort=medium",
+            )
+            .unwrap();
+        chat.runtime()
+            .set_settings(
+                &conversation_id,
+                RuntimeTurnSettings {
+                    model: Some(spark.id.clone()),
+                    effort: spark.default_effort.clone(),
+                },
+            )
+            .unwrap();
+    }
+
+    if can_request_medium {
+        let start = chat.runtime().start(
+            &conversation_id,
+            "Reply with exactly: AGENTHUB_EFFORT_PROBE. Do not call any tools.",
+            "real-effort-1",
+            RuntimeStartExtras::default(),
+        );
+        match start {
+            Ok(snapshot) => {
+                let done = wait_for_terminal(&chat, &conversation_id, snapshot.last_sequence);
+                if matches!(done.phase, RuntimePhase::Completed) {
+                    eprintln!("note: spark+medium completed; denied-effort learning not exercised");
+                    return;
+                }
+                assert_eq!(
+                    done.phase,
+                    RuntimePhase::Failed,
+                    "unexpected phase after spark+medium: {:?}",
+                    done.phase
+                );
+                let err = done
+                    .current_message
+                    .as_ref()
+                    .and_then(|m| m.error.clone())
+                    .unwrap_or_default();
+                assert!(
+                    super::ops::looks_like_thinking_unsupported(&err),
+                    "expected thinking-unsupported failure, got: {err}"
+                );
+            }
+            Err(error) => {
+                assert!(
+                    error.to_string().contains("不支持思考强度")
+                        || super::ops::looks_like_thinking_unsupported(&error.to_string()),
+                    "unexpected start error: {error}"
+                );
+                chat.runtime()
+                    .note_thinking_failure(
+                        &conversation_id,
+                        RuntimeTurnSettings {
+                            model: Some(spark.id.clone()),
+                            effort: Some("medium".into()),
+                        },
+                        "does not support parameter reasoningEffort=medium",
+                    )
+                    .unwrap();
+            }
+        }
+    }
+
+    let after = chat.runtime().options(&conversation_id).unwrap();
+    let spark_after = after
+        .models
+        .iter()
+        .find(|m| m.id == "gpt-5.3-codex-spark")
+        .expect("spark should remain listed");
+    assert!(
+        !spark_after.efforts.iter().any(|e| e == "medium"),
+        "medium should be filtered after learning"
+    );
+    assert_ne!(after.settings.effort.as_deref(), Some("medium"));
+
+    drop(chat);
+    let chat = reopen_real_chat(&data_dir);
+    let persisted = chat.runtime().options(&conversation_id).unwrap();
+    let spark_persisted = persisted
+        .models
+        .iter()
+        .find(|m| m.id == "gpt-5.3-codex-spark")
+        .expect("spark should remain listed after reopen");
+    assert!(
+        !spark_persisted.efforts.iter().any(|e| e == "medium"),
+        "medium should stay filtered after sqlite reopen"
+    );
+
+    let retry = chat
+        .runtime()
+        .start(
+            &conversation_id,
+            "Reply with exactly: AGENTHUB_EFFORT_OK. Do not call any tools.",
+            "real-effort-2",
+            RuntimeStartExtras::default(),
+        )
+        .unwrap();
+    let done = wait_for_terminal(&chat, &conversation_id, retry.last_sequence);
+    assert_eq!(done.phase, RuntimePhase::Completed);
+    assert!(
+        last_agent_content(&chat, &conversation_id).contains("AGENTHUB_EFFORT_OK"),
+        "retry after effort coerce did not complete cleanly"
+    );
+}
+
+/// Product path: worker shutdown mid-turn, reopen sqlite, continue the native thread.
+#[test]
+#[ignore = "uses the caller's Codex login and creates native sessions; explicit opt-in required"]
+fn real_codex_runtime_crash_reopen_then_continue() {
+    require_real_codex_opt_in();
+    let root = tempdir().unwrap();
+    let (chat, conversation_id, data_dir) = open_real_chat(&root);
+    let started = chat
+        .runtime()
+        .start(
+            &conversation_id,
+            "Write a very long essay about rivers, at least 40 paragraphs. Do not call any tools. Keep writing until finished.",
+            "real-crash-1",
+            RuntimeStartExtras::default(),
+        )
+        .unwrap();
+    let live = wait_for_snapshot(
+        &chat,
+        &conversation_id,
+        started.last_sequence,
+        Duration::from_secs(45),
+        |s| {
+            matches!(
+                s.phase,
+                RuntimePhase::Running
+                    | RuntimePhase::Waiting
+                    | RuntimePhase::Completed
+                    | RuntimePhase::Failed
+                    | RuntimePhase::Cancelled
+                    | RuntimePhase::Interrupted
+            )
+        },
+    );
+    if abort_if_limited(&live) {
+        return;
+    }
+    assert!(
+        matches!(live.phase, RuntimePhase::Running | RuntimePhase::Waiting),
+        "crash reopen needs an active turn; got {:?}",
+        live.phase
+    );
+    chat.runtime().shutdown(&conversation_id);
+    drop(chat);
+
+    let chat = reopen_real_chat(&data_dir);
+    let recovered = chat.runtime().snapshot(&conversation_id, None).unwrap();
+    assert!(
+        !matches!(
+            recovered.phase,
+            RuntimePhase::Starting
+                | RuntimePhase::Running
+                | RuntimePhase::Waiting
+                | RuntimePhase::Cancelling
+        ),
+        "stale active phase after reopen: {:?}",
+        recovered.phase
+    );
+    let retry = chat
+        .runtime()
+        .start(
+            &conversation_id,
+            "Reply with exactly: AGENTHUB_RECOVER_OK. Do not call any tools.",
+            "real-crash-2",
+            RuntimeStartExtras::default(),
+        )
+        .unwrap();
+    let done = wait_for_terminal(&chat, &conversation_id, retry.last_sequence);
+    if abort_if_limited(&done) {
+        return;
+    }
+    assert_eq!(
+        done.phase,
+        RuntimePhase::Completed,
+        "recover continue error: {}",
+        snapshot_error(&done)
+    );
+    assert!(
+        last_agent_content(&chat, &conversation_id).contains("AGENTHUB_RECOVER_OK"),
+        "continue after reopen did not complete cleanly"
+    );
+}
+
+/// Product path: localImage extra is accepted on turn/start.
+#[test]
+#[ignore = "uses the caller's Codex login and creates native sessions; explicit opt-in required"]
+fn real_codex_runtime_local_image_turn() {
+    require_real_codex_opt_in();
+    let root = tempdir().unwrap();
+    let (chat, conversation_id, _) = open_real_chat(&root);
+    let png = root.path().join("workspace").join("probe.png");
+    std::fs::write(
+        &png,
+        [
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00,
+            0x00, 0x90, 0x77, 0x53, 0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x08,
+            0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00, 0x00, 0x00, 0x03, 0x00, 0x01, 0x00, 0x05, 0xFE,
+            0xD4, 0xEF, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+        ],
+    )
+    .unwrap();
+    let started = chat
+        .runtime()
+        .start(
+            &conversation_id,
+            "If you received an image, reply with exactly AGENTHUB_IMAGE_OK. Do not call any tools.",
+            "real-image-1",
+            RuntimeStartExtras {
+                images: vec![RuntimeLocalImage {
+                    path: png.to_string_lossy().into_owned(),
+                }],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let done = wait_for_terminal(&chat, &conversation_id, started.last_sequence);
+    if abort_if_limited(&done) {
+        return;
+    }
+    assert_eq!(
+        done.phase,
+        RuntimePhase::Completed,
+        "image turn error: {}",
+        snapshot_error(&done)
+    );
+    assert!(
+        last_agent_content(&chat, &conversation_id).contains("AGENTHUB_IMAGE_OK"),
+        "image turn did not acknowledge the attachment"
+    );
 }
 
 #[test]

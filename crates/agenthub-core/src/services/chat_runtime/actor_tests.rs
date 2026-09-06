@@ -139,18 +139,14 @@ fn non_retryable_notification_error_terminalizes_message_and_controls() {
         snapshot.current_message.unwrap().status,
         ChatMessageStatus::Failed
     );
-    assert!(
-        snapshot
-            .events
-            .iter()
-            .any(|event| matches!(event.event, ChatEvent::AgentFinished { .. }))
-    );
-    assert!(
-        snapshot
-            .events
-            .iter()
-            .any(|event| matches!(event.event, ChatEvent::Finished { ok: false, .. }))
-    );
+    assert!(snapshot
+        .events
+        .iter()
+        .any(|event| matches!(event.event, ChatEvent::AgentFinished { .. })));
+    assert!(snapshot
+        .events
+        .iter()
+        .any(|event| matches!(event.event, ChatEvent::Finished { ok: false, .. })));
 }
 
 #[test]
@@ -169,12 +165,10 @@ fn retryable_notification_error_keeps_the_turn_alive() {
         snapshot.current_message.unwrap().status,
         ChatMessageStatus::Running
     );
-    assert!(
-        snapshot
-            .events
-            .iter()
-            .any(|event| matches!(event.event, ChatEvent::Error { .. }))
-    );
+    assert!(snapshot
+        .events
+        .iter()
+        .any(|event| matches!(event.event, ChatEvent::Error { .. })));
 }
 
 #[cfg(unix)]
@@ -236,18 +230,16 @@ fn stop_wins_over_late_allow_and_reply_before_stop_is_sent() {
         .add_request("stop-first", &request, "approval", "server-stop")
         .unwrap();
     first_worker.cancel("run-1").unwrap();
-    assert!(
-        first_worker
-            .reply(RuntimeReply {
-                conversation_id: "stop-first".into(),
-                run_id: "run-1".into(),
-                request_id: "request-1".into(),
-                client_request_id: "late-allow".into(),
-                decision: Some(RuntimeDecision::Allow),
-                answers: None,
-            })
-            .is_err()
-    );
+    assert!(first_worker
+        .reply(RuntimeReply {
+            conversation_id: "stop-first".into(),
+            run_id: "run-1".into(),
+            request_id: "request-1".into(),
+            client_request_id: "late-allow".into(),
+            decision: Some(RuntimeDecision::Allow),
+            answers: None,
+        })
+        .is_err());
     first_worker.poll_events().unwrap();
     assert_eq!(
         first_worker
@@ -399,4 +391,54 @@ fn retained_events_report_a_gap_after_old_sequences_are_trimmed() {
     assert!(snapshot.gap);
     assert!(snapshot.events.len() <= 2_048);
     assert!(snapshot.events.first().unwrap().sequence > 1);
+}
+
+#[test]
+fn file_and_question_server_requests_become_pending_runtime_requests() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "requests");
+    let mut worker = worker(&db, "requests");
+    worker.store.enable_if_new("requests").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .server_request(
+            json!("file-1"),
+            "item/fileChange/requestApproval",
+            &json!({"turnId": "run-1", "reason": "edit readme"}),
+        )
+        .unwrap();
+    worker
+        .server_request(
+            json!("q-1"),
+            "item/tool/requestUserInput",
+            &json!({
+                "turnId": "run-1",
+                "questions": [{
+                    "id": "color",
+                    "header": "Color",
+                    "question": "Pick one",
+                    "options": [{"label": "red", "description": ""}],
+                    "isOther": false,
+                    "isSecret": false
+                }]
+            }),
+        )
+        .unwrap();
+
+    let snapshot = worker.store.snapshot("requests", None).unwrap();
+    assert_eq!(snapshot.phase, RuntimePhase::Waiting);
+    assert_eq!(snapshot.pending_requests.len(), 2);
+    assert_eq!(snapshot.pending_requests[0].kind, RuntimeRequestKind::File);
+    assert_eq!(snapshot.pending_requests[0].title, "修改文件");
+    assert_eq!(snapshot.pending_requests[0].detail, "edit readme");
+    assert_eq!(
+        snapshot.pending_requests[1].kind,
+        RuntimeRequestKind::Question
+    );
+    assert_eq!(snapshot.pending_requests[1].questions[0].id, "color");
+    assert_eq!(
+        snapshot.pending_requests[1].questions[0].options[0].label,
+        "red"
+    );
 }
