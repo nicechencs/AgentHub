@@ -70,6 +70,7 @@ fn fresh_disk_cache_is_used_without_network() {
         updates[0].can_auto_upgrade,
         cfg!(windows) || cfg!(target_os = "macos")
     );
+}
 
 #[test]
 fn node_git_and_npm_offer_one_click_upgrade_where_supported() {
