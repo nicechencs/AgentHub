@@ -83,7 +83,6 @@ export function ChatComposer({
   effortOptions = [],
   currentEffort = null,
   onSwitchEffort,
-  onOpenSettings,
   onPickWorkingDirectory,
   onDraftKeyDown,
   onPasteImages,
@@ -127,7 +126,6 @@ export function ChatComposer({
   effortOptions?: string[];
   currentEffort?: string | null;
   onSwitchEffort?: (effort: string) => void;
-  onOpenSettings: () => void;
   onPickWorkingDirectory: () => void;
   onDraftKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => boolean;
   onPasteImages?: (files: File[]) => void;
