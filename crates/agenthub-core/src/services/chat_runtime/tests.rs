@@ -221,3 +221,75 @@ fn wait_for_terminal(chat: &ChatService, conversation_id: &str, after: i64) -> R
         std::thread::sleep(Duration::from_millis(400));
     }
 }
+
+
+#[test]
+fn frozen_options_serve_warmed_catalog_without_refetch() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "warm", false);
+    let run = Arc::new(RunService::new(AdapterRegistry::default()));
+    let runtime = Arc::new(ChatRuntime::new(db, run));
+    runtime.store.enable_if_new("warm").unwrap();
+    runtime.seed_catalog_cache_for_test(
+        "warm",
+        vec![super::types::RuntimeModelOption {
+            id: "gpt-warm".into(),
+            efforts: vec!["low".into()],
+            default_effort: Some("low".into()),
+        }],
+        vec![super::types::RuntimeExtensionItem {
+            id: "/skills/demo/SKILL.md".into(),
+            name: "demo".into(),
+            kind: super::types::RuntimeExtensionKind::Skill,
+            installed: true,
+            enabled: true,
+            loaded: false,
+            callable: true,
+            path: Some("/skills/demo/SKILL.md".into()),
+        }],
+    );
+    runtime
+        .store
+        .commit_event(
+            "warm",
+            RuntimePhase::Running,
+            Some("run-warm"),
+            &ChatEvent::Error {
+                message: "marker".into(),
+            },
+        )
+        .unwrap();
+
+    let options = runtime.options("warm").unwrap();
+    assert!(options.settings_frozen);
+    assert_eq!(options.models.len(), 1);
+    assert_eq!(options.models[0].id, "gpt-warm");
+    assert_eq!(options.extensions.len(), 1);
+    assert!(options.models_from_codex);
+}
+
+#[test]
+fn frozen_options_stay_empty_when_catalog_never_warmed() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "cold", false);
+    let run = Arc::new(RunService::new(AdapterRegistry::default()));
+    let runtime = Arc::new(ChatRuntime::new(db, run));
+    runtime.store.enable_if_new("cold").unwrap();
+    runtime
+        .store
+        .commit_event(
+            "cold",
+            RuntimePhase::Running,
+            Some("run-cold"),
+            &ChatEvent::Error {
+                message: "marker".into(),
+            },
+        )
+        .unwrap();
+
+    let options = runtime.options("cold").unwrap();
+    assert!(options.settings_frozen);
+    assert!(options.models.is_empty());
+    assert!(options.extensions.is_empty());
+    assert!(!options.models_from_codex);
+}

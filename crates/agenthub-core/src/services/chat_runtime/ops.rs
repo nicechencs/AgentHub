@@ -19,6 +19,12 @@ pub(crate) fn phase_freezes_settings(phase: super::types::RuntimePhase) -> bool 
     )
 }
 
+/// Idle / unknown phases may spawn a short-lived Codex process for model/skills lists.
+/// Active turns must never fetch — only serve an already-warmed per-conversation cache.
+pub(crate) fn may_fetch_catalog(phase: Option<super::types::RuntimePhase>) -> bool {
+    !phase.is_some_and(phase_freezes_settings)
+}
+
 /// Validate requested settings against a model/list catalog.
 /// Empty catalog: only reject obviously empty model ids; effort may be set with model.
 pub(crate) fn validate_turn_settings(
@@ -453,5 +459,17 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("不可用于本轮"));
+    }
+
+    #[test]
+    fn may_fetch_catalog_only_when_idle() {
+        use super::super::types::RuntimePhase;
+        assert!(may_fetch_catalog(None));
+        assert!(may_fetch_catalog(Some(RuntimePhase::Idle)));
+        assert!(may_fetch_catalog(Some(RuntimePhase::Completed)));
+        assert!(!may_fetch_catalog(Some(RuntimePhase::Starting)));
+        assert!(!may_fetch_catalog(Some(RuntimePhase::Running)));
+        assert!(!may_fetch_catalog(Some(RuntimePhase::Waiting)));
+        assert!(!may_fetch_catalog(Some(RuntimePhase::Cancelling)));
     }
 }
