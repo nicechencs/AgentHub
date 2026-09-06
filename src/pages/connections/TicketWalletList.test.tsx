@@ -1035,6 +1035,8 @@ describe('TicketDetailPanel', () => {
       label: 'xAI',
       surface: 'xai-api' as const,
       credentialClass: 'oauth' as const,
+      speaks: ['openai-responses'],
+      importedFrom: null,
     };
     const current = renderWithTooltip(
       createElement(TicketDetailPanel, {
