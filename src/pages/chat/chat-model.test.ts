@@ -39,6 +39,7 @@ import {
   groupConversationsByDay,
   isChatAgentSelectable,
   liveSendingIds,
+  incomingSendingIds,
   busyAgentsForSends,
   messageStatusLabel,
   newConversationDefaults,
@@ -272,12 +273,30 @@ describe('sendBlockers', () => {
   });
 });
 
+describe('incomingSendingIds', () => {
+  it('treats null, undefined, and non-arrays as empty', () => {
+    expect(incomingSendingIds(null)).toEqual([]);
+    expect(incomingSendingIds(undefined)).toEqual([]);
+    expect(incomingSendingIds(1)).toEqual([]);
+  });
+
+  it('keeps a legacy single id and ignores empty strings', () => {
+    expect(incomingSendingIds('sess-1')).toEqual(['sess-1']);
+    expect(incomingSendingIds('')).toEqual([]);
+    expect(incomingSendingIds(['a', '', 'a', 1, 'b'])).toEqual(['a', 'b']);
+  });
+});
+
 describe('liveSendingIds', () => {
   it('drops ids that are no longer in the conversation list', () => {
     expect(liveSendingIds(['a', 'gone', 'b'], [conv({ id: 'b' }), conv({ id: 'a' })])).toEqual([
       'a',
       'b',
     ]);
+  });
+
+  it('treats a missing sending list as empty', () => {
+    expect(liveSendingIds(null, [conv({ id: 'a' })])).toEqual([]);
   });
 });
 

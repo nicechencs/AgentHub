@@ -67,7 +67,7 @@ export function useChatPage() {
   const activeGenerationRef = useRef(0);
   const generationActiveIdRef = useRef<string | null>(null);
   const sendRef = useRef<{
-    adoptInflight: (ids: string[]) => void;
+    adoptInflight: (ids?: string[] | string | null) => void;
     cancelIfSending: (id: string) => Promise<void>;
   }>({
     adoptInflight: () => {},
