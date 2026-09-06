@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { AlertTriangle, ArrowUpCircle, CheckCircle2, Download, RefreshCw, Wrench, XCircle } from 'lucide-react';
 import { envOneClickInstallVariant } from '@/components/shared/env-remediation-cta';
 import { useI18n } from '@/components/shared/LanguageProvider';
@@ -6,10 +7,17 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   Table,
   TableBody,
   TableCell,
-  TableEmptyCell,
   TableHead,
   TableHeader,
   TableHeaderRow,
@@ -18,16 +26,19 @@ import {
 import { Hint, Tip } from '@/components/ui/tooltip';
 import { RUNTIME_MAP } from '@/config/runtimes';
 import { resolveAutoInstallPlan } from '@/lib/api/env';
+import { openExternalLink } from '@/lib/open-external';
 import { detectHostPlatform } from '@/lib/platform-detect';
 import type { EnvStatus, RuntimeDetect, RuntimeUpdateInfo } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/components/ui/toast';
 import {
-  envSoftwareAction,
   envSoftwareActionLabel,
   envSoftwareColumnLabel,
+  envSoftwareControl,
   envSoftwareName,
   envSoftwareNoteKey,
   envSoftwareStatusLabel,
+  envSoftwareUpgradeTitle,
   envSoftwareVersion,
   type EnvSoftwareAction,
 } from './env-software-list-model';
@@ -79,6 +90,7 @@ export function EnvSoftwareList({
   onOneClickFix,
   oneClickBusy,
   runtimeUpdates,
+  updatesLoading = false,
 }: {
   runtimes: RuntimeDetect[];
   loading?: boolean;
@@ -87,9 +99,12 @@ export function EnvSoftwareList({
   onOneClickFix?: () => void;
   oneClickBusy?: boolean;
   runtimeUpdates?: Partial<Record<RuntimeDetect['id'], RuntimeUpdateInfo>>;
+  updatesLoading?: boolean;
 }) {
   const { t } = useI18n();
+  const { toast } = useToast();
   const platform = detectHostPlatform();
+  const [forceRuntime, setForceRuntime] = useState<RuntimeDetect | null>(null);
   const issues = runtimes.filter((r) => r.status !== 'ok');
   const allOk = issues.length === 0 && runtimes.length > 0;
   const plan = resolveAutoInstallPlan(runtimes);
@@ -167,18 +182,13 @@ export function EnvSoftwareList({
               ))
             : runtimes.map((runtime) => {
                 const update = runtimeUpdates?.[runtime.id];
-                const action = envSoftwareAction(runtime, runtimes, platform, update);
+                const control = envSoftwareControl(runtime, runtimes, platform, update);
+                const action = control.action;
                 const meta = RUNTIME_MAP[runtime.id];
-                const Icon = action ? actionIcon(action) : null;
-                const updateAvailable = update?.state === 'update_available';
-                const actionLabel = action ? envSoftwareActionLabel(action, t) : '';
-                const actionTitle = updateAvailable && !update?.canAutoUpgrade
-                  ? t('chrome.env.manualUpdate')
-                  : updateAvailable && update.latestVersion
-                    ? t('chrome.env.updateAvailable', { version: update.latestVersion })
-                  : action === 'upgrade' && runtime.status === 'ok'
-                    ? t('chrome.env.upgradeLatest')
-                    : actionLabel;
+                const Icon = actionIcon(action);
+                const actionLabel = envSoftwareActionLabel(action, t);
+                const checking = Boolean(updatesLoading && action === 'upgrade');
+                const actionTitle = envSoftwareUpgradeTitle(control, t, update, checking);
                 return (
                   <TableRow key={runtime.id}>
                     <TableCell className="font-medium">{envSoftwareName(runtime)}</TableCell>
@@ -219,36 +229,102 @@ export function EnvSoftwareList({
                       </Hint>
                     </TableCell>
                     <TableCell className="text-right">
-                      {action && Icon ? (
-                        <Button
-                          size={action === 'upgrade' ? 'icon' : 'sm'}
-                          variant={
-                            action === 'upgrade'
-                              ? 'secondary'
-                              : envOneClickInstallVariant(true)
+                      <Button
+                        size={action === 'upgrade' ? 'icon' : 'sm'}
+                        variant={
+                          action === 'upgrade'
+                            ? control.muted
+                              ? 'outline'
+                              : 'secondary'
+                            : envOneClickInstallVariant(true)
+                        }
+                        className={cn(
+                          'h-7',
+                          action === 'upgrade' && 'w-7',
+                          control.muted && 'text-muted',
+                        )}
+                        disabled={busy || checking || control.kind === 'hint_only'}
+                        onClick={() => {
+                          if (action === 'upgrade' && control.kind === 'open_setup') {
+                            const url = update?.setupUrl?.trim();
+                            if (!url) return;
+                            void openExternalLink(url).catch((e) => {
+                              toast({
+                                title: t('chrome.env.openLinkFailed'),
+                                description: e instanceof Error ? e.message : String(e),
+                                variant: 'danger',
+                              });
+                            });
+                            return;
                           }
-                          className={cn('h-7', action === 'upgrade' && 'w-7')}
-                          disabled={busy}
-                          onClick={() => onAction(
+                          if (action === 'upgrade' && control.kind === 'in_app' && !control.upgradable) {
+                            setForceRuntime(runtime);
+                            return;
+                          }
+                          onAction(
                             runtime,
                             action,
                             action !== 'upgrade' || update?.canAutoUpgrade !== false,
+                          );
+                        }}
+                        title={actionTitle}
+                        aria-label={actionTitle}
+                      >
+                        <Icon
+                          className={cn(
+                            'h-3.5 w-3.5',
+                            action === 'upgrade' && !control.muted && control.upgradable && 'text-success',
+                            control.muted && 'text-muted',
+                            checking && 'animate-pulse opacity-70',
                           )}
-                          title={actionTitle}
-                          aria-label={actionTitle}
-                        >
-                          <Icon className={cn('h-3.5 w-3.5', action === 'upgrade' && 'text-success')} />
-                          {action === 'upgrade' ? null : actionLabel}
-                        </Button>
-                      ) : (
-                        <TableEmptyCell />
-                      )}
+                        />
+                        {action === 'upgrade' ? null : actionLabel}
+                      </Button>
                     </TableCell>
                   </TableRow>
                 );
               })}
         </TableBody>
       </Table>
+
+      <Dialog
+        open={forceRuntime != null}
+        onOpenChange={(open) => {
+          if (!open) setForceRuntime(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {t('chrome.env.forceUpgradeTitle', {
+                name: forceRuntime ? envSoftwareName(forceRuntime) : '',
+              })}
+            </DialogTitle>
+            <DialogDescription>
+              {forceRuntime && runtimeUpdates?.[forceRuntime.id]?.state === 'up_to_date'
+                ? t('chrome.env.forceUpgradeUpToDate')
+                : t('chrome.env.forceUpgradeUnknown')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setForceRuntime(null)} disabled={busy}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="default"
+              disabled={busy || !forceRuntime}
+              onClick={() => {
+                const runtime = forceRuntime;
+                if (!runtime) return;
+                setForceRuntime(null);
+                onAction(runtime, 'upgrade', true);
+              }}
+            >
+              {t('chrome.env.confirmForceUpgrade')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
