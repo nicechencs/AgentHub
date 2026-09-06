@@ -70,9 +70,9 @@ fn unknown_resume_agents_return_none() {
 }
 
 #[test]
-fn print_resume_is_only_claude_and_codex() {
+fn print_resume_is_claude_codex_and_grok() {
     assert!(super::supports_print_resume(AgentId::Claude));
     assert!(super::supports_print_resume(AgentId::Codex));
+    assert!(super::supports_print_resume(AgentId::Grok));
     assert!(!super::supports_print_resume(AgentId::Kimi));
-    assert!(!super::supports_print_resume(AgentId::Grok));
 }

@@ -210,7 +210,10 @@ impl AgentAdapter for GrokAdapter {
             | StructuredStream | DangerousMode | ProjectHistory | ProjectDelete
             | ProviderPresets => CapabilityState::full(),
             Usage => CapabilityState::full(),
-            Mcp | ModelSelect | SessionResume => CapabilityState::planned("待验证接入"),
+            SessionResume => {
+                CapabilityState::partial("Chat 后续轮次走 print+resume；终端可复制官方续接命令")
+            }
+            Mcp | ModelSelect => CapabilityState::planned("待验证接入"),
         }
     }
 
@@ -227,6 +230,7 @@ impl AgentAdapter for GrokAdapter {
     fn build_run_spec(&self, binary: &Path, prompt: &str, opts: &RunOptions) -> Result<RunSpec> {
         // text: grok -p <prompt>
         // structured (Chat): --output-format streaming-json (ACP NDJSON ≥ 0.2.117)
+        // subsequent turns: grok --resume <id> -p <prompt>
         // --no-auto-update: same guard Grok App uses so a mid-turn CLI
         // self-update cannot kill the headless child. Old CLIs (< 0.2.117)
         // reject the flag, so only emit it when version is unknown or modern.
@@ -888,6 +892,15 @@ fn grok_cli_args(prompt: &str, opts: &RunOptions, version: Option<&str>) -> Vec<
     let mut args = Vec::new();
     if grok_supports_no_auto_update(version) {
         args.push("--no-auto-update".into());
+    }
+    // `--resume` before `-p`: `-p` takes the next value as the prompt.
+    if let Some(sid) = opts
+        .native_session_id
+        .as_deref()
+        .and_then(super::session_resume::valid_session_id)
+    {
+        args.push("--resume".into());
+        args.push(sid.to_string());
     }
     args.push("-p".into());
     args.push(prompt.to_string());

@@ -262,6 +262,46 @@ fn grok_cli_args_omit_no_auto_update_for_old_cli() {
 }
 
 #[test]
+fn grok_cli_args_resume_before_prompt() {
+    let opts = RunOptions {
+        process_mode: ProcessMode::Auto,
+        native_session_id: Some("agent-sess-1".into()),
+        ..RunOptions::default()
+    };
+    assert_eq!(
+        grok_cli_args("next", &opts, None),
+        vec![
+            "--no-auto-update",
+            "--resume",
+            "agent-sess-1",
+            "-p",
+            "next",
+            "--output-format",
+            "streaming-json"
+        ]
+    );
+}
+
+#[test]
+fn grok_cli_args_ignores_blank_resume_id() {
+    let opts = RunOptions {
+        process_mode: ProcessMode::Auto,
+        native_session_id: Some("  ".into()),
+        ..RunOptions::default()
+    };
+    assert_eq!(
+        grok_cli_args("hi", &opts, None),
+        vec![
+            "--no-auto-update",
+            "-p",
+            "hi",
+            "--output-format",
+            "streaming-json"
+        ]
+    );
+}
+
+#[test]
 fn grok_cli_args_dangerous_prefixes_always_approve() {
     let opts = RunOptions {
         allow_dangerous: true,
