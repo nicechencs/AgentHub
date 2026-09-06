@@ -225,3 +225,32 @@ fn read_social_token_from_sqlite_uses_auth_kv() {
         Some("arn:aws:codewhisperer:us-east-1:1:profile/ABC")
     );
 }
+
+#[test]
+fn write_social_token_roundtrips_sqlite() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("data.sqlite3");
+    let body = serde_json::json!({
+        "access_token": "aoa-write",
+        "refresh_token": "aor-write",
+        "expires_at": "2026-09-07T00:00:00Z",
+        "provider": "google",
+        "profile_arn": "arn:aws:codewhisperer:us-east-1:1:profile/ABC"
+    });
+    super::auth::write_social_token_to_sqlite(&path, &body).unwrap();
+    let read = super::auth::read_social_token_from_sqlite(&path).expect("written token");
+    assert_eq!(read["access_token"], "aoa-write");
+    assert_eq!(read["expires_at"], "2026-09-07T00:00:00Z");
+}
+
+#[test]
+fn kiro_grant_is_newer_compares_expires_at() {
+    let older = serde_json::json!({
+        "body": { "expires_at": "2026-09-06T15:00:00Z" }
+    });
+    let newer = serde_json::json!({
+        "body": { "expires_at": "2026-09-06T16:00:00Z" }
+    });
+    assert!(super::auth::kiro_grant_is_newer(&newer, &older));
+    assert!(!super::auth::kiro_grant_is_newer(&older, &newer));
+}

@@ -1479,6 +1479,46 @@ fn import_live_kiro_does_not_require_account_switch() {
 }
 
 #[test]
+fn refresh_kiro_keeps_the_later_expiry() {
+    let (_root, svc, adapter) = live_svc(AgentId::Kiro);
+    adapter.supports.store(false, Ordering::SeqCst);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Kiro,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {
+                "access_token": "aoa-old",
+                "refresh_token": "aor-old",
+                "expires_at": "2026-09-06T15:00:00Z",
+                "provider": "google"
+            }
+        }),
+        label_hint: Some("Google".into()),
+        extra: json!({ "source": "data.sqlite3" }),
+    });
+    let imported = svc.import_live(AgentId::Kiro, None).unwrap();
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Kiro,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {
+                "access_token": "aoa-new",
+                "refresh_token": "aor-new",
+                "expires_at": "2026-09-06T17:00:00Z",
+                "provider": "google"
+            }
+        }),
+        label_hint: Some("Google".into()),
+        extra: json!({ "source": "data.sqlite3" }),
+    });
+    let refreshed = svc.refresh_token(&imported.id, AgentId::Kiro).unwrap();
+    assert_eq!(refreshed.credentials["body"]["access_token"], "aoa-new");
+    assert_eq!(refreshed.credentials["body"]["expires_at"], "2026-09-06T17:00:00Z");
+}
+
+#[test]
 fn import_live_dedupes_identical_credentials() {
     let (_root, svc, adapter) = live_svc(AgentId::Codex);
     adapter.set_live(LiveAccount {
