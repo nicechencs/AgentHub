@@ -198,8 +198,8 @@ export function useChatPageConnection(input: {
     return chatModelOptions(remoteModels, currentModel);
   }, [currentModel, currentProvider, liveChatModels, primaryAgent, remoteModels]);
 
-  const effortOptions = primaryAgent === 'grok' ? liveChatEfforts : [];
-  const currentEffort = primaryAgent === 'grok' ? liveChatEffort : null;
+  const effortOptions = usesLiveChatModel ? liveChatEfforts : [];
+  const currentEffort = usesLiveChatModel ? liveChatEffort : null;
 
   const connectionOptions = useMemo(
     () =>
@@ -336,14 +336,14 @@ export function useChatPageConnection(input: {
   }
 
   async function handleSwitchEffort(effort: string) {
-    if (!primaryAgent || primaryAgent !== 'grok' || switchingProvider || switchingModel || switchingEffort || hiddenIds.has(primaryAgent)) return;
+    if (!primaryAgent || !usesLiveChatModel || switchingProvider || switchingModel || switchingEffort || hiddenIds.has(primaryAgent)) return;
     const next = effort.trim();
     if (!next || next === currentEffort) return;
     setSwitchingEffort(true);
     try {
-      await setChatEffort('grok', next);
+      await setChatEffort(primaryAgent, next);
       setLiveChatEffort(next);
-      await loadLiveChatModel('grok');
+      await loadLiveChatModel(primaryAgent);
       toast({
         title: t('chat.composer.modelSwitched'),
         variant: 'success',
