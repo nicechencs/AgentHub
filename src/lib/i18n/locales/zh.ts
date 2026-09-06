@@ -2877,6 +2877,7 @@ export const zh = {
       loginExpired: "这份登录已失效，请重新登录后重试。",
       modelRetired: "这个模型已经下架或当前登录用不了。请换一个模型后重试。",
       thinkingUnsupported: "这个模型不支持当前思考设置。请点重试。",
+      usageLimit: "这份登录暂时没法继续，请稍后再试。",
       sendFailed: "这次发送没成功。请点重试。",
     },
     toast: {
@@ -2884,6 +2885,7 @@ export const zh = {
       fromProjectsDesc: "提示词已填入；确认工作目录后发送。",
       cancelRequested: "已请求取消",
       cancelRequestedDesc: "正在停止当前生成，过程面板将显示已取消。",
+      steered: "已补充",
       multiAgentMigrationFailed: "部分历史会话未能自动整理为单 Agent，可稍后重试",
     },
     title: {

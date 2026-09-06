@@ -2889,6 +2889,7 @@ export const en = {
       loginExpired: "This login has expired. Sign in again, then retry.",
       modelRetired: "This model is gone or this login can't use it. Change the model, then retry.",
       thinkingUnsupported: "This model doesn't support the current thinking setting. Tap retry.",
+      usageLimit: "This login can't continue right now. Try again later.",
       sendFailed: "This send didn't succeed. Tap retry.",
     },
     toast: {
@@ -2896,6 +2897,7 @@ export const en = {
       fromProjectsDesc: "The prompt is filled in. Confirm the working directory, then send.",
       cancelRequested: "Cancel requested",
       cancelRequestedDesc: "Stopping the current generation. The process panel will show cancelled.",
+      steered: "Added",
       multiAgentMigrationFailed: "Some older chats could not be auto-migrated to a single agent. Try again later.",
     },
     title: {
