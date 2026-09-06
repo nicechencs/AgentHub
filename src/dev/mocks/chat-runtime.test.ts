@@ -32,4 +32,29 @@ describe('mock chat runtime', () => {
     const conversation = await chat.createConversation(['claude']);
     await expect(chat.runtimeSnapshot(conversation.id)).resolves.toMatchObject({ enabled: false });
   });
+
+  it('prefers a warmed catalog during an active turn and stays empty when never fetched', async () => {
+    const chat = createMockChatPort();
+    const conversation = await chat.createConversation(['codex']);
+    const warmed = await chat.runtimeOptions(conversation.id);
+    expect(warmed.models.length).toBeGreaterThan(0);
+    const started = await chat.runtimeStart(conversation.id, 'go', 'client-warm');
+    expect(started.phase).not.toBe('idle');
+    await expect(chat.runtimeOptions(conversation.id)).resolves.toMatchObject({
+      settingsFrozen: true,
+      models: warmed.models,
+      extensions: warmed.extensions,
+    });
+
+    resetChatMock();
+    const chat2 = createMockChatPort();
+    const cold = await chat2.createConversation(['codex']);
+    const running = await chat2.runtimeStart(cold.id, 'go', 'client-cold');
+    expect(running.phase).not.toBe('idle');
+    await expect(chat2.runtimeOptions(cold.id)).resolves.toMatchObject({
+      settingsFrozen: true,
+      models: [],
+      extensions: [],
+    });
+  });
 });

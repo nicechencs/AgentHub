@@ -1,17 +1,54 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import {
   pickChatImages,
   runtimeOptions,
   runtimeSetSettings,
+  saveChatPasteImage,
   type RuntimeExtensionItem,
   type RuntimeModelOption,
   type RuntimeTurnSettings,
 } from '@/lib/api/chat';
 import type { Conversation } from '@/lib/types';
+import {
+  retainRuntimeCatalog,
+  type RuntimeCatalogMemory,
+} from './chat-runtime-ops-model';
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp)$/i;
+const MAX_IMAGES = 8;
+const MAX_BYTES = 10 * 1024 * 1024;
+
+function mimeToExt(mime: string): string | null {
+  switch (mime.toLowerCase()) {
+    case 'image/png':
+      return 'png';
+    case 'image/jpeg':
+    case 'image/jpg':
+      return 'jpg';
+    case 'image/gif':
+      return 'gif';
+    case 'image/webp':
+      return 'webp';
+    case 'image/bmp':
+    case 'image/x-ms-bmp':
+      return 'bmp';
+    default:
+      return null;
+  }
+}
+
+async function fileToBase64(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
 
 export function useChatRuntimeOps(input: {
   active: Conversation | null;
@@ -29,9 +66,17 @@ export function useChatRuntimeOps(input: {
   const [images, setImages] = useState<string[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const catalogRef = useRef<RuntimeCatalogMemory>({
+    conversationId: null,
+    models: [],
+    extensions: [],
+  });
+  const settingsRef = useRef<RuntimeTurnSettings>({});
+  settingsRef.current = settings;
 
   const refresh = useCallback(async () => {
     if (!active || !runtimeEnabled) {
+      catalogRef.current = { conversationId: null, models: [], extensions: [] };
       setModels([]);
       setSettings({});
       setSettingsFrozen(false);
@@ -41,10 +86,16 @@ export function useChatRuntimeOps(input: {
     setLoading(true);
     try {
       const options = await runtimeOptions(active.id);
-      setModels(options.models);
+      const retained = retainRuntimeCatalog(catalogRef.current, options, active.id);
+      catalogRef.current = {
+        conversationId: active.id,
+        models: retained.models,
+        extensions: retained.extensions,
+      };
+      setModels(retained.models);
       setSettings(options.settings ?? {});
       setSettingsFrozen(options.settingsFrozen || turnActive);
-      setExtensions(options.extensions);
+      setExtensions(retained.extensions);
     } catch (error) {
       toast({
         title: t('chat.runtimeOps.optionsFail'),
@@ -77,6 +128,7 @@ export function useChatRuntimeOps(input: {
   const switchModel = useCallback(
     async (model: string) => {
       if (!active || frozen) return;
+      const prior = settingsRef.current;
       try {
         const next = await runtimeSetSettings(active.id, {
           model,
@@ -84,6 +136,7 @@ export function useChatRuntimeOps(input: {
         });
         setSettings(next);
       } catch (error) {
+        setSettings(prior);
         toast({
           title: t('chat.runtimeOps.settingsReject'),
           description: error instanceof Error ? error.message : String(error),
@@ -98,6 +151,7 @@ export function useChatRuntimeOps(input: {
   const switchEffort = useCallback(
     async (effort: string) => {
       if (!active || frozen || !settings.model) return;
+      const prior = settingsRef.current;
       try {
         const next = await runtimeSetSettings(active.id, {
           model: settings.model,
@@ -105,6 +159,7 @@ export function useChatRuntimeOps(input: {
         });
         setSettings(next);
       } catch (error) {
+        setSettings(prior);
         toast({
           title: t('chat.runtimeOps.settingsReject'),
           description: error instanceof Error ? error.message : String(error),
@@ -116,12 +171,10 @@ export function useChatRuntimeOps(input: {
     [active, frozen, refresh, settings.model, t, toast],
   );
 
-  const addImages = useCallback(async () => {
-    if (!runtimeEnabled) return;
-    try {
-      const picked = await pickChatImages(t('chat.runtimeOps.pickImages'));
+  const mergeImagePaths = useCallback(
+    (paths: string[]) => {
       const next = [...images];
-      for (const path of picked) {
+      for (const path of paths) {
         if (!IMAGE_EXT.test(path)) {
           toast({
             title: t('chat.runtimeOps.badImageType'),
@@ -132,12 +185,21 @@ export function useChatRuntimeOps(input: {
         }
         if (!next.includes(path)) next.push(path);
       }
-      if (next.length > 8) {
+      if (next.length > MAX_IMAGES) {
         toast({ title: t('chat.runtimeOps.tooManyImages'), variant: 'danger' });
-        setImages(next.slice(0, 8));
+        setImages(next.slice(0, MAX_IMAGES));
       } else {
         setImages(next);
       }
+    },
+    [images, t, toast],
+  );
+
+  const addImages = useCallback(async () => {
+    if (!runtimeEnabled) return;
+    try {
+      const picked = await pickChatImages(t('chat.runtimeOps.pickImages'));
+      mergeImagePaths(picked);
     } catch (error) {
       toast({
         title: t('chat.runtimeOps.pickImagesFail'),
@@ -145,7 +207,50 @@ export function useChatRuntimeOps(input: {
         variant: 'danger',
       });
     }
-  }, [images, runtimeEnabled, t, toast]);
+  }, [mergeImagePaths, runtimeEnabled, t, toast]);
+
+  const pasteImages = useCallback(
+    async (files: File[]) => {
+      if (!runtimeEnabled || files.length === 0) return;
+      const saved: string[] = [];
+      for (const file of files) {
+        const ext = mimeToExt(file.type) ?? (IMAGE_EXT.test(file.name) ? file.name.split('.').pop() : null);
+        if (!ext) {
+          toast({
+            title: t('chat.runtimeOps.badImageType'),
+            description: file.name || file.type,
+            variant: 'danger',
+          });
+          continue;
+        }
+        if (file.size > MAX_BYTES) {
+          toast({
+            title: t('chat.runtimeOps.imageTooLarge'),
+            description: file.name || file.type,
+            variant: 'danger',
+          });
+          continue;
+        }
+        try {
+          const base64 = await fileToBase64(file);
+          const path = await saveChatPasteImage({
+            base64,
+            extension: ext,
+            byteLength: file.size,
+          });
+          saved.push(path);
+        } catch (error) {
+          toast({
+            title: t('chat.runtimeOps.pasteImageFail'),
+            description: error instanceof Error ? error.message : String(error),
+            variant: 'danger',
+          });
+        }
+      }
+      if (saved.length > 0) mergeImagePaths(saved);
+    },
+    [mergeImagePaths, runtimeEnabled, t, toast],
+  );
 
   const removeImage = useCallback((path: string) => {
     setImages((prev) => prev.filter((item) => item !== path));
@@ -187,6 +292,7 @@ export function useChatRuntimeOps(input: {
     switchModel,
     switchEffort,
     addImages,
+    pasteImages,
     removeImage,
     clearAttachments,
     toggleSkill,

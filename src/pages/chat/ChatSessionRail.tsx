@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { Loader2, PanelLeftClose, Plus, Terminal, Trash2 } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { AgentDot } from '@/components/shared/AgentDot';
@@ -43,6 +44,7 @@ export function ChatSessionRail({
   onRequestDelete,
   onCancelDelete,
   onConfirmDelete,
+  searchFocusNonce = 0,
 }: {
   open: boolean;
   listLoading: boolean;
@@ -62,9 +64,16 @@ export function ChatSessionRail({
   onRequestDelete: (id: string) => void;
   onCancelDelete: () => void;
   onConfirmDelete: () => void;
+  searchFocusNonce?: number;
 }) {
   const { t } = useI18n();
   const pending = conversations.find((c) => c.id === deleteConfirmId) ?? null;
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!open || !searchFocusNonce) return;
+    searchInputRef.current?.focus();
+    searchInputRef.current?.select();
+  }, [open, searchFocusNonce]);
 
   return (
     <aside
@@ -102,6 +111,7 @@ export function ChatSessionRail({
       </div>
       <div className="px-2 pb-2">
         <SearchField
+          inputRef={searchInputRef}
           placeholder={t('chat.rail.searchPlaceholder')}
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}

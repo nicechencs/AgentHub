@@ -3,6 +3,7 @@ import {
   useEffect,
   useLayoutEffect,
   useRef,
+  type KeyboardEvent,
   type Ref,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -78,6 +79,8 @@ export function ChatComposer({
   onOpenSettings,
   onPickWorkingDirectory,
   onFocusConversation,
+  onDraftKeyDown,
+  onPasteImages,
   fillHeight = false,
   paneHeight = null,
   paneRef,
@@ -112,6 +115,8 @@ export function ChatComposer({
   onOpenSettings: () => void;
   onPickWorkingDirectory: () => void;
   onFocusConversation: (id: string) => void;
+  onDraftKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => boolean;
+  onPasteImages?: (files: File[]) => void;
   fillHeight?: boolean;
   paneHeight?: number | null;
   paneRef?: Ref<HTMLDivElement>;
@@ -222,10 +227,20 @@ export function ChatComposer({
           onChange={(e) => setDraft(e.target.value)}
           onInput={syncTextareaHeight}
           onKeyDown={(e) => {
+            if (onDraftKeyDown?.(e)) return;
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
               if (canSend) (sending && onSteer ? onSteer() : onSend());
             }
+          }}
+          onPaste={(e) => {
+            if (!onPasteImages) return;
+            const files = Array.from(e.clipboardData?.files ?? []).filter((file) =>
+              file.type.startsWith('image/'),
+            );
+            if (files.length === 0) return;
+            e.preventDefault();
+            onPasteImages(files);
           }}
           aria-label={t('chat.composer.inputAria')}
         />

@@ -261,6 +261,7 @@ pub fn run() {
             commands::chat::chat_runtime_steer,
             commands::chat::chat_runtime_cancel,
             commands::chat::pick_chat_images,
+            commands::chat::save_chat_paste_image,
             commands::chat::set_chat_model,
             commands::chat::get_chat_model,
             // Agent projects / sessions

@@ -291,18 +291,30 @@ export function createMockChatPort(): ChatPort {
     async runtimeOptions(conversationId) {
       const snapshot = await this.runtimeSnapshot(conversationId);
       if (!snapshot.enabled) throw new Error('runtime is unavailable for this conversation');
+      const frozen = ['starting', 'running', 'waiting', 'cancelling'].includes(snapshot.phase);
       const cached = runtimeOptionsCache.get(conversationId);
       if (cached) {
         return {
           ...cached,
           settings: runtimeSettings.get(conversationId) ?? cached.settings,
-          settingsFrozen: ['starting', 'running', 'waiting', 'cancelling'].includes(snapshot.phase),
+          settingsFrozen: frozen,
+        };
+      }
+      // Match core: never invent a catalog mid-turn when nothing was prefetched.
+      if (frozen) {
+        return {
+          conversationId,
+          settings: runtimeSettings.get(conversationId) ?? {},
+          settingsFrozen: true,
+          models: [],
+          extensions: [],
+          modelsFromCodex: false,
         };
       }
       const options: RuntimeOptions = {
         conversationId,
         settings: runtimeSettings.get(conversationId) ?? {},
-        settingsFrozen: ['starting', 'running', 'waiting', 'cancelling'].includes(snapshot.phase),
+        settingsFrozen: false,
         models: [
           { id: 'gpt-mock', efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' },
         ],
@@ -404,6 +416,11 @@ export function createMockChatPort(): ChatPort {
     async pickChatImages() {
       await delay(10);
       return ['/tmp/mock-chat.png'];
+    },
+    async saveChatPasteImage(input) {
+      await delay(5);
+      const ext = input.extension.replace(/^\./, '') || 'png';
+      return `/tmp/mock-paste.${ext}`;
     },
   };
 }
