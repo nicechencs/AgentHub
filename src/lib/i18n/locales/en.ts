@@ -2771,6 +2771,7 @@ export const en = {
       summaryGenerating: "▸ Generating",
       steps: "{n} steps",
       waitingLogs: "Waiting for CLI process logs…",
+      streamingText: "Response is streaming…",
       runDetails: "Run details",
       command: "Command",
       unrecognizedLine: "Unrecognized output line",

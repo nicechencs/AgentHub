@@ -52,6 +52,20 @@ fn grok_thought_and_text() {
 }
 
 #[test]
+fn grok_nested_data_text_streams() {
+    let mut s = StreamSession::new(AgentId::Grok, ProcessMode::Auto);
+    let out = s.feed(
+        OutputStream::Stdout,
+        "{\"type\":\"text\",\"data\":{\"content\":[{\"text\":\"hi\"}]}}\n",
+    );
+    assert!(out.iter().any(|o| matches!(
+        o,
+        StreamOutput::Chunk { text, .. } if text == "hi"
+    )));
+    assert_eq!(s.assistant_text(), "hi");
+}
+
+#[test]
 fn grok_recognized_noop_is_not_raw_fallback() {
     let mut s = StreamSession::new(AgentId::Grok, ProcessMode::Auto);
     let out = s.feed(

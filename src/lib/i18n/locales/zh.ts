@@ -2759,6 +2759,7 @@ export const zh = {
       summaryGenerating: "▸ 生成中",
       steps: "{n} 步",
       waitingLogs: "等待 CLI 输出过程日志…",
+      streamingText: "正文正在输出…",
       runDetails: "运行详情",
       command: "命令",
       unrecognizedLine: "无法识别的输出行",
