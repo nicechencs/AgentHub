@@ -2687,6 +2687,7 @@ export const zh = {
       plugin: '插件',
       skill: '技能',
       useForTurn: '用于本次任务',
+      removeSkill: '移除本次技能',
       frozenDuringTurn: '本轮进行中，设置已冻结',
       catalogLoading: '正在读取模型目录…',
       catalogEmpty: '暂时没有可用模型列表',

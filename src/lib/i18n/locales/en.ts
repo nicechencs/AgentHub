@@ -2699,6 +2699,7 @@ export const en = {
       plugin: 'Plugin',
       skill: 'Skill',
       useForTurn: 'Use for this task',
+      removeSkill: 'Remove skill from this task',
       frozenDuringTurn: 'Frozen while this turn is active',
       catalogLoading: 'Loading model catalog…',
       catalogEmpty: 'No model catalog available yet',
