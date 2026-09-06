@@ -111,6 +111,54 @@ describe('mapCoreAccount', () => {
     expect(mapped.subscription).toBe('prolite');
   });
 
+  it('keeps Cursor CLI vs window login kind after import', () => {
+    const mapped = mapCoreAccount(
+      core({
+        id: 'cursor-1',
+        agentId: 'cursor',
+        extra: { source: 'live', cursorLoginKind: 'cli' },
+        credentials: {
+          format: 'auth_json',
+          body: { access_token: 'cli-access', email: 'c@example.com' },
+        },
+      }),
+    );
+    expect(mapped.cursorLoginKind).toBe('cli');
+    expect(mapped.credentialFiles?.[0]?.name).toBe('auth.json');
+
+    const windowLogin = mapCoreAccount(
+      core({
+        id: 'cursor-2',
+        agentId: 'cursor',
+        extra: { source: 'live', cursorLoginKind: 'window' },
+        credentials: {
+          format: 'auth_json',
+          body: { access_token: 'window-access', email: 'c@example.com' },
+        },
+      }),
+    );
+    expect(windowLogin.cursorLoginKind).toBe('window');
+    expect(windowLogin.credentialFiles?.[0]?.name).toBe('state.vscdb');
+
+    const fromCredentials = mapCoreAccount(
+      core({
+        id: 'cursor-3',
+        agentId: 'cursor',
+        extra: { source: 'live' },
+        credentials: {
+          format: 'auth_json',
+          cursorLoginKind: 'both',
+          body: { access_token: 'shared-access' },
+        },
+      }),
+    );
+    expect(fromCredentials.cursorLoginKind).toBe('both');
+    expect(fromCredentials.credentialFiles?.map((file) => file.name)).toEqual([
+      'auth.json',
+      'state.vscdb',
+    ]);
+  });
+
   it('attaches associated files from stored credentials', () => {
     const mapped = mapCoreAccount(
       core({
