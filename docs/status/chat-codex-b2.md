@@ -64,3 +64,13 @@ updated: 2026-09-06
 - 插件仍为状态展示，不可伪装为本轮可调用。
 - 普通文件/音频附件：协议未验证，保持禁用。
 - Claude ChatRuntime / 假确认：仍阻塞。
+
+## Follow-up：model × reasoning effort 兼容（本分支）
+
+真实验收曾出现：`gpt-5.3-codex-spark` + `medium` 发送后失败（「这个模型不支持当前思考设置」），控件仍展示不兼容强度。
+
+已补整包：
+
+- UI effort 菜单只来自该模型的 `supportedReasoningEfforts`；切换模型时重置为 default / 首个支持值。
+- 空闲 `runtimeOptions` 会 reconcile 掉库存里的不兼容 pair；冻结轮次仍展示当轮有效 pair，不提供无效选项。
+- `runtimeSetSettings` / `start` 一致拒绝不支持的 (model, effort)；`defaultReasoningEffort` 若不在支持列表则回退到首个支持值。
