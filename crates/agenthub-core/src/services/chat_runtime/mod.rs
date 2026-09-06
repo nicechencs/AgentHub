@@ -6,12 +6,15 @@
 //! normalized events to SQLite before a snapshot can expose them.
 
 mod codex_transport;
+mod ops;
 mod store;
 mod types;
 
 pub use types::{
-    RuntimeDecision, RuntimeEvent, RuntimePhase, RuntimeQuestion, RuntimeQuestionOption,
-    RuntimeReply, RuntimeRequest, RuntimeRequestKind, RuntimeSnapshot,
+    RuntimeDecision, RuntimeEvent, RuntimeExtensionItem, RuntimeExtensionKind, RuntimeLocalImage,
+    RuntimeModelOption, RuntimeOptions, RuntimePhase, RuntimeQuestion, RuntimeQuestionOption,
+    RuntimeReply, RuntimeRequest, RuntimeRequestKind, RuntimeSkillRef, RuntimeSnapshot,
+    RuntimeStartExtras, RuntimeTurnSettings,
 };
 
 use std::collections::HashMap;
@@ -43,6 +46,7 @@ enum RuntimeCommand {
     Start {
         prompt: String,
         client_request_id: String,
+        extras: RuntimeStartExtras,
         result: SyncSender<Result<RuntimeSnapshot>>,
     },
     Reply {
@@ -71,11 +75,19 @@ struct ActorHandle {
 
 /// One serialized owner per conversation.  The map itself is only a routing
 /// table; process state is never mutated from command callers.
+#[derive(Default, Clone)]
+struct CatalogCache {
+    models: Vec<RuntimeModelOption>,
+    extensions: Vec<RuntimeExtensionItem>,
+    from_codex: bool,
+}
+
 pub struct ChatRuntime {
     store: RuntimeStore,
     repo: ChatRepo,
     run: Arc<RunService>,
     actors: Mutex<HashMap<String, ActorHandle>>,
+    catalogs: Mutex<HashMap<String, CatalogCache>>,
 }
 
 impl ChatRuntime {
@@ -89,6 +101,7 @@ impl ChatRuntime {
             repo: ChatRepo::new(db),
             run,
             actors: Mutex::new(HashMap::new()),
+            catalogs: Mutex::new(HashMap::new()),
         }
     }
 
@@ -104,11 +117,51 @@ impl ChatRuntime {
         self.store.persisted_enabled(conversation_id)
     }
 
+    pub fn options(&self, conversation_id: &str) -> Result<RuntimeOptions> {
+        self.store.enable_if_new(conversation_id)?;
+        let settings = self.store.turn_settings(conversation_id)?;
+        let frozen = self
+            .store
+            .record(conversation_id)?
+            .map(|record| ops::phase_freezes_settings(record.phase))
+            .unwrap_or(false);
+        let cache = self.load_catalog(conversation_id);
+        Ok(RuntimeOptions {
+            conversation_id: conversation_id.to_string(),
+            settings,
+            settings_frozen: frozen,
+            models: cache.models,
+            extensions: cache.extensions,
+            models_from_codex: cache.from_codex,
+        })
+    }
+
+    pub fn set_settings(
+        &self,
+        conversation_id: &str,
+        requested: RuntimeTurnSettings,
+    ) -> Result<RuntimeTurnSettings> {
+        self.store.enable_if_new(conversation_id)?;
+        // Reject active turns before spawning a catalog process.
+        if let Some(record) = self.store.record(conversation_id)? {
+            if ops::phase_freezes_settings(record.phase) {
+                return Err(AppError::InvalidArg(
+                    "当前轮次进行中，不能修改模型或思考强度".into(),
+                ));
+            }
+        }
+        let prior = self.store.turn_settings(conversation_id)?;
+        let cache = self.load_catalog(conversation_id);
+        let effective = ops::validate_turn_settings(&requested, &cache.models, &prior)?;
+        self.store.set_turn_settings(conversation_id, &effective)
+    }
+
     pub fn start(
         self: &Arc<Self>,
         conversation_id: &str,
         prompt: &str,
         client_request_id: &str,
+        extras: RuntimeStartExtras,
     ) -> Result<RuntimeSnapshot> {
         let prompt = prompt.trim();
         if prompt.is_empty() {
@@ -118,6 +171,11 @@ impl ChatRuntime {
             return Err(AppError::InvalidArg(
                 "clientRequestId must not be empty".into(),
             ));
+        }
+        ops::validate_local_images(&extras.images)?;
+        if !extras.skills.is_empty() {
+            let cache = self.load_catalog(conversation_id);
+            ops::validate_skill_refs(&extras.skills, &cache.extensions)?;
         }
         self.store.enable_if_new(conversation_id)?;
         match self
@@ -152,6 +210,7 @@ impl ChatRuntime {
             .send(RuntimeCommand::Start {
                 prompt: prompt.to_string(),
                 client_request_id: client_request_id.to_string(),
+                extras,
                 result: tx,
             })
             .map_err(|_| AppError::message("chat.runtime", "runtime worker stopped"))
@@ -332,7 +391,69 @@ impl ChatRuntime {
         }
     }
 
+
+    fn load_catalog(&self, conversation_id: &str) -> CatalogCache {
+        if let Ok(guard) = self.catalogs.lock() {
+            if let Some(cache) = guard.get(conversation_id) {
+                return cache.clone();
+            }
+        }
+        // Avoid competing with an in-flight turn's Codex process.
+        if let Ok(Some(record)) = self.store.record(conversation_id) {
+            if ops::phase_freezes_settings(record.phase) {
+                return CatalogCache::default();
+            }
+        }
+        let fetched = self.fetch_catalog(conversation_id);
+        if let Ok(mut guard) = self.catalogs.lock() {
+            guard.insert(conversation_id.to_string(), fetched.clone());
+        }
+        fetched
+    }
+
+    fn fetch_catalog(&self, conversation_id: &str) -> CatalogCache {
+        let Ok(Some(conversation)) = self.repo.get_conversation(conversation_id) else {
+            return CatalogCache::default();
+        };
+        let Some(cwd) = conversation
+            .cwd
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(PathBuf::from)
+        else {
+            return CatalogCache::default();
+        };
+        let Ok(program) = self.run.detect_codex_installation() else {
+            return CatalogCache::default();
+        };
+        let mut transport = match CodexTransport::spawn(&program, &cwd) {
+            Ok(t) => t,
+            Err(_) => return CatalogCache::default(),
+        };
+        let models = transport
+            .request("model/list", json!({}), CODEX_REQUEST_TIMEOUT)
+            .ok()
+            .map(|value| ops::parse_model_list(&value))
+            .unwrap_or_default();
+        let mut extensions = transport
+            .request("skills/list", json!({}), CODEX_REQUEST_TIMEOUT)
+            .ok()
+            .map(|value| ops::parse_skills_list(&value))
+            .unwrap_or_default();
+        if let Ok(plugins) = transport.request("plugin/installed", json!({}), CODEX_REQUEST_TIMEOUT) {
+            extensions.extend(ops::parse_plugins_installed(&plugins));
+        }
+        transport.shutdown();
+        CatalogCache {
+            models,
+            extensions,
+            from_codex: true,
+        }
+    }
+
     fn actor(&self, conversation_id: &str) -> Result<ActorHandle> {
+
         let mut actors = self
             .actors
             .lock()
@@ -442,9 +563,10 @@ impl ActorWorker {
                 Ok(RuntimeCommand::Start {
                     prompt,
                     client_request_id,
+                    extras,
                     result,
                 }) => {
-                    let outcome = self.start_turn(&prompt, &client_request_id);
+                    let outcome = self.start_turn(&prompt, &client_request_id, &extras);
                     let _ = result.send(outcome);
                 }
                 Ok(RuntimeCommand::Reply { reply, result }) => {
@@ -495,9 +617,14 @@ impl ActorWorker {
         self.last_start_request = record.last_client_request_id;
     }
 
-    fn start_turn(&mut self, prompt: &str, client_request_id: &str) -> Result<RuntimeSnapshot> {
+    fn start_turn(
+        &mut self,
+        prompt: &str,
+        client_request_id: &str,
+        extras: &RuntimeStartExtras,
+    ) -> Result<RuntimeSnapshot> {
         let previous_chat_turn = self.chat_turn;
-        match self.start_turn_inner(prompt, client_request_id) {
+        match self.start_turn_inner(prompt, client_request_id, extras) {
             Ok(snapshot) => Ok(snapshot),
             Err(error) => {
                 // A duplicate/active-run validation error must leave the
@@ -516,6 +643,7 @@ impl ActorWorker {
         &mut self,
         prompt: &str,
         client_request_id: &str,
+        extras: &RuntimeStartExtras,
     ) -> Result<RuntimeSnapshot> {
         let record = self
             .store
@@ -643,21 +771,30 @@ impl ActorWorker {
             let thread_id = self.thread_id.clone().ok_or_else(|| {
                 AppError::message("chat.runtime.protocol", "Codex omitted thread id")
             })?;
+            let settings = self.store.turn_settings(&self.conversation_id)?;
+            let input = ops::build_turn_input(prompt, &extras.images, &extras.skills)?;
+            let mut params = json!({
+                "threadId": thread_id,
+                "input": input,
+                "clientUserMessageId": client_request_id,
+                "cwd": cwd.to_string_lossy(),
+                "approvalPolicy": "on-request",
+                "sandboxPolicy": {
+                    "type": "workspaceWrite",
+                    "writableRoots": [cwd.to_string_lossy()],
+                    "networkAccess": false
+                }
+            });
+            if let Some(model) = settings.model.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                params["model"] = json!(model);
+            }
+            if let Some(effort) = settings.effort.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                params["effort"] = json!(effort);
+            }
             let result = transport
                 .request(
                     "turn/start",
-                    json!({
-                        "threadId": thread_id,
-                        "input": [{"type": "text", "text": prompt}],
-                        "clientUserMessageId": client_request_id,
-                        "cwd": cwd.to_string_lossy(),
-                        "approvalPolicy": "on-request",
-                        "sandboxPolicy": {
-                            "type": "workspaceWrite",
-                            "writableRoots": [cwd.to_string_lossy()],
-                            "networkAccess": false
-                        }
-                    }),
+                    params,
                     CODEX_REQUEST_TIMEOUT,
                 )
                 .map_err(transport_error);

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { chatMainColumnClass, chatStageClass } from './chat-model';
 import { formatChatSessionRecord } from './chat-format';
+import { ChatRuntimeExtras } from './ChatRuntimeExtras';
 import { ChatComposer } from './ChatComposer';
 import { ChatSessionHeader } from './ChatSessionHeader';
 import { ChatSessionRail } from './ChatSessionRail';
@@ -133,6 +134,24 @@ export default function ChatPage() {
                   onKeyDown={split.onSeparatorKeyDown}
                   className="relative z-10 h-2 shrink-0 cursor-row-resize bg-transparent outline-none"
                 />
+                <ChatRuntimeExtras
+                  enabled={Boolean(page.runtime?.enabled)}
+                  draft={page.draft}
+                  commandSearchOpen={page.commandSearchOpen}
+                  onRunAction={page.runChatAction}
+                  models={page.runtimeOps.models}
+                  settings={page.runtimeOps.settings}
+                  frozen={page.runtimeOps.frozen}
+                  efforts={page.runtimeOps.currentEfforts}
+                  onSwitchModel={(id) => void page.runtimeOps.switchModel(id)}
+                  onSwitchEffort={(id) => void page.runtimeOps.switchEffort(id)}
+                  images={page.runtimeOps.images}
+                  onAddImages={() => void page.runtimeOps.addImages()}
+                  onRemoveImage={page.runtimeOps.removeImage}
+                  extensions={page.runtimeOps.extensions}
+                  selectedSkillIds={page.runtimeOps.selectedSkillIds}
+                  onToggleSkill={page.runtimeOps.toggleSkill}
+                />
                 <ChatComposer
                   draft={page.draft}
                   setDraft={page.setDraft}
@@ -162,10 +181,13 @@ export default function ChatPage() {
                   onCancel={() => void page.cancelSending()}
                   onSelectAgent={(id) => void page.selectConversationAgentId(id)}
                   onSwitchConnection={(id) => void page.handleSwitchConnection(id)}
-                  modelOptions={page.modelOptions}
-                  currentModel={page.currentModel}
-                  switchingModel={page.switchingModel}
-                  onSwitchModel={(id) => void page.handleSwitchModel(id)}
+                  modelOptions={page.runtime?.enabled ? [] : page.modelOptions}
+                  currentModel={page.runtime?.enabled ? null : page.currentModel}
+                  switchingModel={page.runtime?.enabled ? false : page.switchingModel}
+                  onSwitchModel={(id) => {
+                    if (page.runtime?.enabled) return;
+                    void page.handleSwitchModel(id);
+                  }}
                   onOpenSettings={() => page.setSettingsOpen(true)}
                   onPickWorkingDirectory={() => void page.pickWorkingDirectory()}
                   onFocusConversation={page.focusConversation}
