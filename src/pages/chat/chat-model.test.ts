@@ -13,6 +13,7 @@ import {
   blockerPrimaryTarget,
   chatAgentPickerEmptyCopy,
   chatAgentPickerEmptyKind,
+  chatEscapeShouldCancel,
   chatAgentPickerRows,
   chatConnectionKind,
   chatConnectionOptions,
@@ -623,6 +624,31 @@ describe('messageStatusLabel', () => {
     expect(messageStatusLabel(t, 'cancelled')).toBe('已取消');
     expect(messageStatusLabel(t, 'timeout')).toBe('超时');
     expect(messageStatusLabel(t, 'weird')).toBe('weird');
+  });
+});
+
+describe('chatEscapeShouldCancel', () => {
+  const idle = {
+    key: 'Escape',
+    sending: true,
+    canceling: false,
+    previewOpen: false,
+    overlayOpen: false,
+    defaultPrevented: false,
+  };
+
+  it('cancels an in-flight turn', () => {
+    expect(chatEscapeShouldCancel(idle)).toBe(true);
+  });
+
+  it('yields to overlays, preview, IME, and a stop already in progress', () => {
+    expect(chatEscapeShouldCancel({ ...idle, previewOpen: true })).toBe(false);
+    expect(chatEscapeShouldCancel({ ...idle, overlayOpen: true })).toBe(false);
+    expect(chatEscapeShouldCancel({ ...idle, defaultPrevented: true })).toBe(false);
+    expect(chatEscapeShouldCancel({ ...idle, composing: true })).toBe(false);
+    expect(chatEscapeShouldCancel({ ...idle, canceling: true })).toBe(false);
+    expect(chatEscapeShouldCancel({ ...idle, sending: false })).toBe(false);
+    expect(chatEscapeShouldCancel({ ...idle, key: 'Enter' })).toBe(false);
   });
 });
 

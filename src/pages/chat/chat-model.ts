@@ -671,6 +671,23 @@ export function messageStatusLabel(
   }
 }
 
+/** Esc stops the in-flight turn unless a dialog, preview, or IME already owns it. */
+export function chatEscapeShouldCancel(input: {
+  key: string;
+  sending: boolean;
+  canceling: boolean;
+  previewOpen: boolean;
+  overlayOpen: boolean;
+  defaultPrevented: boolean;
+  composing?: boolean;
+}): boolean {
+  if (input.key !== 'Escape') return false;
+  if (input.composing || input.defaultPrevented || input.overlayOpen || input.previewOpen) {
+    return false;
+  }
+  return input.sending && !input.canceling;
+}
+
 export function visibleAgentDots(agentIds: AgentKey[]): { shown: AgentKey[]; extra: number } {
   const shown = agentIds.slice(0, 3);
   return { shown, extra: Math.max(0, agentIds.length - 3) };
