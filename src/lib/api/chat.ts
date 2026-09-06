@@ -3,7 +3,9 @@
  */
 import { getBackend } from '@/app/runtime';
 import type { AgentKey, ChatEvent, ChatMessage, Conversation } from '@/lib/types';
+import type { MarkdownFilePreviewDto } from '@/lib/backend/contracts/chat-port';
 import type { RuntimeOptions, RuntimeReply, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings } from '@/lib/backend/contracts/chat-runtime';
+export type { MarkdownFilePreviewDto } from '@/lib/backend/contracts/chat-port';
 export type { RuntimeQuestion, RuntimeRequest, RuntimeReply, RuntimeSnapshot, RuntimeOptions, RuntimeTurnSettings, RuntimeStartExtras, RuntimeModelOption, RuntimeExtensionItem } from '@/lib/backend/contracts/chat-runtime';
 
 export type {
@@ -116,4 +118,11 @@ export async function saveChatPasteImage(input: {
   byteLength?: number;
 }): Promise<string> {
   return getBackend().chat.saveChatPasteImage(input);
+}
+
+export async function readMarkdownPreview(
+  path: string,
+  cwd: string,
+): Promise<MarkdownFilePreviewDto> {
+  return getBackend().chat.readMarkdownPreview(path, cwd);
 }

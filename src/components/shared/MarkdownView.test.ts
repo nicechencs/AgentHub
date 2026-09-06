@@ -17,7 +17,9 @@ import {
   filterUnsafeMarkdownPlugins,
   handleMarkdownClick,
   isActionableMarkdownHref,
+  isMarkdownFilePath,
   isSafeMarkdownUrl,
+  localParentDir,
   looksLikeMarkdownLocalPath,
   resolveMarkdownLocalPath,
   sanitizeMarkdownNode,
@@ -165,6 +167,25 @@ describe('MarkdownView content safety', () => {
     expect(resolveMarkdownLocalPath('./README.md', 'D:\\demo')).toBe('D:\\demo\\README.md');
     expect(resolveMarkdownLocalPath('src/foo.ts')).toBeNull();
     expect(resolveMarkdownLocalPath('/docs/setup', '/Users/demo/app')).toBeNull();
+  });
+
+  it('detects markdown files for in-app preview', () => {
+    expect(isMarkdownFilePath('README.md')).toBe(true);
+    expect(isMarkdownFilePath('/Users/demo/app/docs/guide.MDX')).toBe(true);
+    expect(isMarkdownFilePath('src/pages/chat/index.tsx')).toBe(false);
+    expect(localParentDir('/Users/demo/app/README.md')).toBe('/Users/demo/app');
+    expect(localParentDir('D:\\demo\\docs\\guide.md')).toBe('D:\\demo\\docs');
+  });
+
+  it('lets the chat page handle markdown files instead of the file manager', () => {
+    openLocalPathMock.mockReset();
+    const onOpenLocal = vi.fn(() => true);
+    handleMarkdownClick(clickEvent('README.md'), {
+      localBasePath: '/Users/demo/app',
+      onOpenLocal,
+    });
+    expect(onOpenLocal).toHaveBeenCalledWith('/Users/demo/app/README.md');
+    expect(openLocalPathMock).not.toHaveBeenCalled();
   });
 
   it('opens local markdown links in the file manager', async () => {

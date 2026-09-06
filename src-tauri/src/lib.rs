@@ -267,6 +267,7 @@ pub fn run() {
             commands::chat::set_chat_model,
             commands::chat::set_chat_effort,
             commands::chat::get_chat_model,
+            commands::chat::read_markdown_preview,
             // Agent projects / sessions
             commands::project::list_agent_projects,
             commands::project::list_agent_project_sessions,
