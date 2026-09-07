@@ -207,12 +207,7 @@ pub fn agent_live_paths(agent: AgentId) -> Result<AgentLivePaths> {
             ],
             open_dir,
         },
-        AgentId::Cursor => AgentLivePaths {
-            config: "无稳定 provider 配置文件".into(),
-            auth: None,
-            extra: Vec::new(),
-            open_dir,
-        },
+        AgentId::Cursor => cursor_live_paths(open_dir)?,
         AgentId::Dsh => AgentLivePaths {
             config: join(&home, "cordis.patch.yml")?,
             auth: Some(join(&home, ".credentials.yaml")?),
@@ -225,6 +220,158 @@ pub fn agent_live_paths(agent: AgentId) -> Result<AgentLivePaths> {
             extra: vec![join(&home, "cli/config.json")?],
             open_dir,
         },
+        AgentId::Kiro => kiro_live_paths()?,
+    })
+}
+
+/// Canonical kiro-cli login store (`auth_kv` in data.sqlite3).
+/// Prefers a file that already exists.
+pub fn kiro_cli_sqlite_path() -> Option<PathBuf> {
+    let paths = kiro_cli_sqlite_candidates();
+    paths
+        .iter()
+        .find(|path| path.is_file())
+        .cloned()
+        .or_else(|| paths.into_iter().next())
+}
+
+/// AWS SSO cache copy of the same social login.
+pub fn kiro_sso_cache_path() -> Option<PathBuf> {
+    Some(
+        home_dir()
+            .ok()?
+            .join(".aws")
+            .join("sso")
+            .join("cache")
+            .join("kiro-auth-token.json"),
+    )
+}
+
+fn cursor_cli_auth_json_path() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        let appdata = std::env::var_os("APPDATA")?;
+        return Some(PathBuf::from(appdata).join("Cursor").join("auth.json"));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let home = home_dir().ok()?;
+        return Some(home.join(".cursor").join("auth.json"));
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let home = home_dir().ok()?;
+        let dir = std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".config"));
+        return Some(dir.join("cursor").join("auth.json"));
+    }
+    #[allow(unreachable_code)]
+    None
+}
+
+fn cursor_state_vscdb_path() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        let appdata = std::env::var_os("APPDATA")?;
+        return Some(
+            PathBuf::from(appdata)
+                .join("Cursor")
+                .join("User")
+                .join("globalStorage")
+                .join("state.vscdb"),
+        );
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let home = home_dir().ok()?;
+        return Some(
+            home.join("Library")
+                .join("Application Support")
+                .join("Cursor")
+                .join("User")
+                .join("globalStorage")
+                .join("state.vscdb"),
+        );
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let home = home_dir().ok()?;
+        return Some(
+            home.join(".config")
+                .join("Cursor")
+                .join("User")
+                .join("globalStorage")
+                .join("state.vscdb"),
+        );
+    }
+    #[allow(unreachable_code)]
+    None
+}
+
+fn cursor_live_paths(open_dir: String) -> Result<AgentLivePaths> {
+    let auth = cursor_cli_auth_json_path()
+        .map(|path| display_user_path(&path))
+        .transpose()?;
+    let mut extra = Vec::new();
+    if let Some(path) = cursor_state_vscdb_path() {
+        extra.push(display_user_path(&path)?);
+    }
+    Ok(AgentLivePaths {
+        config: "无稳定 provider 配置文件".into(),
+        auth,
+        extra,
+        open_dir,
+    })
+}
+
+fn kiro_cli_sqlite_candidates() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    #[cfg(windows)]
+    if let Ok(local) = std::env::var("LOCALAPPDATA") {
+        paths.push(PathBuf::from(local).join("Kiro-Cli").join("data.sqlite3"));
+    }
+    #[cfg(target_os = "macos")]
+    if let Ok(home) = home_dir() {
+        paths.push(
+            home.join("Library")
+                .join("Application Support")
+                .join("Kiro-Cli")
+                .join("data.sqlite3"),
+        );
+    }
+    #[cfg(not(windows))]
+    if let Ok(home) = home_dir() {
+        let xdg = std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".local").join("share"));
+        paths.push(xdg.join("kiro-cli").join("data.sqlite3"));
+        paths.push(
+            home.join(".local")
+                .join("share")
+                .join("kiro-cli")
+                .join("data.sqlite3"),
+        );
+    }
+    paths
+}
+
+fn kiro_live_paths() -> Result<AgentLivePaths> {
+    let sqlite = kiro_cli_sqlite_path()
+        .ok_or_else(|| AppError::message("paths.kiro", "cannot resolve kiro-cli data.sqlite3"))?;
+    let open_dir = sqlite
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| sqlite.clone());
+    let mut extra = Vec::new();
+    if let Some(cache) = kiro_sso_cache_path() {
+        extra.push(display_user_path(&cache)?);
+    }
+    Ok(AgentLivePaths {
+        config: "无稳定 provider 配置文件".into(),
+        auth: Some(display_user_path(&sqlite)?),
+        extra,
+        open_dir: display_user_path(&open_dir)?,
     })
 }
 

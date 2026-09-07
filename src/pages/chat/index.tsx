@@ -13,6 +13,12 @@ import { Button } from '@/components/ui/button';
 import { hasEscPriorityOverlay } from '@/lib/skills/preview-keys';
 import { StorageKey } from '@/lib/storage-key';
 import { cn } from '@/lib/utils';
+import {
+  chatComposerChoiceOptions,
+  chatShowsRuntimeRequestPanels,
+  kiroChatBannerCopy,
+  kiroChatStance,
+} from './chat-kiro-model';
 import { chatEscapeShouldCancel, chatMainColumnClass, chatStageClass } from './chat-model';
 import { formatChatSessionRecord } from './chat-format';
 import { grokCanQueueFollowUp, grokLegacyContinueKind } from './chat-grok-follow-up';
@@ -194,7 +200,7 @@ export default function ChatPage() {
               onRetry={() => void page.retryLast()}
               onOpenLocal={openMarkdownPreview}
             />
-            {page.runtime?.pendingRequests.length ? (
+            {chatShowsRuntimeRequestPanels(page.primaryAgent) && page.runtime?.pendingRequests.length ? (
               <ChatRuntimeRequests
                 requests={page.runtime.pendingRequests}
                 onReply={(request, decision, answers) => page.submitRuntimeRequest(request, decision, answers)}
@@ -211,6 +217,19 @@ export default function ChatPage() {
                     onRestoreDraft={() => page.setDraft(page.turnOutcome?.prompt ?? '')}
                   />
                 ) : null}
+                {(() => {
+                  const stance = kiroChatStance(page.primaryAgent);
+                  if (!stance?.showBanner) return null;
+                  const copy = kiroChatBannerCopy(t);
+                  return (
+                    <Notice tone="info" className="mb-2">
+                      <div className="space-y-1" data-help="chat-kiro-oneshot">
+                        <p className="font-medium text-primary">{copy.title}</p>
+                        <p className="text-meta text-secondary">{copy.detail}</p>
+                      </div>
+                    </Notice>
+                  );
+                })()}
                 <div
                   role="separator"
                   aria-orientation="horizontal"
@@ -274,14 +293,22 @@ export default function ChatPage() {
                   onRetryWallet={() => void page.reloadWallet()}
                   onRetryStatus={() => void page.refreshAgents().catch(() => {})}
                   onSend={() => void page.handleSend()}
-                  onSteer={page.runtime?.enabled && page.runtimeOps.steer && page.sendingHere ? () => {
-                    const value = page.draft;
-                    void page.steerRuntime(value)
-                      .then(() => page.setDraft(''))
-                      .catch(() => {});
-                  } : undefined}
+                  onSteer={
+                    !kiroChatStance(page.primaryAgent)
+                    && page.runtime?.enabled
+                    && page.runtimeOps.steer
+                    && page.sendingHere
+                      ? () => {
+                          const value = page.draft;
+                          void page.steerRuntime(value)
+                            .then(() => page.setDraft(''))
+                            .catch(() => {});
+                        }
+                      : undefined
+                  }
                   onQueueAfterTurn={
-                    grokCanQueueFollowUp({
+                    !kiroChatStance(page.primaryAgent)
+                    && grokCanQueueFollowUp({
                       agentId: page.primaryAgent,
                       runtimeEnabled: page.runtime?.enabled,
                       phase: page.runtime?.phase,
@@ -295,14 +322,22 @@ export default function ChatPage() {
                   onCancel={() => void page.cancelSending()}
                   onSelectAgent={(id) => void page.selectConversationAgentId(id)}
                   onSwitchConnection={(id) => void page.handleSwitchConnection(id)}
-                  modelOptions={page.runtime?.enabled ? [] : page.modelOptions}
+                  modelOptions={
+                    page.runtime?.enabled
+                      ? []
+                      : chatComposerChoiceOptions(page.primaryAgent, page.modelOptions)
+                  }
                   currentModel={page.runtime?.enabled ? null : page.currentModel}
                   switchingModel={page.runtime?.enabled ? false : page.switchingModel}
                   onSwitchModel={(id) => {
                     if (page.runtime?.enabled) return;
                     void page.handleSwitchModel(id);
                   }}
-                  effortOptions={page.runtime?.enabled ? [] : page.effortOptions}
+                  effortOptions={
+                    page.runtime?.enabled
+                      ? []
+                      : chatComposerChoiceOptions(page.primaryAgent, page.effortOptions)
+                  }
                   currentEffort={page.runtime?.enabled ? null : page.currentEffort}
                   onSwitchEffort={(id) => {
                     if (page.runtime?.enabled) return;
@@ -318,7 +353,7 @@ export default function ChatPage() {
                   connectionLocked={page.connectionLocked}
                   runtimeLocked={page.runtimeLocked}
                   runtimeControls={
-                    page.runtime?.enabled ? (
+                    page.runtime?.enabled && !kiroChatStance(page.primaryAgent) ? (
                       <ChatRuntimeExtras
                         enabled
                         inline

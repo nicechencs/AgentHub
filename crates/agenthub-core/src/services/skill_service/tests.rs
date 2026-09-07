@@ -427,7 +427,8 @@ fn nested_identical_trees_are_copied() {
             | AgentId::WorkBuddy
             | AgentId::Cursor
             | AgentId::Dsh
-            | AgentId::Zcode => {
+            | AgentId::Zcode
+            | AgentId::Kiro => {
                 assert_eq!(p.state, SkillSyncState::Unsupported, "agent {}", p.agent);
             }
             AgentId::Claude | AgentId::Codex | AgentId::Grok => {
@@ -2193,6 +2194,7 @@ fn sync_targets_skips_unsupported_when_requested() {
         AgentId::Cursor,
         AgentId::Dsh,
         AgentId::Zcode,
+        AgentId::Kiro,
     ] {
         assert!(
             report.skipped.iter().any(|a| a.agent == agent),

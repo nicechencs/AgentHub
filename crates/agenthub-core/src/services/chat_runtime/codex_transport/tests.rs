@@ -1,6 +1,7 @@
 use super::*;
 
 use serde_json::json;
+#[cfg(unix)]
 use tempfile::tempdir;
 
 #[test]

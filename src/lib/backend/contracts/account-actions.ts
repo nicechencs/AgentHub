@@ -71,6 +71,9 @@ export function oauthListAction(account: Pick<
   if (account.agentId === 'claude') {
     return { kind: 'refresh-quota', label: '刷新' };
   }
+  if (account.agentId === 'kiro') {
+    return { kind: 'refresh-credentials', label: '刷新' };
+  }
   return undefined;
 }
 

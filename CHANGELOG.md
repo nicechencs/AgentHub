@@ -15,6 +15,32 @@
 ```
 
 
+## [Unreleased]
+
+## [0.4.8] - 2026-09-07
+
+### 新增
+- 对话：Kiro 新对话走持续通道（可点允许/拒绝、停止；生成时不能中途补充，可排队到下一轮）。旧对话可「用新方式继续」
+- 对话：Kiro 在本机登录或 `KIRO_API_KEY` 可用时优先走 AgentHub 自有 HTTP（列模型 + 一轮回复）；失败或续场时仍回退 kiro-cli
+- 对话：Kiro 可选模型与思考等级（list-models；每轮 --model / --effort）
+- Agents：可管理 Kiro 命令行（检测/安装/登录指引/API Key）。新对话走持续通道；不接编辑器或本机路由
+- 连接：Kiro 可添加授权，并可导入本机 kiro-cli 登录
+- 连接：Kiro 详情显示 data.sqlite3；刷新会对比本机登录有效期并回写 sqlite
+- 连接：Kiro 可官方登录（打开 Kiro 自己的登录，完成后写入连接）
+- 连接：Kiro 登录可经本机路由接到 Claude、Codex、Grok
+- 连接：Cursor 可导入本机已有登录（不写回 Cursor）
+- 总览：Kiro 可读 kiro-cli 会话里的 token；日志没写时是 0
+- 项目：能看到 Kiro 的项目对话（命令行会话和编辑器会话）
+- 连接：Kiro 官方登录可查看积分用量（打开详情会向官方查询）
+
+### 修复
+- 连接：Kiro 官方登录可再登一份并切换；已有本机登录会先收下再打开新的登录页
+- 能力：Kiro LiveBackup 与 sqlite/SSO 备份路径对齐（此前声明 Unsupported 却返回路径）
+- 总览：已安装的 Cursor 可点进去管理登录，不再显示「不支持管理授权」
+- 连接：Cursor 不能添加 API Key，只导入本机已有登录
+- Agents：Kiro 装到本机用户目录后能被检测到（不只认 Program Files）
+- Agents：Kiro 用官方紫色幽灵标，不再显示成橙色字母 K
+
 ## [0.4.7] - 2026-09-06
 
 ### 修复

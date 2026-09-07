@@ -22,16 +22,18 @@ import {
   officialLoginShouldKeepPolling,
   officialLoginSuccessView,
   presentOfficialLoginOptions,
+  sessionFromCliStart,
   sessionFromDeviceStart,
   sessionFromPkceStart,
   validateManualCallbackUrl,
 } from './official-login-session';
 
 describe('official login option catalog', () => {
-  it('lists only implemented Claude / Codex / Grok / Pi options', () => {
+  it('lists only implemented Claude / Codex / Grok / Kiro / Pi options', () => {
     expect(IMPLEMENTED_OFFICIAL_LOGIN_IDS.claude).toEqual(['claude']);
     expect(IMPLEMENTED_OFFICIAL_LOGIN_IDS.codex).toEqual(['codex']);
     expect(IMPLEMENTED_OFFICIAL_LOGIN_IDS.grok).toEqual(['xai']);
+    expect(IMPLEMENTED_OFFICIAL_LOGIN_IDS.kiro).toEqual(['kiro']);
     expect(IMPLEMENTED_OFFICIAL_LOGIN_IDS.pi).toEqual(['anthropic', 'openai-codex', 'xai']);
     expect(IMPLEMENTED_OFFICIAL_LOGIN_IDS.kimi).toBeUndefined();
     expect(IMPLEMENTED_OFFICIAL_LOGIN_IDS.dsh).toBeUndefined();
@@ -60,10 +62,12 @@ describe('official login option catalog', () => {
     expect(officialLoginCopyId('claude', 'claude')).toBe('claude');
     expect(officialLoginCopyId('codex', 'openai-codex')).toBe('codex');
     expect(officialLoginCopyId('grok', 'xai')).toBe('grok');
+    expect(officialLoginCopyId('kiro', 'kiro')).toBe('kiro');
     expect(officialLoginCopyId('pi', 'openai')).toBe('piCodex');
     expect(officialLoginCopyId('pi', 'grok')).toBe('piXai');
     expect(officialLoginAdapter('deviceCode')).toBe('deviceCode');
     expect(officialLoginAdapter('pkce')).toBe('pkce');
+    expect(officialLoginAdapter('cli')).toBe('cli');
   });
 });
 
@@ -87,7 +91,7 @@ describe('official login status mapping', () => {
     expect(mapDevicePollStatus('expired')).toBe('expired');
   });
 
-  it('builds a shared session from either start payload without a third grant type', () => {
+  it('builds a shared session from PKCE, device-code, or CLI start payloads', () => {
     const pkce = sessionFromPkceStart(
       {
         state: 'pkce-state',
@@ -148,6 +152,43 @@ describe('official login status mapping', () => {
       }),
     ).toBe('https://auth.x.ai/device');
     expect(officialLoginActionUrl(null)).toBeNull();
+
+    const cli = sessionFromCliStart(
+      {
+        state: 'cli-state',
+        authorizeUrl: '',
+        redirectUri: '',
+        agentId: 'kiro',
+        providerKey: 'kiro',
+        browserOpened: true,
+        expiresInSecs: 900,
+      },
+      'kiro',
+    );
+    expect(cli).toMatchObject({
+      sessionId: 'cli-state',
+      agentId: 'kiro',
+      optionId: 'kiro',
+      flow: 'cli',
+      expiresInSecs: 900,
+    });
+    expect(officialLoginActionUrl(cli)).toBeNull();
+
+    const cliWithLink = sessionFromCliStart(
+      {
+        state: 'cli-link',
+        authorizeUrl: 'https://oidc.example.test/device',
+        redirectUri: '',
+        agentId: 'kiro',
+        providerKey: 'kiro',
+        browserOpened: false,
+        userCode: 'ABCD-EFGH',
+        expiresInSecs: 900,
+      },
+      'kiro',
+    );
+    expect(cliWithLink.userCode).toBe('ABCD-EFGH');
+    expect(officialLoginActionUrl(cliWithLink)).toBe('https://oidc.example.test/device');
   });
 
   it('maps superseded and timeout onto wait-page copy without leaking internals', () => {
@@ -158,6 +199,8 @@ describe('official login status mapping', () => {
     expect(officialLoginErrorKey('expired', null, 'deviceCode')).toBe(
       'connect.oauth.deviceTimeout',
     );
+    expect(officialLoginErrorKey('expired', null, 'cli')).toBe('connect.oauth.cliTimeout');
+    expect(officialLoginErrorKey('failed', null, 'cli')).toBe('connect.oauth.cliFailed');
     expect(officialLoginErrorDisplay('failed', 'OAuth authorization failed', 'pkce')).toEqual({
       key: 'connect.oauth.authFailed',
     });

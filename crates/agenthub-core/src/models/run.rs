@@ -68,7 +68,7 @@ impl RunStatus {
 ///
 /// CLI `agenthub run` keeps [`ProcessMode::Text`] (human-readable).
 /// GUI Chat uses [`ProcessMode::Auto`] so all registered agents emit structured
-/// streams when their CLI supports it (Claude/Codex/Kimi/Pi/Grok).
+/// streams when their CLI supports it (Claude/Codex/Kimi/Pi/Grok/Kiro).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ProcessMode {
@@ -181,7 +181,9 @@ impl RunSpec {
                 continue;
             }
             if last_prompt_index == Some(index)
-                && (self.agent == AgentId::Codex || self.agent == AgentId::Dsh)
+                && (self.agent == AgentId::Codex
+                    || self.agent == AgentId::Dsh
+                    || self.agent == AgentId::Kiro)
             {
                 parts.push("<prompt>".into());
                 continue;

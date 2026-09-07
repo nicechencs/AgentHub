@@ -1254,7 +1254,7 @@ fn native_session_id_from_path(agent: AgentId, path: &Path) -> Option<String> {
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string()),
-        AgentId::Zcode => None,
+        AgentId::Zcode | AgentId::Kiro => None,
     }
 }
 
@@ -2431,7 +2431,7 @@ fn is_primary_session_file(agent: AgentId, path: &Path) -> bool {
                 .unwrap_or("");
             parent.eq_ignore_ascii_case(stem) || parent.eq_ignore_ascii_case("subagents")
         }
-        AgentId::Zcode => false,
+        AgentId::Zcode | AgentId::Kiro => false,
     }
 }
 

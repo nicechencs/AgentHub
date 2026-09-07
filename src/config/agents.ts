@@ -27,6 +27,7 @@ import deepseekLogoSvg from '@/assets/agent-logos/deepseek.svg';
 import grokLogo from '@/assets/agent-logos/grok.png';
 import grokLogoSvg from '@/assets/agent-logos/grok.svg';
 import kimiLogoSvg from '@/assets/agent-logos/kimi.svg';
+import kiroLogoSvg from '@/assets/agent-logos/kiro.svg';
 import piLogo from '@/assets/agent-logos/pi.png';
 import piLogoSvg from '@/assets/agent-logos/pi.svg';
 import workbuddyLogoSvg from '@/assets/agent-logos/workbuddy.svg';
@@ -135,6 +136,12 @@ export const AGENT_DISPLAY: Readonly<
     colorKey: 'zcode',
     logoSrc: zcodeLogo,
     logoBackground: '#ffffff',
+  },
+  kiro: {
+    letter: 'K',
+    colorKey: 'kiro',
+    logoSvgSrc: kiroLogoSvg,
+    logoBackground: '#9046ff',
   },
 });
 

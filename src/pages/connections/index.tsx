@@ -992,6 +992,9 @@ export default function ConnectionsPage() {
           if (shouldIgnoreMenuDialogDismiss(ignoreMenuDialogDismissRef.current, open)) return;
           setOauthOpen(open);
         }}
+        onStored={() => {
+          void loadWallet();
+        }}
         onCompleted={(account) => {
           setOauthOpen(false);
           void (async () => {

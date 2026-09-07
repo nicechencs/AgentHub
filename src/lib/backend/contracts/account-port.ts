@@ -13,6 +13,8 @@ export interface OAuthStartInfo {
   browserOpened: boolean;
   /** Seconds the wait page should stay open. Matches the browser-login listener. */
   expiresInSecs?: number;
+  /** Device-style code when the login prints one (Kiro). */
+  userCode?: string | null;
 }
 
 export interface OAuthWaitInfo {
@@ -22,7 +24,7 @@ export interface OAuthWaitInfo {
   error?: string | null;
 }
 
-export type OAuthFlowKind = 'pkce' | 'deviceCode';
+export type OAuthFlowKind = 'pkce' | 'deviceCode' | 'cli';
 
 /** One selectable OAuth login target (Pi has multiple). */
 export interface OAuthLoginOption {

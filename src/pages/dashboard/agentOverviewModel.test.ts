@@ -97,14 +97,14 @@ describe('isAgentIssue', () => {
     );
   });
 
-  it('does not treat Cursor login gaps as issues', () => {
+  it('treats Cursor login gaps as issues once authorization can be managed', () => {
     expect(
       isAgentIssue(status('cursor', {
         authStatus: 'none',
         authHealth: 'needs_login',
         capabilities: MOCK_CAPABILITIES.cursor,
       })),
-    ).toBe(false);
+    ).toBe(true);
   });
 });
 
@@ -369,7 +369,7 @@ describe('buildAgentCardView', () => {
     expect(missing.twoLineLayout).toBe(true);
   });
 
-  it('installed Cursor shows 不支持管理授权 and is not clickable', () => {
+  it('installed Cursor can manage authorization even without live account switch', () => {
     const view = buildAgentCardView(
       meta('cursor', 'Cursor Agent'),
       status('cursor', {
@@ -379,28 +379,42 @@ describe('buildAgentCardView', () => {
         capabilities: MOCK_CAPABILITIES.cursor,
       }),
     );
-    expect(view.metaText).toBe('不支持管理授权');
-    expect(view.titleFull).toBe('不支持管理授权');
-    expect(view.action).toEqual({ kind: 'none' });
-    expect(view.authStatus).toBe('none');
-    expect(view.statusDotTitle).toBe('不支持管理授权');
-    expect(view.ariaLabel).toBe('Cursor Agent，v1.2.3，不支持管理授权');
-    expect(view.ariaLabel).not.toContain('点击管理连接');
-    expect(view.binding).toBeUndefined();
+    expect(view.metaText).not.toBe('不支持管理授权');
+    expect(view.action).toEqual({ kind: 'connect' });
+    expect(view.ariaLabel).toContain('点击管理连接');
   });
 
-  it('translates Cursor auth-unsupported copy on English dashboard cards', () => {
+  it('installed Kiro can manage authorization even without live account switch', () => {
+    const view = buildAgentCardView(
+      meta('kiro', 'Kiro'),
+      status('kiro', {
+        effectiveKind: 'none',
+        effectiveLabel: '未配置',
+        version: '1.0.0',
+        capabilities: MOCK_CAPABILITIES.kiro,
+      }),
+    );
+    expect(view.metaText).not.toBe('不支持管理授权');
+    expect(view.action).toEqual({ kind: 'connect' });
+    expect(view.ariaLabel).toContain('点击管理连接');
+  });
+
+  it('shows Cursor binding on English dashboard cards', () => {
     const tEn = createTranslator('en');
     const view = buildAgentCardView(
       meta('cursor', 'Cursor Agent'),
-      status('cursor', { version: '1.2.3' }),
-      { binding: { ticketLabel: 'Cursor Key', routeLabel: '改配置' } },
+      status('cursor', {
+        version: '1.2.3',
+        authLabel: 'Signed in',
+        effectiveLabel: 'Official',
+        capabilities: MOCK_CAPABILITIES.cursor,
+      }),
+      { binding: { ticketLabel: 'Cursor Key', routeLabel: 'Edit config' } },
       tEn,
     );
-    expect(view.metaText).toBe("Can't manage authorization here");
-    expect(view.action).toEqual({ kind: 'none' });
-    expect(view.binding).toBeUndefined();
-    expect(view.ariaLabel).toBe("Cursor Agent, v1.2.3, can't manage authorization here");
+    expect(view.metaText).not.toBe("Can't manage authorization here");
+    expect(view.action).toEqual({ kind: 'connect' });
+    expect(view.binding?.ticketLabel).toBe('Cursor Key');
     expect(view.ariaLabel).not.toMatch(/[\u4e00-\u9fff]/);
   });
 

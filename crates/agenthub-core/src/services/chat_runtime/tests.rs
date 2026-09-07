@@ -108,6 +108,55 @@ fn empty_grok_conversation_enables_runtime() {
 }
 
 #[test]
+fn empty_kiro_conversation_enables_runtime() {
+    let db = Database::open_in_memory().unwrap();
+    let now = "2026-01-01T00:00:00Z".to_string();
+    let empty = Conversation {
+        id: "kiro-empty".into(),
+        title: String::new(),
+        agent_ids: vec![AgentId::Kiro],
+        cwd: Some(std::env::temp_dir().to_string_lossy().into_owned()),
+        allow_dangerous: false,
+        created_at: now.clone(),
+        updated_at: now.clone(),
+        native_session_id: None,
+        sending: false,
+    };
+    let legacy = Conversation {
+        id: "kiro-legacy".into(),
+        title: String::new(),
+        agent_ids: vec![AgentId::Kiro],
+        cwd: empty.cwd.clone(),
+        allow_dangerous: false,
+        created_at: now.clone(),
+        updated_at: now,
+        native_session_id: None,
+        sending: false,
+    };
+    let repo = ChatRepo::new(db.clone());
+    repo.create_conversation(&empty).unwrap();
+    repo.create_conversation(&legacy).unwrap();
+    repo.insert_message(&crate::models::ChatMessage {
+        id: "legacy-user".into(),
+        conversation_id: "kiro-legacy".into(),
+        turn: 1,
+        role: crate::models::ChatRole::User,
+        agent_id: None,
+        content: "legacy".into(),
+        status: crate::models::ChatMessageStatus::Ok,
+        exit_code: None,
+        duration_ms: 0,
+        error: None,
+        created_at: "2026-01-01T00:00:00Z".into(),
+    })
+    .unwrap();
+    let store = super::store::RuntimeStore::new(db);
+    store.enable_if_new("kiro-empty").unwrap();
+    assert!(store.snapshot("kiro-empty", None).unwrap().enabled);
+    assert!(store.enable_if_new("kiro-legacy").is_err());
+}
+
+#[test]
 fn grok_legacy_continue_requires_session_and_keeps_print_path_otherwise() {
     let db = Database::open_in_memory().unwrap();
     let now = "2026-01-01T00:00:00Z".to_string();
@@ -180,10 +229,7 @@ fn grok_legacy_continue_requires_session_and_keeps_print_path_otherwise() {
         Some("sess-legacy-1")
     );
     let missing = runtime.continue_legacy("grok-nosess").unwrap_err();
-    assert!(
-        missing.to_string().contains("请新建对话"),
-        "{missing}"
-    );
+    assert!(missing.to_string().contains("请新建对话"), "{missing}");
     assert!(!runtime.snapshot("grok-nosess", None).unwrap().enabled);
     assert!(runtime.continue_legacy("codex-legacy").is_err());
 }

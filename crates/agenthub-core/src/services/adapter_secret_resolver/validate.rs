@@ -280,4 +280,35 @@ impl AdapterSecretResolver {
         .ok_or_else(invalid_reference)?;
         Ok(ResolvedAuth::bearer(access))
     }
+
+    pub(crate) fn resolve_kiro_auth(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<ResolvedAuth> {
+        if source_kind != AdapterSourceKind::Account {
+            return Err(invalid_reference());
+        }
+        let account = self
+            .accounts
+            .get_by_id(source_id.trim())?
+            .ok_or_else(invalid_reference)?;
+        if account.agent_id != AgentId::Kiro {
+            return Err(invalid_reference());
+        }
+        let access = first_usable_string(
+            &account.credentials,
+            &[
+                "/api_key",
+                "/access_token",
+                "/body/access_token",
+                "/tokens/access_token",
+                "/body/tokens/access_token",
+                "/key",
+                "/body/key",
+            ],
+        )
+        .ok_or_else(invalid_reference)?;
+        Ok(ResolvedAuth::bearer(access))
+    }
 }

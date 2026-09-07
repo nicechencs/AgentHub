@@ -34,6 +34,9 @@ pub const KIMI_GROK_RULE_ID: &str = "kimi-membership-to-grok-v1";
 pub const OPENAI_GROK_RULE_ID: &str = "openai-api-to-grok-v1";
 pub const GROK_CLAUDE_RULE_ID: &str = "grok-subscription-to-claude-v1";
 pub const GROK_CODEX_RULE_ID: &str = "grok-subscription-to-codex-v1";
+pub const KIRO_CLAUDE_RULE_ID: &str = "kiro-to-claude-v1";
+pub const KIRO_CODEX_RULE_ID: &str = "kiro-to-codex-v1";
+pub const KIRO_GROK_RULE_ID: &str = "kiro-to-grok-v1";
 pub const CODEX_GROK_RULE_ID: &str = "codex-subscription-to-grok-v1";
 pub const CODEX_KIMI_RULE_ID: &str = "codex-subscription-to-kimi-v1";
 pub const CODEX_DSH_RULE_ID: &str = "codex-subscription-to-dsh-v1";
@@ -205,6 +208,9 @@ pub const PUBLISHED_ROUTE_RULE_IDS: &[&str] = &[
     OPENAI_DSH_BRIDGE_RULE_ID,
     GROK_CLAUDE_RULE_ID,
     GROK_CODEX_RULE_ID,
+    KIRO_CLAUDE_RULE_ID,
+    KIRO_CODEX_RULE_ID,
+    KIRO_GROK_RULE_ID,
     CODEX_GROK_RULE_ID,
     CODEX_KIMI_RULE_ID,
     CODEX_DSH_RULE_ID,

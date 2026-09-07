@@ -1224,6 +1224,75 @@
       }
     },
     {
+      "id": "kiro-api-to-codex",
+      "source": {
+        "kind": "account",
+        "agentId": "kiro",
+        "accountKind": "apikey",
+        "credentials": {
+          "format": "api_key",
+          "api_key": "must-not-leak"
+        }
+      },
+      "target": "codex",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "kiro-to-codex-v1",
+        "gateKind": "none",
+        "reason": "这份 Kiro 登录会经本机路由接到 Codex。",
+        "reusePath": "local_bridge"
+      }
+    },
+    {
+      "id": "kiro-oauth-to-claude",
+      "source": {
+        "kind": "account",
+        "agentId": "kiro",
+        "accountKind": "oauth",
+        "credentials": {
+          "format": "auth_json",
+          "access_token": "must-not-leak"
+        }
+      },
+      "target": "claude",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "kiro-to-claude-v1",
+        "gateKind": "none",
+        "reason": "这份 Kiro 登录会经本机路由接到 Claude。",
+        "reusePath": "local_bridge"
+      }
+    },
+    {
+      "id": "kiro-oauth-to-grok",
+      "source": {
+        "kind": "account",
+        "agentId": "kiro",
+        "accountKind": "oauth",
+        "credentials": {
+          "format": "auth_json",
+          "access_token": "must-not-leak"
+        }
+      },
+      "target": "grok",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "kiro-to-grok-v1",
+        "gateKind": "none",
+        "reason": "这份 Kiro 登录会经本机路由接到 Grok。",
+        "reusePath": "local_bridge"
+      }
+    },
+    {
       "id": "openai-api-account-to-codex",
       "source": {
         "kind": "account",

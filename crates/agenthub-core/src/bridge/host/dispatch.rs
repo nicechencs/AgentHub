@@ -12,6 +12,7 @@ use super::http::{
     error_response, model_unavailable_message, model_unavailable_response,
     reject_invalid_local_auth, stopping_response, EdgeState,
 };
+use super::kiro_upstream::handle_kiro_conversation;
 use super::pair_policy::{
     identity_relay, pair_adapter_active, pair_adapter_rejected, pair_direction, pair_model_servable,
 };
@@ -30,6 +31,7 @@ use super::UPSTREAM_NON_STREAM_TIMEOUT;
 use crate::bridge::account::PickedMember;
 use crate::bridge::route_index::DispatchCandidate;
 use crate::bridge::usage_capture::CaptureContext;
+use crate::bridge::BridgeUpstreamProtocol;
 
 pub(super) async fn handle_conversation(
     surface: DownstreamSurface,
@@ -96,7 +98,10 @@ pub(super) async fn handle_conversation(
         }
     };
     let initial_channel = UpstreamChannel::from_protocol(admitted.state.upstream.protocol);
-    if surface == DownstreamSurface::Responses
+    if !matches!(
+        admitted.state.upstream.protocol,
+        BridgeUpstreamProtocol::KiroHttp
+    ) && surface == DownstreamSurface::Responses
         && pair_adapter_rejected(&admitted.state, initial_channel)
     {
         trace.route_resolution_failed(
@@ -345,6 +350,12 @@ pub(super) async fn handle_conversation(
         session_id: super::continuation::session_identifier(&admitted.body, &admitted.headers),
         channel: None,
     };
+    if matches!(
+        admitted.state.upstream.protocol,
+        BridgeUpstreamProtocol::KiroHttp
+    ) {
+        return handle_kiro_conversation(surface, admitted, capture).await;
+    }
     if admitted.state.route_index.is_some() {
         return forward_upstream_v2(
             surface,

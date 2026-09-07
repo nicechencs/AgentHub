@@ -10,7 +10,7 @@ mod ops;
 mod store;
 mod types;
 
-pub(crate) use store::is_runtime_chat_agent;
+pub(crate) use store::{is_acp_runtime_agent, is_runtime_chat_agent};
 
 pub use types::{
     RuntimeDecision, RuntimeEvent, RuntimeExtensionItem, RuntimeExtensionKind, RuntimeLocalImage,
@@ -164,24 +164,25 @@ impl ChatRuntime {
             .unwrap_or(false)
     }
 
-    /// Switch an existing Grok print session onto continuous chat.
-    /// Requires a stored native session id; does not invent a new Grok session.
+    /// Switch an existing Grok/Kiro print session onto continuous chat.
+    /// Requires a stored native session id; does not invent a new session.
     pub fn continue_legacy(&self, conversation_id: &str) -> Result<RuntimeSnapshot> {
-        let conversation = self.repo.get_conversation(conversation_id)?.ok_or_else(|| {
-            AppError::NotFound(format!("conversation not found: {conversation_id}"))
-        })?;
-        if conversation.agent_ids.first().copied() != Some(AgentId::Grok) {
+        let conversation = self
+            .repo
+            .get_conversation(conversation_id)?
+            .ok_or_else(|| {
+                AppError::NotFound(format!("conversation not found: {conversation_id}"))
+            })?;
+        if !is_acp_runtime_agent(conversation.agent_ids.first().copied()) {
             return Err(AppError::Unsupported(
-                "只有 Grok 可以用新方式继续".into(),
+                "只有 Grok 和 Kiro 可以用新方式继续".into(),
             ));
         }
         let session_id = conversation
             .native_session_id
             .as_deref()
             .and_then(crate::adapters::session_resume::valid_session_id)
-            .ok_or_else(|| {
-                AppError::InvalidArg("这条对话没有可接上的会话，请新建对话".into())
-            })?;
+            .ok_or_else(|| AppError::InvalidArg("这条对话没有可接上的会话，请新建对话".into()))?;
         self.store
             .enable_legacy_with_session(conversation_id, session_id)?;
         self.store.snapshot(conversation_id, None)
@@ -225,8 +226,7 @@ impl ChatRuntime {
                 settings = self.store.set_turn_settings(conversation_id, &repaired)?;
             }
         }
-        let grok = self.store.conversation_agent(conversation_id).ok().flatten()
-            == Some(AgentId::Grok);
+        let acp = is_acp_runtime_agent(agent);
         Ok(RuntimeOptions {
             conversation_id: conversation_id.to_string(),
             settings,
@@ -235,7 +235,7 @@ impl ChatRuntime {
             extensions: cache.extensions,
             models_from_codex: cache.from_codex,
             image_input: true,
-            steer: !grok,
+            steer: !acp,
         })
     }
 
@@ -584,6 +584,7 @@ impl ChatRuntime {
         };
         match conversation.agent_ids.first().copied() {
             Some(AgentId::Grok) => return self.fetch_grok_catalog(&cwd),
+            Some(AgentId::Kiro) => return self.fetch_kiro_catalog(),
             _ => {}
         }
         let Ok(program) = self.run.detect_codex_installation() else {
@@ -633,6 +634,24 @@ impl ChatRuntime {
         if models.is_empty() {
             return self.grok_fallback_catalog();
         }
+        CatalogCache {
+            models,
+            extensions: Vec::new(),
+            from_codex: true,
+        }
+    }
+
+    fn fetch_kiro_catalog(&self) -> CatalogCache {
+        let live = crate::adapters::kiro::kiro_live_chat_model();
+        let models: Vec<RuntimeModelOption> = live
+            .models
+            .into_iter()
+            .map(|id| RuntimeModelOption {
+                efforts: live.efforts.clone(),
+                default_effort: live.effort.clone(),
+                id,
+            })
+            .collect();
         CatalogCache {
             models,
             extensions: Vec::new(),
@@ -936,10 +955,10 @@ impl ActorWorker {
                     ChatEvent::AgentStarted {
                         turn,
                         agent: self.agent,
-                        command: if self.agent == AgentId::Grok {
-                            "grok agent stdio".into()
-                        } else {
-                            "codex app-server".into()
+                        command: match self.agent {
+                            AgentId::Grok => "grok agent stdio".into(),
+                            AgentId::Kiro => "kiro-cli acp".into(),
+                            _ => "codex app-server".into(),
                         },
                     },
                 ]
@@ -950,104 +969,104 @@ impl ActorWorker {
         self.turn_id = None;
         self.run_id = Some(run_id);
 
-        let start_result = if self.agent == AgentId::Grok {
-            self.grok_connect_and_prompt(prompt, extras)
+        let start_result = if is_acp_runtime_agent(Some(self.agent)) {
+            self.acp_connect_and_prompt(prompt, extras)
         } else {
             (|| {
-            let cwd = self.conversation_cwd()?;
-            let program = self.run.detect_codex_installation()?;
-            let mut transport = if let Some(thread_id) = self.thread_id.as_deref() {
-                // The transport itself is always a fresh process; thread/resume
-                // reattaches it to Codex's durable native thread.
-                let mut t = CodexTransport::spawn(&program, &cwd).map_err(transport_error)?;
-                let result = t
-                    .request(
-                        "thread/resume",
-                        json!({
-                            "threadId": thread_id,
-                            "cwd": cwd.to_string_lossy(),
-                            "approvalPolicy": "on-request",
-                            "sandbox": "workspace-write"
-                        }),
-                        CODEX_REQUEST_TIMEOUT,
-                    )
-                    .map_err(transport_error)?;
-                self.thread_id = Some(thread_id.to_string());
-                let _ = result;
-                t
-            } else {
-                let mut t = CodexTransport::spawn(&program, &cwd).map_err(transport_error)?;
-                let result = t
-                    .request(
-                        "thread/start",
-                        json!({
-                            "cwd": cwd.to_string_lossy(),
-                            "approvalPolicy": "on-request",
-                            "sandbox": "workspace-write",
-                            "ephemeral": false
-                        }),
-                        CODEX_REQUEST_TIMEOUT,
-                    )
-                    .map_err(transport_error)?;
-                self.thread_id =
-                    extract_id(&result, "thread").or_else(|| extract_id(&result, "id"));
-                t
-            };
-            let thread_id = self.thread_id.clone().ok_or_else(|| {
-                AppError::message("chat.runtime.protocol", "Codex omitted thread id")
-            })?;
-            let settings = self.store.turn_settings(&self.conversation_id)?;
-            let input = ops::build_turn_input(prompt, &extras.images, &extras.skills)?;
-            let mut params = json!({
-                "threadId": thread_id,
-                "input": input,
-                "clientUserMessageId": client_request_id,
-                "cwd": cwd.to_string_lossy(),
-                "approvalPolicy": "on-request",
-                "sandboxPolicy": {
-                    "type": "workspaceWrite",
-                    "writableRoots": [cwd.to_string_lossy()],
-                    "networkAccess": false
+                let cwd = self.conversation_cwd()?;
+                let program = self.run.detect_codex_installation()?;
+                let mut transport = if let Some(thread_id) = self.thread_id.as_deref() {
+                    // The transport itself is always a fresh process; thread/resume
+                    // reattaches it to Codex's durable native thread.
+                    let mut t = CodexTransport::spawn(&program, &cwd).map_err(transport_error)?;
+                    let result = t
+                        .request(
+                            "thread/resume",
+                            json!({
+                                "threadId": thread_id,
+                                "cwd": cwd.to_string_lossy(),
+                                "approvalPolicy": "on-request",
+                                "sandbox": "workspace-write"
+                            }),
+                            CODEX_REQUEST_TIMEOUT,
+                        )
+                        .map_err(transport_error)?;
+                    self.thread_id = Some(thread_id.to_string());
+                    let _ = result;
+                    t
+                } else {
+                    let mut t = CodexTransport::spawn(&program, &cwd).map_err(transport_error)?;
+                    let result = t
+                        .request(
+                            "thread/start",
+                            json!({
+                                "cwd": cwd.to_string_lossy(),
+                                "approvalPolicy": "on-request",
+                                "sandbox": "workspace-write",
+                                "ephemeral": false
+                            }),
+                            CODEX_REQUEST_TIMEOUT,
+                        )
+                        .map_err(transport_error)?;
+                    self.thread_id =
+                        extract_id(&result, "thread").or_else(|| extract_id(&result, "id"));
+                    t
+                };
+                let thread_id = self.thread_id.clone().ok_or_else(|| {
+                    AppError::message("chat.runtime.protocol", "Codex omitted thread id")
+                })?;
+                let settings = self.store.turn_settings(&self.conversation_id)?;
+                let input = ops::build_turn_input(prompt, &extras.images, &extras.skills)?;
+                let mut params = json!({
+                    "threadId": thread_id,
+                    "input": input,
+                    "clientUserMessageId": client_request_id,
+                    "cwd": cwd.to_string_lossy(),
+                    "approvalPolicy": "on-request",
+                    "sandboxPolicy": {
+                        "type": "workspaceWrite",
+                        "writableRoots": [cwd.to_string_lossy()],
+                        "networkAccess": false
+                    }
+                });
+                if let Some(model) = settings
+                    .model
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                {
+                    params["model"] = json!(model);
                 }
-            });
-            if let Some(model) = settings
-                .model
-                .as_deref()
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-            {
-                params["model"] = json!(model);
-            }
-            if let Some(effort) = settings
-                .effort
-                .as_deref()
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-            {
-                params["effort"] = json!(effort);
-            }
-            let result = transport
-                .request("turn/start", params, CODEX_REQUEST_TIMEOUT)
-                .map_err(transport_error);
-            let result = result?;
-            self.turn_id = extract_id(&result, "turn").or_else(|| extract_id(&result, "id"));
-            let actual_run = self.turn_id.clone().unwrap_or_else(|| {
-                self.run_id
-                    .clone()
-                    .unwrap_or_else(|| format!("run-{}", Uuid::new_v4()))
-            });
-            self.run_id = Some(actual_run.clone());
-            self.store.set_state(
-                &self.conversation_id,
-                RuntimePhase::Running,
-                Some(&actual_run),
-                self.thread_id.as_deref(),
-                self.turn_id.as_deref(),
-                self.chat_turn,
-                self.message_id.as_deref(),
-            )?;
-            self.transport = Some(transport);
-            self.store.snapshot(&self.conversation_id, None)
+                if let Some(effort) = settings
+                    .effort
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                {
+                    params["effort"] = json!(effort);
+                }
+                let result = transport
+                    .request("turn/start", params, CODEX_REQUEST_TIMEOUT)
+                    .map_err(transport_error);
+                let result = result?;
+                self.turn_id = extract_id(&result, "turn").or_else(|| extract_id(&result, "id"));
+                let actual_run = self.turn_id.clone().unwrap_or_else(|| {
+                    self.run_id
+                        .clone()
+                        .unwrap_or_else(|| format!("run-{}", Uuid::new_v4()))
+                });
+                self.run_id = Some(actual_run.clone());
+                self.store.set_state(
+                    &self.conversation_id,
+                    RuntimePhase::Running,
+                    Some(&actual_run),
+                    self.thread_id.as_deref(),
+                    self.turn_id.as_deref(),
+                    self.chat_turn,
+                    self.message_id.as_deref(),
+                )?;
+                self.transport = Some(transport);
+                self.store.snapshot(&self.conversation_id, None)
             })()
         };
         if let Err(error) = start_result {
@@ -1068,18 +1087,17 @@ impl ActorWorker {
         start_result
     }
 
-    fn grok_connect_and_prompt(
+    fn acp_connect_and_prompt(
         &mut self,
         prompt: &str,
         extras: &RuntimeStartExtras,
     ) -> Result<RuntimeSnapshot> {
         if !extras.skills.is_empty() {
             return Err(AppError::Unsupported(
-                "Grok 目前不能在本轮指定 Skill".into(),
+                "目前不能在本轮指定 Skill".into(),
             ));
         }
         let cwd = self.conversation_cwd()?;
-        let program = self.run.detect_grok_installation()?;
         let settings = self.store.turn_settings(&self.conversation_id)?;
         let model = settings
             .model
@@ -1091,8 +1109,23 @@ impl ActorWorker {
             .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty());
-        let mut transport =
-            CodexTransport::spawn_grok(&program, &cwd, model, effort).map_err(transport_error)?;
+        let trust_all = self
+            .repo
+            .get_conversation(&self.conversation_id)
+            .ok()
+            .flatten()
+            .is_some_and(|conversation| conversation.allow_dangerous);
+        let mut transport = match self.agent {
+            AgentId::Kiro => {
+                let program = self.run.detect_kiro_installation()?;
+                CodexTransport::spawn_kiro(&program, &cwd, model, effort, trust_all)
+            }
+            _ => {
+                let program = self.run.detect_grok_installation()?;
+                CodexTransport::spawn_grok(&program, &cwd, model, effort)
+            }
+        }
+        .map_err(transport_error)?;
         if let Some(session_id) = self.thread_id.clone() {
             let loaded = transport
                 .request(
@@ -1121,17 +1154,20 @@ impl ActorWorker {
                 .map_err(transport_error)?;
             self.thread_id = grok_session_id(&created).or_else(|| extract_id(&created, "session"));
         }
-        let session_id = self.thread_id.clone().ok_or_else(|| {
-            AppError::message("chat.runtime.protocol", "Grok omitted session id")
-        })?;
+        let session_id = self
+            .thread_id
+            .clone()
+            .ok_or_else(|| AppError::message("chat.runtime.protocol", "session id omitted"))?;
+        let blocks = ops::grok_prompt_blocks(prompt, &extras.images)?;
+        let mut prompt_params = json!({
+            "sessionId": session_id,
+            "prompt": blocks.clone(),
+        });
+        if self.agent == AgentId::Kiro {
+            prompt_params["content"] = json!(blocks);
+        }
         let prompt_id = transport
-            .begin_request(
-                "session/prompt",
-                json!({
-                    "sessionId": session_id,
-                    "prompt": ops::grok_prompt_blocks(prompt, &extras.images)?
-                }),
-            )
+            .begin_request("session/prompt", prompt_params)
             .map_err(transport_error)?;
         self.pending_prompt_id = Some(prompt_id);
         let run_id = self
@@ -1191,7 +1227,7 @@ impl ActorWorker {
                         "approval cannot include answers".into(),
                     ));
                 }
-                if self.agent == AgentId::Grok {
+                if is_acp_runtime_agent(Some(self.agent)) {
                     let option_id = if decision == "accept" {
                         "allow-once"
                     } else {
@@ -1267,9 +1303,9 @@ impl ActorWorker {
     }
 
     fn steer(&mut self, prompt: &str, run_id: &str, client_request_id: &str) -> Result<()> {
-        if self.agent == AgentId::Grok {
+        if is_acp_runtime_agent(Some(self.agent)) {
             return Err(AppError::Unsupported(
-                "Grok 不能在生成过程中补充要求，请等本轮结束后再发送".into(),
+                "不能在生成过程中补充要求，请等本轮结束后再发送".into(),
             ));
         }
         self.check_run(run_id)?;
@@ -1389,7 +1425,7 @@ impl ActorWorker {
             .as_mut()
             .ok_or_else(|| AppError::message("chat.runtime.interrupted", "Codex process stopped"))
             .and_then(|transport| {
-                if self.agent == AgentId::Grok {
+                if is_acp_runtime_agent(Some(self.agent)) {
                     transport
                         .request(
                             "session/cancel",
@@ -1745,7 +1781,8 @@ impl ActorWorker {
             "method": "session/update",
             "params": params,
         });
-        let Some(steps) = crate::utils::stream_parse::grok::parse_line(&envelope.to_string()) else {
+        let Some(steps) = crate::utils::stream_parse::grok::parse_line(&envelope.to_string())
+        else {
             return Ok(());
         };
         for step in steps {

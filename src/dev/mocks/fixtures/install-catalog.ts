@@ -141,4 +141,17 @@ export const MOCK_INSTALL_CATALOG: AgentInstallCatalogEntryDto[] = [
       },
     ],
   },
+  {
+    agentId: 'kiro',
+    channels: [
+      {
+        id: 'native',
+        label: 'native 官方脚本',
+        command: isWindows
+          ? 'irm https://cli.kiro.dev/install.ps1 | iex'
+          : 'curl -fsS https://cli.kiro.dev/install | bash',
+        requires: isWindows ? ['powershell'] : [],
+      },
+    ],
+  },
 ];

@@ -39,6 +39,14 @@ describe('grok follow-up after the current turn', () => {
         sending: false,
       }),
     ).toBe(false);
+    expect(
+      grokCanQueueFollowUp({
+        agentId: 'kiro',
+        runtimeEnabled: true,
+        phase: 'running',
+        sending: true,
+      }),
+    ).toBe(true);
   });
 
   it('flushes only when a live turn completes', () => {
@@ -82,5 +90,13 @@ describe('grok follow-up after the current turn', () => {
         nativeSessionId: 'thread-1',
       }),
     ).toBe(null);
+    expect(
+      grokLegacyContinueKind({
+        agentId: 'kiro',
+        runtimeEnabled: false,
+        hasMessages: true,
+        nativeSessionId: 'sess-kiro',
+      }),
+    ).toBe('continue');
   });
 });

@@ -477,6 +477,15 @@ fn push_exec_logs(logs: &mut Vec<String>, res: &ExecResult, timeout_secs: u64) {
                 exit = 0,
                 "ok"
             );
+        } else if is_already_latest_upgrade(res) {
+            push_log(logs, "✓ 已是最新");
+            tracing::info!(
+                target: crate::logging::targets::INSTALL,
+                module = crate::logging::targets::INSTALL,
+                op = "exec",
+                exit = code,
+                "already latest"
+            );
         } else {
             let line = format!("✗ exit {code}");
             push_log(logs, line.clone());
@@ -572,7 +581,7 @@ fn package_manager_verb(action: RuntimePackageAction) -> &'static str {
     }
 }
 
-#[cfg_attr(all(not(windows), not(target_os = "macos")), allow(dead_code))]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn package_manager_zh(action: RuntimePackageAction) -> &'static str {
     match action {
         RuntimePackageAction::Install => "安装",
@@ -620,6 +629,7 @@ fn resolve_brew() -> Result<String> {
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const NODEJS_DIST_INDEX_URL: &str = "https://nodejs.org/dist/index.json";
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn is_safe_node_version(version: &str) -> bool {
     let mut parts = version.split('.');
     let Some(major) = parts.next() else {
@@ -641,6 +651,7 @@ fn is_safe_node_version(version: &str) -> bool {
 }
 
 /// First LTS release in nodejs.org `index.json` (newest-first) that ships a macOS `.pkg`.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn pick_nodejs_macos_lts_pkg(index_json: &str) -> Option<(String, String)> {
     let releases: Vec<serde_json::Value> = serde_json::from_str(index_json).ok()?;
     for rel in releases {
@@ -872,6 +883,31 @@ fn unsupported_channel_outcome(action: &str, logs: Vec<String>, channel: &str) -
     )
 }
 
+/// winget `APPINSTALLER_CLI_ERROR_NO_APPLICABLE_UPGRADE` (0x8A15002B).
+/// The package is already at the newest version the configured source has.
+const WINGET_NO_APPLICABLE_UPGRADE: i32 = -1978335189;
+
+/// True when an upgrade command found nothing newer. This is success for
+/// "upgrade", not a failed install — even though winget exits non-zero.
+fn is_already_latest_upgrade(res: &ExecResult) -> bool {
+    if res.timed_out || res.spawn_error.is_some() || res.success() {
+        return false;
+    }
+    if res.exit_code == Some(WINGET_NO_APPLICABLE_UPGRADE) {
+        return true;
+    }
+    let blob = format!(
+        "{}
+{}",
+        res.stdout, res.stderr
+    );
+    let lower = blob.to_ascii_lowercase();
+    lower.contains("no applicable upgrade")
+        || lower.contains("no newer package versions are available")
+        || blob.contains("找不到可用的升级")
+        || blob.contains("没有可用的较新的包版本")
+}
+
 /// Complete an environment install by invalidating detection caches and
 /// checking the exact requested runtime (plus Node.js for an npm request).
 #[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
@@ -882,7 +918,8 @@ fn finalize_runtime_install(
 ) -> InstallOutcome {
     runtime::invalidate_cache();
     let status = runtime::detect_one(id);
-    if !res.success() {
+    let already_latest = is_already_latest_upgrade(&res);
+    if !res.success() && !already_latest {
         logs.push(format!(
             "安装命令失败（exit={}）；重新检测结果不会覆盖该失败。",
             res.exit_code
@@ -911,15 +948,19 @@ fn finalize_runtime_install(
             ok: true,
             action: "env_install".into(),
             logs,
-            message: format!(
-                "{} 已就绪{}",
-                id.as_str(),
-                if res.success() {
-                    ""
-                } else {
-                    "（命令非 0 退出，但重新检测已通过）"
-                }
-            ),
+            message: if already_latest {
+                format!("{} 已是最新", id.as_str())
+            } else {
+                format!(
+                    "{} 已就绪{}",
+                    id.as_str(),
+                    if res.success() {
+                        ""
+                    } else {
+                        "（命令非 0 退出，但重新检测已通过）"
+                    }
+                )
+            },
             agent: None,
             runtime: Some(status),
             ..Default::default()
@@ -2742,9 +2783,8 @@ fn native_sh_shell_requirement(builtin_agent: Option<AgentId>) -> NativeShellReq
     // `bash` inside the pipeline.
     // Contribution-only (non-AgentId) installs default to Bash.
     match builtin_agent {
-        Some(AgentId::Claude | AgentId::Kimi | AgentId::Grok | AgentId::Cursor) | None => {
-            NativeShellRequirement::Bash
-        }
+        Some(AgentId::Claude | AgentId::Kimi | AgentId::Grok | AgentId::Cursor | AgentId::Kiro)
+        | None => NativeShellRequirement::Bash,
         Some(_) => NativeShellRequirement::Posix,
     }
 }

@@ -22,15 +22,19 @@ fn agent_id_parse_as_str_roundtrip() {
     assert_eq!(AgentId::parse("deepseek-harness"), Some(AgentId::Dsh));
     assert_eq!(AgentId::parse("zcode"), Some(AgentId::Zcode));
     assert_eq!(AgentId::parse("  ZCode  "), Some(AgentId::Zcode));
+    assert_eq!(AgentId::parse("kiro"), Some(AgentId::Kiro));
+    assert_eq!(AgentId::parse("  Kiro  "), Some(AgentId::Kiro));
+    assert_eq!(AgentId::parse("kiro-cli"), Some(AgentId::Kiro));
     let expected = AgentId::expected_list();
     assert!(expected.contains("pi"));
     assert!(expected.contains("workbuddy"));
     assert!(expected.contains("cursor"));
     assert!(expected.contains("dsh"));
     assert!(expected.contains("zcode"));
+    assert!(expected.contains("kiro"));
     assert_eq!(
         expected,
-        "claude|codex|kimi|grok|pi|workbuddy|cursor|dsh|zcode"
+        "claude|codex|kimi|grok|pi|workbuddy|cursor|dsh|zcode|kiro"
     );
 }
 

@@ -52,13 +52,17 @@ pub struct QuotaSnapshot {
     pub quota7d_pct: Option<f64>,
     pub reset_5h_at: Option<DateTime<Utc>>,
     pub reset_7d_at: Option<DateTime<Utc>>,
+    /// Kiro official credits (not a 5h/7d window).
+    pub credit_used: Option<f64>,
+    pub credit_limit: Option<f64>,
+    pub credit_reset_at: Option<DateTime<Utc>>,
     pub plan_type: Option<String>,
     pub source: &'static str,
 }
 
 impl QuotaSnapshot {
     pub fn is_empty(&self) -> bool {
-        self.quota5h_pct.is_none() && self.quota7d_pct.is_none()
+        self.quota5h_pct.is_none() && self.quota7d_pct.is_none() && self.credit_limit.is_none()
     }
 
     /// Prefer 5h reset text when available (matches UI QuotaBar on the 5h row).
@@ -213,6 +217,7 @@ pub fn refresh_account_quota(account: &mut Account, force: bool) -> Result<bool>
         AgentId::Codex => fetch_codex_quota(account)?,
         AgentId::Claude => fetch_claude_quota(account)?,
         AgentId::Grok => fetch_grok_quota(account)?,
+        AgentId::Kiro => fetch_kiro_quota(account)?,
         AgentId::Pi => {
             // Pi multi-provider routing lives in oauth::catalog (aliases → backend).
             let provider = account
@@ -234,7 +239,7 @@ pub fn refresh_account_quota(account: &mut Account, force: bool) -> Result<bool>
         if force {
             return Err(AppError::message(
                 "account.quota",
-                "quota probe returned no 5h/7d windows",
+                "quota probe returned no usage windows",
             ));
         }
         return Ok(false);
@@ -304,6 +309,19 @@ pub fn apply_quota_snapshot(
             "codex_7d_reset_after_seconds",
             "quota7dResetIn",
         ] {
+            obj.remove(key);
+        }
+    }
+    if let (Some(used), Some(limit)) = (snap.credit_used, snap.credit_limit) {
+        obj.insert("creditUsed".into(), json!(used));
+        obj.insert("creditLimit".into(), json!(limit));
+        if let Some(at) = snap.credit_reset_at {
+            obj.insert("creditResetAt".into(), json!(at.to_rfc3339()));
+        } else {
+            obj.remove("creditResetAt");
+        }
+    } else {
+        for key in ["creditUsed", "creditLimit", "creditResetAt"] {
             obj.remove(key);
         }
     }
@@ -457,6 +475,120 @@ fn extract_codex_headers_from_ureq(
         }
     }
     m
+}
+
+fn fetch_kiro_quota(account: &Account) -> Result<QuotaSnapshot> {
+    let access = extract_access_token(account).ok_or_else(|| {
+        AppError::message("account.quota", "no access_token for Kiro usage probe")
+    })?;
+    let region = kiro_region(account);
+    let body = crate::adapters::kiro::http::get_usage_limits(&access, &region)?;
+    let snap = parse_kiro_usage_limits(&body, Utc::now());
+    if snap.is_empty() {
+        return Err(AppError::message(
+            "account.quota",
+            "Kiro GetUsageLimits returned no credit window",
+        ));
+    }
+    Ok(snap)
+}
+
+fn kiro_region(account: &Account) -> String {
+    account
+        .credentials
+        .get("region")
+        .or_else(|| account.extra.get("region"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("us-east-1")
+        .to_string()
+}
+
+/// Map `AmazonCodeWhispererService.GetUsageLimits` → credit used/limit.
+///
+/// Verified 2026-09 on Builder ID / KIRO FREE: `usageBreakdownList` CREDIT row
+/// with `currentUsageWithPrecision` / `usageLimitWithPrecision`, plus
+/// `subscriptionInfo.subscriptionTitle` and `nextDateReset` unix seconds.
+pub fn parse_kiro_usage_limits(body: &Value, _now: DateTime<Utc>) -> QuotaSnapshot {
+    let mut snap = QuotaSnapshot {
+        source: "kiro_get_usage_limits",
+        ..Default::default()
+    };
+    if let Some(title) = body
+        .pointer("/subscriptionInfo/subscriptionTitle")
+        .or_else(|| body.pointer("/subscription_info/subscription_title"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        snap.plan_type = Some(title.to_string());
+    }
+    let rows = body
+        .get("usageBreakdownList")
+        .or_else(|| body.get("usage_breakdown_list"))
+        .and_then(Value::as_array);
+    let credit = rows.and_then(|arr| {
+        arr.iter()
+            .find(|row| {
+                row.get("resourceType")
+                    .or_else(|| row.get("resource_type"))
+                    .and_then(Value::as_str)
+                    .is_some_and(|s| s.eq_ignore_ascii_case("CREDIT"))
+            })
+            .or_else(|| arr.first())
+    });
+    if let Some(row) = credit {
+        let used = number_as_f64(
+            row.get("currentUsageWithPrecision")
+                .or_else(|| row.get("current_usage_with_precision"))
+                .or_else(|| row.get("currentUsage"))
+                .or_else(|| row.get("current_usage")),
+        );
+        let limit = number_as_f64(
+            row.get("usageLimitWithPrecision")
+                .or_else(|| row.get("usage_limit_with_precision"))
+                .or_else(|| row.get("usageLimit"))
+                .or_else(|| row.get("usage_limit")),
+        );
+        if let (Some(used), Some(limit)) = (used, limit) {
+            if limit > 0.0 {
+                snap.credit_used = Some(used.max(0.0));
+                snap.credit_limit = Some(limit);
+            }
+        }
+        let reset = unix_ts(
+            row.get("nextDateReset")
+                .or_else(|| row.get("next_date_reset")),
+        )
+        .or_else(|| {
+            unix_ts(
+                body.get("nextDateReset")
+                    .or_else(|| body.get("next_date_reset")),
+            )
+        });
+        snap.credit_reset_at = reset;
+    }
+    if snap.credit_reset_at.is_none() {
+        snap.credit_reset_at = unix_ts(
+            body.get("nextDateReset")
+                .or_else(|| body.get("next_date_reset")),
+        );
+    }
+    snap
+}
+
+fn unix_ts(v: Option<&Value>) -> Option<DateTime<Utc>> {
+    let n = number_as_f64(v)?;
+    if n <= 0.0 {
+        return None;
+    }
+    let secs = if n >= 100_000_000_000.0 {
+        n / 1000.0
+    } else {
+        n
+    };
+    DateTime::from_timestamp(secs as i64, 0)
 }
 
 fn fetch_claude_quota(account: &Account) -> Result<QuotaSnapshot> {
@@ -1321,6 +1453,14 @@ fn resolve_expires_at(agent: AgentId, credentials: &Value) -> Option<String> {
             return Some(n);
         }
     }
+    if let Some(s) = credentials
+        .pointer("/body/expires_at")
+        .and_then(|v| v.as_str())
+    {
+        if let Some(n) = normalize_expires_str(s) {
+            return Some(n);
+        }
+    }
     if let Some(v) = credentials.get("expires_at") {
         if let Some(n) = normalize_expires_value(v) {
             return Some(n);
@@ -1650,6 +1790,70 @@ mod tests {
     }
 
     #[test]
+    fn parse_kiro_usage_limits_reads_credit_row() {
+        let now = Utc::now();
+        let body = json!({
+            "nextDateReset": 1_790_812_800.0,
+            "subscriptionInfo": { "subscriptionTitle": "KIRO FREE" },
+            "usageBreakdownList": [{
+                "resourceType": "CREDIT",
+                "currentUsageWithPrecision": 0.29,
+                "usageLimitWithPrecision": 50.0,
+                "nextDateReset": 1_790_812_800.0
+            }]
+        });
+        let snap = parse_kiro_usage_limits(&body, now);
+        assert_eq!(snap.credit_used, Some(0.29));
+        assert_eq!(snap.credit_limit, Some(50.0));
+        assert_eq!(snap.plan_type.as_deref(), Some("KIRO FREE"));
+        assert_eq!(
+            snap.credit_reset_at.map(|t| t.timestamp()),
+            Some(1_790_812_800)
+        );
+        assert!(snap.quota5h_pct.is_none());
+        assert!(snap.quota7d_pct.is_none());
+        assert!(!snap.is_empty());
+    }
+
+    #[test]
+    fn apply_quota_snapshot_writes_kiro_credits() {
+        let now = Utc::now();
+        let mut acc = Account {
+            id: "k1".into(),
+            agent_id: AgentId::Kiro,
+            kind: AccountKind::Oauth,
+            label: "x".into(),
+            credentials: json!({}),
+            extra: json!({}),
+            status: "active".into(),
+            is_current: true,
+            created_at: "t".into(),
+            updated_at: "t".into(),
+        };
+        let snap = QuotaSnapshot {
+            credit_used: Some(0.29),
+            credit_limit: Some(50.0),
+            credit_reset_at: DateTime::from_timestamp(1_790_812_800, 0),
+            plan_type: Some("KIRO FREE".into()),
+            source: "kiro_get_usage_limits",
+            ..Default::default()
+        };
+        assert!(apply_quota_snapshot(&mut acc, &snap, now));
+        assert_eq!(
+            acc.extra.get("creditUsed").and_then(|v| v.as_f64()),
+            Some(0.29)
+        );
+        assert_eq!(
+            acc.extra.get("creditLimit").and_then(|v| v.as_f64()),
+            Some(50.0)
+        );
+        assert_eq!(
+            acc.extra.get("subscription").and_then(|v| v.as_str()),
+            Some("KIRO FREE")
+        );
+    }
+
+    #[test]
     fn codex_token_expiry_ignores_short_id_token() {
         // Real Codex shape: access exp ~10d, id_token exp ~1h (often already past).
         let access_exp = (Utc::now() + ChronoDuration::hours(200)).timestamp();
@@ -1812,6 +2016,7 @@ mod tests {
             reset_7d_at: None,
             plan_type: Some("plus".into()),
             source: "test",
+            ..Default::default()
         };
         assert!(apply_quota_snapshot(&mut acc, &snap, now));
         assert_eq!(
@@ -1856,6 +2061,7 @@ mod tests {
             reset_7d_at: Some(now + ChronoDuration::days(2)),
             plan_type: None,
             source: "test",
+            ..Default::default()
         };
         assert!(apply_quota_snapshot(&mut acc, &snap, now));
         assert!(acc.extra.get("quota5hPct").is_none());

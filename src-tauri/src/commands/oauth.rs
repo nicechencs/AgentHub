@@ -1,6 +1,6 @@
 //! OAuth PKCE + device-code Tauri commands.
 
-use agenthub_core::models::Account;
+use agenthub_core::models::{Account, AgentId};
 use agenthub_core::oauth::{
     self, DeviceOAuthPoll, DeviceOAuthStart, OAuthLoginOption, OAuthSessionInfo, StartOAuthResult,
 };
@@ -30,8 +30,12 @@ pub async fn oauth_start(
 ) -> Result<StartOAuthResult, String> {
     let hub = state.hub_arc()?;
     let open = open_browser.unwrap_or(false);
-    with_hub_blocking(hub, move |_hub| {
+    with_hub_blocking(hub, move |hub| {
         let agent = parse_agent(&agent_id)?;
+        if agent == AgentId::Kiro {
+            return oauth::start_kiro_cli_login(Some(hub.accounts()))
+                .map_err(|e| map_err_string("oauth_start", e));
+        }
         oauth::start_oauth(agent, open, provider_key.as_deref())
             .map_err(|e| map_err_string("oauth_start", e))
     })

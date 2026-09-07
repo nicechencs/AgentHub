@@ -99,11 +99,12 @@ fn product_id(product: AdapterSourceProduct) -> &'static str {
         AdapterSourceProduct::CodexChatGptSubscription => "codex-chatgpt-subscription",
         AdapterSourceProduct::ClaudeSubscription => "claude-subscription",
         AdapterSourceProduct::XaiGrokSubscription => "grok-xai-subscription",
+        AdapterSourceProduct::Kiro => "kiro",
         AdapterSourceProduct::Other => "other",
     }
 }
 
-fn all_products() -> [AdapterSourceProduct; 10] {
+fn all_products() -> [AdapterSourceProduct; 11] {
     [
         AdapterSourceProduct::KimiCodeMembership,
         AdapterSourceProduct::AnthropicApi,
@@ -114,6 +115,7 @@ fn all_products() -> [AdapterSourceProduct; 10] {
         AdapterSourceProduct::CodexChatGptSubscription,
         AdapterSourceProduct::ClaudeSubscription,
         AdapterSourceProduct::XaiGrokSubscription,
+        AdapterSourceProduct::Kiro,
         AdapterSourceProduct::Other,
     ]
 }

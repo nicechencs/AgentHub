@@ -1,13 +1,13 @@
 /**
  * Unified official-login session: one model the wait page talks to.
- * PKCE and device-code stay the only grant types; this file maps both.
+ * PKCE, device-code, and CLI-guided login stay the adapters underneath.
  */
 import type { MessageKey } from '@/lib/i18n';
 import type { Account, AgentKey } from '@/lib/types';
 import type { DeviceOAuthPollInfo, DeviceOAuthStartInfo, OAuthLoginOption, OAuthStartInfo, OAuthWaitInfo } from './account-port';
 import { OFFICIAL_LOGIN_SUPERSEDED, OAUTH_PKCE_LISTEN_TIMEOUT_SECS } from './oauth-constants';
 
-export type OfficialLoginFlow = 'pkce' | 'deviceCode';
+export type OfficialLoginFlow = 'pkce' | 'deviceCode' | 'cli';
 
 /** User-visible wait-page phase. Protocol statuses collapse into these. */
 export type OfficialLoginPhase = 'waiting' | 'ready' | 'failed' | 'expired' | 'cancelled';
@@ -16,6 +16,7 @@ export type OfficialLoginCopyId =
   | 'claude'
   | 'codex'
   | 'grok'
+  | 'kiro'
   | 'piAnthropic'
   | 'piCodex'
   | 'piXai';
@@ -44,6 +45,7 @@ export const IMPLEMENTED_OFFICIAL_LOGIN_IDS: Readonly<Record<string, readonly st
   claude: ['claude'],
   codex: ['codex'],
   grok: ['xai'],
+  kiro: ['kiro'],
   pi: ['anthropic', 'openai-codex', 'xai'],
 };
 
@@ -100,6 +102,7 @@ export function officialLoginCopyId(
     return 'codex';
   }
   if (agent === 'grok' && (id === 'xai' || id === 'grok')) return 'grok';
+  if (agent === 'kiro' && id === 'kiro') return 'kiro';
   if (agent === 'pi') {
     if (id === 'anthropic' || id === 'claude') return 'piAnthropic';
     if (id === 'openai-codex' || id === 'codex' || id === 'openai') return 'piCodex';
@@ -112,6 +115,7 @@ const OPTION_LABEL_KEY: Record<OfficialLoginCopyId, MessageKey> = {
   claude: 'connect.oauth.option.claude.label',
   codex: 'connect.oauth.option.codex.label',
   grok: 'connect.oauth.option.grok.label',
+  kiro: 'connect.oauth.option.kiro.label',
   piAnthropic: 'connect.oauth.option.piAnthropic.label',
   piCodex: 'connect.oauth.option.piCodex.label',
   piXai: 'connect.oauth.option.piXai.label',
@@ -121,6 +125,7 @@ const OPTION_DESCRIPTION_KEY: Record<OfficialLoginCopyId, MessageKey> = {
   claude: 'connect.oauth.option.claude.description',
   codex: 'connect.oauth.option.codex.description',
   grok: 'connect.oauth.option.grok.description',
+  kiro: 'connect.oauth.option.kiro.description',
   piAnthropic: 'connect.oauth.option.piAnthropic.description',
   piCodex: 'connect.oauth.option.piCodex.description',
   piXai: 'connect.oauth.option.piXai.description',
@@ -151,7 +156,9 @@ export function presentOfficialLoginOptions<T extends { agentId: string; id: str
 }
 
 export function officialLoginAdapter(flow: OAuthLoginOption['flow'] | OfficialLoginFlow): OfficialLoginFlow {
-  return flow === 'deviceCode' ? 'deviceCode' : 'pkce';
+  if (flow === 'deviceCode') return 'deviceCode';
+  if (flow === 'cli') return 'cli';
+  return 'pkce';
 }
 
 export function mapPkceWaitStatus(status: OAuthWaitInfo['status']): OfficialLoginPhase {
@@ -210,9 +217,12 @@ export function officialLoginErrorKey(
   const raw = error?.trim() ?? '';
   if (raw === OFFICIAL_LOGIN_SUPERSEDED) return 'connect.oauth.superseded';
   if (phase === 'expired') {
-    return flow === 'deviceCode' ? 'connect.oauth.deviceTimeout' : 'connect.oauth.waitTimeout';
+    if (flow === 'deviceCode') return 'connect.oauth.deviceTimeout';
+    if (flow === 'cli') return 'connect.oauth.cliTimeout';
+    return 'connect.oauth.waitTimeout';
   }
   if (flow === 'deviceCode') return 'connect.oauth.deviceFailed';
+  if (flow === 'cli') return 'connect.oauth.cliFailed';
   return 'connect.oauth.authFailed';
 }
 
@@ -233,6 +243,26 @@ export function officialLoginErrorDisplay(
     return { key, text: raw };
   }
   return { key };
+}
+
+export function sessionFromCliStart(
+  start: OAuthStartInfo,
+  optionId: string,
+): OfficialLoginSession {
+  const authorizeUrl = start.authorizeUrl?.trim() || null;
+  const userCode = start.userCode?.trim() || null;
+  return {
+    sessionId: start.state,
+    agentId: start.agentId,
+    optionId: start.providerKey?.trim() ? start.providerKey : optionId,
+    flow: 'cli',
+    authorizeUrl,
+    redirectUri: start.redirectUri?.trim() || null,
+    browserOpened: start.browserOpened,
+    userCode,
+    intervalSecs: 0,
+    expiresInSecs: start.expiresInSecs || OAUTH_PKCE_LISTEN_TIMEOUT_SECS,
+  };
 }
 
 export function sessionFromPkceStart(

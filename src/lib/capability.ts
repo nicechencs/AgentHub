@@ -39,14 +39,17 @@ export function isCapabilityBlocked(cap?: AgentCapability | null): boolean {
 
 /**
  * Connections / dashboard: this Agent cannot manage logins here.
- * Cursor is product-locked; other agents follow explicit `accountSwitch`.
+ * Cursor stays available so existing login can be imported; it has no API Key
+ * configuration. Other agents stay available when API Key can enter the pool
+ * (`apiKeyAccount` full/partial), even if live `accountSwitch` is unsupported.
  * Missing capability data fails open so loading does not disable every tab.
  */
 export function isAuthorizationManagementBlocked(
   agentId?: string | null,
   capabilities?: AgentCapabilities | null,
 ): boolean {
-  if (agentId === 'cursor') return true;
+  if (agentId === 'cursor') return false;
+  if (isCapabilityUsable(capabilities?.apiKeyAccount)) return false;
   const accountSwitch = capabilities?.accountSwitch;
   return accountSwitch != null && isCapabilityBlocked(accountSwitch);
 }

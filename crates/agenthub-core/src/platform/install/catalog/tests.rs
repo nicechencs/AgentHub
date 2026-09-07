@@ -1,4 +1,5 @@
 use super::*;
+#[cfg(not(windows))]
 use crate::models::RuntimeId;
 
 #[test]

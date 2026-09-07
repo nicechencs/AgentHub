@@ -8,8 +8,7 @@ use std::sync::Arc;
 use agenthub_core::adapters::AdapterRegistry;
 use agenthub_core::models::{AgentId, ChatEvent, ChatMessage, ChatMessageStatus, ChatRole};
 use agenthub_core::services::chat_runtime::{
-    RuntimeDecision, RuntimeEvent, RuntimePhase, RuntimeReply, RuntimeSnapshot,
-    RuntimeStartExtras,
+    RuntimeDecision, RuntimeEvent, RuntimePhase, RuntimeReply, RuntimeSnapshot, RuntimeStartExtras,
 };
 use agenthub_core::services::{ChatService, RunService};
 use agenthub_core::storage::{ChatRepo, Database};
@@ -79,7 +78,10 @@ fn missing_cwd_start_failure_cannot_leave_a_running_snapshot_or_accept_an_old_re
     let (_dir, _db, chat) = chat();
     let id = conversation(&chat, AgentId::Codex, None);
 
-    assert!(chat.runtime().start(&id, "hello", "start-1", RuntimeStartExtras::default()).is_err());
+    assert!(chat
+        .runtime()
+        .start(&id, "hello", "start-1", RuntimeStartExtras::default())
+        .is_err());
     let snapshot = chat
         .runtime()
         .snapshot(&id, None)
@@ -125,7 +127,12 @@ fn persisted_running_state_rejects_a_second_start_without_spawning_codex() {
 
     let error = chat
         .runtime()
-        .start(&id, "must not spawn", "start-2", RuntimeStartExtras::default())
+        .start(
+            &id,
+            "must not spawn",
+            "start-2",
+            RuntimeStartExtras::default(),
+        )
         .unwrap_err();
     assert!(error.to_string().contains("active runtime turn"));
     let snapshot = chat.runtime().snapshot(&id, None).unwrap();
@@ -177,7 +184,6 @@ fn runtime_dtos_use_the_public_camel_case_wire_contract() {
     assert_eq!(reply_value["decision"], "deny");
 }
 
-
 #[test]
 fn set_settings_rejects_while_running_and_keeps_prior_values() {
     let (_dir, db, chat) = chat();
@@ -220,7 +226,11 @@ fn set_settings_rejects_while_running_and_keeps_prior_values() {
             },
         )
         .unwrap_err();
-    assert!(err.to_string().contains("进行中") || err.to_string().contains("active") || err.to_string().contains("轮次"));
+    assert!(
+        err.to_string().contains("进行中")
+            || err.to_string().contains("active")
+            || err.to_string().contains("轮次")
+    );
 
     let options = chat.runtime().options(&id).unwrap();
     assert_eq!(options.settings.model.as_deref(), Some("gpt-mock"));

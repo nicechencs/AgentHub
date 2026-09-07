@@ -2006,7 +2006,7 @@ fn cursor_switch_fails_closed_with_chinese_reason() {
     assert_eq!(error.code(), "unsupported");
     let message = error.to_string();
     assert!(
-        message.contains("CURSOR_API_KEY"),
+        message.contains("请用 Cursor 自己的登录"),
         "gui must receive the fail-closed reason: {message}"
     );
     assert!(message.contains("Cursor"), "{message}");

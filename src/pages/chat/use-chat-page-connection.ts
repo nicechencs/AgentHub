@@ -108,10 +108,10 @@ export function useChatPageConnection(input: {
 
   const leftoverCurrent = leftoverProviderIsCurrent(providers);
 
-  const usesLiveChatModel = primaryAgent === 'pi' || primaryAgent === 'grok';
+  const usesLiveChatModel = primaryAgent === 'pi' || primaryAgent === 'grok' || primaryAgent === 'kiro';
 
   const loadLiveChatModel = useCallback(async (agentId: AgentKey) => {
-    if (agentId !== 'pi' && agentId !== 'grok') {
+    if (agentId !== 'pi' && agentId !== 'grok' && agentId !== 'kiro') {
       setLiveChatModel(null);
       setLiveChatModels([]);
       setLiveChatEffort(null);
@@ -177,7 +177,7 @@ export function useChatPageConnection(input: {
 
   const currentModel = useMemo(() => {
     if (leftoverCurrent) return null;
-    if (primaryAgent === 'pi' || primaryAgent === 'grok') {
+    if (primaryAgent === 'pi' || primaryAgent === 'grok' || primaryAgent === 'kiro') {
       return resolvePiChatCurrentModel(liveChatModel);
     }
     const fromProvider = currentProvider ? extractModel(currentProvider.configText) : null;
@@ -194,7 +194,7 @@ export function useChatPageConnection(input: {
         currentModel,
       });
     }
-    if (primaryAgent === 'grok') {
+    if (primaryAgent === 'grok' || primaryAgent === 'kiro') {
       return chatModelOptions(liveChatModels, currentModel);
     }
     return chatModelOptions(remoteModels, currentModel);
@@ -303,7 +303,7 @@ export function useChatPageConnection(input: {
     if (!next || isRetiredChatModel(next) || next === currentModel) return;
     setSwitchingModel(true);
     try {
-      if (primaryAgent === 'pi' || primaryAgent === 'grok') {
+      if (primaryAgent === 'pi' || primaryAgent === 'grok' || primaryAgent === 'kiro') {
         await setChatModel(primaryAgent, next);
         setLiveChatModel(next);
       } else if (currentProvider && currentProvider.agentId === primaryAgent) {

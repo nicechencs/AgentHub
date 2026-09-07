@@ -571,7 +571,10 @@ pub(crate) fn set_pi_default_thinking(level: &str) -> Result<()> {
     if !pi_thinking_level_ok(level) {
         return Err(AppError::InvalidArg(format!("不支持的思考等级: {level}")));
     }
-    if pi_settings_default_model().as_deref().is_some_and(pi_model_rejects_thinking) {
+    if pi_settings_default_model()
+        .as_deref()
+        .is_some_and(pi_model_rejects_thinking)
+    {
         return Err(AppError::InvalidArg("这个模型不支持思考等级".into()));
     }
     let dir = pi_config_dir()?;
@@ -667,11 +670,7 @@ fn pi_model_family(model: &str) -> Option<&'static str> {
     if crate::models::is_openrouter_backup_model(raw) {
         return Some("retired");
     }
-    let id = raw
-        .rsplit('/')
-        .next()
-        .unwrap_or(raw)
-        .to_ascii_lowercase();
+    let id = raw.rsplit('/').next().unwrap_or(raw).to_ascii_lowercase();
     if id.starts_with("grok") {
         return Some("xai");
     }

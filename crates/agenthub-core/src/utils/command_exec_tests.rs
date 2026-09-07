@@ -3,8 +3,11 @@ use std::time::{Duration, Instant};
 
 #[cfg(unix)]
 use super::command_exec::{CommandExecutor, ExecRequest, SystemCommandExecutor};
+#[cfg(unix)]
 use crate::services::{with_install_log_hook, InstallLogHook};
+#[cfg(unix)]
 use std::sync::atomic::{AtomicUsize, Ordering};
+#[cfg(unix)]
 use std::sync::Arc;
 
 #[cfg(unix)]

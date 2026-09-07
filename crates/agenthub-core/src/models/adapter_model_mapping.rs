@@ -388,6 +388,33 @@ pub const ADAPTER_MODEL_MAPPING_TABLES: &[AdapterModelMappingTable] = &[
         entries: DEEPSEEK_DSH_MODELS,
         allow_passthrough: true,
     },
+    AdapterModelMappingTable {
+        id: "kiro-claude-v1",
+        source: AdapterSourceProduct::Kiro,
+        target: AgentId::Claude,
+        target_protocol: AdapterTargetProtocol::AnthropicMessages,
+        default_target_model: Some("auto"),
+        entries: &[],
+        allow_passthrough: true,
+    },
+    AdapterModelMappingTable {
+        id: "kiro-codex-v1",
+        source: AdapterSourceProduct::Kiro,
+        target: AgentId::Codex,
+        target_protocol: AdapterTargetProtocol::OpenAiResponses,
+        default_target_model: Some("auto"),
+        entries: &[],
+        allow_passthrough: true,
+    },
+    AdapterModelMappingTable {
+        id: "kiro-grok-v1",
+        source: AdapterSourceProduct::Kiro,
+        target: AgentId::Grok,
+        target_protocol: AdapterTargetProtocol::OpenAiResponses,
+        default_target_model: Some("auto"),
+        entries: &[],
+        allow_passthrough: true,
+    },
 ];
 
 pub fn find_adapter_model_mapping(

@@ -77,9 +77,13 @@ import {
   ticketAddMenuClosesOnKey,
   buildTicketDetailFields,
   buildTicketWalletRows,
+  creditUsagePct,
+  formatCreditAmount,
+  hasCreditWindow,
   hasOfficialQuotaWindow,
   ticketAddActionLabel,
   ticketAuthChip,
+  cursorLoginKindLabel,
   ticketCardTitle,
   showsCatalogUnapply,
   showsNativeSwitch,
@@ -201,7 +205,9 @@ export function TicketDetailPanel({
   // 5h is official-only. Missing quota5hPct hides the bar; never copy 7d into 5h.
   const has7d = hasOfficialQuotaWindow(extras?.quota7dPct);
   const has5h = hasOfficialQuotaWindow(extras?.quota5hPct);
-  const hasQuota = has7d || has5h;
+  const hasCredits = hasCreditWindow(extras);
+  const creditPct = creditUsagePct(extras?.creditUsed, extras?.creditLimit);
+  const hasQuota = has7d || has5h || hasCredits;
   const tokenUsage = !hasQuota ? ticketWalletTokenUsageText(extras, t) : null;
   const isSyncLogin = extras?.oauthAction?.kind === 'sync-current-login';
   const refreshLabel = isSyncLogin
@@ -261,6 +267,8 @@ export function TicketDetailPanel({
       hasQuota={hasQuota}
       has7d={has7d}
       has5h={has5h}
+      hasCredits={hasCredits}
+      creditPct={creditPct}
       tokenUsage={tokenUsage}
       overview={overview}
       timeline={timeline}
@@ -383,6 +391,8 @@ function TicketDetailBody({
   hasQuota,
   has7d,
   has5h,
+  hasCredits,
+  creditPct,
   tokenUsage,
   overview,
   timeline,
@@ -399,6 +409,8 @@ function TicketDetailBody({
   hasQuota: boolean;
   has7d: boolean;
   has5h: boolean;
+  hasCredits: boolean;
+  creditPct?: number;
   tokenUsage: string | null;
   overview: TicketDetailField[];
   timeline: TicketDetailField[];
@@ -433,6 +445,21 @@ function TicketDetailBody({
                 pct={extras?.quota5hPct}
                 resetIn={extras?.quotaResetIn}
               />
+            ) : null}
+            {hasCredits ? (
+              <QuotaBar
+                label={t('connections.list.credits')}
+                pct={creditPct}
+                resetIn={extras?.creditResetIn}
+              />
+            ) : null}
+            {hasCredits && extras?.creditLimit != null ? (
+              <p className="text-meta text-secondary tabular-nums">
+                {t('connections.list.creditsUsage', {
+                  used: formatCreditAmount(extras.creditUsed ?? 0),
+                  limit: formatCreditAmount(extras.creditLimit),
+                })}
+              </p>
             ) : null}
             {tokenUsage ? (
               <p className="text-meta text-secondary">{tokenUsage}</p>
@@ -587,10 +614,13 @@ function TicketRow({
   const switching = switchingId === ticket.id;
   const switchBusy = switchingId !== null;
   const title = ticketCardTitle(ticket, extras);
+  const cursorLogin = cursorLoginKindLabel(extras?.cursorLoginKind, t);
   const lastUsed = formatDetailTimestamp(extras?.tokenLastUsedAt ?? extras?.lastUsedAt);
   const has7d = hasOfficialQuotaWindow(extras?.quota7dPct);
   const has5h = hasOfficialQuotaWindow(extras?.quota5hPct);
-  const tokenUsage = !has7d && !has5h ? ticketWalletTokenUsageText(extras, t) : null;
+  const hasCredits = hasCreditWindow(extras);
+  const creditPct = creditUsagePct(extras?.creditUsed, extras?.creditLimit);
+  const tokenUsage = !has7d && !has5h && !hasCredits ? ticketWalletTokenUsageText(extras, t) : null;
   const kind = credentialKindFromClass(ticket.credentialClass);
 
   return (
@@ -606,20 +636,25 @@ function TicketRow({
         <div className="flex min-w-0 items-center gap-2">
           {sortHandle}
           <AgentLogo agentId={ticket.agentId} size="sm" />
-          {onShowDetail ? (
-            <ListNameButton
-              hint={title}
-              data-ticket-name={ticket.id}
-              data-help="list-row"
-              onClick={() => onShowDetail(ticket)}
-            >
-              {title}
-            </ListNameButton>
-          ) : (
-            <Tip className="truncate text-body font-medium" label={title}>
-              {title}
-            </Tip>
-          )}
+          <div className="min-w-0 flex-1">
+            {onShowDetail ? (
+              <ListNameButton
+                hint={title}
+                data-ticket-name={ticket.id}
+                data-help="list-row"
+                onClick={() => onShowDetail(ticket)}
+              >
+                {title}
+              </ListNameButton>
+            ) : (
+              <Tip className="truncate text-body font-medium" label={title}>
+                {title}
+              </Tip>
+            )}
+            {cursorLogin ? (
+              <div className="truncate text-meta text-secondary">{cursorLogin}</div>
+            ) : null}
+          </div>
         </div>
       </TableCell>
       <TableCell data-col="kind" className="whitespace-nowrap">
@@ -651,8 +686,11 @@ function TicketRow({
         )}
       </TableCell>
       <TableCell data-col="usage" className="min-w-0">
-        {has7d || has5h ? (
+        {has7d || has5h || hasCredits ? (
           <div className="flex min-w-0 flex-col gap-1">
+            {hasCredits ? (
+              <QuotaBar label={t('connections.list.credits')} pct={creditPct} compact />
+            ) : null}
             {has7d ? <QuotaBar label="7d" pct={extras?.quota7dPct} compact /> : null}
             {has5h ? <QuotaBar label="5h" pct={extras?.quota5hPct} compact /> : null}
           </div>

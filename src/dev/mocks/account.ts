@@ -12,6 +12,7 @@ const mockState: Record<AgentKey, Account[]> = {
   pi: [],
   workbuddy: [],
   cursor: [],
+  kiro: [],
 };
 
 let lastSwitch: { agentId: AgentKey; fromId: string } | null = null;
@@ -221,7 +222,13 @@ export function createMockAccountPort(): AccountPort {
     },
 
     async oauthSupported(agentId) {
-      return agentId === 'claude' || agentId === 'codex' || agentId === 'grok' || agentId === 'pi';
+      return (
+        agentId === 'claude'
+        || agentId === 'codex'
+        || agentId === 'grok'
+        || agentId === 'pi'
+        || agentId === 'kiro'
+      );
     },
 
     async listOAuthOptions(agentId) {
@@ -261,6 +268,17 @@ export function createMockAccountPort(): AccountPort {
             label: 'Grok / xAI',
             description: '用设备码登录 Grok 订阅',
             flow: 'deviceCode' as const,
+          },
+        ];
+      }
+      if (agentId === 'kiro') {
+        return [
+          {
+            id: 'kiro',
+            agentId: 'kiro',
+            label: 'Kiro',
+            description: '开始后会出现登录链接。你可以复制，也可以打开浏览器。完成后回到这里。',
+            flow: 'cli' as const,
           },
         ];
       }

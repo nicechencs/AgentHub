@@ -41,6 +41,7 @@ fn builtin_registers_structured_agents_not_text_only() {
         AgentId::Kimi,
         AgentId::Grok,
         AgentId::Pi,
+        AgentId::Kiro,
     ];
     for agent in agents {
         assert!(reg.contains(agent), "{agent:?}");

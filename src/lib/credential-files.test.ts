@@ -30,6 +30,25 @@ describe('credential file names', () => {
     );
   });
 
+  it('maps Cursor CLI and window login files', () => {
+    expect(defaultLivePathForFile('cursor', 'auth.json')).toBe(
+      '~/AppData/Roaming/Cursor/auth.json',
+    );
+    expect(defaultLivePathForFile('cursor', 'state.vscdb')).toBe(
+      '~/AppData/Roaming/Cursor/User/globalStorage/state.vscdb',
+    );
+  });
+
+  it('maps Kiro login files to the kiro-cli stores', () => {
+    expect(authFileName('kiro')).toBe('data.sqlite3');
+    expect(defaultLivePathForFile('kiro', 'data.sqlite3')).toBe(
+      '~/AppData/Local/Kiro-Cli/data.sqlite3',
+    );
+    expect(defaultLivePathForFile('kiro', 'kiro-auth-token.json')).toBe(
+      '~/.aws/sso/cache/kiro-auth-token.json',
+    );
+  });
+
   it('maps ZCode live files to v2/config.json, not config.toml', () => {
     expect(defaultLivePathForFile('zcode', 'config.json')).toBe(
       '~/.zcode/v2/config.json',
@@ -41,6 +60,54 @@ describe('credential file names', () => {
 });
 
 describe('extractAccountCredentialFiles', () => {
+  it('shows data.sqlite3 for an imported Kiro login', () => {
+    const files = extractAccountCredentialFiles({
+      agentId: 'kiro',
+      kind: 'oauth',
+      format: 'auth_json',
+      source: 'data.sqlite3',
+      credentials: {
+        format: 'auth_json',
+        body: {
+          access_token: 'aoa-preview',
+          refresh_token: 'aor-preview',
+          expires_at: '2026-09-06T15:05:03Z',
+          provider: 'google',
+        },
+      },
+    });
+    expect(files).toHaveLength(1);
+    expect(files[0]!.name).toBe('data.sqlite3');
+    expect(files[0]!.content).toContain('aoa-preview');
+    expect(files[0]!.name).not.toBe('auth.json');
+  });
+
+  it('shows Cursor window login as state.vscdb and both stores when marked', () => {
+    const windowFiles = extractAccountCredentialFiles({
+      agentId: 'cursor',
+      kind: 'oauth',
+      format: 'auth_json',
+      cursorLoginKind: 'window',
+      credentials: {
+        format: 'auth_json',
+        body: { access_token: 'window-access' },
+      },
+    });
+    expect(windowFiles.map((file) => file.name)).toEqual(['state.vscdb']);
+
+    const both = extractAccountCredentialFiles({
+      agentId: 'cursor',
+      kind: 'oauth',
+      format: 'auth_json',
+      cursorLoginKind: 'both',
+      credentials: {
+        format: 'auth_json',
+        body: { access_token: 'shared-access' },
+      },
+    });
+    expect(both.map((file) => file.name)).toEqual(['auth.json', 'state.vscdb']);
+  });
+
   it('shows auth.json from an official Grok login body', () => {
     const files = extractAccountCredentialFiles({
       agentId: 'grok',

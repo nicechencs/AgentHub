@@ -459,11 +459,11 @@ impl ChatService {
                 jobs.push((agent, prompt));
             }
 
-            let grok_prefs = agents
-                .first()
-                .copied()
-                .filter(|agent| *agent == AgentId::Grok)
-                .map(|_| crate::adapters::grok::grok_send_prefs());
+            let send_prefs = match agents.first().copied() {
+                Some(AgentId::Grok) => Some(crate::adapters::grok::grok_send_prefs()),
+                Some(AgentId::Kiro) => Some(crate::adapters::kiro::kiro_send_prefs()),
+                _ => None,
+            };
             let opts = RunOptions {
                 mode: RunMode::Parallel,
                 timeout: DEFAULT_RUN_TIMEOUT,
@@ -475,8 +475,8 @@ impl ChatService {
                 // Claude/Codex → stream-json / --json; others remain text.
                 process_mode: crate::models::ProcessMode::Auto,
                 native_session_id: resume_id.clone(),
-                model: grok_prefs.as_ref().and_then(|(model, _)| model.clone()),
-                effort: grok_prefs.as_ref().and_then(|(_, effort)| effort.clone()),
+                model: send_prefs.as_ref().and_then(|(model, _)| model.clone()),
+                effort: send_prefs.as_ref().and_then(|(_, effort)| effort.clone()),
             };
             let max_out = opts.max_output_bytes;
             tracing::debug!(
@@ -712,15 +712,8 @@ fn looks_like_stream_protocol(text: &str) -> bool {
     };
     match value.get("type").and_then(|t| t.as_str()) {
         Some(
-            "session"
-            | "agent_start"
-            | "turn_start"
-            | "message_start"
-            | "message_update"
-            | "message_end"
-            | "agent_end"
-            | "turn_end"
-            | "agent_settled",
+            "session" | "agent_start" | "turn_start" | "message_start" | "message_update"
+            | "message_end" | "agent_end" | "turn_end" | "agent_settled",
         ) => true,
         _ => value.get("jsonrpc").is_some() && value.get("method").is_some(),
     }
@@ -732,6 +725,76 @@ fn stdout_as_message_content(stdout: &str) -> Option<&str> {
     } else {
         Some(stdout)
     }
+}
+
+/// Strip CSI/OSC/cursor sequences from headless CLI text.
+///
+/// Kiro (and similar TUI CLIs) still emit color/cursor restore when stdout is a
+/// pipe if `TERM` is inherited from Terminal.app / a Linux tty. Windows kiro
+/// also colors under `CREATE_NO_WINDOW`. Chat stores the reply, not the TUI.
+pub(crate) fn sanitize_cli_chat_text(input: &str) -> String {
+    let had_esc = input.bytes().any(|b| b == 0x1b) || input.contains('\u{9b}');
+    let stripped = strip_terminal_escapes(input);
+    let mut out = stripped.replace("\r\n", "\n").replace('\r', "\n");
+    if let Some(rest) = out.strip_prefix('\u{feff}') {
+        out = rest.to_string();
+    }
+    if had_esc {
+        if let Some(rest) = out.strip_prefix("> ") {
+            out = rest.to_string();
+        } else if let Some(rest) = out.strip_prefix('>') {
+            out = rest.to_string();
+        }
+    }
+    out.trim_matches('\n').to_string()
+}
+
+fn strip_terminal_escapes(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' {
+            match chars.next() {
+                Some('[') => {
+                    for c in chars.by_ref() {
+                        if ('\u{40}'..='\u{7e}').contains(&c) {
+                            break;
+                        }
+                    }
+                }
+                Some(']') => {
+                    while let Some(c) = chars.next() {
+                        if c == '\u{07}' {
+                            break;
+                        }
+                        if c == '\u{1b}' && chars.peek() == Some(&'\\') {
+                            chars.next();
+                            break;
+                        }
+                    }
+                }
+                Some('(' | ')') => {
+                    let _ = chars.next();
+                }
+                Some(_) | None => {}
+            }
+            continue;
+        }
+        // UTF-8 C1 CSI (U+009B). Raw 0x9B is invalid UTF-8 and already lossy.
+        if ch == '\u{9b}' {
+            for c in chars.by_ref() {
+                if ('\u{40}'..='\u{7e}').contains(&c) {
+                    break;
+                }
+            }
+            continue;
+        }
+        if (ch as u32) < 0x20 && ch != '\t' && ch != '\n' && ch != '\r' {
+            continue;
+        }
+        out.push(ch);
+    }
+    out
 }
 
 fn finalize_agent_message(
@@ -752,6 +815,8 @@ fn finalize_agent_message(
     }
     if looks_like_stream_protocol(&msg.content) {
         msg.content.clear();
+    } else {
+        msg.content = sanitize_cli_chat_text(&msg.content);
     }
     msg.status = map_run_status(result.status);
     msg.exit_code = result.exit_code;

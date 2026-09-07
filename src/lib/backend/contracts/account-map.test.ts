@@ -111,6 +111,54 @@ describe('mapCoreAccount', () => {
     expect(mapped.subscription).toBe('prolite');
   });
 
+  it('keeps Cursor CLI vs window login kind after import', () => {
+    const mapped = mapCoreAccount(
+      core({
+        id: 'cursor-1',
+        agentId: 'cursor',
+        extra: { source: 'live', cursorLoginKind: 'cli' },
+        credentials: {
+          format: 'auth_json',
+          body: { access_token: 'cli-access', email: 'c@example.com' },
+        },
+      }),
+    );
+    expect(mapped.cursorLoginKind).toBe('cli');
+    expect(mapped.credentialFiles?.[0]?.name).toBe('auth.json');
+
+    const windowLogin = mapCoreAccount(
+      core({
+        id: 'cursor-2',
+        agentId: 'cursor',
+        extra: { source: 'live', cursorLoginKind: 'window' },
+        credentials: {
+          format: 'auth_json',
+          body: { access_token: 'window-access', email: 'c@example.com' },
+        },
+      }),
+    );
+    expect(windowLogin.cursorLoginKind).toBe('window');
+    expect(windowLogin.credentialFiles?.[0]?.name).toBe('state.vscdb');
+
+    const fromCredentials = mapCoreAccount(
+      core({
+        id: 'cursor-3',
+        agentId: 'cursor',
+        extra: { source: 'live' },
+        credentials: {
+          format: 'auth_json',
+          cursorLoginKind: 'both',
+          body: { access_token: 'shared-access' },
+        },
+      }),
+    );
+    expect(fromCredentials.cursorLoginKind).toBe('both');
+    expect(fromCredentials.credentialFiles?.map((file) => file.name)).toEqual([
+      'auth.json',
+      'state.vscdb',
+    ]);
+  });
+
   it('attaches associated files from stored credentials', () => {
     const mapped = mapCoreAccount(
       core({
@@ -271,6 +319,26 @@ describe('mapCoreAccount', () => {
     );
     expect(mapped.quotaResetIn).toBeUndefined();
     expect(mapped.quota7dPct).toBe(30);
+  });
+
+  it('maps Kiro official credit windows without treating them as 7d', () => {
+    const mapped = mapCoreAccount(
+      core({
+        id: 'kiro-1',
+        agentId: 'kiro',
+        label: 'nice@x.com',
+        extra: {
+          creditUsed: 0.29,
+          creditLimit: 50,
+          creditResetAt: '2026-10-01T00:00:00Z',
+          subscription: 'KIRO FREE',
+        },
+      }),
+    );
+    expect(mapped.creditUsed).toBe(0.29);
+    expect(mapped.creditLimit).toBe(50);
+    expect(mapped.creditResetAt).toBe('2026-10-01T00:00:00Z');
+    expect(mapped.quota7dPct).toBeUndefined();
   });
 
   it('upgrades grok-oauth title when email is in extra', () => {

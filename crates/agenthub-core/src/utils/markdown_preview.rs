@@ -26,9 +26,7 @@ pub fn is_markdown_path(path: &Path) -> bool {
 
 pub fn read_markdown_file_preview(path: &str, cwd: &str) -> Result<MarkdownFilePreview> {
     if cwd.trim().is_empty() {
-        return Err(AppError::InvalidArg(
-            "working directory is required".into(),
-        ));
+        return Err(AppError::InvalidArg("working directory is required".into()));
     }
     if path.trim().is_empty() {
         return Err(AppError::InvalidArg("path is required".into()));

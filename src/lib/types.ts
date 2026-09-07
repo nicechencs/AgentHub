@@ -18,6 +18,7 @@ export const KNOWN_AGENT_IDS = [
   'cursor',
   'dsh',
   'zcode',
+  'kiro',
 ] as const;
 
 export type KnownAgentId = (typeof KNOWN_AGENT_IDS)[number];
@@ -225,6 +226,8 @@ export interface Account {
   liveAuthHealth?: import('@/lib/backend/contracts/auth-state').AuthHealth;
   liveAuthSource?: string;
   liveAuthRevision?: string;
+  /** Cursor only: which local login file this row came from. */
+  cursorLoginKind?: 'cli' | 'window' | 'both';
   /** OAuth has a refresh credential and can renew an expired access token. */
   refreshable?: boolean;
   /** core 原始 status（如 active） */
@@ -239,6 +242,12 @@ export interface Account {
   quotaResetIn?: string;
   /** 7d 窗口重置倒计时 */
   quota7dResetIn?: string;
+  /** Kiro official credits used. */
+  creditUsed?: number;
+  /** Kiro official credit limit. */
+  creditLimit?: number;
+  /** Absolute reset for Kiro credits (RFC3339). */
+  creditResetAt?: string;
   lastUsedAt?: string; // ISO 时间
   /** core 更新时间（比较当前生效项时使用） */
   updatedAt?: string;

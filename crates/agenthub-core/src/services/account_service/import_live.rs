@@ -33,7 +33,14 @@ impl AccountService {
             return self.import_pi_providers_inner(name);
         }
 
-        let adapter = self.registry.require(agent, Capability::AccountSwitch)?;
+        // Kiro / Cursor can import a local login without writing it back.
+        let adapter = if matches!(agent, AgentId::Kiro | AgentId::Cursor) {
+            self.registry.get(agent).ok_or_else(|| {
+                AppError::NotFound(format!("adapter not registered: {}", agent.as_str()))
+            })?
+        } else {
+            self.registry.require(agent, Capability::AccountSwitch)?
+        };
         let _lock = self.acquire_live_lock(agent)?;
         let lives = self.read_live_accounts(adapter.as_ref(), agent)?;
         if lives.is_empty() {
