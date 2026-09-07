@@ -12,7 +12,12 @@ updated: 2026-09-08
 
 ## 产品形态
 
-Chat 是 AgentHub 里的运行工作台。当前一个会话对应一个 Agent；同一 turn 内的过程状态仍以 `(turn, agent)` 隔离。新空 Codex 会话使用 app-server 持续聊天，旧会话和其他 Agent 保留原有运行方式。Codex 会话级模型/思考强度选择和统一菜单尚未完成，不以其他 Agent 的现有设置入口代替。
+Chat 是 AgentHub 里的运行工作台。当前一个会话对应一个 Agent；同一 turn 内的过程状态仍以 `(turn, agent)` 隔离。发送按会话隔离，多个会话可以同时生成。
+
+- **新空 Codex 会话**：app-server 持续聊天；会话级模型/思考强度、最小操作菜单、本地图片附件、「用于本次」技能已落地（见 [B2](../status/chat-codex-b2.md)）。计划模式与 Claude B3 未做。
+- **新空 Grok 会话**：持续聊天，可选模型和思考等级，支持图片与后续轮排队。
+- **新空 Kiro 会话**：`kiro-cli acp` 持续通道（允许/拒绝、停止；生成时不能中途补充，可排队到下一轮）。旧对话保留原发送方式。本机登录或 `KIRO_API_KEY` 可用时，打印路径可走 HTTP 多轮（`kiro-http:` 前缀）；已有 HTTP 会话失败时直接报错并保留会话，不回退成新的命令行会话。跨页事实见 [STATUS](../STATUS.md)。
+- **其余 Agent 与旧会话**：保留原有发送方式。
 
 ## 当前数据流
 
@@ -47,7 +52,7 @@ Tauri transport 使用 `ipc::Channel<ChatEvent>`，不是 SSE。阻塞进程执�
 - 结构化 process step（thinking、tool、状态等，取决于 Agent parser）；
 - Agent finished、cancelled、failed 与整体 finished/error。
 
-Claude、Codex、Kimi、Grok、Pi、Kiro 当前可走 `ProcessMode::Auto` 的结构化解析；WorkBuddy 与 ZCode 没有结构化 parser 时按 text 展示。Kiro 须 `--agent-engine v2`，v1 会拒绝 stream-json。Kiro 已安装命令行时走 `kiro-cli`（含过程流）；没有命令行时 `RunService` 才提前返回 HTTP 文本回复，没有 stream-json。ZCode 对话需要 PATH 上的 `zcode`；只装了桌面端时不能凭空当成命令行。DeepSeek Harness 的 StructuredStream 仍是 Planned。**Cursor Agent 默认软隐藏**，结构化输出与登录写入等兼容项修复完成前不在 Chat 等页面开放。解析失败降级为 raw/text 事件，不因某一行 JSON 不可识别而丢弃整次对话；CLI 不支持 flag 时不得静默重试成另一种语义。
+Claude、Codex、Kimi、Grok、Pi、Kiro 当前可走 `ProcessMode::Auto` 的结构化解析；WorkBuddy 与 ZCode 没有结构化 parser 时按 text 展示。Kiro 须 `--agent-engine v2`，v1 会拒绝 stream-json。新交互对话走 `kiro-cli acp`；旧打印路径在本机登录或 `KIRO_API_KEY` 可用时可走 HTTP，已有 HTTP 会话失败不改走命令行。ZCode 对话需要 PATH 上的 `zcode`；只装了桌面端时不能凭空当成命令行。DeepSeek Harness 的 StructuredStream 仍是 Planned。**Cursor Agent 默认软隐藏**，结构化输出与登录写入等兼容项修复完成前不在 Chat 等页面开放。解析失败降级为 raw/text 事件，不因某一行 JSON 不可识别而丢弃整次对话；CLI 不支持 flag 时不得静默重试成另一种语义。
 
 旧发送方式的过程数据主要是内存视图，最终正文和会话消息入库；刷新后不保证过程回放。Codex runtime 另有有限持久化事件、真实确认/问答回复及同机恢复；截断通过 gap 表达，不承诺无限过程历史。问答和文件审批的完整桌面真实验收仍待补，过程内 usage 也未完成。
 
@@ -71,6 +76,8 @@ Agent catalog/registry 描述安装、配置、账号、skills、usage、runtime
 
 ## 相关页面
 
+- [当前实现状态](../STATUS.md)
+- [Codex Chat B2](../status/chat-codex-b2.md)
 - [Architecture overview](../architecture/overview.md)
 - [Core and runtime](../architecture/core-runtime.md)
 - [Frontend and backend boundary](../architecture/frontend-backend.md)

@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: product, frontend, and core contributors
 source-of-truth: Ticket/Connection services, adapter planner contracts, and product boundary decisions
-updated: 2026-09-03
+updated: 2026-09-08
 ---
 
 # Connections、Routes 与绑定
@@ -19,7 +19,7 @@ AgentHub 保存的是一份登录：API Key 或一次订阅授权。用户把它
 | 用户看到 | 领域/实现术语 | 含义 |
 | --- | --- | --- |
 | 登录 / Connection | Ticket（过渡期聚合 accounts + providers） | 用户可选择的一份真实授权 |
-| 编程工具 | Agent | Claude、Codex、Grok、Pi 等目标客户端 |
+| 编程工具 | Agent | Claude、Codex、Grok、Pi、Kiro 等目标客户端 |
 | 对方认的登录或配置位置 | Slot / writer | 目标 Agent 可写的 native 位置 |
 | 这份登录接到这个工具的做法 | Edge / Binding | 一个 source 到 target 的使用关系 |
 | 直接改配置 | `native_endpoint` / `config_sync`，领域常归 `reshape` | 目标无需常驻 bridge |
@@ -69,7 +69,7 @@ unbind(binding)        → 停桥（若有）、恢复上一份 live、保留登
 - 接到某个工具从 Dashboard「连接/切换」。把连接页的登录加入默认连接池，走连接池页的「从连接同步」；登录仍留在连接页。**API Key 都可以加入**（含 WorkBuddy / ZCode 等上配置的）。国产官方登录不能加入。连接页不再提供「分享至连接池 / 用到其他工具 / 本机转发」。
 - 连接池页另有「从连接同步」，可一次加入连接页里可分享的登录（所有 API Key；Claude / Codex / Grok 官方登录仍按已登记的接法）。已经在池里的会跳过。国产官方登录不进入候选。
 - Routes 管理本机转发 runtime：固定 loopback 入口、本机令牌、默认池成员、模型名单、启停、自动恢复、失败详情和解绑。连接池列出这份登录在本机转发里怎么用；从池中移除只改成员，不删登录。
-- 接到本机转发后，目标客户端只认一个 loopback 口和一把本机令牌。默认每个目标 Agent/surface 一个池；往池里增删合格登录不改客户端配置。Codex 与 Grok 共用 `/v1/responses`，具体格式跟路由一起保存，由本机令牌选中，不根据请求正文猜测。接到 Codex 时写入 Responses + 本机 API Key（进 `auth.json`）；接到 Grok 时写入 `api_backend = "responses"` 和本机令牌。这不是 Codex↔Grok 双向转换开关。
+- 接到本机转发后，目标客户端只认一个 loopback 口和一把本机令牌。默认每个目标 Agent/surface 一个池；往池里增删合格登录不改客户端配置。Codex 与 Grok 共用 `/v1/responses`，具体格式跟路由一起保存，由本机令牌选中，不根据请求正文猜测。接到 Codex 时写入 Responses + 本机 API Key（进 `auth.json`）；接到 Grok 时写入 `api_backend = "responses"` 和本机令牌。这不是 Codex↔Grok 双向转换开关。Kiro 登录可作为上游接到 Claude / Codex / Grok；endpoint 与 SSE 见 [本机路由 API](../reference/local-route-api.md)。
 - 调度留在本机网关：先解析模型和协议，再从合格成员里按默认 `priority_failover` 选择；`GET /models` 与实际请求共用同一份 resolver。未声明等价关系时，不会把请求发到另一个供应商。
 - 官方直连（`native_endpoint` / `config_sync`）不自动入池。Routes 对仍可改成本机转发的直连提供「交给本机网关」。
 - 生成的本机令牌只给目标客户端使用，上游登录信息留在 Hub；不监听公网，不做多人共享或转售。
