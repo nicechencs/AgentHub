@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::collect_kiro_usage;
 
@@ -106,6 +106,79 @@ fn skips_unfinished_turns_and_editor_trees() {
     .unwrap();
 
     assert!(collect_kiro_usage(home).is_empty());
+}
+
+#[test]
+fn skips_failed_zero_token_turns_and_falls_back_model() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    write_session(
+        home,
+        "sess-a.json",
+        &session_json(
+            r#"{
+      "end_timestamp": "2026-05-11T02:54:06Z",
+      "end_reason": "Error",
+      "input_token_count": 0,
+      "output_token_count": 0,
+      "message_ids": [null, "m-err"]
+    },{
+      "end_timestamp": "2026-05-11T03:00:00Z",
+      "end_reason": "UserTurnEnd",
+      "input_token_count": 0,
+      "output_token_count": 0,
+      "message_ids": [null, "m-ok"]
+    }"#,
+        ),
+    );
+    let events = collect_kiro_usage(home);
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].model, "auto");
+    assert_eq!(events[0].raw_hash, "kiro:sess-a:m-ok");
+    assert_eq!(events[0].input_tokens, 0);
+}
+
+#[test]
+fn ignores_editor_usage_summary_credits() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    let ide = home.join("sessions").join("abc").join("sess_x");
+    fs::create_dir_all(&ide).unwrap();
+    fs::write(
+        ide.join("messages.jsonl"),
+        r#"{"id":"e-usage","timestamp":"2026-07-28T02:04:20.619Z","payload":{"type":"usage_summary","promptTurnSummaries":[{"unit":"credit","usage":2.5}],"status":"success","executionId":"e"}}\n"#,
+    )
+    .unwrap();
+    assert!(collect_kiro_usage(home).is_empty());
+}
+
+#[test]
+fn copied_kiro_home_cli_matches_verified_layout() {
+    let home = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../temp/kiro-sample");
+    if !home.join("sessions").join("cli").is_dir() {
+        return;
+    }
+    let events = collect_kiro_usage(&home);
+    assert_eq!(
+        events.len(),
+        61,
+        "copied CLI home: UserTurnEnd rows only (Error/ToolUseRejected zeros dropped)"
+    );
+    assert!(
+        events.iter().all(|ev| {
+            ev.input_tokens == 0
+                && ev.output_tokens == 0
+                && ev.cache_read_tokens == 0
+                && ev.cache_creation_tokens == 0
+                && !ev.model.is_empty()
+                && ev.cost_usd.is_none()
+                && ev.raw_hash.starts_with("kiro:")
+        }),
+        "copied CLI turns have no token fields; model is turn.model or rts model_id"
+    );
+    let models: Vec<_> = events.iter().map(|ev| ev.model.as_str()).collect();
+    assert!(models.iter().any(|m| *m == "auto"));
+    assert!(models.iter().any(|m| *m == "claude-opus-4.6"));
 }
 
 #[test]
