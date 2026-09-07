@@ -2702,7 +2702,7 @@ export const zh = {
     },
     kiro: {
       oneshotHint: "Kiro 在这里一轮一发：写完后发送，等这一轮结束。可用本机登录（kiro-cli login）或 API Key。",
-      oneshotDetail: "不能中途补充、排队或点允许/拒绝；下一轮仍可继续。终端里的模型/Agent 选择、命令补全和灰色提示不在本页。",
+      oneshotDetail: "不能中途补充、排队或点允许/拒绝；下一轮仍可继续。终端里的 Agent 配置、命令补全和灰色提示不在本页。",
       placeholder: "写完后发送，等这一轮结束。下一轮可继续。",
     },
     runtime: {

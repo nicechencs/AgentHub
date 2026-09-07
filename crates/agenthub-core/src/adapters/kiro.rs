@@ -7,6 +7,7 @@
 //! - install / detect (official sh + ps1; IDE.app is never Installed)
 //! - headless: `kiro-cli chat --no-interactive --wrap never "…"`
 //!   (+ `--trust-all-tools` when dangerous; TERM=dumb so Unix color does not leak)
+//! - Chat model/effort: `--model` / `--effort` from live prefs (`--list-models -f json`)
 //! - Chat Auto: `--agent-engine v2 --output-format stream-json` (v1 rejects it)
 //! - subsequent turns: `--resume-id` when a native session id is known
 //! - auth: env `KIRO_API_KEY` / import `kiro-cli login` (sqlite + SSO cache);
@@ -35,8 +36,13 @@ use super::{
 };
 
 mod auth;
+mod chat_prefs;
 
 pub(crate) use auth::kiro_grant_is_newer;
+pub(crate) use chat_prefs::{
+    kiro_live_chat_model, kiro_send_prefs, set_kiro_default_effort, set_kiro_default_model,
+};
+
 
 /// Official Windows native installer (PowerShell: `irm … | iex`).
 pub const NATIVE_PS1_URL: &str = "https://cli.kiro.dev/install.ps1";
@@ -307,7 +313,7 @@ impl AgentAdapter for KiroAdapter {
             ProviderPresets => CapabilityState::unsupported("无 provider 配置契约"),
             Usage => CapabilityState::planned("待日志字段核实"),
             Mcp => CapabilityState::planned("待路径核实"),
-            ModelSelect => CapabilityState::planned("待验证接入"),
+            ModelSelect => CapabilityState::full(),
             SessionResume => {
                 CapabilityState::partial("后续轮次走 --resume-id；不能中途补充或点允许/拒绝")
             }
@@ -337,6 +343,14 @@ impl AgentAdapter for KiroAdapter {
             args.push("v2".into());
             args.push("--output-format".into());
             args.push("stream-json".into());
+        }
+        if let Some(model) = opts.model.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            args.push("--model".into());
+            args.push(model.to_string());
+        }
+        if let Some(effort) = opts.effort.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            args.push("--effort".into());
+            args.push(effort.to_string());
         }
         if let Some(sid) = opts
             .native_session_id
