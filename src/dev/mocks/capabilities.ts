@@ -245,7 +245,7 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
       reason: '可用 API Key 或 kiro-cli login',
     },
     skills: { level: 'planned', reason: '待路径核实' },
-    liveBackup: { level: 'unsupported', reason: '无稳定配置/凭据文件' },
+    liveBackup: { level: 'full' },
     structuredStream: {
       level: 'partial',
       reason: '对话过程走 v2 stream-json；不能中途补充',
