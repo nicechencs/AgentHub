@@ -35,7 +35,9 @@ function RuntimeRequestCard({ request, onReply }: { request: RuntimeRequest; onR
     for (const question of request.questions) if (other[question.id]?.trim()) merged[question.id] = [other[question.id].trim()];
     if (!canSubmitRuntimeQuestions(request, merged)) return;
     setSent(true);
-    try { await onReply(request, decision, merged); } catch { setSent(false); }
+    try {
+      await onReply(request, decision, request.kind === 'question' ? merged : undefined);
+    } catch { setSent(false); }
   };
   return (
     <section className="rounded-card border border-border bg-panel p-3 text-body" aria-live="polite">

@@ -377,6 +377,56 @@ fn failed_old_run_reply_with_same_client_id_never_becomes_success() {
 }
 
 #[test]
+fn empty_approval_answers_are_treated_as_absent() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "empty-answers");
+    let mut worker = worker(&db, "empty-answers");
+    worker.store.enable_if_new("empty-answers").unwrap();
+    start_placeholder(&mut worker);
+    worker
+        .store
+        .add_request(
+            "empty-answers",
+            &RuntimeRequest {
+                id: "request-1".into(),
+                run_id: "run-1".into(),
+                kind: RuntimeRequestKind::Command,
+                title: "执行命令".into(),
+                detail: "safe".into(),
+                questions: Vec::new(),
+            },
+            "session/request_permission",
+            "server-1",
+        )
+        .unwrap();
+    let empty = worker
+        .reply(RuntimeReply {
+            conversation_id: "empty-answers".into(),
+            run_id: "run-1".into(),
+            request_id: "request-1".into(),
+            client_request_id: "allow-empty".into(),
+            decision: Some(RuntimeDecision::Allow),
+            answers: Some(std::collections::BTreeMap::new()),
+        })
+        .unwrap_err();
+    assert_ne!(empty.code(), "invalid_arg");
+    let filled = worker
+        .reply(RuntimeReply {
+            conversation_id: "empty-answers".into(),
+            run_id: "run-1".into(),
+            request_id: "request-1".into(),
+            client_request_id: "allow-filled".into(),
+            decision: Some(RuntimeDecision::Allow),
+            answers: Some(std::collections::BTreeMap::from([(
+                "q".into(),
+                vec!["x".into()],
+            )])),
+        })
+        .unwrap_err();
+    assert_eq!(filled.code(), "invalid_arg");
+}
+
+#[test]
 fn retained_events_report_a_gap_after_old_sequences_are_trimmed() {
     let db = Database::open_in_memory().unwrap();
     conversation(&db, "gap");
