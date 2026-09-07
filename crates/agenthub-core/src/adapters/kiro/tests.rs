@@ -77,6 +77,9 @@ fn account_switch_partial_stream_and_resume_partial() {
         KiroAdapter.capability(Capability::ModelSelect).level,
         CapabilityLevel::Full
     );
+    assert!(KiroAdapter
+        .capability(Capability::ProjectHistory)
+        .is_usable());
 }
 
 #[test]
