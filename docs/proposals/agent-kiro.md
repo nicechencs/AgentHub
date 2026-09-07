@@ -9,7 +9,7 @@ audience: contributor
 
 # 接入 Kiro（kiro-cli）Agent
 
-> 提案，不是现行实现契约。现行行为见 [STATUS](../STATUS.md)。对话发送：有 `kiro-cli` 走命令行；没有命令行才 HTTP 文本回复。本机路由仍未接。
+> 本文保留早期第一波方案，不是现行实现契约。下文“一轮一发”“不接持续通道”和“本机路由后置”均为历史阶段约束。现行行为见 [STATUS](../STATUS.md)：新对话使用 `kiro-cli acp`，在同一进程内继续；旧打印对话保留原方式，HTTP 会话不能转成 CLI 会话。Kiro 本机路由已接入。
 
 接线与实现纪律见 [添加 Agent](../guides/adding-an-agent.md)；半面参照 `crates/agenthub-core/src/adapters/cursor.rs`。本文只定目标、公开事实与产品决策，不重复指南里的文件清单与验收清单。
 
@@ -58,7 +58,7 @@ Kiro 是 AWS 系 agentic 编码产品，同一套项目上下文可跨多种界�
 
 不要把 Agent id 做成 `kiro-cli`：CLI 是安装形态，不是产品身份。
 
-## 3. 能力立场（诚实半面）
+## 3. 早期第一波能力立场（历史方案）
 
 第一波对标 **Cursor Agent CLI 半面**：检测 / 安装 / 登录指引 / API Key / headless 发送。
 
