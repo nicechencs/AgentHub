@@ -556,6 +556,14 @@ export function createMockChatPort(): ChatPort {
           efforts: ['low', 'high', 'xhigh'],
         };
       }
+      if (agentId === 'kiro') {
+        return {
+          model: 'auto',
+          models: ['auto', 'claude-haiku-4.5', 'claude-sonnet-4.5'],
+          effort: 'high',
+          efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+        };
+      }
       return { model: null, models: [], effort: null, efforts: [] };
     },
     async pickChatImages() {
