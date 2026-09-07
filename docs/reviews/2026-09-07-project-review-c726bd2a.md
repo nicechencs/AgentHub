@@ -61,12 +61,16 @@ scope: dev；跨 HEAD 续审，最终目标 c726bd2aa1ff8ea0aaf206c6755f6cdcfbb6
 
 ### AHREV-P1-003：备份未完整恢复仍向界面报告成功
 
+- **修复状态**：已关闭（`c72f22cd`，合入 dest）。
+
 - **位置**：`services/backup_service/restore.rs:347-387`；`backup_service/mod.rs:65-78`；`src/lib/backend/contracts/backup-port.ts:7`；`src/lib/backend/tauri/backup.ts:33-35`；`src/pages/backups/BackupsPanel.tsx:186-196`。
 - **触发/行为**：恢复需删除 AgentHub 管理的缺席文件，但文件只读、被占用或权限不足。`delete_failed` 只进入被 `serde(skip)` 的内部列表，前端端口返回 `void`，页面无条件提示成功。
 - **影响/证据**：遗留配置仍可影响登录或配置选择，用户误以为完整恢复。源码确认；`edited/unknown` 安全保留不属于本问题。**P1，高置信度**。
 - **最小修复/验证**：公开部分恢复结果或将 `delete_failed` 升为错误；注入删除失败并验证 Tauri/页面警告。
 
 ### AHREV-P1-004：路由所属登录恢复失败会消耗唯一恢复入口
+
+- **修复状态**：已关闭（`71b32e85`，合入 dest）。
 
 - **位置**：`crates/agenthub-core/src/lib.rs:146-177`；`services/connection_service/trash.rs:212-246`；`services/route_pool_service.rs:540-580,1109-1119,1988-1993`；`services/ticket_read_service.rs:60-82`。
 - **触发/行为**：恢复 `home=route_pool` 的登录时路由功能关闭，或重新加入路由失败。源行和回收记录先在事务中恢复/删除，之后才重新加入路由；失败后记录已消失，源行又被 Connections 过滤且不在路由成员中。
@@ -115,6 +119,8 @@ scope: dev；跨 HEAD 续审，最终目标 c726bd2aa1ff8ea0aaf206c6755f6cdcfbb6
 - 按模块分批迁移，禁止顺带重构；迁移后核对测试数量和平台条件。
 
 ### AHREV-P2-002：路由成员回收失败会留下部分状态或重复记录
+
+- **修复状态**：已关闭（`71b32e85`，合入 dest）。
 
 - `services/route_pool_service.rs:964-1044` 先自动提交回收记录，再逐池删除成员和同步投影；失败无整体补偿，重试可再插入记录，schema 无来源唯一约束。
 - 主 Agent 将 reviewer 的 P1 **降为 P2**：现有恢复会跳过仍存在的成员，重复记录可逐条安全消耗，尚无同等级数据丢失证据；但部分成功、错误后 UI 不刷新和重复记录仍是真实正确性问题。
