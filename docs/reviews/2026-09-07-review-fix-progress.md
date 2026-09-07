@@ -31,7 +31,7 @@ scope: dest @ 5ee06a4f；对照三份 2026-09-07 全项目 review 的确认问�
 | 2c | P1-005 | `fix/review-p1-sse-trailer` `b40d97db` | 已关闭 |
 | 3a | P1-009、P2-004、P2-005 | `fix/review-p1-chat-runtime` | 核实完成，待实现 |
 | 3b | C8-P1-001/002/003、C8-P2-001/002 | `fix/review-open-chat` | 核实完成，待实现 |
-| 4 | P2-003 | `fix/review-p2-setup-guide` | 核实完成，待实现 |
+| 4 | P2-003 | `fix/review-p2-setup-guide` `0b7d17b8` | 已关闭 |
 | 5 | P2-001 | 不在本轮并行 | 机械迁移，单独排队 |
 
 ## 确认问题与方案
@@ -150,6 +150,8 @@ scope: dest @ 5ee06a4f；对照三份 2026-09-07 全项目 review 的确认问�
 **AHREV-P2-003**（confirmed）：`open_in_browser` 失败只写日志；`setup_guide_open_failed` 只看 `spawn_error`/`timed_out`；用户仍看到「已打开官网安装页」。
 
 方案：打开失败记入 `ExecResult`，走失败提示，不要说已经打开。
+
+**关闭**：`0b7d17b8`。dest 已合入。主 Agent 复跑 `install_service::tests` 56 项，含打开失败不声称「已打开」。
 
 ### 批次 5 — 测试文件分离
 

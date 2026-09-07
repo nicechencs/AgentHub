@@ -140,6 +140,8 @@ scope: dev；跨 HEAD 续审，最终目标 c726bd2aa1ff8ea0aaf206c6755f6cdcfbb6
 
 ### AHREV-P2-003：安装页打开失败仍提示“已打开”
 
+- **修复状态**：已关闭（`0b7d17b8`，合入 dest）。
+
 - `services/install_service.rs:150-151,240-242,2665-2701`：`open_in_browser` 失败只写日志，仍返回 `spawn_error: None`，WorkBuddy/ZCode 等 setup-guide 入口继续生成“已打开官网安装页”。
 - 用户状态与事实相反，但渠道窄且无数据风险。**P2，高置信度**。
 - 保留打开失败到结果并走失败提示；注入浏览器打开器失败测试。
