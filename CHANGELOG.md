@@ -17,6 +17,8 @@
 
 ## [Unreleased]
 
+## [0.4.8] - 2026-09-07
+
 ### 新增
 - 对话：Kiro 新对话走持续通道（可点允许/拒绝、停止；生成时不能中途补充，可排队到下一轮）。旧对话可「用新方式继续」
 - 对话：Kiro 在本机登录或 `KIRO_API_KEY` 可用时优先走 AgentHub 自有 HTTP（列模型 + 一轮回复）；失败或续场时仍回退 kiro-cli
@@ -25,6 +27,7 @@
 - 连接：Kiro 可添加授权，并可导入本机 kiro-cli 登录
 - 连接：Kiro 详情显示 data.sqlite3；刷新会对比本机登录有效期并回写 sqlite
 - 连接：Kiro 可官方登录（打开 Kiro 自己的登录，完成后写入连接）
+- 连接：Kiro 登录可经本机路由接到 Claude、Codex、Grok
 - 连接：Cursor 可导入本机已有登录（不写回 Cursor）
 - 总览：Kiro 可读 kiro-cli 会话里的 token；日志没写时是 0
 - 项目：能看到 Kiro 的项目对话（命令行会话和编辑器会话）
