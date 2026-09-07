@@ -38,6 +38,9 @@ use super::{
 
 const V2_MAX_ATTEMPTS: usize = 8;
 
+#[cfg(test)]
+mod tests;
+
 struct LastFail {
     class: UpstreamErrorClass,
     status: StatusCode,
@@ -255,6 +258,7 @@ pub async fn send_upstream_v2(
                 )
             });
             let token = member.auth.token();
+            let sent_revision = member.auth.revision();
             let builder = transport.apply_auth(
                 state.client.post(attempt_url.clone()).json(&body),
                 &token,
@@ -329,8 +333,30 @@ pub async fn send_upstream_v2(
                     }
                     return Err(timeout_response());
                 }
+                Err(UpstreamConnectError::Unreplayable) => {
+                    // Connected, then dropped before headers. Same billing risk as
+                    // a header timeout — do not replay onto another member.
+                    if let Some(trace) = trace.as_deref_mut() {
+                        if let Some(attempt_id) = trace_attempt_id {
+                            trace.upstream_attempt_transport_failed(
+                                attempt_id,
+                                false,
+                                attempt_started.elapsed().as_millis() as u64,
+                                "upstream_unavailable",
+                            );
+                        }
+                        trace.upstream_failed(
+                            &attempt_url_string,
+                            &member,
+                            None,
+                            "upstream_unavailable",
+                            "Upstream closed the connection after the request was sent.",
+                        );
+                    }
+                    return Err(unavailable_response());
+                }
                 Err(UpstreamConnectError::Unavailable) => {
-                    // Transport failed before a usable response — safe to try another member.
+                    // Connection never established — safe to try another member.
                     // Keep Transient last_fail so exhaustion becomes upstream_unavailable,
                     // not a false pool_exhausted.
                     if let Some(trace) = trace.as_deref_mut() {
@@ -481,6 +507,16 @@ pub async fn send_upstream_v2(
                             );
                             continue;
                         }
+                    }
+                    if member.auth.revision() != sent_revision || member.auth.token() != token {
+                        tracing::info!(
+                            target: "core.adapter",
+                            profile_id = %state.profile_id,
+                            request_id = %request_id,
+                            account_id = %member.source_id,
+                            "skipping isolate; 401 was for a stale authorization"
+                        );
+                        continue;
                     }
                     if let Some(trace) = trace.as_deref_mut() {
                         trace.pool_attempt_failed(
