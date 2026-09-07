@@ -8,7 +8,7 @@ use std::time::Instant;
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::catalog::limits::DEFAULT_RUN_TIMEOUT;
+use crate::catalog::limits::{CHAT_RUN_IDLE_TIMEOUT, CHAT_RUN_MAX_TIMEOUT};
 use crate::error::{AppError, Result};
 use crate::logging::{self, targets};
 use crate::models::{
@@ -483,7 +483,8 @@ impl ChatService {
             };
             let opts = RunOptions {
                 mode: RunMode::Parallel,
-                timeout: DEFAULT_RUN_TIMEOUT,
+                timeout: CHAT_RUN_MAX_TIMEOUT,
+                idle_timeout: Some(CHAT_RUN_IDLE_TIMEOUT),
                 cwd: conv.cwd.as_ref().map(PathBuf::from),
                 dry_run: false,
                 skip_missing: true,

@@ -2788,7 +2788,7 @@ export const zh = {
       cancelled: '已停止',
       cancelledHint: '已按你的要求停止。可恢复草稿后重发。',
       timeout: '这一轮超时了',
-      timeoutHint: '可以重试，或先缩短任务再发。',
+      timeoutHint: '还在输出时不会因时间到了就停。可以重试。',
       draftKept: '失败/停止时会尽量保留你的输入，不会假装测试已通过。',
       restoreDraft: '填回草稿',
       retry: '重试本轮',

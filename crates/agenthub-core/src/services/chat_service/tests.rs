@@ -46,7 +46,7 @@ impl StreamingProcessRunner for SidProcessRunner {
     fn run_streaming(
         &self,
         spec: &crate::models::RunSpec,
-        timeout: Duration,
+        timeout: crate::utils::process::ProcessTimeout,
         max_output_bytes: usize,
         cancel: &crate::utils::process::CancelToken,
         on_chunk: &(dyn Fn(OutputStream, &str) + Send + Sync),

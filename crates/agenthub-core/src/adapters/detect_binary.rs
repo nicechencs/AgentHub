@@ -703,6 +703,78 @@ pub(crate) fn first_existing_named_bin(dirs: &[PathBuf], names: &[String]) -> Op
     None
 }
 
+/// If `binary` is an npm `.cmd` / `.bat` shim, run `node <cli.js> …` instead.
+///
+/// Windows `CreateProcess` on batch files rejects arguments that contain
+/// newlines or `"` (`batch file arguments are invalid`). Chat continuation
+/// stitches history with newlines, so npm `.cmd` shims must not take `-p`.
+pub(crate) fn spawn_npm_cmd_via_node(
+    binary: &Path,
+    args: Vec<String>,
+    node: &Path,
+) -> (PathBuf, Vec<String>) {
+    if !looks_like_windows_batch(binary) {
+        return (binary.to_path_buf(), args);
+    }
+    let Some(js) = npm_cmd_shim_script(binary) else {
+        return (binary.to_path_buf(), args);
+    };
+    if !js.is_file() {
+        return (binary.to_path_buf(), args);
+    }
+    let mut out = Vec::with_capacity(args.len() + 1);
+    out.push(js.to_string_lossy().into_owned());
+    out.extend(args);
+    (node.to_path_buf(), out)
+}
+
+fn looks_like_windows_batch(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .as_deref(),
+        Some("cmd" | "bat")
+    )
+}
+
+/// JS entry an npm global `.cmd` shim execs (`%dp0%\node_modules\pkg\cli.js`).
+pub(crate) fn npm_cmd_shim_script(cmd_path: &Path) -> Option<PathBuf> {
+    let text = std::fs::read_to_string(cmd_path).ok()?;
+    let dir = cmd_path.parent()?;
+    npm_cmd_shim_script_from_text(&text, dir)
+}
+
+pub(crate) fn npm_cmd_shim_script_from_text(text: &str, shim_dir: &Path) -> Option<PathBuf> {
+    for raw in text.lines() {
+        if let Some(rel) = extract_dp0_js(raw) {
+            return Some(shim_dir.join(rel));
+        }
+    }
+    None
+}
+
+fn extract_dp0_js(line: &str) -> Option<PathBuf> {
+    const MARK: &str = "%dp0%";
+    let start = line.find(MARK)?;
+    let rest = line[start + MARK.len()..].trim_start_matches(['\\', '/', '"']);
+    let end = rest
+        .find(|c: char| c == '"' || c.is_whitespace())
+        .unwrap_or(rest.len());
+    let rel = &rest[..end];
+    if rel.is_empty() || !rel.to_ascii_lowercase().ends_with(".js") {
+        return None;
+    }
+    let mut path = PathBuf::new();
+    for part in rel.split(['\\', '/']) {
+        if part.is_empty() {
+            continue;
+        }
+        path.push(part);
+    }
+    Some(path)
+}
+
 /// True when `Command::new(path)` can launch the file without a shell.
 ///
 /// npm's extensionless `codex` on Windows is `#!/bin/sh` — CreateProcess

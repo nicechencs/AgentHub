@@ -89,9 +89,15 @@ pub(crate) fn build_pi_run_spec(
         args.push("--approve".into());
     }
     let env = require_pi_node22_env(node22)?;
+    // Windows npm `pi.cmd` cannot take a Chat prompt with newlines (`-p` history).
+    // Spawn the installed Node + package `cli.js` instead of the batch shim.
+    let (program, args) = match node22 {
+        Some(node) => super::spawn_npm_cmd_via_node(binary, args, &node.path),
+        None => (binary.to_path_buf(), args),
+    };
     Ok(RunSpec {
         agent: AgentId::Pi,
-        program: binary.to_path_buf(),
+        program,
         args,
         cwd: opts.cwd.clone(),
         env,

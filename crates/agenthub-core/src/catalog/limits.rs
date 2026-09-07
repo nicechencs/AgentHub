@@ -5,10 +5,19 @@ use std::time::Duration;
 
 // --- Run / chat ---
 
-/// Default per-agent run timeout (CLI `run --timeout`, chat send).
+/// Default per-agent run timeout (CLI `run --timeout`).
+/// Chat does not use this: a busy coding turn routinely exceeds 5 minutes.
 pub const DEFAULT_RUN_TIMEOUT_SECS: u64 = 300;
 /// Same as [`DEFAULT_RUN_TIMEOUT_SECS`] as a [`Duration`].
 pub const DEFAULT_RUN_TIMEOUT: Duration = Duration::from_secs(DEFAULT_RUN_TIMEOUT_SECS);
+/// Chat: stop if the child prints nothing for this long (hung approval / deadlock).
+pub const CHAT_RUN_IDLE_TIMEOUT_SECS: u64 = 10 * 60;
+/// Same as [`CHAT_RUN_IDLE_TIMEOUT_SECS`] as a [`Duration`].
+pub const CHAT_RUN_IDLE_TIMEOUT: Duration = Duration::from_secs(CHAT_RUN_IDLE_TIMEOUT_SECS);
+/// Chat: absolute ceiling even if the child keeps printing. User can still Stop.
+pub const CHAT_RUN_MAX_TIMEOUT_SECS: u64 = 2 * 60 * 60;
+/// Same as [`CHAT_RUN_MAX_TIMEOUT_SECS`] as a [`Duration`].
+pub const CHAT_RUN_MAX_TIMEOUT: Duration = Duration::from_secs(CHAT_RUN_MAX_TIMEOUT_SECS);
 /// Default max captured stdout/stderr for a run process.
 pub const DEFAULT_RUN_MAX_OUTPUT_BYTES: usize = 2 * 1024 * 1024;
 /// Max characters of stitched chat history included in a prompt.

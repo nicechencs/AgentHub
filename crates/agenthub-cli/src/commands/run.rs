@@ -44,6 +44,7 @@ pub fn run(hub: &AgentHub, args: RunArgs, format: OutputFormat) -> Result<()> {
     let opts = RunOptions {
         mode,
         timeout: Duration::from_secs(args.timeout_secs),
+        idle_timeout: None,
         cwd: args.cwd,
         dry_run: args.dry_run,
         skip_missing: true,
