@@ -11,7 +11,7 @@ main = "src/index.ts"
 compatibility_date = "2026-09-01"
 
 # Placeholder — replace with your Cloudflare account id before deploy.
-account_id = "YOUR_CLOUDFLARE_ACCOUNT_ID"
+account_id = "6aba836949cd9c5d41e095487e526d40"
 
 workers_dev = false
 
@@ -19,9 +19,10 @@ workers_dev = false
 # operator. Prefer Workers Custom Domain for updates.agenthub.qooo.io only.
 # Do not route or alter the apex agenthub.qooo.io from this project.
 # Example (uncomment after account_id + zone are ready):
-# [[routes]]
-# pattern = "updates.agenthub.qooo.io/*"
+[[routes]]
+pattern = "updates.agenthub.qooo.io"
 # zone_name = "agenthub.qooo.io"
+custom_domain = true
 
 [[r2_buckets]]
 binding = "UPDATES_BUCKET"
