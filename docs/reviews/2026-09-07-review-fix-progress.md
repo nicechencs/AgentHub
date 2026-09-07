@@ -32,7 +32,7 @@ scope: dest @ 5ee06a4f；对照三份 2026-09-07 全项目 review 的确认问�
 | 3a | P1-009、P2-004、P2-005 | `fix/review-p1-chat-runtime` `350d7712` | 已关闭 |
 | 3b | C8-P1-001/002/003、C8-P2-001/002 | `fix/review-open-chat` `8d828143` | 已关闭 |
 | 4 | P2-003 | `fix/review-p2-setup-guide` `0b7d17b8` | 已关闭 |
-| 5 | P2-001 | 不在本轮并行 | 机械迁移，单独排队 |
+| 5 | P2-001 | `fix/review-p2-extract-tests` `15dd7c0d` | 已关闭 |
 
 ## 确认问题与方案
 
@@ -159,7 +159,13 @@ scope: dest @ 5ee06a4f；对照三份 2026-09-07 全项目 review 的确认问�
 
 ### 批次 5 — 测试文件分离
 
-**AHREV-P2-001**：53 个生产 Rust 文件内嵌测试。机械迁移，禁止顺带重构。本轮功能修复完成后再分批做。
+**AHREV-P2-001**（confirmed）
+
+- 源码：46 个 `crates/**`、7 个 `src-tauri/**` 生产文件内嵌 `#[cfg(test)] mod tests { ... }`，与「生产侧只放模块声明」冲突。
+- 方案：按模块机械迁到相邻 `tests.rs`（`foo.rs` → `foo/tests.rs`，`mod.rs` → 同目录 `tests.rs`）。保留 `#[cfg(test)]` helper、`#[path]` 附加测试模块和平台条件。禁止顺带重构。
+- 验证：迁后生产文件只剩 `#[cfg(test)] mod tests;`；核对测试数量。
+
+**关闭**：`15dd7c0d`。dest 已合入。主 Agent 复跑 `cargo test -p agenthub-core --locked --lib`（2827 通过、8 ignored）和 `cargo test -p agenthub-gui --locked --lib`（166 通过）。`git ls-files` 后再扫生产文件，0 处内嵌 `mod tests {`。`live_codex_config_and_session_models` 在本机因 `~/.codex/sessions` 存在但 config 无 `model=` 失败，未迁代码的 dest 同样失败，不是本次回归。
 
 ## 关闭规则
 

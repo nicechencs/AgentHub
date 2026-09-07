@@ -79,6 +79,8 @@ scope: dev；工作区文档变更及当前项目健康抽样；HEAD 06b893c4471
 
 ### AHREV-P2-001：Chat 运行时生产文件内仍包含测试实现
 
+- **修复状态**：已关闭（`15dd7c0d`，合入 dest；全仓 53 文件一并迁出，含 `ops.rs`）。
+
 - **分类/置信度**：confirmed；P2；高，主 Agent 在补核 Kiro 入口时直接发现并复核。
 - **位置**：`crates/agenthub-core/src/services/chat_runtime/ops.rs:751–1159`，`#[cfg(test)] mod tests { ... }`；例如 `acp_session_plan_reuses_live_kiro_and_skips_cross_process_load`（1100 起）。
 - **触发/实际/预期**：读取当前源码即可确认；生产文件内嵌大量测试实现。`AGENTS.md` 明确要求生产侧只声明测试模块，测试实现放独立文件。
