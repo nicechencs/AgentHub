@@ -333,8 +333,8 @@ export function OAuthFlowDialog({
   const actionUrl = officialLoginActionUrl(session);
   const loginLinkCard = actionUrl ? (
     <Card variant="plain" className="w-full bg-canvas p-3 text-left">
-      <p className="mb-1 text-xs text-muted">{t('connect.oauth.authLink')}</p>
-      <p className="mb-2 select-all break-all font-mono text-xs text-primary">{actionUrl}</p>
+      <p className="mb-1 text-meta text-muted">{t('connect.oauth.authLink')}</p>
+      <p className="mb-2 select-all break-all font-mono text-meta text-primary">{actionUrl}</p>
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="outline" onClick={copyActionUrl}>
           <Copy className="h-3.5 w-3.5" /> {t('connect.oauth.copyAuthLink')}
@@ -356,21 +356,21 @@ export function OAuthFlowDialog({
         {step === 'check' && (
           <div className="flex flex-col items-center gap-3 py-8 text-center">
             <Loader2 className="h-8 w-8 animate-spin text-accent" />
-            <p className="text-sm text-secondary">{t('connect.oauth.checking')}</p>
+            <p className="text-body text-secondary">{t('connect.oauth.checking')}</p>
           </div>
         )}
 
         {step === 'unavailable' && (
           <div className="flex flex-col items-center gap-3 py-6 text-center">
             <AlertCircle className="h-10 w-10 text-warning" />
-            <p className="text-sm font-medium text-primary">{t('connect.oauth.unavailableTitle')}</p>
-            <p className="text-xs text-secondary">{t('connect.oauth.unavailableDesc')}</p>
+            <p className="text-body font-medium text-primary">{t('connect.oauth.unavailableTitle')}</p>
+            <p className="text-meta text-secondary">{t('connect.oauth.unavailableDesc')}</p>
           </div>
         )}
 
         {step === 'pick' && (
           <div className="flex flex-col gap-3 py-2">
-            <p className="text-sm text-secondary">{t('connect.oauth.pickHint')}</p>
+            <p className="text-body text-secondary">{t('connect.oauth.pickHint')}</p>
             <div className="flex flex-col gap-2">
               {options.map((opt) => {
                 const copy = optionCopy(opt, t);
@@ -384,9 +384,9 @@ export function OAuthFlowDialog({
                     )}
                     onClick={() => chooseOption(opt)}
                   >
-                    <div className="text-sm font-medium text-primary">{copy.label}</div>
+                    <div className="text-body font-medium text-primary">{copy.label}</div>
                     {copy.description ? (
-                      <div className="mt-0.5 text-xs text-muted">{copy.description}</div>
+                      <div className="mt-0.5 text-meta text-muted">{copy.description}</div>
                     ) : null}
                     <div className="mt-1 text-meta text-muted">
                       {opt.flow === 'deviceCode'
@@ -405,7 +405,7 @@ export function OAuthFlowDialog({
         {step === 'start' && (
           <div className="flex flex-col items-center gap-3 py-4 text-center">
             <ExternalLink className="h-8 w-8 text-accent" />
-            <p className="text-sm text-secondary">
+            <p className="text-body text-secondary">
               {startIsDevice
                 ? t('connect.oauth.deviceHint', { name: selectedCopy?.label ?? meta.name })
                 : t('connect.oauth.browserHint', { name: selectedCopy?.label ?? meta.name })}
@@ -426,10 +426,10 @@ export function OAuthFlowDialog({
         {step === 'waiting' && waitingFlow === 'cli' && (
           <div className="flex flex-col items-center gap-3 py-4 text-center">
             <Loader2 className="h-8 w-8 animate-spin text-accent" />
-            <p className="text-sm text-secondary">{t('connect.oauth.waitingCallback')}</p>
+            <p className="text-body text-secondary">{t('connect.oauth.waitingCallback')}</p>
             {session?.userCode ? (
               <Card variant="plain" className="w-full bg-canvas px-4 py-3">
-                <p className="text-xs text-muted">{t('connect.oauth.deviceCode')}</p>
+                <p className="text-meta text-muted">{t('connect.oauth.deviceCode')}</p>
                 <p className="font-mono text-title tracking-widest text-primary">{session.userCode}</p>
               </Card>
             ) : null}
@@ -453,10 +453,10 @@ export function OAuthFlowDialog({
         {step === 'waiting' && waitingFlow === 'deviceCode' && (
           <div className="flex flex-col items-center gap-3 py-4 text-center">
             <Loader2 className="h-8 w-8 animate-spin text-accent" />
-            <p className="text-sm text-secondary">{t('connect.oauth.waitingDevice')}</p>
+            <p className="text-body text-secondary">{t('connect.oauth.waitingDevice')}</p>
             {session?.userCode ? (
               <Card variant="plain" className="w-full bg-canvas px-4 py-3">
-                <p className="text-xs text-muted">{t('connect.oauth.deviceCode')}</p>
+                <p className="text-meta text-muted">{t('connect.oauth.deviceCode')}</p>
                 <p className="font-mono text-title tracking-widest text-primary">{session.userCode}</p>
               </Card>
             ) : null}
@@ -475,7 +475,7 @@ export function OAuthFlowDialog({
         {step === 'waiting' && waitingFlow !== 'deviceCode' && waitingFlow !== 'cli' && (
           <div className="flex flex-col items-center gap-3 py-4 text-center">
             <Loader2 className="h-8 w-8 animate-spin text-accent" />
-            <p className="text-sm text-secondary">{t('connect.oauth.waitingCallback')}</p>
+            <p className="text-body text-secondary">{t('connect.oauth.waitingCallback')}</p>
             <p className="font-mono text-title tabular-nums text-primary">
               {mm}:{ss}
             </p>
@@ -483,13 +483,13 @@ export function OAuthFlowDialog({
               <Notice tone="info">{t('connect.oauth.waitingNotice')}</Notice>
               {loginLinkCard}
               <Card variant="plain" className="bg-canvas p-3">
-                <p className="mb-2 text-xs text-muted">{t('connect.oauth.pasteCallback')}</p>
+                <p className="mb-2 text-meta text-muted">{t('connect.oauth.pasteCallback')}</p>
                 <div className="flex gap-2">
                   <Input
                     value={manualUrl}
                     onChange={(e) => setManualUrl(e.target.value)}
                     placeholder={t('connect.oauth.pastePlaceholder')}
-                    className="font-mono text-xs"
+                    className="font-mono text-meta"
                   />
                   <Button
                     size="sm"
@@ -508,27 +508,27 @@ export function OAuthFlowDialog({
         {step === 'error' && (
           <div className="flex flex-col items-center gap-3 py-6 text-center">
             <AlertCircle className="h-10 w-10 text-danger" />
-            <p className="text-sm font-medium text-primary">{t('connect.oauth.failedTitle')}</p>
-            <p className="text-xs text-secondary">{errorMsg ?? t('connect.oauth.unknownError')}</p>
+            <p className="text-body font-medium text-primary">{t('connect.oauth.failedTitle')}</p>
+            <p className="text-meta text-secondary">{errorMsg ?? t('connect.oauth.unknownError')}</p>
           </div>
         )}
 
         {step === 'done' && account && (
           <div className="flex flex-col items-center gap-3 py-4 text-center">
             <CheckCircle2 className="h-10 w-10 text-success" />
-            <p className="text-sm font-medium">{t('connect.oauth.success')}</p>
+            <p className="text-body font-medium">{t('connect.oauth.success')}</p>
             {successView?.title || successView?.subscription ? (
               <Card variant="plain" className="bg-canvas px-6 py-3">
-                {successView.title ? <p className="text-sm">{successView.title}</p> : null}
+                {successView.title ? <p className="text-body">{successView.title}</p> : null}
                 {successView.subscription ? (
-                  <p className="mt-0.5 text-xs text-secondary">{successView.subscription}</p>
+                  <p className="mt-0.5 text-meta text-secondary">{successView.subscription}</p>
                 ) : null}
                 {successView.identity ? (
-                  <p className="mt-0.5 text-xs text-muted">{successView.identity}</p>
+                  <p className="mt-0.5 text-meta text-muted">{successView.identity}</p>
                 ) : null}
               </Card>
             ) : null}
-            <p className="text-xs text-muted">
+            <p className="text-meta text-muted">
               {successDescription
                 ?? (agentId === 'pi' ? t('connect.oauth.writtenPi') : t('connect.oauth.writtenPool'))}
             </p>

@@ -115,5 +115,7 @@ describe('locale key parity', () => {
     expect(translate('en', 'connect.result.bindUnreadable')).toBe(
       "Couldn't read the connect result. Try again",
     );
+    expect(translate('zh', 'chat.actions.openAgents')).toBe('打开 Agent');
+    expect(translate('en', 'chat.actions.openAgents')).toBe('Open Agents');
   });
 });

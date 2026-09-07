@@ -1,8 +1,7 @@
-import { RefreshCw, Wallet } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { CurrentBadge } from '@/components/shared/CurrentBadge';
-import { EmptyState } from '@/components/shared/EmptyState';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { ListRow } from '@/components/shared/ListRow';
 import { Notice } from '@/components/shared/Notice';
@@ -168,16 +167,13 @@ export function ConnectFlowSelectStep({
 
   if (emptyKind.kind === 'wallet_empty') {
     return (
-      <EmptyState
-        icon={Wallet}
-        title={t('connect.select.emptyTitle')}
-        description={t('connect.select.emptyDesc')}
-        action={
-          <Button size="sm" variant="outline" className="mt-2" onClick={onGoImport}>
-            {t('connect.select.emptyAction')}
-          </Button>
-        }
-      />
+      <div className="flex flex-col items-center justify-center gap-2 rounded-card border border-dashed border-border py-10 text-center">
+        <p className="text-title font-medium text-primary">{t('connect.select.emptyTitle')}</p>
+        <p className="max-w-sm text-meta text-muted">{t('connect.select.emptyDesc')}</p>
+        <Button size="sm" variant="outline" className="mt-2" onClick={onGoImport}>
+          {t('connect.select.emptyAction')}
+        </Button>
+      </div>
     );
   }
 
@@ -254,9 +250,9 @@ function SourceGroups({
   return (
     <div className="space-y-4">
       <section className="space-y-2">
-        <h3 className="text-sm font-medium">{t('connect.select.nativeTitle')}</h3>
+        <h3 className="text-body font-medium">{t('connect.select.nativeTitle')}</h3>
         {native.length === 0 ? (
-          <p className="text-xs text-muted">{t('connect.select.nativeEmpty')}</p>
+          <p className="text-meta text-muted">{t('connect.select.nativeEmpty')}</p>
         ) : native.map((item) => (
           <NativeOptionRow
             key={`${item.ref.kind}:${item.ref.id}`}
@@ -267,9 +263,9 @@ function SourceGroups({
         ))}
       </section>
       <section className="space-y-2">
-        <h3 className="text-sm font-medium">{t('connect.select.crossTitle')}</h3>
+        <h3 className="text-body font-medium">{t('connect.select.crossTitle')}</h3>
         {cross.length === 0 ? (
-          <p className="text-xs text-muted">{t('connect.select.crossEmpty')}</p>
+          <p className="text-meta text-muted">{t('connect.select.crossEmpty')}</p>
         ) : cross.map((item) => (
           <CrossOptionRow
             key={`${item.ref.kind}:${item.ref.id}`}
@@ -317,21 +313,21 @@ function NativeOptionRow({
     >
       <div className="flex min-w-0 items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{option.label}</p>
-          {option.sublabel ? <p className="truncate text-xs text-muted">{option.sublabel}</p> : null}
+          <p className="truncate text-body font-medium">{option.label}</p>
+          {option.sublabel ? <p className="truncate text-meta text-muted">{option.sublabel}</p> : null}
           {option.viaAdapter ? (
-            <p className="mt-0.5 text-xs text-secondary">
+            <p className="mt-0.5 text-meta text-secondary">
               {t('connect.select.viaSource', { source: option.viaAdapter.sourceLabel })}
             </p>
           ) : null}
           {option.state.kind === 'blocked_native' ? (
-            <p className="mt-0.5 text-xs text-warning">{option.state.reason}</p>
+            <p className="mt-0.5 text-meta text-warning">{option.state.reason}</p>
           ) : null}
         </div>
         {option.state.kind === 'current' ? (
           <span className="flex items-center gap-1">
             <CurrentBadge />
-            <span className="text-xs text-secondary">{t('connect.select.currentlyUsed')}</span>
+            <span className="text-meta text-secondary">{t('connect.select.currentlyUsed')}</span>
           </span>
         ) : null}
       </div>
@@ -376,11 +372,11 @@ function CrossOptionRow({
     >
       <div className="flex min-w-0 items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+          <p className="flex items-center gap-1.5 truncate text-body font-medium">
             <AgentDot agentId={option.agentId} size="sm" title={null} />
             {option.label}
           </p>
-          {option.sublabel ? <p className="truncate text-xs text-muted">{option.sublabel}</p> : null}
+          {option.sublabel ? <p className="truncate text-meta text-muted">{option.sublabel}</p> : null}
           <EligibilityBody
             eligibility={eligibility}
             onRetry={onRetry}
@@ -462,9 +458,9 @@ function EndpointGrid({
               <RouteEndpointUrl
                 path={endpoint.path}
                 endpointId={endpoint.id}
-                className="text-sm font-medium"
+                className="text-body font-medium"
               />
-              <p className="text-xs">
+              <p className="text-meta">
                 <RouteEndpointTypeText endpointId={endpoint.id}>
                   {endpoint.id === 'messages'
                     ? t('connect.select.endpointMessages')
@@ -481,7 +477,7 @@ function EndpointGrid({
                 onOauthGuide={() => onOauthGuide(sourceAgentId ?? representative)}
               />
             ) : (
-              <p className="mt-1 text-xs text-muted">{t('connect.select.endpointUnavailable')}</p>
+              <p className="mt-1 text-meta text-muted">{t('connect.select.endpointUnavailable')}</p>
             )}
           </div>
         );
@@ -511,7 +507,7 @@ function TargetGrid({
 }) {
   const { t } = useI18n();
   if (targetAgentIds.length === 0) {
-    return <p className="text-sm text-muted">{t('connect.select.noOtherAgents')}</p>;
+    return <p className="text-meta text-muted">{t('connect.select.noOtherAgents')}</p>;
   }
   return (
     <div className="grid grid-cols-2 gap-2">
@@ -544,7 +540,7 @@ function TargetGrid({
           >
             <div className="flex items-center gap-2">
               <AgentLogo agentId={agentId} size="sm" />
-              <span className="text-sm font-medium">{agentDisplayName(agentId)}</span>
+              <span className="text-body font-medium">{agentDisplayName(agentId)}</span>
             </div>
             <EligibilityBody
               eligibility={eligibility}
@@ -573,7 +569,7 @@ function EligibilityBody({
   }
   if (eligibility.kind === 'blocked_oauth') {
     return (
-      <p className="mt-1 text-xs text-warning">
+      <p className="mt-1 text-meta text-warning">
         {t('connect.select.oauthIncomplete')}{' '}
         <button
           type="button"
@@ -590,7 +586,7 @@ function EligibilityBody({
   }
   if (eligibility.kind === 'error') {
     return (
-      <p className="mt-1 flex items-center gap-2 text-xs text-danger">
+      <p className="mt-1 flex items-center gap-2 text-meta text-danger">
         <span className="min-w-0 flex-1">{eligibility.message}</span>
         <Button
           size="sm"
@@ -610,7 +606,7 @@ function EligibilityBody({
   const routeLine = [routeTitle, maturity].filter(Boolean).join(' · ');
   if (planEligibilityAllowsApply(eligibility)) {
     if (!routeLine) return null;
-    return <p className="mt-1 text-xs text-secondary">{routeLine}</p>;
+    return <p className="mt-1 text-meta text-secondary">{routeLine}</p>;
   }
-  return <p className="mt-1 text-xs text-warning">{eligibility.reason ?? routeLine}</p>;
+  return <p className="mt-1 text-meta text-warning">{eligibility.reason ?? routeLine}</p>;
 }

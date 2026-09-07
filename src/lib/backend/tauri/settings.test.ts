@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StorageKey } from '@/lib/ui-preferences';
+import { sanitizeGuiLast4 } from '@/lib/backend/contracts/settings-port';
 import {
   closeToTraySettingValue,
   createTauriSettingsPort,
   isAlreadyDisabledAutostartError,
+  logGuiEvent,
   resolveCloseToTray,
   resolveUsageCollectIntervalMin,
 } from './settings';
@@ -701,6 +703,40 @@ describe('createTauriSettingsPort pickDirectory', () => {
     await expect(port.pickDirectory()).resolves.toBeNull();
     invokeMock.mockResolvedValueOnce('   ');
     await expect(port.pickDirectory()).resolves.toBeNull();
+  });
+});
+
+describe('sanitizeGuiLast4', () => {
+  it('keeps a tail and never a raw key', () => {
+    const key = 'sk-abcdefghijklmnopqrstuvwxyz';
+    expect(sanitizeGuiLast4(key)).toBe('wxyz');
+    expect(sanitizeGuiLast4(key)).not.toBe(key);
+    expect(sanitizeGuiLast4('wxyz')).toBe('wxyz');
+    expect(sanitizeGuiLast4('short')).toBe('');
+    expect(sanitizeGuiLast4('***')).toBe('');
+    expect(sanitizeGuiLast4('')).toBe('');
+    expect(sanitizeGuiLast4(null)).toBe('');
+  });
+});
+
+describe('logGuiEvent last4', () => {
+  beforeEach(() => {
+    tauriRuntime = true;
+    invokeMock.mockReset().mockResolvedValue(undefined);
+  });
+
+  it('sends only the tail when given a full key', async () => {
+    const key = 'sk-abcdefghijklmnopqrstuvwxyz';
+    await logGuiEvent('recognize', { agent: 'claude', last4: key });
+    expect(invokeMock).toHaveBeenCalledWith('log_gui_event', {
+      op: 'recognize',
+      agent: 'claude',
+      last4: 'wxyz',
+      profileId: null,
+      route: null,
+      code: null,
+    });
+    expect(JSON.stringify(invokeMock.mock.calls)).not.toContain(key);
   });
 });
 

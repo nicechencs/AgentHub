@@ -690,7 +690,7 @@ export function SkillMatrix({
                       )}
                       {realDesc ? (
                         <Tip
-                          className="mt-0.5 line-clamp-1 truncate text-sm text-secondary"
+                          className="mt-0.5 line-clamp-1 truncate text-meta text-muted"
                           label={row.description}
                         >
                           {row.description}
