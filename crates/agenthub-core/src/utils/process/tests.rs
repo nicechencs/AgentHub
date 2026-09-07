@@ -870,3 +870,198 @@ fn streaming_idle_timeout_kills_silent_process() {
     );
     assert!(started.elapsed() < Duration::from_secs(10));
 }
+
+fn streaming_capped_then_keepalive_spec() -> RunSpec {
+    #[cfg(unix)]
+    {
+        printf_spec(
+            "head -c 256 /dev/zero | tr '\\0' 'A'; i=0; while [ $i -lt 12 ]; do printf 'Z%d\\n' \"$i\"; i=$((i+1)); sleep 0.1; done",
+        )
+    }
+    #[cfg(windows)]
+    {
+        printf_spec(
+            "[Console]::Out.Write(('A'*256)); [Console]::Out.Flush(); for ($i=0; $i -lt 12; $i++) { [Console]::Out.Write(\"Z$i`n\"); [Console]::Out.Flush(); Start-Sleep -Milliseconds 100 }",
+        )
+    }
+}
+
+fn streaming_capped_then_silent_spec() -> RunSpec {
+    #[cfg(unix)]
+    {
+        printf_spec("head -c 256 /dev/zero | tr '\\0' 'A'; sleep 30")
+    }
+    #[cfg(windows)]
+    {
+        printf_spec(
+            "[Console]::Out.Write(('A'*256)); [Console]::Out.Flush(); Start-Sleep -Seconds 30",
+        )
+    }
+}
+
+fn streaming_forever_spec() -> RunSpec {
+    #[cfg(unix)]
+    {
+        printf_spec("yes")
+    }
+    #[cfg(windows)]
+    {
+        printf_spec("while ($true) { [Console]::Out.Write('x'); [Console]::Out.Flush() }")
+    }
+}
+
+/// After the save/UI cap, continued pipe bytes must still reset idle.
+#[test]
+fn streaming_idle_keeps_alive_after_output_cap() {
+    let spec = streaming_capped_then_keepalive_spec();
+    let saw_marker = std::sync::Arc::new(AtomicBool::new(false));
+    let saw_marker_cb = std::sync::Arc::clone(&saw_marker);
+    let started = Instant::now();
+    let r = SystemProcessRunner.run_streaming(
+        &spec,
+        ProcessTimeout::wall_and_idle(Duration::from_secs(10), Duration::from_millis(400)),
+        64,
+        &CancelToken::new(),
+        &move |_, text| {
+            if text.contains('Z') {
+                saw_marker_cb.store(true, Ordering::SeqCst);
+            }
+        },
+    );
+    assert_eq!(r.status, RunStatus::Ok, "error={:?}", r.error);
+    assert!(r.truncated, "stdout={:?}", r.stdout);
+    assert!(
+        !saw_marker.load(Ordering::SeqCst),
+        "capped bytes were still sent live: stdout={:?}",
+        r.stdout
+    );
+    assert!(
+        !strip_acc_suffix(&r.stdout).contains('Z'),
+        "save buffer grew past the cap: {:?}",
+        r.stdout
+    );
+    assert!(
+        strip_acc_suffix(&r.stdout).len() <= 64,
+        "save buffer exceeded cap: {:?}",
+        r.stdout
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(8),
+        "capped keepalive took {:?}",
+        started.elapsed()
+    );
+}
+
+/// Once the child actually stops writing, idle still fires after the cap.
+#[test]
+fn streaming_idle_timeout_after_capped_output_stops() {
+    let spec = streaming_capped_then_silent_spec();
+    let started = Instant::now();
+    let r = SystemProcessRunner.run_streaming(
+        &spec,
+        ProcessTimeout::wall_and_idle(Duration::from_secs(30), Duration::from_millis(400)),
+        64,
+        &CancelToken::new(),
+        &|_, _| {},
+    );
+    assert_eq!(r.status, RunStatus::Timeout, "error={:?}", r.error);
+    assert!(
+        r.error
+            .as_deref()
+            .is_some_and(|e| e.contains("without output")),
+        "error={:?}",
+        r.error
+    );
+    assert!(r.truncated, "stdout={:?}", r.stdout);
+    assert!(
+        started.elapsed() < Duration::from_secs(10),
+        "idle after cap took {:?}",
+        started.elapsed()
+    );
+}
+
+/// A child that keeps writing past the cap is still bound by wall time.
+#[test]
+fn streaming_idle_does_not_replace_wall_timeout() {
+    let spec = streaming_forever_spec();
+    let started = Instant::now();
+    let r = SystemProcessRunner.run_streaming(
+        &spec,
+        ProcessTimeout::wall_and_idle(Duration::from_secs(1), Duration::from_millis(200)),
+        64,
+        &CancelToken::new(),
+        &|_, _| {},
+    );
+    assert_eq!(r.status, RunStatus::Timeout, "error={:?}", r.error);
+    assert_eq!(
+        r.error.as_deref(),
+        Some("timed out after 1s"),
+        "busy capped child should hit wall, not idle: {:?}",
+        r.error
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "wall timeout after cap took {:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
+fn read_pipe_capped_touches_activity_after_max() {
+    use std::io::Cursor;
+    let data = vec![b'x'; 100];
+    let acc = Mutex::new(Vec::new());
+    let trunc = AtomicBool::new(false);
+    let incomplete = AtomicBool::new(false);
+    let activity = OutputActivity::new();
+    thread::sleep(Duration::from_millis(25));
+    assert!(activity.elapsed() >= Duration::from_millis(20));
+    let mut live = String::new();
+    read_pipe_capped_with_activity(
+        Some(Cursor::new(data)),
+        10,
+        &acc,
+        &trunc,
+        &incomplete,
+        Some(&activity),
+        |text| {
+            live.push_str(&text);
+            true
+        },
+    );
+    assert!(
+        activity.elapsed() < Duration::from_millis(20),
+        "capped drain did not refresh activity: {:?}",
+        activity.elapsed()
+    );
+    assert_eq!(acc.lock().unwrap().len(), 10);
+    assert_eq!(live.len(), 10);
+    assert!(trunc.load(Ordering::SeqCst));
+    assert!(!incomplete.load(Ordering::SeqCst));
+}
+
+#[test]
+fn read_pipe_capped_does_not_emit_after_max() {
+    use std::io::Cursor;
+    let mut data = vec![b'A'; 10];
+    data.extend_from_slice(b"ZZZZ");
+    let acc = Mutex::new(Vec::new());
+    let trunc = AtomicBool::new(false);
+    let incomplete = AtomicBool::new(false);
+    let mut live = String::new();
+    read_pipe_capped(
+        Some(Cursor::new(data)),
+        10,
+        &acc,
+        &trunc,
+        &incomplete,
+        |text| {
+            live.push_str(&text);
+            true
+        },
+    );
+    assert_eq!(live, "AAAAAAAAAA");
+    assert!(!live.contains('Z'));
+    assert_eq!(acc.lock().unwrap().as_slice(), b"AAAAAAAAAA");
+    assert!(trunc.load(Ordering::SeqCst));
+}

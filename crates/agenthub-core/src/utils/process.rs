@@ -7,7 +7,7 @@ use std::io::{self, Read};
 use std::mem::size_of;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -54,6 +54,36 @@ impl ProcessTimeout {
 impl From<Duration> for ProcessTimeout {
     fn from(wall: Duration) -> Self {
         Self::wall(wall)
+    }
+}
+
+/// Last successful stdout/stderr read, shared with reader threads.
+///
+/// Idle timeout must follow bytes leaving the child, not the live UI channel
+/// or the capped save buffer. After the display cap, readers keep draining
+/// the pipe and [`Self::touch`] still fires so a busy child is not killed as
+/// idle.
+pub(crate) struct OutputActivity {
+    epoch: Instant,
+    last_nanos: AtomicU64,
+}
+
+impl OutputActivity {
+    pub(crate) fn new() -> Self {
+        Self {
+            epoch: Instant::now(),
+            last_nanos: AtomicU64::new(0),
+        }
+    }
+
+    pub(crate) fn touch(&self) {
+        let nanos = self.epoch.elapsed().as_nanos().min(u64::MAX as u128) as u64;
+        self.last_nanos.fetch_max(nanos, Ordering::SeqCst);
+    }
+
+    pub(crate) fn elapsed(&self) -> Duration {
+        let last = Duration::from_nanos(self.last_nanos.load(Ordering::SeqCst));
+        self.epoch.elapsed().saturating_sub(last)
     }
 }
 
@@ -930,13 +960,15 @@ fn run_spec_streaming(
     let stderr_trunc = Arc::new(AtomicBool::new(false));
     let stdout_read_inc = Arc::new(AtomicBool::new(false));
     let stderr_read_inc = Arc::new(AtomicBool::new(false));
+    let activity = Arc::new(OutputActivity::new());
 
     let stdout_acc_r = Arc::clone(&stdout_acc);
     let stdout_trunc_r = Arc::clone(&stdout_trunc);
     let stdout_inc_r = Arc::clone(&stdout_read_inc);
+    let stdout_activity = Arc::clone(&activity);
     let tx_out = tx.clone();
     let stdout_handle = thread::spawn(move || {
-        read_lines_capped(
+        read_lines_capped_with_activity(
             stdout,
             max,
             OutputStream::Stdout,
@@ -944,13 +976,15 @@ fn run_spec_streaming(
             &stdout_acc_r,
             &stdout_trunc_r,
             &stdout_inc_r,
+            Some(&stdout_activity),
         )
     });
     let stderr_acc_r = Arc::clone(&stderr_acc);
     let stderr_trunc_r = Arc::clone(&stderr_trunc);
     let stderr_inc_r = Arc::clone(&stderr_read_inc);
+    let stderr_activity = Arc::clone(&activity);
     let stderr_handle = thread::spawn(move || {
-        read_lines_capped(
+        read_lines_capped_with_activity(
             stderr,
             max,
             OutputStream::Stderr,
@@ -958,12 +992,12 @@ fn run_spec_streaming(
             &stderr_acc_r,
             &stderr_trunc_r,
             &stderr_inc_r,
+            Some(&stderr_activity),
         )
     });
 
     const MAX_LIVE_CHUNKS_PER_TICK: usize = 4;
     let poll = Duration::from_millis(16);
-    let mut last_activity = Instant::now();
     let outcome = loop {
         if cancel.is_cancelled() {
             break StreamPoll::Cancelled;
@@ -972,7 +1006,6 @@ fn run_spec_streaming(
             let Ok((stream, text)) = rx.try_recv() else {
                 break;
             };
-            last_activity = Instant::now();
             on_chunk(stream, &text);
         }
         if cancel.is_cancelled() {
@@ -987,7 +1020,7 @@ fn run_spec_streaming(
                     };
                 }
                 if let Some(idle) = timeout.idle {
-                    if last_activity.elapsed() >= idle {
+                    if activity.elapsed() >= idle {
                         break StreamPoll::TimedOut {
                             error: format!("timed out after {}s without output", idle.as_secs()),
                         };
@@ -1300,6 +1333,7 @@ fn drain_streaming_chunks(
     }
 }
 
+#[cfg(test)]
 fn read_lines_capped<R: Read>(
     stream: Option<R>,
     max: usize,
@@ -1309,9 +1343,22 @@ fn read_lines_capped<R: Read>(
     trunc: &AtomicBool,
     incomplete: &AtomicBool,
 ) {
+    read_lines_capped_with_activity(stream, max, which, tx, acc, trunc, incomplete, None);
+}
+
+fn read_lines_capped_with_activity<R: Read>(
+    stream: Option<R>,
+    max: usize,
+    which: OutputStream,
+    tx: &std::sync::mpsc::SyncSender<(OutputStream, String)>,
+    acc: &Mutex<Vec<u8>>,
+    trunc: &AtomicBool,
+    incomplete: &AtomicBool,
+    activity: Option<&OutputActivity>,
+) {
     // Lossless: block on send rather than drop. The waiter drains the channel
     // while joining this reader after child exit / timeout.
-    read_pipe_capped(stream, max, acc, trunc, incomplete, |text| {
+    read_pipe_capped_with_activity(stream, max, acc, trunc, incomplete, activity, |text| {
         tx.send((which, text)).is_ok()
     });
 }
@@ -1320,13 +1367,27 @@ fn read_lines_capped<R: Read>(
 ///
 /// `on_text` returning `false` means the live consumer dropped the chunk
 /// (lossless paths must treat that as incomplete). After the cap, further
-/// reads drain the pipe without locking the accumulator.
+/// reads drain the pipe without locking the accumulator. Successful reads
+/// still refresh [`OutputActivity`] so idle timeout does not treat a busy
+/// child as silent.
 pub(crate) fn read_pipe_capped<R: Read>(
     stream: Option<R>,
     max: usize,
     acc: &Mutex<Vec<u8>>,
     trunc: &AtomicBool,
     incomplete: &AtomicBool,
+    on_text: impl FnMut(String) -> bool,
+) {
+    read_pipe_capped_with_activity(stream, max, acc, trunc, incomplete, None, on_text);
+}
+
+pub(crate) fn read_pipe_capped_with_activity<R: Read>(
+    stream: Option<R>,
+    max: usize,
+    acc: &Mutex<Vec<u8>>,
+    trunc: &AtomicBool,
+    incomplete: &AtomicBool,
+    activity: Option<&OutputActivity>,
     mut on_text: impl FnMut(String) -> bool,
 ) {
     let Some(mut r) = stream else {
@@ -1340,6 +1401,11 @@ pub(crate) fn read_pipe_capped<R: Read>(
         match r.read(&mut chunk) {
             Ok(0) => break,
             Ok(n) => {
+                if n > 0 {
+                    if let Some(activity) = activity {
+                        activity.touch();
+                    }
+                }
                 let accepted = if capped {
                     0
                 } else {
