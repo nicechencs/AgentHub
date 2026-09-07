@@ -202,7 +202,7 @@
         "providerPresets": "无 provider 配置契约",
         "usage": "待日志字段核实",
         "mcp": "待路径核实",
-        "modelSelect": "待验证接入",
+        "modelSelect": null,
         "sessionResume": "后续轮次走 --resume-id；不能中途补充或点允许/拒绝"
       }
     },
@@ -364,7 +364,7 @@
         "providerPresets": "无 provider 配置契约",
         "usage": "待日志字段核实",
         "mcp": "待路径核实",
-        "modelSelect": "待验证接入",
+        "modelSelect": null,
         "sessionResume": "后续轮次走 --resume-id；不能中途补充或点允许/拒绝"
       }
     },
