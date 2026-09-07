@@ -129,3 +129,32 @@ fn today_log_stem_format() {
     assert!(stem.ends_with(".log"));
     assert_eq!(stem.len(), "agenthub.YYYY-MM-DD.log".len());
 }
+
+fn captured_has_op(logs: &str, op: &str) -> bool {
+    logs.contains(&format!("op=\"{op}\""))
+}
+
+#[test]
+fn chat_helpers_record_send_and_stop_ops() {
+    let ((), logs) = with_captured_logs(|| {
+        log_chat_info("send", "conv-1", Some("codex"), "send start");
+        log_chat_info("send", "conv-1", Some("codex"), "send ok");
+        log_chat_error(
+            "send_fail",
+            "conv-1",
+            Some("codex"),
+            Some("chat.runtime"),
+            "send failed",
+        );
+        log_chat_info("stop", "conv-1", Some("codex"), "stop ok");
+        log_chat_error("stop_fail", "conv-1", Some("codex"), None, "stop failed");
+    });
+    assert!(logs.contains("core.chat"), "logs:\n{logs}");
+    assert!(captured_has_op(&logs, "send"), "logs:\n{logs}");
+    assert!(captured_has_op(&logs, "send_fail"), "logs:\n{logs}");
+    assert!(captured_has_op(&logs, "stop"), "logs:\n{logs}");
+    assert!(captured_has_op(&logs, "stop_fail"), "logs:\n{logs}");
+    assert!(logs.contains("conv-1"));
+    assert!(logs.contains("codex"));
+    assert!(!logs.contains("sk-"), "must not log keys: {logs}");
+}

@@ -32,6 +32,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
+use crate::logging;
 use crate::models::{
     AgentId, ChatEvent, ChatMessage, ChatMessageStatus, ChatRole, OutputStream, ProcessStep,
 };
@@ -308,45 +309,74 @@ impl ChatRuntime {
     ) -> Result<RuntimeSnapshot> {
         let prompt = prompt.trim();
         if prompt.is_empty() {
-            return Err(AppError::InvalidArg("prompt must not be empty".into()));
-        }
-        if client_request_id.trim().is_empty() {
-            return Err(AppError::InvalidArg(
-                "clientRequestId must not be empty".into(),
+            return Err(log_and_return_send_fail(
+                conversation_id,
+                AppError::InvalidArg("prompt must not be empty".into()),
             ));
         }
-        ops::validate_local_images(&extras.images)?;
-        self.store.enable_if_new(conversation_id)?;
+        if client_request_id.trim().is_empty() {
+            return Err(log_and_return_send_fail(
+                conversation_id,
+                AppError::InvalidArg("clientRequestId must not be empty".into()),
+            ));
+        }
+        if let Err(error) = ops::validate_local_images(&extras.images) {
+            return Err(log_and_return_send_fail(conversation_id, error));
+        }
+        if let Err(error) = self.store.enable_if_new(conversation_id) {
+            return Err(log_and_return_send_fail(conversation_id, error));
+        }
         let actor = match self.actor(conversation_id) {
             Ok(actor) => actor,
-            Err(error) => return Err(error),
+            Err(error) => return Err(log_and_return_send_fail(conversation_id, error)),
         };
         actor.abort.store(false, Ordering::SeqCst);
         // Cached lists can be checked on the caller thread. A cold catalog
         // fetch is owned by the actor so Cancel/Shutdown can preempt it.
         if let Some(cache) = self.peek_catalog(conversation_id) {
             let models = self.effective_models(&cache.models);
-            let mut settings = self.store.turn_settings(conversation_id)?;
+            let mut settings = match self.store.turn_settings(conversation_id) {
+                Ok(settings) => settings,
+                Err(error) => return Err(log_and_return_send_fail(conversation_id, error)),
+            };
             if ops::settings_need_catalog_default(&settings, &models) {
                 if let Some(defaults) = ops::default_turn_settings(&models) {
-                    settings = self.store.set_turn_settings(conversation_id, &defaults)?;
+                    settings = match self.store.set_turn_settings(conversation_id, &defaults) {
+                        Ok(settings) => settings,
+                        Err(error) => return Err(log_and_return_send_fail(conversation_id, error)),
+                    };
                 }
             }
-            ops::assert_settings_supported(&settings, &models)?;
+            if let Err(error) = ops::assert_settings_supported(&settings, &models) {
+                return Err(log_and_return_send_fail(conversation_id, error));
+            }
             if !extras.skills.is_empty() {
-                ops::validate_skill_refs(&extras.skills, &cache.extensions)?;
+                if let Err(error) = ops::validate_skill_refs(&extras.skills, &cache.extensions) {
+                    return Err(log_and_return_send_fail(conversation_id, error));
+                }
             }
         }
-        match self
-            .store
-            .begin_operation(conversation_id, "start", client_request_id, None)?
-        {
+        let operation =
+            match self
+                .store
+                .begin_operation(conversation_id, "start", client_request_id, None)
+            {
+                Ok(state) => state,
+                Err(error) => return Err(log_and_return_send_fail(conversation_id, error)),
+            };
+        match operation {
             OperationState::Accepted => return self.store.snapshot(conversation_id, None),
             OperationState::Pending => {
-                return Err(operation_replay_error("start", "pending"));
+                return Err(log_and_return_send_fail(
+                    conversation_id,
+                    operation_replay_error("start", "pending"),
+                ));
             }
             OperationState::Failed => {
-                return Err(operation_replay_error("start", "failed"));
+                return Err(log_and_return_send_fail(
+                    conversation_id,
+                    operation_replay_error("start", "failed"),
+                ));
             }
             OperationState::New => {}
         }
@@ -358,7 +388,7 @@ impl ChatRuntime {
                 OperationState::Failed,
                 None,
             )?;
-            return Err(cancelled_error());
+            return Err(log_and_return_send_fail(conversation_id, cancelled_error()));
         }
         let (tx, rx) = mpsc::sync_channel(1);
         let outcome = actor
@@ -369,7 +399,12 @@ impl ChatRuntime {
                 extras,
                 result: tx,
             })
-            .map_err(|_| AppError::message("chat.runtime", "runtime worker stopped"))
+            .map_err(|_| {
+                log_and_return_send_fail(
+                    conversation_id,
+                    AppError::message("chat.runtime", "runtime worker stopped"),
+                )
+            })
             .and_then(|_| recv_result(rx));
         match &outcome {
             Ok(snapshot) => self.store.mark_operation(
@@ -517,16 +552,25 @@ impl ChatRuntime {
     }
 
     pub fn cancel(&self, conversation_id: &str, run_id: &str) -> Result<()> {
-        let actor = self.actor_for_existing(conversation_id)?;
+        let actor = match self.actor_for_existing(conversation_id) {
+            Ok(actor) => actor,
+            Err(error) => return Err(log_and_return_stop_fail(conversation_id, error)),
+        };
         actor.abort.store(true, Ordering::SeqCst);
         let (tx, rx) = mpsc::sync_channel(1);
-        actor
+        if actor
             .tx
             .send(RuntimeCommand::Cancel {
                 run_id: run_id.to_string(),
                 result: tx,
             })
-            .map_err(|_| AppError::message("chat.runtime", "runtime worker stopped"))?;
+            .is_err()
+        {
+            return Err(log_and_return_stop_fail(
+                conversation_id,
+                AppError::message("chat.runtime", "runtime worker stopped"),
+            ));
+        }
         recv_result(rx)
     }
 
@@ -964,14 +1008,11 @@ impl ActorWorker {
         if self.aborted() {
             return CatalogCache::default();
         }
-        let mut transport = match CodexTransport::spawn_interruptible(
-            &program,
-            &cwd,
-            Arc::clone(&self.abort),
-        ) {
-            Ok(t) => t,
-            Err(_) => return CatalogCache::default(),
-        };
+        let mut transport =
+            match CodexTransport::spawn_interruptible(&program, &cwd, Arc::clone(&self.abort)) {
+                Ok(t) => t,
+                Err(_) => return CatalogCache::default(),
+            };
         let models = transport
             .request("model/list", json!({}), CODEX_REQUEST_TIMEOUT)
             .ok()
@@ -1045,6 +1086,13 @@ impl ActorWorker {
         } else {
             "取消请求超时，已中断当前生成"
         };
+        logging::log_chat_error(
+            "stop_fail",
+            &self.conversation_id,
+            Some(self.agent.as_str()),
+            None,
+            message,
+        );
         self.terminalize(
             ChatMessageStatus::Cancelled,
             Some(message),
@@ -1071,6 +1119,8 @@ impl ActorWorker {
                 if self.chat_turn != previous_chat_turn {
                     let message = error.to_string();
                     self.fail_runtime(AppError::message("chat.runtime", message));
+                } else {
+                    self.log_send_fail(&error);
                 }
                 Err(error)
             }
@@ -1153,7 +1203,9 @@ impl ActorWorker {
         let mut settings = self.store.turn_settings(&self.conversation_id)?;
         if ops::settings_need_catalog_default(&settings, &models) {
             if let Some(defaults) = ops::default_turn_settings(&models) {
-                settings = self.store.set_turn_settings(&self.conversation_id, &defaults)?;
+                settings = self
+                    .store
+                    .set_turn_settings(&self.conversation_id, &defaults)?;
             }
         }
         ops::assert_settings_supported(&settings, &models)?;
@@ -1230,6 +1282,12 @@ impl ActorWorker {
         self.message_id = Some(message_id);
         self.turn_id = None;
         self.run_id = Some(run_id);
+        logging::log_chat_info(
+            "send",
+            &self.conversation_id,
+            Some(self.agent.as_str()),
+            "send start",
+        );
 
         let start_result = if is_acp_runtime_agent(Some(self.agent)) {
             self.acp_connect_and_prompt(acp_prompt_blocks.unwrap_or_default())
@@ -1740,6 +1798,7 @@ impl ActorWorker {
                     transport.shutdown();
                 }
                 self.transport = None;
+                self.log_stop_ok();
             }
             return Ok(());
         }
@@ -1768,6 +1827,7 @@ impl ActorWorker {
                 false,
                 true,
             )?;
+            self.log_stop_ok();
             return Ok(());
         }
         let (Some(thread_id), Some(turn_id)) = (thread_id, turn_id) else {
@@ -1820,9 +1880,13 @@ impl ActorWorker {
         match interrupt_result {
             Ok(_) if is_acp_runtime_agent(Some(self.agent)) => {
                 self.cancel_deadline = Some(Instant::now() + ACP_CANCEL_DEADLINE);
+                self.log_stop_ok();
                 Ok(())
             }
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                self.log_stop_ok();
+                Ok(())
+            }
             Err(error) => self.cancel_failed(error),
         }
     }
@@ -2355,6 +2419,13 @@ impl ActorWorker {
     }
 
     fn cancel_failed(&mut self, error: AppError) -> Result<()> {
+        logging::log_chat_error(
+            "stop_fail",
+            &self.conversation_id,
+            Some(self.agent.as_str()),
+            Some(error.code()),
+            &error.to_string(),
+        );
         let message = redact_text(&error.to_string());
         self.terminalize(
             ChatMessageStatus::Cancelled,
@@ -2378,6 +2449,20 @@ impl ActorWorker {
         ok: bool,
         cancelled: bool,
     ) -> Result<()> {
+        let already_terminal = self
+            .store
+            .record(&self.conversation_id)
+            .ok()
+            .flatten()
+            .is_some_and(|record| {
+                matches!(
+                    record.phase,
+                    RuntimePhase::Completed
+                        | RuntimePhase::Failed
+                        | RuntimePhase::Cancelled
+                        | RuntimePhase::Interrupted
+                )
+            });
         self.cancel_deadline = None;
         self.pending_prompt_id = None;
         self.permission_options.clear();
@@ -2426,7 +2511,59 @@ impl ActorWorker {
             phase,
             self.run_id.as_deref(),
             &events,
-        )
+        )?;
+        if !already_terminal {
+            self.log_terminal_outcome(status, cancelled, error);
+        }
+        Ok(())
+    }
+
+    fn log_terminal_outcome(
+        &self,
+        status: ChatMessageStatus,
+        cancelled: bool,
+        error: Option<&str>,
+    ) {
+        if cancelled {
+            return;
+        }
+        match status {
+            ChatMessageStatus::Ok => logging::log_chat_info(
+                "send",
+                &self.conversation_id,
+                Some(self.agent.as_str()),
+                "send ok",
+            ),
+            ChatMessageStatus::Failed | ChatMessageStatus::Timeout => logging::log_chat_error(
+                "send_fail",
+                &self.conversation_id,
+                Some(self.agent.as_str()),
+                None,
+                error.unwrap_or("send failed"),
+            ),
+            ChatMessageStatus::Running
+            | ChatMessageStatus::Cancelled
+            | ChatMessageStatus::Skipped => {}
+        }
+    }
+
+    fn log_stop_ok(&self) {
+        logging::log_chat_info(
+            "stop",
+            &self.conversation_id,
+            Some(self.agent.as_str()),
+            "stop ok",
+        );
+    }
+
+    fn log_send_fail(&self, error: &AppError) {
+        logging::log_chat_error(
+            "send_fail",
+            &self.conversation_id,
+            Some(self.agent.as_str()),
+            Some(error.code()),
+            &error.to_string(),
+        );
     }
 
     fn live_phase(&self, default: RuntimePhase) -> RuntimePhase {
@@ -2660,6 +2797,28 @@ fn map_transport(error: codex_transport::CodexTransportError) -> AppError {
 
 fn cancelled_error() -> AppError {
     AppError::message("chat.runtime.cancelled", "已取消")
+}
+
+fn log_and_return_send_fail(conversation_id: &str, error: AppError) -> AppError {
+    logging::log_chat_error(
+        "send_fail",
+        conversation_id,
+        None,
+        Some(error.code()),
+        &error.to_string(),
+    );
+    error
+}
+
+fn log_and_return_stop_fail(conversation_id: &str, error: AppError) -> AppError {
+    logging::log_chat_error(
+        "stop_fail",
+        conversation_id,
+        None,
+        Some(error.code()),
+        &error.to_string(),
+    );
+    error
 }
 
 fn is_cancelled_error(error: &AppError) -> bool {
