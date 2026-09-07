@@ -262,7 +262,7 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
     providerPresets: { level: 'unsupported', reason: '无 provider 配置契约' },
     usage: { level: 'planned', reason: '待日志字段核实' },
     mcp: { level: 'planned', reason: '待路径核实' },
-    modelSelect: { level: 'planned', reason: '待验证接入' },
+    modelSelect: { level: 'full' },
     sessionResume: {
       level: 'partial',
       reason: '后续轮次走 --resume-id；不能中途补充或点允许/拒绝',
