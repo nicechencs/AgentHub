@@ -59,7 +59,7 @@ pub(crate) use config_write::{
 };
 pub(crate) use detect_binary::{
     detect_binary, detect_binary_with_env, extract_version_token,
-    is_under_agenthub_user_npm_prefix, looks_like_version_line, spawn_npm_cmd_via_node,
+    is_under_agenthub_user_npm_prefix, looks_like_version_line, rewrite_windows_batch_run_spec,
     user_writable_npm_prefix, NOT_FOUND_FIREFIGHTING_NOTE,
 };
 pub use registry::{

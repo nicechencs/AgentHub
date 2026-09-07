@@ -323,7 +323,10 @@ impl RunService {
         }
         let program = program_from_detect(detect.binary_path.as_deref(), id.as_str());
         let spec = match adapter.build_run_spec(&program, prompt, opts) {
-            Ok(spec) => spec,
+            Ok(mut spec) => {
+                crate::adapters::rewrite_windows_batch_run_spec(&mut spec);
+                spec
+            }
             // Desktop-only ZCode has no verified headless argv (`Unsupported`).
             // Skip that agent instead of aborting the rest of a multi-agent run.
             // Other spec errors (e.g. InvalidArg) still fail the whole batch so
