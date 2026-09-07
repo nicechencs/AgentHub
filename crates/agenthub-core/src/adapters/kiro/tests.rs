@@ -120,6 +120,7 @@ fn build_run_spec_resume_id_before_prompt() {
     assert_eq!(spec.args.last().map(String::as_str), Some("ok"));
 }
 
+
 #[test]
 fn build_run_spec_model_and_effort_before_prompt() {
     let mut opts = RunOptions::default();
@@ -153,6 +154,20 @@ fn build_run_spec_model_effort_with_resume() {
         .windows(2)
         .any(|w| w == ["--resume-id", "43829d57-18ca-483f-b0df-054a5e1c395e"]));
     assert_eq!(spec.args.last().map(String::as_str), Some("again"));
+}
+
+#[test]
+fn build_run_spec_skips_http_namespaced_resume() {
+    let mut opts = RunOptions::default();
+    opts.process_mode = ProcessMode::Auto;
+    opts.native_session_id = Some("kiro-http:cid-from-http".into());
+    let spec = KiroAdapter
+        .build_run_spec(Path::new("kiro-cli"), "ok", &opts)
+        .unwrap();
+    assert!(
+        !spec.args.iter().any(|a| a == "--resume-id"),
+        "HTTP namespaced id must not become CLI --resume-id"
+    );
 }
 
 #[test]
