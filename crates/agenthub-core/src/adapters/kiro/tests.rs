@@ -80,6 +80,14 @@ fn account_switch_partial_stream_and_resume_partial() {
 }
 
 #[test]
+fn usage_capability_is_partial() {
+    assert_eq!(
+        KiroAdapter.capability(Capability::Usage).level,
+        CapabilityLevel::Partial
+    );
+}
+
+#[test]
 fn build_run_spec_chat_auto_adds_v2_stream_json() {
     let mut opts = RunOptions::default();
     opts.process_mode = ProcessMode::Auto;

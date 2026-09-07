@@ -260,7 +260,10 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
       reason: '无安全浅删契约',
     },
     providerPresets: { level: 'unsupported', reason: '无 provider 配置契约' },
-    usage: { level: 'planned', reason: '待日志字段核实' },
+    usage: {
+      level: 'partial',
+      reason: '读 kiro-cli 会话里的 token；日志没写时总览是 0',
+    },
     mcp: { level: 'planned', reason: '待路径核实' },
     modelSelect: { level: 'full' },
     sessionResume: {
