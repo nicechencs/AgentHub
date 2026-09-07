@@ -246,6 +246,8 @@ export const en = {
       backupCreated: 'Backup created',
       backupFailed: 'Backup failed',
       restored: 'Restored to this backup',
+      restorePartial: 'Partially restored',
+      restorePartialDesc: 'Some files could not be removed',
       restoreFailed: 'Restore failed',
       deleted: 'Backup deleted',
       deleteFailed: 'Delete failed',

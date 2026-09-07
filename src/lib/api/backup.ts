@@ -2,10 +2,15 @@
  * Backup API façade — delegates to app runtime backend.
  */
 import { getBackend } from '@/app/runtime';
+import type { CoreRestoreResult } from '@/lib/backend/contracts/backup-map';
 import type { AgentKey, BackupInspect, BackupMeta } from '@/lib/types';
 
-export type { CoreBackupRecord, CoreRestoreResult } from '@/lib/backend/contracts/backup-map';
-export { mapCoreBackup } from '@/lib/backend/contracts/backup-map';
+export type {
+  CoreBackupRecord,
+  CoreRestoreResult,
+  CoreSkippedDeletion,
+} from '@/lib/backend/contracts/backup-map';
+export { mapCoreBackup, restoreHasDeleteFailures } from '@/lib/backend/contracts/backup-map';
 
 export async function listBackups(agentId?: AgentKey): Promise<BackupMeta[]> {
   return getBackend().backup.listBackups(agentId);
@@ -19,7 +24,7 @@ export async function createBackup(agentId: AgentKey, note?: string): Promise<Ba
   return getBackend().backup.createBackup(agentId, note);
 }
 
-export async function restoreBackup(backupId: string): Promise<void> {
+export async function restoreBackup(backupId: string): Promise<CoreRestoreResult> {
   return getBackend().backup.restoreBackup(backupId);
 }
 

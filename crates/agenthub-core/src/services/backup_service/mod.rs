@@ -22,6 +22,8 @@ mod path_safety;
 mod restore;
 mod snapshot;
 
+pub use restore::SkippedDeletion;
+
 #[cfg(test)]
 mod tests;
 
@@ -70,9 +72,9 @@ pub struct RestoreResult {
     pub pre_restore: Option<BackupRecord>,
     /// Live destinations that received a restored file.
     pub restored_paths: Vec<PathBuf>,
-    /// Absent-file cleanup that restore declined. Not part of the public JSON.
-    #[serde(skip)]
-    pub(crate) skipped_deletions: Vec<restore::SkippedDeletion>,
+    /// Absent-file cleanup that restore declined (`edited`, `unknown`,
+    /// `delete_failed`, `fingerprint_unavailable`).
+    pub skipped_deletions: Vec<SkippedDeletion>,
 }
 
 impl RestoreResult {

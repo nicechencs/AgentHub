@@ -1,6 +1,7 @@
 import type { BackupPort } from '@/lib/backend/contracts';
 import {
   mapCoreBackup,
+  mapCoreRestoreResult,
   type CoreBackupInspect,
   type CoreBackupRecord,
   type CoreRestoreResult,
@@ -31,7 +32,8 @@ export function createTauriBackupPort(): BackupPort {
     },
 
     async restoreBackup(backupId) {
-      await invoke<CoreRestoreResult>('restore_backup', { backupId });
+      const result = await invoke<CoreRestoreResult>('restore_backup', { backupId });
+      return mapCoreRestoreResult(result);
     },
 
     async deleteBackup(backupId) {
