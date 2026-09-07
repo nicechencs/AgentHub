@@ -121,7 +121,7 @@ fn streaming_cancel_kills_long_process() {
     });
     let r = SystemProcessRunner.run_streaming(
         &spec,
-        Duration::from_secs(30),
+        ProcessTimeout::wall(Duration::from_secs(30)),
         64 * 1024,
         &cancel,
         &|_, _| {},
@@ -148,7 +148,7 @@ fn streaming_cancel_kills_long_process() {
     });
     let r = SystemProcessRunner.run_streaming(
         &spec,
-        Duration::from_secs(30),
+        ProcessTimeout::wall(Duration::from_secs(30)),
         64 * 1024,
         &cancel,
         &|_, _| {},
@@ -172,7 +172,7 @@ fn streaming_runner_emits_small_chunks_before_process_exit() {
     let first_cb = std::sync::Arc::clone(&first);
     let result = SystemProcessRunner.run_streaming(
         &spec,
-        Duration::from_secs(5),
+        ProcessTimeout::wall(Duration::from_secs(5)),
         64 * 1024,
         &CancelToken::new(),
         &move |stream, text| {
@@ -506,7 +506,7 @@ fn streaming_newline_storm_has_bounded_live_callbacks() {
     let seen = std::sync::Arc::clone(&callbacks);
     let _result = SystemProcessRunner.run_streaming(
         &spec,
-        Duration::from_secs(5),
+        ProcessTimeout::wall(Duration::from_secs(5)),
         2 * 1024 * 1024,
         &cancel,
         &move |_, _| {
@@ -621,7 +621,7 @@ fn collect_streaming(spec: RunSpec, timeout: Duration, max: usize) -> (AgentRunR
     let live = std::sync::Mutex::new(String::new());
     let result = SystemProcessRunner.run_streaming(
         &spec,
-        timeout,
+        ProcessTimeout::wall(timeout),
         max,
         &CancelToken::new(),
         &|stream, text| {
@@ -790,4 +790,83 @@ fn first_reader_join_timeout_stays_incomplete_after_second_join() {
         "second join success must not clear the first timeout"
     );
     let _ = reap_child(&mut child, &process_control);
+}
+
+#[cfg(not(windows))]
+#[test]
+fn streaming_idle_timeout_kills_silent_process() {
+    let spec = RunSpec {
+        agent: AgentId::Claude,
+        program: PathBuf::from("sleep"),
+        args: vec!["30".into()],
+        cwd: None,
+        env: vec![],
+    };
+    let started = Instant::now();
+    let r = SystemProcessRunner.run_streaming(
+        &spec,
+        ProcessTimeout::wall_and_idle(Duration::from_secs(30), Duration::from_millis(400)),
+        64 * 1024,
+        &CancelToken::new(),
+        &|_, _| {},
+    );
+    assert_eq!(r.status, RunStatus::Timeout);
+    assert_eq!(
+        r.error.as_deref(),
+        Some("timed out after 0s without output")
+    );
+    assert!(started.elapsed() < Duration::from_secs(10));
+}
+
+#[cfg(not(windows))]
+#[test]
+fn streaming_idle_timeout_resets_on_output() {
+    let spec = RunSpec {
+        agent: AgentId::Claude,
+        program: PathBuf::from("sh"),
+        args: vec![
+            "-c".into(),
+            "i=0; while [ $i -lt 8 ]; do echo $i; i=$((i+1)); sleep 0.15; done".into(),
+        ],
+        cwd: None,
+        env: vec![],
+    };
+    let r = SystemProcessRunner.run_streaming(
+        &spec,
+        ProcessTimeout::wall_and_idle(Duration::from_secs(10), Duration::from_millis(500)),
+        64 * 1024,
+        &CancelToken::new(),
+        &|_, _| {},
+    );
+    assert_eq!(r.status, RunStatus::Ok, "error={:?}", r.error);
+}
+
+#[cfg(windows)]
+#[test]
+fn streaming_idle_timeout_kills_silent_process() {
+    let spec = RunSpec {
+        agent: AgentId::Claude,
+        program: PathBuf::from("ping"),
+        args: vec!["-n".into(), "30".into(), "127.0.0.1".into()],
+        cwd: None,
+        env: vec![],
+    };
+    let started = Instant::now();
+    // ping prints about once a second; a 200ms idle fires between lines.
+    let r = SystemProcessRunner.run_streaming(
+        &spec,
+        ProcessTimeout::wall_and_idle(Duration::from_secs(30), Duration::from_millis(200)),
+        64 * 1024,
+        &CancelToken::new(),
+        &|_, _| {},
+    );
+    assert_eq!(r.status, RunStatus::Timeout);
+    assert!(
+        r.error
+            .as_deref()
+            .is_some_and(|e| e.contains("without output")),
+        "error={:?}",
+        r.error
+    );
+    assert!(started.elapsed() < Duration::from_secs(10));
 }

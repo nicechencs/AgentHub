@@ -5,9 +5,9 @@ use super::detect_binary::well_known_npm_cli_dirs;
 use super::detect_binary::{
     agenthub_user_npm_prefix_roots, attach_extra_binary_copies, detect_binary, expand_binary_names,
     first_existing_named_bin, infer_channel, is_under_agenthub_user_npm_prefix,
-    npm_global_bin_dirs, npm_prefix_stdout_to_bin_dir, parse_npmrc_global_prefix,
-    user_writable_npm_bin_dir, user_writable_npm_prefix, well_known_bin_paths,
-    NOT_FOUND_FIREFIGHTING_NOTE,
+    npm_cmd_shim_script_from_text, npm_global_bin_dirs, npm_prefix_stdout_to_bin_dir,
+    parse_npmrc_global_prefix, spawn_npm_cmd_via_node, user_writable_npm_bin_dir,
+    user_writable_npm_prefix, well_known_bin_paths, NOT_FOUND_FIREFIGHTING_NOTE,
 };
 use super::*;
 use crate::error::AppError;
@@ -67,6 +67,65 @@ fn first_existing_named_bin_skips_unix_shebang_prefers_cmd() {
         Some(dir.join("codex.cmd")),
         "must not pick the Unix shebang `codex` that CreateProcess cannot run"
     );
+}
+
+#[test]
+fn npm_cmd_shim_script_from_text_reads_dp0_js() {
+    let text = r#"@ECHO off
+endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\node_modules\@earendil-works\pi-coding-agent\dist\bundle\cli.js" %*
+"#;
+    let dir = PathBuf::from(r"C:\Users\demo\AppData\Roaming\npm");
+    let js = npm_cmd_shim_script_from_text(text, &dir).expect("js entry");
+    assert_eq!(
+        js,
+        dir.join("node_modules")
+            .join("@earendil-works")
+            .join("pi-coding-agent")
+            .join("dist")
+            .join("bundle")
+            .join("cli.js")
+    );
+}
+
+#[test]
+fn spawn_npm_cmd_via_node_rewrites_when_js_exists() {
+    let tmp = tempfile::tempdir().unwrap();
+    let npm = tmp.path().join("npm");
+    let js_dir = npm
+        .join("node_modules")
+        .join("@earendil-works")
+        .join("pi-coding-agent")
+        .join("dist")
+        .join("bundle");
+    std::fs::create_dir_all(&js_dir).unwrap();
+    let js = js_dir.join("cli.js");
+    std::fs::write(&js, "console.log('pi')\n").unwrap();
+    let cmd = npm.join("pi.cmd");
+    std::fs::write(
+        &cmd,
+        format!(
+            "@ECHO off\n\"%_prog%\" \"%dp0%\\node_modules\\@earendil-works\\pi-coding-agent\\dist\\bundle\\cli.js\" %*\n"
+        ),
+    )
+    .unwrap();
+    let node = tmp.path().join("node.exe");
+    let (program, args) =
+        spawn_npm_cmd_via_node(&cmd, vec!["-p".into(), "hello\nworld".into()], &node);
+    assert_eq!(program, node);
+    assert_eq!(args[0], js.to_string_lossy());
+    assert_eq!(args[1], "-p");
+    assert_eq!(args[2], "hello\nworld");
+}
+
+#[test]
+fn spawn_npm_cmd_via_node_leaves_non_cmd_alone() {
+    let (program, args) = spawn_npm_cmd_via_node(
+        std::path::Path::new("pi"),
+        vec!["-p".into()],
+        std::path::Path::new("node"),
+    );
+    assert_eq!(program, PathBuf::from("pi"));
+    assert_eq!(args, vec!["-p"]);
 }
 
 #[test]

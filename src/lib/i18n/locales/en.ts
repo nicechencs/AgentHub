@@ -2800,7 +2800,7 @@ export const en = {
       cancelled: 'Stopped',
       cancelledHint: 'Stopped as requested. Restore the draft to resend.',
       timeout: 'This turn timed out',
-      timeoutHint: 'Retry, or shorten the task first.',
+      timeoutHint: 'It will not stop just because the turn is long. You can retry.',
       draftKept: 'Failures keep your draft when possible; model prose never counts as “tests passed”.',
       restoreDraft: 'Restore draft',
       retry: 'Retry turn',

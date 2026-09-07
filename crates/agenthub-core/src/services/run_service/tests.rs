@@ -8,6 +8,7 @@ fn opts() -> RunOptions {
     RunOptions {
         mode: RunMode::Parallel,
         timeout: Duration::from_secs(5),
+        idle_timeout: None,
         cwd: None,
         dry_run: false,
         skip_missing: true,

@@ -14,7 +14,8 @@ use crate::models::{
     RunOptions, RunSpec, RunStatus,
 };
 use crate::utils::process::{
-    program_from_detect, CancelToken, ProcessRunner, StreamingProcessRunner, SystemProcessRunner,
+    program_from_detect, CancelToken, ProcessRunner, ProcessTimeout, StreamingProcessRunner,
+    SystemProcessRunner,
 };
 use crate::utils::stream_parse::{StreamOutput, StreamSession};
 
@@ -478,7 +479,7 @@ impl RunService {
             let session = std::sync::Mutex::new(StreamSession::new(agent, opts.process_mode));
             let mut result = self.streaming.run_streaming(
                 spec,
-                opts.timeout,
+                ProcessTimeout::from_run_options(opts),
                 opts.max_output_bytes,
                 cancel,
                 &|stream, text| {
@@ -540,7 +541,7 @@ impl RunService {
                 work.iter().map(|(i, id, _)| (*i, *id)).collect();
             let (tx, rx) = std::sync::mpsc::channel::<RunEvent>();
             let streaming = Arc::clone(&self.streaming);
-            let timeout = opts.timeout;
+            let timeout = ProcessTimeout::from_run_options(opts);
             let max_out = opts.max_output_bytes;
             let cancel = cancel.clone();
 

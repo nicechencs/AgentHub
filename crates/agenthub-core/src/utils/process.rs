@@ -24,6 +24,39 @@ pub struct CancelToken {
     cancelled: Arc<AtomicBool>,
 }
 
+/// Wall-clock and optional idle (no stdout/stderr) limits for a child process.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProcessTimeout {
+    pub wall: Duration,
+    pub idle: Option<Duration>,
+}
+
+impl ProcessTimeout {
+    pub const fn wall(wall: Duration) -> Self {
+        Self { wall, idle: None }
+    }
+
+    pub const fn wall_and_idle(wall: Duration, idle: Duration) -> Self {
+        Self {
+            wall,
+            idle: Some(idle),
+        }
+    }
+
+    pub fn from_run_options(opts: &crate::models::RunOptions) -> Self {
+        Self {
+            wall: opts.timeout,
+            idle: opts.idle_timeout,
+        }
+    }
+}
+
+impl From<Duration> for ProcessTimeout {
+    fn from(wall: Duration) -> Self {
+        Self::wall(wall)
+    }
+}
+
 impl CancelToken {
     pub fn new() -> Self {
         Self {
@@ -618,7 +651,7 @@ pub trait StreamingProcessRunner: Send + Sync {
     fn run_streaming(
         &self,
         spec: &RunSpec,
-        timeout: Duration,
+        timeout: ProcessTimeout,
         max_output_bytes: usize,
         cancel: &CancelToken,
         on_chunk: &(dyn Fn(OutputStream, &str) + Send + Sync),
@@ -639,7 +672,7 @@ impl StreamingProcessRunner for SystemProcessRunner {
     fn run_streaming(
         &self,
         spec: &RunSpec,
-        timeout: Duration,
+        timeout: ProcessTimeout,
         max_output_bytes: usize,
         cancel: &CancelToken,
         on_chunk: &(dyn Fn(OutputStream, &str) + Send + Sync),
@@ -719,7 +752,7 @@ impl StreamingProcessRunner for RecordingProcessRunner {
     fn run_streaming(
         &self,
         spec: &RunSpec,
-        timeout: Duration,
+        timeout: ProcessTimeout,
         max_output_bytes: usize,
         cancel: &CancelToken,
         on_chunk: &(dyn Fn(OutputStream, &str) + Send + Sync),
@@ -808,7 +841,7 @@ impl StreamingProcessRunner for RecordingProcessRunner {
 
 fn run_spec_streaming(
     spec: &RunSpec,
-    timeout: Duration,
+    timeout: ProcessTimeout,
     max_output_bytes: usize,
     cancel: &CancelToken,
     on_chunk: &(dyn Fn(OutputStream, &str) + Send + Sync),
@@ -930,6 +963,7 @@ fn run_spec_streaming(
 
     const MAX_LIVE_CHUNKS_PER_TICK: usize = 4;
     let poll = Duration::from_millis(16);
+    let mut last_activity = Instant::now();
     let outcome = loop {
         if cancel.is_cancelled() {
             break StreamPoll::Cancelled;
@@ -938,6 +972,7 @@ fn run_spec_streaming(
             let Ok((stream, text)) = rx.try_recv() else {
                 break;
             };
+            last_activity = Instant::now();
             on_chunk(stream, &text);
         }
         if cancel.is_cancelled() {
@@ -946,8 +981,17 @@ fn run_spec_streaming(
         match poll_child(&mut child, &process_control) {
             Ok(ChildPoll::Exited(status)) => break StreamPoll::Exited(status),
             Ok(ChildPoll::Running) => {
-                if started.elapsed() >= timeout {
-                    break StreamPoll::TimedOut;
+                if started.elapsed() >= timeout.wall {
+                    break StreamPoll::TimedOut {
+                        error: format!("timed out after {}s", timeout.wall.as_secs()),
+                    };
+                }
+                if let Some(idle) = timeout.idle {
+                    if last_activity.elapsed() >= idle {
+                        break StreamPoll::TimedOut {
+                            error: format!("timed out after {}s without output", idle.as_secs()),
+                        };
+                    }
                 }
                 thread::sleep(poll);
             }
@@ -1070,7 +1114,7 @@ fn run_spec_streaming(
                 native_session_id: None,
             }
         }
-        StreamPoll::TimedOut => {
+        StreamPoll::TimedOut { error } => {
             kill_process_tree(&process_control, &mut child);
             reap_child_lossy(&mut child, &process_control);
             let mut terminated = true;
@@ -1109,7 +1153,7 @@ fn run_spec_streaming(
                 stdout,
                 stderr,
                 command,
-                error: Some(format!("timed out after {}s", timeout.as_secs())),
+                error: Some(error),
                 truncated: st || se || stdout_incomplete || stderr_incomplete,
                 native_session_id: None,
             }
@@ -1163,7 +1207,7 @@ fn run_spec_streaming(
 
 enum StreamPoll {
     Exited(Option<std::process::ExitStatus>),
-    TimedOut,
+    TimedOut { error: String },
     Cancelled,
 }
 
