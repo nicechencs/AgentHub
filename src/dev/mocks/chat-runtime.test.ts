@@ -37,7 +37,9 @@ describe('mock chat runtime', () => {
     const chat = createMockChatPort();
     const conversation = await chat.createConversation(['kiro']);
     const before = await chat.runtimeSnapshot(conversation.id);
-    await expect(chat.runtimeContinueLegacy(conversation.id)).rejects.toThrow('请新建对话');
+    await expect(chat.runtimeContinueLegacy(conversation.id)).rejects.toThrow(
+      '这条 Kiro 对话不能切换聊天方式，请新建对话',
+    );
     await expect(chat.runtimeSnapshot(conversation.id)).resolves.toEqual(before);
   });
 

@@ -514,7 +514,7 @@ export function createMockChatPort(): ChatPort {
       const conv = mockConversations.find((item) => item.id === conversationId);
       if (!conv) throw new Error(`conversation not found: ${conversationId}`);
       if (conv.agentIds[0] === 'kiro') {
-        throw new Error('旧 Kiro 对话不能切换聊天方式，请新建对话');
+        throw new Error('这条 Kiro 对话不能切换聊天方式，请新建对话');
       }
       if (conv.agentIds[0] !== 'grok') {
         throw new Error('只有 Grok 可以用新方式继续');

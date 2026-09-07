@@ -28,6 +28,11 @@ fn elapsed_ms(started: Instant) -> u64 {
     u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
+fn is_kiro_http_native_session(id: Option<&str>) -> bool {
+    id.and_then(crate::adapters::kiro::http::parse_http_native_session_id)
+        .is_some()
+}
+
 pub struct ChatService {
     repo: ChatRepo,
     run: Arc<RunService>,
@@ -278,6 +283,18 @@ impl ChatService {
                 Err(e)
             }
         }
+    }
+
+    /// Kiro HTTP conversations must keep `kiro-http:<id>` after a failed turn.
+    /// Clearing it would make the next send look like a new chat and fall back to CLI.
+    fn keep_native_session_after_resume_failure(
+        resume_id: Option<&str>,
+        results: &[AgentRunResult],
+    ) -> bool {
+        is_kiro_http_native_session(resume_id)
+            || results
+                .iter()
+                .any(|result| is_kiro_http_native_session(result.native_session_id.as_deref()))
     }
 
     /// Best-effort: drop a stale native session so the next send uses full history.
@@ -557,7 +574,12 @@ impl ChatService {
                     on_event(ChatEvent::Error {
                         message: e.to_string(),
                     });
-                    if resume_id.is_some() {
+                    if resume_id.is_some()
+                        && !Self::keep_native_session_after_resume_failure(
+                            resume_id.as_deref(),
+                            &[],
+                        )
+                    {
                         self.clear_native_session_id(conversation_id);
                     }
                     return Err(e);
@@ -583,7 +605,9 @@ impl ChatService {
 
         let resume_hard_fail =
             resume_id.is_some() && results.iter().any(|r| r.status.is_hard_failure());
-        if resume_hard_fail {
+        if resume_hard_fail
+            && !Self::keep_native_session_after_resume_failure(resume_id.as_deref(), &results)
+        {
             self.clear_native_session_id(conversation_id);
         } else if let Some(sid) = results.iter().find_map(|r| r.native_session_id.clone()) {
             if let Ok(mut latest) = self.get_conversation(conversation_id) {

@@ -165,8 +165,9 @@ impl ChatRuntime {
             .unwrap_or(false)
     }
 
-    /// Switch an existing Grok/Kiro print session onto continuous chat.
+    /// Switch an existing Grok print session onto continuous chat.
     /// Requires a stored native session id; does not invent a new session.
+    /// Kiro history stays on its original send path.
     pub fn continue_legacy(&self, conversation_id: &str) -> Result<RuntimeSnapshot> {
         let conversation = self
             .repo
@@ -176,7 +177,7 @@ impl ChatRuntime {
             })?;
         if conversation.agent_ids.first().copied() == Some(AgentId::Kiro) {
             return Err(AppError::Unsupported(
-                "Kiro 对话不能用旧方式继续，请新建对话".into(),
+                "这条 Kiro 对话不能切换聊天方式，请新建对话".into(),
             ));
         }
         if conversation.agent_ids.first().copied() != Some(AgentId::Grok) {
