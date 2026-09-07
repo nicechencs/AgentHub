@@ -7,7 +7,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use chrono::{Local, NaiveDate};
 use tracing::Level;
@@ -355,6 +355,131 @@ pub fn log_warn(module: &'static str, op: &str, msg: &str) {
 pub fn log_debug(module: &'static str, op: &str, msg: &str) {
     let msg = redact_text(msg);
     tracing::debug!(module = module, op = op, "{msg}");
+}
+
+/// Chat send/stop milestone. Never pass prompt, reply body, or secrets as `msg`.
+pub(crate) fn log_chat_info(op: &str, conversation_id: &str, agent: Option<&str>, msg: &str) {
+    let msg = redact_text(msg);
+    if let Some(agent) = agent.filter(|value| !value.is_empty()) {
+        tracing::info!(
+            target: targets::CHAT,
+            module = targets::CHAT,
+            op,
+            conversation_id,
+            agent,
+            "{msg}"
+        );
+    } else {
+        tracing::info!(
+            target: targets::CHAT,
+            module = targets::CHAT,
+            op,
+            conversation_id,
+            "{msg}"
+        );
+    }
+}
+
+/// Chat send/stop failure. Never pass prompt, reply body, or secrets as `msg`.
+pub(crate) fn log_chat_error(
+    op: &str,
+    conversation_id: &str,
+    agent: Option<&str>,
+    code: Option<&str>,
+    msg: &str,
+) {
+    let msg = redact_text(msg);
+    match (
+        agent.filter(|value| !value.is_empty()),
+        code.filter(|value| !value.is_empty()),
+    ) {
+        (Some(agent), Some(code)) => {
+            tracing::error!(
+                target: targets::CHAT,
+                module = targets::CHAT,
+                op,
+                conversation_id,
+                agent,
+                code,
+                "{msg}"
+            );
+        }
+        (Some(agent), None) => {
+            tracing::error!(
+                target: targets::CHAT,
+                module = targets::CHAT,
+                op,
+                conversation_id,
+                agent,
+                "{msg}"
+            );
+        }
+        (None, Some(code)) => {
+            tracing::error!(
+                target: targets::CHAT,
+                module = targets::CHAT,
+                op,
+                conversation_id,
+                code,
+                "{msg}"
+            );
+        }
+        (None, None) => {
+            tracing::error!(
+                target: targets::CHAT,
+                module = targets::CHAT,
+                op,
+                conversation_id,
+                "{msg}"
+            );
+        }
+    }
+}
+
+/// Capture tracing output on this thread (tests). Independent of the process subscriber.
+#[cfg(test)]
+pub(crate) fn with_captured_logs<T>(f: impl FnOnce() -> T) -> (T, String) {
+    use std::io::{self, Write};
+
+    #[derive(Clone)]
+    struct Buffer(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for Buffer {
+        fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+            self.0
+                .lock()
+                .map_err(|_| io::Error::new(io::ErrorKind::Other, "log buffer poisoned"))?
+                .extend_from_slice(data);
+            Ok(data.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Buffer {
+        type Writer = Self;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    let buffer = Buffer(Arc::new(Mutex::new(Vec::new())));
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(buffer.clone())
+        .with_ansi(false)
+        .with_target(true)
+        .with_level(true)
+        .finish();
+    let result = tracing::subscriber::with_default(subscriber, f);
+    let bytes = buffer
+        .0
+        .lock()
+        .map(|guard| guard.clone())
+        .unwrap_or_default();
+    (result, String::from_utf8_lossy(&bytes).into_owned())
 }
 
 /// Today's log file name (for tests / doctor).
