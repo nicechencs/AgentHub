@@ -44,14 +44,4 @@ pub fn random_state() -> Result<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn pkce_shapes() {
-        let p = PkcePair::generate().unwrap();
-        assert!(p.verifier().len() >= 32);
-        assert!(!p.challenge().is_empty());
-        assert_ne!(p.verifier(), p.challenge());
-    }
-}
+mod tests;
