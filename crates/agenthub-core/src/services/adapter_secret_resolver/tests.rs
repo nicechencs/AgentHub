@@ -1262,6 +1262,48 @@ fn grok_subscription_auth_json_resolves_access_token() {
 }
 
 #[test]
+fn kiro_pool_auth_is_bearer_only_and_params_keep_region() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("kiro-resolver.db")).unwrap();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "kiro-official".into(),
+            agent_id: AgentId::Kiro,
+            kind: AccountKind::Oauth,
+            label: "Kiro login".into(),
+            credentials: json!({
+                "access_token": "at-official",
+                "refresh_token": "rt-must-not-enter-route",
+                "region": "eu-west-1",
+                "profile_arn": "arn:aws:codewhisperer:eu-west-1:1:profile/X"
+            }),
+            extra: json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let resolver = AdapterSecretResolver::new(db);
+    assert_eq!(
+        resolver
+            .resolve_kiro_auth(AdapterSourceKind::Account, "kiro-official")
+            .unwrap()
+            .token(),
+        "at-official"
+    );
+    let params = resolver
+        .resolve_kiro_http_params(AdapterSourceKind::Account, "kiro-official")
+        .unwrap();
+    assert_eq!(params.region, "eu-west-1");
+    assert_eq!(
+        params.profile_arn.as_deref(),
+        Some("arn:aws:codewhisperer:eu-west-1:1:profile/X")
+    );
+    assert!(!params.api_key);
+}
+
+#[test]
 fn subscription_oauth_requires_access_token() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("subscription-resolver.db")).unwrap();

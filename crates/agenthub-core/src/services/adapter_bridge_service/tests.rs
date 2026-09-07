@@ -1029,6 +1029,7 @@ async fn bound_health_rejects_upstream_auth_before_a_provider_switch() {
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
         schedule_policy: Default::default(),
+        kiro_http: None,
     };
     let host = crate::bridge::BridgeRuntimeHost::new();
     let runtime = host.start(material.start_spec(Some(0))).await.unwrap();
@@ -1067,6 +1068,7 @@ async fn bound_health_does_not_forward_anthropic_key_across_redirect() {
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
         schedule_policy: Default::default(),
+        kiro_http: None,
     };
     let host = crate::bridge::BridgeRuntimeHost::new();
     let runtime = host.start(material.start_spec(Some(0))).await.unwrap();
@@ -1184,6 +1186,7 @@ async fn codex_responses_health_probe_does_not_request_models() {
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
         schedule_policy: Default::default(),
+        kiro_http: None,
     };
     let host = crate::bridge::BridgeRuntimeHost::new();
     let runtime = host.start(material.start_spec(Some(0))).await.unwrap();
@@ -1218,6 +1221,7 @@ async fn xai_responses_health_probe_does_not_request_models() {
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
         schedule_policy: Default::default(),
+        kiro_http: None,
     };
     let host = crate::bridge::BridgeRuntimeHost::new();
     let runtime = host.start(material.start_spec(Some(0))).await.unwrap();
@@ -1252,6 +1256,7 @@ async fn deepseek_health_probe_skips_upstream_models() {
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
         schedule_policy: Default::default(),
+        kiro_http: None,
     };
     let host = crate::bridge::BridgeRuntimeHost::new();
     let runtime = host.start(material.start_spec(Some(0))).await.unwrap();
@@ -1286,6 +1291,7 @@ fn start_spec_lists_codex_to_grok_dispatch_accepted_ids() {
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
         schedule_policy: Default::default(),
+        kiro_http: None,
     };
     assert_eq!(
         material.downstream_dialect(),
@@ -1335,6 +1341,7 @@ fn start_spec_lists_grok_default_when_mapping_entries_empty() {
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
         schedule_policy: Default::default(),
+        kiro_http: None,
     };
     assert_eq!(
         material.start_spec(Some(0)).listed_models,
@@ -1364,6 +1371,7 @@ fn start_spec_lists_codex_to_kimi_dispatch_accepted_ids() {
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
         schedule_policy: Default::default(),
+        kiro_http: None,
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert_eq!(
@@ -1394,6 +1402,7 @@ fn start_spec_codex_to_kimi_configured_default_merges_into_catalog() {
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
         schedule_policy: Default::default(),
+        kiro_http: None,
     };
     let listed = material.start_spec(Some(0)).listed_models;
     let mut expected =
@@ -1424,6 +1433,7 @@ fn start_spec_lists_openai_to_codex_without_kimi_ids() {
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
         schedule_policy: Default::default(),
+        kiro_http: None,
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert_eq!(listed, vec![OPENAI_DEFAULT_MODEL.to_string()]);
@@ -2495,6 +2505,7 @@ fn start_spec_does_not_inject_retired_openrouter_backup() {
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
         schedule_policy: Default::default(),
+        kiro_http: None,
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(
@@ -2525,6 +2536,7 @@ fn start_spec_keeps_every_user_listed_model() {
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
         schedule_policy: Default::default(),
+        kiro_http: None,
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(listed.iter().any(|model| model == "openai/gpt-4o"));
@@ -2556,6 +2568,7 @@ fn start_spec_strips_claude_1m_marker_from_listed_models() {
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
         schedule_policy: Default::default(),
+        kiro_http: None,
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(!listed.iter().any(|model| model == "stealth/ox-alpha"));
@@ -2584,6 +2597,7 @@ fn start_spec_official_openai_does_not_list_stealth() {
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
         schedule_policy: Default::default(),
+        kiro_http: None,
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(!listed.iter().any(|model| model == "stealth/ox-alpha"));

@@ -537,6 +537,12 @@ fn acp_cancel_deadline_terminalizes_without_a_server_response() {
     worker.check_cancel_deadline().unwrap();
     let snapshot = worker.store.snapshot("cancel-deadline", None).unwrap();
     assert_eq!(snapshot.phase, RuntimePhase::Interrupted);
+    assert!(snapshot.events.iter().any(|event| {
+        matches!(
+            &event.event,
+            ChatEvent::Error { message } if message.contains("请新建对话")
+        )
+    }));
     assert!(!snapshot
         .events
         .iter()

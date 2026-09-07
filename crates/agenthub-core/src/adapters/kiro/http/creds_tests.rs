@@ -14,6 +14,26 @@ fn truncate_nanoseconds_for_chrono() {
 }
 
 #[test]
+fn route_params_keep_region_and_profile_without_refresh_token() {
+    let params = KiroHttpRouteParams::from_credentials(
+        &json!({
+            "access_token": "at-official",
+            "refresh_token": "rt-must-not-copy",
+            "region": "eu-west-1",
+            "profile_arn": "arn:aws:codewhisperer:eu-west-1:1:profile/X",
+        }),
+        "at-official",
+    );
+    assert!(!params.api_key);
+    assert_eq!(params.region, "eu-west-1");
+    assert_eq!(
+        params.profile_arn.as_deref(),
+        Some("arn:aws:codewhisperer:eu-west-1:1:profile/X")
+    );
+    assert_eq!(params.origin, "AI_EDITOR");
+}
+
+#[test]
 fn api_key_needs_no_refresh() {
     let creds = KiroHttpCreds {
         auth_kind: KiroAuthKind::ApiKey,

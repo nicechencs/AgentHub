@@ -34,6 +34,76 @@ pub(crate) enum KiroAuthKind {
     Oidc,
 }
 
+/// Non-secret request envelope for a connection-pool Kiro login.
+/// Access tokens stay in the shared bearer cell; this never carries a refresh token.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct KiroHttpRouteParams {
+    pub region: String,
+    pub profile_arn: Option<String>,
+    pub origin: String,
+    pub api_key: bool,
+}
+
+impl KiroHttpRouteParams {
+    pub(crate) fn from_access_token(token: &str) -> Self {
+        Self {
+            region: "us-east-1".into(),
+            profile_arn: None,
+            origin: "AI_EDITOR".into(),
+            api_key: token.trim().starts_with("ksk_"),
+        }
+    }
+
+    pub(crate) fn from_credentials(credentials: &Value, access_token: &str) -> Self {
+        let access = access_token.trim();
+        let api_key = access.starts_with("ksk_")
+            || pointer_string(
+                credentials,
+                &["/api_key", "/key", "/body/api_key", "/body/key"],
+            )
+            .is_some_and(|key| key.starts_with("ksk_"));
+        let region = pointer_string(credentials, &["/region", "/body/region"])
+            .unwrap_or_else(|| "us-east-1".into());
+        let profile_arn = pointer_string(
+            credentials,
+            &[
+                "/profile_arn",
+                "/profileArn",
+                "/body/profile_arn",
+                "/body/profileArn",
+            ],
+        );
+        let oidc = pointer_string(
+            credentials,
+            &["/client_id", "/clientId", "/body/client_id", "/body/clientId"],
+        )
+        .is_some()
+            && pointer_string(
+                credentials,
+                &[
+                    "/client_secret",
+                    "/clientSecret",
+                    "/body/client_secret",
+                    "/body/clientSecret",
+                ],
+            )
+            .is_some();
+        let origin = pointer_string(credentials, &["/origin", "/body/origin"]).unwrap_or_else(|| {
+            if oidc {
+                "KIRO_CLI".into()
+            } else {
+                "AI_EDITOR".into()
+            }
+        });
+        Self {
+            region,
+            profile_arn,
+            origin,
+            api_key,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct KiroHttpCreds {
     pub auth_kind: KiroAuthKind,
@@ -318,6 +388,17 @@ fn query_auth_kv(conn: &Connection, key: &str) -> Option<Value> {
         })
         .ok()?;
     serde_json::from_str(&raw).ok()
+}
+
+fn pointer_string(value: &Value, pointers: &[&str]) -> Option<String> {
+    pointers.iter().find_map(|pointer| {
+        value
+            .pointer(pointer)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+    })
 }
 
 fn string_field(value: &Value, keys: &[&str]) -> Option<String> {
