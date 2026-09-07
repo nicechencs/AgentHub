@@ -4185,37 +4185,47 @@ fn live_reconcile_matching_legacy_row_heals_missing_surface() {
 }
 
 fn spawn_oauth_token_server(access: &str, refresh: &str) -> (u16, std::thread::JoinHandle<()>) {
+    spawn_oauth_token_server_n(access, refresh, 1)
+}
+
+fn spawn_oauth_token_server_n(
+    access: &str,
+    refresh: &str,
+    n: usize,
+) -> (u16, std::thread::JoinHandle<()>) {
     use std::io::{Read, Write};
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let access = access.to_string();
     let refresh = refresh.to_string();
     let handle = std::thread::spawn(move || {
-        if let Ok((mut stream, _)) = listener.accept() {
-            let mut acc = Vec::new();
-            loop {
-                let mut buf = [0u8; 1024];
-                match stream.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        acc.extend_from_slice(&buf[..n]);
-                        if acc.windows(4).any(|w| w == b"\r\n\r\n") {
-                            break;
+        for _ in 0..n {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut acc = Vec::new();
+                loop {
+                    let mut buf = [0u8; 1024];
+                    match stream.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            acc.extend_from_slice(&buf[..n]);
+                            if acc.windows(4).any(|w| w == b"\r\n\r\n") {
+                                break;
+                            }
                         }
+                        Err(_) => break,
                     }
-                    Err(_) => break,
                 }
-            }
-            let body = format!(
-                r#"{{"access_token":"{access}","refresh_token":"{refresh}","token_type":"Bearer","expires_in":3600}}"#
-            );
-            let resp = format!(
+                let body = format!(
+                    r#"{{"access_token":"{access}","refresh_token":"{refresh}","token_type":"Bearer","expires_in":3600}}"#
+                );
+                let resp = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len()
             );
-            let _ = stream.write_all(resp.as_bytes());
-            let _ = stream.flush();
-            let _ = stream.shutdown(std::net::Shutdown::Write);
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.flush();
+                let _ = stream.shutdown(std::net::Shutdown::Write);
+            }
         }
     });
     (port, handle)
@@ -4262,6 +4272,66 @@ fn grok_hub_pkce_refresh_updates_pool_without_writing_auth_json() {
         0,
         "hub-owned refresh with no live CLI file must not write grok auth.json"
     );
+}
+
+#[test]
+fn hub_reload_returns_current_token_when_pool_did_not_rotate_again() {
+    let (_root, svc, _) = live_svc(AgentId::Grok);
+    let created = svc
+        .create(AccountInput {
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "hub-pkce".into(),
+            credentials: json!({
+                "type": "oauth",
+                "provider": "xai",
+                "access_token": "old-access",
+                "refresh_token": "old-refresh"
+            }),
+            extra: json!({ "source": "oauth_pkce" }),
+            is_current: false,
+        })
+        .unwrap();
+    let (port, server) = spawn_oauth_token_server_n("same-access", "same-refresh", 2);
+    let url = format!("http://127.0.0.1:{port}/oauth/token");
+    let first = crate::oauth::with_token_url_override(&url, || {
+        svc.reload_oauth_upstream_access(&created.id)
+    })
+    .unwrap();
+    assert_eq!(first.as_deref(), Some("same-access"));
+    let second = crate::oauth::with_token_url_override(&url, || {
+        svc.reload_oauth_upstream_access(&created.id)
+    })
+    .unwrap();
+    assert_eq!(
+        second.as_deref(),
+        Some("same-access"),
+        "a later cell must still receive the current access token"
+    );
+    let _ = server.join();
+}
+
+#[test]
+fn cli_owned_reload_returns_current_access_when_follow_is_noop() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {
+                "email": "a@example.com",
+                "user_id": "uid-1",
+                "key": "access-a",
+                "refresh_token": "refresh-shared"
+            }
+        }),
+        label_hint: Some("a@example.com".into()),
+        extra: json!({"source": "auth.json"}),
+    });
+    let imported = svc.import_live(AgentId::Grok, None).unwrap();
+    let reloaded = svc.reload_oauth_upstream_access(&imported.id).unwrap();
+    assert_eq!(reloaded.as_deref(), Some("access-a"));
 }
 
 #[test]

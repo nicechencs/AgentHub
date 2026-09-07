@@ -124,10 +124,15 @@ impl AuthReloadCoordinator {
         if gen_after > gen_before {
             return apply_shared_reload(member, &gate, observed);
         }
-        let outcome = run_reload(member);
+        let member_for_reload = member.clone();
+        let outcome =
+            match tokio::task::spawn_blocking(move || run_reload(&member_for_reload)).await {
+                Ok(outcome) => outcome,
+                Err(_) => AuthReloadOutcome::Unchanged,
+            };
         let token = matches!(
             outcome,
-            AuthReloadOutcome::Rotated | AuthReloadOutcome::Stale
+            AuthReloadOutcome::Rotated | AuthReloadOutcome::Stale | AuthReloadOutcome::AlreadyFresh
         )
         .then(|| member.auth.token());
         {
@@ -175,7 +180,12 @@ fn apply_shared_reload(
             }
             AuthReloadOutcome::Stale
         }
-        AuthReloadOutcome::AlreadyFresh => AuthReloadOutcome::AlreadyFresh,
+        AuthReloadOutcome::AlreadyFresh => {
+            if let Some(token) = shared.token.as_deref() {
+                member.auth.apply_reloaded_token(observed, token);
+            }
+            AuthReloadOutcome::AlreadyFresh
+        }
     }
 }
 
