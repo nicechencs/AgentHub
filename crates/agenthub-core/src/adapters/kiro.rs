@@ -12,7 +12,9 @@
 //!   (+ `--trust-all-tools` when dangerous; TERM=dumb so Unix color does not leak)
 //! - Chat model/effort: `--model` / `--effort` from live prefs (HTTP list or CLI)
 //! - Chat Auto: `--agent-engine v2 --output-format stream-json` (v1 rejects it)
-//! - subsequent turns: ACP `session/load`; print path still `--resume-id`
+//! - subsequent turns: reuse the live ACP process + same `sessionId`
+//!   (`session/prompt`); `session/load` is not reliable across process restarts
+//!   on current kiro-cli; print path still `--resume-id`
 //! - auth: env `KIRO_API_KEY` / import `kiro-cli login` (sqlite + SSO cache);
 //!   Connections official login spawns `kiro-cli login --license free` then imports;
 //!   refresh compares expiry and can write sqlite; HTTP also refreshes OIDC/Desktop

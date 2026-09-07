@@ -193,6 +193,18 @@ while IFS= read -r line; do
       printf '%s\n' '{"id":2,"result":{}}'
       printf '%s\n' '{"method":"turn/completed","params":{"status":"interrupted"}}'
       ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' prompt >> "$log"
+      ;;
+    *'"method":"session/load"'*)
+      printf '%s\n' load >> "$log"
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' new >> "$log"
+      ;;
+    *'"method":"session/resume"'*)
+      printf '%s\n' resume >> "$log"
+      ;;
     *'"decision":"accept"'*)
       printf '%s\n' accept >> "$log"
       ;;
@@ -443,4 +455,113 @@ fn file_and_question_server_requests_become_pending_runtime_requests() {
         snapshot.pending_requests[1].questions[0].options[0].label,
         "red"
     );
+}
+
+#[test]
+fn keep_acp_transport_only_after_successful_acp_turn() {
+    assert!(super::keep_acp_transport_after_turn(AgentId::Kiro, true));
+    assert!(super::keep_acp_transport_after_turn(AgentId::Grok, true));
+    assert!(!super::keep_acp_transport_after_turn(AgentId::Kiro, false));
+    assert!(!super::keep_acp_transport_after_turn(AgentId::Grok, false));
+    assert!(!super::keep_acp_transport_after_turn(AgentId::Codex, true));
+    assert!(!super::keep_acp_transport_after_turn(AgentId::Codex, false));
+}
+
+fn kiro_conversation(db: &Database, id: &str) {
+    ChatRepo::new(db.clone())
+        .create_conversation(&Conversation {
+            id: id.into(),
+            title: String::new(),
+            agent_ids: vec![AgentId::Kiro],
+            cwd: Some(std::env::temp_dir().to_string_lossy().into_owned()),
+            allow_dangerous: false,
+            created_at: "2026-01-01T00:00:00Z".into(),
+            updated_at: "2026-01-01T00:00:00Z".into(),
+            native_session_id: None,
+            sending: false,
+        })
+        .unwrap();
+}
+
+fn kiro_worker(db: &Database, id: &str) -> ActorWorker {
+    let mut worker = worker(db, id);
+    worker.agent = AgentId::Kiro;
+    worker
+}
+
+#[cfg(unix)]
+#[test]
+fn acp_successful_turn_keeps_transport_for_reuse() {
+    let db = Database::open_in_memory().unwrap();
+    kiro_conversation(&db, "kiro-keep");
+    let mut worker = kiro_worker(&db, "kiro-keep");
+    worker.store.enable_if_new("kiro-keep").unwrap();
+    start_placeholder(&mut worker);
+    let (_directory, transport, log) = fake_transport();
+    worker.transport = Some(transport);
+    worker
+        .turn_completed(&json!({ "status": "completed" }))
+        .unwrap();
+    assert!(
+        worker.transport.is_some(),
+        "successful ACP turn must keep the live process"
+    );
+    assert!(!worker.transport.as_ref().unwrap().is_closed());
+
+    worker
+        .start_turn("again", "turn-2", &RuntimeStartExtras::default())
+        .unwrap();
+    assert!(worker.transport.is_some());
+    assert!(!worker.transport.as_ref().unwrap().is_closed());
+    assert_eq!(worker.thread_id.as_deref(), Some("thread-1"));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let wire = loop {
+        let wire = std::fs::read_to_string(&log).unwrap_or_default();
+        if wire.lines().any(|line| line == "prompt") || std::time::Instant::now() >= deadline {
+            break wire;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    assert!(
+        wire.lines().any(|line| line == "prompt"),
+        "turn 2 should send session/prompt on the live process: {wire}"
+    );
+    assert!(
+        !wire
+            .lines()
+            .any(|line| line == "load" || line == "new" || line == "resume"),
+        "turn 2 must not spawn/load/resume: {wire}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn acp_cancelled_turn_shuts_down_transport() {
+    let db = Database::open_in_memory().unwrap();
+    kiro_conversation(&db, "kiro-cancel");
+    let mut worker = kiro_worker(&db, "kiro-cancel");
+    worker.store.enable_if_new("kiro-cancel").unwrap();
+    start_placeholder(&mut worker);
+    let (_directory, transport, _log) = fake_transport();
+    worker.transport = Some(transport);
+    worker
+        .turn_completed(&json!({ "status": "cancelled" }))
+        .unwrap();
+    assert!(worker.transport.is_none());
+}
+
+#[cfg(unix)]
+#[test]
+fn codex_successful_turn_shuts_down_transport() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "codex-done");
+    let mut worker = worker(&db, "codex-done");
+    worker.store.enable_if_new("codex-done").unwrap();
+    start_placeholder(&mut worker);
+    let (_directory, transport, _log) = fake_transport();
+    worker.transport = Some(transport);
+    worker
+        .turn_completed(&json!({ "status": "completed" }))
+        .unwrap();
+    assert!(worker.transport.is_none());
 }

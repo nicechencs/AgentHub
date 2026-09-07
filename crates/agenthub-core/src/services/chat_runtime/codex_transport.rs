@@ -399,6 +399,11 @@ impl CodexTransport {
         String::from_utf8_lossy(&bytes).into_owned()
     }
 
+    /// True after the child has exited or [`Self::shutdown`] has been called.
+    pub fn is_closed(&self) -> bool {
+        self.exited || self.shutdown
+    }
+
     /// Terminate the app-server process tree and reap the process.
     pub fn shutdown(&mut self) {
         if self.shutdown {

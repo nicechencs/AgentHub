@@ -20,7 +20,7 @@ pub use types::{
 };
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -38,7 +38,7 @@ use crate::services::RunService;
 use crate::storage::{ChatRepo, Database};
 use crate::utils::redact::redact_text;
 
-use self::codex_transport::{CodexEvent, CodexTransport};
+use self::codex_transport::{CodexEvent, CodexTransport, CodexTransportError};
 use self::store::{OperationState, RuntimeStore};
 
 const CODEX_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -906,7 +906,15 @@ impl ActorWorker {
         self.last_start_request = Some(client_request_id.to_string());
         self.store
             .set_last_client_request_id(&self.conversation_id, client_request_id)?;
-        if let Some(mut transport) = self.transport.take() {
+        if is_acp_runtime_agent(Some(self.agent)) {
+            if self
+                .transport
+                .as_ref()
+                .is_some_and(CodexTransport::is_closed)
+            {
+                self.transport = None;
+            }
+        } else if let Some(mut transport) = self.transport.take() {
             transport.shutdown();
         }
 
@@ -1113,45 +1121,70 @@ impl ActorWorker {
             .ok()
             .flatten()
             .is_some_and(|conversation| conversation.allow_dangerous);
-        let mut transport = match self.agent {
-            AgentId::Kiro => {
-                let program = self.run.detect_kiro_installation()?;
-                CodexTransport::spawn_kiro(&program, &cwd, model, effort, trust_all)
+
+        if let Some(transport) = self.transport.take() {
+            if !transport.is_closed() && self.thread_id.is_some() {
+                return self.acp_begin_prompt(transport, prompt, extras);
             }
-            _ => {
-                let program = self.run.detect_grok_installation()?;
-                CodexTransport::spawn_grok(&program, &cwd, model, effort)
-            }
+            let mut transport = transport;
+            transport.shutdown();
         }
-        .map_err(transport_error)?;
+
+        let spawn_transport = || -> Result<CodexTransport> {
+            match self.agent {
+                AgentId::Kiro => {
+                    let program = self.run.detect_kiro_installation()?;
+                    CodexTransport::spawn_kiro(&program, &cwd, model, effort, trust_all)
+                }
+                _ => {
+                    let program = self.run.detect_grok_installation()?;
+                    CodexTransport::spawn_grok(&program, &cwd, model, effort)
+                }
+            }
+            .map_err(transport_error)
+        };
+
+        let mut transport = spawn_transport()?;
         if let Some(session_id) = self.thread_id.clone() {
-            let loaded = transport
-                .request(
-                    "session/load",
-                    json!({ "sessionId": session_id, "cwd": cwd.to_string_lossy() }),
-                    CODEX_REQUEST_TIMEOUT,
-                )
-                .or_else(|_| {
-                    transport.request(
-                        "session/resume",
-                        json!({ "sessionId": session_id, "cwd": cwd.to_string_lossy() }),
-                        CODEX_REQUEST_TIMEOUT,
-                    )
-                })
-                .map_err(transport_error)?;
-            if let Some(id) = grok_session_id(&loaded) {
-                self.thread_id = Some(id);
+            match acp_load_or_resume(&mut transport, &session_id, &cwd) {
+                Ok(loaded) => {
+                    if let Some(id) = grok_session_id(&loaded) {
+                        self.thread_id = Some(id);
+                    }
+                }
+                Err(_) => {
+                    // session/load on a fresh kiro-cli process exits; do not
+                    // write resume to a dead stdin. History after process
+                    // death is acceptable — start a new session.
+                    transport.shutdown();
+                    transport = spawn_transport()?;
+                    self.acp_session_new(&mut transport, &cwd)?;
+                }
             }
         } else {
-            let created = transport
-                .request(
-                    "session/new",
-                    json!({ "cwd": cwd.to_string_lossy(), "mcpServers": [] }),
-                    CODEX_REQUEST_TIMEOUT,
-                )
-                .map_err(transport_error)?;
-            self.thread_id = grok_session_id(&created).or_else(|| extract_id(&created, "session"));
+            self.acp_session_new(&mut transport, &cwd)?;
         }
+        self.acp_begin_prompt(transport, prompt, extras)
+    }
+
+    fn acp_session_new(&mut self, transport: &mut CodexTransport, cwd: &Path) -> Result<()> {
+        let created = transport
+            .request(
+                "session/new",
+                json!({ "cwd": cwd.to_string_lossy(), "mcpServers": [] }),
+                CODEX_REQUEST_TIMEOUT,
+            )
+            .map_err(transport_error)?;
+        self.thread_id = grok_session_id(&created).or_else(|| extract_id(&created, "session"));
+        Ok(())
+    }
+
+    fn acp_begin_prompt(
+        &mut self,
+        mut transport: CodexTransport,
+        prompt: &str,
+        extras: &RuntimeStartExtras,
+    ) -> Result<RuntimeSnapshot> {
         let session_id = self
             .thread_id
             .clone()
@@ -1745,10 +1778,15 @@ impl ActorWorker {
             (ChatMessageStatus::Ok, RuntimePhase::Completed, true, None)
         };
         self.terminalize(message_status, error.as_deref(), phase, ok, cancelled)?;
-        if let Some(transport) = self.transport.as_mut() {
-            transport.shutdown();
+        // ACP session/load is not reliable across process restarts; keep the
+        // live process after a successful turn so the next session/prompt
+        // can reuse the same sessionId.
+        if !keep_acp_transport_after_turn(self.agent, ok) {
+            if let Some(transport) = self.transport.as_mut() {
+                transport.shutdown();
+            }
+            self.transport = None;
         }
-        self.transport = None;
         Ok(())
     }
 
@@ -2084,8 +2122,27 @@ fn redact_json_text(value: Option<&Value>) -> String {
     redact_text(&raw)
 }
 
-fn transport_error(error: codex_transport::CodexTransportError) -> AppError {
+fn transport_error(error: CodexTransportError) -> AppError {
     AppError::message("chat.runtime.transport", redact_text(&error.to_string()))
+}
+
+fn keep_acp_transport_after_turn(agent: AgentId, ok: bool) -> bool {
+    ok && is_acp_runtime_agent(Some(agent))
+}
+
+fn acp_load_or_resume(
+    transport: &mut CodexTransport,
+    session_id: &str,
+    cwd: &Path,
+) -> std::result::Result<Value, CodexTransportError> {
+    let params = json!({ "sessionId": session_id, "cwd": cwd.to_string_lossy() });
+    match transport.request("session/load", params.clone(), CODEX_REQUEST_TIMEOUT) {
+        Ok(value) => Ok(value),
+        Err(error) if matches!(error, CodexTransportError::Exited) || transport.is_closed() => {
+            Err(error)
+        }
+        Err(_) => transport.request("session/resume", params, CODEX_REQUEST_TIMEOUT),
+    }
 }
 
 #[cfg(test)]
