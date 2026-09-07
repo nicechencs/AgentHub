@@ -2,10 +2,13 @@
 //!
 //! Does not POST OpenAI/Anthropic; uses the AgentHub-owned Kiro HTTP client.
 
-use axum::http::StatusCode;
+use axum::body::{Body, Bytes};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
+use futures_util::stream;
 use serde_json::{json, Value};
+use std::convert::Infallible;
 use tokio::task::spawn_blocking;
 
 use super::admission::AdmittedRequest;
@@ -58,10 +61,9 @@ pub(super) async fn handle_kiro_conversation(
         .and_then(Value::as_bool)
         .unwrap_or(false);
 
-    let result = spawn_blocking(move || {
-        chat_turn_with_access_token(&token, &prompt, model.as_deref())
-    })
-    .await;
+    let result =
+        spawn_blocking(move || chat_turn_with_access_token(&token, &prompt, model.as_deref()))
+            .await;
 
     let turn = match result {
         Ok(Ok(turn)) => turn,
@@ -90,27 +92,62 @@ pub(super) async fn handle_kiro_conversation(
         }
     };
 
-    let model_id = admitted
-        .state
-        .upstream
-        .model
-        .clone()
-        .unwrap_or_else(|| "auto".into());
-    let ir = kiro_ir(&request_id, &model_id, &turn.text);
-    let encoded = match encode_surface(surface, &ir, &request_id) {
-        Ok(value) => value,
+    let _ = (started, capture);
+    let turn_view = KiroTurnView {
+        text: &turn.text,
+        model_id: &turn.model_id,
+    };
+    match encode_kiro_response(surface, stream, &request_id, &turn_view) {
+        Ok(response) => response,
         Err(_) => {
-            return error_response(
+            error_response(
                 StatusCode::BAD_GATEWAY,
                 "upstream_error",
                 "The upstream model provider returned an invalid response.",
                 None,
-            );
+            )
         }
-    };
+    }
+}
 
-    let _ = (started, capture, stream);
-    Json(encoded).into_response()
+struct KiroTurnView<'a> {
+    text: &'a str,
+    model_id: &'a str,
+}
+
+fn encode_kiro_response(
+    surface: DownstreamSurface,
+    stream_requested: bool,
+    request_id: &str,
+    turn: &KiroTurnView<'_>,
+) -> Result<Response, ()> {
+    // Kiro may resolve `auto` (or another requested alias) to a concrete model.
+    // Keep the model returned by the completed turn in every downstream envelope.
+    let model_id = turn.model_id.trim().to_owned();
+    let ir = kiro_ir(request_id, &model_id, &turn.text);
+    if stream_requested {
+        let frames = encode_surface_sse(surface, &ir, request_id, &model_id)?;
+        return Ok(buffered_sse_response(stream::iter(
+            frames
+                .into_iter()
+                .map(|frame| Ok::<Bytes, Infallible>(Bytes::from(frame))),
+        )));
+    }
+    let encoded = encode_surface(surface, &ir, request_id)?;
+    Ok(Json(encoded).into_response())
+}
+
+fn buffered_sse_response(
+    output: impl futures_util::Stream<Item = Result<Bytes, Infallible>> + Send + 'static,
+) -> Response {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/event-stream"),
+    );
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    headers.insert(header::CONNECTION, HeaderValue::from_static("keep-alive"));
+    (StatusCode::OK, headers, Body::from_stream(output)).into_response()
 }
 
 fn kiro_ir(request_id: &str, model: &str, text: &str) -> Vec<IrEvent> {
@@ -135,7 +172,8 @@ fn encode_surface(
 ) -> Result<Value, ()> {
     match surface {
         DownstreamSurface::Messages => {
-            crate::bridge::protocol::anthropic_messages::encode_anthropic_message(ir).map_err(|_| ())
+            crate::bridge::protocol::anthropic_messages::encode_anthropic_message(ir)
+                .map_err(|_| ())
         }
         DownstreamSurface::ChatCompletions => {
             crate::bridge::protocol::chat::encode_chat_from_ir(ir, Some(request_id)).map_err(|_| ())
@@ -146,6 +184,42 @@ fn encode_surface(
         }
         DownstreamSurface::Models => Ok(json!({ "object": "list", "data": [] })),
     }
+}
+
+fn encode_surface_sse(
+    surface: DownstreamSurface,
+    ir: &[IrEvent],
+    request_id: &str,
+    model: &str,
+) -> Result<Vec<String>, ()> {
+    match surface {
+        DownstreamSurface::Messages => {
+            crate::bridge::protocol::anthropic_messages::encode_anthropic_sse(ir).map_err(|_| ())
+        }
+        DownstreamSurface::ChatCompletions => {
+            crate::bridge::protocol::chat::encode_chat_sse(ir, Some(request_id)).map_err(|_| ())
+        }
+        DownstreamSurface::Responses => {
+            let mut encoder =
+                crate::bridge::protocol::responses::IrToResponsesSse::new(request_id, model);
+            let mut frames = Vec::new();
+            for event in ir {
+                for response_event in encoder.push_event(event).map_err(|_| ())? {
+                    frames.push(responses_sse_frame(&response_event)?);
+                }
+            }
+            for response_event in encoder.finish() {
+                frames.push(responses_sse_frame(&response_event)?);
+            }
+            Ok(frames)
+        }
+        DownstreamSurface::Models => Err(()),
+    }
+}
+
+fn responses_sse_frame(event: &crate::bridge::types::BridgeEvent) -> Result<String, ()> {
+    let data = serde_json::to_string(&event.data()).map_err(|_| ())?;
+    Ok(format!("event: {}\ndata: {data}\n\n", event.event_name()))
 }
 
 pub(super) fn prompt_from_body(surface: DownstreamSurface, body: &Value) -> String {
@@ -234,36 +308,4 @@ fn flatten_content(content: Option<&Value>) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn prompt_from_messages_joins_roles() {
-        let body = json!({
-            "messages": [
-                {"role": "system", "content": "be brief"},
-                {"role": "user", "content": "hi"}
-            ]
-        });
-        let prompt = prompt_from_body(DownstreamSurface::Messages, &body);
-        assert!(prompt.contains("System: be brief"));
-        assert!(prompt.contains("hi"));
-    }
-
-    #[test]
-    fn prompt_from_responses_string_input() {
-        let body = json!({ "input": "hello kiro" });
-        assert_eq!(
-            prompt_from_body(DownstreamSurface::Responses, &body),
-            "hello kiro"
-        );
-    }
-
-    #[test]
-    fn encode_messages_has_text() {
-        let ir = kiro_ir("abc", "auto", "pong");
-        let value = encode_surface(DownstreamSurface::Messages, &ir, "abc").unwrap();
-        let dump = value.to_string();
-        assert!(dump.contains("pong"));
-    }
-}
+mod tests;
