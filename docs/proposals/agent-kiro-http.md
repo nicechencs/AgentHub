@@ -15,7 +15,7 @@ audience: contributor
 
 ## Goal
 
-用用户自己的 Kiro 登录（或 `KIRO_API_KEY`）经 HTTP 列出模型并对话，使 Chat / 兼容客户端不必只靠每次拉起 `kiro-cli`；可选把同一上游接到本机路由，供其他工具走 loopback。CLI headless 仍作合法回退。
+用用户自己的 Kiro 登录（或 `KIRO_API_KEY`）经 HTTP 列出模型并对话，使 Chat / 兼容客户端不必只靠每次拉起 `kiro-cli`；同一上游可接到本机路由。仅未开始的 HTTP 新会话可回退 CLI；已有 HTTP 会话失败时保留会话并报错，不能静默换成新对话。
 
 ## Facts（社区与公开材料；≠ 本仓库已验证）
 
@@ -30,12 +30,12 @@ audience: contributor
 - **客户端表面（社区常见）：** OpenAI `/v1/chat/completions`（及部分 `/v1/responses`）、Anthropic `/v1/messages`、`/v1/models`。
 - **失败模式：** 主机与协议 churn；refresh 失效需重新登录；Builder ID vs 企业 `profileArn` / region 错位；区域连通性（VPN/代理）。
 
-## Decisions（第一切片已定）
+## 当前范围
 
 1. **嵌入 core**（不外挂第三方网关二进制）。
-2. **Chat 原生先**；OpenAI loopback / Routes 后置。
+2. **Chat 与本机路由均已接入**；协议输出与真实上游逐块转发分别验收。
 3. **Builder ID + `ksk_` API Key 先**；企业 IdC / `profileArn` / `runtime.*.kiro.dev` 后置。
-4. **长期双轨：** HTTP 可用时 Chat 优先走 HTTP；凭据/上游失败或需 `--resume-id` 时回退 `kiro-cli` headless。
+4. **当前双轨：** 新交互对话走 ACP；旧打印路径保留 HTTP / CLI。HTTP 新会话失败可回退 CLI，已有 HTTP 会话失败不回退；CLI 会话按原 `--resume-id` 继续。
 
 ## First slice（工作区）
 
@@ -48,7 +48,9 @@ audience: contributor
 
 - Chat 持久化的 `native_session_id`：HTTP 用 `kiro-http:<conversationId>`；CLI `--resume-id` 不加此前缀。
 - `try_http_run_result`：有 HTTP 前缀则带 `conversationId` 续聊；有 CLI id 则跳过 HTTP；无 id 则新开 HTTP 对话。
-- 凭据/上游失败时仍回退 `kiro-cli`；不要把 HTTP id 传给 `--resume-id`。
+- 已有 HTTP 会话在登录或上游失败时明确报错；仅无会话 id 的新请求可以回退 `kiro-cli`。HTTP id 不传给 `--resume-id`，也不用于 ACP 恢复。
+- 本机路由按调用方的 `stream` 返回 JSON 或对应接口的 SSE。HTTP 上游目前收齐回复后再编码输出，不表示已经实现上游逐块实时转发。
+- 本机路由使用共享库中所选登录的当前访问令牌，并保留区域、`profileArn` 与请求来源参数；不会借用或刷新其他本机登录。登录过期后需同步共享库。直接读取本机登录的 HTTP 路径继续沿用原有刷新逻辑。保留这些参数不代表企业 IdC 场景已完成实机验收。
 
 ## Non-goals
 
