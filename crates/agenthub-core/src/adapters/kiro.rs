@@ -13,6 +13,7 @@
 //! - Chat Auto: `--agent-engine v2 --output-format stream-json` (v1 rejects it)
 //! - subsequent turns: `--resume-id` when a native session id is known (CLI path)
 //! - auth: env `KIRO_API_KEY` / import `kiro-cli login` (sqlite + SSO cache);
+//!   Connections official login spawns `kiro-cli login --license free` then imports;
 //!   refresh compares expiry and can write sqlite; HTTP also refreshes OIDC/Desktop
 //! - live backup of the sqlite login store and SSO cache copy
 //!
@@ -44,11 +45,10 @@ mod auth;
 mod chat_prefs;
 pub(crate) mod http;
 
-pub(crate) use auth::kiro_grant_is_newer;
+pub(crate) use auth::{kiro_grant_is_newer, kiro_login_fingerprint};
 pub(crate) use chat_prefs::{
     kiro_live_chat_model, kiro_send_prefs, set_kiro_default_effort, set_kiro_default_model,
 };
-
 
 /// Official Windows native installer (PowerShell: `irm … | iex`).
 pub const NATIVE_PS1_URL: &str = "https://cli.kiro.dev/install.ps1";
@@ -350,11 +350,21 @@ impl AgentAdapter for KiroAdapter {
             args.push("--output-format".into());
             args.push("stream-json".into());
         }
-        if let Some(model) = opts.model.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        if let Some(model) = opts
+            .model
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
             args.push("--model".into());
             args.push(model.to_string());
         }
-        if let Some(effort) = opts.effort.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        if let Some(effort) = opts
+            .effort
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
             args.push("--effort".into());
             args.push(effort.to_string());
         }
@@ -390,8 +400,12 @@ impl AgentAdapter for KiroAdapter {
     }
 }
 
-fn resolve_kiro_cli() -> Option<PathBuf> {
+pub(crate) fn kiro_cli_binary() -> Option<PathBuf> {
     detect_installation().binary_path
+}
+
+fn resolve_kiro_cli() -> Option<PathBuf> {
+    kiro_cli_binary()
 }
 
 fn probe_kiro_login_text(bin: &Path) -> Option<String> {

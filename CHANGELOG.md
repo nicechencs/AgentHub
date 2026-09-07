@@ -25,6 +25,7 @@
 - 对话：Kiro 发送时可看过程（v2 stream-json）；下一轮走官方续场。仍不能中途补充或点允许/拒绝
 - 连接：Kiro 可添加授权，并可导入本机 kiro-cli 登录
 - 连接：Kiro 详情显示 data.sqlite3；刷新会对比本机登录有效期并回写 sqlite
+- 连接：Kiro 可官方登录（打开 Kiro 自己的登录，完成后写入连接）
 - 连接：Cursor 可导入本机已有登录（不写回 Cursor）
 
 ### 修复

@@ -41,10 +41,7 @@ pub(super) fn kiro_oauth_auth_state() -> Option<AuthState> {
     })
 }
 
-pub(super) fn kiro_identity_label(
-    credentials: &Value,
-    label_hint: Option<&str>,
-) -> Option<String> {
+pub(super) fn kiro_identity_label(credentials: &Value, label_hint: Option<&str>) -> Option<String> {
     if let Some(arn) = first_string(credentials, &["profile_arn", "profileArn"]) {
         return Some(arn);
     }
@@ -91,12 +88,10 @@ pub(super) fn write_kiro_live_account(account: &LiveAccount) -> Result<()> {
         .get("body")
         .cloned()
         .unwrap_or_else(|| account.credentials.clone());
-    let body = normalize_kiro_token(&raw).ok_or_else(|| {
-        AppError::InvalidArg("Kiro login is missing access_token".into())
-    })?;
-    let sqlite = kiro_cli_sqlite_path().ok_or_else(|| {
-        AppError::message("paths.kiro", "cannot resolve kiro-cli data.sqlite3")
-    })?;
+    let body = normalize_kiro_token(&raw)
+        .ok_or_else(|| AppError::InvalidArg("Kiro login is missing access_token".into()))?;
+    let sqlite = kiro_cli_sqlite_path()
+        .ok_or_else(|| AppError::message("paths.kiro", "cannot resolve kiro-cli data.sqlite3"))?;
     write_social_token_to_sqlite(&sqlite, &body)?;
     if let Some(cache) = kiro_sso_cache_path() {
         write_sso_cache_token(&cache, &body)?;
@@ -220,6 +215,14 @@ fn write_sso_cache_token(path: &Path, body: &Value) -> Result<()> {
     crate::utils::atomic::atomic_write(path, &bytes)
 }
 
+/// Non-secret snapshot so official login can notice a new kiro-cli grant.
+pub(crate) fn kiro_login_fingerprint() -> Option<String> {
+    let (body, _) = load_kiro_token().ok().flatten()?;
+    let access = body.get("access_token").and_then(Value::as_str)?;
+    let expires = body.get("expires_at").and_then(Value::as_str).unwrap_or("");
+    Some(format!("{access}\n{expires}"))
+}
+
 fn load_kiro_token() -> Result<Option<(Value, &'static str)>> {
     if let Some(path) = kiro_cli_sqlite_path() {
         if path.is_file() {
@@ -242,11 +245,9 @@ fn load_kiro_token() -> Result<Option<(Value, &'static str)>> {
 
 fn query_auth_kv(conn: &Connection, key: &str) -> Option<Value> {
     let raw: String = conn
-        .query_row(
-            "SELECT value FROM auth_kv WHERE key = ?1",
-            [key],
-            |row| row.get(0),
-        )
+        .query_row("SELECT value FROM auth_kv WHERE key = ?1", [key], |row| {
+            row.get(0)
+        })
         .ok()?;
     serde_json::from_str(&raw).ok()
 }

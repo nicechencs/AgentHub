@@ -22,7 +22,7 @@ export interface OAuthWaitInfo {
   error?: string | null;
 }
 
-export type OAuthFlowKind = 'pkce' | 'deviceCode';
+export type OAuthFlowKind = 'pkce' | 'deviceCode' | 'cli';
 
 /** One selectable OAuth login target (Pi has multiple). */
 export interface OAuthLoginOption {
