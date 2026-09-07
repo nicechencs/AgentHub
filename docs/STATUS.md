@@ -43,6 +43,7 @@ updated: 2026-09-07
 - Rust 核心、CLI 和 GUI 分别由对应 crate 的 `cargo test --locked` 验证。
 - `pnpm check:docs` 检查活跃 Markdown 的本地链接、标题锚点、元数据和已废弃路径标注。
 - PR CI 运行前端类型检查、构建、测试、三个 Rust crate 测试，以及独立的 Playwright Chromium 浏览器冒烟 job；正式发布由 **`dev` 上推送的 `v*` tag** 触发，且 tag 指向的提交必须已在 `release` 上（先合 `dev` → `release`，再在 `dev` 打 tag）。
+- 正式包自动更新：App updater 优先镜像 `https://updates.agenthub.qooo.io/latest.json`，回退 GitHub `latest.json`；发版 CI 在 secrets 齐全时同步安装包/`.sig`/改写后的清单到 R2（见 [国内自动更新镜像提案](proposals/update-mirror-r2.md)）。Cloudflare 资源由运维配置；签名私钥只在 CI。
 - 发布前以 **`package.json` 为版本真源**；`pnpm release:sync-version` 同步 `Cargo.toml` 与 `Cargo.lock`，`tauri.conf.json` 引用 `../package.json`。
 
 ## 已知边界
