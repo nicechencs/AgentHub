@@ -1585,3 +1585,284 @@ fn refresh_local_token_models_unions_pool_logins_and_bypasses_live_cache() {
     assert_eq!(custom.source, "custom");
     assert_eq!(custom.models, vec!["model-b-custom"]);
 }
+
+fn isolated_hub() -> (tempfile::TempDir, crate::AgentHub) {
+    let dir = tempfile::tempdir().unwrap();
+    let skills = dir.path().join("skills");
+    std::fs::create_dir_all(&skills).unwrap();
+    let hub = crate::AgentHub::open_with_skills_root(Some(dir.path()), Some(&skills)).unwrap();
+    (dir, hub)
+}
+
+fn pool_owned_provider(id: &str) -> Provider {
+    Provider {
+        id: id.into(),
+        agent_id: AgentId::Codex,
+        name: id.into(),
+        settings_config: json!({"apiKey": "secret"}),
+        meta: json!({}),
+        is_current: false,
+        created_at: "t0".into(),
+        updated_at: "t0".into(),
+    }
+}
+
+fn pool_trash(hub: &crate::AgentHub) -> Vec<crate::models::ConnectionTrashItem> {
+    hub.connections()
+        .list_trash_filtered(None, Some("route_pool"))
+        .unwrap()
+}
+
+fn wallet_has_provider(hub: &crate::AgentHub, source_id: &str) -> bool {
+    hub.tickets()
+        .list_wallet()
+        .unwrap()
+        .tickets
+        .iter()
+        .any(|ticket| ticket.id == format!("provider:{source_id}"))
+}
+
+#[test]
+fn restore_route_pool_login_keeps_trash_when_route_pool_is_disabled() {
+    let (_dir, hub) = isolated_hub();
+    ProviderRepo::new(hub.db().clone())
+        .create(&pool_owned_provider("pool-key"))
+        .unwrap();
+    hub.route_pools()
+        .attach_pool_owned_authorization(
+            AgentId::Codex,
+            RouteDownstreamSurface::Responses,
+            AdapterSourceKind::Provider,
+            "pool-key",
+        )
+        .unwrap();
+    hub.connections()
+        .delete_provider("pool-key", AgentId::Codex)
+        .unwrap();
+    let trash = pool_trash(&hub);
+    assert_eq!(trash.len(), 1);
+    let trash_id = trash[0].id.clone();
+
+    hub.db().set_setting(FEATURE_ROUTE_POOL_V2, "off").unwrap();
+    let error = hub.restore_connection_trash(&trash_id).unwrap_err();
+    assert_eq!(error.code(), "unsupported");
+    assert!(ProviderRepo::new(hub.db().clone())
+        .get_by_id("pool-key")
+        .unwrap()
+        .is_none());
+    let remaining = pool_trash(&hub);
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].id, trash_id);
+    assert!(!wallet_has_provider(&hub, "pool-key"));
+
+    hub.db().set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+    hub.restore_connection_trash(&trash_id).unwrap();
+    assert!(ProviderRepo::new(hub.db().clone())
+        .get_by_id("pool-key")
+        .unwrap()
+        .is_some());
+    assert!(pool_trash(&hub).is_empty());
+}
+
+#[test]
+fn restore_route_pool_login_retries_after_attach_failure() {
+    let (_dir, hub) = isolated_hub();
+    ProviderRepo::new(hub.db().clone())
+        .create(&pool_owned_provider("attach-key"))
+        .unwrap();
+    let overview = hub
+        .route_pools()
+        .attach_pool_owned_authorization(
+            AgentId::Codex,
+            RouteDownstreamSurface::Responses,
+            AdapterSourceKind::Provider,
+            "attach-key",
+        )
+        .unwrap();
+    let mut profile = bridge_profile(&overview.id, "other-lead", AgentId::Codex, true);
+    profile.source_kind = AdapterSourceKind::Provider;
+    AdapterProfileRepo::new(hub.db().clone())
+        .create(&profile)
+        .unwrap();
+    hub.route_pools()
+        .remove_route_authorization(AdapterSourceKind::Provider, "attach-key")
+        .unwrap();
+    hub.connections()
+        .delete_provider("attach-key", AgentId::Codex)
+        .unwrap();
+    let trash = pool_trash(&hub);
+    assert_eq!(trash.len(), 1);
+    let trash_id = trash[0].id.clone();
+
+    hub.db()
+        .with_conn(|conn| {
+            conn.execute_batch(
+                r#"
+                CREATE TRIGGER fail_adapter_profile_update
+                BEFORE UPDATE ON adapter_profiles
+                BEGIN
+                    SELECT RAISE(ABORT, 'injected projection failure');
+                END;
+                "#,
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+    let error = hub.restore_connection_trash(&trash_id).unwrap_err();
+    assert_eq!(error.code(), "db");
+    assert!(ProviderRepo::new(hub.db().clone())
+        .get_by_id("attach-key")
+        .unwrap()
+        .is_none());
+    let remaining = pool_trash(&hub);
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].id, trash_id);
+    assert!(!wallet_has_provider(&hub, "attach-key"));
+
+    hub.db()
+        .with_conn(|conn| {
+            conn.execute_batch("DROP TRIGGER fail_adapter_profile_update;")?;
+            Ok(())
+        })
+        .unwrap();
+    hub.restore_connection_trash(&trash_id).unwrap();
+    assert!(ProviderRepo::new(hub.db().clone())
+        .get_by_id("attach-key")
+        .unwrap()
+        .is_some());
+    assert!(pool_trash(&hub).is_empty());
+    let members = hub
+        .route_pools()
+        .list_default_overviews()
+        .unwrap()
+        .pools
+        .into_iter()
+        .flat_map(|pool| pool.members)
+        .filter(|member| member.source_id == "attach-key")
+        .count();
+    assert_eq!(members, 1);
+}
+
+#[test]
+fn recycle_route_membership_rolls_back_when_member_delete_fails() {
+    let (_dir, db, service, _profiles) = tmp();
+    ProviderRepo::new(db.clone())
+        .create(&pool_owned_provider("recycle-del"))
+        .unwrap();
+    let pool = service
+        .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
+        .unwrap();
+    service
+        .add_member(&pool.id, AdapterSourceKind::Provider, "recycle-del")
+        .unwrap();
+    db.with_conn(|conn| {
+        conn.execute_batch(
+            r#"
+            CREATE TRIGGER fail_route_member_delete
+            BEFORE DELETE ON route_members
+            BEGIN
+                SELECT RAISE(ABORT, 'injected member delete failure');
+            END;
+            "#,
+        )?;
+        Ok(())
+    })
+    .unwrap();
+
+    let error = service
+        .recycle_route_membership(AdapterSourceKind::Provider, "recycle-del")
+        .unwrap_err();
+    assert_eq!(error.code(), "db");
+    let conn = crate::services::ConnectionService::new(db.clone());
+    assert!(conn
+        .list_trash_filtered(None, Some("route_pool"))
+        .unwrap()
+        .is_empty());
+    assert_eq!(service.list_members(&pool.id).unwrap().len(), 1);
+
+    db.with_conn(|conn| {
+        conn.execute_batch("DROP TRIGGER fail_route_member_delete;")?;
+        Ok(())
+    })
+    .unwrap();
+    service
+        .recycle_route_membership(AdapterSourceKind::Provider, "recycle-del")
+        .unwrap();
+    assert_eq!(
+        conn.list_trash_filtered(None, Some("route_pool"))
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(service.list_members(&pool.id).unwrap().is_empty());
+}
+
+#[test]
+fn recycle_route_membership_rolls_back_when_projection_fails() {
+    let (_dir, db, service, profiles) = tmp();
+    ProviderRepo::new(db.clone())
+        .create(&pool_owned_provider("lead-a"))
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&pool_owned_provider("extra-b"))
+        .unwrap();
+    let pool = service
+        .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
+        .unwrap();
+    service
+        .add_member(&pool.id, AdapterSourceKind::Provider, "lead-a")
+        .unwrap();
+    service
+        .add_member(&pool.id, AdapterSourceKind::Provider, "extra-b")
+        .unwrap();
+    let mut profile = bridge_profile(&pool.id, "lead-a", AgentId::Codex, true);
+    profile.source_kind = AdapterSourceKind::Provider;
+    profiles.create(&profile).unwrap();
+
+    db.with_conn(|conn| {
+        conn.execute_batch(
+            r#"
+            CREATE TRIGGER fail_adapter_profile_update
+            BEFORE UPDATE ON adapter_profiles
+            BEGIN
+                SELECT RAISE(ABORT, 'injected projection failure');
+            END;
+            "#,
+        )?;
+        Ok(())
+    })
+    .unwrap();
+
+    let error = service
+        .recycle_route_membership(AdapterSourceKind::Provider, "lead-a")
+        .unwrap_err();
+    assert_eq!(error.code(), "db");
+    let conn = crate::services::ConnectionService::new(db.clone());
+    assert!(conn
+        .list_trash_filtered(None, Some("route_pool"))
+        .unwrap()
+        .is_empty());
+    let members = service.list_members(&pool.id).unwrap();
+    assert_eq!(members.len(), 2);
+    assert!(members.iter().any(|member| member.source_id == "lead-a"));
+    assert!(members.iter().any(|member| member.source_id == "extra-b"));
+
+    db.with_conn(|conn| {
+        conn.execute_batch("DROP TRIGGER fail_adapter_profile_update;")?;
+        Ok(())
+    })
+    .unwrap();
+    service
+        .recycle_route_membership(AdapterSourceKind::Provider, "lead-a")
+        .unwrap();
+    assert_eq!(
+        conn.list_trash_filtered(None, Some("route_pool"))
+            .unwrap()
+            .len(),
+        1
+    );
+    let remaining = service.list_members(&pool.id).unwrap();
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].source_id, "extra-b");
+}

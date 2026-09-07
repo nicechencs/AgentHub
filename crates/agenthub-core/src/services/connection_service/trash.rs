@@ -212,38 +212,46 @@ impl ConnectionService {
     pub fn restore_trash(&self, id: &str) -> Result<()> {
         self.db.with_conn(|conn| {
             let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
-            let row = ConnectionTrashRepo::load_payload_conn(&tx, id)?;
-            match row.kind {
-                ConnectionTrashKind::Account => {
-                    let account: Account = serde_json::from_value(row.payload)?;
-                    if account.id != row.source_id || account.agent_id != row.agent_id {
-                        return Err(AppError::InvalidArg("回收记录与账号内容不一致".into()));
-                    }
-                    restore_account_payload(&tx, account, id)?;
-                }
-                ConnectionTrashKind::Provider => {
-                    let mut provider: Provider = serde_json::from_value(row.payload)?;
-                    if provider.id != row.source_id || provider.agent_id != row.agent_id {
-                        return Err(AppError::InvalidArg("回收记录与 API Key 配置不一致".into()));
-                    }
-                    if provider_get_by_id_conn(&tx, &provider.id)?.is_some() {
-                        return Err(AppError::InvalidArg(format!(
-                            "provider already exists: {}",
-                            provider.id
-                        )));
-                    }
-                    provider.is_current = false;
-                    provider_create_conn(&tx, &provider)?;
-                }
-                ConnectionTrashKind::Membership => {
-                    return Err(AppError::InvalidArg(
-                        "membership trash is restored by the connection pool".into(),
-                    ));
-                }
-            }
+            restore_trash_source_conn(&tx, id)?;
             ConnectionTrashRepo::delete_conn(&tx, id)?;
             tx.commit()?;
             Ok(())
+        })
+    }
+
+    /// Insert the source row from a recycle record and leave the record in place.
+    /// Route-owned restore uses this so a later reattach failure can still retry.
+    pub(crate) fn restore_trash_source(&self, id: &str) -> Result<()> {
+        self.db.with_conn(|conn| {
+            let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+            restore_trash_source_conn(&tx, id)?;
+            tx.commit()?;
+            Ok(())
+        })
+    }
+
+    /// Remove a source row inserted by [`Self::restore_trash_source`].
+    /// Does not create another recycle record.
+    pub(crate) fn discard_restored_source(
+        &self,
+        kind: ConnectionTrashKind,
+        agent_id: AgentId,
+        source_id: &str,
+    ) -> Result<()> {
+        self.db.with_conn(|conn| match kind {
+            ConnectionTrashKind::Account => {
+                if account_get_by_id_conn(conn, source_id)?.is_some() {
+                    account_delete_for_agent_conn(conn, source_id, agent_id)?;
+                }
+                Ok(())
+            }
+            ConnectionTrashKind::Provider => {
+                if provider_get_by_id_conn(conn, source_id)?.is_some() {
+                    provider_delete_for_agent_conn(conn, source_id, agent_id)?;
+                }
+                Ok(())
+            }
+            ConnectionTrashKind::Membership => Ok(()),
         })
     }
 
@@ -251,6 +259,39 @@ impl ConnectionService {
     pub fn delete_trash(&self, id: &str) -> Result<()> {
         self.trash.delete(id)
     }
+}
+
+fn restore_trash_source_conn(conn: &rusqlite::Connection, id: &str) -> Result<()> {
+    let row = ConnectionTrashRepo::load_payload_conn(conn, id)?;
+    match row.kind {
+        ConnectionTrashKind::Account => {
+            let account: Account = serde_json::from_value(row.payload)?;
+            if account.id != row.source_id || account.agent_id != row.agent_id {
+                return Err(AppError::InvalidArg("回收记录与账号内容不一致".into()));
+            }
+            restore_account_payload(conn, account, id)?;
+        }
+        ConnectionTrashKind::Provider => {
+            let mut provider: Provider = serde_json::from_value(row.payload)?;
+            if provider.id != row.source_id || provider.agent_id != row.agent_id {
+                return Err(AppError::InvalidArg("回收记录与 API Key 配置不一致".into()));
+            }
+            if provider_get_by_id_conn(conn, &provider.id)?.is_some() {
+                return Err(AppError::InvalidArg(format!(
+                    "provider already exists: {}",
+                    provider.id
+                )));
+            }
+            provider.is_current = false;
+            provider_create_conn(conn, &provider)?;
+        }
+        ConnectionTrashKind::Membership => {
+            return Err(AppError::InvalidArg(
+                "membership trash is restored by the connection pool".into(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Restore a login row without applying it to the agent.

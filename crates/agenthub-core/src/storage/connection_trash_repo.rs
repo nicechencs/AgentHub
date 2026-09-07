@@ -59,7 +59,7 @@ impl ConnectionTrashRepo {
         was_current: bool,
         payload: &T,
         deleted_at: &str,
-    ) -> Result<()> {
+    ) -> Result<String> {
         insert_trash_conn(
             conn,
             source_id,
@@ -151,7 +151,8 @@ fn insert_trash_conn<T: serde::Serialize>(
     was_current: bool,
     payload: &T,
     deleted_at: &str,
-) -> Result<()> {
+) -> Result<String> {
+    let id = Uuid::new_v4().to_string();
     let expires_at = (Utc::now() + Duration::days(30))
         .format("%Y-%m-%d %H:%M:%S%.6f")
         .to_string();
@@ -163,7 +164,7 @@ fn insert_trash_conn<T: serde::Serialize>(
          (id, agent_id, source_kind, source_id, label, was_current, payload, deleted_at, expires_at, home)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
-            Uuid::new_v4().to_string(),
+            id,
             agent_id.as_str(),
             kind.as_str(),
             source_id,
@@ -175,7 +176,7 @@ fn insert_trash_conn<T: serde::Serialize>(
             home,
         ],
     )?;
-    Ok(())
+    Ok(id)
 }
 
 fn infer_trash_home(kind: ConnectionTrashKind, payload: &Value) -> &'static str {
