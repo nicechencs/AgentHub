@@ -256,3 +256,140 @@ fn stderr_capture_is_bounded() {
         MAX_STDERR_BYTES
     );
 }
+
+#[cfg(windows)]
+#[test]
+fn powershell_restore_discards_history_without_filling_event_queue() {
+    let directory = tempfile::tempdir().expect("temp directory");
+    let script = directory.path().join("fake-acp.ps1");
+    std::fs::write(
+        &script,
+        r#"
+$OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+$log = Join-Path (Split-Path -Parent $PSCommandPath) 'wire.log'
+while ($null -ne ($line = [Console]::In.ReadLine())) {
+  if ($line -like '*"method":"initialize"*') {
+    [Console]::Out.WriteLine('{"jsonrpc":"2.0","id":1,"result":{"agentCapabilities":{"loadSession":true}}}')
+    [Console]::Out.Flush()
+  } elseif ($line -like '*"method":"session/load"*') {
+    [Console]::Out.WriteLine('{"jsonrpc":"2.0","id":"replay-permission","method":"session/request_permission","params":{}}')
+    0..299 | ForEach-Object {
+      [Console]::Out.WriteLine('{"jsonrpc":"2.0","method":"session/update","params":{"delta":"old"}}')
+    }
+    [Console]::Out.WriteLine('{"jsonrpc":"2.0","id":2,"result":{"sessionId":"restored"}}')
+    [Console]::Out.Flush()
+    $permissionReply = [Console]::In.ReadLine()
+    Add-Content -LiteralPath $log -Value $permissionReply -Encoding utf8
+  }
+}
+"#,
+    )
+    .expect("fake ACP script");
+    let powershell = std::env::var_os("SystemRoot")
+        .map(std::path::PathBuf::from)
+        .map(|root| root.join("System32\\WindowsPowerShell\\v1.0\\powershell.exe"))
+        .unwrap_or_else(|| "powershell.exe".into());
+    let args = vec![
+        "-NoProfile".into(),
+        "-ExecutionPolicy".into(),
+        "Bypass".into(),
+        "-File".into(),
+        script.to_string_lossy().into_owned(),
+    ];
+    let mut transport = CodexTransport::spawn_test_with(
+        &powershell,
+        &args,
+        directory.path(),
+        json!({"protocolVersion": 1}),
+        false,
+    )
+    .expect("spawn powershell ACP");
+    assert_eq!(
+        transport
+            .request_discarding_history(
+                "session/load",
+                json!({"sessionId":"old"}),
+                Duration::from_secs(2),
+            )
+            .expect("restore response")["sessionId"],
+        "restored"
+    );
+    assert_eq!(
+        transport
+            .recv_timeout(Duration::from_millis(100))
+            .expect("history queue check"),
+        None
+    );
+    transport.shutdown();
+    let wire = std::fs::read_to_string(directory.path().join("wire.log"))
+        .expect("permission replay wire log");
+    assert!(
+        wire.contains(r#""id":"replay-permission","result":{"outcome":{"outcome":"cancelled"}}"#)
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn powershell_cancel_notification_has_no_id_and_does_not_wait_for_response() {
+    let directory = tempfile::tempdir().expect("temp directory");
+    let script = directory.path().join("fake-cancel.ps1");
+    std::fs::write(
+        &script,
+        r#"
+$OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+$log = Join-Path (Split-Path -Parent $PSCommandPath) 'wire.log'
+$line = [Console]::In.ReadLine()
+[Console]::Out.WriteLine('{"jsonrpc":"2.0","id":1,"result":{"agentCapabilities":{}}}')
+[Console]::Out.Flush()
+while ($null -ne ($line = [Console]::In.ReadLine())) {
+  Add-Content -LiteralPath $log -Value $line -Encoding utf8
+  [Console]::Out.WriteLine('{"jsonrpc":"2.0","method":"test/cancel_seen","params":{}}')
+  [Console]::Out.Flush()
+}
+"#,
+    )
+    .expect("fake ACP script");
+    let powershell = std::env::var_os("SystemRoot")
+        .map(std::path::PathBuf::from)
+        .map(|root| root.join("System32\\WindowsPowerShell\\v1.0\\powershell.exe"))
+        .unwrap_or_else(|| "powershell.exe".into());
+    let args = vec![
+        "-NoProfile".into(),
+        "-ExecutionPolicy".into(),
+        "Bypass".into(),
+        "-File".into(),
+        script.to_string_lossy().into_owned(),
+    ];
+    let mut transport = CodexTransport::spawn_test_with(
+        &powershell,
+        &args,
+        directory.path(),
+        json!({"protocolVersion": 1}),
+        false,
+    )
+    .expect("spawn powershell ACP");
+    let started = Instant::now();
+    transport
+        .notify("session/cancel", Some(json!({"sessionId":"session-1"})))
+        .expect("send cancel notification");
+    assert!(started.elapsed() < Duration::from_secs(1));
+    assert_eq!(
+        transport
+            .recv_timeout(Duration::from_secs(1))
+            .expect("cancel barrier"),
+        Some(CodexEvent::Notification {
+            method: "test/cancel_seen".into(),
+            params: json!({}),
+        })
+    );
+    transport.shutdown();
+    let wire = std::fs::read_to_string(directory.path().join("wire.log")).expect("cancel wire log");
+    let cancel = wire
+        .lines()
+        .find_map(|line| {
+            let value: Value = serde_json::from_str(line.trim_start_matches('\u{feff}')).ok()?;
+            (value.get("method").and_then(Value::as_str) == Some("session/cancel")).then_some(value)
+        })
+        .expect("session/cancel wire message");
+    assert!(cancel.get("id").is_none(), "cancel must be a notification");
+}

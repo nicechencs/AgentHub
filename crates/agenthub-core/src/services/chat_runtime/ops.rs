@@ -414,6 +414,9 @@ pub(crate) enum AcpSessionPlan {
     New,
     /// Fresh process, try `session/load` then prompt.
     LoadThenPrompt,
+    /// Kiro sessions cannot be reattached after the ACP process exits. Keep
+    /// the durable id and ask the user to start a new conversation.
+    Unavailable,
 }
 
 /// Kiro ACP `session/load` after the previous process exited hangs or kills the
@@ -425,6 +428,9 @@ pub(crate) fn acp_session_plan(
 ) -> AcpSessionPlan {
     if live_transport && has_session_id {
         return AcpSessionPlan::PromptExisting;
+    }
+    if has_session_id && agent == AgentId::Kiro {
+        return AcpSessionPlan::Unavailable;
     }
     if has_session_id && agent != AgentId::Kiro {
         return AcpSessionPlan::LoadThenPrompt;
@@ -1097,7 +1103,7 @@ mod tests {
         );
         assert_eq!(
             acp_session_plan(AgentId::Kiro, false, true),
-            AcpSessionPlan::New
+            AcpSessionPlan::Unavailable
         );
         assert_eq!(
             acp_session_plan(AgentId::Kiro, false, false),
