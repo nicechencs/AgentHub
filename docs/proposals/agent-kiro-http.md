@@ -1,7 +1,7 @@
 ---
 title: Kiro HTTP / 本机转发
 type: proposal
-status: accepted
+status: proposed
 owner: maintainers
 updated: 2026-09-07
 audience: contributor
