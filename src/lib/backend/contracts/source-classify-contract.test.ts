@@ -23,6 +23,8 @@ const MOCK_SOURCE_IDS: MockSourceId[] = [
   'grok-oauth',
   'codex-auth-json',
   'codex-oauth',
+  'kiro-oauth',
+  'kiro-api',
 ];
 
 function accountFromCase(entry: (typeof SOURCE_CLASSIFY_CONTRACT.cases)[number]): ClassifiableAccount {

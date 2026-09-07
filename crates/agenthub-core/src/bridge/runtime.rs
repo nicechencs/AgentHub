@@ -118,6 +118,8 @@ pub enum BridgeUpstreamProtocol {
     CodexResponsesOauth,
     /// Grok / xAI subscription OAuth: Responses upstream (CLI chat proxy).
     XaiResponsesOauth,
+    /// Kiro login via AgentHub-owned CodeWhisperer HTTP (not official REST).
+    KiroHttp,
 }
 
 /// Responses wire dialect expected by a downstream client.

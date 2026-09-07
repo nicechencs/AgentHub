@@ -70,6 +70,7 @@ const TICKET_SURFACES: readonly TicketSurface[] = [
   'codex-chatgpt-subscription',
   'claude-subscription',
   'grok-xai-subscription',
+  'kiro',
   'unknown',
 ];
 

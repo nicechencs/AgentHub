@@ -3,13 +3,13 @@ title: Kiro HTTP / 本机转发
 type: proposal
 status: proposed
 owner: maintainers
-updated: 2026-09-07
+updated: 2026-09-08
 audience: contributor
 ---
 
 # Kiro HTTP / 本机转发
 
-> 提案，不是现行实现契约。与 [接入 Kiro（kiro-cli）](agent-kiro.md) 互补：那边管半面 CLI；这边探「用户自己的 Kiro 登录 / API Key → HTTP，供 Chat 与本机路由用」。
+> 提案，不是现行实现契约。现行行为见 [STATUS](../STATUS.md)。已落地：列模型可走 HTTP；没有命令行时可用 HTTP 文本回复；Kiro 登录可经本机路由接到 Claude / Codex / Grok。
 
 接线纪律见 [添加 Agent](../guides/adding-an-agent.md)、[Connections 与路由](../concepts/connections-and-routing.md)、[产品边界](../decisions/product-boundaries.md)。用户文案用 **登录 / 本机路由 / 直连**，不写票、桥、PKCE。
 

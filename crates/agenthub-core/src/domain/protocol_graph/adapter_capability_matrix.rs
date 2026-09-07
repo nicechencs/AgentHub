@@ -35,6 +35,10 @@ pub const GROK_SUBSCRIPTION_TO_CLAUDE_REASON: &str = "Grok 登录会经本机路
 /// Shared public reason for Grok subscription to Codex local route.
 pub const GROK_SUBSCRIPTION_TO_CODEX_REASON: &str = "Grok 登录会经本机路由接到 Codex。";
 
+pub const KIRO_TO_CLAUDE_REASON: &str = "这份 Kiro 登录会经本机路由接到 Claude。";
+pub const KIRO_TO_CODEX_REASON: &str = "这份 Kiro 登录会经本机路由接到 Codex。";
+pub const KIRO_TO_GROK_REASON: &str = "这份 Kiro 登录会经本机路由接到 Grok。";
+
 /// Codex / ChatGPT official login → Grok / Kimi / DSH local route.
 pub const CODEX_SUBSCRIPTION_TO_GROK_REASON: &str = "Codex 官方登录会经本机路由接到 Grok。";
 pub const CODEX_SUBSCRIPTION_TO_KIMI_REASON: &str = "Codex 官方登录会经本机路由接到 Kimi。";
@@ -98,6 +102,8 @@ pub enum AdapterSourceProduct {
     ClaudeSubscription,
     /// Grok / xAI subscription OAuth account.
     XaiGrokSubscription,
+    /// Kiro API Key or kiro-cli login (Builder ID / social).
+    Kiro,
     /// Anything else; never upgraded by name guessing.
     Other,
 }
@@ -131,6 +137,8 @@ pub enum AdapterUpstreamTransport {
     CodexResponsesOauth,
     /// Grok / xAI subscription OAuth: Responses upstream (CLI chat proxy).
     XaiResponsesOauth,
+    /// Kiro login: CodeWhisperer GenerateAssistantResponse (not official REST).
+    LocalBridgeKiroHttp,
     /// No transport selected / not applicable.
     None,
 }
@@ -421,6 +429,13 @@ pub(super) const OPENAI_GROK_BRIDGE_LIMITS: &[&str] = &[
     "AgentHub 需保持在托盘运行；退出前会尝试排空监听。",
     "本机转发：下游 Responses，上游 OpenAI Chat Completions。",
     "固定端口被占用时会尝试重新分配端口并写回配置。",
+];
+
+pub(super) const KIRO_BRIDGE_LIMITS: &[&str] = &[
+    "会把目标 Agent 指到本机路由；上游 Kiro 登录不会写入对方。",
+    "AgentHub 需保持在托盘运行；退出前会尝试排空监听。",
+    "本机转发：下游走对方接口，上游是 Kiro 一轮文本回复，不会在对方工作目录执行工具。",
+    "Kiro 登录过期后需重新同步；Hub 本轮不自动刷新。",
 ];
 
 pub(super) const OPENAI_CHAT_BRIDGE_LIMITS: &[&str] = &[
@@ -911,6 +926,12 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
     CODEX_DSH_EDGE.to_cell(),
     CODEX_DSH_OAUTH_OTHER_EDGE.to_cell(),
     CLAUDE_CODEX_EDGE.to_cell(),
+    KIRO_CLAUDE_API_EDGE.to_cell(),
+    KIRO_CLAUDE_OAUTH_EDGE.to_cell(),
+    KIRO_CODEX_API_EDGE.to_cell(),
+    KIRO_CODEX_OAUTH_EDGE.to_cell(),
+    KIRO_GROK_API_EDGE.to_cell(),
+    KIRO_GROK_OAUTH_EDGE.to_cell(),
 ];
 
 /// Resolve a cell by full key. Missing → [`None`] (caller must fail-closed).

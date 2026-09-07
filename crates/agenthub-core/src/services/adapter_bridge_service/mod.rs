@@ -43,8 +43,8 @@ use crate::models::{
     ProviderInput, RouteDownstreamDialect, RouteDownstreamSurface, RouteMember, RoutePool,
     RouteSchedulePolicy, ANTHROPIC_CODEX_EDGE, CODEX_CLAUDE_RESPONSES_EDGE, CODEX_DSH_EDGE,
     CODEX_GROK_EDGE, CODEX_KIMI_EDGE, GROK_CLAUDE_EDGE, GROK_CODEX_EDGE, KIMI_CODEX_EDGE,
-    OPENAI_CLAUDE_EDGE, OPENAI_CODEX_EDGE, OPENAI_DSH_BRIDGE_EDGE, OPENAI_GROK_BRIDGE_EDGE,
-    OPENAI_KIMI_BRIDGE_EDGE,
+    KIRO_CLAUDE_API_EDGE, KIRO_CODEX_API_EDGE, KIRO_GROK_API_EDGE, OPENAI_CLAUDE_EDGE,
+    OPENAI_CODEX_EDGE, OPENAI_DSH_BRIDGE_EDGE, OPENAI_GROK_BRIDGE_EDGE, OPENAI_KIMI_BRIDGE_EDGE,
 };
 use crate::services::{AdapterRouteService, AdapterSecretResolver, RoutePoolService};
 use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
@@ -131,6 +131,7 @@ const fn upstream_protocol_of(edge: &LocalBridgeEdge) -> BridgeUpstreamProtocol 
             BridgeUpstreamProtocol::CodexResponsesOauth
         }
         AdapterUpstreamTransport::XaiResponsesOauth => BridgeUpstreamProtocol::XaiResponsesOauth,
+        AdapterUpstreamTransport::LocalBridgeKiroHttp => BridgeUpstreamProtocol::KiroHttp,
         AdapterUpstreamTransport::NativeHttp
         | AdapterUpstreamTransport::CodexAppServer
         | AdapterUpstreamTransport::None => BridgeUpstreamProtocol::OpenAiChatCompletions,
@@ -374,6 +375,65 @@ const CODEX_KIMI_RULE: CodexBridgeRule = CodexBridgeRule {
     mode: live_writer_mode(&CODEX_KIMI_EDGE),
 };
 
+const KIRO_Q_BASE_URL: &str = "https://q.us-east-1.amazonaws.com/";
+
+const KIRO_CLAUDE_RULE: CodexBridgeRule = CodexBridgeRule {
+    rule_id: KIRO_CLAUDE_API_EDGE.rule_id,
+    profile_prefix: "adapter-kiro-claude-bridge",
+    provider_prefix: "claude-kiro-adapter-bridge",
+    profile_name: "Kiro → Claude 本机路由",
+    provider_name: "Kiro 本机路由",
+    toml_name: "",
+    provider_slug: "",
+    upstream_base_url: KIRO_Q_BASE_URL,
+    default_model: KIRO_CLAUDE_API_EDGE.default_model,
+    protocol: upstream_protocol_of(&KIRO_CLAUDE_API_EDGE),
+    local_surface: local_surface_of(&KIRO_CLAUDE_API_EDGE),
+    bridge_kind: "messages_to_kiro_http",
+    legacy_bridge_kinds: &[],
+    source: KIRO_CLAUDE_API_EDGE.source,
+    target_agent: KIRO_CLAUDE_API_EDGE.target,
+    mode: live_writer_mode(&KIRO_CLAUDE_API_EDGE),
+};
+
+const KIRO_CODEX_RULE: CodexBridgeRule = CodexBridgeRule {
+    rule_id: KIRO_CODEX_API_EDGE.rule_id,
+    profile_prefix: "adapter-kiro-codex-bridge",
+    provider_prefix: "codex-kiro-adapter-bridge",
+    profile_name: "Kiro → Codex 本机路由",
+    provider_name: "Kiro 本机路由",
+    toml_name: "AgentHub Kiro Route",
+    provider_slug: "agenthub_kiro_bridge",
+    upstream_base_url: KIRO_Q_BASE_URL,
+    default_model: KIRO_CODEX_API_EDGE.default_model,
+    protocol: upstream_protocol_of(&KIRO_CODEX_API_EDGE),
+    local_surface: local_surface_of(&KIRO_CODEX_API_EDGE),
+    bridge_kind: "responses_to_kiro_http",
+    legacy_bridge_kinds: &[],
+    source: KIRO_CODEX_API_EDGE.source,
+    target_agent: KIRO_CODEX_API_EDGE.target,
+    mode: live_writer_mode(&KIRO_CODEX_API_EDGE),
+};
+
+const KIRO_GROK_RULE: CodexBridgeRule = CodexBridgeRule {
+    rule_id: KIRO_GROK_API_EDGE.rule_id,
+    profile_prefix: "adapter-kiro-grok-bridge",
+    provider_prefix: "grok-kiro-adapter-bridge",
+    profile_name: "Kiro → Grok 本机路由",
+    provider_name: "Kiro 本机路由",
+    toml_name: "AgentHub Kiro Route",
+    provider_slug: "agenthub_kiro_bridge",
+    upstream_base_url: KIRO_Q_BASE_URL,
+    default_model: KIRO_GROK_API_EDGE.default_model,
+    protocol: upstream_protocol_of(&KIRO_GROK_API_EDGE),
+    local_surface: local_surface_of(&KIRO_GROK_API_EDGE),
+    bridge_kind: "responses_to_kiro_http",
+    legacy_bridge_kinds: &[],
+    source: KIRO_GROK_API_EDGE.source,
+    target_agent: KIRO_GROK_API_EDGE.target,
+    mode: live_writer_mode(&KIRO_GROK_API_EDGE),
+};
+
 const CODEX_DSH_RULE: CodexBridgeRule = CodexBridgeRule {
     rule_id: CODEX_DSH_EDGE.rule_id,
     profile_prefix: "adapter-codex-dsh-bridge",
@@ -409,6 +469,9 @@ const LIVE_BRIDGE_RULES: &[CodexBridgeRule] = &[
     CODEX_GROK_RULE,
     CODEX_KIMI_RULE,
     CODEX_DSH_RULE,
+    KIRO_CLAUDE_RULE,
+    KIRO_CODEX_RULE,
+    KIRO_GROK_RULE,
 ];
 
 mod finalize;
@@ -498,6 +561,7 @@ fn index_provider_key(source: AdapterSourceProduct) -> &'static str {
         AdapterSourceProduct::CodexChatGptSubscription => "codex",
         AdapterSourceProduct::ClaudeSubscription => "claude",
         AdapterSourceProduct::XaiGrokSubscription => "grok",
+        AdapterSourceProduct::Kiro => "kiro",
         AdapterSourceProduct::Other => "other",
     }
 }
@@ -508,6 +572,7 @@ fn index_transport_key(protocol: BridgeUpstreamProtocol) -> &'static str {
         BridgeUpstreamProtocol::AnthropicMessages => "anthropic:claude",
         BridgeUpstreamProtocol::CodexResponsesOauth => "codex:codex",
         BridgeUpstreamProtocol::XaiResponsesOauth => "grok:grok",
+        BridgeUpstreamProtocol::KiroHttp => "kiro:http",
     }
 }
 
@@ -783,7 +848,9 @@ impl AdapterBridgeRuntimeMaterial {
         // remains the upstream probe.
         if matches!(
             self.protocol,
-            BridgeUpstreamProtocol::CodexResponsesOauth | BridgeUpstreamProtocol::XaiResponsesOauth
+            BridgeUpstreamProtocol::CodexResponsesOauth
+                | BridgeUpstreamProtocol::XaiResponsesOauth
+                | BridgeUpstreamProtocol::KiroHttp
         ) || !crate::services::adapter_route_constants::upstream_models_health_probe_supported(
             &self.upstream_base_url,
         ) {
@@ -803,7 +870,8 @@ impl AdapterBridgeRuntimeMaterial {
                     crate::services::adapter_route_constants::ANTHROPIC_API_VERSION,
                 ),
             BridgeUpstreamProtocol::CodexResponsesOauth
-            | BridgeUpstreamProtocol::XaiResponsesOauth => {
+            | BridgeUpstreamProtocol::XaiResponsesOauth
+            | BridgeUpstreamProtocol::KiroHttp => {
                 upstream_req.bearer_auth(self.upstream_auth.token())
             }
         };

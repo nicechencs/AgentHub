@@ -12,6 +12,7 @@ const SURFACES: TicketSurface[] = [
   'codex-chatgpt-subscription',
   'claude-subscription',
   'grok-xai-subscription',
+  'kiro',
   'unknown',
 ];
 

@@ -514,6 +514,27 @@ fn registered_surfaces_have_writable_pi_cells() {
 }
 
 #[test]
+fn kiro_login_opens_local_bridge_to_claude_codex_grok() {
+    for (target, rule_id) in [
+        (AgentId::Claude, "kiro-to-claude-v1"),
+        (AgentId::Codex, "kiro-to-codex-v1"),
+        (AgentId::Grok, "kiro-to-grok-v1"),
+    ] {
+        for credential in [
+            AdapterCredentialClass::ApiKey,
+            AdapterCredentialClass::OauthOther,
+        ] {
+            let decision =
+                decide_adapter_capability(AdapterSourceProduct::Kiro, credential, target)
+                    .public_surface();
+            assert!(decision.can_apply, "{target:?} {credential:?}");
+            assert_eq!(decision.route, AdapterRoute::LocalBridge);
+            assert_eq!(decision.rule_id, Some(rule_id));
+        }
+    }
+}
+
+#[test]
 fn cursor_target_uses_no_writer_reason_not_source_copy() {
     for source in [
         AdapterSourceProduct::KimiCodeMembership,
@@ -525,6 +546,7 @@ fn cursor_target_uses_no_writer_reason_not_source_copy() {
         AdapterSourceProduct::CodexChatGptSubscription,
         AdapterSourceProduct::ClaudeSubscription,
         AdapterSourceProduct::XaiGrokSubscription,
+        AdapterSourceProduct::Kiro,
         AdapterSourceProduct::Other,
     ] {
         let credential = match source {

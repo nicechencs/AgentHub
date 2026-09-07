@@ -7,6 +7,7 @@ mod admission;
 mod continuation;
 mod dispatch;
 mod dispatch_trace;
+mod kiro_upstream;
 mod gateway;
 mod http;
 pub(crate) mod inbound;

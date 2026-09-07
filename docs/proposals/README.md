@@ -29,8 +29,8 @@ Every proposal in this directory has `Status: proposed`. A proposal may be resea
 | [tray-background-modes.md](tray-background-modes.md) | proposed | Could closing the window reduce WebView memory without changing route ownership or exit semantics? |
 | [modularity.md](modularity.md) | proposed | Which single-source and use-case boundaries should be tightened before any larger process change? |
 | [Service 内部 owner 拆分](../architecture/service-internal-owners.md) | proposed | Concrete internal owner split for O-11 ProviderService, O-12 AccountService, O-13 BackupService, and O-14/O-66 local-route persist — façades and switch semantics stay |
-| [接入 Kiro（kiro-cli）](agent-kiro.md) | proposed | 如何以半面 Agent 接入 Kiro CLI（检测/安装/登录/headless），对话页一轮一发、不宣称终端补全，且不提前做持续聊？ |
-| [Kiro HTTP / 本机转发](agent-kiro-http.md) | proposed | 用用户自己的 Kiro 登录或 API Key 经 HTTP 列模型与对话；可选本机路由；与 CLI 半面互补？ |
+| [接入 Kiro（kiro-cli）](agent-kiro.md) | proposed | 半面 CLI 目标书；现行发送以 STATUS 为准（有命令行走命令行）。 |
+| [Kiro HTTP / 本机转发](agent-kiro-http.md) | proposed | HTTP 列模型与无命令行时的文本回复；本机路由仍后置。 |
 | [plugin-management.md](plugin-management.md) | proposed | Could AgentHub list and manage per-agent plugin/extension packs (not MCP servers) via official CLIs, with a Routes-like workbench? |
 | [read-model-owners.md](../architecture/read-model-owners.md) | proposed | Could O-15–O-19 be narrowed with unique mapper owners without changing wire DTO or splitting public types? |
 | [runtime-context-owners.md](../architecture/runtime-context-owners.md) | proposed | Could store reset/invalidation live in one runtime context (O-07) without changing plan/bind/switch? |

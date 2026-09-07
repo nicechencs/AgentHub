@@ -100,9 +100,8 @@ fn refresh_oidc(creds: &mut KiroHttpCreds) -> Result<()> {
         .or_else(|| value.get("expires_in"))
         .and_then(Value::as_u64)
         .unwrap_or(3600);
-    creds.expires_at = Some(
-        chrono::Utc::now() + chrono::Duration::seconds(expires_in.saturating_sub(60) as i64),
-    );
+    creds.expires_at =
+        Some(chrono::Utc::now() + chrono::Duration::seconds(expires_in.saturating_sub(60) as i64));
     let _ = persist_refreshed_token(creds);
     Ok(())
 }
@@ -133,10 +132,7 @@ fn refresh_desktop(creds: &mut KiroHttpCreds) -> Result<()> {
         .and_then(Value::as_str)
         .filter(|s| !s.is_empty())
         .ok_or_else(|| {
-            AppError::message(
-                "kiro.http.desktop_refresh",
-                "response missing accessToken",
-            )
+            AppError::message("kiro.http.desktop_refresh", "response missing accessToken")
         })?;
     creds.access_token = access.to_string();
     if let Some(r) = value
@@ -160,9 +156,8 @@ fn refresh_desktop(creds: &mut KiroHttpCreds) -> Result<()> {
         .or_else(|| value.get("expires_in"))
         .and_then(Value::as_u64)
         .unwrap_or(3600);
-    creds.expires_at = Some(
-        chrono::Utc::now() + chrono::Duration::seconds(expires_in.saturating_sub(60) as i64),
-    );
+    creds.expires_at =
+        Some(chrono::Utc::now() + chrono::Duration::seconds(expires_in.saturating_sub(60) as i64));
     let _ = persist_refreshed_token(creds);
     Ok(())
 }
@@ -183,10 +178,7 @@ fn amz_headers(creds: &KiroHttpCreds, target: &str) -> Vec<(String, String)> {
         ("User-Agent".into(), USER_AGENT.into()),
         ("x-amz-user-agent".into(), USER_AGENT.into()),
         ("x-amzn-codewhisperer-optout".into(), "true".into()),
-        (
-            "amz-sdk-invocation-id".into(),
-            Uuid::new_v4().to_string(),
-        ),
+        ("amz-sdk-invocation-id".into(), Uuid::new_v4().to_string()),
         ("amz-sdk-request".into(), "attempt=1; max=1".into()),
     ];
     if let Some(tt) = creds.token_type_header() {
@@ -210,7 +202,10 @@ fn post_amz(creds: &KiroHttpCreds, target: &str, body: &Value) -> Result<Vec<u8>
             let preview = String::from_utf8_lossy(&body);
             Err(AppError::message(
                 "kiro.http.upstream",
-                redact_text(&format!("HTTP {status}: {}", preview.chars().take(300).collect::<String>())),
+                redact_text(&format!(
+                    "HTTP {status}: {}",
+                    preview.chars().take(300).collect::<String>()
+                )),
             ))
         }
         Err(e) => Err(map_ureq("kiro.http.upstream")(e)),
@@ -250,9 +245,12 @@ pub(crate) fn parse_list_models_response(value: &Value) -> KiroListModels {
         .get("defaultModel")
         .or_else(|| value.get("default_model"))
         .and_then(|v| {
-            v.as_str()
-                .map(str::to_owned)
-                .or_else(|| v.get("modelId").or_else(|| v.get("model_id")).and_then(|x| x.as_str()).map(str::to_owned))
+            v.as_str().map(str::to_owned).or_else(|| {
+                v.get("modelId")
+                    .or_else(|| v.get("model_id"))
+                    .and_then(|x| x.as_str())
+                    .map(str::to_owned)
+            })
         })
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
@@ -318,6 +316,33 @@ pub(crate) fn build_chat_body(
     body
 }
 
+pub(crate) fn creds_from_access_token(token: &str) -> KiroHttpCreds {
+    let token = token.trim().to_string();
+    let auth_kind = if token.starts_with("ksk_") {
+        KiroAuthKind::ApiKey
+    } else {
+        KiroAuthKind::Desktop
+    };
+    let origin = match auth_kind {
+        KiroAuthKind::Oidc => "KIRO_CLI",
+        KiroAuthKind::Desktop | KiroAuthKind::ApiKey => "AI_EDITOR",
+    }
+    .to_string();
+    KiroHttpCreds {
+        auth_kind,
+        access_token: token,
+        refresh_token: None,
+        expires_at: None,
+        region: "us-east-1".into(),
+        profile_arn: None,
+        client_id: None,
+        client_secret: None,
+        origin,
+        sqlite_token_key: None,
+        source: "bridge".into(),
+    }
+}
+
 /// One non-streaming chat turn against Kiro upstream.
 pub(crate) fn chat_turn_http(
     prompt: &str,
@@ -325,7 +350,25 @@ pub(crate) fn chat_turn_http(
     conversation_id: Option<&str>,
 ) -> Result<KiroChatTurn> {
     let mut creds = load_kiro_http_creds()?;
-    ensure_access_token(&mut creds)?;
+    chat_turn_with_creds(&mut creds, prompt, model, conversation_id)
+}
+
+pub(crate) fn chat_turn_with_access_token(
+    token: &str,
+    prompt: &str,
+    model: Option<&str>,
+) -> Result<KiroChatTurn> {
+    let mut creds = creds_from_access_token(token);
+    chat_turn_with_creds(&mut creds, prompt, model, None)
+}
+
+fn chat_turn_with_creds(
+    creds: &mut KiroHttpCreds,
+    prompt: &str,
+    model: Option<&str>,
+    conversation_id: Option<&str>,
+) -> Result<KiroChatTurn> {
+    ensure_access_token(creds)?;
     let model_id = model
         .map(str::trim)
         .filter(|s| !s.is_empty())
@@ -367,10 +410,10 @@ pub(crate) fn chat_turn_http(
     })
 }
 
-/// Try HTTP chat for RunService; `None` means caller should use CLI fallback.
+/// Try HTTP chat when `kiro-cli` is not installed. `None` means skip HTTP.
 ///
-/// Skips HTTP when a native resume id is set (CLI `--resume-id` remains the
-/// verified continuation path for first slice).
+/// Callers must not invoke this when the CLI is installed. Skips HTTP when a
+/// native resume id is set (CLI `--resume-id` is a different session namespace).
 pub(crate) fn try_http_run_result(prompt: &str, opts: &RunOptions) -> Option<AgentRunResult> {
     if opts
         .native_session_id
@@ -415,7 +458,7 @@ pub(crate) fn try_http_run_result(prompt: &str, opts: &RunOptions) -> Option<Age
             tracing::debug!(
                 module = "adapters.kiro.http",
                 error = %e,
-                "Kiro HTTP chat failed; falling back to kiro-cli"
+                "Kiro HTTP chat failed"
             );
             None
         }

@@ -22,6 +22,7 @@ export type TicketSurface =
   | 'codex-chatgpt-subscription'
   | 'claude-subscription'
   | 'grok-xai-subscription'
+  | 'kiro'
   | 'unknown';
 
 /** Credential family on the ticket (UI filter chips). */
@@ -172,6 +173,7 @@ function mapSurface(value: string): TicketSurface {
     || value === 'codex-chatgpt-subscription'
     || value === 'claude-subscription'
     || value === 'grok-xai-subscription'
+    || value === 'kiro'
     || value === 'unknown'
   ) {
     return value;
@@ -489,5 +491,6 @@ export function ticketSurfaceLabel(surface: TicketSurface, t?: TranslateFn): str
   if (surface === 'claude-subscription' || surface === 'grok-xai-subscription') {
     return t ? t('connections.list.surfaceSub') : 'Subscription';
   }
+  if (surface === 'kiro') return 'Kiro';
   return t ? t('connections.list.unrecognized') : 'Unrecognized';
 }
