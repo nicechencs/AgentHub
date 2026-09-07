@@ -49,6 +49,8 @@ scope: dev；工作区文档变更及当前项目健康抽样；HEAD 06b893c4471
 
 ### AHREV-P1-001：Kiro 旧会话 HTTP 发送忽略取消，取消后仍可能报告成功
 
+- **修复状态**：已关闭（`d1edd6f4`，合入 dest）。
+
 - **分类/置信度**：confirmed；P1；高（源码可达路径），真实上游时序未复现。
 - **位置**：`src/pages/chat/use-chat-page-send.ts` 的 `cancelRuntimeTarget`（约 740–777）；`crates/agenthub-core/src/services/chat_service.rs` 的 `cancel`（225–234）、取消登记（424–438）、调用运行服务（560）、释放占用（596–603）和最终取消状态（688）；`services/run_service.rs` 的 `resolve_job`（301–309）、`run_each_parallel`（512 起）；`adapters/kiro/http/client.rs` 的 `try_http_run_result`（571–637）。Rust 路径均位于 `crates/agenthub-core/src/`。
 - **触发**：仍使用旧发送入口的 Kiro 会话，HTTP 请求已开始且仍在等待；用户点击停止；请求稍后返回成功。`src/pages/chat/chat-grok-follow-up.ts` 对已有消息的 Kiro 返回 `newChat`，不提供会丢原会话的续接（源码称 lossy upgrade）；会话仍可走旧发送入口。
@@ -61,6 +63,8 @@ scope: dev；工作区文档变更及当前项目健康抽样；HEAD 06b893c4471
 - **推荐验证**：可控 HTTP transport + 临时数据库，覆盖请求前取消、等待中取消、取消后成功返回和短期限；断言状态、消息、发送占用及 HTTP 会话标识。不得用真实登录或付费请求。
 
 ### AHREV-P1-002：输出保存达到上限后，仍在输出的聊天进程被误判为空闲
+
+- **修复状态**：已关闭（`a1ad547c`，合入 dest）。
 
 - **分类/置信度**：confirmed；P1；高。跨平台共享源码确认，未运行完整 2 MiB/10 分钟复现。
 - **位置**：`crates/agenthub-core/src/utils/process.rs` 的 `run_spec_streaming`（966–993、1117 起）及 `read_pipe_capped`（1324–1370）；`services/chat_service.rs:490–499`；`catalog/limits.rs:13–20`。

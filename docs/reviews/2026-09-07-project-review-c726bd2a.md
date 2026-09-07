@@ -47,12 +47,16 @@ scope: dev；跨 HEAD 续审，最终目标 c726bd2aa1ff8ea0aaf206c6755f6cdcfbb6
 
 ### AHREV-P1-001：Kiro 旧会话 HTTP 发送不响应停止
 
+- **修复状态**：已关闭（`d1edd6f4`，合入 dest）。
+
 - **位置**：`crates/agenthub-core/src/services/run_service.rs:301-309,512-536`；`adapters/kiro/http/client.rs:571-637`；`services/chat_service.rs:225-234,424-438,560,596-603,688`。
 - **触发/行为**：旧 Kiro 会话的 HTTP 请求等待期间点击停止。取消 token 没有传入同步 HTTP；Early 成功结果不检查取消，最终仍可能保存成功消息并报告 `cancelled=false`。
 - **影响/证据**：停止失效直到固定 HTTP 期限返回；源码调用链确认，未访问真实上游。**P1，高置信度**。
 - **最小修复/验证**：HTTP 执行接收取消和期限，统一取消出口；用可控 transport 覆盖等待中取消、迟到成功和会话标识保留。
 
 ### AHREV-P1-002：输出截断后仍输出的进程会被误判为空闲
+
+- **修复状态**：已关闭（`a1ad547c`，合入 dest）。
 
 - **位置**：`crates/agenthub-core/src/utils/process.rs:966-993,1117,1324-1370`；`services/chat_service.rs:490-499`；`catalog/limits.rs:13-20`。
 - **触发/行为**：stdout 达到 2 MiB 后继续输出超过 10 分钟。管道继续读取但不再发送活动消息，`last_activity` 不刷新，进程被 `without output` 超时终止。
@@ -78,6 +82,8 @@ scope: dev；跨 HEAD 续审，最终目标 c726bd2aa1ff8ea0aaf206c6755f6cdcfbb6
 - **最小修复/验证**：最后再删除回收记录，或失败时完整补偿；关闭功能/注入 attach 失败后断言可重试。
 
 ### AHREV-P1-005：SSE 正常结束受网络分块影响而误报失败
+
+- **修复状态**：已关闭（`b40d97db`，合入 dest）。
 
 - **位置**：`crates/agenthub-core/src/bridge/host/stream.rs:1534-1546,1729-1741`；`bridge/protocol/responses/mod.rs:993-1003,1055-1071`。
 - **触发/行为**：`response.completed` 后的合法注释、空帧或尾部字节与终止帧位于同一网络块。转换循环见结束事件即退出，但剩余 buffer 又被判为损坏；分到下一块则成功。

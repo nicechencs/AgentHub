@@ -26,9 +26,9 @@ scope: dest @ 5ee06a4f；对照三份 2026-09-07 全项目 review 的确认问�
 | 1a | P1-004、P2-002 | `fix/review-p1-restore` `71b32e85` | 已关闭 |
 | 1b | P1-003 | `fix/review-p1-backup` `c72f22cd` | 已关闭 |
 | 1c | P1-006、P1-007、P1-008 | `fix/review-p1-bridge-auth` `76b6389c` | 已关闭 |
-| 2a | P1-002 | `fix/review-p1-process-idle` | 核实完成，待实现 |
-| 2b | P1-001 | `fix/review-p1-kiro-http-cancel` | 核实完成，待实现 |
-| 2c | P1-005 | `fix/review-p1-sse-trailer` | 核实完成，待实现 |
+| 2a | P1-002 | `fix/review-p1-process-idle` `a1ad547c` | 已关闭 |
+| 2b | P1-001 | `fix/review-p1-kiro-http-cancel` `d1edd6f4` | 已关闭 |
+| 2c | P1-005 | `fix/review-p1-sse-trailer` `b40d97db` | 已关闭 |
 | 3a | P1-009、P2-004、P2-005 | `fix/review-p1-chat-runtime` | 核实完成，待实现 |
 | 3b | C8-P1-001/002/003、C8-P2-001/002 | `fix/review-open-chat` | 核实完成，待实现 |
 | 4 | P2-003 | `fix/review-p2-setup-guide` | 核实完成，待实现 |
@@ -99,6 +99,8 @@ scope: dest @ 5ee06a4f；对照三份 2026-09-07 全项目 review 的确认问�
 - 方案：成功读到字节就刷新独立活动时间，即使不纳入保存缓冲。保留 2 MiB 展示上限和绝对墙钟期限。
 - 验证：小上限 + 短空闲，持续输出超过上限应完成；真正停止输出后才超时。
 
+**关闭**：`a1ad547c`。dest 已合入。主 Agent 复跑 `streaming_idle_keeps_alive_after_output_cap`、`streaming_idle_timeout_after_capped_output_stops`、`read_pipe_capped_touches_activity_after_max`、`streaming_idle_timeout_kills_silent_process`。成功读到字节即 `OutputActivity::touch()`，即使不进入保存缓冲。
+
 ### 批次 2b — Kiro HTTP 取消
 
 **AHREV-P1-001**（confirmed）
@@ -107,6 +109,8 @@ scope: dest @ 5ee06a4f；对照三份 2026-09-07 全项目 review 的确认问�
 - 方案：HTTP 执行接收取消与期限，本地等待可中断。取消后统一 cancelled 出口，保留 HTTP 会话标识。不要只在请求开始前检查一次。
 - 验证：可控 transport 覆盖等待中取消、取消后迟到成功、短期限。
 
+**关闭**：`d1edd6f4`。dest 已合入。主 Agent 复跑 `kiro::http`（25 通过、2 ignored）、`run_service::tests`（17 通过）、`chat_service::tests`（44 通过，含 `kiro_http_cancel_releases_occupancy_and_keeps_session`）。HTTP 等待可中断；迟到成功丢弃；会话标识保留。
+
 ### 批次 2c — SSE 正常结束误报失败
 
 **AHREV-P1-005**（confirmed）
@@ -114,6 +118,8 @@ scope: dest @ 5ee06a4f；对照三份 2026-09-07 全项目 review 的确认问�
 - 源码：`stream.rs` 见到完成事件就 `break`，随后 `if !saw_done || !buffer.is_empty()` 记失败。`response.completed` 后的合法注释/空帧若与终止帧同一网络块，会留下 buffer。
 - 方案：终止后按合法 SSE 语义忽略尾部空白/注释；无终止帧仍要失败。
 - 验证：同块与跨块 fixture，覆盖 Messages 与 Chat。
+
+**关闭**：`b40d97db`。dest 已合入。主 Agent 复跑 legal trailer、Messages/Chat 同块与跨块、无终止帧失败、完成后损坏帧仍失败。
 
 ### 批次 3a — Chat 启动停止与排序
 
