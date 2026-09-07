@@ -4,7 +4,7 @@ use crate::utils::process::{ProcessRunner, RecordingProcessRunner, StreamingProc
 use std::collections::HashMap;
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tempfile::tempdir;
 
 /// Test runner that returns a canned native session id on top of [`RecordingProcessRunner`].
@@ -378,6 +378,101 @@ fn send_persists_and_isolates_prompts() {
     let updated = chat.get_conversation(&conv.id).unwrap();
     assert!(!updated.title.is_empty());
     assert!(updated.title.contains("first") || !updated.title.is_empty());
+}
+
+#[test]
+fn kiro_http_cancel_releases_occupancy_and_keeps_session() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(RecordingProcessRunner::new()),
+    ));
+    let chat = Arc::new(ChatService::new(db.clone(), run));
+    let conv = chat.create_conversation(vec![AgentId::Kiro], None).unwrap();
+    let repo = crate::storage::ChatRepo::new(db);
+    let mut stored = repo.get_conversation(&conv.id).unwrap().unwrap();
+    stored.native_session_id = Some("kiro-http:cid-occ".into());
+    repo.update_conversation(&stored).unwrap();
+
+    let hang = crate::adapters::kiro::http::HangingChatTransport::success("cid-occ", "late-ok");
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let started = Instant::now();
+    let (first, second) = crate::adapters::kiro::http::with_http_run_override(
+        crate::adapters::kiro::http::test_api_key_creds(),
+        hang.clone(),
+        || {
+            let chat2 = Arc::clone(&chat);
+            let id2 = conv.id.clone();
+            let hang2 = hang.clone();
+            let occupier = thread::spawn(move || {
+                hang2.wait_started();
+                let second = chat2.send(&id2, "second", &|_| {});
+                chat2.cancel(&id2).expect("cancel in-flight HTTP send");
+                second
+            });
+            let events2 = Arc::clone(&events);
+            let first = chat.send(&conv.id, "first", &move |ev| {
+                events2.lock().unwrap().push(ev);
+            });
+            let second = occupier.join().unwrap();
+            (first, second)
+        },
+    );
+    hang.release();
+    assert!(
+        started.elapsed() < Duration::from_millis(800),
+        "cancel should release the HTTP wait, took {:?}",
+        started.elapsed()
+    );
+    first.expect("cancelled send should complete");
+    let err = second.expect_err("occupancy must reject a second send");
+    assert!(
+        err.to_string().contains("in-flight"),
+        "unexpected occupancy error: {err}"
+    );
+
+    let after = chat.get_conversation(&conv.id).unwrap();
+    assert_eq!(
+        after.native_session_id.as_deref(),
+        Some("kiro-http:cid-occ"),
+        "HTTP session id must survive cancel"
+    );
+    assert!(!after.sending, "send occupancy should be released");
+
+    let agent = chat
+        .list_messages(&conv.id)
+        .unwrap()
+        .into_iter()
+        .find(|m| m.role == ChatRole::Agent)
+        .expect("agent message");
+    assert_eq!(agent.status, ChatMessageStatus::Cancelled);
+    assert!(
+        !agent.content.contains("late-ok"),
+        "late HTTP success must not become the message: {}",
+        agent.content
+    );
+
+    let events = events.lock().unwrap().clone();
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            ChatEvent::Finished {
+                cancelled: true,
+                ..
+            }
+        )),
+        "Finished.cancelled must be true, got {events:?}"
+    );
+
+    crate::adapters::kiro::http::with_http_run_override(
+        crate::adapters::kiro::http::test_api_key_creds(),
+        hang.clone(),
+        || {
+            chat.send(&conv.id, "after-cancel", &|_| {})
+                .expect("occupancy must be free after cancel")
+        },
+    );
 }
 
 #[test]

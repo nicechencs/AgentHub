@@ -234,6 +234,8 @@ export const zh = {
       backupCreated: '备份已创建',
       backupFailed: '备份失败',
       restored: '已恢复到该备份',
+      restorePartial: '部分恢复',
+      restorePartialDesc: '有文件没删掉',
       restoreFailed: '恢复失败',
       deleted: '备份已删除',
       deleteFailed: '删除失败',

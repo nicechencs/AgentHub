@@ -8,13 +8,16 @@
 //! - `runtime.{region}.kiro.dev` requires `profileArn` (enterprise / deferred)
 
 use std::io::Read;
-use std::time::Instant;
+use std::sync::{mpsc, Arc};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
 use crate::models::{AgentId, AgentRunResult, RunOptions, RunStatus};
+use crate::utils::process::CancelToken;
 use crate::utils::redact::redact_text;
 
 use super::creds::{
@@ -234,9 +237,31 @@ fn amz_headers(creds: &KiroHttpCreds, target: &str) -> Vec<(String, String)> {
     headers
 }
 
+/// One chat POST. Tests inject a hanging/mock transport; production uses ureq.
+pub(crate) trait KiroChatTransport: Send + Sync {
+    fn send_chat(&self, creds: &KiroHttpCreds, body: &Value, timeout: Duration) -> Result<Vec<u8>>;
+}
+
+struct UreqChatTransport;
+
+impl KiroChatTransport for UreqChatTransport {
+    fn send_chat(&self, creds: &KiroHttpCreds, body: &Value, timeout: Duration) -> Result<Vec<u8>> {
+        post_amz_with_timeout(creds, CHAT_TARGET, body, timeout)
+    }
+}
+
 fn post_amz(creds: &KiroHttpCreds, target: &str, body: &Value) -> Result<Vec<u8>> {
+    post_amz_with_timeout(creds, target, body, super::creds::http_timeout())
+}
+
+fn post_amz_with_timeout(
+    creds: &KiroHttpCreds,
+    target: &str,
+    body: &Value,
+    timeout: Duration,
+) -> Result<Vec<u8>> {
     let url = q_host(&creds.region);
-    let mut req = ureq::post(&url).timeout(super::creds::http_timeout());
+    let mut req = ureq::post(&url).timeout(timeout);
     for (k, v) in amz_headers(creds, target) {
         req = req.set(&k, &v);
     }
@@ -463,6 +488,7 @@ pub(crate) fn chat_turn_with_access_token(
     post_chat_turn(&mut creds, prompt, model, None)
 }
 
+#[cfg(test)]
 fn chat_turn_with_creds(
     creds: &mut KiroHttpCreds,
     prompt: &str,
@@ -479,6 +505,24 @@ fn post_chat_turn(
     model: Option<&str>,
     conversation_id: Option<&str>,
 ) -> Result<KiroChatTurn> {
+    post_chat_turn_on(
+        creds,
+        prompt,
+        model,
+        conversation_id,
+        &UreqChatTransport,
+        super::creds::http_timeout(),
+    )
+}
+
+fn post_chat_turn_on(
+    creds: &KiroHttpCreds,
+    prompt: &str,
+    model: Option<&str>,
+    conversation_id: Option<&str>,
+    transport: &dyn KiroChatTransport,
+    timeout: Duration,
+) -> Result<KiroChatTurn> {
     let model_id = model
         .map(str::trim)
         .filter(|s| !s.is_empty())
@@ -491,7 +535,7 @@ fn post_chat_turn(
         conversation_id,
         creds.profile_arn.as_deref(),
     );
-    let raw = post_amz(&creds, CHAT_TARGET, &body)?;
+    let raw = transport.send_chat(creds, &body, timeout)?;
     let (text, cid) = collect_assistant_text(&raw);
     if text.trim().is_empty() {
         let preview = String::from_utf8_lossy(&raw);
@@ -534,6 +578,50 @@ pub(crate) fn http_failed_run_result(
     conversation_id: Option<&str>,
     error: impl Into<String>,
 ) -> AgentRunResult {
+    http_status_run_result(
+        RunStatus::Failed,
+        duration_ms,
+        model,
+        conversation_id,
+        Some(redact_text(&error.into())),
+    )
+}
+
+fn http_cancelled_run_result(
+    duration_ms: u64,
+    model: Option<&str>,
+    conversation_id: Option<&str>,
+) -> AgentRunResult {
+    http_status_run_result(
+        RunStatus::Cancelled,
+        duration_ms,
+        model,
+        conversation_id,
+        Some("cancelled".into()),
+    )
+}
+
+fn http_timeout_run_result(
+    duration_ms: u64,
+    model: Option<&str>,
+    conversation_id: Option<&str>,
+) -> AgentRunResult {
+    http_status_run_result(
+        RunStatus::Timeout,
+        duration_ms,
+        model,
+        conversation_id,
+        Some("timeout".into()),
+    )
+}
+
+fn http_status_run_result(
+    status: RunStatus,
+    duration_ms: u64,
+    model: Option<&str>,
+    conversation_id: Option<&str>,
+    error: Option<String>,
+) -> AgentRunResult {
     let model_id = model
         .map(str::trim)
         .filter(|s| !s.is_empty())
@@ -545,18 +633,62 @@ pub(crate) fn http_failed_run_result(
             .map(|id| format!(" conversationId={}", conversation_id_preview(id)))
             .unwrap_or_default()
     );
-    let error = redact_text(&error.into());
     AgentRunResult {
         agent: AgentId::Kiro,
-        status: RunStatus::Failed,
+        status,
         exit_code: None,
         duration_ms,
         stdout: String::new(),
         stderr: String::new(),
         command,
-        error: Some(error),
+        error,
         truncated: false,
         native_session_id: conversation_id.map(http_native_session_id),
+    }
+}
+
+fn elapsed_ms(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+const HTTP_WAIT_POLL: Duration = Duration::from_millis(20);
+
+enum HttpWait<T> {
+    Ready(T),
+    Cancelled,
+    Deadline,
+    Disconnected,
+}
+
+/// Poll cancel and the wall deadline while a worker holds the blocking HTTP call.
+/// A result that arrives after cancel/deadline is discarded (not rewritten as Ok).
+fn wait_interruptible<T>(
+    rx: &mpsc::Receiver<T>,
+    cancel: &CancelToken,
+    deadline: Instant,
+) -> HttpWait<T> {
+    loop {
+        if cancel.is_cancelled() {
+            return HttpWait::Cancelled;
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            return HttpWait::Deadline;
+        }
+        let slice = HTTP_WAIT_POLL.min(deadline.saturating_duration_since(now));
+        match rx.recv_timeout(slice) {
+            Ok(value) => {
+                if cancel.is_cancelled() {
+                    return HttpWait::Cancelled;
+                }
+                if Instant::now() >= deadline {
+                    return HttpWait::Deadline;
+                }
+                return HttpWait::Ready(value);
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => return HttpWait::Disconnected,
+        }
     }
 }
 
@@ -568,7 +700,13 @@ pub(crate) fn http_failed_run_result(
 /// - any other id (CLI `--resume-id`) → skip HTTP
 ///
 /// On success, persists a namespaced id so ChatService can resume later turns.
-pub(crate) fn try_http_run_result(prompt: &str, opts: &RunOptions) -> Option<AgentRunResult> {
+/// Cancel and the run deadline are observed while waiting; a late HTTP success
+/// after cancel is dropped.
+pub(crate) fn try_http_run_result(
+    prompt: &str,
+    opts: &RunOptions,
+    cancel: &CancelToken,
+) -> Option<AgentRunResult> {
     let resume = http_resume_from_opts(opts)?;
     let conversation_id = match resume {
         HttpResume::New => None,
@@ -576,23 +714,143 @@ pub(crate) fn try_http_run_result(prompt: &str, opts: &RunOptions) -> Option<Age
     };
     let started = Instant::now();
     let model = opts.model.as_deref();
-    let mut creds = match load_kiro_http_creds() {
-        Ok(creds) => creds,
-        Err(e) => {
+    let deadline = started + opts.timeout;
+
+    #[cfg(test)]
+    {
+        if let Some(over) = HTTP_RUN_OVERRIDE.with(|slot| slot.borrow().clone()) {
+            return finish_http_run(
+                prompt,
+                model,
+                conversation_id,
+                cancel,
+                deadline,
+                started,
+                over.creds,
+                over.transport,
+            );
+        }
+        // Unit tests must not use this machine's Kiro login. Live coverage is
+        // the ignored `chat_turn_http` tests; inject a transport via override.
+        return None;
+    }
+
+    #[cfg(not(test))]
+    {
+        let creds = match load_kiro_http_creds() {
+            Ok(creds) => creds,
+            Err(e) => {
+                if conversation_id.is_some() {
+                    return Some(http_failed_run_result(
+                        elapsed_ms(started),
+                        model,
+                        conversation_id,
+                        e.to_string(),
+                    ));
+                }
+                return None;
+            }
+        };
+        finish_http_run(
+            prompt,
+            model,
+            conversation_id,
+            cancel,
+            deadline,
+            started,
+            creds,
+            Arc::new(UreqChatTransport),
+        )
+    }
+}
+
+fn finish_http_run(
+    prompt: &str,
+    model: Option<&str>,
+    conversation_id: Option<&str>,
+    cancel: &CancelToken,
+    deadline: Instant,
+    started: Instant,
+    creds: KiroHttpCreds,
+    transport: Arc<dyn KiroChatTransport>,
+) -> Option<AgentRunResult> {
+    if cancel.is_cancelled() {
+        return Some(http_cancelled_run_result(
+            elapsed_ms(started),
+            model,
+            conversation_id,
+        ));
+    }
+    if Instant::now() >= deadline {
+        return Some(http_timeout_run_result(
+            elapsed_ms(started),
+            model,
+            conversation_id,
+        ));
+    }
+
+    let (tx, rx) = mpsc::channel();
+    let prompt = prompt.to_string();
+    let model_owned = model.map(str::to_owned);
+    let conversation_owned = conversation_id.map(str::to_owned);
+    thread::spawn(move || {
+        let mut creds = creds;
+        if let Err(e) = ensure_access_token(&mut creds) {
+            let _ = tx.send(Err(e));
+            return;
+        }
+        let timeout = deadline
+            .saturating_duration_since(Instant::now())
+            .min(super::creds::http_timeout());
+        let result = post_chat_turn_on(
+            &creds,
+            &prompt,
+            model_owned.as_deref(),
+            conversation_owned.as_deref(),
+            transport.as_ref(),
+            timeout,
+        );
+        let _ = tx.send(result);
+    });
+
+    match wait_interruptible(&rx, cancel, deadline) {
+        HttpWait::Cancelled => Some(http_cancelled_run_result(
+            elapsed_ms(started),
+            model,
+            conversation_id,
+        )),
+        HttpWait::Deadline => {
             if conversation_id.is_some() {
-                return Some(http_failed_run_result(
-                    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+                Some(http_timeout_run_result(
+                    elapsed_ms(started),
                     model,
                     conversation_id,
-                    e.to_string(),
+                ))
+            } else {
+                None
+            }
+        }
+        HttpWait::Disconnected => {
+            if conversation_id.is_some() {
+                Some(http_failed_run_result(
+                    elapsed_ms(started),
+                    model,
+                    conversation_id,
+                    "kiro http worker ended",
+                ))
+            } else {
+                None
+            }
+        }
+        HttpWait::Ready(Ok(turn)) => {
+            if cancel.is_cancelled() {
+                return Some(http_cancelled_run_result(
+                    elapsed_ms(started),
+                    model,
+                    conversation_id,
                 ));
             }
-            return None;
-        }
-    };
-    match chat_turn_with_creds(&mut creds, prompt, model, conversation_id) {
-        Ok(turn) => {
-            let duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+            let duration_ms = elapsed_ms(started);
             let command = format!(
                 "kiro-http GenerateAssistantResponse model={}{}",
                 turn.model_id,
@@ -614,21 +872,202 @@ pub(crate) fn try_http_run_result(prompt: &str, opts: &RunOptions) -> Option<Age
                 native_session_id: turn.conversation_id.as_deref().map(http_native_session_id),
             })
         }
-        Err(e) => {
+        HttpWait::Ready(Err(e)) => {
+            if cancel.is_cancelled() {
+                return Some(http_cancelled_run_result(
+                    elapsed_ms(started),
+                    model,
+                    conversation_id,
+                ));
+            }
             tracing::debug!(
                 module = "adapters.kiro.http",
                 error = %e,
                 "Kiro HTTP chat failed"
             );
-            conversation_id.map(|cid| {
-                http_failed_run_result(
-                    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+            if conversation_id.is_some() {
+                Some(http_failed_run_result(
+                    elapsed_ms(started),
                     model,
-                    Some(cid),
+                    conversation_id,
                     e.to_string(),
-                )
-            })
+                ))
+            } else {
+                None
+            }
         }
+    }
+}
+
+#[cfg(test)]
+#[derive(Clone)]
+struct HttpRunOverride {
+    creds: KiroHttpCreds,
+    transport: Arc<dyn KiroChatTransport>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static HTTP_RUN_OVERRIDE: std::cell::RefCell<Option<HttpRunOverride>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) fn with_http_run_override<T, R>(
+    creds: KiroHttpCreds,
+    transport: Arc<T>,
+    f: impl FnOnce() -> R,
+) -> R
+where
+    T: KiroChatTransport + 'static,
+{
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            HTTP_RUN_OVERRIDE.with(|slot| *slot.borrow_mut() = None);
+        }
+    }
+    let transport: Arc<dyn KiroChatTransport> = transport;
+    HTTP_RUN_OVERRIDE.with(|slot| {
+        *slot.borrow_mut() = Some(HttpRunOverride { creds, transport });
+    });
+    let _reset = Reset;
+    f()
+}
+
+#[cfg(test)]
+pub(crate) fn test_api_key_creds() -> KiroHttpCreds {
+    KiroHttpCreds {
+        auth_kind: KiroAuthKind::ApiKey,
+        access_token: "ksk_test_cancel".into(),
+        refresh_token: None,
+        expires_at: None,
+        region: "us-east-1".into(),
+        profile_arn: None,
+        client_id: None,
+        client_secret: None,
+        origin: "AI_EDITOR".into(),
+        sqlite_token_key: None,
+        source: "test".into(),
+    }
+}
+
+#[cfg(test)]
+fn event_frame(headers: &[(&str, &str)], payload: &[u8]) -> Vec<u8> {
+    let mut header_bytes = Vec::new();
+    for (name, value) in headers {
+        header_bytes.push(name.len() as u8);
+        header_bytes.extend_from_slice(name.as_bytes());
+        header_bytes.push(7);
+        let vb = value.as_bytes();
+        header_bytes.extend_from_slice(&(vb.len() as u16).to_be_bytes());
+        header_bytes.extend_from_slice(vb);
+    }
+    let headers_len = header_bytes.len() as u32;
+    let total_len = 12 + header_bytes.len() + payload.len() + 4;
+    let mut out = Vec::with_capacity(total_len);
+    out.extend_from_slice(&(total_len as u32).to_be_bytes());
+    out.extend_from_slice(&headers_len.to_be_bytes());
+    out.extend_from_slice(&0u32.to_be_bytes());
+    out.extend_from_slice(&header_bytes);
+    out.extend_from_slice(payload);
+    out.extend_from_slice(&0u32.to_be_bytes());
+    out
+}
+
+#[cfg(test)]
+pub(crate) fn assistant_success_body(conversation_id: &str, text: &str) -> Vec<u8> {
+    let cid = serde_json::json!({ "conversationId": conversation_id }).to_string();
+    let content = serde_json::json!({ "content": text }).to_string();
+    let mut bytes = event_frame(&[(":event-type", "initial-response")], cid.as_bytes());
+    bytes.extend(event_frame(
+        &[(":event-type", "assistantResponseEvent")],
+        content.as_bytes(),
+    ));
+    bytes
+}
+
+/// Controllable chat transport: first call waits until [`Self::release`], then
+/// returns a canned success body. Later calls return immediately. Dropping the
+/// last handle releases any waiter so tests cannot hang the process.
+#[cfg(test)]
+pub(crate) struct HangingChatTransport {
+    body: Vec<u8>,
+    started_tx: mpsc::Sender<()>,
+    started_rx: std::sync::Mutex<mpsc::Receiver<()>>,
+    release_tx: mpsc::Sender<()>,
+    gate_rx: std::sync::Mutex<mpsc::Receiver<()>>,
+    finished_tx: mpsc::Sender<()>,
+    finished_rx: std::sync::Mutex<mpsc::Receiver<()>>,
+    released: std::sync::atomic::AtomicBool,
+}
+
+#[cfg(test)]
+impl HangingChatTransport {
+    pub(crate) fn success(conversation_id: &str, text: &str) -> Arc<Self> {
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, gate_rx) = mpsc::channel();
+        let (finished_tx, finished_rx) = mpsc::channel();
+        Arc::new(Self {
+            body: assistant_success_body(conversation_id, text),
+            started_tx,
+            started_rx: std::sync::Mutex::new(started_rx),
+            release_tx,
+            gate_rx: std::sync::Mutex::new(gate_rx),
+            finished_tx,
+            finished_rx: std::sync::Mutex::new(finished_rx),
+            released: std::sync::atomic::AtomicBool::new(false),
+        })
+    }
+
+    pub(crate) fn wait_started(&self) {
+        self.started_rx
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .recv_timeout(Duration::from_secs(5))
+            .expect("http transport did not start");
+    }
+
+    pub(crate) fn release(&self) {
+        self.released
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let _ = self.release_tx.send(());
+    }
+
+    pub(crate) fn wait_finished(&self) {
+        self.finished_rx
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .recv_timeout(Duration::from_secs(5))
+            .expect("http transport did not finish");
+    }
+}
+
+#[cfg(test)]
+impl Drop for HangingChatTransport {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
+#[cfg(test)]
+impl KiroChatTransport for HangingChatTransport {
+    fn send_chat(
+        &self,
+        _creds: &KiroHttpCreds,
+        _body: &Value,
+        _timeout: Duration,
+    ) -> Result<Vec<u8>> {
+        let _ = self.started_tx.send(());
+        if !self.released.load(std::sync::atomic::Ordering::SeqCst) {
+            let _ = self
+                .gate_rx
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .recv_timeout(Duration::from_secs(5));
+        }
+        let _ = self.finished_tx.send(());
+        Ok(self.body.clone())
     }
 }
 

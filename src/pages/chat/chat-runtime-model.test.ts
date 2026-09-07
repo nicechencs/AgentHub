@@ -4,6 +4,7 @@ import {
   acceptsRuntimeSnapshot,
   bindRuntimeSnapshotToAgent,
   canSubmitRuntimeQuestions,
+  runtimeReplyFields,
   isLatestRuntimeRead,
   isRuntimeActive,
   isRuntimeChatAgent,
@@ -86,5 +87,10 @@ describe('chat runtime transport guards', () => {
     };
     expect(canSubmitRuntimeQuestions(request, {})).toBe(false);
     expect(canSubmitRuntimeQuestions(request, { q: ['freeform'] })).toBe(true);
+  });
+  it('omits answers when allowing or denying, and omits decision for questions', () => {
+    expect(runtimeReplyFields({ kind: 'command' }, 'allow', {})).toEqual({ decision: 'allow' });
+    expect(runtimeReplyFields({ kind: 'file' }, 'deny', { q: ['x'] })).toEqual({ decision: 'deny' });
+    expect(runtimeReplyFields({ kind: 'question' }, 'allow', { q: ['x'] })).toEqual({ answers: { q: ['x'] } });
   });
 });

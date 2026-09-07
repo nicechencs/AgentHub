@@ -27,6 +27,12 @@ import RoutesActivityPage from '@/pages/routes/activity';
 import Sub2ApiPage from '@/pages/sub2api';
 import { isRoutesAreaPath } from '@/pages/routes/routes-nav-items';
 import { onTrayNavigate } from '@/lib/backend/tauri/tray-events';
+import {
+  onOpenChatCwd,
+  takePendingOpenChatCwd,
+} from '@/lib/backend/tauri/shell-open-chat-events';
+import { setChatBootstrap } from '@/lib/chat-bootstrap';
+import { consumePendingOpenChatCwd } from '@/lib/open-chat-cwd';
 import { legacyBridgesRedirectTo, ROUTES_SUB2API_PATH, SUB2API_PATH } from '@/lib/routes-path';
 import {
   checkForUpdate,
@@ -67,6 +73,8 @@ export default function App() {
   const { t } = useI18n();
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
   const isChat = pathname === '/chat';
   const isRoutesArea = isRoutesAreaPath(pathname);
   /** Skills / Projects / Connections / Sub2API / Routes / Agents / Plugins / Settings 左右分栏需要全高 overflow-hidden，不套 pageShell 内边距 */
@@ -107,6 +115,38 @@ export default function App() {
       unsub?.();
     };
   }, [navigate]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unsub: (() => void) | undefined;
+    const consumePending = () =>
+      consumePendingOpenChatCwd({
+        takePending: takePendingOpenChatCwd,
+        applyBootstrap: setChatBootstrap,
+        navigate: (to) => navigateRef.current(to),
+      });
+    void (async () => {
+      try {
+        // Event is a wake-up only; cwd always comes from takePending.
+        const fn = await onOpenChatCwd(() => {
+          if (!cancelled) void consumePending();
+        });
+        if (cancelled) {
+          fn();
+          return;
+        }
+        unsub = fn;
+        if (!cancelled) await consumePending();
+      } catch (error) {
+        logger.scope('shell').error('open-chat-cwd subscription unavailable', error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
+    // HashRouter `useNavigate` changes identity with pathname; do not resubscribe.
+  }, []);
 
   const onUpdateReady = useCallback((handle: UpdatePromptHandle) => {
     updateHandleRef.current = handle;

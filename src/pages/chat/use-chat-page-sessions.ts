@@ -19,10 +19,27 @@ import {
   listConversations,
   updateConversation,
 } from '@/lib/api/chat';
-import { takeChatBootstrap } from '@/lib/chat-bootstrap';
+import {
+  chatBootstrapGeneration,
+  isChatBootstrapHandoff,
+  restoreChatBootstrapIfUnchanged,
+  takeChatBootstrap,
+} from '@/lib/chat-bootstrap';
 import type { AgentKey, AgentStatus, ChatMessage, Conversation } from '@/lib/types';
 import { draftForFocusedConversation, isChatAgentSelectable, newConversationDefaults, singleAgentConversationPatch } from './chat-model';
 import { conversationListState, createSingleFlight } from './chat-request';
+
+/** Keep conversations created by an in-flight shell/projects handoff when list load returns stale. */
+export function mergeHandoffConversations(
+  prev: Conversation[],
+  loaded: Conversation[],
+): Conversation[] {
+  if (prev.length === 0) return loaded;
+  const loadedIds = new Set(loaded.map((conversation) => conversation.id));
+  const extras = prev.filter((conversation) => !loadedIds.has(conversation.id));
+  if (extras.length === 0) return loaded;
+  return [...extras, ...loaded];
+}
 
 /**
  * Chat 会话列表：加载、空列表补建、项目跳转、新建 / 删除。
@@ -52,6 +69,7 @@ export function useChatPageSessions(input: {
     sendRef,
   } = input;
   const draftsRef = useRef(new Map<string, string>());
+  const conversationsRef = useRef<Conversation[]>([]);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -67,9 +85,8 @@ export function useChatPageSessions(input: {
   const loadListSingleFlightRef = useRef<ReturnType<typeof createSingleFlight<Conversation[]>> | null>(
     null,
   );
+  const loadListAllowEnsureRef = useRef<boolean | null>(null);
   const loadGenerationRef = useRef(0);
-  /** Projects 页跳转：bootstrap 只处理一次 */
-  const bootstrapDoneRef = useRef(false);
   /** Multi-agent → single-agent one-shot migration runs once per load generation. */
   const migratedGenerationRef = useRef(-1);
 
@@ -116,15 +133,21 @@ export function useChatPageSessions(input: {
   /**
    * 会话列表优先：不因 listAgents（doctor）阻塞会话渲染。
    * agents 仅在空列表需自动建会话时才 await。
+   * shell/projects bootstrap 完成前不要自动建默认会话。
    */
-  const loadList = useCallback(() => {
+  const loadList = useCallback((opts?: { allowEnsureDefault?: boolean }) => {
+    const allowEnsureDefault = opts?.allowEnsureDefault ?? true;
+    if (loadListAllowEnsureRef.current !== allowEnsureDefault) {
+      loadListSingleFlightRef.current = createSingleFlight<Conversation[]>();
+      loadListAllowEnsureRef.current = allowEnsureDefault;
+    }
     if (!loadListSingleFlightRef.current) {
       loadListSingleFlightRef.current = createSingleFlight<Conversation[]>();
     }
     return loadListSingleFlightRef.current(async () => {
       const convs = await listConversations();
       let next = convs;
-      if (convs.length > 0) {
+      if (convs.length > 0 || !allowEnsureDefault) {
         // agent 状态异步填充 picker，不挡列表；失败记 ready=false，允许重试
         void refreshAgents().catch(() => {});
       } else {
@@ -181,68 +204,37 @@ export function useChatPageSessions(input: {
     [t, toast],
   );
 
+  const waitForHandoff = isChatBootstrapHandoff(searchParams.get('from'));
+
   useEffect(() => {
     const generation = ++loadGenerationRef.current;
     let cancelled = false;
     setListLoading(true);
     setError(null);
-    loadList()
+    loadList({ allowEnsureDefault: !waitForHandoff })
       .then(async (convs) => {
         if (cancelled || generation !== loadGenerationRef.current) return;
         // Commit the list and its initial selection together. Without this
         // commit the hook kept an empty in-memory rail even though the API
         // load succeeded, and bootstrap could accidentally discard existing
         // conversations when it prepended its new one.
-        const committed = conversationListState(convs);
-        setConversations(committed.conversations);
-        setActiveId(committed.activeId);
-        void migrateMultiAgentConversations(committed.conversations, generation).then((migrated) => {
-          if (cancelled || generation !== loadGenerationRef.current) return;
-          if (migrated !== committed.conversations) setConversations(migrated);
+        setConversations((prev) => {
+          const next = mergeHandoffConversations(prev, convs);
+          conversationsRef.current = next;
+          return next;
         });
-        // Projects → Chat：新建会话并预填（可选自动发送）提示
-        const fromProjects = searchParams.get('from') === 'projects';
-        if (fromProjects && !bootstrapDoneRef.current) {
-          bootstrapDoneRef.current = true;
-          const boot = takeChatBootstrap();
-          // 清掉 query，避免刷新重复创建
-          setSearchParams({}, { replace: true });
-          if (boot) {
-            try {
-              const created = await createConversation(
-                boot.agentIds.slice(0, 1),
-                boot.cwd ?? null,
-              );
-              let next = created;
-              if (boot.title) {
-                try {
-                  next = await updateConversation(created.id, { title: boot.title });
-                } catch {
-                  /* title 可选 */
-                }
-              }
-              if (cancelled || generation !== loadGenerationRef.current) return;
-              setConversations((prev) => [next, ...prev.filter((c) => c.id !== next.id)]);
-              setActiveId(next.id);
-              setMessages([]);
-              if (boot.prompt?.trim()) {
-                setDraft(boot.prompt);
-                toast({
-                  title: t('chat.toast.fromProjects'),
-                  description: t('chat.toast.fromProjectsDesc'),
-                  variant: 'success',
-                });
-              }
-              return;
-            } catch (e) {
-              if (cancelled || generation !== loadGenerationRef.current) return;
-              toast({
-                title: e instanceof Error ? e.message : String(e),
-                variant: 'danger',
-              });
-            }
+        setActiveId((current) => {
+          const list = conversationsRef.current;
+          if (current && list.some((conversation) => conversation.id === current)) return current;
+          return conversationListState(list).activeId;
+        });
+        void migrateMultiAgentConversations(conversationsRef.current, generation).then((migrated) => {
+          if (cancelled || generation !== loadGenerationRef.current) return;
+          if (migrated !== conversationsRef.current) {
+            conversationsRef.current = migrated;
+            setConversations(migrated);
           }
-        }
+        });
         if (cancelled || generation !== loadGenerationRef.current) return;
       })
       .catch((e) => {
@@ -254,8 +246,81 @@ export function useChatPageSessions(input: {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- bootstrap once on mount/list load
-  }, [loadList]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when loader identity or handoff gate changes
+  }, [loadList, waitForHandoff]);
+
+  useEffect(() => {
+    const from = searchParams.get('from');
+    if (!isChatBootstrapHandoff(from)) return;
+    const boot = takeChatBootstrap();
+    const generation = chatBootstrapGeneration();
+    if (!boot) {
+      setSearchParams({}, { replace: true });
+      return;
+    }
+    let cancelled = false;
+    let applied = false;
+    void (async () => {
+      try {
+        let ids = boot.agentIds.filter(Boolean).slice(0, 1);
+        if (ids.length === 0) {
+          const agents = await refreshAgents().catch(() => agentStatus);
+          if (cancelled) return;
+          ids = defaultAgents(agents);
+        }
+        if (cancelled) return;
+        if (ids.length === 0) {
+          toast({ title: t('chat.rail.newChatDisabled'), variant: 'danger' });
+          setSearchParams({}, { replace: true });
+          applied = true;
+          return;
+        }
+        if (activeId) draftsRef.current.set(activeId, draft);
+        const created = await createConversation(ids, boot.cwd ?? null);
+        let next = created;
+        if (boot.title) {
+          try {
+            next = await updateConversation(created.id, { title: boot.title });
+          } catch {
+            /* title 可选 */
+          }
+        }
+        if (cancelled) return;
+        setConversations((prev) => {
+          const list = [next, ...prev.filter((c) => c.id !== next.id)];
+          conversationsRef.current = list;
+          return list;
+        });
+        setActiveId(next.id);
+        setMessages([]);
+        if (boot.prompt?.trim()) {
+          setDraft(boot.prompt);
+          toast({
+            title: t('chat.toast.fromProjects'),
+            description: t('chat.toast.fromProjectsDesc'),
+            variant: 'success',
+          });
+        } else {
+          setDraft('');
+        }
+        setSearchParams({}, { replace: true });
+        applied = true;
+      } catch (e) {
+        if (cancelled) return;
+        toast({
+          title: e instanceof Error ? e.message : String(e),
+          variant: 'danger',
+        });
+        setSearchParams({}, { replace: true });
+        applied = true;
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (!applied) restoreChatBootstrapIfUnchanged(boot, generation);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot when from= is set
+  }, [searchParams]);
 
   async function handleNewChat() {
     let status = agentStatus;
@@ -326,15 +391,19 @@ export function useChatPageSessions(input: {
     let cancelled = false;
     setListLoading(true);
     setError(null);
-    loadList()
+    loadList({ allowEnsureDefault: !isChatBootstrapHandoff(searchParams.get('from')) })
       .then((next) => {
         if (cancelled || generation !== loadGenerationRef.current) return;
+        conversationsRef.current = next;
         const committed = conversationListState(next);
         setConversations(committed.conversations);
         setActiveId(committed.activeId);
         void migrateMultiAgentConversations(committed.conversations, generation).then((migrated) => {
           if (cancelled || generation !== loadGenerationRef.current) return;
-          if (migrated !== committed.conversations) setConversations(migrated);
+          if (migrated !== committed.conversations) {
+            conversationsRef.current = migrated;
+            setConversations(migrated);
+          }
         });
       })
       .catch((e) => {

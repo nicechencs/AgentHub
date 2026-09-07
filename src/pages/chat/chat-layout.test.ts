@@ -130,4 +130,13 @@ describe('chat layout wiring', () => {
     expect(composer).toContain('variant="outline"');
     expect(composer).not.toContain('bg-subtle px-2 text-meta text-secondary hover:bg-hover');
   });
+
+  it('opens a new chat from the OS file-manager folder handoff', () => {
+    const sessions = source('use-chat-page-sessions.ts');
+    expect(sessions).toContain('isChatBootstrapHandoff');
+    expect(sessions).toContain('allowEnsureDefault');
+    expect(sessions).toContain('restoreChatBootstrapIfUnchanged');
+    expect(sessions).toContain('takeChatBootstrap');
+    expect(sessions).toContain('boot.cwd');
+  });
 });

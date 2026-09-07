@@ -1755,3 +1755,30 @@ fn list_trash_filtered_keeps_connections_and_pool_homes_apart() {
     assert_eq!(pool[0].source_id, "pool-acc");
     assert_eq!(pool[0].home, "route_pool");
 }
+
+#[test]
+fn restore_trash_source_keeps_recycle_row_until_discard_or_delete() {
+    let (_d, db) = tmp();
+    let accounts = AccountRepo::new(db.clone());
+    let conn = ConnectionService::new(db.clone());
+    accounts
+        .create(&account("keep-trash", AgentId::Claude, false, "t1"))
+        .unwrap();
+    conn.delete_account("keep-trash", AgentId::Claude).unwrap();
+    let trash = conn.list_trash(Some(AgentId::Claude)).unwrap();
+    assert_eq!(trash.len(), 1);
+    let trash_id = trash[0].id.clone();
+
+    conn.restore_trash_source(&trash_id).unwrap();
+    assert!(accounts.get_by_id("keep-trash").unwrap().is_some());
+    assert_eq!(conn.list_trash(Some(AgentId::Claude)).unwrap().len(), 1);
+
+    conn.discard_restored_source(ConnectionTrashKind::Account, AgentId::Claude, "keep-trash")
+        .unwrap();
+    assert!(accounts.get_by_id("keep-trash").unwrap().is_none());
+    assert_eq!(conn.list_trash(Some(AgentId::Claude)).unwrap().len(), 1);
+
+    conn.restore_trash(&trash_id).unwrap();
+    assert!(accounts.get_by_id("keep-trash").unwrap().is_some());
+    assert!(conn.list_trash(Some(AgentId::Claude)).unwrap().is_empty());
+}

@@ -74,7 +74,7 @@ export function TableSkeleton({
       {Array.from({ length: rows }).map((_, r) => (
         <div
           key={r}
-          className={cn('flex items-center gap-3 px-3 py-2 last:border-0', rowBorder)}
+          className={cn('flex items-center gap-3 px-3 py-2', rowBorder)}
         >
           {Array.from({ length: cols }).map((_, c) => (
             <Skeleton key={c} className="h-3.5 flex-1" />

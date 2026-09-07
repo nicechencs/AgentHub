@@ -136,14 +136,7 @@ pub fn start_kiro_cli_login(accounts: Option<&AccountService>) -> Result<StartOA
     let output = Arc::new(Mutex::new(String::new()));
     spawn_output_reader(&mut child, Arc::clone(&output), cancel.clone());
 
-    let prompt = wait_for_login_prompt(
-        &state,
-        &st,
-        &cancel,
-        &mut child,
-        &process_control,
-        &output,
-    );
+    let prompt = wait_for_login_prompt(&state, &st, &cancel, &mut child, &process_control, &output);
 
     match prompt {
         WaitPrompt::Url(prompt) => {
@@ -202,9 +195,9 @@ fn preserve_then_logout_if_needed(
         ));
     };
     let previous = crate::adapters::kiro::read_kiro_live_account().ok();
-    accounts.import_live(AgentId::Kiro, None).map_err(|_| {
-        AppError::message("oauth.kiro", "无法收下当前 Kiro 登录，未开始新的登录")
-    })?;
+    accounts
+        .import_live(AgentId::Kiro, None)
+        .map_err(|_| AppError::message("oauth.kiro", "无法收下当前 Kiro 登录，未开始新的登录"))?;
     kiro_cli_logout()?;
     tracing::info!(
         module = targets::OAUTH,
@@ -215,15 +208,11 @@ fn preserve_then_logout_if_needed(
 }
 
 fn kiro_cli_logout() -> Result<()> {
-    let bin = crate::adapters::kiro::kiro_cli_binary().ok_or_else(|| {
-        AppError::Unsupported("请先安装 Kiro 命令行".into())
-    })?;
-    let out = crate::utils::process::run_capture_timeout(
-        &bin,
-        &["logout"],
-        Duration::from_secs(45),
-    )
-    .map_err(|_| AppError::message("oauth.kiro", "无法退出当前 Kiro 登录"))?;
+    let bin = crate::adapters::kiro::kiro_cli_binary()
+        .ok_or_else(|| AppError::Unsupported("请先安装 Kiro 命令行".into()))?;
+    let out =
+        crate::utils::process::run_capture_timeout(&bin, &["logout"], Duration::from_secs(45))
+            .map_err(|_| AppError::message("oauth.kiro", "无法退出当前 Kiro 登录"))?;
     let text = format!(
         "{}{}",
         String::from_utf8_lossy(&out.stdout),
@@ -255,7 +244,10 @@ fn ready_start(state: String) -> StartOAuthResult {
 }
 
 fn truncate_output(text: &str) -> String {
-    let flat: String = text.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
+    let flat: String = text
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
     let trimmed = flat.trim();
     if trimmed.chars().count() <= 240 {
         trimmed.to_string()
@@ -431,10 +423,7 @@ pub fn complete_kiro_cli_login(
             return Err(error);
         }
     };
-    let label = live
-        .label_hint
-        .clone()
-        .unwrap_or_else(|| "Kiro".into());
+    let label = live.label_hint.clone().unwrap_or_else(|| "Kiro".into());
     match accounts.create(AccountInput {
         agent_id: AgentId::Kiro,
         kind: AccountKind::Oauth,
@@ -540,53 +529,4 @@ fn is_device_user_code(token: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn missing_kiro_cli_does_not_start_pkce() {
-        let err = start_kiro_cli_login(None).unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("Kiro"), "{msg}");
-        assert!(!msg.contains("PKCE"), "{msg}");
-        assert!(!msg.contains("start_device_oauth"), "{msg}");
-    }
-
-    #[test]
-    fn cancel_unknown_session_is_idempotent() {
-        cancel_kiro_cli_login("missing-kiro-login");
-    }
-
-    #[test]
-    fn parse_device_prompt_url_and_code() {
-        let raw = "Please visit https://oidc.us-east-1.amazonaws.com/device\nand enter the code ABCD-EFGH\n";
-        let parsed = parse_kiro_login_prompt(raw).expect("url");
-        assert_eq!(parsed.url, "https://oidc.us-east-1.amazonaws.com/device");
-        assert_eq!(parsed.user_code.as_deref(), Some("ABCD-EFGH"));
-    }
-
-    #[test]
-    fn parse_ignores_loopback_and_ansi() {
-        let raw = "\u{1b}[32mopen\u{1b}[0m http://127.0.0.1:1234/callback then https://prod.us-east-1.auth.desktop.kiro.dev/login?x=1,\ncode: Wxyz-9876\n";
-        let parsed = parse_kiro_login_prompt(raw).expect("url");
-        assert_eq!(
-            parsed.url,
-            "https://prod.us-east-1.auth.desktop.kiro.dev/login?x=1"
-        );
-        assert_eq!(parsed.user_code.as_deref(), Some("WXYZ-9876"));
-    }
-
-    #[test]
-    fn parse_without_https_is_none() {
-        assert!(parse_kiro_login_prompt("waiting for login").is_none());
-    }
-
-    #[test]
-    fn already_logged_in_is_detected() {
-        assert!(already_logged_in(
-            "error: Already logged in, please logout with kiro-cli logout first\n"
-        ));
-        assert!(!already_logged_in("Please visit https://example.test/login"));
-        assert!(already_logged_out("Not logged in\n"));
-    }
-}
+mod tests;

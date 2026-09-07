@@ -2,7 +2,7 @@
 //! Holds a single shared AgentHub facade from agenthub-core.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use agenthub_core::bridge::BridgeRuntimeHost;
 use agenthub_core::logging::{self, targets};
@@ -33,6 +33,8 @@ pub struct AppState {
     close_to_tray: AtomicBool,
     /// True while restore / start_local_gateway is bringing loopback listeners back.
     local_gateway_restarting: Arc<AtomicBool>,
+    /// Folder from `--open-chat` / file-manager, consumed once by the GUI.
+    pending_open_chat_cwd: Mutex<Option<String>>,
 }
 
 impl AppState {
@@ -86,6 +88,7 @@ impl AppState {
             exit_requested: AtomicBool::new(false),
             close_to_tray: AtomicBool::new(close_to_tray),
             local_gateway_restarting: Arc::new(AtomicBool::new(false)),
+            pending_open_chat_cwd: Mutex::new(None),
         }
     }
 
@@ -178,6 +181,20 @@ impl AppState {
             self.set_close_to_tray(window_policy::is_close_to_tray_enabled(value));
         }
     }
+
+    pub(crate) fn set_pending_open_chat_cwd(&self, cwd: String) {
+        *self.pending_lock() = Some(cwd);
+    }
+
+    pub(crate) fn take_pending_open_chat_cwd(&self) -> Option<String> {
+        self.pending_lock().take()
+    }
+
+    fn pending_lock(&self) -> std::sync::MutexGuard<'_, Option<String>> {
+        self.pending_open_chat_cwd
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+    }
 }
 
 fn load_close_to_tray(hub: &Result<Arc<AgentHub>, String>) -> bool {
@@ -189,83 +206,4 @@ fn load_close_to_tray(hub: &Result<Arc<AgentHub>, String>) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use agenthub_core::AgentHub;
-    use tempfile::tempdir;
-
-    fn hub_tmp() -> (tempfile::TempDir, Arc<AgentHub>) {
-        let dir = tempdir().unwrap();
-        let hub = Arc::new(AgentHub::open(Some(dir.path())).unwrap());
-        (dir, hub)
-    }
-
-    #[test]
-    fn defaults_close_to_tray_true_and_not_exiting() {
-        let (_dir, hub) = hub_tmp();
-        let state = AppState::from_hub(Ok(hub));
-        assert!(state.close_to_tray());
-        assert!(!state.should_exit());
-    }
-
-    #[test]
-    fn loads_close_to_tray_false_from_settings() {
-        let (_dir, hub) = hub_tmp();
-        hub.settings().set("close_to_tray", "false").unwrap();
-        let state = AppState::from_hub(Ok(hub));
-        assert!(!state.close_to_tray());
-    }
-
-    #[test]
-    fn hub_error_still_defaults_close_to_tray_true() {
-        let state = AppState::from_hub(Err("open failed".into()));
-        assert!(state.close_to_tray());
-        assert!(state.hub().is_err());
-        assert!(state.hub_arc().is_err());
-    }
-
-    #[test]
-    fn request_exit_and_set_close_to_tray_flags() {
-        let (_dir, hub) = hub_tmp();
-        let state = AppState::from_hub(Ok(hub));
-        state.set_close_to_tray(false);
-        assert!(!state.close_to_tray());
-        state.set_close_to_tray(true);
-        assert!(state.close_to_tray());
-        state.request_exit();
-        assert!(state.should_exit());
-    }
-
-    #[test]
-    fn exit_confirmation_gate_is_idempotent() {
-        let (_dir, hub) = hub_tmp();
-        let state = AppState::from_hub(Ok(hub));
-
-        assert!(state.begin_exit_confirmation());
-        assert!(state.exit_confirmation_pending());
-        assert!(!state.begin_exit_confirmation());
-
-        state.finish_exit_confirmation();
-        assert!(!state.exit_confirmation_pending());
-        assert!(state.begin_exit_confirmation());
-    }
-
-    #[test]
-    fn sync_setting_flag_only_reacts_to_close_to_tray() {
-        let (_dir, hub) = hub_tmp();
-        let state = AppState::from_hub(Ok(hub));
-        assert!(state.close_to_tray());
-
-        state.sync_setting_flag("theme", "dark");
-        assert!(state.close_to_tray());
-
-        state.sync_setting_flag("close_to_tray", "false");
-        assert!(!state.close_to_tray());
-
-        state.sync_setting_flag("close_to_tray", "true");
-        assert!(state.close_to_tray());
-
-        state.sync_setting_flag("close_to_tray", "0");
-        assert!(!state.close_to_tray());
-    }
-}
+mod tests;

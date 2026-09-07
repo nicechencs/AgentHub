@@ -27,6 +27,7 @@ updated: 2026-09-08
 - [测试与验证](guides/testing-and-validation.md)
 - [Chat 第二批开发交接提示词](guides/chat-b2-handoff.md)
 - [Chat 独立 review 提示词](guides/chat-review-handoff.md)
+- [全项目独立 review 提示词](guides/project-review-handoff.md)
 - [release 分支保护](guides/release-branch-protection.md)
 - [故障排查](guides/troubleshooting.md)
 
@@ -71,6 +72,7 @@ updated: 2026-09-08
 
 - [对象化与封装审查](architecture/objectization-encapsulation-audit.md)（审查记录；分册从该页链出）
 - [Codex 安装与连接/路由模块化审查](status/codex-install-modularity-review.md)
+- [2026-09-07 全项目 review 修复进展](reviews/2026-09-07-review-fix-progress.md)
 
 ## 未来与历史
 
