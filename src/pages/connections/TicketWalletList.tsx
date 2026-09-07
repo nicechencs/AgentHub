@@ -267,6 +267,8 @@ export function TicketDetailPanel({
       hasQuota={hasQuota}
       has7d={has7d}
       has5h={has5h}
+      hasCredits={hasCredits}
+      creditPct={creditPct}
       tokenUsage={tokenUsage}
       overview={overview}
       timeline={timeline}
@@ -389,6 +391,8 @@ function TicketDetailBody({
   hasQuota,
   has7d,
   has5h,
+  hasCredits,
+  creditPct,
   tokenUsage,
   overview,
   timeline,
@@ -405,6 +409,8 @@ function TicketDetailBody({
   hasQuota: boolean;
   has7d: boolean;
   has5h: boolean;
+  hasCredits: boolean;
+  creditPct?: number;
   tokenUsage: string | null;
   overview: TicketDetailField[];
   timeline: TicketDetailField[];

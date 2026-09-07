@@ -196,7 +196,6 @@ describe('officialDetailQuotaNeedsProbe', () => {
     expect(officialDetailQuotaNeedsProbe({
       oauthAction: { kind: 'refresh-credentials', label: '刷新' },
       creditLimit: 50,
-      creditUsed: 0.29,
     })).toBe(false);
   });
 });

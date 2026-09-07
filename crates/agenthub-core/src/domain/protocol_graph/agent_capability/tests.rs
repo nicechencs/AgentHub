@@ -133,6 +133,7 @@ fn cursor_reason_is_no_writer_for_any_ticket_speaks() {
         TicketSurface::CodexChatgptSubscription,
         TicketSurface::ClaudeSubscription,
         TicketSurface::GrokXaiSubscription,
+        TicketSurface::Kiro,
         TicketSurface::Unknown,
     ] {
         let reason = unsupported_reason_for_target(AgentId::Cursor, surface.speaks());

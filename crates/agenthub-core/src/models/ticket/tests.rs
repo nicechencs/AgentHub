@@ -3,7 +3,7 @@ use serde_json::Value;
 
 const FIXTURE: &str = include_str!("../../../../../src/lib/backend/contracts/ticket-speaks.json");
 
-fn all_surfaces() -> [TicketSurface; 10] {
+fn all_surfaces() -> [TicketSurface; 11] {
     [
         TicketSurface::KimiCodeMembership,
         TicketSurface::AnthropicApi,
@@ -14,6 +14,7 @@ fn all_surfaces() -> [TicketSurface; 10] {
         TicketSurface::CodexChatgptSubscription,
         TicketSurface::ClaudeSubscription,
         TicketSurface::GrokXaiSubscription,
+        TicketSurface::Kiro,
         TicketSurface::Unknown,
     ]
 }
