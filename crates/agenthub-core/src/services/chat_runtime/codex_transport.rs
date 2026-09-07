@@ -112,6 +112,7 @@ pub struct CodexTransport {
     next_id: u64,
     exited: bool,
     shutdown: bool,
+    initialize_result: Option<Value>,
 }
 
 impl CodexTransport {
@@ -292,9 +293,12 @@ impl CodexTransport {
             next_id: 1,
             exited: false,
             shutdown: false,
+            initialize_result: None,
         };
 
-        transport.request_inner("initialize", initialize_params, HANDSHAKE_TIMEOUT)?;
+        let initialize_result =
+            transport.request_inner("initialize", initialize_params, HANDSHAKE_TIMEOUT)?;
+        transport.initialize_result = Some(initialize_result);
         if send_initialized {
             transport.send_notification("initialized", None)?;
         }
@@ -311,6 +315,44 @@ impl CodexTransport {
         timeout: Duration,
     ) -> Result<Value, CodexTransportError> {
         self.request_inner(method, params, timeout)
+    }
+
+    /// Restore a session without replaying historical notifications into the
+    /// actor's bounded event queue. ACP session/load replays the old session
+    /// before returning its response; those events are not output for the new
+    /// turn.
+    pub fn request_discarding_history(
+        &mut self,
+        method: &str,
+        params: Value,
+        timeout: Duration,
+    ) -> Result<Value, CodexTransportError> {
+        self.request_inner_with_policy(method, params, timeout, true)
+    }
+
+    /// Send a JSON-RPC notification without allocating a request id or
+    /// waiting for a response. ACP session/cancel is one-way.
+    pub fn notify(
+        &mut self,
+        method: &str,
+        params: Option<Value>,
+    ) -> Result<(), CodexTransportError> {
+        self.send_notification(method, params)
+    }
+
+    pub fn initialize_result(&self) -> Option<&Value> {
+        self.initialize_result.as_ref()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn spawn_test_with(
+        program: &Path,
+        args: &[String],
+        cwd: &Path,
+        initialize_params: Value,
+        send_initialized: bool,
+    ) -> Result<Self, CodexTransportError> {
+        Self::spawn_with(program, args, cwd, initialize_params, send_initialized)
     }
 
     pub fn begin_request(
@@ -429,6 +471,16 @@ impl CodexTransport {
         params: Value,
         timeout: Duration,
     ) -> TransportResult<Value> {
+        self.request_inner_with_policy(method, params, timeout, false)
+    }
+
+    fn request_inner_with_policy(
+        &mut self,
+        method: &str,
+        params: Value,
+        timeout: Duration,
+        discard_history: bool,
+    ) -> TransportResult<Value> {
         if self.exited || self.shutdown {
             return Err(CodexTransportError::Exited);
         }
@@ -468,10 +520,26 @@ impl CodexTransport {
                 }
                 Some(message @ WireMessage::Response { .. }) => deferred.push_back(message),
                 Some(WireMessage::Notification { method, params }) => {
-                    self.push_event(CodexEvent::Notification { method, params })?;
+                    if !discard_history {
+                        self.push_event(CodexEvent::Notification { method, params })?;
+                    }
                 }
                 Some(WireMessage::Request { id, method, params }) => {
-                    self.push_event(CodexEvent::Request { id, method, params })?;
+                    if discard_history {
+                        let response = if method == "session/request_permission" {
+                            Ok(json!({
+                                "outcome": { "outcome": "cancelled" }
+                            }))
+                        } else {
+                            Err(json!({
+                                "code": -32601,
+                                "message": "server request is not supported during session restore"
+                            }))
+                        };
+                        self.respond(id, response)?;
+                    } else {
+                        self.push_event(CodexEvent::Request { id, method, params })?;
+                    }
                 }
                 Some(WireMessage::Eof) => {
                     self.restore_deferred(deferred)?;
