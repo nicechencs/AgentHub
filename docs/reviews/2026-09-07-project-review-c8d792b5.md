@@ -35,6 +35,8 @@ scope: dev；c726bd2a..c8d792b5，含审查期间落入 0b79a97a/c8d792b5 的原
 
 ### AHREV-C8-P1-001：已处理的文件夹事件会被 pending 再次重放
 
+- **修复状态**：已关闭（`8d828143`，合入 dest）。
+
 - **位置**：`src-tauri/src/shell_open_chat.rs:135-141`；`src/App.tsx:117-150`；`src/pages/chat/use-chat-page-sessions.ts:215-276`。
 - **触发**：应用已运行时，通过系统菜单打开一个文件夹。
 - **实际**：Rust 先写 pending 再 emit。事件回调直接处理路径但不消费 pending；导航后 HashRouter 的 `useNavigate` 因 pathname 改变而换身份，`[navigate]` effect 重建，再调用 `takePendingOpenChatCwd()`。effect 内 2 秒去重状态也已重置。
@@ -43,6 +45,8 @@ scope: dev；c726bd2a..c8d792b5，含审查期间落入 0b79a97a/c8d792b5 的原
 - **最小修复/验证**：事件通知和冷启动补偿消费同一份 pending；例如事件只通知前端取 pending。测试热启动打开一次后切到 Settings，断言不重放、不新增会话。
 
 ### AHREV-C8-P1-002：空会话首次打开会并行创建默认会话和文件夹会话
+
+- **修复状态**：已关闭（`8d828143`，合入 dest）。
 
 - **位置**：`src/pages/chat/use-chat-page-sessions.ts:127-131,182-196,215-276`；`src/App.tsx:121-130`。
 - **触发**：空库冷启动 `--open-chat`，或没有会话时从其他页面使用系统菜单。
@@ -53,6 +57,8 @@ scope: dev；c726bd2a..c8d792b5，含审查期间落入 0b79a97a/c8d792b5 的原
 
 ### AHREV-C8-P1-003：AppImage 将临时挂载路径登记为永久菜单目标
 
+- **修复状态**：已关闭（`8d828143`，合入 dest）。
+
 - **位置**：`src-tauri/src/shell_open_chat.rs:159-163,230-259`；`.github/workflows/release.yml:564-585`。
 - **触发**：正式 Linux AppImage 运行时注册菜单，退出后再从文件管理器启动。
 - **实际**：登记无条件使用 `std::env::current_exe()`，并写入持久 `.desktop` 文件与 Nautilus 脚本。AppImage 的该路径位于本次临时挂载，退出卸载后失效。
@@ -62,6 +68,8 @@ scope: dev；c726bd2a..c8d792b5，含审查期间落入 0b79a97a/c8d792b5 的原
 
 ### AHREV-C8-P2-001：Windows 磁盘根目录参数被尾反斜杠破坏
 
+- **修复状态**：已关闭（`8d828143`，合入 dest）。
+
 - **位置**：`src-tauri/src/shell_open_chat.rs:77-78,193-196`。
 - **触发**：使用新增 Drive 菜单打开 `C:\` 等根目录。
 - **实际**：模板展开为 `--open-chat "C:\"`。本机通过 `CommandLineToArgvW` 复现，该参数解析成 `C:"`，随后路径校验拒绝。
@@ -69,6 +77,8 @@ scope: dev；c726bd2a..c8d792b5，含审查期间落入 0b79a97a/c8d792b5 的原
 - **最小修复/验证**：使用不会让反斜杠紧邻闭合引号的形式，例如传根目录的 `.` 等价路径；覆盖普通、空格与根目录的实际 argv 解析。
 
 ### AHREV-C8-P2-002：快速连续两次手递会被旧 bootstrap 覆盖
+
+- **修复状态**：已关闭（`8d828143`，合入 dest）。
 
 - **位置**：`src/pages/chat/use-chat-page-sessions.ts:276-278`；`src/App.tsx:121-130`。
 - **触发**：第一次会话创建完成前，从两个不同目录连续打开。
