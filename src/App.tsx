@@ -32,7 +32,7 @@ import {
   takePendingOpenChatCwd,
 } from '@/lib/backend/tauri/shell-open-chat-events';
 import { setChatBootstrap } from '@/lib/chat-bootstrap';
-import { folderNameFromCwd } from '@/lib/open-chat-cwd';
+import { consumePendingOpenChatCwd } from '@/lib/open-chat-cwd';
 import { legacyBridgesRedirectTo, ROUTES_SUB2API_PATH, SUB2API_PATH } from '@/lib/routes-path';
 import {
   checkForUpdate,
@@ -73,6 +73,8 @@ export default function App() {
   const { t } = useI18n();
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
   const isChat = pathname === '/chat';
   const isRoutesArea = isRoutesAreaPath(pathname);
   /** Skills / Projects / Connections / Sub2API / Routes / Agents / Plugins / Settings 左右分栏需要全高 overflow-hidden，不套 pageShell 内边距 */
@@ -117,28 +119,24 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     let unsub: (() => void) | undefined;
-    const last = { cwd: '', at: 0 };
-    const openFolder = (cwd: string) => {
-      const now = Date.now();
-      if (cwd === last.cwd && now - last.at < 2000) return;
-      last.cwd = cwd;
-      last.at = now;
-      const title = folderNameFromCwd(cwd);
-      if (!setChatBootstrap({ agentIds: [], cwd, title: title || undefined })) {
-        return;
-      }
-      navigate(`/chat?from=shell&t=${now}`);
-    };
+    const consumePending = () =>
+      consumePendingOpenChatCwd({
+        takePending: takePendingOpenChatCwd,
+        applyBootstrap: setChatBootstrap,
+        navigate: (to) => navigateRef.current(to),
+      });
     void (async () => {
       try {
-        const fn = await onOpenChatCwd(openFolder);
+        // Event is a wake-up only; cwd always comes from takePending.
+        const fn = await onOpenChatCwd(() => {
+          if (!cancelled) void consumePending();
+        });
         if (cancelled) {
           fn();
           return;
         }
         unsub = fn;
-        const pending = await takePendingOpenChatCwd();
-        if (!cancelled && pending) openFolder(pending);
+        if (!cancelled) await consumePending();
       } catch (error) {
         logger.scope('shell').error('open-chat-cwd subscription unavailable', error);
       }
@@ -147,7 +145,8 @@ export default function App() {
       cancelled = true;
       unsub?.();
     };
-  }, [navigate]);
+    // HashRouter `useNavigate` changes identity with pathname; do not resubscribe.
+  }, []);
 
   const onUpdateReady = useCallback((handle: UpdatePromptHandle) => {
     updateHandleRef.current = handle;

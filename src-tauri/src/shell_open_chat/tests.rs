@@ -2,8 +2,8 @@ use std::path::Path;
 
 use super::{
     linux_nautilus_script, linux_open_with_desktop, linux_servicemenu_desktop,
-    parse_open_chat_cwd_arg, resolve_open_chat_cwd, shell_menu_label, windows_open_chat_command,
-    OPEN_CHAT_FLAG,
+    parse_open_chat_cwd_arg, resolve_open_chat_cwd, resolve_shell_register_exe, shell_menu_label,
+    windows_open_chat_command, OPEN_CHAT_FLAG,
 };
 use crate::tray_i18n::TrayUiLanguage;
 
@@ -54,8 +54,89 @@ fn windows_command_uses_percent_v() {
     let cmd = windows_open_chat_command(Path::new(r"C:\Program Files\AgentHub\AgentHub.exe"));
     assert_eq!(
         cmd,
-        r#""C:\Program Files\AgentHub\AgentHub.exe" --open-chat "%V""#
+        r#""C:\Program Files\AgentHub\AgentHub.exe" --open-chat "%V\.""#
     );
+}
+
+/// CommandLineToArgvW rules used by Explorer when it launches the registered command.
+fn command_line_to_argv(cmdline: &str) -> Vec<String> {
+    let chars: Vec<char> = cmdline.chars().collect();
+    let mut args = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        while i < chars.len() && (chars[i] == ' ' || chars[i] == '\t') {
+            i += 1;
+        }
+        if i >= chars.len() {
+            break;
+        }
+        let mut arg = String::new();
+        let mut in_quotes = false;
+        while i < chars.len() {
+            if chars[i] == '\\' {
+                let mut slashes = 0;
+                while i < chars.len() && chars[i] == '\\' {
+                    slashes += 1;
+                    i += 1;
+                }
+                if i < chars.len() && chars[i] == '"' {
+                    arg.push_str(&"\\".repeat(slashes / 2));
+                    if slashes % 2 == 1 {
+                        arg.push('"');
+                        i += 1;
+                    }
+                    continue;
+                }
+                arg.push_str(&"\\".repeat(slashes));
+                continue;
+            }
+            if chars[i] == '"' {
+                in_quotes = !in_quotes;
+                i += 1;
+                continue;
+            }
+            if !in_quotes && (chars[i] == ' ' || chars[i] == '\t') {
+                break;
+            }
+            arg.push(chars[i]);
+            i += 1;
+        }
+        args.push(arg);
+    }
+    args
+}
+
+#[test]
+fn command_line_to_argv_matches_drive_root_escape_bug() {
+    assert_eq!(
+        command_line_to_argv(r#""C:\AgentHub.exe" --open-chat "C:\""#),
+        ["C:\\AgentHub.exe", "--open-chat", "C:\""]
+    );
+}
+
+#[test]
+fn windows_drive_root_and_spaced_folder_survive_argv_parsing() {
+    let template = windows_open_chat_command(Path::new(r"C:\Program Files\AgentHub\AgentHub.exe"));
+    let drive = command_line_to_argv(&template.replace("%V", r"C:\"));
+    assert_eq!(
+        drive,
+        [
+            r"C:\Program Files\AgentHub\AgentHub.exe",
+            "--open-chat",
+            r"C:\\.",
+        ]
+    );
+    let spaced = command_line_to_argv(&template.replace("%V", r"C:\My Project"));
+    assert_eq!(
+        spaced,
+        [
+            r"C:\Program Files\AgentHub\AgentHub.exe",
+            "--open-chat",
+            r"C:\My Project\.",
+        ]
+    );
+    let ordinary = command_line_to_argv(&template.replace("%V", r"C:\work\app"));
+    assert_eq!(ordinary[2], r"C:\work\app\.");
 }
 
 #[test]
@@ -94,4 +175,57 @@ fn resolve_uses_folder_or_parent_of_file() {
     );
     assert_eq!(resolve_open_chat_cwd(""), None);
     assert_eq!(resolve_open_chat_cwd("/this/path/does/not/exist-agenthub"), None);
+
+    let dotted = folder.join(".");
+    assert_eq!(
+        resolve_open_chat_cwd(dotted.to_str().unwrap()).as_deref(),
+        Some(folder.as_path())
+    );
+}
+
+#[test]
+fn appimage_env_wins_over_current_exe_when_file_exists() {
+    let dir = tempfile::tempdir().unwrap();
+    let appimage = dir.path().join("AgentHub.AppImage");
+    std::fs::write(&appimage, b"fake").unwrap();
+    let current = dir.path().join("tmp-mount").join("agenthub-gui");
+    std::fs::create_dir_all(current.parent().unwrap()).unwrap();
+    std::fs::write(&current, b"exe").unwrap();
+
+    assert_eq!(
+        resolve_shell_register_exe(Some(&current), Some(&appimage)).as_deref(),
+        Some(appimage.as_path())
+    );
+}
+
+#[test]
+fn missing_or_relative_appimage_falls_back_to_current_exe() {
+    let dir = tempfile::tempdir().unwrap();
+    let current = dir.path().join("agenthub-gui");
+    std::fs::write(&current, b"exe").unwrap();
+    let missing = dir.path().join("missing.AppImage");
+    assert_eq!(
+        resolve_shell_register_exe(Some(&current), Some(&missing)).as_deref(),
+        Some(current.as_path())
+    );
+    let relative = Path::new("AgentHub.AppImage");
+    assert_eq!(
+        resolve_shell_register_exe(Some(&current), Some(relative)).as_deref(),
+        Some(current.as_path())
+    );
+    assert_eq!(
+        resolve_shell_register_exe(Some(&current), None).as_deref(),
+        Some(current.as_path())
+    );
+}
+
+#[test]
+fn directory_appimage_is_ignored() {
+    let dir = tempfile::tempdir().unwrap();
+    let current = dir.path().join("agenthub-gui");
+    std::fs::write(&current, b"exe").unwrap();
+    assert_eq!(
+        resolve_shell_register_exe(Some(&current), Some(dir.path())).as_deref(),
+        Some(current.as_path())
+    );
 }

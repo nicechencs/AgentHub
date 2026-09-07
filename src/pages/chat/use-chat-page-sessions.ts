@@ -19,10 +19,27 @@ import {
   listConversations,
   updateConversation,
 } from '@/lib/api/chat';
-import { setChatBootstrap, takeChatBootstrap } from '@/lib/chat-bootstrap';
+import {
+  chatBootstrapGeneration,
+  isChatBootstrapHandoff,
+  restoreChatBootstrapIfUnchanged,
+  takeChatBootstrap,
+} from '@/lib/chat-bootstrap';
 import type { AgentKey, AgentStatus, ChatMessage, Conversation } from '@/lib/types';
 import { draftForFocusedConversation, isChatAgentSelectable, newConversationDefaults, singleAgentConversationPatch } from './chat-model';
 import { conversationListState, createSingleFlight } from './chat-request';
+
+/** Keep conversations created by an in-flight shell/projects handoff when list load returns stale. */
+export function mergeHandoffConversations(
+  prev: Conversation[],
+  loaded: Conversation[],
+): Conversation[] {
+  if (prev.length === 0) return loaded;
+  const loadedIds = new Set(loaded.map((conversation) => conversation.id));
+  const extras = prev.filter((conversation) => !loadedIds.has(conversation.id));
+  if (extras.length === 0) return loaded;
+  return [...extras, ...loaded];
+}
 
 /**
  * Chat 会话列表：加载、空列表补建、项目跳转、新建 / 删除。
@@ -52,6 +69,7 @@ export function useChatPageSessions(input: {
     sendRef,
   } = input;
   const draftsRef = useRef(new Map<string, string>());
+  const conversationsRef = useRef<Conversation[]>([]);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -67,6 +85,7 @@ export function useChatPageSessions(input: {
   const loadListSingleFlightRef = useRef<ReturnType<typeof createSingleFlight<Conversation[]>> | null>(
     null,
   );
+  const loadListAllowEnsureRef = useRef<boolean | null>(null);
   const loadGenerationRef = useRef(0);
   /** Multi-agent → single-agent one-shot migration runs once per load generation. */
   const migratedGenerationRef = useRef(-1);
@@ -114,15 +133,21 @@ export function useChatPageSessions(input: {
   /**
    * 会话列表优先：不因 listAgents（doctor）阻塞会话渲染。
    * agents 仅在空列表需自动建会话时才 await。
+   * shell/projects bootstrap 完成前不要自动建默认会话。
    */
-  const loadList = useCallback(() => {
+  const loadList = useCallback((opts?: { allowEnsureDefault?: boolean }) => {
+    const allowEnsureDefault = opts?.allowEnsureDefault ?? true;
+    if (loadListAllowEnsureRef.current !== allowEnsureDefault) {
+      loadListSingleFlightRef.current = createSingleFlight<Conversation[]>();
+      loadListAllowEnsureRef.current = allowEnsureDefault;
+    }
     if (!loadListSingleFlightRef.current) {
       loadListSingleFlightRef.current = createSingleFlight<Conversation[]>();
     }
     return loadListSingleFlightRef.current(async () => {
       const convs = await listConversations();
       let next = convs;
-      if (convs.length > 0) {
+      if (convs.length > 0 || !allowEnsureDefault) {
         // agent 状态异步填充 picker，不挡列表；失败记 ready=false，允许重试
         void refreshAgents().catch(() => {});
       } else {
@@ -179,24 +204,36 @@ export function useChatPageSessions(input: {
     [t, toast],
   );
 
+  const waitForHandoff = isChatBootstrapHandoff(searchParams.get('from'));
+
   useEffect(() => {
     const generation = ++loadGenerationRef.current;
     let cancelled = false;
     setListLoading(true);
     setError(null);
-    loadList()
+    loadList({ allowEnsureDefault: !waitForHandoff })
       .then(async (convs) => {
         if (cancelled || generation !== loadGenerationRef.current) return;
         // Commit the list and its initial selection together. Without this
         // commit the hook kept an empty in-memory rail even though the API
         // load succeeded, and bootstrap could accidentally discard existing
         // conversations when it prepended its new one.
-        const committed = conversationListState(convs);
-        setConversations(committed.conversations);
-        setActiveId(committed.activeId);
-        void migrateMultiAgentConversations(committed.conversations, generation).then((migrated) => {
+        setConversations((prev) => {
+          const next = mergeHandoffConversations(prev, convs);
+          conversationsRef.current = next;
+          return next;
+        });
+        setActiveId((current) => {
+          const list = conversationsRef.current;
+          if (current && list.some((conversation) => conversation.id === current)) return current;
+          return conversationListState(list).activeId;
+        });
+        void migrateMultiAgentConversations(conversationsRef.current, generation).then((migrated) => {
           if (cancelled || generation !== loadGenerationRef.current) return;
-          if (migrated !== committed.conversations) setConversations(migrated);
+          if (migrated !== conversationsRef.current) {
+            conversationsRef.current = migrated;
+            setConversations(migrated);
+          }
         });
         if (cancelled || generation !== loadGenerationRef.current) return;
       })
@@ -209,13 +246,14 @@ export function useChatPageSessions(input: {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- list load once per loader identity
-  }, [loadList]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when loader identity or handoff gate changes
+  }, [loadList, waitForHandoff]);
 
   useEffect(() => {
     const from = searchParams.get('from');
-    if (from !== 'projects' && from !== 'shell') return;
+    if (!isChatBootstrapHandoff(from)) return;
     const boot = takeChatBootstrap();
+    const generation = chatBootstrapGeneration();
     if (!boot) {
       setSearchParams({}, { replace: true });
       return;
@@ -248,7 +286,11 @@ export function useChatPageSessions(input: {
           }
         }
         if (cancelled) return;
-        setConversations((prev) => [next, ...prev.filter((c) => c.id !== next.id)]);
+        setConversations((prev) => {
+          const list = [next, ...prev.filter((c) => c.id !== next.id)];
+          conversationsRef.current = list;
+          return list;
+        });
         setActiveId(next.id);
         setMessages([]);
         if (boot.prompt?.trim()) {
@@ -275,7 +317,7 @@ export function useChatPageSessions(input: {
     })();
     return () => {
       cancelled = true;
-      if (!applied) setChatBootstrap(boot);
+      if (!applied) restoreChatBootstrapIfUnchanged(boot, generation);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot when from= is set
   }, [searchParams]);
@@ -349,15 +391,19 @@ export function useChatPageSessions(input: {
     let cancelled = false;
     setListLoading(true);
     setError(null);
-    loadList()
+    loadList({ allowEnsureDefault: !isChatBootstrapHandoff(searchParams.get('from')) })
       .then((next) => {
         if (cancelled || generation !== loadGenerationRef.current) return;
+        conversationsRef.current = next;
         const committed = conversationListState(next);
         setConversations(committed.conversations);
         setActiveId(committed.activeId);
         void migrateMultiAgentConversations(committed.conversations, generation).then((migrated) => {
           if (cancelled || generation !== loadGenerationRef.current) return;
-          if (migrated !== committed.conversations) setConversations(migrated);
+          if (migrated !== committed.conversations) {
+            conversationsRef.current = migrated;
+            setConversations(migrated);
+          }
         });
       })
       .catch((e) => {
