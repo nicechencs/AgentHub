@@ -68,6 +68,10 @@ export function mapCoreAccount(a: CoreAccount): Account {
   }
   const quota5hPct = typeof extra.quota5hPct === 'number' ? extra.quota5hPct : undefined;
   const quota7dPct = typeof extra.quota7dPct === 'number' ? extra.quota7dPct : undefined;
+  const creditUsed = typeof extra.creditUsed === 'number' ? extra.creditUsed : undefined;
+  const creditLimit = typeof extra.creditLimit === 'number' ? extra.creditLimit : undefined;
+  const creditResetAt =
+    typeof extra.creditResetAt === 'string' ? extra.creditResetAt : undefined;
   // Live countdown from absolute resets. Keep 5h and 7d separate — never mix.
   const rem5 = remainingSecFromExpiresAt(extra.quota5hResetAt);
   const rem7 = remainingSecFromExpiresAt(extra.quota7dResetAt);
@@ -173,6 +177,9 @@ export function mapCoreAccount(a: CoreAccount): Account {
     quota7dPct,
     quotaResetIn,
     quota7dResetIn,
+    creditUsed,
+    creditLimit,
+    creditResetAt,
     lastUsedAt,
     updatedAt: a.updatedAt,
     createdAt: a.createdAt,
@@ -180,12 +187,14 @@ export function mapCoreAccount(a: CoreAccount): Account {
     source,
     envKey,
     credentialSummary,
+    cursorLoginKind: cursorLoginKindFrom(extra, credentials),
     credentialFiles: extractAccountCredentialFiles({
       agentId: a.agentId,
       kind: a.kind,
       credentials,
       source,
       format: credentialFormat,
+      cursorLoginKind: cursorLoginKindFrom(extra, credentials),
     }),
     refreshTokenPreview: a.kind === 'oauth' ? pickString(extra.refreshTokenPreview) : undefined,
     secretTail: recoveredSecretTail,
@@ -200,6 +209,15 @@ export function mapCoreAccount(a: CoreAccount): Account {
       ?? pickString(credentials.url)
       ?? catalogRowEndpoint(credentials),
   };
+}
+
+function cursorLoginKindFrom(
+  extra: Record<string, unknown>,
+  credentials: Record<string, unknown>,
+): Account['cursorLoginKind'] {
+  const raw = pickString(extra.cursorLoginKind) ?? pickString(credentials.cursorLoginKind);
+  if (raw === 'cli' || raw === 'window' || raw === 'both') return raw;
+  return undefined;
 }
 
 function pickString(v: unknown): string | undefined {

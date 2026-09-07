@@ -73,3 +73,4 @@ temp-pic/
 /artifacts
 nul
 crates/agenthub-core/scan-cache.db
+rust_out

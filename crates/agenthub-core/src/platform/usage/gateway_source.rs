@@ -35,6 +35,7 @@ pub(crate) struct GatewaySpoolOutcome {
 }
 
 /// Ingest every `gateway-*.jsonl` spool file in `dir`, oldest first.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn ingest_spool_dir(repo: &GatewayUsageRepo, dir: &Path) -> Result<GatewaySpoolOutcome> {
     ingest_spool_dir_with(repo, dir, &mut |_| {})
 }

@@ -147,6 +147,20 @@ impl RunService {
             .ok_or_else(|| AppError::NotFound("Grok 可执行文件路径不可用".into()))
     }
 
+    pub fn detect_kiro_installation(&self) -> Result<std::path::PathBuf> {
+        let adapter = self
+            .registry
+            .get(AgentId::Kiro)
+            .ok_or_else(|| AppError::NotFound("adapter not registered for kiro".into()))?;
+        let detect = adapter.detect();
+        if detect.status != DetectStatus::Installed {
+            return Err(AppError::NotFound("Kiro 未安装或不可用".into()));
+        }
+        detect
+            .binary_path
+            .ok_or_else(|| AppError::NotFound("Kiro 可执行文件路径不可用".into()))
+    }
+
     /// Run the same prompt on one or more agents.
     pub fn run(
         &self,
@@ -287,6 +301,12 @@ impl RunService {
         let adapter = self.registry.get(id).ok_or_else(|| {
             AppError::NotFound(format!("adapter not registered for {}", id.as_str()))
         })?;
+        // Kiro Chat: prefer AgentHub-owned HTTP when login/API Key works; CLI is fallback.
+        if id == AgentId::Kiro {
+            if let Some(result) = crate::adapters::kiro::http::try_http_run_result(prompt, opts) {
+                return Ok(ResolveOutcome::Early(result));
+            }
+        }
         let detect = adapter.detect();
         if detect.status != DetectStatus::Installed {
             if opts.skip_missing {
@@ -437,6 +457,13 @@ impl RunService {
                     agent: *id,
                     command: r.command.clone(),
                 });
+                if !r.stdout.is_empty() {
+                    on_event(RunEvent::Chunk {
+                        agent: *id,
+                        stream: OutputStream::Stdout,
+                        text: r.stdout.clone(),
+                    });
+                }
                 on_event(RunEvent::Finished { agent: *id });
                 out.push(r.clone());
                 continue;
@@ -494,6 +521,13 @@ impl RunService {
                     agent: *id,
                     command: r.command.clone(),
                 });
+                if !r.stdout.is_empty() {
+                    on_event(RunEvent::Chunk {
+                        agent: *id,
+                        stream: OutputStream::Stdout,
+                        text: r.stdout.clone(),
+                    });
+                }
                 on_event(RunEvent::Finished { agent: *id });
                 results[i] = Some(r.clone());
             } else if let Some(spec) = spec {

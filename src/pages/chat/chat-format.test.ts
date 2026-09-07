@@ -17,6 +17,7 @@ import {
   piChatModelOptions,
   pinElementScrollToBottom,
   resolvePiChatCurrentModel,
+  sanitizeCliChatText,
   shouldFetchChatRemoteModels,
   thinkingChromeLabel,
 } from './chat-format';
@@ -35,6 +36,19 @@ function chatMsg(
     ...partial,
   };
 }
+
+describe('sanitizeCliChatText', () => {
+  it('strips kiro color and prompt chrome from stored replies', () => {
+    expect(
+      sanitizeCliChatText('\u001b[38;5;141m> \u001b[0mHi! How can I help you today?'),
+    ).toBe('Hi! How can I help you today?');
+  });
+
+  it('keeps utf-8 chinese and strips unix C1 CSI', () => {
+    expect(sanitizeCliChatText('\u001b[32m你好\u001b[0m')).toBe('你好');
+    expect(sanitizeCliChatText('\u009b32mhello\u009b0m')).toBe('hello');
+  });
+});
 
 describe('formatChatSessionRecord', () => {
   it('formats user and agent turns as copyable text', () => {

@@ -52,6 +52,8 @@ function resumeArgv(agentId: string, sessionId: string, host: HostPlatform): str
       return ['pi', '--session', sessionId];
     case 'cursor':
       return [host === 'windows' ? 'cursor-agent.cmd' : 'cursor-agent', '--resume', sessionId];
+    case 'kiro':
+      return ['kiro-cli', 'chat', '--resume-id', sessionId];
     default:
       return null;
   }

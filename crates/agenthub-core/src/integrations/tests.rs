@@ -25,7 +25,7 @@ fn production_register_integrations_covers_all_agents_without_demo() {
     for agent in AgentId::ALL {
         assert!(prod.projects.contains(agent), "{}", agent.as_str());
         assert!(
-            prod.usage.contains(agent) || agent == AgentId::Cursor,
+            prod.usage.contains(agent) || matches!(agent, AgentId::Cursor | AgentId::Kiro),
             "{}",
             agent.as_str()
         );

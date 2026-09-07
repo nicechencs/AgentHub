@@ -43,6 +43,7 @@ pub(in crate::services) enum RouteSourceLabel {
     CodexSubscription,
     ClaudeSubscription,
     XaiGrokSubscription,
+    Kiro,
     Other,
 }
 
@@ -112,6 +113,9 @@ pub(super) fn subscription_account_secret_open(
                     | "codex-subscription-to-grok-v1"
                     | "codex-subscription-to-kimi-v1"
                     | "codex-subscription-to-dsh-v1"
+                    | "kiro-to-claude-v1"
+                    | "kiro-to-codex-v1"
+                    | "kiro-to-grok-v1"
             )
         )
     {
@@ -120,6 +124,9 @@ pub(super) fn subscription_account_secret_open(
     let Ok(Some(account)) = accounts.get_by_id(&request.source_id) else {
         return false;
     };
+    if account.kind == crate::models::AccountKind::ApiKey {
+        return true;
+    }
     [
         "/access_token",
         "/tokens/access_token",
@@ -313,6 +320,27 @@ pub(crate) fn bind_implementation_open(
             Some("codex-subscription-to-dsh-v1"),
             AdapterSourceKind::Account,
             AgentId::Dsh,
+            AdapterRoute::LocalBridge,
+            AdapterSupport::Experimental,
+        )
+        | (
+            Some("kiro-to-claude-v1"),
+            AdapterSourceKind::Account,
+            AgentId::Claude,
+            AdapterRoute::LocalBridge,
+            AdapterSupport::Experimental,
+        )
+        | (
+            Some("kiro-to-codex-v1"),
+            AdapterSourceKind::Account,
+            AgentId::Codex,
+            AdapterRoute::LocalBridge,
+            AdapterSupport::Experimental,
+        )
+        | (
+            Some("kiro-to-grok-v1"),
+            AdapterSourceKind::Account,
+            AgentId::Grok,
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
         )
@@ -642,6 +670,54 @@ pub(super) fn actions_for(
                 false,
             ),
         ],
+        (RouteSourceLabel::Kiro, AgentId::Claude, AdapterRoute::LocalBridge) => vec![
+            action(
+                "requires_local_bridge",
+                "Claude Code",
+                "会把 Claude 指到本机路由；上游 Kiro 登录不会写入 Claude。",
+                None,
+                false,
+            ),
+            action(
+                "set_env",
+                "Claude Code",
+                "写入 Claude 的本机地址和本机令牌。",
+                Some("ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN"),
+                false,
+            ),
+        ],
+        (RouteSourceLabel::Kiro, AgentId::Codex, AdapterRoute::LocalBridge) => vec![
+            action(
+                "requires_local_bridge",
+                "Codex",
+                "会把 Codex 指到本机路由；上游 Kiro 登录不会写入 Codex。",
+                None,
+                false,
+            ),
+            action(
+                "set_config",
+                "Codex",
+                "写入 Codex 的本机路由端点。",
+                Some("AgentHub Kiro 本机路由"),
+                false,
+            ),
+        ],
+        (RouteSourceLabel::Kiro, AgentId::Grok, AdapterRoute::LocalBridge) => vec![
+            action(
+                "requires_local_bridge",
+                "Grok",
+                "会把 Grok 指到本机路由；上游 Kiro 登录不会写入 Grok。",
+                None,
+                false,
+            ),
+            action(
+                "set_config",
+                "Grok",
+                "写入 Grok 的本机路由端点。",
+                Some("AgentHub Kiro 本机路由"),
+                false,
+            ),
+        ],
         (RouteSourceLabel::CodexSubscription, AgentId::Dsh, AdapterRoute::LocalBridge) => vec![
             action(
                 "requires_local_bridge",
@@ -892,6 +968,9 @@ pub(super) fn evidence_for(
         (RouteSourceLabel::XaiGrokSubscription, AgentId::Claude | AgentId::Codex) => {
             vec![adapter_compatibility_evidence()]
         }
+        (RouteSourceLabel::Kiro, AgentId::Claude | AgentId::Codex | AgentId::Grok) => {
+            vec![adapter_compatibility_evidence()]
+        }
         (RouteSourceLabel::CodexSubscription, AgentId::Grok | AgentId::Kimi | AgentId::Dsh) => {
             vec![adapter_compatibility_evidence()]
         }
@@ -917,6 +996,7 @@ pub(super) fn evidence_for(
             | RouteSourceLabel::CodexSubscription
             | RouteSourceLabel::ClaudeSubscription
             | RouteSourceLabel::XaiGrokSubscription
+            | RouteSourceLabel::Kiro
             | RouteSourceLabel::Other,
             _,
         ) => vec![adapter_compatibility_evidence()],

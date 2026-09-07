@@ -37,7 +37,7 @@ export function switchWroteLiveLabel(
 
 const FAILED_TO_WRITE_LIVE_FALLBACK = '未能写入本机配置';
 const CURSOR_LIVE_WRITE_UNSUPPORTED_FALLBACK =
-  '未能写入本机配置。Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录，或设置 CURSOR_API_KEY。';
+  '未能写入本机配置。Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录。';
 
 export function switchErrorText(error: unknown): string {
   if (typeof error === 'string' && error.trim()) return error.trim();

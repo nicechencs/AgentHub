@@ -3,6 +3,7 @@
 //! Uses a short-lived in-process session store + std TCP listener (no Tokio runtime).
 
 mod catalog;
+mod cli;
 mod device;
 mod identity;
 mod pi_refresh;
@@ -12,10 +13,12 @@ mod server;
 mod session;
 
 pub use catalog::{
-    is_device_code_option, is_unimplemented_pi_oauth, list_oauth_options, pi_auth_json_key,
-    pi_provider_quota_backend, pi_provider_refreshable, pi_refreshable_provider_aliases,
-    resolve_pkce_provider, OAuthFlowKind, OAuthLoginOption, PiQuotaBackend,
+    is_cli_login_option, is_device_code_option, is_unimplemented_pi_oauth, list_oauth_options,
+    pi_auth_json_key, pi_provider_quota_backend, pi_provider_refreshable,
+    pi_refreshable_provider_aliases, resolve_pkce_provider, OAuthFlowKind, OAuthLoginOption,
+    PiQuotaBackend,
 };
+pub use cli::start_kiro_cli_login;
 pub use device::{
     complete_device_oauth, complete_device_oauth_and_attach_pool, device_oauth_agent,
     poll_device_oauth, start_device_oauth, start_device_oauth_with_pool, DeviceOAuthPoll,
@@ -73,6 +76,9 @@ pub struct StartOAuthResult {
     pub browser_opened: bool,
     /// Seconds the wait page should stay open. Matches the PKCE listener (15 min).
     pub expires_in_secs: u64,
+    /// Device-style user code when the agent CLI prints one (Kiro).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_code: Option<String>,
 }
 
 /// Begin OAuth for an agent. Spawns a callback listener thread.
@@ -84,6 +90,9 @@ pub fn start_oauth(
     open_browser: bool,
     provider_key: Option<&str>,
 ) -> Result<StartOAuthResult> {
+    if is_cli_login_option(agent, provider_key) {
+        return cli::start_kiro_cli_login(None);
+    }
     if is_device_code_option(agent, provider_key) {
         return Err(AppError::InvalidArg(
             "this provider uses device-code flow; call start_device_oauth instead".into(),
@@ -200,6 +209,7 @@ pub fn start_oauth(
         provider_key: resolved_key,
         browser_opened,
         expires_in_secs: crate::catalog::limits::OAUTH_CALLBACK_LISTEN_TIMEOUT.as_secs(),
+        user_code: None,
     })
 }
 
@@ -209,6 +219,7 @@ pub fn cancel_oauth(state: &str) -> Result<()> {
     if state.is_empty() {
         return Ok(());
     }
+    cli::cancel_kiro_cli_login(state);
     store().mark_error(state, "cancelled")?;
     device::cancel_device_oauth(state)
 }
@@ -251,6 +262,12 @@ pub fn oauth_session_info(state: &str) -> Result<OAuthSessionInfo> {
 
 /// Exchange code for tokens and persist as pool account (does not switch live).
 pub fn complete_oauth(accounts: &AccountService, state: &str) -> Result<Account> {
+    if oauth_session_info(state)
+        .ok()
+        .is_some_and(|info| info.agent_id == AgentId::Kiro)
+    {
+        return cli::complete_kiro_cli_login(accounts, state);
+    }
     let st = store();
     let session = st.take_ready(state)?;
     let result = (|| -> Result<Account> {
@@ -465,6 +482,18 @@ mod tests {
             "Grok must not start loopback PKCE: {msg}"
         );
         assert!(msg.contains("start_device_oauth"), "{msg}");
+    }
+
+    #[test]
+    fn kiro_login_uses_cli_instead_of_pkce() {
+        let err = start_oauth(AgentId::Kiro, false, None).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Kiro"),
+            "Kiro official login must not start loopback PKCE: {msg}"
+        );
+        assert!(!msg.contains("start_device_oauth"), "{msg}");
+        assert!(!msg.contains("PKCE"), "{msg}");
     }
 
     #[test]

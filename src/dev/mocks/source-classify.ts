@@ -26,7 +26,9 @@ export type MockSourceId =
   | 'claude-oauth'
   | 'grok-oauth'
   | 'codex-auth-json'
-  | 'codex-oauth';
+  | 'codex-oauth'
+  | 'kiro-oauth'
+  | 'kiro-api';
 
 export const KIMI_MEMBERSHIP_PRESET = SOURCE_CLASSIFY_CONTRACT.presets.kimiMembership;
 export const KIMI_CODING_ENDPOINT_NEEDLE = SOURCE_CLASSIFY_CONTRACT.needles.kimiCoding;
@@ -190,6 +192,8 @@ export function classifyAccountSource(
 
   if (account.agentId === 'claude' && account.kind === 'oauth') return 'claude-oauth';
   if (account.agentId === 'grok' && account.kind === 'oauth') return 'grok-oauth';
+  if (account.agentId === 'kiro' && account.kind === 'oauth') return 'kiro-oauth';
+  if (account.agentId === 'kiro' && account.kind === 'apikey') return 'kiro-api';
 
   if (account.kind === 'apikey') {
     if (

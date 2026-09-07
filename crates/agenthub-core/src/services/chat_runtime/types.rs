@@ -151,7 +151,6 @@ pub enum RuntimeDecision {
     Deny,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeTurnSettings {

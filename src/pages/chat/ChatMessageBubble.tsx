@@ -10,7 +10,12 @@ import { agentDisplayName } from '@/config/agents';
 import { hasProcessDetails, processPhaseLabel } from '@/lib/chat-process';
 import type { AgentProcessView } from '@/lib/chat-process';
 import type { ChatMessage } from '@/lib/types';
-import { formatDurationMs, localizeChatFailure, looksLikeChatProtocolDump } from './chat-format';
+import {
+  formatDurationMs,
+  localizeChatFailure,
+  looksLikeChatProtocolDump,
+  sanitizeCliChatText,
+} from './chat-format';
 import { messageStatusLabel } from './chat-model';
 import { ChatProcessPanel } from './ChatProcessPanel';
 
@@ -125,8 +130,9 @@ function AgentBubble({
   const { t } = useI18n();
   const agent = message.agentId ?? 'claude';
   const protocolDump = looksLikeChatProtocolDump(message.content);
-  const rawDisplayContent =
+  const localized =
     message.content && !protocolDump ? localizeChatFailure(message.content, t) : '';
+  const rawDisplayContent = localized ? sanitizeCliChatText(localized) : '';
   const displayContent = useStreamingDisplayContent(rawDisplayContent, message.status === 'running');
   const cancelledPlaceholder =
     message.status === 'cancelled' && ((message.error ?? '').toLowerCase() === 'cancelled');
@@ -140,7 +146,7 @@ function AgentBubble({
     message.status === 'failed' ||
     message.status === 'cancelled' ||
     message.status === 'timeout' ||
-    (message.status === 'ok' && displayContent !== message.content);
+    (message.status === 'ok' && localized !== message.content);
   const statusText = messageStatusLabel(
     t,
     looksFailed && message.status === 'ok' ? 'failed' : message.status,
@@ -210,7 +216,9 @@ function AgentBubble({
             <p className="mt-2 text-body text-danger">{displayError}</p>
           )}
         </div>
-        {!running && <CopyTextButton text={protocolDump ? '' : message.content} />}
+        {!running && (
+          <CopyTextButton text={protocolDump ? '' : sanitizeCliChatText(message.content)} />
+        )}
       </div>
     </div>
   );

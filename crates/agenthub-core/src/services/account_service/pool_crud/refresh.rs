@@ -4,7 +4,7 @@ use serde_json::json;
 
 use crate::adapters::AgentAdapter;
 use crate::error::{AppError, Result};
-use crate::models::{Account, AccountKind, AgentId};
+use crate::models::{Account, AccountKind, AgentId, LiveAccount};
 
 use super::super::surface::*;
 use super::super::AccountService;
@@ -30,6 +30,9 @@ impl AccountService {
             return Err(AppError::Unsupported(
                 "token refresh is only supported for OAuth accounts".into(),
             ));
+        }
+        if agent == AgentId::Kiro {
+            return self.sync_kiro_oauth(id_or_label);
         }
         // CLI-owned grants rotate in the official auth.json. Hitting the token
         // endpoint here would invalidate the CLI's refresh token.
@@ -208,6 +211,40 @@ impl AccountService {
             return self.finish_refresh_after_cli_file_miss(persisted);
         }
         Ok(persisted)
+    }
+
+    fn sync_kiro_oauth(&self, id_or_label: &str) -> Result<Account> {
+        let mut account = self.get(id_or_label, Some(AgentId::Kiro))?;
+        let adapter = self.adapter(AgentId::Kiro)?;
+        let live = adapter.read_account()?;
+        let live_newer =
+            crate::adapters::kiro::kiro_grant_is_newer(&live.credentials, &account.credentials);
+        let pool_newer =
+            crate::adapters::kiro::kiro_grant_is_newer(&account.credentials, &live.credentials);
+        if live_newer {
+            let label = account.label.clone();
+            let current = account.is_current;
+            let imported = self
+                .upsert_live_account(adapter.as_ref(), AgentId::Kiro, live, Some(&label), current)?
+                .ok_or_else(|| {
+                    AppError::message("account.import", "Kiro refresh produced no account")
+                })?;
+            return Ok(imported);
+        }
+        if pool_newer {
+            adapter.apply_account(&LiveAccount {
+                agent: AgentId::Kiro,
+                kind: account.kind,
+                credentials: account.credentials.clone(),
+                label_hint: Some(account.label.clone()),
+                extra: account.extra.clone(),
+            })?;
+        }
+        let expected_updated_at = account.updated_at.clone();
+        let _ = crate::services::account_quota::heal_token_expiry(&mut account);
+        account.updated_at = now_ts();
+        account.status = "active".into();
+        self.persist_healed_fields(&account, &expected_updated_at)
     }
 
     fn persist_refreshed_account(

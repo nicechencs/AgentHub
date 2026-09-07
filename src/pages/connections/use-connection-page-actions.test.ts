@@ -18,9 +18,9 @@ describe('describeProviderSwitchError', () => {
       'provider switch failed [unsupported]; compensation status: live=unsupported, database=ok [provider.switch.rollback]',
       tZh,
     )).toBe(
-      '未能写入本机配置。Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录，或设置 CURSOR_API_KEY。',
+      '未能写入本机配置。Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录。',
     );
-    expect(describeProviderSwitchError('cursor', new Error('unsupported'), tZh)).toContain('CURSOR_API_KEY');
+    expect(describeProviderSwitchError('cursor', new Error('unsupported'), tZh)).toContain('请用 Cursor 自己的登录');
     expect(describeProviderSwitchError('cursor', { message: 'unsupported' }, tZh)).toContain('未能写入本机配置');
   });
 
@@ -30,9 +30,9 @@ describe('describeProviderSwitchError', () => {
       'provider switch failed [unsupported]; compensation status: live=unsupported, database=ok [provider.switch.rollback]',
       tEn,
     )).toBe(
-      "Failed to write local config. Cursor can't write this login to its local config yet. Use Cursor's own sign-in, or set CURSOR_API_KEY.",
+      "Failed to write local config. Cursor can't write this login to its local config yet. Use Cursor's own sign-in.",
     );
-    expect(describeProviderSwitchError('cursor', new Error('unsupported'), tEn)).toContain('CURSOR_API_KEY');
+    expect(describeProviderSwitchError('cursor', new Error('unsupported'), tEn)).toContain("Use Cursor's own sign-in");
     expect(describeProviderSwitchError('cursor', { message: 'unsupported' }, tEn)).toContain('Failed to write local config');
   });
 
@@ -41,7 +41,7 @@ describe('describeProviderSwitchError', () => {
       'cursor',
       'provider switch failed [unsupported]; compensation status: live=unsupported, database=ok [provider.switch.rollback]',
     )).toBe(
-      '未能写入本机配置。Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录，或设置 CURSOR_API_KEY。',
+      '未能写入本机配置。Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录。',
     );
   });
 

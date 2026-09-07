@@ -65,13 +65,79 @@ export function clipProcessTail(text: string, limit = PROCESS_TEXT_LIMIT): strin
   return `…${text.slice(-limit)}`;
 }
 
+/** Drop CSI/OSC/cursor sequences so headless CLI chrome is not shown as 乱码. */
+export function stripTerminalEscapes(text: string): string {
+  let out = '';
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i);
+    if (code === 0x1b) {
+      const next = text[i + 1];
+      if (next === '[') {
+        i += 2;
+        while (i < text.length) {
+          const ch = text.charCodeAt(i);
+          i += 1;
+          if (ch >= 0x40 && ch <= 0x7e) break;
+        }
+        i -= 1;
+        continue;
+      }
+      if (next === ']') {
+        i += 2;
+        while (i < text.length) {
+          if (text.charCodeAt(i) === 0x07) {
+            i += 1;
+            break;
+          }
+          if (text.charCodeAt(i) === 0x1b && text[i + 1] === '\\') {
+            i += 2;
+            break;
+          }
+          i += 1;
+        }
+        i -= 1;
+        continue;
+      }
+      i += next ? 1 : 0;
+      continue;
+    }
+    if (code === 0x9b) {
+      i += 1;
+      while (i < text.length) {
+        const ch = text.charCodeAt(i);
+        i += 1;
+        if (ch >= 0x40 && ch <= 0x7e) break;
+      }
+      i -= 1;
+      continue;
+    }
+    if (code < 0x20 && code !== 9 && code !== 10 && code !== 13) continue;
+    out += text[i];
+  }
+  return out;
+}
+
+/**
+ * Headless Kiro (and similar TUI CLIs) prefix a colored `>` and cursor restore.
+ * Same bytes on Windows / macOS / Linux; TERM=dumb does not always stop color.
+ */
+export function sanitizeCliChatText(text: string): string {
+  const hadEsc = /[\u001b\u009b]/.test(text);
+  let out = stripTerminalEscapes(text)
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n');
+  if (hadEsc) out = out.replace(/^>\s?/, '');
+  return out.replace(/^\n+|\n+$/g, '');
+}
+
 export function formatChatSessionRecord(turns: TurnGroup[], userLabel: string): string {
   const lines = [];
   for (const g of turns) {
     const user = g.user?.content?.trim();
     if (user) lines.push({ speaker: userLabel, text: user });
     for (const m of g.agents) {
-      const text = m.content?.trim();
+      const text = sanitizeCliChatText(m.content ?? '').trim();
       if (!text) continue;
       lines.push({
         speaker: m.agentId ? agentDisplayName(m.agentId) : '',

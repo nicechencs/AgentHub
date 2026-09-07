@@ -95,7 +95,9 @@ impl RouteDownstreamSurface {
             AgentId::Claude => Some(Self::Messages),
             AgentId::Codex | AgentId::Grok => Some(Self::Responses),
             AgentId::Kimi | AgentId::Dsh => Some(Self::ChatCompletions),
-            AgentId::Pi | AgentId::WorkBuddy | AgentId::Cursor | AgentId::Zcode => None,
+            AgentId::Pi | AgentId::WorkBuddy | AgentId::Cursor | AgentId::Zcode | AgentId::Kiro => {
+                None
+            }
         }
     }
 }
@@ -144,7 +146,9 @@ impl RouteDownstreamDialect {
             AgentId::Grok => Self::Grok,
             AgentId::Kimi => Self::Kimi,
             AgentId::Dsh => Self::Dsh,
-            AgentId::Pi | AgentId::WorkBuddy | AgentId::Cursor | AgentId::Zcode => Self::Generic,
+            AgentId::Pi | AgentId::WorkBuddy | AgentId::Cursor | AgentId::Zcode | AgentId::Kiro => {
+                Self::Generic
+            }
         }
     }
 }

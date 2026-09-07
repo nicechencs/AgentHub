@@ -1071,6 +1071,36 @@ describe('TicketDetailPanel', () => {
 });
 
 describe('TicketWalletList switch action', () => {
+  it('hides native 切换 for Cursor logins', () => {
+    const wallet: TicketWallet = {
+      tickets: [{
+        id: 'account:cursor-1',
+        sourceKind: 'account',
+        sourceId: 'cursor-1',
+        agentId: 'cursor',
+        label: 'c@example.com',
+        surface: 'unknown',
+        credentialClass: 'oauth',
+        speaks: [],
+        importedFrom: 'cursor',
+      }],
+      bindings: [],
+      surfaceGroups: [],
+    };
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet,
+        extrasForTicket: () => ({ isCurrent: false }),
+        onSwitchTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(markup).not.toContain('aria-label="切换"');
+    expect(markup).not.toContain('aria-label="使用中"');
+    expect(markup).toContain('Cursor Agent');
+  });
+
   it('hides native 切换 when the card is on another Agent tab', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {

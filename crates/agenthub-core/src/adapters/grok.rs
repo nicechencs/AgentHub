@@ -1115,7 +1115,11 @@ pub(crate) fn set_grok_default_effort(effort: &str) -> Result<()> {
         return Err(AppError::InvalidArg(format!("不支持的思考等级: {effort}")));
     }
     let live = grok_live_chat_model();
-    if live.model.as_deref().is_some_and(grok_model_rejects_thinking) {
+    if live
+        .model
+        .as_deref()
+        .is_some_and(grok_model_rejects_thinking)
+    {
         return Err(AppError::InvalidArg("这个模型不支持思考等级".into()));
     }
     let mut doc = read_grok_config_doc()?;
@@ -1131,11 +1135,21 @@ fn grok_cli_args(prompt: &str, opts: &RunOptions, version: Option<&str>) -> Vec<
     if grok_supports_no_auto_update(version) {
         args.push("--no-auto-update".into());
     }
-    if let Some(model) = opts.model.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(model) = opts
+        .model
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         args.push("-m".into());
         args.push(model.to_string());
     }
-    if let Some(effort) = opts.effort.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(effort) = opts
+        .effort
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         if !grok_model_rejects_thinking(opts.model.as_deref().unwrap_or("")) {
             args.push("--reasoning-effort".into());
             args.push(effort.to_string());

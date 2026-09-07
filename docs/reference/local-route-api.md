@@ -39,7 +39,7 @@ Authorization: Bearer <local-token>
 
 `/models` 与 `/chat/completions` 是兼容别名。其余对话路径使用 `/v1/messages`、`/v1/responses`、`/v1/chat/completions`。对这些对话路径发 `GET`/`PUT` 等非 POST 方法返回 `405` `method_not_allowed`（双语 JSON + `Allow: POST`），不会返回空 body。
 
-目标客户端：Claude 用 `/v1/messages`；Codex 和 Grok 用 `/v1/responses`（配置里写本机令牌，按 API Key 方式）；Kimi / DSH 用 `/v1/chat/completions`。
+目标客户端：Claude 用 `/v1/messages`；Codex 和 Grok 用 `/v1/responses`（配置里写本机令牌，按 API Key 方式）；Kimi / DSH 用 `/v1/chat/completions`。Kiro 登录可作为上游接到 Claude / Codex / Grok（一轮文本回复）。
 
 ## Models 响应
 

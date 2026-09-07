@@ -145,8 +145,8 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
       reason: '账号由 Cursor 管理',
     },
     apiKeyAccount: {
-      level: 'partial',
-      reason: '可用 API Key 或 cursor-agent login',
+      level: 'unsupported',
+      reason: '无本机 API Key 配置',
     },
     skills: { level: 'full' },
     liveBackup: { level: 'unsupported', reason: '无稳定配置/凭据文件' },
@@ -230,5 +230,48 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
     mcp: { level: 'planned', reason: '待验证接入' },
     modelSelect: { level: 'planned', reason: '待验证接入' },
     sessionResume: { level: 'planned', reason: '待验证接入' },
+  },
+  kiro: {
+    configWrite: {
+      level: 'unsupported',
+      reason: '无稳定配置写入契约，fail-closed',
+    },
+    accountSwitch: {
+      level: 'partial',
+      reason: '可在连接里切换，会写回 Kiro',
+    },
+    apiKeyAccount: {
+      level: 'partial',
+      reason: '可用 API Key 或 kiro-cli login',
+    },
+    skills: { level: 'planned', reason: '待路径核实' },
+    liveBackup: { level: 'full' },
+    structuredStream: {
+      level: 'partial',
+      reason: '对话过程走 ACP；生成时不能中途补充',
+    },
+    dangerousMode: {
+      level: 'partial',
+      reason: '映射 --trust-all-tools；请确认风险后再开',
+    },
+    projectHistory: {
+      level: 'partial',
+      reason: '能列出命令行和编辑器里的对话；删除请到 Kiro 里做',
+    },
+    projectDelete: {
+      level: 'unsupported',
+      reason: '无安全浅删契约',
+    },
+    providerPresets: { level: 'unsupported', reason: '无 provider 配置契约' },
+    usage: {
+      level: 'partial',
+      reason: '读 kiro-cli 会话里的 token；日志没写时总览是 0',
+    },
+    mcp: { level: 'planned', reason: '待路径核实' },
+    modelSelect: { level: 'full' },
+    sessionResume: {
+      level: 'partial',
+      reason: '新对话走持续通道，可点允许/拒绝；生成时不能中途补充',
+    },
   },
 };

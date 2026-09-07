@@ -17,6 +17,7 @@ pub(crate) mod cursor;
 pub(crate) mod dsh;
 pub(crate) mod grok;
 mod kimi;
+pub(crate) mod kiro;
 pub(crate) mod pi;
 pub mod pi_auth;
 pub(crate) mod workbuddy;
@@ -29,6 +30,7 @@ pub(crate) use cursor::detect_installation as detect_cursor_installation;
 pub(crate) use dsh::detect_installation as detect_dsh_installation;
 pub(crate) use grok::detect_installation as detect_grok_installation;
 pub(crate) use kimi::detect_installation as detect_kimi_installation;
+pub(crate) use kiro::detect_installation as detect_kiro_installation;
 pub(crate) use pi::detect_installation as detect_pi_installation;
 pub(crate) use workbuddy::detect_installation as detect_workbuddy_installation;
 pub(crate) use zcode::detect_installation as detect_zcode_installation;
@@ -39,6 +41,7 @@ pub(crate) use claude::expand_claude_live_accounts;
 pub(crate) use claude::normalize_oauth_credentials as normalize_claude_oauth_credentials;
 pub(crate) use codex::normalize_oauth_credentials as normalize_codex_oauth_credentials;
 pub(crate) use codex::strip_codex_live_auth_file;
+pub(crate) use cursor::expand_cursor_live_accounts;
 pub(crate) use grok::{
     expand_grok_auth_to_live_accounts, grok_live_has_leftover_api_key_field,
     grok_live_uses_default_auth_slot, read_grok_live_api_key_tail, read_grok_live_base_url,

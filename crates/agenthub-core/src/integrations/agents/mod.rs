@@ -6,6 +6,7 @@ pub mod cursor;
 pub mod dsh;
 pub mod grok;
 pub mod kimi;
+pub mod kiro;
 pub mod pi;
 pub mod workbuddy;
 pub mod zcode;
@@ -26,4 +27,5 @@ pub fn register_production(ctx: &mut IntegrationContext<'_>) {
     cursor::register(ctx);
     dsh::register(ctx);
     zcode::register(ctx);
+    kiro::register(ctx);
 }

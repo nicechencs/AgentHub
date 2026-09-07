@@ -388,14 +388,20 @@ pub(super) fn is_codex_local_token(provider: &Provider) -> bool {
                 KIMI_TO_CODEX_BRIDGE_RULE
                     | ANTHROPIC_TO_CODEX_BRIDGE_RULE
                     | OPENAI_TO_CODEX_BRIDGE_RULE
-                    | GROK_CODEX_RULE_ID,
+                    | GROK_CODEX_RULE_ID
+                    | KIRO_CODEX_RULE_ID,
             )
         ) | (
             AgentId::Claude,
-            Some(CODEX_TO_CLAUDE_BRIDGE_RULE | GROK_CLAUDE_RULE_ID | OPENAI_TO_CLAUDE_BRIDGE_RULE)
+            Some(
+                CODEX_TO_CLAUDE_BRIDGE_RULE
+                    | GROK_CLAUDE_RULE_ID
+                    | OPENAI_TO_CLAUDE_BRIDGE_RULE
+                    | KIRO_CLAUDE_RULE_ID,
+            )
         ) | (
             AgentId::Grok,
-            Some(CODEX_TO_GROK_BRIDGE_RULE | OPENAI_TO_GROK_BRIDGE_RULE)
+            Some(CODEX_TO_GROK_BRIDGE_RULE | OPENAI_TO_GROK_BRIDGE_RULE | KIRO_GROK_RULE_ID)
         ) | (
             AgentId::Kimi,
             Some(CODEX_TO_KIMI_BRIDGE_RULE | OPENAI_TO_KIMI_BRIDGE_RULE)

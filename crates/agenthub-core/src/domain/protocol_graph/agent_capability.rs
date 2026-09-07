@@ -169,6 +169,11 @@ pub const fn agent_bind_capability(id: AgentId) -> AgentBindCapability {
             writer: true,
             occupancy: LiveOccupancy::CatalogAppend,
         },
+        AgentId::Kiro => AgentBindCapability {
+            accepts: &[],
+            writer: false,
+            occupancy: LiveOccupancy::Exclusive,
+        },
     }
 }
 

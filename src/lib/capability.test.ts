@@ -39,6 +39,7 @@ const AGENT_IDS: AgentKey[] = [
   'cursor',
   'dsh',
   'zcode',
+  'kiro',
 ];
 
 describe('isCapabilityUsable / isCapabilityBlocked', () => {
@@ -168,19 +169,27 @@ describe('MOCK_CAPABILITIES (dev/mocks)', () => {
     expect(MOCK_CAPABILITIES.kimi!.skills!.level).toBe('partial');
     expect(MOCK_CAPABILITIES.workbuddy!.accountSwitch!.level).toBe('partial');
     expect(MOCK_CAPABILITIES.cursor!.accountSwitch!.level).toBe('unsupported');
+    expect(MOCK_CAPABILITIES.cursor!.apiKeyAccount!.level).toBe('unsupported');
     expect(MOCK_CAPABILITIES.cursor!.providerPresets!.level).toBe('unsupported');
     expect(MOCK_CAPABILITIES.claude!.accountSwitch!.level).toBe('full');
     expect(MOCK_CAPABILITIES.dsh!.apiKeyAccount!.level).toBe('full');
     expect(MOCK_CAPABILITIES.dsh!.usage!.level).toBe('full');
     expect(MOCK_CAPABILITIES.dsh!.structuredStream!.level).toBe('planned');
     expect(MOCK_CAPABILITIES.dsh!.configWrite!.level).toBe('partial');
+    expect(MOCK_CAPABILITIES.kiro!.accountSwitch!.level).toBe('partial');
+    expect(MOCK_CAPABILITIES.kiro!.configWrite!.level).toBe('unsupported');
+    expect(MOCK_CAPABILITIES.kiro!.apiKeyAccount!.level).toBe('partial');
+    expect(MOCK_CAPABILITIES.kiro!.structuredStream!.level).toBe('partial');
+    expect(MOCK_CAPABILITIES.kiro!.sessionResume!.level).toBe('partial');
   });
 
   it('accountSwitch blocked agents match Connections TabStrip expectations', () => {
     const disabled = AGENT_IDS.filter((id) =>
       isAuthorizationManagementBlocked(id, MOCK_CAPABILITIES[id]),
     );
-    expect(disabled).toEqual(['cursor']);
+    expect(disabled).toEqual([]);
+    expect(disabled).not.toContain('cursor');
+    expect(disabled).not.toContain('kiro');
     expect(disabled).not.toContain('workbuddy');
     expect(disabled).not.toContain('claude');
     expect(disabled).not.toContain('kimi');
@@ -188,12 +197,9 @@ describe('MOCK_CAPABILITIES (dev/mocks)', () => {
 });
 
 describe('isAuthorizationManagementBlocked', () => {
-  it('locks Cursor even when capability data is missing', () => {
-    expect(isAuthorizationManagementBlocked('cursor')).toBe(true);
-    expect(isAuthorizationManagementBlocked('cursor', undefined)).toBe(true);
-  });
-
-  it('fails open for other agents when accountSwitch is absent', () => {
+  it('fails open when capability data is missing', () => {
+    expect(isAuthorizationManagementBlocked('cursor')).toBe(false);
+    expect(isAuthorizationManagementBlocked('cursor', undefined)).toBe(false);
     expect(isAuthorizationManagementBlocked('claude')).toBe(false);
     expect(isAuthorizationManagementBlocked('claude', {})).toBe(false);
   });
@@ -204,5 +210,25 @@ describe('isAuthorizationManagementBlocked', () => {
         accountSwitch: { level: 'unsupported' },
       }),
     ).toBe(true);
+  });
+
+  it('keeps Kiro available when API Key can enter the pool', () => {
+    expect(isAuthorizationManagementBlocked('kiro', MOCK_CAPABILITIES.kiro)).toBe(false);
+    expect(
+      isAuthorizationManagementBlocked('kiro', {
+        accountSwitch: { level: 'unsupported' },
+        apiKeyAccount: { level: 'partial' },
+      }),
+    ).toBe(false);
+  });
+
+  it('keeps Cursor available for import even without API Key configuration', () => {
+    expect(isAuthorizationManagementBlocked('cursor', MOCK_CAPABILITIES.cursor)).toBe(false);
+    expect(
+      isAuthorizationManagementBlocked('cursor', {
+        accountSwitch: { level: 'unsupported' },
+        apiKeyAccount: { level: 'unsupported' },
+      }),
+    ).toBe(false);
   });
 });

@@ -14,6 +14,7 @@ const SVG_AGENT_IDS = [
   'pi',
   'cursor',
   'dsh',
+  'kiro',
 ] as const;
 
 function markup(agentId: string, size: 'sm' | 'md' | 'lg' = 'md'): string {

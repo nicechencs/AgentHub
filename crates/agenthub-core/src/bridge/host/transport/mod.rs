@@ -123,6 +123,8 @@ impl UpstreamChannel {
             BridgeUpstreamProtocol::AnthropicMessages => Self::Anthropic,
             BridgeUpstreamProtocol::CodexResponsesOauth => Self::CodexResponses,
             BridgeUpstreamProtocol::XaiResponsesOauth => Self::Grok,
+            // Kiro is handled in dispatch before prepare/send.
+            BridgeUpstreamProtocol::KiroHttp => Self::OpenAiChat,
         }
     }
 

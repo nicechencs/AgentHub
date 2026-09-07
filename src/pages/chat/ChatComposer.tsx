@@ -48,6 +48,7 @@ import {
   type ChatConnectionPickerView,
   type ChatSendBlocker,
 } from './chat-model';
+import { kiroChatComposerPlaceholder } from './chat-kiro-model';
 
 export function ChatComposer({
   draft,
@@ -241,7 +242,11 @@ export function ChatComposer({
               ? undefined
               : { minHeight: COMPOSER_TEXTAREA_MIN_PX, maxHeight: COMPOSER_TEXTAREA_MAX_PX }
           }
-          placeholder={t('chat.composer.placeholder')}
+          placeholder={kiroChatComposerPlaceholder(
+            t,
+            primaryAgent,
+            t('chat.composer.placeholder'),
+          )}
           rows={1}
           value={draft}
           disabled={textareaDisabled}

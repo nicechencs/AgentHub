@@ -17,6 +17,7 @@ import {
   mapDevicePollStatus,
   mapPkceWaitStatus,
   officialLoginShouldKeepPolling,
+  sessionFromCliStart,
   sessionFromDeviceStart,
   sessionFromPkceStart,
   type OfficialLoginPoll,
@@ -34,13 +35,15 @@ export async function startOfficialLogin(
   openBrowser = false,
   poolOwned = false,
 ): Promise<OfficialLoginSession> {
-  if (officialLoginAdapter(option.flow) === 'deviceCode') {
+  const adapter = officialLoginAdapter(option.flow);
+  if (adapter === 'deviceCode') {
     const start = poolOwned
       ? await startDeviceOAuth(agentId, option.id, true)
       : await startDeviceOAuth(agentId, option.id);
     return sessionFromDeviceStart(start);
   }
   const start = await startOAuth(agentId, openBrowser, option.id);
+  if (adapter === 'cli') return sessionFromCliStart(start, option.id);
   return sessionFromPkceStart(start, option.id);
 }
 

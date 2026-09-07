@@ -315,6 +315,7 @@ export function autoApproveEffect(agentId: AgentKey | null | undefined): AutoApp
     case 'grok':
     case 'workbuddy':
     case 'cursor':
+    case 'kiro':
       return 'skip';
     case 'pi':
       return 'project-trust';
@@ -473,6 +474,20 @@ function accountConnectionTitle(t: TranslateFn, status: AgentStatus | undefined)
   return t('chat.connection.signedIn');
 }
 
+/** Pool `none` still writes effectiveLabel 「未配置」; never show that as an API title. */
+function apiConnectionTitle(
+  t: TranslateFn,
+  currentProviderName: string | null | undefined,
+  status: AgentStatus | undefined,
+): string {
+  const unconfigured = t('chat.connection.unconfiguredLabel');
+  for (const raw of [currentProviderName, status?.effectiveLabel]) {
+    const label = raw?.trim() ?? '';
+    if (label && label !== unconfigured) return label;
+  }
+  return 'API';
+}
+
 export function chatConnectionPickerView(t: TranslateFn, input: {
   primaryAgent: AgentKey | null;
   switching?: boolean;
@@ -549,7 +564,7 @@ export function chatConnectionPickerView(t: TranslateFn, input: {
   }
 
   if (kind === 'api') {
-    const title = input.currentProviderName?.trim() || input.status?.effectiveLabel?.trim() || 'API';
+    const title = apiConnectionTitle(t, input.currentProviderName, input.status);
     const unimported = allowUnimported && !input.currentProviderName;
     return {
       kind,

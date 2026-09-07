@@ -80,6 +80,11 @@ fn table_registers_every_agent_accepts_and_writer() {
     assert!(cursor.accepts.is_empty());
     assert!(!cursor.writer);
 
+    let kiro = agent_bind_capability(AgentId::Kiro);
+    assert!(kiro.accepts.is_empty());
+    assert!(!kiro.writer);
+    assert_eq!(kiro.occupancy, LiveOccupancy::Exclusive);
+
     let workbuddy = agent_bind_capability(AgentId::WorkBuddy);
     assert_eq!(workbuddy.accepts, &[AgentAccept::WorkBuddyModelsJson]);
     assert!(
@@ -128,6 +133,7 @@ fn cursor_reason_is_no_writer_for_any_ticket_speaks() {
         TicketSurface::CodexChatgptSubscription,
         TicketSurface::ClaudeSubscription,
         TicketSurface::GrokXaiSubscription,
+        TicketSurface::Kiro,
         TicketSurface::Unknown,
     ] {
         let reason = unsupported_reason_for_target(AgentId::Cursor, surface.speaks());

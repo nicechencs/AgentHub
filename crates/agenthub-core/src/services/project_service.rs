@@ -653,6 +653,13 @@ fn load_excerpt_for_id(id: &str, home_override: Option<&Path>) -> Result<AgentPr
         };
         return crate::integrations::agents::zcode::load_zcode_excerpt(&home, id, &rel);
     }
+    if agent == AgentId::Kiro {
+        let home = match home_override {
+            Some(h) => h.to_path_buf(),
+            None => agent_home(agent)?,
+        };
+        return crate::integrations::agents::kiro::load_kiro_excerpt(&home, id, &rel);
+    }
     load_excerpt(id, home_override)
 }
 

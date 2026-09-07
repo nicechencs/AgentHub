@@ -23,6 +23,7 @@ import {
   filterWalletByExcludedAgents,
   dashboardBindingMetaText,
   extrasFromPoolSource,
+  cursorLoginKindLabel,
   filterTickets,
   hasOfficialQuotaWindow,
   officialDetailQuotaNeedsProbe,
@@ -192,6 +193,10 @@ describe('officialDetailQuotaNeedsProbe', () => {
       quota7dPct: 12,
     })).toBe(false);
     expect(officialDetailQuotaNeedsProbe({ quota7dPct: undefined })).toBe(false);
+    expect(officialDetailQuotaNeedsProbe({
+      oauthAction: { kind: 'refresh-credentials', label: '刷新' },
+      creditLimit: 50,
+    })).toBe(false);
   });
 });
 
@@ -856,6 +861,11 @@ describe('ticket detail fields', () => {
     expect(showsNativeSwitch('kimi', 'codex')).toBe(false);
   });
 
+  it('hides native 切换 for Cursor, which only allows import', () => {
+    expect(showsNativeSwitch('cursor', null)).toBe(false);
+    expect(showsNativeSwitch('cursor', 'cursor')).toBe(false);
+  });
+
   it('uses 切换 for idle grants and 使用中 when current', () => {
     expect(ticketSwitchChip()).toEqual({ kind: 'switch', label: '切换' });
     expect(ticketSwitchChip({ isCurrent: false })).toEqual({ kind: 'switch', label: '切换' });
@@ -1064,6 +1074,42 @@ describe('ticket detail fields', () => {
     expect(humanizeTicketAuthLabel('可续期')).toBe('可续期');
   });
 
+  it('marks Cursor CLI vs window logins after import', () => {
+    const tZh = createTranslator('zh');
+    expect(cursorLoginKindLabel('cli', tZh)).toBe('Cursor Agent CLI');
+    expect(cursorLoginKindLabel('window', tZh)).toBe('Cursor 窗口');
+    expect(cursorLoginKindLabel('both', tZh)).toBe('Cursor Agent CLI 和 Cursor 窗口');
+
+    const ticketRow = ticket({
+      id: 'account:cursor-1',
+      sourceKind: 'account',
+      sourceId: 'cursor-1',
+      agentId: 'cursor',
+      label: 'c@example.com',
+      surface: 'unknown',
+      credentialClass: 'oauth',
+      speaks: [],
+      importedFrom: 'cursor',
+    });
+    const extras = extrasFromPoolSource(ticketRow, {
+      account: account({
+        id: 'cursor-1',
+        agentId: 'cursor',
+        kind: 'oauth',
+        label: 'c@example.com',
+        email: 'c@example.com',
+        cursorLoginKind: 'cli',
+      }),
+    }, tZh);
+    expect(extras.cursorLoginKind).toBe('cli');
+    const fields = buildTicketDetailFields(ticketRow, extras, tZh);
+    expect(fields.advanced).toEqual(
+      expect.arrayContaining([
+        { label: '本机来源', value: 'Cursor Agent CLI' },
+      ]),
+    );
+  });
+
   it('joins pool extras so OAuth can be inspected and API Key can be edited', () => {
     const oauth = ticket({
       id: 'account:oauth-1',
@@ -1259,6 +1305,12 @@ describe('buildTicketAddMenu', () => {
     expect(
       ticketAddActionsForAgent(true).map((item) => item.kind),
     ).toEqual(['import-login', 'oauth', 'api-key']);
+  });
+
+  it('hides API Key for Cursor', () => {
+    expect(
+      buildTicketAddMenu(['cursor']).map((item) => item.actions.map((a) => a.kind)),
+    ).toEqual([['import-login']]);
   });
 
   it('is empty when no Agent is installed', () => {
