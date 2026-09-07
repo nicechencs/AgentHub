@@ -14,10 +14,30 @@ export interface CoreBackupRecord {
 
 export type CoreBackupInspect = BackupInspect;
 
+export interface CoreSkippedDeletion {
+  path: string;
+  reason: string;
+}
+
 export interface CoreRestoreResult {
   restored: CoreBackupRecord;
   preRestore?: CoreBackupRecord | null;
   restoredPaths: string[];
+  skippedDeletions?: CoreSkippedDeletion[];
+}
+
+export function mapCoreRestoreResult(result: CoreRestoreResult): CoreRestoreResult {
+  return {
+    ...result,
+    restoredPaths: result.restoredPaths ?? [],
+    skippedDeletions: result.skippedDeletions ?? [],
+  };
+}
+
+export function restoreHasDeleteFailures(
+  result: Pick<CoreRestoreResult, 'skippedDeletions'>,
+): boolean {
+  return (result.skippedDeletions ?? []).some((item) => item.reason === 'delete_failed');
 }
 
 export function mapCoreBackup(b: CoreBackupRecord): BackupMeta | null {

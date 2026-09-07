@@ -24,7 +24,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { AGENTS, AGENT_MAP, type AgentMeta, agentDisplayName } from '@/config/agents';
-import { createBackup, deleteBackup, listBackups, restoreBackup } from '@/lib/api/backup';
+import {
+  createBackup,
+  deleteBackup,
+  listBackups,
+  restoreBackup,
+  restoreHasDeleteFailures,
+} from '@/lib/api/backup';
 import { getSettings, updateSettings } from '@/lib/api/settings';
 import type { TranslateFn } from '@/lib/i18n';
 import { Switch } from '@/components/ui/switch';
@@ -188,12 +194,20 @@ export function BackupsPanel({ toolbar }: { toolbar?: ReactNode }) {
     const target = restoreTarget;
     setBusyId(target.id);
     try {
-      await restoreBackup(target.id);
-      toast({
-        title: t('settings.backups.restored'),
-        description: `${agentDisplayName(target.agentId)} · ${fmtRelativeI18n(target.createdAt, t)}`,
-        variant: 'success',
-      });
+      const result = await restoreBackup(target.id);
+      if (restoreHasDeleteFailures(result)) {
+        toast({
+          title: t('settings.backups.restorePartial'),
+          description: t('settings.backups.restorePartialDesc'),
+          variant: 'warning',
+        });
+      } else {
+        toast({
+          title: t('settings.backups.restored'),
+          description: `${agentDisplayName(target.agentId)} · ${fmtRelativeI18n(target.createdAt, t)}`,
+          variant: 'success',
+        });
+      }
       setRestoreTarget(null);
       await refresh();
     } catch (e) {

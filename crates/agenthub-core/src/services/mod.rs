@@ -55,7 +55,7 @@ pub use adapter_route_service::AdapterRouteService;
 pub use adapter_secret_resolver::AdapterSecretResolver;
 pub use agent_service::{invalidate_detect_cache, AgentService};
 pub use agent_visibility_service::AgentVisibilityService;
-pub use backup_service::{BackupService, RestoreResult};
+pub use backup_service::{BackupService, RestoreResult, SkippedDeletion};
 pub use chat_runtime::ChatRuntime;
 pub use chat_service::ChatService;
 pub use connection_service::{ActiveBinding, ConnectionService};
