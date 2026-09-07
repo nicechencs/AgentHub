@@ -193,6 +193,11 @@ describe('officialDetailQuotaNeedsProbe', () => {
       quota7dPct: 12,
     })).toBe(false);
     expect(officialDetailQuotaNeedsProbe({ quota7dPct: undefined })).toBe(false);
+    expect(officialDetailQuotaNeedsProbe({
+      oauthAction: { kind: 'refresh-credentials', label: '刷新' },
+      creditLimit: 50,
+      creditUsed: 0.29,
+    })).toBe(false);
   });
 });
 

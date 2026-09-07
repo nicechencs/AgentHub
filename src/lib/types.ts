@@ -242,6 +242,12 @@ export interface Account {
   quotaResetIn?: string;
   /** 7d 窗口重置倒计时 */
   quota7dResetIn?: string;
+  /** Kiro official credits used. */
+  creditUsed?: number;
+  /** Kiro official credit limit. */
+  creditLimit?: number;
+  /** Absolute reset for Kiro credits (RFC3339). */
+  creditResetAt?: string;
   lastUsedAt?: string; // ISO 时间
   /** core 更新时间（比较当前生效项时使用） */
   updatedAt?: string;

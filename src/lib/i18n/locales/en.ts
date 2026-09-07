@@ -2185,6 +2185,8 @@ export const en = {
       ticketId: "Record ID",
       routeNative: "Direct",
       usage: "Usage",
+      credits: "Credits",
+      creditsUsage: "{used} / {limit} credits",
       more: "More",
       refreshToken: "Renewal credential",
       moveToTrash: "Move to trash",
