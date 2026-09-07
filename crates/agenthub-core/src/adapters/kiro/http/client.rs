@@ -26,6 +26,49 @@ const CHAT_TARGET: &str = "AmazonCodeWhispererStreamingService.GenerateAssistant
 const USER_AGENT: &str =
     "aws-sdk-js/1.0.27 ua/2.1 os/linux lang/js md/nodejs#22.0.0 api/codewhispererstreaming#1.0.27 m/E AgentHub-KiroHTTP";
 
+/// Persisted Chat `native_session_id` prefix for HTTP conversation ids.
+/// CLI `--resume-id` values are a different namespace and must not use this prefix.
+pub(crate) const HTTP_NATIVE_SESSION_PREFIX: &str = "kiro-http:";
+
+/// Encode an HTTP conversationId for ChatService persistence.
+pub(crate) fn http_native_session_id(conversation_id: &str) -> String {
+    format!("{HTTP_NATIVE_SESSION_PREFIX}{conversation_id}")
+}
+
+/// Strip `kiro-http:` prefix. Returns None for blank, unprefixed (CLI), or empty id.
+pub(crate) fn parse_http_native_session_id(native: &str) -> Option<&str> {
+    let native = native.trim();
+    let rest = native.strip_prefix(HTTP_NATIVE_SESSION_PREFIX)?;
+    let rest = rest.trim();
+    if rest.is_empty() {
+        None
+    } else {
+        Some(rest)
+    }
+}
+
+/// How HTTP chat should treat `RunOptions.native_session_id`.
+///
+/// CLI `--resume-id` values are **not** prefixed → `http_resume_from_opts` is `None`
+/// (skip HTTP). Unset/blank → `Some(New)`. `kiro-http:<cid>` → `Some(Conversation)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HttpResume<'a> {
+    New,
+    Conversation(&'a str),
+}
+
+pub(crate) fn http_resume_from_opts(opts: &RunOptions) -> Option<HttpResume<'_>> {
+    match opts
+        .native_session_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        None => Some(HttpResume::New),
+        Some(id) => parse_http_native_session_id(id).map(HttpResume::Conversation),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct KiroListModels {
     pub default_model: Option<String>,
@@ -445,25 +488,26 @@ fn chat_turn_with_creds(
     })
 }
 
-/// Try HTTP chat when `kiro-cli` is not installed. `None` means skip HTTP.
+/// Try AgentHub-owned HTTP chat. `None` means skip HTTP (use CLI / ACP).
 ///
-/// Callers must not invoke this when the CLI is installed. Skips HTTP when a
-/// native resume id is set (CLI `--resume-id` is a different session namespace).
+/// Session namespaces:
+/// - unset → new HTTP conversation
+/// - `kiro-http:<conversationId>` → continue that HTTP conversation
+/// - any other id (CLI `--resume-id`) → skip HTTP
+///
+/// On success, persists a namespaced id so ChatService can resume later turns.
 pub(crate) fn try_http_run_result(prompt: &str, opts: &RunOptions) -> Option<AgentRunResult> {
-    if opts
-        .native_session_id
-        .as_deref()
-        .map(str::trim)
-        .is_some_and(|s| !s.is_empty())
-    {
-        return None;
-    }
+    let resume = http_resume_from_opts(opts)?;
+    let conversation_id = match resume {
+        HttpResume::New => None,
+        HttpResume::Conversation(cid) => Some(cid),
+    };
     if load_kiro_http_creds().is_err() {
         return None;
     }
     let started = Instant::now();
     let model = opts.model.as_deref();
-    match chat_turn_http(prompt, model, None) {
+    match chat_turn_http(prompt, model, conversation_id) {
         Ok(turn) => {
             let duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
             let command = format!(
@@ -484,9 +528,10 @@ pub(crate) fn try_http_run_result(prompt: &str, opts: &RunOptions) -> Option<Age
                 command,
                 error: None,
                 truncated: false,
-                // HTTP conversation ids are not CLI --resume-id; leave unset
-                // so later turns still use CLI resume when available.
-                native_session_id: None,
+                native_session_id: turn
+                    .conversation_id
+                    .as_deref()
+                    .map(http_native_session_id),
             })
         }
         Err(e) => {
@@ -551,6 +596,47 @@ mod tests {
         assert_eq!(
             parsed.models,
             vec!["auto".to_string(), "claude-haiku-4.5".to_string()]
+        );
+    }
+
+    #[test]
+    fn http_native_session_roundtrip() {
+        let encoded = http_native_session_id("abc-123");
+        assert_eq!(encoded, "kiro-http:abc-123");
+        assert_eq!(parse_http_native_session_id(&encoded), Some("abc-123"));
+        assert_eq!(parse_http_native_session_id("  kiro-http:abc-123  "), Some("abc-123"));
+        assert_eq!(parse_http_native_session_id("resume-me"), None);
+        assert_eq!(parse_http_native_session_id("kiro-http:"), None);
+        assert_eq!(parse_http_native_session_id(""), None);
+    }
+
+    #[test]
+    fn http_resume_from_opts_namespaces() {
+        let mut opts = RunOptions::default();
+        assert_eq!(http_resume_from_opts(&opts), Some(HttpResume::New));
+
+        opts.native_session_id = Some("kiro-http:cid-9".into());
+        assert_eq!(
+            http_resume_from_opts(&opts),
+            Some(HttpResume::Conversation("cid-9"))
+        );
+
+        opts.native_session_id = Some("resume-me".into());
+        assert_eq!(http_resume_from_opts(&opts), None);
+
+        opts.native_session_id = Some("  ".into());
+        assert_eq!(http_resume_from_opts(&opts), Some(HttpResume::New));
+    }
+
+    #[test]
+    fn namespaced_id_feeds_build_chat_body() {
+        let native = http_native_session_id("conv-xyz");
+        let cid = parse_http_native_session_id(&native).expect("http id");
+        let body = build_chat_body("hi", "auto", "AI_EDITOR", Some(cid), None);
+        assert_eq!(
+            body.pointer("/conversationState/conversationId")
+                .and_then(Value::as_str),
+            Some("conv-xyz")
         );
     }
 }

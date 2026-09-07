@@ -106,6 +106,48 @@ fn try_http_skips_when_native_resume_set() {
     opts.native_session_id = Some("resume-me".into());
     assert!(
         super::try_http_run_result("hi", &opts).is_none(),
-        "resume must stay on CLI path"
+        "CLI --resume-id must stay on CLI path"
     );
+}
+
+#[test]
+fn http_native_session_helpers_exported() {
+    let encoded = super::http_native_session_id("cid-1");
+    assert_eq!(encoded, "kiro-http:cid-1");
+    assert_eq!(super::parse_http_native_session_id(&encoded), Some("cid-1"));
+    assert_eq!(super::parse_http_native_session_id("cli-session"), None);
+}
+
+#[test]
+#[ignore = "live network + Builder ID login on this machine"]
+fn live_http_multi_turn_reuses_conversation_id() {
+    let turn1 = super::chat_turn_http(
+        "Reply with exactly: alpha",
+        Some("claude-haiku-4.5"),
+        None,
+    )
+    .expect("turn1");
+    let cid = turn1
+        .conversation_id
+        .as_deref()
+        .expect("turn1 conversationId");
+    assert!(
+        turn1.text.to_ascii_lowercase().contains("alpha"),
+        "unexpected turn1: {}",
+        turn1.text
+    );
+    let turn2 = super::chat_turn_http(
+        "Reply with exactly: beta",
+        Some("claude-haiku-4.5"),
+        Some(cid),
+    )
+    .expect("turn2");
+    assert!(
+        turn2.text.to_ascii_lowercase().contains("beta"),
+        "unexpected turn2: {}",
+        turn2.text
+    );
+    if let Some(cid2) = turn2.conversation_id.as_deref() {
+        assert_eq!(cid2, cid, "second turn should keep conversationId");
+    }
 }

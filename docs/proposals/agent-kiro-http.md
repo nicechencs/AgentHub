@@ -3,13 +3,13 @@ title: Kiro HTTP / 本机转发
 type: proposal
 status: proposed
 owner: maintainers
-updated: 2026-09-08
+updated: 2026-09-07
 audience: contributor
 ---
 
 # Kiro HTTP / 本机转发
 
-> 提案，不是现行实现契约。现行行为见 [STATUS](../STATUS.md)。已落地：列模型可走 HTTP；没有命令行时可用 HTTP 文本回复；Kiro 登录可经本机路由接到 Claude / Codex / Grok。
+> 提案，不是现行实现契约。现行行为见 [STATUS](../STATUS.md)。已落地：列模型可走 HTTP；Chat 打印路径 HTTP 多轮经 `kiro-http:<conversationId>` 续场；Kiro 登录可经本机路由接到 Claude / Codex / Grok。
 
 接线纪律见 [添加 Agent](../guides/adding-an-agent.md)、[Connections 与路由](../concepts/connections-and-routing.md)、[产品边界](../decisions/product-boundaries.md)。用户文案用 **登录 / 本机路由 / 直连**，不写票、桥、PKCE。
 
@@ -42,6 +42,13 @@ audience: contributor
 - 模块：`crates/agenthub-core/src/adapters/kiro/http/`（creds / client / eventstream）。
 - 本机核实（Builder ID / OIDC DeviceCode）：`q.{region}.amazonaws.com` 上 ListAvailableModels + GenerateAssistantResponse；OIDC refresh 写回 sqlite。
 - 不宣称官方 REST；不打包社区网关。
+
+
+## Chat HTTP multi-turn（已接线）
+
+- Chat 持久化的 `native_session_id`：HTTP 用 `kiro-http:<conversationId>`；CLI `--resume-id` 不加此前缀。
+- `try_http_run_result`：有 HTTP 前缀则带 `conversationId` 续聊；有 CLI id 则跳过 HTTP；无 id 则新开 HTTP 对话。
+- 凭据/上游失败时仍回退 `kiro-cli`；不要把 HTTP id 传给 `--resume-id`。
 
 ## Non-goals
 
