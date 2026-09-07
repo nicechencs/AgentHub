@@ -17,6 +17,9 @@
 
 ## [Unreleased]
 
+### 新增
+- 发布：国内更新镜像（Cloudflare R2 + Worker）；App 优先读 `https://updates.agenthub.qooo.io/latest.json`，失败回退 GitHub
+
 ### 修复
 - 对话：Kiro 持续聊天握手不再发送对方不支持的 initialized
 - 对话：Kiro 同一会话的后续轮次继续用当前进程发送，不再在新进程上 session/load（对方会退出或卡住）
