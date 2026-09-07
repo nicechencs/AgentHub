@@ -28,6 +28,7 @@ export function ChatRuntimeExtras(props: {
   models: RuntimeModelOption[];
   settings: RuntimeTurnSettings;
   frozen: boolean;
+  frozenReason?: string;
   catalogLoading?: boolean;
   efforts: string[];
   onSwitchModel: (model: string) => void;
@@ -45,14 +46,14 @@ export function ChatRuntimeExtras(props: {
   const { t } = useI18n();
   const callableSkills = props.extensions.filter((item) => item.kind === 'skill' && item.callable);
   const modelDisabledReason = props.frozen
-    ? t('chat.runtimeOps.frozenDuringTurn')
+    ? props.frozenReason ?? t('chat.runtimeOps.frozenDuringTurn')
     : props.catalogLoading
       ? t('chat.runtimeOps.catalogLoading')
       : props.models.length === 0
         ? t('chat.runtimeOps.catalogEmpty')
         : null;
   const effortDisabledReason = props.frozen
-    ? t('chat.runtimeOps.frozenDuringTurn')
+    ? props.frozenReason ?? t('chat.runtimeOps.frozenDuringTurn')
     : !props.settings.model
       ? t('chat.runtimeOps.needModelFirst')
       : props.efforts.length === 0
