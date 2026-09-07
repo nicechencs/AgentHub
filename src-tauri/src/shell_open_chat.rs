@@ -64,7 +64,11 @@ pub(crate) fn resolve_open_chat_cwd(raw: &str) -> Option<PathBuf> {
     if trimmed.is_empty() {
         return None;
     }
-    let path = crate::file_manager::normalize_open_path_input(&trimmed);
+    let mut path = crate::file_manager::normalize_open_path_input(&trimmed);
+    // Windows Explorer command uses `"%V\."` so a drive root is `C:\.` not `C:\"`.
+    if path.file_name().is_some_and(|name| name == ".") {
+        path.pop();
+    }
     if path.is_dir() {
         return Some(path);
     }
@@ -75,7 +79,24 @@ pub(crate) fn resolve_open_chat_cwd(raw: &str) -> Option<PathBuf> {
 }
 
 pub(crate) fn windows_open_chat_command(exe: &Path) -> String {
-    format!("\"{}\" {OPEN_CHAT_FLAG} \"%V\"", exe.display())
+    // `"%V"` expands to `"C:\"` for a drive root; CommandLineToArgvW treats the
+    // trailing `\"` as an escaped quote. Keep a `.` between `\` and `"`.
+    format!("\"{}\" {OPEN_CHAT_FLAG} \"%V\\.\"", exe.display())
+}
+
+/// Prefer a validated AppImage path; otherwise the running executable.
+pub(crate) fn resolve_shell_register_exe(
+    current_exe: Option<&Path>,
+    appimage: Option<&Path>,
+) -> Option<PathBuf> {
+    if let Some(path) = appimage.filter(|p| is_usable_appimage(p)) {
+        return Some(path.to_path_buf());
+    }
+    current_exe.map(Path::to_path_buf)
+}
+
+fn is_usable_appimage(path: &Path) -> bool {
+    path.is_absolute() && path.is_file()
 }
 
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -132,6 +153,8 @@ pub(crate) fn linux_nautilus_script(exe: &Path) -> String {
     )
 }
 
+/// Store `cwd` as the single pending handoff, then wake the UI so it can take
+/// that pending. The event is not a second delivery path.
 pub(crate) fn deliver_open_chat_cwd<R: Runtime>(app: &AppHandle<R>, cwd: PathBuf) {
     let cwd = cwd.to_string_lossy().into_owned();
     if let Some(state) = app.try_state::<AppState>() {
@@ -157,7 +180,9 @@ pub(crate) fn ingest_args<R: Runtime>(app: &AppHandle<R>, args: &[String]) {
 }
 
 pub(crate) fn register_best_effort(lang: TrayUiLanguage) {
-    let Ok(exe) = std::env::current_exe() else {
+    let current = std::env::current_exe().ok();
+    let appimage = std::env::var_os("APPIMAGE").map(PathBuf::from);
+    let Some(exe) = resolve_shell_register_exe(current.as_deref(), appimage.as_deref()) else {
         return;
     };
     if let Err(e) = register_shell_open_chat(&exe, lang) {
