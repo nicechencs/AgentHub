@@ -38,10 +38,12 @@ describe('Kiro chat honesty helpers', () => {
     expect(kiroChatComposerPlaceholder(t, 'claude', 'fallback')).toBe('fallback');
     expect(t('chat.kiro.oneshotHint')).toContain('允许/拒绝');
     expect(t('chat.kiro.oneshotHint')).toContain('不能中途补充');
-    expect(t('chat.kiro.oneshotDetail')).toContain('用新方式继续');
+    expect(t('chat.kiro.oneshotDetail')).toContain('请新建对话');
     expect(t('chat.kiro.oneshotDetail')).toContain('不在本页');
     expect(t('chat.kiro.placeholder')).toContain('允许/拒绝');
     expect(t('chat.kiro.placeholder')).toContain('排队');
+    expect(t('chat.kiro.settingsLocked')).toContain('权限');
+    expect(t('chat.kiro.settingsLocked')).toContain('请新建对话');
   });
 
   it('keeps runtime request panels and command search on for Kiro', () => {

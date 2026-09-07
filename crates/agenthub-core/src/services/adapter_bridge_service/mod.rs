@@ -622,6 +622,7 @@ pub struct AdapterBridgeRuntimeMaterial {
     codex_ingress_grok_upstream: bool,
     grok_ingress_codex_upstream: bool,
     schedule_policy: RouteSchedulePolicy,
+    kiro_http: Option<crate::adapters::kiro::http::KiroHttpRouteParams>,
 }
 
 impl std::fmt::Debug for AdapterBridgeRuntimeMaterial {
@@ -709,6 +710,7 @@ impl AdapterBridgeRuntimeMaterial {
             codex_ingress_grok_upstream: false,
             grok_ingress_codex_upstream: false,
             schedule_policy: RouteSchedulePolicy::PriorityFailover,
+            kiro_http: None,
         }
     }
 
@@ -773,6 +775,7 @@ impl AdapterBridgeRuntimeMaterial {
             health: MemberHealth::Renewable,
             priority: 0,
             position: 0,
+            kiro_http: self.kiro_http.clone(),
         }]);
         spec
     }
@@ -1167,6 +1170,23 @@ impl AdapterBridgeService {
         }
     }
 
+    /// Attach Kiro HTTP envelope params without exposing them to other crates.
+    pub fn with_kiro_http_route_params(
+        &self,
+        spec: BridgeMemberSpec,
+        source_kind: AdapterSourceKind,
+        protocol: BridgeUpstreamProtocol,
+    ) -> BridgeMemberSpec {
+        if protocol != BridgeUpstreamProtocol::KiroHttp {
+            return spec;
+        }
+        let params = self
+            .secrets
+            .resolve_kiro_http_params(source_kind, &spec.source_id)
+            .ok();
+        spec.with_kiro_http(params)
+    }
+
     pub fn attach_route_index(
         &self,
         mut material: AdapterBridgeRuntimeMaterial,
@@ -1352,6 +1372,13 @@ impl AdapterBridgeService {
                     health,
                     priority: member.priority,
                     position: member.position,
+                    kiro_http: if member_protocol == BridgeUpstreamProtocol::KiroHttp {
+                        self.secrets
+                            .resolve_kiro_http_params(member.source_kind, &member.source_id)
+                            .ok()
+                    } else {
+                        None
+                    },
                 })
             })
             .collect();

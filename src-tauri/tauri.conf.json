@@ -41,6 +41,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDEyQjY1NTY5QjlGN0YyMDMKUldRRDh2ZTVhVlcyRXV3Vkt4elF1Sk9QWjJEK0FkMWRLckI2TXk0RjkweDdhcEdUNDZvWFpsWGEK",
       "endpoints": [
+        "https://updates.agenthub.qooo.io/latest.json",
         "https://github.com/nicechencs/AgentHub/releases/latest/download/latest.json"
       ],
       "windows": {

@@ -7,12 +7,13 @@
 //! - install / detect (official sh + ps1; IDE.app is never Installed)
 //! - Chat: new conversations use `kiro-cli acp` (ACP session/prompt, allow/deny,
 //!   cancel). Legacy print path remains `kiro-cli chat --no-interactive`
-//!   (HTTP text-only when CLI is missing).
+//!   (HTTP when creds work; multi-turn via `kiro-http:<conversationId>`).
 //! - headless CLI: `kiro-cli chat --no-interactive --wrap never "…"`
 //!   (+ `--trust-all-tools` when dangerous; TERM=dumb so Unix color does not leak)
 //! - Chat model/effort: `--model` / `--effort` from live prefs (HTTP list or CLI)
 //! - Chat Auto: `--agent-engine v2 --output-format stream-json` (v1 rejects it)
-//! - subsequent turns: ACP `session/load`; print path still `--resume-id`
+//! - subsequent turns: keep the ACP process and `session/prompt` (Kiro
+//!   `session/load` after the process exits hangs or dies); print path still `--resume-id`
 //! - auth: env `KIRO_API_KEY` / import `kiro-cli login` (sqlite + SSO cache);
 //!   Connections official login spawns `kiro-cli login --license free` then imports;
 //!   refresh compares expiry and can write sqlite; HTTP also refreshes OIDC/Desktop
@@ -380,8 +381,11 @@ impl AgentAdapter for KiroAdapter {
             .as_deref()
             .and_then(super::session_resume::valid_session_id)
         {
-            args.push("--resume-id".into());
-            args.push(sid.to_string());
+            // HTTP multi-turn ids use `kiro-http:`; never pass them to CLI.
+            if http::parse_http_native_session_id(sid).is_none() && !sid.starts_with("kiro-http:") {
+                args.push("--resume-id".into());
+                args.push(sid.to_string());
+            }
         }
         if opts.allow_dangerous {
             args.push("--trust-all-tools".into());

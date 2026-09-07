@@ -272,6 +272,13 @@ impl AdapterBridgeService {
                 codex_ingress_grok_upstream: false,
                 grok_ingress_codex_upstream: false,
                 schedule_policy: Default::default(),
+                kiro_http: if protocol == BridgeUpstreamProtocol::KiroHttp {
+                    self.secrets
+                        .resolve_kiro_http_params(profile.source_kind, &profile.source_id)
+                        .ok()
+                } else {
+                    None
+                },
             },
             &profile,
         )?;

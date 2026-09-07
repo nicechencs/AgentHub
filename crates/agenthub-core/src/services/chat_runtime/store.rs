@@ -43,6 +43,7 @@ pub(crate) struct RuntimeRecord {
 #[derive(Debug, Clone)]
 pub(crate) struct PersistedRequest {
     pub request: RuntimeRequest,
+    pub server_method: String,
     pub server_id: String,
 }
 
@@ -805,6 +806,7 @@ impl RuntimeStore {
                             detail: row.get(4)?,
                             questions,
                         },
+                        server_method: row.get(6)?,
                         server_id: row.get(7)?,
                     })
                 },
@@ -857,6 +859,7 @@ impl RuntimeStore {
                         detail: row.get(4)?,
                         questions,
                     },
+                    server_method: row.get(6)?,
                     server_id: row.get(7)?,
                 })
             })?;

@@ -40,6 +40,11 @@ fn worker(db: &Database, id: &str) -> ActorWorker {
         run_id: None,
         last_start_request: None,
         pending_prompt_id: None,
+        permission_options: HashMap::new(),
+        cancel_deadline: None,
+        session_model: None,
+        session_effort: None,
+        session_trust_all: None,
     }
 }
 
@@ -442,5 +447,238 @@ fn file_and_question_server_requests_become_pending_runtime_requests() {
     assert_eq!(
         snapshot.pending_requests[1].questions[0].options[0].label,
         "red"
+    );
+}
+
+#[test]
+fn acp_permission_uses_server_option_ids_without_auto_allow_always() {
+    let options = vec![
+        AcpPermissionOption {
+            id: "custom-allow".into(),
+            kind: "allow_always".into(),
+        },
+        AcpPermissionOption {
+            id: "custom-once".into(),
+            kind: "allow_once".into(),
+        },
+        AcpPermissionOption {
+            id: "custom-reject".into(),
+            kind: "reject_once".into(),
+        },
+    ];
+    assert_eq!(
+        acp_permission_reply(&options, "accept").unwrap(),
+        json!({"outcome":{"outcome":"selected","optionId":"custom-once"}})
+    );
+    assert_eq!(
+        acp_permission_reply(&options, "decline").unwrap(),
+        json!({"outcome":{"outcome":"selected","optionId":"custom-reject"}})
+    );
+    assert!(acp_permission_reply(&[], "accept").is_err());
+    assert_eq!(
+        acp_permission_reply(&[], "decline").unwrap(),
+        json!({"outcome":{"outcome":"cancelled"}})
+    );
+}
+
+#[test]
+fn acp_cancel_wins_over_late_end_turn() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "cancel-race");
+    let mut worker = worker(&db, "cancel-race");
+    worker.store.enable_if_new("cancel-race").unwrap();
+    start_placeholder(&mut worker);
+    worker.agent = AgentId::Kiro;
+    worker.cancel_deadline = Some(Instant::now() + Duration::from_secs(10));
+    worker
+        .store
+        .set_state(
+            "cancel-race",
+            RuntimePhase::Cancelling,
+            Some("run-1"),
+            Some("session-1"),
+            Some("turn-1"),
+            worker.chat_turn,
+            worker.message_id.as_deref(),
+        )
+        .unwrap();
+    worker
+        .turn_completed(&json!({"stopReason":"end_turn"}))
+        .unwrap();
+    let snapshot = worker.store.snapshot("cancel-race", None).unwrap();
+    assert_eq!(snapshot.phase, RuntimePhase::Cancelled);
+    assert_eq!(
+        snapshot.current_message.unwrap().status,
+        ChatMessageStatus::Cancelled
+    );
+}
+
+#[test]
+fn acp_cancel_deadline_terminalizes_without_a_server_response() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "cancel-deadline");
+    let mut worker = worker(&db, "cancel-deadline");
+    worker.store.enable_if_new("cancel-deadline").unwrap();
+    start_placeholder(&mut worker);
+    worker.agent = AgentId::Kiro;
+    worker.cancel_deadline = Some(Instant::now() - Duration::from_millis(1));
+    worker
+        .store
+        .set_state(
+            "cancel-deadline",
+            RuntimePhase::Cancelling,
+            Some("run-1"),
+            Some("session-1"),
+            Some("turn-1"),
+            worker.chat_turn,
+            worker.message_id.as_deref(),
+        )
+        .unwrap();
+    worker.check_cancel_deadline().unwrap();
+    let snapshot = worker.store.snapshot("cancel-deadline", None).unwrap();
+    assert_eq!(snapshot.phase, RuntimePhase::Interrupted);
+    assert!(snapshot.events.iter().any(|event| {
+        matches!(
+            &event.event,
+            ChatEvent::Error { message } if message.contains("请新建对话")
+        )
+    }));
+    assert!(!snapshot
+        .events
+        .iter()
+        .any(|event| { matches!(event.event, ChatEvent::Finished { ok: true, .. }) }));
+}
+
+#[test]
+fn late_acp_permission_after_completion_is_cancelled_without_waiting() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "late-permission");
+    let mut worker = worker(&db, "late-permission");
+    worker.store.enable_if_new("late-permission").unwrap();
+    start_placeholder(&mut worker);
+    worker.agent = AgentId::Kiro;
+    worker
+        .store
+        .set_state(
+            "late-permission",
+            RuntimePhase::Completed,
+            None,
+            Some("session-1"),
+            None,
+            worker.chat_turn,
+            worker.message_id.as_deref(),
+        )
+        .unwrap();
+    worker
+        .server_request(
+            json!("late-1"),
+            "session/request_permission",
+            &json!({
+                "sessionId": "session-1",
+                "turnId": "run-1",
+                "options": [{"optionId":"allow","kind":"allow_once"}]
+            }),
+        )
+        .unwrap();
+    assert!(worker
+        .store
+        .snapshot("late-permission", None)
+        .unwrap()
+        .pending_requests
+        .is_empty());
+
+    worker
+        .store
+        .set_state(
+            "late-permission",
+            RuntimePhase::Cancelling,
+            Some("run-1"),
+            Some("session-1"),
+            Some("turn-1"),
+            worker.chat_turn,
+            worker.message_id.as_deref(),
+        )
+        .unwrap();
+    worker
+        .server_request(
+            json!("late-2"),
+            "session/request_permission",
+            &json!({
+                "sessionId": "session-1",
+                "turnId": "run-1",
+                "options": [{"optionId":"allow","kind":"allow_once"}]
+            }),
+        )
+        .unwrap();
+    assert!(worker
+        .store
+        .snapshot("late-permission", None)
+        .unwrap()
+        .pending_requests
+        .is_empty());
+}
+
+#[test]
+fn acp_stop_reasons_never_default_to_success() {
+    for (index, reason) in ["max_tokens", "max_turn_requests", "refusal", "unknown"]
+        .iter()
+        .enumerate()
+    {
+        let id = format!("stop-reason-{index}");
+        let db = Database::open_in_memory().unwrap();
+        conversation(&db, &id);
+        let mut worker = worker(&db, &id);
+        worker.store.enable_if_new(&id).unwrap();
+        start_placeholder(&mut worker);
+        worker.agent = AgentId::Kiro;
+        worker
+            .turn_completed(&json!({"stopReason": reason}))
+            .unwrap();
+        let snapshot = worker.store.snapshot(&id, None).unwrap();
+        assert_eq!(snapshot.phase, RuntimePhase::Failed, "{reason}");
+        assert_eq!(
+            snapshot.current_message.unwrap().status,
+            ChatMessageStatus::Failed,
+            "{reason}"
+        );
+        assert!(!snapshot
+            .events
+            .iter()
+            .any(|event| { matches!(event.event, ChatEvent::Finished { ok: true, .. }) }));
+    }
+}
+
+#[test]
+fn dead_kiro_process_rejects_existing_session_without_replacing_thread_id() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "dead-kiro");
+    let mut worker = worker(&db, "dead-kiro");
+    worker.agent = AgentId::Kiro;
+    worker.store.enable_if_new("dead-kiro").unwrap();
+    worker.thread_id = Some("kiro-session-1".into());
+    worker
+        .store
+        .set_state(
+            "dead-kiro",
+            RuntimePhase::Completed,
+            None,
+            worker.thread_id.as_deref(),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    let error = worker.acp_connect_and_prompt(Vec::new()).unwrap_err();
+    assert!(error.to_string().contains("新建对话"));
+    assert_eq!(worker.thread_id.as_deref(), Some("kiro-session-1"));
+    assert_eq!(
+        worker
+            .store
+            .record("dead-kiro")
+            .unwrap()
+            .unwrap()
+            .thread_id
+            .as_deref(),
+        Some("kiro-session-1")
     );
 }

@@ -34,6 +34,76 @@ pub(crate) enum KiroAuthKind {
     Oidc,
 }
 
+/// Non-secret request envelope for a connection-pool Kiro login.
+/// Access tokens stay in the shared bearer cell; this never carries a refresh token.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct KiroHttpRouteParams {
+    pub region: String,
+    pub profile_arn: Option<String>,
+    pub origin: String,
+    pub api_key: bool,
+}
+
+impl KiroHttpRouteParams {
+    pub(crate) fn from_access_token(token: &str) -> Self {
+        Self {
+            region: "us-east-1".into(),
+            profile_arn: None,
+            origin: "AI_EDITOR".into(),
+            api_key: token.trim().starts_with("ksk_"),
+        }
+    }
+
+    pub(crate) fn from_credentials(credentials: &Value, access_token: &str) -> Self {
+        let access = access_token.trim();
+        let api_key = access.starts_with("ksk_")
+            || pointer_string(
+                credentials,
+                &["/api_key", "/key", "/body/api_key", "/body/key"],
+            )
+            .is_some_and(|key| key.starts_with("ksk_"));
+        let region = pointer_string(credentials, &["/region", "/body/region"])
+            .unwrap_or_else(|| "us-east-1".into());
+        let profile_arn = pointer_string(
+            credentials,
+            &[
+                "/profile_arn",
+                "/profileArn",
+                "/body/profile_arn",
+                "/body/profileArn",
+            ],
+        );
+        let oidc = pointer_string(
+            credentials,
+            &["/client_id", "/clientId", "/body/client_id", "/body/clientId"],
+        )
+        .is_some()
+            && pointer_string(
+                credentials,
+                &[
+                    "/client_secret",
+                    "/clientSecret",
+                    "/body/client_secret",
+                    "/body/clientSecret",
+                ],
+            )
+            .is_some();
+        let origin = pointer_string(credentials, &["/origin", "/body/origin"]).unwrap_or_else(|| {
+            if oidc {
+                "KIRO_CLI".into()
+            } else {
+                "AI_EDITOR".into()
+            }
+        });
+        Self {
+            region,
+            profile_arn,
+            origin,
+            api_key,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct KiroHttpCreds {
     pub auth_kind: KiroAuthKind,
@@ -99,25 +169,34 @@ pub(crate) fn load_kiro_http_creds() -> Result<KiroHttpCreds> {
         }
     }
 
-    if let Some(path) = kiro_cli_sqlite_path() {
-        if path.is_file() {
-            if let Some(creds) = load_from_sqlite(&path)? {
-                return Ok(creds);
-            }
-        }
-    }
-
-    if let Some(path) = kiro_sso_cache_path() {
-        if path.is_file() {
-            if let Some(creds) = load_from_sso_cache(&path)? {
-                return Ok(creds);
-            }
-        }
+    let sqlite_path = kiro_cli_sqlite_path();
+    let sso_path = kiro_sso_cache_path();
+    if let Some(creds) = load_from_local_sources(sqlite_path.as_deref(), sso_path.as_deref())? {
+        return Ok(creds);
     }
 
     Err(AppError::NotFound(
         "no Kiro login or KIRO_API_KEY for HTTP".into(),
     ))
+}
+
+fn load_from_local_sources(
+    sqlite_path: Option<&Path>,
+    sso_path: Option<&Path>,
+) -> Result<Option<KiroHttpCreds>> {
+    if let Some(path) = sqlite_path.filter(|path| path.is_file()) {
+        if let Some(creds) = load_from_sqlite(path)? {
+            return Ok(Some(creds));
+        }
+    }
+
+    if let Some(path) = sso_path.filter(|path| path.is_file()) {
+        if let Some(creds) = load_from_sso_cache(path)? {
+            return Ok(Some(creds));
+        }
+    }
+
+    Ok(None)
 }
 
 fn load_from_sqlite(path: &Path) -> Result<Option<KiroHttpCreds>> {
@@ -126,27 +205,37 @@ fn load_from_sqlite(path: &Path) -> Result<Option<KiroHttpCreds>> {
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )?;
 
-    let mut token_key: Option<String> = None;
-    let mut token_raw: Option<Value> = None;
-    if let Some(v) = query_auth_kv(&conn, SOCIAL_TOKEN_KEY) {
-        token_key = Some(SOCIAL_TOKEN_KEY.into());
-        token_raw = Some(v);
-    } else {
-        for key in ODIC_TOKEN_KEYS {
-            if let Some(v) = query_auth_kv(&conn, key) {
-                token_key = Some((*key).into());
-                token_raw = Some(v);
-                break;
+    // Social login is the preferred desktop credential, but stale/corrupt
+    // records are common after a logout. Treat that record as one candidate
+    // and continue to the OIDC keys so a usable login is not hidden by it.
+    let mut token_keys = Vec::with_capacity(1 + ODIC_TOKEN_KEYS.len());
+    token_keys.push(SOCIAL_TOKEN_KEY);
+    token_keys.extend_from_slice(ODIC_TOKEN_KEYS);
+    for key in token_keys {
+        let Some(token_raw) = query_auth_kv(&conn, key) else {
+            continue;
+        };
+        match creds_from_sqlite_token(&conn, key, token_raw) {
+            Ok(creds) => return Ok(Some(creds)),
+            Err(e) => {
+                tracing::debug!(
+                    module = "adapters.kiro.http",
+                    key,
+                    error = %e,
+                    "ignoring invalid Kiro login record and trying another source"
+                );
             }
         }
     }
-    let Some(token_raw) = token_raw else {
-        return Ok(None);
-    };
-    let Some(token_key) = token_key else {
-        return Ok(None);
-    };
 
+    Ok(None)
+}
+
+fn creds_from_sqlite_token(
+    conn: &Connection,
+    token_key: &str,
+    token_raw: Value,
+) -> Result<KiroHttpCreds> {
     let access = string_field(&token_raw, &["access_token", "accessToken"])
         .ok_or_else(|| AppError::InvalidArg("Kiro login missing access_token".into()))?;
     let refresh = string_field(&token_raw, &["refresh_token", "refreshToken"]);
@@ -158,7 +247,7 @@ fn load_from_sqlite(path: &Path) -> Result<Option<KiroHttpCreds>> {
     let mut client_id = None;
     let mut client_secret = None;
     for key in ODIC_REG_KEYS {
-        if let Some(reg) = query_auth_kv(&conn, key) {
+        if let Some(reg) = query_auth_kv(conn, key) {
             client_id = string_field(&reg, &["client_id", "clientId"]);
             client_secret = string_field(&reg, &["client_secret", "clientSecret"]);
             if client_id.is_some() && client_secret.is_some() {
@@ -185,7 +274,7 @@ fn load_from_sqlite(path: &Path) -> Result<Option<KiroHttpCreds>> {
     }
     .to_string();
 
-    Ok(Some(KiroHttpCreds {
+    Ok(KiroHttpCreds {
         auth_kind,
         access_token: access,
         refresh_token: refresh,
@@ -195,9 +284,9 @@ fn load_from_sqlite(path: &Path) -> Result<Option<KiroHttpCreds>> {
         client_id,
         client_secret,
         origin,
-        sqlite_token_key: Some(token_key.clone()),
+        sqlite_token_key: Some(token_key.to_string()),
         source: format!("data.sqlite3:{token_key}"),
-    }))
+    })
 }
 
 fn load_from_sso_cache(path: &Path) -> Result<Option<KiroHttpCreds>> {
@@ -301,6 +390,17 @@ fn query_auth_kv(conn: &Connection, key: &str) -> Option<Value> {
     serde_json::from_str(&raw).ok()
 }
 
+fn pointer_string(value: &Value, pointers: &[&str]) -> Option<String> {
+    pointers.iter().find_map(|pointer| {
+        value
+            .pointer(pointer)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+    })
+}
+
 fn string_field(value: &Value, keys: &[&str]) -> Option<String> {
     let obj = value.as_object()?;
     for key in keys {
@@ -353,32 +453,5 @@ pub(crate) fn http_timeout() -> Duration {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn truncate_nanoseconds_for_chrono() {
-        let s = truncate_frac_to_micros("2026-09-07T01:08:11.937696853Z");
-        assert_eq!(s, "2026-09-07T01:08:11.937696Z");
-        assert!(parse_expires("2026-09-07T01:08:11.937696853Z").is_some());
-    }
-
-    #[test]
-    fn api_key_needs_no_refresh() {
-        let creds = KiroHttpCreds {
-            auth_kind: KiroAuthKind::ApiKey,
-            access_token: "ksk_test".into(),
-            refresh_token: None,
-            expires_at: None,
-            region: "us-east-1".into(),
-            profile_arn: None,
-            client_id: None,
-            client_secret: None,
-            origin: "AI_EDITOR".into(),
-            sqlite_token_key: None,
-            source: "env".into(),
-        };
-        assert!(!creds.needs_refresh());
-        assert_eq!(creds.token_type_header(), Some("API_KEY"));
-    }
-}
+#[path = "creds_tests.rs"]
+mod tests;
