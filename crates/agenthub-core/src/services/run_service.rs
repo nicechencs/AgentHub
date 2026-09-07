@@ -183,8 +183,9 @@ impl RunService {
 
             // Resolve specs first (sequential, cheap).
             let mut jobs: Vec<(AgentId, Option<RunSpec>, Option<AgentRunResult>)> = Vec::new();
+            let cancel = CancelToken::new();
             for &id in agents {
-                match self.resolve_job(id, prompt, opts) {
+                match self.resolve_job(id, prompt, opts, &cancel) {
                     Ok(ResolveOutcome::Ready(spec)) => jobs.push((id, Some(spec), None)),
                     Ok(ResolveOutcome::Early(result)) => jobs.push((id, None, Some(result))),
                     Err(e) => return Err(e),
@@ -251,7 +252,7 @@ impl RunService {
             let started_at = Utc::now().to_rfc3339();
             let mut resolved: Vec<(AgentId, Option<RunSpec>, Option<AgentRunResult>)> = Vec::new();
             for (id, prompt) in jobs {
-                match self.resolve_job(*id, prompt, opts) {
+                match self.resolve_job(*id, prompt, opts, cancel) {
                     Ok(ResolveOutcome::Ready(spec)) => resolved.push((*id, Some(spec), None)),
                     Ok(ResolveOutcome::Early(result)) => resolved.push((*id, None, Some(result))),
                     Err(e) => return Err(e),
@@ -298,13 +299,22 @@ impl RunService {
         result
     }
 
-    fn resolve_job(&self, id: AgentId, prompt: &str, opts: &RunOptions) -> Result<ResolveOutcome> {
+    fn resolve_job(
+        &self,
+        id: AgentId,
+        prompt: &str,
+        opts: &RunOptions,
+        cancel: &CancelToken,
+    ) -> Result<ResolveOutcome> {
         let adapter = self.registry.get(id).ok_or_else(|| {
             AppError::NotFound(format!("adapter not registered for {}", id.as_str()))
         })?;
         // Kiro Chat: prefer AgentHub-owned HTTP when login/API Key works; CLI is fallback.
-        if id == AgentId::Kiro {
-            if let Some(result) = crate::adapters::kiro::http::try_http_run_result(prompt, opts) {
+        // Dry-run must not hit the network.
+        if id == AgentId::Kiro && !opts.dry_run {
+            if let Some(result) =
+                crate::adapters::kiro::http::try_http_run_result(prompt, opts, cancel)
+            {
                 return Ok(ResolveOutcome::Early(result));
             }
         }
@@ -453,7 +463,7 @@ impl RunService {
         let mut out = Vec::with_capacity(jobs.len());
         for (id, spec, early) in jobs {
             if cancel.is_cancelled() {
-                out.push(cancelled_result(*id));
+                out.push(cancelled_from_early(*id, early.as_ref()));
                 continue;
             }
             if let Some(r) = early {
@@ -521,19 +531,28 @@ impl RunService {
 
         for (i, (id, spec, early)) in jobs.iter().enumerate() {
             if let Some(r) = early {
+                let result = if cancel.is_cancelled() {
+                    cancelled_from_early(*id, Some(r))
+                } else {
+                    r.clone()
+                };
+                if result.status == RunStatus::Cancelled {
+                    results[i] = Some(result);
+                    continue;
+                }
                 on_event(RunEvent::Started {
                     agent: *id,
-                    command: r.command.clone(),
+                    command: result.command.clone(),
                 });
-                if !r.stdout.is_empty() {
+                if !result.stdout.is_empty() {
                     on_event(RunEvent::Chunk {
                         agent: *id,
                         stream: OutputStream::Stdout,
-                        text: r.stdout.clone(),
+                        text: result.stdout.clone(),
                     });
                 }
                 on_event(RunEvent::Finished { agent: *id });
-                results[i] = Some(r.clone());
+                results[i] = Some(result);
             } else if let Some(spec) = spec {
                 work.push((i, *id, spec.clone()));
             }
@@ -674,18 +693,18 @@ impl RunService {
     }
 }
 
-fn cancelled_result(agent: AgentId) -> AgentRunResult {
+fn cancelled_from_early(agent: AgentId, early: Option<&AgentRunResult>) -> AgentRunResult {
     AgentRunResult {
         agent,
         status: RunStatus::Cancelled,
         exit_code: None,
-        duration_ms: 0,
+        duration_ms: early.map(|r| r.duration_ms).unwrap_or(0),
         stdout: String::new(),
         stderr: String::new(),
-        command: String::new(),
+        command: early.map(|r| r.command.clone()).unwrap_or_default(),
         error: Some("cancelled".into()),
         truncated: false,
-        native_session_id: None,
+        native_session_id: early.and_then(|r| r.native_session_id.clone()),
     }
 }
 
