@@ -93,3 +93,27 @@ fn namespaced_id_feeds_build_chat_body() {
         Some("conv-xyz")
     );
 }
+
+#[test]
+fn pool_access_token_does_not_invent_refresh_and_keeps_envelope() {
+    let params = super::super::creds::KiroHttpRouteParams {
+        region: "eu-west-1".into(),
+        profile_arn: Some("arn:aws:codewhisperer:eu-west-1:1:profile/X".into()),
+        origin: "AI_EDITOR".into(),
+        api_key: false,
+    };
+    let creds = creds_from_access_token("at-official", Some(&params));
+    assert!(creds.refresh_token.is_none());
+    assert!(creds.sqlite_token_key.is_none());
+    assert_eq!(creds.region, "eu-west-1");
+    assert_eq!(
+        creds.profile_arn.as_deref(),
+        Some("arn:aws:codewhisperer:eu-west-1:1:profile/X")
+    );
+    assert_eq!(creds.origin, "AI_EDITOR");
+    assert!(creds.token_type_header().is_none());
+    assert!(
+        creds.needs_refresh(),
+        "missing expiry still looks refreshable; the pool path must not call ensure_access_token"
+    );
+}

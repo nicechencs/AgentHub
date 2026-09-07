@@ -622,6 +622,7 @@ pub struct AdapterBridgeRuntimeMaterial {
     codex_ingress_grok_upstream: bool,
     grok_ingress_codex_upstream: bool,
     schedule_policy: RouteSchedulePolicy,
+    kiro_http: Option<crate::adapters::kiro::http::KiroHttpRouteParams>,
 }
 
 impl std::fmt::Debug for AdapterBridgeRuntimeMaterial {
@@ -709,6 +710,7 @@ impl AdapterBridgeRuntimeMaterial {
             codex_ingress_grok_upstream: false,
             grok_ingress_codex_upstream: false,
             schedule_policy: RouteSchedulePolicy::PriorityFailover,
+            kiro_http: None,
         }
     }
 
@@ -773,6 +775,7 @@ impl AdapterBridgeRuntimeMaterial {
             health: MemberHealth::Renewable,
             priority: 0,
             position: 0,
+            kiro_http: self.kiro_http.clone(),
         }]);
         spec
     }
@@ -1352,6 +1355,13 @@ impl AdapterBridgeService {
                     health,
                     priority: member.priority,
                     position: member.position,
+                    kiro_http: if member_protocol == BridgeUpstreamProtocol::KiroHttp {
+                        self.secrets
+                            .resolve_kiro_http_params(member.source_kind, &member.source_id)
+                            .ok()
+                    } else {
+                        None
+                    },
                 })
             })
             .collect();

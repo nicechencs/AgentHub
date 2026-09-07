@@ -4055,6 +4055,7 @@ fn pool_member(id: &str, token: &str) -> BridgeMemberSpec {
         health: MemberHealth::Renewable,
         priority: 0,
         position: 0,
+        kiro_http: None,
     }
 }
 

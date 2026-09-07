@@ -17,7 +17,9 @@ use crate::error::{AppError, Result};
 use crate::models::{AgentId, AgentRunResult, RunOptions, RunStatus};
 use crate::utils::redact::redact_text;
 
-use super::creds::{load_kiro_http_creds, persist_refreshed_token, KiroAuthKind, KiroHttpCreds};
+use super::creds::{
+    load_kiro_http_creds, persist_refreshed_token, KiroAuthKind, KiroHttpCreds, KiroHttpRouteParams,
+};
 use super::eventstream::collect_assistant_text;
 
 const LIST_TARGET: &str = "AmazonCodeWhispererService.ListAvailableModels";
@@ -394,28 +396,45 @@ pub(crate) fn build_chat_body(
     body
 }
 
-pub(crate) fn creds_from_access_token(token: &str) -> KiroHttpCreds {
+pub(crate) fn creds_from_access_token(
+    token: &str,
+    params: Option<&KiroHttpRouteParams>,
+) -> KiroHttpCreds {
     let token = token.trim().to_string();
-    let auth_kind = if token.starts_with("ksk_") {
+    let inferred = KiroHttpRouteParams::from_access_token(&token);
+    let params = params.unwrap_or(&inferred);
+    let api_key = params.api_key || token.starts_with("ksk_");
+    let auth_kind = if api_key {
         KiroAuthKind::ApiKey
+    } else if params.origin == "KIRO_CLI" {
+        KiroAuthKind::Oidc
     } else {
         KiroAuthKind::Desktop
     };
-    let origin = match auth_kind {
-        KiroAuthKind::Oidc => "KIRO_CLI",
-        KiroAuthKind::Desktop | KiroAuthKind::ApiKey => "AI_EDITOR",
-    }
-    .to_string();
+    let region = params.region.trim();
     KiroHttpCreds {
         auth_kind,
         access_token: token,
         refresh_token: None,
         expires_at: None,
-        region: "us-east-1".into(),
-        profile_arn: None,
+        region: if region.is_empty() {
+            "us-east-1".into()
+        } else {
+            region.to_owned()
+        },
+        profile_arn: params
+            .profile_arn
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned),
         client_id: None,
         client_secret: None,
-        origin,
+        origin: if params.origin.trim().is_empty() {
+            "AI_EDITOR".into()
+        } else {
+            params.origin.clone()
+        },
         sqlite_token_key: None,
         source: "bridge".into(),
     }
@@ -436,9 +455,12 @@ pub(crate) fn chat_turn_with_access_token(
     token: &str,
     prompt: &str,
     model: Option<&str>,
+    params: Option<&KiroHttpRouteParams>,
 ) -> Result<KiroChatTurn> {
-    let mut creds = creds_from_access_token(token);
-    chat_turn_with_creds(&mut creds, prompt, model, None)
+    let mut creds = creds_from_access_token(token, params);
+    // Pool logins have a current access token only. Do not invent a Desktop
+    // refresh, and do not write another machine's kiro-cli sqlite.
+    post_chat_turn(&mut creds, prompt, model, None)
 }
 
 fn chat_turn_with_creds(
@@ -448,6 +470,15 @@ fn chat_turn_with_creds(
     conversation_id: Option<&str>,
 ) -> Result<KiroChatTurn> {
     ensure_access_token(creds)?;
+    post_chat_turn(creds, prompt, model, conversation_id)
+}
+
+fn post_chat_turn(
+    creds: &mut KiroHttpCreds,
+    prompt: &str,
+    model: Option<&str>,
+    conversation_id: Option<&str>,
+) -> Result<KiroChatTurn> {
     let model_id = model
         .map(str::trim)
         .filter(|s| !s.is_empty())

@@ -28,6 +28,7 @@ pub(super) async fn handle_kiro_conversation(
         .member
         .expect("handle_conversation always picks before Kiro upstream");
     let token = member.auth.token();
+    let kiro_http = member.kiro_http.clone();
     if token.trim().is_empty() {
         return error_response(
             StatusCode::BAD_GATEWAY,
@@ -61,9 +62,10 @@ pub(super) async fn handle_kiro_conversation(
         .and_then(Value::as_bool)
         .unwrap_or(false);
 
-    let result =
-        spawn_blocking(move || chat_turn_with_access_token(&token, &prompt, model.as_deref()))
-            .await;
+    let result = spawn_blocking(move || {
+        chat_turn_with_access_token(&token, &prompt, model.as_deref(), kiro_http.as_ref())
+    })
+    .await;
 
     let turn = match result {
         Ok(Ok(turn)) => turn,

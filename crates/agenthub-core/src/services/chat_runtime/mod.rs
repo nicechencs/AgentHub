@@ -904,9 +904,14 @@ impl ActorWorker {
             transport.shutdown();
         }
         self.transport = None;
+        let message = if self.agent == AgentId::Kiro {
+            "取消请求超时，当前对话已中断，请新建对话"
+        } else {
+            "取消请求超时，已中断当前生成"
+        };
         self.terminalize(
             ChatMessageStatus::Cancelled,
-            Some("取消请求超时，已中断当前生成"),
+            Some(message),
             RuntimePhase::Interrupted,
             false,
             true,
