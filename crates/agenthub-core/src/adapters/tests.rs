@@ -5,7 +5,8 @@ use super::detect_binary::well_known_npm_cli_dirs;
 use super::detect_binary::{
     agenthub_user_npm_prefix_roots, attach_extra_binary_copies, detect_binary, expand_binary_names,
     first_existing_named_bin, infer_channel, is_under_agenthub_user_npm_prefix,
-    npm_global_bin_dirs, npm_prefix_stdout_to_bin_dir, parse_npmrc_global_prefix,
+    npm_cmd_shim_script_from_text, npm_global_bin_dirs, npm_prefix_stdout_to_bin_dir,
+    parse_npmrc_global_prefix, rewrite_windows_batch_run_spec, spawn_npm_cmd_via_node,
     user_writable_npm_bin_dir, user_writable_npm_prefix, well_known_bin_paths,
     NOT_FOUND_FIREFIGHTING_NOTE,
 };
@@ -13,7 +14,7 @@ use super::*;
 use crate::error::AppError;
 use crate::models::{
     AccountKind, AgentConfig, AgentId, Capability, CapabilityLevel, DetectResult, DetectStatus,
-    DetectedBinaryCopy,
+    DetectedBinaryCopy, RunSpec,
 };
 use crate::utils::atomic::atomic_write;
 use serde_json::json;
@@ -67,6 +68,117 @@ fn first_existing_named_bin_skips_unix_shebang_prefers_cmd() {
         Some(dir.join("codex.cmd")),
         "must not pick the Unix shebang `codex` that CreateProcess cannot run"
     );
+}
+
+#[test]
+fn npm_cmd_shim_script_from_text_reads_dp0_js() {
+    let text = r#"@ECHO off
+endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\node_modules\@earendil-works\pi-coding-agent\dist\bundle\cli.js" %*
+"#;
+    let dir = PathBuf::from(r"C:\Users\demo\AppData\Roaming\npm");
+    let js = npm_cmd_shim_script_from_text(text, &dir).expect("js entry");
+    assert_eq!(
+        js,
+        dir.join("node_modules")
+            .join("@earendil-works")
+            .join("pi-coding-agent")
+            .join("dist")
+            .join("bundle")
+            .join("cli.js")
+    );
+}
+
+#[test]
+fn spawn_npm_cmd_via_node_rewrites_when_js_exists() {
+    let tmp = tempfile::tempdir().unwrap();
+    let npm = tmp.path().join("npm");
+    let js_dir = npm
+        .join("node_modules")
+        .join("@earendil-works")
+        .join("pi-coding-agent")
+        .join("dist")
+        .join("bundle");
+    std::fs::create_dir_all(&js_dir).unwrap();
+    let js = js_dir.join("cli.js");
+    std::fs::write(&js, "console.log('pi')\n").unwrap();
+    let cmd = npm.join("pi.cmd");
+    std::fs::write(
+        &cmd,
+        format!(
+            "@ECHO off\n\"%_prog%\" \"%dp0%\\node_modules\\@earendil-works\\pi-coding-agent\\dist\\bundle\\cli.js\" %*\n"
+        ),
+    )
+    .unwrap();
+    let node = tmp.path().join("node.exe");
+    let (program, args) =
+        spawn_npm_cmd_via_node(&cmd, vec!["-p".into(), "hello\nworld".into()], &node);
+    assert_eq!(program, node);
+    assert_eq!(args[0], js.to_string_lossy());
+    assert_eq!(args[1], "-p");
+    assert_eq!(args[2], "hello\nworld");
+}
+
+#[test]
+fn spawn_npm_cmd_via_node_leaves_non_cmd_alone() {
+    let (program, args) = spawn_npm_cmd_via_node(
+        std::path::Path::new("pi"),
+        vec!["-p".into()],
+        std::path::Path::new("node"),
+    );
+    assert_eq!(program, PathBuf::from("pi"));
+    assert_eq!(args, vec!["-p"]);
+}
+
+fn sample_run_spec(agent: AgentId, program: PathBuf, args: Vec<String>) -> RunSpec {
+    RunSpec {
+        agent,
+        program,
+        args,
+        cwd: None,
+        env: vec![],
+    }
+}
+
+#[test]
+fn rewrite_windows_batch_run_spec_leaves_exe_alone() {
+    let exe = PathBuf::from("WorkBuddy.exe");
+    let mut spec = sample_run_spec(
+        AgentId::WorkBuddy,
+        exe.clone(),
+        vec!["-p".into(), "hello\nworld".into()],
+    );
+    rewrite_windows_batch_run_spec(&mut spec);
+    assert_eq!(spec.program, exe);
+    assert_eq!(spec.args, vec!["-p", "hello\nworld"]);
+}
+
+#[cfg(windows)]
+#[test]
+fn rewrite_windows_batch_run_spec_uses_sibling_ps1() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cmd = tmp.path().join("cursor-agent.cmd");
+    let ps1 = tmp.path().join("cursor-agent.ps1");
+    std::fs::write(&cmd, "@echo off\npowershell -File cursor-agent.ps1 %*\n").unwrap();
+    std::fs::write(&ps1, "# cursor\n").unwrap();
+    let mut spec = sample_run_spec(
+        AgentId::Cursor,
+        cmd,
+        vec!["-p".into(), "hello\nworld".into()],
+    );
+    rewrite_windows_batch_run_spec(&mut spec);
+    assert!(
+        spec.program
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.eq_ignore_ascii_case("powershell.exe")),
+        "program={:?}",
+        spec.program
+    );
+    assert_eq!(spec.args[0], "-NoProfile");
+    assert_eq!(spec.args[3], "-File");
+    assert_eq!(spec.args[4], ps1.to_string_lossy());
+    assert_eq!(spec.args[5], "-p");
+    assert_eq!(spec.args[6], "hello\nworld");
 }
 
 #[test]

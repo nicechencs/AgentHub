@@ -4,7 +4,7 @@ description: AgentHub 进程内 Gateway 的 loopback HTTP endpoint、鉴权和�
 type: reference
 audience: integrator
 status: current
-updated: 2026-09-02
+updated: 2026-09-08
 ---
 
 # 本机 Routes API
@@ -39,7 +39,7 @@ Authorization: Bearer <local-token>
 
 `/models` 与 `/chat/completions` 是兼容别名。其余对话路径使用 `/v1/messages`、`/v1/responses`、`/v1/chat/completions`。对这些对话路径发 `GET`/`PUT` 等非 POST 方法返回 `405` `method_not_allowed`（双语 JSON + `Allow: POST`），不会返回空 body。
 
-目标客户端：Claude 用 `/v1/messages`；Codex 和 Grok 用 `/v1/responses`（配置里写本机令牌，按 API Key 方式）；Kimi / DSH 用 `/v1/chat/completions`。Kiro 登录可作为上游接到 Claude / Codex / Grok（一轮文本回复）。
+目标客户端：Claude 用 `/v1/messages`；Codex 和 Grok 用 `/v1/responses`（配置里写本机令牌，按 API Key 方式）；Kimi / DSH 用 `/v1/chat/completions`。Kiro 登录可作为上游接到 Claude / Codex / Grok。Kiro 本机路由按请求返回 JSON 或 SSE（`Accept: text/event-stream`）；目前先收齐上游回复再输出。使用连接池里当前登录的访问令牌，并带上该登录的区域、profile 与请求来源，不在本机路由里刷新令牌。Chat 侧已有 HTTP 会话失败时的 fail-closed 见 [STATUS](../STATUS.md)，不是本页的 loopback 契约。
 
 ## Models 响应
 
@@ -100,6 +100,7 @@ Codex 与 Grok 都使用 `POST /v1/responses`。具体 Responses 格式（Codex 
 - 只绑定 loopback，不提供公网监听或 CORS 网关。
 - Route 的启动、停止、apply 和恢复由 backend/Tauri 控制面完成；不要手写第二个 listener。
 - 已提交下游第一个字节后不再换成员或重放；提交前可按健康与模型切合格成员。
+- Kiro 上游请求使用池内当前成员的登录参数；无效本机登录不会拿来发请求。
 - `local_bridge` 只是三种 adapter route 之一；能用 `native_endpoint` 或 `config_sync` 时优先原生路径，官方直连不会自动改成本机转发。
 
 ## 相关页面

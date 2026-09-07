@@ -3,7 +3,7 @@ title: Future Proposals
 type: navigation
 status: current
 owner: maintainers
-updated: 2026-09-07
+updated: 2026-09-08
 ---
 
 # Proposals
@@ -29,9 +29,9 @@ Every proposal in this directory has `Status: proposed`. A proposal may be resea
 | [tray-background-modes.md](tray-background-modes.md) | proposed | Could closing the window reduce WebView memory without changing route ownership or exit semantics? |
 | [modularity.md](modularity.md) | proposed | Which single-source and use-case boundaries should be tightened before any larger process change? |
 | [Service 内部 owner 拆分](../architecture/service-internal-owners.md) | proposed | Concrete internal owner split for O-11 ProviderService, O-12 AccountService, O-13 BackupService, and O-14/O-66 local-route persist — façades and switch semantics stay |
-| [接入 Kiro（kiro-cli）](agent-kiro.md) | proposed | 半面 CLI 目标书；现行发送以 STATUS 为准（有命令行走命令行）。 |
-| [Kiro HTTP / 本机转发](agent-kiro-http.md) | proposed | HTTP 列模型与无命令行时的文本回复；本机路由仍后置。 |
-| [国内自动更新镜像（R2）](update-mirror-r2.md) | proposed | 国内连不上 GitHub 时镜像到 R2+Worker（`updates.agenthub.qooo.io`）；App 镜像优先、GitHub 回退。CF 资源运维自建；见提案实施进度。 |
+| [接入 Kiro（kiro-cli）](agent-kiro.md) | proposed（半面已落地） | 早期目标书；现行检测/登录/ACP/项目/用量以 [STATUS](../STATUS.md) 为准。 |
+| [Kiro HTTP / 本机转发](agent-kiro-http.md) | proposed（切片已落地） | Chat HTTP 多轮与本机路由已接线；剩余边界与 fail-closed 见 STATUS 与提案正文。 |
+| [国内自动更新镜像（R2）](update-mirror-r2.md) | proposed（0.4.9 已发） | App 镜像优先、GitHub 回退已在正式包；CF 资源仍由运维配置，见提案实施进度。 |
 | [plugin-management.md](plugin-management.md) | proposed | Could AgentHub list and manage per-agent plugin/extension packs (not MCP servers) via official CLIs, with a Routes-like workbench? |
 | [read-model-owners.md](../architecture/read-model-owners.md) | proposed | Could O-15–O-19 be narrowed with unique mapper owners without changing wire DTO or splitting public types? |
 | [runtime-context-owners.md](../architecture/runtime-context-owners.md) | proposed | Could store reset/invalidation live in one runtime context (O-07) without changing plan/bind/switch? |

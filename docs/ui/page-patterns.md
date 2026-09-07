@@ -3,7 +3,7 @@ title: UI 页面模式
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-05
+updated: 2026-09-08
 ---
 
 # UI Page Patterns
@@ -30,7 +30,7 @@ The application is organized by work and management, with Agent filtering inside
 | Manage | Routes | `/routes` | Local route runtime and the connection pool. May add/manage route-only official login / API Key; `/routes` opens the board; secondary nav: board / pool / tokens / activity |
 | Manage | Settings | `/settings` | Preferences, local device, backups, and about |
 
-`Plugins` and `MCP` are in development. New installs hide the **Plugins** and **Sub2API** sidebar entries (`pluginsNavVisible` and `sub2apiNavVisible` default off). **Routes** defaults **on** (`routesNavVisible` default on) and can be hidden in Preferences. Turning a setting on shows its entry; the pages stay reachable at `/routes`, `/plugins`, and `/sub2api`. MCP stays in the workspace nav. The sidebar and page titles mark **MCP** and **Plugins** as in development; Routes and Sub2API are preference-gated without that mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / uninstall / update for plugin packs is still a [proposal](../proposals/plugin-management.md). The current page lists installed packs for Claude, Grok, and Pi; Claude and Grok can enable or disable. There is no install button.
+New installs hide the **Plugins** and **Sub2API** sidebar entries (`pluginsNavVisible` and `sub2apiNavVisible` default off). **Routes** defaults **on** (`routesNavVisible` default on) and can be hidden in Preferences. Turning a setting on shows its entry; the pages stay reachable at `/routes`, `/plugins`, and `/sub2api`. MCP stays in the workspace nav. The sidebar marks **Plugins** as in development; MCP no longer has that mark. Routes and Sub2API are preference-gated without that mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / uninstall / update for plugin packs is still a [proposal](../proposals/plugin-management.md). The current page lists installed packs for Claude, Grok, and Pi; Claude and Grok can enable or disable. There is no install button.
 
 The compatibility paths `/adapter` and `/router` replace-navigate to `/routes`. They are recovery paths for existing links, not current navigation labels.
 
@@ -329,7 +329,7 @@ Chat is a one-conversation, one-Agent workbench with a session rail, transcript,
 - The rail supports new conversation, search by title and working directory, day grouping, selection, rename, and delete confirmation.
 - The current conversation header exposes Agent identity, working directory, automatic-approval state, and connection context. A missing working directory is a blocker, not an automatic modal.
 - A conversation has one active Agent. Hidden or unauthorized Agents remain visible with a reason but cannot be selected for a new send.
-- The composer validates blockers in order: hidden Agent, missing authorization, missing working directory, then another conversation currently sending. It renders only the first blocker with a recovery action.
+- The composer validates blockers in order: hidden Agent, environment not ready, missing authorization, unknown status, then missing working directory. It renders only the first blocker with a recovery action. Sending is isolated per conversation; several conversations may generate at once.
 - The send button is the page's one accent action. Sending changes it to a stop action. Retry creates a new turn using the same validation path.
 - Streaming process details use a compact summary and an expandable timeline. Commands, stderr, and exit codes stay in a secondary runtime-details disclosure.
 - Switching conversations does not cancel the active operation. Codex runtime keeps per-conversation process state and a replay cursor; its snapshot supplies the authoritative current reply. Legacy sends retain their existing in-memory process behavior.
@@ -339,14 +339,14 @@ Chat is a one-conversation, one-Agent workbench with a session rail, transcript,
 
 - Session rail: new conversation, search by title/cwd, day grouping, rename, delete confirmation.
 - Header: Agent identity, working directory, automatic-approval state, connection context.
-- Composer blocker order: hidden Agent → missing authorization → missing working directory → another conversation sending; send is the one accent action (becomes stop); retry creates a new turn.
+- Composer blocker order: hidden Agent → environment not ready → missing authorization → unknown status → missing working directory; send is the one accent action (becomes stop); retry creates a new turn. Several conversations may generate at once.
 - Streaming process panel with expandable timeline; copy for completed messages only.
-- New Codex conversations use durable app-server snapshots and show actual approval/question requests as controls. Replies and stop target the exact run; snapshot failure does not fall back to legacy send. Model/effort, unified actions, attachments and extension discovery remain B2 work. See [B1 handoff](../status/chat-codex-b1.md) for verified scope and outstanding real desktop scenarios.
+- New Codex conversations use durable app-server snapshots and show actual approval/question requests as controls. Replies and stop target the exact run; snapshot failure does not fall back to legacy send. Codex B2 is in: session model/effort, actions menu, localImage attachments, and skills/plugins discovery for this turn (no plan mode). New Grok conversations are continuous (model/thinking, images, queued follow-ups). New Kiro conversations use the ACP continuous channel; old Kiro chats keep the original send path. See [B2](../status/chat-codex-b2.md) and [STATUS](../STATUS.md).
 
 ### Agent touchpoints (Chat)
 
 - **StructuredStream** (and text fallbacks) for Chat send/stream; **DangerousMode** / automatic-approval where supported.
-- **SessionResume** where Partial (e.g. Claude / Codex print+resume); connection context from current login / 本机路由.
+- **SessionResume** where Partial (Claude / Codex / Grok print+resume; Kiro continuous ACP / HTTP `kiro-http:`); connection context from current login / 本机路由.
 - One active Agent per conversation; hidden/unauthorized Agents visible with reason but not selectable for a new send.
 
 ### Out of scope (Chat)
@@ -398,7 +398,7 @@ Skills, Projects, and Plugins are full-height workbenches with a left inventory 
 
 ### Agent touchpoints (Projects)
 
-- **ProjectHistory** for list/preview; **ProjectDelete** where supported (ZCode delete stays in ZCode; Cursor unsupported).
+- **ProjectHistory** for list/preview; **ProjectDelete** where supported (ZCode / Kiro delete stays in that tool; Cursor unsupported). Kiro lists CLI and editor conversations.
 - Transcript/session support is capability-gated; unsupported actions hidden or disabled with a hint.
 - Does not silently edit the original Agent log when handing off to Chat.
 

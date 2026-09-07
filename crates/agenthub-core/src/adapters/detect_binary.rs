@@ -703,6 +703,144 @@ pub(crate) fn first_existing_named_bin(dirs: &[PathBuf], names: &[String]) -> Op
     None
 }
 
+/// Rewrite Windows `.cmd` / `.bat` Chat spawns so prompts with newlines work.
+///
+/// `CreateProcess` on batch files rejects `\n` / `"` (`batch file arguments are
+/// invalid`). Prefer the installed Node + npm `cli.js`; otherwise a sibling
+/// `.ps1` via `powershell.exe -File` (Cursor).
+pub(crate) fn rewrite_windows_batch_run_spec(spec: &mut crate::models::RunSpec) {
+    if !looks_like_windows_batch(&spec.program) {
+        return;
+    }
+    let original = spec.program.clone();
+    if let Some(node) = node_for_batch_rewrite(spec.agent) {
+        let args = std::mem::take(&mut spec.args);
+        let (program, args) = spawn_npm_cmd_via_node(&original, args, &node);
+        spec.program = program;
+        spec.args = args;
+        if spec.program != original {
+            if !spec.env.iter().any(|(k, _)| k.eq_ignore_ascii_case("PATH")) {
+                spec.env
+                    .extend(crate::runtime::prefixed_path_env(node.parent()));
+            }
+            return;
+        }
+    }
+    let args = std::mem::take(&mut spec.args);
+    let (program, args) = spawn_cmd_via_sibling_powershell(&original, args);
+    spec.program = program;
+    spec.args = args;
+}
+
+fn node_for_batch_rewrite(agent: AgentId) -> Option<PathBuf> {
+    match agent {
+        AgentId::Pi => crate::runtime::resolve_pi_node().map(|n| n.path),
+        _ => crate::runtime::resolve_node_at_least(crate::catalog::limits::NODE_MIN_MAJOR)
+            .map(|n| n.path)
+            .or_else(|| crate::runtime::resolve_binary(&["node", "node.exe"])),
+    }
+}
+
+fn spawn_cmd_via_sibling_powershell(binary: &Path, args: Vec<String>) -> (PathBuf, Vec<String>) {
+    if !looks_like_windows_batch(binary) {
+        return (binary.to_path_buf(), args);
+    }
+    let ps1 = binary.with_extension("ps1");
+    if !ps1.is_file() {
+        return (binary.to_path_buf(), args);
+    }
+    let Some(powershell) = windows_powershell_exe() else {
+        return (binary.to_path_buf(), args);
+    };
+    let mut out = vec![
+        "-NoProfile".into(),
+        "-ExecutionPolicy".into(),
+        "Bypass".into(),
+        "-File".into(),
+        ps1.to_string_lossy().into_owned(),
+    ];
+    out.extend(args);
+    (powershell, out)
+}
+
+fn windows_powershell_exe() -> Option<PathBuf> {
+    let root = std::env::var_os("SystemRoot").map(PathBuf::from)?;
+    let exe = root
+        .join("System32")
+        .join("WindowsPowerShell")
+        .join("v1.0")
+        .join("powershell.exe");
+    exe.is_file().then_some(exe)
+}
+
+/// If `binary` is an npm `.cmd` / `.bat` shim, run `node <cli.js> …` instead.
+pub(crate) fn spawn_npm_cmd_via_node(
+    binary: &Path,
+    args: Vec<String>,
+    node: &Path,
+) -> (PathBuf, Vec<String>) {
+    if !looks_like_windows_batch(binary) {
+        return (binary.to_path_buf(), args);
+    }
+    let Some(js) = npm_cmd_shim_script(binary) else {
+        return (binary.to_path_buf(), args);
+    };
+    if !js.is_file() {
+        return (binary.to_path_buf(), args);
+    }
+    let mut out = Vec::with_capacity(args.len() + 1);
+    out.push(js.to_string_lossy().into_owned());
+    out.extend(args);
+    (node.to_path_buf(), out)
+}
+
+fn looks_like_windows_batch(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .as_deref(),
+        Some("cmd" | "bat")
+    )
+}
+
+/// JS entry an npm global `.cmd` shim execs (`%dp0%\node_modules\pkg\cli.js`).
+pub(crate) fn npm_cmd_shim_script(cmd_path: &Path) -> Option<PathBuf> {
+    let text = std::fs::read_to_string(cmd_path).ok()?;
+    let dir = cmd_path.parent()?;
+    npm_cmd_shim_script_from_text(&text, dir)
+}
+
+pub(crate) fn npm_cmd_shim_script_from_text(text: &str, shim_dir: &Path) -> Option<PathBuf> {
+    for raw in text.lines() {
+        if let Some(rel) = extract_dp0_js(raw) {
+            return Some(shim_dir.join(rel));
+        }
+    }
+    None
+}
+
+fn extract_dp0_js(line: &str) -> Option<PathBuf> {
+    const MARK: &str = "%dp0%";
+    let start = line.find(MARK)?;
+    let rest = line[start + MARK.len()..].trim_start_matches(['\\', '/', '"']);
+    let end = rest
+        .find(|c: char| c == '"' || c.is_whitespace())
+        .unwrap_or(rest.len());
+    let rel = &rest[..end];
+    if rel.is_empty() || !rel.to_ascii_lowercase().ends_with(".js") {
+        return None;
+    }
+    let mut path = PathBuf::new();
+    for part in rel.split(['\\', '/']) {
+        if part.is_empty() {
+            continue;
+        }
+        path.push(part);
+    }
+    Some(path)
+}
+
 /// True when `Command::new(path)` can launch the file without a shell.
 ///
 /// npm's extensionless `codex` on Windows is `#!/bin/sh` — CreateProcess

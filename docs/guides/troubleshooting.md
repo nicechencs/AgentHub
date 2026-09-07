@@ -4,7 +4,7 @@ description: 按启动、环境、登录、Routes、日志和测试症状定位�
 type: guide
 audience: user-and-contributor
 status: current
-updated: 2026-09-03
+updated: 2026-09-08
 ---
 
 # 排障指南
@@ -54,10 +54,10 @@ AgentHub 一键 npm 安装写到 `~/.npm-global`（Windows 为 `%APPDATA%\npm`�
 | 点安装后打开官网 | WorkBuddy / ZCode 没有脚本安装，只打开官网安装页 | 这是指引，不是安装失败。在官网装完后，从托盘退出并重新打开 AgentHub |
 | 失败面板全是下载进度 | 旧版把 npm HTTP 当正文 | 现行失败面板先显示诊断，下载进度会折叠 |
 | WorkBuddy / ZCode 桌面套餐登录没出现 | 桌面套餐登录不导入 | 用「添加 API Key」写入自定义模型/供应商；套餐登录留在桌面客户端 |
-| WorkBuddy / ZCode 的 API Key「分享至连接池」灰掉 | 现行实现按 Agent 白名单入池，还没跟上产品规则 | 产品上 **API Key 都应能分享**；只有国产官方登录不能分享。实现跟上前可把同一把钥匙用「添加 API Key」加到能进池的工具 |
+| 连接页找不到「分享至连接池」 | 入池入口已改到连接池 | 打开 Routes → 连接池，用「从连接同步」。**API Key 都可以同步**；国产官方登录不能分享 |
 | ZCode 自定义供应商不出现在模型列表 | 自定义行必须带模型名单 | 添加 API Key 时填入模型；官方槽会写入默认名单 |
 
-### Cursor / Kimi 登录
+### Cursor / Kimi / Kiro 登录
 
 | 现象 | 常见原因 | 处理 |
 | --- | --- | --- |
@@ -65,6 +65,8 @@ AgentHub 一键 npm 安装写到 `~/.npm-global`（Windows 为 `%APPDATA%\npm`�
 | Cursor 点「用这份登录」后出现中文错误 | Cursor 不能把登录写回本机配置 | 用 Cursor 自己的登录。本机已有登录仍可导入到登录列表 |
 | 保存第二张登录后第一张进了回收站 | 旧版会按同一把钥匙合并 | 现行不会因同一把钥匙悄悄删除另一张 |
 | Kimi 对话失败、模型不在配置里 | 本机 `config.toml` 缺模型表 | 再切换一次该登录，会写出带 `kimi-k2` 的完整配置 |
+| Kiro 官方登录打不开或不写入连接 | 未装 `kiro-cli`，或本机 sqlite 登录无效 | Agents 页先装/检测 Kiro 命令行；无效本机登录会被跳过。可再登一份并切换 |
+| Kiro 已有 HTTP 对话失败后变成新的命令行会话 | 旧版会回退 CLI | 现行已有 HTTP 会话失败时直接报错并保留会话，再发仍走同一条 HTTP 对话 |
 
 ## 登录或配置问题
 
@@ -75,7 +77,7 @@ AgentHub 一键 npm 安装写到 `~/.npm-global`（Windows 为 `%APPDATA%\npm`�
 - 「使用官方服务」勾选后仍可粘贴做智能识别。高级编辑器不回显明文钥匙。本机正在用官方登录时，不要用「添加 API Key」去导入；反过来也一样，改用对应入口。
 - Windows 上子进程统一无窗启动，不应再弹出 cmd 闪窗。
 - CLI 使用 `account add-apikey --key -` 从 stdin 读取 key，避免把 key 放进 shell history。
-- 官方登录以 GUI 为主。Claude / Codex 走浏览器回调；Grok 走设备码（打开验证页并输入代码）。CLI 的 `account oauth-url` 只打印授权地址或设备码，不能替代完整本机登录。
+- 官方登录以 GUI 为主。Claude / Codex 走浏览器回调；Grok 走设备码（打开验证页并输入代码）；Kiro 打开 Kiro 自己的登录（`kiro-cli`），完成后写入连接。CLI 的 `account oauth-url` 只打印授权地址或设备码，不能替代完整本机登录。
 - 当前项目沿用既有凭据存储方案，不规划额外加密或国产 OAuth 转 API。
 
 ## Routes 返回错误

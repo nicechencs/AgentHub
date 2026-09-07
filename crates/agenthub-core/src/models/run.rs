@@ -107,6 +107,9 @@ impl ProcessMode {
 pub struct RunOptions {
     pub mode: RunMode,
     pub timeout: Duration,
+    /// Streaming runs also stop after this long with no stdout/stderr.
+    /// `None` keeps wall-clock-only behavior (CLI `run`).
+    pub idle_timeout: Option<Duration>,
     pub cwd: Option<PathBuf>,
     pub dry_run: bool,
     /// When true (default), missing agents become Skipped instead of hard error.
@@ -130,6 +133,7 @@ impl Default for RunOptions {
         Self {
             mode: RunMode::Parallel,
             timeout: crate::catalog::limits::DEFAULT_RUN_TIMEOUT,
+            idle_timeout: None,
             cwd: None,
             dry_run: false,
             skip_missing: true,
