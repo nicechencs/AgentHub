@@ -535,6 +535,7 @@ export function useChatPageSend(input: {
       hiddenIds,
       envNotReadyIds,
       unconfiguredAuthIds,
+      agentsReady,
     }).length > 0) {
       return;
     }

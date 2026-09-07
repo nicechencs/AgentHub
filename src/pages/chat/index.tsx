@@ -367,6 +367,7 @@ export default function ChatPage() {
                         models={page.runtimeOps.models}
                         settings={page.runtimeOps.settings}
                         frozen={page.runtimeOps.frozen}
+                        frozenReason={page.primaryAgent === 'kiro' ? t('chat.kiro.settingsLocked') : undefined}
                         catalogLoading={page.runtimeOps.loading}
                         efforts={page.runtimeOps.currentEfforts}
                         onSwitchModel={(id) => void page.runtimeOps.switchModel(id)}

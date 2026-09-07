@@ -104,7 +104,7 @@ describe('chat layout wiring', () => {
     expect(hook).toContain('setHistoryRevealNonce');
   });
 
-  it('wires a one-shot honesty banner for Kiro without runtime request panels', () => {
+  it('wires chat capability helpers and the Kiro composer placeholder', () => {
     const page = source('index.tsx');
     expect(page).toContain('kiroChatStance');
     expect(page).toContain('kiroChatBannerCopy');

@@ -513,8 +513,11 @@ export function createMockChatPort(): ChatPort {
     async runtimeContinueLegacy(conversationId) {
       const conv = mockConversations.find((item) => item.id === conversationId);
       if (!conv) throw new Error(`conversation not found: ${conversationId}`);
-      if (conv.agentIds[0] !== 'grok' && conv.agentIds[0] !== 'kiro') {
-        throw new Error('只有 Grok 和 Kiro 可以用新方式继续');
+      if (conv.agentIds[0] === 'kiro') {
+        throw new Error('旧 Kiro 对话不能切换聊天方式，请新建对话');
+      }
+      if (conv.agentIds[0] !== 'grok') {
+        throw new Error('只有 Grok 可以用新方式继续');
       }
       if (!conv.nativeSessionId?.trim()) throw new Error('这条对话没有可接上的会话，请新建对话');
       const current = runtimeSnapshots.get(conversationId);

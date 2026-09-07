@@ -17,7 +17,7 @@ export function grokCanQueueFollowUp(input: {
 }
 
 /** Drain the queued line only after a successful turn. Stop/fail keep it unsent. */
-/** Old Grok chats stay on print send until the user explicitly continues. */
+/** Only Grok can reconnect an old native session in a fresh ACP process. */
 export function grokLegacyContinueKind(input: {
   agentId?: string | null;
   runtimeEnabled?: boolean;
@@ -25,6 +25,9 @@ export function grokLegacyContinueKind(input: {
   nativeSessionId?: string | null;
 }): 'continue' | 'newChat' | null {
   if (!isAcpFollowUpAgent(input.agentId) || input.runtimeEnabled || !input.hasMessages) return null;
+  // Kiro session ids belong to the original ACP process. HTTP ids also cannot
+  // be loaded by the CLI; keep old history without offering a lossy upgrade.
+  if (input.agentId === 'kiro') return 'newChat';
   return input.nativeSessionId?.trim() ? 'continue' : 'newChat';
 }
 
