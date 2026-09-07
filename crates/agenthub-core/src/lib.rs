@@ -151,30 +151,36 @@ impl AgentHub {
                 self.route_pools.restore_membership_trash(&payload)?;
                 self.connections.delete_trash(id)?;
             }
-            ConnectionTrashKind::Account => {
-                let home = row.home.clone();
-                let agent_id = row.agent_id;
-                let source_id = row.source_id.clone();
-                self.connections.restore_trash(id)?;
-                if home == TRASH_HOME_ROUTE_POOL {
-                    self.route_pools.reattach_restored_pool_owned(
-                        agent_id,
-                        AdapterSourceKind::Account,
-                        &source_id,
-                    )?;
-                }
-            }
-            ConnectionTrashKind::Provider => {
-                let home = row.home.clone();
-                let agent_id = row.agent_id;
-                let source_id = row.source_id.clone();
-                self.connections.restore_trash(id)?;
-                if home == TRASH_HOME_ROUTE_POOL {
-                    self.route_pools.reattach_restored_pool_owned(
-                        agent_id,
-                        AdapterSourceKind::Provider,
-                        &source_id,
-                    )?;
+            ConnectionTrashKind::Account | ConnectionTrashKind::Provider => {
+                if row.home == TRASH_HOME_ROUTE_POOL {
+                    self.route_pools.require_enabled()?;
+                    let source_kind = match row.kind {
+                        ConnectionTrashKind::Account => AdapterSourceKind::Account,
+                        ConnectionTrashKind::Provider => AdapterSourceKind::Provider,
+                        ConnectionTrashKind::Membership => unreachable!(),
+                    };
+                    self.connections.restore_trash_source(id)?;
+                    if let Err(error) = self.route_pools.reattach_restored_pool_owned(
+                        row.agent_id,
+                        source_kind,
+                        &row.source_id,
+                    ) {
+                        if let Err(cleanup) = self.connections.discard_restored_source(
+                            row.kind,
+                            row.agent_id,
+                            &row.source_id,
+                        ) {
+                            tracing::warn!(
+                                error_code = cleanup.code(),
+                                source_id = row.source_id.as_str(),
+                                "failed to roll back restored login after route reattach failure"
+                            );
+                        }
+                        return Err(error);
+                    }
+                    self.connections.delete_trash(id)?;
+                } else {
+                    self.connections.restore_trash(id)?;
                 }
             }
         }
