@@ -6,14 +6,15 @@ use super::detect_binary::{
     agenthub_user_npm_prefix_roots, attach_extra_binary_copies, detect_binary, expand_binary_names,
     first_existing_named_bin, infer_channel, is_under_agenthub_user_npm_prefix,
     npm_cmd_shim_script_from_text, npm_global_bin_dirs, npm_prefix_stdout_to_bin_dir,
-    parse_npmrc_global_prefix, spawn_npm_cmd_via_node, user_writable_npm_bin_dir,
-    user_writable_npm_prefix, well_known_bin_paths, NOT_FOUND_FIREFIGHTING_NOTE,
+    parse_npmrc_global_prefix, rewrite_windows_batch_run_spec, spawn_npm_cmd_via_node,
+    user_writable_npm_bin_dir, user_writable_npm_prefix, well_known_bin_paths,
+    NOT_FOUND_FIREFIGHTING_NOTE,
 };
 use super::*;
 use crate::error::AppError;
 use crate::models::{
     AccountKind, AgentConfig, AgentId, Capability, CapabilityLevel, DetectResult, DetectStatus,
-    DetectedBinaryCopy,
+    DetectedBinaryCopy, RunSpec,
 };
 use crate::utils::atomic::atomic_write;
 use serde_json::json;
@@ -126,6 +127,58 @@ fn spawn_npm_cmd_via_node_leaves_non_cmd_alone() {
     );
     assert_eq!(program, PathBuf::from("pi"));
     assert_eq!(args, vec!["-p"]);
+}
+
+fn sample_run_spec(agent: AgentId, program: PathBuf, args: Vec<String>) -> RunSpec {
+    RunSpec {
+        agent,
+        program,
+        args,
+        cwd: None,
+        env: vec![],
+    }
+}
+
+#[test]
+fn rewrite_windows_batch_run_spec_leaves_exe_alone() {
+    let exe = PathBuf::from("WorkBuddy.exe");
+    let mut spec = sample_run_spec(
+        AgentId::WorkBuddy,
+        exe.clone(),
+        vec!["-p".into(), "hello\nworld".into()],
+    );
+    rewrite_windows_batch_run_spec(&mut spec);
+    assert_eq!(spec.program, exe);
+    assert_eq!(spec.args, vec!["-p", "hello\nworld"]);
+}
+
+#[cfg(windows)]
+#[test]
+fn rewrite_windows_batch_run_spec_uses_sibling_ps1() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cmd = tmp.path().join("cursor-agent.cmd");
+    let ps1 = tmp.path().join("cursor-agent.ps1");
+    std::fs::write(&cmd, "@echo off\npowershell -File cursor-agent.ps1 %*\n").unwrap();
+    std::fs::write(&ps1, "# cursor\n").unwrap();
+    let mut spec = sample_run_spec(
+        AgentId::Cursor,
+        cmd,
+        vec!["-p".into(), "hello\nworld".into()],
+    );
+    rewrite_windows_batch_run_spec(&mut spec);
+    assert!(
+        spec.program
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.eq_ignore_ascii_case("powershell.exe")),
+        "program={:?}",
+        spec.program
+    );
+    assert_eq!(spec.args[0], "-NoProfile");
+    assert_eq!(spec.args[3], "-File");
+    assert_eq!(spec.args[4], ps1.to_string_lossy());
+    assert_eq!(spec.args[5], "-p");
+    assert_eq!(spec.args[6], "hello\nworld");
 }
 
 #[test]

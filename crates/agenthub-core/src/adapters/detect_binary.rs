@@ -703,11 +703,77 @@ pub(crate) fn first_existing_named_bin(dirs: &[PathBuf], names: &[String]) -> Op
     None
 }
 
-/// If `binary` is an npm `.cmd` / `.bat` shim, run `node <cli.js> …` instead.
+/// Rewrite Windows `.cmd` / `.bat` Chat spawns so prompts with newlines work.
 ///
-/// Windows `CreateProcess` on batch files rejects arguments that contain
-/// newlines or `"` (`batch file arguments are invalid`). Chat continuation
-/// stitches history with newlines, so npm `.cmd` shims must not take `-p`.
+/// `CreateProcess` on batch files rejects `\n` / `"` (`batch file arguments are
+/// invalid`). Prefer the installed Node + npm `cli.js`; otherwise a sibling
+/// `.ps1` via `powershell.exe -File` (Cursor).
+pub(crate) fn rewrite_windows_batch_run_spec(spec: &mut crate::models::RunSpec) {
+    if !looks_like_windows_batch(&spec.program) {
+        return;
+    }
+    let original = spec.program.clone();
+    if let Some(node) = node_for_batch_rewrite(spec.agent) {
+        let args = std::mem::take(&mut spec.args);
+        let (program, args) = spawn_npm_cmd_via_node(&original, args, &node);
+        spec.program = program;
+        spec.args = args;
+        if spec.program != original {
+            if !spec.env.iter().any(|(k, _)| k.eq_ignore_ascii_case("PATH")) {
+                spec.env
+                    .extend(crate::runtime::prefixed_path_env(node.parent()));
+            }
+            return;
+        }
+    }
+    let args = std::mem::take(&mut spec.args);
+    let (program, args) = spawn_cmd_via_sibling_powershell(&original, args);
+    spec.program = program;
+    spec.args = args;
+}
+
+fn node_for_batch_rewrite(agent: AgentId) -> Option<PathBuf> {
+    match agent {
+        AgentId::Pi => crate::runtime::resolve_pi_node().map(|n| n.path),
+        _ => crate::runtime::resolve_node_at_least(crate::catalog::limits::NODE_MIN_MAJOR)
+            .map(|n| n.path)
+            .or_else(|| crate::runtime::resolve_binary(&["node", "node.exe"])),
+    }
+}
+
+fn spawn_cmd_via_sibling_powershell(binary: &Path, args: Vec<String>) -> (PathBuf, Vec<String>) {
+    if !looks_like_windows_batch(binary) {
+        return (binary.to_path_buf(), args);
+    }
+    let ps1 = binary.with_extension("ps1");
+    if !ps1.is_file() {
+        return (binary.to_path_buf(), args);
+    }
+    let Some(powershell) = windows_powershell_exe() else {
+        return (binary.to_path_buf(), args);
+    };
+    let mut out = vec![
+        "-NoProfile".into(),
+        "-ExecutionPolicy".into(),
+        "Bypass".into(),
+        "-File".into(),
+        ps1.to_string_lossy().into_owned(),
+    ];
+    out.extend(args);
+    (powershell, out)
+}
+
+fn windows_powershell_exe() -> Option<PathBuf> {
+    let root = std::env::var_os("SystemRoot").map(PathBuf::from)?;
+    let exe = root
+        .join("System32")
+        .join("WindowsPowerShell")
+        .join("v1.0")
+        .join("powershell.exe");
+    exe.is_file().then_some(exe)
+}
+
+/// If `binary` is an npm `.cmd` / `.bat` shim, run `node <cli.js> …` instead.
 pub(crate) fn spawn_npm_cmd_via_node(
     binary: &Path,
     args: Vec<String>,
