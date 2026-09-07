@@ -422,6 +422,7 @@ pub(crate) fn creds_from_access_token(token: &str) -> KiroHttpCreds {
 }
 
 /// One non-streaming chat turn against Kiro upstream.
+#[cfg(test)]
 pub(crate) fn chat_turn_http(
     prompt: &str,
     model: Option<&str>,
@@ -488,6 +489,46 @@ fn chat_turn_with_creds(
     })
 }
 
+/// Build the explicit failed result used when an existing HTTP conversation
+/// cannot be continued. Keeping the namespaced session id on the result lets
+/// the caller retain the conversation for a retry instead of silently
+/// switching it to the unrelated CLI session namespace.
+fn conversation_id_preview(id: &str) -> String {
+    id.chars().take(8).collect()
+}
+
+pub(crate) fn http_failed_run_result(
+    duration_ms: u64,
+    model: Option<&str>,
+    conversation_id: Option<&str>,
+    error: impl Into<String>,
+) -> AgentRunResult {
+    let model_id = model
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("auto");
+    let command = format!(
+        "kiro-http GenerateAssistantResponse model={}{}",
+        model_id,
+        conversation_id
+            .map(|id| format!(" conversationId={}", conversation_id_preview(id)))
+            .unwrap_or_default()
+    );
+    let error = redact_text(&error.into());
+    AgentRunResult {
+        agent: AgentId::Kiro,
+        status: RunStatus::Failed,
+        exit_code: None,
+        duration_ms,
+        stdout: String::new(),
+        stderr: String::new(),
+        command,
+        error: Some(error),
+        truncated: false,
+        native_session_id: conversation_id.map(http_native_session_id),
+    }
+}
+
 /// Try AgentHub-owned HTTP chat. `None` means skip HTTP (use CLI / ACP).
 ///
 /// Session namespaces:
@@ -502,12 +543,23 @@ pub(crate) fn try_http_run_result(prompt: &str, opts: &RunOptions) -> Option<Age
         HttpResume::New => None,
         HttpResume::Conversation(cid) => Some(cid),
     };
-    if load_kiro_http_creds().is_err() {
-        return None;
-    }
     let started = Instant::now();
     let model = opts.model.as_deref();
-    match chat_turn_http(prompt, model, conversation_id) {
+    let mut creds = match load_kiro_http_creds() {
+        Ok(creds) => creds,
+        Err(e) => {
+            if conversation_id.is_some() {
+                return Some(http_failed_run_result(
+                    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+                    model,
+                    conversation_id,
+                    e.to_string(),
+                ));
+            }
+            return None;
+        }
+    };
+    match chat_turn_with_creds(&mut creds, prompt, model, conversation_id) {
         Ok(turn) => {
             let duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
             let command = format!(
@@ -515,7 +567,7 @@ pub(crate) fn try_http_run_result(prompt: &str, opts: &RunOptions) -> Option<Age
                 turn.model_id,
                 turn.conversation_id
                     .as_deref()
-                    .map(|id| format!(" conversationId={}", &id[..id.len().min(8)]))
+                    .map(|id| format!(" conversationId={}", conversation_id_preview(id)))
                     .unwrap_or_default()
             );
             Some(AgentRunResult {
@@ -528,10 +580,7 @@ pub(crate) fn try_http_run_result(prompt: &str, opts: &RunOptions) -> Option<Age
                 command,
                 error: None,
                 truncated: false,
-                native_session_id: turn
-                    .conversation_id
-                    .as_deref()
-                    .map(http_native_session_id),
+                native_session_id: turn.conversation_id.as_deref().map(http_native_session_id),
             })
         }
         Err(e) => {
@@ -540,103 +589,18 @@ pub(crate) fn try_http_run_result(prompt: &str, opts: &RunOptions) -> Option<Age
                 error = %e,
                 "Kiro HTTP chat failed"
             );
-            None
+            conversation_id.map(|cid| {
+                http_failed_run_result(
+                    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+                    model,
+                    Some(cid),
+                    e.to_string(),
+                )
+            })
         }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn build_chat_body_omits_profile_when_absent() {
-        let body = build_chat_body("hi", "claude-haiku-4.5", "KIRO_CLI", None, None);
-        assert!(body.get("profileArn").is_none());
-        assert_eq!(
-            body.pointer("/conversationState/currentMessage/userInputMessage/origin")
-                .and_then(Value::as_str),
-            Some("KIRO_CLI")
-        );
-        assert_eq!(
-            body.pointer("/conversationState/currentMessage/userInputMessage/modelId")
-                .and_then(Value::as_str),
-            Some("claude-haiku-4.5")
-        );
-    }
-
-    #[test]
-    fn build_chat_body_includes_profile_when_present() {
-        let body = build_chat_body(
-            "hi",
-            "auto",
-            "AI_EDITOR",
-            Some("cid"),
-            Some("arn:aws:codewhisperer:us-east-1:1:profile/X"),
-        );
-        assert_eq!(
-            body.get("profileArn").and_then(Value::as_str),
-            Some("arn:aws:codewhisperer:us-east-1:1:profile/X")
-        );
-        assert_eq!(
-            body.pointer("/conversationState/conversationId")
-                .and_then(Value::as_str),
-            Some("cid")
-        );
-    }
-
-    #[test]
-    fn parse_list_models_reads_default_object_or_string() {
-        let v = json!({
-            "models": [{"modelId": "claude-haiku-4.5"}],
-            "defaultModel": {"modelId": "auto"}
-        });
-        let parsed = parse_list_models_response(&v);
-        assert_eq!(parsed.default_model.as_deref(), Some("auto"));
-        assert_eq!(
-            parsed.models,
-            vec!["auto".to_string(), "claude-haiku-4.5".to_string()]
-        );
-    }
-
-    #[test]
-    fn http_native_session_roundtrip() {
-        let encoded = http_native_session_id("abc-123");
-        assert_eq!(encoded, "kiro-http:abc-123");
-        assert_eq!(parse_http_native_session_id(&encoded), Some("abc-123"));
-        assert_eq!(parse_http_native_session_id("  kiro-http:abc-123  "), Some("abc-123"));
-        assert_eq!(parse_http_native_session_id("resume-me"), None);
-        assert_eq!(parse_http_native_session_id("kiro-http:"), None);
-        assert_eq!(parse_http_native_session_id(""), None);
-    }
-
-    #[test]
-    fn http_resume_from_opts_namespaces() {
-        let mut opts = RunOptions::default();
-        assert_eq!(http_resume_from_opts(&opts), Some(HttpResume::New));
-
-        opts.native_session_id = Some("kiro-http:cid-9".into());
-        assert_eq!(
-            http_resume_from_opts(&opts),
-            Some(HttpResume::Conversation("cid-9"))
-        );
-
-        opts.native_session_id = Some("resume-me".into());
-        assert_eq!(http_resume_from_opts(&opts), None);
-
-        opts.native_session_id = Some("  ".into());
-        assert_eq!(http_resume_from_opts(&opts), Some(HttpResume::New));
-    }
-
-    #[test]
-    fn namespaced_id_feeds_build_chat_body() {
-        let native = http_native_session_id("conv-xyz");
-        let cid = parse_http_native_session_id(&native).expect("http id");
-        let body = build_chat_body("hi", "auto", "AI_EDITOR", Some(cid), None);
-        assert_eq!(
-            body.pointer("/conversationState/conversationId")
-                .and_then(Value::as_str),
-            Some("conv-xyz")
-        );
-    }
-}
+#[path = "client_tests.rs"]
+mod tests;
