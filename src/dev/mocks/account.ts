@@ -277,7 +277,7 @@ export function createMockAccountPort(): AccountPort {
             id: 'kiro',
             agentId: 'kiro',
             label: 'Kiro',
-            description: '打开 Kiro 自己的登录。完成后回到这里。',
+            description: '开始后会出现登录链接。你可以复制，也可以打开浏览器。完成后回到这里。',
             flow: 'cli' as const,
           },
         ];

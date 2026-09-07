@@ -329,7 +329,6 @@ export function OAuthFlowDialog({
     : t('connect.oauth.title', { name: meta.name });
   const footer = officialLoginFooter(step, step === 'waiting');
   const startIsDevice = selected?.flow === 'deviceCode';
-  const startIsCli = selected?.flow === 'cli';
   const waitingFlow = session?.flow ?? selected?.flow;
   const actionUrl = officialLoginActionUrl(session);
   const loginLinkCard = actionUrl ? (
@@ -409,9 +408,7 @@ export function OAuthFlowDialog({
             <p className="text-sm text-secondary">
               {startIsDevice
                 ? t('connect.oauth.deviceHint', { name: selectedCopy?.label ?? meta.name })
-                : startIsCli
-                  ? t('connect.oauth.cliHint', { name: selectedCopy?.label ?? meta.name })
-                  : t('connect.oauth.browserHint', { name: selectedCopy?.label ?? meta.name })}
+                : t('connect.oauth.browserHint', { name: selectedCopy?.label ?? meta.name })}
             </p>
             {options.length > 1 ? (
               <Button variant="ghost" size="sm" onClick={() => setStep('pick')}>
@@ -429,11 +426,27 @@ export function OAuthFlowDialog({
         {step === 'waiting' && waitingFlow === 'cli' && (
           <div className="flex flex-col items-center gap-3 py-4 text-center">
             <Loader2 className="h-8 w-8 animate-spin text-accent" />
-            <p className="text-sm text-secondary">{t('connect.oauth.waitingCli')}</p>
+            <p className="text-sm text-secondary">{t('connect.oauth.waitingCallback')}</p>
+            {session?.userCode ? (
+              <Card variant="plain" className="w-full bg-canvas px-4 py-3">
+                <p className="text-xs text-muted">{t('connect.oauth.deviceCode')}</p>
+                <p className="font-mono text-title tracking-widest text-primary">{session.userCode}</p>
+              </Card>
+            ) : null}
             <p className="font-mono text-title tabular-nums text-primary">
               {mm}:{ss}
             </p>
-            <Notice tone="info">{t('connect.oauth.waitingCliNotice')}</Notice>
+            <div className="w-full space-y-2 text-left">
+              <Notice tone="info">{t('connect.oauth.waitingCliNotice')}</Notice>
+              {loginLinkCard}
+            </div>
+            {session?.userCode ? (
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button size="sm" variant="outline" onClick={copyUserCode} disabled={!session?.userCode}>
+                  <Copy className="h-3.5 w-3.5" /> {t('connect.oauth.copyDeviceCode')}
+                </Button>
+              </div>
+            ) : null}
           </div>
         )}
 

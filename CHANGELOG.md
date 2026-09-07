@@ -28,6 +28,7 @@
 - 连接：Cursor 可导入本机已有登录（不写回 Cursor）
 
 ### 修复
+- 连接：Kiro 官方登录可再登一份并切换；已有本机登录会先收下再打开新的登录页
 - 能力：Kiro LiveBackup 与 sqlite/SSO 备份路径对齐（此前声明 Unsupported 却返回路径）
 - 总览：已安装的 Cursor 可点进去管理登录，不再显示「不支持管理授权」
 - 连接：Cursor 不能添加 API Key，只导入本机已有登录

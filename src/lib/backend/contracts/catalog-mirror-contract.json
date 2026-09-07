@@ -191,7 +191,7 @@
       },
       "kiro": {
         "configWrite": "无稳定配置写入契约，fail-closed",
-        "accountSwitch": "账号由 Kiro 登录管理",
+        "accountSwitch": "可在连接里切换，会写回 Kiro",
         "apiKeyAccount": "可用 API Key 或 kiro-cli login",
         "skills": "待路径核实",
         "liveBackup": null,
@@ -353,7 +353,7 @@
       },
       "kiro": {
         "configWrite": "无稳定配置写入契约，fail-closed",
-        "accountSwitch": "账号由 Kiro 登录管理",
+        "accountSwitch": "可在连接里切换，会写回 Kiro",
         "apiKeyAccount": "可用 API Key 或 kiro-cli login",
         "skills": "待路径核实",
         "liveBackup": null,

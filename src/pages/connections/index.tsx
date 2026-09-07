@@ -988,7 +988,6 @@ export default function ConnectionsPage() {
       <OAuthFlowDialog
         agentId={addAgentId}
         open={oauthOpen}
-        offerSwitch={addAgentId !== 'kiro'}
         onOpenChange={(open) => {
           if (shouldIgnoreMenuDialogDismiss(ignoreMenuDialogDismissRef.current, open)) return;
           setOauthOpen(open);

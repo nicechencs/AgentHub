@@ -50,10 +50,11 @@ fn write_config_is_fail_closed() {
 }
 
 #[test]
-fn account_switch_blocked_stream_and_resume_partial() {
-    assert!(KiroAdapter
-        .capability(Capability::AccountSwitch)
-        .is_blocked());
+fn account_switch_partial_stream_and_resume_partial() {
+    assert_eq!(
+        KiroAdapter.capability(Capability::AccountSwitch).level,
+        CapabilityLevel::Partial
+    );
     assert!(KiroAdapter
         .capability(Capability::StructuredStream)
         .is_usable());
