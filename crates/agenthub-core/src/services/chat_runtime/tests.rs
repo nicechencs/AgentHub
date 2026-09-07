@@ -183,19 +183,12 @@ fn begin_turn_sets_title_when_empty_and_still_bumps_sort_time() {
         created_at: now,
     };
     store
-        .begin_turn(
-            "untitled",
-            &mut user,
-            &mut agent,
-            "run-1",
-            None,
-            |turn| {
-                vec![ChatEvent::Started {
-                    turn,
-                    agents: vec![AgentId::Codex],
-                }]
-            },
-        )
+        .begin_turn("untitled", &mut user, &mut agent, "run-1", None, |turn| {
+            vec![ChatEvent::Started {
+                turn,
+                agents: vec![AgentId::Codex],
+            }]
+        })
         .unwrap();
     let untitled = repo.get_conversation("untitled").unwrap().unwrap();
     assert_eq!(untitled.title, "first prompt for title");
@@ -1678,4 +1671,41 @@ fn learn_from_thinking_unsupported_filters_over_reported_catalog() {
         )
         .unwrap_err();
     assert!(rejected.to_string().contains("不支持思考强度"));
+}
+
+#[test]
+fn start_empty_prompt_logs_send_fail() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "empty-prompt", false);
+    let runtime = Arc::new(ChatRuntime::new(
+        db,
+        Arc::new(RunService::new(AdapterRegistry::default())),
+    ));
+    let (result, logs) = crate::logging::with_captured_logs(|| {
+        runtime.start(
+            "empty-prompt",
+            "   ",
+            "client-empty",
+            RuntimeStartExtras::default(),
+        )
+    });
+    assert!(result.is_err());
+    assert!(logs.contains("core.chat"), "logs:\n{logs}");
+    assert!(logs.contains("op=\"send_fail\""), "logs:\n{logs}");
+    assert!(
+        !logs.contains("   "),
+        "must not log prompt whitespace as body"
+    );
+}
+
+#[test]
+fn cancel_without_actor_logs_stop_fail() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "no-actor", false);
+    let runtime = ChatRuntime::new(db, Arc::new(RunService::new(AdapterRegistry::default())));
+    let (result, logs) =
+        crate::logging::with_captured_logs(|| runtime.cancel("no-actor", "run-missing"));
+    assert!(result.is_err());
+    assert!(logs.contains("core.chat"), "logs:\n{logs}");
+    assert!(logs.contains("op=\"stop_fail\""), "logs:\n{logs}");
 }
