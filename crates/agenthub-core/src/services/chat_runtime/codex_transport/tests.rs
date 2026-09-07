@@ -147,7 +147,14 @@ printf '%s\n' "$initialized" >> "$log"
     std::fs::set_permissions(&program, permissions).expect("fake executable");
 
     let mut transport = CodexTransport::spawn(&program, directory.path()).expect("spawn fake");
-    transport.shutdown();
+    // Wait for the fake peer to read+log `initialized` and exit; shutting down
+    // immediately races the shell `read` and flakes on busy CI runners.
+    assert_eq!(
+        transport
+            .recv_timeout(Duration::from_secs(2))
+            .expect("peer exit receive"),
+        Some(CodexEvent::Exited)
+    );
     let wire = std::fs::read_to_string(directory.path().join("wire.log")).expect("wire log");
     assert!(
         wire.contains(r#""jsonrpc":"2.0""#) && wire.contains(r#""method":"initialize""#),
