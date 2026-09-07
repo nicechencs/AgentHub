@@ -27,6 +27,7 @@ updated: 2026-09-08
 - [测试与验证](guides/testing-and-validation.md)
 - [Chat 第二批开发交接提示词](guides/chat-b2-handoff.md)
 - [Chat 独立 review 提示词](guides/chat-review-handoff.md)
+- [全项目独立 review 提示词](guides/project-review-handoff.md)
 - [release 分支保护](guides/release-branch-protection.md)
 - [故障排查](guides/troubleshooting.md)
 
