@@ -25,7 +25,8 @@
 //! - Config write / API Key live apply
 //! - Mid-turn steer (ACP has session/cancel, not turn/steer)
 //! - usage: harvest `~/.kiro/sessions/cli/*.json` turn token fields
-//! - Skills / MCP / project history (no verified path yet)
+//! - Skills / MCP (no verified path yet)
+//! - project history: list CLI + editor sessions under `~/.kiro/sessions`
 //! - Using Kiro IDE as the headless entry
 
 use std::path::{Path, PathBuf};
@@ -318,7 +319,9 @@ impl AgentAdapter for KiroAdapter {
             LiveBackup => CapabilityState::full(),
             StructuredStream => CapabilityState::partial("对话过程走 ACP；生成时不能中途补充"),
             DangerousMode => CapabilityState::partial("映射 --trust-all-tools；请确认风险后再开"),
-            ProjectHistory => CapabilityState::planned("待路径核实"),
+            ProjectHistory => {
+                CapabilityState::partial("能列出命令行和编辑器里的对话；删除请到 Kiro 里做")
+            }
             ProjectDelete => CapabilityState::unsupported("无安全浅删契约"),
             ProviderPresets => CapabilityState::unsupported("无 provider 配置契约"),
             Usage => CapabilityState::partial("读 kiro-cli 会话里的 token；日志没写时总览是 0"),

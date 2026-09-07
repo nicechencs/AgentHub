@@ -7,6 +7,8 @@ mod project;
 mod stream;
 mod usage;
 
+pub(crate) use project::load_kiro_excerpt;
+
 use crate::integrations::shared::register::register_fn_detector;
 use crate::integrations::IntegrationContext;
 use crate::models::AgentId;

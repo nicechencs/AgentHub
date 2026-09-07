@@ -254,7 +254,10 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
       level: 'partial',
       reason: '映射 --trust-all-tools；请确认风险后再开',
     },
-    projectHistory: { level: 'planned', reason: '待路径核实' },
+    projectHistory: {
+      level: 'partial',
+      reason: '能列出命令行和编辑器里的对话；删除请到 Kiro 里做',
+    },
     projectDelete: {
       level: 'unsupported',
       reason: '无安全浅删契约',
