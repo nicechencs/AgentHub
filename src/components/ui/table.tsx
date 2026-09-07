@@ -26,12 +26,13 @@ export const tableStyles = {
   table: 'w-full border-collapse text-body',
   theadRow: 'border-b border-border bg-subtle text-left',
   th: 'px-3 py-2 text-meta font-medium text-muted',
-  tr: 'border-t border-border/50 last:border-0 hover:bg-hover',
+  // 行线在顶边；最后一行的顶线就是与上一行的分隔，不能 last:border-0。
+  tr: 'border-t border-border/50 hover:bg-hover',
   trSelected: 'bg-hover/40',
   trActive: 'bg-active hover:bg-active',
   theadRowWorkbench: 'border-b border-border/70 bg-subtle/50 text-left',
   trWorkbench:
-    'border-t border-border/40 last:border-0 hover:bg-hover data-[active=true]:bg-active data-[active=true]:hover:bg-active',
+    'border-t border-border/40 hover:bg-hover data-[active=true]:bg-active data-[active=true]:hover:bg-active',
   thWorkbench: 'px-3 py-2 text-meta font-medium text-muted',
   tdWorkbench: 'overflow-hidden px-3 py-2',
   td: 'overflow-hidden px-3 py-2',
