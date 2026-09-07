@@ -421,7 +421,14 @@ impl CodexTransport {
         initialize_params: Value,
         send_initialized: bool,
     ) -> Result<Self, CodexTransportError> {
-        Self::spawn_with(program, args, cwd, initialize_params, send_initialized, None)
+        Self::spawn_with(
+            program,
+            args,
+            cwd,
+            initialize_params,
+            send_initialized,
+            None,
+        )
     }
 
     pub fn begin_request(

@@ -1562,3 +1562,46 @@ fn finished_event_cancelled_true_and_ok_true() {
     assert!(ok, "Cancelled is not a hard failure");
     assert!(cancelled);
 }
+
+#[test]
+fn send_logs_start_and_ok() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(RecordingProcessRunner::new()),
+    ));
+    let chat = ChatService::new(db, run);
+    let conv = chat
+        .create_conversation(vec![AgentId::Claude], None)
+        .unwrap();
+    let prompt = "secret-legacy-prompt";
+    let (result, logs) =
+        crate::logging::with_captured_logs(|| chat.send(&conv.id, prompt, &|_| {}));
+    result.unwrap();
+    assert!(logs.contains("core.chat"), "logs:\n{logs}");
+    assert!(logs.contains("send start"), "logs:\n{logs}");
+    assert!(logs.contains("send ok"), "logs:\n{logs}");
+    assert!(logs.contains("op=\"send\""), "logs:\n{logs}");
+    assert!(logs.contains("claude"), "logs:\n{logs}");
+    assert!(!logs.contains(prompt), "must not log prompt:\n{logs}");
+}
+
+#[test]
+fn cancel_logs_stop() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(RecordingProcessRunner::new()),
+    ));
+    let chat = ChatService::new(db, run);
+    let conv = chat
+        .create_conversation(vec![AgentId::Claude], None)
+        .unwrap();
+    let (result, logs) = crate::logging::with_captured_logs(|| chat.cancel(&conv.id));
+    result.unwrap();
+    assert!(logs.contains("core.chat"), "logs:\n{logs}");
+    assert!(logs.contains("stop ok"), "logs:\n{logs}");
+    assert!(logs.contains("op=\"stop\""), "logs:\n{logs}");
+}

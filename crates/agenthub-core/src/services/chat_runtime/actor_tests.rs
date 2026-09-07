@@ -1,6 +1,8 @@
 use super::*;
 
 use crate::adapters::AdapterRegistry;
+use crate::error::AppError;
+use crate::logging::with_captured_logs;
 use crate::models::{AgentId, ChatEvent, ChatMessageStatus, ChatRole, Conversation};
 use crate::services::RunService;
 use crate::storage::{ChatRepo, Database};
@@ -802,7 +804,10 @@ done
         .unwrap()
         .content
         .len();
-    assert_eq!(first, 64, "one poll should take a 64-event batch, got {first}");
+    assert_eq!(
+        first, 64,
+        "one poll should take a 64-event batch, got {first}"
+    );
     worker.poll_events().unwrap();
     let second = worker
         .store
@@ -813,7 +818,9 @@ done
         .content
         .len();
     assert_eq!(second, 128);
-    worker.abort.store(true, std::sync::atomic::Ordering::SeqCst);
+    worker
+        .abort
+        .store(true, std::sync::atomic::Ordering::SeqCst);
     let started = Instant::now();
     worker.poll_events().unwrap();
     assert!(started.elapsed() < Duration::from_millis(200));
@@ -954,4 +961,85 @@ done
         "phase {:?}",
         snapshot.phase
     );
+}
+
+fn captured_has_op(logs: &str, op: &str) -> bool {
+    logs.contains(&format!("op=\"{op}\""))
+}
+
+#[test]
+fn runtime_logs_send_start_and_fail_without_codex() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "log-send");
+    let mut worker = worker(&db, "log-send");
+    worker.store.enable_if_new("log-send").unwrap();
+    *worker.codex_program_override.lock().unwrap() =
+        Some(std::path::PathBuf::from("/nonexistent-agenthub-codex"));
+    let prompt = "secret-prompt-must-not-appear";
+    let (result, logs) = with_captured_logs(|| {
+        worker.start_turn(prompt, "client-log-send", &RuntimeStartExtras::default())
+    });
+    assert!(result.is_err(), "missing Codex must fail start: {result:?}");
+    assert!(logs.contains("core.chat"), "logs:\n{logs}");
+    assert!(logs.contains("send start"), "logs:\n{logs}");
+    assert!(captured_has_op(&logs, "send"), "logs:\n{logs}");
+    assert!(captured_has_op(&logs, "send_fail"), "logs:\n{logs}");
+    assert!(logs.contains("log-send"), "logs:\n{logs}");
+    assert!(logs.contains("codex"), "logs:\n{logs}");
+    assert!(!logs.contains(prompt), "must not log prompt:\n{logs}");
+}
+
+#[test]
+fn runtime_logs_send_ok_when_turn_completes() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "log-ok");
+    let mut worker = worker(&db, "log-ok");
+    worker.store.enable_if_new("log-ok").unwrap();
+    start_placeholder(&mut worker);
+    let (result, logs) = with_captured_logs(|| {
+        worker.terminalize(
+            ChatMessageStatus::Ok,
+            None,
+            RuntimePhase::Completed,
+            true,
+            false,
+        )
+    });
+    result.unwrap();
+    assert!(logs.contains("core.chat"), "logs:\n{logs}");
+    assert!(logs.contains("send ok"), "logs:\n{logs}");
+    assert!(captured_has_op(&logs, "send"), "logs:\n{logs}");
+    assert!(!captured_has_op(&logs, "send_fail"), "logs:\n{logs}");
+}
+
+#[test]
+fn runtime_logs_stop_when_cancel_has_no_transport() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "log-stop");
+    let mut worker = worker(&db, "log-stop");
+    worker.store.enable_if_new("log-stop").unwrap();
+    start_placeholder(&mut worker);
+    let (result, logs) = with_captured_logs(|| worker.cancel("run-1"));
+    result.unwrap();
+    assert!(logs.contains("core.chat"), "logs:\n{logs}");
+    assert!(logs.contains("stop ok"), "logs:\n{logs}");
+    assert!(captured_has_op(&logs, "stop"), "logs:\n{logs}");
+    assert!(!captured_has_op(&logs, "stop_fail"), "logs:\n{logs}");
+    assert!(!captured_has_op(&logs, "send_fail"), "logs:\n{logs}");
+}
+
+#[test]
+fn runtime_logs_stop_fail_when_cancel_fails() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "log-stop-fail");
+    let mut worker = worker(&db, "log-stop-fail");
+    worker.store.enable_if_new("log-stop-fail").unwrap();
+    start_placeholder(&mut worker);
+    let (result, logs) = with_captured_logs(|| {
+        worker.cancel_failed(AppError::message("chat.runtime", "interrupt failed"))
+    });
+    assert!(result.is_err());
+    assert!(logs.contains("core.chat"), "logs:\n{logs}");
+    assert!(captured_has_op(&logs, "stop_fail"), "logs:\n{logs}");
+    assert!(!logs.contains("interrupt failed") || logs.contains("stop_fail"));
 }
