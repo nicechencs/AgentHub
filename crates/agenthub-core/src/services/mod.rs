@@ -45,7 +45,7 @@ pub use adapter_apply_service::AdapterApplyService;
 pub use adapter_bridge_service::{
     should_make_bridge_current, AdapterBridgePrepareRequest, AdapterBridgePrepared,
     AdapterBridgeProviderProjection, AdapterBridgeRestoreMaterial, AdapterBridgeRuntimeMaterial,
-    AdapterBridgeService, BridgeProviderSnapshot,
+    AdapterBridgeService, BridgeProviderSnapshot, RestoreSourceFailure, RestoreSourceFailureKind,
 };
 pub use adapter_projection::{
     classify_account_live, classify_provider_config, exact_generated_provider_for_live,

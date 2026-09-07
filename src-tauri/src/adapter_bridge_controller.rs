@@ -32,8 +32,8 @@ use agenthub_core::models::{
 };
 use agenthub_core::services::{
     oauth_bridge_reload_callback, AdapterBridgePrepareRequest, AdapterBridgePrepared,
-    AdapterBridgeProviderProjection, AdapterBridgeRuntimeMaterial, BridgeProviderSnapshot,
-    ProviderLiveSagaGuard,
+    AdapterBridgeProviderProjection, AdapterBridgeRestoreMaterial, AdapterBridgeRuntimeMaterial,
+    BridgeProviderSnapshot, ProviderLiveSagaGuard, RestoreSourceFailure, RestoreSourceFailureKind,
 };
 
 #[cfg(test)]
@@ -608,17 +608,26 @@ pub(crate) fn restore_adapter_bridges(
             let _profile_guard = coordinator.lock_profile(&profile.id).await;
             let profile_id = profile.id.clone();
             let material = match with_hub_blocking(hub.clone(), move |hub| {
-                hub.adapter_bridge()
-                    .resolve_restore_material(&profile_id)
-                    .map_err(|error| map_err_string("resolve_adapter_bridge_restore", error))
+                Ok(record_restore_source_material(hub, &profile_id))
             })
             .await
             {
-                Ok(material) => material,
-                Err(_) => {
+                Ok(Ok(material)) => material,
+                Ok(Err(failure)) => {
+                    warn_restore_source_failure(&profile.id, &failure);
+                    continue;
+                }
+                Err(error) => {
                     let _ =
                         mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_RESTORE_SOURCE).await;
-                    tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, code = CODE_BRIDGE_RESTORE_SOURCE, "adapter bridge source could not be restored");
+                    tracing::warn!(
+                        target: targets::GUI,
+                        op = "adapter_bridge_restore",
+                        profile_id = %profile.id,
+                        code = CODE_BRIDGE_RESTORE_SOURCE,
+                        error = %error,
+                        "adapter bridge source could not be restored"
+                    );
                     continue;
                 }
             };
@@ -1510,6 +1519,62 @@ fn restorable_profiles(profiles: Vec<AdapterProfile>) -> Vec<AdapterProfile> {
                 && profile.auto_start
         })
         .collect()
+}
+
+fn record_restore_source_material(
+    hub: &AgentHub,
+    profile_id: &str,
+) -> Result<AdapterBridgeRestoreMaterial, RestoreSourceFailure> {
+    match hub.adapter_bridge().resolve_restore_material(profile_id) {
+        Ok(material) => Ok(material),
+        Err(error) => {
+            let failure = hub
+                .adapter_bridge()
+                .restore_source_failure_from_error(profile_id, &error);
+            if let Err(persist_error) = hub
+                .adapter_bridge()
+                .record_restore_source_failure(profile_id, failure.kind)
+            {
+                tracing::warn!(
+                    target: targets::GUI,
+                    op = "adapter_bridge_restore",
+                    profile_id,
+                    code = CODE_BRIDGE_RESTORE_SOURCE,
+                    reason = failure.kind.reason(),
+                    error = %persist_error,
+                    "adapter bridge restore failure could not be persisted"
+                );
+            }
+            Err(failure)
+        }
+    }
+}
+
+fn warn_restore_source_failure(profile_id: &str, failure: &RestoreSourceFailure) {
+    if failure.kind == RestoreSourceFailureKind::Ineligible {
+        tracing::debug!(
+            target: targets::GUI,
+            op = "adapter_bridge_restore",
+            profile_id,
+            code = CODE_BRIDGE_RESTORE_SOURCE,
+            reason = failure.kind.reason(),
+            restore_error = failure.error_code,
+            "{}",
+            failure.kind.warn_message()
+        );
+        return;
+    }
+    tracing::warn!(
+        target: targets::GUI,
+        op = "adapter_bridge_restore",
+        profile_id,
+        code = CODE_BRIDGE_RESTORE_SOURCE,
+        reason = failure.kind.reason(),
+        restore_error = failure.error_code,
+        error = %failure.message,
+        "{}",
+        failure.kind.warn_message()
+    );
 }
 
 async fn bridge_profile_id_for_request(
