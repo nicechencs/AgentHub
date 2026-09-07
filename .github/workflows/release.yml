@@ -1074,6 +1074,71 @@ jobs:
             echo "Ensured GitHub Release $TAG latest/prerelease flags after an already-published retry."
           fi
 
+      - name: Sync release assets to Cloudflare R2 mirror
+        # Runs only after GitHub Release publish succeeds. Missing R2 secrets
+        # skip with a warning so first landings do not fail the whole release.
+        # Signing private key is never uploaded; only public assets + .sig.
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          UPDATE_MIRROR_BASE_URL: ${{ secrets.UPDATE_MIRROR_BASE_URL }}
+          TAG: ${{ needs.validate.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for key in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET UPDATE_MIRROR_BASE_URL; do
+            if [ -z "${!key:-}" ]; then
+              missing+=("$key")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::warning::Skipping R2 update mirror sync; missing secrets: ${missing[*]}"
+            echo "R2_MIRROR_SYNC=skipped" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          node scripts/rewrite-latest-json-mirror.mjs \
+            --in release-assets/latest.json \
+            --out release-assets/latest.mirror.json \
+            --mirror-base-url "$UPDATE_MIRROR_BASE_URL"
+
+          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
+          export AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
+          export AWS_DEFAULT_REGION=auto
+          export AWS_EC2_METADATA_DISABLED=true
+
+          if ! command -v aws >/dev/null 2>&1; then
+            echo "aws CLI is required to sync release assets to R2" >&2
+            exit 1
+          fi
+
+          # Upload installers + signatures (skip GitHub-oriented latest.json first).
+          while IFS= read -r -d '' file; do
+            name="$(basename "$file")"
+            case "$name" in
+              latest.json|latest.mirror.json) continue ;;
+            esac
+            echo "Uploading $name -> s3://$R2_BUCKET/$name"
+            aws s3 cp "$file" "s3://$R2_BUCKET/$name" \
+              --endpoint-url "$endpoint" \
+              --only-show-errors
+          done < <(find release-assets -maxdepth 1 -type f -print0)
+
+          # Overwrite feed last so clients do not see new URLs before assets exist.
+          echo "Uploading rewritten latest.json -> s3://$R2_BUCKET/latest.json"
+          aws s3 cp release-assets/latest.mirror.json "s3://$R2_BUCKET/latest.json" \
+            --endpoint-url "$endpoint" \
+            --content-type "application/json" \
+            --cache-control "public, max-age=60" \
+            --only-show-errors
+
+          echo "R2_MIRROR_SYNC=uploaded" >> "$GITHUB_ENV"
+          echo "Mirrored release $TAG assets to R2 bucket $R2_BUCKET (base $UPDATE_MIRROR_BASE_URL)"
+
       - name: Write release summary
         env:
           TAG: ${{ needs.validate.outputs.tag }}
@@ -1099,4 +1164,15 @@ jobs:
             if ! grep -q '"linux-x86_64"' release-assets/latest.json; then
               echo "- Linux auto-update: not signed yet (installers are still published). Remaining secret: \`TAURI_SIGNING_PRIVATE_KEY\`"
             fi
+            case "${R2_MIRROR_SYNC:-}" in
+              uploaded)
+                echo "- Update mirror: uploaded to R2 (\`UPDATE_MIRROR_BASE_URL\` / bucket secret \`R2_BUCKET\`)"
+                ;;
+              skipped)
+                echo "- Update mirror: skipped (R2 secrets incomplete)"
+                ;;
+              *)
+                echo "- Update mirror: not run"
+                ;;
+            esac
           } >> "$GITHUB_STEP_SUMMARY"
