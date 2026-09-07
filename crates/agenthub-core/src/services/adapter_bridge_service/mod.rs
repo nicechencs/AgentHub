@@ -480,6 +480,7 @@ pub(super) mod prepare;
 mod removal;
 mod rules;
 
+pub use finalize::{RestoreSourceFailure, RestoreSourceFailureKind};
 pub use persist_saga::{should_make_bridge_current, BridgeProviderSnapshot};
 
 use rules::*;

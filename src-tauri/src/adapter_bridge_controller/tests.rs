@@ -939,6 +939,93 @@ fn restore_filter_only_keeps_active_auto_start_local_bridges() {
 }
 
 #[test]
+fn restore_source_failure_log_uses_stable_code_and_reason() {
+    let missing = RestoreSourceFailure {
+        kind: RestoreSourceFailureKind::SourceMissing,
+        error_code: "adapter.bridge_source_missing",
+        message: "bridge restore source no longer exists".into(),
+    };
+    let unusable = RestoreSourceFailure {
+        kind: RestoreSourceFailureKind::LoginUnusable,
+        error_code: "adapter.bridge_source_expired",
+        message: "bridge restore source login is unusable".into(),
+    };
+    assert_eq!(CODE_BRIDGE_RESTORE_SOURCE, "adapter.bridge_restore_source");
+    assert_eq!(missing.kind.reason(), "source_missing");
+    assert_eq!(
+        missing.kind.warn_message(),
+        "adapter bridge restore skipped: source no longer exists"
+    );
+    assert_eq!(unusable.kind.reason(), "login_unusable");
+    assert_eq!(
+        unusable.kind.warn_message(),
+        "adapter bridge restore skipped: source login is unusable"
+    );
+    assert_ne!(
+        missing.kind.warn_message(),
+        "adapter bridge source could not be restored"
+    );
+}
+
+#[test]
+fn restore_missing_source_records_unrestorable_reason() {
+    let dir = tempfile::tempdir().unwrap();
+    let hub = AgentHub::open(Some(dir.path())).unwrap();
+    let profile = seed_active_bridge(&hub, "kimi-restore-missing", 43121);
+    ProviderRepo::new(hub.db().clone())
+        .delete("kimi-restore-missing")
+        .unwrap();
+
+    let failure = record_restore_source_material(&hub, &profile.id).expect_err("source gone");
+    assert_eq!(failure.kind, RestoreSourceFailureKind::SourceMissing);
+    assert_eq!(failure.kind.reason(), "source_missing");
+    assert_eq!(failure.error_code, "adapter.bridge_source_missing");
+    assert_eq!(CODE_BRIDGE_RESTORE_SOURCE, "adapter.bridge_restore_source");
+
+    let persisted = AdapterProfileRepo::new(hub.db().clone())
+        .get(&profile.id)
+        .unwrap()
+        .unwrap();
+    assert!(!persisted.auto_start);
+    assert_eq!(persisted.status, AdapterProfileStatus::NeedsAttention);
+    assert_eq!(
+        persisted.last_error_code.as_deref(),
+        Some("adapter.bridge_source_missing")
+    );
+}
+
+#[test]
+fn restore_unusable_login_records_retryable_reason() {
+    let dir = tempfile::tempdir().unwrap();
+    let hub = AgentHub::open(Some(dir.path())).unwrap();
+    let profile = seed_active_bridge(&hub, "kimi-restore-expired", 43121);
+    let mut source = ProviderRepo::new(hub.db().clone())
+        .get_by_id("kimi-restore-expired")
+        .unwrap()
+        .unwrap();
+    source.settings_config = json!({"apiKey": ""});
+    source.updated_at = "expired".into();
+    ProviderRepo::new(hub.db().clone()).update(&source).unwrap();
+
+    let failure = record_restore_source_material(&hub, &profile.id).expect_err("login unusable");
+    assert_eq!(failure.kind, RestoreSourceFailureKind::LoginUnusable);
+    assert_eq!(failure.kind.reason(), "login_unusable");
+    assert_eq!(failure.error_code, "adapter.bridge_source_expired");
+    assert_eq!(CODE_BRIDGE_RESTORE_SOURCE, "adapter.bridge_restore_source");
+
+    let persisted = AdapterProfileRepo::new(hub.db().clone())
+        .get(&profile.id)
+        .unwrap()
+        .unwrap();
+    assert!(persisted.auto_start);
+    assert_eq!(persisted.status, AdapterProfileStatus::Active);
+    assert_eq!(
+        persisted.last_error_code.as_deref(),
+        Some("retryable:adapter.bridge_source_expired")
+    );
+}
+
+#[test]
 fn saga_coordinator_serializes_same_profile_but_not_different_profiles() {
     tauri::async_runtime::block_on(async {
         let coordinator = Arc::new(AdapterSagaCoordinator::new());

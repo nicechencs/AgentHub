@@ -65,6 +65,7 @@ CLI 和 GUI 都调用 `agenthub-core::logging` 初始化同一套 tracing。生�
 | `gui` | `delete_connection` / `delete_connection_fail` | 连接页删除进回收站 |
 | `gui` | `route_create` / `route_import` / `route_edit`（及对应 `_fail`） | 路由页新建 / 导入 / 编辑 |
 | `gui` | `bridge_start` / `bridge_stop` / `bridge_remove` / `bridge_enroll`（及对应 `_fail`） | 路由页启动 / 停止 / 移除 / 纳入默认池 |
+| `gui` | `adapter_bridge_restore` | 启动时恢复本机路由。`code=adapter.bridge_restore_source` 时看 `reason`：`source_missing`（来源已不在）、`login_unusable`（登录失效）、`profile_corrupt`（配置损坏）、`transient`（临时失败）。`restore_error` 是底层错误码 |
 | `gui` | `switch_write` | 路由页「写入登录」成功；带 `last4` |
 | `core.provider` | `recycle` | 登录被送进回收站 |
 | `core.provider` | `switch_write` | 切换真正写了本机配置路径；带 `agent` 与 `last4`（`**xxxx`），从不写完整钥匙 |
