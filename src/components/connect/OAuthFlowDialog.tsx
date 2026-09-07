@@ -216,7 +216,11 @@ export function OAuthFlowDialog({
     setErrorMsg(null);
     setStep('waiting');
     setManualUrl('');
-    setCountdown(selected.flow === 'deviceCode' ? 900 : OAUTH_PKCE_LISTEN_TIMEOUT_SECS);
+    setCountdown(
+      selected.flow === 'deviceCode' || selected.flow === 'cli'
+        ? 900
+        : OAUTH_PKCE_LISTEN_TIMEOUT_SECS,
+    );
     try {
       const started = poolOwned
         ? await startOfficialLogin(agentId, selected, false, true)
@@ -325,6 +329,7 @@ export function OAuthFlowDialog({
     : t('connect.oauth.title', { name: meta.name });
   const footer = officialLoginFooter(step, step === 'waiting');
   const startIsDevice = selected?.flow === 'deviceCode';
+  const startIsCli = selected?.flow === 'cli';
   const waitingFlow = session?.flow ?? selected?.flow;
   const actionUrl = officialLoginActionUrl(session);
   const loginLinkCard = actionUrl ? (
@@ -387,7 +392,9 @@ export function OAuthFlowDialog({
                     <div className="mt-1 text-meta text-muted">
                       {opt.flow === 'deviceCode'
                         ? t('connect.oauth.flowDevice')
-                        : t('connect.oauth.flowBrowser')}
+                        : opt.flow === 'cli'
+                          ? t('connect.oauth.flowCli')
+                          : t('connect.oauth.flowBrowser')}
                     </div>
                   </button>
                 );
@@ -402,7 +409,9 @@ export function OAuthFlowDialog({
             <p className="text-sm text-secondary">
               {startIsDevice
                 ? t('connect.oauth.deviceHint', { name: selectedCopy?.label ?? meta.name })
-                : t('connect.oauth.browserHint', { name: selectedCopy?.label ?? meta.name })}
+                : startIsCli
+                  ? t('connect.oauth.cliHint', { name: selectedCopy?.label ?? meta.name })
+                  : t('connect.oauth.browserHint', { name: selectedCopy?.label ?? meta.name })}
             </p>
             {options.length > 1 ? (
               <Button variant="ghost" size="sm" onClick={() => setStep('pick')}>
@@ -410,8 +419,21 @@ export function OAuthFlowDialog({
               </Button>
             ) : null}
             <Button onClick={() => void startSelectedFlow()}>
-              {startIsDevice ? t('connect.oauth.startDevice') : t('connect.oauth.startLogin')}
+              {startIsDevice
+                ? t('connect.oauth.startDevice')
+                : t('connect.oauth.startLogin')}
             </Button>
+          </div>
+        )}
+
+        {step === 'waiting' && waitingFlow === 'cli' && (
+          <div className="flex flex-col items-center gap-3 py-4 text-center">
+            <Loader2 className="h-8 w-8 animate-spin text-accent" />
+            <p className="text-sm text-secondary">{t('connect.oauth.waitingCli')}</p>
+            <p className="font-mono text-title tabular-nums text-primary">
+              {mm}:{ss}
+            </p>
+            <Notice tone="info">{t('connect.oauth.waitingCliNotice')}</Notice>
           </div>
         )}
 
@@ -437,7 +459,7 @@ export function OAuthFlowDialog({
           </div>
         )}
 
-        {step === 'waiting' && waitingFlow !== 'deviceCode' && (
+        {step === 'waiting' && waitingFlow !== 'deviceCode' && waitingFlow !== 'cli' && (
           <div className="flex flex-col items-center gap-3 py-4 text-center">
             <Loader2 className="h-8 w-8 animate-spin text-accent" />
             <p className="text-sm text-secondary">{t('connect.oauth.waitingCallback')}</p>

@@ -99,6 +99,40 @@ describe('official login session façade', () => {
     expect(finishDeviceOAuth).toHaveBeenCalledWith('dev-1');
   });
 
+  it('starts Kiro official login through the CLI adapter', async () => {
+    startOAuth.mockResolvedValue({
+      state: 'cli-kiro',
+      authorizeUrl: '',
+      redirectUri: '',
+      agentId: 'kiro',
+      providerKey: 'kiro',
+      browserOpened: true,
+      expiresInSecs: 900,
+    });
+    waitOAuth.mockResolvedValue({
+      state: 'cli-kiro',
+      agentId: 'kiro',
+      status: 'callbackReceived',
+      error: null,
+    });
+    finishOAuth.mockResolvedValue({ id: 'acc-kiro', agentId: 'kiro', kind: 'oauth' });
+
+    const session = await startOfficialLogin('kiro', { id: 'kiro', flow: 'cli' });
+    expect(startOAuth).toHaveBeenCalledWith('kiro', false, 'kiro');
+    expect(startDeviceOAuth).not.toHaveBeenCalled();
+    expect(session.flow).toBe('cli');
+    expect(session.sessionId).toBe('cli-kiro');
+    expect(session.authorizeUrl).toBeNull();
+
+    const poll = await pollOfficialLogin(session);
+    expect(waitOAuth).toHaveBeenCalledWith('cli-kiro', 120);
+    expect(poll.phase).toBe('ready');
+
+    await finishOfficialLogin(session);
+    expect(finishOAuth).toHaveBeenCalledWith('cli-kiro');
+    expect(finishDeviceOAuth).not.toHaveBeenCalled();
+  });
+
   it('starts Grok official login through the device adapter', async () => {
     startDeviceOAuth.mockResolvedValue({
       state: 'dev-grok',

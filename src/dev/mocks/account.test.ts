@@ -29,6 +29,18 @@ describe('mock OAuth sessions', () => {
     expect(acc.label).toMatch(/^pi:anthropic · /);
   });
 
+  it('lists Kiro official login as CLI-guided, not browser PKCE', async () => {
+    const accounts = createMockAccountPort();
+    expect(await accounts.oauthSupported('kiro')).toBe(true);
+    const opts = await accounts.listOAuthOptions('kiro');
+    expect(opts).toHaveLength(1);
+    expect(opts[0]).toMatchObject({
+      id: 'kiro',
+      agentId: 'kiro',
+      flow: 'cli',
+    });
+  });
+
   it('lists Grok official login as device-code, not browser PKCE', async () => {
     const accounts = createMockAccountPort();
     const opts = await accounts.listOAuthOptions('grok');

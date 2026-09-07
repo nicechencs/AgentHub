@@ -1,7 +1,8 @@
 //! OAuth login options exposed to CLI/GUI.
 //!
 //! Claude and Codex use a single PKCE option. Grok uses device-code (same xAI
-//! client as the official Grok CLI). Pi exposes multiple upstream providers
+//! client as the official Grok CLI). Kiro spawns `kiro-cli login` then imports.
+//! Pi exposes multiple upstream providers
 //! (anthropic / openai-codex / xai / …) that all write into `~/.pi/agent/auth.json`.
 //!
 //! Provider aliases, refresh support, and quota backends are table-driven so the
@@ -21,6 +22,8 @@ pub enum OAuthFlowKind {
     Pkce,
     /// Device code (user opens a URL and enters a short code).
     DeviceCode,
+    /// Spawn the agent's own CLI login, then import the local login.
+    Cli,
 }
 
 /// One selectable OAuth login target.
@@ -160,6 +163,12 @@ pub fn list_oauth_options(agent: AgentId) -> Vec<OAuthLoginOption> {
             "用设备码登录 Grok 订阅",
         )],
         AgentId::Pi => pi_options(),
+        AgentId::Kiro => vec![single_cli(
+            agent,
+            "kiro",
+            "Kiro",
+            "打开 Kiro 自己的登录。完成后回到这里。",
+        )],
         _ => vec![],
     }
 }
@@ -225,6 +234,17 @@ pub fn is_device_code_option(agent: AgentId, provider_key: Option<&str>) -> bool
     }
 }
 
+/// Whether this option spawns the agent's CLI login (Kiro).
+pub fn is_cli_login_option(agent: AgentId, provider_key: Option<&str>) -> bool {
+    match agent {
+        AgentId::Kiro => match provider_key.map(str::trim).filter(|key| !key.is_empty()) {
+            None => true,
+            Some(key) => single_agent_accepts_provider_key(AgentId::Kiro, key),
+        },
+        _ => false,
+    }
+}
+
 /// Known Pi login keys that are not implemented in AgentHub (not PKCE, not device-code).
 pub fn is_unimplemented_pi_oauth(provider_key: Option<&str>) -> bool {
     matches!(
@@ -275,6 +295,17 @@ fn single_pkce(agent: AgentId, id: &str, label: &str, description: &str) -> OAut
         label: label.into(),
         description: description.into(),
         flow: OAuthFlowKind::Pkce,
+        auth_json_key: None,
+    }
+}
+
+fn single_cli(agent: AgentId, id: &str, label: &str, description: &str) -> OAuthLoginOption {
+    OAuthLoginOption {
+        id: id.into(),
+        agent_id: agent,
+        label: label.into(),
+        description: description.into(),
+        flow: OAuthFlowKind::Cli,
         auth_json_key: None,
     }
 }
@@ -409,5 +440,18 @@ mod tests {
         assert!(!oauth_supported(AgentId::Kimi));
         assert!(!oauth_supported(AgentId::Cursor));
         assert!(!oauth_supported(AgentId::Dsh));
+        let kiro = list_oauth_options(AgentId::Kiro);
+        assert_eq!(kiro.len(), 1);
+        assert_eq!(kiro[0].id, "kiro");
+        assert_eq!(kiro[0].flow, OAuthFlowKind::Cli);
+        assert!(oauth_supported(AgentId::Kiro));
+        assert!(is_cli_login_option(AgentId::Kiro, None));
+        assert!(is_cli_login_option(AgentId::Kiro, Some("kiro")));
+        assert!(!is_cli_login_option(AgentId::Kiro, Some("claude")));
+        assert!(!is_device_code_option(AgentId::Kiro, None));
+        assert!(resolve_pkce_provider(AgentId::Kiro, None).is_none());
+        assert!(kiro.iter().all(|o| !o.description.contains("auth.json")
+            && !o.description.contains("OAuth")
+            && !o.description.contains("sqlite")));
     }
 }
