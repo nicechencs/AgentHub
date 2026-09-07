@@ -5,16 +5,21 @@
 //!
 //! ## Scope
 //! - install / detect (official sh + ps1; IDE.app is never Installed)
-//! - headless: `kiro-cli chat --no-interactive --wrap never "…"`
+//! - Chat: prefer AgentHub-owned HTTP (Builder ID login / `KIRO_API_KEY`) for
+//!   list-models + one-shot completion; fall back to `kiro-cli` headless
+//! - headless CLI: `kiro-cli chat --no-interactive --wrap never "…"`
 //!   (+ `--trust-all-tools` when dangerous; TERM=dumb so Unix color does not leak)
-//! - Chat model/effort: `--model` / `--effort` from live prefs (`--list-models -f json`)
+//! - Chat model/effort: `--model` / `--effort` from live prefs (HTTP list or CLI)
 //! - Chat Auto: `--agent-engine v2 --output-format stream-json` (v1 rejects it)
-//! - subsequent turns: `--resume-id` when a native session id is known
+//! - subsequent turns: `--resume-id` when a native session id is known (CLI path)
 //! - auth: env `KIRO_API_KEY` / import `kiro-cli login` (sqlite + SSO cache);
-//!   refresh compares expiry and can write sqlite
+//!   refresh compares expiry and can write sqlite; HTTP also refreshes OIDC/Desktop
 //! - live backup of the sqlite login store and SSO cache copy
 //!
 //! ## Explicitly out of scope
+//! - Claiming official public REST support
+//! - Enterprise IdC `profileArn` / `runtime.*.kiro.dev` deep support (deferred)
+//! - OpenAI loopback Routes surface (follow-up)
 //! - Config write / API Key live apply
 //! - Chat continuous runtime (mid-turn allow/deny / steer)
 //! - Skills / MCP / usage / project history (no verified path yet)
@@ -37,6 +42,7 @@ use super::{
 
 mod auth;
 mod chat_prefs;
+pub(crate) mod http;
 
 pub(crate) use auth::kiro_grant_is_newer;
 pub(crate) use chat_prefs::{

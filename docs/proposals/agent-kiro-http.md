@@ -30,12 +30,18 @@ audience: contributor
 - **客户端表面（社区常见）：** OpenAI `/v1/chat/completions`（及部分 `/v1/responses`）、Anthropic `/v1/messages`、`/v1/models`。
 - **失败模式：** 主机与协议 churn；refresh 失效需重新登录；Builder ID vs 企业 `profileArn` / region 错位；区域连通性（VPN/代理）。
 
-## Open decisions
+## Decisions（第一切片已定）
 
-1. **嵌入 vs 外挂：** 上游 HTTP 适配做进 AgentHub core（本机路由池一员），还是按需 spawn 受控 helper（进程边界清晰、升级独立）？
-2. **先接哪张表面：** Chat 原生通道，还是先 OpenAI 兼容 loopback（本机路由 / 第三方客户端）？
-3. **账号优先级：** 是否 **Builder ID / 个人登录与 `ksk_` API Key 先做**，企业 IdC / `profileArn` 后置？
-4. **与 CLI 半面的关系：** HTTP 成功后 headless 是否降为探测/安装回退，还是长期双轨？
+1. **嵌入 core**（不外挂第三方网关二进制）。
+2. **Chat 原生先**；OpenAI loopback / Routes 后置。
+3. **Builder ID + `ksk_` API Key 先**；企业 IdC / `profileArn` / `runtime.*.kiro.dev` 后置。
+4. **长期双轨：** HTTP 可用时 Chat 优先走 HTTP；凭据/上游失败或需 `--resume-id` 时回退 `kiro-cli` headless。
+
+## First slice（工作区）
+
+- 模块：`crates/agenthub-core/src/adapters/kiro/http/`（creds / client / eventstream）。
+- 本机核实（Builder ID / OIDC DeviceCode）：`q.{region}.amazonaws.com` 上 ListAvailableModels + GenerateAssistantResponse；OIDC refresh 写回 sqlite。
+- 不宣称官方 REST；不打包社区网关。
 
 ## Non-goals
 
