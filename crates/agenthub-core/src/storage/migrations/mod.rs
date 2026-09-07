@@ -117,6 +117,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "00033_chat_runtime_denied_efforts",
         include_str!("00033_chat_runtime_denied_efforts.sql"),
     ),
+    (
+        "00034_local_gateway_desired_running_default_off",
+        include_str!("00034_local_gateway_desired_running_default_off.sql"),
+    ),
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {

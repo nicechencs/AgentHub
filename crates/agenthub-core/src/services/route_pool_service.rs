@@ -408,9 +408,10 @@ impl RoutePoolService {
         ))
     }
 
-    /// Last local-gateway switch. Unset stays on so existing auto-restore keeps working.
+    /// Last local-gateway switch. Unset stays off so a new install does not start
+    /// forwarding until the user turns it on.
     pub fn local_gateway_desired_running(&self) -> Result<bool> {
-        Ok(product_flag_enabled(
+        Ok(feature_flag_enabled(
             self.db
                 .get_setting(LOCAL_GATEWAY_DESIRED_RUNNING)?
                 .as_deref(),

@@ -39,8 +39,8 @@ pub const FEATURE_MIXED_PROVIDER_POOL: &str = "feature.mixed_provider_pool";
 /// User choice: Kimi and DSH share one chat-completions token. Default off.
 pub const SHARE_CHAT_COMPLETIONS: &str = "share_chat_completions";
 
-/// Shared local-gateway switch. Absent means restore (default on). Explicit off
-/// keeps the gateway stopped across process restart.
+/// Shared local-gateway switch. Absent means off so a new install stays stopped
+/// until the user turns it on. Explicit on restores across process restart.
 pub const LOCAL_GATEWAY_DESIRED_RUNNING: &str = "local_gateway_desired_running";
 
 /// Fail-closed experimental flags. Absent / anything other than an explicit
