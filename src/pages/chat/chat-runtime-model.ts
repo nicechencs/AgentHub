@@ -94,3 +94,15 @@ export function canSubmitRuntimeQuestions(
 ): boolean {
   return request.kind !== 'question' || request.questions.every((question) => Boolean(answers[question.id]?.length));
 }
+
+/** Allow/deny must not send answers; questions must not send a decision. */
+export function runtimeReplyFields(
+  request: Pick<RuntimeRequest, 'kind'>,
+  decision?: 'allow' | 'deny',
+  answers?: Record<string, string[]>,
+): { decision?: 'allow' | 'deny'; answers?: Record<string, string[]> } {
+  if (request.kind === 'question') {
+    return answers ? { answers } : {};
+  }
+  return decision ? { decision } : {};
+}

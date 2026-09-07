@@ -28,7 +28,7 @@ import type { TurnGroup } from './chat-format';
 import { busyAgentsForSends, incomingSendingIds, liveSendingIds, retryTarget, sendBlockers } from './chat-model';
 import { isCurrentChatRequest } from './chat-request';
 import { grokCanQueueFollowUp, grokShouldFlushFollowUp } from './chat-grok-follow-up';
-import { acceptsRuntimeSnapshot, isLatestRuntimeRead, isRuntimeActive, readRuntimeTransport, requestMatchesRuntime } from './chat-runtime-model';
+import { acceptsRuntimeSnapshot, isLatestRuntimeRead, isRuntimeActive, readRuntimeTransport, requestMatchesRuntime, runtimeReplyFields } from './chat-runtime-model';
 import {
   beginRuntimeStart,
   acceptRuntimeSnapshotVersion,
@@ -827,8 +827,7 @@ export function useChatPageSend(input: {
         runId: request.runId,
         requestId: request.id,
         clientRequestId: crypto.randomUUID(),
-        decision,
-        answers,
+        ...runtimeReplyFields(request, decision, answers),
       });
     } catch (error) {
       toast({ title: error instanceof Error ? error.message : String(error), variant: 'danger' });

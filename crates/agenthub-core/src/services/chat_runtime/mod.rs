@@ -1380,6 +1380,7 @@ impl ActorWorker {
                 "clientRequestId must not be empty".into(),
             ));
         }
+        let answers = reply.answers.filter(|values| !values.is_empty());
         let value = match persisted.request.kind {
             RuntimeRequestKind::Command | RuntimeRequestKind::File => {
                 let decision = match reply.decision {
@@ -1389,7 +1390,7 @@ impl ActorWorker {
                         return Err(AppError::InvalidArg("approval decision is required".into()));
                     }
                 };
-                if reply.answers.is_some() {
+                if answers.is_some() {
                     return Err(AppError::InvalidArg(
                         "approval cannot include answers".into(),
                     ));
@@ -1411,8 +1412,7 @@ impl ActorWorker {
                         "question reply cannot include decision".into(),
                     ));
                 }
-                let answers = reply
-                    .answers
+                let answers = answers
                     .ok_or_else(|| AppError::InvalidArg("question answers are required".into()))?;
                 validate_answers(&persisted.request.questions, &answers)?;
                 let answers = answers
