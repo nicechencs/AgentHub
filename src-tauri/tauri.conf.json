@@ -46,7 +46,10 @@
         "mimeType": "inode/directory",
         "contentTypes": ["public.folder"]
       }
-    ]
+    ],
+    "macOS": {
+      "entitlements": "./Entitlements.plist"
+    }
   },
   "plugins": {
     "updater": {
