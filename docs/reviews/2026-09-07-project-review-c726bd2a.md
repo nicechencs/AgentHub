@@ -128,6 +128,8 @@ scope: dev；跨 HEAD 续审，最终目标 c726bd2aa1ff8ea0aaf206c6755f6cdcfbb6
 
 ### AHREV-P2-001：53 个生产 Rust 文件内嵌测试实现
 
+- **修复状态**：已关闭（`15dd7c0d`，合入 dest）。
+
 - `git ls-files` + 正则确认 46 个 `crates/**` 文件、7 个 `src-tauri/**` 文件含 `#[cfg(test)] mod tests { ... }`，包括 `services/chat_runtime/ops.rs:751`、`src-tauri/src/commands/backup.rs:144`、`project.rs:152`、`sub2api.rs:323` 等。
 - 与 `AGENTS.md`“生产侧只放模块声明，测试实现放相邻 tests.rs”直接冲突；不影响发布二进制运行。**P2，高置信度**。
 - 按模块分批迁移，禁止顺带重构；迁移后核对测试数量和平台条件。
