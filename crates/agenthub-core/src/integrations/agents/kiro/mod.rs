@@ -5,6 +5,7 @@ mod install;
 mod paths;
 mod project;
 mod stream;
+mod usage;
 
 use crate::integrations::shared::register::register_fn_detector;
 use crate::integrations::IntegrationContext;
@@ -15,6 +16,7 @@ pub fn register(ctx: &mut IntegrationContext<'_>) {
     install::register(ctx);
     project::register(ctx);
     stream::register(ctx);
+    usage::register(ctx);
     register_fn_detector(
         ctx,
         AgentId::Kiro,

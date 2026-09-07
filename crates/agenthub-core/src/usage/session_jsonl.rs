@@ -15,6 +15,8 @@
 //!   Prefer `costUsdTicks` (1e-10 USD). Do not add `reasoningTokens` to totals.
 //! - DSH: provider usage on assistant/step events; inherit model from `request/header`.
 //!   Skip Token Meter heuristics (`surfaceTokens` / `estimated`). Do not scan cwd `.sessions`.
+//! - Kiro: harvest `~/.kiro/sessions/cli/*.json` turn token fields (pretty snapshot,
+//!   not JSONL). Editor session trees are out of scope.
 //! - Paths: CLAUDE_CONFIG_DIR / XDG, KIMI_DATA_DIR, PI_AGENT_DIR, GROK_HOME, DSH_HOME / DSH_SESSION_ROOT.
 //! - Pricing: prefer log costUSD / Grok ticks (Auto), else token × rates
 //!   (long-context whole-request switch, 1h cache at 2× input, Codex Fast).
@@ -2233,9 +2235,10 @@ mod tests {
         let repo = UsageRepo::new(db);
         let mut sample = None;
         let mut batch = None;
-        for path in files.iter().filter(|p| {
-            fs::metadata(p).map(|m| m.len() > 1000).unwrap_or(false)
-        }) {
+        for path in files
+            .iter()
+            .filter(|p| fs::metadata(p).map(|m| m.len() > 1000).unwrap_or(false))
+        {
             let parsed = parse_file_for_agent_id(AgentId::Kimi, path, &repo).expect("parse");
             if !parsed.events.is_empty() {
                 sample = Some(path);

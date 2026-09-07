@@ -24,7 +24,8 @@
 //! - OpenAI loopback Routes surface (follow-up)
 //! - Config write / API Key live apply
 //! - Mid-turn steer (ACP has session/cancel, not turn/steer)
-//! - Skills / MCP / usage / project history (no verified path yet)
+//! - usage: harvest `~/.kiro/sessions/cli/*.json` turn token fields
+//! - Skills / MCP / project history (no verified path yet)
 //! - Using Kiro IDE as the headless entry
 
 use std::path::{Path, PathBuf};
@@ -153,7 +154,7 @@ impl AgentAdapter for KiroAdapter {
             serde_json::json!({
                 "providers": false,
                 "accountSwitch": false,
-                "usage": false,
+                "usage": true,
                 "skills": false,
             }),
         );
@@ -320,7 +321,7 @@ impl AgentAdapter for KiroAdapter {
             ProjectHistory => CapabilityState::planned("待路径核实"),
             ProjectDelete => CapabilityState::unsupported("无安全浅删契约"),
             ProviderPresets => CapabilityState::unsupported("无 provider 配置契约"),
-            Usage => CapabilityState::planned("待日志字段核实"),
+            Usage => CapabilityState::partial("读 kiro-cli 会话里的 token；日志没写时总览是 0"),
             Mcp => CapabilityState::planned("待路径核实"),
             ModelSelect => CapabilityState::full(),
             SessionResume => {
