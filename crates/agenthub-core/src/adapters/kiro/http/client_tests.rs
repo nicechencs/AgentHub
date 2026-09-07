@@ -94,6 +94,86 @@ fn namespaced_id_feeds_build_chat_body() {
     );
 }
 
+mod support {
+    use super::*;
+
+    pub fn http_opts(native: Option<&str>, timeout: std::time::Duration) -> RunOptions {
+        let mut opts = RunOptions::default();
+        opts.timeout = timeout;
+        opts.native_session_id = native.map(str::to_string);
+        opts
+    }
+}
+
+#[test]
+fn http_run_cancels_while_waiting_and_drops_late_success() {
+    let hang = HangingChatTransport::success("cid-wait", "late-ok");
+    let cancel = CancelToken::new();
+    let opts = support::http_opts(
+        Some("kiro-http:cid-wait"),
+        std::time::Duration::from_secs(5),
+    );
+    let started = Instant::now();
+    let result = with_http_run_override(test_api_key_creds(), hang.clone(), || {
+        let cancel2 = cancel.clone();
+        let hang2 = hang.clone();
+        let stopper = std::thread::spawn(move || {
+            hang2.wait_started();
+            cancel2.cancel();
+        });
+        let result = try_http_run_result("hi", &opts, &cancel);
+        stopper.join().unwrap();
+        result
+    });
+    let elapsed = started.elapsed();
+    hang.release();
+    hang.wait_finished();
+    let result = result.expect("cancelled HTTP result");
+    assert_eq!(result.status, RunStatus::Cancelled);
+    assert_eq!(
+        result.native_session_id.as_deref(),
+        Some("kiro-http:cid-wait")
+    );
+    assert_eq!(result.error.as_deref(), Some("cancelled"));
+    assert!(
+        result.stdout.is_empty(),
+        "late HTTP success must not become Ok stdout: {}",
+        result.stdout
+    );
+    assert!(
+        elapsed < std::time::Duration::from_millis(800),
+        "local wait should interrupt, took {elapsed:?}"
+    );
+}
+
+#[test]
+fn http_run_short_deadline_times_out_and_keeps_session() {
+    let hang = HangingChatTransport::success("cid-deadline", "too-late");
+    let cancel = CancelToken::new();
+    let opts = support::http_opts(
+        Some("kiro-http:cid-deadline"),
+        std::time::Duration::from_millis(50),
+    );
+    let started = Instant::now();
+    let result = with_http_run_override(test_api_key_creds(), hang.clone(), || {
+        try_http_run_result("hi", &opts, &cancel)
+    });
+    let elapsed = started.elapsed();
+    hang.release();
+    let result = result.expect("timeout HTTP result");
+    assert_eq!(result.status, RunStatus::Timeout);
+    assert_eq!(
+        result.native_session_id.as_deref(),
+        Some("kiro-http:cid-deadline")
+    );
+    assert_eq!(result.error.as_deref(), Some("timeout"));
+    assert!(result.stdout.is_empty(), "deadline must not keep late Ok");
+    assert!(
+        elapsed < std::time::Duration::from_millis(800),
+        "short deadline should fire locally, took {elapsed:?}"
+    );
+}
+
 #[test]
 fn pool_access_token_does_not_invent_refresh_and_keeps_envelope() {
     let params = super::super::creds::KiroHttpRouteParams {

@@ -2,7 +2,8 @@ use super::*;
 use crate::adapters::register_all;
 use crate::models::RunStatus;
 use crate::utils::process::RecordingProcessRunner;
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 fn opts() -> RunOptions {
     RunOptions {
@@ -451,6 +452,82 @@ fn run_each_emits_started_chunk_finished_events() {
     if ran {
         assert!(has_chunk, "expected Chunk for installed agent");
     }
+}
+
+#[test]
+fn run_each_kiro_http_cancel_drops_late_ok_and_keeps_session() {
+    let hang = crate::adapters::kiro::http::HangingChatTransport::success("cid-run", "late-ok");
+    let cancel = CancelToken::new();
+    let mut opts = opts();
+    opts.native_session_id = Some("kiro-http:cid-run".into());
+    opts.timeout = Duration::from_secs(5);
+    let svc = RunService::with_runner(register_all(), Arc::new(RecordingProcessRunner::new()));
+    let started = Instant::now();
+    let report = crate::adapters::kiro::http::with_http_run_override(
+        crate::adapters::kiro::http::test_api_key_creds(),
+        hang.clone(),
+        || {
+            let cancel2 = cancel.clone();
+            let hang2 = hang.clone();
+            let stopper = std::thread::spawn(move || {
+                hang2.wait_started();
+                cancel2.cancel();
+            });
+            let report = svc
+                .run_each(&[(AgentId::Kiro, "hi".into())], &opts, &cancel, &|_| {})
+                .unwrap();
+            stopper.join().unwrap();
+            report
+        },
+    );
+    hang.release();
+    assert_eq!(report.results.len(), 1);
+    let result = &report.results[0];
+    assert_eq!(result.status, RunStatus::Cancelled);
+    assert_eq!(
+        result.native_session_id.as_deref(),
+        Some("kiro-http:cid-run")
+    );
+    assert!(result.stdout.is_empty(), "{}", result.stdout);
+    assert!(
+        started.elapsed() < Duration::from_millis(800),
+        "HTTP wait should interrupt, took {:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
+fn run_each_kiro_http_short_deadline_times_out() {
+    let hang =
+        crate::adapters::kiro::http::HangingChatTransport::success("cid-deadline", "too-late");
+    let cancel = CancelToken::new();
+    let mut opts = opts();
+    opts.native_session_id = Some("kiro-http:cid-deadline".into());
+    opts.timeout = Duration::from_millis(50);
+    let svc = RunService::with_runner(register_all(), Arc::new(RecordingProcessRunner::new()));
+    let started = Instant::now();
+    let report = crate::adapters::kiro::http::with_http_run_override(
+        crate::adapters::kiro::http::test_api_key_creds(),
+        hang.clone(),
+        || {
+            svc.run_each(&[(AgentId::Kiro, "hi".into())], &opts, &cancel, &|_| {})
+                .unwrap()
+        },
+    );
+    hang.release();
+    assert_eq!(report.results.len(), 1);
+    let result = &report.results[0];
+    assert_eq!(result.status, RunStatus::Timeout);
+    assert_eq!(
+        result.native_session_id.as_deref(),
+        Some("kiro-http:cid-deadline")
+    );
+    assert!(result.stdout.is_empty());
+    assert!(
+        started.elapsed() < Duration::from_millis(800),
+        "short deadline should fire locally, took {:?}",
+        started.elapsed()
+    );
 }
 
 #[test]
