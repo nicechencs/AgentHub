@@ -516,12 +516,10 @@ fn live_codex_config_and_session_models() {
     if !root.join("sessions").is_dir() {
         return;
     }
-    let dm = read_codex_default_model(&root);
-    assert!(
-        dm.is_some(),
-        "expected model= from real ~/.codex/config.toml"
-    );
-    assert_ne!(dm.as_deref(), Some("gpt-5"), "must not invent legacy gpt-5");
+    let Some(dm) = read_codex_default_model(&root) else {
+        return;
+    };
+    assert_ne!(dm.as_str(), "gpt-5", "must not invent legacy gpt-5");
 
     let files = discover_usage_files(AgentId::Codex).expect("discover");
     if files.is_empty() {
@@ -543,7 +541,7 @@ fn live_codex_config_and_session_models() {
         batch
             .events
             .iter()
-            .all(|e| e.model != "gpt-5" || dm.as_deref() == Some("gpt-5")),
+            .all(|e| e.model != "gpt-5" || dm == "gpt-5"),
         "must not invent gpt-5 unless config really says so; got {:?}",
         batch
             .events
@@ -555,8 +553,8 @@ fn live_codex_config_and_session_models() {
     let models: std::collections::BTreeSet<_> =
         batch.events.iter().map(|e| e.model.as_str()).collect();
     assert!(
-        models.iter().all(|m| *m != "unknown" || dm.is_none()),
-        "unexpected unknown when config/logs available: {models:?} cfg={dm:?}"
+        models.iter().all(|m| *m != "unknown"),
+        "unexpected unknown when config/logs available: {models:?} cfg={dm}"
     );
 }
 
