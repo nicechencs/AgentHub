@@ -29,7 +29,7 @@ scope: dest @ 5ee06a4f；对照三份 2026-09-07 全项目 review 的确认问�
 | 2a | P1-002 | `fix/review-p1-process-idle` `a1ad547c` | 已关闭 |
 | 2b | P1-001 | `fix/review-p1-kiro-http-cancel` `d1edd6f4` | 已关闭 |
 | 2c | P1-005 | `fix/review-p1-sse-trailer` `b40d97db` | 已关闭 |
-| 3a | P1-009、P2-004、P2-005 | `fix/review-p1-chat-runtime` | 核实完成，待实现 |
+| 3a | P1-009、P2-004、P2-005 | `fix/review-p1-chat-runtime` `350d7712` | 已关闭 |
 | 3b | C8-P1-001/002/003、C8-P2-001/002 | `fix/review-open-chat` `8d828143` | 已关闭 |
 | 4 | P2-003 | `fix/review-p2-setup-guide` `0b7d17b8` | 已关闭 |
 | 5 | P2-001 | 不在本轮并行 | 机械迁移，单独排队 |
@@ -130,6 +130,8 @@ scope: dest @ 5ee06a4f；对照三份 2026-09-07 全项目 review 的确认问�
 **AHREV-P2-005**（confirmed）：`begin_turn` 只在标题为空时更新 `updated_at`。
 
 方案：目录与 start 可取消；Shutdown 能抢占；未确认退出不删库。后续读取改为真正 `try_recv`。`begin_turn` 无条件更新 `updated_at`，标题仍只在空时赋值。
+
+**关闭**：`350d7712`。dest 已合入。主 Agent 复跑 `chat_runtime` 76 项（含 shutdown/cancel 抢占、burst drain、updated_at 排序）。
 
 ### 批次 3b — 系统文件夹打开 Chat
 
