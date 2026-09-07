@@ -233,65 +233,61 @@ pub async fn sub2api_http_request(
     let path_log_outer = path_log.clone();
     let headers = headers.unwrap_or_default();
 
-    let result = tauri::async_runtime::spawn_blocking(move || -> Result<Sub2ApiHttpResponse, String> {
-        let agent = ureq::AgentBuilder::new()
-            .timeout(HTTP_TIMEOUT)
-            .redirects(5)
-            .try_proxy_from_env(true)
-            .build();
+    let result =
+        tauri::async_runtime::spawn_blocking(move || -> Result<Sub2ApiHttpResponse, String> {
+            let agent = ureq::AgentBuilder::new()
+                .timeout(HTTP_TIMEOUT)
+                .redirects(5)
+                .try_proxy_from_env(true)
+                .build();
 
-        let mut req = match method.as_str() {
-            "GET" => agent.get(&url),
-            "POST" => agent.post(&url),
-            "PUT" => agent.put(&url),
-            "PATCH" => agent.request("PATCH", &url),
-            "DELETE" => agent.request("DELETE", &url),
-            "HEAD" => agent.request("HEAD", &url),
-            _ => return Err(format!("method not allowed: {method}")),
-        };
+            let mut req = match method.as_str() {
+                "GET" => agent.get(&url),
+                "POST" => agent.post(&url),
+                "PUT" => agent.put(&url),
+                "PATCH" => agent.request("PATCH", &url),
+                "DELETE" => agent.request("DELETE", &url),
+                "HEAD" => agent.request("HEAD", &url),
+                _ => return Err(format!("method not allowed: {method}")),
+            };
 
-        for (name, value) in &headers {
-            let key = name.trim();
-            if key.is_empty() {
-                continue;
+            for (name, value) in &headers {
+                let key = name.trim();
+                if key.is_empty() {
+                    continue;
+                }
+                req = req.set(key, value);
             }
-            req = req.set(key, value);
-        }
 
-        let call = if let Some(ref b) = body {
-            req.send_string(b)
-        } else {
-            req.call()
-        };
+            let call = if let Some(ref b) = body {
+                req.send_string(b)
+            } else {
+                req.call()
+            };
 
-        match call {
-            Ok(resp) => {
-                let status = resp.status();
-                let mut buf = String::new();
-                resp.into_reader()
-                    .take(MAX_BODY_BYTES as u64)
-                    .read_to_string(&mut buf)
-                    .map_err(|e| format!("read body failed: {e}"))?;
-                Ok(Sub2ApiHttpResponse { status, body: buf })
+            match call {
+                Ok(resp) => {
+                    let status = resp.status();
+                    let mut buf = String::new();
+                    resp.into_reader()
+                        .take(MAX_BODY_BYTES as u64)
+                        .read_to_string(&mut buf)
+                        .map_err(|e| format!("read body failed: {e}"))?;
+                    Ok(Sub2ApiHttpResponse { status, body: buf })
+                }
+                Err(ureq::Error::Status(status, resp)) => {
+                    let mut buf = String::new();
+                    let _ = resp
+                        .into_reader()
+                        .take(MAX_BODY_BYTES as u64)
+                        .read_to_string(&mut buf);
+                    Ok(Sub2ApiHttpResponse { status, body: buf })
+                }
+                Err(ureq::Error::Transport(t)) => Err(format!("network error: {t}")),
             }
-            Err(ureq::Error::Status(status, resp)) => {
-                let mut buf = String::new();
-                let _ = resp
-                    .into_reader()
-                    .take(MAX_BODY_BYTES as u64)
-                    .read_to_string(&mut buf);
-                Ok(Sub2ApiHttpResponse {
-                    status,
-                    body: buf,
-                })
-            }
-            Err(ureq::Error::Transport(t)) => {
-                Err(format!("network error: {t}"))
-            }
-        }
-    })
-    .await
-    .map_err(|e| format!("http join error: {e}"))?;
+        })
+        .await
+        .map_err(|e| format!("http join error: {e}"))?;
 
     match &result {
         Ok(resp) => {
@@ -320,20 +316,4 @@ pub async fn sub2api_http_request(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rejects_non_http_urls() {
-        assert!(validate_http_url("file:///etc/passwd").is_err());
-        assert!(validate_http_url("javascript:alert(1)").is_err());
-        assert!(validate_http_url("https://v2.pincc.ai/api/v1/settings/public").is_ok());
-    }
-
-    #[test]
-    fn safe_path_omits_query() {
-        let p = safe_path_for_log("https://v2.pincc.ai/api/v1/auth/login?x=1");
-        assert!(p.contains("v2.pincc.ai/api/v1/auth/login"));
-        assert!(!p.contains("x=1"));
-    }
-}
+mod tests;
