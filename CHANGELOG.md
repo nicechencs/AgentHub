@@ -20,8 +20,9 @@
 ## [0.4.8] - 2026-09-07
 
 ### 新增
+- 对话：Kiro HTTP 多轮可续同一 conversationId（`kiro-http:` 前缀）；CLI `--resume-id` 仍走命令行
 - 对话：Kiro 新对话走持续通道（可点允许/拒绝、停止；生成时不能中途补充，可排队到下一轮）。旧对话可「用新方式继续」
-- 对话：Kiro 在本机登录或 `KIRO_API_KEY` 可用时优先走 AgentHub 自有 HTTP（列模型 + 一轮回复）；失败或续场时仍回退 kiro-cli
+- 对话：Kiro 在本机登录或 `KIRO_API_KEY` 可用时优先走 AgentHub 自有 HTTP（列模型 + 多轮 conversationId）；失败或 CLI 续场 id 时仍回退 kiro-cli
 - 对话：Kiro 可选模型与思考等级（list-models；每轮 --model / --effort）
 - Agents：可管理 Kiro 命令行（检测/安装/登录指引/API Key）。新对话走持续通道；不接编辑器或本机路由
 - 连接：Kiro 可添加授权，并可导入本机 kiro-cli 登录
