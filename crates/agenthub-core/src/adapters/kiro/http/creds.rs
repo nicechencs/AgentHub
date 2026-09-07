@@ -150,9 +150,8 @@ fn load_from_sqlite(path: &Path) -> Result<Option<KiroHttpCreds>> {
     let access = string_field(&token_raw, &["access_token", "accessToken"])
         .ok_or_else(|| AppError::InvalidArg("Kiro login missing access_token".into()))?;
     let refresh = string_field(&token_raw, &["refresh_token", "refreshToken"]);
-    let expires_at = string_field(&token_raw, &["expires_at", "expiresAt"]).and_then(|s| {
-        parse_expires(&s)
-    });
+    let expires_at =
+        string_field(&token_raw, &["expires_at", "expiresAt"]).and_then(|s| parse_expires(&s));
     let region = string_field(&token_raw, &["region"]).unwrap_or_else(|| "us-east-1".into());
     let mut profile_arn = string_field(&token_raw, &["profile_arn", "profileArn"]);
 
@@ -209,7 +208,8 @@ fn load_from_sso_cache(path: &Path) -> Result<Option<KiroHttpCreds>> {
         None => return Ok(None),
     };
     let refresh = string_field(&raw, &["refresh_token", "refreshToken"]);
-    let expires_at = string_field(&raw, &["expires_at", "expiresAt"]).and_then(|s| parse_expires(&s));
+    let expires_at =
+        string_field(&raw, &["expires_at", "expiresAt"]).and_then(|s| parse_expires(&s));
     let region = string_field(&raw, &["region"]).unwrap_or_else(|| "us-east-1".into());
     let profile_arn = string_field(&raw, &["profile_arn", "profileArn"]);
     let client_id = string_field(&raw, &["client_id", "clientId"]);
@@ -250,14 +250,13 @@ pub(crate) fn persist_refreshed_token(creds: &KiroHttpCreds) -> Result<()> {
         return Ok(());
     }
     let conn = Connection::open(&path)?;
-    let existing: String = match conn.query_row(
-        "SELECT value FROM auth_kv WHERE key = ?1",
-        [key],
-        |row| row.get(0),
-    ) {
-        Ok(v) => v,
-        Err(_) => return Ok(()),
-    };
+    let existing: String =
+        match conn.query_row("SELECT value FROM auth_kv WHERE key = ?1", [key], |row| {
+            row.get(0)
+        }) {
+            Ok(v) => v,
+            Err(_) => return Ok(()),
+        };
     let mut obj: Map<String, Value> = match serde_json::from_str::<Value>(&existing) {
         Ok(Value::Object(m)) => m,
         _ => Map::new(),
@@ -295,11 +294,9 @@ fn read_profile_arn_from_state(conn: &Connection) -> Option<String> {
 
 fn query_auth_kv(conn: &Connection, key: &str) -> Option<Value> {
     let raw: String = conn
-        .query_row(
-            "SELECT value FROM auth_kv WHERE key = ?1",
-            [key],
-            |row| row.get(0),
-        )
+        .query_row("SELECT value FROM auth_kv WHERE key = ?1", [key], |row| {
+            row.get(0)
+        })
         .ok()?;
     serde_json::from_str(&raw).ok()
 }

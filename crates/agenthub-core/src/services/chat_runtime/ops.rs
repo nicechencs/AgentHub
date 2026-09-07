@@ -376,11 +376,15 @@ pub(crate) fn ensure_grok_catalog_efforts(
                 return option;
             }
             if option.efforts.is_empty() {
-                option.efforts = DEFAULT_EFFORTS.iter().map(|item| (*item).to_string()).collect();
+                option.efforts = DEFAULT_EFFORTS
+                    .iter()
+                    .map(|item| (*item).to_string())
+                    .collect();
             }
-            let default_ok = option.default_effort.as_deref().is_some_and(|value| {
-                option.efforts.iter().any(|item| item == value)
-            });
+            let default_ok = option
+                .default_effort
+                .as_deref()
+                .is_some_and(|value| option.efforts.iter().any(|item| item == value));
             if !default_ok {
                 option.default_effort = option
                     .efforts
@@ -394,10 +398,7 @@ pub(crate) fn ensure_grok_catalog_efforts(
         .collect()
 }
 
-pub(crate) fn grok_prompt_blocks(
-    prompt: &str,
-    images: &[RuntimeLocalImage],
-) -> Result<Vec<Value>> {
+pub(crate) fn grok_prompt_blocks(prompt: &str, images: &[RuntimeLocalImage]) -> Result<Vec<Value>> {
     let mut blocks = vec![serde_json::json!({ "type": "text", "text": prompt })];
     for image in images {
         blocks.push(grok_image_block(&image.path)?);
@@ -427,9 +428,8 @@ fn grok_image_block(path: &str) -> Result<Value> {
     if path.is_empty() {
         return Err(AppError::InvalidArg("图片路径不能为空".into()));
     }
-    let mime = grok_image_mime(path).ok_or_else(|| {
-        AppError::InvalidArg(format!("不支持的图片类型: {path}"))
-    })?;
+    let mime = grok_image_mime(path)
+        .ok_or_else(|| AppError::InvalidArg(format!("不支持的图片类型: {path}")))?;
     let bytes = std::fs::read(path)
         .map_err(|err| AppError::InvalidArg(format!("无法读取图片: {path} ({err})")))?;
     use base64::Engine;

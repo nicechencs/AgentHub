@@ -338,7 +338,9 @@ fn grok_cli_args_omit_effort_for_code_fast() {
         ..RunOptions::default()
     };
     let args = grok_cli_args("hi", &opts, None);
-    assert!(args.windows(2).any(|pair| pair == ["-m", "grok-code-fast-1"]));
+    assert!(args
+        .windows(2)
+        .any(|pair| pair == ["-m", "grok-code-fast-1"]));
     assert!(!args.iter().any(|item| item == "--reasoning-effort"));
 }
 
@@ -372,7 +374,10 @@ fn grok_live_chat_prefs_read_and_write_config() {
     set_grok_default_effort("high").unwrap();
     let text = fs::read_to_string(dir.path().join("config.toml")).unwrap();
     assert!(text.contains("default = \"grok-4.6\""), "{text}");
-    assert!(text.contains("default_reasoning_effort = \"high\""), "{text}");
+    assert!(
+        text.contains("default_reasoning_effort = \"high\""),
+        "{text}"
+    );
     match prev {
         Some(value) => std::env::set_var("GROK_HOME", value),
         None => std::env::remove_var("GROK_HOME"),

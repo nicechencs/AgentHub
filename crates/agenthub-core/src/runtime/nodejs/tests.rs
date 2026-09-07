@@ -344,7 +344,9 @@ fn extra_env_for_node_shebang_prefixes_cli_dir() {
         .expect("PATH overlay");
     let parts: Vec<PathBuf> = std::env::split_paths(path).collect();
     assert!(
-        parts.iter().any(|dir| dir.file_name().is_some_and(|n| n == "fake-npm-bin")),
+        parts
+            .iter()
+            .any(|dir| dir.file_name().is_some_and(|n| n == "fake-npm-bin")),
         "CLI parent must be on PATH overlay: {path}"
     );
 }

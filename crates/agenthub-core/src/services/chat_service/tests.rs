@@ -876,13 +876,20 @@ fn finalize_cancel_does_not_dump_pi_protocol_stdout() {
     let mut map = HashMap::new();
     map.insert(AgentId::Pi, running_pi_message(""));
     let stdout = concat!(
-        r#"{"type":"session","version":3,"id":"s1"}"#, "\n",
-        r#"{"type":"agent_start"}"#, "\n",
-        r#"{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","delta":"The"}}"#, "\n",
+        r#"{"type":"session","version":3,"id":"s1"}"#,
+        "\n",
+        r#"{"type":"agent_start"}"#,
+        "\n",
+        r#"{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","delta":"The"}}"#,
+        "\n",
     );
     let msg = finalize_agent_message(&mut map, &cancelled_result(stdout, true)).unwrap();
     assert_eq!(msg.status, ChatMessageStatus::Cancelled);
-    assert!(msg.content.is_empty(), "protocol dump leaked: {}", msg.content);
+    assert!(
+        msg.content.is_empty(),
+        "protocol dump leaked: {}",
+        msg.content
+    );
 }
 
 #[test]
@@ -927,14 +934,8 @@ fn finalize_strips_kiro_tui_chrome_from_plain_stdout() {
 
 #[test]
 fn sanitize_cli_chat_text_keeps_utf8_and_strips_c1_csi() {
-    assert_eq!(
-        sanitize_cli_chat_text("\u{1b}[32m你好\u{1b}[0m"),
-        "你好"
-    );
-    assert_eq!(
-        sanitize_cli_chat_text("\u{9b}32mhello\u{9b}0m"),
-        "hello"
-    );
+    assert_eq!(sanitize_cli_chat_text("\u{1b}[32m你好\u{1b}[0m"), "你好");
+    assert_eq!(sanitize_cli_chat_text("\u{9b}32mhello\u{9b}0m"), "hello");
 }
 
 #[test]

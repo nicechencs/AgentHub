@@ -166,8 +166,8 @@ fn collect_second_pass_counts_only_changed_harvest_rows() {
         "unchanged harvest must not count as new rows"
     );
 
-    let conn = rusqlite::Connection::open(tmp.path().join("cli").join("db").join("db.sqlite"))
-        .unwrap();
+    let conn =
+        rusqlite::Connection::open(tmp.path().join("cli").join("db").join("db.sqlite")).unwrap();
     conn.execute(
         "UPDATE model_usage SET input_tokens = 200 WHERE id = 'u1'",
         [],
@@ -176,5 +176,8 @@ fn collect_second_pass_counts_only_changed_harvest_rows() {
     drop(conn);
 
     let third = service.collect(Some(AgentId::Zcode)).unwrap();
-    assert_eq!(third.inserted, 1, "token change on the same id is an update");
+    assert_eq!(
+        third.inserted, 1,
+        "token change on the same id is an update"
+    );
 }

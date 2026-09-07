@@ -1090,7 +1090,8 @@ fn install_runtime_npm_upgrades_via_npm_when_present() {
     let out = install_runtime(RuntimeId::Npm, "winget", &ex).unwrap();
     let cmds = calls.lock().unwrap();
     assert!(
-        cmds.iter().any(|cmd| cmd.contains("npm") && cmd.contains("npm@latest")),
+        cmds.iter()
+            .any(|cmd| cmd.contains("npm") && cmd.contains("npm@latest")),
         "expected npm self-upgrade, got {cmds:?}; outcome={out:?}"
     );
     assert!(out.logs.iter().any(|line| line.contains("npm")));
