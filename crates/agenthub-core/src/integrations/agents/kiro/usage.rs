@@ -3,12 +3,14 @@
 //! Verified on kiro-cli 2.21.1: each session is a pretty-printed JSON snapshot
 //! rewritten per turn (not JSONL). Token fields live on
 //! `session_state.conversation_metadata.user_turn_metadatas[]`. Companion
-//! `.jsonl` transcripts and Kiro editor session trees have no verified token
-//! path. SQLite `data.sqlite3` has no usage tables.
+//! `.jsonl` transcripts have no token fields. Editor trees
+//! (`sessions/<workspace>/sess_*/messages.jsonl`) only log `usage_summary`
+//! credits, not tokens — not harvested (credits are not USD).
+//! SQLite `data.sqlite3` has no usage tables.
 //!
-//! Current CLI often writes `0` token counts while still ending the turn;
-//! those rows are kept so Kiro shows up after collect. Do not treat
-//! `metering_usage` credits as USD.
+//! CLI often writes `0` token counts on `UserTurnEnd`; those rows are kept so
+//! Kiro still appears after collect. Failed turns (`Error` / `ToolUseRejected`)
+//! with no tokens are skipped. Do not treat `metering_usage` credits as USD.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -135,6 +137,15 @@ fn event_from_turn(
         turn,
         &["cache_write_input_token_count", "cacheWriteInputTokenCount"],
     );
+    let failed = str_field(turn, &["end_reason", "endReason"]).is_some_and(|reason| {
+        matches!(
+            reason.as_str(),
+            "Error" | "ToolUseRejected" | "Aborted" | "Cancelled"
+        )
+    });
+    if failed && input == 0 && output == 0 && cache_read == 0 && cache_write == 0 {
+        return None;
+    }
     let model = str_field(turn, &["model", "modelId", "model_id"])
         .or_else(|| fallback_model.map(ToOwned::to_owned))
         .unwrap_or_else(|| "unknown".into());
