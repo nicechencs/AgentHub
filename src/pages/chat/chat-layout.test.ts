@@ -50,6 +50,14 @@ describe('chat layout wiring', () => {
     );
   });
 
+  it('shows empty-session starter cards that fill the composer', () => {
+    const transcript = source('ChatTranscript.tsx');
+    expect(transcript).toContain('chatStarterActions');
+    expect(transcript).toContain('onPickStarter');
+    expect(transcript).not.toContain('variant="default"');
+    expect(source('index.tsx')).toContain('onPickStarter={page.runChatAction}');
+  });
+
   it('keeps the transcript white column on the same max-w-3xl as the composer', () => {
     expect(source('index.tsx')).toContain('chatMainColumnClass');
     expect(source('index.tsx')).toContain('chatStageClass');

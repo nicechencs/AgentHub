@@ -69,6 +69,29 @@ pub fn is_unusable_secret(value: &str) -> bool {
         || t.chars().all(|c| matches!(c, '•' | '*' | '.' | '…' | ' '))
 }
 
+/// GUI log `last4` field: at most four characters, never a raw secret.
+///
+/// Callers should already pass a tail. If they pass a full key (`len >= 8`),
+/// keep only the last four. Values that are neither a 1–4 char tail nor a
+/// long secret are dropped.
+pub fn sanitize_gui_last4(raw: Option<&str>) -> String {
+    let t = raw.unwrap_or("").trim();
+    if is_unusable_secret(t) {
+        return String::new();
+    }
+    let chars: Vec<char> = t.chars().collect();
+    if chars.len() <= 4 {
+        if chars.iter().all(|c| c.is_ascii_alphanumeric()) {
+            return chars.into_iter().collect();
+        }
+        return String::new();
+    }
+    if chars.len() >= 8 {
+        return chars[chars.len() - 4..].iter().collect();
+    }
+    String::new()
+}
+
 /// Last four characters of a secret, prefixed with `**`. None when too short
 /// to show a tail without leaking most of the value.
 pub fn mask_secret_tail(secret: &str) -> Option<String> {

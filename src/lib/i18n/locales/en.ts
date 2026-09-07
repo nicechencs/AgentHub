@@ -2860,6 +2860,17 @@ export const en = {
     transcript: {
       start: "Start chatting",
       firstMessage: "Send the first message to {agent}",
+      startersAria: "Sample tasks",
+      starter: {
+        understand: "Understand this project",
+        understandHint: "See the layout and what it does",
+        check: "Check for issues",
+        checkHint: "Spot obvious risks and next steps",
+        summarize: "Summarize this folder",
+        summarizeHint: "Say in a few sentences what it is doing",
+        tests: "Add a small test",
+        testsHint: "Cover the current change with a test you can run",
+      },
       loadFailed: "Couldn't load messages",
       turnAgents: "{n} agents this turn",
       generating: "Generating",

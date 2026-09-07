@@ -3,6 +3,7 @@ import {
   CHAT_ACTIONS,
   actionMatchesQuery,
   chatActionDisabledReason,
+  chatStarterActions,
   clampActionIndex,
   filterChatActions,
   isCommandSearchMode,
@@ -55,5 +56,17 @@ describe('chat action command search', () => {
     ).toBe('noAgent');
     expect(clampActionIndex(-1, 3)).toBe(2);
     expect(clampActionIndex(3, 3)).toBe(0);
+  });
+
+  it('exposes four draft starters that only fill the composer', () => {
+    const starters = chatStarterActions();
+    expect(starters).toHaveLength(4);
+    expect(starters.every((item) => item.kind === 'draft' && Boolean(item.draftText))).toBe(true);
+    expect(starters.map((item) => item.id)).toEqual([
+      'sample-understand-project',
+      'sample-check-issues',
+      'sample-summarize',
+      'sample-write-tests',
+    ]);
   });
 });

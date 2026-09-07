@@ -2,6 +2,7 @@
  * Settings API façade — core keys via backend; UI prefs via UiPreferencesStore.
  */
 import { getBackend } from '@/app/runtime';
+import { sanitizeGuiLast4 } from '@/lib/backend/contracts/settings-port';
 import type { AppSettings, LogLevel } from '@/lib/types';
 
 export async function getSettings(): Promise<AppSettings> {
@@ -43,7 +44,10 @@ export async function logGuiEvent(
   try {
     const port = getBackend().settings;
     if (typeof port.logGuiEvent === 'function') {
-      await port.logGuiEvent(op, detail);
+      await port.logGuiEvent(op, {
+        ...detail,
+        last4: sanitizeGuiLast4(detail?.last4),
+      });
     }
   } catch {
     // Logging must not break the form.

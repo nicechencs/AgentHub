@@ -1,5 +1,12 @@
 import type { RefObject } from 'react';
-import { Loader2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  FolderSearch,
+  ListTree,
+  Loader2,
+  TestTube2,
+  type LucideIcon,
+} from 'lucide-react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
@@ -18,6 +25,12 @@ import {
   chatTranscriptSurfaceClass,
   turnComparisonChips,
 } from './chat-model';
+import {
+  chatStarterActions,
+  chatStarterCopyKey,
+  type ChatActionDef,
+  type ChatStarterCopyKey,
+} from './chat-actions';
 import { ChatMessageBubble } from './ChatMessageBubble';
 
 export function ChatTranscript({
@@ -35,6 +48,7 @@ export function ChatTranscript({
   onScroll,
   onRetry,
   onOpenLocal,
+  onPickStarter,
 }: {
   active: Conversation | null;
   turns: TurnGroup[];
@@ -50,6 +64,7 @@ export function ChatTranscript({
   onScroll: () => void;
   onRetry: () => void;
   onOpenLocal?: (path: string) => boolean;
+  onPickStarter?: (action: ChatActionDef) => void;
 }) {
   const { t } = useI18n();
   if (listLoading && !active) {
@@ -87,14 +102,11 @@ export function ChatTranscript({
           />
         </div>
       ) : turns.length === 0 ? (
-        <div className="flex h-full flex-col items-center justify-center px-6 py-10">
-          <div className="text-center">
-            <p className="text-title font-semibold tracking-tight text-primary">{t('chat.transcript.start')}</p>
-            <p className="mt-2 max-w-md text-body text-muted">
-              {t('chat.transcript.firstMessage', { agent: agentPickerLabel(t, active) })}
-            </p>
-          </div>
-        </div>
+        <EmptyTranscriptStart
+          agentLabel={agentPickerLabel(t, active)}
+          sending={sending}
+          onPickStarter={onPickStarter}
+        />
       ) : (
         <div
           className={cn(
@@ -144,6 +156,65 @@ export function ChatTranscript({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+const STARTER_ICONS: Record<ChatStarterCopyKey, LucideIcon> = {
+  understand: FolderSearch,
+  check: AlertTriangle,
+  summarize: ListTree,
+  tests: TestTube2,
+};
+
+function EmptyTranscriptStart({
+  agentLabel,
+  sending,
+  onPickStarter,
+}: {
+  agentLabel: string;
+  sending: boolean;
+  onPickStarter?: (action: ChatActionDef) => void;
+}) {
+  const { t } = useI18n();
+  const starters = chatStarterActions();
+  return (
+    <div className="flex h-full flex-col items-center justify-center px-6 py-10">
+      <div className="w-full max-w-3xl text-center">
+        <p className="text-title font-semibold tracking-tight text-primary">{t('chat.transcript.start')}</p>
+        <p className="mt-2 text-body text-muted">
+          {t('chat.transcript.firstMessage', { agent: agentLabel })}
+        </p>
+        {!sending ? (
+          <div
+            className="mt-6 grid grid-cols-1 gap-2 sm:grid-cols-2"
+            role="group"
+            aria-label={t('chat.transcript.startersAria')}
+          >
+            {starters.map((action) => {
+              const key = chatStarterCopyKey(action.id);
+              if (!key) return null;
+              const Icon = STARTER_ICONS[key];
+              const title = t(`chat.transcript.starter.${key}` as never);
+              return (
+                <button
+                  key={action.id}
+                  type="button"
+                  aria-label={title}
+                  className="rounded-card border border-border bg-panel p-3 text-left shadow-xs hover:bg-hover"
+                  onClick={() => onPickStarter?.(action)}
+                >
+                  <Icon className="mb-2 h-4 w-4 text-accent" aria-hidden />
+                  <p className="text-body font-medium text-primary">{title}</p>
+                  <p className="mt-1 text-meta text-muted">
+                    {t(`chat.transcript.starter.${key}Hint` as never)}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
