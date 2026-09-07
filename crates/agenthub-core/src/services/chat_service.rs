@@ -459,11 +459,11 @@ impl ChatService {
                 jobs.push((agent, prompt));
             }
 
-            let grok_prefs = agents
-                .first()
-                .copied()
-                .filter(|agent| *agent == AgentId::Grok)
-                .map(|_| crate::adapters::grok::grok_send_prefs());
+            let send_prefs = match agents.first().copied() {
+                Some(AgentId::Grok) => Some(crate::adapters::grok::grok_send_prefs()),
+                Some(AgentId::Kiro) => Some(crate::adapters::kiro::kiro_send_prefs()),
+                _ => None,
+            };
             let opts = RunOptions {
                 mode: RunMode::Parallel,
                 timeout: DEFAULT_RUN_TIMEOUT,
@@ -475,8 +475,8 @@ impl ChatService {
                 // Claude/Codex → stream-json / --json; others remain text.
                 process_mode: crate::models::ProcessMode::Auto,
                 native_session_id: resume_id.clone(),
-                model: grok_prefs.as_ref().and_then(|(model, _)| model.clone()),
-                effort: grok_prefs.as_ref().and_then(|(_, effort)| effort.clone()),
+                model: send_prefs.as_ref().and_then(|(model, _)| model.clone()),
+                effort: send_prefs.as_ref().and_then(|(_, effort)| effort.clone()),
             };
             let max_out = opts.max_output_bytes;
             tracing::debug!(

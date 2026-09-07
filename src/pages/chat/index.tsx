@@ -330,7 +330,7 @@ export default function ChatPage() {
                   currentModel={page.runtime?.enabled ? null : page.currentModel}
                   switchingModel={page.runtime?.enabled ? false : page.switchingModel}
                   onSwitchModel={(id) => {
-                    if (page.runtime?.enabled || kiroChatStance(page.primaryAgent)) return;
+                    if (page.runtime?.enabled) return;
                     void page.handleSwitchModel(id);
                   }}
                   effortOptions={
@@ -340,7 +340,7 @@ export default function ChatPage() {
                   }
                   currentEffort={page.runtime?.enabled ? null : page.currentEffort}
                   onSwitchEffort={(id) => {
-                    if (page.runtime?.enabled || kiroChatStance(page.primaryAgent)) return;
+                    if (page.runtime?.enabled) return;
                     void page.handleSwitchEffort(id);
                   }}
                   onPickWorkingDirectory={() => void page.pickWorkingDirectory()}

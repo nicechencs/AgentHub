@@ -18,8 +18,9 @@
 ## [Unreleased]
 
 ### 新增
+- 对话：Kiro 可选模型与思考等级（list-models；每轮 --model / --effort）
 - Agents：可管理 Kiro 命令行（检测/安装/登录指引/API Key；可 headless 发一轮）。不接编辑器、持续聊或本机路由
-- 对话：Kiro 一轮一发；不能中途补充或点允许/拒绝；自动批准对应跳过工具确认
+- 对话：Kiro 一轮一发（可选模型/思考等级）；不能中途补充或点允许/拒绝；自动批准对应跳过工具确认
 - 对话：Kiro 发送时可看过程（v2 stream-json）；下一轮走官方续场。仍不能中途补充或点允许/拒绝
 - 连接：Kiro 可添加授权，并可导入本机 kiro-cli 登录
 - 连接：Kiro 详情显示 data.sqlite3；刷新会对比本机登录有效期并回写 sqlite
