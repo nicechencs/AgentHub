@@ -72,6 +72,7 @@ updated: 2026-09-08
 
 - [对象化与封装审查](architecture/objectization-encapsulation-audit.md)（审查记录；分册从该页链出）
 - [Codex 安装与连接/路由模块化审查](status/codex-install-modularity-review.md)
+- [2026-09-07 全项目 review 修复进展](reviews/2026-09-07-review-fix-progress.md)
 
 ## 未来与历史
 
