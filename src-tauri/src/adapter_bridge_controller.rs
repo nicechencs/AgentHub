@@ -576,7 +576,7 @@ pub(crate) fn restore_adapter_bridges(
             Ok(desired_running) => desired_running,
             Err(_) => {
                 tracing::warn!(target: "gui", op = "adapter_bridge_restore", code = "adapter.bridge_restore_desired", "adapter bridge restore could not read the local gateway switch");
-                true
+                false
             }
         };
         if !desired_running {

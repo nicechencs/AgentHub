@@ -5,7 +5,7 @@ use crate::models::{
     AdapterServiceImpact, AdapterSourceKind, AdapterSupport, AgentId, Provider,
     RouteDownstreamSurface, FEATURE_CODEX_INGRESS_GROK_UPSTREAM,
     FEATURE_GROK_INGRESS_CODEX_UPSTREAM, FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2,
-    FEATURE_ROUTE_POOL_V2,
+    FEATURE_ROUTE_POOL_V2, LOCAL_GATEWAY_DESIRED_RUNNING,
 };
 use crate::services::RoutePoolService;
 use crate::storage::{AccountRepo, AdapterProfileRepo, Database, ProviderRepo};
@@ -47,13 +47,17 @@ fn bridge_profile(id: &str, source_id: &str, agent: AgentId, auto_start: bool) -
 }
 
 #[test]
-fn local_gateway_desired_running_defaults_on_and_remembers_off() {
-    let (_dir, _db, service, _) = tmp();
-    assert!(service.local_gateway_desired_running().unwrap());
-    service.set_local_gateway_desired_running(false).unwrap();
+fn local_gateway_desired_running_defaults_off_and_remembers_on() {
+    let (_dir, db, service, _) = tmp();
+    assert!(db
+        .get_setting(LOCAL_GATEWAY_DESIRED_RUNNING)
+        .unwrap()
+        .is_none());
     assert!(!service.local_gateway_desired_running().unwrap());
     service.set_local_gateway_desired_running(true).unwrap();
     assert!(service.local_gateway_desired_running().unwrap());
+    service.set_local_gateway_desired_running(false).unwrap();
+    assert!(!service.local_gateway_desired_running().unwrap());
 }
 
 #[test]
