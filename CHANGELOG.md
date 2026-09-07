@@ -17,12 +17,17 @@
 
 ## [Unreleased]
 
+## [0.4.9] - 2026-09-07
+
 ### 新增
-- 发布：国内更新镜像（Cloudflare R2 + Worker）；App 优先读 `https://updates.agenthub.qooo.io/latest.json`，失败回退 GitHub
+- 发布：国内更新镜像；优先从 `https://updates.agenthub.qooo.io/latest.json` 检查更新，失败再回退 GitHub
 
 ### 修复
 - 对话：Kiro 持续聊天握手不再发送对方不支持的 initialized
-- 对话：Kiro 同一会话的后续轮次继续用当前进程发送，不再在新进程上 session/load（对方会退出或卡住）
+- 对话：Kiro 同一会话的后续轮次继续用当前进程，避免卡住或退出
+- 对话：Kiro 已有 HTTP 对话失败时不再改走命令行；旧对话仍走原来的发送方式
+- 对话：停止、允许/拒绝更稳；Kiro 会话不会提前关掉；HTTP 续聊失败后仍保留会话
+- 连接：跳过无效的本机 Kiro 登录；接到本机路由时保留连接池登录参数
 
 ## [0.4.8] - 2026-09-07
 

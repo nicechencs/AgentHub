@@ -169,6 +169,38 @@ pub struct BridgeMemberSpec {
     pub(crate) kiro_http: Option<KiroHttpRouteParams>,
 }
 
+impl BridgeMemberSpec {
+    pub fn new(
+        ticket_id: impl Into<String>,
+        source_kind: impl Into<String>,
+        source_id: impl Into<String>,
+        label: impl Into<String>,
+        auth: ResolvedAuth,
+        reload: Option<UpstreamAuthReload>,
+        health: MemberHealth,
+        priority: i64,
+        position: i64,
+    ) -> Self {
+        Self {
+            ticket_id: ticket_id.into(),
+            source_kind: source_kind.into(),
+            source_id: source_id.into(),
+            label: label.into(),
+            auth,
+            reload,
+            health,
+            priority,
+            position,
+            kiro_http: None,
+        }
+    }
+
+    pub(crate) fn with_kiro_http(mut self, params: Option<KiroHttpRouteParams>) -> Self {
+        self.kiro_http = params;
+        self
+    }
+}
+
 impl std::fmt::Debug for BridgeMemberSpec {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
