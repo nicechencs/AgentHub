@@ -1,6 +1,6 @@
 //! B2 helpers: model/effort validation, Codex list parsing, turn input building.
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::error::{AppError, Result};
 
@@ -396,6 +396,13 @@ pub(crate) fn ensure_grok_catalog_efforts(
             option
         })
         .collect()
+}
+
+pub(crate) fn acp_session_prompt_params(session_id: &str, blocks: Vec<Value>) -> Value {
+    json!({
+        "sessionId": session_id,
+        "prompt": blocks,
+    })
 }
 
 pub(crate) fn grok_prompt_blocks(prompt: &str, images: &[RuntimeLocalImage]) -> Result<Vec<Value>> {
@@ -1053,6 +1060,15 @@ mod tests {
         assert_eq!(models[0].default_effort.as_deref(), Some("high"));
         assert!(models[1].efforts.is_empty());
         assert_eq!(models[1].default_effort, None);
+    }
+
+    #[test]
+    fn acp_session_prompt_params_use_prompt_not_content() {
+        let blocks = grok_prompt_blocks("ping", &[]).unwrap();
+        let params = acp_session_prompt_params("sess-1", blocks);
+        assert_eq!(params["sessionId"], "sess-1");
+        assert_eq!(params["prompt"][0]["text"], "ping");
+        assert!(params.get("content").is_none());
     }
 
     #[test]

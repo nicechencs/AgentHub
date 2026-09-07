@@ -1093,9 +1093,7 @@ impl ActorWorker {
         extras: &RuntimeStartExtras,
     ) -> Result<RuntimeSnapshot> {
         if !extras.skills.is_empty() {
-            return Err(AppError::Unsupported(
-                "目前不能在本轮指定 Skill".into(),
-            ));
+            return Err(AppError::Unsupported("目前不能在本轮指定 Skill".into()));
         }
         let cwd = self.conversation_cwd()?;
         let settings = self.store.turn_settings(&self.conversation_id)?;
@@ -1159,13 +1157,7 @@ impl ActorWorker {
             .clone()
             .ok_or_else(|| AppError::message("chat.runtime.protocol", "session id omitted"))?;
         let blocks = ops::grok_prompt_blocks(prompt, &extras.images)?;
-        let mut prompt_params = json!({
-            "sessionId": session_id,
-            "prompt": blocks.clone(),
-        });
-        if self.agent == AgentId::Kiro {
-            prompt_params["content"] = json!(blocks);
-        }
+        let prompt_params = ops::acp_session_prompt_params(&session_id, blocks);
         let prompt_id = transport
             .begin_request("session/prompt", prompt_params)
             .map_err(transport_error)?;

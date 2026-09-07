@@ -8,35 +8,41 @@ use tempfile::tempdir;
 fn classify_distinguishes_numeric_and_string_ids_and_message_kinds() {
     assert!(matches!(
         classify_message(json!({"id": 1, "result": {"ok": true}})),
-        Ok(WireMessage::Response { id, .. }) if id == json!(1)
+        Ok(Some(WireMessage::Response { id, .. })) if id == json!(1)
     ));
     assert!(matches!(
         classify_message(json!({"id": "1", "result": {"ok": true}})),
-        Ok(WireMessage::Response { id, .. }) if id == json!("1")
+        Ok(Some(WireMessage::Response { id, .. })) if id == json!("1")
     ));
     assert!(matches!(
         classify_message(json!({"id": 1, "method": "approve", "params": {}})),
-        Ok(WireMessage::Request { id, method, .. }) if id == json!(1) && method == "approve"
+        Ok(Some(WireMessage::Request { id, method, .. })) if id == json!(1) && method == "approve"
     ));
     assert!(matches!(
         classify_message(json!({"method": "notice", "params": {}})),
-        Ok(WireMessage::Notification { method, .. }) if method == "notice"
+        Ok(Some(WireMessage::Notification { method, .. })) if method == "notice"
     ));
 }
 
 #[test]
-fn classify_rejects_ambiguous_or_incomplete_messages() {
+fn classify_skips_unshaped_json_instead_of_failing() {
     for value in [
         json!({"id": 1}),
         json!({"result": {}}),
-        json!({"id": 1, "result": {}, "error": {}}),
+        json!({"type": "text", "content": "hi"}),
+        json!({"error": "missing field `prompt`", "phase": "deserialization"}),
         json!(null),
     ] {
-        assert!(matches!(
-            classify_message(value),
-            Err(CodexTransportError::Protocol(_))
-        ));
+        assert!(matches!(classify_message(value), Ok(None)));
     }
+}
+
+#[test]
+fn classify_still_rejects_response_with_both_result_and_error() {
+    assert!(matches!(
+        classify_message(json!({"id": 1, "result": {}, "error": {}})),
+        Err(CodexTransportError::Protocol(_))
+    ));
 }
 
 #[cfg(unix)]
@@ -104,6 +110,45 @@ printf '%s\n' '{"id":2,"result":{"echo":true}}'
         json!({"echo": true})
     );
     transport.shutdown();
+}
+
+#[cfg(unix)]
+#[test]
+fn handshake_skips_bare_json_and_outgoing_lines_include_jsonrpc() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = tempdir().expect("temp directory");
+    let program = directory.path().join("fake-kiro-acp");
+    std::fs::write(
+        &program,
+        r##"#!/bin/sh
+log="$(dirname "$0")/wire.log"
+IFS= read -r initialize
+printf '%s\n' "$initialize" >> "$log"
+printf '%s\n' '{"type":"text","content":"hi"}'
+printf '%s\n' '{"id":1,"result":{"initialized":true}}'
+IFS= read -r initialized
+printf '%s\n' "$initialized" >> "$log"
+"##,
+    )
+    .expect("fake acp script");
+    let mut permissions = std::fs::metadata(&program)
+        .expect("fake metadata")
+        .permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(&program, permissions).expect("fake executable");
+
+    let mut transport = CodexTransport::spawn(&program, directory.path()).expect("spawn fake");
+    transport.shutdown();
+    let wire = std::fs::read_to_string(directory.path().join("wire.log")).expect("wire log");
+    assert!(
+        wire.contains(r#""jsonrpc":"2.0""#) && wire.contains(r#""method":"initialize""#),
+        "outgoing initialize must be JSON-RPC 2.0: {wire}"
+    );
+    assert!(
+        wire.contains(r#""method":"initialized""#),
+        "outgoing initialized notification missing: {wire}"
+    );
 }
 
 #[cfg(unix)]

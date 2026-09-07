@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Map, Value};
 use thiserror::Error;
 
+use crate::logging::targets;
 use crate::utils::process::{
     apply_no_window, configure_process_group, join_reader_bounded, kill_process_tree, poll_child,
     reap_child_lossy, ChildPoll, ProcessControl, ReaderJoin,
@@ -318,7 +319,12 @@ impl CodexTransport {
             .next_id
             .checked_add(1)
             .ok_or_else(|| CodexTransportError::Protocol("request id exhausted".into()))?;
-        self.send_value(json!({ "id": id.clone(), "method": method, "params": params }))?;
+        self.send_value(json!({
+            "jsonrpc": "2.0",
+            "id": id.clone(),
+            "method": method,
+            "params": params
+        }))?;
         Ok(id)
     }
 
@@ -365,6 +371,7 @@ impl CodexTransport {
         response: Result<Value, Value>,
     ) -> Result<(), CodexTransportError> {
         let mut message = Map::new();
+        message.insert("jsonrpc".into(), Value::String("2.0".into()));
         message.insert("id".into(), id);
         match response {
             Ok(result) => {
@@ -419,7 +426,12 @@ impl CodexTransport {
             .next_id
             .checked_add(1)
             .ok_or_else(|| CodexTransportError::Protocol("request id exhausted".into()))?;
-        self.send_value(json!({ "id": id, "method": method, "params": params }))?;
+        self.send_value(json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+            "params": params
+        }))?;
 
         let deadline = Instant::now() + timeout;
         let mut deferred = VecDeque::new();
@@ -465,6 +477,7 @@ impl CodexTransport {
 
     fn send_notification(&mut self, method: &str, params: Option<Value>) -> TransportResult<()> {
         let mut message = Map::new();
+        message.insert("jsonrpc".into(), Value::String("2.0".into()));
         message.insert("method".into(), Value::String(method.into()));
         if let Some(params) = params {
             message.insert("params".into(), params);
@@ -472,9 +485,13 @@ impl CodexTransport {
         self.send_value(Value::Object(message))
     }
 
-    fn send_value(&mut self, value: Value) -> TransportResult<()> {
+    fn send_value(&mut self, mut value: Value) -> TransportResult<()> {
         if self.shutdown || self.exited {
             return Err(CodexTransportError::Exited);
+        }
+        if let Value::Object(map) = &mut value {
+            map.entry("jsonrpc")
+                .or_insert_with(|| Value::String("2.0".into()));
         }
         let stdin = self.stdin.as_mut().ok_or(CodexTransportError::Exited)?;
         serde_json::to_writer(&mut *stdin, &value)
@@ -495,7 +512,8 @@ impl CodexTransport {
             match self.wire_rx.recv_timeout(wait) {
                 Ok(event) => match event {
                     WireEvent::Message(value) => match classify_message(value) {
-                        Ok(message) => return Ok(Some(message)),
+                        Ok(Some(message)) => return Ok(Some(message)),
+                        Ok(None) => continue,
                         Err(error) => {
                             self.shutdown();
                             return Err(error);
@@ -524,7 +542,8 @@ impl CodexTransport {
                     self.shutdown();
                     return Err(error);
                 }
-                Ok(message) => match message {
+                Ok(None) => Ok(None),
+                Ok(Some(message)) => match message {
                     WireMessage::Notification { method, params } => {
                         Ok(Some(CodexEvent::Notification { method, params }))
                     }
@@ -602,16 +621,17 @@ impl Drop for CodexTransport {
     }
 }
 
-fn classify_message(value: Value) -> TransportResult<WireMessage> {
-    let object = value.as_object().ok_or_else(|| {
-        CodexTransportError::Protocol("JSON-RPC message must be an object".into())
-    })?;
+fn classify_message(value: Value) -> TransportResult<Option<WireMessage>> {
+    let Some(object) = value.as_object() else {
+        warn_skipped_json(&value);
+        return Ok(None);
+    };
     let has_id = object.contains_key("id");
     let has_method = object.get("method").and_then(Value::as_str).is_some();
     let has_result = object.contains_key("result");
     let has_error = object.contains_key("error");
     if has_id && has_method {
-        return Ok(WireMessage::Request {
+        return Ok(Some(WireMessage::Request {
             id: object.get("id").cloned().expect("id was checked above"),
             method: object
                 .get("method")
@@ -619,7 +639,7 @@ fn classify_message(value: Value) -> TransportResult<WireMessage> {
                 .expect("method was checked above")
                 .into(),
             params: object.get("params").cloned().unwrap_or(Value::Null),
-        });
+        }));
     }
     if has_id && (has_result || has_error) {
         if has_result && has_error {
@@ -627,25 +647,37 @@ fn classify_message(value: Value) -> TransportResult<WireMessage> {
                 "response cannot contain both result and error".into(),
             ));
         }
-        return Ok(WireMessage::Response {
+        return Ok(Some(WireMessage::Response {
             id: object.get("id").cloned().expect("id was checked above"),
             result: object.get("result").cloned(),
             error: object.get("error").cloned(),
-        });
+        }));
     }
     if has_method && !has_id {
-        return Ok(WireMessage::Notification {
+        return Ok(Some(WireMessage::Notification {
             method: object
                 .get("method")
                 .and_then(Value::as_str)
                 .expect("method was checked above")
                 .into(),
             params: object.get("params").cloned().unwrap_or(Value::Null),
-        });
+        }));
     }
-    Err(CodexTransportError::Protocol(
-        "invalid JSON-RPC message shape".into(),
-    ))
+    warn_skipped_json(&value);
+    Ok(None)
+}
+
+fn warn_skipped_json(value: &Value) {
+    let preview: String = crate::utils::redact::redact_text(&value.to_string())
+        .chars()
+        .take(300)
+        .collect();
+    tracing::warn!(
+        module = targets::CHAT,
+        op = "jsonrpc_skip",
+        preview = %preview,
+        "skipped stdout JSON that is not a JSON-RPC request, response, or notification"
+    );
 }
 
 fn read_stdout(stdout: impl Read, tx: SyncSender<WireEvent>, stop: Arc<AtomicBool>) {
