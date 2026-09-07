@@ -119,6 +119,8 @@ scope: dev；跨 HEAD 续审，最终目标 c726bd2aa1ff8ea0aaf206c6755f6cdcfbb6
 
 ### AHREV-P1-009：Chat 启动中停止/删除可在子进程仍运行时报告成功
 
+- **修复状态**：已关闭（`350d7712`，合入 dest）。
+
 - **位置**：`src/pages/chat/runtime-run-state.ts:62-80`；`use-chat-page-send.ts:610-619,740-769,814-817`；`use-chat-page-sessions.ts:284-287`；`crates/agenthub-core/src/services/chat_runtime/mod.rs:314-353,528-540,548-633,831-866,1155-1158`。
 - **触发/行为**：冷启动目录拉取或 actor 同步 `turn/start` 阻塞时停止/删除。前端 pendingStart 只记本地取消；冷启动 transport 尚未登记。actor 建立后也在同步命令期间不处理 Cancel/Shutdown；shutdown 忽略 5 秒确认超时并继续删库。
 - **影响/证据**：会话已显示删除，子进程却可继续运行到 30 秒期限。源码可达路径确认。**P1，高置信度**。
@@ -148,11 +150,15 @@ scope: dev；跨 HEAD 续审，最终目标 c726bd2aa1ff8ea0aaf206c6755f6cdcfbb6
 
 ### AHREV-P2-004：actor 的 64 事件批处理通常每轮只读一个 wire 事件
 
+- **修复状态**：已关闭（`350d7712`，合入 dest）。
+
 - `services/chat_runtime/mod.rs:831-834,1625-1635` 后续 63 次传 `Duration::ZERO`；`codex_transport.rs:384-397` 在尝试 `wire_rx` 前因零期限返回。
 - 正常流式通知约每轮一条，容量 128 的队列会反压 stdout，延迟消息、权限请求和终态。**P2，高置信度**。
 - 后续读取改为真正 `try_recv`，用 200 条突发通知验证单轮 64 条和取消公平性。
 
 ### AHREV-P2-005：持续聊天后续发送不更新会话排序时间
+
+- **修复状态**：已关闭（`350d7712`，合入 dest）。
 
 - `storage/chat_repo.rs:91-100` 按 `updated_at DESC`；`services/chat_runtime/store.rs:490-501` 仅标题为空时更新会话行。已有标题的后续发送不会提升持久化排序，旧路径则每轮更新。
 - 刷新后最近使用的会话仍可能排在旧位置。**P2，高置信度**。
