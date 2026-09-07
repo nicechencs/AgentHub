@@ -41,6 +41,7 @@ pub(crate) use claude::expand_claude_live_accounts;
 pub(crate) use claude::normalize_oauth_credentials as normalize_claude_oauth_credentials;
 pub(crate) use codex::normalize_oauth_credentials as normalize_codex_oauth_credentials;
 pub(crate) use codex::strip_codex_live_auth_file;
+#[cfg(test)]
 pub(crate) use cursor::expand_cursor_live_accounts;
 pub(crate) use grok::{
     expand_grok_auth_to_live_accounts, grok_live_has_leftover_api_key_field,

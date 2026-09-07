@@ -983,6 +983,36 @@ fn oauth_reload_for_material(
     )
 }
 
+fn bridge_member_spec(
+    hub: &AgentHub,
+    ticket_id: String,
+    source_kind: AdapterSourceKind,
+    source_id: String,
+    label: String,
+    auth: ResolvedAuth,
+    reload: Option<UpstreamAuthReload>,
+    health: MemberHealth,
+    priority: i64,
+    position: i64,
+    protocol: BridgeUpstreamProtocol,
+) -> BridgeMemberSpec {
+    hub.adapter_bridge().with_kiro_http_route_params(
+        BridgeMemberSpec::new(
+            ticket_id,
+            source_kind.as_str(),
+            source_id,
+            label,
+            auth,
+            reload,
+            health,
+            priority,
+            position,
+        ),
+        source_kind,
+        protocol,
+    )
+}
+
 fn resolve_start_members(
     hub: &AgentHub,
     profile: &AdapterProfile,
@@ -1018,17 +1048,19 @@ fn resolve_unified_gateway_pool_members(
         let is_lead =
             member.source_kind == profile.source_kind && member.source_id == profile.source_id;
         if is_lead {
-            resolved.push(BridgeMemberSpec {
-                ticket_id: ticket_id(member.source_kind, &member.source_id),
-                source_kind: member.source_kind.as_str().to_owned(),
-                source_id: member.source_id.clone(),
-                label: member.source_id.clone(),
-                auth: material.start_spec(None).upstream.auth,
-                reload: lead_reload.clone(),
-                health: MemberHealth::Renewable,
-                priority: member.priority,
-                position: member.position,
-            });
+            resolved.push(bridge_member_spec(
+                hub,
+                ticket_id(member.source_kind, &member.source_id),
+                member.source_kind,
+                member.source_id.clone(),
+                member.source_id.clone(),
+                material.start_spec(None).upstream.auth,
+                lead_reload.clone(),
+                MemberHealth::Renewable,
+                member.priority,
+                member.position,
+                protocol,
+            ));
             continue;
         }
         match hub.adapter_bridge().resolve_member_auth(
@@ -1037,23 +1069,25 @@ fn resolve_unified_gateway_pool_members(
             &member.source_id,
         ) {
             Ok(auth) if auth.has_token() => {
-                resolved.push(BridgeMemberSpec {
-                    ticket_id: ticket_id(member.source_kind, &member.source_id),
-                    source_kind: member.source_kind.as_str().to_owned(),
-                    source_id: member.source_id.clone(),
-                    label: member.source_id.clone(),
+                resolved.push(bridge_member_spec(
+                    hub,
+                    ticket_id(member.source_kind, &member.source_id),
+                    member.source_kind,
+                    member.source_id.clone(),
+                    member.source_id.clone(),
                     auth,
-                    reload: oauth_bridge_reload_callback(
+                    oauth_bridge_reload_callback(
                         hub.accounts().clone(),
                         hub.adapter_secret_resolver(),
                         member.source_kind,
                         member.source_id.clone(),
                         protocol,
                     ),
-                    health: MemberHealth::Renewable,
-                    priority: member.priority,
-                    position: member.position,
-                });
+                    MemberHealth::Renewable,
+                    member.priority,
+                    member.position,
+                    protocol,
+                ));
             }
             _ => {
                 tracing::info!(
@@ -1063,23 +1097,25 @@ fn resolve_unified_gateway_pool_members(
                     account_id = %member.source_id,
                     "isolating unified-gateway pool member whose secret could not be resolved"
                 );
-                resolved.push(BridgeMemberSpec {
-                    ticket_id: ticket_id(member.source_kind, &member.source_id),
-                    source_kind: member.source_kind.as_str().to_owned(),
-                    source_id: member.source_id.clone(),
-                    label: member.source_id.clone(),
-                    auth: agenthub_core::bridge::ResolvedAuth::bearer(""),
-                    reload: oauth_bridge_reload_callback(
+                resolved.push(bridge_member_spec(
+                    hub,
+                    ticket_id(member.source_kind, &member.source_id),
+                    member.source_kind,
+                    member.source_id.clone(),
+                    member.source_id.clone(),
+                    agenthub_core::bridge::ResolvedAuth::bearer(""),
+                    oauth_bridge_reload_callback(
                         hub.accounts().clone(),
                         hub.adapter_secret_resolver(),
                         member.source_kind,
                         member.source_id.clone(),
                         protocol,
                     ),
-                    health: MemberHealth::NeedsLogin,
-                    priority: member.priority,
-                    position: member.position,
-                });
+                    MemberHealth::NeedsLogin,
+                    member.priority,
+                    member.position,
+                    protocol,
+                ));
             }
         }
     }
@@ -1090,17 +1126,19 @@ fn resolve_unified_gateway_pool_members(
         let source_id = material.source_id().to_owned();
         resolved.insert(
             0,
-            BridgeMemberSpec {
-                ticket_id: ticket_id(profile.source_kind, &source_id),
-                source_kind: profile.source_kind.as_str().to_owned(),
-                source_id: source_id.clone(),
-                label: source_id,
-                auth: material.start_spec(None).upstream.auth,
-                reload: lead_reload,
-                health: MemberHealth::Renewable,
-                priority: 0,
-                position: 0,
-            },
+            bridge_member_spec(
+                hub,
+                ticket_id(profile.source_kind, &source_id),
+                profile.source_kind,
+                source_id.clone(),
+                source_id,
+                material.start_spec(None).upstream.auth,
+                lead_reload,
+                MemberHealth::Renewable,
+                0,
+                0,
+                protocol,
+            ),
         );
     }
     Some(resolved)
@@ -1140,17 +1178,19 @@ fn resolve_pool_members(
     let mut members = Vec::with_capacity(group.members.len());
     for member in &group.members {
         if member.ticket_id == lead_ticket {
-            members.push(BridgeMemberSpec {
-                ticket_id: member.ticket_id.clone(),
-                source_kind: member.source_kind.as_str().to_owned(),
-                source_id: member.source_id.clone(),
-                label: member.label.clone(),
-                auth: material.start_spec(None).upstream.auth,
-                reload: lead_reload.clone(),
-                health: MemberHealth::Renewable,
-                priority: 0,
-                position: members.len() as i64,
-            });
+            members.push(bridge_member_spec(
+                hub,
+                member.ticket_id.clone(),
+                member.source_kind,
+                member.source_id.clone(),
+                member.label.clone(),
+                material.start_spec(None).upstream.auth,
+                lead_reload.clone(),
+                MemberHealth::Renewable,
+                0,
+                members.len() as i64,
+                protocol,
+            ));
             continue;
         }
         match hub.adapter_bridge().resolve_member_auth(
@@ -1159,23 +1199,25 @@ fn resolve_pool_members(
             &member.source_id,
         ) {
             Ok(auth) if auth.has_token() => {
-                members.push(BridgeMemberSpec {
-                    ticket_id: member.ticket_id.clone(),
-                    source_kind: member.source_kind.as_str().to_owned(),
-                    source_id: member.source_id.clone(),
-                    label: member.label.clone(),
+                members.push(bridge_member_spec(
+                    hub,
+                    member.ticket_id.clone(),
+                    member.source_kind,
+                    member.source_id.clone(),
+                    member.label.clone(),
                     auth,
-                    reload: oauth_bridge_reload_callback(
+                    oauth_bridge_reload_callback(
                         hub.accounts().clone(),
                         hub.adapter_secret_resolver(),
                         member.source_kind,
                         member.source_id.clone(),
                         protocol,
                     ),
-                    health: MemberHealth::Renewable,
-                    priority: 0,
-                    position: members.len() as i64,
-                });
+                    MemberHealth::Renewable,
+                    0,
+                    members.len() as i64,
+                    protocol,
+                ));
             }
             _ => {
                 tracing::info!(
@@ -1185,23 +1227,25 @@ fn resolve_pool_members(
                     account_id = %member.source_id,
                     "isolating pool member whose secret could not be resolved"
                 );
-                members.push(BridgeMemberSpec {
-                    ticket_id: member.ticket_id.clone(),
-                    source_kind: member.source_kind.as_str().to_owned(),
-                    source_id: member.source_id.clone(),
-                    label: member.label.clone(),
-                    auth: agenthub_core::bridge::ResolvedAuth::bearer(""),
-                    reload: oauth_bridge_reload_callback(
+                members.push(bridge_member_spec(
+                    hub,
+                    member.ticket_id.clone(),
+                    member.source_kind,
+                    member.source_id.clone(),
+                    member.label.clone(),
+                    agenthub_core::bridge::ResolvedAuth::bearer(""),
+                    oauth_bridge_reload_callback(
                         hub.accounts().clone(),
                         hub.adapter_secret_resolver(),
                         member.source_kind,
                         member.source_id.clone(),
                         protocol,
                     ),
-                    health: MemberHealth::NeedsLogin,
-                    priority: 0,
-                    position: members.len() as i64,
-                });
+                    MemberHealth::NeedsLogin,
+                    0,
+                    members.len() as i64,
+                    protocol,
+                ));
             }
         }
     }

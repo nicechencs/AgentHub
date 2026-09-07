@@ -1170,6 +1170,23 @@ impl AdapterBridgeService {
         }
     }
 
+    /// Attach Kiro HTTP envelope params without exposing them to other crates.
+    pub fn with_kiro_http_route_params(
+        &self,
+        spec: BridgeMemberSpec,
+        source_kind: AdapterSourceKind,
+        protocol: BridgeUpstreamProtocol,
+    ) -> BridgeMemberSpec {
+        if protocol != BridgeUpstreamProtocol::KiroHttp {
+            return spec;
+        }
+        let params = self
+            .secrets
+            .resolve_kiro_http_params(source_kind, &spec.source_id)
+            .ok();
+        spec.with_kiro_http(params)
+    }
+
     pub fn attach_route_index(
         &self,
         mut material: AdapterBridgeRuntimeMaterial,
