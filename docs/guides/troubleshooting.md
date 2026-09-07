@@ -4,7 +4,7 @@ description: 按启动、环境、登录、Routes、日志和测试症状定位�
 type: guide
 audience: user-and-contributor
 status: current
-updated: 2026-09-08
+updated: 2026-09-07
 ---
 
 # 排障指南
@@ -96,6 +96,19 @@ AgentHub 一键 npm 安装写到 `~/.npm-global`（Windows 为 `%APPDATA%\npm`�
 | `504 upstream_timeout` | 上游在超时窗口内未返回 | 检查上游 URL、网络和服务状态 |
 
 完整 endpoint、请求头和响应形状见 [local-route-api.md](../reference/local-route-api.md)。
+
+## 启动时本机路由恢复失败
+
+启动日志里出现 `op=adapter_bridge_restore` 且 `code=adapter.bridge_restore_source`，表示某条本机路由没法自动恢复。看同一行的 `reason`：
+
+| `reason` | 含义 | 处理 |
+|---|---|---|
+| `source_missing` | 来源登录已不在（删掉或进了回收站），这条本机路由仍标着自动启动 | 自动恢复已停掉。在连接池关掉或移除那条本机路由；需要时再重建 |
+| `login_unusable` | 来源还在，但登录失效或 API Key 不可用 | 下次启动仍会重试。重新登录或更新 API Key |
+| `profile_corrupt` | 这条本机路由的本地配置已损坏（缺端口、缺生成配置、规则失效） | 自动恢复已停掉。删掉后重建 |
+| `transient` | 临时失败（例如数据库或索引） | 下次启动会再试 |
+
+不要把这条 WARN 当成启动失败。其它本机路由仍会继续恢复。同一条已停掉自动恢复的路由不应在下次启动再刷同一句含糊告警。
 
 ## 查看日志
 
