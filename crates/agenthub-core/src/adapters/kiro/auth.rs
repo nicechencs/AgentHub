@@ -15,7 +15,7 @@ use crate::utils::redact::mask_secret_preview;
 
 const SOCIAL_TOKEN_KEY: &str = "kirocli:social:token";
 
-pub(super) fn read_kiro_live_account() -> Result<LiveAccount> {
+pub(crate) fn read_kiro_live_account() -> Result<LiveAccount> {
     match load_kiro_token()? {
         Some((body, source)) => Ok(live_account_from_token_body(body, source)),
         None => Err(AppError::NotFound(
@@ -77,7 +77,7 @@ pub(super) fn live_account_from_token_body(body: Value, source: &str) -> LiveAcc
     }
 }
 
-pub(super) fn write_kiro_live_account(account: &LiveAccount) -> Result<()> {
+pub(crate) fn write_kiro_live_account(account: &LiveAccount) -> Result<()> {
     if account.agent != AgentId::Kiro {
         return Err(AppError::InvalidArg(
             "account agent mismatch for kiro".into(),

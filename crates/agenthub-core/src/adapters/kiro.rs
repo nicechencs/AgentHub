@@ -46,7 +46,9 @@ mod auth;
 mod chat_prefs;
 pub(crate) mod http;
 
-pub(crate) use auth::{kiro_grant_is_newer, kiro_login_fingerprint};
+pub(crate) use auth::{
+    kiro_grant_is_newer, kiro_login_fingerprint, read_kiro_live_account, write_kiro_live_account,
+};
 pub(crate) use chat_prefs::{
     kiro_live_chat_model, kiro_send_prefs, set_kiro_default_effort, set_kiro_default_model,
 };
@@ -309,7 +311,7 @@ impl AgentAdapter for KiroAdapter {
         use Capability::*;
         match cap {
             ConfigWrite => CapabilityState::unsupported("无稳定配置写入契约，fail-closed"),
-            AccountSwitch => CapabilityState::unsupported("账号由 Kiro 登录管理"),
+            AccountSwitch => CapabilityState::partial("可在连接里切换，会写回 Kiro"),
             ApiKeyAccount => CapabilityState::partial("可用 API Key 或 kiro-cli login"),
             Skills => CapabilityState::planned("待路径核实"),
             LiveBackup => CapabilityState::full(),
@@ -321,9 +323,9 @@ impl AgentAdapter for KiroAdapter {
             Usage => CapabilityState::planned("待日志字段核实"),
             Mcp => CapabilityState::planned("待路径核实"),
             ModelSelect => CapabilityState::full(),
-            SessionResume => CapabilityState::partial(
-                "新对话走持续通道，可点允许/拒绝；生成时不能中途补充",
-            ),
+            SessionResume => {
+                CapabilityState::partial("新对话走持续通道，可点允许/拒绝；生成时不能中途补充")
+            }
         }
     }
 

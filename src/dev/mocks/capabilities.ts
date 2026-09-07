@@ -237,8 +237,8 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
       reason: '无稳定配置写入契约，fail-closed',
     },
     accountSwitch: {
-      level: 'unsupported',
-      reason: '账号由 Kiro 登录管理',
+      level: 'partial',
+      reason: '可在连接里切换，会写回 Kiro',
     },
     apiKeyAccount: {
       level: 'partial',

@@ -102,11 +102,12 @@ describe('official login session façade', () => {
   it('starts Kiro official login through the CLI adapter', async () => {
     startOAuth.mockResolvedValue({
       state: 'cli-kiro',
-      authorizeUrl: '',
+      authorizeUrl: 'https://oidc.example.test/device',
       redirectUri: '',
       agentId: 'kiro',
       providerKey: 'kiro',
-      browserOpened: true,
+      browserOpened: false,
+      userCode: 'ABCD-EFGH',
       expiresInSecs: 900,
     });
     waitOAuth.mockResolvedValue({
@@ -122,7 +123,8 @@ describe('official login session façade', () => {
     expect(startDeviceOAuth).not.toHaveBeenCalled();
     expect(session.flow).toBe('cli');
     expect(session.sessionId).toBe('cli-kiro');
-    expect(session.authorizeUrl).toBeNull();
+    expect(session.authorizeUrl).toBe('https://oidc.example.test/device');
+    expect(session.userCode).toBe('ABCD-EFGH');
 
     const poll = await pollOfficialLogin(session);
     expect(waitOAuth).toHaveBeenCalledWith('cli-kiro', 120);

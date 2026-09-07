@@ -167,7 +167,7 @@ pub fn list_oauth_options(agent: AgentId) -> Vec<OAuthLoginOption> {
             agent,
             "kiro",
             "Kiro",
-            "打开 Kiro 自己的登录。完成后回到这里。",
+            "开始后会出现登录链接。你可以复制，也可以打开浏览器。完成后回到这里。",
         )],
         _ => vec![],
     }

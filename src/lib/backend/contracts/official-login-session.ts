@@ -250,6 +250,7 @@ export function sessionFromCliStart(
   optionId: string,
 ): OfficialLoginSession {
   const authorizeUrl = start.authorizeUrl?.trim() || null;
+  const userCode = start.userCode?.trim() || null;
   return {
     sessionId: start.state,
     agentId: start.agentId,
@@ -258,6 +259,7 @@ export function sessionFromCliStart(
     authorizeUrl,
     redirectUri: start.redirectUri?.trim() || null,
     browserOpened: start.browserOpened,
+    userCode,
     intervalSecs: 0,
     expiresInSecs: start.expiresInSecs || OAUTH_PKCE_LISTEN_TIMEOUT_SECS,
   };
@@ -309,7 +311,6 @@ export function officialLoginActionUrl(
     const url = session.verificationUriComplete?.trim() || session.verificationUri?.trim();
     return url || null;
   }
-  if (session.flow === 'cli') return null;
   const url = session.authorizeUrl?.trim();
   return url || null;
 }

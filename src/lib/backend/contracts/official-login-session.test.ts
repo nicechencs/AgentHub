@@ -173,6 +173,22 @@ describe('official login status mapping', () => {
       expiresInSecs: 900,
     });
     expect(officialLoginActionUrl(cli)).toBeNull();
+
+    const cliWithLink = sessionFromCliStart(
+      {
+        state: 'cli-link',
+        authorizeUrl: 'https://oidc.example.test/device',
+        redirectUri: '',
+        agentId: 'kiro',
+        providerKey: 'kiro',
+        browserOpened: false,
+        userCode: 'ABCD-EFGH',
+        expiresInSecs: 900,
+      },
+      'kiro',
+    );
+    expect(cliWithLink.userCode).toBe('ABCD-EFGH');
+    expect(officialLoginActionUrl(cliWithLink)).toBe('https://oidc.example.test/device');
   });
 
   it('maps superseded and timeout onto wait-page copy without leaking internals', () => {

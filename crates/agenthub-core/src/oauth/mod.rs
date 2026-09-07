@@ -18,6 +18,7 @@ pub use catalog::{
     pi_refreshable_provider_aliases, resolve_pkce_provider, OAuthFlowKind, OAuthLoginOption,
     PiQuotaBackend,
 };
+pub use cli::start_kiro_cli_login;
 pub use device::{
     complete_device_oauth, complete_device_oauth_and_attach_pool, device_oauth_agent,
     poll_device_oauth, start_device_oauth, start_device_oauth_with_pool, DeviceOAuthPoll,
@@ -75,6 +76,9 @@ pub struct StartOAuthResult {
     pub browser_opened: bool,
     /// Seconds the wait page should stay open. Matches the PKCE listener (15 min).
     pub expires_in_secs: u64,
+    /// Device-style user code when the agent CLI prints one (Kiro).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_code: Option<String>,
 }
 
 /// Begin OAuth for an agent. Spawns a callback listener thread.
@@ -87,7 +91,7 @@ pub fn start_oauth(
     provider_key: Option<&str>,
 ) -> Result<StartOAuthResult> {
     if is_cli_login_option(agent, provider_key) {
-        return cli::start_kiro_cli_login();
+        return cli::start_kiro_cli_login(None);
     }
     if is_device_code_option(agent, provider_key) {
         return Err(AppError::InvalidArg(
@@ -205,6 +209,7 @@ pub fn start_oauth(
         provider_key: resolved_key,
         browser_opened,
         expires_in_secs: crate::catalog::limits::OAUTH_CALLBACK_LISTEN_TIMEOUT.as_secs(),
+        user_code: None,
     })
 }
 

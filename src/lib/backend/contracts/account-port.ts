@@ -13,6 +13,8 @@ export interface OAuthStartInfo {
   browserOpened: boolean;
   /** Seconds the wait page should stay open. Matches the browser-login listener. */
   expiresInSecs?: number;
+  /** Device-style code when the login prints one (Kiro). */
+  userCode?: string | null;
 }
 
 export interface OAuthWaitInfo {
