@@ -14,7 +14,8 @@ use crate::models::{
     RunOptions, RunSpec, RunStatus,
 };
 use crate::utils::process::{
-    program_from_detect, CancelToken, ProcessRunner, StreamingProcessRunner, SystemProcessRunner,
+    program_from_detect, CancelToken, ProcessRunner, ProcessTimeout, StreamingProcessRunner,
+    SystemProcessRunner,
 };
 use crate::utils::stream_parse::{StreamOutput, StreamSession};
 
@@ -322,7 +323,10 @@ impl RunService {
         }
         let program = program_from_detect(detect.binary_path.as_deref(), id.as_str());
         let spec = match adapter.build_run_spec(&program, prompt, opts) {
-            Ok(spec) => spec,
+            Ok(mut spec) => {
+                crate::adapters::rewrite_windows_batch_run_spec(&mut spec);
+                spec
+            }
             // Desktop-only ZCode has no verified headless argv (`Unsupported`).
             // Skip that agent instead of aborting the rest of a multi-agent run.
             // Other spec errors (e.g. InvalidArg) still fail the whole batch so
@@ -478,7 +482,7 @@ impl RunService {
             let session = std::sync::Mutex::new(StreamSession::new(agent, opts.process_mode));
             let mut result = self.streaming.run_streaming(
                 spec,
-                opts.timeout,
+                ProcessTimeout::from_run_options(opts),
                 opts.max_output_bytes,
                 cancel,
                 &|stream, text| {
@@ -540,7 +544,7 @@ impl RunService {
                 work.iter().map(|(i, id, _)| (*i, *id)).collect();
             let (tx, rx) = std::sync::mpsc::channel::<RunEvent>();
             let streaming = Arc::clone(&self.streaming);
-            let timeout = opts.timeout;
+            let timeout = ProcessTimeout::from_run_options(opts);
             let max_out = opts.max_output_bytes;
             let cancel = cancel.clone();
 

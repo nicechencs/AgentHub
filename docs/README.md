@@ -3,7 +3,7 @@ title: AgentHub 文档索引
 type: navigation
 status: current
 owner: maintainers
-updated: 2026-09-05
+updated: 2026-09-08
 ---
 
 # AgentHub 文档

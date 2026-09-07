@@ -1,6 +1,9 @@
 //! Windows desktop / Start-menu shortcut icon retint.
 
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
+
+use agenthub_core::utils::process::apply_no_window;
 
 use super::shortcuts::shortcut_update_script;
 
@@ -13,17 +16,22 @@ pub(crate) fn publish_shortcut_icon(ico_path: &Path) -> Result<(), String> {
 
 fn retarget_shortcuts(exe: &Path, ico: &Path) -> Result<(), String> {
     let script = shortcut_update_script(exe, ico);
-    let status = std::process::Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-STA",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            &script,
-        ])
-        .status()
-        .map_err(|e| e.to_string())?;
+    let mut cmd = std::process::Command::new("powershell");
+    cmd.args([
+        "-NoProfile",
+        "-STA",
+        "-WindowStyle",
+        "Hidden",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        &script,
+    ])
+    .stdin(Stdio::null())
+    .stdout(Stdio::null())
+    .stderr(Stdio::null());
+    apply_no_window(&mut cmd);
+    let status = cmd.status().map_err(|e| e.to_string())?;
     if status.success() {
         Ok(())
     } else {

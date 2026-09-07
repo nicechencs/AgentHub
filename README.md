@@ -10,7 +10,7 @@ AgentHub 是一个本地运行的多 Agent 桌面工具。一个 GUI 和 CLI 管
 
 ## 能做什么
 
-- 管理 Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy、ZCode、Cursor Agent 和 DeepSeek Harness 等本机 Agent。Cursor Agent 默认不出现在侧栏和连接页，可在 Agents 里取消隐藏。
+- 管理 Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy、ZCode、DeepSeek Harness、Kiro 和 Cursor Agent 等本机 Agent。Cursor Agent 默认不出现在侧栏和连接页，可在 Agents 里取消隐藏。
 - 查看跨工具的登录与连接，优先直接写入目标工具配置；只有存在开放规则和受测协议转换时才使用本机路由，否则明确显示「当前不支持」，不会静默转发。
 - 登录 Sub2API 站点，管理站点 API Key，并将可用 Key 导入已安装的 Agent。
 - 管理共享 Skills、查看已发现的 MCP、浏览项目与会话。

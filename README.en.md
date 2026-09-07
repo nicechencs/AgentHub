@@ -12,7 +12,7 @@ The desktop UI is available in English and 简体中文. Switch under **Settings
 
 ## What you can do
 
-- Manage local agents such as Claude Code, Codex, Kimi, Grok, Pi, WorkBuddy, ZCode, Cursor Agent, and DeepSeek Harness. Cursor Agent is hidden from the sidebar and Connections by default; you can unhide it on Agents.
+- Manage local agents such as Claude Code, Codex, Kimi, Grok, Pi, WorkBuddy, ZCode, DeepSeek Harness, Kiro, and Cursor Agent. Cursor Agent is hidden from the sidebar and Connections by default; you can unhide it on Agents.
 - See logins and connections across tools. Prefer writing directly into the target tool’s config. **Local forwarding** is used only when there are published rules and a tested protocol conversion; otherwise the UI shows **Not supported now**, and nothing is forwarded silently.
 - Sign in to a Sub2API site, manage its API keys, and import usable keys into installed agents.
 - Manage shared Skills, inspect discovered MCP, and browse projects and sessions.
