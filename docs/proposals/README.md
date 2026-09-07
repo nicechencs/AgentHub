@@ -31,7 +31,7 @@ Every proposal in this directory has `Status: proposed`. A proposal may be resea
 | [Service 内部 owner 拆分](../architecture/service-internal-owners.md) | proposed | Concrete internal owner split for O-11 ProviderService, O-12 AccountService, O-13 BackupService, and O-14/O-66 local-route persist — façades and switch semantics stay |
 | [接入 Kiro（kiro-cli）](agent-kiro.md) | proposed | 半面 CLI 目标书；现行发送以 STATUS 为准（有命令行走命令行）。 |
 | [Kiro HTTP / 本机转发](agent-kiro-http.md) | proposed | HTTP 列模型与无命令行时的文本回复；本机路由仍后置。 |
-| [国内自动更新镜像（R2）](update-mirror-r2.md) | proposed | 国内连不上 GitHub 时，发版后自动镜像 latest.json/安装包/.sig 到 Cloudflare R2（可选 Worker），App updater 读镜像？ |
+| [国内自动更新镜像（R2）](update-mirror-r2.md) | proposed | 国内连不上 GitHub 时镜像到 R2+Worker（`updates.agenthub.qooo.io`）；App 镜像优先、GitHub 回退。CF 资源运维自建；见提案实施进度。 |
 | [plugin-management.md](plugin-management.md) | proposed | Could AgentHub list and manage per-agent plugin/extension packs (not MCP servers) via official CLIs, with a Routes-like workbench? |
 | [read-model-owners.md](../architecture/read-model-owners.md) | proposed | Could O-15–O-19 be narrowed with unique mapper owners without changing wire DTO or splitting public types? |
 | [runtime-context-owners.md](../architecture/runtime-context-owners.md) | proposed | Could store reset/invalidation live in one runtime context (O-07) without changing plan/bind/switch? |

@@ -64,13 +64,37 @@ Worker 非必须：R2 自定义域名也可直出。Worker 便于改写 URL、�
 - 私钥永不进 R2 / Worker 环境变量。
 - 若 Cloudflare 个别网络仍差，可并行同步国内 OSS，App 做多源。
 
-## 实施清单（待开发）
+## 实施清单
 
 1. 建 R2 桶 + 自定义域名（或 Worker 路由）。
 2. Release CI 增加同步步骤；改写 `latest.json` 内 URL。
 3. App 配置镜像 endpoint（可选双源）。
 4. 国内真机点测自动更新。
 5. 文档：发版说明中写明镜像为用户更新源、GitHub 仍为发布权威源。
+
+## 流量与滥用防护
+
+- **CDN / WAF**：在 Cloudflare 仪表盘对主机名 `updates.agenthub.qooo.io`（仅此子域，勿改 apex `agenthub.qooo.io`）启用 Bot Fight Mode，并按 IP 对 `latest.json` 与大文件 GET 做速率限制。Worker 本身只放行白名单路径，根路径与未知对象一律 404，R2 桶保持私有、无公开列举。
+- **客户端签名校验**：App 仍用 `src-tauri/tauri.conf.json` 内嵌公钥校验 `.sig`。镜像被篡改但无合法签名时拒绝安装。
+- **私钥边界**：`TAURI_SIGNING_PRIVATE_KEY` 只存在于 GitHub Actions；**永不**写入 R2、Worker 环境变量或本仓库。
+
+## 实施进度
+
+- 2026-09-07：落地 in-repo Worker（`cloudflare/update-mirror`）、Release CI R2 同步（secrets 缺失则跳过）、`latest.json` URL 改写脚本与单测、App updater 镜像优先 + GitHub 回退（`https://updates.agenthub.qooo.io/latest.json`）。
+- Cloudflare 桶 / 自定义域 / WAF 由运维自行创建；本变更不声称已在云端建好资源。
+- **待验项**：国内真机检查更新 → 下载 → 验签 → 安装全路径（DNS/Worker 就绪后）。
+
+## 运维备忘（CI Secrets 与一次性 CF）
+
+GitHub repo secrets：`R2_ACCOUNT_ID`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`、`R2_BUCKET`（建议 `agenthub-updates`）、`UPDATE_MIRROR_BASE_URL`（`https://updates.agenthub.qooo.io`）。
+
+一次性 CF（操作者本地完成，勿动 apex）：
+
+1. 建私有 R2 桶 `agenthub-updates`。
+2. 发 R2 S3 API 凭证给 CI。
+3. 填 `cloudflare/update-mirror/wrangler.toml` 的 `account_id` 后 `npx wrangler deploy`。
+4. 仅为 `updates.agenthub.qooo.io` 绑定 Workers Custom Domain / DNS。
+5. 仪表盘配置 WAF / Bot Fight / rate limit。
 
 ## 决议记录
 

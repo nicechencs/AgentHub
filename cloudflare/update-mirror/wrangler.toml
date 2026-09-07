@@ -1,0 +1,28 @@
+# AgentHub domestic update mirror (Cloudflare Worker + R2).
+# Do NOT commit secrets. Operator fills account_id before deploy.
+#
+# Required R2 binding name: UPDATES_BUCKET
+# Public hostname only: updates.agenthub.qooo.io
+#   (do not point this Worker at the apex agenthub.qooo.io)
+# Intended bucket name: agenthub-updates
+
+name = "agenthub-update-mirror"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+# Placeholder — replace with your Cloudflare account id before deploy.
+account_id = "YOUR_CLOUDFLARE_ACCOUNT_ID"
+
+workers_dev = false
+
+# Custom domain is attached in the CF dashboard / wrangler routes by the
+# operator. Prefer Workers Custom Domain for updates.agenthub.qooo.io only.
+# Do not route or alter the apex agenthub.qooo.io from this project.
+# Example (uncomment after account_id + zone are ready):
+# [[routes]]
+# pattern = "updates.agenthub.qooo.io/*"
+# zone_name = "agenthub.qooo.io"
+
+[[r2_buckets]]
+binding = "UPDATES_BUCKET"
+bucket_name = "agenthub-updates"
