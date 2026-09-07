@@ -97,6 +97,21 @@ describe('grok follow-up after the current turn', () => {
         hasMessages: true,
         nativeSessionId: 'sess-kiro',
       }),
-    ).toBe('continue');
+    ).toBe('newChat');
+  });
+
+  it('keeps Kiro HTTP history out of the ACP continuation flow', () => {
+    expect(grokLegacyContinueKind({
+      agentId: 'kiro',
+      runtimeEnabled: false,
+      hasMessages: true,
+      nativeSessionId: 'kiro-http:conversation-1',
+    })).toBe('newChat');
+    expect(grokLegacyContinueKind({
+      agentId: 'kiro',
+      runtimeEnabled: true,
+      hasMessages: true,
+      nativeSessionId: 'session-1',
+    })).toBeNull();
   });
 });

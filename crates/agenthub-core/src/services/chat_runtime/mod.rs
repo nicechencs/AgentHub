@@ -24,7 +24,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use serde_json::{json, Value};
@@ -43,6 +43,7 @@ use self::store::{OperationState, RuntimeStore};
 
 const CODEX_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const CODEX_POLL_INTERVAL: Duration = Duration::from_millis(100);
+const ACP_CANCEL_DEADLINE: Duration = Duration::from_secs(10);
 
 enum RuntimeCommand {
     Start {
@@ -164,8 +165,9 @@ impl ChatRuntime {
             .unwrap_or(false)
     }
 
-    /// Switch an existing Grok/Kiro print session onto continuous chat.
+    /// Switch an existing Grok print session onto continuous chat.
     /// Requires a stored native session id; does not invent a new session.
+    /// Kiro history stays on its original send path.
     pub fn continue_legacy(&self, conversation_id: &str) -> Result<RuntimeSnapshot> {
         let conversation = self
             .repo
@@ -173,10 +175,13 @@ impl ChatRuntime {
             .ok_or_else(|| {
                 AppError::NotFound(format!("conversation not found: {conversation_id}"))
             })?;
-        if !is_acp_runtime_agent(conversation.agent_ids.first().copied()) {
+        if conversation.agent_ids.first().copied() == Some(AgentId::Kiro) {
             return Err(AppError::Unsupported(
-                "只有 Grok 和 Kiro 可以用新方式继续".into(),
+                "这条 Kiro 对话不能切换聊天方式，请新建对话".into(),
             ));
+        }
+        if conversation.agent_ids.first().copied() != Some(AgentId::Grok) {
+            return Err(AppError::Unsupported("只有 Grok 可以用新方式继续".into()));
         }
         let session_id = conversation
             .native_session_id
@@ -205,11 +210,14 @@ impl ChatRuntime {
             return Ok(RuntimeOptions::inactive(conversation_id));
         }
         self.store.enable_if_new(conversation_id)?;
-        let frozen = self
-            .store
-            .record(conversation_id)?
-            .map(|record| ops::phase_freezes_settings(record.phase))
-            .unwrap_or(false);
+        let record = self.store.record(conversation_id)?;
+        let frozen = record
+            .as_ref()
+            .is_some_and(|record| ops::phase_freezes_settings(record.phase))
+            || (agent == Some(AgentId::Kiro)
+                && record
+                    .as_ref()
+                    .is_some_and(|record| record.thread_id.is_some()));
         let cache = self.load_catalog(conversation_id, refresh);
         let models = self.effective_models(&cache.models);
         let mut settings = self.store.turn_settings(conversation_id)?;
@@ -246,6 +254,7 @@ impl ChatRuntime {
     ) -> Result<RuntimeTurnSettings> {
         self.store.enable_if_new(conversation_id)?;
         // Reject active turns before spawning a catalog process.
+        let agent = self.store.conversation_agent(conversation_id)?;
         if let Some(record) = self.store.record(conversation_id)? {
             if ops::phase_freezes_settings(record.phase) {
                 return Err(AppError::InvalidArg(
@@ -254,6 +263,19 @@ impl ChatRuntime {
             }
         }
         let prior = self.store.turn_settings(conversation_id)?;
+        if agent == Some(AgentId::Kiro)
+            && self
+                .store
+                .record(conversation_id)?
+                .is_some_and(|record| record.thread_id.is_some())
+        {
+            if requested != prior {
+                return Err(AppError::InvalidArg(
+                    "Kiro 会话创建后不能修改模型或思考强度，请新建对话".into(),
+                ));
+            }
+            return Ok(prior);
+        }
         let cache = self.load_catalog(conversation_id, false);
         let models = self.effective_models(&cache.models);
         let effective = ops::validate_turn_settings(&requested, &models, &prior)?;
@@ -768,6 +790,11 @@ fn actor_loop(
         run_id: None,
         last_start_request: None,
         pending_prompt_id: None,
+        permission_options: HashMap::new(),
+        cancel_deadline: None,
+        session_model: None,
+        session_effort: None,
+        session_trust_all: None,
     };
     worker.run();
 }
@@ -787,6 +814,17 @@ struct ActorWorker {
     run_id: Option<String>,
     last_start_request: Option<String>,
     pending_prompt_id: Option<Value>,
+    permission_options: HashMap<String, Vec<AcpPermissionOption>>,
+    cancel_deadline: Option<Instant>,
+    session_model: Option<String>,
+    session_effort: Option<String>,
+    session_trust_all: Option<bool>,
+}
+
+#[derive(Debug, Clone)]
+struct AcpPermissionOption {
+    id: String,
+    kind: String,
 }
 
 impl ActorWorker {
@@ -830,6 +868,9 @@ impl ActorWorker {
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
+            if let Err(error) = self.check_cancel_deadline() {
+                self.fail_runtime(error);
+            }
             if let Err(error) = self.poll_events() {
                 self.fail_runtime(error);
             }
@@ -849,6 +890,32 @@ impl ActorWorker {
         self.message_id = record.message_id;
         self.run_id = record.run_id;
         self.last_start_request = record.last_client_request_id;
+    }
+
+    fn check_cancel_deadline(&mut self) -> Result<()> {
+        let Some(deadline) = self.cancel_deadline else {
+            return Ok(());
+        };
+        if Instant::now() < deadline {
+            return Ok(());
+        }
+        self.cancel_deadline = None;
+        if let Some(transport) = self.transport.as_mut() {
+            transport.shutdown();
+        }
+        self.transport = None;
+        let message = if self.agent == AgentId::Kiro {
+            "取消请求超时，当前对话已中断，请新建对话"
+        } else {
+            "取消请求超时，已中断当前生成"
+        };
+        self.terminalize(
+            ChatMessageStatus::Cancelled,
+            Some(message),
+            RuntimePhase::Interrupted,
+            false,
+            true,
+        )
     }
 
     fn start_turn(
@@ -903,11 +970,51 @@ impl ActorWorker {
                 "conversation already has an active runtime turn".into(),
             ));
         }
+        ops::validate_local_images(&extras.images)?;
+        if is_acp_runtime_agent(Some(self.agent)) && !extras.skills.is_empty() {
+            return Err(AppError::Unsupported("目前不能在本轮指定 Skill".into()));
+        }
+        let acp_prompt_blocks = if is_acp_runtime_agent(Some(self.agent)) {
+            Some(ops::grok_prompt_blocks(prompt, &extras.images)?)
+        } else {
+            None
+        };
+        if self.agent == AgentId::Kiro
+            && self.thread_id.is_some()
+            && self.transport.as_ref().is_some_and(CodexTransport::is_open)
+        {
+            let settings = self.store.turn_settings(&self.conversation_id)?;
+            let model = settings
+                .model
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
+            let effort = settings
+                .effort
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
+            let trust_all = self
+                .repo
+                .get_conversation(&self.conversation_id)?
+                .is_some_and(|conversation| conversation.allow_dangerous);
+            if self.session_model.as_deref() != model
+                || self.session_effort.as_deref() != effort
+                || self.session_trust_all != Some(trust_all)
+            {
+                return Err(AppError::message(
+                    "chat.runtime.settings",
+                    "Kiro 会话设置已固定，请新建对话后修改模型、思考强度或权限",
+                ));
+            }
+        }
         self.last_start_request = Some(client_request_id.to_string());
         self.store
             .set_last_client_request_id(&self.conversation_id, client_request_id)?;
-        if let Some(mut transport) = self.transport.take() {
-            transport.shutdown();
+        if !is_acp_runtime_agent(Some(self.agent)) {
+            if let Some(mut transport) = self.transport.take() {
+                transport.shutdown();
+            }
         }
 
         let now = Utc::now().to_rfc3339();
@@ -970,7 +1077,7 @@ impl ActorWorker {
         self.run_id = Some(run_id);
 
         let start_result = if is_acp_runtime_agent(Some(self.agent)) {
-            self.acp_connect_and_prompt(prompt, extras)
+            self.acp_connect_and_prompt(acp_prompt_blocks.unwrap_or_default())
         } else {
             (|| {
                 let cwd = self.conversation_cwd()?;
@@ -1087,16 +1194,7 @@ impl ActorWorker {
         start_result
     }
 
-    fn acp_connect_and_prompt(
-        &mut self,
-        prompt: &str,
-        extras: &RuntimeStartExtras,
-    ) -> Result<RuntimeSnapshot> {
-        if !extras.skills.is_empty() {
-            return Err(AppError::Unsupported(
-                "目前不能在本轮指定 Skill".into(),
-            ));
-        }
+    fn acp_connect_and_prompt(&mut self, prompt_blocks: Vec<Value>) -> Result<RuntimeSnapshot> {
         let cwd = self.conversation_cwd()?;
         let settings = self.store.turn_settings(&self.conversation_id)?;
         let model = settings
@@ -1115,78 +1213,147 @@ impl ActorWorker {
             .ok()
             .flatten()
             .is_some_and(|conversation| conversation.allow_dangerous);
-        let mut transport = match self.agent {
-            AgentId::Kiro => {
-                let program = self.run.detect_kiro_installation()?;
-                CodexTransport::spawn_kiro(&program, &cwd, model, effort, trust_all)
+
+        let mut retried_after_exit = false;
+        loop {
+            let live = self.transport.as_ref().is_some_and(CodexTransport::is_open);
+            let plan = ops::acp_session_plan(self.agent, live, self.thread_id.is_some());
+            if matches!(plan, ops::AcpSessionPlan::Unavailable) {
+                return Err(AppError::message(
+                    "chat.runtime.interrupted",
+                    "Kiro 会话所在进程已停止，请新建对话后继续",
+                ));
             }
-            _ => {
-                let program = self.run.detect_grok_installation()?;
-                CodexTransport::spawn_grok(&program, &cwd, model, effort)
+            if self.agent == AgentId::Kiro
+                && matches!(plan, ops::AcpSessionPlan::PromptExisting)
+                && (self.session_model.as_deref() != model
+                    || self.session_effort.as_deref() != effort
+                    || self.session_trust_all != Some(trust_all))
+            {
+                return Err(AppError::message(
+                    "chat.runtime.settings",
+                    "Kiro 会话设置已固定，请新建对话后修改模型、思考强度或权限",
+                ));
+            }
+            let mut transport = if matches!(plan, ops::AcpSessionPlan::PromptExisting) {
+                self.transport.take().ok_or_else(|| {
+                    AppError::message("chat.runtime.transport", "ACP process stopped")
+                })?
+            } else {
+                if let Some(mut previous) = self.transport.take() {
+                    previous.shutdown();
+                }
+                match self.agent {
+                    AgentId::Kiro => {
+                        let program = self.run.detect_kiro_installation()?;
+                        CodexTransport::spawn_kiro(&program, &cwd, model, effort, trust_all)
+                    }
+                    _ => {
+                        let program = self.run.detect_grok_installation()?;
+                        CodexTransport::spawn_grok(&program, &cwd, model, effort)
+                    }
+                }
+                .map_err(transport_error)?
+            };
+
+            match plan {
+                ops::AcpSessionPlan::PromptExisting => {}
+                ops::AcpSessionPlan::New => {
+                    let created = transport
+                        .request(
+                            "session/new",
+                            json!({ "cwd": cwd.to_string_lossy(), "mcpServers": [] }),
+                            CODEX_REQUEST_TIMEOUT,
+                        )
+                        .map_err(transport_error)?;
+                    self.thread_id =
+                        grok_session_id(&created).or_else(|| extract_id(&created, "session"));
+                    if self.agent == AgentId::Kiro {
+                        self.session_model = model.map(str::to_owned);
+                        self.session_effort = effort.map(str::to_owned);
+                        self.session_trust_all = Some(trust_all);
+                    }
+                }
+                ops::AcpSessionPlan::LoadThenPrompt => {
+                    let session_id = self.thread_id.clone().ok_or_else(|| {
+                        AppError::message("chat.runtime.protocol", "session id omitted")
+                    })?;
+                    let load_params = json!({
+                        "sessionId": session_id,
+                        "cwd": cwd.to_string_lossy(),
+                        "mcpServers": []
+                    });
+                    let capabilities = transport.initialize_result().cloned().unwrap_or_default();
+                    let agent_capabilities = capabilities
+                        .get("agentCapabilities")
+                        .or_else(|| capabilities.get("capabilities"))
+                        .unwrap_or(&capabilities);
+                    let supports_resume = agent_capabilities
+                        .get("sessionCapabilities")
+                        .and_then(|value| value.get("resume"))
+                        .is_some_and(|value| acp_capability_present(Some(value)))
+                        || acp_capability_present(agent_capabilities.get("resume"));
+                    let supports_load = agent_capabilities
+                        .get("loadSession")
+                        .is_some_and(|value| acp_capability_present(Some(value)));
+                    let method = if supports_resume {
+                        "session/resume"
+                    } else if supports_load {
+                        "session/load"
+                    } else {
+                        return Err(AppError::message(
+                            "chat.runtime.protocol",
+                            "Grok 不支持恢复已有会话，请新建对话",
+                        ));
+                    };
+                    let value = transport
+                        .request_discarding_history(method, load_params, CODEX_REQUEST_TIMEOUT)
+                        .map_err(transport_error)?;
+                    if let Some(id) = grok_session_id(&value) {
+                        self.thread_id = Some(id);
+                    }
+                }
+                ops::AcpSessionPlan::Unavailable => unreachable!("handled above"),
+            }
+
+            let session_id = self
+                .thread_id
+                .clone()
+                .ok_or_else(|| AppError::message("chat.runtime.protocol", "session id omitted"))?;
+            let prompt_params = ops::acp_session_prompt_params(&session_id, prompt_blocks.clone());
+            match transport.begin_request("session/prompt", prompt_params) {
+                Ok(prompt_id) => {
+                    self.pending_prompt_id = Some(prompt_id);
+                    let run_id = self
+                        .run_id
+                        .clone()
+                        .unwrap_or_else(|| format!("run-{}", Uuid::new_v4()));
+                    self.turn_id = Some(run_id.clone());
+                    self.run_id = Some(run_id.clone());
+                    self.store.set_state(
+                        &self.conversation_id,
+                        RuntimePhase::Running,
+                        Some(&run_id),
+                        self.thread_id.as_deref(),
+                        self.turn_id.as_deref(),
+                        self.chat_turn,
+                        self.message_id.as_deref(),
+                    )?;
+                    self.transport = Some(transport);
+                    return self.store.snapshot(&self.conversation_id, None);
+                }
+                Err(codex_transport::CodexTransportError::Exited)
+                    if matches!(plan, ops::AcpSessionPlan::PromptExisting)
+                        && self.agent != AgentId::Kiro
+                        && !retried_after_exit =>
+                {
+                    retried_after_exit = true;
+                    self.transport = None;
+                    continue;
+                }
+                Err(error) => return Err(transport_error(error)),
             }
         }
-        .map_err(transport_error)?;
-        if let Some(session_id) = self.thread_id.clone() {
-            let loaded = transport
-                .request(
-                    "session/load",
-                    json!({ "sessionId": session_id, "cwd": cwd.to_string_lossy() }),
-                    CODEX_REQUEST_TIMEOUT,
-                )
-                .or_else(|_| {
-                    transport.request(
-                        "session/resume",
-                        json!({ "sessionId": session_id, "cwd": cwd.to_string_lossy() }),
-                        CODEX_REQUEST_TIMEOUT,
-                    )
-                })
-                .map_err(transport_error)?;
-            if let Some(id) = grok_session_id(&loaded) {
-                self.thread_id = Some(id);
-            }
-        } else {
-            let created = transport
-                .request(
-                    "session/new",
-                    json!({ "cwd": cwd.to_string_lossy(), "mcpServers": [] }),
-                    CODEX_REQUEST_TIMEOUT,
-                )
-                .map_err(transport_error)?;
-            self.thread_id = grok_session_id(&created).or_else(|| extract_id(&created, "session"));
-        }
-        let session_id = self
-            .thread_id
-            .clone()
-            .ok_or_else(|| AppError::message("chat.runtime.protocol", "session id omitted"))?;
-        let blocks = ops::grok_prompt_blocks(prompt, &extras.images)?;
-        let mut prompt_params = json!({
-            "sessionId": session_id,
-            "prompt": blocks.clone(),
-        });
-        if self.agent == AgentId::Kiro {
-            prompt_params["content"] = json!(blocks);
-        }
-        let prompt_id = transport
-            .begin_request("session/prompt", prompt_params)
-            .map_err(transport_error)?;
-        self.pending_prompt_id = Some(prompt_id);
-        let run_id = self
-            .run_id
-            .clone()
-            .unwrap_or_else(|| format!("run-{}", Uuid::new_v4()));
-        self.turn_id = Some(run_id.clone());
-        self.run_id = Some(run_id.clone());
-        self.store.set_state(
-            &self.conversation_id,
-            RuntimePhase::Running,
-            Some(&run_id),
-            self.thread_id.as_deref(),
-            self.turn_id.as_deref(),
-            self.chat_turn,
-            self.message_id.as_deref(),
-        )?;
-        self.transport = Some(transport);
-        self.store.snapshot(&self.conversation_id, None)
     }
 
     fn reply(&mut self, reply: RuntimeReply) -> Result<()> {
@@ -1228,12 +1395,12 @@ impl ActorWorker {
                     ));
                 }
                 if is_acp_runtime_agent(Some(self.agent)) {
-                    let option_id = if decision == "accept" {
-                        "allow-once"
-                    } else {
-                        "reject-once"
-                    };
-                    json!({ "outcome": { "outcome": "selected", "optionId": option_id } })
+                    let options = self
+                        .permission_options
+                        .get(&persisted.request.id)
+                        .cloned()
+                        .unwrap_or_default();
+                    acp_permission_reply(&options, decision)?
                 } else {
                     json!({"decision": decision})
                 }
@@ -1280,6 +1447,7 @@ impl ActorWorker {
             ));
             return Err(error);
         }
+        self.permission_options.remove(&persisted.request.id);
         let phase = if self
             .store
             .snapshot(&self.conversation_id, None)?
@@ -1405,15 +1573,19 @@ impl ActorWorker {
         };
         for request in pending {
             let response = parse_wire_id(&request.server_id).and_then(|server_id| {
+                let response = if request.server_method == "session/request_permission" {
+                    Ok(json!({
+                        "outcome": { "outcome": "cancelled" }
+                    }))
+                } else {
+                    Err(json!({ "code": -32800, "message": "cancelled" }))
+                };
                 self.transport
                     .as_mut()
                     .ok_or_else(|| {
                         AppError::message("chat.runtime.interrupted", "Codex process stopped")
                     })?
-                    .respond(
-                        server_id,
-                        Err(json!({"code": -32800, "message": "cancelled"})),
-                    )
+                    .respond(server_id, response)
                     .map_err(transport_error)
             });
             if let Err(error) = response {
@@ -1427,11 +1599,7 @@ impl ActorWorker {
             .and_then(|transport| {
                 if is_acp_runtime_agent(Some(self.agent)) {
                     transport
-                        .request(
-                            "session/cancel",
-                            json!({"sessionId": thread_id}),
-                            CODEX_REQUEST_TIMEOUT,
-                        )
+                        .notify("session/cancel", Some(json!({"sessionId": thread_id})))
                         .map_err(transport_error)
                 } else {
                     transport
@@ -1440,10 +1608,15 @@ impl ActorWorker {
                             json!({"threadId": thread_id, "turnId": turn_id}),
                             CODEX_REQUEST_TIMEOUT,
                         )
+                        .map(|_| ())
                         .map_err(transport_error)
                 }
             });
         match interrupt_result {
+            Ok(_) if is_acp_runtime_agent(Some(self.agent)) => {
+                self.cancel_deadline = Some(Instant::now() + ACP_CANCEL_DEADLINE);
+                Ok(())
+            }
             Ok(_) => Ok(()),
             Err(error) => self.cancel_failed(error),
         }
@@ -1520,6 +1693,57 @@ impl ActorWorker {
 
     fn server_request(&mut self, id: Value, method: &str, params: &Value) -> Result<()> {
         let id_string = wire_id_string(&id);
+        let phase = self
+            .store
+            .record(&self.conversation_id)?
+            .map(|record| record.phase);
+        let session_mismatch = params
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .zip(self.thread_id.as_deref())
+            .is_some_and(|(incoming, current)| incoming != current);
+        if session_mismatch {
+            if let Some(transport) = self.transport.as_mut() {
+                transport
+                    .respond(
+                        id,
+                        Err(json!({ "code": -32001, "message": "stale session" })),
+                    )
+                    .map_err(transport_error)?;
+            }
+            return Ok(());
+        }
+        if phase == Some(RuntimePhase::Cancelling) {
+            if let Some(transport) = self.transport.as_mut() {
+                let response = if method == "session/request_permission" {
+                    Ok(json!({
+                        "outcome": { "outcome": "cancelled" }
+                    }))
+                } else {
+                    Err(json!({ "code": -32800, "message": "cancelled" }))
+                };
+                transport.respond(id, response).map_err(transport_error)?;
+            }
+            return Ok(());
+        }
+        if is_acp_runtime_agent(Some(self.agent))
+            && !matches!(
+                phase,
+                Some(RuntimePhase::Starting | RuntimePhase::Running | RuntimePhase::Waiting)
+            )
+        {
+            if let Some(transport) = self.transport.as_mut() {
+                let response = if method == "session/request_permission" {
+                    Ok(json!({
+                        "outcome": { "outcome": "cancelled" }
+                    }))
+                } else {
+                    Err(json!({ "code": -32800, "message": "cancelled" }))
+                };
+                transport.respond(id, response).map_err(transport_error)?;
+            }
+            return Ok(());
+        }
         let run_id = params
             .get("turnId")
             .and_then(Value::as_str)
@@ -1540,7 +1764,7 @@ impl ActorWorker {
             }
             return Ok(());
         }
-        let (kind, title, detail, questions) = match method {
+        let (kind, title, detail, questions, acp_options) = match method {
             "session/request_permission" => {
                 let title = params
                     .pointer("/toolCall/title")
@@ -1553,25 +1777,34 @@ impl ActorWorker {
                         .get("toolCall")
                         .and_then(|call| call.get("rawInput").or_else(|| call.get("title"))),
                 );
-                (RuntimeRequestKind::Command, title, detail, Vec::new())
+                (
+                    RuntimeRequestKind::Command,
+                    title,
+                    detail,
+                    Vec::new(),
+                    acp_permission_options(params),
+                )
             }
             "item/commandExecution/requestApproval" | "execCommandApproval" => (
                 RuntimeRequestKind::Command,
                 "执行命令".to_string(),
                 redact_json_text(params.get("command").or_else(|| params.get("reason"))),
                 Vec::new(),
+                acp_permission_options(params),
             ),
             "item/fileChange/requestApproval" | "fileChangeApproval" => (
                 RuntimeRequestKind::File,
                 "修改文件".to_string(),
                 redact_json_text(params.get("reason").or_else(|| params.get("grantRoot"))),
                 Vec::new(),
+                acp_permission_options(params),
             ),
             "item/tool/requestUserInput" => (
                 RuntimeRequestKind::Question,
                 "需要你的回答".to_string(),
                 String::new(),
                 parse_questions(params.get("questions")),
+                None,
             ),
             _ => {
                 // Unknown server requests must never be auto-approved. Reply
@@ -1600,7 +1833,11 @@ impl ActorWorker {
             questions,
         };
         self.store
-            .add_request(&self.conversation_id, &request, method, &id_string)
+            .add_request(&self.conversation_id, &request, method, &id_string)?;
+        if let Some(options) = acp_options {
+            self.permission_options.insert(id_string, options);
+        }
+        Ok(())
     }
 
     fn notification(&mut self, method: &str, params: &Value) -> Result<()> {
@@ -1609,17 +1846,7 @@ impl ActorWorker {
                 self.grok_session_update(params)?;
             }
             "_x.ai/session/prompt_complete" => {
-                let reason = params
-                    .get("stopReason")
-                    .or_else(|| params.get("stop_reason"))
-                    .and_then(Value::as_str)
-                    .unwrap_or("end_turn");
-                let status = if matches!(reason, "cancelled" | "interrupted") {
-                    "interrupted"
-                } else {
-                    "completed"
-                };
-                self.turn_completed(&json!({ "status": status }))?;
+                self.turn_completed(params)?;
             }
             "turn/started" => {
                 if let Some(id) = extract_id(params, "turn").or_else(|| {
@@ -1731,32 +1958,92 @@ impl ActorWorker {
                     .and_then(|v| v.get("status"))
                     .and_then(Value::as_str)
             })
-            .unwrap_or("completed");
-        let cancelled = matches!(status, "interrupted" | "cancelled" | "canceled");
-        let (message_status, phase, ok, error) = if cancelled {
-            (
+            .unwrap_or_default();
+        let reason = params
+            .get("stopReason")
+            .or_else(|| params.get("stop_reason"))
+            .or_else(|| params.get("turn").and_then(|v| v.get("stopReason")))
+            .or_else(|| params.get("turn").and_then(|v| v.get("stop_reason")))
+            .and_then(Value::as_str);
+        let cancel_requested = self
+            .store
+            .record(&self.conversation_id)?
+            .is_some_and(|record| record.phase == RuntimePhase::Cancelling)
+            || self.cancel_deadline.is_some();
+        if cancel_requested {
+            self.terminalize(
+                ChatMessageStatus::Cancelled,
+                None,
+                RuntimePhase::Cancelled,
+                false,
+                true,
+            )?;
+            return Ok(());
+        }
+        let completion = reason.or_else(|| (!status.is_empty()).then_some(status));
+        let (message_status, phase, ok, cancelled, error) = match completion {
+            Some("end_turn") | Some("completed") | Some("complete") => (
+                ChatMessageStatus::Ok,
+                RuntimePhase::Completed,
+                true,
+                false,
+                None,
+            ),
+            Some("cancelled") | Some("canceled") | Some("interrupted") => (
                 ChatMessageStatus::Cancelled,
                 RuntimePhase::Cancelled,
                 false,
+                true,
                 None,
-            )
-        } else if matches!(status, "failed" | "error") {
-            (
+            ),
+            Some("failed") | Some("error") => (
                 ChatMessageStatus::Failed,
                 RuntimePhase::Failed,
+                false,
                 false,
                 Some(redact_json_text(
                     params.get("error").or_else(|| params.get("message")),
                 )),
-            )
-        } else {
-            (ChatMessageStatus::Ok, RuntimePhase::Completed, true, None)
+            ),
+            Some("max_tokens") | Some("max_turn_requests") | Some("refusal") => (
+                ChatMessageStatus::Failed,
+                RuntimePhase::Failed,
+                false,
+                false,
+                Some(format!(
+                    "ACP 生成未完成：{}",
+                    reason.unwrap_or(completion.unwrap_or("unknown"))
+                )),
+            ),
+            Some(other) => (
+                ChatMessageStatus::Failed,
+                RuntimePhase::Failed,
+                false,
+                false,
+                Some(format!("ACP 返回未知结束原因：{other}")),
+            ),
+            None if !is_acp_runtime_agent(Some(self.agent)) => (
+                ChatMessageStatus::Ok,
+                RuntimePhase::Completed,
+                true,
+                false,
+                None,
+            ),
+            None => (
+                ChatMessageStatus::Failed,
+                RuntimePhase::Failed,
+                false,
+                false,
+                Some("ACP 响应缺少 stopReason".into()),
+            ),
         };
         self.terminalize(message_status, error.as_deref(), phase, ok, cancelled)?;
-        if let Some(transport) = self.transport.as_mut() {
-            transport.shutdown();
+        if !is_acp_runtime_agent(Some(self.agent)) {
+            if let Some(transport) = self.transport.as_mut() {
+                transport.shutdown();
+            }
+            self.transport = None;
         }
-        self.transport = None;
         Ok(())
     }
 
@@ -1872,13 +2159,16 @@ impl ActorWorker {
     }
 
     fn terminalize(
-        &self,
+        &mut self,
         status: ChatMessageStatus,
         error: Option<&str>,
         phase: RuntimePhase,
         ok: bool,
         cancelled: bool,
     ) -> Result<()> {
+        self.cancel_deadline = None;
+        self.pending_prompt_id = None;
+        self.permission_options.clear();
         if let Some(message) = error {
             if let Err(learn_err) = self
                 .store
@@ -2090,6 +2380,58 @@ fn redact_json_text(value: Option<&Value>) -> String {
         None => String::new(),
     };
     redact_text(&raw)
+}
+
+fn parse_acp_permission_options(params: &Value) -> Vec<AcpPermissionOption> {
+    params
+        .get("options")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|option| {
+            let id = option
+                .get("optionId")
+                .or_else(|| option.get("id"))
+                .and_then(Value::as_str)
+                .map(str::to_owned)?;
+            let kind = option
+                .get("kind")
+                .and_then(Value::as_str)
+                .map(str::to_owned)?;
+            Some(AcpPermissionOption { id, kind })
+        })
+        .collect()
+}
+
+fn acp_permission_options(params: &Value) -> Option<Vec<AcpPermissionOption>> {
+    let options = parse_acp_permission_options(params);
+    (!options.is_empty()).then_some(options)
+}
+
+fn acp_capability_present(value: Option<&Value>) -> bool {
+    matches!(value, Some(Value::Bool(true)) | Some(Value::Object(_)))
+}
+
+fn acp_permission_reply(options: &[AcpPermissionOption], decision: &str) -> Result<Value> {
+    let wanted_kind = match decision {
+        "accept" => "allow_once",
+        "decline" => "reject_once",
+        _ => return Err(AppError::InvalidArg("approval decision is required".into())),
+    };
+    if let Some(option) = options.iter().find(|option| option.kind == wanted_kind) {
+        return Ok(json!({
+            "outcome": { "outcome": "selected", "optionId": option.id }
+        }));
+    }
+    if decision == "decline" {
+        return Ok(json!({
+            "outcome": { "outcome": "cancelled" }
+        }));
+    }
+    Err(AppError::message(
+        "chat.runtime.permission",
+        "服务端没有提供一次性允许选项，无法安全批准此请求",
+    ))
 }
 
 fn transport_error(error: codex_transport::CodexTransportError) -> AppError {

@@ -1,8 +1,9 @@
 //! B2 helpers: model/effort validation, Codex list parsing, turn input building.
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::error::{AppError, Result};
+use crate::models::AgentId;
 
 use super::types::{
     RuntimeExtensionItem, RuntimeExtensionKind, RuntimeLocalImage, RuntimeModelOption,
@@ -396,6 +397,46 @@ pub(crate) fn ensure_grok_catalog_efforts(
             option
         })
         .collect()
+}
+
+pub(crate) fn acp_session_prompt_params(session_id: &str, blocks: Vec<Value>) -> Value {
+    json!({
+        "sessionId": session_id,
+        "prompt": blocks,
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AcpSessionPlan {
+    /// Same ACP process is still up: send another `session/prompt`.
+    PromptExisting,
+    /// Start `session/new` (and spawn if needed).
+    New,
+    /// Fresh process, try `session/load` then prompt.
+    LoadThenPrompt,
+    /// Kiro sessions cannot be reattached after the ACP process exits. Keep
+    /// the durable id and ask the user to start a new conversation.
+    Unavailable,
+}
+
+/// Kiro ACP `session/load` after the previous process exited hangs or kills the
+/// new process. Reuse the live process; if it is gone, keep the session id and
+/// ask the user to start a new conversation.
+pub(crate) fn acp_session_plan(
+    agent: AgentId,
+    live_transport: bool,
+    has_session_id: bool,
+) -> AcpSessionPlan {
+    if live_transport && has_session_id {
+        return AcpSessionPlan::PromptExisting;
+    }
+    if has_session_id && agent == AgentId::Kiro {
+        return AcpSessionPlan::Unavailable;
+    }
+    if has_session_id && agent != AgentId::Kiro {
+        return AcpSessionPlan::LoadThenPrompt;
+    }
+    AcpSessionPlan::New
 }
 
 pub(crate) fn grok_prompt_blocks(prompt: &str, images: &[RuntimeLocalImage]) -> Result<Vec<Value>> {
@@ -1053,6 +1094,43 @@ mod tests {
         assert_eq!(models[0].default_effort.as_deref(), Some("high"));
         assert!(models[1].efforts.is_empty());
         assert_eq!(models[1].default_effort, None);
+    }
+
+    #[test]
+    fn acp_session_plan_reuses_live_kiro_and_skips_cross_process_load() {
+        assert_eq!(
+            acp_session_plan(AgentId::Kiro, true, true),
+            AcpSessionPlan::PromptExisting
+        );
+        assert_eq!(
+            acp_session_plan(AgentId::Kiro, false, true),
+            AcpSessionPlan::Unavailable
+        );
+        assert_eq!(
+            acp_session_plan(AgentId::Kiro, false, false),
+            AcpSessionPlan::New
+        );
+        assert_eq!(
+            acp_session_plan(AgentId::Grok, true, true),
+            AcpSessionPlan::PromptExisting
+        );
+        assert_eq!(
+            acp_session_plan(AgentId::Grok, false, true),
+            AcpSessionPlan::LoadThenPrompt
+        );
+        assert_eq!(
+            acp_session_plan(AgentId::Grok, false, false),
+            AcpSessionPlan::New
+        );
+    }
+
+    #[test]
+    fn acp_session_prompt_params_use_prompt_not_content() {
+        let blocks = grok_prompt_blocks("ping", &[]).unwrap();
+        let params = acp_session_prompt_params("sess-1", blocks);
+        assert_eq!(params["sessionId"], "sess-1");
+        assert_eq!(params["prompt"][0]["text"], "ping");
+        assert!(params.get("content").is_none());
     }
 
     #[test]

@@ -8,35 +8,49 @@ use tempfile::tempdir;
 fn classify_distinguishes_numeric_and_string_ids_and_message_kinds() {
     assert!(matches!(
         classify_message(json!({"id": 1, "result": {"ok": true}})),
-        Ok(WireMessage::Response { id, .. }) if id == json!(1)
+        Ok(Some(WireMessage::Response { id, .. })) if id == json!(1)
     ));
     assert!(matches!(
         classify_message(json!({"id": "1", "result": {"ok": true}})),
-        Ok(WireMessage::Response { id, .. }) if id == json!("1")
+        Ok(Some(WireMessage::Response { id, .. })) if id == json!("1")
     ));
     assert!(matches!(
         classify_message(json!({"id": 1, "method": "approve", "params": {}})),
-        Ok(WireMessage::Request { id, method, .. }) if id == json!(1) && method == "approve"
+        Ok(Some(WireMessage::Request { id, method, .. })) if id == json!(1) && method == "approve"
     ));
     assert!(matches!(
         classify_message(json!({"method": "notice", "params": {}})),
-        Ok(WireMessage::Notification { method, .. }) if method == "notice"
+        Ok(Some(WireMessage::Notification { method, .. })) if method == "notice"
     ));
 }
 
 #[test]
-fn classify_rejects_ambiguous_or_incomplete_messages() {
+fn classify_skips_unshaped_json_instead_of_failing() {
     for value in [
         json!({"id": 1}),
         json!({"result": {}}),
-        json!({"id": 1, "result": {}, "error": {}}),
+        json!({"type": "text", "content": "hi"}),
+        json!({"error": "missing field `prompt`", "phase": "deserialization"}),
+        json!({
+            "jsonrpc": "2.0",
+            "error": {
+                "code": -32601,
+                "message": "Method not found",
+                "data": "initialized"
+            }
+        }),
         json!(null),
     ] {
-        assert!(matches!(
-            classify_message(value),
-            Err(CodexTransportError::Protocol(_))
-        ));
+        assert!(matches!(classify_message(value), Ok(None)));
     }
+}
+
+#[test]
+fn classify_still_rejects_response_with_both_result_and_error() {
+    assert!(matches!(
+        classify_message(json!({"id": 1, "result": {}, "error": {}})),
+        Err(CodexTransportError::Protocol(_))
+    ));
 }
 
 #[cfg(unix)]
@@ -108,6 +122,92 @@ printf '%s\n' '{"id":2,"result":{"echo":true}}'
 
 #[cfg(unix)]
 #[test]
+fn handshake_skips_bare_json_and_outgoing_lines_include_jsonrpc() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = tempdir().expect("temp directory");
+    let program = directory.path().join("fake-kiro-acp");
+    std::fs::write(
+        &program,
+        r##"#!/bin/sh
+log="$(dirname "$0")/wire.log"
+IFS= read -r initialize
+printf '%s\n' "$initialize" >> "$log"
+printf '%s\n' '{"type":"text","content":"hi"}'
+printf '%s\n' '{"id":1,"result":{"initialized":true}}'
+IFS= read -r initialized
+printf '%s\n' "$initialized" >> "$log"
+"##,
+    )
+    .expect("fake acp script");
+    let mut permissions = std::fs::metadata(&program)
+        .expect("fake metadata")
+        .permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(&program, permissions).expect("fake executable");
+
+    let mut transport = CodexTransport::spawn(&program, directory.path()).expect("spawn fake");
+    // Wait for the fake peer to read+log `initialized` and exit; shutting down
+    // immediately races the shell `read` and flakes on busy CI runners.
+    assert_eq!(
+        transport
+            .recv_timeout(Duration::from_secs(2))
+            .expect("peer exit receive"),
+        Some(CodexEvent::Exited)
+    );
+    let wire = std::fs::read_to_string(directory.path().join("wire.log")).expect("wire log");
+    assert!(
+        wire.contains(r#""jsonrpc":"2.0""#) && wire.contains(r#""method":"initialize""#),
+        "outgoing initialize must be JSON-RPC 2.0: {wire}"
+    );
+    assert!(
+        wire.contains(r#""method":"initialized""#),
+        "outgoing initialized notification missing: {wire}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn spawn_kiro_skips_initialized_and_id_less_errors() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = tempdir().expect("temp directory");
+    let program = directory.path().join("fake-kiro-acp");
+    std::fs::write(
+        &program,
+        r##"#!/bin/sh
+log="$(dirname "$0")/wire.log"
+IFS= read -r initialize
+printf '%s\n' "$initialize" >> "$log"
+printf '%s\n' '{"jsonrpc":"2.0","error":{"code":-32601,"message":"Method not found","data":"initialized"}}'
+printf '%s\n' '{"id":1,"result":{"initialized":true}}'
+IFS= read -r extra
+printf '%s\n' "$extra" >> "$log"
+"##,
+    )
+    .expect("fake acp script");
+    let mut permissions = std::fs::metadata(&program)
+        .expect("fake metadata")
+        .permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(&program, permissions).expect("fake executable");
+
+    let mut transport = CodexTransport::spawn_kiro(&program, directory.path(), None, None, false)
+        .expect("spawn kiro");
+    transport.shutdown();
+    let wire = std::fs::read_to_string(directory.path().join("wire.log")).expect("wire log");
+    assert!(
+        wire.contains(r#""jsonrpc":"2.0""#) && wire.contains(r#""method":"initialize""#),
+        "outgoing initialize must be JSON-RPC 2.0: {wire}"
+    );
+    assert!(
+        !wire.contains(r#""method":"initialized""#),
+        "Kiro handshake must not send initialized: {wire}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn fake_app_server_exit_is_reported_after_last_response() {
     use std::os::unix::fs::PermissionsExt;
 
@@ -155,4 +255,141 @@ fn stderr_capture_is_bounded() {
         capture.lock().expect("capture lock").len(),
         MAX_STDERR_BYTES
     );
+}
+
+#[cfg(windows)]
+#[test]
+fn powershell_restore_discards_history_without_filling_event_queue() {
+    let directory = tempfile::tempdir().expect("temp directory");
+    let script = directory.path().join("fake-acp.ps1");
+    std::fs::write(
+        &script,
+        r#"
+$OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+$log = Join-Path (Split-Path -Parent $PSCommandPath) 'wire.log'
+while ($null -ne ($line = [Console]::In.ReadLine())) {
+  if ($line -like '*"method":"initialize"*') {
+    [Console]::Out.WriteLine('{"jsonrpc":"2.0","id":1,"result":{"agentCapabilities":{"loadSession":true}}}')
+    [Console]::Out.Flush()
+  } elseif ($line -like '*"method":"session/load"*') {
+    [Console]::Out.WriteLine('{"jsonrpc":"2.0","id":"replay-permission","method":"session/request_permission","params":{}}')
+    0..299 | ForEach-Object {
+      [Console]::Out.WriteLine('{"jsonrpc":"2.0","method":"session/update","params":{"delta":"old"}}')
+    }
+    [Console]::Out.WriteLine('{"jsonrpc":"2.0","id":2,"result":{"sessionId":"restored"}}')
+    [Console]::Out.Flush()
+    $permissionReply = [Console]::In.ReadLine()
+    Add-Content -LiteralPath $log -Value $permissionReply -Encoding utf8
+  }
+}
+"#,
+    )
+    .expect("fake ACP script");
+    let powershell = std::env::var_os("SystemRoot")
+        .map(std::path::PathBuf::from)
+        .map(|root| root.join("System32\\WindowsPowerShell\\v1.0\\powershell.exe"))
+        .unwrap_or_else(|| "powershell.exe".into());
+    let args = vec![
+        "-NoProfile".into(),
+        "-ExecutionPolicy".into(),
+        "Bypass".into(),
+        "-File".into(),
+        script.to_string_lossy().into_owned(),
+    ];
+    let mut transport = CodexTransport::spawn_test_with(
+        &powershell,
+        &args,
+        directory.path(),
+        json!({"protocolVersion": 1}),
+        false,
+    )
+    .expect("spawn powershell ACP");
+    assert_eq!(
+        transport
+            .request_discarding_history(
+                "session/load",
+                json!({"sessionId":"old"}),
+                Duration::from_secs(2),
+            )
+            .expect("restore response")["sessionId"],
+        "restored"
+    );
+    assert_eq!(
+        transport
+            .recv_timeout(Duration::from_millis(100))
+            .expect("history queue check"),
+        None
+    );
+    transport.shutdown();
+    let wire = std::fs::read_to_string(directory.path().join("wire.log"))
+        .expect("permission replay wire log");
+    assert!(
+        wire.contains(r#""id":"replay-permission","result":{"outcome":{"outcome":"cancelled"}}"#)
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn powershell_cancel_notification_has_no_id_and_does_not_wait_for_response() {
+    let directory = tempfile::tempdir().expect("temp directory");
+    let script = directory.path().join("fake-cancel.ps1");
+    std::fs::write(
+        &script,
+        r#"
+$OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+$log = Join-Path (Split-Path -Parent $PSCommandPath) 'wire.log'
+$line = [Console]::In.ReadLine()
+[Console]::Out.WriteLine('{"jsonrpc":"2.0","id":1,"result":{"agentCapabilities":{}}}')
+[Console]::Out.Flush()
+while ($null -ne ($line = [Console]::In.ReadLine())) {
+  Add-Content -LiteralPath $log -Value $line -Encoding utf8
+  [Console]::Out.WriteLine('{"jsonrpc":"2.0","method":"test/cancel_seen","params":{}}')
+  [Console]::Out.Flush()
+}
+"#,
+    )
+    .expect("fake ACP script");
+    let powershell = std::env::var_os("SystemRoot")
+        .map(std::path::PathBuf::from)
+        .map(|root| root.join("System32\\WindowsPowerShell\\v1.0\\powershell.exe"))
+        .unwrap_or_else(|| "powershell.exe".into());
+    let args = vec![
+        "-NoProfile".into(),
+        "-ExecutionPolicy".into(),
+        "Bypass".into(),
+        "-File".into(),
+        script.to_string_lossy().into_owned(),
+    ];
+    let mut transport = CodexTransport::spawn_test_with(
+        &powershell,
+        &args,
+        directory.path(),
+        json!({"protocolVersion": 1}),
+        false,
+    )
+    .expect("spawn powershell ACP");
+    let started = Instant::now();
+    transport
+        .notify("session/cancel", Some(json!({"sessionId":"session-1"})))
+        .expect("send cancel notification");
+    assert!(started.elapsed() < Duration::from_secs(1));
+    assert_eq!(
+        transport
+            .recv_timeout(Duration::from_secs(1))
+            .expect("cancel barrier"),
+        Some(CodexEvent::Notification {
+            method: "test/cancel_seen".into(),
+            params: json!({}),
+        })
+    );
+    transport.shutdown();
+    let wire = std::fs::read_to_string(directory.path().join("wire.log")).expect("cancel wire log");
+    let cancel = wire
+        .lines()
+        .find_map(|line| {
+            let value: Value = serde_json::from_str(line.trim_start_matches('\u{feff}')).ok()?;
+            (value.get("method").and_then(Value::as_str) == Some("session/cancel")).then_some(value)
+        })
+        .expect("session/cancel wire message");
+    assert!(cancel.get("id").is_none(), "cancel must be a notification");
 }

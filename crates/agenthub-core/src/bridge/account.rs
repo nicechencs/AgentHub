@@ -17,6 +17,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use super::bounded_ttl::BoundedTtlMap;
 use super::route_index::DispatchCandidate;
 use super::runtime::{ResolvedAuth, UpstreamAuthReload};
+use crate::adapters::kiro::http::KiroHttpRouteParams;
 use crate::models::RouteSchedulePolicy;
 
 const STICKY_MAX_ENTRIES: usize = 4096;
@@ -55,6 +56,7 @@ pub struct PickedMember {
     pub reload: Option<UpstreamAuthReload>,
     pub priority: i64,
     pub position: i64,
+    pub(crate) kiro_http: Option<KiroHttpRouteParams>,
     health: Arc<Mutex<MemberHealth>>,
     concurrency: Arc<Semaphore>,
 }
@@ -95,9 +97,15 @@ impl PickedMember {
             reload,
             priority: 0,
             position: 0,
+            kiro_http: None,
             health: Arc::new(Mutex::new(health)),
             concurrency: Arc::new(Semaphore::new(4)),
         }
+    }
+
+    pub(crate) fn with_kiro_http(mut self, params: Option<KiroHttpRouteParams>) -> Self {
+        self.kiro_http = params;
+        self
     }
 
     /// One in-flight attempt per member. Full → skip this member for the request.
@@ -158,6 +166,39 @@ pub struct BridgeMemberSpec {
     pub health: MemberHealth,
     pub priority: i64,
     pub position: i64,
+    pub(crate) kiro_http: Option<KiroHttpRouteParams>,
+}
+
+impl BridgeMemberSpec {
+    pub fn new(
+        ticket_id: impl Into<String>,
+        source_kind: impl Into<String>,
+        source_id: impl Into<String>,
+        label: impl Into<String>,
+        auth: ResolvedAuth,
+        reload: Option<UpstreamAuthReload>,
+        health: MemberHealth,
+        priority: i64,
+        position: i64,
+    ) -> Self {
+        Self {
+            ticket_id: ticket_id.into(),
+            source_kind: source_kind.into(),
+            source_id: source_id.into(),
+            label: label.into(),
+            auth,
+            reload,
+            health,
+            priority,
+            position,
+            kiro_http: None,
+        }
+    }
+
+    pub(crate) fn with_kiro_http(mut self, params: Option<KiroHttpRouteParams>) -> Self {
+        self.kiro_http = params;
+        self
+    }
 }
 
 impl std::fmt::Debug for BridgeMemberSpec {
@@ -189,6 +230,7 @@ impl From<&BridgeMemberSpec> for PickedMember {
             spec.health,
         )
         .with_schedule(spec.priority, spec.position)
+        .with_kiro_http(spec.kiro_http.clone())
     }
 }
 

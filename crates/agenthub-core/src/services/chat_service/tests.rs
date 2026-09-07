@@ -1128,6 +1128,58 @@ fn resume_hard_failure_discards_new_sid_from_results() {
 }
 
 #[test]
+fn kiro_http_resume_failure_keeps_namespaced_session_id() {
+    let failed = AgentRunResult {
+        agent: AgentId::Kiro,
+        status: RunStatus::Failed,
+        exit_code: None,
+        duration_ms: 9,
+        stdout: String::new(),
+        stderr: String::new(),
+        command: "kiro-http GenerateAssistantResponse".into(),
+        error: Some("no Kiro login".into()),
+        truncated: false,
+        native_session_id: Some("kiro-http:conversation-1".into()),
+    };
+    assert!(
+        ChatService::keep_native_session_after_resume_failure(
+            Some("kiro-http:conversation-1"),
+            &[failed.clone()],
+        ),
+        "existing HTTP chats must keep their session after a failed turn"
+    );
+    assert!(
+        !ChatService::keep_native_session_after_resume_failure(Some("cli-session"), &[]),
+        "CLI resume ids still clear after a hard failure"
+    );
+
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(RecordingProcessRunner::with_status(RunStatus::Failed)),
+    ));
+    let chat = ChatService::new(db.clone(), run);
+    let conv = chat
+        .create_conversation(vec![AgentId::Claude], None)
+        .unwrap();
+    let repo = crate::storage::ChatRepo::new(db);
+    let mut stored = repo.get_conversation(&conv.id).unwrap().unwrap();
+    stored.native_session_id = Some("kiro-http:conversation-1".into());
+    repo.update_conversation(&stored).unwrap();
+
+    chat.send(&conv.id, "resume fail keep http id", &|_| {})
+        .unwrap();
+    let after = chat.get_conversation(&conv.id).unwrap();
+    assert_eq!(
+        after.native_session_id.as_deref(),
+        Some("kiro-http:conversation-1"),
+        "hard failure must not clear a Kiro HTTP session id, got {:?}",
+        after.native_session_id
+    );
+}
+
+#[test]
 fn persist_native_session_id_when_cwd_and_agent_unchanged() {
     let dir = tempdir().unwrap();
     let db = Database::open(&dir.path().join("t.db")).unwrap();

@@ -189,15 +189,27 @@ fn grok_legacy_continue_requires_session_and_keeps_print_path_otherwise() {
         cwd: with_session.cwd.clone(),
         allow_dangerous: false,
         created_at: now.clone(),
-        updated_at: now,
+        updated_at: now.clone(),
         native_session_id: Some("thread-1".into()),
+        sending: false,
+    };
+    let kiro = Conversation {
+        id: "kiro-legacy".into(),
+        title: String::new(),
+        agent_ids: vec![AgentId::Kiro],
+        cwd: with_session.cwd.clone(),
+        allow_dangerous: false,
+        created_at: now.clone(),
+        updated_at: now,
+        native_session_id: Some("sess-kiro-1".into()),
         sending: false,
     };
     let repo = ChatRepo::new(db.clone());
     repo.create_conversation(&with_session).unwrap();
     repo.create_conversation(&no_session).unwrap();
     repo.create_conversation(&codex).unwrap();
-    for id in ["grok-resume", "grok-nosess", "codex-legacy"] {
+    repo.create_conversation(&kiro).unwrap();
+    for id in ["grok-resume", "grok-nosess", "codex-legacy", "kiro-legacy"] {
         repo.insert_message(&crate::models::ChatMessage {
             id: format!("{id}-user"),
             conversation_id: id.into(),
@@ -232,6 +244,12 @@ fn grok_legacy_continue_requires_session_and_keeps_print_path_otherwise() {
     assert!(missing.to_string().contains("请新建对话"), "{missing}");
     assert!(!runtime.snapshot("grok-nosess", None).unwrap().enabled);
     assert!(runtime.continue_legacy("codex-legacy").is_err());
+    let kiro_err = runtime.continue_legacy("kiro-legacy").unwrap_err();
+    assert!(
+        kiro_err.to_string().contains("不能切换聊天方式"),
+        "{kiro_err}"
+    );
+    assert!(!runtime.snapshot("kiro-legacy", None).unwrap().enabled);
 }
 
 #[test]

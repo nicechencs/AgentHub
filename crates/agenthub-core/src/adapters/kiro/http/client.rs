@@ -17,7 +17,9 @@ use crate::error::{AppError, Result};
 use crate::models::{AgentId, AgentRunResult, RunOptions, RunStatus};
 use crate::utils::redact::redact_text;
 
-use super::creds::{load_kiro_http_creds, persist_refreshed_token, KiroAuthKind, KiroHttpCreds};
+use super::creds::{
+    load_kiro_http_creds, persist_refreshed_token, KiroAuthKind, KiroHttpCreds, KiroHttpRouteParams,
+};
 use super::eventstream::collect_assistant_text;
 
 const LIST_TARGET: &str = "AmazonCodeWhispererService.ListAvailableModels";
@@ -25,6 +27,49 @@ const USAGE_TARGET: &str = "AmazonCodeWhispererService.GetUsageLimits";
 const CHAT_TARGET: &str = "AmazonCodeWhispererStreamingService.GenerateAssistantResponse";
 const USER_AGENT: &str =
     "aws-sdk-js/1.0.27 ua/2.1 os/linux lang/js md/nodejs#22.0.0 api/codewhispererstreaming#1.0.27 m/E AgentHub-KiroHTTP";
+
+/// Persisted Chat `native_session_id` prefix for HTTP conversation ids.
+/// CLI `--resume-id` values are a different namespace and must not use this prefix.
+pub(crate) const HTTP_NATIVE_SESSION_PREFIX: &str = "kiro-http:";
+
+/// Encode an HTTP conversationId for ChatService persistence.
+pub(crate) fn http_native_session_id(conversation_id: &str) -> String {
+    format!("{HTTP_NATIVE_SESSION_PREFIX}{conversation_id}")
+}
+
+/// Strip `kiro-http:` prefix. Returns None for blank, unprefixed (CLI), or empty id.
+pub(crate) fn parse_http_native_session_id(native: &str) -> Option<&str> {
+    let native = native.trim();
+    let rest = native.strip_prefix(HTTP_NATIVE_SESSION_PREFIX)?;
+    let rest = rest.trim();
+    if rest.is_empty() {
+        None
+    } else {
+        Some(rest)
+    }
+}
+
+/// How HTTP chat should treat `RunOptions.native_session_id`.
+///
+/// CLI `--resume-id` values are **not** prefixed → `http_resume_from_opts` is `None`
+/// (skip HTTP). Unset/blank → `Some(New)`. `kiro-http:<cid>` → `Some(Conversation)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HttpResume<'a> {
+    New,
+    Conversation(&'a str),
+}
+
+pub(crate) fn http_resume_from_opts(opts: &RunOptions) -> Option<HttpResume<'_>> {
+    match opts
+        .native_session_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        None => Some(HttpResume::New),
+        Some(id) => parse_http_native_session_id(id).map(HttpResume::Conversation),
+    }
+}
 
 #[derive(Debug, Clone)]
 pub(crate) struct KiroListModels {
@@ -351,34 +396,52 @@ pub(crate) fn build_chat_body(
     body
 }
 
-pub(crate) fn creds_from_access_token(token: &str) -> KiroHttpCreds {
+pub(crate) fn creds_from_access_token(
+    token: &str,
+    params: Option<&KiroHttpRouteParams>,
+) -> KiroHttpCreds {
     let token = token.trim().to_string();
-    let auth_kind = if token.starts_with("ksk_") {
+    let inferred = KiroHttpRouteParams::from_access_token(&token);
+    let params = params.unwrap_or(&inferred);
+    let api_key = params.api_key || token.starts_with("ksk_");
+    let auth_kind = if api_key {
         KiroAuthKind::ApiKey
+    } else if params.origin == "KIRO_CLI" {
+        KiroAuthKind::Oidc
     } else {
         KiroAuthKind::Desktop
     };
-    let origin = match auth_kind {
-        KiroAuthKind::Oidc => "KIRO_CLI",
-        KiroAuthKind::Desktop | KiroAuthKind::ApiKey => "AI_EDITOR",
-    }
-    .to_string();
+    let region = params.region.trim();
     KiroHttpCreds {
         auth_kind,
         access_token: token,
         refresh_token: None,
         expires_at: None,
-        region: "us-east-1".into(),
-        profile_arn: None,
+        region: if region.is_empty() {
+            "us-east-1".into()
+        } else {
+            region.to_owned()
+        },
+        profile_arn: params
+            .profile_arn
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned),
         client_id: None,
         client_secret: None,
-        origin,
+        origin: if params.origin.trim().is_empty() {
+            "AI_EDITOR".into()
+        } else {
+            params.origin.clone()
+        },
         sqlite_token_key: None,
         source: "bridge".into(),
     }
 }
 
 /// One non-streaming chat turn against Kiro upstream.
+#[cfg(test)]
 pub(crate) fn chat_turn_http(
     prompt: &str,
     model: Option<&str>,
@@ -392,9 +455,12 @@ pub(crate) fn chat_turn_with_access_token(
     token: &str,
     prompt: &str,
     model: Option<&str>,
+    params: Option<&KiroHttpRouteParams>,
 ) -> Result<KiroChatTurn> {
-    let mut creds = creds_from_access_token(token);
-    chat_turn_with_creds(&mut creds, prompt, model, None)
+    let mut creds = creds_from_access_token(token, params);
+    // Pool logins have a current access token only. Do not invent a Desktop
+    // refresh, and do not write another machine's kiro-cli sqlite.
+    post_chat_turn(&mut creds, prompt, model, None)
 }
 
 fn chat_turn_with_creds(
@@ -404,6 +470,15 @@ fn chat_turn_with_creds(
     conversation_id: Option<&str>,
 ) -> Result<KiroChatTurn> {
     ensure_access_token(creds)?;
+    post_chat_turn(creds, prompt, model, conversation_id)
+}
+
+fn post_chat_turn(
+    creds: &mut KiroHttpCreds,
+    prompt: &str,
+    model: Option<&str>,
+    conversation_id: Option<&str>,
+) -> Result<KiroChatTurn> {
     let model_id = model
         .map(str::trim)
         .filter(|s| !s.is_empty())
@@ -445,25 +520,77 @@ fn chat_turn_with_creds(
     })
 }
 
-/// Try HTTP chat when `kiro-cli` is not installed. `None` means skip HTTP.
-///
-/// Callers must not invoke this when the CLI is installed. Skips HTTP when a
-/// native resume id is set (CLI `--resume-id` is a different session namespace).
-pub(crate) fn try_http_run_result(prompt: &str, opts: &RunOptions) -> Option<AgentRunResult> {
-    if opts
-        .native_session_id
-        .as_deref()
+/// Build the explicit failed result used when an existing HTTP conversation
+/// cannot be continued. Keeping the namespaced session id on the result lets
+/// the caller retain the conversation for a retry instead of silently
+/// switching it to the unrelated CLI session namespace.
+fn conversation_id_preview(id: &str) -> String {
+    id.chars().take(8).collect()
+}
+
+pub(crate) fn http_failed_run_result(
+    duration_ms: u64,
+    model: Option<&str>,
+    conversation_id: Option<&str>,
+    error: impl Into<String>,
+) -> AgentRunResult {
+    let model_id = model
         .map(str::trim)
-        .is_some_and(|s| !s.is_empty())
-    {
-        return None;
+        .filter(|s| !s.is_empty())
+        .unwrap_or("auto");
+    let command = format!(
+        "kiro-http GenerateAssistantResponse model={}{}",
+        model_id,
+        conversation_id
+            .map(|id| format!(" conversationId={}", conversation_id_preview(id)))
+            .unwrap_or_default()
+    );
+    let error = redact_text(&error.into());
+    AgentRunResult {
+        agent: AgentId::Kiro,
+        status: RunStatus::Failed,
+        exit_code: None,
+        duration_ms,
+        stdout: String::new(),
+        stderr: String::new(),
+        command,
+        error: Some(error),
+        truncated: false,
+        native_session_id: conversation_id.map(http_native_session_id),
     }
-    if load_kiro_http_creds().is_err() {
-        return None;
-    }
+}
+
+/// Try AgentHub-owned HTTP chat. `None` means skip HTTP (use CLI / ACP).
+///
+/// Session namespaces:
+/// - unset → new HTTP conversation
+/// - `kiro-http:<conversationId>` → continue that HTTP conversation
+/// - any other id (CLI `--resume-id`) → skip HTTP
+///
+/// On success, persists a namespaced id so ChatService can resume later turns.
+pub(crate) fn try_http_run_result(prompt: &str, opts: &RunOptions) -> Option<AgentRunResult> {
+    let resume = http_resume_from_opts(opts)?;
+    let conversation_id = match resume {
+        HttpResume::New => None,
+        HttpResume::Conversation(cid) => Some(cid),
+    };
     let started = Instant::now();
     let model = opts.model.as_deref();
-    match chat_turn_http(prompt, model, None) {
+    let mut creds = match load_kiro_http_creds() {
+        Ok(creds) => creds,
+        Err(e) => {
+            if conversation_id.is_some() {
+                return Some(http_failed_run_result(
+                    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+                    model,
+                    conversation_id,
+                    e.to_string(),
+                ));
+            }
+            return None;
+        }
+    };
+    match chat_turn_with_creds(&mut creds, prompt, model, conversation_id) {
         Ok(turn) => {
             let duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
             let command = format!(
@@ -471,7 +598,7 @@ pub(crate) fn try_http_run_result(prompt: &str, opts: &RunOptions) -> Option<Age
                 turn.model_id,
                 turn.conversation_id
                     .as_deref()
-                    .map(|id| format!(" conversationId={}", &id[..id.len().min(8)]))
+                    .map(|id| format!(" conversationId={}", conversation_id_preview(id)))
                     .unwrap_or_default()
             );
             Some(AgentRunResult {
@@ -484,9 +611,7 @@ pub(crate) fn try_http_run_result(prompt: &str, opts: &RunOptions) -> Option<Age
                 command,
                 error: None,
                 truncated: false,
-                // HTTP conversation ids are not CLI --resume-id; leave unset
-                // so later turns still use CLI resume when available.
-                native_session_id: None,
+                native_session_id: turn.conversation_id.as_deref().map(http_native_session_id),
             })
         }
         Err(e) => {
@@ -495,62 +620,18 @@ pub(crate) fn try_http_run_result(prompt: &str, opts: &RunOptions) -> Option<Age
                 error = %e,
                 "Kiro HTTP chat failed"
             );
-            None
+            conversation_id.map(|cid| {
+                http_failed_run_result(
+                    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+                    model,
+                    Some(cid),
+                    e.to_string(),
+                )
+            })
         }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn build_chat_body_omits_profile_when_absent() {
-        let body = build_chat_body("hi", "claude-haiku-4.5", "KIRO_CLI", None, None);
-        assert!(body.get("profileArn").is_none());
-        assert_eq!(
-            body.pointer("/conversationState/currentMessage/userInputMessage/origin")
-                .and_then(Value::as_str),
-            Some("KIRO_CLI")
-        );
-        assert_eq!(
-            body.pointer("/conversationState/currentMessage/userInputMessage/modelId")
-                .and_then(Value::as_str),
-            Some("claude-haiku-4.5")
-        );
-    }
-
-    #[test]
-    fn build_chat_body_includes_profile_when_present() {
-        let body = build_chat_body(
-            "hi",
-            "auto",
-            "AI_EDITOR",
-            Some("cid"),
-            Some("arn:aws:codewhisperer:us-east-1:1:profile/X"),
-        );
-        assert_eq!(
-            body.get("profileArn").and_then(Value::as_str),
-            Some("arn:aws:codewhisperer:us-east-1:1:profile/X")
-        );
-        assert_eq!(
-            body.pointer("/conversationState/conversationId")
-                .and_then(Value::as_str),
-            Some("cid")
-        );
-    }
-
-    #[test]
-    fn parse_list_models_reads_default_object_or_string() {
-        let v = json!({
-            "models": [{"modelId": "claude-haiku-4.5"}],
-            "defaultModel": {"modelId": "auto"}
-        });
-        let parsed = parse_list_models_response(&v);
-        assert_eq!(parsed.default_model.as_deref(), Some("auto"));
-        assert_eq!(
-            parsed.models,
-            vec!["auto".to_string(), "claude-haiku-4.5".to_string()]
-        );
-    }
-}
+#[path = "client_tests.rs"]
+mod tests;

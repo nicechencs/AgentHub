@@ -17,11 +17,24 @@
 
 ## [Unreleased]
 
+## [0.4.9] - 2026-09-07
+
+### 新增
+- 发布：国内更新镜像；优先从 `https://updates.agenthub.qooo.io/latest.json` 检查更新，失败再回退 GitHub
+
+### 修复
+- 对话：Kiro 持续聊天握手不再发送对方不支持的 initialized
+- 对话：Kiro 同一会话的后续轮次继续用当前进程，避免卡住或退出
+- 对话：Kiro 已有 HTTP 对话失败时不再改走命令行；旧对话仍走原来的发送方式
+- 对话：停止、允许/拒绝更稳；Kiro 会话不会提前关掉；HTTP 续聊失败后仍保留会话
+- 连接：跳过无效的本机 Kiro 登录；接到本机路由时保留连接池登录参数
+
 ## [0.4.8] - 2026-09-07
 
 ### 新增
+- 对话：Kiro HTTP 多轮可续同一 conversationId（`kiro-http:` 前缀）；CLI `--resume-id` 仍走命令行
 - 对话：Kiro 新对话走持续通道（可点允许/拒绝、停止；生成时不能中途补充，可排队到下一轮）。旧对话可「用新方式继续」
-- 对话：Kiro 在本机登录或 `KIRO_API_KEY` 可用时优先走 AgentHub 自有 HTTP（列模型 + 一轮回复）；失败或续场时仍回退 kiro-cli
+- 对话：Kiro 在本机登录或 `KIRO_API_KEY` 可用时优先走 AgentHub 自有 HTTP（列模型 + 多轮 conversationId）；失败或 CLI 续场 id 时仍回退 kiro-cli
 - 对话：Kiro 可选模型与思考等级（list-models；每轮 --model / --effort）
 - Agents：可管理 Kiro 命令行（检测/安装/登录指引/API Key）。新对话走持续通道；不接编辑器或本机路由
 - 连接：Kiro 可添加授权，并可导入本机 kiro-cli 登录

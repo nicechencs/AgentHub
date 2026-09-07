@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Map, Value};
 use thiserror::Error;
 
+use crate::logging::targets;
 use crate::utils::process::{
     apply_no_window, configure_process_group, join_reader_bounded, kill_process_tree, poll_child,
     reap_child_lossy, ChildPoll, ProcessControl, ReaderJoin,
@@ -111,6 +112,7 @@ pub struct CodexTransport {
     next_id: u64,
     exited: bool,
     shutdown: bool,
+    initialize_result: Option<Value>,
 }
 
 impl CodexTransport {
@@ -127,6 +129,7 @@ impl CodexTransport {
                     "version": env!("CARGO_PKG_VERSION"),
                 }
             }),
+            true,
         )
     }
 
@@ -160,6 +163,7 @@ impl CodexTransport {
                     "fs": { "readTextFile": false, "writeTextFile": false }
                 }
             }),
+            true,
         )
     }
 
@@ -196,6 +200,8 @@ impl CodexTransport {
                     "fs": { "readTextFile": false, "writeTextFile": false }
                 }
             }),
+            // Kiro ACP does not implement the `initialized` notification.
+            false,
         )
     }
 
@@ -204,6 +210,7 @@ impl CodexTransport {
         args: &[String],
         cwd: &Path,
         initialize_params: Value,
+        send_initialized: bool,
     ) -> Result<Self, CodexTransportError> {
         let mut command = std::process::Command::new(program);
         command
@@ -286,10 +293,15 @@ impl CodexTransport {
             next_id: 1,
             exited: false,
             shutdown: false,
+            initialize_result: None,
         };
 
-        transport.request_inner("initialize", initialize_params, HANDSHAKE_TIMEOUT)?;
-        transport.send_notification("initialized", None)?;
+        let initialize_result =
+            transport.request_inner("initialize", initialize_params, HANDSHAKE_TIMEOUT)?;
+        transport.initialize_result = Some(initialize_result);
+        if send_initialized {
+            transport.send_notification("initialized", None)?;
+        }
         Ok(transport)
     }
 
@@ -305,6 +317,44 @@ impl CodexTransport {
         self.request_inner(method, params, timeout)
     }
 
+    /// Restore a session without replaying historical notifications into the
+    /// actor's bounded event queue. ACP session/load replays the old session
+    /// before returning its response; those events are not output for the new
+    /// turn.
+    pub fn request_discarding_history(
+        &mut self,
+        method: &str,
+        params: Value,
+        timeout: Duration,
+    ) -> Result<Value, CodexTransportError> {
+        self.request_inner_with_policy(method, params, timeout, true)
+    }
+
+    /// Send a JSON-RPC notification without allocating a request id or
+    /// waiting for a response. ACP session/cancel is one-way.
+    pub fn notify(
+        &mut self,
+        method: &str,
+        params: Option<Value>,
+    ) -> Result<(), CodexTransportError> {
+        self.send_notification(method, params)
+    }
+
+    pub fn initialize_result(&self) -> Option<&Value> {
+        self.initialize_result.as_ref()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn spawn_test_with(
+        program: &Path,
+        args: &[String],
+        cwd: &Path,
+        initialize_params: Value,
+        send_initialized: bool,
+    ) -> Result<Self, CodexTransportError> {
+        Self::spawn_with(program, args, cwd, initialize_params, send_initialized)
+    }
+
     pub fn begin_request(
         &mut self,
         method: &str,
@@ -318,7 +368,12 @@ impl CodexTransport {
             .next_id
             .checked_add(1)
             .ok_or_else(|| CodexTransportError::Protocol("request id exhausted".into()))?;
-        self.send_value(json!({ "id": id.clone(), "method": method, "params": params }))?;
+        self.send_value(json!({
+            "jsonrpc": "2.0",
+            "id": id.clone(),
+            "method": method,
+            "params": params
+        }))?;
         Ok(id)
     }
 
@@ -365,6 +420,7 @@ impl CodexTransport {
         response: Result<Value, Value>,
     ) -> Result<(), CodexTransportError> {
         let mut message = Map::new();
+        message.insert("jsonrpc".into(), Value::String("2.0".into()));
         message.insert("id".into(), id);
         match response {
             Ok(result) => {
@@ -383,6 +439,10 @@ impl CodexTransport {
     pub fn stderr(&self) -> String {
         let bytes = self.stderr.lock().expect("stderr capture lock poisoned");
         String::from_utf8_lossy(&bytes).into_owned()
+    }
+
+    pub fn is_open(&self) -> bool {
+        !self.exited && !self.shutdown && self.stdin.is_some() && self.child.is_some()
     }
 
     /// Terminate the app-server process tree and reap the process.
@@ -411,6 +471,16 @@ impl CodexTransport {
         params: Value,
         timeout: Duration,
     ) -> TransportResult<Value> {
+        self.request_inner_with_policy(method, params, timeout, false)
+    }
+
+    fn request_inner_with_policy(
+        &mut self,
+        method: &str,
+        params: Value,
+        timeout: Duration,
+        discard_history: bool,
+    ) -> TransportResult<Value> {
         if self.exited || self.shutdown {
             return Err(CodexTransportError::Exited);
         }
@@ -419,7 +489,12 @@ impl CodexTransport {
             .next_id
             .checked_add(1)
             .ok_or_else(|| CodexTransportError::Protocol("request id exhausted".into()))?;
-        self.send_value(json!({ "id": id, "method": method, "params": params }))?;
+        self.send_value(json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+            "params": params
+        }))?;
 
         let deadline = Instant::now() + timeout;
         let mut deferred = VecDeque::new();
@@ -445,10 +520,26 @@ impl CodexTransport {
                 }
                 Some(message @ WireMessage::Response { .. }) => deferred.push_back(message),
                 Some(WireMessage::Notification { method, params }) => {
-                    self.push_event(CodexEvent::Notification { method, params })?;
+                    if !discard_history {
+                        self.push_event(CodexEvent::Notification { method, params })?;
+                    }
                 }
                 Some(WireMessage::Request { id, method, params }) => {
-                    self.push_event(CodexEvent::Request { id, method, params })?;
+                    if discard_history {
+                        let response = if method == "session/request_permission" {
+                            Ok(json!({
+                                "outcome": { "outcome": "cancelled" }
+                            }))
+                        } else {
+                            Err(json!({
+                                "code": -32601,
+                                "message": "server request is not supported during session restore"
+                            }))
+                        };
+                        self.respond(id, response)?;
+                    } else {
+                        self.push_event(CodexEvent::Request { id, method, params })?;
+                    }
                 }
                 Some(WireMessage::Eof) => {
                     self.restore_deferred(deferred)?;
@@ -465,6 +556,7 @@ impl CodexTransport {
 
     fn send_notification(&mut self, method: &str, params: Option<Value>) -> TransportResult<()> {
         let mut message = Map::new();
+        message.insert("jsonrpc".into(), Value::String("2.0".into()));
         message.insert("method".into(), Value::String(method.into()));
         if let Some(params) = params {
             message.insert("params".into(), params);
@@ -472,9 +564,13 @@ impl CodexTransport {
         self.send_value(Value::Object(message))
     }
 
-    fn send_value(&mut self, value: Value) -> TransportResult<()> {
+    fn send_value(&mut self, mut value: Value) -> TransportResult<()> {
         if self.shutdown || self.exited {
             return Err(CodexTransportError::Exited);
+        }
+        if let Value::Object(map) = &mut value {
+            map.entry("jsonrpc")
+                .or_insert_with(|| Value::String("2.0".into()));
         }
         let stdin = self.stdin.as_mut().ok_or(CodexTransportError::Exited)?;
         serde_json::to_writer(&mut *stdin, &value)
@@ -495,7 +591,8 @@ impl CodexTransport {
             match self.wire_rx.recv_timeout(wait) {
                 Ok(event) => match event {
                     WireEvent::Message(value) => match classify_message(value) {
-                        Ok(message) => return Ok(Some(message)),
+                        Ok(Some(message)) => return Ok(Some(message)),
+                        Ok(None) => continue,
                         Err(error) => {
                             self.shutdown();
                             return Err(error);
@@ -524,7 +621,8 @@ impl CodexTransport {
                     self.shutdown();
                     return Err(error);
                 }
-                Ok(message) => match message {
+                Ok(None) => Ok(None),
+                Ok(Some(message)) => match message {
                     WireMessage::Notification { method, params } => {
                         Ok(Some(CodexEvent::Notification { method, params }))
                     }
@@ -602,16 +700,17 @@ impl Drop for CodexTransport {
     }
 }
 
-fn classify_message(value: Value) -> TransportResult<WireMessage> {
-    let object = value.as_object().ok_or_else(|| {
-        CodexTransportError::Protocol("JSON-RPC message must be an object".into())
-    })?;
+fn classify_message(value: Value) -> TransportResult<Option<WireMessage>> {
+    let Some(object) = value.as_object() else {
+        warn_skipped_json(&value);
+        return Ok(None);
+    };
     let has_id = object.contains_key("id");
     let has_method = object.get("method").and_then(Value::as_str).is_some();
     let has_result = object.contains_key("result");
     let has_error = object.contains_key("error");
     if has_id && has_method {
-        return Ok(WireMessage::Request {
+        return Ok(Some(WireMessage::Request {
             id: object.get("id").cloned().expect("id was checked above"),
             method: object
                 .get("method")
@@ -619,7 +718,7 @@ fn classify_message(value: Value) -> TransportResult<WireMessage> {
                 .expect("method was checked above")
                 .into(),
             params: object.get("params").cloned().unwrap_or(Value::Null),
-        });
+        }));
     }
     if has_id && (has_result || has_error) {
         if has_result && has_error {
@@ -627,25 +726,37 @@ fn classify_message(value: Value) -> TransportResult<WireMessage> {
                 "response cannot contain both result and error".into(),
             ));
         }
-        return Ok(WireMessage::Response {
+        return Ok(Some(WireMessage::Response {
             id: object.get("id").cloned().expect("id was checked above"),
             result: object.get("result").cloned(),
             error: object.get("error").cloned(),
-        });
+        }));
     }
     if has_method && !has_id {
-        return Ok(WireMessage::Notification {
+        return Ok(Some(WireMessage::Notification {
             method: object
                 .get("method")
                 .and_then(Value::as_str)
                 .expect("method was checked above")
                 .into(),
             params: object.get("params").cloned().unwrap_or(Value::Null),
-        });
+        }));
     }
-    Err(CodexTransportError::Protocol(
-        "invalid JSON-RPC message shape".into(),
-    ))
+    warn_skipped_json(&value);
+    Ok(None)
+}
+
+fn warn_skipped_json(value: &Value) {
+    let preview: String = crate::utils::redact::redact_text(&value.to_string())
+        .chars()
+        .take(300)
+        .collect();
+    tracing::warn!(
+        module = targets::CHAT,
+        op = "jsonrpc_skip",
+        preview = %preview,
+        "skipped stdout JSON that is not a JSON-RPC request, response, or notification"
+    );
 }
 
 fn read_stdout(stdout: impl Read, tx: SyncSender<WireEvent>, stop: Arc<AtomicBool>) {

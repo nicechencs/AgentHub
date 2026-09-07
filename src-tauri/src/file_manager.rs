@@ -324,6 +324,7 @@ pub(crate) fn codex_app_launch_kind(path: &std::path::Path) -> CodexAppLaunchKin
     }
 }
 
+#[cfg_attr(not(any(test, target_os = "macos")), allow(dead_code))]
 pub(crate) fn macos_codex_app_bundle_names() -> &'static [&'static str] {
     &[
         "ChatGPT.app",

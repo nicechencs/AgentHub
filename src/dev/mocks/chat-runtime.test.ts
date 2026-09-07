@@ -33,6 +33,16 @@ describe('mock chat runtime', () => {
     await expect(chat.runtimeSnapshot(conversation.id)).resolves.toMatchObject({ enabled: false });
   });
 
+  it('rejects upgrading Kiro history without changing its runtime snapshot', async () => {
+    const chat = createMockChatPort();
+    const conversation = await chat.createConversation(['kiro']);
+    const before = await chat.runtimeSnapshot(conversation.id);
+    await expect(chat.runtimeContinueLegacy(conversation.id)).rejects.toThrow(
+      '这条 Kiro 对话不能切换聊天方式，请新建对话',
+    );
+    await expect(chat.runtimeSnapshot(conversation.id)).resolves.toEqual(before);
+  });
+
   it('prefers a warmed catalog during an active turn and stays empty when never fetched', async () => {
     const chat = createMockChatPort();
     const conversation = await chat.createConversation(['codex']);
