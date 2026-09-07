@@ -25,7 +25,7 @@ scope: dest @ 5ee06a4f；对照三份 2026-09-07 全项目 review 的确认问�
 | --- | --- | --- | --- |
 | 1a | P1-004、P2-002 | `fix/review-p1-restore` `71b32e85` | 已关闭 |
 | 1b | P1-003 | `fix/review-p1-backup` `c72f22cd` | 已关闭 |
-| 1c | P1-006、P1-007、P1-008 | `fix/review-p1-bridge-auth` / bridgefix@w16 | 实现中 |
+| 1c | P1-006、P1-007、P1-008 | `fix/review-p1-bridge-auth` `76b6389c` | 已关闭 |
 | 2a | P1-002 | `fix/review-p1-process-idle` | 核实完成，待实现 |
 | 2b | P1-001 | `fix/review-p1-kiro-http-cancel` | 核实完成，待实现 |
 | 2c | P1-005 | `fix/review-p1-sse-trailer` | 核实完成，待实现 |
@@ -88,6 +88,8 @@ scope: dest @ 5ee06a4f；对照三份 2026-09-07 全项目 review 的确认问�
 - 验证：固定少量 worker，多指纹慢刷新时其他请求和停止仍推进。
 
 允许改动：`bridge/host/upstream.rs`、`bridge/host/transport/failover.rs`、`bridge/auth_reload.rs`、`account_service/oauth_owner.rs`、`oauth/providers.rs`（仅当必须把 ureq 移出 async 路径）及对应测试。不要改 SSE 转换。
+
+**关闭**：`76b6389c`。dest 已合入。主 Agent 复跑 drop-after-post、connect failover、late 401、stale 401、blocking reload、singleflight 等测试均通过。`reqwest::Error::is_connect()` 才允许换成员；刷新后把当前 token 交给过期 cell；`spawn_blocking` 包住同步 ureq。
 
 ### 批次 2a — 截断后活动时钟
 

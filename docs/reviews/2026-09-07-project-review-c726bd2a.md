@@ -86,6 +86,8 @@ scope: dev；跨 HEAD 续审，最终目标 c726bd2aa1ff8ea0aaf206c6755f6cdcfbb6
 
 ### AHREV-P1-006：响应头前断连会换成员重放不明状态请求
 
+- **修复状态**：已关闭（`76b6389c`，合入 dest）。
+
 - **位置**：`bridge/host/upstream.rs:211-217,291-319`；`bridge/host/transport/failover.rs:257-270,330-375,575-631`。
 - **触发/行为**：无续接锁定且至少两个成员；成员 A 已读完 POST、响应头前断连。所有 `builder.send()` 错误都变为“可安全换成员”的 `Unavailable`，同一生成请求再发给 B；Chat/Responses 没有跨成员幂等键。
 - **影响/证据**：可能重复生成和计费；不声称工具一定重复执行。代码自身对 header timeout 的“可能已计费、禁止重放”契约构成直接反证。**P1，高置信度**。
@@ -93,12 +95,16 @@ scope: dev；跨 HEAD 续审，最终目标 c726bd2aa1ff8ea0aaf206c6755f6cdcfbb6
 
 ### AHREV-P1-007：跨池晚到的旧 token 401 会隔离已更新登录
 
+- **修复状态**：已关闭（`76b6389c`，合入 dest）。
+
 - **位置**：`bridge/auth_reload.rs:97-140,182-194`；`services/account_service/oauth_owner.rs:95-154,210-225`；`bridge/host/transport/failover.rs:472-503`。
 - **触发/行为**：两个池持有同一登录的独立 token cell。A 已把 T0 更新为 T1；B 稍后仍用 T0 收到 401。B 进入刷新协调器时错过 generation 等待，回调因数据库已是 T1 返回 `None`，B 不采用 T1，随后按指纹跨池隔离该登录。
 - **影响/证据**：有效 T1 也从所有池的后续选择中消失。源码确认；现有 singleflight 测试只覆盖同 cell 重叠刷新。**P1，高置信度**。
 - **最小修复/验证**：即使数据库未再次变化也向调用者返回当前 token，隔离前核对失败请求版本；双 cell 先后 401 测试。
 
 ### AHREV-P1-008：登录刷新同步 I/O 阻塞异步工作线程
+
+- **修复状态**：已关闭（`76b6389c`，合入 dest）。
 
 - **位置**：`bridge/host/transport/failover.rs:472-474`；`bridge/auth_reload.rs:125,182-192`；`services/account_service/oauth_owner.rs:157-174`；`oauth/providers.rs:252-271`。
 - **触发/行为**：多个不同登录同时进行 Hub-owned token 刷新。异步请求线程同步执行最长 30 秒的 `ureq` 调用，没有阻塞执行边界。
