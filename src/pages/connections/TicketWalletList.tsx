@@ -77,6 +77,9 @@ import {
   ticketAddMenuClosesOnKey,
   buildTicketDetailFields,
   buildTicketWalletRows,
+  creditUsagePct,
+  formatCreditAmount,
+  hasCreditWindow,
   hasOfficialQuotaWindow,
   ticketAddActionLabel,
   ticketAuthChip,
@@ -202,7 +205,9 @@ export function TicketDetailPanel({
   // 5h is official-only. Missing quota5hPct hides the bar; never copy 7d into 5h.
   const has7d = hasOfficialQuotaWindow(extras?.quota7dPct);
   const has5h = hasOfficialQuotaWindow(extras?.quota5hPct);
-  const hasQuota = has7d || has5h;
+  const hasCredits = hasCreditWindow(extras);
+  const creditPct = creditUsagePct(extras?.creditUsed, extras?.creditLimit);
+  const hasQuota = has7d || has5h || hasCredits;
   const tokenUsage = !hasQuota ? ticketWalletTokenUsageText(extras, t) : null;
   const isSyncLogin = extras?.oauthAction?.kind === 'sync-current-login';
   const refreshLabel = isSyncLogin
@@ -435,6 +440,21 @@ function TicketDetailBody({
                 resetIn={extras?.quotaResetIn}
               />
             ) : null}
+            {hasCredits ? (
+              <QuotaBar
+                label={t('connections.list.credits')}
+                pct={creditPct}
+                resetIn={extras?.creditResetIn}
+              />
+            ) : null}
+            {hasCredits && extras?.creditLimit != null ? (
+              <p className="text-meta text-secondary tabular-nums">
+                {t('connections.list.creditsUsage', {
+                  used: formatCreditAmount(extras.creditUsed ?? 0),
+                  limit: formatCreditAmount(extras.creditLimit),
+                })}
+              </p>
+            ) : null}
             {tokenUsage ? (
               <p className="text-meta text-secondary">{tokenUsage}</p>
             ) : null}
@@ -592,7 +612,9 @@ function TicketRow({
   const lastUsed = formatDetailTimestamp(extras?.tokenLastUsedAt ?? extras?.lastUsedAt);
   const has7d = hasOfficialQuotaWindow(extras?.quota7dPct);
   const has5h = hasOfficialQuotaWindow(extras?.quota5hPct);
-  const tokenUsage = !has7d && !has5h ? ticketWalletTokenUsageText(extras, t) : null;
+  const hasCredits = hasCreditWindow(extras);
+  const creditPct = creditUsagePct(extras?.creditUsed, extras?.creditLimit);
+  const tokenUsage = !has7d && !has5h && !hasCredits ? ticketWalletTokenUsageText(extras, t) : null;
   const kind = credentialKindFromClass(ticket.credentialClass);
 
   return (
@@ -658,8 +680,11 @@ function TicketRow({
         )}
       </TableCell>
       <TableCell data-col="usage" className="min-w-0">
-        {has7d || has5h ? (
+        {has7d || has5h || hasCredits ? (
           <div className="flex min-w-0 flex-col gap-1">
+            {hasCredits ? (
+              <QuotaBar label={t('connections.list.credits')} pct={creditPct} compact />
+            ) : null}
             {has7d ? <QuotaBar label="7d" pct={extras?.quota7dPct} compact /> : null}
             {has5h ? <QuotaBar label="5h" pct={extras?.quota5hPct} compact /> : null}
           </div>

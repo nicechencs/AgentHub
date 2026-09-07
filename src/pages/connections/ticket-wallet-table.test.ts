@@ -60,6 +60,9 @@ describe('ticket wallet table columns', () => {
     );
     expect(ticketWalletQuotaParts(null)).toEqual([]);
     expect(ticketWalletQuotaParts({ quota7dPct: 22 })).toEqual(['7d 22%']);
+    expect(ticketWalletQuotaParts({ creditUsed: 0.29, creditLimit: 50 })).toEqual([
+      '积分 0.29 / 50',
+    ]);
     expect(ticketWalletQuotaParts({ quota7dPct: 89, quota5hPct: 12 })).toEqual([
       '7d 89%',
       '5h 12%',

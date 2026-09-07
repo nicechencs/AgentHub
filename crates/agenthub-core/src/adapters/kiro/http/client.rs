@@ -3,6 +3,7 @@
 //! Verified Builder ID path (2026-09):
 //! - host: `https://q.{region}.amazonaws.com/`
 //! - list: `AmazonCodeWhispererService.ListAvailableModels`
+//! - usage: `AmazonCodeWhispererService.GetUsageLimits` (credits)
 //! - chat: `AmazonCodeWhispererStreamingService.GenerateAssistantResponse`
 //! - `runtime.{region}.kiro.dev` requires `profileArn` (enterprise / deferred)
 
@@ -20,6 +21,7 @@ use super::creds::{load_kiro_http_creds, persist_refreshed_token, KiroAuthKind, 
 use super::eventstream::collect_assistant_text;
 
 const LIST_TARGET: &str = "AmazonCodeWhispererService.ListAvailableModels";
+const USAGE_TARGET: &str = "AmazonCodeWhispererService.GetUsageLimits";
 const CHAT_TARGET: &str = "AmazonCodeWhispererStreamingService.GenerateAssistantResponse";
 const USER_AGENT: &str =
     "aws-sdk-js/1.0.27 ua/2.1 os/linux lang/js md/nodejs#22.0.0 api/codewhispererstreaming#1.0.27 m/E AgentHub-KiroHTTP";
@@ -223,6 +225,39 @@ fn read_body(resp: ureq::Response) -> Result<Vec<u8>> {
 
 fn map_ureq(code: &'static str) -> impl Fn(ureq::Error) -> AppError {
     move |e| AppError::message(code, redact_text(&e.to_string()))
+}
+
+/// Official credit window. Empty JSON body is the verified Builder ID request.
+pub(crate) fn get_usage_limits(access_token: &str, region: &str) -> Result<Value> {
+    let region = region.trim();
+    let region = if region.is_empty() {
+        "us-east-1"
+    } else {
+        region
+    };
+    let creds = KiroHttpCreds {
+        auth_kind: KiroAuthKind::Oidc,
+        access_token: access_token.trim().to_string(),
+        refresh_token: None,
+        expires_at: None,
+        region: region.to_string(),
+        profile_arn: None,
+        client_id: None,
+        client_secret: None,
+        origin: "KIRO_CLI".into(),
+        sqlite_token_key: None,
+        source: "account".into(),
+    };
+    if creds.access_token.is_empty() {
+        return Err(AppError::message("kiro.http.usage", "missing access token"));
+    }
+    let raw = post_amz(&creds, USAGE_TARGET, &json!({}))?;
+    serde_json::from_slice(&raw).map_err(|e| {
+        AppError::message(
+            "kiro.http.usage",
+            redact_text(&format!("invalid JSON: {e}")),
+        )
+    })
 }
 
 /// List models via HTTP. Fail-closed (no static catalog).

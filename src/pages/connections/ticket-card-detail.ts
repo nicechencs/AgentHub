@@ -49,6 +49,25 @@ const REFRESH_TIP_FALLBACK = '查看这份登录的用量。';
 const SYNC_CURRENT_LOGIN_TIP_FALLBACK =
   '不是刷新列表。会把本机正在用的官方登录写进来，并查看用量。';
 
+function remainingSecFromIso(raw: string): number | undefined {
+  const ms = Date.parse(raw);
+  if (!Number.isFinite(ms)) return undefined;
+  return Math.floor((ms - Date.now()) / 1000);
+}
+
+function formatResetCountdown(sec: number): string {
+  if (sec <= 0) return '即将重置';
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (h >= 24) {
+    const d = Math.floor(h / 24);
+    const rh = h % 24;
+    return `${d}d${rh}h 后重置`;
+  }
+  if (h === 0) return `${m}m 后重置`;
+  return `${h}h${String(m).padStart(2, '0')}m 后重置`;
+}
+
 export function localizeQuotaResetIn(raw: string | undefined, t?: TranslateFn): string | undefined {
   if (!raw) return undefined;
   if (!t) return raw;
@@ -106,6 +125,9 @@ export interface TicketDetailExtras {
   quota7dPct?: number;
   quotaResetIn?: string;
   quota7dResetIn?: string;
+  creditUsed?: number;
+  creditLimit?: number;
+  creditResetIn?: string;
   /** Sidecar token totals for this login (not dashboard usage). */
   tokenInput?: number;
   tokenOutput?: number;
@@ -133,11 +155,32 @@ export interface TicketDetailExtras {
 }
 
 /** Opened OAuth details with no 5h/7d percent yet — fetch quota once. */
+export function hasCreditWindow(
+  extras?: Pick<TicketDetailExtras, 'creditUsed' | 'creditLimit'> | null,
+): boolean {
+  return typeof extras?.creditLimit === 'number' && Number.isFinite(extras.creditLimit);
+}
+
 export function officialDetailQuotaNeedsProbe(
-  extras?: Pick<TicketDetailExtras, 'oauthAction' | 'quota5hPct' | 'quota7dPct'> | null,
+  extras?: Pick<TicketDetailExtras, 'oauthAction' | 'quota5hPct' | 'quota7dPct' | 'creditLimit'> | null,
 ): boolean {
   if (!extras?.oauthAction) return false;
+  if (hasCreditWindow(extras)) return false;
   return !hasOfficialQuotaWindow(extras.quota7dPct) && !hasOfficialQuotaWindow(extras.quota5hPct);
+}
+
+export function creditUsagePct(used?: number, limit?: number): number | undefined {
+  if (typeof used !== 'number' || typeof limit !== 'number' || !Number.isFinite(used) || !Number.isFinite(limit) || limit <= 0) {
+    return undefined;
+  }
+  return Math.min(100, Math.max(0, Math.round((used / limit) * 100)));
+}
+
+export function formatCreditAmount(n: number): string {
+  if (!Number.isFinite(n)) return '0';
+  const rounded = Math.round(n);
+  if (Math.abs(n - rounded) < 0.005) return String(rounded);
+  return n.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
 }
 
 export interface TicketDetailField {
@@ -501,6 +544,16 @@ export function extrasFromPoolSource(
     extras.quota7dPct = source.account.quota7dPct;
     extras.quotaResetIn = localizeQuotaResetIn(source.account.quotaResetIn, t);
     extras.quota7dResetIn = localizeQuotaResetIn(source.account.quota7dResetIn, t);
+    extras.creditUsed = source.account.creditUsed;
+    extras.creditLimit = source.account.creditLimit;
+    if (source.account.creditResetAt) {
+      const rem = remainingSecFromIso(source.account.creditResetAt);
+      extras.creditResetIn = rem === undefined
+        ? undefined
+        : rem <= 0
+          ? (t ? t('connections.list.quotaResetSoon') : '即将重置')
+          : localizeQuotaResetIn(formatResetCountdown(rem), t);
+    }
     const endpoint = accountEndpointExtras(source.account);
     extras.endpointMode = endpoint.endpointMode;
     extras.endpointHost = endpoint.endpointHost;

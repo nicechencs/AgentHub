@@ -321,6 +321,26 @@ describe('mapCoreAccount', () => {
     expect(mapped.quota7dPct).toBe(30);
   });
 
+  it('maps Kiro official credit windows without treating them as 7d', () => {
+    const mapped = mapCoreAccount(
+      core({
+        id: 'kiro-1',
+        agentId: 'kiro',
+        label: 'nice@x.com',
+        extra: {
+          creditUsed: 0.29,
+          creditLimit: 50,
+          creditResetAt: '2026-10-01T00:00:00Z',
+          subscription: 'KIRO FREE',
+        },
+      }),
+    );
+    expect(mapped.creditUsed).toBe(0.29);
+    expect(mapped.creditLimit).toBe(50);
+    expect(mapped.creditResetAt).toBe('2026-10-01T00:00:00Z');
+    expect(mapped.quota7dPct).toBeUndefined();
+  });
+
   it('upgrades grok-oauth title when email is in extra', () => {
     const mapped = mapCoreAccount(
       core({

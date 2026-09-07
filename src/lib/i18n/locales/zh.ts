@@ -2173,6 +2173,8 @@ export const zh = {
       ticketId: "记录 ID",
       routeNative: "直连",
       usage: "用量",
+      credits: "积分",
+      creditsUsage: "{used} / {limit} 积分",
       more: "更多",
       refreshToken: "续期凭证",
       moveToTrash: "移入回收站",

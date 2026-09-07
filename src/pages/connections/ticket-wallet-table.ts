@@ -5,6 +5,8 @@ import type { ColumnWidthSpec } from '@/components/ui/table';
 import type { TranslateFn } from '@/lib/i18n';
 import { fmtTokens } from '@/lib/utils';
 import {
+  formatCreditAmount,
+  hasCreditWindow,
   hasOfficialQuotaWindow,
   type TicketDetailExtras,
 } from './ticket-card-detail';
@@ -52,9 +54,20 @@ export function ticketWalletColumnLabel(
 
 /** Compact 7d / 5h percents for the connections table. Empty when unknown. */
 export function ticketWalletQuotaParts(
-  extras?: Pick<TicketDetailExtras, 'quota5hPct' | 'quota7dPct'> | null,
+  extras?: Pick<TicketDetailExtras, 'quota5hPct' | 'quota7dPct' | 'creditUsed' | 'creditLimit'> | null,
+  t?: TranslateFn,
 ): string[] {
   const parts: string[] = [];
+  if (hasCreditWindow(extras) && extras?.creditLimit != null) {
+    const used = formatCreditAmount(extras.creditUsed ?? 0);
+    const limit = formatCreditAmount(extras.creditLimit);
+    parts.push(
+      t
+        ? t('connections.list.creditsUsage', { used, limit })
+        : `积分 ${used} / ${limit}`,
+    );
+    return parts;
+  }
   const pct7d = extras?.quota7dPct;
   const pct5h = extras?.quota5hPct;
   if (hasOfficialQuotaWindow(pct7d)) parts.push(`7d ${pct7d}%`);
@@ -81,11 +94,11 @@ export function ticketWalletTokenUsageText(
 export function ticketWalletUsageParts(
   extras?: Pick<
     TicketDetailExtras,
-    'quota5hPct' | 'quota7dPct' | 'tokenInput' | 'tokenOutput'
+    'quota5hPct' | 'quota7dPct' | 'creditUsed' | 'creditLimit' | 'tokenInput' | 'tokenOutput'
   > | null,
   t?: TranslateFn,
 ): string[] {
-  const quota = ticketWalletQuotaParts(extras);
+  const quota = ticketWalletQuotaParts(extras, t);
   if (quota.length > 0) return quota;
   const tokens = ticketWalletTokenUsageText(extras, t);
   return tokens ? [tokens] : [];

@@ -13,5 +13,6 @@ mod eventstream;
 mod tests;
 
 pub(crate) use client::{
-    chat_turn_http, chat_turn_with_access_token, list_models_http, try_http_run_result,
+    chat_turn_http, chat_turn_with_access_token, get_usage_limits, list_models_http,
+    try_http_run_result,
 };
