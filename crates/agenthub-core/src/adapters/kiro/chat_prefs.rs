@@ -96,6 +96,12 @@ pub(crate) fn parse_kiro_list_models_json(stdout: &str) -> (Option<String>, Vec<
 }
 
 fn list_kiro_cli_models() -> (Option<String>, Vec<String>) {
+    // Prefer AgentHub-owned HTTP list when creds work; CLI remains fallback.
+    if let Ok(listed) = super::http::list_models_http() {
+        if !listed.models.is_empty() {
+            return (listed.default_model, listed.models);
+        }
+    }
     let Some(bin) = detect_installation().binary_path else {
         return (None, Vec::new());
     };

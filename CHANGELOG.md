@@ -18,6 +18,7 @@
 ## [Unreleased]
 
 ### 新增
+- 对话：Kiro 在本机登录或 `KIRO_API_KEY` 可用时优先走 AgentHub 自有 HTTP（列模型 + 一轮回复）；失败或续场时仍回退 kiro-cli
 - 对话：Kiro 可选模型与思考等级（list-models；每轮 --model / --effort）
 - Agents：可管理 Kiro 命令行（检测/安装/登录指引/API Key；可 headless 发一轮）。不接编辑器、持续聊或本机路由
 - 对话：Kiro 一轮一发（可选模型/思考等级）；不能中途补充或点允许/拒绝；自动批准对应跳过工具确认
