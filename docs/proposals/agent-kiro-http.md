@@ -9,13 +9,28 @@ audience: contributor
 
 # Kiro HTTP / 本机转发
 
-> 提案，不是现行实现契约。现行行为见 [STATUS](../STATUS.md)。已落地：列模型可走 HTTP；Chat 打印路径 HTTP 多轮经 `kiro-http:<conversationId>` 续场；Kiro 登录可经本机路由接到 Claude / Codex / Grok。
+> 提案，不是现行实现契约。YAML 保持 `status: proposed`（STYLE 要求提案必须 proposed）。若干切片已落地，**不要把本页当成未开工**。现行行为见 [STATUS](../STATUS.md)。
 
 接线纪律见 [添加 Agent](../guides/adding-an-agent.md)、[Connections 与路由](../concepts/connections-and-routing.md)、[产品边界](../decisions/product-boundaries.md)。用户文案用 **登录 / 本机路由 / 直连**，不写票、桥、PKCE。
 
+## 进度（已落地 / 剩余边界）
+
+对照 [STATUS](../STATUS.md)。本表只防止把提案当成未开工，不是现行契约。
+
+| 状态 | 内容 |
+| --- | --- |
+| **已落地** | 列模型可走 HTTP |
+| **已落地** | Chat 打印路径 HTTP 多轮，经 `kiro-http:<conversationId>` 续场；已有 HTTP 会话失败不回退 CLI |
+| **已落地** | Kiro 登录经本机路由接到 Claude / Codex / Grok |
+| **已落地** | 检测 / 安装 / 登录、ACP 新对话见 [CLI 半面](agent-kiro.md) |
+| **剩余边界** | 企业 IdC / `profileArn` 实机验收（带上参数 ≠ 已验收） |
+| **剩余边界** | 上游逐块实时转发（当前先收齐回复再编码输出） |
+| **剩余边界** | 官方 REST（不宣称、不接入） |
+| **历史约束（不是现行待办）** | CLI 早期方案里的「一轮一发」「不接持续通道」「本机路由后置」——见 [agent-kiro.md](agent-kiro.md) §3 |
+
 ## Goal
 
-用用户自己的 Kiro 登录（或 `KIRO_API_KEY`）经 HTTP 列出模型并对话，使 Chat / 兼容客户端不必只靠每次拉起 `kiro-cli`；同一上游可接到本机路由。仅未开始的 HTTP 新会话可回退 CLI；已有 HTTP 会话失败时保留会话并报错，不能静默换成新对话。
+候选目标（切片已部分落地）：用用户自己的 Kiro 登录（或 `KIRO_API_KEY`）经 HTTP 列出模型并对话，使 Chat / 兼容客户端不必只靠每次拉起 `kiro-cli`；同一上游可接到本机路由。仅未开始的 HTTP 新会话可回退 CLI；已有 HTTP 会话失败时保留会话并报错，不能静默换成新对话。已接线部分与剩余边界见进度表。
 
 ## Facts（社区与公开材料；≠ 本仓库已验证）
 
@@ -34,13 +49,13 @@ audience: contributor
 
 1. **嵌入 core**（不外挂第三方网关二进制）。
 2. **Chat 与本机路由均已接入**；协议输出与真实上游逐块转发分别验收。
-3. **Builder ID + `ksk_` API Key 先**；企业 IdC / `profileArn` / `runtime.*.kiro.dev` 后置。
+3. **Builder ID + `ksk_` API Key 先**；企业 IdC / `profileArn` / `runtime.*.kiro.dev` 仍是**剩余边界**（带上参数 ≠ 已验收）。
 4. **当前双轨：** 新交互对话走 ACP；旧打印路径保留 HTTP / CLI。HTTP 新会话失败可回退 CLI，已有 HTTP 会话失败不回退；CLI 会话按原 `--resume-id` 继续。
 
-## First slice（工作区）
+## First slice（工作区；模块已落地）
 
-- 模块：`crates/agenthub-core/src/adapters/kiro/http/`（creds / client / eventstream）。
-- 本机核实（Builder ID / OIDC DeviceCode）：`q.{region}.amazonaws.com` 上 ListAvailableModels + GenerateAssistantResponse；OIDC refresh 写回 sqlite。
+- 模块：`crates/agenthub-core/src/adapters/kiro/http/`（creds / client / eventstream）已在工作区。
+- 本机核实（Builder ID / OIDC DeviceCode）：`q.{region}.amazonaws.com` 上 ListAvailableModels + GenerateAssistantResponse；OIDC refresh 写回 sqlite。企业 IdC 不在本切片验收范围内。
 - 不宣称官方 REST；不打包社区网关。
 
 
