@@ -108,6 +108,28 @@ fn applescript_terminal_do_script_uses_quoted_form() {
 }
 
 #[test]
+fn macos_info_plist_explains_apple_events() {
+    let info = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/Info.plist"));
+    assert!(info.contains("<key>NSAppleEventsUsageDescription</key>"));
+    assert!(info.contains("终端"));
+    assert!(info.contains("Node.js"));
+}
+
+#[test]
+fn macos_entitlements_allow_apple_events_without_sandbox() {
+    let entitlements = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/Entitlements.plist"));
+    assert!(entitlements.contains("com.apple.security.automation.apple-events"));
+    assert!(!entitlements.contains("com.apple.security.app-sandbox"));
+}
+
+#[test]
+fn macos_tauri_conf_points_at_entitlements() {
+    let conf = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tauri.conf.json"));
+    assert!(conf.contains("\"entitlements\""));
+    assert!(conf.contains("Entitlements.plist"));
+}
+
+#[test]
 fn looks_like_codex_bundled_cli_skips_gui_and_matches_hashed_bin() {
     assert!(looks_like_codex_bundled_cli(std::path::Path::new(
         r"C:\Users\demo\AppData\Local\OpenAI\Codex\bin\b99306303521e97e\codex.exe",
