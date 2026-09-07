@@ -1943,10 +1943,22 @@ fn claude_excerpt_skips_user_wrapped_tool_results_and_local_commands() {
         rows[0].title
     );
     let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
-    assert!(ex.excerpt.contains("帮我更新 adapter 页面"), "excerpt={}", ex.excerpt);
+    assert!(
+        ex.excerpt.contains("帮我更新 adapter 页面"),
+        "excerpt={}",
+        ex.excerpt
+    );
     assert!(ex.excerpt.contains("先改列表。"), "excerpt={}", ex.excerpt);
-    assert!(!ex.excerpt.contains("Code Context"), "excerpt={}", ex.excerpt);
-    assert!(!ex.excerpt.contains("local-command"), "excerpt={}", ex.excerpt);
+    assert!(
+        !ex.excerpt.contains("Code Context"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        !ex.excerpt.contains("local-command"),
+        "excerpt={}",
+        ex.excerpt
+    );
     assert!(!ex.excerpt.contains("/model"), "excerpt={}", ex.excerpt);
 }
 
@@ -1983,9 +1995,21 @@ fn kimi_excerpt_strips_git_context_from_user_turn() {
     let rows = list_sessions_for_agent_home(AgentId::Kimi, &home, None).unwrap();
     assert_eq!(rows.len(), 1);
     let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
-    assert!(ex.excerpt.contains("Explore the adapter page."), "excerpt={}", ex.excerpt);
-    assert!(!ex.excerpt.contains("git-context"), "excerpt={}", ex.excerpt);
-    assert!(!ex.excerpt.contains("Working directory"), "excerpt={}", ex.excerpt);
+    assert!(
+        ex.excerpt.contains("Explore the adapter page."),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        !ex.excerpt.contains("git-context"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        !ex.excerpt.contains("Working directory"),
+        "excerpt={}",
+        ex.excerpt
+    );
 }
 
 #[test]
@@ -2017,7 +2041,11 @@ fn workbuddy_excerpt_unwraps_user_query_inside_attributed_reminder() {
     let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
     assert!(ex.excerpt.contains("你会干啥呢"), "excerpt={}", ex.excerpt);
     assert!(!ex.excerpt.contains("user_info"), "excerpt={}", ex.excerpt);
-    assert!(!ex.excerpt.contains("system-reminder"), "excerpt={}", ex.excerpt);
+    assert!(
+        !ex.excerpt.contains("system-reminder"),
+        "excerpt={}",
+        ex.excerpt
+    );
 }
 
 #[test]
@@ -2043,8 +2071,16 @@ fn cursor_excerpt_skips_synthetic_followup_prompt() {
     let rows = list_sessions_for_agent_home(AgentId::Cursor, &home, None).unwrap();
     assert_eq!(rows.len(), 1);
     let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
-    assert!(ex.excerpt.contains("帮我改路由页"), "excerpt={}", ex.excerpt);
-    assert!(ex.excerpt.contains("先看现有路由。"), "excerpt={}", ex.excerpt);
+    assert!(
+        ex.excerpt.contains("帮我改路由页"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        ex.excerpt.contains("先看现有路由。"),
+        "excerpt={}",
+        ex.excerpt
+    );
     assert!(
         !ex.excerpt.contains("Briefly inform the user"),
         "excerpt={}",
@@ -2143,13 +2179,21 @@ fn codex_excerpt_keeps_question_and_convention_without_injected_blocks() {
         "excerpt={}",
         ex.excerpt
     );
-    assert!(ex.excerpt.contains("日常合入 dev"), "excerpt={}", ex.excerpt);
+    assert!(
+        ex.excerpt.contains("日常合入 dev"),
+        "excerpt={}",
+        ex.excerpt
+    );
     assert!(
         ex.excerpt.contains("帮我看看当前界面"),
         "excerpt={}",
         ex.excerpt
     );
-    assert!(ex.excerpt.contains("先看连接页。"), "excerpt={}", ex.excerpt);
+    assert!(
+        ex.excerpt.contains("先看连接页。"),
+        "excerpt={}",
+        ex.excerpt
+    );
     assert!(
         ex.excerpt.contains("---ts:2026-09-05T12:00:00.000Z---"),
         "excerpt={}",
@@ -2208,8 +2252,16 @@ fn codex_review_session_is_marked_and_drops_transcript_dump() {
         "excerpt={}",
         ex.excerpt
     );
-    assert!(ex.excerpt.contains("\"outcome\":\"allow\""), "excerpt={}", ex.excerpt);
-    assert!(ex.excerpt.contains("---doc:convention---"), "excerpt={}", ex.excerpt);
+    assert!(
+        ex.excerpt.contains("\"outcome\":\"allow\""),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        ex.excerpt.contains("---doc:convention---"),
+        "excerpt={}",
+        ex.excerpt
+    );
 }
 
 #[test]

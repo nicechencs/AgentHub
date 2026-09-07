@@ -18,8 +18,8 @@ fn reads_markdown_under_cwd() {
     let dir = real_tempdir();
     let file = dir.path().join("README.md");
     fs::write(&file, "# Hello\n").unwrap();
-    let preview = read_markdown_file_preview(file.to_str().unwrap(), dir.path().to_str().unwrap())
-        .unwrap();
+    let preview =
+        read_markdown_file_preview(file.to_str().unwrap(), dir.path().to_str().unwrap()).unwrap();
     assert_eq!(preview.name, "README.md");
     assert_eq!(preview.content, "# Hello\n");
     assert!(!preview.truncated);
@@ -63,8 +63,8 @@ fn truncates_large_body() {
     let mut body = String::from("# big\n");
     body.push_str(&"x".repeat(SKILL_MARKDOWN_PREVIEW_CHARS + 64));
     fs::write(&file, &body).unwrap();
-    let preview = read_markdown_file_preview(file.to_str().unwrap(), dir.path().to_str().unwrap())
-        .unwrap();
+    let preview =
+        read_markdown_file_preview(file.to_str().unwrap(), dir.path().to_str().unwrap()).unwrap();
     assert!(preview.truncated);
     assert!(preview.content.chars().count() <= SKILL_MARKDOWN_PREVIEW_CHARS);
 }
@@ -74,8 +74,8 @@ fn returns_path_without_verbatim_prefix() {
     let dir = real_tempdir();
     let file = dir.path().join("README.md");
     fs::write(&file, "ok").unwrap();
-    let preview = read_markdown_file_preview(file.to_str().unwrap(), dir.path().to_str().unwrap())
-        .unwrap();
+    let preview =
+        read_markdown_file_preview(file.to_str().unwrap(), dir.path().to_str().unwrap()).unwrap();
     let shown = preview.path.to_string_lossy();
     assert!(
         !shown.starts_with(r"\\?\"),

@@ -89,16 +89,9 @@ fn api_key_creds_surface_tokentype() {
 #[ignore = "live network + Builder ID login on this machine"]
 fn live_list_models_and_chat_turn() {
     let listed = super::list_models_http().expect("list_models_http");
-    assert!(
-        !listed.models.is_empty(),
-        "expected models from Kiro HTTP"
-    );
-    let turn = super::chat_turn_http(
-        "Reply with exactly: pong",
-        Some("claude-haiku-4.5"),
-        None,
-    )
-    .expect("chat_turn_http");
+    assert!(!listed.models.is_empty(), "expected models from Kiro HTTP");
+    let turn = super::chat_turn_http("Reply with exactly: pong", Some("claude-haiku-4.5"), None)
+        .expect("chat_turn_http");
     assert!(
         turn.text.to_ascii_lowercase().contains("pong"),
         "unexpected text: {}",

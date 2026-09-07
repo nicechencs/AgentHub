@@ -896,8 +896,11 @@ fn is_already_latest_upgrade(res: &ExecResult) -> bool {
     if res.exit_code == Some(WINGET_NO_APPLICABLE_UPGRADE) {
         return true;
     }
-    let blob = format!("{}
-{}", res.stdout, res.stderr);
+    let blob = format!(
+        "{}
+{}",
+        res.stdout, res.stderr
+    );
     let lower = blob.to_ascii_lowercase();
     lower.contains("no applicable upgrade")
         || lower.contains("no newer package versions are available")

@@ -712,15 +712,8 @@ fn looks_like_stream_protocol(text: &str) -> bool {
     };
     match value.get("type").and_then(|t| t.as_str()) {
         Some(
-            "session"
-            | "agent_start"
-            | "turn_start"
-            | "message_start"
-            | "message_update"
-            | "message_end"
-            | "agent_end"
-            | "turn_end"
-            | "agent_settled",
+            "session" | "agent_start" | "turn_start" | "message_start" | "message_update"
+            | "message_end" | "agent_end" | "turn_end" | "agent_settled",
         ) => true,
         _ => value.get("jsonrpc").is_some() && value.get("method").is_some(),
     }

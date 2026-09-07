@@ -155,13 +155,8 @@ fn parse_one_file(
 
     let mut offset = 0i64;
     if let Some(cur) = repo.get_cursor(&path_s)? {
-        offset = jsonl_cursor::resume_offset(
-            cur.byte_offset,
-            cur.file_mtime,
-            cur.file_size,
-            mtime,
-            len,
-        );
+        offset =
+            jsonl_cursor::resume_offset(cur.byte_offset, cur.file_mtime, cur.file_size, mtime, len);
     }
 
     let session_id = crate::usage::session_jsonl::session_id_from_path(path);
