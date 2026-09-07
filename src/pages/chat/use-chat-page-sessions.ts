@@ -19,7 +19,7 @@ import {
   listConversations,
   updateConversation,
 } from '@/lib/api/chat';
-import { takeChatBootstrap } from '@/lib/chat-bootstrap';
+import { setChatBootstrap, takeChatBootstrap } from '@/lib/chat-bootstrap';
 import type { AgentKey, AgentStatus, ChatMessage, Conversation } from '@/lib/types';
 import { draftForFocusedConversation, isChatAgentSelectable, newConversationDefaults, singleAgentConversationPatch } from './chat-model';
 import { conversationListState, createSingleFlight } from './chat-request';
@@ -68,8 +68,6 @@ export function useChatPageSessions(input: {
     null,
   );
   const loadGenerationRef = useRef(0);
-  /** Projects 页跳转：bootstrap 只处理一次 */
-  const bootstrapDoneRef = useRef(false);
   /** Multi-agent → single-agent one-shot migration runs once per load generation. */
   const migratedGenerationRef = useRef(-1);
 
@@ -200,49 +198,6 @@ export function useChatPageSessions(input: {
           if (cancelled || generation !== loadGenerationRef.current) return;
           if (migrated !== committed.conversations) setConversations(migrated);
         });
-        // Projects → Chat：新建会话并预填（可选自动发送）提示
-        const fromProjects = searchParams.get('from') === 'projects';
-        if (fromProjects && !bootstrapDoneRef.current) {
-          bootstrapDoneRef.current = true;
-          const boot = takeChatBootstrap();
-          // 清掉 query，避免刷新重复创建
-          setSearchParams({}, { replace: true });
-          if (boot) {
-            try {
-              const created = await createConversation(
-                boot.agentIds.slice(0, 1),
-                boot.cwd ?? null,
-              );
-              let next = created;
-              if (boot.title) {
-                try {
-                  next = await updateConversation(created.id, { title: boot.title });
-                } catch {
-                  /* title 可选 */
-                }
-              }
-              if (cancelled || generation !== loadGenerationRef.current) return;
-              setConversations((prev) => [next, ...prev.filter((c) => c.id !== next.id)]);
-              setActiveId(next.id);
-              setMessages([]);
-              if (boot.prompt?.trim()) {
-                setDraft(boot.prompt);
-                toast({
-                  title: t('chat.toast.fromProjects'),
-                  description: t('chat.toast.fromProjectsDesc'),
-                  variant: 'success',
-                });
-              }
-              return;
-            } catch (e) {
-              if (cancelled || generation !== loadGenerationRef.current) return;
-              toast({
-                title: e instanceof Error ? e.message : String(e),
-                variant: 'danger',
-              });
-            }
-          }
-        }
         if (cancelled || generation !== loadGenerationRef.current) return;
       })
       .catch((e) => {
@@ -254,8 +209,76 @@ export function useChatPageSessions(input: {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- bootstrap once on mount/list load
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- list load once per loader identity
   }, [loadList]);
+
+  useEffect(() => {
+    const from = searchParams.get('from');
+    if (from !== 'projects' && from !== 'shell') return;
+    const boot = takeChatBootstrap();
+    if (!boot) {
+      setSearchParams({}, { replace: true });
+      return;
+    }
+    let cancelled = false;
+    let applied = false;
+    void (async () => {
+      try {
+        let ids = boot.agentIds.filter(Boolean).slice(0, 1);
+        if (ids.length === 0) {
+          const agents = await refreshAgents().catch(() => agentStatus);
+          if (cancelled) return;
+          ids = defaultAgents(agents);
+        }
+        if (cancelled) return;
+        if (ids.length === 0) {
+          toast({ title: t('chat.rail.newChatDisabled'), variant: 'danger' });
+          setSearchParams({}, { replace: true });
+          applied = true;
+          return;
+        }
+        if (activeId) draftsRef.current.set(activeId, draft);
+        const created = await createConversation(ids, boot.cwd ?? null);
+        let next = created;
+        if (boot.title) {
+          try {
+            next = await updateConversation(created.id, { title: boot.title });
+          } catch {
+            /* title 可选 */
+          }
+        }
+        if (cancelled) return;
+        setConversations((prev) => [next, ...prev.filter((c) => c.id !== next.id)]);
+        setActiveId(next.id);
+        setMessages([]);
+        if (boot.prompt?.trim()) {
+          setDraft(boot.prompt);
+          toast({
+            title: t('chat.toast.fromProjects'),
+            description: t('chat.toast.fromProjectsDesc'),
+            variant: 'success',
+          });
+        } else {
+          setDraft('');
+        }
+        setSearchParams({}, { replace: true });
+        applied = true;
+      } catch (e) {
+        if (cancelled) return;
+        toast({
+          title: e instanceof Error ? e.message : String(e),
+          variant: 'danger',
+        });
+        setSearchParams({}, { replace: true });
+        applied = true;
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (!applied) setChatBootstrap(boot);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot when from= is set
+  }, [searchParams]);
 
   async function handleNewChat() {
     let status = agentStatus;

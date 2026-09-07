@@ -6,6 +6,7 @@ mod adapter_control_host;
 mod commands;
 mod exit_coordinator;
 mod file_manager;
+mod shell_open_chat;
 mod skill_watch;
 mod state;
 mod tray;
@@ -24,8 +25,9 @@ pub fn run() {
 
     tauri::Builder::default()
         // Must be first so a second process exits before other plugins init.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             tray::show_main_window(app);
+            crate::shell_open_chat::ingest_args(app, &args);
         }))
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -47,6 +49,17 @@ pub fn run() {
             }
             if let Err(e) = tray::setup_tray(app.handle()) {
                 tracing::warn!(error = %e, "system tray setup failed");
+            }
+            {
+                let args: Vec<String> = std::env::args().collect();
+                if let Some(raw) = crate::shell_open_chat::parse_open_chat_cwd_arg(&args) {
+                    if let Some(cwd) = crate::shell_open_chat::resolve_open_chat_cwd(&raw) {
+                        app.state::<AppState>()
+                            .set_pending_open_chat_cwd(cwd.to_string_lossy().into_owned());
+                    }
+                }
+                let lang = crate::tray_i18n::language_from_hub(app.state::<AppState>().hub().ok());
+                crate::shell_open_chat::register_best_effort(lang);
             }
             // Best-effort skill dir watch → frontend `skills-fs-changed`.
             if let Ok(hub) = app.state::<AppState>().hub_arc() {
@@ -291,6 +304,7 @@ pub fn run() {
             commands::sub2api_remembered_vault::sub2api_remembered_vault_set,
             commands::settings::pick_directory::pick_directory,
             commands::shell_icon::set_shell_icon,
+            shell_open_chat::take_pending_open_chat_cwd,
         ])
         .build(tauri::generate_context!())
         .expect("error while building AgentHub GUI")
@@ -306,6 +320,19 @@ pub fn run() {
                 } => {
                     if should_show_on_reopen(*has_visible_windows) {
                         tray::show_main_window(app_handle);
+                    }
+                }
+                #[cfg(target_os = "macos")]
+                RunEvent::Opened { urls, .. } => {
+                    for url in urls {
+                        let Ok(path) = url.to_file_path() else {
+                            continue;
+                        };
+                        if let Some(cwd) =
+                            crate::shell_open_chat::resolve_open_chat_cwd(&path.to_string_lossy())
+                        {
+                            crate::shell_open_chat::deliver_open_chat_cwd(app_handle, cwd);
+                        }
                     }
                 }
                 // A window close with close-to-tray disabled, OS shutdown, or

@@ -37,8 +37,11 @@ export function takeChatBootstrap(): ChatBootstrap | null {
     if (raw == null) return null;
     removeStorageItem(sessionStorage, KEY);
     const data = JSON.parse(raw) as ChatBootstrap;
-    if (!data || !Array.isArray(data.agentIds) || data.agentIds.length === 0) return null;
-    return data;
+    if (!data) return null;
+    const agentIds = Array.isArray(data.agentIds) ? data.agentIds.filter(Boolean) : [];
+    const cwd = typeof data.cwd === 'string' ? data.cwd.trim() : '';
+    if (agentIds.length === 0 && !cwd) return null;
+    return { ...data, agentIds, cwd: cwd || data.cwd };
   } catch {
     try {
       removeStorageItem(sessionStorage, KEY);

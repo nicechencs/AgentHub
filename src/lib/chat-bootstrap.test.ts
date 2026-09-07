@@ -113,12 +113,24 @@ describe('chat-bootstrap', () => {
     expect(writes).toBeGreaterThan(1);
   });
 
-  it('rejects empty agentIds', () => {
+  it('rejects empty agentIds unless a working directory is set', () => {
     sessionStorage.setItem(
       StorageKey.chatBootstrap,
       JSON.stringify({ agentIds: [], prompt: 'x' }),
     );
     expect(takeChatBootstrap()).toBeNull();
+    expect(
+      setChatBootstrap({
+        agentIds: [],
+        cwd: 'D:\\work\\app',
+        title: 'app',
+      }),
+    ).toBe(true);
+    expect(takeChatBootstrap()).toEqual({
+      agentIds: [],
+      cwd: 'D:\\work\\app',
+      title: 'app',
+    });
   });
 
   it('clears corrupt payload on the canonical key', () => {
