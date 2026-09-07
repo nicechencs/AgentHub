@@ -424,6 +424,59 @@ fn resolve_bundled_codebuddy_ignores_extracted() {
     let cb = good.join("codebuddy");
     fs::write(&cb, b"ok").unwrap();
     assert_eq!(resolve_bundled_codebuddy(&tmp), Some(cb));
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn resolve_bundled_codebuddy_finds_macos_resources_layout() {
+    let tmp = tempfile_dir();
+    let macos = tmp.join("WorkBuddy.app").join("Contents").join("MacOS");
+    let bin = tmp
+        .join("WorkBuddy.app")
+        .join("Contents")
+        .join("Resources")
+        .join("app.asar.unpacked")
+        .join("cli")
+        .join("bin");
+    fs::create_dir_all(&macos).unwrap();
+    fs::create_dir_all(&bin).unwrap();
+    let cb = bin.join("codebuddy");
+    fs::write(&cb, b"ok").unwrap();
+    assert_eq!(resolve_bundled_codebuddy(&macos), Some(cb));
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+#[cfg(not(windows))]
+#[test]
+fn cf_bundle_executable_name_reads_xml_plist() {
+    let tmp = tempfile_dir();
+    let contents = tmp.join("Contents");
+    fs::create_dir_all(&contents).unwrap();
+    fs::write(
+        contents.join("Info.plist"),
+        r#"<?xml version="1.0"?>
+<plist>
+<dict>
+	<key>CFBundleExecutable</key>
+	<string>Electron</string>
+</dict>
+</plist>
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        cf_bundle_executable_name(&tmp).as_deref(),
+        Some("Electron")
+    );
+    let bins = macos_workbuddy_binaries(&tmp);
+    assert_eq!(
+        bins[0],
+        tmp.join("Contents").join("MacOS").join("Electron")
+    );
+    assert!(bins
+        .iter()
+        .any(|p| p.file_name().and_then(|n| n.to_str()) == Some("WorkBuddy")));
+    let _ = fs::remove_dir_all(&tmp);
 }
 
 #[test]
@@ -431,6 +484,7 @@ fn well_known_exe_paths_are_cheap_fixed_only() {
     let paths = well_known_exe_paths();
     // Must not be empty on Windows (LOCALAPPDATA or home) or Unix (Applications).
     // Registry is intentionally not in this list.
+    assert!(!paths.is_empty());
     for p in &paths {
         let s = p.to_string_lossy().to_ascii_lowercase();
         assert!(
@@ -443,6 +497,57 @@ fn well_known_exe_paths_are_cheap_fixed_only() {
             "well-known must not be uninstaller path: {}",
             p.display()
         );
+    }
+    #[cfg(not(windows))]
+    {
+        assert!(
+            paths.iter().any(|p| {
+                p.to_string_lossy()
+                    .replace('\\', "/")
+                    .ends_with("/WorkBuddy.app/Contents/MacOS/Electron")
+            }),
+            "missing Electron binary candidate in {paths:?}"
+        );
+        assert!(
+            paths.iter().any(|p| {
+                p.to_string_lossy()
+                    .replace('\\', "/")
+                    .ends_with("/WorkBuddy.app/Contents/MacOS/WorkBuddy")
+            }),
+            "missing WorkBuddy binary candidate in {paths:?}"
+        );
+    }
+}
+
+#[test]
+fn auth_info_path_is_platform_specific() {
+    let path = auth_info_path();
+    #[cfg(windows)]
+    {
+        let s = path
+            .expect("windows auth path")
+            .to_string_lossy()
+            .replace('\\', "/");
+        assert!(
+            s.to_ascii_lowercase()
+                .ends_with("/codebuddyextension/data/public/auth/workbuddy-desktop.info"),
+            "unexpected windows auth path: {s}"
+        );
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let s = path
+            .expect("macos auth path")
+            .to_string_lossy()
+            .replace('\\', "/");
+        assert!(
+            s.contains("/Library/Application Support/CodeBuddyExtension/Data/Public/auth/workbuddy-desktop.info"),
+            "unexpected macos auth path: {s}"
+        );
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        assert!(path.is_none());
     }
 }
 
