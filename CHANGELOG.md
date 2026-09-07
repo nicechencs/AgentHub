@@ -17,8 +17,13 @@
 
 ## [Unreleased]
 
+## [0.4.10] - 2026-09-07
+
 ### 修复
 - Windows：启动时不再闪过 PowerShell 窗口（改快捷方式图标时无窗运行）
+- Windows：npm / Cursor 命令行启动不再误找 .cmd 包装
+- 对话：Pi 忙碌轮次保持存活；Windows 上经 Node 拉起更稳
+- 发布：Release 上传 artifact 失败时自动重试，减轻 macOS 瞬时网络失败
 
 ## [0.4.9] - 2026-09-07
 
