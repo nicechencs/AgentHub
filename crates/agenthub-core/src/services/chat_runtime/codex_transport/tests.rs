@@ -122,6 +122,68 @@ printf '%s\n' '{"id":2,"result":{"echo":true}}'
 
 #[cfg(unix)]
 #[test]
+fn zero_timeout_try_recv_drains_queued_notifications() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = tempdir().expect("temp directory");
+    let ready = directory.path().join("ready");
+    let ready_path = ready.display().to_string();
+    let program = directory.path().join("fake-codex-burst");
+    std::fs::write(
+        &program,
+        format!(
+            r##"#!/bin/sh
+IFS= read -r initialize
+printf '%s\n' '{{"id":1,"result":{{"initialized":true}}}}'
+i=0
+while [ "$i" -lt 8 ]; do
+  printf '%s\n' '{{"method":"notice","params":{{"n":'"$i"'}}}}'
+  i=$((i + 1))
+done
+printf '%s\n' ready > "{ready_path}"
+while IFS= read -r _; do
+  :
+done
+"##
+        ),
+    )
+    .expect("fake app-server script");
+    let mut permissions = std::fs::metadata(&program)
+        .expect("fake metadata")
+        .permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(&program, permissions).expect("fake executable");
+
+    let mut transport = CodexTransport::spawn(&program, directory.path()).expect("spawn fake");
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline && !ready.is_file() {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(ready.is_file(), "burst notifications were not flushed");
+    let mut got = 0;
+    while got < 8 {
+        match transport
+            .recv_timeout(Duration::ZERO)
+            .expect("zero-timeout recv")
+        {
+            Some(CodexEvent::Notification { method, .. }) if method == "notice" => got += 1,
+            Some(CodexEvent::Exited) => panic!("process exited before draining notices"),
+            Some(_) => {}
+            None => break,
+        }
+    }
+    assert_eq!(got, 8, "zero timeout must try_recv queued lines");
+    assert_eq!(
+        transport
+            .recv_timeout(Duration::ZERO)
+            .expect("empty try_recv"),
+        None
+    );
+    transport.shutdown();
+}
+
+#[cfg(unix)]
+#[test]
 fn handshake_skips_bare_json_and_outgoing_lines_include_jsonrpc() {
     use std::os::unix::fs::PermissionsExt;
 

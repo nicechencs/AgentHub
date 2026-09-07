@@ -9,7 +9,7 @@ use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdin, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender, TrySendError};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender, TryRecvError, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -67,6 +67,8 @@ pub enum CodexTransportError {
     Server { error: Value },
     #[error("codex app-server event queue is full")]
     EventQueueFull,
+    #[error("codex app-server request interrupted")]
+    Interrupted,
 }
 
 type TransportResult<T> = Result<T, CodexTransportError>;
@@ -113,6 +115,7 @@ pub struct CodexTransport {
     exited: bool,
     shutdown: bool,
     initialize_result: Option<Value>,
+    abort: Option<Arc<AtomicBool>>,
 }
 
 impl CodexTransport {
@@ -130,6 +133,27 @@ impl CodexTransport {
                 }
             }),
             true,
+            None,
+        )
+    }
+
+    pub(crate) fn spawn_interruptible(
+        program: &Path,
+        cwd: &Path,
+        abort: Arc<AtomicBool>,
+    ) -> Result<Self, CodexTransportError> {
+        Self::spawn_with(
+            program,
+            &["app-server".to_string()],
+            cwd,
+            json!({
+                "clientInfo": {
+                    "name": "agenthub-chat",
+                    "version": env!("CARGO_PKG_VERSION"),
+                }
+            }),
+            true,
+            Some(abort),
         )
     }
 
@@ -138,6 +162,47 @@ impl CodexTransport {
         cwd: &Path,
         model: Option<&str>,
         effort: Option<&str>,
+    ) -> Result<Self, CodexTransportError> {
+        Self::spawn_grok_with(program, cwd, model, effort, None)
+    }
+
+    pub(crate) fn spawn_grok_interruptible(
+        program: &Path,
+        cwd: &Path,
+        model: Option<&str>,
+        effort: Option<&str>,
+        abort: Arc<AtomicBool>,
+    ) -> Result<Self, CodexTransportError> {
+        Self::spawn_grok_with(program, cwd, model, effort, Some(abort))
+    }
+
+    pub fn spawn_kiro(
+        program: &Path,
+        cwd: &Path,
+        model: Option<&str>,
+        effort: Option<&str>,
+        trust_all_tools: bool,
+    ) -> Result<Self, CodexTransportError> {
+        Self::spawn_kiro_with(program, cwd, model, effort, trust_all_tools, None)
+    }
+
+    pub(crate) fn spawn_kiro_interruptible(
+        program: &Path,
+        cwd: &Path,
+        model: Option<&str>,
+        effort: Option<&str>,
+        trust_all_tools: bool,
+        abort: Arc<AtomicBool>,
+    ) -> Result<Self, CodexTransportError> {
+        Self::spawn_kiro_with(program, cwd, model, effort, trust_all_tools, Some(abort))
+    }
+
+    fn spawn_grok_with(
+        program: &Path,
+        cwd: &Path,
+        model: Option<&str>,
+        effort: Option<&str>,
+        abort: Option<Arc<AtomicBool>>,
     ) -> Result<Self, CodexTransportError> {
         let mut args = vec!["agent".to_string(), "--no-leader".to_string()];
         if let Some(model) = model.map(str::trim).filter(|s| !s.is_empty()) {
@@ -164,15 +229,17 @@ impl CodexTransport {
                 }
             }),
             true,
+            abort,
         )
     }
 
-    pub fn spawn_kiro(
+    fn spawn_kiro_with(
         program: &Path,
         cwd: &Path,
         model: Option<&str>,
         effort: Option<&str>,
         trust_all_tools: bool,
+        abort: Option<Arc<AtomicBool>>,
     ) -> Result<Self, CodexTransportError> {
         let mut args = vec!["acp".to_string()];
         if let Some(model) = model.map(str::trim).filter(|s| !s.is_empty()) {
@@ -200,8 +267,8 @@ impl CodexTransport {
                     "fs": { "readTextFile": false, "writeTextFile": false }
                 }
             }),
-            // Kiro ACP does not implement the `initialized` notification.
             false,
+            abort,
         )
     }
 
@@ -211,6 +278,7 @@ impl CodexTransport {
         cwd: &Path,
         initialize_params: Value,
         send_initialized: bool,
+        abort: Option<Arc<AtomicBool>>,
     ) -> Result<Self, CodexTransportError> {
         let mut command = std::process::Command::new(program);
         command
@@ -294,6 +362,7 @@ impl CodexTransport {
             exited: false,
             shutdown: false,
             initialize_result: None,
+            abort,
         };
 
         let initialize_result =
@@ -352,7 +421,7 @@ impl CodexTransport {
         initialize_params: Value,
         send_initialized: bool,
     ) -> Result<Self, CodexTransportError> {
-        Self::spawn_with(program, args, cwd, initialize_params, send_initialized)
+        Self::spawn_with(program, args, cwd, initialize_params, send_initialized, None)
     }
 
     pub fn begin_request(
@@ -379,19 +448,26 @@ impl CodexTransport {
 
     /// Receive one queued server event, waiting up to `timeout` for a new
     /// line. `Ok(None)` means that no event arrived before the deadline.
+    /// A zero timeout is a true non-blocking `try_recv`.
     pub fn recv_timeout(
         &mut self,
         timeout: Duration,
     ) -> Result<Option<CodexEvent>, CodexTransportError> {
+        if timeout.is_zero() {
+            return self.try_recv();
+        }
         if let Some(event) = self.events.pop_front() {
             return Ok(Some(event));
         }
 
         let deadline = Instant::now() + timeout;
         loop {
+            if self.abort_requested() {
+                return Ok(None);
+            }
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
-                return Ok(None);
+                return self.try_recv();
             }
             let wait = remaining.min(CHILD_POLL_INTERVAL);
             match self.wire_rx.recv_timeout(wait) {
@@ -405,6 +481,32 @@ impl CodexTransport {
                     }
                 }
                 Err(RecvTimeoutError::Disconnected) => {
+                    self.exited = true;
+                    return Ok(Some(CodexEvent::Exited));
+                }
+            }
+        }
+    }
+
+    /// Receive one queued server event without waiting. Drains skippable wire
+    /// lines until a real event, a process exit, or an empty channel.
+    pub fn try_recv(&mut self) -> Result<Option<CodexEvent>, CodexTransportError> {
+        if let Some(event) = self.events.pop_front() {
+            return Ok(Some(event));
+        }
+        loop {
+            match self.wire_rx.try_recv() {
+                Ok(event) => match self.consume_wire_event(event)? {
+                    Some(event) => return Ok(Some(event)),
+                    None => continue,
+                },
+                Err(TryRecvError::Empty) => {
+                    if self.poll_exited()? {
+                        return Ok(Some(CodexEvent::Exited));
+                    }
+                    return Ok(None);
+                }
+                Err(TryRecvError::Disconnected) => {
                     self.exited = true;
                     return Ok(Some(CodexEvent::Exited));
                 }
@@ -499,6 +601,10 @@ impl CodexTransport {
         let deadline = Instant::now() + timeout;
         let mut deferred = VecDeque::new();
         loop {
+            if let Err(error) = self.fail_if_aborted() {
+                self.restore_deferred(deferred)?;
+                return Err(error);
+            }
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
                 self.restore_deferred(deferred)?;
@@ -583,9 +689,10 @@ impl CodexTransport {
     fn next_wire_message(&mut self, timeout: Duration) -> TransportResult<Option<WireMessage>> {
         let deadline = Instant::now() + timeout;
         loop {
+            self.fail_if_aborted()?;
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
-                return Ok(None);
+                return self.try_next_wire_message();
             }
             let wait = remaining.min(CHILD_POLL_INTERVAL);
             match self.wire_rx.recv_timeout(wait) {
@@ -612,6 +719,49 @@ impl CodexTransport {
                 Err(RecvTimeoutError::Disconnected) => return Ok(Some(WireMessage::Eof)),
             }
         }
+    }
+
+    fn try_next_wire_message(&mut self) -> TransportResult<Option<WireMessage>> {
+        loop {
+            match self.wire_rx.try_recv() {
+                Ok(event) => match event {
+                    WireEvent::Message(value) => match classify_message(value) {
+                        Ok(Some(message)) => return Ok(Some(message)),
+                        Ok(None) => continue,
+                        Err(error) => {
+                            self.shutdown();
+                            return Err(error);
+                        }
+                    },
+                    WireEvent::Eof => return Ok(Some(WireMessage::Eof)),
+                    WireEvent::Error(error) => {
+                        self.shutdown();
+                        return Err(CodexTransportError::Protocol(error));
+                    }
+                },
+                Err(TryRecvError::Empty) => {
+                    if self.poll_exited()? {
+                        return Ok(Some(WireMessage::Eof));
+                    }
+                    return Ok(None);
+                }
+                Err(TryRecvError::Disconnected) => return Ok(Some(WireMessage::Eof)),
+            }
+        }
+    }
+
+    fn abort_requested(&self) -> bool {
+        self.abort
+            .as_ref()
+            .is_some_and(|flag| flag.load(Ordering::SeqCst))
+    }
+
+    fn fail_if_aborted(&mut self) -> TransportResult<()> {
+        if !self.abort_requested() {
+            return Ok(());
+        }
+        self.shutdown();
+        Err(CodexTransportError::Interrupted)
     }
 
     fn consume_wire_event(&mut self, event: WireEvent) -> TransportResult<Option<CodexEvent>> {
