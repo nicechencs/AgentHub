@@ -31,6 +31,14 @@ fn classify_skips_unshaped_json_instead_of_failing() {
         json!({"result": {}}),
         json!({"type": "text", "content": "hi"}),
         json!({"error": "missing field `prompt`", "phase": "deserialization"}),
+        json!({
+            "jsonrpc": "2.0",
+            "error": {
+                "code": -32601,
+                "message": "Method not found",
+                "data": "initialized"
+            }
+        }),
         json!(null),
     ] {
         assert!(matches!(classify_message(value), Ok(None)));
@@ -148,6 +156,46 @@ printf '%s\n' "$initialized" >> "$log"
     assert!(
         wire.contains(r#""method":"initialized""#),
         "outgoing initialized notification missing: {wire}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn spawn_kiro_skips_initialized_and_id_less_errors() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = tempdir().expect("temp directory");
+    let program = directory.path().join("fake-kiro-acp");
+    std::fs::write(
+        &program,
+        r##"#!/bin/sh
+log="$(dirname "$0")/wire.log"
+IFS= read -r initialize
+printf '%s\n' "$initialize" >> "$log"
+printf '%s\n' '{"jsonrpc":"2.0","error":{"code":-32601,"message":"Method not found","data":"initialized"}}'
+printf '%s\n' '{"id":1,"result":{"initialized":true}}'
+IFS= read -r extra
+printf '%s\n' "$extra" >> "$log"
+"##,
+    )
+    .expect("fake acp script");
+    let mut permissions = std::fs::metadata(&program)
+        .expect("fake metadata")
+        .permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(&program, permissions).expect("fake executable");
+
+    let mut transport = CodexTransport::spawn_kiro(&program, directory.path(), None, None, false)
+        .expect("spawn kiro");
+    transport.shutdown();
+    let wire = std::fs::read_to_string(directory.path().join("wire.log")).expect("wire log");
+    assert!(
+        wire.contains(r#""jsonrpc":"2.0""#) && wire.contains(r#""method":"initialize""#),
+        "outgoing initialize must be JSON-RPC 2.0: {wire}"
+    );
+    assert!(
+        !wire.contains(r#""method":"initialized""#),
+        "Kiro handshake must not send initialized: {wire}"
     );
 }
 
