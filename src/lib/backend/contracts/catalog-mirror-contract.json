@@ -195,7 +195,7 @@
         "apiKeyAccount": "可用 API Key 或 kiro-cli login",
         "skills": "待路径核实",
         "liveBackup": null,
-        "structuredStream": "对话过程走 v2 stream-json；不能中途补充",
+        "structuredStream": "对话过程走 ACP；生成时不能中途补充",
         "dangerousMode": "映射 --trust-all-tools；请确认风险后再开",
         "projectHistory": "待路径核实",
         "projectDelete": "无安全浅删契约",
@@ -203,7 +203,7 @@
         "usage": "待日志字段核实",
         "mcp": "待路径核实",
         "modelSelect": null,
-        "sessionResume": "后续轮次走 --resume-id；不能中途补充或点允许/拒绝"
+        "sessionResume": "新对话走持续通道，可点允许/拒绝；生成时不能中途补充"
       }
     },
     "mock": {
@@ -357,7 +357,7 @@
         "apiKeyAccount": "可用 API Key 或 kiro-cli login",
         "skills": "待路径核实",
         "liveBackup": null,
-        "structuredStream": "对话过程走 v2 stream-json；不能中途补充",
+        "structuredStream": "对话过程走 ACP；生成时不能中途补充",
         "dangerousMode": "映射 --trust-all-tools；请确认风险后再开",
         "projectHistory": "待路径核实",
         "projectDelete": "无安全浅删契约",
@@ -365,7 +365,7 @@
         "usage": "待日志字段核实",
         "mcp": "待路径核实",
         "modelSelect": null,
-        "sessionResume": "后续轮次走 --resume-id；不能中途补充或点允许/拒绝"
+        "sessionResume": "新对话走持续通道，可点允许/拒绝；生成时不能中途补充"
       }
     },
     "knownMismatches": []

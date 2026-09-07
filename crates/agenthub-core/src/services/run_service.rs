@@ -147,6 +147,20 @@ impl RunService {
             .ok_or_else(|| AppError::NotFound("Grok 可执行文件路径不可用".into()))
     }
 
+    pub fn detect_kiro_installation(&self) -> Result<std::path::PathBuf> {
+        let adapter = self
+            .registry
+            .get(AgentId::Kiro)
+            .ok_or_else(|| AppError::NotFound("adapter not registered for kiro".into()))?;
+        let detect = adapter.detect();
+        if detect.status != DetectStatus::Installed {
+            return Err(AppError::NotFound("Kiro 未安装或不可用".into()));
+        }
+        detect
+            .binary_path
+            .ok_or_else(|| AppError::NotFound("Kiro 可执行文件路径不可用".into()))
+    }
+
     /// Run the same prompt on one or more agents.
     pub fn run(
         &self,

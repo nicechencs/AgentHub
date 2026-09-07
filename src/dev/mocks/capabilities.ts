@@ -248,7 +248,7 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
     liveBackup: { level: 'full' },
     structuredStream: {
       level: 'partial',
-      reason: '对话过程走 v2 stream-json；不能中途补充',
+      reason: '对话过程走 ACP；生成时不能中途补充',
     },
     dangerousMode: {
       level: 'partial',
@@ -265,7 +265,7 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
     modelSelect: { level: 'full' },
     sessionResume: {
       level: 'partial',
-      reason: '后续轮次走 --resume-id；不能中途补充或点允许/拒绝',
+      reason: '新对话走持续通道，可点允许/拒绝；生成时不能中途补充',
     },
   },
 };

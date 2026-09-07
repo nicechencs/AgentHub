@@ -2708,9 +2708,9 @@ export const zh = {
       resizeAria: "调整对话记录与输入区高度",
     },
     kiro: {
-      oneshotHint: "Kiro 在这里一轮一发：写完后发送，等这一轮结束。可用本机登录（kiro-cli login）或 API Key。",
-      oneshotDetail: "不能中途补充、排队或点允许/拒绝；下一轮仍可继续。终端里的 Agent 配置、命令补全和灰色提示不在本页。",
-      placeholder: "写完后发送，等这一轮结束。下一轮可继续。",
+      oneshotHint: "Kiro 新对话可以点允许/拒绝；生成时不能中途补充，可排队到下一轮。",
+      oneshotDetail: "装了命令行时在本机执行。旧对话可点「用新方式继续」。终端里的命令补全和灰色提示不在本页。",
+      placeholder: "发送后可点允许/拒绝。生成时不能中途补充，可排队到下一轮。",
     },
     runtime: {
       submit: '提交',
