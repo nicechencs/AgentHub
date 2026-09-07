@@ -1,7 +1,7 @@
 /**
- * Kiro Chat honesty: per-turn headless send/wait (not ChatRuntime).
- * Later turns may resume via `--resume-id`; there is no mid-run steer/queue/allow-deny.
- * Catalog may not include `kiro` yet — helpers key off the id only.
+ * Kiro Chat: new conversations use ACP (`kiro-cli acp`), same class as Grok.
+ * Allow/deny and queue-after-turn are real. Mid-turn steer is not.
+ * Legacy print chats stay off ChatRuntime until the user continues.
  */
 import type { TranslateFn } from '@/lib/i18n';
 import { isRuntimeChatAgent } from './chat-runtime-model';
@@ -10,31 +10,23 @@ export function isKiroChatAgent(agentId: string | null | undefined): boolean {
   return agentId === 'kiro';
 }
 
-/** Per-turn CLI send/wait (no mid-run steer); resume across turns may still apply. */
+/** Per-turn CLI send/wait (no mid-run steer); Cursor remains on this list. */
 export function isOneShotHeadlessChatAgent(agentId: string | null | undefined): boolean {
-  return agentId === 'kiro' || agentId === 'cursor';
+  return agentId === 'cursor';
 }
 
 export type KiroChatStance = {
-  showBanner: true;
-  allowCommandSearch: false;
-  allowRuntimeRequests: false;
+  showBanner: boolean;
+  allowCommandSearch: boolean;
+  allowRuntimeRequests: boolean;
   allowModelPicker: boolean;
-  allowSteer: false;
-  allowQueueFollowUp: false;
+  allowSteer: boolean;
+  allowQueueFollowUp: boolean;
 };
 
-/** Product stance when the conversation Agent is Kiro. Other ids return null. */
-export function kiroChatStance(agentId: string | null | undefined): KiroChatStance | null {
-  if (!isKiroChatAgent(agentId)) return null;
-  return {
-    showBanner: true,
-    allowCommandSearch: false,
-    allowRuntimeRequests: false,
-    allowModelPicker: true,
-    allowSteer: false,
-    allowQueueFollowUp: false,
-  };
+/** Kiro no longer uses a one-shot banner; continuous ACP follows Grok gates. */
+export function kiroChatStance(_agentId: string | null | undefined): KiroChatStance | null {
+  return null;
 }
 
 export function kiroChatAllowsCommandSearch(agentId: string | null | undefined): boolean {

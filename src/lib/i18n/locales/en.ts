@@ -2720,9 +2720,9 @@ export const en = {
       resizeAria: "Resize conversation and composer",
     },
     kiro: {
-      oneshotHint: "Kiro here is one send at a time: write, send, wait. Sign in locally (kiro-cli login) or use an API key.",
-      oneshotDetail: "You can't add more, queue, or tap allow/deny mid-run; later turns can still continue. Terminal agent profiles, command completion, and ghost text are not on this page.",
-      placeholder: "Write, send, and wait for this turn. You can continue on the next turn.",
+      oneshotHint: "Kiro new chats can tap allow/deny; you can't add more mid-run, but you can queue for the next turn.",
+      oneshotDetail: "With the CLI installed, this runs on this computer. Older chats can continue the new way. Terminal command completion and ghost text are not on this page.",
+      placeholder: "After send you can tap allow/deny. You can't add more mid-run; you can queue for the next turn.",
     },
     runtime: {
       submit: 'Submit',

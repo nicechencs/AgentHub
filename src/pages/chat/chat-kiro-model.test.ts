@@ -15,50 +15,39 @@ import {
 const t = createTranslator('zh');
 
 describe('Kiro chat honesty helpers', () => {
-  it('treats kiro as a half-surface id, not a ChatRuntime continuous agent', () => {
+  it('treats kiro as a continuous ACP agent, not a one-shot headless id', () => {
     expect(isKiroChatAgent('kiro')).toBe(true);
     expect(isKiroChatAgent('cursor')).toBe(false);
     expect(isKiroChatAgent(null)).toBe(false);
-    expect(isOneShotHeadlessChatAgent('kiro')).toBe(true);
+    expect(isOneShotHeadlessChatAgent('kiro')).toBe(false);
     expect(isOneShotHeadlessChatAgent('cursor')).toBe(true);
     expect(isOneShotHeadlessChatAgent('codex')).toBe(false);
-    expect(isRuntimeChatAgent('kiro')).toBe(false);
+    expect(isRuntimeChatAgent('kiro')).toBe(true);
     expect(isRuntimeChatAgent('cursor')).toBe(false);
   });
 
-  it('exposes one-shot stance copy and composer gates only for kiro', () => {
+  it('does not pin a one-shot banner; composer still names allow/deny and queue', () => {
     expect(kiroChatStance('claude')).toBeNull();
     expect(kiroChatStance('cursor')).toBeNull();
-    expect(kiroChatStance('kiro')).toEqual({
-      showBanner: true,
-      allowCommandSearch: false,
-      allowRuntimeRequests: false,
-      allowModelPicker: true,
-      allowSteer: false,
-      allowQueueFollowUp: false,
-    });
+    expect(kiroChatStance('kiro')).toBeNull();
     expect(kiroChatBannerCopy(t)).toEqual({
       title: t('chat.kiro.oneshotHint'),
       detail: t('chat.kiro.oneshotDetail'),
     });
     expect(kiroChatComposerPlaceholder(t, 'kiro', 'fallback')).toBe(t('chat.kiro.placeholder'));
     expect(kiroChatComposerPlaceholder(t, 'claude', 'fallback')).toBe('fallback');
-    expect(t('chat.kiro.oneshotHint')).toContain('本机登录');
-    expect(t('chat.kiro.oneshotHint')).toContain('API Key');
-    expect(t('chat.kiro.oneshotHint')).toContain('一轮一发');
-    expect(t('chat.kiro.oneshotDetail')).toContain('不能中途补充');
+    expect(t('chat.kiro.oneshotHint')).toContain('允许/拒绝');
+    expect(t('chat.kiro.oneshotHint')).toContain('不能中途补充');
+    expect(t('chat.kiro.oneshotDetail')).toContain('用新方式继续');
     expect(t('chat.kiro.oneshotDetail')).toContain('不在本页');
-    expect(t('chat.kiro.oneshotDetail')).not.toContain('模型');
-    const en = createTranslator('en');
-    expect(en('chat.kiro.oneshotDetail')).not.toMatch(/model\/agent/i);
-    expect(t('chat.kiro.oneshotDetail')).toContain('下一轮');
-    expect(t('chat.kiro.placeholder')).toContain('下一轮');
+    expect(t('chat.kiro.placeholder')).toContain('允许/拒绝');
+    expect(t('chat.kiro.placeholder')).toContain('排队');
   });
 
-  it('keeps slash/runtime gates off but allows model/effort chips', () => {
-    expect(kiroChatAllowsCommandSearch('kiro')).toBe(false);
+  it('keeps runtime request panels and command search on for Kiro', () => {
+    expect(kiroChatAllowsCommandSearch('kiro')).toBe(true);
     expect(kiroChatAllowsCommandSearch('codex')).toBe(true);
-    expect(chatShowsRuntimeRequestPanels('kiro')).toBe(false);
+    expect(chatShowsRuntimeRequestPanels('kiro')).toBe(true);
     expect(chatShowsRuntimeRequestPanels('codex')).toBe(true);
     expect(chatShowsRuntimeRequestPanels('grok')).toBe(true);
     expect(chatShowsRuntimeRequestPanels('cursor')).toBe(false);

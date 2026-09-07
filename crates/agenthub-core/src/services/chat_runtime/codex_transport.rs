@@ -14,12 +14,12 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use serde_json::{Map, Value, json};
+use serde_json::{json, Map, Value};
 use thiserror::Error;
 
 use crate::utils::process::{
-    ChildPoll, ProcessControl, ReaderJoin, apply_no_window, configure_process_group,
-    join_reader_bounded, kill_process_tree, poll_child, reap_child_lossy,
+    apply_no_window, configure_process_group, join_reader_bounded, kill_process_tree, poll_child,
+    reap_child_lossy, ChildPoll, ProcessControl, ReaderJoin,
 };
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(8);
@@ -157,6 +157,42 @@ impl CodexTransport {
                     "version": env!("CARGO_PKG_VERSION"),
                 },
                 "capabilities": {
+                    "fs": { "readTextFile": false, "writeTextFile": false }
+                }
+            }),
+        )
+    }
+
+    pub fn spawn_kiro(
+        program: &Path,
+        cwd: &Path,
+        model: Option<&str>,
+        effort: Option<&str>,
+        trust_all_tools: bool,
+    ) -> Result<Self, CodexTransportError> {
+        let mut args = vec!["acp".to_string()];
+        if let Some(model) = model.map(str::trim).filter(|s| !s.is_empty()) {
+            args.push("--model".into());
+            args.push(model.to_string());
+        }
+        if let Some(effort) = effort.map(str::trim).filter(|s| !s.is_empty()) {
+            args.push("--effort".into());
+            args.push(effort.to_string());
+        }
+        if trust_all_tools {
+            args.push("--trust-all-tools".into());
+        }
+        Self::spawn_with(
+            program,
+            &args,
+            cwd,
+            json!({
+                "protocolVersion": 1,
+                "clientInfo": {
+                    "name": "agenthub-chat",
+                    "version": env!("CARGO_PKG_VERSION"),
+                },
+                "clientCapabilities": {
                     "fs": { "readTextFile": false, "writeTextFile": false }
                 }
             }),
