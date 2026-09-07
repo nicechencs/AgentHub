@@ -90,12 +90,9 @@ fn api_key_creds_surface_tokentype() {
 fn live_list_models_and_chat_turn() {
     let listed = super::list_models_http().expect("list_models_http");
     assert!(!listed.models.is_empty(), "expected models from Kiro HTTP");
-    let turn = super::client::chat_turn_http(
-        "Reply with exactly: pong",
-        Some("claude-haiku-4.5"),
-        None,
-    )
-    .expect("chat_turn_http");
+    let turn =
+        super::client::chat_turn_http("Reply with exactly: pong", Some("claude-haiku-4.5"), None)
+            .expect("chat_turn_http");
     assert!(
         turn.text.to_ascii_lowercase().contains("pong"),
         "unexpected text: {}",
@@ -106,10 +103,11 @@ fn live_list_models_and_chat_turn() {
 #[test]
 fn try_http_skips_when_native_resume_set() {
     use crate::models::RunOptions;
+    use crate::utils::process::CancelToken;
     let mut opts = RunOptions::default();
     opts.native_session_id = Some("resume-me".into());
     assert!(
-        super::try_http_run_result("hi", &opts).is_none(),
+        super::try_http_run_result("hi", &opts, &CancelToken::new()).is_none(),
         "CLI --resume-id must stay on CLI path"
     );
 }
@@ -147,12 +145,8 @@ fn existing_http_conversation_failure_stays_failed_and_namespaced() {
 
 #[test]
 fn existing_http_conversation_failure_handles_multibyte_id() {
-    let result = super::client::http_failed_run_result(
-        1,
-        None,
-        Some("会话ID-abcdef"),
-        "upstream failure",
-    );
+    let result =
+        super::client::http_failed_run_result(1, None, Some("会话ID-abcdef"), "upstream failure");
 
     assert_eq!(
         result.native_session_id.as_deref(),
@@ -164,12 +158,9 @@ fn existing_http_conversation_failure_handles_multibyte_id() {
 #[test]
 #[ignore = "live network + Builder ID login on this machine"]
 fn live_http_multi_turn_reuses_conversation_id() {
-    let turn1 = super::client::chat_turn_http(
-        "Reply with exactly: alpha",
-        Some("claude-haiku-4.5"),
-        None,
-    )
-    .expect("turn1");
+    let turn1 =
+        super::client::chat_turn_http("Reply with exactly: alpha", Some("claude-haiku-4.5"), None)
+            .expect("turn1");
     let cid = turn1
         .conversation_id
         .as_deref()
