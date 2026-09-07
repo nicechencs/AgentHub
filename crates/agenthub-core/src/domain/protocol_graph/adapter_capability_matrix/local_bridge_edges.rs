@@ -399,6 +399,114 @@ pub const CLAUDE_CODEX_EDGE: LocalBridgeEdge = LocalBridgeEdge {
     multi_account: false,
 };
 
+pub const KIRO_CLAUDE_API_EDGE: LocalBridgeEdge = LocalBridgeEdge {
+    rule_id: "kiro-to-claude-v1",
+    source: AdapterSourceProduct::Kiro,
+    credential: AdapterCredentialClass::ApiKey,
+    transport: AdapterUpstreamTransport::LocalBridgeKiroHttp,
+    target: AgentId::Claude,
+    protocol: AdapterTargetProtocol::AnthropicMessages,
+    version: MATRIX_VERSION,
+    support: AdapterSupport::Experimental,
+    can_apply: true,
+    reason: KIRO_TO_CLAUDE_REASON,
+    limitations: KIRO_BRIDGE_LIMITS,
+    verified_at: "2026-09-08",
+    gates: AdapterCapabilityGates::all_open(),
+    default_model: "auto",
+    multi_account: false,
+};
+
+pub const KIRO_CLAUDE_OAUTH_EDGE: LocalBridgeEdge = LocalBridgeEdge {
+    rule_id: "kiro-to-claude-v1",
+    source: AdapterSourceProduct::Kiro,
+    credential: AdapterCredentialClass::OauthOther,
+    transport: AdapterUpstreamTransport::LocalBridgeKiroHttp,
+    target: AgentId::Claude,
+    protocol: AdapterTargetProtocol::AnthropicMessages,
+    version: MATRIX_VERSION,
+    support: AdapterSupport::Experimental,
+    can_apply: true,
+    reason: KIRO_TO_CLAUDE_REASON,
+    limitations: KIRO_BRIDGE_LIMITS,
+    verified_at: "2026-09-08",
+    gates: AdapterCapabilityGates::all_open(),
+    default_model: "auto",
+    multi_account: false,
+};
+
+pub const KIRO_CODEX_API_EDGE: LocalBridgeEdge = LocalBridgeEdge {
+    rule_id: "kiro-to-codex-v1",
+    source: AdapterSourceProduct::Kiro,
+    credential: AdapterCredentialClass::ApiKey,
+    transport: AdapterUpstreamTransport::LocalBridgeKiroHttp,
+    target: AgentId::Codex,
+    protocol: AdapterTargetProtocol::OpenAiResponses,
+    version: MATRIX_VERSION,
+    support: AdapterSupport::Experimental,
+    can_apply: true,
+    reason: KIRO_TO_CODEX_REASON,
+    limitations: KIRO_BRIDGE_LIMITS,
+    verified_at: "2026-09-08",
+    gates: AdapterCapabilityGates::all_open(),
+    default_model: "auto",
+    multi_account: false,
+};
+
+pub const KIRO_CODEX_OAUTH_EDGE: LocalBridgeEdge = LocalBridgeEdge {
+    rule_id: "kiro-to-codex-v1",
+    source: AdapterSourceProduct::Kiro,
+    credential: AdapterCredentialClass::OauthOther,
+    transport: AdapterUpstreamTransport::LocalBridgeKiroHttp,
+    target: AgentId::Codex,
+    protocol: AdapterTargetProtocol::OpenAiResponses,
+    version: MATRIX_VERSION,
+    support: AdapterSupport::Experimental,
+    can_apply: true,
+    reason: KIRO_TO_CODEX_REASON,
+    limitations: KIRO_BRIDGE_LIMITS,
+    verified_at: "2026-09-08",
+    gates: AdapterCapabilityGates::all_open(),
+    default_model: "auto",
+    multi_account: false,
+};
+
+pub const KIRO_GROK_API_EDGE: LocalBridgeEdge = LocalBridgeEdge {
+    rule_id: "kiro-to-grok-v1",
+    source: AdapterSourceProduct::Kiro,
+    credential: AdapterCredentialClass::ApiKey,
+    transport: AdapterUpstreamTransport::LocalBridgeKiroHttp,
+    target: AgentId::Grok,
+    protocol: AdapterTargetProtocol::OpenAiResponses,
+    version: MATRIX_VERSION,
+    support: AdapterSupport::Experimental,
+    can_apply: true,
+    reason: KIRO_TO_GROK_REASON,
+    limitations: KIRO_BRIDGE_LIMITS,
+    verified_at: "2026-09-08",
+    gates: AdapterCapabilityGates::all_open(),
+    default_model: "auto",
+    multi_account: false,
+};
+
+pub const KIRO_GROK_OAUTH_EDGE: LocalBridgeEdge = LocalBridgeEdge {
+    rule_id: "kiro-to-grok-v1",
+    source: AdapterSourceProduct::Kiro,
+    credential: AdapterCredentialClass::OauthOther,
+    transport: AdapterUpstreamTransport::LocalBridgeKiroHttp,
+    target: AgentId::Grok,
+    protocol: AdapterTargetProtocol::OpenAiResponses,
+    version: MATRIX_VERSION,
+    support: AdapterSupport::Experimental,
+    can_apply: true,
+    reason: KIRO_TO_GROK_REASON,
+    limitations: KIRO_BRIDGE_LIMITS,
+    verified_at: "2026-09-08",
+    gates: AdapterCapabilityGates::all_open(),
+    default_model: "auto",
+    multi_account: false,
+};
+
 /// Every local-bridge matrix cell. Order does not matter for lookup.
 pub const LOCAL_BRIDGE_EDGES: &[LocalBridgeEdge] = &[
     KIMI_CODEX_EDGE,
@@ -420,4 +528,10 @@ pub const LOCAL_BRIDGE_EDGES: &[LocalBridgeEdge] = &[
     CODEX_DSH_EDGE,
     CODEX_DSH_OAUTH_OTHER_EDGE,
     CLAUDE_CODEX_EDGE,
+    KIRO_CLAUDE_API_EDGE,
+    KIRO_CLAUDE_OAUTH_EDGE,
+    KIRO_CODEX_API_EDGE,
+    KIRO_CODEX_OAUTH_EDGE,
+    KIRO_GROK_API_EDGE,
+    KIRO_GROK_OAUTH_EDGE,
 ];

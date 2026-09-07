@@ -8,5 +8,6 @@
   "codex-chatgpt-subscription": ["openai-responses", "openai-codex-pkce"],
   "claude-subscription": ["anthropic-messages", "anthropic-pkce"],
   "grok-xai-subscription": ["openai-responses", "openai-chat", "xai-device-code"],
+  "kiro": [],
   "unknown": []
 }

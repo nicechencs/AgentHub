@@ -98,6 +98,7 @@ pub enum TicketSurface {
     CodexChatgptSubscription,
     ClaudeSubscription,
     GrokXaiSubscription,
+    Kiro,
     Unknown,
 }
 
@@ -113,6 +114,7 @@ impl TicketSurface {
             Self::CodexChatgptSubscription => "codex-chatgpt-subscription",
             Self::ClaudeSubscription => "claude-subscription",
             Self::GrokXaiSubscription => "grok-xai-subscription",
+            Self::Kiro => "kiro",
             Self::Unknown => "unknown",
         }
     }
@@ -128,6 +130,7 @@ impl TicketSurface {
             AdapterSourceProduct::CodexChatGptSubscription => Self::CodexChatgptSubscription,
             AdapterSourceProduct::ClaudeSubscription => Self::ClaudeSubscription,
             AdapterSourceProduct::XaiGrokSubscription => Self::GrokXaiSubscription,
+            AdapterSourceProduct::Kiro => Self::Kiro,
             AdapterSourceProduct::Other => Self::Unknown,
         }
     }
@@ -144,6 +147,7 @@ impl TicketSurface {
             "codex-chatgpt-subscription" => Some(Self::CodexChatgptSubscription),
             "claude-subscription" => Some(Self::ClaudeSubscription),
             "grok-xai-subscription" => Some(Self::GrokXaiSubscription),
+            "kiro" => Some(Self::Kiro),
             "unknown" => Some(Self::Unknown),
             _ => None,
         }
@@ -192,6 +196,7 @@ impl TicketSurface {
                 TicketProtocol::OpenaiChat,
                 TicketProtocol::XaiDeviceCode,
             ],
+            Self::Kiro => &[],
             Self::Unknown => &[],
         }
     }

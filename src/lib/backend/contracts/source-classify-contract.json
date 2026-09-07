@@ -9,6 +9,7 @@
     "codex-chatgpt-subscription",
     "claude-subscription",
     "grok-xai-subscription",
+    "kiro",
     "other"
   ],
   "needles": {
@@ -46,7 +47,9 @@
     "claude-oauth": "claude-subscription",
     "grok-oauth": "grok-xai-subscription",
     "codex-auth-json": "codex-chatgpt-subscription",
-    "codex-oauth": "codex-chatgpt-subscription"
+    "codex-oauth": "codex-chatgpt-subscription",
+    "kiro-oauth": "kiro",
+    "kiro-api": "kiro"
   },
   "cases": [
     {
@@ -165,6 +168,24 @@
       "extra": {},
       "credentials": { "format": "oauth" },
       "expectProduct": "grok-xai-subscription"
+    },
+    {
+      "id": "kiro-oauth",
+      "kind": "account",
+      "agentId": "kiro",
+      "accountKind": "oauth",
+      "extra": {},
+      "credentials": { "format": "auth_json" },
+      "expectProduct": "kiro"
+    },
+    {
+      "id": "kiro-api",
+      "kind": "account",
+      "agentId": "kiro",
+      "accountKind": "apikey",
+      "extra": {},
+      "credentials": { "format": "api_key" },
+      "expectProduct": "kiro"
     },
     {
       "id": "anthropic-provider-preset",

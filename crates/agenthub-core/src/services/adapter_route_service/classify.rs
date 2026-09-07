@@ -69,6 +69,10 @@ impl AdapterRouteService {
             AdapterSourceProduct::ClaudeSubscription
         } else if account.agent_id == AgentId::Grok && account.kind == AccountKind::Oauth {
             AdapterSourceProduct::XaiGrokSubscription
+        } else if account.agent_id == AgentId::Kiro
+            && matches!(account.kind, AccountKind::ApiKey | AccountKind::Oauth)
+        {
+            AdapterSourceProduct::Kiro
         } else {
             AdapterSourceProduct::Other
         }
@@ -379,6 +383,22 @@ impl AdapterRouteService {
                         product: AdapterSourceProduct::XaiGrokSubscription,
                         credential: AdapterCredentialClass::OauthOther,
                         label: RouteSourceLabel::XaiGrokSubscription,
+                        reason_hint: None,
+                    })
+                } else if account.agent_id == AgentId::Kiro
+                    && account.kind == AccountKind::ApiKey
+                {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::Kiro,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::Kiro,
+                        reason_hint: None,
+                    })
+                } else if account.agent_id == AgentId::Kiro && account.kind == AccountKind::Oauth {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::Kiro,
+                        credential: AdapterCredentialClass::OauthOther,
+                        label: RouteSourceLabel::Kiro,
                         reason_hint: None,
                     })
                 } else {

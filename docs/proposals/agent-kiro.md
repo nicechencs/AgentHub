@@ -3,13 +3,13 @@ title: 接入 Kiro（kiro-cli）Agent
 type: proposal
 status: proposed
 owner: maintainers
-updated: 2026-09-06
+updated: 2026-09-08
 audience: contributor
 ---
 
 # 接入 Kiro（kiro-cli）Agent
 
-> 提案，不是现行实现契约。未验证前不要把下列能力标成已支持，也不要在 UI 做假确认 / 假持续聊。
+> 提案，不是现行实现契约。现行行为见 [STATUS](../STATUS.md)。对话发送：有 `kiro-cli` 走命令行；没有命令行才 HTTP 文本回复。本机路由仍未接。
 
 接线与实现纪律见 [添加 Agent](../guides/adding-an-agent.md)；半面参照 `crates/agenthub-core/src/adapters/cursor.rs`。本文只定目标、公开事实与产品决策，不重复指南里的文件清单与验收清单。
 

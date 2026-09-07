@@ -167,6 +167,15 @@ const BY_RULE_ID: Record<string, MockMaterializeSpec> = {
   'codex-subscription-to-dsh-v1': {
     kind: 'local_bridge', prefix: 'codex', display: 'Codex', mode: 'oauth',
   },
+  'kiro-to-claude-v1': {
+    kind: 'local_bridge', prefix: 'kiro', display: 'Kiro', mode: 'api',
+  },
+  'kiro-to-codex-v1': {
+    kind: 'local_bridge', prefix: 'kiro', display: 'Kiro', mode: 'api', codexLabel: 'AgentHub Kiro 本机路由',
+  },
+  'kiro-to-grok-v1': {
+    kind: 'local_bridge', prefix: 'kiro', display: 'Kiro', mode: 'api',
+  },
 };
 
 export function getMaterializeSpec(ruleId: string | null | undefined): MockMaterializeSpec | undefined {

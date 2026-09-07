@@ -828,6 +828,9 @@ fn live_bridge_rules_match_local_bridge_catalog() {
             AdapterUpstreamTransport::XaiResponsesOauth => {
                 super::BridgeUpstreamProtocol::XaiResponsesOauth
             }
+            AdapterUpstreamTransport::LocalBridgeKiroHttp => {
+                super::BridgeUpstreamProtocol::KiroHttp
+            }
             other => panic!(
                 "{}: transport {other:?} is not a live upstream",
                 edge.rule_id

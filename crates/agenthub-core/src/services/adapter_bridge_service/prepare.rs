@@ -234,7 +234,7 @@ impl AdapterBridgeService {
             .and_then(rule_for_id)
             .ok_or_else(|| {
                 AppError::Unsupported(
-                    "adapter bridge currently supports Kimi / Anthropic / OpenAI → Codex / Claude / Grok, Codex subscription → Claude / Grok / Kimi / DSH, or Grok subscription → Claude / Codex"
+                    "adapter bridge currently supports Kimi / Anthropic / OpenAI → Codex / Claude / Grok, Codex subscription → Claude / Grok / Kimi / DSH, Grok subscription → Claude / Codex, or Kiro → Claude / Codex / Grok"
                         .into(),
                 )
             })?;
@@ -248,7 +248,8 @@ impl AdapterBridgeService {
                 AdapterSourceKind::Provider | AdapterSourceKind::Account
             ),
             BridgeUpstreamProtocol::CodexResponsesOauth
-            | BridgeUpstreamProtocol::XaiResponsesOauth => {
+            | BridgeUpstreamProtocol::XaiResponsesOauth
+            | BridgeUpstreamProtocol::KiroHttp => {
                 request.source_kind == AdapterSourceKind::Account
             }
         };
@@ -298,6 +299,9 @@ impl AdapterBridgeService {
             (BridgeUpstreamProtocol::XaiResponsesOauth, _) => self
                 .secrets
                 .resolve_grok_subscription_auth(source_kind, source_id),
+            (BridgeUpstreamProtocol::KiroHttp, _) => {
+                self.secrets.resolve_kiro_auth(source_kind, source_id)
+            }
         }
     }
 
@@ -356,6 +360,15 @@ impl AdapterBridgeService {
             }
             GROK_CLAUDE_RULE_ID | GROK_CODEX_RULE_ID => {
                 profile.source_kind == AdapterSourceKind::Account
+            }
+            id if id == KIRO_CLAUDE_API_EDGE.rule_id
+                || id == KIRO_CODEX_API_EDGE.rule_id
+                || id == KIRO_GROK_API_EDGE.rule_id =>
+            {
+                matches!(
+                    profile.source_kind,
+                    AdapterSourceKind::Provider | AdapterSourceKind::Account
+                )
             }
             _ => false,
         };
