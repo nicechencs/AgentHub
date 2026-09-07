@@ -19,7 +19,7 @@ export type KiroChatStance = {
   showBanner: true;
   allowCommandSearch: false;
   allowRuntimeRequests: false;
-  allowModelPicker: true;
+  allowModelPicker: boolean;
   allowSteer: false;
   allowQueueFollowUp: false;
 };
