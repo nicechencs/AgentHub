@@ -2712,7 +2712,7 @@ export const zh = {
     kiro: {
       oneshotHint: "Kiro 新对话可以点允许/拒绝；生成时不能中途补充，可排队到下一轮。",
       oneshotDetail: '装了命令行时在本机执行。旧对话保留原方式；如需持续聊天，请新建对话。终端里的命令补全和灰色提示不在本页。',
-      settingsLocked: '这条 Kiro 对话已开始，如需更换模型或思考等级，请新建对话',
+      settingsLocked: '这条 Kiro 对话已开始，如需更换模型、思考等级或权限，请新建对话',
       placeholder: "发送后可点允许/拒绝。生成时不能中途补充，可排队到下一轮。",
     },
     runtime: {

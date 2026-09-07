@@ -420,7 +420,8 @@ pub(crate) enum AcpSessionPlan {
 }
 
 /// Kiro ACP `session/load` after the previous process exited hangs or kills the
-/// new process. Keep the live process and prompt it; otherwise open a new session.
+/// new process. Reuse the live process; if it is gone, keep the session id and
+/// ask the user to start a new conversation.
 pub(crate) fn acp_session_plan(
     agent: AgentId,
     live_transport: bool,
