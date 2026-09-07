@@ -20,6 +20,15 @@ use crate::services::adapter_secret_resolver::AdapterSecretResolver;
 use super::surface::live_reconcile_lock;
 use super::AccountService;
 
+fn usable_access_token(account: &Account) -> Option<String> {
+    let token = extract_access_token(account).filter(|token| !token.trim().is_empty())?;
+    if access_jwt_expired(Some(&token)) {
+        None
+    } else {
+        Some(token)
+    }
+}
+
 fn access_jwt_expired(token: Option<&str>) -> bool {
     let Some(token) = token.map(str::trim).filter(|value| !value.is_empty()) else {
         return false;
@@ -153,26 +162,29 @@ impl AccountService {
         Ok(None)
     }
 
-    /// Follow a CLI-owned grant or Hub-refresh a Hub-owned grant. Returns a new
-    /// access token only when the pool value actually changed.
+    /// Follow a CLI-owned grant or Hub-refresh a Hub-owned grant.
+    ///
+    /// Returns the current usable access token after the attempt, even when the
+    /// pool value did not change, so a stale in-memory cell can catch up.
     pub fn reload_oauth_upstream_access(&self, id_or_label: &str) -> Result<Option<String>> {
         let account = self.get(id_or_label, None)?;
         if !matches!(account.agent_id, AgentId::Grok | AgentId::Codex) {
             return Ok(None);
         }
         if oauth_grant_is_cli_owned(&account) {
-            return self.follow_cli_owned_access(&account.id, account.agent_id);
+            let rotated = self.follow_cli_owned_access(&account.id, account.agent_id)?;
+            if rotated.is_some() {
+                return Ok(rotated);
+            }
+            return Ok(usable_access_token(
+                &self.get(&account.id, Some(account.agent_id))?,
+            ));
         }
         if !oauth_grant_is_hub_owned(&account) {
             return Ok(None);
         }
-        let prior = extract_access_token(&account);
         let refreshed = self.refresh_token(&account.id, account.agent_id)?;
-        let next = extract_access_token(&refreshed);
-        if next.as_deref() != prior.as_deref() {
-            return Ok(next);
-        }
-        Ok(None)
+        Ok(usable_access_token(&refreshed))
     }
 
     fn mark_cli_oauth_needs_login(&self, account: &Account) -> Result<()> {
@@ -209,9 +221,10 @@ pub fn oauth_bridge_reload_callback(
         return None;
     }
     Some(Arc::new(move || {
-        match accounts.reload_oauth_upstream_access(&source_id) {
-            Ok(Some(_)) => {}
-            _ => return None,
+        // `Ok(None)` still means "pool value did not rotate further". Re-resolve
+        // the current access so a cell still holding an older token can catch up.
+        if accounts.reload_oauth_upstream_access(&source_id).is_err() {
+            return None;
         }
         let auth = match protocol {
             BridgeUpstreamProtocol::XaiResponsesOauth => {
