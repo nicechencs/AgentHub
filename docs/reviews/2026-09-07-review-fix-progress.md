@@ -30,7 +30,7 @@ scope: dest @ 5ee06a4f；对照三份 2026-09-07 全项目 review 的确认问�
 | 2b | P1-001 | `fix/review-p1-kiro-http-cancel` `d1edd6f4` | 已关闭 |
 | 2c | P1-005 | `fix/review-p1-sse-trailer` `b40d97db` | 已关闭 |
 | 3a | P1-009、P2-004、P2-005 | `fix/review-p1-chat-runtime` | 核实完成，待实现 |
-| 3b | C8-P1-001/002/003、C8-P2-001/002 | `fix/review-open-chat` | 核实完成，待实现 |
+| 3b | C8-P1-001/002/003、C8-P2-001/002 | `fix/review-open-chat` `8d828143` | 已关闭 |
 | 4 | P2-003 | `fix/review-p2-setup-guide` `0b7d17b8` | 已关闭 |
 | 5 | P2-001 | 不在本轮并行 | 机械迁移，单独排队 |
 
@@ -144,6 +144,8 @@ scope: dest @ 5ee06a4f；对照三份 2026-09-07 全项目 review 的确认问�
 **AHREV-C8-P2-002**（confirmed）：旧 bootstrap cleanup 在 `applied=false` 时写回，可覆盖第二次请求。
 
 方案：事件只通知前端取 pending，消费点唯一。shell bootstrap 完成前不要自动建默认会话。AppImage 用经校验的 `APPIMAGE`。根目录避免反斜杠紧邻闭合引号。写回前比较 payload/代次。
+
+**关闭**：`8d828143`。dest 已合入。主 Agent 复跑相关 Vitest 37 项、`shell_open_chat` 13 项、`pnpm typecheck`。
 
 ### 批次 4 — 安装页失败提示
 
