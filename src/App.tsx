@@ -27,6 +27,12 @@ import RoutesActivityPage from '@/pages/routes/activity';
 import Sub2ApiPage from '@/pages/sub2api';
 import { isRoutesAreaPath } from '@/pages/routes/routes-nav-items';
 import { onTrayNavigate } from '@/lib/backend/tauri/tray-events';
+import {
+  onOpenChatCwd,
+  takePendingOpenChatCwd,
+} from '@/lib/backend/tauri/shell-open-chat-events';
+import { setChatBootstrap } from '@/lib/chat-bootstrap';
+import { folderNameFromCwd } from '@/lib/open-chat-cwd';
 import { legacyBridgesRedirectTo, ROUTES_SUB2API_PATH, SUB2API_PATH } from '@/lib/routes-path';
 import {
   checkForUpdate,
@@ -102,6 +108,41 @@ export default function App() {
       // installing a mock listener or turning into an unhandled rejection.
       logger.scope('tray').error('tray navigation subscription unavailable', error);
     });
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
+  }, [navigate]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unsub: (() => void) | undefined;
+    const last = { cwd: '', at: 0 };
+    const openFolder = (cwd: string) => {
+      const now = Date.now();
+      if (cwd === last.cwd && now - last.at < 2000) return;
+      last.cwd = cwd;
+      last.at = now;
+      const title = folderNameFromCwd(cwd);
+      if (!setChatBootstrap({ agentIds: [], cwd, title: title || undefined })) {
+        return;
+      }
+      navigate(`/chat?from=shell&t=${now}`);
+    };
+    void (async () => {
+      try {
+        const fn = await onOpenChatCwd(openFolder);
+        if (cancelled) {
+          fn();
+          return;
+        }
+        unsub = fn;
+        const pending = await takePendingOpenChatCwd();
+        if (!cancelled && pending) openFolder(pending);
+      } catch (error) {
+        logger.scope('shell').error('open-chat-cwd subscription unavailable', error);
+      }
+    })();
     return () => {
       cancelled = true;
       unsub?.();
