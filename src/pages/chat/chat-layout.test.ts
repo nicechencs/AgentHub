@@ -133,7 +133,9 @@ describe('chat layout wiring', () => {
 
   it('opens a new chat from the OS file-manager folder handoff', () => {
     const sessions = source('use-chat-page-sessions.ts');
-    expect(sessions).toContain("from !== 'projects' && from !== 'shell'");
+    expect(sessions).toContain('isChatBootstrapHandoff');
+    expect(sessions).toContain('allowEnsureDefault');
+    expect(sessions).toContain('restoreChatBootstrapIfUnchanged');
     expect(sessions).toContain('takeChatBootstrap');
     expect(sessions).toContain('boot.cwd');
   });
