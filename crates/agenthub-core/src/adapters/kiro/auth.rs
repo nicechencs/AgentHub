@@ -31,7 +31,9 @@ pub(super) fn kiro_oauth_auth_state() -> Option<AuthState> {
         kind: Some("oauth".into()),
         summary: format!("kiro-cli login on this computer ({source})"),
         has_credentials: true,
-        health: AuthHealth::Configured,
+        // Local Builder ID / social login is a renewable oauth grant, not an API key.
+        // Chat maps configured to the API chip path; that wrongly showed 未配置.
+        health: AuthHealth::Renewable,
         source: Some(source.into()),
         revision: None,
         also_present: Vec::new(),

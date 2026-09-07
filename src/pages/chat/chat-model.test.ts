@@ -78,7 +78,7 @@ describe('conversationResumeCommand', () => {
         agentIds: ['kiro'],
         nativeSessionId: 'sess-1',
       }),
-    ).toBeNull();
+    ).toBe('kiro-cli chat --resume-id sess-1');
   });
 });
 
@@ -943,6 +943,43 @@ describe('chatConnectionPickerView', () => {
     expect(view.currentLoginTitle).toBeNull();
     expect(view.label).toBe('未配置连接');
     expect(view.label).not.toContain('本机路由');
+  });
+
+  it('shows signed-in for Kiro live oauth/cli auth instead of 未配置', () => {
+    for (const health of ['renewable', 'verified'] as const) {
+      const kiro = status('kiro', true, false, {
+        effectiveKind: 'none',
+        effectiveLabel: '未配置',
+        authHealth: health,
+        authStatus: 'valid',
+        authSource: health === 'verified' ? 'kiro-cli whoami' : 'data.sqlite3',
+      });
+      expect(chatConnectionKind(kiro, false)).toBe('account');
+      const view = chatConnectionPickerView(t, {
+        primaryAgent: 'kiro',
+        status: kiro,
+      });
+      expect(view.kind).toBe('account');
+      expect(view.label).toBe('已登录');
+      expect(view.label).not.toContain('未配置');
+      expect(view.emptyHint).toBeNull();
+    }
+  });
+
+  it('does not show pool placeholder 未配置 as the API chip title', () => {
+    const view = chatConnectionPickerView(t, {
+      primaryAgent: 'kiro',
+      status: status('kiro', true, false, {
+        effectiveKind: 'none',
+        effectiveLabel: '未配置',
+        authHealth: 'configured',
+        authStatus: 'valid',
+        authSource: 'env:KIRO_API_KEY',
+      }),
+    });
+    expect(view.kind).toBe('api');
+    expect(view.label).toBe('API');
+    expect(view.label).not.toContain('未配置');
   });
 
   it('hides the unimported-current row until the wallet has loaded', () => {
