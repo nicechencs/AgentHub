@@ -17,6 +17,9 @@
 
 ## [Unreleased]
 
+### 修复
+- 对话：Kiro 持续聊天不再发送对方不支持的 `initialized`，避免 JSON-RPC 形状错误和带 Codex 字样的失败提示；传输错误改为中性 JSON-RPC 表述
+
 ## [0.4.8] - 2026-09-07
 
 ### 新增

@@ -55,17 +55,17 @@ pub enum CodexEvent {
 
 #[derive(Debug, Error)]
 pub enum CodexTransportError {
-    #[error("codex app-server I/O failed: {0}")]
+    #[error("JSON-RPC transport I/O failed: {0}")]
     Io(#[from] io::Error),
-    #[error("codex app-server request timed out")]
+    #[error("JSON-RPC transport request timed out")]
     Timeout,
-    #[error("codex app-server exited")]
+    #[error("JSON-RPC transport exited")]
     Exited,
-    #[error("codex app-server protocol error: {0}")]
+    #[error("JSON-RPC transport protocol error: {0}")]
     Protocol(String),
-    #[error("codex app-server returned an error: {error}")]
+    #[error("JSON-RPC transport returned an error: {error}")]
     Server { error: Value },
-    #[error("codex app-server event queue is full")]
+    #[error("JSON-RPC transport event queue is full")]
     EventQueueFull,
 }
 
@@ -128,6 +128,7 @@ impl CodexTransport {
                     "version": env!("CARGO_PKG_VERSION"),
                 }
             }),
+            true,
         )
     }
 
@@ -161,6 +162,7 @@ impl CodexTransport {
                     "fs": { "readTextFile": false, "writeTextFile": false }
                 }
             }),
+            true,
         )
     }
 
@@ -197,6 +199,8 @@ impl CodexTransport {
                     "fs": { "readTextFile": false, "writeTextFile": false }
                 }
             }),
+            // Kiro ACP does not implement the `initialized` notification.
+            false,
         )
     }
 
@@ -205,6 +209,7 @@ impl CodexTransport {
         args: &[String],
         cwd: &Path,
         initialize_params: Value,
+        send_initialized: bool,
     ) -> Result<Self, CodexTransportError> {
         let mut command = std::process::Command::new(program);
         command
@@ -290,7 +295,9 @@ impl CodexTransport {
         };
 
         transport.request_inner("initialize", initialize_params, HANDSHAKE_TIMEOUT)?;
-        transport.send_notification("initialized", None)?;
+        if send_initialized {
+            transport.send_notification("initialized", None)?;
+        }
         Ok(transport)
     }
 

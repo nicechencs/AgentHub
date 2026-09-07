@@ -31,6 +31,15 @@ fn classify_skips_unshaped_json_instead_of_failing() {
         json!({"result": {}}),
         json!({"type": "text", "content": "hi"}),
         json!({"error": "missing field `prompt`", "phase": "deserialization"}),
+        // Kiro may emit id-less Method not found for `initialized`; ignore like other unshaped lines.
+        json!({
+            "jsonrpc": "2.0",
+            "error": {
+                "code": -32601,
+                "message": "Method not found",
+                "data": "initialized"
+            }
+        }),
         json!(null),
     ] {
         assert!(matches!(classify_message(value), Ok(None)));
