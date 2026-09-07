@@ -639,8 +639,13 @@ export function useChatPageSend(input: {
           sendConvId,
           sendGeneration,
         );
-        if (current) {
+        const cancelledDuringStart = Boolean(
+          runtimeRecordsRef.current.get(sendConvId)?.cancelRequested,
+        );
+        if (current && !cancelledDuringStart) {
           toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
+          setDraft(prompt);
+        } else if (cancelledDuringStart && current) {
           setDraft(prompt);
         }
         const rows = await loadMessages(sendConvId).catch(() => null);
@@ -766,7 +771,15 @@ export function useChatPageSend(input: {
         target = requestRuntimeCancel(runtimeRecordsRef.current, conversationId);
       }
     }
-    if (target.kind === 'pending') return 'pending';
+    if (target.kind === 'pending') {
+      const record = runtimeRecordsRef.current.get(conversationId);
+      try {
+        await runtimeCancel(conversationId, record?.runId ?? '');
+      } catch {
+        // Worker may not exist yet; local pendingStart already recorded cancel.
+      }
+      return 'pending';
+    }
     if (target.kind === 'none') return 'none';
     if (target.kind === 'runtime') {
       await runtimeCancel(conversationId, target.runId);

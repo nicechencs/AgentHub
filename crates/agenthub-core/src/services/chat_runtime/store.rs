@@ -498,6 +498,11 @@ impl RuntimeStore {
                         "UPDATE conversations SET title = ?2, updated_at = ?3 WHERE id = ?1",
                         params![conversation_id, title, now],
                     )?;
+                } else {
+                    conn.execute(
+                        "UPDATE conversations SET updated_at = ?2 WHERE id = ?1",
+                        params![conversation_id, now],
+                    )?;
                 }
                 let current: i64 = conn.query_row(
                     "SELECT last_sequence FROM chat_runtime WHERE conversation_id = ?1",

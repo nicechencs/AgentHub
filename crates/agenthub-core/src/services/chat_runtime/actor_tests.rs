@@ -6,6 +6,7 @@ use crate::services::RunService;
 use crate::storage::{ChatRepo, Database};
 use serde_json::json;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 fn conversation(db: &Database, id: &str) {
     ChatRepo::new(db.clone())
@@ -31,6 +32,9 @@ fn worker(db: &Database, id: &str) -> ActorWorker {
         store: store::RuntimeStore::new(db.clone()),
         repo: ChatRepo::new(db.clone()),
         run: Arc::new(RunService::new(AdapterRegistry::default())),
+        catalogs: Arc::new(std::sync::Mutex::new(HashMap::new())),
+        codex_program_override: Arc::new(std::sync::Mutex::new(None)),
+        abort: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         agent: AgentId::Codex,
         transport: None,
         thread_id: None,
@@ -730,5 +734,224 @@ fn dead_kiro_process_rejects_existing_session_without_replacing_thread_id() {
             .thread_id
             .as_deref(),
         Some("kiro-session-1")
+    );
+}
+
+#[cfg(unix)]
+fn write_fake_codex(directory: &std::path::Path, script: &str) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let program = directory.join("fake-codex");
+    std::fs::write(&program, script).unwrap();
+    let mut permissions = std::fs::metadata(&program).unwrap().permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(&program, permissions).unwrap();
+    program
+}
+
+#[cfg(unix)]
+fn wait_for_file(path: &std::path::Path, timeout: Duration) {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if path.is_file() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    panic!("timed out waiting for {}", path.display());
+}
+
+#[cfg(unix)]
+#[test]
+fn poll_events_drains_a_burst_without_starving_later_commands() {
+    let directory = tempfile::tempdir().unwrap();
+    let ready = directory.path().join("ready");
+    let ready_path = ready.display().to_string();
+    let program = write_fake_codex(
+        directory.path(),
+        &format!(
+            r##"#!/bin/sh
+IFS= read -r initialize
+printf '%s\n' '{{"id":1,"result":{{"initialized":true}}}}'
+i=0
+while [ "$i" -lt 200 ]; do
+  printf '%s\n' '{{"method":"item/agentMessage/delta","params":{{"delta":"x"}}}}'
+  i=$((i + 1))
+done
+printf '%s\n' ready > "{ready_path}"
+while IFS= read -r _; do
+  :
+done
+"##
+        ),
+    );
+    let transport = CodexTransport::spawn(&program, directory.path()).unwrap();
+    wait_for_file(&ready, Duration::from_secs(2));
+
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "burst");
+    let mut worker = worker(&db, "burst");
+    worker.store.enable_if_new("burst").unwrap();
+    start_placeholder(&mut worker);
+    worker.transport = Some(transport);
+    worker.poll_events().unwrap();
+    let first = worker
+        .store
+        .snapshot("burst", None)
+        .unwrap()
+        .current_message
+        .unwrap()
+        .content
+        .len();
+    assert_eq!(first, 64, "one poll should take a 64-event batch, got {first}");
+    worker.poll_events().unwrap();
+    let second = worker
+        .store
+        .snapshot("burst", None)
+        .unwrap()
+        .current_message
+        .unwrap()
+        .content
+        .len();
+    assert_eq!(second, 128);
+    worker.abort.store(true, std::sync::atomic::Ordering::SeqCst);
+    let started = Instant::now();
+    worker.poll_events().unwrap();
+    assert!(started.elapsed() < Duration::from_millis(200));
+}
+
+#[cfg(unix)]
+#[test]
+fn shutdown_preempts_blocking_catalog_fetch() {
+    let directory = tempfile::tempdir().unwrap();
+    let ready = directory.path().join("blocked");
+    let ready_path = ready.display().to_string();
+    let program = write_fake_codex(
+        directory.path(),
+        &format!(
+            r##"#!/bin/sh
+if [ "$1" = "--version" ]; then
+  printf '%s\n' 'codex 0.0.1'
+  exit 0
+fi
+while IFS= read -r line; do
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' '{{"id":1,"result":{{"initialized":true}}}}'
+      ;;
+    *'"method":"model/list"'*)
+      printf '%s\n' blocked > "{ready_path}"
+      sleep 30
+      printf '%s\n' '{{"id":2,"result":{{"data":[]}}}}'
+      ;;
+  esac
+done
+"##
+        ),
+    );
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "catalog-cancel");
+    let runtime = Arc::new(ChatRuntime::new(
+        db,
+        Arc::new(RunService::new(AdapterRegistry::default())),
+    ));
+    runtime.store.enable_if_new("catalog-cancel").unwrap();
+    runtime.set_codex_program_for_test(program);
+    let started = Arc::clone(&runtime);
+    let handle = std::thread::spawn(move || {
+        started.start(
+            "catalog-cancel",
+            "hello",
+            "client-catalog",
+            RuntimeStartExtras::default(),
+        )
+    });
+    wait_for_file(&ready, Duration::from_secs(3));
+    let shutdown_started = Instant::now();
+    runtime.shutdown("catalog-cancel");
+    assert!(
+        shutdown_started.elapsed() < Duration::from_secs(5),
+        "shutdown waited {:?}",
+        shutdown_started.elapsed()
+    );
+    let outcome = handle.join().expect("start thread");
+    assert!(outcome.is_err(), "start should fail after shutdown");
+}
+
+#[cfg(unix)]
+#[test]
+fn cancel_preempts_blocking_turn_start() {
+    let directory = tempfile::tempdir().unwrap();
+    let ready = directory.path().join("blocked");
+    let ready_path = ready.display().to_string();
+    let program = write_fake_codex(
+        directory.path(),
+        &format!(
+            r##"#!/bin/sh
+if [ "$1" = "--version" ]; then
+  printf '%s\n' 'codex 0.0.1'
+  exit 0
+fi
+while IFS= read -r line; do
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' '{{"id":1,"result":{{"initialized":true}}}}'
+      ;;
+    *'"method":"thread/start"'*)
+      printf '%s\n' '{{"id":2,"result":{{"thread":{{"id":"thread-1"}}}}}}'
+      ;;
+    *'"method":"turn/start"'*)
+      printf '%s\n' blocked > "{ready_path}"
+      sleep 30
+      printf '%s\n' '{{"id":3,"result":{{"turn":{{"id":"turn-1"}}}}}}'
+      ;;
+  esac
+done
+"##
+        ),
+    );
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "turn-cancel");
+    let runtime = Arc::new(ChatRuntime::new(
+        db,
+        Arc::new(RunService::new(AdapterRegistry::default())),
+    ));
+    runtime.store.enable_if_new("turn-cancel").unwrap();
+    runtime.set_codex_program_for_test(program);
+    runtime.seed_catalog_cache_for_test(
+        "turn-cancel",
+        vec![RuntimeModelOption {
+            id: "gpt-test".into(),
+            efforts: vec!["low".into()],
+            default_effort: Some("low".into()),
+        }],
+        vec![],
+    );
+    let started = Arc::clone(&runtime);
+    let handle = std::thread::spawn(move || {
+        started.start(
+            "turn-cancel",
+            "hello",
+            "client-turn",
+            RuntimeStartExtras::default(),
+        )
+    });
+    wait_for_file(&ready, Duration::from_secs(3));
+    let cancel_started = Instant::now();
+    runtime.cancel("turn-cancel", "").unwrap();
+    assert!(
+        cancel_started.elapsed() < Duration::from_secs(5),
+        "cancel waited {:?}",
+        cancel_started.elapsed()
+    );
+    let outcome = handle.join().expect("start thread");
+    assert!(outcome.is_err(), "start should fail after cancel");
+    let snapshot = runtime.snapshot("turn-cancel", None).unwrap();
+    assert!(
+        matches!(
+            snapshot.phase,
+            RuntimePhase::Cancelled | RuntimePhase::Interrupted
+        ),
+        "phase {:?}",
+        snapshot.phase
     );
 }
