@@ -747,6 +747,43 @@ impl StreamCodec {
     }
 }
 
+/// After a terminal SSE event, leftover bytes in the same network chunk are
+/// ignorable when they are comments, empty frames, whitespace, `[DONE]`, or an
+/// incomplete comment at EOF. Extra `data:` payloads still fail.
+fn sse_buffer_is_legal_trailer(buffer: &std::collections::VecDeque<u8>) -> bool {
+    let mut rest = buffer.clone();
+    while let Some((frame_end, delimiter_len)) = sse_frame_end_deque(&rest) {
+        let frame = rest.drain(..frame_end).collect::<Vec<_>>();
+        for _ in 0..delimiter_len {
+            let _ = rest.pop_front();
+        }
+        match sse_data_payload(&frame) {
+            Ok(None) => {}
+            Ok(Some(payload)) if payload.is_empty() || payload == "[DONE]" => {}
+            _ => return false,
+        }
+    }
+    sse_incomplete_bytes_are_legal_trailer(&rest)
+}
+
+fn sse_incomplete_bytes_are_legal_trailer(buffer: &std::collections::VecDeque<u8>) -> bool {
+    if buffer.is_empty() {
+        return true;
+    }
+    let bytes = buffer.iter().copied().collect::<Vec<_>>();
+    let Ok(text) = std::str::from_utf8(&bytes) else {
+        return false;
+    };
+    text.replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .split('\n')
+        .all(|line| {
+            line.is_empty()
+                || line.chars().all(|ch| ch.is_ascii_whitespace())
+                || line.starts_with(':')
+        })
+}
+
 fn warn_stream_fail(request_id: &str, code: &str) {
     tracing::warn!(
         target: "core.adapter.protocol",
@@ -1299,7 +1336,7 @@ pub(super) fn stream_response(
         }
         // A clean EOF without the provider's terminal marker is not a completed response. This
         // distinction matters to response clients, which otherwise persist a truncated answer.
-        if !saw_done || !buffer.is_empty() {
+        if !saw_done || !sse_buffer_is_legal_trailer(&buffer) {
             observed.record_upstream_failure();
             trace_guard.fail_conversion();
             warn_stream_fail(&request_id, "stream_error");
@@ -1537,7 +1574,7 @@ pub(super) fn messages_stream_response(
                 }
             }
         }
-        if !saw_done || !buffer.is_empty() {
+        if !saw_done || !sse_buffer_is_legal_trailer(&buffer) {
             observed.record_upstream_failure();
             trace_guard.fail_conversion();
             warn_stream_fail(&request_id, "stream_error");
@@ -1732,7 +1769,7 @@ pub(super) fn chat_stream_response(
                 }
             }
         }
-        if !saw_done || !buffer.is_empty() {
+        if !saw_done || !sse_buffer_is_legal_trailer(&buffer) {
             observed.record_upstream_failure();
             trace_guard.fail_conversion();
             warn_stream_fail(&request_id, "stream_error");
@@ -1796,3 +1833,6 @@ pub(super) fn chat_stream_response(
     };
     event_stream_response(output)
 }
+
+#[cfg(test)]
+mod tests;
