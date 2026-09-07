@@ -23,9 +23,9 @@ scope: dest @ 5ee06a4f；对照三份 2026-09-07 全项目 review 的确认问�
 
 | 批次 | 问题 | 分支 / worktree | 状态 |
 | --- | --- | --- | --- |
-| 1a | P1-004、P2-002 | `fix/review-p1-restore` | 核实完成，待实现 |
-| 1b | P1-003 | `fix/review-p1-backup` | 核实完成，待实现 |
-| 1c | P1-006、P1-007、P1-008 | `fix/review-p1-bridge-auth` | 核实完成，待实现 |
+| 1a | P1-004、P2-002 | `fix/review-p1-restore` `71b32e85` | 已关闭 |
+| 1b | P1-003 | `fix/review-p1-backup` `c72f22cd` | 已关闭 |
+| 1c | P1-006、P1-007、P1-008 | `fix/review-p1-bridge-auth` / bridgefix@w16 | 实现中 |
 | 2a | P1-002 | `fix/review-p1-process-idle` | 核实完成，待实现 |
 | 2b | P1-001 | `fix/review-p1-kiro-http-cancel` | 核实完成，待实现 |
 | 2c | P1-005 | `fix/review-p1-sse-trailer` | 核实完成，待实现 |
@@ -53,6 +53,8 @@ scope: dest @ 5ee06a4f；对照三份 2026-09-07 全项目 review 的确认问�
 
 允许改动：`crates/agenthub-core/src/lib.rs`、`services/connection_service/trash.rs`、`services/route_pool_service.rs` 及其 `tests.rs`。不要顺带重构。
 
+**关闭**：`71b32e85`。dest 已合入。主 Agent 复跑 `cargo test -p agenthub-core --locked route_pool_service`（54 通过）和 `connection_service`（55 通过）。`restore_connection_trash` 对 `home=route_pool` 先 `require_enabled`、再 `restore_trash_source`、reattach 成功后才 `delete_trash`；失败则 `discard_restored_source`。`recycle_route_membership` 在同一 Immediate 事务写入回收记录并删除成员，投影失败会补偿。
+
 ### 批次 1b — 备份恢复误报成功
 
 **AHREV-P1-003**（confirmed）
@@ -62,6 +64,8 @@ scope: dest @ 5ee06a4f；对照三份 2026-09-07 全项目 review 的确认问�
 - 验证：注入只读/删除失败，断言 Tauri/页面能区分完整恢复与部分恢复。更新 mock 与 contract。
 
 允许改动：backup_service、backup DTO/port/tauri/mock、`BackupsPanel` 与相关 i18n、对应测试。
+
+**关闭**：`c72f22cd`。dest 已合入。主 Agent 复跑 `backup_service` 46 项、相关 Vitest 9 项、`pnpm typecheck`。`skipped_deletions` 进入 JSON；`delete_failed` 时页面警告「部分恢复」，`edited`/`unknown` 仍算成功。
 
 ### 批次 1c — 本机路由重放与登录刷新
 
