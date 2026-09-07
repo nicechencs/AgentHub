@@ -906,8 +906,10 @@ impl ActorWorker {
         self.last_start_request = Some(client_request_id.to_string());
         self.store
             .set_last_client_request_id(&self.conversation_id, client_request_id)?;
-        if let Some(mut transport) = self.transport.take() {
-            transport.shutdown();
+        if !is_acp_runtime_agent(Some(self.agent)) {
+            if let Some(mut transport) = self.transport.take() {
+                transport.shutdown();
+            }
         }
 
         let now = Utc::now().to_rfc3339();
@@ -1113,72 +1115,119 @@ impl ActorWorker {
             .ok()
             .flatten()
             .is_some_and(|conversation| conversation.allow_dangerous);
-        let mut transport = match self.agent {
-            AgentId::Kiro => {
-                let program = self.run.detect_kiro_installation()?;
-                CodexTransport::spawn_kiro(&program, &cwd, model, effort, trust_all)
+
+        let mut retried_after_exit = false;
+        loop {
+            let live = self.transport.as_ref().is_some_and(CodexTransport::is_open);
+            let plan = ops::acp_session_plan(self.agent, live, self.thread_id.is_some());
+            let mut transport = if matches!(plan, ops::AcpSessionPlan::PromptExisting) {
+                self.transport.take().ok_or_else(|| {
+                    AppError::message("chat.runtime.transport", "ACP process stopped")
+                })?
+            } else {
+                if let Some(mut previous) = self.transport.take() {
+                    previous.shutdown();
+                }
+                match self.agent {
+                    AgentId::Kiro => {
+                        let program = self.run.detect_kiro_installation()?;
+                        CodexTransport::spawn_kiro(&program, &cwd, model, effort, trust_all)
+                    }
+                    _ => {
+                        let program = self.run.detect_grok_installation()?;
+                        CodexTransport::spawn_grok(&program, &cwd, model, effort)
+                    }
+                }
+                .map_err(transport_error)?
+            };
+
+            match plan {
+                ops::AcpSessionPlan::PromptExisting => {}
+                ops::AcpSessionPlan::New => {
+                    let created = transport
+                        .request(
+                            "session/new",
+                            json!({ "cwd": cwd.to_string_lossy(), "mcpServers": [] }),
+                            CODEX_REQUEST_TIMEOUT,
+                        )
+                        .map_err(transport_error)?;
+                    self.thread_id =
+                        grok_session_id(&created).or_else(|| extract_id(&created, "session"));
+                }
+                ops::AcpSessionPlan::LoadThenPrompt => {
+                    let session_id = self.thread_id.clone().ok_or_else(|| {
+                        AppError::message("chat.runtime.protocol", "session id omitted")
+                    })?;
+                    let load_params = json!({
+                        "sessionId": session_id,
+                        "cwd": cwd.to_string_lossy(),
+                        "mcpServers": []
+                    });
+                    match transport
+                        .request("session/load", load_params.clone(), CODEX_REQUEST_TIMEOUT)
+                        .or_else(|_| {
+                            transport.request(
+                                "session/resume",
+                                load_params.clone(),
+                                CODEX_REQUEST_TIMEOUT,
+                            )
+                        }) {
+                        Ok(value) => {
+                            if let Some(id) = grok_session_id(&value) {
+                                self.thread_id = Some(id);
+                            }
+                        }
+                        Err(_) => {
+                            let created = transport
+                                .request(
+                                    "session/new",
+                                    json!({ "cwd": cwd.to_string_lossy(), "mcpServers": [] }),
+                                    CODEX_REQUEST_TIMEOUT,
+                                )
+                                .map_err(transport_error)?;
+                            self.thread_id = grok_session_id(&created)
+                                .or_else(|| extract_id(&created, "session"));
+                        }
+                    }
+                }
             }
-            _ => {
-                let program = self.run.detect_grok_installation()?;
-                CodexTransport::spawn_grok(&program, &cwd, model, effort)
+
+            let session_id = self.thread_id.clone().ok_or_else(|| {
+                AppError::message("chat.runtime.protocol", "session id omitted")
+            })?;
+            let blocks = ops::grok_prompt_blocks(prompt, &extras.images)?;
+            let prompt_params = ops::acp_session_prompt_params(&session_id, blocks);
+            match transport.begin_request("session/prompt", prompt_params) {
+                Ok(prompt_id) => {
+                    self.pending_prompt_id = Some(prompt_id);
+                    let run_id = self
+                        .run_id
+                        .clone()
+                        .unwrap_or_else(|| format!("run-{}", Uuid::new_v4()));
+                    self.turn_id = Some(run_id.clone());
+                    self.run_id = Some(run_id.clone());
+                    self.store.set_state(
+                        &self.conversation_id,
+                        RuntimePhase::Running,
+                        Some(&run_id),
+                        self.thread_id.as_deref(),
+                        self.turn_id.as_deref(),
+                        self.chat_turn,
+                        self.message_id.as_deref(),
+                    )?;
+                    self.transport = Some(transport);
+                    return self.store.snapshot(&self.conversation_id, None);
+                }
+                Err(codex_transport::CodexTransportError::Exited)
+                    if matches!(plan, ops::AcpSessionPlan::PromptExisting) && !retried_after_exit =>
+                {
+                    retried_after_exit = true;
+                    self.transport = None;
+                    continue;
+                }
+                Err(error) => return Err(transport_error(error)),
             }
         }
-        .map_err(transport_error)?;
-        if let Some(session_id) = self.thread_id.clone() {
-            let loaded = transport
-                .request(
-                    "session/load",
-                    json!({ "sessionId": session_id, "cwd": cwd.to_string_lossy() }),
-                    CODEX_REQUEST_TIMEOUT,
-                )
-                .or_else(|_| {
-                    transport.request(
-                        "session/resume",
-                        json!({ "sessionId": session_id, "cwd": cwd.to_string_lossy() }),
-                        CODEX_REQUEST_TIMEOUT,
-                    )
-                })
-                .map_err(transport_error)?;
-            if let Some(id) = grok_session_id(&loaded) {
-                self.thread_id = Some(id);
-            }
-        } else {
-            let created = transport
-                .request(
-                    "session/new",
-                    json!({ "cwd": cwd.to_string_lossy(), "mcpServers": [] }),
-                    CODEX_REQUEST_TIMEOUT,
-                )
-                .map_err(transport_error)?;
-            self.thread_id = grok_session_id(&created).or_else(|| extract_id(&created, "session"));
-        }
-        let session_id = self
-            .thread_id
-            .clone()
-            .ok_or_else(|| AppError::message("chat.runtime.protocol", "session id omitted"))?;
-        let blocks = ops::grok_prompt_blocks(prompt, &extras.images)?;
-        let prompt_params = ops::acp_session_prompt_params(&session_id, blocks);
-        let prompt_id = transport
-            .begin_request("session/prompt", prompt_params)
-            .map_err(transport_error)?;
-        self.pending_prompt_id = Some(prompt_id);
-        let run_id = self
-            .run_id
-            .clone()
-            .unwrap_or_else(|| format!("run-{}", Uuid::new_v4()));
-        self.turn_id = Some(run_id.clone());
-        self.run_id = Some(run_id.clone());
-        self.store.set_state(
-            &self.conversation_id,
-            RuntimePhase::Running,
-            Some(&run_id),
-            self.thread_id.as_deref(),
-            self.turn_id.as_deref(),
-            self.chat_turn,
-            self.message_id.as_deref(),
-        )?;
-        self.transport = Some(transport);
-        self.store.snapshot(&self.conversation_id, None)
     }
 
     fn reply(&mut self, reply: RuntimeReply) -> Result<()> {
@@ -1745,10 +1794,12 @@ impl ActorWorker {
             (ChatMessageStatus::Ok, RuntimePhase::Completed, true, None)
         };
         self.terminalize(message_status, error.as_deref(), phase, ok, cancelled)?;
-        if let Some(transport) = self.transport.as_mut() {
-            transport.shutdown();
+        if !is_acp_runtime_agent(Some(self.agent)) {
+            if let Some(transport) = self.transport.as_mut() {
+                transport.shutdown();
+            }
+            self.transport = None;
         }
-        self.transport = None;
         Ok(())
     }
 

@@ -128,6 +128,7 @@ impl CodexTransport {
                     "version": env!("CARGO_PKG_VERSION"),
                 }
             }),
+            true,
         )
     }
 
@@ -161,6 +162,7 @@ impl CodexTransport {
                     "fs": { "readTextFile": false, "writeTextFile": false }
                 }
             }),
+            true,
         )
     }
 
@@ -197,6 +199,8 @@ impl CodexTransport {
                     "fs": { "readTextFile": false, "writeTextFile": false }
                 }
             }),
+            // Kiro ACP does not implement the `initialized` notification.
+            false,
         )
     }
 
@@ -205,6 +209,7 @@ impl CodexTransport {
         args: &[String],
         cwd: &Path,
         initialize_params: Value,
+        send_initialized: bool,
     ) -> Result<Self, CodexTransportError> {
         let mut command = std::process::Command::new(program);
         command
@@ -290,7 +295,9 @@ impl CodexTransport {
         };
 
         transport.request_inner("initialize", initialize_params, HANDSHAKE_TIMEOUT)?;
-        transport.send_notification("initialized", None)?;
+        if send_initialized {
+            transport.send_notification("initialized", None)?;
+        }
         Ok(transport)
     }
 
@@ -390,6 +397,10 @@ impl CodexTransport {
     pub fn stderr(&self) -> String {
         let bytes = self.stderr.lock().expect("stderr capture lock poisoned");
         String::from_utf8_lossy(&bytes).into_owned()
+    }
+
+    pub fn is_open(&self) -> bool {
+        !self.exited && !self.shutdown && self.stdin.is_some() && self.child.is_some()
     }
 
     /// Terminate the app-server process tree and reap the process.
