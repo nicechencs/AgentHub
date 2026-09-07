@@ -1,7 +1,7 @@
 use super::*;
 use crate::adapters::AgentAdapter;
 use crate::models::{
-    AgentConfig, AuthState, Capability, CapabilityState, DetectResult, DetectStatus,
+    AgentConfig, AuthState, BackupRecord, Capability, CapabilityState, DetectResult, DetectStatus,
     InstallChannel, RunOptions, RunSpec,
 };
 use crate::services::ProviderService;
@@ -1333,6 +1333,95 @@ fn restore_keeps_created_then_edited_or_foreign_file() {
         .collect();
     assert!(reasons.contains(&(&edited, "edited")));
     assert!(reasons.contains(&(&foreign, "unknown")));
+}
+
+#[test]
+fn restore_result_serializes_delete_failed_skipped_deletions() {
+    let restored = BackupRecord {
+        id: "backup-1".into(),
+        agent_id: Some(AgentId::Claude),
+        kind: BackupKind::Manual,
+        path: "/tmp/backup-1".into(),
+        files: vec!["settings.json".into()],
+        size: 4,
+        note: None,
+        created_at: "2026-09-07T00:00:00Z".into(),
+    };
+    let mut result = RestoreResult::new(restored, None, vec!["/tmp/live/settings.json".into()]);
+    result.skipped_deletions.push(SkippedDeletion {
+        path: PathBuf::from("/tmp/live/auth.json"),
+        reason: "delete_failed".into(),
+    });
+    let value = serde_json::to_value(&result).unwrap();
+    let skipped = value
+        .get("skippedDeletions")
+        .expect("skippedDeletions must be serialized");
+    assert!(skipped.is_array());
+    assert_eq!(skipped[0]["reason"], "delete_failed");
+    assert_eq!(skipped[0]["path"], "/tmp/live/auth.json");
+}
+
+#[cfg(unix)]
+#[test]
+fn restore_reports_delete_failed_when_absent_file_cannot_be_removed() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let live = tempdir().unwrap();
+    let present = live.path().join("settings.json");
+    let nested = live.path().join("nested");
+    let created = nested.join("auth.json");
+    write_file(&present, b"keep");
+    let (_root, db, svc, _) =
+        make_svc_with_db(AgentId::Claude, vec![present.clone(), created.clone()]);
+    let rec = svc
+        .snapshot(AgentId::Claude, BackupKind::Manual, None)
+        .unwrap();
+
+    write_file(&created, b"agenthub-bytes");
+    crate::services::live_fingerprint::record_written(&db, AgentId::Claude, &[created.clone()]);
+
+    let original = std::fs::metadata(&nested).unwrap().permissions();
+    let mut locked = original.clone();
+    locked.set_mode(0o555);
+    std::fs::set_permissions(&nested, locked).unwrap();
+    struct ResetPerms {
+        path: PathBuf,
+        perms: std::fs::Permissions,
+    }
+    impl Drop for ResetPerms {
+        fn drop(&mut self) {
+            let _ = std::fs::set_permissions(&self.path, self.perms.clone());
+        }
+    }
+    let _reset = ResetPerms {
+        path: nested.clone(),
+        perms: original,
+    };
+
+    let result = svc.restore(&rec.id).unwrap();
+    assert_eq!(std::fs::read(&present).unwrap(), b"keep");
+    assert!(
+        created.exists(),
+        "managed absent file should remain when delete fails"
+    );
+    assert!(
+        result
+            .skipped_deletions
+            .iter()
+            .any(|skipped| skipped.path == created && skipped.reason == "delete_failed"),
+        "delete_failed skip missing: {:?}",
+        result.skipped_deletions
+    );
+
+    let value = serde_json::to_value(&result).unwrap();
+    let skipped = value
+        .get("skippedDeletions")
+        .expect("skippedDeletions must be serialized");
+    assert!(skipped
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["reason"] == "delete_failed"));
 }
 
 #[test]

@@ -482,25 +482,10 @@ pub(crate) fn well_known_bin_paths(agent: AgentId) -> Vec<(PathBuf, &'static str
             push_native(&mut paths, home.join(".pi").join("agent").join("bin"));
         }
         AgentId::WorkBuddy => {
-            // Electron desktop under LocalAppData\Programs\WorkBuddy (not PATH/npm).
-            #[cfg(windows)]
-            {
-                if let Ok(local) = std::env::var("LOCALAPPDATA") {
-                    paths.push((
-                        PathBuf::from(local)
-                            .join("Programs")
-                            .join("WorkBuddy")
-                            .join("WorkBuddy.exe"),
-                        "native",
-                    ));
-                }
-            }
-            #[cfg(not(windows))]
-            {
-                paths.push((
-                    PathBuf::from("/Applications/WorkBuddy.app/Contents/MacOS/WorkBuddy"),
-                    "native",
-                ));
+            // Electron desktop (Windows Programs\WorkBuddy, macOS WorkBuddy.app).
+            // macOS builds may ship `Electron` as the bundle executable.
+            for path in super::workbuddy::well_known_exe_paths() {
+                paths.push((path, "native"));
             }
             let _ = home;
         }

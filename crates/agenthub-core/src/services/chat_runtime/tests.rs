@@ -59,6 +59,151 @@ fn empty_codex_conversation_enables_runtime_but_legacy_stays_legacy() {
 }
 
 #[test]
+fn begin_turn_bumps_conversation_sort_time_without_renaming() {
+    let db = Database::open_in_memory().unwrap();
+    let repo = ChatRepo::new(db.clone());
+    let older = Conversation {
+        id: "older".into(),
+        title: "kept title".into(),
+        agent_ids: vec![AgentId::Codex],
+        cwd: Some(std::env::temp_dir().to_string_lossy().into_owned()),
+        allow_dangerous: false,
+        created_at: "2026-01-01T00:00:00Z".into(),
+        updated_at: "2026-01-01T00:00:00Z".into(),
+        native_session_id: None,
+        sending: false,
+    };
+    let newer = Conversation {
+        id: "newer".into(),
+        title: "other".into(),
+        agent_ids: vec![AgentId::Codex],
+        cwd: older.cwd.clone(),
+        allow_dangerous: false,
+        created_at: "2026-01-01T00:00:00Z".into(),
+        updated_at: "2026-06-01T00:00:00Z".into(),
+        native_session_id: None,
+        sending: false,
+    };
+    repo.create_conversation(&older).unwrap();
+    repo.create_conversation(&newer).unwrap();
+    let store = super::store::RuntimeStore::new(db);
+    store.enable_if_new("older").unwrap();
+    store.enable_if_new("newer").unwrap();
+    let listed = repo.list_conversations().unwrap();
+    assert_eq!(listed[0].id, "newer");
+    assert_eq!(listed[1].id, "older");
+
+    let now = "2026-01-01T00:00:00Z".to_string();
+    let mut user = crate::models::ChatMessage {
+        id: "user-1".into(),
+        conversation_id: "older".into(),
+        turn: 0,
+        role: ChatRole::User,
+        agent_id: None,
+        content: "hello from older".into(),
+        status: crate::models::ChatMessageStatus::Ok,
+        exit_code: None,
+        duration_ms: 0,
+        error: None,
+        created_at: now.clone(),
+    };
+    let mut agent = crate::models::ChatMessage {
+        id: "agent-1".into(),
+        conversation_id: "older".into(),
+        turn: 0,
+        role: ChatRole::Agent,
+        agent_id: Some(AgentId::Codex),
+        content: String::new(),
+        status: crate::models::ChatMessageStatus::Running,
+        exit_code: None,
+        duration_ms: 0,
+        error: None,
+        created_at: now,
+    };
+    store
+        .begin_turn("older", &mut user, &mut agent, "run-1", None, |turn| {
+            vec![ChatEvent::Started {
+                turn,
+                agents: vec![AgentId::Codex],
+            }]
+        })
+        .unwrap();
+
+    let listed = repo.list_conversations().unwrap();
+    assert_eq!(listed[0].id, "older");
+    assert_eq!(listed[0].title, "kept title");
+    assert_eq!(listed[1].id, "newer");
+}
+
+#[test]
+fn begin_turn_sets_title_when_empty_and_still_bumps_sort_time() {
+    let db = Database::open_in_memory().unwrap();
+    let repo = ChatRepo::new(db.clone());
+    conversation(&db, "untitled", false);
+    conversation(&db, "other", false);
+    repo.update_conversation(&Conversation {
+        id: "other".into(),
+        title: "named".into(),
+        agent_ids: vec![AgentId::Codex],
+        cwd: Some(std::env::temp_dir().to_string_lossy().into_owned()),
+        allow_dangerous: false,
+        created_at: "2026-01-01T00:00:00Z".into(),
+        updated_at: "2026-06-01T00:00:00Z".into(),
+        native_session_id: None,
+        sending: false,
+    })
+    .unwrap();
+    let store = super::store::RuntimeStore::new(db);
+    store.enable_if_new("untitled").unwrap();
+    let now = "2026-01-01T00:00:00Z".to_string();
+    let mut user = crate::models::ChatMessage {
+        id: "user-1".into(),
+        conversation_id: "untitled".into(),
+        turn: 0,
+        role: ChatRole::User,
+        agent_id: None,
+        content: "first prompt for title".into(),
+        status: crate::models::ChatMessageStatus::Ok,
+        exit_code: None,
+        duration_ms: 0,
+        error: None,
+        created_at: now.clone(),
+    };
+    let mut agent = crate::models::ChatMessage {
+        id: "agent-1".into(),
+        conversation_id: "untitled".into(),
+        turn: 0,
+        role: ChatRole::Agent,
+        agent_id: Some(AgentId::Codex),
+        content: String::new(),
+        status: crate::models::ChatMessageStatus::Running,
+        exit_code: None,
+        duration_ms: 0,
+        error: None,
+        created_at: now,
+    };
+    store
+        .begin_turn(
+            "untitled",
+            &mut user,
+            &mut agent,
+            "run-1",
+            None,
+            |turn| {
+                vec![ChatEvent::Started {
+                    turn,
+                    agents: vec![AgentId::Codex],
+                }]
+            },
+        )
+        .unwrap();
+    let untitled = repo.get_conversation("untitled").unwrap().unwrap();
+    assert_eq!(untitled.title, "first prompt for title");
+    let listed = repo.list_conversations().unwrap();
+    assert_eq!(listed[0].id, "untitled");
+}
+
+#[test]
 fn empty_grok_conversation_enables_runtime() {
     let db = Database::open_in_memory().unwrap();
     let now = "2026-01-01T00:00:00Z".to_string();

@@ -38,6 +38,14 @@ impl CommandExecutor for MockExecutor {
     }
 }
 
+fn setup_page_open_ok(_url: &str) -> crate::error::Result<()> {
+    Ok(())
+}
+
+fn setup_page_open_err(_url: &str) -> crate::error::Result<()> {
+    Err(AppError::message("oauth.browser", "xdg-open not found"))
+}
+
 #[test]
 fn install_runtime_powershell_refuses() {
     let ex = MockExecutor {
@@ -581,13 +589,15 @@ fn workbuddy_setup_channel_never_reports_success() {
     let contribution = builtin_install_registry()
         .get_agent_id(AgentId::WorkBuddy)
         .expect("workbuddy contribution");
-    let result = run_native_install(
-        contribution.as_ref(),
-        AgentId::WorkBuddy.as_str(),
-        Some(AgentId::WorkBuddy),
-        &ex,
-        &mut logs,
-    )
+    let result = with_open_browser_override(setup_page_open_ok, || {
+        run_native_install(
+            contribution.as_ref(),
+            AgentId::WorkBuddy.as_str(),
+            Some(AgentId::WorkBuddy),
+            &ex,
+            &mut logs,
+        )
+    })
     .unwrap();
     assert!(!result.success());
     assert!(
@@ -616,7 +626,9 @@ fn workbuddy_native_install_is_setup_guide_not_failure() {
         stdout: String::new(),
         stderr: String::new(),
     };
-    let out = install_agent(&registry, AgentId::WorkBuddy, "native", false, &ex).unwrap();
+    let out = with_open_browser_override(setup_page_open_ok, || {
+        install_agent(&registry, AgentId::WorkBuddy, "native", false, &ex).unwrap()
+    });
     if out.ok {
         // Already installed on this machine: still must not have installed
         // into leftover AgentHub data-dir npm.
@@ -668,7 +680,9 @@ fn setup_guide_contribution_is_not_command_failure() {
         stdout: String::new(),
         stderr: String::new(),
     };
-    let out = install_from_contribution(&key, &GuideContrib, "native", false, &ex).unwrap();
+    let out = with_open_browser_override(setup_page_open_ok, || {
+        install_from_contribution(&key, &GuideContrib, "native", false, &ex).unwrap()
+    });
     assert!(!out.ok);
     assert_eq!(out.code.as_deref(), Some("setup_guide"));
     assert!(!out.message.contains("失败"));
@@ -681,6 +695,158 @@ fn setup_guide_contribution_is_not_command_failure() {
         calls.lock().unwrap().is_empty(),
         "setup guide opens the official page without the install executor: {:?}",
         calls.lock().unwrap()
+    );
+}
+
+#[test]
+fn setup_guide_open_failed_when_spawn_error_or_timeout() {
+    let opened = ExecResult {
+        command: "open https://example.com".into(),
+        exit_code: Some(1),
+        stdout: String::new(),
+        stderr: String::new(),
+        timed_out: false,
+        spawn_error: None,
+    };
+    assert!(!setup_guide_open_failed(&opened));
+
+    let spawn_failed = ExecResult {
+        spawn_error: Some("xdg-open not found".into()),
+        exit_code: None,
+        ..opened.clone()
+    };
+    assert!(setup_guide_open_failed(&spawn_failed));
+
+    let timed_out = ExecResult {
+        timed_out: true,
+        exit_code: None,
+        ..opened
+    };
+    assert!(setup_guide_open_failed(&timed_out));
+}
+
+#[test]
+fn setup_guide_open_failure_sets_spawn_error() {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let ex = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+        stderr: String::new(),
+    };
+    let mut logs = Vec::new();
+    let contribution = builtin_install_registry()
+        .get_agent_id(AgentId::WorkBuddy)
+        .expect("workbuddy contribution");
+    let result = with_open_browser_override(setup_page_open_err, || {
+        run_native_install(
+            contribution.as_ref(),
+            AgentId::WorkBuddy.as_str(),
+            Some(AgentId::WorkBuddy),
+            &ex,
+            &mut logs,
+        )
+    })
+    .unwrap();
+    assert!(setup_guide_open_failed(&result));
+    assert_eq!(result.spawn_error.as_deref(), Some("xdg-open not found"));
+    assert!(
+        logs.iter().any(|line| line.contains("打开安装页失败")),
+        "expected open-failure log, got {logs:?}"
+    );
+    assert!(
+        logs.iter()
+            .all(|line| !line.contains("已尝试打开官网安装页")),
+        "must not claim the page was opened: {logs:?}"
+    );
+    assert!(
+        calls.lock().unwrap().is_empty(),
+        "setup guide must not use the install executor: {:?}",
+        calls.lock().unwrap()
+    );
+}
+
+#[test]
+fn setup_guide_open_failure_does_not_claim_page_opened() {
+    struct GuideContrib;
+    impl InstallContribution for GuideContrib {
+        fn agent_key(&self) -> AgentKey {
+            AgentKey::parse("guide-only").unwrap()
+        }
+        fn native_setup_url(&self) -> Option<&'static str> {
+            Some("https://www.codebuddy.cn/work/")
+        }
+    }
+
+    let key = AgentKey::parse("guide-only").unwrap();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let ex = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+        stderr: String::new(),
+    };
+    let out = with_open_browser_override(setup_page_open_err, || {
+        install_from_contribution(&key, &GuideContrib, "native", false, &ex).unwrap()
+    });
+    assert!(!out.ok);
+    assert_ne!(out.code.as_deref(), Some("setup_guide"));
+    assert!(
+        !out.message.contains("已打开"),
+        "must not claim the official page opened: {}",
+        out.message
+    );
+    assert!(
+        out.message.contains("无法打开官网安装页"),
+        "expected open-failure copy, got {}",
+        out.message
+    );
+    assert_eq!(
+        out.logs.first().map(String::as_str),
+        Some(setup_guide_open_failed_diagnosis())
+    );
+    assert!(
+        out.logs
+            .iter()
+            .any(|line| line.contains("打开安装页失败")),
+        "logs={:?}",
+        out.logs
+    );
+    assert!(
+        calls.lock().unwrap().is_empty(),
+        "setup guide must not use the install executor: {:?}",
+        calls.lock().unwrap()
+    );
+}
+
+#[test]
+fn workbuddy_open_failure_is_not_setup_guide_success() {
+    let registry = register_all();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let ex = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+        stderr: String::new(),
+    };
+    let out = with_open_browser_override(setup_page_open_err, || {
+        install_agent(&registry, AgentId::WorkBuddy, "native", false, &ex).unwrap()
+    });
+    assert!(!out.ok);
+    assert_ne!(out.code.as_deref(), Some("setup_guide"));
+    assert!(
+        !out.message.contains("已打开"),
+        "must not claim the official page opened: {}",
+        out.message
+    );
+    assert!(
+        out.message.contains("无法打开官网安装页"),
+        "expected open-failure copy, got {}",
+        out.message
+    );
+    assert_eq!(
+        out.logs.first().map(String::as_str),
+        Some(setup_guide_open_failed_diagnosis())
     );
 }
 

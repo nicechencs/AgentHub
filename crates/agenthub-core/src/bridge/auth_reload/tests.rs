@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
@@ -238,6 +238,59 @@ async fn waiter_on_stale_reload_retries_without_clobbering_newer_credential() {
     assert_eq!(waiter_member.auth.token(), "newer");
     assert!(!coordinator.is_isolated("account:acc-a"));
     assert_eq!(hits.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn later_independent_cell_adopts_already_current_token() {
+    let db = Arc::new(Mutex::new("t0".to_string()));
+    let reload: crate::bridge::UpstreamAuthReload = Arc::new({
+        let db = db.clone();
+        move || {
+            let mut guard = db.lock().expect("lock");
+            if guard.as_str() == "t0" {
+                *guard = "t1".to_owned();
+            }
+            Some(guard.clone())
+        }
+    });
+    let coordinator = AuthReloadCoordinator::new();
+    let cell_a = member("acc-a", "t0", reload.clone());
+    assert_eq!(
+        coordinator.reload_member(&cell_a).await,
+        AuthReloadOutcome::Rotated
+    );
+    assert_eq!(cell_a.auth.token(), "t1");
+
+    let cell_b = member("acc-a", "t0", reload);
+    let outcome = coordinator.reload_member(&cell_b).await;
+    assert!(
+        outcome.should_retry(),
+        "stale cell must adopt the current token, not isolate: {outcome:?}"
+    );
+    assert_eq!(cell_b.auth.token(), "t1");
+    assert!(!coordinator.is_isolated("account:acc-a"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn reload_callback_runs_in_blocking_pool() {
+    let in_blocking = Arc::new(AtomicBool::new(false));
+    let flag = in_blocking.clone();
+    let reload: crate::bridge::UpstreamAuthReload = Arc::new(move || {
+        let allowed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            tokio::runtime::Handle::current().block_on(std::future::ready(()));
+        }))
+        .is_ok();
+        flag.store(allowed, Ordering::SeqCst);
+        Some("rotated".into())
+    });
+    let picked = member("acc-a", "old", reload);
+    let coordinator = AuthReloadCoordinator::new();
+    let outcome = coordinator.reload_member(&picked).await;
+    assert_eq!(outcome, AuthReloadOutcome::Rotated);
+    assert!(
+        in_blocking.load(Ordering::SeqCst),
+        "reload callback must run on spawn_blocking so Handle::block_on is allowed"
+    );
 }
 
 #[test]

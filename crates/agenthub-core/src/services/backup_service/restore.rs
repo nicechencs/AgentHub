@@ -37,14 +37,16 @@ pub struct RestoreItem {
 
 /// One absent-file cleanup the restore declined to perform. The file was
 /// created after the backup was taken, but the restore kept it because it is
-/// no longer byte-identical to AgentHub's last managed write.
+/// no longer byte-identical to AgentHub's last managed write — or because
+/// deleting a still-managed file failed.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub(crate) struct SkippedDeletion {
+#[serde(rename_all = "camelCase")]
+pub struct SkippedDeletion {
     /// Live path that was kept.
-    pub(crate) path: PathBuf,
+    pub path: PathBuf,
     /// Short machine-readable cause (`edited`, `unknown`, `delete_failed`,
     /// `fingerprint_unavailable`).
-    pub(crate) reason: String,
+    pub reason: String,
 }
 
 /// File-restore plan plus the live paths that were absent at snapshot time

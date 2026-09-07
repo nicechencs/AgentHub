@@ -20,7 +20,8 @@ pub use types::{
 };
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -74,6 +75,7 @@ enum RuntimeCommand {
 #[derive(Clone)]
 struct ActorHandle {
     tx: SyncSender<RuntimeCommand>,
+    abort: Arc<AtomicBool>,
 }
 
 /// One serialized owner per conversation.  The map itself is only a routing
@@ -90,7 +92,8 @@ pub struct ChatRuntime {
     repo: ChatRepo,
     run: Arc<RunService>,
     actors: Mutex<HashMap<String, ActorHandle>>,
-    catalogs: Mutex<HashMap<String, CatalogCache>>,
+    catalogs: Arc<Mutex<HashMap<String, CatalogCache>>>,
+    codex_program_override: Arc<Mutex<Option<PathBuf>>>,
 }
 
 impl ChatRuntime {
@@ -104,7 +107,8 @@ impl ChatRuntime {
             repo: ChatRepo::new(db),
             run,
             actors: Mutex::new(HashMap::new()),
-            catalogs: Mutex::new(HashMap::new()),
+            catalogs: Arc::new(Mutex::new(HashMap::new())),
+            codex_program_override: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -313,19 +317,25 @@ impl ChatRuntime {
         }
         ops::validate_local_images(&extras.images)?;
         self.store.enable_if_new(conversation_id)?;
-        // Prefetch while still idle so mid-turn options() can serve cached lists
-        // without spawning a second Codex process during a frozen phase.
-        let cache = self.load_catalog(conversation_id, false);
-        let models = self.effective_models(&cache.models);
-        let mut settings = self.store.turn_settings(conversation_id)?;
-        if ops::settings_need_catalog_default(&settings, &models) {
-            if let Some(defaults) = ops::default_turn_settings(&models) {
-                settings = self.store.set_turn_settings(conversation_id, &defaults)?;
+        let actor = match self.actor(conversation_id) {
+            Ok(actor) => actor,
+            Err(error) => return Err(error),
+        };
+        actor.abort.store(false, Ordering::SeqCst);
+        // Cached lists can be checked on the caller thread. A cold catalog
+        // fetch is owned by the actor so Cancel/Shutdown can preempt it.
+        if let Some(cache) = self.peek_catalog(conversation_id) {
+            let models = self.effective_models(&cache.models);
+            let mut settings = self.store.turn_settings(conversation_id)?;
+            if ops::settings_need_catalog_default(&settings, &models) {
+                if let Some(defaults) = ops::default_turn_settings(&models) {
+                    settings = self.store.set_turn_settings(conversation_id, &defaults)?;
+                }
             }
-        }
-        ops::assert_settings_supported(&settings, &models)?;
-        if !extras.skills.is_empty() {
-            ops::validate_skill_refs(&extras.skills, &cache.extensions)?;
+            ops::assert_settings_supported(&settings, &models)?;
+            if !extras.skills.is_empty() {
+                ops::validate_skill_refs(&extras.skills, &cache.extensions)?;
+            }
         }
         match self
             .store
@@ -340,19 +350,16 @@ impl ChatRuntime {
             }
             OperationState::New => {}
         }
-        let actor = match self.actor(conversation_id) {
-            Ok(actor) => actor,
-            Err(error) => {
-                self.store.mark_operation(
-                    conversation_id,
-                    "start",
-                    client_request_id,
-                    OperationState::Failed,
-                    None,
-                )?;
-                return Err(error);
-            }
-        };
+        if actor.abort.load(Ordering::SeqCst) {
+            self.store.mark_operation(
+                conversation_id,
+                "start",
+                client_request_id,
+                OperationState::Failed,
+                None,
+            )?;
+            return Err(cancelled_error());
+        }
         let (tx, rx) = mpsc::sync_channel(1);
         let outcome = actor
             .tx
@@ -511,6 +518,7 @@ impl ChatRuntime {
 
     pub fn cancel(&self, conversation_id: &str, run_id: &str) -> Result<()> {
         let actor = self.actor_for_existing(conversation_id)?;
+        actor.abort.store(true, Ordering::SeqCst);
         let (tx, rx) = mpsc::sync_channel(1);
         actor
             .tx
@@ -528,15 +536,33 @@ impl ChatRuntime {
     pub(crate) fn shutdown(&self, conversation_id: &str) {
         if let Ok(mut actors) = self.actors.lock() {
             if let Some(actor) = actors.remove(conversation_id) {
+                actor.abort.store(true, Ordering::SeqCst);
                 let (done_tx, done_rx) = mpsc::sync_channel(1);
                 if actor
                     .tx
                     .send(RuntimeCommand::Shutdown { done: done_tx })
                     .is_ok()
                 {
-                    let _ = done_rx.recv_timeout(Duration::from_secs(5));
+                    // Wait until the worker confirms process teardown. A timeout
+                    // here used to continue deleting the conversation while the
+                    // child was still running.
+                    let _ = done_rx.recv();
                 }
             }
+        }
+    }
+
+    fn peek_catalog(&self, conversation_id: &str) -> Option<CatalogCache> {
+        self.catalogs
+            .lock()
+            .ok()
+            .and_then(|guard| guard.get(conversation_id).cloned())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_codex_program_for_test(&self, path: PathBuf) {
+        if let Ok(mut guard) = self.codex_program_override.lock() {
+            *guard = Some(path);
         }
     }
 
@@ -606,10 +632,10 @@ impl ChatRuntime {
         };
         match conversation.agent_ids.first().copied() {
             Some(AgentId::Grok) => return self.fetch_grok_catalog(&cwd),
-            Some(AgentId::Kiro) => return self.fetch_kiro_catalog(),
+            Some(AgentId::Kiro) => return fetch_kiro_catalog(),
             _ => {}
         }
-        let Ok(program) = self.run.detect_codex_installation() else {
+        let Ok(program) = resolve_codex_program(&self.run, &self.codex_program_override) else {
             return CatalogCache::default();
         };
         let mut transport = match CodexTransport::spawn(&program, &cwd) {
@@ -640,11 +666,11 @@ impl ChatRuntime {
 
     fn fetch_grok_catalog(&self, cwd: &PathBuf) -> CatalogCache {
         let Ok(program) = self.run.detect_grok_installation() else {
-            return self.grok_fallback_catalog();
+            return grok_fallback_catalog();
         };
         let mut transport = match CodexTransport::spawn_grok(&program, cwd, None, None) {
             Ok(t) => t,
-            Err(_) => return self.grok_fallback_catalog(),
+            Err(_) => return grok_fallback_catalog(),
         };
         let models = transport
             .request("_x.ai/models/list", json!({}), CODEX_REQUEST_TIMEOUT)
@@ -654,49 +680,12 @@ impl ChatRuntime {
         transport.shutdown();
         let models = ops::ensure_grok_catalog_efforts(models);
         if models.is_empty() {
-            return self.grok_fallback_catalog();
+            return grok_fallback_catalog();
         }
         CatalogCache {
             models,
             extensions: Vec::new(),
             from_codex: true,
-        }
-    }
-
-    fn fetch_kiro_catalog(&self) -> CatalogCache {
-        let live = crate::adapters::kiro::kiro_live_chat_model();
-        let models: Vec<RuntimeModelOption> = live
-            .models
-            .into_iter()
-            .map(|id| RuntimeModelOption {
-                efforts: live.efforts.clone(),
-                default_effort: live.effort.clone(),
-                id,
-            })
-            .collect();
-        CatalogCache {
-            models,
-            extensions: Vec::new(),
-            from_codex: true,
-        }
-    }
-
-    fn grok_fallback_catalog(&self) -> CatalogCache {
-        let live = crate::adapters::grok::grok_live_chat_model();
-        let models = ops::ensure_grok_catalog_efforts(
-            live.models
-                .into_iter()
-                .map(|id| RuntimeModelOption {
-                    efforts: live.efforts.clone(),
-                    default_effort: live.effort.clone(),
-                    id,
-                })
-                .collect(),
-        );
-        CatalogCache {
-            models,
-            extensions: Vec::new(),
-            from_codex: false,
         }
     }
 
@@ -712,12 +701,27 @@ impl ChatRuntime {
         let store = self.store.clone();
         let repo = self.repo.clone();
         let run = Arc::clone(&self.run);
+        let catalogs = Arc::clone(&self.catalogs);
+        let codex_program_override = Arc::clone(&self.codex_program_override);
+        let abort = Arc::new(AtomicBool::new(false));
+        let worker_abort = Arc::clone(&abort);
         let id = conversation_id.to_string();
         thread::Builder::new()
             .name(format!("agenthub-chat-runtime-{conversation_id}"))
-            .spawn(move || actor_loop(id, rx, store, repo, run))
+            .spawn(move || {
+                actor_loop(
+                    id,
+                    rx,
+                    store,
+                    repo,
+                    run,
+                    catalogs,
+                    codex_program_override,
+                    worker_abort,
+                )
+            })
             .map_err(AppError::from)?;
-        let actor = ActorHandle { tx };
+        let actor = ActorHandle { tx, abort };
         actors.insert(conversation_id.to_string(), actor.clone());
         Ok(actor)
     }
@@ -740,6 +744,7 @@ impl Drop for ChatRuntime {
     fn drop(&mut self) {
         if let Ok(actors) = self.actors.lock() {
             for actor in actors.values() {
+                actor.abort.store(true, Ordering::SeqCst);
                 let (done_tx, _done_rx) = mpsc::sync_channel(1);
                 let _ = actor
                     .tx
@@ -769,6 +774,9 @@ fn actor_loop(
     store: RuntimeStore,
     repo: ChatRepo,
     run: Arc<RunService>,
+    catalogs: Arc<Mutex<HashMap<String, CatalogCache>>>,
+    codex_program_override: Arc<Mutex<Option<PathBuf>>>,
+    abort: Arc<AtomicBool>,
 ) {
     let agent = store
         .conversation_agent(&conversation_id)
@@ -781,6 +789,9 @@ fn actor_loop(
         store,
         repo,
         run,
+        catalogs,
+        codex_program_override,
+        abort,
         agent,
         transport: None,
         thread_id: None,
@@ -805,6 +816,9 @@ struct ActorWorker {
     store: RuntimeStore,
     repo: ChatRepo,
     run: Arc<RunService>,
+    catalogs: Arc<Mutex<HashMap<String, CatalogCache>>>,
+    codex_program_override: Arc<Mutex<Option<PathBuf>>>,
+    abort: Arc<AtomicBool>,
     agent: AgentId,
     transport: Option<CodexTransport>,
     thread_id: Option<String>,
@@ -871,8 +885,10 @@ impl ActorWorker {
             if let Err(error) = self.check_cancel_deadline() {
                 self.fail_runtime(error);
             }
-            if let Err(error) = self.poll_events() {
-                self.fail_runtime(error);
+            if !self.aborted() {
+                if let Err(error) = self.poll_events() {
+                    self.fail_runtime(error);
+                }
             }
         }
         if let Some(transport) = self.transport.as_mut() {
@@ -890,6 +906,126 @@ impl ActorWorker {
         self.message_id = record.message_id;
         self.run_id = record.run_id;
         self.last_start_request = record.last_client_request_id;
+    }
+
+    fn aborted(&self) -> bool {
+        self.abort.load(Ordering::SeqCst)
+    }
+
+    fn codex_program(&self) -> Result<PathBuf> {
+        resolve_codex_program(&self.run, &self.codex_program_override)
+    }
+
+    fn spawn_codex(&self, program: &Path, cwd: &Path) -> Result<CodexTransport> {
+        CodexTransport::spawn_interruptible(program, cwd, Arc::clone(&self.abort))
+            .map_err(map_transport)
+    }
+
+    fn ensure_start_catalog(&mut self) -> Result<CatalogCache> {
+        if let Ok(guard) = self.catalogs.lock() {
+            if let Some(cache) = guard.get(&self.conversation_id) {
+                return Ok(cache.clone());
+            }
+        }
+        if self.aborted() {
+            return Err(cancelled_error());
+        }
+        let fetched = self.fetch_start_catalog();
+        if self.aborted() {
+            return Err(cancelled_error());
+        }
+        if let Ok(mut guard) = self.catalogs.lock() {
+            guard.insert(self.conversation_id.clone(), fetched.clone());
+        }
+        Ok(fetched)
+    }
+
+    fn fetch_start_catalog(&mut self) -> CatalogCache {
+        let Ok(Some(conversation)) = self.repo.get_conversation(&self.conversation_id) else {
+            return CatalogCache::default();
+        };
+        let Some(cwd) = conversation
+            .cwd
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(PathBuf::from)
+        else {
+            return CatalogCache::default();
+        };
+        match conversation.agent_ids.first().copied() {
+            Some(AgentId::Grok) => return self.fetch_grok_start_catalog(&cwd),
+            Some(AgentId::Kiro) => return fetch_kiro_catalog(),
+            _ => {}
+        }
+        let Ok(program) = self.codex_program() else {
+            return CatalogCache::default();
+        };
+        if self.aborted() {
+            return CatalogCache::default();
+        }
+        let mut transport = match CodexTransport::spawn_interruptible(
+            &program,
+            &cwd,
+            Arc::clone(&self.abort),
+        ) {
+            Ok(t) => t,
+            Err(_) => return CatalogCache::default(),
+        };
+        let models = transport
+            .request("model/list", json!({}), CODEX_REQUEST_TIMEOUT)
+            .ok()
+            .map(|value| ops::parse_model_list(&value))
+            .unwrap_or_default();
+        let mut extensions = transport
+            .request("skills/list", json!({}), CODEX_REQUEST_TIMEOUT)
+            .ok()
+            .map(|value| ops::parse_skills_list(&value))
+            .unwrap_or_default();
+        if let Ok(plugins) = transport.request("plugin/installed", json!({}), CODEX_REQUEST_TIMEOUT)
+        {
+            extensions.extend(ops::parse_plugins_installed(&plugins));
+        }
+        transport.shutdown();
+        CatalogCache {
+            models,
+            extensions,
+            from_codex: true,
+        }
+    }
+
+    fn fetch_grok_start_catalog(&mut self, cwd: &PathBuf) -> CatalogCache {
+        let Ok(program) = self.run.detect_grok_installation() else {
+            return grok_fallback_catalog();
+        };
+        if self.aborted() {
+            return CatalogCache::default();
+        }
+        let mut transport = match CodexTransport::spawn_grok_interruptible(
+            &program,
+            cwd,
+            None,
+            None,
+            Arc::clone(&self.abort),
+        ) {
+            Ok(t) => t,
+            Err(_) => return grok_fallback_catalog(),
+        };
+        let models = transport
+            .request("_x.ai/models/list", json!({}), CODEX_REQUEST_TIMEOUT)
+            .ok()
+            .map(|value| ops::parse_grok_model_list(&value))
+            .unwrap_or_default();
+        transport.shutdown();
+        let models = ops::ensure_grok_catalog_efforts(models);
+        if models.is_empty() {
+            return grok_fallback_catalog();
+        }
+        CatalogCache {
+            models,
+            extensions: Vec::new(),
+            from_codex: true,
+        }
     }
 
     fn check_cancel_deadline(&mut self) -> Result<()> {
@@ -927,6 +1063,7 @@ impl ActorWorker {
         let previous_chat_turn = self.chat_turn;
         match self.start_turn_inner(prompt, client_request_id, extras) {
             Ok(snapshot) => Ok(snapshot),
+            Err(error) if is_cancelled_error(&error) => Err(error),
             Err(error) => {
                 // A duplicate/active-run validation error must leave the
                 // existing owner untouched. Once begin_turn succeeds, this
@@ -1008,6 +1145,24 @@ impl ActorWorker {
                 ));
             }
         }
+        let cache = self.ensure_start_catalog()?;
+        let models = {
+            let denied = self.store.list_denied_efforts().unwrap_or_default();
+            ops::apply_denied_efforts(&cache.models, &denied)
+        };
+        let mut settings = self.store.turn_settings(&self.conversation_id)?;
+        if ops::settings_need_catalog_default(&settings, &models) {
+            if let Some(defaults) = ops::default_turn_settings(&models) {
+                settings = self.store.set_turn_settings(&self.conversation_id, &defaults)?;
+            }
+        }
+        ops::assert_settings_supported(&settings, &models)?;
+        if !extras.skills.is_empty() {
+            ops::validate_skill_refs(&extras.skills, &cache.extensions)?;
+        }
+        if self.aborted() {
+            return Err(cancelled_error());
+        }
         self.last_start_request = Some(client_request_id.to_string());
         self.store
             .set_last_client_request_id(&self.conversation_id, client_request_id)?;
@@ -1081,11 +1236,11 @@ impl ActorWorker {
         } else {
             (|| {
                 let cwd = self.conversation_cwd()?;
-                let program = self.run.detect_codex_installation()?;
+                let program = self.codex_program()?;
                 let mut transport = if let Some(thread_id) = self.thread_id.as_deref() {
                     // The transport itself is always a fresh process; thread/resume
                     // reattaches it to Codex's durable native thread.
-                    let mut t = CodexTransport::spawn(&program, &cwd).map_err(transport_error)?;
+                    let mut t = self.spawn_codex(&program, &cwd)?;
                     let result = t
                         .request(
                             "thread/resume",
@@ -1097,12 +1252,12 @@ impl ActorWorker {
                             }),
                             CODEX_REQUEST_TIMEOUT,
                         )
-                        .map_err(transport_error)?;
+                        .map_err(map_transport)?;
                     self.thread_id = Some(thread_id.to_string());
                     let _ = result;
                     t
                 } else {
-                    let mut t = CodexTransport::spawn(&program, &cwd).map_err(transport_error)?;
+                    let mut t = self.spawn_codex(&program, &cwd)?;
                     let result = t
                         .request(
                             "thread/start",
@@ -1114,7 +1269,7 @@ impl ActorWorker {
                             }),
                             CODEX_REQUEST_TIMEOUT,
                         )
-                        .map_err(transport_error)?;
+                        .map_err(map_transport)?;
                     self.thread_id =
                         extract_id(&result, "thread").or_else(|| extract_id(&result, "id"));
                     t
@@ -1154,8 +1309,7 @@ impl ActorWorker {
                 }
                 let result = transport
                     .request("turn/start", params, CODEX_REQUEST_TIMEOUT)
-                    .map_err(transport_error);
-                let result = result?;
+                    .map_err(map_transport)?;
                 self.turn_id = extract_id(&result, "turn").or_else(|| extract_id(&result, "id"));
                 let actual_run = self.turn_id.clone().unwrap_or_else(|| {
                     self.run_id
@@ -1177,14 +1331,24 @@ impl ActorWorker {
             })()
         };
         if let Err(error) = start_result {
-            let message = redact_text(&error.to_string());
-            let _ = self.terminalize(
-                ChatMessageStatus::Failed,
-                Some(&message),
-                RuntimePhase::Failed,
-                false,
-                false,
-            );
+            if is_cancelled_error(&error) {
+                let _ = self.terminalize(
+                    ChatMessageStatus::Cancelled,
+                    Some("已取消"),
+                    RuntimePhase::Cancelled,
+                    false,
+                    true,
+                );
+            } else {
+                let message = redact_text(&error.to_string());
+                let _ = self.terminalize(
+                    ChatMessageStatus::Failed,
+                    Some(&message),
+                    RuntimePhase::Failed,
+                    false,
+                    false,
+                );
+            }
             if let Some(transport) = self.transport.as_mut() {
                 transport.shutdown();
             }
@@ -1246,14 +1410,27 @@ impl ActorWorker {
                 match self.agent {
                     AgentId::Kiro => {
                         let program = self.run.detect_kiro_installation()?;
-                        CodexTransport::spawn_kiro(&program, &cwd, model, effort, trust_all)
+                        CodexTransport::spawn_kiro_interruptible(
+                            &program,
+                            &cwd,
+                            model,
+                            effort,
+                            trust_all,
+                            Arc::clone(&self.abort),
+                        )
                     }
                     _ => {
                         let program = self.run.detect_grok_installation()?;
-                        CodexTransport::spawn_grok(&program, &cwd, model, effort)
+                        CodexTransport::spawn_grok_interruptible(
+                            &program,
+                            &cwd,
+                            model,
+                            effort,
+                            Arc::clone(&self.abort),
+                        )
                     }
                 }
-                .map_err(transport_error)?
+                .map_err(map_transport)?
             };
 
             match plan {
@@ -1265,7 +1442,7 @@ impl ActorWorker {
                             json!({ "cwd": cwd.to_string_lossy(), "mcpServers": [] }),
                             CODEX_REQUEST_TIMEOUT,
                         )
-                        .map_err(transport_error)?;
+                        .map_err(map_transport)?;
                     self.thread_id =
                         grok_session_id(&created).or_else(|| extract_id(&created, "session"));
                     if self.agent == AgentId::Kiro {
@@ -1308,7 +1485,7 @@ impl ActorWorker {
                     };
                     let value = transport
                         .request_discarding_history(method, load_params, CODEX_REQUEST_TIMEOUT)
-                        .map_err(transport_error)?;
+                        .map_err(map_transport)?;
                     if let Some(id) = grok_session_id(&value) {
                         self.thread_id = Some(id);
                     }
@@ -1351,7 +1528,7 @@ impl ActorWorker {
                     self.transport = None;
                     continue;
                 }
-                Err(error) => return Err(transport_error(error)),
+                Err(error) => return Err(map_transport(error)),
             }
         }
     }
@@ -1380,6 +1557,7 @@ impl ActorWorker {
                 "clientRequestId must not be empty".into(),
             ));
         }
+        let answers = reply.answers.filter(|values| !values.is_empty());
         let value = match persisted.request.kind {
             RuntimeRequestKind::Command | RuntimeRequestKind::File => {
                 let decision = match reply.decision {
@@ -1389,7 +1567,7 @@ impl ActorWorker {
                         return Err(AppError::InvalidArg("approval decision is required".into()));
                     }
                 };
-                if reply.answers.is_some() {
+                if answers.is_some() {
                     return Err(AppError::InvalidArg(
                         "approval cannot include answers".into(),
                     ));
@@ -1411,8 +1589,7 @@ impl ActorWorker {
                         "question reply cannot include decision".into(),
                     ));
                 }
-                let answers = reply
-                    .answers
+                let answers = answers
                     .ok_or_else(|| AppError::InvalidArg("question answers are required".into()))?;
                 validate_answers(&persisted.request.questions, &answers)?;
                 let answers = answers
@@ -1534,11 +1711,39 @@ impl ActorWorker {
     }
 
     fn cancel(&mut self, run_id: &str) -> Result<()> {
-        self.check_run(run_id)?;
         let record = self
             .store
             .record(&self.conversation_id)?
             .ok_or_else(|| AppError::NotFound("runtime conversation not found".into()))?;
+        if !matches!(
+            record.phase,
+            RuntimePhase::Starting
+                | RuntimePhase::Running
+                | RuntimePhase::Waiting
+                | RuntimePhase::Cancelling
+        ) {
+            return Ok(());
+        }
+        if run_id.trim().is_empty() {
+            if let Some(current) = record.run_id.clone().or_else(|| self.run_id.clone()) {
+                return self.cancel(&current);
+            }
+            if self.chat_turn.is_some() {
+                self.terminalize(
+                    ChatMessageStatus::Cancelled,
+                    Some("已取消"),
+                    RuntimePhase::Cancelled,
+                    false,
+                    true,
+                )?;
+                if let Some(transport) = self.transport.as_mut() {
+                    transport.shutdown();
+                }
+                self.transport = None;
+            }
+            return Ok(());
+        }
+        self.check_run(run_id)?;
         self.store.set_state(
             &self.conversation_id,
             RuntimePhase::Cancelling,
@@ -1624,15 +1829,22 @@ impl ActorWorker {
 
     fn poll_events(&mut self) -> Result<()> {
         for index in 0..64 {
+            if self.aborted() {
+                return Ok(());
+            }
             let Some(transport) = self.transport.as_mut() else {
                 return Ok(());
             };
-            let timeout = if index == 0 {
-                CODEX_POLL_INTERVAL
+            let event = if index == 0 {
+                transport.recv_timeout(CODEX_POLL_INTERVAL)
             } else {
-                Duration::ZERO
+                transport.try_recv()
             };
-            let event = transport.recv_timeout(timeout).map_err(transport_error)?;
+            let event = match event {
+                Ok(event) => event,
+                Err(codex_transport::CodexTransportError::Interrupted) => return Ok(()),
+                Err(error) => return Err(transport_error(error)),
+            };
             match event {
                 Some(CodexEvent::Request { id, method, params }) => {
                     self.server_request(id, &method, &params)?;
@@ -2436,6 +2648,71 @@ fn acp_permission_reply(options: &[AcpPermissionOption], decision: &str) -> Resu
 
 fn transport_error(error: codex_transport::CodexTransportError) -> AppError {
     AppError::message("chat.runtime.transport", redact_text(&error.to_string()))
+}
+
+fn map_transport(error: codex_transport::CodexTransportError) -> AppError {
+    if matches!(error, codex_transport::CodexTransportError::Interrupted) {
+        cancelled_error()
+    } else {
+        transport_error(error)
+    }
+}
+
+fn cancelled_error() -> AppError {
+    AppError::message("chat.runtime.cancelled", "已取消")
+}
+
+fn is_cancelled_error(error: &AppError) -> bool {
+    error.code() == "chat.runtime.cancelled"
+}
+
+fn resolve_codex_program(
+    run: &RunService,
+    override_path: &Mutex<Option<PathBuf>>,
+) -> Result<PathBuf> {
+    if let Ok(guard) = override_path.lock() {
+        if let Some(path) = guard.as_ref() {
+            return Ok(path.clone());
+        }
+    }
+    run.detect_codex_installation()
+}
+
+fn fetch_kiro_catalog() -> CatalogCache {
+    let live = crate::adapters::kiro::kiro_live_chat_model();
+    let models: Vec<RuntimeModelOption> = live
+        .models
+        .into_iter()
+        .map(|id| RuntimeModelOption {
+            efforts: live.efforts.clone(),
+            default_effort: live.effort.clone(),
+            id,
+        })
+        .collect();
+    CatalogCache {
+        models,
+        extensions: Vec::new(),
+        from_codex: true,
+    }
+}
+
+fn grok_fallback_catalog() -> CatalogCache {
+    let live = crate::adapters::grok::grok_live_chat_model();
+    let models = ops::ensure_grok_catalog_efforts(
+        live.models
+            .into_iter()
+            .map(|id| RuntimeModelOption {
+                efforts: live.efforts.clone(),
+                default_effort: live.effort.clone(),
+                id,
+            })
+            .collect(),
+    );
+    CatalogCache {
+        models,
+        extensions: Vec::new(),
+        from_codex: false,
+    }
 }
 
 #[cfg(test)]

@@ -32,6 +32,15 @@ describe('backups layout wiring', () => {
     expect(detail).toContain('openPathInFileManager');
   });
 
+  it('warns on restore when skipped deletions include delete_failed', () => {
+    const panel = source('BackupsPanel.tsx');
+    expect(panel).toContain('restoreHasDeleteFailures');
+    expect(panel).toContain("t('settings.backups.restorePartial')");
+    expect(panel).toContain("t('settings.backups.restorePartialDesc')");
+    expect(panel).toContain("variant: 'warning'");
+    expect(panel).toContain("variant: 'success'");
+  });
+
   it('opens backup details in the right-hand inspect pane', () => {
     const panel = source('BackupsPanel.tsx');
     const detail = source('backup-detail-panel.tsx');

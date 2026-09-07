@@ -208,13 +208,26 @@ pub(super) async fn read_bounded_upstream_error(
     Ok(body)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum UpstreamConnectError {
     Stopping,
     /// Response headers did not arrive in time. The request may already be
     /// accepted/billing upstream — callers must not failover-retry the same body.
     Timeout,
-    /// Transport-level failure before a usable response (safe to try another member).
+    /// TCP/TLS (or DNS) never completed — safe to try another member.
     Unavailable,
+    /// The request left this process; the peer may already have accepted it.
+    /// Callers must not failover-retry the same body.
+    Unreplayable,
+}
+
+pub(super) fn classify_upstream_send_error(error: &reqwest::Error) -> UpstreamConnectError {
+    // `is_connect` covers DNS + TCP/TLS handshake via hyper's ConnectError.
+    if error.is_connect() {
+        UpstreamConnectError::Unavailable
+    } else {
+        UpstreamConnectError::Unreplayable
+    }
 }
 
 pub(super) fn timeout_response() -> Response {
@@ -269,26 +282,7 @@ pub(super) fn upstream_header_timeout(stream: bool) -> Duration {
 }
 
 #[cfg(test)]
-mod header_timeout_tests {
-    use super::*;
-    use std::time::Duration;
-
-    #[test]
-    fn non_stream_header_budget_matches_body_timeout() {
-        assert_eq!(
-            upstream_header_timeout(false),
-            UPSTREAM_NON_STREAM_TIMEOUT,
-            "non-stream TTFB must use the 120s body budget, not the 30s stream TTFB"
-        );
-        assert_eq!(
-            upstream_header_timeout(true),
-            UPSTREAM_RESPONSE_HEADER_TIMEOUT
-        );
-        assert!(upstream_header_timeout(false) > upstream_header_timeout(true));
-        assert_eq!(UPSTREAM_NON_STREAM_TIMEOUT, Duration::from_secs(120));
-        assert_eq!(UPSTREAM_RESPONSE_HEADER_TIMEOUT, Duration::from_secs(30));
-    }
-}
+mod tests;
 
 pub(super) async fn post_upstream_attempt(
     state: &EdgeState,
@@ -309,10 +303,18 @@ pub(super) async fn post_upstream_attempt(
     };
     match result {
         Ok(response) => Ok(response),
-        Err(_) => {
-            tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "unavailable", status = 502_u16, "bridge upstream unavailable");
+        Err(error) => {
+            let classified = classify_upstream_send_error(&error);
+            match classified {
+                UpstreamConnectError::Unavailable => {
+                    tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "unavailable", status = 502_u16, "bridge upstream unavailable");
+                }
+                _ => {
+                    tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "unreplayable", status = 502_u16, "bridge upstream dropped after the request was sent");
+                }
+            }
             state.record_upstream_failure();
-            Err(UpstreamConnectError::Unavailable)
+            Err(classified)
         }
     }
 }
@@ -328,7 +330,9 @@ pub(super) async fn post_upstream(
         Ok(response) => Ok(response),
         Err(UpstreamConnectError::Stopping) => Err(stopping_response()),
         Err(UpstreamConnectError::Timeout) => Err(timeout_response()),
-        Err(UpstreamConnectError::Unavailable) => Err(unavailable_response()),
+        Err(UpstreamConnectError::Unavailable | UpstreamConnectError::Unreplayable) => {
+            Err(unavailable_response())
+        }
     }
 }
 

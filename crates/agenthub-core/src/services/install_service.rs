@@ -155,6 +155,20 @@ fn setup_guide_diagnosis() -> &'static str {
     "诊断：该 Agent 没有脚本安装，已打开官网安装页。请完成安装后，完全退出并重启 AgentHub。"
 }
 
+fn setup_guide_open_failed_diagnosis() -> &'static str {
+    "诊断：无法打开官网安装页。"
+}
+
+fn setup_guide_open_failed_message(agent_label: &str, res: &ExecResult) -> String {
+    if res.timed_out {
+        return format!("{agent_label} 打开官网安装页超时");
+    }
+    if let Some(err) = &res.spawn_error {
+        return format!("{agent_label} 无法打开官网安装页：{err}");
+    }
+    format!("{agent_label} 无法打开官网安装页")
+}
+
 fn command_failure_diagnosis(res: &ExecResult) -> String {
     if looks_like_permission_failure(res) {
         "诊断：没有写入权限，不是 PATH 问题。".into()
@@ -1369,6 +1383,11 @@ pub fn install_agent_with_contribution(
 
         let setup_guide = is_native_setup_guide(contribution, &channel);
         if !res.success() && !(setup_guide && !setup_guide_open_failed(&res)) {
+            if setup_guide {
+                prepend_diagnosis(&mut logs, setup_guide_open_failed_diagnosis());
+                let msg = setup_guide_open_failed_message(agent.as_str(), &res);
+                return Ok(InstallOutcome::failure(action, logs, msg));
+            }
             prepend_diagnosis(&mut logs, command_failure_diagnosis(&res));
             logs.push("安装命令未成功退出，已判定失败。".into());
             let msg = install_command_failure_message(agent.as_str(), &res);
@@ -1567,6 +1586,14 @@ pub fn install_from_contribution(
         // Setup-guide channels intentionally return non-zero so upgrade cannot
         // claim success; opening the official page is not an install failure.
         let setup_guide = is_native_setup_guide(contribution, &channel);
+        if setup_guide && setup_guide_open_failed(&res) {
+            prepend_diagnosis(&mut logs, setup_guide_open_failed_diagnosis());
+            return Ok(InstallOutcome::failure(
+                action,
+                logs,
+                setup_guide_open_failed_message(key.as_str(), &res),
+            ));
+        }
         if setup_guide && !setup_guide_open_failed(&res) {
             prepend_diagnosis(&mut logs, setup_guide_diagnosis());
             return Ok(InstallOutcome {
@@ -2661,6 +2688,37 @@ fn run_native_install(
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    static OPEN_BROWSER_OVERRIDE: std::cell::RefCell<
+        Option<fn(&str) -> crate::error::Result<()>>,
+    > = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+fn with_open_browser_override<T>(
+    opener: fn(&str) -> crate::error::Result<()>,
+    f: impl FnOnce() -> T,
+) -> T {
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            OPEN_BROWSER_OVERRIDE.with(|slot| *slot.borrow_mut() = None);
+        }
+    }
+    OPEN_BROWSER_OVERRIDE.with(|slot| *slot.borrow_mut() = Some(opener));
+    let _reset = Reset;
+    f()
+}
+
+fn open_setup_page(url: &str) -> crate::error::Result<()> {
+    #[cfg(test)]
+    if let Some(opener) = OPEN_BROWSER_OVERRIDE.with(|slot| *slot.borrow()) {
+        return opener(url);
+    }
+    crate::oauth::open_in_browser(url)
+}
+
 /// Open official Setup page and return a non-success result so callers redetect honestly.
 fn run_native_setup_guide(
     contribution: &dyn InstallContribution,
@@ -2687,10 +2745,18 @@ fn run_native_setup_guide(
         "opening official Setup page for native install"
     );
 
-    if let Err(err) = crate::oauth::open_in_browser(url) {
-        logs.push(format!("打开安装页失败：{err}"));
-    }
     let _ = executor;
+    if let Err(err) = open_setup_page(url) {
+        logs.push(format!("打开安装页失败：{err}"));
+        return Ok(ExecResult {
+            command: format!("open {url}"),
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            timed_out: false,
+            spawn_error: Some(err.to_string()),
+        });
+    }
     logs.push("已尝试打开官网安装页。请完成安装后，完全退出并重启 AgentHub。".into());
     Ok(ExecResult {
         command: format!("open {url}"),

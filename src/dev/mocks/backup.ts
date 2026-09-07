@@ -1,4 +1,5 @@
 import type { BackupPort } from '@/lib/backend/contracts';
+import type { CoreBackupRecord, CoreRestoreResult } from '@/lib/backend/contracts/backup-map';
 import { delay, randomLatency } from '@/dev/mocks/delay';
 import type { AgentKey, BackupInspect, BackupKind, BackupMeta } from '@/lib/types';
 
@@ -69,6 +70,20 @@ function mockInspect(bk: BackupMeta): BackupInspect {
   };
 }
 
+function toCoreRecord(b: BackupMeta): CoreBackupRecord {
+  return {
+    id: b.id,
+    agentId: b.agentId,
+    kind: b.kind,
+    path: `~/.agenthub/backups/mock/${b.id}`,
+    files: [...b.files],
+    size: b.sizeBytes,
+    note: b.note ?? null,
+    createdAt: b.createdAt,
+    identity: b.identity ?? null,
+  };
+}
+
 export function createMockBackupPort(): BackupPort {
   return {
     async listBackups(agentId) {
@@ -99,19 +114,26 @@ export function createMockBackupPort(): BackupPort {
       return { ...bk };
     },
 
-    async restoreBackup(backupId) {
+    async restoreBackup(backupId): Promise<CoreRestoreResult> {
       await delay(600 + Math.random() * 400);
       const bk = mockState.find((b) => b.id === backupId);
       if (!bk) throw new Error('备份不存在');
-      mockState.unshift({
+      const preRestore: BackupMeta = {
         id: `bk-${Date.now()}`,
         agentId: bk.agentId,
         kind: 'pre-restore',
         createdAt: new Date().toISOString(),
-        files: bk.files,
+        files: [...bk.files],
         sizeBytes: bk.sizeBytes,
         note: '恢复前自动备份当前状态',
-      });
+      };
+      mockState.unshift(preRestore);
+      return {
+        restored: toCoreRecord(bk),
+        preRestore: toCoreRecord(preRestore),
+        restoredPaths: [...bk.files],
+        skippedDeletions: [],
+      };
     },
 
     async deleteBackup(backupId) {

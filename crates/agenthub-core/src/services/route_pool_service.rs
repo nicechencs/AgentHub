@@ -6,6 +6,7 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
+use rusqlite::{params, Transaction, TransactionBehavior};
 use uuid::Uuid;
 
 use super::adapter_projection::{classify_account_live, generated_provider_is_adapter_owned};
@@ -408,9 +409,10 @@ impl RoutePoolService {
         ))
     }
 
-    /// Last local-gateway switch. Unset stays on so existing auto-restore keeps working.
+    /// Last local-gateway switch. Unset stays off so a new install does not start
+    /// forwarding until the user turns it on.
     pub fn local_gateway_desired_running(&self) -> Result<bool> {
-        Ok(product_flag_enabled(
+        Ok(feature_flag_enabled(
             self.db
                 .get_setting(LOCAL_GATEWAY_DESIRED_RUNNING)?
                 .as_deref(),
@@ -1025,9 +1027,10 @@ impl RoutePoolService {
                 .collect(),
         };
         let now = now();
-        self.db.with_conn(|conn| {
-            ConnectionTrashRepo::insert_conn(
-                conn,
+        let trash_id = self.db.with_conn(|conn| {
+            let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+            let trash_id = ConnectionTrashRepo::insert_conn(
+                &tx,
                 source_id,
                 agent_id,
                 ConnectionTrashKind::Membership,
@@ -1035,9 +1038,68 @@ impl RoutePoolService {
                 false,
                 &payload,
                 &now,
-            )
+            )?;
+            for member in &members {
+                let deleted = tx.execute(
+                    "DELETE FROM route_members WHERE id = ?1",
+                    params![member.id],
+                )?;
+                if deleted == 0 {
+                    return Err(AppError::NotFound(format!(
+                        "route member not found: {}",
+                        member.id
+                    )));
+                }
+                let bumped = tx.execute(
+                    "UPDATE route_pools SET policy_revision = policy_revision + 1 WHERE id = ?1",
+                    params![member.route_pool_id],
+                )?;
+                if bumped != 1 {
+                    return Err(AppError::message(
+                        "db.route_pool",
+                        "pool missing during revision bump",
+                    ));
+                }
+            }
+            tx.commit()?;
+            Ok(trash_id)
         })?;
-        self.remove_route_authorization(source_kind, source_id)
+        let mut pool_ids: Vec<String> = members
+            .iter()
+            .map(|member| member.route_pool_id.clone())
+            .collect();
+        pool_ids.sort();
+        pool_ids.dedup();
+        for pool_id in &pool_ids {
+            if let Err(error) = self.sync_lead_projection(pool_id) {
+                self.compensate_recycle_membership(&trash_id, &members);
+                return Err(error);
+            }
+        }
+        Ok(u32::try_from(members.len()).unwrap_or(u32::MAX))
+    }
+
+    fn compensate_recycle_membership(&self, trash_id: &str, members: &[RouteMember]) {
+        for member in members {
+            if let Err(cleanup) = self.pools.add_member(member) {
+                tracing::warn!(
+                    module = targets::ADAPTER,
+                    op = "recycle_membership_rollback",
+                    member_id = %member.id,
+                    error_code = cleanup.code(),
+                    "failed to restore route member after projection failure"
+                );
+            }
+        }
+        if let Err(cleanup) = ConnectionTrashRepo::new(self.db.clone()).delete(trash_id) {
+            tracing::warn!(
+                module = targets::ADAPTER,
+                op = "recycle_membership_rollback",
+                trash_id,
+                error_code = cleanup.code(),
+                "failed to drop recycle record after projection failure"
+            );
+        }
     }
 
     fn membership_trash_identity(
@@ -1985,7 +2047,7 @@ impl RoutePoolService {
         })
     }
 
-    fn require_enabled(&self) -> Result<()> {
+    pub(crate) fn require_enabled(&self) -> Result<()> {
         if self.enabled()? {
             Ok(())
         } else {

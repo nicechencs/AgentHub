@@ -19,3 +19,6 @@ pub(crate) use client::{
     try_http_run_result,
 };
 pub(crate) use creds::KiroHttpRouteParams;
+
+#[cfg(test)]
+pub(crate) use client::{test_api_key_creds, with_http_run_override, HangingChatTransport};

@@ -48,5 +48,5 @@ fn restore_result_has_json_shape() {
     assert_eq!(value["restored"]["id"], "backup-1");
     assert_eq!(value["preRestore"]["id"], "backup-1");
     assert_eq!(value["restoredPaths"][0], r"D:\live\auth.json");
-    assert!(value.get("skippedDeletions").is_none());
+    assert_eq!(value["skippedDeletions"], serde_json::json!([]));
 }

@@ -213,3 +213,97 @@ fn usage_dedup_00021_collapses_true_session_hash_duplicates() {
         .unwrap();
     assert_eq!(remaining, ("sess-1".into(), "hash-1".into()));
 }
+
+fn apply_00034(conn: &Connection) {
+    let sql = MIGRATIONS
+        .iter()
+        .find(|(version, _)| *version == "00034_local_gateway_desired_running_default_off")
+        .expect("00034_local_gateway_desired_running_default_off is registered")
+        .1;
+    apply_migration(conn, "00034_local_gateway_desired_running_default_off", sql).unwrap();
+}
+
+fn prepare_local_gateway_00034_tables(conn: &Connection) {
+    conn.execute_batch(
+        r#"
+        CREATE TABLE settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+        CREATE TABLE adapter_profiles (
+            id TEXT PRIMARY KEY NOT NULL,
+            route TEXT NOT NULL,
+            status TEXT NOT NULL,
+            auto_start INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE route_pools (
+            id TEXT PRIMARY KEY NOT NULL,
+            auto_start INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE route_members (
+            id TEXT PRIMARY KEY NOT NULL,
+            route_pool_id TEXT NOT NULL
+        );
+        CREATE TABLE local_entry_keys (
+            id TEXT PRIMARY KEY NOT NULL
+        );
+        "#,
+    )
+    .unwrap();
+}
+
+fn local_gateway_setting(conn: &Connection) -> Option<String> {
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = 'local_gateway_desired_running'",
+        [],
+        |row| row.get(0),
+    )
+    .ok()
+}
+
+#[test]
+fn local_gateway_00034_leaves_fresh_store_unset() {
+    let conn = Connection::open_in_memory().unwrap();
+    prepare_migration_table(&conn);
+    prepare_local_gateway_00034_tables(&conn);
+    apply_00034(&conn);
+    assert_eq!(local_gateway_setting(&conn), None);
+}
+
+#[test]
+fn local_gateway_00034_stamps_on_when_pool_members_exist() {
+    let conn = Connection::open_in_memory().unwrap();
+    prepare_migration_table(&conn);
+    prepare_local_gateway_00034_tables(&conn);
+    conn.execute(
+        "INSERT INTO route_pools (id, auto_start) VALUES ('pool-1', 0)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO route_members (id, route_pool_id) VALUES ('member-1', 'pool-1')",
+        [],
+    )
+    .unwrap();
+    apply_00034(&conn);
+    assert_eq!(local_gateway_setting(&conn), Some("true".into()));
+}
+
+#[test]
+fn local_gateway_00034_keeps_explicit_off() {
+    let conn = Connection::open_in_memory().unwrap();
+    prepare_migration_table(&conn);
+    prepare_local_gateway_00034_tables(&conn);
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES ('local_gateway_desired_running', 'false')",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO route_members (id, route_pool_id) VALUES ('member-1', 'pool-1')",
+        [],
+    )
+    .unwrap();
+    apply_00034(&conn);
+    assert_eq!(local_gateway_setting(&conn), Some("false".into()));
+}
