@@ -35,7 +35,7 @@ pub(crate) fn detect_installation() -> DetectResult {
             op = "detect",
             agent = "workbuddy",
             via = "not_found",
-            "WorkBuddy.exe not found in default or registry paths"
+            "WorkBuddy desktop binary not found in default or registry paths"
         );
         notes.push(
             "WorkBuddy not found. Install via official Setup: https://www.codebuddy.cn/work/"
@@ -279,7 +279,8 @@ impl AgentAdapter for WorkBuddyAdapter {
     }
 
     fn build_run_spec(&self, binary: &Path, prompt: &str, opts: &RunOptions) -> Result<RunSpec> {
-        // binary is WorkBuddy.exe (from detect). CLI is a separate bundled path.
+        // `binary` is the Electron desktop executable from detect.
+        // CLI is a separate bundled path under resources / Contents/Resources.
         let install_dir = binary
             .parent()
             .map(Path::to_path_buf)
@@ -370,7 +371,7 @@ pub fn resolve_workbuddy_exe() -> Option<PathBuf> {
 }
 
 /// Cheap fixed candidates only — no process spawn.
-fn well_known_exe_paths() -> Vec<PathBuf> {
+pub(crate) fn well_known_exe_paths() -> Vec<PathBuf> {
     let mut out = Vec::new();
     #[cfg(windows)]
     {
@@ -394,49 +395,83 @@ fn well_known_exe_paths() -> Vec<PathBuf> {
     }
     #[cfg(not(windows))]
     {
-        // macOS app bundle (no local evidence required; NotFound if missing).
-        out.push(PathBuf::from(
-            "/Applications/WorkBuddy.app/Contents/MacOS/WorkBuddy",
-        ));
-        if let Ok(home) = home_dir() {
-            out.push(
-                home.join("Applications")
-                    .join("WorkBuddy.app")
-                    .join("Contents")
-                    .join("MacOS")
-                    .join("WorkBuddy"),
-            );
+        // macOS app bundle. Current WorkBuddy.mac keeps CFBundleExecutable as
+        // `Electron` (not `WorkBuddy`); probe both plus Info.plist when present.
+        for bundle in macos_workbuddy_bundles() {
+            out.extend(macos_workbuddy_binaries(&bundle));
         }
     }
     out
 }
 
+#[cfg(not(windows))]
+fn macos_workbuddy_bundles() -> Vec<PathBuf> {
+    let mut bundles = vec![PathBuf::from("/Applications/WorkBuddy.app")];
+    if let Ok(home) = home_dir() {
+        bundles.push(home.join("Applications").join("WorkBuddy.app"));
+    }
+    bundles
+}
+
+#[cfg(not(windows))]
+fn macos_workbuddy_binaries(bundle: &Path) -> Vec<PathBuf> {
+    let macos = bundle.join("Contents").join("MacOS");
+    let mut names: Vec<String> = Vec::new();
+    if let Some(name) = cf_bundle_executable_name(bundle) {
+        names.push(name);
+    }
+    for fallback in ["WorkBuddy", "Electron"] {
+        if !names.iter().any(|existing| existing == fallback) {
+            names.push(fallback.to_string());
+        }
+    }
+    names.into_iter().map(|name| macos.join(name)).collect()
+}
+
+/// XML Info.plist only. Binary plists and missing bundles return None.
+#[cfg(not(windows))]
+fn cf_bundle_executable_name(bundle: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(bundle.join("Contents").join("Info.plist")).ok()?;
+    let rest = text.split_once("<key>CFBundleExecutable</key>")?.1;
+    let name = rest
+        .trim_start()
+        .strip_prefix("<string>")?
+        .split_once("</string>")?
+        .0
+        .trim();
+    if name.is_empty() || name.contains(['/', '\\', '\0']) {
+        return None;
+    }
+    Some(name.to_string())
+}
+
+fn electron_resource_dirs(install_dir: &Path) -> Vec<PathBuf> {
+    let mut dirs = vec![install_dir.join("resources")];
+    // Windows: WorkBuddy.exe sits next to `resources/`.
+    // macOS: Electron lives in Contents/MacOS, assets in Contents/Resources.
+    if install_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("macos"))
+    {
+        if let Some(contents) = install_dir.parent() {
+            dirs.push(contents.join("Resources"));
+        }
+    }
+    dirs
+}
+
 /// Production bundled CLI only (never unpack/extract scratch paths).
 pub fn resolve_bundled_codebuddy(install_dir: &Path) -> Option<PathBuf> {
-    let mut candidates = vec![install_dir
-        .join("resources")
-        .join("app.asar.unpacked")
-        .join("cli")
-        .join("bin")
-        .join("codebuddy")];
-    if cfg!(windows) {
-        candidates.push(
-            install_dir
-                .join("resources")
-                .join("app.asar.unpacked")
-                .join("cli")
-                .join("bin")
-                .join("codebuddy.cmd"),
-        );
-        // Some builds ship extension-less or .exe
-        candidates.push(
-            install_dir
-                .join("resources")
-                .join("app.asar.unpacked")
-                .join("cli")
-                .join("bin")
-                .join("codebuddy.exe"),
-        );
+    let mut candidates = Vec::new();
+    for root in electron_resource_dirs(install_dir) {
+        let bin = root.join("app.asar.unpacked").join("cli").join("bin");
+        candidates.push(bin.join("codebuddy"));
+        if cfg!(windows) {
+            candidates.push(bin.join("codebuddy.cmd"));
+            // Some builds ship extension-less or .exe
+            candidates.push(bin.join("codebuddy.exe"));
+        }
     }
     for p in candidates {
         if p.is_file() {
@@ -472,18 +507,27 @@ pub fn resolve_uninstaller() -> Option<PathBuf> {
 }
 
 fn auth_info_path() -> Option<PathBuf> {
+    let relative = PathBuf::from("CodeBuddyExtension")
+        .join("Data")
+        .join("Public")
+        .join("auth")
+        .join("workbuddy-desktop.info");
     #[cfg(windows)]
     {
         let local = std::env::var("LOCALAPPDATA").ok()?;
-        let p = PathBuf::from(local)
-            .join("CodeBuddyExtension")
-            .join("Data")
-            .join("Public")
-            .join("auth")
-            .join("workbuddy-desktop.info");
-        Some(p)
+        Some(PathBuf::from(local).join(relative))
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        Some(
+            home_dir()
+                .ok()?
+                .join("Library")
+                .join("Application Support")
+                .join(relative),
+        )
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         None
     }
@@ -558,24 +602,31 @@ fn read_version_from_last_launch() -> Option<String> {
 }
 
 fn read_version_from_package_json(install_dir: &Path) -> Option<String> {
-    let path = install_dir
-        .join("resources")
-        .join("app.asar.unpacked")
-        .join("package.json");
-    let path = if path.is_file() {
-        path
-    } else {
-        install_dir.join("package.json")
-    };
-    if !path.is_file() {
-        return None;
+    let mut paths: Vec<PathBuf> = electron_resource_dirs(install_dir)
+        .into_iter()
+        .map(|root| root.join("app.asar.unpacked").join("package.json"))
+        .collect();
+    paths.push(install_dir.join("package.json"));
+    for path in paths {
+        if !path.is_file() {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
+            continue;
+        };
+        if let Some(version) = v
+            .get("version")
+            .and_then(|x| x.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            return Some(version.to_string());
+        }
     }
-    let text = std::fs::read_to_string(path).ok()?;
-    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
-    v.get("version")
-        .and_then(|x| x.as_str())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
+    None
 }
 
 /// Slow fallback: parse DisplayIcon from HKCU Uninstall keys (Windows only).
