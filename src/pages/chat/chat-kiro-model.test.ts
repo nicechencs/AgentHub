@@ -33,7 +33,7 @@ describe('Kiro chat honesty helpers', () => {
       showBanner: true,
       allowCommandSearch: false,
       allowRuntimeRequests: false,
-      allowModelPicker: false,
+      allowModelPicker: true,
       allowSteer: false,
       allowQueueFollowUp: false,
     });
@@ -48,18 +48,21 @@ describe('Kiro chat honesty helpers', () => {
     expect(t('chat.kiro.oneshotHint')).toContain('一轮一发');
     expect(t('chat.kiro.oneshotDetail')).toContain('不能中途补充');
     expect(t('chat.kiro.oneshotDetail')).toContain('不在本页');
+    expect(t('chat.kiro.oneshotDetail')).not.toContain('模型');
+    const en = createTranslator('en');
+    expect(en('chat.kiro.oneshotDetail')).not.toMatch(/model\/agent/i);
     expect(t('chat.kiro.oneshotDetail')).toContain('下一轮');
     expect(t('chat.kiro.placeholder')).toContain('下一轮');
   });
 
-  it('does not keep slash pickers, model chips, or runtime request panels', () => {
+  it('keeps slash/runtime gates off but allows model/effort chips', () => {
     expect(kiroChatAllowsCommandSearch('kiro')).toBe(false);
     expect(kiroChatAllowsCommandSearch('codex')).toBe(true);
     expect(chatShowsRuntimeRequestPanels('kiro')).toBe(false);
     expect(chatShowsRuntimeRequestPanels('codex')).toBe(true);
     expect(chatShowsRuntimeRequestPanels('grok')).toBe(true);
     expect(chatShowsRuntimeRequestPanels('cursor')).toBe(false);
-    expect(chatComposerChoiceOptions('kiro', ['sonnet', 'haiku'])).toEqual([]);
+    expect(chatComposerChoiceOptions('kiro', ['sonnet', 'haiku'])).toEqual(['sonnet', 'haiku']);
     expect(chatComposerChoiceOptions('claude', ['sonnet', 'haiku'])).toEqual(['sonnet', 'haiku']);
   });
 });

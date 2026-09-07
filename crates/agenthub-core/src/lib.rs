@@ -249,6 +249,10 @@ impl AgentHub {
                 let _guard = self.backups.acquire_live_write(agent)?;
                 crate::adapters::grok::set_grok_default_model(model)
             }
+            AgentId::Kiro => {
+                let _guard = self.backups.acquire_live_write(agent)?;
+                crate::adapters::kiro::set_kiro_default_model(model)
+            }
             _ => Err(error::AppError::Unsupported(
                 "换模型请用当前登录的配置".into(),
             )),
@@ -256,7 +260,7 @@ impl AgentHub {
     }
 
     /// Write the live Chat thinking level. Grok stores it in config.toml;
-    /// Pi stores it in settings.json.
+    /// Pi stores it in settings.json; Kiro in agenthub-chat-prefs.json.
     pub fn set_live_chat_effort(&self, agent: AgentId, effort: &str) -> Result<()> {
         match agent {
             AgentId::Grok => {
@@ -266,6 +270,10 @@ impl AgentHub {
             AgentId::Pi => {
                 let _guard = self.backups.acquire_live_write(agent)?;
                 crate::adapters::pi::set_pi_default_thinking(effort)
+            }
+            AgentId::Kiro => {
+                let _guard = self.backups.acquire_live_write(agent)?;
+                crate::adapters::kiro::set_kiro_default_effort(effort)
             }
             _ => Err(error::AppError::Unsupported(
                 "思考等级请用当前登录的配置".into(),
@@ -278,6 +286,7 @@ impl AgentHub {
         match agent {
             AgentId::Pi => Ok(crate::adapters::pi::pi_live_chat_model()),
             AgentId::Grok => Ok(crate::adapters::grok::grok_live_chat_model()),
+            AgentId::Kiro => Ok(crate::adapters::kiro::kiro_live_chat_model()),
             _ => Err(error::AppError::Unsupported(
                 "换模型请用当前登录的配置".into(),
             )),

@@ -19,7 +19,7 @@ export type KiroChatStance = {
   showBanner: true;
   allowCommandSearch: false;
   allowRuntimeRequests: false;
-  allowModelPicker: false;
+  allowModelPicker: boolean;
   allowSteer: false;
   allowQueueFollowUp: false;
 };
@@ -31,7 +31,7 @@ export function kiroChatStance(agentId: string | null | undefined): KiroChatStan
     showBanner: true,
     allowCommandSearch: false,
     allowRuntimeRequests: false,
-    allowModelPicker: false,
+    allowModelPicker: true,
     allowSteer: false,
     allowQueueFollowUp: false,
   };
@@ -45,7 +45,7 @@ export function chatShowsRuntimeRequestPanels(agentId: string | null | undefined
   return isRuntimeChatAgent(agentId);
 }
 
-/** Headless Kiro has no `/model` picker; leftover lists must not appear. */
+/** Composer model/effort chips follow `allowModelPicker` (enabled for Kiro). */
 export function chatComposerChoiceOptions(
   agentId: string | null | undefined,
   options: readonly string[],
