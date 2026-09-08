@@ -851,9 +851,5 @@ export const chatMainColumnClass = pageRhythm.readingColumn;
 /** 对话记录与输入壳外侧同一圈 16px 缝（水平再叠 `chatChromeX`）。 */
 export const chatStageClass = 'flex min-h-0 flex-1 flex-col py-4';
 
-/**
- * 空转录与 composer 周围同色（canvas）；有消息后对话记录列与输入壳同色（panel）。
- */
-export function chatTranscriptSurfaceClass(hasMessages: boolean): string {
-  return hasMessages ? 'bg-panel' : 'bg-canvas';
-}
+/** Transcript reading surface. Transparent so the chat column canvas shows through. Do not paint bg-panel here. */
+export const chatTranscriptSurfaceClass = 'bg-transparent';

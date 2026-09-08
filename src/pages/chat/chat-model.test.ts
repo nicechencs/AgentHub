@@ -1340,11 +1340,11 @@ describe('chat transcript / composer surfaces', () => {
     expect(chatStageClass).toContain('py-4');
   });
 
-  it('uses canvas when empty so the transcript matches the composer chrome', () => {
-    expect(chatTranscriptSurfaceClass(false)).toBe('bg-canvas');
+  it('keeps the transcript surface transparent so the chat column canvas shows through', () => {
+    expect(chatTranscriptSurfaceClass).toBe('bg-transparent');
   });
 
-  it('uses panel for the transcript once messages exist, matching the input shell', () => {
-    expect(chatTranscriptSurfaceClass(true)).toBe('bg-panel');
+  it('does not paint bg-panel on the transcript surface', () => {
+    expect(chatTranscriptSurfaceClass).not.toContain('bg-panel');
   });
 });

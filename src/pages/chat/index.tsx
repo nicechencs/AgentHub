@@ -179,7 +179,10 @@ export default function ChatPage() {
           runtimeLocked={page.runtimeLocked || page.sendingHere}
         />
 
-        <div className={cn(chatStageClass, pageRhythm.chatChromeX)}>
+        <div
+          className={cn(chatStageClass, pageRhythm.chatChromeX, 'relative')}
+          data-chat-stage
+        >
           <div
             ref={split.splitRef}
             className={cn(chatMainColumnClass, 'flex min-h-0 flex-1 flex-col')}

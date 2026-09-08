@@ -97,7 +97,7 @@ function UserBubble({
     <div className="flex justify-end">
       <div
         id={`chat-msg-${message.id}`}
-        className="group relative max-w-[85%] rounded-composer bg-subtle px-4 py-2 text-body text-primary"
+        className="group relative max-w-[85%] rounded-composer bg-subtle px-4 py-2 text-body leading-relaxed text-primary"
       >
         <MarkdownView
           content={message.content}
@@ -218,7 +218,7 @@ function AgentBubble({
             <span className="text-muted">{displayError || t('chat.bubble.noOutput')}</span>
           )}
           {displayError && (looksFailed || message.status !== 'ok') && displayContent && (
-            <p className="mt-2 text-body text-danger">{displayError}</p>
+            <p className="mt-2 text-body leading-relaxed text-danger">{displayError}</p>
           )}
         </div>
         {!running && (
