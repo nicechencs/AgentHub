@@ -25,6 +25,7 @@ updated: 2026-09-08
 - [添加 Adapter](guides/adding-an-adapter.md)
 - [Adapter dogfood](guides/adapter-dogfood.md)
 - [测试与验证](guides/testing-and-validation.md)
+- [Agent 协作流程](guides/agent-workflow.md)
 - [Chat 第二批开发交接提示词](guides/chat-b2-handoff.md)
 - [Chat 独立 review 提示词](guides/chat-review-handoff.md)
 - [全项目独立 review 提示词](guides/project-review-handoff.md)
@@ -57,6 +58,7 @@ updated: 2026-09-08
 - [术语表](reference/terminology.md)
 - [MCP inventory](reference/mcp-inventory.md)
 - [Agent 插件表面](reference/agent-plugin-surfaces.md)
+- [Agent 运行环境参考](reference/agent-runtime.md)
 
 ### 产品与界面
 

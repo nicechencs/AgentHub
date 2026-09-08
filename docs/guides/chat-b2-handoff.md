@@ -3,12 +3,12 @@ title: Chat 第二批开发交接提示词
 type: how-to
 status: current
 owner: maintainers
-updated: 2026-09-05
+updated: 2026-09-08
 ---
 
 # Chat 第二批开发交接提示词
 
-将下面整段交给下一位开发 Agent。当前事实和测试结果只维护在 [B1 实施记录](../status/chat-codex-b1.md)，审查任务另用 [review 提示词](chat-review-handoff.md)。换电脑前需要取得包含这些文件的提交；本地提交不等于已经推送到远端。
+将下面整段交给下一位开发 Agent。当前事实和测试结果只维护在 [B1 实施记录](../status/chat-codex-b1.md)，审查任务另用 [review 提示词](chat-review-handoff.md)。跨会话接手时按 [Agent 协作流程](agent-workflow.md) 核对基线、改动归属和验证结果；本页的提交、测试和环境记录都是历史证据，必须在当前 HEAD、工作区和实际能力上重新核对。换电脑前需要取得包含这些文件的提交；本地提交不等于已经推送到远端。
 
 ```text
 你接手 AgentHub 的 Chat 统一体验开发，请直接推进 B2 的实现、审查和验证，不要只返回设计方案。
@@ -18,7 +18,7 @@ updated: 2026-09-05
 先确认：
 1. 阅读仓库 AGENTS.md、docs/proposals/chat-unified-experience.md、docs/status/chat-codex-b1.md。
 2. 检查当前分支、commit、工作区 diff；日常工作在 dev，保留已有修改。B1 代码已在 c03acb540b0327cd3fb81a56060d930e7836585a，提示词初版在 357853762ac902808b6fac5636786abddefaa22c。还需取得随后补充测试记录的提交。db40f6fbf9c86a184707f7ff8259a5bac361bb24 只是任务最初基线，其后存在其他并行功能提交，不要全部算成 B1。
-3. 结构问题优先 CodeGraph；不可用时定向读文件，不重复全仓探索。用户已允许 GPT-5.6 Terra/Luna 子 Agent；仅把文件不重叠的独立任务并行。
+3. 结构问题优先 CodeGraph；不可用时定向读文件，不重复全仓探索。子 Agent、模型和并行方式以当前会话实际可发现且可执行的能力为准；需要委派或选择模型时先读仓库根目录下的 `docs/guides/agent-workflow.md` 与 `docs/reference/agent-runtime.md`。能力不可用时由主 Agent 顺序推进，并如实说明没有形成独立多模型审查；仅把文件不重叠的独立任务并行。
 
 已实现，不要重新设计：
 - 新空 Codex 会话走 ChatRuntime + app-server，旧消息会话与其他 Agent 保持 legacy。
