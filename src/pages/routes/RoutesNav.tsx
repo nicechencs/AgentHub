@@ -6,6 +6,11 @@ import { pageRhythm } from '@/components/layout/page-rhythm';
 import { ROUTES_NAV_WIDTH } from '@/components/layout/sidebar-width-model';
 import { useNavWidth } from '@/components/layout/use-sidebar-width';
 import { Badge } from '@/components/ui/badge';
+import {
+  ContextMenu,
+  ContextMenuItem,
+  type ContextMenuPoint,
+} from '@/components/ui/context-menu';
 import { Hint } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { StorageKey } from '@/lib/storage-key';
@@ -18,7 +23,13 @@ import {
 } from '@/pages/routes/routes-nav-items';
 
 const NAV_ICON_SIZE = 18;
+const MENU_ICON_CLASS = 'h-3.5 w-3.5';
 const LG_QUERY = '(min-width: 1024px)';
+
+const railMenuIcon = {
+  expand: <PanelLeftOpen className={MENU_ICON_CLASS} strokeWidth={1.8} />,
+  collapse: <PanelLeftClose className={MENU_ICON_CLASS} strokeWidth={1.8} />,
+} as const;
 
 function useIsLgUp() {
   const [isLg, setIsLg] = React.useState(() =>
@@ -111,6 +122,21 @@ export function RoutesNav() {
     saveBool(StorageKey.routesNavCollapsed, next);
   }, []);
 
+  const [railMenu, setRailMenu] = React.useState<ContextMenuPoint | null>(null);
+  const openRailMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setRailMenu({ x: e.clientX, y: e.clientY });
+  };
+  const closeRailMenu = React.useCallback(() => setRailMenu(null), []);
+  const expandFromRailMenu = React.useCallback(() => {
+    setRailCollapsed(false);
+    setRailMenu(null);
+  }, [setRailCollapsed]);
+  const collapseFromRailMenu = React.useCallback(() => {
+    setRailCollapsed(true);
+    setRailMenu(null);
+  }, [setRailCollapsed]);
+
   const itemClass = (isActive: boolean) =>
     cn(
       'group relative flex h-8 w-full items-center gap-2.5 rounded-btn px-2.5 text-body transition-colors duration-150',
@@ -128,6 +154,7 @@ export function RoutesNav() {
         className={cn(pageRhythm.shellNav, 'relative', width.widthTransition)}
         style={{ width: width.width }}
         data-routes-nav
+        onContextMenu={openRailMenu}
       >
       <div
         className={cn(
@@ -204,6 +231,19 @@ export function RoutesNav() {
         width={width}
         interactive={isLg && !collapsed}
       />
+      <ContextMenu open={railMenu !== null} point={railMenu} onClose={closeRailMenu}>
+        {collapsed ? (
+          <ContextMenuItem onSelect={expandFromRailMenu}>
+            {railMenuIcon.expand}
+            {t('routes.nav.expand')}
+          </ContextMenuItem>
+        ) : (
+          <ContextMenuItem onSelect={collapseFromRailMenu}>
+            {railMenuIcon.collapse}
+            {t('routes.nav.collapse')}
+          </ContextMenuItem>
+        )}
+      </ContextMenu>
     </>
   );
 }
