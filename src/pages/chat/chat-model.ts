@@ -331,7 +331,14 @@ export function autoApproveActive(
   return allowDangerous && autoApproveEffect(agentId) !== 'none';
 }
 
-export function autoApproveHint(t: TranslateFn, effect: AutoApproveEffect): string {
+export function autoApproveHint(
+  t: TranslateFn,
+  effect: AutoApproveEffect,
+  agentId?: AgentKey | null,
+): string {
+  if (agentId === 'kiro') {
+    return effect === 'skip' ? t('chat.kiro.permissionFullHint') : t('chat.autoApprove.none');
+  }
   switch (effect) {
     case 'skip':
       return t('chat.autoApprove.skip');
@@ -352,7 +359,10 @@ export function autoApproveFooter(
     return { text: '', warning: false };
   }
   if (effect === 'skip') {
-    return { text: t('chat.autoApprove.footerSkip'), warning: true };
+    return {
+      text: agentId === 'kiro' ? t('chat.autoApprove.footerKiroFull') : t('chat.autoApprove.footerSkip'),
+      warning: true,
+    };
   }
   if (effect === 'project-trust') {
     return { text: t('chat.autoApprove.footerTrust'), warning: true };
@@ -360,7 +370,14 @@ export function autoApproveFooter(
   return { text: t('chat.autoApprove.footerNone'), warning: false };
 }
 
-export function autoApproveConfirmCopy(t: TranslateFn, effect: AutoApproveEffect): string {
+export function autoApproveConfirmCopy(
+  t: TranslateFn,
+  effect: AutoApproveEffect,
+  agentId?: AgentKey | null,
+): string {
+  if (agentId === 'kiro') {
+    return t('chat.autoApprove.confirmKiroFull');
+  }
   if (effect === 'project-trust') {
     return t('chat.autoApprove.confirmTrust');
   }
@@ -834,9 +851,5 @@ export const chatMainColumnClass = pageRhythm.readingColumn;
 /** 对话记录与输入壳外侧同一圈 16px 缝（水平再叠 `chatChromeX`）。 */
 export const chatStageClass = 'flex min-h-0 flex-1 flex-col py-4';
 
-/**
- * 空转录与 composer 周围同色（canvas）；有消息后对话记录列与输入壳同色（panel）。
- */
-export function chatTranscriptSurfaceClass(hasMessages: boolean): string {
-  return hasMessages ? 'bg-panel' : 'bg-canvas';
-}
+/** Transcript reading surface. Transparent so the chat column canvas shows through. Do not paint bg-panel here. */
+export const chatTranscriptSurfaceClass = 'bg-transparent';

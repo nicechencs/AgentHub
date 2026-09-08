@@ -13,6 +13,7 @@ export type MarkdownViewVariant = 'chat' | 'document';
 
 /** Override @uiw markdown.css 6px / square table chrome with design tokens. */
 export const MARKDOWN_TOKEN_CHROME = [
+  'min-w-0 max-w-full overflow-hidden break-words',
   '[&_pre]:!overflow-x-auto [&_pre]:!rounded-card',
   '[&_pre_.copied]:!rounded-btn',
   '[&_code]:!rounded-btn [&_tt]:!rounded-btn [&_kbd]:!rounded-btn',
@@ -28,7 +29,7 @@ export interface MarkdownViewProps {
   className?: string;
   /**
    * Density:
-   * - `chat` — message body (compact)
+   * - `chat` — message body (`leading-relaxed`)
    * - `document` — skill / file preview (IDE-dense; not GitHub README scale)
    */
   variant?: MarkdownViewVariant;
@@ -395,7 +396,10 @@ export function MarkdownView({
           '!bg-transparent',
           MARKDOWN_TOKEN_CHROME,
           variant === 'chat' &&
-            'text-body [&_pre]:text-meta [&_a]:!text-accent [&_a]:!no-underline hover:[&_a]:!underline',
+            [
+              'text-body !leading-relaxed [&_pre]:text-meta [&_a]:!text-accent [&_a]:!no-underline hover:[&_a]:!underline',
+              '[&_p]:!leading-relaxed [&_li]:!leading-relaxed',
+            ].join(' '),
           // document：三档字号；! 覆盖 @uiw 默认 2em h1 / 底部分割线，避免压过预览 chrome
           variant === 'document' &&
             [

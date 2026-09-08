@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
 import type { Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { isKiroChatAgent } from './chat-kiro-model';
 import {
   autoApproveActive,
   autoApproveEffect,
@@ -56,6 +57,7 @@ export function ChatSessionHeader({
 
   const selectedAgent = active?.agentIds[0] ?? null;
   const approveOn = autoApproveActive(Boolean(active?.allowDangerous), selectedAgent);
+  const kiroPermissions = isKiroChatAgent(selectedAgent);
 
   async function commit() {
     if (cancelledRef.current) {
@@ -196,19 +198,31 @@ export function ChatSessionHeader({
               <span className="truncate">{shortenId(active.nativeSessionId, 10)}</span>
             </Button>
           )}
-          {approveOn && (
+          {kiroPermissions ? (
             <Button
               type="button"
               size="sm"
               variant="outline"
               onClick={onOpenSettings}
-              title={autoApproveHint(t, autoApproveEffect(selectedAgent))}
+              title={approveOn ? t('chat.kiro.permissionFullHint') : t('chat.kiro.permissionAskHint')}
+              className={approveOn ? 'text-warning' : 'text-muted'}
+            >
+              <ShieldAlert className="h-3 w-3 shrink-0" />
+              {approveOn ? t('chat.kiro.permissionFull') : t('chat.kiro.permissionAsk')}
+            </Button>
+          ) : approveOn ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={onOpenSettings}
+              title={autoApproveHint(t, autoApproveEffect(selectedAgent), selectedAgent)}
               className="text-warning"
             >
               <ShieldAlert className="h-3 w-3 shrink-0" />
               {t('chat.header.autoApprove')}
             </Button>
-          )}
+          ) : null}
           <Button
             type="button"
             size="icon"

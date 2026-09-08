@@ -76,7 +76,7 @@ describe('PageHeader', () => {
     expect(source('pages/projects/index.tsx')).toContain('pageRhythm.chromeActions');
     expect(topBar).toContain('PageTitleBlock');
     expect(topBar).toContain('ChromeActions');
-    expect(topBar).toContain('NotificationBell');
+    expect(topBar).not.toContain('NotificationBell');
     expect(source('components/layout/ChromeActions.tsx')).toContain('PageHelpButton');
     expect(source('components/layout/ChromeActions.tsx')).toContain('FeedbackButton');
     expect(source('pages/chat/ChatSessionHeader.tsx')).toContain('ChromeActions');

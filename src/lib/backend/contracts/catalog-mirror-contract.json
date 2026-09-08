@@ -203,7 +203,7 @@
         "usage": "读 kiro-cli 会话里的 token；日志没写时总览是 0",
         "mcp": "待路径核实",
         "modelSelect": null,
-        "sessionResume": "新对话走持续通道，可点允许/拒绝；生成时不能中途补充"
+        "sessionResume": "新对话走持续通道，可点允许、一直允许或拒绝；生成时不能中途补充"
       }
     },
     "mock": {
@@ -365,7 +365,7 @@
         "usage": "读 kiro-cli 会话里的 token；日志没写时总览是 0",
         "mcp": "待路径核实",
         "modelSelect": null,
-        "sessionResume": "新对话走持续通道，可点允许/拒绝；生成时不能中途补充"
+        "sessionResume": "新对话走持续通道，可点允许、一直允许或拒绝；生成时不能中途补充"
       }
     },
     "knownMismatches": []

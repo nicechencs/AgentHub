@@ -14,7 +14,7 @@ use crate::models::{AgentId, ChatEvent, ChatMessage, ChatMessageStatus, ChatRole
 use crate::storage::Database;
 
 use super::types::{
-    RuntimeEvent, RuntimePhase, RuntimeQuestion, RuntimeRequest, RuntimeRequestKind,
+    RuntimeEvent, RuntimePhase, RuntimePermissionOption, RuntimeRequest, RuntimeRequestKind,
     RuntimeSnapshot, RuntimeTurnSettings,
 };
 
@@ -733,6 +733,7 @@ impl RuntimeStore {
         server_id: &str,
     ) -> Result<()> {
         let questions = serde_json::to_string(&request.questions)?;
+        let options = serde_json::to_string(&request.permission_options)?;
         let now = Utc::now().to_rfc3339();
         self.db.with_conn(|conn| {
             conn.execute_batch("BEGIN IMMEDIATE")?;
@@ -741,8 +742,8 @@ impl RuntimeStore {
                     r#"
                     INSERT INTO chat_runtime_requests
                         (conversation_id, request_id, run_id, kind, title, detail,
-                         questions_json, server_method, server_id, created_at)
-                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                         questions_json, server_method, server_id, created_at, options_json)
+                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
                     ON CONFLICT(conversation_id, request_id) DO NOTHING
                     "#,
                     params![
@@ -756,6 +757,7 @@ impl RuntimeStore {
                         server_method,
                         server_id,
                         now,
+                        options,
                     ],
                 )?;
                 conn.execute(
@@ -776,43 +778,17 @@ impl RuntimeStore {
         self.db.with_conn(|conn| {
             conn.query_row(
                 r#"
-                SELECT request_id, run_id, kind, title, detail, questions_json,
+                SELECT request_id, run_id, kind, title, detail, questions_json, options_json,
                        server_method, server_id
                 FROM chat_runtime_requests
                 WHERE conversation_id = ?1 AND request_id = ?2
                 "#,
                 params![conversation_id, request_id],
                 |row| {
-                    let kind_raw: String = row.get(2)?;
-                    let kind = RuntimeRequestKind::parse(&kind_raw).ok_or_else(|| {
-                        rusqlite::Error::FromSqlConversionFailure(
-                            2,
-                            rusqlite::types::Type::Text,
-                            Box::new(std::io::Error::new(
-                                std::io::ErrorKind::InvalidData,
-                                format!("invalid runtime request kind: {kind_raw}"),
-                            )),
-                        )
-                    })?;
-                    let questions_json: String = row.get(5)?;
-                    let questions = serde_json::from_str(&questions_json).map_err(|error| {
-                        rusqlite::Error::FromSqlConversionFailure(
-                            5,
-                            rusqlite::types::Type::Text,
-                            Box::new(error),
-                        )
-                    })?;
                     Ok(PersistedRequest {
-                        request: RuntimeRequest {
-                            id: row.get(0)?,
-                            run_id: row.get(1)?,
-                            kind,
-                            title: row.get(3)?,
-                            detail: row.get(4)?,
-                            questions,
-                        },
-                        server_method: row.get(6)?,
-                        server_id: row.get(7)?,
+                        request: decode_request_row(row)?,
+                        server_method: row.get(7)?,
+                        server_id: row.get(8)?,
                     })
                 },
             )
@@ -828,7 +804,7 @@ impl RuntimeStore {
         self.db.with_conn(|conn| {
             let mut stmt = conn.prepare(
                 r#"
-                SELECT request_id, run_id, kind, title, detail, questions_json,
+                SELECT request_id, run_id, kind, title, detail, questions_json, options_json,
                        server_method, server_id
                 FROM chat_runtime_requests
                 WHERE conversation_id = ?1
@@ -836,36 +812,10 @@ impl RuntimeStore {
                 "#,
             )?;
             let rows = stmt.query_map(params![conversation_id], |row| {
-                let kind_raw: String = row.get(2)?;
-                let kind = RuntimeRequestKind::parse(&kind_raw).ok_or_else(|| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        2,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(
-                            std::io::ErrorKind::InvalidData,
-                            format!("invalid runtime request kind: {kind_raw}"),
-                        )),
-                    )
-                })?;
-                let questions_json: String = row.get(5)?;
-                let questions = serde_json::from_str(&questions_json).map_err(|error| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        5,
-                        rusqlite::types::Type::Text,
-                        Box::new(error),
-                    )
-                })?;
                 Ok(PersistedRequest {
-                    request: RuntimeRequest {
-                        id: row.get(0)?,
-                        run_id: row.get(1)?,
-                        kind,
-                        title: row.get(3)?,
-                        detail: row.get(4)?,
-                        questions,
-                    },
-                    server_method: row.get(6)?,
-                    server_id: row.get(7)?,
+                    request: decode_request_row(row)?,
+                    server_method: row.get(7)?,
+                    server_id: row.get(8)?,
                 })
             })?;
             let mut out = Vec::new();
@@ -904,42 +854,13 @@ impl RuntimeStore {
     ) -> Result<Vec<RuntimeRequest>> {
         let mut stmt = conn.prepare(
             r#"
-                SELECT request_id, run_id, kind, title, detail, questions_json
+                SELECT request_id, run_id, kind, title, detail, questions_json, options_json
                 FROM chat_runtime_requests
                 WHERE conversation_id = ?1
                 ORDER BY created_at ASC, request_id ASC
                 "#,
         )?;
-        let rows = stmt.query_map(params![conversation_id], |row| {
-            let kind_raw: String = row.get(2)?;
-            let kind = RuntimeRequestKind::parse(&kind_raw).ok_or_else(|| {
-                rusqlite::Error::FromSqlConversionFailure(
-                    2,
-                    rusqlite::types::Type::Text,
-                    Box::new(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("invalid runtime request kind: {kind_raw}"),
-                    )),
-                )
-            })?;
-            let questions_json: String = row.get(5)?;
-            let questions =
-                serde_json::from_str::<Vec<RuntimeQuestion>>(&questions_json).map_err(|error| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        5,
-                        rusqlite::types::Type::Text,
-                        Box::new(error),
-                    )
-                })?;
-            Ok(RuntimeRequest {
-                id: row.get(0)?,
-                run_id: row.get(1)?,
-                kind,
-                title: row.get(3)?,
-                detail: row.get(4)?,
-                questions,
-            })
-        })?;
+        let rows = stmt.query_map(params![conversation_id], decode_request_row)?;
         let mut out = Vec::new();
         for row in rows {
             out.push(row?);
@@ -1380,4 +1301,44 @@ impl RuntimeRequestKind {
             _ => None,
         }
     }
+}
+
+fn decode_request_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RuntimeRequest> {
+    let kind_raw: String = row.get(2)?;
+    let kind = RuntimeRequestKind::parse(&kind_raw).ok_or_else(|| {
+        rusqlite::Error::FromSqlConversionFailure(
+            2,
+            rusqlite::types::Type::Text,
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("invalid runtime request kind: {kind_raw}"),
+            )),
+        )
+    })?;
+    let questions_json: String = row.get(5)?;
+    let questions = serde_json::from_str(&questions_json).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            5,
+            rusqlite::types::Type::Text,
+            Box::new(error),
+        )
+    })?;
+    let options_json: String = row.get(6)?;
+    let permission_options: Vec<RuntimePermissionOption> = serde_json::from_str(&options_json)
+        .map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                6,
+                rusqlite::types::Type::Text,
+                Box::new(error),
+            )
+        })?;
+    Ok(RuntimeRequest {
+        id: row.get(0)?,
+        run_id: row.get(1)?,
+        kind,
+        title: row.get(3)?,
+        detail: row.get(4)?,
+        questions,
+        permission_options,
+    })
 }

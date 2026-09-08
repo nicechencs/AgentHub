@@ -5,6 +5,7 @@ import {
   bindRuntimeSnapshotToAgent,
   canSubmitRuntimeQuestions,
   runtimeReplyFields,
+  requestAllowsAlways,
   isLatestRuntimeRead,
   isRuntimeActive,
   isRuntimeChatAgent,
@@ -91,6 +92,17 @@ describe('chat runtime transport guards', () => {
   it('omits answers when allowing or denying, and omits decision for questions', () => {
     expect(runtimeReplyFields({ kind: 'command' }, 'allow', {})).toEqual({ decision: 'allow' });
     expect(runtimeReplyFields({ kind: 'file' }, 'deny', { q: ['x'] })).toEqual({ decision: 'deny' });
+    expect(runtimeReplyFields({ kind: 'command' }, 'allow_always', {})).toEqual({ decision: 'allow_always' });
     expect(runtimeReplyFields({ kind: 'question' }, 'allow', { q: ['x'] })).toEqual({ answers: { q: ['x'] } });
+  });
+  it('only offers always-allow when the pending request includes that option', () => {
+    expect(requestAllowsAlways({})).toBe(false);
+    expect(requestAllowsAlways({ permissionOptions: [{ id: 'once', kind: 'allow_once' }] })).toBe(false);
+    expect(requestAllowsAlways({
+      permissionOptions: [
+        { id: 'once', kind: 'allow_once' },
+        { id: 'always', kind: 'allow_always' },
+      ],
+    })).toBe(true);
   });
 });

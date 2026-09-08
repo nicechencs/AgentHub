@@ -2,10 +2,9 @@ import { ChromeActions } from '@/components/layout/ChromeActions';
 import { usePageChrome } from '@/components/layout/PageChromeContext';
 import { PageTitleBlock } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
-import { NotificationBell } from '@/components/shared/NotificationBell';
 import { cn } from '@/lib/utils';
 
-/** 非对话页顶栏：左侧页标题 + 一行说明，右侧问号、反馈与通知。对话页不渲染。 */
+/** 非对话页顶栏：左侧页标题 + 一行说明，右侧问号与反馈。对话页不渲染。 */
 export function TopBar() {
   const chrome = usePageChrome();
 
@@ -27,7 +26,7 @@ export function TopBar() {
           />
         ) : null}
       </div>
-      <ChromeActions extra={<NotificationBell />} />
+      <ChromeActions />
     </header>
   );
 }

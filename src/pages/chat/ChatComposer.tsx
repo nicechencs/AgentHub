@@ -234,7 +234,7 @@ export function ChatComposer({
           className={cn(
             'block w-full resize-none overflow-x-hidden overflow-y-auto break-words bg-transparent',
             fillHeight ? 'min-h-0 flex-1' : '[field-sizing:content]',
-            'px-4 pb-2 pt-3 text-body leading-[1.45] outline-none placeholder:text-muted',
+            'px-4 pb-2 pt-3 text-body leading-relaxed outline-none placeholder:text-muted',
             'disabled:cursor-not-allowed disabled:opacity-60',
           )}
           style={
