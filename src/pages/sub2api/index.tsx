@@ -4,6 +4,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { WorkbenchSplitPage } from '@/components/layout/SideSplit';
 import { useSideSplit } from '@/components/layout/use-side-split';
 import { pageRhythm } from '@/components/layout/page-rhythm';
+import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { copyTextToClipboard } from '@/components/shared/CopyTextButton';
 import { PageRefreshButton } from '@/components/shared/PageRefreshButton';
@@ -205,6 +206,7 @@ export default function Sub2ApiPage() {
   const [loadingKeys, setLoadingKeys] = React.useState(
     () => initialSub2ApiKeysView(loadSub2ApiSession(), readSub2ApiKeysMemory()).loadingKeys,
   );
+  const [keysLoadError, setKeysLoadError] = React.useState<unknown>(null);
   const keysRef = React.useRef(keys);
   const [creating, setCreating] = React.useState(false);
   const [newKeyName, setNewKeyName] = React.useState('AgentHub');
@@ -293,6 +295,7 @@ export default function Sub2ApiPage() {
       try {
         const [nextKeys] = await Promise.all([loadSub2ApiKeys(active), loadGroups(active)]);
         setKeys(nextKeys);
+        setKeysLoadError(null);
       } catch (err) {
         const unauthorized =
           err instanceof Sub2ApiError && (err.status === 401 || err.code === 401);
@@ -302,6 +305,7 @@ export default function Sub2ApiPage() {
             applySession(next);
             const [nextKeys] = await Promise.all([loadSub2ApiKeys(next), loadGroups(next)]);
             setKeys(nextKeys);
+            setKeysLoadError(null);
             return;
           } catch {
             await logoutSub2Api(active);
@@ -321,7 +325,10 @@ export default function Sub2ApiPage() {
           }
         }
         toast({ title: t('routes.sub2api.loadKeysFailed'), variant: 'danger' });
-        if (keysRef.current.length === 0) setKeys([]);
+        if (keysRef.current.length === 0) {
+          setKeysLoadError(err);
+          setKeys([]);
+        }
       } finally {
         setLoadingKeys(false);
       }
@@ -1262,6 +1269,12 @@ export default function Sub2ApiPage() {
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
               </Card>
+            ) : keysLoadError && sortedKeys.length === 0 ? (
+              <ErrorState
+                title={t('routes.sub2api.loadKeysFailed')}
+                error={keysLoadError}
+                onRetry={() => session && void refreshKeys(session, { showLoading: true })}
+              />
             ) : sortedKeys.length === 0 ? (
               <Card className="p-6 text-sm text-secondary">
                 <div className="font-medium text-primary">{t('routes.sub2api.keysEmpty')}</div>
