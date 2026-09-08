@@ -20,4 +20,13 @@ describe('ConnectFlowSelectStep type scale', () => {
     expect(src).toMatch(/className="text-body font-medium">\{t\('connect\.select\.crossTitle'\)\}/);
     expect(src).not.toContain('text-sm font-medium');
   });
+
+  it('uses the page primary action when there is no login to pick', () => {
+    const src = source('ConnectFlowSelectStep.tsx');
+    expect(src).toContain("t('connect.select.emptyAction')");
+    expect(src).not.toMatch(/variant="outline"[^>]{0,80}onClick=\{onGoImport\}/);
+    expect(src).toContain('onClick={onGoImport}');
+    const dialog = source('ConnectFlowDialog.tsx');
+    expect(dialog).toContain("emptyKind.kind !== 'wallet_empty'");
+  });
 });

@@ -49,7 +49,7 @@ export function SearchField({
       {hasValue && !props.disabled ? (
         <button
           type="button"
-          className="absolute right-1.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-btn text-muted hover:bg-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+          className="absolute right-0.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-btn text-muted hover:bg-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
           aria-label={clearLabel}
           onClick={clear}
         >

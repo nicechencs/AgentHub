@@ -107,7 +107,7 @@ export function ticketSurfaceChipLabel(surface: TicketSurface, t?: TranslateFn):
   return t('connections.list.unrecognized');
 }
 
-export function hasOfficialQuotaWindow(pct: number | undefined | null): boolean {
+export function hasOfficialQuotaWindow(pct: number | undefined | null): pct is number {
   return typeof pct === 'number' && Number.isFinite(pct);
 }
 

@@ -170,7 +170,7 @@ export function ConnectFlowSelectStep({
       <div className="flex flex-col items-center justify-center gap-2 rounded-card border border-dashed border-border py-10 text-center">
         <p className="text-title font-medium text-primary">{t('connect.select.emptyTitle')}</p>
         <p className="max-w-sm text-meta text-muted">{t('connect.select.emptyDesc')}</p>
-        <Button size="sm" variant="outline" className="mt-2" onClick={onGoImport}>
+        <Button size="sm" className="mt-2" onClick={onGoImport}>
           {t('connect.select.emptyAction')}
         </Button>
       </div>

@@ -758,6 +758,22 @@ export function conversationTitle(t: TranslateFn, title: string): string {
   return title.trim() ? title : t('chat.title.newConversation');
 }
 
+/** Empty title and no official session means this row has not been sent yet. */
+export function isBlankConversationDraft(
+  conversation: Pick<Conversation, 'title' | 'nativeSessionId'>,
+): boolean {
+  return !conversation.title.trim() && !conversation.nativeSessionId;
+}
+
+export function conversationAgentLine(agentIds: readonly AgentKey[]): string {
+  if (agentIds.length === 0) return '';
+  if (agentIds.length === 1) return agentDisplayName(agentIds[0]);
+  if (agentIds.length === 2) {
+    return `${agentDisplayName(agentIds[0])} · ${agentDisplayName(agentIds[1])}`;
+  }
+  return `${agentDisplayName(agentIds[0])} +${agentIds.length - 1}`;
+}
+
 export type ChatBlockerPrimaryTarget =
   | 'agents'
   | 'connections'

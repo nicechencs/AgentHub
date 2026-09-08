@@ -22,8 +22,13 @@ import type { TranslateFn } from '@/lib/i18n';
 import { formatDurationMs, type TurnGroup } from './chat-format';
 import {
   agentPickerLabel,
+  blockerCopy,
+  blockerPrimaryTarget,
   chatTranscriptSurfaceClass,
+  cwdShortName,
   turnComparisonChips,
+  type ChatBlockerPrimaryTarget,
+  type ChatSendBlocker,
 } from './chat-model';
 import {
   chatStarterActions,
@@ -49,6 +54,8 @@ export function ChatTranscript({
   onRetry,
   onOpenLocal,
   onPickStarter,
+  firstBlocker = null,
+  onBlockerAction,
 }: {
   active: Conversation | null;
   turns: TurnGroup[];
@@ -65,6 +72,8 @@ export function ChatTranscript({
   onRetry: () => void;
   onOpenLocal?: (path: string) => boolean;
   onPickStarter?: (action: ChatActionDef) => void;
+  firstBlocker?: ChatSendBlocker | null;
+  onBlockerAction?: (target: ChatBlockerPrimaryTarget) => void;
 }) {
   const { t } = useI18n();
   if (listLoading && !active) {
@@ -105,7 +114,10 @@ export function ChatTranscript({
       ) : turns.length === 0 ? (
         <EmptyTranscriptStart
           agentLabel={agentPickerLabel(t, active)}
+          projectLabel={cwdShortName(active.cwd, t)}
           sending={sending}
+          firstBlocker={firstBlocker}
+          onBlockerAction={onBlockerAction}
           onPickStarter={onPickStarter}
         />
       ) : (
@@ -165,23 +177,44 @@ const STARTER_ICONS: Record<ChatStarterCopyKey, LucideIcon> = {
 
 function EmptyTranscriptStart({
   agentLabel,
+  projectLabel,
   sending,
+  firstBlocker,
+  onBlockerAction,
   onPickStarter,
 }: {
   agentLabel: string;
+  projectLabel: string;
   sending: boolean;
+  firstBlocker: ChatSendBlocker | null;
+  onBlockerAction?: (target: ChatBlockerPrimaryTarget) => void;
   onPickStarter?: (action: ChatActionDef) => void;
 }) {
   const { t } = useI18n();
   const starters = chatStarterActions();
+  const blocker = firstBlocker ? blockerCopy(t, firstBlocker) : null;
   return (
     <div className="flex h-full flex-col items-center justify-center px-6 py-10">
       <div className="w-full max-w-3xl text-center">
         <p className="text-display font-semibold tracking-tight text-primary">{t('chat.transcript.start')}</p>
         <p className="mt-2 text-body text-muted">
-          {t('chat.transcript.firstMessage', { agent: agentLabel })}
+          {t('chat.transcript.identity', { agent: agentLabel, project: projectLabel })}
         </p>
-        {!sending ? (
+        {blocker ? (
+          <>
+            <p className="mt-3 text-body text-secondary">{blocker.text}</p>
+            <Button
+              size="sm"
+              className="mt-4"
+              onClick={() => {
+                if (!firstBlocker) return;
+                onBlockerAction?.(blockerPrimaryTarget(firstBlocker));
+              }}
+            >
+              {blocker.primaryAction}
+            </Button>
+          </>
+        ) : !sending ? (
           <div
             className="mt-6 grid grid-cols-1 gap-2 sm:grid-cols-2"
             role="group"

@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Loader2, PanelLeftClose, Plus, Terminal, Trash2 } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
-import { AgentDot } from '@/components/shared/AgentDot';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { SearchField } from '@/components/shared/SearchField';
 import { Button } from '@/components/ui/button';
@@ -19,9 +18,10 @@ import type { Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { relativeTime } from './chat-format';
 import {
+  conversationAgentLine,
   conversationTitle,
   cwdShortName,
-  visibleAgentDots,
+  isBlankConversationDraft,
   type ConversationDayGroup,
 } from './chat-model';
 
@@ -160,8 +160,8 @@ export function ChatSessionRail({
               </div>
               {group.items.map((c) => {
                 const selected = activeId === c.id;
-                const dots = visibleAgentDots(c.agentIds);
                 const sending = sendingConversationIds.includes(c.id);
+                const draft = isBlankConversationDraft(c);
                 return (
                   <Hint
                     key={c.id}
@@ -187,17 +187,17 @@ export function ChatSessionRail({
                       >
                         <span className="flex items-center gap-1.5">
                           <span className="truncate">{conversationTitle(t, c.title)}</span>
+                          {draft ? (
+                            <span className="shrink-0 text-meta font-normal text-muted">
+                              {t('chat.rail.draft')}
+                            </span>
+                          ) : null}
                           {sending && (
                             <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted" />
                           )}
                         </span>
                         <span className="mt-0.5 flex items-center gap-1.5 text-meta text-muted">
-                          <span className="inline-flex items-center gap-0.5">
-                            {dots.shown.map((id) => (
-                              <AgentDot key={id} agentId={id} size="sm" title={null} />
-                            ))}
-                            {dots.extra > 0 && <span>+{dots.extra}</span>}
-                          </span>
+                          <span className="truncate">{conversationAgentLine(c.agentIds)}</span>
                           <span className="truncate">{cwdShortName(c.cwd, t)}</span>
                           <span className="shrink-0">{relativeTime(c.updatedAt, t)}</span>
                           {c.nativeSessionId ? (

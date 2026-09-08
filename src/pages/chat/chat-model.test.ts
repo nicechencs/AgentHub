@@ -33,8 +33,10 @@ import {
   isLeftoverLocalRouteProvider,
   leftoverProviderIsCurrent,
   conversationResumeCommand,
+  conversationAgentLine,
   conversationTitle,
   cwdShortName,
+  isBlankConversationDraft,
   draftForFocusedConversation,
   filterConversations,
   groupConversationsByDay,
@@ -137,6 +139,27 @@ function processView(phase: AgentProcessView['phase']): AgentProcessView {
     updatedAt: 0,
   };
 }
+
+describe('isBlankConversationDraft', () => {
+  it('treats an untitled row without an official session as a draft', () => {
+    expect(isBlankConversationDraft({ title: '', nativeSessionId: null })).toBe(true);
+    expect(isBlankConversationDraft({ title: '  ', nativeSessionId: undefined })).toBe(true);
+    expect(isBlankConversationDraft({ title: 'hi', nativeSessionId: null })).toBe(false);
+    expect(isBlankConversationDraft({ title: '', nativeSessionId: 'sess-1' })).toBe(false);
+  });
+});
+
+describe('conversationAgentLine', () => {
+  it('names one or two agents and then counts extras', () => {
+    expect(conversationAgentLine(['claude'])).toBe(agentDisplayName('claude'));
+    expect(conversationAgentLine(['claude', 'pi'])).toBe(
+      `${agentDisplayName('claude')} · ${agentDisplayName('pi')}`,
+    );
+    expect(conversationAgentLine(['claude', 'pi', 'codex'])).toBe(
+      `${agentDisplayName('claude')} +2`,
+    );
+  });
+});
 
 describe('cwdShortName', () => {
   it('takes the last segment of a Windows path', () => {
