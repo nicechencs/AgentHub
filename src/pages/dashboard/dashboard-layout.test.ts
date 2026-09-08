@@ -185,4 +185,37 @@ describe('dashboard user-facing copy', () => {
       expect(lookup(en, key), key).not.toMatch(BANNED_UI);
     }
   });
+
+  it('uses readable sync and env copy instead of internal English labels', () => {
+    expect(translate('zh', 'dashboard.sync.everyMinutes', { minutes: 15 })).toBe(
+      '每 15 分钟自动同步',
+    );
+    expect(translate('zh', 'dashboard.sync.soon')).toBe('即将自动同步');
+    expect(translate('zh', 'dashboard.sync.remaining', { remain: '1 分钟' })).toBe(
+      '还有 1 分钟后自动同步',
+    );
+    expect(translate('zh', 'dashboard.sync.toastAutoDone')).toBe('自动同步完成');
+    expect(translate('zh', 'dashboard.page.envNoticeBody')).toBe('先修运行环境，再安装 Agent');
+    expect(translate('en', 'dashboard.sync.everyMinutes', { minutes: 15 })).toBe(
+      'Automatically syncs every 15 min',
+    );
+    expect(translate('en', 'dashboard.sync.soon')).toBe('Will sync automatically soon');
+    expect(translate('en', 'dashboard.sync.remaining', { remain: '1 min' })).toBe(
+      'Will sync automatically in 1 min',
+    );
+    expect(translate('en', 'dashboard.sync.toastAutoDone')).toBe('Automatic sync finished');
+    expect(translate('en', 'dashboard.page.collectTitleAuto', { minutes: 15 })).toContain(
+      'automatic sync',
+    );
+    expect(translate('en', 'dashboard.page.guide')).toContain('automatic sync');
+    expect(translate('en', 'dashboard.page.envNoticeBody')).toBe(
+      'Fix the runtime, then install an agent',
+    );
+    expect(translate('en', 'dashboard.sync.everyMinutes', { minutes: 15 })).not.toContain('Auto-sync');
+    expect(translate('en', 'dashboard.page.collectTitleAuto', { minutes: 15 })).not.toContain(
+      'auto-sync',
+    );
+    expect(translate('zh', 'dashboard.page.envNoticeBody')).not.toContain('CLI');
+    expect(translate('en', 'dashboard.page.envNoticeBody')).not.toContain('CLI');
+  });
 });
