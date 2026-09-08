@@ -67,11 +67,12 @@ Chat, Agents, Skills, Projects, Plugins, Connections, Sub2API, Routes, and Setti
 
 ### 2.3 Settings
 
-Settings uses the workbench header and four page tabs; the tab row stays at the top-left of the workbench header. Preferences, This computer, and About center their content on the reading column. Backups is a left-right workbench: the list is on the left, a file inspect panel opens on the right.
+Settings uses the workbench header and five page tabs; the tab row stays at the top-left of the workbench header. Preferences, Features, This computer, and About center their content on the reading column. Backups is a left-right workbench: the list is on the left, a file inspect panel opens on the right.
 
 | Tab | Query | Contents |
 |---|---|---|
-| Preferences | `?tab=preferences` | Grouped cards: language and appearance; launch and close; sidebar (auto-collapse on Routes; Routes / Plugins / Sub2API visibility); Routes (duplicate-key tip and same-URL update); Skills (market source); Usage (collection interval) |
+| Preferences | `?tab=preferences` | Grouped cards: language and appearance; launch and close; Routes (duplicate-key tip and same-URL update); Skills (market source); Usage (collection interval) |
+| Features | `?tab=features` | Sidebar pages (which entries appear in the left nav) and whether clicking Routes collapses the sidebar |
 | This computer | `?tab=local` | Data directory, log level, retention, log directory |
 | Backups | `?tab=backups` | Agent configuration snapshots; keep-copies switch; restore/delete; file inspect |
 | About | `?tab=about` | Version, update check, repository, and read-only credential-storage notes |
@@ -80,8 +81,9 @@ Invalid or old tab values replace to the nearest current tab. Tab changes use `r
 
 ### Features (Settings)
 
-- Four tabs via `?tab=`: Preferences, This computer (`local`), Backups, About. Invalid or legacy tab values replace to the nearest current tab.
-- Preferences: language and appearance; launch and close; sidebar auto-collapse on Routes; Routes / Plugins / Sub2API sidebar visibility; Routes duplicate-key tip and same-URL update; Skills market source; Usage collection interval.
+- Five tabs via `?tab=`: Preferences, Features, This computer (`local`), Backups, About. Invalid or legacy tab values replace to the nearest current tab.
+- Preferences: language and appearance; launch and close; Routes duplicate-key tip and same-URL update; Skills market source; Usage collection interval.
+- Features: sidebar page visibility (pages other than Chat, Agents, Dashboard, and Settings) and auto-collapse on Routes.
 - This computer: data directory, log level, retention, and log directory.
 - Backups: Agent configuration snapshots with `AgentTabStrip`; keep-copies switch (`keepLiveFileCopies`); restore/delete; right-hand file inspect of the stored snapshot.
 - About: version, update check, repository link, and read-only credential-storage notes.
@@ -89,7 +91,7 @@ Invalid or old tab values replace to the nearest current tab. Tab changes use `r
 ### Agent touchpoints (Settings)
 
 - Backups depend on `LiveBackup` and per-Agent snapshot identity (email or key tail). Switch/import keep-copies follow Agent live files.
-- Preferences gate Routes / Plugins / Sub2API nav visibility and Skills market source used by those pages.
+- Features gates sidebar page visibility. Preferences still holds the Skills market source used by those pages.
 - No ConnectFlow, route `plan`/`bind`, or usage parsers live on Settings itself.
 
 ### Out of scope (Settings)

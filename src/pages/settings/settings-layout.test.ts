@@ -36,35 +36,54 @@ describe('settings layout wiring', () => {
     );
   });
 
-  it('exposes auto-collapse then routes, plugins, and Sub2API nav toggles', () => {
+  it('puts sidebar page toggles on the Features tab, not Preferences', () => {
+    const page = source('index.tsx');
+    const features = source('FeaturesPanel.tsx');
     const prefs = source('PreferencesPanel.tsx');
-    expect(prefs).toContain("t('settings.general.autoCollapseOnRoutesLabel')");
-    expect(prefs).toContain("t('settings.general.routesNavVisibleLabel')");
-    expect(prefs).toContain("t('settings.general.pluginsNavVisibleLabel')");
-    expect(prefs).toContain("t('settings.general.sub2apiNavVisibleLabel')");
-    expect(prefs).toContain('setAutoCollapseOnRoutes');
-    expect(prefs).toContain('setPluginsNavVisible');
-    expect(prefs).toContain('setSub2apiNavVisible');
-    expect(prefs.indexOf("t('settings.general.autoCollapseOnRoutesLabel')")).toBeLessThan(
-      prefs.indexOf("t('settings.general.routesNavVisibleLabel')"),
+    const format = source('settings-format.ts');
+    expect(page).toContain('value="features"');
+    expect(page).toContain("t('settings.page.tabFeatures')");
+    expect(page).toContain('<FeaturesPanel />');
+    expect(prefs).not.toContain('OPTIONAL_NAV_IDS');
+    expect(prefs).not.toContain('setNavVisible');
+    expect(prefs).not.toContain("t('settings.general.sectionSidebar')");
+    expect(features).toContain("t('settings.general.sectionSidebarNav')");
+    expect(features).toContain('OPTIONAL_NAV_IDS');
+    expect(features).toContain('OPTIONAL_NAV_VISIBLE_COPY');
+    expect(features).toContain('setNavVisible');
+    expect(features).toContain("t('settings.general.autoCollapseOnRoutesLabel')");
+    expect(features.indexOf("t('settings.general.sectionSidebarNav')")).toBeLessThan(
+      features.indexOf("t('settings.general.sectionSidebar')"),
     );
-    expect(prefs.indexOf("t('settings.general.routesNavVisibleLabel')")).toBeLessThan(
-      prefs.indexOf("t('settings.general.pluginsNavVisibleLabel')"),
-    );
-    expect(prefs.indexOf("t('settings.general.pluginsNavVisibleLabel')")).toBeLessThan(
-      prefs.indexOf("t('settings.general.sub2apiNavVisibleLabel')"),
-    );
+    expect(format).toContain('skillsNavVisibleLabel');
+    expect(format).toContain('mcpNavVisibleLabel');
+    expect(format).toContain('projectsNavVisibleLabel');
+    expect(format).toContain('pluginsNavVisibleLabel');
+    expect(format).toContain('connectionsNavVisibleLabel');
+    expect(format).toContain('sub2apiNavVisibleLabel');
+    expect(format).toContain('routesNavVisibleLabel');
+    const skillsAt = format.indexOf('skillsNavVisibleLabel');
+    const mcpAt = format.indexOf('mcpNavVisibleLabel');
+    const projectsAt = format.indexOf('projectsNavVisibleLabel');
+    const pluginsAt = format.indexOf('pluginsNavVisibleLabel');
+    const connectionsAt = format.indexOf('connectionsNavVisibleLabel');
+    const sub2apiAt = format.indexOf('sub2apiNavVisibleLabel');
+    const routesAt = format.indexOf('routesNavVisibleLabel');
+    expect(skillsAt).toBeLessThan(mcpAt);
+    expect(mcpAt).toBeLessThan(projectsAt);
+    expect(projectsAt).toBeLessThan(pluginsAt);
+    expect(pluginsAt).toBeLessThan(connectionsAt);
+    expect(connectionsAt).toBeLessThan(sub2apiAt);
+    expect(sub2apiAt).toBeLessThan(routesAt);
   });
 
   it('marks plugins toggle as in development', () => {
-    const prefs = source('PreferencesPanel.tsx');
-    expect(prefs).toContain("t('common.inDevelopment')");
-    expect(prefs).toContain('badge={<Badge');
-    expect((prefs.match(/t\('common\.inDevelopment'\)/g) ?? []).length).toBe(1);
-    expect(prefs).toContain("aria-label={t('settings.general.autoCollapseOnRoutesLabel')}");
-    expect(prefs).toContain("aria-label={t('settings.general.routesNavVisibleLabel')}");
-    expect(prefs).toContain("aria-label={t('settings.general.pluginsNavVisibleLabel')}");
-    expect(prefs).toContain("aria-label={t('settings.general.sub2apiNavVisibleLabel')}");
+    const features = source('FeaturesPanel.tsx');
+    expect(features).toContain("t('common.inDevelopment')");
+    expect(features).toContain("id === 'plugins'");
+    expect((features.match(/t\('common\.inDevelopment'\)/g) ?? []).length).toBe(1);
+    expect(features).toContain("aria-label={t('settings.general.autoCollapseOnRoutesLabel')}");
+    expect(features).toContain('aria-label={label}');
   });
 
   it('groups preference rows into labeled sections in a stable order', () => {
@@ -76,7 +95,6 @@ describe('settings layout wiring', () => {
     const keys = [
       'sectionAppearance',
       'sectionLaunch',
-      'sectionSidebar',
       'sectionRoutes',
       'sectionSkills',
       'sectionUsage',

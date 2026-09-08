@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createTranslator } from '@/lib/i18n';
+import { OPTIONAL_NAV_IDS } from '@/lib/ui-preferences';
 import {
+  OPTIONAL_NAV_VISIBLE_COPY,
   SETTINGS_TABS,
   clampLogRetentionDays,
   clampUsageIntervalMin,
@@ -16,14 +18,15 @@ const tEn = createTranslator('en');
 
 describe('parseSettingsTab', () => {
   it('accepts canonical slugs', () => {
-    expect(SETTINGS_TABS).toEqual(['preferences', 'local', 'backups', 'about']);
+    expect(SETTINGS_TABS).toEqual(['preferences', 'features', 'local', 'backups', 'about']);
     expect(parseSettingsTab('preferences')).toBe('preferences');
+    expect(parseSettingsTab('features')).toBe('features');
     expect(parseSettingsTab('local')).toBe('local');
     expect(parseSettingsTab('backups')).toBe('backups');
     expect(parseSettingsTab('about')).toBe('about');
   });
 
-  it('maps legacy slugs onto the four-tab IA', () => {
+  it('maps legacy slugs onto the five-tab IA', () => {
     expect(parseSettingsTab('general')).toBe('preferences');
     expect(parseSettingsTab('security')).toBe('about');
     expect(parseSettingsTab('data')).toBe('local');
@@ -48,6 +51,11 @@ describe('resolveSettingsLocation', () => {
   it('leaves canonical slugs in place', () => {
     expect(resolveSettingsLocation('preferences')).toEqual({
       tab: 'preferences',
+      hash: '',
+      shouldReplace: false,
+    });
+    expect(resolveSettingsLocation('features')).toEqual({
+      tab: 'features',
       hash: '',
       shouldReplace: false,
     });
@@ -137,8 +145,12 @@ describe('legacy backups hash', () => {
 
 describe('settings-format i18n helpers', () => {
   it('lists backups as a peer Settings tab', () => {
-    expect(tZh('settings.page.description')).toBe('偏好、本机、备份与关于');
-    expect(tEn('settings.page.description')).toBe('Preferences, this computer, backups, and about');
+    expect(tZh('settings.page.description')).toBe('偏好、功能、本机、备份与关于');
+    expect(tEn('settings.page.description')).toBe(
+      'Preferences, features, this computer, backups, and about',
+    );
+    expect(tZh('settings.page.tabFeatures')).toBe('功能');
+    expect(tEn('settings.page.tabFeatures')).toBe('Features');
     expect(tZh('settings.page.tabLocal')).toBe('本机');
     expect(tEn('settings.page.tabLocal')).toBe('This computer');
     expect(tZh('settings.page.tabBackups')).toBe('备份');
@@ -147,11 +159,30 @@ describe('settings-format i18n helpers', () => {
     expect(tEn('settings.page.descriptionTip')).toContain('Backups manage config snapshots');
   });
 
+  it('covers every optional sidebar toggle in both languages', () => {
+    expect(Object.keys(OPTIONAL_NAV_VISIBLE_COPY)).toEqual([...OPTIONAL_NAV_IDS]);
+    for (const id of OPTIONAL_NAV_IDS) {
+      const copy = OPTIONAL_NAV_VISIBLE_COPY[id];
+      expect(tZh(copy.label).length).toBeGreaterThan(0);
+      expect(tEn(copy.label).length).toBeGreaterThan(0);
+      expect(tZh(copy.description).length).toBeGreaterThan(0);
+      expect(tEn(copy.description).length).toBeGreaterThan(0);
+      expect(tZh(copy.tip).length).toBeGreaterThan(0);
+      expect(tEn(copy.tip).length).toBeGreaterThan(0);
+    }
+    expect(tZh('settings.general.skillsNavVisibleLabel')).toBe('显示技能页面');
+    expect(tEn('settings.general.skillsNavVisibleLabel')).toBe('Show Skills in sidebar');
+    expect(tZh('settings.general.connectionsNavVisibleLabel')).toBe('显示连接页面');
+    expect(tEn('settings.general.mcpNavVisibleLabel')).toBe('Show MCP in sidebar');
+  });
+
   it('labels preference groups in the active language', () => {
     expect(tZh('settings.general.sectionAppearance')).toBe('语言与外观');
     expect(tEn('settings.general.sectionAppearance')).toBe('Language and appearance');
     expect(tZh('settings.general.sectionLaunch')).toBe('启动与关闭');
     expect(tEn('settings.general.sectionLaunch')).toBe('Launch and close');
+    expect(tZh('settings.general.sectionSidebarNav')).toBe('侧栏菜单');
+    expect(tEn('settings.general.sectionSidebarNav')).toBe('Sidebar pages');
     expect(tZh('settings.general.sectionSidebar')).toBe('侧栏');
     expect(tEn('settings.general.sectionSidebar')).toBe('Sidebar');
     expect(tZh('settings.general.sectionRoutes')).toBe('路由');

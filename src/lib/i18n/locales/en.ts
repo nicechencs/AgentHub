@@ -63,9 +63,11 @@ export const en = {
   settings: {
     page: {
       title: 'Settings',
-      description: 'Preferences, this computer, backups, and about',
-      descriptionTip: 'Language and theme apply immediately. This computer covers data and logs. Backups manage config snapshots. About has version and login information notes.',
+      description: 'Preferences, features, this computer, backups, and about',
+      descriptionTip:
+        'Language and theme apply immediately. Features controls which pages appear in the sidebar. This computer covers data and logs. Backups manage config snapshots. About has version and login information notes.',
       tabPreferences: 'Preferences',
+      tabFeatures: 'Features',
       tabLocal: 'This computer',
       tabBackups: 'Backups',
       tabAbout: 'About',
@@ -121,21 +123,41 @@ export const en = {
         'Clicking Routes in the left nav collapses it. Turn off to stop automatic expand or collapse.',
       autoCollapseOnRoutesTip:
         'Only the Routes item auto-collapses the sidebar. Other pages, refresh, and moving inside Routes leave it as you left it. The collapse control always works.',
-      routesNavVisibleLabel: 'Show Routes in sidebar',
-      routesNavVisibleDescription:
-        'Show the Routes entry in the left nav. Hiding it does not disable the page.',
-      routesNavVisibleTip:
-        'Shown by default on a new install. When hidden, you can still open Routes via the URL or direct links.',
-      sub2apiNavVisibleLabel: 'Show Sub2API page',
-      sub2apiNavVisibleDescription:
-        'Show the Sub2API entry in the left nav. Hiding it does not disable the page.',
-      sub2apiNavVisibleTip:
-        'Hidden by default on a new install. When hidden, you can still open Sub2API via the URL or direct links.',
+      skillsNavVisibleLabel: 'Show Skills in sidebar',
+      skillsNavVisibleDescription:
+        'Show the Skills entry in the left nav. Hiding it does not disable the page.',
+      skillsNavVisibleTip:
+        'Shown by default on a new install. When hidden, you can still open Skills via the URL or direct links.',
+      mcpNavVisibleLabel: 'Show MCP in sidebar',
+      mcpNavVisibleDescription:
+        'Show the MCP entry in the left nav. Hiding it does not disable the page.',
+      mcpNavVisibleTip:
+        'Shown by default on a new install. When hidden, you can still open MCP via the URL or direct links.',
+      projectsNavVisibleLabel: 'Show Projects in sidebar',
+      projectsNavVisibleDescription:
+        'Show the Projects entry in the left nav. Hiding it does not disable the page.',
+      projectsNavVisibleTip:
+        'Shown by default on a new install. When hidden, you can still open Projects via the URL or direct links.',
       pluginsNavVisibleLabel: 'Show Plugins in sidebar',
       pluginsNavVisibleDescription:
         'In development. Show the Plugins entry in the left nav. Hiding it does not disable the page.',
       pluginsNavVisibleTip:
         'Hidden by default on a new install. When hidden, you can still open Plugins via the URL or direct links.',
+      connectionsNavVisibleLabel: 'Show Connections in sidebar',
+      connectionsNavVisibleDescription:
+        'Show the Connections entry in the left nav. Hiding it does not disable the page.',
+      connectionsNavVisibleTip:
+        'Shown by default on a new install. When hidden, you can still open Connections via the URL or direct links.',
+      sub2apiNavVisibleLabel: 'Show Sub2API page',
+      sub2apiNavVisibleDescription:
+        'Show the Sub2API entry in the left nav. Hiding it does not disable the page.',
+      sub2apiNavVisibleTip:
+        'Hidden by default on a new install. When hidden, you can still open Sub2API via the URL or direct links.',
+      routesNavVisibleLabel: 'Show Routes in sidebar',
+      routesNavVisibleDescription:
+        'Show the Routes entry in the left nav. Hiding it does not disable the page.',
+      routesNavVisibleTip:
+        'Shown by default on a new install. When hidden, you can still open Routes via the URL or direct links.',
       warnDuplicateRouteCredentialLabel: 'Warn on reused keys',
       warnDuplicateRouteCredentialDescription: 'Tip only when a route key or login was already used',
       warnDuplicateRouteCredentialTip:
@@ -153,6 +175,7 @@ export const en = {
       skillMarketSkillhub: 'skillhub.cn',
       sectionAppearance: 'Language and appearance',
       sectionLaunch: 'Launch and close',
+      sectionSidebarNav: 'Sidebar pages',
       sectionSidebar: 'Sidebar',
       sectionRoutes: 'Routes',
       sectionSkills: 'Skills',
@@ -584,23 +607,29 @@ export const en = {
         },
         settingsPreferences: {
           title: "Using Preferences",
-          intro: "Language, appearance, sidebar, and sync interval.",
-          step1: "Four tabs: Preferences, This computer, Backups, and About.",
+          intro: "Language, appearance, and sync interval.",
+          step1: "Five tabs: Preferences, Features, This computer, Backups, and About.",
           step2: "Language, theme, accent, and page background take effect immediately.",
-          step3: "Sidebar can show or hide Routes, Plugins, and Sub2API.",
-          step4: "The usage collect interval is here.",
+          step3: "The usage collect interval is here.",
+        },
+        settingsFeatures: {
+          title: "Using Features",
+          intro: "Which pages appear in the sidebar.",
+          step1: "Five tabs: Preferences, Features, This computer, Backups, and About.",
+          step2: "Show or hide pages other than Chat, Agents, Dashboard, and Settings.",
+          step3: "Whether clicking Routes collapses the sidebar.",
         },
         settingsLocal: {
           title: "Using This computer",
           intro: "Data folder and logs.",
-          step1: "Four tabs: Preferences, This computer, Backups, and About.",
+          step1: "Five tabs: Preferences, Features, This computer, Backups, and About.",
           step2: "Open the data folder from here.",
           step3: "Change the log level and how many days to keep logs.",
         },
         settingsBackups: {
           title: "Using Backups",
           intro: "Configuration snapshots for each Agent.",
-          step1: "Four tabs: Preferences, This computer, Backups, and About.",
+          step1: "Five tabs: Preferences, Features, This computer, Backups, and About.",
           step2: "Keep local config copies on switch and sync is on by default.",
           step3: "Click Back up to create one.",
           step4: "Click this snapshot to inspect files on the right. Then click Next.",
@@ -609,7 +638,7 @@ export const en = {
         settingsAbout: {
           title: "Using About",
           intro: "Version, updates, and reporting a problem.",
-          step1: "Four tabs: Preferences, This computer, Backups, and About.",
+          step1: "Five tabs: Preferences, Features, This computer, Backups, and About.",
           step2: "See the version and check for updates.",
           step3: "Report a problem here, or use the chat icon at the top right.",
         },
