@@ -1252,7 +1252,6 @@ export default function Sub2ApiPage() {
               </form>
             )}
 
-            <p className="text-sm text-secondary">{t('routes.sub2api.syncedKeysEmpty')}</p>
           </Card>
         )}
 

@@ -137,14 +137,15 @@ describe('routes layout wiring', () => {
     expect(split).toContain('flex shrink-0 justify-end');
   });
 
-  it('keeps the healthy empty state informational without a second create CTA', () => {
+  it('makes sync-from-connections the empty-state action without a create-route CTA', () => {
     const page = source('pages/routes/pool/index.tsx');
     const emptyBlock = page.slice(
       page.indexOf("pageView === 'healthy_empty'"),
       page.indexOf("pageView === 'list'"),
     );
     expect(emptyBlock).toContain("t('routes.pool.page.emptyTitle')");
-    expect(emptyBlock).not.toContain('actionLabel');
+    expect(emptyBlock).toContain("t('routes.pool.page.syncFromConnections')");
+    expect(emptyBlock).toContain('actionLabel');
     expect(emptyBlock).not.toContain("t('routes.create.action')");
   });
 });

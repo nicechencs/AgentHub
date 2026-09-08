@@ -260,15 +260,14 @@ export function ProjectConversationPreviewPanel({
           <Copy className="h-3.5 w-3.5" />
         </Button>
         <Button
-          size="icon"
-          variant="ghost"
-          className="h-7 w-7 shrink-0"
+          size="sm"
+          variant="secondary"
+          className="shrink-0"
           disabled={busy}
-          aria-label={t('projects.tree.continue')}
-          title={t('projects.tree.continue')}
           onClick={() => onContinue(session)}
         >
           <MessageSquarePlus className="h-3.5 w-3.5" />
+          {t('projects.tree.continue')}
         </Button>
         {record ? (
           <OpenDirButton

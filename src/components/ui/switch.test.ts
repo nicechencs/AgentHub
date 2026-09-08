@@ -17,6 +17,11 @@ describe('Switch', () => {
     expect(html).not.toContain('before:');
   });
 
+  it('drops thumb motion when the system asks for reduced motion', () => {
+    const html = switchMarkup();
+    expect(html).toContain('motion-reduce:transition-none');
+  });
+
   it('uses a distinct off-track fill instead of the surrounding subtle surface', () => {
     const html = switchMarkup();
     expect(html).toContain('bg-active');

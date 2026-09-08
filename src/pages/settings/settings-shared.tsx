@@ -1,9 +1,37 @@
-import type { ReactNode } from 'react';
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  useId,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 import { PageSection } from '@/components/layout/PageSection';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+
+function labeledControl(
+  child: ReactNode,
+  labelId: string,
+  descId: string | undefined,
+  controlId: string,
+): ReactNode {
+  if (!isValidElement(child)) return child;
+  const props = child.props as {
+    id?: string;
+    'aria-labelledby'?: string;
+    'aria-describedby'?: string;
+    'aria-label'?: string;
+  };
+  const next: Record<string, string> = {};
+  if (!props.id) next.id = controlId;
+  if (!props['aria-labelledby'] && !props['aria-label']) next['aria-labelledby'] = labelId;
+  const describedBy = [props['aria-describedby'], descId].filter(Boolean).join(' ');
+  if (describedBy) next['aria-describedby'] = describedBy;
+  return Object.keys(next).length > 0 ? cloneElement(child as ReactElement, next) : child;
+}
 
 /** 表单行：左侧标签 + 短说明；细节用 descriptionTip 悬停展示 */
 export function SettingsRow({
@@ -22,20 +50,31 @@ export function SettingsRow({
   /** Path rows: children grow and wrap instead of a fixed 12rem slot. */
   wide?: boolean;
 }) {
+  const uid = useId();
+  const labelId = `${uid}-label`;
+  const descId = description ? `${uid}-desc` : undefined;
+  const labeled = Children.map(children, (child, index) =>
+    index === 0 ? labeledControl(child, labelId, descId, uid) : child,
+  );
+
   return (
     <div className={cn('flex gap-6 py-3', wide ? 'items-start' : 'items-center justify-between')}>
       <div className="min-w-0 shrink-0">
         <div className="flex items-center gap-1.5">
-          <p className="text-body">{label}</p>
+          <p id={labelId} className="text-body">
+            {label}
+          </p>
           {badge}
         </div>
         {description &&
           (descriptionTip ? (
             <Tip className="mt-0.5 block text-meta text-muted" label={descriptionTip}>
-              {description}
+              <span id={descId}>{description}</span>
             </Tip>
           ) : (
-            <p className="mt-0.5 text-meta text-muted">{description}</p>
+            <p id={descId} className="mt-0.5 text-meta text-muted">
+              {description}
+            </p>
           ))}
       </div>
       <div
@@ -44,7 +83,7 @@ export function SettingsRow({
           wide ? 'min-w-0 flex-1 justify-end' : 'w-48 shrink-0 justify-end',
         )}
       >
-        {children}
+        {labeled}
       </div>
     </div>
   );

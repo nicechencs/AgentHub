@@ -86,6 +86,18 @@ describe('settings layout wiring', () => {
     expect(features).toContain('aria-label={label}');
   });
 
+  it('names launch and route switches for assistive reading', () => {
+    const prefs = source('PreferencesPanel.tsx');
+    const shared = source('settings-shared.tsx');
+    expect(prefs).toContain("t('settings.general.autoStartLabel')");
+    expect(prefs).toContain("t('settings.general.closeToTrayLabel')");
+    expect(prefs).not.toContain("aria-label={t('settings.general.autoStartLabel')}");
+    expect(prefs).not.toContain("aria-label={t('settings.general.closeToTrayLabel')}");
+    expect(prefs).not.toContain("aria-label={t('settings.data.usageIntervalLabel')}");
+    expect(shared).toContain('aria-labelledby');
+    expect(shared).toContain('aria-describedby');
+  });
+
   it('groups preference rows into labeled sections in a stable order', () => {
     const prefs = source('PreferencesPanel.tsx');
     const shared = source('settings-shared.tsx');

@@ -6,6 +6,7 @@ import {
   expandedProjectMembers,
   filterVisibleProjects,
   nextSelectedForToggleAllVisible,
+  projectIdsToExpandForSearch,
   clampSessionPage,
   sessionPageCount,
   SESSION_PAGE_SIZE,
@@ -141,6 +142,18 @@ describe('filterVisibleProjects', () => {
     expect(
       filterVisibleProjects(projects, 'token', { [perf.id]: [perfCold] }).map((p) => p.id),
     ).toEqual([]);
+  });
+});
+
+describe('projectIdsToExpandForSearch', () => {
+  it('returns groups that already have a loaded matching session', () => {
+    const groups = [
+      { id: app.id, members: [app] },
+      { id: perf.id, members: [perf] },
+    ];
+    expect(projectIdsToExpandForSearch(groups, 'token', sessionsByProject)).toEqual([app.id]);
+    expect(projectIdsToExpandForSearch(groups, '', sessionsByProject)).toEqual([]);
+    expect(projectIdsToExpandForSearch(groups, 'token', {})).toEqual([]);
   });
 });
 

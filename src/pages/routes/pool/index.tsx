@@ -447,6 +447,7 @@ export default function RoutesPoolPage() {
       />
     ) : null;
 
+  const syncOpenerRef = useRef<(() => void) | null>(null);
   const trashDock = (
     <ConnectionTrashButton home="route_pool" onChanged={reloadAll} />
   );
@@ -484,6 +485,7 @@ export default function RoutesPoolPage() {
               entries={entries}
               defaultPools={defaultPools}
               onChanged={reloadAll}
+              syncOpenerRef={syncOpenerRef}
             />
             <PageRefreshButton
               loading={loading}
@@ -519,6 +521,8 @@ export default function RoutesPoolPage() {
               icon={Boxes}
               title={t('routes.pool.page.emptyTitle')}
               description={t('routes.pool.page.emptyDescription')}
+              actionLabel={t('routes.pool.page.syncFromConnections')}
+              onAction={() => syncOpenerRef.current?.()}
             />
           ) : null}
           {pageView === 'list' || (hasContent && pageView !== 'loading' && pageView !== 'list_error') ? (
