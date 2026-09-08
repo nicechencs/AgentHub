@@ -1,7 +1,7 @@
 ---
 title: Codex Chat 第二批实施与交接
-type: status
-status: current
+type: archive
+status: archived
 owner: maintainers
 audience: chat implementers
 updated: 2026-09-08
@@ -9,7 +9,11 @@ updated: 2026-09-08
 
 # Codex Chat 第二批实施与交接
 
-承接 [B1 实施记录](chat-codex-b1.md) 与 [B2 交接提示词](../guides/chat-b2-handoff.md)。本记录只覆盖 **TRIMMED B2 / B2.1**（Codex 优先），不含计划模式、Claude B3、完整 A11–A17 剧场或无关全量失败修复。
+> **归档（2026-09-08）**。本页是一次性审查、批次记录或复核，不是现行契约。当前实现见 [当前实现状态](../STATUS.md)。下文保留原文，不要按此页派工。
+>
+> **Archived / 已归档**: Historical review or batch record. Do not use it as the current implementation contract.
+
+承接 [B1 实施记录](chat-codex-b1.md)。当时的 [B2 交接提示词](chat-b2-handoff.md) 已归档。本记录只覆盖 **TRIMMED B2 / B2.1**（Codex 优先），不含计划模式、Claude B3、完整 A11–A17 剧场或无关全量失败修复。
 
 ## 交付范围与结果
 

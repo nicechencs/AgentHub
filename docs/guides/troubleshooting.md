@@ -45,7 +45,7 @@ AgentHub 一键 npm 安装写到 `~/.npm-global`（Windows 为 `%APPDATA%\npm`�
 
 需要完全退出时：若设置了「关闭到托盘」，关窗口不会退出，请从托盘选退出后再打开。
 
-完整审查清单见 [Codex 安装与模块化审查](../status/codex-install-modularity-review.md)。
+完整审查清单见 [Codex 安装与模块化审查](../archive/codex-install-modularity-review.md)。
 
 ### WorkBuddy / ZCode 安装
 

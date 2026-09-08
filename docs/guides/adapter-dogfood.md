@@ -4,7 +4,7 @@ description: 在桌面应用和真实连接上验收本机 Routes 的发布前�
 type: how-to
 status: current
 owner: maintainers
-updated: 2026-08-29
+updated: 2026-09-08
 ---
 
 # Route Adapter 真机 Dogfood
@@ -13,7 +13,7 @@ updated: 2026-08-29
 
 ## 范围和入口
 
-使用 `pnpm tauri:dev` 和真实连接验证。产品入口是 Dashboard 的连接/切换和 Connections 的「分享至连接池」；本机 Routes 页面（中文“路由”，英文 `Routes`）只管理已绑定 Route 的运行时。不要把内部 `bridge` 名称写成用户功能名。
+使用 `pnpm tauri:dev` 和真实连接验证。产品入口是 Dashboard 的连接/切换；把连接页的登录加入默认连接池，走连接池页的「从连接同步」。本机 Routes 页面（中文“路由”，英文 `Routes`）只管理已绑定 Route 的运行时。不要把内部 `bridge` 名称写成用户功能名。
 
 典型 smoke flow：
 

@@ -20,6 +20,22 @@
 | [hub-redesign-plan.md](hub-redesign-plan.md) | Completed Hub Phase 1 implementation record | `docs/ui/page-patterns.md` and `docs/concepts/connections-and-routing.md` |
 | [route-endpoint-audit-2026-08.md](route-endpoint-audit-2026-08.md) | Dated endpoint audit snapshot | `docs/reference/local-route-api.md` |
 | [single-kernel-projections.md](single-kernel-projections.md) | Completed Adapter single-kernel proposal plus E/F evaluation | Current contract: `docs/architecture/adapter-route-kernel.md` |
+| [project-review-handoff.md](project-review-handoff.md) | 2026-09-07 full-project review launch prompt | Current procedure: `docs/guides/agent-workflow.md` 审查与验证 |
+| [chat-b2-handoff.md](chat-b2-handoff.md) | Chat B2 development launch prompt | Current facts: `docs/STATUS.md` and [chat-codex-b2.md](chat-codex-b2.md) |
+| [chat-review-handoff.md](chat-review-handoff.md) | Chat B1 independent-review launch prompt | Evidence: [chat-codex-b1.md](chat-codex-b1.md) |
+| [chat-codex-s0.md](chat-codex-s0.md) | Codex Chat S0 protocol probe | Current facts: `docs/STATUS.md` and `docs/concepts/chat-and-agents.md` |
+| [chat-codex-b1.md](chat-codex-b1.md) | Codex Chat B1 implementation record | Current facts: `docs/STATUS.md` and `docs/concepts/chat-and-agents.md` |
+| [chat-codex-b2.md](chat-codex-b2.md) | Codex Chat B2 implementation record | Current facts: `docs/STATUS.md` and `docs/concepts/chat-and-agents.md` |
+| [chat-claude-b3.md](chat-claude-b3.md) | Claude ChatRuntime probe (not wired) | Current facts: `docs/STATUS.md` |
+| [codex-install-modularity-review.md](codex-install-modularity-review.md) | 2026-08-27 Codex install and modularity review | Current facts: `docs/guides/troubleshooting.md` and `docs/STATUS.md` |
+| [2026-09-project-review.md](2026-09-project-review.md) | 2026-09-04 project review | Historical record only |
+| [2026-09-07-project-review-06b893c4.md](2026-09-07-project-review-06b893c4.md) | 2026-09-07 project review, first round | See [fix progress](2026-09-07-review-fix-progress.md) |
+| [2026-09-07-project-review-c726bd2a.md](2026-09-07-project-review-c726bd2a.md) | 2026-09-07 project review, continued | See [fix progress](2026-09-07-review-fix-progress.md) |
+| [2026-09-07-project-review-c8d792b5.md](2026-09-07-project-review-c8d792b5.md) | 2026-09-07 incremental review | See [fix progress](2026-09-07-review-fix-progress.md) |
+| [2026-09-07-review-fix-progress.md](2026-09-07-review-fix-progress.md) | Fix tracking for the 2026-09-07 reviews | Historical record; issues closed |
+| [naming-convention-audit.md](naming-convention-audit.md) | 2026-09-02 naming audit | Current terms: `docs/reference/terminology.md` |
+| [objectization-encapsulation-audit.md](objectization-encapsulation-audit.md) | Objectization audit plus five volumes | Follow-on designs remain `proposed` in `docs/architecture/*-owners.md` |
+| [recent-fix-review.md](recent-fix-review.md) | 2026-08-26 fix recap | Current facts: `docs/STATUS.md` |
 
 ## Removed historical bodies
 

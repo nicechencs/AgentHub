@@ -14,14 +14,14 @@ updated: 2026-09-08
 
 Chat 是 AgentHub 里的运行工作台。当前一个会话对应一个 Agent；同一 turn 内的过程状态仍以 `(turn, agent)` 隔离。发送按会话隔离，多个会话可以同时生成。
 
-- **新空 Codex 会话**：app-server 持续聊天；会话级模型/思考强度、最小操作菜单、本地图片附件、「用于本次」技能已落地（见 [B2](../status/chat-codex-b2.md)）。计划模式与 Claude B3 未做。
+- **新空 Codex 会话**：app-server 持续聊天；会话级模型/思考强度、最小操作菜单、本地图片附件、「用于本次」技能已落地（见 [B2](../archive/chat-codex-b2.md)）。计划模式与 Claude B3 未做。
 - **新空 Grok 会话**：持续聊天，可选模型和思考等级，支持图片与后续轮排队。不能为本轮指定「用于本次」技能（与 Codex 不同；界面也不画出可点的假按钮）。生成时不能中途补充，只能排队到下一轮。
 - **新空 Kiro 会话**：`kiro-cli acp` 持续通道（允许/拒绝、停止；生成时不能中途补充，可排队到下一轮）。旧对话保留原发送方式。本机登录或 `KIRO_API_KEY` 可用时，打印路径可走 HTTP 多轮（`kiro-http:` 前缀）；已有 HTTP 会话失败时直接报错并保留会话，不回退成新的命令行会话。跨页事实见 [STATUS](../STATUS.md)。
 - **其余 Agent 与旧会话**：保留原有发送方式。
 
 ## 当前数据流
 
-新空 Codex 会话：页面 → ChatPort runtime 操作 → Tauri blocking command → ChatRuntime 串行会话 → Codex app-server。后台将消息、事件与终态保存到 SQLite；页面读取带 sequence、待处理请求、currentMessage 与 gap 的快照。正文采用同一次读取中的完整 currentMessage，不能用字符串相似性猜测增量是否重复。页面关闭不拥有后台生命周期；重开使用持久化的原生 thread。详见 [B1 实施记录](../status/chat-codex-b1.md)。
+新空 Codex 会话：页面 → ChatPort runtime 操作 → Tauri blocking command → ChatRuntime 串行会话 → Codex app-server。后台将消息、事件与终态保存到 SQLite；页面读取带 sequence、待处理请求、currentMessage 与 gap 的快照。正文采用同一次读取中的完整 currentMessage，不能用字符串相似性猜测增量是否重复。页面关闭不拥有后台生命周期；重开使用持久化的原生 thread。详见 [B1 实施记录](../archive/chat-codex-b1.md)。
 
 旧会话和其他 Agent：
 
@@ -68,7 +68,7 @@ Chat 不调用 VS Code 扩展或 Codex 桌面 App 的界面；它启动检测到
 
 IDE/桌面副本在 Agents 页标记为「在 IDE/桌面 App 内更新」；不影响 Chat，只要 detect 为已安装且登录态可用。
 
-审查与修复状态见 [Codex 安装与模块化审查](../status/codex-install-modularity-review.md)。
+审查与修复状态见 [Codex 安装与模块化审查](../archive/codex-install-modularity-review.md)。
 
 ## Agent 能力边界
 
@@ -77,7 +77,7 @@ Agent catalog/registry 描述安装、配置、账号、skills、usage、runtime
 ## 相关页面
 
 - [当前实现状态](../STATUS.md)
-- [Codex Chat B2](../status/chat-codex-b2.md)
+- [Codex Chat B2](../archive/chat-codex-b2.md)
 - [Architecture overview](../architecture/overview.md)
 - [Core and runtime](../architecture/core-runtime.md)
 - [Frontend and backend boundary](../architecture/frontend-backend.md)

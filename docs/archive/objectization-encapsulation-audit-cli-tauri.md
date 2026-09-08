@@ -1,12 +1,16 @@
 ---
 title: 对象化与封装审查：CLI、Tauri 与工具链
-type: explanation
-status: current
+type: archive
+status: archived
 owner: maintainers
-updated: 2026-08-27
+updated: 2026-09-08
 ---
 
 # 对象化与封装审查：CLI、Tauri 与工具链
+
+> **归档（2026-09-08）**。本页是一次性审查、批次记录或复核，不是现行契约。当前实现见 [当前实现状态](../STATUS.md)。下文保留原文，不要按此页派工。
+>
+> **Archived / 已归档**: Historical review or batch record. Do not use it as the current implementation contract.
 
 本分册记录 CLI、Tauri、根目录脚本、发布配置和工作流的逐文件审查结果。问题编号与总览文档一致；旧问题见[对象化与封装审查](objectization-encapsulation-audit.md)。
 

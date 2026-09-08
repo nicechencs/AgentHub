@@ -52,13 +52,34 @@ The destination paths below are the intended organized names. A destination may 
 | `docs/ui-design.md` | `docs/ui/page-patterns.md` | Extract current shells, pages, and interactions |
 | `docs/ui-experience-alignment.md` | `docs/ui/design-system.md` + `docs/archive/README.md` | Keep stable UI constraints current; record the dated comparison only as history |
 
-## Retained archive records (7)
+## Retained archive records (28)
 
 | Archive file | Current destination or explanation |
 |---|---|
 | `docs/archive/a4-unified-loopback-gateway.md` | Historical gateway design; current facts belong in `docs/reference/local-route-api.md` and `docs/concepts/adapters-and-bridges.md` |
+| `docs/archive/2026-09-07-project-review-06b893c4.md` | 2026-09-07 project review first round, moved from `docs/reviews/` |
+| `docs/archive/2026-09-07-project-review-c726bd2a.md` | 2026-09-07 project review continuation, moved from `docs/reviews/` |
+| `docs/archive/2026-09-07-project-review-c8d792b5.md` | 2026-09-07 incremental review, moved from `docs/reviews/` |
+| `docs/archive/2026-09-07-review-fix-progress.md` | Fix tracking for the 2026-09-07 reviews, moved from `docs/reviews/` |
+| `docs/archive/2026-09-project-review.md` | 2026-09-04 project review, moved from `docs/reviews/` |
+| `docs/archive/chat-b2-handoff.md` | Chat B2 development launch prompt, moved from `docs/guides/chat-b2-handoff.md`; current facts belong in `docs/STATUS.md` and `docs/archive/chat-codex-b2.md` |
+| `docs/archive/chat-claude-b3.md` | Claude ChatRuntime probe, moved from `docs/status/chat-claude-b3.md`; current facts belong in `docs/STATUS.md` |
+| `docs/archive/chat-codex-b1.md` | Codex Chat B1 record, moved from `docs/status/chat-codex-b1.md`; current facts belong in `docs/STATUS.md` |
+| `docs/archive/chat-codex-b2.md` | Codex Chat B2 record, moved from `docs/status/chat-codex-b2.md`; current facts belong in `docs/STATUS.md` |
+| `docs/archive/chat-codex-s0.md` | Codex Chat S0 probe, moved from `docs/status/chat-codex-s0.md` |
+| `docs/archive/chat-review-handoff.md` | Chat B1 independent-review launch prompt, moved from `docs/guides/chat-review-handoff.md`; evidence belongs in `docs/archive/chat-codex-b1.md` |
+| `docs/archive/codex-install-modularity-review.md` | 2026-08-27 Codex install review, moved from `docs/status/codex-install-modularity-review.md` |
 | `docs/archive/hub-redesign-plan.md` | Historical Hub Phase 1 record; current page behavior belongs in `docs/ui/page-patterns.md` and current product docs |
 | `docs/archive/multi-account-routing-rfc.md` | Historical same-surface multi-account RFC; current runtime facts belong in product/reference docs; the shipped default pool is documented in `docs/concepts/connections-and-routing.md` |
+| `docs/archive/naming-convention-audit.md` | 2026-09-02 naming audit, moved from `docs/reviews/naming-convention-audit.md`; current terms belong in `docs/reference/terminology.md` |
+| `docs/archive/objectization-encapsulation-audit.md` | Objectization audit, moved from `docs/architecture/`; five volumes share this prefix; follow-on designs remain `proposed` in `docs/architecture/*-owners.md` |
+| `docs/archive/objectization-encapsulation-audit-cli-tauri.md` | Objectization audit volume, moved from `docs/architecture/` |
+| `docs/archive/objectization-encapsulation-audit-core.md` | Objectization audit volume, moved from `docs/architecture/` |
+| `docs/archive/objectization-encapsulation-audit-frontend.md` | Objectization audit volume, moved from `docs/architecture/` |
+| `docs/archive/objectization-encapsulation-audit-oauth.md` | Objectization audit volume, moved from `docs/architecture/` |
+| `docs/archive/objectization-encapsulation-audit-tests-fixtures.md` | Objectization audit volume, moved from `docs/architecture/` |
+| `docs/archive/project-review-handoff.md` | 2026-09-07 full-project review launch prompt, moved from `docs/guides/project-review-handoff.md`; current procedure belongs in `docs/guides/agent-workflow.md` |
+| `docs/archive/recent-fix-review.md` | 2026-08-26 fix recap, moved from `docs/architecture/recent-fix-review.md` |
 | `docs/archive/route-endpoint-audit-2026-08.md` | Dated audit snapshot; current endpoint facts belong in `docs/reference/local-route-api.md` |
 | `docs/archive/routing-connection-refactor-plan.md` | Historical implementation plan; future process options belong in `docs/proposals/adapter-sidecar.md` and `docs/proposals/modularity.md` |
 | `docs/archive/single-kernel-projections.md` | Completed single-kernel proposal, implementation slices, and dated E/F evaluation; current contract belongs in `docs/architecture/adapter-route-kernel.md` |
@@ -66,4 +87,4 @@ The destination paths below are the intended organized names. A destination may 
 
 ## Coverage check
 
-The flat set is intentionally listed as 31 rows, including the legacy `README.md`. The retained archive set is intentionally listed as 7 rows. When a root file is removed, its row must remain here and the destination document must contain the stable content or an explicit archived explanation. No row authorizes credential encryption work or domestic OAuth/API conversion.
+The flat set is intentionally listed as 31 rows, including the legacy `README.md`. The retained archive set is intentionally listed as 28 rows. When a root file is removed, its row must remain here and the destination document must contain the stable content or an explicit archived explanation. No row authorizes credential encryption work or domestic OAuth/API conversion.

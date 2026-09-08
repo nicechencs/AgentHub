@@ -1,12 +1,16 @@
 ---
 title: 对象化与封装审查：Core 剩余分区
-type: explanation
-status: current
+type: archive
+status: archived
 owner: maintainers
-updated: 2026-08-26
+updated: 2026-09-08
 ---
 
 # 对象化与封装审查：Core 剩余分区
+
+> **归档（2026-09-08）**。本页是一次性审查、批次记录或复核，不是现行契约。当前实现见 [当前实现状态](../STATUS.md)。下文保留原文，不要按此页派工。
+>
+> **Archived / 已归档**: Historical review or batch record. Do not use it as the current implementation contract.
 
 本分册记录 Rust Core 在既有 Provider、Account、Backup、Bridge Service 和前一轮 adapter/platform/usage 审查之外的逐文件复核结果。总览见[对象化与封装审查](objectization-encapsulation-audit.md)。
 
