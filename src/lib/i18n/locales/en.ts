@@ -2725,7 +2725,7 @@ export const en = {
       searchPlaceholder: "Search chats",
       searchAria: "Search chats",
       empty: "No chats yet",
-      emptyHint: "Click New chat below to start",
+      emptyHint: "Click New chat above to start",
       noMatch: "No matching chats",
       draft: "Draft",
       deleteAria: "Delete",

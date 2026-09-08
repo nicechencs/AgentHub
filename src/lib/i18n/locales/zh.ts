@@ -2705,7 +2705,7 @@ export const zh = {
       searchPlaceholder: "搜索对话",
       searchAria: "搜索对话",
       empty: "暂无对话",
-      emptyHint: "点下方「新建对话」开始",
+      emptyHint: "点上方「新建对话」开始",
       noMatch: "没有匹配的对话",
       draft: "草稿",
       deleteAria: "删除",

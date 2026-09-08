@@ -173,7 +173,7 @@ export default function App() {
           <Sidebar />
           {isRoutesArea ? <RoutesNav /> : null}
           <PageChromeProvider>
-            <div className={pageRhythm.shellMain}>
+            <div className={isChat ? 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden' : pageRhythm.shellMain}>
             {!isChat && <TopBar />}
             {!isChat && !isRoutesArea ? <LocalForwardRestartBanner /> : null}
             <main
