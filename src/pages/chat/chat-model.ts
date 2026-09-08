@@ -799,6 +799,11 @@ export function conversationRailMarkColor(agentIds: readonly AgentKey[]): string
   return id ? resolveAgentMeta(id).color : 'var(--accent)';
 }
 
+/** Selected history-row fill: a visible wash of the Agent mark on canvas. */
+export function conversationRailSelectedFill(agentIds: readonly AgentKey[]): string {
+  return `color-mix(in srgb, ${conversationRailMarkColor(agentIds)} 28%, var(--bg-canvas))`;
+}
+
 export type ChatBlockerPrimaryTarget =
   | 'agents'
   | 'connections'
