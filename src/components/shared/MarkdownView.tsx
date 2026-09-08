@@ -13,6 +13,7 @@ export type MarkdownViewVariant = 'chat' | 'document';
 
 /** Override @uiw markdown.css 6px / square table chrome with design tokens. */
 export const MARKDOWN_TOKEN_CHROME = [
+  'min-w-0 max-w-full overflow-hidden break-words',
   '[&_pre]:!overflow-x-auto [&_pre]:!rounded-card',
   '[&_pre_.copied]:!rounded-btn',
   '[&_code]:!rounded-btn [&_tt]:!rounded-btn [&_kbd]:!rounded-btn',

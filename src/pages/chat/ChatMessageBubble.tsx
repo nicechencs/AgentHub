@@ -11,6 +11,7 @@ import { hasProcessDetails, processPhaseLabel } from '@/lib/chat-process';
 import type { AgentProcessView } from '@/lib/chat-process';
 import type { ChatMessage } from '@/lib/types';
 import {
+  formatChatDisplayContent,
   formatDurationMs,
   localizeChatFailure,
   looksLikeChatProtocolDump,
@@ -19,11 +20,13 @@ import {
 import { messageStatusLabel } from './chat-model';
 import { ChatProcessPanel } from './ChatProcessPanel';
 
+const STREAM_TYPEWRITER_MAX_CHARS = 1200;
+
 function useStreamingDisplayContent(content: string, running: boolean): string {
   const [visible, setVisible] = useState(content);
 
   useEffect(() => {
-    if (!running) {
+    if (!running || content.length > STREAM_TYPEWRITER_MAX_CHARS) {
       setVisible(content);
       return;
     }
@@ -132,7 +135,9 @@ function AgentBubble({
   const protocolDump = looksLikeChatProtocolDump(message.content);
   const localized =
     message.content && !protocolDump ? localizeChatFailure(message.content, t) : '';
-  const rawDisplayContent = localized ? sanitizeCliChatText(localized) : '';
+  const rawDisplayContent = localized
+    ? formatChatDisplayContent(sanitizeCliChatText(localized))
+    : '';
   const displayContent = useStreamingDisplayContent(rawDisplayContent, message.status === 'running');
   const cancelledPlaceholder =
     message.status === 'cancelled' && ((message.error ?? '').toLowerCase() === 'cancelled');
@@ -161,7 +166,7 @@ function AgentBubble({
   );
 
   return (
-    <div id={`chat-msg-${message.id}`} className="group flex gap-3">
+    <div id={`chat-msg-${message.id}`} className="group flex min-w-0 gap-3">
       <AgentLogo agentId={agent} size="md" />
       <div className="relative min-w-0 flex-1 pt-0.5">
         <div className="mb-1 flex flex-wrap items-center gap-2 text-meta text-muted">
@@ -194,7 +199,7 @@ function AgentBubble({
             exitCode={message.exitCode}
           />
         ) : null}
-        <div className="text-body leading-relaxed text-primary">
+        <div className="min-w-0 overflow-hidden text-body leading-relaxed text-primary">
           {displayContent ? (
             <MarkdownView
               content={displayContent}

@@ -13,9 +13,11 @@ function source(name: string): string {
 describe('chat layout wiring', () => {
   it('keeps the main column on canvas so an empty transcript matches composer chrome', () => {
     const page = source('index.tsx');
-    expect(page).toContain('flex min-w-0 flex-1 flex-col bg-canvas');
+    expect(page).toContain('flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-canvas');
     expect(page).toContain('chatStageClass');
     expect(page).not.toContain('flex min-w-0 flex-1 flex-col bg-panel');
+    expect(source('ChatMessageBubble.tsx')).toContain('formatChatDisplayContent');
+    expect(source('ChatTranscript.tsx')).toContain('overflow-x-hidden overflow-y-auto');
   });
 
   it('lets Escape stop an in-flight turn', () => {

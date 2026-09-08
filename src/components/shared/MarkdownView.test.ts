@@ -29,6 +29,7 @@ import {
 
 describe('MarkdownView token chrome', () => {
   it('overrides library 6px / square boxes with btn and card radii', () => {
+    expect(MARKDOWN_TOKEN_CHROME).toContain('min-w-0 max-w-full overflow-hidden break-words');
     expect(MARKDOWN_TOKEN_CHROME).toContain('[&_pre]:!rounded-card');
     expect(MARKDOWN_TOKEN_CHROME).toContain('[&_code]:!rounded-btn');
     expect(MARKDOWN_TOKEN_CHROME).toContain('[&_kbd]:!rounded-btn');
