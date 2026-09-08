@@ -56,8 +56,9 @@ function renderTranscript(turns: { turn: number; user?: ChatMessage; agents: Cha
 describe('ChatTranscript surfaces', () => {
   it('paints canvas when there are no messages, matching composer chrome', () => {
     const html = renderTranscript([]);
-    expect(html).toContain(`overflow-x-hidden overflow-y-auto ${chatTranscriptSurfaceClass(false)}`);
-    expect(html).not.toContain(`rounded-composer ${chatTranscriptSurfaceClass(true)}`);
+    expect(html).toContain(`overflow-x-hidden overflow-y-auto ${chatTranscriptSurfaceClass}`);
+    expect(html).not.toContain('rounded-composer bg-panel');
+    expect(html).not.toContain('rounded-composer bg-canvas');
     expect(html).toContain('开始对话');
     expect(html).toContain('了解这个项目');
     expect(html).toContain('检查问题');
@@ -66,12 +67,13 @@ describe('ChatTranscript surfaces', () => {
     expect(html).not.toContain('请帮我了解这个项目的结构和主要功能。');
   });
 
-  it('paints panel once a turn exists, matching the composer input shell', () => {
+  it('does not paint a panel card once a turn exists', () => {
     const html = renderTranscript([
       { turn: 1, user: userMessage('hello from chat'), agents: [] },
     ]);
-    expect(html).toContain(`overflow-x-hidden overflow-y-auto ${chatTranscriptSurfaceClass(false)}`);
-    expect(html).toContain(`rounded-composer ${chatTranscriptSurfaceClass(true)}`);
+    expect(html).toContain(`overflow-x-hidden overflow-y-auto ${chatTranscriptSurfaceClass}`);
+    expect(html).not.toContain('rounded-composer bg-panel');
+    expect(html).not.toContain('rounded-composer bg-canvas');
     expect(html).toContain('hello from chat');
   });
 });

@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import rehypeRaw from 'rehype-raw';
 
@@ -250,6 +253,39 @@ describe('MarkdownView content safety', () => {
         value: previousDocument,
       });
     }
+  });
+});
+
+describe('MarkdownView variant density source contract', () => {
+  const dir = path.dirname(fileURLToPath(import.meta.url));
+  const source = readFileSync(path.join(dir, 'MarkdownView.tsx'), 'utf8');
+
+  function variantBranch(variant: 'chat' | 'document'): string {
+    const start = source.indexOf(`variant === '${variant}'`);
+    expect(start).toBeGreaterThan(-1);
+    const end =
+      variant === 'chat'
+        ? source.indexOf("variant === 'document'", start)
+        : source.indexOf('className,', start);
+    expect(end).toBeGreaterThan(start);
+    return source.slice(start, end);
+  }
+
+  it('gives chat markdown important leading-relaxed without copying document margins', () => {
+    const chat = variantBranch('chat');
+    expect(chat).toContain('text-body !leading-relaxed');
+    expect(chat).toContain('[&_p]:!leading-relaxed');
+    expect(chat).toContain('[&_li]:!leading-relaxed');
+    expect(chat).not.toContain('[&_p]:!my-2');
+    expect(chat).not.toContain('[&_h1]:!text-title');
+    expect(chat).not.toContain('[&_p]:!my-1.5');
+    expect(chat).not.toContain('[&_li]:!my-');
+  });
+
+  it('keeps document density on 1.45 leading', () => {
+    const document = variantBranch('document');
+    expect(document).toContain('leading-[1.45]');
+    expect(document).toContain('[&_p]:!leading-[1.45]');
   });
 });
 

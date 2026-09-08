@@ -45,12 +45,23 @@ describe('chat layout wiring', () => {
     expect(composer).toContain('composerTextareaMeasuredStyle');
     expect(composer).toContain('composerUsesCssFieldSizing');
     expect(composer).toContain('rounded-composer border border-border bg-panel');
+    expect(composer).toContain('text-body leading-relaxed');
+    expect(composer).not.toContain('leading-[1.45]');
   });
 
-  it('derives the transcript surface from whether any turns exist', () => {
-    expect(source('ChatTranscript.tsx')).toContain(
-      'chatTranscriptSurfaceClass(turns.length > 0)',
-    );
+  it('loosens chat bubble reading line-height without changing bubble chrome', () => {
+    const bubble = source('ChatMessageBubble.tsx');
+    expect(bubble).toContain('text-body leading-relaxed text-primary');
+    expect(bubble).toContain('text-body leading-relaxed text-danger');
+    expect(bubble).toContain('rounded-composer bg-subtle');
+  });
+
+  it('paints the transcript surface on the scroller, not a message card', () => {
+    const transcript = source('ChatTranscript.tsx');
+    expect(transcript).toContain('chatTranscriptSurfaceClass');
+    expect(transcript).toContain('data-chat-transcript');
+    expect(transcript).not.toContain('chatTranscriptSurfaceClass(turns.length > 0)');
+    expect(source('index.tsx')).toContain('data-chat-stage');
   });
 
   it('shows empty-session starter cards that fill the composer', () => {
