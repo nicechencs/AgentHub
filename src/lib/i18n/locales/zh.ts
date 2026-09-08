@@ -3391,6 +3391,9 @@ export const zh = {
       all: "在各工具自己的设置里添加 MCP 后点刷新。AgentHub 只展示，不会改这些配置。",
       agent: "「{name}」下还没有发现 MCP 项。",
       refresh: "刷新",
+      hasSources: "已检查这些配置，里面还没有 MCP 项。",
+      sourceEmpty: "这份配置里还没有 MCP",
+      sourceUnreadable: "这份配置读不出来",
     },
     table: {
       name: "Server",

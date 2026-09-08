@@ -3418,6 +3418,9 @@ export const en = {
       all: "Add MCP in each tool's own settings, then refresh. AgentHub only displays them; it does not change those configs.",
       agent: "No MCP items found under {name}.",
       refresh: "Refresh",
+      hasSources: "These configs were checked; they do not contain MCP items yet.",
+      sourceEmpty: "This config has no MCP items",
+      sourceUnreadable: "This config could not be read",
     },
     table: {
       name: "Server",
