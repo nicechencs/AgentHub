@@ -83,4 +83,23 @@ describe('routes-nav-items', () => {
     expect(nav).not.toContain("t('nav.expandSidebar')");
     expect(nav).not.toContain('useSidebar');
   });
+
+  it('opens a right-click menu on the secondary rail with one expand or collapse action', () => {
+    const nav = readFileSync(path.join(dir, 'RoutesNav.tsx'), 'utf8');
+    expect(nav).toContain('onContextMenu={openRailMenu}');
+    expect(nav).toContain('e.preventDefault()');
+    const start = nav.indexOf('<ContextMenu open={railMenu');
+    const end = nav.indexOf('</ContextMenu>', start);
+    const menu = nav.slice(start, end);
+    const expandBranch = menu.slice(menu.indexOf('collapsed ? ('), menu.indexOf(') : ('));
+    const collapseBranch = menu.slice(menu.indexOf(') : ('), menu.length);
+    expect(expandBranch).toContain("t('routes.nav.expand')");
+    expect(expandBranch).toContain('expandFromRailMenu');
+    expect(expandBranch).not.toContain('collapseFromRailMenu');
+    expect(collapseBranch).toContain("t('routes.nav.collapse')");
+    expect(collapseBranch).toContain('collapseFromRailMenu');
+    expect(collapseBranch).not.toContain('expandFromRailMenu');
+    expect(nav).toContain('setRailCollapsed(false)');
+    expect(nav).toContain('setRailCollapsed(true)');
+  });
 });
