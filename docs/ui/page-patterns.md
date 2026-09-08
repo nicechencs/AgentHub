@@ -63,11 +63,11 @@ The page title is a single line: name, then short description. Distinguish them 
 
 ### 2.2 Full-height workbench
 
-Chat, Agents, Skills, Projects, Plugins, Connections, Sub2API, Routes, and Settings use `fullBleed` and manage their own vertical scrolling. Full-height does not create a third content width: Chat messages use the reading column; Agents, Skills, Projects, Plugins, Connections, Sub2API, and the Settings backups tab use the edge column with a split preview surface. Page-level commands stay in the list column, on the right of the same row as tabs or filters. They do not occupy a row of their own. The workbench list and the preview column share the same `pageEdge.inset` top and bottom so both edges line up. The page title itself stays in the top bar.
+Chat, Agents, Skills, Projects, Plugins, Connections, Sub2API, Routes, and Settings use `fullBleed` and manage their own vertical scrolling. Full-height does not create a third content width: Chat messages use the reading column; Preferences, Features, This computer, and About use the overview column; Agents, Skills, Projects, Plugins, Connections, Sub2API, and the Settings backups tab use the edge column with a split preview surface. Page-level commands stay in the list column, on the right of the same row as tabs or filters. They do not occupy a row of their own. The workbench list and the preview column share the same `pageEdge.inset` top and bottom so both edges line up. The page title itself stays in the top bar.
 
 ### 2.3 Settings
 
-Settings uses the workbench header and five page tabs; the tab row stays at the top-left of the workbench header. Preferences, Features, This computer, and About center their content on the reading column. Backups is a left-right workbench: the list is on the left, a file inspect panel opens on the right.
+Settings uses the workbench header and five page tabs; the tab row stays at the top-left of the workbench header. Preferences, Features, This computer, and About center their content on the overview column. Backups is a left-right workbench: the list is on the left, a file inspect panel opens on the right.
 
 | Tab | Query | Contents |
 |---|---|---|
