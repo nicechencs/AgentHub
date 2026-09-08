@@ -18,7 +18,7 @@ updated: 2026-09-07
 - Sub2API 是独立站点管理页：密码登录站点（验证码 / 2FA 按站点要求），可记住多账号；密码经 settings 端口写入桌面 SQLite vault（mock 为内存）。登录后可按分组查看、创建、编辑、启用/禁用或删除 API Key，并把可用 Key 导入已安装的 Agent。侧栏入口默认隐藏，打开偏好中的「显示 Sub2API 页面」后显示；隐藏只影响入口，不影响页面本身。界面细节见 [页面模式](ui/page-patterns.md)。
 - 当前内置适配包括 Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy、ZCode、DeepSeek Harness 和 Kiro。**Cursor Agent 适配器仍在代码中，但 dev 线通过 store-stamp 默认软隐藏**（Agents 管理页可取消隐藏）；待登录写入、路由目标与结构化输出等兼容问题修复后再重新开放。Kiro 管理 `kiro-cli`（检测/安装/登录指引/API Key）。新对话走 `kiro-cli acp` 持续通道：可点允许/拒绝、停止；生成时不能中途补充，可排队到下一轮。Kiro 在同一进程内续聊；进程退出后保留历史并提示新建对话，不静默创建空会话。模型、思考等级和权限在对话开始后固定，更换时需新建对话。旧 headless 对话保留原发送方式，不提供切到 ACP 的入口。本机登录或 `KIRO_API_KEY` 可用时，列模型与 Chat 打印路径可走 AgentHub 自有 HTTP（非官方 REST，不会改工作目录）；多轮经 `kiro-http:<conversationId>` 续同一对话，CLI `--resume-id` 为不同命名空间；已有 HTTP 会话失败时直接报错并保留会话，再发仍走同一条 HTTP 对话，不回退成新 CLI 会话。Kiro 本机路由按请求返回 JSON 或 SSE，目前先收齐上游回复再输出；使用连接池里当前登录的访问令牌，并带上该登录的区域、profile 与请求来源，不在本机路由里刷新。交互新对话仍可走 `kiro-cli acp`。不把编辑器当成已安装。
 - CLI 提供 doctor、env、agent、provider、account、skill、usage、backup、run、config 等命令；参数以 CLI 帮助和源码为准。
-- Chat 新空 Codex 会话已接入 app-server：持续回复、确认/回答、补充/停止、保存与同机重开；旧会话与其他 Agent 保留原有发送方式。B2 已落地会话 model/effort、最小操作菜单、localImage 附件与 Skills/插件发现状态（不含计划模式与完整扩展管理）；其他 Agent 适配待 B3。macOS 上真实重开续聊已验证，带附件/模型的桌面端到端与其他平台尚未验收；见 [B1](status/chat-codex-b1.md)、[B2](status/chat-codex-b2.md)。
+- Chat 新空 Codex 会话已接入 app-server：持续回复、确认/回答、补充/停止、保存与同机重开；旧会话与其他 Agent 保留原有发送方式。B2 已落地会话 model/effort、最小操作菜单、localImage 附件与 Skills/插件发现状态（不含计划模式与完整扩展管理）；其他 Agent 适配待 B3。新空 Grok 会话是持续聊天（模型/思考、图片、后续轮排队），**不支持**为本轮指定「用于本次」技能，界面也不画可点的假按钮。macOS 上真实重开续聊已验证，带附件/模型的桌面端到端与其他平台尚未验收；见 [B1](status/chat-codex-b1.md)、[B2](status/chat-codex-b2.md)。
 
 ## Backend 边界
 
