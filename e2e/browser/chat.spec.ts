@@ -4,6 +4,7 @@ import { openApp, openChatComposer, setWorkingDirectory } from './helpers';
 test('empty chat starter card fills the composer without sending', async ({ page }) => {
   await openApp(page);
   await openChatComposer(page);
+  await setWorkingDirectory(page);
 
   const card = page.getByRole('button', { name: '了解这个项目' });
   await expect(card).toBeVisible();
@@ -24,8 +25,8 @@ test('Chat sends a prompt and shows the mock reply', async ({ page }) => {
   await expect(page.getByRole('button', { name: '发送' })).toBeEnabled();
   await page.getByRole('button', { name: '发送' }).click();
 
-  await expect(page.getByText('e2e mock ping')).toBeVisible();
-  await expect(page.getByText(/模拟回复/)).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('log').getByText('e2e mock ping')).toBeVisible();
+  await expect(page.getByRole('log').getByText(/模拟回复/)).toBeVisible({ timeout: 20_000 });
 });
 
 test('Chat settings dialog traps Tab and restores focus after Escape', async ({ page }) => {

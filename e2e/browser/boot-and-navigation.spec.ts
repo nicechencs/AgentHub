@@ -27,7 +27,10 @@ test('app boots on mock and primary navigation works', async ({ page }) => {
   ).toBeVisible();
 });
 
-test('Settings tabs stay on the workbench-header left; form cards use the centered reading column; backups toolbar stays on one row', async ({ page }) => {
+test('Settings tabs stay on the workbench-header left; form cards use the centered overview column; backups toolbar stays on one row', async ({ page }) => {
+  // max-w-6xl only centers once the main column is wider than 1152px (Playwright's
+  // default 1280 viewport is too narrow after the sidebar).
+  await page.setViewportSize({ width: 1920, height: 1080 });
   await openApp(page);
   await goNav(page, '设置');
   await expect(page.getByRole('heading', { name: '设置' })).toBeVisible();
@@ -156,7 +159,9 @@ test('page title sits in the top bar; Chat has neither title nor in-app notifica
   await goPath(page, '/routes/pool');
   const addOauth = page.getByRole('button', { name: '官方登录' });
   const addApi = page.getByRole('button', { name: '添加 API Key' });
-  const routesLead = page.getByText(/oauth 及 API 信息|孤立本机路由/);
+  const routesLead = page.getByText('官方登录和 API Key', { exact: true }).or(
+    page.getByText('孤立本机路由', { exact: true }),
+  );
   await expect(addOauth).toBeVisible();
   await expect(addApi).toBeVisible();
   await expect(routesLead).toBeVisible();
@@ -239,7 +244,7 @@ test('Routes secondary nav appears under /routes*; URL entry does not auto-colla
   await expect(secondary.getByRole('link', { name: /^看板/ })).toBeVisible();
   await expect(secondary.getByRole('link', { name: /^连接池/ })).toBeVisible();
   await expect(secondary.getByRole('link', { name: /^入口 Key/ })).toBeVisible();
-  await expect(secondary.getByRole('button', { name: '展开侧栏' })).toBeVisible();
+  await expect(secondary.getByRole('button', { name: '收起路由导航' })).toBeVisible();
   await expect(page.getByRole('button', { name: '收起侧栏' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '看板' })).toBeVisible();
   await expect(page.getByText('用量统计')).toBeVisible();

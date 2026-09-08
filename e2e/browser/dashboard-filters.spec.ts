@@ -15,7 +15,7 @@ async function chooseOption(page: Page, selected: string, option: string) {
 test('Dashboard usage filters stay selected after leaving and returning', async ({ page }) => {
   await openApp(page);
   await expect(page.getByRole('heading', { name: '总览' })).toBeVisible();
-  await expect(page.getByText(/Token 用量/)).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/总 Token（含缓存）/)).toBeVisible({ timeout: 20_000 });
   await expect(await usageCombobox(page, '全部 Agent')).toBeVisible();
   await expect(await usageCombobox(page, '全部模型')).toBeVisible();
   const sevenDays = page.getByRole('tab', { name: '7 天', exact: true });
@@ -24,7 +24,7 @@ test('Dashboard usage filters stay selected after leaving and returning', async 
 
   await page.getByRole('tab', { name: '今天', exact: true }).click();
   await chooseOption(page, '全部 Agent', 'Claude Code');
-  await expect(page.getByText(/Token 用量/)).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/总 Token（含缓存）/)).toBeVisible({ timeout: 20_000 });
 
   const modelTrigger = await usageCombobox(page, '全部模型');
   await modelTrigger.click();
