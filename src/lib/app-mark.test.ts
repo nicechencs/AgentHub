@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ACCENT_PALETTES, DEFAULT_ACCENT_ID } from '@/styles/tokens';
 import { APP_MARK_PATH, appMarkSvg } from './app-mark';
 
 describe('app mark svg', () => {
@@ -20,5 +21,13 @@ describe('app mark svg', () => {
       'utf8',
     );
     expect(logo).toContain(APP_MARK_PATH);
+  });
+
+  it('keeps the packaged mark fill on the default accent', () => {
+    const packaged = readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), '../../src-tauri/app-icon.svg'),
+      'utf8',
+    );
+    expect(packaged).toContain(`fill="${ACCENT_PALETTES[DEFAULT_ACCENT_ID].light}"`);
   });
 });

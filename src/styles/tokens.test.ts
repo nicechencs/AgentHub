@@ -67,7 +67,7 @@ describe('design tokens SSOT', () => {
     expect(THEME.dark['bg-canvas']).not.toBe(THEME.dark['bg-panel']);
   });
 
-  it('keeps THEME.accent aligned with the default indigo palette', () => {
+  it('keeps THEME.accent aligned with the default blue palette', () => {
     expect(THEME.light.accent).toBe(ACCENT_PALETTES[DEFAULT_ACCENT_ID].light);
     expect(THEME.dark.accent).toBe(ACCENT_PALETTES[DEFAULT_ACCENT_ID].dark);
   });

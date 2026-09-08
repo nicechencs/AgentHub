@@ -22,7 +22,7 @@ export type ThemeScheme = 'light' | 'dark';
 /**
  * Switchable product accent fill. Pages should use `--accent` plus the
  * hover / pressed / foreground / subtle / text companions in `ACCENT_STATES`.
- * Installer / OS icons stay the default indigo PNG.
+ * Packaged installer / OS icons stay the bundled PNG (not the live accent).
  */
 export const ACCENT_PALETTES = {
   indigo: { light: '#4f46e5', dark: '#a5b4fc' },
@@ -33,7 +33,7 @@ export const ACCENT_PALETTES = {
 } as const;
 
 export type AccentId = keyof typeof ACCENT_PALETTES;
-export const DEFAULT_ACCENT_ID = 'indigo' as const satisfies AccentId;
+export const DEFAULT_ACCENT_ID = 'blue' as const satisfies AccentId;
 export const ACCENT_IDS = Object.keys(ACCENT_PALETTES) as AccentId[];
 
 export function isAccentId(value: string): value is AccentId {
@@ -465,7 +465,7 @@ function accentOverrideDecls(tone: AccentTone): string[] {
   ];
 }
 
-/** `[data-accent]` overrides for the accent ramp. Default indigo is already in `:root` / `.dark`. */
+/** `[data-accent]` overrides for the accent ramp. Default blue is already in `:root` / `.dark`. */
 export function buildAccentOverrideCss(): string {
   return ACCENT_IDS.flatMap((id) => [
     `:root[data-accent="${id}"] {`,

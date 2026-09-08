@@ -32,11 +32,18 @@ function stubDom() {
 }
 
 describe('accent preference', () => {
-  it('defaults to indigo and rejects unknown ids', () => {
+  it('defaults to blue when the user never picked a color', () => {
     stubDom();
-    expect(loadStoredAccent()).toBe(DEFAULT_ACCENT_ID);
+    expect(DEFAULT_ACCENT_ID).toBe('blue');
+    expect(loadStoredAccent()).toBe('blue');
     expect(isAccentId('indigo')).toBe(true);
     expect(isAccentId('navy')).toBe(false);
+  });
+
+  it('keeps a stored indigo choice on update', () => {
+    stubDom();
+    store.set(StorageKey.accent, 'indigo');
+    expect(loadStoredAccent()).toBe('indigo');
   });
 
   it('applies data-accent and persists a known id', () => {
