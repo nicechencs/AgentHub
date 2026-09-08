@@ -300,6 +300,7 @@ export default function RoutesBoardPage() {
 
   return (
     <RoutesPane>
+      <div className={pageRhythm.overviewColumn}>
       <PageHeader
         title={t('routes.board.title')}
         badge={entryBadge}
@@ -439,6 +440,7 @@ export default function RoutesBoardPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </div>
     </RoutesPane>
   );
 }
