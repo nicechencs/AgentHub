@@ -75,15 +75,33 @@ export function visibleCatalogIds(hiddenIds: Iterable<string>): AgentKey[] {
   return visibleCatalogAgents(hiddenIds).map((agent) => agent.id);
 }
 
-/** Management page: keep catalog order, then append hidden rows in the same order. */
-export function sortAgentsForManagePage<T extends { hidden?: boolean }>(agents: T[]): T[] {
-  const visible: T[] = [];
+/**
+ * Management page: installed first, then uninstalled; hidden rows stay at the end.
+ * Relative order inside each group is preserved.
+ */
+export function sortAgentsForManagePage<
+  T extends { hidden?: boolean; installed?: boolean },
+>(agents: T[]): T[] {
+  const installed: T[] = [];
+  const uninstalled: T[] = [];
   const hidden: T[] = [];
   for (const agent of agents) {
     if (agent.hidden) hidden.push(agent);
-    else visible.push(agent);
+    else if (agent.installed) installed.push(agent);
+    else uninstalled.push(agent);
   }
-  return [...visible, ...hidden];
+  return [...installed, ...uninstalled, ...hidden];
+}
+
+/**
+ * Index of the first visible uninstalled row, if an installed group sits above it.
+ * `-1` when a divider would be redundant (all installed, all uninstalled, or empty).
+ */
+export function managePageUninstalledDividerIndex(
+  agents: ReadonlyArray<{ hidden?: boolean; installed?: boolean }>,
+): number {
+  const index = agents.findIndex((agent) => !agent.hidden && !agent.installed);
+  return index > 0 ? index : -1;
 }
 
 /** Apply a remembered id sequence; empty storage keeps the manage-page default. */

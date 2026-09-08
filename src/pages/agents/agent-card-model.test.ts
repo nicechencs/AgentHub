@@ -46,6 +46,8 @@ describe('agent-card menu wiring', () => {
     expect(card).toContain('agentLaunchTargets');
     expect(card).toContain("t('agents.card.startCli')");
     expect(card).toContain("t('agents.card.startApp')");
+    expect(card).toContain('flex flex-nowrap items-center justify-end');
+    expect(card).not.toContain('flex flex-wrap items-center justify-end');
     expect(zh.agents.card.startCli).toBe('启动命令行');
     expect(en.agents.card.startCli).toBe('Start command line');
     expect(zh.agents.card.startApp).toBe('启动应用');

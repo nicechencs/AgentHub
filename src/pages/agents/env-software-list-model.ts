@@ -14,6 +14,13 @@ export type EnvSoftwareAction = 'install' | 'upgrade' | 'repair';
 
 export type EnvSoftwareColumnKey = 'software' | 'status' | 'version' | 'note' | 'actions';
 
+/** Agents 页运行环境：有待修项才默认展开，全部就绪则收起。 */
+export function envSoftwareListOpenByDefault(
+  runtimes: readonly Pick<RuntimeDetect, 'status'>[],
+): boolean {
+  return runtimes.some((runtime) => runtime.status !== 'ok');
+}
+
 export const ENV_SOFTWARE_FLEX_COLUMN: EnvSoftwareColumnKey = 'note';
 
 export function envSoftwareColumnLabel(

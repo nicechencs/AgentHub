@@ -406,7 +406,7 @@ export function AgentCard({
         onPointerDown={(event) => event.stopPropagation()}
       >
         {!hidden && agent.installed && (launch.cliPath || launch.appPath) ? (
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex flex-nowrap items-center justify-end gap-1.5">
             {launch.cliPath ? (
               <Button
                 size="sm"

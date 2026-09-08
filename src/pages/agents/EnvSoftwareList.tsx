@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { AlertTriangle, ArrowUpCircle, CheckCircle2, Download, RefreshCw, Wrench, XCircle } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { AlertTriangle, ArrowUpCircle, CheckCircle2, ChevronDown, Download, RefreshCw, Wrench, XCircle } from 'lucide-react';
 import { envOneClickInstallVariant } from '@/components/shared/env-remediation-cta';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { StatusPin } from '@/components/shared/StatusPin';
@@ -35,6 +35,7 @@ import {
   envSoftwareActionLabel,
   envSoftwareColumnLabel,
   envSoftwareControl,
+  envSoftwareListOpenByDefault,
   envSoftwareName,
   envSoftwareNoteKey,
   envSoftwareStatusLabel,
@@ -107,6 +108,12 @@ export function EnvSoftwareList({
   const [forceRuntime, setForceRuntime] = useState<RuntimeDetect | null>(null);
   const issues = runtimes.filter((r) => r.status !== 'ok');
   const allOk = issues.length === 0 && runtimes.length > 0;
+  const openByDefault = envSoftwareListOpenByDefault(runtimes);
+  const [userOpen, setUserOpen] = useState<boolean | null>(null);
+  useEffect(() => {
+    setUserOpen(null);
+  }, [openByDefault]);
+  const expanded = userOpen ?? openByDefault;
   const plan = resolveAutoInstallPlan(runtimes);
   const canOneClick = plan.targets.length > 0 && !!onOneClickFix;
   const busy = Boolean(loading || oneClickBusy);
@@ -114,7 +121,18 @@ export function EnvSoftwareList({
   return (
     <Card className={cn(!allOk && issues.length > 0 && 'border-warning/40 bg-warning/5')}>
       <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
-        <span className="text-xs font-medium text-secondary">{t('chrome.env.title')}</span>
+        <button
+          type="button"
+          className="inline-flex min-w-0 flex-1 items-center gap-1 text-xs font-medium text-secondary transition-colors hover:text-primary"
+          aria-expanded={expanded}
+          onClick={() => setUserOpen(!expanded)}
+        >
+          <ChevronDown
+            className={cn('h-3.5 w-3.5 shrink-0 transition-transform', !expanded && '-rotate-90')}
+            aria-hidden
+          />
+          {t('chrome.env.title')}
+        </button>
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {allOk ? (
             <span className="text-xs text-success">{t('chrome.env.allReady')}</span>
@@ -161,7 +179,8 @@ export function EnvSoftwareList({
         </div>
       </div>
 
-      <Table className="w-full">
+      {expanded ? (
+        <Table className="w-full">
         <TableHeader>
           <TableHeaderRow>
             <TableHead>{envSoftwareColumnLabel('software', t)}</TableHead>
@@ -285,7 +304,8 @@ export function EnvSoftwareList({
                 );
               })}
         </TableBody>
-      </Table>
+        </Table>
+      ) : null}
 
       <Dialog
         open={forceRuntime != null}
