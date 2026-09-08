@@ -21,7 +21,7 @@ function runtime(
 }
 
 describe('env software list model', () => {
-  it('collapses the environment list when nothing is waiting to be fixed', () => {
+  it('collapses the environment list unless install or PATH still needs a fix', () => {
     expect(envSoftwareListOpenByDefault([])).toBe(false);
     expect(
       envSoftwareListOpenByDefault([
@@ -29,13 +29,14 @@ describe('env software list model', () => {
         runtime('git', 'ok'),
       ]),
     ).toBe(false);
+    expect(envSoftwareListOpenByDefault([runtime('git', 'outdated')])).toBe(false);
     expect(
       envSoftwareListOpenByDefault([
         runtime('nodejs', 'ok'),
         runtime('git', 'missing'),
       ]),
     ).toBe(true);
-    expect(envSoftwareListOpenByDefault([runtime('git', 'outdated')])).toBe(true);
+    expect(envSoftwareListOpenByDefault([runtime('git', 'broken_path')])).toBe(true);
   });
 
   it('uses existing Agents / env words for headers', () => {
