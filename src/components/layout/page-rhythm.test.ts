@@ -56,6 +56,7 @@ describe('pageRhythm (docs/ui/design-system.md §3)', () => {
     expect(pageRhythm.workbenchXSplit).not.toContain('px-');
     expect(pageRhythm.workbenchXSplit).not.toContain(pageInsetTw.r);
     expect(pageRhythm.chatChromeX).toBe(pageChatTw.x);
+    expect(pageRhythm.chatChromeX).toBe(pageRhythm.workbenchX);
   });
 
   it('keeps Chat on the reading column and Dashboard/Settings forms on the overview column', () => {
@@ -66,9 +67,10 @@ describe('pageRhythm (docs/ui/design-system.md §3)', () => {
   it('keeps the current page inset at 12px (change pageEdge.inset to retune)', () => {
     expect(pageEdge.inset).toBe(12);
     expect(pageEdge.canvas).toBe(12);
-    expect(pageEdge.chat).toBe(16);
+    expect(pageEdge.chat).toBe(pageEdge.inset);
+    expect(pageEdge.chat).toBe(12);
     expect(pageInsetTw.x).toBe('px-3');
-    expect(pageChatTw.x).toBe('px-4');
+    expect(pageChatTw.x).toBe('px-3');
   });
 
   it('locks page titles to one type, one-line title+meta, and the shared inset', () => {

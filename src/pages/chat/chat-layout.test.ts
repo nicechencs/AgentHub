@@ -92,6 +92,11 @@ describe('chat layout wiring', () => {
     expect(source('index.tsx')).toContain('chatMainColumnClass');
     expect(source('index.tsx')).toContain('chatStageClass');
     expect(source('index.tsx')).toContain('pageRhythm.chatChromeX');
+    expect(source('ChatSessionHeader.tsx')).toContain('pageRhythm.chatChromeX');
+    expect(source('ChatTranscript.tsx')).not.toContain('pageRhythm.chatChromeX');
+    expect(source('ChatTranscript.tsx')).not.toContain('px-6');
+    expect(source('ChatRuntimeRequests.tsx')).not.toContain('max-w-3xl');
+    expect(source('ChatRuntimeRequests.tsx')).not.toContain('px-4');
   });
 
   it('hides the splitter in an 8px gutter between transcript and composer', () => {
