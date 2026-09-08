@@ -954,6 +954,7 @@ fn cursor_ide_bin() -> Option<(PathBuf, Option<String>)> {
     None
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 fn cursor_ide_version_from_exe(exe: &Path) -> Option<String> {
     let pkg = exe
         .parent()?
