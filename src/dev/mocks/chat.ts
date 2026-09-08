@@ -42,6 +42,10 @@ function mockTitle(prompt: string) {
   return t.length <= 30 ? t : `${t.slice(0, 29)}…`;
 }
 
+function mockRuntimeSteer(conversationId: string): boolean {
+  return mockConversations.find((item) => item.id === conversationId)?.agentIds[0] === 'codex';
+}
+
 
 function applyMockDeniedEfforts<T extends { id: string; efforts: string[]; defaultEffort?: string | null }>(
   models: T[],
@@ -381,6 +385,7 @@ export function createMockChatPort(): ChatPort {
           models: [],
           extensions: [],
           modelsFromCodex: false,
+          steer: mockRuntimeSteer(conversationId),
         };
       }
       const options: RuntimeOptions = {
@@ -405,6 +410,7 @@ export function createMockChatPort(): ChatPort {
           },
         ],
         modelsFromCodex: false,
+        steer: mockRuntimeSteer(conversationId),
       };
       options.models = applyMockDeniedEfforts(options.models);
       runtimeOptionsCache.set(conversationId, options);

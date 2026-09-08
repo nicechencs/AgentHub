@@ -21,7 +21,7 @@ import {
 } from './chat-kiro-model';
 import { chatEscapeShouldCancel, chatMainColumnClass, chatStageClass } from './chat-model';
 import { formatChatSessionRecord } from './chat-format';
-import { grokCanQueueFollowUp, grokLegacyContinueKind } from './chat-grok-follow-up';
+import { chatBusySendMode, grokLegacyContinueKind } from './chat-grok-follow-up';
 import { ChatMarkdownPreviewPanel } from './ChatMarkdownPreviewPanel';
 import {
   chatPreviewCanBack,
@@ -44,6 +44,14 @@ import { useChatPage } from './use-chat-page';
 
 export default function ChatPage() {
   const page = useChatPage();
+  const busySend = chatBusySendMode({
+    sending: page.sendingHere,
+    runtimeEnabled: page.runtime?.enabled,
+    steer: page.runtimeOps.steer,
+    runId: page.runtime?.runId,
+    phase: page.runtime?.phase,
+    queued: Boolean(page.queuedFollowUp),
+  });
   const split = useChatComposerSplit();
   const preview = useSideSplit<ChatPreviewTarget>({
     storageKey: StorageKey.chatPreviewWidth,
@@ -126,16 +134,8 @@ export default function ChatPage() {
           icon={MessagesSquare}
           title={t('chat.page.emptyTitle')}
           description={t('chat.page.emptyDesc')}
-          action={
-            <Button
-              size="sm"
-              variant="secondary"
-              className="mt-2"
-              onClick={() => navigate('/agents')}
-            >
-              {t('chat.page.goAgents')}
-            </Button>
-          }
+          actionLabel={t('chat.page.goAgents')}
+          onAction={() => navigate('/agents')}
         />
       </div>
     );
@@ -203,6 +203,15 @@ export default function ChatPage() {
               onRetry={() => void page.retryLast()}
               onOpenLocal={openMarkdownPreview}
               onPickStarter={page.runChatAction}
+              firstBlocker={page.blockers[0] ?? null}
+              onBlockerAction={(target) => {
+                if (target === 'agents') navigate('/agents');
+                else if (target === 'connections') {
+                  navigate(page.primaryAgent ? `/connections?agent=${page.primaryAgent}` : '/connections');
+                }
+                else if (target === 'pick-directory') void page.pickWorkingDirectory();
+                else void page.refreshAgents().catch(() => {});
+              }}
             />
             {chatShowsRuntimeRequestPanels(page.primaryAgent) && page.runtime?.pendingRequests.length ? (
               <ChatRuntimeRequests
@@ -292,32 +301,24 @@ export default function ChatPage() {
                   pickerRows={page.pickerRows}
                   agentsReady={page.agentsReady}
                   blockers={page.blockers}
+                  showBlockerBanner={page.turns.length > 0}
                   connectionCaption={page.connectionCaption}
                   walletError={page.walletError}
                   onRetryWallet={() => void page.reloadWallet()}
                   onRetryStatus={() => void page.refreshAgents().catch(() => {})}
                   onSend={() => void page.handleSend()}
                   onSteer={
-                    !kiroChatStance(page.primaryAgent)
-                    && page.runtime?.enabled
-                    && page.runtimeOps.steer
-                    && page.sendingHere
+                    busySend === 'steer'
                       ? () => {
                           const value = page.draft;
-                          void page.steerRuntime(value)
-                            .then(() => page.setDraft(''))
-                            .catch(() => {});
+                          void page.steerRuntime(value).then((ok) => {
+                            if (ok) page.setDraft('');
+                          }).catch(() => {});
                         }
                       : undefined
                   }
                   onQueueAfterTurn={
-                    !kiroChatStance(page.primaryAgent)
-                    && grokCanQueueFollowUp({
-                      agentId: page.primaryAgent,
-                      runtimeEnabled: page.runtime?.enabled,
-                      phase: page.runtime?.phase,
-                      sending: page.sendingHere,
-                    })
+                    busySend === 'queue'
                       ? () => void page.handleSend()
                       : undefined
                   }
