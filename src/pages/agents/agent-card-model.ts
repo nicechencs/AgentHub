@@ -403,7 +403,7 @@ function hideCodexAppLaunch(agentId: string, platform: HostPlatform): boolean {
   return agentId === 'codex' && platform === 'linux';
 }
 
-/** Outer card: show 启动 CLI / 启动 App only when that program exists. */
+/** Outer card: show 启动命令行 / 启动应用 only when that program exists. */
 export function agentLaunchTargets(
   agent: Pick<AgentStatus, 'agentId' | 'installed' | 'binPath' | 'channel' | 'version' | 'extraCopies'>,
   platform: HostPlatform = detectHostPlatform(),
