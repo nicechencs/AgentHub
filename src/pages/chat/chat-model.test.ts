@@ -36,6 +36,7 @@ import {
   conversationAgentLine,
   conversationRailHint,
   conversationRailMarkColor,
+  conversationRailSelectedFill,
   conversationTitle,
   cwdShortName,
   isBlankConversationDraft,
@@ -197,6 +198,17 @@ describe('conversationRailMarkColor', () => {
     expect(conversationRailMarkColor(['claude'])).toBe('var(--agent-claude)');
     expect(conversationRailMarkColor(['claude', 'pi'])).toBe('var(--agent-claude)');
     expect(conversationRailMarkColor([])).toBe('var(--accent)');
+  });
+});
+
+describe('conversationRailSelectedFill', () => {
+  it('washes the Agent mark onto the canvas', () => {
+    expect(conversationRailSelectedFill(['claude'])).toBe(
+      'color-mix(in srgb, var(--agent-claude) 28%, var(--bg-canvas))',
+    );
+    expect(conversationRailSelectedFill([])).toBe(
+      'color-mix(in srgb, var(--accent) 28%, var(--bg-canvas))',
+    );
   });
 });
 

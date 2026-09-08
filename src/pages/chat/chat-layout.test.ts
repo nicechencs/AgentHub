@@ -163,6 +163,9 @@ describe('chat layout wiring', () => {
     expect(listAt).toBeGreaterThan(searchAt);
     expect(rail).toContain('conversationRailHint');
     expect(rail).toContain('conversationRailMarkColor');
+    expect(rail).toContain('conversationRailSelectedFill');
+    expect(rail).not.toContain('bg-accent-subtle');
+    expect(rail).not.toContain("'bg-active'");
     expect(rail).toContain('inset-y-1.5 left-0 w-0.5 rounded-full');
     expect(rail).toContain('AgentLogo');
     expect(rail).toContain('hint={false}');

@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils';
 import {
   conversationRailHint,
   conversationRailMarkColor,
+  conversationRailSelectedFill,
   conversationTitle,
   type ConversationDayGroup,
 } from './chat-model';
@@ -187,8 +188,13 @@ export function ChatSessionRail({
                     key={c.id}
                     className={cn(
                       'group relative mb-0.5 flex items-center rounded-btn',
-                      selected ? 'bg-active' : 'hover:bg-hover',
+                      !selected && 'hover:bg-hover',
                     )}
+                    style={
+                      selected
+                        ? { backgroundColor: conversationRailSelectedFill(c.agentIds) }
+                        : undefined
+                    }
                   >
                     {selected ? (
                       <span
