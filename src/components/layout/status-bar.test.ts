@@ -25,6 +25,8 @@ describe('status bar wiring', () => {
     expect(bar).toContain('AgentStatusStrip');
     expect(bar).toContain('chrome.localForward');
     expect(bar).toContain('ROUTES_BOARD_PATH');
+    expect(bar).toContain('<Hint label={aria}>');
+    expect(bar).not.toContain('title={aria}');
     expect(bar.indexOf('<AgentStatusStrip')).toBeLessThan(bar.indexOf('navigate(ROUTES_BOARD_PATH)'));
   });
 });

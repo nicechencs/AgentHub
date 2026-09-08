@@ -8,6 +8,7 @@ import {
   statusBarForwardMessageKey,
 } from '@/components/layout/status-bar-model';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { Hint } from '@/components/ui/tooltip';
 import { getLocalGatewayStatus } from '@/lib/api/adapter';
 import { onLocalForwardLifecycle } from '@/lib/backend/tauri/local-forward-events';
 import { ROUTES_BOARD_PATH } from '@/lib/routes-path';
@@ -74,20 +75,21 @@ export function StatusBar() {
   return (
     <footer className={pageRhythm.statusBar} data-status-bar="">
       <AgentStatusStrip />
-      <button
-        type="button"
-        className={cn(pageRhythm.statusBarItem, 'ml-auto')}
-        aria-label={aria}
-        title={aria}
-        onClick={() => navigate(ROUTES_BOARD_PATH)}
-      >
-        <span
-          aria-hidden
-          className={cn('h-1.5 w-1.5 shrink-0 rounded-full', statusBarForwardDotClass(kind))}
-        />
-        <span className="truncate">{name}</span>
-        <span className="truncate">{stateLabel}</span>
-      </button>
+      <Hint label={aria}>
+        <button
+          type="button"
+          className={cn(pageRhythm.statusBarItem, 'ml-auto')}
+          aria-label={aria}
+          onClick={() => navigate(ROUTES_BOARD_PATH)}
+        >
+          <span
+            aria-hidden
+            className={cn('h-1.5 w-1.5 shrink-0 rounded-full', statusBarForwardDotClass(kind))}
+          />
+          <span className="truncate">{name}</span>
+          <span className="truncate">{stateLabel}</span>
+        </button>
+      </Hint>
     </footer>
   );
 }

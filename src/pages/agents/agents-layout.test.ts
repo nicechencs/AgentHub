@@ -136,9 +136,9 @@ describe('agents layout wiring', () => {
     expect(card).toContain('{sortHandle}');
   });
 
-  it('applies the same remembered order on sidebar, dashboard, and installed lists', () => {
-    const sidebar = source('components/layout/Sidebar.tsx');
-    expect(sidebar).toContain('StorageKey.agentsCatalogOrder');
+  it('applies the same remembered order on status bar, dashboard, and installed lists', () => {
+    const statusStrip = source('components/layout/AgentStatusStrip.tsx');
+    expect(statusStrip).toContain('StorageKey.agentsCatalogOrder');
     const sidebarStats = source('components/layout/sidebar-stats.ts');
     expect(sidebarStats).toContain('applyStoredAgentOrder');
     const overview = source('pages/dashboard/AgentOverview.tsx');

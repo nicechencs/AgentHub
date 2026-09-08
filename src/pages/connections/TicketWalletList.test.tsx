@@ -253,9 +253,9 @@ describe('TicketWalletList details', () => {
         onDeleteTicket() {},
       }),
     );
-    expect(markup).toContain('>7d<');
+    expect(markup).toContain('7 天已用');
     expect(markup).toContain('40%');
-    expect(markup).toContain('>5h<');
+    expect(markup).toContain('5 小时已用');
     expect(markup).toContain('12%');
     expect(markup).toContain('role="progressbar"');
     expect(markup).toMatch(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
@@ -275,7 +275,7 @@ describe('TicketWalletList details', () => {
         onDeleteTicket() {},
       }),
     );
-    expect(markup).toContain('12 / 3');
+    expect(markup).toContain('输入 12 · 输出 3');
     expect(markup).not.toContain('7d');
   });
 
@@ -293,7 +293,7 @@ describe('TicketWalletList details', () => {
         onDeleteTicket() {},
       }),
     );
-    expect(markup).toContain('1.2M / 89.0K');
+    expect(markup).toContain('输入 1.2M · 输出 89.0K');
     expect(markup).not.toContain('1234567');
     expect(markup).not.toContain('1,234,567');
   });
@@ -728,8 +728,8 @@ describe('TicketDetailPanel', () => {
     expect(markup).not.toContain('官方账号');
     expect(markup).not.toContain('编辑配置');
     expect(markup).toContain('移入回收站');
-    expect(markup).toContain('>7d<');
-    expect(markup).not.toContain('>5h<');
+    expect(markup).toContain('7 天已用');
+    expect(markup).not.toContain('5 小时已用');
     const usageIndex = markup.indexOf('用量');
     const protocolIndex = markup.indexOf('anthropic-messages');
     expect(usageIndex).toBeGreaterThan(-1);
@@ -745,7 +745,7 @@ describe('TicketDetailPanel', () => {
         onDelete() {},
       }),
     );
-    expect(markup).toContain('1.2M / 89.0K');
+    expect(markup).toContain('输入 1.2M · 输出 89.0K');
     expect(markup).not.toContain('1234567');
     expect(markup).not.toContain('1,234,567');
   });
@@ -764,8 +764,8 @@ describe('TicketDetailPanel', () => {
         onDelete() {},
       }),
     );
-    expect(with5h).toContain('>7d<');
-    expect(with5h).toContain('>5h<');
+    expect(with5h).toContain('7 天已用');
+    expect(with5h).toContain('5 小时已用');
     expect(with5h).toContain('12%');
     expect(with5h).toContain('4h20m 后重置');
 
@@ -777,8 +777,8 @@ describe('TicketDetailPanel', () => {
         onDelete() {},
       }),
     );
-    expect(only7d).toContain('>7d<');
-    expect(only7d).not.toContain('>5h<');
+    expect(only7d).toContain('7 天已用');
+    expect(only7d).not.toContain('5 小时已用');
   });
 
   it('puts refresh in details, not on the card', () => {
@@ -1278,7 +1278,7 @@ describe('TicketWalletList switch action', () => {
 });
 
 describe('TicketWalletList header health chip', () => {
-  it('shows a quiet 可续期 chip and never 未验证', () => {
+  it('shows 已配置 and never 未验证', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
@@ -1288,13 +1288,13 @@ describe('TicketWalletList header health chip', () => {
         onDeleteTicket() {},
       }),
     );
-    expect(markup).toContain('可续期');
+    expect(markup).toContain('已配置');
     expect(markup).not.toContain('尚未验证');
     expect(markup).not.toContain('未验证');
-    expect(markup).not.toContain('可续期·未验证');
+    expect(markup).not.toContain('可续期');
   });
 
-  it('shows the refresh-token tail instead of 可续期', () => {
+  it('shows 已配置 instead of the refresh-token tail', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
@@ -1304,13 +1304,13 @@ describe('TicketWalletList header health chip', () => {
         onDeleteTicket() {},
       }),
     );
-    expect(markup).toContain('**JF6Q');
-    expect(markup).toContain('font-mono');
+    expect(markup).toContain('已配置');
+    expect(markup).not.toContain('**JF6Q');
     expect(markup).not.toContain('可续期');
     expect(markup).not.toContain('未验证');
   });
 
-  it('shows the API key tail instead of 已配置', () => {
+  it('shows 已配置 instead of the API key tail', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
@@ -1320,7 +1320,7 @@ describe('TicketWalletList header health chip', () => {
         onDeleteTicket() {},
       }),
     );
-    expect(markup).toContain('**wxyz');
-    expect(markup).not.toContain('已配置');
+    expect(markup).toContain('已配置');
+    expect(markup).not.toContain('**wxyz');
   });
 });
