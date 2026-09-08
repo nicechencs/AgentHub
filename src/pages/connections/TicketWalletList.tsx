@@ -93,6 +93,9 @@ import {
   TICKET_WALLET_COLUMN_SPECS,
   formatDetailTimestamp,
   ticketWalletColumnLabel,
+  ticketWalletFullMinWidth,
+  ticketWalletShowsColumn,
+  ticketWalletVisibleSpecs,
   ticketWalletTokenUsageText,
   ticketDetailEditLabel,
   oauthActionHoverTip,
@@ -585,6 +588,7 @@ function TicketRow({
   sortHandle,
   sortId,
   sortClassName,
+  compact = false,
 }: {
   row: TicketWalletRow;
   extras: TicketDetailExtras | null;
@@ -601,6 +605,7 @@ function TicketRow({
   sortHandle?: React.ReactNode;
   sortId?: string;
   sortClassName?: string;
+  compact?: boolean;
 }) {
   const { t } = useI18n();
   const { ticket, highlighted } = row;
@@ -657,6 +662,7 @@ function TicketRow({
           </div>
         </div>
       </TableCell>
+      {ticketWalletShowsColumn(compact, 'kind') ? (
       <TableCell data-col="kind" className="whitespace-nowrap">
         <div className="flex items-center gap-1.5">
           {kind ? (
@@ -669,6 +675,7 @@ function TicketRow({
           </span>
         </div>
       </TableCell>
+      ) : null}
       <TableCell data-col="status" className="whitespace-nowrap">
         {authChip ? (
           <Badge variant={authChip.tone === 'warning' ? 'warning' : 'default'}>
@@ -678,6 +685,7 @@ function TicketRow({
           <TableEmptyCell />
         )}
       </TableCell>
+      {ticketWalletShowsColumn(compact, 'lastUsed') ? (
       <TableCell data-col="lastUsed" className="whitespace-nowrap">
         {lastUsed ? (
           <span className="text-meta text-secondary">{lastUsed}</span>
@@ -685,6 +693,8 @@ function TicketRow({
           <TableEmptyCell />
         )}
       </TableCell>
+      ) : null}
+      {ticketWalletShowsColumn(compact, 'usage') ? (
       <TableCell data-col="usage" className="min-w-0">
         {has7d || has5h || hasCredits ? (
           <div className="flex min-w-0 flex-col gap-1">
@@ -704,9 +714,12 @@ function TicketRow({
           <TableEmptyCell />
         )}
       </TableCell>
+      ) : null}
+      {ticketWalletShowsColumn(compact, 'agent') ? (
       <TableCell data-col="agent" className="whitespace-nowrap">
         <span className="text-meta text-secondary">{agentDisplayName(ticket.agentId)}</span>
       </TableCell>
+      ) : null}
       <TableCell
         data-col="actions"
         className="whitespace-nowrap"
@@ -940,10 +953,25 @@ export function TicketWalletList({
   oauthLoginAgents?: readonly AgentKey[] | null;
 }) {
   const { t } = useI18n();
-  const { widths, onResizeStart, onResizeKeyDown, totalWidth } = useColumnWidths(
+  const { widths, onResizeStart, onResizeKeyDown } = useColumnWidths(
     TICKET_WALLET_COLUMN_SPECS,
     StorageKey.connectionsColumnWidths,
   );
+  const listRef = React.useRef<HTMLDivElement>(null);
+  const [compact, setCompact] = React.useState(false);
+  React.useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const minFull = ticketWalletFullMinWidth();
+    const apply = () => setCompact(el.clientWidth > 0 && el.clientWidth < minFull);
+    apply();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(apply);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  const visibleSpecs = ticketWalletVisibleSpecs(compact);
+  const totalWidth = visibleSpecs.reduce((sum, spec) => sum + widths[spec.key], 0);
   const [rowMenu, setRowMenu] = React.useState<(ContextMenuPoint & { ticket: TicketView }) | null>(null);
   const closeRowMenu = React.useCallback(() => setRowMenu(null), []);
   const menuTicket = rowMenu?.ticket ?? null;
@@ -1007,7 +1035,7 @@ export function TicketWalletList({
   );
 
   return (
-    <div>
+    <div ref={listRef}>
       {loading && !wallet ? <ListSkeleton rows={4} /> : null}
 
       {wallet && tickets.length === 0 ? (
@@ -1043,13 +1071,13 @@ export function TicketWalletList({
         <TableShell layout="split">
           <Table className="table-fixed" style={{ minWidth: totalWidth }}>
             <colgroup>
-              {TICKET_WALLET_COLUMN_SPECS.map((spec) => (
+              {visibleSpecs.map((spec) => (
                 <col key={spec.key} style={{ width: widths[spec.key] }} />
               ))}
             </colgroup>
             <TableHeader>
               <TableHeaderRow>
-                {TICKET_WALLET_COLUMN_SPECS.map((spec) => {
+                {visibleSpecs.map((spec) => {
                   const label = ticketWalletColumnLabel(spec.key, t);
                   return (
                     <TableHead key={spec.key} className="relative select-none" data-col={spec.key}>
@@ -1090,6 +1118,7 @@ export function TicketWalletList({
                   onOpenMenu={canUnapply ? (point) => setRowMenu({ ...point, ticket: row.ticket }) : undefined}
                   active={activeTicketId === row.ticket.id}
                   suppressHighlight={activeTicketId != null}
+                  compact={compact}
                   sortId={sortable[SORTABLE_ID_ATTR]}
                   sortClassName={sortable.className}
                   sortHandle={canReorder ? (

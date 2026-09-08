@@ -30,6 +30,33 @@ export const TICKET_WALLET_COLUMN_SPECS: ColumnWidthSpec<TicketWalletColumnKey>[
   { key: 'actions', defaultWidth: 176, minWidth: 128 },
 ];
 
+/** Keep login identity and status when the inspect pane leaves too little list width. */
+export const TICKET_WALLET_COMPACT_COLUMN_KEYS: readonly TicketWalletColumnKey[] = [
+  'login',
+  'status',
+  'actions',
+];
+
+export function ticketWalletVisibleSpecs(
+  compact: boolean,
+): ColumnWidthSpec<TicketWalletColumnKey>[] {
+  if (!compact) return TICKET_WALLET_COLUMN_SPECS;
+  const keep = new Set<TicketWalletColumnKey>(TICKET_WALLET_COMPACT_COLUMN_KEYS);
+  return TICKET_WALLET_COLUMN_SPECS.filter((spec) => keep.has(spec.key));
+}
+
+export function ticketWalletFullMinWidth(): number {
+  return TICKET_WALLET_COLUMN_SPECS.reduce((sum, spec) => sum + spec.minWidth, 0);
+}
+
+export function ticketWalletShowsColumn(
+  compact: boolean,
+  key: TicketWalletColumnKey,
+): boolean {
+  if (!compact) return true;
+  return (TICKET_WALLET_COMPACT_COLUMN_KEYS as readonly string[]).includes(key);
+}
+
 export function ticketWalletColumnLabel(
   key: TicketWalletColumnKey,
   t: TranslateFn,
