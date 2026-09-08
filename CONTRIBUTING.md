@@ -4,19 +4,15 @@
 
 ## Agent 协作入口
 
-执行任务前以仓库根目录的 [AGENTS.md](AGENTS.md) 为项目规则入口。支持自动加载 `AGENTS.md` 的 Agent 仍需在新会话中核实实际加载结果；不支持自动加载时，由用户或主 Agent 将根文件中与当前任务有关的规则提供给它，并按规则条件读取 `docs/` 中的页面。协作分工、并发、交接和不同运行环境的能力边界见 [Agent 协作流程](docs/guides/agent-workflow.md) 与 [Agent 运行环境参考](docs/reference/agent-runtime.md)。
+执行任务前以仓库根目录的 [AGENTS.md](AGENTS.md) 为项目规则入口；不支持自动加载时，由用户或主 Agent 提供与当前任务有关的规则。协作分工、并发、交接和运行环境能力见 [Agent 协作指南](docs/guides/agent-workflow.md) 与 [Agent 能力与工具](docs/reference/agent-runtime.md)。
 
 开始一个实际任务时，可将下面这段交给当前 Agent，再把 `<task>` 换成任务内容：
 
 ```text
-当前仓库根目录是 <repo-root>。先读取 <repo-root>/AGENTS.md，确认项目规则是否可见；根据其中的任务条件，再读取与本任务相关的 docs 页面。完成下面的任务，并在开始时简要报告读取了哪些规则、哪些页面以及原因：<task>
+当前仓库根目录是 <repo-root>。读取 <repo-root>/AGENTS.md，并按其中条件读取与本任务相关的 docs 页面。完成下面的任务：<task>
 ```
 
-可用下面这段无副作用提示做一次路由检查。它只检查 Agent 是否能按条件找到并读取文档，不修改文件、不运行测试、不启动子 Agent，也不把这次显式读取当成自动加载已经生效的证明：
-
-```text
-请从 <repo-root> 开始，执行一次无副作用的文档路由检查。先读取 <repo-root>/AGENTS.md；再根据当前检查任务“跨工具接手或发现模型/工具不可用”以及 AGENTS.md 的条件，判断是否需要读取 <repo-root>/docs/guides/agent-workflow.md、<repo-root>/docs/reference/agent-runtime.md 和其他被指向页面，不要预先假定这些页面都适用。不要修改文件、运行测试、启动子 Agent 或调用会改变状态的工具。结束时报告：实际读取了哪些路径、每个路径为何适用、哪些路径无法读取，以及当前会话是否有运行时证据表明 AGENTS.md 被自动加载。不要把显式读取结果当成自动加载证据。
-```
+首次接入、升级后或出现加载异常时，再使用 [Agent 能力与工具](docs/reference/agent-runtime.md#接入检查) 的接入检查核实 Agent 是否能读取项目规则和按条件找到相关文档。
 
 ## 开发环境
 
