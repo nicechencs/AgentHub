@@ -27,6 +27,18 @@ fn read_capped_marks_truncated() {
 
 #[cfg(windows)]
 #[test]
+fn run_capture_cmd_echo_succeeds() {
+    let output = run_capture("cmd.exe", &["/C", "echo no-window-ok"]).expect("cmd echo");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.to_ascii_lowercase().contains("no-window-ok"),
+        "stdout={stdout:?}"
+    );
+}
+
+#[cfg(windows)]
+#[test]
 fn run_capture_timeout_returns_timed_out() {
     let err = run_capture_timeout(
         "ping",
@@ -652,7 +664,14 @@ fn printf_spec(script: &str) -> RunSpec {
     RunSpec {
         agent: AgentId::Claude,
         program: PathBuf::from("powershell.exe"),
-        args: vec!["-NoProfile".into(), "-Command".into(), script.into()],
+        args: vec![
+            "-NoProfile".into(),
+            "-NonInteractive".into(),
+            "-WindowStyle".into(),
+            "Hidden".into(),
+            "-Command".into(),
+            script.into(),
+        ],
         cwd: None,
         env: vec![],
     }

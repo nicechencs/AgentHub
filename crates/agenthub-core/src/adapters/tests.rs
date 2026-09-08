@@ -175,10 +175,13 @@ fn rewrite_windows_batch_run_spec_uses_sibling_ps1() {
         spec.program
     );
     assert_eq!(spec.args[0], "-NoProfile");
-    assert_eq!(spec.args[3], "-File");
-    assert_eq!(spec.args[4], ps1.to_string_lossy());
-    assert_eq!(spec.args[5], "-p");
-    assert_eq!(spec.args[6], "hello\nworld");
+    assert_eq!(spec.args[1], "-NonInteractive");
+    assert_eq!(spec.args[2], "-WindowStyle");
+    assert_eq!(spec.args[3], "Hidden");
+    assert_eq!(spec.args[6], "-File");
+    assert_eq!(spec.args[7], ps1.to_string_lossy());
+    assert_eq!(spec.args[8], "-p");
+    assert_eq!(spec.args[9], "hello\nworld");
 }
 
 #[test]

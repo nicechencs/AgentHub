@@ -634,11 +634,10 @@ fn read_version_from_package_json(install_dir: &Path) -> Option<String> {
 /// Call only after well-known paths miss — spawns PowerShell.
 #[cfg(windows)]
 fn resolve_exe_from_uninstall_registry() -> Option<PathBuf> {
-    use std::os::windows::process::CommandExt;
+    use crate::utils::process::apply_no_window;
     use std::process::Command;
     use std::time::Instant;
 
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let started = Instant::now();
     // Query display name matching WorkBuddy and read DisplayIcon.
     let script = r#"
@@ -655,18 +654,19 @@ foreach ($k in $keys) {
   }
 }
 "#;
-    let out = Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            script,
-        ])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()
-        .ok()?;
+    let mut cmd = Command::new("powershell");
+    cmd.args([
+        "-NoProfile",
+        "-NonInteractive",
+        "-WindowStyle",
+        "Hidden",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        script,
+    ]);
+    apply_no_window(&mut cmd);
+    let out = cmd.output().ok()?;
     tracing::debug!(
         target: crate::logging::targets::DETECT,
         module = crate::logging::targets::DETECT,

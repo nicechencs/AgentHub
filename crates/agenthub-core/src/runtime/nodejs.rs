@@ -290,6 +290,9 @@ fn probe_ps_path(path: &Path) -> PsProbe {
         path,
         &[
             "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
             "-Command",
             "$PSVersionTable.PSVersion.ToString()",
         ],
