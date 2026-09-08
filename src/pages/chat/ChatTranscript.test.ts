@@ -56,9 +56,14 @@ function renderTranscript(turns: { turn: number; user?: ChatMessage; agents: Cha
 describe('ChatTranscript surfaces', () => {
   it('paints canvas when there are no messages, matching composer chrome', () => {
     const html = renderTranscript([]);
-    expect(html).toContain(chatTranscriptSurfaceClass(false));
-    expect(html).not.toContain(` ${chatTranscriptSurfaceClass(true)}`);
+    expect(html).toContain(`overflow-y-auto ${chatTranscriptSurfaceClass(false)}`);
+    expect(html).not.toContain(`rounded-composer ${chatTranscriptSurfaceClass(true)}`);
     expect(html).toContain('开始对话');
+    expect(html).toContain('了解这个项目');
+    expect(html).toContain('检查问题');
+    expect(html).toContain('总结当前目录');
+    expect(html).toContain('补最小测试');
+    expect(html).not.toContain('请帮我了解这个项目的结构和主要功能。');
   });
 
   it('paints panel once a turn exists, matching the composer input shell', () => {

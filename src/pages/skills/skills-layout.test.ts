@@ -34,6 +34,12 @@ describe('skills split layout', () => {
     expect(panel).not.toContain('flex min-w-0 flex-col');
   });
 
+  it('uses meta muted type for skill list descriptions', () => {
+    const matrix = source('SkillMatrix.tsx');
+    expect(matrix).toContain('text-meta text-muted');
+    expect(matrix).not.toContain('text-sm text-secondary');
+  });
+
   it('keeps the install action on the tab row in the left split column', () => {
     const page = source('index.tsx');
     const installStart = page.indexOf('setInstallOpen(true)');

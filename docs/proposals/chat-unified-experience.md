@@ -4,14 +4,14 @@ type: proposal
 status: proposed
 owner: maintainers
 audience: product owners and implementation agents
-updated: 2026-09-05
+updated: 2026-09-08
 ---
 
 # Chat 统一体验与跨环境开发方案
 
 本方案让用户在 AgentHub 用同一套聊天、确认和文件查看操作使用不同 Agent，并让换电脑或换开发 Agent 后的实现能够复现、验收和继续推进。
 
-Status: proposed。用户已认可“统一界面、各家分别对接、先 Codex 再 Claude”的方向，并于 2026-09-05 授权使用 GPT‑5.6 Terra / Luna 子 Agent 开始实施。当前从 S0 接入验证推进；目标设计保持 proposed，不能把已授权实施理解为功能已完成。实际证据见 [Codex Chat 接入验证与交接](../status/chat-codex-s0.md)。
+Status: proposed。用户已认可“统一界面、各家分别对接、先 Codex 再 Claude”的方向，并于 2026-09-05 授权使用 GPT‑5.6 Terra / Luna 子 Agent 开始实施。**半面已落地、剩余边界仍在：** B1/B2 的 Codex 持续聊天已落地（见 [B1](../status/chat-codex-b1.md)、[B2](../status/chat-codex-b2.md)）；新空 Grok / Kiro 持续聊天已接线（Grok **无**「用于本次」技能）；Claude 接到持续聊天（ChatRuntime）的 B3 探测为否定、**未接线**（见 [Claude B3](../status/chat-claude-b3.md)）。目标设计保持 proposed，不能把已授权实施或半面落地理解为方案已完成，也不能把方案红线改成「Claude 已做」。S0 历史记录见 [接入验证与交接](../status/chat-codex-s0.md)。
 
 ## 目标与范围
 
@@ -37,7 +37,7 @@ Status: proposed。用户已认可“统一界面、各家分别对接、先 Cod
 | ZCode | `crates/agenthub-core/src/adapters/zcode.rs` | 未验证结构化流、非交互确认与 Chat 原生续接；桌面安装不等于可聊天 |
 | 存储 | `crates/agenthub-core/src/models/chat.rs`、`storage/chat_repo.rs` | 已有文字记录；需增量保存执行状态和过程 |
 
-现行 [Chat 说明](../concepts/chat-and-agents.md) 中“没有独立模型选择器”等描述已有局部滞后，源码已有部分模型选择入口。实施阶段须按源码更新对应说明，不把本文目标提前写成当前能力。
+上表是 2026-09-05 静态检查基线，不是当前产品能力。现行持续聊天见本文交接状态与 [STATUS](../STATUS.md)；概念说明见 [Chat 与 Agent](../concepts/chat-and-agents.md)。实施阶段须按源码更新对应说明，不把本文目标提前写成当前能力。
 
 ## 用户操作约定
 
@@ -262,10 +262,10 @@ pnpm check:docs
 
 ```text
 请先阅读 docs/proposals/chat-unified-experience.md 并确认当前任务授权。
-用户已授权使用 GPT-5.6 Terra / Luna 子 Agent 实施；先读 docs/status/chat-codex-s0.md 的实际证据和未完成项。
-先读取项目 AGENTS.md 和本文交接状态，检查分支、commit 与工作区 diff。
-目标是共用 GUI 体验，先 Codex，再 Claude，不把终端作为主要界面。
-按交接记录中的批次连续推进实现、审查和验证，保留已有修改；不要求用户逐个确认小任务。
+先读本文交接状态：B1/B2 Codex 已落地（docs/status/chat-codex-b1.md、chat-codex-b2.md）；Grok/Kiro 持续聊天已接线；Claude B3 探测为否定、未接线（docs/status/chat-claude-b3.md）。S0 只作历史记录。
+先读取项目 AGENTS.md，检查分支、commit 与工作区 diff。
+目标设计仍是共用 GUI 体验、各家分别对接；不要把 Claude 写成已接持续聊天，不要把提案改成 current。
+按交接记录中的剩余边界推进；不要求用户逐个确认小任务。
 结构问题优先 CodeGraph；工具不可用时说明并定向读取。
 按任务风险使用规划、实现与独立审查，不并行改同一文件。
 未验证的 Agent 能力不能宣称支持；mock 不能作为真实后端验收。
@@ -314,7 +314,7 @@ Codex 首版发布门槛：S0–S3 完成；全部适用场景有自动化或真
 | --- | --- | --- |
 | B1：Codex 会话基础 | S0 必需实验 + S1 + S2 | 新 Codex 会话的持续回复、真实确认/问答、补充/停止、持久化和重开；保留旧会话兼容，异常不静默切换实现 |
 | B2：面向新人的操作 | S3 | 会话模型与思考强度、统一菜单和示例草稿、附件、Skills/插件发现；每项按真实能力启用；完整插件安装管理仍按 A17 单独定范围 |
-| B3：其他 Agent 与兼容验收 | S4 + S5 | Claude 对接与复用 UI，其他 Agent 的能力调查和可行接入、三平台真实验收；ZCode 没有可验证接口时明确边界，不能以终端文字解析假装同等体验 |
+| B3：其他 Agent 与兼容验收 | S4 + S5 | 原计划：Claude 对接与复用 UI，其他 Agent 的能力调查和可行接入、三平台真实验收。**落地后的边界：** Grok / Kiro 持续聊天已接线，不再等 B3；Claude runtime 探测为否定、未接线；ZCode 没有可验证接口时明确边界，不能以终端文字解析假装同等体验 |
 
 B2 的模型选择必须通过 Codex 的会话参数生效，不复用修改本机默认模型的旧入口。模型列表不能证明账号可调用；Skills/插件的已安装列表不能证明本轮已加载。附件需要核对协议输入类型与读取范围，普通文件、图片、音频分别验证。能力不明时保留草稿并说明原因。
 
@@ -326,15 +326,18 @@ B1 首次实现采用后台持有会话、SQLite 保存事件、页面按 sequen
 
 | 条目 | 当前状态 | 下一步 |
 | --- | --- | --- |
-| 方案 | 已授权使用 Terra / Luna 子 Agent 开始实施 | 按 [S0 交接](../status/chat-codex-s0.md) 推进并保留证据 |
-| S0 | 进行中：环境调查、本机 schema 与检查工具 | 补齐实际实验；不得提前标记整体通过 |
-| S1/S2（B1） | 核心实现落地，定向测试与 macOS 真实重开续聊通过；尚未完成全部发布验收 | 以 [B1 实施记录](../status/chat-codex-b1.md) 的验证范围与尾项为准 |
-| S3–S5（B2/B3） | 未完成 | 按合并批次推进，不将 B1 等同完整统一体验 |
-| 菜单/模型/扩展 | 已列入口、优先级、T11–T16 和 A13–A17；均为待验证设计 | S0 核对每项能力，完整插件管理后续单独定范围 |
-| 兼容版本 | Codex 0.153.0 / macOS arm64 已有协议与部分真实 turn 实验 | 仍需产品链路与其他平台实测 |
-| Claude 使用方式 | 官方边界已记录，项目接入未定 | S0 核实可用登录方式；不阻塞 Codex 实验 |
+| 方案 | 仍为 proposed。半面已落地，剩余边界见下；目标设计（含 Claude 第二家接入）不变 | 不把提案改成 current，不把方案红线改成「Claude 已做」 |
+| S0 | 接入验证记录已完成，见 [S0](../status/chat-codex-s0.md) | 历史记录保留，不得倒写成整体发布通过 |
+| S1/S2（B1） | Codex 会话基础已落地；定向测试与 macOS 真实重开续聊通过；尚未完成全部发布验收 | 以 [B1 实施记录](../status/chat-codex-b1.md) 的验证范围与尾项为准 |
+| S3（B2） | Codex 模型/思考强度、最小操作菜单、本地图片附件、Skills/插件发现已落地；计划模式与完整扩展管理未做 | 见 [B2](../status/chat-codex-b2.md)；不将 B2 等同完整统一体验 |
+| Grok / Kiro 持续聊天 | 新空会话已接线（Grok **无**「用于本次」；Kiro 走 ACP，旧对话仍原发送方式） | 不列入 B3 等待名单 |
+| S4（B3 Claude） | 探测为否定，**未**把 Claude 接到持续聊天（ChatRuntime） | 见 [Claude B3](../status/chat-claude-b3.md)；另开批次前不接线、不造假确认 |
+| S5 | ZCode 与其余未接线 Agent 仍待验证 | 验证一家再开放一家；不把已接线的 Grok / Kiro 算进未完成 |
+| 菜单/模型/扩展 | Codex B2 已按真实能力落地；Grok 无「用于本次」；完整插件安装管理仍未做 | 完整插件管理后续单独定范围（A17） |
+| 兼容版本 | Codex 0.153.0 / macOS arm64 已有协议与真实重开续聊 | 带附件/模型的桌面端到端与其他平台仍待验收 |
+| Claude 使用方式 | 官方边界已记录；B3 探测否定，继续 print+resume | 不把 Claude 写成已接 runtime |
 | ZCode 接入 | 尚无可承诺的公开接口证据 | S5 单独验证，不预设日期 |
-| 同机恢复/跨电脑开发 | 已列为设计与验收要求 | S1/S2 和固定 fixtures 实现 |
+| 同机恢复 | Codex 同机重开已落地（macOS 已验证） | Windows/Linux 与其余 Agent 不从 Codex 成功类推 |
 | 跨电脑原生聊天迁移 | 不属于当前首版 | 有独立需求时再定范围 |
 
 每次接手追加以下记录，不将“计划跑”填成“已通过”：

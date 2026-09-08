@@ -56,3 +56,14 @@ export interface SettingsPort {
   ): Promise<void>;
   logLevelOptions: { value: LogLevel; label: string }[];
 }
+
+/** GUI log `last4`: keep a 1–4 char tail, or the last 4 of a longer secret. */
+export function sanitizeGuiLast4(raw: string | null | undefined): string {
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed || trimmed === '***') return '';
+  if (trimmed.length <= 4) {
+    return /^[A-Za-z0-9]+$/.test(trimmed) ? trimmed : '';
+  }
+  if (trimmed.length >= 8) return trimmed.slice(-4);
+  return '';
+}

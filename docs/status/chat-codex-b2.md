@@ -4,7 +4,7 @@ type: status
 status: current
 owner: maintainers
 audience: chat implementers
-updated: 2026-09-06
+updated: 2026-09-08
 ---
 
 # Codex Chat 第二批实施与交接
@@ -20,7 +20,7 @@ updated: 2026-09-06
 | 已验证图片附件 | 已完成 | 仅 `localImage`；选择/移除/类型与大小校验；成功发送后清空草稿附件 |
 | Skills/插件发现与状态 | 已完成 | `skills/list` + `plugin/installed` 状态展示；显式 skill 需名称+路径且对照目录；安装≠启用≠加载≠可调用 |
 | 计划/协作模式 | 未做（明确 OUT） | — |
-| Claude / 其他 Agent | 未做（B3） | — |
+| Claude 持续聊天（ChatRuntime） | 未做（B3 探测为否定） | Grok / Kiro 不在本批、已另接线；见 [STATUS](../STATUS.md) 与 [Claude B3](chat-claude-b3.md) |
 | 完整扩展安装/MCP | 未做（A17 后续） | — |
 
 ## 关键面与持久化
@@ -63,7 +63,7 @@ updated: 2026-09-06
 - 目录缓存按会话驻留；活动轮次不二次拉起 Codex 进程拉目录。
 - 插件仍为状态展示，不可伪装为本轮可调用。
 - 普通文件/音频附件：协议未验证，保持禁用。
-- Claude ChatRuntime / 假确认：仍阻塞。
+- Claude 持续聊天（ChatRuntime）/ 假确认：仍阻塞。Grok / Kiro 已接线，不在此缺口。
 
 ## Follow-up：model × reasoning effort 兼容（本分支）
 

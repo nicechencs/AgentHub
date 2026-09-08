@@ -3,15 +3,30 @@ title: 接入 Kiro（kiro-cli）Agent
 type: proposal
 status: proposed
 owner: maintainers
-updated: 2026-09-08
+updated: 2026-09-07
 audience: contributor
 ---
 
 # 接入 Kiro（kiro-cli）Agent
 
-> 本文保留早期第一波方案，不是现行实现契约。下文“一轮一发”“不接持续通道”和“本机路由后置”均为历史阶段约束。现行行为见 [STATUS](../STATUS.md)：新对话使用 `kiro-cli acp`，在同一进程内继续；旧打印对话保留原方式，HTTP 会话不能转成 CLI 会话。Kiro 本机路由已接入。
+> 提案，不是现行实现契约。YAML 保持 `status: proposed`（STYLE 要求提案必须 proposed）。若干切片已落地，**不要把本页当成未开工**。现行行为以 [STATUS](../STATUS.md) 为准。
 
 接线与实现纪律见 [添加 Agent](../guides/adding-an-agent.md)；半面参照 `crates/agenthub-core/src/adapters/cursor.rs`。本文只定目标、公开事实与产品决策，不重复指南里的文件清单与验收清单。
+
+## 进度（已落地 / 剩余边界）
+
+对照 [STATUS](../STATUS.md)。本表只防止把早期方案当成待办，不是现行契约。
+
+| 状态 | 内容 |
+| --- | --- |
+| **已落地** | Agents 页检测 / 安装 / 登录指引 / API Key |
+| **已落地** | 新对话走 `kiro-cli acp` 持续通道：同一进程内续聊；可点允许/拒绝、停止；生成时不能中途补充 |
+| **已落地** | Chat 打印路径 HTTP 多轮，经 `kiro-http:<conversationId>` 续场（详见 [HTTP 提案](agent-kiro-http.md)） |
+| **已落地** | Kiro 登录经本机路由接到 Claude / Codex / Grok |
+| **剩余边界** | 企业 IdC / `profileArn` 实机验收（带上参数 ≠ 已验收） |
+| **剩余边界** | 上游逐块实时转发（当前先收齐回复再输出） |
+| **剩余边界** | 官方 REST（不宣称、不接入） |
+| **历史约束（不是现行待办）** | 「一轮一发」「不接持续通道」「本机路由后置」——早期第一波方案，见 §3 |
 
 ## 1. 背景与目标
 
@@ -43,7 +58,7 @@ Kiro 是 AWS 系 agentic 编码产品，同一套项目上下文可跨多种界�
 1. Agents 页能发现、检测、安装指引、查看登录状态；
 2. 在有证据的前提下支持 headless 发送（类似 Cursor Agent CLI）；
 3. 后续按证据开放 Skills / MCP / 项目等稀疏端口；
-4. **不**在未验证协议时接入 Chat 持续通道或本机路由。
+4. **（历史约束）不**在未验证协议时接入 Chat 持续通道或本机路由。ACP 新对话与本机路由已落地，见进度表；不要再当待办。
 
 ## 2. 命名与身份
 
@@ -60,6 +75,8 @@ Kiro 是 AWS 系 agentic 编码产品，同一套项目上下文可跨多种界�
 
 ## 3. 早期第一波能力立场（历史方案）
 
+本节是早期第一波方案，**不是现行待办**。「一轮一发」「不接持续通道」「本机路由后置」均已过期：新对话走 ACP，本机路由已接入。旧打印对话仍可 headless。
+
 第一波对标 **Cursor Agent CLI 半面**：检测 / 安装 / 登录指引 / API Key / headless 发送。
 
 | 维度 | Cursor（已有） | Kiro（建议） |
@@ -73,31 +90,31 @@ Kiro 是 AWS 系 agentic 编码产品，同一套项目上下文可跨多种界�
 | 登录 | API Key / login 指引 | 浏览器/设备码 + `KIRO_API_KEY` |
 | 配置写入 | fail-closed | 第一波同样 fail-closed |
 
-**明确不做（第一波）：** 假 `ChatRuntime`（允许/拒绝/补充按钮）、本机路由、配置表单写入、Usage 精算、插件管理页、把终端 Autocomplete / Inline 说成对话页能力。
+**明确不做（第一波，历史约束）：** 假 `ChatRuntime`（允许/拒绝/补充按钮）、本机路由、配置表单写入、Usage 精算、插件管理页、把终端 Autocomplete / Inline 说成对话页能力。其中持续通道与本机路由已按进度表落地；其余仍按能力矩阵，不是从本页抄待办。
 
-Chat 持续通道后置：Kiro headless 无中途输入，与 Codex app-server 不是同一协议。有官方稳定双向协议或经验证 ACP 后再单独立项；先例见 [Claude Chat B3](../status/chat-claude-b3.md)。
+Chat 持续通道后置（**历史约束**）：当时 Kiro headless 无中途输入，与 Codex app-server 不是同一协议。现行新对话已走 `kiro-cli acp`，见进度表。先例见 [Claude Chat B3](../status/chat-claude-b3.md)。
 
-本机路由默认不做；若有稳定 writer 与备份策略，按 [添加 Route Adapter](../guides/adding-an-adapter.md) 另立项。
+本机路由默认不做（**历史约束**）。现行 Kiro 登录已可接到 Claude / Codex / Grok；剩余边界见进度表。接线纪律仍见 [添加 Route Adapter](../guides/adding-an-adapter.md)。
 
-### 3.1 对话页立场（第一波 = 一轮一发）
+### 3.1 对话页立场（第一波 = 一轮一发；历史约束）
 
 官方把 CLI 分成两套体验，不能混谈：
 
 | 官方表面 | 入口 | 对话页能不能当成同一套 |
 | --- | --- | --- |
-| 交互式 Chat / TUI | `kiro-cli`、`kiro-cli chat`、`/model` `/agent` 选择器、中途输入 | **否**。第一波不接持续通道，也不做假选择器 |
+| 交互式 Chat / TUI | `kiro-cli`、`kiro-cli chat`、`/model` `/agent` 选择器、中途输入 | **否**。第一波不接持续通道（**历史约束**），也不做假选择器 |
 | Headless | `kiro-cli chat --no-interactive "…"`，需 `KIRO_API_KEY` | **是**。对标 Cursor `agent -p`，一轮发完等结果 |
 
 官方 Headless 限制（[headless](https://kiro.dev/docs/cli/headless/)）：必须带初始 prompt；**会话中途不能再输入**；交互式斜杠命令（`/model`、`/agent` 选择器）不可用；TUI 关闭。`--trust-all-tools` / `--trust-tools=…` 是发之前预先批准，不是中途点允许/拒绝。`--output-format stream-json` 要 V2/V3，第一波不当成已接入的过程流。
 
-因此第一波对话页对 `kiro`：
+因此第一波对话页对 `kiro`（**历史约束，不是现行待办**）：
 
-- **就是一轮一发 / 发出去等结果**，走 headless，**不是**持续 `ChatRuntime`。
-- **不要**做中途允许/拒绝/补充界面；没有真实通道就不要假按钮（与 Claude B3 同一条红线）。
+- **就是一轮一发 / 发出去等结果**，走 headless，**不是**持续 `ChatRuntime`。现行新对话已走 ACP，见进度表；旧打印对话仍可 headless。
+- **不要**做中途允许/拒绝/补充界面；没有真实通道就不要假按钮（与 Claude B3 同一条红线）。ACP 落地后允许/拒绝来自真实通道，不是假按钮。
 - **不要**因为交互式 CLI 有 `/model`、`/agent` 选择器，就在 AgentHub 做一套假的。
-- `kiro` **不是** `isRuntimeChatAgent`（今天只有 `codex` / `grok`）。残留的持续会话快照不得给 Kiro 打开请求面板、补充或斜杠换模型。
+- `kiro` **不是** `isRuntimeChatAgent`（当时只有 `codex` / `grok`）。残留的持续会话快照不得给 Kiro 打开请求面板、补充或斜杠换模型。现行 ACP 新对话以 STATUS 为准。
 
-主 Agent 为 `kiro` 时，对话页应表现为：
+主 Agent 为 `kiro` 时，第一波对话页应表现为（**历史约束**；现行新对话见进度表与 STATUS）：
 
 | 位置 | 行为 |
 | --- | --- |
@@ -108,7 +125,7 @@ Chat 持续通道后置：Kiro headless 无中途输入，与 Codex app-server �
 | 这一轮结束 | 结果留在对话记录；失败/停止用现有结果条。再发是新的一轮，不是同一场交互式会话的下一句 |
 | 斜杠菜单 | 不要弹出暗示 Kiro 交互式 CLI 的 `/model`、`/agent` 选择器；用户打 `/model` 就当普通正文发出 |
 
-目录里还没有 `kiro` 时，不要在界面里假装已安装一家 Kiro。助手与测试按 id `kiro` 先落地；catalog 出现后再被选中。
+目录里还没有 `kiro` 时，不要在界面里假装已安装一家 Kiro（**历史约束**；catalog 已有 `kiro`）。助手与测试按 id `kiro` 先落地；catalog 出现后再被选中。
 
 ### 3.2 CLI Autocomplete / Inline（终端能力，不是对话页）
 
@@ -178,13 +195,13 @@ kiro-cli chat --no-interactive --trust-all-tools --output-format stream-json "�
 
 ## 5. 分波与能力起点
 
-**第一波：** Agents 管理面 + headless 发送（推荐开干范围）。用户能安装/检测、看登录状态；对话页发一轮走 headless，官方要求 `KIRO_API_KEY`。交互式登录只服务 Agents 页指引 / 本机终端，不当成对话页续聊。
+**第一波（已落地）：** Agents 管理面：检测 / 安装 / 登录指引 / API Key。早期对话页曾按 headless 一轮一发（§3.1，历史约束）；现行新对话走 ACP。
 
-**第二波：** 路径证据齐全后，Skills / MCP / 项目只读；评估 `stream-json`。
+**第二波（部分落地）：** 项目只读、用量、列模型已有 Partial/Full，见 [capabilities](../reference/capabilities.md)。Skills / MCP 仍 Planned。
 
-**第三波（可选）：** 仅当有稳定交互协议或经验证 ACP 再立项。
+**第三波（ACP 新对话已落地，不是未立项）：** 新空会话走 `kiro-cli acp`。旧打印对话保留原方式。剩余边界见进度表（企业 IdC / `profileArn`、上游逐块实时转发、官方 REST）。
 
-能力矩阵诚实起点（实施时以探测改表；穷尽匹配与原因写法见指南）：
+能力矩阵诚实起点（**历史草稿**；现行以 [capabilities](../reference/capabilities.md) 为准，不要按本表派工）：
 
 | Capability | 建议 | 原因草稿 |
 | --- | --- | --- |
@@ -194,13 +211,13 @@ kiro-cli chat --no-interactive --trust-all-tools --output-format stream-json "�
 | Skills / Mcp / Usage / ModelSelect / ProjectHistory / StructuredStream | Planned | 待路径与契约核实 |
 | DangerousMode | Partial / Full | 映射 trust 旗标（`--trust-all-tools` / `--trust-tools`）；文案说清风险 |
 | ProjectDelete / ProviderPresets / LiveBackup | Unsupported | 无安全契约前不做 |
-| SessionResume | Unsupported / Planned | headless 无中途输入；持续聊另立项 |
+| SessionResume | Unsupported / Planned | 当时：headless 无中途输入、持续聊另立项（**历史**；ACP 新对话已落地，现行 Partial 见 capabilities） |
 | Autocomplete 下拉（对话页） | Unsupported / 范围外 | `kiro-cli` 终端补全，不是 AgentHub 对话 UI；未嵌 PTY 不得宣称支持 |
 | Inline 灰色提示（对话页） | Unsupported / 范围外 | 与下拉独立的终端 ghost text；同上，最多外链/打开终端 |
 
-## 6. 开干前建议核实
+## 6. 开干前建议核实（历史探测清单）
 
-下列是事实缺口，不是强制命令矩阵。至少在目标平台记版本与路径（云电脑可先 Linux；macOS / Windows 用真机）：
+第一波探测已做过，不要把本节当成「尚未开工」。下列是当时的事实缺口，不是强制命令矩阵。剩余边界（企业 IdC / `profileArn`、上游逐块、官方 REST）仍需按进度表核实，不要从本清单推导新待办：
 
 - 各平台官方安装后：`kiro-cli` 绝对路径、版本（2.x vs 3.x / `--v3`）
 - macOS：arch；CLI 二进制位置（勿把仅有 IDE.app 当成已安装）
@@ -216,26 +233,29 @@ kiro-cli chat --no-interactive --trust-all-tools --output-format stream-json "�
 
 - **2.x / 3.0 行为分裂** → detect 记版本，能力按版本降级
 - **IDE ≠ CLI** → 产品卡与 detect 只认 `kiro-cli`；文案区分 Applications 里的 Kiro IDE
-- **不要假能力** → 无协议不接线持续 Chat；不做假 `/model` `/agent`；不把终端 Autocomplete / Inline 写成对话页能力；ConfigWrite fail-closed
+- **不要假能力** → 无协议不接线持续 Chat（**历史约束**；ACP 新对话已落地）；不做假 `/model` `/agent`；不把终端 Autocomplete / Inline 写成对话页能力；ConfigWrite fail-closed
 - 安装脚本管道、TTY/`open`/UAC 失败 → 与现有 native 渠道同样失败文案，勿谎称已装
 
 **非目标：** 凭据落盘加密、国产 OAuth、官方登录转 API Key、嵌入 IDE、Crew/Web 云沙箱托管。
 
-## 8. 决策请求
+## 8. 决策记录与剩余边界
 
-1. **是否批准第一波范围**（半面：检测/安装/登录指引/API Key/headless 发送；含跨平台）？
-2. 展示文案用「Kiro」还是「Kiro CLI」？（建议：**Kiro**，副标题写命令行。）
-3. 云电脑默认登录走 **设备码** 是否接受？
-4. 第三波 Chat/ACP 是否进路线图，还是明确「仅 headless」？第一波对话页已定为一轮一发（§3.1），与此题独立。
+下列 1–4 已按产品面落地，不再是「是否开干」的待批项。本页 YAML 仍为 `proposed`，因为剩余边界尚未成为现行契约。
+
+1. **第一波半面（检测/安装/登录指引/API Key）已落地**；跨平台安装渠道以实现与 STATUS 为准。
+2. 展示文案用 **Kiro**，副标题写命令行。
+3. 云电脑登录可走设备码（实现以 `kiro-cli` 登录指引为准）。
+4. **ACP 新对话已落地**，不再问「第三波是否进路线图」。§3.1 的一轮一发是历史约束。
+5. **仍是提案边界（未写成现行契约）：** 企业 IdC / `profileArn` 实机验收；上游逐块实时转发；官方 REST。HTTP 切片细节见 [agent-kiro-http.md](agent-kiro-http.md)。
 
 （安装 UX 细节——如自动 ps1 vs MSI 指引、自动 sh vs `setup_guide`——实现时可对齐 Cursor/WorkBuddy 惯例，不必在提案层钉死。）
 
-批准前本页保持 `proposed`。批准并完成必要探测后，从最新 `dev` 开 `feat/agent-kiro` 实施第一波；落地后更新 capabilities / STATUS / CHANGELOG。
+本页保持 `status: proposed`。已落地切片的现行行为只写在 STATUS / capabilities / 概念页；不要从本页抄成实施清单。
 
 ## 9. 参考
 
 - [添加 Agent](../guides/adding-an-agent.md)（真实接线指南）
-- [添加 Route Adapter](../guides/adding-an-adapter.md)（默认不启用）
+- [添加 Route Adapter](../guides/adding-an-adapter.md)（早期「默认不启用」是历史约束；现行本机路由见进度表）
 - [capabilities](../reference/capabilities.md)
 - [Chat 统一体验](chat-unified-experience.md)
 - [Claude Chat B3](../status/chat-claude-b3.md)

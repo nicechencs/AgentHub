@@ -167,6 +167,20 @@ fn mask_secret_tail_uses_last_four() {
 }
 
 #[test]
+fn sanitize_gui_last4_never_keeps_a_raw_key() {
+    let key = "sk-abcdefghijklmnopqrstuvwxyz";
+    assert_eq!(sanitize_gui_last4(Some(key)), "wxyz");
+    assert_ne!(sanitize_gui_last4(Some(key)), key);
+    assert_eq!(sanitize_gui_last4(Some("wxyz")), "wxyz");
+    assert_eq!(sanitize_gui_last4(Some("  ab12  ")), "ab12");
+    assert_eq!(sanitize_gui_last4(Some("short")), "");
+    assert_eq!(sanitize_gui_last4(Some("***")), "");
+    assert_eq!(sanitize_gui_last4(Some("")), "");
+    assert_eq!(sanitize_gui_last4(None), "");
+    assert_eq!(sanitize_gui_last4(Some("ab**")), "");
+}
+
+#[test]
 fn secret_tail_from_masked_preview_reads_stored_identity_only() {
     assert_eq!(
         secret_tail_from_masked_preview("xai-••••8660 (API Key)").as_deref(),

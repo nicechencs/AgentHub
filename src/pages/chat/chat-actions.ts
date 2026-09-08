@@ -111,6 +111,39 @@ export const CHAT_ACTIONS: ChatActionDef[] = [
   },
 ];
 
+/** Empty-transcript starter cards. Click fills the composer; it does not send. */
+export const CHAT_STARTER_ACTION_IDS = [
+  'sample-understand-project',
+  'sample-check-issues',
+  'sample-summarize',
+  'sample-write-tests',
+] as const;
+
+export function chatStarterActions(): ChatActionDef[] {
+  return CHAT_STARTER_ACTION_IDS.map((id) => {
+    const action = CHAT_ACTIONS.find((item) => item.id === id);
+    if (!action) throw new Error(`missing chat starter action: ${id}`);
+    return action;
+  });
+}
+
+export type ChatStarterCopyKey = 'understand' | 'check' | 'summarize' | 'tests';
+
+export function chatStarterCopyKey(id: string): ChatStarterCopyKey | null {
+  switch (id) {
+    case 'sample-understand-project':
+      return 'understand';
+    case 'sample-check-issues':
+      return 'check';
+    case 'sample-summarize':
+      return 'summarize';
+    case 'sample-write-tests':
+      return 'tests';
+    default:
+      return null;
+  }
+}
+
 export type ChatActionDisableReason = 'noReply' | 'noAgent';
 
 export interface ChatActionContext {

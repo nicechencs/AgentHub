@@ -126,7 +126,7 @@ export function formatNextCollectLabel(
   if (remain <= 0) return t ? t('dashboard.sync.soon') : '即将自动同步';
   return t
     ? t('dashboard.sync.remaining', { remain: formatDurationShort(remain, t) })
-    : `还有 ${formatDurationShort(remain)} 自动同步`;
+    : `还有 ${formatDurationShort(remain)}后自动同步`;
 }
 
 /** Status line for Dashboard: countdown / manual only (no last-sync time). */

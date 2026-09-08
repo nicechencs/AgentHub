@@ -9,6 +9,7 @@ use crate::file_manager::open_in_file_manager;
 use crate::state::AppState;
 use agenthub_core::logging::targets;
 use agenthub_core::models::{AppSettings, PathInfo};
+use agenthub_core::utils::redact::sanitize_gui_last4;
 
 /// Invoke: `get_app_settings` — L1 settings (theme / language / log_*).
 #[tauri::command]
@@ -94,12 +95,13 @@ pub async fn log_gui_event(
     if op.is_empty() {
         return Err("op is empty".into());
     }
+    let last4 = sanitize_gui_last4(last4.as_deref());
     tracing::info!(
         target: targets::GUI,
         module = targets::GUI,
         op = %op,
         agent = agent.as_deref().unwrap_or("-"),
-        last4 = last4.as_deref().unwrap_or(""),
+        last4 = last4.as_str(),
         profile_id = profile_id.as_deref().unwrap_or("-"),
         route = route.as_deref().unwrap_or("-"),
         code = code.as_deref().unwrap_or(""),

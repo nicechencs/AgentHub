@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { translate } from '@/lib/i18n';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -48,6 +49,14 @@ describe('chat layout wiring', () => {
     expect(source('ChatTranscript.tsx')).toContain(
       'chatTranscriptSurfaceClass(turns.length > 0)',
     );
+  });
+
+  it('shows empty-session starter cards that fill the composer', () => {
+    const transcript = source('ChatTranscript.tsx');
+    expect(transcript).toContain('chatStarterActions');
+    expect(transcript).toContain('onPickStarter');
+    expect(transcript).not.toContain('variant="default"');
+    expect(source('index.tsx')).toContain('onPickStarter={page.runChatAction}');
   });
 
   it('keeps the transcript white column on the same max-w-3xl as the composer', () => {
@@ -138,5 +147,19 @@ describe('chat layout wiring', () => {
     expect(sessions).toContain('restoreChatBootstrapIfUnchanged');
     expect(sessions).toContain('takeChatBootstrap');
     expect(sessions).toContain('boot.cwd');
+  });
+
+  it('uses locale copy for process run details instead of internal English', () => {
+    const panel = source('ChatProcessPanel.tsx');
+    expect(panel).toContain("t('chat.process.runDetails')");
+    expect(panel).toContain("t('chat.process.stderr')");
+    expect(panel).toContain("t('chat.process.exitCode'");
+    expect(panel).not.toContain('>stderr<');
+    expect(panel).not.toContain('exit {exitCode}');
+    expect(translate('zh', 'chat.process.runDetails')).toBe('运行详情');
+    expect(translate('en', 'chat.process.runDetails')).toBe('Details of this run');
+    expect(translate('zh', 'chat.process.stderr')).toBe('错误输出');
+    expect(translate('en', 'chat.process.stderr')).toBe('Error output');
+    expect(translate('en', 'chat.process.runDetails')).not.toBe('Run details');
   });
 });

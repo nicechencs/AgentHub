@@ -152,5 +152,11 @@ describe('status labels with translator', () => {
         t,
       }),
     ).toBe('Manual collect only');
+    expect(formatNextCollectLabel(null, 30, now, t)).toBe('Automatically syncs every 30 min');
+    expect(formatNextCollectLabel(now, 30, now, t)).toBe('Will sync automatically soon');
+    expect(formatNextCollectLabel(now + 90_000, 30, now, t)).toBe(
+      'Will sync automatically in 1m 30s',
+    );
+    expect(formatNextCollectLabel(null, 30, now, t)).not.toContain('Auto-sync');
   });
 });

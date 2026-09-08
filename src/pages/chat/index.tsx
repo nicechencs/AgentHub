@@ -199,6 +199,7 @@ export default function ChatPage() {
               onScroll={page.onTranscriptScroll}
               onRetry={() => void page.retryLast()}
               onOpenLocal={openMarkdownPreview}
+              onPickStarter={page.runChatAction}
             />
             {chatShowsRuntimeRequestPanels(page.primaryAgent) && page.runtime?.pendingRequests.length ? (
               <ChatRuntimeRequests
