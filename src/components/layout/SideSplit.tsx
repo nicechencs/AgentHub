@@ -2,16 +2,10 @@ import type { ReactNode } from 'react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { cn } from '@/lib/utils';
 import {
-  SIDE_SPLIT_FRAME_PAD_RIGHT,
+  SIDE_SPLIT_FRAME_PAD_X,
   SIDE_SPLIT_FRAME_PAD_Y,
 } from './side-split-model';
 import type { SideSplitController } from './use-side-split';
-
-const separatorClass = cn(
-  'group relative z-10 w-1.5 shrink-0 cursor-col-resize touch-none bg-transparent outline-none',
-  'hover:bg-accent/40 focus-visible:bg-accent/40 active:bg-accent/60',
-  'before:absolute before:inset-y-0 before:-left-1.5 before:-right-1.5 before:content-[""]',
-);
 
 export function SideSplitSeparator<T>({
   split,
@@ -31,7 +25,7 @@ export function SideSplitSeparator<T>({
       onPointerDown={split.expanded ? split.onResizeStart : undefined}
       onDoubleClick={split.expanded ? split.resetWidth : undefined}
       onKeyDown={split.expanded ? split.onSeparatorKeyDown : undefined}
-      className={cn(separatorClass, !split.expanded && 'pointer-events-none opacity-0')}
+      className={cn(pageRhythm.sash, !split.expanded && 'pointer-events-none opacity-0')}
     />
   );
 }
@@ -59,10 +53,11 @@ export function SideSplitFrame<T>({
         <div
           className="box-border flex h-full min-h-0"
           style={{
-            width: split.paneWidth + SIDE_SPLIT_FRAME_PAD_RIGHT,
+            width: split.paneWidth + SIDE_SPLIT_FRAME_PAD_X * 2,
             paddingTop: padTop,
             paddingBottom: SIDE_SPLIT_FRAME_PAD_Y,
-            paddingRight: SIDE_SPLIT_FRAME_PAD_RIGHT,
+            paddingLeft: SIDE_SPLIT_FRAME_PAD_X,
+            paddingRight: SIDE_SPLIT_FRAME_PAD_X,
           }}
         >
           {children}

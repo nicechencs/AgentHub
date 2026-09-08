@@ -11,11 +11,22 @@ import {
 describe('pageRhythm (docs/ui/design-system.md §3)', () => {
   it('keeps the app chrome as two rounded columns on the canvas gutter', () => {
     expect(pageRhythm.shell).toContain(pageCanvasTw.p);
-    expect(pageRhythm.shell).toContain(pageCanvasTw.gap);
+    expect(pageRhythm.shell).not.toContain('gap-');
     expect(pageRhythm.shellNav).toContain('rounded-card');
     expect(pageRhythm.shellMain).toContain('rounded-card');
     expect(pageRhythm.shellNav).toContain('overflow-hidden');
     expect(pageRhythm.shellMain).toContain('overflow-hidden');
+  });
+
+  it('keeps splitters hidden until hover, centered in an 8px hit', () => {
+    expect(pageEdge.separator).toBe(8);
+    expect(pageRhythm.sash).toContain('w-2 shrink-0');
+    expect(pageRhythm.sash).toContain('after:w-px');
+    expect(pageRhythm.sash).toContain('after:left-1/2');
+    expect(pageRhythm.sash).toContain('after:bg-transparent');
+    expect(pageRhythm.sash).toContain('hover:after:bg-accent');
+    expect(pageRhythm.sash).not.toContain('after:bg-border');
+    expect(pageRhythm.sash).not.toContain('absolute inset-y-0 right-0');
   });
 
   it('derives every page inset class and pixel from pageEdge.inset', () => {
@@ -32,8 +43,9 @@ describe('pageRhythm (docs/ui/design-system.md §3)', () => {
     expect(pageRhythm.workbenchHeader).toContain(pageInsetTw.x);
     expect(pageRhythm.workbenchHeader).toContain(pageInsetTw.t);
     expect(pageRhythm.workbenchHeader).not.toContain(pageInsetTw.y);
-    expect(pageRhythm.workbenchXSplit).toBe(`${pageInsetTw.l} ${pageCanvasTw.r} ${pageCanvasTw.mr}`);
+    expect(pageRhythm.workbenchXSplit).toBe(`${pageInsetTw.l} ${pageInsetTw.mr}`);
     expect(pageRhythm.workbenchXSplit).not.toContain('px-');
+    expect(pageRhythm.workbenchXSplit).not.toContain(pageInsetTw.r);
     expect(pageRhythm.chatChromeX).toBe(pageChatTw.x);
   });
 
