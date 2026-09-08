@@ -528,6 +528,25 @@ export function createTauriSettingsPort(): SettingsPort {
         throw e;
       }
     },
+
+    async pickFile(options) {
+      try {
+        const picked = await invoke<string | null>('pick_file', {
+          title: options?.title ?? null,
+          defaultPath: options?.defaultPath ?? null,
+          filters: options?.filters?.map((filter) => ({
+            name: filter.name,
+            extensions: [...filter.extensions],
+          })) ?? null,
+        });
+        if (picked == null) return null;
+        const trimmed = picked.trim();
+        return trimmed || null;
+      } catch (e) {
+        log.error('pickFile failed', e);
+        throw e;
+      }
+    },
   };
   return port;
 }

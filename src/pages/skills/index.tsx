@@ -6,7 +6,7 @@ import {
   useState,
 } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { FolderOpen, Plus, Store } from 'lucide-react';
+import { FileArchive, FolderOpen, Plus, Store } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { WorkbenchSplitPage } from '@/components/layout/SideSplit';
 import { followInspectOpen } from '@/components/layout/inspect-follow';
@@ -63,7 +63,7 @@ import {
   useProjectShowHidden,
 } from '@/lib/hooks/useProjects';
 import { loadString, saveString, StorageKey } from '@/lib/ui-preferences';
-import { getSettings, pickDirectory } from '@/lib/api/settings';
+import { getSettings, pickDirectory, pickFile } from '@/lib/api/settings';
 import { detectHostPlatform } from '@/lib/platform-detect';
 import { FEATURE_NOT_WIRED } from '@/lib/platform';
 import type { AgentKey, AgentProject, Skill, SkillMarketSource } from '@/lib/types';
@@ -1285,9 +1285,10 @@ export default function SkillsPage() {
             <label className="text-xs text-muted" htmlFor="skill-install-source">
               {t('skills.dialog.sourceLabel')}
             </label>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Input
                 id="skill-install-source"
+                className="min-w-48 flex-1"
                 ref={installInputRef}
                 value={installSource}
                 onChange={(e) => {
@@ -1329,6 +1330,34 @@ export default function SkillsPage() {
               >
                 <FolderOpen className="h-3.5 w-3.5" />
                 {t('skills.dialog.pickFolder')}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={installBusy}
+                onClick={() => {
+                  void (async () => {
+                    try {
+                      const picked = await pickFile({
+                        title: t('skills.dialog.pickZipTitle'),
+                        filters: [{ name: 'ZIP', extensions: ['zip'] }],
+                      });
+                      if (!picked) return;
+                      setInstallSource(picked);
+                      setInstallSourceError(null);
+                    } catch (e) {
+                      toast({
+                        title: t('skills.toast.installFailed'),
+                        description: e instanceof Error ? e.message : String(e),
+                        variant: 'danger',
+                      });
+                    }
+                  })();
+                }}
+              >
+                <FileArchive className="h-3.5 w-3.5" />
+                {t('skills.dialog.pickZip')}
               </Button>
             </div>
             {installSourceError ? (

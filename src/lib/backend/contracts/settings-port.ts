@@ -39,6 +39,12 @@ export interface SettingsPort {
     title?: string;
     defaultPath?: string | null;
   }): Promise<string | null>;
+  /** Native file picker. `null` = cancelled. Value is a filesystem path, not a URI. */
+  pickFile(options?: {
+    title?: string;
+    defaultPath?: string | null;
+    filters?: ReadonlyArray<{ name: string; extensions: readonly string[] }>;
+  }): Promise<string | null>;
   /**
    * Best-effort GUI log line. `last4` only — never a raw key.
    * Optional `profileId` / `route` / `code` help correlate Routes actions.

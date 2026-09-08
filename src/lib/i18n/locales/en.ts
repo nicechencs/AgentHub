@@ -866,6 +866,8 @@ export const en = {
       pickProjectFirst: "Choose a project first",
       sourceLabel: "Source",
       pickFolder: "Choose folder",
+      pickZip: "Choose zip",
+      pickZipTitle: "Choose a skill zip",
       installPlaceholder: "C:\\path\\to\\skill  or  https://github.com/…/skill.git",
       installPlaceholderWin: "C:\\path\\to\\skill  or  https://github.com/…/skill.git",
       installPlaceholderPosix: "/path/to/skill  or  https://github.com/…/skill.git",

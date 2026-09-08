@@ -171,6 +171,11 @@ export function createMockSettingsPort(): SettingsPort {
       return promptForDirectoryPath(options?.title, options?.defaultPath);
     },
 
+    async pickFile(options) {
+      await delay(40);
+      return promptForDirectoryPath(options?.title, options?.defaultPath);
+    },
+
     async logGuiEvent() {
       // Browser mock has no GUI log file.
     },

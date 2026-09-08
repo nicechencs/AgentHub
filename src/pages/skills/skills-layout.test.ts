@@ -44,8 +44,10 @@ describe('skills split layout', () => {
     const page = source('index.tsx');
     const panel = source('SkillsLibraryPanel.tsx');
     expect(page).toContain('pickDirectory');
+    expect(page).toContain('pickFile');
     expect(page).toContain("t('skills.dialog.sourceLabel')");
     expect(page).toContain("t('skills.dialog.pickFolder')");
+    expect(page).toContain("t('skills.dialog.pickZip')");
     expect(page).toContain('installSourceError');
     expect(page).toContain('onEmptyInstall');
     expect(page).toContain('onEmptyMarket');

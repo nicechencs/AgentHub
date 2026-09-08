@@ -303,6 +303,7 @@ pub fn run() {
             commands::sub2api_remembered_vault::sub2api_remembered_vault_get,
             commands::sub2api_remembered_vault::sub2api_remembered_vault_set,
             commands::settings::pick_directory::pick_directory,
+            commands::settings::pick_file::pick_file,
             commands::shell_icon::set_shell_icon,
             shell_open_chat::take_pending_open_chat_cwd,
         ])
