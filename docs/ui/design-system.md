@@ -86,6 +86,17 @@ There are three content systems:
 
 Do not introduce page-private `max-w-*` values or a second left-aligned reading width. `fullBleed` describes height and scrolling behavior, not a width system. The application canvas gutter is 12px. Chat session header and conversation stage use `chatChromeX`, currently the same 12px as `workbenchX`; do not add another horizontal inset inside the transcript.
 
+### 3.5 Agent identity marks
+
+All Agent logos render through `AgentLogo`. Do not import the image in a page.
+
+| Role | Size | Prop |
+|---|---:|---|
+| List, rail, table, chip | 24px | `sm` (default) |
+| Chat avatar, picker card | 32px | `md` |
+
+Do not add a third size. The outer tile is a squircle (`rounded-mark`) with a hairline border; optical padding lives in the SVG, not as extra component inset. Glyphs sit on a contrast plate (`logoBackground`); official full-bleed app icons use `logoFit: 'bleed'`. Brand marks do not invert with the app theme. Asset contract and intake checklist: [agent-logos README](../../src/assets/agent-logos/README.md). Adding a new Agent: [adding-an-agent.md](../guides/adding-an-agent.md).
+
 ## 4. Component rules
 
 ### 4.1 Base components
