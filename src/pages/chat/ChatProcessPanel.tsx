@@ -284,7 +284,7 @@ export function ChatProcessPanel({
               ) : null}
               {view.stderr ? (
                 <div>
-                  <div className="mb-0.5 text-muted">stderr</div>
+                  <div className="mb-0.5 text-muted">{t('chat.process.stderr')}</div>
                   <pre
                     ref={stderrRef}
                     className="max-h-36 overflow-auto [overflow-anchor:none] whitespace-pre-wrap break-all rounded-card bg-subtle px-2 py-1.5 font-mono text-meta leading-relaxed text-danger/90"
@@ -294,7 +294,7 @@ export function ChatProcessPanel({
                 </div>
               ) : null}
               {exitCode != null ? (
-                <div className="text-muted">exit {exitCode}</div>
+                <div className="text-muted">{t('chat.process.exitCode', { code: exitCode })}</div>
               ) : null}
             </div>
           </details>
