@@ -8,9 +8,9 @@
  * 窗内画布缝是 `pageEdge.canvas`；Chat 主列水平是 `pageEdge.chat`，不要和页边混用。
  *
  * ## 内容宽度（两套，docs/ui/design-system.md §3.4）
- * 1. 阅读列 `readingColumn`：Chat 消息列。固定 `max-w-3xl` 居中。设置表单正文（备份分栏页除外）同列居中；页签留在页头贴左，不进阅读列。
+ * 1. 阅读列 `readingColumn`：Chat 消息列。固定 `max-w-3xl` 居中。
  * 2. 贴边列：其余页。铺满主列，左右用 `pageEdge.inset`（`pageShell` / `workbenchX`）。
- * 3. 总览列 `overviewColumn`：总览与路由看板，居中 `max-w-6xl`。
+ * 3. 总览列 `overviewColumn`：总览、路由看板、设置表单正文（备份分栏页除外），居中 `max-w-6xl`。页签留在页头贴左，不进总览列。
  * 页标题一律贴边、同一行（大号深色标题 + 小号浅色说明），放在非对话页顶栏左侧。
  *
  * 层级（自上而下）：
@@ -89,8 +89,13 @@ export const pageInsetTw = SPACE[pageEdge.inset];
 export const pageChatTw = SPACE[pageEdge.chat];
 
 export const pageRhythm = {
-  /** 窗内画布留缝，侧栏/主列两块圆角面板；栏间距只留居中分隔条 */
-  shell: `flex h-full min-h-0 bg-canvas ${pageCanvasTw.p}`,
+  /** 上排圆角面板留窗内缝；底栏方角贴窗底，和对照分支底栏一致 */
+  shell: 'flex h-full min-h-0 flex-col bg-canvas',
+  shellBody: `flex min-h-0 min-w-0 flex-1 ${pageCanvasTw.x} ${pageCanvasTw.t}`,
+  statusBar:
+    'flex h-8 shrink-0 items-center border-t border-border bg-canvas px-6 text-meta',
+  statusBarItem:
+    'inline-flex h-full max-w-full items-center gap-1.5 px-2 text-meta text-secondary hover:bg-hover hover:text-primary',
   shellNav:
     'flex min-h-0 shrink-0 flex-col overflow-hidden rounded-card border border-border bg-panel shadow-xs',
   /** Main column sits on canvas; cards/sidebar use panel (THEME in tokens.ts). */
@@ -108,9 +113,9 @@ export const pageRhythm = {
   ].join(' '),
   /** 常规页外壳：铺满主列，与 Skills / Projects 右缘对齐 */
   pageShell: `w-full min-w-0 ${pageInsetTw.x} ${pageInsetTw.y}`,
-  /** Chat 消息列：居中阅读宽。页头不进此列。设置表单正文（备份分栏页除外）共用同一列。 */
+  /** Chat 消息列：居中阅读宽。页头不进此列。 */
   readingColumn: 'mx-auto w-full max-w-3xl',
-  /** 总览 / 路由看板居中列，避免宽屏把指标拉成一条细线。 */
+  /** 总览 / 路由看板 / 设置表单居中列（备份分栏除外），避免宽屏把内容拉成一条细线。 */
   overviewColumn: 'mx-auto w-full max-w-6xl',
   /** 侧栏品牌行与非对话页顶栏同高，横线对齐 */
   topChrome: 'h-11',

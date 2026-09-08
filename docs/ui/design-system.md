@@ -71,7 +71,7 @@ Status colors are semantic: `success`, `warning`, `danger`, and `info`. A status
 - Controls use `rounded-btn` (8px); cards, panels, and the application shell use `rounded-card` (12px); composers and user bubbles use `rounded-composer` (16px). Chips, avatars, switches, and progress tracks may use `rounded-full`.
 - Do not add `rounded-lg`, `rounded-2xl`, or arbitrary radius values.
 - `shadow-xs` is for a card, `shadow-sm` for a light raised control, `shadow-md` for menus/toasts, and `shadow-lg` for dialogs. Buttons do not gain a shadow on hover or press.
-- The application canvas has a 12px outer gutter. The shell columns are rounded panels. Keep the shell and page surfaces distinct without stacking multiple borders around the same content.
+- The application canvas has a 12px outer gutter around the rounded shell columns. The bottom status bar is square, flush to the window, and uses a top border only. Keep the shell and page surfaces distinct without stacking multiple borders around the same content.
 
 ### 3.4 Content widths
 
@@ -79,8 +79,8 @@ There are three content systems:
 
 | System | Token/pattern | Use |
 |---|---|---|
-| Reading column | `pageRhythm.readingColumn` (`mx-auto w-full max-w-3xl`) | Chat transcript/composer, Settings form, long-form reading |
-| Overview column | `pageRhythm.overviewColumn` (`mx-auto w-full max-w-6xl`) | Dashboard and Routes board |
+| Reading column | `pageRhythm.readingColumn` (`mx-auto w-full max-w-3xl`) | Chat transcript/composer, long-form reading |
+| Overview column | `pageRhythm.overviewColumn` (`mx-auto w-full max-w-6xl`) | Dashboard, Routes board, and Settings form (except backups split) |
 | Edge column | `pageRhythm.pageShell` / `workbenchX` from `pageEdge.inset` (currently 12px) | Tables, lists, split workbenches, Routes. Change `pageEdge.inset` in `src/components/layout/page-rhythm.ts` to retune every page edge. When a split pane is open, the list uses `workbenchXSplit` (12px left pad, 12px right margin) and the inspect pane uses the same 12px on the splitter side so the 1px rule stays centered. |
 
 Do not introduce page-private `max-w-*` values or a second left-aligned reading width. `fullBleed` describes height and scrolling behavior, not a width system. The application canvas gutter is 12px.

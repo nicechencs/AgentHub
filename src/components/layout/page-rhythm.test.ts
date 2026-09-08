@@ -9,11 +9,20 @@ import {
 } from '@/components/layout/page-rhythm';
 
 describe('pageRhythm (docs/ui/design-system.md §3)', () => {
-  it('keeps the app chrome as two rounded columns on the canvas gutter', () => {
-    expect(pageRhythm.shell).toContain(pageCanvasTw.p);
+  it('keeps rounded columns on the canvas gutter and a square flush status bar', () => {
+    expect(pageRhythm.shell).toContain('flex-col');
+    expect(pageRhythm.shell).toContain('bg-canvas');
+    expect(pageRhythm.shell).not.toContain(pageCanvasTw.p);
     expect(pageRhythm.shell).not.toContain('gap-');
+    expect(pageRhythm.shellBody).toContain(pageCanvasTw.x);
+    expect(pageRhythm.shellBody).toContain(pageCanvasTw.t);
     expect(pageRhythm.shellNav).toContain('rounded-card');
     expect(pageRhythm.shellMain).toContain('rounded-card');
+    expect(pageRhythm.statusBar).toContain('h-8');
+    expect(pageRhythm.statusBar).toContain('border-t');
+    expect(pageRhythm.statusBar).toContain('px-6');
+    expect(pageRhythm.statusBar).not.toContain('rounded-card');
+    expect(pageRhythm.statusBar).not.toContain('shadow-xs');
     expect(pageRhythm.shellNav).toContain('overflow-hidden');
     expect(pageRhythm.shellMain).toContain('overflow-hidden');
   });
@@ -49,7 +58,7 @@ describe('pageRhythm (docs/ui/design-system.md §3)', () => {
     expect(pageRhythm.chatChromeX).toBe(pageChatTw.x);
   });
 
-  it('uses one centered reading column for Chat messages and Settings forms', () => {
+  it('keeps Chat on the reading column and Dashboard/Settings forms on the overview column', () => {
     expect(pageRhythm.readingColumn).toBe('mx-auto w-full max-w-3xl');
     expect(pageRhythm.overviewColumn).toBe('mx-auto w-full max-w-6xl');
   });

@@ -295,6 +295,7 @@ export const zh = {
     },
   },
   chrome: {
+    localForward: '本机转发',
     error: {
       title: "加载失败",
       retry: "重试",
