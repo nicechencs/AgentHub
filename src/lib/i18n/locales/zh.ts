@@ -846,6 +846,8 @@ export const zh = {
       pickProjectFirst: "先选择一个项目",
       sourceLabel: "来源",
       pickFolder: "选择目录",
+      pickZip: "选择 zip",
+      pickZipTitle: "选择技能 zip",
       installPlaceholder: "C:\\path\\to\\skill  或  https://github.com/…/skill.git",
       installPlaceholderWin: "C:\\path\\to\\skill  或  https://github.com/…/skill.git",
       installPlaceholderPosix: "/path/to/skill  或  https://github.com/…/skill.git",

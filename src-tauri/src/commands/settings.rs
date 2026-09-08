@@ -1,6 +1,7 @@
 //! Settings / path info / open logs directory — thin wrappers over SettingsService.
 
 pub mod pick_directory;
+pub mod pick_file;
 
 use tauri::{AppHandle, State};
 
