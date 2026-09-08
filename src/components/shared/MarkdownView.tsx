@@ -431,7 +431,7 @@ export function MarkdownView({
           // Keep text on design tokens; library handles internal structure.
           backgroundColor: 'transparent',
           color: 'var(--text-primary)',
-          fontSize: 'var(--font-body-size, 13px)',
+          fontSize: 'var(--font-body-size, 14px)',
           padding: 0,
         }}
       />

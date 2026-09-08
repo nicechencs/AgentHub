@@ -4,7 +4,7 @@ import { buildTailwindFontSize } from './src/styles/tokens';
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
-    // 覆盖默认 2xl/3xl… 阶，只保留 TYPE_SCALE 五档 + 同像素别名
+    // 覆盖默认 2xl/3xl… 阶，只保留 TYPE_SCALE 四档 + 同像素别名
     fontSize: buildTailwindFontSize(),
     // 全量替换默认阶，只留语义名；sm/md/lg/xl 不再生成
     borderRadius: {

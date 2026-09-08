@@ -36,17 +36,18 @@ The runtime source of truth is `src/styles/tokens.ts`. CSS variables are injecte
 
 ### 3.1 Type scale
 
-Five semantic text roles are allowed for new UI:
+Three everyday text roles, plus one empty-state size. Do not add another pixel size.
 
 | Role | Token/class | Size | Use |
 |---|---|---:|---|
-| Display | `text-display` | 22px | Chat empty-state headline, first-run title |
-| Title | `text-title` | 18px | Page titles, dialog titles |
-| Headline | `text-headline` | 15px | Section titles, dashboard metric values |
-| Body | `text-body` | 14px | Body copy, buttons, list names, menus, form values |
+| Display | `text-display` | 22px | Chat empty-state headline only |
+| Title | `text-title` | 18px | Page titles, dashboard metric values |
+| Body | `text-body` | 14px | Body copy, buttons, list names, menus, form values, dialog titles, section titles |
 | Meta | `text-meta` | 12px | Table headings, paths, timestamps, badges, hints, diagnostic text |
 
-Existing `text-lg`/`text-xl`, `text-sm`/`text-base`, and `text-xs`/`text-2xs` aliases map onto title / body / meta. Do not introduce arbitrary `text-[Npx]` values.
+Section titles stay at body size and use font weight. Dialog titles stay at body size; they are not page titles.
+
+Existing `text-lg`/`text-xl`, `text-sm`/`text-base`, and `text-xs`/`text-2xs` aliases map onto title / body / meta. New code should write the semantic names. Do not introduce `text-headline`, `text-[Npx]`, or a fifth everyday size.
 
 ### 3.2 Surfaces and color
 

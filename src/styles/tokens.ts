@@ -1,6 +1,6 @@
 /**
  * Design tokens — **single source of truth** for theme colors, agent brand
- * colors, radii, shadows, and the three UI type sizes.
+ * colors, radii, shadows, and type sizes (title/body/meta, plus display).
  *
  * Runtime CSS variables are generated from this module:
  * - full set → `virtual:agenthub-design-tokens.css` (Vite plugin)
@@ -275,19 +275,17 @@ export const RADIUS = {
 } as const;
 
 /**
- * UI 字号五档。
+ * UI 字号：三档日常 + 一档空态。
  *
  * | 标准 | class | 像素 | 用途 |
- * | display | `text-display` | 22 | 对话空态主句、首次引导 |
- * | title | `text-title` | 18 | 页标题、对话框标题 |
- * | headline | `text-headline` | 15 | 分区标题、总览关键数字 |
- * | body | `text-body` | 14 | 正文、按钮、列表名、表单值 |
+ * | display | `text-display` | 22 | 仅对话空态主句 |
+ * | title | `text-title` | 18 | 页标题、总览关键数字 |
+ * | body | `text-body` | 14 | 正文、按钮、列表名、表单、对话框标题、分区标题 |
  * | meta | `text-meta` | 12 | 表头、时间、路径、角标、说明 |
  */
 export const TYPE_SCALE = {
   display: { size: '22px', lineHeight: '1.27' },
   title: { size: '18px', lineHeight: '1.33' },
-  headline: { size: '15px', lineHeight: '1.47' },
   body: { size: '14px', lineHeight: '1.57' },
   meta: { size: '12px', lineHeight: '1.5' },
 } as const;
@@ -296,7 +294,7 @@ export type TypeScaleRole = keyof typeof TYPE_SCALE;
 
 /**
  * 旧 Tailwind 名 → 三档标准。像素与标准相同，不是额外字号。
- * 新代码优先写 `text-display` / `text-title` / `text-headline` / `text-body` / `text-meta`。
+ * 新代码写 `text-title` / `text-body` / `text-meta`；`text-display` 仅空态主句。
  * `cn()` 已把这些档注册为 font-size，避免和 `text-primary` 互斥。
  */
 export const TYPE_SCALE_ALIASES = {
@@ -318,7 +316,7 @@ export function typeScalePx(role: TypeScaleRole): number {
   return Number.parseInt(TYPE_SCALE[role].size, 10);
 }
 
-/** Tailwind `theme.extend.fontSize`：三档标准 + 同像素别名。 */
+/** Tailwind `theme.extend.fontSize`：四档标准 + 同像素别名。 */
 export function buildTailwindFontSize(): Record<string, [string, { lineHeight: string }]> {
   const fontSize: Record<string, [string, { lineHeight: string }]> = {};
   for (const role of Object.keys(TYPE_SCALE) as TypeScaleRole[]) {
