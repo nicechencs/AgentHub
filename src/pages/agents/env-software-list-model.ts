@@ -14,11 +14,16 @@ export type EnvSoftwareAction = 'install' | 'upgrade' | 'repair';
 
 export type EnvSoftwareColumnKey = 'software' | 'status' | 'version' | 'note' | 'actions';
 
-/** Agents 页运行环境：有待修项才默认展开，全部就绪则收起。 */
+/**
+ * Agents 页运行环境：未安装 / PATH 异常才默认展开。
+ * 全部就绪或仅版本过旧时收起，避免占掉列表空间。
+ */
 export function envSoftwareListOpenByDefault(
   runtimes: readonly Pick<RuntimeDetect, 'status'>[],
 ): boolean {
-  return runtimes.some((runtime) => runtime.status !== 'ok');
+  return runtimes.some(
+    (runtime) => runtime.status === 'missing' || runtime.status === 'broken_path',
+  );
 }
 
 export const ENV_SOFTWARE_FLEX_COLUMN: EnvSoftwareColumnKey = 'note';
