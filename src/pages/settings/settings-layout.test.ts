@@ -14,9 +14,10 @@ describe('settings layout wiring', () => {
     const page = source('index.tsx');
     expect(page).not.toContain('pageRhythm.readingStart');
     expect(page).not.toContain('pageRhythm.formColumn');
-    expect(page.match(/className=\{pageRhythm\.readingColumn\}/g)?.length).toBe(3);
+    expect(page.match(/className=\{pageRhythm\.overviewColumn\}/g)?.length).toBe(3);
+    expect(page).not.toContain('pageRhythm.readingColumn');
     expect(page).toMatch(/workbenchHeader\}>\s*<div className=\{pageRhythm\.chrome\}/);
-    expect(page).not.toMatch(/readingColumn\}>\s*<PageHeader/);
+    expect(page).not.toMatch(/overviewColumn\}>\s*<PageHeader/);
     expect(page).toContain('TabsContent value="backups" className="h-full min-h-0"');
     expect(page).toContain('toolbar={settingsTabList}');
     expect(page).not.toContain('flushTop');
