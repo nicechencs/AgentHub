@@ -22,6 +22,9 @@ describe('agents layout wiring', () => {
     expect(page).toContain('<AgentDetailPanel');
     expect(page).toContain('inspect.open(a.agentId)');
     expect(page).toContain('onSelect={() => inspect.open(a.agentId)}');
+    expect(page).toContain('useSearchParams');
+    expect(page).toContain('highlightAgentId');
+    expect(card).not.toContain('iconOnly');
     expect(page).toContain('if (!liveIds.includes(inspect.target)) inspect.close()');
     expect(page).not.toContain('a.installed ? () => inspect.open(a.agentId) : undefined');
     expect(page).not.toContain('if (!inspectAgent?.installed) inspect.close()');

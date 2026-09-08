@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { PackageSearch } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { getAgentStatusSnapshot, useAgentStatuses } from '@/app/runtime';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
@@ -56,6 +57,8 @@ const AGENTS_PREVIEW_WIDTH_KEY = StorageKey.agentsPreviewWidth;
 /** Agents 安装管理页 — 环境检测 + Agent 安装（backend 由构建时 composition root 选择） */
 export default function AgentsPage() {
   const { t } = useI18n();
+  const [searchParams] = useSearchParams();
+  const highlightAgentId = searchParams.get('agent');
   const { state, statuses, error, reload } = useAgentStatuses();
   const [updateById, setUpdateById] = React.useState<
     Partial<Record<AgentKey, AgentUpdateInfo>>
@@ -287,6 +290,13 @@ export default function AgentsPage() {
     if (!liveIds.includes(inspect.target)) inspect.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- close when the selected agent leaves the list
   }, [inspect.target, liveIds]);
+  const openedFromUrl = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!highlightAgentId || !liveIds.includes(highlightAgentId)) return;
+    if (openedFromUrl.current === highlightAgentId) return;
+    openedFromUrl.current = highlightAgentId;
+    inspect.open(highlightAgentId);
+  }, [highlightAgentId, inspect, liveIds]);
 
   const inspectPanel = inspectAgent ? (
     <AgentDetailPanel
