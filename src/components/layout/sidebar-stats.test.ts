@@ -6,8 +6,8 @@ import { agentHasCatalogUpdate, sidebarInstallStats } from './sidebar-stats';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 
-function sidebarSource(): string {
-  return readFileSync(path.join(dir, 'Sidebar.tsx'), 'utf8');
+function agentStatusStripSource(): string {
+  return readFileSync(path.join(dir, 'AgentStatusStrip.tsx'), 'utf8');
 }
 
 const catalog = [{ id: 'claude' }, { id: 'codex' }, { id: 'dsh' }, { id: 'kimi' }];
@@ -82,9 +82,9 @@ describe('agentHasCatalogUpdate', () => {
   });
 });
 
-describe('sidebar layout vs stats', () => {
+describe('status bar vs stats', () => {
   it('composes the stats model and does not re-filter hidden rows', () => {
-    const src = sidebarSource();
+    const src = agentStatusStripSource();
     expect(src).toContain('sidebarInstallStats');
     expect(src).toContain('agentHasCatalogUpdate');
     expect(src).not.toContain('a.hidden');
