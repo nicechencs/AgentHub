@@ -113,6 +113,23 @@ describe('chat layout wiring', () => {
     expect(hook).toContain('setHistoryRevealNonce');
   });
 
+  it('offers always-allow on runtime permission cards', () => {
+    const requests = source('ChatRuntimeRequests.tsx');
+    expect(requests).toContain('requestAllowsAlways');
+    expect(requests).toContain("submit('allow_always')");
+    expect(requests).toContain('chat.runtime.allowAlways');
+  });
+
+  it('shows Kiro ask-or-full permission mode in session settings and the header', () => {
+    const settings = source('ChatSettingsDialog.tsx');
+    const header = source('ChatSessionHeader.tsx');
+    expect(settings).toContain('chat.kiro.permissionAsk');
+    expect(settings).toContain('chat.kiro.permissionFull');
+    expect(settings).toContain('chat.kiro.settingsLocked');
+    expect(header).toContain('chat.kiro.permissionAsk');
+    expect(header).toContain('chat.kiro.permissionFull');
+  });
+
   it('wires chat capability helpers and the Kiro composer placeholder', () => {
     const page = source('index.tsx');
     expect(page).toContain('kiroChatStance');

@@ -121,6 +121,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "00034_local_gateway_desired_running_default_off",
         include_str!("00034_local_gateway_desired_running_default_off.sql"),
     ),
+    (
+        "00035_chat_runtime_permission_options",
+        include_str!("00035_chat_runtime_permission_options.sql"),
+    ),
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {

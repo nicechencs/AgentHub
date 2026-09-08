@@ -2724,14 +2724,21 @@ export const en = {
       resizeAria: "Resize conversation and composer",
     },
     kiro: {
-      oneshotHint: "Kiro new chats can tap allow/deny; you can't add more mid-run, but you can queue for the next turn.",
+      oneshotHint: "Kiro new chats can tap allow, always allow, or deny; you can't add more mid-run, but you can queue for the next turn.",
       oneshotDetail: 'With the CLI installed, this runs on this computer. Older chats keep their original mode; start a new chat for continuous conversation. Terminal command completion and ghost text are not on this page.',
       settingsLocked: 'This Kiro chat has started. Start a new chat to change its model, reasoning effort, or permissions.',
-      placeholder: "After send you can tap allow/deny. You can't add more mid-run; you can queue for the next turn.",
+      placeholder: "After send you can tap allow, always allow, or deny. You can't add more mid-run; you can queue for the next turn.",
+      permissionTitle: "Permissions",
+      permissionAsk: "Help me approve",
+      permissionAskHint: "Ask before each action",
+      permissionFull: "Full access",
+      permissionFullHint: "Don't ask again in this chat",
+      enableFullTitle: "Turn on full access?",
     },
     runtime: {
       submit: 'Submit',
       allow: 'Allow',
+      allowAlways: 'Always allow',
       deny: 'Deny',
     },
     runtimeOps: {
@@ -2935,10 +2942,13 @@ export const en = {
       none: "This agent's headless mode cannot skip confirmation",
       footerOff: "This feature is currently for testing only",
       footerSkip: "Auto-approve is on · the agent will change files without asking",
+      footerKiroFull: "Full access is on · files and commands will run without asking",
       footerTrust: "Auto-approve is on · trusts project files only; may still ask",
       footerNone: "This agent cannot skip confirmation in Chat; auto-approve will not apply",
       confirmSkip:
         "Turns on skipping tool confirmation. The agent can change files and run commands directly. Only turn this on if you trust the working directory.",
+      confirmKiroFull:
+        "This chat will stop asking for each action, so the agent can edit files and run commands. Only turn this on if you trust the working directory.",
       confirmTrust:
         "Trusts files in the current project. This agent will not skip all tool confirmation and may still stop for approval. Only turn this on if you trust the working directory.",
     },

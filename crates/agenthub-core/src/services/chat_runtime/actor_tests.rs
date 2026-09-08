@@ -136,6 +136,7 @@ fn non_retryable_notification_error_terminalizes_message_and_controls() {
                 title: "执行命令".into(),
                 detail: "safe".into(),
                 questions: Vec::new(),
+                permission_options: Vec::new(),
             },
             "item/commandExecution/requestApproval",
             "1",
@@ -235,6 +236,7 @@ fn stop_wins_over_late_allow_and_reply_before_stop_is_sent() {
         title: "执行命令".into(),
         detail: "safe".into(),
         questions: Vec::new(),
+        permission_options: Vec::new(),
     };
     let (_directory, transport, log) = fake_transport();
     first_worker.transport = Some(transport);
@@ -400,6 +402,7 @@ fn empty_approval_answers_are_treated_as_absent() {
                 title: "执行命令".into(),
                 detail: "safe".into(),
                 questions: Vec::new(),
+                permission_options: Vec::new(),
             },
             "session/request_permission",
             "server-1",
@@ -507,17 +510,63 @@ fn file_and_question_server_requests_become_pending_runtime_requests() {
 }
 
 #[test]
+fn acp_permission_snapshot_keeps_allow_always_option() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "always");
+    let mut worker = worker(&db, "always");
+    worker.agent = AgentId::Kiro;
+    worker.store.enable_if_new("always").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .server_request(
+            json!("perm-1"),
+            "session/request_permission",
+            &json!({
+                "turnId": "run-1",
+                "toolCall": { "title": "写文件" },
+                "options": [
+                    {"optionId": "once", "kind": "allow_once"},
+                    {"optionId": "always", "kind": "allow_always"},
+                    {"optionId": "reject", "kind": "reject_once"}
+                ]
+            }),
+        )
+        .unwrap();
+
+    let snapshot = worker.store.snapshot("always", None).unwrap();
+    assert_eq!(snapshot.pending_requests.len(), 1);
+    assert_eq!(
+        snapshot.pending_requests[0].permission_options,
+        vec![
+            RuntimePermissionOption {
+                id: "once".into(),
+                kind: "allow_once".into(),
+            },
+            RuntimePermissionOption {
+                id: "always".into(),
+                kind: "allow_always".into(),
+            },
+            RuntimePermissionOption {
+                id: "reject".into(),
+                kind: "reject_once".into(),
+            },
+        ]
+    );
+}
+
+#[test]
 fn acp_permission_uses_server_option_ids_without_auto_allow_always() {
     let options = vec![
-        AcpPermissionOption {
+        RuntimePermissionOption {
             id: "custom-allow".into(),
             kind: "allow_always".into(),
         },
-        AcpPermissionOption {
+        RuntimePermissionOption {
             id: "custom-once".into(),
             kind: "allow_once".into(),
         },
-        AcpPermissionOption {
+        RuntimePermissionOption {
             id: "custom-reject".into(),
             kind: "reject_once".into(),
         },
@@ -527,10 +576,18 @@ fn acp_permission_uses_server_option_ids_without_auto_allow_always() {
         json!({"outcome":{"outcome":"selected","optionId":"custom-once"}})
     );
     assert_eq!(
+        acp_permission_reply(&options, "accept_always").unwrap(),
+        json!({"outcome":{"outcome":"selected","optionId":"custom-allow"}})
+    );
+    assert_eq!(
         acp_permission_reply(&options, "decline").unwrap(),
         json!({"outcome":{"outcome":"selected","optionId":"custom-reject"}})
     );
     assert!(acp_permission_reply(&[], "accept").is_err());
+    assert!(acp_permission_reply(&[], "accept_always")
+        .unwrap_err()
+        .to_string()
+        .contains("不能一直允许"));
     assert_eq!(
         acp_permission_reply(&[], "decline").unwrap(),
         json!({"outcome":{"outcome":"cancelled"}})
