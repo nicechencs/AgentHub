@@ -1257,6 +1257,8 @@ export const en = {
     nav: {
       title: "Routes",
       aria: "Routes section",
+      collapse: "Collapse Routes nav",
+      expand: "Expand Routes nav",
       resize: "Resize width",
       list: "Route list",
       board: "Board",
