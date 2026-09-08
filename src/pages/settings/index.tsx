@@ -28,6 +28,7 @@ import type { AppSettings } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { BackupsPanel } from '@/pages/backups/BackupsPanel';
 import { AboutPanel } from './AboutPanel';
+import { FeaturesPanel } from './FeaturesPanel';
 import { LocalPanel } from './LocalPanel';
 import { PreferencesPanel } from './PreferencesPanel';
 import {
@@ -197,6 +198,7 @@ export default function SettingsPage({
   const settingsTabList = (
     <TabsList data-help="settings-tabs">
       <TabsTrigger value="preferences">{t('settings.page.tabPreferences')}</TabsTrigger>
+      <TabsTrigger value="features">{t('settings.page.tabFeatures')}</TabsTrigger>
       <TabsTrigger value="local">{t('settings.page.tabLocal')}</TabsTrigger>
       <TabsTrigger value="backups">{t('settings.page.tabBackups')}</TabsTrigger>
       <TabsTrigger value="about" className="gap-1.5">
@@ -217,7 +219,7 @@ export default function SettingsPage({
       <div className="flex h-full min-h-0 flex-col">
         {settingsHeader}
         <div className={cn('min-h-0 flex-1 overflow-y-auto', pageRhythm.workbenchX, pageRhythm.workbenchPadT, pageRhythm.workbenchY)}>
-          <div className={pageRhythm.readingColumn}>
+          <div className={pageRhythm.overviewColumn}>
             <SettingsSkeleton />
           </div>
         </div>
@@ -230,7 +232,7 @@ export default function SettingsPage({
       <div className="flex h-full min-h-0 flex-col">
         {settingsHeader}
         <div className={cn('min-h-0 flex-1 overflow-y-auto', pageRhythm.workbenchX, pageRhythm.workbenchPadT, pageRhythm.workbenchY)}>
-          <div className={pageRhythm.readingColumn}>
+          <div className={pageRhythm.overviewColumn}>
             <ErrorState error={error ?? new Error(t('settings.page.emptyError'))} onRetry={() => void load()} />
           </div>
         </div>
@@ -253,7 +255,7 @@ export default function SettingsPage({
             <div className={pageRhythm.chrome}>{settingsTabList}</div>
           </div>
           <div className={cn('min-h-0 flex-1 overflow-y-auto', pageRhythm.workbenchX, pageRhythm.workbenchY)}>
-            <div className={pageRhythm.readingColumn} data-help="settings-body">
+            <div className={pageRhythm.overviewColumn} data-help="settings-body">
               <TabsContent value="preferences">
                 <PreferencesPanel
                   settings={settings}
@@ -262,6 +264,10 @@ export default function SettingsPage({
                   committedThemeRef={committedThemeRef}
                   committedLanguageRef={committedLanguageRef}
                 />
+              </TabsContent>
+
+              <TabsContent value="features">
+                <FeaturesPanel />
               </TabsContent>
 
               <TabsContent value="local">

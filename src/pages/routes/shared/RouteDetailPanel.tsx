@@ -627,7 +627,7 @@ function CopyableEndpoint({
         }}
       >
         <span className={cn('min-w-0 truncate font-mono text-xs text-secondary', className)}>{text}</span>
-        <Copy className="h-3 w-3 shrink-0 text-muted" aria-hidden />
+        <Copy className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden />
       </button>
     </Hint>
   );

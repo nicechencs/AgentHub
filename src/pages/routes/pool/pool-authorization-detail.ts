@@ -73,10 +73,23 @@ export const POOL_AUTHORIZATION_ALWAYS_COLUMNS: readonly PoolAuthorizationColumn
 
 export function poolAuthorizationQuotaParts(
   item: Pick<PoolAuthorizationItem, 'quota5hPct' | 'quota7dPct'>,
+  t?: TranslateFn,
 ): string[] {
   const parts: string[] = [];
-  if (hasQuotaWindow(item.quota7dPct)) parts.push(`7d ${item.quota7dPct}%`);
-  if (hasQuotaWindow(item.quota5hPct)) parts.push(`5h ${item.quota5hPct}%`);
+  if (hasQuotaWindow(item.quota7dPct)) {
+    parts.push(
+      t
+        ? t('connections.list.quota7dUsedPct', { pct: item.quota7dPct as number })
+        : `7 天已用 ${item.quota7dPct}%`,
+    );
+  }
+  if (hasQuotaWindow(item.quota5hPct)) {
+    parts.push(
+      t
+        ? t('connections.list.quota5hUsedPct', { pct: item.quota5hPct as number })
+        : `5 小时已用 ${item.quota5hPct}%`,
+    );
+  }
   return parts;
 }
 

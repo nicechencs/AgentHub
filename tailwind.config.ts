@@ -4,14 +4,14 @@ import { buildTailwindFontSize } from './src/styles/tokens';
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
-    // 覆盖默认 2xl/3xl… 阶，只保留 TYPE_SCALE 三档 + 同像素别名
+    // 覆盖默认 2xl/3xl… 阶，只保留 TYPE_SCALE 四档 + 同像素别名
     fontSize: buildTailwindFontSize(),
     // 全量替换默认阶，只留语义名；sm/md/lg/xl 不再生成
     borderRadius: {
       none: '0px',
-      btn: 'var(--radius-sm)', // 6px：按钮、输入、菜单项、小控件
-      card: 'var(--radius)', // 8px：卡片、弹层、嵌套面板、代码井、列表行
-      composer: 'var(--radius-lg)', // 12px：Chat 输入壳、用户气泡
+      btn: 'var(--radius-sm)', // 8px：按钮、输入、菜单项、小控件
+      card: 'var(--radius)', // 12px：卡片、弹层、嵌套面板、代码井、列表行
+      composer: 'var(--radius-lg)', // 16px：Chat 输入壳、用户气泡
       mark: 'var(--radius-mark)', // 22%：产品标、Agent 图标
       full: '9999px',
     },
@@ -27,16 +27,36 @@ export default {
         border: {
           DEFAULT: 'var(--border)',
           strong: 'var(--border-strong)',
+          control: 'var(--border-control)',
         },
         primary: 'var(--text-primary)',
         secondary: 'var(--text-secondary)',
         muted: 'var(--text-muted)',
         disabled: 'var(--text-disabled)',
-        accent: 'var(--accent)',
-        success: 'var(--success)',
-        warning: 'var(--warning)',
-        danger: 'var(--danger)',
-        info: 'var(--info)',
+        accent: {
+          DEFAULT: 'var(--accent)',
+          hover: 'var(--accent-hover)',
+          pressed: 'var(--accent-pressed)',
+          foreground: 'var(--accent-foreground)',
+          subtle: 'var(--accent-subtle)',
+          text: 'var(--accent-text)',
+        },
+        success: {
+          DEFAULT: 'var(--success)',
+          subtle: 'var(--success-subtle)',
+        },
+        warning: {
+          DEFAULT: 'var(--warning)',
+          subtle: 'var(--warning-subtle)',
+        },
+        danger: {
+          DEFAULT: 'var(--danger)',
+          subtle: 'var(--danger-subtle)',
+        },
+        info: {
+          DEFAULT: 'var(--info)',
+          subtle: 'var(--info-subtle)',
+        },
         claude: 'var(--agent-claude)',
         codex: 'var(--agent-codex)',
         kimi: 'var(--agent-kimi)',

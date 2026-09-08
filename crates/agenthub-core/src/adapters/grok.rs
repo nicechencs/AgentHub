@@ -16,6 +16,7 @@ use crate::utils::grok_toml::{
     overlay_into_credentials,
 };
 use crate::utils::paths::{agent_home, home_dir};
+use crate::utils::process::apply_no_window;
 use crate::utils::redact::mask_secret_preview;
 use toml_edit::{DocumentMut, Item};
 
@@ -1016,7 +1017,10 @@ fn list_grok_cli_models() -> Vec<String> {
     let Some(binary) = detect_installation().binary_path else {
         return Vec::new();
     };
-    let output = Command::new(binary).arg("models").output().ok();
+    let mut cmd = Command::new(binary);
+    cmd.arg("models");
+    apply_no_window(&mut cmd);
+    let output = cmd.output().ok();
     let Some(output) = output.filter(|item| item.status.success()) else {
         return Vec::new();
     };

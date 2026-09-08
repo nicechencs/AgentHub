@@ -1,13 +1,17 @@
 ---
 title: Claude Chat B3 探测结论
-type: status
-status: current
+type: archive
+status: archived
 owner: maintainers
 audience: chat implementers
 updated: 2026-09-08
 ---
 
 # Claude Chat B3 探测结论
+
+> **归档（2026-09-08）**。本页是一次性审查、批次记录或复核，不是现行契约。当前实现见 [当前实现状态](../STATUS.md)。下文保留原文，不要按此页派工。
+>
+> **Archived / 已归档**: Historical review or batch record. Do not use it as the current implementation contract.
 
 承接 [统一体验方案](../proposals/chat-unified-experience.md)、[S0](chat-codex-s0.md) 与 [B2](chat-codex-b2.md)。本记录只回答：**当前 Claude 是否能以不大的改动复用持续聊天（`ChatRuntime`，后台会话控制）**。结论是否定的；本批 **未** 把 Claude 空会话接到 runtime，也 **未** 伪造确认/补充按钮。新空 Grok / Kiro 会话已经 enable 持续聊天，**不**在本否定结论范围内。
 
@@ -21,7 +25,7 @@ updated: 2026-09-08
 | `crates/agenthub-core/src/adapters/claude.rs` `build_run_spec` | Claude Chat 路径是 **`claude -p` + `--output-format stream-json`**（可选 `--resume`）；危险模式用 `--dangerously-skip-permissions`，**不是**交互式批准通道 |
 | 同文件 `capability(SessionResume)` | 标明「Chat 后续轮次走 print+resume」 |
 | `crates/agenthub-core/src/adapters/session_resume.rs` | Claude/Codex 均支持 print-resume；**不等于** app-server 式 reply/steer/cancel |
-| `docs/status/chat-codex-s0.md` T03 | Claude Agent SDK 仅为候选；第三方 claude.ai 登录/额度需官方批准；**未做** SDK 登录或双向交互实验 |
+| `docs/archive/chat-codex-s0.md` T03 | Claude Agent SDK 仅为候选；第三方 claude.ai 登录/额度需官方批准；**未做** SDK 登录或双向交互实验 |
 | 方案文 | 「无真实确认通道不能展示可点击的假确认」；Claude 需「经验证的交互接口」 |
 
 ## 阻塞项

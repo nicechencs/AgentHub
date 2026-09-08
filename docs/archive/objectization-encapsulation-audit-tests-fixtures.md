@@ -1,12 +1,16 @@
 ---
 title: 对象化与封装审查：测试、Mock 与 Fixture
-type: explanation
-status: current
+type: archive
+status: archived
 owner: maintainers
-updated: 2026-08-27
+updated: 2026-09-08
 ---
 
 # 对象化与封装审查：测试、Mock 与 Fixture
+
+> **归档（2026-09-08）**。本页是一次性审查、批次记录或复核，不是现行契约。当前实现见 [当前实现状态](../STATUS.md)。下文保留原文，不要按此页派工。
+>
+> **Archived / 已归档**: Historical review or batch record. Do not use it as the current implementation contract.
 
 本分册记录测试、E2E、Mock、Fixture 和测试脚本的逐文件复核结果。它关注测试对象是否完整承载状态、辅助对象是否泄漏可变内部数据，以及 Mock 是否与生产对象模型漂移。总览见[对象化与封装审查](objectization-encapsulation-audit.md)。
 

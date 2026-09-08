@@ -54,7 +54,7 @@ export function Sub2ApiGroupCell({
           data-sub2api-group-edit=""
         >
           {body}
-          <ChevronDown className="h-3 w-3 shrink-0 text-muted" aria-hidden />
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-[16rem]">

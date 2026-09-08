@@ -47,6 +47,8 @@ export type SkillsLibraryPanelProps = {
   onOpenDir?: (path: string) => void;
   onDeleteShared?: (row: InstalledSkillDto) => void;
   onDeleteFromTool?: (skillId: string, agentId: AgentKey, name: string) => void;
+  onEmptyInstall?: () => void;
+  onEmptyMarket?: () => void;
   agents: AgentColumn[];
   installedAgentIds: Set<AgentKey> | AgentKey[];
 };
@@ -56,7 +58,7 @@ export function SkillsLibraryPanel(props: SkillsLibraryPanelProps) {
     error, loading, onRetry, search, onSearchChange, filter, onFilterChange,
     filterCounts, selected, onClearSelected, batchSyncing, onBatchEnable,
     filtered, allSelected, pendingCells, importingIds, onToggleSelect, onToggleSelectAll,
-    onCellClick, onCellProject, onPreview, onFollow, activeKey, onAdopt, onOpenDir, onDeleteShared, onDeleteFromTool, agents, installedAgentIds,
+    onCellClick, onCellProject, onPreview, onFollow, activeKey, onAdopt, onOpenDir, onDeleteShared, onDeleteFromTool, onEmptyInstall, onEmptyMarket, agents, installedAgentIds,
   } = props;
   const { t } = useI18n();
 
@@ -151,6 +153,17 @@ export function SkillsLibraryPanel(props: SkillsLibraryPanelProps) {
               >
                 {t('skills.empty.clearFilter')}
               </Button>
+            ) : onEmptyInstall ? (
+              <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+                <Button size="sm" onClick={onEmptyInstall}>
+                  {t('skills.page.installCta')}
+                </Button>
+                {onEmptyMarket ? (
+                  <Button size="sm" variant="outline" onClick={onEmptyMarket}>
+                    {t('skills.empty.goMarket')}
+                  </Button>
+                ) : null}
+              </div>
             ) : undefined
           }
         />

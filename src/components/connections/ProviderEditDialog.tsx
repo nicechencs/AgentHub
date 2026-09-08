@@ -244,7 +244,7 @@ export function ProviderEditDialog({
   const [customSnapshot, setCustomSnapshot] = React.useState<OfficialToggleSnapshot | null>(
     null,
   );
-  const [showAdvanced, setShowAdvanced] = React.useState(true);
+  const [showAdvanced, setShowAdvanced] = React.useState(false);
   /** Backend config schema when Catalog declares a projector. */
   const [configSchema, setConfigSchema] = React.useState<AgentConfigSchemaDto | null>(
     null,
@@ -1058,27 +1058,11 @@ export function ProviderEditDialog({
         <div className="flex flex-col gap-3">
           {!compact ? (
             <>
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-border bg-canvas px-3 py-2 text-meta text-muted">
-            <div className="min-w-0 flex-1 space-y-0.5">
-              <div className="min-w-0">
-                <Tip label={livePaths.hint}>
-                  <span className="text-secondary">{t('connections.providerDialog.liveConfig')}</span>
-                </Tip>
-                <CopyableFileName path={livePaths.config} wrap="break" />
-              </div>
-              {isLiveFilePath(livePaths.auth) ? (
-                <div className="min-w-0">
-                  <span className="text-secondary">{t('connections.providerDialog.liveAuth')}</span>
-                  <CopyableFileName path={livePaths.auth} wrap="break" />
-                </div>
-              ) : null}
-            </div>
-            <OpenDirButton
-              labeled
-              title={t('connections.providerDialog.openDirTitle', { dir: livePaths.openDir })}
-              onClick={() => void openLiveDir()}
-            />
-          </div>
+          {!isEdit ? (
+            <p className="text-meta text-secondary">
+              {t('connections.providerDialog.whatHappensOnAdd')}
+            </p>
+          ) : null}
 
           {official ? (
             <Hint label={t('connections.providerDialog.useOfficialHint', { label: official.label })}>
@@ -1116,62 +1100,10 @@ export function ProviderEditDialog({
             </Hint>
           )}
 
-          {/* 智能识别始终可粘贴；勾选官方不灰掉这块。粘贴成功会改成自定义。 */}
-          <div className="flex flex-col gap-1.5 rounded-card border border-border bg-canvas p-3">
-            <Hint
-              label={
-                useOfficial
-                  ? t('connections.providerDialog.smartDetectOfficialHint')
-                  : t('connections.providerDialog.smartDetectHint')
-              }
-            >
-              <span className="flex items-center gap-1 text-xs font-medium text-secondary">
-                <Sparkles className="h-3.5 w-3.5" />
-                {t('connections.providerDialog.smartDetect')}
-                {useOfficial ? (
-                  <span className="font-normal text-muted">
-                    {t('connections.providerDialog.smartDetectOfficialPaste')}
-                  </span>
-                ) : null}
-              </span>
-            </Hint>
-            <textarea
-              value={pasteBuf}
-              onChange={(e) => {
-                setPasteBuf(e.target.value);
-              }}
-              onPaste={(e) => {
-                const text = e.clipboardData.getData('text');
-                if (text && text.length > 12) {
-                  window.setTimeout(() => {
-                    setPasteBuf(text);
-                    runSmartPaste(text, { fillName: true });
-                  }, 0);
-                }
-              }}
-              rows={3}
-              placeholder={t('connections.providerDialog.pastePlaceholder')}
-              className="w-full resize-none rounded-btn border border-border bg-panel px-2.5 py-2 font-mono text-xs text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/60"
-              spellCheck={false}
-            />
-            <div className="flex min-h-[1.75rem] flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                disabled={!pasteBuf.trim()}
-                onClick={onSmartPaste}
-              >
-                {t('connections.providerDialog.detectFill')}
-              </Button>
-              <span className="text-meta text-muted">
-                {detectHints.length > 0 ? detectHints.join(' · ') : '\u00a0'}
-              </span>
-            </div>
-          </div>
-
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-muted">{t('connections.apiKeyDialog.name')}</span>
+            <span className="text-xs text-muted">
+              {isEdit ? t('connections.apiKeyDialog.name') : t('connections.apiKeyDialog.nameOptional')}
+            </span>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -1181,21 +1113,6 @@ export function ProviderEditDialog({
               autoComplete="off"
             />
           </label>
-
-          {/* 固定占位，避免 tomlOpaque 出现时把表单顶高 */}
-          <p
-            className={cn(
-              'min-h-[2.25rem] rounded-card border px-2.5 py-2 text-meta',
-              tomlOpaque
-                ? 'border-border bg-canvas text-muted'
-                : 'border-transparent text-transparent',
-            )}
-            aria-hidden={!tomlOpaque}
-          >
-            {tomlOpaque
-              ? t('connections.providerDialog.tomlOpaque')
-              : '\u00a0'}
-          </p>
             </>
           ) : null}
 
@@ -1426,12 +1343,92 @@ export function ProviderEditDialog({
               {t('connections.providerDialog.advancedClose')}
             </button>
             {showAdvanced ? (
-              <ConfigEditor
-                value={configText === REDACTED_MARKER ? '' : configText}
-                format={configFormat}
-                onChange={useOfficial ? () => {} : onConfigTextChange}
-                readOnly={useOfficial}
-              />
+              <>
+                {tomlOpaque ? (
+                  <p className="rounded-card border border-border bg-canvas px-2.5 py-2 text-meta text-muted">
+                    {t('connections.providerDialog.tomlOpaque')}
+                  </p>
+                ) : null}
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-border bg-canvas px-3 py-2 text-meta text-muted">
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <div className="min-w-0">
+                      <Tip label={livePaths.hint}>
+                        <span className="text-secondary">{t('connections.providerDialog.liveConfig')}</span>
+                      </Tip>
+                      <CopyableFileName path={livePaths.config} wrap="break" />
+                    </div>
+                    {isLiveFilePath(livePaths.auth) ? (
+                      <div className="min-w-0">
+                        <span className="text-secondary">{t('connections.providerDialog.liveAuth')}</span>
+                        <CopyableFileName path={livePaths.auth} wrap="break" />
+                      </div>
+                    ) : null}
+                  </div>
+                  <OpenDirButton
+                    labeled
+                    title={t('connections.providerDialog.openDirTitle', { dir: livePaths.openDir })}
+                    onClick={() => void openLiveDir()}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5 rounded-card border border-border bg-canvas p-3">
+                  <Hint
+                    label={
+                      useOfficial
+                        ? t('connections.providerDialog.smartDetectOfficialHint')
+                        : t('connections.providerDialog.smartDetectHint')
+                    }
+                  >
+                    <span className="flex items-center gap-1 text-xs font-medium text-secondary">
+                      <Sparkles className="h-3.5 w-3.5" />
+                      {t('connections.providerDialog.smartDetect')}
+                      {useOfficial ? (
+                        <span className="font-normal text-muted">
+                          {t('connections.providerDialog.smartDetectOfficialPaste')}
+                        </span>
+                      ) : null}
+                    </span>
+                  </Hint>
+                  <textarea
+                    value={pasteBuf}
+                    onChange={(e) => {
+                      setPasteBuf(e.target.value);
+                    }}
+                    onPaste={(e) => {
+                      const text = e.clipboardData.getData('text');
+                      if (text && text.length > 12) {
+                        window.setTimeout(() => {
+                          setPasteBuf(text);
+                          runSmartPaste(text, { fillName: true });
+                        }, 0);
+                      }
+                    }}
+                    rows={3}
+                    placeholder={t('connections.providerDialog.pastePlaceholder')}
+                    className="w-full resize-none rounded-btn border border-border bg-panel px-2.5 py-2 font-mono text-xs text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/60"
+                    spellCheck={false}
+                  />
+                  <div className="flex min-h-[1.75rem] flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled={!pasteBuf.trim()}
+                      onClick={onSmartPaste}
+                    >
+                      {t('connections.providerDialog.detectFill')}
+                    </Button>
+                    <span className="text-meta text-muted">
+                      {detectHints.length > 0 ? detectHints.join(' · ') : '\u00a0'}
+                    </span>
+                  </div>
+                </div>
+                <ConfigEditor
+                  value={configText === REDACTED_MARKER ? '' : configText}
+                  format={configFormat}
+                  onChange={useOfficial ? () => {} : onConfigTextChange}
+                  readOnly={useOfficial}
+                />
+              </>
             ) : null}
           </div>
           ) : null}

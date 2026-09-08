@@ -31,6 +31,7 @@ const LAYOUT_STORAGE_KEY = {
   dashboardUsageColumnWidths: `${PREFIX}dashboard-usage-column-widths`,
   chatComposerPaneHeight: `${PREFIX}chat-composer-pane-height`,
   chatPreviewWidth: `${PREFIX}chat-preview-width`,
+  chatRailWidth: `${PREFIX}chat-rail-width`,
   chatBootstrap: `${PREFIX}chat-bootstrap`,
 } as const;
 
@@ -49,6 +50,8 @@ export const StorageKey = {
   usageGuideDismissed: `${PREFIX}usage-guide-dismissed`,
   dismissedAlertIds: `${PREFIX}dismissed-alert-ids`,
   sidebarCollapsed: `${PREFIX}sidebar-collapsed`,
+  /** 路由二级导航是否收起 */
+  routesNavCollapsed: `${PREFIX}routes-nav-collapsed`,
   /** 点侧栏「路由」时是否自动折叠最左侧栏 */
   sidebarAutoCollapseOnRoutes: `${PREFIX}sidebar-auto-collapse-on-routes`,
   /** 侧栏是否显示「路由」入口；缺省显示（已稳定） */
@@ -57,6 +60,14 @@ export const StorageKey = {
   pluginsNavVisible: `${PREFIX}plugins-nav-visible`,
   /** 侧栏是否显示 Sub2API 入口；缺省隐藏 */
   sub2apiNavVisible: `${PREFIX}sub2api-nav-visible`,
+  /** 侧栏是否显示「技能」入口；缺省显示 */
+  skillsNavVisible: `${PREFIX}skills-nav-visible`,
+  /** 侧栏是否显示 MCP 入口；缺省显示 */
+  mcpNavVisible: `${PREFIX}mcp-nav-visible`,
+  /** 侧栏是否显示「项目」入口；缺省显示 */
+  projectsNavVisible: `${PREFIX}projects-nav-visible`,
+  /** 侧栏是否显示「连接」入口；缺省显示 */
+  connectionsNavVisible: `${PREFIX}connections-nav-visible`,
   /** Sub2API 登录会话（不含导入到连接的 Key） */
   sub2apiSession: `${PREFIX}sub2api-session`,
   /** Last Sub2API site URL (even when logged out) */

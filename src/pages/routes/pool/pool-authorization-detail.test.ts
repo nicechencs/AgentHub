@@ -150,7 +150,7 @@ describe('pool authorization detail fields', () => {
     });
     expect(hasQuotaWindow(row.quota7dPct)).toBe(true);
     expect(formatPoolTimestamp(row.lastUsedAt)).toMatch(/2026-08-31/);
-    expect(poolAuthorizationQuotaParts(row)).toEqual(['7d 41%']);
+    expect(poolAuthorizationQuotaParts(row)).toEqual(['7 天已用 41%']);
     expect(poolAuthorizationVisibleColumns([row])).toEqual([
       'login',
       'kind',

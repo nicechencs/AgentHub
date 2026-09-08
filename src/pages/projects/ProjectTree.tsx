@@ -152,7 +152,8 @@ const ProjectGroupCard = memo(function ProjectGroupCard({
     setPage(0);
   }, [queryKey, sortKey, group.id]);
 
-  const kids = keepPane ? visibleSessions(group.id) : [];
+  const listedKids = visibleSessions(group.id);
+  const kids = keepPane ? listedKids : [];
   const nested = keepPane ? nestedSessionRows(kids, sortKey) : [];
   const pages = sessionPageCount(nested.length);
   const currentPage = clampSessionPage(page, nested.length);
@@ -244,7 +245,9 @@ const ProjectGroupCard = memo(function ProjectGroupCard({
           {relativeTime(group.updatedAt, t)}
         </span>
         <span className="whitespace-nowrap text-xs text-muted tabular-nums">
-          {t('projects.tree.sessionCount', { n: group.sessionCount })}
+          {queryKey && listedKids.length > 0
+            ? t('projects.tree.matchCount', { n: listedKids.length })
+            : t('projects.tree.sessionCount', { n: group.sessionCount })}
         </span>
         <span className="whitespace-nowrap text-xs text-muted tabular-nums">
           {fmtBytes(group.sizeBytes)}

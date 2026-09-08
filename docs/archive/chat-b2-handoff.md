@@ -1,14 +1,18 @@
 ---
 title: Chat 第二批开发交接提示词
-type: how-to
-status: current
+type: archive
+status: archived
 owner: maintainers
-updated: 2026-09-05
+updated: 2026-09-08
 ---
 
 # Chat 第二批开发交接提示词
 
-将下面整段交给下一位开发 Agent。当前事实和测试结果只维护在 [B1 实施记录](../status/chat-codex-b1.md)，审查任务另用 [review 提示词](chat-review-handoff.md)。换电脑前需要取得包含这些文件的提交；本地提交不等于已经推送到远端。
+> **归档（2026-09-08）**。这是 Chat B2 的开发交接提示词，不是现行操作。当前实现见 [当前实现状态](../STATUS.md) 和 [Chat 与 Agent](../concepts/chat-and-agents.md)；实施证据见 [B1](chat-codex-b1.md)、[B2](chat-codex-b2.md)。下文保留原文，便于核对那一批怎么开工，不要按此页派工。
+>
+> **Archived / 已归档**: Historical launch prompt for Chat B2. Do not use it as the current development procedure.
+
+将下面整段交给下一位开发 Agent。当前事实和测试结果只维护在 [B1 实施记录](chat-codex-b1.md)，审查任务另用 [review 提示词](chat-review-handoff.md)。跨会话接手时按 [Agent 协作指南](../guides/agent-workflow.md#交接与恢复) 核对基线、改动归属和验证结果；本页的提交、测试和环境记录都是历史证据，必须在当前 HEAD、工作区和实际能力上重新核对。换电脑前需要取得包含这些文件的提交；本地提交不等于已经推送到远端。
 
 ```text
 你接手 AgentHub 的 Chat 统一体验开发，请直接推进 B2 的实现、审查和验证，不要只返回设计方案。
@@ -16,9 +20,9 @@ updated: 2026-09-05
 目标：让未用过命令行的人也能操作不同 Agent。共用清晰的聊天界面，以每家真实能力适配；不克隆 VS Code 插件的私有 UI，不把按钮伪装成命令行文本。
 
 先确认：
-1. 阅读仓库 AGENTS.md、docs/proposals/chat-unified-experience.md、docs/status/chat-codex-b1.md。
+1. 阅读仓库 AGENTS.md、docs/proposals/chat-unified-experience.md、docs/archive/chat-codex-b1.md。
 2. 检查当前分支、commit、工作区 diff；日常工作在 dev，保留已有修改。B1 代码已在 c03acb540b0327cd3fb81a56060d930e7836585a，提示词初版在 357853762ac902808b6fac5636786abddefaa22c。还需取得随后补充测试记录的提交。db40f6fbf9c86a184707f7ff8259a5bac361bb24 只是任务最初基线，其后存在其他并行功能提交，不要全部算成 B1。
-3. 结构问题优先 CodeGraph；不可用时定向读文件，不重复全仓探索。用户已允许 GPT-5.6 Terra/Luna 子 Agent；仅把文件不重叠的独立任务并行。
+3. 跨会话接手按仓库根目录 `docs/guides/agent-workflow.md` 的“交接与恢复”章节核对基线、改动归属和验证结果；需要委派时再按“委派与并发”章节执行。
 
 已实现，不要重新设计：
 - 新空 Codex 会话走 ChatRuntime + app-server，旧消息会话与其他 Agent 保持 legacy。

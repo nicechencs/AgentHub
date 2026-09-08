@@ -30,6 +30,15 @@ export async function pickDirectory(options?: {
   return getBackend().settings.pickDirectory(options);
 }
 
+/** Native file picker. `null` = cancelled. */
+export async function pickFile(options?: {
+  title?: string;
+  defaultPath?: string | null;
+  filters?: ReadonlyArray<{ name: string; extensions: readonly string[] }>;
+}): Promise<string | null> {
+  return getBackend().settings.pickFile(options);
+}
+
 /** GUI log line (op + agent + last4 + optional route fields). Best-effort; never pass a raw key. */
 export async function logGuiEvent(
   op: string,

@@ -40,7 +40,7 @@ export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDiv
 }
 
 export function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
-  // 段标题走 body 档（13px），靠 medium 与正文区分
+  // 段标题与正文同字号，靠字重区分
   return <h3 className={cn('text-body font-medium', className)} {...props} />;
 }
 

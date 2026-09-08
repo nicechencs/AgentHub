@@ -225,7 +225,7 @@ export function SkillMarkdownPreviewPanel({
               className={cn(segmentedItemClass(mode === 'preview', 'sm'), 'h-6 gap-1 px-2')}
               onClick={() => setMode('preview')}
             >
-              <Eye className="h-3 w-3" />
+              <Eye className="h-3.5 w-3.5" />
               {t('skills.preview.modePreview')}
             </button>
             <button
@@ -233,7 +233,7 @@ export function SkillMarkdownPreviewPanel({
               className={cn(segmentedItemClass(mode === 'source', 'sm'), 'h-6 gap-1 px-2')}
               onClick={() => setMode('source')}
             >
-              <Code2 className="h-3 w-3" />
+              <Code2 className="h-3.5 w-3.5" />
               {t('skills.preview.modeSource')}
             </button>
           </div>
@@ -306,7 +306,7 @@ export function SkillMarkdownPreviewPanel({
       <div
         ref={resolvedBodyRef as RefObject<HTMLDivElement>}
         tabIndex={-1}
-        className="min-h-0 min-w-0 flex-1 overflow-auto px-4 py-3 outline-none"
+        className="min-h-0 min-w-0 flex-1 overflow-auto px-3 py-3 outline-none"
         aria-busy={loading}
       >
         {loading ? (

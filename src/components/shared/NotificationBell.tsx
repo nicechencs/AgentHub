@@ -28,11 +28,15 @@ export function NotificationBell() {
   const navigate = useNavigate();
   const [alerts, setAlerts] = React.useState<DashboardAlert[]>([]);
   const [open, setOpen] = React.useState(false);
+  const [loadError, setLoadError] = React.useState(false);
 
   const refresh = React.useCallback(() => {
     listAlerts()
-      .then(setAlerts)
-      .catch(() => setAlerts([]));
+      .then((next) => {
+        setAlerts(next);
+        setLoadError(false);
+      })
+      .catch(() => setLoadError(true));
   }, []);
 
   React.useEffect(() => {
@@ -47,12 +51,15 @@ export function NotificationBell() {
 
   const handleClick = async (alert: DashboardAlert) => {
     setOpen(false);
+    const agentQuery = alert.agentId
+      ? `?agent=${encodeURIComponent(alert.agentId)}`
+      : '';
     switch (alert.actionKind) {
       case 'refresh-token':
-        navigate('/connections');
+        navigate(`/connections${agentQuery}`);
         break;
       case 'upgrade':
-        navigate('/agents');
+        navigate(`/agents${agentQuery}`);
         break;
     }
   };
@@ -60,6 +67,7 @@ export function NotificationBell() {
   const handleDismissAll = async () => {
     await Promise.all(alerts.map((a) => dismissAlert(a.id).catch(() => {})));
     setAlerts([]);
+    setLoadError(false);
   };
 
   return (
@@ -101,7 +109,22 @@ export function NotificationBell() {
           )}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {alerts.length === 0 ? (
+        {loadError && alerts.length === 0 ? (
+          <div className="flex flex-col items-start gap-2 px-2 py-4 text-sm text-secondary">
+            <p>{t('chrome.bell.loadFailed')}</p>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={(e) => {
+                e.preventDefault();
+                refresh();
+              }}
+            >
+              {t('chrome.bell.retry')}
+            </Button>
+          </div>
+        ) : alerts.length === 0 ? (
           <div className="flex items-center gap-2 px-2 py-4 text-sm text-secondary">
             <CheckCircle2 className="h-4 w-4 text-success" />
             {t('chrome.bell.empty')}

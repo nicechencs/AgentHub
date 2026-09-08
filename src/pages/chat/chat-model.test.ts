@@ -33,8 +33,13 @@ import {
   isLeftoverLocalRouteProvider,
   leftoverProviderIsCurrent,
   conversationResumeCommand,
+  conversationAgentLine,
+  conversationRailHint,
+  conversationRailMarkColor,
+  conversationRailSelectedFill,
   conversationTitle,
   cwdShortName,
+  isBlankConversationDraft,
   draftForFocusedConversation,
   filterConversations,
   groupConversationsByDay,
@@ -137,6 +142,75 @@ function processView(phase: AgentProcessView['phase']): AgentProcessView {
     updatedAt: 0,
   };
 }
+
+describe('isBlankConversationDraft', () => {
+  it('treats an untitled row without an official session as a draft', () => {
+    expect(isBlankConversationDraft({ title: '', nativeSessionId: null })).toBe(true);
+    expect(isBlankConversationDraft({ title: '  ', nativeSessionId: undefined })).toBe(true);
+    expect(isBlankConversationDraft({ title: 'hi', nativeSessionId: null })).toBe(false);
+    expect(isBlankConversationDraft({ title: '', nativeSessionId: 'sess-1' })).toBe(false);
+  });
+});
+
+describe('conversationAgentLine', () => {
+  it('names one or two agents and then counts extras', () => {
+    expect(conversationAgentLine(['claude'])).toBe(agentDisplayName('claude'));
+    expect(conversationAgentLine(['claude', 'pi'])).toBe(
+      `${agentDisplayName('claude')} · ${agentDisplayName('pi')}`,
+    );
+    expect(conversationAgentLine(['claude', 'pi', 'codex'])).toBe(
+      `${agentDisplayName('claude')} +2`,
+    );
+  });
+});
+
+describe('conversationRailHint', () => {
+  it('joins directory, time, and extra session facts without Agent names', () => {
+    expect(
+      conversationRailHint(
+        {
+          title: '',
+          agentIds: ['claude'],
+          cwd: 'D:\\demo',
+          updatedAt: new Date().toISOString(),
+          nativeSessionId: null,
+        },
+        t,
+      ),
+    ).toBe('D:\\demo · 刚刚 · 草稿');
+    expect(
+      conversationRailHint(
+        {
+          title: '修登录',
+          agentIds: ['claude'],
+          cwd: '',
+          updatedAt: new Date().toISOString(),
+          nativeSessionId: 'sess-1',
+        },
+        t,
+      ),
+    ).toBe('未设目录 · 刚刚 · 已关联官方会话 sess-1');
+  });
+});
+
+describe('conversationRailMarkColor', () => {
+  it('uses the first Agent brand, then the nav accent', () => {
+    expect(conversationRailMarkColor(['claude'])).toBe('var(--agent-claude)');
+    expect(conversationRailMarkColor(['claude', 'pi'])).toBe('var(--agent-claude)');
+    expect(conversationRailMarkColor([])).toBe('var(--accent)');
+  });
+});
+
+describe('conversationRailSelectedFill', () => {
+  it('washes the Agent mark onto the canvas', () => {
+    expect(conversationRailSelectedFill(['claude'])).toBe(
+      'color-mix(in srgb, var(--agent-claude) 28%, var(--bg-canvas))',
+    );
+    expect(conversationRailSelectedFill([])).toBe(
+      'color-mix(in srgb, var(--accent) 28%, var(--bg-canvas))',
+    );
+  });
+});
 
 describe('cwdShortName', () => {
   it('takes the last segment of a Windows path', () => {

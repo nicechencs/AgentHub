@@ -1,4 +1,5 @@
-import type { TranslateFn } from '@/lib/i18n';
+import type { MessageKey, TranslateFn } from '@/lib/i18n';
+import type { OptionalNavId } from '@/lib/ui-preferences';
 import type { LogLevel, SkillMarketSource } from '@/lib/types';
 
 export { GITHUB_NEW_ISSUE_URL, GITHUB_REPO_URL } from '@/lib/github';
@@ -8,7 +9,7 @@ export const SKILL_MARKET_VALUES: SkillMarketSource[] = ['auto', 'skills.sh', 's
 export const LOG_LEVEL_VALUES: LogLevel[] = ['error', 'warn', 'info', 'debug', 'trace'];
 
 /** Canonical Settings `?tab=` slugs. */
-export const SETTINGS_TABS = ['preferences', 'local', 'backups', 'about'] as const;
+export const SETTINGS_TABS = ['preferences', 'features', 'local', 'backups', 'about'] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 /**
@@ -19,6 +20,7 @@ export type SettingsTab = (typeof SETTINGS_TABS)[number];
  */
 export const SETTINGS_TAB_REDIRECTS: Record<string, { tab: SettingsTab }> = {
   preferences: { tab: 'preferences' },
+  features: { tab: 'features' },
   local: { tab: 'local' },
   backups: { tab: 'backups' },
   about: { tab: 'about' },
@@ -104,3 +106,45 @@ export function clampLogRetentionDays(n: number): number {
 export function clampUsageIntervalMin(n: number): number {
   return Math.min(24 * 60, Math.max(0, n));
 }
+
+/** 设置 → 侧栏：每个可开关入口的文案。顺序由 OPTIONAL_NAV_IDS 决定。 */
+export const OPTIONAL_NAV_VISIBLE_COPY: Record<
+  OptionalNavId,
+  { label: MessageKey; description: MessageKey; tip: MessageKey }
+> = {
+  skills: {
+    label: 'settings.general.skillsNavVisibleLabel',
+    description: 'settings.general.skillsNavVisibleDescription',
+    tip: 'settings.general.skillsNavVisibleTip',
+  },
+  mcp: {
+    label: 'settings.general.mcpNavVisibleLabel',
+    description: 'settings.general.mcpNavVisibleDescription',
+    tip: 'settings.general.mcpNavVisibleTip',
+  },
+  projects: {
+    label: 'settings.general.projectsNavVisibleLabel',
+    description: 'settings.general.projectsNavVisibleDescription',
+    tip: 'settings.general.projectsNavVisibleTip',
+  },
+  plugins: {
+    label: 'settings.general.pluginsNavVisibleLabel',
+    description: 'settings.general.pluginsNavVisibleDescription',
+    tip: 'settings.general.pluginsNavVisibleTip',
+  },
+  connections: {
+    label: 'settings.general.connectionsNavVisibleLabel',
+    description: 'settings.general.connectionsNavVisibleDescription',
+    tip: 'settings.general.connectionsNavVisibleTip',
+  },
+  sub2api: {
+    label: 'settings.general.sub2apiNavVisibleLabel',
+    description: 'settings.general.sub2apiNavVisibleDescription',
+    tip: 'settings.general.sub2apiNavVisibleTip',
+  },
+  routes: {
+    label: 'settings.general.routesNavVisibleLabel',
+    description: 'settings.general.routesNavVisibleDescription',
+    tip: 'settings.general.routesNavVisibleTip',
+  },
+};

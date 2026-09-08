@@ -1,13 +1,17 @@
 ---
 title: AgentHub review 修复进展（2026-09-07）
-type: status
-status: current
+type: archive
+status: archived
 owner: maintainers
-updated: 2026-09-07
+updated: 2026-09-08
 scope: dest @ 5ee06a4f；对照三份 2026-09-07 全项目 review 的确认问题
 ---
 
 # AgentHub review 修复进展
+
+> **归档（2026-09-08）**。本页是一次性审查、批次记录或复核，不是现行契约。当前实现见 [当前实现状态](../STATUS.md)。下文保留原文，不要按此页派工。
+>
+> **Archived / 已归档**: Historical review or batch record. Do not use it as the current implementation contract.
 
 本页是审查问题的修复跟踪，不是新的审查报告。问题证据仍以原报告为准：
 

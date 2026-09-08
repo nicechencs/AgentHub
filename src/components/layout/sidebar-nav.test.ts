@@ -5,18 +5,25 @@ import { fileURLToPath } from 'node:url';
 import { Cloud, FolderCode, MessageSquare, Route } from 'lucide-react';
 import { ROUTES_PATH, SUB2API_PATH } from '@/lib/routes-path';
 import {
+  ALL_NAV_HIDDEN,
+  ALL_NAV_VISIBLE,
+  DEFAULT_NAV_VISIBILITY,
   DEFAULT_PLUGINS_NAV_VISIBLE,
   DEFAULT_ROUTES_NAV_VISIBLE,
   DEFAULT_SIDEBAR_AUTO_COLLAPSE_ON_ROUTES,
   DEFAULT_SUB2API_NAV_VISIBLE,
+  navVisibilityWith,
+  OPTIONAL_NAV_IDS,
 } from '@/lib/ui-preferences';
 import {
-  filterManageNavItems,
-  filterWorkspaceNavItems,
+  ALWAYS_VISIBLE_NAV_PATHS,
+  filterNavItems,
   manageNavItems,
   NAV_MANAGE,
   NAV_WORKSPACE,
   navItemInDevelopment,
+  OPTIONAL_NAV_PATH,
+  optionalNavIdForPath,
   workspaceNavItems,
 } from './sidebar-nav';
 
@@ -39,9 +46,9 @@ const WORKSPACE = [
   { to: '/plugins', navKey: 'nav.plugins' },
 ] as const;
 
-describe('filterManageNavItems', () => {
-  it('keeps routes when visible', () => {
-    expect(filterManageNavItems(MANAGE, true).map((item) => item.to)).toEqual([
+describe('filterNavItems', () => {
+  it('keeps optional manage entries when visible', () => {
+    expect(filterNavItems(MANAGE, ALL_NAV_VISIBLE).map((item) => item.to)).toEqual([
       '/',
       '/connections',
       SUB2API_PATH,
@@ -51,27 +58,25 @@ describe('filterManageNavItems', () => {
   });
 
   it('hides routes when not visible', () => {
-    expect(filterManageNavItems(MANAGE, false).map((item) => item.to)).toEqual([
-      '/',
-      '/connections',
-      SUB2API_PATH,
-      '/settings',
-    ]);
+    expect(
+      filterNavItems(MANAGE, navVisibilityWith({ routes: false })).map((item) => item.to),
+    ).toEqual(['/', '/connections', SUB2API_PATH, '/settings']);
   });
 
   it('hides Sub2API when preference is off', () => {
-    expect(filterManageNavItems(MANAGE, true, false).map((item) => item.to)).toEqual([
-      '/',
-      '/connections',
-      '/routes',
-      '/settings',
-    ]);
+    expect(
+      filterNavItems(MANAGE, navVisibilityWith({ sub2api: false })).map((item) => item.to),
+    ).toEqual(['/', '/connections', '/routes', '/settings']);
   });
-});
 
-describe('filterWorkspaceNavItems', () => {
+  it('hides connections when preference is off', () => {
+    expect(
+      filterNavItems(MANAGE, navVisibilityWith({ connections: false })).map((item) => item.to),
+    ).toEqual(['/', SUB2API_PATH, '/routes', '/settings']);
+  });
+
   it('keeps plugins after Projects when visible', () => {
-    expect(filterWorkspaceNavItems(WORKSPACE, true).map((item) => item.to)).toEqual([
+    expect(filterNavItems(WORKSPACE, ALL_NAV_VISIBLE).map((item) => item.to)).toEqual([
       '/chat',
       '/agents',
       '/skills',
@@ -82,13 +87,18 @@ describe('filterWorkspaceNavItems', () => {
   });
 
   it('hides plugins when not visible without renaming MCP', () => {
-    expect(filterWorkspaceNavItems(WORKSPACE, false).map((item) => item.to)).toEqual([
-      '/chat',
-      '/agents',
-      '/skills',
-      '/mcp',
-      '/projects',
-    ]);
+    expect(
+      filterNavItems(WORKSPACE, navVisibilityWith({ plugins: false })).map((item) => item.to),
+    ).toEqual(['/chat', '/agents', '/skills', '/mcp', '/projects']);
+  });
+
+  it('hides skills, MCP, and projects independently', () => {
+    expect(
+      filterNavItems(
+        WORKSPACE,
+        navVisibilityWith({ skills: false, mcp: false, projects: false }),
+      ).map((item) => item.to),
+    ).toEqual(['/chat', '/agents', '/plugins']);
   });
 });
 
@@ -138,11 +148,12 @@ describe('nav model order', () => {
 
   it('keeps active labels readable while accenting 18px navigation icons', () => {
     const sidebar = readFileSync(path.join(dir, 'Sidebar.tsx'), 'utf8');
-    expect(sidebar).toContain('bg-active font-medium text-primary [&_svg]:text-accent');
+    expect(sidebar).toContain('bg-accent-subtle font-medium text-primary [&_svg]:text-accent');
     expect(sidebar).toContain('hover:bg-hover hover:text-primary');
     expect(sidebar).toContain('const NAV_ICON_SIZE = 18;');
     expect(sidebar).toContain('size={NAV_ICON_SIZE}');
     expect(sidebar).toContain('strokeWidth={1.6}');
+    expect(sidebar).toContain('data-icon="nav"');
     expect(sidebar).toContain('absoluteStrokeWidth');
   });
 
@@ -157,30 +168,32 @@ describe('nav model order', () => {
 });
 
 describe('workspaceNavItems / manageNavItems', () => {
+  it('keeps chat, agents, dashboard, and settings when every optional entry is off', () => {
+    expect(workspaceNavItems(ALL_NAV_HIDDEN).map((item) => item.to)).toEqual(['/chat', '/agents']);
+    expect(manageNavItems(ALL_NAV_HIDDEN).map((item) => item.to)).toEqual(['/', '/settings']);
+    expect([...ALWAYS_VISIBLE_NAV_PATHS]).toEqual(['/chat', '/agents', '/', '/settings']);
+  });
+
   it('wraps workspace filter without changing paths', () => {
-    expect(workspaceNavItems(true).map((item) => item.to)).toEqual(
-      filterWorkspaceNavItems(NAV_WORKSPACE, true).map((item) => item.to),
+    expect(workspaceNavItems(ALL_NAV_VISIBLE).map((item) => item.to)).toEqual(
+      filterNavItems(NAV_WORKSPACE, ALL_NAV_VISIBLE).map((item) => item.to),
     );
-    expect(workspaceNavItems(false).map((item) => item.to)).toEqual([
-      '/chat',
-      '/agents',
-      '/skills',
-      '/mcp',
-      '/projects',
-    ]);
+    expect(
+      workspaceNavItems(navVisibilityWith({ plugins: false })).map((item) => item.to),
+    ).toEqual(['/chat', '/agents', '/skills', '/mcp', '/projects']);
   });
 
   it('wraps manage filter and still hides routes only in the nav model', () => {
-    expect(manageNavItems(true, true).map((item) => item.to)).toEqual(
-      filterManageNavItems(NAV_MANAGE, true, true).map((item) => item.to),
+    expect(manageNavItems(ALL_NAV_VISIBLE).map((item) => item.to)).toEqual(
+      filterNavItems(NAV_MANAGE, ALL_NAV_VISIBLE).map((item) => item.to),
     );
-    expect(manageNavItems(false, true).map((item) => item.to)).toEqual([
+    expect(manageNavItems(navVisibilityWith({ routes: false })).map((item) => item.to)).toEqual([
       '/',
       '/connections',
       SUB2API_PATH,
       '/settings',
     ]);
-    expect(manageNavItems(true, false).map((item) => item.to)).toEqual([
+    expect(manageNavItems(navVisibilityWith({ sub2api: false })).map((item) => item.to)).toEqual([
       '/',
       '/connections',
       ROUTES_PATH,
@@ -188,31 +201,52 @@ describe('workspaceNavItems / manageNavItems', () => {
     ]);
   });
 
+  it('maps every optional path and leaves always-visible paths unmapped', () => {
+    expect(OPTIONAL_NAV_IDS.map((id) => OPTIONAL_NAV_PATH[id])).toEqual([
+      '/skills',
+      '/mcp',
+      '/projects',
+      '/plugins',
+      '/connections',
+      SUB2API_PATH,
+      ROUTES_PATH,
+    ]);
+    for (const path of ALWAYS_VISIBLE_NAV_PATHS) {
+      expect(optionalNavIdForPath(path)).toBeUndefined();
+    }
+    expect(optionalNavIdForPath('/skills')).toBe('skills');
+    expect(optionalNavIdForPath(ROUTES_PATH)).toBe('routes');
+  });
+
   it('shows routes by default and hides plugins in the sidebar for a new install', () => {
     expect(DEFAULT_SIDEBAR_AUTO_COLLAPSE_ON_ROUTES).toBe(true);
     expect(DEFAULT_ROUTES_NAV_VISIBLE).toBe(true);
     expect(DEFAULT_PLUGINS_NAV_VISIBLE).toBe(false);
-    expect(workspaceNavItems(DEFAULT_PLUGINS_NAV_VISIBLE).map((item) => item.to)).not.toContain(
+    expect(workspaceNavItems(DEFAULT_NAV_VISIBILITY).map((item) => item.to)).not.toContain(
       '/plugins',
     );
-    expect(
-      manageNavItems(DEFAULT_ROUTES_NAV_VISIBLE, DEFAULT_SUB2API_NAV_VISIBLE).map(
-        (item) => item.to,
-      ),
-    ).toContain(ROUTES_PATH);
-    expect(
-      manageNavItems(DEFAULT_ROUTES_NAV_VISIBLE, DEFAULT_SUB2API_NAV_VISIBLE).map(
-        (item) => item.to,
-      ),
-    ).not.toContain(SUB2API_PATH);
+    expect(workspaceNavItems(DEFAULT_NAV_VISIBILITY).map((item) => item.to)).toEqual([
+      '/chat',
+      '/agents',
+      '/skills',
+      '/mcp',
+      '/projects',
+    ]);
+    expect(manageNavItems(DEFAULT_NAV_VISIBILITY).map((item) => item.to)).toContain(ROUTES_PATH);
+    expect(manageNavItems(DEFAULT_NAV_VISIBILITY).map((item) => item.to)).toContain(
+      '/connections',
+    );
+    expect(manageNavItems(DEFAULT_NAV_VISIBILITY).map((item) => item.to)).not.toContain(
+      SUB2API_PATH,
+    );
     expect(DEFAULT_SUB2API_NAV_VISIBLE).toBe(false);
     const ctx = readFileSync(path.join(dir, 'SidebarContext.tsx'), 'utf8');
     expect(ctx).toContain(
       'loadBool(StorageKey.sidebarAutoCollapseOnRoutes, DEFAULT_SIDEBAR_AUTO_COLLAPSE_ON_ROUTES)',
     );
-    expect(ctx).toContain('loadBool(StorageKey.routesNavVisible, DEFAULT_ROUTES_NAV_VISIBLE)');
-    expect(ctx).toContain('loadBool(StorageKey.pluginsNavVisible, DEFAULT_PLUGINS_NAV_VISIBLE)');
-    expect(ctx).toContain('loadBool(StorageKey.sub2apiNavVisible, DEFAULT_SUB2API_NAV_VISIBLE)');
+    expect(ctx).toContain('OPTIONAL_NAV_STORAGE_KEY');
+    expect(ctx).toContain('DEFAULT_NAV_VISIBILITY');
+    expect(ctx).toContain('setNavVisible');
   });
 
   it('marks plugins as in development; MCP and routes are not', () => {

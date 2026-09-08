@@ -4,6 +4,7 @@ import { PageChromeProvider } from '@/components/layout/PageChromeContext';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { SidebarProvider } from '@/components/layout/SidebarContext';
 import { LocalForwardRestartBanner } from '@/components/layout/LocalForwardRestartBanner';
+import { StatusBar } from '@/components/layout/StatusBar';
 import { TopBar } from '@/components/layout/TopBar';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { OnboardingDialog } from '@/components/shared/OnboardingDialog';
@@ -168,10 +169,11 @@ export default function App() {
   return (
     <SidebarProvider>
       <div className={pageRhythm.shell}>
-        <Sidebar />
-        {isRoutesArea ? <RoutesNav /> : null}
-        <PageChromeProvider>
-          <div className={pageRhythm.shellMain}>
+        <div className={pageRhythm.shellBody}>
+          <Sidebar />
+          {isRoutesArea ? <RoutesNav /> : null}
+          <PageChromeProvider>
+            <div className={isChat ? 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden' : pageRhythm.shellMain}>
             {!isChat && <TopBar />}
             {!isChat && !isRoutesArea ? <LocalForwardRestartBanner /> : null}
             <main
@@ -227,8 +229,10 @@ export default function App() {
                 </Routes>
               </div>
             </main>
-          </div>
-        </PageChromeProvider>
+            </div>
+          </PageChromeProvider>
+        </div>
+        <StatusBar />
         <OnboardingDialog />
         <UpdatePrompt onReady={onUpdateReady} />
       </div>

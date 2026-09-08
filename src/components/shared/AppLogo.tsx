@@ -9,7 +9,7 @@ export function appIconUrl(): string {
 /**
  * In-app product mark. Tile fill follows `--accent` via `currentColor`
  * (live CSS, not a one-shot SVG presentation attribute).
- * Desktop / installer icons stay the default indigo PNG.
+ * Desktop / installer icons stay the bundled default PNG.
  */
 export function AppLogo({
   className,

@@ -19,8 +19,17 @@ body {
   background-color: var(--bg-canvas);
   color: var(--text-primary);
   @apply bg-canvas text-primary font-sans antialiased;
-  font-size: var(--font-body-size, 13px);
-  line-height: var(--font-body-leading, 1.45);
+  font-size: var(--font-body-size, 14px);
+  line-height: var(--font-body-leading, 1.57);
+}
+
+/* Lucide: 16/14px chrome uses 1.75; 18px nav sets data-icon="nav". */
+svg.lucide:not([data-icon='nav']) {
+  stroke-width: 1.75;
+}
+
+svg.lucide[data-icon='nav'] {
+  stroke-width: 1.6;
 }
 
 ::-webkit-scrollbar {
@@ -245,6 +254,83 @@ body {
   transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+.agent-thinking-dots {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 14px;
+}
+
+.agent-thinking-dots > span {
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--accent);
+  animation: agent-thinking-bounce 0.9s ease-in-out infinite;
+}
+
+.agent-thinking-dots > span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.agent-thinking-dots > span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes agent-thinking-bounce {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  40% {
+    transform: translateY(-6px);
+    opacity: 1;
+  }
+}
+
+.chat-stream-in {
+  animation: chat-stream-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes agent-thinking-shimmer {
+  from {
+    background-position: 200% center;
+  }
+  to {
+    background-position: -100% center;
+  }
+}
+
+@keyframes chat-stream-in {
+  from {
+    opacity: 0;
+    filter: blur(5px);
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+}
+
+.agent-progress-running {
+  background-image: linear-gradient(
+    100deg,
+    var(--text-secondary) 16%,
+    var(--text-primary) 50%,
+    var(--text-secondary) 84%
+  );
+  background-size: 240% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: agent-thinking-shimmer 2.8s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .boot-splash--exit,
   .boot-splash__glow,
@@ -277,5 +363,21 @@ body {
   .animate-pulse {
     animation: none !important;
     opacity: 0.65;
+  }
+
+  .agent-thinking-dots > span,
+  .chat-stream-in,
+  .agent-progress-running {
+    animation: none !important;
+  }
+
+  .agent-thinking-dots > span {
+    opacity: 0.55;
+    transform: none;
+  }
+
+  .agent-progress-running {
+    color: var(--text-secondary);
+    background-image: none;
   }
 }

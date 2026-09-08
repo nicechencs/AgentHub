@@ -6,6 +6,7 @@ import {
   envSoftwareActionLabel,
   envSoftwareColumnLabel,
   envSoftwareControl,
+  envSoftwareListOpenByDefault,
   envSoftwareStatusLabel,
   envSoftwareUpgradeTitle,
   envSoftwareVersion,
@@ -20,6 +21,24 @@ function runtime(
 }
 
 describe('env software list model', () => {
+  it('collapses the environment list unless install or PATH still needs a fix', () => {
+    expect(envSoftwareListOpenByDefault([])).toBe(false);
+    expect(
+      envSoftwareListOpenByDefault([
+        runtime('nodejs', 'ok'),
+        runtime('git', 'ok'),
+      ]),
+    ).toBe(false);
+    expect(envSoftwareListOpenByDefault([runtime('git', 'outdated')])).toBe(false);
+    expect(
+      envSoftwareListOpenByDefault([
+        runtime('nodejs', 'ok'),
+        runtime('git', 'missing'),
+      ]),
+    ).toBe(true);
+    expect(envSoftwareListOpenByDefault([runtime('git', 'broken_path')])).toBe(true);
+  });
+
   it('uses existing Agents / env words for headers', () => {
     const t = createTranslator('zh');
     expect(envSoftwareColumnLabel('software', t)).toBe('软件');

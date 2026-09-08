@@ -43,10 +43,12 @@ import {
   resolveUsageModelFilter,
   usageModelSelectOptions,
 } from '@/pages/dashboard/usageOverviewModel';
+import { ROUTES_TOKENS_PATH } from '@/lib/routes-path';
 import { activityHref } from '@/pages/routes/board/board-view-model';
 import { resolveChartColor, typeScalePx } from '@/styles/tokens';
 import {
   BOARD_SURFACES,
+  boardUsageHasRequests,
   boardUsageWindow,
   buildBoardUsageEntries,
   buildGatewayDistribution,
@@ -93,6 +95,7 @@ export function BoardUsageSection({
   pools = [],
   refreshKey = 0,
   surface,
+  forwardingOn = false,
   headerActions,
 }: {
   profiles: readonly AdapterProfile[];
@@ -100,6 +103,7 @@ export function BoardUsageSection({
   pools?: readonly DefaultRoutePoolOverview[];
   refreshKey?: number;
   surface: string;
+  forwardingOn?: boolean;
   headerActions?: ReactNode;
 }) {
   const { t } = useI18n();
@@ -331,6 +335,27 @@ export function BoardUsageSection({
           error={t('routes.board.usageUnavailable')}
           onRetry={() => setRetryKey((key) => key + 1)}
         />
+      ) : !boardUsageHasRequests(totals) ? (
+        <div className={pageRhythm.blocks}>
+          <p className="text-body text-secondary">
+            {t(forwardingOn ? 'routes.board.usageEmpty' : 'routes.board.usageEmptyStart')}
+          </p>
+          {forwardingOn ? null : (
+            <ol className="list-decimal space-y-1 pl-5 text-meta text-secondary">
+              <li>
+                <Link to="/connections" className="hover:text-primary">
+                  {t('routes.board.usageStartConnect')}
+                </Link>
+              </li>
+              <li>
+                <Link to={ROUTES_TOKENS_PATH} className="hover:text-primary">
+                  {t('routes.board.usageStartKey')}
+                </Link>
+              </li>
+              <li>{t('routes.board.usageStartForward')}</li>
+            </ol>
+          )}
+        </div>
       ) : (
         <div
           className={cn(

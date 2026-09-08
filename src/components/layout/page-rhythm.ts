@@ -5,12 +5,12 @@
  * ## 页边（只改 `pageEdge`）
  * 贴边列、顶栏、工作台列表、预览列共用 `pageEdge.inset`。
  * class 走 `pageRhythm`，分栏像素走 `pageEdgePx`，都从这一处派生。
- * 窗内画布缝是 `pageEdge.canvas`；Chat 主列水平是 `pageEdge.chat`，不要和页边混用。
+ * 窗内画布缝是 `pageEdge.canvas`。对话水平缝 `pageEdge.chat` 与页边 `inset` 同为 12；不要在消息列里再叠一层。
  *
  * ## 内容宽度（两套，docs/ui/design-system.md §3.4）
- * 1. 阅读列 `readingColumn`：Chat 消息列。固定 `max-w-3xl` 居中。设置表单正文（备份分栏页除外）同列居中；页签留在页头贴左，不进阅读列。
+ * 1. 阅读列 `readingColumn`：Chat 消息列。固定 `max-w-3xl` 居中。
  * 2. 贴边列：其余页。铺满主列，左右用 `pageEdge.inset`（`pageShell` / `workbenchX`）。
- * 新页默认贴边列；对话 / 表单 / 长文才用阅读列。禁止第三套 `max-w-*`。
+ * 3. 总览列 `overviewColumn`：总览、路由看板、设置表单正文（备份分栏页除外），居中 `max-w-6xl`。页签留在页头贴左，不进总览列。
  * 页标题一律贴边、同一行（大号深色标题 + 小号浅色说明），放在非对话页顶栏左侧。
  *
  * 层级（自上而下）：
@@ -70,13 +70,13 @@ type SpacePx = keyof typeof SPACE;
  */
 export const pageEdge = {
   /** 窗内画布缝（侧栏与主列外的 p / gap） */
-  canvas: 8,
+  canvas: 12,
   /** 主列贴边：pageShell、顶栏、工作台列表、预览列 */
-  inset: 8,
-  /** Chat 消息列 / composer 水平 chrome，不是页边 */
-  chat: 16,
-  /** 分栏分隔条占位 */
-  separator: 6,
+  inset: 12,
+  /** Chat 消息列 / composer 水平 chrome，与页边 inset 对齐 */
+  chat: 12,
+  /** 分栏分隔条热区；线平时隐藏，悬停才出现且居中 */
+  separator: 8,
 } as const satisfies {
   canvas: SpacePx;
   inset: SpacePx;
@@ -89,28 +89,44 @@ export const pageInsetTw = SPACE[pageEdge.inset];
 export const pageChatTw = SPACE[pageEdge.chat];
 
 export const pageRhythm = {
-  /** 窗内画布留缝，侧栏/主列两块圆角面板 */
-  shell: `flex h-full min-h-0 ${pageCanvasTw.gap} bg-canvas ${pageCanvasTw.p}`,
+  /** 上排圆角面板留窗内缝；底栏方角贴窗底，和对照分支底栏一致 */
+  shell: 'flex h-full min-h-0 flex-col bg-canvas',
+  shellBody: `flex min-h-0 min-w-0 flex-1 ${pageCanvasTw.x} ${pageCanvasTw.t}`,
+  statusBar:
+    'flex h-8 shrink-0 items-center border-t border-border bg-canvas px-6 text-meta',
+  statusBarItem:
+    'inline-flex h-full max-w-full items-center gap-1.5 px-2 text-meta text-secondary hover:bg-hover hover:text-primary',
   shellNav:
     'flex min-h-0 shrink-0 flex-col overflow-hidden rounded-card border border-border bg-panel shadow-xs',
   /** Main column sits on canvas; cards/sidebar use panel (THEME in tokens.ts). */
   shellMain:
     'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-card border border-border bg-canvas shadow-xs',
+  /**
+   * 栏间分隔条：8px 热区（`pageEdge.separator` / `w-2`），1px 线居中。
+   * 平时隐藏，悬停 / 聚焦 / 拖动才显示主色。导航栏、详情栏共用。
+   */
+  sash: [
+    'group relative z-10 w-2 shrink-0 cursor-col-resize touch-none bg-transparent outline-none',
+    'before:absolute before:inset-y-0 before:-left-1 before:-right-1 before:content-[""]',
+    'after:pointer-events-none after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-transparent after:content-[""]',
+    'hover:after:bg-accent focus-visible:after:bg-accent active:after:bg-accent',
+  ].join(' '),
   /** 常规页外壳：铺满主列，与 Skills / Projects 右缘对齐 */
   pageShell: `w-full min-w-0 ${pageInsetTw.x} ${pageInsetTw.y}`,
-  /** Chat 消息列：居中阅读宽。页头不进此列。设置表单正文（备份分栏页除外）共用同一列。 */
+  /** Chat 消息列：居中阅读宽。页头不进此列。 */
   readingColumn: 'mx-auto w-full max-w-3xl',
+  /** 总览 / 路由看板 / 设置表单居中列（备份分栏除外），避免宽屏把内容拉成一条细线。 */
+  overviewColumn: 'mx-auto w-full max-w-6xl',
   /** 侧栏品牌行与非对话页顶栏同高，横线对齐 */
-  topChrome: 'h-10',
+  topChrome: 'h-11',
   /** 全高工作台水平 inset — 与常规页水平一致 */
   workbenchX: pageInsetTw.x,
   /**
    * 分栏打开时的列表水平 inset。
-   * 左缘与页头同为 `pageEdge.inset`；右侧改用画布缝，把空隙让到滚动条与分隔条之间。
-   * 不要把页边右距留在 overflow 容器上：那会把空白加在卡片和滚动条之间，
-   * 滚动条仍贴着分隔条（分隔条 hit 区还会叠进滚动条）。
+   * 左缘页边 12；右侧用 margin 12，滚动条靠内容，空白在滚动条与分隔条之间。
+   * 详情栏左侧同样 12，1px 线仍居中。
    */
-  workbenchXSplit: `${pageInsetTw.l} ${pageCanvasTw.r} ${pageCanvasTw.mr}`,
+  workbenchXSplit: `${pageInsetTw.l} ${pageInsetTw.mr}`,
   /** 表单页：顶栏下的 Tab 行，顶距与页边相同。分栏页把 Tab 放进列表列 chromeRow。 */
   workbenchHeader: `shrink-0 ${pageInsetTw.x} ${pageInsetTw.t}`,
   /** 全高列表顶距，与预览列 padTop 相同 */
@@ -166,6 +182,6 @@ export const pageEdgePx = {
   x: pageEdge.inset,
   /** 预览卡片底距，与 pageShell 垂直 inset 一致。 */
   previewY: pageEdge.inset,
-  /** 分隔条约宽 */
+  /** 分隔条热区宽度 */
   separator: pageEdge.separator,
 } as const;

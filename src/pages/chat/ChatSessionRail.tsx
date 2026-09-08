@@ -1,7 +1,10 @@
 import { useEffect, useRef } from 'react';
-import { Loader2, PanelLeftClose, Plus, Terminal, Trash2 } from 'lucide-react';
+import { Loader2, PanelLeftClose, Plus, Trash2 } from 'lucide-react';
+import { AgentLogo } from '@/components/shared/AgentLogo';
+import { NavResizeHandle } from '@/components/layout/NavResizeHandle';
 import { pageRhythm } from '@/components/layout/page-rhythm';
-import { AgentDot } from '@/components/shared/AgentDot';
+import { CHAT_RAIL_WIDTH } from '@/components/layout/sidebar-width-model';
+import { useNavWidth } from '@/components/layout/use-sidebar-width';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { SearchField } from '@/components/shared/SearchField';
 import { Button } from '@/components/ui/button';
@@ -15,13 +18,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { StorageKey } from '@/lib/storage-key';
 import type { Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { relativeTime } from './chat-format';
 import {
+  conversationRailHint,
+  conversationRailMarkColor,
+  conversationRailSelectedFill,
   conversationTitle,
-  cwdShortName,
-  visibleAgentDots,
   type ConversationDayGroup,
 } from './chat-model';
 
@@ -69,6 +73,11 @@ export function ChatSessionRail({
   historyRevealNonce?: number;
 }) {
   const { t } = useI18n();
+  const width = useNavWidth({
+    collapsed: !open,
+    storageKey: StorageKey.chatRailWidth,
+    policy: CHAT_RAIL_WIDTH,
+  });
   const pending = conversations.find((c) => c.id === deleteConfirmId) ?? null;
   const railRef = useRef<HTMLElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -93,15 +102,26 @@ export function ChatSessionRail({
   }, [open, historyRevealNonce]);
 
   return (
+    <>
     <aside
       ref={railRef}
       className={cn(
-        'flex shrink-0 flex-col border-r border-border bg-canvas transition-[width] duration-200',
-        open ? 'w-60' : 'w-0 overflow-hidden border-r-0',
+        'flex shrink-0 flex-col overflow-hidden bg-canvas',
+        width.widthTransition,
+        open && 'rounded-card border border-border',
       )}
+      style={{ width: width.width }}
       data-help="chat-rail"
     >
-      <div className="flex items-center gap-1.5 p-2">
+      <div
+        className={cn(
+          'flex shrink-0 items-center justify-between gap-1 border-b border-border px-2',
+          pageRhythm.topChrome,
+        )}
+      >
+        <h2 className="min-w-0 truncate text-body font-semibold text-primary">
+          {t('chat.rail.historyTitle')}
+        </h2>
         <Button
           type="button"
           size="icon"
@@ -113,9 +133,11 @@ export function ChatSessionRail({
         >
           <PanelLeftClose className="h-4 w-4" />
         </Button>
+      </div>
+      <div className="shrink-0 px-2 pt-2">
         <Hint label={agentsReady && !hasUsableAgent ? t('chat.rail.newChatDisabled') : undefined}>
           <Button
-            className="min-w-0 flex-1 justify-start gap-1.5"
+            className="w-full justify-start gap-1.5"
             size="sm"
             variant="secondary"
             disabled={agentsReady && !hasUsableAgent}
@@ -127,7 +149,7 @@ export function ChatSessionRail({
           </Button>
         </Hint>
       </div>
-      <div className="px-2 pb-2">
+      <div className="px-2 pb-2 pt-3">
         <SearchField
           inputRef={searchInputRef}
           placeholder={t('chat.rail.searchPlaceholder')}
@@ -136,11 +158,11 @@ export function ChatSessionRail({
           aria-label={t('chat.rail.searchAria')}
         />
       </div>
-      <div className="flex-1 overflow-y-auto px-1.5 pb-3">
+      <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-3">
         {listLoading ? (
           <div className="space-y-2 px-1 pt-1">
             {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-10 w-full rounded-btn" />
+              <Skeleton key={i} className="h-8 w-full rounded-btn" />
             ))}
           </div>
         ) : conversations.length === 0 ? (
@@ -160,20 +182,28 @@ export function ChatSessionRail({
               </div>
               {group.items.map((c) => {
                 const selected = activeId === c.id;
-                const dots = visibleAgentDots(c.agentIds);
                 const sending = sendingConversationIds.includes(c.id);
                 return (
-                  <Hint
+                  <div
                     key={c.id}
-                    label={`${c.cwd || t('chat.cwd.unset')} · ${relativeTime(c.updatedAt, t)}`}
-                    side="right"
+                    className={cn(
+                      'group relative mb-0.5 flex items-center rounded-btn',
+                      !selected && 'hover:bg-hover',
+                    )}
+                    style={
+                      selected
+                        ? { backgroundColor: conversationRailSelectedFill(c.agentIds) }
+                        : undefined
+                    }
                   >
-                    <div
-                      className={cn(
-                        'group mb-0.5 flex items-center rounded-btn',
-                        selected ? 'bg-active' : 'hover:bg-hover',
-                      )}
-                    >
+                    {selected ? (
+                      <span
+                        aria-hidden
+                        className="absolute inset-y-1.5 left-0 w-0.5 rounded-full"
+                        style={{ backgroundColor: conversationRailMarkColor(c.agentIds) }}
+                      />
+                    ) : null}
+                    <Hint label={<ConversationRailHintLabel conversation={c} />} side="right">
                       <button
                         type="button"
                         data-session-id={c.id}
@@ -181,49 +211,34 @@ export function ChatSessionRail({
                         aria-current={selected ? 'true' : undefined}
                         onClick={() => onFocus(c.id)}
                         className={cn(
-                          'min-w-0 flex-1 px-2 py-1.5 text-left text-body',
+                          'flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left text-body',
                           selected ? 'font-medium text-primary' : 'text-secondary',
                         )}
                       >
-                        <span className="flex items-center gap-1.5">
-                          <span className="truncate">{conversationTitle(t, c.title)}</span>
-                          {sending && (
-                            <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted" />
-                          )}
-                        </span>
-                        <span className="mt-0.5 flex items-center gap-1.5 text-meta text-muted">
-                          <span className="inline-flex items-center gap-0.5">
-                            {dots.shown.map((id) => (
-                              <AgentDot key={id} agentId={id} size="sm" title={null} />
-                            ))}
-                            {dots.extra > 0 && <span>+{dots.extra}</span>}
-                          </span>
-                          <span className="truncate">{cwdShortName(c.cwd, t)}</span>
-                          {c.nativeSessionId ? (
-                            <Terminal className="h-3 w-3 shrink-0" aria-hidden />
-                          ) : null}
-                        </span>
+                        <span className="min-w-0 flex-1 truncate">{conversationTitle(t, c.title)}</span>
+                        {sending ? (
+                          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted" />
+                        ) : null}
                       </button>
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        className="mr-1 text-muted opacity-0 transition-opacity hover:text-danger group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100"
-                        title={t('chat.rail.deleteAria')}
-                        aria-label={t('chat.rail.deleteAria')}
-                        onClick={() => onRequestDelete(c.id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </Hint>
+                    </Hint>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="mr-1 text-muted opacity-0 transition-opacity hover:text-danger group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100"
+                      title={t('chat.rail.deleteAria')}
+                      aria-label={t('chat.rail.deleteAria')}
+                      onClick={() => onRequestDelete(c.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 );
               })}
             </div>
           ))
         )}
       </div>
-
       <Dialog open={Boolean(deleteConfirmId)} onOpenChange={(next) => !next && onCancelDelete()}>
         <DialogContent>
           <DialogHeader>
@@ -245,5 +260,23 @@ export function ChatSessionRail({
         </DialogContent>
       </Dialog>
     </aside>
+    {open ? <NavResizeHandle label={t('chat.rail.resize')} width={width} /> : null}
+    </>
+  );
+}
+
+function ConversationRailHintLabel({ conversation }: { conversation: Conversation }) {
+  const { t } = useI18n();
+  return (
+    <span className="flex items-center gap-1.5">
+      {conversation.agentIds.length > 0 ? (
+        <span className="inline-flex items-center gap-0.5">
+          {conversation.agentIds.map((id) => (
+            <AgentLogo key={id} agentId={id} size="sm" hint={false} />
+          ))}
+        </span>
+      ) : null}
+      <span>{conversationRailHint(conversation, t)}</span>
+    </span>
   );
 }

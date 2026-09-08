@@ -35,6 +35,9 @@ describe('mcp layout wiring', () => {
     expect(page).toContain("t('mcp.page.description')");
     expect(page).toContain("t('mcp.page.empty'");
     expect(page).toContain("t('mcp.page.nextStep')");
+    expect(page).toContain('visibleMcpSources');
+    expect(page).toContain('McpSourceEmpty');
+    expect(page).toContain("t('mcp.empty.hasSources')");
     expect(page).not.toContain('installMcp');
     expect(page).not.toContain('onInstall');
     expect(page).not.toContain('mcp.install');

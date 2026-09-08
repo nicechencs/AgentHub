@@ -53,6 +53,7 @@ describe('StorageKey', () => {
       dashboardUsageColumnWidths: StorageKey.dashboardUsageColumnWidths,
       chatComposerPaneHeight: StorageKey.chatComposerPaneHeight,
       chatPreviewWidth: StorageKey.chatPreviewWidth,
+      chatRailWidth: StorageKey.chatRailWidth,
       chatBootstrap: StorageKey.chatBootstrap,
     }).toEqual({
       sidebarWidth: 'agenthub:sidebar-width',
@@ -79,6 +80,7 @@ describe('StorageKey', () => {
       dashboardUsageColumnWidths: 'agenthub:dashboard-usage-column-widths',
       chatComposerPaneHeight: 'agenthub:chat-composer-pane-height',
       chatPreviewWidth: 'agenthub:chat-preview-width',
+      chatRailWidth: 'agenthub:chat-rail-width',
       chatBootstrap: 'agenthub:chat-bootstrap',
     });
   });

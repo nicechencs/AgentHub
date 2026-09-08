@@ -1,9 +1,15 @@
 import type { MouseEvent as ReactMouseEvent } from 'react';
-import { ChevronDown, ChevronRight, Copy, MessageSquarePlus, Terminal, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, MessageSquarePlus, MoreHorizontal } from 'lucide-react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { ListNameButton } from '@/components/shared/ListNameButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { shouldOpenTableRowFromClick } from '@/components/ui/table-row-model';
 import { Tip } from '@/components/ui/tooltip';
 import { normalizeOpenPath } from '@/lib/path-open';
@@ -187,57 +193,62 @@ export function ProjectSessionRow({
         {fmtBytes(session.sizeBytes)}
       </span>
       <span className="min-w-0" aria-hidden />
-      <div className="flex shrink-0 gap-1">
-        {sid ? (
-          <Button
-            size="icon"
-            variant="ghost"
-            disabled={busy}
-            aria-label={t('projects.tree.copySessionId', { id: sid })}
-            title={t('projects.tree.copySessionId', { id: sid })}
-            onClick={(e) => onCopySessionId(session, e)}
-          >
-            <Copy className="h-3.5 w-3.5" />
-          </Button>
-        ) : null}
-        {resume ? (
-          <Button
-            size="icon"
-            variant="ghost"
-            disabled={busy}
-            aria-label={t('projects.tree.copyResumeCommand', { command: resume })}
-            title={t('projects.tree.copyResumeCommand', { command: resume })}
-            onClick={(e) => onCopyResumeCommand(session, e)}
-          >
-            <Terminal className="h-3.5 w-3.5" />
-          </Button>
-        ) : null}
+      <div className="flex shrink-0 items-center gap-1">
         <Button
-          size="icon"
-          variant="ghost"
+          size="sm"
+          variant="secondary"
           disabled={busy}
-          aria-label={t('projects.tree.continue')}
-          title={t('projects.tree.continue')}
           onClick={() => onGoContinue(session)}
         >
           <MessageSquarePlus className="h-3.5 w-3.5" />
+          {t('projects.tree.continue')}
         </Button>
-        {showDeleteAction && (
-          <Button
-            size="icon"
-            variant="ghost"
-            disabled={busy || Boolean(deleteHint)}
-            className="text-danger hover:text-danger"
-            aria-label={deleteHint || t('projects.tree.deleteSession')}
-            title={deleteHint || t('projects.tree.deleteSession')}
-            onClick={() => {
-              if (deleteHint) return;
-              onRequestDelete(session);
-            }}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
-        )}
+        {sid || resume || showDeleteAction ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                disabled={busy}
+                aria-label={t('projects.tree.moreActions')}
+                title={t('projects.tree.moreActions')}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+              {sid ? (
+                <DropdownMenuItem
+                  disabled={busy}
+                  onSelect={() => onCopySessionId(session)}
+                >
+                  {t('projects.tree.copyId')}
+                </DropdownMenuItem>
+              ) : null}
+              {resume ? (
+                <DropdownMenuItem
+                  disabled={busy}
+                  onSelect={() => onCopyResumeCommand(session)}
+                >
+                  {t('projects.tree.copyCommand')}
+                </DropdownMenuItem>
+              ) : null}
+              {showDeleteAction ? (
+                <DropdownMenuItem
+                  disabled={busy || Boolean(deleteHint)}
+                  className="text-danger focus:text-danger"
+                  onSelect={() => {
+                    if (deleteHint) return;
+                    onRequestDelete(session);
+                  }}
+                >
+                  {deleteHint || t('projects.tree.deleteSession')}
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
       </div>
     </li>
   );

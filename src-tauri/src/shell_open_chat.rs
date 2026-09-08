@@ -233,6 +233,7 @@ fn register_windows(exe: &Path, lang: TrayUiLanguage) -> Result<(), String> {
 
 #[cfg(windows)]
 fn reg_add(key: &str, name: Option<&str>, data: &str) -> Result<(), String> {
+    use agenthub_core::utils::process::apply_no_window;
     let mut cmd = std::process::Command::new("reg");
     cmd.arg("add").arg(key).arg("/f").arg("/t").arg("REG_SZ");
     match name {
@@ -244,6 +245,7 @@ fn reg_add(key: &str, name: Option<&str>, data: &str) -> Result<(), String> {
         }
     }
     cmd.arg("/d").arg(data);
+    apply_no_window(&mut cmd);
     let output = cmd
         .output()
         .map_err(|e| format!("reg add failed: {e}"))?;

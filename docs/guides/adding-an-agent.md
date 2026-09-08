@@ -4,7 +4,7 @@ description: 按稀疏端口、能力声明和目录注册把一个 Agent 接入
 type: guide
 audience: contributor
 status: current
-updated: 2026-09-05
+updated: 2026-09-08
 ---
 
 # 添加 Agent
@@ -33,7 +33,7 @@ updated: 2026-09-05
 | 身份 | `crates/agenthub-core/src/models/agent.rs` | 增加 `AgentId`、`ALL`、解析和展示名；兼容期仍需维护生产 façade |
 | 占用 | `agent_bind_capability` / `LiveOccupancy` | 声明独占写入、具名槽还是目录追加；WorkBuddy 模型行 / ZCode 供应商行是目录追加，不要默认覆盖整份配置 |
 | 目录 | Agent catalog / install registry | 让 doctor、Agents 页和安装流程从 catalog 看到同一份元数据 |
-| 前端 | `src/config/agents.ts`、`KNOWN_AGENT_IDS`、`src/styles/tokens.ts` | `agents.ts` 仅展示装饰；catalog 是列表真源，已知 id 集合不是封闭业务枚举，颜色集中在 tokens |
+| 前端 | `src/config/agents.ts`、`KNOWN_AGENT_IDS`、`src/styles/tokens.ts`、`src/assets/agent-logos/` | `agents.ts` 仅展示装饰；catalog 是列表真源，已知 id 集合不是封闭业务枚举，颜色集中在 tokens；方标按 [agent-logos README](../../src/assets/agent-logos/README.md) 改编后登记 |
 
 平台端口通过 registry 注入。不要在 `platform/*` service、页面或通用 utils 中写 `match AgentId` 来补功能。
 
@@ -75,6 +75,7 @@ updated: 2026-09-05
 3. 任何 Tauri 调用放在 `src/lib/backend/tauri/`；页面通过 backend contract 或 `lib/api` façade。
 4. mock fixture 只为 `pnpm dev:mock` 和测试准备，不进入生产 build。
 5. UI 说「登录」和「路由/Routes」；内部实现可使用 Ticket、Binding、bridge 等名称，但不要把内部名直接当用户文案。
+6. 方标：按 [agent-logos README](../../src/assets/agent-logos/README.md) 改编一枚正方形图（符号或整图），在 `AGENT_DISPLAY` 登记 `logoSvgSrc` / `logoFit` / `logoBackground`。界面只通过 `AgentLogo` 展示，列表 24px、头像 32px。不要直接使用网上原图，也不要给每家写缩放系数。
 
 
 ## 5a. 页面触点（UI awareness）
@@ -121,6 +122,7 @@ pnpm test -- --run <test-file>
 - 端口注册后平台 service 无新增具体 Agent 分支；
 - doctor、Agents 页和 CLI 对安装失败明确报告，不静默成功；
 - 相关 Rust、Vitest、typecheck 和生产 build 通过。
+- 方标与现有 Agent 在 24px / 32px 并排时大小接近，且一眼能认出是谁。
 
 不要把凭据落盘加密、keyring、主密码迁移或国产 OAuth 适配列为本任务的一部分；它们不在当前项目范围内。
 

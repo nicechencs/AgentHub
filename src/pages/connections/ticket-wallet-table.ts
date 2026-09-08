@@ -30,6 +30,33 @@ export const TICKET_WALLET_COLUMN_SPECS: ColumnWidthSpec<TicketWalletColumnKey>[
   { key: 'actions', defaultWidth: 176, minWidth: 128 },
 ];
 
+/** Keep login identity and status when the inspect pane leaves too little list width. */
+export const TICKET_WALLET_COMPACT_COLUMN_KEYS: readonly TicketWalletColumnKey[] = [
+  'login',
+  'status',
+  'actions',
+];
+
+export function ticketWalletVisibleSpecs(
+  compact: boolean,
+): ColumnWidthSpec<TicketWalletColumnKey>[] {
+  if (!compact) return TICKET_WALLET_COLUMN_SPECS;
+  const keep = new Set<TicketWalletColumnKey>(TICKET_WALLET_COMPACT_COLUMN_KEYS);
+  return TICKET_WALLET_COLUMN_SPECS.filter((spec) => keep.has(spec.key));
+}
+
+export function ticketWalletFullMinWidth(): number {
+  return TICKET_WALLET_COLUMN_SPECS.reduce((sum, spec) => sum + spec.minWidth, 0);
+}
+
+export function ticketWalletShowsColumn(
+  compact: boolean,
+  key: TicketWalletColumnKey,
+): boolean {
+  if (!compact) return true;
+  return (TICKET_WALLET_COMPACT_COLUMN_KEYS as readonly string[]).includes(key);
+}
+
 export function ticketWalletColumnLabel(
   key: TicketWalletColumnKey,
   t: TranslateFn,
@@ -64,14 +91,18 @@ export function ticketWalletQuotaParts(
     parts.push(
       t
         ? t('connections.list.creditsUsage', { used, limit })
-        : `积分 ${used} / ${limit}`,
+        : `积分已用 ${used} / ${limit}`,
     );
     return parts;
   }
   const pct7d = extras?.quota7dPct;
   const pct5h = extras?.quota5hPct;
-  if (hasOfficialQuotaWindow(pct7d)) parts.push(`7d ${pct7d}%`);
-  if (hasOfficialQuotaWindow(pct5h)) parts.push(`5h ${pct5h}%`);
+  if (hasOfficialQuotaWindow(pct7d)) {
+    parts.push(t ? t('connections.list.quota7dUsedPct', { pct: pct7d }) : `7 天已用 ${pct7d}%`);
+  }
+  if (hasOfficialQuotaWindow(pct5h)) {
+    parts.push(t ? t('connections.list.quota5hUsedPct', { pct: pct5h }) : `5 小时已用 ${pct5h}%`);
+  }
   return parts;
 }
 
@@ -87,7 +118,7 @@ export function ticketWalletTokenUsageText(
   const inText = fmtTokens(hasInput ? input : 0);
   const outText = fmtTokens(hasOutput ? output : 0);
   if (t) return t('connections.list.tokenUsage', { in: inText, out: outText });
-  return `${inText} / ${outText}`;
+  return `输入 ${inText} · 输出 ${outText}`;
 }
 
 /** Percents when the official window exists; otherwise token totals. */

@@ -35,6 +35,7 @@ test('choosing only Sub2API hides Routes; Settings can show Routes again', async
   await expect(nav.getByRole('link', { name: /^路由(?:$| — )/ })).toHaveCount(0);
 
   await nav.getByRole('link', { name: /^设置(?:$| — )/ }).click();
+  await page.getByRole('tab', { name: '功能' }).click();
   const routesToggle = page.getByRole('switch', { name: '显示路由页面' });
   await expect(routesToggle).not.toBeChecked();
   await expect(page.getByRole('switch', { name: '显示 Sub2API 页面' })).toBeChecked();
@@ -53,6 +54,7 @@ test('choosing local routing only hides Sub2API; Settings can show it again', as
   await expect(nav.getByRole('link', { name: /^Sub2API(?:$| — )/ })).toHaveCount(0);
 
   await nav.getByRole('link', { name: /^设置(?:$| — )/ }).click();
+  await page.getByRole('tab', { name: '功能' }).click();
   const sub2apiToggle = page.getByRole('switch', { name: '显示 Sub2API 页面' });
   await expect(sub2apiToggle).not.toBeChecked();
   await sub2apiToggle.click();

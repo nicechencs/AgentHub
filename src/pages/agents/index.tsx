@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { PackageSearch } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { getAgentStatusSnapshot, useAgentStatuses } from '@/app/runtime';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
@@ -15,9 +16,11 @@ import {
   ColumnResizeHandle,
   Table,
   TableBody,
+  TableCell,
   TableHead,
   TableHeader,
   TableHeaderRow,
+  TableRow,
   TableShell,
   useColumnWidths,
 } from '@/components/ui/table';
@@ -26,7 +29,11 @@ import { SortHandle } from '@/components/shared/SortHandle';
 import { SORTABLE_ID_ATTR, useSortableDrag } from '@/components/shared/use-sortable-drag';
 import { useStoredIdOrder } from '@/components/shared/use-stored-id-order';
 import { resolveAgentMeta } from '@/config/agents';
-import { applyStoredAgentOrder, sortAgentsForManagePage } from '@/lib/agent-visibility';
+import {
+  applyStoredAgentOrder,
+  managePageUninstalledDividerIndex,
+  sortAgentsForManagePage,
+} from '@/lib/agent-visibility';
 import { applyAgentUpdates, checkAgentUpdates } from '@/lib/api/agent';
 import { StorageKey } from '@/lib/ui-preferences';
 import { tryRefreshDoctor } from '@/lib/api/doctor';
@@ -50,6 +57,8 @@ const AGENTS_PREVIEW_WIDTH_KEY = StorageKey.agentsPreviewWidth;
 /** Agents 安装管理页 — 环境检测 + Agent 安装（backend 由构建时 composition root 选择） */
 export default function AgentsPage() {
   const { t } = useI18n();
+  const [searchParams] = useSearchParams();
+  const highlightAgentId = searchParams.get('agent');
   const { state, statuses, error, reload } = useAgentStatuses();
   const [updateById, setUpdateById] = React.useState<
     Partial<Record<AgentKey, AgentUpdateInfo>>
@@ -242,11 +251,15 @@ export default function AgentsPage() {
   const showPagePanel = pageFix != null;
   const agentOrder = useStoredIdOrder(StorageKey.agentsCatalogOrder);
   const orderedAgents = React.useMemo(() => {
-    const baseline = sortAgentsForManagePage(agents);
-    return applyStoredAgentOrder(baseline, (row) => row.agentId, agentOrder.stored);
+    const ordered = applyStoredAgentOrder(agents, (row) => row.agentId, agentOrder.stored);
+    return sortAgentsForManagePage(ordered);
   }, [agentOrder.stored, agents]);
   const liveIds = React.useMemo(
     () => orderedAgents.map((row) => row.agentId),
+    [orderedAgents],
+  );
+  const uninstalledDividerIndex = React.useMemo(
+    () => managePageUninstalledDividerIndex(orderedAgents),
     [orderedAgents],
   );
   React.useEffect(() => {
@@ -277,6 +290,13 @@ export default function AgentsPage() {
     if (!liveIds.includes(inspect.target)) inspect.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- close when the selected agent leaves the list
   }, [inspect.target, liveIds]);
+  const openedFromUrl = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!highlightAgentId || !liveIds.includes(highlightAgentId)) return;
+    if (openedFromUrl.current === highlightAgentId) return;
+    openedFromUrl.current = highlightAgentId;
+    inspect.open(highlightAgentId);
+  }, [highlightAgentId, inspect, liveIds]);
 
   const inspectPanel = inspectAgent ? (
     <AgentDetailPanel
@@ -400,11 +420,26 @@ export default function AgentsPage() {
               </TableHeaderRow>
             </TableHeader>
             <TableBody>
-          {orderedAgents.map((a) => {
+          {orderedAgents.map((a, index) => {
             const sortable = rowProps(a.agentId);
             return (
+              <React.Fragment key={a.agentId}>
+                {index === uninstalledDividerIndex ? (
+                  <TableRow
+                    data-agent-group="uninstalled"
+                    className="bg-subtle/40 hover:bg-subtle/40"
+                  >
+                    <TableCell
+                      colSpan={AGENT_TABLE_COLUMN_SPECS.length}
+                      className="py-1"
+                    >
+                      <span className="text-meta font-medium text-muted">
+                        {t('agents.card.notInstalled')}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ) : null}
                 <AgentCard
-                  key={a.agentId}
                   agent={a}
                   runtimes={runtimes}
                   selected={inspect.target === a.agentId}
@@ -424,6 +459,7 @@ export default function AgentsPage() {
                     />
                   ) : null}
                 />
+              </React.Fragment>
             );
           })}
             </TableBody>

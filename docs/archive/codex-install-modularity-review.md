@@ -1,14 +1,18 @@
 ---
 title: Codex 安装与连接/路由模块化审查
-type: status
-status: current
+type: archive
+status: archived
 owner: maintainers
 audience: product, frontend, and core contributors
 source-of-truth: dev branch review on 2026-08-27; fixes on branch cursor/codex-modularity-fixes-85e8
-updated: 2026-08-27
+updated: 2026-09-08
 ---
 
 # Codex 安装与连接/路由模块化审查
+
+> **归档（2026-09-08）**。本页是一次性审查、批次记录或复核，不是现行契约。当前实现见 [当前实现状态](../STATUS.md)。下文保留原文，不要按此页派工。
+>
+> **Archived / 已归档**: Historical review or batch record. Do not use it as the current implementation contract.
 
 本页记录 2026-08-27 对 `dev` 分支的深度审查结论与修复状态。每项可在源码、测试或文档中核实。
 

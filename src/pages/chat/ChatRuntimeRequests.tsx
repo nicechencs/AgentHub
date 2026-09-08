@@ -14,7 +14,7 @@ export function ChatRuntimeRequests({
   onReply: ReplyHandler;
 }) {
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-2 px-4 py-2">
+    <div className="w-full space-y-2 py-2">
       {requests.map((request) => <RuntimeRequestCard key={`${request.runId}:${request.id}`} request={request} onReply={onReply} />)}
     </div>
   );

@@ -1,13 +1,17 @@
 ---
 title: AgentHub 项目 review（2026-09-07，c726bd2a）
-type: status
-status: current
+type: archive
+status: archived
 owner: maintainers
-updated: 2026-09-07
+updated: 2026-09-08
 scope: dev；跨 HEAD 续审，最终目标 c726bd2aa1ff8ea0aaf206c6755f6cdcfbb6303c
 ---
 
 # AgentHub 项目 review
+
+> **归档（2026-09-08）**。本页是一次性审查、批次记录或复核，不是现行契约。当前实现见 [当前实现状态](../STATUS.md)。下文保留原文，不要按此页派工。
+>
+> **Archived / 已归档**: Historical review or batch record. Do not use it as the current implementation contract.
 
 本报告记录当前工作区的持续独立审查，不替代现行架构契约；本轮未修改生产代码、测试或用户配置。修复跟踪见 [2026-09-07 review 修复进展](./2026-09-07-review-fix-progress.md)。
 
@@ -17,7 +21,7 @@ scope: dev；跨 HEAD 续审，最终目标 c726bd2aa1ff8ea0aaf206c6755f6cdcfbb6
 
 最终确认 **P0 0 项、P1 9 项、P2 5 项**。P1 集中在停止与进程生命周期、备份/回收一致性、本机路由的重放与登录刷新、SSE 结束处理。前端/backend 分层、生产/mock 隔离、连接激活事务、迁移事务及发版元数据抽样表现良好。
 
-第一轮开始于 `06b893c4`。审查期间 `dev` 前进到 `c726bd2a`（`v0.4.10`）；新增提交只修改 `CHANGELOG.md`、`Cargo.lock`、`Cargo.toml`、`package.json`。第二、三轮以新 HEAD 复核源码并扩大覆盖。旧报告 `docs/reviews/2026-09-07-project-review-06b893c4.md` 保留，不覆盖。
+第一轮开始于 `06b893c4`。审查期间 `dev` 前进到 `c726bd2a`（`v0.4.10`）；新增提交只修改 `CHANGELOG.md`、`Cargo.lock`、`Cargo.toml`、`package.json`。第二、三轮以新 HEAD 复核源码并扩大覆盖。旧报告 `docs/archive/2026-09-07-project-review-06b893c4.md` 保留，不覆盖。
 
 ## 范围与运行信息
 

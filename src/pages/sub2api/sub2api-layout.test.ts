@@ -40,6 +40,8 @@ describe('sub2api layout wiring', () => {
     expect(page).toContain('data-sub2api-group-filter');
     expect(page).toContain('applyImportedLogin');
     expect(page).toContain('data-sub2api-keys-table');
+    expect(page).toContain('keysLoadError');
+    expect(page).toContain('ErrorState');
     expect(page).toContain('data-sub2api-endpoints');
     expect(page).toContain("t('routes.sub2api.copyEndpoint')");
     expect(page).toContain('CopyableEndpointChip');

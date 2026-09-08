@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { PluginAgentStatus } from '@/lib/backend/contracts/plugin-types';
 import type { TranslateFn } from '@/lib/i18n';
-import { pluginEmptyCopy } from './plugin-empty';
+import { pluginEmptyCopy, pluginScanFailedAgents } from './plugin-empty';
 
-const t = ((key: string, params?: { name?: string | number }) =>
-  params?.name != null ? `${key}:${params.name}` : key) as TranslateFn;
+const t = ((key: string, params?: { name?: string | number; names?: string }) =>
+  params?.names != null
+    ? `${key}:${params.names}`
+    : params?.name != null
+      ? `${key}:${params.name}`
+      : key) as TranslateFn;
 
 const agents: PluginAgentStatus[] = [
   { agent: 'claude', support: 'listed', pluginCount: 0 },
@@ -25,6 +29,20 @@ describe('pluginEmptyCopy', () => {
       description: 'plugins.empty.all',
       showRefresh: true,
     });
+  });
+
+  it('names which tools failed when the all-tab list is empty', () => {
+    const copy = pluginEmptyCopy('all', agents, '', t, 'Grok');
+    expect(copy).toEqual({
+      title: 'plugins.empty.partialTitle',
+      description: 'plugins.empty.allPartial:Grok',
+      showRefresh: true,
+    });
+  });
+
+  it('lists official-command failures among visible agents', () => {
+    const failed = pluginScanFailedAgents(agents, ['claude', 'grok', 'pi']);
+    expect(failed.map((row) => row.agent)).toEqual(['grok']);
   });
 
   it('keeps a refresh action when a wired tool simply has no packs', () => {

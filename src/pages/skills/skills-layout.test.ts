@@ -40,6 +40,21 @@ describe('skills split layout', () => {
     expect(matrix).not.toContain('text-sm text-secondary');
   });
 
+  it('lets empty library install from the empty state and pick a local folder', () => {
+    const page = source('index.tsx');
+    const panel = source('SkillsLibraryPanel.tsx');
+    expect(page).toContain('pickDirectory');
+    expect(page).toContain('pickFile');
+    expect(page).toContain("t('skills.dialog.sourceLabel')");
+    expect(page).toContain("t('skills.dialog.pickFolder')");
+    expect(page).toContain("t('skills.dialog.pickZip')");
+    expect(page).toContain('installSourceError');
+    expect(page).toContain('onEmptyInstall');
+    expect(page).toContain('onEmptyMarket');
+    expect(panel).toContain("t('skills.empty.goMarket')");
+    expect(panel).toContain("t('skills.page.installCta')");
+  });
+
   it('keeps the install action on the tab row in the left split column', () => {
     const page = source('index.tsx');
     const installStart = page.indexOf('setInstallOpen(true)');

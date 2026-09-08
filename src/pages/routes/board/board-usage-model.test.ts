@@ -16,6 +16,7 @@ import {
   poolSurfaceToUsageSurface,
   seriesKeyForRow,
   summarizeGatewayUsage,
+  boardUsageHasRequests,
   usageSurfaceToPoolSurface,
 } from './board-usage-model';
 
@@ -74,6 +75,13 @@ describe('boardUsageWindow', () => {
     const day = boardUsageWindow('7d', now);
     expect(day.days).toBe(7);
     expect(new Date(day.since).getTime()).toBe(now.getTime() - 7 * 24 * 3600 * 1000);
+  });
+});
+
+describe('boardUsageHasRequests', () => {
+  it('treats zero requests as empty even when token fields are zeroed', () => {
+    expect(boardUsageHasRequests({ requestCount: 0 })).toBe(false);
+    expect(boardUsageHasRequests({ requestCount: 2 })).toBe(true);
   });
 });
 

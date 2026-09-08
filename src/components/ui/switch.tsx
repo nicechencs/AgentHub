@@ -9,7 +9,7 @@ const Switch = React.forwardRef<
   <SwitchPrimitive.Root
     ref={ref}
     className={cn(
-      'peer inline-flex h-6 w-10 shrink-0 cursor-pointer items-center rounded-full border-0 p-1 transition-colors',
+      'peer inline-flex h-6 w-10 shrink-0 cursor-pointer items-center rounded-full border-0 p-1 transition-colors motion-reduce:transition-none',
       // 关态用 active，避免 subtle 贴在卡片/画布上几乎看不出轨道
       'bg-active',
       // primary 在本项目是文字色；开关选中态用 accent
@@ -22,7 +22,7 @@ const Switch = React.forwardRef<
   >
     <SwitchPrimitive.Thumb
       className={cn(
-        'pointer-events-none block h-4 w-4 translate-x-0 rounded-full bg-white shadow-sm transition-transform',
+        'pointer-events-none block h-4 w-4 translate-x-0 rounded-full bg-white shadow-sm transition-transform motion-reduce:transition-none',
         'data-[state=checked]:translate-x-4',
       )}
     />

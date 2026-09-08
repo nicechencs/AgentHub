@@ -3,7 +3,7 @@
  * 不 import React、不碰 lib/api。
  */
 import { pageRhythm } from '@/components/layout/page-rhythm';
-import { agentDisplayName } from '@/config/agents';
+import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
 import { sliceAgentStatus } from '@/lib/backend/contracts/agent-status-view';
 import type {
   BindingRoute,
@@ -24,7 +24,7 @@ import type {
   ChatMessageStatus,
   Conversation,
 } from '@/lib/types';
-import type { TurnGroup } from './chat-format';
+import { relativeTime, type TurnGroup } from './chat-format';
 
 export type ChatSendBlocker =
   | { kind: 'hiddenAgents'; agentIds: AgentKey[] }
@@ -758,6 +758,52 @@ export function conversationTitle(t: TranslateFn, title: string): string {
   return title.trim() ? title : t('chat.title.newConversation');
 }
 
+/** Empty title and no official session means this row has not been sent yet. */
+export function isBlankConversationDraft(
+  conversation: Pick<Conversation, 'title' | 'nativeSessionId'>,
+): boolean {
+  return !conversation.title.trim() && !conversation.nativeSessionId;
+}
+
+export function conversationAgentLine(agentIds: readonly AgentKey[]): string {
+  if (agentIds.length === 0) return '';
+  if (agentIds.length === 1) return agentDisplayName(agentIds[0]);
+  if (agentIds.length === 2) {
+    return `${agentDisplayName(agentIds[0])} · ${agentDisplayName(agentIds[1])}`;
+  }
+  return `${agentDisplayName(agentIds[0])} +${agentIds.length - 1}`;
+}
+
+/** Hover details for a one-line history row, excluding Agent (shown as logos). */
+export function conversationRailHint(
+  conversation: Pick<
+    Conversation,
+    'agentIds' | 'cwd' | 'updatedAt' | 'title' | 'nativeSessionId'
+  >,
+  t: TranslateFn,
+): string {
+  const parts = [
+    conversation.cwd?.trim() || t('chat.cwd.unset'),
+    relativeTime(conversation.updatedAt, t),
+  ].filter(Boolean);
+  if (isBlankConversationDraft(conversation)) parts.push(t('chat.rail.draft'));
+  if (conversation.nativeSessionId) {
+    parts.push(t('chat.header.nativeSession', { id: conversation.nativeSessionId }));
+  }
+  return parts.join(' · ');
+}
+
+/** Selected history-row mark: first Agent brand, else the nav accent. */
+export function conversationRailMarkColor(agentIds: readonly AgentKey[]): string {
+  const id = agentIds[0];
+  return id ? resolveAgentMeta(id).color : 'var(--accent)';
+}
+
+/** Selected history-row fill: a visible wash of the Agent mark on canvas. */
+export function conversationRailSelectedFill(agentIds: readonly AgentKey[]): string {
+  return `color-mix(in srgb, ${conversationRailMarkColor(agentIds)} 28%, var(--bg-canvas))`;
+}
+
 export type ChatBlockerPrimaryTarget =
   | 'agents'
   | 'connections'
@@ -848,7 +894,7 @@ export function composerUsesCssFieldSizing(css?: CssSupports | null): boolean {
 /** 对话记录与 composer 共用的主列宽（`pageRhythm.readingColumn`）。 */
 export const chatMainColumnClass = pageRhythm.readingColumn;
 
-/** 对话记录与输入壳外侧同一圈 16px 缝（水平再叠 `chatChromeX`）。 */
+/** 对话记录与输入壳外侧上下 16px；水平缝由页面上的 `chatChromeX` 提供，与页边 12px 对齐。 */
 export const chatStageClass = 'flex min-h-0 flex-1 flex-col py-4';
 
 /** Transcript reading surface. Transparent so the chat column canvas shows through. Do not paint bg-panel here. */

@@ -75,7 +75,7 @@ export function SourcePreview({
             aria-label={t('common.copy')}
             onClick={onCopy}
           >
-            {copied ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
+            {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
             {copied ? t('common.copied') : t('common.copy')}
           </Button>
         </div>

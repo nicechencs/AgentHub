@@ -16,10 +16,13 @@ import { filterByPageVisibleAgent } from '@/lib/agent-visibility';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { listMcpInventory } from '@/lib/api/mcp';
 import { openPathInFileManager } from '@/lib/api/skill';
-import type { McpInventory, McpServerEntry } from '@/lib/backend/contracts/mcp-types';
+import type { McpInventory, McpServerEntry, McpSourceFile } from '@/lib/backend/contracts/mcp-types';
 import type { AgentKey } from '@/lib/types';
+import { AgentDot } from '@/components/shared/AgentDot';
+import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { groupMcpServersByAgentAndFile } from './group-servers';
 import { McpServerTable } from './McpServerTable';
+import { visibleMcpSources } from './mcp-sources';
 
 function agentName(id: AgentKey): string {
   return agentDisplayName(id);
@@ -94,6 +97,18 @@ export default function McpPage() {
 
   const agentGroups = useMemo(() => groupMcpServersByAgentAndFile(servers), [servers]);
 
+  const sources = useMemo(() => {
+    const visible = filterByPageVisibleAgent(
+      visibleMcpSources(data?.sources),
+      (file) => file.agent,
+      hiddenIds,
+      installedIds,
+      !agentsLoading,
+    );
+    if (filterAgent === 'all') return visible;
+    return visible.filter((file) => file.agent === filterAgent);
+  }, [data, filterAgent, hiddenIds, installedIds, agentsLoading]);
+
   async function locateSource(path: string) {
     try {
       await openPathInFileManager(path);
@@ -145,6 +160,12 @@ export default function McpPage() {
           <TableSkeleton rows={6} cols={4} />
         ) : error && !data ? (
           <ErrorState error={error} onRetry={() => void load()} />
+        ) : servers.length === 0 && sources.length > 0 ? (
+          <McpSourceEmpty
+            sources={sources}
+            showAgent={filterAgent === 'all'}
+            onLocate={locateSource}
+          />
         ) : servers.length === 0 ? (
           <EmptyState
             icon={Plug}
@@ -173,6 +194,50 @@ export default function McpPage() {
           />
         )}
       </PageSection>
+    </div>
+  );
+}
+
+function McpSourceEmpty({
+  sources,
+  showAgent,
+  onLocate,
+}: {
+  sources: McpSourceFile[];
+  showAgent: boolean;
+  onLocate: (path: string) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="space-y-2">
+      <p className="text-body text-secondary">{t('mcp.empty.hasSources')}</p>
+      {sources.map((file) => (
+        <div
+          key={`${file.agent}:${file.path}`}
+          className="flex items-center justify-between gap-3 rounded-card border border-border bg-panel px-3 py-2"
+        >
+          <div className="min-w-0">
+            <p className="flex min-w-0 items-center gap-2 truncate text-body font-medium">
+              {showAgent ? (
+                <>
+                  <AgentDot agentId={file.agent} size="sm" title={null} />
+                  <span className="shrink-0">{agentName(file.agent)}</span>
+                  <span className="text-muted">·</span>
+                </>
+              ) : null}
+              <span className="truncate">{file.label}</span>
+            </p>
+            <p className={file.error ? 'truncate text-meta text-danger' : 'truncate text-meta text-muted'}>
+              {file.error?.trim()
+                ? file.error
+                : file.readable
+                  ? t('mcp.empty.sourceEmpty')
+                  : t('mcp.empty.sourceUnreadable')}
+            </p>
+          </div>
+          <OpenDirButton labeled title={file.path} onClick={() => onLocate(file.path)} />
+        </div>
+      ))}
     </div>
   );
 }

@@ -22,6 +22,7 @@ import {
   buildDesignTokensCss,
   buildTailwindFontSize,
   BUTTON,
+  ICON,
   RADIUS,
   TOOLTIP,
   typeScalePx,
@@ -66,7 +67,7 @@ describe('design tokens SSOT', () => {
     expect(THEME.dark['bg-canvas']).not.toBe(THEME.dark['bg-panel']);
   });
 
-  it('keeps THEME.accent aligned with the default indigo palette', () => {
+  it('keeps THEME.accent aligned with the default blue palette', () => {
     expect(THEME.light.accent).toBe(ACCENT_PALETTES[DEFAULT_ACCENT_ID].light);
     expect(THEME.dark.accent).toBe(ACCENT_PALETTES[DEFAULT_ACCENT_ID].dark);
   });
@@ -127,23 +128,23 @@ describe('design tokens SSOT', () => {
 describe('RADIUS (docs/ui-design.md §2)', () => {
   it('keeps three px steps plus the product-mark squircle', () => {
     expect(RADIUS).toEqual({
-      sm: '6px',
-      DEFAULT: '8px',
-      lg: '12px',
+      sm: '8px',
+      DEFAULT: '12px',
+      lg: '16px',
       mark: '22%',
     });
   });
 });
 
 describe('TYPE_SCALE (docs/ui-design.md §2)', () => {
-  it('keeps exactly three distinct pixel sizes', () => {
+  it('keeps four distinct pixel sizes', () => {
     const roles = Object.keys(TYPE_SCALE);
-    expect(roles).toEqual(['title', 'body', 'meta']);
+    expect(roles).toEqual(['display', 'title', 'body', 'meta']);
     const sizes = new Set(Object.values(TYPE_SCALE).map((spec) => spec.size));
-    expect(sizes).toEqual(new Set(['16px', '13px', '12px']));
+    expect(sizes).toEqual(new Set(['22px', '18px', '14px', '12px']));
   });
 
-  it('maps legacy Tailwind names onto the three standards', () => {
+  it('maps legacy Tailwind names onto the current standards', () => {
     expect(TYPE_SCALE_ALIASES).toEqual({
       lg: 'title',
       xl: 'title',
@@ -154,6 +155,7 @@ describe('TYPE_SCALE (docs/ui-design.md §2)', () => {
     });
     const fontSize = buildTailwindFontSize();
     expect(fontSize.title).toEqual(typeScaleTw('title'));
+    expect(fontSize.display).toEqual(typeScaleTw('display'));
     expect(fontSize.lg).toEqual(fontSize.title);
     expect(fontSize.xl).toEqual(fontSize.title);
     expect(fontSize.sm).toEqual(fontSize.body);
@@ -161,9 +163,10 @@ describe('TYPE_SCALE (docs/ui-design.md §2)', () => {
     expect(fontSize.xs).toEqual(fontSize.meta);
     expect(fontSize['2xs']).toEqual(fontSize.meta);
     const distinctPx = new Set(Object.values(fontSize).map(([size]) => size));
-    expect(distinctPx).toEqual(new Set(['16px', '13px', '12px']));
-    expect(typeScalePx('title')).toBe(16);
-    expect(typeScalePx('body')).toBe(13);
+    expect(distinctPx).toEqual(new Set(['22px', '18px', '14px', '12px']));
+    expect(typeScalePx('display')).toBe(22);
+    expect(typeScalePx('title')).toBe(18);
+    expect(typeScalePx('body')).toBe(14);
     expect(typeScalePx('meta')).toBe(12);
   });
 });
@@ -176,6 +179,14 @@ describe('BUTTON (docs/ui-design.md §2)', () => {
     expect(BUTTON.padX.default % 4).toBe(0);
     expect(BUTTON.padX.lg % 4).toBe(0);
     expect(BUTTON.hoverShadow).toBe('none');
-    expect(BUTTON.radius).toBe('6px');
+    expect(BUTTON.radius).toBe('8px');
+  });
+});
+
+describe('ICON', () => {
+  it('keeps three lucide sizes: nav 18, chrome 16, inline 14', () => {
+    expect(ICON.nav).toEqual({ px: 18, stroke: 1.6 });
+    expect(ICON.chrome).toEqual({ px: 16, stroke: 1.75, className: 'h-4 w-4' });
+    expect(ICON.inline).toEqual({ px: 14, stroke: 1.75, className: 'h-3.5 w-3.5' });
   });
 });

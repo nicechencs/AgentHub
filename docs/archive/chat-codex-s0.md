@@ -1,13 +1,17 @@
 ---
 title: Codex Chat 接入验证与交接
-type: status
-status: current
+type: archive
+status: archived
 owner: maintainers
 audience: chat implementers
-updated: 2026-09-05
+updated: 2026-09-08
 ---
 
 # Codex Chat 接入验证与交接
+
+> **归档（2026-09-08）**。本页是一次性审查、批次记录或复核，不是现行契约。当前实现见 [当前实现状态](../STATUS.md)。下文保留原文，不要按此页派工。
+>
+> **Archived / 已归档**: Historical review or batch record. Do not use it as the current implementation contract.
 
 本文记录 [Chat 统一体验方案](../proposals/chat-unified-experience.md) 的 S0 实施证据。用户已授权使用 GPT‑5.6 Terra / Luna 子 Agent 开始处理；先完成接入验证，不将协议发现当作正式聊天功能。
 

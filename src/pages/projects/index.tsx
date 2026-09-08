@@ -88,6 +88,7 @@ import {
   expandedProjectMembers,
   filterVisibleProjects,
   nextSelectedForToggleAllVisible,
+  projectIdsToExpandForSearch,
   toggleSelectedSession,
   visibleSessionsForProject,
 } from './projects-list-model';
@@ -124,6 +125,7 @@ export default function ProjectsPage() {
   const [nestedOpen, setNestedOpen] = useState<Set<string>>(new Set());
   const [loadingProjectIds, setLoadingProjectIds] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
+  const expandedBeforeSearchRef = useRef<Set<string> | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<AgentSession | null>(null);
@@ -459,6 +461,32 @@ export default function ProjectsPage() {
       return next;
     });
   }
+
+  useEffect(() => {
+    if (!q) {
+      if (expandedBeforeSearchRef.current) {
+        const snapshot = expandedBeforeSearchRef.current;
+        expandedBeforeSearchRef.current = null;
+        setExpanded(snapshot);
+      }
+      return;
+    }
+    const ids = projectIdsToExpandForSearch(visibleGroups, q, sessionsByProject);
+    setExpanded((prev) => {
+      if (!expandedBeforeSearchRef.current) {
+        expandedBeforeSearchRef.current = new Set(prev);
+      }
+      if (ids.length === 0) return prev;
+      const next = new Set(prev);
+      let changed = false;
+      for (const id of ids) {
+        if (next.has(id)) continue;
+        next.add(id);
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [q, visibleGroups, sessionsByProject]);
 
   useEffect(() => {
     if (!q) return;

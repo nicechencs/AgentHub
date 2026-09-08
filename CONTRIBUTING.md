@@ -2,6 +2,18 @@
 
 感谢参与 AgentHub。红线在根目录 [AGENTS.md](AGENTS.md)。本页是提交和发版步骤；Agent 已加载红线时，不要为了遵守本页再通读文档树。
 
+## Agent 协作入口
+
+执行任务前以仓库根目录的 [AGENTS.md](AGENTS.md) 为项目规则入口；不支持自动加载时，由用户或主 Agent 提供与当前任务有关的规则。协作分工、并发、交接和运行环境能力见 [Agent 协作指南](docs/guides/agent-workflow.md) 与 [Agent 能力与工具](docs/reference/agent-runtime.md)。
+
+开始一个实际任务时，可将下面这段交给当前 Agent，再把 `<task>` 换成任务内容：
+
+```text
+当前仓库根目录是 <repo-root>。读取 <repo-root>/AGENTS.md，并按其中条件读取与本任务相关的 docs 页面。完成下面的任务：<task>
+```
+
+首次接入、升级后或出现加载异常时，再使用 [Agent 能力与工具](docs/reference/agent-runtime.md#接入检查) 的接入检查核实 Agent 是否能读取项目规则和按条件找到相关文档。
+
 ## 开发环境
 
 需要 Node.js LTS、pnpm、Rust stable、Git，以及 Tauri 在当前操作系统所需的桌面库。安装依赖后可用以下命令选择工作模式：
