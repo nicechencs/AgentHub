@@ -2716,6 +2716,7 @@ export const en = {
       goAgents: "Go to Agents",
     },
     rail: {
+      historyTitle: "Chats",
       collapseHistory: "Collapse history",
       expandHistory: "Expand history",
       resize: "Resize history",
@@ -2724,7 +2725,7 @@ export const en = {
       searchPlaceholder: "Search chats",
       searchAria: "Search chats",
       empty: "No chats yet",
-      emptyHint: "Click New chat above to start",
+      emptyHint: "Click New chat below to start",
       noMatch: "No matching chats",
       draft: "Draft",
       deleteAria: "Delete",

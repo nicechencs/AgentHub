@@ -2696,6 +2696,7 @@ export const zh = {
       goAgents: "去 Agent 页",
     },
     rail: {
+      historyTitle: "对话记录",
       collapseHistory: "收起历史",
       expandHistory: "展开历史",
       resize: "拖动调整历史宽度",
@@ -2704,7 +2705,7 @@ export const zh = {
       searchPlaceholder: "搜索对话",
       searchAria: "搜索对话",
       empty: "暂无对话",
-      emptyHint: "点上方「新建对话」开始",
+      emptyHint: "点下方「新建对话」开始",
       noMatch: "没有匹配的对话",
       draft: "草稿",
       deleteAria: "删除",

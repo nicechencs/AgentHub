@@ -13,7 +13,7 @@ function source(name: string): string {
 describe('chat layout wiring', () => {
   it('keeps the main column on canvas so an empty transcript matches composer chrome', () => {
     const page = source('index.tsx');
-    expect(page).toContain('flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-canvas');
+    expect(page).toContain('flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-card border border-border bg-canvas');
     expect(page).toContain('chatStageClass');
     expect(page).not.toContain('flex min-w-0 flex-1 flex-col bg-panel');
     expect(source('ChatMessageBubble.tsx')).toContain('formatChatDisplayContent');
@@ -139,8 +139,35 @@ describe('chat layout wiring', () => {
     expect(rail).toContain('CHAT_RAIL_WIDTH');
     expect(rail).toContain('StorageKey.chatRailWidth');
     expect(rail).toContain("t('chat.rail.resize')");
+    expect(rail).toContain('rounded-card border border-border');
+    expect(rail).toContain('bg-canvas');
+    expect(rail).toContain('justify-between');
+    expect(rail).toContain('border-b border-border');
+    expect(rail).not.toContain('pageRhythm.shellNav');
+    expect(rail).not.toContain('bg-panel');
     expect(rail).not.toContain('border-r border-border');
     expect(rail).not.toContain("'w-60'");
+  });
+
+  it('titles the history rail, collapses beside the title, and creates chats above search', () => {
+    const rail = source('ChatSessionRail.tsx');
+    const titleAt = rail.indexOf("t('chat.rail.historyTitle')");
+    const collapseAt = rail.indexOf("t('chat.rail.collapseHistory')");
+    const newAt = rail.indexOf("t('chat.rail.newChat')");
+    const searchAt = rail.indexOf("t('chat.rail.searchPlaceholder')");
+    const listAt = rail.indexOf('overflow-y-auto');
+    expect(titleAt).toBeGreaterThan(0);
+    expect(collapseAt).toBeGreaterThan(titleAt);
+    expect(newAt).toBeGreaterThan(collapseAt);
+    expect(searchAt).toBeGreaterThan(newAt);
+    expect(listAt).toBeGreaterThan(searchAt);
+    expect(rail).toContain('conversationRailHint');
+    expect(rail).toContain('conversationRailMarkColor');
+    expect(rail).toContain('inset-y-1.5 left-0 w-0.5 rounded-full');
+    expect(rail).toContain('AgentLogo');
+    expect(rail).toContain('hint={false}');
+    expect(rail).not.toContain('conversationAgentLine');
+    expect(rail).not.toContain('cwdShortName');
   });
 
   it('keeps history actions visible and focusable for runtime composers', () => {

@@ -3,7 +3,7 @@
  * 不 import React、不碰 lib/api。
  */
 import { pageRhythm } from '@/components/layout/page-rhythm';
-import { agentDisplayName } from '@/config/agents';
+import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
 import { sliceAgentStatus } from '@/lib/backend/contracts/agent-status-view';
 import type {
   BindingRoute,
@@ -24,7 +24,7 @@ import type {
   ChatMessageStatus,
   Conversation,
 } from '@/lib/types';
-import type { TurnGroup } from './chat-format';
+import { relativeTime, type TurnGroup } from './chat-format';
 
 export type ChatSendBlocker =
   | { kind: 'hiddenAgents'; agentIds: AgentKey[] }
@@ -772,6 +772,31 @@ export function conversationAgentLine(agentIds: readonly AgentKey[]): string {
     return `${agentDisplayName(agentIds[0])} · ${agentDisplayName(agentIds[1])}`;
   }
   return `${agentDisplayName(agentIds[0])} +${agentIds.length - 1}`;
+}
+
+/** Hover details for a one-line history row, excluding Agent (shown as logos). */
+export function conversationRailHint(
+  conversation: Pick<
+    Conversation,
+    'agentIds' | 'cwd' | 'updatedAt' | 'title' | 'nativeSessionId'
+  >,
+  t: TranslateFn,
+): string {
+  const parts = [
+    conversation.cwd?.trim() || t('chat.cwd.unset'),
+    relativeTime(conversation.updatedAt, t),
+  ].filter(Boolean);
+  if (isBlankConversationDraft(conversation)) parts.push(t('chat.rail.draft'));
+  if (conversation.nativeSessionId) {
+    parts.push(t('chat.header.nativeSession', { id: conversation.nativeSessionId }));
+  }
+  return parts.join(' · ');
+}
+
+/** Selected history-row mark: first Agent brand, else the nav accent. */
+export function conversationRailMarkColor(agentIds: readonly AgentKey[]): string {
+  const id = agentIds[0];
+  return id ? resolveAgentMeta(id).color : 'var(--accent)';
 }
 
 export type ChatBlockerPrimaryTarget =
