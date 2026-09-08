@@ -18,7 +18,9 @@ export function QuotaBar({
   const color = pct >= 90 ? 'bg-danger' : pct >= 70 ? 'bg-warning' : 'bg-success';
   return (
     <div className={cn('flex items-center', compact ? 'min-w-0 gap-1.5' : 'gap-2')}>
-      <span className={cn('shrink-0 text-meta text-muted', compact ? 'w-6' : 'w-8')}>{label}</span>
+      <span className={cn('shrink-0 text-meta text-muted', compact ? undefined : 'w-8')}>
+        {label}
+      </span>
       <Progress
         value={pct}
         className={cn('h-1.5', compact ? 'min-w-0 flex-1' : 'w-20')}

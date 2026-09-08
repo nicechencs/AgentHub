@@ -64,14 +64,18 @@ export function ticketWalletQuotaParts(
     parts.push(
       t
         ? t('connections.list.creditsUsage', { used, limit })
-        : `积分 ${used} / ${limit}`,
+        : `积分已用 ${used} / ${limit}`,
     );
     return parts;
   }
   const pct7d = extras?.quota7dPct;
   const pct5h = extras?.quota5hPct;
-  if (hasOfficialQuotaWindow(pct7d)) parts.push(`7d ${pct7d}%`);
-  if (hasOfficialQuotaWindow(pct5h)) parts.push(`5h ${pct5h}%`);
+  if (hasOfficialQuotaWindow(pct7d)) {
+    parts.push(t ? t('connections.list.quota7dUsedPct', { pct: pct7d }) : `7 天已用 ${pct7d}%`);
+  }
+  if (hasOfficialQuotaWindow(pct5h)) {
+    parts.push(t ? t('connections.list.quota5hUsedPct', { pct: pct5h }) : `5 小时已用 ${pct5h}%`);
+  }
   return parts;
 }
 
@@ -87,7 +91,7 @@ export function ticketWalletTokenUsageText(
   const inText = fmtTokens(hasInput ? input : 0);
   const outText = fmtTokens(hasOutput ? output : 0);
   if (t) return t('connections.list.tokenUsage', { in: inText, out: outText });
-  return `${inText} / ${outText}`;
+  return `输入 ${inText} · 输出 ${outText}`;
 }
 
 /** Percents when the official window exists; otherwise token totals. */

@@ -50,7 +50,7 @@ describe('PoolAuthorizationDetail', () => {
     expect(markup).toContain('刷新');
     expect(markup).toContain('启用');
     expect(markup).toContain('调用窗口');
-    expect(markup).toContain('7d');
+    expect(markup).toContain('7 天已用');
     expect(markup).toContain('2 个连接');
     expect(markup).toContain('优先级');
     expect(markup).toContain('最近使用');

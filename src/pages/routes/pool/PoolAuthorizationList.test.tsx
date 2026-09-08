@@ -81,7 +81,7 @@ describe('PoolAuthorizationList', () => {
     expect(markup).toContain('data-col="quota"');
     expect(markup).toContain('data-col="lastUsed"');
     expect(markup).toContain('data-col="priority"');
-    expect(markup).toContain('7d 22%');
+    expect(markup).toContain('7 天已用 22%');
     expect(markup).toContain('连接数量');
     expect(markup).toContain('调用窗口');
     expect(markup).toContain('最近使用');

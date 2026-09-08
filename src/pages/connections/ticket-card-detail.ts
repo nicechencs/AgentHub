@@ -232,22 +232,64 @@ export function humanizeTicketAuthLabel(label: string, t?: TranslateFn): string 
   return t ? localizeStoredUiCopy(stripped, t) : stripped;
 }
 
-const SECRET_TAIL_HEALTH = new Set(['可续期', '已配置', 'Renewable', 'Configured']);
+const CONFIGURED_HEALTH = new Set([
+  '可续期',
+  '已配置',
+  '已验证',
+  'Renewable',
+  'Configured',
+  'Verified',
+]);
 
-/** Card chip: secret tail (`**JF6Q`) in place of 可续期 / 已配置 when known. */
+const AUTH_CHIP_FALLBACK = {
+  authConfigured: '已配置',
+  authNeedsRelogin: '需重新登录',
+  authExpiring: '即将过期',
+  authUnknown: '尚未获取',
+} as const;
+
+/** List status: configured / needs login / unknown — never a secret tail. */
 export function ticketAuthChip(
   extras?: TicketDetailExtras | null,
   t?: TranslateFn,
-): { label: string; mono: boolean } | null {
+): { label: string; tone: 'default' | 'warning' } | null {
   if (!extras) return null;
-  const health = extras.authLabel ? humanizeTicketAuthLabel(extras.authLabel, t) : '';
-  const tail = extras.secretTail?.trim();
-  const healthKey = extras.authLabel ? humanizeTicketAuthLabel(extras.authLabel) : '';
-  if (tail && (!healthKey || SECRET_TAIL_HEALTH.has(healthKey))) {
-    return { label: tail, mono: true };
+  const labelOf = (key: keyof typeof AUTH_CHIP_FALLBACK) => {
+    if (!t) return AUTH_CHIP_FALLBACK[key];
+    switch (key) {
+      case 'authConfigured':
+        return t('connections.list.authConfigured');
+      case 'authNeedsRelogin':
+        return t('connections.list.authNeedsRelogin');
+      case 'authExpiring':
+        return t('connections.list.authExpiring');
+      case 'authUnknown':
+        return t('connections.list.authUnknown');
+    }
+  };
+
+  if (extras.authStatus === 'expired') {
+    return { label: labelOf('authNeedsRelogin'), tone: 'warning' };
   }
-  if (health) return { label: health, mono: false };
-  return null;
+  if (extras.authStatus === 'expiring') {
+    return { label: labelOf('authExpiring'), tone: 'warning' };
+  }
+  if (extras.authStatus === 'none') {
+    return { label: labelOf('authUnknown'), tone: 'default' };
+  }
+
+  const healthKey = extras.authLabel ? humanizeTicketAuthLabel(extras.authLabel) : '';
+  if (
+    extras.authStatus === 'valid'
+    || CONFIGURED_HEALTH.has(healthKey)
+    || Boolean(extras.secretTail?.trim())
+  ) {
+    return { label: labelOf('authConfigured'), tone: 'default' };
+  }
+  if (extras.authLabel) {
+    return { label: humanizeTicketAuthLabel(extras.authLabel, t), tone: 'default' };
+  }
+  return { label: labelOf('authUnknown'), tone: 'default' };
 }
 
 export type TicketSwitchChip = {

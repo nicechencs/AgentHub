@@ -206,10 +206,18 @@ export function PoolAuthorizationDetail({
             <p className="text-meta text-muted">{t('routes.pool.detail.quota')}</p>
             <div className="mt-1.5 flex flex-col gap-1.5">
               {hasQuotaWindow(item.quota7dPct) ? (
-                <QuotaBar label="7d" pct={item.quota7dPct} resetIn={item.quota7dResetIn} />
+                <QuotaBar
+                  label={t('connections.list.quota7dUsed')}
+                  pct={item.quota7dPct}
+                  resetIn={item.quota7dResetIn}
+                />
               ) : null}
               {hasQuotaWindow(item.quota5hPct) ? (
-                <QuotaBar label="5h" pct={item.quota5hPct} resetIn={item.quotaResetIn} />
+                <QuotaBar
+                  label={t('connections.list.quota5hUsed')}
+                  pct={item.quota5hPct}
+                  resetIn={item.quotaResetIn}
+                />
               ) : null}
             </div>
           </div>

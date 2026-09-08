@@ -812,31 +812,39 @@ describe('ticket detail fields', () => {
     expect(humanizeTicketAuthLabel('已配置', tEn)).toBe('Configured');
     expect(humanizeTicketAuthLabel('已验证', tEn)).toBe('Verified');
     expect(ticketAuthChip({ authLabel: '可续期·未验证' }, tEn)).toEqual({
-      label: 'Renewable',
-      mono: false,
+      label: 'Configured',
+      tone: 'default',
     });
     expect(ticketAuthChip({ authLabel: '已配置', secretTail: '**wxyz' }, tEn)).toEqual({
-      label: '**wxyz',
-      mono: true,
+      label: 'Configured',
+      tone: 'default',
     });
   });
 
-  it('replaces 可续期 / 已配置 chips with the secret tail', () => {
+  it('shows login health instead of a secret tail', () => {
     expect(ticketAuthChip({
       authLabel: '可续期·未验证',
       secretTail: '**JF6Q',
-    })).toEqual({ label: '**JF6Q', mono: true });
+    })).toEqual({ label: '已配置', tone: 'default' });
     expect(ticketAuthChip({
       authLabel: '已配置',
       secretTail: '**wxyz',
-    })).toEqual({ label: '**wxyz', mono: true });
+    })).toEqual({ label: '已配置', tone: 'default' });
     expect(ticketAuthChip({ authLabel: '可续期·未验证' })).toEqual({
-      label: '可续期',
-      mono: false,
+      label: '已配置',
+      tone: 'default',
     });
     expect(ticketAuthChip({ authLabel: '已验证', secretTail: '**JF6Q' })).toEqual({
-      label: '已验证',
-      mono: false,
+      label: '已配置',
+      tone: 'default',
+    });
+    expect(ticketAuthChip({ authStatus: 'expired' })).toEqual({
+      label: '需重新登录',
+      tone: 'warning',
+    });
+    expect(ticketAuthChip({ authStatus: 'none' })).toEqual({
+      label: '尚未获取',
+      tone: 'default',
     });
   });
 
