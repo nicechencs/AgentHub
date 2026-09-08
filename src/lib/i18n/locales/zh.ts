@@ -1237,6 +1237,8 @@ export const zh = {
     nav: {
       title: "路由",
       aria: "路由分区",
+      collapse: "收起路由导航",
+      expand: "展开路由导航",
       resize: "拖动调整宽度",
       list: "路由列表",
       board: "看板",

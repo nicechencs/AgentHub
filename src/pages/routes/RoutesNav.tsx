@@ -1,15 +1,15 @@
 import * as React from 'react';
 import { NavLink } from 'react-router-dom';
-import { PanelLeftOpen } from 'lucide-react';
+import { PanelLeftClose, PanelLeftOpen, Route } from 'lucide-react';
 import { NavResizeHandle } from '@/components/layout/NavResizeHandle';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { ROUTES_NAV_WIDTH } from '@/components/layout/sidebar-width-model';
-import { useSidebar } from '@/components/layout/SidebarContext';
 import { useNavWidth } from '@/components/layout/use-sidebar-width';
 import { Badge } from '@/components/ui/badge';
 import { Hint } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { StorageKey } from '@/lib/storage-key';
+import { loadBool, saveBool } from '@/lib/ui-preferences';
 import { cn } from '@/lib/utils';
 import {
   ROUTES_NAV_ITEMS,
@@ -94,14 +94,22 @@ function RoutesNavLink({
  */
 export function RoutesNav() {
   const { t } = useI18n();
-  const { expandPrimarySidebar } = useSidebar();
   const isLg = useIsLgUp();
+  const [collapsed, setCollapsed] = React.useState(
+    () => loadBool(StorageKey.routesNavCollapsed, false),
+  );
+  const compact = !isLg || collapsed;
   const width = useNavWidth({
-    collapsed: !isLg,
+    collapsed: compact,
     storageKey: StorageKey.routesNavWidth,
     policy: ROUTES_NAV_WIDTH,
   });
   const navItems = ROUTES_NAV_ITEMS;
+
+  const setRailCollapsed = React.useCallback((next: boolean) => {
+    setCollapsed(next);
+    saveBool(StorageKey.routesNavCollapsed, next);
+  }, []);
 
   const itemClass = (isActive: boolean) =>
     cn(
@@ -110,6 +118,9 @@ export function RoutesNav() {
         ? 'bg-accent-subtle font-medium text-primary [&_svg]:text-accent before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-accent'
         : 'text-secondary hover:bg-hover hover:text-primary',
     );
+
+  const railToggleClass =
+    'flex h-7 w-7 items-center justify-center rounded-btn text-muted transition-colors hover:bg-hover hover:text-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30';
 
   return (
     <>
@@ -122,23 +133,55 @@ export function RoutesNav() {
         className={cn(
           'flex shrink-0 items-center border-b border-border',
           pageRhythm.topChrome,
-          isLg ? 'justify-between px-3' : 'justify-center',
+          isLg && !collapsed ? 'justify-between px-3' : 'justify-center',
         )}
       >
-        <Hint label={t('nav.expandSidebar')} side="right">
-          <button
-            type="button"
-            onClick={expandPrimarySidebar}
-            className="flex h-7 w-7 items-center justify-center rounded-btn text-muted transition-colors hover:bg-hover hover:text-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30"
-            aria-label={t('nav.expandSidebar')}
-          >
-            <PanelLeftOpen size={18} strokeWidth={1.6} absoluteStrokeWidth data-icon="nav" />
-          </button>
-        </Hint>
-        {isLg && (
-          <span className="min-w-0 truncate text-sm font-semibold tracking-tight">
-            {t('routes.nav.title')}
-          </span>
+        {isLg && !collapsed ? (
+          <>
+            <div className="flex min-w-0 items-center gap-2">
+              <Route
+                size={NAV_ICON_SIZE}
+                strokeWidth={1.6}
+                absoluteStrokeWidth
+                data-icon="nav"
+                className="shrink-0"
+              />
+              <span className={cn('min-w-0 truncate', pageRhythm.pageTitle)}>
+                {t('routes.nav.title')}
+              </span>
+            </div>
+            <Hint label={t('routes.nav.collapse')} side="right">
+              <button
+                type="button"
+                onClick={() => setRailCollapsed(true)}
+                className={railToggleClass}
+                aria-label={t('routes.nav.collapse')}
+              >
+                <PanelLeftClose size={18} strokeWidth={1.6} absoluteStrokeWidth data-icon="nav" />
+              </button>
+            </Hint>
+          </>
+        ) : (
+          <Hint label={t('routes.nav.expand')} side="right">
+            <button
+              type="button"
+              onClick={() => setRailCollapsed(false)}
+              className="group relative flex h-7 w-7 shrink-0 items-center justify-center rounded-btn focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30"
+              aria-label={t('routes.nav.expand')}
+            >
+              <span className="flex h-7 w-7 items-center justify-center rounded-btn transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0">
+                <Route
+                  size={NAV_ICON_SIZE}
+                  strokeWidth={1.6}
+                  absoluteStrokeWidth
+                  data-icon="nav"
+                />
+              </span>
+              <span className="absolute inset-0 flex items-center justify-center rounded-btn text-muted opacity-0 transition-opacity group-hover:bg-hover group-hover:text-primary group-hover:opacity-100 group-focus-visible:bg-hover group-focus-visible:text-primary group-focus-visible:opacity-100">
+                <PanelLeftOpen size={18} strokeWidth={1.6} absoluteStrokeWidth data-icon="nav" />
+              </span>
+            </button>
+          </Hint>
         )}
       </div>
 
@@ -150,7 +193,7 @@ export function RoutesNav() {
           <RoutesNavLink
             key={item.to}
             item={item}
-            compact={!isLg}
+            compact={compact}
             itemClass={itemClass}
           />
         ))}
@@ -159,7 +202,7 @@ export function RoutesNav() {
       <NavResizeHandle
         label={t('routes.nav.resize')}
         width={width}
-        interactive={isLg}
+        interactive={isLg && !collapsed}
       />
     </>
   );

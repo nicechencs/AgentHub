@@ -64,4 +64,23 @@ describe('routes-nav-items', () => {
     expect(nav).toContain("t('routes.nav.resize')");
     expect(nav).not.toContain('w-12 lg:w-48');
   });
+
+  it('collapses the secondary rail from a top-right control', () => {
+    const nav = readFileSync(path.join(dir, 'RoutesNav.tsx'), 'utf8');
+    expect(nav).toContain('StorageKey.routesNavCollapsed');
+    expect(nav).toContain("t('routes.nav.collapse')");
+    expect(nav).toContain("t('routes.nav.expand')");
+    expect(nav).toContain('PanelLeftClose');
+    expect(nav).toContain('PanelLeftOpen');
+    expect(nav).toContain('group-hover:opacity-0');
+    expect(nav).toContain('justify-between px-3');
+    expect(nav).toContain('pageRhythm.pageTitle');
+    expect(nav).toContain('<Route');
+    expect(nav.indexOf('<Route')).toBeLessThan(nav.indexOf("t('routes.nav.title')"));
+    expect(nav).not.toContain('text-sm font-semibold tracking-tight');
+    expect(nav.indexOf("t('routes.nav.title')")).toBeLessThan(nav.indexOf("t('routes.nav.collapse')"));
+    expect(nav).not.toContain('expandPrimarySidebar');
+    expect(nav).not.toContain("t('nav.expandSidebar')");
+    expect(nav).not.toContain('useSidebar');
+  });
 });
