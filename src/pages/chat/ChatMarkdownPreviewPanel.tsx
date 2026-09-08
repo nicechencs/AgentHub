@@ -5,6 +5,7 @@ import {
   useState,
 } from 'react';
 import { ChevronLeft, Code2, Eye, PanelRightClose } from 'lucide-react';
+import { pageRhythm } from '@/components/layout/page-rhythm';
 import { MarkdownView, isMarkdownFilePath, localParentDir } from '@/components/shared/MarkdownView';
 import { CopyableFileName } from '@/components/shared/CopyableFileName';
 import { OpenDirButton } from '@/components/shared/OpenDirButton';
@@ -119,14 +120,13 @@ export function ChatMarkdownPreviewPanel({
   return (
     <aside
       className={cn(
-        'flex h-full min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-card border border-border bg-panel shadow-xs',
+        pageRhythm.inspectPane,
         className,
       )}
       style={width != null ? { width } : undefined}
       aria-labelledby={titleId}
     >
-      <header className="shrink-0 border-b border-border">
-        <div className="flex h-10 items-center gap-1.5 overflow-x-auto px-3">
+      <header className={pageRhythm.inspectHeader}>
           {canBack ? (
             <Button
               size="icon"
@@ -141,7 +141,7 @@ export function ChatMarkdownPreviewPanel({
           ) : null}
           <h2
             id={titleId}
-            className="min-w-0 flex-1 truncate text-sm font-semibold leading-tight text-primary"
+            className={cn(pageRhythm.inspectTitle, 'flex-1')}
           >
             {name || t('chat.preview.titleFallback')}
           </h2>
@@ -181,14 +181,13 @@ export function ChatMarkdownPreviewPanel({
           >
             <PanelRightClose className="h-4 w-4" />
           </Button>
-        </div>
       </header>
 
       <div className="relative h-px shrink-0 bg-border" aria-hidden={!loading}>
         {loading ? <div className="absolute inset-y-0 left-0 w-1/3 animate-pulse bg-accent/70" /> : null}
       </div>
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-auto px-4 py-3" aria-busy={loading}>
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto px-3 py-2" aria-busy={loading}>
         {loading ? (
           <PreviewSkeleton />
         ) : error ? (

@@ -101,7 +101,7 @@ export function ChatSessionRail({
       )}
       data-help="chat-rail"
     >
-      <div className="flex items-center gap-1.5 p-2">
+      <div className={cn('flex items-center gap-1.5 px-2', pageRhythm.topChrome)}>
         <Button
           type="button"
           size="icon"
@@ -140,7 +140,7 @@ export function ChatSessionRail({
         {listLoading ? (
           <div className="space-y-2 px-1 pt-1">
             {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-10 w-full rounded-btn" />
+              <Skeleton key={i} className="h-8 w-full rounded-btn" />
             ))}
           </div>
         ) : conversations.length === 0 ? (
@@ -170,7 +170,7 @@ export function ChatSessionRail({
                   >
                     <div
                       className={cn(
-                        'group mb-0.5 flex items-center rounded-btn',
+                        'group flex items-center rounded-btn',
                         selected ? 'bg-active' : 'hover:bg-hover',
                       )}
                     >
@@ -181,7 +181,7 @@ export function ChatSessionRail({
                         aria-current={selected ? 'true' : undefined}
                         onClick={() => onFocus(c.id)}
                         className={cn(
-                          'min-w-0 flex-1 px-2 py-1.5 text-left text-body',
+                          'min-w-0 flex-1 px-2 py-1 text-left text-body leading-tight',
                           selected ? 'font-medium text-primary' : 'text-secondary',
                         )}
                       >
@@ -196,7 +196,7 @@ export function ChatSessionRail({
                             <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted" />
                           )}
                         </span>
-                        <span className="mt-0.5 flex items-center gap-1.5 text-meta text-muted">
+                        <span className="mt-px flex items-center gap-1.5 text-meta leading-tight text-muted">
                           <span className="truncate">{conversationAgentLine(c.agentIds)}</span>
                           <span className="truncate">{cwdShortName(c.cwd, t)}</span>
                           <span className="shrink-0">{relativeTime(c.updatedAt, t)}</span>

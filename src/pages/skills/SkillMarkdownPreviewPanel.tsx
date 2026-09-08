@@ -193,8 +193,7 @@ export function SkillMarkdownPreviewPanel({
   return (
     <aside
       className={cn(
-        // 卡片面：圆角 + 边框 + 轻阴影；min-w-0 允许被父级压窄
-        'flex h-full min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-card border border-border bg-panel shadow-xs',
+        pageRhythm.inspectPane,
         className,
       )}
       style={width != null ? { width } : undefined}
@@ -202,13 +201,12 @@ export function SkillMarkdownPreviewPanel({
       onTransitionEnd={onWidthTransitionEnd}
     >
       <header className="shrink-0 border-b border-border">
-        {/* Single-row chrome；过窄时横向滚动工具区，避免按钮被裁切 */}
-        <div className="flex h-10 items-center gap-1.5 overflow-x-auto px-3">
+        <div className={pageRhythm.inspectToolbar}>
           <div className="min-w-0 flex-1 basis-16">
             <div className="flex min-w-0 items-baseline gap-2">
               <h2
                 id={titleId}
-                className="truncate text-sm font-semibold leading-tight text-primary"
+                className={pageRhythm.inspectTitle}
               >
                 {name || t('skills.preview.titleFallback')}
               </h2>
@@ -306,7 +304,7 @@ export function SkillMarkdownPreviewPanel({
       <div
         ref={resolvedBodyRef as RefObject<HTMLDivElement>}
         tabIndex={-1}
-        className="min-h-0 min-w-0 flex-1 overflow-auto px-4 py-3 outline-none"
+        className="min-h-0 min-w-0 flex-1 overflow-auto px-3 py-2 outline-none"
         aria-busy={loading}
       >
         {loading ? (

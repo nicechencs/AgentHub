@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type RefObject } from 'react';
 import { ChevronLeft, Copy, MessageSquarePlus, PanelRightClose } from 'lucide-react';
+import { pageRhythm } from '@/components/layout/page-rhythm';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { CopyableFileName } from '@/components/shared/CopyableFileName';
 import { copyTextToClipboard, CopyTextButton } from '@/components/shared/CopyTextButton';
@@ -213,13 +214,13 @@ export function ProjectConversationPreviewPanel({
   return (
     <aside
       className={cn(
-        'flex h-full min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-card border border-border bg-panel shadow-xs',
+        pageRhythm.inspectPane,
         className,
       )}
       style={width != null ? { width } : undefined}
       aria-labelledby={titleId}
     >
-      <header className="flex h-10 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border px-3">
+      <header className={pageRhythm.inspectHeader}>
         {layer !== 'conversation' ? (
           <Button
             size="icon"
@@ -236,7 +237,7 @@ export function ProjectConversationPreviewPanel({
         )}
         <div className="min-w-0 flex-1 basis-16">
           <div className="flex min-w-0 items-baseline gap-2">
-            <h2 id={titleId} className="truncate text-body font-semibold leading-tight text-primary">
+            <h2 id={titleId} className={pageRhythm.inspectTitle}>
               {layerTitle}
             </h2>
             {layer === 'conversation' ? (
@@ -296,7 +297,7 @@ export function ProjectConversationPreviewPanel({
       <div
         ref={resolvedBodyRef as RefObject<HTMLDivElement>}
         tabIndex={-1}
-        className="min-h-0 min-w-0 flex-1 overflow-auto px-4 py-3 outline-none"
+        className="min-h-0 min-w-0 flex-1 overflow-auto px-3 py-2 outline-none"
         aria-busy={phase === 'loading'}
       >
         {phase === 'loading' ? (

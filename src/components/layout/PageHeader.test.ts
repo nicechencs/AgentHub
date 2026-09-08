@@ -97,6 +97,7 @@ describe('PageHeader', () => {
     expect(source('App.tsx')).toContain('PageChromeProvider');
     expect(source('pages/settings/index.tsx')).not.toMatch(/readingColumn\}>\s*<PageHeader/);
     expect(source('pages/chat/ChatSessionHeader.tsx')).toContain('pageRhythm.chatChromeX');
+    expect(source('pages/chat/ChatSessionHeader.tsx')).toContain('pageRhythm.topChrome');
     expect(source('pages/chat/ChatSessionHeader.tsx')).not.toContain('pageRhythm.workbenchHeader');
     expect(source('App.tsx')).toContain("pathname === '/connections'");
     expect(source('App.tsx')).toContain('pathname === SUB2API_PATH');

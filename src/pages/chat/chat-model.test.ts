@@ -1363,7 +1363,7 @@ describe('chat transcript / composer surfaces', () => {
     expect(chatStageClass).toContain('py-4');
   });
 
-  it('keeps the transcript surface transparent so the chat column canvas shows through', () => {
+  it('keeps the transcript surface transparent so the chat column stage shows through', () => {
     expect(chatTranscriptSurfaceClass).toBe('bg-transparent');
   });
 

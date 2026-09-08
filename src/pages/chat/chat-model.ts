@@ -867,5 +867,5 @@ export const chatMainColumnClass = pageRhythm.readingColumn;
 /** 对话记录与输入壳外侧同一圈 16px 缝（水平再叠 `chatChromeX`）。 */
 export const chatStageClass = 'flex min-h-0 flex-1 flex-col py-4';
 
-/** Transcript reading surface. Transparent so the chat column canvas shows through. Do not paint bg-panel here. */
+/** Transcript reading surface. Transparent so the chat column stage shows through. Do not paint a second fill here. */
 export const chatTranscriptSurfaceClass = 'bg-transparent';
