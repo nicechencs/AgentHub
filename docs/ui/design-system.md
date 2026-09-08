@@ -83,7 +83,7 @@ There are three content systems:
 | Overview column | `pageRhythm.overviewColumn` (`mx-auto w-full max-w-6xl`) | Dashboard, Routes board, and Settings form (except backups split) |
 | Edge column | `pageRhythm.pageShell` / `workbenchX` from `pageEdge.inset` (currently 12px) | Tables, lists, split workbenches, Routes. Change `pageEdge.inset` in `src/components/layout/page-rhythm.ts` to retune every page edge. When a split pane is open, the list uses `workbenchXSplit` (12px left pad, 12px right margin) and the inspect pane uses the same 12px on the splitter side so the 1px rule stays centered. |
 
-Do not introduce page-private `max-w-*` values or a second left-aligned reading width. `fullBleed` describes height and scrolling behavior, not a width system. The application canvas gutter is 12px.
+Do not introduce page-private `max-w-*` values or a second left-aligned reading width. `fullBleed` describes height and scrolling behavior, not a width system. The application canvas gutter is 12px. Chat session header and conversation stage use `chatChromeX`, currently the same 12px as `workbenchX`; do not add another horizontal inset inside the transcript.
 
 ## 4. Component rules
 

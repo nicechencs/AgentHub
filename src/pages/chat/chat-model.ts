@@ -864,7 +864,7 @@ export function composerUsesCssFieldSizing(css?: CssSupports | null): boolean {
 /** 对话记录与 composer 共用的主列宽（`pageRhythm.readingColumn`）。 */
 export const chatMainColumnClass = pageRhythm.readingColumn;
 
-/** 对话记录与输入壳外侧同一圈 16px 缝（水平再叠 `chatChromeX`）。 */
+/** 对话记录与输入壳外侧上下 16px；水平缝由页面上的 `chatChromeX` 提供，与页边 12px 对齐。 */
 export const chatStageClass = 'flex min-h-0 flex-1 flex-col py-4';
 
 /** Transcript reading surface. Transparent so the chat column canvas shows through. Do not paint bg-panel here. */

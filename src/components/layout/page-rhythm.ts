@@ -5,7 +5,7 @@
  * ## 页边（只改 `pageEdge`）
  * 贴边列、顶栏、工作台列表、预览列共用 `pageEdge.inset`。
  * class 走 `pageRhythm`，分栏像素走 `pageEdgePx`，都从这一处派生。
- * 窗内画布缝是 `pageEdge.canvas`；Chat 主列水平是 `pageEdge.chat`，不要和页边混用。
+ * 窗内画布缝是 `pageEdge.canvas`。对话水平缝 `pageEdge.chat` 与页边 `inset` 同为 12；不要在消息列里再叠一层。
  *
  * ## 内容宽度（两套，docs/ui/design-system.md §3.4）
  * 1. 阅读列 `readingColumn`：Chat 消息列。固定 `max-w-3xl` 居中。
@@ -73,8 +73,8 @@ export const pageEdge = {
   canvas: 12,
   /** 主列贴边：pageShell、顶栏、工作台列表、预览列 */
   inset: 12,
-  /** Chat 消息列 / composer 水平 chrome，不是页边 */
-  chat: 16,
+  /** Chat 消息列 / composer 水平 chrome，与页边 inset 对齐 */
+  chat: 12,
   /** 分栏分隔条热区；线平时隐藏，悬停才出现且居中 */
   separator: 8,
 } as const satisfies {

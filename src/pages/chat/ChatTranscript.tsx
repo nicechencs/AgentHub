@@ -11,7 +11,6 @@ import { AgentLogo } from '@/components/shared/AgentLogo';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { StatusPin } from '@/components/shared/StatusPin';
-import { pageRhythm } from '@/components/layout/page-rhythm';
 import { Button } from '@/components/ui/button';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { agentDisplayName } from '@/config/agents';
@@ -122,7 +121,7 @@ export function ChatTranscript({
         />
       ) : (
         <div className="min-h-full" data-chat-transcript-surface>
-          <div className={cn('space-y-6 py-4', pageRhythm.chatChromeX)}>
+          <div className="space-y-6 py-4">
             {turns.map((g) => {
               const chips = g.agents.length >= 2 ? turnComparisonChips(g.agents) : [];
               return (
@@ -194,7 +193,7 @@ function EmptyTranscriptStart({
   const starters = chatStarterActions();
   const blocker = firstBlocker ? blockerCopy(t, firstBlocker) : null;
   return (
-    <div className="flex h-full flex-col items-center justify-center px-6 py-10">
+    <div className="flex h-full flex-col items-center justify-center py-10">
       <div className="w-full max-w-3xl text-center">
         <p className="text-display font-semibold tracking-tight text-primary">{t('chat.transcript.start')}</p>
         <p className="mt-2 text-body text-muted">
