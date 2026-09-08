@@ -21,14 +21,34 @@ function unsupportedDescription(errorCode: string | null | undefined, t: Transla
   }
 }
 
+/** Agents whose official list command failed. */
+export function pluginScanFailedAgents(
+  agents: readonly PluginAgentStatus[] | undefined,
+  visibleIds: ReadonlySet<string> | readonly string[],
+): PluginAgentStatus[] {
+  const visible = visibleIds instanceof Set ? visibleIds : new Set(visibleIds);
+  if (visible.size === 0) return [];
+  return (agents ?? []).filter(
+    (row) => row.errorCode === 'cli-failed' && visible.has(row.agent),
+  );
+}
+
 /** Empty-state copy for the plugins list: wired-empty vs planned vs no pack system. */
 export function pluginEmptyCopy(
   filterAgent: string,
   agents: readonly PluginAgentStatus[] | undefined,
   agentLabel: string,
   t: TranslateFn,
+  failedNames = '',
 ): PluginEmptyCopy {
   if (filterAgent === 'all') {
+    if (failedNames) {
+      return {
+        title: t('plugins.empty.partialTitle'),
+        description: t('plugins.empty.allPartial', { names: failedNames }),
+        showRefresh: true,
+      };
+    }
     return {
       title: t('plugins.empty.title'),
       description: t('plugins.empty.all'),
