@@ -127,6 +127,17 @@ describe('chat layout wiring', () => {
     expect(composer).not.toContain('mt-2 shrink-0 text-center text-meta');
   });
 
+  it('puts a routes-style sash between history and the conversation', () => {
+    const rail = source('ChatSessionRail.tsx');
+    expect(rail).toContain('NavResizeHandle');
+    expect(rail).toContain('useNavWidth');
+    expect(rail).toContain('CHAT_RAIL_WIDTH');
+    expect(rail).toContain('StorageKey.chatRailWidth');
+    expect(rail).toContain("t('chat.rail.resize')");
+    expect(rail).not.toContain('border-r border-border');
+    expect(rail).not.toContain("'w-60'");
+  });
+
   it('keeps history actions visible and focusable for runtime composers', () => {
     const actions = source('ChatActionMenu.tsx');
     const rail = source('ChatSessionRail.tsx');

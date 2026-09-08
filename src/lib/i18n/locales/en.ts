@@ -2715,6 +2715,7 @@ export const en = {
     rail: {
       collapseHistory: "Collapse history",
       expandHistory: "Expand history",
+      resize: "Resize history",
       newChat: "New chat",
       newChatDisabled: "Install or unhide an agent first",
       searchPlaceholder: "Search chats",
