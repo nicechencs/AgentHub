@@ -155,7 +155,14 @@ impl SkillhubMarket {
             ua = ua.replace('\'', "''"),
         );
         let mut cmd = Command::new("powershell.exe");
-        cmd.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
+        cmd.args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            &script,
+        ]);
         apply_no_window(&mut cmd);
         let output = cmd
             .output()

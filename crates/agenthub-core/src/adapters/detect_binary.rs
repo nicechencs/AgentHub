@@ -740,6 +740,9 @@ fn spawn_cmd_via_sibling_powershell(binary: &Path, args: Vec<String>) -> (PathBu
     };
     let mut out = vec![
         "-NoProfile".into(),
+        "-NonInteractive".into(),
+        "-WindowStyle".into(),
+        "Hidden".into(),
         "-ExecutionPolicy".into(),
         "Bypass".into(),
         "-File".into(),
