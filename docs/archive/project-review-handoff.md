@@ -1,12 +1,16 @@
 ---
 title: AgentHub 全项目独立 review 提示词
-type: guide
-status: current
+type: archive
+status: archived
 owner: maintainers
 updated: 2026-09-08
 ---
 
 # AgentHub 全项目独立 review 提示词
+
+> **归档（2026-09-08）**。这是 2026-09-07 全项目审查的启动提示词，不是现行操作。现行约定见 [Agent 协作指南：审查与验证](../guides/agent-workflow.md#审查与验证)。当时的审查记录见 [2026-09-07 全项目 review 修复进展](2026-09-07-review-fix-progress.md)。下文保留原文，便于核对那一轮怎么开工，不要按此页派工或覆盖现行协作规则。
+>
+> **Archived / 已归档**: Historical launch prompt for the 2026-09-07 full-project review. Do not use it as the current review procedure.
 
 本页用于发起一次只读的全项目 review。主 Agent 可按实际需要使用当前运行环境中可发现的 Agent、模型和工具，但最终结论必须由当前源码、本机验证和项目约定共同支持。
 
@@ -70,11 +74,11 @@ updated: 2026-09-08
 
 例如当前 HEAD 为 06b893c4、日期为 2026-09-07 时，路径必须是：
 
-    docs/reviews/2026-09-07-project-review-06b893c4.md
+    docs/archive/2026-09-07-project-review-06b893c4.md
 
 规则：
 
-1. 不覆盖 docs/reviews/2026-09-project-review.md 或其他既有审查记录；
+1. 不覆盖 docs/archive/2026-09-project-review.md 或其他既有审查记录；
 2. 同一 HEAD 的同一次 review 可以继续更新同一报告；不同 HEAD 或新一轮 review 新建文件；
 3. 只有主 Agent写最终报告。subagent 返回只读审查结果或临时输出，不并发修改该报告；
 4. 报告必须使用小写 kebab-case 文件名，并包含：

@@ -1,12 +1,16 @@
 ---
 title: AgentHub 命名规范审查报告
-type: status
-status: current
+type: archive
+status: archived
 owner: maintainers
-updated: 2026-09-02
+updated: 2026-09-08
 ---
 
 # AgentHub 命名规范审查报告
+
+> **归档（2026-09-08）**。本页是一次性审查、批次记录或复核，不是现行契约。当前实现见 [当前实现状态](../STATUS.md)。下文保留原文，不要按此页派工。
+>
+> **Archived / 已归档**: Historical review or batch record. Do not use it as the current implementation contract.
 
 本文记录 2026-09-02 对 AgentHub 当前代码库进行的命名规范审查，覆盖功能、页面、组件、控件、代码符号、架构模块、API、数据模型、配置、事件、状态、文件和目录。本文只记录当前事实与候选整改建议，不表示这些建议已经实施。
 

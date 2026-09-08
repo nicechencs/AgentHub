@@ -1,13 +1,17 @@
 ---
 title: Codex Chat 第一批实施与交接
-type: status
-status: current
+type: archive
+status: archived
 owner: maintainers
 audience: chat implementers
-updated: 2026-09-05
+updated: 2026-09-08
 ---
 
 # Codex Chat 第一批实施与交接
+
+> **归档（2026-09-08）**。本页是一次性审查、批次记录或复核，不是现行契约。当前实现见 [当前实现状态](../STATUS.md)。下文保留原文，不要按此页派工。
+>
+> **Archived / 已归档**: Historical review or batch record. Do not use it as the current implementation contract.
 
 承接 [统一体验方案](../proposals/chat-unified-experience.md) 与 [S0 协议检查](chat-codex-s0.md)。用户授权连续使用 GPT‑5.6 Terra / Luna 子 Agent 实施，并尽量合并批次。本记录区分代码实现、自动化验证和真实 Codex 实验。
 
@@ -111,4 +115,4 @@ Rust：
 
 下一位开发 Agent 从 B2 开始，并将上述 B1 真实验收尾项并入后续批次验证，不需要重新设计已通过的会话底层；遇到具体失败时再定向扩大范围。不得将该安排解释为允许跳过发布门槛。
 
-可直接复制的交接内容：[B2 开发提示词](../guides/chat-b2-handoff.md)、[独立 review 提示词](../guides/chat-review-handoff.md)。
+当时给下一位的启动提示词已归档，不要当现行操作：[B2 开发提示词](chat-b2-handoff.md)、[独立 review 提示词](chat-review-handoff.md)。

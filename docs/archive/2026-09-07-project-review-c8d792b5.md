@@ -1,13 +1,17 @@
 ---
 title: AgentHub 项目 review（2026-09-07，c8d792b5）
-type: status
-status: current
+type: archive
+status: archived
 owner: maintainers
-updated: 2026-09-07
+updated: 2026-09-08
 scope: dev；c726bd2a..c8d792b5，含审查期间落入 0b79a97a/c8d792b5 的原未提交改动
 ---
 
 # AgentHub 项目 review
+
+> **归档（2026-09-08）**。本页是一次性审查、批次记录或复核，不是现行契约。当前实现见 [当前实现状态](../STATUS.md)。下文保留原文，不要按此页派工。
+>
+> **Archived / 已归档**: Historical review or batch record. Do not use it as the current implementation contract.
 
 本报告接续 `2026-09-07-project-review-c726bd2a.md`，只审查之后三个提交。审查开始时，`0b79a97a` 和 `c8d792b5` 的内容仍是未提交改动；运行期间由外部提交，故按最终 HEAD 统一审查。未修改生产代码或测试。修复跟踪见 [2026-09-07 review 修复进展](./2026-09-07-review-fix-progress.md)。
 

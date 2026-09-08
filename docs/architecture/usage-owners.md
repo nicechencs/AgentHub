@@ -10,7 +10,7 @@ updated: 2026-08-27
 
 > 状态：提案（Draft）。作者：maintainers。日期：2026-08-27。
 >
-> 本文是 [对象化与封装审查](objectization-encapsulation-audit.md) O-31–O-34 的落地设计：只拆 Bridge `Usage` 协议映射、Usage 查询过滤、Usage 存储/解析/计费角色、以及 `decide_model_switch` 的内部 owner。不是现行契约，不得按已实施理解。日常 PR 合入 GitHub `dev`。
+> 本文是 [对象化与封装审查](../archive/objectization-encapsulation-audit.md) O-31–O-34 的落地设计：只拆 Bridge `Usage` 协议映射、Usage 查询过滤、Usage 存储/解析/计费角色、以及 `decide_model_switch` 的内部 owner。不是现行契约，不得按已实施理解。日常 PR 合入 GitHub `dev`。
 >
 > **冻结写入路径：** 不改 `switch` / `switch_with_guard` / `undo_switch`、不改票夹 `plan` / `bind` / `unbind`、不改 `AdapterRouteService::plan`。本系列是文件与角色边界，不是统计口径或切换策略迁移。
 
@@ -348,7 +348,7 @@ cargo test -p agenthub-core --locked custom_openai_passthroughs_only_stealth_ox_
 
 ## References
 
-- [对象化与封装审查](objectization-encapsulation-audit.md) — O-31、O-32、O-33、O-34
+- [对象化与封装审查](../archive/objectization-encapsulation-audit.md) — O-31、O-32、O-33、O-34
 - [Service 内部 owner 拆分](service-internal-owners.md) — 同类内部 owner 拆法（门面冻结、第一刀局部）
 - [模块化与边界收紧](../proposals/modularity.md)
 - [Core 与 Runtime](core-runtime.md)

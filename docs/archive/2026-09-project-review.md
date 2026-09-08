@@ -1,13 +1,17 @@
 ---
 title: AgentHub 项目深度审查
-type: status
-status: current
+type: archive
+status: archived
 owner: maintainers
 updated: 2026-09-08
 scope: 当前 dev 工作区
 ---
 
 # AgentHub 项目深度审查
+
+> **归档（2026-09-08）**。本页是一次性审查、批次记录或复核，不是现行契约。当前实现见 [当前实现状态](../STATUS.md)。下文保留原文，不要按此页派工。
+>
+> **Archived / 已归档**: Historical review or batch record. Do not use it as the current implementation contract.
 
 ## 这次要做什么
 

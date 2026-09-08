@@ -1,14 +1,18 @@
 ---
 title: Chat 独立审查交接提示词
-type: how-to
-status: current
+type: archive
+status: archived
 owner: maintainers
-updated: 2026-09-05
+updated: 2026-09-08
 ---
 
 # Chat 独立审查交接提示词
 
-以下提示词默认审查本次 B1 提交；审查后续 B2 时明确替换范围与目标提交。验证记录见 [B1 实施记录](../status/chat-codex-b1.md)。
+> **归档（2026-09-08）**。这是 Chat B1 的独立审查提示词，不是现行操作。B1 证据见 [B1 实施记录](chat-codex-b1.md)。下文保留原文，便于核对那一次怎么审，不要按此页派工。
+>
+> **Archived / 已归档**: Historical launch prompt for the Chat B1 review. Do not use it as the current review procedure.
+
+以下提示词默认审查本次 B1 提交；审查后续 B2 时明确替换范围与目标提交。验证记录见 [B1 实施记录](chat-codex-b1.md)。
 
 ```text
 请对 AgentHub Chat 的本次提交做独立、只读 review。先报告问题，不直接修改代码，不复述实现者的“已通过”作为审查证据。
@@ -16,7 +20,7 @@ updated: 2026-09-05
 范围：
 - B1 代码提交是 c03acb540b0327cd3fb81a56060d930e7836585a；其父提交是 4eeaab10cdd3e66f6e794e30e1290a0a679cd8d0。先审查这一笔实际 diff。
 - 提示词/现行说明初版在 357853762ac902808b6fac5636786abddefaa22c，之后另有最终验证记录补充。db40f6fbf9c86a184707f7ff8259a5bac361bb24 是任务最初起点，其后有其他并行功能提交；不要把整个 db40..HEAD 范围归为 B1，也不要重置当前工作区。
-- 读 AGENTS.md、docs/status/chat-codex-b1.md 和 docs/proposals/chat-unified-experience.md，再从 diff/调用方/相关测试进入；结构问题优先 CodeGraph，不可用时定向读取。
+- 读 AGENTS.md、docs/archive/chat-codex-b1.md 和 docs/proposals/chat-unified-experience.md，再从 diff/调用方/相关测试进入；结构问题优先 CodeGraph，不可用时定向读取。
 
 重点审查：
 1. 公共入口：空 Codex snapshot 是否选择 runtime；旧历史/非 Codex 是否仍兼容；不支持安装/登录/协议错误是否明确，不回退 mock 或静默 legacy。

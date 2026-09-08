@@ -10,7 +10,7 @@ updated: 2026-08-27
 
 > 状态：提案（Draft）。作者：maintainers。日期：2026-08-27。
 >
-> 本文是 [对象化与封装审查](objectization-encapsulation-audit.md) O-26–O-30 的落地设计：只拆 `AgentHub::open_with_skills_root` 组合根、Registry vs Catalog、`UpstreamChannel` 协议/分派/传输、Gateway/EdgeState 生命周期、以及 Responses 解析器 vs 供应商策略（Kimi `developer -> system`）。不是现行契约，不得按已实施理解。日常 PR 合入 GitHub `dev`。
+> 本文是 [对象化与封装审查](../archive/objectization-encapsulation-audit.md) O-26–O-30 的落地设计：只拆 `AgentHub::open_with_skills_root` 组合根、Registry vs Catalog、`UpstreamChannel` 协议/分派/传输、Gateway/EdgeState 生命周期、以及 Responses 解析器 vs 供应商策略（Kimi `developer -> system`）。不是现行契约，不得按已实施理解。日常 PR 合入 GitHub `dev`。
 >
 > **冻结写入路径：** 不改 `switch` / `switch_with_guard` / `undo_switch`、票夹 `plan` / `bind` / `unbind`、`AdapterRouteService::plan`、补偿顺序、current 指针、锁。本系列是文件与角色边界。**不把 `local_bridge` 迁出进程**；[adapter-sidecar](../proposals/adapter-sidecar.md) 是另一份提案。
 
@@ -335,7 +335,7 @@ cargo test -p agenthub-core --locked profile_admission_rejects_overload_without_
 
 ## References
 
-- [对象化与封装审查](objectization-encapsulation-audit.md) — O-26、O-27、O-28、O-29、O-30
+- [对象化与封装审查](../archive/objectization-encapsulation-audit.md) — O-26、O-27、O-28、O-29、O-30
 - [Service 内部 owner 拆分](service-internal-owners.md) — 同系列写法；本页不重做 O-11–O-14
 - [模块化与边界收紧](../proposals/modularity.md) — D3
 - [Adapter sidecar](../proposals/adapter-sidecar.md) — **另一提案**，本页不实施

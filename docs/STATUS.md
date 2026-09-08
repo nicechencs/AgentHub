@@ -19,11 +19,11 @@ updated: 2026-09-08
 - 当前内置适配包括 Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy、ZCode、DeepSeek Harness 和 Kiro。**Cursor Agent 适配器仍在代码中，但 dev 线通过 store-stamp 默认软隐藏**（Agents 管理页可取消隐藏）；待登录写入、路由目标与结构化输出等兼容问题修复后再重新开放。Kiro 管理 `kiro-cli`（检测/安装/登录指引/API Key）。新对话走 `kiro-cli acp` 持续通道：可点允许/拒绝、停止；生成时不能中途补充，可排队到下一轮。Kiro 在同一进程内续聊；进程退出后保留历史并提示新建对话，不静默创建空会话。模型、思考等级和权限在对话开始后固定，更换时需新建对话。旧 headless 对话保留原发送方式，不提供切到 ACP 的入口。本机登录或 `KIRO_API_KEY` 可用时，列模型与 Chat 打印路径可走 AgentHub 自有 HTTP（非官方 REST，不会改工作目录）；多轮经 `kiro-http:<conversationId>` 续同一对话，CLI `--resume-id` 为不同命名空间；已有 HTTP 会话失败时直接报错并保留会话，再发仍走同一条 HTTP 对话，不回退成新 CLI 会话。Kiro 本机路由按请求返回 JSON 或 SSE，目前先收齐上游回复再输出；使用连接池里当前登录的访问令牌，并带上该登录的区域、profile 与请求来源，不在本机路由里刷新。交互新对话仍可走 `kiro-cli acp`。不把编辑器当成已安装。
 - CLI 提供 doctor、env、agent、provider、account、skill、usage、backup、run、config 等命令；参数以 CLI 帮助和源码为准。
 - Chat 各家能力与 [Chat 与 Agent](concepts/chat-and-agents.md) 一致：
-  - **新空 Codex 会话**：已接入 app-server 持续聊天（持续回复、确认/回答、补充/停止、保存与同机重开）。B2 已落地会话模型/思考强度、最小操作菜单、本地图片附件与「用于本次」技能（不含计划模式与完整扩展管理）。macOS 上真实重开续聊已验证；带附件/模型的桌面端到端与其他平台尚未验收。见 [B1](status/chat-codex-b1.md)、[B2](status/chat-codex-b2.md)。
+  - **新空 Codex 会话**：已接入 app-server 持续聊天（持续回复、确认/回答、补充/停止、保存与同机重开）。B2 已落地会话模型/思考强度、最小操作菜单、本地图片附件与「用于本次」技能（不含计划模式与完整扩展管理）。macOS 上真实重开续聊已验证；带附件/模型的桌面端到端与其他平台尚未验收。见 [B1](archive/chat-codex-b1.md)、[B2](archive/chat-codex-b2.md)。
   - **新空 Grok 会话**：持续聊天（模型/思考、图片、后续轮排队），**不支持**为本轮指定「用于本次」技能，界面也不画可点的假按钮。真实窗口验收已通过。
   - **新空 Kiro 会话**：`kiro-cli acp` 持续通道（允许/拒绝、停止；生成时不能中途补充，可排队到下一轮）。真实窗口验收已通过（含 HTTP 多轮）。旧对话保留原发送方式。
   - **其余 Agent 与旧会话**：仍走原发送方式。
-  - **B3** 只约束 Claude 接到持续聊天（ChatRuntime，后台会话控制）：探测结论否定，未接线。见 [Claude B3](status/chat-claude-b3.md)。
+  - **B3** 只约束 Claude 接到持续聊天（ChatRuntime，后台会话控制）：探测结论否定，未接线。见 [Claude B3](archive/chat-claude-b3.md)。
 
 ## Backend 边界
 
@@ -60,7 +60,7 @@ updated: 2026-09-08
 - 不落地 sccache，也不把 `agenthub-core` 拆成多个 crate。CI 使用 `Swatinem/rust-cache`。Windows worktree 不得共享 `target/`。2026-08-25 的热缓存过滤测试约 3.5 秒、冷 worktree 首次编译依赖约 42 秒是历史快照，不是当前固定规模；过程见 [单一内核提案归档](archive/single-kernel-projections.md)。
 - DeepSeek Harness 的 StructuredStream 仍是规划项；已落地部分以源码和集成文档为准。
 - 插件包的安装/卸载/更新仍是提案，不从 MCP inventory 推导。Claude / Grok 已装包可启用/停用；Pi 只列已装包。见 [插件管理](proposals/plugin-management.md)。MCP 写入同样未做，且是另一条线。
-- Codex 安装、外部渠道 Chat 调用与连接/路由模块化审查见 [Codex 安装与模块化审查](status/codex-install-modularity-review.md)（2026-08-27）。
+- Codex 安装、外部渠道 Chat 调用与连接/路由模块化审查见 [Codex 安装与模块化审查](archive/codex-install-modularity-review.md)（2026-08-27）。
 - npm 渠道安装写到检测会扫的用户前缀（`~/.npm-global`，Windows 为 `%APPDATA%\npm`）。`~/.agenthub` 以及其中的 `npm` 只是遗留，不是安装目标，也不是启动路径。
 - WorkBuddy 本机安装只打开官网安装页，界面给中文指引，不当成「安装失败」。真失败时「重试」是主按钮；失败面板先显示诊断，不把 npm 下载进度当正文。
 - ZCode 本机安装同样只打开官网；API Key 按目录追加写入 `~/.zcode/v2/config.json` 的一条供应商（官方槽或自定义行），不替换其它条目；套餐登录不导入；自定义行必须带模型名单。Chat 优先 PATH 上的 `zcode` CLI，只有桌面安装时不会虚构一条捆绑命令。Projects 只读任务索引，预览从命令行会话库读取对话正文；删除按钮禁用，提示到 ZCode 里删除。用量从命令行 `model_usage` 采集。

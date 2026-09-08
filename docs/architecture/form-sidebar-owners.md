@@ -8,7 +8,7 @@ updated: 2026-08-30
 
 # 通用表单与侧栏 owner
 
-> 提案，不是现行契约。针对审查 [O-23](objectization-encapsulation-audit.md)：给 `GenericConfigForm` 和 `Sidebar` 各定唯一 owner。不改 `plan` / `bind` / `unbind` / `switch` / 补偿。O-22（`SecretInput` 接收 `disabled`/`readOnly`）和 O-24（缺少 `SidebarProvider` 时 `useSidebar()` 抛错）已经落地，本系列不重做。日常合入 GitHub `dev`。
+> 提案，不是现行契约。针对审查 [O-23](../archive/objectization-encapsulation-audit.md)：给 `GenericConfigForm` 和 `Sidebar` 各定唯一 owner。不改 `plan` / `bind` / `unbind` / `switch` / 补偿。O-22（`SecretInput` 接收 `disabled`/`readOnly`）和 O-24（缺少 `SidebarProvider` 时 `useSidebar()` 抛错）已经落地，本系列不重做。日常合入 GitHub `dev`。
 
 ## Overview
 
@@ -226,7 +226,7 @@ pnpm typecheck
 
 ## References
 
-- [对象化与封装审查](objectization-encapsulation-audit.md) — O-22、O-23、O-24
+- [对象化与封装审查](../archive/objectization-encapsulation-audit.md) — O-22、O-23、O-24
 - [读模型 owner 与兼容策略](read-model-owners.md) — O-15 宽行切片；本页不改 `AgentStatus` 字段
 - [Service 内部 owner 拆分](service-internal-owners.md) — 内部 owner、不改 switch/补偿 的同一约束
 - [前端与 Backend Adapter 边界](frontend-backend.md)
