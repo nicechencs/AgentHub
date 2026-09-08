@@ -3,7 +3,7 @@ title: Kiro HTTP / 本机转发
 type: proposal
 status: proposed
 owner: maintainers
-updated: 2026-09-07
+updated: 2026-09-09
 audience: contributor
 ---
 
@@ -65,7 +65,7 @@ audience: contributor
 - `try_http_run_result`：有 HTTP 前缀则带 `conversationId` 续聊；有 CLI id 则跳过 HTTP；无 id 则新开 HTTP 对话。
 - 已有 HTTP 会话在登录或上游失败时明确报错；仅无会话 id 的新请求可以回退 `kiro-cli`。HTTP id 不传给 `--resume-id`，也不用于 ACP 恢复。
 - 本机路由按调用方的 `stream` 返回 JSON 或对应接口的 SSE。HTTP 上游目前收齐回复后再编码输出，不表示已经实现上游逐块实时转发。
-- 本机路由使用共享库中所选登录的当前访问令牌，并带上该登录的区域、`profileArn` 与请求来源；不会借用或刷新其他本机登录，也不把刷新信息放进本机路由。登录过期后需同步共享库。Chat 打印路径直接读取本机登录时继续沿用原有刷新逻辑。带上这些参数不代表企业 IdC 场景已完成实机验收。
+- 本机路由使用共享库中所选登录的当前访问令牌，并带上该登录的区域、`profileArn` 与请求来源；不会借用或刷新其他本机登录，也不把刷新信息放进本机路由。登录过期后需同步共享库。Chat 打印路径直接读取本机 sqlite / SSO / `KIRO_API_KEY`（可从 sqlite `state` 补 `profileArn`），并继续沿用原有刷新逻辑。ACP 新对话只拉起 `kiro-cli acp`，不向进程注入 `profileArn`。带上这些参数不代表企业 IdC 场景已完成实机验收。
 
 ## Non-goals
 
