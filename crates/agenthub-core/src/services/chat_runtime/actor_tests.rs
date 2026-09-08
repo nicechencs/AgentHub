@@ -574,6 +574,39 @@ fn acp_permission_snapshot_keeps_allow_always_option() {
 }
 
 #[test]
+fn acp_permission_without_options_does_not_synthesize_allow_always() {
+    for (id, agent) in [
+        ("grok-no-synth", AgentId::Grok),
+        ("kiro-no-synth", AgentId::Kiro),
+    ] {
+        let db = Database::open_in_memory().unwrap();
+        conversation(&db, id);
+        let mut worker = worker(&db, id);
+        worker.agent = agent;
+        worker.store.enable_if_new(id).unwrap();
+        start_placeholder(&mut worker);
+
+        worker
+            .server_request(
+                json!("perm-1"),
+                "session/request_permission",
+                &json!({
+                    "turnId": "run-1",
+                    "toolCall": { "title": "写文件" }
+                }),
+            )
+            .unwrap();
+
+        let snapshot = worker.store.snapshot(id, None).unwrap();
+        assert_eq!(snapshot.pending_requests.len(), 1);
+        assert!(
+            snapshot.pending_requests[0].permission_options.is_empty(),
+            "{agent:?} must not invent allow_always"
+        );
+    }
+}
+
+#[test]
 fn acp_permission_uses_server_option_ids_without_auto_allow_always() {
     let options = vec![
         RuntimePermissionOption {

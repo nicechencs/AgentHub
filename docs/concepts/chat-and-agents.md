@@ -19,6 +19,17 @@ Chat 是 AgentHub 里的运行工作台。当前一个会话对应一个 Agent�
 - **新空 Kiro 会话**：`kiro-cli acp` 持续通道（允许/拒绝、停止；生成时不能中途补充，可排队到下一轮）。旧对话保留原发送方式。本机登录或 `KIRO_API_KEY` 可用时，打印路径可走 HTTP 多轮（`kiro-http:` 前缀）；已有 HTTP 会话失败时直接报错并保留会话，不回退成新的命令行会话。跨页事实见 [STATUS](../STATUS.md)。
 - **其余 Agent 与旧会话**：保留原有发送方式。
 
+## 允许 / 拒绝 / 一直允许
+
+只覆盖 Codex / Grok / Kiro 的持续聊天。没有真实确认通道的 Agent 不会画出可点的假按钮。界面文案是「允许」「拒绝」「一直允许」。
+
+两件不同的事：
+
+1. **记住这次卡片上的选项。** 待处理请求的选项会写入 SQLite。快照或进程重开后，尚未回复的卡片仍显示同一组按钮（包括这次能不能点「一直允许」）。Codex / Grok / Kiro 都这样。
+2. **点了「一直允许」之后，后面的确认还问不问。** 只有 Codex 由 AgentHub 在本机记住，而且只限当前这次 Codex 进程（通常是本轮：每轮会新起 `codex app-server`，结束时清掉该标记）。发给 Codex 的决定是一次性允许。Grok / Kiro 走 ACP：这次请求自己带了 `allow_always` 才显示「一直允许」，点了只把对方给的选项回传；AgentHub **不会**给后续请求自动点允许，也 **不会** 在没带该选项时补一个。对方会话是否记住，没有真机验收。
+
+Kiro 会话设置里的「帮我批准 / 完全访问权限」是启动时的 `--trust-all-tools`，对话开始后不能改；它不是确认卡片上的「一直允许」。跨页事实表见 [STATUS](../STATUS.md)。
+
 ## 当前数据流
 
 新空 Codex 会话：页面 → ChatPort runtime 操作 → Tauri blocking command → ChatRuntime 串行会话 → Codex app-server。后台将消息、事件与终态保存到 SQLite；页面读取带 sequence、待处理请求、currentMessage 与 gap 的快照。正文采用同一次读取中的完整 currentMessage，不能用字符串相似性猜测增量是否重复。页面关闭不拥有后台生命周期；重开使用持久化的原生 thread。详见 [B1 实施记录](../archive/chat-codex-b1.md)。
@@ -54,7 +65,7 @@ Tauri transport 使用 `ipc::Channel<ChatEvent>`，不是 SSE。阻塞进程执�
 
 Claude、Codex、Kimi、Grok、Pi、Kiro 当前可走 `ProcessMode::Auto` 的结构化解析；WorkBuddy 与 ZCode 没有结构化 parser 时按 text 展示。Kiro 须 `--agent-engine v2`，v1 会拒绝 stream-json。新交互对话走 `kiro-cli acp`；旧打印路径在本机登录或 `KIRO_API_KEY` 可用时可走 HTTP，已有 HTTP 会话失败不改走命令行。ZCode 对话需要 PATH 上的 `zcode`；只装了桌面端时不能凭空当成命令行。DeepSeek Harness 的 StructuredStream 仍是 Planned。**Cursor Agent 默认软隐藏**，结构化输出与登录写入等兼容项修复完成前不在 Chat 等页面开放。解析失败降级为 raw/text 事件，不因某一行 JSON 不可识别而丢弃整次对话；CLI 不支持 flag 时不得静默重试成另一种语义。
 
-旧发送方式的过程数据主要是内存视图，最终正文和会话消息入库；刷新后不保证过程回放。Codex runtime 另有有限持久化事件、真实确认/问答回复及同机恢复；截断通过 gap 表达，不承诺无限过程历史。各项验收分开写：命令批准 Linux 真窗已验允许/拒绝；关窗续聊 Linux / macOS 已验；记住允许/拒绝与「一直允许」已发。问答仍是 blocker（界面有控件，本轮 Codex 未发出问答协议）。文件审批缺真窗验收。过程内 usage 也未完成。
+旧发送方式的过程数据主要是内存视图，最终正文和会话消息入库；刷新后不保证过程回放。Codex runtime 另有有限持久化事件、真实确认/问答回复及同机恢复；截断通过 gap 表达，不承诺无限过程历史。各项验收分开写：命令批准 Linux 真窗已验允许/拒绝；关窗续聊 Linux / macOS 已验。记住允许/拒绝与「一直允许」已接线，范围见上文：不是三家都会在本机记住后续确认。问答仍是 blocker（界面有控件，本轮 Codex 未发出问答协议）。文件审批缺真窗验收。Grok / Kiro 点「一直允许」后对方是否记住仍待补。过程内 usage 也未完成。
 
 ## Codex 外部安装
 
