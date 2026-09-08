@@ -2712,14 +2712,21 @@ export const zh = {
       resizeAria: "调整对话记录与输入区高度",
     },
     kiro: {
-      oneshotHint: "Kiro 新对话可以点允许/拒绝；生成时不能中途补充，可排队到下一轮。",
+      oneshotHint: "Kiro 新对话可以点允许、一直允许或拒绝；生成时不能中途补充，可排队到下一轮。",
       oneshotDetail: '装了命令行时在本机执行。旧对话保留原方式；如需持续聊天，请新建对话。终端里的命令补全和灰色提示不在本页。',
       settingsLocked: '这条 Kiro 对话已开始，如需更换模型、思考等级或权限，请新建对话',
-      placeholder: "发送后可点允许/拒绝。生成时不能中途补充，可排队到下一轮。",
+      placeholder: "发送后可点允许、一直允许或拒绝。生成时不能中途补充，可排队到下一轮。",
+      permissionTitle: "权限",
+      permissionAsk: "帮我批准",
+      permissionAskHint: "每次操作都问你",
+      permissionFull: "完全访问权限",
+      permissionFullHint: "这场对话里不再逐条询问",
+      enableFullTitle: "开启完全访问权限？",
     },
     runtime: {
       submit: '提交',
       allow: '允许',
+      allowAlways: '一直允许',
       deny: '拒绝',
     },
     runtimeOps: {
@@ -2923,10 +2930,13 @@ export const zh = {
       none: "此 Agent 的 headless 模式无法跳过确认",
       footerOff: "本功能目前仅用作测试",
       footerSkip: "自动批准已开启 · Agent 将不经确认修改文件",
+      footerKiroFull: "完全访问权限已开启 · 将不经确认改文件、执行命令",
       footerTrust: "自动批准已开启 · 仅信任项目文件，仍可能要求确认",
       footerNone: "此 Agent 无法在对话中跳过确认，自动批准不会生效",
       confirmSkip:
         "开启后将跳过工具确认，Agent 可直接改文件、执行命令。仅在信任当前工作目录时开启。",
+      confirmKiroFull:
+        "开启后这场对话不再逐条询问，可直接改文件、执行命令。仅在信任当前工作目录时开启。",
       confirmTrust:
         "开启后会信任当前项目内的文件。该 Agent 不会完全跳过工具确认，仍可能停下等待批准。仅在信任当前工作目录时开启。",
     },

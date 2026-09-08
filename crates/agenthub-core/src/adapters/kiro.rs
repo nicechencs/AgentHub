@@ -329,7 +329,7 @@ impl AgentAdapter for KiroAdapter {
             Mcp => CapabilityState::planned("待路径核实"),
             ModelSelect => CapabilityState::full(),
             SessionResume => {
-                CapabilityState::partial("新对话走持续通道，可点允许/拒绝；生成时不能中途补充")
+                CapabilityState::partial("新对话走持续通道，可点允许、一直允许或拒绝；生成时不能中途补充")
             }
         }
     }

@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/components/shared/LanguageProvider';
-import type { RuntimeRequest } from '@/lib/api/chat';
-import { canSubmitRuntimeQuestions } from './chat-runtime-model';
+import type { RuntimeDecision, RuntimeRequest } from '@/lib/api/chat';
+import { canSubmitRuntimeQuestions, requestAllowsAlways } from './chat-runtime-model';
 
-type ReplyHandler = (request: RuntimeRequest, decision?: 'allow' | 'deny', answers?: Record<string, string[]>) => Promise<void>;
+type ReplyHandler = (request: RuntimeRequest, decision?: RuntimeDecision, answers?: Record<string, string[]>) => Promise<void>;
 
 export function ChatRuntimeRequests({
   requests,
@@ -29,7 +29,7 @@ function RuntimeRequestCard({ request, onReply }: { request: RuntimeRequest; onR
     setAnswers((current) => ({ ...current, [id]: [value] }));
     setOther((current) => ({ ...current, [id]: '' }));
   };
-  const submit = async (decision?: 'allow' | 'deny') => {
+  const submit = async (decision?: RuntimeDecision) => {
     if (sent) return;
     const merged = { ...answers };
     for (const question of request.questions) if (other[question.id]?.trim()) merged[question.id] = [other[question.id].trim()];
@@ -56,9 +56,12 @@ function RuntimeRequestCard({ request, onReply }: { request: RuntimeRequest; onR
           {(question.isOther || question.options.length === 0) ? <input type={question.isSecret ? 'password' : 'text'} className="w-full rounded border border-border bg-canvas px-2 py-1" disabled={sent} value={other[question.id] ?? ''} onChange={(event) => { setOther((current) => ({ ...current, [question.id]: event.target.value })); setAnswers((current) => ({ ...current, [question.id]: [] })); }} aria-label={question.question} /> : null}
         </fieldset>
       )) : null}
-      <div className="mt-3 flex gap-2">
+      <div className="mt-3 flex flex-wrap gap-2">
         {request.kind === 'question' ? <Button size="sm" disabled={sent} onClick={() => submit()}>{t('chat.runtime.submit')}</Button> : <>
           <Button size="sm" disabled={sent} onClick={() => submit('allow')}>{t('chat.runtime.allow')}</Button>
+          {requestAllowsAlways(request) ? (
+            <Button size="sm" disabled={sent} onClick={() => submit('allow_always')}>{t('chat.runtime.allowAlways')}</Button>
+          ) : null}
           <Button size="sm" variant="outline" disabled={sent} onClick={() => submit('deny')}>{t('chat.runtime.deny')}</Button>
         </>}
       </div>

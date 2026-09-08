@@ -182,6 +182,12 @@ fn runtime_dtos_use_the_public_camel_case_wire_contract() {
     let reply_value = serde_json::to_value(reply).expect("serialize reply");
     assert_eq!(reply_value["clientRequestId"], "client-1");
     assert_eq!(reply_value["decision"], "deny");
+
+    let always = serde_json::to_value(RuntimeDecision::AllowAlways).expect("serialize always");
+    assert_eq!(always, serde_json::json!("allow_always"));
+    let restored: RuntimeDecision =
+        serde_json::from_value(serde_json::json!("allow_always")).expect("parse always");
+    assert_eq!(restored, RuntimeDecision::AllowAlways);
 }
 
 #[test]

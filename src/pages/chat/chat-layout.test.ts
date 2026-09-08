@@ -13,9 +13,11 @@ function source(name: string): string {
 describe('chat layout wiring', () => {
   it('keeps the main column on canvas so an empty transcript matches composer chrome', () => {
     const page = source('index.tsx');
-    expect(page).toContain('flex min-w-0 flex-1 flex-col bg-canvas');
+    expect(page).toContain('flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-canvas');
     expect(page).toContain('chatStageClass');
     expect(page).not.toContain('flex min-w-0 flex-1 flex-col bg-panel');
+    expect(source('ChatMessageBubble.tsx')).toContain('formatChatDisplayContent');
+    expect(source('ChatTranscript.tsx')).toContain('overflow-x-hidden overflow-y-auto');
   });
 
   it('lets Escape stop an in-flight turn', () => {
@@ -43,12 +45,23 @@ describe('chat layout wiring', () => {
     expect(composer).toContain('composerTextareaMeasuredStyle');
     expect(composer).toContain('composerUsesCssFieldSizing');
     expect(composer).toContain('rounded-composer border border-border bg-panel');
+    expect(composer).toContain('text-body leading-relaxed');
+    expect(composer).not.toContain('leading-[1.45]');
   });
 
-  it('derives the transcript surface from whether any turns exist', () => {
-    expect(source('ChatTranscript.tsx')).toContain(
-      'chatTranscriptSurfaceClass(turns.length > 0)',
-    );
+  it('loosens chat bubble reading line-height without changing bubble chrome', () => {
+    const bubble = source('ChatMessageBubble.tsx');
+    expect(bubble).toContain('text-body leading-relaxed text-primary');
+    expect(bubble).toContain('text-body leading-relaxed text-danger');
+    expect(bubble).toContain('rounded-composer bg-subtle');
+  });
+
+  it('paints the transcript surface on the scroller, not a message card', () => {
+    const transcript = source('ChatTranscript.tsx');
+    expect(transcript).toContain('chatTranscriptSurfaceClass');
+    expect(transcript).toContain('data-chat-transcript');
+    expect(transcript).not.toContain('chatTranscriptSurfaceClass(turns.length > 0)');
+    expect(source('index.tsx')).toContain('data-chat-stage');
   });
 
   it('shows empty-session starter cards that fill the composer', () => {
@@ -111,6 +124,23 @@ describe('chat layout wiring', () => {
     expect(page).toContain('historyRevealNonce={page.historyRevealNonce}');
     expect(hook).toContain("action.id === 'open-history'");
     expect(hook).toContain('setHistoryRevealNonce');
+  });
+
+  it('offers always-allow on runtime permission cards', () => {
+    const requests = source('ChatRuntimeRequests.tsx');
+    expect(requests).toContain('requestAllowsAlways');
+    expect(requests).toContain("submit('allow_always')");
+    expect(requests).toContain('chat.runtime.allowAlways');
+  });
+
+  it('shows Kiro ask-or-full permission mode in session settings and the header', () => {
+    const settings = source('ChatSettingsDialog.tsx');
+    const header = source('ChatSessionHeader.tsx');
+    expect(settings).toContain('chat.kiro.permissionAsk');
+    expect(settings).toContain('chat.kiro.permissionFull');
+    expect(settings).toContain('chat.kiro.settingsLocked');
+    expect(header).toContain('chat.kiro.permissionAsk');
+    expect(header).toContain('chat.kiro.permissionFull');
   });
 
   it('wires chat capability helpers and the Kiro composer placeholder', () => {

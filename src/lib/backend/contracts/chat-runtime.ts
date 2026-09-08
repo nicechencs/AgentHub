@@ -13,6 +13,11 @@ export interface RuntimeQuestion {
   isSecret: boolean;
 }
 
+export interface RuntimePermissionOption {
+  id: string;
+  kind: string;
+}
+
 export interface RuntimeRequest {
   id: string;
   runId: string;
@@ -20,7 +25,10 @@ export interface RuntimeRequest {
   title: string;
   detail: string;
   questions: RuntimeQuestion[];
+  permissionOptions?: RuntimePermissionOption[];
 }
+
+export type RuntimeDecision = 'allow' | 'deny' | 'allow_always';
 
 export interface RuntimeEvent { sequence: number; event: ChatEvent }
 
@@ -42,7 +50,7 @@ export interface RuntimeReply {
   runId: string;
   requestId: string;
   clientRequestId: string;
-  decision?: 'allow' | 'deny';
+  decision?: RuntimeDecision;
   answers?: Record<string, string[]>;
 }
 

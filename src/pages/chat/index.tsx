@@ -167,7 +167,7 @@ export default function ChatPage() {
       />
 
       <div ref={preview.splitRef} className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-      <section className="relative flex min-w-0 flex-1 flex-col bg-canvas">
+      <section className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-canvas">
         <ChatSessionHeader
           active={page.active}
           railOpen={page.railOpen}
@@ -179,7 +179,10 @@ export default function ChatPage() {
           runtimeLocked={page.runtimeLocked || page.sendingHere}
         />
 
-        <div className={cn(chatStageClass, pageRhythm.chatChromeX)}>
+        <div
+          className={cn(chatStageClass, pageRhythm.chatChromeX, 'relative')}
+          data-chat-stage
+        >
           <div
             ref={split.splitRef}
             className={cn(chatMainColumnClass, 'flex min-h-0 flex-1 flex-col')}

@@ -14,9 +14,9 @@ pub(crate) use store::{is_acp_runtime_agent, is_runtime_chat_agent};
 
 pub use types::{
     RuntimeDecision, RuntimeEvent, RuntimeExtensionItem, RuntimeExtensionKind, RuntimeLocalImage,
-    RuntimeModelOption, RuntimeOptions, RuntimePhase, RuntimeQuestion, RuntimeQuestionOption,
-    RuntimeReply, RuntimeRequest, RuntimeRequestKind, RuntimeSkillRef, RuntimeSnapshot,
-    RuntimeStartExtras, RuntimeTurnSettings,
+    RuntimeModelOption, RuntimeOptions, RuntimePhase, RuntimePermissionOption, RuntimeQuestion,
+    RuntimeQuestionOption, RuntimeReply, RuntimeRequest, RuntimeRequestKind, RuntimeSkillRef,
+    RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings,
 };
 
 use std::collections::HashMap;
@@ -603,7 +603,7 @@ impl ChatRuntime {
             .and_then(|guard| guard.get(conversation_id).cloned())
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn set_codex_program_for_test(&self, path: PathBuf) {
         if let Ok(mut guard) = self.codex_program_override.lock() {
             *guard = Some(path);
@@ -872,17 +872,11 @@ struct ActorWorker {
     run_id: Option<String>,
     last_start_request: Option<String>,
     pending_prompt_id: Option<Value>,
-    permission_options: HashMap<String, Vec<AcpPermissionOption>>,
+    permission_options: HashMap<String, Vec<RuntimePermissionOption>>,
     cancel_deadline: Option<Instant>,
     session_model: Option<String>,
     session_effort: Option<String>,
     session_trust_all: Option<bool>,
-}
-
-#[derive(Debug, Clone)]
-struct AcpPermissionOption {
-    id: String,
-    kind: String,
 }
 
 impl ActorWorker {
@@ -950,6 +944,13 @@ impl ActorWorker {
         self.message_id = record.message_id;
         self.run_id = record.run_id;
         self.last_start_request = record.last_client_request_id;
+        if let Ok(pending) = self.store.pending_wire_requests(&self.conversation_id) {
+            self.permission_options = pending
+                .into_iter()
+                .filter(|item| !item.request.permission_options.is_empty())
+                .map(|item| (item.request.id.clone(), item.request.permission_options))
+                .collect();
+        }
     }
 
     fn aborted(&self) -> bool {
@@ -1620,6 +1621,7 @@ impl ActorWorker {
             RuntimeRequestKind::Command | RuntimeRequestKind::File => {
                 let decision = match reply.decision {
                     Some(RuntimeDecision::Allow) => "accept",
+                    Some(RuntimeDecision::AllowAlways) => "accept_always",
                     Some(RuntimeDecision::Deny) => "decline",
                     None => {
                         return Err(AppError::InvalidArg("approval decision is required".into()));
@@ -1631,12 +1633,19 @@ impl ActorWorker {
                     ));
                 }
                 if is_acp_runtime_agent(Some(self.agent)) {
-                    let options = self
-                        .permission_options
-                        .get(&persisted.request.id)
-                        .cloned()
-                        .unwrap_or_default();
+                    let options = if persisted.request.permission_options.is_empty() {
+                        self.permission_options
+                            .get(&persisted.request.id)
+                            .cloned()
+                            .unwrap_or_default()
+                    } else {
+                        persisted.request.permission_options.clone()
+                    };
                     acp_permission_reply(&options, decision)?
+                } else if matches!(reply.decision, Some(RuntimeDecision::AllowAlways)) {
+                    return Err(AppError::InvalidArg(
+                        "this agent cannot remember approval for later".into(),
+                    ));
                 } else {
                     json!({"decision": decision})
                 }
@@ -2100,6 +2109,7 @@ impl ActorWorker {
                 return Ok(());
             }
         };
+        let permission_options = acp_options.clone().unwrap_or_default();
         let request = RuntimeRequest {
             id: id_string.clone(),
             run_id,
@@ -2107,11 +2117,13 @@ impl ActorWorker {
             title,
             detail,
             questions,
+            permission_options: permission_options.clone(),
         };
         self.store
             .add_request(&self.conversation_id, &request, method, &id_string)?;
-        if let Some(options) = acp_options {
-            self.permission_options.insert(id_string, options);
+        if !permission_options.is_empty() {
+            self.permission_options
+                .insert(id_string, permission_options);
         }
         Ok(())
     }
@@ -2731,7 +2743,7 @@ fn redact_json_text(value: Option<&Value>) -> String {
     redact_text(&raw)
 }
 
-fn parse_acp_permission_options(params: &Value) -> Vec<AcpPermissionOption> {
+fn parse_acp_permission_options(params: &Value) -> Vec<RuntimePermissionOption> {
     params
         .get("options")
         .and_then(Value::as_array)
@@ -2747,12 +2759,12 @@ fn parse_acp_permission_options(params: &Value) -> Vec<AcpPermissionOption> {
                 .get("kind")
                 .and_then(Value::as_str)
                 .map(str::to_owned)?;
-            Some(AcpPermissionOption { id, kind })
+            Some(RuntimePermissionOption { id, kind })
         })
         .collect()
 }
 
-fn acp_permission_options(params: &Value) -> Option<Vec<AcpPermissionOption>> {
+fn acp_permission_options(params: &Value) -> Option<Vec<RuntimePermissionOption>> {
     let options = parse_acp_permission_options(params);
     (!options.is_empty()).then_some(options)
 }
@@ -2761,9 +2773,10 @@ fn acp_capability_present(value: Option<&Value>) -> bool {
     matches!(value, Some(Value::Bool(true)) | Some(Value::Object(_)))
 }
 
-fn acp_permission_reply(options: &[AcpPermissionOption], decision: &str) -> Result<Value> {
+fn acp_permission_reply(options: &[RuntimePermissionOption], decision: &str) -> Result<Value> {
     let wanted_kind = match decision {
         "accept" => "allow_once",
+        "accept_always" => "allow_always",
         "decline" => "reject_once",
         _ => return Err(AppError::InvalidArg("approval decision is required".into())),
     };
@@ -2776,6 +2789,12 @@ fn acp_permission_reply(options: &[AcpPermissionOption], decision: &str) -> Resu
         return Ok(json!({
             "outcome": { "outcome": "cancelled" }
         }));
+    }
+    if decision == "accept_always" {
+        return Err(AppError::message(
+            "chat.runtime.permission",
+            "这次操作不能一直允许",
+        ));
     }
     Err(AppError::message(
         "chat.runtime.permission",

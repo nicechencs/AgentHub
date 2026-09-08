@@ -31,6 +31,13 @@ pub struct RuntimeQuestion {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct RuntimePermissionOption {
+    pub id: String,
+    pub kind: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct RuntimeRequest {
     pub id: String,
     pub run_id: String,
@@ -39,6 +46,8 @@ pub struct RuntimeRequest {
     pub detail: String,
     #[serde(default)]
     pub questions: Vec<RuntimeQuestion>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub permission_options: Vec<RuntimePermissionOption>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -149,6 +158,8 @@ pub struct RuntimeReply {
 pub enum RuntimeDecision {
     Allow,
     Deny,
+    #[serde(rename = "allow_always")]
+    AllowAlways,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]

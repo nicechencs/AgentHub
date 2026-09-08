@@ -109,19 +109,19 @@ test('Agents page title shares the same top-left inset as other pages', async ({
   }
 });
 
-test('page title sits in the top bar with notifications; Chat has neither', async ({ page }) => {
+test('page title sits in the top bar; Chat has neither title nor in-app notifications', async ({ page }) => {
   await openApp(page);
   const heading = page.getByRole('heading', { level: 1 }).first();
-  const bell = page.getByRole('button', { name: '通知' });
+  const help = page.getByRole('button', { name: '本页用法' });
   await expect(heading).toBeVisible();
-  await expect(bell).toBeVisible();
+  await expect(page.getByRole('button', { name: '通知' })).toHaveCount(0);
   const titleBox = await heading.boundingBox();
-  const bellBox = await bell.boundingBox();
+  const helpBox = await help.boundingBox();
   expect(titleBox).toBeTruthy();
-  expect(bellBox).toBeTruthy();
-  expect(titleBox!.x).toBeLessThan(bellBox!.x);
-  expect(titleBox!.y).toBeLessThan(bellBox!.y + bellBox!.height);
-  expect(bellBox!.y).toBeLessThan(titleBox!.y + titleBox!.height);
+  expect(helpBox).toBeTruthy();
+  expect(titleBox!.x).toBeLessThan(helpBox!.x);
+  expect(titleBox!.y).toBeLessThan(helpBox!.y + helpBox!.height);
+  expect(helpBox!.y).toBeLessThan(titleBox!.y + titleBox!.height);
 
   await goNav(page, '连接');
   await expect(page.getByRole('heading', { name: '连接' })).toBeVisible();

@@ -529,6 +529,7 @@ fn auth_info_path() -> Option<PathBuf> {
     }
     #[cfg(not(any(windows, target_os = "macos")))]
     {
+        let _ = relative;
         None
     }
 }
