@@ -109,6 +109,7 @@ describe('agents layout wiring', () => {
     expect(card).not.toContain('formatAgentConversationEndpoints');
     expect(card).not.toContain('<Hint label={inst.location}');
     expect(page).toContain('TableShell');
+    expect(page).toContain('variant="workbench"');
     expect(page).not.toContain('pageRhythm.stackDense');
   });
 
@@ -137,8 +138,8 @@ describe('agents layout wiring', () => {
   });
 
   it('applies the same remembered order on sidebar, dashboard, and installed lists', () => {
-    const sidebar = source('components/layout/Sidebar.tsx');
-    expect(sidebar).toContain('StorageKey.agentsCatalogOrder');
+    const strip = source('components/layout/AgentStatusStrip.tsx');
+    expect(strip).toContain('StorageKey.agentsCatalogOrder');
     const sidebarStats = source('components/layout/sidebar-stats.ts');
     expect(sidebarStats).toContain('applyStoredAgentOrder');
     const overview = source('pages/dashboard/AgentOverview.tsx');

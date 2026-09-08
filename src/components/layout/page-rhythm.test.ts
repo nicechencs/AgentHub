@@ -10,7 +10,9 @@ import {
 
 describe('pageRhythm (docs/ui/design-system.md §3)', () => {
   it('keeps the app chrome flush: canvas rail, panel stage, no outer gutter', () => {
-    expect(pageRhythm.shell).toBe('flex h-full min-h-0 bg-canvas');
+    expect(pageRhythm.shell).toBe('flex h-full min-h-0 flex-col bg-canvas');
+    expect(pageRhythm.shellBody).toContain('flex-1');
+    expect(pageRhythm.statusBar).toContain('h-6');
     expect(pageRhythm.shell).not.toContain(pageCanvasTw.p);
     expect(pageRhythm.shell).not.toContain(pageCanvasTw.gap);
     expect(pageRhythm.shellNav).toContain('bg-canvas');
@@ -59,7 +61,7 @@ describe('pageRhythm (docs/ui/design-system.md §3)', () => {
 
   it('uses one centered reading column for Chat messages and Settings forms', () => {
     expect(pageRhythm.readingColumn).toBe('mx-auto w-full max-w-3xl');
-    expect(pageRhythm.overviewColumn).toBe('mx-auto w-full max-w-6xl');
+    expect(pageRhythm).not.toHaveProperty('overviewColumn');
   });
 
   it('keeps the current page inset at 12px (change pageEdge.inset to retune)', () => {
@@ -74,7 +76,9 @@ describe('pageRhythm (docs/ui/design-system.md §3)', () => {
     expect(pageRhythm.chromeRow).toContain('min-h-9');
     expect(pageRhythm.chromeActions).toContain('ml-auto');
     expect(pageRhythm.lead).toContain('mb-3');
-    expect(pageRhythm.pageTitle).toBe('text-headline font-medium tracking-tight text-primary');
+    expect(pageRhythm.pageTitle).toBe('text-body font-medium tracking-tight text-primary');
+    expect(pageRhythm.railSlot).toContain('h-12');
+    expect(pageRhythm.railSlot).toContain('w-12');
     expect(pageRhythm.pageTitleMeta).toContain('text-meta');
     expect(pageRhythm.pageTitleMeta).toContain('text-secondary');
     expect(pageRhythm.pageTitleBlock).toBe('flex min-w-0 items-baseline gap-2.5');

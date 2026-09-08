@@ -279,7 +279,7 @@ export const RADIUS = {
  *
  * | 标准 | class | 像素 | 用途 |
  * | display | `text-display` | 22 | 对话空态主句、首次引导 |
- * | title | `text-title` | 18 | 对话框标题；壳顶栏页名走 `pageRhythm.pageTitle`（headline） |
+ * | title | `text-title` | 18 | 对话框标题；壳顶栏页名走 `pageRhythm.pageTitle`（body） |
  * | headline | `text-headline` | 15 | 分区标题、总览关键数字 |
  * | body | `text-body` | 14 | 正文、按钮、列表名、表单值 |
  * | meta | `text-meta` | 12 | 表头、时间、路径、角标、说明 |

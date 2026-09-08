@@ -536,7 +536,7 @@ export default function DashboardPage() {
   const showEnvCta = !agentsLoading && !showAgentError && installedCount === 0 && envBad;
 
   return (
-    <div className={pageRhythm.overviewColumn}>
+    <div>
       <PageHeader
         title={t('dashboard.page.title')}
         description={pageDescription}

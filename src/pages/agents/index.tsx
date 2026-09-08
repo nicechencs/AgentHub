@@ -383,7 +383,7 @@ export default function AgentsPage() {
         />
       ) : (
         <div data-help="agents-list">
-        <TableShell layout="split">
+        <TableShell variant="workbench" layout="split">
           <Table className="w-full table-fixed" style={{ minWidth: totalWidth }}>
             <colgroup>
               {AGENT_TABLE_COLUMN_SPECS.map((spec) => (

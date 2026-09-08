@@ -13,6 +13,12 @@ function source(name: string): string {
 }
 
 describe('dashboard layout wiring', () => {
+  it('uses the shared edge column instead of a centered overview width', () => {
+    const page = source('index.tsx');
+    expect(page).not.toContain('overviewColumn');
+    expect(page).not.toContain('max-w-6xl');
+  });
+
   it('folds the agent ready count into the page subtitle', () => {
     const page = source('index.tsx');
     expect(page).toContain('dashboardPageDescription');

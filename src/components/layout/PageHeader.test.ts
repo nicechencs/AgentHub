@@ -79,10 +79,12 @@ describe('PageHeader', () => {
     expect(topBar).not.toContain('NotificationBell');
     expect(source('components/layout/ChromeActions.tsx')).toContain('PageHelpButton');
     expect(source('components/layout/ChromeActions.tsx')).toContain('FeedbackButton');
-    expect(source('pages/chat/ChatSessionHeader.tsx')).toContain('ChromeActions');
+    expect(source('pages/chat/ChatSessionHeader.tsx')).not.toContain('ChromeActions');
+    expect(source('pages/chat/ChatSessionHeader.tsx')).toContain('useRegisterPageChrome');
     expect(topBar).toContain('pageRhythm.topChrome');
-    expect(topBar).toContain('pageRhythm.workbenchX');
-    expect(source('components/layout/Sidebar.tsx')).toContain('pageRhythm.topChrome');
+    expect(topBar).toContain('pageRhythm.railSlot');
+    expect(source('components/layout/Sidebar.tsx')).toContain('pageRhythm.railSlot');
+    expect(source('components/layout/Sidebar.tsx')).not.toContain('pageRhythm.topChrome');
     expect(source('pages/skills/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/projects/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/settings/index.tsx')).toContain('pageRhythm.workbenchHeader');
@@ -93,7 +95,8 @@ describe('PageHeader', () => {
     expect(source('pages/routes/pool/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/plugins/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/agents/index.tsx')).toContain('WorkbenchSplitPage');
-    expect(source('App.tsx')).toContain('!isChat && <TopBar');
+    expect(source('App.tsx')).toContain('<TopBar />');
+    expect(source('App.tsx')).not.toContain('!isChat && <TopBar');
     expect(source('App.tsx')).toContain('PageChromeProvider');
     expect(source('pages/settings/index.tsx')).not.toMatch(/readingColumn\}>\s*<PageHeader/);
     expect(source('pages/chat/ChatSessionHeader.tsx')).toContain('pageRhythm.chatChromeX');

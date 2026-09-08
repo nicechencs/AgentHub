@@ -1,10 +1,8 @@
 import * as React from 'react';
 import { NavLink } from 'react-router-dom';
-import { PanelLeftOpen } from 'lucide-react';
 import { NavResizeHandle } from '@/components/layout/NavResizeHandle';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { ROUTES_NAV_WIDTH } from '@/components/layout/sidebar-width-model';
-import { useSidebar } from '@/components/layout/SidebarContext';
 import { useNavWidth } from '@/components/layout/use-sidebar-width';
 import { Badge } from '@/components/ui/badge';
 import { Hint } from '@/components/ui/tooltip';
@@ -17,7 +15,7 @@ import {
   type RoutesNavItem,
 } from '@/pages/routes/routes-nav-items';
 
-const NAV_ICON_SIZE = 20;
+const NAV_ICON_SIZE = 22;
 const LG_QUERY = '(min-width: 1024px)';
 
 function useIsLgUp() {
@@ -53,24 +51,23 @@ function RoutesNavLink({
     <NavLink
       to={item.to}
       aria-label={compact || inDevelopment ? a11yLabel : undefined}
-      className={cn(
-        'block focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30',
-        !compact && 'rounded-btn',
-      )}
+      className="block focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30"
     >
       {({ isActive }) => {
         const node = (
-          <span className={cn(itemClass(isActive), compact && 'justify-center px-0')}>
-            <item.icon
-              size={NAV_ICON_SIZE}
-              strokeWidth={1.6}
-              absoluteStrokeWidth
-              data-icon="nav"
-              className="shrink-0"
-            />
+          <span className={itemClass(isActive)}>
+            <span className={pageRhythm.railSlot}>
+              <item.icon
+                size={NAV_ICON_SIZE}
+                strokeWidth={1.6}
+                absoluteStrokeWidth
+                data-icon="nav"
+                className="shrink-0"
+              />
+            </span>
             {!compact && (
               <>
-                <span className="truncate">{label}</span>
+                <span className="min-w-0 flex-1 truncate pr-2">{label}</span>
                 {inDevelopment && (
                   <Badge variant="default" className="ml-auto shrink-0" aria-hidden>
                     {developmentLabel}
@@ -97,7 +94,6 @@ function RoutesNavLink({
  */
 export function RoutesNav() {
   const { t } = useI18n();
-  const { expandPrimarySidebar } = useSidebar();
   const isLg = useIsLgUp();
   const width = useNavWidth({
     collapsed: !isLg,
@@ -108,15 +104,11 @@ export function RoutesNav() {
 
   const itemClass = (isActive: boolean) =>
     cn(
-      'group relative flex w-full items-center text-body transition-colors duration-150',
-      isLg
-        ? 'h-7 gap-2.5 rounded-btn px-2.5'
-        : 'h-9 justify-center px-0',
+      'group relative flex h-12 w-full items-center text-body transition-colors duration-150',
       isActive
-        ? 'font-medium text-primary [&_svg]:text-accent before:absolute before:left-0 before:w-0.5 before:rounded-full before:bg-accent'
+        ? 'font-medium text-primary [&_svg]:text-accent before:absolute before:inset-y-2.5 before:left-0 before:w-0.5 before:rounded-full before:bg-accent'
         : 'text-secondary hover:bg-hover hover:text-primary',
-      isActive && isLg && 'bg-accent-subtle before:inset-y-1.5',
-      isActive && !isLg && 'before:inset-y-2',
+      isActive && isLg && 'bg-accent-subtle',
     );
 
   return (
@@ -125,33 +117,9 @@ export function RoutesNav() {
       style={{ width: width.width }}
       data-routes-nav
     >
-      <div
-        className={cn(
-          'flex shrink-0 items-center border-b border-border',
-          pageRhythm.topChrome,
-          isLg ? 'justify-between px-3' : 'justify-center',
-        )}
-      >
-        <Hint label={t('nav.expandSidebar')} side="right">
-          <button
-            type="button"
-            onClick={expandPrimarySidebar}
-            className="flex h-7 w-7 items-center justify-center rounded-btn text-muted transition-colors hover:bg-hover hover:text-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30"
-            aria-label={t('nav.expandSidebar')}
-          >
-            <PanelLeftOpen size={18} strokeWidth={1.6} absoluteStrokeWidth data-icon="nav" />
-          </button>
-        </Hint>
-        {isLg && (
-          <span className="min-w-0 truncate text-body font-medium tracking-tight">
-            {t('routes.nav.title')}
-          </span>
-        )}
-      </div>
-
       <nav
         aria-label={t('routes.nav.aria')}
-        className={cn('flex min-h-0 flex-1 flex-col gap-0.5 pt-1', isLg ? 'px-2' : 'px-0')}
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain"
       >
         {navItems.map((item) => (
           <RoutesNavLink

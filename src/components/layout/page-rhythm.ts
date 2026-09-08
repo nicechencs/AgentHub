@@ -10,8 +10,7 @@
  *
  * ## 内容宽度（两套，docs/ui/design-system.md §3.4）
  * 1. 阅读列 `readingColumn`：Chat 消息列。固定 `max-w-3xl` 居中。设置表单正文（备份分栏页除外）同列居中；页签留在页头贴左，不进阅读列。
- * 2. 贴边列：其余页。铺满主列，左右用 `pageEdge.inset`（`pageShell` / `workbenchX`）。
- * 3. 总览列 `overviewColumn`：仅 Dashboard，居中 `max-w-6xl`。
+ * 2. 贴边列：其余页（含总览）。铺满主列，左右用 `pageEdge.inset`（`pageShell` / `workbenchX`）。
  * 页标题一律贴边、同一行（headline 深色标题 + meta 浅色说明），放在非对话页顶栏左侧。
  *
  * 层级（自上而下）：
@@ -90,8 +89,13 @@ export const pageInsetTw = SPACE[pageEdge.inset];
 export const pageChatTw = SPACE[pageEdge.chat];
 
 export const pageRhythm = {
-  /** 贴边工作台：灰 chrome（canvas）+ 白正文（panel），栏与栏 1px 线。 */
-  shell: 'flex h-full min-h-0 bg-canvas',
+  /** 贴边工作台：灰 chrome（canvas）+ 白正文（panel），栏与栏 1px 线。底栏横跨整窗。 */
+  shell: 'flex h-full min-h-0 flex-col bg-canvas',
+  shellBody: 'flex min-h-0 min-w-0 flex-1',
+  statusBar:
+    'flex h-6 shrink-0 items-center border-t border-border bg-canvas px-1 text-meta',
+  statusBarItem:
+    'inline-flex h-full max-w-full items-center gap-1.5 px-2 text-meta text-secondary hover:bg-hover hover:text-primary',
   shellNav:
     'flex min-h-0 shrink-0 flex-col overflow-hidden border-r border-border bg-canvas',
   /** Main stage is panel; sidebar / top chrome stay on canvas (THEME in tokens.ts). */
@@ -117,10 +121,10 @@ export const pageRhythm = {
   pageShell: `w-full min-w-0 ${pageInsetTw.x} ${pageInsetTw.y}`,
   /** Chat 消息列：居中阅读宽。页头不进此列。设置表单正文（备份分栏页除外）共用同一列。 */
   readingColumn: 'mx-auto w-full max-w-3xl',
-  /** Dashboard 居中列，避免宽屏把指标拉成一条细线。 */
-  overviewColumn: 'mx-auto w-full max-w-6xl',
-  /** 侧栏品牌行与非对话页顶栏同高，横线对齐（36px，接近桌面工具栏） */
+  /** 整窗顶栏高度（36px） */
   topChrome: 'h-9',
+  /** 图标轨格子：48×48，与收起侧栏同宽 */
+  railSlot: 'flex h-12 w-12 shrink-0 items-center justify-center',
   /** 全高工作台水平 inset — 与常规页水平一致 */
   workbenchX: pageInsetTw.x,
   /**
@@ -134,8 +138,8 @@ export const pageRhythm = {
   workbenchHeader: `shrink-0 ${pageInsetTw.x} ${pageInsetTw.t}`,
   /** 全高列表顶距，与预览列 padTop 相同 */
   workbenchPadT: pageInsetTw.t,
-  /** 页标题：非对话页顶栏（headline，不当成网站大标题） */
-  pageTitle: 'text-headline font-medium tracking-tight text-primary',
+  /** 页标题：顶栏（body，不当成网站大标题） */
+  pageTitle: 'text-body font-medium tracking-tight text-primary',
   /** 页说明：紧跟标题同一行（小号、浅色），过长截断 */
   pageTitleMeta: 'min-w-0 truncate text-meta font-normal text-secondary',
   /** 顶栏标题行：标题与说明基线对齐 */

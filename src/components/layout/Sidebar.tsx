@@ -1,15 +1,8 @@
 import * as React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import { AgentDot } from '@/components/shared/AgentDot';
-import { AppLogo } from '@/components/shared/AppLogo';
 import { StatusPin } from '@/components/shared/StatusPin';
-import { AGENTS, type AgentMeta } from '@/config/agents';
-import {
-  useAgentStatusesOptional,
-  useAppUpdateAvailable,
-} from '@/app/runtime';
-import type { AgentStatus } from '@/lib/types';
+import { useAppUpdateAvailable } from '@/app/runtime';
 import { Hint } from '@/components/ui/tooltip';
 import { collapsedAfterPrimaryNavClick } from '@/components/layout/sidebar-collapse-override';
 import { NavResizeHandle } from '@/components/layout/NavResizeHandle';
@@ -22,10 +15,6 @@ import {
   workspaceNavItems,
 } from '@/components/layout/sidebar-nav';
 import { Badge } from '@/components/ui/badge';
-import {
-  agentHasCatalogUpdate,
-  sidebarInstallStats,
-} from '@/components/layout/sidebar-stats';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import {
   ContextMenu,
@@ -34,10 +23,8 @@ import {
 } from '@/components/ui/context-menu';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/components/shared/LanguageProvider';
-import { useStoredIdOrder } from '@/components/shared/use-stored-id-order';
-import { StorageKey } from '@/lib/ui-preferences';
 import { isRoutesAreaPath } from '@/pages/routes/routes-nav-items';
-const NAV_ICON_SIZE = 20;
+const NAV_ICON_SIZE = 22;
 const MENU_ICON_CLASS = 'h-3.5 w-3.5';
 
 /** 右键菜单图标：与折叠按钮同款 PanelLeft 图标 */
@@ -74,10 +61,7 @@ function SidebarNavLink({
       to={to}
       end={to === '/'}
       aria-label={collapsed || tip || inDevelopment ? a11yLabel : undefined}
-      className={cn(
-        'block focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30',
-        !collapsed && 'rounded-btn',
-      )}
+      className="block focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30"
       onClick={() => {
         const next = collapsedAfterPrimaryNavClick({
           itemTo: to,
@@ -90,7 +74,7 @@ function SidebarNavLink({
       {({ isActive }) => {
         const node = (
           <span className={cn(itemClass(isActive), 'relative')}>
-            <span className="relative shrink-0">
+            <span className={cn('relative', pageRhythm.railSlot)}>
               <Icon
                 size={NAV_ICON_SIZE}
                 strokeWidth={1.6}
@@ -103,7 +87,7 @@ function SidebarNavLink({
             </span>
             {!collapsed && (
               <>
-                <span className="truncate">{label}</span>
+                <span className="min-w-0 flex-1 truncate pr-2">{label}</span>
                 {inDevelopment && (
                   <Badge variant="default" className="ml-auto shrink-0" aria-hidden>
                     {developmentLabel}
@@ -148,7 +132,7 @@ function NavGroup({
   return (
     <div className={cn('flex shrink-0 flex-col gap-0.5', className)}>
       {!collapsed && (
-        <div className={cn('px-2.5 pb-1 pt-2', pageRhythm.sectionEyebrow)}>
+        <div className={cn('pb-1 pr-2.5 pt-2 pl-12', pageRhythm.sectionEyebrow)}>
           {label}
         </div>
       )}
@@ -158,102 +142,12 @@ function NavGroup({
   );
 }
 
-function agentDotLabel(
-  meta: AgentMeta,
-  status: AgentStatus | undefined,
-  hasUpdate: boolean,
-  upgradeable: string,
-): string {
-  const ver = status?.version ? ` v${status.version}` : '';
-  const up = hasUpdate ? upgradeable : '';
-  return `${meta.name}${ver}${up}`;
-}
-
-/** agent 在线状态迷你条：最底部 */
-function SidebarAgentStrip({
-  collapsed,
-  agents,
-  installedCount,
-  visibleTotal,
-  orderedInstalledMetas,
-}: {
-  collapsed: boolean;
-  agents: readonly AgentStatus[];
-  installedCount: number;
-  visibleTotal: number;
-  orderedInstalledMetas: readonly AgentMeta[];
-}) {
-  const { t } = useI18n();
-  const fractionLabel = t('nav.agentsInstalled', {
-    installed: installedCount,
-    total: visibleTotal,
-  });
-
-  return (
-    <div className={cn('shrink-0 border-t border-border', collapsed ? 'px-1.5 py-2.5' : 'px-3 py-2.5')}>
-      {collapsed ? (
-        <Hint label={fractionLabel} side="right">
-          <div
-            className="flex cursor-default flex-wrap items-center justify-center gap-1.5 rounded-btn py-0.5"
-            aria-label={fractionLabel}
-          >
-            {orderedInstalledMetas.map((meta) => {
-              const status = agents.find((row) => row.agentId === meta.id);
-              const hasUpdate = agentHasCatalogUpdate(status);
-              return (
-                <AgentDot
-                  key={meta.id}
-                  agentId={meta.id}
-                  color={meta.color}
-                  title={null}
-                  ring={!hasUpdate}
-                  growOnHover
-                  className={cn(hasUpdate && 'ring-2 ring-warning')}
-                />
-              );
-            })}
-          </div>
-        </Hint>
-      ) : (
-        <div className="flex flex-wrap items-center gap-2">
-          {orderedInstalledMetas.map((meta) => {
-            const status = agents.find((row) => row.agentId === meta.id);
-            const hasUpdate = agentHasCatalogUpdate(status);
-            return (
-              <AgentDot
-                key={meta.id}
-                agentId={meta.id}
-                color={meta.color}
-                title={agentDotLabel(
-                  meta,
-                  status,
-                  hasUpdate,
-                  t('nav.upgradeable', { version: status?.latestVersion ?? '' }),
-                )}
-                growOnHover
-                className={cn(hasUpdate && 'ring-2 ring-warning')}
-              />
-            );
-          })}
-          {installedCount === 0 && (
-            <span className="text-xs text-muted">{t('nav.noAgentInstalled')}</span>
-          )}
-          <span className="ml-auto shrink-0 text-xs text-muted">
-            {installedCount}/{visibleTotal}
-          </span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** 侧边导航:可折叠;底部为 agent 在线状态迷你条 */
+/** 侧边导航:可折叠。Agent 状态在窗口底栏。 */
 export function Sidebar() {
-  const { collapsed, setCollapsed, toggle, navVisible } = useSidebar();
+  const { collapsed, setCollapsed, navVisible } = useSidebar();
   const width = useSidebarWidth(collapsed);
   const { pathname } = useLocation();
   const { t } = useI18n();
-  const { statuses: agents } = useAgentStatusesOptional();
   const appUpdate = useAppUpdateAvailable();
   const settingsNotice = appUpdate
     ? { label: t('nav.updateAvailable', { version: appUpdate.version }) }
@@ -277,22 +171,15 @@ export function Sidebar() {
 
   const itemClass = (isActive: boolean) =>
     cn(
-      'group relative flex w-full items-center text-body transition-colors duration-150',
-      collapsed ? 'h-9 justify-center' : 'h-7 gap-2.5 rounded-btn px-2.5',
+      'group relative flex h-12 w-full items-center text-body transition-colors duration-150',
       isActive
         ? 'font-medium text-primary [&_svg]:text-accent'
         : 'text-secondary hover:bg-hover hover:text-primary',
       isActive && !collapsed && 'bg-accent-subtle',
       isActive &&
-        'before:absolute before:left-0 before:w-0.5 before:rounded-full before:bg-accent',
-      isActive && (collapsed ? 'before:inset-y-2' : 'before:inset-y-1.5'),
+        'before:absolute before:inset-y-2.5 before:left-0 before:w-0.5 before:rounded-full before:bg-accent',
     );
 
-  const { stored: agentCatalogOrder } = useStoredIdOrder(StorageKey.agentsCatalogOrder);
-  const stats = React.useMemo(
-    () => sidebarInstallStats(AGENTS, agents, agentCatalogOrder),
-    [agents, agentCatalogOrder],
-  );
   const visibleWorkspaceNav = React.useMemo(
     () => workspaceNavItems(navVisible),
     [navVisible],
@@ -316,58 +203,8 @@ export function Sidebar() {
         style={{ width: width.width }}
         onContextMenu={openRailMenu}
       >
-        {/* 品牌 + 折叠按钮 */}
-        <div
-          className={cn(
-            'flex shrink-0 items-center border-b border-border',
-            pageRhythm.topChrome,
-            collapsed ? 'justify-center' : 'justify-between px-3',
-          )}
-        >
-          {collapsed ? (
-            <Hint label={t('nav.expandSidebar')} side="right">
-              <button
-                type="button"
-                onClick={toggle}
-                className="group relative flex h-7 w-7 shrink-0 items-center justify-center rounded-btn focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30"
-                aria-label={t('nav.expandSidebar')}
-              >
-                <span className="flex h-7 w-7 items-center justify-center rounded-btn transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0">
-                  <AppLogo size={20} className="h-5 w-5" />
-                </span>
-                <span className="absolute inset-0 flex items-center justify-center rounded-btn text-muted opacity-0 transition-opacity group-hover:bg-hover group-hover:text-primary group-hover:opacity-100 group-focus-visible:bg-hover group-focus-visible:text-primary group-focus-visible:opacity-100">
-                  <PanelLeftOpen size={18} strokeWidth={1.6} absoluteStrokeWidth data-icon="nav" />
-                </span>
-              </button>
-            </Hint>
-          ) : (
-            <>
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-btn">
-                  <AppLogo size={20} className="h-5 w-5" />
-                </span>
-                <span className="truncate text-body font-medium tracking-tight">AgentHub</span>
-              </div>
-              <Hint label={t('nav.collapseSidebar')} side="right">
-                <button
-                  type="button"
-                  onClick={toggle}
-                  className="flex h-7 w-7 items-center justify-center rounded-btn text-muted transition-colors hover:bg-hover hover:text-primary"
-                  aria-label={t('nav.collapseSidebar')}
-                >
-                  <PanelLeftClose size={18} strokeWidth={1.6} absoluteStrokeWidth data-icon="nav" />
-                </button>
-              </Hint>
-            </>
-          )}
-        </div>
-
-        {/* 工作区置顶；管理区 mt-auto 贴底（在 agent 状态条上方） */}
         <nav
-          className={cn(
-            'flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain pt-1',
-            collapsed ? 'px-0' : 'px-2',
-          )}
+          className="flex min-h-0 flex-1 flex-col gap-0 overflow-y-auto overscroll-contain"
         >
           <NavGroup label={t('nav.workspace')} collapsed={collapsed}>
             {visibleWorkspaceNav.map((item) => (
@@ -386,14 +223,6 @@ export function Sidebar() {
             ))}
           </NavGroup>
         </nav>
-
-        <SidebarAgentStrip
-          collapsed={collapsed}
-          agents={agents}
-          installedCount={stats.installedCount}
-          visibleTotal={stats.visibleTotal}
-          orderedInstalledMetas={stats.orderedInstalledMetas}
-        />
         {!collapsed && <NavResizeHandle label={t('nav.resizeSidebar')} width={width} />}
       </aside>
       <ContextMenu open={railMenu !== null} point={railMenu} onClose={closeRailMenu}>

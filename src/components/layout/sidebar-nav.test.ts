@@ -146,11 +146,13 @@ describe('nav model order', () => {
     expect(NAV_MANAGE.find((item) => item.to === SUB2API_PATH)?.icon).toBe(Cloud);
   });
 
-  it('keeps active labels readable while accenting 20px navigation icons', () => {
+  it('keeps active labels readable while accenting 22px navigation icons', () => {
     const sidebar = readFileSync(path.join(dir, 'Sidebar.tsx'), 'utf8');
     expect(sidebar).toContain('font-medium text-primary [&_svg]:text-accent');
     expect(sidebar).toContain('hover:bg-hover hover:text-primary');
-    expect(sidebar).toContain('const NAV_ICON_SIZE = 20;');
+    expect(sidebar).toContain('const NAV_ICON_SIZE = 22;');
+    expect(sidebar).toContain('h-12');
+    expect(sidebar).toContain('pageRhythm.railSlot');
     expect(sidebar).toContain('size={NAV_ICON_SIZE}');
     expect(sidebar).toContain('strokeWidth={1.6}');
     expect(sidebar).toContain('data-icon="nav"');

@@ -315,6 +315,7 @@ export const en = {
     },
   },
   chrome: {
+    localForward: 'Local forwarding',
     error: {
       title: "Failed to load",
       retry: "Retry",

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Copy, FolderOpen, PanelLeftOpen, Settings2, ShieldAlert, Terminal } from 'lucide-react';
-import { ChromeActions } from '@/components/layout/ChromeActions';
+import { useRegisterPageChrome } from '@/components/layout/PageChromeContext';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { copyTextToClipboard } from '@/components/shared/CopyTextButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
@@ -58,6 +58,11 @@ export function ChatSessionHeader({
   const selectedAgent = active?.agentIds[0] ?? null;
   const approveOn = autoApproveActive(Boolean(active?.allowDangerous), selectedAgent);
   const kiroPermissions = isKiroChatAgent(selectedAgent);
+
+  useRegisterPageChrome({
+    title: t('nav.chat'),
+    description: active ? conversationTitle(t, active.title) : undefined,
+  });
 
   async function commit() {
     if (cancelledRef.current) {
@@ -238,7 +243,6 @@ export function ChatSessionHeader({
           </Button>
         </div>
       )}
-      <ChromeActions />
     </header>
   );
 }
