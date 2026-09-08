@@ -1,4 +1,7 @@
 import * as React from 'react';
+import { readFileSync, readdirSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -6,18 +9,23 @@ import { AGENT_DISPLAY } from '@/config/agents';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AgentLogo } from './AgentLogo';
 
+const logosDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../assets/agent-logos');
+
 const SVG_AGENT_IDS = [
   'claude',
   'codex',
   'kimi',
   'grok',
   'pi',
+  'workbuddy',
   'cursor',
   'dsh',
   'kiro',
 ] as const;
 
-function markup(agentId: string, size: 'sm' | 'md' | 'lg' = 'md'): string {
+const BLEED_AGENT_IDS = ['workbuddy', 'kiro', 'zcode'] as const;
+
+function markup(agentId: string, size: 'sm' | 'md' = 'sm'): string {
   return renderToStaticMarkup(
     createElement(
       TooltipProvider,
@@ -97,7 +105,26 @@ describe('AgentLogo', () => {
       expect(html, agentId).not.toContain('.png');
       expect(html, agentId).toContain('rounded-mark');
       expect(html, agentId).not.toContain('rounded-full');
+      expect(html, agentId).not.toContain('p-0.5');
+      expect(html, agentId).toContain('h-6 w-6');
     }
+  });
+
+  it('defaults to the 24px list size', () => {
+    const html = markup('claude');
+    expect(html).toContain('h-6 w-6');
+    expect(html).not.toContain('h-8 w-8');
+    expect(html).not.toContain('h-10 w-10');
+  });
+
+  it('uses bleed fit for full-tile marks and glyph fit otherwise', () => {
+    for (const agentId of BLEED_AGENT_IDS) {
+      expect(markup(agentId)).toContain('data-logo-fit="bleed"');
+      expect(markup(agentId)).toContain('object-cover');
+    }
+    expect(markup('claude')).toContain('data-logo-fit="glyph"');
+    expect(markup('claude')).toContain('object-contain');
+    expect(markup('unknown-agent')).not.toContain('data-logo-fit');
   });
 
   it('uses zcode PNG directly because no safe SVG is available', () => {
@@ -173,10 +200,23 @@ describe('AgentLogo', () => {
   });
 
   it('keeps the hint, accessible name, and size API intact', () => {
-    const html = markup('claude', 'lg');
+    const html = markup('claude', 'md');
 
     expect(html).toContain('aria-label="Claude Code"');
-    expect(html).toContain('h-10 w-10');
+    expect(html).toContain('h-8 w-8');
     expect(html).toContain('data-state="closed"');
+  });
+
+  it('keeps every local SVG on a square viewBox', () => {
+    const files = readdirSync(logosDir).filter((name) => name.endsWith('.svg'));
+    expect(files.length).toBeGreaterThan(0);
+    for (const name of files) {
+      const svg = readFileSync(path.join(logosDir, name), 'utf8');
+      const match = svg.match(/viewBox="([^\"]+)"/);
+      expect(match, name).toBeTruthy();
+      const parts = match![1].split(/\s+/).map(Number);
+      expect(parts, name).toHaveLength(4);
+      expect(parts[2], name).toBeCloseTo(parts[3], 2);
+    }
   });
 });
