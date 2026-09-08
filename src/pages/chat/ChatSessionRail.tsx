@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { Loader2, PanelLeftClose, Plus, Terminal, Trash2 } from 'lucide-react';
+import { NavResizeHandle } from '@/components/layout/NavResizeHandle';
 import { pageRhythm } from '@/components/layout/page-rhythm';
+import { CHAT_RAIL_WIDTH } from '@/components/layout/sidebar-width-model';
+import { useNavWidth } from '@/components/layout/use-sidebar-width';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { SearchField } from '@/components/shared/SearchField';
 import { Button } from '@/components/ui/button';
@@ -14,6 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { StorageKey } from '@/lib/storage-key';
 import type { Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { relativeTime } from './chat-format';
@@ -69,6 +73,11 @@ export function ChatSessionRail({
   historyRevealNonce?: number;
 }) {
   const { t } = useI18n();
+  const width = useNavWidth({
+    collapsed: !open,
+    storageKey: StorageKey.chatRailWidth,
+    policy: CHAT_RAIL_WIDTH,
+  });
   const pending = conversations.find((c) => c.id === deleteConfirmId) ?? null;
   const railRef = useRef<HTMLElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -93,12 +102,14 @@ export function ChatSessionRail({
   }, [open, historyRevealNonce]);
 
   return (
+    <>
     <aside
       ref={railRef}
       className={cn(
-        'flex shrink-0 flex-col border-r border-border bg-canvas transition-[width] duration-200',
-        open ? 'w-60' : 'w-0 overflow-hidden border-r-0',
+        'flex shrink-0 flex-col overflow-hidden bg-canvas',
+        width.widthTransition,
       )}
+      style={{ width: width.width }}
       data-help="chat-rail"
     >
       <div className="flex items-center gap-1.5 p-2">
@@ -246,5 +257,7 @@ export function ChatSessionRail({
         </DialogContent>
       </Dialog>
     </aside>
+    {open ? <NavResizeHandle label={t('chat.rail.resize')} width={width} /> : null}
+    </>
   );
 }

@@ -2695,6 +2695,7 @@ export const zh = {
     rail: {
       collapseHistory: "收起历史",
       expandHistory: "展开历史",
+      resize: "拖动调整历史宽度",
       newChat: "新建对话",
       newChatDisabled: "请先安装或取消隐藏 Agent",
       searchPlaceholder: "搜索对话",
