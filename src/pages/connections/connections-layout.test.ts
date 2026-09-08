@@ -138,6 +138,18 @@ describe('connections layout wiring', () => {
     expect(provider).not.toContain('<p className="text-muted">{livePaths.hint}</p>');
   });
 
+  it('puts official service and the key before live-config and paste chrome', () => {
+    const provider = source('../../components/connections/ProviderEditDialog.tsx');
+    expect(provider).toContain("t('connections.providerDialog.whatHappensOnAdd')");
+    expect(provider).toContain('const [showAdvanced, setShowAdvanced] = React.useState(false)');
+    expect(provider.indexOf("t('connections.providerDialog.useOfficial')")).toBeLessThan(
+      provider.indexOf('livePaths.config'),
+    );
+    expect(provider.indexOf("t('connections.apiKeyDialog.nameOptional')")).toBeLessThan(
+      provider.indexOf('connections.providerDialog.smartDetect'),
+    );
+  });
+
   it('uses beginner field copy instead of schema help text', () => {
     const form = source('../../components/shared/GenericConfigForm.tsx');
     expect(form).toContain('configFieldHint');
