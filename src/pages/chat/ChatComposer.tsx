@@ -93,6 +93,7 @@ export function ChatComposer({
   fillHeight = false,
   paneHeight = null,
   paneRef,
+  showBlockerBanner = true,
 }: {
   draft: string;
   setDraft: (v: string) => void;
@@ -136,6 +137,7 @@ export function ChatComposer({
   fillHeight?: boolean;
   paneHeight?: number | null;
   paneRef?: Ref<HTMLDivElement>;
+  showBlockerBanner?: boolean;
 }) {
   const navigate = useNavigate();
   const { t } = useI18n();
@@ -146,6 +148,11 @@ export function ChatComposer({
     Boolean(draft.trim()) &&
     blockers.length === 0 &&
     (!sending || Boolean(onSteer) || Boolean(onQueueAfterTurn));
+  const busySendHint = onSteer
+    ? t('chat.composer.add')
+    : onQueueAfterTurn
+      ? t('chat.composer.sendAfterTurn')
+      : t('chat.composer.send');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const syncTextareaHeight = useCallback(() => {
@@ -182,7 +189,11 @@ export function ChatComposer({
     onPasteImages(images);
     return true;
   }, [onPasteImages]);
-  const sendHint = firstBlocker ? blockerCopy(t, firstBlocker).text : t('chat.composer.send');
+  const sendHint = firstBlocker
+    ? blockerCopy(t, firstBlocker).text
+    : sending
+      ? busySendHint
+      : t('chat.composer.send');
   const selectedAgent = active.agentIds[0] ?? '';
   const approveFooter = autoApproveFooter(t, active.allowDangerous, active.agentIds[0] ?? null);
   const pickerEmpty = chatAgentPickerEmptyKind({
@@ -203,7 +214,7 @@ export function ChatComposer({
           {t('connections.page.walletError')}
         </Notice>
       ) : null}
-      {firstBlocker && (
+      {firstBlocker && showBlockerBanner ? (
         <BlockerNotice
           blocker={firstBlocker}
           onGoAgents={() => navigate('/agents')}
@@ -213,7 +224,7 @@ export function ChatComposer({
           onPickWorkingDirectory={onPickWorkingDirectory}
           onRetryStatus={onRetryStatus}
         />
-      )}
+      ) : null}
       <div
         ref={paneRef}
         data-help="chat-composer"
@@ -258,6 +269,7 @@ export function ChatComposer({
               e.preventDefault();
               if (canSend) {
                 if (sending && onSteer) onSteer();
+                else if (sending && onQueueAfterTurn) onQueueAfterTurn();
                 else onSend();
               }
             }
@@ -550,16 +562,23 @@ export function ChatComposer({
 
           {sending ? (
             <>
-              {onSteer ? (
-                <Button size="sm" variant="outline" disabled={!draft.trim()} onClick={onSteer}>
-                  {t('chat.composer.add')}
-                </Button>
-              ) : onQueueAfterTurn ? (
-                <Button size="sm" variant="outline" disabled={!draft.trim()} onClick={onQueueAfterTurn}>
-                  {t('chat.composer.sendAfterTurn')}
-                </Button>
-              ) : null}
-              <Button size="sm" variant="dangerOutline" disabled={canceling} onClick={onCancel}>
+              <Button
+                size="icon"
+                variant={canSend ? 'default' : 'secondary'}
+                className="h-8 w-8 shrink-0 rounded-full"
+                disabled={!canSend}
+                onClick={() => {
+                  if (onSteer) onSteer();
+                  else if (onQueueAfterTurn) onQueueAfterTurn();
+                  else onSend();
+                }}
+                data-help="chat-send"
+                aria-label={sendHint}
+                title={sendHint}
+              >
+                <SendHorizontal className="h-4 w-4" />
+              </Button>
+              <Button size="sm" variant="dangerOutline" className="shrink-0" disabled={canceling} onClick={onCancel}>
                 <Square className="h-3.5 w-3.5" />
                 {t('chat.composer.stop')}
               </Button>

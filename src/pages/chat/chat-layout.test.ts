@@ -26,6 +26,17 @@ describe('chat layout wiring', () => {
     expect(source('ChatComposer.tsx')).toContain('chat.composer.stop');
   });
 
+  it('keeps send available while a turn is in progress', () => {
+    expect(source('index.tsx')).toContain('chatBusySendMode');
+    const composer = source('ChatComposer.tsx');
+    const sendingAt = composer.indexOf('{sending ? (');
+    const sendWhileBusyAt = composer.indexOf('data-help="chat-send"', sendingAt);
+    const stopAt = composer.indexOf("t('chat.composer.stop')", sendingAt);
+    expect(sendingAt).toBeGreaterThan(0);
+    expect(sendWhileBusyAt).toBeGreaterThan(sendingAt);
+    expect(stopAt).toBeGreaterThan(sendWhileBusyAt);
+  });
+
   it('opens markdown files in a right-hand preview pane', () => {
     const page = source('index.tsx');
     expect(page).toContain('useSideSplit');
@@ -68,8 +79,13 @@ describe('chat layout wiring', () => {
     const transcript = source('ChatTranscript.tsx');
     expect(transcript).toContain('chatStarterActions');
     expect(transcript).toContain('onPickStarter');
+    expect(transcript).toContain('chat.transcript.identity');
+    expect(transcript).toContain('firstBlocker');
     expect(transcript).not.toContain('variant="default"');
     expect(source('index.tsx')).toContain('onPickStarter={page.runChatAction}');
+    expect(source('index.tsx')).toContain('firstBlocker={page.blockers[0] ?? null}');
+    expect(source('index.tsx')).toContain('showBlockerBanner={page.turns.length > 0}');
+    expect(source('ChatComposer.tsx')).toContain('showBlockerBanner');
   });
 
   it('keeps the transcript white column on the same max-w-3xl as the composer', () => {
