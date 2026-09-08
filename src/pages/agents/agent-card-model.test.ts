@@ -46,6 +46,12 @@ describe('agent-card menu wiring', () => {
     expect(card).toContain('agentLaunchTargets');
     expect(card).toContain("t('agents.card.startCli')");
     expect(card).toContain("t('agents.card.startApp')");
+    expect(zh.agents.card.startCli).toBe('启动命令行');
+    expect(en.agents.card.startCli).toBe('Start command line');
+    expect(zh.agents.card.startApp).toBe('启动应用');
+    expect(en.agents.card.startApp).toBe('Start app');
+    expect(zh.agents.card.startCli).not.toContain('CLI');
+    expect(en.agents.card.startCli).not.toContain('CLI');
     expect(card).toContain('text-muted');
     expect(card).not.toContain('openAgentCardUninstallConfirm');
     expect(card).not.toContain("t('agents.card.uninstallProgram')");
