@@ -603,7 +603,7 @@ impl ChatRuntime {
             .and_then(|guard| guard.get(conversation_id).cloned())
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn set_codex_program_for_test(&self, path: PathBuf) {
         if let Ok(mut guard) = self.codex_program_override.lock() {
             *guard = Some(path);

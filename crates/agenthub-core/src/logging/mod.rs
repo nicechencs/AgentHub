@@ -7,7 +7,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock};
 
 use chrono::{Local, NaiveDate};
 use tracing::Level;
@@ -440,6 +440,7 @@ pub(crate) fn log_chat_error(
 #[cfg(test)]
 pub(crate) fn with_captured_logs<T>(f: impl FnOnce() -> T) -> (T, String) {
     use std::io::{self, Write};
+    use std::sync::Arc;
 
     #[derive(Clone)]
     struct Buffer(Arc<Mutex<Vec<u8>>>);
