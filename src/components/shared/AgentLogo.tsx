@@ -34,12 +34,20 @@ function brandHex(agentId: AgentKey): string | undefined {
 }
 
 /** 展示 agent 本地 logo；未知 agent 或 logo 加载失败时回退为首字母方标。 */
-export function AgentLogo({ agentId, size = 'md' }: { agentId: AgentKey; size?: 'sm' | 'md' | 'lg' }) {
+export function AgentLogo({
+  agentId,
+  size = 'sm',
+  hint = true,
+}: {
+  agentId: AgentKey;
+  /** `sm` 24px 列表方标（默认）；`md` 32px 头像 / 选择卡片。 */
+  size?: 'sm' | 'md';
+  hint?: boolean;
+}) {
   const meta = resolveAgentMeta(agentId);
   const sizeCls = {
     sm: 'h-6 w-6 text-meta',
     md: 'h-8 w-8 text-xs',
-    lg: 'h-10 w-10 text-sm',
   }[size];
   // 未知 agent：resolveAgentMeta 已用 muted + 首字母 fallback
   const color = meta.color;
@@ -48,6 +56,7 @@ export function AgentLogo({ agentId, size = 'md' }: { agentId: AgentKey; size?: 
   const svgLogoSrc = meta.logoSvgSrc;
   const pngLogoSrc = meta.logoSrc;
   const logoBackground = meta.logoBackground ?? '#ffffff';
+  const logoFit = meta.logoFit ?? 'glyph';
 
   type LogoLoadState = {
     agentId: AgentKey;
@@ -76,19 +85,19 @@ export function AgentLogo({ agentId, size = 'md' }: { agentId: AgentKey; size?: 
   const logoKind = logoSrc === svgLogoSrc ? 'svg' : logoSrc === pngLogoSrc ? 'png' : undefined;
   const showLogo = Boolean(logoSrc);
   const lightBg = relativeLuminance(brandHex(agentId) ?? color) > 0.55;
-  return (
-    <Hint label={name}>
+  const mark = (
       <span
         className={cn(
           'inline-flex shrink-0 items-center justify-center overflow-hidden rounded-mark font-bold',
           showLogo
-            ? 'border border-border p-0.5'
+            ? 'border border-border'
             : lightBg
               ? 'text-primary'
               : 'text-white',
           sizeCls,
         )}
         style={{ backgroundColor: showLogo ? logoBackground : color }}
+        data-logo-fit={showLogo ? logoFit : undefined}
         aria-label={name}
       >
         {logoSrc && showLogo ? (
@@ -96,7 +105,10 @@ export function AgentLogo({ agentId, size = 'md' }: { agentId: AgentKey; size?: 
             src={logoSrc}
             alt=""
             aria-hidden="true"
-            className="h-full w-full rounded-mark object-contain"
+            className={cn(
+              'h-full w-full',
+              logoFit === 'bleed' ? 'object-cover' : 'object-contain',
+            )}
             onError={() => {
               setLogoState((previous) => {
                 // Ignore a stale error from an image that belonged to an
@@ -127,6 +139,7 @@ export function AgentLogo({ agentId, size = 'md' }: { agentId: AgentKey; size?: 
           letter
         )}
       </span>
-    </Hint>
   );
+  if (!hint) return mark;
+  return <Hint label={name}>{mark}</Hint>;
 }

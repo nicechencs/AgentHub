@@ -3,7 +3,7 @@
  * 官方登录只提供支持的三个 Agent；添加 API Key 时先填服务地址和 Key，再勾选接口类型。
  * 这里加入的登录只给连接池用，不会出现在连接页。
  */
-import { useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type MutableRefObject, type ReactNode } from 'react';
 import { agentDisplayName } from '@/config/agents';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { useI18n } from '@/components/shared/LanguageProvider';
@@ -176,6 +176,7 @@ export function PoolAddButtons({
   entries = [],
   defaultPools = [],
   onChanged,
+  syncOpenerRef,
 }: {
   agents: readonly AgentKey[];
   oauthAgents: readonly AgentKey[];
@@ -183,6 +184,8 @@ export function PoolAddButtons({
   defaultPools?: readonly DefaultRoutePoolOverview[];
   /** Called after an OAuth flow or API provider is saved. */
   onChanged?: () => void;
+  /** Empty-state CTA calls this to open the sync dialog. */
+  syncOpenerRef?: MutableRefObject<(() => void) | null>;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -250,14 +253,22 @@ export function PoolAddButtons({
     }
   };
 
-  const openSyncDialog = () => {
+  const openSyncDialog = useCallback(() => {
     setSelectedSyncKeys(new Set(
       syncCandidates
         .filter((candidate) => !candidate.alreadySynced)
         .map((candidate) => candidate.key),
     ));
     setSyncOpen(true);
-  };
+  }, [syncCandidates]);
+
+  useEffect(() => {
+    if (!syncOpenerRef) return;
+    syncOpenerRef.current = openSyncDialog;
+    return () => {
+      if (syncOpenerRef.current === openSyncDialog) syncOpenerRef.current = null;
+    };
+  }, [openSyncDialog, syncOpenerRef]);
 
   const selectOAuthAgent = (agentId: PoolAccessAgent) => {
     setPicker(null);

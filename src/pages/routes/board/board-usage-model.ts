@@ -177,6 +177,10 @@ export interface BoardUsageTotals {
   modelNames: string[];
 }
 
+export function boardUsageHasRequests(totals: Pick<BoardUsageTotals, 'requestCount'>): boolean {
+  return totals.requestCount > 0;
+}
+
 export function summarizeGatewayUsage(rows: readonly GatewayUsageRow[]): BoardUsageTotals {
   let okCount = 0;
   let failedCount = 0;

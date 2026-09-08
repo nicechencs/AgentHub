@@ -73,7 +73,7 @@ export function useChatRuntimeOps(input: {
   const [images, setImages] = useState<string[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [imageInput, setImageInput] = useState(true);
-  const [steer, setSteer] = useState(true);
+  const [steer, setSteer] = useState(false);
   const [loading, setLoading] = useState(false);
   const catalogRef = useRef<RuntimeCatalogMemory>({
     conversationId: null,
@@ -97,7 +97,7 @@ export function useChatRuntimeOps(input: {
       setSettingsFrozen(false);
       setExtensions([]);
       setImageInput(true);
-      setSteer(true);
+      setSteer(false);
       return;
     }
     const conversationId = active.id;
@@ -162,7 +162,7 @@ export function useChatRuntimeOps(input: {
       setSettingsFrozen(frozenNow);
       setExtensions(retained.extensions);
       setImageInput(options.imageInput !== false);
-      setSteer(options.steer !== false);
+      setSteer(options.steer === true);
     } catch (error) {
       if (
         activeRef.current?.id !== conversationId

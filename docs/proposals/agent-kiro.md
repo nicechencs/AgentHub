@@ -92,7 +92,7 @@ Kiro 是 AWS 系 agentic 编码产品，同一套项目上下文可跨多种界�
 
 **明确不做（第一波，历史约束）：** 假 `ChatRuntime`（允许/拒绝/补充按钮）、本机路由、配置表单写入、Usage 精算、插件管理页、把终端 Autocomplete / Inline 说成对话页能力。其中持续通道与本机路由已按进度表落地；其余仍按能力矩阵，不是从本页抄待办。
 
-Chat 持续通道后置（**历史约束**）：当时 Kiro headless 无中途输入，与 Codex app-server 不是同一协议。现行新对话已走 `kiro-cli acp`，见进度表。先例见 [Claude Chat B3](../status/chat-claude-b3.md)。
+Chat 持续通道后置（**历史约束**）：当时 Kiro headless 无中途输入，与 Codex app-server 不是同一协议。现行新对话已走 `kiro-cli acp`，见进度表。先例见 [Claude Chat B3](../archive/chat-claude-b3.md)。
 
 本机路由默认不做（**历史约束**）。现行 Kiro 登录已可接到 Claude / Codex / Grok；剩余边界见进度表。接线纪律仍见 [添加 Route Adapter](../guides/adding-an-adapter.md)。
 
@@ -258,7 +258,7 @@ kiro-cli chat --no-interactive --trust-all-tools --output-format stream-json "�
 - [添加 Route Adapter](../guides/adding-an-adapter.md)（早期「默认不启用」是历史约束；现行本机路由见进度表）
 - [capabilities](../reference/capabilities.md)
 - [Chat 统一体验](chat-unified-experience.md)
-- [Claude Chat B3](../status/chat-claude-b3.md)
+- [Claude Chat B3](../archive/chat-claude-b3.md)
 - Cursor 半面：`crates/agenthub-core/src/adapters/cursor.rs`
 - 官方 Headless：<https://kiro.dev/docs/cli/headless/>
 - 官方 Autocomplete / Inline：<https://kiro.dev/docs/cli/autocomplete/>

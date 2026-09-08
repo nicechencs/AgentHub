@@ -33,7 +33,7 @@ O-40 **已经落地，本系列不得回退**：mock 运行时（ticket wallet�
 | O-42 mock Ticket resolver | `src/dev/mocks/ticket.ts:40-52`：`MockTicketSourceResolver` = `listAccounts` / `listProviders` / `listProfiles` / `getBridgeStatus` / `planAdapter` / 可选 `applyAdapter` / `removeBinding`。`create-backend.ts:88-96` 把 mock 账户池、供应商池、adapter profiles、bridge、`adapter.plan` / `adapter.apply` / `removeMockAdapterBinding` 一次性注入。`buildWallet` 用四套 list 派生 tickets/bindings；未落盘 surface 调 `planAdapter`（O-40）。`TicketPort.plan` / `bind` / `unbind` 再调同一 resolver 的 plan/apply/remove。`requireTicketSource` 额外直调 `getMockAccountById` / `getMockProviderById`，绕过 resolver。`ticket.test.ts` 的 `ticketResolver()` 为钱包单测手写 plan stub。 | 产品写入仍是 `TicketPort.plan` / `bind` / `unbind`（`src/lib/api/tickets`）。bind 成功仍是返回的 active binding（`isBindSuccessForAgent` 未改）。mock bind 仍委托 adapter `plan`+`apply`，不得在 ticket 里复制路线决策。 |
 | O-44 设备码测试 store | 生产：`crates/agenthub-core/src/oauth/device.rs` 进程级 `DEVICE_STORE: OnceLock<Mutex<HashMap<String, DeviceSession>>>`，`store()` 私有。`poll_device_oauth_with` 持锁、`purge_locked`、`poll_claim` / `poll_generation`、Complete 的 completion TTL。测试：`device/tests.rs`。纯函数/本地 map 已隔离：`parse_device_http_response*`、`expired_and_terminal_device_sessions_are_cleaned_without_touching_active`（本地 `HashMap` + `purge_locked`）、`failed_device_completion_scrubs_tokens_and_cannot_be_replayed`。污染点：`insert_session`（31–36）写全局；`concurrent_poll_claim_does_not_issue_a_second_request`（121–167）、`superseded_poll_response_cannot_revert_complete_session_or_clear_tokens`（168–208）、`complete_session_survives_device_code_expiry_until_completion_ttl`（210–253）末尾 `store().lock().remove(state)`；`complete_session_is_purged_after_completion_ttl` 直接 `purge_locked(&mut store().lock(), None)`。 | 生产 GUI 仍是进程级 store（start 然后 poll）。`poll_claim` 互斥、supersede 不得回退 Complete、Complete 在 device expiry 后仍可读直到 completion TTL，语义不改。不把 PKCE `SessionStore` 与 `DEVICE_STORE` 合成一个生产对象（那是 O-73）。 |
 
-审查核实表（[audit](objectization-encapsulation-audit.md)）对这三条仍是「暂缓」：O-41「整表绑定成功态重写不做」；O-42「resolver 仍可读 accounts/providers/profiles 并调 plan/apply；本刀不扩、不重写绑定」——那是 O-40 那一刀的范围，不是本系列的永久禁令。本页升格前不把 O-41/O-42/O-44 标成已处理。
+审查核实表（[audit](../archive/objectization-encapsulation-audit.md)）对这三条仍是「暂缓」：O-41「整表绑定成功态重写不做」；O-42「resolver 仍可读 accounts/providers/profiles 并调 plan/apply；本刀不扩、不重写绑定」——那是 O-40 那一刀的范围，不是本系列的永久禁令。本页升格前不把 O-41/O-42/O-44 标成已处理。
 
 ## Goals & Non-Goals
 
@@ -249,9 +249,9 @@ Cargo 过滤用模块路径，避免误伤其它 `device` 子串。并发用例�
 
 ## References
 
-- [对象化与封装审查](objectization-encapsulation-audit.md) — O-40（已处理）、O-41、O-42、O-44
-- [对象化与封装审查：测试、Mock 与 Fixture](objectization-encapsulation-audit-tests-fixtures.md)
-- [对象化与封装审查：OAuth](objectization-encapsulation-audit-oauth.md) — O-73 生产 store 注入不在本系列
+- [对象化与封装审查](../archive/objectization-encapsulation-audit.md) — O-40（已处理）、O-41、O-42、O-44
+- [对象化与封装审查：测试、Mock 与 Fixture](../archive/objectization-encapsulation-audit-tests-fixtures.md)
+- [对象化与封装审查：OAuth](../archive/objectization-encapsulation-audit-oauth.md) — O-73 生产 store 注入不在本系列
 - [Adapter 路线内核](adapter-route-kernel.md)
 - [读模型 owner 与兼容策略](read-model-owners.md) — 不改 bind 回写；`adapterRouteToBinding` 永不 `native`
 - [Service 内部 owner 拆分](service-internal-owners.md) — 同类提案体例

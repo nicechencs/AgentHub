@@ -4,7 +4,7 @@ import {
   clampSideSplitWidth,
   persistSideSplitWidth,
   readStoredSideSplitWidth,
-  SIDE_SPLIT_FRAME_PAD_RIGHT,
+  SIDE_SPLIT_FRAME_PAD_X,
   SIDE_SPLIT_MAIN_MIN,
   SIDE_SPLIT_MAIN_FLOOR,
   SIDE_SPLIT_MAX_SHARE,
@@ -15,7 +15,7 @@ import {
 } from './side-split-model';
 
 function usableWidth(containerWidth: number): number {
-  return Math.max(0, containerWidth - SIDE_SPLIT_SEPARATOR_W - SIDE_SPLIT_FRAME_PAD_RIGHT);
+  return Math.max(0, containerWidth - SIDE_SPLIT_SEPARATOR_W - SIDE_SPLIT_FRAME_PAD_X * 2);
 }
 
 describe('clampSideSplitWidth', () => {

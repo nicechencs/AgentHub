@@ -1,12 +1,16 @@
 ---
 title: 对象化与封装审查：OAuth
-type: explanation
-status: current
+type: archive
+status: archived
 owner: maintainers
-updated: 2026-08-26
+updated: 2026-09-08
 ---
 
 # 对象化与封装审查：OAuth
+
+> **归档（2026-09-08）**。本页是一次性审查、批次记录或复核，不是现行契约。当前实现见 [当前实现状态](../STATUS.md)。下文保留原文，不要按此页派工。
+>
+> **Archived / 已归档**: Historical review or batch record. Do not use it as the current implementation contract.
 
 本分册记录 Core `src/oauth/**` 的差集复核结果。总览见[对象化与封装审查](objectization-encapsulation-audit.md)。JWT 验签、凭据安全等纯安全问题不在本分册展开；这里只记录对象职责、状态归属和封装边界。
 

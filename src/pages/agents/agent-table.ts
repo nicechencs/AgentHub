@@ -21,10 +21,11 @@ export const AGENT_TABLE_COLUMN_SPECS: ColumnWidthSpec<AgentTableColumnKey>[] = 
   { key: 'status', defaultWidth: 96, minWidth: 80 },
   { key: 'version', defaultWidth: 120, minWidth: 80 },
   { key: 'note', defaultWidth: 200, minWidth: 120 },
-  { key: 'start', defaultWidth: 176, minWidth: 128 },
-  { key: 'upgrade', defaultWidth: 64, minWidth: 52 },
-  { key: 'hide', defaultWidth: 64, minWidth: 52 },
-  { key: 'actions', defaultWidth: 88, minWidth: 64 },
+  // 启动命令行 + 启动应用 must stay on one row; stored widths are clamped to minWidth.
+  { key: 'start', defaultWidth: 268, minWidth: 240 },
+  { key: 'upgrade', defaultWidth: 128, minWidth: 96 },
+  { key: 'hide', defaultWidth: 96, minWidth: 80 },
+  { key: 'actions', defaultWidth: 128, minWidth: 96 },
 ];
 
 export function agentTableColumnLabel(

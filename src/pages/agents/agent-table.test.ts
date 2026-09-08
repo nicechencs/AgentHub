@@ -58,6 +58,12 @@ describe('agent table columns', () => {
     ]);
   });
 
+  it('keeps the start column wide enough for both launch buttons on one row', () => {
+    const start = AGENT_TABLE_COLUMN_SPECS.find((spec) => spec.key === 'start');
+    expect(start?.minWidth).toBeGreaterThanOrEqual(240);
+    expect(start?.defaultWidth).toBeGreaterThanOrEqual(start?.minWidth ?? 0);
+  });
+
   it('lets 说明 fill leftover width; left columns start, right columns end', () => {
     expect(AGENT_TABLE_FLEX_COLUMN).toBe('note');
     expect(AGENT_TABLE_FIXED_COLUMN_SPECS.map((spec) => spec.key)).toEqual([

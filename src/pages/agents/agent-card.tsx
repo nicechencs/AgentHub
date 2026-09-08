@@ -406,7 +406,7 @@ export function AgentCard({
         onPointerDown={(event) => event.stopPropagation()}
       >
         {!hidden && agent.installed && (launch.cliPath || launch.appPath) ? (
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex flex-nowrap items-center justify-end gap-1.5">
             {launch.cliPath ? (
               <Button
                 size="sm"
@@ -442,20 +442,11 @@ export function AgentCard({
       >
         {!hidden && upgradeControl.show ? (
           <Button
-            size="icon"
+            size="sm"
             variant={upgradeControl.muted ? 'outline' : 'secondary'}
             className={upgradeControl.muted ? 'text-muted' : undefined}
             disabled={busy || checkingUpdate || upgradeControl.kind === 'hint_only'}
             title={upgradeTooltip}
-            aria-label={
-              upgradeControl.kind === 'open_setup'
-                ? t('agents.card.openOfficialUpdate')
-                : upgradeControl.muted
-                  ? t('agents.card.unsupportedUpdate')
-                  : upgradable
-                    ? t('agents.card.update')
-                    : t('agents.card.forceUpgrade')
-            }
             onClick={
               upgradeControl.kind === 'open_setup'
                 ? openOfficialSetup
@@ -472,6 +463,13 @@ export function AgentCard({
                 checkingUpdate && 'animate-pulse opacity-70',
               )}
             />
+            {upgradeControl.kind === 'open_setup'
+              ? t('agents.card.openOfficialUpdate')
+              : upgradeControl.muted
+                ? t('agents.card.unsupportedUpdate')
+                : upgradable
+                  ? t('agents.card.update')
+                  : t('agents.card.forceUpgrade')}
           </Button>
         ) : (
           <TableEmptyCell />
@@ -485,25 +483,25 @@ export function AgentCard({
       >
         {hidden ? (
           <Button
-            size="icon"
+            size="sm"
             variant="outline"
             disabled={hiding}
-            aria-label={t('agents.card.unhide')}
             title={t('agents.card.unhideTitle')}
             onClick={() => void toggleHidden()}
           >
             <Eye className="h-3.5 w-3.5" />
+            {t('agents.card.unhide')}
           </Button>
         ) : (
           <Button
-            size="icon"
+            size="sm"
             variant="outline"
             disabled={actionsBusy}
-            aria-label={t('agents.card.hide')}
             title={t('agents.card.hideTitle')}
             onClick={() => void toggleHidden()}
           >
             <EyeOff className="h-3.5 w-3.5" />
+            {t('agents.card.hide')}
           </Button>
         )}
       </TableCell>
@@ -521,7 +519,6 @@ export function AgentCard({
               status={task?.status}
               busy={busy}
               channelId={selectedChannel.id}
-              iconOnly
               onClick={() =>
                 installFailed
                   ? retryAction()
@@ -535,11 +532,10 @@ export function AgentCard({
           )
         ) : cardState === 'env_missing' ? (
           <Button
-            size="icon"
+            size="sm"
             variant="secondary"
             onClick={canOneClickEnv ? () => openConfirm('oneclick') : startOneClickEnvOnly}
             disabled={busy}
-            aria-label={canOneClickEnv ? t('agents.card.fixAndInstall') : t('agents.card.fixEnv')}
             title={
               canOneClickEnv
                 ? t('agents.card.fixThenInstall')
@@ -547,6 +543,7 @@ export function AgentCard({
             }
           >
             <Zap className="h-3.5 w-3.5" />
+            {canOneClickEnv ? t('agents.card.fixAndInstall') : t('agents.card.fixEnv')}
           </Button>
         ) : (
           <AgentInstallButton
@@ -554,7 +551,6 @@ export function AgentCard({
             busy={busy}
             channelId={selectedChannel.id}
             linuxUnsupported={linuxUnsupported}
-            iconOnly
             onClick={() => {
               if (linuxUnsupported) {
                 toast({

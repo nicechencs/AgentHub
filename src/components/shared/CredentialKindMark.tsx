@@ -44,7 +44,7 @@ export function CredentialKindMark({
         aria-label={label}
         {...props}
       >
-        <Icon className="h-4 w-4" strokeWidth={1.8} />
+        <Icon className="h-4 w-4" />
       </span>
     </Hint>
   );

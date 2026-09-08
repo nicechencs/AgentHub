@@ -34,7 +34,7 @@ export function OpenDirButton({
         aria-label={title}
         onClick={onClick}
       >
-        <FolderOpen className="h-3 w-3" />
+        <FolderOpen className="h-3.5 w-3.5" />
         {t('common.directory')}
       </Button>
     );
@@ -50,7 +50,7 @@ export function OpenDirButton({
       aria-label={title}
       onClick={onClick}
     >
-      <FolderOpen className="h-3.5 w-3.5" />
+      <FolderOpen className="h-4 w-4" />
     </Button>
   );
 }

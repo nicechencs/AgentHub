@@ -51,6 +51,7 @@ fn worker(db: &Database, id: &str) -> ActorWorker {
         session_model: None,
         session_effort: None,
         session_trust_all: None,
+        session_allow_always: false,
     }
 }
 
@@ -499,6 +500,23 @@ fn file_and_question_server_requests_become_pending_runtime_requests() {
     assert_eq!(snapshot.pending_requests[0].title, "修改文件");
     assert_eq!(snapshot.pending_requests[0].detail, "edit readme");
     assert_eq!(
+        snapshot.pending_requests[0].permission_options,
+        vec![
+            RuntimePermissionOption {
+                id: "accept".into(),
+                kind: "allow_once".into(),
+            },
+            RuntimePermissionOption {
+                id: "accept_always".into(),
+                kind: "allow_always".into(),
+            },
+            RuntimePermissionOption {
+                id: "decline".into(),
+                kind: "reject_once".into(),
+            },
+        ]
+    );
+    assert_eq!(
         snapshot.pending_requests[1].kind,
         RuntimeRequestKind::Question
     );
@@ -592,6 +610,62 @@ fn acp_permission_uses_server_option_ids_without_auto_allow_always() {
         acp_permission_reply(&[], "decline").unwrap(),
         json!({"outcome":{"outcome":"cancelled"}})
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn codex_allow_always_accepts_and_auto_approves_later_command() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "codex-always");
+    let mut worker = worker(&db, "codex-always");
+    worker.store.enable_if_new("codex-always").unwrap();
+    start_placeholder(&mut worker);
+    let (_directory, transport, log) = fake_transport();
+    worker.transport = Some(transport);
+    worker
+        .server_request(
+            json!("cmd-1"),
+            "item/commandExecution/requestApproval",
+            &json!({"turnId": "run-1", "command": "ls"}),
+        )
+        .unwrap();
+    let first = worker.store.snapshot("codex-always", None).unwrap();
+    assert!(first.pending_requests[0]
+        .permission_options
+        .iter()
+        .any(|option| option.kind == "allow_always"));
+    worker
+        .reply(RuntimeReply {
+            conversation_id: "codex-always".into(),
+            run_id: "run-1".into(),
+            request_id: first.pending_requests[0].id.clone(),
+            client_request_id: "always-1".into(),
+            decision: Some(RuntimeDecision::AllowAlways),
+            answers: None,
+        })
+        .unwrap();
+    assert!(worker
+        .store
+        .snapshot("codex-always", None)
+        .unwrap()
+        .pending_requests
+        .is_empty());
+    worker
+        .server_request(
+            json!("cmd-2"),
+            "item/commandExecution/requestApproval",
+            &json!({"turnId": "run-1", "command": "pwd"}),
+        )
+        .unwrap();
+    assert!(worker
+        .store
+        .snapshot("codex-always", None)
+        .unwrap()
+        .pending_requests
+        .is_empty());
+    std::thread::sleep(Duration::from_millis(80));
+    let wire = std::fs::read_to_string(log).unwrap();
+    assert!(wire.lines().any(|line| line == "accept"));
 }
 
 #[test]

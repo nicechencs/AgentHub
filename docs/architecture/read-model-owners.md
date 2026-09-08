@@ -10,7 +10,7 @@ updated: 2026-08-26
 
 > 提案，不是现行契约。本系列不改 wire DTO、不拆公开类型、不改 `plan` / `bind` / `unbind` / `switch` / `activate_*`。日常合入 GitHub `dev`。
 
-针对审查 [O-15–O-19](objectization-encapsulation-audit.md)：宽对象继续承载旧 wire；每个**角色**一个 owner。第一刀只加 mapper 和锁步测试，不删字段、不迁页面。
+针对审查 [O-15–O-19](../archive/objectization-encapsulation-audit.md)：宽对象继续承载旧 wire；每个**角色**一个 owner。第一刀只加 mapper 和锁步测试，不删字段、不迁页面。
 
 ## Overview
 
@@ -275,7 +275,7 @@ pnpm exec vitest run src/lib/backend/contracts/account-map.test.ts src/lib/backe
 
 ## References
 
-- [对象化与封装审查 O-15–O-19](objectization-encapsulation-audit.md)
+- [对象化与封装审查 O-15–O-19](../archive/objectization-encapsulation-audit.md)
 - [Core 与 Runtime](core-runtime.md)
 - [前端与 Backend Adapter 边界](frontend-backend.md)
 - [Connections、Routes 与绑定](../concepts/connections-and-routing.md)

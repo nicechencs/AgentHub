@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { goNav, goPath, openApp } from './helpers';
+import { goNav, goPath, goSettingsTab, openApp } from './helpers';
 
 test('Sub2API primary nav stays hidden until Settings toggle is on; deep link still works', async ({
   page,
@@ -32,7 +32,7 @@ test('Sub2API primary nav stays hidden until Settings toggle is on; deep link st
   await goPath(page, '/routes/sub2api');
   await expect(page).toHaveURL(/#\/sub2api$/);
 
-  await goNav(page, '设置');
+  await goSettingsTab(page, '功能');
   const toggle = page.getByRole('switch', { name: '显示 Sub2API 页面' });
   await expect(toggle).toBeVisible();
   await expect(toggle).toHaveAttribute('aria-checked', 'false');

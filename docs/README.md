@@ -25,9 +25,7 @@ updated: 2026-09-08
 - [添加 Adapter](guides/adding-an-adapter.md)
 - [Adapter dogfood](guides/adapter-dogfood.md)
 - [测试与验证](guides/testing-and-validation.md)
-- [Chat 第二批开发交接提示词](guides/chat-b2-handoff.md)
-- [Chat 独立 review 提示词](guides/chat-review-handoff.md)
-- [全项目独立 review 提示词](guides/project-review-handoff.md)
+- [Agent 协作指南](guides/agent-workflow.md)
 - [release 分支保护](guides/release-branch-protection.md)
 - [故障排查](guides/troubleshooting.md)
 
@@ -57,6 +55,7 @@ updated: 2026-09-08
 - [术语表](reference/terminology.md)
 - [MCP inventory](reference/mcp-inventory.md)
 - [Agent 插件表面](reference/agent-plugin-surfaces.md)
+- [Agent 能力与工具](reference/agent-runtime.md)
 
 ### 产品与界面
 
@@ -68,11 +67,9 @@ updated: 2026-09-08
 
 ## 审查与提案
 
-不是现行契约。实现对应条目之前不要当架构说明阅读；完整列表见 [提案索引](proposals/README.md)。
+不是现行契约。实现对应条目之前不要当架构说明阅读；完整列表见 [提案索引](proposals/README.md)。已完成的审查、批次记录和启动提示词见 [归档索引](archive/README.md)。
 
-- [对象化与封装审查](architecture/objectization-encapsulation-audit.md)（审查记录；分册从该页链出）
-- [Codex 安装与连接/路由模块化审查](status/codex-install-modularity-review.md)
-- [2026-09-07 全项目 review 修复进展](reviews/2026-09-07-review-fix-progress.md)
+- 全项目体检的现行约定见 [Agent 协作指南：审查与验证](guides/agent-workflow.md#审查与验证)
 
 ## 未来与历史
 

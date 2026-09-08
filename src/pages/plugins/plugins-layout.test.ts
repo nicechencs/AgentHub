@@ -24,6 +24,9 @@ describe('plugins layout wiring', () => {
     expect(page).toContain('<EmptyState');
     expect(page.indexOf('<AgentTabStrip')).toBeLessThan(page.indexOf('<ListSkeleton'));
     expect(page).toContain('pluginEmptyCopy');
+    expect(page).toContain('pluginScanFailedAgents');
+    expect(page).toContain('<Notice');
+    expect(page).toContain("t('plugins.empty.scanFailed'");
     expect(page).not.toContain('onInstall');
     expect(page).not.toContain('installPlugin');
     expect(page).not.toContain('listMcpInventory');

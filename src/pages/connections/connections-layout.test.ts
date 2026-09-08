@@ -78,6 +78,8 @@ describe('connections layout wiring', () => {
     expect(list).toContain('data-ticket-name');
     expect(list).toContain('<ListNameButton');
     expect(list).toContain('onOpen={onFollowDetail');
+    expect(list).toContain('ticketWalletVisibleSpecs');
+    expect(list).toContain('compact={compact}');
     expect(list).not.toContain('onOpen={onShowDetail');
     expect(page).toContain('followInspectOpen');
     expect(page).toContain("kind === 'detail'");
@@ -136,6 +138,18 @@ describe('connections layout wiring', () => {
     expect(provider).toContain('Tip label={livePaths.hint}');
     expect(provider).toContain('isLiveFilePath(livePaths.auth)');
     expect(provider).not.toContain('<p className="text-muted">{livePaths.hint}</p>');
+  });
+
+  it('puts official service and the key before live-config and paste chrome', () => {
+    const provider = source('../../components/connections/ProviderEditDialog.tsx');
+    expect(provider).toContain("t('connections.providerDialog.whatHappensOnAdd')");
+    expect(provider).toContain('const [showAdvanced, setShowAdvanced] = React.useState(false)');
+    expect(provider.indexOf("t('connections.providerDialog.useOfficial')")).toBeLessThan(
+      provider.indexOf('livePaths.config'),
+    );
+    expect(provider.indexOf("t('connections.apiKeyDialog.nameOptional')")).toBeLessThan(
+      provider.indexOf('connections.providerDialog.smartDetect'),
+    );
   });
 
   it('uses beginner field copy instead of schema help text', () => {

@@ -44,15 +44,17 @@ describe('ProjectSessionRow', () => {
     expect(src).not.toContain('AgentDot');
   });
 
-  it('aligns fields on a borderless grid and keeps continue as an icon', () => {
+  it('aligns fields on a borderless grid and keeps continue as a labeled action', () => {
     expect(src).toContain('projectSessionRowGrid');
     expect(src).toContain('grid-cols-');
     expect(src).not.toContain('divide-y');
     expect(src).not.toContain('border-t');
     expect(src).toContain('projects.tree.openRecordFolder');
-    expect(src).toContain('projects.tree.copySessionId');
+    expect(src).toContain('projects.tree.copyId');
     expect(src).toContain('MessageSquarePlus');
-    expect(src).not.toMatch(/size="sm"[\s\S]{0,200}projects\.tree\.continue/);
+    expect(src).toContain('DropdownMenu');
+    expect(src).toContain('projects.tree.moreActions');
+    expect(src).toMatch(/size="sm"[\s\S]{0,200}projects\.tree\.continue/);
   });
 
   it('keeps project cards and collapsible groups, without session row dividers', () => {

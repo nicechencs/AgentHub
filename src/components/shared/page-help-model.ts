@@ -25,6 +25,7 @@ export const PAGE_HELP_IDS = [
   'routesTokens',
   'routesActivity',
   'settingsPreferences',
+  'settingsFeatures',
   'settingsLocal',
   'settingsBackups',
   'settingsAbout',
@@ -55,7 +56,8 @@ export const PAGE_HELP_STEP_COUNT: Record<PageHelpId, 2 | 3 | 4 | 5> = {
   routesPool: 4,
   routesTokens: 3,
   routesActivity: 3,
-  settingsPreferences: 4,
+  settingsPreferences: 3,
+  settingsFeatures: 3,
   settingsLocal: 3,
   settingsBackups: 5,
   settingsAbout: 3,
@@ -67,6 +69,7 @@ function searchParams(search: string): URLSearchParams {
 
 function settingsHelpId(search: string): PageHelpId {
   const tab = searchParams(search).get('tab');
+  if (tab === 'features') return 'settingsFeatures';
   if (tab === 'local' || tab === 'data') return 'settingsLocal';
   if (tab === 'backups') return 'settingsBackups';
   if (tab === 'about' || tab === 'security') return 'settingsAbout';
@@ -140,7 +143,8 @@ export const PAGE_HELP_TARGETS: Record<PageHelpId, readonly string[]> = {
   routesPool: ['pool-add', 'list-row', 'inspect-panel', 'connections-trash'],
   routesTokens: ['list-row', 'tokens-copy', 'inspect-panel'],
   routesActivity: ['page-chrome', 'list-row', 'inspect-panel'],
-  settingsPreferences: ['settings-tabs', 'settings-appearance', 'settings-sidebar', 'settings-usage'],
+  settingsPreferences: ['settings-tabs', 'settings-appearance', 'settings-usage'],
+  settingsFeatures: ['settings-tabs', 'settings-nav-visible', 'settings-sidebar'],
   settingsLocal: ['settings-tabs', 'settings-datadir', 'settings-logs'],
   settingsBackups: ['settings-tabs', 'backups-keep', 'backups-now', 'list-row', 'inspect-panel'],
   settingsAbout: ['settings-tabs', 'settings-version', 'settings-feedback'],

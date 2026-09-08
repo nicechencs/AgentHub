@@ -22,6 +22,9 @@ describe('agents layout wiring', () => {
     expect(page).toContain('<AgentDetailPanel');
     expect(page).toContain('inspect.open(a.agentId)');
     expect(page).toContain('onSelect={() => inspect.open(a.agentId)}');
+    expect(page).toContain('useSearchParams');
+    expect(page).toContain('highlightAgentId');
+    expect(card).not.toContain('iconOnly');
     expect(page).toContain('if (!liveIds.includes(inspect.target)) inspect.close()');
     expect(page).not.toContain('a.installed ? () => inspect.open(a.agentId) : undefined');
     expect(page).not.toContain('if (!inspectAgent?.installed) inspect.close()');
@@ -48,6 +51,8 @@ describe('agents layout wiring', () => {
     expect(card).toContain('agentLaunchTargets');
     expect(card).toContain("t('agents.card.startCli')");
     expect(card).toContain("t('agents.card.startApp')");
+    expect(card).toContain('flex flex-nowrap items-center justify-end');
+    expect(card).not.toContain('flex flex-wrap items-center justify-end');
     expect(detail).toContain("t('agents.card.uninstallProgram')");
     expect(detail).toContain("t('agents.card.uninstallConfig')");
     expect(detail).toContain('listAgentInstalls');
@@ -76,6 +81,13 @@ describe('agents layout wiring', () => {
     expect(envList).toContain("t('chrome.env.forceUpgradeTitle'");
     expect(envList).toContain("t('chrome.env.confirmForceUpgrade')");
     expect(envList).toContain('envSoftwareControl');
+    expect(envList).toContain('envSoftwareListOpenByDefault');
+    expect(envList).toContain('aria-expanded={expanded}');
+    expect(envList).toContain('ChevronDown');
+    expect(page).toContain('sortAgentsForManagePage(ordered)');
+    expect(page).toContain('managePageUninstalledDividerIndex');
+    expect(page).toContain('data-agent-group="uninstalled"');
+    expect(page).toContain("t('agents.card.notInstalled')");
     expect(card).toContain('onSelect?:');
     expect(card).toContain('selected?:');
     expect(card).toContain('data-agent-name');
@@ -124,9 +136,9 @@ describe('agents layout wiring', () => {
     expect(card).toContain('{sortHandle}');
   });
 
-  it('applies the same remembered order on sidebar, dashboard, and installed lists', () => {
-    const sidebar = source('components/layout/Sidebar.tsx');
-    expect(sidebar).toContain('StorageKey.agentsCatalogOrder');
+  it('applies the same remembered order on status bar, dashboard, and installed lists', () => {
+    const statusStrip = source('components/layout/AgentStatusStrip.tsx');
+    expect(statusStrip).toContain('StorageKey.agentsCatalogOrder');
     const sidebarStats = source('components/layout/sidebar-stats.ts');
     expect(sidebarStats).toContain('applyStoredAgentOrder');
     const overview = source('pages/dashboard/AgentOverview.tsx');

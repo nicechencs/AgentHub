@@ -16,7 +16,7 @@
               window.matchMedia('(prefers-color-scheme: dark)').matches);
           document.documentElement.classList.toggle('dark', dark);
           document.documentElement.classList.toggle('light', !dark);
-          var accent = localStorage.getItem('agenthub:accent') || 'indigo';
+          var accent = localStorage.getItem('agenthub:accent') || 'blue';
           document.documentElement.setAttribute('data-accent', accent);
           var canvas = localStorage.getItem('agenthub:canvas') || 'gray';
           document.documentElement.setAttribute('data-canvas', canvas);
@@ -35,7 +35,7 @@
         --text-primary: #18181b;
         --text-muted: #70707a;
         --border: #e6e6e9;
-        --accent: #4f46e5;
+        --accent: #2563eb;
         --agent-claude: #d97757;
         --agent-codex: #7189ff;
         --agent-kimi: #1783ff;
@@ -53,7 +53,7 @@
         --text-primary: #fafafa;
         --text-muted: #8b8b96;
         --border: #27272a;
-        --accent: #6366f1;
+        --accent: #93c5fd;
         --agent-claude: #d97757;
         --agent-codex: #8b9bff;
         --agent-kimi: #3d94ff;
@@ -149,14 +149,14 @@
         fill: currentColor;
       }
       #boot-fallback .title {
-        font-size: 16px;
+        font-size: var(--font-title-size, 18px);
         font-weight: 600;
         letter-spacing: -0.01em;
         color: var(--text-primary);
         animation: boot-up 480ms cubic-bezier(0.22, 1, 0.36, 1) 80ms both;
       }
       #boot-fallback .sub {
-        font-size: 12px;
+        font-size: var(--font-meta-size, 12px);
         color: var(--text-muted);
         animation: boot-up 480ms cubic-bezier(0.22, 1, 0.36, 1) 140ms both;
       }
@@ -305,7 +305,7 @@
         <div class="mark-wrap">
           <span class="mark-ring" aria-hidden="true"></span>
           <span class="mark" aria-hidden="true">
-            <!-- 产品标随 --accent；安装包图标仍是默认紫 PNG -->
+            <!-- 产品标随 --accent；安装包图标仍是打包默认图 -->
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="48" height="48" aria-hidden="true">
               <rect width="1024" height="1024" rx="224" fill="currentColor" />
               <path d="M300 682 430 342h164l130 340M354 548h316" fill="none" stroke="#fff" stroke-width="78" stroke-linecap="round" stroke-linejoin="round" />

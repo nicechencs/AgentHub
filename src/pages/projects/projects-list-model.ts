@@ -119,6 +119,22 @@ export function expandedProjectMembers<
   return out;
 }
 
+/** Expand groups that already have a loaded session matching the query. */
+export function projectIdsToExpandForSearch(
+  groups: readonly { id: string; members: readonly { id: string }[] }[],
+  q: string,
+  sessionsByProject: Record<string, AgentSession[]>,
+): string[] {
+  if (!q) return [];
+  return groups
+    .filter((group) =>
+      group.members.some((member) =>
+        (sessionsByProject[member.id] ?? []).some((session) => sessionMatches(session, q)),
+      ),
+    )
+    .map((group) => group.id);
+}
+
 export function nextSelectedForToggleAllVisible(
   selected: Set<string>,
   selectableSessions: AgentSession[],

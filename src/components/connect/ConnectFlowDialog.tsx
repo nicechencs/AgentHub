@@ -474,7 +474,7 @@ export function ConnectFlowDialog({
           <Button type="button" size={actionSize} variant="secondary" disabled={busy} onClick={requestClose}>
             {t('common.cancel')}
           </Button>
-          {!entryStale ? (
+          {!entryStale && emptyKind.kind !== 'wallet_empty' ? (
             <Button
               type="button"
               size={actionSize}

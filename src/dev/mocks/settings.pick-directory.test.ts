@@ -49,4 +49,11 @@ describe('mock SettingsPort.pickDirectory', () => {
     expect(prompt).toHaveBeenCalledWith('选择工作目录', '/tmp');
     await expect(pickDirectory({ defaultPath: '/tmp' })).resolves.toBe('/Users/me/work');
   });
+
+  it('exposes pickFile through the same prompt stand-in', async () => {
+    const prompt = vi.fn(() => '/Users/me/skill.zip');
+    vi.stubGlobal('window', { prompt });
+    const port = createMockSettingsPort();
+    await expect(port.pickFile({ title: '选择 zip' })).resolves.toBe('/Users/me/skill.zip');
+  });
 });

@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { AgentThinking } from '@/components/shared/AgentThinking';
 import { SourcePreview } from '@/components/shared/SourcePreview';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import {
@@ -90,8 +91,13 @@ function ProcessStepRow({ step }: { step: ProcessStep }) {
     const input = formatStepInput(step.input);
     return (
       <div className="py-1">
-        <div className="font-medium text-secondary">
-          ⚙ {step.name} · {step.status}
+        <div
+          className={cn(
+            'font-medium text-secondary',
+            step.status === 'running' && 'agent-progress-running',
+          )}
+        >
+          {step.name} · {step.status}
         </div>
         {input ? (
           <PayloadPreview text={input} density="compact" className="mt-0.5" />
@@ -157,7 +163,11 @@ function ThinkingStepRow({ text, done }: { text: string; done: boolean }) {
       }}
     >
       <summary className="cursor-pointer list-none text-secondary marker:content-none [&::-webkit-details-marker]:hidden">
-        ✳ {label}
+        {done ? (
+          label
+        ) : (
+          <AgentThinking label={label} showTimer={false} />
+        )}
       </summary>
       {body ? (
         <div className="mt-0.5 whitespace-pre-wrap break-words italic text-muted">{body}</div>
@@ -255,7 +265,7 @@ export function ChatProcessPanel({
         {timeline.length > 0 ? (
           <div
             ref={timelineRef}
-            className="max-h-48 space-y-0 overflow-y-auto [overflow-anchor:none] border-l-2 border-border pl-3"
+            className="max-h-48 space-y-0 overflow-y-auto [overflow-anchor:none] border-l border-border pl-3"
           >
             {timeline.map((step, i) => (
               <ProcessStepRow key={`${step.type}-${i}`} step={step} />

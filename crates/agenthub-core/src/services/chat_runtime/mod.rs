@@ -850,6 +850,7 @@ fn actor_loop(
         session_model: None,
         session_effort: None,
         session_trust_all: None,
+        session_allow_always: false,
     };
     worker.run();
 }
@@ -877,6 +878,10 @@ struct ActorWorker {
     session_model: Option<String>,
     session_effort: Option<String>,
     session_trust_all: Option<bool>,
+    /// Codex has no ACP `allow_always` option list. After the user picks
+    /// session remember, later command/file approvals in this live process
+    /// are accepted without another card. Not persisted; a new process asks again.
+    session_allow_always: bool,
 }
 
 impl ActorWorker {
@@ -1642,12 +1647,11 @@ impl ActorWorker {
                         persisted.request.permission_options.clone()
                     };
                     acp_permission_reply(&options, decision)?
-                } else if matches!(reply.decision, Some(RuntimeDecision::AllowAlways)) {
-                    return Err(AppError::InvalidArg(
-                        "this agent cannot remember approval for later".into(),
-                    ));
                 } else {
-                    json!({"decision": decision})
+                    if matches!(reply.decision, Some(RuntimeDecision::AllowAlways)) {
+                        self.session_allow_always = true;
+                    }
+                    json!({"decision": codex_approval_decision(decision)})
                 }
             }
             RuntimeRequestKind::Question => {
@@ -2109,7 +2113,26 @@ impl ActorWorker {
                 return Ok(());
             }
         };
-        let permission_options = acp_options.clone().unwrap_or_default();
+        if self.session_allow_always
+            && !is_acp_runtime_agent(Some(self.agent))
+            && matches!(kind, RuntimeRequestKind::Command | RuntimeRequestKind::File)
+        {
+            if let Some(transport) = self.transport.as_mut() {
+                transport
+                    .respond(id, Ok(json!({"decision": "accept"})))
+                    .map_err(transport_error)?;
+            }
+            return Ok(());
+        }
+        let permission_options = match acp_options {
+            Some(options) => options,
+            None if !is_acp_runtime_agent(Some(self.agent))
+                && matches!(kind, RuntimeRequestKind::Command | RuntimeRequestKind::File) =>
+            {
+                codex_session_permission_options()
+            }
+            None => Vec::new(),
+        };
         let request = RuntimeRequest {
             id: id_string.clone(),
             run_id,
@@ -2478,6 +2501,7 @@ impl ActorWorker {
         self.cancel_deadline = None;
         self.pending_prompt_id = None;
         self.permission_options.clear();
+        self.session_allow_always = false;
         if let Some(message) = error {
             if let Err(learn_err) = self
                 .store
@@ -2767,6 +2791,30 @@ fn parse_acp_permission_options(params: &Value) -> Vec<RuntimePermissionOption> 
 fn acp_permission_options(params: &Value) -> Option<Vec<RuntimePermissionOption>> {
     let options = parse_acp_permission_options(params);
     (!options.is_empty()).then_some(options)
+}
+
+fn codex_session_permission_options() -> Vec<RuntimePermissionOption> {
+    vec![
+        RuntimePermissionOption {
+            id: "accept".into(),
+            kind: "allow_once".into(),
+        },
+        RuntimePermissionOption {
+            id: "accept_always".into(),
+            kind: "allow_always".into(),
+        },
+        RuntimePermissionOption {
+            id: "decline".into(),
+            kind: "reject_once".into(),
+        },
+    ]
+}
+
+fn codex_approval_decision(decision: &str) -> &'static str {
+    match decision {
+        "decline" => "decline",
+        _ => "accept",
+    }
 }
 
 fn acp_capability_present(value: Option<&Value>) -> bool {

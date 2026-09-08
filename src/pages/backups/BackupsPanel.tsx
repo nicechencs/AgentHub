@@ -452,7 +452,7 @@ export function BackupsPanel({ toolbar }: { toolbar?: ReactNode }) {
             <Button variant="secondary" disabled={busyId !== null} onClick={() => setRestoreTarget(null)}>
               {t('common.cancel')}
             </Button>
-            <Button disabled={busyId !== null} onClick={() => void handleRestore()}>
+            <Button variant="danger" disabled={busyId !== null} onClick={() => void handleRestore()}>
               {busyId !== null ? t('settings.backups.restoring') : t('settings.backups.confirmRestore')}
             </Button>
           </DialogFooter>

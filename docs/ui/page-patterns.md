@@ -43,13 +43,13 @@ Routes nested paths (secondary nav):
 | Local tokens | `/routes/tokens` | Entry keys per endpoint; copy or write into the matching Agent. Keys appear after the local gateway starts. |
 | Activity | `/routes/activity` | Cross-route recent request feed |
 
-Entering any `/routes*` path shows a shell-level secondary nav panel. Clicking Routes in the primary sidebar collapses that sidebar when **Collapse sidebar on Routes** is on (writes `agenthub:sidebar-collapsed`; default on). Other primary items, refresh, secondary-nav clicks, and leaving the routes area do not auto-expand or auto-collapse it. The setting is in Preferences → Sidebar. The secondary nav top-left control expands the primary sidebar. While the URL is inside `/routes*`, the primary sidebar still shows the Routes entry even if `routesNavVisible` is off, so the active item remains visible; that preference itself is unchanged.
+Entering any `/routes*` path shows a shell-level secondary nav panel. Clicking Routes in the primary sidebar collapses that sidebar when **Collapse sidebar on Routes** is on (writes `agenthub:sidebar-collapsed`; default on). Other primary items, refresh, secondary-nav clicks, and leaving the routes area do not auto-expand or auto-collapse it. The setting is in Preferences → Sidebar. The secondary nav top-right control collapses that nav (writes `agenthub:routes-nav-collapsed`). Right-click offers expand when collapsed and collapse when expanded. While the URL is inside `/routes*`, the primary sidebar still shows the Routes entry even if `routesNavVisible` is off, so the active item remains visible; that preference itself is unchanged.
 
 ## 2. Application shell
 
 ### 2.1 Standard shell
 
-The standard shell has an 8px canvas gutter (`pageEdge.canvas`), a rounded sidebar panel, a rounded main panel, and a top bar. The main column uses the edge-column pattern with a shared horizontal inset (`pageEdge.inset`, currently 8px). Non-chat pages put the page title on the left of the top bar as one line: the page name in the title size and primary color, then a short description in the meta size and secondary color. The notification control stays on the right. Chat has no top bar and owns its session name. A standard page is composed in this order:
+The standard shell has a 12px canvas gutter (`pageEdge.canvas`), a rounded sidebar panel, a rounded main panel, and a top bar. The main column uses the edge-column pattern with a shared horizontal inset (`pageEdge.inset`, currently 12px). Dashboard and the Routes board use `pageRhythm.overviewColumn`. Non-chat pages put the page title on the left of the top bar as one line: the page name in the title size and primary color, then a short description in the meta size and secondary color. The notification control stays on the right. Chat has no top bar and owns its session name. A standard page is composed in this order:
 
 ```text
 TopBar (title + metadata | notification)
@@ -63,15 +63,16 @@ The page title is a single line: name, then short description. Distinguish them 
 
 ### 2.2 Full-height workbench
 
-Chat, Agents, Skills, Projects, Plugins, Connections, Sub2API, Routes, and Settings use `fullBleed` and manage their own vertical scrolling. Full-height does not create a third content width: Chat messages use the reading column; Agents, Skills, Projects, Plugins, Connections, Sub2API, and the Settings backups tab use the edge column with a split preview surface. Page-level commands stay in the list column, on the right of the same row as tabs or filters. They do not occupy a row of their own. The workbench list and the preview column share the same `pageEdge.inset` top and bottom so both edges line up. The page title itself stays in the top bar.
+Chat, Agents, Skills, Projects, Plugins, Connections, Sub2API, Routes, and Settings use `fullBleed` and manage their own vertical scrolling. Full-height does not create a third content width: Chat messages use the reading column; Preferences, Features, This computer, and About use the overview column; Agents, Skills, Projects, Plugins, Connections, Sub2API, and the Settings backups tab use the edge column with a split preview surface. Page-level commands stay in the list column, on the right of the same row as tabs or filters. They do not occupy a row of their own. The workbench list and the preview column share the same `pageEdge.inset` top and bottom so both edges line up. The page title itself stays in the top bar.
 
 ### 2.3 Settings
 
-Settings uses the workbench header and four page tabs; the tab row stays at the top-left of the workbench header. Preferences, This computer, and About center their content on the reading column. Backups is a left-right workbench: the list is on the left, a file inspect panel opens on the right.
+Settings uses the workbench header and five page tabs; the tab row stays at the top-left of the workbench header. Preferences, Features, This computer, and About center their content on the overview column. Backups is a left-right workbench: the list is on the left, a file inspect panel opens on the right.
 
 | Tab | Query | Contents |
 |---|---|---|
-| Preferences | `?tab=preferences` | Grouped cards: language and appearance; launch and close; sidebar (auto-collapse on Routes; Routes / Plugins / Sub2API visibility); Routes (duplicate-key tip and same-URL update); Skills (market source); Usage (collection interval) |
+| Preferences | `?tab=preferences` | Grouped cards: language and appearance; launch and close; Routes (duplicate-key tip and same-URL update); Skills (market source); Usage (collection interval) |
+| Features | `?tab=features` | Sidebar pages (which entries appear in the left nav) and whether clicking Routes collapses the sidebar |
 | This computer | `?tab=local` | Data directory, log level, retention, log directory |
 | Backups | `?tab=backups` | Agent configuration snapshots; keep-copies switch; restore/delete; file inspect |
 | About | `?tab=about` | Version, update check, repository, and read-only credential-storage notes |
@@ -80,8 +81,9 @@ Invalid or old tab values replace to the nearest current tab. Tab changes use `r
 
 ### Features (Settings)
 
-- Four tabs via `?tab=`: Preferences, This computer (`local`), Backups, About. Invalid or legacy tab values replace to the nearest current tab.
-- Preferences: language and appearance; launch and close; sidebar auto-collapse on Routes; Routes / Plugins / Sub2API sidebar visibility; Routes duplicate-key tip and same-URL update; Skills market source; Usage collection interval.
+- Five tabs via `?tab=`: Preferences, Features, This computer (`local`), Backups, About. Invalid or legacy tab values replace to the nearest current tab.
+- Preferences: language and appearance; launch and close; Routes duplicate-key tip and same-URL update; Skills market source; Usage collection interval.
+- Features: sidebar page visibility (pages other than Chat, Agents, Dashboard, and Settings) and auto-collapse on Routes.
 - This computer: data directory, log level, retention, and log directory.
 - Backups: Agent configuration snapshots with `AgentTabStrip`; keep-copies switch (`keepLiveFileCopies`); restore/delete; right-hand file inspect of the stored snapshot.
 - About: version, update check, repository link, and read-only credential-storage notes.
@@ -89,7 +91,7 @@ Invalid or old tab values replace to the nearest current tab. Tab changes use `r
 ### Agent touchpoints (Settings)
 
 - Backups depend on `LiveBackup` and per-Agent snapshot identity (email or key tail). Switch/import keep-copies follow Agent live files.
-- Preferences gate Routes / Plugins / Sub2API nav visibility and Skills market source used by those pages.
+- Features gates sidebar page visibility. Preferences still holds the Skills market source used by those pages.
 - No ConnectFlow, route `plan`/`bind`, or usage parsers live on Settings itself.
 
 ### Out of scope (Settings)
@@ -341,7 +343,7 @@ Chat is a one-conversation, one-Agent workbench with a session rail, transcript,
 - Header: Agent identity, working directory, automatic-approval state, connection context.
 - Composer blocker order: hidden Agent → environment not ready → missing authorization → unknown status → missing working directory; send is the one accent action (becomes stop); retry creates a new turn. Several conversations may generate at once.
 - Streaming process panel with expandable timeline; copy for completed messages only.
-- New Codex conversations use durable app-server snapshots and show actual approval/question requests as controls. Replies and stop target the exact run; snapshot failure does not fall back to legacy send. Codex B2 is in: session model/effort, actions menu, localImage attachments, and skills/plugins discovery for this turn (no plan mode). New Grok conversations are continuous (model/thinking, images, queued follow-ups); **Unsupported**: choosing a skill “for this turn” (no clickable fake control). New Kiro conversations use the ACP continuous channel; old Kiro chats keep the original send path. See [B2](../status/chat-codex-b2.md) and [STATUS](../STATUS.md).
+- New Codex conversations use durable app-server snapshots and show actual approval/question requests as controls. Replies and stop target the exact run; snapshot failure does not fall back to legacy send. Codex B2 is in: session model/effort, actions menu, localImage attachments, and skills/plugins discovery for this turn (no plan mode). New Grok conversations are continuous (model/thinking, images, queued follow-ups); **Unsupported**: choosing a skill “for this turn” (no clickable fake control). New Kiro conversations use the ACP continuous channel; old Kiro chats keep the original send path. See [B2](../archive/chat-codex-b2.md) and [STATUS](../STATUS.md).
 
 ### Agent touchpoints (Chat)
 

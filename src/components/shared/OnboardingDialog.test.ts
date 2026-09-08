@@ -27,10 +27,11 @@ describe('OnboardingDialog first-run usage', () => {
     expect(dialog).toContain('setRoutesNavVisible');
     expect(dialog).toContain('setSub2apiNavVisible');
     expect(dialog).toContain('applyUsage');
-    const prefs = readFileSync(path.join(dir, '../../pages/settings/PreferencesPanel.tsx'), 'utf8');
-    expect(prefs).toContain("t('settings.general.routesNavVisibleLabel')");
-    expect(prefs).toContain("t('settings.general.sub2apiNavVisibleLabel')");
-    expect(prefs).toContain('setRoutesNavVisible');
-    expect(prefs).toContain('setSub2apiNavVisible');
+    const features = readFileSync(path.join(dir, '../../pages/settings/FeaturesPanel.tsx'), 'utf8');
+    expect(features).toContain('OPTIONAL_NAV_VISIBLE_COPY');
+    expect(features).toContain('setNavVisible');
+    const format = readFileSync(path.join(dir, '../../pages/settings/settings-format.ts'), 'utf8');
+    expect(format).toContain('settings.general.routesNavVisibleLabel');
+    expect(format).toContain('settings.general.sub2apiNavVisibleLabel');
   });
 });

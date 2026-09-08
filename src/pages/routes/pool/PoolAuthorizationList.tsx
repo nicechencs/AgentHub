@@ -262,7 +262,7 @@ function renderColumn(
         item.bindingCount && item.bindingCount > 0 ? String(item.bindingCount) : null,
       );
     case 'quota': {
-      const parts = poolAuthorizationQuotaParts(item);
+      const parts = poolAuthorizationQuotaParts(item, ctx.t);
       if (parts.length === 0) return <TableEmptyCell />;
       return (
         <div className="flex flex-col gap-0.5 text-meta text-secondary">

@@ -13,7 +13,7 @@ function source(name: string): string {
 describe('chat layout wiring', () => {
   it('keeps the main column on canvas so an empty transcript matches composer chrome', () => {
     const page = source('index.tsx');
-    expect(page).toContain('flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-canvas');
+    expect(page).toContain('flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-card border border-border bg-canvas');
     expect(page).toContain('chatStageClass');
     expect(page).not.toContain('flex min-w-0 flex-1 flex-col bg-panel');
     expect(source('ChatMessageBubble.tsx')).toContain('formatChatDisplayContent');
@@ -24,6 +24,17 @@ describe('chat layout wiring', () => {
     expect(source('index.tsx')).toContain('chatEscapeShouldCancel');
     expect(source('index.tsx')).toContain("e.key");
     expect(source('ChatComposer.tsx')).toContain('chat.composer.stop');
+  });
+
+  it('keeps send available while a turn is in progress', () => {
+    expect(source('index.tsx')).toContain('chatBusySendMode');
+    const composer = source('ChatComposer.tsx');
+    const sendingAt = composer.indexOf('{sending ? (');
+    const sendWhileBusyAt = composer.indexOf('data-help="chat-send"', sendingAt);
+    const stopAt = composer.indexOf("t('chat.composer.stop')", sendingAt);
+    expect(sendingAt).toBeGreaterThan(0);
+    expect(sendWhileBusyAt).toBeGreaterThan(sendingAt);
+    expect(stopAt).toBeGreaterThan(sendWhileBusyAt);
   });
 
   it('opens markdown files in a right-hand preview pane', () => {
@@ -68,14 +79,24 @@ describe('chat layout wiring', () => {
     const transcript = source('ChatTranscript.tsx');
     expect(transcript).toContain('chatStarterActions');
     expect(transcript).toContain('onPickStarter');
+    expect(transcript).toContain('chat.transcript.identity');
+    expect(transcript).toContain('firstBlocker');
     expect(transcript).not.toContain('variant="default"');
     expect(source('index.tsx')).toContain('onPickStarter={page.runChatAction}');
+    expect(source('index.tsx')).toContain('firstBlocker={page.blockers[0] ?? null}');
+    expect(source('index.tsx')).toContain('showBlockerBanner={page.turns.length > 0}');
+    expect(source('ChatComposer.tsx')).toContain('showBlockerBanner');
   });
 
   it('keeps the transcript white column on the same max-w-3xl as the composer', () => {
     expect(source('index.tsx')).toContain('chatMainColumnClass');
     expect(source('index.tsx')).toContain('chatStageClass');
     expect(source('index.tsx')).toContain('pageRhythm.chatChromeX');
+    expect(source('ChatSessionHeader.tsx')).toContain('pageRhythm.chatChromeX');
+    expect(source('ChatTranscript.tsx')).not.toContain('pageRhythm.chatChromeX');
+    expect(source('ChatTranscript.tsx')).not.toContain('px-6');
+    expect(source('ChatRuntimeRequests.tsx')).not.toContain('max-w-3xl');
+    expect(source('ChatRuntimeRequests.tsx')).not.toContain('px-4');
   });
 
   it('hides the splitter in an 8px gutter between transcript and composer', () => {
@@ -109,6 +130,47 @@ describe('chat layout wiring', () => {
     expect(composer).toContain('text-muted/35');
     expect(composer).toContain('text-left text-meta leading-none');
     expect(composer).not.toContain('mt-2 shrink-0 text-center text-meta');
+  });
+
+  it('puts a routes-style sash between history and the conversation', () => {
+    const rail = source('ChatSessionRail.tsx');
+    expect(rail).toContain('NavResizeHandle');
+    expect(rail).toContain('useNavWidth');
+    expect(rail).toContain('CHAT_RAIL_WIDTH');
+    expect(rail).toContain('StorageKey.chatRailWidth');
+    expect(rail).toContain("t('chat.rail.resize')");
+    expect(rail).toContain('rounded-card border border-border');
+    expect(rail).toContain('bg-canvas');
+    expect(rail).toContain('justify-between');
+    expect(rail).toContain('border-b border-border');
+    expect(rail).not.toContain('pageRhythm.shellNav');
+    expect(rail).not.toContain('bg-panel');
+    expect(rail).not.toContain('border-r border-border');
+    expect(rail).not.toContain("'w-60'");
+  });
+
+  it('titles the history rail, collapses beside the title, and creates chats above search', () => {
+    const rail = source('ChatSessionRail.tsx');
+    const titleAt = rail.indexOf("t('chat.rail.historyTitle')");
+    const collapseAt = rail.indexOf("t('chat.rail.collapseHistory')");
+    const newAt = rail.indexOf("t('chat.rail.newChat')");
+    const searchAt = rail.indexOf("t('chat.rail.searchPlaceholder')");
+    const listAt = rail.indexOf('overflow-y-auto');
+    expect(titleAt).toBeGreaterThan(0);
+    expect(collapseAt).toBeGreaterThan(titleAt);
+    expect(newAt).toBeGreaterThan(collapseAt);
+    expect(searchAt).toBeGreaterThan(newAt);
+    expect(listAt).toBeGreaterThan(searchAt);
+    expect(rail).toContain('conversationRailHint');
+    expect(rail).toContain('conversationRailMarkColor');
+    expect(rail).toContain('conversationRailSelectedFill');
+    expect(rail).not.toContain('bg-accent-subtle');
+    expect(rail).not.toContain("'bg-active'");
+    expect(rail).toContain('inset-y-1.5 left-0 w-0.5 rounded-full');
+    expect(rail).toContain('AgentLogo');
+    expect(rail).toContain('hint={false}');
+    expect(rail).not.toContain('conversationAgentLine');
+    expect(rail).not.toContain('cwdShortName');
   });
 
   it('keeps history actions visible and focusable for runtime composers', () => {

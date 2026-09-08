@@ -1,12 +1,16 @@
 ---
 title: 最近提交修复复核
-type: architecture
-status: historical
+type: archive
+status: archived
 owner: maintainers
-updated: 2026-08-26
+updated: 2026-09-08
 ---
 
 # 最近提交修复复核
+
+> **归档（2026-09-08）**。本页是一次性审查、批次记录或复核，不是现行契约。当前实现见 [当前实现状态](../STATUS.md)。下文保留原文，不要按此页派工。
+>
+> **Archived / 已归档**: Historical review or batch record. Do not use it as the current implementation contract.
 
 本页是 2026-08-26 的一次性复核记录，不是现行契约。当前实现事实见 [STATUS](../STATUS.md)。
 

@@ -2795,6 +2795,9 @@ fn run_native_ps1(
         std::path::Path::new(&ps),
         &[
             "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
             "-Command",
             "$PSVersionTable.PSVersion.ToString()",
         ],
@@ -2821,6 +2824,9 @@ fn run_native_ps1(
         program: ps,
         args: vec![
             "-NoProfile".into(),
+            "-NonInteractive".into(),
+            "-WindowStyle".into(),
+            "Hidden".into(),
             "-ExecutionPolicy".into(),
             "Bypass".into(),
             "-Command".into(),

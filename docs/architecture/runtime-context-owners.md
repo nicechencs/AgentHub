@@ -10,7 +10,7 @@ updated: 2026-08-27
 
 > 提案，不是现行契约。本系列不改 `plan` / `bind` / `unbind` / `switch` / `activate_*` / 补偿 / current / 锁。日常合入 GitHub `dev`。
 
-针对审查 [O-07](objectization-encapsulation-audit.md)：运行时 store 是多个模块级可变单例；`setBackend` / `resetBackend` 手工依次 reset；没有统一 context 承载生命周期和失效。O-08 / O-09（`refreshRuntimeReadModels`、刷新失败留在 snapshot）和 O-51 / O-52（epoch 丢弃过期写回、catalog 随 backend 一起 reset）**已经落地，本系列冻结，不重做**。
+针对审查 [O-07](../archive/objectization-encapsulation-audit.md)：运行时 store 是多个模块级可变单例；`setBackend` / `resetBackend` 手工依次 reset；没有统一 context 承载生命周期和失效。O-08 / O-09（`refreshRuntimeReadModels`、刷新失败留在 snapshot）和 O-51 / O-52（epoch 丢弃过期写回、catalog 随 backend 一起 reset）**已经落地，本系列冻结，不重做**。
 
 ## Overview
 
@@ -272,8 +272,8 @@ pnpm typecheck
 
 ## References
 
-- [对象化与封装审查 O-07、O-08、O-09](objectization-encapsulation-audit.md)
-- [对象化与封装审查：前端与运行时 O-51、O-52、O-53](objectization-encapsulation-audit-frontend.md)
+- [对象化与封装审查 O-07、O-08、O-09](../archive/objectization-encapsulation-audit.md)
+- [对象化与封装审查：前端与运行时 O-51、O-52、O-53](../archive/objectization-encapsulation-audit-frontend.md)
 - [读模型 owner 与兼容策略](read-model-owners.md)（宽 DTO 切片；本提案不改 wire）
 - [Service 内部 owner 拆分](service-internal-owners.md)（Core 门面内部拆分；本提案不改 switch / current / 锁）
 - [前端与 Backend Adapter 边界](frontend-backend.md)

@@ -321,8 +321,8 @@ cargo test -p agenthub-gui --locked adapter_bridge_controller
 
 ## References
 
-- [对象化与封装审查](objectization-encapsulation-audit.md) — O-11、O-12、O-13、O-14
-- [对象化与封装审查：CLI、Tauri 与工具链](objectization-encapsulation-audit-cli-tauri.md) — O-66
+- [对象化与封装审查](../archive/objectization-encapsulation-audit.md) — O-11、O-12、O-13、O-14
+- [对象化与封装审查：CLI、Tauri 与工具链](../archive/objectization-encapsulation-audit-cli-tauri.md) — O-66
 - [模块化与边界收紧](../proposals/modularity.md) — D3
 - [Core 与 Runtime](core-runtime.md)
 - [架构总览](overview.md)（本提案不改其当前态表述）

@@ -60,11 +60,34 @@ describe('ChatTranscript surfaces', () => {
     expect(html).not.toContain('rounded-composer bg-panel');
     expect(html).not.toContain('rounded-composer bg-canvas');
     expect(html).toContain('开始对话');
+    expect(html).toContain(' · demo');
     expect(html).toContain('了解这个项目');
     expect(html).toContain('检查问题');
     expect(html).toContain('总结当前目录');
     expect(html).toContain('补最小测试');
     expect(html).not.toContain('请帮我了解这个项目的结构和主要功能。');
+  });
+
+  it('replaces starters with the first send blocker as the primary action', () => {
+    const html = renderToStaticMarkup(
+      createElement(ChatTranscript, {
+        active: conversation(),
+        turns: [],
+        processMap: {},
+        listLoading: false,
+        messagesLoading: false,
+        sending: false,
+        retryDisabled: false,
+        scrollRef: createRef<HTMLDivElement>(),
+        bottomRef: createRef<HTMLDivElement>(),
+        onScroll: () => undefined,
+        onRetry: () => undefined,
+        firstBlocker: { kind: 'noCwd' },
+      }),
+    );
+    expect(html).toContain(' · demo');
+    expect(html).toContain('设置工作目录');
+    expect(html).not.toContain('了解这个项目');
   });
 
   it('does not paint a panel card once a turn exists', () => {

@@ -13,6 +13,10 @@ function source(name: string): string {
 }
 
 describe('routes board layout wiring', () => {
+  it('uses the same centered column as 总览', () => {
+    expect(source('index.tsx')).toContain('pageRhythm.overviewColumn');
+  });
+
   it('keeps fleet health on the page and usage charts in the usage section', () => {
     const page = source('index.tsx');
     expect(page).toContain('BoardUsageSection');
@@ -83,6 +87,10 @@ describe('routes board layout wiring', () => {
     expect(section).not.toContain('routes.board.allSurfaces');
     expect(section).toContain('rememberedBoardUsageFilters');
     expect(section).toContain('rememberBoardUsageFilters');
+    expect(section).toContain('boardUsageHasRequests');
+    expect(section).toContain('forwardingOn');
+    expect(section).toContain('routes.board.usageEmptyStart');
+    expect(source('index.tsx')).toContain('forwardingOn={entryRunning}');
   });
 
   it('does not list writer agents as the top cards', () => {

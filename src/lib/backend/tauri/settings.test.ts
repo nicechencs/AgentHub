@@ -706,6 +706,37 @@ describe('createTauriSettingsPort pickDirectory', () => {
   });
 });
 
+describe('createTauriSettingsPort pickFile', () => {
+  beforeEach(() => {
+    tauriRuntime = true;
+    invokeMock.mockReset();
+  });
+
+  it('invokes pick_file with zip filters and returns a path', async () => {
+    invokeMock.mockResolvedValue('/Users/me/skill.zip');
+    const port = createTauriSettingsPort();
+    await expect(
+      port.pickFile({
+        title: '选择 zip',
+        filters: [{ name: 'ZIP', extensions: ['zip'] }],
+      }),
+    ).resolves.toBe('/Users/me/skill.zip');
+    expect(invokeMock).toHaveBeenCalledWith('pick_file', {
+      title: '选择 zip',
+      defaultPath: null,
+      filters: [{ name: 'ZIP', extensions: ['zip'] }],
+    });
+  });
+
+  it('maps cancel and blank to null', async () => {
+    const port = createTauriSettingsPort();
+    invokeMock.mockResolvedValueOnce(null);
+    await expect(port.pickFile()).resolves.toBeNull();
+    invokeMock.mockResolvedValueOnce('   ');
+    await expect(port.pickFile()).resolves.toBeNull();
+  });
+});
+
 describe('sanitizeGuiLast4', () => {
   it('keeps a tail and never a raw key', () => {
     const key = 'sk-abcdefghijklmnopqrstuvwxyz';

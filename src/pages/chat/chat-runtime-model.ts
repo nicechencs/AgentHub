@@ -95,7 +95,7 @@ export function canSubmitRuntimeQuestions(
   return request.kind !== 'question' || request.questions.every((question) => Boolean(answers[question.id]?.length));
 }
 
-/** Allow/deny must not send answers; questions must not send a decision. */
+/** Session remember is offered only when this request can honor it (ACP option or Codex-synthesized allow_always). */
 export function requestAllowsAlways(
   request: Pick<RuntimeRequest, 'permissionOptions'>,
 ): boolean {

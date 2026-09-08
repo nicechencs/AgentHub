@@ -61,14 +61,14 @@ function DashboardItem({ h }: { h: Row }) {
         className="text-warning"
         label={t('dashboard.parse.failTip', { pct: h.failRatePct, skipped })}
       >
-        <AlertTriangle className="inline h-3 w-3 align-text-bottom" /> {name} {h.failRatePct}%
+        <AlertTriangle className="inline h-3.5 w-3.5 align-text-bottom" /> {name} {h.failRatePct}%
       </Tip>
     );
   }
   return (
     <span>
       {name}{' '}
-      <Check className="inline h-3 w-3 align-text-bottom text-success" /> {fmtRecords(h.records)}
+      <Check className="inline h-3.5 w-3.5 align-text-bottom text-success" /> {fmtRecords(h.records)}
     </span>
   );
 }
@@ -191,7 +191,7 @@ export function UsageParserHealth({
                 {name}{' '}
                 {h.records > 0 ? (
                   <span className="text-success">
-                    <Check className="inline h-3 w-3 align-text-bottom" />
+                    <Check className="inline h-3.5 w-3.5 align-text-bottom" />
                     {h.records}
                   </span>
                 ) : (
@@ -236,7 +236,7 @@ export function UsageParserHealth({
           className="text-xs text-warning"
           label={t('dashboard.parse.missingPriceTip', { models: missing.join(', ') })}
         >
-          <AlertTriangle className="mr-1 inline h-3 w-3 align-text-bottom" />
+          <AlertTriangle className="mr-1 inline h-3.5 w-3.5 align-text-bottom" />
           {t('dashboard.parse.missingPrice', { models: missing.slice(0, 4).join(', ') })}
           {missing.length > 4 ? t('dashboard.parse.missingPriceMore', { n: missing.length }) : ''}
         </Tip>
