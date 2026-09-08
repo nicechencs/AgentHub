@@ -577,6 +577,7 @@ fn persisted_request_is_removed_only_after_explicit_resolution() {
         title: "执行命令".into(),
         detail: "printf safe".into(),
         questions: Vec::new(),
+        permission_options: Vec::new(),
     };
     store
         .add_request("c2", &request, "item/commandExecution/requestApproval", "7")
@@ -590,6 +591,38 @@ fn persisted_request_is_removed_only_after_explicit_resolution() {
         .unwrap()
         .pending_requests
         .is_empty());
+}
+
+#[test]
+fn persisted_request_round_trips_allow_always_options() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "c-always", false);
+    let store = super::store::RuntimeStore::new(db);
+    store.enable_if_new("c-always").unwrap();
+    let request = RuntimeRequest {
+        id: "req-always".into(),
+        run_id: "run-1".into(),
+        kind: RuntimeRequestKind::Command,
+        title: "执行命令".into(),
+        detail: "printf always".into(),
+        questions: Vec::new(),
+        permission_options: vec![super::types::RuntimePermissionOption {
+            id: "always".into(),
+            kind: "allow_always".into(),
+        }],
+    };
+    store
+        .add_request(
+            "c-always",
+            &request,
+            "session/request_permission",
+            "8",
+        )
+        .unwrap();
+    assert_eq!(
+        store.snapshot("c-always", None).unwrap().pending_requests,
+        vec![request]
+    );
 }
 
 fn require_real_codex_opt_in() {

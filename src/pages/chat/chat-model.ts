@@ -331,7 +331,14 @@ export function autoApproveActive(
   return allowDangerous && autoApproveEffect(agentId) !== 'none';
 }
 
-export function autoApproveHint(t: TranslateFn, effect: AutoApproveEffect): string {
+export function autoApproveHint(
+  t: TranslateFn,
+  effect: AutoApproveEffect,
+  agentId?: AgentKey | null,
+): string {
+  if (agentId === 'kiro') {
+    return effect === 'skip' ? t('chat.kiro.permissionFullHint') : t('chat.autoApprove.none');
+  }
   switch (effect) {
     case 'skip':
       return t('chat.autoApprove.skip');
@@ -352,7 +359,10 @@ export function autoApproveFooter(
     return { text: '', warning: false };
   }
   if (effect === 'skip') {
-    return { text: t('chat.autoApprove.footerSkip'), warning: true };
+    return {
+      text: agentId === 'kiro' ? t('chat.autoApprove.footerKiroFull') : t('chat.autoApprove.footerSkip'),
+      warning: true,
+    };
   }
   if (effect === 'project-trust') {
     return { text: t('chat.autoApprove.footerTrust'), warning: true };
@@ -360,7 +370,14 @@ export function autoApproveFooter(
   return { text: t('chat.autoApprove.footerNone'), warning: false };
 }
 
-export function autoApproveConfirmCopy(t: TranslateFn, effect: AutoApproveEffect): string {
+export function autoApproveConfirmCopy(
+  t: TranslateFn,
+  effect: AutoApproveEffect,
+  agentId?: AgentKey | null,
+): string {
+  if (agentId === 'kiro') {
+    return t('chat.autoApprove.confirmKiroFull');
+  }
   if (effect === 'project-trust') {
     return t('chat.autoApprove.confirmTrust');
   }

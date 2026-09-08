@@ -830,7 +830,7 @@ export function useChatPageSend(input: {
     clearSendingFor(id);
   }
 
-  async function submitRuntimeRequest(request: RuntimeRequest, decision?: 'allow' | 'deny', answers?: Record<string, string[]>) {
+  async function submitRuntimeRequest(request: RuntimeRequest, decision?: 'allow' | 'deny' | 'allow_always', answers?: Record<string, string[]>) {
     if (!active || !requestMatchesRuntime(request, runtimeIdRef.current)) {
       throw new Error('stale runtime request');
     }

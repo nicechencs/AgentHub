@@ -96,11 +96,17 @@ export function canSubmitRuntimeQuestions(
 }
 
 /** Allow/deny must not send answers; questions must not send a decision. */
+export function requestAllowsAlways(
+  request: Pick<RuntimeRequest, 'permissionOptions'>,
+): boolean {
+  return (request.permissionOptions ?? []).some((option) => option.kind === 'allow_always');
+}
+
 export function runtimeReplyFields(
   request: Pick<RuntimeRequest, 'kind'>,
-  decision?: 'allow' | 'deny',
+  decision?: 'allow' | 'deny' | 'allow_always',
   answers?: Record<string, string[]>,
-): { decision?: 'allow' | 'deny'; answers?: Record<string, string[]> } {
+): { decision?: 'allow' | 'deny' | 'allow_always'; answers?: Record<string, string[]> } {
   if (request.kind === 'question') {
     return answers ? { answers } : {};
   }

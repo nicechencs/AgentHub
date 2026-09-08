@@ -16,6 +16,7 @@ import { useToast } from '@/components/ui/toast';
 import { Tip } from '@/components/ui/tooltip';
 import { pickDirectory } from '@/lib/api/settings';
 import type { Conversation } from '@/lib/types';
+import { isKiroChatAgent } from './chat-kiro-model';
 import {
   autoApproveActive,
   autoApproveConfirmCopy,
@@ -48,6 +49,8 @@ export function ChatSettingsDialog({
   const approveEffect = autoApproveEffect(selectedAgent);
   const approveEnabled = approveEffect !== 'none';
   const approveOn = autoApproveActive(Boolean(active?.allowDangerous), selectedAgent);
+  const kiroPermissions = isKiroChatAgent(selectedAgent);
+  const permissionLocked = kiroPermissions && runtimeLocked;
 
   useEffect(() => {
     setCwdDraft(active?.cwd ?? '');
@@ -118,33 +121,73 @@ export function ChatSettingsDialog({
                   </Button>
                 </div>
               </div>
-              <label className="flex items-center justify-between gap-3 text-body">
-                <span>
-                  <span className="block font-medium">{t('chat.settings.autoApprove')}</span>
-                  <Tip
-                    className="text-meta text-muted"
-                    label={
-                      approveEnabled
-                        ? t('chat.settings.autoApproveOffHint')
-                        : autoApproveHint(t, 'none')
-                    }
-                  >
-                    {autoApproveHint(t, approveEffect)}
-                  </Tip>
-                </span>
-                <Switch
-                  checked={approveOn}
-                  disabled={!approveEnabled}
-                  onCheckedChange={(checked) => {
-                    if (!approveEnabled) return;
-                    if (checked) {
-                      onDangerConfirmChange(true);
-                      return;
-                    }
-                    onPatch({ allowDangerous: false });
-                  }}
-                />
-              </label>
+              {kiroPermissions ? (
+                <fieldset className="space-y-2" disabled={permissionLocked}>
+                  <legend className="text-body font-medium">{t('chat.kiro.permissionTitle')}</legend>
+                  {permissionLocked ? (
+                    <p className="text-meta text-muted">{t('chat.kiro.settingsLocked')}</p>
+                  ) : null}
+                  <label className="flex cursor-pointer items-start gap-2 rounded px-1 py-1 hover:bg-subtle">
+                    <input
+                      type="radio"
+                      name={`kiro-permission-${active.id}`}
+                      className="mt-1"
+                      checked={!approveOn}
+                      disabled={permissionLocked}
+                      onChange={() => onPatch({ allowDangerous: false })}
+                    />
+                    <span>
+                      <span className="block font-medium">{t('chat.kiro.permissionAsk')}</span>
+                      <span className="text-meta text-muted">{t('chat.kiro.permissionAskHint')}</span>
+                    </span>
+                  </label>
+                  <label className="flex cursor-pointer items-start gap-2 rounded px-1 py-1 hover:bg-subtle">
+                    <input
+                      type="radio"
+                      name={`kiro-permission-${active.id}`}
+                      className="mt-1"
+                      checked={approveOn}
+                      disabled={permissionLocked}
+                      onChange={() => {
+                        if (approveOn || permissionLocked) return;
+                        onDangerConfirmChange(true);
+                      }}
+                    />
+                    <span>
+                      <span className="block font-medium">{t('chat.kiro.permissionFull')}</span>
+                      <span className="text-meta text-muted">{t('chat.kiro.permissionFullHint')}</span>
+                    </span>
+                  </label>
+                </fieldset>
+              ) : (
+                <label className="flex items-center justify-between gap-3 text-body">
+                  <span>
+                    <span className="block font-medium">{t('chat.settings.autoApprove')}</span>
+                    <Tip
+                      className="text-meta text-muted"
+                      label={
+                        approveEnabled
+                          ? t('chat.settings.autoApproveOffHint')
+                          : autoApproveHint(t, 'none')
+                      }
+                    >
+                      {autoApproveHint(t, approveEffect)}
+                    </Tip>
+                  </span>
+                  <Switch
+                    checked={approveOn}
+                    disabled={!approveEnabled}
+                    onCheckedChange={(checked) => {
+                      if (!approveEnabled) return;
+                      if (checked) {
+                        onDangerConfirmChange(true);
+                        return;
+                      }
+                      onPatch({ allowDangerous: false });
+                    }}
+                  />
+                </label>
+              )}
             </div>
           )}
           <DialogFooter>
@@ -158,9 +201,11 @@ export function ChatSettingsDialog({
       <Dialog open={dangerConfirm} onOpenChange={onDangerConfirmChange}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t('chat.settings.enableTitle')}</DialogTitle>
+            <DialogTitle>
+              {kiroPermissions ? t('chat.kiro.enableFullTitle') : t('chat.settings.enableTitle')}
+            </DialogTitle>
             <DialogDescription>
-              {autoApproveConfirmCopy(t, approveEffect)}
+              {autoApproveConfirmCopy(t, approveEffect, selectedAgent)}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -171,6 +216,7 @@ export function ChatSettingsDialog({
               variant="danger"
               onClick={() => {
                 onDangerConfirmChange(false);
+                if (permissionLocked) return;
                 onPatch({ allowDangerous: true });
               }}
             >

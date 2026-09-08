@@ -271,7 +271,7 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
     modelSelect: { level: 'full' },
     sessionResume: {
       level: 'partial',
-      reason: '新对话走持续通道，可点允许/拒绝；生成时不能中途补充',
+      reason: '新对话走持续通道，可点允许、一直允许或拒绝；生成时不能中途补充',
     },
   },
 };
