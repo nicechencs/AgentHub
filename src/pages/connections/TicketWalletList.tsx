@@ -1068,7 +1068,7 @@ export function TicketWalletList({
       ) : null}
 
       {rows.length > 0 ? (
-        <TableShell layout="split">
+        <TableShell variant="workbench" layout="split">
           <Table className="table-fixed" style={{ minWidth: totalWidth }}>
             <colgroup>
               {visibleSpecs.map((spec) => (

@@ -85,6 +85,7 @@ describe('connections layout wiring', () => {
     expect(page).toContain("kind === 'detail'");
     expect(list).not.toContain("t('connections.list.details')");
     expect(list).toContain('TableShell');
+    expect(list).toContain('variant="workbench"');
     expect(list).toContain('TableRow');
     expect(list).toContain('AgentLogo');
     expect(list).not.toContain('ListRowBody');

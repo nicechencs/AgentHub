@@ -7,6 +7,8 @@ describe('table row dividers', () => {
     expect(tableStyles.tr).not.toContain('last:border-0');
     expect(tableStyles.trWorkbench).toContain('border-t');
     expect(tableStyles.trWorkbench).not.toContain('last:border-0');
+    expect(tableStyles.tdWorkbench).toContain('py-1');
+    expect(tableStyles.td).toContain('py-2');
   });
 });
 

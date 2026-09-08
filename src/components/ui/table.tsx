@@ -16,7 +16,7 @@ import {
  * 全站表格视觉协议。
  *
  * - **default**：全站管理表默认（Dashboard 用量、Skills 三 Tab 等）— Card 壳 + 标准行线
- * - **workbench** / **flush**：无 Card 的贴边特例（目前业务侧不用；保留 API）
+ * - **workbench** / **flush**：无 Card 的贴边表（Agents / 连接等工作台列表）
  *
  * 业务表只选 `TableShell variant`；表头/行/单元格密度由 Context 自动套用。
  * 左右分栏里的字段表再设 `layout="split"`（窄栏强制横向滚动）。
@@ -33,8 +33,8 @@ export const tableStyles = {
   theadRowWorkbench: 'border-b border-border/70 bg-subtle/50 text-left',
   trWorkbench:
     'border-t border-border/40 hover:bg-hover data-[active=true]:bg-active data-[active=true]:hover:bg-active',
-  thWorkbench: 'px-3 py-2 text-meta font-medium text-muted',
-  tdWorkbench: 'overflow-hidden px-3 py-2',
+  thWorkbench: 'px-3 py-1 text-meta font-medium text-muted',
+  tdWorkbench: 'overflow-hidden px-3 py-1',
   td: 'overflow-hidden px-3 py-2',
   footer:
     'flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-2 text-meta text-muted',
