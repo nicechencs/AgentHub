@@ -1490,6 +1490,10 @@ export const zh = {
       usageUnavailable: "用量统计暂不可用",
       usageUnavailableReason: "原因：{reason}",
       usageEmpty: "所选时间范围内没有用量记录",
+      usageEmptyStart: "还没有本机转发用量。按下面顺序开始：",
+      usageStartConnect: "添加可用连接",
+      usageStartKey: "创建入口 Key",
+      usageStartForward: "开启本机转发",
       openLog: "打开监控",
     },
     activity: {

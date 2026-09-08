@@ -83,6 +83,10 @@ describe('routes board layout wiring', () => {
     expect(section).not.toContain('routes.board.allSurfaces');
     expect(section).toContain('rememberedBoardUsageFilters');
     expect(section).toContain('rememberBoardUsageFilters');
+    expect(section).toContain('boardUsageHasRequests');
+    expect(section).toContain('forwardingOn');
+    expect(section).toContain('routes.board.usageEmptyStart');
+    expect(source('index.tsx')).toContain('forwardingOn={entryRunning}');
   });
 
   it('does not list writer agents as the top cards', () => {
