@@ -112,11 +112,12 @@ export function RoutesNav() {
     );
 
   return (
-    <aside
-      className={cn(pageRhythm.shellNav, 'relative', width.widthTransition)}
-      style={{ width: width.width }}
-      data-routes-nav
-    >
+    <>
+      <aside
+        className={cn(pageRhythm.shellNav, 'relative', width.widthTransition)}
+        style={{ width: width.width }}
+        data-routes-nav
+      >
       <div
         className={cn(
           'flex shrink-0 items-center border-b border-border',
@@ -143,7 +144,7 @@ export function RoutesNav() {
 
       <nav
         aria-label={t('routes.nav.aria')}
-        className={cn('flex min-h-0 flex-1 flex-col gap-0.5 pt-1', isLg ? 'px-2' : 'px-1.5')}
+        className={cn('flex min-h-0 flex-1 flex-col gap-0.5 pt-1 px-2')}
       >
         {navItems.map((item) => (
           <RoutesNavLink
@@ -154,7 +155,12 @@ export function RoutesNav() {
           />
         ))}
       </nav>
-      {isLg && <NavResizeHandle label={t('routes.nav.resize')} width={width} />}
-    </aside>
+      </aside>
+      <NavResizeHandle
+        label={t('routes.nav.resize')}
+        width={width}
+        interactive={isLg}
+      />
+    </>
   );
 }

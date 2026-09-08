@@ -15,7 +15,7 @@ import {
   createIdempotentCleanup,
   persistSideSplitWidth,
   readStoredSideSplitWidth,
-  SIDE_SPLIT_FRAME_PAD_RIGHT,
+  SIDE_SPLIT_FRAME_PAD_X,
   SIDE_SPLIT_WIDTH_DEFAULT,
   SIDE_SPLIT_WIDTH_FLOOR,
   SIDE_SPLIT_WIDTH_MIN,
@@ -267,7 +267,7 @@ export function useSideSplit<T>(options: {
     persistSideSplitWidth(storageKey, defaultWidth);
   }, [defaultWidth, storageKey]);
 
-  const shellWidth = expanded ? paneWidth + SIDE_SPLIT_FRAME_PAD_RIGHT : 0;
+  const shellWidth = expanded ? paneWidth + SIDE_SPLIT_FRAME_PAD_X * 2 : 0;
   const widthTransition =
     !resizing && !reduceMotion ? 'motion-panel-width' : 'transition-none';
 

@@ -81,7 +81,7 @@ There are three content systems:
 |---|---|---|
 | Reading column | `pageRhythm.readingColumn` (`mx-auto w-full max-w-3xl`) | Chat transcript/composer, Settings form, long-form reading |
 | Overview column | `pageRhythm.overviewColumn` (`mx-auto w-full max-w-6xl`) | Dashboard only |
-| Edge column | `pageRhythm.pageShell` / `workbenchX` from `pageEdge.inset` (currently 12px) | Tables, lists, split workbenches, Routes. Change `pageEdge.inset` in `src/components/layout/page-rhythm.ts` to retune every page edge. When a split pane is open, the scrolling list uses `workbenchXSplit` (`inset` left; canvas gutter pad + margin on the right) so the scrollbar is not flush against the separator. |
+| Edge column | `pageRhythm.pageShell` / `workbenchX` from `pageEdge.inset` (currently 12px) | Tables, lists, split workbenches, Routes. Change `pageEdge.inset` in `src/components/layout/page-rhythm.ts` to retune every page edge. When a split pane is open, the list uses `workbenchXSplit` (12px left pad, 12px right margin) and the inspect pane uses the same 12px on the splitter side so the 1px rule stays centered. |
 
 Do not introduce page-private `max-w-*` values or a second left-aligned reading width. `fullBleed` describes height and scrolling behavior, not a width system. The application canvas gutter is 12px.
 

@@ -187,7 +187,7 @@ function SidebarAgentStrip({
   });
 
   return (
-    <div className={cn('shrink-0 border-t border-border', collapsed ? 'px-1.5 py-2.5' : 'px-3 py-2.5')}>
+    <div className={cn('shrink-0 border-t border-border', collapsed ? 'px-2 py-2.5' : 'px-3 py-2.5')}>
       {collapsed ? (
         <Hint label={fractionLabel} side="right">
           <div
@@ -360,10 +360,7 @@ export function Sidebar() {
 
         {/* 工作区置顶；管理区 mt-auto 贴底（在 agent 状态条上方） */}
         <nav
-          className={cn(
-            'flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain pt-1',
-            collapsed ? 'px-1.5' : 'px-2',
-          )}
+          className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain px-2 pt-1"
         >
           <NavGroup label={t('nav.workspace')} collapsed={collapsed}>
             {visibleWorkspaceNav.map((item) => (
@@ -390,8 +387,12 @@ export function Sidebar() {
           visibleTotal={stats.visibleTotal}
           orderedInstalledMetas={stats.orderedInstalledMetas}
         />
-        {!collapsed && <NavResizeHandle label={t('nav.resizeSidebar')} width={width} />}
       </aside>
+      <NavResizeHandle
+        label={t('nav.resizeSidebar')}
+        width={width}
+        interactive={!collapsed}
+      />
       <ContextMenu open={railMenu !== null} point={railMenu} onClose={closeRailMenu}>
         {collapsed ? (
           <ContextMenuItem onSelect={expandFromRailMenu}>

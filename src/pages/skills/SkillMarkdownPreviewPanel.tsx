@@ -306,7 +306,7 @@ export function SkillMarkdownPreviewPanel({
       <div
         ref={resolvedBodyRef as RefObject<HTMLDivElement>}
         tabIndex={-1}
-        className="min-h-0 min-w-0 flex-1 overflow-auto px-4 py-3 outline-none"
+        className="min-h-0 min-w-0 flex-1 overflow-auto px-3 py-3 outline-none"
         aria-busy={loading}
       >
         {loading ? (
