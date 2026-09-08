@@ -223,7 +223,7 @@ impl ChatService {
 
     /// Cancel an in-flight send for this conversation (best-effort).
     pub fn cancel(&self, conversation_id: &str) -> Result<()> {
-        let result = (|| {
+        let result: Result<()> = (|| {
             let guard = self
                 .active
                 .lock()
@@ -235,15 +235,16 @@ impl ChatService {
         })();
         match &result {
             Ok(()) => {
-                tracing::debug!(
-                    module = targets::CHAT,
-                    op = "cancel",
-                    conversation_id = conversation_id,
-                    "cancel ok"
-                );
+                logging::log_chat_info("stop", conversation_id, None, "stop ok");
             }
             Err(e) => {
-                logging::log_app_error(targets::CHAT, "cancel", e);
+                logging::log_chat_error(
+                    "stop_fail",
+                    conversation_id,
+                    None,
+                    Some(e.code()),
+                    &e.to_string(),
+                );
             }
         }
         result
@@ -260,6 +261,7 @@ impl ChatService {
         match self.send_inner(conversation_id, user_input, on_event) {
             Ok(true) => {
                 tracing::info!(
+                    target: targets::CHAT,
                     module = targets::CHAT,
                     op = "send",
                     conversation_id = conversation_id,
@@ -269,17 +271,17 @@ impl ChatService {
                 Ok(())
             }
             Ok(false) => {
-                tracing::error!(
-                    module = targets::CHAT,
-                    op = "send",
-                    conversation_id = conversation_id,
-                    elapsed_ms = elapsed_ms(started),
-                    "send failed"
-                );
+                logging::log_chat_error("send_fail", conversation_id, None, None, "send failed");
                 Ok(())
             }
             Err(e) => {
-                logging::log_app_error(targets::CHAT, "send", &e);
+                logging::log_chat_error(
+                    "send_fail",
+                    conversation_id,
+                    None,
+                    Some(e.code()),
+                    &e.to_string(),
+                );
                 Err(e)
             }
         }
@@ -363,13 +365,11 @@ impl ChatService {
             .map(|a| a.as_str())
             .collect::<Vec<_>>()
             .join(",");
-        tracing::debug!(
-            module = targets::CHAT,
-            op = "send",
-            conversation_id = conversation_id,
-            agents = %agents_joined,
-            prompt_len = user_input.chars().count(),
-            "send start"
+        logging::log_chat_info(
+            "send",
+            conversation_id,
+            agents.first().map(|agent| agent.as_str()),
+            "send start",
         );
         let send_agents = agents.clone();
         let send_cwd = conv.cwd.clone();

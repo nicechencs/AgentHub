@@ -4,19 +4,20 @@ type: status
 status: current
 owner: maintainers
 audience: chat implementers
-updated: 2026-09-06
+updated: 2026-09-08
 ---
 
 # Claude Chat B3 探测结论
 
-承接 [统一体验方案](../proposals/chat-unified-experience.md)、[S0](chat-codex-s0.md) 与 [B2](chat-codex-b2.md)。本记录只回答：**当前 Claude 是否能以不大的改动复用 `ChatRuntime`（与 Codex app-server 同级的会话控制）**。结论是否定的；本批 **未** 把 Claude 空会话接到 runtime，也 **未** 伪造确认/补充按钮。
+承接 [统一体验方案](../proposals/chat-unified-experience.md)、[S0](chat-codex-s0.md) 与 [B2](chat-codex-b2.md)。本记录只回答：**当前 Claude 是否能以不大的改动复用持续聊天（`ChatRuntime`，后台会话控制）**。结论是否定的；本批 **未** 把 Claude 空会话接到 runtime，也 **未** 伪造确认/补充按钮。新空 Grok / Kiro 会话已经 enable 持续聊天，**不**在本否定结论范围内。
 
 ## 证据（仓库现状）
 
 | 路径 | 事实 |
 | --- | --- |
-| `crates/agenthub-core/src/services/chat_runtime/mod.rs` | `ChatRuntime` 明确为 **Codex app-server** 运行时；传输与 `model/list`、`turn/*`、approval 均绑定 Codex JSON-RPC |
-| `crates/agenthub-core/src/services/chat_runtime/store.rs` `enable_if_new` | 非 Codex 直接 `Unsupported("持续聊天目前只支持 Codex")`；有历史消息的会话保持 legacy |
+| `crates/agenthub-core/src/services/chat_runtime/store.rs` `is_runtime_chat_agent` | 仅 **Codex / Grok / Kiro**；Claude 不在其中 |
+| `crates/agenthub-core/src/services/chat_runtime/store.rs` `enable_if_new` | 非上述三家直接 `Unsupported("持续聊天目前只支持 Codex、Grok 和 Kiro")`；有历史消息的会话保持原发送方式 |
+| `crates/agenthub-core/src/services/chat_runtime/mod.rs` | Codex 路径仍绑定 app-server JSON-RPC（`model/list`、`turn/*`、approval）；Grok / Kiro 走 ACP 持续通道。Claude **没有**对等 driver |
 | `crates/agenthub-core/src/adapters/claude.rs` `build_run_spec` | Claude Chat 路径是 **`claude -p` + `--output-format stream-json`**（可选 `--resume`）；危险模式用 `--dangerously-skip-permissions`，**不是**交互式批准通道 |
 | 同文件 `capability(SessionResume)` | 标明「Chat 后续轮次走 print+resume」 |
 | `crates/agenthub-core/src/adapters/session_resume.rs` | Claude/Codex 均支持 print-resume；**不等于** app-server 式 reply/steer/cancel |

@@ -1470,6 +1470,121 @@ fn restore_uses_a_rotated_source_key_without_changing_the_local_bearer() {
     assert!(!format!("{restored:?}").contains("rotated-upstream-secret"));
 }
 
+fn seed_active_kimi_bridge(db: &Database, source_id: &str) -> AdapterProfile {
+    ProviderRepo::new(db.clone())
+        .create(&kimi_source(source_id, "upstream-membership-secret"))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service.prepare(&request(source_id)).unwrap();
+    create_projection(db, &prepared, 43121);
+    service.finalize(&prepared, 43121).unwrap()
+}
+
+#[test]
+fn restore_missing_source_is_unrestorable_and_stops_auto_start() {
+    let (_dir, db) = test_db();
+    let profile = seed_active_kimi_bridge(&db, "kimi-membership");
+    ProviderRepo::new(db.clone())
+        .delete("kimi-membership")
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+
+    let error = service
+        .resolve_restore_material(&profile.id)
+        .expect_err("deleted source must fail restore");
+    assert_eq!(error.code(), "adapter.bridge_source_missing");
+    let failure = service.restore_source_failure_from_error(&profile.id, &error);
+    assert_eq!(failure.kind, RestoreSourceFailureKind::SourceMissing);
+    assert_eq!(failure.kind.reason(), "source_missing");
+    assert_eq!(failure.error_code, "adapter.bridge_source_missing");
+    assert!(!failure.kind.recoverable());
+
+    let recorded = service
+        .record_restore_source_failure(&profile.id, failure.kind)
+        .unwrap();
+    assert!(!recorded.auto_start);
+    assert_eq!(recorded.status, AdapterProfileStatus::NeedsAttention);
+    assert_eq!(
+        recorded.last_error_code.as_deref(),
+        Some("adapter.bridge_source_missing")
+    );
+    assert!(service.list_auto_start_profiles().unwrap().is_empty());
+}
+
+#[test]
+fn restore_unusable_login_stays_retryable_with_stable_reason() {
+    let (_dir, db) = test_db();
+    let profile = seed_active_kimi_bridge(&db, "kimi-membership");
+    let mut source = ProviderRepo::new(db.clone())
+        .get_by_id("kimi-membership")
+        .unwrap()
+        .unwrap();
+    source.settings_config = json!({"apiKey": ""});
+    source.updated_at = "expired".into();
+    ProviderRepo::new(db.clone()).update(&source).unwrap();
+    let service = AdapterBridgeService::new(db);
+
+    let error = service
+        .resolve_restore_material(&profile.id)
+        .expect_err("empty source key must fail restore");
+    assert_eq!(error.code(), "adapter.bridge_source_expired");
+    let failure = service.restore_source_failure_from_error(&profile.id, &error);
+    assert_eq!(failure.kind, RestoreSourceFailureKind::LoginUnusable);
+    assert_eq!(failure.kind.reason(), "login_unusable");
+    assert_eq!(failure.error_code, "adapter.bridge_source_expired");
+    assert!(failure.kind.recoverable());
+
+    let recorded = service
+        .record_restore_source_failure(&profile.id, failure.kind)
+        .unwrap();
+    assert!(recorded.auto_start);
+    assert_eq!(recorded.status, AdapterProfileStatus::Active);
+    assert_eq!(
+        recorded.last_error_code.as_deref(),
+        Some("retryable:adapter.bridge_source_expired")
+    );
+    assert_eq!(
+        service
+            .list_auto_start_profiles()
+            .unwrap()
+            .into_iter()
+            .map(|item| item.id)
+            .collect::<Vec<_>>(),
+        vec![profile.id]
+    );
+}
+
+#[test]
+fn restore_corrupt_profile_without_port_is_unrestorable() {
+    let (_dir, db) = test_db();
+    let mut profile = seed_active_kimi_bridge(&db, "kimi-membership");
+    profile.local_port = None;
+    AdapterProfileRepo::new(db.clone())
+        .update(&profile)
+        .unwrap();
+    let service = AdapterBridgeService::new(db);
+
+    let error = service
+        .resolve_restore_material(&profile.id)
+        .expect_err("active profile without a port is corrupt");
+    assert_eq!(error.code(), "adapter.profile_invalid");
+    let failure = service.restore_source_failure_from_error(&profile.id, &error);
+    assert_eq!(failure.kind, RestoreSourceFailureKind::ProfileCorrupt);
+    assert_eq!(failure.kind.reason(), "profile_corrupt");
+    assert_eq!(failure.error_code, "adapter.profile_invalid");
+
+    let recorded = service
+        .record_restore_source_failure(&profile.id, failure.kind)
+        .unwrap();
+    assert!(!recorded.auto_start);
+    assert_eq!(recorded.status, AdapterProfileStatus::NeedsAttention);
+    assert_eq!(
+        recorded.last_error_code.as_deref(),
+        Some("adapter.profile_invalid")
+    );
+    assert!(service.list_auto_start_profiles().unwrap().is_empty());
+}
+
 #[test]
 fn malformed_generated_provider_version_fails_closed() {
     let (_dir, db) = test_db();

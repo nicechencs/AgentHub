@@ -8,7 +8,7 @@ export function ConnectFlowResultStep({ result }: { result: NonNullable<ConnectF
   const tone = result.kind === 'failed' ? 'danger' : result.refreshFailed ? 'warning' : 'success';
   return (
     <Notice tone={tone}>
-      <p className="text-sm font-medium text-primary">{message}</p>
+      <p className="text-body font-medium text-primary">{message}</p>
       {result.kind === 'applied' && result.isCurrent && !result.refreshFailed ? (
         <p className="mt-1">{t('connect.result.appliedCurrent')}</p>
       ) : null}

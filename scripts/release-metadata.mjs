@@ -253,6 +253,70 @@ function readReleaseMetadata(root = defaultRoot) {
   };
 }
 
+const BUMP_KINDS = new Set(['patch', 'minor', 'major']);
+
+/** Strip prerelease/build metadata so auto-bump always produces X.Y.Z. */
+function coreSemVerParts(version) {
+  const core = String(version).split('+')[0].split('-')[0];
+  const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(core);
+  if (!match) {
+    throw new Error(`Cannot auto-bump version '${version}' (need strict X.Y.Z core)`);
+  }
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+  };
+}
+
+function formatSemVer(parts) {
+  return `${parts.major}.${parts.minor}.${parts.patch}`;
+}
+
+/** Next X.Y.Z for patch/minor/major. Prerelease and build metadata are dropped. */
+function bumpSemVer(version, kind) {
+  if (!BUMP_KINDS.has(kind)) {
+    throw new Error(`Unknown bump kind: ${kind}`);
+  }
+  const parts = coreSemVerParts(version);
+  if (kind === 'patch') parts.patch += 1;
+  else if (kind === 'minor') {
+    parts.minor += 1;
+    parts.patch = 0;
+  } else {
+    parts.major += 1;
+    parts.minor = 0;
+    parts.patch = 0;
+  }
+  return formatSemVer(parts);
+}
+
+/**
+ * Walk patch versions until `isTaken(tag)` is false.
+ * `isTaken` receives `vX.Y.Z`. Fail closed if it throws.
+ */
+function nextFreeReleaseVersion(startVersion, isTaken, maxAttempts = 50) {
+  if (typeof isTaken !== 'function') {
+    throw new Error('isTaken callback is required');
+  }
+  const attempts = Number(maxAttempts);
+  if (!Number.isInteger(attempts) || attempts < 1) {
+    throw new Error('maxAttempts must be a positive integer');
+  }
+  let candidate = String(startVersion).replace(/^v/i, '');
+  assertStrictSemVer(candidate, 'release candidate');
+  for (let index = 0; index < attempts; index += 1) {
+    const tag = `v${candidate}`;
+    if (!isTaken(tag)) {
+      return candidate;
+    }
+    candidate = bumpSemVer(candidate, 'patch');
+  }
+  throw new Error(
+    `Could not find a free release version after ${attempts} attempts (last tried v${candidate}).`,
+  );
+}
+
 /** Propagate package.json version into Cargo.toml and Cargo.lock workspace entries. */
 function syncReleaseVersionFromPackageJson(root = defaultRoot, explicitVersion) {
   const packagePath = path.join(root, 'package.json');
@@ -372,8 +436,10 @@ export {
   assertReleaseChangelog,
   assertStrictSemVer,
   assertTagMatchesMetadata,
+  bumpSemVer,
   extractChangelogSection,
   isPrerelease,
+  nextFreeReleaseVersion,
   parseCliArgs,
   readCargoLockWorkspaceVersions,
   readCargoWorkspaceVersion,

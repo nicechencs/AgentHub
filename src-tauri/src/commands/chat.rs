@@ -1,10 +1,12 @@
 //! Chat Tauri commands — thin wrappers over agenthub-core ChatService.
 
-use agenthub_core::models::{AgentId, ChatEvent, ChatMessage, Conversation, LiveChatModel, MarkdownFilePreview};
-use agenthub_core::utils::markdown_preview::read_markdown_file_preview;
+use agenthub_core::models::{
+    AgentId, ChatEvent, ChatMessage, Conversation, LiveChatModel, MarkdownFilePreview,
+};
 use agenthub_core::services::chat_runtime::{
     RuntimeOptions, RuntimeReply, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings,
 };
+use agenthub_core::utils::markdown_preview::read_markdown_file_preview;
 use agenthub_core::AgentHub;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};

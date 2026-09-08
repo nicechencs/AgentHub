@@ -14,7 +14,7 @@ import {
 function SwitchPreviewFacts({ preview }: { preview: SwitchPreview }) {
   const { t } = useI18n();
   return (
-    <div className="flex flex-col gap-2.5 text-sm">
+    <div className="flex flex-col gap-2.5 text-body">
       <div className="flex items-start gap-2">
         <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
         <span className="text-secondary">{preview.backfillSummary}</span>
@@ -84,7 +84,7 @@ function SwitchNativePreview({
   }, [shouldFetch, option, previewNative, t]);
 
   const nativeHint = (
-    <p className="text-xs text-secondary">{t('connect.preview.nativeHint')}</p>
+    <p className="text-meta text-secondary">{t('connect.preview.nativeHint')}</p>
   );
   const switchPrompt = (
     <p>{t('connect.preview.switchTo', { label: label ?? '' })}</p>
@@ -92,11 +92,11 @@ function SwitchNativePreview({
 
   if (phase === 'loading') {
     return (
-      <div className="space-y-2 text-sm">
+      <div className="space-y-2 text-body">
         {switchPrompt}
         <Skeleton className="h-4 w-full" />
         <Skeleton className="h-4 w-3/4" />
-        <p className="text-xs text-muted">{t('connect.preview.previewing')}</p>
+        <p className="text-meta text-muted">{t('connect.preview.previewing')}</p>
         {nativeHint}
       </div>
     );
@@ -104,7 +104,7 @@ function SwitchNativePreview({
 
   if (phase === 'error') {
     return (
-      <div className="space-y-2 text-sm">
+      <div className="space-y-2 text-body">
         {switchPrompt}
         <Notice tone="danger">{previewError}</Notice>
         {nativeHint}
@@ -113,7 +113,7 @@ function SwitchNativePreview({
   }
 
   return (
-    <div className="space-y-2 text-sm">
+    <div className="space-y-2 text-body">
       {switchPrompt}
       {preview ? <SwitchPreviewFacts preview={preview} /> : null}
       {nativeHint}
@@ -159,7 +159,7 @@ export function ConnectFlowPreviewStep({
 
   const view = describePlanPreview(state.boundPlan.plan, t);
   return (
-    <div className="space-y-3 text-sm">
+    <div className="space-y-3 text-body">
       <div>
         {view.title ? (
           <div className="flex flex-wrap items-center gap-2">
@@ -177,7 +177,7 @@ export function ConnectFlowPreviewStep({
       ) : null}
       {state.lastError ? <Notice tone="danger">{state.lastError}</Notice> : null}
       {showImportHint ? (
-        <p className="text-xs text-muted">
+        <p className="text-meta text-muted">
           {t('connect.preview.importHintBefore')}
           <button type="button" className="underline" onClick={onGoImport}>{t('connect.preview.importHintLink')}</button>
           {t('connect.preview.importHintAfter')}

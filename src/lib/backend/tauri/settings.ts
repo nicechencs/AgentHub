@@ -1,5 +1,6 @@
 import { getVersion } from '@tauri-apps/api/app';
 import type { SettingsPort } from '@/lib/backend/contracts';
+import { sanitizeGuiLast4 } from '@/lib/backend/contracts/settings-port';
 import { UNKNOWN_APP_VERSION } from '@/lib/app-version';
 import { logger } from '@/lib/logger';
 import {
@@ -228,7 +229,7 @@ export async function logGuiEvent(
     await invoke('log_gui_event', {
       op: trimmed,
       agent: detail?.agent ?? null,
-      last4: detail?.last4 ?? null,
+      last4: sanitizeGuiLast4(detail?.last4) || null,
       profileId: detail?.profileId ?? null,
       route: detail?.route ?? null,
       code: detail?.code ?? null,

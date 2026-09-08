@@ -54,7 +54,7 @@ describe('translate / interpolate', () => {
       '用量每 30 分钟自动采集',
     );
     expect(translate('en', 'settings.data.usageAuto', { minutes: 15 })).toBe(
-      'Auto-collect usage every 15 min',
+      'Collect usage automatically every 15 min',
     );
   });
 
