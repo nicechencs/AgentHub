@@ -13,6 +13,10 @@ function source(name: string): string {
 }
 
 describe('routes board layout wiring', () => {
+  it('uses the same centered column as 总览', () => {
+    expect(source('index.tsx')).toContain('pageRhythm.overviewColumn');
+  });
+
   it('keeps fleet health on the page and usage charts in the usage section', () => {
     const page = source('index.tsx');
     expect(page).toContain('BoardUsageSection');
