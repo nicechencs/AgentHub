@@ -846,6 +846,7 @@ fn actor_loop(
         last_start_request: None,
         pending_prompt_id: None,
         permission_options: HashMap::new(),
+        file_change_items: HashMap::new(),
         cancel_deadline: None,
         session_model: None,
         session_effort: None,
@@ -874,6 +875,9 @@ struct ActorWorker {
     last_start_request: Option<String>,
     pending_prompt_id: Option<Value>,
     permission_options: HashMap<String, Vec<RuntimePermissionOption>>,
+    /// Paths from `item/started` fileChange items, keyed by item id.
+    /// `item/fileChange/requestApproval` does not include the file list.
+    file_change_items: HashMap<String, String>,
     cancel_deadline: Option<Instant>,
     session_model: Option<String>,
     session_effort: Option<String>,
@@ -2082,10 +2086,10 @@ impl ActorWorker {
                 Vec::new(),
                 acp_permission_options(params),
             ),
-            "item/fileChange/requestApproval" | "fileChangeApproval" => (
+            "item/fileChange/requestApproval" | "fileChangeApproval" | "applyPatchApproval" => (
                 RuntimeRequestKind::File,
                 "修改文件".to_string(),
-                redact_json_text(params.get("reason").or_else(|| params.get("grantRoot"))),
+                self.file_change_request_detail(params),
                 Vec::new(),
                 acp_permission_options(params),
             ),
@@ -2230,6 +2234,12 @@ impl ActorWorker {
                     )?;
                 }
             }
+            "item/started" | "item/completed" => {
+                self.remember_file_change_item(method, params.get("item"))?;
+            }
+            "item/fileChange/patchUpdated" => {
+                self.remember_file_change_patch(params);
+            }
             "turn/completed" => self.turn_completed(params)?,
             "error" => {
                 let message =
@@ -2372,6 +2382,73 @@ impl ActorWorker {
             },
             phase,
         )
+    }
+
+    fn file_change_request_detail(&self, params: &Value) -> String {
+        let from_params = optional_json_text(params.get("reason"))
+            .or_else(|| optional_json_text(params.get("grantRoot")))
+            .unwrap_or_default();
+        if !from_params.is_empty() {
+            return from_params;
+        }
+        if let Some(item_id) = params.get("itemId").and_then(Value::as_str) {
+            if let Some(cached) = self.file_change_items.get(item_id) {
+                if !cached.is_empty() {
+                    return cached.clone();
+                }
+            }
+        }
+        join_file_change_paths(&file_change_paths(params))
+    }
+
+    fn remember_file_change_item(&mut self, method: &str, item: Option<&Value>) -> Result<()> {
+        let Some(item) = item else {
+            return Ok(());
+        };
+        let ty = item.get("type").and_then(Value::as_str).unwrap_or_default();
+        if ty != "fileChange" && ty != "file_change" {
+            return Ok(());
+        }
+        let id = item.get("id").and_then(Value::as_str).unwrap_or_default();
+        let paths = file_change_paths(item);
+        if !id.is_empty() && !paths.is_empty() {
+            self.file_change_items
+                .insert(id.to_string(), join_file_change_paths(&paths));
+        }
+        let status = item
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or(if method == "item/completed" {
+                "completed"
+            } else {
+                "inProgress"
+            });
+        let path = paths.first().map(String::as_str).unwrap_or("file");
+        self.emit(
+            ChatEvent::AgentProcess {
+                turn: self.chat_turn.unwrap_or(0),
+                agent: AgentId::Codex,
+                step: ProcessStep::Tool {
+                    id: (!id.is_empty()).then(|| id.to_string()),
+                    name: "fileChange".into(),
+                    input: Some(json!({ "path": path })),
+                    status: status.into(),
+                    result: None,
+                },
+            },
+            self.live_phase(RuntimePhase::Running),
+        )
+    }
+
+    fn remember_file_change_patch(&mut self, params: &Value) {
+        let Some(id) = params.get("itemId").and_then(Value::as_str) else {
+            return;
+        };
+        let paths = file_change_paths(params);
+        if !paths.is_empty() {
+            self.file_change_items
+                .insert(id.to_string(), join_file_change_paths(&paths));
+        }
     }
 
     fn grok_session_update(&mut self, params: &Value) -> Result<()> {
@@ -2529,6 +2606,7 @@ impl ActorWorker {
         self.cancel_deadline = None;
         self.pending_prompt_id = None;
         self.permission_options.clear();
+        self.file_change_items.clear();
         self.session_allow_always = false;
         if let Some(message) = error {
             if let Err(learn_err) = self
@@ -2793,6 +2871,39 @@ fn redact_json_text(value: Option<&Value>) -> String {
         None => String::new(),
     };
     redact_text(&raw)
+}
+
+fn optional_json_text(value: Option<&Value>) -> Option<String> {
+    match value {
+        None | Some(Value::Null) => None,
+        Some(Value::String(text)) if text.trim().is_empty() => None,
+        other => {
+            let text = redact_json_text(other);
+            (!text.is_empty()).then_some(text)
+        }
+    }
+}
+
+fn file_change_paths(value: &Value) -> Vec<String> {
+    if let Some(rows) = value.get("changes").and_then(Value::as_array) {
+        return rows
+            .iter()
+            .filter_map(|row| row.get("path").and_then(Value::as_str))
+            .map(str::to_string)
+            .collect();
+    }
+    if let Some(map) = value.get("fileChanges").and_then(Value::as_object) {
+        return map.keys().cloned().collect();
+    }
+    Vec::new()
+}
+
+fn join_file_change_paths(paths: &[String]) -> String {
+    paths
+        .iter()
+        .map(|path| redact_text(path))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn parse_acp_permission_options(params: &Value) -> Vec<RuntimePermissionOption> {
