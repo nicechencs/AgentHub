@@ -4,10 +4,12 @@ import { CopyableFileName } from '@/components/shared/CopyableFileName';
 import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { agentDisplayName } from '@/config/agents';
 import type { PluginComponent, PluginEntry } from '@/lib/backend/contracts/plugin-types';
 import type { TranslateFn } from '@/lib/i18n';
+import { canUninstallListedPlugin } from './can-install';
 import { canToggleListedPlugin } from './can-toggle';
 import { pluginVersionView } from './plugin-version-model';
 
@@ -73,16 +75,19 @@ export function PluginDetailPanel({
   onClose,
   onLocate,
   onToggle,
+  onUninstall,
 }: {
   plugin: PluginEntry;
   width: number;
   onClose: () => void;
   onLocate: (path: string) => void;
   onToggle?: (plugin: PluginEntry, enabled: boolean) => Promise<void>;
+  onUninstall?: (plugin: PluginEntry) => void;
 }) {
   const { t } = useI18n();
   const [busy, setBusy] = useState<'enable' | 'disable' | null>(null);
   const canToggle = canToggleListedPlugin(plugin.agent) && Boolean(onToggle);
+  const canUninstall = canUninstallListedPlugin(plugin.agent) && Boolean(onUninstall);
   const enabled = plugin.enabled === true;
   const description = plugin.description?.trim() || undefined;
   const version = pluginVersionView(plugin);
@@ -138,6 +143,19 @@ export function PluginDetailPanel({
       description={description}
       showCancel={false}
       primary={actions}
+      danger={
+        canUninstall ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="dangerOutline"
+            disabled={busy !== null}
+            onClick={() => onUninstall?.(plugin)}
+          >
+            {t('plugins.uninstall.button')}
+          </Button>
+        ) : undefined
+      }
       width={width}
     >
       {canToggle ? (

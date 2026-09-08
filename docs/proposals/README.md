@@ -32,7 +32,7 @@ Every proposal in this directory has `Status: proposed`. A proposal may be resea
 | [接入 Kiro（kiro-cli）](agent-kiro.md) | proposed（半面已落地） | 检测/安装/登录与 ACP 新对话已落地；剩余边界见正文进度表。现行以 [STATUS](../STATUS.md) 为准。 |
 | [Kiro HTTP / 本机转发](agent-kiro-http.md) | proposed（切片已落地） | HTTP 多轮与本机路由已接线；剩余：企业 IdC/`profileArn`、上游逐块实时转发、官方 REST。 |
 | [国内自动更新镜像（R2）](update-mirror-r2.md) | proposed（0.4.9 已发） | App 镜像优先、GitHub 回退已在正式包；CF 资源仍由运维配置，见提案实施进度。 |
-| [plugin-management.md](plugin-management.md) | proposed（半面已落地） | `/plugins` 列表与 Claude/Grok 启停已落地；安装/卸载/更新仍提案。现行以 [STATUS](../STATUS.md) 为准。 |
+| [plugin-management.md](plugin-management.md) | proposed（半面已落地） | `/plugins` 列表与 Claude/Grok 启停、安装/卸载已落地；更新与 Codex/Pi 写入仍提案。现行以 [STATUS](../STATUS.md) 为准。 |
 | [read-model-owners.md](../architecture/read-model-owners.md) | proposed | Could O-15–O-19 be narrowed with unique mapper owners without changing wire DTO or splitting public types? |
 | [runtime-context-owners.md](../architecture/runtime-context-owners.md) | proposed | Could store reset/invalidation live in one runtime context (O-07) without changing plan/bind/switch? |
 | [form-sidebar-owners.md](../architecture/form-sidebar-owners.md) | proposed | Could GenericConfigForm and Sidebar split schema/nav/stats owners (O-23) without restyling chrome? |
