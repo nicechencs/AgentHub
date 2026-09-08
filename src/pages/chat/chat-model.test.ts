@@ -34,6 +34,8 @@ import {
   leftoverProviderIsCurrent,
   conversationResumeCommand,
   conversationAgentLine,
+  conversationRailHint,
+  conversationRailMarkColor,
   conversationTitle,
   cwdShortName,
   isBlankConversationDraft,
@@ -158,6 +160,43 @@ describe('conversationAgentLine', () => {
     expect(conversationAgentLine(['claude', 'pi', 'codex'])).toBe(
       `${agentDisplayName('claude')} +2`,
     );
+  });
+});
+
+describe('conversationRailHint', () => {
+  it('joins directory, time, and extra session facts without Agent names', () => {
+    expect(
+      conversationRailHint(
+        {
+          title: '',
+          agentIds: ['claude'],
+          cwd: 'D:\\demo',
+          updatedAt: new Date().toISOString(),
+          nativeSessionId: null,
+        },
+        t,
+      ),
+    ).toBe('D:\\demo · 刚刚 · 草稿');
+    expect(
+      conversationRailHint(
+        {
+          title: '修登录',
+          agentIds: ['claude'],
+          cwd: '',
+          updatedAt: new Date().toISOString(),
+          nativeSessionId: 'sess-1',
+        },
+        t,
+      ),
+    ).toBe('未设目录 · 刚刚 · 已关联官方会话 sess-1');
+  });
+});
+
+describe('conversationRailMarkColor', () => {
+  it('uses the first Agent brand, then the nav accent', () => {
+    expect(conversationRailMarkColor(['claude'])).toBe('var(--agent-claude)');
+    expect(conversationRailMarkColor(['claude', 'pi'])).toBe('var(--agent-claude)');
+    expect(conversationRailMarkColor([])).toBe('var(--accent)');
   });
 });
 
