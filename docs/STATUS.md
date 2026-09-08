@@ -19,7 +19,7 @@ updated: 2026-09-08
 - 当前内置适配包括 Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy、ZCode、DeepSeek Harness 和 Kiro。**Cursor Agent 适配器仍在代码中，但 dev 线通过 store-stamp 默认软隐藏**（Agents 管理页可取消隐藏）；待登录写入、路由目标与结构化输出等兼容问题修复后再重新开放。Kiro 管理 `kiro-cli`（检测/安装/登录指引/API Key）。新对话走 `kiro-cli acp` 持续通道：可点允许/拒绝、停止；生成时不能中途补充，可排队到下一轮。Kiro 在同一进程内续聊；进程退出后保留历史并提示新建对话，不静默创建空会话。模型、思考等级和权限在对话开始后固定，更换时需新建对话。旧 headless 对话保留原发送方式，不提供切到 ACP 的入口。本机登录或 `KIRO_API_KEY` 可用时，列模型与 Chat 打印路径可走 AgentHub 自有 HTTP（非官方 REST，不会改工作目录）；多轮经 `kiro-http:<conversationId>` 续同一对话，CLI `--resume-id` 为不同命名空间；已有 HTTP 会话失败时直接报错并保留会话，再发仍走同一条 HTTP 对话，不回退成新 CLI 会话。Kiro 本机路由按请求返回 JSON 或 SSE，目前先收齐上游回复再输出；使用连接池里当前登录的访问令牌，并带上该登录的区域、profile 与请求来源，不在本机路由里刷新。交互新对话仍可走 `kiro-cli acp`。不把编辑器当成已安装。
 - CLI 提供 doctor、env、agent、provider、account、skill、usage、backup、run、config 等命令；参数以 CLI 帮助和源码为准。
 - Chat 各家能力与 [Chat 与 Agent](concepts/chat-and-agents.md) 一致：
-  - **新空 Codex 会话**：已接入 app-server 持续聊天（持续回复、确认/回答、补充/停止、保存与同机重开）。B2 已落地会话模型/思考强度、最小操作菜单、本地图片附件与「用于本次」技能（不含计划模式与完整扩展管理）。macOS 上真实重开续聊已验证；带附件/模型的桌面端到端与其他平台尚未验收。见 [B1](archive/chat-codex-b1.md)、[B2](archive/chat-codex-b2.md)。
+  - **新空 Codex 会话**：已接入 app-server 持续聊天（持续回复、确认/回答、补充/停止、保存与同机重开）。B2 已落地会话模型/思考强度、最小操作菜单、本地图片附件与「用于本次」技能（不含计划模式与完整扩展管理）。Linux 真窗已验：图片、「用于本次」技能、模型×思考强度、停止、关窗续聊、命令批准允许/拒绝。macOS 重开续聊仍有效。Windows 未宣称。问答仍是 blocker（界面有问答控件，本轮 Codex Default / `on-request` 未发出问答协议）。文件审批缺真窗验收。见 [B1](archive/chat-codex-b1.md)、[B2](archive/chat-codex-b2.md)。
   - **新空 Grok 会话**：持续聊天（模型/思考、图片、后续轮排队），**不支持**为本轮指定「用于本次」技能，界面也不画可点的假按钮。真实窗口验收已通过。
   - **新空 Kiro 会话**：`kiro-cli acp` 持续通道（允许/拒绝、停止；生成时不能中途补充，可排队到下一轮）。真实窗口验收已通过（含 HTTP 多轮）。旧对话保留原发送方式。
   - **其余 Agent 与旧会话**：仍走原发送方式。
@@ -69,7 +69,7 @@ updated: 2026-09-08
 - Cursor 可以从本机已有登录导入到登录列表，但不能写回 Cursor。切换失败给出中文说明，不静默。保存第二张登录不会因同一把钥匙悄悄把第一张送进回收站。**dev 线默认软隐藏 Cursor Agent**（`agent_visibility.json` store-stamp）；兼容修复完成前不在侧栏、连接、Chat 等页面展示，Agents 管理页可取消隐藏。
 - 「使用官方服务」默认勾选不禁用智能识别。高级编辑器不回显明文钥匙。同一工具切换成功 toast 说明已写入本机配置；接到本机路由则仍说已切换。备份标题是「切换前自动 / 手动 + 时间」。设置里的安全备份默认在切换/导入时保留本机配置副本（可关闭自动堆积；当次切换仍留一份以便失败回滚）；卡片左右分栏，点开在右侧展示打码后的文件内容。
 - 官方登录等待页不显示内部状态或登录文件路径；失败时「重试」是主按钮。Windows 上子进程统一无窗启动。
-- GUI 日志：智能识别 `gui`/`recognize`，勾选官方 `gui`/`use_official`，删进回收站 `core.provider`/`recycle`，切换写本机路径 `core.provider`/`switch_write`。连接页切换、Dashboard 连接流程和路由页成功失败另记 `gui`/`switch`·`bind`·`route_*`·`bridge_*`；核心绑定记 `core.adapter`/`bind`·`unbind`。对话发送/停止记 `core.chat`/`send`·`stop`（失败为 `send_fail`/`stop_fail`）。只记 last4，不写明文钥匙。见 [日志参考](reference/logging.md)。
+- GUI 日志：智能识别 `gui`/`recognize`，勾选官方 `gui`/`use_official`，删进回收站 `core.provider`/`recycle`，切换写本机路径 `core.provider`/`switch_write`。连接页切换、Dashboard 连接流程和路由页成功失败另记 `gui`/`switch`·`bind`·`route_*`·`bridge_*`；核心绑定记 `core.adapter`/`bind`·`unbind`。对话发送/停止记 `core.chat`/`send`·`stop`（失败为 `send_fail`/`stop_fail`）。批准等待中点停止时，界面能停住，日志常记 `stop_fail` 且 `code=chat.runtime.transport`，不是干净的 `stop` 成功行。只记 last4，不写明文钥匙。见 [日志参考](reference/logging.md)。
 - 凭据落盘加密不在产品范围内；国产 OAuth 适配以及 OAuth 转 API 也不在产品范围内。它们不是当前 backlog。入池候选由「从连接同步」决定（连接页无「分享至连接池」行入口）：**所有 API Key 都可同步**（含 WorkBuddy / ZCode / Pi / Cursor 上配置的）；官方 OAuth 仅 Claude / Codex / Grok；**国产官方登录不能分享**。实现见 `isPoolShareableLogin`（`src/pages/connections/ticket-pool-import.ts`），已与产品决策对齐，不再按 Agent 白名单挡 API Key。见 [产品边界](decisions/product-boundaries.md)。
 
 ## 真源优先级

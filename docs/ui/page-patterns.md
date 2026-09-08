@@ -28,9 +28,9 @@ The application is organized by work and management, with Agent filtering inside
 | Manage | Connections | `/connections` | General login list; route-only entries with `home=route_pool` may be absent |
 | Manage | Sub2API | `/sub2api` | Sign in to a Sub2API site, manage API keys by group, and import usable keys into an installed Agent |
 | Manage | Routes | `/routes` | Local route runtime and the connection pool. May add/manage route-only official login / API Key; `/routes` opens the board; secondary nav: board / pool / tokens / activity |
-| Manage | Settings | `/settings` | Preferences, local device, backups, and about |
+| Manage | Settings | `/settings` | Preferences, Features, This computer, backups, and about |
 
-New installs hide the **Plugins** and **Sub2API** sidebar entries (`pluginsNavVisible` and `sub2apiNavVisible` default off). **Routes** defaults **on** (`routesNavVisible` default on) and can be hidden in Preferences. Turning a setting on shows its entry; the pages stay reachable at `/routes`, `/plugins`, and `/sub2api`. MCP stays in the workspace nav. The sidebar marks **Plugins** as in development; MCP no longer has that mark. Routes and Sub2API are preference-gated without that mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / uninstall / update for plugin packs is still a [proposal](../proposals/plugin-management.md). The current page lists installed packs for Claude, Grok, and Pi; Claude and Grok can enable or disable. There is no install button.
+New installs hide the **Plugins** and **Sub2API** sidebar entries (`pluginsNavVisible` and `sub2apiNavVisible` default off). **Routes** defaults **on** (`routesNavVisible` default on) and can be hidden in Settings → Features. Turning a setting on shows its entry; the pages stay reachable at `/routes`, `/plugins`, and `/sub2api`. MCP stays in the workspace nav. The sidebar marks **Plugins** as in development; MCP no longer has that mark. Routes and Sub2API are Features-gated without that mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / uninstall / update for plugin packs is still a [proposal](../proposals/plugin-management.md). The current page lists installed packs for Claude, Grok, and Pi; Claude and Grok can enable or disable. There is no install button.
 
 The compatibility paths `/adapter` and `/router` replace-navigate to `/routes`. They are recovery paths for existing links, not current navigation labels.
 
@@ -43,16 +43,18 @@ Routes nested paths (secondary nav):
 | Local tokens | `/routes/tokens` | Entry keys per endpoint; copy or write into the matching Agent. Keys appear after the local gateway starts. |
 | Activity | `/routes/activity` | Cross-route recent request feed |
 
-Entering any `/routes*` path shows a shell-level secondary nav panel. Clicking Routes in the primary sidebar collapses that sidebar when **Collapse sidebar on Routes** is on (writes `agenthub:sidebar-collapsed`; default on). Other primary items, refresh, secondary-nav clicks, and leaving the routes area do not auto-expand or auto-collapse it. The setting is in Preferences → Sidebar. The secondary nav top-right control collapses that nav (writes `agenthub:routes-nav-collapsed`). Right-click offers expand when collapsed and collapse when expanded. While the URL is inside `/routes*`, the primary sidebar still shows the Routes entry even if `routesNavVisible` is off, so the active item remains visible; that preference itself is unchanged.
+Entering any `/routes*` path shows a shell-level secondary nav panel. Clicking Routes in the primary sidebar collapses that sidebar when **Collapse sidebar on Routes** is on (writes `agenthub:sidebar-collapsed`; default on). Other primary items, refresh, secondary-nav clicks, and leaving the routes area do not auto-expand or auto-collapse it. The setting is in Settings → Features. The secondary nav top-right control collapses that nav (writes `agenthub:routes-nav-collapsed`). Right-click offers expand when collapsed and collapse when expanded. While the URL is inside `/routes*`, the primary sidebar still shows the Routes entry even if `routesNavVisible` is off, so the active item remains visible; that preference itself is unchanged.
 
 ## 2. Application shell
 
+The window bottom bar (`StatusBar`) is application chrome: installed Agents on the left, local-forward status on the right (click goes to the Routes board). It is not a page top-bar control.
+
 ### 2.1 Standard shell
 
-The standard shell has a 12px canvas gutter (`pageEdge.canvas`), a rounded sidebar panel, a rounded main panel, and a top bar. The main column uses the edge-column pattern with a shared horizontal inset (`pageEdge.inset`, currently 12px). Dashboard and the Routes board use `pageRhythm.overviewColumn`. Non-chat pages put the page title on the left of the top bar as one line: the page name in the title size and primary color, then a short description in the meta size and secondary color. The notification control stays on the right. Chat has no top bar and owns its session name. A standard page is composed in this order:
+The standard shell has a 12px canvas gutter (`pageEdge.canvas`), a rounded sidebar panel, a rounded main panel, and a top bar. The main column uses the edge-column pattern with a shared horizontal inset (`pageEdge.inset`, currently 12px). Dashboard and the Routes board use `pageRhythm.overviewColumn`. Non-chat pages put the page title on the left of the top bar as one line: the page name in the title size and primary color, then a short description in the meta size and secondary color. Help (question mark) and Feedback stay on the right. There is no in-app notification bell. Chat has no top bar and owns its session name. A standard page is composed in this order:
 
 ```text
-TopBar (title + metadata | notification)
+TopBar (title + metadata | help + feedback)
   -> chrome / chromeRow (tabs, filters, Agent strip; page commands on the right of the same row)
   -> lead (environment status or one Notice)
   -> stack / blocks (main content)
@@ -328,20 +330,22 @@ Sub2API is a separate site-management workbench, not a Routes subpage or a repla
 
 Chat is a one-conversation, one-Agent workbench with a session rail, transcript, process panel, and composer.
 
-- The rail supports new conversation, search by title and working directory, day grouping, selection, rename, and delete confirmation.
+- The rail supports new conversation, search by title and working directory, day grouping, selection, rename, and delete confirmation. The rail width is dragged from the separator and remembered (`agenthub:chat-rail-width`).
 - The current conversation header exposes Agent identity, working directory, automatic-approval state, and connection context. A missing working directory is a blocker, not an automatic modal.
 - A conversation has one active Agent. Hidden or unauthorized Agents remain visible with a reason but cannot be selected for a new send.
 - The composer validates blockers in order: hidden Agent, environment not ready, missing authorization, unknown status, then missing working directory. It renders only the first blocker with a recovery action. Sending is isolated per conversation; several conversations may generate at once.
-- The send button is the page's one accent action. Sending changes it to a stop action. Retry creates a new turn using the same validation path.
+- The send button is the page's one accent action. While generating, Send stays available: mid-turn inject when the Agent supports it, otherwise queue for after this turn. Stop is a separate control. Retry creates a new turn using the same validation path.
+- Approval cards offer Allow / Deny; when the request can honor it, Always allow. Codex remembers that session choice.
 - Streaming process details use a compact summary and an expandable timeline. Commands, stderr, and exit codes stay in a secondary runtime-details disclosure.
 - Switching conversations does not cancel the active operation. Codex runtime keeps per-conversation process state and a replay cursor; its snapshot supplies the authoritative current reply. Legacy sends retain their existing in-memory process behavior.
 - Copy is available for completed user/Agent messages. Running messages do not show copy or retry.
 
 ### Features (Chat)
 
-- Session rail: new conversation, search by title/cwd, day grouping, rename, delete confirmation.
+- Session rail: new conversation, search by title/cwd, day grouping, rename, delete confirmation; drag-resize remembered in `agenthub:chat-rail-width`.
 - Header: Agent identity, working directory, automatic-approval state, connection context.
-- Composer blocker order: hidden Agent → environment not ready → missing authorization → unknown status → missing working directory; send is the one accent action (becomes stop); retry creates a new turn. Several conversations may generate at once.
+- Composer blocker order: hidden Agent → environment not ready → missing authorization → unknown status → missing working directory; send is the one accent action and stays available while generating (inject or queue); Stop is separate; retry creates a new turn. Several conversations may generate at once.
+- Approval cards: Allow / Deny; Always allow when the request can honor it. Codex session remember of that choice is shipped.
 - Streaming process panel with expandable timeline; copy for completed messages only.
 - New Codex conversations use durable app-server snapshots and show actual approval/question requests as controls. Replies and stop target the exact run; snapshot failure does not fall back to legacy send. Codex B2 is in: session model/effort, actions menu, localImage attachments, and skills/plugins discovery for this turn (no plan mode). New Grok conversations are continuous (model/thinking, images, queued follow-ups); **Unsupported**: choosing a skill “for this turn” (no clickable fake control). New Kiro conversations use the ACP continuous channel; old Kiro chats keep the original send path. See [B2](../archive/chat-codex-b2.md) and [STATUS](../STATUS.md).
 
@@ -363,7 +367,7 @@ Skills, Projects, and Plugins are full-height workbenches with a left inventory 
 ### Skills
 
 - User skills, Project skills, and Market are page-level tabs. Filtering and Agent scope stay in the chrome row.
-- User skills list the shared library plus this-tool-only skills, with the enablement matrix.
+- User skills list the shared library plus this-tool-only skills, with the enablement matrix. Install accepts a folder, a zip via the system file dialog, or a git URL (must contain `SKILL.md`).
 - Project skills use a dropdown of workspaces already identified on the Projects page. After a project is selected, skills can be added or deleted for that workspace (canonical folder `.agents/skills`).
 - A skill name opens the preview (`ListNameButton`); Enter on the name is equivalent. If the preview is already open, clicking empty row area on the library/project tables switches it; a closed preview stays closed. Checkbox selection is only for batch operations and never opens the preview.
 - The preview identity is separate from checkbox selection. It remains open when filters hide the selected skill, with a short source label in the header.
@@ -374,6 +378,7 @@ Skills, Projects, and Plugins are full-height workbenches with a left inventory 
 
 - Tabs: User skills (shared library + this-tool), Project skills (workspace dropdown from Projects), Market.
 - Enablement matrix; name opens preview; checkbox selection only for batch ops; paths in preview footer / open-directory.
+- Install source: folder, zip (system file dialog), or git.
 
 ### Agent touchpoints (Skills)
 

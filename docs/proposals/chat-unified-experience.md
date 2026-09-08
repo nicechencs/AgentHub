@@ -25,7 +25,9 @@ Status: proposed。用户已认可“统一界面、各家分别对接、先 Cod
 
 ## 已核实的起点
 
-源码基线：`dev`，commit `104d2e6de8272dc58ee94d1f442c97f8bafaceae`，2026-09-05 静态检查。后续开发先看实际 diff；此基线不是依赖锁定版本。
+**2026-09-05 历史快照**，不是当前产品能力。现行持续聊天、Linux 真窗验收与剩余 blocker 以 [STATUS](../STATUS.md) 为准；概念说明见 [Chat 与 Agent](../concepts/chat-and-agents.md)。
+
+源码基线：`dev`，commit `104d2e6de8272dc58ee94d1f442c97f8bafaceae`，2026-09-05 静态检查。后续开发先看实际 diff；此基线不是依赖锁定版本。下表各行冻结在该日，不要当现行能力阅读（例如当时写「Chat 原生续接仅支持 Claude/Codex」，现行 `store.rs` 允许 Codex / Grok / Kiro）。
 
 | 领域 | 当前证据 | 对方案的影响 |
 | --- | --- | --- |
@@ -37,7 +39,7 @@ Status: proposed。用户已认可“统一界面、各家分别对接、先 Cod
 | ZCode | `crates/agenthub-core/src/adapters/zcode.rs` | 未验证结构化流、非交互确认与 Chat 原生续接；桌面安装不等于可聊天 |
 | 存储 | `crates/agenthub-core/src/models/chat.rs`、`storage/chat_repo.rs` | 已有文字记录；需增量保存执行状态和过程 |
 
-上表是 2026-09-05 静态检查基线，不是当前产品能力。现行持续聊天见本文交接状态与 [STATUS](../STATUS.md)；概念说明见 [Chat 与 Agent](../concepts/chat-and-agents.md)。实施阶段须按源码更新对应说明，不把本文目标提前写成当前能力。
+上表保持为 2026-09-05 静态检查快照。实施阶段须按源码更新交接状态与 [STATUS](../STATUS.md)，不把本文目标提前写成当前能力，也不把本表改写成现行矩阵。
 
 ## 用户操作约定
 
@@ -334,10 +336,10 @@ B1 首次实现采用后台持有会话、SQLite 保存事件、页面按 sequen
 | S4（B3 Claude） | 探测为否定，**未**把 Claude 接到持续聊天（ChatRuntime） | 见 [Claude B3](../archive/chat-claude-b3.md)；另开批次前不接线、不造假确认 |
 | S5 | ZCode 与其余未接线 Agent 仍待验证 | 验证一家再开放一家；不把已接线的 Grok / Kiro 算进未完成 |
 | 菜单/模型/扩展 | Codex B2 已按真实能力落地；Grok 无「用于本次」；完整插件安装管理仍未做 | 完整插件管理后续单独定范围（A17） |
-| 兼容版本 | Codex 0.153.0 / macOS arm64 已有协议与真实重开续聊 | 带附件/模型的桌面端到端与其他平台仍待验收 |
-| Claude 使用方式 | 官方边界已记录；B3 探测否定，继续 print+resume | 不把 Claude 写成已接 runtime |
+| 兼容版本 | Codex 0.153.0 / macOS arm64 已有协议与真实重开续聊；Linux 真窗已验图片、「用于本次」技能、模型×思考强度、停止、关窗续聊、命令批准允许/拒绝 | Windows 未宣称。问答仍是 blocker |
+| Claude 使用方式 | 官方边界已记录；B3 探测否定，继续 print+resume | 不把 Claude 写成已接 runtime；另开批次前不接线 |
 | ZCode 接入 | 尚无可承诺的公开接口证据 | S5 单独验证，不预设日期 |
-| 同机恢复 | Codex 同机重开已落地（macOS 已验证） | Windows/Linux 与其余 Agent 不从 Codex 成功类推 |
+| 同机恢复 | Codex 同机重开已落地（macOS 重开续聊有效；Linux 关窗续聊已验） | Windows 与其余 Agent 不从 Codex 成功类推 |
 | 跨电脑原生聊天迁移 | 不属于当前首版 | 有独立需求时再定范围 |
 
 每次接手追加以下记录，不将“计划跑”填成“已通过”：
