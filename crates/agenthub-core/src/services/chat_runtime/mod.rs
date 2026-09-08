@@ -14,7 +14,7 @@ pub(crate) use store::{is_acp_runtime_agent, is_runtime_chat_agent};
 
 pub use types::{
     RuntimeDecision, RuntimeEvent, RuntimeExtensionItem, RuntimeExtensionKind, RuntimeLocalImage,
-    RuntimeModelOption, RuntimeOptions, RuntimePhase, RuntimePermissionOption, RuntimeQuestion,
+    RuntimeModelOption, RuntimeOptions, RuntimePermissionOption, RuntimePhase, RuntimeQuestion,
     RuntimeQuestionOption, RuntimeReply, RuntimeRequest, RuntimeRequestKind, RuntimeSkillRef,
     RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings,
 };
@@ -1844,7 +1844,7 @@ impl ActorWorker {
             return Ok(());
         }
         let (Some(thread_id), Some(turn_id)) = (thread_id, turn_id) else {
-            return self.cancel_failed(AppError::message(
+            return self.complete_cancel(AppError::message(
                 "chat.runtime",
                 "Codex turn is unavailable",
             ));
@@ -1864,10 +1864,10 @@ impl ActorWorker {
                         AppError::message("chat.runtime.interrupted", "Codex process stopped")
                     })?
                     .respond(server_id, response)
-                    .map_err(transport_error)
+                    .map_err(map_transport)
             });
             if let Err(error) = response {
-                return self.cancel_failed(error);
+                return self.complete_cancel(error);
             }
         }
         let interrupt_result = self
@@ -1878,7 +1878,7 @@ impl ActorWorker {
                 if is_acp_runtime_agent(Some(self.agent)) {
                     transport
                         .notify("session/cancel", Some(json!({"sessionId": thread_id})))
-                        .map_err(transport_error)
+                        .map_err(map_transport)
                 } else {
                     transport
                         .request(
@@ -1887,20 +1887,21 @@ impl ActorWorker {
                             CODEX_REQUEST_TIMEOUT,
                         )
                         .map(|_| ())
-                        .map_err(transport_error)
+                        .map_err(map_transport)
                 }
             });
         match interrupt_result {
-            Ok(_) if is_acp_runtime_agent(Some(self.agent)) => {
+            Ok(_) if is_acp_runtime_agent(Some(self.agent)) && !self.aborted() => {
                 self.cancel_deadline = Some(Instant::now() + ACP_CANCEL_DEADLINE);
                 self.log_stop_ok();
                 Ok(())
             }
+            Ok(_) if self.aborted() => self.finish_user_stop(),
             Ok(_) => {
                 self.log_stop_ok();
                 Ok(())
             }
-            Err(error) => self.cancel_failed(error),
+            Err(error) => self.complete_cancel(error),
         }
     }
 
@@ -2476,6 +2477,33 @@ impl ActorWorker {
         Err(error)
     }
 
+    /// User Stop while generating or waiting for approval. The abort flag is
+    /// set before the cancel command, so `turn/interrupt` often returns
+    /// `Interrupted` / `chat.runtime.transport`. That is a successful stop.
+    fn complete_cancel(&mut self, error: AppError) -> Result<()> {
+        if self.aborted() || is_user_stop_error(&error) {
+            self.finish_user_stop()
+        } else {
+            self.cancel_failed(error)
+        }
+    }
+
+    fn finish_user_stop(&mut self) -> Result<()> {
+        self.terminalize(
+            ChatMessageStatus::Cancelled,
+            None,
+            RuntimePhase::Cancelled,
+            false,
+            true,
+        )?;
+        if let Some(transport) = self.transport.as_mut() {
+            transport.shutdown();
+        }
+        self.transport = None;
+        self.log_stop_ok();
+        Ok(())
+    }
+
     fn terminalize(
         &mut self,
         status: ChatMessageStatus,
@@ -2890,6 +2918,13 @@ fn log_and_return_stop_fail(conversation_id: &str, error: AppError) -> AppError 
 
 fn is_cancelled_error(error: &AppError) -> bool {
     error.code() == "chat.runtime.cancelled"
+}
+
+fn is_user_stop_error(error: &AppError) -> bool {
+    matches!(
+        error.code(),
+        "chat.runtime.cancelled" | "chat.runtime.interrupted"
+    )
 }
 
 fn resolve_codex_program(
