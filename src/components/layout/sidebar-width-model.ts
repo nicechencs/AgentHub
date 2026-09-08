@@ -11,10 +11,10 @@ export type NavWidthPolicy = {
   stepLarge: number;
 };
 
-/** Matches the previous expanded primary rail (`w-56`). */
+/** Expanded default matches the previous primary rail (`w-56`); collapsed is a 48px icon rail. */
 export const PRIMARY_NAV_WIDTH = {
   defaultWidth: 224,
-  collapsedWidth: 56,
+  collapsedWidth: 48,
   minRatio: 0.12,
   maxRatio: 0.28,
   minPx: 176,

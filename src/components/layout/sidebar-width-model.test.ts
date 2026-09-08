@@ -4,8 +4,10 @@ import {
   clampNavWidth,
   clampSidebarWidth,
   persistSidebarWidth,
+  PRIMARY_NAV_WIDTH,
   readStoredSidebarWidth,
   ROUTES_NAV_WIDTH,
+  SIDEBAR_WIDTH_COLLAPSED,
   SIDEBAR_WIDTH_DEFAULT,
   SIDEBAR_WIDTH_MAX_RATIO,
   SIDEBAR_WIDTH_MIN_CAP,
@@ -13,6 +15,14 @@ import {
   SIDEBAR_WIDTH_MIN_RATIO,
   sidebarWidthBounds,
 } from './sidebar-width-model';
+
+describe('PRIMARY_NAV_WIDTH', () => {
+  it('collapses to a 48px icon rail', () => {
+    expect(PRIMARY_NAV_WIDTH.collapsedWidth).toBe(48);
+    expect(SIDEBAR_WIDTH_COLLAPSED).toBe(48);
+    expect(ROUTES_NAV_WIDTH.collapsedWidth).toBe(48);
+  });
+});
 
 describe('sidebarWidthBounds', () => {
   it('uses the pixel floor when 12% of a narrow window would crush labels', () => {

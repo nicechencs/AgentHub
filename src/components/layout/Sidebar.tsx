@@ -37,7 +37,7 @@ import { useI18n } from '@/components/shared/LanguageProvider';
 import { useStoredIdOrder } from '@/components/shared/use-stored-id-order';
 import { StorageKey } from '@/lib/ui-preferences';
 import { isRoutesAreaPath } from '@/pages/routes/routes-nav-items';
-const NAV_ICON_SIZE = 18;
+const NAV_ICON_SIZE = 20;
 const MENU_ICON_CLASS = 'h-3.5 w-3.5';
 
 /** 右键菜单图标：与折叠按钮同款 PanelLeft 图标 */
@@ -74,7 +74,10 @@ function SidebarNavLink({
       to={to}
       end={to === '/'}
       aria-label={collapsed || tip || inDevelopment ? a11yLabel : undefined}
-      className="block rounded-btn focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30"
+      className={cn(
+        'block focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30',
+        !collapsed && 'rounded-btn',
+      )}
       onClick={() => {
         const next = collapsedAfterPrimaryNavClick({
           itemTo: to,
@@ -274,14 +277,15 @@ export function Sidebar() {
 
   const itemClass = (isActive: boolean) =>
     cn(
-      'group relative flex h-8 w-full items-center rounded-btn text-body transition-colors duration-150',
-      collapsed ? 'justify-center' : 'gap-2.5 px-2.5',
+      'group relative flex w-full items-center text-body transition-colors duration-150',
+      collapsed ? 'h-9 justify-center' : 'h-7 gap-2.5 rounded-btn px-2.5',
       isActive
-        ? 'bg-accent-subtle font-medium text-primary [&_svg]:text-accent'
+        ? 'font-medium text-primary [&_svg]:text-accent'
         : 'text-secondary hover:bg-hover hover:text-primary',
+      isActive && !collapsed && 'bg-accent-subtle',
       isActive &&
-        !collapsed &&
-        'before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-accent',
+        'before:absolute before:left-0 before:w-0.5 before:rounded-full before:bg-accent',
+      isActive && (collapsed ? 'before:inset-y-2' : 'before:inset-y-1.5'),
     );
 
   const { stored: agentCatalogOrder } = useStoredIdOrder(StorageKey.agentsCatalogOrder);
@@ -342,7 +346,7 @@ export function Sidebar() {
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-btn">
                   <AppLogo size={20} className="h-5 w-5" />
                 </span>
-                <span className="truncate text-sm font-semibold tracking-tight">AgentHub</span>
+                <span className="truncate text-body font-medium tracking-tight">AgentHub</span>
               </div>
               <Hint label={t('nav.collapseSidebar')} side="right">
                 <button
@@ -362,7 +366,7 @@ export function Sidebar() {
         <nav
           className={cn(
             'flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain pt-1',
-            collapsed ? 'px-1.5' : 'px-2',
+            collapsed ? 'px-0' : 'px-2',
           )}
         >
           <NavGroup label={t('nav.workspace')} collapsed={collapsed}>

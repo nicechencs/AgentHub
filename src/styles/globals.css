@@ -23,7 +23,7 @@ body {
   line-height: var(--font-body-leading, 1.57);
 }
 
-/* Lucide: 16/14px chrome uses 1.75; 18px nav sets data-icon="nav". */
+/* Lucide: 16/14px chrome uses 1.75; 20px nav sets data-icon="nav". */
 svg.lucide:not([data-icon='nav']) {
   stroke-width: 1.75;
 }

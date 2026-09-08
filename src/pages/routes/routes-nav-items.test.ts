@@ -44,11 +44,12 @@ describe('routes-nav-items', () => {
     expect(ROUTES_NAV_ITEMS.find((item) => item.to === '/routes/pool')?.icon).toBe(Network);
   });
 
-  it('keeps secondary-nav labels readable while accenting 18px icons', () => {
+  it('keeps secondary-nav labels readable while accenting 20px icons', () => {
     const nav = readFileSync(path.join(dir, 'RoutesNav.tsx'), 'utf8');
-    expect(nav).toContain('bg-accent-subtle font-medium text-primary [&_svg]:text-accent');
+    expect(nav).toContain('font-medium text-primary [&_svg]:text-accent');
     expect(nav).toContain('hover:bg-hover hover:text-primary');
-    expect(nav).toContain('const NAV_ICON_SIZE = 18;');
+    expect(nav).toContain('bg-accent-subtle');
+    expect(nav).toContain('const NAV_ICON_SIZE = 20;');
     expect(nav).toContain('size={NAV_ICON_SIZE}');
     expect(nav).toContain('strokeWidth={1.6}');
     expect(nav).toContain('data-icon="nav"');

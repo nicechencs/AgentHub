@@ -17,7 +17,7 @@ import {
   type RoutesNavItem,
 } from '@/pages/routes/routes-nav-items';
 
-const NAV_ICON_SIZE = 18;
+const NAV_ICON_SIZE = 20;
 const LG_QUERY = '(min-width: 1024px)';
 
 function useIsLgUp() {
@@ -53,7 +53,10 @@ function RoutesNavLink({
     <NavLink
       to={item.to}
       aria-label={compact || inDevelopment ? a11yLabel : undefined}
-      className="block rounded-btn focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30"
+      className={cn(
+        'block focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30',
+        !compact && 'rounded-btn',
+      )}
     >
       {({ isActive }) => {
         const node = (
@@ -89,7 +92,7 @@ function RoutesNavLink({
 }
 
 /**
- * 路由区二级导航：shell 级第三块圆角面板。
+ * 路由区二级导航：与一级侧栏并列的贴边 chrome。
  * 由 App 在 `/routes*` 时条件渲染，与一级侧栏并列。
  */
 export function RoutesNav() {
@@ -105,10 +108,15 @@ export function RoutesNav() {
 
   const itemClass = (isActive: boolean) =>
     cn(
-      'group relative flex h-8 w-full items-center gap-2.5 rounded-btn px-2.5 text-body transition-colors duration-150',
+      'group relative flex w-full items-center text-body transition-colors duration-150',
+      isLg
+        ? 'h-7 gap-2.5 rounded-btn px-2.5'
+        : 'h-9 justify-center px-0',
       isActive
-        ? 'bg-accent-subtle font-medium text-primary [&_svg]:text-accent before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-accent'
+        ? 'font-medium text-primary [&_svg]:text-accent before:absolute before:left-0 before:w-0.5 before:rounded-full before:bg-accent'
         : 'text-secondary hover:bg-hover hover:text-primary',
+      isActive && isLg && 'bg-accent-subtle before:inset-y-1.5',
+      isActive && !isLg && 'before:inset-y-2',
     );
 
   return (
@@ -135,7 +143,7 @@ export function RoutesNav() {
           </button>
         </Hint>
         {isLg && (
-          <span className="min-w-0 truncate text-sm font-semibold tracking-tight">
+          <span className="min-w-0 truncate text-body font-medium tracking-tight">
             {t('routes.nav.title')}
           </span>
         )}
@@ -143,7 +151,7 @@ export function RoutesNav() {
 
       <nav
         aria-label={t('routes.nav.aria')}
-        className={cn('flex min-h-0 flex-1 flex-col gap-0.5 pt-1', isLg ? 'px-2' : 'px-1.5')}
+        className={cn('flex min-h-0 flex-1 flex-col gap-0.5 pt-1', isLg ? 'px-2' : 'px-0')}
       >
         {navItems.map((item) => (
           <RoutesNavLink
