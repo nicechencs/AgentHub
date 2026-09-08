@@ -434,21 +434,21 @@ function TicketDetailBody({
           <div className="mt-1.5 flex flex-col gap-1.5">
             {has7d ? (
               <QuotaBar
-                label="7d"
+                label={t('connections.list.quota7dUsed')}
                 pct={extras?.quota7dPct}
                 resetIn={extras?.quota7dResetIn}
               />
             ) : null}
             {has5h ? (
               <QuotaBar
-                label="5h"
+                label={t('connections.list.quota5hUsed')}
                 pct={extras?.quota5hPct}
                 resetIn={extras?.quotaResetIn}
               />
             ) : null}
             {hasCredits ? (
               <QuotaBar
-                label={t('connections.list.credits')}
+                label={t('connections.list.creditsUsed')}
                 pct={creditPct}
                 resetIn={extras?.creditResetIn}
               />
@@ -671,7 +671,7 @@ function TicketRow({
       </TableCell>
       <TableCell data-col="status" className="whitespace-nowrap">
         {authChip ? (
-          <Badge variant="default" className={authChip.mono ? 'font-mono' : undefined}>
+          <Badge variant={authChip.tone === 'warning' ? 'warning' : 'default'}>
             {authChip.label}
           </Badge>
         ) : (
@@ -689,10 +689,14 @@ function TicketRow({
         {has7d || has5h || hasCredits ? (
           <div className="flex min-w-0 flex-col gap-1">
             {hasCredits ? (
-              <QuotaBar label={t('connections.list.credits')} pct={creditPct} compact />
+              <QuotaBar label={t('connections.list.creditsUsed')} pct={creditPct} compact />
             ) : null}
-            {has7d ? <QuotaBar label="7d" pct={extras?.quota7dPct} compact /> : null}
-            {has5h ? <QuotaBar label="5h" pct={extras?.quota5hPct} compact /> : null}
+            {has7d ? (
+              <QuotaBar label={t('connections.list.quota7dUsed')} pct={extras?.quota7dPct} compact />
+            ) : null}
+            {has5h ? (
+              <QuotaBar label={t('connections.list.quota5hUsed')} pct={extras?.quota5hPct} compact />
+            ) : null}
           </div>
         ) : tokenUsage ? (
           <span className="text-meta text-secondary tabular-nums">{tokenUsage}</span>

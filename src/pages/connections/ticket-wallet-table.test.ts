@@ -59,20 +59,22 @@ describe('ticket wallet table columns', () => {
       /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/,
     );
     expect(ticketWalletQuotaParts(null)).toEqual([]);
-    expect(ticketWalletQuotaParts({ quota7dPct: 22 })).toEqual(['7d 22%']);
+    expect(ticketWalletQuotaParts({ quota7dPct: 22 })).toEqual(['7 天已用 22%']);
     expect(ticketWalletQuotaParts({ creditUsed: 0.29, creditLimit: 50 })).toEqual([
-      '积分 0.29 / 50',
+      '积分已用 0.29 / 50',
     ]);
     expect(ticketWalletQuotaParts({ quota7dPct: 89, quota5hPct: 12 })).toEqual([
-      '7d 89%',
-      '5h 12%',
+      '7 天已用 89%',
+      '5 小时已用 12%',
     ]);
     expect(ticketWalletUsageParts({ quota7dPct: 22, tokenInput: 100, tokenOutput: 9 })).toEqual([
-      '7d 22%',
+      '7 天已用 22%',
     ]);
-    expect(ticketWalletUsageParts({ tokenInput: 12, tokenOutput: 3 })).toEqual(['12 / 3']);
+    expect(ticketWalletUsageParts({ tokenInput: 12, tokenOutput: 3 })).toEqual([
+      '输入 12 · 输出 3',
+    ]);
     expect(ticketWalletUsageParts({ tokenInput: 1_234_567, tokenOutput: 89_000 })).toEqual([
-      '1.2M / 89.0K',
+      '输入 1.2M · 输出 89.0K',
     ]);
     expect(ticketWalletUsageParts(null)).toEqual([]);
   });
