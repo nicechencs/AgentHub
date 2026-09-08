@@ -1,5 +1,5 @@
 /**
- * 字号契约：生产源码只用 TYPE_SCALE 五档。
+ * 字号契约：生产源码只用 TYPE_SCALE 四档（三档日常 + display）。
  * 真源见 `TYPE_SCALE`；旧名 text-sm / text-xs 等是同像素别名。
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -30,14 +30,14 @@ function toPosixRel(abs: string): string {
   return path.relative(srcRoot, abs).split(path.sep).join('/');
 }
 
-/** 已退役的「第四档」名，以及任意像素字号。tokens.ts 的别名表除外。 */
+/** 已退役的档名，以及任意像素字号。tokens.ts 的别名表除外。 */
 const RETIRED_SIZE =
-  /\btext-(?:2xs|xl|2xl|3xl|4xl|5xl|6xl|7xl|8xl|9xl)\b|text-\[\d+px\]/;
+  /\btext-(?:headline|2xs|xl|2xl|3xl|4xl|5xl|6xl|7xl|8xl|9xl)\b|text-\[\d+px\]/;
 const FONT_SIZE_PROP = /fontSize:\s*(\d+)/g;
-const ALLOWED_FONT_PX = new Set(['12', '14', '15', '18', '22']);
+const ALLOWED_FONT_PX = new Set(['12', '14', '18', '22']);
 
 describe('type scale source contract', () => {
-  it('does not introduce a fourth font size in production source', () => {
+  it('does not introduce extra font sizes in production source', () => {
     const hits: string[] = [];
     for (const abs of walkSourceFiles(srcRoot)) {
       const rel = toPosixRel(abs);
@@ -57,8 +57,7 @@ describe('type scale source contract', () => {
     expect(cn('text-body', 'text-primary')).toContain('text-body');
     expect(cn('text-title', 'text-primary')).toContain('text-title');
     expect(cn('text-display', 'text-primary')).toContain('text-display');
-    expect(cn('text-headline', 'text-secondary')).toContain('text-headline');
     expect(cn('text-meta', 'text-body')).toBe('text-body');
-    expect(cn('text-body', 'text-headline')).toBe('text-headline');
+    expect(cn('text-body', 'text-title')).toBe('text-title');
   });
 });

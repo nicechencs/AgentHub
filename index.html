@@ -149,14 +149,14 @@
         fill: currentColor;
       }
       #boot-fallback .title {
-        font-size: 16px;
+        font-size: var(--font-title-size, 18px);
         font-weight: 600;
         letter-spacing: -0.01em;
         color: var(--text-primary);
         animation: boot-up 480ms cubic-bezier(0.22, 1, 0.36, 1) 80ms both;
       }
       #boot-fallback .sub {
-        font-size: 12px;
+        font-size: var(--font-meta-size, 12px);
         color: var(--text-muted);
         animation: boot-up 480ms cubic-bezier(0.22, 1, 0.36, 1) 140ms both;
       }
