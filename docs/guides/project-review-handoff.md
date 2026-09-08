@@ -122,7 +122,7 @@ updated: 2026-09-08
 
 【Agent、模型和委派】
 
-需要委派时，先读取仓库根目录下 `docs/guides/agent-workflow.md` 的“委派与并发”章节。需要选择模型或能力、处理工具限制时，再读取 `docs/reference/agent-runtime.md` 的“能力等级”和“工具能力”章节；首次接入、升级后或出现加载异常时，才执行“接入检查”。只做主 Agent 顺序审查时，不必额外读取这些页面。
+需要委派时，读取仓库根目录下 `docs/guides/agent-workflow.md` 的“委派与并发”章节。选择模型或能力时读 `docs/reference/agent-runtime.md` 的“能力等级”，处理工具限制时读“工具能力”；首次接入、升级后或加载异常时才执行“接入检查”。未命中条件的章节不读。
 
 本次 review 的委派约束：
 

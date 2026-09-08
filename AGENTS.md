@@ -34,7 +34,7 @@
 
 - 先说完：做了什么、现在怎样、接下来要不要动手。
 - 只用用户说过的词，或界面上已有的词（登录、连接、路由、供应商、共享库、会话）。内部名第一次用人话解释。
-- 提示要短；实现细节不写进弹窗。改界面文案时再对照 [术语表](docs/reference/terminology.md) 的「用户界面术语」列。
+- 提示要短；实现细节不写进弹窗。
 - 对用户不要直接用：
   - 票 / Ticket / 绑定 → 登录、接到某个 Agent
   - 凭据 → 登录信息或 API Key
@@ -45,9 +45,7 @@
 
 ## 分支与发布
 
-- 日常合入 `dev`，不要把 `main` 或 `release` 当日常集成线。**禁止直接在 `release` 上提交。**
 - 发版：只改 `package.json` 的 `version`，运行 `pnpm release:sync-version`；在 `dev` 升版并写 `CHANGELOG.md` → 合入 `release` → 在 **`dev` 打并推送 `vX.Y.Z` tag**。已发布的 tag 不可覆盖。
-- 发版逐步操作需要时再打开 [CONTRIBUTING.md](CONTRIBUTING.md)。
 - Agent 隐藏以 `dev` 的 store-stamp 为准（当前 `store_stamp_version = 1` 默认软隐藏 **Cursor Agent**），只影响界面。用户可在 Agents 管理页取消隐藏。
 
 ## 前端 backend 分层
@@ -60,7 +58,7 @@
 
 ## 测试
 
-选命令时再打开 [测试与验证](docs/guides/testing-and-validation.md)。不要默认再打开测试参考。
+不要默认打开测试参考。
 
 - 测试不得与生产代码写在同一文件。Rust 生产侧只放 `#[cfg(test)] mod tests;`，实现放 `*/tests.rs`；前端用并列的 `*.test.ts`。
 - 前端 Vitest 固定 mock backend；领域 reset 放 `src/dev/mocks`，不要往生产 façade 塞 `__reset*ForTests`。
