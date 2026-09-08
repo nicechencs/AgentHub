@@ -53,7 +53,7 @@ export const PageSection = forwardRef<HTMLElement, PageSectionProps>(
             {title || description ? (
               <div className={cn(actions && 'min-w-0 flex-1')}>
                 {title ? (
-                  <h2 className="text-body font-semibold tracking-tight text-primary">{title}</h2>
+                  <h2 className="text-headline font-semibold tracking-tight text-primary">{title}</h2>
                 ) : null}
                 {description ? (
                   <p className={cn(title ? 'mt-0.5' : undefined, 'text-meta text-secondary')}>

@@ -39,13 +39,14 @@ describe('pageRhythm (docs/ui/design-system.md §3)', () => {
 
   it('uses one centered reading column for Chat messages and Settings forms', () => {
     expect(pageRhythm.readingColumn).toBe('mx-auto w-full max-w-3xl');
+    expect(pageRhythm.overviewColumn).toBe('mx-auto w-full max-w-6xl');
   });
 
-  it('keeps the current page inset at 8px (change pageEdge.inset to retune)', () => {
-    expect(pageEdge.inset).toBe(8);
-    expect(pageEdge.canvas).toBe(8);
+  it('keeps the current page inset at 12px (change pageEdge.inset to retune)', () => {
+    expect(pageEdge.inset).toBe(12);
+    expect(pageEdge.canvas).toBe(12);
     expect(pageEdge.chat).toBe(16);
-    expect(pageInsetTw.x).toBe('px-2');
+    expect(pageInsetTw.x).toBe('px-3');
     expect(pageChatTw.x).toBe('px-4');
   });
 
@@ -57,7 +58,7 @@ describe('pageRhythm (docs/ui/design-system.md §3)', () => {
     expect(pageRhythm.pageTitleMeta).toContain('text-meta');
     expect(pageRhythm.pageTitleMeta).toContain('text-secondary');
     expect(pageRhythm.pageTitleBlock).toBe('flex min-w-0 items-baseline gap-2.5');
-    expect(pageRhythm.topChrome).toBe('h-10');
+    expect(pageRhythm.topChrome).toBe('h-11');
   });
 
   it('starts workbench body with inset top/bottom and no extra py on the bottom token', () => {

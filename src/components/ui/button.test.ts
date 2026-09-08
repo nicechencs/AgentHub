@@ -99,13 +99,17 @@ describe('buttonVariants (docs/ui-design.md §2 Button)', () => {
   it('uses only the two standard heights and 4px-ladder padding', () => {
     expect(buttonVariants({ size: 'default' })).toContain('h-7');
     expect(buttonVariants({ size: 'default' })).toContain('px-3');
+    expect(buttonVariants({ size: 'default' })).toContain('[&_svg]:h-4');
     expect(buttonVariants({ size: 'sm' })).toContain('h-7');
     expect(buttonVariants({ size: 'sm' })).toContain('px-2');
     expect(buttonVariants({ size: 'sm' })).toContain('text-meta');
+    expect(buttonVariants({ size: 'sm' })).toContain('[&_svg]:h-3.5');
     expect(buttonVariants({ size: 'lg' })).toContain('h-8');
     expect(buttonVariants({ size: 'lg' })).toContain('px-4');
+    expect(buttonVariants({ size: 'lg' })).toContain('[&_svg]:h-4');
     expect(buttonVariants({ size: 'icon' })).toContain('h-7');
     expect(buttonVariants({ size: 'icon' })).toContain('w-7');
+    expect(buttonVariants({ size: 'icon' })).toContain('[&_svg]:h-4');
 
     for (const size of SIZES) {
       const cls = buttonVariants({ size });
@@ -120,8 +124,9 @@ describe('buttonVariants (docs/ui-design.md §2 Button)', () => {
   });
 
   it('keeps hover as fill/color, with a matching press darkening', () => {
-    expect(buttonVariants({ variant: 'default' })).toContain('hover:bg-accent/90');
-    expect(buttonVariants({ variant: 'default' })).toContain('active:bg-accent/80');
+    expect(buttonVariants({ variant: 'default' })).toContain('hover:bg-accent-hover');
+    expect(buttonVariants({ variant: 'default' })).toContain('active:bg-accent-pressed');
+    expect(buttonVariants({ variant: 'default' })).toContain('text-accent-foreground');
     expect(buttonVariants({ variant: 'secondary' })).toContain('bg-hover');
     expect(buttonVariants({ variant: 'secondary' })).not.toContain('bg-subtle');
     expect(buttonVariants({ variant: 'secondary' })).toContain('hover:bg-active');

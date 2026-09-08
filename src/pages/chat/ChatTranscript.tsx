@@ -177,7 +177,7 @@ function EmptyTranscriptStart({
   return (
     <div className="flex h-full flex-col items-center justify-center px-6 py-10">
       <div className="w-full max-w-3xl text-center">
-        <p className="text-title font-semibold tracking-tight text-primary">{t('chat.transcript.start')}</p>
+        <p className="text-display font-semibold tracking-tight text-primary">{t('chat.transcript.start')}</p>
         <p className="mt-2 text-body text-muted">
           {t('chat.transcript.firstMessage', { agent: agentLabel })}
         </p>
@@ -275,7 +275,7 @@ function ChipStatus({ status }: { status: ChatMessageStatus }) {
   if (status === 'running') {
     return (
       <span className="inline-flex" aria-label={label}>
-        <Loader2 className="h-3 w-3 animate-spin text-muted" aria-hidden />
+        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted" aria-hidden />
         <span className="sr-only">{label}</span>
       </span>
     );

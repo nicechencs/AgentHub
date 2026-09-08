@@ -304,7 +304,7 @@ export function ChatComposer({
               >
                 {active.agentIds[0] && <AgentLogo agentId={active.agentIds[0]} size="sm" />}
                 <span className="truncate">{agentPickerLabel}</span>
-                <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+                <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-56">
@@ -379,7 +379,7 @@ export function ChatComposer({
                       <span className="text-muted"> · {connectionView.subtitle}</span>
                     ) : null}
                   </span>
-                  <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
                 </Button>
               </DropdownMenuTrigger>
             </Hint>
@@ -468,7 +468,7 @@ export function ChatComposer({
                   <span className="min-w-0 truncate">
                     {currentModel || t('chat.composer.switchModel')}
                   </span>
-                  <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-64">
@@ -506,7 +506,7 @@ export function ChatComposer({
                   <span className="min-w-0 truncate">
                     {currentEffort || t('chat.runtimeOps.effort')}
                   </span>
-                  <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-48">
@@ -568,14 +568,14 @@ export function ChatComposer({
             <Button
               size="icon"
               variant={canSend ? 'default' : 'secondary'}
-              className="h-7 w-7 rounded-btn"
+              className="h-8 w-8 rounded-full"
               disabled={!canSend}
               onClick={onSend}
               data-help="chat-send"
               aria-label={t('chat.composer.send')}
               title={sendHint}
             >
-              <SendHorizontal className="h-3.5 w-3.5" />
+              <SendHorizontal className="h-4 w-4" />
             </Button>
           )}
         </div>

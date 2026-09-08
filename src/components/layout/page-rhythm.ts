@@ -10,7 +10,7 @@
  * ## 内容宽度（两套，docs/ui/design-system.md §3.4）
  * 1. 阅读列 `readingColumn`：Chat 消息列。固定 `max-w-3xl` 居中。设置表单正文（备份分栏页除外）同列居中；页签留在页头贴左，不进阅读列。
  * 2. 贴边列：其余页。铺满主列，左右用 `pageEdge.inset`（`pageShell` / `workbenchX`）。
- * 新页默认贴边列；对话 / 表单 / 长文才用阅读列。禁止第三套 `max-w-*`。
+ * 3. 总览列 `overviewColumn`：仅 Dashboard，居中 `max-w-6xl`。
  * 页标题一律贴边、同一行（大号深色标题 + 小号浅色说明），放在非对话页顶栏左侧。
  *
  * 层级（自上而下）：
@@ -70,9 +70,9 @@ type SpacePx = keyof typeof SPACE;
  */
 export const pageEdge = {
   /** 窗内画布缝（侧栏与主列外的 p / gap） */
-  canvas: 8,
+  canvas: 12,
   /** 主列贴边：pageShell、顶栏、工作台列表、预览列 */
-  inset: 8,
+  inset: 12,
   /** Chat 消息列 / composer 水平 chrome，不是页边 */
   chat: 16,
   /** 分栏分隔条占位 */
@@ -100,8 +100,10 @@ export const pageRhythm = {
   pageShell: `w-full min-w-0 ${pageInsetTw.x} ${pageInsetTw.y}`,
   /** Chat 消息列：居中阅读宽。页头不进此列。设置表单正文（备份分栏页除外）共用同一列。 */
   readingColumn: 'mx-auto w-full max-w-3xl',
+  /** Dashboard 居中列，避免宽屏把指标拉成一条细线。 */
+  overviewColumn: 'mx-auto w-full max-w-6xl',
   /** 侧栏品牌行与非对话页顶栏同高，横线对齐 */
-  topChrome: 'h-10',
+  topChrome: 'h-11',
   /** 全高工作台水平 inset — 与常规页水平一致 */
   workbenchX: pageInsetTw.x,
   /**

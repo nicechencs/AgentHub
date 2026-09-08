@@ -3,7 +3,7 @@ title: UI 设计系统
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-05
+updated: 2026-09-08
 ---
 
 # UI Design System
@@ -36,15 +36,17 @@ The runtime source of truth is `src/styles/tokens.ts`. CSS variables are injecte
 
 ### 3.1 Type scale
 
-Only three semantic text roles are allowed for new UI:
+Five semantic text roles are allowed for new UI:
 
 | Role | Token/class | Size | Use |
 |---|---|---:|---|
-| Title | `text-title` | 16px | Page titles, empty-state headline, metric value, document H1 |
-| Body | `text-body` | 13px | Body copy, buttons, list names, section labels, menus |
+| Display | `text-display` | 22px | Chat empty-state headline, first-run title |
+| Title | `text-title` | 18px | Page titles, dialog titles |
+| Headline | `text-headline` | 15px | Section titles, dashboard metric values |
+| Body | `text-body` | 14px | Body copy, buttons, list names, menus, form values |
 | Meta | `text-meta` | 12px | Table headings, paths, timestamps, badges, hints, diagnostic text |
 
-Existing `text-lg`/`text-xl`, `text-sm`/`text-base`, and `text-xs`/`text-2xs` aliases are compatibility names at the same pixel sizes. Do not introduce a fourth type scale or arbitrary `text-[Npx]` values. Use weight, not a new size, to distinguish section titles.
+Existing `text-lg`/`text-xl`, `text-sm`/`text-base`, and `text-xs`/`text-2xs` aliases map onto title / body / meta. Do not introduce arbitrary `text-[Npx]` values.
 
 ### 3.2 Surfaces and color
 
@@ -66,21 +68,22 @@ Status colors are semantic: `success`, `warning`, `danger`, and `info`. A status
 ### 3.3 Spacing, radius, and elevation
 
 - Spacing follows the 4/8/12/16/24/32px ladder.
-- Controls use `rounded-btn` (6px); cards, panels, and the application shell use `rounded-card` (8px); composers and user bubbles use `rounded-composer` (12px). Chips, avatars, switches, and progress tracks may use `rounded-full`.
+- Controls use `rounded-btn` (8px); cards, panels, and the application shell use `rounded-card` (12px); composers and user bubbles use `rounded-composer` (16px). Chips, avatars, switches, and progress tracks may use `rounded-full`.
 - Do not add `rounded-lg`, `rounded-2xl`, or arbitrary radius values.
 - `shadow-xs` is for a card, `shadow-sm` for a light raised control, `shadow-md` for menus/toasts, and `shadow-lg` for dialogs. Buttons do not gain a shadow on hover or press.
-- The application canvas has an 8px outer gutter. The shell columns are rounded panels. Keep the shell and page surfaces distinct without stacking multiple borders around the same content.
+- The application canvas has a 12px outer gutter. The shell columns are rounded panels. Keep the shell and page surfaces distinct without stacking multiple borders around the same content.
 
 ### 3.4 Content widths
 
-There are two content systems only:
+There are three content systems:
 
 | System | Token/pattern | Use |
 |---|---|---|
 | Reading column | `pageRhythm.readingColumn` (`mx-auto w-full max-w-3xl`) | Chat transcript/composer, Settings form, long-form reading |
-| Edge column | `pageRhythm.pageShell` / `workbenchX` from `pageEdge.inset` (currently 8px) | Tables, lists, dashboards, split workbenches, Routes. Change `pageEdge.inset` in `src/components/layout/page-rhythm.ts` to retune every page edge. When a split pane is open, the scrolling list uses `workbenchXSplit` (`inset` left; canvas gutter pad + margin on the right) so the scrollbar is not flush against the separator. |
+| Overview column | `pageRhythm.overviewColumn` (`mx-auto w-full max-w-6xl`) | Dashboard only |
+| Edge column | `pageRhythm.pageShell` / `workbenchX` from `pageEdge.inset` (currently 12px) | Tables, lists, split workbenches, Routes. Change `pageEdge.inset` in `src/components/layout/page-rhythm.ts` to retune every page edge. When a split pane is open, the scrolling list uses `workbenchXSplit` (`inset` left; canvas gutter pad + margin on the right) so the scrollbar is not flush against the separator. |
 
-Do not introduce page-private `max-w-*` values, a third content width, or a second left-aligned reading width. `fullBleed` describes height and scrolling behavior, not a third width system.
+Do not introduce page-private `max-w-*` values or a second left-aligned reading width. `fullBleed` describes height and scrolling behavior, not a width system. The application canvas gutter is 12px.
 
 ## 4. Component rules
 
@@ -106,7 +109,15 @@ The only base component family is `src/components/ui/` using the existing shadcn
 | Open folder | `OpenDirButton` | Ghost icon-only, or ghost + 「目录」 next to a path |
 | Search | `SearchField` | Use the shared icon, height, and focus behavior |
 
-Use lucide icons for familiar icon-only actions. Every `size="icon"` Button must have `aria-label` or `aria-labelledby`; `title` / `Hint` is the hover label, not the accessible name. Icon-only is for familiar tools: page help, feedback, notifications, overflow (more), overlay copy, open folder in a toolbar, close/collapse, chat send, show/hide (row or secret), session settings, in-row edit/delete in a dense table, and the Agents upgrade control. A labeled button is required when the command itself is the thing the user must scan, such as “添加登录” or “重试”. New chrome icon buttons use `Button size="icon" variant="ghost"` on a 28px target.
+Use lucide icons for familiar icon-only actions. Sizes are three steps only (`ICON` in `src/styles/tokens.ts`):
+
+| Role | Size | Stroke | Use |
+|---|---:|---:|---|
+| Nav | 18px | 1.6 | Sidebar and Routes secondary nav (`data-icon="nav"`) |
+| Chrome | 16px (`h-4`) | 1.75 | Top bar, send, icon-only tools, `Button` default / lg / icon |
+| Inline | 14px (`h-3.5`) | 1.75 | Chevrons, row actions, status, `Button` sm |
+
+Do not mix a fourth pixel size. Every `size="icon"` Button must have `aria-label` or `aria-labelledby`; `title` / `Hint` is the hover label, not the accessible name. Icon-only is for familiar tools: page help, feedback, notifications, overflow (more), overlay copy, open folder in a toolbar, close/collapse, chat send, show/hide (row or secret), session settings, in-row edit/delete in a dense table, and the Agents upgrade control. A labeled button is required when the command itself is the thing the user must scan, such as “添加登录” or “重试”. New chrome icon buttons use `Button size="icon" variant="ghost"` on a 28px target.
 
 ### 4.2 Surfaces and selection
 

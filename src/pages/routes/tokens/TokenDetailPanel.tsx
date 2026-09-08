@@ -393,7 +393,7 @@ export function TokenDetailPanel({
                     onClick={() => setRevealed((current) => !current)}
                     aria-label={revealed ? t('common.hideSecret') : t('common.showSecret')}
                   >
-                    {revealed ? <EyeOff className="h-3 w-3" aria-hidden /> : <Eye className="h-3 w-3" aria-hidden />}
+                    {revealed ? <EyeOff className="h-3.5 w-3.5" aria-hidden /> : <Eye className="h-3.5 w-3.5" aria-hidden />}
                   </Button>
                 </Hint>
                 <Hint label={t('routes.tokens.copy')}>
@@ -406,7 +406,7 @@ export function TokenDetailPanel({
                     onClick={copyToken}
                     aria-label={t('routes.tokens.copy')}
                   >
-                    <Copy className="h-3 w-3" aria-hidden />
+                    <Copy className="h-3.5 w-3.5" aria-hidden />
                   </Button>
                 </Hint>
               </>
@@ -482,7 +482,7 @@ export function TokenDetailPanel({
                     aria-pressed={selected}
                   >
                     <span className="truncate">{model}</span>
-                    {selected ? <X className="h-3 w-3 shrink-0" aria-hidden /> : null}
+                    {selected ? <X className="h-3.5 w-3.5 shrink-0" aria-hidden /> : null}
                   </button>
                 );
               })}
