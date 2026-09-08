@@ -53,5 +53,7 @@ agenthub agent capabilities --markdown
 
 Cursor 的 `ConfigWrite` / `AccountSwitch` / `ApiKeyAccount` 为 Unsupported：可以从本机已有登录导入，但不能配置 API Key，也不能写回 Cursor。界面切换失败时给出中文说明，不静默。**store-stamp 默认软隐藏 Cursor Agent**（见 [STATUS](../STATUS.md)）。Kiro 接 `kiro-cli`：检测/安装/官方登录/API Key；新对话走 ACP 持续通道（允许/拒绝、停止；生成时不能中途补充）。旧路径仍可 headless / HTTP 文本回复。`AccountSwitch` 为 Partial（可在连接里切换并写回 Kiro）。`ProjectHistory` 为 Partial（列出命令行和编辑器里的对话；删除请到 Kiro 里做）。`Usage` 为 Partial（读 kiro-cli 会话 token；日志没写时总览是 0）。`ModelSelect` 为 Full（HTTP 或 CLI 列模型）。Kiro 登录可经本机路由接到 Claude / Codex / Grok。产品表面详见 [STATUS](../STATUS.md)。WorkBuddy / ZCode 本机安装只打开官网，不当成脚本安装失败。占用方式：WorkBuddy / ZCode 是目录追加（只动对应那一行），Pi / DSH 是具名槽，其余默认独占。ZCode API Key 按目录追加写入 `~/.zcode/v2/config.json` 的一条供应商（官方槽或自定义行），不替换其它条目；套餐登录不导入。ZCode Projects 可列出任务并预览对话；删除请到 ZCode 里做。WorkBuddy 自定义模型按 `models.json` 一行一份登录追加，只写 `/v1/chat/completions`；若地址是 DeepSeek 官方 `/chat/completions`，写入时会改成 `/v1/chat/completions`。桌面套餐登录不导入。
 
+`Skills: Full` 指共享库与各工具启用矩阵，**不等于** Chat 里为本轮指定「用于本次」。Grok 的 `Skills` 为 Full（库仍可用）；Chat「用于本次」为 Unsupported，界面也不画可点的假按钮。Codex 持续聊天才接入「用于本次」。见 [STATUS](../STATUS.md) 与 [Chat 与 Agent](../concepts/chat-and-agents.md)。
+
 能力矩阵不承载 npm 包名、安装 URL、home 路径或账号识别算法；这些是 adapter/port 数据。只读 MCP inventory 也不等于 `Mcp` 管理能力，更不等于厂商 plugin/extension 包。本机 Routes 的 models endpoint 也不改变 `ModelSelect` 状态。MCP 扫描见 [MCP inventory](mcp-inventory.md)；各家插件包与 MCP 表面见 [Agent 插件表面](agent-plugin-surfaces.md)。`/plugins` 已列出 Claude / Grok / Pi 已装包（Claude / Grok 可启用停用）；安装/卸载仍是 [提案](../proposals/plugin-management.md)。
 

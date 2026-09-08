@@ -3,21 +3,38 @@ title: 插件（extension / plugin）管理
 type: proposal
 status: proposed
 owner: maintainers
-updated: 2026-08-29
+updated: 2026-09-08
 ---
 
 # 插件（extension / plugin）管理
 
 > Status: proposed
 >
-> 产品对象是各家 **plugin / extension 包**，不是 MCP server。`/mcp` 保持只读 MCP 清单。在 owner、兼容计划、失败行为和测试批准之前，不得把本页写成当前功能，也不得新增未实现的能力矩阵 Full。
+> 产品对象是各家 **plugin / extension 包**，不是 MCP server。`/mcp` 保持只读 MCP 清单。YAML 保持 `proposed`：安装/卸载/更新仍未做。若干切片已落地，**不要把本页当成未开工**。现行行为以 [STATUS](../STATUS.md) 和 [页面模式](../ui/page-patterns.md) 为准。
 
 调研日期：2026-08-26。对照的是各家官方 CLI/文档与同类桌面管理器，不是实施承诺。
 
-## 1. 当前基线
+## 进度（已落地 / 剩余边界）
 
-- AgentHub **没有**插件页。工作区是 Chat / Agents / Skills / MCP / Projects。MCP 在 Skills 与 Projects 之间，单栏只读表。
-- 路由页已是左右分栏；设置「显示路由页面」可藏入口、不禁用 `/routes`。
+对照 [STATUS](../STATUS.md)。本表只防止把早期方案当成待办，不是现行契约。
+
+| 状态 | 内容 |
+| --- | --- |
+| **已落地 PR-1** | Claude / Grok 只读 inventory（优先官方 CLI JSON，否则读 live 目录） |
+| **已落地 PR-2** | `/plugins` 左右分栏；设置 → 功能「显示插件页面」藏入口（新安装默认关）；不禁用 `/plugins` |
+| **已落地 PR-3** | Claude / Grok 已装包可启用/停用；写前备份；无安装按钮 |
+| **已落地（Pi 列表）** | Pi 只列已装包，不启用/停用 |
+| **剩余 PR-4** | 安装 / 卸载 |
+| **剩余 PR-5** | 更新 |
+| **剩余 PR-6** | Codex 端口；Pi 安装/卸载 |
+| **剩余 PR-7** | MCP 页补 Grok TOML 等（另开） |
+
+## 1. 历史基线（2026-08-26）
+
+当时调研时的产品表面，**不是现行待办**。现行见进度表与 [STATUS](../STATUS.md)。
+
+- AgentHub **当时没有**插件页。工作区是 Chat / Agents / Skills / MCP / Projects。MCP 在 Skills 与 Projects 之间，单栏只读表。
+- 路由页已是左右分栏；侧栏开关当时写在设置「偏好」。现行侧栏页开关与「打开路由时自动折叠」在设置 → **功能**。
 - Skills 已由 `SkillService` 管理。MCP 由 `list_mcp_inventory` 只读扫描。二者都不是插件包。
 - 无 `Capability::Plugins`。`Capability::Mcp` 仍是 Planned，且只约束 MCP 写入，不约束插件。
 - 厂商侧已经存在完整插件生命周期（见 [Agent 插件表面](../reference/agent-plugin-surfaces.md)）：Claude `claude plugin`、Codex `codex plugin`、Grok `grok plugin`、Pi `pi install`。
@@ -27,7 +44,7 @@ updated: 2026-08-29
 新增与 Routes 同构的 **插件工作台**（建议路径 `/plugins`）：
 
 1. 左右两栏：左为已安装/可用列表，右为包详情（组件清单、范围、版本、路径）。
-2. 设置 → 偏好控制侧栏「插件」开关；关闭只藏入口，不禁用页面。
+2. 设置控制侧栏「插件」开关；关闭只藏入口，不禁用页面。开关已落在设置 → **功能**（不是偏好）。
 3. 打开时工作区顺序为 `Chat → Agents → Skills → MCP → Projects → 插件`（插件在 **Projects 下方**）。MCP 项保持原意，不改名。
 
 管理动作对齐厂商：浏览、安装、启用/停用、更新、卸载。AgentHub **不**运行插件代码，**不**当 MCP host，**不**合并各家市场为一个商店。
@@ -80,7 +97,7 @@ Cline / Continue Hub / 官方 `registry.modelcontextprotocol.io` 管的是 **MCP
 ### 做
 
 - 新路由 `/plugins`，全高 `WorkbenchSplitPage`。
-- 设置 `pluginsNavVisible`，对齐 `routesNavVisible`；默认显示。
+- 设置 `pluginsNavVisible`，对齐 `routesNavVisible`。开关在设置 → 功能；新安装默认关（与早期「默认显示」草案不同）。
 - 侧栏工作区在开关打开时把插件放在 Projects **下面**。
 - 每家一个稀疏 **Plugin 端口**：list / details / 可选 install、enable、disable、update、uninstall。优先封装官方 CLI 的 `--json` 输出。
 - 新增能力键须等实现 PR 才加进 `Capability`（穷尽 match）。未接线的 Agent 标 Unsupported 或 Planned，带原因。
@@ -141,7 +158,7 @@ Live 文件仍是各 Agent 的。AgentHub 只编排与展示。CLI 不可用时 
 
 ## 8. 行动任务（可独立合入）
 
-每个 PR 只做一列范围。合入 `dev`，不碰 `release`。未列的文件不要改。
+每个 PR 只做一列范围。合入 `dev`，不碰 `release`。未列的文件不要改。**PR-1～3 已合入**（Pi 列表也已落地）；下面保留原文便于对照，剩余从 PR-4 起。
 
 ### PR-0 文档纠偏（本提案）
 
