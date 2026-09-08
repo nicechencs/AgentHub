@@ -1,5 +1,4 @@
 import { useRef, useState } from 'react';
-import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Hint } from '@/components/ui/tooltip';
 import {
@@ -32,7 +31,6 @@ import {
   clampUsageIntervalMin,
   skillMarketLabel,
 } from './settings-format';
-import { useSidebar } from '@/components/layout/SidebarContext';
 import { SettingsGroup, SettingsRow } from './settings-shared';
 
 const ACCENT_NAME_KEY = {
@@ -70,16 +68,6 @@ export function PreferencesPanel({
   const { toast } = useToast();
   const { setTheme } = useTheme();
   const { t, setLanguage } = useI18n();
-  const {
-    autoCollapseOnRoutes,
-    setAutoCollapseOnRoutes,
-    routesNavVisible,
-    setRoutesNavVisible,
-    pluginsNavVisible,
-    setPluginsNavVisible,
-    sub2apiNavVisible,
-    setSub2apiNavVisible,
-  } = useSidebar();
   const [accent, setAccent] = useState(loadStoredAccent);
   const [canvas, setCanvas] = useState(loadStoredCanvas);
   const usageBaselineRef = useRef(settings.usageCollectIntervalMin);
@@ -286,53 +274,6 @@ export function PreferencesPanel({
               patch({ closeToTray: v });
               void persist({ closeToTray: v });
             }}
-          />
-        </SettingsRow>
-      </SettingsGroup>
-      <SettingsGroup title={t('settings.general.sectionSidebar')} help="settings-sidebar">
-        <SettingsRow
-          label={t('settings.general.autoCollapseOnRoutesLabel')}
-          description={t('settings.general.autoCollapseOnRoutesDescription')}
-          descriptionTip={t('settings.general.autoCollapseOnRoutesTip')}
-        >
-          <Switch
-            checked={autoCollapseOnRoutes}
-            onCheckedChange={setAutoCollapseOnRoutes}
-            aria-label={t('settings.general.autoCollapseOnRoutesLabel')}
-          />
-        </SettingsRow>
-        <SettingsRow
-          label={t('settings.general.routesNavVisibleLabel')}
-          description={t('settings.general.routesNavVisibleDescription')}
-          descriptionTip={t('settings.general.routesNavVisibleTip')}
-        >
-          <Switch
-            checked={routesNavVisible}
-            onCheckedChange={setRoutesNavVisible}
-            aria-label={t('settings.general.routesNavVisibleLabel')}
-          />
-        </SettingsRow>
-        <SettingsRow
-          label={t('settings.general.pluginsNavVisibleLabel')}
-          badge={<Badge variant="default">{t('common.inDevelopment')}</Badge>}
-          description={t('settings.general.pluginsNavVisibleDescription')}
-          descriptionTip={t('settings.general.pluginsNavVisibleTip')}
-        >
-          <Switch
-            checked={pluginsNavVisible}
-            onCheckedChange={setPluginsNavVisible}
-            aria-label={t('settings.general.pluginsNavVisibleLabel')}
-          />
-        </SettingsRow>
-        <SettingsRow
-          label={t('settings.general.sub2apiNavVisibleLabel')}
-          description={t('settings.general.sub2apiNavVisibleDescription')}
-          descriptionTip={t('settings.general.sub2apiNavVisibleTip')}
-        >
-          <Switch
-            checked={sub2apiNavVisible}
-            onCheckedChange={setSub2apiNavVisible}
-            aria-label={t('settings.general.sub2apiNavVisibleLabel')}
           />
         </SettingsRow>
       </SettingsGroup>

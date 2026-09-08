@@ -41,6 +41,10 @@ describe('locale key parity', () => {
     expect(keys).toContain('mcp.page.title');
     expect(keys).toContain('plugins.page.title');
     expect(keys).toContain('settings.general.pluginsNavVisibleLabel');
+    expect(keys).toContain('settings.general.skillsNavVisibleLabel');
+    expect(keys).toContain('settings.general.mcpNavVisibleLabel');
+    expect(keys).toContain('settings.general.projectsNavVisibleLabel');
+    expect(keys).toContain('settings.general.connectionsNavVisibleLabel');
     expect(keys).toContain('common.inDevelopment');
     expect(keys).toContain('nav.plugins');
     expect(keys).toContain('nav.sub2api');

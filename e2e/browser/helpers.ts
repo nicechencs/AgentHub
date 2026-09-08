@@ -31,6 +31,11 @@ export async function goNav(page: Page, name: string): Promise<void> {
     .click();
 }
 
+export async function goSettingsTab(page: Page, name: string): Promise<void> {
+  await goNav(page, '设置');
+  await page.getByRole('tab', { name }).click();
+}
+
 export async function goPath(page: Page, hash: string): Promise<void> {
   const path = hash.startsWith('#') ? `/${hash}` : `/#${hash.startsWith('/') ? hash : `/${hash}`}`;
   await page.goto(path);

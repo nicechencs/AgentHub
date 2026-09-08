@@ -1,13 +1,23 @@
 import * as React from 'react';
 import {
-  DEFAULT_PLUGINS_NAV_VISIBLE,
-  DEFAULT_ROUTES_NAV_VISIBLE,
+  DEFAULT_NAV_VISIBILITY,
   DEFAULT_SIDEBAR_AUTO_COLLAPSE_ON_ROUTES,
-  DEFAULT_SUB2API_NAV_VISIBLE,
   loadBool,
+  OPTIONAL_NAV_IDS,
+  OPTIONAL_NAV_STORAGE_KEY,
   saveBool,
   StorageKey,
+  type NavVisibility,
+  type OptionalNavId,
 } from '@/lib/ui-preferences';
+
+function loadNavVisibility(): NavVisibility {
+  const next = { ...DEFAULT_NAV_VISIBILITY };
+  for (const id of OPTIONAL_NAV_IDS) {
+    next[id] = loadBool(OPTIONAL_NAV_STORAGE_KEY[id], DEFAULT_NAV_VISIBILITY[id]);
+  }
+  return next;
+}
 
 interface SidebarContextValue {
   collapsed: boolean;
@@ -18,6 +28,8 @@ interface SidebarContextValue {
   /** When on, clicking Routes in the primary nav collapses it. */
   autoCollapseOnRoutes: boolean;
   setAutoCollapseOnRoutes: (v: boolean) => void;
+  navVisible: NavVisibility;
+  setNavVisible: (id: OptionalNavId, v: boolean) => void;
   routesNavVisible: boolean;
   setRoutesNavVisible: (v: boolean) => void;
   pluginsNavVisible: boolean;
@@ -36,7 +48,7 @@ export function useSidebar() {
   return value;
 }
 
-/** 侧栏 UI 偏好（折叠、路由点击自动折叠、路由/插件入口可见性；持久化到 localStorage） */
+/** 侧栏 UI 偏好（折叠、路由点击自动折叠、可选入口可见性；持久化到 localStorage） */
 export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsedState] = React.useState(
     () => loadBool(StorageKey.sidebarCollapsed, false),
@@ -45,15 +57,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     () =>
       loadBool(StorageKey.sidebarAutoCollapseOnRoutes, DEFAULT_SIDEBAR_AUTO_COLLAPSE_ON_ROUTES),
   );
-  const [routesNavVisible, setRoutesNavVisibleState] = React.useState(
-    () => loadBool(StorageKey.routesNavVisible, DEFAULT_ROUTES_NAV_VISIBLE),
-  );
-  const [pluginsNavVisible, setPluginsNavVisibleState] = React.useState(
-    () => loadBool(StorageKey.pluginsNavVisible, DEFAULT_PLUGINS_NAV_VISIBLE),
-  );
-  const [sub2apiNavVisible, setSub2apiNavVisibleState] = React.useState(
-    () => loadBool(StorageKey.sub2apiNavVisible, DEFAULT_SUB2API_NAV_VISIBLE),
-  );
+  const [navVisible, setNavVisibleState] = React.useState(loadNavVisibility);
 
   const setCollapsed = React.useCallback((v: boolean) => {
     setCollapsedState(v);
@@ -65,20 +69,23 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     saveBool(StorageKey.sidebarAutoCollapseOnRoutes, v);
   }, []);
 
-  const setRoutesNavVisible = React.useCallback((v: boolean) => {
-    setRoutesNavVisibleState(v);
-    saveBool(StorageKey.routesNavVisible, v);
+  const setNavVisible = React.useCallback((id: OptionalNavId, v: boolean) => {
+    setNavVisibleState((prev) => ({ ...prev, [id]: v }));
+    saveBool(OPTIONAL_NAV_STORAGE_KEY[id], v);
   }, []);
 
-  const setPluginsNavVisible = React.useCallback((v: boolean) => {
-    setPluginsNavVisibleState(v);
-    saveBool(StorageKey.pluginsNavVisible, v);
-  }, []);
-
-  const setSub2apiNavVisible = React.useCallback((v: boolean) => {
-    setSub2apiNavVisibleState(v);
-    saveBool(StorageKey.sub2apiNavVisible, v);
-  }, []);
+  const setRoutesNavVisible = React.useCallback(
+    (v: boolean) => setNavVisible('routes', v),
+    [setNavVisible],
+  );
+  const setPluginsNavVisible = React.useCallback(
+    (v: boolean) => setNavVisible('plugins', v),
+    [setNavVisible],
+  );
+  const setSub2apiNavVisible = React.useCallback(
+    (v: boolean) => setNavVisible('sub2api', v),
+    [setNavVisible],
+  );
 
   const toggle = React.useCallback(() => {
     setCollapsedState((prev) => {
@@ -100,11 +107,13 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       expandPrimarySidebar,
       autoCollapseOnRoutes,
       setAutoCollapseOnRoutes,
-      routesNavVisible,
+      navVisible,
+      setNavVisible,
+      routesNavVisible: navVisible.routes,
       setRoutesNavVisible,
-      pluginsNavVisible,
+      pluginsNavVisible: navVisible.plugins,
       setPluginsNavVisible,
-      sub2apiNavVisible,
+      sub2apiNavVisible: navVisible.sub2api,
       setSub2apiNavVisible,
     }),
     [
@@ -114,11 +123,10 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       expandPrimarySidebar,
       autoCollapseOnRoutes,
       setAutoCollapseOnRoutes,
-      routesNavVisible,
+      navVisible,
+      setNavVisible,
       setRoutesNavVisible,
-      pluginsNavVisible,
       setPluginsNavVisible,
-      sub2apiNavVisible,
       setSub2apiNavVisible,
     ],
   );

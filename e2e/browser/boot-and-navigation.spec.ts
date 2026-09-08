@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { goNav, goPath, openApp } from './helpers';
+import { goNav, goPath, goSettingsTab, openApp } from './helpers';
 
 test('app boots on mock and primary navigation works', async ({ page }) => {
   await openApp(page);
@@ -33,9 +33,10 @@ test('Settings tabs stay on the workbench-header left; form cards use the center
   await expect(page.getByRole('heading', { name: '设置' })).toBeVisible();
   const prefsTab = page.getByRole('tab', { name: '偏好' });
   await expect(prefsTab).toBeVisible();
+  await expect(page.getByRole('tab', { name: '功能' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '语言与外观' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '启动与关闭' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: '侧栏' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '侧栏' })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: '路由' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '技能' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '用量' })).toBeVisible();
@@ -52,6 +53,10 @@ test('Settings tabs stay on the workbench-header left; form cards use the center
   expect(cardBox).toBeTruthy();
   expect(Math.abs(tabListBox!.x - headingBox!.x)).toBeLessThanOrEqual(2);
   expect(cardBox!.x).toBeGreaterThan(tabListBox!.x + 24);
+
+  await page.getByRole('tab', { name: '功能' }).click();
+  await expect(page.getByRole('heading', { name: '侧栏菜单' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '侧栏', exact: true })).toBeVisible();
 
   await page.getByRole('tab', { name: '本机' }).click();
   await expect(page.getByText('数据目录')).toBeVisible();
@@ -177,11 +182,16 @@ test('new install shows Routes by default; Plugins stay hidden until Settings', 
   await expect(nav.getByRole('link', { name: /^Sub2API(?:$| — )/ })).toHaveCount(0);
   await expect(nav.getByRole('link', { name: /^MCP(?:$| — )/ })).toBeVisible();
 
-  await goNav(page, '设置');
+  await goSettingsTab(page, '功能');
+  await expect(page.getByRole('heading', { name: '侧栏菜单' })).toBeVisible();
   await expect(page.getByRole('switch', { name: '打开路由时自动折叠' })).toBeChecked();
-  await expect(page.getByRole('switch', { name: '显示路由页面' })).toBeChecked();
+  await expect(page.getByRole('switch', { name: '显示技能页面' })).toBeChecked();
+  await expect(page.getByRole('switch', { name: '显示 MCP 页面' })).toBeChecked();
+  await expect(page.getByRole('switch', { name: '显示项目页面' })).toBeChecked();
   await expect(page.getByRole('switch', { name: '显示插件页面' })).not.toBeChecked();
+  await expect(page.getByRole('switch', { name: '显示连接页面' })).toBeChecked();
   await expect(page.getByRole('switch', { name: '显示 Sub2API 页面' })).not.toBeChecked();
+  await expect(page.getByRole('switch', { name: '显示路由页面' })).toBeChecked();
   await expect(
     page.getByText('显示路由页面', { exact: true }).locator('..').getByText('开发中'),
   ).toHaveCount(0);
@@ -192,9 +202,13 @@ test('new install shows Routes by default; Plugins stay hidden until Settings', 
   // Settings switch still disables Routes; Plugins can be enabled.
   await page.getByRole('switch', { name: '显示路由页面' }).click();
   await page.getByRole('switch', { name: '显示插件页面' }).click();
+  await page.getByRole('switch', { name: '显示技能页面' }).click();
   await expect(nav.getByRole('link', { name: /^路由(?:$| — )/ })).toHaveCount(0);
   await expect(nav.getByRole('link', { name: /^插件 — / })).toBeVisible();
+  await expect(nav.getByRole('link', { name: /^技能(?:$| — )/ })).toHaveCount(0);
 
+  await page.getByRole('switch', { name: '显示技能页面' }).click();
+  await expect(nav.getByRole('link', { name: /^技能(?:$| — )/ })).toBeVisible();
   await page.getByRole('switch', { name: '显示路由页面' }).click();
   await expect(nav.getByRole('link', { name: /^路由(?:$| — )/ })).toBeVisible();
 

@@ -57,6 +57,14 @@ export const StorageKey = {
   pluginsNavVisible: `${PREFIX}plugins-nav-visible`,
   /** 侧栏是否显示 Sub2API 入口；缺省隐藏 */
   sub2apiNavVisible: `${PREFIX}sub2api-nav-visible`,
+  /** 侧栏是否显示「技能」入口；缺省显示 */
+  skillsNavVisible: `${PREFIX}skills-nav-visible`,
+  /** 侧栏是否显示 MCP 入口；缺省显示 */
+  mcpNavVisible: `${PREFIX}mcp-nav-visible`,
+  /** 侧栏是否显示「项目」入口；缺省显示 */
+  projectsNavVisible: `${PREFIX}projects-nav-visible`,
+  /** 侧栏是否显示「连接」入口；缺省显示 */
+  connectionsNavVisible: `${PREFIX}connections-nav-visible`,
   /** Sub2API 登录会话（不含导入到连接的 Key） */
   sub2apiSession: `${PREFIX}sub2api-session`,
   /** Last Sub2API site URL (even when logged out) */

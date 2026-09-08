@@ -48,6 +48,7 @@ describe('pageHelpIdFromPath', () => {
 
   it('maps Settings tabs from ?tab=', () => {
     expect(pageHelpIdFromPath('/settings', '?tab=preferences')).toBe('settingsPreferences');
+    expect(pageHelpIdFromPath('/settings', '?tab=features')).toBe('settingsFeatures');
     expect(pageHelpIdFromPath('/settings', '?tab=local')).toBe('settingsLocal');
     expect(pageHelpIdFromPath('/settings', '?tab=backups')).toBe('settingsBackups');
     expect(pageHelpIdFromPath('/settings', '?tab=about')).toBe('settingsAbout');
@@ -88,7 +89,7 @@ describe('pageHelpIdFromPath', () => {
 
   it('exposes title, intro, and matching steps for every page', () => {
     const keys = flattenKeys(zh);
-    expect(PAGE_HELP_IDS).toHaveLength(19);
+    expect(PAGE_HELP_IDS).toHaveLength(20);
     for (const id of PAGE_HELP_IDS) {
       const copy = pageHelpCopy(id);
       const n = PAGE_HELP_STEP_COUNT[id];

@@ -28,6 +28,7 @@ import type { AppSettings } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { BackupsPanel } from '@/pages/backups/BackupsPanel';
 import { AboutPanel } from './AboutPanel';
+import { FeaturesPanel } from './FeaturesPanel';
 import { LocalPanel } from './LocalPanel';
 import { PreferencesPanel } from './PreferencesPanel';
 import {
@@ -197,6 +198,7 @@ export default function SettingsPage({
   const settingsTabList = (
     <TabsList data-help="settings-tabs">
       <TabsTrigger value="preferences">{t('settings.page.tabPreferences')}</TabsTrigger>
+      <TabsTrigger value="features">{t('settings.page.tabFeatures')}</TabsTrigger>
       <TabsTrigger value="local">{t('settings.page.tabLocal')}</TabsTrigger>
       <TabsTrigger value="backups">{t('settings.page.tabBackups')}</TabsTrigger>
       <TabsTrigger value="about" className="gap-1.5">
@@ -262,6 +264,10 @@ export default function SettingsPage({
                   committedThemeRef={committedThemeRef}
                   committedLanguageRef={committedLanguageRef}
                 />
+              </TabsContent>
+
+              <TabsContent value="features">
+                <FeaturesPanel />
               </TabsContent>
 
               <TabsContent value="local">
