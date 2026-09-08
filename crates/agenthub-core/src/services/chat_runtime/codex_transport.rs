@@ -176,6 +176,7 @@ impl CodexTransport {
         Self::spawn_grok_with(program, cwd, model, effort, Some(abort))
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn spawn_kiro(
         program: &Path,
         cwd: &Path,

@@ -82,6 +82,7 @@ fn platform_ide_codex_bins(bin_dir: &Path) -> Vec<PathBuf> {
 }
 
 fn desktop_codex_bins() -> Vec<PathBuf> {
+    #[allow(unused_mut)]
     let mut out = Vec::new();
     #[cfg(windows)]
     {
