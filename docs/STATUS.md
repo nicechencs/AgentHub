@@ -19,7 +19,7 @@ updated: 2026-09-08
 - 当前内置适配包括 Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy、ZCode、DeepSeek Harness 和 Kiro。**Cursor Agent 适配器仍在代码中，但 dev 线通过 store-stamp 默认软隐藏**（Agents 管理页可取消隐藏）；待登录写入、路由目标与结构化输出等兼容问题修复后再重新开放。Kiro 管理 `kiro-cli`（检测/安装/登录指引/API Key）。新对话走 `kiro-cli acp` 持续通道：可点允许/拒绝、停止；生成时不能中途补充，可排队到下一轮。Kiro 在同一进程内续聊；进程退出后保留历史并提示新建对话，不静默创建空会话。模型、思考等级和权限在对话开始后固定，更换时需新建对话。旧 headless 对话保留原发送方式，不提供切到 ACP 的入口。本机登录或 `KIRO_API_KEY` 可用时，列模型与 Chat 打印路径可走 AgentHub 自有 HTTP（非官方 REST，不会改工作目录）；多轮经 `kiro-http:<conversationId>` 续同一对话，CLI `--resume-id` 为不同命名空间；已有 HTTP 会话失败时直接报错并保留会话，再发仍走同一条 HTTP 对话，不回退成新 CLI 会话。Kiro 本机路由按请求返回 JSON 或 SSE，目前先收齐上游回复再输出；使用连接池里当前登录的访问令牌，并带上该登录的区域、profile 与请求来源，不在本机路由里刷新。交互新对话仍可走 `kiro-cli acp`。不把编辑器当成已安装。
 - CLI 提供 doctor、env、agent、provider、account、skill、usage、backup、run、config 等命令；参数以 CLI 帮助和源码为准。
 - Chat 各家能力与 [Chat 与 Agent](concepts/chat-and-agents.md) 一致：
-  - **新空 Codex 会话**：已接入 app-server 持续聊天（持续回复、确认/回答、补充/停止、保存与同机重开）。B2 已落地会话模型/思考强度、最小操作菜单、本地图片附件与「用于本次」技能（不含计划模式与完整扩展管理）。Linux 真窗已验：图片、「用于本次」技能、模型×思考强度、停止、关窗续聊、命令批准允许/拒绝。macOS 重开续聊仍有效。Windows 未宣称。问答仍是 blocker（界面有问答控件，本轮 Codex Default / `on-request` 未发出问答协议）。文件审批缺真窗验收。见 [B1](archive/chat-codex-b1.md)、[B2](archive/chat-codex-b2.md)。
+  - **新空 Codex 会话**：已接入 app-server 持续聊天（持续回复、命令确认、补充/停止、保存与同机重开）。B2 已落地会话模型/思考强度、最小操作菜单、本地图片附件与「用于本次」技能（不含计划模式与完整扩展管理）。Linux 真窗已验：图片、「用于本次」技能、模型×思考强度、停止、关窗续聊、命令批准允许/拒绝。macOS 重开续聊仍有效。Windows 未宣称。文本问答的协议和界面已映射（`item/tool/requestUserInput` → 卡片 + 提交），但 Codex 0.148 Default / `on-request` 默认不发出该请求；见下方已知边界。文件审批缺真窗验收。见 [B1](archive/chat-codex-b1.md)、[B2](archive/chat-codex-b2.md)。
   - **新空 Grok 会话**：持续聊天（模型/思考、图片、后续轮排队），**不支持**为本轮指定「用于本次」技能，界面也不画可点的假按钮。真实窗口验收已通过。
   - **新空 Kiro 会话**：`kiro-cli acp` 持续通道（允许/拒绝、停止；生成时不能中途补充，可排队到下一轮）。真实窗口验收已通过（含 HTTP 多轮）。旧对话保留原发送方式。
   - **其余 Agent 与旧会话**：仍走原发送方式。
@@ -54,6 +54,7 @@ updated: 2026-09-08
 
 ## 已知边界
 
+- Codex 文本问答：Chat 已能处理 `item/tool/requestUserInput` 并提交答案。本机 Codex 0.148 在 Default / `on-request` 下会把模型对 `request_user_input` 的调用打回「unavailable in Default mode」，因此产品会话发不出问答卡片。进程级 `--enable default_mode_request_user_input`（不写用户 `config.toml`）可以逼出该请求；该开关在 Codex 侧是 under development、默认关闭，开启后 Codex 会警告行为不完整。计划模式也能用该工具，但需要 `experimentalApi`，且计划模式仍是 B2 范围外。未把该开关做成产品默认，也未造假问答入口。
 - `agenthub-adapterd` sidecar 目标架构尚未替代当前桌面进程内的路由运行时。
 - 本机同口授权池已作为默认 Routes 能力打开：每个目标 Agent/surface 一个默认池，共用 loopback 入口和本机令牌；`GET /models` 与 dispatch 共用 resolver；默认 `priority_failover`；官方直连不自动入池。混合供应商复合路由和 Codex↔Grok 双向 Responses 仍是实验开关、默认关闭。已保存的本机入口和 Responses 格式（Codex 或 Grok）必须与当前端点一致，否则准备启动时失败，不会悄悄改成直通。现行契约见 [连接与路由](concepts/connections-and-routing.md) 和 [本机 Routes API](reference/local-route-api.md)；设计稿见 [本机同口授权池（归档）](archive/unified-loopback-pool.md)。
 - 托盘低内存后台模式仍是未实施方案，不从它派生当前任务。
