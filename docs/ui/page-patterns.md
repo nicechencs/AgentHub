@@ -49,10 +49,10 @@ Entering any `/routes*` path shows a shell-level secondary nav panel. Clicking R
 
 ### 2.1 Standard shell
 
-The standard shell is flush to the window: a canvas-colored sidebar, a 1px rule, and a panel-colored main stage. The top bar is 36px (`pageRhythm.topChrome`) and lines up with the sidebar brand row. The main column uses the edge-column pattern with a shared horizontal inset (`pageEdge.inset`, currently 12px). Dashboard uses `pageRhythm.overviewColumn`. Non-chat pages put the page title on the left of the top bar as one line: the page name in the headline size and primary color, then a short description in the meta size and secondary color. Help and feedback stay on the right. Chat has no top bar and owns its session name. A standard page is composed in this order:
+The standard shell is flush to the window: a 36px title bar across the full width (logo over the 48px icon rail, page name, help/feedback), then a canvas-colored icon rail, a 1px rule, and a panel-colored main stage. Collapsed primary nav is a 48×48 icon rail; expanded nav keeps that icon column and shows labels to the right. A 24px status bar spans the window under those columns: local forwarding on the left, installed agents on the right. The main column uses the edge-column pattern with a shared horizontal inset (`pageEdge.inset`, currently 12px), including Dashboard. The page title is one line on the title bar: the page name in the body size and primary color, then a short description in the meta size and secondary color. Chat also uses that title bar and keeps session actions in its own header. A standard page is composed in this order:
 
 ```text
-TopBar (title + metadata | notification)
+TopBar (logo | sidebar toggle | title + metadata | help/feedback)
   -> chrome / chromeRow (tabs, filters, Agent strip; page commands on the right of the same row)
   -> lead (environment status or one Notice)
   -> stack / blocks (main content)

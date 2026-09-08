@@ -42,8 +42,8 @@ Five semantic text roles are allowed for new UI:
 |---|---|---:|---|
 | Display | `text-display` | 22px | Chat empty-state headline, first-run title |
 | Title | `text-title` | 18px | Dialog titles |
-| Headline | `text-headline` | 15px | Shell page titles (`pageRhythm.pageTitle`), section titles, dashboard metric values |
-| Body | `text-body` | 14px | Body copy, buttons, list names, menus, form values |
+| Headline | `text-headline` | 15px | Section titles, dashboard metric values |
+| Body | `text-body` | 14px | Body copy, buttons, list names, menus, form values, shell page titles |
 | Meta | `text-meta` | 12px | Table headings, paths, timestamps, badges, hints, diagnostic text |
 
 Existing `text-lg`/`text-xl`, `text-sm`/`text-base`, and `text-xs`/`text-2xs` aliases map onto title / body / meta. Do not introduce arbitrary `text-[Npx]` values.
@@ -71,17 +71,16 @@ Status colors are semantic: `success`, `warning`, `danger`, and `info`. A status
 - Controls use `rounded-btn` (8px); cards, dialogs, and overlays use `rounded-card` (12px); composers and user bubbles use `rounded-composer` (16px). Chips, avatars, switches, and progress tracks may use `rounded-full`. The application shell and inspect panes are flush (no radius, no shadow).
 - Do not add `rounded-lg`, `rounded-2xl`, or arbitrary radius values.
 - `shadow-xs` is for a card, `shadow-sm` for a light raised control, `shadow-md` for menus/toasts, and `shadow-lg` for dialogs. Buttons do not gain a shadow on hover or press.
-- The shell is edge-to-edge. Sidebar and main meet with a 1px `border-r`. Resize sashes are a 4px hit (`pageEdge.separator`) with a 1px accent rule on hover only. Do not wrap the shell in an outer gutter or a second border.
+- The shell is edge-to-edge. Sidebar and main meet with a 1px `border-r`. Resize sashes are a 4px hit (`pageEdge.separator`) with a 1px accent rule on hover only. Do not wrap the shell in an outer gutter or a second border. The status bar is 24px (`h-6`) and spans the window.
 
 ### 3.4 Content widths
 
-There are three content systems:
+There are two content systems:
 
 | System | Token/pattern | Use |
 |---|---|---|
 | Reading column | `pageRhythm.readingColumn` (`mx-auto w-full max-w-3xl`) | Chat transcript/composer, Settings form, long-form reading |
-| Overview column | `pageRhythm.overviewColumn` (`mx-auto w-full max-w-6xl`) | Dashboard only |
-| Edge column | `pageRhythm.pageShell` / `workbenchX` from `pageEdge.inset` (currently 12px) | Tables, lists, split workbenches, Routes. Change `pageEdge.inset` in `src/components/layout/page-rhythm.ts` to retune every page edge. When a split pane is open, the scrolling list uses `workbenchXSplit` (`inset` left; canvas pad + margin on the right) so the scrollbar is not flush against the separator. |
+| Edge column | `pageRhythm.pageShell` / `workbenchX` from `pageEdge.inset` (currently 12px) | Dashboard, tables, lists, split workbenches, Routes. Change `pageEdge.inset` in `src/components/layout/page-rhythm.ts` to retune every page edge. When a split pane is open, the scrolling list uses `workbenchXSplit` (`inset` left; canvas pad + margin on the right) so the scrollbar is not flush against the separator. |
 
 Do not introduce page-private `max-w-*` values or a second left-aligned reading width. `fullBleed` describes height and scrolling behavior, not a width system. The shell has no outer gutter; `pageEdge.canvas` (12px) is only the split-list right gap beside the separator.
 
