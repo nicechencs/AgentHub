@@ -19,6 +19,13 @@ describe('backups layout wiring', () => {
     expect(panel).toContain("t('settings.backups.confirmDelete')");
   });
 
+  it('treats restore as a destructive confirm', () => {
+    const panel = source('BackupsPanel.tsx');
+    expect(panel).toContain("t('settings.backups.restoreConfirm')");
+    expect(panel).toContain('variant="danger"');
+    expect(panel).toContain("t('settings.backups.confirmRestore')");
+  });
+
   it('uses compact list rows and opens inspectBackup details', () => {
     const panel = source('BackupsPanel.tsx');
     const detail = source('backup-detail-panel.tsx');

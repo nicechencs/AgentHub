@@ -93,6 +93,10 @@ describe('dashboard layout wiring', () => {
     expect(chart).toContain('costFromTrendPoint');
     expect(chart).toContain('dashboard.page.trendOther');
     expect(chart).toContain('dashboard.page.trendToday');
+    expect(translate('zh', 'dashboard.page.tokenUsageTitle', { range: '7 天' })).toContain('含缓存');
+    expect(translate('en', 'dashboard.page.tokenUsageTitle', { range: '7d' })).toContain(
+      'including cache',
+    );
   });
 
   it('keeps trend y-axis labels in view and sorts the hover list by tokens', () => {
