@@ -41,8 +41,8 @@ Five semantic text roles are allowed for new UI:
 | Role | Token/class | Size | Use |
 |---|---|---:|---|
 | Display | `text-display` | 22px | Chat empty-state headline, first-run title |
-| Title | `text-title` | 18px | Page titles, dialog titles |
-| Headline | `text-headline` | 15px | Section titles, dashboard metric values |
+| Title | `text-title` | 18px | Dialog titles |
+| Headline | `text-headline` | 15px | Shell page titles (`pageRhythm.pageTitle`), section titles, dashboard metric values |
 | Body | `text-body` | 14px | Body copy, buttons, list names, menus, form values |
 | Meta | `text-meta` | 12px | Table headings, paths, timestamps, badges, hints, diagnostic text |
 
@@ -54,8 +54,8 @@ Use semantic surface roles:
 
 | Role | Token | Use |
 |---|---|---|
-| Canvas | `bg-canvas` | Page, main column, and top bar |
-| Panel | `bg-panel` | Cards, sidebar, preview panel, dialog content |
+| Canvas | `bg-canvas` | Window chrome: sidebar, session rail, and top bar |
+| Panel | `bg-panel` | Main stage, cards, preview panel, dialog content |
 | Subtle | `bg-subtle` | Toolbars, table headings, secondary strips |
 | Hover | `bg-hover` | Pointer hover on an enabled item |
 | Active | `bg-active` | Current page item, current preview target, current connection |
@@ -68,10 +68,10 @@ Status colors are semantic: `success`, `warning`, `danger`, and `info`. A status
 ### 3.3 Spacing, radius, and elevation
 
 - Spacing follows the 4/8/12/16/24/32px ladder.
-- Controls use `rounded-btn` (8px); cards, panels, and the application shell use `rounded-card` (12px); composers and user bubbles use `rounded-composer` (16px). Chips, avatars, switches, and progress tracks may use `rounded-full`.
+- Controls use `rounded-btn` (8px); cards, dialogs, and overlays use `rounded-card` (12px); composers and user bubbles use `rounded-composer` (16px). Chips, avatars, switches, and progress tracks may use `rounded-full`. The application shell and inspect panes are flush (no radius, no shadow).
 - Do not add `rounded-lg`, `rounded-2xl`, or arbitrary radius values.
 - `shadow-xs` is for a card, `shadow-sm` for a light raised control, `shadow-md` for menus/toasts, and `shadow-lg` for dialogs. Buttons do not gain a shadow on hover or press.
-- The application canvas has a 12px outer gutter. The shell columns are rounded panels. Keep the shell and page surfaces distinct without stacking multiple borders around the same content.
+- The shell is edge-to-edge. Sidebar and main meet with a 1px `border-r`. Resize sashes are a 4px hit (`pageEdge.separator`) with a 1px accent rule on hover only. Do not wrap the shell in an outer gutter or a second border.
 
 ### 3.4 Content widths
 
@@ -81,9 +81,9 @@ There are three content systems:
 |---|---|---|
 | Reading column | `pageRhythm.readingColumn` (`mx-auto w-full max-w-3xl`) | Chat transcript/composer, Settings form, long-form reading |
 | Overview column | `pageRhythm.overviewColumn` (`mx-auto w-full max-w-6xl`) | Dashboard only |
-| Edge column | `pageRhythm.pageShell` / `workbenchX` from `pageEdge.inset` (currently 12px) | Tables, lists, split workbenches, Routes. Change `pageEdge.inset` in `src/components/layout/page-rhythm.ts` to retune every page edge. When a split pane is open, the scrolling list uses `workbenchXSplit` (`inset` left; canvas gutter pad + margin on the right) so the scrollbar is not flush against the separator. |
+| Edge column | `pageRhythm.pageShell` / `workbenchX` from `pageEdge.inset` (currently 12px) | Tables, lists, split workbenches, Routes. Change `pageEdge.inset` in `src/components/layout/page-rhythm.ts` to retune every page edge. When a split pane is open, the scrolling list uses `workbenchXSplit` (`inset` left; canvas pad + margin on the right) so the scrollbar is not flush against the separator. |
 
-Do not introduce page-private `max-w-*` values or a second left-aligned reading width. `fullBleed` describes height and scrolling behavior, not a width system. The application canvas gutter is 12px.
+Do not introduce page-private `max-w-*` values or a second left-aligned reading width. `fullBleed` describes height and scrolling behavior, not a width system. The shell has no outer gutter; `pageEdge.canvas` (12px) is only the split-list right gap beside the separator.
 
 ## 4. Component rules
 

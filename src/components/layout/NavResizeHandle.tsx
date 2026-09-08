@@ -1,5 +1,6 @@
-import { cn } from '@/lib/utils';
+import { pageRhythm } from '@/components/layout/page-rhythm';
 import type { NavWidthController } from '@/components/layout/use-sidebar-width';
+import { cn } from '@/lib/utils';
 
 export function NavResizeHandle({
   label,
@@ -20,11 +21,7 @@ export function NavResizeHandle({
       onPointerDown={width.onResizeStart}
       onDoubleClick={width.resetWidth}
       onKeyDown={width.onSeparatorKeyDown}
-      className={cn(
-        'absolute inset-y-0 right-0 z-10 w-1.5 cursor-col-resize touch-none bg-transparent outline-none',
-        'hover:bg-accent/40 focus-visible:bg-accent/40 active:bg-accent/60',
-        'before:absolute before:inset-y-0 before:-left-1 before:right-0 before:content-[""]',
-      )}
+      className={cn(pageRhythm.sash, 'absolute inset-y-0 right-0')}
     />
   );
 }

@@ -7,12 +7,6 @@ import {
 } from './side-split-model';
 import type { SideSplitController } from './use-side-split';
 
-const separatorClass = cn(
-  'group relative z-10 w-1.5 shrink-0 cursor-col-resize touch-none bg-transparent outline-none',
-  'hover:bg-accent/40 focus-visible:bg-accent/40 active:bg-accent/60',
-  'before:absolute before:inset-y-0 before:-left-1.5 before:-right-1.5 before:content-[""]',
-);
-
 export function SideSplitSeparator<T>({
   split,
   resizeAria,
@@ -31,7 +25,7 @@ export function SideSplitSeparator<T>({
       onPointerDown={split.expanded ? split.onResizeStart : undefined}
       onDoubleClick={split.expanded ? split.resetWidth : undefined}
       onKeyDown={split.expanded ? split.onSeparatorKeyDown : undefined}
-      className={cn(separatorClass, !split.expanded && 'pointer-events-none opacity-0')}
+      className={cn(pageRhythm.sash, !split.expanded && 'pointer-events-none opacity-0')}
     />
   );
 }
@@ -76,8 +70,8 @@ export function SideSplitFrame<T>({
  * Full-height workbench: list column | optional inspect pane.
  * Page title lives in TopBar. Toolbar (tabs/filters + page commands) and
  * listFooter stay in the list column, left of the separator.
- * Both columns start at `pageEdge.inset` so the inspect header lines up with
- * the list chrome (Skills / Connections / Settings backups).
+ * When the inspect pane is open, both columns start at the top so the inspect
+ * header lines up with the list chrome (Skills / Connections / Settings backups).
  */
 export function WorkbenchSplitPage<T>({
   split,
@@ -100,15 +94,15 @@ export function WorkbenchSplitPage<T>({
   const listInset = paneOpen ? pageRhythm.workbenchXSplit : pageRhythm.workbenchX;
   const overflowX = paneOpen && listOverflowX === 'hidden' ? 'overflow-x-hidden' : 'overflow-x-auto';
   return (
-    <div ref={split.splitRef} className="flex h-full min-h-0 overflow-hidden bg-canvas">
+    <div ref={split.splitRef} className="flex h-full min-h-0 overflow-hidden bg-panel">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div
           className={cn(
-            'min-h-0 min-w-0 flex-1 overflow-y-auto bg-canvas',
+            'min-h-0 min-w-0 flex-1 overflow-y-auto bg-panel',
             overflowX,
             listInset,
             listFooter ? undefined : pageRhythm.workbenchY,
-            pageRhythm.workbenchPadT,
+            paneOpen ? undefined : pageRhythm.workbenchPadT,
           )}
           data-help="workbench-list"
         >

@@ -49,7 +49,7 @@ Entering any `/routes*` path shows a shell-level secondary nav panel. Clicking R
 
 ### 2.1 Standard shell
 
-The standard shell has a 12px canvas gutter (`pageEdge.canvas`), a rounded sidebar panel, a rounded main panel, and a top bar. The main column uses the edge-column pattern with a shared horizontal inset (`pageEdge.inset`, currently 12px). Dashboard uses `pageRhythm.overviewColumn`. Non-chat pages put the page title on the left of the top bar as one line: the page name in the title size and primary color, then a short description in the meta size and secondary color. The notification control stays on the right. Chat has no top bar and owns its session name. A standard page is composed in this order:
+The standard shell is flush to the window: a canvas-colored sidebar, a 1px rule, and a panel-colored main stage. The top bar is 36px (`pageRhythm.topChrome`) and lines up with the sidebar brand row. The main column uses the edge-column pattern with a shared horizontal inset (`pageEdge.inset`, currently 12px). Dashboard uses `pageRhythm.overviewColumn`. Non-chat pages put the page title on the left of the top bar as one line: the page name in the headline size and primary color, then a short description in the meta size and secondary color. Help and feedback stay on the right. Chat has no top bar and owns its session name. A standard page is composed in this order:
 
 ```text
 TopBar (title + metadata | notification)

@@ -5,13 +5,14 @@
  * ## 页边（只改 `pageEdge`）
  * 贴边列、顶栏、工作台列表、预览列共用 `pageEdge.inset`。
  * class 走 `pageRhythm`，分栏像素走 `pageEdgePx`，都从这一处派生。
- * 窗内画布缝是 `pageEdge.canvas`；Chat 主列水平是 `pageEdge.chat`，不要和页边混用。
+ * `pageEdge.canvas` 不再做窗内留缝，只给分栏列表右侧（滚动条与分隔条之间）留空。
+ * Chat 主列水平是 `pageEdge.chat`，不要和页边混用。
  *
  * ## 内容宽度（两套，docs/ui/design-system.md §3.4）
  * 1. 阅读列 `readingColumn`：Chat 消息列。固定 `max-w-3xl` 居中。设置表单正文（备份分栏页除外）同列居中；页签留在页头贴左，不进阅读列。
  * 2. 贴边列：其余页。铺满主列，左右用 `pageEdge.inset`（`pageShell` / `workbenchX`）。
  * 3. 总览列 `overviewColumn`：仅 Dashboard，居中 `max-w-6xl`。
- * 页标题一律贴边、同一行（大号深色标题 + 小号浅色说明），放在非对话页顶栏左侧。
+ * 页标题一律贴边、同一行（headline 深色标题 + meta 浅色说明），放在非对话页顶栏左侧。
  *
  * 层级（自上而下）：
  * 1. TopBar 页标题（非对话页；对话页自管会话名）
@@ -69,14 +70,14 @@ type SpacePx = keyof typeof SPACE;
  * `pageRhythm` 与 `pageEdgePx` 从这里派生，业务页不要再写死页边 class / 像素。
  */
 export const pageEdge = {
-  /** 窗内画布缝（侧栏与主列外的 p / gap） */
+  /** 分栏列表右侧空：滚动条与分隔条之间，不是窗内留缝 */
   canvas: 12,
   /** 主列贴边：pageShell、顶栏、工作台列表、预览列 */
   inset: 12,
   /** Chat 消息列 / composer 水平 chrome，不是页边 */
   chat: 16,
-  /** 分栏分隔条占位 */
-  separator: 6,
+  /** 分栏分隔条热区宽度；可见线是 1px，悬停才出现 */
+  separator: 4,
 } as const satisfies {
   canvas: SpacePx;
   inset: SpacePx;
@@ -89,21 +90,39 @@ export const pageInsetTw = SPACE[pageEdge.inset];
 export const pageChatTw = SPACE[pageEdge.chat];
 
 export const pageRhythm = {
-  /** 窗内画布留缝，侧栏/主列两块圆角面板 */
-  shell: `flex h-full min-h-0 ${pageCanvasTw.gap} bg-canvas ${pageCanvasTw.p}`,
+  /** 贴边工作台：灰 chrome（canvas）+ 白正文（panel），栏与栏 1px 线。 */
+  shell: 'flex h-full min-h-0 bg-canvas',
   shellNav:
-    'flex min-h-0 shrink-0 flex-col overflow-hidden rounded-card border border-border bg-panel shadow-xs',
-  /** Main column sits on canvas; cards/sidebar use panel (THEME in tokens.ts). */
+    'flex min-h-0 shrink-0 flex-col overflow-hidden border-r border-border bg-canvas',
+  /** Main stage is panel; sidebar / top chrome stay on canvas (THEME in tokens.ts). */
   shellMain:
-    'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-card border border-border bg-canvas shadow-xs',
+    'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-panel',
+  /**
+   * Resize sash: 4px hit (`pageEdge.separator` / `w-1`), 1px rule, accent on hover.
+   * Overlay handles add `absolute inset-y-0 right-0`.
+   */
+  sash: [
+    'group relative z-10 w-1 shrink-0 cursor-col-resize touch-none bg-transparent outline-none',
+    'before:absolute before:inset-y-0 before:-left-1 before:-right-1 before:content-[""]',
+    'after:pointer-events-none after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-border after:content-[""]',
+    'hover:after:bg-accent focus-visible:after:bg-accent active:after:bg-accent',
+  ].join(' '),
+  /** Right-hand inspect / preview: flush chrome, no card radius. */
+  inspectPane:
+    'flex h-full min-h-0 min-w-0 shrink-0 flex-col overflow-hidden bg-canvas',
+  inspectToolbar:
+    'flex h-9 shrink-0 items-center gap-1.5 overflow-x-auto px-3',
+  inspectHeader:
+    'flex h-9 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border px-3',
+  inspectTitle: 'min-w-0 truncate text-body font-medium leading-tight text-primary',
   /** 常规页外壳：铺满主列，与 Skills / Projects 右缘对齐 */
   pageShell: `w-full min-w-0 ${pageInsetTw.x} ${pageInsetTw.y}`,
   /** Chat 消息列：居中阅读宽。页头不进此列。设置表单正文（备份分栏页除外）共用同一列。 */
   readingColumn: 'mx-auto w-full max-w-3xl',
   /** Dashboard 居中列，避免宽屏把指标拉成一条细线。 */
   overviewColumn: 'mx-auto w-full max-w-6xl',
-  /** 侧栏品牌行与非对话页顶栏同高，横线对齐 */
-  topChrome: 'h-11',
+  /** 侧栏品牌行与非对话页顶栏同高，横线对齐（36px，接近桌面工具栏） */
+  topChrome: 'h-9',
   /** 全高工作台水平 inset — 与常规页水平一致 */
   workbenchX: pageInsetTw.x,
   /**
@@ -117,8 +136,8 @@ export const pageRhythm = {
   workbenchHeader: `shrink-0 ${pageInsetTw.x} ${pageInsetTw.t}`,
   /** 全高列表顶距，与预览列 padTop 相同 */
   workbenchPadT: pageInsetTw.t,
-  /** 页标题：非对话页顶栏 h1（大号、深色） */
-  pageTitle: 'text-title font-semibold tracking-tight text-primary',
+  /** 页标题：非对话页顶栏（headline，不当成网站大标题） */
+  pageTitle: 'text-headline font-medium tracking-tight text-primary',
   /** 页说明：紧跟标题同一行（小号、浅色），过长截断 */
   pageTitleMeta: 'min-w-0 truncate text-meta font-normal text-secondary',
   /** 顶栏标题行：标题与说明基线对齐 */
@@ -134,7 +153,7 @@ export const pageRhythm = {
   /** 页头下：Agent 条 / Tabs / 单行筛选工具带 */
   chrome: 'mb-3',
   /** 工具行：与预览列页头同高，左侧筛选、右侧操作 */
-  chromeRow: 'mb-3 flex min-h-10 flex-wrap items-center gap-2',
+  chromeRow: 'mb-3 flex min-h-9 flex-wrap items-center gap-2',
   /** 工具行右侧页内操作，与左侧 Tab/筛选同一行 */
   chromeActions: 'ml-auto flex shrink-0 items-center gap-2',
   /** Header 后引导区（环境条、提示组）；底距与 chrome 相同，切页列表顶边对齐 */
@@ -168,6 +187,6 @@ export const pageEdgePx = {
   x: pageEdge.inset,
   /** 预览卡片底距，与 pageShell 垂直 inset 一致。 */
   previewY: pageEdge.inset,
-  /** 分隔条约宽 */
+  /** 分隔条热区宽度 */
   separator: pageEdge.separator,
 } as const;

@@ -9,13 +9,33 @@ import {
 } from '@/components/layout/page-rhythm';
 
 describe('pageRhythm (docs/ui/design-system.md §3)', () => {
-  it('keeps the app chrome as two rounded columns on the canvas gutter', () => {
-    expect(pageRhythm.shell).toContain(pageCanvasTw.p);
-    expect(pageRhythm.shell).toContain(pageCanvasTw.gap);
-    expect(pageRhythm.shellNav).toContain('rounded-card');
-    expect(pageRhythm.shellMain).toContain('rounded-card');
+  it('keeps the app chrome flush: canvas rail, panel stage, no outer gutter', () => {
+    expect(pageRhythm.shell).toBe('flex h-full min-h-0 bg-canvas');
+    expect(pageRhythm.shell).not.toContain(pageCanvasTw.p);
+    expect(pageRhythm.shell).not.toContain(pageCanvasTw.gap);
+    expect(pageRhythm.shellNav).toContain('bg-canvas');
+    expect(pageRhythm.shellNav).toContain('border-r');
+    expect(pageRhythm.shellNav).not.toContain('rounded-card');
+    expect(pageRhythm.shellMain).toContain('bg-panel');
+    expect(pageRhythm.shellMain).not.toContain('rounded-card');
     expect(pageRhythm.shellNav).toContain('overflow-hidden');
     expect(pageRhythm.shellMain).toContain('overflow-hidden');
+  });
+
+  it('keeps the resize sash as a 4px hit with a 1px rule that accents on hover', () => {
+    expect(pageEdge.separator).toBe(4);
+    expect(pageRhythm.sash).toContain('w-1');
+    expect(pageRhythm.sash).toContain('after:bg-border');
+    expect(pageRhythm.sash).toContain('hover:after:bg-accent');
+    expect(pageRhythm.sash).not.toContain('hover:bg-accent/40');
+  });
+
+  it('keeps inspect panes flush, without card radius or shadow', () => {
+    expect(pageRhythm.inspectPane).toContain('bg-canvas');
+    expect(pageRhythm.inspectPane).not.toContain('rounded-card');
+    expect(pageRhythm.inspectPane).not.toContain('shadow-xs');
+    expect(pageRhythm.inspectHeader).toContain('h-9');
+    expect(pageRhythm.inspectTitle).toContain('text-body');
   });
 
   it('derives every page inset class and pixel from pageEdge.inset', () => {
@@ -51,14 +71,14 @@ describe('pageRhythm (docs/ui/design-system.md §3)', () => {
   });
 
   it('locks page titles to one type, one-line title+meta, and the shared inset', () => {
-    expect(pageRhythm.chromeRow).toContain('min-h-10');
+    expect(pageRhythm.chromeRow).toContain('min-h-9');
     expect(pageRhythm.chromeActions).toContain('ml-auto');
     expect(pageRhythm.lead).toContain('mb-3');
-    expect(pageRhythm.pageTitle).toBe('text-title font-semibold tracking-tight text-primary');
+    expect(pageRhythm.pageTitle).toBe('text-headline font-medium tracking-tight text-primary');
     expect(pageRhythm.pageTitleMeta).toContain('text-meta');
     expect(pageRhythm.pageTitleMeta).toContain('text-secondary');
     expect(pageRhythm.pageTitleBlock).toBe('flex min-w-0 items-baseline gap-2.5');
-    expect(pageRhythm.topChrome).toBe('h-11');
+    expect(pageRhythm.topChrome).toBe('h-9');
   });
 
   it('starts workbench body with inset top/bottom and no extra py on the bottom token', () => {

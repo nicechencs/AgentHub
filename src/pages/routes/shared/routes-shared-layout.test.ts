@@ -123,7 +123,7 @@ describe('routes layout wiring', () => {
     expect(create).not.toContain('showCancel={false}');
     const panel = source('components/layout/SideInspectPanel.tsx');
     expect(panel).toContain('PanelRightClose');
-    expect(panel).toContain('flex h-10');
+    expect(panel).toContain('pageRhythm.inspectHeader');
   });
 
   it('docks the recycle-bin button in the list column, left of the split', () => {

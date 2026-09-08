@@ -9,8 +9,9 @@ export const SIDE_SPLIT_WIDTH_FLOOR = 240;
 /** List column reserved while the inspect pane is open. */
 export const SIDE_SPLIT_MAIN_MIN = 380;
 export const SIDE_SPLIT_MAIN_FLOOR = 280;
-export const SIDE_SPLIT_FRAME_PAD_RIGHT = pageEdgePx.x;
-export const SIDE_SPLIT_FRAME_PAD_Y = pageEdgePx.previewY;
+/** Inspect pane is flush; keep 0 so clamp math stays in one place. */
+export const SIDE_SPLIT_FRAME_PAD_RIGHT = 0;
+export const SIDE_SPLIT_FRAME_PAD_Y = 0;
 export const SIDE_SPLIT_SEPARATOR_W = pageEdgePx.separator;
 export const SIDE_SPLIT_WIDTH_STEP = 16;
 export const SIDE_SPLIT_WIDTH_STEP_LARGE = 48;
