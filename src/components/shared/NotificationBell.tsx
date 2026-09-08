@@ -51,12 +51,15 @@ export function NotificationBell() {
 
   const handleClick = async (alert: DashboardAlert) => {
     setOpen(false);
+    const agentQuery = alert.agentId
+      ? `?agent=${encodeURIComponent(alert.agentId)}`
+      : '';
     switch (alert.actionKind) {
       case 'refresh-token':
-        navigate('/connections');
+        navigate(`/connections${agentQuery}`);
         break;
       case 'upgrade':
-        navigate('/agents');
+        navigate(`/agents${agentQuery}`);
         break;
     }
   };
