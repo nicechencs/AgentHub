@@ -3424,7 +3424,10 @@ export const zh = {
     },
     empty: {
       title: '还没有发现插件包',
+      partialTitle: '部分插件列表没读到',
       all: '在 Claude、Grok 或 Pi 里安装插件后点刷新。Claude 和 Grok 已装的包可以在这里启用或停用；安装仍在各工具里做。',
+      allPartial: '{names} 的列表没读到。其他工具里暂时没有插件包。',
+      scanFailed: '{names} 的插件列表没读到。下面是其他工具里已发现的包。',
       agent: '在「{name}」里安装插件后点刷新。已装的包可以启用或停用；安装仍在该工具里做。',
       agentListOnly: '在「{name}」里安装插件后点刷新。安装仍在该工具里做。',
       plannedTitle: '插件列表尚未接线',

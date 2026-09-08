@@ -3451,7 +3451,10 @@ export const en = {
     },
     empty: {
       title: 'No plugin packs found',
+      partialTitle: 'Some plugin lists could not be read',
       all: 'Install a plugin in Claude, Grok, or Pi, then refresh. You can enable or disable installed Claude and Grok packs here; install still happens in each tool.',
+      allPartial: "Couldn't read the list for {names}. Other tools have no plugin packs yet.",
+      scanFailed: "Couldn't read the plugin list for {names}. Packs found in other tools are below.",
       agent: 'Install a plugin in {name}, then refresh. You can enable or disable installed packs; install still happens in that tool.',
       agentListOnly: 'Install a plugin in {name}, then refresh. Install still happens in that tool.',
       plannedTitle: 'Plugin list is not wired yet',

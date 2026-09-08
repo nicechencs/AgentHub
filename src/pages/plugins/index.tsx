@@ -7,6 +7,7 @@ import { WorkbenchSplitPage } from '@/components/layout/SideSplit';
 import { useSideSplit } from '@/components/layout/use-side-split';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { Notice } from '@/components/shared/Notice';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { PageRefreshButton } from '@/components/shared/PageRefreshButton';
 import { Badge } from '@/components/ui/badge';
@@ -22,7 +23,7 @@ import type { PluginEntry, PluginInventory } from '@/lib/backend/contracts/plugi
 import type { AgentKey } from '@/lib/types';
 import { PluginDetailPanel } from './PluginDetailPanel';
 import { PluginPackList } from './PluginPackList';
-import { pluginEmptyCopy } from './plugin-empty';
+import { pluginEmptyCopy, pluginScanFailedAgents } from './plugin-empty';
 import { StorageKey } from '@/lib/ui-preferences';
 
 const PLUGINS_PREVIEW_WIDTH_KEY = StorageKey.pluginsPreviewWidth;
@@ -32,7 +33,7 @@ function agentName(id: AgentKey): string {
 }
 
 export default function PluginsPage() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { toast } = useToast();
   const { hiddenIds, installedIds, installedAgents, loading: agentsLoading } = useInstalledAgents();
   const [data, setData] = useState<PluginInventory | null>(null);
@@ -93,11 +94,19 @@ export default function PluginsPage() {
     return counts;
   }, [installedAgents, visiblePlugins]);
 
+  const failedAgents = pluginScanFailedAgents(
+    data?.agents,
+    new Set(installedIds),
+  );
+  const failedNames = failedAgents
+    .map((row) => agentName(row.agent))
+    .join(lang === 'en' ? ', ' : '、');
   const emptyCopy = pluginEmptyCopy(
     filterAgent,
     data?.agents,
     filterAgent === 'all' ? '' : agentName(filterAgent),
     t,
+    filterAgent === 'all' ? failedNames : '',
   );
 
   useEffect(() => {
@@ -212,12 +221,19 @@ export default function PluginsPage() {
           }
         />
       ) : (
-        <PluginPackList
-          plugins={plugins}
-          showAgent={filterAgent === 'all'}
-          activeId={inspect.target?.id ?? null}
-          onOpen={(plugin) => inspect.open(plugin)}
-        />
+        <>
+          {filterAgent === 'all' && failedNames ? (
+            <Notice tone="warning" className="mb-3">
+              {t('plugins.empty.scanFailed', { names: failedNames })}
+            </Notice>
+          ) : null}
+          <PluginPackList
+            plugins={plugins}
+            showAgent={filterAgent === 'all'}
+            activeId={inspect.target?.id ?? null}
+            onOpen={(plugin) => inspect.open(plugin)}
+          />
+        </>
       )}
     </WorkbenchSplitPage>
   );
