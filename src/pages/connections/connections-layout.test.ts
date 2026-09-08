@@ -78,6 +78,8 @@ describe('connections layout wiring', () => {
     expect(list).toContain('data-ticket-name');
     expect(list).toContain('<ListNameButton');
     expect(list).toContain('onOpen={onFollowDetail');
+    expect(list).toContain('ticketWalletVisibleSpecs');
+    expect(list).toContain('compact={compact}');
     expect(list).not.toContain('onOpen={onShowDetail');
     expect(page).toContain('followInspectOpen');
     expect(page).toContain("kind === 'detail'");

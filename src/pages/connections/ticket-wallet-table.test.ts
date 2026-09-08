@@ -3,9 +3,12 @@ import { createTranslator } from '@/lib/i18n';
 import { formatDetailTimestamp } from './ticket-card-detail';
 import {
   TICKET_WALLET_COLUMN_SPECS,
+  TICKET_WALLET_COMPACT_COLUMN_KEYS,
   ticketWalletColumnLabel,
+  ticketWalletFullMinWidth,
   ticketWalletQuotaParts,
   ticketWalletUsageParts,
+  ticketWalletVisibleSpecs,
   type TicketWalletColumnKey,
 } from './ticket-wallet-table';
 
@@ -20,6 +23,17 @@ describe('ticket wallet table columns', () => {
       'agent',
       'actions',
     ]);
+  });
+
+  it('keeps login, status, and actions when the list is too narrow', () => {
+    expect(TICKET_WALLET_COMPACT_COLUMN_KEYS).toEqual(['login', 'status', 'actions']);
+    expect(ticketWalletVisibleSpecs(true).map((spec) => spec.key)).toEqual([
+      'login',
+      'status',
+      'actions',
+    ]);
+    expect(ticketWalletVisibleSpecs(false)).toBe(TICKET_WALLET_COLUMN_SPECS);
+    expect(ticketWalletFullMinWidth()).toBeGreaterThan(700);
   });
 
   it('uses existing connection-page words for headers', () => {
