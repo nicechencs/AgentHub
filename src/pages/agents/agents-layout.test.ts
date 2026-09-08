@@ -48,6 +48,8 @@ describe('agents layout wiring', () => {
     expect(card).toContain('agentLaunchTargets');
     expect(card).toContain("t('agents.card.startCli')");
     expect(card).toContain("t('agents.card.startApp')");
+    expect(card).toContain('flex flex-nowrap items-center justify-end');
+    expect(card).not.toContain('flex flex-wrap items-center justify-end');
     expect(detail).toContain("t('agents.card.uninstallProgram')");
     expect(detail).toContain("t('agents.card.uninstallConfig')");
     expect(detail).toContain('listAgentInstalls');
@@ -76,6 +78,13 @@ describe('agents layout wiring', () => {
     expect(envList).toContain("t('chrome.env.forceUpgradeTitle'");
     expect(envList).toContain("t('chrome.env.confirmForceUpgrade')");
     expect(envList).toContain('envSoftwareControl');
+    expect(envList).toContain('envSoftwareListOpenByDefault');
+    expect(envList).toContain('aria-expanded={expanded}');
+    expect(envList).toContain('ChevronDown');
+    expect(page).toContain('sortAgentsForManagePage(ordered)');
+    expect(page).toContain('managePageUninstalledDividerIndex');
+    expect(page).toContain('data-agent-group="uninstalled"');
+    expect(page).toContain("t('agents.card.notInstalled')");
     expect(card).toContain('onSelect?:');
     expect(card).toContain('selected?:');
     expect(card).toContain('data-agent-name');

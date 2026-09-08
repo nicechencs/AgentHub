@@ -15,9 +15,11 @@ import {
   ColumnResizeHandle,
   Table,
   TableBody,
+  TableCell,
   TableHead,
   TableHeader,
   TableHeaderRow,
+  TableRow,
   TableShell,
   useColumnWidths,
 } from '@/components/ui/table';
@@ -26,7 +28,11 @@ import { SortHandle } from '@/components/shared/SortHandle';
 import { SORTABLE_ID_ATTR, useSortableDrag } from '@/components/shared/use-sortable-drag';
 import { useStoredIdOrder } from '@/components/shared/use-stored-id-order';
 import { resolveAgentMeta } from '@/config/agents';
-import { applyStoredAgentOrder, sortAgentsForManagePage } from '@/lib/agent-visibility';
+import {
+  applyStoredAgentOrder,
+  managePageUninstalledDividerIndex,
+  sortAgentsForManagePage,
+} from '@/lib/agent-visibility';
 import { applyAgentUpdates, checkAgentUpdates } from '@/lib/api/agent';
 import { StorageKey } from '@/lib/ui-preferences';
 import { tryRefreshDoctor } from '@/lib/api/doctor';
@@ -242,11 +248,15 @@ export default function AgentsPage() {
   const showPagePanel = pageFix != null;
   const agentOrder = useStoredIdOrder(StorageKey.agentsCatalogOrder);
   const orderedAgents = React.useMemo(() => {
-    const baseline = sortAgentsForManagePage(agents);
-    return applyStoredAgentOrder(baseline, (row) => row.agentId, agentOrder.stored);
+    const ordered = applyStoredAgentOrder(agents, (row) => row.agentId, agentOrder.stored);
+    return sortAgentsForManagePage(ordered);
   }, [agentOrder.stored, agents]);
   const liveIds = React.useMemo(
     () => orderedAgents.map((row) => row.agentId),
+    [orderedAgents],
+  );
+  const uninstalledDividerIndex = React.useMemo(
+    () => managePageUninstalledDividerIndex(orderedAgents),
     [orderedAgents],
   );
   React.useEffect(() => {
@@ -400,11 +410,26 @@ export default function AgentsPage() {
               </TableHeaderRow>
             </TableHeader>
             <TableBody>
-          {orderedAgents.map((a) => {
+          {orderedAgents.map((a, index) => {
             const sortable = rowProps(a.agentId);
             return (
+              <React.Fragment key={a.agentId}>
+                {index === uninstalledDividerIndex ? (
+                  <TableRow
+                    data-agent-group="uninstalled"
+                    className="bg-subtle/40 hover:bg-subtle/40"
+                  >
+                    <TableCell
+                      colSpan={AGENT_TABLE_COLUMN_SPECS.length}
+                      className="py-1"
+                    >
+                      <span className="text-meta font-medium text-muted">
+                        {t('agents.card.notInstalled')}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ) : null}
                 <AgentCard
-                  key={a.agentId}
                   agent={a}
                   runtimes={runtimes}
                   selected={inspect.target === a.agentId}
@@ -424,6 +449,7 @@ export default function AgentsPage() {
                     />
                   ) : null}
                 />
+              </React.Fragment>
             );
           })}
             </TableBody>

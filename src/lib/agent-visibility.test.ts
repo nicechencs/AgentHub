@@ -9,6 +9,7 @@ import {
   firstVisibleAgentId,
   hiddenAgentIdSet,
   isPageVisibleAgent,
+  managePageUninstalledDividerIndex,
   omittedAgentIds,
   sortAgentsForManagePage,
   visibleCatalogAgents,
@@ -30,7 +31,7 @@ function status(
 }
 
 describe('agent-visibility', () => {
-  it('keeps manage-page order: visible catalog order, then hidden catalog order', () => {
+  it('keeps manage-page order: installed, then uninstalled, then hidden', () => {
     const rows = [
       status('claude', { hidden: true }),
       status('codex'),
@@ -43,6 +44,69 @@ describe('agent-visibility', () => {
       'claude',
       'kimi',
     ]);
+  });
+
+  it('puts installed agents before uninstalled ones and keeps hidden last', () => {
+    const rows = [
+      status('claude', { installed: false }),
+      status('codex'),
+      status('kimi', { installed: false, hidden: true }),
+      status('grok', { installed: false }),
+      status('pi', { hidden: true }),
+    ];
+    expect(sortAgentsForManagePage(rows).map((row) => row.agentId)).toEqual([
+      'codex',
+      'claude',
+      'grok',
+      'kimi',
+      'pi',
+    ]);
+  });
+
+  it('keeps installed ahead of uninstalled after a remembered mixed order', () => {
+    const rows = [
+      status('claude', { installed: false }),
+      status('codex'),
+      status('grok', { installed: false }),
+      status('pi'),
+    ];
+    const stored = applyStoredAgentOrder(rows, (row) => row.agentId, [
+      'claude',
+      'codex',
+      'grok',
+      'pi',
+    ]);
+    expect(sortAgentsForManagePage(stored).map((row) => row.agentId)).toEqual([
+      'codex',
+      'pi',
+      'claude',
+      'grok',
+    ]);
+  });
+
+  it('places the uninstalled divider only when both groups are present', () => {
+    expect(
+      managePageUninstalledDividerIndex([
+        status('codex'),
+        status('pi'),
+        status('claude', { installed: false }),
+        status('grok', { installed: false }),
+        status('kimi', { hidden: true }),
+      ]),
+    ).toBe(2);
+    expect(managePageUninstalledDividerIndex([status('codex'), status('pi')])).toBe(-1);
+    expect(
+      managePageUninstalledDividerIndex([
+        status('claude', { installed: false }),
+        status('grok', { installed: false }),
+      ]),
+    ).toBe(-1);
+    expect(
+      managePageUninstalledDividerIndex([
+        status('codex'),
+        status('kimi', { hidden: true }),
+      ]),
+    ).toBe(-1);
   });
 
   it('applies a remembered agent order and keeps hidden rows that are not in storage at the end', () => {
