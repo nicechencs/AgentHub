@@ -87,7 +87,7 @@ export function ChatTranscript({
       aria-live="polite"
       aria-relevant="additions text"
       aria-busy={messagesLoading || sending ? 'true' : undefined}
-      className="min-h-0 flex-1 overflow-y-auto bg-canvas"
+      className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto bg-canvas"
     >
       {messagesLoading && turns.length === 0 ? (
         <div className="flex h-full flex-col justify-center p-6">

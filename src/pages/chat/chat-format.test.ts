@@ -12,6 +12,7 @@ import {
   clipProcessTail,
   isRetiredChatModel,
   localizeChatFailure,
+  formatChatDisplayContent,
   looksLikeChatProtocolDump,
   officialPiModelsBaseUrl,
   piChatModelOptions,
@@ -71,6 +72,54 @@ describe('formatChatSessionRecord', () => {
         '你',
       ),
     ).toBe('你\n修登录\n\nClaude Code\n先看 token。');
+  });
+});
+
+describe('formatChatDisplayContent', () => {
+  it('turns a Kiro file-edit JSON blob into a short readable summary', () => {
+    const dump = [
+      'Editing UpdatePlanTests.cs',
+      JSON.stringify({
+        _tool_use_purpose: '在 UpdatePlanTests 末尾追加筛选逻辑测试',
+        command: 'strReplace',
+        path: 'src/tests/StartApp.Tests.Unit/Models/UpdatePlanTests.cs',
+        oldStr: 'public void Foo()\n{\n}\n'.repeat(40),
+      }),
+    ].join('\n');
+    const formatted = formatChatDisplayContent(dump);
+    expect(formatted).toContain('**Editing UpdatePlanTests.cs**');
+    expect(formatted).toContain('在 UpdatePlanTests 末尾追加筛选逻辑测试');
+    expect(formatted).toContain('`strReplace`');
+    expect(formatted).toContain('`src/tests/StartApp.Tests.Unit/Models/UpdatePlanTests.cs`');
+    expect(formatted).not.toContain('oldStr');
+    expect(formatted).not.toContain('\\n');
+  });
+
+  it('summarizes an incomplete streaming tool dump from the title and keys', () => {
+    const formatted = formatChatDisplayContent(
+      'Editing Foo.cs\n{"_tool_use_purpose":"改一处调用","command":"strReplace","path":"src/Foo.cs","oldStr":"partial',
+    );
+    expect(formatted).toContain('**Editing Foo.cs**');
+    expect(formatted).toContain('改一处调用');
+    expect(formatted).toContain('`strReplace` `src/Foo.cs`');
+  });
+
+  it('summarizes a title and JSON blob on the same line', () => {
+    const formatted = formatChatDisplayContent(
+      'Editing Foo.cs {"_tool_use_purpose":"改一处调用","command":"strReplace","path":"src/Foo.cs"}',
+    );
+    expect(formatted).toContain('**Editing Foo.cs**');
+    expect(formatted).toContain('`strReplace` `src/Foo.cs`');
+  });
+
+  it('pretty-prints a standalone JSON object as a fenced block', () => {
+    expect(formatChatDisplayContent('{"a":1,"b":{"c":2}}')).toBe(
+      '```json\n{\n  "a": 1,\n  "b": {\n    "c": 2\n  }\n}\n```',
+    );
+  });
+
+  it('leaves ordinary markdown replies unchanged', () => {
+    expect(formatChatDisplayContent('先看 `token`，再改登录。')).toBe('先看 `token`，再改登录。');
   });
 });
 

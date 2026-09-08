@@ -1,5 +1,10 @@
 import { agentDisplayName } from '@/config/agents';
-import { formatJsonPayload } from '@/lib/source-preview';
+import {
+  clipPreviewText,
+  formatJsonPayload,
+  looksLikeJsonObject,
+  tryPrettyJson,
+} from '@/lib/source-preview';
 import { formatSessionRecordText } from '@/lib/session-record-text';
 import type { MessageKey, TranslateFn } from '@/lib/i18n';
 
@@ -324,6 +329,135 @@ const PROTOCOL_EVENT_TYPES = new Set([
   'turn_end',
   'agent_settled',
 ]);
+
+type ChatToolDump = {
+  title: string;
+  purpose?: string;
+  command?: string;
+  path?: string;
+};
+
+const TOOL_DUMP_HINT =
+  /"_tool_use_purpose"\s*:|"oldStr"\s*:|"newStr"\s*:|"command"\s*:\s*"strReplace"/;
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function jsonStringField(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function extractJsonStringField(source: string, key: string): string | undefined {
+  const match = source.match(new RegExp(`"${key}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`));
+  if (!match) return undefined;
+  try {
+    const parsed = JSON.parse(`"${match[1]}"`) as unknown;
+    return typeof parsed === 'string' && parsed.trim() ? parsed.trim() : undefined;
+  } catch {
+    const fallback = match[1].replace(/\\n/g, '\n').replace(/\\t/g, '\t').trim();
+    return fallback || undefined;
+  }
+}
+
+function isToolUseObject(record: Record<string, unknown>): boolean {
+  if (jsonStringField(record, '_tool_use_purpose')) return true;
+  const command = jsonStringField(record, 'command') ?? jsonStringField(record, 'name');
+  return Boolean(
+    command &&
+      (jsonStringField(record, 'path') ||
+        jsonStringField(record, 'filePath') ||
+        jsonStringField(record, 'file_path') ||
+        jsonStringField(record, 'oldStr') ||
+        jsonStringField(record, 'newStr')),
+  );
+}
+
+function splitTitleAndJson(text: string): { title: string; json: string } | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  if (looksLikeJsonObject(trimmed) && /^[[{][\s\n]*"/.test(trimmed)) {
+    return { title: '', json: trimmed };
+  }
+  const jsonAt = trimmed.search(/\{\s*"/);
+  if (jsonAt <= 0) return null;
+  const title = trimmed.slice(0, jsonAt).trim();
+  const json = trimmed.slice(jsonAt).trim();
+  if (!title || title.length > 200) return null;
+  if (title.startsWith('#') || title.startsWith('```') || title.startsWith('|')) return null;
+  if (!looksLikeJsonObject(json) || json.length < 20) return null;
+  return { title, json };
+}
+
+function tryParseObject(text: string): Record<string, unknown> | null {
+  try {
+    return asRecord(JSON.parse(text));
+  } catch {
+    return null;
+  }
+}
+
+function parseChatToolDump(text: string): ChatToolDump | null {
+  const split = splitTitleAndJson(text);
+  if (!split) return null;
+  const parsed = tryParseObject(split.json);
+  if (parsed && isToolUseObject(parsed)) {
+    return {
+      title: split.title,
+      purpose: jsonStringField(parsed, '_tool_use_purpose'),
+      command: jsonStringField(parsed, 'command') ?? jsonStringField(parsed, 'name'),
+      path:
+        jsonStringField(parsed, 'path') ??
+        jsonStringField(parsed, 'filePath') ??
+        jsonStringField(parsed, 'file_path'),
+    };
+  }
+  if (!TOOL_DUMP_HINT.test(split.json)) return null;
+  return {
+    title: split.title,
+    purpose: extractJsonStringField(split.json, '_tool_use_purpose'),
+    command:
+      extractJsonStringField(split.json, 'command') ?? extractJsonStringField(split.json, 'name'),
+    path:
+      extractJsonStringField(split.json, 'path') ??
+      extractJsonStringField(split.json, 'filePath') ??
+      extractJsonStringField(split.json, 'file_path'),
+  };
+}
+
+function markdownFence(lang: string, body: string): string {
+  let ticks = '```';
+  while (body.includes(ticks)) ticks += '`';
+  return `${ticks}${lang}\n${body}\n${ticks}`;
+}
+
+function formatToolDumpMarkdown(dump: ChatToolDump): string {
+  const parts: string[] = [];
+  if (dump.title) parts.push(`**${dump.title.replace(/\*/g, '')}**`);
+  if (dump.purpose) parts.push(dump.purpose);
+  const meta = [dump.command, dump.path]
+    .filter((item): item is string => Boolean(item))
+    .map((item) => `\`${item}\``)
+    .join(' ');
+  if (meta) parts.push(meta);
+  return parts.join('\n\n');
+}
+
+/**
+ * Kiro (and similar) sometimes writes a file-edit JSON blob into the assistant
+ * body. Keep the bubble as a short readable summary instead of a wall of `\n`.
+ */
+export function formatChatDisplayContent(text: string): string {
+  const dump = parseChatToolDump(text);
+  if (dump && (dump.title || dump.purpose || dump.command || dump.path)) {
+    return formatToolDumpMarkdown(dump);
+  }
+  const pretty = tryPrettyJson(text.trim());
+  if (pretty) return markdownFence('json', clipPreviewText(pretty));
+  return text;
+}
 
 /** True when assistant content is a Pi/Grok NDJSON dump, not a reply. */
 export function looksLikeChatProtocolDump(text: string): boolean {

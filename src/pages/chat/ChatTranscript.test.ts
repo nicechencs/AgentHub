@@ -56,7 +56,7 @@ function renderTranscript(turns: { turn: number; user?: ChatMessage; agents: Cha
 describe('ChatTranscript surfaces', () => {
   it('paints canvas when there are no messages, matching composer chrome', () => {
     const html = renderTranscript([]);
-    expect(html).toContain(`overflow-y-auto ${chatTranscriptSurfaceClass(false)}`);
+    expect(html).toContain(`overflow-x-hidden overflow-y-auto ${chatTranscriptSurfaceClass(false)}`);
     expect(html).not.toContain(`rounded-composer ${chatTranscriptSurfaceClass(true)}`);
     expect(html).toContain('开始对话');
     expect(html).toContain('了解这个项目');
@@ -70,7 +70,7 @@ describe('ChatTranscript surfaces', () => {
     const html = renderTranscript([
       { turn: 1, user: userMessage('hello from chat'), agents: [] },
     ]);
-    expect(html).toContain(`overflow-y-auto ${chatTranscriptSurfaceClass(false)}`);
+    expect(html).toContain(`overflow-x-hidden overflow-y-auto ${chatTranscriptSurfaceClass(false)}`);
     expect(html).toContain(`rounded-composer ${chatTranscriptSurfaceClass(true)}`);
     expect(html).toContain('hello from chat');
   });
