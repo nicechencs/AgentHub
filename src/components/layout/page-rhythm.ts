@@ -110,8 +110,6 @@ export const pageRhythm = {
   /** Right-hand inspect / preview: flush chrome, no card radius. */
   inspectPane:
     'flex h-full min-h-0 min-w-0 shrink-0 flex-col overflow-hidden bg-canvas',
-  inspectToolbar:
-    'flex h-9 shrink-0 items-center gap-1.5 overflow-x-auto px-3',
   inspectHeader:
     'flex h-9 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border px-3',
   inspectTitle: 'min-w-0 truncate text-body font-medium leading-tight text-primary',

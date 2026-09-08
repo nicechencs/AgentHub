@@ -200,95 +200,93 @@ export function SkillMarkdownPreviewPanel({
       aria-labelledby={titleId}
       onTransitionEnd={onWidthTransitionEnd}
     >
-      <header className="shrink-0 border-b border-border">
-        <div className={pageRhythm.inspectToolbar}>
-          <div className="min-w-0 flex-1 basis-16">
-            <div className="flex min-w-0 items-baseline gap-2">
-              <h2
-                id={titleId}
-                className={pageRhythm.inspectTitle}
-              >
-                {name || t('skills.preview.titleFallback')}
-              </h2>
-              {showCopyTabs ? null : (
-                <span className="shrink-0 text-meta text-muted">{originLabel}</span>
-              )}
-            </div>
+      <header className={pageRhythm.inspectHeader}>
+        <div className="min-w-0 flex-1 basis-16">
+          <div className="flex min-w-0 items-baseline gap-2">
+            <h2
+              id={titleId}
+              className={pageRhythm.inspectTitle}
+            >
+              {name || t('skills.preview.titleFallback')}
+            </h2>
+            {showCopyTabs ? null : (
+              <span className="shrink-0 text-meta text-muted">{originLabel}</span>
+            )}
           </div>
+        </div>
 
-          {/* chrome 特例：比页内筛选 sm 更扁（h-6），不与列表筛选同高 */}
-          <div className={cn(segmentedTrackClass, 'shrink-0 flex-nowrap')}>
-            <button
-              type="button"
-              className={cn(segmentedItemClass(mode === 'preview', 'sm'), 'h-6 gap-1 px-2')}
-              onClick={() => setMode('preview')}
-            >
-              <Eye className="h-3.5 w-3.5" />
-              {t('skills.preview.modePreview')}
-            </button>
-            <button
-              type="button"
-              className={cn(segmentedItemClass(mode === 'source', 'sm'), 'h-6 gap-1 px-2')}
-              onClick={() => setMode('source')}
-            >
-              <Code2 className="h-3.5 w-3.5" />
-              {t('skills.preview.modeSource')}
-            </button>
-          </div>
+        {/* chrome 特例：比页内筛选 sm 更扁（h-6），不与列表筛选同高 */}
+        <div className={cn(segmentedTrackClass, 'shrink-0 flex-nowrap')}>
+          <button
+            type="button"
+            className={cn(segmentedItemClass(mode === 'preview', 'sm'), 'h-6 gap-1 px-2')}
+            onClick={() => setMode('preview')}
+          >
+            <Eye className="h-3.5 w-3.5" />
+            {t('skills.preview.modePreview')}
+          </button>
+          <button
+            type="button"
+            className={cn(segmentedItemClass(mode === 'source', 'sm'), 'h-6 gap-1 px-2')}
+            onClick={() => setMode('source')}
+          >
+            <Code2 className="h-3.5 w-3.5" />
+            {t('skills.preview.modeSource')}
+          </button>
+        </div>
 
-          {openFolderPath && onOpenDir ? (
-            <OpenDirButton
-              title={t('skills.preview.openDir')}
-              onClick={() => onOpenDir(openFolderPath)}
-            />
-          ) : null}
+        {openFolderPath && onOpenDir ? (
+          <OpenDirButton
+            title={t('skills.preview.openDir')}
+            onClick={() => onOpenDir(openFolderPath)}
+          />
+        ) : null}
 
-          {onRemoveCopy ? (
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7 shrink-0 text-danger hover:text-danger"
-              title={removeCopyLabel ?? t('skills.preview.removeCopy')}
-              aria-label={removeCopyLabel ?? t('skills.preview.removeCopy')}
-              onClick={onRemoveCopy}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          ) : null}
-
+        {onRemoveCopy ? (
           <Button
             size="icon"
             variant="ghost"
-            className="h-7 w-7 shrink-0"
-            aria-label={t('skills.preview.collapse')}
-            title={t('skills.preview.collapse')}
-            onClick={onClose}
+            className="h-7 w-7 shrink-0 text-danger hover:text-danger"
+            title={removeCopyLabel ?? t('skills.preview.removeCopy')}
+            aria-label={removeCopyLabel ?? t('skills.preview.removeCopy')}
+            onClick={onRemoveCopy}
           >
-            <PanelRightClose className="h-4 w-4" />
+            <Trash2 className="h-3.5 w-3.5" />
           </Button>
-        </div>
-        {showCopyTabs && tabValue ? (
-          <div className="px-3 pb-2">
-            {includeShared ? (
-              <AgentTabStrip
-                showAll
-                allLabel={t('skills.preview.sharedOrigin')}
-                value={tabValue}
-                onChange={(id) => onSelectCopy?.(id === 'all' ? null : id)}
-                agents={copyAgents}
-                aria-label={t('skills.preview.copyTabs')}
-              />
-            ) : (
-              <AgentTabStrip
-                value={tabValue === 'all' ? copyAgents[0]!.id : tabValue}
-                onChange={(id) => onSelectCopy?.(id)}
-                agents={copyAgents}
-                aria-label={t('skills.preview.copyTabs')}
-              />
-            )}
-          </div>
         ) : null}
+
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7 shrink-0"
+          aria-label={t('skills.preview.collapse')}
+          title={t('skills.preview.collapse')}
+          onClick={onClose}
+        >
+          <PanelRightClose className="h-4 w-4" />
+        </Button>
       </header>
+      {showCopyTabs && tabValue ? (
+        <div className="shrink-0 px-3 pb-2">
+          {includeShared ? (
+            <AgentTabStrip
+              showAll
+              allLabel={t('skills.preview.sharedOrigin')}
+              value={tabValue}
+              onChange={(id) => onSelectCopy?.(id === 'all' ? null : id)}
+              agents={copyAgents}
+              aria-label={t('skills.preview.copyTabs')}
+            />
+          ) : (
+            <AgentTabStrip
+              value={tabValue === 'all' ? copyAgents[0]!.id : tabValue}
+              onChange={(id) => onSelectCopy?.(id)}
+              agents={copyAgents}
+              aria-label={t('skills.preview.copyTabs')}
+            />
+          )}
+        </div>
+      ) : null}
 
       {/* Top 1px progress while loading */}
       <div
