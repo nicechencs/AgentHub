@@ -383,6 +383,7 @@ export default function RoutesBoardPage() {
             pools={defaultPools}
             refreshKey={usageRefreshKey}
             surface={usageSurface}
+            forwardingOn={entryRunning}
             headerActions={
               <PageRefreshButton
                 loading={pageLoading}

@@ -1510,6 +1510,10 @@ export const en = {
       usageUnavailable: "Usage stats unavailable",
       usageUnavailableReason: "Reason: {reason}",
       usageEmpty: "No usage records in this range",
+      usageEmptyStart: "No local-forwarding usage yet. Start in this order:",
+      usageStartConnect: "Add a usable connection",
+      usageStartKey: "Create an entry key",
+      usageStartForward: "Turn on local forwarding",
       openLog: "Open monitoring",
     },
     activity: {
