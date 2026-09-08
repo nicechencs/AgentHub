@@ -14,6 +14,7 @@ use crate::tray_i18n::TrayUiLanguage;
 
 pub(crate) const OPEN_CHAT_FLAG: &str = "--open-chat";
 pub(crate) const OPEN_CHAT_CWD_EVENT: &str = "open-chat-cwd";
+#[cfg_attr(not(windows), allow(dead_code))]
 const MENU_KEY_ID: &str = "AgentHubOpenChat";
 
 #[derive(Clone, Serialize)]
@@ -78,6 +79,7 @@ pub(crate) fn resolve_open_chat_cwd(raw: &str) -> Option<PathBuf> {
     None
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn windows_open_chat_command(exe: &Path) -> String {
     // `"%V"` expands to `"C:\"` for a drive root; CommandLineToArgvW treats the
     // trailing `\"` as an escaped quote. Keep a `.` between `\` and `"`.

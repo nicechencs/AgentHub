@@ -549,6 +549,7 @@ pub(crate) fn well_known_bin_paths(agent: AgentId) -> Vec<(PathBuf, &'static str
                 }
                 paths.push((dir.join("kiro-cli"), "native"));
             };
+            #[cfg(windows)]
             let push_cli_root = |paths: &mut Vec<(PathBuf, &'static str)>, dir: PathBuf| {
                 let nested_bin = dir.join("bin");
                 push_cli(paths, dir);
