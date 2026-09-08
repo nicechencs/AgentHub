@@ -596,7 +596,7 @@ function EligibilityBody({
             onRetry();
           }}
         >
-          <RefreshCw className="h-3 w-3" /> {t('chrome.error.retry')}
+          <RefreshCw className="h-3.5 w-3.5" /> {t('chrome.error.retry')}
         </Button>
       </p>
     );

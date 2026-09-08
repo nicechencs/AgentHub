@@ -536,7 +536,7 @@ export default function DashboardPage() {
   const showEnvCta = !agentsLoading && !showAgentError && installedCount === 0 && envBad;
 
   return (
-    <div>
+    <div className={pageRhythm.overviewColumn}>
       <PageHeader
         title={t('dashboard.page.title')}
         description={pageDescription}
@@ -872,7 +872,7 @@ function MetricCard({ label, value }: { label: string; value: string }) {
   return (
     <Card className="px-6 py-5">
       <p className="text-meta text-muted">{label}</p>
-      <p className="mt-3 text-title font-semibold tracking-tight tabular-nums">{value}</p>
+      <p className="mt-3 text-headline font-semibold tracking-tight tabular-nums">{value}</p>
     </Card>
   );
 }

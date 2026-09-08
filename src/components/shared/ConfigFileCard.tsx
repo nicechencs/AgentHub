@@ -51,7 +51,7 @@ export function ConfigFileCard({
               aria-label={copyLabel}
               onClick={onCopyContent}
             >
-              {copied ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
+              {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
               {copyLabel}
             </Button>
           ) : null}

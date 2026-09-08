@@ -759,7 +759,7 @@ function CopyableCommand({ command }: { command: string }) {
         onClick={copy}
       >
         <span className="min-w-0 flex-1 break-all font-mono">{command}</span>
-        <Copy className="mt-0.5 h-3 w-3 shrink-0" />
+        <Copy className="mt-0.5 h-3.5 w-3.5 shrink-0" />
       </button>
     </Hint>
   );

@@ -26,16 +26,16 @@ export function SettingsRow({
     <div className={cn('flex gap-6 py-3', wide ? 'items-start' : 'items-center justify-between')}>
       <div className="min-w-0 shrink-0">
         <div className="flex items-center gap-1.5">
-          <p className="text-sm">{label}</p>
+          <p className="text-body">{label}</p>
           {badge}
         </div>
         {description &&
           (descriptionTip ? (
-            <Tip className="mt-0.5 block text-xs text-muted" label={descriptionTip}>
+            <Tip className="mt-0.5 block text-meta text-muted" label={descriptionTip}>
               {description}
             </Tip>
           ) : (
-            <p className="mt-0.5 text-xs text-muted">{description}</p>
+            <p className="mt-0.5 text-meta text-muted">{description}</p>
           ))}
       </div>
       <div

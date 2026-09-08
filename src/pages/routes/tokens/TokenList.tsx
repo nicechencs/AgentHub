@@ -293,7 +293,7 @@ function renderColumn(
           data-help="tokens-copy"
           aria-label={t('routes.tokens.copy')}
         >
-          <Copy className="h-3 w-3" aria-hidden />
+          <Copy className="h-3.5 w-3.5" aria-hidden />
         </Button>
       ) : null}
       {ctx.installedAgents && ctx.onImport ? (
@@ -317,7 +317,7 @@ function renderColumn(
             }}
             aria-label={t('routes.tokens.delete')}
           >
-            <Trash2 className="h-3 w-3" aria-hidden />
+            <Trash2 className="h-3.5 w-3.5" aria-hidden />
           </Button>
         </Hint>
       ) : null}

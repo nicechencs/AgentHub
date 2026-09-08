@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
+import { AgentThinking } from '@/components/shared/AgentThinking';
 import { CopyTextButton } from '@/components/shared/CopyTextButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { MarkdownView } from '@/components/shared/MarkdownView';
@@ -19,32 +18,6 @@ import {
 } from './chat-format';
 import { messageStatusLabel } from './chat-model';
 import { ChatProcessPanel } from './ChatProcessPanel';
-
-const STREAM_TYPEWRITER_MAX_CHARS = 1200;
-
-function useStreamingDisplayContent(content: string, running: boolean): string {
-  const [visible, setVisible] = useState(content);
-
-  useEffect(() => {
-    if (!running || content.length > STREAM_TYPEWRITER_MAX_CHARS) {
-      setVisible(content);
-      return;
-    }
-    setVisible((prev) => (content.startsWith(prev) ? prev : content));
-    const timer = window.setInterval(() => {
-      setVisible((prev) => {
-        if (!content.startsWith(prev)) return content;
-        if (prev.length >= content.length) return prev;
-        const remaining = content.length - prev.length;
-        const step = Math.min(Math.max(Math.ceil(remaining / 8), 1), 12);
-        return content.slice(0, prev.length + step);
-      });
-    }, 24);
-    return () => window.clearInterval(timer);
-  }, [content, running]);
-
-  return visible;
-}
 
 export function ChatMessageBubble({
   message,
@@ -135,10 +108,9 @@ function AgentBubble({
   const protocolDump = looksLikeChatProtocolDump(message.content);
   const localized =
     message.content && !protocolDump ? localizeChatFailure(message.content, t) : '';
-  const rawDisplayContent = localized
+  const displayContent = localized
     ? formatChatDisplayContent(sanitizeCliChatText(localized))
     : '';
-  const displayContent = useStreamingDisplayContent(rawDisplayContent, message.status === 'running');
   const cancelledPlaceholder =
     message.status === 'cancelled' && ((message.error ?? '').toLowerCase() === 'cancelled');
   const displayError =
@@ -201,19 +173,22 @@ function AgentBubble({
         ) : null}
         <div className="min-w-0 overflow-hidden text-body leading-relaxed text-primary">
           {displayContent ? (
-            <MarkdownView
-              content={displayContent}
-              variant="chat"
-              localBasePath={localBasePath}
-              onOpenLocal={onOpenLocal}
-            />
+            <div className={running ? 'chat-stream-in' : undefined}>
+              <MarkdownView
+                content={displayContent}
+                variant="chat"
+                localBasePath={localBasePath}
+                onOpenLocal={onOpenLocal}
+              />
+            </div>
           ) : running ? (
-            <span className="inline-flex items-center gap-2 text-muted">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              {process
-                ? t('chat.bubble.generatingPhase', { phase: processPhaseLabel(process.phase, t) })
-                : t('chat.bubble.generating')}
-            </span>
+            <AgentThinking
+              label={
+                process
+                  ? t('chat.bubble.generatingPhase', { phase: processPhaseLabel(process.phase, t) })
+                  : t('chat.bubble.generating')
+              }
+            />
           ) : (
             <span className="text-muted">{displayError || t('chat.bubble.noOutput')}</span>
           )}

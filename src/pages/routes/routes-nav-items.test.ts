@@ -46,11 +46,12 @@ describe('routes-nav-items', () => {
 
   it('keeps secondary-nav labels readable while accenting 18px icons', () => {
     const nav = readFileSync(path.join(dir, 'RoutesNav.tsx'), 'utf8');
-    expect(nav).toContain('bg-active font-medium text-primary [&_svg]:text-accent');
+    expect(nav).toContain('bg-accent-subtle font-medium text-primary [&_svg]:text-accent');
     expect(nav).toContain('hover:bg-hover hover:text-primary');
     expect(nav).toContain('const NAV_ICON_SIZE = 18;');
     expect(nav).toContain('size={NAV_ICON_SIZE}');
     expect(nav).toContain('strokeWidth={1.6}');
+    expect(nav).toContain('data-icon="nav"');
     expect(nav).toContain('absoluteStrokeWidth');
   });
 

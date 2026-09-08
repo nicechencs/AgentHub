@@ -188,7 +188,7 @@ export function ChatSessionRail({
                         <span className="flex items-center gap-1.5">
                           <span className="truncate">{conversationTitle(t, c.title)}</span>
                           {sending && (
-                            <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted" />
+                            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted" />
                           )}
                         </span>
                         <span className="mt-0.5 flex items-center gap-1.5 text-meta text-muted">
@@ -199,8 +199,9 @@ export function ChatSessionRail({
                             {dots.extra > 0 && <span>+{dots.extra}</span>}
                           </span>
                           <span className="truncate">{cwdShortName(c.cwd, t)}</span>
+                          <span className="shrink-0">{relativeTime(c.updatedAt, t)}</span>
                           {c.nativeSessionId ? (
-                            <Terminal className="h-3 w-3 shrink-0" aria-hidden />
+                            <Terminal className="h-3.5 w-3.5 shrink-0" aria-hidden />
                           ) : null}
                         </span>
                       </button>

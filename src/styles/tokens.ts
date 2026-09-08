@@ -20,16 +20,16 @@
 export type ThemeScheme = 'light' | 'dark';
 
 /**
- * Switchable product accent. `--accent` is the only runtime color pages should
- * use for primary actions, checked switches, focus rings, and the in-app mark.
+ * Switchable product accent fill. Pages should use `--accent` plus the
+ * hover / pressed / foreground / subtle / text companions in `ACCENT_STATES`.
  * Installer / OS icons stay the default indigo PNG.
  */
 export const ACCENT_PALETTES = {
-  indigo: { light: '#4f46e5', dark: '#6366f1' },
-  blue: { light: '#2563eb', dark: '#3b82f6' },
-  teal: { light: '#0f766e', dark: '#14b8a6' },
-  rose: { light: '#e11d48', dark: '#f43f5e' },
-  amber: { light: '#c2410c', dark: '#ea580c' },
+  indigo: { light: '#4f46e5', dark: '#a5b4fc' },
+  blue: { light: '#2563eb', dark: '#93c5fd' },
+  teal: { light: '#0f766e', dark: '#5eead4' },
+  rose: { light: '#e11d48', dark: '#fda4af' },
+  amber: { light: '#c2410c', dark: '#fdba74' },
 } as const;
 
 export type AccentId = keyof typeof ACCENT_PALETTES;
@@ -39,6 +39,109 @@ export const ACCENT_IDS = Object.keys(ACCENT_PALETTES) as AccentId[];
 export function isAccentId(value: string): value is AccentId {
   return (ACCENT_IDS as readonly string[]).includes(value);
 }
+
+/** Full accent ramp for buttons, links, focus, and selected tints. */
+export type AccentTone = {
+  fill: string;
+  hover: string;
+  pressed: string;
+  foreground: string;
+  subtle: string;
+  text: string;
+};
+
+export const ACCENT_STATES: Record<AccentId, Record<ThemeScheme, AccentTone>> = {
+  indigo: {
+    light: {
+      fill: '#4f46e5',
+      hover: '#4338ca',
+      pressed: '#3730a3',
+      foreground: '#ffffff',
+      subtle: '#eef2ff',
+      text: '#4338ca',
+    },
+    dark: {
+      fill: '#a5b4fc',
+      hover: '#c7d2fe',
+      pressed: '#818cf8',
+      foreground: '#1e1b4b',
+      subtle: '#252343',
+      text: '#c7d2fe',
+    },
+  },
+  blue: {
+    light: {
+      fill: '#2563eb',
+      hover: '#1d4ed8',
+      pressed: '#1e40af',
+      foreground: '#ffffff',
+      subtle: '#eff6ff',
+      text: '#1d4ed8',
+    },
+    dark: {
+      fill: '#93c5fd',
+      hover: '#bfdbfe',
+      pressed: '#60a5fa',
+      foreground: '#172554',
+      subtle: '#17263b',
+      text: '#bfdbfe',
+    },
+  },
+  teal: {
+    light: {
+      fill: '#0f766e',
+      hover: '#115e59',
+      pressed: '#134e4a',
+      foreground: '#ffffff',
+      subtle: '#f0fdfa',
+      text: '#115e59',
+    },
+    dark: {
+      fill: '#5eead4',
+      hover: '#99f6e4',
+      pressed: '#2dd4bf',
+      foreground: '#042f2e',
+      subtle: '#102e2b',
+      text: '#99f6e4',
+    },
+  },
+  rose: {
+    light: {
+      fill: '#e11d48',
+      hover: '#be123c',
+      pressed: '#9f1239',
+      foreground: '#ffffff',
+      subtle: '#fff1f2',
+      text: '#be123c',
+    },
+    dark: {
+      fill: '#fda4af',
+      hover: '#fecdd3',
+      pressed: '#fb7185',
+      foreground: '#4c0519',
+      subtle: '#351c2a',
+      text: '#fecdd3',
+    },
+  },
+  amber: {
+    light: {
+      fill: '#c2410c',
+      hover: '#9a3412',
+      pressed: '#7c2d12',
+      foreground: '#ffffff',
+      subtle: '#fff7ed',
+      text: '#9a3412',
+    },
+    dark: {
+      fill: '#fdba74',
+      hover: '#fed7aa',
+      pressed: '#fb923c',
+      foreground: '#431407',
+      subtle: '#332315',
+      text: '#fed7aa',
+    },
+  },
+};
 
 /**
  * Light page backgrounds. Never used as a dark-theme override.
@@ -81,13 +184,23 @@ export const THEME = {
     'border-strong': '#d6d6da',
     'text-primary': '#18181b',
     'text-secondary': '#55555d',
-    'text-muted': '#70707a',
+    'text-muted': '#62626c',
     'text-disabled': '#a1a1aa',
-    accent: ACCENT_PALETTES[DEFAULT_ACCENT_ID].light,
-    success: '#16a34a',
-    warning: '#c2740c',
-    danger: '#dc2626',
-    info: '#2563eb',
+    'border-control': '#85858f',
+    accent: ACCENT_STATES[DEFAULT_ACCENT_ID].light.fill,
+    'accent-hover': ACCENT_STATES[DEFAULT_ACCENT_ID].light.hover,
+    'accent-pressed': ACCENT_STATES[DEFAULT_ACCENT_ID].light.pressed,
+    'accent-foreground': ACCENT_STATES[DEFAULT_ACCENT_ID].light.foreground,
+    'accent-subtle': ACCENT_STATES[DEFAULT_ACCENT_ID].light.subtle,
+    'accent-text': ACCENT_STATES[DEFAULT_ACCENT_ID].light.text,
+    success: '#15803d',
+    'success-subtle': '#f0fdf4',
+    warning: '#92400e',
+    'warning-subtle': '#fffbeb',
+    danger: '#b91c1c',
+    'danger-subtle': '#fef2f2',
+    info: '#1d4ed8',
+    'info-subtle': '#eff6ff',
   },
   dark: {
     'bg-canvas': '#0a0a0b',
@@ -99,13 +212,23 @@ export const THEME = {
     'border-strong': '#3f3f46',
     'text-primary': '#fafafa',
     'text-secondary': '#a1a1aa',
-    'text-muted': '#8b8b96',
+    'text-muted': '#a1a1aa',
     'text-disabled': '#52525b',
-    accent: ACCENT_PALETTES[DEFAULT_ACCENT_ID].dark,
-    success: '#22c55e',
-    warning: '#f59e0b',
-    danger: '#ef4444',
-    info: '#3b82f6',
+    'border-control': '#71717a',
+    accent: ACCENT_STATES[DEFAULT_ACCENT_ID].dark.fill,
+    'accent-hover': ACCENT_STATES[DEFAULT_ACCENT_ID].dark.hover,
+    'accent-pressed': ACCENT_STATES[DEFAULT_ACCENT_ID].dark.pressed,
+    'accent-foreground': ACCENT_STATES[DEFAULT_ACCENT_ID].dark.foreground,
+    'accent-subtle': ACCENT_STATES[DEFAULT_ACCENT_ID].dark.subtle,
+    'accent-text': ACCENT_STATES[DEFAULT_ACCENT_ID].dark.text,
+    success: '#86efac',
+    'success-subtle': '#142a20',
+    warning: '#fcd34d',
+    'warning-subtle': '#302510',
+    danger: '#fca5a5',
+    'danger-subtle': '#321b22',
+    info: '#93c5fd',
+    'info-subtle': '#17263b',
   },
 } as const satisfies Record<ThemeScheme, Record<string, string>>;
 
@@ -144,33 +267,37 @@ export const TOKEN_AGENT_IDS = Object.keys(AGENT_COLORS) as TokenAgentId[];
 
 /** Radii → `--radius-sm` / `--radius` / `--radius-lg` / `--radius-mark` */
 export const RADIUS = {
-  sm: '6px',
-  DEFAULT: '8px',
-  lg: '12px',
-  /** App-icon squircle (AppLogo, AgentLogo). Not a fourth px step. */
+  sm: '8px',
+  DEFAULT: '12px',
+  lg: '16px',
+  /** App-icon squircle (AppLogo, AgentLogo). Not a layout radius. */
   mark: '22%',
 } as const;
 
 /**
- * UI 字号只保留三档。不要再加第四个像素值。
+ * UI 字号五档。
  *
  * | 标准 | class | 像素 | 用途 |
- * | title | `text-title` | 16 | 页标题、空态主句、指标数字 |
- * | body | `text-body` | 13 | 正文、按钮、列表名、段标题（加字重） |
- * | meta | `text-meta` | 12 | 次级说明、表头、路径、角标、眉题 |
+ * | display | `text-display` | 22 | 对话空态主句、首次引导 |
+ * | title | `text-title` | 18 | 页标题、对话框标题 |
+ * | headline | `text-headline` | 15 | 分区标题、总览关键数字 |
+ * | body | `text-body` | 14 | 正文、按钮、列表名、表单值 |
+ * | meta | `text-meta` | 12 | 表头、时间、路径、角标、说明 |
  */
 export const TYPE_SCALE = {
-  title: { size: '16px', lineHeight: '1.35' },
-  body: { size: '13px', lineHeight: '1.45' },
-  meta: { size: '12px', lineHeight: '1.4' },
+  display: { size: '22px', lineHeight: '1.27' },
+  title: { size: '18px', lineHeight: '1.33' },
+  headline: { size: '15px', lineHeight: '1.47' },
+  body: { size: '14px', lineHeight: '1.57' },
+  meta: { size: '12px', lineHeight: '1.5' },
 } as const;
 
 export type TypeScaleRole = keyof typeof TYPE_SCALE;
 
 /**
  * 旧 Tailwind 名 → 三档标准。像素与标准相同，不是额外字号。
- * 新代码优先写 `text-title` / `text-body` / `text-meta`。
- * `cn()` 已把这三档注册为 font-size，避免和 `text-primary` 互斥。
+ * 新代码优先写 `text-display` / `text-title` / `text-headline` / `text-body` / `text-meta`。
+ * `cn()` 已把这些档注册为 font-size，避免和 `text-primary` 互斥。
  */
 export const TYPE_SCALE_ALIASES = {
   lg: 'title',
@@ -238,8 +365,18 @@ export const TOOLTIP = {
 export const BUTTON = {
   height: { default: 28, lg: 32 },
   padX: { sm: 8, default: 12, lg: 16 },
-  radius: '6px',
+  radius: '8px',
   hoverShadow: 'none',
+} as const;
+
+/**
+ * Lucide sizes. Nav keeps a slightly thinner stroke so 18px marks stay sharp.
+ * Chrome = top bar / send / icon-only tools. Inline = chevrons, row actions, status.
+ */
+export const ICON = {
+  nav: { px: 18, stroke: 1.6 },
+  chrome: { px: 16, stroke: 1.75, className: 'h-4 w-4' },
+  inline: { px: 14, stroke: 1.75, className: 'h-3.5 w-3.5' },
 } as const;
 
 /** CSS custom property for an agent brand color. */
@@ -317,14 +454,25 @@ function themeDecls(scheme: ThemeScheme): string[] {
   return lines;
 }
 
-/** `[data-accent]` overrides for `--accent`. Default indigo is already in `:root` / `.dark`. */
+function accentOverrideDecls(tone: AccentTone): string[] {
+  return [
+    `--accent: ${tone.fill};`,
+    `--accent-hover: ${tone.hover};`,
+    `--accent-pressed: ${tone.pressed};`,
+    `--accent-foreground: ${tone.foreground};`,
+    `--accent-subtle: ${tone.subtle};`,
+    `--accent-text: ${tone.text};`,
+  ];
+}
+
+/** `[data-accent]` overrides for the accent ramp. Default indigo is already in `:root` / `.dark`. */
 export function buildAccentOverrideCss(): string {
   return ACCENT_IDS.flatMap((id) => [
     `:root[data-accent="${id}"] {`,
-    `  --accent: ${ACCENT_PALETTES[id].light};`,
+    cssDecls(accentOverrideDecls(ACCENT_STATES[id].light)),
     '}',
     `html.dark[data-accent="${id}"], .dark[data-accent="${id}"] {`,
-    `  --accent: ${ACCENT_PALETTES[id].dark};`,
+    cssDecls(accentOverrideDecls(ACCENT_STATES[id].dark)),
     '}',
   ]).join('\n');
 }

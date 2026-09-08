@@ -62,6 +62,7 @@ function RoutesNavLink({
               size={NAV_ICON_SIZE}
               strokeWidth={1.6}
               absoluteStrokeWidth
+              data-icon="nav"
               className="shrink-0"
             />
             {!compact && (
@@ -104,9 +105,9 @@ export function RoutesNav() {
 
   const itemClass = (isActive: boolean) =>
     cn(
-      'group flex h-8 w-full items-center gap-2.5 rounded-btn px-2.5 text-sm transition-colors duration-150',
+      'group relative flex h-8 w-full items-center gap-2.5 rounded-btn px-2.5 text-body transition-colors duration-150',
       isActive
-        ? 'bg-active font-medium text-primary [&_svg]:text-accent'
+        ? 'bg-accent-subtle font-medium text-primary [&_svg]:text-accent before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-accent'
         : 'text-secondary hover:bg-hover hover:text-primary',
     );
 
@@ -130,7 +131,7 @@ export function RoutesNav() {
             className="flex h-7 w-7 items-center justify-center rounded-btn text-muted transition-colors hover:bg-hover hover:text-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30"
             aria-label={t('nav.expandSidebar')}
           >
-            <PanelLeftOpen size={18} strokeWidth={1.6} absoluteStrokeWidth />
+            <PanelLeftOpen size={18} strokeWidth={1.6} absoluteStrokeWidth data-icon="nav" />
           </button>
         </Hint>
         {isLg && (

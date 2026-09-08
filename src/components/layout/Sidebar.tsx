@@ -92,6 +92,7 @@ function SidebarNavLink({
                 size={NAV_ICON_SIZE}
                 strokeWidth={1.6}
                 absoluteStrokeWidth
+                data-icon="nav"
                 className="shrink-0"
               />
               {/* Collapsed: corner pin on icon only (expanded uses trailing pin). */}
@@ -273,11 +274,14 @@ export function Sidebar() {
 
   const itemClass = (isActive: boolean) =>
     cn(
-      'group flex h-8 w-full items-center rounded-btn text-sm transition-colors duration-150',
+      'group relative flex h-8 w-full items-center rounded-btn text-body transition-colors duration-150',
       collapsed ? 'justify-center' : 'gap-2.5 px-2.5',
       isActive
-        ? 'bg-active font-medium text-primary [&_svg]:text-accent'
+        ? 'bg-accent-subtle font-medium text-primary [&_svg]:text-accent'
         : 'text-secondary hover:bg-hover hover:text-primary',
+      isActive &&
+        !collapsed &&
+        'before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-accent',
     );
 
   const { stored: agentCatalogOrder } = useStoredIdOrder(StorageKey.agentsCatalogOrder);
@@ -328,7 +332,7 @@ export function Sidebar() {
                   <AppLogo size={20} className="h-5 w-5" />
                 </span>
                 <span className="absolute inset-0 flex items-center justify-center rounded-btn text-muted opacity-0 transition-opacity group-hover:bg-hover group-hover:text-primary group-hover:opacity-100 group-focus-visible:bg-hover group-focus-visible:text-primary group-focus-visible:opacity-100">
-                  <PanelLeftOpen size={18} strokeWidth={1.6} absoluteStrokeWidth />
+                  <PanelLeftOpen size={18} strokeWidth={1.6} absoluteStrokeWidth data-icon="nav" />
                 </span>
               </button>
             </Hint>
@@ -347,7 +351,7 @@ export function Sidebar() {
                   className="flex h-7 w-7 items-center justify-center rounded-btn text-muted transition-colors hover:bg-hover hover:text-primary"
                   aria-label={t('nav.collapseSidebar')}
                 >
-                  <PanelLeftClose size={18} strokeWidth={1.6} absoluteStrokeWidth />
+                  <PanelLeftClose size={18} strokeWidth={1.6} absoluteStrokeWidth data-icon="nav" />
                 </button>
               </Hint>
             </>

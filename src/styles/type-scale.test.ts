@@ -1,6 +1,6 @@
 /**
- * 字号契约：生产源码不得再长出第四档。
- * 三档真源见 `TYPE_SCALE`；旧名 text-sm / text-xs 等是同像素别名。
+ * 字号契约：生产源码只用 TYPE_SCALE 五档。
+ * 真源见 `TYPE_SCALE`；旧名 text-sm / text-xs 等是同像素别名。
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -34,7 +34,7 @@ function toPosixRel(abs: string): string {
 const RETIRED_SIZE =
   /\btext-(?:2xs|xl|2xl|3xl|4xl|5xl|6xl|7xl|8xl|9xl)\b|text-\[\d+px\]/;
 const FONT_SIZE_PROP = /fontSize:\s*(\d+)/g;
-const ALLOWED_FONT_PX = new Set(['12', '13', '16']);
+const ALLOWED_FONT_PX = new Set(['12', '14', '15', '18', '22']);
 
 describe('type scale source contract', () => {
   it('does not introduce a fourth font size in production source', () => {
@@ -56,6 +56,9 @@ describe('type scale source contract', () => {
     expect(cn('text-meta', 'text-secondary')).toContain('text-secondary');
     expect(cn('text-body', 'text-primary')).toContain('text-body');
     expect(cn('text-title', 'text-primary')).toContain('text-title');
+    expect(cn('text-display', 'text-primary')).toContain('text-display');
+    expect(cn('text-headline', 'text-secondary')).toContain('text-headline');
     expect(cn('text-meta', 'text-body')).toBe('text-body');
+    expect(cn('text-body', 'text-headline')).toBe('text-headline');
   });
 });

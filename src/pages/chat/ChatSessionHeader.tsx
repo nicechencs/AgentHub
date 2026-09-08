@@ -74,7 +74,7 @@ export function ChatSessionHeader({
   return (
     <header
       className={cn(
-        'flex h-10 shrink-0 items-center gap-2 border-b border-border',
+        'flex h-11 shrink-0 items-center gap-2 border-b border-border',
         pageRhythm.chatChromeX,
       )}
       data-help="chat-header"
@@ -163,7 +163,7 @@ export function ChatSessionHeader({
             title={runtimeLocked ? t('chat.runtimeOps.sessionLocked') : active.cwd || t('chat.header.pickCwd')}
             className={cn('max-w-[9rem]', !active.cwd && 'text-warning')}
           >
-            <FolderOpen className="h-3 w-3 shrink-0" />
+            <FolderOpen className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">
               {active.cwd ? cwdShortName(active.cwd, t) : t('chat.header.cwdUnset')}
             </span>
@@ -194,7 +194,7 @@ export function ChatSessionHeader({
               }}
               aria-label={t('chat.header.copyResumeCommand')}
             >
-              <Terminal className="h-3 w-3 shrink-0" />
+              <Terminal className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate">{shortenId(active.nativeSessionId, 10)}</span>
             </Button>
           )}
@@ -207,7 +207,7 @@ export function ChatSessionHeader({
               title={approveOn ? t('chat.kiro.permissionFullHint') : t('chat.kiro.permissionAskHint')}
               className={approveOn ? 'text-warning' : 'text-muted'}
             >
-              <ShieldAlert className="h-3 w-3 shrink-0" />
+              <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
               {approveOn ? t('chat.kiro.permissionFull') : t('chat.kiro.permissionAsk')}
             </Button>
           ) : approveOn ? (
@@ -219,7 +219,7 @@ export function ChatSessionHeader({
               title={autoApproveHint(t, autoApproveEffect(selectedAgent), selectedAgent)}
               className="text-warning"
             >
-              <ShieldAlert className="h-3 w-3 shrink-0" />
+              <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
               {t('chat.header.autoApprove')}
             </Button>
           ) : null}
