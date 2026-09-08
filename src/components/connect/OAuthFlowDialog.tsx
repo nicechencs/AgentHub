@@ -381,6 +381,7 @@ export function OAuthFlowDialog({
                     className={cn(
                       'rounded-card border border-border bg-canvas px-3 py-2.5 text-left transition-colors',
                       'hover:border-accent/50 hover:bg-subtle',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
                     )}
                     onClick={() => chooseOption(opt)}
                   >
