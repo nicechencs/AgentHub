@@ -715,6 +715,7 @@ describe('TicketDetailPanel', () => {
     );
     expect(markup).toContain('id="ticket-detail"');
     expect(markup).toContain('用量');
+    expect(markup).toContain('连到哪里 · 模型');
     expect(markup).not.toContain('用在哪');
     expect(markup).not.toContain('导入自');
     expect(markup).not.toContain('更多');
@@ -863,7 +864,7 @@ describe('TicketDetailPanel', () => {
     expect(markup).not.toContain('可续期·未验证');
   });
 
-  it('omits 直连 from 接到 rows', () => {
+  it('omits 直连 from 谁在用 rows', () => {
     const ticket = sampleWallet().tickets[0]!;
     const markup = renderWithTooltip(
       createElement(TicketDetailPanel, {
@@ -884,7 +885,7 @@ describe('TicketDetailPanel', () => {
         onOpenChange() {},
       }),
     );
-    expect(markup).toContain('接到');
+    expect(markup).toContain('谁在用');
     expect(markup).toContain('Claude');
     expect(markup).toContain('当前使用');
     expect(markup).not.toContain('直连');
@@ -918,13 +919,15 @@ describe('TicketDetailPanel', () => {
     expect(markup).not.toContain('取消');
     expect(markup).toContain('收起');
     expect(markup).toContain('编辑配置');
-    expect(markup).toContain('接到');
+    expect(markup).toContain('谁在用');
     expect(markup).toContain('Codex');
     expect(markup).toContain('本机路由运行中');
     expect(markup).toContain('http://127.0.0.1:43121');
     expect(markup).toContain('接口');
     expect(markup).toContain('Claude');
-    expect(markup).toContain('诊断信息');
+    expect(markup).toContain('连到哪里 · 模型');
+    expect(markup).toContain('配置与记录');
+    expect(markup).toContain('更多');
     expect(markup).toContain('provider:kimi-1');
     expect(markup).toContain('移入回收站');
     expect(markup.indexOf('移入回收站')).toBeLessThan(markup.indexOf('编辑配置'));
@@ -1056,6 +1059,8 @@ describe('TicketDetailPanel', () => {
     expect(current).toContain('grok-4.6');
     expect(current).toContain('新开会话会用这个模型');
     expect(current).not.toContain('先把这份登录设为默认');
+    expect(current.indexOf('连到哪里 · 模型')).toBeLessThan(current.indexOf('默认模型'));
+    expect(current.indexOf('配置与记录')).toBeGreaterThan(current.indexOf('默认模型'));
 
     const other = renderWithTooltip(
       createElement(TicketDetailPanel, {

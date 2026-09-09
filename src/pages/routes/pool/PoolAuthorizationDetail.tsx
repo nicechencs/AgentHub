@@ -70,6 +70,8 @@ export function PoolAuthorizationDetail({
   const rows = poolAuthorizationDetailRows(item, t);
   const endpointKinds = poolAuthorizationEndpointKinds(item);
   const fieldRows = rows.filter((row) => row.id !== 'endpointTypes');
+  const whereRows = fieldRows.filter((row) => row.id === 'subscription' || row.id === 'endpoint');
+  const recordRows = fieldRows.filter((row) => row.id !== 'subscription' && row.id !== 'endpoint');
   const displayTitle = poolAuthorizationLoginLabel(item);
   const hasQuota = hasQuotaWindow(item.quota7dPct) || hasQuotaWindow(item.quota5hPct);
   const canEditKey = Boolean(editTarget?.provider.id) && item.kind === 'apikey';
@@ -181,30 +183,32 @@ export function PoolAuthorizationDetail({
           }}
         />
       ) : (
-      <div className="flex flex-col gap-3 text-xs" data-pool-authorization-detail={item.key}>
-        <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
-          <PoolLoginMark item={item} />
-          <span className="truncate font-medium text-primary">{displayTitle}</span>
-          <span className="text-meta text-muted">{connectionKindLabel(item.kind, t)}</span>
-          <span className={adapterStatusTextClass(status.tone)}>{status.label}</span>
-        </div>
-
-        {item.canToggle ? (
-          <label className="flex items-center justify-between gap-3 rounded-card border border-border px-3 py-2">
-            <span className="text-sm text-primary">{t('routes.pool.detail.enabled')}</span>
-            <Switch
-              checked={item.enabled !== false}
-              disabled={toggling}
-              onCheckedChange={onEnabledChange}
-              aria-label={t('routes.pool.detail.enabled')}
-            />
-          </label>
-        ) : null}
+      <div className="flex flex-col gap-3" data-pool-authorization-detail={item.key}>
+        <section className="space-y-1.5">
+          <h3 className="text-body font-medium">{t('routes.pool.detail.sectionAvailability')}</h3>
+          <div className="flex min-w-0 flex-wrap items-center gap-2 text-body">
+            <PoolLoginMark item={item} />
+            <span className="truncate font-medium text-primary">{displayTitle}</span>
+            <span className="text-meta text-muted">{connectionKindLabel(item.kind, t)}</span>
+            <span className={adapterStatusTextClass(status.tone)}>{status.label}</span>
+          </div>
+          {item.canToggle ? (
+            <label className="flex items-center justify-between gap-3 rounded-card border border-border px-3 py-2">
+              <span className="text-body text-primary">{t('routes.pool.detail.enabled')}</span>
+              <Switch
+                checked={item.enabled !== false}
+                disabled={toggling}
+                onCheckedChange={onEnabledChange}
+                aria-label={t('routes.pool.detail.enabled')}
+              />
+            </label>
+          ) : null}
+        </section>
 
         {hasQuota ? (
-          <div>
-            <p className="text-meta text-muted">{t('routes.pool.detail.quota')}</p>
-            <div className="mt-1.5 flex flex-col gap-1.5">
+          <section className="space-y-1.5">
+            <h3 className="text-body font-medium">{t('connections.list.usage')}</h3>
+            <div className="flex flex-col gap-1.5">
               {hasQuotaWindow(item.quota7dPct) ? (
                 <QuotaBar
                   label={t('connections.list.quota7dUsed')}
@@ -220,28 +224,74 @@ export function PoolAuthorizationDetail({
                 />
               ) : null}
             </div>
-          </div>
+          </section>
         ) : null}
 
-        {endpointKinds.length > 0 || fieldRows.length > 0 ? (
-          <div className="grid gap-1.5 text-secondary sm:grid-cols-1">
-            {endpointKinds.length > 0 ? (
-              <span className="flex min-w-0 items-start gap-1.5">
-                <span className="min-w-0 flex-1">
-                  <span className="text-muted">{t('routes.pool.detail.endpointTypes')} </span>
-                  <span className="inline-flex flex-col gap-0.5 align-top">
-                    {endpointKinds.map((kind) => (
-                      <PoolEndpointTypeLine
-                        key={kind}
-                        kind={kind}
-                        href={poolAuthorizationTypeHref(item.endpointHost, localEndpointPath(kind)) ?? undefined}
-                      />
-                    ))}
-                  </span>
+        <section className="space-y-1.5">
+          <h3 className="text-body font-medium">{t('connections.list.sectionWhere')}</h3>
+          {endpointKinds.length > 0 ? (
+            <span className="flex min-w-0 items-start gap-1.5">
+              <span className="min-w-0 flex-1">
+                <span className="text-muted">{t('routes.pool.detail.endpointTypes')} </span>
+                <span className="inline-flex flex-col gap-0.5 align-top">
+                  {endpointKinds.map((kind) => (
+                    <PoolEndpointTypeLine
+                      key={kind}
+                      kind={kind}
+                      href={poolAuthorizationTypeHref(item.endpointHost, localEndpointPath(kind)) ?? undefined}
+                    />
+                  ))}
                 </span>
               </span>
-            ) : null}
-            {fieldRows.map((row) => (
+            </span>
+          ) : null}
+          {whereRows.map((row) => (
+            <DetailRow
+              key={row.id}
+              label={row.label}
+              value={row.value}
+              lines={row.lines}
+              href={row.href}
+              mono={row.mono}
+              copyable={row.copyable}
+              className={row.copyable ? 'w-full' : undefined}
+            />
+          ))}
+          <div className="flex flex-col gap-1.5">
+            <p className="text-meta text-muted">{t('routes.pool.detail.models')}</p>
+            {catalogLoading ? (
+              <p className="text-meta text-secondary">…</p>
+            ) : catalogFailed ? (
+              <p className="text-meta text-secondary">{t('routes.pool.detail.modelsLoadFailed')}</p>
+            ) : catalog && catalog.models.length > 0 ? (
+              <>
+                <p className="text-body text-primary">
+                  {catalog.models.slice(0, 8).join(', ')}
+                  <span className="ml-2 text-meta text-muted">
+                    {catalog.source === 'custom'
+                      ? t('routes.pool.detail.modelsCustom')
+                      : t('routes.pool.detail.modelsLive')}
+                  </span>
+                </p>
+                {catalog.models.length > 8 ? (
+                  <details>
+                    <summary className="cursor-pointer text-meta text-muted">
+                      {t('routes.pool.detail.modelsMore', { n: catalog.models.length - 8 })}
+                    </summary>
+                    <p className="mt-1 text-body text-primary">{catalog.models.slice(8).join(', ')}</p>
+                  </details>
+                ) : null}
+              </>
+            ) : (
+              <p className="text-meta text-secondary">{t('routes.pool.detail.modelsEmpty')}</p>
+            )}
+          </div>
+        </section>
+
+        {recordRows.length > 0 ? (
+          <section className="space-y-1.5">
+            <h3 className="text-body font-medium">{t('connections.list.sectionRecords')}</h3>
+            {recordRows.map((row) => (
               <DetailRow
                 key={row.id}
                 label={row.label}
@@ -252,28 +302,8 @@ export function PoolAuthorizationDetail({
                 copyable={row.copyable}
               />
             ))}
-          </div>
+          </section>
         ) : null}
-
-        <div className="flex flex-col gap-1.5">
-          <p className="text-meta text-muted">{t('routes.pool.detail.models')}</p>
-          {catalogLoading ? (
-            <p className="text-meta text-secondary">…</p>
-          ) : catalogFailed ? (
-            <p className="text-meta text-secondary">{t('routes.pool.detail.modelsLoadFailed')}</p>
-          ) : catalog && catalog.models.length > 0 ? (
-            <p className="text-sm text-primary">
-              {catalog.models.join(', ')}
-              <span className="ml-2 text-meta text-muted">
-                {catalog.source === 'custom'
-                  ? t('routes.pool.detail.modelsCustom')
-                  : t('routes.pool.detail.modelsLive')}
-              </span>
-            </p>
-          ) : (
-            <p className="text-meta text-secondary">{t('routes.pool.detail.modelsEmpty')}</p>
-          )}
-        </div>
       </div>
       )}
     </SideInspectPanel>
