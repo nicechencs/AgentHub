@@ -43,7 +43,6 @@ export function ChatQueuedFollowUpList({
                 size="sm"
                 variant="ghost"
                 className="h-auto shrink-0 px-1 py-0.5"
-                aria-label={t('chat.composer.cancelQueuedItem')}
                 onClick={() => onCancelItem(item.id)}
               >
                 <X className="size-3.5" />
