@@ -7,19 +7,19 @@ use tempfile::tempdir;
 #[test]
 fn classify_distinguishes_numeric_and_string_ids_and_message_kinds() {
     assert!(matches!(
-        classify_message(json!({"id": 1, "result": {"ok": true}})),
+        classify_message(json!({"id": 1, "result": {"ok": true}}), false),
         Ok(Some(WireMessage::Response { id, .. })) if id == json!(1)
     ));
     assert!(matches!(
-        classify_message(json!({"id": "1", "result": {"ok": true}})),
+        classify_message(json!({"id": "1", "result": {"ok": true}}), false),
         Ok(Some(WireMessage::Response { id, .. })) if id == json!("1")
     ));
     assert!(matches!(
-        classify_message(json!({"id": 1, "method": "approve", "params": {}})),
+        classify_message(json!({"id": 1, "method": "approve", "params": {}}), false),
         Ok(Some(WireMessage::Request { id, method, .. })) if id == json!(1) && method == "approve"
     ));
     assert!(matches!(
-        classify_message(json!({"method": "notice", "params": {}})),
+        classify_message(json!({"method": "notice", "params": {}}), false),
         Ok(Some(WireMessage::Notification { method, .. })) if method == "notice"
     ));
 }
@@ -41,14 +41,14 @@ fn classify_skips_unshaped_json_instead_of_failing() {
         }),
         json!(null),
     ] {
-        assert!(matches!(classify_message(value), Ok(None)));
+        assert!(matches!(classify_message(value, false), Ok(None)));
     }
 }
 
 #[test]
 fn classify_still_rejects_response_with_both_result_and_error() {
     assert!(matches!(
-        classify_message(json!({"id": 1, "result": {}, "error": {}})),
+        classify_message(json!({"id": 1, "result": {}, "error": {}}), false),
         Err(CodexTransportError::Protocol(_))
     ));
 }
@@ -465,7 +465,7 @@ fn classify_maps_claude_stream_json_to_notification() {
         "is_error": false,
         "result": "PONG",
         "session_id": "sess-1"
-    }))
+    }), true)
     .unwrap()
     .expect("claude result must not be skipped");
     match result {
@@ -481,11 +481,33 @@ fn classify_maps_claude_stream_json_to_notification() {
         "type": "assistant",
         "message": {"role": "assistant", "content": [{"type": "text", "text": "hi"}]},
         "session_id": "sess-1"
-    }))
+    }), true)
     .unwrap()
     .expect("assistant");
     assert!(matches!(
         assistant,
         WireMessage::Notification { method, .. } if method == "claude/stream"
+    ));
+}
+
+
+#[test]
+fn classify_ignores_claude_types_on_jsonrpc_transport() {
+    // Without claude_stream mode, Anthropic/Claude `type` must not steal the line.
+    assert!(matches!(
+        classify_message(json!({"type": "assistant", "message": {"role": "assistant"}}), false),
+        Ok(None)
+    ));
+    assert!(matches!(
+        classify_message(
+            json!({"type": "result", "subtype": "success", "result": "PONG"}),
+            false
+        ),
+        Ok(None)
+    ));
+    // JSON-RPC responses still win when they have id + result.
+    assert!(matches!(
+        classify_message(json!({"id": 1, "result": {"ok": true}}), false),
+        Ok(Some(WireMessage::Response { .. }))
     ));
 }

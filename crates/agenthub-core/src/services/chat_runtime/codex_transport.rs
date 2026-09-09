@@ -120,6 +120,8 @@ pub struct CodexTransport {
     shutdown: bool,
     initialize_result: Option<Value>,
     abort: Option<Arc<AtomicBool>>,
+    /// When true, stdout is Claude Code stream-json NDJSON (not JSON-RPC).
+    claude_stream: bool,
 }
 
 impl CodexTransport {
@@ -138,6 +140,7 @@ impl CodexTransport {
             })),
             true,
             None,
+            false,
         )
     }
 
@@ -158,6 +161,7 @@ impl CodexTransport {
             })),
             true,
             Some(abort),
+            false,
         )
     }
 
@@ -235,6 +239,7 @@ impl CodexTransport {
             })),
             true,
             abort,
+            false,
         )
     }
 
@@ -274,6 +279,7 @@ impl CodexTransport {
             })),
             false,
             abort,
+            false,
         )
     }
 
@@ -309,7 +315,9 @@ impl CodexTransport {
             args.push("--resume".into());
             args.push(session_id.to_string());
         }
-        Self::spawn_with(program, &args, cwd, None, false, Some(abort))
+        Self::spawn_with(program, &args, cwd, None, false, Some(abort),
+            true,
+        )
     }
 
     fn spawn_with(
@@ -319,6 +327,7 @@ impl CodexTransport {
         initialize_params: Option<Value>,
         send_initialized: bool,
         abort: Option<Arc<AtomicBool>>,
+        claude_stream: bool,
     ) -> Result<Self, CodexTransportError> {
         let mut command = std::process::Command::new(program);
         command
@@ -403,6 +412,7 @@ impl CodexTransport {
             shutdown: false,
             initialize_result: None,
             abort,
+            claude_stream,
         };
 
         if let Some(initialize_params) = initialize_params {
@@ -470,6 +480,7 @@ impl CodexTransport {
             Some(initialize_params),
             send_initialized,
             None,
+            false,
         )
     }
 
@@ -760,7 +771,7 @@ impl CodexTransport {
             let wait = remaining.min(CHILD_POLL_INTERVAL);
             match self.wire_rx.recv_timeout(wait) {
                 Ok(event) => match event {
-                    WireEvent::Message(value) => match classify_message(value) {
+                    WireEvent::Message(value) => match classify_message(value, self.claude_stream) {
                         Ok(Some(message)) => return Ok(Some(message)),
                         Ok(None) => continue,
                         Err(error) => {
@@ -788,7 +799,7 @@ impl CodexTransport {
         loop {
             match self.wire_rx.try_recv() {
                 Ok(event) => match event {
-                    WireEvent::Message(value) => match classify_message(value) {
+                    WireEvent::Message(value) => match classify_message(value, self.claude_stream) {
                         Ok(Some(message)) => return Ok(Some(message)),
                         Ok(None) => continue,
                         Err(error) => {
@@ -829,7 +840,7 @@ impl CodexTransport {
 
     fn consume_wire_event(&mut self, event: WireEvent) -> TransportResult<Option<CodexEvent>> {
         match event {
-            WireEvent::Message(value) => match classify_message(value) {
+            WireEvent::Message(value) => match classify_message(value, self.claude_stream) {
                 Err(error) => {
                     self.shutdown();
                     return Err(error);
@@ -913,17 +924,21 @@ impl Drop for CodexTransport {
     }
 }
 
-fn classify_message(value: Value) -> TransportResult<Option<WireMessage>> {
+fn classify_message(value: Value, claude_stream: bool) -> TransportResult<Option<WireMessage>> {
     let Some(object) = value.as_object() else {
         warn_skipped_json(&value);
         return Ok(None);
     };
-    if let Some(ty) = object.get("type").and_then(Value::as_str) {
-        if is_claude_stream_type(ty) {
-            return Ok(Some(WireMessage::Notification {
-                method: "claude/stream".into(),
-                params: value,
-            }));
+    // Only Claude stream-json transports classify by `type`. Shared JSON-RPC
+    // (Codex / ACP) must not treat Anthropic-shaped type names as Claude events.
+    if claude_stream {
+        if let Some(ty) = object.get("type").and_then(Value::as_str) {
+            if is_claude_stream_type(ty) {
+                return Ok(Some(WireMessage::Notification {
+                    method: "claude/stream".into(),
+                    params: value,
+                }));
+            }
         }
     }
     let has_id = object.contains_key("id");
@@ -968,24 +983,12 @@ fn classify_message(value: Value) -> TransportResult<Option<WireMessage>> {
 }
 
 fn is_claude_stream_type(ty: &str) -> bool {
+    // Narrow allowlist: types observed (or needed) on Claude Code stream-json
+    // stdout. Do not list Anthropic Messages SSE names here — those are not
+    // this transport's dialect and would pollute shared classification if gated wrong.
     matches!(
         ty,
-        "system"
-            | "assistant"
-            | "user"
-            | "result"
-            | "stream_event"
-            | "content_block_delta"
-            | "content_block_start"
-            | "content_block_stop"
-            | "message_start"
-            | "message_delta"
-            | "message_stop"
-            | "tool_use"
-            | "tool_result"
-            | "error"
-            | "log"
-            | "prompt_suggestion"
+        "system" | "assistant" | "user" | "result" | "stream_event" | "error"
     )
 }
 
