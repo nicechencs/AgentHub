@@ -595,8 +595,19 @@ function firstTableSlug(text: string, prefix: 'model_providers' | 'providers'): 
   return m?.[2]?.trim() || 'custom';
 }
 
+/** Collapse an accidental exact concat (`grok-4.6grok-4.6` → `grok-4.6`). */
+export function collapseDoubledModelId(model: string): string {
+  let out = model.trim();
+  while (out.length >= 2 && out.length % 2 === 0) {
+    const half = out.slice(0, out.length / 2);
+    if (!half || half !== out.slice(half.length)) break;
+    out = half;
+  }
+  return out;
+}
+
 function kimiModelForWrite(model: string): string {
-  return model.trim();
+  return collapseDoubledModelId(model);
 }
 
 function renameKimiProvider(text: string, from: string, to: string): string {
@@ -649,6 +660,62 @@ function tomlTableSet(text: string, table: string, key: string, value: string): 
     newBody = `${body}${pad}${key} = "${value}"\n`;
   }
   return text.slice(0, bodyStart) + newBody + rest;
+}
+
+function tomlTableRemove(text: string, table: string): string {
+  const header = `[${table}]`;
+  const start = text.indexOf(header);
+  if (start < 0) return text;
+  const bodyStart = start + header.length;
+  const after = text.slice(bodyStart);
+  const nextRel = after.search(/^\s*\[/m);
+  const end = nextRel < 0 ? text.length : bodyStart + nextRel;
+  const before = text.slice(0, start).replace(/[ \t]+$/, '');
+  const rest = text.slice(end).replace(/^\s*\n/, '');
+  const joined = before && rest && !before.endsWith('\n') ? `${before}\n${rest}` : before + rest;
+  return joined.replace(/\n{3,}/g, '\n\n');
+}
+
+function kimiModelsTableName(text: string, alias: string): string {
+  const quoted = `models."${alias}"`;
+  const bare = `models.${alias}`;
+  if (text.includes(`[${quoted}]`)) return quoted;
+  if (text.includes(`[${bare}]`)) return bare;
+  return quoted;
+}
+
+function kimiModelAliasTables(text: string): string[] {
+  const tables: string[] = [];
+  const re = /^\[models\.(?:"([^"]+)"|([^\]]+))\]\s*$/gm;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text))) {
+    const alias = (match[1] ?? match[2] ?? '').trim();
+    if (!alias) continue;
+    const table = kimiModelsTableName(text, alias);
+    if (!tables.includes(table)) tables.push(table);
+  }
+  return tables;
+}
+
+/** Keep only `[models."<alias>"]` so typing prefixes do not accumulate. */
+function pruneKimiModelAliases(text: string, keepAlias: string): string {
+  const keep = keepAlias.trim();
+  const keepQuoted = keep ? `models."${keep}"` : '';
+  const keepBare = keep ? `models.${keep}` : '';
+  let out = text;
+  for (const table of kimiModelAliasTables(out)) {
+    if (keep && (table === keepQuoted || table === keepBare)) continue;
+    out = tomlTableRemove(out, table);
+  }
+  return out;
+}
+
+function replaceTomlStringKey(text: string, key: string, value: string): string {
+  let out = text;
+  while (tomlGet(out, key)) {
+    out = tomlUnset(out, key);
+  }
+  return tomlSet(out, key, value);
 }
 
 function grokDefaultAlias(text: string): string {
@@ -1094,8 +1161,12 @@ export function applyFormVars(
     }
     const table = `providers.${slug}`;
     const model = kimiModelForWrite(vars.model);
-    if (model) text = tomlSet(text, 'default_model', model);
-    else text = tomlUnset(text, 'default_model');
+    if (model) text = replaceTomlStringKey(text, 'default_model', model);
+    else {
+      while (tomlGet(text, 'default_model')) {
+        text = tomlUnset(text, 'default_model');
+      }
+    }
     text = tomlSet(text, 'default_provider', slug);
     if (vars.baseUrl.trim()) {
       text = tomlTableSet(text, table, 'base_url', vars.baseUrl.trim());
@@ -1106,8 +1177,9 @@ export function applyFormVars(
     } else if (tomlTableGet(text, table, 'api_key')) {
       text = tomlTableSet(text, table, 'api_key', REDACTED_MARKER);
     }
+    text = pruneKimiModelAliases(text, model);
     if (model) {
-      const modelsTable = `models."${model}"`;
+      const modelsTable = kimiModelsTableName(text, model);
       text = tomlTableSet(text, modelsTable, 'provider', slug);
       text = tomlTableSet(text, modelsTable, 'model', model);
     }

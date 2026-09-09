@@ -115,26 +115,37 @@ pub(crate) fn ensure_kimi_model_alias(
     if models.get(alias).is_none() {
         models.insert(alias, toml_edit::table());
     }
-    let entry = models
-        .get_mut(alias)
-        .and_then(Item::as_table_mut)
-        .ok_or_else(|| AppError::InvalidArg(format!("Kimi models.{alias} must be a table")))?;
-    entry["provider"] = toml_edit::value(slug);
-    let model_id = entry
-        .get("model")
-        .and_then(Item::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string);
-    if model_id.is_none() {
-        entry["model"] = toml_edit::value(alias);
+    {
+        let entry = models
+            .get_mut(alias)
+            .and_then(Item::as_table_mut)
+            .ok_or_else(|| AppError::InvalidArg(format!("Kimi models.{alias} must be a table")))?;
+        entry["provider"] = toml_edit::value(slug);
+        let model_id = entry
+            .get("model")
+            .and_then(Item::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        if model_id.is_none() {
+            entry["model"] = toml_edit::value(alias);
+        }
+        let context_ok = entry
+            .get("max_context_size")
+            .and_then(Item::as_integer)
+            .is_some_and(|n| n >= 1);
+        if !context_ok {
+            entry["max_context_size"] = toml_edit::value(DEFAULT_MAX_CONTEXT_SIZE);
+        }
     }
-    let context_ok = entry
-        .get("max_context_size")
-        .and_then(Item::as_integer)
-        .is_some_and(|n| n >= 1);
-    if !context_ok {
-        entry["max_context_size"] = toml_edit::value(DEFAULT_MAX_CONTEXT_SIZE);
+    // Typing prefixes and leftover aliases must not accumulate under [models].
+    let stale: Vec<String> = models
+        .iter()
+        .map(|(k, _)| k.to_string())
+        .filter(|k| k != alias)
+        .collect();
+    for key in stale {
+        models.remove(&key);
     }
     Ok(())
 }
@@ -179,10 +190,36 @@ pub(crate) fn complete_kimi_live_toml(doc: &mut DocumentMut) -> Result<()> {
         .map(str::to_string);
     // Keep the account's model. Rewriting grok-* to kimi-k2 made custom
     // relays 404: the key's group never had that alias.
-    let Some(alias) = stored else {
+    let Some(stored) = stored else {
         return Ok(());
     };
+    let alias = collapse_doubled_model_id(&stored);
+    if alias.is_empty() {
+        return Ok(());
+    }
+    if alias != stored {
+        doc["default_model"] = toml_edit::value(alias.as_str());
+    }
     ensure_kimi_model_alias(doc, slug.as_str(), &alias)
+}
+
+/// `grok-4.6grok-4.6` is a form concat, not a real alias.
+fn collapse_doubled_model_id(model: &str) -> String {
+    let mut out = model.trim().to_string();
+    loop {
+        let n = out.chars().count();
+        if n < 2 || n % 2 != 0 {
+            break;
+        }
+        let half = n / 2;
+        let left: String = out.chars().take(half).collect();
+        let right: String = out.chars().skip(half).collect();
+        if left.is_empty() || left != right {
+            break;
+        }
+        out = left;
+    }
+    out
 }
 
 #[cfg(test)]

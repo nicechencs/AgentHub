@@ -55,6 +55,8 @@ describe('GenericConfigForm renderer', () => {
     expect(src).toContain('fieldControlKind');
     expect(src).toContain('pickLabel');
     expect(src).toContain('customLabel');
+    expect(src).toContain('next === value + value');
+    expect(src).toContain('collapseDoubledModelId');
   });
 
   it('passes disabled and readOnly to SecretInput when kind is secret', () => {

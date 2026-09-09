@@ -18,7 +18,7 @@ import {
 import type { TicketWallet } from '@/lib/backend/contracts/ticket';
 import type { AgentKey, AgentStatus, Conversation, Provider } from '@/lib/types';
 import { applyFormVars, extractFormVars } from '@/lib/provider-detect';
-import { filterRemoteModelsForAgent } from '@/lib/provider-detect/remote-models';
+import { listRemoteModelsForPicker } from '@/lib/provider-detect/remote-models';
 import {
   chatModelOptions,
   extractModel,
@@ -165,7 +165,7 @@ export function useChatPageConnection(input: {
         const agentFilter = primaryAgent === 'pi' && /api\.x\.ai/i.test(baseUrl)
           ? 'grok'
           : currentProvider.agentId;
-        setRemoteModels(filterRemoteModelsForAgent(agentFilter, ids));
+        setRemoteModels(listRemoteModelsForPicker(agentFilter, ids, baseUrl));
       })
       .catch(() => {
         if (!cancelled) setRemoteModels([]);

@@ -1,4 +1,7 @@
-use super::{complete_kimi_live_toml, fill_missing_kimi_provider_type, kimi_provider_type_for_url};
+use super::{
+    collapse_doubled_model_id, complete_kimi_live_toml, fill_missing_kimi_provider_type,
+    kimi_provider_type_for_url,
+};
 use toml_edit::DocumentMut;
 
 #[test]
@@ -72,5 +75,108 @@ api_key = "sk-x"
         kept["providers"]["custom"]["type"].as_str(),
         Some("openai"),
         "must not overwrite an explicit type"
+    );
+}
+
+#[test]
+fn complete_live_toml_keeps_custom_relay_model() {
+    let mut doc: DocumentMut = r#"
+default_model = "grok-4.6"
+default_provider = "moonshot"
+
+[providers.moonshot]
+base_url = "https://mytokens.cc/v1"
+api_key = "sk-x"
+"#
+    .parse()
+    .unwrap();
+    complete_kimi_live_toml(&mut doc).unwrap();
+    assert_eq!(doc["default_model"].as_str(), Some("grok-4.6"));
+    assert_eq!(
+        doc["providers"]["moonshot"]["type"].as_str(),
+        Some("openai")
+    );
+    assert_eq!(
+        doc["models"]["grok-4.6"]["model"].as_str(),
+        Some("grok-4.6")
+    );
+    assert_eq!(
+        doc["models"]["grok-4.6"]["provider"].as_str(),
+        Some("moonshot")
+    );
+    let dumped = doc.to_string();
+    assert!(!dumped.contains("kimi-k2"), "{dumped}");
+}
+
+#[test]
+fn complete_live_toml_prunes_stale_model_aliases() {
+    let mut doc: DocumentMut = r#"
+default_model = "grok-4.6"
+default_provider = "moonshot"
+
+[providers.moonshot]
+base_url = "https://mytokens.cc/v1"
+api_key = "sk-x"
+
+[models."g"]
+provider = "moonshot"
+model = "g"
+
+[models."grok-4.6"]
+provider = "moonshot"
+model = "grok-4.6"
+
+[models."grok-4.6rok-4.6"]
+provider = "moonshot"
+model = "grok-4.6rok-4.6"
+"#
+    .parse()
+    .unwrap();
+    complete_kimi_live_toml(&mut doc).unwrap();
+    let models = doc["models"].as_table().expect("models table");
+    assert!(models.get("grok-4.6").is_some());
+    assert!(models.get("g").is_none());
+    assert!(models.get("grok-4.6rok-4.6").is_none());
+    assert_eq!(models.len(), 1);
+    assert_eq!(doc["default_model"].as_str(), Some("grok-4.6"));
+}
+
+#[test]
+fn collapse_doubled_model_id_halves_exact_concat() {
+    assert_eq!(collapse_doubled_model_id("grok-4.6grok-4.6"), "grok-4.6");
+    assert_eq!(collapse_doubled_model_id("  grok-4.6grok-4.6  "), "grok-4.6");
+    assert_eq!(
+        collapse_doubled_model_id("grok-4.6grok-4.6grok-4.6grok-4.6"),
+        "grok-4.6"
+    );
+    assert_eq!(collapse_doubled_model_id("grok-4.6"), "grok-4.6");
+    assert_eq!(collapse_doubled_model_id("grok-4.6rok-4.6"), "grok-4.6rok-4.6");
+}
+
+#[test]
+fn complete_live_toml_collapses_stacked_default_model() {
+    let mut doc: DocumentMut = r#"
+default_model = "grok-4.6grok-4.6"
+default_provider = "moonshot"
+
+[providers.moonshot]
+base_url = "https://mytokens.cc/v1"
+api_key = "sk-x"
+
+[models."grok-4.6grok-4.6"]
+provider = "moonshot"
+model = "grok-4.6grok-4.6"
+"#
+    .parse()
+    .unwrap();
+    complete_kimi_live_toml(&mut doc).unwrap();
+    assert_eq!(doc["default_model"].as_str(), Some("grok-4.6"));
+    let models = doc["models"].as_table().expect("models table");
+    assert!(models.get("grok-4.6").is_some());
+    assert!(models.get("grok-4.6grok-4.6").is_none());
+    assert_eq!(models.len(), 1);
+    assert_eq!(
+        doc["models"]["grok-4.6"]["model"].as_str(),
+        Some("grok-4.6")
     );
 }

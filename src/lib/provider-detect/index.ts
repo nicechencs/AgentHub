@@ -32,6 +32,7 @@ export { defaultConfigScaffold, isLiveFilePath, liveConfigPaths } from './scaffo
 
 export {
   applyFormVars,
+  collapseDoubledModelId,
   extractFormVars,
   formFieldVisibility,
   FORM_FIELD_LABELS,
