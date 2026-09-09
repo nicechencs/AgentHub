@@ -12,8 +12,7 @@ describe('DetailTable', () => {
         null,
         createElement(
           DetailTableRow,
-          { label: '7 天已用' },
-          createElement(DetailTableCell, null, '40%'),
+          { label: '7 天已用', children: createElement(DetailTableCell, null, '40%') },
         ),
       ),
     );
