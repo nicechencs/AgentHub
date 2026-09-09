@@ -193,7 +193,7 @@ describe('chat layout wiring', () => {
   it('puts the auto-approve hint to the left of send, muted and meta-sized', () => {
     const composer = source('ChatComposer.tsx');
     const hintAt = composer.indexOf('approveFooter.text');
-    const sendAt = composer.indexOf('<SendHorizontal');
+    const sendAt = composer.indexOf('<ArrowUp');
     expect(hintAt).toBeGreaterThan(0);
     expect(sendAt).toBeGreaterThan(hintAt);
     expect(composer).toContain('text-muted/35');

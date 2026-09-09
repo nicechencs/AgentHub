@@ -10,10 +10,10 @@ import {
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  ArrowUp,
   Check,
   ChevronDown,
   MoreHorizontal,
-  SendHorizontal,
   Square,
 } from 'lucide-react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
@@ -699,7 +699,7 @@ export function ChatComposer({
               aria-label={sendHint}
               title={composerHoverHint(sendHint, hoverHint)}
             >
-              <SendHorizontal className="h-4 w-4" />
+              <ArrowUp className="h-4 w-4" />
             </Button>
           )}
         </div>
