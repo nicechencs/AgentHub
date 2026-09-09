@@ -47,7 +47,7 @@ describe('agents layout wiring', () => {
     expect(detail).toContain('ChannelUninstallButton');
     expect(detail).toContain("title={t('agents.card.openConfigDirTitle')}");
     expect(detail).toContain("title={t('agents.card.openInstallDir')}");
-    expect(card).toContain('agentListDetailsHint');
+    expect(card).toContain('agentHonestyHint');
     expect(card).toContain('agentLaunchTargets');
     expect(card).toContain("t('agents.card.startCli')");
     expect(card).toContain("t('agents.card.startApp')");
