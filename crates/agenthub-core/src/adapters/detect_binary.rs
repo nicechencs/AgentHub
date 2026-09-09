@@ -168,7 +168,7 @@ pub(crate) fn detect_binary_with_env(
                 extra_env,
             );
             found.notes.push(format!(
-                "using leftover AgentHub npm prefix (legacy; not an install target): {}",
+                "用遗留数据目录 npm 启动（仅后备，不是安装位置）：{}",
                 path.display()
             ));
             return found;
@@ -224,6 +224,9 @@ pub(crate) fn attach_extra_binary_copies(
             continue;
         }
         if is_under_agenthub_user_npm_prefix(&path) {
+            continue;
+        }
+        if !spawn_candidate_usable(result.agent, &path) {
             continue;
         }
         if primary.is_some_and(|p| leftover_paths_equal(p, &path)) {
@@ -438,7 +441,7 @@ fn skip_unusable_spawn(agent: AgentId, path: &Path, via: &str) -> Option<String>
         "skipping incomplete DeepSeek Harness CLI (missing @deepseek-ai/dsh-scope)"
     );
     Some(format!(
-        "skipping {via} {} (missing {}); not a spawn target",
+        "跳过 {via} {}：命令不完整（缺少 {}），不能从该路径启动。请用官方 npm 装到用户前缀（如 ~/.npm-global），不要装进 ~/.agenthub。",
         path.display(),
         super::dsh::SCOPE_PACKAGE
     ))

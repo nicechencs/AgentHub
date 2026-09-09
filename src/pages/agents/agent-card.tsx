@@ -38,7 +38,7 @@ import {
   isNodeTooOldUpdateNote,
   isSpecialInstallChannel,
   agentLaunchTargets,
-  agentListDetailsHint,
+  agentHonestyHint,
   isLeftoverDetailsHint,
   agentUpgradeControl,
   agentUpgradeHint,
@@ -186,7 +186,7 @@ export function AgentCard({
   const checkingUpdate = updateState === 'checking';
   const installs = listAgentInstalls(agent);
   const versions = uniqueInstallVersions(programInstalls(installs));
-  const detailsHint = agentListDetailsHint(installs);
+  const detailsHint = agentHonestyHint(agent);
   const spawn = spawnInstall(agent);
   const inAppChannel = spawn?.updateVia === 'in_app';
   const upgradable =

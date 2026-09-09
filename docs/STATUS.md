@@ -66,10 +66,10 @@ updated: 2026-09-09
 - 托盘低内存后台模式仍是未实施方案，不从它派生当前任务。
 - `AdapterRouteService::plan()` 是 Adapter / route 的唯一产品决策者。`adapter-capability-contract.json` 是它对冻结入参的只读投影；Rust 测试在 JSON 与内核输出不一致时失败。browser mock 只按来源特征查表并维护内存状态；凭据可用性必须精确匹配；未命中 fail-closed 为 unsupported，不回退 classify。route / support / ruleId / gateKind / canApply 的产品正确性在 Rust；Vitest 覆盖查表、脱敏、内存 apply 和页面听从 plan。见 [Adapter 路线内核](architecture/adapter-route-kernel.md)。
 - 不落地 sccache，也不把 `agenthub-core` 拆成多个 crate。CI 使用 `Swatinem/rust-cache`。Windows worktree 不得共享 `target/`。2026-08-25 的热缓存过滤测试约 3.5 秒、冷 worktree 首次编译依赖约 42 秒是历史快照，不是当前固定规模；过程见 [单一内核提案归档](archive/single-kernel-projections.md)。
-- DeepSeek Harness 的 StructuredStream 仍是规划项。检测/启动会跳过缺 `@deepseek-ai/dsh-scope` 的 PATH 残缺命令（常见是 `~/.local/bin/dsh`），优先完整的常见 npm 目录；遗留 `~/.agenthub/npm` 不是安装目标，但树完整时可以用来启动。已落地部分以源码和集成文档为准。写入 `cordis.patch.yml` 时，以 `@` 开头的插件 id（以及其它 YAML 指示符）经 `yaml_quote` 加引号，避免无界面 dsh 因非法 YAML 退出。
+- DeepSeek Harness 的 StructuredStream 仍是规划项。检测/启动会跳过缺 `@deepseek-ai/dsh-scope` 的 PATH 残缺命令（常见是 `~/.local/bin/dsh`），优先完整的常见 npm 目录；遗留 `~/.agenthub/npm` 不是安装目标，但树完整时可以用来启动。Agents 页把遗留副本标成启动后备而不是安装位置；残缺命令提示用官方 npm 装到 `~/.npm-global`，不会推荐 `~/.agenthub/npm`。已落地部分以源码和集成文档为准。写入 `cordis.patch.yml` 时，以 `@` 开头的插件 id（以及其它 YAML 指示符）经 `yaml_quote` 加引号，避免无界面 dsh 因非法 YAML 退出。
 - 插件包更新、Codex/Pi 安装仍是提案，不从 MCP inventory 推导。Claude / Grok 已装包可启用/停用/安装/卸载；Pi 只列已装包。见 [插件管理](proposals/plugin-management.md)。MCP 写入同样未做，且是另一条线。
 - Codex 安装、外部渠道 Chat 调用与连接/路由模块化审查见 [Codex 安装与模块化审查](archive/codex-install-modularity-review.md)（2026-08-27）。
-- npm 渠道安装写到检测会扫的用户前缀（`~/.npm-global`，Windows 为 `%APPDATA%\npm`）。`~/.agenthub` 以及其中的 `npm` 只是遗留，不是安装目标。DeepSeek Harness 在 PATH 残缺且遗留 prefix 树完整时，可以用这份遗留副本启动。
+- npm 渠道安装写到检测会扫的用户前缀（`~/.npm-global`，Windows 为 `%APPDATA%\npm`）。`~/.agenthub` 以及其中的 `npm` 只是遗留，不是安装目标。DeepSeek Harness 在 PATH 残缺且遗留 prefix 树完整时，可以用这份遗留副本启动；界面不会把它写成安装位置。
 - WorkBuddy 本机安装只打开官网安装页，界面给中文指引，不当成「安装失败」。真失败时「重试」是主按钮；失败面板先显示诊断，不把 npm 下载进度当正文。
 - ZCode 本机安装同样只打开官网；API Key 按目录追加写入 `~/.zcode/v2/config.json` 的一条供应商（官方槽或自定义行），不替换其它条目；套餐登录不导入；自定义行必须带模型名单。Chat 优先 PATH 上的 `zcode` CLI，只有桌面安装时不会虚构一条捆绑命令。Projects 只读任务索引，预览从命令行会话库读取对话正文；删除按钮禁用，提示到 ZCode 里删除。用量从命令行 `model_usage` 采集。
 - WorkBuddy 用量读取 `projects/**/*.jsonl` 里的 `providerData.usage`（以及旧的 `message.usage` 形状）。

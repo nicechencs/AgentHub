@@ -957,8 +957,8 @@ fn detect_dsh_prefers_complete_leftover_prefix_over_incomplete_local_bin() {
                 result
                     .notes
                     .iter()
-                    .any(|n| n.contains("leftover AgentHub npm prefix")),
-                "must document leftover spawn: {:?}",
+                    .any(|n| n.contains("不是安装位置") && n.contains("遗留")),
+                "must document leftover spawn as fallback only: {:?}",
                 result.notes
             );
         } else {
@@ -981,9 +981,17 @@ fn detect_dsh_prefers_complete_leftover_prefix_over_incomplete_local_bin() {
         result
             .notes
             .iter()
-            .any(|n| n.contains("dsh-scope") || n.contains("leftover")),
+            .any(|n| n.contains("dsh-scope") || n.contains("leftover") || n.contains("遗留")),
         "doctor notes must mention skip or leftover: {:?}",
         result.notes
+    );
+    assert!(
+        result
+            .extra_copies
+            .iter()
+            .all(|c| c.path != stub),
+        "incomplete ~/.local/bin/dsh must not appear as a healthy extra: {:?}",
+        result.extra_copies
     );
 }
 
