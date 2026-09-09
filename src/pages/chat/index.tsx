@@ -334,6 +334,7 @@ export default function ChatPage() {
                       : undefined
                   }
                   queuedFollowUp={page.queuedFollowUp}
+                  queuedFollowUpCount={page.queuedFollowUpCount}
                   onClearQueuedFollowUp={page.clearQueuedFollowUp}
                   onCancel={() => void page.cancelSending()}
                   onSelectAgent={(id) => void page.selectConversationAgentId(id)}

@@ -23,18 +23,36 @@ describe('chat layout wiring', () => {
   it('lets Escape stop an in-flight turn', () => {
     expect(source('index.tsx')).toContain('chatEscapeShouldCancel');
     expect(source('index.tsx')).toContain("e.key");
-    expect(source('ChatComposer.tsx')).toContain('chat.composer.stop');
+    expect(source('ChatComposer.tsx')).toContain('composerStopMessageKey');
+    expect(source('ChatComposer.tsx')).toContain('data-help="chat-stop"');
   });
 
-  it('keeps send available while a turn is in progress', () => {
+  it('keeps send available while a turn is in progress, with a labeled stop', () => {
     expect(source('index.tsx')).toContain('chatBusySendMode');
     const composer = source('ChatComposer.tsx');
-    const sendingAt = composer.indexOf('{sending ? (');
-    const sendWhileBusyAt = composer.indexOf('data-help="chat-send"', sendingAt);
-    const stopAt = composer.indexOf("t('chat.composer.stop')", sendingAt);
-    expect(sendingAt).toBeGreaterThan(0);
-    expect(sendWhileBusyAt).toBeGreaterThan(sendingAt);
-    expect(stopAt).toBeGreaterThan(sendWhileBusyAt);
+    expect(composer).toContain('composerPrimaryAction');
+    expect(composer).toContain('composerShowsSubmitButton');
+    expect(composer).toContain('data-help="chat-send"');
+    expect(composer).toContain('data-help="chat-stop"');
+    const stopAt = composer.indexOf('data-help="chat-stop"');
+    const sendAt = composer.indexOf('data-help="chat-send"');
+    expect(stopAt).toBeGreaterThan(0);
+    expect(sendAt).toBeGreaterThan(stopAt);
+  });
+
+  it('names Enter / Shift+Enter, shows the queue, and restores composer focus', () => {
+    const composer = source('ChatComposer.tsx');
+    expect(composer).toContain('composerEnterShouldSubmit');
+    expect(composer).toContain('composerShortcutMessageKey');
+    expect(composer).toContain('data-composer-shortcut');
+    expect(composer).toContain('composerQueuedFollowUpView');
+    expect(composer).toContain('chat.composer.queuedCount');
+    expect(composer).toContain('keepComposerFocus');
+    expect(composer).toContain('enterKeyHint="send"');
+    expect(source('use-chat-page.ts')).toContain('composerEnterShouldSubmit');
+    expect(source('index.tsx')).toContain('queuedFollowUpCount');
+    expect(translate('zh', 'chat.composer.shortcutSend')).toContain('Enter 发送');
+    expect(translate('zh', 'chat.composer.stopping')).toBe('正在停止');
   });
 
   it('opens markdown files in a right-hand preview pane', () => {
