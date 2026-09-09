@@ -259,6 +259,7 @@ export default function ChatPage() {
                   const kind = grokLegacyContinueKind({
                     agentId: page.primaryAgent,
                     runtimeEnabled: page.runtime?.enabled,
+                    runtimeReady: page.runtime != null,
                     hasMessages: page.messages.length > 0,
                     nativeSessionId: page.active.nativeSessionId,
                   });
