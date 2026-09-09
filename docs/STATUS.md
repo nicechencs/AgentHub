@@ -23,6 +23,7 @@ updated: 2026-09-09
   - **新空 Grok 会话**：持续聊天（模型/思考、图片、后续轮排队），**不支持**为本轮指定「用于本次」技能，界面也不画可点的假按钮。真实窗口验收已通过。
   - **新空 Kiro 会话**：`kiro-cli acp` 持续通道（允许/拒绝、停止；生成时不能中途补充，可排队到下一轮）。真实窗口验收已通过（ACP 新对话；打印路径 HTTP 多轮为 Builder ID / 本机登录，不是企业 IdC）。旧对话保留原发送方式。
   - **其余 Agent 与旧会话**：仍走原发送方式。
+  - **过程内用量**：新空 Codex 会话在 `thread/tokenUsage/updated` 到达后立刻展示 **当前轮**（`last`）和 **累计**（`total`）；有 `modelContextWindow` 时写成 `累计 n / 窗口`，不画假进度条。新空 Grok 会话只展示 **当前轮**（`turn_completed.usage`）；ACP 没有会话累计字段，不把各轮相加冒充累计。只显示协议里有的数字，不估算费用。Kiro 没有 token 累计数据源。回复标题行和生成中的过程摘要都会留下用量。
   - **B3** 只约束 Claude 接到持续聊天（ChatRuntime，后台会话控制）：探测结论否定，未接线。见 [Claude B3](archive/chat-claude-b3.md)。
   - **允许 / 拒绝 / 一直允许**（仅 Codex / Grok / Kiro 持续聊天；Cursor 不在此列）。卡片始终有允许和拒绝。「一直允许」只在这次请求带了该选项时出现（Codex 命令/文件卡片会补上；Grok / Kiro 只认对方给的 `allow_always`，Kiro 常见是 `allow_always_tool`）。待处理请求上的选项会入库，快照或重开后卡片仍可点。点了「一直允许」之后，**三家都在本机记住后续确认**，只限当前这次进程，不写进数据库：Codex 通常是本轮（一轮结束会新起进程，会再问）；Grok / Kiro 同一条 ACP 进程可跨轮，进程退出后再问。点的时候仍把对方给的选项回传；后面没有允许选项的请求仍出卡片，不会造假按钮。Kiro 会话设置里的「完全访问权限」是另一条（启动时 `--trust-all-tools`），不是卡片上的「一直允许」。机制见 [Chat 与 Agent](concepts/chat-and-agents.md#允许-拒绝-一直允许)。
 

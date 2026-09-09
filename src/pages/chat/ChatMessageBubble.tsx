@@ -6,7 +6,11 @@ import { MarkdownView } from '@/components/shared/MarkdownView';
 import { Button } from '@/components/ui/button';
 import { Hint } from '@/components/ui/tooltip';
 import { agentDisplayName } from '@/config/agents';
-import { hasProcessDetails, processPhaseLabel } from '@/lib/chat-process';
+import {
+  formatVisibleUsage,
+  hasProcessDetails,
+  processPhaseLabel,
+} from '@/lib/chat-process';
 import type { AgentProcessView } from '@/lib/chat-process';
 import type { ChatMessage } from '@/lib/types';
 import {
@@ -136,6 +140,7 @@ function AgentBubble({
       hasProcessDetails(process) &&
       (!running || !displayContent || process.steps.length > 0 || Boolean(process.stderr)),
   );
+  const usageText = formatVisibleUsage(process?.steps, t);
 
   return (
     <div id={`chat-msg-${message.id}`} className="group flex min-w-0 gap-3">
@@ -145,6 +150,7 @@ function AgentBubble({
           <span className="font-medium text-secondary">{agentDisplayName(agent)}</span>
           {statusText && <span>{statusText}</span>}
           {message.durationMs > 0 && <span>{formatDurationMs(message.durationMs)}</span>}
+          {usageText ? <span>{usageText}</span> : null}
           {showRetry && (
             <Hint
               label={

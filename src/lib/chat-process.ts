@@ -23,7 +23,7 @@ export type AgentProcessView = {
   command?: string;
   stdout: string;
   stderr: string;
-  /** Structured steps (tool / thinking / status / raw). Cap in reducer. */
+  /** Structured steps (tool / thinking / status / raw / usage). Cap in reducer. */
   steps: ProcessStep[];
   updatedAt: number;
 };
@@ -111,9 +111,62 @@ export function stepSummary(step: ProcessStep, t: TranslateFn): string {
       return mapRawStepNote(step.note, t);
     case 'error':
       return step.message;
+    case 'usage':
+      return formatUsageStep(step, t);
     default:
       return 'step';
   }
+}
+
+export type UsageStep = Extract<ProcessStep, { type: 'usage' }>;
+
+export function usageScope(step: UsageStep): 'turn' | 'session' {
+  return step.scope === 'session' ? 'session' : 'turn';
+}
+
+export function usageByScope(steps: ProcessStep[] | undefined): {
+  turn?: UsageStep;
+  session?: UsageStep;
+} {
+  const out: { turn?: UsageStep; session?: UsageStep } = {};
+  if (!steps) return out;
+  for (const step of steps) {
+    if (step.type !== 'usage') continue;
+    out[usageScope(step)] = step;
+  }
+  return out;
+}
+
+function formatUsageCounts(step: UsageStep, t: TranslateFn): string {
+  const parts: string[] = [];
+  if (step.input != null) parts.push(t('chat.process.usageInput', { n: step.input }));
+  if (step.output != null) parts.push(t('chat.process.usageOutput', { n: step.output }));
+  if (step.cacheRead) parts.push(t('chat.process.usageCache', { n: step.cacheRead }));
+  if (step.cacheWrite) parts.push(t('chat.process.usageCacheWrite', { n: step.cacheWrite }));
+  return parts.join(' · ');
+}
+
+/** One usage row: 当前轮 or 累计, protocol fields as sent. Cache only when > 0. */
+export function formatUsageStep(step: UsageStep, t: TranslateFn): string {
+  const counts = formatUsageCounts(step, t);
+  const label =
+    usageScope(step) === 'session' ? t('chat.process.usageSession') : t('chat.process.usageTurn');
+  const window =
+    usageScope(step) === 'session' && step.total != null && step.contextWindow
+      ? t('chat.process.usageWindow', { used: step.total, window: step.contextWindow })
+      : '';
+  const body = [counts, window].filter(Boolean).join(' · ');
+  return body ? `${label} ${body}` : label;
+}
+
+/** Reply-header line: 用量 + 当前轮 and 累计 when the Agent sent them. */
+export function formatVisibleUsage(steps: ProcessStep[] | undefined, t: TranslateFn): string {
+  const { turn, session } = usageByScope(steps);
+  const parts: string[] = [];
+  if (turn) parts.push(formatUsageStep(turn, t));
+  if (session) parts.push(formatUsageStep(session, t));
+  if (parts.length === 0) return '';
+  return `${t('chat.process.usage')} ${parts.join(' · ')}`;
 }
 
 /** 是否值得展示过程折叠面板 */
@@ -185,12 +238,12 @@ function mergeToolStep(prev: Extract<ProcessStep, { type: 'tool' }>, step: Extra
 }
 
 function isPriorityStep(step: ProcessStep): boolean {
-  return step.type === 'tool' || step.type === 'error';
+  return step.type === 'tool' || step.type === 'error' || step.type === 'usage';
 }
 
 /**
- * 过程步封顶：优先保留 tool / error（对齐 core MAX_EMITTED_STEPS 对 Error/Tool 的突破）。
- * 其余类型从最旧开始丢；若 tool+error 本身超过上限，只留最近 MAX_STEPS 条并丢掉全部 soft 步。
+ * 过程步封顶：优先保留 tool / error / usage（对齐 core MAX_EMITTED_STEPS 对 Error/Tool/Usage 的突破）。
+ * 其余类型从最旧开始丢；若优先步本身超过上限，只留最近 MAX_STEPS 条并丢掉全部 soft 步。
  */
 function capSteps(steps: ProcessStep[]): ProcessStep[] {
   if (steps.length <= MAX_STEPS) return steps;
@@ -241,6 +294,19 @@ function pushStep(steps: ProcessStep[], step: ProcessStep): ProcessStep[] {
         next[idx] = mergeToolStep(prev, step);
         return next;
       }
+    }
+  }
+
+  if (step.type === 'usage') {
+    const scope = usageScope(step);
+    const idx = findLastIndex(
+      steps,
+      (row) => row.type === 'usage' && usageScope(row) === scope,
+    );
+    if (idx >= 0) {
+      const next = steps.slice();
+      next[idx] = step;
+      return next;
     }
   }
 

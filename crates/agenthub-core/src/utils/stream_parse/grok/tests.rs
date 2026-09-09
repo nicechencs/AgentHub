@@ -99,11 +99,42 @@ fn unknown_acp_kind_is_empty_not_none() {
     .unwrap();
     assert!(s.is_empty());
 
-    let usage = parse_line(
-        r#"{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":1}}}}"#,
+    let empty_usage = parse_line(
+        r#"{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"turn_completed"}}}"#,
     )
     .unwrap();
-    assert!(usage.is_empty());
+    assert!(empty_usage.is_empty());
+}
+
+#[test]
+fn turn_completed_usage_becomes_usage_step() {
+    let usage = parse_line(
+        r#"{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":100,"outputTokens":20,"cachedReadTokens":40}}}}"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        &usage[0],
+        ProcessStep::Usage {
+            input: Some(100),
+            output: Some(20),
+            cache_read: Some(40),
+            ..
+        }
+    ));
+}
+
+#[test]
+fn legacy_usage_type_becomes_usage_step() {
+    let usage =
+        parse_line(r#"{"type":"usage","data":{"input_tokens":8,"output_tokens":2}}"#).unwrap();
+    assert!(matches!(
+        &usage[0],
+        ProcessStep::Usage {
+            input: Some(8),
+            output: Some(2),
+            ..
+        }
+    ));
 }
 
 #[test]

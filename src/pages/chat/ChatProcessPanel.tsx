@@ -3,6 +3,8 @@ import { AgentThinking } from '@/components/shared/AgentThinking';
 import { SourcePreview } from '@/components/shared/SourcePreview';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import {
+  formatUsageStep,
+  formatVisibleUsage,
   phaseFromMessageStatus,
   processPhaseLabel,
   stepSummary,
@@ -126,6 +128,9 @@ function ProcessStepRow({ step }: { step: ProcessStep }) {
       </div>
     );
   }
+  if (step.type === 'usage') {
+    return <div className="py-1 text-muted">· {formatUsageStep(step, t)}</div>;
+  }
   return <div className="py-1 text-muted">{stepSummary(step, t)}</div>;
 }
 
@@ -180,13 +185,15 @@ function summaryLabel(
   effectivePhase: AgentProcessView['phase'],
   stepCount: number,
   durationMs: number | undefined,
+  usageText: string,
   t: TranslateFn,
 ): string {
-  if (stepCount === 0 && isProcessActivePhase(effectivePhase)) {
+  if (stepCount === 0 && isProcessActivePhase(effectivePhase) && !usageText) {
     return t('chat.process.summaryGenerating');
   }
   const parts = [processPhaseLabel(effectivePhase, t)];
-  if (stepCount > 0) parts.push(t('chat.process.steps', { n: stepCount }));
+  if (usageText) parts.push(usageText);
+  else if (stepCount > 0) parts.push(t('chat.process.steps', { n: stepCount }));
   if (durationMs != null && durationMs > 0) parts.push(formatDurationMs(durationMs));
   return `▸ ${parts.join(' · ')}`;
 }
@@ -234,6 +241,7 @@ export function ChatProcessPanel({
 
   const open = userOpen ?? autoOpen;
   const hasRunDetails = Boolean(view.command || view.stderr || exitCode != null);
+  const usageText = formatVisibleUsage(view.steps, t);
   const timelineRef = useRef<HTMLDivElement>(null);
   const stderrRef = useRef<HTMLPreElement>(null);
 
@@ -258,7 +266,7 @@ export function ChatProcessPanel({
     >
       <summary className="flex cursor-pointer list-none items-center gap-1.5 py-1 text-muted marker:content-none [&::-webkit-details-marker]:hidden">
         <span className="font-medium text-secondary">
-          {summaryLabel(effectivePhase, timeline.length, durationMs, t)}
+          {summaryLabel(effectivePhase, timeline.length, durationMs, usageText, t)}
         </span>
       </summary>
       <div className="space-y-2 pb-1">

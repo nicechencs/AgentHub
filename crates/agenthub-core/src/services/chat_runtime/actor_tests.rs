@@ -188,6 +188,118 @@ fn retryable_notification_error_keeps_the_turn_alive() {
         .any(|event| matches!(event.event, ChatEvent::Error { .. })));
 }
 
+#[test]
+fn thread_token_usage_updated_emits_turn_and_session() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "usage");
+    let mut worker = worker(&db, "usage");
+    worker.store.enable_if_new("usage").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .notification(
+            "thread/tokenUsage/updated",
+            &json!({
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "tokenUsage": {
+                    "last": {
+                        "inputTokens": 100,
+                        "cachedInputTokens": 20,
+                        "cacheWriteInputTokens": 0,
+                        "outputTokens": 10,
+                        "reasoningOutputTokens": 5,
+                        "totalTokens": 110
+                    },
+                    "total": {
+                        "inputTokens": 400,
+                        "cachedInputTokens": 80,
+                        "cacheWriteInputTokens": 0,
+                        "outputTokens": 40,
+                        "reasoningOutputTokens": 15,
+                        "totalTokens": 440
+                    },
+                    "modelContextWindow": 258400
+                }
+            }),
+        )
+        .unwrap();
+
+    let snapshot = worker.store.snapshot("usage", None).unwrap();
+    let rows: Vec<_> = snapshot
+        .events
+        .iter()
+        .filter_map(|event| match &event.event {
+            ChatEvent::AgentProcess {
+                step:
+                    crate::models::ProcessStep::Usage {
+                        scope,
+                        input,
+                        output,
+                        total,
+                        context_window,
+                        ..
+                    },
+                ..
+            } => Some((scope.clone(), *input, *output, *total, *context_window)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        vec![
+            (Some("turn".into()), Some(100), Some(10), Some(110), None),
+            (
+                Some("session".into()),
+                Some(400),
+                Some(40),
+                Some(440),
+                Some(258400)
+            ),
+        ]
+    );
+}
+
+#[test]
+fn grok_turn_completed_usage_emits_process_step() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "grok-usage");
+    let mut worker = worker(&db, "grok-usage");
+    worker.agent = AgentId::Grok;
+    worker.store.enable_if_new("grok-usage").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .notification(
+            "session/update",
+            &json!({
+                "update": {
+                    "sessionUpdate": "turn_completed",
+                    "usage": {
+                        "inputTokens": 50,
+                        "outputTokens": 5,
+                        "cachedReadTokens": 10
+                    }
+                }
+            }),
+        )
+        .unwrap();
+
+    let snapshot = worker.store.snapshot("grok-usage", None).unwrap();
+    assert!(snapshot.events.iter().any(|event| matches!(
+        &event.event,
+        ChatEvent::AgentProcess {
+            step: crate::models::ProcessStep::Usage {
+                input: Some(50),
+                output: Some(5),
+                cache_read: Some(10),
+                ..
+            },
+            ..
+        }
+    )));
+}
+
 #[cfg(unix)]
 fn fake_transport() -> (tempfile::TempDir, CodexTransport, std::path::PathBuf) {
     fake_transport_with(None)
