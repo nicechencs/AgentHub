@@ -51,6 +51,10 @@ import {
   type RuntimeRunRecord,
   type RuntimeSnapshotVersion,
 } from './runtime-run-state';
+import {
+  RUNTIME_SNAPSHOT_POLL_ACTIVE_MS,
+  RUNTIME_SNAPSHOT_POLL_BACKGROUND_MS,
+} from './chat-streaming';
 
 function titleFromPrompt(prompt: string): string {
   const trimmed = prompt.trim();
@@ -340,7 +344,7 @@ export function useChatPageSend(input: {
     void read();
     const shouldPoll = runtime?.enabled && isRuntimeActive(runtime.phase);
     if (!shouldPoll) return () => { disposed = true; };
-    const timer = window.setInterval(() => void read(), 400);
+    const timer = window.setInterval(() => void read(), RUNTIME_SNAPSHOT_POLL_ACTIVE_MS);
     return () => { disposed = true; window.clearInterval(timer); };
   }, [activeId, activeAgentId, runtime?.enabled, runtime?.phase]);
 
@@ -379,7 +383,7 @@ export function useChatPageSend(input: {
       for (const id of ids) void read(id);
     };
     tick();
-    const timer = window.setInterval(tick, 400);
+    const timer = window.setInterval(tick, RUNTIME_SNAPSHOT_POLL_BACKGROUND_MS);
     return () => { disposed = true; window.clearInterval(timer); };
   }, [activeId, sendingIds]);
 

@@ -702,8 +702,9 @@ describe('messageStatusLabel', () => {
   it('uses process phase while running', () => {
     expect(messageStatusLabel(t, 'running', processView('queued'))).toBe('排队中');
     expect(messageStatusLabel(t, 'running', processView('starting'))).toBe('启动中');
-    expect(messageStatusLabel(t, 'running', processView('running'))).toBe('生成中');
-    expect(messageStatusLabel(t, 'running')).toBe('生成中');
+    expect(messageStatusLabel(t, 'running', processView('running'))).toBe('正在想');
+    expect(messageStatusLabel(t, 'running', processView('running'), true)).toBe('正在写');
+    expect(messageStatusLabel(t, 'running')).toBe('正在想');
   });
 
   it('maps terminal and unknown statuses', () => {

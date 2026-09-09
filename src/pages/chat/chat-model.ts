@@ -25,6 +25,7 @@ import type {
   Conversation,
 } from '@/lib/types';
 import { relativeTime, type TurnGroup } from './chat-format';
+import { streamingStatusKey } from './chat-streaming';
 
 export type ChatSendBlocker =
   | { kind: 'hiddenAgents'; agentIds: AgentKey[] }
@@ -677,16 +678,20 @@ export function messageStatusLabel(
   t: TranslateFn,
   status: string,
   process?: AgentProcessView,
+  hasContent = false,
 ): string | null {
-  // 过程机更细（排队/启动）；终态以 message.status 为准
+  // 过程机更细（排队/启动）；生成中首字前「正在想」，有正文后「正在写」
   if (process && (status === 'running' || !status)) {
-    if (process.phase === 'queued' || process.phase === 'starting' || process.phase === 'running') {
+    if (process.phase === 'queued' || process.phase === 'starting') {
       return processPhaseLabel(process.phase, t);
+    }
+    if (process.phase === 'running') {
+      return t(streamingStatusKey(process, hasContent));
     }
   }
   switch (status) {
     case 'running':
-      return t('chat.status.generating');
+      return t(streamingStatusKey(process, hasContent));
     case 'error':
     case 'failed':
       return t('chat.status.failed');

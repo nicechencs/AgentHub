@@ -2904,6 +2904,8 @@ export const en = {
       retryAllHint: "Resend this prompt to every agent in the conversation",
       generating: "Generating…",
       generatingPhase: "{phase}…",
+      thinking: "Thinking",
+      writing: "Writing",
       noOutput: "(no output)",
       copyAria: "Copy",
       copied: "Copied",
@@ -3028,6 +3030,8 @@ export const en = {
     },
     status: {
       generating: "Generating",
+      thinking: "Thinking",
+      writing: "Writing",
       failed: "Failed",
       cancelled: "Cancelled",
       timeout: "Timed out",
