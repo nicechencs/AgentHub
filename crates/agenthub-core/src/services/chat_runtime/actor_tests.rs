@@ -218,6 +218,9 @@ while IFS= read -r line; do
     *'"decision":"accept"'*)
       printf '%s\n' accept >> "$log"
       ;;
+    *'"optionId":'*)
+      printf '%s\n' "$line" >> "$log"
+      ;;
   esac
 done
 "##,
@@ -740,6 +743,41 @@ fn acp_permission_uses_server_option_ids_without_auto_allow_always() {
     );
 }
 
+#[test]
+fn acp_permission_accepts_allow_always_tool_kinds() {
+    assert!(is_acp_allow_always_kind("allow_always"));
+    assert!(is_acp_allow_always_kind("allow_always_tool"));
+    assert!(is_acp_allow_always_kind("allow_always_tool_args"));
+    assert!(!is_acp_allow_always_kind("allow_once"));
+    assert!(!is_acp_allow_always_kind("allow_edits_for_session"));
+    let options = vec![
+        RuntimePermissionOption {
+            id: "once".into(),
+            kind: "allow_once".into(),
+        },
+        RuntimePermissionOption {
+            id: "tool".into(),
+            kind: "allow_always_tool".into(),
+        },
+        RuntimePermissionOption {
+            id: "reject".into(),
+            kind: "reject_once".into(),
+        },
+    ];
+    assert_eq!(
+        acp_permission_reply(&options, "accept_always").unwrap(),
+        json!({"outcome":{"outcome":"selected","optionId":"tool"}})
+    );
+    let args = vec![RuntimePermissionOption {
+        id: "args".into(),
+        kind: "allow_always_tool_args".into(),
+    }];
+    assert_eq!(
+        acp_permission_reply(&args, "accept_always").unwrap(),
+        json!({"outcome":{"outcome":"selected","optionId":"args"}})
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn codex_allow_always_accepts_and_auto_approves_later_command() {
@@ -794,6 +832,245 @@ fn codex_allow_always_accepts_and_auto_approves_later_command() {
     std::thread::sleep(Duration::from_millis(80));
     let wire = std::fs::read_to_string(log).unwrap();
     assert!(wire.lines().any(|line| line == "accept"));
+}
+
+#[cfg(unix)]
+#[test]
+fn acp_allow_always_forwards_option_and_auto_approves_later_in_live_process() {
+    for (id, agent, always_kind) in [
+        ("grok-always", AgentId::Grok, "allow_always"),
+        ("kiro-always", AgentId::Kiro, "allow_always_tool"),
+    ] {
+        let db = Database::open_in_memory().unwrap();
+        conversation(&db, id);
+        let mut worker = worker(&db, id);
+        worker.agent = agent;
+        worker.store.enable_if_new(id).unwrap();
+        start_placeholder(&mut worker);
+        let (_directory, transport, log) = fake_transport();
+        worker.transport = Some(transport);
+        worker
+            .server_request(
+                json!("perm-1"),
+                "session/request_permission",
+                &json!({
+                    "turnId": "run-1",
+                    "toolCall": { "title": "写文件" },
+                    "options": [
+                        {"optionId": "once", "kind": "allow_once"},
+                        {"optionId": "always", "kind": always_kind},
+                        {"optionId": "reject", "kind": "reject_once"}
+                    ]
+                }),
+            )
+            .unwrap();
+        let first = worker.store.snapshot(id, None).unwrap();
+        assert!(
+            first.pending_requests[0]
+                .permission_options
+                .iter()
+                .any(|option| option.kind == always_kind),
+            "{agent:?} must keep server remember kind {always_kind}"
+        );
+        worker
+            .reply(RuntimeReply {
+                conversation_id: id.into(),
+                run_id: "run-1".into(),
+                request_id: first.pending_requests[0].id.clone(),
+                client_request_id: "always-1".into(),
+                decision: Some(RuntimeDecision::AllowAlways),
+                answers: None,
+            })
+            .unwrap();
+        assert!(worker.session_allow_always, "{agent:?}");
+        assert!(worker
+            .store
+            .snapshot(id, None)
+            .unwrap()
+            .pending_requests
+            .is_empty());
+
+        worker
+            .server_request(
+                json!("perm-2"),
+                "session/request_permission",
+                &json!({
+                    "turnId": "run-1",
+                    "toolCall": { "title": "再写文件" },
+                    "options": [
+                        {"optionId": "once-2", "kind": "allow_once"},
+                        {"optionId": "reject-2", "kind": "reject_once"}
+                    ]
+                }),
+            )
+            .unwrap();
+        assert!(
+            worker
+                .store
+                .snapshot(id, None)
+                .unwrap()
+                .pending_requests
+                .is_empty(),
+            "{agent:?} must auto-approve later permission in the live process"
+        );
+
+        worker
+            .turn_completed(&json!({"stopReason": "end_turn"}))
+            .unwrap();
+        assert!(
+            worker.session_allow_always,
+            "{agent:?} remember must survive a completed ACP turn"
+        );
+        assert!(
+            worker.transport.as_ref().is_some_and(CodexTransport::is_open),
+            "{agent:?}"
+        );
+
+        worker
+            .store
+            .set_state(
+                id,
+                RuntimePhase::Running,
+                Some("run-1"),
+                worker.thread_id.as_deref(),
+                Some("turn-1"),
+                worker.chat_turn,
+                worker.message_id.as_deref(),
+            )
+            .unwrap();
+        worker
+            .server_request(
+                json!("perm-3"),
+                "session/request_permission",
+                &json!({
+                    "turnId": "run-1",
+                    "toolCall": { "title": "下一轮" },
+                    "options": [
+                        {"optionId": "once-3", "kind": "allow_once"},
+                        {"optionId": "always-3", "kind": always_kind}
+                    ]
+                }),
+            )
+            .unwrap();
+        assert!(
+            worker
+                .store
+                .snapshot(id, None)
+                .unwrap()
+                .pending_requests
+                .is_empty(),
+            "{agent:?} next-turn permission must stay auto-approved"
+        );
+
+        std::thread::sleep(Duration::from_millis(80));
+        let wire = std::fs::read_to_string(&log).unwrap();
+        assert!(
+            wire.contains(r#""optionId":"always""#),
+            "{agent:?} first reply must forward remember option: {wire}"
+        );
+        assert!(
+            wire.contains(r#""optionId":"once-2""#),
+            "{agent:?} later request without remember kind still auto-allows once: {wire}"
+        );
+        assert!(
+            wire.contains(r#""optionId":"always-3""#),
+            "{agent:?} later request prefers remember kind: {wire}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn acp_allow_once_does_not_remember_later_permissions() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "acp-once");
+    let mut worker = worker(&db, "acp-once");
+    worker.agent = AgentId::Kiro;
+    worker.store.enable_if_new("acp-once").unwrap();
+    start_placeholder(&mut worker);
+    let (_directory, transport, _log) = fake_transport();
+    worker.transport = Some(transport);
+    worker
+        .server_request(
+            json!("perm-1"),
+            "session/request_permission",
+            &json!({
+                "turnId": "run-1",
+                "toolCall": { "title": "写文件" },
+                "options": [
+                    {"optionId": "once", "kind": "allow_once"},
+                    {"optionId": "always", "kind": "allow_always_tool"},
+                    {"optionId": "reject", "kind": "reject_once"}
+                ]
+            }),
+        )
+        .unwrap();
+    let first = worker.store.snapshot("acp-once", None).unwrap();
+    worker
+        .reply(RuntimeReply {
+            conversation_id: "acp-once".into(),
+            run_id: "run-1".into(),
+            request_id: first.pending_requests[0].id.clone(),
+            client_request_id: "once-1".into(),
+            decision: Some(RuntimeDecision::Allow),
+            answers: None,
+        })
+        .unwrap();
+    assert!(!worker.session_allow_always);
+    worker
+        .server_request(
+            json!("perm-2"),
+            "session/request_permission",
+            &json!({
+                "turnId": "run-1",
+                "toolCall": { "title": "再写" },
+                "options": [
+                    {"optionId": "once-2", "kind": "allow_once"},
+                    {"optionId": "always-2", "kind": "allow_always_tool"}
+                ]
+            }),
+        )
+        .unwrap();
+    assert_eq!(
+        worker
+            .store
+            .snapshot("acp-once", None)
+            .unwrap()
+            .pending_requests
+            .len(),
+        1
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn acp_session_remember_does_not_invent_allow_when_request_has_no_allow_option() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "acp-no-allow");
+    let mut worker = worker(&db, "acp-no-allow");
+    worker.agent = AgentId::Grok;
+    worker.store.enable_if_new("acp-no-allow").unwrap();
+    start_placeholder(&mut worker);
+    let (_directory, transport, _log) = fake_transport();
+    worker.transport = Some(transport);
+    worker.session_allow_always = true;
+    worker
+        .server_request(
+            json!("perm-deny-only"),
+            "session/request_permission",
+            &json!({
+                "turnId": "run-1",
+                "toolCall": { "title": "危险操作" },
+                "options": [{"optionId": "reject", "kind": "reject_once"}]
+            }),
+        )
+        .unwrap();
+    let snapshot = worker.store.snapshot("acp-no-allow", None).unwrap();
+    assert_eq!(snapshot.pending_requests.len(), 1);
+    assert!(snapshot.pending_requests[0]
+        .permission_options
+        .iter()
+        .all(|option| option.kind != "allow_always"));
 }
 
 #[test]

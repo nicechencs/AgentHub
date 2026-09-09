@@ -104,5 +104,17 @@ describe('chat runtime transport guards', () => {
         { id: 'always', kind: 'allow_always' },
       ],
     })).toBe(true);
+    expect(requestAllowsAlways({
+      permissionOptions: [
+        { id: 'once', kind: 'allow_once' },
+        { id: 'tool', kind: 'allow_always_tool' },
+      ],
+    })).toBe(true);
+    expect(requestAllowsAlways({
+      permissionOptions: [{ id: 'args', kind: 'allow_always_tool_args' }],
+    })).toBe(true);
+    expect(requestAllowsAlways({
+      permissionOptions: [{ id: 'edits', kind: 'allow_edits_for_session' }],
+    })).toBe(false);
   });
 });

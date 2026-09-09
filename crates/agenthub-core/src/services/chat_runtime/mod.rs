@@ -882,9 +882,12 @@ struct ActorWorker {
     session_model: Option<String>,
     session_effort: Option<String>,
     session_trust_all: Option<bool>,
-    /// Codex has no ACP `allow_always` option list. After the user picks
-    /// session remember, later command/file approvals in this live process
-    /// are accepted without another card. Not persisted; a new process asks again.
+    /// After the user picks session remember, later command/file approvals in
+    /// this live process are accepted without another card. Not persisted; a
+    /// new process asks again. Codex synthesizes the button. Grok / Kiro only
+    /// show it when the ACP request includes an `allow_always` kind (including
+    /// `allow_always_tool`). ACP keeps the process across turns, so the flag
+    /// survives a completed turn while that process is still open.
     session_allow_always: bool,
 }
 
@@ -1650,7 +1653,11 @@ impl ActorWorker {
                     } else {
                         persisted.request.permission_options.clone()
                     };
-                    acp_permission_reply(&options, decision)?
+                    let value = acp_permission_reply(&options, decision)?;
+                    if matches!(reply.decision, Some(RuntimeDecision::AllowAlways)) {
+                        self.session_allow_always = true;
+                    }
+                    value
                 } else {
                     if matches!(reply.decision, Some(RuntimeDecision::AllowAlways)) {
                         self.session_allow_always = true;
@@ -2119,15 +2126,24 @@ impl ActorWorker {
             }
         };
         if self.session_allow_always
-            && !is_acp_runtime_agent(Some(self.agent))
             && matches!(kind, RuntimeRequestKind::Command | RuntimeRequestKind::File)
         {
-            if let Some(transport) = self.transport.as_mut() {
+            if is_acp_runtime_agent(Some(self.agent)) {
+                let options = acp_options.clone().unwrap_or_default();
+                if let Some(response) = acp_auto_allow_response(&options) {
+                    if let Some(transport) = self.transport.as_mut() {
+                        transport
+                            .respond(id, Ok(response))
+                            .map_err(transport_error)?;
+                    }
+                    return Ok(());
+                }
+            } else if let Some(transport) = self.transport.as_mut() {
                 transport
                     .respond(id, Ok(json!({"decision": "accept"})))
                     .map_err(transport_error)?;
+                return Ok(());
             }
-            return Ok(());
         }
         let permission_options = match acp_options {
             Some(options) => options,
@@ -2607,7 +2623,11 @@ impl ActorWorker {
         self.pending_prompt_id = None;
         self.permission_options.clear();
         self.file_change_items.clear();
-        self.session_allow_always = false;
+        if !is_acp_runtime_agent(Some(self.agent))
+            || !self.transport.as_ref().is_some_and(CodexTransport::is_open)
+        {
+            self.session_allow_always = false;
+        }
         if let Some(message) = error {
             if let Err(learn_err) = self
                 .store
@@ -2960,6 +2980,19 @@ fn acp_capability_present(value: Option<&Value>) -> bool {
     matches!(value, Some(Value::Bool(true)) | Some(Value::Object(_)))
 }
 
+fn is_acp_allow_always_kind(kind: &str) -> bool {
+    kind == "allow_always" || kind.starts_with("allow_always_")
+}
+
+fn acp_kind_matches(option_kind: &str, wanted: &str) -> bool {
+    match wanted {
+        "allow_once" => option_kind == "allow_once" || option_kind.starts_with("allow_once_"),
+        "allow_always" => is_acp_allow_always_kind(option_kind),
+        "reject_once" => option_kind == "reject_once" || option_kind.starts_with("reject_once_"),
+        _ => option_kind == wanted,
+    }
+}
+
 fn acp_permission_reply(options: &[RuntimePermissionOption], decision: &str) -> Result<Value> {
     let wanted_kind = match decision {
         "accept" => "allow_once",
@@ -2967,7 +3000,10 @@ fn acp_permission_reply(options: &[RuntimePermissionOption], decision: &str) -> 
         "decline" => "reject_once",
         _ => return Err(AppError::InvalidArg("approval decision is required".into())),
     };
-    if let Some(option) = options.iter().find(|option| option.kind == wanted_kind) {
+    if let Some(option) = options
+        .iter()
+        .find(|option| acp_kind_matches(&option.kind, wanted_kind))
+    {
         return Ok(json!({
             "outcome": { "outcome": "selected", "optionId": option.id }
         }));
@@ -2987,6 +3023,12 @@ fn acp_permission_reply(options: &[RuntimePermissionOption], decision: &str) -> 
         "chat.runtime.permission",
         "服务端没有提供一次性允许选项，无法安全批准此请求",
     ))
+}
+
+fn acp_auto_allow_response(options: &[RuntimePermissionOption]) -> Option<Value> {
+    acp_permission_reply(options, "accept_always")
+        .ok()
+        .or_else(|| acp_permission_reply(options, "accept").ok())
 }
 
 fn transport_error(error: codex_transport::CodexTransportError) -> AppError {
