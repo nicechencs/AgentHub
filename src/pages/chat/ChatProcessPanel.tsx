@@ -3,6 +3,7 @@ import { AgentThinking } from '@/components/shared/AgentThinking';
 import { SourcePreview } from '@/components/shared/SourcePreview';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import {
+  formatUsageStep,
   phaseFromMessageStatus,
   processPhaseLabel,
   stepSummary,
@@ -125,6 +126,9 @@ function ProcessStepRow({ step }: { step: ProcessStep }) {
         {step.detail ? ` · ${step.detail}` : ''}
       </div>
     );
+  }
+  if (step.type === 'usage') {
+    return <div className="py-1 text-muted">· {formatUsageStep(step, t)}</div>;
   }
   return <div className="py-1 text-muted">{stepSummary(step, t)}</div>;
 }

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createTranslator } from '@/lib/i18n';
 import {
+  formatUsageStep,
   hasProcessDetails,
+  lastUsageStep,
   mergeThinkingText,
   phaseFromMessageStatus,
   processKey,
@@ -711,5 +713,43 @@ describe('chat-process reduceProcessEvent', () => {
     expect(steps[0]).toMatchObject({ type: 'tool', id: 'tool-1' });
     expect(steps[199]).toMatchObject({ type: 'tool', id: 'tool-200' });
     expect(steps.some((s) => s.type === 'tool' && s.id === 'tool-0')).toBe(false);
+  });
+
+  it('keeps the latest usage step for a turn', () => {
+    let map: ProcessMap = reduceProcessEvent(
+      {},
+      { type: 'agentStarted', turn: 1, agent: 'codex', command: 'codex app-server' },
+      1,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'codex',
+        step: { type: 'usage', input: 10, output: 1 },
+      },
+      2,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'codex',
+        step: { type: 'usage', input: 100, output: 20, cacheRead: 40 },
+      },
+      3,
+    );
+    const steps = map['1:codex']?.steps ?? [];
+    expect(steps.filter((s) => s.type === 'usage')).toHaveLength(1);
+    expect(lastUsageStep(steps)).toMatchObject({
+      type: 'usage',
+      input: 100,
+      output: 20,
+      cacheRead: 40,
+    });
+    expect(formatUsageStep(lastUsageStep(steps)!, t)).toBe('用量 输入 100 · 输出 20 · 缓存 40');
+    expect(stepSummary(lastUsageStep(steps)!, t)).toBe('用量 输入 100 · 输出 20 · 缓存 40');
   });
 });

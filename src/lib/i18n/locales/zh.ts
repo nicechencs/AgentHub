@@ -2890,6 +2890,11 @@ export const zh = {
       unrecognizedLine: "无法识别的输出行",
       nonJsonLine: "结构化模式下出现非 JSON 行",
       lineTooLong: "输出行过长",
+      usage: "用量",
+      usageInput: "输入 {n}",
+      usageOutput: "输出 {n}",
+      usageCache: "缓存 {n}",
+      usageCacheWrite: "缓存写入 {n}",
     },
     settings: {
       title: "会话设置",

@@ -2910,6 +2910,11 @@ export const en = {
       unrecognizedLine: "Unrecognized output line",
       nonJsonLine: "Non-JSON line in structured mode",
       lineTooLong: "Output line too long",
+      usage: "Usage",
+      usageInput: "{n} in",
+      usageOutput: "{n} out",
+      usageCache: "{n} cache",
+      usageCacheWrite: "{n} cache write",
     },
     settings: {
       title: "Session settings",

@@ -2256,7 +2256,13 @@ impl ActorWorker {
             "item/fileChange/patchUpdated" => {
                 self.remember_file_change_patch(params);
             }
-            "turn/completed" => self.turn_completed(params)?,
+            "thread/tokenUsage/updated" | "thread/token_usage/updated" => {
+                self.emit_usage_step(codex_last_usage(params))?;
+            }
+            "turn/completed" => {
+                self.emit_usage_step(codex_last_usage(params))?;
+                self.turn_completed(params)?;
+            }
             "error" => {
                 let message =
                     redact_json_text(params.get("message").or_else(|| params.get("error")));
@@ -2391,6 +2397,20 @@ impl ActorWorker {
         Ok(())
     }
 
+    fn emit_usage_step(&self, step: Option<ProcessStep>) -> Result<()> {
+        let Some(step) = step else {
+            return Ok(());
+        };
+        self.emit(
+            ChatEvent::AgentProcess {
+                turn: self.chat_turn.unwrap_or(0),
+                agent: self.agent,
+                step,
+            },
+            self.live_phase(RuntimePhase::Running),
+        )
+    }
+
     fn emit_error(&self, message: &str, phase: RuntimePhase) -> Result<()> {
         self.emit(
             ChatEvent::Error {
@@ -2431,14 +2451,14 @@ impl ActorWorker {
             self.file_change_items
                 .insert(id.to_string(), join_file_change_paths(&paths));
         }
-        let status = item
-            .get("status")
-            .and_then(Value::as_str)
-            .unwrap_or(if method == "item/completed" {
-                "completed"
-            } else {
-                "inProgress"
-            });
+        let status =
+            item.get("status")
+                .and_then(Value::as_str)
+                .unwrap_or(if method == "item/completed" {
+                    "completed"
+                } else {
+                    "inProgress"
+                });
         let path = paths.first().map(String::as_str).unwrap_or("file");
         self.emit(
             ChatEvent::AgentProcess {
@@ -2784,6 +2804,17 @@ fn extract_id(value: &Value, key: &str) -> Option<String> {
             .or_else(|| nested.as_str())
             .map(str::to_string)
     })
+}
+
+/// Codex `thread/tokenUsage/updated` (and optional `turn/completed`) last-turn
+/// breakdown. Session `total` is ignored so Chat does not show a cumulative
+/// number as this turn.
+fn codex_last_usage(params: &Value) -> Option<ProcessStep> {
+    params
+        .pointer("/tokenUsage/last")
+        .or_else(|| params.pointer("/token_usage/last"))
+        .or_else(|| params.pointer("/turn/tokenUsage/last"))
+        .and_then(ProcessStep::from_usage_object)
 }
 
 fn wire_id_string(value: &Value) -> String {

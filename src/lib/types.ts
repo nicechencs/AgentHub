@@ -521,7 +521,16 @@ export type ProcessStep =
     }
   | { type: 'text'; text: string }
   | { type: 'raw'; text: string; note?: string | null }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string }
+  | {
+      type: 'usage';
+      input?: number | null;
+      output?: number | null;
+      cacheRead?: number | null;
+      cacheWrite?: number | null;
+      reasoning?: number | null;
+      total?: number | null;
+    };
 
 /** Streaming events from chat_send (externally tagged `type`) */
 export type ChatEvent =

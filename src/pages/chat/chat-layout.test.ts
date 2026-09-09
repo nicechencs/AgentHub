@@ -260,5 +260,9 @@ describe('chat layout wiring', () => {
     expect(translate('zh', 'chat.process.stderr')).toBe('错误输出');
     expect(translate('en', 'chat.process.stderr')).toBe('Error output');
     expect(translate('en', 'chat.process.runDetails')).not.toBe('Run details');
+    expect(translate('zh', 'chat.process.usage')).toBe('用量');
+    expect(translate('en', 'chat.process.usage')).toBe('Usage');
+    expect(source('ChatMessageBubble.tsx')).toContain('lastUsageStep');
+    expect(source('ChatProcessPanel.tsx')).toContain('formatUsageStep');
   });
 });

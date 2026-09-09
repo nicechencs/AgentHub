@@ -86,14 +86,9 @@ pub(crate) fn decode_session_update(v: &Value) -> Vec<ProcessStep> {
             }]
         }
         "available_commands" | "available_commands_update" => vec![],
-        "usage"
-        | "token_usage"
-        | "tokenUsage"
-        | "context_usage"
-        | "tokens_used"
-        | "turn_completed"
-        | "turn_usage"
-        | "response_completed"
+        "usage" | "token_usage" | "tokenUsage" | "tokens_used" | "turn_completed"
+        | "turn_usage" | "response_completed" => usage_steps(update),
+        "context_usage"
         | "auto_compact_started"
         | "auto_compact_completed"
         | "auto_compact"
@@ -177,6 +172,18 @@ pub(crate) fn collect_text(value: &Value, depth: usize) -> String {
         }
         _ => String::new(),
     }
+}
+
+fn usage_steps(update: &Value) -> Vec<ProcessStep> {
+    let usage = update
+        .get("usage")
+        .or_else(|| update.get("tokenUsage"))
+        .or_else(|| update.get("token_usage"))
+        .filter(|u| u.is_object())
+        .unwrap_or(update);
+    ProcessStep::from_usage_object(usage)
+        .map(|step| vec![step])
+        .unwrap_or_default()
 }
 
 pub(crate) fn first_str(v: &Value, keys: &[&str]) -> Option<String> {

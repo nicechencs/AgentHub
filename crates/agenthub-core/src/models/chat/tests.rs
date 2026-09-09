@@ -110,3 +110,68 @@ fn chat_message_serde_camel_case() {
     assert_eq!(back.turn, 2);
     assert_eq!(back.agent_id, Some(AgentId::Codex));
 }
+
+#[test]
+fn usage_step_maps_codex_and_grok_fields_without_inventing_totals() {
+    let codex = ProcessStep::from_usage_object(&serde_json::json!({
+        "inputTokens": 100,
+        "cachedInputTokens": 20,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 10,
+        "reasoningOutputTokens": 5,
+        "totalTokens": 110
+    }))
+    .unwrap();
+    match &codex {
+        ProcessStep::Usage {
+            input,
+            output,
+            cache_read,
+            cache_write,
+            reasoning,
+            total,
+        } => {
+            assert_eq!(*input, Some(100));
+            assert_eq!(*output, Some(10));
+            assert_eq!(*cache_read, Some(20));
+            assert_eq!(*cache_write, Some(0));
+            assert_eq!(*reasoning, Some(5));
+            assert_eq!(*total, Some(110));
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+    let json = serde_json::to_string(&codex).unwrap();
+    assert!(json.contains(r#""type":"usage""#));
+    assert!(json.contains(r#""cacheRead":20"#));
+
+    let grok = ProcessStep::from_usage_object(&serde_json::json!({
+        "inputTokens": 18444,
+        "outputTokens": 130,
+        "cachedReadTokens": 11264,
+        "reasoningTokens": 73
+    }))
+    .unwrap();
+    match grok {
+        ProcessStep::Usage {
+            input,
+            output,
+            cache_read,
+            reasoning,
+            total,
+            ..
+        } => {
+            assert_eq!(input, Some(18444));
+            assert_eq!(output, Some(130));
+            assert_eq!(cache_read, Some(11264));
+            assert_eq!(reasoning, Some(73));
+            assert_eq!(total, None);
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+
+    assert!(ProcessStep::from_usage_object(&serde_json::json!({
+        "inputTokens": 0,
+        "outputTokens": 0
+    }))
+    .is_none());
+}

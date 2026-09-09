@@ -294,6 +294,14 @@ export function createMockChatPort(): ChatPort {
             onEvent({ type: 'agentChunk', turn, agent, stream: 'stdout', text: part });
           }
           const status: ChatMessageStatus = mockCancel.has(conversationId) ? 'cancelled' : 'ok';
+          if ((agent === 'grok' || agent === 'codex') && status === 'ok') {
+            onEvent({
+              type: 'agentProcess',
+              turn,
+              agent,
+              step: { type: 'usage', input: 128, output: 32, cacheRead: 16 },
+            });
+          }
           const finished: ChatMessage = {
             id: `msg-mock-${mockSeq++}`,
             conversationId,
