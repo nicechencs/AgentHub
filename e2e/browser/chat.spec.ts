@@ -72,6 +72,51 @@ test('Shift+Enter inserts a new line without sending', async ({ page }) => {
   await expect(page.getByRole('log')).not.toContainText('第一行');
 });
 
+test('model menu uses readable names and Ctrl+Shift+I opens it', async ({ page }) => {
+  await openApp(page);
+  await openChatComposer(page);
+  await setWorkingDirectory(page);
+
+  const composerChrome = page.locator('[data-help="chat-composer"]');
+  await composerChrome.getByRole('button', { name: /Claude Code/ }).click();
+  const codex = page.getByRole('menuitemradio', { name: /Codex/ });
+  await expect(codex).toBeVisible();
+  await expect(codex).toBeEnabled();
+  await codex.click();
+
+  const modelTrigger = page.locator('[data-help="chat-model"]');
+  await expect(modelTrigger).toBeVisible({ timeout: 20_000 });
+  await expect(modelTrigger).not.toHaveText(/gpt-[0-9]|grok-[0-9]|claude-/i);
+
+  await modelTrigger.click();
+  await expect(page.getByRole('menuitemradio', { name: 'GPT Mock' })).toBeVisible();
+  const spark = page.getByRole('menuitemradio', { name: 'GPT 5.3 Codex Spark' });
+  await expect(spark).toBeVisible();
+  await spark.click();
+  await expect(modelTrigger).toHaveText('GPT 5.3 Codex Spark');
+
+  const effortTrigger = page.locator('[data-help="chat-effort"]');
+  await expect(effortTrigger).toBeEnabled();
+  await expect(page.getByText('可能更慢')).toBeVisible();
+  await effortTrigger.click();
+  await expect(page.getByRole('menuitemradio', { name: /低/ })).toBeVisible();
+  await expect(page.getByText('更快')).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'I',
+        code: 'KeyI',
+        ctrlKey: true,
+        shiftKey: true,
+        bubbles: true,
+      }),
+    );
+  });
+  await expect(page.getByRole('menuitemradio', { name: 'GPT 5.3 Codex Spark' })).toBeVisible();
+});
+
 test('Chat settings dialog traps Tab and restores focus after Escape', async ({ page }) => {
   await openApp(page);
   await openChatComposer(page);

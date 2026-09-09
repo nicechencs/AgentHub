@@ -27,6 +27,18 @@ describe('chat layout wiring', () => {
     expect(source('ChatComposer.tsx')).toContain('data-help="chat-stop"');
   });
 
+  it('opens the model menu from Ctrl/Cmd+Shift+I and labels models in plain language', () => {
+    expect(source('index.tsx')).toContain('chatModShiftIShouldOpenModel');
+    expect(source('index.tsx')).toContain('modelMenuOpenNonce');
+    expect(source('ChatRuntimeExtras.tsx')).toContain('chatModelDisplayName');
+    expect(source('ChatRuntimeExtras.tsx')).toContain('chatEffortHint');
+    expect(source('ChatRuntimeExtras.tsx')).toContain('data-help="chat-model"');
+    expect(source('ChatComposer.tsx')).toContain('chatModelDisplayName');
+    expect(source('ChatComposer.tsx')).toContain('chatEffortHint');
+    expect(translate('zh', 'chat.runtimeOps.effortHintHigh')).toBe('可能更慢');
+    expect(translate('zh', 'chat.composer.shortcutOpenModel')).toBe('Ctrl+Shift+I');
+  });
+
   it('keeps send available while a turn is in progress, with a labeled stop', () => {
     expect(source('index.tsx')).toContain('chatBusySendMode');
     const composer = source('ChatComposer.tsx');

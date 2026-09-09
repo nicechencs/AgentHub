@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MessagesSquare } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
@@ -25,6 +25,7 @@ import {
   chatMainColumnClass,
   chatStageClass,
 } from './chat-model';
+import { chatModShiftIShouldOpenModel } from './chat-model-labels';
 import { formatChatSessionRecord } from './chat-format';
 import { chatBusySendMode, grokLegacyContinueKind } from './chat-grok-follow-up';
 import { ChatMarkdownPreviewPanel } from './ChatMarkdownPreviewPanel';
@@ -63,6 +64,7 @@ export default function ChatPage() {
   });
   const navigate = useNavigate();
   const { t } = useI18n();
+  const [modelMenuOpenNonce, setModelMenuOpenNonce] = useState(0);
   const openMarkdownPreview = useCallback(
     (next: string) => {
       if (!isMarkdownFilePath(next)) return false;
@@ -109,6 +111,20 @@ export default function ChatPage() {
           kind: 'local',
           keywords: [],
         });
+        return;
+      }
+      if (
+        chatModShiftIShouldOpenModel({
+          key: e.key,
+          metaKey: e.metaKey,
+          ctrlKey: e.ctrlKey,
+          altKey: e.altKey,
+          shiftKey: e.shiftKey,
+          overlayOpen: hasEscPriorityOverlay(),
+        })
+      ) {
+        e.preventDefault();
+        setModelMenuOpenNonce((n) => n + 1);
         return;
       }
       if (
@@ -361,6 +377,7 @@ export default function ChatPage() {
                   queuedFollowUpCount={page.queuedFollowUpCount}
                   onClearQueuedFollowUp={page.clearQueuedFollowUp}
                   focusNonce={page.composerFocusNonce}
+                  modelMenuOpenNonce={modelMenuOpenNonce}
                   onCancel={() => void page.cancelSending()}
                   onSelectAgent={(id) => void page.selectConversationAgentId(id)}
                   onSwitchConnection={(id) => void page.handleSwitchConnection(id)}
@@ -399,6 +416,7 @@ export default function ChatPage() {
                       <ChatRuntimeExtras
                         enabled
                         inline
+                        modelMenuOpenNonce={modelMenuOpenNonce}
                         draft={page.draft}
                         commandSearchOpen={page.commandSearchOpen}
                         commandIndex={page.commandIndex}
