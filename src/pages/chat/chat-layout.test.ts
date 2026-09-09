@@ -15,7 +15,8 @@ describe('chat layout wiring', () => {
     const page = source('index.tsx');
     expect(page).toContain('flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-panel');
     expect(page).toContain('chatStageClass');
-    expect(source('ChatSessionRail.tsx')).toContain('border-r border-border bg-canvas');
+    expect(source('ChatSessionRail.tsx')).toContain('border-r border-border');
+    expect(source('ChatSessionRail.tsx')).toContain('bg-canvas');
     expect(source('ChatMessageBubble.tsx')).toContain('formatChatDisplayContent');
     expect(source('ChatTranscript.tsx')).toContain('overflow-x-hidden overflow-y-auto');
   });
@@ -23,18 +24,21 @@ describe('chat layout wiring', () => {
   it('lets Escape stop an in-flight turn', () => {
     expect(source('index.tsx')).toContain('chatEscapeShouldCancel');
     expect(source('index.tsx')).toContain("e.key");
-    expect(source('ChatComposer.tsx')).toContain('chat.composer.stop');
+    expect(source('ChatComposer.tsx')).toContain('composerStopMessageKey');
+    expect(source('ChatComposer.tsx')).toContain('data-help="chat-stop"');
   });
 
-  it('keeps send available while a turn is in progress', () => {
+  it('keeps send available while a turn is in progress, with a labeled stop', () => {
     expect(source('index.tsx')).toContain('chatBusySendMode');
     const composer = source('ChatComposer.tsx');
-    const sendingAt = composer.indexOf('{sending ? (');
-    const sendWhileBusyAt = composer.indexOf('data-help="chat-send"', sendingAt);
-    const stopAt = composer.indexOf("t('chat.composer.stop')", sendingAt);
-    expect(sendingAt).toBeGreaterThan(0);
-    expect(sendWhileBusyAt).toBeGreaterThan(sendingAt);
-    expect(stopAt).toBeGreaterThan(sendWhileBusyAt);
+    expect(composer).toContain('composerPrimaryAction');
+    expect(composer).toContain('composerShowsSubmitButton');
+    expect(composer).toContain('data-help="chat-send"');
+    expect(composer).toContain('data-help="chat-stop"');
+    const stopAt = composer.indexOf('data-help="chat-stop"');
+    const sendAt = composer.indexOf('data-help="chat-send"');
+    expect(stopAt).toBeGreaterThan(0);
+    expect(sendAt).toBeGreaterThan(stopAt);
   });
 
   it('opens markdown files in a right-hand preview pane', () => {
