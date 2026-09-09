@@ -26,6 +26,7 @@ import {
   conversationRailMarkColor,
   conversationRailSelectedFill,
   conversationTitle,
+  cwdShortName,
   isBlankConversationDraft,
   type ConversationDayGroup,
 } from './chat-model';
@@ -219,10 +220,13 @@ export function ChatSessionRail({
                         {c.agentIds[0] ? (
                           <AgentLogo agentId={c.agentIds[0]} size="sm" hint={false} />
                         ) : null}
-                        <span className="min-w-0 flex-1 truncate">{conversationTitle(t, c.title)}</span>
-                        {isBlankConversationDraft(c) ? (
-                          <span className="shrink-0 text-meta text-muted">{t('chat.rail.draft')}</span>
-                        ) : null}
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate">{conversationTitle(t, c.title)}</span>
+                          <span className="block truncate text-meta text-muted">
+                            {cwdShortName(c.cwd, t)}
+                            {isBlankConversationDraft(c) ? ` · ${t('chat.rail.draft')}` : ''}
+                          </span>
+                        </span>
                         {sending ? (
                           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted" />
                         ) : null}

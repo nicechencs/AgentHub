@@ -19,7 +19,12 @@ import {
   kiroChatBannerCopy,
   kiroChatStance,
 } from './chat-kiro-model';
-import { chatEscapeShouldCancel, chatMainColumnClass, chatStageClass } from './chat-model';
+import {
+  chatEscapeShouldCancel,
+  chatModKShouldFocusHistory,
+  chatMainColumnClass,
+  chatStageClass,
+} from './chat-model';
 import { formatChatSessionRecord } from './chat-format';
 import { chatBusySendMode, grokLegacyContinueKind } from './chat-grok-follow-up';
 import { ChatMarkdownPreviewPanel } from './ChatMarkdownPreviewPanel';
@@ -89,6 +94,24 @@ export default function ChatPage() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (
+        chatModKShouldFocusHistory({
+          key: e.key,
+          metaKey: e.metaKey,
+          ctrlKey: e.ctrlKey,
+          altKey: e.altKey,
+          shiftKey: e.shiftKey,
+          overlayOpen: hasEscPriorityOverlay(),
+        })
+      ) {
+        e.preventDefault();
+        page.runChatAction({
+          id: 'focus-history-search',
+          kind: 'local',
+          keywords: [],
+        });
+        return;
+      }
+      if (
         !chatEscapeShouldCancel({
           key: e.key,
           sending: page.sendingHere,
@@ -109,6 +132,7 @@ export default function ChatPage() {
   }, [
     page.cancelSending,
     page.cancelingHere,
+    page.runChatAction,
     page.sendingHere,
     preview.expanded,
     preview.mounted,

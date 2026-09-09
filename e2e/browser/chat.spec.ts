@@ -16,6 +16,24 @@ test('empty chat starter card fills the composer without sending', async ({ page
   await expect(page.getByRole('log')).not.toContainText('请帮我了解这个项目的结构和主要功能。');
 });
 
+test('Enter sends and Shift+Enter inserts a newline without sending', async ({ page }) => {
+  await openApp(page);
+  await openChatComposer(page);
+  await setWorkingDirectory(page);
+
+  const composer = page.getByRole('textbox', { name: '消息输入' });
+  await composer.click();
+  await composer.fill('first line');
+  await page.keyboard.press('Shift+Enter');
+  await page.keyboard.type('second line');
+  await expect(composer).toHaveValue('first line\nsecond line');
+  await expect(page.getByRole('log').getByText('first line')).toHaveCount(0);
+
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('log').getByText('first line')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('log').getByText(/模拟回复/)).toBeVisible({ timeout: 20_000 });
+});
+
 test('Chat sends a prompt and shows the mock reply', async ({ page }) => {
   await openApp(page);
   await openChatComposer(page);

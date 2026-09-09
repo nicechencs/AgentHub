@@ -59,7 +59,7 @@ describe('ChatTranscript surfaces', () => {
     expect(html).toContain(`overflow-x-hidden overflow-y-auto ${chatTranscriptSurfaceClass}`);
     expect(html).not.toContain('rounded-composer bg-panel');
     expect(html).not.toContain('rounded-composer bg-canvas');
-    expect(html).toContain('开始对话');
+    expect(html).not.toContain('text-display');
     expect(html).toContain(' · demo');
     expect(html).toContain('了解这个项目');
     expect(html).toContain('检查问题');
