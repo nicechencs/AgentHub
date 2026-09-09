@@ -160,8 +160,12 @@ done
         std::thread::sleep(Duration::from_millis(5));
     }
     assert!(ready.is_file(), "burst notifications were not flushed");
+    // ready only means the child flushed stdout. The parent reader may still
+    // be parsing; try_recv immediately after the file appears flakes on busy
+    // CI runners (got 0 of 8). Keep Duration::ZERO so this stays a try_recv.
     let mut got = 0;
-    while got < 8 {
+    let drain_deadline = Instant::now() + Duration::from_secs(2);
+    while got < 8 && Instant::now() < drain_deadline {
         match transport
             .recv_timeout(Duration::ZERO)
             .expect("zero-timeout recv")
@@ -169,7 +173,7 @@ done
             Some(CodexEvent::Notification { method, .. }) if method == "notice" => got += 1,
             Some(CodexEvent::Exited) => panic!("process exited before draining notices"),
             Some(_) => {}
-            None => break,
+            None => std::thread::sleep(Duration::from_millis(5)),
         }
     }
     assert_eq!(got, 8, "zero timeout must try_recv queued lines");

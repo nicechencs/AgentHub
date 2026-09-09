@@ -199,8 +199,27 @@ async function playMockRuntimeTurn(input: {
   const { conversationId, runId, prompt, agent, turn, user } = input;
   let agentMessage = input.agentMessage;
 
+  const finishCancelled = () => {
+    const current = runtimeSnapshots.get(conversationId);
+    if (!current || current.runId !== runId || current.phase === 'cancelled') return;
+    const currentMessage = current.currentMessage
+      ? { ...current.currentMessage, status: 'cancelled' as const, error: 'cancelled' }
+      : { ...agentMessage, status: 'cancelled' as const, error: 'cancelled' };
+    persistMockRuntimeMessages(conversationId, user, currentMessage);
+    appendMockRuntimeEvent(
+      conversationId,
+      { type: 'agentFinished', turn, agent, message: currentMessage },
+      { phase: 'cancelled', currentMessage },
+    );
+    appendMockRuntimeEvent(conversationId, { type: 'finished', turn, ok: false, cancelled: true });
+    runtimeJobs.delete(conversationId);
+  };
+
   await delay(80);
-  if (!mockRuntimeStillLive(conversationId, runId)) return;
+  if (!mockRuntimeStillLive(conversationId, runId)) {
+    finishCancelled();
+    return;
+  }
   appendMockRuntimeEvent(conversationId, {
     type: 'agentProcess',
     turn,
@@ -209,7 +228,10 @@ async function playMockRuntimeTurn(input: {
   });
 
   await delay(90);
-  if (!mockRuntimeStillLive(conversationId, runId)) return;
+  if (!mockRuntimeStillLive(conversationId, runId)) {
+    finishCancelled();
+    return;
+  }
   appendMockRuntimeEvent(conversationId, {
     type: 'agentProcess',
     turn,
@@ -223,7 +245,10 @@ async function playMockRuntimeTurn(input: {
   ];
   for (const part of parts) {
     await delay(120);
-    if (!mockRuntimeStillLive(conversationId, runId)) return;
+    if (!mockRuntimeStillLive(conversationId, runId)) {
+      finishCancelled();
+      return;
+    }
     agentMessage = { ...agentMessage, content: `${agentMessage.content}${part}` };
     appendMockRuntimeEvent(
       conversationId,
@@ -232,7 +257,10 @@ async function playMockRuntimeTurn(input: {
     );
   }
 
-  if (!mockRuntimeStillLive(conversationId, runId)) return;
+  if (!mockRuntimeStillLive(conversationId, runId)) {
+    finishCancelled();
+    return;
+  }
   agentMessage = { ...agentMessage, status: 'ok', durationMs: 500 };
   persistMockRuntimeMessages(conversationId, user, agentMessage);
   appendMockRuntimeEvent(

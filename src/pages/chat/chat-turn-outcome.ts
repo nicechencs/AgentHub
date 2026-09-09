@@ -1,6 +1,8 @@
 import type { ChatMessage, ChatMessageStatus } from '@/lib/types';
 import type { TurnGroup } from './chat-format';
 
+const STATUS_ONLY_ERROR = /^(cancelled|canceled|stopped|timeout|failed)$/i;
+
 export type ChatTurnOutcomeKind = 'failed' | 'interrupted' | 'cancelled' | 'timeout';
 
 export interface ChatTurnOutcome {
@@ -59,4 +61,15 @@ export function lastTurnOutcome(turns: TurnGroup[], sending: boolean): ChatTurnO
     errorText: primary.error?.trim() || null,
     source: 'message-status',
   };
+}
+
+/** Status words like `cancelled` are not a user-facing reason — use the hint. */
+export function turnOutcomeDetail(
+  outcome: Pick<ChatTurnOutcome, 'kind' | 'errorText'>,
+  localize: (text: string) => string,
+  hint: string,
+): string {
+  const raw = outcome.errorText?.trim() ?? '';
+  if (!raw || STATUS_ONLY_ERROR.test(raw)) return hint;
+  return localize(raw);
 }
