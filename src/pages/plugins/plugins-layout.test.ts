@@ -67,6 +67,18 @@ describe('plugins layout wiring', () => {
     expect(detail).not.toContain('marketplaceInstall');
   });
 
+  it('opens details from a pack row that is itself role=button', () => {
+    const list = source('PluginPackList.tsx');
+    const row = readFileSync(
+      path.resolve(dir, '../../components/shared/ListRow.tsx'),
+      'utf8',
+    );
+    expect(list).toContain('role="button"');
+    expect(list).toContain('onOpen={() => onOpen(plugin)}');
+    expect(row).toContain('hit !== root');
+    expect(row).toContain('isInteractiveListTarget(event.target, event.currentTarget)');
+  });
+
   it('keeps the list to name, version, one-line description, and exception badges', () => {
     const list = source('PluginPackList.tsx');
     expect(list).toContain('plugin.description');
