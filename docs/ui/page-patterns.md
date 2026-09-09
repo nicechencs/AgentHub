@@ -3,7 +3,7 @@ title: UI 页面模式
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-08
+updated: 2026-09-09
 ---
 
 # UI Page Patterns
@@ -368,8 +368,8 @@ Skills, Projects, and Plugins are full-height workbenches with a left inventory 
 ### Skills
 
 - User skills, Project skills, and Market are page-level tabs. Filtering and Agent scope stay in the chrome row.
-- User skills list the shared library plus this-tool-only skills, with the enablement matrix. Install accepts a folder, a zip via the system file dialog, or a git URL (must contain `SKILL.md`).
-- Project skills use a dropdown of workspaces already identified on the Projects page. After a project is selected, skills can be added or deleted for that workspace (canonical folder `.agents/skills`).
+- User skills list the shared library plus this-tool-only skills, with the enablement matrix. The install dialog has one Source field (folder path, zip path, or git URL; must contain `SKILL.md`). **Choose folder** opens the system folder picker; **Choose zip** opens the system file dialog (title **Choose a skill zip** / **选择技能 zip**, ZIP filter). Cancel in the system dialog leaves the field unchanged. Empty source shows a field error. User-skill install writes `~/.agents/skills/` only and does not enable the skill on any tool.
+- Project skills use a dropdown of workspaces already identified on the Projects page. After a project is selected, skills can be added or deleted for that workspace (canonical folder `.agents/skills`). The same install dialog writes that folder instead of the shared library.
 - A skill name opens the preview (`ListNameButton`); Enter on the name is equivalent. If the preview is already open, clicking empty row area on the library/project tables switches it; a closed preview stays closed. Checkbox selection is only for batch operations and never opens the preview.
 - The preview identity is separate from checkbox selection. It remains open when filters hide the selected skill, with a short source label in the header.
 - The list keeps the name and at most one line of description. Absolute paths move to the preview footer or an explicit open-directory action.
@@ -379,7 +379,7 @@ Skills, Projects, and Plugins are full-height workbenches with a left inventory 
 
 - Tabs: User skills (shared library + this-tool), Project skills (workspace dropdown from Projects), Market.
 - Enablement matrix; name opens preview; checkbox selection only for batch ops; paths in preview footer / open-directory.
-- Install source: folder, zip (system file dialog), or git.
+- Install dialog: folder picker, zip via system file dialog (ZIP filter; title Choose a skill zip), or git URL. User install writes the shared library and does not auto-enable. Project install uses the same dialog for `.agents/skills`.
 
 ### Agent touchpoints (Skills)
 
