@@ -158,6 +158,9 @@ describe('extra copy labels', () => {
     expect(zh.agents.card.incompleteCliInstallNpm).toContain('~/.npm-global');
     expect(zh.agents.card.incompleteCliInstallNpm).toContain('~/.local/bin/dsh');
     expect(zh.agents.card.incompleteCliInstallNpm).not.toMatch(/装到\s*~\/\.agenthub/);
+    expect(`${zh.agents.card.leftoverSpawnFallback} ${zh.agents.card.incompleteCliInstallNpm}`).not.toContain(
+      '~/.agenthub/npm',
+    );
     expect(en.agents.card.seeDetailsLeftover).toBe('Leftover copy — do not launch from this path');
     expect(en.agents.card.leftoverDoNotLaunch).toBe('Do not launch from this path');
     expect(en.agents.card.leftoverSpawnFallback).toContain('~/.npm-global');
@@ -472,7 +475,7 @@ describe('dsh leftover vs incomplete CLI honesty', () => {
   const leftoverPath = '/home/box/.agenthub/npm/bin/dsh';
   const stubPath = '/home/box/.local/bin/dsh';
   const skipNote =
-    '跳过 PATH /home/box/.local/bin/dsh：命令不完整（缺少 @deepseek-ai/dsh-scope），不能从该路径启动。请用官方 npm 装到用户前缀（如 ~/.npm-global），不要装进 ~/.agenthub。';
+    '跳过 PATH /home/box/.local/bin/dsh：命令不完整（缺少 @deepseek-ai/dsh-scope），不能从该路径启动。请用官方 npm 装到用户前缀（如 ~/.npm-global）。';
 
   it('reclassifies leftover spawn path as leftover, not official npm', () => {
     expect(isLeftoverInstallPath(leftoverPath)).toBe(true);

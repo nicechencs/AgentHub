@@ -826,6 +826,19 @@ fn leftover_agenthub_npm_is_never_the_spawn_target() {
         "leftover must be extra_copies only: {:?}",
         result.extra_copies
     );
+    assert!(
+        result
+            .notes
+            .iter()
+            .any(|n| n.contains("不是安装位置")),
+        "leftover extra must not be an install location: {:?}",
+        result.notes
+    );
+    assert!(
+        result.notes.iter().all(|n| !n.contains("往 ~/.agenthub/npm 安装")),
+        "must not recommend leftover as install destination: {:?}",
+        result.notes
+    );
 }
 
 fn write_dsh_npm_tree(

@@ -394,7 +394,7 @@ fn attach_leftover_agenthub_npm_copy(
         "leftover AgentHub data-dir npm copy observed; not used to spawn"
     );
     result.notes.push(format!(
-        "发现数据目录遗留 npm 副本 @ {}（不会用于启动，也不会再往 ~/.agenthub/npm 安装）",
+        "发现数据目录遗留 npm 副本 @ {}（仅观察，不是安装位置）",
         path.display()
     ));
     result.extra_copies.push(DetectedBinaryCopy::from_kind(
@@ -441,7 +441,7 @@ fn skip_unusable_spawn(agent: AgentId, path: &Path, via: &str) -> Option<String>
         "skipping incomplete DeepSeek Harness CLI (missing @deepseek-ai/dsh-scope)"
     );
     Some(format!(
-        "跳过 {via} {}：命令不完整（缺少 {}），不能从该路径启动。请用官方 npm 装到用户前缀（如 ~/.npm-global），不要装进 ~/.agenthub。",
+        "跳过 {via} {}：命令不完整（缺少 {}），不能从该路径启动。请用官方 npm 装到用户前缀（如 ~/.npm-global）。",
         path.display(),
         super::dsh::SCOPE_PACKAGE
     ))
