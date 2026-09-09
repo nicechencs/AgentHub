@@ -4,7 +4,11 @@
 //! DeepSeek API ticket and not the Python SDK / source checkout.
 //!
 //! ## Scope
-//! - detect / npm install (`@deepseek-ai/dsh`)
+//! - detect / npm install (`@deepseek-ai/dsh`) into the user-writable prefix
+//!   (`~/.npm-global` / `%APPDATA%\npm`), never `~/.agenthub`
+//! - spawn prefers a complete npm tree (`@deepseek-ai/dsh-scope` present) over a
+//!   PATH stub such as `~/.local/bin/dsh`; a leftover AgentHub npm prefix may
+//!   be used when it is the working tree
 //! - home `$DSH_HOME` or `~/.dsh`
 //! - skills projection root `$DSH_HOME/skills`
 //! - API Key pool + credentials-file apply (reference name in patch, value in credentials)
@@ -37,6 +41,8 @@ use super::{
 };
 
 pub const NPM_PACKAGE: &str = "@deepseek-ai/dsh";
+/// Required sibling of the published CLI. A PATH stub without this tree exits 1.
+pub const SCOPE_PACKAGE: &str = "@deepseek-ai/dsh-scope";
 pub const HOME_PATCH_FILE: &str = "cordis.patch.yml";
 pub const CREDENTIALS_FILE: &str = ".credentials.yaml";
 pub const LLM_PLUGIN_ID: &str = "@deepseek-ai/dsh-llm-deepseek";
@@ -611,13 +617,15 @@ fn replace_plugin_row(existing: &str, plugin_id: &str, new_row: &str) -> Option<
             .map(|raw| unquote(raw) == plugin_id)
             .unwrap_or(false);
         if matches {
-            start = Some(if trimmed.starts_with("- ") || trimmed.starts_with("-id:") {
-                idx
-            } else if idx > 0 && lines[idx - 1].trim_start().starts_with('-') {
-                idx - 1
-            } else {
-                idx
-            });
+            start = Some(
+                if trimmed.starts_with("- ") || trimmed.starts_with("-id:") {
+                    idx
+                } else if idx > 0 && lines[idx - 1].trim_start().starts_with('-') {
+                    idx - 1
+                } else {
+                    idx
+                },
+            );
             break;
         }
     }
@@ -663,8 +671,7 @@ fn yaml_quote(value: &str) -> String {
         || value.bytes().any(|b| {
             matches!(
                 b,
-                b':'
-                    | b'#'
+                b':' | b'#'
                     | b' '
                     | b'"'
                     | b'\''
