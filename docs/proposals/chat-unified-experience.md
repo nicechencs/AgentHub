@@ -4,12 +4,14 @@ type: proposal
 status: proposed
 owner: maintainers
 audience: product owners and implementation agents
-updated: 2026-09-08
+updated: 2026-09-09
 ---
 
 # Chat 统一体验与跨环境开发方案
 
 本方案让用户在 AgentHub 用同一套聊天、确认和文件查看操作使用不同 Agent，并让换电脑或换开发 Agent 后的实现能够复现、验收和继续推进。
+
+用户标准：Chat 对标 Claude Code、Cursor Chat、Codex app，要做到好用易用。目标与当前事实见 [Chat 体验标杆](../ui/chat-experience-bar.md)。本方案继续管共用界面、各家对接和分阶段实施。
 
 Status: proposed。用户已认可“统一界面、各家分别对接、先 Codex 再 Claude”的方向，并于 2026-09-05 授权使用 GPT‑5.6 Terra / Luna 子 Agent 开始实施。**半面已落地、剩余边界仍在：** B1/B2 的 Codex 持续聊天已落地（见 [B1](../archive/chat-codex-b1.md)、[B2](../archive/chat-codex-b2.md)）；新空 Grok / Kiro 持续聊天已接线（Grok **无**「用于本次」技能）；Claude 接到持续聊天（ChatRuntime）的 B3 探测为否定、**未接线**（见 [Claude B3](../archive/chat-claude-b3.md)）。目标设计保持 proposed，不能把已授权实施或半面落地理解为方案已完成，也不能把方案红线改成「Claude 已做」。S0 历史记录见 [接入验证与交接](../archive/chat-codex-s0.md)。
 
