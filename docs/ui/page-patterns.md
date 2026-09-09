@@ -155,7 +155,7 @@ Connections is the general login list in a full-height workbench split. Logins c
 - The top `AgentTabStrip` filters the list. Do not add a second row of “official / API key / unknown” filter chips.
 - The add menu is **导入授权** / **官方登录** / **添加 API Key**. Official login and API Key are stored as separate rows. WorkBuddy custom models and ZCode catalog providers split into one login per directory row; desktop package logins are not imported.
 - OAuth rows use an identity/person icon; API key rows use a key icon. The icon has an accessible label and a short hint.
-- Click the login **name** to open the right-hand detail: related config files (copyable, open-directory), package, expiry, timeline, and the full endpoint. The rest of the row (switch, edit, menu, sort) does not open inspect. If the detail pane is already open, clicking another row’s empty area switches the detail; a closed pane stays closed. The list uses masked labels; the file preview shows the stored snapshot.
+- Click the login **name** to open the right-hand detail. The pane uses this section order: **现在能不能用**, **用量**, **连到哪里 · 模型**, **谁在用**, **配置与记录**. Related config files, last used, and added time stay expanded; record ID and import source sit under collapsed **更多**. The rest of the row (switch, edit, menu, sort) does not open inspect. If the detail pane is already open, clicking another row’s empty area switches the detail; a closed pane stays closed. The list uses masked labels; the file preview shows the stored snapshot.
 - The official-login wait page does not show internal status or login file paths; failure keeps **重试** as the primary action.
 - The row menu is only **取消添加** (when that login is already written into the tool). Adding a Connections login to the default connection pool is **从连接同步** on the pool page, not a Connections row action. Connections does not open ConnectFlow, and does not show **分享至连接池**, **用到其他工具**, or **本机转发**.
 - Missing data and a genuinely empty login list are different states.
@@ -164,7 +164,7 @@ Connections is the general login list in a full-height workbench split. Logins c
 
 - Full-height workbench split: `AgentTabStrip` filters; add menu **导入授权** / **官方登录** / **添加 API Key**.
 - Official login and API Key stored as separate rows; WorkBuddy custom models and ZCode catalog providers split one login per directory row; desktop package logins are not imported.
-- Click login **name** for right-hand detail (related config files, package, expiry, timeline, full endpoint). Row menu only **取消添加** when that login is already written into the tool.
+- Click login **name** for right-hand detail (sections: 现在能不能用 / 用量 / 连到哪里 · 模型 / 谁在用 / 配置与记录). Row menu only **取消添加** when that login is already written into the tool.
 - Distinct states for missing data vs a genuinely empty login list. Recycle bin restores to Connections only.
 
 ### Agent touchpoints (Connections)
@@ -210,7 +210,7 @@ The connection pool lists official logins and API Keys used for local forwarding
 
 ### Features (Pool)
 
-- Field-aligned table of official logins and API Keys used for local forwarding; **从连接同步**, route-only add/edit/delete, enable switch, column resize memory, name-click detail, `?profile=<id>`.
+- Field-aligned table of official logins and API Keys used for local forwarding; **从连接同步**, route-only add/edit/delete, enable switch, column resize memory, name-click detail (**能不能用** / **用量** / **连到哪里 · 模型** / **配置与记录**; model lists longer than 8 show the first 8 plus expand), `?profile=<id>`.
 - Editing a shared official login copies to a pool-owned row, then may ask **同步到连接页？**. Separate recycle bin from Connections.
 - Shareability for「从连接同步」: **all API Keys** can join (any owning Agent, including WorkBuddy / ZCode / Pi / Cursor); official OAuth only for Claude / Codex / Grok; domestic official logins cannot. Implemented by `isPoolShareableLogin` in `ticket-pool-import.ts` (aligned with product — no Agent API Key whitelist). Status/health states are distinct from durable DB rows (see table below).
 
