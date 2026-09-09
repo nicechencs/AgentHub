@@ -34,6 +34,7 @@ export const zh = {
     resizeColumn: '拖动调整列宽',
     resizeColumnNamed: '调整{label}列宽',
     inDevelopment: '开发中',
+    moreActions: '更多',
   },
   nav: {
     workspace: '工作区',
@@ -288,8 +289,9 @@ export const zh = {
       restoring: '恢复中…',
       confirmRestore: '确定恢复',
       deleteTitle: '删除备份',
-      deleteDesc: '将删除 {name} 在 {when} 的备份（{kind}）。',
-      deleteConfirm: '此操作不可恢复。确定删除该备份？',
+      deleteDesc: '将删除 {name} 在 {when} 的「{title}」这份配置（{kind}）。',
+      deleteConfirm: '此操作不可恢复。确定删除这份配置？',
+      moreActions: '更多',
       deleting: '删除中…',
       confirmDelete: '确定删除',
     },
@@ -1913,7 +1915,11 @@ export const zh = {
     },
     direct: {
       title: "还没接到本机转发",
+      titleDisconnected: "本机转发未接通（{n}）",
       description: "当前规则允许本机转发、但还没接到本机转发的登录。",
+      descriptionDisconnected: "这些登录还没接到本机转发。卡片上写了已停止原因和下一步。",
+      stoppedReason: "本机转发已停止",
+      stoppedNext: "点「启动」接到本机转发",
     },
   },
   dashboard: {
@@ -2785,6 +2791,7 @@ export const zh = {
       stop: "停止",
       stopping: "正在停止",
       resizeAria: "调整对话记录与输入区高度",
+      moreOptions: "更多",
     },
     shortcuts: {
       title: "快捷键",
@@ -3490,6 +3497,9 @@ export const zh = {
     empty: {
       title: "还没有发现额外工具（MCP）",
       all: "在各工具自己的设置里添加 MCP 后点刷新。AgentHub 只展示，不会改这些配置。",
+      oneLiner: "在各工具自己的配置里添加 MCP 后刷新即可看到。",
+      addServer: "添加服务器",
+      addServerHint: "先打开各工具自己的配置文件，加上 MCP 后再刷新。",
       agent: "「{name}」下还没有发现 MCP 项。",
       refresh: "刷新",
       hasSources: "已检查这些配置，里面还没有 MCP 项。",

@@ -49,6 +49,8 @@ describe('routes layout wiring', () => {
     expect(list).not.toContain('routes.pool.page.chromeHint');
     expect(list).toContain('first={orphanOnly}');
     expect(list).toContain('title={orphanOnly ? undefined');
+    expect(list).toContain("t('routes.direct.titleDisconnected'");
+    expect(list).toContain("t('routes.direct.descriptionDisconnected')");
   });
 
   it('uses a plain 详情 button on Routes and Connections (no chevron)', () => {

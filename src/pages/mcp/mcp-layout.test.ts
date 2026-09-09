@@ -33,11 +33,12 @@ describe('mcp layout wiring', () => {
     const page = source('index.tsx');
     expect(page).not.toContain("t('common.inDevelopment')");
     expect(page).toContain("t('mcp.page.description')");
-    expect(page).toContain("t('mcp.page.empty'");
+    expect(page).toContain("t('mcp.empty.oneLiner')");
+    expect(page).toContain("t('mcp.empty.addServer')");
     expect(page).toContain("t('mcp.page.nextStep')");
     expect(page).toContain('visibleMcpSources');
     expect(page).toContain('McpSourceEmpty');
-    expect(page).toContain("t('mcp.empty.hasSources')");
+    expect(page).toContain("t('mcp.empty.addServerHint')");
     expect(page).not.toContain('installMcp');
     expect(page).not.toContain('onInstall');
     expect(page).not.toContain('mcp.install');

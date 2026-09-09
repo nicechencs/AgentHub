@@ -175,7 +175,12 @@ export function SkillMarketTable({
                   </Tip>
                 </TableCell>
                 <TableCell className="truncate font-mono text-xs text-muted">
-                  {item.version ? `v${item.version}` : t('skills.market.versionUnknown')}
+                  <Tip
+                    className="block truncate"
+                    label={item.version ? `v${item.version}` : t('skills.market.versionUnknown')}
+                  >
+                    {item.version ? `v${item.version}` : t('skills.market.versionUnknown')}
+                  </Tip>
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-wrap items-center justify-end gap-1.5">

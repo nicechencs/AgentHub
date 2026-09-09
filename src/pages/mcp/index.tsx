@@ -170,21 +170,19 @@ export default function McpPage() {
           <EmptyState
             icon={Plug}
             title={t('mcp.empty.title')}
-            description={
-              filterAgent === 'all'
-                ? t('mcp.page.empty', { next: t('mcp.page.nextStep') })
-                : t('mcp.page.emptyAgent', { name: agentName(filterAgent) })
-            }
-            action={
-              <Button
-                size="sm"
-                variant="outline"
-                className="mt-2"
-                onClick={() => void load()}
-              >
-                {t('mcp.empty.refresh')}
-              </Button>
-            }
+            description={t('mcp.empty.oneLiner')}
+            actionLabel={t('mcp.empty.addServer')}
+            onAction={() => {
+              const path = sources[0]?.path;
+              if (path) {
+                void locateSource(path);
+                return;
+              }
+              toast({
+                title: t('mcp.empty.addServer'),
+                description: t('mcp.empty.addServerHint'),
+              });
+            }}
           />
         ) : (
           <McpServerTable
@@ -210,7 +208,18 @@ function McpSourceEmpty({
   const { t } = useI18n();
   return (
     <div className="space-y-2">
-      <p className="text-body text-secondary">{t('mcp.empty.hasSources')}</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-body text-secondary">{t('mcp.empty.oneLiner')}</p>
+        <Button
+          size="sm"
+          onClick={() => {
+            const path = sources[0]?.path;
+            if (path) onLocate(path);
+          }}
+        >
+          {t('mcp.empty.addServer')}
+        </Button>
+      </div>
       {sources.map((file) => (
         <div
           key={`${file.agent}:${file.path}`}

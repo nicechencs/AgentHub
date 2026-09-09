@@ -219,3 +219,17 @@ export function clampActionIndex(index: number, length: number): number {
   if (index >= length) return 0;
   return index;
 }
+
+/** Sit the slash palette just above the textarea (caret lives on line 1; `/` forbids whitespace). */
+export function slashMenuFixedPosition(input: {
+  anchorTop: number;
+  anchorLeft: number;
+  viewportHeight: number;
+  gap?: number;
+}): { left: number; bottom: number } {
+  const gap = input.gap ?? 4;
+  return {
+    left: input.anchorLeft,
+    bottom: input.viewportHeight - input.anchorTop + gap,
+  };
+}

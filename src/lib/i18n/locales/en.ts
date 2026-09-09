@@ -35,6 +35,7 @@ export const en = {
     resizeColumn: 'Drag to resize column',
     resizeColumnNamed: 'Resize {label} column',
     inDevelopment: 'In development',
+    moreActions: 'More',
   },
   nav: {
     workspace: 'Workspace',
@@ -308,8 +309,9 @@ export const en = {
       restoring: 'Restoring…',
       confirmRestore: 'Restore',
       deleteTitle: 'Delete backup',
-      deleteDesc: "Delete {name}'s backup from {when} ({kind}).",
-      deleteConfirm: 'This cannot be undone. Delete this backup?',
+      deleteDesc: "Delete {name}'s «{title}» config from {when} ({kind}).",
+      deleteConfirm: 'This cannot be undone. Delete this config snapshot?',
+      moreActions: 'More',
       deleting: 'Deleting…',
       confirmDelete: 'Delete',
     },
@@ -1933,7 +1935,11 @@ export const en = {
     },
     direct: {
       title: "Not on the local forwarding yet",
+      titleDisconnected: "Local forwarding not connected ({n})",
       description: "Logins that current rules can send through local forwarding, but that are not on the local forwarding yet.",
+      descriptionDisconnected: "These logins are not on local forwarding. Each card shows why it stopped and what to do next.",
+      stoppedReason: "Local forwarding is stopped",
+      stoppedNext: "Click Start to connect local forwarding",
     },
   },
   dashboard: {
@@ -2805,6 +2811,7 @@ export const en = {
       stop: "Stop",
       stopping: "Stopping",
       resizeAria: "Resize conversation and composer",
+      moreOptions: "More",
     },
     shortcuts: {
       title: "Shortcuts",
@@ -3517,6 +3524,9 @@ export const en = {
     empty: {
       title: "No extra tools (MCP) found",
       all: "Add MCP in each tool's own settings, then refresh. AgentHub only displays them; it does not change those configs.",
+      oneLiner: "Add MCP in each tool's own config, then refresh to see it here.",
+      addServer: "Add server",
+      addServerHint: "Open the tool's own config file, add MCP, then refresh.",
       agent: "No MCP items found under {name}.",
       refresh: "Refresh",
       hasSources: "These configs were checked; they do not contain MCP items yet.",

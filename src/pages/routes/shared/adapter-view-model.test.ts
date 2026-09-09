@@ -6,6 +6,7 @@ import {
   adapterProfileFlowLabel,
   adapterProfilePrimaryAction,
   adapterProfileRecoveryGuide,
+  adapterProfileStoppedHint,
   routesPoolPageViewState,
   bridgeRuntimeStatusView,
   canonicalizeLocalBridgeOrderIds,
@@ -154,6 +155,24 @@ describe('bridge runtime status view', () => {
       bridgeState: 'running',
       statusUnavailable: true,
     })).toEqual({ label: '状态不可用', tone: 'muted' });
+  });
+
+  it('marks stopped as muted, never success green', () => {
+    expect(bridgeRuntimeStatusView({ route: 'local_bridge' })?.tone).toBe('muted');
+    expect(bridgeRuntimeStatusView({ route: 'local_bridge', bridgeState: 'stopped' })?.tone)
+      .not.toBe('success');
+  });
+});
+
+describe('adapterProfileStoppedHint', () => {
+  it('offers reason and next step only when local forward is stopped', () => {
+    expect(adapterProfileStoppedHint({ route: 'native_endpoint' })).toBeNull();
+    expect(adapterProfileStoppedHint({ route: 'local_bridge', bridgeState: 'running' })).toBeNull();
+    expect(adapterProfileStoppedHint({ route: 'local_bridge', bridgeState: 'error' })).toBeNull();
+    expect(adapterProfileStoppedHint({ route: 'local_bridge' })).toEqual({
+      reason: '本机转发已停止',
+      next: '点「启动」接到本机转发',
+    });
   });
 });
 

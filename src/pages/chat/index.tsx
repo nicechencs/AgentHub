@@ -458,6 +458,12 @@ export default function ChatPage() {
                   }}
                   onPickWorkingDirectory={() => void page.pickWorkingDirectory()}
                   onDraftKeyDown={page.handleComposerKeyDown}
+                  commandSearchOpen={page.commandSearchOpen}
+                  commandIndex={page.commandIndex}
+                  actionContext={page.actionContext}
+                  extraActions={page.runtimeCommandActions}
+                  onRunAction={page.runChatAction}
+                  onHoverCommandIndex={page.setCommandIndex}
                   onPasteImages={
                     page.runtime?.enabled && page.runtimeOps.imageInput
                       ? (files) => void page.runtimeOps.pasteImages(files)
@@ -471,13 +477,6 @@ export default function ChatPage() {
                         enabled
                         inline
                         modelMenuOpenNonce={modelMenuOpenNonce}
-                        draft={page.draft}
-                        commandSearchOpen={page.commandSearchOpen}
-                        commandIndex={page.commandIndex}
-                        actionContext={page.actionContext}
-                        extraActions={page.runtimeCommandActions}
-                        onRunAction={page.runChatAction}
-                        onHoverCommandIndex={page.setCommandIndex}
                         models={page.runtimeOps.models}
                         settings={page.runtimeOps.settings}
                         frozen={page.runtimeOps.frozen}

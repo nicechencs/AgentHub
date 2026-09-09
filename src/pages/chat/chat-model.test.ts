@@ -20,6 +20,7 @@ import {
   chatPageShortcutAction,
   chatQuestionShouldOpenShortcuts,
   composerEnterShouldSend,
+  dialogEnterShouldConfirm,
   chatAgentPickerRows,
   chatConnectionKind,
   chatConnectionOptions,
@@ -43,7 +44,9 @@ import {
   conversationRailHint,
   conversationRailMarkColor,
   conversationRailSelectedFill,
+  conversationSemanticTitle,
   conversationTitle,
+  titleFromPrompt,
   cwdShortName,
   isBlankConversationDraft,
   draftForFocusedConversation,
@@ -643,6 +646,18 @@ describe('conversationTitle', () => {
     expect(conversationTitle(t, '   ')).toBe('新对话');
     expect(conversationTitle(t, '修复登录')).toBe('修复登录');
   });
+
+  it('uses a semantic phrase instead of a path-first prompt clip', () => {
+    expect(conversationSemanticTitle('Only modify /tmp/qa/ping.png')).toBe('Only modify');
+    expect(conversationSemanticTitle('请在 /workspace/src/app.ts 检查问题')).toBe('检查问题');
+    expect(conversationSemanticTitle('请帮我了解这个项目')).toBe('请帮我了解这个项目');
+    expect(conversationSemanticTitle('/workspace/foo/bar.ts')).toBe('');
+    expect(conversationTitle(t, 'Only modify /tmp/qa/ping.png')).toBe('Only modify');
+    expect(conversationTitle(t, '请在 /workspace/AgentHub-pr332 修这个')).toBe('修这个');
+    expect(conversationTitle(t, '/tmp/only-a-path')).toBe('新对话');
+    expect(titleFromPrompt('请在 /workspace/src 检查问题')).toBe('检查问题');
+    expect(titleFromPrompt('Only modify /tmp/foo')).not.toMatch(/\/tmp/);
+  });
 });
 
 describe('blockerCopy', () => {
@@ -741,6 +756,22 @@ describe('chatEscapeShouldCancel', () => {
     expect(chatEscapeShouldCancel({ ...idle, canceling: true })).toBe(false);
     expect(chatEscapeShouldCancel({ ...idle, sending: false })).toBe(false);
     expect(chatEscapeShouldCancel({ ...idle, key: 'Enter' })).toBe(false);
+  });
+});
+
+describe('dialogEnterShouldConfirm', () => {
+  it('confirms delete on Enter, not Shift+Enter or IME', () => {
+    expect(dialogEnterShouldConfirm({ key: 'Enter', shiftKey: false })).toBe(true);
+    expect(dialogEnterShouldConfirm({ key: 'Enter', shiftKey: true })).toBe(false);
+    expect(dialogEnterShouldConfirm({ key: 'Escape', shiftKey: false })).toBe(false);
+    expect(dialogEnterShouldConfirm({ key: 'Enter', shiftKey: false, isComposing: true })).toBe(false);
+    expect(
+      dialogEnterShouldConfirm({
+        key: 'Enter',
+        shiftKey: false,
+        nativeEvent: { keyCode: 229 },
+      }),
+    ).toBe(false);
   });
 });
 
