@@ -47,6 +47,14 @@ function extras(partial?: Partial<Parameters<typeof ChatRuntimeExtras>[0]>) {
   });
 }
 
+describe('ChatRuntimeExtras overflow chrome', () => {
+  it('does not render a duplicate Agent overflow trigger', () => {
+    const html = renderMarkup(extras({ inline: true }));
+    expect(html).not.toContain('aria-label="更多操作"');
+    expect(html).not.toContain('MoreHorizontal');
+  });
+});
+
 describe('ChatRuntimeExtras model and effort labels', () => {
   it('shows a readable current model and a short thinking-effort hint', () => {
     const html = renderMarkup(extras());
