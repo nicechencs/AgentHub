@@ -60,3 +60,30 @@ describe('ChatRuntimeExtras model and effort labels', () => {
     expect(html).toContain('Control+Shift+I');
   });
 });
+
+describe('ChatRuntimeExtras image chips', () => {
+  it('shows removable image chips in inline composer mode', () => {
+    const html = renderMarkup(
+      extras({
+        inline: true,
+        images: ['/tmp/qa/ping.png', '/tmp/qa/shot.webp'],
+        imageInput: true,
+      }),
+    );
+    expect(html).toContain('ping.png');
+    expect(html).toContain('shot.webp');
+    expect(html).toContain('添加图片');
+    expect(html).not.toContain('localImage');
+    // Must not stay on display:contents when chips exist (true-window layout).
+    expect(html).toContain('flex-col');
+    expect(html).toContain('data-help="chat-image-chips"');
+    expect(html).toMatch(/aria-label="[^"]*"/);
+  });
+
+  it('keeps contents layout in inline mode when there are no images', () => {
+    const html = renderMarkup(extras({ inline: true, images: [] }));
+    expect(html).toContain('contents');
+    expect(html).not.toContain('data-help="chat-image-chips"');
+  });
+});
+

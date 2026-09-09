@@ -90,9 +90,19 @@ export function ChatRuntimeExtras(props: {
     );
   }
 
+  // Inline mode uses `contents` so model/effort buttons sit in the composer
+  // toolbar row. Once images are attached, switch to a column: `contents`
+  // would drop the chip row into that same overflow-hidden horizontal flex
+  // and the removable chips get clipped (true-window #312 FAIL).
+  const rootClass = props.inline
+    ? props.images.length > 0
+      ? 'flex w-full min-w-0 flex-col gap-2'
+      : 'contents'
+    : 'space-y-2 px-1 pb-1';
+
   return (
     <div
-      className={props.inline ? 'contents' : 'space-y-2 px-1 pb-1'}
+      className={rootClass}
       onPaste={(event) => {
         if (!props.onPasteImages) return;
         const files = Array.from(event.clipboardData?.files ?? []).filter((file) =>
@@ -103,6 +113,21 @@ export function ChatRuntimeExtras(props: {
         props.onPasteImages(files);
       }}
     >
+      {props.images.length > 0 ? (
+        <div className="flex flex-wrap gap-2" data-help="chat-image-chips">
+          {props.images.map((path) => (
+            <Hint key={path} label={path}>
+              <span className="inline-flex max-w-full items-center gap-1 rounded-card border px-2 py-1 text-meta">
+                <span className="truncate">{path.split(/[/\\]/).pop()}</span>
+                <button type="button" aria-label={t('chat.runtimeOps.removeImage')} onClick={() => props.onRemoveImage(path)}>
+                  <X className="size-3.5" />
+                </button>
+              </span>
+            </Hint>
+          ))}
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap items-center gap-2">
         <ChatActionMenu
           draft={props.draft}
@@ -231,20 +256,6 @@ export function ChatRuntimeExtras(props: {
         ) : null}
       </div>
 
-      {!props.inline && props.images.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          {props.images.map((path) => (
-            <Hint key={path} label={path}>
-              <span className="inline-flex max-w-full items-center gap-1 rounded-card border px-2 py-1 text-meta">
-                <span className="truncate">{path.split(/[/\\]/).pop()}</span>
-                <button type="button" aria-label={t('chat.runtimeOps.removeImage')} onClick={() => props.onRemoveImage(path)}>
-                  <X className="size-3.5" />
-                </button>
-              </span>
-            </Hint>
-          ))}
-        </div>
-      ) : null}
 
       {!props.inline && props.selectedSkillIds.length > 0 ? (
         <div className="flex flex-wrap gap-2 text-meta">

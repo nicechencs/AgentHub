@@ -628,7 +628,7 @@ export function ChatComposer({
           ) : null}
 
           {runtimeControls ? (
-            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+            <div className="flex min-w-0 flex-1 flex-col justify-center gap-1.5 overflow-visible">
               {runtimeControls}
             </div>
           ) : approveFooter.text ? (

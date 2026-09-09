@@ -2820,7 +2820,7 @@ export const zh = {
       removeImage: '移除图片',
       pasteImageHint: '也可直接粘贴剪贴板图片',
       pasteImageFail: '没法保存粘贴的图片',
-      otherAttachmentsBlocked: '普通文件/音频暂不支持（仅 localImage）',
+      otherAttachmentsBlocked: '普通文件和音频暂不支持，目前只能加图片',
       effort: '思考强度',
       effortLow: '低',
       effortMedium: '中',
