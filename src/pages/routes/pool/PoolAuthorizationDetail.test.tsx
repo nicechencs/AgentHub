@@ -49,7 +49,10 @@ describe('PoolAuthorizationDetail', () => {
     expect(markup).toContain('var(--agent-grok)');
     expect(markup).toContain('刷新');
     expect(markup).toContain('启用');
-    expect(markup).toContain('调用窗口');
+    expect(markup).toContain('能不能用');
+    expect(markup).toContain('用量');
+    expect(markup).toContain('连到哪里 · 模型');
+    expect(markup).toContain('配置与记录');
     expect(markup).toContain('7 天已用');
     expect(markup).toContain('2 个连接');
     expect(markup).toContain('优先级');
