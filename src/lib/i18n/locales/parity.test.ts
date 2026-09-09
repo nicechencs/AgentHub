@@ -131,5 +131,13 @@ describe('locale key parity', () => {
     );
     expect(translate('zh', 'chat.process.runDetails')).toBe('运行详情');
     expect(translate('en', 'chat.process.runDetails')).toBe('Details of this run');
+    expect(translate('zh', 'chat.process.toolRead')).toBe('正在读取');
+    expect(translate('en', 'chat.process.toolRead')).toBe('Reading');
+    expect(translate('zh', 'chat.process.toolEdit')).toBe('正在修改');
+    expect(translate('en', 'chat.process.toolEdit')).toBe('Editing');
+    expect(translate('zh', 'chat.process.toolRun')).toBe('正在执行');
+    expect(translate('en', 'chat.process.toolRun')).toBe('Running');
+    expect(translate('zh', 'chat.process.details')).toBe('细节');
+    expect(translate('en', 'chat.process.details')).toBe('Details');
   });
 });

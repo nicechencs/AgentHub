@@ -279,6 +279,56 @@ export function createMockChatPort(): ChatPort {
             type: 'agentProcess',
             turn,
             agent,
+            step: {
+              type: 'tool',
+              id: `mock-edit-${agent}`,
+              name: 'Write',
+              status: 'start',
+              input: { path: 'notes.md' },
+            },
+          });
+          await delay(40);
+          onEvent({
+            type: 'agentProcess',
+            turn,
+            agent,
+            step: {
+              type: 'tool',
+              id: `mock-edit-${agent}`,
+              name: 'Write',
+              status: 'end',
+              result: 'ok',
+            },
+          });
+          onEvent({
+            type: 'agentProcess',
+            turn,
+            agent,
+            step: {
+              type: 'tool',
+              id: `mock-run-${agent}`,
+              name: 'Bash',
+              status: 'start',
+              input: { command: 'ls' },
+            },
+          });
+          await delay(40);
+          onEvent({
+            type: 'agentProcess',
+            turn,
+            agent,
+            step: {
+              type: 'tool',
+              id: `mock-run-${agent}`,
+              name: 'Bash',
+              status: 'end',
+              result: 'README.md',
+            },
+          });
+          onEvent({
+            type: 'agentProcess',
+            turn,
+            agent,
             step: { type: 'thinking', text: '规划回复结构…', done: false },
           });
           const parts = [
