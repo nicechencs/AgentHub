@@ -119,8 +119,10 @@ describe('locale key parity', () => {
     expect(translate('en', 'connect.result.bindUnreadable')).toBe(
       "Couldn't read the connect result. Try again",
     );
-    expect(translate('zh', 'chat.actions.openAgents')).toBe('打开 Agent');
-    expect(translate('en', 'chat.actions.openAgents')).toBe('Open Agents');
+    expect(translate('zh', 'chat.actions.newSession')).toBe('新建对话');
+    expect(translate('en', 'chat.actions.newSession')).toBe('New chat');
+    expect(translate('zh', 'chat.actions.copyLatestReply')).toBe('复制最近回复');
+    expect(translate('en', 'chat.actions.copyLatestReply')).toBe('Copy latest reply');
     expect(translate('zh', 'agents.card.startCli')).toBe('启动命令行');
     expect(translate('en', 'agents.card.startCli')).toBe('Start command line');
     expect(translate('zh', 'dashboard.sync.everyMinutes', { minutes: 30 })).toBe(

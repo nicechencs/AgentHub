@@ -11,6 +11,8 @@ import { ErrorState } from '@/components/shared/ErrorState';
 import { LIST_ROW_PAD, ListRow, ListRowBody } from '@/components/shared/ListRow';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { EnterKeyMark } from '@/components/ui/shortcut-kbd';
+import { dialogEnterShouldConfirm } from '@/lib/dialog-enter';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -483,7 +485,19 @@ export function BackupsPanel({ toolbar }: { toolbar?: ReactNode }) {
         open={deleteTarget !== null}
         onOpenChange={(open) => !open && busyId === null && setDeleteTarget(null)}
       >
-        <DialogContent>
+        <DialogContent
+          onKeyDown={(event) => {
+            if (busyId !== null) return;
+            if (!dialogEnterShouldConfirm({
+              key: event.key,
+              shiftKey: event.shiftKey,
+              isComposing: event.nativeEvent.isComposing,
+              nativeEvent: event.nativeEvent,
+            })) return;
+            event.preventDefault();
+            void handleDelete();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>{t('settings.backups.deleteTitle')}</DialogTitle>
             <DialogDescription>
@@ -503,8 +517,14 @@ export function BackupsPanel({ toolbar }: { toolbar?: ReactNode }) {
             <Button variant="secondary" disabled={busyId !== null} onClick={() => setDeleteTarget(null)}>
               {t('common.cancel')}
             </Button>
-            <Button variant="danger" disabled={busyId !== null} onClick={() => void handleDelete()}>
+            <Button
+              variant="danger"
+              disabled={busyId !== null}
+              aria-keyshortcuts="Enter"
+              onClick={() => void handleDelete()}
+            >
               {busyId !== null ? t('settings.backups.deleting') : t('settings.backups.confirmDelete')}
+              {busyId === null ? <EnterKeyMark onAccent /> : null}
             </Button>
           </DialogFooter>
         </DialogContent>

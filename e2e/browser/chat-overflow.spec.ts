@@ -27,10 +27,12 @@ test('selected Agent has no duplicate overflow menu; other entries stay', async 
   await input.fill('/');
   const palette = page.getByRole('listbox', { name: '更多操作' });
   await expect(palette).toBeVisible();
-  await expect(palette.getByRole('option', { name: /新建会话/ })).toBeVisible();
-  await expect(palette.getByRole('option', { name: /打开历史/ })).toBeVisible();
-  await expect(palette.getByRole('option', { name: /搜索历史会话/ })).toBeVisible();
-  await expect(palette.getByRole('option', { name: /打开设置/ })).toBeVisible();
-  await expect(palette.getByRole('option', { name: /打开 Agent/ })).toBeVisible();
+  await expect(palette.getByRole('option', { name: /新建对话/ })).toBeVisible();
+  await expect(palette.getByRole('option', { name: /复制最近回复/ })).toBeVisible();
+  await expect(palette.getByRole('option', { name: /打开历史/ })).toHaveCount(0);
+  await expect(palette.getByRole('option', { name: /搜索历史会话/ })).toHaveCount(0);
+  await expect(palette.getByRole('option', { name: /打开设置/ })).toHaveCount(0);
+  await expect(palette.getByRole('option', { name: /打开 Agent/ })).toHaveCount(0);
+  await expect(palette.getByRole('option', { name: /打开连接/ })).toHaveCount(0);
   await page.screenshot({ path: '/opt/cursor/artifacts/chat_no_agent_overflow.png' });
 });

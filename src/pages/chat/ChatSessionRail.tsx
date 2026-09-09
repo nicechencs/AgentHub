@@ -8,6 +8,8 @@ import { useNavWidth } from '@/components/layout/use-sidebar-width';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { SearchField } from '@/components/shared/SearchField';
 import { Button } from '@/components/ui/button';
+import { EnterKeyMark } from '@/components/ui/shortcut-kbd';
+import { dialogEnterShouldConfirm } from '@/lib/dialog-enter';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Hint } from '@/components/ui/tooltip';
 import {
@@ -27,7 +29,6 @@ import {
   conversationRailSelectedFill,
   conversationTitle,
   cwdShortName,
-  dialogEnterShouldConfirm,
   isBlankConversationDraft,
   type ConversationDayGroup,
 } from './chat-model';
@@ -142,7 +143,7 @@ export function ChatSessionRail({
           <Button
             className="w-full justify-start gap-1.5"
             size="sm"
-            variant="secondary"
+            variant="default"
             disabled={agentsReady && !hasUsableAgent}
             data-help="chat-new"
             aria-keyshortcuts="Control+N"
@@ -283,12 +284,7 @@ export function ChatSessionRail({
               onClick={onConfirmDelete}
             >
               {t('chat.rail.confirmDelete')}
-              <kbd
-                className="inline-flex h-5 min-w-5 items-center justify-center rounded-btn border border-white/35 bg-white/15 px-1 text-meta leading-none text-white"
-                aria-hidden
-              >
-                Enter
-              </kbd>
+              <EnterKeyMark onAccent />
             </Button>
           </DialogFooter>
         </DialogContent>
