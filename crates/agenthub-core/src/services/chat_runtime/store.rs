@@ -97,7 +97,7 @@ impl RuntimeStore {
             let agent = self.conversation_agent_conn(conn, conversation_id)?;
             if !is_runtime_chat_agent(agent) {
                 return Err(AppError::Unsupported(
-                    "持续聊天目前只支持 Codex、Grok 和 Kiro".into(),
+                    "持续聊天目前只支持 Codex、Grok、Kiro 和 Claude".into(),
                 ));
             }
             let has_messages: bool = conn.query_row(
@@ -1277,11 +1277,18 @@ fn finish_transaction<T>(conn: &rusqlite::Connection, result: Result<T>) -> Resu
 }
 
 pub(crate) fn is_runtime_chat_agent(agent: Option<AgentId>) -> bool {
-    matches!(agent, Some(AgentId::Codex | AgentId::Grok | AgentId::Kiro))
+    matches!(
+        agent,
+        Some(AgentId::Codex | AgentId::Grok | AgentId::Kiro | AgentId::Claude)
+    )
 }
 
 pub(crate) fn is_acp_runtime_agent(agent: Option<AgentId>) -> bool {
     matches!(agent, Some(AgentId::Grok | AgentId::Kiro))
+}
+
+pub(crate) fn is_claude_stream_runtime_agent(agent: Option<AgentId>) -> bool {
+    matches!(agent, Some(AgentId::Claude))
 }
 
 impl RuntimeRequestKind {

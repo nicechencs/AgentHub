@@ -481,6 +481,41 @@ fn grok_image_block(path: &str) -> Result<Value> {
     }))
 }
 
+/// Claude stream-json user message (text + optional base64 images).
+pub(crate) fn claude_user_message(prompt: &str, images: &[RuntimeLocalImage]) -> Result<Value> {
+    let mut content = vec![serde_json::json!({ "type": "text", "text": prompt })];
+    for image in images {
+        content.push(claude_image_block(&image.path)?);
+    }
+    Ok(serde_json::json!({
+        "type": "user",
+        "message": {
+            "role": "user",
+            "content": content
+        }
+    }))
+}
+
+fn claude_image_block(path: &str) -> Result<Value> {
+    let path = path.trim();
+    if path.is_empty() {
+        return Err(AppError::InvalidArg("图片路径不能为空".into()));
+    }
+    let mime = grok_image_mime(path)
+        .ok_or_else(|| AppError::InvalidArg(format!("不支持的图片类型: {path}")))?;
+    let bytes = std::fs::read(path)
+        .map_err(|err| AppError::InvalidArg(format!("无法读取图片: {path} ({err})")))?;
+    use base64::Engine;
+    Ok(serde_json::json!({
+        "type": "image",
+        "source": {
+            "type": "base64",
+            "media_type": mime,
+            "data": base64::engine::general_purpose::STANDARD.encode(bytes),
+        }
+    }))
+}
+
 /// Drop previously denied efforts from a catalog (Codex may over-report support).
 pub(crate) fn apply_denied_efforts(
     models: &[RuntimeModelOption],

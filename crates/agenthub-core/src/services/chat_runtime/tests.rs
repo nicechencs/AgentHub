@@ -295,6 +295,55 @@ fn empty_kiro_conversation_enables_runtime() {
 }
 
 #[test]
+fn empty_claude_conversation_enables_runtime() {
+    let db = Database::open_in_memory().unwrap();
+    let now = "2026-01-01T00:00:00Z".to_string();
+    let empty = Conversation {
+        id: "claude-empty".into(),
+        title: String::new(),
+        agent_ids: vec![AgentId::Claude],
+        cwd: Some(std::env::temp_dir().to_string_lossy().into_owned()),
+        allow_dangerous: false,
+        created_at: now.clone(),
+        updated_at: now.clone(),
+        native_session_id: None,
+        sending: false,
+    };
+    let legacy = Conversation {
+        id: "claude-legacy".into(),
+        title: String::new(),
+        agent_ids: vec![AgentId::Claude],
+        cwd: empty.cwd.clone(),
+        allow_dangerous: false,
+        created_at: now.clone(),
+        updated_at: now,
+        native_session_id: None,
+        sending: false,
+    };
+    let repo = ChatRepo::new(db.clone());
+    repo.create_conversation(&empty).unwrap();
+    repo.create_conversation(&legacy).unwrap();
+    repo.insert_message(&crate::models::ChatMessage {
+        id: "legacy-user".into(),
+        conversation_id: "claude-legacy".into(),
+        turn: 1,
+        role: crate::models::ChatRole::User,
+        agent_id: None,
+        content: "legacy".into(),
+        status: crate::models::ChatMessageStatus::Ok,
+        exit_code: None,
+        duration_ms: 0,
+        error: None,
+        created_at: "2026-01-01T00:00:00Z".into(),
+    })
+    .unwrap();
+    let store = super::store::RuntimeStore::new(db);
+    store.enable_if_new("claude-empty").unwrap();
+    assert!(store.snapshot("claude-empty", None).unwrap().enabled);
+    assert!(store.enable_if_new("claude-legacy").is_err());
+}
+
+#[test]
 fn grok_legacy_continue_requires_session_and_keeps_print_path_otherwise() {
     let db = Database::open_in_memory().unwrap();
     let now = "2026-01-01T00:00:00Z".to_string();
@@ -442,9 +491,9 @@ fn idle_enabled_runtime_allows_agent_and_cwd_changes() {
     assert!(store.persisted_enabled(&conv.id).unwrap());
 
     let switched = chat
-        .update_conversation(&conv.id, None, Some(vec![AgentId::Claude]), None, None)
+        .update_conversation(&conv.id, None, Some(vec![AgentId::Pi]), None, None)
         .unwrap();
-    assert_eq!(switched.agent_ids, vec![AgentId::Claude]);
+    assert_eq!(switched.agent_ids, vec![AgentId::Pi]);
     assert!(!store.persisted_enabled(&conv.id).unwrap());
     let snapshot = chat.runtime().snapshot(&conv.id, None).unwrap();
     assert!(!snapshot.enabled);
