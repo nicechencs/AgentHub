@@ -119,14 +119,18 @@ pub(crate) fn windows_open_chat_command_with(exe: &Path, placeholder: &str) -> S
 
 /// Cargo `target/debug` builds. Registering them overwrites the installed
 /// Explorer verb, then the menu breaks when that debug exe is gone.
+///
+/// Split on `/` and `\` so Windows fixtures still match when this crate is
+/// tested on Linux CI. `Path::iter` treats a `\` path as one component there.
 pub(crate) fn is_cargo_debug_exe(exe: &Path) -> bool {
-    let mut parts = exe.iter().filter_map(|s| s.to_str());
-    while let Some(part) = parts.next() {
-        if part == "target" && matches!(parts.next(), Some("debug")) {
-            return true;
-        }
-    }
-    false
+    let raw = exe.to_string_lossy();
+    let parts: Vec<&str> = raw
+        .split(['/', '\\'])
+        .filter(|part| !part.is_empty())
+        .collect();
+    parts
+        .windows(2)
+        .any(|window| window[0] == "target" && window[1] == "debug")
 }
 
 pub(crate) fn should_write_shell_registration(exe: &Path, force: bool) -> bool {
