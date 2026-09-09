@@ -166,6 +166,10 @@ function mockNeedsConfirm(prompt: string): boolean {
   return /需要确认|need confirm/i.test(prompt);
 }
 
+function mockNeedsFileChange(prompt: string): boolean {
+  return /修改文件|change files|file change/i.test(prompt);
+}
+
 function appendMockRuntimeEvent(
   conversationId: string,
   event: ChatEvent,
@@ -242,6 +246,32 @@ async function playMockRuntimeTurn(input: {
     agent,
     step: { type: 'thinking', text: '规划回复结构…', done: true },
   });
+
+  if (mockNeedsFileChange(prompt)) {
+    const request: RuntimeRequest = {
+      id: `req-mock-${mockSeq++}`,
+      runId,
+      kind: 'file',
+      title: '修改文件',
+      detail: '/workspace/qa-codex-filechange-scratch/probe.txt',
+      questions: [],
+      permissionOptions: [
+        { id: 'once', kind: 'allow_once' },
+        { id: 'always', kind: 'allow_always' },
+      ],
+      fileChanges: [{
+        path: '/workspace/qa-codex-filechange-scratch/probe.txt',
+        kind: 'add',
+        preview: 'FILECHANGE_OK\n',
+      }],
+    };
+    appendMockRuntimeEvent(
+      conversationId,
+      { type: 'agentProcess', turn, agent, step: { type: 'tool', name: 'fileChange', status: 'start', input: { path: '/workspace/qa-codex-filechange-scratch/probe.txt' } } },
+      { phase: 'waiting', currentMessage: agentMessage, pendingRequests: [request] },
+    );
+    return;
+  }
 
   if (mockNeedsConfirm(prompt)) {
     const request: RuntimeRequest = {

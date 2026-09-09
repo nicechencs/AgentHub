@@ -254,6 +254,10 @@ describe('chat layout wiring', () => {
     expect(requests).toContain('runtimeRequestTitle');
     expect(requests).toContain('always.hintKey');
     expect(requests).toContain('data-help="chat-allow-always"');
+    expect(requests).toContain('runtimeFileChangePreview');
+    expect(requests).toContain('chat.runtime.fileChangePreviewEmpty');
+    expect(translate('zh', 'chat.runtime.fileChangePreviewEmpty')).toBe('暂无改动预览');
+    expect(translate('en', 'chat.runtime.fileChangePreviewEmpty')).toBe('No change preview');
     expect(translate('zh', 'chat.runtime.allowAlwaysHint')).toBe('仅当前这次进程，不保存');
     expect(translate('en', 'chat.runtime.allowAlwaysHint')).toBe('This process only, not saved');
     expect(translate('zh', 'chat.runtime.allowAlwaysHintTurn')).toBe('仅当前这次进程，通常只记到本轮，不保存');

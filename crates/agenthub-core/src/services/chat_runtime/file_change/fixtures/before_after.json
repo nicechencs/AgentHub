@@ -1,0 +1,10 @@
+{
+  "changes": [
+    {
+      "path": "src/app.ts",
+      "kind": "update",
+      "before": "const name = 'old';",
+      "after": "const name = 'new';"
+    }
+  ]
+}

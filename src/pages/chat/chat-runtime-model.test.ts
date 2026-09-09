@@ -5,6 +5,7 @@ import {
   acceptsRuntimeSnapshot,
   bindRuntimeSnapshotToAgent,
   canSubmitRuntimeQuestions,
+  runtimeFileChangePreview,
   runtimeReplyFields,
   requestAllowsAlways,
   runtimeAllowAlwaysCopy,
@@ -158,5 +159,38 @@ describe('chat runtime transport guards', () => {
     expect(runtimeRequestTitle(t, { kind: 'command', title: '' })).toBe('需要确认');
     expect(runtimeRequestTitle(t, { kind: 'question', title: '' })).toBe('需要你的回答');
     expect(runtimeRequestTitle(t, { kind: 'question', title: '选一个模型' })).toBe('选一个模型');
+  });
+  it('builds a file preview from protocol-copied fixture rows and stays empty for path-only', () => {
+    expect(runtimeFileChangePreview({
+      kind: 'file',
+      detail: '/workspace/qa-codex-filechange-scratch/probe.txt',
+      fileChanges: [{
+        path: '/workspace/qa-codex-filechange-scratch/probe.txt',
+        kind: 'add',
+        preview: 'FILECHANGE_OK\n',
+      }],
+    })).toEqual({
+      shown: true,
+      empty: false,
+      rows: [{
+        path: '/workspace/qa-codex-filechange-scratch/probe.txt',
+        kind: 'add',
+        preview: 'FILECHANGE_OK\n',
+      }],
+    });
+    expect(runtimeFileChangePreview({
+      kind: 'file',
+      detail: '/workspace/notes.md',
+      fileChanges: [{ path: '/workspace/notes.md', kind: 'update' }],
+    })).toEqual({
+      shown: true,
+      empty: true,
+      rows: [{ path: '/workspace/notes.md', kind: 'update', preview: null }],
+    });
+    expect(runtimeFileChangePreview({
+      kind: 'command',
+      detail: 'ls',
+      fileChanges: [],
+    })).toEqual({ shown: false });
   });
 });
