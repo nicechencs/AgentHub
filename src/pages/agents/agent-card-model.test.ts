@@ -437,6 +437,21 @@ describe('agent launch targets', () => {
       channel: 'ide',
       binPath: '/ide/codex',
     })).toEqual({});
+    expect(agentLaunchTargets({
+      agentId: 'dsh',
+      installed: true,
+      channel: 'leftover-agenthub',
+      binPath: '/home/box/.agenthub/npm/bin/dsh',
+    })).toEqual({ cliPath: '/home/box/.agenthub/npm/bin/dsh' });
+    expect(agentLaunchTargets({
+      agentId: 'dsh',
+      installed: true,
+      channel: 'npm',
+      binPath: '/home/box/.agenthub/npm/bin/dsh',
+      extraCopies: [
+        { path: '/home/box/.local/bin/dsh', kind: 'native', source: 'native' },
+      ],
+    })).toEqual({ cliPath: '/home/box/.agenthub/npm/bin/dsh' });
   });
 });
 

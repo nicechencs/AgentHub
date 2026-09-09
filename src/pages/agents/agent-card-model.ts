@@ -389,7 +389,8 @@ function launchKindForInstall(
   row: Pick<AgentInstall, 'source'>,
 ): 'cli' | 'app' | null {
   if (row.source === 'desktop') return 'app';
-  if (row.source === 'npm') return 'cli';
+  // Leftover AgentHub npm is not an install target; a working tree is still CLI.
+  if (row.source === 'npm' || row.source === 'leftover-agenthub') return 'cli';
   if (row.source === 'native') {
     // WorkBuddy / ZCode native Setup is the Electron app, not a CLI.
     if (installLifecycle('native', agentId).updateVia === 'official') return 'app';

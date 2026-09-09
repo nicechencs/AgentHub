@@ -3,12 +3,13 @@ use super::codex_copies::ide_codex_bins_under;
 #[cfg(not(windows))]
 use super::detect_binary::well_known_npm_cli_dirs;
 use super::detect_binary::{
-    agenthub_user_npm_prefix_roots, attach_extra_binary_copies, detect_binary, expand_binary_names,
-    first_existing_named_bin, infer_channel, is_under_agenthub_user_npm_prefix,
-    npm_cmd_shim_script_from_text, npm_global_bin_dirs, npm_prefix_stdout_to_bin_dir,
-    parse_npmrc_global_prefix, rewrite_windows_batch_run_spec, spawn_npm_cmd_via_node,
-    user_writable_npm_bin_dir, user_writable_npm_prefix, well_known_bin_paths,
-    NOT_FOUND_FIREFIGHTING_NOTE,
+    agenthub_user_npm_prefix_roots, attach_extra_binary_copies, detect_binary,
+    dsh_cli_tree_complete, expand_binary_names, first_existing_named_bin, infer_channel,
+    is_under_agenthub_user_npm_prefix, npm_cmd_shim_script_from_text, npm_global_bin_dirs,
+    npm_module_roots_for_cli, npm_prefix_stdout_to_bin_dir, npm_tree_has_package,
+    parse_npmrc_global_prefix, rewrite_windows_batch_run_spec, spawn_candidate_usable,
+    spawn_npm_cmd_via_node, user_writable_npm_bin_dir, user_writable_npm_prefix,
+    well_known_bin_paths, NOT_FOUND_FIREFIGHTING_NOTE,
 };
 use super::*;
 use crate::error::AppError;
@@ -823,6 +824,271 @@ fn leftover_agenthub_npm_is_never_the_spawn_target() {
             .iter()
             .any(|c| c.kind == "leftover-agenthub" && c.path == leftover),
         "leftover must be extra_copies only: {:?}",
+        result.extra_copies
+    );
+}
+
+fn write_dsh_npm_tree(
+    prefix: &std::path::Path,
+    name: &str,
+    version: &str,
+    with_scope: bool,
+) -> PathBuf {
+    #[cfg(windows)]
+    let bin_dir = prefix.to_path_buf();
+    #[cfg(not(windows))]
+    let bin_dir = prefix.join("bin");
+    std::fs::create_dir_all(&bin_dir).unwrap();
+    #[cfg(windows)]
+    let bin = bin_dir.join(format!("{name}.cmd"));
+    #[cfg(not(windows))]
+    let bin = bin_dir.join(name);
+    write_spawnable_probe(&bin, version);
+    if with_scope {
+        let scope = prefix
+            .join("lib")
+            .join("node_modules")
+            .join("@deepseek-ai")
+            .join("dsh-scope");
+        std::fs::create_dir_all(&scope).unwrap();
+        std::fs::write(
+            scope.join("package.json"),
+            b"{\"name\":\"@deepseek-ai/dsh-scope\"}\n",
+        )
+        .unwrap();
+    }
+    bin
+}
+
+#[test]
+fn npm_tree_has_package_reads_unix_prefix_and_nested_scope() {
+    let tmp = tempfile::tempdir().unwrap();
+    let prefix = tmp.path().join("npm-global");
+    let bin = write_dsh_npm_tree(&prefix, "dsh", "0.1.0", true);
+    assert!(dsh_cli_tree_complete(&bin));
+    assert!(npm_tree_has_package(&bin, super::dsh::SCOPE_PACKAGE));
+    assert!(
+        npm_module_roots_for_cli(&bin)
+            .iter()
+            .any(|root| root == &prefix.join("lib").join("node_modules")),
+        "unix prefix/bin must scan prefix/lib/node_modules: {:?}",
+        npm_module_roots_for_cli(&bin)
+    );
+
+    let nested_only = tmp.path().join("nested");
+    let nested_bin_dir = nested_only.join("bin");
+    std::fs::create_dir_all(&nested_bin_dir).unwrap();
+    let nested_bin = nested_bin_dir.join("dsh");
+    write_spawnable_probe(&nested_bin, "0.2.0");
+    let nested_scope = nested_only
+        .join("lib")
+        .join("node_modules")
+        .join("@deepseek-ai")
+        .join("dsh")
+        .join("node_modules")
+        .join("@deepseek-ai")
+        .join("dsh-scope");
+    std::fs::create_dir_all(&nested_scope).unwrap();
+    assert!(npm_tree_has_package(&nested_bin, super::dsh::SCOPE_PACKAGE));
+
+    let stub = tmp.path().join("local").join("bin").join("dsh");
+    write_spawnable_probe(&stub, "0.1.0");
+    assert!(!dsh_cli_tree_complete(&stub));
+    assert!(!spawn_candidate_usable(AgentId::Dsh, &stub));
+    assert!(spawn_candidate_usable(AgentId::Codex, &stub));
+}
+
+#[cfg(unix)]
+#[test]
+fn detect_dsh_prefers_complete_leftover_prefix_over_incomplete_local_bin() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let _guard = DETECT_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let data = tmp.path().join("data");
+    let local_bin = home.join(".local").join("bin");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(&local_bin).unwrap();
+
+    let leftover = write_dsh_npm_tree(&data.join("npm"), "dsh", "9.9.9", true);
+    let stub = local_bin.join("dsh");
+    write_spawnable_probe(&stub, "1.0.0");
+    std::fs::set_permissions(&stub, PermissionsExt::from_mode(0o755)).unwrap();
+
+    let prev_home = std::env::var_os("HOME");
+    let prev_agent_home = std::env::var_os("AGENTHUB_HOME");
+    let prev_path = std::env::var_os("PATH");
+    std::env::set_var("HOME", &home);
+    std::env::set_var("AGENTHUB_HOME", &data);
+    let mut path = OsString::from(&local_bin);
+    path.push(":");
+    if let Some(rest) = &prev_path {
+        path.push(rest);
+    }
+    std::env::set_var("PATH", &path);
+
+    let found = std::panic::catch_unwind(|| {
+        detect_binary(AgentId::Dsh, &["dsh"], &["--version"], Some("npm"), true)
+    });
+    restore_env("HOME", prev_home);
+    restore_env("AGENTHUB_HOME", prev_agent_home);
+    restore_env("PATH", prev_path);
+    let result = found.expect("detect_binary must not panic");
+
+    assert_eq!(
+        result.status,
+        crate::models::DetectStatus::Installed,
+        "complete leftover dsh must count as Installed: {:?}",
+        result.notes
+    );
+    if let Some(target) = &result.binary_path {
+        if target.starts_with(&data) || target == &leftover {
+            assert_eq!(
+                target, &leftover,
+                "spawn must be leftover prefix: {target:?}"
+            );
+            assert_eq!(result.channel.as_deref(), Some("npm"));
+            assert_eq!(result.version.as_deref(), Some("9.9.9"));
+            assert!(
+                result
+                    .notes
+                    .iter()
+                    .any(|n| n.contains("leftover AgentHub npm prefix")),
+                "must document leftover spawn: {:?}",
+                result.notes
+            );
+        } else {
+            assert_ne!(
+                target,
+                &stub,
+                "incomplete ~/.local/bin/dsh must not be spawned: {}",
+                target.display()
+            );
+            assert!(
+                spawn_candidate_usable(AgentId::Dsh, target),
+                "non-fixture spawn must still be a complete dsh tree: {}",
+                target.display()
+            );
+        }
+    } else {
+        panic!("expected a spawn target, got {:?}", result.notes);
+    }
+    assert!(
+        result
+            .notes
+            .iter()
+            .any(|n| n.contains("dsh-scope") || n.contains("leftover")),
+        "doctor notes must mention skip or leftover: {:?}",
+        result.notes
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn detect_dsh_complete_path_wins_over_leftover_prefix() {
+    let _guard = DETECT_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let data = tmp.path().join("data");
+    let good_prefix = home.join(".npm-global");
+    std::fs::create_dir_all(&home).unwrap();
+
+    let leftover = write_dsh_npm_tree(&data.join("npm"), "dsh", "9.9.9", true);
+    let good = write_dsh_npm_tree(&good_prefix, "dsh", "2.0.0", true);
+
+    let prev_home = std::env::var_os("HOME");
+    let prev_agent_home = std::env::var_os("AGENTHUB_HOME");
+    let prev_path = std::env::var_os("PATH");
+    std::env::set_var("HOME", &home);
+    std::env::set_var("AGENTHUB_HOME", &data);
+    let mut path = OsString::from(good_prefix.join("bin"));
+    path.push(":");
+    if let Some(rest) = &prev_path {
+        path.push(rest);
+    }
+    std::env::set_var("PATH", &path);
+
+    let found = std::panic::catch_unwind(|| {
+        detect_binary(AgentId::Dsh, &["dsh"], &["--version"], Some("npm"), true)
+    });
+    restore_env("HOME", prev_home);
+    restore_env("AGENTHUB_HOME", prev_agent_home);
+    restore_env("PATH", prev_path);
+    let result = found.expect("detect_binary must not panic");
+
+    assert_eq!(result.status, crate::models::DetectStatus::Installed);
+    assert_eq!(
+        result.binary_path.as_deref(),
+        Some(good.as_path()),
+        "complete PATH/user prefix must beat leftover {leftover:?}: {:?}",
+        result.binary_path
+    );
+    assert_eq!(result.version.as_deref(), Some("2.0.0"));
+    assert!(
+        result
+            .extra_copies
+            .iter()
+            .any(|c| c.kind == "leftover-agenthub" && c.path == leftover),
+        "leftover stays extra when a real prefix exists: {:?}",
+        result.extra_copies
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn detect_dsh_incomplete_leftover_alone_is_not_spawn() {
+    let _guard = DETECT_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let data = tmp.path().join("data");
+    std::fs::create_dir_all(&home).unwrap();
+    let leftover = write_dsh_npm_tree(&data.join("npm"), "dsh-incomplete-only", "9.9.9", false);
+
+    let prev_home = std::env::var_os("HOME");
+    let prev_agent_home = std::env::var_os("AGENTHUB_HOME");
+    let prev_path = std::env::var_os("PATH");
+    std::env::set_var("HOME", &home);
+    std::env::set_var("AGENTHUB_HOME", &data);
+    std::env::set_var("PATH", leftover.parent().unwrap());
+
+    let found = std::panic::catch_unwind(|| {
+        detect_binary(
+            AgentId::Dsh,
+            &["dsh-incomplete-only"],
+            &["--version"],
+            Some("npm"),
+            true,
+        )
+    });
+    restore_env("HOME", prev_home);
+    restore_env("AGENTHUB_HOME", prev_agent_home);
+    restore_env("PATH", prev_path);
+    let result = found.expect("detect_binary must not panic");
+
+    if let Some(target) = &result.binary_path {
+        assert_ne!(
+            target, &leftover,
+            "incomplete leftover must not become the spawn target"
+        );
+    } else {
+        assert_eq!(result.status, crate::models::DetectStatus::NotFound);
+    }
+    assert!(
+        result
+            .extra_copies
+            .iter()
+            .any(|c| c.kind == "leftover-agenthub" && c.path == leftover),
+        "incomplete leftover stays extra: {:?}",
         result.extra_copies
     );
 }
@@ -2282,7 +2548,6 @@ fn kimi_switch_write_keeps_account_model_instead_of_rewriting() {
         "{text}"
     );
 }
-
 
 #[test]
 fn kimi_switch_write_prefers_settings_model_over_content_default() {
