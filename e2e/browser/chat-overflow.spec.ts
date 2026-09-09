@@ -20,6 +20,7 @@ test('selected Agent has no duplicate overflow menu; other entries stay', async 
   await codex.click();
   await expect(page.locator('[data-help="chat-model"]')).toBeVisible({ timeout: 20_000 });
   await expect(composer.getByRole('button', { name: '更多操作' })).toHaveCount(0);
+  await page.screenshot({ path: '/opt/cursor/artifacts/chat_toolbar_no_overflow.png' });
 
   const input = page.getByRole('textbox', { name: '消息输入' });
   await input.click();
