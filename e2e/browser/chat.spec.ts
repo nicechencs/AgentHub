@@ -7,11 +7,11 @@ test('empty chat starter card fills the composer without sending', async ({ page
   await setWorkingDirectory(page);
 
   await expect(page.getByText('开始对话')).toBeVisible();
-  await expect(page.getByText(/发送第一条消息/)).toBeVisible();
-  await expect(page.getByText('示例只填入输入框，由你发送')).toBeVisible();
+  await expect(page.getByText(/发送第一条消息/)).toHaveCount(0);
+  await expect(page.getByText('示例只填入输入框，由你发送')).toHaveCount(0);
 
   const composer = page.getByRole('textbox', { name: '消息输入' });
-  await expect(composer).toHaveAttribute('placeholder', /发第一条消息|发给 Agent/);
+  await expect(composer).toHaveAttribute('placeholder', /发消息|发给 Agent|Send a message/);
   await expect(composer).not.toHaveAttribute('placeholder', /不能中途补充/);
 
   const card = page.getByRole('button', { name: '了解这个项目' });
@@ -22,7 +22,8 @@ test('empty chat starter card fills the composer without sending', async ({ page
   await expect(composer).toHaveValue('请帮我了解这个项目的结构和主要功能。');
   await expect(composer).toBeFocused();
   await expect(page.getByRole('log')).not.toContainText('请帮我了解这个项目的结构和主要功能。');
-  await expect(page.locator('[data-help="chat-composer-hint"]')).toContainText('生成时不能中途补充，可排队到下一轮');
+  await expect(page.locator('[data-help="chat-composer-hint"]')).toHaveCount(0);
+  await expect(composer).toHaveAttribute('title', /不能中途补充/);
   await page.screenshot({ path: '/opt/cursor/artifacts/chat_chip_fills_draft.png' });
 });
 
@@ -50,7 +51,8 @@ test('Chat sends a prompt and shows the mock reply', async ({ page }) => {
   await setWorkingDirectory(page);
 
   const composer = page.getByRole('textbox', { name: '消息输入' });
-  await expect(page.getByText('Enter 发送 · Shift+Enter 换行')).toBeVisible();
+  await expect(page.getByText('Enter 发送 · Shift+Enter 换行')).toHaveCount(0);
+  await expect(composer).toHaveAttribute('title', /Enter 发送/);
   await expect(page.getByRole('button', { name: '发送' })).toBeDisabled();
   await composer.fill('e2e mock ping');
   await expect(page.getByRole('button', { name: '发送' })).toBeEnabled();
@@ -155,19 +157,30 @@ test('shortcut overview opens from the composer and lists new-chat keys', async 
   await openApp(page);
   await openChatComposer(page);
 
-  await page.getByRole('button', { name: '快捷键' }).click();
-  const dialog = page.getByRole('dialog', { name: '快捷键' });
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByText('组字时 Enter 不发送')).toBeVisible();
-  await expect(dialog.getByText('新建对话')).toBeVisible();
-  await expect(dialog.getByText('Ctrl+N')).toBeVisible();
-  await expect(dialog.getByText('快捷键一览')).toBeVisible();
+  const trigger = page.getByRole('button', { name: '快捷键' });
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await trigger.hover();
+  const panel = page.locator('[data-help="chat-shortcuts-popover"]');
+  await expect(panel).toBeVisible();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  await expect(panel.getByText('组字时 Enter 不发送')).toBeVisible();
+  await expect(panel.getByText('新建对话')).toBeVisible();
+  await expect(panel.getByText('Ctrl+N')).toBeVisible();
+  await expect(panel.getByText('换模型')).toBeVisible();
+
+  await page.getByRole('button', { name: '会话设置' }).hover();
+  await expect(panel).toBeHidden();
+
+  await trigger.click();
+  await expect(panel).toBeVisible();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
   await page.screenshot({
     path: '/opt/cursor/artifacts/chat_shortcut_overview.png',
     fullPage: true,
   });
   await page.keyboard.press('Escape');
-  await expect(dialog).toBeHidden();
+  await expect(panel).toBeHidden();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
 
   await page.getByRole('button', { name: '会话设置' }).focus();
   await page.evaluate(() => {

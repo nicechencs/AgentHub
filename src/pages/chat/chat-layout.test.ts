@@ -50,11 +50,14 @@ describe('chat layout wiring', () => {
     expect(page).toContain('ChatShortcutsDialog');
     expect(source('chat-shortcuts.ts')).toContain("addEventListener('keydown', wrapped, true)");
     expect(source('use-chat-page.ts')).toContain('chatModNShouldStartNewChat');
-    expect(page).toContain('onOpenShortcuts');
-    expect(source('ChatComposer.tsx')).toContain('data-help="chat-shortcuts"');
-    expect(source('ChatComposer.tsx')).toContain('aria-keyshortcuts="?"');
+    expect(source('ChatComposer.tsx')).toContain('ChatShortcutsHelp');
+    expect(source('ChatShortcutsHelp.tsx')).toContain('data-help="chat-shortcuts"');
+    expect(source('ChatShortcutsHelp.tsx')).toContain('aria-keyshortcuts="?"');
+    expect(source('ChatShortcutsHelp.tsx')).toContain('aria-expanded={open}');
+    expect(source('ChatShortcutsHelp.tsx')).toContain('data-help="chat-shortcuts-popover"');
+    expect(source('ChatShortcutsDialog.tsx')).toContain('ChatShortcutOverview');
+    expect(source('ChatShortcutOverview.tsx')).toContain('CHAT_SHORTCUT_ROWS');
     expect(source('ChatSessionRail.tsx')).toContain('aria-keyshortcuts="Control+N"');
-    expect(source('ChatShortcutsDialog.tsx')).toContain('CHAT_SHORTCUT_ROWS');
     expect(translate('zh', 'chat.shortcuts.open')).toBe('快捷键');
     expect(translate('en', 'chat.shortcuts.open')).toBe('Shortcuts');
   });
@@ -133,9 +136,10 @@ describe('chat layout wiring', () => {
     expect(transcript).toContain('onPickStarter');
     expect(transcript).toContain('emptyTranscriptCopy');
     expect(transcript).toContain('text-display');
-    expect(source('chat-empty-state.ts')).toContain('chat.transcript.identity');
-    expect(source('chat-empty-state.ts')).toContain('chat.transcript.firstMessage');
     expect(source('chat-empty-state.ts')).toContain('chat.transcript.startersHint');
+    expect(source('chat-empty-state.ts')).not.toContain('chat.transcript.identity');
+    expect(source('chat-empty-state.ts')).not.toContain('chat.transcript.firstMessage');
+    expect(source('ChatTranscript.tsx')).toContain('emptyStarterChipHint');
     expect(source('ChatComposer.tsx')).toContain('focusNonce');
     expect(source('index.tsx')).toContain('focusNonce={page.composerFocusNonce}');
     expect(transcript).toContain('firstBlocker');
@@ -291,6 +295,9 @@ describe('chat layout wiring', () => {
     expect(page).toContain('data-help="chat-kiro-oneshot"');
     expect(source('ChatComposer.tsx')).toContain('composerInvitePlaceholder');
     expect(source('ChatComposer.tsx')).toContain('composerCapabilityHint');
+    expect(source('ChatComposer.tsx')).toContain('composerHoverHint');
+    expect(source('ChatComposer.tsx')).toContain('composerShowsHintRow');
+    expect(source('ChatComposer.tsx')).toContain('composerConnectionTooltip');
     expect(source('use-chat-page.ts')).toContain('kiroChatAllowsCommandSearch');
   });
 

@@ -2752,7 +2752,7 @@ export const zh = {
     },
     composer: {
       placeholder: "发给 Agent…",
-      placeholderInvite: "向 {agent} 发第一条消息…",
+      placeholderInvite: "发消息…",
       queueOnlyHint: "生成时不能中途补充，可排队到下一轮。",
       inputAria: "消息输入",
       selectAgent: "选择 Agent",

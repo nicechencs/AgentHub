@@ -21,11 +21,9 @@ import { cn } from '@/lib/utils';
 import type { TranslateFn } from '@/lib/i18n';
 import { formatDurationMs, type TurnGroup } from './chat-format';
 import {
-  agentPickerLabel,
   blockerCopy,
   blockerPrimaryTarget,
   chatTranscriptSurfaceClass,
-  cwdShortName,
   turnComparisonChips,
   type ChatBlockerPrimaryTarget,
   type ChatSendBlocker,
@@ -36,7 +34,7 @@ import {
   type ChatActionDef,
   type ChatStarterCopyKey,
 } from './chat-actions';
-import { emptyTranscriptCopy } from './chat-empty-state';
+import { emptyStarterChipHint, emptyTranscriptCopy } from './chat-empty-state';
 import { ChatMessageBubble } from './ChatMessageBubble';
 
 export function ChatTranscript({
@@ -114,8 +112,6 @@ export function ChatTranscript({
         </div>
       ) : turns.length === 0 ? (
         <EmptyTranscriptStart
-          agentLabel={agentPickerLabel(t, active)}
-          projectLabel={cwdShortName(active.cwd, t)}
           sending={sending}
           firstBlocker={firstBlocker}
           onBlockerAction={onBlockerAction}
@@ -177,15 +173,11 @@ const STARTER_ICONS: Record<ChatStarterCopyKey, LucideIcon> = {
 };
 
 function EmptyTranscriptStart({
-  agentLabel,
-  projectLabel,
   sending,
   firstBlocker,
   onBlockerAction,
   onPickStarter,
 }: {
-  agentLabel: string;
-  projectLabel: string;
   sending: boolean;
   firstBlocker: ChatSendBlocker | null;
   onBlockerAction?: (target: ChatBlockerPrimaryTarget) => void;
@@ -193,20 +185,12 @@ function EmptyTranscriptStart({
 }) {
   const { t } = useI18n();
   const starters = chatStarterActions();
-  const copy = emptyTranscriptCopy(t, { agentLabel, projectLabel });
+  const copy = emptyTranscriptCopy(t);
   const blocker = firstBlocker ? blockerCopy(t, firstBlocker) : null;
   return (
     <div className="flex h-full flex-col justify-end px-1 pb-3 pt-8">
       <div className="w-full">
         <p className="text-display text-primary">{copy.headline}</p>
-        {blocker ? (
-          <p className="mt-1 text-meta text-muted">{copy.identity}</p>
-        ) : (
-          <>
-            <p className="mt-1 text-body text-secondary">{copy.invite}</p>
-            <p className="mt-1 text-meta text-muted">{copy.identity}</p>
-          </>
-        )}
         {blocker ? (
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <p className="text-body text-secondary">{blocker.text}</p>
@@ -222,7 +206,6 @@ function EmptyTranscriptStart({
           </div>
         ) : !sending ? (
           <div className="mt-3">
-            <p className="mb-2 text-meta text-muted">{copy.startersHint}</p>
             <div
               className="flex flex-wrap gap-2"
               role="group"
@@ -235,7 +218,7 @@ function EmptyTranscriptStart({
                 const title = t(`chat.transcript.starter.${key}` as never);
                 const hint = t(`chat.transcript.starter.${key}Hint` as never);
                 return (
-                  <Hint key={action.id} label={hint}>
+                  <Hint key={action.id} label={emptyStarterChipHint(hint, copy.startersHint)}>
                     <button
                       type="button"
                       aria-label={title}

@@ -1,29 +1,23 @@
 /**
  * Empty transcript / empty composer copy. Chips still only fill the draft.
- * Queue-only limits sit on a quiet hint, never the primary placeholder.
+ * Queue-only limits and Enter/Shift+Enter sit on hover titles, not permanent lines.
  */
 import type { TranslateFn } from '@/lib/i18n';
 
 export type EmptyTranscriptCopy = {
   headline: string;
-  invite: string;
-  identity: string;
   startersHint: string;
 };
 
-export function emptyTranscriptCopy(
-  t: TranslateFn,
-  input: { agentLabel: string; projectLabel: string },
-): EmptyTranscriptCopy {
+export function emptyTranscriptCopy(t: TranslateFn): EmptyTranscriptCopy {
   return {
     headline: t('chat.transcript.start'),
-    invite: t('chat.transcript.firstMessage', { agent: input.agentLabel }),
-    identity: t('chat.transcript.identity', {
-      agent: input.agentLabel,
-      project: input.projectLabel,
-    }),
     startersHint: t('chat.transcript.startersHint'),
   };
+}
+
+export function emptyStarterChipHint(taskHint: string, startersHint: string): string {
+  return `${taskHint} · ${startersHint}`;
 }
 
 /** Grok / Kiro / Claude queue after this turn; Codex can add mid-run. */
@@ -33,11 +27,9 @@ export function composerShowsQueueOnlyHint(agentId: string | null | undefined): 
 
 export function composerInvitePlaceholder(
   t: TranslateFn,
-  input: { emptyTranscript: boolean; agentLabel: string },
+  input: { emptyTranscript: boolean },
 ): string {
-  if (input.emptyTranscript && input.agentLabel.trim()) {
-    return t('chat.composer.placeholderInvite', { agent: input.agentLabel.trim() });
-  }
+  if (input.emptyTranscript) return t('chat.composer.placeholderInvite');
   return t('chat.composer.placeholder');
 }
 
@@ -52,4 +44,26 @@ export function composerCapabilityHint(
 /** First-use toolbar: keep controls, quiet the secondary labels. */
 export function composerCompactSecondary(input: { emptyTranscript: boolean }): boolean {
   return input.emptyTranscript;
+}
+
+/** Permanent Enter / queue line stays off the empty session. */
+export function composerShowsHintRow(input: { emptyTranscript: boolean }): boolean {
+  return !input.emptyTranscript;
+}
+
+export function composerHoverHint(shortcut: string, capability: string | null): string {
+  return capability ? `${shortcut} ${capability}` : shortcut;
+}
+
+export function composerConnectionTooltip(input: {
+  label: string;
+  subtitle: string | null;
+  caption: string | null;
+}): string {
+  const parts = [input.label.trim()].filter(Boolean);
+  const subtitle = input.subtitle?.trim() ?? '';
+  if (subtitle && subtitle !== parts[0]) parts.push(subtitle);
+  const caption = input.caption?.trim() ?? '';
+  if (caption && !parts.includes(caption)) parts.push(caption);
+  return parts.join(' · ');
 }

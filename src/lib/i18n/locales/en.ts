@@ -2772,7 +2772,7 @@ export const en = {
     },
     composer: {
       placeholder: "Message an agent…",
-      placeholderInvite: "Send the first message to {agent}…",
+      placeholderInvite: "Send a message…",
       queueOnlyHint: "You can't add more mid-run; you can queue for the next turn.",
       inputAria: "Message input",
       selectAgent: "Select agent",
