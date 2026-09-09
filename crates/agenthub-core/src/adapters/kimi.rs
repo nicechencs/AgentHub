@@ -504,6 +504,7 @@ fn apply_kimi_api_key_credentials(path: &Path, credentials: &Value) -> Result<()
         fill_missing_kimi_provider_type(&mut doc, slug.as_str())?;
     }
     if changed {
+        crate::integrations::agents::kimi::managed::complete_kimi_live_toml(&mut doc)?;
         atomic_write(path, doc.to_string().as_bytes())?;
     }
     Ok(())

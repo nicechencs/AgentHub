@@ -29,8 +29,10 @@ import {
   isCommandSearchMode,
   type ChatActionDef,
 } from './chat-actions';
+import { composerEnterShouldSubmit } from './chat-composer-model';
 import { lastTurnOutcome } from './chat-turn-outcome';
 import { kiroChatAllowsCommandSearch, kiroChatStance } from './chat-kiro-model';
+import { chatEffortLabel, chatModelDisplayName } from './chat-model-labels';
 import { bindRuntimeSnapshotToAgent, isRuntimeSessionLocked } from './chat-runtime-model';
 
 export {
@@ -178,6 +180,7 @@ export function useChatPage() {
   const navigate = useNavigate();
   const [searchFocusNonce, setSearchFocusNonce] = useState(0);
   const [historyRevealNonce, setHistoryRevealNonce] = useState(0);
+  const [composerFocusNonce, setComposerFocusNonce] = useState(0);
   const [commandIndex, setCommandIndex] = useState(0);
   const hasLatestReply = useMemo(
     () => messages.some((m) => m.role === 'agent' && m.content.trim()),
@@ -199,9 +202,9 @@ export function useChatPage() {
         actions.push({
           id: `runtime-model:${model.id}`,
           kind: 'local',
-          label: `${t('chat.composer.switchModel')}：${model.id}`,
+          label: `${t('chat.composer.switchModel')}：${chatModelDisplayName(model.id, t)}`,
           description: model.id === runtimeOps.settings.model ? t('chat.runtimeOps.currentModel') : undefined,
-          keywords: ['model', '模型', '换模型', model.id],
+          keywords: ['model', '模型', '换模型', model.id, chatModelDisplayName(model.id, t)],
         });
       }
       if (runtimeOps.settings.model) {
@@ -209,9 +212,9 @@ export function useChatPage() {
           actions.push({
             id: `runtime-effort:${effort}`,
             kind: 'local',
-            label: `${t('chat.runtimeOps.effort')}：${effort}`,
+            label: `${t('chat.runtimeOps.effort')}：${chatEffortLabel(effort, t)}`,
             description: effort === runtimeOps.settings.effort ? t('chat.runtimeOps.currentSetting') : undefined,
-            keywords: ['think', 'thinking', 'effort', '思考', '思考强度', effort],
+            keywords: ['think', 'thinking', 'effort', '思考', '思考强度', effort, chatEffortLabel(effort, t)],
           });
         }
       }
@@ -267,6 +270,7 @@ export function useChatPage() {
       }
       if (action.kind === 'draft' && action.draftText) {
         setDraft(action.draftText);
+        setComposerFocusNonce((n) => n + 1);
         return;
       }
       if (action.id === 'new-session') {
@@ -344,7 +348,12 @@ export function useChatPage() {
         setDraft('');
         return true;
       }
-      if (e.key === 'Enter' && !e.shiftKey) {
+      if (composerEnterShouldSubmit({
+        key: e.key,
+        shiftKey: e.shiftKey,
+        composing: e.nativeEvent.isComposing,
+        keyCode: e.nativeEvent.keyCode,
+      })) {
         e.preventDefault();
         const action = commandItems[clampActionIndex(commandIndex, commandItems.length)];
         if (action) runChatAction(action);
@@ -600,6 +609,8 @@ export function useChatPage() {
     retryLast: send.retryLast,
     handleCancel: send.handleCancel,
     queuedFollowUp: send.queuedFollowUp,
+    queuedFollowUpCount: send.queuedFollowUpCount,
+    composerFocusNonce,
     clearQueuedFollowUp: send.clearQueuedFollowUp,
     continueLegacyGrok: send.continueLegacyGrok,
     runtime: activeRuntime,

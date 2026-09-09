@@ -55,6 +55,10 @@ export function queuedFollowUpLabel(queue: readonly string[]): string | null {
   return items.join('；');
 }
 
+export function queuedFollowUpCount(queue: readonly string[]): number {
+  return queue.map((item) => item.trim()).filter(Boolean).length;
+}
+
 export function restoreQueuedFollowUpOnCancel(input: {
   draft: string;
   queue: readonly string[];
@@ -79,9 +83,12 @@ export function grokCanQueueFollowUp(input: {
 export function grokLegacyContinueKind(input: {
   agentId?: string | null;
   runtimeEnabled?: boolean;
+  /** Snapshot has arrived for this conversation. Unknown must not look like legacy. */
+  runtimeReady: boolean;
   hasMessages: boolean;
   nativeSessionId?: string | null;
 }): 'continue' | 'newChat' | null {
+  if (!input.runtimeReady) return null;
   if (!isAcpFollowUpAgent(input.agentId) || input.runtimeEnabled || !input.hasMessages) return null;
   // Kiro session ids belong to the original ACP process. HTTP ids also cannot
   // be loaded by the CLI; keep old history without offering a lossy upgrade.

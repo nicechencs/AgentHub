@@ -23,7 +23,7 @@ const SVG_AGENT_IDS = [
   'kiro',
 ] as const;
 
-const BLEED_AGENT_IDS = ['workbuddy', 'kiro', 'zcode'] as const;
+const BLEED_AGENT_IDS = ['kiro', 'zcode'] as const;
 
 function markup(agentId: string, size: 'sm' | 'md' = 'sm'): string {
   return renderToStaticMarkup(
@@ -124,6 +124,8 @@ describe('AgentLogo', () => {
     }
     expect(markup('claude')).toContain('data-logo-fit="glyph"');
     expect(markup('claude')).toContain('object-contain');
+    expect(markup('workbuddy')).toContain('data-logo-fit="glyph"');
+    expect(markup('workbuddy')).toContain('object-contain');
     expect(markup('unknown-agent')).not.toContain('data-logo-fit');
   });
 

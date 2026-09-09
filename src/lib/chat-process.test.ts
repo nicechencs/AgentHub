@@ -1,13 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { createTranslator } from '@/lib/i18n';
 import {
+  classifyToolAction,
+  formatProcessHeadline,
+  formatToolStep,
+  formatUsageStep,
+  formatVisibleUsage,
   hasProcessDetails,
+  isProtocolProcessStep,
   mergeThinkingText,
   phaseFromMessageStatus,
   processKey,
   processPhaseLabel,
   reduceProcessEvent,
   stepSummary,
+  toolActionTarget,
+  toolActionTone,
+  usageByScope,
   type ProcessMap,
 } from '@/lib/chat-process';
 import type { ChatEvent, ChatMessage } from '@/lib/types';
@@ -119,7 +128,7 @@ describe('chat-process reduceProcessEvent', () => {
     expect(map['1:claude']?.steps).toHaveLength(2);
     expect(map['1:claude']?.steps[0]).toMatchObject({ type: 'tool', name: 'Read' });
     expect(map['1:claude']?.steps[1]).toMatchObject({ type: 'thinking' });
-    expect(stepSummary(map['1:claude']!.steps[0], t)).toContain('Read');
+    expect(stepSummary(map['1:claude']!.steps[0], t)).toBe('正在读取');
   });
 
   it('agentFinished maps status to phase', () => {
@@ -146,13 +155,13 @@ describe('chat-process reduceProcessEvent', () => {
   it('maps raw step notes to the translated label (zh)', () => {
     expect(
       stepSummary({ type: 'raw', text: '{…}', note: 'unrecognized structured line' }, t),
-    ).toBe('无法识别的输出行');
+    ).toBe('有一行输出没法展示');
     expect(
       stepSummary({ type: 'raw', text: 'oops', note: 'non-json line in structured mode' }, t),
-    ).toBe('结构化模式下出现非 JSON 行');
-    expect(stepSummary({ type: 'raw', text: 'x', note: 'line too long' }, t)).toBe('输出行过长');
+    ).toBe('有一行不是正常输出');
+    expect(stepSummary({ type: 'raw', text: 'x', note: 'line too long' }, t)).toBe('有一行太长，已截断');
     expect(stepSummary({ type: 'raw', text: '{…}', note: '无法识别的输出行' }, t)).toBe(
-      '无法识别的输出行',
+      '有一行输出没法展示',
     );
   });
 
@@ -160,15 +169,15 @@ describe('chat-process reduceProcessEvent', () => {
     const tEn = createTranslator('en');
     expect(
       stepSummary({ type: 'raw', text: '{…}', note: 'unrecognized structured line' }, tEn),
-    ).toBe('Unrecognized output line');
+    ).toBe("One line couldn't be shown");
     expect(
       stepSummary({ type: 'raw', text: 'oops', note: 'non-json line in structured mode' }, tEn),
-    ).toBe('Non-JSON line in structured mode');
+    ).toBe("One line wasn't normal output");
     expect(stepSummary({ type: 'raw', text: 'x', note: 'line too long' }, tEn)).toBe(
-      'Output line too long',
+      'One line was too long and was cut',
     );
     expect(stepSummary({ type: 'raw', text: '{…}', note: '无法识别的输出行' }, tEn)).toBe(
-      'Unrecognized output line',
+      "One line couldn't be shown",
     );
   });
 
@@ -711,5 +720,163 @@ describe('chat-process reduceProcessEvent', () => {
     expect(steps[0]).toMatchObject({ type: 'tool', id: 'tool-1' });
     expect(steps[199]).toMatchObject({ type: 'tool', id: 'tool-200' });
     expect(steps.some((s) => s.type === 'tool' && s.id === 'tool-0')).toBe(false);
+  });
+
+  it('keeps latest turn and session usage separately', () => {
+    let map: ProcessMap = reduceProcessEvent(
+      {},
+      { type: 'agentStarted', turn: 1, agent: 'codex', command: 'codex app-server' },
+      1,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'codex',
+        step: { type: 'usage', scope: 'turn', input: 10, output: 1 },
+      },
+      2,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'codex',
+        step: { type: 'usage', scope: 'session', input: 40, output: 4, total: 44, contextWindow: 1000 },
+      },
+      3,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'codex',
+        step: { type: 'usage', scope: 'turn', input: 100, output: 20, cacheRead: 40 },
+      },
+      4,
+    );
+    const steps = map['1:codex']?.steps ?? [];
+    expect(steps.filter((s) => s.type === 'usage')).toHaveLength(2);
+    const { turn, session } = usageByScope(steps);
+    expect(turn).toMatchObject({ input: 100, output: 20, cacheRead: 40 });
+    expect(session).toMatchObject({ input: 40, output: 4, total: 44, contextWindow: 1000 });
+    expect(formatUsageStep(turn!, t)).toBe('当前轮 输入 100 · 输出 20 · 缓存 40');
+    expect(formatUsageStep(session!, t)).toBe('累计 输入 40 · 输出 4 · 44 / 1000');
+    expect(formatVisibleUsage(steps, t)).toBe(
+      '用量 当前轮 输入 100 · 输出 20 · 缓存 40 · 累计 输入 40 · 输出 4 · 44 / 1000',
+    );
+    expect(stepSummary(turn!, t)).toBe('当前轮 输入 100 · 输出 20 · 缓存 40');
+  });
+});
+
+describe('chat-process human tool labels', () => {
+  const tEn = createTranslator('en');
+
+  it('classifies vendor tool names into read / edit / execute', () => {
+    expect(classifyToolAction('Read')).toBe('read');
+    expect(classifyToolAction('read_file')).toBe('read');
+    expect(classifyToolAction('Glob')).toBe('read');
+    expect(classifyToolAction('Grep')).toBe('read');
+    expect(classifyToolAction('web_search')).toBe('read');
+    expect(classifyToolAction('WebFetch')).toBe('read');
+    expect(classifyToolAction('list_dir')).toBe('read');
+    expect(classifyToolAction('Write')).toBe('edit');
+    expect(classifyToolAction('Edit')).toBe('edit');
+    expect(classifyToolAction('StrReplace')).toBe('edit');
+    expect(classifyToolAction('apply_patch')).toBe('edit');
+    expect(classifyToolAction('file_change')).toBe('edit');
+    expect(classifyToolAction('NotebookEdit')).toBe('edit');
+    expect(classifyToolAction('Bash')).toBe('execute');
+    expect(classifyToolAction('command_execution')).toBe('execute');
+    expect(classifyToolAction('function_call')).toBe('execute');
+    expect(classifyToolAction('tool')).toBe('execute');
+    expect(classifyToolAction('TodoWrite')).toBe('execute');
+  });
+
+  it('picks a short path or command as the visible target', () => {
+    expect(toolActionTarget('Read', { path: 'src/lib/chat-process.ts' })).toBe('lib/chat-process.ts');
+    expect(toolActionTarget('Bash', { command: 'ls -la' })).toBe('ls -la');
+    expect(toolActionTarget('Read src/foo.ts')).toBe('src/foo.ts');
+    expect(toolActionTarget('Read')).toBeUndefined();
+  });
+
+  it('maps tool status to live / done / failed', () => {
+    expect(toolActionTone('start')).toBe('live');
+    expect(toolActionTone('running')).toBe('live');
+    expect(toolActionTone('in_progress')).toBe('live');
+    expect(toolActionTone('end')).toBe('done');
+    expect(toolActionTone('completed')).toBe('done');
+    expect(toolActionTone('error')).toBe('failed');
+  });
+
+  it('formats tool rows in zh and en without exposing protocol names', () => {
+    expect(
+      formatToolStep({ type: 'tool', name: 'Read', status: 'start', input: { path: 'README.md' } }, t),
+    ).toBe('正在读取 README.md');
+    expect(
+      formatToolStep({ type: 'tool', name: 'Read', status: 'end', input: { path: 'README.md' } }, t),
+    ).toBe('已读取 README.md');
+    expect(
+      formatToolStep(
+        { type: 'tool', name: 'apply_patch', status: 'start', input: { path: 'src/a.ts' } },
+        t,
+      ),
+    ).toBe('正在修改 src/a.ts');
+    expect(
+      formatToolStep(
+        { type: 'tool', name: 'command_execution', status: 'start', input: { command: 'pnpm test' } },
+        t,
+      ),
+    ).toBe('正在执行 pnpm test');
+    expect(
+      formatToolStep({ type: 'tool', name: 'Bash', status: 'error' }, t),
+    ).toBe('没法执行');
+    expect(
+      formatToolStep({ type: 'tool', name: 'Read', status: 'start', input: { path: 'README.md' } }, tEn),
+    ).toBe('Reading README.md');
+    expect(
+      formatToolStep({ type: 'tool', name: 'Write', status: 'end', input: { path: 'a.ts' } }, tEn),
+    ).toBe('Edited a.ts');
+    expect(
+      formatToolStep({ type: 'tool', name: 'Bash', status: 'start', input: { command: 'ls' } }, tEn),
+    ).toBe('Running ls');
+    expect(stepSummary({ type: 'tool', name: 'Read', status: 'start' }, t)).toBe('正在读取');
+    expect(stepSummary({ type: 'tool', name: 'Read', status: 'start' }, tEn)).toBe('Reading');
+  });
+
+  it('summarizes a turn as the current human action, not step counts', () => {
+    expect(formatProcessHeadline([], 'running', t)).toBe('生成中');
+    expect(
+      formatProcessHeadline(
+        [{ type: 'tool', name: 'Read', status: 'start', input: { path: 'README.md' } }],
+        'running',
+        t,
+      ),
+    ).toBe('正在读取 README.md');
+    expect(
+      formatProcessHeadline(
+        [
+          { type: 'tool', name: 'Read', status: 'end', input: { path: 'README.md' } },
+          { type: 'tool', name: 'Write', status: 'end', input: { path: 'a.ts' } },
+          { type: 'tool', name: 'Bash', status: 'end' },
+        ],
+        'ok',
+        t,
+      ),
+    ).toBe('已完成 · 已读取 · 已修改 · 已执行');
+    expect(
+      formatProcessHeadline(
+        [{ type: 'tool', name: 'Read', status: 'start', input: { path: 'README.md' } }],
+        'running',
+        tEn,
+      ),
+    ).toBe('Reading README.md');
+    expect(isProtocolProcessStep({ type: 'status', phase: 'starting', detail: 'thread.started' })).toBe(
+      true,
+    );
+    expect(isProtocolProcessStep({ type: 'tool', name: 'Read', status: 'start' })).toBe(false);
   });
 });

@@ -14,6 +14,8 @@ import {
   chatAgentPickerEmptyCopy,
   chatAgentPickerEmptyKind,
   chatEscapeShouldCancel,
+  chatModKShouldFocusHistory,
+  composerEnterShouldSend,
   chatAgentPickerRows,
   chatConnectionKind,
   chatConnectionOptions,
@@ -700,8 +702,9 @@ describe('messageStatusLabel', () => {
   it('uses process phase while running', () => {
     expect(messageStatusLabel(t, 'running', processView('queued'))).toBe('排队中');
     expect(messageStatusLabel(t, 'running', processView('starting'))).toBe('启动中');
-    expect(messageStatusLabel(t, 'running', processView('running'))).toBe('生成中');
-    expect(messageStatusLabel(t, 'running')).toBe('生成中');
+    expect(messageStatusLabel(t, 'running', processView('running'))).toBe('正在想');
+    expect(messageStatusLabel(t, 'running', processView('running'), true)).toBe('正在写');
+    expect(messageStatusLabel(t, 'running')).toBe('正在想');
   });
 
   it('maps terminal and unknown statuses', () => {
@@ -734,6 +737,55 @@ describe('chatEscapeShouldCancel', () => {
     expect(chatEscapeShouldCancel({ ...idle, canceling: true })).toBe(false);
     expect(chatEscapeShouldCancel({ ...idle, sending: false })).toBe(false);
     expect(chatEscapeShouldCancel({ ...idle, key: 'Enter' })).toBe(false);
+  });
+});
+
+describe('composerEnterShouldSend', () => {
+  it('sends on Enter and keeps Shift+Enter as a newline', () => {
+    expect(composerEnterShouldSend({ key: 'Enter', shiftKey: false })).toBe(true);
+    expect(composerEnterShouldSend({ key: 'Enter', shiftKey: true })).toBe(false);
+    expect(composerEnterShouldSend({ key: 'a', shiftKey: false })).toBe(false);
+  });
+
+  it('does not send while the IME is composing', () => {
+    expect(composerEnterShouldSend({ key: 'Enter', shiftKey: false, isComposing: true })).toBe(false);
+    expect(
+      composerEnterShouldSend({
+        key: 'Enter',
+        shiftKey: false,
+        nativeEvent: { isComposing: true },
+      }),
+    ).toBe(false);
+    expect(
+      composerEnterShouldSend({
+        key: 'Enter',
+        shiftKey: false,
+        nativeEvent: { keyCode: 229 },
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('chatModKShouldFocusHistory', () => {
+  const base = {
+    key: 'k',
+    metaKey: false,
+    ctrlKey: true,
+    altKey: false,
+    shiftKey: false,
+    overlayOpen: false,
+  };
+
+  it('focuses history search with Ctrl/Cmd+K', () => {
+    expect(chatModKShouldFocusHistory(base)).toBe(true);
+    expect(chatModKShouldFocusHistory({ ...base, ctrlKey: false, metaKey: true })).toBe(true);
+  });
+
+  it('yields to overlays, Shift, and Alt', () => {
+    expect(chatModKShouldFocusHistory({ ...base, overlayOpen: true })).toBe(false);
+    expect(chatModKShouldFocusHistory({ ...base, shiftKey: true })).toBe(false);
+    expect(chatModKShouldFocusHistory({ ...base, altKey: true })).toBe(false);
+    expect(chatModKShouldFocusHistory({ ...base, ctrlKey: false, metaKey: false })).toBe(false);
   });
 });
 

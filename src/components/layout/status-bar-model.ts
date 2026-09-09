@@ -15,13 +15,13 @@ export function statusBarForwardKind(input: {
 export function statusBarForwardMessageKey(kind: StatusBarForwardKind): MessageKey {
   switch (kind) {
     case 'running':
-      return 'routes.runtime.running';
+      return 'chrome.localForwardRunning';
     case 'restarting':
-      return 'routes.localForward.restarting';
+      return 'chrome.localForwardRestarting';
     case 'unavailable':
-      return 'routes.runtime.unavailable';
+      return 'chrome.localForwardUnavailable';
     default:
-      return 'routes.runtime.stopped';
+      return 'chrome.localForwardStopped';
   }
 }
 

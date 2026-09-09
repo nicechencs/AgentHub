@@ -67,7 +67,10 @@ pub use install_service::{
 pub use live_write_authority::{LiveWriteAuthority, LiveWriteGuard};
 pub use mcp_inventory::{list_mcp_inventory, McpInventory, McpServerEntry, McpSourceFile};
 pub use plugin_apply::{
-    disable_plugin, disable_plugin_with, enable_plugin, enable_plugin_with, PluginApplyContext,
+    disable_plugin, disable_plugin_with, enable_plugin, enable_plugin_with, install_plugin,
+    install_plugin_with, list_available_plugins, list_available_plugins_with,
+    preview_plugin_install, preview_plugin_install_with, uninstall_plugin, uninstall_plugin_with,
+    PluginApplyContext, PluginInstallOptions, PluginUninstallOptions,
 };
 pub use plugin_inventory::{
     list_plugin_inventory, PluginAgentStatus, PluginComponent, PluginEntry, PluginInventory,

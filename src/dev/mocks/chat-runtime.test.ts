@@ -27,10 +27,32 @@ describe('mock chat runtime', () => {
     });
   });
 
-  it('keeps a non-Codex conversation on the legacy path', async () => {
+  it('enables a new empty Claude conversation with image input', async () => {
     const chat = createMockChatPort();
     const conversation = await chat.createConversation(['claude']);
-    await expect(chat.runtimeSnapshot(conversation.id)).resolves.toMatchObject({ enabled: false });
+    await expect(chat.runtimeSnapshot(conversation.id)).resolves.toMatchObject({
+      enabled: true,
+      phase: 'idle',
+    });
+    const options = await chat.runtimeOptions(conversation.id);
+    expect(options.imageInput).not.toBe(false);
+    expect(options.steer).toBe(false);
+    expect(options.models.map((item) => item.id)).toEqual(['sonnet', 'opus', 'haiku']);
+    const started = await chat.runtimeStart(conversation.id, 'what color?', 'client-claude-img', {
+      images: [{ path: '/tmp/mock-chat.png' }],
+    });
+    expect(started.enabled).toBe(true);
+    expect(started.phase).toBe('running');
+  });
+
+  it('keeps Claude history and other agents on the print path', async () => {
+    const chat = createMockChatPort();
+    const history = await chat.createConversation(['claude']);
+    await chat.chatSend(history.id, 'old turn', () => {});
+    await expect(chat.runtimeSnapshot(history.id)).resolves.toMatchObject({ enabled: false });
+
+    const pi = await chat.createConversation(['pi']);
+    await expect(chat.runtimeSnapshot(pi.id)).resolves.toMatchObject({ enabled: false });
   });
 
   it('rejects upgrading Kiro history without changing its runtime snapshot', async () => {
@@ -78,8 +100,6 @@ describe('mock chat runtime', () => {
       conversationId: conversation.id,
     });
   });
-});
-
 
   it('defaults spark on switch; learns to hide over-reported medium after start reject', async () => {
     const chat = createMockChatPort();
@@ -130,3 +150,57 @@ describe('mock chat runtime', () => {
     expect(ok.effort).toBe('high');
     expect(started.phase).not.toBe('idle');
   });
+});
+
+describe('mock runtime streaming feel', () => {
+  beforeEach(resetChatMock);
+
+  async function waitFor(
+    chat: ReturnType<typeof createMockChatPort>,
+    conversationId: string,
+    pred: (snapshot: Awaited<ReturnType<typeof chat.runtimeSnapshot>>) => boolean,
+  ) {
+    const started = Date.now();
+    while (Date.now() - started < 2000) {
+      const snapshot = await chat.runtimeSnapshot(conversationId);
+      if (pred(snapshot)) return snapshot;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error('timed out waiting for mock runtime snapshot');
+  }
+
+  it('shows thinking with an empty body, then grows durable text without a pre-buffered drip', async () => {
+    const chat = createMockChatPort();
+    const conversation = await chat.createConversation(['codex']);
+    const started = await chat.runtimeStart(conversation.id, 'read the project', 'client-stream');
+    expect(started.currentMessage).toMatchObject({ status: 'running', content: '' });
+
+    const thinking = await waitFor(chat, conversation.id, (snapshot) =>
+      snapshot.events.some(
+        (item) =>
+          item.event.type === 'agentProcess'
+          && item.event.step.type === 'thinking'
+          && item.event.step.done !== true,
+      ),
+    );
+    expect(thinking.currentMessage?.content).toBe('');
+
+    const firstText = await waitFor(
+      chat,
+      conversation.id,
+      (snapshot) => (snapshot.currentMessage?.content.length ?? 0) > 0,
+    );
+    const first = firstText.currentMessage?.content ?? '';
+    expect(first.length).toBeGreaterThan(0);
+
+    const later = await waitFor(
+      chat,
+      conversation.id,
+      (snapshot) => (snapshot.currentMessage?.content.length ?? 0) > first.length,
+    );
+    const grown = later.currentMessage?.content ?? '';
+    expect(grown.startsWith(first)).toBe(true);
+    expect(grown).toContain('【codex mock】');
+    expect(grown).toContain('模拟回复');
+  });
+});

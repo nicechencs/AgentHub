@@ -295,6 +295,16 @@ svg.lucide[data-icon='nav'] {
   animation: chat-stream-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+.chat-stream-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: var(--accent);
+  animation: chat-stream-caret 1s step-end infinite;
+}
+
 @keyframes agent-thinking-shimmer {
   from {
     background-position: 200% center;
@@ -314,6 +324,12 @@ svg.lucide[data-icon='nav'] {
     opacity: 1;
     filter: blur(0);
     transform: translateY(0);
+  }
+}
+
+@keyframes chat-stream-caret {
+  50% {
+    opacity: 0;
   }
 }
 
@@ -367,6 +383,7 @@ svg.lucide[data-icon='nav'] {
 
   .agent-thinking-dots > span,
   .chat-stream-in,
+  .chat-stream-caret,
   .agent-progress-running {
     animation: none !important;
   }

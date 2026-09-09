@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Puzzle } from 'lucide-react';
+import { Plus, Puzzle } from 'lucide-react';
 import { AgentTabStrip, type AgentTabId } from '@/components/layout/AgentTabStrip';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
@@ -17,12 +17,21 @@ import { useToast } from '@/components/ui/toast';
 import { agentDisplayName } from '@/config/agents';
 import { filterByPageVisibleAgent } from '@/lib/agent-visibility';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
-import { disablePlugin, enablePlugin, listPluginInventory } from '@/lib/api/plugins';
+import {
+  disablePlugin,
+  enablePlugin,
+  installPlugin,
+  listPluginInventory,
+  uninstallPlugin,
+} from '@/lib/api/plugins';
 import { openPathInFileManager } from '@/lib/api/skill';
 import type { PluginEntry, PluginInventory } from '@/lib/backend/contracts/plugin-types';
 import type { AgentKey } from '@/lib/types';
+import { canInstallListedPlugin } from './can-install';
 import { PluginDetailPanel } from './PluginDetailPanel';
+import { PluginInstallDialog } from './PluginInstallDialog';
 import { PluginPackList } from './PluginPackList';
+import { PluginUninstallDialog } from './PluginUninstallDialog';
 import { pluginEmptyCopy, pluginScanFailedAgents } from './plugin-empty';
 import { StorageKey } from '@/lib/ui-preferences';
 
@@ -40,7 +49,14 @@ export default function PluginsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | string | null>(null);
   const [filterAgent, setFilterAgent] = useState<AgentTabId>('all');
+  const [installOpen, setInstallOpen] = useState(false);
+  const [installBusy, setInstallBusy] = useState(false);
+  const [installError, setInstallError] = useState<unknown>(null);
+  const [uninstallTarget, setUninstallTarget] = useState<PluginEntry | null>(null);
+  const [uninstallBusy, setUninstallBusy] = useState(false);
+  const [uninstallError, setUninstallError] = useState<unknown>(null);
   const inspect = useSideSplit<PluginEntry>({ storageKey: PLUGINS_PREVIEW_WIDTH_KEY });
+  const showInstall = filterAgent === 'all' || canInstallListedPlugin(filterAgent);
 
   const load = useCallback(async (): Promise<PluginInventory | null> => {
     setLoading(true);
@@ -129,6 +145,37 @@ export default function PluginsPage() {
     }
   }
 
+  async function runInstall(agent: AgentKey, source: string, confirmed: boolean) {
+    setInstallBusy(true);
+    setInstallError(null);
+    try {
+      await installPlugin(agent, source, { confirmed });
+      await load();
+      setInstallOpen(false);
+      toast({ title: t('plugins.install.ok'), variant: 'success' });
+    } catch (e) {
+      setInstallError(e instanceof Error ? e : String(e));
+    } finally {
+      setInstallBusy(false);
+    }
+  }
+
+  async function runUninstall(plugin: PluginEntry, keepData: boolean) {
+    setUninstallBusy(true);
+    setUninstallError(null);
+    try {
+      await uninstallPlugin(plugin.agent, plugin.name, plugin.marketplace, { keepData });
+      inspect.close();
+      setUninstallTarget(null);
+      await load();
+      toast({ title: t('plugins.uninstall.ok'), variant: 'success' });
+    } catch (e) {
+      setUninstallError(e instanceof Error ? e : String(e));
+    } finally {
+      setUninstallBusy(false);
+    }
+  }
+
   async function togglePlugin(plugin: PluginEntry, enabled: boolean) {
     try {
       if (enabled) {
@@ -159,6 +206,10 @@ export default function PluginsPage() {
       onClose={() => inspect.close()}
       onLocate={locateSource}
       onToggle={togglePlugin}
+      onUninstall={(plugin) => {
+        setUninstallError(null);
+        setUninstallTarget(plugin);
+      }}
     />
   ) : null;
 
@@ -196,6 +247,17 @@ export default function PluginsPage() {
           aria-label={t('plugins.page.filterAria')}
         />
         <div className={pageRhythm.chromeActions}>
+          {showInstall ? (
+            <Button
+              size="sm"
+              onClick={() => {
+                setInstallError(null);
+                setInstallOpen(true);
+              }}
+            >
+              <Plus className="h-3.5 w-3.5" /> {t('plugins.install.button')}
+            </Button>
+          ) : null}
           <PageRefreshButton
             loading={loading}
             onClick={() => void load()}
@@ -213,7 +275,18 @@ export default function PluginsPage() {
           title={emptyCopy.title}
           description={emptyCopy.description}
           action={
-            emptyCopy.showRefresh ? (
+            showInstall ? (
+              <Button
+                size="sm"
+                className="mt-2"
+                onClick={() => {
+                  setInstallError(null);
+                  setInstallOpen(true);
+                }}
+              >
+                <Plus className="h-3.5 w-3.5" /> {t('plugins.install.button')}
+              </Button>
+            ) : emptyCopy.showRefresh ? (
               <Button size="sm" variant="outline" className="mt-2" onClick={() => void load()}>
                 {t('plugins.empty.refresh')}
               </Button>
@@ -235,6 +308,29 @@ export default function PluginsPage() {
           />
         </>
       )}
+      <PluginInstallDialog
+        open={installOpen}
+        defaultAgent={filterAgent === 'all' ? 'grok' : filterAgent}
+        busy={installBusy}
+        error={installError}
+        onClose={() => {
+          if (installBusy) return;
+          setInstallOpen(false);
+          setInstallError(null);
+        }}
+        onInstall={runInstall}
+      />
+      <PluginUninstallDialog
+        plugin={uninstallTarget}
+        busy={uninstallBusy}
+        error={uninstallError}
+        onClose={() => {
+          if (uninstallBusy) return;
+          setUninstallTarget(null);
+          setUninstallError(null);
+        }}
+        onUninstall={runUninstall}
+      />
     </WorkbenchSplitPage>
   );
 }

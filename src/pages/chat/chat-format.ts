@@ -16,6 +16,7 @@ const CHAT_FAILURE_KEY = {
   thinkingUnsupported: 'chat.failure.thinkingUnsupported',
   usageLimit: 'chat.failure.usageLimit',
   sendFailed: 'chat.failure.sendFailed',
+  garbledOutput: 'chat.failure.garbledOutput',
   interrupted: 'chat.turnOutcome.interruptedHint',
 } as const satisfies Record<string, MessageKey>;
 import type { AgentProcessView } from '@/lib/chat-process';
@@ -537,6 +538,14 @@ export function localizeChatFailure(text: string, t?: TranslateFn): string {
       return copy('thinkingUnsupported', '这个模型不支持当前思考设置。请点重试。');
     }
     return copy('sendFailed', '这次发送没成功。请点重试。');
+  }
+  if (
+    hay.includes('unrecognized')
+    || hay.includes('无法识别的输出')
+    || hay.includes('non-json line')
+    || hay.includes('非 json')
+  ) {
+    return copy('garbledOutput', '有一段输出没法展示。可以重试。');
   }
   return text;
 }

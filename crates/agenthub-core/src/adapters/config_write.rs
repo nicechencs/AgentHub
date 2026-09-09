@@ -119,14 +119,37 @@ pub(crate) fn write_toml_config(
                 "TOML settings_config.content (or config) must be a string".into(),
             )
         })?;
+    // Prefer explicit settings model over a stale default inside content
+    // (custom OpenAI relays must not keep forced kimi-k2 when UI set grok-*).
+    let settings_model = object
+        .get("model")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
 
     let live = match std::fs::read_to_string(path) {
         Ok(content) => content,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(error) => return Err(error.into()),
     };
-    let merged = merge_toml_provider_config(expected, &live, desired)?;
+    let mut merged = merge_toml_provider_config(expected, &live, desired)?;
+    if expected == AgentId::Kimi {
+        if let Some(model) = settings_model {
+            merged = apply_kimi_settings_model_override(&merged, &model)?;
+        }
+    }
     crate::utils::atomic::atomic_write(path, merged.as_bytes())
+}
+
+fn apply_kimi_settings_model_override(toml_text: &str, model: &str) -> Result<String> {
+    use toml_edit::DocumentMut;
+    let mut doc = toml_text.parse::<DocumentMut>().map_err(|error| {
+        crate::error::AppError::InvalidArg(format!("Kimi TOML config is invalid: {error}"))
+    })?;
+    doc["default_model"] = toml_edit::value(model);
+    crate::integrations::agents::kimi::managed::complete_kimi_live_toml(&mut doc)?;
+    Ok(doc.to_string())
 }
 
 fn merge_toml_provider_config(expected: AgentId, live: &str, desired: &str) -> Result<String> {

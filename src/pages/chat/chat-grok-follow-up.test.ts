@@ -6,6 +6,7 @@ import {
   grokLegacyContinueKind,
   grokShouldFlushFollowUp,
   prependQueuedFollowUp,
+  queuedFollowUpCount,
   queuedFollowUpLabel,
   restoreQueuedFollowUpOnCancel,
   shiftQueuedFollowUp,
@@ -84,6 +85,9 @@ describe('busy composer send', () => {
     expect(queuedFollowUpLabel(prependQueuedFollowUp(['第三条'], '第二条'))).toBe('第二条；第三条');
     expect(appendQueuedFollowUp(['已排队'], '  ')).toEqual(['已排队']);
     expect(queuedFollowUpLabel([])).toBeNull();
+    expect(queuedFollowUpCount([])).toBe(0);
+    expect(queuedFollowUpCount(['第二条', '第三条'])).toBe(2);
+    expect(queuedFollowUpCount(['  ', '第三条'])).toBe(1);
     expect(shiftQueuedFollowUp([])).toBeNull();
   });
 
@@ -164,6 +168,7 @@ describe('grok follow-up after the current turn', () => {
       grokLegacyContinueKind({
         agentId: 'grok',
         runtimeEnabled: false,
+        runtimeReady: true,
         hasMessages: true,
         nativeSessionId: 'sess-1',
       }),
@@ -172,6 +177,7 @@ describe('grok follow-up after the current turn', () => {
       grokLegacyContinueKind({
         agentId: 'grok',
         runtimeEnabled: false,
+        runtimeReady: true,
         hasMessages: true,
         nativeSessionId: null,
       }),
@@ -180,6 +186,7 @@ describe('grok follow-up after the current turn', () => {
       grokLegacyContinueKind({
         agentId: 'grok',
         runtimeEnabled: true,
+        runtimeReady: true,
         hasMessages: true,
         nativeSessionId: 'sess-1',
       }),
@@ -188,6 +195,7 @@ describe('grok follow-up after the current turn', () => {
       grokLegacyContinueKind({
         agentId: 'codex',
         runtimeEnabled: false,
+        runtimeReady: true,
         hasMessages: true,
         nativeSessionId: 'thread-1',
       }),
@@ -196,22 +204,46 @@ describe('grok follow-up after the current turn', () => {
       grokLegacyContinueKind({
         agentId: 'kiro',
         runtimeEnabled: false,
+        runtimeReady: true,
         hasMessages: true,
         nativeSessionId: 'sess-kiro',
       }),
     ).toBe('newChat');
   });
 
+  it('does not treat a missing snapshot as an old chat', () => {
+    expect(
+      grokLegacyContinueKind({
+        agentId: 'grok',
+        runtimeEnabled: false,
+        runtimeReady: false,
+        hasMessages: true,
+        nativeSessionId: null,
+      }),
+    ).toBeNull();
+    expect(
+      grokLegacyContinueKind({
+        agentId: 'kiro',
+        runtimeEnabled: false,
+        runtimeReady: false,
+        hasMessages: true,
+        nativeSessionId: 'sess-kiro',
+      }),
+    ).toBeNull();
+  });
+
   it('keeps Kiro HTTP history out of the ACP continuation flow', () => {
     expect(grokLegacyContinueKind({
       agentId: 'kiro',
       runtimeEnabled: false,
+      runtimeReady: true,
       hasMessages: true,
       nativeSessionId: 'kiro-http:conversation-1',
     })).toBe('newChat');
     expect(grokLegacyContinueKind({
       agentId: 'kiro',
       runtimeEnabled: true,
+      runtimeReady: true,
       hasMessages: true,
       nativeSessionId: 'session-1',
     })).toBeNull();

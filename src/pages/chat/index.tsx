@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MessagesSquare } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
@@ -19,7 +19,13 @@ import {
   kiroChatBannerCopy,
   kiroChatStance,
 } from './chat-kiro-model';
-import { chatEscapeShouldCancel, chatMainColumnClass, chatStageClass } from './chat-model';
+import {
+  chatEscapeShouldCancel,
+  chatModKShouldFocusHistory,
+  chatMainColumnClass,
+  chatStageClass,
+} from './chat-model';
+import { chatModShiftIShouldOpenModel } from './chat-model-labels';
 import { formatChatSessionRecord } from './chat-format';
 import { chatBusySendMode, grokLegacyContinueKind } from './chat-grok-follow-up';
 import { ChatMarkdownPreviewPanel } from './ChatMarkdownPreviewPanel';
@@ -58,6 +64,7 @@ export default function ChatPage() {
   });
   const navigate = useNavigate();
   const { t } = useI18n();
+  const [modelMenuOpenNonce, setModelMenuOpenNonce] = useState(0);
   const openMarkdownPreview = useCallback(
     (next: string) => {
       if (!isMarkdownFilePath(next)) return false;
@@ -89,6 +96,38 @@ export default function ChatPage() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (
+        chatModKShouldFocusHistory({
+          key: e.key,
+          metaKey: e.metaKey,
+          ctrlKey: e.ctrlKey,
+          altKey: e.altKey,
+          shiftKey: e.shiftKey,
+          overlayOpen: hasEscPriorityOverlay(),
+        })
+      ) {
+        e.preventDefault();
+        page.runChatAction({
+          id: 'focus-history-search',
+          kind: 'local',
+          keywords: [],
+        });
+        return;
+      }
+      if (
+        chatModShiftIShouldOpenModel({
+          key: e.key,
+          metaKey: e.metaKey,
+          ctrlKey: e.ctrlKey,
+          altKey: e.altKey,
+          shiftKey: e.shiftKey,
+          overlayOpen: hasEscPriorityOverlay(),
+        })
+      ) {
+        e.preventDefault();
+        setModelMenuOpenNonce((n) => n + 1);
+        return;
+      }
+      if (
         !chatEscapeShouldCancel({
           key: e.key,
           sending: page.sendingHere,
@@ -109,6 +148,7 @@ export default function ChatPage() {
   }, [
     page.cancelSending,
     page.cancelingHere,
+    page.runChatAction,
     page.sendingHere,
     preview.expanded,
     preview.mounted,
@@ -259,6 +299,7 @@ export default function ChatPage() {
                   const kind = grokLegacyContinueKind({
                     agentId: page.primaryAgent,
                     runtimeEnabled: page.runtime?.enabled,
+                    runtimeReady: page.runtime != null,
                     hasMessages: page.messages.length > 0,
                     nativeSessionId: page.active.nativeSessionId,
                   });
@@ -281,7 +322,17 @@ export default function ChatPage() {
                           >
                             {t('chat.composer.legacyContinueAction')}
                           </Button>
-                        ) : null}
+                        ) : (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            disabled={!page.actionContext.newChatAllowed}
+                            onClick={() => void page.handleNewChat()}
+                          >
+                            {t('chat.composer.legacyNewChatAction')}
+                          </Button>
+                        )}
                       </div>
                     </Notice>
                   );
@@ -323,7 +374,10 @@ export default function ChatPage() {
                       : undefined
                   }
                   queuedFollowUp={page.queuedFollowUp}
+                  queuedFollowUpCount={page.queuedFollowUpCount}
                   onClearQueuedFollowUp={page.clearQueuedFollowUp}
+                  focusNonce={page.composerFocusNonce}
+                  modelMenuOpenNonce={modelMenuOpenNonce}
                   onCancel={() => void page.cancelSending()}
                   onSelectAgent={(id) => void page.selectConversationAgentId(id)}
                   onSwitchConnection={(id) => void page.handleSwitchConnection(id)}
@@ -362,6 +416,7 @@ export default function ChatPage() {
                       <ChatRuntimeExtras
                         enabled
                         inline
+                        modelMenuOpenNonce={modelMenuOpenNonce}
                         draft={page.draft}
                         commandSearchOpen={page.commandSearchOpen}
                         commandIndex={page.commandIndex}
@@ -385,6 +440,8 @@ export default function ChatPage() {
                         extensions={page.runtimeOps.extensions}
                         selectedSkillIds={page.runtimeOps.selectedSkillIds}
                         onToggleSkill={page.runtimeOps.toggleSkill}
+                        agentId={page.primaryAgent}
+                        showSkillPicker={page.primaryAgent !== 'codex'}
                       />
                     ) : undefined
                   }

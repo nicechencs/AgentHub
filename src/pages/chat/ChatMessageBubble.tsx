@@ -6,7 +6,10 @@ import { MarkdownView } from '@/components/shared/MarkdownView';
 import { Button } from '@/components/ui/button';
 import { Hint } from '@/components/ui/tooltip';
 import { agentDisplayName } from '@/config/agents';
-import { hasProcessDetails, processPhaseLabel } from '@/lib/chat-process';
+import {
+  formatVisibleUsage,
+  hasProcessDetails,
+} from '@/lib/chat-process';
 import type { AgentProcessView } from '@/lib/chat-process';
 import type { ChatMessage } from '@/lib/types';
 import {
@@ -17,6 +20,7 @@ import {
   sanitizeCliChatText,
 } from './chat-format';
 import { messageStatusLabel } from './chat-model';
+import { streamingActivity, streamingPlaceholderKey } from './chat-streaming';
 import { ChatProcessPanel } from './ChatProcessPanel';
 
 export function ChatMessageBubble({
@@ -124,18 +128,22 @@ function AgentBubble({
     message.status === 'cancelled' ||
     message.status === 'timeout' ||
     (message.status === 'ok' && localized !== message.content);
+  const running = message.status === 'running';
+  const hasContent = Boolean(displayContent);
   const statusText = messageStatusLabel(
     t,
     looksFailed && message.status === 'ok' ? 'failed' : message.status,
     process,
+    hasContent,
   );
-  const running = message.status === 'running';
+  const activity = running ? streamingActivity(process, hasContent) : null;
   const showRetry = isLastTurn && looksFailed;
   const showProcessPanel = Boolean(
     process &&
       hasProcessDetails(process) &&
       (!running || !displayContent || process.steps.length > 0 || Boolean(process.stderr)),
   );
+  const usageText = formatVisibleUsage(process?.steps, t);
 
   return (
     <div id={`chat-msg-${message.id}`} className="group flex min-w-0 gap-3">
@@ -145,6 +153,7 @@ function AgentBubble({
           <span className="font-medium text-secondary">{agentDisplayName(agent)}</span>
           {statusText && <span>{statusText}</span>}
           {message.durationMs > 0 && <span>{formatDurationMs(message.durationMs)}</span>}
+          {usageText ? <span>{usageText}</span> : null}
           {showRetry && (
             <Hint
               label={
@@ -171,24 +180,22 @@ function AgentBubble({
             exitCode={message.exitCode}
           />
         ) : null}
-        <div className="min-w-0 overflow-hidden text-body leading-relaxed text-primary">
+        <div
+          className="min-w-0 overflow-hidden text-body leading-relaxed text-primary"
+          data-chat-stream-activity={activity ?? undefined}
+        >
           {displayContent ? (
-            <div className={running ? 'chat-stream-in' : undefined}>
+            <div>
               <MarkdownView
                 content={displayContent}
                 variant="chat"
                 localBasePath={localBasePath}
                 onOpenLocal={onOpenLocal}
               />
+              {running ? <span className="chat-stream-caret" aria-hidden /> : null}
             </div>
           ) : running ? (
-            <AgentThinking
-              label={
-                process
-                  ? t('chat.bubble.generatingPhase', { phase: processPhaseLabel(process.phase, t) })
-                  : t('chat.bubble.generating')
-              }
-            />
+            <AgentThinking label={t(streamingPlaceholderKey(process))} />
           ) : (
             <span className="text-muted">{displayError || t('chat.bubble.noOutput')}</span>
           )}

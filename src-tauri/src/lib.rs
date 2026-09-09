@@ -26,8 +26,8 @@ pub fn run() {
     tauri::Builder::default()
         // Must be first so a second process exits before other plugins init.
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            tray::show_main_window(app);
             crate::shell_open_chat::ingest_args(app, &args);
+            tray::show_main_window(app);
         }))
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -81,6 +81,9 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if let WindowEvent::Focused(true) = event {
+                crate::shell_open_chat::rewake_pending_open_chat(window.app_handle());
+            }
             if let WindowEvent::CloseRequested { api, .. } = event {
                 let Some(state) = window.try_state::<AppState>() else {
                     return;
@@ -177,10 +180,14 @@ pub fn run() {
             commands::agent_visibility::set_agent_hidden,
             // MCP inventory (read-only)
             commands::mcp::list_mcp_inventory,
-            // Plugin / extension pack inventory + enable/disable (not MCP)
+            // Plugin / extension pack inventory + enable/disable/install/uninstall (not MCP)
             commands::plugins::list_plugin_inventory,
             commands::plugins::enable_plugin,
             commands::plugins::disable_plugin,
+            commands::plugins::list_available_plugins,
+            commands::plugins::preview_plugin_install,
+            commands::plugins::install_plugin,
+            commands::plugins::uninstall_plugin,
             // Provider
             commands::provider::list_provider_presets,
             commands::provider::list_providers,

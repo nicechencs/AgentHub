@@ -23,18 +23,48 @@ describe('chat layout wiring', () => {
   it('lets Escape stop an in-flight turn', () => {
     expect(source('index.tsx')).toContain('chatEscapeShouldCancel');
     expect(source('index.tsx')).toContain("e.key");
-    expect(source('ChatComposer.tsx')).toContain('chat.composer.stop');
+    expect(source('ChatComposer.tsx')).toContain('composerStopMessageKey');
+    expect(source('ChatComposer.tsx')).toContain('data-help="chat-stop"');
   });
 
-  it('keeps send available while a turn is in progress', () => {
+  it('opens the model menu from Ctrl/Cmd+Shift+I and labels models in plain language', () => {
+    expect(source('index.tsx')).toContain('chatModShiftIShouldOpenModel');
+    expect(source('index.tsx')).toContain('modelMenuOpenNonce');
+    expect(source('ChatRuntimeExtras.tsx')).toContain('chatModelDisplayName');
+    expect(source('ChatRuntimeExtras.tsx')).toContain('chatEffortHint');
+    expect(source('ChatRuntimeExtras.tsx')).toContain('data-help="chat-model"');
+    expect(source('ChatComposer.tsx')).toContain('chatModelDisplayName');
+    expect(source('ChatComposer.tsx')).toContain('chatEffortHint');
+    expect(translate('zh', 'chat.runtimeOps.effortHintHigh')).toBe('可能更慢');
+    expect(translate('zh', 'chat.composer.shortcutOpenModel')).toBe('Ctrl+Shift+I');
+  });
+
+  it('keeps send available while a turn is in progress, with a labeled stop', () => {
     expect(source('index.tsx')).toContain('chatBusySendMode');
     const composer = source('ChatComposer.tsx');
-    const sendingAt = composer.indexOf('{sending ? (');
-    const sendWhileBusyAt = composer.indexOf('data-help="chat-send"', sendingAt);
-    const stopAt = composer.indexOf("t('chat.composer.stop')", sendingAt);
-    expect(sendingAt).toBeGreaterThan(0);
-    expect(sendWhileBusyAt).toBeGreaterThan(sendingAt);
-    expect(stopAt).toBeGreaterThan(sendWhileBusyAt);
+    expect(composer).toContain('composerPrimaryAction');
+    expect(composer).toContain('composerShowsSubmitButton');
+    expect(composer).toContain('data-help="chat-send"');
+    expect(composer).toContain('data-help="chat-stop"');
+    const stopAt = composer.indexOf('data-help="chat-stop"');
+    const sendAt = composer.indexOf('data-help="chat-send"');
+    expect(stopAt).toBeGreaterThan(0);
+    expect(sendAt).toBeGreaterThan(stopAt);
+  });
+
+  it('names Enter / Shift+Enter, shows the queue, and restores composer focus', () => {
+    const composer = source('ChatComposer.tsx');
+    expect(composer).toContain('composerEnterShouldSubmit');
+    expect(composer).toContain('composerShortcutMessageKey');
+    expect(composer).toContain('data-composer-shortcut');
+    expect(composer).toContain('composerQueuedFollowUpView');
+    expect(composer).toContain('chat.composer.queuedCount');
+    expect(composer).toContain('keepComposerFocus');
+    expect(composer).toContain('enterKeyHint="send"');
+    expect(source('use-chat-page.ts')).toContain('composerEnterShouldSubmit');
+    expect(source('index.tsx')).toContain('queuedFollowUpCount');
+    expect(translate('zh', 'chat.composer.shortcutSend')).toContain('Enter 发送');
+    expect(translate('zh', 'chat.composer.stopping')).toBe('正在停止');
   });
 
   it('opens markdown files in a right-hand preview pane', () => {
@@ -80,6 +110,9 @@ describe('chat layout wiring', () => {
     expect(transcript).toContain('chatStarterActions');
     expect(transcript).toContain('onPickStarter');
     expect(transcript).toContain('chat.transcript.identity');
+    expect(transcript).toContain('chat.transcript.startersHint');
+    expect(source('ChatComposer.tsx')).toContain('focusNonce');
+    expect(source('index.tsx')).toContain('focusNonce={page.composerFocusNonce}');
     expect(transcript).toContain('firstBlocker');
     expect(transcript).not.toContain('variant="default"');
     expect(source('index.tsx')).toContain('onPickStarter={page.runChatAction}');
@@ -170,7 +203,10 @@ describe('chat layout wiring', () => {
     expect(rail).toContain('AgentLogo');
     expect(rail).toContain('hint={false}');
     expect(rail).not.toContain('conversationAgentLine');
-    expect(rail).not.toContain('cwdShortName');
+    expect(rail).toContain('cwdShortName');
+    expect(rail).toContain('isBlankConversationDraft');
+    expect(rail).toContain("t('chat.rail.draft')");
+    expect(rail).toContain("t('chat.rail.searchPlaceholder')");
   });
 
   it('keeps history actions visible and focusable for runtime composers', () => {
@@ -193,6 +229,8 @@ describe('chat layout wiring', () => {
     expect(requests).toContain('requestAllowsAlways');
     expect(requests).toContain("submit('allow_always')");
     expect(requests).toContain('chat.runtime.allowAlways');
+    expect(requests).toContain('runtimeRequestTitle');
+    expect(requests).toContain('chat.runtime.allowAlwaysHint');
   });
 
   it('shows Kiro ask-or-full permission mode in session settings and the header', () => {
@@ -214,6 +252,13 @@ describe('chat layout wiring', () => {
     expect(page).toContain('data-help="chat-kiro-oneshot"');
     expect(source('ChatComposer.tsx')).toContain('kiroChatComposerPlaceholder');
     expect(source('use-chat-page.ts')).toContain('kiroChatAllowsCommandSearch');
+  });
+
+  it('waits for a snapshot before warning, and offers new chat when images cannot attach', () => {
+    const page = source('index.tsx');
+    expect(page).toContain('runtimeReady: page.runtime != null');
+    expect(page).toContain('legacyNewChatAction');
+    expect(page).toContain('handleNewChat');
   });
 
   it('uses shared Button for chrome icons and composer chips', () => {
@@ -246,6 +291,10 @@ describe('chat layout wiring', () => {
     expect(panel).toContain("t('chat.process.runDetails')");
     expect(panel).toContain("t('chat.process.stderr')");
     expect(panel).toContain("t('chat.process.exitCode'");
+    expect(panel).toContain("t('chat.process.details')");
+    expect(panel).toContain('formatToolStep');
+    expect(panel).toContain('formatProcessHeadline');
+    expect(panel).not.toContain('{step.name} · {step.status}');
     expect(panel).not.toContain('>stderr<');
     expect(panel).not.toContain('exit {exitCode}');
     expect(translate('zh', 'chat.process.runDetails')).toBe('运行详情');
@@ -253,5 +302,19 @@ describe('chat layout wiring', () => {
     expect(translate('zh', 'chat.process.stderr')).toBe('错误输出');
     expect(translate('en', 'chat.process.stderr')).toBe('Error output');
     expect(translate('en', 'chat.process.runDetails')).not.toBe('Run details');
+    expect(translate('zh', 'chat.process.toolRead')).toBe('正在读取');
+    expect(translate('zh', 'chat.process.toolEdit')).toBe('正在修改');
+    expect(translate('zh', 'chat.process.toolRun')).toBe('正在执行');
+    expect(translate('en', 'chat.process.toolRead')).toBe('Reading');
+    expect(translate('en', 'chat.process.toolEdit')).toBe('Editing');
+    expect(translate('en', 'chat.process.toolRun')).toBe('Running');
+    expect(translate('zh', 'chat.process.details')).toBe('细节');
+    expect(translate('en', 'chat.process.details')).toBe('Details');
+    expect(translate('zh', 'chat.process.usage')).toBe('用量');
+    expect(translate('en', 'chat.process.usage')).toBe('Usage');
+    expect(source('ChatMessageBubble.tsx')).toContain('formatVisibleUsage');
+    expect(source('ChatProcessPanel.tsx')).toContain('formatVisibleUsage');
+    expect(translate('zh', 'chat.process.usageTurn')).toBe('当前轮');
+    expect(translate('zh', 'chat.process.usageSession')).toBe('累计');
   });
 });

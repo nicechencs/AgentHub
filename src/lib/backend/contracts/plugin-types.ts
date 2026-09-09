@@ -52,8 +52,26 @@ export interface PluginInventory {
   sources?: PluginSourceFile[];
 }
 
+export interface PluginInstallOptions {
+  confirmed: boolean;
+}
+
+export interface PluginUninstallOptions {
+  /** Default true: keep the vendor plugin data directory. */
+  keepData: boolean;
+}
+
 export interface PluginPort {
   listInventory(): Promise<PluginInventory>;
+  listAvailable(agent: AgentKey): Promise<PluginEntry[]>;
+  previewInstall(agent: AgentKey, source: string): Promise<PluginEntry>;
+  install(agent: AgentKey, source: string, options: PluginInstallOptions): Promise<void>;
+  uninstall(
+    agent: AgentKey,
+    name: string,
+    marketplace: string | null | undefined,
+    options: PluginUninstallOptions,
+  ): Promise<void>;
   enable(agent: AgentKey, name: string, marketplace?: string | null): Promise<void>;
   disable(agent: AgentKey, name: string, marketplace?: string | null): Promise<void>;
 }

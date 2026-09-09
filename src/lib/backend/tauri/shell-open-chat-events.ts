@@ -28,9 +28,8 @@ export async function takePendingOpenChatCwd(): Promise<string | null> {
   return openChatCwdFromPayload({ cwd: cwd ?? undefined });
 }
 
-export async function onOpenChatCwd(
-  handler: (cwd: string) => void,
-): Promise<() => void> {
+/** Event is a wake-up only; the folder always comes from takePending. */
+export async function onOpenChatCwd(handler: () => void): Promise<() => void> {
   if (!isTauriApp()) {
     throw unavailableError(
       '系统右键打开对话',
@@ -39,9 +38,8 @@ export async function onOpenChatCwd(
   }
   try {
     const { listen } = await import('@tauri-apps/api/event');
-    const unlisten = await listen<{ cwd?: unknown }>(OPEN_CHAT_CWD_EVENT, (event) => {
-      const cwd = openChatCwdFromPayload(event.payload);
-      if (cwd !== null) handler(cwd);
+    const unlisten = await listen(OPEN_CHAT_CWD_EVENT, () => {
+      handler();
     });
     return unlisten;
   } catch (error) {
@@ -50,4 +48,36 @@ export async function onOpenChatCwd(
       error instanceof Error ? error.message : String(error),
     );
   }
+}
+
+/**
+ * Wake the GUI when a folder handoff may be waiting: event, window focus, or
+ * the page becoming visible again after hide-to-tray.
+ */
+export async function subscribeOpenChatCwdWakeups(
+  handler: () => void,
+): Promise<() => void> {
+  const unsubs: Array<() => void> = [await onOpenChatCwd(handler)];
+
+  if (typeof document !== 'undefined') {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') handler();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    unsubs.push(() => document.removeEventListener('visibilitychange', onVisible));
+  }
+
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    const unlistenFocus = await getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+      if (focused) handler();
+    });
+    unsubs.push(unlistenFocus);
+  } catch {
+    // Focus events are extra wake-ups; the folder event still works.
+  }
+
+  return () => {
+    for (const unsub of unsubs) unsub();
+  };
 }

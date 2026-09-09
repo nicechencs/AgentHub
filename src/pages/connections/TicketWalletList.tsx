@@ -67,6 +67,7 @@ import {
 import { Hint, Tip } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
+import type { TranslateFn } from '@/lib/i18n';
 import type { BindingView, TicketView, TicketWallet } from '@/lib/backend/contracts/ticket';
 import type { AgentKey } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -315,7 +316,7 @@ export function TicketDetailPanel({
     <Card
       id={id}
       variant="plain"
-      className="mt-3 flex flex-col gap-3 bg-canvas p-3 text-xs"
+      className="mt-3 flex flex-col gap-3 bg-canvas p-3"
     >
       {body}
       <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
@@ -387,6 +388,41 @@ function PiDefaultModelSection({
   );
 }
 
+function occupancyField(field: TicketDetailField, t: TranslateFn): boolean {
+  return field.label === t('connections.list.catalogStatus')
+    || field.label === t('connections.list.liveStatus');
+}
+
+function detailAvailabilityChip(
+  extras: TicketDetailExtras | null | undefined,
+  t: TranslateFn,
+) {
+  if (!extras) return null;
+  if (extras.authStatus || extras.secretTail?.trim()) return ticketAuthChip(extras, t);
+  if (!extras.authLabel) return null;
+  const chip = ticketAuthChip(extras, t);
+  if (!chip) return null;
+  if (chip.tone === 'warning' || chip.label === t('connections.list.authConfigured')) return chip;
+  return null;
+}
+
+function TicketDetailSection({
+  title,
+  children,
+  quiet = false,
+}: {
+  title: string;
+  children: React.ReactNode;
+  quiet?: boolean;
+}) {
+  return (
+    <section className="space-y-1.5">
+      <h3 className={quiet ? 'text-meta font-medium text-muted' : 'text-body font-medium'}>{title}</h3>
+      {children}
+    </section>
+  );
+}
+
 function TicketDetailBody({
   piDefaultModel,
   onSwitchPiDefaultModel,
@@ -425,16 +461,41 @@ function TicketDetailBody({
   files?: TicketDetailExtras['credentialFiles'];
 }) {
   const { t } = useI18n();
+  const authChip = detailAvailabilityChip(extras, t);
+  const occupancy = overview.filter((field) => occupancyField(field, t));
+  const connection = overview.filter((field) => !occupancyField(field, t));
+  const showPi = Boolean(piDefaultModel && piDefaultModel.kind !== 'hidden');
+  const showUsage = hasQuota || Boolean(tokenRemaining) || Boolean(tokenUsage);
+  const showRecords = Boolean(
+    (agentId && files && files.length > 0)
+    || timeline.length > 0
+    || extras?.refreshTokenPreview
+    || diagnostics.length > 0,
+  );
   return (
-    <div className="flex flex-col gap-3 text-xs">
-      <PiDefaultModelSection
-        view={piDefaultModel}
-        onSwitch={onSwitchPiDefaultModel}
-      />
-      {hasQuota || tokenRemaining || tokenUsage ? (
-        <div>
-          <p className="text-meta text-muted">{t('connections.list.usage')}</p>
-          <div className="mt-1.5 flex flex-col gap-1.5">
+    <div className="flex flex-col gap-3">
+      {authChip || occupancy.length > 0 ? (
+        <TicketDetailSection title={t('connections.list.sectionAvailability')}>
+          {authChip ? (
+            <Badge variant={authChip.tone === 'warning' ? 'warning' : 'default'}>
+              {authChip.label}
+            </Badge>
+          ) : null}
+          {occupancy.map((field) => (
+            <DetailRow
+              key={`${field.label}:${field.value}`}
+              label={field.label}
+              value={field.value}
+              mono={field.mono}
+              copyable={field.copyable}
+            />
+          ))}
+        </TicketDetailSection>
+      ) : null}
+
+      {showUsage ? (
+        <TicketDetailSection title={t('connections.list.usage')}>
+          <div className="flex flex-col gap-1.5">
             {has7d ? (
               <QuotaBar
                 label={t('connections.list.quota7dUsed')}
@@ -474,28 +535,32 @@ function TicketDetailBody({
               />
             ) : null}
           </div>
-        </div>
+        </TicketDetailSection>
       ) : null}
 
-      {overview.length > 0 ? (
-        <div className="grid gap-1.5 text-secondary sm:grid-cols-2">
-          {overview.map((field) => (
+      {connection.length > 0 || showPi ? (
+        <TicketDetailSection title={t('connections.list.sectionWhere')}>
+          {connection.map((field) => (
             <DetailRow
               key={`${field.label}:${field.value}`}
               label={field.label}
               value={field.value}
               mono={field.mono}
               copyable={field.copyable}
+              className={field.copyable ? 'w-full' : undefined}
             />
           ))}
-        </div>
+          <PiDefaultModelSection
+            view={piDefaultModel}
+            onSwitch={onSwitchPiDefaultModel}
+          />
+        </TicketDetailSection>
       ) : null}
 
       {showClients ? (
-        <section className="space-y-1.5">
-          <h3 className="text-sm font-medium">{t('connections.list.clientsTitle')}</h3>
+        <TicketDetailSection title={t('connections.list.sectionWho')}>
           {bindingRows.length === 0 ? (
-            <p className="text-sm text-muted">{t('connections.list.clientsEmpty')}</p>
+            <p className="text-body text-muted">{t('connections.list.clientsEmpty')}</p>
           ) : (
             <ul className="space-y-1">
               {bindingRows.map((row) => (
@@ -503,7 +568,7 @@ function TicketDetailBody({
                   key={`${row.agentId}:${row.routeLabel ?? ''}:${row.localUrl ?? ''}`}
                   className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 py-1"
                 >
-                  <span className="flex min-w-[5.5rem] items-center gap-1.5 text-sm font-medium">
+                  <span className="flex min-w-[5.5rem] items-center gap-1.5 text-body font-medium">
                     <AgentDot agentId={row.agentId} size="sm" title={null} />
                     <span className="truncate">{row.agentLabel}</span>
                   </span>
@@ -512,61 +577,56 @@ function TicketDetailBody({
                   ) : null}
                   <span className="shrink-0 text-meta text-secondary">{row.status}</span>
                   {row.localUrl ? (
-                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-secondary">{row.localUrl}</span>
+                    <span className="min-w-0 flex-1 break-all font-mono text-meta text-secondary">{row.localUrl}</span>
                   ) : null}
                 </li>
               ))}
             </ul>
           )}
-        </section>
+        </TicketDetailSection>
       ) : null}
 
-      {timeline.length > 0 ? (
-        <section className="space-y-1.5">
-          <h3 className="text-sm font-medium">{t('connections.list.timelineTitle')}</h3>
-          <div className="grid gap-1.5 text-secondary sm:grid-cols-2">
-            {timeline.map((field) => (
-              <DetailRow
-                key={`${field.label}:${field.value}`}
-                label={field.label}
-                value={field.value}
-                mono={field.mono}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {extras?.refreshTokenPreview ? (
-        <DetailRow
-          label={t('connections.list.refreshToken')}
-          value={extras.refreshTokenPreview}
-          mono
-        />
-      ) : null}
-
-      {diagnostics.length > 0 ? (
-        <details className="group rounded-card border border-border bg-subtle/60">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-secondary marker:content-none [&::-webkit-details-marker]:hidden">
-            <span>{t('connections.list.diagnostics')}</span>
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180" aria-hidden />
-          </summary>
-          <div className="grid gap-1.5 border-t border-border px-3 py-3 text-xs">
-            {diagnostics.map((field) => (
-              <DetailRow
-                key={`${field.label}:${field.value}`}
-                label={field.label}
-                value={field.value}
-                mono={field.mono}
-                copyable={field.copyable}
-              />
-            ))}
-          </div>
-        </details>
-      ) : null}
-
-      {agentId && files && files.length > 0 ? (
-        <TicketAuthFiles agentId={agentId} files={files} />
+      {showRecords ? (
+        <TicketDetailSection quiet title={t('connections.list.sectionRecords')}>
+          {agentId && files && files.length > 0 ? (
+            <TicketAuthFiles agentId={agentId} files={files} />
+          ) : null}
+          {timeline.map((field) => (
+            <DetailRow
+              key={`${field.label}:${field.value}`}
+              label={field.label}
+              value={field.value}
+              mono={field.mono}
+            />
+          ))}
+          {extras?.refreshTokenPreview ? (
+            <DetailRow
+              label={t('connections.list.refreshToken')}
+              value={extras.refreshTokenPreview}
+              mono
+            />
+          ) : null}
+          {diagnostics.length > 0 ? (
+            <details className="group rounded-card border border-border bg-subtle/60">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-meta font-medium text-secondary marker:content-none [&::-webkit-details-marker]:hidden">
+                <span>{t('connections.list.more')}</span>
+                <ChevronDown className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180" aria-hidden />
+              </summary>
+              <div className="grid gap-1.5 border-t border-border px-3 py-3 text-meta">
+                {diagnostics.map((field) => (
+                  <DetailRow
+                    key={`${field.label}:${field.value}`}
+                    label={field.label}
+                    value={field.value}
+                    mono={field.mono}
+                    copyable={field.copyable}
+                    className={field.copyable ? 'w-full' : undefined}
+                  />
+                ))}
+              </div>
+            </details>
+          ) : null}
+        </TicketDetailSection>
       ) : null}
     </div>
   );

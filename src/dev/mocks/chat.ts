@@ -18,6 +18,7 @@ const runtimeSnapshots = new Map<string, RuntimeSnapshot>();
 const runtimeSettings = new Map<string, RuntimeTurnSettings>();
 const runtimeDeniedEfforts = new Map<string, Set<string>>();
 const runtimeOptionsCache = new Map<string, RuntimeOptions>();
+const runtimeJobs = new Map<string, { runId: string; aborted: boolean }>();
 
 function nowIso() {
   return new Date().toISOString();
@@ -42,8 +43,50 @@ function mockTitle(prompt: string) {
   return t.length <= 30 ? t : `${t.slice(0, 29)}…`;
 }
 
+function mockConversationAgent(conversationId: string): AgentKey | undefined {
+  return mockConversations.find((item) => item.id === conversationId)?.agentIds[0];
+}
+
+/** Same whitelist as core `is_runtime_chat_agent` / frontend `isRuntimeChatAgent`. */
+function isMockRuntimeChatAgent(agent: AgentKey | undefined): boolean {
+  return agent === 'codex' || agent === 'grok' || agent === 'kiro' || agent === 'claude';
+}
+
 function mockRuntimeSteer(conversationId: string): boolean {
-  return mockConversations.find((item) => item.id === conversationId)?.agentIds[0] === 'codex';
+  return mockConversationAgent(conversationId) === 'codex';
+}
+
+function mockRuntimeCatalog(agent: AgentKey | undefined): Pick<RuntimeOptions, 'models' | 'extensions'> {
+  if (agent === 'claude') {
+    const efforts = ['low', 'medium', 'high', 'xhigh', 'max'];
+    return {
+      models: ['sonnet', 'opus', 'haiku'].map((id) => ({
+        id,
+        efforts,
+        defaultEffort: 'high',
+      })),
+      extensions: [],
+    };
+  }
+  return {
+    models: [
+      { id: 'gpt-mock', efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' },
+      // Live Codex 0.150+ over-reports medium/xhigh for spark; learn-from-reject filters later.
+      { id: 'gpt-5.3-codex-spark', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high' },
+    ],
+    extensions: [
+      {
+        id: '/mock/skills/demo/SKILL.md',
+        name: 'demo',
+        kind: 'skill',
+        installed: true,
+        enabled: true,
+        loaded: false,
+        callable: true,
+        path: '/mock/skills/demo/SKILL.md',
+      },
+    ],
+  };
 }
 
 
@@ -104,6 +147,101 @@ export function resetChatMock() {
   runtimeSettings.clear();
   runtimeOptionsCache.clear();
   runtimeDeniedEfforts.clear();
+  for (const job of runtimeJobs.values()) job.aborted = true;
+  runtimeJobs.clear();
+}
+
+function mockRuntimeStillLive(conversationId: string, runId: string): boolean {
+  if (runtimeJobs.get(conversationId)?.runId !== runId) return false;
+  if (runtimeJobs.get(conversationId)?.aborted) return false;
+  const snapshot = runtimeSnapshots.get(conversationId);
+  return Boolean(
+    snapshot
+    && snapshot.runId === runId
+    && (snapshot.phase === 'starting' || snapshot.phase === 'running' || snapshot.phase === 'waiting'),
+  );
+}
+
+function appendMockRuntimeEvent(
+  conversationId: string,
+  event: ChatEvent,
+  patch?: Partial<Pick<RuntimeSnapshot, 'phase' | 'currentMessage'>>,
+): RuntimeSnapshot | null {
+  const current = runtimeSnapshots.get(conversationId);
+  if (!current) return null;
+  const sequence = current.lastSequence + 1;
+  const next: RuntimeSnapshot = {
+    ...current,
+    ...patch,
+    lastSequence: sequence,
+    events: [...current.events, { sequence, event }],
+  };
+  runtimeSnapshots.set(conversationId, next);
+  return next;
+}
+
+function persistMockRuntimeMessages(conversationId: string, user: ChatMessage, agent: ChatMessage) {
+  const rows = mockMessages[conversationId] ?? (mockMessages[conversationId] = []);
+  const withoutTurn = rows.filter((item) => item.turn !== user.turn);
+  withoutTurn.push(user, agent);
+  mockMessages[conversationId] = withoutTurn;
+}
+
+async function playMockRuntimeTurn(input: {
+  conversationId: string;
+  runId: string;
+  prompt: string;
+  agent: AgentKey;
+  turn: number;
+  user: ChatMessage;
+  agentMessage: ChatMessage;
+}) {
+  const { conversationId, runId, prompt, agent, turn, user } = input;
+  let agentMessage = input.agentMessage;
+
+  await delay(80);
+  if (!mockRuntimeStillLive(conversationId, runId)) return;
+  appendMockRuntimeEvent(conversationId, {
+    type: 'agentProcess',
+    turn,
+    agent,
+    step: { type: 'thinking', text: '规划回复结构…', done: false },
+  });
+
+  await delay(90);
+  if (!mockRuntimeStillLive(conversationId, runId)) return;
+  appendMockRuntimeEvent(conversationId, {
+    type: 'agentProcess',
+    turn,
+    agent,
+    step: { type: 'thinking', text: '规划回复结构…', done: true },
+  });
+
+  const parts = [
+    `【${agent} mock】收到：${prompt.slice(0, 80)}\n`,
+    `这是 ${agent} 的模拟回复（浏览器 Vite 原型，未调用真实 CLI）。\n`,
+  ];
+  for (const part of parts) {
+    await delay(120);
+    if (!mockRuntimeStillLive(conversationId, runId)) return;
+    agentMessage = { ...agentMessage, content: `${agentMessage.content}${part}` };
+    appendMockRuntimeEvent(
+      conversationId,
+      { type: 'agentChunk', turn, agent, stream: 'stdout', text: part },
+      { currentMessage: agentMessage },
+    );
+  }
+
+  if (!mockRuntimeStillLive(conversationId, runId)) return;
+  agentMessage = { ...agentMessage, status: 'ok', durationMs: 500 };
+  persistMockRuntimeMessages(conversationId, user, agentMessage);
+  appendMockRuntimeEvent(
+    conversationId,
+    { type: 'agentFinished', turn, agent, message: agentMessage },
+    { phase: 'completed', currentMessage: agentMessage },
+  );
+  appendMockRuntimeEvent(conversationId, { type: 'finished', turn, ok: true, cancelled: false });
+  runtimeJobs.delete(conversationId);
 }
 
 export function createMockChatPort(): ChatPort {
@@ -279,6 +417,56 @@ export function createMockChatPort(): ChatPort {
             type: 'agentProcess',
             turn,
             agent,
+            step: {
+              type: 'tool',
+              id: `mock-edit-${agent}`,
+              name: 'Write',
+              status: 'start',
+              input: { path: 'notes.md' },
+            },
+          });
+          await delay(40);
+          onEvent({
+            type: 'agentProcess',
+            turn,
+            agent,
+            step: {
+              type: 'tool',
+              id: `mock-edit-${agent}`,
+              name: 'Write',
+              status: 'end',
+              result: 'ok',
+            },
+          });
+          onEvent({
+            type: 'agentProcess',
+            turn,
+            agent,
+            step: {
+              type: 'tool',
+              id: `mock-run-${agent}`,
+              name: 'Bash',
+              status: 'start',
+              input: { command: 'ls' },
+            },
+          });
+          await delay(40);
+          onEvent({
+            type: 'agentProcess',
+            turn,
+            agent,
+            step: {
+              type: 'tool',
+              id: `mock-run-${agent}`,
+              name: 'Bash',
+              status: 'end',
+              result: 'README.md',
+            },
+          });
+          onEvent({
+            type: 'agentProcess',
+            turn,
+            agent,
             step: { type: 'thinking', text: '规划回复结构…', done: false },
           });
           const parts = [
@@ -294,6 +482,36 @@ export function createMockChatPort(): ChatPort {
             onEvent({ type: 'agentChunk', turn, agent, stream: 'stdout', text: part });
           }
           const status: ChatMessageStatus = mockCancel.has(conversationId) ? 'cancelled' : 'ok';
+          if (agent === 'grok' && status === 'ok') {
+            onEvent({
+              type: 'agentProcess',
+              turn,
+              agent,
+              step: { type: 'usage', scope: 'turn', input: 128, output: 32, cacheRead: 16 },
+            });
+          }
+          if (agent === 'codex' && status === 'ok') {
+            onEvent({
+              type: 'agentProcess',
+              turn,
+              agent,
+              step: { type: 'usage', scope: 'turn', input: 128, output: 32, cacheRead: 16, total: 160 },
+            });
+            onEvent({
+              type: 'agentProcess',
+              turn,
+              agent,
+              step: {
+                type: 'usage',
+                scope: 'session',
+                input: 512,
+                output: 96,
+                cacheRead: 64,
+                total: 608,
+                contextWindow: 258400,
+              },
+            });
+          }
           const finished: ChatMessage = {
             id: `msg-mock-${mockSeq++}`,
             conversationId,
@@ -331,7 +549,7 @@ export function createMockChatPort(): ChatPort {
       const current = runtimeSnapshots.get(conversationId) ?? {
         conversationId,
         enabled:
-          (conv.agentIds[0] === 'codex' || conv.agentIds[0] === 'grok' || conv.agentIds[0] === 'kiro')
+          isMockRuntimeChatAgent(conv.agentIds[0])
           && (mockMessages[conversationId] ?? []).length === 0,
         runId: null,
         phase: 'idle' as const,
@@ -374,6 +592,7 @@ export function createMockChatPort(): ChatPort {
           models,
           settings,
           settingsFrozen: frozen,
+          imageInput: cached.imageInput !== false,
         };
       }
       // Match core: never invent a catalog mid-turn when nothing was prefetched.
@@ -385,31 +604,19 @@ export function createMockChatPort(): ChatPort {
           models: [],
           extensions: [],
           modelsFromCodex: false,
+          imageInput: true,
           steer: mockRuntimeSteer(conversationId),
         };
       }
+      const catalog = mockRuntimeCatalog(mockConversationAgent(conversationId));
       const options: RuntimeOptions = {
         conversationId,
         settings: runtimeSettings.get(conversationId) ?? {},
         settingsFrozen: false,
-        models: [
-          { id: 'gpt-mock', efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' },
-          // Live Codex 0.150+ over-reports medium/xhigh for spark; learn-from-reject filters later.
-          { id: 'gpt-5.3-codex-spark', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high' },
-        ],
-        extensions: [
-          {
-            id: '/mock/skills/demo/SKILL.md',
-            name: 'demo',
-            kind: 'skill',
-            installed: true,
-            enabled: true,
-            loaded: false,
-            callable: true,
-            path: '/mock/skills/demo/SKILL.md',
-          },
-        ],
+        models: catalog.models,
+        extensions: catalog.extensions,
         modelsFromCodex: false,
+        imageInput: true,
         steer: mockRuntimeSteer(conversationId),
       };
       options.models = applyMockDeniedEfforts(options.models);
@@ -487,9 +694,23 @@ export function createMockChatPort(): ChatPort {
         throw new Error(message);
       }
       const runId = `run-mock-${mockSeq++}`;
-      const agent = mockConversations.find((item) => item.id === conversationId)?.agentIds[0] ?? 'codex';
-      const turn = (mockMessages[conversationId] ?? []).length + 1;
+      const conv = mockConversations.find((item) => item.id === conversationId);
+      const agent = conv?.agentIds[0] ?? 'codex';
+      const msgs = mockMessages[conversationId] ?? (mockMessages[conversationId] = []);
+      const turn = msgs.reduce((max, item) => Math.max(max, item.turn), 0) + 1;
       const event: ChatEvent = { type: 'started', turn, agents: [agent] };
+      const userMessage: ChatMessage = {
+        id: `runtime-user-${mockSeq++}`,
+        conversationId,
+        turn,
+        role: 'user',
+        content: prompt,
+        status: 'ok',
+        durationMs: 0,
+        createdAt: nowIso(),
+      };
+      msgs.push(userMessage);
+      if (conv && !conv.title) conv.title = mockTitle(prompt);
       const currentMessage: ChatMessage = {
         id: `runtime-agent-${mockSeq++}`,
         conversationId,
@@ -511,7 +732,18 @@ export function createMockChatPort(): ChatPort {
         currentMessage,
       };
       runtimeSnapshots.set(conversationId, next);
-      void prompt;
+      const previous = runtimeJobs.get(conversationId);
+      if (previous) previous.aborted = true;
+      runtimeJobs.set(conversationId, { runId, aborted: false });
+      void playMockRuntimeTurn({
+        conversationId,
+        runId,
+        prompt,
+        agent,
+        turn,
+        user: userMessage,
+        agentMessage: currentMessage,
+      });
       return next;
     },
     async runtimeReply(_reply: RuntimeReply) {},
@@ -544,13 +776,21 @@ export function createMockChatPort(): ChatPort {
     async runtimeCancel(conversationId, runId) {
       const current = runtimeSnapshots.get(conversationId);
       if (current?.runId !== runId) throw new Error('run is no longer active');
+      const job = runtimeJobs.get(conversationId);
+      if (job && job.runId === runId) job.aborted = true;
+      const currentMessage = current.currentMessage
+        ? { ...current.currentMessage, status: 'cancelled' as const, error: 'cancelled' }
+        : null;
       runtimeSnapshots.set(conversationId, {
         ...current,
         phase: 'cancelling',
-        currentMessage: current.currentMessage
-          ? { ...current.currentMessage, status: 'cancelled', error: 'cancelled' }
-          : null,
+        currentMessage,
       });
+      if (currentMessage) {
+        const rows = mockMessages[conversationId] ?? [];
+        const user = rows.find((item) => item.turn === currentMessage.turn && item.role === 'user');
+        if (user) persistMockRuntimeMessages(conversationId, user, currentMessage);
+      }
     },
 
     async setChatModel(_agentId, _model) {
