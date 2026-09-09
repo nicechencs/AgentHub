@@ -842,12 +842,15 @@ describe('chatQuestionShouldOpenShortcuts', () => {
 });
 
 describe('chatKeyTargetIsField', () => {
+  const fieldTarget = (partial: { tagName?: string; isContentEditable?: boolean }) =>
+    partial as unknown as EventTarget;
+
   it('treats input, textarea, select, and contenteditable as fields', () => {
-    expect(chatKeyTargetIsField({ tagName: 'TEXTAREA' } as EventTarget)).toBe(true);
-    expect(chatKeyTargetIsField({ tagName: 'INPUT' } as EventTarget)).toBe(true);
-    expect(chatKeyTargetIsField({ tagName: 'SELECT' } as EventTarget)).toBe(true);
-    expect(chatKeyTargetIsField({ isContentEditable: true } as EventTarget)).toBe(true);
-    expect(chatKeyTargetIsField({ tagName: 'BUTTON' } as EventTarget)).toBe(false);
+    expect(chatKeyTargetIsField(fieldTarget({ tagName: 'TEXTAREA' }))).toBe(true);
+    expect(chatKeyTargetIsField(fieldTarget({ tagName: 'INPUT' }))).toBe(true);
+    expect(chatKeyTargetIsField(fieldTarget({ tagName: 'SELECT' }))).toBe(true);
+    expect(chatKeyTargetIsField(fieldTarget({ isContentEditable: true }))).toBe(true);
+    expect(chatKeyTargetIsField(fieldTarget({ tagName: 'BUTTON' }))).toBe(false);
     expect(chatKeyTargetIsField(null)).toBe(false);
   });
 });
