@@ -72,6 +72,68 @@ function composer(partial?: Partial<Parameters<typeof ChatComposer>[0]>) {
   });
 }
 
+describe('ChatComposer footer control', () => {
+  it('shows only Send when idle', () => {
+    const html = renderMarkup(composer({ draft: '', sending: false }));
+    expect(html).toContain('data-help="chat-send"');
+    expect(html).not.toContain('data-help="chat-stop"');
+    expect(html).toContain('aria-label="发送"');
+    expect(html).toContain('disabled');
+  });
+
+  it('shows only Send while generating when the draft can queue', () => {
+    const html = renderMarkup(
+      composer({
+        draft: '是否',
+        sending: true,
+        onQueueAfterTurn: () => undefined,
+      }),
+    );
+    expect(html).toContain('data-help="chat-send"');
+    expect(html).not.toContain('data-help="chat-stop"');
+    expect(html).toContain('aria-label="本轮结束后发送"');
+    expect(html).toContain('h-8 w-8 shrink-0 rounded-full');
+  });
+
+  it('shows Stop when generating has text but no inject or queue channel', () => {
+    const html = renderMarkup(composer({ draft: '是否', sending: true }));
+    expect(html).toContain('data-help="chat-stop"');
+    expect(html).not.toContain('data-help="chat-send"');
+  });
+
+  it('shows only Stop in the same slot while generating and the draft is empty', () => {
+    const html = renderMarkup(
+      composer({
+        draft: '',
+        sending: true,
+        onQueueAfterTurn: () => undefined,
+      }),
+    );
+    expect(html).toContain('data-help="chat-stop"');
+    expect(html).not.toContain('data-help="chat-send"');
+    expect(html).toContain('aria-label="停止"');
+    expect(html).toContain('aria-keyshortcuts="Escape"');
+    expect(html).toContain('h-8 w-8 shrink-0 rounded-full');
+    expect(html).not.toContain('>停止<');
+  });
+
+  it('keeps 正在停止 on the same circular Stop while cancelling', () => {
+    const html = renderMarkup(
+      composer({
+        draft: '',
+        sending: true,
+        canceling: true,
+        onQueueAfterTurn: () => undefined,
+      }),
+    );
+    expect(html).toContain('data-help="chat-stop"');
+    expect(html).not.toContain('data-help="chat-send"');
+    expect(html).toContain('aria-label="正在停止"');
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('disabled');
+  });
+});
+
 describe('ChatComposer empty invite', () => {
   it('uses a generic placeholder and keeps limits on hover titles', () => {
     const html = renderMarkup(composer());

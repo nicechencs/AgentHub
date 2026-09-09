@@ -24,7 +24,9 @@ describe('chat layout wiring', () => {
     expect(source('index.tsx')).toContain('chatEscapeShouldCancel');
     expect(source('index.tsx')).toContain("e.key");
     expect(source('ChatComposer.tsx')).toContain('composerStopMessageKey');
+    expect(source('ChatComposer.tsx')).toContain('composerStopTitle');
     expect(source('ChatComposer.tsx')).toContain('data-help="chat-stop"');
+    expect(source('ChatComposer.tsx')).toContain('aria-keyshortcuts="Escape"');
     expect(source('use-chat-page-send.ts')).toContain('composerKeepsStoppingAfterCancel');
     expect(source('use-chat-page-send.ts')).toContain('composerCancelingVisible');
   });
@@ -62,17 +64,18 @@ describe('chat layout wiring', () => {
     expect(translate('en', 'chat.shortcuts.open')).toBe('Shortcuts');
   });
 
-  it('keeps send available while a turn is in progress, with a labeled stop', () => {
+  it('keeps one footer slot that switches Send and Stop', () => {
     expect(source('index.tsx')).toContain('chatBusySendMode');
     const composer = source('ChatComposer.tsx');
     expect(composer).toContain('composerPrimaryAction');
-    expect(composer).toContain('composerShowsSubmitButton');
+    expect(composer).toContain('composerFooterControl');
+    expect(composer).toContain("footerControl === 'stop'");
     expect(composer).toContain('data-help="chat-send"');
     expect(composer).toContain('data-help="chat-stop"');
-    const stopAt = composer.indexOf('data-help="chat-stop"');
-    const sendAt = composer.indexOf('data-help="chat-send"');
-    expect(stopAt).toBeGreaterThan(0);
-    expect(sendAt).toBeGreaterThan(stopAt);
+    expect(composer).toContain('footerSlotClass');
+    expect(composer).toContain('h-8 w-8 shrink-0 rounded-full');
+    expect(composer).not.toContain('{sending ? (');
+    expect(composer).not.toContain('{showSubmit ? (');
   });
 
   it('names Enter / Shift+Enter, shows the queue, and restores composer focus', () => {
