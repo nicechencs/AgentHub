@@ -418,23 +418,23 @@ Skills, Projects, and Plugins are full-height workbenches with a left inventory 
 ### Plugins
 
 - Left column lists installed plugin / extension packs (Claude, Grok, and Pi today). The row keeps the name, the on-disk version when known, at most one line of description, and exception badges (disabled / untrusted / not installed / version mismatch). Clicking a row opens the right-hand details pane.
-- Details lead with the pack components (bundled MCP is a component, not a list row). Identity fields (version, marketplace, scope, path) follow. Pi also shows the specified version from settings when pinned, and a short note on how upgrade is judged (pinned npm specs are skipped by Pi updates; this page does not probe npm for a newer unpinned version). Claude and Grok packs can be turned on or off; turning off is not uninstall. There is no install button.
+- Details lead with the pack components (bundled MCP is a component, not a list row). Identity fields (version, marketplace, scope, path) follow. Pi also shows the specified version from settings when pinned, and a short note on how upgrade is judged (pinned npm specs are skipped by Pi updates; this page does not probe npm for a newer unpinned version). Claude and Grok packs can be turned on or off (turning off is not uninstall), and can be installed or uninstalled from this page. Pi remains list-only.
 - Empty copy depends on the Agent filter: wired-but-empty (install in that tool, then refresh), planned (list not wired yet), or unsupported (this tool has no pack system of this kind). Loading, empty, and error states stay in the list column. Diagnostic scan sources are not shown in the list. Hiding the sidebar item does not disable `/plugins`.
 
 ### Features (Plugins)
 
 - Lists installed plugin/extension packs for Claude, Grok, and Pi; row shows name, on-disk version, one-line description, exception badges.
 - Details: pack components (bundled MCP is a component), identity fields; Pi shows pinned version note.
-- Claude and Grok can enable/disable listed packs (not uninstall). No install button. Sidebar visibility gated by `pluginsNavVisible`.
+- Claude and Grok can install, uninstall, enable, or disable listed packs. Pi is list-only. Sidebar visibility gated by `pluginsNavVisible`.
 
 ### Agent touchpoints (Plugins)
 
-- Claude / Grok toggle via that Agent’s plugin enable surface; Pi is list-only.
+- Claude / Grok install, uninstall, and toggle via that Agent’s official plugin CLI; Pi is list-only.
 - Empty copy depends on Agent filter: wired-but-empty, planned, or unsupported. Not `Capability::Plugins` (none exists); not `Capability::Mcp`.
 
 ### Out of scope (Plugins)
 
-- Install / uninstall / update of packs remains a proposal.
+- Update of packs remains a proposal. Codex / Pi install and uninstall are not wired.
 - Not the MCP inventory page; hiding the sidebar item does not disable `/plugins`.
 
 ## 10. Agents and MCP

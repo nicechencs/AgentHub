@@ -61,13 +61,13 @@ Screenshots are from the real desktop app; email addresses, local paths, API key
 
 ![Sub2API](docs/assets/screenshots/sub2api.png)
 
-**MCP** currently only scans and lists what was already found; it does not install anything or change each tool’s settings. **Plugins** lists packs already installed in Claude, Grok, and Pi. Claude and Grok packs can be enabled or disabled here; install still happens in each tool.
+**MCP** currently only scans and lists what was already found; it does not install anything or change each tool’s settings. **Plugins** lists packs already installed in Claude, Grok, and Pi. Claude and Grok packs can be installed, uninstalled, enabled, or disabled here. Pi remains list-only.
 
 ## Roadmap
 
 Local forwarding, plugins, and similar management will keep growing. These are currently **in development**.
 
-- **Plugins**: list of Claude / Grok / Pi plugin packs; Claude and Grok packs can be enabled or disabled. No install button.
+- **Plugins**: list of Claude / Grok / Pi plugin packs; Claude and Grok can install, uninstall, enable, or disable. Pi remains list-only. Update is still a proposal.
 - **MCP**: read-only scan only; write and manage are not implemented yet.
 - **Routes**: some connections can already be forwarded; mixed vendors and some protocol conversions are still in progress. Do not treat this as a finished universal router.
 

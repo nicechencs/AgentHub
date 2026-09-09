@@ -121,12 +121,7 @@ pub trait PluginCliRunner: Send + Sync {
         run_cli(program, args, CLI_TIMEOUT)
     }
     /// Tests that only override [`run_plugin`] still intercept install/uninstall.
-    fn run_plugin_with_timeout(
-        &self,
-        program: &Path,
-        args: &[&str],
-        timeout: Duration,
-    ) -> CliRun {
+    fn run_plugin_with_timeout(&self, program: &Path, args: &[&str], timeout: Duration) -> CliRun {
         let _ = timeout;
         self.run_plugin(program, args)
     }
@@ -159,12 +154,7 @@ impl PluginCliRunner for SystemPluginCliRunner {
         run_cli(program, CLI_ARGS, CLI_TIMEOUT)
     }
 
-    fn run_plugin_with_timeout(
-        &self,
-        program: &Path,
-        args: &[&str],
-        timeout: Duration,
-    ) -> CliRun {
+    fn run_plugin_with_timeout(&self, program: &Path, args: &[&str], timeout: Duration) -> CliRun {
         run_cli(program, args, timeout)
     }
 }
@@ -212,13 +202,16 @@ pub fn list_plugin_inventory_with(ctx: &PluginScanContext<'_>) -> PluginInventor
                 agents.push(status);
             }
             AgentId::Grok => {
-                let (status, rows) = scan_wired_agent(
+                let (status, mut rows) = scan_wired_agent(
                     AgentId::Grok,
                     ctx.grok_bin.as_deref(),
                     ctx.runner,
                     &ctx.user_home,
                     || scan_grok_live(&ctx.grok_home, &ctx.user_home),
                 );
+                if status.source.as_deref() == Some("cli") {
+                    apply_grok_config_enablement(&mut rows, &ctx.grok_home);
+                }
                 plugins.extend(rows);
                 agents.push(status);
             }
@@ -782,11 +775,7 @@ fn plugin_from_json(
         return None;
     }
     let (name, marketplace_from_id) = split_name_marketplace(&name);
-    let marketplace = string_field(
-        item,
-        &["marketplace", "market", "sourceMarketplace", "source"],
-    )
-    .or(marketplace_from_id);
+    let marketplace = json_marketplace(item).or(marketplace_from_id);
     let version = string_field(item, &["version"]);
     let scope = string_field(item, &["scope"]);
     let description = string_field(item, &["description"]);
@@ -815,6 +804,36 @@ fn plugin_from_json(
         source: source.into(),
         components,
     })
+}
+
+/// Marketplace name from CLI JSON. Grok's `source` is the install origin
+/// (local path / git URL), not a marketplace, and `marketplace` may be JSON null.
+fn json_marketplace(item: &JsonValue) -> Option<String> {
+    if let Some(value) = string_field(item, &["marketplace", "market", "sourceMarketplace"]) {
+        return Some(value);
+    }
+    if item.get("marketplace").is_some() {
+        return None;
+    }
+    let source = string_field(item, &["source"])?;
+    if looks_like_install_origin(&source) {
+        None
+    } else {
+        Some(source)
+    }
+}
+
+fn looks_like_install_origin(source: &str) -> bool {
+    let source = source.trim();
+    source.starts_with('/')
+        || source.starts_with('.')
+        || source.starts_with('~')
+        || source.starts_with("https://")
+        || source.starts_with("http://")
+        || source.starts_with("git@")
+        || source.starts_with("ssh://")
+        || source.contains('\\')
+        || source.contains('/')
 }
 
 fn string_field(item: &JsonValue, keys: &[&str]) -> Option<String> {
@@ -1276,20 +1295,9 @@ fn scan_grok_live(grok_home: &Path, user_home: &Path) -> Result<Vec<PluginEntry>
         user_home,
         &["data", "cache", "marketplaces"],
     );
-    let enabled = grok_enabled_names(&grok_home.join("config.toml"));
-    let disabled = grok_disabled_names(&grok_home.join("config.toml"));
+    apply_grok_config_enablement(&mut rows, grok_home);
     for row in &mut rows {
-        if disabled
-            .iter()
-            .any(|n| names_match(n, &row.name, row.marketplace.as_deref()))
-        {
-            row.enabled = Some(false);
-        } else if enabled
-            .iter()
-            .any(|n| names_match(n, &row.name, row.marketplace.as_deref()))
-        {
-            row.enabled = Some(true);
-        } else if row.enabled.is_none() {
+        if row.enabled.is_none() {
             row.enabled = Some(false);
         }
         if row.trusted.is_none() {
@@ -1299,6 +1307,7 @@ fn scan_grok_live(grok_home: &Path, user_home: &Path) -> Result<Vec<PluginEntry>
             row.scope = Some("user".into());
         }
     }
+    let enabled = grok_enabled_names(&grok_home.join("config.toml"));
     for listed in &enabled {
         if rows
             .iter()
@@ -1636,6 +1645,29 @@ fn names_match(listed: &str, name: &str, marketplace: Option<&str>) -> bool {
         }
     }
     listed.rsplit('/').next() == Some(name)
+}
+
+/// Grok `plugin list --json` uses `status: "installed"` for both enabled and
+/// disabled packs. Enablement is in `config.toml` `[plugins].enabled/disabled`.
+fn apply_grok_config_enablement(rows: &mut [PluginEntry], grok_home: &Path) {
+    let enabled = grok_enabled_names(&grok_home.join("config.toml"));
+    let disabled = grok_disabled_names(&grok_home.join("config.toml"));
+    if enabled.is_empty() && disabled.is_empty() {
+        return;
+    }
+    for row in rows {
+        if disabled
+            .iter()
+            .any(|n| names_match(n, &row.name, row.marketplace.as_deref()))
+        {
+            row.enabled = Some(false);
+        } else if enabled
+            .iter()
+            .any(|n| names_match(n, &row.name, row.marketplace.as_deref()))
+        {
+            row.enabled = Some(true);
+        }
+    }
 }
 
 fn grok_enabled_names(config: &Path) -> Vec<String> {
