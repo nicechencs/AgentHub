@@ -57,6 +57,7 @@ pub(crate) fn detect_binary_with_env(
         }
     }
 
+    let mut skip_notes: Vec<String> = Vec::new();
     let mut result = (|| {
         for name in &names {
             if let Ok(path) = which(name) {
@@ -71,8 +72,12 @@ pub(crate) fn detect_binary_with_env(
                         agent = agent.as_str(),
                         via = "path_leftover_skip",
                         path = %path.display(),
-                        "skipping leftover AgentHub data-dir npm copy on PATH; not an install target"
+                        "defer leftover AgentHub data-dir npm copy on PATH; not an install target"
                     );
+                    continue;
+                }
+                if let Some(note) = skip_unusable_spawn(agent, &path, "PATH") {
+                    skip_notes.push(note);
                     continue;
                 }
                 let channel = infer_channel(&path, channel_hint);
@@ -98,9 +103,9 @@ pub(crate) fn detect_binary_with_env(
             }
         }
 
-        // Remaining well-known dirs (OS npm global, ~/.local/bin, …).
-        // Never spawn from leftover `~/.agenthub/npm` — that directory is not
-        // an install target for any agent.
+        // Remaining well-known dirs (OS npm global, ~/.npm-global, …).
+        // Leftover `~/.agenthub/npm` is not an install target; a complete
+        // leftover tree may still be used after this scan (DeepSeek Harness).
         for (path, channel) in well_known_bin_paths(agent) {
             if is_under_agenthub_user_npm_prefix(&path) {
                 tracing::info!(
@@ -111,11 +116,15 @@ pub(crate) fn detect_binary_with_env(
                     via = "well_known_leftover_skip",
                     channel = channel,
                     path = %path.display(),
-                    "skipping leftover AgentHub data-dir npm copy in well-known dirs; not an install target"
+                    "defer leftover AgentHub data-dir npm copy in well-known dirs; not an install target"
                 );
                 continue;
             }
             if path.is_file() && is_direct_spawnable(&path) {
+                if let Some(note) = skip_unusable_spawn(agent, &path, "well-known") {
+                    skip_notes.push(note);
+                    continue;
+                }
                 // PATH miss but disk hit — common after install without AgentHub restart.
                 tracing::info!(
                     target: crate::logging::targets::DETECT,
@@ -139,6 +148,32 @@ pub(crate) fn detect_binary_with_env(
             }
         }
 
+        if let Some(path) = leftover_usable_spawn(agent, &names) {
+            tracing::info!(
+                target: crate::logging::targets::DETECT,
+                module = crate::logging::targets::DETECT,
+                op = "detect_binary",
+                agent = agent.as_str(),
+                via = "leftover_agenthub_npm",
+                path = %path.display(),
+                "using leftover AgentHub npm prefix as spawn; complete tree, not an install target"
+            );
+            let mut found = finish_detect(
+                agent,
+                path.clone(),
+                version_args,
+                Some("npm"),
+                env_ready,
+                false,
+                extra_env,
+            );
+            found.notes.push(format!(
+                "using leftover AgentHub npm prefix (legacy; not an install target): {}",
+                path.display()
+            ));
+            return found;
+        }
+
         tracing::debug!(
             target: crate::logging::targets::DETECT,
             module = crate::logging::targets::DETECT,
@@ -159,6 +194,7 @@ pub(crate) fn detect_binary_with_env(
             extra_copies: Vec::new(),
         }
     })();
+    result.notes.extend(skip_notes);
     attach_leftover_agenthub_npm_copy(&mut result, agent, &names, extra_env);
     attach_extra_binary_copies(
         &mut result,
@@ -227,10 +263,12 @@ fn promote_spawnable_extra_copy_if_missing(result: &mut DetectResult) {
         return;
     }
     const ORDER: [&str; 4] = ["native", "npm", "desktop", "ide"];
-    let Some(idx) = ORDER
-        .iter()
-        .find_map(|kind| result.extra_copies.iter().position(|c| c.kind == *kind))
-    else {
+    let Some(idx) = ORDER.iter().find_map(|kind| {
+        result
+            .extra_copies
+            .iter()
+            .position(|c| c.kind == *kind && spawn_candidate_usable(result.agent, &c.path))
+    }) else {
         return;
     };
     let copy = result.extra_copies.remove(idx);
@@ -317,7 +355,8 @@ fn refresh_channel_extra_copies_note(result: &mut DetectResult) {
     ));
 }
 
-/// Observe leftover `<data>/npm` shims without using them as the spawn target.
+/// Observe leftover `<data>/npm` shims. A complete DeepSeek Harness tree may
+/// already be the spawn target; otherwise leftover stays extra-only.
 fn attach_leftover_agenthub_npm_copy(
     result: &mut DetectResult,
     agent: AgentId,
@@ -369,6 +408,108 @@ fn leftover_paths_equal(a: &Path, b: &Path) -> bool {
         a.to_string_lossy()
             .eq_ignore_ascii_case(&b.to_string_lossy())
     })
+}
+
+/// Leftover AgentHub npm is never an install target. DeepSeek Harness may still
+/// spawn from a complete leftover tree when PATH / well-known hits are stubs.
+fn allows_leftover_spawn(agent: AgentId) -> bool {
+    agent == AgentId::Dsh
+}
+
+/// True when this on-disk CLI is safe to spawn (DeepSeek Harness needs dsh-scope).
+pub(crate) fn spawn_candidate_usable(agent: AgentId, path: &Path) -> bool {
+    if agent != AgentId::Dsh {
+        return true;
+    }
+    dsh_cli_tree_complete(path)
+}
+
+fn skip_unusable_spawn(agent: AgentId, path: &Path, via: &str) -> Option<String> {
+    if spawn_candidate_usable(agent, path) {
+        return None;
+    }
+    tracing::info!(
+        target: crate::logging::targets::DETECT,
+        module = crate::logging::targets::DETECT,
+        op = "detect_binary",
+        agent = agent.as_str(),
+        via = via,
+        path = %path.display(),
+        "skipping incomplete DeepSeek Harness CLI (missing @deepseek-ai/dsh-scope)"
+    );
+    Some(format!(
+        "skipping {via} {} (missing {}); not a spawn target",
+        path.display(),
+        super::dsh::SCOPE_PACKAGE
+    ))
+}
+
+fn leftover_usable_spawn(agent: AgentId, names: &[String]) -> Option<PathBuf> {
+    if !allows_leftover_spawn(agent) {
+        return None;
+    }
+    let path = first_existing_named_bin(&agenthub_user_npm_bin_dirs(), names)?;
+    spawn_candidate_usable(agent, &path).then_some(path)
+}
+
+/// `node_modules/<package>` roots next to an npm global shim.
+pub(crate) fn npm_module_roots_for_cli(bin: &Path) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    let mut push = |path: PathBuf| {
+        if !roots.iter().any(|existing| existing == &path) {
+            roots.push(path);
+        }
+    };
+    let mut consider_dir = |dir: &Path| {
+        if dir.file_name().is_some_and(|name| name == "bin") {
+            if let Some(prefix) = dir.parent() {
+                push(prefix.join("lib").join("node_modules"));
+                push(prefix.join("node_modules"));
+            }
+        }
+        push(dir.join("node_modules"));
+        push(dir.join("lib").join("node_modules"));
+    };
+    if let Some(dir) = bin.parent() {
+        consider_dir(dir);
+    }
+    if let Ok(canon) = std::fs::canonicalize(bin) {
+        if let Some(dir) = canon.parent() {
+            consider_dir(dir);
+        }
+    }
+    roots
+}
+
+fn package_rel_path(package: &str) -> PathBuf {
+    package.split('/').collect()
+}
+
+/// True when `package` exists under the npm tree that `bin` belongs to.
+pub(crate) fn npm_tree_has_package(bin: &Path, package: &str) -> bool {
+    let rel = package_rel_path(package);
+    if rel.as_os_str().is_empty() {
+        return false;
+    }
+    for root in npm_module_roots_for_cli(bin) {
+        if root.join(&rel).is_dir() {
+            return true;
+        }
+        let nested = root
+            .join("@deepseek-ai")
+            .join("dsh")
+            .join("node_modules")
+            .join(&rel);
+        if nested.is_dir() {
+            return true;
+        }
+    }
+    false
+}
+
+/// Published `dsh` needs `@deepseek-ai/dsh-scope` next to the shim.
+pub(crate) fn dsh_cli_tree_complete(bin: &Path) -> bool {
+    npm_tree_has_package(bin, super::dsh::SCOPE_PACKAGE)
 }
 
 /// Surfaced in DetectResult.notes and searchable in doctor / GUI when binary is missing.

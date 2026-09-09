@@ -308,4 +308,15 @@ fn resolve_agent_launch_path_matches_card_rules() {
         resolve_agent_launch_path(AgentId::Claude, &claude, "gui", false).unwrap_err(),
         "unknown launch kind: gui"
     );
+
+    let dsh_leftover = detect_installed(
+        AgentId::Dsh,
+        "leftover-agenthub",
+        "/home/box/.agenthub/npm/bin/dsh",
+        &[],
+    );
+    assert_eq!(
+        resolve_agent_launch_path(AgentId::Dsh, &dsh_leftover, "cli", true).unwrap(),
+        PathBuf::from("/home/box/.agenthub/npm/bin/dsh")
+    );
 }
