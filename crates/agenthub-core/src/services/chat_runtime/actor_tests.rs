@@ -12,12 +12,16 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 fn conversation(db: &Database, id: &str) {
+    conversation_with(db, id, AgentId::Codex, &std::env::temp_dir());
+}
+
+fn conversation_with(db: &Database, id: &str, agent: AgentId, cwd: &std::path::Path) {
     ChatRepo::new(db.clone())
         .create_conversation(&Conversation {
             id: id.into(),
             title: String::new(),
-            agent_ids: vec![AgentId::Codex],
-            cwd: Some(std::env::temp_dir().to_string_lossy().into_owned()),
+            agent_ids: vec![agent],
+            cwd: Some(cwd.to_string_lossy().into_owned()),
             allow_dangerous: false,
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:00Z".into(),
@@ -54,6 +58,7 @@ fn worker(db: &Database, id: &str) -> ActorWorker {
         session_effort: None,
         session_trust_all: None,
         session_allow_always: false,
+        pending_fs_writes: HashMap::new(),
     }
 }
 
@@ -2081,4 +2086,155 @@ fn claude_stream_result_completes_turn_and_keeps_session() {
         "content={}",
         message.content
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn grok_fs_write_outside_cwd_emits_card_then_writes_on_allow() {
+    let project = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let write_path = outside.path().join("agenthub-always-allow-grok-347.txt");
+    let db = Database::open_in_memory().unwrap();
+    conversation_with(&db, "grok-fs-out", AgentId::Grok, project.path());
+    let mut worker = worker(&db, "grok-fs-out");
+    worker.agent = AgentId::Grok;
+    worker.store.enable_if_new("grok-fs-out").unwrap();
+    start_placeholder(&mut worker);
+    let (_directory, transport, _log) = fake_transport();
+    worker.transport = Some(transport);
+
+    worker
+        .server_request(
+            json!("fs-1"),
+            "fs/write_text_file",
+            &json!({
+                "sessionId": "thread-1",
+                "path": write_path.to_string_lossy(),
+                "content": "first-write"
+            }),
+        )
+        .unwrap();
+    assert!(
+        !write_path.exists(),
+        "out-of-cwd write must wait for the card"
+    );
+    let first = worker.store.snapshot("grok-fs-out", None).unwrap();
+    assert_eq!(first.pending_requests.len(), 1);
+    assert_eq!(first.pending_requests[0].kind, RuntimeRequestKind::File);
+    assert_eq!(first.pending_requests[0].title, "修改文件");
+    assert!(first.pending_requests[0]
+        .permission_options
+        .iter()
+        .any(|option| option.kind == "allow_always"));
+
+    worker
+        .reply(RuntimeReply {
+            conversation_id: "grok-fs-out".into(),
+            run_id: "run-1".into(),
+            request_id: first.pending_requests[0].id.clone(),
+            client_request_id: "allow-fs-1".into(),
+            decision: Some(RuntimeDecision::AllowAlways),
+            answers: None,
+        })
+        .unwrap();
+    assert_eq!(std::fs::read_to_string(&write_path).unwrap(), "first-write");
+    assert!(worker.session_allow_always);
+
+    let later = outside.path().join("agenthub-always-allow-grok-347-b.txt");
+    worker
+        .server_request(
+            json!("fs-2"),
+            "fs/write_text_file",
+            &json!({
+                "sessionId": "thread-1",
+                "path": later.to_string_lossy(),
+                "content": "second-write"
+            }),
+        )
+        .unwrap();
+    assert!(
+        worker
+            .store
+            .snapshot("grok-fs-out", None)
+            .unwrap()
+            .pending_requests
+            .is_empty(),
+        "later out-of-cwd write must stay auto-approved"
+    );
+    assert_eq!(std::fs::read_to_string(&later).unwrap(), "second-write");
+}
+
+#[cfg(unix)]
+#[test]
+fn grok_fs_write_inside_cwd_writes_without_card() {
+    let project = tempfile::tempdir().unwrap();
+    let write_path = project.path().join("inside.txt");
+    let db = Database::open_in_memory().unwrap();
+    conversation_with(&db, "grok-fs-in", AgentId::Grok, project.path());
+    let mut worker = worker(&db, "grok-fs-in");
+    worker.agent = AgentId::Grok;
+    worker.store.enable_if_new("grok-fs-in").unwrap();
+    start_placeholder(&mut worker);
+    let (_directory, transport, _log) = fake_transport();
+    worker.transport = Some(transport);
+
+    worker
+        .server_request(
+            json!("fs-in"),
+            "fs/write_text_file",
+            &json!({
+                "sessionId": "thread-1",
+                "path": write_path.to_string_lossy(),
+                "content": "cwd-ok"
+            }),
+        )
+        .unwrap();
+    assert!(worker
+        .store
+        .snapshot("grok-fs-in", None)
+        .unwrap()
+        .pending_requests
+        .is_empty());
+    assert_eq!(std::fs::read_to_string(&write_path).unwrap(), "cwd-ok");
+}
+
+#[cfg(unix)]
+#[test]
+fn grok_fs_write_deny_does_not_create_file() {
+    let project = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let write_path = outside.path().join("denied.txt");
+    let db = Database::open_in_memory().unwrap();
+    conversation_with(&db, "grok-fs-deny", AgentId::Grok, project.path());
+    let mut worker = worker(&db, "grok-fs-deny");
+    worker.agent = AgentId::Grok;
+    worker.store.enable_if_new("grok-fs-deny").unwrap();
+    start_placeholder(&mut worker);
+    let (_directory, transport, _log) = fake_transport();
+    worker.transport = Some(transport);
+
+    worker
+        .server_request(
+            json!("fs-deny"),
+            "fs/write_text_file",
+            &json!({
+                "sessionId": "thread-1",
+                "path": write_path.to_string_lossy(),
+                "content": "nope"
+            }),
+        )
+        .unwrap();
+    let first = worker.store.snapshot("grok-fs-deny", None).unwrap();
+    worker
+        .reply(RuntimeReply {
+            conversation_id: "grok-fs-deny".into(),
+            run_id: "run-1".into(),
+            request_id: first.pending_requests[0].id.clone(),
+            client_request_id: "deny-fs-1".into(),
+            decision: Some(RuntimeDecision::Deny),
+            answers: None,
+        })
+        .unwrap();
+    assert!(!write_path.exists());
+    assert!(!worker.session_allow_always);
 }

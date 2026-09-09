@@ -27,7 +27,8 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(8);
 /// Hard cap for one JSON-RPC line. ACP image blocks embed base64, and the
 /// product allows 10MB files (~13.3MB encoded) plus wrapping. Keep a bound so
 /// a runaway process cannot grow without limit. Do not send path-only image
-/// blocks: ACP requires `data`, and this client advertises no fs read.
+/// blocks: ACP requires `data`. Grok initialize advertises client fs so the
+/// CLI can delegate reads/writes; prompt images still embed `data`.
 pub(crate) const MAX_STDOUT_LINE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_STDERR_BYTES: usize = 64 * 1024;
 const WIRE_CHANNEL_CAPACITY: usize = 128;
@@ -216,24 +217,14 @@ impl CodexTransport {
         abort: Option<Arc<AtomicBool>>,
     ) -> Result<Self, CodexTransportError> {
         let args = super::ops::grok_acp_stdio_args(model, effort, always_approve);
+        // Official Grok ACP does not send `initialized`. That notification is
+        // `-32601` on some builds and can exit the process before any card.
         Self::spawn_with(
             program,
             &args,
             cwd,
-            Some(json!({
-                "protocolVersion": 1,
-                "clientInfo": {
-                    "name": "agenthub-chat",
-                    "version": env!("CARGO_PKG_VERSION"),
-                },
-                "clientCapabilities": {
-                    "fs": { "readTextFile": false, "writeTextFile": false }
-                },
-                "capabilities": {
-                    "fs": { "readTextFile": false, "writeTextFile": false }
-                }
-            })),
-            true,
+            Some(super::ops::grok_initialize_params()),
+            false,
             abort,
             false,
         )

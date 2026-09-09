@@ -27,7 +27,7 @@ Chat 是 AgentHub 里的运行工作台。当前一个会话对应一个 Agent�
 两件不同的事：
 
 1. **记住这次卡片上的选项。** 待处理请求的选项会写入 SQLite。快照或进程重开后，尚未回复的卡片仍显示同一组按钮（包括这次能不能点「一直允许」）。Codex / Grok / Kiro 都这样。
-2. **点了「一直允许」之后，后面的确认还问不问。** Codex / Grok / Kiro 都由 AgentHub 在**当前这次对话**里记住，不写进数据库。发给 Codex 的「一直允许」是 `acceptForSession`；一轮结束会新起 `codex app-server`，但本机标记还在，后续同类命令/文件（含另一条工作目录外路径）不再出卡。Grok / Kiro 走 ACP：这次请求自己带了 `allow_always`（Kiro 常见是 `allow_always_tool` / `allow_always_tool_args`）才显示「一直允许」，点了会把对方给的选项回传，并且本机对后续确认自动点允许（同一条 ACP 进程，通常跨多轮）。没有允许选项时仍出卡片，不会补一个假的「一直允许」。新对话再问。
+2. **点了「一直允许」之后，后面的确认还问不问。** Codex / Grok / Kiro 都由 AgentHub 在**当前这次对话**里记住，不写进数据库。发给 Codex 的「一直允许」是 `acceptForSession`；一轮结束会新起 `codex app-server`，但本机标记还在，后续同类命令/文件（含另一条工作目录外路径）不再出卡。Grok / Kiro 走 ACP：`session/request_permission` 这次请求自己带了 `allow_always`（Kiro 常见是 `allow_always_tool` / `allow_always_tool_args`）才显示「一直允许」，点了会把对方给的选项回传，并且本机对后续确认自动点允许（同一条 ACP 进程，通常跨多轮）。Grok 工作目录外的本机 `fs/write_text_file` 由 Chat 先出「修改文件」卡片（允许 / 一直允许 / 拒绝）再写文件，点了一直允许后同一对话里后续同类写出不再出卡。没有允许选项时仍出卡片，不会补一个假的「一直允许」。新对话再问。
 
 Kiro 会话设置里的「帮我批准 / 完全访问权限」是启动时的 `--trust-all-tools`，对话开始后不能改；它不是确认卡片上的「一直允许」。跨页事实表见 [STATUS](../STATUS.md)。
 

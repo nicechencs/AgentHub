@@ -393,17 +393,18 @@ fn codex_workspace_write_excludes_tmp_so_outside_cwd_needs_approval() {
 }
 
 #[test]
-fn grok_acp_stdio_asks_unless_session_always_approve() {
+fn grok_acp_stdio_uses_documented_agent_flags_only() {
     assert_eq!(
         grok_acp_stdio_args(None, None, false),
         vec![
-            "--permission-mode".to_string(),
-            "ask".to_string(),
             "agent".to_string(),
             "--no-leader".to_string(),
             "stdio".to_string()
         ]
     );
+    assert!(!grok_acp_stdio_args(None, None, false)
+        .iter()
+        .any(|arg| arg == "--permission-mode"));
     assert_eq!(
         grok_acp_stdio_args(Some("grok-4.6"), Some("high"), true),
         vec![
@@ -417,6 +418,46 @@ fn grok_acp_stdio_asks_unless_session_always_approve() {
             "stdio".to_string()
         ]
     );
+}
+
+#[test]
+fn grok_initialize_advertises_client_fs_without_terminal() {
+    let params = grok_initialize_params();
+    assert_eq!(params["protocolVersion"], 1);
+    assert_eq!(params["clientCapabilities"]["fs"]["readTextFile"], true);
+    assert_eq!(params["clientCapabilities"]["fs"]["writeTextFile"], true);
+    assert_eq!(params["clientCapabilities"]["terminal"], false);
+}
+
+#[test]
+fn path_is_inside_cwd_uses_real_directories() {
+    let cwd = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let inside_new = cwd.path().join("new-file.txt");
+    let outside_new = outside.path().join("out.txt");
+    assert!(path_is_inside_cwd(&inside_new, cwd.path()));
+    assert!(path_is_inside_cwd(
+        std::path::Path::new("relative.txt"),
+        cwd.path()
+    ));
+    assert!(!path_is_inside_cwd(&outside_new, cwd.path()));
+}
+
+#[test]
+fn acp_fs_write_payload_requires_path_and_caps_size() {
+    let (path, content) = acp_fs_write_payload(&json!({
+        "path": "/tmp/agenthub-always-allow-grok-347.txt",
+        "content": "hello"
+    }))
+    .unwrap();
+    assert_eq!(
+        path,
+        std::path::PathBuf::from("/tmp/agenthub-always-allow-grok-347.txt")
+    );
+    assert_eq!(content, "hello");
+    assert!(acp_fs_write_payload(&json!({"content": "x"})).is_err());
+    let too_big = "x".repeat(ACP_FS_WRITE_MAX_BYTES + 1);
+    assert!(acp_fs_write_payload(&json!({"path": "/tmp/x", "content": too_big})).is_err());
 }
 
 #[test]
@@ -434,7 +475,7 @@ fn grok_session_new_disables_yolo_unless_conversation_skips_cards() {
 #[test]
 fn grok_prompt_blocks_embed_local_image() {
     // Grok/Kiro ACP image blocks require base64 `data`. A path-only / file URI
-    // block is not sent: this client advertises no fs read.
+    // block is not sent even when initialize advertises client fs.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("shot.png");
     std::fs::write(&path, b"png-bytes").unwrap();

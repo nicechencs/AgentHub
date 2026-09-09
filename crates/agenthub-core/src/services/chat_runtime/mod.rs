@@ -851,6 +851,7 @@ fn actor_loop(
         session_effort: None,
         session_trust_all: None,
         session_allow_always: false,
+        pending_fs_writes: HashMap::new(),
     };
     worker.run();
 }
@@ -884,11 +885,17 @@ struct ActorWorker {
     /// After the user picks session remember, later command/file approvals in
     /// this conversation are accepted without another card. Not written to
     /// SQLite; a new conversation asks again. Codex synthesizes the button
-    /// and is told `acceptForSession`. Grok / Kiro only show it when the ACP
-    /// request includes an `allow_always` kind (including `allow_always_tool`).
-    /// Codex starts a fresh process each turn, so the flag must outlive
-    /// `terminalize`. ACP usually keeps one process across turns.
+    /// and is told `acceptForSession`. Grok / Kiro `session/request_permission`
+    /// only show it when the ACP request includes an `allow_always` kind
+    /// (including `allow_always_tool`). Host-owned Grok `fs/write_text_file`
+    /// cards synthesize the same three buttons as Codex. Codex starts a fresh
+    /// process each turn, so the flag must outlive `terminalize`. ACP usually
+    /// keeps one process across turns.
     session_allow_always: bool,
+    /// Full write body for in-flight `fs/write_text_file` cards, keyed by the
+    /// JSON-RPC request id. Content is not persisted; a dead process cannot
+    /// complete the write anyway.
+    pending_fs_writes: HashMap<String, (PathBuf, String)>,
 }
 
 impl ActorWorker {
@@ -1841,6 +1848,30 @@ impl ActorWorker {
                 "clientRequestId must not be empty".into(),
             ));
         }
+        if matches!(
+            persisted.request.kind,
+            RuntimeRequestKind::Command | RuntimeRequestKind::File
+        ) && ops::is_acp_fs_write_method(&persisted.server_method)
+        {
+            let decision = match reply.decision {
+                Some(RuntimeDecision::Allow) => "accept",
+                Some(RuntimeDecision::AllowAlways) => "accept_always",
+                Some(RuntimeDecision::Deny) => "decline",
+                None => {
+                    return Err(AppError::InvalidArg("approval decision is required".into()));
+                }
+            };
+            if reply
+                .answers
+                .as_ref()
+                .is_some_and(|values| !values.is_empty())
+            {
+                return Err(AppError::InvalidArg(
+                    "approval cannot include answers".into(),
+                ));
+            }
+            return self.reply_acp_fs_write(&reply, &persisted, decision);
+        }
         let answers = reply.answers.filter(|values| !values.is_empty());
         let value = match persisted.request.kind {
             RuntimeRequestKind::Command | RuntimeRequestKind::File => {
@@ -2284,6 +2315,12 @@ impl ActorWorker {
                     .map_err(|error| transport_error(self.agent, error))?;
             }
             return Ok(());
+        }
+        if ops::is_acp_fs_read_method(method) {
+            return self.handle_acp_fs_read(id, params);
+        }
+        if ops::is_acp_fs_write_method(method) {
+            return self.handle_acp_fs_write(id, params);
         }
         let run_id = params
             .get("turnId")
@@ -2918,6 +2955,7 @@ impl ActorWorker {
         self.pending_prompt_id = None;
         self.permission_options.clear();
         self.file_change_items.clear();
+        self.pending_fs_writes.clear();
         if let Some(message) = error {
             if let Err(learn_err) = self
                 .store
@@ -3051,6 +3089,157 @@ impl ActorWorker {
             .get_conversation(&self.conversation_id)?
             .and_then(|conversation| conversation.cwd);
         crate::services::chat_cwd::resolve_runtime_cwd(stored.as_deref())
+    }
+
+    fn respond_jsonrpc(
+        &mut self,
+        id: Value,
+        response: std::result::Result<Value, Value>,
+    ) -> Result<()> {
+        let transport = self.transport.as_mut().ok_or_else(|| {
+            AppError::message(
+                "chat.runtime.interrupted",
+                format!("{} 已退出", runtime_process_label(self.agent)),
+            )
+        })?;
+        transport
+            .respond(id, response)
+            .map_err(|error| transport_error(self.agent, error))
+    }
+
+    fn handle_acp_fs_read(&mut self, id: Value, params: &Value) -> Result<()> {
+        let path = match ops::acp_fs_read_path(params) {
+            Ok(path) => path,
+            Err(error) => {
+                return self.respond_jsonrpc(
+                    id,
+                    Err(json!({"code": -32602, "message": error.to_string()})),
+                );
+            }
+        };
+        match ops::read_text_file_from_disk(&path) {
+            Ok(content) => self.respond_jsonrpc(id, Ok(json!({ "content": content }))),
+            Err(error) => self.respond_jsonrpc(
+                id,
+                Err(json!({"code": -32000, "message": error.to_string()})),
+            ),
+        }
+    }
+
+    fn handle_acp_fs_write(&mut self, id: Value, params: &Value) -> Result<()> {
+        let id_string = wire_id_string(&id);
+        let (path, content) = match ops::acp_fs_write_payload(params) {
+            Ok(payload) => payload,
+            Err(error) => {
+                return self.respond_jsonrpc(
+                    id,
+                    Err(json!({"code": -32602, "message": error.to_string()})),
+                );
+            }
+        };
+        let cwd = self.conversation_cwd()?;
+        let auto_write = ops::path_is_inside_cwd(&path, &cwd) || self.session_allow_always;
+        if auto_write {
+            return match ops::write_text_file_on_disk(&path, &content) {
+                Ok(()) => self.respond_jsonrpc(id, Ok(Value::Null)),
+                Err(error) => self.respond_jsonrpc(
+                    id,
+                    Err(json!({"code": -32000, "message": error.to_string()})),
+                ),
+            };
+        }
+        let run_id = params
+            .get("turnId")
+            .and_then(Value::as_str)
+            .or(self.run_id.as_deref())
+            .ok_or_else(|| {
+                AppError::message("chat.runtime.protocol", "Codex request omitted run id")
+            })?
+            .to_string();
+        let permission_options = codex_session_permission_options();
+        let request = RuntimeRequest {
+            id: id_string.clone(),
+            run_id,
+            kind: RuntimeRequestKind::File,
+            title: "修改文件".into(),
+            detail: path.to_string_lossy().into_owned(),
+            questions: Vec::new(),
+            permission_options: permission_options.clone(),
+            file_changes: vec![RuntimeFileChange {
+                path: path.to_string_lossy().into_owned(),
+                kind: Some("write".into()),
+                preview: ops::acp_fs_write_preview(&content),
+            }],
+        };
+        self.pending_fs_writes
+            .insert(id_string.clone(), (path, content));
+        self.store.add_request(
+            &self.conversation_id,
+            &request,
+            "fs/write_text_file",
+            &id_string,
+        )?;
+        self.permission_options
+            .insert(id_string, permission_options);
+        Ok(())
+    }
+
+    fn reply_acp_fs_write(
+        &mut self,
+        reply: &RuntimeReply,
+        persisted: &store::PersistedRequest,
+        decision: &str,
+    ) -> Result<()> {
+        let server_id = parse_wire_id(&persisted.server_id)?;
+        if decision == "decline" {
+            self.pending_fs_writes.remove(&persisted.request.id);
+            self.store.record_reply(
+                &reply.conversation_id,
+                &reply.run_id,
+                &reply.client_request_id,
+                &reply.request_id,
+            )?;
+            self.respond_jsonrpc(
+                server_id,
+                Err(json!({"code": -32000, "message": "已拒绝写出"})),
+            )?;
+        } else {
+            let Some((path, content)) = self.pending_fs_writes.remove(&persisted.request.id) else {
+                return Err(AppError::message("chat.runtime", "写出内容已失效，请重试"));
+            };
+            ops::write_text_file_on_disk(&path, &content)?;
+            if decision == "accept_always" {
+                self.session_allow_always = true;
+            }
+            self.store.record_reply(
+                &reply.conversation_id,
+                &reply.run_id,
+                &reply.client_request_id,
+                &reply.request_id,
+            )?;
+            self.respond_jsonrpc(server_id, Ok(Value::Null))?;
+        }
+        self.permission_options.remove(&persisted.request.id);
+        let phase = if self
+            .store
+            .snapshot(&self.conversation_id, None)?
+            .pending_requests
+            .is_empty()
+        {
+            RuntimePhase::Running
+        } else {
+            RuntimePhase::Waiting
+        };
+        self.store.set_state(
+            &self.conversation_id,
+            phase,
+            self.run_id.as_deref(),
+            self.thread_id.as_deref(),
+            self.turn_id.as_deref(),
+            self.chat_turn,
+            self.message_id.as_deref(),
+        )?;
+        Ok(())
     }
 }
 

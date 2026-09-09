@@ -432,17 +432,11 @@ pub(crate) fn grok_acp_stdio_args(
     effort: Option<&str>,
     always_approve: bool,
 ) -> Vec<String> {
-    // `--permission-mode` is a top-level `grok` flag. Putting it after
-    // `agent` is not a documented agent option and exits the process
-    // (GUI then shows a shared-transport "exited" error). CLI ask beats
-    // `~/.grok` always-approve for this launch.
-    let mut args = Vec::new();
-    if !always_approve {
-        args.push("--permission-mode".into());
-        args.push("ask".into());
-    }
-    args.push("agent".into());
-    args.push("--no-leader".into());
+    // Only documented `grok agent` flags. `--permission-mode` is a TUI /
+    // headless flag: before or after `agent` both exit the process, so Chat
+    // never reaches a permission card. Ask vs always-approve is set on
+    // `session/new` `_meta` and, for out-of-cwd writes, by client `fs/write_text_file`.
+    let mut args = vec!["agent".to_string(), "--no-leader".to_string()];
     if let Some(model) = model.map(str::trim).filter(|s| !s.is_empty()) {
         args.push("-m".into());
         args.push(model.to_string());
@@ -456,6 +450,117 @@ pub(crate) fn grok_acp_stdio_args(
     }
     args.push("stdio".into());
     args
+}
+
+/// Official Grok ACP initialize. Advertise client fs so writes come to Chat
+/// as `fs/write_text_file` instead of the CLI writing first. Do not advertise
+/// `terminal` — those methods are unimplemented and a `-32601` can kill Grok.
+pub(crate) fn grok_initialize_params() -> Value {
+    json!({
+        "protocolVersion": 1,
+        "clientInfo": {
+            "name": "agenthub-chat",
+            "version": env!("CARGO_PKG_VERSION"),
+        },
+        "clientCapabilities": {
+            "fs": { "readTextFile": true, "writeTextFile": true },
+            "terminal": false
+        }
+    })
+}
+
+pub(crate) fn is_acp_fs_write_method(method: &str) -> bool {
+    matches!(method, "fs/write_text_file" | "fs/writeTextFile")
+}
+
+pub(crate) fn is_acp_fs_read_method(method: &str) -> bool {
+    matches!(method, "fs/read_text_file" | "fs/readTextFile")
+}
+
+pub(crate) const ACP_FS_WRITE_MAX_BYTES: usize = 10 * 1024 * 1024;
+pub(crate) const ACP_FS_READ_MAX_BYTES: usize = 10 * 1024 * 1024;
+
+fn acp_fs_path(params: &Value, empty: &str) -> Result<std::path::PathBuf> {
+    let path = params
+        .get("path")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| AppError::InvalidArg(empty.into()))?;
+    Ok(std::path::PathBuf::from(path))
+}
+
+pub(crate) fn acp_fs_write_payload(params: &Value) -> Result<(std::path::PathBuf, String)> {
+    let path = acp_fs_path(params, "写出缺少路径")?;
+    let content = params
+        .get("content")
+        .and_then(Value::as_str)
+        .ok_or_else(|| AppError::InvalidArg("写出缺少内容".into()))?;
+    if content.len() > ACP_FS_WRITE_MAX_BYTES {
+        return Err(AppError::InvalidArg("写出内容太大".into()));
+    }
+    Ok((path, content.to_string()))
+}
+
+pub(crate) fn acp_fs_read_path(params: &Value) -> Result<std::path::PathBuf> {
+    acp_fs_path(params, "读取缺少路径")
+}
+
+pub(crate) fn acp_fs_write_preview(content: &str) -> Option<String> {
+    if content.is_empty() {
+        return None;
+    }
+    let preview: String = content.chars().take(1_600).collect();
+    if preview.len() < content.len() {
+        Some(format!("{preview}…"))
+    } else {
+        Some(preview)
+    }
+}
+
+pub(crate) fn write_text_file_on_disk(path: &Path, content: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            std::fs::create_dir_all(parent).map_err(|err| {
+                AppError::InvalidArg(format!("无法创建目录: {} ({err})", parent.display()))
+            })?;
+        }
+    }
+    std::fs::write(path, content.as_bytes())
+        .map_err(|err| AppError::InvalidArg(format!("无法写出: {} ({err})", path.display())))
+}
+
+pub(crate) fn read_text_file_from_disk(path: &Path) -> Result<String> {
+    let bytes = std::fs::read(path)
+        .map_err(|err| AppError::InvalidArg(format!("无法读取: {} ({err})", path.display())))?;
+    if bytes.len() > ACP_FS_READ_MAX_BYTES {
+        return Err(AppError::InvalidArg("读取内容太大".into()));
+    }
+    String::from_utf8(bytes).map_err(|_| AppError::InvalidArg("不是文本文件".into()))
+}
+
+/// True when `path` resolves inside `cwd` (cwd must exist). Missing files use
+/// the parent directory so a new file still counts as inside or outside.
+pub(crate) fn path_is_inside_cwd(path: &Path, cwd: &Path) -> bool {
+    let Ok(cwd) = cwd.canonicalize() else {
+        return false;
+    };
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        cwd.join(path)
+    };
+    let resolved = match absolute.canonicalize() {
+        Ok(path) => path,
+        Err(_) => match absolute
+            .parent()
+            .and_then(|parent| parent.canonicalize().ok())
+        {
+            Some(parent) => parent.join(absolute.file_name().unwrap_or_default()),
+            None => return false,
+        },
+    };
+    resolved.starts_with(&cwd)
 }
 
 /// Grok `session/new`. `_meta.yoloMode` is the ACP always-approve switch;
