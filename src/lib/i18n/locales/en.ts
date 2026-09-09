@@ -2839,6 +2839,10 @@ export const en = {
       allowAlwaysHintTurn: 'This process only, usually this turn, not saved',
       deny: 'Deny',
       fileChange: 'Change files',
+      fileChangePreviewEmpty: 'No change preview',
+      fileChangeKindAdd: 'Add',
+      fileChangeKindUpdate: 'Update',
+      fileChangeKindDelete: 'Delete',
       needConfirm: 'Needs confirmation',
       needAnswer: 'Needs your answer',
       kind: {

@@ -2819,6 +2819,10 @@ export const zh = {
       allowAlwaysHintTurn: '仅当前这次进程，通常只记到本轮，不保存',
       deny: '拒绝',
       fileChange: '修改文件',
+      fileChangePreviewEmpty: '暂无改动预览',
+      fileChangeKindAdd: '新增',
+      fileChangeKindUpdate: '修改',
+      fileChangeKindDelete: '删除',
       needConfirm: '需要确认',
       needAnswer: '需要你的回答',
       kind: {

@@ -627,6 +627,7 @@ fn persisted_request_is_removed_only_after_explicit_resolution() {
         detail: "printf safe".into(),
         questions: Vec::new(),
         permission_options: Vec::new(),
+        file_changes: Vec::new(),
     };
     store
         .add_request("c2", &request, "item/commandExecution/requestApproval", "7")
@@ -659,6 +660,7 @@ fn persisted_request_round_trips_allow_always_options() {
             id: "always".into(),
             kind: "allow_always".into(),
         }],
+        file_changes: Vec::new(),
     };
     store
         .add_request(
@@ -670,6 +672,35 @@ fn persisted_request_round_trips_allow_always_options() {
         .unwrap();
     assert_eq!(
         store.snapshot("c-always", None).unwrap().pending_requests,
+        vec![request]
+    );
+}
+
+#[test]
+fn persisted_request_round_trips_file_change_preview() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "c-file", false);
+    let store = super::store::RuntimeStore::new(db);
+    store.enable_if_new("c-file").unwrap();
+    let request = RuntimeRequest {
+        id: "req-file".into(),
+        run_id: "run-1".into(),
+        kind: RuntimeRequestKind::File,
+        title: "修改文件".into(),
+        detail: "/tmp/example.txt".into(),
+        questions: Vec::new(),
+        permission_options: Vec::new(),
+        file_changes: vec![super::types::RuntimeFileChange {
+            path: "/tmp/example.txt".into(),
+            kind: Some("add".into()),
+            preview: Some("ok".into()),
+        }],
+    };
+    store
+        .add_request("c-file", &request, "applyPatchApproval", "9")
+        .unwrap();
+    assert_eq!(
+        store.snapshot("c-file", None).unwrap().pending_requests,
         vec![request]
     );
 }

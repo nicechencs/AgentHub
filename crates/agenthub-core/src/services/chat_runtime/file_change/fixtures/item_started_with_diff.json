@@ -1,0 +1,14 @@
+{
+  "item": {
+    "type": "fileChange",
+    "id": "exec-1",
+    "status": "inProgress",
+    "changes": [
+      {
+        "path": "/workspace/qa-codex-filechange-scratch/probe.txt",
+        "kind": { "type": "add" },
+        "diff": "FILECHANGE_OK\n"
+      }
+    ]
+  }
+}

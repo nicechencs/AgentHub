@@ -3,7 +3,13 @@ import { Button } from '@/components/ui/button';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import type { RuntimeDecision, RuntimeRequest } from '@/lib/api/chat';
 import { cn } from '@/lib/utils';
-import { canSubmitRuntimeQuestions, runtimeAllowAlwaysCopy, runtimeRequestTitle } from './chat-runtime-model';
+import {
+  canSubmitRuntimeQuestions,
+  fileChangeKindLabel,
+  runtimeAllowAlwaysCopy,
+  runtimeFileChangePreview,
+  runtimeRequestTitle,
+} from './chat-runtime-model';
 
 type ReplyHandler = (request: RuntimeRequest, decision?: RuntimeDecision, answers?: Record<string, string[]>) => Promise<void>;
 
@@ -68,12 +74,13 @@ function RuntimeRequestCard({
     <section className="rounded-card border border-border bg-subtle p-3 text-body" aria-live="polite">
       <p className="text-meta text-muted">{kindLabel}</p>
       {title !== kindLabel ? <p className="mt-0.5 font-medium text-primary">{title}</p> : null}
-      {request.detail ? (
+      {showRequestDetail(request) ? (
         <p className={cn(
           'mt-1 whitespace-pre-wrap text-meta text-secondary',
           request.kind === 'file' && 'font-mono',
         )}>{request.detail}</p>
       ) : null}
+      <FileChangePreview request={request} />
       {request.kind === 'question' ? request.questions.map((question) => (
         <fieldset key={question.id} className="mt-3 space-y-1.5">
           <legend className="font-medium">{question.header || question.question}</legend>
@@ -102,5 +109,44 @@ function RuntimeRequestCard({
         </>}
       </div>
     </section>
+  );
+}
+
+function showRequestDetail(request: RuntimeRequest): boolean {
+  if (!request.detail) return false;
+  const preview = runtimeFileChangePreview(request);
+  return !preview.shown || (preview.empty && preview.rows.length === 0);
+}
+
+function FileChangePreview({ request }: { request: RuntimeRequest }) {
+  const { t } = useI18n();
+  const preview = runtimeFileChangePreview(request);
+  if (!preview.shown) return null;
+  return (
+    <div
+      className="mt-2 space-y-2"
+      data-help={preview.empty ? 'chat-file-change-preview-empty' : 'chat-file-change-preview'}
+    >
+      {preview.rows.map((row, index) => (
+        <div key={`${row.path}:${index}`} className="space-y-1">
+          {row.path ? (
+            <p className="font-mono text-meta text-secondary">
+              {row.kind ? (
+                <span className="mr-2 font-sans text-muted">{fileChangeKindLabel(row.kind, t)}</span>
+              ) : null}
+              {row.path}
+            </p>
+          ) : null}
+          {!preview.empty && row.preview ? (
+            <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-all rounded-card border border-border/60 bg-canvas px-2 py-1.5 font-mono text-meta leading-relaxed text-primary">
+              {row.preview}
+            </pre>
+          ) : null}
+        </div>
+      ))}
+      {preview.empty ? (
+        <p className="text-meta text-muted">{t('chat.runtime.fileChangePreviewEmpty')}</p>
+      ) : null}
+    </div>
   );
 }

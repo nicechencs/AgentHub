@@ -1,0 +1,13 @@
+{
+  "item": {
+    "type": "fileChange",
+    "id": "exec-path-only",
+    "status": "inProgress",
+    "changes": [
+      {
+        "path": "/workspace/notes.md",
+        "kind": { "type": "update" }
+      }
+    ]
+  }
+}
