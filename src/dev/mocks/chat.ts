@@ -866,5 +866,8 @@ export function createMockChatPort(): ChatPort {
         truncated: false,
       };
     },
+    async onNativeShortcut() {
+      return () => {};
+    },
   };
 }

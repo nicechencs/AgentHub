@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { translate } from '@/lib/i18n';
-import { CHAT_SHORTCUT_ROWS, chatShortcutChord } from './chat-shortcuts';
+import {
+  CHAT_SHORTCUT_ROWS,
+  chatShortcutChord,
+  subscribeChatShortcutKeydown,
+} from './chat-shortcuts';
 
 describe('chat shortcut overview', () => {
   it('lists new chat and the overview itself', () => {
@@ -34,5 +38,27 @@ describe('chat shortcut overview', () => {
     expect(translate('zh', 'chat.shortcuts.overview')).toBe('快捷键一览');
     expect(translate('zh', 'chat.shortcuts.ime')).toBe('组字时 Enter 不发送');
     expect(translate('en', 'chat.shortcuts.ime')).toBe('Enter does not send while composing');
+  });
+
+  it('binds keydown on the document in the capture phase', () => {
+    const add = vi.fn();
+    const remove = vi.fn();
+    const onKey = vi.fn();
+    const unsub = subscribeChatShortcutKeydown(onKey, {
+      addEventListener: add,
+      removeEventListener: remove,
+    });
+    expect(add).toHaveBeenCalledOnce();
+    expect(add.mock.calls[0]?.[0]).toBe('keydown');
+    expect(add.mock.calls[0]?.[2]).toBe(true);
+    const listener = add.mock.calls[0]?.[1] as (event: KeyboardEvent) => void;
+    const event = { key: 'n' } as KeyboardEvent;
+    listener(event);
+    listener(event);
+    expect(onKey).toHaveBeenCalledOnce();
+    expect(onKey).toHaveBeenCalledWith(event);
+    unsub();
+    expect(remove).toHaveBeenCalledOnce();
+    expect(remove.mock.calls[0]?.[2]).toBe(true);
   });
 });

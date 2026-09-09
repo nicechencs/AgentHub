@@ -738,8 +738,21 @@ export function composerEnterShouldSend(input: {
   return true;
 }
 
+function chatModChordMatchesLetter(
+  input: { key: string; code?: string; metaKey: boolean; ctrlKey: boolean },
+  letter: 'n' | 'k',
+  code: 'KeyN' | 'KeyK',
+): boolean {
+  if (!(input.metaKey || input.ctrlKey)) return false;
+  const upper = letter.toUpperCase();
+  if (input.key === letter || input.key === upper) return true;
+  // WebKitGTK/IME may report Unidentified or a control char; the physical code stays stable.
+  return input.code === code;
+}
+
 export function chatModKShouldFocusHistory(input: {
   key: string;
+  code?: string;
   metaKey: boolean;
   ctrlKey: boolean;
   altKey: boolean;
@@ -747,13 +760,13 @@ export function chatModKShouldFocusHistory(input: {
   overlayOpen: boolean;
 }): boolean {
   if (input.overlayOpen || input.altKey || input.shiftKey) return false;
-  if (input.key !== 'k' && input.key !== 'K') return false;
-  return input.metaKey || input.ctrlKey;
+  return chatModChordMatchesLetter(input, 'k', 'KeyK');
 }
 
 /** Cmd/Ctrl+N starts a new chat (same modifier pattern as Ctrl+K). */
 export function chatModNShouldStartNewChat(input: {
   key: string;
+  code?: string;
   metaKey: boolean;
   ctrlKey: boolean;
   altKey: boolean;
@@ -761,8 +774,7 @@ export function chatModNShouldStartNewChat(input: {
   overlayOpen: boolean;
 }): boolean {
   if (input.overlayOpen || input.altKey || input.shiftKey) return false;
-  if (input.key !== 'n' && input.key !== 'N') return false;
-  return input.metaKey || input.ctrlKey;
+  return chatModChordMatchesLetter(input, 'n', 'KeyN');
 }
 
 /** True when the event target is a field that should keep typed characters. */
@@ -777,6 +789,8 @@ export function chatKeyTargetIsField(target: EventTarget | null): boolean {
 /** `?` opens the shortcut overview when not typing in a field. */
 export function chatQuestionShouldOpenShortcuts(input: {
   key: string;
+  code?: string;
+  shiftKey: boolean;
   metaKey: boolean;
   ctrlKey: boolean;
   altKey: boolean;
@@ -786,7 +800,40 @@ export function chatQuestionShouldOpenShortcuts(input: {
   if (input.overlayOpen || input.typingInField || input.altKey || input.metaKey || input.ctrlKey) {
     return false;
   }
-  return input.key === '?';
+  if (input.key === '?') return true;
+  // US `?` is Shift+/. Some webviews report key:'/' or Unidentified instead of '?'.
+  // Do not match code === 'Slash' alone (a letter key must stay a letter).
+  if (input.shiftKey && input.key === '/') return true;
+  return Boolean(
+    input.shiftKey && (input.key === 'Unidentified' || input.key === '') && input.code === 'Slash',
+  );
+}
+
+/**
+ * Page-level Chat chords. Ctrl/Cmd+N still fires when the target is the composer
+ * textarea; `?` does not (the field keeps the character).
+ */
+export function chatPageShortcutAction(input: {
+  key: string;
+  code?: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+  overlayOpen: boolean;
+  target: EventTarget | null;
+}): 'history' | 'newChat' | 'overview' | null {
+  if (chatModKShouldFocusHistory(input)) return 'history';
+  if (chatModNShouldStartNewChat(input)) return 'newChat';
+  if (
+    chatQuestionShouldOpenShortcuts({
+      ...input,
+      typingInField: chatKeyTargetIsField(input.target),
+    })
+  ) {
+    return 'overview';
+  }
+  return null;
 }
 
 export function visibleAgentDots(agentIds: AgentKey[]): { shown: AgentKey[]; extra: number } {

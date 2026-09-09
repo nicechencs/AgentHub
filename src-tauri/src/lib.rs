@@ -3,6 +3,7 @@
 
 mod adapter_bridge_controller;
 mod adapter_control_host;
+mod chat_shortcuts;
 mod commands;
 mod exit_coordinator;
 mod file_manager;
@@ -49,6 +50,9 @@ pub fn run() {
             if let Err(e) = tray::setup_tray(app.handle()) {
                 tracing::warn!(error = %e, "system tray setup failed");
             }
+            if let Err(e) = chat_shortcuts::setup_new_chat_accel(app.handle()) {
+                tracing::warn!(error = %e, "chat new-chat accelerator setup failed");
+            }
             {
                 let args: Vec<String> = std::env::args().collect();
                 let fallback = std::env::current_dir()
@@ -82,6 +86,9 @@ pub fn run() {
                 );
             }
             Ok(())
+        })
+        .on_menu_event(|app, event| {
+            crate::chat_shortcuts::emit_if_new_chat(app, event.id.as_ref());
         })
         .on_window_event(|window, event| {
             if let WindowEvent::Focused(true) = event {
