@@ -9,6 +9,7 @@ import {
   filterChatActions,
   isCommandSearchMode,
   normalizeActionQuery,
+  slashMenuFixedPosition,
 } from './chat-actions';
 
 describe('chat action command search', () => {
@@ -73,5 +74,19 @@ describe('chat action command search', () => {
     expect(chatOverflowMenuActions().every((item) => item.kind !== 'draft')).toBe(true);
     expect(chatOverflowMenuActions().some((item) => item.id === 'new-session')).toBe(true);
     expect(CHAT_ACTIONS.some((item) => item.kind === 'draft')).toBe(true);
+  });
+
+  it('sits the slash panel tight above the textarea, not mid-viewport', () => {
+    expect(slashMenuFixedPosition({
+      anchorTop: 640,
+      anchorLeft: 48,
+      viewportHeight: 800,
+    })).toEqual({ left: 48, bottom: 164 });
+    expect(slashMenuFixedPosition({
+      anchorTop: 400,
+      anchorLeft: 20,
+      viewportHeight: 800,
+      gap: 4,
+    }).bottom).toBe(404);
   });
 });

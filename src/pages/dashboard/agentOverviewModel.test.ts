@@ -243,7 +243,7 @@ describe('buildAgentCardView', () => {
     expect(view.envMissing).toBe(false);
     expect(view.versionText).toBe('v2.1.218');
     expect(view.metaText).toBe('xx云中转 · relay.xxyun.example.com');
-    expect(view.metaClass).toBe('text-muted');
+    expect(view.metaClass).toBe('text-secondary');
     expect(view.titleFull).toBe('xx云中转 · relay.xxyun.example.com · API');
     expect(view.ariaLabel).toBe(
       'Claude Code，v2.1.218，API，API Key xx云中转 · relay.xxyun.example.com，点击管理连接',
@@ -331,7 +331,7 @@ describe('buildAgentCardView', () => {
     expect(view.envMissing).toBe(false);
     expect(view.versionText).toBeNull();
     expect(view.metaText).toBe('未安装 · 点击安装');
-    expect(view.metaClass).toBe('text-muted');
+    expect(view.metaClass).toBe('text-secondary');
     expect(view.titleFull).toBe('未安装 · 点击安装');
     expect(view.ariaLabel).toBe('Claude Code，未安装，点击安装');
     expect(view.action).toEqual({ kind: 'navigate', to: '/agents' });

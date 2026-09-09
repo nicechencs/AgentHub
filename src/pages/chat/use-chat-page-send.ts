@@ -25,7 +25,7 @@ import type { RuntimeRequest, RuntimeSnapshot } from '@/lib/api/chat';
 import type { ProcessMap } from '@/lib/chat-process';
 import type { AgentKey, ChatEvent, ChatMessage, Conversation } from '@/lib/types';
 import type { TurnGroup } from './chat-format';
-import { busyAgentsForSends, incomingSendingIds, liveSendingIds, retryTarget, sendBlockers } from './chat-model';
+import { busyAgentsForSends, incomingSendingIds, liveSendingIds, retryTarget, sendBlockers, titleFromPrompt } from './chat-model';
 import { isCurrentChatRequest } from './chat-request';
 import {
   appendQueuedFollowUp,
@@ -60,11 +60,6 @@ import {
   RUNTIME_SNAPSHOT_POLL_ACTIVE_MS,
   RUNTIME_SNAPSHOT_POLL_BACKGROUND_MS,
 } from './chat-streaming';
-
-function titleFromPrompt(prompt: string): string {
-  const trimmed = prompt.trim();
-  return trimmed.length > 30 ? `${trimmed.slice(0, 30)}…` : trimmed;
-}
 
 /**
  * Chat 发送 / 取消 / 流式事件 / 过程面板。

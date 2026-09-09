@@ -79,3 +79,11 @@ export function backupCardIdentity(
   if (identity) return identity;
   return backupFileLabels(bk.files);
 }
+
+/** Confirm copy subject: visible title + time, never a backup id. */
+export function backupDeleteSubject(
+  bk: Pick<BackupMeta, 'identity' | 'note' | 'files' | 'kind' | 'createdAt'>,
+  t: TranslateFn,
+): string {
+  return backupCardIdentity(bk) || backupRowTitle(bk, t);
+}

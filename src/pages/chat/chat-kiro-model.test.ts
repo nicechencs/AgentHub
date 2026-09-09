@@ -51,6 +51,8 @@ describe('Kiro chat honesty helpers', () => {
   it('keeps runtime request panels and command search on for Kiro', () => {
     expect(kiroChatAllowsCommandSearch('kiro')).toBe(true);
     expect(kiroChatAllowsCommandSearch('codex')).toBe(true);
+    expect(kiroChatAllowsCommandSearch('pi')).toBe(true);
+    expect(kiroChatAllowsCommandSearch('grok')).toBe(true);
     expect(chatShowsRuntimeRequestPanels('kiro')).toBe(true);
     expect(chatShowsRuntimeRequestPanels('codex')).toBe(true);
     expect(chatShowsRuntimeRequestPanels('grok')).toBe(true);

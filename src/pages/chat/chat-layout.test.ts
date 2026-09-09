@@ -89,6 +89,8 @@ describe('chat layout wiring', () => {
     expect(source('ChatQueuedFollowUpList.tsx')).toContain('cancelQueuedItem');
     expect(composer).toContain('keepComposerFocus');
     expect(composer).toContain('enterKeyHint="send"');
+    expect(composer).toContain("t('chat.composer.moreOptions')");
+    expect(composer).not.toContain('chat.actions.menu');
     expect(source('use-chat-page.ts')).toContain('composerEnterShouldSubmit');
     expect(source('index.tsx')).toContain('queuedFollowUpCount');
     expect(translate('zh', 'chat.composer.shortcutSend')).toContain('Enter 发送');
@@ -238,22 +240,42 @@ describe('chat layout wiring', () => {
     expect(rail).toContain('hint={false}');
     expect(rail).not.toContain('conversationAgentLine');
     expect(rail).toContain('cwdShortName');
+    expect(rail).toContain('conversationTitle');
     expect(rail).toContain('isBlankConversationDraft');
     expect(rail).toContain("t('chat.rail.draft')");
     expect(rail).toContain("t('chat.rail.searchPlaceholder')");
   });
 
+  it('confirms session delete on Enter and marks the danger button', () => {
+    const rail = source('ChatSessionRail.tsx');
+    expect(rail).toContain('dialogEnterShouldConfirm');
+    expect(rail).toContain('aria-keyshortcuts="Enter"');
+    expect(rail).toContain('<kbd');
+    expect(rail).toContain('Enter');
+    expect(rail).toContain("t('chat.rail.confirmDelete')");
+  });
+
   it('keeps history actions visible and focusable for runtime composers', () => {
     const actions = source('ChatActionMenu.tsx');
     const extras = source('ChatRuntimeExtras.tsx');
+    const composer = source('ChatComposer.tsx');
     const rail = source('ChatSessionRail.tsx');
     const page = source('index.tsx');
     const hook = source('use-chat-page.ts');
     expect(actions).toContain('createPortal');
     expect(actions).toContain('role="listbox"');
+    expect(actions).toContain('slashMenuFixedPosition');
+    expect(actions).toContain('bg-panel');
+    expect(actions).not.toContain('bg-popover');
+    expect(actions).toContain('data-help="chat-slash-menu"');
     expect(actions).not.toContain('DropdownMenu');
     expect(actions).not.toContain('MoreHorizontal');
+    expect(composer).toContain('<ChatActionMenu');
+    expect(composer).toContain('anchorRef={textareaRef}');
+    expect(extras).not.toContain('ChatActionMenu');
     expect(extras).not.toContain('chat.actions.menu');
+    expect(page).toContain('commandSearchOpen={page.commandSearchOpen}');
+    expect(page).toContain('onRunAction={page.runChatAction}');
     expect(rail).toContain('historyRevealNonce');
     expect(rail).toContain('window.setTimeout');
     expect(rail).toContain('data-session-id');

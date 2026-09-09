@@ -27,10 +27,6 @@ const settings: RuntimeTurnSettings = { model: 'gpt-5.3-codex-spark', effort: 'h
 function extras(partial?: Partial<Parameters<typeof ChatRuntimeExtras>[0]>) {
   return createElement(ChatRuntimeExtras, {
     enabled: true,
-    draft: '',
-    commandSearchOpen: false,
-    actionContext: { hasLatestReply: false, newChatAllowed: true },
-    onRunAction: () => undefined,
     models,
     settings,
     frozen: false,
@@ -51,21 +47,22 @@ describe('ChatRuntimeExtras overflow chrome', () => {
   it('does not render a duplicate Agent overflow trigger', () => {
     const html = renderMarkup(extras({ inline: true }));
     expect(html).not.toContain('aria-label="更多操作"');
-    expect(html).not.toContain('MoreHorizontal');
+    expect(html).not.toContain('chat.actions.menu');
+    expect(html).toContain('aria-label="更多"');
+    expect(html).toContain('data-help="chat-composer-more"');
   });
 });
 
 describe('ChatRuntimeExtras model and effort labels', () => {
-  it('shows a readable current model and a short thinking-effort hint', () => {
+  it('shows a readable current model and folds thinking effort into More', () => {
     const html = renderMarkup(extras());
     expect(html).toContain('GPT 5.3 Codex Spark');
     expect(html).not.toContain('>gpt-5.3-codex-spark<');
-    expect(html).toContain('高');
-    expect(html).toContain('可能更慢');
-    expect(html).not.toContain('>high<');
     expect(html).toContain('data-help="chat-model"');
-    expect(html).toContain('data-help="chat-effort"');
+    expect(html).toContain('data-help="chat-composer-more"');
     expect(html).toContain('Control+Shift+I');
+    expect(html).not.toMatch(/>高</);
+    expect(html).not.toContain('>high<');
   });
 });
 
@@ -80,7 +77,7 @@ describe('ChatRuntimeExtras image chips', () => {
     );
     expect(html).toContain('ping.png');
     expect(html).toContain('shot.webp');
-    expect(html).toContain('添加图片');
+    expect(html).toContain('data-help="chat-composer-more"');
     expect(html).not.toContain('localImage');
     // Must not stay on display:contents when chips exist (true-window layout).
     expect(html).toContain('flex-col');
@@ -136,11 +133,11 @@ describe('ChatRuntimeExtras skill picker', () => {
         ],
       }),
     );
-    // Radix closed menus do not SSR item labels; the toolbar trigger is enough.
-    expect(html).toContain('>技能<');
+    expect(html).toContain('data-help="chat-composer-more"');
+    expect(html).not.toMatch(/>技能</);
   });
 
-  it('keeps first-use image and skill controls as icon-only with accessible names', () => {
+  it('keeps first-use image and skill controls inside More, not on the toolbar', () => {
     const html = renderMarkup(
       extras({
         compactSecondary: true,
@@ -151,8 +148,8 @@ describe('ChatRuntimeExtras skill picker', () => {
         ],
       }),
     );
-    expect(html).toContain('aria-label="添加图片"');
-    expect(html).toContain('aria-label="技能"');
+    expect(html).toContain('aria-label="更多"');
+    expect(html).toContain('data-help="chat-composer-more"');
     expect(html).not.toMatch(/>添加图片</);
     expect(html).not.toMatch(/>技能</);
   });

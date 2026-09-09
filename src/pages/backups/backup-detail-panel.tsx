@@ -1,10 +1,16 @@
 import { useEffect, useState } from 'react';
-import { RotateCcw, Trash2 } from 'lucide-react';
+import { MoreHorizontal, RotateCcw, Trash2 } from 'lucide-react';
 import { ConfigFileCard } from '@/components/shared/ConfigFileCard';
 import { DetailRow } from '@/components/shared/DetailRow';
 import { InspectSurface } from '@/components/layout/InspectSurface';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useToast } from '@/components/ui/toast';
 import { inspectBackup } from '@/lib/api/backup';
 import { openPathInFileManager } from '@/lib/api/skill';
@@ -98,16 +104,32 @@ export function BackupDetailPanel({
       showCancel={false}
       width={width}
       primary={(
-        <Button type="button" size="sm" variant="outline" disabled={busy} onClick={onRestore}>
-          <RotateCcw className="h-3.5 w-3.5" />
-          {t('common.restore')}
-        </Button>
-      )}
-      danger={(
-        <Button type="button" size="sm" variant="dangerOutline" disabled={busy} onClick={onDelete}>
-          <Trash2 className="h-3.5 w-3.5" />
-          {t('common.delete')}
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button type="button" size="sm" variant="outline" disabled={busy} onClick={onRestore}>
+            <RotateCcw className="h-3.5 w-3.5" />
+            {t('common.restore')}
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                disabled={busy}
+                aria-label={t('settings.backups.moreActions')}
+                title={t('settings.backups.moreActions')}
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem className="text-danger focus:text-danger" onSelect={onDelete}>
+                <Trash2 className="h-3.5 w-3.5" />
+                {t('common.delete')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       )}
     >
       <div id={`backup-detail-${backup.id}`} data-backup-detail={backup.id} className="flex flex-col gap-3 text-xs">

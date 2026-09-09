@@ -705,6 +705,7 @@ function TicketRow({
   nativeSwitch,
   onSwitch,
   onEdit,
+  onRemoveFromCatalog,
   onShowDetail,
   onFollowDetail,
   onContextMenu,
@@ -722,6 +723,7 @@ function TicketRow({
   nativeSwitch: boolean;
   onSwitch?: (ticket: TicketView) => void;
   onEdit: (ticket: TicketView) => void;
+  onRemoveFromCatalog?: (ticket: TicketView) => void;
   onShowDetail?: (ticket: TicketView) => void;
   onFollowDetail?: (ticket: TicketView) => void;
   onContextMenu?: (event: React.MouseEvent) => void;
@@ -852,7 +854,7 @@ function TicketRow({
         onClick={(event) => event.stopPropagation()}
         onPointerDown={(event) => event.stopPropagation()}
       >
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-nowrap items-center gap-2">
           {nativeSwitch ? (
             <DisabledReasonButton
               disabled={switchChip.kind === 'in-use' || switchBusy || !onSwitch}
@@ -875,12 +877,34 @@ function TicketRow({
                 : switchChip.label}
             </DisabledReasonButton>
           ) : null}
-          {editLabel ? (
-            <Button size="sm" variant="outline" onClick={() => onEdit(ticket)}>
-              <Pencil className="h-3.5 w-3.5" /> {editLabel}
-            </Button>
-          ) : null}
-          {onOpenMenu ? (
+          {editLabel || onRemoveFromCatalog ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  aria-label={t('connections.list.moreActions')}
+                  title={t('connections.list.moreActions')}
+                >
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
+                {editLabel ? (
+                  <DropdownMenuItem onSelect={() => onEdit(ticket)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                    {editLabel}
+                  </DropdownMenuItem>
+                ) : null}
+                {onRemoveFromCatalog ? (
+                  <DropdownMenuItem onSelect={() => onRemoveFromCatalog(ticket)}>
+                    <Undo2 className="h-3.5 w-3.5" />
+                    {t('connections.list.removeFromCatalog')}
+                  </DropdownMenuItem>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : onOpenMenu ? (
             <Button
               size="icon"
               variant="ghost"
@@ -1235,6 +1259,7 @@ export function TicketWalletList({
                   nativeSwitch={showsNativeSwitch(row.ticket.agentId, agentFilterId)}
                   onSwitch={onSwitchTicket}
                   onEdit={onEditTicket}
+                  onRemoveFromCatalog={canUnapply ? onRemoveFromCatalog : undefined}
                   onShowDetail={onShowDetail}
                   onFollowDetail={onFollowDetail}
                   onContextMenu={canUnapply ? (event) => {

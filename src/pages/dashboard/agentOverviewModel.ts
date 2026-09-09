@@ -177,7 +177,7 @@ export interface AgentCardView {
   /** 已安装时展示在名称后的版本文案，如 `v2.1.218`；未安装为 null */
   versionText: string | null;
   metaText: string;
-  metaClass: 'text-muted' | 'text-warning';
+  metaClass: 'text-secondary' | 'text-warning';
   titleFull: string;
   ariaLabel: string;
   statusDotTitle: string;
@@ -225,7 +225,7 @@ export function buildAgentCardView(
   const authLabel = localizeStoredDashboardCopy(rawAuthLabel, t);
 
   let metaText: string;
-  let metaClass: 'text-muted' | 'text-warning' = 'text-muted';
+  let metaClass: 'text-secondary' | 'text-warning' = 'text-secondary';
   if (missing) {
     if (envMissing) {
       metaText = t ? t('dashboard.overview.envNotReady') : '环境未就绪 · 点击修复';

@@ -33,6 +33,7 @@ import { localAddressCopyForTarget } from './route-endpoint-copy';
 import {
   adapterProfilePrimaryAction,
   adapterProfileRecoveryGuide,
+  adapterProfileStoppedHint,
   adapterStatusTextClass,
   bridgeRuntimeStatusView,
   isLocalBridgeCardActive,
@@ -231,6 +232,11 @@ function AdapterProfileRow({
   }, t);
   const transitioning = bridgeStatus?.state === 'starting' || bridgeStatus?.state === 'stopping';
   const recovery = adapterProfileRecoveryGuide(profile, t);
+  const stoppedHint = adapterProfileStoppedHint({
+    route: profile.route,
+    bridgeState: bridgeStatus?.state,
+    statusUnavailable,
+  }, t);
   const failure = error ? adapterFailurePresentation(error, t('routes.mutationFailure'), t) : null;
   const listening = adapterBridgeIsListening(bridgeStatus);
   const localLabel = listening
@@ -247,7 +253,7 @@ function AdapterProfileRow({
         <div className="min-w-0 flex-1 space-y-1 overflow-hidden">
           <div className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
             {source.agentId ? <AgentDot agentId={source.agentId} size="sm" title={null} /> : null}
-            <span className="min-w-0 truncate">{source.title}</span>
+            <Tip label={source.title} className="min-w-0 truncate">{source.title}</Tip>
           </div>
           <div className="flex min-w-0 items-center gap-1.5 font-mono text-xs text-secondary">
             <div className="min-w-0 flex-1">
@@ -256,7 +262,7 @@ function AdapterProfileRow({
               </Tip>
             </div>
             <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden />
-            <span className="min-w-0 max-w-[45%] truncate">{localLabel}</span>
+            <Tip label={localLabel} className="min-w-0 max-w-[45%] truncate">{localLabel}</Tip>
           </div>
           {supportedAgents.length > 0 ? (
             <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -339,6 +345,10 @@ function AdapterProfileRow({
       {recovery ? (
         <p className="mt-2 text-xs text-warning" role="status">
           {`${recovery.summary} ${t('routes.recovery.openDetail')}`}
+        </p>
+      ) : stoppedHint ? (
+        <p className="mt-2 text-xs text-secondary" role="status">
+          {`${stoppedHint.reason} · ${stoppedHint.next}`}
         </p>
       ) : null}
       {failure ? (

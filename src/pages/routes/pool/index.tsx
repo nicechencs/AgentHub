@@ -561,8 +561,8 @@ export default function RoutesPoolPage() {
               {directProfiles.length > 0 ? (
                 <PageSection
                   first={authorizations.length === 0 && groupedOrphan.length === 0}
-                  title={t('routes.direct.title')}
-                  description={t('routes.direct.description')}
+                  title={t('routes.direct.titleDisconnected', { n: directProfiles.length })}
+                  description={t('routes.direct.descriptionDisconnected')}
                 >
                   <AdapterProfiles
                     {...listProps}

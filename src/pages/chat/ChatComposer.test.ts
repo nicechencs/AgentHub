@@ -155,4 +155,12 @@ describe('ChatComposer empty invite', () => {
     expect(html).toContain('Enter 发送 · Shift+Enter 换行');
     expect(html).not.toContain('data-help="chat-composer-hint"');
   });
+
+  it('accepts slash-menu props for Pi and Grok without a toolbar host', () => {
+    expect(() => renderMarkup(composer({
+      draft: '/',
+      commandSearchOpen: true,
+      onRunAction: () => undefined,
+    }))).not.toThrow();
+  });
 });
