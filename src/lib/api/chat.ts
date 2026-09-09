@@ -2,7 +2,7 @@
  * Chat API façade — delegates to app runtime backend.
  */
 import { getBackend } from '@/app/runtime';
-import type { AgentKey, ChatEvent, ChatMessage, Conversation } from '@/lib/types';
+import type { AgentKey, ChatEvent, ChatHistoryTurn, ChatMessage, Conversation } from '@/lib/types';
 import type { MarkdownFilePreviewDto } from '@/lib/backend/contracts/chat-port';
 import type { RuntimeOptions, RuntimeReply, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings } from '@/lib/backend/contracts/chat-runtime';
 export type { MarkdownFilePreviewDto } from '@/lib/backend/contracts/chat-port';
@@ -31,6 +31,16 @@ export async function ensureDefaultConversation(
   cwd?: string | null,
 ): Promise<Conversation> {
   return getBackend().chat.ensureDefaultConversation(agentIds, cwd);
+}
+
+export async function openConversationFromSession(input: {
+  agentId: AgentKey;
+  sessionId?: string | null;
+  cwd?: string | null;
+  title?: string | null;
+  history: ChatHistoryTurn[];
+}): Promise<Conversation> {
+  return getBackend().chat.openConversationFromSession(input);
 }
 
 export async function updateConversation(

@@ -22,6 +22,8 @@ describe('projects split layout', () => {
     expect(page).not.toContain('useProjectPreview');
     expect(page).not.toContain('previewShellMounted');
     expect(page).toContain('followPreview={preview.expanded}');
+    expect(page).toContain('historyTurnsFromRecord');
+    expect(page).toContain('sessionId: nativeSessionId(p)');
   });
 
   it('offers 全部, merges same-path projects, and sorts the list', () => {

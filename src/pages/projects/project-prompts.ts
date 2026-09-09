@@ -1,4 +1,4 @@
-import type { AgentSession } from '@/lib/types';
+import type { AgentSession, ChatHistoryTurn } from '@/lib/types';
 import { splitExcerptTurns } from './session-excerpt';
 
 /** Keep continue/summarize payloads well under typical sessionStorage quota. */
@@ -39,6 +39,22 @@ export function buildSummaryPrompt(
     '',
     blocks.join('\n\n---\n\n'),
   ].join('\n');
+}
+
+export function historyTurnsFromRecord(
+  p: AgentSession,
+  record?: ContinueRecord | null,
+): ChatHistoryTurn[] {
+  const excerpt = record?.excerpt?.trim() ?? '';
+  const turns = excerpt ? splitExcerptTurns(excerpt) : [];
+  if (turns.length > 0) {
+    return turns.map((turn) => ({
+      role: turn.role === 'user' ? 'user' : 'agent',
+      content: turn.text,
+    }));
+  }
+  const fallback = p.preview?.trim() || p.title.trim();
+  return fallback ? [{ role: 'user', content: fallback }] : [];
 }
 
 export function buildContinuePrompt(

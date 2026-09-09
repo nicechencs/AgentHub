@@ -21,6 +21,9 @@ export function sameChatBootstrap(a: ChatBootstrap, b: ChatBootstrap): boolean {
     (a.cwd ?? '') === (b.cwd ?? '') &&
     (a.title ?? '') === (b.title ?? '') &&
     (a.prompt ?? '') === (b.prompt ?? '') &&
+    (a.sessionId ?? '') === (b.sessionId ?? '') &&
+    (a.fallbackCwd ?? '') === (b.fallbackCwd ?? '') &&
+    (a.history?.length ?? 0) === (b.history?.length ?? 0) &&
     a.agentIds.length === b.agentIds.length &&
     a.agentIds.every((id, index) => id === b.agentIds[index])
   );
@@ -55,8 +58,14 @@ function parseChatBootstrap(raw: string): ChatBootstrap | null {
   if (!data) return null;
   const agentIds = Array.isArray(data.agentIds) ? data.agentIds.filter(Boolean) : [];
   const cwd = typeof data.cwd === 'string' ? data.cwd.trim() : '';
-  if (agentIds.length === 0 && !cwd) return null;
-  return { ...data, agentIds, cwd: cwd || data.cwd };
+  const sessionId = typeof data.sessionId === 'string' ? data.sessionId.trim() : '';
+  if (agentIds.length === 0 && !cwd && !sessionId) return null;
+  return {
+    ...data,
+    agentIds,
+    cwd: cwd || data.cwd,
+    sessionId: sessionId || data.sessionId,
+  };
 }
 
 /** 读取并清除，保证只消费一次 */

@@ -2755,6 +2755,7 @@ export const en = {
       titleAria: "Conversation title",
       pickCwd: "Click to choose a working directory",
       cwdUnset: "Working directory not set",
+      cwdMissing: "Folder is gone",
       autoApprove: "Auto-approve",
       sessionSettings: "Session settings",
       nativeSession: "Linked official session {id}",
@@ -3085,6 +3086,11 @@ export const en = {
     },
     cwd: {
       unset: "No folder set",
+      missing: "The original working directory is gone",
+      missingDetail:
+        "The chat history is still here. Starting the agent uses a folder that still exists. You can also bind it to the project folder or choose another folder.",
+      rebind: "Choose folder",
+      useProjectDir: "Use project folder",
     },
     autoApprove: {
       skip: "Skip tool confirmation",
@@ -3115,6 +3121,8 @@ export const en = {
     toast: {
       fromProjects: "Created a chat from Projects",
       fromProjectsDesc: "The prompt is filled in. Confirm the working directory, then send.",
+      fromSession: "Opened this chat",
+      fromSessionDesc: "History is loaded. You can choose a new folder if the original one is gone.",
       cancelRequested: "Cancel requested",
       cancelRequestedDesc: "Stopping the current generation. The process panel will show cancelled.",
       steered: "Added",

@@ -330,6 +330,37 @@ export default function ChatPage() {
 
             {page.active && (
               <>
+                {page.cwdMissing ? (
+                  <Notice tone="warning" className="mb-2">
+                    <div
+                      className="flex flex-wrap items-center justify-between gap-2"
+                      data-help="chat-cwd-missing"
+                    >
+                      <div className="min-w-0 space-y-1">
+                        <p className="font-medium text-primary">{t('chat.cwd.missing')}</p>
+                        <p className="text-meta text-secondary">{t('chat.cwd.missingDetail')}</p>
+                      </div>
+                      <div className="flex shrink-0 flex-wrap gap-2">
+                        {page.fallbackCwd ? (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => void page.pickWorkingDirectory(page.fallbackCwd)}
+                          >
+                            {t('chat.cwd.useProjectDir')}
+                          </Button>
+                        ) : null}
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => void page.pickWorkingDirectory()}
+                        >
+                          {t('chat.cwd.rebind')}
+                        </Button>
+                      </div>
+                    </div>
+                  </Notice>
+                ) : null}
                 {page.turnOutcome ? (
                   <ChatTurnOutcomeBanner
                     outcome={page.turnOutcome}

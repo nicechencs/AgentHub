@@ -87,6 +87,14 @@ pub struct Conversation {
     pub sending: bool,
 }
 
+/// One imported transcript turn when opening a session by id.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatHistoryTurn {
+    pub role: ChatRole,
+    pub content: String,
+}
+
 /// One message in a conversation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

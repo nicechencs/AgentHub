@@ -148,6 +148,19 @@ export function conversationResumeCommand(c: Pick<Conversation, 'agentIds' | 'na
   return nativeResumeCommand(agent, c.nativeSessionId);
 }
 
+export function conversationCwdMissing(
+  conversation: Pick<Conversation, 'cwd' | 'cwdMissing'>,
+): boolean {
+  return Boolean(conversation.cwd?.trim() && conversation.cwdMissing);
+}
+
+export function canRebindConversationCwd(
+  conversation: Pick<Conversation, 'cwd' | 'cwdMissing'>,
+  runtimeLocked: boolean,
+): boolean {
+  return !runtimeLocked || conversationCwdMissing(conversation);
+}
+
 export function cwdShortName(cwd: string | null | undefined, t: TranslateFn): string {
   if (cwd == null) return t('chat.cwd.unset');
   const trimmed = cwd.trim();

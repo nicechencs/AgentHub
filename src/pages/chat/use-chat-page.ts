@@ -6,6 +6,7 @@ import { listChatMessages, updateConversation } from '@/lib/api/chat';
 import { pickDirectory } from '@/lib/api/settings';
 import type { AgentKey, ChatMessage } from '@/lib/types';
 import { groupByTurn } from './chat-format';
+import { forgetFallbackCwd, peekFallbackCwd } from '@/lib/chat-cwd-fallback';
 import {
   agentChatEnvReady,
   agentHasConfiguredAuth,
@@ -13,6 +14,7 @@ import {
   chatAgentPickerRows,
   chatModNShouldStartNewChat,
   composerNativeEditChord,
+  conversationCwdMissing,
   filterConversations,
   groupConversationsByDay,
   isChatAgentSelectable,
@@ -525,15 +527,18 @@ export function useChatPage() {
     }
   }
 
-  async function pickWorkingDirectory() {
+  async function pickWorkingDirectory(nextPath?: string | null) {
     if (!active || send.sendingHere) return;
     try {
-      const picked = await pickDirectory({
-        title: t('chat.settings.pickDirTitle'),
-        defaultPath: active.cwd ?? null,
-      });
+      const picked = nextPath?.trim()
+        ? nextPath.trim()
+        : await pickDirectory({
+            title: t('chat.settings.pickDirTitle'),
+            defaultPath: peekFallbackCwd(active.id) ?? active.cwd ?? null,
+          });
       if (picked) {
         await patchActive({ cwd: picked });
+        forgetFallbackCwd(active.id);
       }
     } catch (e) {
       toast({
@@ -628,6 +633,8 @@ export function useChatPage() {
     confirmDelete,
     patchActive,
     pickWorkingDirectory,
+    cwdMissing: active ? conversationCwdMissing(active) : false,
+    fallbackCwd: active ? peekFallbackCwd(active.id) : null,
     renameTitle,
     selectConversationAgentId,
     handleSwitchConnection: connection.handleSwitchConnection,
