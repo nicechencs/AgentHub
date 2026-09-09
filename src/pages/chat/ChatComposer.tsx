@@ -3,6 +3,7 @@ import {
   useEffect,
   useLayoutEffect,
   useRef,
+  useState,
   type KeyboardEvent,
   type ReactNode,
   type Ref,
@@ -60,6 +61,7 @@ import {
   type ChatSendBlocker,
 } from './chat-model';
 import { kiroChatComposerPlaceholder } from './chat-kiro-model';
+import { chatEffortHint, chatEffortLabel, chatModelDisplayName } from './chat-model-labels';
 
 export function ChatComposer({
   draft,
@@ -107,6 +109,7 @@ export function ChatComposer({
   paneRef,
   showBlockerBanner = true,
   focusNonce = 0,
+  modelMenuOpenNonce = 0,
 }: {
   draft: string;
   setDraft: (v: string) => void;
@@ -153,6 +156,7 @@ export function ChatComposer({
   paneHeight?: number | null;
   paneRef?: Ref<HTMLDivElement>;
   showBlockerBanner?: boolean;
+  modelMenuOpenNonce?: number;
 }) {
   const navigate = useNavigate();
   const { t } = useI18n();
@@ -176,6 +180,14 @@ export function ChatComposer({
   const queueView = composerQueuedFollowUpView(queuedFollowUp, queuedFollowUpCount);
   const stopCopy = t(composerStopMessageKey(canceling));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const modelMenuDisabled = sending || connectionLocked || switchingProvider || switchingModel;
+  const currentEffortHint = currentEffort ? chatEffortHint(currentEffort, t) : null;
+  useEffect(() => {
+    if (!modelMenuOpenNonce) return;
+    if (modelMenuDisabled || modelOptions.length === 0) return;
+    setModelMenuOpen(true);
+  }, [modelMenuDisabled, modelMenuOpenNonce, modelOptions.length]);
 
   const syncTextareaHeight = useCallback(() => {
     const el = textareaRef.current;
@@ -518,79 +530,101 @@ export function ChatComposer({
           </DropdownMenu>
 
           {modelOptions.length > 0 ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-              disabled={sending || connectionLocked || switchingProvider || switchingModel}
-                  className="max-w-40"
-                  aria-label={t('chat.composer.switchModel')}
-                >
-                  <span className="min-w-0 truncate">
-                    {currentModel || t('chat.composer.switchModel')}
-                  </span>
-                  <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-64">
-                <DropdownMenuLabel>{t('chat.composer.switchModel')}</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuRadioGroup
-                  value={currentModel ?? ''}
-                  onValueChange={(id) => onSwitchModel(id)}
-                >
-                  {modelOptions.map((model) => (
-                    <DropdownMenuRadioItem
-                      key={model}
-                      value={model}
-                      disabled={sending || connectionLocked || switchingModel}
-                    >
-                      <span className="truncate">{model}</span>
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Hint label={`${t('chat.composer.switchModel')} · ${t('chat.composer.shortcutOpenModel')}`}>
+              <DropdownMenu open={modelMenuOpen} onOpenChange={setModelMenuOpen}>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={modelMenuDisabled}
+                    className="max-w-48"
+                    data-help="chat-model"
+                    aria-label={t('chat.composer.switchModel')}
+                    aria-keyshortcuts="Control+Shift+I"
+                  >
+                    <span className="min-w-0 truncate">
+                      {currentModel
+                        ? chatModelDisplayName(currentModel, t)
+                        : t('chat.composer.switchModel')}
+                    </span>
+                    <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-64">
+                  <DropdownMenuLabel>{t('chat.composer.switchModel')}</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuRadioGroup
+                    value={currentModel ?? ''}
+                    onValueChange={(id) => onSwitchModel(id)}
+                  >
+                    {modelOptions.map((model) => (
+                      <DropdownMenuRadioItem
+                        key={model}
+                        value={model}
+                        disabled={sending || connectionLocked || switchingModel}
+                      >
+                        <span className="truncate">{chatModelDisplayName(model, t)}</span>
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </Hint>
           ) : null}
 
           {effortOptions.length > 0 && onSwitchEffort ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={sending || connectionLocked || switchingProvider || switchingModel}
-                  className="max-w-32"
-                  aria-label={t('chat.runtimeOps.effort')}
-                >
-                  <span className="min-w-0 truncate">
-                    {currentEffort || t('chat.runtimeOps.effort')}
-                  </span>
-                  <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-48">
-                <DropdownMenuLabel>{t('chat.runtimeOps.effort')}</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuRadioGroup
-                  value={currentEffort ?? ''}
-                  onValueChange={(id) => onSwitchEffort(id)}
-                >
-                  {effortOptions.map((effort) => (
-                    <DropdownMenuRadioItem
-                      key={effort}
-                      value={effort}
-                      disabled={sending || connectionLocked || switchingModel}
+            <>
+              <Hint label={currentEffortHint ?? t('chat.runtimeOps.effort')}>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={sending || connectionLocked || switchingProvider || switchingModel}
+                      className="max-w-32"
+                      data-help="chat-effort"
+                      aria-label={t('chat.runtimeOps.effort')}
                     >
-                      <span className="truncate">{effort}</span>
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                      <span className="min-w-0 truncate">
+                        {currentEffort
+                          ? chatEffortLabel(currentEffort, t)
+                          : t('chat.runtimeOps.effort')}
+                      </span>
+                      <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-56">
+                    <DropdownMenuLabel>{t('chat.runtimeOps.effort')}</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuRadioGroup
+                      value={currentEffort ?? ''}
+                      onValueChange={(id) => onSwitchEffort(id)}
+                    >
+                      {effortOptions.map((effort) => {
+                        const hint = chatEffortHint(effort, t);
+                        return (
+                          <DropdownMenuRadioItem
+                            key={effort}
+                            value={effort}
+                            disabled={sending || connectionLocked || switchingModel}
+                          >
+                            <span className="flex min-w-0 flex-1 items-baseline justify-between gap-3">
+                              <span className="truncate">{chatEffortLabel(effort, t)}</span>
+                              {hint ? <span className="shrink-0 text-meta text-muted">{hint}</span> : null}
+                            </span>
+                          </DropdownMenuRadioItem>
+                        );
+                      })}
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </Hint>
+              {currentEffortHint ? (
+                <span className="text-meta text-muted">{currentEffortHint}</span>
+              ) : null}
+            </>
           ) : null}
 
           {runtimeControls ? (
