@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTranslator } from '@/lib/i18n';
 import {
   backupCardIdentity,
+  backupDeleteSubject,
   backupFileLabel,
   backupFileLabels,
   backupNoteSubtitle,
@@ -143,5 +144,54 @@ describe('backupCardIdentity', () => {
         files: ['auth.json', 'config.toml'],
       }),
     ).toBe('auth.json · config.toml');
+  });
+});
+
+describe('backupDeleteSubject', () => {
+  it('uses the visible identity, never a backup id', () => {
+    expect(
+      backupDeleteSubject(
+        {
+          note: 'Dashboard 手动备份',
+          identity: 'a@example.com',
+          files: ['auth.json'],
+          kind: 'manual',
+          createdAt: isoMinutesAgo(3),
+        },
+        tZh,
+      ),
+    ).toBe('Dashboard 手动备份');
+    expect(
+      backupDeleteSubject(
+        {
+          note: 'before provider switch',
+          identity: 'a@example.com',
+          files: ['auth.json'],
+          kind: 'auto-switch',
+          createdAt: isoMinutesAgo(3),
+        },
+        tZh,
+      ),
+    ).toBe('a@example.com');
+    expect(
+      backupDeleteSubject(
+        {
+          files: ['~/.claude/settings.json'],
+          kind: 'manual',
+          createdAt: isoMinutesAgo(3),
+        },
+        tZh,
+      ),
+    ).toBe('settings.json');
+    expect(
+      backupDeleteSubject(
+        {
+          files: ['~/.claude/settings.json'],
+          kind: 'manual',
+          createdAt: isoMinutesAgo(3),
+        },
+        tZh,
+      ),
+    ).not.toMatch(/bk_|backup-/i);
   });
 });

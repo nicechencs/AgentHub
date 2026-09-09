@@ -17,6 +17,9 @@ describe('backups layout wiring', () => {
     expect(panel).toContain('variant="danger"');
     expect(panel).not.toContain('onClick={() => void handleDelete(bk)}');
     expect(panel).toContain("t('settings.backups.confirmDelete')");
+    expect(panel).toContain('backupDeleteSubject');
+    expect(panel).toContain('MoreHorizontal');
+    expect(panel).not.toContain('variant="dangerOutline"');
   });
 
   it('treats restore as a destructive confirm', () => {

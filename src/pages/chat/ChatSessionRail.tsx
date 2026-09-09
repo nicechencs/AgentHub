@@ -27,6 +27,7 @@ import {
   conversationRailSelectedFill,
   conversationTitle,
   cwdShortName,
+  dialogEnterShouldConfirm,
   isBlankConversationDraft,
   type ConversationDayGroup,
 } from './chat-model';
@@ -252,7 +253,18 @@ export function ChatSessionRail({
         )}
       </div>
       <Dialog open={Boolean(deleteConfirmId)} onOpenChange={(next) => !next && onCancelDelete()}>
-        <DialogContent>
+        <DialogContent
+          onKeyDown={(event) => {
+            if (!dialogEnterShouldConfirm({
+              key: event.key,
+              shiftKey: event.shiftKey,
+              isComposing: event.nativeEvent.isComposing,
+              nativeEvent: event.nativeEvent,
+            })) return;
+            event.preventDefault();
+            onConfirmDelete();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>
               {t('chat.rail.deleteTitle', { title: conversationTitle(t, pending?.title ?? '') })}
@@ -265,8 +277,18 @@ export function ChatSessionRail({
             <Button variant="secondary" onClick={onCancelDelete}>
               {t('common.cancel')}
             </Button>
-            <Button variant="danger" onClick={onConfirmDelete}>
+            <Button
+              variant="danger"
+              aria-keyshortcuts="Enter"
+              onClick={onConfirmDelete}
+            >
               {t('chat.rail.confirmDelete')}
+              <kbd
+                className="inline-flex h-5 min-w-5 items-center justify-center rounded-btn border border-white/35 bg-white/15 px-1 text-meta leading-none text-white"
+                aria-hidden
+              >
+                Enter
+              </kbd>
             </Button>
           </DialogFooter>
         </DialogContent>

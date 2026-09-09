@@ -12,6 +12,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Check,
   ChevronDown,
+  MoreHorizontal,
   SendHorizontal,
   Square,
 } from 'lucide-react';
@@ -52,6 +53,8 @@ import {
   composerInvitePlaceholder,
   composerShowsHintRow,
 } from './chat-empty-state';
+import { ChatActionMenu } from './ChatActionMenu';
+import type { ChatActionContext, ChatActionDef } from './chat-actions';
 import { ChatShortcutsHelp } from './ChatShortcutsHelp';
 import {
   autoApproveFooter,
@@ -121,6 +124,12 @@ export function ChatComposer({
   emptyTranscript = false,
   focusNonce = 0,
   modelMenuOpenNonce = 0,
+  commandSearchOpen = false,
+  commandIndex = 0,
+  actionContext = { hasLatestReply: false, newChatAllowed: true },
+  extraActions,
+  onRunAction,
+  onHoverCommandIndex,
 }: {
   draft: string;
   setDraft: (v: string) => void;
@@ -169,6 +178,12 @@ export function ChatComposer({
   showBlockerBanner?: boolean;
   emptyTranscript?: boolean;
   modelMenuOpenNonce?: number;
+  commandSearchOpen?: boolean;
+  commandIndex?: number;
+  actionContext?: ChatActionContext;
+  extraActions?: ChatActionDef[];
+  onRunAction?: (action: ChatActionDef) => void;
+  onHoverCommandIndex?: (index: number) => void;
 }) {
   const navigate = useNavigate();
   const { t } = useI18n();
@@ -366,6 +381,18 @@ export function ChatComposer({
           }}
           aria-label={t('chat.composer.inputAria')}
         />
+        {onRunAction ? (
+          <ChatActionMenu
+            draft={draft}
+            commandOpen={commandSearchOpen}
+            selectedIndex={commandIndex}
+            actionContext={actionContext}
+            extraActions={extraActions}
+            onRun={onRunAction}
+            onHoverIndex={onHoverCommandIndex}
+            anchorRef={textareaRef}
+          />
+        ) : null}
         <ChatQueuedFollowUpList
           items={queuedFollowUps}
           onCancelItem={onCancelQueuedFollowUp}
@@ -582,57 +609,48 @@ export function ChatComposer({
           ) : null}
 
           {effortOptions.length > 0 && onSwitchEffort ? (
-            <>
-              <Hint label={currentEffortHint ?? t('chat.runtimeOps.effort')}>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={sending || connectionLocked || switchingProvider || switchingModel}
-                      className="max-w-32"
-                      data-help="chat-effort"
-                      aria-label={t('chat.runtimeOps.effort')}
-                    >
-                      <span className="min-w-0 truncate">
-                        {currentEffort
-                          ? chatEffortLabel(currentEffort, t)
-                          : t('chat.runtimeOps.effort')}
-                      </span>
-                      <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-56">
-                    <DropdownMenuLabel>{t('chat.runtimeOps.effort')}</DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuRadioGroup
-                      value={currentEffort ?? ''}
-                      onValueChange={(id) => onSwitchEffort(id)}
-                    >
-                      {effortOptions.map((effort) => {
-                        const hint = chatEffortHint(effort, t);
-                        return (
-                          <DropdownMenuRadioItem
-                            key={effort}
-                            value={effort}
-                            disabled={sending || connectionLocked || switchingModel}
-                          >
-                            <span className="flex min-w-0 flex-1 items-baseline justify-between gap-3">
-                              <span className="truncate">{chatEffortLabel(effort, t)}</span>
-                              {hint ? <span className="shrink-0 text-meta text-muted">{hint}</span> : null}
-                            </span>
-                          </DropdownMenuRadioItem>
-                        );
-                      })}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </Hint>
-              {!compactSecondary && currentEffortHint ? (
-                <span className="text-meta text-muted">{currentEffortHint}</span>
-              ) : null}
-            </>
+            <Hint label={currentEffortHint ?? t('chat.runtimeOps.effort')}>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    disabled={sending || connectionLocked || switchingProvider || switchingModel}
+                    data-help="chat-composer-more"
+                    aria-label={t('chat.composer.moreOptions')}
+                    title={t('chat.composer.moreOptions')}
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-56">
+                  <DropdownMenuLabel>{t('chat.runtimeOps.effort')}</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuRadioGroup
+                    value={currentEffort ?? ''}
+                    onValueChange={(id) => onSwitchEffort(id)}
+                  >
+                    {effortOptions.map((effort) => {
+                      const hint = chatEffortHint(effort, t);
+                      return (
+                        <DropdownMenuRadioItem
+                          key={effort}
+                          value={effort}
+                          disabled={sending || connectionLocked || switchingModel}
+                          data-help="chat-effort"
+                        >
+                          <span className="flex min-w-0 flex-1 items-baseline justify-between gap-3">
+                            <span className="truncate">{chatEffortLabel(effort, t)}</span>
+                            {hint ? <span className="shrink-0 text-meta text-muted">{hint}</span> : null}
+                          </span>
+                        </DropdownMenuRadioItem>
+                      );
+                    })}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </Hint>
           ) : null}
 
           {runtimeControls ? (

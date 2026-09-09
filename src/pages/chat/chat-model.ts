@@ -738,6 +738,16 @@ export function composerEnterShouldSend(input: {
   return true;
 }
 
+/** Delete-confirm dialog: Enter confirms. IME composition must not confirm. */
+export function dialogEnterShouldConfirm(input: {
+  key: string;
+  shiftKey: boolean;
+  isComposing?: boolean;
+  nativeEvent?: { isComposing?: boolean; keyCode?: number };
+}): boolean {
+  return composerEnterShouldSend(input);
+}
+
 function chatModChordMatchesLetter(
   input: { key: string; code?: string; metaKey: boolean; ctrlKey: boolean },
   letter: 'n' | 'k',
@@ -870,8 +880,30 @@ export function turnComparisonChips(agents: ChatMessage[]): Array<{
     }));
 }
 
+const PATH_TOKEN = /(?:[A-Za-z]:)?(?:[\\/][^\s\\/`'"]+)+/g;
+const WEAK_LEAD = /^(?:请(?:帮我)?在|请|in|at)\s+/i;
+const WEAK_ONLY = /^(?:请(?:帮我)?在|请|in|at|only)$/i;
+const TITLE_CLIP = 24;
+
+/** Drop filesystem paths so a prompt like "请在 /tmp/foo 检查问题" keeps 检查问题. */
+export function conversationSemanticTitle(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  let next = trimmed.replace(/`[^`]+`/g, ' ').replace(PATH_TOKEN, ' ');
+  next = next.replace(/\s+/g, ' ').trim().replace(WEAK_LEAD, '').trim();
+  if (!next || WEAK_ONLY.test(next)) return '';
+  return next.length > TITLE_CLIP ? `${next.slice(0, TITLE_CLIP)}…` : next;
+}
+
+/** First send: store a semantic title, never a path-first clip of the prompt. */
+export function titleFromPrompt(prompt: string): string {
+  return conversationSemanticTitle(prompt);
+}
+
 export function conversationTitle(t: TranslateFn, title: string): string {
-  return title.trim() ? title : t('chat.title.newConversation');
+  const semantic = conversationSemanticTitle(title);
+  if (semantic) return semantic;
+  return t('chat.title.newConversation');
 }
 
 /** Empty title and no official session means this row has not been sent yet. */

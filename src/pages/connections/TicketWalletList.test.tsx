@@ -135,7 +135,7 @@ describe('TicketWalletList details', () => {
     expect(markup).toContain('data-sortable-id');
   });
 
-  it('puts 编辑配置 on the collapsed card, not only inside 详情', () => {
+  it('puts edit behind ⋯ on the card, not as a same-row button', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
@@ -146,7 +146,7 @@ describe('TicketWalletList details', () => {
       }),
     );
     expect(markup).not.toContain('aria-expanded');
-    expect(markup).toContain('编辑配置');
+    expect(markup).toContain('更多操作');
     expect(markup).not.toContain('移入回收站');
   });
 
