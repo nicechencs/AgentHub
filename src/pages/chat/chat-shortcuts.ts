@@ -27,25 +27,46 @@ export function chatShortcutChord(
   return keys.replace(/Ctrl/g, 'Cmd');
 }
 
+type ShortcutKeyRoot = {
+  addEventListener(
+    type: 'keydown',
+    listener: (event: KeyboardEvent) => void,
+    options?: boolean | AddEventListenerOptions,
+  ): void;
+  removeEventListener(
+    type: 'keydown',
+    listener: (event: KeyboardEvent) => void,
+    options?: boolean | AddEventListenerOptions,
+  ): void;
+};
+
+function defaultShortcutKeyRoots(): ShortcutKeyRoot[] {
+  if (typeof document === 'undefined') return [];
+  return typeof window === 'undefined' ? [document] : [document, window];
+}
+
 /**
- * Capture-phase on the document so Tauri/WebKit still sees chords that start
- * on the composer (window bubble often never runs in the desktop webview).
+ * Capture-phase on document and window. Window bubble never sees many real
+ * keydowns in the Tauri webview; window capture still gets `window.dispatchEvent`
+ * used by existing tests.
  */
 export function subscribeChatShortcutKeydown(
   onKey: (event: KeyboardEvent) => void,
-  root: {
-    addEventListener(
-      type: 'keydown',
-      listener: (event: KeyboardEvent) => void,
-      options?: boolean | AddEventListenerOptions,
-    ): void;
-    removeEventListener(
-      type: 'keydown',
-      listener: (event: KeyboardEvent) => void,
-      options?: boolean | AddEventListenerOptions,
-    ): void;
-  } = document,
+  roots: ShortcutKeyRoot | ShortcutKeyRoot[] = defaultShortcutKeyRoots(),
 ): () => void {
-  root.addEventListener('keydown', onKey, true);
-  return () => root.removeEventListener('keydown', onKey, true);
+  const list = Array.isArray(roots) ? roots : [roots];
+  const seen = new WeakSet<KeyboardEvent>();
+  const wrapped = (event: KeyboardEvent) => {
+    if (seen.has(event)) return;
+    seen.add(event);
+    onKey(event);
+  };
+  for (const root of list) {
+    root.addEventListener('keydown', wrapped, true);
+  }
+  return () => {
+    for (const root of list) {
+      root.removeEventListener('keydown', wrapped, true);
+    }
+  };
 }

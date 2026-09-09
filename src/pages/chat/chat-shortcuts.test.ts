@@ -48,8 +48,17 @@ describe('chat shortcut overview', () => {
       addEventListener: add,
       removeEventListener: remove,
     });
-    expect(add).toHaveBeenCalledWith('keydown', onKey, true);
+    expect(add).toHaveBeenCalledOnce();
+    expect(add.mock.calls[0]?.[0]).toBe('keydown');
+    expect(add.mock.calls[0]?.[2]).toBe(true);
+    const listener = add.mock.calls[0]?.[1] as (event: KeyboardEvent) => void;
+    const event = { key: 'n' } as KeyboardEvent;
+    listener(event);
+    listener(event);
+    expect(onKey).toHaveBeenCalledOnce();
+    expect(onKey).toHaveBeenCalledWith(event);
     unsub();
-    expect(remove).toHaveBeenCalledWith('keydown', onKey, true);
+    expect(remove).toHaveBeenCalledOnce();
+    expect(remove.mock.calls[0]?.[2]).toBe(true);
   });
 });

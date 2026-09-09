@@ -47,7 +47,7 @@ describe('chat layout wiring', () => {
     expect(page).toContain('subscribeChatShortcutKeydown');
     expect(page).toContain("id: 'new-session'");
     expect(page).toContain('ChatShortcutsDialog');
-    expect(source('chat-shortcuts.ts')).toContain("addEventListener('keydown', onKey, true)");
+    expect(source('chat-shortcuts.ts')).toContain("addEventListener('keydown', wrapped, true)");
     expect(source('use-chat-page.ts')).toContain('chatModNShouldStartNewChat');
     expect(page).toContain('onOpenShortcuts');
     expect(source('ChatComposer.tsx')).toContain('data-help="chat-shortcuts"');

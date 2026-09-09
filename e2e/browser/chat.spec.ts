@@ -104,13 +104,15 @@ test('model menu uses readable names and Ctrl+Shift+I opens it', async ({ page }
   await page.keyboard.press('Escape');
 
   await page.evaluate(() => {
-    window.dispatchEvent(
+    const target = document.activeElement ?? document.body;
+    target.dispatchEvent(
       new KeyboardEvent('keydown', {
         key: 'I',
         code: 'KeyI',
         ctrlKey: true,
         shiftKey: true,
         bubbles: true,
+        cancelable: true,
       }),
     );
   });
