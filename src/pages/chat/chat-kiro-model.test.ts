@@ -26,7 +26,7 @@ describe('Kiro chat honesty helpers', () => {
     expect(isRuntimeChatAgent('cursor')).toBe(false);
   });
 
-  it('does not pin a one-shot banner; composer still names allow/deny and queue', () => {
+  it('does not pin a one-shot banner; composer invite stays off the warning', () => {
     expect(kiroChatStance('claude')).toBeNull();
     expect(kiroChatStance('cursor')).toBeNull();
     expect(kiroChatStance('kiro')).toBeNull();
@@ -34,16 +34,16 @@ describe('Kiro chat honesty helpers', () => {
       title: t('chat.kiro.oneshotHint'),
       detail: t('chat.kiro.oneshotDetail'),
     });
-    expect(kiroChatComposerPlaceholder(t, 'kiro', 'fallback')).toBe(t('chat.kiro.placeholder'));
+    expect(kiroChatComposerPlaceholder(t, 'kiro', 'fallback')).toBe('fallback');
     expect(kiroChatComposerPlaceholder(t, 'claude', 'fallback')).toBe('fallback');
     expect(t('chat.kiro.oneshotHint')).toContain('允许、一直允许或拒绝');
     expect(t('chat.kiro.oneshotHint')).toContain('不能中途补充');
     expect(t('chat.kiro.oneshotDetail')).toContain('请新建对话');
     expect(t('chat.kiro.oneshotDetail')).toContain('不在本页');
-    expect(t('chat.kiro.placeholder')).toContain('允许、一直允许或拒绝');
+    expect(t('chat.kiro.placeholder')).toBe('发给 Agent…');
+    expect(t('chat.kiro.placeholder')).not.toContain('不能中途补充');
     expect(t('chat.kiro.permissionAsk')).toBe('帮我批准');
     expect(t('chat.kiro.permissionFull')).toBe('完全访问权限');
-    expect(t('chat.kiro.placeholder')).toContain('排队');
     expect(t('chat.kiro.settingsLocked')).toContain('权限');
     expect(t('chat.kiro.settingsLocked')).toContain('请新建对话');
   });

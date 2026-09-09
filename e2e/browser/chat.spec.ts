@@ -6,14 +6,24 @@ test('empty chat starter card fills the composer without sending', async ({ page
   await openChatComposer(page);
   await setWorkingDirectory(page);
 
-  const card = page.getByRole('button', { name: '了解这个项目' });
-  await expect(card).toBeVisible();
-  await card.click();
+  await expect(page.getByText('开始对话')).toBeVisible();
+  await expect(page.getByText(/发送第一条消息/)).toBeVisible();
+  await expect(page.getByText('示例只填入输入框，由你发送')).toBeVisible();
 
   const composer = page.getByRole('textbox', { name: '消息输入' });
+  await expect(composer).toHaveAttribute('placeholder', /发第一条消息|发给 Agent/);
+  await expect(composer).not.toHaveAttribute('placeholder', /不能中途补充/);
+
+  const card = page.getByRole('button', { name: '了解这个项目' });
+  await expect(card).toBeVisible();
+  await page.screenshot({ path: '/opt/cursor/artifacts/chat_empty_invite.png' });
+  await card.click();
+
   await expect(composer).toHaveValue('请帮我了解这个项目的结构和主要功能。');
   await expect(composer).toBeFocused();
   await expect(page.getByRole('log')).not.toContainText('请帮我了解这个项目的结构和主要功能。');
+  await expect(page.locator('[data-help="chat-composer-hint"]')).toContainText('生成时不能中途补充，可排队到下一轮');
+  await page.screenshot({ path: '/opt/cursor/artifacts/chat_chip_fills_draft.png' });
 });
 
 test('Enter sends and Shift+Enter inserts a newline without sending', async ({ page }) => {

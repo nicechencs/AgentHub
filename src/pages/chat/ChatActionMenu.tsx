@@ -11,8 +11,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import {
-  CHAT_ACTIONS,
   chatActionDisabledReason,
+  chatOverflowMenuActions,
   filterChatActions,
   type ChatActionContext,
   type ChatActionDef,
@@ -75,7 +75,7 @@ export function ChatActionMenu(props: {
           className="min-w-56"
           onCloseAutoFocus={(event) => event.preventDefault()}
         >
-          {CHAT_ACTIONS.map((action) => {
+          {chatOverflowMenuActions().map((action) => {
             const reason = chatActionDisabledReason(action, props.actionContext);
             return (
               <DropdownMenuItem

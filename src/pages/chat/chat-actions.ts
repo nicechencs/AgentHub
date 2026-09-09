@@ -190,12 +190,18 @@ export function actionMatchesQuery(action: ChatActionDef, query: string): boolea
   return tokens.every((token) => hay.includes(token));
 }
 
+/** Overflow ⋯ lists real commands. Sample drafts stay on empty-state chips. */
+export function chatOverflowMenuActions(actions: readonly ChatActionDef[] = CHAT_ACTIONS): ChatActionDef[] {
+  return actions.filter((item) => item.kind !== 'draft');
+}
+
 export function filterChatActions(draft: string, extraActions: ChatActionDef[] = []): ChatActionDef[] {
   if (!isCommandSearchMode(draft)) return [];
   const actions = [...extraActions, ...CHAT_ACTIONS];
   const query = commandSearchQuery(draft);
-  if (!query) return actions;
-  return actions.filter((action) => actionMatchesQuery(action, query));
+  const scoped = query ? actions : actions.filter((item) => item.kind !== 'draft');
+  if (!query) return scoped;
+  return scoped.filter((action) => actionMatchesQuery(action, query));
 }
 
 export function chatActionDisabledReason(

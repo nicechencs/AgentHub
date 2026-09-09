@@ -44,6 +44,11 @@ import {
   composerSubmitMessageKey,
 } from './chat-composer-model';
 import {
+  composerCapabilityHint,
+  composerCompactSecondary,
+  composerInvitePlaceholder,
+} from './chat-empty-state';
+import {
   autoApproveFooter,
   blockerCopy,
   blockerPrimaryTarget,
@@ -60,7 +65,6 @@ import {
   type ChatSendBlocker,
 } from './chat-model';
 import { ChatQueuedFollowUpList } from './ChatQueuedFollowUpList';
-import { kiroChatComposerPlaceholder } from './chat-kiro-model';
 import { chatEffortHint, chatEffortLabel, chatModelDisplayName } from './chat-model-labels';
 import type { QueuedFollowUpItem } from './chat-grok-follow-up';
 
@@ -109,6 +113,7 @@ export function ChatComposer({
   paneHeight = null,
   paneRef,
   showBlockerBanner = true,
+  emptyTranscript = false,
   focusNonce = 0,
   modelMenuOpenNonce = 0,
   onOpenShortcuts,
@@ -158,6 +163,7 @@ export function ChatComposer({
   paneHeight?: number | null;
   paneRef?: Ref<HTMLDivElement>;
   showBlockerBanner?: boolean;
+  emptyTranscript?: boolean;
   modelMenuOpenNonce?: number;
   onOpenShortcuts?: () => void;
 }) {
@@ -251,6 +257,11 @@ export function ChatComposer({
     rowCount: pickerRows.length,
   });
   const pickerEmptyCopy = pickerEmpty ? chatAgentPickerEmptyCopy(t, pickerEmpty) : null;
+  const compactSecondary = composerCompactSecondary({ emptyTranscript });
+  const capabilityHint = composerCapabilityHint(t, {
+    agentId: primaryAgent,
+    sending,
+  });
 
   return (
     <>
@@ -303,11 +314,10 @@ export function ChatComposer({
               ? undefined
               : { minHeight: COMPOSER_TEXTAREA_MIN_PX, maxHeight: COMPOSER_TEXTAREA_MAX_PX }
           }
-          placeholder={kiroChatComposerPlaceholder(
-            t,
-            primaryAgent,
-            t('chat.composer.placeholder'),
-          )}
+          placeholder={composerInvitePlaceholder(t, {
+            emptyTranscript,
+            agentLabel: agentPickerLabel,
+          })}
           rows={1}
           value={draft}
           disabled={textareaDisabled}
@@ -351,9 +361,16 @@ export function ChatComposer({
           onCancelAll={onClearQueuedFollowUp}
         />
         <div className="flex items-center justify-between gap-2 px-4 pb-1" data-composer-shortcut="">
-          <p className="min-w-0 text-meta text-muted">
-            {t(composerShortcutMessageKey(shortcutKind))}
-          </p>
+          <div className="min-w-0">
+            <p className="text-meta text-muted">
+              {t(composerShortcutMessageKey(shortcutKind))}
+            </p>
+            {capabilityHint ? (
+              <p className="text-meta text-muted/70" data-help="chat-composer-hint">
+                {capabilityHint}
+              </p>
+            ) : null}
+          </div>
           {onOpenShortcuts ? (
             <Button
               type="button"
@@ -627,7 +644,7 @@ export function ChatComposer({
                   </DropdownMenuContent>
                 </DropdownMenu>
               </Hint>
-              {currentEffortHint ? (
+              {!compactSecondary && currentEffortHint ? (
                 <span className="text-meta text-muted">{currentEffortHint}</span>
               ) : null}
             </>

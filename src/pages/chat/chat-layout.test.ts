@@ -131,8 +131,11 @@ describe('chat layout wiring', () => {
     const transcript = source('ChatTranscript.tsx');
     expect(transcript).toContain('chatStarterActions');
     expect(transcript).toContain('onPickStarter');
-    expect(transcript).toContain('chat.transcript.identity');
-    expect(transcript).toContain('chat.transcript.startersHint');
+    expect(transcript).toContain('emptyTranscriptCopy');
+    expect(transcript).toContain('text-display');
+    expect(source('chat-empty-state.ts')).toContain('chat.transcript.identity');
+    expect(source('chat-empty-state.ts')).toContain('chat.transcript.firstMessage');
+    expect(source('chat-empty-state.ts')).toContain('chat.transcript.startersHint');
     expect(source('ChatComposer.tsx')).toContain('focusNonce');
     expect(source('index.tsx')).toContain('focusNonce={page.composerFocusNonce}');
     expect(transcript).toContain('firstBlocker');
@@ -140,6 +143,8 @@ describe('chat layout wiring', () => {
     expect(source('index.tsx')).toContain('onPickStarter={page.runChatAction}');
     expect(source('index.tsx')).toContain('firstBlocker={page.blockers[0] ?? null}');
     expect(source('index.tsx')).toContain('showBlockerBanner={page.turns.length > 0}');
+    expect(source('index.tsx')).toContain('emptyTranscript={page.turns.length === 0}');
+    expect(source('index.tsx')).toContain('compactSecondary={page.turns.length === 0}');
     expect(source('ChatComposer.tsx')).toContain('showBlockerBanner');
   });
 
@@ -280,7 +285,8 @@ describe('chat layout wiring', () => {
     expect(page).toContain('chatShowsRuntimeRequestPanels');
     expect(page).toContain('chatComposerChoiceOptions');
     expect(page).toContain('data-help="chat-kiro-oneshot"');
-    expect(source('ChatComposer.tsx')).toContain('kiroChatComposerPlaceholder');
+    expect(source('ChatComposer.tsx')).toContain('composerInvitePlaceholder');
+    expect(source('ChatComposer.tsx')).toContain('composerCapabilityHint');
     expect(source('use-chat-page.ts')).toContain('kiroChatAllowsCommandSearch');
   });
 
