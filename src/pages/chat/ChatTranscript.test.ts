@@ -1,6 +1,7 @@
-import { createElement, createRef } from 'react';
+import { createElement, createRef, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import type { ChatMessage, Conversation } from '@/lib/types';
 import { chatTranscriptSurfaceClass } from './chat-model';
 import { ChatTranscript } from './ChatTranscript';
@@ -35,8 +36,12 @@ function userMessage(content: string): ChatMessage {
   };
 }
 
+function renderMarkup(node: ReactElement) {
+  return renderToStaticMarkup(createElement(TooltipProvider, null, node));
+}
+
 function renderTranscript(turns: { turn: number; user?: ChatMessage; agents: ChatMessage[] }[]) {
-  return renderToStaticMarkup(
+  return renderMarkup(
     createElement(ChatTranscript, {
       active: conversation(),
       turns,
@@ -70,7 +75,7 @@ describe('ChatTranscript surfaces', () => {
   });
 
   it('replaces starters with the first send blocker as the primary action', () => {
-    const html = renderToStaticMarkup(
+    const html = renderMarkup(
       createElement(ChatTranscript, {
         active: conversation(),
         turns: [],
