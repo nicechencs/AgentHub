@@ -259,6 +259,7 @@ export default function ChatPage() {
                   const kind = grokLegacyContinueKind({
                     agentId: page.primaryAgent,
                     runtimeEnabled: page.runtime?.enabled,
+                    runtimeReady: page.runtime != null,
                     hasMessages: page.messages.length > 0,
                     nativeSessionId: page.active.nativeSessionId,
                   });
@@ -281,7 +282,17 @@ export default function ChatPage() {
                           >
                             {t('chat.composer.legacyContinueAction')}
                           </Button>
-                        ) : null}
+                        ) : (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            disabled={!page.actionContext.newChatAllowed}
+                            onClick={() => void page.handleNewChat()}
+                          >
+                            {t('chat.composer.legacyNewChatAction')}
+                          </Button>
+                        )}
                       </div>
                     </Notice>
                   );

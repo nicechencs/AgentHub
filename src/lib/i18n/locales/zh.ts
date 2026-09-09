@@ -2759,6 +2759,7 @@ export const zh = {
       legacyContinueHint: "继续后这条对话可以加图片。",
       legacyContinueAction: "用新方式继续",
       legacyNewChatHint: "这条对话加不了图片。新建对话可以加图片。",
+      legacyNewChatAction: "新建对话",
       stop: "停止",
       resizeAria: "调整对话记录与输入区高度",
     },
