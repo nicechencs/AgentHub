@@ -100,6 +100,11 @@ describe('agents layout wiring', () => {
     expect(card).not.toContain('ListRowBody');
     expect(card).not.toContain('LIST_ROW_PAD');
     expect(card).toContain('size="sm"');
+    expect(card).toContain('size="icon"');
+    expect(card).toContain('aria-label={upgradeTooltip}');
+    expect(card).not.toContain("t('agents.card.forceUpgrade')");
+    expect(card).not.toContain("t('agents.card.openOfficialUpdate')");
+    expect(card).not.toContain("t('agents.card.update')");
     expect(card).not.toContain('min-h-20');
     expect(card).toContain('uniqueInstallVersions');
     expect(card).toContain('programInstalls');

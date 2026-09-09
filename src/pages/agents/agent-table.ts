@@ -23,7 +23,7 @@ export const AGENT_TABLE_COLUMN_SPECS: ColumnWidthSpec<AgentTableColumnKey>[] = 
   { key: 'note', defaultWidth: 200, minWidth: 120 },
   // 启动命令行 + 启动应用 must stay on one row; stored widths are clamped to minWidth.
   { key: 'start', defaultWidth: 268, minWidth: 240 },
-  { key: 'upgrade', defaultWidth: 128, minWidth: 96 },
+  { key: 'upgrade', defaultWidth: 72, minWidth: 56 },
   { key: 'hide', defaultWidth: 96, minWidth: 80 },
   { key: 'actions', defaultWidth: 128, minWidth: 96 },
 ];
