@@ -58,8 +58,9 @@ updated: 2026-09-09
 
 ## 已知边界
 
-- 验收剩余（不从提案推导新任务）：Codex 文本问答要产品决定（见下，未默认打开上游开关）；Windows 上的 Codex 对话真窗尚未宣称；Kiro 企业 IdC / `profileArn` / `runtime.*.kiro.dev` 真窗未验（登录里带上区域和 profile ≠ 已验收）。
-- Codex 文本问答：Chat 已能处理 `item/tool/requestUserInput` 并提交答案。本机 Codex 0.148 在 Default / `on-request` 下会把模型对 `request_user_input` 的调用打回「unavailable in Default mode」，因此产品会话发不出问答卡片。进程级 `--enable default_mode_request_user_input`（不写用户 `config.toml`）可以逼出该请求；该开关在 Codex 侧是 under development、默认关闭，开启后 Codex 会警告行为不完整。计划模式也能用该工具，但需要 `experimentalApi`，且计划模式仍是 B2 范围外。未把该开关做成产品默认，也未造假问答入口。
+- 验收剩余（不从提案推导新任务）：Windows 上的 Codex 对话真窗尚未宣称；Kiro 企业 IdC / `profileArn` / `runtime.*.kiro.dev` 真窗未验（登录里带上区域和 profile ≠ 已验收）。
+- Codex 文本问答：Chat 已能处理 `item/tool/requestUserInput` 并提交答案。本机 Codex 0.148 在 Default / `on-request` 下会把模型对 `request_user_input` 的调用打回「unavailable in Default mode」，因此产品会话发不出问答卡片。进程级 `--enable default_mode_request_user_input` 可逼出该请求，但该开关在 Codex 侧仍是 under development、默认关闭。**产品决定：等上游把该能力做成稳定默认后再跟**；AgentHub 不会把该开关做成产品默认，也不会造假问答卡片。计划模式仍是 B2 范围外，不为此接线。
+- Codex Computer Use：Linux AgentHub Chat 真窗不可用（FAIL）。没有 AgentHub 开启路径，也不做假接线或产品开关。官方 Computer Use 只在 macOS / Windows Codex 桌面端。不要宣称已支持 CU。
 - `agenthub-adapterd` sidecar 目标架构尚未替代当前桌面进程内的路由运行时。
 - 本机同口授权池已作为默认 Routes 能力打开：每个目标 Agent/surface 一个默认池，共用 loopback 入口和本机令牌；`GET /models` 与 dispatch 共用 resolver；默认 `priority_failover`；官方直连不自动入池。混合供应商复合路由和 Codex↔Grok 双向 Responses 仍是实验开关、默认关闭。已保存的本机入口和 Responses 格式（Codex 或 Grok）必须与当前端点一致，否则准备启动时失败，不会悄悄改成直通。现行契约见 [连接与路由](concepts/connections-and-routing.md) 和 [本机 Routes API](reference/local-route-api.md)；设计稿见 [本机同口授权池（归档）](archive/unified-loopback-pool.md)。
 - 托盘低内存后台模式仍是未实施方案，不从它派生当前任务。
