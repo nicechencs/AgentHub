@@ -65,11 +65,11 @@ describe('chat runtime transport guards', () => {
     expect(isRuntimeSessionLocked(snapshot(true, 'idle'), { nativeSessionId: 'thread-1' })).toBe(true);
     expect(isRuntimeSessionLocked(snapshot(true, 'completed'), { conversationId: 'a' })).toBe(true);
   });
-  it('treats Codex, Grok, and Kiro as continuous-chat agents', () => {
+  it('treats Codex, Grok, Kiro, and Claude as continuous-chat agents', () => {
     expect(isRuntimeChatAgent('codex')).toBe(true);
     expect(isRuntimeChatAgent('grok')).toBe(true);
     expect(isRuntimeChatAgent('pi')).toBe(false);
-    expect(isRuntimeChatAgent('claude')).toBe(false);
+    expect(isRuntimeChatAgent('claude')).toBe(true);
     expect(isRuntimeChatAgent('cursor')).toBe(false);
     expect(isRuntimeChatAgent('kiro')).toBe(true);
     expect(isRuntimeChatAgent(null)).toBe(false);
@@ -81,6 +81,7 @@ describe('chat runtime transport guards', () => {
     expect(bindRuntimeSnapshotToAgent(leftover, { agentId: 'cursor', conversationId: 'a' })?.enabled).toBe(false);
     expect(bindRuntimeSnapshotToAgent(leftover, { agentId: 'codex', conversationId: 'a' })?.enabled).toBe(true);
     expect(bindRuntimeSnapshotToAgent(leftover, { agentId: 'grok', conversationId: 'a' })?.enabled).toBe(true);
+    expect(bindRuntimeSnapshotToAgent(leftover, { agentId: 'claude', conversationId: 'a' })?.enabled).toBe(true);
     expect(bindRuntimeSnapshotToAgent(leftover, { agentId: 'pi', conversationId: 'b' })).toBeNull();
     expect(bindRuntimeSnapshotToAgent(leftover, { agentId: 'codex' })).toBeNull();
   });
