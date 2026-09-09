@@ -843,11 +843,19 @@ describe('chatQuestionShouldOpenShortcuts', () => {
     expect(
       chatQuestionShouldOpenShortcuts({
         ...base,
-        key: 'Unidentified',
+        key: '?',
+        code: undefined,
+        shiftKey: false,
+      }),
+    ).toBe(true);
+    expect(
+      chatQuestionShouldOpenShortcuts({
+        ...base,
+        key: 'x',
         code: 'Slash',
         shiftKey: true,
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('yields to fields, overlays, and modifiers', () => {

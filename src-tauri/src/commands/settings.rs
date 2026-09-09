@@ -53,6 +53,7 @@ pub async fn set_setting(
     state.sync_setting_flag(&key_for_sync, &value_for_sync);
     if key_for_sync == "language" {
         crate::tray::rebuild_tray_menu(&app, &value_for_sync);
+        crate::chat_shortcuts::rebuild_new_chat_accel(&app, &value_for_sync);
         crate::shell_open_chat::register_best_effort(crate::tray_i18n::parse_tray_language(
             &value_for_sync,
         ));

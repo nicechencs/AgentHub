@@ -801,8 +801,8 @@ export function chatQuestionShouldOpenShortcuts(input: {
     return false;
   }
   if (input.key === '?') return true;
-  // WebKitGTK often reports Shift+/ as key:'/' (or Unidentified) instead of '?'.
-  return Boolean(input.shiftKey && (input.key === '/' || input.code === 'Slash'));
+  // Some webviews report Shift+/ as key:'/' instead of '?'. Do not match code alone.
+  return Boolean(input.shiftKey && input.key === '/');
 }
 
 /**

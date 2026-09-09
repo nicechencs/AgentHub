@@ -10,6 +10,7 @@ import { Notice } from '@/components/shared/Notice';
 import { isMarkdownFilePath } from '@/components/shared/MarkdownView';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
+import { onChatNativeShortcut } from '@/lib/api/chat';
 import { hasEscPriorityOverlay } from '@/lib/skills/preview-keys';
 import { StorageKey } from '@/lib/storage-key';
 import { cn } from '@/lib/utils';
@@ -175,6 +176,33 @@ export default function ChatPage() {
     preview.expanded,
     preview.mounted,
   ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unsub: (() => void) | undefined;
+    void onChatNativeShortcut((action) => {
+      if (cancelled || action !== 'newChat') return;
+      page.runChatAction({
+        id: 'new-session',
+        kind: 'local',
+        keywords: [],
+      });
+    })
+      .then((fn) => {
+        if (cancelled) {
+          fn();
+          return;
+        }
+        unsub = fn;
+      })
+      .catch(() => {
+        // Browser mock / unavailable: page keydown still handles Chromium.
+      });
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
+  }, [page.runChatAction]);
 
   if (page.error && page.conversations.length === 0 && !page.listLoading) {
     return (
