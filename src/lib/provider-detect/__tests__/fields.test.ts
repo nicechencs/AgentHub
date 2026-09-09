@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyFormVars,
+  collapseDoubledModelId,
   EMPTY_FORM_VARS,
   extractFormVars,
   formFieldVisibility,
@@ -760,6 +761,41 @@ describe('provider-detect fields', () => {
     expect(out).toContain('default_model = "grok-4.6"');
     expect(out.match(/^\s*default_model\s*=/gm)).toHaveLength(1);
     expect(out).not.toContain('grok-4.6rok-4.6');
+    expect(out.match(/\[models\.[^\]]+\]/g)).toEqual(['[models."grok-4.6"]']);
+  });
+
+  it('collapses an exact doubled Kimi model id before write', () => {
+    expect(collapseDoubledModelId('grok-4.6grok-4.6')).toBe('grok-4.6');
+    expect(collapseDoubledModelId('  grok-4.6grok-4.6  ')).toBe('grok-4.6');
+    expect(collapseDoubledModelId('grok-4.6grok-4.6grok-4.6grok-4.6')).toBe('grok-4.6');
+    expect(collapseDoubledModelId('grok-4.6')).toBe('grok-4.6');
+    expect(collapseDoubledModelId('grok-4.6rok-4.6')).toBe('grok-4.6rok-4.6');
+
+    const src = [
+      'default_model = "grok-4.6grok-4.6"',
+      'default_provider = "moonshot"',
+      '',
+      '[providers.moonshot]',
+      'base_url = "https://mytokens.cc/v1"',
+      'api_key = "***"',
+      '',
+      '[models."grok-4.6grok-4.6"]',
+      'provider = "moonshot"',
+      'model = "grok-4.6grok-4.6"',
+      '',
+    ].join('\n');
+    const extracted = extractFormVars('kimi', src, 'toml');
+    expect(extracted.model).toBe('grok-4.6');
+    const out = applyFormVars('kimi', src, 'toml', {
+      ...EMPTY_FORM_VARS,
+      model: 'grok-4.6grok-4.6',
+      baseUrl: 'https://mytokens.cc/v1',
+      providerSlug: 'moonshot',
+      apiKey: '***',
+    });
+    expect(out).toContain('default_model = "grok-4.6"');
+    expect(out).not.toContain('grok-4.6grok-4.6');
+    expect(out).toContain('[models."grok-4.6"]');
     expect(out.match(/\[models\.[^\]]+\]/g)).toEqual(['[models."grok-4.6"]']);
   });
 

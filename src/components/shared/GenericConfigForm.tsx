@@ -36,6 +36,7 @@ import {
   configFieldSuggestionPickLabel,
   configFieldUnsupported,
 } from './config-field-copy';
+import { collapseDoubledModelId } from '@/lib/provider-detect/fields';
 
 export interface GenericConfigFormProps {
   schema: AgentConfigSchemaDto;
@@ -127,7 +128,18 @@ export function SuggestableInput({
       ) : null}
       <Input
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => {
+          const next = e.target.value;
+          if (value && next === value + value) {
+            onChange(value);
+            return;
+          }
+          onChange(next);
+        }}
+        onBlur={() => {
+          const collapsed = collapseDoubledModelId(value);
+          if (collapsed !== value) onChange(collapsed);
+        }}
         disabled={disabled}
         readOnly={readOnly}
         placeholder={placeholder}

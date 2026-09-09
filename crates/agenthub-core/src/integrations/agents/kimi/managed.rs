@@ -190,10 +190,36 @@ pub(crate) fn complete_kimi_live_toml(doc: &mut DocumentMut) -> Result<()> {
         .map(str::to_string);
     // Keep the account's model. Rewriting grok-* to kimi-k2 made custom
     // relays 404: the key's group never had that alias.
-    let Some(alias) = stored else {
+    let Some(stored) = stored else {
         return Ok(());
     };
+    let alias = collapse_doubled_model_id(&stored);
+    if alias.is_empty() {
+        return Ok(());
+    }
+    if alias != stored {
+        doc["default_model"] = toml_edit::value(alias.as_str());
+    }
     ensure_kimi_model_alias(doc, slug.as_str(), &alias)
+}
+
+/// `grok-4.6grok-4.6` is a form concat, not a real alias.
+fn collapse_doubled_model_id(model: &str) -> String {
+    let mut out = model.trim().to_string();
+    loop {
+        let n = out.chars().count();
+        if n < 2 || n % 2 != 0 {
+            break;
+        }
+        let half = n / 2;
+        let left: String = out.chars().take(half).collect();
+        let right: String = out.chars().skip(half).collect();
+        if left.is_empty() || left != right {
+            break;
+        }
+        out = left;
+    }
+    out
 }
 
 #[cfg(test)]

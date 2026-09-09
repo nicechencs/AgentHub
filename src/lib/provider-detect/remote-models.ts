@@ -8,7 +8,7 @@ import type { AgentKey } from '@/lib/types';
 import { officialApiDefaults } from '@/config/official-api';
 import { isOfficialKimiPlatformUrl } from '@/lib/kimi-provider-type';
 import { smartDetectUrlAndKey } from './detect';
-import { extractFormVars, looksRedactedOrPlaceholder } from './fields';
+import { collapseDoubledModelId, extractFormVars, looksRedactedOrPlaceholder } from './fields';
 import { REDACTED_MARKER, type ProviderFormVars } from './types';
 
 /** Agents without an official template (pi / workbuddy / cursor, …). */
@@ -157,7 +157,7 @@ export function resolveModelForSave(
     const official = officialApiDefaults(agentId);
     if (official) return official.model;
   }
-  return model.trim();
+  return collapseDoubledModelId(model);
 }
 
 /**

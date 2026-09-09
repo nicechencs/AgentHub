@@ -149,6 +149,23 @@ describe('default / resolve / withDefaultModel', () => {
     expect(resolveModelForSave('pi', '', false)).toBe('');
   });
 
+  it('collapses an exact doubled model id on custom save', () => {
+    expect(resolveModelForSave('kimi', 'grok-4.6grok-4.6', false)).toBe('grok-4.6');
+    expect(resolveModelForSave('kimi', '  grok-4.6grok-4.6  ', false)).toBe('grok-4.6');
+    const vars = withDefaultModel(
+      'kimi',
+      {
+        ...EMPTY_FORM_VARS,
+        baseUrl: 'https://mytokens.cc/v1',
+        apiKey: 'sk-test-key',
+        model: 'grok-4.6grok-4.6',
+      },
+      false,
+    );
+    expect(vars.model).toBe('grok-4.6');
+    expect(resolveModelForSave('kimi', 'grok-4.6grok-4.6', true)).toBe('kimi-k2');
+  });
+
   it('empty custom model + withDefaultModel does not invent a Claude model id', () => {
     const vars = withDefaultModel(
       'claude',

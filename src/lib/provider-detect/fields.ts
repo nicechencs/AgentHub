@@ -595,8 +595,19 @@ function firstTableSlug(text: string, prefix: 'model_providers' | 'providers'): 
   return m?.[2]?.trim() || 'custom';
 }
 
+/** Collapse an accidental exact concat (`grok-4.6grok-4.6` → `grok-4.6`). */
+export function collapseDoubledModelId(model: string): string {
+  let out = model.trim();
+  while (out.length >= 2 && out.length % 2 === 0) {
+    const half = out.slice(0, out.length / 2);
+    if (!half || half !== out.slice(half.length)) break;
+    out = half;
+  }
+  return out;
+}
+
 function kimiModelForWrite(model: string): string {
-  return model.trim();
+  return collapseDoubledModelId(model);
 }
 
 function renameKimiProvider(text: string, from: string, to: string): string {
