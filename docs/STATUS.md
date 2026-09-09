@@ -3,7 +3,7 @@ title: AgentHub 当前实现状态
 type: status
 status: current
 owner: maintainers
-updated: 2026-09-08
+updated: 2026-09-09
 ---
 
 # 当前实现状态
@@ -16,12 +16,12 @@ updated: 2026-09-08
 - 当前界面包含 Dashboard、Agents、Connections、Sub2API、Routes、Skills、MCP、Chat、Projects、Plugins 和 Settings。Settings 五个页签为 **偏好 / 功能 / 本机 / 备份 / 关于**（`?tab=preferences|features|local|backups|about`）。各页功能与 Agent 接入点见 [页面模式](ui/page-patterns.md)。
 - Connections 是跨工具的登录列表。接到某个工具从 Dashboard「连接/切换」。连接页不提供「分享至连接池」行入口；入池在 Routes 连接池用「从连接同步」。登录仍由连接页管理生命周期（除非在池里编辑官方登录并复制为池自有行）。**产品决策：所有 API Key 都可以分享（含 WorkBuddy / ZCode 等上配置的）；国产官方登录不能分享**，见 [产品边界](decisions/product-boundaries.md)。Routes 管理本机路由运行时，二级导航为 board / pool / tokens / activity（`/routes` 进看板）；连接池也可以添加官方登录 / API Key（仅用于连接池，可不出现在连接页），并可用「从连接同步」一次加入多份登录。界面契约见 [页面模式](ui/page-patterns.md)。在连接池里编辑从连接页分享来的官方登录并保存时，会先复制成连接池自己的一份（连接页那份还在），再问要不要把模型写回连接页。连接页与连接池相互独立，回收站也分开。登录按登录方式分行保存（官方登录与 API Key 分开），记下关键词和整份配置；详情列出记下的配置文件（可复制、打开所在目录），并补充套餐、有效期、时间线与完整端点。WorkBuddy 自定义模型和 ZCode 供应商按目录拆成多条登录，桌面套餐登录不导入；WorkBuddy 写入只认 `/v1/chat/completions`。
 - Sub2API 是独立站点管理页：密码登录站点（验证码 / 2FA 按站点要求），可记住多账号；密码经 settings 端口写入桌面 SQLite vault（mock 为内存）。登录后可按分组查看、创建、编辑、启用/禁用或删除 API Key，并把可用 Key 导入已安装的 Agent。侧栏入口默认隐藏，打开设置「功能」中的「显示 Sub2API 页面」后显示；隐藏只影响入口，不影响页面本身。界面细节见 [页面模式](ui/page-patterns.md)。
-- 当前内置适配包括 Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy、ZCode、DeepSeek Harness 和 Kiro。**Cursor Agent 适配器仍在代码中，但 dev 线通过 store-stamp 默认软隐藏**（Agents 管理页可取消隐藏）；待登录写入、路由目标与结构化输出等兼容问题修复后再重新开放。Kiro 管理 `kiro-cli`（检测/安装/登录指引/API Key）。新对话走 `kiro-cli acp` 持续通道：可点允许/拒绝、停止；生成时不能中途补充，可排队到下一轮。Kiro 在同一进程内续聊；进程退出后保留历史并提示新建对话，不静默创建空会话。模型、思考等级和权限在对话开始后固定，更换时需新建对话。旧 headless 对话保留原发送方式，不提供切到 ACP 的入口。本机登录或 `KIRO_API_KEY` 可用时，列模型与 Chat 打印路径可走 AgentHub 自有 HTTP（非官方 REST，不会改工作目录）；多轮经 `kiro-http:<conversationId>` 续同一对话，CLI `--resume-id` 为不同命名空间；已有 HTTP 会话失败时直接报错并保留会话，再发仍走同一条 HTTP 对话，不回退成新 CLI 会话。Kiro 本机路由按请求返回 JSON 或 SSE，目前先收齐上游回复再输出；使用连接池里当前登录的访问令牌，并带上该登录的区域、profile 与请求来源，不在本机路由里刷新。交互新对话仍可走 `kiro-cli acp`。不把编辑器当成已安装。
+- 当前内置适配包括 Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy、ZCode、DeepSeek Harness 和 Kiro。**Cursor Agent 适配器仍在代码中，但 dev 线通过 store-stamp 默认软隐藏**（Agents 管理页可取消隐藏）；待登录写入、路由目标与结构化输出等兼容问题修复后再重新开放。Kiro 管理 `kiro-cli`（检测/安装/登录指引/API Key）。新对话走 `kiro-cli acp` 持续通道：可点允许/拒绝、停止；生成时不能中途补充，可排队到下一轮。Kiro 在同一进程内续聊；进程退出后保留历史并提示新建对话，不静默创建空会话。模型、思考等级和权限在对话开始后固定，更换时需新建对话。旧 headless 对话保留原发送方式，不提供切到 ACP 的入口。本机登录或 `KIRO_API_KEY` 可用时，列模型与 Chat 打印路径可走 AgentHub 自有 HTTP（非官方 REST，不会改工作目录）；多轮经 `kiro-http:<conversationId>` 续同一对话，CLI `--resume-id` 为不同命名空间；已有 HTTP 会话失败时直接报错并保留会话，再发仍走同一条 HTTP 对话，不回退成新 CLI 会话。Kiro 本机路由按请求返回 JSON 或 SSE，目前先收齐上游回复再输出；使用连接池里当前登录的访问令牌，并带上该登录的区域、profile 与请求来源，不在本机路由里刷新。企业 IdC / `profileArn` / `runtime.*.kiro.dev` 未做实机验收：登录里有区域和 profile 时会带上，不等于企业场景已验收。交互新对话仍可走 `kiro-cli acp`。不把编辑器当成已安装。
 - CLI 提供 doctor、env、agent、provider、account、skill、usage、backup、run、config 等命令；参数以 CLI 帮助和源码为准。
 - Chat 各家能力与 [Chat 与 Agent](concepts/chat-and-agents.md) 一致：
   - **新空 Codex 会话**：已接入 app-server 持续聊天（持续回复、命令确认、补充/停止、保存与同机重开）。B2 已落地会话模型/思考强度、最小操作菜单、本地图片附件与「用于本次」技能（不含计划模式与完整扩展管理）。Linux 真窗已验：图片、「用于本次」技能、模型×思考强度、停止、关窗续聊、命令批准允许/拒绝。macOS 重开续聊仍有效。Windows 未宣称。文本问答的协议和界面已映射（`item/tool/requestUserInput` → 卡片 + 提交），但 Codex 0.148 Default / `on-request` 默认不发出该请求；见下方已知边界。文件审批缺真窗验收。见 [B1](archive/chat-codex-b1.md)、[B2](archive/chat-codex-b2.md)。
   - **新空 Grok 会话**：持续聊天（模型/思考、图片、后续轮排队），**不支持**为本轮指定「用于本次」技能，界面也不画可点的假按钮。真实窗口验收已通过。
-  - **新空 Kiro 会话**：`kiro-cli acp` 持续通道（允许/拒绝、停止；生成时不能中途补充，可排队到下一轮）。真实窗口验收已通过（含 HTTP 多轮）。旧对话保留原发送方式。
+  - **新空 Kiro 会话**：`kiro-cli acp` 持续通道（允许/拒绝、停止；生成时不能中途补充，可排队到下一轮）。真实窗口验收已通过（ACP 新对话；打印路径 HTTP 多轮为 Builder ID / 本机登录，不是企业 IdC）。旧对话保留原发送方式。
   - **其余 Agent 与旧会话**：仍走原发送方式。
   - **B3** 只约束 Claude 接到持续聊天（ChatRuntime，后台会话控制）：探测结论否定，未接线。见 [Claude B3](archive/chat-claude-b3.md)。
   - **允许 / 拒绝 / 一直允许**（仅 Codex / Grok / Kiro 持续聊天；Cursor 不在此列）。卡片始终有允许和拒绝。「一直允许」只在这次请求带了该选项时出现。待处理请求上的选项会入库，快照或重开后卡片仍可点。点了「一直允许」之后，**只有 Codex 会在本机记住后续确认**，且只限当前这次 Codex 进程（通常是本轮；一轮结束会新起进程，会再问），不写进数据库。Grok / Kiro 只把对方给的选项回传，本机不会替后续请求自动点允许；对方会话是否记住，本仓库没有真机验收。Kiro 会话设置里的「完全访问权限」是另一条（启动时 `--trust-all-tools`），不是卡片上的「一直允许」。机制见 [Chat 与 Agent](concepts/chat-and-agents.md#允许-拒绝-一直允许)。

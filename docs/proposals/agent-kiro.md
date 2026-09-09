@@ -3,7 +3,7 @@ title: 接入 Kiro（kiro-cli）Agent
 type: proposal
 status: proposed
 owner: maintainers
-updated: 2026-09-07
+updated: 2026-09-09
 audience: contributor
 ---
 
@@ -23,7 +23,7 @@ audience: contributor
 | **已落地** | 新对话走 `kiro-cli acp` 持续通道：同一进程内续聊；可点允许/拒绝、停止；生成时不能中途补充 |
 | **已落地** | Chat 打印路径 HTTP 多轮，经 `kiro-http:<conversationId>` 续场（详见 [HTTP 提案](agent-kiro-http.md)） |
 | **已落地** | Kiro 登录经本机路由接到 Claude / Codex / Grok |
-| **剩余边界** | 企业 IdC / `profileArn` 实机验收（带上参数 ≠ 已验收） |
+| **剩余边界** | 企业 IdC / `profileArn` 实机验收（带上参数 ≠ 已验收；ACP 不注入该字段） |
 | **剩余边界** | 上游逐块实时转发（当前先收齐回复再输出） |
 | **剩余边界** | 官方 REST（不宣称、不接入） |
 | **历史约束（不是现行待办）** | 「一轮一发」「不接持续通道」「本机路由后置」——早期第一波方案，见 §3 |
