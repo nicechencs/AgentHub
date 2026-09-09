@@ -173,6 +173,35 @@ fn cli_available_rows_are_not_installed_plugins() {
 }
 
 #[test]
+fn cli_available_parser_keeps_marketplace_rows_and_skips_mcp() {
+    let grok = parse_cli_available_plugin_list(
+        AgentId::Grok,
+        r#"[{"status":"available","name":"superpowers","marketplace":"xAI Official","components":{"skills":[{"name":"tdd"}]}},{"status":"installed","name":"already"}]"#,
+        Path::new("/home/me"),
+    )
+    .unwrap();
+    assert_eq!(grok.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), vec!["superpowers"]);
+    assert_eq!(grok[0].source, "available");
+
+    let claude = parse_cli_available_plugin_list(
+        AgentId::Claude,
+        r#"{"installed":[{"name":"demo"}],"available":[{"name":"hello","marketplace":"official"}]}"#,
+        Path::new("/home/me"),
+    )
+    .unwrap();
+    assert_eq!(claude.len(), 1);
+    assert_eq!(claude[0].name, "hello");
+
+    let err = parse_cli_available_plugin_list(
+        AgentId::Claude,
+        r#"{"mcpServers":{"fs":{"command":"npx"}}}"#,
+        Path::new("/home/me"),
+    )
+    .unwrap_err();
+    assert!(err.contains("mcpServers"), "{err}");
+}
+
+#[test]
 fn cli_mcp_servers_object_is_rejected() {
     let err = parse_cli_plugin_list(
         AgentId::Claude,

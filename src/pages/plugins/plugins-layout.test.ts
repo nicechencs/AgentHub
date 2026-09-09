@@ -27,8 +27,8 @@ describe('plugins layout wiring', () => {
     expect(page).toContain('pluginScanFailedAgents');
     expect(page).toContain('<Notice');
     expect(page).toContain("t('plugins.empty.scanFailed'");
-    expect(page).not.toContain('onInstall');
-    expect(page).not.toContain('installPlugin');
+    expect(page).toContain('installPlugin');
+    expect(page).toContain('uninstallPlugin');
     expect(page).not.toContain('listMcpInventory');
     expect(page).toContain('filterByPageVisibleAgent');
     expect(page).not.toContain('PluginSourceList');
@@ -48,7 +48,7 @@ describe('plugins layout wiring', () => {
     );
     expect(detail).toContain("t('plugins.detail.requestedVersion')");
     expect(detail).toContain('pluginVersionView');
-    expect(detail).not.toContain('onInstall');
+    expect(detail).toContain('onUninstall');
     expect(detail).not.toContain('installPlugin');
   });
 
@@ -57,13 +57,13 @@ describe('plugins layout wiring', () => {
     const detail = source('PluginDetailPanel.tsx');
     expect(page).toContain('enablePlugin');
     expect(page).toContain('disablePlugin');
-    expect(page).not.toContain('installPlugin');
-    expect(page).not.toContain('uninstallPlugin');
+    expect(page).toContain('installPlugin');
+    expect(page).toContain('uninstallPlugin');
     expect(detail).toContain('<Switch');
     expect(detail).toContain("t('plugins.actions.toggle')");
     expect(detail).toContain("t('plugins.actions.disableHint')");
     expect(detail).toContain('canToggleListedPlugin');
-    expect(detail).not.toContain('installPlugin');
+    expect(detail).toContain('canUninstallListedPlugin');
     expect(detail).not.toContain('marketplaceInstall');
   });
 
@@ -79,5 +79,21 @@ describe('plugins layout wiring', () => {
     expect(list).not.toContain('plugin.scope');
     expect(list).not.toContain('plugin.version');
     expect(list).not.toContain("t('plugins.list.enabled')");
+  });
+
+  it('wires install and uninstall dialogs to official plugin commands', () => {
+    const page = source('index.tsx');
+    const install = source('PluginInstallDialog.tsx');
+    const uninstall = source('PluginUninstallDialog.tsx');
+    expect(page).toContain('<PluginInstallDialog');
+    expect(page).toContain('<PluginUninstallDialog');
+    expect(page).toContain("t('plugins.install.button')");
+    expect(install).toContain('previewPluginInstall');
+    expect(install).toContain('listAvailablePlugins');
+    expect(install).toContain("t('plugins.install.trust')");
+    expect(install).toContain('<ErrorState');
+    expect(uninstall).toContain("t('plugins.uninstall.deleteData')");
+    expect(uninstall).toContain('<ErrorState');
+    expect(page).not.toContain('listMcpInventory');
   });
 });

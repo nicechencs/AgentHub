@@ -23,14 +23,14 @@ The application is organized by work and management, with Agent filtering inside
 | Workspace | Skills | `/skills` | User skills (shared library + this-tool), project skills by workspace, and market |
 | Workspace | MCP | `/mcp` | Read-only configuration inventory |
 | Workspace | Projects | `/projects` | Project/session tree and read-only preview |
-| Workspace | Plugins | `/plugins` | Installed vendor plugin / extension packs; Claude / Grok can enable or disable; Pi is list-only |
+| Workspace | Plugins | `/plugins` | Installed vendor plugin / extension packs; Claude / Grok can install, uninstall, enable, or disable; Pi is list-only |
 | Manage | Dashboard | `/` | Agent status, usage, and shortcuts |
 | Manage | Connections | `/connections` | General login list; route-only entries with `home=route_pool` may be absent |
 | Manage | Sub2API | `/sub2api` | Sign in to a Sub2API site, manage API keys by group, and import usable keys into an installed Agent |
 | Manage | Routes | `/routes` | Local route runtime and the connection pool. May add/manage route-only official login / API Key; `/routes` opens the board; secondary nav: board / pool / tokens / activity |
 | Manage | Settings | `/settings` | Preferences, Features, This computer, backups, and about |
 
-New installs hide the **Plugins** and **Sub2API** sidebar entries (`pluginsNavVisible` and `sub2apiNavVisible` default off). **Routes** defaults **on** (`routesNavVisible` default on) and can be hidden in Settings → Features. Turning a setting on shows its entry; the pages stay reachable at `/routes`, `/plugins`, and `/sub2api`. MCP stays in the workspace nav. The sidebar marks **Plugins** as in development; MCP no longer has that mark. Routes and Sub2API are Features-gated without that mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / uninstall / update for plugin packs is still a [proposal](../proposals/plugin-management.md). The current page lists installed packs for Claude, Grok, and Pi; Claude and Grok can enable or disable. There is no install button.
+New installs hide the **Plugins** and **Sub2API** sidebar entries (`pluginsNavVisible` and `sub2apiNavVisible` default off). **Routes** defaults **on** (`routesNavVisible` default on) and can be hidden in Settings → Features. Turning a setting on shows its entry; the pages stay reachable at `/routes`, `/plugins`, and `/sub2api`. MCP stays in the workspace nav. The sidebar marks **Plugins** as in development; MCP no longer has that mark. Routes and Sub2API are Features-gated without that mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Update for plugin packs is still a [proposal](../proposals/plugin-management.md). The current page lists installed packs for Claude, Grok, and Pi; Claude and Grok can install, uninstall, enable, or disable. Pi remains list-only.
 
 The compatibility paths `/adapter` and `/router` replace-navigate to `/routes`. They are recovery paths for existing links, not current navigation labels.
 

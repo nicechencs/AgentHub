@@ -1,5 +1,5 @@
 import type { PluginPort } from '@/lib/backend/contracts';
-import type { PluginInventory } from '@/lib/backend/contracts/plugin-types';
+import type { PluginEntry, PluginInventory } from '@/lib/backend/contracts/plugin-types';
 import type { AgentKey } from '@/lib/types';
 import { delay } from '@/dev/mocks/delay';
 
@@ -173,15 +173,47 @@ const DEMO: PluginInventory = {
   ],
 };
 
+const AVAILABLE: PluginEntry[] = [
+  {
+    id: 'grok:superpowers',
+    agent: 'grok',
+    name: 'superpowers',
+    marketplace: 'xAI Official',
+    description: 'Core skills library for software development',
+    source: 'available',
+    components: [
+      { kind: 'skills', name: 'tdd', description: 'Test-driven development' },
+      { kind: 'skills', name: 'debug' },
+    ],
+  },
+  {
+    id: 'claude:demo-available@official',
+    agent: 'claude',
+    name: 'demo-available',
+    marketplace: 'official',
+    description: 'Example Claude marketplace pack',
+    source: 'available',
+    components: [{ kind: 'commands', name: 'hello' }],
+  },
+];
+
 let inventory: PluginInventory = structuredClone(DEMO);
+let available: PluginEntry[] = structuredClone(AVAILABLE);
 
 export function resetMockPlugins(): void {
   inventory = structuredClone(DEMO);
+  available = structuredClone(AVAILABLE);
 }
 
 function assertListedAgent(agent: AgentKey): void {
   if (agent !== 'claude' && agent !== 'grok') {
     throw new Error('enable/disable is only available for listed Claude and Grok plugin packs');
+  }
+}
+
+function assertInstallAgent(agent: AgentKey): void {
+  if (agent !== 'claude' && agent !== 'grok') {
+    throw new Error('install is only available for listed Claude and Grok plugin packs');
   }
 }
 
@@ -204,6 +236,68 @@ export function createMockPluginPort(): PluginPort {
     async listInventory() {
       await delay(150);
       return structuredClone(inventory);
+    },
+    async listAvailable(agent) {
+      await delay(40);
+      assertInstallAgent(agent);
+      return structuredClone(available.filter((row) => row.agent === agent));
+    },
+    async previewInstall(agent, source) {
+      await delay(40);
+      assertInstallAgent(agent);
+      const trimmed = source.trim();
+      const fromCatalog = available.find(
+        (row) =>
+          row.agent === agent &&
+          (row.name === trimmed ||
+            (row.marketplace ? `${row.name}@${row.marketplace}` : row.name) === trimmed),
+      );
+      if (fromCatalog) return structuredClone(fromCatalog);
+      return {
+        id: `${agent}:${trimmed}`,
+        agent,
+        name: trimmed,
+        source: 'available',
+        components: [],
+      };
+    },
+    async install(agent, source, options) {
+      await delay(40);
+      assertInstallAgent(agent);
+      if (!options.confirmed) {
+        throw new Error('installation needs confirmation');
+      }
+      const preview = await this.previewInstall(agent, source);
+      if (inventory.plugins.some((p) => p.agent === agent && p.name === preview.name)) {
+        throw new Error(`plugin already listed: ${preview.name}`);
+      }
+      inventory.plugins.push({
+        ...preview,
+        id: `${agent}:${preview.name}${preview.marketplace ? `@${preview.marketplace}` : ''}`,
+        enabled: true,
+        source: 'cli',
+        path: agent === 'grok' ? `~/.grok/plugins/${preview.name}` : `~/.claude/plugins/cache/${preview.name}/1.0.0`,
+        version: preview.version ?? '1.0.0',
+        scope: 'user',
+      });
+      const status = inventory.agents.find((row) => row.agent === agent);
+      if (status) status.pluginCount = inventory.plugins.filter((p) => p.agent === agent).length;
+    },
+    async uninstall(agent, name, marketplace, _options) {
+      await delay(40);
+      assertInstallAgent(agent);
+      const index = inventory.plugins.findIndex(
+        (p) =>
+          p.agent === agent &&
+          p.name === name &&
+          (marketplace == null || marketplace === '' || p.marketplace === marketplace),
+      );
+      if (index < 0) {
+        throw new Error(`plugin not listed: ${name}`);
+      }
+      inventory.plugins.splice(index, 1);
+      const status = inventory.agents.find((row) => row.agent === agent);
+      if (status) status.pluginCount = inventory.plugins.filter((p) => p.agent === agent).length;
     },
     async enable(agent, name, marketplace) {
       await delay(40);

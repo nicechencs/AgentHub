@@ -10,7 +10,7 @@ updated: 2026-09-08
 
 > Status: proposed
 >
-> 产品对象是各家 **plugin / extension 包**，不是 MCP server。`/mcp` 保持只读 MCP 清单。YAML 保持 `proposed`：安装/卸载/更新仍未做。若干切片已落地，**不要把本页当成未开工**。现行行为以 [STATUS](../STATUS.md) 和 [页面模式](../ui/page-patterns.md) 为准。
+> 产品对象是各家 **plugin / extension 包**，不是 MCP server。`/mcp` 保持只读 MCP 清单。YAML 保持 `proposed`：更新与 Codex/Pi 写入仍未做。列表、启停、安装/卸载已落地，**不要把本页当成未开工**。现行行为以 [STATUS](../STATUS.md) 和 [页面模式](../ui/page-patterns.md) 为准。
 
 调研日期：2026-08-26。对照的是各家官方 CLI/文档与同类桌面管理器，不是实施承诺。
 
@@ -22,9 +22,9 @@ updated: 2026-09-08
 | --- | --- |
 | **已落地 PR-1** | Claude / Grok 只读 inventory（优先官方 CLI JSON，否则读 live 目录） |
 | **已落地 PR-2** | `/plugins` 左右分栏；设置 → 功能「显示插件页面」藏入口（新安装默认关）；不禁用 `/plugins` |
-| **已落地 PR-3** | Claude / Grok 已装包可启用/停用；写前备份；无安装按钮 |
+| **已落地 PR-3** | Claude / Grok 已装包可启用/停用；写前备份 |
+| **已落地 PR-4** | Claude / Grok 安装/卸载（确认后官方 CLI；卸载默认保留数据） |
 | **已落地（Pi 列表）** | Pi 只列已装包，不启用/停用 |
-| **剩余 PR-4** | 安装 / 卸载 |
 | **剩余 PR-5** | 更新 |
 | **剩余 PR-6** | Codex 端口；Pi 安装/卸载 |
 | **剩余 PR-7** | MCP 页补 Grok TOML 等（另开） |
@@ -36,7 +36,7 @@ updated: 2026-09-08
 - AgentHub **当时没有**插件页。工作区是 Chat / Agents / Skills / MCP / Projects。MCP 在 Skills 与 Projects 之间，单栏只读表。
 - 路由页已是左右分栏；侧栏开关当时写在设置「偏好」。现行侧栏页开关与「打开路由时自动折叠」在设置 → **功能**。
 - Skills 已由 `SkillService` 管理。MCP 由 `list_mcp_inventory` 只读扫描。二者都不是插件包。
-- 无 `Capability::Plugins`。`Capability::Mcp` 仍是 Planned，且只约束 MCP 写入，不约束插件。
+- `Capability::Mcp` 仍是 Planned，且只约束 MCP 写入，不约束插件。
 - 厂商侧已经存在完整插件生命周期（见 [Agent 插件表面](../reference/agent-plugin-surfaces.md)）：Claude `claude plugin`、Codex `codex plugin`、Grok `grok plugin`、Pi `pi install`。
 
 ## 2. 候选目标
@@ -158,7 +158,7 @@ Live 文件仍是各 Agent 的。AgentHub 只编排与展示。CLI 不可用时 
 
 ## 8. 行动任务（可独立合入）
 
-每个 PR 只做一列范围。合入 `dev`，不碰 `release`。未列的文件不要改。**PR-1～3 已合入**（Pi 列表也已落地）；下面保留原文便于对照，剩余从 PR-4 起。
+每个 PR 只做一列范围。合入 `dev`，不碰 `release`。未列的文件不要改。**PR-1～4 已合入**（Pi 列表也已落地）；下面保留原文便于对照，剩余从 PR-5 起。
 
 ### PR-0 文档纠偏（本提案）
 
@@ -185,12 +185,12 @@ Live 文件仍是各 Agent 的。AgentHub 只编排与展示。CLI 不可用时 
 - **测试**：round-trip；CLI 失败不改文件。
 - **点测**：停用后厂商 CLI 仍 list 得到、状态为 disabled；MCP 页不因此丢无关 server。
 
-### PR-4 安装 / 卸载（单市场狗粮）
+### PR-4 安装 / 卸载（单市场狗粮）— 已落地（2026-09-08）
 
-- **做**：先 Claude 官方市场或 Grok 本地/git 源之一。预览组件清单 → 确认 → CLI → 刷新。
-- **测试**：信任/确认失败停在预览；卸载不删 `plugins/data` 除非用户勾选（Grok `--keep-data`）。
-- **点测**：装一个无密钥官方示例包，再卸掉。
-- **不做**：自建市场、跨 Agent 复制包。
+- **已做**：Claude `name@marketplace` 与 Grok 官方市场名 / git / 本地路径。预览组件清单 → 确认 → 官方 CLI → 刷新。Grok 未勾选信任不调用 `install --trust`。卸载默认 `--keep-data`。
+- **测试**：未确认不调用 CLI；卸载默认带 `--keep-data`；CLI 失败还原配置快照；不把 MCP 当插件行。
+- **仍不做 / 剩余**：自建市场、跨 Agent 复制包、更新（PR-5）、Codex/Pi 写入（PR-6）、`Capability::Plugins`。
+- **本机点测**：`GROK_HOME` 临时目录里本地包无 `--trust` 停在确认；`--trust` 后 `plugin list --json` 出现该包；`uninstall --confirm --keep-data` 后列表为空。未往用户 `~/.grok` 装市场包。
 
 ### PR-5 更新
 
