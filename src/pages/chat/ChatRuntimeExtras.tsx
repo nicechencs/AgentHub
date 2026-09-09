@@ -84,7 +84,7 @@ export function ChatRuntimeExtras(props: {
 
   if (!props.enabled) {
     return (
-      <div className="flex items-center gap-2 px-1 pb-1">
+      <div className="relative">
         <ChatActionMenu
           draft={props.draft}
           commandOpen={props.commandSearchOpen}
@@ -136,7 +136,7 @@ export function ChatRuntimeExtras(props: {
         </div>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="relative flex flex-wrap items-center gap-2">
         <ChatActionMenu
           draft={props.draft}
           commandOpen={props.commandSearchOpen}

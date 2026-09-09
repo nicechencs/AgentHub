@@ -1,4 +1,4 @@
-/** Shared chat action definitions for the menu button and `/` command search. */
+/** Shared chat action definitions for `/` command search. */
 
 export type ChatActionKind = 'local' | 'draft';
 
@@ -190,7 +190,7 @@ export function actionMatchesQuery(action: ChatActionDef, query: string): boolea
   return tokens.every((token) => hay.includes(token));
 }
 
-/** Overflow ⋯ lists real commands. Sample drafts stay on empty-state chips. */
+/** Slash `/` lists real commands. Sample drafts stay on empty-state chips. */
 export function chatOverflowMenuActions(actions: readonly ChatActionDef[] = CHAT_ACTIONS): ChatActionDef[] {
   return actions.filter((item) => item.kind !== 'draft');
 }

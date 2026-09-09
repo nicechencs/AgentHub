@@ -1,24 +1,16 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { MoreHorizontal } from 'lucide-react';
 import { useI18n } from '@/components/shared/LanguageProvider';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import {
   chatActionDisabledReason,
-  chatOverflowMenuActions,
   filterChatActions,
   type ChatActionContext,
   type ChatActionDef,
   type ChatActionDisableReason,
 } from './chat-actions';
 
+/** Slash `/` command palette. The old Agent overflow (⋯) trigger is gone — those items already live on the rail, header, and shortcuts. */
 export function ChatActionMenu(props: {
   draft: string;
   commandOpen: boolean;
@@ -63,47 +55,14 @@ export function ChatActionMenu(props: {
   }, [commandOpen]);
 
   return (
-    <div ref={anchorRef} className="relative">
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button type="button" variant="ghost" size="icon" aria-label={t('chat.actions.menu')}>
-            <MoreHorizontal className="size-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="start"
-          className="min-w-56"
-          onCloseAutoFocus={(event) => event.preventDefault()}
-        >
-          {chatOverflowMenuActions().map((action) => {
-            const reason = chatActionDisabledReason(action, props.actionContext);
-            return (
-              <DropdownMenuItem
-                key={action.id}
-                disabled={Boolean(reason)}
-                onSelect={() => {
-                  if (reason) return;
-                  props.onRun(action);
-                }}
-              >
-                <span className="flex w-full flex-col gap-0.5">
-                  <span>{label(action)}</span>
-                  {reason ? (
-                    <span className="text-meta text-muted">{disabledCopy(reason)}</span>
-                  ) : null}
-                </span>
-              </DropdownMenuItem>
-            );
-          })}
-        </DropdownMenuContent>
-      </DropdownMenu>
+    <div ref={anchorRef} className="pointer-events-none absolute size-0" aria-hidden={!commandOpen}>
       {commandOpen && palettePos
         ? createPortal(
             <div
               className="fixed z-50 max-h-56 w-72 overflow-auto rounded-card border bg-popover p-1 shadow-md"
               style={{ left: palettePos.left, bottom: palettePos.bottom }}
               role="listbox"
-              aria-label={t('chat.actions.menu')}
+              aria-label={t('chat.shortcuts.actions')}
             >
               {slashItems.map((action, index) => {
                 const reason = chatActionDisabledReason(action, props.actionContext);

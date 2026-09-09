@@ -2906,7 +2906,6 @@ export const en = {
       sessionLocked: 'This session is connected to the current agent and working directory. Start a new chat to change them.',
     },
     actions: {
-      menu: 'More actions',
       newSession: 'New session',
       openHistory: 'Open history',
       focusHistorySearch: 'Search history',
