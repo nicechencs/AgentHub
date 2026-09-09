@@ -110,6 +110,69 @@ async fn stream_response_is_sse_for_all_surfaces_and_uses_turn_model() {
 }
 
 #[tokio::test]
+async fn sse_stream_emits_first_delta_before_done() {
+    use std::time::Duration;
+
+    use futures_util::StreamExt;
+    use tokio::sync::mpsc::unbounded_channel;
+
+    let (tx, rx) = unbounded_channel();
+    let mut stream = std::pin::pin!(kiro_sse_byte_stream(
+        DownstreamSurface::ChatCompletions,
+        "req-1".into(),
+        "resolved-kiro-model".into(),
+        rx,
+        "po".into(),
+    ));
+    let mut seen = String::new();
+    while !seen.contains("po") {
+        let chunk = tokio::time::timeout(Duration::from_millis(200), stream.next())
+            .await
+            .expect("first delta must not wait for upstream EOF")
+            .expect("stream open")
+            .expect("bytes");
+        seen.push_str(&String::from_utf8_lossy(&chunk));
+    }
+    assert!(seen.contains("resolved-kiro-model"), "{seen}");
+    assert!(
+        !seen.contains("ng"),
+        "later delta must not be present yet: {seen}"
+    );
+    assert!(
+        !seen.contains("data: [DONE]"),
+        "terminal frame must wait for Done: {seen}"
+    );
+    tx.send(Ok(KiroStreamItem::Text("ng".into())))
+        .expect("send rest");
+    tx.send(Ok(KiroStreamItem::Done)).expect("send done");
+    while let Some(chunk) = stream.next().await {
+        seen.push_str(&String::from_utf8_lossy(&chunk.expect("bytes")));
+    }
+    assert!(seen.contains("ng"), "{seen}");
+    assert!(seen.contains("data: [DONE]"), "{seen}");
+}
+
+#[tokio::test]
+async fn stream_without_first_delta_is_upstream_error_not_sse() {
+    use tokio::sync::mpsc::unbounded_channel;
+
+    let (tx, rx) = unbounded_channel();
+    drop(tx);
+    let response = response_from_kiro_stream(
+        DownstreamSurface::ChatCompletions,
+        "req-1".into(),
+        Some("resolved-kiro-model".into()),
+        rx,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    assert_ne!(
+        response.headers().get(header::CONTENT_TYPE),
+        Some(&header::HeaderValue::from_static("text/event-stream"))
+    );
+}
+
+#[tokio::test]
 async fn non_stream_response_is_json_for_all_surfaces_and_uses_turn_model() {
     for surface in [
         DownstreamSurface::ChatCompletions,

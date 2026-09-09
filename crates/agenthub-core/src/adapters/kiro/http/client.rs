@@ -23,7 +23,7 @@ use crate::utils::redact::redact_text;
 use super::creds::{
     load_kiro_http_creds, persist_refreshed_token, KiroAuthKind, KiroHttpCreds, KiroHttpRouteParams,
 };
-use super::eventstream::collect_assistant_text;
+use super::eventstream::{collect_assistant_text, read_assistant_events, AssistantRead};
 
 const LIST_TARGET: &str = "AmazonCodeWhispererService.ListAvailableModels";
 const USAGE_TARGET: &str = "AmazonCodeWhispererService.GetUsageLimits";
@@ -254,12 +254,12 @@ fn post_amz(creds: &KiroHttpCreds, target: &str, body: &Value) -> Result<Vec<u8>
     post_amz_with_timeout(creds, target, body, super::creds::http_timeout())
 }
 
-fn post_amz_with_timeout(
+fn open_amz(
     creds: &KiroHttpCreds,
     target: &str,
     body: &Value,
     timeout: Duration,
-) -> Result<Vec<u8>> {
+) -> Result<ureq::Response> {
     let url = q_host(&creds.region);
     let mut req = ureq::post(&url).timeout(timeout);
     for (k, v) in amz_headers(creds, target) {
@@ -268,7 +268,7 @@ fn post_amz_with_timeout(
     let bytes = serde_json::to_vec(body)
         .map_err(|e| AppError::InvalidArg(format!("kiro http body: {e}")))?;
     match req.send_bytes(&bytes) {
-        Ok(resp) => read_body(resp),
+        Ok(resp) => Ok(resp),
         Err(ureq::Error::Status(status, resp)) => {
             let body = read_body(resp).unwrap_or_default();
             let preview = String::from_utf8_lossy(&body);
@@ -282,6 +282,15 @@ fn post_amz_with_timeout(
         }
         Err(e) => Err(map_ureq("kiro.http.upstream")(e)),
     }
+}
+
+fn post_amz_with_timeout(
+    creds: &KiroHttpCreds,
+    target: &str,
+    body: &Value,
+    timeout: Duration,
+) -> Result<Vec<u8>> {
+    read_body(open_amz(creds, target, body, timeout)?)
 }
 
 fn read_body(resp: ureq::Response) -> Result<Vec<u8>> {
@@ -482,10 +491,23 @@ pub(crate) fn chat_turn_with_access_token(
     model: Option<&str>,
     params: Option<&KiroHttpRouteParams>,
 ) -> Result<KiroChatTurn> {
-    let mut creds = creds_from_access_token(token, params);
+    stream_chat_turn_with_access_token(token, prompt, model, params, |_| {})
+}
+
+/// Same upstream POST as [`chat_turn_with_access_token`], but `on_delta` runs
+/// when each `assistantResponseEvent` frame completes on the socket — not
+/// after the body EOF. Chat print still collects the returned turn.
+pub(crate) fn stream_chat_turn_with_access_token(
+    token: &str,
+    prompt: &str,
+    model: Option<&str>,
+    params: Option<&KiroHttpRouteParams>,
+    on_delta: impl FnMut(&str),
+) -> Result<KiroChatTurn> {
+    let creds = creds_from_access_token(token, params);
     // Pool logins have a current access token only. Do not invent a Desktop
     // refresh, and do not write another machine's kiro-cli sqlite.
-    post_chat_turn(&mut creds, prompt, model, None)
+    post_chat_turn_streaming(&creds, prompt, model, None, on_delta)
 }
 
 #[cfg(test)]
@@ -499,6 +521,7 @@ fn chat_turn_with_creds(
     post_chat_turn(creds, prompt, model, conversation_id)
 }
 
+#[cfg(test)]
 fn post_chat_turn(
     creds: &mut KiroHttpCreds,
     prompt: &str,
@@ -537,8 +560,70 @@ fn post_chat_turn_on(
     );
     let raw = transport.send_chat(creds, &body, timeout)?;
     let (text, cid) = collect_assistant_text(&raw);
+    turn_from_assistant_text(
+        text,
+        cid,
+        &String::from_utf8_lossy(&raw),
+        model_id,
+        body.pointer("/conversationState/conversationId")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+    )
+}
+
+fn post_chat_turn_streaming(
+    creds: &KiroHttpCreds,
+    prompt: &str,
+    model: Option<&str>,
+    conversation_id: Option<&str>,
+    on_delta: impl FnMut(&str),
+) -> Result<KiroChatTurn> {
+    let model_id = model
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("auto")
+        .to_string();
+    let body = build_chat_body(
+        prompt,
+        &model_id,
+        &creds.origin,
+        conversation_id,
+        creds.profile_arn.as_deref(),
+    );
+    let resp = open_amz(creds, CHAT_TARGET, &body, super::creds::http_timeout())?;
+    let read = read_assistant_events(resp.into_reader(), on_delta)
+        .map_err(|e| AppError::message("kiro.http.read", redact_text(&e.to_string())))?;
+    turn_from_read(
+        read,
+        model_id,
+        body.pointer("/conversationState/conversationId")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+    )
+}
+
+fn turn_from_read(
+    read: AssistantRead,
+    model_id: String,
+    fallback_cid: Option<String>,
+) -> Result<KiroChatTurn> {
+    turn_from_assistant_text(
+        read.text,
+        read.conversation_id,
+        &read.preview,
+        model_id,
+        fallback_cid,
+    )
+}
+
+fn turn_from_assistant_text(
+    text: String,
+    conversation_id: Option<String>,
+    preview: &str,
+    model_id: String,
+    fallback_cid: Option<String>,
+) -> Result<KiroChatTurn> {
     if text.trim().is_empty() {
-        let preview = String::from_utf8_lossy(&raw);
         if preview.contains("ValidationException")
             || preview.contains("AccessDenied")
             || preview.contains("__type")
@@ -555,11 +640,7 @@ fn post_chat_turn_on(
     }
     Ok(KiroChatTurn {
         text,
-        conversation_id: cid.or_else(|| {
-            body.pointer("/conversationState/conversationId")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-        }),
+        conversation_id: conversation_id.or(fallback_cid),
         model_id,
     })
 }
