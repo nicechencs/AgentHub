@@ -95,11 +95,16 @@ export function canSubmitRuntimeQuestions(
   return request.kind !== 'question' || request.questions.every((question) => Boolean(answers[question.id]?.length));
 }
 
+/** ACP remember kinds: standard `allow_always` and Kiro `allow_always_tool` / `_args`. */
+export function isRuntimeAllowAlwaysKind(kind: string | null | undefined): boolean {
+  return kind === 'allow_always' || Boolean(kind?.startsWith('allow_always_'));
+}
+
 /** Session remember is offered only when this request can honor it (ACP option or Codex-synthesized allow_always). */
 export function requestAllowsAlways(
   request: Pick<RuntimeRequest, 'permissionOptions'>,
 ): boolean {
-  return (request.permissionOptions ?? []).some((option) => option.kind === 'allow_always');
+  return (request.permissionOptions ?? []).some((option) => isRuntimeAllowAlwaysKind(option.kind));
 }
 
 export function runtimeReplyFields(

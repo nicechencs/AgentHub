@@ -26,7 +26,7 @@ Chat 是 AgentHub 里的运行工作台。当前一个会话对应一个 Agent�
 两件不同的事：
 
 1. **记住这次卡片上的选项。** 待处理请求的选项会写入 SQLite。快照或进程重开后，尚未回复的卡片仍显示同一组按钮（包括这次能不能点「一直允许」）。Codex / Grok / Kiro 都这样。
-2. **点了「一直允许」之后，后面的确认还问不问。** 只有 Codex 由 AgentHub 在本机记住，而且只限当前这次 Codex 进程（通常是本轮：每轮会新起 `codex app-server`，结束时清掉该标记）。发给 Codex 的决定是一次性允许。Grok / Kiro 走 ACP：这次请求自己带了 `allow_always` 才显示「一直允许」，点了只把对方给的选项回传；AgentHub **不会**给后续请求自动点允许，也 **不会** 在没带该选项时补一个。对方会话是否记住，没有真机验收。
+2. **点了「一直允许」之后，后面的确认还问不问。** Codex / Grok / Kiro 都由 AgentHub 在**当前这次进程**里记住，不写进数据库。发给 Codex 的决定仍是一次性允许；一轮结束会新起 `codex app-server`，标记清掉，会再问。Grok / Kiro 走 ACP：这次请求自己带了 `allow_always`（Kiro 常见是 `allow_always_tool` / `allow_always_tool_args`）才显示「一直允许」，点了会把对方给的选项回传，并且本机对后续确认自动点允许（同一条 ACP 进程，通常跨多轮）。没有允许选项时仍出卡片，不会补一个假的「一直允许」。进程退出后再问。
 
 Kiro 会话设置里的「帮我批准 / 完全访问权限」是启动时的 `--trust-all-tools`，对话开始后不能改；它不是确认卡片上的「一直允许」。跨页事实表见 [STATUS](../STATUS.md)。
 
@@ -65,7 +65,7 @@ Tauri transport 使用 `ipc::Channel<ChatEvent>`，不是 SSE。阻塞进程执�
 
 Claude、Codex、Kimi、Grok、Pi、Kiro 当前可走 `ProcessMode::Auto` 的结构化解析；WorkBuddy 与 ZCode 没有结构化 parser 时按 text 展示。Kiro 须 `--agent-engine v2`，v1 会拒绝 stream-json。新交互对话走 `kiro-cli acp`；旧打印路径在本机登录或 `KIRO_API_KEY` 可用时可走 HTTP，已有 HTTP 会话失败不改走命令行。ZCode 对话需要 PATH 上的 `zcode`；只装了桌面端时不能凭空当成命令行。DeepSeek Harness 的 StructuredStream 仍是 Planned。**Cursor Agent 默认软隐藏**，结构化输出与登录写入等兼容项修复完成前不在 Chat 等页面开放。解析失败降级为 raw/text 事件，不因某一行 JSON 不可识别而丢弃整次对话；CLI 不支持 flag 时不得静默重试成另一种语义。
 
-旧发送方式的过程数据主要是内存视图，最终正文和会话消息入库；刷新后不保证过程回放。Codex runtime 另有有限持久化事件、真实确认/问答回复及同机恢复；截断通过 gap 表达，不承诺无限过程历史。各项验收分开写：命令批准 Linux 真窗已验允许/拒绝；文件审批 Linux 真窗已验允许/拒绝；关窗续聊 Linux / macOS 已验。记住允许/拒绝与「一直允许」已接线，范围见上文：不是三家都会在本机记住后续确认。文本问答的协议和界面已映射，但 Codex 0.148 Default 默认不发出 `item/tool/requestUserInput`；打开上游 under-development 开关可以发出，产品未默认打开。文件审批已接线（允许/拒绝）；Linux 协议探测和真窗 GUI 已验 `apply_patch` 写工作目录和 `/tmp` 以外的允许/拒绝（卡片「修改文件」）。Grok / Kiro 点「一直允许」后对方是否记住仍待补。过程内 usage 也未完成。见 [STATUS](../STATUS.md)。
+旧发送方式的过程数据主要是内存视图，最终正文和会话消息入库；刷新后不保证过程回放。Codex runtime 另有有限持久化事件、真实确认/问答回复及同机恢复；截断通过 gap 表达，不承诺无限过程历史。各项验收分开写：命令批准 Linux 真窗已验允许/拒绝；文件审批 Linux 真窗已验允许/拒绝；关窗续聊 Linux / macOS 已验。记住允许/拒绝与「一直允许」已接线，范围见上文：三家都在当前这次进程里记住后续确认（Codex 通常本轮；Grok / Kiro 同一条 ACP 进程可跨轮）。文本问答的协议和界面已映射，但 Codex 0.148 Default 默认不发出 `item/tool/requestUserInput`；打开上游 under-development 开关可以发出，产品未默认打开。文件审批已接线（允许/拒绝）；Linux 协议探测和真窗 GUI 已验 `apply_patch` 写工作目录和 `/tmp` 以外的允许/拒绝（卡片「修改文件」）。过程内 usage 也未完成。见 [STATUS](../STATUS.md)。
 
 ## Codex 外部安装
 
