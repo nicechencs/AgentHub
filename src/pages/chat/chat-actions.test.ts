@@ -3,6 +3,7 @@ import {
   CHAT_ACTIONS,
   actionMatchesQuery,
   chatActionDisabledReason,
+  chatOverflowMenuActions,
   chatStarterActions,
   clampActionIndex,
   filterChatActions,
@@ -24,7 +25,8 @@ describe('chat action command search', () => {
   });
 
   it('filters with Chinese-friendly normalization', () => {
-    expect(filterChatActions('/').length).toBe(CHAT_ACTIONS.length);
+    expect(filterChatActions('/').every((item) => item.kind !== 'draft')).toBe(true);
+    expect(filterChatActions('/').length).toBe(chatOverflowMenuActions().length);
     expect(filterChatActions('/新建').some((item) => item.id === 'new-session')).toBe(true);
     expect(filterChatActions('/搜索').some((item) => item.id === 'focus-history-search')).toBe(true);
     expect(filterChatActions('/搜索历史会话').some((item) => item.id === 'focus-history-search')).toBe(true);
@@ -68,5 +70,8 @@ describe('chat action command search', () => {
       'sample-summarize',
       'sample-write-tests',
     ]);
+    expect(chatOverflowMenuActions().every((item) => item.kind !== 'draft')).toBe(true);
+    expect(chatOverflowMenuActions().some((item) => item.id === 'new-session')).toBe(true);
+    expect(CHAT_ACTIONS.some((item) => item.kind === 'draft')).toBe(true);
   });
 });

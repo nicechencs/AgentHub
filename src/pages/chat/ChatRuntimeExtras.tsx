@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ImagePlus, X } from 'lucide-react';
+import { ImagePlus, Sparkles, X } from 'lucide-react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import {
@@ -48,6 +48,7 @@ export function ChatRuntimeExtras(props: {
   /** When `codex`, toolbar skill control is always hidden (defense if parent forgets the prop). */
   agentId?: string | null;
   inline?: boolean;
+  compactSecondary?: boolean;
   modelMenuOpenNonce?: number;
 }) {
   const { t } = useI18n();
@@ -223,17 +224,31 @@ export function ChatRuntimeExtras(props: {
             ) : null}
           </DropdownMenu>
         </Hint>
-        {!effortDisabledReason && currentEffortHint ? (
+        {!props.compactSecondary && !effortDisabledReason && currentEffortHint ? (
           <span className="text-meta text-muted">{currentEffortHint}</span>
         ) : null}
         {showSkillPicker && callableSkills.length > 0 ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button type="button" size="sm" variant="outline" className="max-w-32">
-                <span className="truncate">
-                  {t('chat.runtimeOps.skill')}
-                  {props.selectedSkillIds.length > 0 ? ` · ${props.selectedSkillIds.length}` : ''}
-                </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className={props.compactSecondary ? 'px-2' : 'max-w-32'}
+                aria-label={
+                  props.selectedSkillIds.length > 0
+                    ? `${t('chat.runtimeOps.skill')} · ${props.selectedSkillIds.length}`
+                    : t('chat.runtimeOps.skill')
+                }
+              >
+                {props.compactSecondary ? (
+                  <Sparkles className="size-3.5" />
+                ) : (
+                  <span className="truncate">
+                    {t('chat.runtimeOps.skill')}
+                    {props.selectedSkillIds.length > 0 ? ` · ${props.selectedSkillIds.length}` : ''}
+                  </span>
+                )}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-64">
@@ -252,9 +267,22 @@ export function ChatRuntimeExtras(props: {
         ) : null}
         {props.imageInput !== false ? (
         <Hint label={t('chat.runtimeOps.pasteImageHint')}>
-          <Button type="button" size="sm" variant="outline" onClick={props.onAddImages}>
-            <ImagePlus className="mr-1 size-3.5" />
-            {t('chat.runtimeOps.addImage')}{props.images.length > 0 ? ` · ${props.images.length}` : ''}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className={props.compactSecondary ? 'px-2' : undefined}
+            onClick={props.onAddImages}
+            aria-label={
+              props.images.length > 0
+                ? `${t('chat.runtimeOps.addImage')} · ${props.images.length}`
+                : t('chat.runtimeOps.addImage')
+            }
+          >
+            <ImagePlus className={props.compactSecondary ? 'size-3.5' : 'mr-1 size-3.5'} />
+            {props.compactSecondary
+              ? null
+              : `${t('chat.runtimeOps.addImage')}${props.images.length > 0 ? ` · ${props.images.length}` : ''}`}
           </Button>
         </Hint>
         ) : null}

@@ -2772,6 +2772,8 @@ export const en = {
     },
     composer: {
       placeholder: "Message an agent…",
+      placeholderInvite: "Send the first message to {agent}…",
+      queueOnlyHint: "You can't add more mid-run; you can queue for the next turn.",
       inputAria: "Message input",
       selectAgent: "Select agent",
       noAuth: "Not signed in",
@@ -2821,7 +2823,7 @@ export const en = {
       oneshotHint: "Kiro new chats can tap allow, always allow, or deny; you can't add more mid-run, but you can queue for the next turn.",
       oneshotDetail: 'With the CLI installed, this runs on this computer. Older chats keep their original mode; start a new chat for continuous conversation. Terminal command completion and ghost text are not on this page.',
       settingsLocked: 'This Kiro chat has started. Start a new chat to change its model, reasoning effort, or permissions.',
-      placeholder: "After send you can tap allow, always allow, or deny. You can't add more mid-run; you can queue for the next turn.",
+      placeholder: "Message an agent…",
       permissionTitle: "Permissions",
       permissionAsk: "Help me approve",
       permissionAskHint: "Ask before each action",
@@ -3010,7 +3012,7 @@ export const en = {
       firstMessage: "Send the first message to {agent}",
       identity: "{agent} · {project}",
       startersAria: "Sample tasks",
-      startersHint: "Click to fill the box; you send it",
+      startersHint: "Examples fill the box only; you send",
       starter: {
         understand: "Understand this project",
         understandHint: "See the layout and what it does",

@@ -131,4 +131,21 @@ describe('ChatRuntimeExtras skill picker', () => {
     // Radix closed menus do not SSR item labels; the toolbar trigger is enough.
     expect(html).toContain('>技能<');
   });
+
+  it('keeps first-use image and skill controls as icon-only with accessible names', () => {
+    const html = renderMarkup(
+      extras({
+        compactSecondary: true,
+        inline: true,
+        imageInput: true,
+        extensions: [
+          { id: 'skill-a', kind: 'skill', name: 'Demo Skill', callable: true, installed: true, enabled: true, loaded: true },
+        ],
+      }),
+    );
+    expect(html).toContain('aria-label="添加图片"');
+    expect(html).toContain('aria-label="技能"');
+    expect(html).not.toMatch(/>添加图片</);
+    expect(html).not.toMatch(/>技能</);
+  });
 });

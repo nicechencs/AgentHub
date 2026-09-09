@@ -56,10 +56,11 @@ export function kiroChatBannerCopy(t: TranslateFn): {
   };
 }
 
+/** Kiro uses the shared invite placeholder; limits go to `composerCapabilityHint`. */
 export function kiroChatComposerPlaceholder(
-  t: TranslateFn,
-  agentId: string | null | undefined,
+  _t: TranslateFn,
+  _agentId: string | null | undefined,
   fallback: string,
 ): string {
-  return isKiroChatAgent(agentId) ? t('chat.kiro.placeholder') : fallback;
+  return fallback;
 }
