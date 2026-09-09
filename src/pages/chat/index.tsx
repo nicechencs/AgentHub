@@ -21,7 +21,10 @@ import {
 } from './chat-kiro-model';
 import {
   chatEscapeShouldCancel,
+  chatKeyTargetIsField,
   chatModKShouldFocusHistory,
+  chatModNShouldStartNewChat,
+  chatQuestionShouldOpenShortcuts,
   chatMainColumnClass,
   chatStageClass,
 } from './chat-model';
@@ -43,6 +46,7 @@ import { ChatComposer } from './ChatComposer';
 import { ChatSessionHeader } from './ChatSessionHeader';
 import { ChatSessionRail } from './ChatSessionRail';
 import { ChatSettingsDialog } from './ChatSettingsDialog';
+import { ChatShortcutsDialog } from './ChatShortcutsDialog';
 import { ChatTranscript } from './ChatTranscript';
 import { ChatRuntimeRequests } from './ChatRuntimeRequests';
 import { useChatComposerSplit } from './use-chat-composer-split';
@@ -65,6 +69,7 @@ export default function ChatPage() {
   const navigate = useNavigate();
   const { t } = useI18n();
   const [modelMenuOpenNonce, setModelMenuOpenNonce] = useState(0);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const openMarkdownPreview = useCallback(
     (next: string) => {
       if (!isMarkdownFilePath(next)) return false;
@@ -128,6 +133,38 @@ export default function ChatPage() {
         return;
       }
       if (
+        chatModNShouldStartNewChat({
+          key: e.key,
+          metaKey: e.metaKey,
+          ctrlKey: e.ctrlKey,
+          altKey: e.altKey,
+          shiftKey: e.shiftKey,
+          overlayOpen: hasEscPriorityOverlay(),
+        })
+      ) {
+        e.preventDefault();
+        page.runChatAction({
+          id: 'new-session',
+          kind: 'local',
+          keywords: [],
+        });
+        return;
+      }
+      if (
+        chatQuestionShouldOpenShortcuts({
+          key: e.key,
+          metaKey: e.metaKey,
+          ctrlKey: e.ctrlKey,
+          altKey: e.altKey,
+          overlayOpen: hasEscPriorityOverlay(),
+          typingInField: chatKeyTargetIsField(e.target),
+        })
+      ) {
+        e.preventDefault();
+        setShortcutsOpen(true);
+        return;
+      }
+      if (
         !chatEscapeShouldCancel({
           key: e.key,
           sending: page.sendingHere,
@@ -157,6 +194,7 @@ export default function ChatPage() {
   if (page.error && page.conversations.length === 0 && !page.listLoading) {
     return (
       <div className="flex h-full items-center justify-center p-6">
+        <ChatShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
         <ErrorState error={page.error} onRetry={page.retryLoad} />
       </div>
     );
@@ -170,6 +208,7 @@ export default function ChatPage() {
   ) {
     return (
       <div className="flex h-full items-center justify-center p-6" data-help="chat-empty">
+        <ChatShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
         <EmptyState
           icon={MessagesSquare}
           title={t('chat.page.emptyTitle')}
@@ -378,6 +417,7 @@ export default function ChatPage() {
                   onClearQueuedFollowUp={page.clearQueuedFollowUp}
                   focusNonce={page.composerFocusNonce}
                   modelMenuOpenNonce={modelMenuOpenNonce}
+                  onOpenShortcuts={() => setShortcutsOpen(true)}
                   onCancel={() => void page.cancelSending()}
                   onSelectAgent={(id) => void page.selectConversationAgentId(id)}
                   onSwitchConnection={(id) => void page.handleSwitchConnection(id)}
@@ -454,6 +494,7 @@ export default function ChatPage() {
           </div>
         </div>
 
+        <ChatShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
         <ChatSettingsDialog
           open={page.settingsOpen}
           onOpenChange={page.setSettingsOpen}

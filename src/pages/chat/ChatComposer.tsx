@@ -110,6 +110,7 @@ export function ChatComposer({
   showBlockerBanner = true,
   focusNonce = 0,
   modelMenuOpenNonce = 0,
+  onOpenShortcuts,
 }: {
   draft: string;
   setDraft: (v: string) => void;
@@ -157,6 +158,7 @@ export function ChatComposer({
   paneRef?: Ref<HTMLDivElement>;
   showBlockerBanner?: boolean;
   modelMenuOpenNonce?: number;
+  onOpenShortcuts?: () => void;
 }) {
   const navigate = useNavigate();
   const { t } = useI18n();
@@ -363,9 +365,28 @@ export function ChatComposer({
             ) : null}
           </div>
         ) : null}
-        <p className="px-4 pb-1 text-meta text-muted" data-composer-shortcut="">
-          {t(composerShortcutMessageKey(shortcutKind))}
-        </p>
+        <div className="flex items-center justify-between gap-2 px-4 pb-1" data-composer-shortcut="">
+          <p className="min-w-0 text-meta text-muted">
+            {t(composerShortcutMessageKey(shortcutKind))}
+          </p>
+          {onOpenShortcuts ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-auto shrink-0 px-1 py-0 text-meta text-muted"
+              aria-haspopup="dialog"
+              aria-keyshortcuts="?"
+              data-help="chat-shortcuts"
+              onClick={onOpenShortcuts}
+            >
+              {t('chat.shortcuts.open')}
+              <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded-btn border border-border bg-subtle px-1 text-meta leading-none text-muted">
+                ?
+              </kbd>
+            </Button>
+          ) : null}
+        </div>
         <div className="flex shrink-0 items-center gap-1.5 border-t border-border/50 px-2 py-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

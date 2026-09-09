@@ -135,6 +135,68 @@ test('Stop stays 正在停止 until the mock turn ends', async ({ page }) => {
   await expect(page.getByRole('main').getByText('已停止', { exact: true })).toBeVisible();
 });
 
+test('shortcut overview opens from the composer and lists new-chat keys', async ({ page }) => {
+  await openApp(page);
+  await openChatComposer(page);
+
+  await page.getByRole('button', { name: '快捷键' }).click();
+  const dialog = page.getByRole('dialog', { name: '快捷键' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('组字时 Enter 不发送')).toBeVisible();
+  await expect(dialog.getByText('新建对话')).toBeVisible();
+  await expect(dialog.getByText('Ctrl+N')).toBeVisible();
+  await expect(dialog.getByText('快捷键一览')).toBeVisible();
+  await page.screenshot({
+    path: '/opt/cursor/artifacts/chat_shortcut_overview.png',
+    fullPage: true,
+  });
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+
+  await page.getByRole('button', { name: '会话设置' }).focus();
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: '?',
+        bubbles: true,
+      }),
+    );
+  });
+  await expect(page.getByRole('dialog', { name: '快捷键' })).toBeVisible();
+  await page.getByRole('dialog', { name: '快捷键' }).getByRole('button', { name: '关闭' }).click();
+  await expect(page.getByRole('dialog', { name: '快捷键' })).toBeHidden();
+
+  const composer = page.getByRole('textbox', { name: '消息输入' });
+  await composer.click();
+  await composer.fill('');
+  await page.keyboard.type('?');
+  await expect(composer).toHaveValue('?');
+  await expect(page.getByRole('dialog', { name: '快捷键' })).toHaveCount(0);
+});
+
+test('Ctrl+N starts a new chat', async ({ page }) => {
+  await openApp(page);
+  await openChatComposer(page);
+
+  const composer = page.getByRole('textbox', { name: '消息输入' });
+  await composer.fill('keep this draft');
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'n',
+        code: 'KeyN',
+        ctrlKey: true,
+        bubbles: true,
+      }),
+    );
+  });
+  await expect(composer).toHaveValue('');
+  await page.screenshot({
+    path: '/opt/cursor/artifacts/chat_new_chat_ctrl_n.png',
+    fullPage: true,
+  });
+});
+
 test('Chat settings dialog traps Tab and restores focus after Escape', async ({ page }) => {
   await openApp(page);
   await openChatComposer(page);

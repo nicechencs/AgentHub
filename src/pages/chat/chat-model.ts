@@ -751,6 +751,44 @@ export function chatModKShouldFocusHistory(input: {
   return input.metaKey || input.ctrlKey;
 }
 
+/** Cmd/Ctrl+N starts a new chat (same modifier pattern as Ctrl+K). */
+export function chatModNShouldStartNewChat(input: {
+  key: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+  overlayOpen: boolean;
+}): boolean {
+  if (input.overlayOpen || input.altKey || input.shiftKey) return false;
+  if (input.key !== 'n' && input.key !== 'N') return false;
+  return input.metaKey || input.ctrlKey;
+}
+
+/** True when the event target is a field that should keep typed characters. */
+export function chatKeyTargetIsField(target: EventTarget | null): boolean {
+  if (!target || typeof target !== 'object') return false;
+  const el = target as { tagName?: string; isContentEditable?: boolean };
+  const tag = el.tagName?.toUpperCase();
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  return Boolean(el.isContentEditable);
+}
+
+/** `?` opens the shortcut overview when not typing in a field. */
+export function chatQuestionShouldOpenShortcuts(input: {
+  key: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+  overlayOpen: boolean;
+  typingInField: boolean;
+}): boolean {
+  if (input.overlayOpen || input.typingInField || input.altKey || input.metaKey || input.ctrlKey) {
+    return false;
+  }
+  return input.key === '?';
+}
+
 export function visibleAgentDots(agentIds: AgentKey[]): { shown: AgentKey[]; extra: number } {
   const shown = agentIds.slice(0, 3);
   return { shown, extra: Math.max(0, agentIds.length - 3) };
