@@ -1895,7 +1895,10 @@ impl ActorWorker {
             }
         };
         let transport = self.transport.as_mut().ok_or_else(|| {
-            AppError::message("chat.runtime.interrupted", "Codex process stopped")
+            AppError::message(
+                "chat.runtime.interrupted",
+                format!("{} 已退出", runtime_process_label(self.agent)),
+            )
         })?;
         let server_id = parse_wire_id(&persisted.server_id)?;
         // Resolve the durable control before writing the JSON-RPC response.
@@ -1973,7 +1976,10 @@ impl ActorWorker {
             .clone()
             .ok_or_else(|| AppError::message("chat.runtime", "Codex turn is unavailable"))?;
         let transport = self.transport.as_mut().ok_or_else(|| {
-            AppError::message("chat.runtime.interrupted", "Codex process stopped")
+            AppError::message(
+                "chat.runtime.interrupted",
+                format!("{} 已退出", runtime_process_label(self.agent)),
+            )
         })?;
         transport
             .request(
@@ -2094,7 +2100,10 @@ impl ActorWorker {
                 self.transport
                     .as_mut()
                     .ok_or_else(|| {
-                        AppError::message("chat.runtime.interrupted", "Codex process stopped")
+                        AppError::message(
+                            "chat.runtime.interrupted",
+                            format!("{} 已退出", runtime_process_label(self.agent)),
+                        )
                     })?
                     .respond(server_id, response)
                     .map_err(|error| map_transport(self.agent, error))
@@ -2106,7 +2115,12 @@ impl ActorWorker {
         let interrupt_result = self
             .transport
             .as_mut()
-            .ok_or_else(|| AppError::message("chat.runtime.interrupted", "Codex process stopped"))
+            .ok_or_else(|| {
+                AppError::message(
+                    "chat.runtime.interrupted",
+                    format!("{} 已退出", runtime_process_label(self.agent)),
+                )
+            })
             .and_then(|transport| {
                 if is_acp_runtime_agent(Some(self.agent)) {
                     transport
