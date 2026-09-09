@@ -89,9 +89,9 @@ export const pageInsetTw = SPACE[pageEdge.inset];
 export const pageChatTw = SPACE[pageEdge.chat];
 
 export const pageRhythm = {
-  /** 上排圆角面板留窗内缝；底栏方角贴窗底，和对照分支底栏一致 */
+  /** 上排圆角面板留窗内缝；底栏上方留 4px 缝，方角贴窗底 */
   shell: 'flex h-full min-h-0 flex-col bg-canvas',
-  shellBody: `flex min-h-0 min-w-0 flex-1 ${pageCanvasTw.x} ${pageCanvasTw.t}`,
+  shellBody: `flex min-h-0 min-w-0 flex-1 ${pageCanvasTw.x} ${pageCanvasTw.t} pb-1`,
   statusBar:
     'flex h-8 shrink-0 items-center border-t border-border bg-canvas px-6 text-meta',
   statusBarItem:
