@@ -21,7 +21,7 @@ use crate::state::AppState;
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ConversationWire {
+pub struct ConversationWire {
     #[serde(flatten)]
     conversation: Conversation,
     cwd_missing: bool,

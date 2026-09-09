@@ -565,7 +565,7 @@ fn append_capped_utf8_safe() {
 }
 
 #[test]
-fn invalid_cwd_rejected_on_create() {
+fn create_keeps_missing_cwd_and_rebind_rejects_invalid() {
     let dir = tempdir().unwrap();
     let db = Database::open(&dir.path().join("t.db")).unwrap();
     let run = Arc::new(RunService::with_runner(
@@ -573,13 +573,26 @@ fn invalid_cwd_rejected_on_create() {
         Arc::new(RecordingProcessRunner::new()),
     ));
     let chat = ChatService::new(db, run);
+    let dead = "Z:\\this\\path\\does\\not\\exist-agenthub";
+    let conv = chat
+        .create_conversation(vec![AgentId::Claude], Some(dead.into()))
+        .unwrap();
+    assert_eq!(conv.cwd.as_deref(), Some(dead));
+
     let err = chat
-        .create_conversation(
-            vec![AgentId::Claude],
-            Some("Z:\\this\\path\\does\\not\\exist-agenthub".into()),
+        .update_conversation(
+            &conv.id,
+            None,
+            None,
+            Some(Some("Z:\\nope-agenthub-cwd".into())),
+            None,
         )
         .unwrap_err();
     assert!(err.to_string().contains("cwd"), "unexpected: {err}");
+    assert_eq!(
+        chat.get_conversation(&conv.id).unwrap().cwd.as_deref(),
+        Some(dead)
+    );
 }
 
 #[test]
