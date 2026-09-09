@@ -21,13 +21,11 @@ import {
 } from './chat-kiro-model';
 import {
   chatEscapeShouldCancel,
-  chatKeyTargetIsField,
-  chatModKShouldFocusHistory,
-  chatModNShouldStartNewChat,
-  chatQuestionShouldOpenShortcuts,
+  chatPageShortcutAction,
   chatMainColumnClass,
   chatStageClass,
 } from './chat-model';
+import { subscribeChatShortcutKeydown } from './chat-shortcuts';
 import { chatModShiftIShouldOpenModel } from './chat-model-labels';
 import { formatChatSessionRecord } from './chat-format';
 import { chatBusySendMode, grokLegacyContinueKind } from './chat-grok-follow-up';
@@ -100,17 +98,20 @@ export default function ChatPage() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (
-        chatModKShouldFocusHistory({
-          key: e.key,
-          metaKey: e.metaKey,
-          ctrlKey: e.ctrlKey,
-          altKey: e.altKey,
-          shiftKey: e.shiftKey,
-          overlayOpen: hasEscPriorityOverlay(),
-        })
-      ) {
+      const overlayOpen = hasEscPriorityOverlay();
+      const action = chatPageShortcutAction({
+        key: e.key,
+        code: e.code,
+        metaKey: e.metaKey,
+        ctrlKey: e.ctrlKey,
+        altKey: e.altKey,
+        shiftKey: e.shiftKey,
+        overlayOpen,
+        target: e.target,
+      });
+      if (action === 'history') {
         e.preventDefault();
+        e.stopPropagation();
         page.runChatAction({
           id: 'focus-history-search',
           kind: 'local',
@@ -125,24 +126,17 @@ export default function ChatPage() {
           ctrlKey: e.ctrlKey,
           altKey: e.altKey,
           shiftKey: e.shiftKey,
-          overlayOpen: hasEscPriorityOverlay(),
+          overlayOpen,
         })
       ) {
         e.preventDefault();
+        e.stopPropagation();
         setModelMenuOpenNonce((n) => n + 1);
         return;
       }
-      if (
-        chatModNShouldStartNewChat({
-          key: e.key,
-          metaKey: e.metaKey,
-          ctrlKey: e.ctrlKey,
-          altKey: e.altKey,
-          shiftKey: e.shiftKey,
-          overlayOpen: hasEscPriorityOverlay(),
-        })
-      ) {
+      if (action === 'newChat') {
         e.preventDefault();
+        e.stopPropagation();
         page.runChatAction({
           id: 'new-session',
           kind: 'local',
@@ -150,17 +144,9 @@ export default function ChatPage() {
         });
         return;
       }
-      if (
-        chatQuestionShouldOpenShortcuts({
-          key: e.key,
-          metaKey: e.metaKey,
-          ctrlKey: e.ctrlKey,
-          altKey: e.altKey,
-          overlayOpen: hasEscPriorityOverlay(),
-          typingInField: chatKeyTargetIsField(e.target),
-        })
-      ) {
+      if (action === 'overview') {
         e.preventDefault();
+        e.stopPropagation();
         setShortcutsOpen(true);
         return;
       }
@@ -170,7 +156,7 @@ export default function ChatPage() {
           sending: page.sendingHere,
           canceling: page.cancelingHere,
           previewOpen: preview.expanded || preview.mounted,
-          overlayOpen: hasEscPriorityOverlay(),
+          overlayOpen,
           defaultPrevented: e.defaultPrevented,
           composing: e.isComposing,
         })
@@ -180,8 +166,7 @@ export default function ChatPage() {
       e.preventDefault();
       void page.cancelSending();
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return subscribeChatShortcutKeydown(onKey);
   }, [
     page.cancelSending,
     page.cancelingHere,

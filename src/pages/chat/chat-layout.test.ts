@@ -43,11 +43,12 @@ describe('chat layout wiring', () => {
 
   it('starts a new chat from Ctrl/Cmd+N and opens a shortcut overview', () => {
     const page = source('index.tsx');
-    expect(page).toContain('chatModNShouldStartNewChat');
+    expect(page).toContain('chatPageShortcutAction');
+    expect(page).toContain('subscribeChatShortcutKeydown');
     expect(page).toContain("id: 'new-session'");
-    expect(page).toContain('chatQuestionShouldOpenShortcuts');
-    expect(page).toContain('chatKeyTargetIsField');
     expect(page).toContain('ChatShortcutsDialog');
+    expect(source('chat-shortcuts.ts')).toContain("addEventListener('keydown', onKey, true)");
+    expect(source('use-chat-page.ts')).toContain('chatModNShouldStartNewChat');
     expect(page).toContain('onOpenShortcuts');
     expect(source('ChatComposer.tsx')).toContain('data-help="chat-shortcuts"');
     expect(source('ChatComposer.tsx')).toContain('aria-keyshortcuts="?"');

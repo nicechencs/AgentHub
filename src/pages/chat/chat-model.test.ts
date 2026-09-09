@@ -17,6 +17,7 @@ import {
   chatKeyTargetIsField,
   chatModKShouldFocusHistory,
   chatModNShouldStartNewChat,
+  chatPageShortcutAction,
   chatQuestionShouldOpenShortcuts,
   composerEnterShouldSend,
   chatAgentPickerRows,
@@ -806,6 +807,9 @@ describe('chatModNShouldStartNewChat', () => {
     expect(chatModNShouldStartNewChat(base)).toBe(true);
     expect(chatModNShouldStartNewChat({ ...base, ctrlKey: false, metaKey: true })).toBe(true);
     expect(chatModNShouldStartNewChat({ ...base, key: 'N' })).toBe(true);
+    expect(
+      chatModNShouldStartNewChat({ ...base, key: 'Unidentified', code: 'KeyN' }),
+    ).toBe(true);
   });
 
   it('yields to overlays, Shift, and Alt', () => {
@@ -814,12 +818,16 @@ describe('chatModNShouldStartNewChat', () => {
     expect(chatModNShouldStartNewChat({ ...base, altKey: true })).toBe(false);
     expect(chatModNShouldStartNewChat({ ...base, ctrlKey: false, metaKey: false })).toBe(false);
     expect(chatModNShouldStartNewChat({ ...base, key: 'k' })).toBe(false);
+    expect(
+      chatModNShouldStartNewChat({ ...base, key: 'Unidentified', code: 'KeyK' }),
+    ).toBe(false);
   });
 });
 
 describe('chatQuestionShouldOpenShortcuts', () => {
   const base = {
     key: '?',
+    shiftKey: false,
     metaKey: false,
     ctrlKey: false,
     altKey: false,
@@ -829,6 +837,17 @@ describe('chatQuestionShouldOpenShortcuts', () => {
 
   it('opens the overview with ? when not typing', () => {
     expect(chatQuestionShouldOpenShortcuts(base)).toBe(true);
+    expect(
+      chatQuestionShouldOpenShortcuts({ ...base, key: '/', shiftKey: true }),
+    ).toBe(true);
+    expect(
+      chatQuestionShouldOpenShortcuts({
+        ...base,
+        key: 'Unidentified',
+        code: 'Slash',
+        shiftKey: true,
+      }),
+    ).toBe(true);
   });
 
   it('yields to fields, overlays, and modifiers', () => {
@@ -838,6 +857,62 @@ describe('chatQuestionShouldOpenShortcuts', () => {
     expect(chatQuestionShouldOpenShortcuts({ ...base, metaKey: true })).toBe(false);
     expect(chatQuestionShouldOpenShortcuts({ ...base, altKey: true })).toBe(false);
     expect(chatQuestionShouldOpenShortcuts({ ...base, key: '/' })).toBe(false);
+  });
+});
+
+describe('chatPageShortcutAction', () => {
+  const textarea = { tagName: 'TEXTAREA' } as unknown as EventTarget;
+  const button = { tagName: 'BUTTON' } as unknown as EventTarget;
+  const mods = {
+    metaKey: false,
+    ctrlKey: false,
+    altKey: false,
+    shiftKey: false,
+    overlayOpen: false,
+  };
+
+  it('starts a new chat from Ctrl+N even when the target is the composer textarea', () => {
+    expect(
+      chatPageShortcutAction({
+        ...mods,
+        key: 'n',
+        code: 'KeyN',
+        ctrlKey: true,
+        target: textarea,
+      }),
+    ).toBe('newChat');
+    expect(
+      chatPageShortcutAction({
+        ...mods,
+        key: 'Unidentified',
+        code: 'KeyN',
+        ctrlKey: true,
+        target: textarea,
+      }),
+    ).toBe('newChat');
+  });
+
+  it('keeps ? literal in the composer and opens the overview outside fields', () => {
+    expect(chatPageShortcutAction({ ...mods, key: '?', target: textarea })).toBeNull();
+    expect(chatPageShortcutAction({ ...mods, key: '?', target: button })).toBe('overview');
+    expect(
+      chatPageShortcutAction({
+        ...mods,
+        key: '/',
+        code: 'Slash',
+        shiftKey: true,
+        target: button,
+      }),
+    ).toBe('overview');
+    expect(
+      chatPageShortcutAction({
+        ...mods,
+        key: '/',
+        code: 'Slash',
+        shiftKey: true,
+        target: textarea,
+      }),
+    ).toBeNull();
   });
 });
 

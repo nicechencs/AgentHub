@@ -26,3 +26,26 @@ export function chatShortcutChord(
   if (platform !== 'macos') return keys;
   return keys.replace(/Ctrl/g, 'Cmd');
 }
+
+/**
+ * Capture-phase on the document so Tauri/WebKit still sees chords that start
+ * on the composer (window bubble often never runs in the desktop webview).
+ */
+export function subscribeChatShortcutKeydown(
+  onKey: (event: KeyboardEvent) => void,
+  root: {
+    addEventListener(
+      type: 'keydown',
+      listener: (event: KeyboardEvent) => void,
+      options?: boolean | AddEventListenerOptions,
+    ): void;
+    removeEventListener(
+      type: 'keydown',
+      listener: (event: KeyboardEvent) => void,
+      options?: boolean | AddEventListenerOptions,
+    ): void;
+  } = document,
+): () => void {
+  root.addEventListener('keydown', onKey, true);
+  return () => root.removeEventListener('keydown', onKey, true);
+}
