@@ -1055,6 +1055,7 @@ impl ActorWorker {
             cwd,
             None,
             None,
+            false,
             Arc::clone(&self.abort),
         ) {
             Ok(t) => t,
@@ -1327,7 +1328,8 @@ impl ActorWorker {
                                 "threadId": thread_id,
                                 "cwd": cwd.to_string_lossy(),
                                 "approvalPolicy": "on-request",
-                                "sandbox": "workspace-write"
+                                "sandbox": "workspace-write",
+                                "sandboxPolicy": ops::codex_workspace_write_sandbox_policy(&cwd)
                             }),
                             CODEX_REQUEST_TIMEOUT,
                         )
@@ -1344,6 +1346,7 @@ impl ActorWorker {
                                 "cwd": cwd.to_string_lossy(),
                                 "approvalPolicy": "on-request",
                                 "sandbox": "workspace-write",
+                                "sandboxPolicy": ops::codex_workspace_write_sandbox_policy(&cwd),
                                 "ephemeral": false
                             }),
                             CODEX_REQUEST_TIMEOUT,
@@ -1364,11 +1367,7 @@ impl ActorWorker {
                     "clientUserMessageId": client_request_id,
                     "cwd": cwd.to_string_lossy(),
                     "approvalPolicy": "on-request",
-                    "sandboxPolicy": {
-                        "type": "workspaceWrite",
-                        "writableRoots": [cwd.to_string_lossy()],
-                        "networkAccess": false
-                    }
+                    "sandboxPolicy": ops::codex_workspace_write_sandbox_policy(&cwd)
                 });
                 if let Some(model) = settings
                     .model
@@ -1505,6 +1504,7 @@ impl ActorWorker {
                             &cwd,
                             model,
                             effort,
+                            trust_all,
                             Arc::clone(&self.abort),
                         )
                     }
@@ -2282,24 +2282,37 @@ impl ActorWorker {
         }
         let (kind, title, detail, questions, acp_options, file_changes) = match method {
             "session/request_permission" => {
-                let title = params
-                    .pointer("/toolCall/title")
-                    .or_else(|| params.pointer("/toolCall/kind"))
-                    .and_then(Value::as_str)
-                    .unwrap_or("需要确认")
-                    .to_string();
-                let detail = redact_json_text(
+                let file_changes = file_change::extract_file_changes(params);
+                let title = if file_changes.is_empty() {
                     params
-                        .get("toolCall")
-                        .and_then(|call| call.get("rawInput").or_else(|| call.get("title"))),
-                );
+                        .pointer("/toolCall/title")
+                        .or_else(|| params.pointer("/toolCall/kind"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("需要确认")
+                        .to_string()
+                } else {
+                    "修改文件".to_string()
+                };
+                let detail = if file_changes.is_empty() {
+                    redact_json_text(
+                        params
+                            .get("toolCall")
+                            .and_then(|call| call.get("rawInput").or_else(|| call.get("title"))),
+                    )
+                } else {
+                    self.file_change_request_detail(params)
+                };
                 (
-                    RuntimeRequestKind::Command,
+                    if file_changes.is_empty() {
+                        RuntimeRequestKind::Command
+                    } else {
+                        RuntimeRequestKind::File
+                    },
                     title,
                     detail,
                     Vec::new(),
                     acp_permission_options(params),
-                    file_change::extract_file_changes(params),
+                    file_changes,
                 )
             }
             "item/commandExecution/requestApproval" | "execCommandApproval" => (

@@ -839,7 +839,8 @@ fn acp_permission_with_file_operation_keeps_protocol_diff() {
         .unwrap();
 
     let snapshot = worker.store.snapshot("acp-file", None).unwrap();
-    assert_eq!(snapshot.pending_requests[0].kind, RuntimeRequestKind::Command);
+    assert_eq!(snapshot.pending_requests[0].kind, RuntimeRequestKind::File);
+    assert_eq!(snapshot.pending_requests[0].title, "修改文件");
     assert_eq!(snapshot.pending_requests[0].file_changes.len(), 1);
     assert_eq!(snapshot.pending_requests[0].file_changes[0].path, "README.md");
     assert_eq!(

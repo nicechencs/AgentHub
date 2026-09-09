@@ -171,7 +171,7 @@ impl CodexTransport {
         model: Option<&str>,
         effort: Option<&str>,
     ) -> Result<Self, CodexTransportError> {
-        Self::spawn_grok_with(program, cwd, model, effort, None)
+        Self::spawn_grok_with(program, cwd, model, effort, false, None)
     }
 
     pub(crate) fn spawn_grok_interruptible(
@@ -179,9 +179,10 @@ impl CodexTransport {
         cwd: &Path,
         model: Option<&str>,
         effort: Option<&str>,
+        always_approve: bool,
         abort: Arc<AtomicBool>,
     ) -> Result<Self, CodexTransportError> {
-        Self::spawn_grok_with(program, cwd, model, effort, Some(abort))
+        Self::spawn_grok_with(program, cwd, model, effort, always_approve, Some(abort))
     }
 
     #[cfg(all(test, unix))]
@@ -211,18 +212,10 @@ impl CodexTransport {
         cwd: &Path,
         model: Option<&str>,
         effort: Option<&str>,
+        always_approve: bool,
         abort: Option<Arc<AtomicBool>>,
     ) -> Result<Self, CodexTransportError> {
-        let mut args = vec!["agent".to_string(), "--no-leader".to_string()];
-        if let Some(model) = model.map(str::trim).filter(|s| !s.is_empty()) {
-            args.push("-m".into());
-            args.push(model.to_string());
-        }
-        if let Some(effort) = effort.map(str::trim).filter(|s| !s.is_empty()) {
-            args.push("--reasoning-effort".into());
-            args.push(effort.to_string());
-        }
-        args.push("stdio".into());
+        let args = super::ops::grok_acp_stdio_args(model, effort, always_approve);
         Self::spawn_with(
             program,
             &args,

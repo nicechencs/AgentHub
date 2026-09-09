@@ -1,5 +1,7 @@
 //! B2 helpers: model/effort validation, Codex list parsing, turn input building.
 
+use std::path::Path;
+
 use serde_json::{json, Value};
 
 use crate::error::{AppError, Result};
@@ -404,6 +406,43 @@ pub(crate) fn acp_session_prompt_params(session_id: &str, blocks: Vec<Value>) ->
         "sessionId": session_id,
         "prompt": blocks,
     })
+}
+
+/// Codex `workspace-write` treats `/tmp` and `$TMPDIR` as writable unless
+/// excluded. Chat must ask before writing outside the conversation cwd.
+pub(crate) fn codex_workspace_write_sandbox_policy(cwd: &Path) -> Value {
+    json!({
+        "type": "workspaceWrite",
+        "writableRoots": [cwd.to_string_lossy()],
+        "networkAccess": false,
+        "excludeTmpdirEnvVar": true,
+        "excludeSlashTmp": true
+    })
+}
+
+pub(crate) fn grok_acp_stdio_args(
+    model: Option<&str>,
+    effort: Option<&str>,
+    always_approve: bool,
+) -> Vec<String> {
+    let mut args = vec!["agent".to_string(), "--no-leader".to_string()];
+    if let Some(model) = model.map(str::trim).filter(|s| !s.is_empty()) {
+        args.push("-m".into());
+        args.push(model.to_string());
+    }
+    if let Some(effort) = effort.map(str::trim).filter(|s| !s.is_empty()) {
+        args.push("--reasoning-effort".into());
+        args.push(effort.to_string());
+    }
+    if always_approve {
+        args.push("--always-approve".into());
+    } else {
+        // CLI overrides ~/.grok always-approve so Chat can show cards.
+        args.push("--permission-mode".into());
+        args.push("default".into());
+    }
+    args.push("stdio".into());
+    args
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

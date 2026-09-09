@@ -382,6 +382,44 @@ fn acp_session_prompt_params_use_prompt_not_content() {
 }
 
 #[test]
+fn codex_workspace_write_excludes_tmp_so_outside_cwd_needs_approval() {
+    let cwd = std::path::Path::new("/workspace/project");
+    let policy = codex_workspace_write_sandbox_policy(cwd);
+    assert_eq!(policy["type"], "workspaceWrite");
+    assert_eq!(policy["writableRoots"], json!(["/workspace/project"]));
+    assert_eq!(policy["networkAccess"], false);
+    assert_eq!(policy["excludeSlashTmp"], true);
+    assert_eq!(policy["excludeTmpdirEnvVar"], true);
+}
+
+#[test]
+fn grok_acp_stdio_asks_unless_session_always_approve() {
+    assert_eq!(
+        grok_acp_stdio_args(None, None, false),
+        vec![
+            "agent".to_string(),
+            "--no-leader".to_string(),
+            "--permission-mode".to_string(),
+            "default".to_string(),
+            "stdio".to_string()
+        ]
+    );
+    assert_eq!(
+        grok_acp_stdio_args(Some("grok-4.6"), Some("high"), true),
+        vec![
+            "agent".to_string(),
+            "--no-leader".to_string(),
+            "-m".to_string(),
+            "grok-4.6".to_string(),
+            "--reasoning-effort".to_string(),
+            "high".to_string(),
+            "--always-approve".to_string(),
+            "stdio".to_string()
+        ]
+    );
+}
+
+#[test]
 fn grok_prompt_blocks_embed_local_image() {
     // Grok/Kiro ACP image blocks require base64 `data`. A path-only / file URI
     // block is not sent: this client advertises no fs read.
