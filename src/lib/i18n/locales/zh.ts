@@ -2798,7 +2798,7 @@ export const zh = {
       submit: '提交',
       allow: '允许',
       allowAlways: '一直允许',
-      allowAlwaysHint: '不写入本机保存',
+      allowAlwaysHint: '仅当前这次进程，不保存',
       deny: '拒绝',
       fileChange: '修改文件',
       needConfirm: '需要确认',

@@ -117,6 +117,24 @@ test('model menu uses readable names and Ctrl+Shift+I opens it', async ({ page }
   await expect(page.getByRole('menuitemradio', { name: 'GPT 5.3 Codex Spark' })).toBeVisible();
 });
 
+test('Stop stays 正在停止 until the mock turn ends', async ({ page }) => {
+  await openApp(page);
+  await openChatComposer(page);
+  await setWorkingDirectory(page);
+
+  const composer = page.getByRole('textbox', { name: '消息输入' });
+  await composer.fill('e2e mock stop');
+  await page.getByRole('button', { name: '发送' }).click();
+  const stop = page.locator('[data-help="chat-stop"]');
+  await expect(stop).toBeVisible();
+  await stop.click();
+  await expect(page.getByRole('button', { name: '停止', exact: true })).toHaveCount(0);
+  await expect(page.getByText('已按你的要求停止。可恢复草稿后重发。')).toBeVisible({
+    timeout: 10_000,
+  });
+  await expect(page.getByRole('main').getByText('已停止', { exact: true })).toBeVisible();
+});
+
 test('Chat settings dialog traps Tab and restores focus after Escape', async ({ page }) => {
   await openApp(page);
   await openChatComposer(page);

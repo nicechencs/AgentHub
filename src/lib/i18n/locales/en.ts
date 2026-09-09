@@ -2818,7 +2818,7 @@ export const en = {
       submit: 'Submit',
       allow: 'Allow',
       allowAlways: 'Always allow',
-      allowAlwaysHint: 'Not saved on this computer',
+      allowAlwaysHint: 'This process only, not saved',
       deny: 'Deny',
       fileChange: 'Change files',
       needConfirm: 'Needs confirmation',
