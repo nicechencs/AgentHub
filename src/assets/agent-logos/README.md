@@ -18,7 +18,7 @@
 | 装法 | 何时 | 要求 |
 | --- | --- | --- |
 | `glyph` | 官方素材是透明底符号 | 正方形画布；图形视觉上约占格子的 70%～75%；`logoBackground` 为对比底（多数白，Grok / Cursor 深色） |
-| `bleed` | 官方素材已经是铺满的应用图标 | 正方形画布，贴边裁进圆角框；`logoBackground` 与图标底色一致，避免露边 |
+| `bleed` | 官方素材已经是铺满的**方**应用图标 | 正方形画布，贴边裁进圆角框；`logoBackground` 与图标底色一致，避免露边。圆形官网标不当 bleed，当符号放在格子底上 |
 
 不要在 SVG 里再画一层圆角底或圆形底（会和格子套两层）。不要给每家写 CSS `scale`。
 
@@ -40,7 +40,7 @@
 | `kimi.svg` | Kimi Code | glyph | [KIMI 官方品牌指南：K Only 浅色背景](https://moonshotai.github.io/Branding-Guide/scenarios/04-k-only/k-only-light.svg) | — |
 | `grok.svg` / `.png` | Grok | glyph | [theSVG Grok](https://cdn.jsdelivr.net/gh/glincker/thesvg@main/public/icons/grok/default.svg) | [grok.com](https://grok.com) |
 | `pi.svg` / `.png` | Pi | glyph | [theSVG Pi](https://cdn.jsdelivr.net/gh/glincker/thesvg@main/public/icons/pi/default.svg) | [pi.dev](https://pi.dev) |
-| `workbuddy.svg` | WorkBuddy | bleed | [WorkBuddy 官方页面 logo.svg](https://download.codebuddy.ai/web/workbuddy/00aa368996ce0f8793afd87db1bcdf458d8ba952/assets/logo.svg) | — |
+| `workbuddy.svg` | WorkBuddy | glyph | [WorkBuddy 官方页面 logo.svg](https://download.codebuddy.ai/web/workbuddy/00aa368996ce0f8793afd87db1bcdf458d8ba952/assets/logo.svg) | — |
 | `cursor.svg` / `.png` | Cursor | glyph | [theSVG Cursor](https://cdn.jsdelivr.net/gh/glincker/thesvg@main/public/icons/cursor/default.svg) | [cursor.com](https://cursor.com) |
 | `deepseek.svg` / `.png` | DeepSeek（`dsh`） | glyph | [theSVG DeepSeek](https://cdn.jsdelivr.net/gh/glincker/thesvg@main/public/icons/deepseek/default.svg) | [deepseek.com](https://deepseek.com) |
 | `zcode.png` | ZCode | bleed | —（公开 SVG 是位图封装，未采用） | [z.ai](https://z.ai) |

@@ -118,8 +118,7 @@ export const AGENT_DISPLAY: Readonly<
     letter: 'W',
     colorKey: 'workbuddy',
     logoSvgSrc: workbuddyLogoSvg,
-    logoBackground: '#0EC8A9',
-    logoFit: 'bleed',
+    logoBackground: '#ffffff',
   },
   cursor: {
     letter: 'R',
