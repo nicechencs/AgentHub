@@ -27,7 +27,7 @@ updated: 2026-09-09
   - **过程面板**：工具行用人话「正在读取 / 正在修改 / 正在执行」（完成则「已读取 / 已修改 / 已执行」），路径或命令跟在后面。工具名、状态和 JSON 进折叠的「细节」；命令、错误输出、退出码和状态事件仍在「运行详情」。
   - **过程内用量**：新空 Codex 会话在 `thread/tokenUsage/updated` 到达后立刻展示 **当前轮**（`last`）和 **累计**（`total`）；有 `modelContextWindow` 时写成 `累计 n / 窗口`，不画假进度条。新空 Grok 会话只展示 **当前轮**（`turn_completed.usage`）；ACP 没有会话累计字段，不把各轮相加冒充累计。解析路径已接；真窗 2026-09-09 见过部分轮次 **没有** `turn_completed.usage`，此时界面不画假数字。只显示协议里有的数字，不估算费用。Kiro 没有 token 累计数据源。回复标题行和生成中的过程摘要都会留下用量。
   - **新空 Claude 会话（B3 首片）**：走 Claude Code `-p --input-format stream-json --output-format stream-json` 持续通道（同进程多轮、本地图片 base64、模型/思考强度参数）；**不支持**生成中补充；本片**不**接可点允许/拒绝（默认 `dontAsk`，危险模式 `bypassPermissions`）。有历史的旧 Claude 会话仍走 print+resume。见 [Claude B3](archive/chat-claude-b3.md)。
-  - **图片附件**：ChatRuntime 持续聊天（Codex / Grok / Kiro / 新空 Claude）露出「添加图片」；有历史的旧 Claude 仍 print+resume、**无**图片按钮。普通文件 / `@` 未接。
+  - **图片附件**：ChatRuntime 持续聊天（Codex / Grok / Kiro / 新空 Claude）露出「添加图片」（桌面端与 `dev:mock` 新空 Claude 一致）；有历史的旧 Claude 仍 print+resume、**无**图片按钮。普通文件 / `@` 未接。
   - **允许 / 拒绝 / 一直允许**（仅 Codex / Grok / Kiro 持续聊天；Cursor 不在此列）。卡片始终有允许和拒绝。「一直允许」只在这次请求带了该选项时出现（Codex 命令/文件卡片会补上；Grok / Kiro 只认对方给的 `allow_always`，Kiro 常见是 `allow_always_tool`）。待处理请求上的选项会入库，快照或重开后卡片仍可点。点了「一直允许」之后，**三家都在本机记住后续确认**，只限当前这次进程，不写进数据库：Codex 通常是本轮（一轮结束会新起进程，会再问）；Grok / Kiro 同一条 ACP 进程可跨轮，进程退出后再问。点的时候仍把对方给的选项回传；后面没有允许选项的请求仍出卡片，不会造假按钮。Kiro 会话设置里的「完全访问权限」是另一条（启动时 `--trust-all-tools`），不是卡片上的「一直允许」。机制见 [Chat 与 Agent](concepts/chat-and-agents.md#允许-拒绝-一直允许)。
 
 ## Backend 边界
