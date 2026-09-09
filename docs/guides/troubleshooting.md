@@ -4,7 +4,7 @@ description: 按启动、环境、登录、Routes、日志和测试症状定位�
 type: guide
 audience: user-and-contributor
 status: current
-updated: 2026-09-07
+updated: 2026-09-08
 ---
 
 # 排障指南
@@ -124,7 +124,7 @@ CLI 临时提高级别：
 cargo run -p agenthub-cli -- -v doctor
 ```
 
-日志中用 `request_id`、`profile_id`、`op`、`code` 检索。文件日志不记录请求正文、响应正文、prompt、工具参数或完整密钥。日志规范见 [logging.md](../reference/logging.md)。
+日志中用 `request_id`、`profile_id`、`op`、`code` 检索。Chat 点停止后搜 `op=stop`：生成中或等待批准时点停止都应出现 `stop ok`。`op=stop_fail` 表示停止没生效（没有可停的运行时或取消超时），不要把传输 interrupt 的用户停止当成没记日志。文件日志不记录请求正文、响应正文、prompt、工具参数或完整密钥。日志规范见 [logging.md](../reference/logging.md)。
 
 ## 测试失败
 

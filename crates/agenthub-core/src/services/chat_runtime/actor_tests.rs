@@ -7,6 +7,7 @@ use crate::models::{AgentId, ChatEvent, ChatMessageStatus, ChatRole, Conversatio
 use crate::services::RunService;
 use crate::storage::{ChatRepo, Database};
 use serde_json::json;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -188,6 +189,13 @@ fn retryable_notification_error_keeps_the_turn_alive() {
 
 #[cfg(unix)]
 fn fake_transport() -> (tempfile::TempDir, CodexTransport, std::path::PathBuf) {
+    fake_transport_with(None)
+}
+
+#[cfg(unix)]
+fn fake_transport_with(
+    abort: Option<Arc<std::sync::atomic::AtomicBool>>,
+) -> (tempfile::TempDir, CodexTransport, std::path::PathBuf) {
     use std::os::unix::fs::PermissionsExt;
 
     let directory = tempfile::tempdir().unwrap();
@@ -218,7 +226,12 @@ done
     permissions.set_mode(0o700);
     std::fs::set_permissions(&program, permissions).unwrap();
     let log = directory.path().join("wire.log");
-    let transport = CodexTransport::spawn(&program, directory.path()).unwrap();
+    let transport = match abort {
+        Some(flag) => {
+            CodexTransport::spawn_interruptible(&program, directory.path(), flag).unwrap()
+        }
+        None => CodexTransport::spawn(&program, directory.path()).unwrap(),
+    };
     (directory, transport, log)
 }
 
@@ -1206,4 +1219,110 @@ fn runtime_logs_stop_fail_when_cancel_fails() {
     assert!(logs.contains("core.chat"), "logs:\n{logs}");
     assert!(captured_has_op(&logs, "stop_fail"), "logs:\n{logs}");
     assert!(!logs.contains("interrupt failed") || logs.contains("stop_fail"));
+}
+
+#[test]
+fn abort_during_cancel_logs_stop_ok_not_transport_fail() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "log-stop-abort");
+    let mut worker = worker(&db, "log-stop-abort");
+    worker.store.enable_if_new("log-stop-abort").unwrap();
+    start_placeholder(&mut worker);
+    worker.abort.store(true, Ordering::SeqCst);
+    let (result, logs) = with_captured_logs(|| {
+        worker.complete_cancel(AppError::message(
+            "chat.runtime.transport",
+            "codex app-server request interrupted",
+        ))
+    });
+    result.unwrap();
+    assert!(logs.contains("core.chat"), "logs:\n{logs}");
+    assert!(logs.contains("stop ok"), "logs:\n{logs}");
+    assert!(captured_has_op(&logs, "stop"), "logs:\n{logs}");
+    assert!(!captured_has_op(&logs, "stop_fail"), "logs:\n{logs}");
+    assert!(!captured_has_op(&logs, "send_fail"), "logs:\n{logs}");
+    let snapshot = worker.store.snapshot("log-stop-abort", None).unwrap();
+    assert_eq!(snapshot.phase, RuntimePhase::Cancelled);
+    assert_eq!(
+        snapshot.current_message.unwrap().status,
+        ChatMessageStatus::Cancelled
+    );
+}
+
+#[test]
+fn transport_interrupt_without_abort_still_logs_stop_fail() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "log-stop-transport");
+    let mut worker = worker(&db, "log-stop-transport");
+    worker.store.enable_if_new("log-stop-transport").unwrap();
+    start_placeholder(&mut worker);
+    let (result, logs) = with_captured_logs(|| {
+        worker.complete_cancel(AppError::message(
+            "chat.runtime.transport",
+            "codex app-server I/O failed",
+        ))
+    });
+    assert!(result.is_err());
+    assert!(captured_has_op(&logs, "stop_fail"), "logs:\n{logs}");
+    assert!(!logs.contains("stop ok"), "logs:\n{logs}");
+}
+
+#[cfg(unix)]
+#[test]
+fn stop_while_waiting_for_approval_logs_stop_ok() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "stop-waiting");
+    let mut worker = worker(&db, "stop-waiting");
+    worker.store.enable_if_new("stop-waiting").unwrap();
+    start_placeholder(&mut worker);
+    worker
+        .store
+        .set_state(
+            "stop-waiting",
+            RuntimePhase::Waiting,
+            Some("run-1"),
+            worker.thread_id.as_deref(),
+            worker.turn_id.as_deref(),
+            worker.chat_turn,
+            worker.message_id.as_deref(),
+        )
+        .unwrap();
+    worker
+        .store
+        .add_request(
+            "stop-waiting",
+            &RuntimeRequest {
+                id: "request-1".into(),
+                run_id: "run-1".into(),
+                kind: RuntimeRequestKind::Command,
+                title: "执行命令".into(),
+                detail: "safe".into(),
+                questions: Vec::new(),
+                permission_options: Vec::new(),
+            },
+            "item/commandExecution/requestApproval",
+            "server-wait",
+        )
+        .unwrap();
+    let abort = Arc::clone(&worker.abort);
+    let (_directory, transport, log) = fake_transport_with(Some(abort));
+    worker.transport = Some(transport);
+    worker.abort.store(true, Ordering::SeqCst);
+    let (result, logs) = with_captured_logs(|| worker.cancel("run-1"));
+    result.unwrap();
+    assert!(logs.contains("stop ok"), "logs:\n{logs}");
+    assert!(captured_has_op(&logs, "stop"), "logs:\n{logs}");
+    assert!(!captured_has_op(&logs, "stop_fail"), "logs:\n{logs}");
+    let snapshot = worker.store.snapshot("stop-waiting", None).unwrap();
+    assert_eq!(snapshot.phase, RuntimePhase::Cancelled);
+    assert!(snapshot.pending_requests.is_empty());
+    assert_eq!(
+        snapshot.current_message.unwrap().status,
+        ChatMessageStatus::Cancelled
+    );
+    let wire = std::fs::read_to_string(log).unwrap_or_default();
+    assert!(
+        !wire.lines().any(|line| line == "accept"),
+        "stop must not allow the pending command:\n{wire}"
+    );
 }

@@ -8,8 +8,10 @@ use std::time::Duration;
 use crate::adapters::register_all;
 use crate::error::{AppError, Result};
 use crate::models::{AgentId, DetectStatus, InstallOutcome};
-use crate::platform::detection::{AgentDetector, DetectorRegistry};
-use crate::platform::install::{InstallContribution, InstallContributionRegistry};
+use crate::platform::detection::{builtin_detector_registry, AgentDetector, DetectorRegistry};
+use crate::platform::install::{
+    builtin_install_registry, InstallContribution, InstallContributionRegistry,
+};
 use crate::platform::lifecycle::{
     InstallationObserved, LifecycleCoordinator, LifecycleInstallExecutor, OperationKind,
     OperationStatus, VecProgressSink,
@@ -326,6 +328,19 @@ fn open_hub_db() -> (tempfile::TempDir, Database, LifecycleCoordinator) {
     (dir, db, lc)
 }
 
+fn open_hub_db_mocked_install() -> (tempfile::TempDir, Database, LifecycleCoordinator) {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let installed = Arc::new(AtomicBool::new(false));
+    let lc = LifecycleCoordinator::with_registries_and_executor(
+        db.clone(),
+        builtin_detector_registry().clone(),
+        builtin_install_registry().clone(),
+        Arc::new(FakeLifecycleExecutor { installed }),
+    );
+    (dir, db, lc)
+}
+
 #[test]
 fn compatibility_constructor_derives_file_backed_data_dir() {
     let dir = tempdir().unwrap();
@@ -460,13 +475,12 @@ fn interrupt_stale_running_on_recovery() {
 
 #[test]
 fn install_records_operation_and_progress() {
-    // Lifecycle always writes an operation row (success or fail depends on machine env).
-    let (_dir, _db, lc) = open_hub_db();
+    let (_dir, _db, lc) = open_hub_db_mocked_install();
     let mut sink = VecProgressSink::default();
     let out = lc
         .install_agent(
             AgentId::Kimi,
-            "npm",
+            "native",
             false,
             &RejectExecutor,
             Some(&mut sink),
@@ -554,7 +568,7 @@ fn unsupported_unknown_agent_fails_closed() {
 
 #[test]
 fn install_progress_events_share_one_nonempty_operation_id() {
-    let (_dir, _db, lc) = open_hub_db();
+    let (_dir, _db, lc) = open_hub_db_mocked_install();
     let mut sink = VecProgressSink::default();
     let out = lc
         .install_agent(
