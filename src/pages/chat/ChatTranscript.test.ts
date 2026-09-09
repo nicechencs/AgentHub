@@ -66,7 +66,7 @@ describe('ChatTranscript surfaces', () => {
     expect(html).not.toContain('rounded-composer bg-canvas');
     expect(html).toContain('text-display');
     expect(html).toContain('开始对话');
-    expect(html).toContain('向 Claude 发送第一条消息');
+    expect(html).toContain('发送第一条消息');
     expect(html).toContain(' · demo');
     expect(html).toContain('了解这个项目');
     expect(html).toContain('检查问题');
@@ -96,7 +96,7 @@ describe('ChatTranscript surfaces', () => {
     expect(html).toContain('开始对话');
     expect(html).toContain(' · demo');
     expect(html).toContain('设置工作目录');
-    expect(html).not.toContain('向 Claude 发送第一条消息');
+    expect(html).not.toContain('发送第一条消息');
     expect(html).not.toContain('了解这个项目');
     expect(html).not.toContain('示例只填入输入框，由你发送');
   });

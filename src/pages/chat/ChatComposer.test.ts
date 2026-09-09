@@ -2,7 +2,7 @@ import { createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import type { Conversation } from '@/lib/types';
+import type { AgentKey, Conversation } from '@/lib/types';
 import { ChatComposer } from './ChatComposer';
 
 vi.mock('react-router-dom', () => ({
@@ -53,7 +53,7 @@ function composer(partial?: Partial<Parameters<typeof ChatComposer>[0]>) {
       manageLabel: '管理',
     },
     switchingProvider: false,
-    hiddenIds: new Set(),
+    hiddenIds: new Set<AgentKey>(),
     pickerRows: [],
     agentsReady: true,
     blockers: [],

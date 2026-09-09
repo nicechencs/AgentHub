@@ -133,8 +133,9 @@ describe('chat layout wiring', () => {
     expect(transcript).toContain('onPickStarter');
     expect(transcript).toContain('emptyTranscriptCopy');
     expect(transcript).toContain('text-display');
-    expect(transcript).toContain('chat.transcript.identity');
-    expect(transcript).toContain('chat.transcript.startersHint');
+    expect(source('chat-empty-state.ts')).toContain('chat.transcript.identity');
+    expect(source('chat-empty-state.ts')).toContain('chat.transcript.firstMessage');
+    expect(source('chat-empty-state.ts')).toContain('chat.transcript.startersHint');
     expect(source('ChatComposer.tsx')).toContain('focusNonce');
     expect(source('index.tsx')).toContain('focusNonce={page.composerFocusNonce}');
     expect(transcript).toContain('firstBlocker');
