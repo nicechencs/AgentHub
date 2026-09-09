@@ -162,6 +162,10 @@ pub enum ProcessStep {
     /// Protocol token counts from the Agent. Absent fields were not sent.
     #[serde(rename_all = "camelCase")]
     Usage {
+        /// `turn` = current turn (`last`); `session` = cumulative (`total`).
+        /// Missing means current turn (Grok `turn_completed.usage`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scope: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         input: Option<u64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -174,6 +178,8 @@ pub enum ProcessStep {
         reasoning: Option<u64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         total: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        context_window: Option<u64>,
     },
 }
 
@@ -207,6 +213,44 @@ impl ProcessStep {
             return None;
         }
         usage_from_fields(map.values().next()?)
+    }
+
+    /// Codex `tokenUsage`: `last` is this turn, `total` is the thread cumulative.
+    /// Does not invent a session total when only `last` is present.
+    pub fn from_codex_token_usage(token_usage: &serde_json::Value) -> Vec<Self> {
+        let window = token_u64(token_usage, &["modelContextWindow", "model_context_window"]);
+        let mut out = Vec::new();
+        if let Some(step) = token_usage.get("last").and_then(Self::from_usage_object) {
+            out.push(step.with_usage_meta(Some("turn"), None));
+        }
+        if let Some(step) = token_usage.get("total").and_then(Self::from_usage_object) {
+            out.push(step.with_usage_meta(Some("session"), window));
+        }
+        out
+    }
+
+    fn with_usage_meta(self, scope: Option<&str>, context_window: Option<u64>) -> Self {
+        match self {
+            Self::Usage {
+                input,
+                output,
+                cache_read,
+                cache_write,
+                reasoning,
+                total,
+                ..
+            } => Self::Usage {
+                scope: scope.map(str::to_string),
+                input,
+                output,
+                cache_read,
+                cache_write,
+                reasoning,
+                total,
+                context_window,
+            },
+            other => other,
+        }
     }
 }
 
@@ -251,12 +295,14 @@ fn usage_from_fields(usage: &serde_json::Value) -> Option<ProcessStep> {
         return None;
     }
     Some(ProcessStep::Usage {
+        scope: None,
         input,
         output,
         cache_read,
         cache_write,
         reasoning,
         total,
+        context_window: None,
     })
 }
 

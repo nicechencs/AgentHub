@@ -7,9 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Hint } from '@/components/ui/tooltip';
 import { agentDisplayName } from '@/config/agents';
 import {
-  formatUsageStep,
+  formatVisibleUsage,
   hasProcessDetails,
-  lastUsageStep,
   processPhaseLabel,
 } from '@/lib/chat-process';
 import type { AgentProcessView } from '@/lib/chat-process';
@@ -141,8 +140,7 @@ function AgentBubble({
       hasProcessDetails(process) &&
       (!running || !displayContent || process.steps.length > 0 || Boolean(process.stderr)),
   );
-  const usage = lastUsageStep(process?.steps);
-  const usageText = usage ? formatUsageStep(usage, t) : '';
+  const usageText = formatVisibleUsage(process?.steps, t);
 
   return (
     <div id={`chat-msg-${message.id}`} className="group flex min-w-0 gap-3">

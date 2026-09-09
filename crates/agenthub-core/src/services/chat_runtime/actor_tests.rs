@@ -189,7 +189,7 @@ fn retryable_notification_error_keeps_the_turn_alive() {
 }
 
 #[test]
-fn thread_token_usage_updated_emits_last_breakdown() {
+fn thread_token_usage_updated_emits_turn_and_session() {
     let db = Database::open_in_memory().unwrap();
     conversation(&db, "usage");
     let mut worker = worker(&db, "usage");
@@ -218,28 +218,46 @@ fn thread_token_usage_updated_emits_last_breakdown() {
                         "outputTokens": 40,
                         "reasoningOutputTokens": 15,
                         "totalTokens": 440
-                    }
+                    },
+                    "modelContextWindow": 258400
                 }
             }),
         )
         .unwrap();
 
     let snapshot = worker.store.snapshot("usage", None).unwrap();
-    let usage = snapshot.events.iter().find_map(|event| match &event.event {
-        ChatEvent::AgentProcess {
-            step:
-                crate::models::ProcessStep::Usage {
-                    input,
-                    output,
-                    cache_read,
-                    total,
-                    ..
-                },
-            ..
-        } => Some((*input, *output, *cache_read, *total)),
-        _ => None,
-    });
-    assert_eq!(usage, Some((Some(100), Some(10), Some(20), Some(110))));
+    let rows: Vec<_> = snapshot
+        .events
+        .iter()
+        .filter_map(|event| match &event.event {
+            ChatEvent::AgentProcess {
+                step:
+                    crate::models::ProcessStep::Usage {
+                        scope,
+                        input,
+                        output,
+                        total,
+                        context_window,
+                        ..
+                    },
+                ..
+            } => Some((scope.clone(), *input, *output, *total, *context_window)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        vec![
+            (Some("turn".into()), Some(100), Some(10), Some(110), None),
+            (
+                Some("session".into()),
+                Some(400),
+                Some(40),
+                Some(440),
+                Some(258400)
+            ),
+        ]
+    );
 }
 
 #[test]

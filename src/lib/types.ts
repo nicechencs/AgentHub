@@ -524,12 +524,15 @@ export type ProcessStep =
   | { type: 'error'; message: string }
   | {
       type: 'usage';
+      /** `turn` = current turn; `session` = cumulative. Missing means current turn. */
+      scope?: 'turn' | 'session' | string | null;
       input?: number | null;
       output?: number | null;
       cacheRead?: number | null;
       cacheWrite?: number | null;
       reasoning?: number | null;
       total?: number | null;
+      contextWindow?: number | null;
     };
 
 /** Streaming events from chat_send (externally tagged `type`) */

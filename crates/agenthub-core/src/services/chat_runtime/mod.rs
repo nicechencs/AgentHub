@@ -2257,10 +2257,10 @@ impl ActorWorker {
                 self.remember_file_change_patch(params);
             }
             "thread/tokenUsage/updated" | "thread/token_usage/updated" => {
-                self.emit_usage_step(codex_last_usage(params))?;
+                self.emit_usage_steps(codex_usage_steps(params))?;
             }
             "turn/completed" => {
-                self.emit_usage_step(codex_last_usage(params))?;
+                self.emit_usage_steps(codex_usage_steps(params))?;
                 self.turn_completed(params)?;
             }
             "error" => {
@@ -2397,18 +2397,18 @@ impl ActorWorker {
         Ok(())
     }
 
-    fn emit_usage_step(&self, step: Option<ProcessStep>) -> Result<()> {
-        let Some(step) = step else {
-            return Ok(());
-        };
-        self.emit(
-            ChatEvent::AgentProcess {
-                turn: self.chat_turn.unwrap_or(0),
-                agent: self.agent,
-                step,
-            },
-            self.live_phase(RuntimePhase::Running),
-        )
+    fn emit_usage_steps(&self, steps: Vec<ProcessStep>) -> Result<()> {
+        for step in steps {
+            self.emit(
+                ChatEvent::AgentProcess {
+                    turn: self.chat_turn.unwrap_or(0),
+                    agent: self.agent,
+                    step,
+                },
+                self.live_phase(RuntimePhase::Running),
+            )?;
+        }
+        Ok(())
     }
 
     fn emit_error(&self, message: &str, phase: RuntimePhase) -> Result<()> {
@@ -2806,15 +2806,14 @@ fn extract_id(value: &Value, key: &str) -> Option<String> {
     })
 }
 
-/// Codex `thread/tokenUsage/updated` (and optional `turn/completed`) last-turn
-/// breakdown. Session `total` is ignored so Chat does not show a cumulative
-/// number as this turn.
-fn codex_last_usage(params: &Value) -> Option<ProcessStep> {
+/// Codex `thread/tokenUsage/updated` (and optional `turn/completed`) last + total.
+fn codex_usage_steps(params: &Value) -> Vec<ProcessStep> {
     params
-        .pointer("/tokenUsage/last")
-        .or_else(|| params.pointer("/token_usage/last"))
-        .or_else(|| params.pointer("/turn/tokenUsage/last"))
-        .and_then(ProcessStep::from_usage_object)
+        .get("tokenUsage")
+        .or_else(|| params.get("token_usage"))
+        .or_else(|| params.pointer("/turn/tokenUsage"))
+        .map(ProcessStep::from_codex_token_usage)
+        .unwrap_or_default()
 }
 
 fn wire_id_string(value: &Value) -> String {
