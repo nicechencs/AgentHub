@@ -140,6 +140,7 @@ fn non_retryable_notification_error_terminalizes_message_and_controls() {
                 detail: "safe".into(),
                 questions: Vec::new(),
                 permission_options: Vec::new(),
+                file_changes: Vec::new(),
             },
             "item/commandExecution/requestApproval",
             "1",
@@ -367,6 +368,7 @@ fn stop_wins_over_late_allow_and_reply_before_stop_is_sent() {
         detail: "safe".into(),
         questions: Vec::new(),
         permission_options: Vec::new(),
+        file_changes: Vec::new(),
     };
     let (_directory, transport, log) = fake_transport();
     first_worker.transport = Some(transport);
@@ -533,6 +535,7 @@ fn empty_approval_answers_are_treated_as_absent() {
                 detail: "safe".into(),
                 questions: Vec::new(),
                 permission_options: Vec::new(),
+                file_changes: Vec::new(),
             },
             "session/request_permission",
             "server-1",
@@ -628,6 +631,7 @@ fn file_and_question_server_requests_become_pending_runtime_requests() {
     assert_eq!(snapshot.pending_requests[0].kind, RuntimeRequestKind::File);
     assert_eq!(snapshot.pending_requests[0].title, "修改文件");
     assert_eq!(snapshot.pending_requests[0].detail, "edit readme");
+    assert!(snapshot.pending_requests[0].file_changes.is_empty());
     assert_eq!(
         snapshot.pending_requests[0].permission_options,
         vec![
@@ -702,6 +706,21 @@ fn file_change_request_uses_item_started_paths_when_reason_is_empty() {
         snapshot.pending_requests[0].detail,
         "/workspace/qa-codex-filechange-scratch/probe.txt"
     );
+    assert_eq!(snapshot.pending_requests[0].file_changes.len(), 1);
+    assert_eq!(
+        snapshot.pending_requests[0].file_changes[0].path,
+        "/workspace/qa-codex-filechange-scratch/probe.txt"
+    );
+    assert_eq!(
+        snapshot.pending_requests[0].file_changes[0].kind.as_deref(),
+        Some("add")
+    );
+    assert_eq!(
+        snapshot.pending_requests[0].file_changes[0]
+            .preview
+            .as_deref(),
+        Some("FILECHANGE_OK\n")
+    );
     assert!(snapshot.events.iter().any(|event| matches!(
         &event.event,
         ChatEvent::AgentProcess {
@@ -735,6 +754,98 @@ fn apply_patch_approval_alias_becomes_file_request() {
     let snapshot = worker.store.snapshot("legacy-patch", None).unwrap();
     assert_eq!(snapshot.pending_requests[0].kind, RuntimeRequestKind::File);
     assert_eq!(snapshot.pending_requests[0].detail, "/tmp/example.txt");
+    assert_eq!(snapshot.pending_requests[0].file_changes.len(), 1);
+    assert_eq!(
+        snapshot.pending_requests[0].file_changes[0].preview.as_deref(),
+        Some("ok")
+    );
+}
+
+#[test]
+fn file_change_path_only_payload_keeps_empty_preview() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "file-empty");
+    let mut worker = worker(&db, "file-empty");
+    worker.store.enable_if_new("file-empty").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .notification(
+            "item/started",
+            &json!({
+                "item": {
+                    "type": "fileChange",
+                    "id": "exec-empty",
+                    "status": "inProgress",
+                    "changes": [{
+                        "path": "/workspace/notes.md",
+                        "kind": { "type": "update" }
+                    }]
+                }
+            }),
+        )
+        .unwrap();
+    worker
+        .server_request(
+            json!("file-empty"),
+            "item/fileChange/requestApproval",
+            &json!({
+                "turnId": "run-1",
+                "itemId": "exec-empty",
+                "reason": null,
+                "grantRoot": null
+            }),
+        )
+        .unwrap();
+
+    let snapshot = worker.store.snapshot("file-empty", None).unwrap();
+    assert_eq!(snapshot.pending_requests[0].detail, "/workspace/notes.md");
+    assert_eq!(snapshot.pending_requests[0].file_changes.len(), 1);
+    assert_eq!(snapshot.pending_requests[0].file_changes[0].preview, None);
+}
+
+#[test]
+fn acp_permission_with_file_operation_keeps_protocol_diff() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "acp-file");
+    let mut worker = worker(&db, "acp-file");
+    worker.agent = AgentId::Grok;
+    worker.store.enable_if_new("acp-file").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .server_request(
+            json!("perm-file"),
+            "session/request_permission",
+            &json!({
+                "turnId": "run-1",
+                "toolCall": {
+                    "title": "edit",
+                    "kind": "edit",
+                    "rawInput": {
+                        "operation": {
+                            "type": "update_file",
+                            "path": "README.md",
+                            "diff": "@@ -1,2 +1,3 @@\n hello\n+world\n"
+                        }
+                    }
+                },
+                "options": [
+                    {"optionId": "once", "kind": "allow_once"},
+                    {"optionId": "reject", "kind": "reject_once"}
+                ]
+            }),
+        )
+        .unwrap();
+
+    let snapshot = worker.store.snapshot("acp-file", None).unwrap();
+    assert_eq!(snapshot.pending_requests[0].kind, RuntimeRequestKind::Command);
+    assert_eq!(snapshot.pending_requests[0].file_changes.len(), 1);
+    assert_eq!(snapshot.pending_requests[0].file_changes[0].path, "README.md");
+    assert_eq!(
+        snapshot.pending_requests[0].file_changes[0].preview.as_deref(),
+        Some("@@ -1,2 +1,3 @@\n hello\n+world\n")
+    );
 }
 
 #[test]
@@ -1770,6 +1881,7 @@ fn stop_while_waiting_for_approval_logs_stop_ok() {
                 detail: "safe".into(),
                 questions: Vec::new(),
                 permission_options: Vec::new(),
+                file_changes: Vec::new(),
             },
             "item/commandExecution/requestApproval",
             "server-wait",

@@ -6,6 +6,7 @@
 //! normalized events to SQLite before a snapshot can expose them.
 
 mod codex_transport;
+mod file_change;
 mod ops;
 mod store;
 mod types;
@@ -13,10 +14,10 @@ mod types;
 pub(crate) use store::{is_acp_runtime_agent, is_claude_stream_runtime_agent, is_runtime_chat_agent};
 
 pub use types::{
-    RuntimeDecision, RuntimeEvent, RuntimeExtensionItem, RuntimeExtensionKind, RuntimeLocalImage,
-    RuntimeModelOption, RuntimeOptions, RuntimePermissionOption, RuntimePhase, RuntimeQuestion,
-    RuntimeQuestionOption, RuntimeReply, RuntimeRequest, RuntimeRequestKind, RuntimeSkillRef,
-    RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings,
+    RuntimeDecision, RuntimeEvent, RuntimeExtensionItem, RuntimeExtensionKind, RuntimeFileChange,
+    RuntimeLocalImage, RuntimeModelOption, RuntimeOptions, RuntimePermissionOption, RuntimePhase,
+    RuntimeQuestion, RuntimeQuestionOption, RuntimeReply, RuntimeRequest, RuntimeRequestKind,
+    RuntimeSkillRef, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings,
 };
 
 use std::collections::HashMap;
@@ -876,9 +877,9 @@ struct ActorWorker {
     last_start_request: Option<String>,
     pending_prompt_id: Option<Value>,
     permission_options: HashMap<String, Vec<RuntimePermissionOption>>,
-    /// Paths from `item/started` fileChange items, keyed by item id.
-    /// `item/fileChange/requestApproval` does not include the file list.
-    file_change_items: HashMap<String, String>,
+    /// File-change rows from `item/started` / `patchUpdated`, keyed by item id.
+    /// `item/fileChange/requestApproval` often omits the file list and snippet.
+    file_change_items: HashMap<String, Vec<RuntimeFileChange>>,
     cancel_deadline: Option<Instant>,
     session_model: Option<String>,
     session_effort: Option<String>,
@@ -2289,7 +2290,7 @@ impl ActorWorker {
             }
             return Ok(());
         }
-        let (kind, title, detail, questions, acp_options) = match method {
+        let (kind, title, detail, questions, acp_options, file_changes) = match method {
             "session/request_permission" => {
                 let title = params
                     .pointer("/toolCall/title")
@@ -2308,6 +2309,7 @@ impl ActorWorker {
                     detail,
                     Vec::new(),
                     acp_permission_options(params),
+                    file_change::extract_file_changes(params),
                 )
             }
             "item/commandExecution/requestApproval" | "execCommandApproval" => (
@@ -2316,6 +2318,7 @@ impl ActorWorker {
                 redact_json_text(params.get("command").or_else(|| params.get("reason"))),
                 Vec::new(),
                 acp_permission_options(params),
+                Vec::new(),
             ),
             "item/fileChange/requestApproval" | "fileChangeApproval" | "applyPatchApproval" => (
                 RuntimeRequestKind::File,
@@ -2323,6 +2326,7 @@ impl ActorWorker {
                 self.file_change_request_detail(params),
                 Vec::new(),
                 acp_permission_options(params),
+                self.file_change_request_changes(params),
             ),
             "item/tool/requestUserInput" => (
                 RuntimeRequestKind::Question,
@@ -2330,6 +2334,7 @@ impl ActorWorker {
                 String::new(),
                 parse_questions(params.get("questions")),
                 None,
+                Vec::new(),
             ),
             _ => {
                 // Unknown server requests must never be auto-approved. Reply
@@ -2386,6 +2391,7 @@ impl ActorWorker {
             detail,
             questions,
             permission_options: permission_options.clone(),
+            file_changes,
         };
         self.store
             .add_request(&self.conversation_id, &request, method, &id_string)?;
@@ -2647,10 +2653,8 @@ impl ActorWorker {
         )
     }
 
-    fn file_change_request_detail(&self, params: &Value) -> String {
-        let from_params = optional_json_text(params.get("reason"))
-            .or_else(|| optional_json_text(params.get("grantRoot")))
-            .unwrap_or_default();
+    fn file_change_request_changes(&self, params: &Value) -> Vec<RuntimeFileChange> {
+        let from_params = file_change::extract_file_changes(params);
         if !from_params.is_empty() {
             return from_params;
         }
@@ -2661,7 +2665,21 @@ impl ActorWorker {
                 }
             }
         }
-        join_file_change_paths(&file_change_paths(params))
+        Vec::new()
+    }
+
+    fn file_change_request_detail(&self, params: &Value) -> String {
+        let paths: Vec<String> = self
+            .file_change_request_changes(params)
+            .into_iter()
+            .map(|change| change.path)
+            .collect();
+        if !paths.is_empty() {
+            return file_change::join_file_change_paths(&paths);
+        }
+        optional_json_text(params.get("reason"))
+            .or_else(|| optional_json_text(params.get("grantRoot")))
+            .unwrap_or_default()
     }
 
     fn remember_file_change_item(&mut self, method: &str, item: Option<&Value>) -> Result<()> {
@@ -2673,10 +2691,10 @@ impl ActorWorker {
             return Ok(());
         }
         let id = item.get("id").and_then(Value::as_str).unwrap_or_default();
-        let paths = file_change_paths(item);
-        if !id.is_empty() && !paths.is_empty() {
-            self.file_change_items
-                .insert(id.to_string(), join_file_change_paths(&paths));
+        let changes = file_change::extract_file_changes(item);
+        let paths: Vec<String> = changes.iter().map(|change| change.path.clone()).collect();
+        if !id.is_empty() && !changes.is_empty() {
+            self.file_change_items.insert(id.to_string(), changes);
         }
         let status =
             item.get("status")
@@ -2707,10 +2725,9 @@ impl ActorWorker {
         let Some(id) = params.get("itemId").and_then(Value::as_str) else {
             return;
         };
-        let paths = file_change_paths(params);
-        if !paths.is_empty() {
-            self.file_change_items
-                .insert(id.to_string(), join_file_change_paths(&paths));
+        let changes = file_change::extract_file_changes(params);
+        if !changes.is_empty() {
+            self.file_change_items.insert(id.to_string(), changes);
         }
     }
 
@@ -3159,28 +3176,6 @@ fn optional_json_text(value: Option<&Value>) -> Option<String> {
             (!text.is_empty()).then_some(text)
         }
     }
-}
-
-fn file_change_paths(value: &Value) -> Vec<String> {
-    if let Some(rows) = value.get("changes").and_then(Value::as_array) {
-        return rows
-            .iter()
-            .filter_map(|row| row.get("path").and_then(Value::as_str))
-            .map(str::to_string)
-            .collect();
-    }
-    if let Some(map) = value.get("fileChanges").and_then(Value::as_object) {
-        return map.keys().cloned().collect();
-    }
-    Vec::new()
-}
-
-fn join_file_change_paths(paths: &[String]) -> String {
-    paths
-        .iter()
-        .map(|path| redact_text(path))
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 fn parse_acp_permission_options(params: &Value) -> Vec<RuntimePermissionOption> {

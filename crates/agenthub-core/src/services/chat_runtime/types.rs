@@ -38,6 +38,18 @@ pub struct RuntimePermissionOption {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct RuntimeFileChange {
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// Protocol-provided snippet (`diff`, `patch`, `content`, or before/after).
+    /// Absent when the payload only named a path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct RuntimeRequest {
     pub id: String,
     pub run_id: String,
@@ -48,6 +60,10 @@ pub struct RuntimeRequest {
     pub questions: Vec<RuntimeQuestion>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub permission_options: Vec<RuntimePermissionOption>,
+    /// File-edit rows copied from protocol fields. Empty when the request is
+    /// not a file change, or when the payload had no path list.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub file_changes: Vec<RuntimeFileChange>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

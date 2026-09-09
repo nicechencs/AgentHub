@@ -125,6 +125,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "00035_chat_runtime_permission_options",
         include_str!("00035_chat_runtime_permission_options.sql"),
     ),
+    (
+        "00036_chat_runtime_file_changes",
+        include_str!("00036_chat_runtime_file_changes.sql"),
+    ),
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {

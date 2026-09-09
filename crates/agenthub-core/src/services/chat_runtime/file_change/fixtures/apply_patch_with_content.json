@@ -1,0 +1,6 @@
+{
+  "turnId": "run-1",
+  "fileChanges": {
+    "/tmp/example.txt": { "type": "add", "content": "ok" }
+  }
+}

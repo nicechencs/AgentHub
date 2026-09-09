@@ -1,4 +1,4 @@
-import type { RuntimeRequest, RuntimeSnapshot } from '@/lib/api/chat';
+import type { RuntimeFileChange, RuntimeRequest, RuntimeSnapshot } from '@/lib/api/chat';
 import type { MessageKey, TranslateFn } from '@/lib/i18n';
 
 export type RuntimeTransport =
@@ -168,4 +168,62 @@ export function runtimeRequestTitle(
   if (!raw) return t('chat.runtime.needConfirm');
   const mapped = COMMAND_TITLE_KEYS[raw.toLowerCase()];
   return mapped ? t(mapped) : raw;
+}
+
+export type FileChangePreviewKind = 'add' | 'update' | 'delete';
+
+export type FileChangePreviewRow = {
+  path: string;
+  kind?: FileChangePreviewKind;
+  preview: string | null;
+};
+
+export type FileChangePreviewModel =
+  | { shown: false }
+  | { shown: true; empty: true; rows: FileChangePreviewRow[] }
+  | { shown: true; empty: false; rows: FileChangePreviewRow[] };
+
+function normalizeFileChangeKind(kind: string | undefined): FileChangePreviewKind | undefined {
+  const raw = kind?.trim().toLowerCase();
+  if (raw === 'add' || raw === 'create' || raw === 'create_file' || raw === 'add_file') return 'add';
+  if (raw === 'update' || raw === 'modify' || raw === 'edit' || raw === 'update_file' || raw === 'modify_file') {
+    return 'update';
+  }
+  if (raw === 'delete' || raw === 'remove' || raw === 'delete_file' || raw === 'remove_file') return 'delete';
+  return undefined;
+}
+
+function previewText(change: Pick<RuntimeFileChange, 'preview'>): string | null {
+  const text = change.preview;
+  if (!text || !text.trim()) return null;
+  return text;
+}
+
+/** Card preview from protocol-copied rows. Path-only rows stay an honest empty state. */
+export function runtimeFileChangePreview(
+  request: Pick<RuntimeRequest, 'kind' | 'detail' | 'fileChanges'>,
+): FileChangePreviewModel {
+  const rows: FileChangePreviewRow[] = (request.fileChanges ?? []).map((change) => ({
+    path: change.path,
+    kind: normalizeFileChangeKind(change.kind),
+    preview: previewText(change),
+  }));
+  if (rows.length === 0 && request.kind === 'file') {
+    const paths = request.detail.split('\n').map((line) => line.trim()).filter(Boolean);
+    if (paths.length > 0) {
+      rows.push(...paths.map((path) => ({ path, preview: null })));
+    }
+  }
+  if (rows.length === 0) {
+    return request.kind === 'file' ? { shown: true, empty: true, rows: [] } : { shown: false };
+  }
+  const empty = rows.every((row) => !row.preview);
+  if (request.kind !== 'file' && empty) return { shown: false };
+  return empty ? { shown: true, empty: true, rows } : { shown: true, empty: false, rows };
+}
+
+export function fileChangeKindLabel(kind: FileChangePreviewKind, t: TranslateFn): string {
+  if (kind === 'add') return t('chat.runtime.fileChangeKindAdd');
+  if (kind === 'delete') return t('chat.runtime.fileChangeKindDelete');
+  return t('chat.runtime.fileChangeKindUpdate');
 }
