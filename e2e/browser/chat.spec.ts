@@ -117,10 +117,11 @@ test('model menu uses readable names and Ctrl+Shift+I opens it', async ({ page }
   const effortTrigger = page.locator('[data-help="chat-effort"]');
   await expect(effortTrigger).toBeEnabled();
   // Empty transcript keeps the effort hint on hover / in the menu, not as toolbar copy.
+  await expect(page.getByText('可能更慢')).toHaveCount(0);
   await effortTrigger.click();
   await expect(page.getByRole('menuitemradio', { name: /低/ })).toBeVisible();
+  await expect(page.getByRole('menuitemradio', { name: '高 可能更慢' })).toBeVisible();
   await expect(page.getByText('更快')).toBeVisible();
-  await expect(page.getByText('可能更慢')).toBeVisible();
   await page.keyboard.press('Escape');
 
   await page.evaluate(() => {
