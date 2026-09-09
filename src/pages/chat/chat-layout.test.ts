@@ -98,6 +98,9 @@ describe('chat layout wiring', () => {
     expect(transcript).toContain('chatStarterActions');
     expect(transcript).toContain('onPickStarter');
     expect(transcript).toContain('chat.transcript.identity');
+    expect(transcript).toContain('chat.transcript.startersHint');
+    expect(source('ChatComposer.tsx')).toContain('focusNonce');
+    expect(source('index.tsx')).toContain('focusNonce={page.composerFocusNonce}');
     expect(transcript).toContain('firstBlocker');
     expect(transcript).not.toContain('variant="default"');
     expect(source('index.tsx')).toContain('onPickStarter={page.runChatAction}');
@@ -189,6 +192,9 @@ describe('chat layout wiring', () => {
     expect(rail).toContain('hint={false}');
     expect(rail).not.toContain('conversationAgentLine');
     expect(rail).not.toContain('cwdShortName');
+    expect(rail).toContain('isBlankConversationDraft');
+    expect(rail).toContain("t('chat.rail.draft')");
+    expect(rail).toContain("t('chat.rail.searchPlaceholder')");
   });
 
   it('keeps history actions visible and focusable for runtime composers', () => {
@@ -211,6 +217,8 @@ describe('chat layout wiring', () => {
     expect(requests).toContain('requestAllowsAlways');
     expect(requests).toContain("submit('allow_always')");
     expect(requests).toContain('chat.runtime.allowAlways');
+    expect(requests).toContain('runtimeRequestTitle');
+    expect(requests).toContain('chat.runtime.allowAlwaysHint');
   });
 
   it('shows Kiro ask-or-full permission mode in session settings and the header', () => {

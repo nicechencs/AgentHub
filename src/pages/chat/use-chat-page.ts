@@ -179,6 +179,7 @@ export function useChatPage() {
   const navigate = useNavigate();
   const [searchFocusNonce, setSearchFocusNonce] = useState(0);
   const [historyRevealNonce, setHistoryRevealNonce] = useState(0);
+  const [composerFocusNonce, setComposerFocusNonce] = useState(0);
   const [commandIndex, setCommandIndex] = useState(0);
   const hasLatestReply = useMemo(
     () => messages.some((m) => m.role === 'agent' && m.content.trim()),
@@ -268,6 +269,7 @@ export function useChatPage() {
       }
       if (action.kind === 'draft' && action.draftText) {
         setDraft(action.draftText);
+        setComposerFocusNonce((n) => n + 1);
         return;
       }
       if (action.id === 'new-session') {
@@ -607,6 +609,7 @@ export function useChatPage() {
     handleCancel: send.handleCancel,
     queuedFollowUp: send.queuedFollowUp,
     queuedFollowUpCount: send.queuedFollowUpCount,
+    composerFocusNonce,
     clearQueuedFollowUp: send.clearQueuedFollowUp,
     continueLegacyGrok: send.continueLegacyGrok,
     runtime: activeRuntime,

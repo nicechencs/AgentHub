@@ -336,6 +336,7 @@ export default function ChatPage() {
                   queuedFollowUp={page.queuedFollowUp}
                   queuedFollowUpCount={page.queuedFollowUpCount}
                   onClearQueuedFollowUp={page.clearQueuedFollowUp}
+                  focusNonce={page.composerFocusNonce}
                   onCancel={() => void page.cancelSending()}
                   onSelectAgent={(id) => void page.selectConversationAgentId(id)}
                   onSwitchConnection={(id) => void page.handleSwitchConnection(id)}

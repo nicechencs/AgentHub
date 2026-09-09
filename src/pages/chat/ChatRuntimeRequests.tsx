@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { Hint } from '@/components/ui/tooltip';
 import type { RuntimeDecision, RuntimeRequest } from '@/lib/api/chat';
-import { canSubmitRuntimeQuestions, requestAllowsAlways } from './chat-runtime-model';
+import { canSubmitRuntimeQuestions, requestAllowsAlways, runtimeRequestTitle } from './chat-runtime-model';
 
 type ReplyHandler = (request: RuntimeRequest, decision?: RuntimeDecision, answers?: Record<string, string[]>) => Promise<void>;
 
@@ -41,7 +42,7 @@ function RuntimeRequestCard({ request, onReply }: { request: RuntimeRequest; onR
   };
   return (
     <section className="rounded-card border border-border bg-panel p-3 text-body" aria-live="polite">
-      <p className="font-medium">{request.title}</p>
+      <p className="font-medium">{runtimeRequestTitle(t, request)}</p>
       {request.detail ? <p className="mt-1 whitespace-pre-wrap text-muted">{request.detail}</p> : null}
       {request.kind === 'question' ? request.questions.map((question) => (
         <fieldset key={question.id} className="mt-3 space-y-1.5">
@@ -60,7 +61,11 @@ function RuntimeRequestCard({ request, onReply }: { request: RuntimeRequest; onR
         {request.kind === 'question' ? <Button size="sm" disabled={sent} onClick={() => submit()}>{t('chat.runtime.submit')}</Button> : <>
           <Button size="sm" disabled={sent} onClick={() => submit('allow')}>{t('chat.runtime.allow')}</Button>
           {requestAllowsAlways(request) ? (
-            <Button size="sm" disabled={sent} onClick={() => submit('allow_always')}>{t('chat.runtime.allowAlways')}</Button>
+            <Hint label={t('chat.runtime.allowAlwaysHint')}>
+              <Button size="sm" disabled={sent} onClick={() => submit('allow_always')}>
+                {t('chat.runtime.allowAlways')}
+              </Button>
+            </Hint>
           ) : null}
           <Button size="sm" variant="outline" disabled={sent} onClick={() => submit('deny')}>{t('chat.runtime.deny')}</Button>
         </>}

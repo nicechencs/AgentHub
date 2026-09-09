@@ -12,6 +12,7 @@ test('empty chat starter card fills the composer without sending', async ({ page
 
   const composer = page.getByRole('textbox', { name: '消息输入' });
   await expect(composer).toHaveValue('请帮我了解这个项目的结构和主要功能。');
+  await expect(composer).toBeFocused();
   await expect(page.getByRole('log')).not.toContainText('请帮我了解这个项目的结构和主要功能。');
 });
 

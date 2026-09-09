@@ -214,32 +214,35 @@ function EmptyTranscriptStart({
             </Button>
           </>
         ) : !sending ? (
-          <div
-            className="mt-6 grid grid-cols-1 gap-2 sm:grid-cols-2"
-            role="group"
-            aria-label={t('chat.transcript.startersAria')}
-          >
-            {starters.map((action) => {
-              const key = chatStarterCopyKey(action.id);
-              if (!key) return null;
-              const Icon = STARTER_ICONS[key];
-              const title = t(`chat.transcript.starter.${key}` as never);
-              return (
-                <button
-                  key={action.id}
-                  type="button"
-                  aria-label={title}
-                  className="rounded-card border border-border bg-panel p-3 text-left shadow-xs hover:bg-hover"
-                  onClick={() => onPickStarter?.(action)}
-                >
-                  <Icon className="mb-2 h-4 w-4 text-accent" aria-hidden />
-                  <p className="text-body font-medium text-primary">{title}</p>
-                  <p className="mt-1 text-meta text-muted">
-                    {t(`chat.transcript.starter.${key}Hint` as never)}
-                  </p>
-                </button>
-              );
-            })}
+          <div className="mt-6">
+            <p className="mb-2 text-meta text-muted">{t('chat.transcript.startersHint')}</p>
+            <div
+              className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+              role="group"
+              aria-label={t('chat.transcript.startersAria')}
+            >
+              {starters.map((action) => {
+                const key = chatStarterCopyKey(action.id);
+                if (!key) return null;
+                const Icon = STARTER_ICONS[key];
+                const title = t(`chat.transcript.starter.${key}` as never);
+                return (
+                  <button
+                    key={action.id}
+                    type="button"
+                    aria-label={title}
+                    className="rounded-card border border-border bg-panel p-3 text-left shadow-xs hover:bg-hover"
+                    onClick={() => onPickStarter?.(action)}
+                  >
+                    <Icon className="mb-2 h-4 w-4 text-accent" aria-hidden />
+                    <p className="text-body font-medium text-primary">{title}</p>
+                    <p className="mt-1 text-meta text-muted">
+                      {t(`chat.transcript.starter.${key}Hint` as never)}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         ) : null}
       </div>

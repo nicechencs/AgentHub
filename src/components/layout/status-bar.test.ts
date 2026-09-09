@@ -24,9 +24,13 @@ describe('status bar wiring', () => {
     const bar = source('components/layout/StatusBar.tsx');
     expect(bar).toContain('AgentStatusStrip');
     expect(bar).toContain('chrome.localForward');
+    expect(bar).toContain('chrome.localForwardOpenBoard');
     expect(bar).toContain('ROUTES_BOARD_PATH');
     expect(bar).toContain('<Hint label={aria}>');
     expect(bar).not.toContain('title={aria}');
     expect(bar.indexOf('<AgentStatusStrip')).toBeLessThan(bar.indexOf('navigate(ROUTES_BOARD_PATH)'));
+    const strip = source('components/layout/AgentStatusStrip.tsx');
+    expect(strip).toContain('title={fractionLabel}');
+    expect(strip).toContain('nav.agentsInstalled');
   });
 });
