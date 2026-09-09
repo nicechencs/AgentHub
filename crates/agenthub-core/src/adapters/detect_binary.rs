@@ -167,6 +167,9 @@ pub(crate) fn detect_binary_with_env(
                 false,
                 extra_env,
             );
+            // finish_detect infers leftover paths as npm; keep spawn usable but
+            // never present leftover as the official install channel.
+            found.channel = Some("leftover-agenthub".into());
             found.notes.push(format!(
                 "用遗留数据目录 npm 启动（仅后备，不是安装位置）：{}",
                 path.display()

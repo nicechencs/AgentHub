@@ -964,7 +964,7 @@ fn detect_dsh_prefers_complete_leftover_prefix_over_incomplete_local_bin() {
                 target, &leftover,
                 "spawn must be leftover prefix: {target:?}"
             );
-            assert_eq!(result.channel.as_deref(), Some("npm"));
+            assert_eq!(result.channel.as_deref(), Some("leftover-agenthub"));
             assert_eq!(result.version.as_deref(), Some("9.9.9"));
             assert!(
                 result
