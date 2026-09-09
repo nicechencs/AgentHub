@@ -3,7 +3,7 @@ title: Future Proposals
 type: navigation
 status: current
 owner: maintainers
-updated: 2026-09-08
+updated: 2026-09-09
 ---
 
 # Proposals
@@ -30,7 +30,7 @@ Every proposal in this directory has `Status: proposed`. A proposal may be resea
 | [modularity.md](modularity.md) | proposed | Which single-source and use-case boundaries should be tightened before any larger process change? |
 | [Service 内部 owner 拆分](../architecture/service-internal-owners.md) | proposed | Concrete internal owner split for O-11 ProviderService, O-12 AccountService, O-13 BackupService, and O-14/O-66 local-route persist — façades and switch semantics stay |
 | [接入 Kiro（kiro-cli）](agent-kiro.md) | proposed（半面已落地） | 检测/安装/登录与 ACP 新对话已落地；剩余边界见正文进度表。现行以 [STATUS](../STATUS.md) 为准。 |
-| [Kiro HTTP / 本机转发](agent-kiro-http.md) | proposed（切片已落地） | HTTP 多轮与本机路由已接线；剩余：企业 IdC/`profileArn`、上游逐块实时转发、官方 REST。 |
+| [Kiro HTTP / 本机转发](agent-kiro-http.md) | proposed（切片已落地） | HTTP 多轮与本机路由已接线；本机路由 SSE 按上游 event-stream 帧转发（单测；真窗 TTFT 未验）。剩余：企业 IdC/`profileArn`、Chat 打印收齐、官方 REST。 |
 | [国内自动更新镜像（R2）](update-mirror-r2.md) | proposed（0.4.9 已发） | App 镜像优先、GitHub 回退已在正式包；CF 资源仍由运维配置，见提案实施进度。 |
 | [plugin-management.md](plugin-management.md) | proposed（半面已落地） | `/plugins` 列表与 Claude/Grok 启停、安装/卸载已落地；更新与 Codex/Pi 写入仍提案。现行以 [STATUS](../STATUS.md) 为准。 |
 | [read-model-owners.md](../architecture/read-model-owners.md) | proposed | Could O-15–O-19 be narrowed with unique mapper owners without changing wire DTO or splitting public types? |
