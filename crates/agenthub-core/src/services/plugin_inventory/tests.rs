@@ -180,7 +180,10 @@ fn cli_available_parser_keeps_marketplace_rows_and_skips_mcp() {
         Path::new("/home/me"),
     )
     .unwrap();
-    assert_eq!(grok.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), vec!["superpowers"]);
+    assert_eq!(
+        grok.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
+        vec!["superpowers"]
+    );
     assert_eq!(grok[0].source, "available");
 
     let claude = parse_cli_available_plugin_list(
@@ -677,4 +680,68 @@ fn claude_installed_object_and_empty_cli_array() {
     .unwrap();
     assert_eq!(rows[0].name, "alpha");
     assert_eq!(rows[0].enabled, Some(false));
+}
+
+#[test]
+fn grok_cli_source_path_is_not_marketplace() {
+    let rows = parse_cli_plugin_list(
+        AgentId::Grok,
+        r#"[{
+            "status":"installed",
+            "name":"agenthub-qa-ping",
+            "version":"0.0.1",
+            "path":"/tmp/grok-home/installed-plugins/agenthub-qa-ping",
+            "source":"/tmp/local-plugin/agenthub-qa-ping",
+            "marketplace":null
+        }]"#,
+        Path::new("/tmp"),
+    )
+    .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].name, "agenthub-qa-ping");
+    assert_eq!(rows[0].marketplace, None);
+    assert_eq!(rows[0].enabled, Some(true));
+}
+
+#[test]
+fn grok_cli_installed_status_follows_config_disabled_list() {
+    let dir = tempdir().unwrap();
+    let grok_home = dir.path().join("grok");
+    fs::create_dir_all(&grok_home).unwrap();
+    fs::write(
+        grok_home.join("config.toml"),
+        "[plugins]\nenabled = []\ndisabled = [\"agenthub-qa-ping\"]\n",
+    )
+    .unwrap();
+    let runner = ScriptedCli {
+        by_bin: HashMap::from([(
+            "grok".into(),
+            ok_json(
+                r#"[{
+                    "status":"installed",
+                    "name":"agenthub-qa-ping",
+                    "version":"0.0.1",
+                    "source":"/tmp/local-plugin/agenthub-qa-ping",
+                    "marketplace":null
+                }]"#,
+            ),
+        )]),
+    };
+    let inv = list_plugin_inventory_with(&ctx(
+        dir.path().join("claude"),
+        grok_home,
+        dir.path().to_path_buf(),
+        &runner,
+        None,
+        Some("/usr/bin/grok"),
+    ));
+    let grok = inv
+        .plugins
+        .iter()
+        .find(|p| p.agent == AgentId::Grok)
+        .unwrap();
+    assert_eq!(grok.name, "agenthub-qa-ping");
+    assert_eq!(grok.marketplace, None);
+    assert_eq!(grok.enabled, Some(false));
+    assert_eq!(grok.source, "cli");
 }
