@@ -3,6 +3,7 @@ import { translate } from '@/lib/i18n';
 import {
   composerCancelingVisible,
   composerEnterShouldSubmit,
+  composerFooterControl,
   composerKeepsStoppingAfterCancel,
   composerPrimaryAction,
   composerQueuedFollowUpView,
@@ -11,6 +12,7 @@ import {
   composerShouldRestoreFocus,
   composerShowsSubmitButton,
   composerStopMessageKey,
+  composerStopTitle,
   composerSubmitMessageKey,
 } from './chat-composer-model';
 
@@ -99,6 +101,28 @@ describe('composer primary action honesty', () => {
     expect(composerShowsSubmitButton({ sending: true, action: null })).toBe(false);
     expect(composerShowsSubmitButton({ sending: false, action: null })).toBe(true);
     expect(composerShowsSubmitButton({ sending: true, action: 'queue' })).toBe(true);
+  });
+});
+
+describe('composer footer control', () => {
+  it('shows Send when idle, even if the draft is empty', () => {
+    expect(composerFooterControl({ sending: false, action: null })).toBe('send');
+    expect(composerFooterControl({ sending: false, action: 'send' })).toBe('send');
+  });
+
+  it('shows Send while generating only when there is a real next action', () => {
+    expect(composerFooterControl({ sending: true, action: 'queue' })).toBe('send');
+    expect(composerFooterControl({ sending: true, action: 'steer' })).toBe('send');
+  });
+
+  it('shows Stop in the same slot when generating and the composer is empty or blocked', () => {
+    expect(composerFooterControl({ sending: true, action: null })).toBe('stop');
+  });
+
+  it('names Esc on Stop until cancelling', () => {
+    expect(composerStopTitle({ canceling: false, stopLabel: '停止' })).toBe('停止 · Esc');
+    expect(composerStopTitle({ canceling: false, stopLabel: 'Stop' })).toBe('Stop · Esc');
+    expect(composerStopTitle({ canceling: true, stopLabel: '正在停止' })).toBe('正在停止');
   });
 });
 
