@@ -16,6 +16,8 @@ describe('pageRhythm (docs/ui/design-system.md §3)', () => {
     expect(pageRhythm.shell).not.toContain('gap-');
     expect(pageRhythm.shellBody).toContain(pageCanvasTw.x);
     expect(pageRhythm.shellBody).toContain(pageCanvasTw.t);
+    expect(pageRhythm.shellBody).toContain('pb-1');
+    expect(pageRhythm.shellBody).not.toContain(pageCanvasTw.b);
     expect(pageRhythm.shellNav).toContain('rounded-card');
     expect(pageRhythm.shellMain).toContain('rounded-card');
     expect(pageRhythm.statusBar).toContain('h-8');
