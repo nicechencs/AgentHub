@@ -14,7 +14,7 @@ updated: 2026-09-09
 
 Chat 是 AgentHub 里的运行工作台。当前一个会话对应一个 Agent；同一 turn 内的过程状态仍以 `(turn, agent)` 隔离。发送按会话隔离，多个会话可以同时生成。
 
-- **新空 Codex 会话**：app-server 持续聊天；会话级模型/思考强度、最小操作菜单、本地图片附件、「用于本次」技能已落地（见 [B2](../archive/chat-codex-b2.md)）。计划模式未做；Claude B3 首片见下。
+- **新空 Codex 会话**：app-server 持续聊天；会话级模型/思考强度、最小操作菜单、本地图片附件、「用于本次」技能已落地（见 [B2](../archive/chat-codex-b2.md)）。计划模式未做；文本问答等上游默认稳定后再跟，不打开 under-development 开关、也不造假卡片；Linux AgentHub Chat 不可用 Codex Computer Use。Claude B3 首片见下。
 - **新空 Grok 会话**：持续聊天，可选模型和思考等级，支持图片与后续轮排队。不能为本轮指定「用于本次」技能（与 Codex 不同；界面也不画出可点的假按钮）。生成时不能中途补充，只能排队到下一轮。
 - **新空 Kiro 会话**：`kiro-cli acp` 持续通道（允许/拒绝、停止；生成时不能中途补充，可排队到下一轮）。旧对话保留原发送方式。本机登录或 `KIRO_API_KEY` 可用时，打印路径可走 HTTP 多轮（`kiro-http:` 前缀）；已有 HTTP 会话失败时直接报错并保留会话，不回退成新的命令行会话。企业 IdC / `profileArn` 仍是提案剩余边界（带上参数 ≠ 已验收）。跨页事实见 [STATUS](../STATUS.md)。
 - **新空 Claude 会话**：`claude -p --input-format stream-json` 持续通道（多轮、本地图片；不能在生成中补充；本片无允许/拒绝卡片，默认 `dontAsk` / 危险模式 `bypassPermissions`）。有历史的 Claude 会话仍走 print+resume。见 [Claude B3](../archive/chat-claude-b3.md)。
@@ -66,7 +66,7 @@ Tauri transport 使用 `ipc::Channel<ChatEvent>`，不是 SSE。阻塞进程执�
 
 Claude、Codex、Kimi、Grok、Pi、Kiro 当前可走 `ProcessMode::Auto` 的结构化解析；WorkBuddy 与 ZCode 没有结构化 parser 时按 text 展示。Kiro 须 `--agent-engine v2`，v1 会拒绝 stream-json。新交互对话走 `kiro-cli acp`；旧打印路径在本机登录或 `KIRO_API_KEY` 可用时可走 HTTP，已有 HTTP 会话失败不改走命令行。ZCode 对话需要 PATH 上的 `zcode`；只装了桌面端时不能凭空当成命令行。DeepSeek Harness 的 StructuredStream 仍是 Planned。**Cursor Agent 默认软隐藏**，结构化输出与登录写入等兼容项修复完成前不在 Chat 等页面开放。解析失败降级为 raw/text 事件，不因某一行 JSON 不可识别而丢弃整次对话；CLI 不支持 flag 时不得静默重试成另一种语义。
 
-旧发送方式的过程数据主要是内存视图，最终正文和会话消息入库；刷新后不保证过程回放。Codex runtime 另有有限持久化事件、真实确认/问答回复及同机恢复；截断通过 gap 表达，不承诺无限过程历史。各项验收分开写：命令批准 Linux 真窗已验允许/拒绝；文件审批 Linux 真窗已验允许/拒绝；关窗续聊 Linux / macOS 已验。记住允许/拒绝与「一直允许」已接线，范围见上文：三家都在当前这次进程里记住后续确认（Codex 通常本轮；Grok / Kiro 同一条 ACP 进程可跨轮）。文本问答的协议和界面已映射，但 Codex 0.148 Default 默认不发出 `item/tool/requestUserInput`；打开上游 under-development 开关可以发出，产品未默认打开。文件审批已接线（允许/拒绝）；Linux 协议探测和真窗 GUI 已验 `apply_patch` 写工作目录和 `/tmp` 以外的允许/拒绝（卡片「修改文件」）。过程内用量：Codex 展示当前轮 `last` 与累计 `total`（有窗口时写 n / 窗口，不画假进度条）；Grok 只展示当前轮 `turn_completed.usage`，没有会话累计数据源；ACP 某轮不带 usage 时不画假数字。不估算费用。Kiro 无 token 累计数据源。图片附件在 ChatRuntime 持续聊天（Codex / Grok / Kiro / 新空 Claude）露出；有历史的旧 Claude 仍走 print+resume，**无**图片按钮。普通文件与 `@` 未接。见 [STATUS](../STATUS.md)。
+旧发送方式的过程数据主要是内存视图，最终正文和会话消息入库；刷新后不保证过程回放。Codex runtime 另有有限持久化事件、真实确认/问答回复及同机恢复；截断通过 gap 表达，不承诺无限过程历史。各项验收分开写：命令批准 Linux 真窗已验允许/拒绝；文件审批 Linux 真窗已验允许/拒绝；关窗续聊 Linux / macOS 已验。记住允许/拒绝与「一直允许」已接线，范围见上文：三家都在当前这次进程里记住后续确认（Codex 通常本轮；Grok / Kiro 同一条 ACP 进程可跨轮）。文本问答的协议和界面已映射，但 Codex 0.148 Default 默认不发出 `item/tool/requestUserInput`；产品决定等上游默认稳定后再跟，不把 under-development 开关做成产品默认，也不造假问答卡片。Linux AgentHub Chat 不可用 Codex Computer Use。文件审批已接线（允许/拒绝）；Linux 协议探测和真窗 GUI 已验 `apply_patch` 写工作目录和 `/tmp` 以外的允许/拒绝（卡片「修改文件」）。过程内用量：Codex 展示当前轮 `last` 与累计 `total`（有窗口时写 n / 窗口，不画假进度条）；Grok 只展示当前轮 `turn_completed.usage`，没有会话累计数据源；ACP 某轮不带 usage 时不画假数字。不估算费用。Kiro 无 token 累计数据源。图片附件在 ChatRuntime 持续聊天（Codex / Grok / Kiro / 新空 Claude）露出；有历史的旧 Claude 仍走 print+resume，**无**图片按钮。普通文件与 `@` 未接。见 [STATUS](../STATUS.md)。
 
 ## Codex 外部安装
 
