@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatMessage } from '@/lib/types';
 import type { TurnGroup } from './chat-format';
-import { lastTurnOutcome } from './chat-turn-outcome';
+import { lastTurnOutcome, turnOutcomeDetail } from './chat-turn-outcome';
 
 function msg(partial: Partial<ChatMessage> & Pick<ChatMessage, 'id' | 'role' | 'status'>): ChatMessage {
   return {
@@ -58,5 +58,22 @@ describe('lastTurnOutcome', () => {
       },
     ];
     expect(lastTurnOutcome(turns, false)?.kind).toBe('failed');
+  });
+
+  it('does not show a raw cancelled status word as the stop reason', () => {
+    const hint = '已按你的要求停止。可恢复草稿后重发。';
+    expect(
+      turnOutcomeDetail({ kind: 'cancelled', errorText: 'cancelled' }, (text) => text, hint),
+    ).toBe(hint);
+    expect(
+      turnOutcomeDetail({ kind: 'cancelled', errorText: null }, (text) => text, hint),
+    ).toBe(hint);
+    expect(
+      turnOutcomeDetail(
+        { kind: 'failed', errorText: 'boom' },
+        (text) => `localized:${text}`,
+        hint,
+      ),
+    ).toBe('localized:boom');
   });
 });

@@ -235,6 +235,7 @@ describe('chat layout wiring', () => {
     expect(requests).toContain('chat.runtime.allowAlwaysHint');
     expect(translate('zh', 'chat.runtime.allowAlwaysHint')).toBe('仅当前这次进程，不保存');
     expect(translate('en', 'chat.runtime.allowAlwaysHint')).toBe('This process only, not saved');
+    expect(source('ChatTurnOutcomeBanner.tsx')).toContain('turnOutcomeDetail');
   });
 
   it('shows Kiro ask-or-full permission mode in session settings and the header', () => {
