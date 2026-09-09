@@ -104,13 +104,15 @@ test('model menu uses readable names and Ctrl+Shift+I opens it', async ({ page }
   await page.keyboard.press('Escape');
 
   await page.evaluate(() => {
-    window.dispatchEvent(
+    const target = document.activeElement ?? document.body;
+    target.dispatchEvent(
       new KeyboardEvent('keydown', {
         key: 'I',
         code: 'KeyI',
         ctrlKey: true,
         shiftKey: true,
         bubbles: true,
+        cancelable: true,
       }),
     );
   });
@@ -155,16 +157,34 @@ test('shortcut overview opens from the composer and lists new-chat keys', async 
 
   await page.getByRole('button', { name: '会话设置' }).focus();
   await page.evaluate(() => {
-    window.dispatchEvent(
+    const target = document.activeElement ?? document.body;
+    target.dispatchEvent(
       new KeyboardEvent('keydown', {
         key: '?',
         bubbles: true,
+        cancelable: true,
       }),
     );
   });
   await expect(page.getByRole('dialog', { name: '快捷键' })).toBeVisible();
   await page.getByRole('dialog', { name: '快捷键' }).getByRole('button', { name: '关闭' }).click();
   await expect(page.getByRole('dialog', { name: '快捷键' })).toBeHidden();
+
+  await page.getByRole('button', { name: '会话设置' }).focus();
+  await page.evaluate(() => {
+    const target = document.activeElement ?? document.body;
+    target.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: '/',
+        code: 'Slash',
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+  await expect(page.getByRole('dialog', { name: '快捷键' })).toBeVisible();
+  await page.getByRole('dialog', { name: '快捷键' }).getByRole('button', { name: '关闭' }).click();
 
   const composer = page.getByRole('textbox', { name: '消息输入' });
   await composer.click();
@@ -180,13 +200,14 @@ test('Ctrl+N starts a new chat', async ({ page }) => {
 
   const composer = page.getByRole('textbox', { name: '消息输入' });
   await composer.fill('keep this draft');
-  await page.evaluate(() => {
-    window.dispatchEvent(
+  await composer.evaluate((el) => {
+    el.dispatchEvent(
       new KeyboardEvent('keydown', {
         key: 'n',
         code: 'KeyN',
         ctrlKey: true,
         bubbles: true,
+        cancelable: true,
       }),
     );
   });

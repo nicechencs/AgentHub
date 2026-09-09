@@ -11,6 +11,7 @@ import {
   agentHasConfiguredAuth,
   agentPickerLabel as agentPickerLabelOf,
   chatAgentPickerRows,
+  chatModNShouldStartNewChat,
   filterConversations,
   groupConversationsByDay,
   isChatAgentSelectable,
@@ -332,6 +333,25 @@ export function useChatPage() {
 
   const handleComposerKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (
+        chatModNShouldStartNewChat({
+          key: e.key,
+          code: e.nativeEvent.code,
+          metaKey: e.metaKey,
+          ctrlKey: e.ctrlKey,
+          altKey: e.altKey,
+          shiftKey: e.shiftKey,
+          overlayOpen: false,
+        })
+      ) {
+        e.preventDefault();
+        runChatAction({
+          id: 'new-session',
+          kind: 'local',
+          keywords: [],
+        });
+        return true;
+      }
       if (!commandSearchOpen || commandItems.length === 0) return false;
       if (e.key === 'ArrowDown') {
         e.preventDefault();

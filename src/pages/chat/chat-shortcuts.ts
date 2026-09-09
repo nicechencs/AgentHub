@@ -26,3 +26,47 @@ export function chatShortcutChord(
   if (platform !== 'macos') return keys;
   return keys.replace(/Ctrl/g, 'Cmd');
 }
+
+type ShortcutKeyRoot = {
+  addEventListener(
+    type: 'keydown',
+    listener: (event: KeyboardEvent) => void,
+    options?: boolean | AddEventListenerOptions,
+  ): void;
+  removeEventListener(
+    type: 'keydown',
+    listener: (event: KeyboardEvent) => void,
+    options?: boolean | AddEventListenerOptions,
+  ): void;
+};
+
+function defaultShortcutKeyRoots(): ShortcutKeyRoot[] {
+  if (typeof document === 'undefined') return [];
+  return typeof window === 'undefined' ? [document] : [document, window];
+}
+
+/**
+ * Capture-phase on document and window. Window bubble never sees many real
+ * keydowns in the Tauri webview; window capture still gets `window.dispatchEvent`
+ * used by existing tests.
+ */
+export function subscribeChatShortcutKeydown(
+  onKey: (event: KeyboardEvent) => void,
+  roots: ShortcutKeyRoot | ShortcutKeyRoot[] = defaultShortcutKeyRoots(),
+): () => void {
+  const list = Array.isArray(roots) ? roots : [roots];
+  const seen = new WeakSet<KeyboardEvent>();
+  const wrapped = (event: KeyboardEvent) => {
+    if (seen.has(event)) return;
+    seen.add(event);
+    onKey(event);
+  };
+  for (const root of list) {
+    root.addEventListener('keydown', wrapped, true);
+  }
+  return () => {
+    for (const root of list) {
+      root.removeEventListener('keydown', wrapped, true);
+    }
+  };
+}

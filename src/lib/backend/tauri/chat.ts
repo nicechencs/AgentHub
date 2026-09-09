@@ -6,6 +6,7 @@ import {
   type CoreChatMessage,
   type CoreConversation,
 } from '@/lib/backend/contracts/chat-map';
+import { onChatNativeShortcut } from './chat-shortcut-events';
 import { Channel, invoke } from './invoke';
 import type { RuntimeOptions, RuntimeSnapshot, RuntimeTurnSettings } from '@/lib/backend/contracts/chat-runtime';
 
@@ -135,6 +136,9 @@ export function createTauriChatPort(): ChatPort {
     },
     async readMarkdownPreview(path, cwd) {
       return invoke<MarkdownFilePreviewDto>('read_markdown_preview', { path, cwd });
+    },
+    onNativeShortcut(handler) {
+      return onChatNativeShortcut(handler);
     },
   };
 }

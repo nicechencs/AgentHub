@@ -126,3 +126,10 @@ export async function readMarkdownPreview(
 ): Promise<MarkdownFilePreviewDto> {
   return getBackend().chat.readMarkdownPreview(path, cwd);
 }
+
+/** Desktop Ctrl/Cmd+N when the webview swallows the key. Browser mock is a no-op. */
+export async function onChatNativeShortcut(
+  handler: (action: 'newChat') => void,
+): Promise<() => void> {
+  return getBackend().chat.onNativeShortcut(handler);
+}
