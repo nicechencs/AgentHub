@@ -3,7 +3,7 @@ title: AgentHub 文档风格与治理
 type: governance
 status: current
 owner: maintainers
-updated: 2026-09-05
+updated: 2026-09-09
 ---
 
 # 文档风格与治理
@@ -85,6 +85,7 @@ updated: 2026-08-25
 | 改了什么 | 更新 |
 | --- | --- |
 | 某页交互/导航/工作流 | docs/ui/page-patterns.md |
+| Chat 好用程度（对标 Claude Code / Cursor / Codex app） | docs/ui/chat-experience-bar.md |
 | 跨页实现事实与已知边界 | docs/STATUS.md |
 | 新 Agent / 能力变化 | docs/guides/adding-an-agent.md + docs/reference/capabilities.md |
 | 连接/路由/分享规则 | docs/concepts/connections-and-routing.md + docs/decisions/product-boundaries.md |
