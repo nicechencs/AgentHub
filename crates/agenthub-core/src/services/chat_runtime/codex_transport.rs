@@ -120,6 +120,8 @@ pub struct CodexTransport {
     shutdown: bool,
     initialize_result: Option<Value>,
     abort: Option<Arc<AtomicBool>>,
+    /// When true, stdout is Claude Code stream-json NDJSON (not JSON-RPC).
+    claude_stream: bool,
 }
 
 impl CodexTransport {
@@ -130,14 +132,15 @@ impl CodexTransport {
             program,
             &["app-server".to_string()],
             cwd,
-            json!({
+            Some(json!({
                 "clientInfo": {
                     "name": "agenthub-chat",
                     "version": env!("CARGO_PKG_VERSION"),
                 }
-            }),
+            })),
             true,
             None,
+            false,
         )
     }
 
@@ -150,14 +153,15 @@ impl CodexTransport {
             program,
             &["app-server".to_string()],
             cwd,
-            json!({
+            Some(json!({
                 "clientInfo": {
                     "name": "agenthub-chat",
                     "version": env!("CARGO_PKG_VERSION"),
                 }
-            }),
+            })),
             true,
             Some(abort),
+            false,
         )
     }
 
@@ -223,7 +227,7 @@ impl CodexTransport {
             program,
             &args,
             cwd,
-            json!({
+            Some(json!({
                 "protocolVersion": 1,
                 "clientInfo": {
                     "name": "agenthub-chat",
@@ -232,9 +236,10 @@ impl CodexTransport {
                 "capabilities": {
                     "fs": { "readTextFile": false, "writeTextFile": false }
                 }
-            }),
+            })),
             true,
             abort,
+            false,
         )
     }
 
@@ -262,7 +267,7 @@ impl CodexTransport {
             program,
             &args,
             cwd,
-            json!({
+            Some(json!({
                 "protocolVersion": 1,
                 "clientInfo": {
                     "name": "agenthub-chat",
@@ -271,9 +276,47 @@ impl CodexTransport {
                 "clientCapabilities": {
                     "fs": { "readTextFile": false, "writeTextFile": false }
                 }
-            }),
+            })),
             false,
             abort,
+            false,
+        )
+    }
+
+    /// Claude Code print mode with stream-json stdin/stdout (no JSON-RPC handshake).
+    pub(crate) fn spawn_claude_stream_interruptible(
+        program: &Path,
+        cwd: &Path,
+        model: Option<&str>,
+        effort: Option<&str>,
+        permission_mode: &str,
+        resume_session_id: Option<&str>,
+        abort: Arc<AtomicBool>,
+    ) -> Result<Self, CodexTransportError> {
+        let mut args = vec![
+            "-p".into(),
+            "--input-format".into(),
+            "stream-json".into(),
+            "--output-format".into(),
+            "stream-json".into(),
+            "--verbose".into(),
+            "--permission-mode".into(),
+            permission_mode.to_string(),
+        ];
+        if let Some(model) = model.map(str::trim).filter(|s| !s.is_empty()) {
+            args.push("--model".into());
+            args.push(model.to_string());
+        }
+        if let Some(effort) = effort.map(str::trim).filter(|s| !s.is_empty()) {
+            args.push("--effort".into());
+            args.push(effort.to_string());
+        }
+        if let Some(session_id) = resume_session_id.map(str::trim).filter(|s| !s.is_empty()) {
+            args.push("--resume".into());
+            args.push(session_id.to_string());
+        }
+        Self::spawn_with(program, &args, cwd, None, false, Some(abort),
+            true,
         )
     }
 
@@ -281,9 +324,10 @@ impl CodexTransport {
         program: &Path,
         args: &[String],
         cwd: &Path,
-        initialize_params: Value,
+        initialize_params: Option<Value>,
         send_initialized: bool,
         abort: Option<Arc<AtomicBool>>,
+        claude_stream: bool,
     ) -> Result<Self, CodexTransportError> {
         let mut command = std::process::Command::new(program);
         command
@@ -368,13 +412,16 @@ impl CodexTransport {
             shutdown: false,
             initialize_result: None,
             abort,
+            claude_stream,
         };
 
-        let initialize_result =
-            transport.request_inner("initialize", initialize_params, HANDSHAKE_TIMEOUT)?;
-        transport.initialize_result = Some(initialize_result);
-        if send_initialized {
-            transport.send_notification("initialized", None)?;
+        if let Some(initialize_params) = initialize_params {
+            let initialize_result =
+                transport.request_inner("initialize", initialize_params, HANDSHAKE_TIMEOUT)?;
+            transport.initialize_result = Some(initialize_result);
+            if send_initialized {
+                transport.send_notification("initialized", None)?;
+            }
         }
         Ok(transport)
     }
@@ -430,9 +477,10 @@ impl CodexTransport {
             program,
             args,
             cwd,
-            initialize_params,
+            Some(initialize_params),
             send_initialized,
             None,
+            false,
         )
     }
 
@@ -682,6 +730,20 @@ impl CodexTransport {
         self.send_value(Value::Object(message))
     }
 
+    /// Write one NDJSON value without injecting a JSON-RPC envelope.
+    /// Used by Claude stream-json stdin prompts.
+    pub(crate) fn send_raw_value(&mut self, value: &Value) -> TransportResult<()> {
+        if self.shutdown || self.exited {
+            return Err(CodexTransportError::Exited);
+        }
+        let stdin = self.stdin.as_mut().ok_or(CodexTransportError::Exited)?;
+        serde_json::to_writer(&mut *stdin, value)
+            .map_err(|error| CodexTransportError::Protocol(error.to_string()))?;
+        stdin.write_all(b"\n")?;
+        stdin.flush()?;
+        Ok(())
+    }
+
     fn send_value(&mut self, mut value: Value) -> TransportResult<()> {
         if self.shutdown || self.exited {
             return Err(CodexTransportError::Exited);
@@ -709,7 +771,7 @@ impl CodexTransport {
             let wait = remaining.min(CHILD_POLL_INTERVAL);
             match self.wire_rx.recv_timeout(wait) {
                 Ok(event) => match event {
-                    WireEvent::Message(value) => match classify_message(value) {
+                    WireEvent::Message(value) => match classify_message(value, self.claude_stream) {
                         Ok(Some(message)) => return Ok(Some(message)),
                         Ok(None) => continue,
                         Err(error) => {
@@ -737,7 +799,7 @@ impl CodexTransport {
         loop {
             match self.wire_rx.try_recv() {
                 Ok(event) => match event {
-                    WireEvent::Message(value) => match classify_message(value) {
+                    WireEvent::Message(value) => match classify_message(value, self.claude_stream) {
                         Ok(Some(message)) => return Ok(Some(message)),
                         Ok(None) => continue,
                         Err(error) => {
@@ -778,7 +840,7 @@ impl CodexTransport {
 
     fn consume_wire_event(&mut self, event: WireEvent) -> TransportResult<Option<CodexEvent>> {
         match event {
-            WireEvent::Message(value) => match classify_message(value) {
+            WireEvent::Message(value) => match classify_message(value, self.claude_stream) {
                 Err(error) => {
                     self.shutdown();
                     return Err(error);
@@ -862,11 +924,23 @@ impl Drop for CodexTransport {
     }
 }
 
-fn classify_message(value: Value) -> TransportResult<Option<WireMessage>> {
+fn classify_message(value: Value, claude_stream: bool) -> TransportResult<Option<WireMessage>> {
     let Some(object) = value.as_object() else {
         warn_skipped_json(&value);
         return Ok(None);
     };
+    // Only Claude stream-json transports classify by `type`. Shared JSON-RPC
+    // (Codex / ACP) must not treat Anthropic-shaped type names as Claude events.
+    if claude_stream {
+        if let Some(ty) = object.get("type").and_then(Value::as_str) {
+            if is_claude_stream_type(ty) {
+                return Ok(Some(WireMessage::Notification {
+                    method: "claude/stream".into(),
+                    params: value,
+                }));
+            }
+        }
+    }
     let has_id = object.contains_key("id");
     let has_method = object.get("method").and_then(Value::as_str).is_some();
     let has_result = object.contains_key("result");
@@ -906,6 +980,16 @@ fn classify_message(value: Value) -> TransportResult<Option<WireMessage>> {
     }
     warn_skipped_json(&value);
     Ok(None)
+}
+
+fn is_claude_stream_type(ty: &str) -> bool {
+    // Narrow allowlist: types observed (or needed) on Claude Code stream-json
+    // stdout. Do not list Anthropic Messages SSE names here — those are not
+    // this transport's dialect and would pollute shared classification if gated wrong.
+    matches!(
+        ty,
+        "system" | "assistant" | "user" | "result" | "stream_event" | "error"
+    )
 }
 
 fn warn_skipped_json(value: &Value) {

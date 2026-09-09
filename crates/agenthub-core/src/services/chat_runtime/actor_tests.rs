@@ -1797,3 +1797,69 @@ fn stop_while_waiting_for_approval_logs_stop_ok() {
         "stop must not allow the pending command:\n{wire}"
     );
 }
+
+
+#[test]
+fn claude_stream_result_completes_turn_and_keeps_session() {
+    let db = Database::open_in_memory().unwrap();
+    ChatRepo::new(db.clone())
+        .create_conversation(&Conversation {
+            id: "claude-stream".into(),
+            title: String::new(),
+            agent_ids: vec![AgentId::Claude],
+            cwd: Some(std::env::temp_dir().to_string_lossy().into_owned()),
+            allow_dangerous: false,
+            created_at: "2026-01-01T00:00:00Z".into(),
+            updated_at: "2026-01-01T00:00:00Z".into(),
+            native_session_id: None,
+            sending: false,
+        })
+        .unwrap();
+    let mut worker = worker(&db, "claude-stream");
+    worker.agent = AgentId::Claude;
+    worker.store.enable_if_new("claude-stream").unwrap();
+    start_placeholder(&mut worker);
+    worker.agent = AgentId::Claude;
+    worker
+        .notification(
+            "claude/stream",
+            &json!({
+                "type": "system",
+                "subtype": "init",
+                "session_id": "claude-sess-1"
+            }),
+        )
+        .unwrap();
+    assert_eq!(worker.thread_id.as_deref(), Some("claude-sess-1"));
+    worker
+        .notification(
+            "claude/stream",
+            &json!({
+                "type": "assistant",
+                "session_id": "claude-sess-1",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "PONG"}]
+                }
+            }),
+        )
+        .unwrap();
+    worker
+        .notification(
+            "claude/stream",
+            &json!({
+                "type": "result",
+                "subtype": "success",
+                "is_error": false,
+                "result": "PONG",
+                "session_id": "claude-sess-1"
+            }),
+        )
+        .unwrap();
+    assert_eq!(worker.thread_id.as_deref(), Some("claude-sess-1"));
+    let snapshot = worker.store.snapshot("claude-stream", None).unwrap();
+    assert_eq!(snapshot.phase, RuntimePhase::Completed);
+    let message = snapshot.current_message.unwrap();
+    assert_eq!(message.status, ChatMessageStatus::Ok);
+    assert!(message.content.contains("PONG"), "content={}", message.content);
+}

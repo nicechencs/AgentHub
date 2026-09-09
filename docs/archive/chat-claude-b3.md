@@ -46,3 +46,21 @@ updated: 2026-09-08
 1. 先固定一种获许可的登录方式并做真实双向实验（确认、停止、恢复）。
 2. 实验通过后再增加 Claude driver；空新会话进 runtime，**legacy 历史保持 legacy**（与 Codex B1 相同规则）。
 3. UI 能力矩阵按 `supported / unsupported / unknown` 逐项开放，禁止从 Codex 成功类推。
+
+
+## 2026-09-09 首片补记（supersedes 否定接线结论，仅限下文范围）
+
+本机 Claude Code **2.1.235** 已核实：
+
+1. `claude -p --input-format stream-json --output-format stream-json --verbose --permission-mode dontAsk`，stdin 保持打开时可多轮；
+2. 用户消息可带 `type:image` + base64 `source`，同进程第二轮可读图；
+3. OAuth 订阅登录可用（不必改走未批准的第三方 SDK 额度路径）。
+
+因此 **最优首片** 是把**新空** Claude 会话接入 `ChatRuntime` 的 stream-json 驱动（多轮 + 图片），而不是在 print/legacy 路径上画死图片按钮。
+
+仍未解决（不得假装已支持）：
+
+- 可点允许/拒绝（`--permission-prompt-tool` / 交互批准通道未接线）；
+- 生成中补充（本片与 Grok/Kiro 一样 Unsupported）；
+- Agent SDK 宿主与计费边界实验；
+- 有历史的 Claude 会话升级（继续 print+resume）。

@@ -10,7 +10,7 @@ mod ops;
 mod store;
 mod types;
 
-pub(crate) use store::{is_acp_runtime_agent, is_runtime_chat_agent};
+pub(crate) use store::{is_acp_runtime_agent, is_claude_stream_runtime_agent, is_runtime_chat_agent};
 
 pub use types::{
     RuntimeDecision, RuntimeEvent, RuntimeExtensionItem, RuntimeExtensionKind, RuntimeLocalImage,
@@ -239,7 +239,7 @@ impl ChatRuntime {
                 settings = self.store.set_turn_settings(conversation_id, &repaired)?;
             }
         }
-        let acp = is_acp_runtime_agent(agent);
+        let persistent = is_acp_runtime_agent(agent) || is_claude_stream_runtime_agent(agent);
         Ok(RuntimeOptions {
             conversation_id: conversation_id.to_string(),
             settings,
@@ -248,7 +248,7 @@ impl ChatRuntime {
             extensions: cache.extensions,
             models_from_codex: cache.from_codex,
             image_input: true,
-            steer: !acp,
+            steer: !persistent,
         })
     }
 
@@ -677,6 +677,7 @@ impl ChatRuntime {
         match conversation.agent_ids.first().copied() {
             Some(AgentId::Grok) => return self.fetch_grok_catalog(&cwd),
             Some(AgentId::Kiro) => return fetch_kiro_catalog(),
+            Some(AgentId::Claude) => return claude_fallback_catalog(),
             _ => {}
         }
         let Ok(program) = resolve_codex_program(&self.run, &self.codex_program_override) else {
@@ -1013,6 +1014,7 @@ impl ActorWorker {
         match conversation.agent_ids.first().copied() {
             Some(AgentId::Grok) => return self.fetch_grok_start_catalog(&cwd),
             Some(AgentId::Kiro) => return fetch_kiro_catalog(),
+            Some(AgentId::Claude) => return claude_fallback_catalog(),
             _ => {}
         }
         let Ok(program) = self.codex_program() else {
@@ -1171,11 +1173,19 @@ impl ActorWorker {
             ));
         }
         ops::validate_local_images(&extras.images)?;
-        if is_acp_runtime_agent(Some(self.agent)) && !extras.skills.is_empty() {
+        if (is_acp_runtime_agent(Some(self.agent))
+            || is_claude_stream_runtime_agent(Some(self.agent)))
+            && !extras.skills.is_empty()
+        {
             return Err(AppError::Unsupported("目前不能在本轮指定 Skill".into()));
         }
         let acp_prompt_blocks = if is_acp_runtime_agent(Some(self.agent)) {
             Some(ops::grok_prompt_blocks(prompt, &extras.images)?)
+        } else {
+            None
+        };
+        let claude_prompt = if is_claude_stream_runtime_agent(Some(self.agent)) {
+            Some(ops::claude_user_message(prompt, &extras.images)?)
         } else {
             None
         };
@@ -1231,7 +1241,9 @@ impl ActorWorker {
         self.last_start_request = Some(client_request_id.to_string());
         self.store
             .set_last_client_request_id(&self.conversation_id, client_request_id)?;
-        if !is_acp_runtime_agent(Some(self.agent)) {
+        if !is_acp_runtime_agent(Some(self.agent))
+            && !is_claude_stream_runtime_agent(Some(self.agent))
+        {
             if let Some(mut transport) = self.transport.take() {
                 transport.shutdown();
             }
@@ -1285,6 +1297,7 @@ impl ActorWorker {
                         command: match self.agent {
                             AgentId::Grok => "grok agent stdio".into(),
                             AgentId::Kiro => "kiro-cli acp".into(),
+                            AgentId::Claude => "claude stream-json".into(),
                             _ => "codex app-server".into(),
                         },
                     },
@@ -1304,6 +1317,8 @@ impl ActorWorker {
 
         let start_result = if is_acp_runtime_agent(Some(self.agent)) {
             self.acp_connect_and_prompt(acp_prompt_blocks.unwrap_or_default())
+        } else if is_claude_stream_runtime_agent(Some(self.agent)) {
+            self.claude_connect_and_prompt(claude_prompt.expect("claude prompt prepared"))
         } else {
             (|| {
                 let cwd = self.conversation_cwd()?;
@@ -1604,6 +1619,206 @@ impl ActorWorker {
         }
     }
 
+
+    fn claude_connect_and_prompt(&mut self, prompt: Value) -> Result<RuntimeSnapshot> {
+        let cwd = self.conversation_cwd()?;
+        let settings = self.store.turn_settings(&self.conversation_id)?;
+        let model = settings
+            .model
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        let effort = settings
+            .effort
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        let trust_all = self
+            .repo
+            .get_conversation(&self.conversation_id)
+            .ok()
+            .flatten()
+            .is_some_and(|conversation| conversation.allow_dangerous);
+        let permission_mode = if trust_all {
+            "bypassPermissions"
+        } else {
+            "dontAsk"
+        };
+
+        let live = self.transport.as_ref().is_some_and(CodexTransport::is_open);
+        let mut transport = if live {
+            self.transport.take().ok_or_else(|| {
+                AppError::message("chat.runtime.transport", "Claude process stopped")
+            })?
+        } else {
+            if let Some(mut previous) = self.transport.take() {
+                previous.shutdown();
+            }
+            let program = self.run.detect_claude_installation()?;
+            let resume = self.thread_id.as_deref();
+            CodexTransport::spawn_claude_stream_interruptible(
+                &program,
+                &cwd,
+                model,
+                effort,
+                permission_mode,
+                resume,
+                Arc::clone(&self.abort),
+            )
+            .map_err(map_transport)?
+        };
+
+        transport
+            .send_raw_value(&prompt)
+            .map_err(map_transport)?;
+
+        let run_id = self
+            .run_id
+            .clone()
+            .unwrap_or_else(|| format!("run-{}", Uuid::new_v4()));
+        self.turn_id = Some(run_id.clone());
+        self.run_id = Some(run_id.clone());
+        self.store.set_state(
+            &self.conversation_id,
+            RuntimePhase::Running,
+            Some(&run_id),
+            self.thread_id.as_deref(),
+            self.turn_id.as_deref(),
+            self.chat_turn,
+            self.message_id.as_deref(),
+        )?;
+        self.transport = Some(transport);
+        self.store.snapshot(&self.conversation_id, None)
+    }
+
+    fn claude_stream_event(&mut self, params: &Value) -> Result<()> {
+        if let Some(session_id) = params
+            .get("session_id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            if self.thread_id.as_deref() != Some(session_id) {
+                self.thread_id = Some(session_id.to_string());
+                self.store.set_state(
+                    &self.conversation_id,
+                    self.live_phase(RuntimePhase::Running),
+                    self.run_id.as_deref(),
+                    self.thread_id.as_deref(),
+                    self.turn_id.as_deref(),
+                    self.chat_turn,
+                    self.message_id.as_deref(),
+                )?;
+            }
+        }
+
+        let ty = params.get("type").and_then(Value::as_str).unwrap_or("");
+        if ty == "result" {
+            let is_err = params
+                .get("is_error")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+                || params
+                    .get("subtype")
+                    .and_then(Value::as_str)
+                    .is_some_and(|s| s.contains("error"));
+            if let Some(steps) = crate::utils::stream_parse::claude::parse_line(&params.to_string())
+            {
+                for step in steps {
+                    match step {
+                        ProcessStep::Text { text } => {
+                            if !text.is_empty() {
+                                // Prefer assistant text already streamed; result text is fallback.
+                                let Some(message) = self.current_message()? else {
+                                    continue;
+                                };
+                                if message.content.is_empty() {
+                                    self.append_message(
+                                        &text,
+                                        self.live_phase(RuntimePhase::Running),
+                                    )?;
+                                }
+                            }
+                        }
+                        other => {
+                            self.emit(
+                                ChatEvent::AgentProcess {
+                                    turn: self.chat_turn.unwrap_or(0),
+                                    agent: self.agent,
+                                    step: other,
+                                },
+                                self.live_phase(RuntimePhase::Running),
+                            )?;
+                        }
+                    }
+                }
+            }
+            if is_err {
+                let message = params
+                    .get("error")
+                    .and_then(Value::as_str)
+                    .or_else(|| params.get("result").and_then(Value::as_str))
+                    .unwrap_or("Claude 运行失败");
+                self.terminalize(
+                    ChatMessageStatus::Failed,
+                    Some(&redact_text(message)),
+                    RuntimePhase::Failed,
+                    false,
+                    false,
+                )?;
+            } else {
+                let cancel_requested = self
+                    .store
+                    .record(&self.conversation_id)?
+                    .is_some_and(|record| record.phase == RuntimePhase::Cancelling)
+                    || self.cancel_deadline.is_some();
+                if cancel_requested {
+                    self.terminalize(
+                        ChatMessageStatus::Cancelled,
+                        None,
+                        RuntimePhase::Cancelled,
+                        false,
+                        true,
+                    )?;
+                } else {
+                    self.terminalize(
+                        ChatMessageStatus::Ok,
+                        None,
+                        RuntimePhase::Completed,
+                        true,
+                        false,
+                    )?;
+                }
+            }
+            // Keep the process alive for the next user turn.
+            return Ok(());
+        }
+
+        let Some(steps) = crate::utils::stream_parse::claude::parse_line(&params.to_string()) else {
+            return Ok(());
+        };
+        for step in steps {
+            match step {
+                ProcessStep::Text { text } => {
+                    if !text.is_empty() {
+                        self.append_message(&text, self.live_phase(RuntimePhase::Running))?;
+                    }
+                }
+                other => {
+                    self.emit(
+                        ChatEvent::AgentProcess {
+                            turn: self.chat_turn.unwrap_or(0),
+                            agent: self.agent,
+                            step: other,
+                        },
+                        self.live_phase(RuntimePhase::Running),
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn reply(&mut self, reply: RuntimeReply) -> Result<()> {
         self.check_run(&reply.run_id)?;
         if self
@@ -1730,7 +1945,9 @@ impl ActorWorker {
     }
 
     fn steer(&mut self, prompt: &str, run_id: &str, client_request_id: &str) -> Result<()> {
-        if is_acp_runtime_agent(Some(self.agent)) {
+        if is_acp_runtime_agent(Some(self.agent))
+            || is_claude_stream_runtime_agent(Some(self.agent))
+        {
             return Err(AppError::Unsupported(
                 "不能在生成过程中补充要求，请等本轮结束后再发送".into(),
             ));
@@ -1853,6 +2070,13 @@ impl ActorWorker {
             )?;
             self.log_stop_ok();
             return Ok(());
+        }
+        if is_claude_stream_runtime_agent(Some(self.agent)) {
+            if let Some(transport) = self.transport.as_mut() {
+                transport.shutdown();
+            }
+            self.transport = None;
+            return self.finish_user_stop();
         }
         let (Some(thread_id), Some(turn_id)) = (thread_id, turn_id) else {
             return self.complete_cancel(AppError::message(
@@ -2174,6 +2398,9 @@ impl ActorWorker {
 
     fn notification(&mut self, method: &str, params: &Value) -> Result<()> {
         match method {
+            "claude/stream" => {
+                self.claude_stream_event(params)?;
+            }
             "session/update" | "session_update" | "_x.ai/session/update" => {
                 self.grok_session_update(params)?;
             }
@@ -3164,6 +3391,27 @@ fn grok_fallback_catalog() -> CatalogCache {
             })
             .collect(),
     );
+    CatalogCache {
+        models,
+        extensions: Vec::new(),
+        from_codex: false,
+    }
+}
+
+fn claude_fallback_catalog() -> CatalogCache {
+    // Aliases accepted by Claude Code CLI `--model` / `--effort`.
+    let efforts = ["low", "medium", "high", "xhigh", "max"]
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let models = ["sonnet", "opus", "haiku"]
+        .into_iter()
+        .map(|id| RuntimeModelOption {
+            id: id.to_string(),
+            efforts: efforts.clone(),
+            default_effort: Some("high".into()),
+        })
+        .collect();
     CatalogCache {
         models,
         extensions: Vec::new(),

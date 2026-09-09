@@ -405,3 +405,27 @@ fn grok_prompt_blocks_embed_local_image() {
         base64::engine::general_purpose::STANDARD.encode(b"png-bytes")
     );
 }
+
+
+#[test]
+fn claude_user_message_embeds_base64_image() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("shot.png");
+    // Minimal PNG header is enough for mime sniffing by extension.
+    std::fs::write(&path, b"\x89PNG\r\n\x1a\nfake").unwrap();
+    let message = claude_user_message(
+        "what color?",
+        &[RuntimeLocalImage {
+            path: path.to_string_lossy().into_owned(),
+        }],
+    )
+    .unwrap();
+    assert_eq!(message["type"], "user");
+    let content = message["message"]["content"].as_array().unwrap();
+    assert_eq!(content[0]["type"], "text");
+    assert_eq!(content[0]["text"], "what color?");
+    assert_eq!(content[1]["type"], "image");
+    assert_eq!(content[1]["source"]["type"], "base64");
+    assert_eq!(content[1]["source"]["media_type"], "image/png");
+    assert!(content[1]["source"]["data"].as_str().unwrap().len() > 0);
+}
