@@ -48,6 +48,7 @@ fn worker(db: &Database, id: &str) -> ActorWorker {
         last_start_request: None,
         pending_prompt_id: None,
         permission_options: HashMap::new(),
+        file_change_items: HashMap::new(),
         cancel_deadline: None,
         session_model: None,
         session_effort: None,
@@ -538,6 +539,87 @@ fn file_and_question_server_requests_become_pending_runtime_requests() {
         snapshot.pending_requests[1].questions[0].options[0].label,
         "red"
     );
+}
+
+#[test]
+fn file_change_request_uses_item_started_paths_when_reason_is_empty() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "file-paths");
+    let mut worker = worker(&db, "file-paths");
+    worker.store.enable_if_new("file-paths").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .notification(
+            "item/started",
+            &json!({
+                "item": {
+                    "type": "fileChange",
+                    "id": "exec-1",
+                    "status": "inProgress",
+                    "changes": [{
+                        "path": "/workspace/qa-codex-filechange-scratch/probe.txt",
+                        "kind": { "type": "add" },
+                        "diff": "FILECHANGE_OK\n"
+                    }]
+                }
+            }),
+        )
+        .unwrap();
+    worker
+        .server_request(
+            json!("file-1"),
+            "item/fileChange/requestApproval",
+            &json!({
+                "turnId": "run-1",
+                "itemId": "exec-1",
+                "reason": null,
+                "grantRoot": null
+            }),
+        )
+        .unwrap();
+
+    let snapshot = worker.store.snapshot("file-paths", None).unwrap();
+    assert_eq!(snapshot.pending_requests.len(), 1);
+    assert_eq!(snapshot.pending_requests[0].kind, RuntimeRequestKind::File);
+    assert_eq!(snapshot.pending_requests[0].title, "修改文件");
+    assert_eq!(
+        snapshot.pending_requests[0].detail,
+        "/workspace/qa-codex-filechange-scratch/probe.txt"
+    );
+    assert!(snapshot.events.iter().any(|event| matches!(
+        &event.event,
+        ChatEvent::AgentProcess {
+            step: crate::models::ProcessStep::Tool { name, status, .. },
+            ..
+        } if name == "fileChange" && status == "inProgress"
+    )));
+}
+
+#[test]
+fn apply_patch_approval_alias_becomes_file_request() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "legacy-patch");
+    let mut worker = worker(&db, "legacy-patch");
+    worker.store.enable_if_new("legacy-patch").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .server_request(
+            json!("patch-1"),
+            "applyPatchApproval",
+            &json!({
+                "turnId": "run-1",
+                "fileChanges": {
+                    "/tmp/example.txt": { "type": "add", "content": "ok" }
+                }
+            }),
+        )
+        .unwrap();
+
+    let snapshot = worker.store.snapshot("legacy-patch", None).unwrap();
+    assert_eq!(snapshot.pending_requests[0].kind, RuntimeRequestKind::File);
+    assert_eq!(snapshot.pending_requests[0].detail, "/tmp/example.txt");
 }
 
 #[test]
