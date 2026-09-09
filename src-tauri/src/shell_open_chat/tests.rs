@@ -281,6 +281,14 @@ fn selected_folder_verb_uses_percent_1() {
 }
 
 #[test]
+fn windows_style_cargo_debug_path_is_detected_on_any_os() {
+    // Unix Path::new keeps `\` in one component; the helper must still match.
+    assert!(is_cargo_debug_exe(Path::new(
+        r"D:\repo\src-tauri\target\debug\agenthub-gui.exe"
+    )));
+}
+
+#[test]
 fn cargo_debug_exe_must_not_overwrite_installed_menu() {
     assert!(is_cargo_debug_exe(Path::new(
         r"D:\repo\src-tauri\target\debug\agenthub-gui.exe"

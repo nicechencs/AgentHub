@@ -119,6 +119,9 @@ pub(crate) fn windows_open_chat_command_with(exe: &Path, placeholder: &str) -> S
 
 /// Cargo `target/debug` builds. Registering them overwrites the installed
 /// Explorer verb, then the menu breaks when that debug exe is gone.
+///
+/// `Path` component walk uses the host separator. A Windows `\` path is one
+/// component on Unix CI, so also normalize `\` to `/` and look for `/target/debug/`.
 pub(crate) fn is_cargo_debug_exe(exe: &Path) -> bool {
     let mut parts = exe.iter().filter_map(|s| s.to_str());
     while let Some(part) = parts.next() {
@@ -126,7 +129,9 @@ pub(crate) fn is_cargo_debug_exe(exe: &Path) -> bool {
             return true;
         }
     }
-    false
+    exe.to_string_lossy()
+        .replace('\\', "/")
+        .contains("/target/debug/")
 }
 
 pub(crate) fn should_write_shell_registration(exe: &Path, force: bool) -> bool {
