@@ -2884,6 +2884,8 @@ export const zh = {
       retryAllHint: "将把这条提示重新发给会话中的全部 Agent",
       generating: "生成中…",
       generatingPhase: "{phase}…",
+      thinking: "正在想",
+      writing: "正在写",
       noOutput: "（无输出）",
       copyAria: "复制",
       copied: "已复制",
@@ -3008,6 +3010,8 @@ export const zh = {
     },
     status: {
       generating: "生成中",
+      thinking: "正在想",
+      writing: "正在写",
       failed: "失败",
       cancelled: "已取消",
       timeout: "超时",

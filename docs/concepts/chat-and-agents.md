@@ -32,7 +32,7 @@ Kiro 会话设置里的「帮我批准 / 完全访问权限」是启动时的 `-
 
 ## 当前数据流
 
-新空 Codex 会话：页面 → ChatPort runtime 操作 → Tauri blocking command → ChatRuntime 串行会话 → Codex app-server。后台将消息、事件与终态保存到 SQLite；页面读取带 sequence、待处理请求、currentMessage 与 gap 的快照。正文采用同一次读取中的完整 currentMessage，不能用字符串相似性猜测增量是否重复。页面关闭不拥有后台生命周期；重开使用持久化的原生 thread。详见 [B1 实施记录](../archive/chat-codex-b1.md)。
+新空 Codex 会话：页面 → ChatPort runtime 操作 → Tauri blocking command → ChatRuntime 串行会话 → Codex app-server。后台将消息、事件与终态保存到 SQLite；页面读取带 sequence、待处理请求、currentMessage 与 gap 的快照。正文采用同一次读取中的完整 currentMessage，不能用字符串相似性猜测增量是否重复。活动会话约 80ms 读一次快照，让已写入的增量尽快出现；首字前显示「正在想」，正文出现后显示「正在写」。不把整段回复拆开假装逐字打出。页面关闭不拥有后台生命周期；重开使用持久化的原生 thread。详见 [B1 实施记录](../archive/chat-codex-b1.md)。
 
 旧会话和其他 Agent：
 
