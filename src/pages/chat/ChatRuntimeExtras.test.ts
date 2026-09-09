@@ -87,3 +87,33 @@ describe('ChatRuntimeExtras image chips', () => {
   });
 });
 
+
+
+describe('ChatRuntimeExtras skill picker', () => {
+  it('hides the skill picker when showSkillPicker is false', () => {
+    const html = renderMarkup(
+      extras({
+        showSkillPicker: false,
+        extensions: [
+          { id: 'skill-a', kind: 'skill', name: 'Demo Skill', callable: true },
+        ],
+        selectedSkillIds: ['skill-a'],
+      }),
+    );
+    expect(html).not.toContain('Demo Skill');
+    // Label "技能" from the picker button / chips should not appear as a control.
+    expect(html).not.toMatch(/>\s*技能/);
+  });
+
+  it('shows the skill picker by default when callable skills exist', () => {
+    const html = renderMarkup(
+      extras({
+        extensions: [
+          { id: 'skill-a', kind: 'skill', name: 'Demo Skill', callable: true },
+        ],
+      }),
+    );
+    // Radix closed menus do not SSR item labels; the toolbar trigger is enough.
+    expect(html).toContain('>技能<');
+  });
+});
