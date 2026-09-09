@@ -25,6 +25,12 @@ describe('mock chat runtime', () => {
       phase: 'cancelling',
       currentMessage: { status: 'cancelled' },
     });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await expect(chat.runtimeSnapshot(conversation.id)).resolves.toMatchObject({
+      runId: started.runId,
+      phase: 'cancelled',
+      currentMessage: { status: 'cancelled' },
+    });
   });
 
   it('enables a new empty Claude conversation with image input', async () => {

@@ -2,7 +2,7 @@ import { Notice } from '@/components/shared/Notice';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { localizeChatFailure } from './chat-format';
-import type { ChatTurnOutcome } from './chat-turn-outcome';
+import { turnOutcomeDetail, type ChatTurnOutcome } from './chat-turn-outcome';
 
 export function ChatTurnOutcomeBanner(props: {
   outcome: ChatTurnOutcome;
@@ -12,9 +12,11 @@ export function ChatTurnOutcomeBanner(props: {
 }) {
   const { t } = useI18n();
   const title = t(`chat.turnOutcome.${props.outcome.kind}` as never);
-  const detail = props.outcome.errorText
-    ? localizeChatFailure(props.outcome.errorText, t)
-    : t(`chat.turnOutcome.${props.outcome.kind}Hint` as never);
+  const detail = turnOutcomeDetail(
+    props.outcome,
+    (text) => localizeChatFailure(text, t),
+    t(`chat.turnOutcome.${props.outcome.kind}Hint` as never),
+  );
 
   return (
     <Notice tone="warning" className="mb-2">

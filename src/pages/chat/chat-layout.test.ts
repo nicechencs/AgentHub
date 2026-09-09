@@ -25,6 +25,8 @@ describe('chat layout wiring', () => {
     expect(source('index.tsx')).toContain("e.key");
     expect(source('ChatComposer.tsx')).toContain('composerStopMessageKey');
     expect(source('ChatComposer.tsx')).toContain('data-help="chat-stop"');
+    expect(source('use-chat-page-send.ts')).toContain('composerKeepsStoppingAfterCancel');
+    expect(source('use-chat-page-send.ts')).toContain('composerCancelingVisible');
   });
 
   it('opens the model menu from Ctrl/Cmd+Shift+I and labels models in plain language', () => {
@@ -37,6 +39,22 @@ describe('chat layout wiring', () => {
     expect(source('ChatComposer.tsx')).toContain('chatEffortHint');
     expect(translate('zh', 'chat.runtimeOps.effortHintHigh')).toBe('可能更慢');
     expect(translate('zh', 'chat.composer.shortcutOpenModel')).toBe('Ctrl+Shift+I');
+  });
+
+  it('starts a new chat from Ctrl/Cmd+N and opens a shortcut overview', () => {
+    const page = source('index.tsx');
+    expect(page).toContain('chatModNShouldStartNewChat');
+    expect(page).toContain("id: 'new-session'");
+    expect(page).toContain('chatQuestionShouldOpenShortcuts');
+    expect(page).toContain('chatKeyTargetIsField');
+    expect(page).toContain('ChatShortcutsDialog');
+    expect(page).toContain('onOpenShortcuts');
+    expect(source('ChatComposer.tsx')).toContain('data-help="chat-shortcuts"');
+    expect(source('ChatComposer.tsx')).toContain('aria-keyshortcuts="?"');
+    expect(source('ChatSessionRail.tsx')).toContain('aria-keyshortcuts="Control+N"');
+    expect(source('ChatShortcutsDialog.tsx')).toContain('CHAT_SHORTCUT_ROWS');
+    expect(translate('zh', 'chat.shortcuts.open')).toBe('快捷键');
+    expect(translate('en', 'chat.shortcuts.open')).toBe('Shortcuts');
   });
 
   it('keeps send available while a turn is in progress, with a labeled stop', () => {
@@ -231,6 +249,9 @@ describe('chat layout wiring', () => {
     expect(requests).toContain('chat.runtime.allowAlways');
     expect(requests).toContain('runtimeRequestTitle');
     expect(requests).toContain('chat.runtime.allowAlwaysHint');
+    expect(translate('zh', 'chat.runtime.allowAlwaysHint')).toBe('仅当前这次进程，不保存');
+    expect(translate('en', 'chat.runtime.allowAlwaysHint')).toBe('This process only, not saved');
+    expect(source('ChatTurnOutcomeBanner.tsx')).toContain('turnOutcomeDetail');
   });
 
   it('shows Kiro ask-or-full permission mode in session settings and the header', () => {
