@@ -98,7 +98,7 @@ describe('PageHeader', () => {
     expect(source('App.tsx')).toContain('<TopBar />');
     expect(source('App.tsx')).not.toContain('!isChat && <TopBar');
     expect(source('App.tsx')).toContain('PageChromeProvider');
-    expect(source('pages/settings/index.tsx')).not.toMatch(/readingColumn\}>\s*<PageHeader/);
+    expect(source('pages/settings/index.tsx')).not.toMatch(/overviewColumn\}>\s*<PageHeader/);
     expect(source('pages/chat/ChatSessionHeader.tsx')).toContain('pageRhythm.chatChromeX');
     expect(source('pages/chat/ChatSessionHeader.tsx')).toContain('pageRhythm.topChrome');
     expect(source('pages/chat/ChatSessionHeader.tsx')).not.toContain('pageRhythm.workbenchHeader');

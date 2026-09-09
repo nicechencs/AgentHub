@@ -38,8 +38,11 @@ export const tableStyles = {
   td: 'overflow-hidden px-3 py-2',
   footer:
     'flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-2 text-meta text-muted',
-  resizeHandle:
-    'absolute -right-1 top-0 z-10 h-full w-3 cursor-col-resize touch-none hover:bg-accent/40 active:bg-accent/60',
+  resizeHandle: [
+    'group absolute -right-1 top-0 z-10 h-full w-2 cursor-col-resize touch-none bg-transparent',
+    'after:pointer-events-none after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-transparent after:content-[""]',
+    'hover:after:bg-accent active:after:bg-accent',
+  ].join(' '),
 } as const;
 
 export type TableShellVariant = 'default' | 'workbench' | 'flush';

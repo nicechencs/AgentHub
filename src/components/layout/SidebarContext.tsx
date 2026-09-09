@@ -23,8 +23,6 @@ interface SidebarContextValue {
   collapsed: boolean;
   setCollapsed: (v: boolean) => void;
   toggle: () => void;
-  /** Secondary-nav control: expand the primary sidebar (persisted). */
-  expandPrimarySidebar: () => void;
   /** When on, clicking Routes in the primary nav collapses it. */
   autoCollapseOnRoutes: boolean;
   setAutoCollapseOnRoutes: (v: boolean) => void;
@@ -95,16 +93,11 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const expandPrimarySidebar = React.useCallback(() => {
-    setCollapsed(false);
-  }, [setCollapsed]);
-
   const value = React.useMemo(
     () => ({
       collapsed,
       setCollapsed,
       toggle,
-      expandPrimarySidebar,
       autoCollapseOnRoutes,
       setAutoCollapseOnRoutes,
       navVisible,
@@ -120,7 +113,6 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       collapsed,
       setCollapsed,
       toggle,
-      expandPrimarySidebar,
       autoCollapseOnRoutes,
       setAutoCollapseOnRoutes,
       navVisible,

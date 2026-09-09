@@ -31,6 +31,7 @@ const LAYOUT_STORAGE_KEY = {
   dashboardUsageColumnWidths: `${PREFIX}dashboard-usage-column-widths`,
   chatComposerPaneHeight: `${PREFIX}chat-composer-pane-height`,
   chatPreviewWidth: `${PREFIX}chat-preview-width`,
+  chatRailWidth: `${PREFIX}chat-rail-width`,
   chatBootstrap: `${PREFIX}chat-bootstrap`,
 } as const;
 
@@ -49,6 +50,8 @@ export const StorageKey = {
   usageGuideDismissed: `${PREFIX}usage-guide-dismissed`,
   dismissedAlertIds: `${PREFIX}dismissed-alert-ids`,
   sidebarCollapsed: `${PREFIX}sidebar-collapsed`,
+  /** 路由二级导航是否收起 */
+  routesNavCollapsed: `${PREFIX}routes-nav-collapsed`,
   /** 点侧栏「路由」时是否自动折叠最左侧栏 */
   sidebarAutoCollapseOnRoutes: `${PREFIX}sidebar-auto-collapse-on-routes`,
   /** 侧栏是否显示「路由」入口；缺省显示（已稳定） */

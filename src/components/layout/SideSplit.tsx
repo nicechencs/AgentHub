@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { cn } from '@/lib/utils';
 import {
-  SIDE_SPLIT_FRAME_PAD_RIGHT,
+  SIDE_SPLIT_FRAME_PAD_X,
   SIDE_SPLIT_FRAME_PAD_Y,
 } from './side-split-model';
 import type { SideSplitController } from './use-side-split';
@@ -53,10 +53,11 @@ export function SideSplitFrame<T>({
         <div
           className="box-border flex h-full min-h-0"
           style={{
-            width: split.paneWidth + SIDE_SPLIT_FRAME_PAD_RIGHT,
+            width: split.paneWidth + SIDE_SPLIT_FRAME_PAD_X * 2,
             paddingTop: padTop,
             paddingBottom: SIDE_SPLIT_FRAME_PAD_Y,
-            paddingRight: SIDE_SPLIT_FRAME_PAD_RIGHT,
+            paddingLeft: SIDE_SPLIT_FRAME_PAD_X,
+            paddingRight: SIDE_SPLIT_FRAME_PAD_X,
           }}
         >
           {children}

@@ -1233,6 +1233,24 @@ fn real_codex_runtime_crash_reopen_then_continue() {
     );
 }
 
+#[test]
+fn oversized_stdout_line_is_a_picture_too_large_error() {
+    let error = super::codex_transport::CodexTransportError::Protocol(
+        "stdout JSON line exceeds 1048576 bytes".into(),
+    );
+    assert_eq!(
+        super::transport_user_message(&error),
+        "图片太大，请换一张更小的图"
+    );
+    let other =
+        super::codex_transport::CodexTransportError::Protocol("missing field".into());
+    assert!(
+        super::transport_user_message(&other).contains("missing field"),
+        "{}",
+        super::transport_user_message(&other)
+    );
+}
+
 /// Product path: localImage extra is accepted on turn/start.
 #[test]
 #[ignore = "uses the caller's Codex login and creates native sessions; explicit opt-in required"]

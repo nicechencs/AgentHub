@@ -6,6 +6,7 @@ import {
   persistSidebarWidth,
   PRIMARY_NAV_WIDTH,
   readStoredSidebarWidth,
+  CHAT_RAIL_WIDTH,
   ROUTES_NAV_WIDTH,
   SIDEBAR_WIDTH_COLLAPSED,
   SIDEBAR_WIDTH_DEFAULT,
@@ -83,6 +84,25 @@ describe('ROUTES_NAV_WIDTH', () => {
     expect(clampNavWidth(80, 1280, ROUTES_NAV_WIDTH)).toBeGreaterThanOrEqual(ROUTES_NAV_WIDTH.minPx);
     expect(clampNavWidth(900, 1280, ROUTES_NAV_WIDTH)).toBe(
       Math.round(1280 * ROUTES_NAV_WIDTH.maxRatio),
+    );
+  });
+});
+
+describe('CHAT_RAIL_WIDTH', () => {
+  it('keeps the default chat history rail on a typical desktop window', () => {
+    expect(clampNavWidth(CHAT_RAIL_WIDTH.defaultWidth, 1280, CHAT_RAIL_WIDTH)).toBe(
+      CHAT_RAIL_WIDTH.defaultWidth,
+    );
+    expect(clampNavWidth(CHAT_RAIL_WIDTH.defaultWidth, 1920, CHAT_RAIL_WIDTH)).toBe(
+      CHAT_RAIL_WIDTH.defaultWidth,
+    );
+  });
+
+  it('collapses to zero and clamps a drag to the window share', () => {
+    expect(CHAT_RAIL_WIDTH.collapsedWidth).toBe(0);
+    expect(clampNavWidth(80, 1280, CHAT_RAIL_WIDTH)).toBeGreaterThanOrEqual(CHAT_RAIL_WIDTH.minPx);
+    expect(clampNavWidth(900, 1280, CHAT_RAIL_WIDTH)).toBe(
+      Math.round(1280 * CHAT_RAIL_WIDTH.maxRatio),
     );
   });
 });

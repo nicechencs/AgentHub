@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import type { RuntimeDecision, RuntimeRequest } from '@/lib/api/chat';
-import { canSubmitRuntimeQuestions, requestAllowsAlways } from './chat-runtime-model';
+import { cn } from '@/lib/utils';
+import { canSubmitRuntimeQuestions, requestAllowsAlways, runtimeRequestTitle } from './chat-runtime-model';
 
 type ReplyHandler = (request: RuntimeRequest, decision?: RuntimeDecision, answers?: Record<string, string[]>) => Promise<void>;
 
@@ -14,7 +15,7 @@ export function ChatRuntimeRequests({
   onReply: ReplyHandler;
 }) {
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-2 px-4 py-2">
+    <div className="w-full space-y-2 py-2">
       {requests.map((request) => <RuntimeRequestCard key={`${request.runId}:${request.id}`} request={request} onReply={onReply} />)}
     </div>
   );
@@ -39,10 +40,22 @@ function RuntimeRequestCard({ request, onReply }: { request: RuntimeRequest; onR
       await onReply(request, decision, request.kind === 'question' ? merged : undefined);
     } catch { setSent(false); }
   };
+  const title = runtimeRequestTitle(t, request);
+  const kindLabel = request.kind === 'file'
+    ? t('chat.runtime.fileChange')
+    : request.kind === 'question'
+      ? t('chat.runtime.needAnswer')
+      : t('chat.runtime.needConfirm');
   return (
-    <section className="rounded-card border border-border bg-panel p-3 text-body" aria-live="polite">
-      <p className="font-medium">{request.title}</p>
-      {request.detail ? <p className="mt-1 whitespace-pre-wrap text-muted">{request.detail}</p> : null}
+    <section className="rounded-card border border-border bg-subtle p-3 text-body" aria-live="polite">
+      <p className="text-meta text-muted">{kindLabel}</p>
+      {title !== kindLabel ? <p className="mt-0.5 font-medium text-primary">{title}</p> : null}
+      {request.detail ? (
+        <p className={cn(
+          'mt-1 whitespace-pre-wrap text-meta text-secondary',
+          request.kind === 'file' && 'font-mono',
+        )}>{request.detail}</p>
+      ) : null}
       {request.kind === 'question' ? request.questions.map((question) => (
         <fieldset key={question.id} className="mt-3 space-y-1.5">
           <legend className="font-medium">{question.header || question.question}</legend>
@@ -60,11 +73,16 @@ function RuntimeRequestCard({ request, onReply }: { request: RuntimeRequest; onR
         {request.kind === 'question' ? <Button size="sm" disabled={sent} onClick={() => submit()}>{t('chat.runtime.submit')}</Button> : <>
           <Button size="sm" disabled={sent} onClick={() => submit('allow')}>{t('chat.runtime.allow')}</Button>
           {requestAllowsAlways(request) ? (
-            <Button size="sm" disabled={sent} onClick={() => submit('allow_always')}>{t('chat.runtime.allowAlways')}</Button>
+            <Button size="sm" variant="outline" disabled={sent} onClick={() => submit('allow_always')}>
+              {t('chat.runtime.allowAlways')}
+            </Button>
           ) : null}
-          <Button size="sm" variant="outline" disabled={sent} onClick={() => submit('deny')}>{t('chat.runtime.deny')}</Button>
+          <Button size="sm" variant="ghost" disabled={sent} onClick={() => submit('deny')}>{t('chat.runtime.deny')}</Button>
         </>}
       </div>
+      {request.kind !== 'question' && requestAllowsAlways(request) ? (
+        <p className="mt-2 text-meta text-muted">{t('chat.runtime.allowAlwaysHint')}</p>
+      ) : null}
     </section>
   );
 }

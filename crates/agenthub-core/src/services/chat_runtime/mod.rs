@@ -14,7 +14,7 @@ pub(crate) use store::{is_acp_runtime_agent, is_runtime_chat_agent};
 
 pub use types::{
     RuntimeDecision, RuntimeEvent, RuntimeExtensionItem, RuntimeExtensionKind, RuntimeLocalImage,
-    RuntimeModelOption, RuntimeOptions, RuntimePhase, RuntimePermissionOption, RuntimeQuestion,
+    RuntimeModelOption, RuntimeOptions, RuntimePermissionOption, RuntimePhase, RuntimeQuestion,
     RuntimeQuestionOption, RuntimeReply, RuntimeRequest, RuntimeRequestKind, RuntimeSkillRef,
     RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings,
 };
@@ -846,6 +846,7 @@ fn actor_loop(
         last_start_request: None,
         pending_prompt_id: None,
         permission_options: HashMap::new(),
+        file_change_items: HashMap::new(),
         cancel_deadline: None,
         session_model: None,
         session_effort: None,
@@ -874,13 +875,19 @@ struct ActorWorker {
     last_start_request: Option<String>,
     pending_prompt_id: Option<Value>,
     permission_options: HashMap<String, Vec<RuntimePermissionOption>>,
+    /// Paths from `item/started` fileChange items, keyed by item id.
+    /// `item/fileChange/requestApproval` does not include the file list.
+    file_change_items: HashMap<String, String>,
     cancel_deadline: Option<Instant>,
     session_model: Option<String>,
     session_effort: Option<String>,
     session_trust_all: Option<bool>,
-    /// Codex has no ACP `allow_always` option list. After the user picks
-    /// session remember, later command/file approvals in this live process
-    /// are accepted without another card. Not persisted; a new process asks again.
+    /// After the user picks session remember, later command/file approvals in
+    /// this live process are accepted without another card. Not persisted; a
+    /// new process asks again. Codex synthesizes the button. Grok / Kiro only
+    /// show it when the ACP request includes an `allow_always` kind (including
+    /// `allow_always_tool`). ACP keeps the process across turns, so the flag
+    /// survives a completed turn while that process is still open.
     session_allow_always: bool,
 }
 
@@ -1646,7 +1653,11 @@ impl ActorWorker {
                     } else {
                         persisted.request.permission_options.clone()
                     };
-                    acp_permission_reply(&options, decision)?
+                    let value = acp_permission_reply(&options, decision)?;
+                    if matches!(reply.decision, Some(RuntimeDecision::AllowAlways)) {
+                        self.session_allow_always = true;
+                    }
+                    value
                 } else {
                     if matches!(reply.decision, Some(RuntimeDecision::AllowAlways)) {
                         self.session_allow_always = true;
@@ -1844,7 +1855,7 @@ impl ActorWorker {
             return Ok(());
         }
         let (Some(thread_id), Some(turn_id)) = (thread_id, turn_id) else {
-            return self.cancel_failed(AppError::message(
+            return self.complete_cancel(AppError::message(
                 "chat.runtime",
                 "Codex turn is unavailable",
             ));
@@ -1864,10 +1875,10 @@ impl ActorWorker {
                         AppError::message("chat.runtime.interrupted", "Codex process stopped")
                     })?
                     .respond(server_id, response)
-                    .map_err(transport_error)
+                    .map_err(map_transport)
             });
             if let Err(error) = response {
-                return self.cancel_failed(error);
+                return self.complete_cancel(error);
             }
         }
         let interrupt_result = self
@@ -1878,7 +1889,7 @@ impl ActorWorker {
                 if is_acp_runtime_agent(Some(self.agent)) {
                     transport
                         .notify("session/cancel", Some(json!({"sessionId": thread_id})))
-                        .map_err(transport_error)
+                        .map_err(map_transport)
                 } else {
                     transport
                         .request(
@@ -1887,20 +1898,21 @@ impl ActorWorker {
                             CODEX_REQUEST_TIMEOUT,
                         )
                         .map(|_| ())
-                        .map_err(transport_error)
+                        .map_err(map_transport)
                 }
             });
         match interrupt_result {
-            Ok(_) if is_acp_runtime_agent(Some(self.agent)) => {
+            Ok(_) if is_acp_runtime_agent(Some(self.agent)) && !self.aborted() => {
                 self.cancel_deadline = Some(Instant::now() + ACP_CANCEL_DEADLINE);
                 self.log_stop_ok();
                 Ok(())
             }
+            Ok(_) if self.aborted() => self.finish_user_stop(),
             Ok(_) => {
                 self.log_stop_ok();
                 Ok(())
             }
-            Err(error) => self.cancel_failed(error),
+            Err(error) => self.complete_cancel(error),
         }
     }
 
@@ -2081,10 +2093,10 @@ impl ActorWorker {
                 Vec::new(),
                 acp_permission_options(params),
             ),
-            "item/fileChange/requestApproval" | "fileChangeApproval" => (
+            "item/fileChange/requestApproval" | "fileChangeApproval" | "applyPatchApproval" => (
                 RuntimeRequestKind::File,
                 "修改文件".to_string(),
-                redact_json_text(params.get("reason").or_else(|| params.get("grantRoot"))),
+                self.file_change_request_detail(params),
                 Vec::new(),
                 acp_permission_options(params),
             ),
@@ -2114,15 +2126,24 @@ impl ActorWorker {
             }
         };
         if self.session_allow_always
-            && !is_acp_runtime_agent(Some(self.agent))
             && matches!(kind, RuntimeRequestKind::Command | RuntimeRequestKind::File)
         {
-            if let Some(transport) = self.transport.as_mut() {
+            if is_acp_runtime_agent(Some(self.agent)) {
+                let options = acp_options.clone().unwrap_or_default();
+                if let Some(response) = acp_auto_allow_response(&options) {
+                    if let Some(transport) = self.transport.as_mut() {
+                        transport
+                            .respond(id, Ok(response))
+                            .map_err(transport_error)?;
+                    }
+                    return Ok(());
+                }
+            } else if let Some(transport) = self.transport.as_mut() {
                 transport
                     .respond(id, Ok(json!({"decision": "accept"})))
                     .map_err(transport_error)?;
+                return Ok(());
             }
-            return Ok(());
         }
         let permission_options = match acp_options {
             Some(options) => options,
@@ -2229,7 +2250,19 @@ impl ActorWorker {
                     )?;
                 }
             }
-            "turn/completed" => self.turn_completed(params)?,
+            "item/started" | "item/completed" => {
+                self.remember_file_change_item(method, params.get("item"))?;
+            }
+            "item/fileChange/patchUpdated" => {
+                self.remember_file_change_patch(params);
+            }
+            "thread/tokenUsage/updated" | "thread/token_usage/updated" => {
+                self.emit_usage_steps(codex_usage_steps(params))?;
+            }
+            "turn/completed" => {
+                self.emit_usage_steps(codex_usage_steps(params))?;
+                self.turn_completed(params)?;
+            }
             "error" => {
                 let message =
                     redact_json_text(params.get("message").or_else(|| params.get("error")));
@@ -2364,6 +2397,20 @@ impl ActorWorker {
         Ok(())
     }
 
+    fn emit_usage_steps(&self, steps: Vec<ProcessStep>) -> Result<()> {
+        for step in steps {
+            self.emit(
+                ChatEvent::AgentProcess {
+                    turn: self.chat_turn.unwrap_or(0),
+                    agent: self.agent,
+                    step,
+                },
+                self.live_phase(RuntimePhase::Running),
+            )?;
+        }
+        Ok(())
+    }
+
     fn emit_error(&self, message: &str, phase: RuntimePhase) -> Result<()> {
         self.emit(
             ChatEvent::Error {
@@ -2371,6 +2418,73 @@ impl ActorWorker {
             },
             phase,
         )
+    }
+
+    fn file_change_request_detail(&self, params: &Value) -> String {
+        let from_params = optional_json_text(params.get("reason"))
+            .or_else(|| optional_json_text(params.get("grantRoot")))
+            .unwrap_or_default();
+        if !from_params.is_empty() {
+            return from_params;
+        }
+        if let Some(item_id) = params.get("itemId").and_then(Value::as_str) {
+            if let Some(cached) = self.file_change_items.get(item_id) {
+                if !cached.is_empty() {
+                    return cached.clone();
+                }
+            }
+        }
+        join_file_change_paths(&file_change_paths(params))
+    }
+
+    fn remember_file_change_item(&mut self, method: &str, item: Option<&Value>) -> Result<()> {
+        let Some(item) = item else {
+            return Ok(());
+        };
+        let ty = item.get("type").and_then(Value::as_str).unwrap_or_default();
+        if ty != "fileChange" && ty != "file_change" {
+            return Ok(());
+        }
+        let id = item.get("id").and_then(Value::as_str).unwrap_or_default();
+        let paths = file_change_paths(item);
+        if !id.is_empty() && !paths.is_empty() {
+            self.file_change_items
+                .insert(id.to_string(), join_file_change_paths(&paths));
+        }
+        let status =
+            item.get("status")
+                .and_then(Value::as_str)
+                .unwrap_or(if method == "item/completed" {
+                    "completed"
+                } else {
+                    "inProgress"
+                });
+        let path = paths.first().map(String::as_str).unwrap_or("file");
+        self.emit(
+            ChatEvent::AgentProcess {
+                turn: self.chat_turn.unwrap_or(0),
+                agent: AgentId::Codex,
+                step: ProcessStep::Tool {
+                    id: (!id.is_empty()).then(|| id.to_string()),
+                    name: "fileChange".into(),
+                    input: Some(json!({ "path": path })),
+                    status: status.into(),
+                    result: None,
+                },
+            },
+            self.live_phase(RuntimePhase::Running),
+        )
+    }
+
+    fn remember_file_change_patch(&mut self, params: &Value) {
+        let Some(id) = params.get("itemId").and_then(Value::as_str) else {
+            return;
+        };
+        let paths = file_change_paths(params);
+        if !paths.is_empty() {
+            self.file_change_items
+                .insert(id.to_string(), join_file_change_paths(&paths));
+        }
     }
 
     fn grok_session_update(&mut self, params: &Value) -> Result<()> {
@@ -2476,6 +2590,33 @@ impl ActorWorker {
         Err(error)
     }
 
+    /// User Stop while generating or waiting for approval. The abort flag is
+    /// set before the cancel command, so `turn/interrupt` often returns
+    /// `Interrupted` / `chat.runtime.transport`. That is a successful stop.
+    fn complete_cancel(&mut self, error: AppError) -> Result<()> {
+        if self.aborted() || is_user_stop_error(&error) {
+            self.finish_user_stop()
+        } else {
+            self.cancel_failed(error)
+        }
+    }
+
+    fn finish_user_stop(&mut self) -> Result<()> {
+        self.terminalize(
+            ChatMessageStatus::Cancelled,
+            None,
+            RuntimePhase::Cancelled,
+            false,
+            true,
+        )?;
+        if let Some(transport) = self.transport.as_mut() {
+            transport.shutdown();
+        }
+        self.transport = None;
+        self.log_stop_ok();
+        Ok(())
+    }
+
     fn terminalize(
         &mut self,
         status: ChatMessageStatus,
@@ -2501,7 +2642,12 @@ impl ActorWorker {
         self.cancel_deadline = None;
         self.pending_prompt_id = None;
         self.permission_options.clear();
-        self.session_allow_always = false;
+        self.file_change_items.clear();
+        if !is_acp_runtime_agent(Some(self.agent))
+            || !self.transport.as_ref().is_some_and(CodexTransport::is_open)
+        {
+            self.session_allow_always = false;
+        }
         if let Some(message) = error {
             if let Err(learn_err) = self
                 .store
@@ -2660,6 +2806,16 @@ fn extract_id(value: &Value, key: &str) -> Option<String> {
     })
 }
 
+/// Codex `thread/tokenUsage/updated` (and optional `turn/completed`) last + total.
+fn codex_usage_steps(params: &Value) -> Vec<ProcessStep> {
+    params
+        .get("tokenUsage")
+        .or_else(|| params.get("token_usage"))
+        .or_else(|| params.pointer("/turn/tokenUsage"))
+        .map(ProcessStep::from_codex_token_usage)
+        .unwrap_or_default()
+}
+
 fn wire_id_string(value: &Value) -> String {
     value
         .as_str()
@@ -2767,6 +2923,39 @@ fn redact_json_text(value: Option<&Value>) -> String {
     redact_text(&raw)
 }
 
+fn optional_json_text(value: Option<&Value>) -> Option<String> {
+    match value {
+        None | Some(Value::Null) => None,
+        Some(Value::String(text)) if text.trim().is_empty() => None,
+        other => {
+            let text = redact_json_text(other);
+            (!text.is_empty()).then_some(text)
+        }
+    }
+}
+
+fn file_change_paths(value: &Value) -> Vec<String> {
+    if let Some(rows) = value.get("changes").and_then(Value::as_array) {
+        return rows
+            .iter()
+            .filter_map(|row| row.get("path").and_then(Value::as_str))
+            .map(str::to_string)
+            .collect();
+    }
+    if let Some(map) = value.get("fileChanges").and_then(Value::as_object) {
+        return map.keys().cloned().collect();
+    }
+    Vec::new()
+}
+
+fn join_file_change_paths(paths: &[String]) -> String {
+    paths
+        .iter()
+        .map(|path| redact_text(path))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn parse_acp_permission_options(params: &Value) -> Vec<RuntimePermissionOption> {
     params
         .get("options")
@@ -2821,6 +3010,19 @@ fn acp_capability_present(value: Option<&Value>) -> bool {
     matches!(value, Some(Value::Bool(true)) | Some(Value::Object(_)))
 }
 
+fn is_acp_allow_always_kind(kind: &str) -> bool {
+    kind == "allow_always" || kind.starts_with("allow_always_")
+}
+
+fn acp_kind_matches(option_kind: &str, wanted: &str) -> bool {
+    match wanted {
+        "allow_once" => option_kind == "allow_once" || option_kind.starts_with("allow_once_"),
+        "allow_always" => is_acp_allow_always_kind(option_kind),
+        "reject_once" => option_kind == "reject_once" || option_kind.starts_with("reject_once_"),
+        _ => option_kind == wanted,
+    }
+}
+
 fn acp_permission_reply(options: &[RuntimePermissionOption], decision: &str) -> Result<Value> {
     let wanted_kind = match decision {
         "accept" => "allow_once",
@@ -2828,7 +3030,10 @@ fn acp_permission_reply(options: &[RuntimePermissionOption], decision: &str) -> 
         "decline" => "reject_once",
         _ => return Err(AppError::InvalidArg("approval decision is required".into())),
     };
-    if let Some(option) = options.iter().find(|option| option.kind == wanted_kind) {
+    if let Some(option) = options
+        .iter()
+        .find(|option| acp_kind_matches(&option.kind, wanted_kind))
+    {
         return Ok(json!({
             "outcome": { "outcome": "selected", "optionId": option.id }
         }));
@@ -2850,6 +3055,12 @@ fn acp_permission_reply(options: &[RuntimePermissionOption], decision: &str) -> 
     ))
 }
 
+fn acp_auto_allow_response(options: &[RuntimePermissionOption]) -> Option<Value> {
+    acp_permission_reply(options, "accept_always")
+        .ok()
+        .or_else(|| acp_permission_reply(options, "accept").ok())
+}
+
 fn transport_error(error: codex_transport::CodexTransportError) -> AppError {
     AppError::message("chat.runtime.transport", redact_text(&error.to_string()))
 }
@@ -2858,7 +3069,19 @@ fn map_transport(error: codex_transport::CodexTransportError) -> AppError {
     if matches!(error, codex_transport::CodexTransportError::Interrupted) {
         cancelled_error()
     } else {
-        transport_error(error)
+        AppError::message(
+            "chat.runtime.transport",
+            redact_text(&transport_user_message(&error)),
+        )
+    }
+}
+
+fn transport_user_message(error: &codex_transport::CodexTransportError) -> String {
+    let text = error.to_string();
+    if text.contains("stdout JSON line exceeds") {
+        "图片太大，请换一张更小的图".into()
+    } else {
+        text
     }
 }
 
@@ -2890,6 +3113,13 @@ fn log_and_return_stop_fail(conversation_id: &str, error: AppError) -> AppError 
 
 fn is_cancelled_error(error: &AppError) -> bool {
     error.code() == "chat.runtime.cancelled"
+}
+
+fn is_user_stop_error(error: &AppError) -> bool {
+    matches!(
+        error.code(),
+        "chat.runtime.cancelled" | "chat.runtime.interrupted"
+    )
 }
 
 fn resolve_codex_program(

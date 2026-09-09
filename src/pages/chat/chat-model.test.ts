@@ -14,6 +14,8 @@ import {
   chatAgentPickerEmptyCopy,
   chatAgentPickerEmptyKind,
   chatEscapeShouldCancel,
+  chatModKShouldFocusHistory,
+  composerEnterShouldSend,
   chatAgentPickerRows,
   chatConnectionKind,
   chatConnectionOptions,
@@ -34,6 +36,9 @@ import {
   leftoverProviderIsCurrent,
   conversationResumeCommand,
   conversationAgentLine,
+  conversationRailHint,
+  conversationRailMarkColor,
+  conversationRailSelectedFill,
   conversationTitle,
   cwdShortName,
   isBlankConversationDraft,
@@ -157,6 +162,54 @@ describe('conversationAgentLine', () => {
     );
     expect(conversationAgentLine(['claude', 'pi', 'codex'])).toBe(
       `${agentDisplayName('claude')} +2`,
+    );
+  });
+});
+
+describe('conversationRailHint', () => {
+  it('joins directory, time, and extra session facts without Agent names', () => {
+    expect(
+      conversationRailHint(
+        {
+          title: '',
+          agentIds: ['claude'],
+          cwd: 'D:\\demo',
+          updatedAt: new Date().toISOString(),
+          nativeSessionId: null,
+        },
+        t,
+      ),
+    ).toBe('D:\\demo · 刚刚 · 草稿');
+    expect(
+      conversationRailHint(
+        {
+          title: '修登录',
+          agentIds: ['claude'],
+          cwd: '',
+          updatedAt: new Date().toISOString(),
+          nativeSessionId: 'sess-1',
+        },
+        t,
+      ),
+    ).toBe('未设目录 · 刚刚 · 已关联官方会话 sess-1');
+  });
+});
+
+describe('conversationRailMarkColor', () => {
+  it('uses the first Agent brand, then the nav accent', () => {
+    expect(conversationRailMarkColor(['claude'])).toBe('var(--agent-claude)');
+    expect(conversationRailMarkColor(['claude', 'pi'])).toBe('var(--agent-claude)');
+    expect(conversationRailMarkColor([])).toBe('var(--accent)');
+  });
+});
+
+describe('conversationRailSelectedFill', () => {
+  it('washes the Agent mark onto the canvas', () => {
+    expect(conversationRailSelectedFill(['claude'])).toBe(
+      'color-mix(in srgb, var(--agent-claude) 28%, var(--bg-canvas))',
+    );
+    expect(conversationRailSelectedFill([])).toBe(
+      'color-mix(in srgb, var(--accent) 28%, var(--bg-canvas))',
     );
   });
 });
@@ -683,6 +736,55 @@ describe('chatEscapeShouldCancel', () => {
     expect(chatEscapeShouldCancel({ ...idle, canceling: true })).toBe(false);
     expect(chatEscapeShouldCancel({ ...idle, sending: false })).toBe(false);
     expect(chatEscapeShouldCancel({ ...idle, key: 'Enter' })).toBe(false);
+  });
+});
+
+describe('composerEnterShouldSend', () => {
+  it('sends on Enter and keeps Shift+Enter as a newline', () => {
+    expect(composerEnterShouldSend({ key: 'Enter', shiftKey: false })).toBe(true);
+    expect(composerEnterShouldSend({ key: 'Enter', shiftKey: true })).toBe(false);
+    expect(composerEnterShouldSend({ key: 'a', shiftKey: false })).toBe(false);
+  });
+
+  it('does not send while the IME is composing', () => {
+    expect(composerEnterShouldSend({ key: 'Enter', shiftKey: false, isComposing: true })).toBe(false);
+    expect(
+      composerEnterShouldSend({
+        key: 'Enter',
+        shiftKey: false,
+        nativeEvent: { isComposing: true },
+      }),
+    ).toBe(false);
+    expect(
+      composerEnterShouldSend({
+        key: 'Enter',
+        shiftKey: false,
+        nativeEvent: { keyCode: 229 },
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('chatModKShouldFocusHistory', () => {
+  const base = {
+    key: 'k',
+    metaKey: false,
+    ctrlKey: true,
+    altKey: false,
+    shiftKey: false,
+    overlayOpen: false,
+  };
+
+  it('focuses history search with Ctrl/Cmd+K', () => {
+    expect(chatModKShouldFocusHistory(base)).toBe(true);
+    expect(chatModKShouldFocusHistory({ ...base, ctrlKey: false, metaKey: true })).toBe(true);
+  });
+
+  it('yields to overlays, Shift, and Alt', () => {
+    expect(chatModKShouldFocusHistory({ ...base, overlayOpen: true })).toBe(false);
+    expect(chatModKShouldFocusHistory({ ...base, shiftKey: true })).toBe(false);
+    expect(chatModKShouldFocusHistory({ ...base, altKey: true })).toBe(false);
+    expect(chatModKShouldFocusHistory({ ...base, ctrlKey: false, metaKey: false })).toBe(false);
   });
 });
 

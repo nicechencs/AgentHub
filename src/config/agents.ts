@@ -54,6 +54,8 @@ export interface AgentMeta {
   logoSvgSrc?: string;
   /** logo 图片容器的本地对比背景色；首字母回退不使用该值 */
   logoBackground?: string;
+  /** `glyph` 符号（边距在 SVG 里）；`bleed` 整图贴边。缺省 `glyph` */
+  logoFit?: 'glyph' | 'bleed';
   /**
    * Install channels from backend catalog.
    * Empty until `applyAgentCatalog` / hydrate runs.
@@ -75,6 +77,7 @@ export const AGENT_DISPLAY: Readonly<
       readonly logoSrc?: string;
       readonly logoSvgSrc?: string;
       readonly logoBackground?: string;
+      readonly logoFit?: 'glyph' | 'bleed';
     }
   >
 > = Object.freeze({
@@ -135,13 +138,15 @@ export const AGENT_DISPLAY: Readonly<
     letter: 'Z',
     colorKey: 'zcode',
     logoSrc: zcodeLogo,
-    logoBackground: '#ffffff',
+    logoBackground: '#333333',
+    logoFit: 'bleed',
   },
   kiro: {
     letter: 'K',
     colorKey: 'kiro',
     logoSvgSrc: kiroLogoSvg,
     logoBackground: '#9046ff',
+    logoFit: 'bleed',
   },
 });
 
@@ -169,6 +174,7 @@ export function agentMetaFromCatalogEntry(entry: AgentCatalogEntryDto): AgentMet
     logoSrc: AGENT_DISPLAY[entry.key]?.logoSrc,
     logoSvgSrc: AGENT_DISPLAY[entry.key]?.logoSvgSrc,
     logoBackground: AGENT_DISPLAY[entry.key]?.logoBackground,
+    logoFit: AGENT_DISPLAY[entry.key]?.logoFit,
     installChannels: entry.installChannels.map((ch) => ({
       id: ch.id,
       label: ch.label,
@@ -226,6 +232,7 @@ export function resolveAgentMeta(agentId: AgentKey): AgentMeta {
     logoSrc: AGENT_DISPLAY[agentId]?.logoSrc,
     logoSvgSrc: AGENT_DISPLAY[agentId]?.logoSvgSrc,
     logoBackground: AGENT_DISPLAY[agentId]?.logoBackground,
+    logoFit: AGENT_DISPLAY[agentId]?.logoFit,
     installChannels: [],
     occupancy: 'exclusive',
   };

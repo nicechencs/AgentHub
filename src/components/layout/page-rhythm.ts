@@ -119,8 +119,10 @@ export const pageRhythm = {
   inspectTitle: 'min-w-0 truncate text-body font-medium leading-tight text-primary',
   /** 常规页外壳：铺满主列，与 Skills / Projects 右缘对齐 */
   pageShell: `w-full min-w-0 ${pageInsetTw.x} ${pageInsetTw.y}`,
-  /** Chat 消息列：居中阅读宽。页头不进此列。设置表单正文（备份分栏页除外）共用同一列。 */
+  /** Chat 消息列：居中阅读宽。页头不进此列。 */
   readingColumn: 'mx-auto w-full max-w-3xl',
+  /** 设置表单 / 总览较宽阅读列。 */
+  overviewColumn: 'mx-auto w-full max-w-6xl',
   /** 整窗顶栏高度（36px） */
   topChrome: 'h-9',
   /** 图标轨格子：48×48，与收起侧栏同宽 */

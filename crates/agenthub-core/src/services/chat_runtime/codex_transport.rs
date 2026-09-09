@@ -24,7 +24,11 @@ use crate::utils::process::{
 };
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(8);
-const MAX_STDOUT_LINE_BYTES: usize = 1024 * 1024;
+/// Hard cap for one JSON-RPC line. ACP image blocks embed base64, and the
+/// product allows 10MB files (~13.3MB encoded) plus wrapping. Keep a bound so
+/// a runaway process cannot grow without limit. Do not send path-only image
+/// blocks: ACP requires `data`, and this client advertises no fs read.
+pub(crate) const MAX_STDOUT_LINE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_STDERR_BYTES: usize = 64 * 1024;
 const WIRE_CHANNEL_CAPACITY: usize = 128;
 const EVENT_QUEUE_CAPACITY: usize = 256;

@@ -29,6 +29,7 @@ import {
   isCommandSearchMode,
   type ChatActionDef,
 } from './chat-actions';
+import { composerEnterShouldSubmit } from './chat-composer-model';
 import { lastTurnOutcome } from './chat-turn-outcome';
 import { kiroChatAllowsCommandSearch, kiroChatStance } from './chat-kiro-model';
 import { bindRuntimeSnapshotToAgent, isRuntimeSessionLocked } from './chat-runtime-model';
@@ -178,6 +179,7 @@ export function useChatPage() {
   const navigate = useNavigate();
   const [searchFocusNonce, setSearchFocusNonce] = useState(0);
   const [historyRevealNonce, setHistoryRevealNonce] = useState(0);
+  const [composerFocusNonce, setComposerFocusNonce] = useState(0);
   const [commandIndex, setCommandIndex] = useState(0);
   const hasLatestReply = useMemo(
     () => messages.some((m) => m.role === 'agent' && m.content.trim()),
@@ -267,6 +269,7 @@ export function useChatPage() {
       }
       if (action.kind === 'draft' && action.draftText) {
         setDraft(action.draftText);
+        setComposerFocusNonce((n) => n + 1);
         return;
       }
       if (action.id === 'new-session') {
@@ -344,7 +347,12 @@ export function useChatPage() {
         setDraft('');
         return true;
       }
-      if (e.key === 'Enter' && !e.shiftKey) {
+      if (composerEnterShouldSubmit({
+        key: e.key,
+        shiftKey: e.shiftKey,
+        composing: e.nativeEvent.isComposing,
+        keyCode: e.nativeEvent.keyCode,
+      })) {
         e.preventDefault();
         const action = commandItems[clampActionIndex(commandIndex, commandItems.length)];
         if (action) runChatAction(action);
@@ -600,6 +608,8 @@ export function useChatPage() {
     retryLast: send.retryLast,
     handleCancel: send.handleCancel,
     queuedFollowUp: send.queuedFollowUp,
+    queuedFollowUpCount: send.queuedFollowUpCount,
+    composerFocusNonce,
     clearQueuedFollowUp: send.clearQueuedFollowUp,
     continueLegacyGrok: send.continueLegacyGrok,
     runtime: activeRuntime,

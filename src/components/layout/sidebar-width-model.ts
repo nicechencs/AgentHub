@@ -35,6 +35,18 @@ export const ROUTES_NAV_WIDTH = {
   stepLarge: 48,
 } as const satisfies NavWidthPolicy;
 
+/** Matches the previous chat history rail (`w-60`). Hidden collapse is `w-0`. */
+export const CHAT_RAIL_WIDTH = {
+  defaultWidth: 240,
+  collapsedWidth: 0,
+  minRatio: 0.12,
+  maxRatio: 0.28,
+  minPx: 176,
+  minCap: 200,
+  step: 16,
+  stepLarge: 48,
+} as const satisfies NavWidthPolicy;
+
 export const SIDEBAR_WIDTH_DEFAULT = PRIMARY_NAV_WIDTH.defaultWidth;
 export const SIDEBAR_WIDTH_COLLAPSED = PRIMARY_NAV_WIDTH.collapsedWidth;
 export const SIDEBAR_WIDTH_MIN_RATIO = PRIMARY_NAV_WIDTH.minRatio;

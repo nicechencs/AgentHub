@@ -33,6 +33,17 @@ import { agentDisplayName } from '@/config/agents';
 import type { AgentKey, Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
+  composerEnterShouldSubmit,
+  composerPrimaryAction,
+  composerQueuedFollowUpView,
+  composerShortcutKind,
+  composerShortcutMessageKey,
+  composerShouldRestoreFocus,
+  composerShowsSubmitButton,
+  composerStopMessageKey,
+  composerSubmitMessageKey,
+} from './chat-composer-model';
+import {
   autoApproveFooter,
   blockerCopy,
   blockerPrimaryTarget,
@@ -73,6 +84,7 @@ export function ChatComposer({
   onSteer,
   onQueueAfterTurn,
   queuedFollowUp = null,
+  queuedFollowUpCount = 0,
   onClearQueuedFollowUp,
   onCancel,
   onSelectAgent,
@@ -94,6 +106,7 @@ export function ChatComposer({
   paneHeight = null,
   paneRef,
   showBlockerBanner = true,
+  focusNonce = 0,
 }: {
   draft: string;
   setDraft: (v: string) => void;
@@ -117,7 +130,9 @@ export function ChatComposer({
   onSteer?: () => void;
   onQueueAfterTurn?: () => void;
   queuedFollowUp?: string | null;
+  queuedFollowUpCount?: number;
   onClearQueuedFollowUp?: () => void;
+  focusNonce?: number;
   onCancel: () => void;
   onSelectAgent: (id: AgentKey) => void;
   onSwitchConnection: (ticketId: string) => void;
@@ -144,15 +159,22 @@ export function ChatComposer({
   const firstBlocker = blockers[0] ?? null;
   const hiddenBlocked = firstBlocker?.kind === 'hiddenAgents' ||
     active.agentIds.some((id) => hiddenIds.has(id));
-  const canSend =
-    Boolean(draft.trim()) &&
-    blockers.length === 0 &&
-    (!sending || Boolean(onSteer) || Boolean(onQueueAfterTurn));
-  const busySendHint = onSteer
-    ? t('chat.composer.add')
-    : onQueueAfterTurn
-      ? t('chat.composer.sendAfterTurn')
-      : t('chat.composer.send');
+  const action = composerPrimaryAction({
+    hasDraft: Boolean(draft.trim()),
+    blocked: blockers.length > 0,
+    sending,
+    canSteer: Boolean(onSteer),
+    canQueue: Boolean(onQueueAfterTurn),
+  });
+  const showSubmit = composerShowsSubmitButton({ sending, action });
+  const shortcutKind = composerShortcutKind({
+    blocked: blockers.length > 0,
+    sending,
+    canSteer: Boolean(onSteer),
+    canQueue: Boolean(onQueueAfterTurn),
+  });
+  const queueView = composerQueuedFollowUpView(queuedFollowUp, queuedFollowUpCount);
+  const stopCopy = t(composerStopMessageKey(canceling));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const syncTextareaHeight = useCallback(() => {
@@ -176,12 +198,28 @@ export function ChatComposer({
   }, [draft, fillHeight, syncTextareaHeight]);
 
   useEffect(() => {
+    if (!focusNonce) return;
+    textareaRef.current?.focus();
+  }, [focusNonce]);
+
+  useEffect(() => {
     const onResize = () => syncTextareaHeight();
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, [syncTextareaHeight]);
 
   const textareaDisabled = hiddenBlocked;
+  const keepComposerFocus = useCallback(() => {
+    if (!composerShouldRestoreFocus({ textareaDisabled })) return;
+    textareaRef.current?.focus();
+  }, [textareaDisabled]);
+  const submitComposer = useCallback(() => {
+    if (action === 'steer') onSteer?.();
+    else if (action === 'queue') onQueueAfterTurn?.();
+    else if (action === 'send') onSend();
+    keepComposerFocus();
+    requestAnimationFrame(keepComposerFocus);
+  }, [action, keepComposerFocus, onQueueAfterTurn, onSend, onSteer]);
   const droppedImages = useCallback((files: FileList | null | undefined) => {
     if (!onPasteImages) return false;
     const images = Array.from(files ?? []).filter((file) => file.type.startsWith('image/'));
@@ -191,9 +229,7 @@ export function ChatComposer({
   }, [onPasteImages]);
   const sendHint = firstBlocker
     ? blockerCopy(t, firstBlocker).text
-    : sending
-      ? busySendHint
-      : t('chat.composer.send');
+    : t(composerSubmitMessageKey(action));
   const selectedAgent = active.agentIds[0] ?? '';
   const approveFooter = autoApproveFooter(t, active.allowDangerous, active.agentIds[0] ?? null);
   const pickerEmpty = chatAgentPickerEmptyKind({
@@ -261,18 +297,22 @@ export function ChatComposer({
           rows={1}
           value={draft}
           disabled={textareaDisabled}
+          enterKeyHint="send"
+          aria-keyshortcuts="Enter"
           onChange={(e) => setDraft(e.target.value)}
           onInput={syncTextareaHeight}
           onKeyDown={(e) => {
             if (onDraftKeyDown?.(e)) return;
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              if (canSend) {
-                if (sending && onSteer) onSteer();
-                else if (sending && onQueueAfterTurn) onQueueAfterTurn();
-                else onSend();
-              }
+            if (!composerEnterShouldSubmit({
+              key: e.key,
+              shiftKey: e.shiftKey,
+              composing: e.nativeEvent.isComposing,
+              keyCode: e.nativeEvent.keyCode,
+            })) {
+              return;
             }
+            e.preventDefault();
+            if (action) submitComposer();
           }}
           onPaste={(e) => {
             if (droppedImages(e.clipboardData?.files)) e.preventDefault();
@@ -291,10 +331,18 @@ export function ChatComposer({
           }}
           aria-label={t('chat.composer.inputAria')}
         />
-        {queuedFollowUp ? (
-          <div className="flex items-center gap-2 px-4 pb-1">
-            <p className="min-w-0 flex-1 truncate text-meta text-muted">
-              {t('chat.composer.queuedFollowUp')}：{queuedFollowUp}
+        {queueView ? (
+          <div
+            className="mx-3 mb-1 flex items-center gap-2 rounded-btn bg-subtle px-2 py-1"
+            role="status"
+            aria-live="polite"
+          >
+            <p className="min-w-0 flex-1 truncate text-meta text-secondary">
+              {t('chat.composer.queuedCount', { count: queueView.count })}
+              {' · '}
+              {t('chat.composer.queuedHint')}
+              {'：'}
+              {queueView.preview}
             </p>
             {onClearQueuedFollowUp ? (
               <Button type="button" size="sm" variant="ghost" onClick={onClearQueuedFollowUp}>
@@ -303,6 +351,9 @@ export function ChatComposer({
             ) : null}
           </div>
         ) : null}
+        <p className="px-4 pb-1 text-meta text-muted" data-composer-shortcut="">
+          {t(composerShortcutMessageKey(shortcutKind))}
+        </p>
         <div className="flex shrink-0 items-center gap-1.5 border-t border-border/50 px-2 py-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -561,42 +612,37 @@ export function ChatComposer({
           )}
 
           {sending ? (
-            <>
-              <Button
-                size="icon"
-                variant={canSend ? 'default' : 'secondary'}
-                className="h-8 w-8 shrink-0 rounded-full"
-                disabled={!canSend}
-                onClick={() => {
-                  if (onSteer) onSteer();
-                  else if (onQueueAfterTurn) onQueueAfterTurn();
-                  else onSend();
-                }}
-                data-help="chat-send"
-                aria-label={sendHint}
-                title={sendHint}
-              >
-                <SendHorizontal className="h-4 w-4" />
-              </Button>
-              <Button size="sm" variant="dangerOutline" className="shrink-0" disabled={canceling} onClick={onCancel}>
-                <Square className="h-3.5 w-3.5" />
-                {t('chat.composer.stop')}
-              </Button>
-            </>
-          ) : (
             <Button
+              type="button"
+              size="sm"
+              variant="dangerOutline"
+              className="shrink-0"
+              disabled={canceling}
+              aria-busy={canceling}
+              data-help="chat-stop"
+              aria-label={stopCopy}
+              title={stopCopy}
+              onClick={onCancel}
+            >
+              <Square className="h-3.5 w-3.5" />
+              {stopCopy}
+            </Button>
+          ) : null}
+          {showSubmit ? (
+            <Button
+              type="button"
               size="icon"
-              variant={canSend ? 'default' : 'secondary'}
-              className="h-8 w-8 rounded-full"
-              disabled={!canSend}
-              onClick={onSend}
+              variant={action ? 'default' : 'secondary'}
+              className="h-8 w-8 shrink-0 rounded-full"
+              disabled={!action}
+              onClick={submitComposer}
               data-help="chat-send"
-              aria-label={t('chat.composer.send')}
+              aria-label={sendHint}
               title={sendHint}
             >
               <SendHorizontal className="h-4 w-4" />
             </Button>
-          )}
+          ) : null}
         </div>
       </div>
       </div>

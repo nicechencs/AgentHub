@@ -8,12 +8,13 @@ import {
   statusBarForwardMessageKey,
 } from '@/components/layout/status-bar-model';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { Hint } from '@/components/ui/tooltip';
 import { getLocalGatewayStatus } from '@/lib/api/adapter';
 import { onLocalForwardLifecycle } from '@/lib/backend/tauri/local-forward-events';
 import { ROUTES_BOARD_PATH } from '@/lib/routes-path';
 import { cn } from '@/lib/utils';
 
-/** Window-bottom chrome: local forwarding on the left, installed agents on the right. */
+/** 窗口底栏：左边本机转发，右边已安装 Agent。 */
 export function StatusBar() {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -69,24 +70,25 @@ export function StatusBar() {
   const kind = statusBarForwardKind({ available, running, restarting });
   const stateLabel = t(statusBarForwardMessageKey(kind));
   const name = t('chrome.localForward');
-  const aria = `${name} ${stateLabel}`;
+  const aria = `${name} ${stateLabel} · ${t('chrome.localForwardOpenBoard')}`;
 
   return (
     <footer className={pageRhythm.statusBar} data-status-bar="">
-      <button
-        type="button"
-        className={pageRhythm.statusBarItem}
-        aria-label={aria}
-        title={aria}
-        onClick={() => navigate(ROUTES_BOARD_PATH)}
-      >
-        <span
-          aria-hidden
-          className={cn('h-1.5 w-1.5 shrink-0 rounded-full', statusBarForwardDotClass(kind))}
-        />
-        <span className="truncate">{name}</span>
-        <span className="truncate">{stateLabel}</span>
-      </button>
+      <Hint label={aria}>
+        <button
+          type="button"
+          className={pageRhythm.statusBarItem}
+          aria-label={aria}
+          onClick={() => navigate(ROUTES_BOARD_PATH)}
+        >
+          <span
+            aria-hidden
+            className={cn('h-1.5 w-1.5 shrink-0 rounded-full', statusBarForwardDotClass(kind))}
+          />
+          <span className="truncate">{name}</span>
+          <span className="truncate">{stateLabel}</span>
+        </button>
+      </Hint>
       <AgentStatusStrip />
     </footer>
   );

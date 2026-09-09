@@ -20,7 +20,7 @@ describe('SidebarContext routes-area wiring', () => {
     expect(ctx).not.toContain('onEnterRoutesArea');
     expect(ctx).not.toContain('onLeaveRoutesArea');
     expect(ctx).not.toContain('sessionCollapsed');
-    expect(ctx).toContain('expandPrimarySidebar');
+    expect(ctx).not.toContain('expandPrimarySidebar');
   });
 
   it('RoutesLayout does not auto-expand or auto-collapse the primary sidebar', () => {

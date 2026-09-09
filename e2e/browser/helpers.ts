@@ -63,7 +63,7 @@ export async function addClaudeApiKeyAndSwitch(page: Page): Promise<void> {
 
   const panel = page.locator('[data-side-inspect]');
   await expect(panel.getByRole('heading', { name: /添加 API Key/ })).toBeVisible();
-  await panel.getByLabel('名称', { exact: true }).fill(CLAUDE_LOGIN_LABEL);
+  await panel.getByLabel('名称（可选）', { exact: true }).fill(CLAUDE_LOGIN_LABEL);
   const keyField = panel.getByPlaceholder('API Key').or(panel.locator('input[type="password"]'));
   await expect(keyField.first()).toBeVisible({ timeout: 20_000 });
   await keyField.first().fill(MOCK_API_KEY);

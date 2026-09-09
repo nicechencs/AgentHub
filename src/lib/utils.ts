@@ -2,13 +2,13 @@ import { clsx, type ClassValue } from 'clsx';
 import { extendTailwindMerge } from 'tailwind-merge';
 
 /**
- * `text-display` / `text-title` / `text-headline` / `text-body` / `text-meta` 是字号，不是颜色。
+ * `text-display` / `text-title` / `text-body` / `text-meta` 是字号，不是颜色。
  * 不注册的话 twMerge 会把它们和 `text-primary` 当成同一组并丢掉字号。
  */
 const twMerge = extendTailwindMerge({
   extend: {
     classGroups: {
-      'font-size': [{ text: ['display', 'title', 'headline', 'body', 'meta', '2xs'] }],
+      'font-size': [{ text: ['display', 'title', 'body', 'meta', '2xs'] }],
     },
   },
 });

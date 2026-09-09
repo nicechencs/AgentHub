@@ -36,7 +36,7 @@ The runtime source of truth is `src/styles/tokens.ts`. CSS variables are injecte
 
 ### 3.1 Type scale
 
-Five semantic text roles are allowed for new UI:
+Three everyday text roles, plus one empty-state size. Do not add another pixel size.
 
 | Role | Token/class | Size | Use |
 |---|---|---:|---|
@@ -46,7 +46,9 @@ Five semantic text roles are allowed for new UI:
 | Body | `text-body` | 14px | Body copy, buttons, list names, menus, form values, shell page titles |
 | Meta | `text-meta` | 12px | Table headings, paths, timestamps, badges, hints, diagnostic text |
 
-Existing `text-lg`/`text-xl`, `text-sm`/`text-base`, and `text-xs`/`text-2xs` aliases map onto title / body / meta. Do not introduce arbitrary `text-[Npx]` values.
+Section titles stay at body size and use font weight. Dialog titles stay at body size; they are not page titles.
+
+Existing `text-lg`/`text-xl`, `text-sm`/`text-base`, and `text-xs`/`text-2xs` aliases map onto title / body / meta. New code should write the semantic names. Do not introduce `text-[Npx]` or another everyday size.
 
 ### 3.2 Surfaces and color
 
@@ -83,6 +85,17 @@ There are two content systems:
 | Edge column | `pageRhythm.pageShell` / `workbenchX` from `pageEdge.inset` (currently 12px) | Dashboard, tables, lists, split workbenches, Routes. Change `pageEdge.inset` in `src/components/layout/page-rhythm.ts` to retune every page edge. When a split pane is open, the scrolling list uses `workbenchXSplit` (`inset` left; canvas pad + margin on the right) so the scrollbar is not flush against the separator. |
 
 Do not introduce page-private `max-w-*` values or a second left-aligned reading width. `fullBleed` describes height and scrolling behavior, not a width system. The shell has no outer gutter; `pageEdge.canvas` (12px) is only the split-list right gap beside the separator.
+
+### 3.5 Agent identity marks
+
+All Agent logos render through `AgentLogo`. Do not import the image in a page.
+
+| Role | Size | Prop |
+|---|---:|---|
+| List, rail, table, chip | 24px | `sm` (default) |
+| Chat avatar, picker card | 32px | `md` |
+
+Do not add a third size. The outer tile is a squircle (`rounded-mark`) with a hairline border; optical padding lives in the SVG, not as extra component inset. Glyphs sit on a contrast plate (`logoBackground`); official full-bleed app icons use `logoFit: 'bleed'`. Brand marks do not invert with the app theme. Asset contract and intake checklist: [agent-logos README](../../src/assets/agent-logos/README.md). Adding a new Agent: [adding-an-agent.md](../guides/adding-an-agent.md).
 
 ## 4. Component rules
 

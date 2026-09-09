@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { RuntimeRequest, RuntimeSnapshot } from '@/lib/api/chat';
+import { translate, type TranslateFn } from '@/lib/i18n';
 import {
   acceptsRuntimeSnapshot,
   bindRuntimeSnapshotToAgent,
   canSubmitRuntimeQuestions,
   runtimeReplyFields,
   requestAllowsAlways,
+  runtimeRequestTitle,
   isLatestRuntimeRead,
   isRuntimeActive,
   isRuntimeChatAgent,
@@ -104,5 +106,28 @@ describe('chat runtime transport guards', () => {
         { id: 'always', kind: 'allow_always' },
       ],
     })).toBe(true);
+    expect(requestAllowsAlways({
+      permissionOptions: [
+        { id: 'once', kind: 'allow_once' },
+        { id: 'tool', kind: 'allow_always_tool' },
+      ],
+    })).toBe(true);
+    expect(requestAllowsAlways({
+      permissionOptions: [{ id: 'args', kind: 'allow_always_tool_args' }],
+    })).toBe(true);
+    expect(requestAllowsAlways({
+      permissionOptions: [{ id: 'edits', kind: 'allow_edits_for_session' }],
+    })).toBe(false);
+  });
+  it('keeps file cards on 修改文件 and maps English ACP kinds', () => {
+    const t: TranslateFn = (key, params) => translate('zh', key, params);
+    expect(runtimeRequestTitle(t, { kind: 'file', title: 'Read' })).toBe('修改文件');
+    expect(runtimeRequestTitle(t, { kind: 'file', title: '/tmp/a.ts' })).toBe('修改文件');
+    expect(runtimeRequestTitle(t, { kind: 'command', title: 'execute' })).toBe('执行命令');
+    expect(runtimeRequestTitle(t, { kind: 'command', title: 'Read' })).toBe('读取文件');
+    expect(runtimeRequestTitle(t, { kind: 'command', title: '写文件' })).toBe('写文件');
+    expect(runtimeRequestTitle(t, { kind: 'command', title: '' })).toBe('需要确认');
+    expect(runtimeRequestTitle(t, { kind: 'question', title: '' })).toBe('需要你的回答');
+    expect(runtimeRequestTitle(t, { kind: 'question', title: '选一个模型' })).toBe('选一个模型');
   });
 });

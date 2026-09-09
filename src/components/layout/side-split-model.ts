@@ -10,7 +10,7 @@ export const SIDE_SPLIT_WIDTH_FLOOR = 240;
 export const SIDE_SPLIT_MAIN_MIN = 380;
 export const SIDE_SPLIT_MAIN_FLOOR = 280;
 /** Inspect pane is flush; keep 0 so clamp math stays in one place. */
-export const SIDE_SPLIT_FRAME_PAD_RIGHT = 0;
+export const SIDE_SPLIT_FRAME_PAD_X = 0;
 export const SIDE_SPLIT_FRAME_PAD_Y = 0;
 export const SIDE_SPLIT_SEPARATOR_W = pageEdgePx.separator;
 export const SIDE_SPLIT_WIDTH_STEP = 16;
@@ -51,7 +51,7 @@ export function clampSideSplitWidth(width: number, containerWidth: number): numb
   if (containerWidth <= 0) {
     return Math.max(SIDE_SPLIT_WIDTH_FLOOR, requested);
   }
-  const chrome = SIDE_SPLIT_SEPARATOR_W + SIDE_SPLIT_FRAME_PAD_RIGHT;
+  const chrome = SIDE_SPLIT_SEPARATOR_W + SIDE_SPLIT_FRAME_PAD_X * 2;
   const usable = Math.max(0, containerWidth - chrome);
   const mainReserve =
     usable >= SIDE_SPLIT_MAIN_MIN + SIDE_SPLIT_WIDTH_MIN

@@ -4,7 +4,7 @@ import {
   clampSideSplitWidth,
   persistSideSplitWidth,
   readStoredSideSplitWidth,
-  SIDE_SPLIT_FRAME_PAD_RIGHT,
+  SIDE_SPLIT_FRAME_PAD_X,
   SIDE_SPLIT_FRAME_PAD_Y,
   SIDE_SPLIT_MAIN_MIN,
   SIDE_SPLIT_MAIN_FLOOR,
@@ -16,12 +16,12 @@ import {
 } from './side-split-model';
 
 function usableWidth(containerWidth: number): number {
-  return Math.max(0, containerWidth - SIDE_SPLIT_SEPARATOR_W - SIDE_SPLIT_FRAME_PAD_RIGHT);
+  return Math.max(0, containerWidth - SIDE_SPLIT_SEPARATOR_W - SIDE_SPLIT_FRAME_PAD_X * 2);
 }
 
 describe('side-split frame pad', () => {
   it('keeps the inspect pane flush to the sash', () => {
-    expect(SIDE_SPLIT_FRAME_PAD_RIGHT).toBe(0);
+    expect(SIDE_SPLIT_FRAME_PAD_X).toBe(0);
     expect(SIDE_SPLIT_FRAME_PAD_Y).toBe(0);
   });
 });
