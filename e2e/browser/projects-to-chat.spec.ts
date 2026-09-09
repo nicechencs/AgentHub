@@ -50,13 +50,17 @@ test('Projects continue with a missing cwd keeps history and offers rebind', asy
   await expect(page.getByRole('textbox', { name: '消息输入' })).toBeVisible({
     timeout: 20_000,
   });
-  await expect(page.getByText('原工作目录不存在')).toBeVisible();
-  await expect(page.getByText('在已删除的临时目录里继续改登录页', { exact: false })).toBeVisible();
+  const missing = page.locator('[data-help="chat-cwd-missing"]');
+  await expect(missing).toBeVisible();
+  await expect(missing.getByText('原工作目录不存在', { exact: true })).toBeVisible();
+  await expect(page.getByText('在已删除的临时目录里继续改登录页', { exact: false })).toBeVisible({
+    timeout: 20_000,
+  });
   await expect(page.getByRole('button', { name: '改绑到项目目录' })).toBeVisible();
   await expect(page.getByRole('button', { name: '选文件夹' })).toBeVisible();
   await expect(page.getByText(/cwd is not an existing directory|invalid_arg/i)).toHaveCount(0);
 
   await page.getByRole('button', { name: '改绑到项目目录' }).click();
-  await expect(page.getByText('原工作目录不存在')).toHaveCount(0);
+  await expect(missing).toHaveCount(0);
   await expect(page.getByText('在已删除的临时目录里继续改登录页', { exact: false })).toBeVisible();
 });
