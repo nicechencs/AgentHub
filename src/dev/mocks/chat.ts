@@ -468,8 +468,14 @@ export function createMockChatPort(): ChatPort {
       const cur = mockConversations[idx];
       const agentIds = patch.agentIds ? requireSingleAgent(patch.agentIds) : cur.agentIds;
       const cwd = patch.cwd !== undefined ? patch.cwd : cur.cwd;
-      const resetNative =
-        JSON.stringify(agentIds) !== JSON.stringify(cur.agentIds) || cwd !== cur.cwd;
+      if (patch.cwd !== undefined && mockCwdMissing(cur.cwd) && !(cwd?.trim())) {
+        throw new Error('原工作目录不存在时，请改绑到仍存在的目录');
+      }
+      const agentsChanged = JSON.stringify(agentIds) !== JSON.stringify(cur.agentIds);
+      const cwdChanged = cwd !== cur.cwd;
+      const keepNativeOnCwdRebind =
+        Boolean(cur.nativeSessionId) && mockCwdMissing(cur.cwd) && cwdChanged;
+      const resetNative = agentsChanged || (cwdChanged && !keepNativeOnCwdRebind);
       const next: Conversation = {
         ...cur,
         title: patch.title ?? cur.title,

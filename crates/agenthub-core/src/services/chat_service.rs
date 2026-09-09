@@ -241,8 +241,14 @@ impl ChatService {
                 .as_deref()
                 .is_some_and(|sid| !sid.trim().is_empty())
                 || self.repo.has_messages(id)?;
-            let rebind_missing_cwd =
-                agent_ids.is_none() && cwd.is_some() && stored_cwd_missing(conv.cwd.as_deref());
+            let rebound_cwd = cwd
+                .as_ref()
+                .and_then(|inner| inner.as_deref())
+                .map(str::trim)
+                .filter(|path| !path.is_empty());
+            let rebind_missing_cwd = agent_ids.is_none()
+                && rebound_cwd.is_some()
+                && stored_cwd_missing(conv.cwd.as_deref());
             if (started
                 || self
                     .runtime
@@ -271,6 +277,12 @@ impl ChatService {
         }
         if let Some(c) = cwd {
             let next = normalize_cwd(c);
+            if next.is_none() && stored_cwd_missing(conv.cwd.as_deref()) {
+                return Err(AppError::message(
+                    "invalid_arg",
+                    "原工作目录不存在时，请改绑到仍存在的目录",
+                ));
+            }
             if let Some(ref path) = next {
                 validate_existing_cwd(path)?;
             }

@@ -92,6 +92,28 @@ fn crud_and_cascade_delete() {
 }
 
 #[test]
+fn list_messages_keeps_insert_order_when_ids_sort_backwards() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let repo = ChatRepo::new(db);
+    let c = sample_conv("c-order", vec![AgentId::Claude]);
+    repo.create_conversation(&c).unwrap();
+
+    let mut user = sample_msg("zzz-user", "c-order", 1, ChatRole::User);
+    user.content = "先改登录页".into();
+    let mut agent = sample_msg("aaa-agent", "c-order", 1, ChatRole::Agent);
+    agent.content = "好，先看现有实现".into();
+    repo.insert_message(&user).unwrap();
+    repo.insert_message(&agent).unwrap();
+
+    let rows = repo.list_messages("c-order").unwrap();
+    assert_eq!(
+        rows.iter().map(|row| row.content.as_str()).collect::<Vec<_>>(),
+        vec!["先改登录页", "好，先看现有实现"]
+    );
+}
+
+#[test]
 fn insert_turn_messages_allocates_monotonic_turn() {
     let dir = tempdir().unwrap();
     let db = Database::open(&dir.path().join("t.db")).unwrap();

@@ -1701,3 +1701,64 @@ fn rebind_missing_cwd_allowed_after_session_starts() {
     assert_eq!(again.id, conv.id);
     assert_eq!(chat.list_messages(&again.id).unwrap().len(), 2);
 }
+
+#[test]
+fn rebind_missing_cwd_rejects_clear() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(RecordingProcessRunner::new()),
+    ));
+    let chat = ChatService::new(db, run);
+    let dead = "/var/folders/zz/T/.tmp-agenthub-missing/workspace";
+    let conv = chat
+        .open_from_session(
+            AgentId::Claude,
+            Some("sess-missing-cwd-clear".into()),
+            Some(dead.into()),
+            Some("临时目录对话".into()),
+            vec![ChatHistoryTurn {
+                role: ChatRole::User,
+                content: "先改登录页".into(),
+            }],
+        )
+        .unwrap();
+
+    let err = chat
+        .update_conversation(&conv.id, None, None, Some(None), None)
+        .unwrap_err();
+    assert_eq!(err.code(), "invalid_arg");
+    assert_eq!(conv.cwd.as_deref(), Some(dead));
+    let still = chat.get_conversation(&conv.id).unwrap();
+    assert_eq!(still.cwd.as_deref(), Some(dead));
+    assert_eq!(
+        still.native_session_id.as_deref(),
+        Some("sess-missing-cwd-clear")
+    );
+}
+
+#[test]
+fn rebind_missing_cwd_rejects_clear_before_session_starts() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(RecordingProcessRunner::new()),
+    ));
+    let chat = ChatService::new(db, run);
+    let dead = "/var/folders/zz/T/.tmp-agenthub-missing/workspace";
+    let conv = chat
+        .create_conversation(vec![AgentId::Claude], Some(dead.into()))
+        .unwrap();
+
+    let err = chat
+        .update_conversation(&conv.id, None, None, Some(None), None)
+        .unwrap_err();
+    assert_eq!(err.code(), "invalid_arg");
+    assert!(err.to_string().contains("改绑到仍存在的目录"));
+    assert_eq!(
+        chat.get_conversation(&conv.id).unwrap().cwd.as_deref(),
+        Some(dead)
+    );
+}

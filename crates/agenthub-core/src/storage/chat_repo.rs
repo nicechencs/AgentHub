@@ -244,7 +244,9 @@ impl ChatRepo {
         })
     }
 
-    /// Messages ordered by turn ASC, then id ASC (stable within a turn).
+    /// Messages ordered by turn, then insert order within a turn.
+    ///
+    /// `id` is a UUID, so `id ASC` can flip user/agent of the same turn.
     pub fn list_messages(&self, conversation_id: &str) -> Result<Vec<ChatMessage>> {
         self.db.with_conn(|conn| {
             let mut stmt = conn.prepare(
@@ -253,7 +255,7 @@ impl ChatRepo {
                        status, exit_code, duration_ms, error, created_at
                 FROM chat_messages
                 WHERE conversation_id = ?1
-                ORDER BY turn ASC, id ASC
+                ORDER BY turn ASC, rowid ASC
                 "#,
             )?;
             let rows = stmt.query_map(params![conversation_id], map_message_row)?;
