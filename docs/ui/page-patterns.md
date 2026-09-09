@@ -328,7 +328,7 @@ Sub2API is a separate site-management workbench, not a Routes subpage or a repla
 
 ## 8. Chat
 
-Chat is a one-conversation, one-Agent workbench with a session rail, transcript, process panel, and composer.
+Chat is a one-conversation, one-Agent workbench with a session rail, transcript, process panel, and composer. The quality bar versus Claude Code, Cursor Chat, and the Codex app is [Chat 体验标杆](chat-experience-bar.md).
 
 - The rail supports new conversation, search by title and working directory, day grouping, selection, rename, and delete confirmation. The rail width is dragged from the separator and remembered (`agenthub:chat-rail-width`).
 - The current conversation header exposes Agent identity, working directory, automatic-approval state, and connection context. A missing working directory is a blocker, not an automatic modal.

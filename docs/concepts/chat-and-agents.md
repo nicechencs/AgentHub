@@ -88,6 +88,7 @@ Agent catalog/registry 描述安装、配置、账号、skills、usage、runtime
 ## 相关页面
 
 - [当前实现状态](../STATUS.md)
+- [Chat 体验标杆](../ui/chat-experience-bar.md)
 - [Codex Chat B2](../archive/chat-codex-b2.md)
 - [Architecture overview](../architecture/overview.md)
 - [Core and runtime](../architecture/core-runtime.md)
