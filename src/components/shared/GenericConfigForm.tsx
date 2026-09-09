@@ -36,7 +36,7 @@ import {
   configFieldSuggestionPickLabel,
   configFieldUnsupported,
 } from './config-field-copy';
-import { collapseDoubledModelId } from '@/lib/provider-detect/fields';
+import { collapseDoubledModelId } from '@/lib/provider-detect';
 
 export interface GenericConfigFormProps {
   schema: AgentConfigSchemaDto;
