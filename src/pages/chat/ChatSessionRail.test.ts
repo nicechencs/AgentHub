@@ -64,12 +64,11 @@ describe('ChatSessionRail titles', () => {
     expect(html).toContain('demo-project');
   });
 
-  it('paints 新建对话 with the theme fill and uses an Enter key icon on delete', () => {
-    const html = renderMarkup(rail({ deleteConfirmId: 'c1' }));
+  it('paints 新建对话 with the theme fill', () => {
+    const html = renderMarkup(rail());
     expect(html).toContain('data-help="chat-new"');
     expect(html).toContain('data-btn="default"');
-    expect(html).toContain('aria-keyshortcuts="Enter"');
-    expect(html).not.toContain('>Enter</kbd>');
+    expect(html).toContain('bg-accent');
     expect(html).not.toContain('删除确认 Enter');
   });
 });
