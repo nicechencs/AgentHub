@@ -1,6 +1,20 @@
+import { EnterKeyMark, ShortcutKbd } from '@/components/ui/shortcut-kbd';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { detectHostPlatform } from '@/lib/platform-detect';
 import { CHAT_SHORTCUT_ROWS, chatShortcutChord } from './chat-shortcuts';
+
+function ShortcutKeys({ keys }: { keys: string }) {
+  if (keys === 'Enter') return <EnterKeyMark />;
+  if (keys === 'Shift+Enter') {
+    return (
+      <span className="inline-flex items-center gap-0.5">
+        <ShortcutKbd>⇧</ShortcutKbd>
+        <EnterKeyMark />
+      </span>
+    );
+  }
+  return <ShortcutKbd>{keys}</ShortcutKbd>;
+}
 
 export function ChatShortcutOverview({ className }: { className?: string }) {
   const { t } = useI18n();
@@ -11,9 +25,7 @@ export function ChatShortcutOverview({ className }: { className?: string }) {
       {CHAT_SHORTCUT_ROWS.map((row) => (
         <li key={row.id} className="flex items-center justify-between gap-3">
           <span className="text-body text-primary">{t(row.actionKey)}</span>
-          <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded-btn border border-border bg-subtle px-1.5 text-meta leading-none text-muted">
-            {chatShortcutChord(row.keys, platform)}
-          </kbd>
+          <ShortcutKeys keys={chatShortcutChord(row.keys, platform)} />
         </li>
       ))}
     </ul>

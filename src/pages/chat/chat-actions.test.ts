@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CHAT_ACTIONS,
+  CHAT_SLASH_PAGE_NAV_IDS,
   actionMatchesQuery,
   chatActionDisabledReason,
   chatOverflowMenuActions,
@@ -29,10 +30,38 @@ describe('chat action command search', () => {
     expect(filterChatActions('/').every((item) => item.kind !== 'draft')).toBe(true);
     expect(filterChatActions('/').length).toBe(chatOverflowMenuActions().length);
     expect(filterChatActions('/新建').some((item) => item.id === 'new-session')).toBe(true);
-    expect(filterChatActions('/搜索').some((item) => item.id === 'focus-history-search')).toBe(true);
-    expect(filterChatActions('/搜索历史会话').some((item) => item.id === 'focus-history-search')).toBe(true);
-    expect(filterChatActions('/打开历史会话').some((item) => item.id === 'open-history')).toBe(true);
     expect(filterChatActions('/copy').some((item) => item.id === 'copy-latest-reply')).toBe(true);
+    expect(CHAT_SLASH_PAGE_NAV_IDS).toEqual([
+      'open-history',
+      'focus-history-search',
+      'open-settings',
+      'open-agents',
+      'open-connections',
+    ]);
+    expect(
+      filterChatActions('/').some((item) =>
+        (CHAT_SLASH_PAGE_NAV_IDS as readonly string[]).includes(item.id),
+      ),
+    ).toBe(false);
+    expect(
+      filterChatActions('/打开历史').some((item) => item.id === 'open-history'),
+    ).toBe(false);
+    expect(
+      filterChatActions('/搜索历史').some((item) => item.id === 'focus-history-search'),
+    ).toBe(false);
+    expect(
+      filterChatActions('/打开设置').some((item) => item.id === 'open-settings'),
+    ).toBe(false);
+    expect(
+      filterChatActions('/打开 Agent').some((item) => item.id === 'open-agents'),
+    ).toBe(false);
+    expect(
+      filterChatActions('/打开连接').some((item) => item.id === 'open-connections'),
+    ).toBe(false);
+    expect(
+      filterChatActions('/打开链接').some((item) => item.id === 'open-connections'),
+    ).toBe(false);
+    expect(CHAT_ACTIONS.some((item) => item.id === 'open-history')).toBe(false);
     expect(filterChatActions('/报错').some((item) => item.id === 'sample-explain-error')).toBe(true);
     expect(normalizeActionQuery('  新建  ')).toBe('新建');
     expect(actionMatchesQuery(CHAT_ACTIONS[0], 'new')).toBe(true);

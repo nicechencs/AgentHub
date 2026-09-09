@@ -20,6 +20,7 @@ import {
   chatPageShortcutAction,
   chatQuestionShouldOpenShortcuts,
   composerEnterShouldSend,
+  composerNativeEditChord,
   dialogEnterShouldConfirm,
   chatAgentPickerRows,
   chatConnectionKind,
@@ -920,6 +921,52 @@ describe('chatPageShortcutAction', () => {
     shiftKey: false,
     overlayOpen: false,
   };
+
+  it('leaves Ctrl/Cmd+A/C/X/V to the field', () => {
+    for (const key of ['a', 'c', 'x', 'v'] as const) {
+      expect(
+        chatPageShortcutAction({
+          ...mods,
+          key,
+          code: `Key${key.toUpperCase()}`,
+          ctrlKey: true,
+          target: textarea,
+        }),
+      ).toBeNull();
+      expect(
+        composerNativeEditChord({
+          key,
+          code: `Key${key.toUpperCase()}`,
+          metaKey: false,
+          ctrlKey: true,
+          altKey: false,
+          shiftKey: false,
+        }),
+      ).toBe(
+        key === 'a' ? 'selectAll' : key === 'c' ? 'copy' : key === 'x' ? 'cut' : 'paste',
+      );
+    }
+    expect(
+      composerNativeEditChord({
+        key: 'Unidentified',
+        code: 'KeyA',
+        metaKey: true,
+        ctrlKey: false,
+        altKey: false,
+        shiftKey: false,
+      }),
+    ).toBe('selectAll');
+    expect(
+      composerNativeEditChord({
+        key: 'a',
+        code: 'KeyA',
+        metaKey: false,
+        ctrlKey: true,
+        altKey: true,
+        shiftKey: false,
+      }),
+    ).toBeNull();
+  });
 
   it('starts a new chat from Ctrl+N even when the target is the composer textarea', () => {
     expect(

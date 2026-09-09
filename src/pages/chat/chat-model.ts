@@ -738,14 +738,27 @@ export function composerEnterShouldSend(input: {
   return true;
 }
 
-/** Delete-confirm dialog: Enter confirms. IME composition must not confirm. */
-export function dialogEnterShouldConfirm(input: {
+export { dialogEnterShouldConfirm } from '@/lib/dialog-enter';
+
+export type ComposerNativeEditChord = 'selectAll' | 'copy' | 'cut' | 'paste';
+
+/** Ctrl/Cmd+A/C/X/V in a field must reach the native edit action. */
+export function composerNativeEditChord(input: {
   key: string;
+  code?: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
   shiftKey: boolean;
-  isComposing?: boolean;
-  nativeEvent?: { isComposing?: boolean; keyCode?: number };
-}): boolean {
-  return composerEnterShouldSend(input);
+}): ComposerNativeEditChord | null {
+  if (input.altKey || input.shiftKey) return null;
+  if (!(input.metaKey || input.ctrlKey)) return null;
+  const letter = input.key.length === 1 ? input.key.toLowerCase() : '';
+  if (letter === 'a' || input.code === 'KeyA') return 'selectAll';
+  if (letter === 'c' || input.code === 'KeyC') return 'copy';
+  if (letter === 'x' || input.code === 'KeyX') return 'cut';
+  if (letter === 'v' || input.code === 'KeyV') return 'paste';
+  return null;
 }
 
 function chatModChordMatchesLetter(
@@ -833,6 +846,7 @@ export function chatPageShortcutAction(input: {
   overlayOpen: boolean;
   target: EventTarget | null;
 }): 'history' | 'newChat' | 'overview' | null {
+  if (composerNativeEditChord(input)) return null;
   if (chatModKShouldFocusHistory(input)) return 'history';
   if (chatModNShouldStartNewChat(input)) return 'newChat';
   if (

@@ -61,7 +61,7 @@ export function ChatActionMenu(props: {
 
   return createPortal(
     <div
-      className="fixed z-50 max-h-56 w-72 overflow-auto rounded-card border border-border bg-panel p-1 shadow-md"
+      className="fixed z-50 flex max-h-80 w-80 flex-col gap-0.5 overflow-auto rounded-card border border-border bg-panel p-1.5 shadow-md"
       style={{ left: palettePos.left, bottom: palettePos.bottom }}
       role="listbox"
       aria-label={t('chat.shortcuts.actions')}
@@ -78,8 +78,8 @@ export function ChatActionMenu(props: {
             aria-selected={active}
             disabled={Boolean(reason)}
             className={cn(
-              'flex w-full flex-col rounded-btn px-2 py-1.5 text-left text-sm',
-              active ? 'bg-accent text-accent-foreground' : 'hover:bg-hover',
+              'flex min-h-10 w-full flex-col justify-center rounded-btn px-2.5 py-2 text-left text-body leading-relaxed',
+              active ? 'bg-accent text-accent-foreground' : 'text-primary hover:bg-hover',
               reason && 'cursor-not-allowed opacity-60',
             )}
             onMouseEnter={() => props.onHoverIndex?.(index)}
@@ -88,9 +88,9 @@ export function ChatActionMenu(props: {
               props.onRun(action);
             }}
           >
-            <span>{label(action)}</span>
+            <span className="font-medium leading-snug">{label(action)}</span>
             {action.description ? (
-              <span className="text-meta text-muted">{action.description}</span>
+              <span className="mt-0.5 text-meta leading-normal text-muted">{action.description}</span>
             ) : null}
             {reason ? (
               <span className="text-meta text-muted">{disabledCopy(reason)}</span>

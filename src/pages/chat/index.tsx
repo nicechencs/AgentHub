@@ -22,9 +22,11 @@ import {
 } from './chat-kiro-model';
 import {
   chatEscapeShouldCancel,
+  chatKeyTargetIsField,
   chatPageShortcutAction,
   chatMainColumnClass,
   chatStageClass,
+  composerNativeEditChord,
 } from './chat-model';
 import { subscribeChatShortcutKeydown } from './chat-shortcuts';
 import { chatModShiftIShouldOpenModel } from './chat-model-labels';
@@ -99,6 +101,19 @@ export default function ChatPage() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (
+        chatKeyTargetIsField(e.target) &&
+        composerNativeEditChord({
+          key: e.key,
+          code: e.code,
+          metaKey: e.metaKey,
+          ctrlKey: e.ctrlKey,
+          altKey: e.altKey,
+          shiftKey: e.shiftKey,
+        })
+      ) {
+        return;
+      }
       const overlayOpen = hasEscPriorityOverlay();
       const action = chatPageShortcutAction({
         key: e.key,

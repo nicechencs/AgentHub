@@ -34,6 +34,7 @@ import { Hint, Tip } from '@/components/ui/tooltip';
 import { agentDisplayName } from '@/config/agents';
 import type { AgentKey, Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { composerNativeEditChord } from './chat-model';
 import {
   composerEnterShouldSubmit,
   composerFooterControl,
@@ -352,6 +353,20 @@ export function ChatComposer({
           onChange={(e) => setDraft(e.target.value)}
           onInput={syncTextareaHeight}
           onKeyDown={(e) => {
+            const edit = composerNativeEditChord({
+              key: e.key,
+              code: e.nativeEvent.code,
+              metaKey: e.metaKey,
+              ctrlKey: e.ctrlKey,
+              altKey: e.altKey,
+              shiftKey: e.shiftKey,
+            });
+            if (edit === 'selectAll') {
+              e.preventDefault();
+              e.currentTarget.select();
+              return;
+            }
+            if (edit) return;
             if (onDraftKeyDown?.(e)) return;
             if (!composerEnterShouldSubmit({
               key: e.key,

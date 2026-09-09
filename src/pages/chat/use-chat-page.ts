@@ -12,6 +12,7 @@ import {
   agentPickerLabel as agentPickerLabelOf,
   chatAgentPickerRows,
   chatModNShouldStartNewChat,
+  composerNativeEditChord,
   filterConversations,
   groupConversationsByDay,
   isChatAgentSelectable,
@@ -333,6 +334,18 @@ export function useChatPage() {
 
   const handleComposerKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (
+        composerNativeEditChord({
+          key: e.key,
+          code: e.nativeEvent.code,
+          metaKey: e.metaKey,
+          ctrlKey: e.ctrlKey,
+          altKey: e.altKey,
+          shiftKey: e.shiftKey,
+        })
+      ) {
+        return false;
+      }
       if (
         chatModNShouldStartNewChat({
           key: e.key,

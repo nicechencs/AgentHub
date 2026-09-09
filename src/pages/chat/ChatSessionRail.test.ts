@@ -63,5 +63,13 @@ describe('ChatSessionRail titles', () => {
     expect(html).not.toContain('/workspace/src/app.ts');
     expect(html).toContain('demo-project');
   });
+
+  it('paints 新建对话 with the theme fill', () => {
+    const html = renderMarkup(rail());
+    expect(html).toContain('data-help="chat-new"');
+    expect(html).toContain('data-btn="default"');
+    expect(html).toContain('bg-accent');
+    expect(html).not.toContain('删除确认 Enter');
+  });
 });
 

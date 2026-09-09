@@ -59,6 +59,8 @@ describe('chat layout wiring', () => {
     expect(source('ChatShortcutsHelp.tsx')).toContain('data-help="chat-shortcuts-popover"');
     expect(source('ChatShortcutsDialog.tsx')).toContain('ChatShortcutOverview');
     expect(source('ChatShortcutOverview.tsx')).toContain('CHAT_SHORTCUT_ROWS');
+    expect(source('ChatShortcutOverview.tsx')).toContain('EnterKeyMark');
+    expect(source('ChatShortcutOverview.tsx')).not.toMatch(/>Enter</);
     expect(source('ChatSessionRail.tsx')).toContain('aria-keyshortcuts="Control+N"');
     expect(translate('zh', 'chat.shortcuts.open')).toBe('快捷键');
     expect(translate('en', 'chat.shortcuts.open')).toBe('Shortcuts');
@@ -118,6 +120,11 @@ describe('chat layout wiring', () => {
     expect(composer).toContain('rounded-composer border border-border bg-panel');
     expect(composer).toContain('text-body leading-relaxed');
     expect(composer).not.toContain('leading-[1.45]');
+    expect(composer).toContain('composerNativeEditChord');
+    expect(composer).toContain("edit === 'selectAll'");
+    expect(composer).toContain('e.currentTarget.select()');
+    expect(source('index.tsx')).toContain('composerNativeEditChord');
+    expect(source('index.tsx')).toContain('chatKeyTargetIsField');
   });
 
   it('loosens chat bubble reading line-height without changing bubble chrome', () => {
@@ -246,13 +253,16 @@ describe('chat layout wiring', () => {
     expect(rail).toContain("t('chat.rail.searchPlaceholder')");
   });
 
-  it('confirms session delete on Enter and marks the danger button', () => {
+  it('confirms session delete on Enter and marks the danger button with a key icon', () => {
     const rail = source('ChatSessionRail.tsx');
     expect(rail).toContain('dialogEnterShouldConfirm');
     expect(rail).toContain('aria-keyshortcuts="Enter"');
-    expect(rail).toContain('<kbd');
-    expect(rail).toContain('Enter');
+    expect(rail).toContain('EnterKeyMark');
+    expect(rail).not.toMatch(/>Enter</);
+    expect(rail).not.toContain('删除确认 Enter');
     expect(rail).toContain("t('chat.rail.confirmDelete')");
+    expect(rail).toContain('variant="default"');
+    expect(rail).toContain('data-help="chat-new"');
   });
 
   it('keeps history actions visible and focusable for runtime composers', () => {
@@ -268,8 +278,17 @@ describe('chat layout wiring', () => {
     expect(actions).toContain('bg-panel');
     expect(actions).not.toContain('bg-popover');
     expect(actions).toContain('data-help="chat-slash-menu"');
+    expect(actions).toContain('text-body leading-relaxed');
+    expect(actions).toContain('min-h-10');
+    expect(actions).toContain('max-h-80');
+    expect(actions).not.toContain('text-sm');
+    expect(actions).not.toContain('py-1.5 text-left text-sm');
     expect(actions).not.toContain('DropdownMenu');
     expect(actions).not.toContain('MoreHorizontal');
+    expect(source('chat-actions.ts')).not.toContain("id: 'open-history'");
+    expect(source('chat-actions.ts')).not.toContain("id: 'open-settings'");
+    expect(source('chat-actions.ts')).not.toContain("id: 'open-agents'");
+    expect(source('chat-actions.ts')).not.toContain("id: 'open-connections'");
     expect(composer).toContain('<ChatActionMenu');
     expect(composer).toContain('anchorRef={textareaRef}');
     expect(extras).not.toContain('ChatActionMenu');
