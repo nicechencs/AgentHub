@@ -455,3 +455,37 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
         .expect("session/cancel wire message");
     assert!(cancel.get("id").is_none(), "cancel must be a notification");
 }
+
+
+#[test]
+fn classify_maps_claude_stream_json_to_notification() {
+    let result = classify_message(json!({
+        "type": "result",
+        "subtype": "success",
+        "is_error": false,
+        "result": "PONG",
+        "session_id": "sess-1"
+    }))
+    .unwrap()
+    .expect("claude result must not be skipped");
+    match result {
+        WireMessage::Notification { method, params } => {
+            assert_eq!(method, "claude/stream");
+            assert_eq!(params["type"], "result");
+            assert_eq!(params["result"], "PONG");
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+
+    let assistant = classify_message(json!({
+        "type": "assistant",
+        "message": {"role": "assistant", "content": [{"type": "text", "text": "hi"}]},
+        "session_id": "sess-1"
+    }))
+    .unwrap()
+    .expect("assistant");
+    assert!(matches!(
+        assistant,
+        WireMessage::Notification { method, .. } if method == "claude/stream"
+    ));
+}

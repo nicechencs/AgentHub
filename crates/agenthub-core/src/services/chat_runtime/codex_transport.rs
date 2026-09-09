@@ -130,12 +130,12 @@ impl CodexTransport {
             program,
             &["app-server".to_string()],
             cwd,
-            json!({
+            Some(json!({
                 "clientInfo": {
                     "name": "agenthub-chat",
                     "version": env!("CARGO_PKG_VERSION"),
                 }
-            }),
+            })),
             true,
             None,
         )
@@ -150,12 +150,12 @@ impl CodexTransport {
             program,
             &["app-server".to_string()],
             cwd,
-            json!({
+            Some(json!({
                 "clientInfo": {
                     "name": "agenthub-chat",
                     "version": env!("CARGO_PKG_VERSION"),
                 }
-            }),
+            })),
             true,
             Some(abort),
         )
@@ -223,7 +223,7 @@ impl CodexTransport {
             program,
             &args,
             cwd,
-            json!({
+            Some(json!({
                 "protocolVersion": 1,
                 "clientInfo": {
                     "name": "agenthub-chat",
@@ -232,7 +232,7 @@ impl CodexTransport {
                 "capabilities": {
                     "fs": { "readTextFile": false, "writeTextFile": false }
                 }
-            }),
+            })),
             true,
             abort,
         )
@@ -262,7 +262,7 @@ impl CodexTransport {
             program,
             &args,
             cwd,
-            json!({
+            Some(json!({
                 "protocolVersion": 1,
                 "clientInfo": {
                     "name": "agenthub-chat",
@@ -271,17 +271,52 @@ impl CodexTransport {
                 "clientCapabilities": {
                     "fs": { "readTextFile": false, "writeTextFile": false }
                 }
-            }),
+            })),
             false,
             abort,
         )
+    }
+
+    /// Claude Code print mode with stream-json stdin/stdout (no JSON-RPC handshake).
+    pub(crate) fn spawn_claude_stream_interruptible(
+        program: &Path,
+        cwd: &Path,
+        model: Option<&str>,
+        effort: Option<&str>,
+        permission_mode: &str,
+        resume_session_id: Option<&str>,
+        abort: Arc<AtomicBool>,
+    ) -> Result<Self, CodexTransportError> {
+        let mut args = vec![
+            "-p".into(),
+            "--input-format".into(),
+            "stream-json".into(),
+            "--output-format".into(),
+            "stream-json".into(),
+            "--verbose".into(),
+            "--permission-mode".into(),
+            permission_mode.to_string(),
+        ];
+        if let Some(model) = model.map(str::trim).filter(|s| !s.is_empty()) {
+            args.push("--model".into());
+            args.push(model.to_string());
+        }
+        if let Some(effort) = effort.map(str::trim).filter(|s| !s.is_empty()) {
+            args.push("--effort".into());
+            args.push(effort.to_string());
+        }
+        if let Some(session_id) = resume_session_id.map(str::trim).filter(|s| !s.is_empty()) {
+            args.push("--resume".into());
+            args.push(session_id.to_string());
+        }
+        Self::spawn_with(program, &args, cwd, None, false, Some(abort))
     }
 
     fn spawn_with(
         program: &Path,
         args: &[String],
         cwd: &Path,
-        initialize_params: Value,
+        initialize_params: Option<Value>,
         send_initialized: bool,
         abort: Option<Arc<AtomicBool>>,
     ) -> Result<Self, CodexTransportError> {
@@ -370,11 +405,13 @@ impl CodexTransport {
             abort,
         };
 
-        let initialize_result =
-            transport.request_inner("initialize", initialize_params, HANDSHAKE_TIMEOUT)?;
-        transport.initialize_result = Some(initialize_result);
-        if send_initialized {
-            transport.send_notification("initialized", None)?;
+        if let Some(initialize_params) = initialize_params {
+            let initialize_result =
+                transport.request_inner("initialize", initialize_params, HANDSHAKE_TIMEOUT)?;
+            transport.initialize_result = Some(initialize_result);
+            if send_initialized {
+                transport.send_notification("initialized", None)?;
+            }
         }
         Ok(transport)
     }
@@ -430,7 +467,7 @@ impl CodexTransport {
             program,
             args,
             cwd,
-            initialize_params,
+            Some(initialize_params),
             send_initialized,
             None,
         )
@@ -682,6 +719,20 @@ impl CodexTransport {
         self.send_value(Value::Object(message))
     }
 
+    /// Write one NDJSON value without injecting a JSON-RPC envelope.
+    /// Used by Claude stream-json stdin prompts.
+    pub(crate) fn send_raw_value(&mut self, value: &Value) -> TransportResult<()> {
+        if self.shutdown || self.exited {
+            return Err(CodexTransportError::Exited);
+        }
+        let stdin = self.stdin.as_mut().ok_or(CodexTransportError::Exited)?;
+        serde_json::to_writer(&mut *stdin, value)
+            .map_err(|error| CodexTransportError::Protocol(error.to_string()))?;
+        stdin.write_all(b"\n")?;
+        stdin.flush()?;
+        Ok(())
+    }
+
     fn send_value(&mut self, mut value: Value) -> TransportResult<()> {
         if self.shutdown || self.exited {
             return Err(CodexTransportError::Exited);
@@ -867,6 +918,14 @@ fn classify_message(value: Value) -> TransportResult<Option<WireMessage>> {
         warn_skipped_json(&value);
         return Ok(None);
     };
+    if let Some(ty) = object.get("type").and_then(Value::as_str) {
+        if is_claude_stream_type(ty) {
+            return Ok(Some(WireMessage::Notification {
+                method: "claude/stream".into(),
+                params: value,
+            }));
+        }
+    }
     let has_id = object.contains_key("id");
     let has_method = object.get("method").and_then(Value::as_str).is_some();
     let has_result = object.contains_key("result");
@@ -906,6 +965,28 @@ fn classify_message(value: Value) -> TransportResult<Option<WireMessage>> {
     }
     warn_skipped_json(&value);
     Ok(None)
+}
+
+fn is_claude_stream_type(ty: &str) -> bool {
+    matches!(
+        ty,
+        "system"
+            | "assistant"
+            | "user"
+            | "result"
+            | "stream_event"
+            | "content_block_delta"
+            | "content_block_start"
+            | "content_block_stop"
+            | "message_start"
+            | "message_delta"
+            | "message_stop"
+            | "tool_use"
+            | "tool_result"
+            | "error"
+            | "log"
+            | "prompt_suggestion"
+    )
 }
 
 fn warn_skipped_json(value: &Value) {

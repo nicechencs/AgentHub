@@ -162,6 +162,20 @@ impl RunService {
             .ok_or_else(|| AppError::NotFound("Kiro 可执行文件路径不可用".into()))
     }
 
+    pub fn detect_claude_installation(&self) -> Result<std::path::PathBuf> {
+        let adapter = self
+            .registry
+            .get(AgentId::Claude)
+            .ok_or_else(|| AppError::NotFound("adapter not registered for claude".into()))?;
+        let detect = adapter.detect();
+        if detect.status != DetectStatus::Installed {
+            return Err(AppError::NotFound("Claude 未安装或不可用".into()));
+        }
+        detect
+            .binary_path
+            .ok_or_else(|| AppError::NotFound("Claude 可执行文件路径不可用".into()))
+    }
+
     /// Run the same prompt on one or more agents.
     pub fn run(
         &self,
