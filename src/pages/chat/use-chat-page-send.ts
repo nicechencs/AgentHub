@@ -35,6 +35,10 @@ import {
   restoreQueuedFollowUpOnCancel,
   shiftQueuedFollowUp,
 } from './chat-grok-follow-up';
+import {
+  composerCancelingVisible,
+  composerKeepsStoppingAfterCancel,
+} from './chat-composer-model';
 import { acceptsRuntimeSnapshot, isLatestRuntimeRead, isRuntimeActive, readRuntimeTransport, requestMatchesRuntime, runtimeReplyFields } from './chat-runtime-model';
 import {
   beginRuntimeStart,
@@ -215,12 +219,15 @@ export function useChatPageSend(input: {
     publishSendingIds();
   };
 
+  const clearCancelingFor = (conversationId: string) => {
+    if (!cancelingIdsRef.current.delete(conversationId)) return;
+    setCancelingIds([...cancelingIdsRef.current]);
+  };
+
   const clearSendingFor = (conversationId: string) => {
     if (!sendingIdsRef.current.has(conversationId)) return;
     sendingIdsRef.current.delete(conversationId);
-    if (cancelingIdsRef.current.delete(conversationId)) {
-      setCancelingIds([...cancelingIdsRef.current]);
-    }
+    clearCancelingFor(conversationId);
     publishSendingIds();
   };
 
@@ -396,7 +403,13 @@ export function useChatPageSend(input: {
     [conversations, liveSendingConversationIds],
   );
   const sendingHere = Boolean(active?.id && liveSendingConversationIds.includes(active.id));
-  const cancelingHere = Boolean(active?.id && cancelingIds.includes(active.id));
+  const cancelingHere = Boolean(
+    active?.id &&
+      composerCancelingVisible({
+        localCanceling: cancelingIds.includes(active.id),
+        runtimePhase: runtime?.phase,
+      }),
+  );
 
   const blockers = useMemo(() => {
     if (!active) return [];
@@ -870,7 +883,11 @@ export function useChatPageSend(input: {
     cancelingIdsRef.current.add(id);
     setCancelingIds([...cancelingIdsRef.current]);
     try {
-      await cancelRuntimeTarget(id);
+      const result = await cancelRuntimeTarget(id);
+      if (!composerKeepsStoppingAfterCancel(result)) {
+        clearCancelingFor(id);
+        return;
+      }
       toast({
         title: t('chat.toast.cancelRequested'),
         description: t('chat.toast.cancelRequestedDesc'),
@@ -879,10 +896,7 @@ export function useChatPageSend(input: {
       });
     } catch (e) {
       toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
-    } finally {
-      if (cancelingIdsRef.current.delete(id)) {
-        setCancelingIds([...cancelingIdsRef.current]);
-      }
+      clearCancelingFor(id);
     }
   }
 
