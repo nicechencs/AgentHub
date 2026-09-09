@@ -24,6 +24,7 @@ updated: 2026-09-09
   - **新空 Grok 会话**：持续聊天（模型/思考、图片、后续轮排队），**不支持**为本轮指定「用于本次」技能，界面也不画可点的假按钮。真实窗口验收已通过。
   - **新空 Kiro 会话**：`kiro-cli acp` 持续通道（允许/拒绝、停止；生成时不能中途补充，可排队到下一轮）。真实窗口验收已通过（ACP 新对话；打印路径 HTTP 多轮为 Builder ID / 本机登录，不是企业 IdC）。旧对话保留原发送方式。
   - **其余 Agent 与旧会话**：仍走原发送方式。
+  - **DeepSeek Harness Chat**：启动会被 PATH 上缺 `@deepseek-ai/dsh-scope` 的残缺 `dsh` 挡住（常见 `~/.local/bin/dsh`）。修复跟踪 [#320](https://github.com/nicechencs/AgentHub/pull/320)，优先完整 npm 树。
   - **过程面板**：工具行用人话「正在读取 / 正在修改 / 正在执行」（完成则「已读取 / 已修改 / 已执行」），路径或命令跟在后面。工具名、状态和 JSON 进折叠的「细节」；命令、错误输出、退出码和状态事件仍在「运行详情」。
   - **过程内用量**：新空 Codex 会话在 `thread/tokenUsage/updated` 到达后立刻展示 **当前轮**（`last`）和 **累计**（`total`）；有 `modelContextWindow` 时写成 `累计 n / 窗口`，不画假进度条。新空 Grok 会话只展示 **当前轮**（`turn_completed.usage`）；ACP 没有会话累计字段，不把各轮相加冒充累计。解析路径已接；真窗 2026-09-09 见过部分轮次 **没有** `turn_completed.usage`，此时界面不画假数字。只显示协议里有的数字，不估算费用。Kiro 没有 token 累计数据源。回复标题行和生成中的过程摘要都会留下用量。
   - **新空 Claude 会话（B3 首片）**：走 Claude Code `-p --input-format stream-json --output-format stream-json` 持续通道（同进程多轮、本地图片 base64、模型/思考强度参数）；**不支持**生成中补充；本片**不**接可点允许/拒绝（默认 `dontAsk`，危险模式 `bypassPermissions`）。有历史的旧 Claude 会话仍走 print+resume。见 [Claude B3](archive/chat-claude-b3.md)。
@@ -73,6 +74,7 @@ updated: 2026-09-09
 - ZCode 本机安装同样只打开官网；API Key 按目录追加写入 `~/.zcode/v2/config.json` 的一条供应商（官方槽或自定义行），不替换其它条目；套餐登录不导入；自定义行必须带模型名单。Chat 优先 PATH 上的 `zcode` CLI，只有桌面安装时不会虚构一条捆绑命令。Projects 只读任务索引，预览从命令行会话库读取对话正文；删除按钮禁用，提示到 ZCode 里删除。用量从命令行 `model_usage` 采集。
 - WorkBuddy 用量读取 `projects/**/*.jsonl` 里的 `providerData.usage`（以及旧的 `message.usage` 形状）。
 - Kimi 官方路径在需要时仍写出带模型表的完整 `~/.kimi-code/config.toml`；旧登录再切换也会补上模型表。自定义 / OpenAI 兼容中继保留上游 `/v1/models` 目录（不丢掉全是 grok 的列表）；写入 API Key 时补全 `[models.<alias>]`；优先用 settings 的 `model`，不用过期的 content `default_model`；叠写成 `grok-4.6grok-4.6` 这类重复别名会收成一份；不把用不上的 `kimi-k2` 硬写到只有 grok 的钥匙上。供应商 `type` 按地址补全（官方 Moonshot 为 `kimi`，Messages / Responses / 补全各写对应协议）。数据根认 `KIMI_CODE_HOME`。技能：共享库会被 Kimi 自己读取，不再投影一份。对话失败用中文。
+- DeepSeek Harness 的 Chat 启动会被 PATH 上的残缺 `dsh` 挡住（常见 `~/.local/bin/dsh`，旁边没有 `@deepseek-ai/dsh-scope`）。修复跟踪 [#320](https://github.com/nicechencs/AgentHub/pull/320)，优先完整 npm 树，不要用 PATH stub。未宣称真窗 PASS。
 - Cursor 可以从本机已有登录导入到登录列表，但不能写回 Cursor。切换失败给出中文说明，不静默。保存第二张登录不会因同一把钥匙悄悄把第一张送进回收站。**dev 线默认软隐藏 Cursor Agent**（`agent_visibility.json` store-stamp）；兼容修复完成前不在侧栏、连接、Chat 等页面展示，Agents 管理页可取消隐藏。
 - 「使用官方服务」默认勾选不禁用智能识别。高级编辑器不回显明文钥匙。同一工具切换成功 toast 说明已写入本机配置；接到本机路由则仍说已切换。备份标题是「切换前自动 / 手动 + 时间」。设置里的安全备份默认在切换/导入时保留本机配置副本（可关闭自动堆积；当次切换仍留一份以便失败回滚）；卡片左右分栏，点开在右侧展示打码后的文件内容。
 - 官方登录等待页不显示内部状态或登录文件路径；失败时「重试」是主按钮。Windows 上子进程统一无窗启动。
