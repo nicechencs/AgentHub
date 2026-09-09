@@ -1908,7 +1908,7 @@ export const zh = {
         modelsLive: "已从这条登录拉到",
         modelsCustom: "自定义名单",
         modelsLoadFailed: "没法拉到模型名单",
-        modelsMore: "还有 {n} 个",
+        modelsShowAll: "显示全部（{n}）",
       },
     },
     direct: {

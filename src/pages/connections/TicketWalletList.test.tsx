@@ -702,7 +702,7 @@ describe('TicketWalletList details', () => {
 });
 
 describe('TicketDetailPanel', () => {
-  it('lays out 用量 and advanced fields without 更多, 用在哪, 导入自, or header duplicates', () => {
+  it('lays out 用量 and protocol without 用在哪, 导入自, or header duplicates', () => {
     const markup = renderWithTooltip(
       createElement(TicketDetailPanel, {
         id: 'ticket-detail',

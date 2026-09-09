@@ -409,13 +409,15 @@ function detailAvailabilityChip(
 function TicketDetailSection({
   title,
   children,
+  quiet = false,
 }: {
   title: string;
   children: React.ReactNode;
+  quiet?: boolean;
 }) {
   return (
     <section className="space-y-1.5">
-      <h3 className="text-body font-medium">{title}</h3>
+      <h3 className={quiet ? 'text-meta font-medium text-muted' : 'text-body font-medium'}>{title}</h3>
       {children}
     </section>
   );
@@ -585,7 +587,7 @@ function TicketDetailBody({
       ) : null}
 
       {showRecords ? (
-        <TicketDetailSection title={t('connections.list.sectionRecords')}>
+        <TicketDetailSection quiet title={t('connections.list.sectionRecords')}>
           {agentId && files && files.length > 0 ? (
             <TicketAuthFiles agentId={agentId} files={files} />
           ) : null}

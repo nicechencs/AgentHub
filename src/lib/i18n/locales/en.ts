@@ -1928,7 +1928,7 @@ export const en = {
         modelsLive: "Loaded from this login",
         modelsCustom: "Custom list",
         modelsLoadFailed: "Couldn't load a model list",
-        modelsMore: "{n} more",
+        modelsShowAll: "Show all ({n})",
       },
     },
     direct: {

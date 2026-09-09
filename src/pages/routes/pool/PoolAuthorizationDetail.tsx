@@ -87,6 +87,7 @@ export function PoolAuthorizationDetail({
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogFailed, setCatalogFailed] = useState(false);
   const [syncPrompt, setSyncPrompt] = useState<SaveOauthPoolLoginResult | null>(null);
+  const [modelsOpen, setModelsOpen] = useState(false);
 
 
   const finishOauthSave = (result: SaveOauthPoolLoginResult) => {
@@ -98,6 +99,7 @@ export function PoolAuthorizationDetail({
   useEffect(() => {
     setEditing(false);
     setSyncPrompt(null);
+    setModelsOpen(false);
   }, [item.key]);
 
   useEffect(() => {
@@ -266,7 +268,10 @@ export function PoolAuthorizationDetail({
             ) : catalog && catalog.models.length > 0 ? (
               <>
                 <p className="text-body text-primary">
-                  {catalog.models.slice(0, 8).join(', ')}
+                  {(modelsOpen || catalog.models.length <= 8
+                    ? catalog.models
+                    : catalog.models.slice(0, 8)
+                  ).join(', ')}
                   <span className="ml-2 text-meta text-muted">
                     {catalog.source === 'custom'
                       ? t('routes.pool.detail.modelsCustom')
@@ -274,12 +279,15 @@ export function PoolAuthorizationDetail({
                   </span>
                 </p>
                 {catalog.models.length > 8 ? (
-                  <details>
-                    <summary className="cursor-pointer text-meta text-muted">
-                      {t('routes.pool.detail.modelsMore', { n: catalog.models.length - 8 })}
-                    </summary>
-                    <p className="mt-1 text-body text-primary">{catalog.models.slice(8).join(', ')}</p>
-                  </details>
+                  <button
+                    type="button"
+                    className="self-start text-meta text-muted"
+                    onClick={() => setModelsOpen((open) => !open)}
+                  >
+                    {modelsOpen
+                      ? t('common.collapse')
+                      : t('routes.pool.detail.modelsShowAll', { n: catalog.models.length })}
+                  </button>
                 ) : null}
               </>
             ) : (
@@ -290,7 +298,7 @@ export function PoolAuthorizationDetail({
 
         {recordRows.length > 0 ? (
           <section className="space-y-1.5">
-            <h3 className="text-body font-medium">{t('connections.list.sectionRecords')}</h3>
+            <h3 className="text-meta font-medium text-muted">{t('connections.list.sectionRecords')}</h3>
             {recordRows.map((row) => (
               <DetailRow
                 key={row.id}
