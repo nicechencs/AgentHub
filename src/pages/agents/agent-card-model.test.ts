@@ -22,7 +22,10 @@ import {
   specialChannelUpdateTargets,
   uniqueInstallVersions,
   agentListDetailsHint,
+  agentHonestyHint,
   agentLaunchTargets,
+  isLeftoverInstallPath,
+  isIncompleteDshCopy,
   agentLinuxInstallUnsupported,
   agentUpgradeControl,
   agentUpgradeHint,
@@ -39,7 +42,7 @@ describe('agent-card menu wiring', () => {
 
     expect(card).toContain('canInstallAlongsideSpecial');
     expect(card).toContain('uniqueInstallVersions');
-    expect(card).toContain('agentListDetailsHint');
+    expect(card).toContain('agentHonestyHint');
     expect(card).toContain('isLeftoverDetailsHint');
     expect(card).toContain('text-warning');
     expect(card).toContain('agentUpgradeControl');
@@ -132,7 +135,7 @@ describe('extra copy labels', () => {
     const card = readFileSync(path.join(dir, 'agent-card.tsx'), 'utf8');
     expect(card).toContain('uniqueInstallVersions');
     expect(card).toContain('listAgentInstalls');
-    expect(card).toContain('agentListDetailsHint');
+    expect(card).toContain('agentHonestyHint');
     expect(card).not.toContain('CopyVersionButton');
     expect(card).not.toContain('copyVersion');
     expect(card).not.toContain('extraCopyKindLabel');
@@ -148,8 +151,21 @@ describe('extra copy labels', () => {
     expect(zh.agents.card.seeDetailsCopies).toBe('另有 {count} 份，点开看详情');
     expect(zh.agents.card.seeDetailsLeftover).toBe('另有遗留副本，勿从此路径启动');
     expect(zh.agents.card.leftoverDoNotLaunch).toBe('勿从此路径启动');
+    expect(zh.agents.card.leftoverSpawnBadge).toBe('启动后备，非安装位置');
+    expect(zh.agents.card.leftoverSpawnFallback).toContain('仅作启动后备');
+    expect(zh.agents.card.leftoverSpawnFallback).toContain('~/.npm-global');
+    expect(zh.agents.card.leftoverSpawnFallback).not.toMatch(/装到\s*~\/\.agenthub/);
+    expect(zh.agents.card.incompleteCliInstallNpm).toContain('~/.npm-global');
+    expect(zh.agents.card.incompleteCliInstallNpm).toContain('~/.local/bin/dsh');
+    expect(zh.agents.card.incompleteCliInstallNpm).not.toMatch(/装到\s*~\/\.agenthub/);
+    expect(`${zh.agents.card.leftoverSpawnFallback} ${zh.agents.card.incompleteCliInstallNpm}`).not.toContain(
+      '~/.agenthub/npm',
+    );
     expect(en.agents.card.seeDetailsLeftover).toBe('Leftover copy — do not launch from this path');
     expect(en.agents.card.leftoverDoNotLaunch).toBe('Do not launch from this path');
+    expect(en.agents.card.leftoverSpawnFallback).toContain('~/.npm-global');
+    expect(en.agents.card.leftoverSpawnFallback).not.toMatch(/install(?:ed)? into ~\/\.agenthub/i);
+    expect(en.agents.card.incompleteCliInstallNpm).toContain('~/.npm-global');
     expect(zh.agents.card.extraCopyLeftover).toBe('遗留数据目录 npm');
     expect(zh.agents.card.updateViaDesktop).toBe('请到桌面应用更新');
     expect(zh.agents.card.updateViaIde).toBe('请到 IDE 插件更新');
@@ -452,6 +468,80 @@ describe('agent launch targets', () => {
         { path: '/home/box/.local/bin/dsh', kind: 'native', source: 'native' },
       ],
     })).toEqual({ cliPath: '/home/box/.agenthub/npm/bin/dsh' });
+  });
+});
+
+describe('dsh leftover vs incomplete CLI honesty', () => {
+  const leftoverPath = '/home/box/.agenthub/npm/bin/dsh';
+  const stubPath = '/home/box/.local/bin/dsh';
+  const skipNote =
+    '跳过 PATH /home/box/.local/bin/dsh：命令不完整（缺少 @deepseek-ai/dsh-scope），不能从该路径启动。请用官方 npm 装到用户前缀（如 ~/.npm-global）。';
+
+  it('reclassifies leftover spawn path as leftover, not official npm', () => {
+    expect(isLeftoverInstallPath(leftoverPath)).toBe(true);
+    expect(isLeftoverInstallPath('~/.npm-global/bin/dsh')).toBe(false);
+    const rows = listAgentInstalls({
+      agentId: 'dsh',
+      installed: true,
+      channel: 'npm',
+      binPath: leftoverPath,
+      version: '9.9.9',
+    });
+    expect(rows).toEqual([
+      {
+        source: 'leftover-agenthub',
+        location: leftoverPath,
+        version: '9.9.9',
+        updateVia: 'none',
+        uninstallVia: 'leftover',
+        spawn: true,
+        kind: 'leftover-agenthub',
+      },
+    ]);
+    expect(agentHonestyHint({
+      agentId: 'dsh',
+      installed: true,
+      channel: 'npm',
+      binPath: leftoverPath,
+    })).toEqual({ key: 'agents.card.leftoverSpawnFallback' });
+  });
+
+  it('hides an incomplete ~/.local/bin/dsh extra copy and asks for official npm', () => {
+    expect(isIncompleteDshCopy('dsh', stubPath, [skipNote])).toBe(true);
+    expect(isIncompleteDshCopy('codex', stubPath, [skipNote])).toBe(false);
+    const rows = listAgentInstalls({
+      agentId: 'dsh',
+      installed: true,
+      channel: 'npm',
+      binPath: leftoverPath,
+      extraCopies: [
+        { path: stubPath, kind: 'native', source: 'native' },
+      ],
+      notes: [skipNote],
+    });
+    expect(rows.map((row) => row.location)).toEqual([leftoverPath]);
+    expect(agentHonestyHint({
+      agentId: 'dsh',
+      installed: false,
+      notes: [skipNote],
+    })).toEqual({ key: 'agents.card.incompleteCliInstallNpm' });
+  });
+
+  it('keeps leftover extra as do-not-launch when the spawn copy is official npm', () => {
+    expect(
+      agentHonestyHint({
+        agentId: 'codex',
+        installed: true,
+        channel: 'npm',
+        binPath: '~/.npm-global/bin/codex',
+        extraCopies: [
+          { path: '~/.agenthub/npm/codex', kind: 'leftover-agenthub', source: 'leftover-agenthub' },
+        ],
+      }),
+    ).toEqual({
+      key: 'agents.card.seeDetailsLeftover',
+      params: { count: 1 },
+    });
   });
 });
 
