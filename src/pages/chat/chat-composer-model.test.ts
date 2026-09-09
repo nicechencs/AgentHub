@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { translate } from '@/lib/i18n';
 import {
+  composerCancelingVisible,
   composerEnterShouldSubmit,
+  composerKeepsStoppingAfterCancel,
   composerPrimaryAction,
   composerQueuedFollowUpView,
   composerShortcutKind,
@@ -166,6 +168,19 @@ describe('composer shortcut and stop copy', () => {
     expect(translate('zh', composerStopMessageKey(false))).toBe('停止');
     expect(translate('zh', composerStopMessageKey(true))).toBe('正在停止');
     expect(translate('en', composerStopMessageKey(true))).toBe('Stopping');
+  });
+
+  it('keeps 正在停止 after a real cancel request until the turn ends', () => {
+    expect(composerKeepsStoppingAfterCancel('requested')).toBe(true);
+    expect(composerKeepsStoppingAfterCancel('pending')).toBe(true);
+    expect(composerKeepsStoppingAfterCancel('none')).toBe(false);
+    expect(composerCancelingVisible({ localCanceling: true, runtimePhase: 'running' })).toBe(true);
+    expect(composerCancelingVisible({ localCanceling: false, runtimePhase: 'cancelling' })).toBe(
+      true,
+    );
+    expect(composerCancelingVisible({ localCanceling: false, runtimePhase: 'running' })).toBe(
+      false,
+    );
   });
 });
 

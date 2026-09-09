@@ -73,6 +73,21 @@ export function composerStopMessageKey(canceling: boolean): MessageKey {
   return canceling ? 'chat.composer.stopping' : 'chat.composer.stop';
 }
 
+export type ComposerCancelResult = 'pending' | 'requested' | 'none';
+
+/** Keep 正在停止 until the turn ends. A miss (`none`) must not lock the button. */
+export function composerKeepsStoppingAfterCancel(result: ComposerCancelResult): boolean {
+  return result === 'pending' || result === 'requested';
+}
+
+/** Local click or a live runtime already in cancelling. */
+export function composerCancelingVisible(input: {
+  localCanceling: boolean;
+  runtimePhase?: string | null;
+}): boolean {
+  return input.localCanceling || input.runtimePhase === 'cancelling';
+}
+
 export function composerQueuedFollowUpView(
   label: string | null | undefined,
   count = 0,

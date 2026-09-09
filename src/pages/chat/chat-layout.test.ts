@@ -25,6 +25,8 @@ describe('chat layout wiring', () => {
     expect(source('index.tsx')).toContain("e.key");
     expect(source('ChatComposer.tsx')).toContain('composerStopMessageKey');
     expect(source('ChatComposer.tsx')).toContain('data-help="chat-stop"');
+    expect(source('use-chat-page-send.ts')).toContain('composerKeepsStoppingAfterCancel');
+    expect(source('use-chat-page-send.ts')).toContain('composerCancelingVisible');
   });
 
   it('opens the model menu from Ctrl/Cmd+Shift+I and labels models in plain language', () => {
@@ -231,6 +233,8 @@ describe('chat layout wiring', () => {
     expect(requests).toContain('chat.runtime.allowAlways');
     expect(requests).toContain('runtimeRequestTitle');
     expect(requests).toContain('chat.runtime.allowAlwaysHint');
+    expect(translate('zh', 'chat.runtime.allowAlwaysHint')).toBe('仅当前这次进程，不保存');
+    expect(translate('en', 'chat.runtime.allowAlwaysHint')).toBe('This process only, not saved');
   });
 
   it('shows Kiro ask-or-full permission mode in session settings and the header', () => {
