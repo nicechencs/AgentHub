@@ -720,6 +720,32 @@ export function chatEscapeShouldCancel(input: {
   return input.sending && !input.canceling;
 }
 
+/** Enter sends; Shift+Enter inserts a newline; IME composition must not send. */
+export function composerEnterShouldSend(input: {
+  key: string;
+  shiftKey: boolean;
+  isComposing?: boolean;
+  nativeEvent?: { isComposing?: boolean; keyCode?: number };
+}): boolean {
+  if (input.key !== 'Enter' || input.shiftKey) return false;
+  if (input.isComposing || input.nativeEvent?.isComposing) return false;
+  if (input.nativeEvent?.keyCode === 229) return false;
+  return true;
+}
+
+export function chatModKShouldFocusHistory(input: {
+  key: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+  overlayOpen: boolean;
+}): boolean {
+  if (input.overlayOpen || input.altKey || input.shiftKey) return false;
+  if (input.key !== 'k' && input.key !== 'K') return false;
+  return input.metaKey || input.ctrlKey;
+}
+
 export function visibleAgentDots(agentIds: AgentKey[]): { shown: AgentKey[]; extra: number } {
   const shown = agentIds.slice(0, 3);
   return { shown, extra: Math.max(0, agentIds.length - 3) };

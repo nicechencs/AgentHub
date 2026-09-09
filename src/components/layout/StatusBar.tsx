@@ -70,7 +70,7 @@ export function StatusBar() {
   const kind = statusBarForwardKind({ available, running, restarting });
   const stateLabel = t(statusBarForwardMessageKey(kind));
   const name = t('chrome.localForward');
-  const aria = `${name} ${stateLabel}`;
+  const aria = `${name} ${stateLabel} · ${t('chrome.localForwardOpenBoard')}`;
 
   return (
     <footer className={pageRhythm.statusBar} data-status-bar="">

@@ -55,6 +55,10 @@ export function queuedFollowUpLabel(queue: readonly string[]): string | null {
   return items.join('；');
 }
 
+export function queuedFollowUpCount(queue: readonly string[]): number {
+  return queue.map((item) => item.trim()).filter(Boolean).length;
+}
+
 export function restoreQueuedFollowUpOnCancel(input: {
   draft: string;
   queue: readonly string[];

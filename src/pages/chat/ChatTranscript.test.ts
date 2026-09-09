@@ -1,6 +1,7 @@
-import { createElement, createRef } from 'react';
+import { createElement, createRef, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import type { ChatMessage, Conversation } from '@/lib/types';
 import { chatTranscriptSurfaceClass } from './chat-model';
 import { ChatTranscript } from './ChatTranscript';
@@ -35,8 +36,12 @@ function userMessage(content: string): ChatMessage {
   };
 }
 
+function renderMarkup(node: ReactElement) {
+  return renderToStaticMarkup(createElement(TooltipProvider, null, node));
+}
+
 function renderTranscript(turns: { turn: number; user?: ChatMessage; agents: ChatMessage[] }[]) {
-  return renderToStaticMarkup(
+  return renderMarkup(
     createElement(ChatTranscript, {
       active: conversation(),
       turns,
@@ -59,17 +64,18 @@ describe('ChatTranscript surfaces', () => {
     expect(html).toContain(`overflow-x-hidden overflow-y-auto ${chatTranscriptSurfaceClass}`);
     expect(html).not.toContain('rounded-composer bg-panel');
     expect(html).not.toContain('rounded-composer bg-canvas');
-    expect(html).toContain('开始对话');
+    expect(html).not.toContain('text-display');
     expect(html).toContain(' · demo');
     expect(html).toContain('了解这个项目');
     expect(html).toContain('检查问题');
     expect(html).toContain('总结当前目录');
     expect(html).toContain('补最小测试');
+    expect(html).toContain('点选只填入输入框，由你发送');
     expect(html).not.toContain('请帮我了解这个项目的结构和主要功能。');
   });
 
   it('replaces starters with the first send blocker as the primary action', () => {
-    const html = renderToStaticMarkup(
+    const html = renderMarkup(
       createElement(ChatTranscript, {
         active: conversation(),
         turns: [],
@@ -88,6 +94,7 @@ describe('ChatTranscript surfaces', () => {
     expect(html).toContain(' · demo');
     expect(html).toContain('设置工作目录');
     expect(html).not.toContain('了解这个项目');
+    expect(html).not.toContain('点选只填入输入框，由你发送');
   });
 
   it('does not paint a panel card once a turn exists', () => {
