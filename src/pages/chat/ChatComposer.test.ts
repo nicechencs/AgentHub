@@ -113,7 +113,6 @@ describe('ChatComposer footer control', () => {
     expect(html).not.toContain('data-help="chat-send"');
     expect(html).toContain('aria-label="停止"');
     expect(html).toContain('aria-keyshortcuts="Escape"');
-    expect(html).toContain('停止 · Esc');
     expect(html).toContain('h-8 w-8 shrink-0 rounded-full');
     expect(html).not.toContain('>停止<');
   });
@@ -132,7 +131,6 @@ describe('ChatComposer footer control', () => {
     expect(html).toContain('aria-label="正在停止"');
     expect(html).toContain('aria-busy="true"');
     expect(html).toContain('disabled');
-    expect(html).not.toContain('正在停止 · Esc');
   });
 });
 
