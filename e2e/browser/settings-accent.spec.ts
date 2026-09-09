@@ -16,16 +16,16 @@ test('Settings brand-color swatches retint the top-left app mark', async ({ page
   const group = page.getByRole('radiogroup', { name: '主色' });
   const purple = group.getByRole('radio', { name: '紫色' });
   const blue = group.getByRole('radio', { name: '蓝色' });
-  await expect(purple).toHaveAttribute('aria-checked', 'true');
-  await expect.poll(() => sidebarLogoFill(page)).toBe('rgb(79, 70, 229)');
-
-  await blue.click();
   await expect(blue).toHaveAttribute('aria-checked', 'true');
-  await expect.poll(async () =>
-    page.evaluate(() => document.documentElement.dataset.accent),
-  ).toBe('blue');
   await expect.poll(() => sidebarLogoFill(page)).toBe('rgb(37, 99, 235)');
 
   await purple.click();
+  await expect(purple).toHaveAttribute('aria-checked', 'true');
+  await expect.poll(async () =>
+    page.evaluate(() => document.documentElement.dataset.accent),
+  ).toBe('indigo');
   await expect.poll(() => sidebarLogoFill(page)).toBe('rgb(79, 70, 229)');
+
+  await blue.click();
+  await expect.poll(() => sidebarLogoFill(page)).toBe('rgb(37, 99, 235)');
 });
