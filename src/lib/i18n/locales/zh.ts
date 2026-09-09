@@ -2893,13 +2893,8 @@ export const zh = {
       sessionLocked: '持续会话已接到当前 Agent 和工作目录；如需更换，请新建会话',
     },
     actions: {
-      newSession: '新建会话',
-      openHistory: '打开历史',
-      focusHistorySearch: '搜索历史会话',
+      newSession: '新建对话',
       copyLatestReply: '复制最近回复',
-      openSettings: '打开设置',
-      openAgents: '打开 Agent',
-      openConnections: '打开连接',
       sampleUnderstandProject: '示例：了解这个项目',
       sampleCheckIssues: '示例：检查问题',
       sampleSummarize: '示例：总结当前目录',
@@ -2909,7 +2904,7 @@ export const zh = {
       sampleGitStatus: '示例：查看 git 状态',
       disabled: {
         noReply: '还没有可复制的回复',
-        noAgent: '没有可用 Agent，没法新建会话',
+        noAgent: '没有可用 Agent，没法新建对话',
       },
     },
     turnOutcome: {

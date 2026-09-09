@@ -1,12 +1,16 @@
-//! Window-menu accelerator for Chat "new chat".
+//! Window-menu accelerators for Chat.
 //!
 //! WebKitGTK / WebView2 swallow Ctrl/Cmd+N (browser "new window") before JS
 //! sees a keydown. A hidden window menu claims the chord at the OS layer and
 //! emits [`CHAT_SHORTCUT_EVENT`] for the frontend.
+//!
+//! Replacing the default menu without Edit items also drops Select All / Cut /
+//! Copy / Paste. Keep a predefined Edit submenu so Ctrl/Cmd+A/C/X/V still work
+//! in the composer.
 
 use serde::Serialize;
 use tauri::{
-    menu::{Menu, MenuItem, Submenu},
+    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
     AppHandle, Emitter, Manager, Runtime,
 };
 
@@ -38,6 +42,33 @@ pub(crate) fn chat_menu_submenu_label(lang: TrayUiLanguage) -> &'static str {
     }
 }
 
+pub(crate) struct EditMenuCopy {
+    pub submenu: &'static str,
+    pub cut: &'static str,
+    pub copy: &'static str,
+    pub paste: &'static str,
+    pub select_all: &'static str,
+}
+
+pub(crate) fn edit_menu_copy(lang: TrayUiLanguage) -> EditMenuCopy {
+    match lang {
+        TrayUiLanguage::Zh => EditMenuCopy {
+            submenu: "编辑",
+            cut: "剪切",
+            copy: "复制",
+            paste: "粘贴",
+            select_all: "全选",
+        },
+        TrayUiLanguage::En => EditMenuCopy {
+            submenu: "Edit",
+            cut: "Cut",
+            copy: "Copy",
+            paste: "Paste",
+            select_all: "Select All",
+        },
+    }
+}
+
 pub(crate) fn chat_shortcut_menu_action(id: &str) -> Option<&'static str> {
     match id {
         MENU_NEW_CHAT => Some(ACTION_NEW_CHAT),
@@ -56,6 +87,17 @@ fn build_new_chat_menu<R: Runtime>(
     app: &AppHandle<R>,
     lang: TrayUiLanguage,
 ) -> tauri::Result<Menu<R>> {
+    let edit = edit_menu_copy(lang);
+    let cut = PredefinedMenuItem::cut(app, Some(edit.cut))?;
+    let copy = PredefinedMenuItem::copy(app, Some(edit.copy))?;
+    let paste = PredefinedMenuItem::paste(app, Some(edit.paste))?;
+    let select_all = PredefinedMenuItem::select_all(app, Some(edit.select_all))?;
+    let edit_menu = Submenu::with_items(
+        app,
+        edit.submenu,
+        true,
+        &[&cut, &copy, &paste, &select_all],
+    )?;
     let item = MenuItem::with_id(
         app,
         MENU_NEW_CHAT,
@@ -63,8 +105,8 @@ fn build_new_chat_menu<R: Runtime>(
         true,
         Some(NEW_CHAT_ACCELERATOR),
     )?;
-    let submenu = Submenu::with_items(app, chat_menu_submenu_label(lang), true, &[&item])?;
-    Menu::with_items(app, &[&submenu])
+    let chat_menu = Submenu::with_items(app, chat_menu_submenu_label(lang), true, &[&item])?;
+    Menu::with_items(app, &[&edit_menu, &chat_menu])
 }
 
 fn hide_main_menu_bar<R: Runtime>(app: &AppHandle<R>) {

@@ -17,48 +17,27 @@ export interface ChatActionDef {
   keywords: string[];
 }
 
+/** Page chrome already has these; `/` only lists in-conversation actions. */
+export const CHAT_SLASH_PAGE_NAV_IDS = [
+  'open-history',
+  'focus-history-search',
+  'open-settings',
+  'open-agents',
+  'open-connections',
+] as const;
+
 export const CHAT_ACTIONS: ChatActionDef[] = [
   {
     id: 'new-session',
     kind: 'local',
     labelKey: 'newSession',
-    keywords: ['new', '新建', '会话', 'new session', '新聊天', '新对话'],
-  },
-  {
-    id: 'open-history',
-    kind: 'local',
-    labelKey: 'openHistory',
-    keywords: ['history', '历史', '记录', '会话列表', 'rail', '打开历史', '打开历史会话', 'open history'],
-  },
-  {
-    id: 'focus-history-search',
-    kind: 'local',
-    labelKey: 'focusHistorySearch',
-    keywords: ['search', '搜索', '查找', '历史搜索', 'find history', '搜索历史会话', '历史会话'],
+    keywords: ['new', '新建', '会话', 'new session', '新聊天', '新对话', '新建对话'],
   },
   {
     id: 'copy-latest-reply',
     kind: 'local',
     labelKey: 'copyLatestReply',
     keywords: ['copy', '复制', '回复', '最近回复', 'clipboard'],
-  },
-  {
-    id: 'open-settings',
-    kind: 'local',
-    labelKey: 'openSettings',
-    keywords: ['settings', '设置', '偏好', '危险模式', '工作目录'],
-  },
-  {
-    id: 'open-agents',
-    kind: 'local',
-    labelKey: 'openAgents',
-    keywords: ['agents', '代理', '智能体', '安装', 'agents page'],
-  },
-  {
-    id: 'open-connections',
-    kind: 'local',
-    labelKey: 'openConnections',
-    keywords: ['connections', '连接', '登录', '账号', 'connections page'],
   },
   {
     id: 'sample-understand-project',

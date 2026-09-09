@@ -17,6 +17,10 @@ describe('backups layout wiring', () => {
     expect(panel).toContain('variant="danger"');
     expect(panel).not.toContain('onClick={() => void handleDelete(bk)}');
     expect(panel).toContain("t('settings.backups.confirmDelete')");
+    expect(panel).toContain('dialogEnterShouldConfirm');
+    expect(panel).toContain('EnterKeyMark');
+    expect(panel).toContain('aria-keyshortcuts="Enter"');
+    expect(panel).not.toMatch(/>Enter</);
     expect(panel).toContain('backupDeleteSubject');
     expect(panel).toContain('MoreHorizontal');
     expect(panel).not.toContain('variant="dangerOutline"');
