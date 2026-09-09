@@ -432,7 +432,6 @@ export default function ChatPage() {
                   onClearQueuedFollowUp={page.clearQueuedFollowUp}
                   focusNonce={page.composerFocusNonce}
                   modelMenuOpenNonce={modelMenuOpenNonce}
-                  onOpenShortcuts={() => setShortcutsOpen(true)}
                   onCancel={() => void page.cancelSending()}
                   onSelectAgent={(id) => void page.selectConversationAgentId(id)}
                   onSwitchConnection={(id) => void page.handleSwitchConnection(id)}

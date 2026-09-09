@@ -46,8 +46,12 @@ import {
 import {
   composerCapabilityHint,
   composerCompactSecondary,
+  composerConnectionTooltip,
+  composerHoverHint,
   composerInvitePlaceholder,
+  composerShowsHintRow,
 } from './chat-empty-state';
+import { ChatShortcutsHelp } from './ChatShortcutsHelp';
 import {
   autoApproveFooter,
   blockerCopy,
@@ -116,7 +120,6 @@ export function ChatComposer({
   emptyTranscript = false,
   focusNonce = 0,
   modelMenuOpenNonce = 0,
-  onOpenShortcuts,
 }: {
   draft: string;
   setDraft: (v: string) => void;
@@ -165,7 +168,6 @@ export function ChatComposer({
   showBlockerBanner?: boolean;
   emptyTranscript?: boolean;
   modelMenuOpenNonce?: number;
-  onOpenShortcuts?: () => void;
 }) {
   const navigate = useNavigate();
   const { t } = useI18n();
@@ -262,6 +264,14 @@ export function ChatComposer({
     agentId: primaryAgent,
     sending,
   });
+  const shortcutHint = t(composerShortcutMessageKey(shortcutKind));
+  const hoverHint = composerHoverHint(shortcutHint, capabilityHint);
+  const showHintRow = composerShowsHintRow({ emptyTranscript });
+  const connectionHint = composerConnectionTooltip({
+    label: connectionView.label,
+    subtitle: connectionView.subtitle,
+    caption: connectionCaption,
+  });
 
   return (
     <>
@@ -314,15 +324,13 @@ export function ChatComposer({
               ? undefined
               : { minHeight: COMPOSER_TEXTAREA_MIN_PX, maxHeight: COMPOSER_TEXTAREA_MAX_PX }
           }
-          placeholder={composerInvitePlaceholder(t, {
-            emptyTranscript,
-            agentLabel: agentPickerLabel,
-          })}
+          placeholder={composerInvitePlaceholder(t, { emptyTranscript })}
           rows={1}
           value={draft}
           disabled={textareaDisabled}
           enterKeyHint="send"
           aria-keyshortcuts="Enter"
+          title={hoverHint}
           onChange={(e) => setDraft(e.target.value)}
           onInput={syncTextareaHeight}
           onKeyDown={(e) => {
@@ -362,32 +370,11 @@ export function ChatComposer({
         />
         <div className="flex items-center justify-between gap-2 px-4 pb-1" data-composer-shortcut="">
           <div className="min-w-0">
-            <p className="text-meta text-muted">
-              {t(composerShortcutMessageKey(shortcutKind))}
-            </p>
-            {capabilityHint ? (
-              <p className="text-meta text-muted/70" data-help="chat-composer-hint">
-                {capabilityHint}
-              </p>
+            {showHintRow ? (
+              <p className="text-meta text-muted">{shortcutHint}</p>
             ) : null}
           </div>
-          {onOpenShortcuts ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="h-auto shrink-0 px-1 py-0 text-meta text-muted"
-              aria-haspopup="dialog"
-              aria-keyshortcuts="?"
-              data-help="chat-shortcuts"
-              onClick={onOpenShortcuts}
-            >
-              {t('chat.shortcuts.open')}
-              <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded-btn border border-border bg-subtle px-1 text-meta leading-none text-muted">
-                ?
-              </kbd>
-            </Button>
-          ) : null}
+          <ChatShortcutsHelp />
         </div>
         <div className="flex shrink-0 items-center gap-1.5 border-t border-border/50 px-2 py-2">
           <DropdownMenu>
@@ -455,7 +442,7 @@ export function ChatComposer({
           </DropdownMenu>
 
           <DropdownMenu>
-            <Hint label={connectionCaption ?? undefined}>
+            <Hint label={connectionHint}>
               <DropdownMenuTrigger asChild>
                 <Button
                   type="button"
@@ -468,15 +455,10 @@ export function ChatComposer({
                     switchingProvider ||
                     Boolean(primaryAgent && hiddenIds.has(primaryAgent))
                   }
-                  className="max-w-32"
-                  aria-label={connectionCaption ?? t('chat.composer.switchConnection')}
+                  className={compactSecondary ? 'max-w-[6.5rem]' : 'max-w-28'}
+                  aria-label={connectionHint || t('chat.composer.switchConnection')}
                 >
-                  <span className="min-w-0 truncate">
-                    {connectionView.label}
-                    {connectionView.subtitle ? (
-                      <span className="text-muted"> · {connectionView.subtitle}</span>
-                    ) : null}
-                  </span>
+                  <span className="min-w-0 truncate">{connectionView.label}</span>
                   <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
                 </Button>
               </DropdownMenuTrigger>
@@ -695,7 +677,7 @@ export function ChatComposer({
               onClick={submitComposer}
               data-help="chat-send"
               aria-label={sendHint}
-              title={sendHint}
+              title={composerHoverHint(sendHint, hoverHint)}
             >
               <SendHorizontal className="h-4 w-4" />
             </Button>

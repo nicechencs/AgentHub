@@ -73,18 +73,24 @@ function composer(partial?: Partial<Parameters<typeof ChatComposer>[0]>) {
 }
 
 describe('ChatComposer empty invite', () => {
-  it('invites typing in the placeholder and keeps Kiro limits on the quiet hint', () => {
+  it('uses a generic placeholder and keeps limits on hover titles', () => {
     const html = renderMarkup(composer());
-    expect(html).toContain('向 Kiro 发第一条消息…');
-    expect(html).toContain('data-help="chat-composer-hint"');
+    expect(html).toContain('发消息…');
+    expect(html).not.toContain('向 Kiro');
+    expect(html).not.toContain('data-help="chat-composer-hint"');
+    expect(html).not.toContain('>生成时不能中途补充，可排队到下一轮。<');
     expect(html).toContain('生成时不能中途补充，可排队到下一轮。');
     expect(html).toContain('aria-label="消息输入"');
+    expect(html).toContain('data-help="chat-shortcuts"');
+    expect(html).toContain('aria-expanded="false"');
     expect(html).not.toMatch(/placeholder="[^"]*不能中途补充/);
+    expect(html).not.toMatch(/>快捷键</);
   });
 
-  it('uses the everyday placeholder after the first turn', () => {
+  it('uses the everyday placeholder after the first turn and restores the shortcut line', () => {
     const html = renderMarkup(composer({ emptyTranscript: false, primaryAgent: 'codex', agentPickerLabel: 'Codex' }));
     expect(html).toContain('发给 Agent…');
+    expect(html).toContain('Enter 发送 · Shift+Enter 换行');
     expect(html).not.toContain('data-help="chat-composer-hint"');
   });
 });
