@@ -2997,7 +2997,19 @@ fn map_transport(error: codex_transport::CodexTransportError) -> AppError {
     if matches!(error, codex_transport::CodexTransportError::Interrupted) {
         cancelled_error()
     } else {
-        transport_error(error)
+        AppError::message(
+            "chat.runtime.transport",
+            redact_text(&transport_user_message(&error)),
+        )
+    }
+}
+
+fn transport_user_message(error: &codex_transport::CodexTransportError) -> String {
+    let text = error.to_string();
+    if text.contains("stdout JSON line exceeds") {
+        "图片太大，请换一张更小的图".into()
+    } else {
+        text
     }
 }
 

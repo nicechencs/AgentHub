@@ -383,6 +383,8 @@ fn acp_session_prompt_params_use_prompt_not_content() {
 
 #[test]
 fn grok_prompt_blocks_embed_local_image() {
+    // Grok/Kiro ACP image blocks require base64 `data`. A path-only / file URI
+    // block is not sent: this client advertises no fs read.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("shot.png");
     std::fs::write(&path, b"png-bytes").unwrap();
