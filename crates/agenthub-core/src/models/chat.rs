@@ -159,6 +159,28 @@ pub enum ProcessStep {
     },
     #[serde(rename_all = "camelCase")]
     Error { message: String },
+    /// Protocol token counts from the Agent. Absent fields were not sent.
+    #[serde(rename_all = "camelCase")]
+    Usage {
+        /// `turn` = current turn (`last`); `session` = cumulative (`total`).
+        /// Missing means current turn (Grok `turn_completed.usage`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scope: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        input: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        output: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache_read: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache_write: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reasoning: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        total: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        context_window: Option<u64>,
+    },
 }
 
 impl ProcessStep {
@@ -170,8 +192,136 @@ impl ProcessStep {
             Self::Text { .. } => "text",
             Self::Raw { .. } => "raw",
             Self::Error { .. } => "error",
+            Self::Usage { .. } => "usage",
         }
     }
+
+    /// Map a protocol usage object to a step. Skips all-zero / empty objects.
+    ///
+    /// Reads Codex `TokenUsageBreakdown` and Grok `turn_completed.usage`
+    /// field names as sent. Does not subtract cache from input, convert cost,
+    /// or invent a total.
+    pub fn from_usage_object(usage: &serde_json::Value) -> Option<Self> {
+        if let Some(step) = usage_from_fields(usage) {
+            return Some(step);
+        }
+        let map = usage
+            .get("modelUsage")
+            .or_else(|| usage.get("model_usage"))
+            .and_then(|v| v.as_object())?;
+        if map.len() != 1 {
+            return None;
+        }
+        usage_from_fields(map.values().next()?)
+    }
+
+    /// Codex `tokenUsage`: `last` is this turn, `total` is the thread cumulative.
+    /// Does not invent a session total when only `last` is present.
+    pub fn from_codex_token_usage(token_usage: &serde_json::Value) -> Vec<Self> {
+        let window = token_u64(token_usage, &["modelContextWindow", "model_context_window"]);
+        let mut out = Vec::new();
+        if let Some(step) = token_usage.get("last").and_then(Self::from_usage_object) {
+            out.push(step.with_usage_meta(Some("turn"), None));
+        }
+        if let Some(step) = token_usage.get("total").and_then(Self::from_usage_object) {
+            out.push(step.with_usage_meta(Some("session"), window));
+        }
+        out
+    }
+
+    fn with_usage_meta(self, scope: Option<&str>, context_window: Option<u64>) -> Self {
+        match self {
+            Self::Usage {
+                input,
+                output,
+                cache_read,
+                cache_write,
+                reasoning,
+                total,
+                ..
+            } => Self::Usage {
+                scope: scope.map(str::to_string),
+                input,
+                output,
+                cache_read,
+                cache_write,
+                reasoning,
+                total,
+                context_window,
+            },
+            other => other,
+        }
+    }
+}
+
+fn usage_from_fields(usage: &serde_json::Value) -> Option<ProcessStep> {
+    let input = token_u64(usage, &["inputTokens", "input_tokens"]);
+    let output = token_u64(usage, &["outputTokens", "output_tokens"]);
+    let cache_read = token_u64(
+        usage,
+        &[
+            "cachedInputTokens",
+            "cached_input_tokens",
+            "cachedReadTokens",
+            "cached_read_tokens",
+        ],
+    );
+    let cache_write = token_u64(
+        usage,
+        &[
+            "cacheWriteInputTokens",
+            "cache_write_input_tokens",
+            "cacheCreationTokens",
+            "cache_creation_tokens",
+        ],
+    );
+    let reasoning = token_u64(
+        usage,
+        &[
+            "reasoningOutputTokens",
+            "reasoning_output_tokens",
+            "reasoningTokens",
+            "reasoning_tokens",
+        ],
+    );
+    let total = token_u64(usage, &["totalTokens", "total_tokens"]);
+    if input.unwrap_or(0) == 0
+        && output.unwrap_or(0) == 0
+        && cache_read.unwrap_or(0) == 0
+        && cache_write.unwrap_or(0) == 0
+        && reasoning.unwrap_or(0) == 0
+        && total.unwrap_or(0) == 0
+    {
+        return None;
+    }
+    Some(ProcessStep::Usage {
+        scope: None,
+        input,
+        output,
+        cache_read,
+        cache_write,
+        reasoning,
+        total,
+        context_window: None,
+    })
+}
+
+fn token_u64(v: &serde_json::Value, keys: &[&str]) -> Option<u64> {
+    for key in keys {
+        let Some(value) = v.get(*key) else {
+            continue;
+        };
+        if let Some(n) = value.as_u64() {
+            return Some(n);
+        }
+        if let Some(n) = value.as_i64().and_then(|n| u64::try_from(n).ok()) {
+            return Some(n);
+        }
+        if let Some(n) = value.as_f64().and_then(|n| (n >= 0.0).then_some(n as u64)) {
+            return Some(n);
+        }
+    }
+    None
 }
 
 /// Streaming events for chat send (externally tagged; no Tauri types).
