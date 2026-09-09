@@ -855,6 +855,66 @@ fn switching_already_current_provider_keeps_backfilled_live_value() {
 }
 
 #[test]
+fn live_config_is_empty_treats_hollow_claude_json_as_empty() {
+    assert!(live_config_is_empty(&json!({"env": {}})));
+    assert!(live_config_is_empty(&json!({"$schema": "x", "env": {}})));
+    assert!(!live_config_is_empty(
+        &json!({"env": {"ANTHROPIC_AUTH_TOKEN": "manual-live-secret"}})
+    ));
+}
+
+#[test]
+fn switching_already_current_claude_preserves_pool_when_live_is_hollow() {
+    let live = AgentConfig {
+        agent: AgentId::Claude,
+        raw: json!({"env": {}}),
+    };
+    let (_root, _db, svc, adapter, _backups) = live_svc(AgentId::Claude, live);
+    let mut current = input("c1", AgentId::Claude, "Current", true);
+    current.settings_config = json!({
+        "env": {
+            "ANTHROPIC_AUTH_TOKEN": "pool-auth-token",
+            "ANTHROPIC_BASE_URL": "https://api.anthropic.com"
+        }
+    });
+    svc.create(&current).unwrap();
+
+    let result = svc.switch("c1", AgentId::Claude).unwrap();
+    assert!(result.backfilled_provider_id.is_none());
+    assert_eq!(result.provider.settings_config, current.settings_config);
+    assert_eq!(
+        svc.get("c1", None).unwrap().settings_config,
+        current.settings_config
+    );
+    assert_eq!(adapter.config().raw, current.settings_config);
+}
+
+#[test]
+fn switching_away_does_not_wipe_current_when_live_is_hollow_claude_json() {
+    let live = AgentConfig {
+        agent: AgentId::Claude,
+        raw: json!({"env": {}}),
+    };
+    let (_root, _db, svc, adapter, _backups) = live_svc(AgentId::Claude, live);
+    let mut current = input("c1", AgentId::Claude, "Current", true);
+    current.settings_config = json!({"env": {"ANTHROPIC_AUTH_TOKEN": "pool-auth-token"}});
+    svc.create(&current).unwrap();
+    let mut target = input("c2", AgentId::Claude, "Target", false);
+    target.settings_config = json!({"env": {"ANTHROPIC_AUTH_TOKEN": "target-secret"}});
+    svc.create(&target).unwrap();
+
+    let result = svc.switch("c2", AgentId::Claude).unwrap();
+    assert!(result.backfilled_provider_id.is_none());
+    assert_eq!(
+        svc.get("c1", None).unwrap().settings_config,
+        current.settings_config
+    );
+    assert!(!svc.get("c1", None).unwrap().is_current);
+    assert_eq!(adapter.config().raw, target.settings_config);
+    assert!(svc.get("c2", None).unwrap().is_current);
+}
+
+#[test]
 fn live_config_snapshot_restores_exact_config_without_serializing_it() {
     let original = AgentConfig {
         agent: AgentId::Codex,
