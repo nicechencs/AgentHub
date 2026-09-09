@@ -94,7 +94,7 @@ describe('connections layout wiring', () => {
     expect(list).toContain('{refreshButton}');
     expect(list).toContain('{deleteButton}');
     expect(list).not.toContain('footer={actions}');
-    expect(list).toContain("t('connections.list.clientsTitle')");
+    expect(list).toContain("t('connections.list.sectionWho')");
     expect(list).toContain('SortHandle');
     expect(page).toContain('inspectActiveTicketId');
   });
