@@ -2735,6 +2735,7 @@ export const zh = {
       titleAria: "会话标题",
       pickCwd: "点击选择工作目录",
       cwdUnset: "未设置工作目录",
+      cwdMissing: "目录已不存在",
       autoApprove: "自动批准",
       sessionSettings: "会话设置",
       nativeSession: "已关联官方会话 {id}",
@@ -3065,6 +3066,10 @@ export const zh = {
     },
     cwd: {
       unset: "未设目录",
+      missing: "原工作目录不存在",
+      missingDetail: "对话记录仍可用。启动时会改用当前可用目录，也可改绑到项目目录或另选文件夹。",
+      rebind: "选文件夹",
+      useProjectDir: "改绑到项目目录",
     },
     autoApprove: {
       skip: "跳过工具确认",
@@ -3095,6 +3100,8 @@ export const zh = {
     toast: {
       fromProjects: "已从项目创建会话",
       fromProjectsDesc: "提示词已填入；确认工作目录后发送。",
+      fromSession: "已打开这条对话",
+      fromSessionDesc: "对话记录已载入。原工作目录不存在时可改绑。",
       cancelRequested: "已请求取消",
       cancelRequestedDesc: "正在停止当前生成，过程面板将显示已取消。",
       steered: "已补充",

@@ -1,8 +1,10 @@
 //! Chat Tauri commands — thin wrappers over agenthub-core ChatService.
 
 use agenthub_core::models::{
-    AgentId, ChatEvent, ChatMessage, Conversation, LiveChatModel, MarkdownFilePreview,
+    AgentId, ChatEvent, ChatHistoryTurn, ChatMessage, Conversation, LiveChatModel,
+    MarkdownFilePreview,
 };
+use agenthub_core::services::chat_cwd::stored_cwd_missing;
 use agenthub_core::services::chat_runtime::{
     RuntimeOptions, RuntimeReply, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings,
 };
@@ -17,11 +19,32 @@ use agenthub_core::logging::targets;
 use crate::commands::{map_err_string, parse_agent, with_hub_blocking};
 use crate::state::AppState;
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConversationWire {
+    #[serde(flatten)]
+    conversation: Conversation,
+    cwd_missing: bool,
+}
+
+fn wire_conversation(conversation: Conversation) -> ConversationWire {
+    let cwd_missing = stored_cwd_missing(conversation.cwd.as_deref());
+    ConversationWire {
+        conversation,
+        cwd_missing,
+    }
+}
+
 /// Invoke: `list_conversations`
 #[tauri::command]
-pub async fn list_conversations(state: State<'_, AppState>) -> Result<Vec<Conversation>, String> {
+pub async fn list_conversations(
+    state: State<'_, AppState>,
+) -> Result<Vec<ConversationWire>, String> {
     let hub = state.hub_arc()?;
-    with_hub_blocking(hub, list_conversations_inner).await
+    with_hub_blocking(hub, |hub| {
+        list_conversations_inner(hub).map(|rows| rows.into_iter().map(wire_conversation).collect())
+    })
+    .await
 }
 
 /// Invoke: `create_conversation`
@@ -30,10 +53,10 @@ pub async fn create_conversation(
     state: State<'_, AppState>,
     agent_ids: Vec<String>,
     cwd: Option<String>,
-) -> Result<Conversation, String> {
+) -> Result<ConversationWire, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
-        create_conversation_inner(hub, agent_ids, cwd)
+        create_conversation_inner(hub, agent_ids, cwd).map(wire_conversation)
     })
     .await
 }
@@ -44,10 +67,10 @@ pub async fn ensure_default_conversation(
     state: State<'_, AppState>,
     agent_ids: Vec<String>,
     cwd: Option<String>,
-) -> Result<Conversation, String> {
+) -> Result<ConversationWire, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
-        ensure_default_conversation_inner(hub, agent_ids, cwd)
+        ensure_default_conversation_inner(hub, agent_ids, cwd).map(wire_conversation)
     })
     .await
 }
@@ -63,10 +86,29 @@ pub async fn update_conversation(
     agent_ids: Option<Vec<String>>,
     cwd: Option<String>,
     allow_dangerous: Option<bool>,
-) -> Result<Conversation, String> {
+) -> Result<ConversationWire, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
         update_conversation_inner(hub, &id, title, agent_ids, cwd, allow_dangerous)
+            .map(wire_conversation)
+    })
+    .await
+}
+
+/// Invoke: `open_conversation_from_session`
+#[tauri::command]
+pub async fn open_conversation_from_session(
+    state: State<'_, AppState>,
+    agent_id: String,
+    session_id: Option<String>,
+    cwd: Option<String>,
+    title: Option<String>,
+    history: Vec<ChatHistoryTurn>,
+) -> Result<ConversationWire, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        open_conversation_from_session_inner(hub, agent_id, session_id, cwd, title, history)
+            .map(wire_conversation)
     })
     .await
 }
@@ -363,6 +405,20 @@ fn update_conversation_inner(
     hub.chat()
         .update_conversation(id, title, agents, cwd_patch, allow_dangerous)
         .map_err(|e| map_err_string("update_conversation", e))
+}
+
+fn open_conversation_from_session_inner(
+    hub: &AgentHub,
+    agent_id: String,
+    session_id: Option<String>,
+    cwd: Option<String>,
+    title: Option<String>,
+    history: Vec<ChatHistoryTurn>,
+) -> Result<Conversation, String> {
+    let agent = parse_agent(&agent_id)?;
+    hub.chat()
+        .open_from_session(agent, session_id, cwd, title, history)
+        .map_err(|e| map_err_string("open_conversation_from_session", e))
 }
 
 fn delete_conversation_inner(hub: &AgentHub, id: &str) -> Result<(), String> {

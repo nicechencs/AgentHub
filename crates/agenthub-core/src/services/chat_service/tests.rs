@@ -1605,3 +1605,99 @@ fn cancel_logs_stop() {
     assert!(logs.contains("stop ok"), "logs:\n{logs}");
     assert!(logs.contains("op=\"stop\""), "logs:\n{logs}");
 }
+
+#[test]
+fn create_and_send_keep_missing_cwd_without_hard_fail() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let runner = Arc::new(RecordingProcessRunner::new());
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::clone(&runner),
+    ));
+    let chat = ChatService::new(db, run);
+    let dead = "/var/folders/zz/T/.tmp-agenthub-missing/workspace";
+    let conv = chat
+        .create_conversation(vec![AgentId::Claude], Some(dead.into()))
+        .unwrap();
+    assert_eq!(conv.cwd.as_deref(), Some(dead));
+
+    chat.send(&conv.id, "hello after missing cwd", &|_| {})
+        .unwrap();
+    let calls = runner.calls.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    let used = calls[0].cwd.clone().expect("runtime cwd");
+    assert!(used.is_dir(), "runtime cwd must exist: {used:?}");
+    assert_ne!(used, std::path::PathBuf::from(dead));
+}
+
+#[test]
+fn rebind_missing_cwd_allowed_after_session_starts() {
+    let dir = tempdir().unwrap();
+    let live = dir.path().join("rebind");
+    std::fs::create_dir_all(&live).unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(RecordingProcessRunner::new()),
+    ));
+    let chat = ChatService::new(db, run);
+    let dead = "/var/folders/zz/T/.tmp-agenthub-missing/workspace";
+    let conv = chat
+        .open_from_session(
+            AgentId::Claude,
+            Some("sess-missing-cwd".into()),
+            Some(dead.into()),
+            Some("旧目录对话".into()),
+            vec![
+                ChatHistoryTurn {
+                    role: ChatRole::User,
+                    content: "先改登录页".into(),
+                },
+                ChatHistoryTurn {
+                    role: ChatRole::Agent,
+                    content: "好，先看现有实现".into(),
+                },
+            ],
+        )
+        .unwrap();
+    assert_eq!(conv.cwd.as_deref(), Some(dead));
+    assert_eq!(conv.native_session_id.as_deref(), Some("sess-missing-cwd"));
+    let messages = chat.list_messages(&conv.id).unwrap();
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[0].content, "先改登录页");
+    assert_eq!(messages[1].content, "好，先看现有实现");
+
+    let rebound = chat
+        .update_conversation(
+            &conv.id,
+            None,
+            None,
+            Some(Some(live.to_string_lossy().into_owned())),
+            None,
+        )
+        .unwrap();
+    assert_eq!(
+        rebound.cwd.as_deref(),
+        Some(live.to_string_lossy().as_ref())
+    );
+    assert_eq!(
+        rebound.native_session_id.as_deref(),
+        Some("sess-missing-cwd")
+    );
+
+    let again = chat
+        .open_from_session(
+            AgentId::Claude,
+            Some("sess-missing-cwd".into()),
+            Some(dead.into()),
+            Some("忽略".into()),
+            vec![ChatHistoryTurn {
+                role: ChatRole::User,
+                content: "should not import again".into(),
+            }],
+        )
+        .unwrap();
+    assert_eq!(again.id, conv.id);
+    assert_eq!(chat.list_messages(&again.id).unwrap().len(), 2);
+}

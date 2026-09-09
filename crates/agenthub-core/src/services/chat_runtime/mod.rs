@@ -11,7 +11,9 @@ mod ops;
 mod store;
 mod types;
 
-pub(crate) use store::{is_acp_runtime_agent, is_claude_stream_runtime_agent, is_runtime_chat_agent};
+pub(crate) use store::{
+    is_acp_runtime_agent, is_claude_stream_runtime_agent, is_runtime_chat_agent,
+};
 
 pub use types::{
     RuntimeDecision, RuntimeEvent, RuntimeExtensionItem, RuntimeExtensionKind, RuntimeFileChange,
@@ -666,12 +668,7 @@ impl ChatRuntime {
         let Ok(Some(conversation)) = self.repo.get_conversation(conversation_id) else {
             return CatalogCache::default();
         };
-        let Some(cwd) = conversation
-            .cwd
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(PathBuf::from)
+        let Ok(cwd) = crate::services::chat_cwd::resolve_runtime_cwd(conversation.cwd.as_deref())
         else {
             return CatalogCache::default();
         };
@@ -1003,12 +1000,7 @@ impl ActorWorker {
         let Ok(Some(conversation)) = self.repo.get_conversation(&self.conversation_id) else {
             return CatalogCache::default();
         };
-        let Some(cwd) = conversation
-            .cwd
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(PathBuf::from)
+        let Ok(cwd) = crate::services::chat_cwd::resolve_runtime_cwd(conversation.cwd.as_deref())
         else {
             return CatalogCache::default();
         };
@@ -1620,7 +1612,6 @@ impl ActorWorker {
         }
     }
 
-
     fn claude_connect_and_prompt(&mut self, prompt: Value) -> Result<RuntimeSnapshot> {
         let cwd = self.conversation_cwd()?;
         let settings = self.store.turn_settings(&self.conversation_id)?;
@@ -1669,9 +1660,7 @@ impl ActorWorker {
             .map_err(map_transport)?
         };
 
-        transport
-            .send_raw_value(&prompt)
-            .map_err(map_transport)?;
+        transport.send_raw_value(&prompt).map_err(map_transport)?;
 
         let run_id = self
             .run_id
@@ -1795,7 +1784,8 @@ impl ActorWorker {
             return Ok(());
         }
 
-        let Some(steps) = crate::utils::stream_parse::claude::parse_line(&params.to_string()) else {
+        let Some(steps) = crate::utils::stream_parse::claude::parse_line(&params.to_string())
+        else {
             return Ok(());
         };
         for step in steps {
@@ -3020,11 +3010,11 @@ impl ActorWorker {
     }
 
     fn conversation_cwd(&self) -> Result<PathBuf> {
-        self.repo
+        let stored = self
+            .repo
             .get_conversation(&self.conversation_id)?
-            .and_then(|conversation| conversation.cwd.map(PathBuf::from))
-            .map(Ok)
-            .unwrap_or_else(|| std::env::current_dir().map_err(AppError::from))
+            .and_then(|conversation| conversation.cwd);
+        crate::services::chat_cwd::resolve_runtime_cwd(stored.as_deref())
     }
 }
 

@@ -107,6 +107,34 @@ impl ChatRepo {
         })
     }
 
+    pub fn find_by_native_session_id(&self, session_id: &str) -> Result<Option<Conversation>> {
+        let session_id = session_id.trim();
+        if session_id.is_empty() {
+            return Ok(None);
+        }
+        self.db.with_conn(|conn| {
+            let mut conv = conn
+                .query_row(
+                    r#"
+                    SELECT id, title, agent_ids, cwd, allow_dangerous, created_at, updated_at,
+                           native_session_id
+                    FROM conversations
+                    WHERE native_session_id = ?1
+                    ORDER BY updated_at DESC, id DESC
+                    LIMIT 1
+                    "#,
+                    params![session_id],
+                    map_conversation_row,
+                )
+                .optional()
+                .map_err(AppError::from)?;
+            if let Some(ref mut c) = conv {
+                c.sending = conversation_is_sending(conn, &c.id)?;
+            }
+            Ok(conv)
+        })
+    }
+
     pub fn get_conversation(&self, id: &str) -> Result<Option<Conversation>> {
         self.db.with_conn(|conn| {
             let mut conv = conn

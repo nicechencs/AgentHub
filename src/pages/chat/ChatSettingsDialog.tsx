@@ -22,6 +22,7 @@ import {
   autoApproveConfirmCopy,
   autoApproveEffect,
   autoApproveHint,
+  canRebindConversationCwd,
 } from './chat-model';
 
 export function ChatSettingsDialog({
@@ -51,19 +52,20 @@ export function ChatSettingsDialog({
   const approveOn = autoApproveActive(Boolean(active?.allowDangerous), selectedAgent);
   const kiroPermissions = isKiroChatAgent(selectedAgent);
   const permissionLocked = kiroPermissions && runtimeLocked;
+  const cwdLocked = !canRebindConversationCwd(active ?? { cwd: null }, runtimeLocked);
 
   useEffect(() => {
     setCwdDraft(active?.cwd ?? '');
   }, [active?.id, active?.cwd]);
 
   function commitCwd(raw: string) {
-    if (runtimeLocked) return;
+    if (cwdLocked) return;
     const v = raw.trim();
     onPatch({ cwd: v || null });
   }
 
   async function handleBrowse() {
-    if (runtimeLocked) return;
+    if (cwdLocked) return;
     setPicking(true);
     try {
       const picked = await pickDirectory({
@@ -105,16 +107,16 @@ export function ChatSettingsDialog({
                     value={cwdDraft}
                     placeholder={t('chat.settings.cwdPlaceholder')}
                     aria-label={t('chat.settings.cwd')}
-                    disabled={runtimeLocked}
-                    title={runtimeLocked ? t('chat.runtimeOps.sessionLocked') : undefined}
+                    disabled={cwdLocked}
+                    title={cwdLocked ? t('chat.runtimeOps.sessionLocked') : undefined}
                     onChange={(e) => setCwdDraft(e.target.value)}
                     onBlur={(e) => commitCwd(e.target.value)}
                   />
                   <Button
                     type="button"
                     variant="outline"
-                    disabled={picking || runtimeLocked}
-                    title={runtimeLocked ? t('chat.runtimeOps.sessionLocked') : undefined}
+                    disabled={picking || cwdLocked}
+                    title={cwdLocked ? t('chat.runtimeOps.sessionLocked') : undefined}
                     onClick={() => void handleBrowse()}
                   >
                     {picking ? t('chat.settings.picking') : t('chat.settings.pickDir')}

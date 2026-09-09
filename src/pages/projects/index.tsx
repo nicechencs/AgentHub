@@ -49,7 +49,7 @@ import {
   upsertProjectMeta,
 } from '@/lib/api/project';
 import { openPathInFileManager } from '@/lib/api/skill';
-import { setChatBootstrapFitting } from '@/lib/chat-bootstrap';
+import { setChatBootstrap, setChatBootstrapFitting } from '@/lib/chat-bootstrap';
 import { isCapabilityUsable } from '@/lib/capability';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import {
@@ -66,7 +66,11 @@ import { loadString, saveString, StorageKey } from '@/lib/ui-preferences';
 import type { AgentKey, AgentProject, AgentSession } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { nativeResumeCommand, nativeSessionId, shortSessionId } from './project-format';
-import { buildContinuePrompt, buildSummaryPrompt, type ContinueRecord } from './project-prompts';
+import {
+  buildSummaryPrompt,
+  historyTurnsFromRecord,
+  type ContinueRecord,
+} from './project-prompts';
 import {
   resolveInitialProjectAgentId,
   resolveProjectFetchAgentId,
@@ -618,15 +622,25 @@ export default function ProjectsPage() {
           record = { excerpt: classified.excerpt, truncated: classified.truncated };
         }
       }
+      const group = visibleGroups.find((item) =>
+        item.members.some((member) => member.id === p.projectId),
+      );
+      const projectCwd = group ? verifiedProjectWorkspacePath(group.primary) : null;
+      const history = historyTurnsFromRecord(p, record);
       const payload = {
         agentIds: [p.agentId],
         cwd: p.cwd ?? null,
         title: p.title,
-        prompt: buildContinuePrompt(p, record),
+        sessionId: nativeSessionId(p),
+        history,
+        fallbackCwd: projectCwd,
       };
-      const ok = setChatBootstrapFitting(payload, (limit) =>
-        buildContinuePrompt(p, record, limit),
-      );
+      const ok =
+        setChatBootstrap(payload) ||
+        setChatBootstrap({
+          ...payload,
+          history: history.length > 2 ? [history[0], history[history.length - 1]] : history,
+        });
       if (!ok) {
         toast({ title: t('projects.toast.handoffFailed'), variant: 'danger' });
         return;

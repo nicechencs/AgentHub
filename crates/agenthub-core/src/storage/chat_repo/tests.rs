@@ -67,6 +67,14 @@ fn crud_and_cascade_delete() {
             .as_deref(),
         Some("sess-1")
     );
+    assert_eq!(
+        repo.find_by_native_session_id("sess-1")
+            .unwrap()
+            .unwrap()
+            .id,
+        "c1"
+    );
+    assert!(repo.find_by_native_session_id("missing").unwrap().is_none());
     let got = repo.get_conversation("c1").unwrap().expect("found");
     assert_eq!(got.agent_ids, vec![AgentId::Claude, AgentId::Codex]);
     assert_eq!(got.cwd.as_deref(), Some("/tmp"));

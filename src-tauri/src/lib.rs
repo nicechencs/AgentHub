@@ -279,6 +279,7 @@ pub fn run() {
             commands::chat::create_conversation,
             commands::chat::ensure_default_conversation,
             commands::chat::update_conversation,
+            commands::chat::open_conversation_from_session,
             commands::chat::delete_conversation,
             commands::chat::list_chat_messages,
             commands::chat::chat_send,

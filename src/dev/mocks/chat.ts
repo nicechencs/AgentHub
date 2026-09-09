@@ -4,6 +4,7 @@ import { delay } from '@/dev/mocks/delay';
 import type {
   AgentKey,
   ChatEvent,
+  ChatHistoryTurn,
   ChatMessage,
   ChatMessageStatus,
   Conversation,
@@ -22,6 +23,61 @@ const runtimeJobs = new Map<string, { runId: string; aborted: boolean }>();
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+/** Browser mock cannot stat real disks; treat temp/missing sentinels as gone. */
+export function mockCwdMissing(cwd?: string | null): boolean {
+  const value = cwd?.trim() ?? '';
+  if (!value) return false;
+  return /(?:^|[\\/])\.tmp|[/\\]var[/\\]folders[/\\]|missing-cwd/i.test(value);
+}
+
+function withCwdFlag(conv: Conversation): Conversation {
+  return { ...conv, cwdMissing: mockCwdMissing(conv.cwd) };
+}
+
+function importMockHistory(
+  conversationId: string,
+  agentId: AgentKey,
+  history: ChatHistoryTurn[],
+): ChatMessage[] {
+  const createdAt = nowIso();
+  const rows: ChatMessage[] = [];
+  let turn = 0;
+  let openUser = false;
+  for (const item of history) {
+    const content = item.content.trim();
+    if (!content) continue;
+    if (item.role === 'user') {
+      turn += 1;
+      openUser = true;
+      rows.push({
+        id: `msg-mock-${mockSeq++}`,
+        conversationId,
+        turn,
+        role: 'user',
+        content,
+        status: 'ok',
+        durationMs: 0,
+        createdAt,
+      });
+    } else {
+      if (!openUser) turn += 1;
+      openUser = false;
+      rows.push({
+        id: `msg-mock-${mockSeq++}`,
+        conversationId,
+        turn,
+        role: 'agent',
+        agentId,
+        content,
+        status: 'ok',
+        durationMs: 0,
+        createdAt,
+      });
+    }
+  }
+  return rows;
 }
 
 function requireSingleAgent(agentIds: AgentKey[]): AgentKey[] {
@@ -331,7 +387,9 @@ export function createMockChatPort(): ChatPort {
   return {
     async listConversations() {
       await delay(120);
-      return mockConversations.map((c) => ({ ...c, sending: mockInflight.has(c.id) }));
+      return mockConversations.map((c) =>
+        withCwdFlag({ ...c, sending: mockInflight.has(c.id) }),
+      );
     },
 
     async createConversation(agentIds, cwd) {
@@ -348,7 +406,35 @@ export function createMockChatPort(): ChatPort {
       };
       mockConversations.unshift(conv);
       mockMessages[conv.id] = [];
-      return { ...conv };
+      return withCwdFlag({ ...conv });
+    },
+
+    async openConversationFromSession(input) {
+      await delay(80);
+      const sessionId = input.sessionId?.trim() || '';
+      const existing = sessionId
+        ? mockConversations.find((c) => c.nativeSessionId === sessionId)
+        : undefined;
+      if (existing) {
+        const rows = mockMessages[existing.id] ?? (mockMessages[existing.id] = []);
+        if (rows.length === 0 && input.history.length > 0) {
+          mockMessages[existing.id] = importMockHistory(existing.id, input.agentId, input.history);
+        }
+        return withCwdFlag({ ...existing, sending: mockInflight.has(existing.id) });
+      }
+      const conv: Conversation = {
+        id: `conv-mock-${mockSeq++}`,
+        title: input.title?.trim() || '',
+        agentIds: requireSingleAgent([input.agentId]),
+        cwd: input.cwd ?? null,
+        allowDangerous: false,
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+        nativeSessionId: sessionId || null,
+      };
+      mockConversations.unshift(conv);
+      mockMessages[conv.id] = importMockHistory(conv.id, input.agentId, input.history);
+      return withCwdFlag({ ...conv });
     },
 
     async ensureDefaultConversation(agentIds, cwd) {
@@ -358,7 +444,7 @@ export function createMockChatPort(): ChatPort {
         (c) => c.title.trim() === '' && (mockMessages[c.id] ?? []).length === 0,
       );
       if (existing) {
-        return { ...existing, sending: mockInflight.has(existing.id) };
+        return withCwdFlag({ ...existing, sending: mockInflight.has(existing.id) });
       }
       const conv: Conversation = {
         id: `conv-mock-${mockSeq++}`,
@@ -372,7 +458,7 @@ export function createMockChatPort(): ChatPort {
       };
       mockConversations.unshift(conv);
       mockMessages[conv.id] = [];
-      return { ...conv };
+      return withCwdFlag({ ...conv });
     },
 
     async updateConversation(id, patch) {
@@ -394,7 +480,7 @@ export function createMockChatPort(): ChatPort {
         updatedAt: nowIso(),
       };
       mockConversations[idx] = next;
-      return { ...next };
+      return withCwdFlag({ ...next });
     },
 
     async deleteConversation(id) {

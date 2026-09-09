@@ -1,7 +1,6 @@
 //! Chat conversations: CRUD + single-agent send with isolated context stitching.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -12,8 +11,11 @@ use crate::catalog::limits::{CHAT_RUN_IDLE_TIMEOUT, CHAT_RUN_MAX_TIMEOUT};
 use crate::error::{AppError, Result};
 use crate::logging::{self, targets};
 use crate::models::{
-    AgentId, AgentRunResult, ChatEvent, ChatMessage, ChatMessageStatus, ChatRole, Conversation,
-    OutputStream, RunEvent, RunMode, RunOptions, RunStatus,
+    AgentId, AgentRunResult, ChatEvent, ChatHistoryTurn, ChatMessage, ChatMessageStatus, ChatRole,
+    Conversation, OutputStream, RunEvent, RunMode, RunOptions, RunStatus,
+};
+use crate::services::chat_cwd::{
+    normalize_cwd, resolve_runtime_cwd, stored_cwd_missing, validate_existing_cwd,
 };
 use crate::services::RunService;
 use crate::storage::{ChatRepo, Database};
@@ -79,9 +81,7 @@ impl ChatService {
         cwd: Option<String>,
     ) -> Result<Conversation> {
         let agent_ids = require_single_agent(agent_ids)?;
-        if let Some(ref c) = cwd {
-            validate_cwd(c)?;
-        }
+        let cwd = normalize_cwd(cwd);
         let now = Utc::now().to_rfc3339();
         let conv = Conversation {
             id: format!("conv-{}", Uuid::new_v4()),
@@ -108,9 +108,7 @@ impl ChatService {
         cwd: Option<String>,
     ) -> Result<Conversation> {
         let agent_ids = require_single_agent(agent_ids)?;
-        if let Some(ref c) = cwd {
-            validate_cwd(c)?;
-        }
+        let cwd = normalize_cwd(cwd);
         let now = Utc::now().to_rfc3339();
         let candidate = Conversation {
             id: format!("conv-{}", Uuid::new_v4()),
@@ -124,6 +122,108 @@ impl ChatService {
             sending: false,
         };
         self.repo.ensure_default_conversation(&candidate)
+    }
+
+    /// Open or create an AgentHub conversation keyed by official session id.
+    /// History comes from the store (or is imported once). Missing cwd is kept
+    /// for display and never fails this call.
+    pub fn open_from_session(
+        &self,
+        agent_id: AgentId,
+        session_id: Option<String>,
+        cwd: Option<String>,
+        title: Option<String>,
+        history: Vec<ChatHistoryTurn>,
+    ) -> Result<Conversation> {
+        let session_id = session_id.and_then(|value| {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
+        if let Some(ref sid) = session_id {
+            if let Some(existing) = self.repo.find_by_native_session_id(sid)? {
+                if !self.repo.has_messages(&existing.id)? && !history.is_empty() {
+                    self.import_history(&existing.id, agent_id, &history)?;
+                }
+                return self.get_conversation(&existing.id);
+            }
+        }
+
+        let mut conv = self.create_conversation(vec![agent_id], cwd)?;
+        if let Some(sid) = session_id {
+            conv.native_session_id = Some(sid);
+        }
+        if let Some(title) = title
+            .map(|value| value.trim().to_string())
+            .filter(|v| !v.is_empty())
+        {
+            conv.title = title;
+        }
+        if conv.native_session_id.is_some() || !conv.title.is_empty() {
+            conv.updated_at = Utc::now().to_rfc3339();
+            self.repo.update_conversation(&conv)?;
+        }
+        self.import_history(&conv.id, agent_id, &history)?;
+        self.get_conversation(&conv.id)
+    }
+
+    fn import_history(
+        &self,
+        conversation_id: &str,
+        agent_id: AgentId,
+        history: &[ChatHistoryTurn],
+    ) -> Result<()> {
+        let now = Utc::now().to_rfc3339();
+        let mut turn = 0_i64;
+        let mut open_user_turn = false;
+        for item in history {
+            let content = item.content.trim();
+            if content.is_empty() {
+                continue;
+            }
+            match item.role {
+                ChatRole::User => {
+                    turn += 1;
+                    open_user_turn = true;
+                    self.repo.insert_message(&ChatMessage {
+                        id: format!("msg-{}", Uuid::new_v4()),
+                        conversation_id: conversation_id.to_string(),
+                        turn,
+                        role: ChatRole::User,
+                        agent_id: None,
+                        content: content.to_string(),
+                        status: ChatMessageStatus::Ok,
+                        exit_code: None,
+                        duration_ms: 0,
+                        error: None,
+                        created_at: now.clone(),
+                    })?;
+                }
+                ChatRole::Agent => {
+                    if !open_user_turn {
+                        turn += 1;
+                    }
+                    open_user_turn = false;
+                    self.repo.insert_message(&ChatMessage {
+                        id: format!("msg-{}", Uuid::new_v4()),
+                        conversation_id: conversation_id.to_string(),
+                        turn,
+                        role: ChatRole::Agent,
+                        agent_id: Some(agent_id),
+                        content: content.to_string(),
+                        status: ChatMessageStatus::Ok,
+                        exit_code: None,
+                        duration_ms: 0,
+                        error: None,
+                        created_at: now.clone(),
+                    })?;
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn update_conversation(
@@ -141,10 +241,13 @@ impl ChatService {
                 .as_deref()
                 .is_some_and(|sid| !sid.trim().is_empty())
                 || self.repo.has_messages(id)?;
-            if started
+            let rebind_missing_cwd =
+                agent_ids.is_none() && cwd.is_some() && stored_cwd_missing(conv.cwd.as_deref());
+            if (started
                 || self
                     .runtime
-                    .session_locked(id, conv.native_session_id.as_deref())?
+                    .session_locked(id, conv.native_session_id.as_deref())?)
+                && !rebind_missing_cwd
             {
                 return Err(AppError::message(
                     "invalid_arg",
@@ -167,13 +270,14 @@ impl ChatService {
             conv.agent_ids = next;
         }
         if let Some(c) = cwd {
-            if let Some(ref path) = c {
-                validate_cwd(path)?;
+            let next = normalize_cwd(c);
+            if let Some(ref path) = next {
+                validate_existing_cwd(path)?;
             }
-            if conv.cwd != c {
+            if conv.cwd != next && !stored_cwd_missing(conv.cwd.as_deref()) {
                 conv.native_session_id = None;
             }
-            conv.cwd = c;
+            conv.cwd = next;
         }
         if let Some(d) = allow_dangerous {
             conv.allow_dangerous = d;
@@ -348,9 +452,7 @@ impl ChatService {
         }
 
         let mut conv = self.get_conversation(conversation_id)?;
-        if let Some(ref c) = conv.cwd {
-            validate_cwd(c)?;
-        }
+        let runtime_cwd = resolve_runtime_cwd(conv.cwd.as_deref())?;
 
         let history = self.repo.list_messages(conversation_id)?;
         // Legacy multi-agent rows: send only the first agent.
@@ -485,7 +587,7 @@ impl ChatService {
                 mode: RunMode::Parallel,
                 timeout: CHAT_RUN_MAX_TIMEOUT,
                 idle_timeout: Some(CHAT_RUN_IDLE_TIMEOUT),
-                cwd: conv.cwd.as_ref().map(PathBuf::from),
+                cwd: Some(runtime_cwd),
                 dry_run: false,
                 skip_missing: true,
                 allow_dangerous: conv.allow_dangerous,
@@ -973,16 +1075,6 @@ fn require_single_agent(agents: Vec<AgentId>) -> Result<Vec<AgentId>> {
         ));
     }
     Ok(agents)
-}
-
-fn validate_cwd(cwd: &str) -> Result<()> {
-    let path = Path::new(cwd);
-    if !path.is_dir() {
-        return Err(AppError::InvalidArg(format!(
-            "cwd is not an existing directory: {cwd}"
-        )));
-    }
-    Ok(())
 }
 
 /// Append `chunk` to `dest` without exceeding `max` bytes (UTF-8 safe cut).

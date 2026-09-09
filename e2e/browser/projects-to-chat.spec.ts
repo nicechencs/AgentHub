@@ -23,5 +23,7 @@ test('Projects continue opens Chat with a mock session prompt', async ({ page })
   await expect(page.getByRole('textbox', { name: '消息输入' })).toBeVisible({
     timeout: 20_000,
   });
-  await expect(page.getByRole('textbox', { name: '消息输入' })).not.toHaveValue('');
+  await expect(page.getByText('修复登录页 token 过期问题', { exact: false }).first()).toBeVisible({
+    timeout: 20_000,
+  });
 });
