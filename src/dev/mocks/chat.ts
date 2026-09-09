@@ -43,8 +43,50 @@ function mockTitle(prompt: string) {
   return t.length <= 30 ? t : `${t.slice(0, 29)}…`;
 }
 
+function mockConversationAgent(conversationId: string): AgentKey | undefined {
+  return mockConversations.find((item) => item.id === conversationId)?.agentIds[0];
+}
+
+/** Same whitelist as core `is_runtime_chat_agent` / frontend `isRuntimeChatAgent`. */
+function isMockRuntimeChatAgent(agent: AgentKey | undefined): boolean {
+  return agent === 'codex' || agent === 'grok' || agent === 'kiro' || agent === 'claude';
+}
+
 function mockRuntimeSteer(conversationId: string): boolean {
-  return mockConversations.find((item) => item.id === conversationId)?.agentIds[0] === 'codex';
+  return mockConversationAgent(conversationId) === 'codex';
+}
+
+function mockRuntimeCatalog(agent: AgentKey | undefined): Pick<RuntimeOptions, 'models' | 'extensions'> {
+  if (agent === 'claude') {
+    const efforts = ['low', 'medium', 'high', 'xhigh', 'max'];
+    return {
+      models: ['sonnet', 'opus', 'haiku'].map((id) => ({
+        id,
+        efforts,
+        defaultEffort: 'high',
+      })),
+      extensions: [],
+    };
+  }
+  return {
+    models: [
+      { id: 'gpt-mock', efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' },
+      // Live Codex 0.150+ over-reports medium/xhigh for spark; learn-from-reject filters later.
+      { id: 'gpt-5.3-codex-spark', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high' },
+    ],
+    extensions: [
+      {
+        id: '/mock/skills/demo/SKILL.md',
+        name: 'demo',
+        kind: 'skill',
+        installed: true,
+        enabled: true,
+        loaded: false,
+        callable: true,
+        path: '/mock/skills/demo/SKILL.md',
+      },
+    ],
+  };
 }
 
 
@@ -507,7 +549,7 @@ export function createMockChatPort(): ChatPort {
       const current = runtimeSnapshots.get(conversationId) ?? {
         conversationId,
         enabled:
-          (conv.agentIds[0] === 'codex' || conv.agentIds[0] === 'grok' || conv.agentIds[0] === 'kiro')
+          isMockRuntimeChatAgent(conv.agentIds[0])
           && (mockMessages[conversationId] ?? []).length === 0,
         runId: null,
         phase: 'idle' as const,
@@ -550,6 +592,7 @@ export function createMockChatPort(): ChatPort {
           models,
           settings,
           settingsFrozen: frozen,
+          imageInput: cached.imageInput !== false,
         };
       }
       // Match core: never invent a catalog mid-turn when nothing was prefetched.
@@ -561,31 +604,19 @@ export function createMockChatPort(): ChatPort {
           models: [],
           extensions: [],
           modelsFromCodex: false,
+          imageInput: true,
           steer: mockRuntimeSteer(conversationId),
         };
       }
+      const catalog = mockRuntimeCatalog(mockConversationAgent(conversationId));
       const options: RuntimeOptions = {
         conversationId,
         settings: runtimeSettings.get(conversationId) ?? {},
         settingsFrozen: false,
-        models: [
-          { id: 'gpt-mock', efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' },
-          // Live Codex 0.150+ over-reports medium/xhigh for spark; learn-from-reject filters later.
-          { id: 'gpt-5.3-codex-spark', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high' },
-        ],
-        extensions: [
-          {
-            id: '/mock/skills/demo/SKILL.md',
-            name: 'demo',
-            kind: 'skill',
-            installed: true,
-            enabled: true,
-            loaded: false,
-            callable: true,
-            path: '/mock/skills/demo/SKILL.md',
-          },
-        ],
+        models: catalog.models,
+        extensions: catalog.extensions,
         modelsFromCodex: false,
+        imageInput: true,
         steer: mockRuntimeSteer(conversationId),
       };
       options.models = applyMockDeniedEfforts(options.models);
