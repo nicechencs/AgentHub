@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { ImagePlus, X } from 'lucide-react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
@@ -15,6 +16,7 @@ import { Hint } from '@/components/ui/tooltip';
 import { ChatActionMenu } from './ChatActionMenu';
 import type { ChatActionContext, ChatActionDef } from './chat-actions';
 import type { RuntimeExtensionItem, RuntimeModelOption, RuntimeTurnSettings } from '@/lib/api/chat';
+import { chatEffortHint, chatEffortLabel, chatModelDisplayName } from './chat-model-labels';
 
 export function ChatRuntimeExtras(props: {
   enabled: boolean;
@@ -42,6 +44,7 @@ export function ChatRuntimeExtras(props: {
   selectedSkillIds: string[];
   onToggleSkill: (id: string) => void;
   inline?: boolean;
+  modelMenuOpenNonce?: number;
 }) {
   const { t } = useI18n();
   const callableSkills = props.extensions.filter((item) => item.kind === 'skill' && item.callable);
@@ -59,6 +62,17 @@ export function ChatRuntimeExtras(props: {
       : props.efforts.length === 0
         ? t('chat.runtimeOps.effortUnavailable')
         : null;
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  useEffect(() => {
+    if (!props.modelMenuOpenNonce) return;
+    if (modelDisabledReason || props.models.length === 0) return;
+    setModelMenuOpen(true);
+  }, [modelDisabledReason, props.modelMenuOpenNonce, props.models.length]);
+  const currentEffortHint = props.settings.effort
+    ? chatEffortHint(props.settings.effort, t)
+    : null;
+  const modelTriggerHint = modelDisabledReason
+    ?? `${t('chat.composer.switchModel')} · ${t('chat.composer.shortcutOpenModel')}`;
 
   if (!props.enabled) {
     return (
@@ -99,18 +113,23 @@ export function ChatRuntimeExtras(props: {
           onRun={props.onRunAction}
           onHoverIndex={props.onHoverCommandIndex}
         />
-        <Hint label={modelDisabledReason ?? undefined}>
-          <DropdownMenu>
+        <Hint label={modelTriggerHint}>
+          <DropdownMenu open={modelMenuOpen} onOpenChange={setModelMenuOpen}>
             <DropdownMenuTrigger asChild>
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
                 disabled={Boolean(modelDisabledReason)}
-                className="max-w-40"
+                className="max-w-48"
+                data-help="chat-model"
+                aria-label={t('chat.composer.switchModel')}
+                aria-keyshortcuts="Control+Shift+I"
               >
                 <span className="truncate">
-                  {props.settings.model || t('chat.composer.switchModel')}
+                  {props.settings.model
+                    ? chatModelDisplayName(props.settings.model, t)
+                    : t('chat.composer.switchModel')}
                 </span>
               </Button>
             </DropdownMenuTrigger>
@@ -124,7 +143,7 @@ export function ChatRuntimeExtras(props: {
                 >
                   {props.models.map((model) => (
                     <DropdownMenuRadioItem key={model.id} value={model.id} disabled={props.frozen}>
-                      {model.id}
+                      <span className="truncate">{chatModelDisplayName(model.id, t)}</span>
                     </DropdownMenuRadioItem>
                   ))}
                 </DropdownMenuRadioGroup>
@@ -132,7 +151,7 @@ export function ChatRuntimeExtras(props: {
             ) : null}
           </DropdownMenu>
         </Hint>
-        <Hint label={effortDisabledReason ?? undefined}>
+        <Hint label={effortDisabledReason ?? currentEffortHint ?? undefined}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -140,28 +159,41 @@ export function ChatRuntimeExtras(props: {
                 size="sm"
                 variant="outline"
                 disabled={Boolean(effortDisabledReason)}
+                data-help="chat-effort"
+                aria-label={t('chat.runtimeOps.effort')}
               >
-                {props.settings.effort || t('chat.runtimeOps.effort')}
+                {props.settings.effort
+                  ? chatEffortLabel(props.settings.effort, t)
+                  : t('chat.runtimeOps.effort')}
               </Button>
             </DropdownMenuTrigger>
             {props.efforts.length > 0 ? (
-              <DropdownMenuContent align="start">
+              <DropdownMenuContent align="start" className="w-56">
                 <DropdownMenuLabel>{t('chat.runtimeOps.effort')}</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuRadioGroup
                   value={props.settings.effort ?? ''}
                   onValueChange={(id) => props.onSwitchEffort(id)}
                 >
-                  {props.efforts.map((effort) => (
-                    <DropdownMenuRadioItem key={effort} value={effort} disabled={props.frozen}>
-                      {effort}
-                    </DropdownMenuRadioItem>
-                  ))}
+                  {props.efforts.map((effort) => {
+                    const hint = chatEffortHint(effort, t);
+                    return (
+                      <DropdownMenuRadioItem key={effort} value={effort} disabled={props.frozen}>
+                        <span className="flex min-w-0 flex-1 items-baseline justify-between gap-3">
+                          <span className="truncate">{chatEffortLabel(effort, t)}</span>
+                          {hint ? <span className="shrink-0 text-meta text-muted">{hint}</span> : null}
+                        </span>
+                      </DropdownMenuRadioItem>
+                    );
+                  })}
                 </DropdownMenuRadioGroup>
               </DropdownMenuContent>
             ) : null}
           </DropdownMenu>
         </Hint>
+        {!effortDisabledReason && currentEffortHint ? (
+          <span className="text-meta text-muted">{currentEffortHint}</span>
+        ) : null}
         {callableSkills.length > 0 ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

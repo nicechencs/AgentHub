@@ -139,5 +139,8 @@ describe('locale key parity', () => {
     expect(translate('en', 'chat.process.toolRun')).toBe('Running');
     expect(translate('zh', 'chat.process.details')).toBe('细节');
     expect(translate('en', 'chat.process.details')).toBe('Details');
+    expect(translate('zh', 'chat.composer.modelAuto')).toBe('自动');
+    expect(translate('zh', 'chat.runtimeOps.effortHintHigh')).toBe('可能更慢');
+    expect(translate('en', 'chat.runtimeOps.effortHintHigh')).toBe('May be slower');
   });
 });

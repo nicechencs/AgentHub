@@ -32,6 +32,7 @@ import {
 import { composerEnterShouldSubmit } from './chat-composer-model';
 import { lastTurnOutcome } from './chat-turn-outcome';
 import { kiroChatAllowsCommandSearch, kiroChatStance } from './chat-kiro-model';
+import { chatEffortLabel, chatModelDisplayName } from './chat-model-labels';
 import { bindRuntimeSnapshotToAgent, isRuntimeSessionLocked } from './chat-runtime-model';
 
 export {
@@ -201,9 +202,9 @@ export function useChatPage() {
         actions.push({
           id: `runtime-model:${model.id}`,
           kind: 'local',
-          label: `${t('chat.composer.switchModel')}：${model.id}`,
+          label: `${t('chat.composer.switchModel')}：${chatModelDisplayName(model.id, t)}`,
           description: model.id === runtimeOps.settings.model ? t('chat.runtimeOps.currentModel') : undefined,
-          keywords: ['model', '模型', '换模型', model.id],
+          keywords: ['model', '模型', '换模型', model.id, chatModelDisplayName(model.id, t)],
         });
       }
       if (runtimeOps.settings.model) {
@@ -211,9 +212,9 @@ export function useChatPage() {
           actions.push({
             id: `runtime-effort:${effort}`,
             kind: 'local',
-            label: `${t('chat.runtimeOps.effort')}：${effort}`,
+            label: `${t('chat.runtimeOps.effort')}：${chatEffortLabel(effort, t)}`,
             description: effort === runtimeOps.settings.effort ? t('chat.runtimeOps.currentSetting') : undefined,
-            keywords: ['think', 'thinking', 'effort', '思考', '思考强度', effort],
+            keywords: ['think', 'thinking', 'effort', '思考', '思考强度', effort, chatEffortLabel(effort, t)],
           });
         }
       }
