@@ -801,8 +801,12 @@ export function chatQuestionShouldOpenShortcuts(input: {
     return false;
   }
   if (input.key === '?') return true;
-  // Some webviews report Shift+/ as key:'/' instead of '?'. Do not match code alone.
-  return Boolean(input.shiftKey && input.key === '/');
+  // US `?` is Shift+/. Some webviews report key:'/' or Unidentified instead of '?'.
+  // Do not match code === 'Slash' alone (a letter key must stay a letter).
+  if (input.shiftKey && input.key === '/') return true;
+  return Boolean(
+    input.shiftKey && (input.key === 'Unidentified' || input.key === '') && input.code === 'Slash',
+  );
 }
 
 /**

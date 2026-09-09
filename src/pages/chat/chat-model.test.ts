@@ -838,14 +838,25 @@ describe('chatQuestionShouldOpenShortcuts', () => {
   it('opens the overview with ? when not typing', () => {
     expect(chatQuestionShouldOpenShortcuts(base)).toBe(true);
     expect(
-      chatQuestionShouldOpenShortcuts({ ...base, key: '/', shiftKey: true }),
-    ).toBe(true);
-    expect(
       chatQuestionShouldOpenShortcuts({
         ...base,
         key: '?',
         code: undefined,
         shiftKey: false,
+      }),
+    ).toBe(true);
+  });
+
+  it('opens the overview from US Shift+/ when that is how ? is typed', () => {
+    expect(
+      chatQuestionShouldOpenShortcuts({ ...base, key: '/', shiftKey: true }),
+    ).toBe(true);
+    expect(
+      chatQuestionShouldOpenShortcuts({
+        ...base,
+        key: 'Unidentified',
+        code: 'Slash',
+        shiftKey: true,
       }),
     ).toBe(true);
     expect(
@@ -907,6 +918,15 @@ describe('chatPageShortcutAction', () => {
       chatPageShortcutAction({
         ...mods,
         key: '/',
+        code: 'Slash',
+        shiftKey: true,
+        target: button,
+      }),
+    ).toBe('overview');
+    expect(
+      chatPageShortcutAction({
+        ...mods,
+        key: 'Unidentified',
         code: 'Slash',
         shiftKey: true,
         target: button,
