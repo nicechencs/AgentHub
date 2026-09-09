@@ -731,6 +731,8 @@ describe('TicketDetailPanel', () => {
     expect(markup).toContain('移入回收站');
     expect(markup).toContain('7 天已用');
     expect(markup).not.toContain('5 小时已用');
+    expect(markup).toContain('data-detail-table');
+    expect(markup).not.toContain('<thead');
     const usageIndex = markup.indexOf('用量');
     const protocolIndex = markup.indexOf('anthropic-messages');
     expect(usageIndex).toBeGreaterThan(-1);
@@ -890,6 +892,9 @@ describe('TicketDetailPanel', () => {
     expect(markup).toContain('当前使用');
     expect(markup).not.toContain('直连');
     expect(markup).not.toContain('Direct');
+    expect(markup).toContain('data-detail-table');
+    expect(markup).not.toContain('<thead');
+    expect(markup).not.toContain('<ul class="space-y-1"');
   });
 
   it('opens as a right-hand inspect pane with clients, protocol, and diagnostics', () => {
@@ -927,6 +932,10 @@ describe('TicketDetailPanel', () => {
     expect(markup).toContain('Claude');
     expect(markup).toContain('连到哪里 · 模型');
     expect(markup).toContain('配置与记录');
+    expect(markup).toContain('data-detail-table');
+    expect(markup).not.toContain('<thead');
+    expect(markup).not.toContain('项目');
+    expect(markup).not.toContain('内容');
     expect(markup).toContain('更多');
     expect(markup).toContain('provider:kimi-1');
     expect(markup).toContain('移入回收站');
