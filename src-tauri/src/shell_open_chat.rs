@@ -31,8 +31,9 @@ pub(crate) fn shell_menu_label(lang: TrayUiLanguage) -> &'static str {
 }
 
 /// First `--open-chat <path>` or `--open-chat=<path>` wins. Other flags are ignored.
+/// The executable name is not required: Windows single-instance delivery may omit it.
 pub(crate) fn parse_open_chat_cwd_arg<S: AsRef<str>>(args: &[S]) -> Option<String> {
-    let mut iter = args.iter().map(AsRef::as_ref).skip(1);
+    let mut iter = args.iter().map(AsRef::as_ref);
     while let Some(arg) = iter.next() {
         if let Some(rest) = arg.strip_prefix("--open-chat=") {
             let path = unquote(rest);
@@ -59,10 +60,15 @@ fn unquote(raw: &str) -> String {
     t.to_string()
 }
 
+/// Empty Explorer `%V` / `%1` expands to `\.`, `.`, or a lone slash — not a folder.
+fn is_bare_dot_or_slash(s: &str) -> bool {
+    s.trim_matches(|c| c == '/' || c == '\\' || c == '.').is_empty()
+}
+
 /// Folder to use as the chat working directory. Files resolve to their parent.
 pub(crate) fn resolve_open_chat_cwd(raw: &str) -> Option<PathBuf> {
     let trimmed = unquote(raw);
-    if trimmed.is_empty() {
+    if trimmed.is_empty() || is_bare_dot_or_slash(&trimmed) {
         return None;
     }
     let mut path = crate::file_manager::normalize_open_path_input(&trimmed);
@@ -82,11 +88,49 @@ pub(crate) fn resolve_open_chat_cwd(raw: &str) -> Option<PathBuf> {
     None
 }
 
+/// Resolve `--open-chat` from argv. If the path is missing or not a folder,
+/// use the launching process's current directory (Explorer often sets that
+/// to the right-clicked folder).
+pub(crate) fn resolve_open_chat_from_launch<S: AsRef<str>>(
+    args: &[S],
+    fallback_cwd: Option<&str>,
+) -> Option<PathBuf> {
+    if let Some(raw) = parse_open_chat_cwd_arg(args) {
+        if let Some(cwd) = resolve_open_chat_cwd(&raw) {
+            return Some(cwd);
+        }
+    } else if !open_chat_arg_missing_folder(args) {
+        return None;
+    }
+    fallback_cwd.and_then(resolve_open_chat_cwd)
+}
+
 #[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn windows_open_chat_command(exe: &Path) -> String {
-    // `"%V"` expands to `"C:\"` for a drive root; CommandLineToArgvW treats the
-    // trailing `\"` as an escaped quote. Keep a `.` between `\` and `"`.
-    format!("\"{}\" {OPEN_CHAT_FLAG} \"%V\\.\"", exe.display())
+    windows_open_chat_command_with(exe, r"%V\.")
+}
+
+/// `placeholder` is an Explorer verb token such as `%1\.` or `%V\.`.
+/// A trailing `.` keeps drive roots from becoming `C:\"` after quoting.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn windows_open_chat_command_with(exe: &Path, placeholder: &str) -> String {
+    format!("\"{}\" {OPEN_CHAT_FLAG} \"{placeholder}\"", exe.display())
+}
+
+/// Cargo `target/debug` builds. Registering them overwrites the installed
+/// Explorer verb, then the menu breaks when that debug exe is gone.
+pub(crate) fn is_cargo_debug_exe(exe: &Path) -> bool {
+    let mut parts = exe.iter().filter_map(|s| s.to_str());
+    while let Some(part) = parts.next() {
+        if part == "target" && matches!(parts.next(), Some("debug")) {
+            return true;
+        }
+    }
+    false
+}
+
+pub(crate) fn should_write_shell_registration(exe: &Path, force: bool) -> bool {
+    force || !is_cargo_debug_exe(exe)
 }
 
 /// Prefer a validated AppImage path; otherwise the running executable.
@@ -185,6 +229,7 @@ pub(crate) fn rewake_pending_open_chat<R: Runtime>(app: &AppHandle<R>) {
     let Some(cwd) = state.peek_pending_open_chat_cwd() else {
         return;
     };
+    tray::show_main_window(app);
     emit_open_chat_wakeup(app, &cwd);
 }
 
@@ -210,18 +255,26 @@ fn open_chat_arg_missing_folder<S: AsRef<str>>(args: &[S]) -> bool {
         && args.iter().any(|arg| arg.as_ref().contains("open-chat"))
 }
 
-pub(crate) fn ingest_args<R: Runtime>(app: &AppHandle<R>, args: &[String]) {
-    let Some(raw) = parse_open_chat_cwd_arg(args) else {
-        if open_chat_arg_missing_folder(args) {
+pub(crate) fn ingest_args<R: Runtime>(
+    app: &AppHandle<R>,
+    args: &[String],
+    fallback_cwd: Option<&str>,
+) {
+    if let Some(raw) = parse_open_chat_cwd_arg(args) {
+        if let Some(cwd) = resolve_open_chat_cwd(&raw) {
+            deliver_open_chat_cwd(app, cwd);
+            return;
+        }
+        if let Some(cwd) = fallback_cwd.and_then(resolve_open_chat_cwd) {
             tracing::warn!(
                 target: "gui",
                 op = "open_chat_cwd",
-                "second instance had --open-chat but no folder"
+                path = %raw,
+                "open-chat path unusable; using launch folder"
             );
+            deliver_open_chat_cwd(app, cwd);
+            return;
         }
-        return;
-    };
-    let Some(cwd) = resolve_open_chat_cwd(&raw) else {
         tracing::warn!(
             target: "gui",
             op = "open_chat_cwd",
@@ -229,8 +282,41 @@ pub(crate) fn ingest_args<R: Runtime>(app: &AppHandle<R>, args: &[String]) {
             "ignored --open-chat path that is not a folder"
         );
         return;
-    };
-    deliver_open_chat_cwd(app, cwd);
+    }
+    if open_chat_arg_missing_folder(args) {
+        if let Some(cwd) = fallback_cwd.and_then(resolve_open_chat_cwd) {
+            deliver_open_chat_cwd(app, cwd);
+            return;
+        }
+        tracing::warn!(
+            target: "gui",
+            op = "open_chat_cwd",
+            "second instance had --open-chat but no folder"
+        );
+    }
+}
+
+/// Explorer launches a second process; the plugin delivers argv on a hidden
+/// window thread. Show + emit must run on the GUI thread or a tray-hidden
+/// window stays hidden and drops the event.
+pub(crate) fn ingest_second_instance<R: Runtime>(
+    app: &AppHandle<R>,
+    args: Vec<String>,
+    launch_cwd: String,
+) {
+    let handle = app.clone();
+    let args_for_main = args.clone();
+    let cwd_for_main = launch_cwd.clone();
+    if app
+        .run_on_main_thread(move || {
+            ingest_args(&handle, &args_for_main, Some(cwd_for_main.as_str()));
+            tray::show_main_window(&handle);
+        })
+        .is_err()
+    {
+        ingest_args(app, &args, Some(launch_cwd.as_str()));
+        tray::show_main_window(app);
+    }
 }
 
 pub(crate) fn register_best_effort(lang: TrayUiLanguage) {
@@ -239,6 +325,18 @@ pub(crate) fn register_best_effort(lang: TrayUiLanguage) {
     let Some(exe) = resolve_shell_register_exe(current.as_deref(), appimage.as_deref()) else {
         return;
     };
+    let force = matches!(
+        std::env::var("AGENTHUB_REGISTER_SHELL").as_deref(),
+        Ok("1")
+    );
+    if !should_write_shell_registration(&exe, force) {
+        tracing::info!(
+            target: "gui",
+            op = "shell_open_chat",
+            "skip file-manager menu registration for cargo debug build"
+        );
+        return;
+    }
     if let Err(e) = register_shell_open_chat(&exe, lang) {
         tracing::warn!(target: "gui", op = "shell_open_chat", error = %e, "register file-manager menu failed");
     }
@@ -267,18 +365,28 @@ pub(crate) fn register_shell_open_chat(exe: &Path, lang: TrayUiLanguage) -> Resu
 #[cfg(windows)]
 fn register_windows(exe: &Path, lang: TrayUiLanguage) -> Result<(), String> {
     let label = shell_menu_label(lang);
-    let command = windows_open_chat_command(exe);
     let icon = format!("{},0", exe.display());
-    let roots = [
-        format!(r"HKCU\Software\Classes\Directory\shell\{MENU_KEY_ID}"),
-        format!(r"HKCU\Software\Classes\Directory\Background\shell\{MENU_KEY_ID}"),
-        format!(r"HKCU\Software\Classes\Drive\shell\{MENU_KEY_ID}"),
+    // Directory: `%1` is the selected folder (more reliable than `%V` in
+    // search / Quick Access). Background and Drive keep `%V`.
+    let entries = [
+        (
+            format!(r"HKCU\Software\Classes\Directory\shell\{MENU_KEY_ID}"),
+            windows_open_chat_command_with(exe, r"%1\."),
+        ),
+        (
+            format!(r"HKCU\Software\Classes\Directory\Background\shell\{MENU_KEY_ID}"),
+            windows_open_chat_command(exe),
+        ),
+        (
+            format!(r"HKCU\Software\Classes\Drive\shell\{MENU_KEY_ID}"),
+            windows_open_chat_command(exe),
+        ),
     ];
-    for root in &roots {
+    for (root, command) in &entries {
         reg_add(root, None, label)?;
         reg_add(root, Some("Icon"), &icon)?;
         let command_key = format!(r"{root}\command");
-        reg_add(&command_key, None, &command)?;
+        reg_add(&command_key, None, command)?;
     }
     Ok(())
 }

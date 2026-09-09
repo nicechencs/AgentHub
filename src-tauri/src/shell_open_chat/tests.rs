@@ -1,9 +1,11 @@
 use std::path::Path;
 
 use super::{
-    linux_nautilus_script, linux_open_with_desktop, linux_servicemenu_desktop,
+    is_cargo_debug_exe, linux_nautilus_script, linux_open_with_desktop, linux_servicemenu_desktop,
     open_chat_arg_missing_folder, parse_open_chat_cwd_arg, resolve_open_chat_cwd,
-    resolve_shell_register_exe, shell_menu_label, windows_open_chat_command, OPEN_CHAT_FLAG,
+    resolve_open_chat_from_launch, resolve_shell_register_exe, shell_menu_label,
+    should_write_shell_registration, windows_open_chat_command, windows_open_chat_command_with,
+    OPEN_CHAT_FLAG,
 };
 use crate::tray_i18n::TrayUiLanguage;
 
@@ -18,6 +20,10 @@ fn parse_skips_exe_and_unrelated_flags() {
 
 #[test]
 fn parse_open_chat_space_and_equals() {
+    assert_eq!(
+        parse_open_chat_cwd_arg(&[OPEN_CHAT_FLAG, r"D:\work\app"]),
+        Some(r"D:\work\app".into())
+    );
     assert_eq!(
         parse_open_chat_cwd_arg(&["agenthub-gui", OPEN_CHAT_FLAG, r"D:\work\app"]),
         Some(r"D:\work\app".into())
@@ -201,6 +207,8 @@ fn resolve_uses_folder_or_parent_of_file() {
         Some(folder.as_path())
     );
     assert_eq!(resolve_open_chat_cwd(""), None);
+    assert_eq!(resolve_open_chat_cwd("."), None);
+    assert_eq!(resolve_open_chat_cwd(r"\."), None);
     assert_eq!(
         resolve_open_chat_cwd("/this/path/does/not/exist-agenthub"),
         None
@@ -257,5 +265,78 @@ fn directory_appimage_is_ignored() {
     assert_eq!(
         resolve_shell_register_exe(Some(&current), Some(dir.path())).as_deref(),
         Some(current.as_path())
+    );
+}
+
+#[test]
+fn selected_folder_verb_uses_percent_1() {
+    let cmd = windows_open_chat_command_with(
+        Path::new(r"C:\Program Files\AgentHub\AgentHub.exe"),
+        r"%1\.",
+    );
+    assert_eq!(
+        cmd,
+        r#""C:\Program Files\AgentHub\AgentHub.exe" --open-chat "%1\.""#
+    );
+}
+
+#[test]
+fn cargo_debug_exe_must_not_overwrite_installed_menu() {
+    assert!(is_cargo_debug_exe(Path::new(
+        r"D:\repo\src-tauri\target\debug\agenthub-gui.exe"
+    )));
+    assert!(is_cargo_debug_exe(Path::new(
+        "/home/demo/src-tauri/target/debug/agenthub-gui"
+    )));
+    assert!(!is_cargo_debug_exe(Path::new(
+        r"C:\Users\demo\AppData\Local\AgentHub\agenthub-gui.exe"
+    )));
+    assert!(!is_cargo_debug_exe(Path::new(
+        r"D:\repo\src-tauri\target\release\agenthub-gui.exe"
+    )));
+    assert!(!should_write_shell_registration(
+        Path::new(r"D:\repo\src-tauri\target\debug\agenthub-gui.exe"),
+        false
+    ));
+    assert!(should_write_shell_registration(
+        Path::new(r"D:\repo\src-tauri\target\debug\agenthub-gui.exe"),
+        true
+    ));
+    assert!(should_write_shell_registration(
+        Path::new(r"C:\Users\demo\AppData\Local\AgentHub\agenthub-gui.exe"),
+        false
+    ));
+}
+
+#[test]
+fn launch_falls_back_to_process_cwd_when_explorer_path_is_unusable() {
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("repo");
+    std::fs::create_dir(&folder).unwrap();
+    let fallback = folder.to_str().unwrap();
+
+    assert_eq!(
+        resolve_open_chat_from_launch(
+            &["agenthub-gui", OPEN_CHAT_FLAG, r"\."],
+            Some(fallback)
+        )
+        .as_deref(),
+        Some(folder.as_path())
+    );
+    assert_eq!(
+        resolve_open_chat_from_launch(&["agenthub-gui", OPEN_CHAT_FLAG], Some(fallback)).as_deref(),
+        Some(folder.as_path())
+    );
+    assert_eq!(
+        resolve_open_chat_from_launch(&["agenthub-gui"], Some(fallback)),
+        None
+    );
+    assert_eq!(
+        resolve_open_chat_from_launch(
+            &["agenthub-gui", OPEN_CHAT_FLAG, folder.to_str().unwrap()],
+            Some("/this/path/does/not-exist")
+        )
+        .as_deref(),
+        Some(folder.as_path())
     );
 }

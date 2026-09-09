@@ -25,9 +25,8 @@ pub fn run() {
 
     tauri::Builder::default()
         // Must be first so a second process exits before other plugins init.
-        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            crate::shell_open_chat::ingest_args(app, &args);
-            tray::show_main_window(app);
+        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            crate::shell_open_chat::ingest_second_instance(app, args, cwd);
         }))
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -52,11 +51,15 @@ pub fn run() {
             }
             {
                 let args: Vec<String> = std::env::args().collect();
-                if let Some(raw) = crate::shell_open_chat::parse_open_chat_cwd_arg(&args) {
-                    if let Some(cwd) = crate::shell_open_chat::resolve_open_chat_cwd(&raw) {
-                        app.state::<AppState>()
-                            .set_pending_open_chat_cwd(cwd.to_string_lossy().into_owned());
-                    }
+                let fallback = std::env::current_dir()
+                    .ok()
+                    .map(|p| p.to_string_lossy().into_owned());
+                if let Some(cwd) = crate::shell_open_chat::resolve_open_chat_from_launch(
+                    &args,
+                    fallback.as_deref(),
+                ) {
+                    app.state::<AppState>()
+                        .set_pending_open_chat_cwd(cwd.to_string_lossy().into_owned());
                 }
                 let lang = crate::tray_i18n::language_from_hub(app.state::<AppState>().hub().ok());
                 crate::shell_open_chat::register_best_effort(lang);
