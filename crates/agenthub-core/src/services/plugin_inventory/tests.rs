@@ -188,12 +188,13 @@ fn cli_available_parser_keeps_marketplace_rows_and_skips_mcp() {
 
     let claude = parse_cli_available_plugin_list(
         AgentId::Claude,
-        r#"{"installed":[{"name":"demo"}],"available":[{"name":"hello","marketplace":"official"}]}"#,
+        r#"{"installed":[{"name":"demo"}],"available":[{"name":"hello","marketplaceName":"official","pluginId":"hello@official"}]}"#,
         Path::new("/home/me"),
     )
     .unwrap();
     assert_eq!(claude.len(), 1);
     assert_eq!(claude[0].name, "hello");
+    assert_eq!(claude[0].marketplace.as_deref(), Some("official"));
 
     let err = parse_cli_available_plugin_list(
         AgentId::Claude,

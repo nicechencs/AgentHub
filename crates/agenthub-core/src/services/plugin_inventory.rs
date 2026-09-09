@@ -809,7 +809,15 @@ fn plugin_from_json(
 /// Marketplace name from CLI JSON. Grok's `source` is the install origin
 /// (local path / git URL), not a marketplace, and `marketplace` may be JSON null.
 fn json_marketplace(item: &JsonValue) -> Option<String> {
-    if let Some(value) = string_field(item, &["marketplace", "market", "sourceMarketplace"]) {
+    if let Some(value) = string_field(
+        item,
+        &[
+            "marketplace",
+            "market",
+            "sourceMarketplace",
+            "marketplaceName",
+        ],
+    ) {
         return Some(value);
     }
     if item.get("marketplace").is_some() {
