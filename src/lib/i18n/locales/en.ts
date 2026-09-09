@@ -2840,7 +2840,7 @@ export const en = {
       removeImage: 'Remove image',
       pasteImageHint: 'You can also paste an image from the clipboard',
       pasteImageFail: "Couldn't save the pasted image",
-      otherAttachmentsBlocked: 'Files/audio not supported yet (localImage only)',
+      otherAttachmentsBlocked: 'Ordinary files and audio are not supported yet — images only',
       effort: 'Reasoning effort',
       effortLow: 'Low',
       effortMedium: 'Medium',

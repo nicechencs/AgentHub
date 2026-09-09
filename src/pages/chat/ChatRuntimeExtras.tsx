@@ -231,7 +231,7 @@ export function ChatRuntimeExtras(props: {
         ) : null}
       </div>
 
-      {!props.inline && props.images.length > 0 ? (
+      {props.images.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {props.images.map((path) => (
             <Hint key={path} label={path}>
