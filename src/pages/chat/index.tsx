@@ -59,7 +59,7 @@ export default function ChatPage() {
     steer: page.runtimeOps.steer,
     runId: page.runtime?.runId,
     phase: page.runtime?.phase,
-    queued: Boolean(page.queuedFollowUp),
+    queued: page.queuedFollowUpCount > 0,
   });
   const split = useChatComposerSplit();
   const preview = useSideSplit<ChatPreviewTarget>({
@@ -307,6 +307,7 @@ export default function ChatPage() {
             />
             {chatShowsRuntimeRequestPanels(page.primaryAgent) && page.runtime?.pendingRequests.length ? (
               <ChatRuntimeRequests
+                agentId={page.primaryAgent}
                 requests={page.runtime.pendingRequests}
                 onReply={(request, decision, answers) => page.submitRuntimeRequest(request, decision, answers)}
               />
@@ -425,8 +426,8 @@ export default function ChatPage() {
                       ? () => void page.handleSend()
                       : undefined
                   }
-                  queuedFollowUp={page.queuedFollowUp}
-                  queuedFollowUpCount={page.queuedFollowUpCount}
+                  queuedFollowUps={page.queuedFollowUps}
+                  onCancelQueuedFollowUp={page.cancelQueuedFollowUp}
                   onClearQueuedFollowUp={page.clearQueuedFollowUp}
                   focusNonce={page.composerFocusNonce}
                   modelMenuOpenNonce={modelMenuOpenNonce}

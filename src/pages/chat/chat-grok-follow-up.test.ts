@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   appendQueuedFollowUp,
   chatBusySendMode,
+  clearQueuedFollowUps,
   grokCanQueueFollowUp,
   grokLegacyContinueKind,
   grokShouldFlushFollowUp,
   prependQueuedFollowUp,
   queuedFollowUpCount,
-  queuedFollowUpLabel,
+  queuedFollowUpItems,
+  removeQueuedFollowUp,
   restoreQueuedFollowUpOnCancel,
   shiftQueuedFollowUp,
 } from './chat-grok-follow-up';
@@ -75,35 +77,72 @@ describe('busy composer send', () => {
       }),
     ).toBe('queue');
   });
+});
 
-  it('keeps second and third follow-ups in order', () => {
-    const queued = appendQueuedFollowUp(appendQueuedFollowUp([], '第二条'), '第三条');
-    expect(queuedFollowUpLabel(queued)).toBe('第二条；第三条');
+describe('queued follow-up items', () => {
+  it('keeps second and third follow-ups as separate items', () => {
+    const queued = appendQueuedFollowUp(appendQueuedFollowUp([], '第二条', 'q-2'), '第三条', 'q-3');
+    expect(queuedFollowUpItems(queued).map((item) => item.text)).toEqual(['第二条', '第三条']);
+    expect(queued.every((item) => !item.text.includes('；'))).toBe(true);
     const first = shiftQueuedFollowUp(queued);
-    expect(first).toEqual({ next: '第二条', rest: ['第三条'] });
-    expect(shiftQueuedFollowUp(first?.rest ?? [])).toEqual({ next: '第三条', rest: [] });
-    expect(queuedFollowUpLabel(prependQueuedFollowUp(['第三条'], '第二条'))).toBe('第二条；第三条');
-    expect(appendQueuedFollowUp(['已排队'], '  ')).toEqual(['已排队']);
-    expect(queuedFollowUpLabel([])).toBeNull();
+    expect(first?.next).toEqual({ id: 'q-2', text: '第二条' });
+    expect(first?.rest).toEqual([{ id: 'q-3', text: '第三条' }]);
+    expect(shiftQueuedFollowUp(first?.rest ?? [])).toEqual({
+      next: { id: 'q-3', text: '第三条' },
+      rest: [],
+    });
+    expect(
+      prependQueuedFollowUp([{ id: 'q-3', text: '第三条' }], '第二条', 'q-2').map((item) => item.text),
+    ).toEqual(['第二条', '第三条']);
+    expect(appendQueuedFollowUp([{ id: 'q-1', text: '已排队' }], '  ')).toEqual([
+      { id: 'q-1', text: '已排队' },
+    ]);
+    expect(queuedFollowUpItems([])).toEqual([]);
     expect(queuedFollowUpCount([])).toBe(0);
-    expect(queuedFollowUpCount(['第二条', '第三条'])).toBe(2);
-    expect(queuedFollowUpCount(['  ', '第三条'])).toBe(1);
+    expect(queuedFollowUpCount(queued)).toBe(2);
+    expect(queuedFollowUpCount([{ id: 'blank', text: '  ' }, { id: 'q-3', text: '第三条' }])).toBe(1);
     expect(shiftQueuedFollowUp([])).toBeNull();
+  });
+
+  it('cancels one item without joining the rest', () => {
+    const queued = appendQueuedFollowUp(
+      appendQueuedFollowUp([{ id: 'q-1', text: '第一条' }], '第二条', 'q-2'),
+      '第三条',
+      'q-3',
+    );
+    expect(removeQueuedFollowUp(queued, 'q-2').map((item) => item.text)).toEqual(['第一条', '第三条']);
+    expect(removeQueuedFollowUp(queued, 'missing')).toEqual(queued);
+    expect(clearQueuedFollowUps()).toEqual([]);
   });
 
   it('puts the first queued line back in the draft on stop, and keeps the rest queued', () => {
     expect(
       restoreQueuedFollowUpOnCancel({
         draft: '',
-        queue: ['第二条', '第三条'],
+        queue: [
+          { id: 'q-2', text: '第二条' },
+          { id: 'q-3', text: '第三条' },
+        ],
       }),
-    ).toEqual({ draft: '第二条', queue: ['第三条'] });
+    ).toEqual({
+      draft: '第二条',
+      queue: [{ id: 'q-3', text: '第三条' }],
+    });
     expect(
       restoreQueuedFollowUpOnCancel({
         draft: '还在写',
-        queue: ['第二条', '第三条'],
+        queue: [
+          { id: 'q-2', text: '第二条' },
+          { id: 'q-3', text: '第三条' },
+        ],
       }),
-    ).toEqual({ draft: '还在写', queue: ['第二条', '第三条'] });
+    ).toEqual({
+      draft: '还在写',
+      queue: [
+        { id: 'q-2', text: '第二条' },
+        { id: 'q-3', text: '第三条' },
+      ],
+    });
     expect(restoreQueuedFollowUpOnCancel({ draft: '', queue: [] })).toEqual({
       draft: '',
       queue: [],
@@ -112,7 +151,7 @@ describe('busy composer send', () => {
 });
 
 describe('grok follow-up after the current turn', () => {
-  it('queues only for a generating Grok continuous session', () => {
+  it('queues only for a generating Grok / Kiro / Claude continuous session', () => {
     expect(
       grokCanQueueFollowUp({
         agentId: 'grok',
@@ -148,6 +187,14 @@ describe('grok follow-up after the current turn', () => {
     expect(
       grokCanQueueFollowUp({
         agentId: 'kiro',
+        runtimeEnabled: true,
+        phase: 'running',
+        sending: true,
+      }),
+    ).toBe(true);
+    expect(
+      grokCanQueueFollowUp({
+        agentId: 'claude',
         runtimeEnabled: true,
         phase: 'running',
         sending: true,
@@ -209,6 +256,15 @@ describe('grok follow-up after the current turn', () => {
         nativeSessionId: 'sess-kiro',
       }),
     ).toBe('newChat');
+    expect(
+      grokLegacyContinueKind({
+        agentId: 'claude',
+        runtimeEnabled: false,
+        runtimeReady: true,
+        hasMessages: true,
+        nativeSessionId: 'sess-claude',
+      }),
+    ).toBe(null);
   });
 
   it('does not treat a missing snapshot as an old chat', () => {

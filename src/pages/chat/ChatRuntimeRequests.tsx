@@ -3,25 +3,42 @@ import { Button } from '@/components/ui/button';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import type { RuntimeDecision, RuntimeRequest } from '@/lib/api/chat';
 import { cn } from '@/lib/utils';
-import { canSubmitRuntimeQuestions, requestAllowsAlways, runtimeRequestTitle } from './chat-runtime-model';
+import { canSubmitRuntimeQuestions, runtimeAllowAlwaysCopy, runtimeRequestTitle } from './chat-runtime-model';
 
 type ReplyHandler = (request: RuntimeRequest, decision?: RuntimeDecision, answers?: Record<string, string[]>) => Promise<void>;
 
 export function ChatRuntimeRequests({
   requests,
   onReply,
+  agentId,
 }: {
   requests: RuntimeRequest[];
   onReply: ReplyHandler;
+  agentId?: string | null;
 }) {
   return (
     <div className="w-full space-y-2 py-2">
-      {requests.map((request) => <RuntimeRequestCard key={`${request.runId}:${request.id}`} request={request} onReply={onReply} />)}
+      {requests.map((request) => (
+        <RuntimeRequestCard
+          key={`${request.runId}:${request.id}`}
+          request={request}
+          onReply={onReply}
+          agentId={agentId}
+        />
+      ))}
     </div>
   );
 }
 
-function RuntimeRequestCard({ request, onReply }: { request: RuntimeRequest; onReply: ReplyHandler }) {
+function RuntimeRequestCard({
+  request,
+  onReply,
+  agentId,
+}: {
+  request: RuntimeRequest;
+  onReply: ReplyHandler;
+  agentId?: string | null;
+}) {
   const { t } = useI18n();
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [other, setOther] = useState<Record<string, string>>({});
@@ -41,6 +58,7 @@ function RuntimeRequestCard({ request, onReply }: { request: RuntimeRequest; onR
     } catch { setSent(false); }
   };
   const title = runtimeRequestTitle(t, request);
+  const always = runtimeAllowAlwaysCopy({ request, agentId });
   const kindLabel = request.kind === 'file'
     ? t('chat.runtime.fileChange')
     : request.kind === 'question'
@@ -69,20 +87,20 @@ function RuntimeRequestCard({ request, onReply }: { request: RuntimeRequest; onR
           {(question.isOther || question.options.length === 0) ? <input type={question.isSecret ? 'password' : 'text'} className="w-full rounded border border-border bg-canvas px-2 py-1" disabled={sent} value={other[question.id] ?? ''} onChange={(event) => { setOther((current) => ({ ...current, [question.id]: event.target.value })); setAnswers((current) => ({ ...current, [question.id]: [] })); }} aria-label={question.question} /> : null}
         </fieldset>
       )) : null}
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         {request.kind === 'question' ? <Button size="sm" disabled={sent} onClick={() => submit()}>{t('chat.runtime.submit')}</Button> : <>
           <Button size="sm" disabled={sent} onClick={() => submit('allow')}>{t('chat.runtime.allow')}</Button>
-          {requestAllowsAlways(request) ? (
-            <Button size="sm" variant="outline" disabled={sent} onClick={() => submit('allow_always')}>
-              {t('chat.runtime.allowAlways')}
-            </Button>
+          {always.shown ? (
+            <span className="inline-flex flex-wrap items-center gap-2" data-help="chat-allow-always">
+              <Button size="sm" variant="outline" disabled={sent} onClick={() => submit('allow_always')}>
+                {t('chat.runtime.allowAlways')}
+              </Button>
+              <span className="text-meta text-muted">{t(always.hintKey)}</span>
+            </span>
           ) : null}
           <Button size="sm" variant="ghost" disabled={sent} onClick={() => submit('deny')}>{t('chat.runtime.deny')}</Button>
         </>}
       </div>
-      {request.kind !== 'question' && requestAllowsAlways(request) ? (
-        <p className="mt-2 text-meta text-muted">{t('chat.runtime.allowAlwaysHint')}</p>
-      ) : null}
     </section>
   );
 }
