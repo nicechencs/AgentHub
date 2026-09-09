@@ -14,7 +14,10 @@ import {
   chatAgentPickerEmptyCopy,
   chatAgentPickerEmptyKind,
   chatEscapeShouldCancel,
+  chatKeyTargetIsField,
   chatModKShouldFocusHistory,
+  chatModNShouldStartNewChat,
+  chatQuestionShouldOpenShortcuts,
   composerEnterShouldSend,
   chatAgentPickerRows,
   chatConnectionKind,
@@ -786,6 +789,66 @@ describe('chatModKShouldFocusHistory', () => {
     expect(chatModKShouldFocusHistory({ ...base, shiftKey: true })).toBe(false);
     expect(chatModKShouldFocusHistory({ ...base, altKey: true })).toBe(false);
     expect(chatModKShouldFocusHistory({ ...base, ctrlKey: false, metaKey: false })).toBe(false);
+  });
+});
+
+describe('chatModNShouldStartNewChat', () => {
+  const base = {
+    key: 'n',
+    metaKey: false,
+    ctrlKey: true,
+    altKey: false,
+    shiftKey: false,
+    overlayOpen: false,
+  };
+
+  it('starts a new chat with Ctrl/Cmd+N', () => {
+    expect(chatModNShouldStartNewChat(base)).toBe(true);
+    expect(chatModNShouldStartNewChat({ ...base, ctrlKey: false, metaKey: true })).toBe(true);
+    expect(chatModNShouldStartNewChat({ ...base, key: 'N' })).toBe(true);
+  });
+
+  it('yields to overlays, Shift, and Alt', () => {
+    expect(chatModNShouldStartNewChat({ ...base, overlayOpen: true })).toBe(false);
+    expect(chatModNShouldStartNewChat({ ...base, shiftKey: true })).toBe(false);
+    expect(chatModNShouldStartNewChat({ ...base, altKey: true })).toBe(false);
+    expect(chatModNShouldStartNewChat({ ...base, ctrlKey: false, metaKey: false })).toBe(false);
+    expect(chatModNShouldStartNewChat({ ...base, key: 'k' })).toBe(false);
+  });
+});
+
+describe('chatQuestionShouldOpenShortcuts', () => {
+  const base = {
+    key: '?',
+    metaKey: false,
+    ctrlKey: false,
+    altKey: false,
+    overlayOpen: false,
+    typingInField: false,
+  };
+
+  it('opens the overview with ? when not typing', () => {
+    expect(chatQuestionShouldOpenShortcuts(base)).toBe(true);
+  });
+
+  it('yields to fields, overlays, and modifiers', () => {
+    expect(chatQuestionShouldOpenShortcuts({ ...base, typingInField: true })).toBe(false);
+    expect(chatQuestionShouldOpenShortcuts({ ...base, overlayOpen: true })).toBe(false);
+    expect(chatQuestionShouldOpenShortcuts({ ...base, ctrlKey: true })).toBe(false);
+    expect(chatQuestionShouldOpenShortcuts({ ...base, metaKey: true })).toBe(false);
+    expect(chatQuestionShouldOpenShortcuts({ ...base, altKey: true })).toBe(false);
+    expect(chatQuestionShouldOpenShortcuts({ ...base, key: '/' })).toBe(false);
+  });
+});
+
+describe('chatKeyTargetIsField', () => {
+  it('treats input, textarea, select, and contenteditable as fields', () => {
+    expect(chatKeyTargetIsField({ tagName: 'TEXTAREA' } as EventTarget)).toBe(true);
+    expect(chatKeyTargetIsField({ tagName: 'INPUT' } as EventTarget)).toBe(true);
+    expect(chatKeyTargetIsField({ tagName: 'SELECT' } as EventTarget)).toBe(true);
+    expect(chatKeyTargetIsField({ isContentEditable: true } as EventTarget)).toBe(true);
+    expect(chatKeyTargetIsField({ tagName: 'BUTTON' } as EventTarget)).toBe(false);
+    expect(chatKeyTargetIsField(null)).toBe(false);
   });
 });
 
