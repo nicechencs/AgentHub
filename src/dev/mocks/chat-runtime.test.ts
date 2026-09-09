@@ -27,10 +27,32 @@ describe('mock chat runtime', () => {
     });
   });
 
-  it('keeps a non-Codex conversation on the legacy path', async () => {
+  it('enables a new empty Claude conversation with image input', async () => {
     const chat = createMockChatPort();
     const conversation = await chat.createConversation(['claude']);
-    await expect(chat.runtimeSnapshot(conversation.id)).resolves.toMatchObject({ enabled: false });
+    await expect(chat.runtimeSnapshot(conversation.id)).resolves.toMatchObject({
+      enabled: true,
+      phase: 'idle',
+    });
+    const options = await chat.runtimeOptions(conversation.id);
+    expect(options.imageInput).not.toBe(false);
+    expect(options.steer).toBe(false);
+    expect(options.models.map((item) => item.id)).toEqual(['sonnet', 'opus', 'haiku']);
+    const started = await chat.runtimeStart(conversation.id, 'what color?', 'client-claude-img', {
+      images: [{ path: '/tmp/mock-chat.png' }],
+    });
+    expect(started.enabled).toBe(true);
+    expect(started.phase).toBe('running');
+  });
+
+  it('keeps Claude history and other agents on the print path', async () => {
+    const chat = createMockChatPort();
+    const history = await chat.createConversation(['claude']);
+    await chat.chatSend(history.id, 'old turn', () => {});
+    await expect(chat.runtimeSnapshot(history.id)).resolves.toMatchObject({ enabled: false });
+
+    const pi = await chat.createConversation(['pi']);
+    await expect(chat.runtimeSnapshot(pi.id)).resolves.toMatchObject({ enabled: false });
   });
 
   it('rejects upgrading Kiro history without changing its runtime snapshot', async () => {
