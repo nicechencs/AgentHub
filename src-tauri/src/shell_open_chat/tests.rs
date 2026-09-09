@@ -288,6 +288,9 @@ fn cargo_debug_exe_must_not_overwrite_installed_menu() {
     assert!(is_cargo_debug_exe(Path::new(
         "/home/demo/src-tauri/target/debug/agenthub-gui"
     )));
+    assert!(is_cargo_debug_exe(Path::new(
+        r"D:/repo/src-tauri/target\debug\agenthub-gui.exe"
+    )));
     assert!(!is_cargo_debug_exe(Path::new(
         r"C:\Users\demo\AppData\Local\AgentHub\agenthub-gui.exe"
     )));
