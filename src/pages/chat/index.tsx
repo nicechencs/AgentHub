@@ -406,6 +406,7 @@ export default function ChatPage() {
                   agentsReady={page.agentsReady}
                   blockers={page.blockers}
                   showBlockerBanner={page.turns.length > 0}
+                  emptyTranscript={page.turns.length === 0}
                   connectionCaption={page.connectionCaption}
                   walletError={page.walletError}
                   onRetryWallet={() => void page.reloadWallet()}
@@ -496,6 +497,7 @@ export default function ChatPage() {
                         onToggleSkill={page.runtimeOps.toggleSkill}
                         agentId={page.primaryAgent}
                         showSkillPicker={page.primaryAgent !== 'codex'}
+                        compactSecondary={page.turns.length === 0}
                       />
                     ) : undefined
                   }

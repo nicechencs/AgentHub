@@ -36,6 +36,7 @@ import {
   type ChatActionDef,
   type ChatStarterCopyKey,
 } from './chat-actions';
+import { emptyTranscriptCopy } from './chat-empty-state';
 import { ChatMessageBubble } from './ChatMessageBubble';
 
 export function ChatTranscript({
@@ -192,13 +193,20 @@ function EmptyTranscriptStart({
 }) {
   const { t } = useI18n();
   const starters = chatStarterActions();
+  const copy = emptyTranscriptCopy(t, { agentLabel, projectLabel });
   const blocker = firstBlocker ? blockerCopy(t, firstBlocker) : null;
   return (
     <div className="flex h-full flex-col justify-end px-1 pb-3 pt-8">
       <div className="w-full">
-        <p className="text-body text-muted">
-          {t('chat.transcript.identity', { agent: agentLabel, project: projectLabel })}
-        </p>
+        <p className="text-display text-primary">{copy.headline}</p>
+        {blocker ? (
+          <p className="mt-1 text-meta text-muted">{copy.identity}</p>
+        ) : (
+          <>
+            <p className="mt-1 text-body text-secondary">{copy.invite}</p>
+            <p className="mt-1 text-meta text-muted">{copy.identity}</p>
+          </>
+        )}
         {blocker ? (
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <p className="text-body text-secondary">{blocker.text}</p>
@@ -214,7 +222,7 @@ function EmptyTranscriptStart({
           </div>
         ) : !sending ? (
           <div className="mt-3">
-            <p className="mb-2 text-meta text-muted">{t('chat.transcript.startersHint')}</p>
+            <p className="mb-2 text-meta text-muted">{copy.startersHint}</p>
             <div
               className="flex flex-wrap gap-2"
               role="group"
