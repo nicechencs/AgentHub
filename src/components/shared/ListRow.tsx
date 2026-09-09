@@ -4,11 +4,13 @@ import { cn } from '@/lib/utils';
 /** Shared padding for Agent / 连接 list cards. */
 export const LIST_ROW_PAD = 'p-3';
 
-function isInteractiveListTarget(target: EventTarget | null): boolean {
+function isInteractiveListTarget(target: EventTarget | null, root: Element): boolean {
   if (!(target instanceof Element)) return false;
-  return Boolean(
-    target.closest('button, a, input, textarea, [role="button"], [role="menuitem"]'),
+  const hit = target.closest(
+    'button, a, input, textarea, [role="button"], [role="menuitem"]',
   );
+  // The row itself is often role="button". Ignore only nested controls.
+  return Boolean(hit && hit !== root);
 }
 
 export type ListRowProps = HTMLAttributes<HTMLDivElement> & {
@@ -52,7 +54,7 @@ export function ListRow({
   const handleClick = (event: MouseEvent<HTMLDivElement>) => {
     onClick?.(event);
     if (event.defaultPrevented || !onOpen) return;
-    if (isInteractiveListTarget(event.target)) return;
+    if (isInteractiveListTarget(event.target, event.currentTarget)) return;
     onOpen();
   };
 
@@ -60,7 +62,7 @@ export function ListRow({
     onKeyDown?.(event);
     if (event.defaultPrevented || !onOpen) return;
     if (event.key !== 'Enter' && event.key !== ' ') return;
-    if (isInteractiveListTarget(event.target)) return;
+    if (isInteractiveListTarget(event.target, event.currentTarget)) return;
     event.preventDefault();
     onOpen();
   };
