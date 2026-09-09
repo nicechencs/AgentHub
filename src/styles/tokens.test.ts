@@ -137,11 +137,11 @@ describe('RADIUS (docs/ui-design.md §2)', () => {
 });
 
 describe('TYPE_SCALE (docs/ui-design.md §2)', () => {
-  it('keeps four distinct pixel sizes', () => {
+  it('keeps five distinct pixel sizes', () => {
     const roles = Object.keys(TYPE_SCALE);
-    expect(roles).toEqual(['display', 'title', 'body', 'meta']);
+    expect(roles).toEqual(['display', 'title', 'headline', 'body', 'meta']);
     const sizes = new Set(Object.values(TYPE_SCALE).map((spec) => spec.size));
-    expect(sizes).toEqual(new Set(['22px', '18px', '14px', '12px']));
+    expect(sizes).toEqual(new Set(['22px', '18px', '15px', '14px', '12px']));
   });
 
   it('maps legacy Tailwind names onto the current standards', () => {
@@ -156,6 +156,7 @@ describe('TYPE_SCALE (docs/ui-design.md §2)', () => {
     const fontSize = buildTailwindFontSize();
     expect(fontSize.title).toEqual(typeScaleTw('title'));
     expect(fontSize.display).toEqual(typeScaleTw('display'));
+    expect(fontSize.headline).toEqual(typeScaleTw('headline'));
     expect(fontSize.lg).toEqual(fontSize.title);
     expect(fontSize.xl).toEqual(fontSize.title);
     expect(fontSize.sm).toEqual(fontSize.body);
@@ -163,9 +164,10 @@ describe('TYPE_SCALE (docs/ui-design.md §2)', () => {
     expect(fontSize.xs).toEqual(fontSize.meta);
     expect(fontSize['2xs']).toEqual(fontSize.meta);
     const distinctPx = new Set(Object.values(fontSize).map(([size]) => size));
-    expect(distinctPx).toEqual(new Set(['22px', '18px', '14px', '12px']));
+    expect(distinctPx).toEqual(new Set(['22px', '18px', '15px', '14px', '12px']));
     expect(typeScalePx('display')).toBe(22);
     expect(typeScalePx('title')).toBe(18);
+    expect(typeScalePx('headline')).toBe(15);
     expect(typeScalePx('body')).toBe(14);
     expect(typeScalePx('meta')).toBe(12);
   });

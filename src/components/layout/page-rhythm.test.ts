@@ -59,9 +59,9 @@ describe('pageRhythm (docs/ui/design-system.md §3)', () => {
     expect(pageRhythm.chatChromeX).toBe(pageChatTw.x);
   });
 
-  it('uses one centered reading column for Chat messages and Settings forms', () => {
+  it('uses a centered reading column for Chat and a wider overview column for Settings', () => {
     expect(pageRhythm.readingColumn).toBe('mx-auto w-full max-w-3xl');
-    expect(pageRhythm).not.toHaveProperty('overviewColumn');
+    expect(pageRhythm.overviewColumn).toBe('mx-auto w-full max-w-6xl');
   });
 
   it('keeps the current page inset at 12px (change pageEdge.inset to retune)', () => {
