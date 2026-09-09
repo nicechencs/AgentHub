@@ -2779,6 +2779,7 @@ export const en = {
       legacyContinueHint: "Continue to add images in this chat.",
       legacyContinueAction: "Continue with the new style",
       legacyNewChatHint: "This chat can't add images. Start a new chat to add them.",
+      legacyNewChatAction: "Start a new chat",
       stop: "Stop",
       resizeAria: "Resize conversation and composer",
     },

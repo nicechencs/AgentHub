@@ -216,6 +216,13 @@ describe('chat layout wiring', () => {
     expect(source('use-chat-page.ts')).toContain('kiroChatAllowsCommandSearch');
   });
 
+  it('waits for a snapshot before warning, and offers new chat when images cannot attach', () => {
+    const page = source('index.tsx');
+    expect(page).toContain('runtimeReady: page.runtime != null');
+    expect(page).toContain('legacyNewChatAction');
+    expect(page).toContain('handleNewChat');
+  });
+
   it('uses shared Button for chrome icons and composer chips', () => {
     const header = source('ChatSessionHeader.tsx');
     const rail = source('ChatSessionRail.tsx');
