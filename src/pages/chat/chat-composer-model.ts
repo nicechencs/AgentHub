@@ -89,12 +89,13 @@ export function composerCancelingVisible(input: {
 }
 
 export function composerQueuedFollowUpView(
-  label: string | null | undefined,
-  count = 0,
-): { count: number; preview: string } | null {
-  const preview = label?.trim() ?? '';
-  if (!preview) return null;
-  return { count: Math.max(count, 1), preview };
+  items: readonly { id: string; text: string }[] | null | undefined,
+): { count: number; items: { id: string; text: string }[] } | null {
+  const next = (items ?? [])
+    .map((item) => ({ id: item.id, text: item.text.trim() }))
+    .filter((item) => item.id && item.text);
+  if (next.length === 0) return null;
+  return { count: next.length, items: next };
 }
 
 export function composerShouldRestoreFocus(input: { textareaDisabled: boolean }): boolean {
