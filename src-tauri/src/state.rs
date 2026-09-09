@@ -186,6 +186,10 @@ impl AppState {
         *self.pending_lock() = Some(cwd);
     }
 
+    pub(crate) fn peek_pending_open_chat_cwd(&self) -> Option<String> {
+        self.pending_lock().clone()
+    }
+
     pub(crate) fn take_pending_open_chat_cwd(&self) -> Option<String> {
         self.pending_lock().take()
     }

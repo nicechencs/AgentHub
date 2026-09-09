@@ -29,7 +29,7 @@ import Sub2ApiPage from '@/pages/sub2api';
 import { isRoutesAreaPath } from '@/pages/routes/routes-nav-items';
 import { onTrayNavigate } from '@/lib/backend/tauri/tray-events';
 import {
-  onOpenChatCwd,
+  subscribeOpenChatCwdWakeups,
   takePendingOpenChatCwd,
 } from '@/lib/backend/tauri/shell-open-chat-events';
 import { setChatBootstrap } from '@/lib/chat-bootstrap';
@@ -128,8 +128,8 @@ export default function App() {
       });
     void (async () => {
       try {
-        // Event is a wake-up only; cwd always comes from takePending.
-        const fn = await onOpenChatCwd(() => {
+        // Event / focus / visible are wake-ups only; cwd always comes from takePending.
+        const fn = await subscribeOpenChatCwdWakeups(() => {
           if (!cancelled) void consumePending();
         });
         if (cancelled) {

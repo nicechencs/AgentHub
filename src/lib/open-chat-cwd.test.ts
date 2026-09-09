@@ -78,7 +78,8 @@ describe('App open-chat wiring', () => {
     );
     expect(app).toContain('consumePendingOpenChatCwd');
     expect(app).toContain('takePendingOpenChatCwd');
-    expect(app).toContain('Event is a wake-up only');
+    expect(app).toContain('subscribeOpenChatCwdWakeups');
+    expect(app).toContain('wake-ups only');
     expect(app).not.toMatch(/onOpenChatCwd\(\s*openFolder\s*\)/);
     expect(app).toMatch(
       /HashRouter `useNavigate` changes identity with pathname; do not resubscribe\.\s*\n\s*\}, \[\]\);/,

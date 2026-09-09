@@ -74,7 +74,10 @@ pub(crate) fn resolve_open_chat_cwd(raw: &str) -> Option<PathBuf> {
         return Some(path);
     }
     if path.is_file() {
-        return path.parent().filter(|p| !p.as_os_str().is_empty()).map(Path::to_path_buf);
+        return path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(Path::to_path_buf);
     }
     None
 }
@@ -159,21 +162,70 @@ pub(crate) fn linux_nautilus_script(exe: &Path) -> String {
 /// that pending. The event is not a second delivery path.
 pub(crate) fn deliver_open_chat_cwd<R: Runtime>(app: &AppHandle<R>, cwd: PathBuf) {
     let cwd = cwd.to_string_lossy().into_owned();
-    if let Some(state) = app.try_state::<AppState>() {
-        state.set_pending_open_chat_cwd(cwd.clone());
-    }
+    let Some(state) = app.try_state::<AppState>() else {
+        tracing::warn!(
+            target: "gui",
+            op = "open_chat_cwd",
+            "no app state; cannot queue folder"
+        );
+        return;
+    };
+    state.set_pending_open_chat_cwd(cwd.clone());
+    tracing::info!(target: "gui", op = "open_chat_cwd", "queued folder for new chat");
     tray::show_main_window(app);
-    let _ = app.emit(OPEN_CHAT_CWD_EVENT, OpenChatCwdPayload { cwd });
+    emit_open_chat_wakeup(app, &cwd);
+    schedule_open_chat_rewake(app);
+}
+
+/// Hidden windows often drop the first event; emit again if pending is still there.
+pub(crate) fn rewake_pending_open_chat<R: Runtime>(app: &AppHandle<R>) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let Some(cwd) = state.peek_pending_open_chat_cwd() else {
+        return;
+    };
+    emit_open_chat_wakeup(app, &cwd);
+}
+
+fn emit_open_chat_wakeup<R: Runtime>(app: &AppHandle<R>, cwd: &str) {
+    let _ = app.emit(
+        OPEN_CHAT_CWD_EVENT,
+        OpenChatCwdPayload {
+            cwd: cwd.to_string(),
+        },
+    );
+}
+
+fn schedule_open_chat_rewake<R: Runtime>(app: &AppHandle<R>) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        rewake_pending_open_chat(&app);
+    });
+}
+
+fn open_chat_arg_missing_folder<S: AsRef<str>>(args: &[S]) -> bool {
+    parse_open_chat_cwd_arg(args).is_none()
+        && args.iter().any(|arg| arg.as_ref().contains("open-chat"))
 }
 
 pub(crate) fn ingest_args<R: Runtime>(app: &AppHandle<R>, args: &[String]) {
     let Some(raw) = parse_open_chat_cwd_arg(args) else {
+        if open_chat_arg_missing_folder(args) {
+            tracing::warn!(
+                target: "gui",
+                op = "open_chat_cwd",
+                "second instance had --open-chat but no folder"
+            );
+        }
         return;
     };
     let Some(cwd) = resolve_open_chat_cwd(&raw) else {
         tracing::warn!(
             target: "gui",
             op = "open_chat_cwd",
+            path = %raw,
             "ignored --open-chat path that is not a folder"
         );
         return;
@@ -246,9 +298,7 @@ fn reg_add(key: &str, name: Option<&str>, data: &str) -> Result<(), String> {
     }
     cmd.arg("/d").arg(data);
     apply_no_window(&mut cmd);
-    let output = cmd
-        .output()
-        .map_err(|e| format!("reg add failed: {e}"))?;
+    let output = cmd.output().map_err(|e| format!("reg add failed: {e}"))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("reg add {key} failed: {stderr}"));
@@ -279,7 +329,11 @@ fn register_linux(exe: &Path, lang: TrayUiLanguage) -> Result<(), String> {
         &linux_open_with_desktop(exe, lang),
     )?;
     let nautilus_dir = home.join(".local/share/nautilus/scripts");
-    for stale in ["用 AgentHub 打开对话", "Open Chat in AgentHub", "AgentHubOpenChat"] {
+    for stale in [
+        "用 AgentHub 打开对话",
+        "Open Chat in AgentHub",
+        "AgentHubOpenChat",
+    ] {
         let path = nautilus_dir.join(stale);
         let _ = std::fs::remove_file(path);
     }
@@ -306,7 +360,9 @@ fn write_text(path: &Path, contents: &str) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn take_pending_open_chat_cwd(state: tauri::State<'_, AppState>) -> Result<Option<String>, String> {
+pub async fn take_pending_open_chat_cwd(
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<String>, String> {
     Ok(state.take_pending_open_chat_cwd())
 }
 

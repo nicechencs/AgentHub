@@ -65,9 +65,18 @@ fn pending_open_chat_cwd_is_taken_once() {
     assert_eq!(state.take_pending_open_chat_cwd(), None);
     state.set_pending_open_chat_cwd(r"D:\work\app".into());
     assert_eq!(
+        state.peek_pending_open_chat_cwd().as_deref(),
+        Some(r"D:\work\app")
+    );
+    assert_eq!(
+        state.peek_pending_open_chat_cwd().as_deref(),
+        Some(r"D:\work\app")
+    );
+    assert_eq!(
         state.take_pending_open_chat_cwd().as_deref(),
         Some(r"D:\work\app")
     );
+    assert_eq!(state.peek_pending_open_chat_cwd(), None);
     assert_eq!(state.take_pending_open_chat_cwd(), None);
 }
 
