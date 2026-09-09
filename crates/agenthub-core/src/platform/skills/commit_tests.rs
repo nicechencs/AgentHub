@@ -4,6 +4,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -905,6 +906,58 @@ fn install_skill_service_success_and_validate_failure() {
     assert_eq!(err.code(), "invalid_arg");
     // Previous skill untouched.
     assert!(skills_root.join("pkg").join("SKILL.md").is_file());
+}
+
+fn write_skill_zip_with_top_dir(zip_path: &Path, dir_name: &str, skill_md: &str) {
+    let file = fs::File::create(zip_path).unwrap();
+    let mut zip = zip::ZipWriter::new(file);
+    let opts = zip::write::SimpleFileOptions::default();
+    zip.add_directory(format!("{dir_name}/"), opts).unwrap();
+    zip.start_file(format!("{dir_name}/SKILL.md"), opts)
+        .unwrap();
+    zip.write_all(skill_md.as_bytes()).unwrap();
+    zip.finish().unwrap();
+}
+
+#[test]
+fn install_skill_service_from_zip_with_single_top_level_dir() {
+    use crate::models::SkillSyncState;
+
+    let tmp = crate::utils::test_temp::real_tempdir();
+    let skills_root = tmp.path().join("skills");
+    let zip_path = tmp.path().join("qa-zip-pkg.zip");
+    write_skill_zip_with_top_dir(
+        &zip_path,
+        "qa-zip-pkg",
+        "---\nname: Zip Demo\n---\n# body\n",
+    );
+
+    let reg = AdapterRegistry::new();
+    let (_db_dir, db) = tmp_db();
+    let svc = SkillService::with_db(skills_root.clone(), reg, db.clone());
+
+    let skill = svc.install_skill(zip_path.to_str().unwrap(), false).unwrap();
+    assert_eq!(skill.id, "qa-zip-pkg");
+    assert_eq!(skill.name, "Zip Demo");
+    assert!(skills_root.join("qa-zip-pkg").join("SKILL.md").is_file());
+    assert!(
+        skill.projections.iter().all(|p| {
+            matches!(
+                p.state,
+                SkillSyncState::Absent | SkillSyncState::Unsupported
+            )
+        }),
+        "zip install must not enable on tools: {:?}",
+        skill
+            .projections
+            .iter()
+            .map(|p| (p.agent, p.state))
+            .collect::<Vec<_>>()
+    );
+    let lock = skill_lock_load(&skills_root).unwrap();
+    assert!(lock.contains_key("qa-zip-pkg"));
+    assert_eq!(lock.get("qa-zip-pkg").unwrap().kind, "zip");
+    assert_no_helper_dirs(&skills_root);
 }
 
 /// Reconcile single-target failure keeps new shared package and writes observed error.
