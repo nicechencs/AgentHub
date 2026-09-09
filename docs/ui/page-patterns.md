@@ -3,7 +3,7 @@ title: UI 页面模式
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-08
+updated: 2026-09-09
 ---
 
 # UI Page Patterns
@@ -23,14 +23,14 @@ The application is organized by work and management, with Agent filtering inside
 | Workspace | Skills | `/skills` | User skills (shared library + this-tool), project skills by workspace, and market |
 | Workspace | MCP | `/mcp` | Read-only configuration inventory |
 | Workspace | Projects | `/projects` | Project/session tree and read-only preview |
-| Workspace | Plugins | `/plugins` | Installed vendor plugin / extension packs; Claude / Grok can enable or disable; Pi is list-only |
+| Workspace | Plugins | `/plugins` | Installed vendor plugin / extension packs; Claude / Grok can install, uninstall, enable, or disable; Pi is list-only |
 | Manage | Dashboard | `/` | Agent status, usage, and shortcuts |
 | Manage | Connections | `/connections` | General login list; route-only entries with `home=route_pool` may be absent |
 | Manage | Sub2API | `/sub2api` | Sign in to a Sub2API site, manage API keys by group, and import usable keys into an installed Agent |
 | Manage | Routes | `/routes` | Local route runtime and the connection pool. May add/manage route-only official login / API Key; `/routes` opens the board; secondary nav: board / pool / tokens / activity |
-| Manage | Settings | `/settings` | Preferences, local device, backups, and about |
+| Manage | Settings | `/settings` | Preferences, Features, This computer, backups, and about |
 
-New installs hide the **Plugins** and **Sub2API** sidebar entries (`pluginsNavVisible` and `sub2apiNavVisible` default off). **Routes** defaults **on** (`routesNavVisible` default on) and can be hidden in Preferences. Turning a setting on shows its entry; the pages stay reachable at `/routes`, `/plugins`, and `/sub2api`. MCP stays in the workspace nav. The sidebar marks **Plugins** as in development; MCP no longer has that mark. Routes and Sub2API are preference-gated without that mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / uninstall / update for plugin packs is still a [proposal](../proposals/plugin-management.md). The current page lists installed packs for Claude, Grok, and Pi; Claude and Grok can enable or disable. There is no install button.
+New installs hide the **Plugins** and **Sub2API** sidebar entries (`pluginsNavVisible` and `sub2apiNavVisible` default off). **Routes** defaults **on** (`routesNavVisible` default on) and can be hidden in Settings → Features. Turning a setting on shows its entry; the pages stay reachable at `/routes`, `/plugins`, and `/sub2api`. MCP stays in the workspace nav. The sidebar marks **Plugins** as in development; MCP no longer has that mark. Routes and Sub2API are Features-gated without that mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Update for plugin packs is still a [proposal](../proposals/plugin-management.md). The current page lists installed packs for Claude, Grok, and Pi; Claude and Grok can install, uninstall, enable, or disable. Pi remains list-only.
 
 The compatibility paths `/adapter` and `/router` replace-navigate to `/routes`. They are recovery paths for existing links, not current navigation labels.
 
@@ -43,16 +43,18 @@ Routes nested paths (secondary nav):
 | Local tokens | `/routes/tokens` | Entry keys per endpoint; copy or write into the matching Agent. Keys appear after the local gateway starts. |
 | Activity | `/routes/activity` | Cross-route recent request feed |
 
-Entering any `/routes*` path shows a shell-level secondary nav panel. Clicking Routes in the primary sidebar collapses that sidebar when **Collapse sidebar on Routes** is on (writes `agenthub:sidebar-collapsed`; default on). Other primary items, refresh, secondary-nav clicks, and leaving the routes area do not auto-expand or auto-collapse it. The setting is in Preferences → Sidebar. The secondary nav top-right control collapses that nav (writes `agenthub:routes-nav-collapsed`). Right-click offers expand when collapsed and collapse when expanded. While the URL is inside `/routes*`, the primary sidebar still shows the Routes entry even if `routesNavVisible` is off, so the active item remains visible; that preference itself is unchanged.
+Entering any `/routes*` path shows a shell-level secondary nav panel. Clicking Routes in the primary sidebar collapses that sidebar when **Collapse sidebar on Routes** is on (writes `agenthub:sidebar-collapsed`; default on). Other primary items, refresh, secondary-nav clicks, and leaving the routes area do not auto-expand or auto-collapse it. The setting is in Settings → Features. The secondary nav top-right control collapses that nav (writes `agenthub:routes-nav-collapsed`). Right-click offers expand when collapsed and collapse when expanded. While the URL is inside `/routes*`, the primary sidebar still shows the Routes entry even if `routesNavVisible` is off, so the active item remains visible; that preference itself is unchanged.
 
 ## 2. Application shell
 
+The window bottom bar (`StatusBar`) is application chrome: installed Agents on the left, local-forward status on the right (click goes to the Routes board). It is not a page top-bar control.
+
 ### 2.1 Standard shell
 
-The standard shell has a 12px canvas gutter (`pageEdge.canvas`), a rounded sidebar panel, a rounded main panel, and a top bar. The main column uses the edge-column pattern with a shared horizontal inset (`pageEdge.inset`, currently 12px). Dashboard and the Routes board use `pageRhythm.overviewColumn`. Non-chat pages put the page title on the left of the top bar as one line: the page name in the title size and primary color, then a short description in the meta size and secondary color. The notification control stays on the right. Chat has no top bar and owns its session name. A standard page is composed in this order:
+The standard shell has a 12px canvas gutter (`pageEdge.canvas`), a rounded sidebar panel, a rounded main panel, and a top bar. The main column uses the edge-column pattern with a shared horizontal inset (`pageEdge.inset`, currently 12px). Dashboard and the Routes board use `pageRhythm.overviewColumn`. Non-chat pages put the page title on the left of the top bar as one line: the page name in the title size and primary color, then a short description in the meta size and secondary color. Help (question mark) and Feedback stay on the right. There is no in-app notification bell. Chat has no top bar and owns its session name. A standard page is composed in this order:
 
 ```text
-TopBar (title + metadata | notification)
+TopBar (title + metadata | help + feedback)
   -> chrome / chromeRow (tabs, filters, Agent strip; page commands on the right of the same row)
   -> lead (environment status or one Notice)
   -> stack / blocks (main content)
@@ -153,7 +155,7 @@ Connections is the general login list in a full-height workbench split. Logins c
 - The top `AgentTabStrip` filters the list. Do not add a second row of “official / API key / unknown” filter chips.
 - The add menu is **导入授权** / **官方登录** / **添加 API Key**. Official login and API Key are stored as separate rows. WorkBuddy custom models and ZCode catalog providers split into one login per directory row; desktop package logins are not imported.
 - OAuth rows use an identity/person icon; API key rows use a key icon. The icon has an accessible label and a short hint.
-- Click the login **name** to open the right-hand detail: related config files (copyable, open-directory), package, expiry, timeline, and the full endpoint. The rest of the row (switch, edit, menu, sort) does not open inspect. If the detail pane is already open, clicking another row’s empty area switches the detail; a closed pane stays closed. The list uses masked labels; the file preview shows the stored snapshot.
+- Click the login **name** to open the right-hand detail. The pane uses this section order: **现在能不能用**, **用量**, **连到哪里 · 模型**, **谁在用**, **配置与记录**. Related config files, last used, and added time stay expanded; record ID and import source sit under collapsed **更多**. The rest of the row (switch, edit, menu, sort) does not open inspect. If the detail pane is already open, clicking another row’s empty area switches the detail; a closed pane stays closed. The list uses masked labels; the file preview shows the stored snapshot.
 - The official-login wait page does not show internal status or login file paths; failure keeps **重试** as the primary action.
 - The row menu is only **取消添加** (when that login is already written into the tool). Adding a Connections login to the default connection pool is **从连接同步** on the pool page, not a Connections row action. Connections does not open ConnectFlow, and does not show **分享至连接池**, **用到其他工具**, or **本机转发**.
 - Missing data and a genuinely empty login list are different states.
@@ -162,7 +164,7 @@ Connections is the general login list in a full-height workbench split. Logins c
 
 - Full-height workbench split: `AgentTabStrip` filters; add menu **导入授权** / **官方登录** / **添加 API Key**.
 - Official login and API Key stored as separate rows; WorkBuddy custom models and ZCode catalog providers split one login per directory row; desktop package logins are not imported.
-- Click login **name** for right-hand detail (related config files, package, expiry, timeline, full endpoint). Row menu only **取消添加** when that login is already written into the tool.
+- Click login **name** for right-hand detail (sections: 现在能不能用 / 用量 / 连到哪里 · 模型 / 谁在用 / 配置与记录). Row menu only **取消添加** when that login is already written into the tool.
 - Distinct states for missing data vs a genuinely empty login list. Recycle bin restores to Connections only.
 
 ### Agent touchpoints (Connections)
@@ -208,7 +210,7 @@ The connection pool lists official logins and API Keys used for local forwarding
 
 ### Features (Pool)
 
-- Field-aligned table of official logins and API Keys used for local forwarding; **从连接同步**, route-only add/edit/delete, enable switch, column resize memory, name-click detail, `?profile=<id>`.
+- Field-aligned table of official logins and API Keys used for local forwarding; **从连接同步**, route-only add/edit/delete, enable switch, column resize memory, name-click detail (**能不能用** / **用量** / **连到哪里 · 模型** / **配置与记录**; model lists longer than 8 show the first 8 plus expand), `?profile=<id>`.
 - Editing a shared official login copies to a pool-owned row, then may ask **同步到连接页？**. Separate recycle bin from Connections.
 - Shareability for「从连接同步」: **all API Keys** can join (any owning Agent, including WorkBuddy / ZCode / Pi / Cursor); official OAuth only for Claude / Codex / Grok; domestic official logins cannot. Implemented by `isPoolShareableLogin` in `ticket-pool-import.ts` (aligned with product — no Agent API Key whitelist). Status/health states are distinct from durable DB rows (see table below).
 
@@ -326,24 +328,27 @@ Sub2API is a separate site-management workbench, not a Routes subpage or a repla
 
 ## 8. Chat
 
-Chat is a one-conversation, one-Agent workbench with a session rail, transcript, process panel, and composer.
+Chat is a one-conversation, one-Agent workbench with a session rail, transcript, process panel, and composer. The quality bar versus Claude Code, Cursor Chat, and the Codex app is [Chat 体验标杆](chat-experience-bar.md).
 
-- The rail supports new conversation, search by title and working directory, day grouping, selection, rename, and delete confirmation.
+- The rail supports new conversation, search by title and working directory, day grouping, selection, rename, and delete confirmation. The rail width is dragged from the separator and remembered (`agenthub:chat-rail-width`).
 - The current conversation header exposes Agent identity, working directory, automatic-approval state, and connection context. A missing working directory is a blocker, not an automatic modal.
 - A conversation has one active Agent. Hidden or unauthorized Agents remain visible with a reason but cannot be selected for a new send.
 - The composer validates blockers in order: hidden Agent, environment not ready, missing authorization, unknown status, then missing working directory. It renders only the first blocker with a recovery action. Sending is isolated per conversation; several conversations may generate at once.
-- The send button is the page's one accent action. Sending changes it to a stop action. Retry creates a new turn using the same validation path.
-- Streaming process details use a compact summary and an expandable timeline. Commands, stderr, and exit codes stay in a secondary runtime-details disclosure.
+- The send button is the page's one accent action. Enter sends; Shift+Enter inserts a new line; the footer names the current shortcut. While generating, Send stays available when there is a real action: mid-turn inject when the Agent supports it, otherwise queue for after this turn. An empty or blocked generating composer hides Send so a disabled control does not look clickable. Queued follow-ups show a count and preview with a clear action. Stop is a labeled control; while stopping it reads 正在停止 and is disabled. After send, focus stays in the composer. Retry creates a new turn using the same validation path. Cursor is not on this surface.
+- Approval cards offer Allow / Deny; Always allow when this request includes that option. After Always allow, Codex / Grok / Kiro auto-accept later command/file prompts in the current process (Codex typically this turn; Grok / Kiro the live ACP process). Not saved. File-change cards title **修改文件** and show the path.
+- Streaming process details use a compact summary of 正在读取 / 正在修改 / 正在执行 and an expandable timeline. Tool names, statuses, and JSON payloads stay in a per-step **细节** disclosure. Commands, stderr, status events, and exit codes stay in **运行详情**. Codex shows **当前轮** and **累计** from protocol counts as soon as they arrive; Grok shows **当前轮** only. Numbers stay on the reply header and the generating summary. No fake usage bar. Continuous Codex / Grok / Kiro turns poll the focused snapshot about every 80ms and show **正在想** before the first character, then **正在写** with a caret. The body is the durable `currentMessage` from that read, not a client-side drip of a buffered reply.
 - Switching conversations does not cancel the active operation. Codex runtime keeps per-conversation process state and a replay cursor; its snapshot supplies the authoritative current reply. Legacy sends retain their existing in-memory process behavior.
 - Copy is available for completed user/Agent messages. Running messages do not show copy or retry.
 
 ### Features (Chat)
 
-- Session rail: new conversation, search by title/cwd, day grouping, rename, delete confirmation.
+- Session rail: new conversation, search by title/cwd, day grouping, rename, delete confirmation; drag-resize remembered in `agenthub:chat-rail-width`.
 - Header: Agent identity, working directory, automatic-approval state, connection context.
-- Composer blocker order: hidden Agent → environment not ready → missing authorization → unknown status → missing working directory; send is the one accent action (becomes stop); retry creates a new turn. Several conversations may generate at once.
-- Streaming process panel with expandable timeline; copy for completed messages only.
-- New Codex conversations use durable app-server snapshots and show actual approval/question requests as controls. Replies and stop target the exact run; snapshot failure does not fall back to legacy send. Codex B2 is in: session model/effort, actions menu, localImage attachments, and skills/plugins discovery for this turn (no plan mode). New Grok conversations are continuous (model/thinking, images, queued follow-ups); **Unsupported**: choosing a skill “for this turn” (no clickable fake control). New Kiro conversations use the ACP continuous channel; old Kiro chats keep the original send path. See [B2](../archive/chat-codex-b2.md) and [STATUS](../STATUS.md).
+- Composer blocker order: hidden Agent → environment not ready → missing authorization → unknown status → missing working directory; send is the one accent action. Enter sends, Shift+Enter makes a new line. While generating, send injects or queues when that channel exists, otherwise it is hidden; queued lines show a count; Stop is labeled (正在停止 while stopping); focus stays in the composer after send. Retry creates a new turn. Several conversations may generate at once.
+- Approval cards: Allow / Deny; Always allow when the request includes that option. Codex / Grok / Kiro in-process remember (not saved). File-change cards show the path.
+- Streaming process panel: human 正在读取 / 正在修改 / 正在执行 rows, protocol details folded; Codex 当前轮 + 累计 and Grok 当前轮 on the reply header; copy for completed messages only.
+- New Codex conversations use durable app-server snapshots and show actual approval/question requests as controls. Replies and stop target the exact run; snapshot failure does not fall back to legacy send. Codex B2 is in: session model/effort, actions menu, local image attachments, and skills/plugins discovery for this turn (no plan mode; no toolbar skill button — use `/` or Codex auto-use). New Grok conversations are continuous (model/thinking, images, queued follow-ups); **Unsupported**: choosing a skill “for this turn” (no clickable fake control). New Kiro conversations use the ACP continuous channel; old Kiro chats keep the original send path. New Claude conversations use stream-json continuous chat (images; no mid-turn steer; no approval cards in this slice); old Claude chats keep print+resume. See [B2](../archive/chat-codex-b2.md) and [STATUS](../STATUS.md).
+- Runtime confirmation cards use **允许** / **拒绝**. **一直允许** appears only when this request includes that option (Codex command/file prompts always include it; Grok / Kiro only if the ACP request does, including Kiro `allow_always_tool`). Pending option lists are stored with the request so a snapshot or restart can still show the same buttons. After **一直允许**, Codex / Grok / Kiro auto-accept later command/file prompts in the current process (Codex typically this turn; Grok / Kiro the live ACP process; not saved). Grok / Kiro also forward the server option. Kiro session **完全访问权限** is a separate start-time setting, not this card. Cursor is out of this surface. See [Chat 与 Agent](../concepts/chat-and-agents.md#允许-拒绝-一直允许).
 
 ### Agent touchpoints (Chat)
 
@@ -363,8 +368,8 @@ Skills, Projects, and Plugins are full-height workbenches with a left inventory 
 ### Skills
 
 - User skills, Project skills, and Market are page-level tabs. Filtering and Agent scope stay in the chrome row.
-- User skills list the shared library plus this-tool-only skills, with the enablement matrix.
-- Project skills use a dropdown of workspaces already identified on the Projects page. After a project is selected, skills can be added or deleted for that workspace (canonical folder `.agents/skills`).
+- User skills list the shared library plus this-tool-only skills, with the enablement matrix. The install dialog has one Source field (folder path, zip path, or git URL; must contain `SKILL.md`). **Choose folder** opens the system folder picker; **Choose zip** opens the system file dialog (title **Choose a skill zip** / **选择技能 zip**, ZIP filter). Cancel in the system dialog leaves the field unchanged. Empty source shows a field error. User-skill install writes `~/.agents/skills/` only and does not enable the skill on any tool.
+- Project skills use a dropdown of workspaces already identified on the Projects page. After a project is selected, skills can be added or deleted for that workspace (canonical folder `.agents/skills`). The same install dialog writes that folder instead of the shared library.
 - A skill name opens the preview (`ListNameButton`); Enter on the name is equivalent. If the preview is already open, clicking empty row area on the library/project tables switches it; a closed preview stays closed. Checkbox selection is only for batch operations and never opens the preview.
 - The preview identity is separate from checkbox selection. It remains open when filters hide the selected skill, with a short source label in the header.
 - The list keeps the name and at most one line of description. Absolute paths move to the preview footer or an explicit open-directory action.
@@ -374,6 +379,7 @@ Skills, Projects, and Plugins are full-height workbenches with a left inventory 
 
 - Tabs: User skills (shared library + this-tool), Project skills (workspace dropdown from Projects), Market.
 - Enablement matrix; name opens preview; checkbox selection only for batch ops; paths in preview footer / open-directory.
+- Install dialog: folder picker, zip via system file dialog (ZIP filter; title Choose a skill zip), or git URL. User install writes the shared library and does not auto-enable. Project install uses the same dialog for `.agents/skills`.
 
 ### Agent touchpoints (Skills)
 
@@ -412,23 +418,23 @@ Skills, Projects, and Plugins are full-height workbenches with a left inventory 
 ### Plugins
 
 - Left column lists installed plugin / extension packs (Claude, Grok, and Pi today). The row keeps the name, the on-disk version when known, at most one line of description, and exception badges (disabled / untrusted / not installed / version mismatch). Clicking a row opens the right-hand details pane.
-- Details lead with the pack components (bundled MCP is a component, not a list row). Identity fields (version, marketplace, scope, path) follow. Pi also shows the specified version from settings when pinned, and a short note on how upgrade is judged (pinned npm specs are skipped by Pi updates; this page does not probe npm for a newer unpinned version). Claude and Grok packs can be turned on or off; turning off is not uninstall. There is no install button.
+- Details lead with the pack components (bundled MCP is a component, not a list row). Identity fields (version, marketplace, scope, path) follow. Pi also shows the specified version from settings when pinned, and a short note on how upgrade is judged (pinned npm specs are skipped by Pi updates; this page does not probe npm for a newer unpinned version). Claude and Grok packs can be turned on or off (turning off is not uninstall), and can be installed or uninstalled from this page. Pi remains list-only.
 - Empty copy depends on the Agent filter: wired-but-empty (install in that tool, then refresh), planned (list not wired yet), or unsupported (this tool has no pack system of this kind). Loading, empty, and error states stay in the list column. Diagnostic scan sources are not shown in the list. Hiding the sidebar item does not disable `/plugins`.
 
 ### Features (Plugins)
 
 - Lists installed plugin/extension packs for Claude, Grok, and Pi; row shows name, on-disk version, one-line description, exception badges.
 - Details: pack components (bundled MCP is a component), identity fields; Pi shows pinned version note.
-- Claude and Grok can enable/disable listed packs (not uninstall). No install button. Sidebar visibility gated by `pluginsNavVisible`.
+- Claude and Grok can install, uninstall, enable, or disable listed packs. Pi is list-only. Sidebar visibility gated by `pluginsNavVisible`.
 
 ### Agent touchpoints (Plugins)
 
-- Claude / Grok toggle via that Agent’s plugin enable surface; Pi is list-only.
+- Claude / Grok install, uninstall, and toggle via that Agent’s official plugin CLI; Pi is list-only.
 - Empty copy depends on Agent filter: wired-but-empty, planned, or unsupported. Not `Capability::Plugins` (none exists); not `Capability::Mcp`.
 
 ### Out of scope (Plugins)
 
-- Install / uninstall / update of packs remains a proposal.
+- Update of packs remains a proposal. Codex / Pi install and uninstall are not wired.
 - Not the MCP inventory page; hiding the sidebar item does not disable `/plugins`.
 
 ## 10. Agents and MCP

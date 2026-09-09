@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { ImagePlus, X } from 'lucide-react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
@@ -15,6 +16,7 @@ import { Hint } from '@/components/ui/tooltip';
 import { ChatActionMenu } from './ChatActionMenu';
 import type { ChatActionContext, ChatActionDef } from './chat-actions';
 import type { RuntimeExtensionItem, RuntimeModelOption, RuntimeTurnSettings } from '@/lib/api/chat';
+import { chatEffortHint, chatEffortLabel, chatModelDisplayName } from './chat-model-labels';
 
 export function ChatRuntimeExtras(props: {
   enabled: boolean;
@@ -41,10 +43,18 @@ export function ChatRuntimeExtras(props: {
   extensions: RuntimeExtensionItem[];
   selectedSkillIds: string[];
   onToggleSkill: (id: string) => void;
+  /** Toolbar skill dropdown. Codex hides this — skills stay on `/` and auto-use. */
+  showSkillPicker?: boolean;
+  /** When `codex`, toolbar skill control is always hidden (defense if parent forgets the prop). */
+  agentId?: string | null;
   inline?: boolean;
+  modelMenuOpenNonce?: number;
 }) {
   const { t } = useI18n();
   const callableSkills = props.extensions.filter((item) => item.kind === 'skill' && item.callable);
+  // Codex: never mount the toolbar skill control (slash menu / auto-use only).
+  const showSkillPicker =
+    props.agentId !== 'codex' && props.showSkillPicker !== false;
   const modelDisabledReason = props.frozen
     ? props.frozenReason ?? t('chat.runtimeOps.frozenDuringTurn')
     : props.catalogLoading
@@ -59,6 +69,17 @@ export function ChatRuntimeExtras(props: {
       : props.efforts.length === 0
         ? t('chat.runtimeOps.effortUnavailable')
         : null;
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  useEffect(() => {
+    if (!props.modelMenuOpenNonce) return;
+    if (modelDisabledReason || props.models.length === 0) return;
+    setModelMenuOpen(true);
+  }, [modelDisabledReason, props.modelMenuOpenNonce, props.models.length]);
+  const currentEffortHint = props.settings.effort
+    ? chatEffortHint(props.settings.effort, t)
+    : null;
+  const modelTriggerHint = modelDisabledReason
+    ?? `${t('chat.composer.switchModel')} · ${t('chat.composer.shortcutOpenModel')}`;
 
   if (!props.enabled) {
     return (
@@ -76,9 +97,19 @@ export function ChatRuntimeExtras(props: {
     );
   }
 
+  // Inline mode uses `contents` so model/effort buttons sit in the composer
+  // toolbar row. Once images are attached, switch to a column: `contents`
+  // would drop the chip row into that same overflow-hidden horizontal flex
+  // and the removable chips get clipped (true-window #312 FAIL).
+  const rootClass = props.inline
+    ? props.images.length > 0
+      ? 'flex w-full min-w-0 flex-col gap-2'
+      : 'contents'
+    : 'space-y-2 px-1 pb-1';
+
   return (
     <div
-      className={props.inline ? 'contents' : 'space-y-2 px-1 pb-1'}
+      className={rootClass}
       onPaste={(event) => {
         if (!props.onPasteImages) return;
         const files = Array.from(event.clipboardData?.files ?? []).filter((file) =>
@@ -89,6 +120,21 @@ export function ChatRuntimeExtras(props: {
         props.onPasteImages(files);
       }}
     >
+      {props.images.length > 0 ? (
+        <div className="flex flex-wrap gap-2" data-help="chat-image-chips">
+          {props.images.map((path) => (
+            <Hint key={path} label={path}>
+              <span className="inline-flex max-w-full items-center gap-1 rounded-card border px-2 py-1 text-meta">
+                <span className="truncate">{path.split(/[/\\]/).pop()}</span>
+                <button type="button" aria-label={t('chat.runtimeOps.removeImage')} onClick={() => props.onRemoveImage(path)}>
+                  <X className="size-3.5" />
+                </button>
+              </span>
+            </Hint>
+          ))}
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap items-center gap-2">
         <ChatActionMenu
           draft={props.draft}
@@ -99,18 +145,23 @@ export function ChatRuntimeExtras(props: {
           onRun={props.onRunAction}
           onHoverIndex={props.onHoverCommandIndex}
         />
-        <Hint label={modelDisabledReason ?? undefined}>
-          <DropdownMenu>
+        <Hint label={modelTriggerHint}>
+          <DropdownMenu open={modelMenuOpen} onOpenChange={setModelMenuOpen}>
             <DropdownMenuTrigger asChild>
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
                 disabled={Boolean(modelDisabledReason)}
-                className="max-w-40"
+                className="max-w-48"
+                data-help="chat-model"
+                aria-label={t('chat.composer.switchModel')}
+                aria-keyshortcuts="Control+Shift+I"
               >
                 <span className="truncate">
-                  {props.settings.model || t('chat.composer.switchModel')}
+                  {props.settings.model
+                    ? chatModelDisplayName(props.settings.model, t)
+                    : t('chat.composer.switchModel')}
                 </span>
               </Button>
             </DropdownMenuTrigger>
@@ -124,7 +175,7 @@ export function ChatRuntimeExtras(props: {
                 >
                   {props.models.map((model) => (
                     <DropdownMenuRadioItem key={model.id} value={model.id} disabled={props.frozen}>
-                      {model.id}
+                      <span className="truncate">{chatModelDisplayName(model.id, t)}</span>
                     </DropdownMenuRadioItem>
                   ))}
                 </DropdownMenuRadioGroup>
@@ -132,7 +183,7 @@ export function ChatRuntimeExtras(props: {
             ) : null}
           </DropdownMenu>
         </Hint>
-        <Hint label={effortDisabledReason ?? undefined}>
+        <Hint label={effortDisabledReason ?? currentEffortHint ?? undefined}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -140,29 +191,42 @@ export function ChatRuntimeExtras(props: {
                 size="sm"
                 variant="outline"
                 disabled={Boolean(effortDisabledReason)}
+                data-help="chat-effort"
+                aria-label={t('chat.runtimeOps.effort')}
               >
-                {props.settings.effort || t('chat.runtimeOps.effort')}
+                {props.settings.effort
+                  ? chatEffortLabel(props.settings.effort, t)
+                  : t('chat.runtimeOps.effort')}
               </Button>
             </DropdownMenuTrigger>
             {props.efforts.length > 0 ? (
-              <DropdownMenuContent align="start">
+              <DropdownMenuContent align="start" className="w-56">
                 <DropdownMenuLabel>{t('chat.runtimeOps.effort')}</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuRadioGroup
                   value={props.settings.effort ?? ''}
                   onValueChange={(id) => props.onSwitchEffort(id)}
                 >
-                  {props.efforts.map((effort) => (
-                    <DropdownMenuRadioItem key={effort} value={effort} disabled={props.frozen}>
-                      {effort}
-                    </DropdownMenuRadioItem>
-                  ))}
+                  {props.efforts.map((effort) => {
+                    const hint = chatEffortHint(effort, t);
+                    return (
+                      <DropdownMenuRadioItem key={effort} value={effort} disabled={props.frozen}>
+                        <span className="flex min-w-0 flex-1 items-baseline justify-between gap-3">
+                          <span className="truncate">{chatEffortLabel(effort, t)}</span>
+                          {hint ? <span className="shrink-0 text-meta text-muted">{hint}</span> : null}
+                        </span>
+                      </DropdownMenuRadioItem>
+                    );
+                  })}
                 </DropdownMenuRadioGroup>
               </DropdownMenuContent>
             ) : null}
           </DropdownMenu>
         </Hint>
-        {callableSkills.length > 0 ? (
+        {!effortDisabledReason && currentEffortHint ? (
+          <span className="text-meta text-muted">{currentEffortHint}</span>
+        ) : null}
+        {showSkillPicker && callableSkills.length > 0 ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button type="button" size="sm" variant="outline" className="max-w-32">
@@ -199,22 +263,8 @@ export function ChatRuntimeExtras(props: {
         ) : null}
       </div>
 
-      {!props.inline && props.images.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          {props.images.map((path) => (
-            <Hint key={path} label={path}>
-              <span className="inline-flex max-w-full items-center gap-1 rounded-card border px-2 py-1 text-meta">
-                <span className="truncate">{path.split(/[/\\]/).pop()}</span>
-                <button type="button" aria-label={t('chat.runtimeOps.removeImage')} onClick={() => props.onRemoveImage(path)}>
-                  <X className="size-3.5" />
-                </button>
-              </span>
-            </Hint>
-          ))}
-        </div>
-      ) : null}
 
-      {!props.inline && props.selectedSkillIds.length > 0 ? (
+      {showSkillPicker && !props.inline && props.selectedSkillIds.length > 0 ? (
         <div className="flex flex-wrap gap-2 text-meta">
           {props.selectedSkillIds.map((id) => {
             const item = props.extensions.find((extension) => extension.id === id);

@@ -64,6 +64,12 @@ describe('agent table columns', () => {
     expect(start?.defaultWidth).toBeGreaterThanOrEqual(start?.minWidth ?? 0);
   });
 
+  it('keeps the upgrade column narrow for an icon-only control', () => {
+    const upgrade = AGENT_TABLE_COLUMN_SPECS.find((spec) => spec.key === 'upgrade');
+    expect(upgrade?.defaultWidth).toBe(72);
+    expect(upgrade?.minWidth).toBe(56);
+  });
+
   it('lets 说明 fill leftover width; left columns start, right columns end', () => {
     expect(AGENT_TABLE_FLEX_COLUMN).toBe('note');
     expect(AGENT_TABLE_FIXED_COLUMN_SPECS.map((spec) => spec.key)).toEqual([

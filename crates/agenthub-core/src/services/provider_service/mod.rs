@@ -195,12 +195,36 @@ pub(super) fn live_config_is_empty(raw: &serde_json::Value) -> bool {
     let Some(object) = raw.as_object() else {
         return false;
     };
-    object.is_empty()
+    if object.is_empty()
         || (object.get("format").and_then(|value| value.as_str()) == Some("toml")
             && object
                 .get("content")
                 .and_then(|value| value.as_str())
                 .is_some_and(str::is_empty))
+    {
+        return true;
+    }
+    // Claude settings.json often exists as {"env":{}} (optional $schema) with
+    // no secrets. Treat that as empty so switch does not backfill hollow live
+    // into the current provider and wipe ANTHROPIC_* on re-select.
+    if !object.keys().all(|key| key == "$schema" || key == "env") {
+        return false;
+    }
+    match object.get("env") {
+        None => true,
+        Some(env) => {
+            if env.as_object().is_some_and(serde_json::Map::is_empty) {
+                return true;
+            }
+            !env.get("ANTHROPIC_AUTH_TOKEN")
+                .and_then(|value| value.as_str())
+                .is_some_and(|value| !value.is_empty())
+                && !env
+                    .get("ANTHROPIC_API_KEY")
+                    .and_then(|value| value.as_str())
+                    .is_some_and(|value| !value.is_empty())
+        }
+    }
 }
 
 pub(super) fn validate_provider_input(input: &ProviderInput) -> Result<()> {

@@ -77,7 +77,21 @@ describe('filterRemoteModelsForAgent', () => {
   it('still offers fetched ids when none match the Agent family', () => {
     const ids = ['claude-sonnet-4', 'gpt-4.1'];
     expect(listRemoteModelsForPicker('kimi', ids, 'http://example.test/v1')).toEqual(ids);
-    expect(listRemoteModelsForPicker('kimi', ['xai/grok-4.6'], 'http://example.test/v1')).toEqual([]);
+    // Custom relay with only grok ids: keep them so Kimi can select an available model.
+    expect(listRemoteModelsForPicker('kimi', ['xai/grok-4.6'], 'http://example.test/v1')).toEqual([
+      'xai/grok-4.6',
+    ]);
+    expect(
+      listRemoteModelsForPicker('kimi', ['grok-4.6', 'grok-4.5'], 'https://mytokens.cc/v1'),
+    ).toEqual(['grok-4.6', 'grok-4.5']);
+  });
+
+  it('keeps the full custom-relay catalog even when a kimi/moonshot id is present', () => {
+    const ids = ['kimi-k2', 'grok-4.6', 'gpt-4.1'];
+    expect(listRemoteModelsForPicker('kimi', ids, 'https://mytokens.cc/v1')).toEqual(ids);
+    expect(listRemoteModelsForPicker('kimi', ids, 'https://mytokens.cc/v1')).toContain('grok-4.6');
+    expect(listRemoteModelsForPicker('kimi', ids, 'https://api.moonshot.cn/v1')).toEqual(['kimi-k2']);
+    expect(listRemoteModelsForPicker('kimi', ids, 'https://api.moonshot.ai/v1')).toEqual(['kimi-k2']);
   });
 });
 
@@ -133,6 +147,23 @@ describe('default / resolve / withDefaultModel', () => {
     expect(resolveModelForSave('claude', '  ', false)).toBe('');
     expect(resolveModelForSave('claude', 'opus', true)).toBe('sonnet');
     expect(resolveModelForSave('pi', '', false)).toBe('');
+  });
+
+  it('collapses an exact doubled model id on custom save', () => {
+    expect(resolveModelForSave('kimi', 'grok-4.6grok-4.6', false)).toBe('grok-4.6');
+    expect(resolveModelForSave('kimi', '  grok-4.6grok-4.6  ', false)).toBe('grok-4.6');
+    const vars = withDefaultModel(
+      'kimi',
+      {
+        ...EMPTY_FORM_VARS,
+        baseUrl: 'https://mytokens.cc/v1',
+        apiKey: 'sk-test-key',
+        model: 'grok-4.6grok-4.6',
+      },
+      false,
+    );
+    expect(vars.model).toBe('grok-4.6');
+    expect(resolveModelForSave('kimi', 'grok-4.6grok-4.6', true)).toBe('kimi-k2');
   });
 
   it('empty custom model + withDefaultModel does not invent a Claude model id', () => {

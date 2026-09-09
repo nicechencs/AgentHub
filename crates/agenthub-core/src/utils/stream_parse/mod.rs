@@ -273,7 +273,12 @@ impl StreamSession {
             }
             // Always accumulate text; only cap Step emissions to the UI.
             let emit_step = self.step_count < MAX_EMITTED_STEPS
-                || matches!(step, ProcessStep::Error { .. } | ProcessStep::Tool { .. });
+                || matches!(
+                    step,
+                    ProcessStep::Error { .. }
+                        | ProcessStep::Tool { .. }
+                        | ProcessStep::Usage { .. }
+                );
             if emit_step {
                 tracing::trace!(
                     module = targets::RUN,

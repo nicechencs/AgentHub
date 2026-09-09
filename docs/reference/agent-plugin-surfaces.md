@@ -4,7 +4,7 @@ description: 各内置 Agent 的 MCP、厂商 Plugin 与技能目录、安装/�
 type: reference
 audience: contributor
 status: current
-updated: 2026-09-06
+updated: 2026-09-08
 ---
 
 # Agent 插件表面
@@ -21,12 +21,12 @@ updated: 2026-09-06
 
 ## 厂商插件系统（plugin / extension 包）
 
-「支持」指该 Agent **自己**是否有可安装的 plugin/extension 包系统。AgentHub 对 Claude / Grok / Pi 只读 list；Claude / Grok 可启用/停用。写入安装和其他 Agent 仍未接线。
+「支持」指该 Agent **自己**是否有可安装的 plugin/extension 包系统。AgentHub 对 Claude / Grok / Pi 只读 list；Claude / Grok 可安装/卸载/启用/停用。更新和其他 Agent 仍未接线。
 
 | Agent | 厂商插件系统 | 判定依据 | AgentHub |
 |---|---|---|---|
-| Claude | **有** | `/plugin`、`claude plugin`；`~/.claude/plugins/`；`enabledPlugins` | 只读 list |
-| Grok | **有** | `grok plugin`；`~/.grok/plugins/`；启用与 trust 分开 | 只读 list |
+| Claude | **有** | `/plugin`、`claude plugin`；`~/.claude/plugins/`；`enabledPlugins` | 列表 + 安装/卸载/启用/停用 |
+| Grok | **有** | `grok plugin`；`~/.grok/plugins/`；启用与 trust 分开 | 列表 + 安装/卸载/启用/停用 |
 | Codex | **有** | `/plugins`、`codex plugin`；`~/.codex/plugins/cache/` | 未接线 |
 | Pi | **有**（叫 package / extension） | `pi install` / `pi remove` / `pi update --extensions` | 只读 list |
 | DSH | **另一套**（Cordis） | `cordis.patch.yml` 插件树，不是 `name@marketplace` 包 | 关闭，不硬转 |

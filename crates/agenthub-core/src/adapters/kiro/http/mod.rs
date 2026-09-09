@@ -16,7 +16,7 @@ mod tests;
 
 pub(crate) use client::{
     chat_turn_with_access_token, get_usage_limits, list_models_http, parse_http_native_session_id,
-    try_http_run_result,
+    stream_chat_turn_with_access_token, try_http_run_result,
 };
 pub(crate) use creds::KiroHttpRouteParams;
 

@@ -49,9 +49,9 @@ fn empty_codex_snapshot_enables_runtime_before_the_frontend_chooses_a_transport(
 }
 
 #[test]
-fn non_codex_and_legacy_conversations_remain_disabled() {
+fn non_runtime_and_legacy_conversations_remain_disabled() {
     let (_dir, db, chat) = chat();
-    let non_codex = conversation(&chat, AgentId::Claude, None);
+    let non_runtime = conversation(&chat, AgentId::Pi, None);
     let legacy = conversation(&chat, AgentId::Codex, None);
     ChatRepo::new(db)
         .insert_message(&ChatMessage {
@@ -69,8 +69,27 @@ fn non_codex_and_legacy_conversations_remain_disabled() {
         })
         .expect("insert legacy history");
 
-    assert!(!chat.runtime().snapshot(&non_codex, None).unwrap().enabled);
+    assert!(!chat.runtime().snapshot(&non_runtime, None).unwrap().enabled);
     assert!(!chat.runtime().snapshot(&legacy, None).unwrap().enabled);
+}
+
+#[test]
+fn empty_claude_snapshot_enables_runtime() {
+    let (_dir, _db, chat) = chat();
+    let id = conversation(
+        &chat,
+        AgentId::Claude,
+        Some(std::env::temp_dir().display().to_string()),
+    );
+    let snapshot = chat
+        .runtime()
+        .snapshot(&id, None)
+        .expect("runtime snapshot");
+    assert!(
+        snapshot.enabled,
+        "an empty Claude conversation must select stream-json runtime, never legacy"
+    );
+    assert_eq!(snapshot.phase, RuntimePhase::Idle);
 }
 
 #[test]

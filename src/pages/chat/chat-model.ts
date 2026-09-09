@@ -25,6 +25,7 @@ import type {
   Conversation,
 } from '@/lib/types';
 import { relativeTime, type TurnGroup } from './chat-format';
+import { streamingStatusKey } from './chat-streaming';
 
 export type ChatSendBlocker =
   | { kind: 'hiddenAgents'; agentIds: AgentKey[] }
@@ -677,16 +678,20 @@ export function messageStatusLabel(
   t: TranslateFn,
   status: string,
   process?: AgentProcessView,
+  hasContent = false,
 ): string | null {
-  // 过程机更细（排队/启动）；终态以 message.status 为准
+  // 过程机更细（排队/启动）；生成中首字前「正在想」，有正文后「正在写」
   if (process && (status === 'running' || !status)) {
-    if (process.phase === 'queued' || process.phase === 'starting' || process.phase === 'running') {
+    if (process.phase === 'queued' || process.phase === 'starting') {
       return processPhaseLabel(process.phase, t);
+    }
+    if (process.phase === 'running') {
+      return t(streamingStatusKey(process, hasContent));
     }
   }
   switch (status) {
     case 'running':
-      return t('chat.status.generating');
+      return t(streamingStatusKey(process, hasContent));
     case 'error':
     case 'failed':
       return t('chat.status.failed');
@@ -718,6 +723,32 @@ export function chatEscapeShouldCancel(input: {
     return false;
   }
   return input.sending && !input.canceling;
+}
+
+/** Enter sends; Shift+Enter inserts a newline; IME composition must not send. */
+export function composerEnterShouldSend(input: {
+  key: string;
+  shiftKey: boolean;
+  isComposing?: boolean;
+  nativeEvent?: { isComposing?: boolean; keyCode?: number };
+}): boolean {
+  if (input.key !== 'Enter' || input.shiftKey) return false;
+  if (input.isComposing || input.nativeEvent?.isComposing) return false;
+  if (input.nativeEvent?.keyCode === 229) return false;
+  return true;
+}
+
+export function chatModKShouldFocusHistory(input: {
+  key: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+  overlayOpen: boolean;
+}): boolean {
+  if (input.overlayOpen || input.altKey || input.shiftKey) return false;
+  if (input.key !== 'k' && input.key !== 'K') return false;
+  return input.metaKey || input.ctrlKey;
 }
 
 export function visibleAgentDots(agentIds: AgentKey[]): { shown: AgentKey[]; extra: number } {

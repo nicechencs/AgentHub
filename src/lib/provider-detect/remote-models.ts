@@ -6,8 +6,9 @@
  */
 import type { AgentKey } from '@/lib/types';
 import { officialApiDefaults } from '@/config/official-api';
+import { isOfficialKimiPlatformUrl } from '@/lib/kimi-provider-type';
 import { smartDetectUrlAndKey } from './detect';
-import { extractFormVars, looksRedactedOrPlaceholder } from './fields';
+import { collapseDoubledModelId, extractFormVars, looksRedactedOrPlaceholder } from './fields';
 import { REDACTED_MARKER, type ProviderFormVars } from './types';
 
 /** Agents without an official template (pi / workbuddy / cursor, …). */
@@ -53,9 +54,10 @@ export function isLoopbackHttpUrl(raw?: string | null): boolean {
 }
 
 /**
- * Models shown in the add/edit picker. Brand-filter official catalogs, but if
- * the address returned a list and none matched (local gateway, custom relay),
- * keep the fetched ids so the dropdown matches the success toast.
+ * Models shown in the add/edit picker. Official Moonshot / Kimi hosts keep
+ * the brand filter. Custom / non-official Kimi relays (and loopback) keep
+ * the fetched catalog so a mixed list that happens to include kimi/moonshot
+ * ids does not hide grok / gpt rows.
  */
 export function listRemoteModelsForPicker(
   agentId: AgentKey,
@@ -65,9 +67,14 @@ export function listRemoteModelsForPicker(
   const list = ids.map((id) => id.trim()).filter(Boolean);
   if (list.length === 0) return [];
   if (isLoopbackHttpUrl(baseUrl)) return list;
+  // Custom Kimi relays expose the upstream catalog (kimi + grok + gpt).
+  // Brand-filtering only when any kimi/moonshot id matches hid grok-*.
+  if (agentId === 'kimi' && !isOfficialKimiPlatformUrl(baseUrl)) return list;
   const filtered = filterRemoteModelsForAgent(agentId, ids);
   if (filtered.length > 0) return filtered;
-  if (list.every((id) => looksLikeGrokModel(id))) return [];
+  // Brand filter matched nothing. Keep the upstream catalog for custom
+  // OpenAI-compatible relays (e.g. Kimi CLI on a grok-only mytokens key).
+  // Loopback already returned above; inventing kimi-k2 here would 404.
   return list;
 }
 
@@ -150,7 +157,7 @@ export function resolveModelForSave(
     const official = officialApiDefaults(agentId);
     if (official) return official.model;
   }
-  return model.trim();
+  return collapseDoubledModelId(model);
 }
 
 /**

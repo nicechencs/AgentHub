@@ -4,7 +4,7 @@ description: CLI、GUI、core 和本机 Routes 共用的日志文件、级别、
 type: reference
 audience: user-and-contributor
 status: current
-updated: 2026-09-07
+updated: 2026-09-08
 ---
 
 # 日志参考
@@ -74,8 +74,8 @@ CLI 和 GUI 都调用 `agenthub-core::logging` 初始化同一套 tracing。生�
 | `core.adapter` | `apply_bridge` / `start` / `stop` | 本机转发应用 / 启动 / 停止里程碑；带 `profile_id` |
 | `core.chat` | `send` | 对话发送开始（`send start`）和一轮成功结束（`send ok`）；带 `conversation_id`，有 Agent 时带 `agent` |
 | `core.chat` | `send_fail` | 发送失败（持续通道或旧路径）；error |
-| `core.chat` | `stop` | 停止成功，含持续通道 Stop 到 Done；带 `conversation_id`，有 Agent 时带 `agent` |
-| `core.chat` | `stop_fail` | 停止失败；error |
+| `core.chat` | `stop` | 停止成功（`stop ok`）。生成中点停止，以及等待批准时点停止，都记这条。用户停止会先中断传输，传输层可能报 interrupt；这仍是成功停止，搜 `op=stop`，不要当成没记日志 |
+| `core.chat` | `stop_fail` | 停止没生效：没有可停的运行时、取消超时等；error。不要把等待批准时的用户停止记成这条 |
 | `core.install` | `install_agent` | 安装结束；只打开官网时带 `code=setup_guide`，不是安装失败 |
 
 前端 `logger.ts` 只打开发控制台。要进当天 `.log` 文件，GUI 事件必须走桌面后端（例如 `log_gui_event`）。`log_gui_event` 可选字段：`agent`、`last4`、`profile_id`、`route`、`code`；从不写明文钥匙。

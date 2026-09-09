@@ -9,12 +9,19 @@ use axum::Json;
 use futures_util::stream;
 use serde_json::{json, Value};
 use std::convert::Infallible;
+use std::thread;
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 use tokio::task::spawn_blocking;
 
 use super::admission::AdmittedRequest;
 use super::http::error_response;
 use super::surface::DownstreamSurface;
-use crate::adapters::kiro::http::chat_turn_with_access_token;
+use crate::adapters::kiro::http::{
+    chat_turn_with_access_token, stream_chat_turn_with_access_token,
+};
+use crate::bridge::protocol::anthropic_messages::IrToAnthropicSse;
+use crate::bridge::protocol::chat::IrToChatSse;
+use crate::bridge::protocol::responses::IrToResponsesSse;
 use crate::bridge::types::{IrEvent, StopReason};
 use crate::bridge::usage_capture::CaptureContext;
 use crate::utils::redact::redact_text;
@@ -62,6 +69,20 @@ pub(super) async fn handle_kiro_conversation(
         .and_then(Value::as_bool)
         .unwrap_or(false);
 
+    let _ = (started, capture);
+    if stream {
+        return stream_kiro_conversation(
+            surface,
+            token,
+            prompt,
+            model,
+            kiro_http,
+            request_id,
+            admitted.state.profile_id.to_string(),
+        )
+        .await;
+    }
+
     let result = spawn_blocking(move || {
         chat_turn_with_access_token(&token, &prompt, model.as_deref(), kiro_http.as_ref())
     })
@@ -77,38 +98,202 @@ pub(super) async fn handle_kiro_conversation(
                 error = %redact_text(&e.to_string()),
                 "Kiro HTTP upstream failed"
             );
-            return error_response(
-                StatusCode::BAD_GATEWAY,
-                "upstream_error",
-                "The upstream model provider returned an error.",
-                None,
-            );
+            return kiro_upstream_error();
         }
-        Err(_) => {
-            return error_response(
-                StatusCode::BAD_GATEWAY,
-                "upstream_error",
-                "The upstream model provider returned an error.",
-                None,
-            );
-        }
+        Err(_) => return kiro_upstream_error(),
     };
 
-    let _ = (started, capture);
     let turn_view = KiroTurnView {
         text: &turn.text,
         model_id: &turn.model_id,
     };
-    match encode_kiro_response(surface, stream, &request_id, &turn_view) {
+    match encode_kiro_response(surface, false, &request_id, &turn_view) {
         Ok(response) => response,
-        Err(_) => {
-            error_response(
-                StatusCode::BAD_GATEWAY,
-                "upstream_error",
-                "The upstream model provider returned an invalid response.",
-                None,
-            )
+        Err(_) => kiro_upstream_error(),
+    }
+}
+
+fn kiro_upstream_error() -> Response {
+    error_response(
+        StatusCode::BAD_GATEWAY,
+        "upstream_error",
+        "The upstream model provider returned an error.",
+        None,
+    )
+}
+
+#[derive(Debug)]
+enum KiroStreamItem {
+    Text(String),
+    Done,
+}
+
+async fn stream_kiro_conversation(
+    surface: DownstreamSurface,
+    token: String,
+    prompt: String,
+    model: Option<String>,
+    kiro_http: Option<crate::adapters::kiro::http::KiroHttpRouteParams>,
+    request_id: String,
+    profile_id: String,
+) -> Response {
+    let (tx, rx) = unbounded_channel();
+    let request_id_for_worker = request_id.clone();
+    let model_for_worker = model.clone();
+    thread::spawn(move || {
+        let result = stream_chat_turn_with_access_token(
+            &token,
+            &prompt,
+            model_for_worker.as_deref(),
+            kiro_http.as_ref(),
+            |delta| {
+                let _ = tx.send(Ok(KiroStreamItem::Text(delta.to_owned())));
+            },
+        );
+        match result {
+            Ok(_) => {
+                let _ = tx.send(Ok(KiroStreamItem::Done));
+            }
+            Err(e) => {
+                tracing::debug!(
+                    target: "core.adapter",
+                    profile_id = %profile_id,
+                    request_id = %request_id_for_worker,
+                    error = %redact_text(&e.to_string()),
+                    "Kiro HTTP upstream failed"
+                );
+                let _ = tx.send(Err(e.to_string()));
+            }
         }
+    });
+    response_from_kiro_stream(surface, request_id, model, rx).await
+}
+
+async fn response_from_kiro_stream(
+    surface: DownstreamSurface,
+    request_id: String,
+    model: Option<String>,
+    mut rx: UnboundedReceiver<Result<KiroStreamItem, String>>,
+) -> Response {
+    let first = rx.recv().await;
+    let first_text = match first {
+        Some(Ok(KiroStreamItem::Text(text))) => text,
+        Some(Ok(KiroStreamItem::Done)) | Some(Err(_)) | None => {
+            return kiro_upstream_error();
+        }
+    };
+    let model_id = model
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("auto")
+        .to_owned();
+    let output = kiro_sse_byte_stream(surface, request_id, model_id, rx, first_text);
+    buffered_sse_response(output)
+}
+
+fn kiro_sse_byte_stream(
+    surface: DownstreamSurface,
+    request_id: String,
+    model_id: String,
+    mut rx: UnboundedReceiver<Result<KiroStreamItem, String>>,
+    first_text: String,
+) -> impl futures_util::Stream<Item = Result<Bytes, Infallible>> + Send + 'static {
+    async_stream::stream! {
+        let Ok(mut encoder) = KiroSseEncoder::new(surface, &request_id, &model_id) else {
+            return;
+        };
+        let start = IrEvent::MessageStart {
+            id: format!("msg_{request_id}"),
+            model: model_id.clone(),
+        };
+        match encoder.push_ir(&start) {
+            Ok(frames) => {
+                for frame in frames {
+                    yield Ok(Bytes::from(frame));
+                }
+            }
+            Err(()) => return,
+        }
+        match encoder.push_ir(&IrEvent::TextDelta {
+            text: first_text,
+        }) {
+            Ok(frames) => {
+                for frame in frames {
+                    yield Ok(Bytes::from(frame));
+                }
+            }
+            Err(()) => return,
+        }
+        while let Some(item) = rx.recv().await {
+            match item {
+                Ok(KiroStreamItem::Text(text)) => {
+                    match encoder.push_ir(&IrEvent::TextDelta { text }) {
+                        Ok(frames) => {
+                            for frame in frames {
+                                yield Ok(Bytes::from(frame));
+                            }
+                        }
+                        Err(()) => return,
+                    }
+                }
+                Ok(KiroStreamItem::Done) | Err(_) => break,
+            }
+        }
+        match encoder.close() {
+            Ok(frames) => {
+                for frame in frames {
+                    yield Ok(Bytes::from(frame));
+                }
+            }
+            Err(()) => {}
+        }
+    }
+}
+
+enum KiroSseEncoder {
+    Chat(IrToChatSse),
+    Messages(IrToAnthropicSse),
+    Responses(IrToResponsesSse),
+}
+
+impl KiroSseEncoder {
+    fn new(surface: DownstreamSurface, request_id: &str, model: &str) -> Result<Self, ()> {
+        Ok(match surface {
+            DownstreamSurface::ChatCompletions => Self::Chat(IrToChatSse::new(Some(request_id))),
+            DownstreamSurface::Messages => Self::Messages(IrToAnthropicSse::new()),
+            DownstreamSurface::Responses => {
+                Self::Responses(IrToResponsesSse::new(request_id, model))
+            }
+            DownstreamSurface::Models => return Err(()),
+        })
+    }
+
+    fn push_ir(&mut self, event: &IrEvent) -> Result<Vec<String>, ()> {
+        match self {
+            Self::Chat(encoder) => encoder.push_event(event).map_err(|_| ()),
+            Self::Messages(encoder) => encoder.push_event(event).map_err(|_| ()),
+            Self::Responses(encoder) => {
+                let events = encoder.push_event(event).map_err(|_| ())?;
+                events.iter().map(responses_sse_frame).collect()
+            }
+        }
+    }
+
+    fn close(&mut self) -> Result<Vec<String>, ()> {
+        let mut frames = self.push_ir(&IrEvent::MessageEnd {
+            stop_reason: StopReason::Stop,
+        })?;
+        match self {
+            Self::Chat(encoder) => frames.extend(encoder.finish().map_err(|_| ())?),
+            Self::Messages(_) => {}
+            Self::Responses(encoder) => {
+                for event in encoder.finish() {
+                    frames.push(responses_sse_frame(&event)?);
+                }
+            }
+        }
+        Ok(frames)
     }
 }
 

@@ -2,8 +2,8 @@ use std::path::Path;
 
 use super::{
     linux_nautilus_script, linux_open_with_desktop, linux_servicemenu_desktop,
-    parse_open_chat_cwd_arg, resolve_open_chat_cwd, resolve_shell_register_exe, shell_menu_label,
-    windows_open_chat_command, OPEN_CHAT_FLAG,
+    open_chat_arg_missing_folder, parse_open_chat_cwd_arg, resolve_open_chat_cwd,
+    resolve_shell_register_exe, shell_menu_label, windows_open_chat_command, OPEN_CHAT_FLAG,
 };
 use crate::tray_i18n::TrayUiLanguage;
 
@@ -38,7 +38,28 @@ fn parse_open_chat_missing_or_empty_path() {
         parse_open_chat_cwd_arg(&["agenthub-gui", OPEN_CHAT_FLAG]),
         None
     );
-    assert_eq!(parse_open_chat_cwd_arg(&["agenthub-gui", "--open-chat="]), None);
+    assert_eq!(
+        parse_open_chat_cwd_arg(&["agenthub-gui", "--open-chat="]),
+        None
+    );
+}
+
+#[test]
+fn missing_folder_is_distinct_from_a_normal_second_launch() {
+    assert!(!open_chat_arg_missing_folder(&["agenthub-gui"]));
+    assert!(open_chat_arg_missing_folder(&[
+        "agenthub-gui",
+        OPEN_CHAT_FLAG
+    ]));
+    assert!(open_chat_arg_missing_folder(&[
+        "agenthub-gui",
+        "--open-chat="
+    ]));
+    assert!(!open_chat_arg_missing_folder(&[
+        "agenthub-gui",
+        OPEN_CHAT_FLAG,
+        r"D:\work\app"
+    ]));
 }
 
 #[test]
@@ -142,7 +163,10 @@ fn windows_drive_root_and_spaced_folder_survive_argv_parsing() {
 #[test]
 fn menu_label_follows_ui_language() {
     assert_eq!(shell_menu_label(TrayUiLanguage::Zh), "用 AgentHub 打开对话");
-    assert_eq!(shell_menu_label(TrayUiLanguage::En), "Open Chat in AgentHub");
+    assert_eq!(
+        shell_menu_label(TrayUiLanguage::En),
+        "Open Chat in AgentHub"
+    );
 }
 
 #[test]
@@ -168,13 +192,19 @@ fn resolve_uses_folder_or_parent_of_file() {
     let file = folder.join("README.md");
     std::fs::write(&file, "x").unwrap();
 
-    assert_eq!(resolve_open_chat_cwd(folder.to_str().unwrap()).as_deref(), Some(folder.as_path()));
+    assert_eq!(
+        resolve_open_chat_cwd(folder.to_str().unwrap()).as_deref(),
+        Some(folder.as_path())
+    );
     assert_eq!(
         resolve_open_chat_cwd(file.to_str().unwrap()).as_deref(),
         Some(folder.as_path())
     );
     assert_eq!(resolve_open_chat_cwd(""), None);
-    assert_eq!(resolve_open_chat_cwd("/this/path/does/not/exist-agenthub"), None);
+    assert_eq!(
+        resolve_open_chat_cwd("/this/path/does/not/exist-agenthub"),
+        None
+    );
 
     let dotted = folder.join(".");
     assert_eq!(

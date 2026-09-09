@@ -16,6 +16,9 @@
 //! - Usage harvests CLI `model_usage` rows; structured stream stays closed.
 //! - Headless Chat run prefers `zcode` on PATH; desktop-only installs cannot
 //!   invent a bundled CLI path.
+//! - Desktop version comes from unpacked package.json, Windows file info, or
+//!   macOS Info.plist. Production installs pack app.asar without a root
+//!   package.json. There is no public latest feed; updates stay Setup-only.
 
 use std::path::{Path, PathBuf};
 
@@ -538,7 +541,15 @@ fn well_known_exe_paths() -> Vec<PathBuf> {
 }
 
 fn read_version_hint(exe: &Path) -> Option<String> {
-    // Adjacent package.json (Electron) if present.
+    // Prefer a real package.json when Electron left one unpacked. Production
+    // ZCode packs the app into app.asar, so fall back to OS file metadata.
+    // Do not parse app.asar here: the header alone is multi-megabyte.
+    read_version_from_package_json(exe)
+        .or_else(|| read_version_from_windows_exe(exe))
+        .or_else(|| read_version_from_macos_plist(exe))
+}
+
+fn read_version_from_package_json(exe: &Path) -> Option<String> {
     let install_dir = exe.parent()?;
     for candidate in [
         install_dir
@@ -567,6 +578,134 @@ fn read_version_hint(exe: &Path) -> Option<String> {
         }
     }
     None
+}
+
+/// Windows file versions are `a.b.c.build`. Keep `a.b.c` so the Agents page
+/// matches ZCode's own version (package.json / About), not the PE build.
+fn compact_windows_product_version(major: u16, minor: u16, patch: u16) -> Option<String> {
+    if major == 0 && minor == 0 && patch == 0 {
+        return None;
+    }
+    Some(format!("{major}.{minor}.{patch}"))
+}
+
+#[cfg(windows)]
+fn read_version_from_windows_exe(path: &Path) -> Option<String> {
+    read_windows_exe_product_version(path)
+}
+
+#[cfg(not(windows))]
+fn read_version_from_windows_exe(_path: &Path) -> Option<String> {
+    None
+}
+
+#[cfg(windows)]
+fn read_windows_exe_product_version(path: &Path) -> Option<String> {
+    use std::os::windows::ffi::OsStrExt;
+
+    #[repr(C)]
+    struct VsFixedFileInfo {
+        signature: u32,
+        struc_version: u32,
+        file_version_ms: u32,
+        file_version_ls: u32,
+        product_version_ms: u32,
+        product_version_ls: u32,
+        file_flags_mask: u32,
+        file_flags: u32,
+        file_os: u32,
+        file_type: u32,
+        file_subtype: u32,
+        file_date_ms: u32,
+        file_date_ls: u32,
+    }
+
+    #[link(name = "version")]
+    extern "system" {
+        fn GetFileVersionInfoSizeW(filename: *const u16, handle: *mut u32) -> u32;
+        fn GetFileVersionInfoW(
+            filename: *const u16,
+            handle: u32,
+            len: u32,
+            data: *mut core::ffi::c_void,
+        ) -> i32;
+        fn VerQueryValueW(
+            block: *const core::ffi::c_void,
+            sub_block: *const u16,
+            buf: *mut *mut core::ffi::c_void,
+            len: *mut u32,
+        ) -> i32;
+    }
+
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    unsafe {
+        let mut dummy = 0u32;
+        let size = GetFileVersionInfoSizeW(wide.as_ptr(), &mut dummy);
+        if size == 0 {
+            return None;
+        }
+        let mut buf = vec![0u8; size as usize];
+        if GetFileVersionInfoW(wide.as_ptr(), 0, size, buf.as_mut_ptr().cast()) == 0 {
+            return None;
+        }
+        let mut len = 0u32;
+        let mut ptr: *mut core::ffi::c_void = core::ptr::null_mut();
+        let root: [u16; 2] = [92, 0]; // backslash + NUL for VerQueryValue root
+        if VerQueryValueW(buf.as_ptr().cast(), root.as_ptr(), &mut ptr, &mut len) == 0
+            || ptr.is_null()
+            || (len as usize) < core::mem::size_of::<VsFixedFileInfo>()
+        {
+            return None;
+        }
+        let info = &*(ptr as *const VsFixedFileInfo);
+        if info.signature != 0xFEEF_04BD {
+            return None;
+        }
+        let product = compact_windows_product_version(
+            (info.product_version_ms >> 16) as u16,
+            (info.product_version_ms & 0xFFFF) as u16,
+            (info.product_version_ls >> 16) as u16,
+        );
+        if product.is_some() {
+            return product;
+        }
+        compact_windows_product_version(
+            (info.file_version_ms >> 16) as u16,
+            (info.file_version_ms & 0xFFFF) as u16,
+            (info.file_version_ls >> 16) as u16,
+        )
+    }
+}
+
+fn read_version_from_macos_plist(exe: &Path) -> Option<String> {
+    let macos_dir = exe.parent()?;
+    if !macos_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("macos"))
+    {
+        return None;
+    }
+    let plist = macos_dir.parent()?.join("Info.plist");
+    let text = std::fs::read_to_string(plist).ok()?;
+    plist_string_for_key(&text, "CFBundleShortVersionString")
+        .or_else(|| plist_string_for_key(&text, "CFBundleVersion"))
+}
+
+/// XML Info.plist only. Binary plists return None.
+fn plist_string_for_key(text: &str, key: &str) -> Option<String> {
+    let needle = format!("<key>{key}</key>");
+    let rest = text.split_once(&needle)?.1;
+    let value = rest
+        .trim_start()
+        .strip_prefix("<string>")?
+        .split_once("</string>")?
+        .0
+        .trim();
+    if value.is_empty() {
+        return None;
+    }
+    Some(value.to_string())
 }
 
 fn read_json_object_or_empty(path: &Path) -> Result<Value> {

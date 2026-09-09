@@ -7,6 +7,7 @@ use crate::models::{AgentId, ChatEvent, ChatMessageStatus, ChatRole, Conversatio
 use crate::services::RunService;
 use crate::storage::{ChatRepo, Database};
 use serde_json::json;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -47,6 +48,7 @@ fn worker(db: &Database, id: &str) -> ActorWorker {
         last_start_request: None,
         pending_prompt_id: None,
         permission_options: HashMap::new(),
+        file_change_items: HashMap::new(),
         cancel_deadline: None,
         session_model: None,
         session_effort: None,
@@ -186,8 +188,127 @@ fn retryable_notification_error_keeps_the_turn_alive() {
         .any(|event| matches!(event.event, ChatEvent::Error { .. })));
 }
 
+#[test]
+fn thread_token_usage_updated_emits_turn_and_session() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "usage");
+    let mut worker = worker(&db, "usage");
+    worker.store.enable_if_new("usage").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .notification(
+            "thread/tokenUsage/updated",
+            &json!({
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "tokenUsage": {
+                    "last": {
+                        "inputTokens": 100,
+                        "cachedInputTokens": 20,
+                        "cacheWriteInputTokens": 0,
+                        "outputTokens": 10,
+                        "reasoningOutputTokens": 5,
+                        "totalTokens": 110
+                    },
+                    "total": {
+                        "inputTokens": 400,
+                        "cachedInputTokens": 80,
+                        "cacheWriteInputTokens": 0,
+                        "outputTokens": 40,
+                        "reasoningOutputTokens": 15,
+                        "totalTokens": 440
+                    },
+                    "modelContextWindow": 258400
+                }
+            }),
+        )
+        .unwrap();
+
+    let snapshot = worker.store.snapshot("usage", None).unwrap();
+    let rows: Vec<_> = snapshot
+        .events
+        .iter()
+        .filter_map(|event| match &event.event {
+            ChatEvent::AgentProcess {
+                step:
+                    crate::models::ProcessStep::Usage {
+                        scope,
+                        input,
+                        output,
+                        total,
+                        context_window,
+                        ..
+                    },
+                ..
+            } => Some((scope.clone(), *input, *output, *total, *context_window)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        vec![
+            (Some("turn".into()), Some(100), Some(10), Some(110), None),
+            (
+                Some("session".into()),
+                Some(400),
+                Some(40),
+                Some(440),
+                Some(258400)
+            ),
+        ]
+    );
+}
+
+#[test]
+fn grok_turn_completed_usage_emits_process_step() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "grok-usage");
+    let mut worker = worker(&db, "grok-usage");
+    worker.agent = AgentId::Grok;
+    worker.store.enable_if_new("grok-usage").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .notification(
+            "session/update",
+            &json!({
+                "update": {
+                    "sessionUpdate": "turn_completed",
+                    "usage": {
+                        "inputTokens": 50,
+                        "outputTokens": 5,
+                        "cachedReadTokens": 10
+                    }
+                }
+            }),
+        )
+        .unwrap();
+
+    let snapshot = worker.store.snapshot("grok-usage", None).unwrap();
+    assert!(snapshot.events.iter().any(|event| matches!(
+        &event.event,
+        ChatEvent::AgentProcess {
+            step: crate::models::ProcessStep::Usage {
+                input: Some(50),
+                output: Some(5),
+                cache_read: Some(10),
+                ..
+            },
+            ..
+        }
+    )));
+}
+
 #[cfg(unix)]
 fn fake_transport() -> (tempfile::TempDir, CodexTransport, std::path::PathBuf) {
+    fake_transport_with(None)
+}
+
+#[cfg(unix)]
+fn fake_transport_with(
+    abort: Option<Arc<std::sync::atomic::AtomicBool>>,
+) -> (tempfile::TempDir, CodexTransport, std::path::PathBuf) {
     use std::os::unix::fs::PermissionsExt;
 
     let directory = tempfile::tempdir().unwrap();
@@ -209,6 +330,9 @@ while IFS= read -r line; do
     *'"decision":"accept"'*)
       printf '%s\n' accept >> "$log"
       ;;
+    *'"optionId":'*)
+      printf '%s\n' "$line" >> "$log"
+      ;;
   esac
 done
 "##,
@@ -218,7 +342,12 @@ done
     permissions.set_mode(0o700);
     std::fs::set_permissions(&program, permissions).unwrap();
     let log = directory.path().join("wire.log");
-    let transport = CodexTransport::spawn(&program, directory.path()).unwrap();
+    let transport = match abort {
+        Some(flag) => {
+            CodexTransport::spawn_interruptible(&program, directory.path(), flag).unwrap()
+        }
+        None => CodexTransport::spawn(&program, directory.path()).unwrap(),
+    };
     (directory, transport, log)
 }
 
@@ -528,6 +657,87 @@ fn file_and_question_server_requests_become_pending_runtime_requests() {
 }
 
 #[test]
+fn file_change_request_uses_item_started_paths_when_reason_is_empty() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "file-paths");
+    let mut worker = worker(&db, "file-paths");
+    worker.store.enable_if_new("file-paths").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .notification(
+            "item/started",
+            &json!({
+                "item": {
+                    "type": "fileChange",
+                    "id": "exec-1",
+                    "status": "inProgress",
+                    "changes": [{
+                        "path": "/workspace/qa-codex-filechange-scratch/probe.txt",
+                        "kind": { "type": "add" },
+                        "diff": "FILECHANGE_OK\n"
+                    }]
+                }
+            }),
+        )
+        .unwrap();
+    worker
+        .server_request(
+            json!("file-1"),
+            "item/fileChange/requestApproval",
+            &json!({
+                "turnId": "run-1",
+                "itemId": "exec-1",
+                "reason": null,
+                "grantRoot": null
+            }),
+        )
+        .unwrap();
+
+    let snapshot = worker.store.snapshot("file-paths", None).unwrap();
+    assert_eq!(snapshot.pending_requests.len(), 1);
+    assert_eq!(snapshot.pending_requests[0].kind, RuntimeRequestKind::File);
+    assert_eq!(snapshot.pending_requests[0].title, "修改文件");
+    assert_eq!(
+        snapshot.pending_requests[0].detail,
+        "/workspace/qa-codex-filechange-scratch/probe.txt"
+    );
+    assert!(snapshot.events.iter().any(|event| matches!(
+        &event.event,
+        ChatEvent::AgentProcess {
+            step: crate::models::ProcessStep::Tool { name, status, .. },
+            ..
+        } if name == "fileChange" && status == "inProgress"
+    )));
+}
+
+#[test]
+fn apply_patch_approval_alias_becomes_file_request() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "legacy-patch");
+    let mut worker = worker(&db, "legacy-patch");
+    worker.store.enable_if_new("legacy-patch").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .server_request(
+            json!("patch-1"),
+            "applyPatchApproval",
+            &json!({
+                "turnId": "run-1",
+                "fileChanges": {
+                    "/tmp/example.txt": { "type": "add", "content": "ok" }
+                }
+            }),
+        )
+        .unwrap();
+
+    let snapshot = worker.store.snapshot("legacy-patch", None).unwrap();
+    assert_eq!(snapshot.pending_requests[0].kind, RuntimeRequestKind::File);
+    assert_eq!(snapshot.pending_requests[0].detail, "/tmp/example.txt");
+}
+
+#[test]
 fn acp_permission_snapshot_keeps_allow_always_option() {
     let db = Database::open_in_memory().unwrap();
     conversation(&db, "always");
@@ -574,6 +784,39 @@ fn acp_permission_snapshot_keeps_allow_always_option() {
 }
 
 #[test]
+fn acp_permission_without_options_does_not_synthesize_allow_always() {
+    for (id, agent) in [
+        ("grok-no-synth", AgentId::Grok),
+        ("kiro-no-synth", AgentId::Kiro),
+    ] {
+        let db = Database::open_in_memory().unwrap();
+        conversation(&db, id);
+        let mut worker = worker(&db, id);
+        worker.agent = agent;
+        worker.store.enable_if_new(id).unwrap();
+        start_placeholder(&mut worker);
+
+        worker
+            .server_request(
+                json!("perm-1"),
+                "session/request_permission",
+                &json!({
+                    "turnId": "run-1",
+                    "toolCall": { "title": "写文件" }
+                }),
+            )
+            .unwrap();
+
+        let snapshot = worker.store.snapshot(id, None).unwrap();
+        assert_eq!(snapshot.pending_requests.len(), 1);
+        assert!(
+            snapshot.pending_requests[0].permission_options.is_empty(),
+            "{agent:?} must not invent allow_always"
+        );
+    }
+}
+
+#[test]
 fn acp_permission_uses_server_option_ids_without_auto_allow_always() {
     let options = vec![
         RuntimePermissionOption {
@@ -609,6 +852,41 @@ fn acp_permission_uses_server_option_ids_without_auto_allow_always() {
     assert_eq!(
         acp_permission_reply(&[], "decline").unwrap(),
         json!({"outcome":{"outcome":"cancelled"}})
+    );
+}
+
+#[test]
+fn acp_permission_accepts_allow_always_tool_kinds() {
+    assert!(is_acp_allow_always_kind("allow_always"));
+    assert!(is_acp_allow_always_kind("allow_always_tool"));
+    assert!(is_acp_allow_always_kind("allow_always_tool_args"));
+    assert!(!is_acp_allow_always_kind("allow_once"));
+    assert!(!is_acp_allow_always_kind("allow_edits_for_session"));
+    let options = vec![
+        RuntimePermissionOption {
+            id: "once".into(),
+            kind: "allow_once".into(),
+        },
+        RuntimePermissionOption {
+            id: "tool".into(),
+            kind: "allow_always_tool".into(),
+        },
+        RuntimePermissionOption {
+            id: "reject".into(),
+            kind: "reject_once".into(),
+        },
+    ];
+    assert_eq!(
+        acp_permission_reply(&options, "accept_always").unwrap(),
+        json!({"outcome":{"outcome":"selected","optionId":"tool"}})
+    );
+    let args = vec![RuntimePermissionOption {
+        id: "args".into(),
+        kind: "allow_always_tool_args".into(),
+    }];
+    assert_eq!(
+        acp_permission_reply(&args, "accept_always").unwrap(),
+        json!({"outcome":{"outcome":"selected","optionId":"args"}})
     );
 }
 
@@ -666,6 +944,245 @@ fn codex_allow_always_accepts_and_auto_approves_later_command() {
     std::thread::sleep(Duration::from_millis(80));
     let wire = std::fs::read_to_string(log).unwrap();
     assert!(wire.lines().any(|line| line == "accept"));
+}
+
+#[cfg(unix)]
+#[test]
+fn acp_allow_always_forwards_option_and_auto_approves_later_in_live_process() {
+    for (id, agent, always_kind) in [
+        ("grok-always", AgentId::Grok, "allow_always"),
+        ("kiro-always", AgentId::Kiro, "allow_always_tool"),
+    ] {
+        let db = Database::open_in_memory().unwrap();
+        conversation(&db, id);
+        let mut worker = worker(&db, id);
+        worker.agent = agent;
+        worker.store.enable_if_new(id).unwrap();
+        start_placeholder(&mut worker);
+        let (_directory, transport, log) = fake_transport();
+        worker.transport = Some(transport);
+        worker
+            .server_request(
+                json!("perm-1"),
+                "session/request_permission",
+                &json!({
+                    "turnId": "run-1",
+                    "toolCall": { "title": "写文件" },
+                    "options": [
+                        {"optionId": "once", "kind": "allow_once"},
+                        {"optionId": "always", "kind": always_kind},
+                        {"optionId": "reject", "kind": "reject_once"}
+                    ]
+                }),
+            )
+            .unwrap();
+        let first = worker.store.snapshot(id, None).unwrap();
+        assert!(
+            first.pending_requests[0]
+                .permission_options
+                .iter()
+                .any(|option| option.kind == always_kind),
+            "{agent:?} must keep server remember kind {always_kind}"
+        );
+        worker
+            .reply(RuntimeReply {
+                conversation_id: id.into(),
+                run_id: "run-1".into(),
+                request_id: first.pending_requests[0].id.clone(),
+                client_request_id: "always-1".into(),
+                decision: Some(RuntimeDecision::AllowAlways),
+                answers: None,
+            })
+            .unwrap();
+        assert!(worker.session_allow_always, "{agent:?}");
+        assert!(worker
+            .store
+            .snapshot(id, None)
+            .unwrap()
+            .pending_requests
+            .is_empty());
+
+        worker
+            .server_request(
+                json!("perm-2"),
+                "session/request_permission",
+                &json!({
+                    "turnId": "run-1",
+                    "toolCall": { "title": "再写文件" },
+                    "options": [
+                        {"optionId": "once-2", "kind": "allow_once"},
+                        {"optionId": "reject-2", "kind": "reject_once"}
+                    ]
+                }),
+            )
+            .unwrap();
+        assert!(
+            worker
+                .store
+                .snapshot(id, None)
+                .unwrap()
+                .pending_requests
+                .is_empty(),
+            "{agent:?} must auto-approve later permission in the live process"
+        );
+
+        worker
+            .turn_completed(&json!({"stopReason": "end_turn"}))
+            .unwrap();
+        assert!(
+            worker.session_allow_always,
+            "{agent:?} remember must survive a completed ACP turn"
+        );
+        assert!(
+            worker.transport.as_ref().is_some_and(CodexTransport::is_open),
+            "{agent:?}"
+        );
+
+        worker
+            .store
+            .set_state(
+                id,
+                RuntimePhase::Running,
+                Some("run-1"),
+                worker.thread_id.as_deref(),
+                Some("turn-1"),
+                worker.chat_turn,
+                worker.message_id.as_deref(),
+            )
+            .unwrap();
+        worker
+            .server_request(
+                json!("perm-3"),
+                "session/request_permission",
+                &json!({
+                    "turnId": "run-1",
+                    "toolCall": { "title": "下一轮" },
+                    "options": [
+                        {"optionId": "once-3", "kind": "allow_once"},
+                        {"optionId": "always-3", "kind": always_kind}
+                    ]
+                }),
+            )
+            .unwrap();
+        assert!(
+            worker
+                .store
+                .snapshot(id, None)
+                .unwrap()
+                .pending_requests
+                .is_empty(),
+            "{agent:?} next-turn permission must stay auto-approved"
+        );
+
+        std::thread::sleep(Duration::from_millis(80));
+        let wire = std::fs::read_to_string(&log).unwrap();
+        assert!(
+            wire.contains(r#""optionId":"always""#),
+            "{agent:?} first reply must forward remember option: {wire}"
+        );
+        assert!(
+            wire.contains(r#""optionId":"once-2""#),
+            "{agent:?} later request without remember kind still auto-allows once: {wire}"
+        );
+        assert!(
+            wire.contains(r#""optionId":"always-3""#),
+            "{agent:?} later request prefers remember kind: {wire}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn acp_allow_once_does_not_remember_later_permissions() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "acp-once");
+    let mut worker = worker(&db, "acp-once");
+    worker.agent = AgentId::Kiro;
+    worker.store.enable_if_new("acp-once").unwrap();
+    start_placeholder(&mut worker);
+    let (_directory, transport, _log) = fake_transport();
+    worker.transport = Some(transport);
+    worker
+        .server_request(
+            json!("perm-1"),
+            "session/request_permission",
+            &json!({
+                "turnId": "run-1",
+                "toolCall": { "title": "写文件" },
+                "options": [
+                    {"optionId": "once", "kind": "allow_once"},
+                    {"optionId": "always", "kind": "allow_always_tool"},
+                    {"optionId": "reject", "kind": "reject_once"}
+                ]
+            }),
+        )
+        .unwrap();
+    let first = worker.store.snapshot("acp-once", None).unwrap();
+    worker
+        .reply(RuntimeReply {
+            conversation_id: "acp-once".into(),
+            run_id: "run-1".into(),
+            request_id: first.pending_requests[0].id.clone(),
+            client_request_id: "once-1".into(),
+            decision: Some(RuntimeDecision::Allow),
+            answers: None,
+        })
+        .unwrap();
+    assert!(!worker.session_allow_always);
+    worker
+        .server_request(
+            json!("perm-2"),
+            "session/request_permission",
+            &json!({
+                "turnId": "run-1",
+                "toolCall": { "title": "再写" },
+                "options": [
+                    {"optionId": "once-2", "kind": "allow_once"},
+                    {"optionId": "always-2", "kind": "allow_always_tool"}
+                ]
+            }),
+        )
+        .unwrap();
+    assert_eq!(
+        worker
+            .store
+            .snapshot("acp-once", None)
+            .unwrap()
+            .pending_requests
+            .len(),
+        1
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn acp_session_remember_does_not_invent_allow_when_request_has_no_allow_option() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "acp-no-allow");
+    let mut worker = worker(&db, "acp-no-allow");
+    worker.agent = AgentId::Grok;
+    worker.store.enable_if_new("acp-no-allow").unwrap();
+    start_placeholder(&mut worker);
+    let (_directory, transport, _log) = fake_transport();
+    worker.transport = Some(transport);
+    worker.session_allow_always = true;
+    worker
+        .server_request(
+            json!("perm-deny-only"),
+            "session/request_permission",
+            &json!({
+                "turnId": "run-1",
+                "toolCall": { "title": "危险操作" },
+                "options": [{"optionId": "reject", "kind": "reject_once"}]
+            }),
+        )
+        .unwrap();
+    let snapshot = worker.store.snapshot("acp-no-allow", None).unwrap();
+    assert_eq!(snapshot.pending_requests.len(), 1);
+    assert!(snapshot.pending_requests[0]
+        .permission_options
+        .iter()
+        .all(|option| option.kind != "allow_always"));
 }
 
 #[test]
@@ -1173,4 +1690,176 @@ fn runtime_logs_stop_fail_when_cancel_fails() {
     assert!(logs.contains("core.chat"), "logs:\n{logs}");
     assert!(captured_has_op(&logs, "stop_fail"), "logs:\n{logs}");
     assert!(!logs.contains("interrupt failed") || logs.contains("stop_fail"));
+}
+
+#[test]
+fn abort_during_cancel_logs_stop_ok_not_transport_fail() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "log-stop-abort");
+    let mut worker = worker(&db, "log-stop-abort");
+    worker.store.enable_if_new("log-stop-abort").unwrap();
+    start_placeholder(&mut worker);
+    worker.abort.store(true, Ordering::SeqCst);
+    let (result, logs) = with_captured_logs(|| {
+        worker.complete_cancel(AppError::message(
+            "chat.runtime.transport",
+            "codex app-server request interrupted",
+        ))
+    });
+    result.unwrap();
+    assert!(logs.contains("core.chat"), "logs:\n{logs}");
+    assert!(logs.contains("stop ok"), "logs:\n{logs}");
+    assert!(captured_has_op(&logs, "stop"), "logs:\n{logs}");
+    assert!(!captured_has_op(&logs, "stop_fail"), "logs:\n{logs}");
+    assert!(!captured_has_op(&logs, "send_fail"), "logs:\n{logs}");
+    let snapshot = worker.store.snapshot("log-stop-abort", None).unwrap();
+    assert_eq!(snapshot.phase, RuntimePhase::Cancelled);
+    assert_eq!(
+        snapshot.current_message.unwrap().status,
+        ChatMessageStatus::Cancelled
+    );
+}
+
+#[test]
+fn transport_interrupt_without_abort_still_logs_stop_fail() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "log-stop-transport");
+    let mut worker = worker(&db, "log-stop-transport");
+    worker.store.enable_if_new("log-stop-transport").unwrap();
+    start_placeholder(&mut worker);
+    let (result, logs) = with_captured_logs(|| {
+        worker.complete_cancel(AppError::message(
+            "chat.runtime.transport",
+            "codex app-server I/O failed",
+        ))
+    });
+    assert!(result.is_err());
+    assert!(captured_has_op(&logs, "stop_fail"), "logs:\n{logs}");
+    assert!(!logs.contains("stop ok"), "logs:\n{logs}");
+}
+
+#[cfg(unix)]
+#[test]
+fn stop_while_waiting_for_approval_logs_stop_ok() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "stop-waiting");
+    let mut worker = worker(&db, "stop-waiting");
+    worker.store.enable_if_new("stop-waiting").unwrap();
+    start_placeholder(&mut worker);
+    worker
+        .store
+        .set_state(
+            "stop-waiting",
+            RuntimePhase::Waiting,
+            Some("run-1"),
+            worker.thread_id.as_deref(),
+            worker.turn_id.as_deref(),
+            worker.chat_turn,
+            worker.message_id.as_deref(),
+        )
+        .unwrap();
+    worker
+        .store
+        .add_request(
+            "stop-waiting",
+            &RuntimeRequest {
+                id: "request-1".into(),
+                run_id: "run-1".into(),
+                kind: RuntimeRequestKind::Command,
+                title: "执行命令".into(),
+                detail: "safe".into(),
+                questions: Vec::new(),
+                permission_options: Vec::new(),
+            },
+            "item/commandExecution/requestApproval",
+            "server-wait",
+        )
+        .unwrap();
+    let abort = Arc::clone(&worker.abort);
+    let (_directory, transport, log) = fake_transport_with(Some(abort));
+    worker.transport = Some(transport);
+    worker.abort.store(true, Ordering::SeqCst);
+    let (result, logs) = with_captured_logs(|| worker.cancel("run-1"));
+    result.unwrap();
+    assert!(logs.contains("stop ok"), "logs:\n{logs}");
+    assert!(captured_has_op(&logs, "stop"), "logs:\n{logs}");
+    assert!(!captured_has_op(&logs, "stop_fail"), "logs:\n{logs}");
+    let snapshot = worker.store.snapshot("stop-waiting", None).unwrap();
+    assert_eq!(snapshot.phase, RuntimePhase::Cancelled);
+    assert!(snapshot.pending_requests.is_empty());
+    assert_eq!(
+        snapshot.current_message.unwrap().status,
+        ChatMessageStatus::Cancelled
+    );
+    let wire = std::fs::read_to_string(log).unwrap_or_default();
+    assert!(
+        !wire.lines().any(|line| line == "accept"),
+        "stop must not allow the pending command:\n{wire}"
+    );
+}
+
+
+#[test]
+fn claude_stream_result_completes_turn_and_keeps_session() {
+    let db = Database::open_in_memory().unwrap();
+    ChatRepo::new(db.clone())
+        .create_conversation(&Conversation {
+            id: "claude-stream".into(),
+            title: String::new(),
+            agent_ids: vec![AgentId::Claude],
+            cwd: Some(std::env::temp_dir().to_string_lossy().into_owned()),
+            allow_dangerous: false,
+            created_at: "2026-01-01T00:00:00Z".into(),
+            updated_at: "2026-01-01T00:00:00Z".into(),
+            native_session_id: None,
+            sending: false,
+        })
+        .unwrap();
+    let mut worker = worker(&db, "claude-stream");
+    worker.agent = AgentId::Claude;
+    worker.store.enable_if_new("claude-stream").unwrap();
+    start_placeholder(&mut worker);
+    worker.agent = AgentId::Claude;
+    worker
+        .notification(
+            "claude/stream",
+            &json!({
+                "type": "system",
+                "subtype": "init",
+                "session_id": "claude-sess-1"
+            }),
+        )
+        .unwrap();
+    assert_eq!(worker.thread_id.as_deref(), Some("claude-sess-1"));
+    worker
+        .notification(
+            "claude/stream",
+            &json!({
+                "type": "assistant",
+                "session_id": "claude-sess-1",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "PONG"}]
+                }
+            }),
+        )
+        .unwrap();
+    worker
+        .notification(
+            "claude/stream",
+            &json!({
+                "type": "result",
+                "subtype": "success",
+                "is_error": false,
+                "result": "PONG",
+                "session_id": "claude-sess-1"
+            }),
+        )
+        .unwrap();
+    assert_eq!(worker.thread_id.as_deref(), Some("claude-sess-1"));
+    let snapshot = worker.store.snapshot("claude-stream", None).unwrap();
+    assert_eq!(snapshot.phase, RuntimePhase::Completed);
+    let message = snapshot.current_message.unwrap();
+    assert_eq!(message.status, ChatMessageStatus::Ok);
+    assert!(message.content.contains("PONG"), "content={}", message.content);
 }

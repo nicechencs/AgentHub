@@ -442,11 +442,12 @@ export function AgentCard({
       >
         {!hidden && upgradeControl.show ? (
           <Button
-            size="sm"
+            size="icon"
             variant={upgradeControl.muted ? 'outline' : 'secondary'}
             className={upgradeControl.muted ? 'text-muted' : undefined}
             disabled={busy || checkingUpdate || upgradeControl.kind === 'hint_only'}
             title={upgradeTooltip}
+            aria-label={upgradeTooltip}
             onClick={
               upgradeControl.kind === 'open_setup'
                 ? openOfficialSetup
@@ -463,13 +464,6 @@ export function AgentCard({
                 checkingUpdate && 'animate-pulse opacity-70',
               )}
             />
-            {upgradeControl.kind === 'open_setup'
-              ? t('agents.card.openOfficialUpdate')
-              : upgradeControl.muted
-                ? t('agents.card.unsupportedUpdate')
-                : upgradable
-                  ? t('agents.card.update')
-                  : t('agents.card.forceUpgrade')}
           </Button>
         ) : (
           <TableEmptyCell />

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { kimiProviderTypeForUrl } from './kimi-provider-type';
+import { isOfficialKimiPlatformUrl, kimiProviderTypeForUrl } from './kimi-provider-type';
 
 describe('kimiProviderTypeForUrl', () => {
   it('maps Messages, Responses, official Kimi, and Chat Completions roots', () => {
@@ -11,5 +11,16 @@ describe('kimiProviderTypeForUrl', () => {
     expect(kimiProviderTypeForUrl('https://api.moonshot.ai/v1')).toBe('kimi');
     expect(kimiProviderTypeForUrl('https://api.kimi.com/coding/v1')).toBe('openai');
     expect(kimiProviderTypeForUrl('https://relay.example.com/v1')).toBe('openai');
+  });
+});
+
+describe('isOfficialKimiPlatformUrl', () => {
+  it('accepts Moonshot / Kimi platform hosts and rejects custom or coding roots', () => {
+    expect(isOfficialKimiPlatformUrl('https://api.moonshot.cn/v1')).toBe(true);
+    expect(isOfficialKimiPlatformUrl('https://api.moonshot.ai/v1')).toBe(true);
+    expect(isOfficialKimiPlatformUrl('https://api.kimi.com/v1')).toBe(true);
+    expect(isOfficialKimiPlatformUrl('https://api.kimi.com/coding/v1')).toBe(false);
+    expect(isOfficialKimiPlatformUrl('https://mytokens.cc/v1')).toBe(false);
+    expect(isOfficialKimiPlatformUrl('')).toBe(false);
   });
 });

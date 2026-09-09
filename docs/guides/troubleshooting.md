@@ -4,7 +4,7 @@ description: 按启动、环境、登录、Routes、日志和测试症状定位�
 type: guide
 audience: user-and-contributor
 status: current
-updated: 2026-09-07
+updated: 2026-09-09
 ---
 
 # 排障指南
@@ -41,7 +41,7 @@ cargo run -p agenthub-cli -- agent list
 | Chat 里看不到 Codex | Agent 被软隐藏 | Agents 卡显示「已隐藏」；取消隐藏即可（安装/检测不受影响） |
 | 已装 VS Code 插件或桌面 App | 非缺陷：Chat 直接 spawn CLI | 需检测到 `codex` 二进制且 `~/.codex/auth.json` 有效；见 [Chat 与 Agent](../concepts/chat-and-agents.md#codex-外部安装) |
 
-AgentHub 一键 npm 安装写到 `~/.npm-global`（Windows 为 `%APPDATA%\npm`），**不会**装进 `~/.agenthub`。那里若还有旧的 `npm` 目录，只是遗留，不能当启动路径。
+AgentHub 一键 npm 安装写到 `~/.npm-global`（Windows 为 `%APPDATA%\npm`），**不会**装进 `~/.agenthub`。那里若还有旧的 `npm` 目录，只是遗留，不是安装目标。DeepSeek Harness 若 PATH 上的 `~/.local/bin/dsh` 缺旁边的 `@deepseek-ai/dsh-scope`，会跳过这支残缺命令，改用仍完整的常见安装目录（含上述遗留 prefix）。不要再优先用 `~/.local/bin/dsh`。
 
 需要完全退出时：若设置了「关闭到托盘」，关窗口不会退出，请从托盘选退出后再打开。
 
@@ -124,7 +124,7 @@ CLI 临时提高级别：
 cargo run -p agenthub-cli -- -v doctor
 ```
 
-日志中用 `request_id`、`profile_id`、`op`、`code` 检索。文件日志不记录请求正文、响应正文、prompt、工具参数或完整密钥。日志规范见 [logging.md](../reference/logging.md)。
+日志中用 `request_id`、`profile_id`、`op`、`code` 检索。Chat 点停止后搜 `op=stop`：生成中或等待批准时点停止都应出现 `stop ok`。`op=stop_fail` 表示停止没生效（没有可停的运行时或取消超时），不要把传输 interrupt 的用户停止当成没记日志。文件日志不记录请求正文、响应正文、prompt、工具参数或完整密钥。日志规范见 [logging.md](../reference/logging.md)。
 
 ## 测试失败
 

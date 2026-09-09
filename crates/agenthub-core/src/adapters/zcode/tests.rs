@@ -286,6 +286,79 @@ fn read_version_hint_reads_unpacked_package_json() {
 }
 
 #[test]
+#[cfg(windows)]
+fn read_version_hint_from_installed_zcode_exe_when_present() {
+    let Some(exe) = well_known_exe_paths().into_iter().find(|p| p.is_file()) else {
+        return;
+    };
+    let version = read_version_hint(&exe).expect("installed ZCode should expose a desktop version");
+    assert!(
+        version
+            .split('.')
+            .take(3)
+            .all(|part| part.chars().all(|c| c.is_ascii_digit())),
+        "unexpected version {version} from {}",
+        exe.display()
+    );
+}
+
+#[test]
+fn compact_windows_product_version_drops_build() {
+    assert_eq!(
+        compact_windows_product_version(3, 10, 1).as_deref(),
+        Some("3.10.1")
+    );
+    assert_eq!(compact_windows_product_version(0, 0, 0), None);
+}
+
+#[test]
+fn plist_short_version_reads_xml_info_plist() {
+    let text = r#"
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+  <key>CFBundleVersion</key>
+  <string>6272</string>
+  <key>CFBundleShortVersionString</key>
+  <string>3.10.1</string>
+</dict>
+</plist>
+"#;
+    assert_eq!(
+        plist_string_for_key(text, "CFBundleShortVersionString").as_deref(),
+        Some("3.10.1")
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let macos = dir.path().join("Contents").join("MacOS");
+    std::fs::create_dir_all(&macos).unwrap();
+    std::fs::write(dir.path().join("Contents").join("Info.plist"), text).unwrap();
+    let exe = macos.join("ZCode");
+    std::fs::write(&exe, b"").unwrap();
+    assert_eq!(
+        read_version_from_macos_plist(&exe).as_deref(),
+        Some("3.10.1")
+    );
+}
+
+#[test]
+fn read_version_hint_prefers_package_json_over_plist() {
+    let dir = tempfile::tempdir().unwrap();
+    let macos = dir.path().join("Contents").join("MacOS");
+    std::fs::create_dir_all(&macos).unwrap();
+    std::fs::write(
+        dir.path().join("Contents").join("Info.plist"),
+        r#"<key>CFBundleShortVersionString</key><string>9.9.9</string>"#,
+    )
+    .unwrap();
+    let unpacked = macos.join("resources").join("app.asar.unpacked");
+    std::fs::create_dir_all(&unpacked).unwrap();
+    std::fs::write(unpacked.join("package.json"), r#"{"version":"3.10.1"}"#).unwrap();
+    let exe = macos.join("ZCode");
+    std::fs::write(&exe, b"").unwrap();
+    assert_eq!(read_version_hint(&exe).as_deref(), Some("3.10.1"));
+}
+
+#[test]
 fn live_backup_paths_include_v2_config() {
     let dir = tempfile::tempdir().unwrap();
     with_zcode_home(dir.path(), || {

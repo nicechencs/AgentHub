@@ -226,6 +226,7 @@ describe('chat model options', () => {
         tEn,
       ),
     ).toBe('This login has expired. Sign in again, then retry.');
+    expect(localizeChatFailure('unrecognized structured line', t)).toBe('有一段输出没法展示。可以重试。');
   });
 
   it('reads Pi slot models from the current defaultProvider, not a leftover URL slot', () => {

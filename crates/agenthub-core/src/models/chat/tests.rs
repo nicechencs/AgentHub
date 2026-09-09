@@ -110,3 +110,137 @@ fn chat_message_serde_camel_case() {
     assert_eq!(back.turn, 2);
     assert_eq!(back.agent_id, Some(AgentId::Codex));
 }
+
+#[test]
+fn usage_step_maps_codex_and_grok_fields_without_inventing_totals() {
+    let codex = ProcessStep::from_usage_object(&serde_json::json!({
+        "inputTokens": 100,
+        "cachedInputTokens": 20,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 10,
+        "reasoningOutputTokens": 5,
+        "totalTokens": 110
+    }))
+    .unwrap();
+    match &codex {
+        ProcessStep::Usage {
+            input,
+            output,
+            cache_read,
+            cache_write,
+            reasoning,
+            total,
+            scope,
+            context_window,
+        } => {
+            assert_eq!(*input, Some(100));
+            assert_eq!(*output, Some(10));
+            assert_eq!(*cache_read, Some(20));
+            assert_eq!(*cache_write, Some(0));
+            assert_eq!(*reasoning, Some(5));
+            assert_eq!(*total, Some(110));
+            assert_eq!(scope.as_deref(), None);
+            assert_eq!(*context_window, None);
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+    let json = serde_json::to_string(&codex).unwrap();
+    assert!(json.contains(r#""type":"usage""#));
+    assert!(json.contains(r#""cacheRead":20"#));
+
+    let grok = ProcessStep::from_usage_object(&serde_json::json!({
+        "inputTokens": 18444,
+        "outputTokens": 130,
+        "cachedReadTokens": 11264,
+        "reasoningTokens": 73
+    }))
+    .unwrap();
+    match grok {
+        ProcessStep::Usage {
+            input,
+            output,
+            cache_read,
+            reasoning,
+            total,
+            ..
+        } => {
+            assert_eq!(input, Some(18444));
+            assert_eq!(output, Some(130));
+            assert_eq!(cache_read, Some(11264));
+            assert_eq!(reasoning, Some(73));
+            assert_eq!(total, None);
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+
+    assert!(ProcessStep::from_usage_object(&serde_json::json!({
+        "inputTokens": 0,
+        "outputTokens": 0
+    }))
+    .is_none());
+}
+
+#[test]
+fn codex_token_usage_splits_turn_and_session_without_inventing_either() {
+    let steps = ProcessStep::from_codex_token_usage(&serde_json::json!({
+        "last": {
+            "inputTokens": 100,
+            "cachedInputTokens": 20,
+            "outputTokens": 10,
+            "reasoningOutputTokens": 5,
+            "totalTokens": 110
+        },
+        "total": {
+            "inputTokens": 400,
+            "cachedInputTokens": 80,
+            "outputTokens": 40,
+            "reasoningOutputTokens": 15,
+            "totalTokens": 440
+        },
+        "modelContextWindow": 258400
+    }));
+    assert_eq!(steps.len(), 2);
+    match &steps[0] {
+        ProcessStep::Usage {
+            scope,
+            input,
+            output,
+            total,
+            context_window,
+            ..
+        } => {
+            assert_eq!(scope.as_deref(), Some("turn"));
+            assert_eq!(*input, Some(100));
+            assert_eq!(*output, Some(10));
+            assert_eq!(*total, Some(110));
+            assert_eq!(*context_window, None);
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+    match &steps[1] {
+        ProcessStep::Usage {
+            scope,
+            input,
+            output,
+            total,
+            context_window,
+            ..
+        } => {
+            assert_eq!(scope.as_deref(), Some("session"));
+            assert_eq!(*input, Some(400));
+            assert_eq!(*output, Some(40));
+            assert_eq!(*total, Some(440));
+            assert_eq!(*context_window, Some(258400));
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+
+    let last_only = ProcessStep::from_codex_token_usage(&serde_json::json!({
+        "last": { "inputTokens": 8, "outputTokens": 2, "totalTokens": 10 }
+    }));
+    assert_eq!(last_only.len(), 1);
+    match &last_only[0] {
+        ProcessStep::Usage { scope, .. } => assert_eq!(scope.as_deref(), Some("turn")),
+        other => panic!("unexpected: {other:?}"),
+    }
+}

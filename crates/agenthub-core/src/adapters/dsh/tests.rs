@@ -256,6 +256,9 @@ fn write_config_rejects_wrong_agent_and_embedded_secret_patch() {
 fn read_auth_reports_missing_file_and_env() {
     let dir = tempfile::tempdir().unwrap();
     with_dsh_home(dir.path(), || {
+        // Isolate from a host DEEPSEEK_API_KEY (QA shells often export one).
+        let prev_key = std::env::var_os(DEFAULT_API_KEY_ENV);
+        std::env::remove_var(DEFAULT_API_KEY_ENV);
         let missing = DshAdapter.read_auth().unwrap();
         assert!(!missing.has_credentials);
         assert_eq!(missing.health, AuthHealth::Missing);
@@ -269,6 +272,7 @@ fn read_auth_reports_missing_file_and_env() {
         let file = DshAdapter.read_auth().unwrap();
         assert!(file.has_credentials);
         assert_eq!(file.source.as_deref(), Some("dsh:credentials"));
+        restore_env(DEFAULT_API_KEY_ENV, prev_key);
     });
 }
 
@@ -387,4 +391,52 @@ fn credentials_yaml_rejects_nested_maps() {
     let text = std::fs::read_to_string(&path).unwrap();
     assert!(text.contains("inner: secret"));
     assert!(!text.contains("sk-new"));
+}
+
+#[test]
+fn upsert_llm_row_quotes_at_plugin_id_as_yaml_safe() {
+    let rendered = upsert_llm_row("", &DshLlmFields::default()).unwrap();
+    assert!(
+        rendered.contains("- id: \"@deepseek-ai/dsh-llm-deepseek\""),
+        "plugin id must be YAML-quoted: {rendered}"
+    );
+    let parsed: serde_yml::Value = serde_yml::from_str(&rendered).expect("yaml parse");
+    let seq = parsed.as_sequence().expect("top-level sequence");
+    let row = seq[0].as_mapping().expect("row mapping");
+    let id = row
+        .get(serde_yml::Value::from("id"))
+        .and_then(|v| v.as_str())
+        .expect("id string");
+    assert_eq!(id, LLM_PLUGIN_ID);
+    let fields = read_llm_fields_from_text(&rendered);
+    assert_eq!(fields.model, DEFAULT_MODEL);
+}
+
+fn read_llm_fields_from_text(text: &str) -> DshLlmFields {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(HOME_PATCH_FILE);
+    std::fs::write(&path, text).unwrap();
+    read_llm_fields(&path).unwrap()
+}
+
+#[test]
+fn upsert_replaces_unquoted_legacy_id_row_with_quoted() {
+    let legacy = "- id: @deepseek-ai/dsh-llm-deepseek\n  config:\n    apiKeyEnv: DEEPSEEK_API_KEY\n    model: deepseek-v4-flash\n";
+    let rendered = upsert_llm_row(legacy, &DshLlmFields::default()).unwrap();
+    assert!(
+        rendered.contains("- id: \"@deepseek-ai/dsh-llm-deepseek\""),
+        "{rendered}"
+    );
+    assert_eq!(rendered.matches(LLM_PLUGIN_ID).count(), 1);
+    let fields = read_llm_fields_from_text(&rendered);
+    assert_eq!(fields.api_key_env, DEFAULT_API_KEY_ENV);
+    assert_eq!(fields.model, DEFAULT_MODEL);
+}
+
+#[test]
+fn yaml_quote_covers_at_and_flow_indicators() {
+    assert_eq!(yaml_quote("@deepseek-ai/x"), "\"@deepseek-ai/x\"");
+    assert_eq!(yaml_quote("{not}"), "\"{not}\"");
+    assert_eq!(yaml_quote("plain"), "plain");
+    assert_eq!(yaml_quote("has:colon"), "\"has:colon\"");
 }

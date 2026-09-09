@@ -3,7 +3,7 @@ title: 接入 Kiro（kiro-cli）Agent
 type: proposal
 status: proposed
 owner: maintainers
-updated: 2026-09-07
+updated: 2026-09-09
 audience: contributor
 ---
 
@@ -23,8 +23,9 @@ audience: contributor
 | **已落地** | 新对话走 `kiro-cli acp` 持续通道：同一进程内续聊；可点允许/拒绝、停止；生成时不能中途补充 |
 | **已落地** | Chat 打印路径 HTTP 多轮，经 `kiro-http:<conversationId>` 续场（详见 [HTTP 提案](agent-kiro-http.md)） |
 | **已落地** | Kiro 登录经本机路由接到 Claude / Codex / Grok |
-| **剩余边界** | 企业 IdC / `profileArn` 实机验收（带上参数 ≠ 已验收） |
-| **剩余边界** | 上游逐块实时转发（当前先收齐回复再输出） |
+| **已落地** | 本机路由 `stream=true`：上游 event-stream 帧完成即转发文本块（单测；真窗 TTFT 未验） |
+| **剩余边界** | 企业 IdC / `profileArn` 实机验收（带上参数 ≠ 已验收；ACP 不注入该字段） |
+| **剩余边界** | Chat 打印路径与本机路由 JSON 仍收齐再返回；真窗 TTFT；客户端断开不停上游读 |
 | **剩余边界** | 官方 REST（不宣称、不接入） |
 | **历史约束（不是现行待办）** | 「一轮一发」「不接持续通道」「本机路由后置」——早期第一波方案，见 §3 |
 
@@ -199,7 +200,7 @@ kiro-cli chat --no-interactive --trust-all-tools --output-format stream-json "�
 
 **第二波（部分落地）：** 项目只读、用量、列模型已有 Partial/Full，见 [capabilities](../reference/capabilities.md)。Skills / MCP 仍 Planned。
 
-**第三波（ACP 新对话已落地，不是未立项）：** 新空会话走 `kiro-cli acp`。旧打印对话保留原方式。剩余边界见进度表（企业 IdC / `profileArn`、上游逐块实时转发、官方 REST）。
+**第三波（ACP 新对话已落地，不是未立项）：** 新空会话走 `kiro-cli acp`。旧打印对话保留原方式。剩余边界见进度表（企业 IdC / `profileArn`、Chat 打印收齐、真窗 TTFT、官方 REST）。
 
 能力矩阵诚实起点（**历史草稿**；现行以 [capabilities](../reference/capabilities.md) 为准，不要按本表派工）：
 
@@ -217,7 +218,7 @@ kiro-cli chat --no-interactive --trust-all-tools --output-format stream-json "�
 
 ## 6. 开干前建议核实（历史探测清单）
 
-第一波探测已做过，不要把本节当成「尚未开工」。下列是当时的事实缺口，不是强制命令矩阵。剩余边界（企业 IdC / `profileArn`、上游逐块、官方 REST）仍需按进度表核实，不要从本清单推导新待办：
+第一波探测已做过，不要把本节当成「尚未开工」。下列是当时的事实缺口，不是强制命令矩阵。剩余边界（企业 IdC / `profileArn`、Chat 打印收齐 / 真窗 TTFT、官方 REST）仍需按进度表核实，不要从本清单推导新待办：
 
 - 各平台官方安装后：`kiro-cli` 绝对路径、版本（2.x vs 3.x / `--v3`）
 - macOS：arch；CLI 二进制位置（勿把仅有 IDE.app 当成已安装）
@@ -246,7 +247,7 @@ kiro-cli chat --no-interactive --trust-all-tools --output-format stream-json "�
 2. 展示文案用 **Kiro**，副标题写命令行。
 3. 云电脑登录可走设备码（实现以 `kiro-cli` 登录指引为准）。
 4. **ACP 新对话已落地**，不再问「第三波是否进路线图」。§3.1 的一轮一发是历史约束。
-5. **仍是提案边界（未写成现行契约）：** 企业 IdC / `profileArn` 实机验收；上游逐块实时转发；官方 REST。HTTP 切片细节见 [agent-kiro-http.md](agent-kiro-http.md)。
+5. **仍是提案边界（未写成现行契约）：** 企业 IdC / `profileArn` 实机验收；Chat 打印路径收齐再返回与真窗 TTFT；官方 REST。HTTP 切片细节见 [agent-kiro-http.md](agent-kiro-http.md)。
 
 （安装 UX 细节——如自动 ps1 vs MSI 指引、自动 sh vs `setup_guide`——实现时可对齐 Cursor/WorkBuddy 惯例，不必在提案层钉死。）
 

@@ -72,7 +72,14 @@ fn parse_legacy_type(v: &Value) -> Option<Vec<ProcessStep>> {
             phase: "result".into(),
             detail: Some(ty.into()),
         }]),
-        "usage" => Some(vec![]),
+        "usage" => {
+            let obj = v.get("data").filter(|d| d.is_object()).unwrap_or(v);
+            Some(
+                ProcessStep::from_usage_object(obj)
+                    .map(|step| vec![step])
+                    .unwrap_or_default(),
+            )
+        }
         "thought" | "thinking" | "reasoning" => {
             let text = extract_data_text(v);
             if text.is_empty() {

@@ -1,4 +1,6 @@
 use std::fs;
+use std::io::Write;
+use std::path::Path;
 
 use crate::utils::test_temp::real_tempdir;
 use crate::AgentHub;
@@ -17,6 +19,17 @@ fn write_pkg(dir: &std::path::Path, id: &str, body: &str) -> std::path::PathBuf 
     fs::create_dir_all(&pkg).unwrap();
     fs::write(pkg.join("SKILL.md"), body).unwrap();
     pkg
+}
+
+fn write_skill_zip_with_top_dir(zip_path: &Path, dir_name: &str, skill_md: &str) {
+    let file = fs::File::create(zip_path).unwrap();
+    let mut zip = zip::ZipWriter::new(file);
+    let opts = zip::write::SimpleFileOptions::default();
+    zip.add_directory(format!("{dir_name}/"), opts).unwrap();
+    zip.start_file(format!("{dir_name}/SKILL.md"), opts)
+        .unwrap();
+    zip.write_all(skill_md.as_bytes()).unwrap();
+    zip.finish().unwrap();
 }
 
 #[test]
@@ -64,6 +77,41 @@ fn install_list_read_uninstall_roundtrip() {
         .uninstall_project_skill(ws, "notes", None)
         .unwrap();
     assert!(hub.skills().list_project_skills(ws).unwrap().is_empty());
+}
+
+#[test]
+fn install_project_skill_from_zip_writes_workspace_not_shared_library() {
+    let (dir, hub) = isolated_hub();
+    let workspace = dir.path().join("workspace");
+    fs::create_dir_all(&workspace).unwrap();
+    let zip_path = dir.path().join("qa-project-zip.zip");
+    write_skill_zip_with_top_dir(
+        &zip_path,
+        "qa-project-zip",
+        "---\nname: Zip Project\n---\n# body\n",
+    );
+    let ws = workspace.to_str().unwrap();
+
+    let skill = hub
+        .skills()
+        .install_project_skill(ws, zip_path.to_str().unwrap(), false)
+        .unwrap();
+    assert_eq!(skill.id, "qa-project-zip");
+    assert_eq!(skill.name, "Zip Project");
+    assert!(skill.projections.is_empty());
+    assert!(workspace
+        .join(".agents")
+        .join("skills")
+        .join("qa-project-zip")
+        .join("SKILL.md")
+        .is_file());
+    assert!(
+        !hub.skills().source_root().join("qa-project-zip").exists(),
+        "project zip install must not write the user shared library"
+    );
+    let listed = hub.skills().list_project_skills(ws).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].origin, ".agents/skills");
 }
 
 #[test]

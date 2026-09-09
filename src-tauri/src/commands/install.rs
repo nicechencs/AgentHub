@@ -370,7 +370,9 @@ fn launch_copy_source(agent: AgentId, kind: &str, source: &str) -> &'static str 
 fn launch_kind_for_source(agent: AgentId, source: &str) -> Option<&'static str> {
     match source {
         "desktop" => Some("app"),
-        "npm" => Some("cli"),
+        // Leftover AgentHub npm is not an install target, but a complete tree
+        // (DeepSeek Harness with dsh-scope) is a valid CLI launch path.
+        "npm" | "leftover-agenthub" => Some("cli"),
         "native" => {
             if install_lifecycle(agent, "native").update_via == "official" {
                 Some("app")

@@ -4,12 +4,26 @@ type: proposal
 status: proposed
 owner: maintainers
 audience: product owners and implementation agents
-updated: 2026-09-07
+updated: 2026-09-08
 ---
 
 # 国内自动更新镜像（GitHub Release → Cloudflare R2 + Worker）
 
-Status: proposed。2026-09-07 与用户确认方向：中国用户常连不上 GitHub，导致 App 无法拉取更新；在现有 GitHub Release + `latest.json` + `.sig`（Tauri updater）之上，发版后自动镜像到 Cloudflare R2，可选 Worker 对外提供更新入口。
+Status: proposed。YAML 保持 proposed：运维资源与国内真机未闭环，不能当现行运维契约。**App 镜像优先已在正式包（0.4.9）**，不要把本页当成未开工。现行 updater 入口见 [STATUS](../STATUS.md)。
+
+2026-09-07 与用户确认方向：中国用户常连不上 GitHub，导致 App 无法拉取更新；在现有 GitHub Release + `latest.json` + `.sig`（Tauri updater）之上，发版后自动镜像到 Cloudflare R2，可选 Worker 对外提供更新入口。
+
+## 进度（已发 / 剩余运维）
+
+| 状态 | 内容 |
+| --- | --- |
+| **已发（0.4.9）** | App updater 优先 `https://updates.agenthub.qooo.io/latest.json`，失败回退 GitHub |
+| **已发** | Release CI 在 secrets 齐全时同步安装包 / `.sig` / 改写后的清单到 R2 |
+| **已发** | in-repo Worker `cloudflare/update-mirror` |
+| **剩余运维** | Cloudflare 桶 / 自定义域 / WAF 由运维配置；本仓库不声称云端资源已建好 |
+| **剩余验收** | 国内真机：检查更新 → 下载 → 验签 → 安装 |
+
+运维一次性清单见下文「运维备忘」。
 
 ## 问题
 

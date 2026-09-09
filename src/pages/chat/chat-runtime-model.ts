@@ -1,4 +1,5 @@
 import type { RuntimeRequest, RuntimeSnapshot } from '@/lib/api/chat';
+import type { MessageKey, TranslateFn } from '@/lib/i18n';
 
 export type RuntimeTransport =
   | { kind: 'runtime'; snapshot: RuntimeSnapshot }
@@ -22,12 +23,17 @@ export function isRuntimeActive(phase: RuntimeSnapshot['phase']): boolean {
 }
 
 /**
- * Continuous chat composer/send path is Codex, Grok, and Kiro.
- * Half-surface agents (`cursor`, Claude print, …) stay off this list —
- * do not invent ChatRuntime just because their interactive CLI has pickers.
+ * Continuous chat composer/send path is Codex, Grok, Kiro, and new-empty Claude
+ * (stream-json). Half-surface agents (`cursor`, Claude print+resume history, …)
+ * stay off this list — do not invent ChatRuntime just because a CLI has pickers.
  */
 export function isRuntimeChatAgent(agentId: string | null | undefined): boolean {
-  return agentId === 'codex' || agentId === 'grok' || agentId === 'kiro';
+  return (
+    agentId === 'codex' ||
+    agentId === 'grok' ||
+    agentId === 'kiro' ||
+    agentId === 'claude'
+  );
 }
 
 /**
@@ -95,11 +101,16 @@ export function canSubmitRuntimeQuestions(
   return request.kind !== 'question' || request.questions.every((question) => Boolean(answers[question.id]?.length));
 }
 
+/** ACP remember kinds: standard `allow_always` and Kiro `allow_always_tool` / `_args`. */
+export function isRuntimeAllowAlwaysKind(kind: string | null | undefined): boolean {
+  return kind === 'allow_always' || Boolean(kind?.startsWith('allow_always_'));
+}
+
 /** Session remember is offered only when this request can honor it (ACP option or Codex-synthesized allow_always). */
 export function requestAllowsAlways(
   request: Pick<RuntimeRequest, 'permissionOptions'>,
 ): boolean {
-  return (request.permissionOptions ?? []).some((option) => option.kind === 'allow_always');
+  return (request.permissionOptions ?? []).some((option) => isRuntimeAllowAlwaysKind(option.kind));
 }
 
 export function runtimeReplyFields(
@@ -111,4 +122,29 @@ export function runtimeReplyFields(
     return answers ? { answers } : {};
   }
   return decision ? { decision } : {};
+}
+
+const COMMAND_TITLE_KEYS: Record<string, MessageKey> = {
+  read: 'chat.runtime.kind.read',
+  edit: 'chat.runtime.kind.edit',
+  write: 'chat.runtime.kind.write',
+  execute: 'chat.runtime.kind.execute',
+  exec: 'chat.runtime.kind.execute',
+  fetch: 'chat.runtime.kind.fetch',
+  search: 'chat.runtime.kind.search',
+  delete: 'chat.runtime.kind.delete',
+  move: 'chat.runtime.kind.move',
+};
+
+/** File cards stay 修改文件. English ACP kinds map; already-Chinese titles stay. */
+export function runtimeRequestTitle(
+  t: TranslateFn,
+  request: Pick<RuntimeRequest, 'kind' | 'title'>,
+): string {
+  if (request.kind === 'file') return t('chat.runtime.fileChange');
+  const raw = request.title.trim();
+  if (request.kind === 'question') return raw || t('chat.runtime.needAnswer');
+  if (!raw) return t('chat.runtime.needConfirm');
+  const mapped = COMMAND_TITLE_KEYS[raw.toLowerCase()];
+  return mapped ? t(mapped) : raw;
 }

@@ -3,7 +3,7 @@ title: Kiro HTTP / 本机转发
 type: proposal
 status: proposed
 owner: maintainers
-updated: 2026-09-07
+updated: 2026-09-09
 audience: contributor
 ---
 
@@ -23,8 +23,9 @@ audience: contributor
 | **已落地** | Chat 打印路径 HTTP 多轮，经 `kiro-http:<conversationId>` 续场；已有 HTTP 会话失败不回退 CLI |
 | **已落地** | Kiro 登录经本机路由接到 Claude / Codex / Grok |
 | **已落地** | 检测 / 安装 / 登录、ACP 新对话见 [CLI 半面](agent-kiro.md) |
+| **已落地** | 本机路由 `stream=true`：上游 AWS event-stream 帧完成即转发文本块（单测分块 reader；真窗 TTFT 未验） |
 | **剩余边界** | 企业 IdC / `profileArn` 实机验收（带上参数 ≠ 已验收） |
-| **剩余边界** | 上游逐块实时转发（当前先收齐回复再编码输出） |
+| **剩余边界** | Chat 打印路径与本机路由 JSON 仍收齐再返回；真窗 TTFT；客户端断开不停上游读 |
 | **剩余边界** | 官方 REST（不宣称、不接入） |
 | **历史约束（不是现行待办）** | CLI 早期方案里的「一轮一发」「不接持续通道」「本机路由后置」——见 [agent-kiro.md](agent-kiro.md) §3 |
 
@@ -48,7 +49,7 @@ audience: contributor
 ## 当前范围
 
 1. **嵌入 core**（不外挂第三方网关二进制）。
-2. **Chat 与本机路由均已接入**；协议输出与真实上游逐块转发分别验收。
+2. **Chat 与本机路由均已接入**；本机路由 SSE 按上游 event-stream 帧转发文本块（单测；真窗 TTFT 未验）。Chat 打印路径与 JSON 仍收齐再返回。
 3. **Builder ID + `ksk_` API Key 先**；企业 IdC / `profileArn` / `runtime.*.kiro.dev` 仍是**剩余边界**（带上参数 ≠ 已验收）。
 4. **当前双轨：** 新交互对话走 ACP；旧打印路径保留 HTTP / CLI。HTTP 新会话失败可回退 CLI，已有 HTTP 会话失败不回退；CLI 会话按原 `--resume-id` 继续。
 
@@ -64,8 +65,8 @@ audience: contributor
 - Chat 持久化的 `native_session_id`：HTTP 用 `kiro-http:<conversationId>`；CLI `--resume-id` 不加此前缀。
 - `try_http_run_result`：有 HTTP 前缀则带 `conversationId` 续聊；有 CLI id 则跳过 HTTP；无 id 则新开 HTTP 对话。
 - 已有 HTTP 会话在登录或上游失败时明确报错；仅无会话 id 的新请求可以回退 `kiro-cli`。HTTP id 不传给 `--resume-id`，也不用于 ACP 恢复。
-- 本机路由按调用方的 `stream` 返回 JSON 或对应接口的 SSE。HTTP 上游目前收齐回复后再编码输出，不表示已经实现上游逐块实时转发。
-- 本机路由使用共享库中所选登录的当前访问令牌，并带上该登录的区域、`profileArn` 与请求来源；不会借用或刷新其他本机登录，也不把刷新信息放进本机路由。登录过期后需同步共享库。Chat 打印路径直接读取本机登录时继续沿用原有刷新逻辑。带上这些参数不代表企业 IdC 场景已完成实机验收。
+- 本机路由按调用方的 `stream` 返回 JSON 或对应接口的 SSE。`stream=true` 时在上游 `assistantResponseEvent` 帧完成时转发文本块，不把收齐后的整段再切成假流。`stream=false` 与 Chat 打印路径仍收齐再返回。真窗 TTFT 未验。
+- 本机路由使用共享库中所选登录的当前访问令牌，并带上该登录的区域、`profileArn` 与请求来源；不会借用或刷新其他本机登录，也不把刷新信息放进本机路由。登录过期后需同步共享库。Chat 打印路径直接读取本机 sqlite / SSO / `KIRO_API_KEY`（可从 sqlite `state` 补 `profileArn`），并继续沿用原有刷新逻辑。ACP 新对话只拉起 `kiro-cli acp`，不向进程注入 `profileArn`。带上这些参数不代表企业 IdC 场景已完成实机验收。
 
 ## Non-goals
 
