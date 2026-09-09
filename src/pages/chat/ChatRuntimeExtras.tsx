@@ -43,11 +43,18 @@ export function ChatRuntimeExtras(props: {
   extensions: RuntimeExtensionItem[];
   selectedSkillIds: string[];
   onToggleSkill: (id: string) => void;
+  /** Toolbar skill dropdown. Codex hides this — skills stay on `/` and auto-use. */
+  showSkillPicker?: boolean;
+  /** When `codex`, toolbar skill control is always hidden (defense if parent forgets the prop). */
+  agentId?: string | null;
   inline?: boolean;
   modelMenuOpenNonce?: number;
 }) {
   const { t } = useI18n();
   const callableSkills = props.extensions.filter((item) => item.kind === 'skill' && item.callable);
+  // Codex: never mount the toolbar skill control (slash menu / auto-use only).
+  const showSkillPicker =
+    props.agentId !== 'codex' && props.showSkillPicker !== false;
   const modelDisabledReason = props.frozen
     ? props.frozenReason ?? t('chat.runtimeOps.frozenDuringTurn')
     : props.catalogLoading
@@ -219,7 +226,7 @@ export function ChatRuntimeExtras(props: {
         {!effortDisabledReason && currentEffortHint ? (
           <span className="text-meta text-muted">{currentEffortHint}</span>
         ) : null}
-        {callableSkills.length > 0 ? (
+        {showSkillPicker && callableSkills.length > 0 ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button type="button" size="sm" variant="outline" className="max-w-32">
@@ -257,7 +264,7 @@ export function ChatRuntimeExtras(props: {
       </div>
 
 
-      {!props.inline && props.selectedSkillIds.length > 0 ? (
+      {showSkillPicker && !props.inline && props.selectedSkillIds.length > 0 ? (
         <div className="flex flex-wrap gap-2 text-meta">
           {props.selectedSkillIds.map((id) => {
             const item = props.extensions.find((extension) => extension.id === id);
