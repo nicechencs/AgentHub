@@ -95,7 +95,7 @@ describe('ChatRuntimeExtras skill picker', () => {
       extras({
         showSkillPicker: false,
         extensions: [
-          { id: 'skill-a', kind: 'skill', name: 'Demo Skill', callable: true },
+          { id: 'skill-a', kind: 'skill', name: 'Demo Skill', callable: true, installed: true, enabled: true, loaded: true },
         ],
         selectedSkillIds: ['skill-a'],
       }),
@@ -109,7 +109,7 @@ describe('ChatRuntimeExtras skill picker', () => {
     const html = renderMarkup(
       extras({
         extensions: [
-          { id: 'skill-a', kind: 'skill', name: 'Demo Skill', callable: true },
+          { id: 'skill-a', kind: 'skill', name: 'Demo Skill', callable: true, installed: true, enabled: true, loaded: true },
         ],
       }),
     );
