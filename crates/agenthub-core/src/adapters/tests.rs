@@ -2283,6 +2283,33 @@ fn kimi_switch_write_keeps_account_model_instead_of_rewriting() {
     );
 }
 
+
+#[test]
+fn kimi_switch_write_prefers_settings_model_over_content_default() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    write_toml_config(
+        AgentId::Kimi,
+        &path,
+        &AgentConfig {
+            agent: AgentId::Kimi,
+            raw: json!({
+                "format": "toml",
+                "model": "grok-4.6",
+                "content": "default_model = \"kimi-k2\"\n\n[providers.moonshot]\nbase_url = \"https://mytokens.cc/v1\"\napi_key = \"sk-pool\"\n",
+            }),
+        },
+    )
+    .unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("default_model = \"grok-4.6\""), "{text}");
+    assert!(
+        text.contains("[models.\"grok-4.6\"]") || text.contains("[models.grok-4.6]"),
+        "{text}"
+    );
+    assert!(text.contains("model = \"grok-4.6\""), "{text}");
+}
+
 #[test]
 fn kimi_write_config_points_base_url_at_loopback() {
     let dir = tempfile::tempdir().unwrap();

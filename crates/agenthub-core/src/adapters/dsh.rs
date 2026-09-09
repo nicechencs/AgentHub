@@ -568,7 +568,7 @@ fn upsert_llm_row(existing: &str, fields: &DshLlmFields) -> Result<String> {
     }
     let new_row = format!(
         "- id: {id}\n  config:\n    apiKeyEnv: {env}\n    baseURL: {base}\n    thinking: {thinking}\n    reasoningEffort: {effort}\n    model: {model}\n{max_tokens}",
-        id = LLM_PLUGIN_ID,
+        id = yaml_quote(LLM_PLUGIN_ID),
         env = yaml_quote(&fields.api_key_env),
         base = yaml_quote(&fields.base_url),
         thinking = yaml_quote(&fields.thinking),
@@ -597,12 +597,21 @@ fn upsert_llm_row(existing: &str, fields: &DshLlmFields) -> Result<String> {
 }
 
 fn replace_plugin_row(existing: &str, plugin_id: &str, new_row: &str) -> Option<String> {
-    let needle = format!("id: {plugin_id}");
+    // Match quoted or unquoted `- id:` / `id:` rows (plugin ids may contain `@`).
     let lines: Vec<&str> = existing.lines().collect();
     let mut start = None;
     for (idx, line) in lines.iter().enumerate() {
-        if line.contains(&needle) {
-            start = Some(if line.trim_start().starts_with("- ") {
+        let trimmed = line.trim_start();
+        let id_value = trimmed
+            .strip_prefix("- id:")
+            .or_else(|| trimmed.strip_prefix("-id:"))
+            .or_else(|| trimmed.strip_prefix("id:"))
+            .map(str::trim);
+        let matches = id_value
+            .map(|raw| unquote(raw) == plugin_id)
+            .unwrap_or(false);
+        if matches {
+            start = Some(if trimmed.starts_with("- ") || trimmed.starts_with("-id:") {
                 idx
             } else if idx > 0 && lines[idx - 1].trim_start().starts_with('-') {
                 idx - 1
@@ -648,13 +657,33 @@ fn unquote(raw: &str) -> String {
 }
 
 fn yaml_quote(value: &str) -> String {
-    if value.is_empty()
-        || value.contains(':')
-        || value.contains('#')
-        || value.contains(' ')
-        || value.contains('"')
-        || value.contains('\'')
-    {
+    // Quote empty values and YAML-indicator / flow characters so plugin ids
+    // like `@deepseek-ai/...` parse (unquoted `@` is invalid YAML).
+    let needs_quotes = value.is_empty()
+        || value.bytes().any(|b| {
+            matches!(
+                b,
+                b':'
+                    | b'#'
+                    | b' '
+                    | b'"'
+                    | b'\''
+                    | b'@'
+                    | b'{'
+                    | b'}'
+                    | b'['
+                    | b']'
+                    | b'*'
+                    | b'&'
+                    | b'!'
+                    | b'|'
+                    | b'>'
+                    | b'%'
+                    | b','
+                    | b'?'
+            )
+        });
+    if needs_quotes {
         format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
     } else {
         value.to_string()
