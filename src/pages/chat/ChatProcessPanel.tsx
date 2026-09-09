@@ -3,11 +3,14 @@ import { AgentThinking } from '@/components/shared/AgentThinking';
 import { SourcePreview } from '@/components/shared/SourcePreview';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import {
+  formatProcessHeadline,
+  formatToolStep,
   formatUsageStep,
   formatVisibleUsage,
+  isProtocolProcessStep,
   phaseFromMessageStatus,
-  processPhaseLabel,
   stepSummary,
+  toolActionTone,
   type AgentProcessView,
 } from '@/lib/chat-process';
 import { looksLikeJsonObject, tryPrettyJson } from '@/lib/source-preview';
@@ -87,29 +90,44 @@ function DiffAwarePre({ text, className }: { text: string; className?: string })
   );
 }
 
+function toolHasProtocolDetails(step: Extract<ProcessStep, { type: 'tool' }>): boolean {
+  return Boolean(
+    step.name ||
+      step.status ||
+      formatStepInput(step.input) ||
+      (step.result && step.result.trim()),
+  );
+}
+
 function ProcessStepRow({ step }: { step: ProcessStep }) {
   const { t } = useI18n();
   if (step.type === 'tool') {
     const input = formatStepInput(step.input);
+    const live = toolActionTone(step.status) === 'live';
     return (
       <div className="py-1">
         <div
           className={cn(
             'font-medium text-secondary',
-            step.status === 'running' && 'agent-progress-running',
+            live && 'agent-progress-running',
           )}
         >
-          {step.name} · {step.status}
+          {formatToolStep(step, t)}
         </div>
-        {input ? (
-          <PayloadPreview text={input} density="compact" className="mt-0.5" />
-        ) : null}
-        {step.result ? (
-          <PayloadPreview
-            text={step.result}
-            density="compact"
-            className="mt-1"
-          />
+        {toolHasProtocolDetails(step) ? (
+          <details className="mt-0.5 text-meta" onClick={(e) => e.stopPropagation()}>
+            <summary className="cursor-pointer text-muted">{t('chat.process.details')}</summary>
+            <div className="mt-1 space-y-1">
+              <div className="text-muted">
+                {step.name}
+                {step.status ? ` · ${step.status}` : ''}
+              </div>
+              {input ? <PayloadPreview text={input} density="compact" /> : null}
+              {step.result ? (
+                <PayloadPreview text={step.result} density="compact" className="mt-1" />
+              ) : null}
+            </div>
+          </details>
         ) : null}
       </div>
     );
@@ -120,16 +138,24 @@ function ProcessStepRow({ step }: { step: ProcessStep }) {
   if (step.type === 'error') {
     return <div className="py-1 text-danger">{step.message}</div>;
   }
-  if (step.type === 'status') {
-    return (
-      <div className="py-1 text-muted">
-        · {step.phase}
-        {step.detail ? ` · ${step.detail}` : ''}
-      </div>
-    );
-  }
   if (step.type === 'usage') {
     return <div className="py-1 text-muted">· {formatUsageStep(step, t)}</div>;
+  }
+  if (step.type === 'raw') {
+    const body = step.text?.trim();
+    return (
+      <div className="py-1">
+        <div className="text-muted">{stepSummary(step, t)}</div>
+        {body ? (
+          <details className="mt-0.5 text-meta" onClick={(e) => e.stopPropagation()}>
+            <summary className="cursor-pointer text-muted">{t('chat.process.details')}</summary>
+            <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap break-all text-muted">
+              {clipProcessTail(body)}
+            </pre>
+          </details>
+        ) : null}
+      </div>
+    );
   }
   return <div className="py-1 text-muted">{stepSummary(step, t)}</div>;
 }
@@ -182,18 +208,14 @@ function ThinkingStepRow({ text, done }: { text: string; done: boolean }) {
 }
 
 function summaryLabel(
+  view: AgentProcessView,
   effectivePhase: AgentProcessView['phase'],
-  stepCount: number,
   durationMs: number | undefined,
   usageText: string,
   t: TranslateFn,
 ): string {
-  if (stepCount === 0 && isProcessActivePhase(effectivePhase) && !usageText) {
-    return t('chat.process.summaryGenerating');
-  }
-  const parts = [processPhaseLabel(effectivePhase, t)];
+  const parts = [formatProcessHeadline(view.steps, effectivePhase, t)];
   if (usageText) parts.push(usageText);
-  else if (stepCount > 0) parts.push(t('chat.process.steps', { n: stepCount }));
   if (durationMs != null && durationMs > 0) parts.push(formatDurationMs(durationMs));
   return `▸ ${parts.join(' · ')}`;
 }
@@ -218,7 +240,8 @@ export function ChatProcessPanel({
   exitCode?: number | null;
 }) {
   const { t } = useI18n();
-  const timeline = view.steps.filter((s) => s.type !== 'text');
+  const timeline = view.steps.filter((s) => s.type !== 'text' && !isProtocolProcessStep(s));
+  const protocolSteps = view.steps.filter(isProtocolProcessStep);
 
   const effectivePhase: AgentProcessView['phase'] =
     messageStatus && messageStatus !== 'running'
@@ -240,7 +263,9 @@ export function ChatProcessPanel({
   }, [effectivePhase]);
 
   const open = userOpen ?? autoOpen;
-  const hasRunDetails = Boolean(view.command || view.stderr || exitCode != null);
+  const hasRunDetails = Boolean(
+    view.command || view.stderr || exitCode != null || protocolSteps.length > 0,
+  );
   const usageText = formatVisibleUsage(view.steps, t);
   const timelineRef = useRef<HTMLDivElement>(null);
   const stderrRef = useRef<HTMLPreElement>(null);
@@ -266,7 +291,7 @@ export function ChatProcessPanel({
     >
       <summary className="flex cursor-pointer list-none items-center gap-1.5 py-1 text-muted marker:content-none [&::-webkit-details-marker]:hidden">
         <span className="font-medium text-secondary">
-          {summaryLabel(effectivePhase, timeline.length, durationMs, usageText, t)}
+          {summaryLabel(view, effectivePhase, durationMs, usageText, t)}
         </span>
       </summary>
       <div className="space-y-2 pb-1">
@@ -292,6 +317,11 @@ export function ChatProcessPanel({
           >
             <summary className="cursor-pointer text-muted">{t('chat.process.runDetails')}</summary>
             <div className="mt-1.5 space-y-2">
+              {protocolSteps.map((step, i) => (
+                <div key={`protocol-${i}`} className="text-muted">
+                  {stepSummary(step, t)}
+                </div>
+              ))}
               {view.command ? (
                 <div>
                   <div className="mb-0.5 text-muted">{t('chat.process.command')}</div>

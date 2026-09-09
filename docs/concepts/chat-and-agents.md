@@ -47,7 +47,7 @@ Kiro 会话设置里的「帮我批准 / 完全访问权限」是启动时的 `-
   → StreamingProcessRunner
   → stream_parse/*（能结构化则结构化，否则 text）
   → RunEvent → ChatEvent
-  → 前端 reducer：正文 + 过程面板
+  → 前端 reducer：正文 + 过程面板（工具行是正在读取 / 正在修改 / 正在执行，协议字段折叠）
 ```
 
 Tauri transport 使用 `ipc::Channel<ChatEvent>`，不是 SSE。阻塞进程执行在 command/core 的 blocking 边界隔离。浏览器 `dev:mock` 与 Vitest 通过 `src/dev/mocks/chat.ts` 提供相同 port 契约的可控事件；`src/lib/api/chat.ts` 不是 mock。

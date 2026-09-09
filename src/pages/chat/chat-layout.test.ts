@@ -279,6 +279,10 @@ describe('chat layout wiring', () => {
     expect(panel).toContain("t('chat.process.runDetails')");
     expect(panel).toContain("t('chat.process.stderr')");
     expect(panel).toContain("t('chat.process.exitCode'");
+    expect(panel).toContain("t('chat.process.details')");
+    expect(panel).toContain('formatToolStep');
+    expect(panel).toContain('formatProcessHeadline');
+    expect(panel).not.toContain('{step.name} · {step.status}');
     expect(panel).not.toContain('>stderr<');
     expect(panel).not.toContain('exit {exitCode}');
     expect(translate('zh', 'chat.process.runDetails')).toBe('运行详情');
@@ -286,6 +290,14 @@ describe('chat layout wiring', () => {
     expect(translate('zh', 'chat.process.stderr')).toBe('错误输出');
     expect(translate('en', 'chat.process.stderr')).toBe('Error output');
     expect(translate('en', 'chat.process.runDetails')).not.toBe('Run details');
+    expect(translate('zh', 'chat.process.toolRead')).toBe('正在读取');
+    expect(translate('zh', 'chat.process.toolEdit')).toBe('正在修改');
+    expect(translate('zh', 'chat.process.toolRun')).toBe('正在执行');
+    expect(translate('en', 'chat.process.toolRead')).toBe('Reading');
+    expect(translate('en', 'chat.process.toolEdit')).toBe('Editing');
+    expect(translate('en', 'chat.process.toolRun')).toBe('Running');
+    expect(translate('zh', 'chat.process.details')).toBe('细节');
+    expect(translate('en', 'chat.process.details')).toBe('Details');
     expect(translate('zh', 'chat.process.usage')).toBe('用量');
     expect(translate('en', 'chat.process.usage')).toBe('Usage');
     expect(source('ChatMessageBubble.tsx')).toContain('formatVisibleUsage');
