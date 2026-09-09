@@ -20,6 +20,10 @@ describe('backups layout wiring', () => {
     expect(panel).toContain('backupDeleteSubject');
     expect(panel).toContain('MoreHorizontal');
     expect(panel).not.toContain('variant="dangerOutline"');
+    expect(panel).toContain('dialogEnterShouldConfirm');
+    expect(panel).toContain('aria-keyshortcuts="Enter"');
+    expect(panel).toContain('<kbd');
+    expect(panel).toContain('Enter');
   });
 
   it('treats restore as a destructive confirm', () => {

@@ -12,6 +12,7 @@ import type {
 } from '@/lib/backend/contracts/ticket';
 import type { TranslateFn } from '@/lib/i18n';
 import { processPhaseLabel, type AgentProcessView } from '@/lib/chat-process';
+import { dialogEnterShouldConfirm } from '@/lib/dialog-enter';
 import { nativeResumeCommand } from '@/lib/session-resume';
 import {
   activeBindingForAgent,
@@ -725,6 +726,8 @@ export function chatEscapeShouldCancel(input: {
   return input.sending && !input.canceling;
 }
 
+export { dialogEnterShouldConfirm };
+
 /** Enter sends; Shift+Enter inserts a newline; IME composition must not send. */
 export function composerEnterShouldSend(input: {
   key: string;
@@ -732,20 +735,7 @@ export function composerEnterShouldSend(input: {
   isComposing?: boolean;
   nativeEvent?: { isComposing?: boolean; keyCode?: number };
 }): boolean {
-  if (input.key !== 'Enter' || input.shiftKey) return false;
-  if (input.isComposing || input.nativeEvent?.isComposing) return false;
-  if (input.nativeEvent?.keyCode === 229) return false;
-  return true;
-}
-
-/** Delete-confirm dialog: Enter confirms. IME composition must not confirm. */
-export function dialogEnterShouldConfirm(input: {
-  key: string;
-  shiftKey: boolean;
-  isComposing?: boolean;
-  nativeEvent?: { isComposing?: boolean; keyCode?: number };
-}): boolean {
-  return composerEnterShouldSend(input);
+  return dialogEnterShouldConfirm(input);
 }
 
 function chatModChordMatchesLetter(

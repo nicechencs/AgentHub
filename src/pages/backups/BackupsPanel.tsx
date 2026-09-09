@@ -38,6 +38,7 @@ import {
   restoreHasDeleteFailures,
 } from '@/lib/api/backup';
 import { getSettings, updateSettings } from '@/lib/api/settings';
+import { dialogEnterShouldConfirm } from '@/lib/dialog-enter';
 import type { TranslateFn } from '@/lib/i18n';
 import { Switch } from '@/components/ui/switch';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
@@ -483,7 +484,19 @@ export function BackupsPanel({ toolbar }: { toolbar?: ReactNode }) {
         open={deleteTarget !== null}
         onOpenChange={(open) => !open && busyId === null && setDeleteTarget(null)}
       >
-        <DialogContent>
+        <DialogContent
+          onKeyDown={(event) => {
+            if (busyId !== null) return;
+            if (!dialogEnterShouldConfirm({
+              key: event.key,
+              shiftKey: event.shiftKey,
+              isComposing: event.nativeEvent.isComposing,
+              nativeEvent: event.nativeEvent,
+            })) return;
+            event.preventDefault();
+            void handleDelete();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>{t('settings.backups.deleteTitle')}</DialogTitle>
             <DialogDescription>
@@ -503,8 +516,21 @@ export function BackupsPanel({ toolbar }: { toolbar?: ReactNode }) {
             <Button variant="secondary" disabled={busyId !== null} onClick={() => setDeleteTarget(null)}>
               {t('common.cancel')}
             </Button>
-            <Button variant="danger" disabled={busyId !== null} onClick={() => void handleDelete()}>
+            <Button
+              variant="danger"
+              disabled={busyId !== null}
+              aria-keyshortcuts="Enter"
+              onClick={() => void handleDelete()}
+            >
               {busyId !== null ? t('settings.backups.deleting') : t('settings.backups.confirmDelete')}
+              {busyId === null ? (
+                <kbd
+                  className="inline-flex h-5 min-w-5 items-center justify-center rounded-btn border border-white/35 bg-white/15 px-1 text-meta leading-none text-white"
+                  aria-hidden
+                >
+                  Enter
+                </kbd>
+              ) : null}
             </Button>
           </DialogFooter>
         </DialogContent>
