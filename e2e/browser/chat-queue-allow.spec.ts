@@ -21,7 +21,7 @@ test('queued follow-ups are separate cancelable rows on the Claude queue path', 
   const card = page.locator('[data-help="chat-allow-always"]');
   await expect(card).toBeVisible({ timeout: 10_000 });
   await expect(card.getByRole('button', { name: '一直允许' })).toBeVisible();
-  await expect(card.getByText('仅当前这次进程，不保存')).toBeVisible();
+  await expect(card.getByText('仅当前这次对话，不保存')).toBeVisible();
   await expect(page.getByText('通常只记到本轮')).toHaveCount(0);
   await page.screenshot({
     path: '/opt/cursor/artifacts/claude_allow_always_scope.png',
@@ -62,7 +62,7 @@ test('queued follow-ups are separate cancelable rows on the Claude queue path', 
   });
 });
 
-test('Codex Always allow names this process and usually this turn', async ({ page }) => {
+test('Codex Always allow names this conversation', async ({ page }) => {
   await openApp(page);
   await openChatComposer(page);
   await setWorkingDirectory(page);
@@ -75,7 +75,7 @@ test('Codex Always allow names this process and usually this turn', async ({ pag
   const card = page.locator('[data-help="chat-allow-always"]');
   await expect(card).toBeVisible({ timeout: 10_000 });
   await expect(card.getByRole('button', { name: '一直允许' })).toBeVisible();
-  await expect(card.getByText('仅当前这次进程，通常只记到本轮，不保存')).toBeVisible();
+  await expect(card.getByText('仅当前这次对话，不保存')).toBeVisible();
   await page.screenshot({
     path: '/opt/cursor/artifacts/codex_allow_always_scope.png',
     fullPage: true,

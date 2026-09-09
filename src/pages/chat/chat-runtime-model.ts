@@ -114,14 +114,11 @@ export function requestAllowsAlways(
 }
 
 /**
- * Always-allow is process-local and not saved.
- * Codex restarts after a turn, so remember usually lasts this turn only.
- * Grok / Kiro keep the same ACP process across turns.
+ * Always-allow is conversation-local and not saved. Codex, Grok, and Kiro
+ * all remember later cards in this conversation.
  */
-export function runtimeAllowAlwaysHintKey(agentId?: string | null): MessageKey {
-  return agentId === 'codex'
-    ? 'chat.runtime.allowAlwaysHintTurn'
-    : 'chat.runtime.allowAlwaysHint';
+export function runtimeAllowAlwaysHintKey(_agentId?: string | null): MessageKey {
+  return 'chat.runtime.allowAlwaysHint';
 }
 
 export function runtimeAllowAlwaysCopy(input: {

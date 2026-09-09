@@ -21,7 +21,7 @@ updated: 2026-09-09
 - Chat 各家能力与 [Chat 与 Agent](concepts/chat-and-agents.md) 一致：
   - **持续聊天流式手感**（Codex / Grok / Kiro / 新空 Claude）：活动会话约 80ms 读快照，正文仍是同一次读取的完整 `currentMessage`，不用字符串猜增量，也不把整段回复拆开假装逐字打出。首字前显示「正在想」，正文出现后「正在写」。有历史的 Claude 与其他旧会话仍是一次性发送；**新空 Claude** 走持续通道。
   - **新空 Codex 会话**：已接入 app-server 持续聊天（持续回复、命令确认、补充/停止、保存与同机重开）。B2 已落地会话模型/思考强度、最小操作菜单、本地图片附件与「用于本次」技能协议（不含计划模式与完整扩展管理）。工具条**不画**技能按钮：技能由 Codex 自动触发，或输入 `/` 动态菜单选用。Linux 真窗已验：图片、模型×思考强度、停止、关窗续聊、命令批准允许/拒绝、文件审批允许/拒绝。macOS 重开续聊仍有效。Windows 未宣称。文本问答的协议和界面已映射（`item/tool/requestUserInput` → 卡片 + 提交），但 Codex 0.148 Default / `on-request` 默认不发出该请求；见下方已知边界。文件审批已接线（允许/拒绝）。`workspace-write` 排除 `/tmp` 与 `$TMPDIR`：工作目录内的 `apply_patch` 直接写、不出卡片；写到工作目录外（含 `/tmp`）发出 `item/fileChange/requestApproval`，卡片「修改文件」，带「一直允许」。有协议里的 `diff` / `content` 时展示改动预览，只有路径则写「暂无改动预览」；点拒绝不写、点允许后写入。用 shell 写文件走命令批准。PATH 上的 Codex 若缺旁边的 `codex-code-mode-host`，`apply_patch` 会失败、不会出卡片。见 [B1](archive/chat-codex-b1.md)、[B2](archive/chat-codex-b2.md)。
-  - **新空 Grok 会话**：持续聊天（模型/思考、图片、后续轮排队），**不支持**为本轮指定「用于本次」技能，界面也不画可点的假按钮。真实窗口验收已通过。Chat ACP 默认 `--permission-mode default`（覆盖本机 always-approve），文件改动出确认卡片并带对方给的「一直允许」；会话自动批准才加 `--always-approve`。
+  - **新空 Grok 会话**：持续聊天（模型/思考、图片、后续轮排队），**不支持**为本轮指定「用于本次」技能，界面也不画可点的假按钮。真实窗口验收已通过。Chat 用顶层 `grok --permission-mode ask agent --no-leader stdio`（不要把 `--permission-mode` 写在 `agent` 后面，进程会退出），`session/new` 带 `_meta.yoloMode=false`，覆盖本机 always-approve；文件改动出确认卡片并带对方给的「一直允许」。会话自动批准才加 `--always-approve` 和 `_meta.yoloMode=true`。进程退出时界面写「Grok 已退出」，不写 Codex 的 app-server 字样。
   - **新空 Kiro 会话**：`kiro-cli acp` 持续通道（允许/拒绝、停止；生成时不能中途补充，可排队到下一轮）。真实窗口验收已通过（ACP 新对话；打印路径 HTTP 多轮为 Builder ID / 本机登录，不是企业 IdC）。旧对话保留原发送方式。
   - **其余 Agent 与旧会话**：仍走原发送方式。
   - **过程面板**：工具行用人话「正在读取 / 正在修改 / 正在执行」（完成则「已读取 / 已修改 / 已执行」），路径或命令跟在后面。工具名、状态和 JSON 进折叠的「细节」；命令、错误输出、退出码和状态事件仍在「运行详情」。
@@ -29,7 +29,7 @@ updated: 2026-09-09
   - **新空 Claude 会话（B3 首片）**：走 Claude Code `-p --input-format stream-json --output-format stream-json` 持续通道（同进程多轮、本地图片 base64、模型/思考强度参数）；**不支持**生成中补充；本片**不**接可点允许/拒绝（默认 `dontAsk`，危险模式 `bypassPermissions`）。有历史的旧 Claude 会话仍走 print+resume。print 路径在已经出过 assistant 正文后不再把最终 `result` 再拼进气泡（短回复不会同一句写两遍）；只有没见过 assistant 文本时才用 `result` 当正文。Linux 真窗短回复已验不双写。见 [Claude B3](archive/chat-claude-b3.md)。
   - **停止**：点停止后按钮保持「正在停止」并禁用，直到这一轮真正结束。运行时已经是 `cancelling` 时同样显示「正在停止」。取消请求落空时恢复可点。停止横幅标题「已停止」；`error=cancelled` 不把英文 `cancelled` 写在旁边，改用「已按你的要求停止。可恢复草稿后重发。」
   - **图片附件**：ChatRuntime 持续聊天（Codex / Grok / Kiro / 新空 Claude）露出「添加图片」；浏览器演示里新空 Claude 同样露出。有历史的旧 Claude 仍 print+resume、**无**图片按钮。普通文件 / `@` 未接。
-  - **允许 / 拒绝 / 一直允许**（仅 Codex / Grok / Kiro 持续聊天；Cursor 不在此列）。卡片始终有允许和拒绝。「一直允许」只在这次请求带了该选项时出现（Codex 命令/文件卡片会补上；Grok / Kiro 只认对方给的 `allow_always`，Kiro 常见是 `allow_always_tool`）。待处理请求上的选项会入库，快照或重开后卡片仍可点。点了「一直允许」之后，**三家都在本机记住后续确认**，只限当前这次进程，不写进数据库：Codex 通常是本轮（一轮结束会新起进程，会再问）；Grok / Kiro 同一条 ACP 进程可跨轮，进程退出后再问。点的时候仍把对方给的选项回传；后面没有允许选项的请求仍出卡片，不会造假按钮。Kiro 会话设置里的「完全访问权限」是另一条（启动时 `--trust-all-tools`），不是卡片上的「一直允许」。机制见 [Chat 与 Agent](concepts/chat-and-agents.md#允许-拒绝-一直允许)。
+  - **允许 / 拒绝 / 一直允许**（仅 Codex / Grok / Kiro 持续聊天；Cursor 不在此列）。卡片始终有允许和拒绝。「一直允许」只在这次请求带了该选项时出现（Codex 命令/文件卡片会补上；Grok / Kiro 只认对方给的 `allow_always`，Kiro 常见是 `allow_always_tool`）。待处理请求上的选项会入库，快照或重开后卡片仍可点。点了「一直允许」之后，**三家都在本机记住后续确认**，只限当前这次对话，不写进数据库：Codex 发给对方 `acceptForSession`，新一轮即使新起进程也不会再对同类命令/文件出卡；Grok / Kiro 同一条 ACP 进程可跨轮。点的时候仍把对方给的选项回传；后面没有允许选项的请求仍出卡片，不会造假按钮。Kiro 会话设置里的「完全访问权限」是另一条（启动时 `--trust-all-tools`），不是卡片上的「一直允许」。机制见 [Chat 与 Agent](concepts/chat-and-agents.md#允许-拒绝-一直允许)。
 
 ## Backend 边界
 

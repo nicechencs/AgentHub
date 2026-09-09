@@ -408,6 +408,13 @@ pub(crate) fn acp_session_prompt_params(session_id: &str, blocks: Vec<Value>) ->
     })
 }
 
+pub(crate) fn acp_session_new_params(cwd: &Path) -> Value {
+    json!({
+        "cwd": cwd.to_string_lossy(),
+        "mcpServers": [],
+    })
+}
+
 /// Codex `workspace-write` treats `/tmp` and `$TMPDIR` as writable unless
 /// excluded. Chat must ask before writing outside the conversation cwd.
 pub(crate) fn codex_workspace_write_sandbox_policy(cwd: &Path) -> Value {
@@ -425,7 +432,17 @@ pub(crate) fn grok_acp_stdio_args(
     effort: Option<&str>,
     always_approve: bool,
 ) -> Vec<String> {
-    let mut args = vec!["agent".to_string(), "--no-leader".to_string()];
+    // `--permission-mode` is a top-level `grok` flag. Putting it after
+    // `agent` is not a documented agent option and exits the process
+    // (GUI then shows a shared-transport "exited" error). CLI ask beats
+    // `~/.grok` always-approve for this launch.
+    let mut args = Vec::new();
+    if !always_approve {
+        args.push("--permission-mode".into());
+        args.push("ask".into());
+    }
+    args.push("agent".into());
+    args.push("--no-leader".into());
     if let Some(model) = model.map(str::trim).filter(|s| !s.is_empty()) {
         args.push("-m".into());
         args.push(model.to_string());
@@ -436,13 +453,23 @@ pub(crate) fn grok_acp_stdio_args(
     }
     if always_approve {
         args.push("--always-approve".into());
-    } else {
-        // CLI overrides ~/.grok always-approve so Chat can show cards.
-        args.push("--permission-mode".into());
-        args.push("default".into());
     }
     args.push("stdio".into());
     args
+}
+
+/// Grok `session/new`. `_meta.yoloMode` is the ACP always-approve switch;
+/// Chat must turn it off unless the conversation asked to skip cards.
+pub(crate) fn grok_session_new_params(cwd: &Path, always_approve: bool) -> Value {
+    json!({
+        "cwd": cwd.to_string_lossy(),
+        "mcpServers": [],
+        "_meta": if always_approve {
+            json!({ "yoloMode": true })
+        } else {
+            json!({ "yoloMode": false, "autoMode": false })
+        }
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

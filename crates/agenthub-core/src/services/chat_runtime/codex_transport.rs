@@ -226,6 +226,9 @@ impl CodexTransport {
                     "name": "agenthub-chat",
                     "version": env!("CARGO_PKG_VERSION"),
                 },
+                "clientCapabilities": {
+                    "fs": { "readTextFile": false, "writeTextFile": false }
+                },
                 "capabilities": {
                     "fs": { "readTextFile": false, "writeTextFile": false }
                 }
@@ -308,9 +311,7 @@ impl CodexTransport {
             args.push("--resume".into());
             args.push(session_id.to_string());
         }
-        Self::spawn_with(program, &args, cwd, None, false, Some(abort),
-            true,
-        )
+        Self::spawn_with(program, &args, cwd, None, false, Some(abort), true)
     }
 
     fn spawn_with(
@@ -764,14 +765,16 @@ impl CodexTransport {
             let wait = remaining.min(CHILD_POLL_INTERVAL);
             match self.wire_rx.recv_timeout(wait) {
                 Ok(event) => match event {
-                    WireEvent::Message(value) => match classify_message(value, self.claude_stream) {
-                        Ok(Some(message)) => return Ok(Some(message)),
-                        Ok(None) => continue,
-                        Err(error) => {
-                            self.shutdown();
-                            return Err(error);
+                    WireEvent::Message(value) => {
+                        match classify_message(value, self.claude_stream) {
+                            Ok(Some(message)) => return Ok(Some(message)),
+                            Ok(None) => continue,
+                            Err(error) => {
+                                self.shutdown();
+                                return Err(error);
+                            }
                         }
-                    },
+                    }
                     WireEvent::Eof => return Ok(Some(WireMessage::Eof)),
                     WireEvent::Error(error) => {
                         self.shutdown();
@@ -792,14 +795,16 @@ impl CodexTransport {
         loop {
             match self.wire_rx.try_recv() {
                 Ok(event) => match event {
-                    WireEvent::Message(value) => match classify_message(value, self.claude_stream) {
-                        Ok(Some(message)) => return Ok(Some(message)),
-                        Ok(None) => continue,
-                        Err(error) => {
-                            self.shutdown();
-                            return Err(error);
+                    WireEvent::Message(value) => {
+                        match classify_message(value, self.claude_stream) {
+                            Ok(Some(message)) => return Ok(Some(message)),
+                            Ok(None) => continue,
+                            Err(error) => {
+                                self.shutdown();
+                                return Err(error);
+                            }
                         }
-                    },
+                    }
                     WireEvent::Eof => return Ok(Some(WireMessage::Eof)),
                     WireEvent::Error(error) => {
                         self.shutdown();

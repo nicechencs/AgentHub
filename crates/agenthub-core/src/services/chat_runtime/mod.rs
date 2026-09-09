@@ -882,11 +882,12 @@ struct ActorWorker {
     session_effort: Option<String>,
     session_trust_all: Option<bool>,
     /// After the user picks session remember, later command/file approvals in
-    /// this live process are accepted without another card. Not persisted; a
-    /// new process asks again. Codex synthesizes the button. Grok / Kiro only
-    /// show it when the ACP request includes an `allow_always` kind (including
-    /// `allow_always_tool`). ACP keeps the process across turns, so the flag
-    /// survives a completed turn while that process is still open.
+    /// this conversation are accepted without another card. Not written to
+    /// SQLite; a new conversation asks again. Codex synthesizes the button
+    /// and is told `acceptForSession`. Grok / Kiro only show it when the ACP
+    /// request includes an `allow_always` kind (including `allow_always_tool`).
+    /// Codex starts a fresh process each turn, so the flag must outlive
+    /// `terminalize`. ACP usually keeps one process across turns.
     session_allow_always: bool,
 }
 
@@ -974,7 +975,7 @@ impl ActorWorker {
 
     fn spawn_codex(&self, program: &Path, cwd: &Path) -> Result<CodexTransport> {
         CodexTransport::spawn_interruptible(program, cwd, Arc::clone(&self.abort))
-            .map_err(map_transport)
+            .map_err(|error| map_transport(self.agent, error))
     }
 
     fn ensure_start_catalog(&mut self) -> Result<CatalogCache> {
@@ -1333,7 +1334,7 @@ impl ActorWorker {
                             }),
                             CODEX_REQUEST_TIMEOUT,
                         )
-                        .map_err(map_transport)?;
+                        .map_err(|error| map_transport(self.agent, error))?;
                     self.thread_id = Some(thread_id.to_string());
                     let _ = result;
                     t
@@ -1351,7 +1352,7 @@ impl ActorWorker {
                             }),
                             CODEX_REQUEST_TIMEOUT,
                         )
-                        .map_err(map_transport)?;
+                        .map_err(|error| map_transport(self.agent, error))?;
                     self.thread_id =
                         extract_id(&result, "thread").or_else(|| extract_id(&result, "id"));
                     t
@@ -1387,7 +1388,7 @@ impl ActorWorker {
                 }
                 let result = transport
                     .request("turn/start", params, CODEX_REQUEST_TIMEOUT)
-                    .map_err(map_transport)?;
+                    .map_err(|error| map_transport(self.agent, error))?;
                 self.turn_id = extract_id(&result, "turn").or_else(|| extract_id(&result, "id"));
                 let actual_run = self.turn_id.clone().unwrap_or_else(|| {
                     self.run_id
@@ -1509,7 +1510,7 @@ impl ActorWorker {
                         )
                     }
                 }
-                .map_err(map_transport)?
+                .map_err(|error| map_transport(self.agent, error))?
             };
 
             match plan {
@@ -1518,10 +1519,14 @@ impl ActorWorker {
                     let created = transport
                         .request(
                             "session/new",
-                            json!({ "cwd": cwd.to_string_lossy(), "mcpServers": [] }),
+                            if self.agent == AgentId::Grok {
+                                ops::grok_session_new_params(&cwd, trust_all)
+                            } else {
+                                ops::acp_session_new_params(&cwd)
+                            },
                             CODEX_REQUEST_TIMEOUT,
                         )
-                        .map_err(map_transport)?;
+                        .map_err(|error| map_transport(self.agent, error))?;
                     self.thread_id =
                         grok_session_id(&created).or_else(|| extract_id(&created, "session"));
                     if self.agent == AgentId::Kiro {
@@ -1564,7 +1569,7 @@ impl ActorWorker {
                     };
                     let value = transport
                         .request_discarding_history(method, load_params, CODEX_REQUEST_TIMEOUT)
-                        .map_err(map_transport)?;
+                        .map_err(|error| map_transport(self.agent, error))?;
                     if let Some(id) = grok_session_id(&value) {
                         self.thread_id = Some(id);
                     }
@@ -1607,7 +1612,7 @@ impl ActorWorker {
                     self.transport = None;
                     continue;
                 }
-                Err(error) => return Err(map_transport(error)),
+                Err(error) => return Err(map_transport(self.agent, error)),
             }
         }
     }
@@ -1657,10 +1662,12 @@ impl ActorWorker {
                 resume,
                 Arc::clone(&self.abort),
             )
-            .map_err(map_transport)?
+            .map_err(|error| map_transport(self.agent, error))?
         };
 
-        transport.send_raw_value(&prompt).map_err(map_transport)?;
+        transport
+            .send_raw_value(&prompt)
+            .map_err(|error| map_transport(self.agent, error))?;
 
         let run_id = self
             .run_id
@@ -1904,7 +1911,7 @@ impl ActorWorker {
         )?;
         let response_result = transport
             .respond(server_id, Ok(value))
-            .map_err(transport_error);
+            .map_err(|error| transport_error(self.agent, error));
         if let Err(error) = response_result {
             self.fail_runtime(AppError::message(
                 "chat.runtime.transport",
@@ -1979,7 +1986,7 @@ impl ActorWorker {
                 }),
                 CODEX_REQUEST_TIMEOUT,
             )
-            .map_err(transport_error)?;
+            .map_err(|error| transport_error(self.agent, error))?;
         self.store
             .set_last_steer_client_request_id(&self.conversation_id, client_request_id)?;
         let turn = self.repo.next_turn(&self.conversation_id)?;
@@ -2090,7 +2097,7 @@ impl ActorWorker {
                         AppError::message("chat.runtime.interrupted", "Codex process stopped")
                     })?
                     .respond(server_id, response)
-                    .map_err(map_transport)
+                    .map_err(|error| map_transport(self.agent, error))
             });
             if let Err(error) = response {
                 return self.complete_cancel(error);
@@ -2104,7 +2111,7 @@ impl ActorWorker {
                 if is_acp_runtime_agent(Some(self.agent)) {
                     transport
                         .notify("session/cancel", Some(json!({"sessionId": thread_id})))
-                        .map_err(map_transport)
+                        .map_err(|error| map_transport(self.agent, error))
                 } else {
                     transport
                         .request(
@@ -2113,7 +2120,7 @@ impl ActorWorker {
                             CODEX_REQUEST_TIMEOUT,
                         )
                         .map(|_| ())
-                        .map_err(map_transport)
+                        .map_err(|error| map_transport(self.agent, error))
                 }
             });
         match interrupt_result {
@@ -2147,7 +2154,7 @@ impl ActorWorker {
             let event = match event {
                 Ok(event) => event,
                 Err(codex_transport::CodexTransportError::Interrupted) => return Ok(()),
-                Err(error) => return Err(transport_error(error)),
+                Err(error) => return Err(transport_error(self.agent, error)),
             };
             match event {
                 Some(CodexEvent::Request { id, method, params }) => {
@@ -2170,7 +2177,7 @@ impl ActorWorker {
                     ) {
                         self.terminalize(
                             ChatMessageStatus::Cancelled,
-                            Some("Codex process stopped"),
+                            Some(&format!("{} 已退出", runtime_process_label(self.agent))),
                             RuntimePhase::Interrupted,
                             false,
                             true,
@@ -2225,7 +2232,7 @@ impl ActorWorker {
                         id,
                         Err(json!({ "code": -32001, "message": "stale session" })),
                     )
-                    .map_err(transport_error)?;
+                    .map_err(|error| transport_error(self.agent, error))?;
             }
             return Ok(());
         }
@@ -2238,7 +2245,9 @@ impl ActorWorker {
                 } else {
                     Err(json!({ "code": -32800, "message": "cancelled" }))
                 };
-                transport.respond(id, response).map_err(transport_error)?;
+                transport
+                    .respond(id, response)
+                    .map_err(|error| transport_error(self.agent, error))?;
             }
             return Ok(());
         }
@@ -2256,7 +2265,9 @@ impl ActorWorker {
                 } else {
                     Err(json!({ "code": -32800, "message": "cancelled" }))
                 };
-                transport.respond(id, response).map_err(transport_error)?;
+                transport
+                    .respond(id, response)
+                    .map_err(|error| transport_error(self.agent, error))?;
             }
             return Ok(());
         }
@@ -2276,7 +2287,7 @@ impl ActorWorker {
             if let Some(transport) = self.transport.as_mut() {
                 transport
                     .respond(id, Err(json!({"code": -32001, "message": "stale turn"})))
-                    .map_err(transport_error)?;
+                    .map_err(|error| transport_error(self.agent, error))?;
             }
             return Ok(());
         }
@@ -2348,10 +2359,13 @@ impl ActorWorker {
                             id,
                             Err(json!({"code": -32601, "message": "unsupported request"})),
                         )
-                        .map_err(transport_error)?;
+                        .map_err(|error| transport_error(self.agent, error))?;
                 }
                 self.emit_error(
-                    &format!("Codex 请求暂不支持：{method}"),
+                    &format!(
+                        "{} 请求暂不支持：{method}",
+                        runtime_process_label(self.agent)
+                    ),
                     self.live_phase(RuntimePhase::Running),
                 )?;
                 return Ok(());
@@ -2366,14 +2380,14 @@ impl ActorWorker {
                     if let Some(transport) = self.transport.as_mut() {
                         transport
                             .respond(id, Ok(response))
-                            .map_err(transport_error)?;
+                            .map_err(|error| transport_error(self.agent, error))?;
                     }
                     return Ok(());
                 }
             } else if let Some(transport) = self.transport.as_mut() {
                 transport
-                    .respond(id, Ok(json!({"decision": "accept"})))
-                    .map_err(transport_error)?;
+                    .respond(id, Ok(json!({"decision": "acceptForSession"})))
+                    .map_err(|error| transport_error(self.agent, error))?;
                 return Ok(());
             }
         }
@@ -2890,11 +2904,6 @@ impl ActorWorker {
         self.pending_prompt_id = None;
         self.permission_options.clear();
         self.file_change_items.clear();
-        if !is_acp_runtime_agent(Some(self.agent))
-            || !self.transport.as_ref().is_some_and(CodexTransport::is_open)
-        {
-            self.session_allow_always = false;
-        }
         if let Some(message) = error {
             if let Err(learn_err) = self
                 .store
@@ -3227,6 +3236,7 @@ fn codex_session_permission_options() -> Vec<RuntimePermissionOption> {
 fn codex_approval_decision(decision: &str) -> &'static str {
     match decision {
         "decline" => "decline",
+        "accept_always" => "acceptForSession",
         _ => "accept",
     }
 }
@@ -3286,28 +3296,42 @@ fn acp_auto_allow_response(options: &[RuntimePermissionOption]) -> Option<Value>
         .or_else(|| acp_permission_reply(options, "accept").ok())
 }
 
-fn transport_error(error: codex_transport::CodexTransportError) -> AppError {
-    AppError::message("chat.runtime.transport", redact_text(&error.to_string()))
+fn runtime_process_label(agent: AgentId) -> &'static str {
+    match agent {
+        AgentId::Grok => "Grok",
+        AgentId::Kiro => "Kiro",
+        AgentId::Claude => "Claude",
+        _ => "Codex",
+    }
 }
 
-fn map_transport(error: codex_transport::CodexTransportError) -> AppError {
+fn transport_error(agent: AgentId, error: codex_transport::CodexTransportError) -> AppError {
+    AppError::message(
+        "chat.runtime.transport",
+        redact_text(&transport_user_message(agent, &error)),
+    )
+}
+
+fn map_transport(agent: AgentId, error: codex_transport::CodexTransportError) -> AppError {
     if matches!(error, codex_transport::CodexTransportError::Interrupted) {
         cancelled_error()
     } else {
         AppError::message(
             "chat.runtime.transport",
-            redact_text(&transport_user_message(&error)),
+            redact_text(&transport_user_message(agent, &error)),
         )
     }
 }
 
-fn transport_user_message(error: &codex_transport::CodexTransportError) -> String {
+fn transport_user_message(agent: AgentId, error: &codex_transport::CodexTransportError) -> String {
     let text = error.to_string();
     if text.contains("stdout JSON line exceeds") {
-        "图片太大，请换一张更小的图".into()
-    } else {
-        text
+        return "图片太大，请换一张更小的图".into();
     }
+    if matches!(error, codex_transport::CodexTransportError::Exited) {
+        return format!("{} 已退出", runtime_process_label(agent));
+    }
+    text.replacen("codex app-server", runtime_process_label(agent), 1)
 }
 
 fn cancelled_error() -> AppError {

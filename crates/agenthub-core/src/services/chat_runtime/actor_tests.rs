@@ -328,6 +328,9 @@ while IFS= read -r line; do
       printf '%s\n' '{"id":2,"result":{}}'
       printf '%s\n' '{"method":"turn/completed","params":{"status":"interrupted"}}'
       ;;
+    *'"decision":"acceptForSession"'*)
+      printf '%s\n' acceptForSession >> "$log"
+      ;;
     *'"decision":"accept"'*)
       printf '%s\n' accept >> "$log"
       ;;
@@ -756,7 +759,9 @@ fn apply_patch_approval_alias_becomes_file_request() {
     assert_eq!(snapshot.pending_requests[0].detail, "/tmp/example.txt");
     assert_eq!(snapshot.pending_requests[0].file_changes.len(), 1);
     assert_eq!(
-        snapshot.pending_requests[0].file_changes[0].preview.as_deref(),
+        snapshot.pending_requests[0].file_changes[0]
+            .preview
+            .as_deref(),
         Some("ok")
     );
 }
@@ -842,9 +847,14 @@ fn acp_permission_with_file_operation_keeps_protocol_diff() {
     assert_eq!(snapshot.pending_requests[0].kind, RuntimeRequestKind::File);
     assert_eq!(snapshot.pending_requests[0].title, "修改文件");
     assert_eq!(snapshot.pending_requests[0].file_changes.len(), 1);
-    assert_eq!(snapshot.pending_requests[0].file_changes[0].path, "README.md");
     assert_eq!(
-        snapshot.pending_requests[0].file_changes[0].preview.as_deref(),
+        snapshot.pending_requests[0].file_changes[0].path,
+        "README.md"
+    );
+    assert_eq!(
+        snapshot.pending_requests[0].file_changes[0]
+            .preview
+            .as_deref(),
         Some("@@ -1,2 +1,3 @@\n hello\n+world\n")
     );
 }
@@ -1055,7 +1065,97 @@ fn codex_allow_always_accepts_and_auto_approves_later_command() {
         .is_empty());
     std::thread::sleep(Duration::from_millis(80));
     let wire = std::fs::read_to_string(log).unwrap();
-    assert!(wire.lines().any(|line| line == "accept"));
+    assert!(
+        wire.lines().any(|line| line == "acceptForSession"),
+        "Codex remember must send acceptForSession: {wire}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn codex_allow_always_survives_turn_and_later_file_path() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "codex-file-always");
+    let mut worker = worker(&db, "codex-file-always");
+    worker.store.enable_if_new("codex-file-always").unwrap();
+    start_placeholder(&mut worker);
+    let (_directory, transport, log) = fake_transport();
+    worker.transport = Some(transport);
+    worker
+        .server_request(
+            json!("file-1"),
+            "item/fileChange/requestApproval",
+            &json!({
+                "turnId": "run-1",
+                "changes": [{"path": "/tmp/agenthub-always-allow-codex-347.txt"}]
+            }),
+        )
+        .unwrap();
+    let first = worker.store.snapshot("codex-file-always", None).unwrap();
+    assert_eq!(first.pending_requests[0].kind, RuntimeRequestKind::File);
+    worker
+        .reply(RuntimeReply {
+            conversation_id: "codex-file-always".into(),
+            run_id: "run-1".into(),
+            request_id: first.pending_requests[0].id.clone(),
+            client_request_id: "always-file-1".into(),
+            decision: Some(RuntimeDecision::AllowAlways),
+            answers: None,
+        })
+        .unwrap();
+    assert!(worker.session_allow_always);
+    worker
+        .turn_completed(&json!({"status": "completed"}))
+        .unwrap();
+    assert!(
+        worker.session_allow_always,
+        "Codex remember must survive a completed turn"
+    );
+    let (_directory2, transport2, log2) = fake_transport();
+    worker.transport = Some(transport2);
+    worker
+        .store
+        .set_state(
+            "codex-file-always",
+            RuntimePhase::Running,
+            Some("run-2"),
+            worker.thread_id.as_deref(),
+            Some("turn-2"),
+            worker.chat_turn,
+            worker.message_id.as_deref(),
+        )
+        .unwrap();
+    worker.run_id = Some("run-2".into());
+    worker
+        .server_request(
+            json!("file-2"),
+            "item/fileChange/requestApproval",
+            &json!({
+                "turnId": "run-2",
+                "changes": [{"path": "/tmp/agenthub-always-allow-codex-347-b.txt"}]
+            }),
+        )
+        .unwrap();
+    assert!(
+        worker
+            .store
+            .snapshot("codex-file-always", None)
+            .unwrap()
+            .pending_requests
+            .is_empty(),
+        "later out-of-cwd write must stay auto-approved"
+    );
+    std::thread::sleep(Duration::from_millis(80));
+    let first_wire = std::fs::read_to_string(log).unwrap();
+    let later_wire = std::fs::read_to_string(log2).unwrap();
+    assert!(
+        first_wire.lines().any(|line| line == "acceptForSession"),
+        "first remember must send acceptForSession: {first_wire}"
+    );
+    assert!(
+        later_wire.lines().any(|line| line == "acceptForSession"),
+        "later auto-allow must send acceptForSession: {later_wire}"
+    );
 }
 
 #[cfg(unix)]
@@ -1146,7 +1246,10 @@ fn acp_allow_always_forwards_option_and_auto_approves_later_in_live_process() {
             "{agent:?} remember must survive a completed ACP turn"
         );
         assert!(
-            worker.transport.as_ref().is_some_and(CodexTransport::is_open),
+            worker
+                .transport
+                .as_ref()
+                .is_some_and(CodexTransport::is_open),
             "{agent:?}"
         );
 
@@ -1911,7 +2014,6 @@ fn stop_while_waiting_for_approval_logs_stop_ok() {
     );
 }
 
-
 #[test]
 fn claude_stream_result_completes_turn_and_keeps_session() {
     let db = Database::open_in_memory().unwrap();
@@ -1974,5 +2076,9 @@ fn claude_stream_result_completes_turn_and_keeps_session() {
     assert_eq!(snapshot.phase, RuntimePhase::Completed);
     let message = snapshot.current_message.unwrap();
     assert_eq!(message.status, ChatMessageStatus::Ok);
-    assert!(message.content.contains("PONG"), "content={}", message.content);
+    assert!(
+        message.content.contains("PONG"),
+        "content={}",
+        message.content
+    );
 }

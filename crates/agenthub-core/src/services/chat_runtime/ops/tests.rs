@@ -397,10 +397,10 @@ fn grok_acp_stdio_asks_unless_session_always_approve() {
     assert_eq!(
         grok_acp_stdio_args(None, None, false),
         vec![
+            "--permission-mode".to_string(),
+            "ask".to_string(),
             "agent".to_string(),
             "--no-leader".to_string(),
-            "--permission-mode".to_string(),
-            "default".to_string(),
             "stdio".to_string()
         ]
     );
@@ -417,6 +417,18 @@ fn grok_acp_stdio_asks_unless_session_always_approve() {
             "stdio".to_string()
         ]
     );
+}
+
+#[test]
+fn grok_session_new_disables_yolo_unless_conversation_skips_cards() {
+    let cwd = std::path::Path::new("/workspace/project");
+    let ask = grok_session_new_params(cwd, false);
+    assert_eq!(ask["cwd"], "/workspace/project");
+    assert_eq!(ask["_meta"]["yoloMode"], false);
+    assert_eq!(ask["_meta"]["autoMode"], false);
+    let skip = grok_session_new_params(cwd, true);
+    assert_eq!(skip["_meta"]["yoloMode"], true);
+    assert!(skip["_meta"].get("autoMode").is_none());
 }
 
 #[test]
@@ -443,7 +455,6 @@ fn grok_prompt_blocks_embed_local_image() {
         base64::engine::general_purpose::STANDARD.encode(b"png-bytes")
     );
 }
-
 
 #[test]
 fn claude_user_message_embeds_base64_image() {
