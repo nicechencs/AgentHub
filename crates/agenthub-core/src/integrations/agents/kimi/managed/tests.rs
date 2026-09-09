@@ -74,3 +74,33 @@ api_key = "sk-x"
         "must not overwrite an explicit type"
     );
 }
+
+#[test]
+fn complete_live_toml_keeps_custom_relay_model() {
+    let mut doc: DocumentMut = r#"
+default_model = "grok-4.6"
+default_provider = "moonshot"
+
+[providers.moonshot]
+base_url = "https://mytokens.cc/v1"
+api_key = "sk-x"
+"#
+    .parse()
+    .unwrap();
+    complete_kimi_live_toml(&mut doc).unwrap();
+    assert_eq!(doc["default_model"].as_str(), Some("grok-4.6"));
+    assert_eq!(
+        doc["providers"]["moonshot"]["type"].as_str(),
+        Some("openai")
+    );
+    assert_eq!(
+        doc["models"]["grok-4.6"]["model"].as_str(),
+        Some("grok-4.6")
+    );
+    assert_eq!(
+        doc["models"]["grok-4.6"]["provider"].as_str(),
+        Some("moonshot")
+    );
+    let dumped = doc.to_string();
+    assert!(!dumped.contains("kimi-k2"), "{dumped}");
+}

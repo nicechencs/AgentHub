@@ -67,7 +67,9 @@ export function listRemoteModelsForPicker(
   if (isLoopbackHttpUrl(baseUrl)) return list;
   const filtered = filterRemoteModelsForAgent(agentId, ids);
   if (filtered.length > 0) return filtered;
-  if (list.every((id) => looksLikeGrokModel(id))) return [];
+  // Brand filter matched nothing. Keep the upstream catalog for custom
+  // OpenAI-compatible relays (e.g. Kimi CLI on a grok-only mytokens key).
+  // Loopback already returned above; inventing kimi-k2 here would 404.
   return list;
 }
 

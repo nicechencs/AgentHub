@@ -77,7 +77,13 @@ describe('filterRemoteModelsForAgent', () => {
   it('still offers fetched ids when none match the Agent family', () => {
     const ids = ['claude-sonnet-4', 'gpt-4.1'];
     expect(listRemoteModelsForPicker('kimi', ids, 'http://example.test/v1')).toEqual(ids);
-    expect(listRemoteModelsForPicker('kimi', ['xai/grok-4.6'], 'http://example.test/v1')).toEqual([]);
+    // Custom relay with only grok ids: keep them so Kimi can select an available model.
+    expect(listRemoteModelsForPicker('kimi', ['xai/grok-4.6'], 'http://example.test/v1')).toEqual([
+      'xai/grok-4.6',
+    ]);
+    expect(
+      listRemoteModelsForPicker('kimi', ['grok-4.6', 'grok-4.5'], 'https://mytokens.cc/v1'),
+    ).toEqual(['grok-4.6', 'grok-4.5']);
   });
 });
 
