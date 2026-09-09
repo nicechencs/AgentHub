@@ -40,7 +40,7 @@ updated: 2026-09-09
 - Usage 只读解析本地 Agent 会话或日志；优先使用日志中的官方成本字段，否则使用离线内嵌价表估算。运行时不联网拉取价格，也不做汇率换算。总览趋势可按 Agent 或模型切换；悬停同时看 token 和费用。Grok 用量把 `grok-4.6` 与 `grok-4.6-build`（以及 `[grok]` / `xai/` 前缀）当成同一个公开模型。
 - Skills 页分用户技能、项目技能和市场。用户技能仍用共享目录 `~/.agents/skills/`，并可启用到各工具。安装对话框支持本地目录、系统文件窗口选择的 zip、或 git 地址（需含 `SKILL.md`）；只写入共享库，不会自动启用。项目技能从项目页已识别的工作区下拉选择，读写该项目的 `.agents/skills/`（列表也会带上 `.claude/skills` 等已有目录），安装对话框同一套来源。配置切换在修改前创建备份。Linux 真窗已走完：系统文件窗口选 zip（标题 Choose a skill zip / 选择技能 zip，ZIP 过滤）→ 源字段填入路径 → 安装写入共享库且不自动启用。
 - MCP 页只读扫描已知 MCP server 配置；`Capability::Mcp` 对全部内置 Agent 仍为 Planned。见 [MCP inventory](reference/mcp-inventory.md)。
-- 插件页 `/plugins` 列出 Claude / Grok / Pi 的 plugin / extension 包。Claude / Grok 优先官方 CLI JSON，否则读 live 目录；Pi 读用户 `settings.json` 的 `packages`。Pi 对照本机版本与配置里的指定版本：指定了版本的 npm 包在 Pi 更新扩展时会跳过；未安装或两者不一致会在列表标出。Claude / Grok 配置里有、本机目录没有的包标未安装，不按 Pi 的指定版本规则判断，也不查商店里是否有新版本。本页不查线上最新。Claude / Grok 已装包可启用/停用，并可安装/卸载（Grok 走官方市场名、git 或本地路径，确认后才带 `--trust`；Claude 走 `name@marketplace` 与 `-y`）。卸载默认保留插件数据目录。没有 `Capability::Plugins`。Codex 仍为 Planned；Cursor / Kimi / WorkBuddy / DSH / ZCode / Kiro 为 Unsupported。见 [插件、MCP 与技能](concepts/plugins-and-mcp.md)。
+- 插件页 `/plugins` 列出 Claude / Grok / Pi 的 plugin / extension 包。Claude / Grok 优先官方 CLI JSON，否则读 live 目录；Pi 读用户 `settings.json` 的 `packages`。Pi 对照本机版本与配置里的指定版本：指定了版本的 npm 包在 Pi 更新扩展时会跳过；未安装或两者不一致会在列表标出。Claude / Grok 配置里有、本机目录没有的包标未安装，不按 Pi 的指定版本规则判断，也不查商店里是否有新版本。本页不查线上最新。Claude / Grok 已装包可启用/停用，并可安装/卸载（Grok 走官方市场名、git 或本地路径，确认后才带 `--trust`；Claude 走 `name@marketplace` 与 `-y`）。卸载默认保留插件数据目录。Linux 真窗已验 Claude / Grok 安装与卸载（隔离目录 + 官方 CLI；点列表行打开详情再卸载）。没有 `Capability::Plugins`。Codex 仍为 Planned；Cursor / Kimi / WorkBuddy / DSH / ZCode / Kiro 为 Unsupported。见 [插件、MCP 与技能](concepts/plugins-and-mcp.md)。
 
 ## 验证与发布
 
@@ -54,6 +54,7 @@ updated: 2026-09-09
 
 ## 已知边界
 
+- 验收剩余（不从提案推导新任务）：Codex 文本问答要产品决定（见下，未默认打开上游开关）；Windows 上的 Codex 对话真窗尚未宣称；Kiro 企业 IdC / `profileArn` / `runtime.*.kiro.dev` 真窗未验（登录里带上区域和 profile ≠ 已验收）。
 - Codex 文本问答：Chat 已能处理 `item/tool/requestUserInput` 并提交答案。本机 Codex 0.148 在 Default / `on-request` 下会把模型对 `request_user_input` 的调用打回「unavailable in Default mode」，因此产品会话发不出问答卡片。进程级 `--enable default_mode_request_user_input`（不写用户 `config.toml`）可以逼出该请求；该开关在 Codex 侧是 under development、默认关闭，开启后 Codex 会警告行为不完整。计划模式也能用该工具，但需要 `experimentalApi`，且计划模式仍是 B2 范围外。未把该开关做成产品默认，也未造假问答入口。
 - `agenthub-adapterd` sidecar 目标架构尚未替代当前桌面进程内的路由运行时。
 - 本机同口授权池已作为默认 Routes 能力打开：每个目标 Agent/surface 一个默认池，共用 loopback 入口和本机令牌；`GET /models` 与 dispatch 共用 resolver；默认 `priority_failover`；官方直连不自动入池。混合供应商复合路由和 Codex↔Grok 双向 Responses 仍是实验开关、默认关闭。已保存的本机入口和 Responses 格式（Codex 或 Grok）必须与当前端点一致，否则准备启动时失败，不会悄悄改成直通。现行契约见 [连接与路由](concepts/connections-and-routing.md) 和 [本机 Routes API](reference/local-route-api.md)；设计稿见 [本机同口授权池（归档）](archive/unified-loopback-pool.md)。
