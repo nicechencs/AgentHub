@@ -104,3 +104,36 @@ api_key = "sk-x"
     let dumped = doc.to_string();
     assert!(!dumped.contains("kimi-k2"), "{dumped}");
 }
+
+#[test]
+fn complete_live_toml_prunes_stale_model_aliases() {
+    let mut doc: DocumentMut = r#"
+default_model = "grok-4.6"
+default_provider = "moonshot"
+
+[providers.moonshot]
+base_url = "https://mytokens.cc/v1"
+api_key = "sk-x"
+
+[models."g"]
+provider = "moonshot"
+model = "g"
+
+[models."grok-4.6"]
+provider = "moonshot"
+model = "grok-4.6"
+
+[models."grok-4.6rok-4.6"]
+provider = "moonshot"
+model = "grok-4.6rok-4.6"
+"#
+    .parse()
+    .unwrap();
+    complete_kimi_live_toml(&mut doc).unwrap();
+    let models = doc["models"].as_table().expect("models table");
+    assert!(models.get("grok-4.6").is_some());
+    assert!(models.get("g").is_none());
+    assert!(models.get("grok-4.6rok-4.6").is_none());
+    assert_eq!(models.len(), 1);
+    assert_eq!(doc["default_model"].as_str(), Some("grok-4.6"));
+}

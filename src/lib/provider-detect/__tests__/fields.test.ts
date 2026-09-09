@@ -691,6 +691,78 @@ describe('provider-detect fields', () => {
     expect(out).not.toContain('kimi-k2');
   });
 
+  it('Kimi applyFormVars typing path keeps only the current model alias', () => {
+    const src = [
+      'default_model = "kimi-k2"',
+      'default_provider = "moonshot"',
+      '',
+      '[providers.moonshot]',
+      'type = "openai"',
+      'base_url = "https://mytokens.cc/v1"',
+      'api_key = "***"',
+      '',
+      '[hooks]',
+      'enabled = true',
+      '',
+      '[models."kimi-k2"]',
+      'provider = "moonshot"',
+      'model = "kimi-k2"',
+      '',
+    ].join('\n');
+    let text = src;
+    const prefixes = ['g', 'gr', 'gro', 'grok', 'grok-', 'grok-4', 'grok-4.', 'grok-4.6'];
+    for (const model of prefixes) {
+      text = applyFormVars('kimi', text, 'toml', {
+        ...EMPTY_FORM_VARS,
+        model,
+        baseUrl: 'https://mytokens.cc/v1',
+        providerSlug: 'moonshot',
+        apiKey: '***',
+      });
+    }
+    expect(text).toContain('default_model = "grok-4.6"');
+    expect(text.match(/^\s*default_model\s*=/gm)).toHaveLength(1);
+    expect(text).toContain('[models."grok-4.6"]');
+    expect(text).toContain('[hooks]');
+    expect(text).toContain('enabled = true');
+    expect(text).not.toMatch(/\[models\."g"\]/);
+    expect(text).not.toMatch(/\[models\."gr"\]/);
+    expect(text).not.toContain('[models."kimi-k2"]');
+    expect(text.match(/\[models\.[^\]]+\]/g)).toEqual(['[models."grok-4.6"]']);
+  });
+
+  it('replaces leftover Kimi default_model lines and prefix model tables in one write', () => {
+    const src = [
+      'default_model = "g"',
+      'default_model = "grok-4.6rok-4.6"',
+      'default_provider = "moonshot"',
+      '',
+      '[providers.moonshot]',
+      'base_url = "https://mytokens.cc/v1"',
+      'api_key = "***"',
+      '',
+      '[models."g"]',
+      'provider = "moonshot"',
+      'model = "g"',
+      '',
+      '[models."grok-4.6rok-4.6"]',
+      'provider = "moonshot"',
+      'model = "grok-4.6rok-4.6"',
+      '',
+    ].join('\n');
+    const out = applyFormVars('kimi', src, 'toml', {
+      ...EMPTY_FORM_VARS,
+      model: 'grok-4.6',
+      baseUrl: 'https://mytokens.cc/v1',
+      providerSlug: 'moonshot',
+      apiKey: '***',
+    });
+    expect(out).toContain('default_model = "grok-4.6"');
+    expect(out.match(/^\s*default_model\s*=/gm)).toHaveLength(1);
+    expect(out).not.toContain('grok-4.6rok-4.6');
+    expect(out.match(/\[models\.[^\]]+\]/g)).toEqual(['[models."grok-4.6"]']);
+  });
+
   it('backfills DeepSeek provider and strips /anthropic from the service URL', () => {
     const src = JSON.stringify({
       provider: 'deepseek-official',

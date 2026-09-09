@@ -85,6 +85,14 @@ describe('filterRemoteModelsForAgent', () => {
       listRemoteModelsForPicker('kimi', ['grok-4.6', 'grok-4.5'], 'https://mytokens.cc/v1'),
     ).toEqual(['grok-4.6', 'grok-4.5']);
   });
+
+  it('keeps the full custom-relay catalog even when a kimi/moonshot id is present', () => {
+    const ids = ['kimi-k2', 'grok-4.6', 'gpt-4.1'];
+    expect(listRemoteModelsForPicker('kimi', ids, 'https://mytokens.cc/v1')).toEqual(ids);
+    expect(listRemoteModelsForPicker('kimi', ids, 'https://mytokens.cc/v1')).toContain('grok-4.6');
+    expect(listRemoteModelsForPicker('kimi', ids, 'https://api.moonshot.cn/v1')).toEqual(['kimi-k2']);
+    expect(listRemoteModelsForPicker('kimi', ids, 'https://api.moonshot.ai/v1')).toEqual(['kimi-k2']);
+  });
 });
 
 describe('parseOpenAiModelList', () => {
