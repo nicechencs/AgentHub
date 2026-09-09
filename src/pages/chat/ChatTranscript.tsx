@@ -12,6 +12,7 @@ import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { StatusPin } from '@/components/shared/StatusPin';
 import { Button } from '@/components/ui/button';
+import { Hint } from '@/components/ui/tooltip';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { agentDisplayName } from '@/config/agents';
 import { processKey, type ProcessMap } from '@/lib/chat-process';
@@ -193,18 +194,16 @@ function EmptyTranscriptStart({
   const starters = chatStarterActions();
   const blocker = firstBlocker ? blockerCopy(t, firstBlocker) : null;
   return (
-    <div className="flex h-full flex-col items-center justify-center py-10">
-      <div className="w-full max-w-3xl text-center">
-        <p className="text-display font-semibold tracking-tight text-primary">{t('chat.transcript.start')}</p>
-        <p className="mt-2 text-body text-muted">
+    <div className="flex h-full flex-col justify-end px-1 pb-3 pt-8">
+      <div className="w-full">
+        <p className="text-body text-muted">
           {t('chat.transcript.identity', { agent: agentLabel, project: projectLabel })}
         </p>
         {blocker ? (
-          <>
-            <p className="mt-3 text-body text-secondary">{blocker.text}</p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <p className="text-body text-secondary">{blocker.text}</p>
             <Button
               size="sm"
-              className="mt-4"
               onClick={() => {
                 if (!firstBlocker) return;
                 onBlockerAction?.(blockerPrimaryTarget(firstBlocker));
@@ -212,34 +211,36 @@ function EmptyTranscriptStart({
             >
               {blocker.primaryAction}
             </Button>
-          </>
+          </div>
         ) : !sending ? (
-          <div
-            className="mt-6 grid grid-cols-1 gap-2 sm:grid-cols-2"
-            role="group"
-            aria-label={t('chat.transcript.startersAria')}
-          >
-            {starters.map((action) => {
-              const key = chatStarterCopyKey(action.id);
-              if (!key) return null;
-              const Icon = STARTER_ICONS[key];
-              const title = t(`chat.transcript.starter.${key}` as never);
-              return (
-                <button
-                  key={action.id}
-                  type="button"
-                  aria-label={title}
-                  className="rounded-card border border-border bg-panel p-3 text-left shadow-xs hover:bg-hover"
-                  onClick={() => onPickStarter?.(action)}
-                >
-                  <Icon className="mb-2 h-4 w-4 text-accent" aria-hidden />
-                  <p className="text-body font-medium text-primary">{title}</p>
-                  <p className="mt-1 text-meta text-muted">
-                    {t(`chat.transcript.starter.${key}Hint` as never)}
-                  </p>
-                </button>
-              );
-            })}
+          <div className="mt-3">
+            <p className="mb-2 text-meta text-muted">{t('chat.transcript.startersHint')}</p>
+            <div
+              className="flex flex-wrap gap-2"
+              role="group"
+              aria-label={t('chat.transcript.startersAria')}
+            >
+              {starters.map((action) => {
+                const key = chatStarterCopyKey(action.id);
+                if (!key) return null;
+                const Icon = STARTER_ICONS[key];
+                const title = t(`chat.transcript.starter.${key}` as never);
+                const hint = t(`chat.transcript.starter.${key}Hint` as never);
+                return (
+                  <Hint key={action.id} label={hint}>
+                    <button
+                      type="button"
+                      aria-label={title}
+                      className="inline-flex items-center gap-1.5 rounded-btn border border-border bg-panel px-2.5 py-1.5 text-body text-primary shadow-xs hover:bg-hover"
+                      onClick={() => onPickStarter?.(action)}
+                    >
+                      <Icon className="h-3.5 w-3.5 text-accent" aria-hidden />
+                      {title}
+                    </button>
+                  </Hint>
+                );
+              })}
+            </div>
           </div>
         ) : null}
       </div>

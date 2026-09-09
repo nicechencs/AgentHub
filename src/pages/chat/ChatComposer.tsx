@@ -106,6 +106,7 @@ export function ChatComposer({
   paneHeight = null,
   paneRef,
   showBlockerBanner = true,
+  focusNonce = 0,
 }: {
   draft: string;
   setDraft: (v: string) => void;
@@ -131,6 +132,7 @@ export function ChatComposer({
   queuedFollowUp?: string | null;
   queuedFollowUpCount?: number;
   onClearQueuedFollowUp?: () => void;
+  focusNonce?: number;
   onCancel: () => void;
   onSelectAgent: (id: AgentKey) => void;
   onSwitchConnection: (ticketId: string) => void;
@@ -194,6 +196,11 @@ export function ChatComposer({
   useLayoutEffect(() => {
     syncTextareaHeight();
   }, [draft, fillHeight, syncTextareaHeight]);
+
+  useEffect(() => {
+    if (!focusNonce) return;
+    textareaRef.current?.focus();
+  }, [focusNonce]);
 
   useEffect(() => {
     const onResize = () => syncTextareaHeight();

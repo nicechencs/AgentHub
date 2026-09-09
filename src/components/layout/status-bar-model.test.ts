@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { translate } from '@/lib/i18n';
 import {
   statusBarForwardDotClass,
   statusBarForwardKind,
@@ -27,11 +28,17 @@ describe('statusBarForwardKind', () => {
 });
 
 describe('statusBarForward copy keys', () => {
-  it('reuses existing runtime labels', () => {
-    expect(statusBarForwardMessageKey('running')).toBe('routes.runtime.running');
-    expect(statusBarForwardMessageKey('stopped')).toBe('routes.runtime.stopped');
-    expect(statusBarForwardMessageKey('restarting')).toBe('routes.localForward.restarting');
-    expect(statusBarForwardMessageKey('unavailable')).toBe('routes.runtime.unavailable');
+  it('uses chrome labels that do not collide with chat generating', () => {
+    expect(statusBarForwardMessageKey('running')).toBe('chrome.localForwardRunning');
+    expect(statusBarForwardMessageKey('stopped')).toBe('chrome.localForwardStopped');
+    expect(statusBarForwardMessageKey('restarting')).toBe('chrome.localForwardRestarting');
+    expect(statusBarForwardMessageKey('unavailable')).toBe('chrome.localForwardUnavailable');
+    expect(translate('zh', 'chrome.localForwardRunning')).toBe('已开启');
+    expect(translate('zh', 'chrome.localForwardRunning')).not.toBe('运行中');
+    expect(translate('zh', 'chat.process.running')).toBe('生成中');
+    expect(translate('zh', 'chat.toast.queuedAfterTurn')).toBe(
+      translate('zh', 'chat.composer.sendAfterTurn'),
+    );
   });
 
   it('does not use color alone: every kind still has a text key', () => {

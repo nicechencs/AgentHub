@@ -24,7 +24,7 @@ function agentDotLabel(
   return `${meta.name}${ver}${up}`;
 }
 
-/** 底栏右侧：已安装 Agent 圆点，点进去是 Agent 页。 */
+/** 底栏左侧：已安装 Agent 圆点，点进去是 Agent 页。不是当前对话的 Agent。 */
 export function AgentStatusStrip() {
   const { t } = useI18n();
   const { statuses: agents } = useAgentStatusesOptional();
@@ -40,6 +40,7 @@ export function AgentStatusStrip() {
       to="/agents"
       className={cn(pageRhythm.statusBarItem, 'min-w-0')}
       aria-label={fractionLabel}
+      title={fractionLabel}
     >
       <span className="flex min-w-0 flex-wrap items-center gap-1">
         {stats.orderedInstalledMetas.map((meta) => {

@@ -6,6 +6,7 @@ import {
   grokLegacyContinueKind,
   grokShouldFlushFollowUp,
   prependQueuedFollowUp,
+  queuedFollowUpCount,
   queuedFollowUpLabel,
   restoreQueuedFollowUpOnCancel,
   shiftQueuedFollowUp,
@@ -84,6 +85,9 @@ describe('busy composer send', () => {
     expect(queuedFollowUpLabel(prependQueuedFollowUp(['第三条'], '第二条'))).toBe('第二条；第三条');
     expect(appendQueuedFollowUp(['已排队'], '  ')).toEqual(['已排队']);
     expect(queuedFollowUpLabel([])).toBeNull();
+    expect(queuedFollowUpCount([])).toBe(0);
+    expect(queuedFollowUpCount(['第二条', '第三条'])).toBe(2);
+    expect(queuedFollowUpCount(['  ', '第三条'])).toBe(1);
     expect(shiftQueuedFollowUp([])).toBeNull();
   });
 
