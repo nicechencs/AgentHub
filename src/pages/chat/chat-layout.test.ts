@@ -77,8 +77,10 @@ describe('chat layout wiring', () => {
     expect(composer).toContain('composerEnterShouldSubmit');
     expect(composer).toContain('composerShortcutMessageKey');
     expect(composer).toContain('data-composer-shortcut');
-    expect(composer).toContain('composerQueuedFollowUpView');
-    expect(composer).toContain('chat.composer.queuedCount');
+    expect(composer).toContain('ChatQueuedFollowUpList');
+    expect(composer).toContain('queuedFollowUps');
+    expect(source('ChatQueuedFollowUpList.tsx')).toContain('chat.composer.queuedCount');
+    expect(source('ChatQueuedFollowUpList.tsx')).toContain('cancelQueuedItem');
     expect(composer).toContain('keepComposerFocus');
     expect(composer).toContain('enterKeyHint="send"');
     expect(source('use-chat-page.ts')).toContain('composerEnterShouldSubmit');
@@ -246,13 +248,18 @@ describe('chat layout wiring', () => {
 
   it('offers always-allow on runtime permission cards', () => {
     const requests = source('ChatRuntimeRequests.tsx');
-    expect(requests).toContain('requestAllowsAlways');
+    expect(requests).toContain('runtimeAllowAlwaysCopy');
     expect(requests).toContain("submit('allow_always')");
     expect(requests).toContain('chat.runtime.allowAlways');
     expect(requests).toContain('runtimeRequestTitle');
-    expect(requests).toContain('chat.runtime.allowAlwaysHint');
+    expect(requests).toContain('always.hintKey');
+    expect(requests).toContain('data-help="chat-allow-always"');
     expect(translate('zh', 'chat.runtime.allowAlwaysHint')).toBe('仅当前这次进程，不保存');
     expect(translate('en', 'chat.runtime.allowAlwaysHint')).toBe('This process only, not saved');
+    expect(translate('zh', 'chat.runtime.allowAlwaysHintTurn')).toBe('仅当前这次进程，通常只记到本轮，不保存');
+    expect(translate('en', 'chat.runtime.allowAlwaysHintTurn')).toBe(
+      'This process only, usually this turn, not saved',
+    );
     expect(source('ChatTurnOutcomeBanner.tsx')).toContain('turnOutcomeDetail');
   });
 

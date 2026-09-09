@@ -113,6 +113,27 @@ export function requestAllowsAlways(
   return (request.permissionOptions ?? []).some((option) => isRuntimeAllowAlwaysKind(option.kind));
 }
 
+/**
+ * Always-allow is process-local and not saved.
+ * Codex restarts after a turn, so remember usually lasts this turn only.
+ * Grok / Kiro keep the same ACP process across turns.
+ */
+export function runtimeAllowAlwaysHintKey(agentId?: string | null): MessageKey {
+  return agentId === 'codex'
+    ? 'chat.runtime.allowAlwaysHintTurn'
+    : 'chat.runtime.allowAlwaysHint';
+}
+
+export function runtimeAllowAlwaysCopy(input: {
+  request: Pick<RuntimeRequest, 'permissionOptions'>;
+  agentId?: string | null;
+}): { shown: boolean; hintKey: MessageKey } {
+  if (!requestAllowsAlways(input.request)) {
+    return { shown: false, hintKey: runtimeAllowAlwaysHintKey(input.agentId) };
+  }
+  return { shown: true, hintKey: runtimeAllowAlwaysHintKey(input.agentId) };
+}
+
 export function runtimeReplyFields(
   request: Pick<RuntimeRequest, 'kind'>,
   decision?: 'allow' | 'deny' | 'allow_always',

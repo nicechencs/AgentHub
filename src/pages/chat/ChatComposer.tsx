@@ -36,7 +36,6 @@ import { cn } from '@/lib/utils';
 import {
   composerEnterShouldSubmit,
   composerPrimaryAction,
-  composerQueuedFollowUpView,
   composerShortcutKind,
   composerShortcutMessageKey,
   composerShouldRestoreFocus,
@@ -60,8 +59,10 @@ import {
   type ChatConnectionPickerView,
   type ChatSendBlocker,
 } from './chat-model';
+import { ChatQueuedFollowUpList } from './ChatQueuedFollowUpList';
 import { kiroChatComposerPlaceholder } from './chat-kiro-model';
 import { chatEffortHint, chatEffortLabel, chatModelDisplayName } from './chat-model-labels';
+import type { QueuedFollowUpItem } from './chat-grok-follow-up';
 
 export function ChatComposer({
   draft,
@@ -85,8 +86,8 @@ export function ChatComposer({
   onSend,
   onSteer,
   onQueueAfterTurn,
-  queuedFollowUp = null,
-  queuedFollowUpCount = 0,
+  queuedFollowUps = [],
+  onCancelQueuedFollowUp,
   onClearQueuedFollowUp,
   onCancel,
   onSelectAgent,
@@ -133,8 +134,8 @@ export function ChatComposer({
   onSend: () => void;
   onSteer?: () => void;
   onQueueAfterTurn?: () => void;
-  queuedFollowUp?: string | null;
-  queuedFollowUpCount?: number;
+  queuedFollowUps?: readonly QueuedFollowUpItem[];
+  onCancelQueuedFollowUp?: (id: string) => void;
   onClearQueuedFollowUp?: () => void;
   focusNonce?: number;
   onCancel: () => void;
@@ -179,7 +180,6 @@ export function ChatComposer({
     canSteer: Boolean(onSteer),
     canQueue: Boolean(onQueueAfterTurn),
   });
-  const queueView = composerQueuedFollowUpView(queuedFollowUp, queuedFollowUpCount);
   const stopCopy = t(composerStopMessageKey(canceling));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
@@ -345,26 +345,11 @@ export function ChatComposer({
           }}
           aria-label={t('chat.composer.inputAria')}
         />
-        {queueView ? (
-          <div
-            className="mx-3 mb-1 flex items-center gap-2 rounded-btn bg-subtle px-2 py-1"
-            role="status"
-            aria-live="polite"
-          >
-            <p className="min-w-0 flex-1 truncate text-meta text-secondary">
-              {t('chat.composer.queuedCount', { count: queueView.count })}
-              {' · '}
-              {t('chat.composer.queuedHint')}
-              {'：'}
-              {queueView.preview}
-            </p>
-            {onClearQueuedFollowUp ? (
-              <Button type="button" size="sm" variant="ghost" onClick={onClearQueuedFollowUp}>
-                {t('chat.composer.clearQueuedFollowUp')}
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
+        <ChatQueuedFollowUpList
+          items={queuedFollowUps}
+          onCancelItem={onCancelQueuedFollowUp}
+          onCancelAll={onClearQueuedFollowUp}
+        />
         <div className="flex items-center justify-between gap-2 px-4 pb-1" data-composer-shortcut="">
           <p className="min-w-0 text-meta text-muted">
             {t(composerShortcutMessageKey(shortcutKind))}

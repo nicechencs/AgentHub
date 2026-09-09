@@ -185,20 +185,33 @@ describe('composer shortcut and stop copy', () => {
 });
 
 describe('queued follow-up visibility', () => {
-  it('hides an empty queue and keeps count visible when queued', () => {
+  it('hides an empty queue and keeps each line as its own item', () => {
     expect(composerQueuedFollowUpView(null)).toBeNull();
-    expect(composerQueuedFollowUpView('  ')).toBeNull();
-    expect(composerQueuedFollowUpView('第二条；第三条', 2)).toEqual({
+    expect(composerQueuedFollowUpView([])).toBeNull();
+    expect(composerQueuedFollowUpView([{ id: 'blank', text: '  ' }])).toBeNull();
+    expect(
+      composerQueuedFollowUpView([
+        { id: 'q-2', text: '第二条' },
+        { id: 'q-3', text: '第三条' },
+      ]),
+    ).toEqual({
       count: 2,
-      preview: '第二条；第三条',
+      items: [
+        { id: 'q-2', text: '第二条' },
+        { id: 'q-3', text: '第三条' },
+      ],
     });
-    expect(composerQueuedFollowUpView('只一条')).toEqual({
+    expect(composerQueuedFollowUpView([{ id: 'q-1', text: '只一条' }])).toEqual({
       count: 1,
-      preview: '只一条',
+      items: [{ id: 'q-1', text: '只一条' }],
     });
     expect(translate('zh', 'chat.composer.queuedCount', { count: 2 })).toBe('已排队 2 条');
     expect(translate('zh', 'chat.composer.queuedHint')).toBe('本轮结束后发送');
+    expect(translate('zh', 'chat.composer.cancelQueuedItem')).toBe('取消这条');
+    expect(translate('zh', 'chat.composer.cancelAllQueued')).toBe('全部取消');
     expect(translate('en', 'chat.composer.queuedCount', { count: 2 })).toBe('2 queued');
+    expect(translate('en', 'chat.composer.cancelQueuedItem')).toBe('Remove this');
+    expect(translate('en', 'chat.composer.cancelAllQueued')).toBe('Cancel all');
   });
 });
 

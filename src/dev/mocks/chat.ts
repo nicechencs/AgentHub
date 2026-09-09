@@ -1,5 +1,5 @@
 import type { ChatPort } from '@/lib/backend/contracts';
-import type { RuntimeOptions, RuntimeReply, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings } from '@/lib/backend/contracts/chat-runtime';
+import type { RuntimeOptions, RuntimeReply, RuntimeRequest, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings } from '@/lib/backend/contracts/chat-runtime';
 import { delay } from '@/dev/mocks/delay';
 import type {
   AgentKey,
@@ -162,10 +162,14 @@ function mockRuntimeStillLive(conversationId: string, runId: string): boolean {
   );
 }
 
+function mockNeedsConfirm(prompt: string): boolean {
+  return /需要确认|need confirm/i.test(prompt);
+}
+
 function appendMockRuntimeEvent(
   conversationId: string,
   event: ChatEvent,
-  patch?: Partial<Pick<RuntimeSnapshot, 'phase' | 'currentMessage'>>,
+  patch?: Partial<Pick<RuntimeSnapshot, 'phase' | 'currentMessage' | 'pendingRequests'>>,
 ): RuntimeSnapshot | null {
   const current = runtimeSnapshots.get(conversationId);
   if (!current) return null;
@@ -238,6 +242,27 @@ async function playMockRuntimeTurn(input: {
     agent,
     step: { type: 'thinking', text: '规划回复结构…', done: true },
   });
+
+  if (mockNeedsConfirm(prompt)) {
+    const request: RuntimeRequest = {
+      id: `req-mock-${mockSeq++}`,
+      runId,
+      kind: 'command',
+      title: 'execute',
+      detail: 'ls',
+      questions: [],
+      permissionOptions: [
+        { id: 'once', kind: 'allow_once' },
+        { id: 'always', kind: 'allow_always' },
+      ],
+    };
+    appendMockRuntimeEvent(
+      conversationId,
+      { type: 'agentProcess', turn, agent, step: { type: 'tool', name: 'execute', status: 'start', input: { command: 'ls' } } },
+      { phase: 'waiting', currentMessage: agentMessage, pendingRequests: [request] },
+    );
+    return;
+  }
 
   const parts = [
     `【${agent} mock】收到：${prompt.slice(0, 80)}\n`,
@@ -774,7 +799,44 @@ export function createMockChatPort(): ChatPort {
       });
       return next;
     },
-    async runtimeReply(_reply: RuntimeReply) {},
+    async runtimeReply(reply: RuntimeReply) {
+      const current = runtimeSnapshots.get(reply.conversationId);
+      if (!current || current.runId !== reply.runId) return;
+      const remaining = (current.pendingRequests ?? []).filter((item) => item.id !== reply.requestId);
+      if (remaining.length > 0) {
+        runtimeSnapshots.set(reply.conversationId, { ...current, pendingRequests: remaining });
+        return;
+      }
+      const currentMessage = current.currentMessage
+        ? {
+            ...current.currentMessage,
+            content: `${current.currentMessage.content || ''}已按你的选择继续。\n`,
+            status: 'ok' as const,
+            durationMs: 500,
+          }
+        : null;
+      const turn = currentMessage?.turn ?? 0;
+      const agent = (currentMessage?.agentId ?? mockConversationAgent(reply.conversationId) ?? 'codex') as AgentKey;
+      const user = (mockMessages[reply.conversationId] ?? []).find(
+        (item) => item.turn === turn && item.role === 'user',
+      );
+      if (currentMessage && user) persistMockRuntimeMessages(reply.conversationId, user, currentMessage);
+      if (currentMessage) {
+        appendMockRuntimeEvent(
+          reply.conversationId,
+          { type: 'agentFinished', turn, agent, message: currentMessage },
+          { phase: 'completed', currentMessage, pendingRequests: [] },
+        );
+      } else {
+        runtimeSnapshots.set(reply.conversationId, {
+          ...current,
+          phase: 'completed',
+          pendingRequests: [],
+        });
+      }
+      appendMockRuntimeEvent(reply.conversationId, { type: 'finished', turn, ok: true, cancelled: false });
+      runtimeJobs.delete(reply.conversationId);
+    },
     async runtimeSteer() {},
     async runtimeContinueLegacy(conversationId) {
       const conv = mockConversations.find((item) => item.id === conversationId);

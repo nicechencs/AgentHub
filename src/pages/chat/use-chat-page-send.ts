@@ -31,9 +31,10 @@ import {
   appendQueuedFollowUp,
   grokShouldFlushFollowUp,
   prependQueuedFollowUp,
-  queuedFollowUpLabel,
+  removeQueuedFollowUp,
   restoreQueuedFollowUpOnCancel,
   shiftQueuedFollowUp,
+  type QueuedFollowUpItem,
 } from './chat-grok-follow-up';
 import {
   composerCancelingVisible,
@@ -129,8 +130,8 @@ export function useChatPageSend(input: {
   const runtimeReadRef = useRef(new Map<string, number>());
   const runtimeProbeRef = useRef(new Set<string>());
   const runtimeProbeCancelRef = useRef(new Set<string>());
-  const followUpsRef = useRef(new Map<string, string[]>());
-  const [followUpById, setFollowUpById] = useState<Record<string, { label: string; count: number }>>({});
+  const followUpsRef = useRef(new Map<string, QueuedFollowUpItem[]>());
+  const [followUpById, setFollowUpById] = useState<Record<string, QueuedFollowUpItem[]>>({});
 
   useEffect(() => {
     setProcessMap({});
@@ -148,20 +149,16 @@ export function useChatPageSend(input: {
   };
 
   const publishFollowUps = () => {
-    const next: Record<string, { label: string; count: number }> = {};
+    const next: Record<string, QueuedFollowUpItem[]> = {};
     for (const [id, items] of followUpsRef.current.entries()) {
-      const label = queuedFollowUpLabel(items);
-      if (!label) continue;
-      next[id] = {
-        label,
-        count: items.map((item) => item.trim()).filter(Boolean).length,
-      };
+      if (items.length === 0) continue;
+      next[id] = items;
     }
     setFollowUpById(next);
   };
 
-  const setFollowUpQueue = (conversationId: string, items: string[]) => {
-    const next = items.map((item) => item.trim()).filter(Boolean);
+  const setFollowUpQueue = (conversationId: string, items: QueuedFollowUpItem[]) => {
+    const next = items.filter((item) => item.text.trim());
     if (next.length > 0) followUpsRef.current.set(conversationId, next);
     else followUpsRef.current.delete(conversationId);
     publishFollowUps();
@@ -185,7 +182,14 @@ export function useChatPageSend(input: {
     const shifted = shiftQueuedFollowUp(followUpsRef.current.get(conversationId) ?? []);
     if (!shifted) return null;
     setFollowUpQueue(conversationId, shifted.rest);
-    return shifted.next;
+    return shifted.next.text;
+  };
+
+  const removeFollowUp = (conversationId: string, itemId: string) => {
+    setFollowUpQueue(
+      conversationId,
+      removeQueuedFollowUp(followUpsRef.current.get(conversationId) ?? [], itemId),
+    );
   };
 
   const clearFollowUp = (conversationId: string) => {
@@ -985,8 +989,11 @@ export function useChatPageSend(input: {
     handleSend,
     retryLast,
     handleCancel,
-    queuedFollowUp: activeId ? followUpById[activeId]?.label ?? null : null,
-    queuedFollowUpCount: activeId ? followUpById[activeId]?.count ?? 0 : 0,
+    queuedFollowUps: activeId ? followUpById[activeId] ?? [] : [],
+    queuedFollowUpCount: activeId ? followUpById[activeId]?.length ?? 0 : 0,
+    cancelQueuedFollowUp: (itemId: string) => {
+      if (activeId) removeFollowUp(activeId, itemId);
+    },
     clearQueuedFollowUp: () => {
       if (activeId) clearFollowUp(activeId);
     },

@@ -50,7 +50,11 @@ test('Chat sends a prompt and shows the mock reply', async ({ page }) => {
   await expect(page.getByText('Enter 排队 · Shift+Enter 换行')).toBeVisible();
   await composer.fill('下一句');
   await composer.press('Enter');
-  await expect(page.getByText('已排队 1 条 · 本轮结束后发送：下一句')).toBeVisible();
+  const queue = page.locator('[data-help="chat-queued-follow-ups"]');
+  await expect(queue.getByText('已排队 1 条 · 本轮结束后发送')).toBeVisible();
+  await expect(queue.getByText('下一句', { exact: true })).toBeVisible();
+  await expect(queue.getByRole('button', { name: '取消这条' })).toBeVisible();
+  await expect(page.getByText('下一句；')).toHaveCount(0);
   await expect(composer).toBeFocused();
   await expect(composer).toHaveValue('');
 
