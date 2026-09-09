@@ -242,11 +242,15 @@ describe('chat layout wiring', () => {
 
   it('keeps history actions visible and focusable for runtime composers', () => {
     const actions = source('ChatActionMenu.tsx');
+    const extras = source('ChatRuntimeExtras.tsx');
     const rail = source('ChatSessionRail.tsx');
     const page = source('index.tsx');
     const hook = source('use-chat-page.ts');
     expect(actions).toContain('createPortal');
-    expect(actions).toContain('onCloseAutoFocus');
+    expect(actions).toContain('role="listbox"');
+    expect(actions).not.toContain('DropdownMenu');
+    expect(actions).not.toContain('MoreHorizontal');
+    expect(extras).not.toContain('chat.actions.menu');
     expect(rail).toContain('historyRevealNonce');
     expect(rail).toContain('window.setTimeout');
     expect(rail).toContain('data-session-id');

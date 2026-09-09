@@ -2886,7 +2886,6 @@ export const zh = {
       sessionLocked: '持续会话已接到当前 Agent 和工作目录；如需更换，请新建会话',
     },
     actions: {
-      menu: '更多操作',
       newSession: '新建会话',
       openHistory: '打开历史',
       focusHistorySearch: '搜索历史会话',
