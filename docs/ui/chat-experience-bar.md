@@ -24,7 +24,7 @@ updated: 2026-09-09
 | 错误文案 | 失败、停止、超时用一句话说明，并给一个下一步（换模型、去连接、填回草稿）。草稿保留。 | 有失败 / 中断 / 停止 / 超时横幅，可填回草稿和重试。常见登录失效、用量、模型下架、思考强度不支持已译成人话。过程里的坏行写成「有一行输出没法展示」。 |
 | 续聊 | 点开历史立刻看到上次正文。生成中切走再回来，任务还在。关窗口再开，同一场对话能接着说。 | 切会话不取消生成。Codex 关窗续聊 Linux 真窗已验、macOS 重开有效，Windows 未宣称。Grok 旧会话可「用新方式继续」。Kiro 同一进程内续聊；进程退出后留历史并提示新建。 |
 | 空状态 | 空会话焦点在输入区。示例只填草稿、不代发。缺目录或登录时一条提示加恢复，不占满中间。 | 空会话焦点在输入区。示例是输入区上方的一行芯片（只填草稿）。缺条件时一条提示加恢复，不占满中间。没有 Agent 时去 Agent 页。 |
-| 键盘 | `Enter` 发送，`Shift+Enter` 换行，`Esc` 停止，`/` 搜操作。能新建对话、打开模型菜单，并能看到当前快捷键。 | 输入区下有快捷键一行。`Enter` / `Shift+Enter` / 组字时不发送 / `Esc` 停止 / `/` 本地菜单已有。`Ctrl+K`（macOS `Cmd+K`）聚焦历史搜索。`Ctrl+Shift+I`（macOS 也认 `Cmd+Shift+I`）打开模型菜单。尚无新建对话快捷键、也无快捷键一览。 |
+| 键盘 | `Enter` 发送，`Shift+Enter` 换行，`Esc` 停止，`/` 搜操作。能新建对话、打开模型菜单，并能看到当前快捷键。 | 输入区下有快捷键一行，右侧可打开快捷键一览；不在输入框里时按 `?` 同样打开。`Enter` / `Shift+Enter` / 组字时不发送 / `Esc` 停止 / `/` 本地菜单已有。`Ctrl+K`（macOS `Cmd+K`）聚焦历史搜索。`Ctrl+Shift+I`（macOS 也认 `Cmd+Shift+I`）打开模型菜单。`Ctrl+N`（macOS `Cmd+N`）新建对话。 |
 
 前沿对照日期 2026-09-09，依据各家公开文档： [Claude Code 桌面](https://code.claude.com/docs/en/desktop)、[Cursor Agent](https://cursor.com/docs/agent/overview)、[Codex app](https://developers.openai.com/codex/app)。各家能力不同；本页不承诺每家生成相同答案，也不把 Claude 批准卡片或 SDK 宿主写成已完成（B3 首片仅 stream-json 多轮+图片）。
 

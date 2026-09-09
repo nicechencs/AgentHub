@@ -41,6 +41,22 @@ describe('chat layout wiring', () => {
     expect(translate('zh', 'chat.composer.shortcutOpenModel')).toBe('Ctrl+Shift+I');
   });
 
+  it('starts a new chat from Ctrl/Cmd+N and opens a shortcut overview', () => {
+    const page = source('index.tsx');
+    expect(page).toContain('chatModNShouldStartNewChat');
+    expect(page).toContain("id: 'new-session'");
+    expect(page).toContain('chatQuestionShouldOpenShortcuts');
+    expect(page).toContain('chatKeyTargetIsField');
+    expect(page).toContain('ChatShortcutsDialog');
+    expect(page).toContain('onOpenShortcuts');
+    expect(source('ChatComposer.tsx')).toContain('data-help="chat-shortcuts"');
+    expect(source('ChatComposer.tsx')).toContain('aria-keyshortcuts="?"');
+    expect(source('ChatSessionRail.tsx')).toContain('aria-keyshortcuts="Control+N"');
+    expect(source('ChatShortcutsDialog.tsx')).toContain('CHAT_SHORTCUT_ROWS');
+    expect(translate('zh', 'chat.shortcuts.open')).toBe('快捷键');
+    expect(translate('en', 'chat.shortcuts.open')).toBe('Shortcuts');
+  });
+
   it('keeps send available while a turn is in progress, with a labeled stop', () => {
     expect(source('index.tsx')).toContain('chatBusySendMode');
     const composer = source('ChatComposer.tsx');
