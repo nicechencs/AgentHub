@@ -113,10 +113,11 @@ test('model menu uses readable names and Ctrl+Shift+I opens it', async ({ page }
 
   const effortTrigger = page.locator('[data-help="chat-effort"]');
   await expect(effortTrigger).toBeEnabled();
-  await expect(page.getByText('可能更慢')).toBeVisible();
+  await expect(page.getByText('可能更慢')).not.toBeVisible();
   await effortTrigger.click();
   await expect(page.getByRole('menuitemradio', { name: /低/ })).toBeVisible();
   await expect(page.getByText('更快')).toBeVisible();
+  await expect(page.getByText('可能更慢')).toBeVisible();
   await page.keyboard.press('Escape');
 
   await page.evaluate(() => {

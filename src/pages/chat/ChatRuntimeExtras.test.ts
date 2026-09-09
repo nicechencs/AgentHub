@@ -147,5 +147,6 @@ describe('ChatRuntimeExtras skill picker', () => {
     expect(html).toContain('aria-label="技能"');
     expect(html).not.toMatch(/>添加图片</);
     expect(html).not.toMatch(/>技能</);
+    expect(html).not.toMatch(/>可能更慢</);
   });
 });
