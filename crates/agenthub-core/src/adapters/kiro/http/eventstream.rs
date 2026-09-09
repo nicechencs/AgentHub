@@ -2,8 +2,17 @@
 //!
 //! Spec shape: big-endian prelude (total_len, headers_len, prelude_crc) +
 //! headers + payload + message_crc. First slice skips CRC verification.
+//!
+//! Incremental decoding yields a frame as soon as its bytes are complete; it
+//! does not wait for EOF. That is the only honest "chunk" boundary this client
+//! can see on the Kiro HTTP body.
 
 use std::collections::HashMap;
+use std::io::Read;
+
+const BODY_LIMIT: u64 = 8 * 1024 * 1024;
+const PREVIEW_LIMIT: usize = 300;
+const READ_BUF: usize = 8192;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct EventMessage {
@@ -17,17 +26,61 @@ impl EventMessage {
     }
 }
 
+/// Bytes already pulled from the socket plus assistant text seen so far.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AssistantRead {
+    pub text: String,
+    pub conversation_id: Option<String>,
+    pub preview: String,
+}
+
+/// Holds a partial AWS event-stream frame until later `push` calls complete it.
+#[derive(Debug, Default)]
+pub(crate) struct EventStreamDecoder {
+    buf: Vec<u8>,
+}
+
+impl EventStreamDecoder {
+    pub(crate) fn new() -> Self {
+        Self { buf: Vec::new() }
+    }
+
+    /// Append bytes and return every newly completed frame. Incomplete tail
+    /// stays buffered; a later `push` (or EOF) is required to finish it.
+    pub(crate) fn push(&mut self, data: &[u8]) -> Vec<EventMessage> {
+        if data.is_empty() {
+            return Vec::new();
+        }
+        self.buf.extend_from_slice(data);
+        let (events, consumed) = parse_event_stream_consumed(&self.buf);
+        if consumed > 0 {
+            self.buf.drain(..consumed);
+        }
+        events
+    }
+
+    #[cfg(test)]
+    pub(crate) fn leftover(&self) -> &[u8] {
+        &self.buf
+    }
+}
+
 /// Parse concatenated AWS event-stream frames. Stops at the first truncated frame.
+#[cfg(test)]
 pub(crate) fn parse_event_stream(data: &[u8]) -> Vec<EventMessage> {
+    parse_event_stream_consumed(data).0
+}
+
+fn parse_event_stream_consumed(data: &[u8]) -> (Vec<EventMessage>, usize) {
     let mut out = Vec::new();
     let mut i = 0usize;
     while i + 16 <= data.len() {
         let total_len = u32::from_be_bytes(data[i..i + 4].try_into().unwrap()) as usize;
         let headers_len = u32::from_be_bytes(data[i + 4..i + 8].try_into().unwrap()) as usize;
-        if total_len < 16 || i + total_len > data.len() {
+        if total_len < 16 || 12 + headers_len + 4 > total_len {
             break;
         }
-        if 12 + headers_len + 4 > total_len {
+        if i + total_len > data.len() {
             break;
         }
         let message = &data[i..i + total_len];
@@ -39,7 +92,7 @@ pub(crate) fn parse_event_stream(data: &[u8]) -> Vec<EventMessage> {
         out.push(EventMessage { headers, payload });
         i += total_len;
     }
-    out
+    (out, i)
 }
 
 fn parse_headers(bytes: &[u8]) -> Option<HashMap<String, String>> {
@@ -136,33 +189,88 @@ fn parse_headers(bytes: &[u8]) -> Option<HashMap<String, String>> {
     Some(out)
 }
 
+enum AssistantEvent {
+    TextDelta(String),
+    ConversationId(String),
+}
+
+fn assistant_event(event: &EventMessage) -> Option<AssistantEvent> {
+    let et = event.event_type().unwrap_or("");
+    let payload = serde_json::from_slice::<serde_json::Value>(&event.payload).ok()?;
+    match et {
+        "assistantResponseEvent" => payload
+            .get("content")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| AssistantEvent::TextDelta(s.to_owned())),
+        "initial-response" => payload
+            .get("conversationId")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| AssistantEvent::ConversationId(s.to_owned())),
+        _ => None,
+    }
+}
+
+fn apply_assistant_event(
+    event: &EventMessage,
+    text: &mut String,
+    conversation_id: &mut Option<String>,
+    mut on_delta: impl FnMut(&str),
+) {
+    match assistant_event(event) {
+        Some(AssistantEvent::TextDelta(chunk)) => {
+            text.push_str(&chunk);
+            on_delta(&chunk);
+        }
+        Some(AssistantEvent::ConversationId(id)) if conversation_id.is_none() => {
+            *conversation_id = Some(id);
+        }
+        _ => {}
+    }
+}
+
 /// Collect assistant text deltas from GenerateAssistantResponse event-stream bytes.
 pub(crate) fn collect_assistant_text(data: &[u8]) -> (String, Option<String>) {
+    let mut decoder = EventStreamDecoder::new();
     let mut text = String::new();
     let mut conversation_id = None;
-    for event in parse_event_stream(data) {
-        let et = event.event_type().unwrap_or("");
-        let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&event.payload) else {
-            continue;
-        };
-        match et {
-            "assistantResponseEvent" => {
-                if let Some(chunk) = payload.get("content").and_then(|v| v.as_str()) {
-                    text.push_str(chunk);
-                }
-            }
-            "initial-response" => {
-                if conversation_id.is_none() {
-                    conversation_id = payload
-                        .get("conversationId")
-                        .and_then(|v| v.as_str())
-                        .map(str::to_owned);
-                }
-            }
-            _ => {}
-        }
+    for event in decoder.push(data) {
+        apply_assistant_event(&event, &mut text, &mut conversation_id, |_| {});
     }
     (text, conversation_id)
+}
+
+/// Read an AWS event-stream body and invoke `on_delta` as each assistant
+/// content frame completes — before the reader reaches EOF.
+pub(crate) fn read_assistant_events(
+    reader: impl Read,
+    mut on_delta: impl FnMut(&str),
+) -> std::io::Result<AssistantRead> {
+    let mut reader = reader.take(BODY_LIMIT);
+    let mut decoder = EventStreamDecoder::new();
+    let mut text = String::new();
+    let mut conversation_id = None;
+    let mut preview = Vec::new();
+    let mut buf = [0u8; READ_BUF];
+    loop {
+        let n = reader.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        if preview.len() < PREVIEW_LIMIT {
+            let take = (PREVIEW_LIMIT - preview.len()).min(n);
+            preview.extend_from_slice(&buf[..take]);
+        }
+        for event in decoder.push(&buf[..n]) {
+            apply_assistant_event(&event, &mut text, &mut conversation_id, &mut on_delta);
+        }
+    }
+    Ok(AssistantRead {
+        text,
+        conversation_id,
+        preview: String::from_utf8_lossy(&preview).into_owned(),
+    })
 }
 
 #[cfg(test)]
