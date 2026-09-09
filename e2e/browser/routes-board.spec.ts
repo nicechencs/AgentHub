@@ -13,8 +13,8 @@ test('routes board follows dashboard layout and local-route usage', async ({ pag
   await expect(page.getByText('用量统计')).toBeVisible();
   await expect(page.getByLabel('按本机转发筛选用量')).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText('请求次数')).toBeVisible();
-  await expect(page.getByText('输入(7 天)')).toBeVisible();
-  await expect(page.getByText('7 天 Token 用量')).toBeVisible();
+  await expect(page.getByText('输入(7 天，不含缓存)')).toBeVisible();
+  await expect(page.getByText('7 天 总 Token（含缓存）')).toBeVisible();
   await expect(page.getByRole('heading', { name: '按接口' })).toBeVisible();
   await expect(page.locator('.recharts-surface')).toBeVisible();
   await expect(page.getByRole('tab', { name: '模型' })).toHaveCount(0);
@@ -24,7 +24,7 @@ test('routes board follows dashboard layout and local-route usage', async ({ pag
   await expect(page.getByRole('heading', { name: '按模型' })).toBeVisible({ timeout: 15_000 });
 
   await page.getByRole('tab', { name: '今天' }).click();
-  await expect(page.getByText('输入(今天)')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText('输入(今天，不含缓存)')).toBeVisible({ timeout: 15_000 });
 
   await page.getByRole('link', { name: '打开监控' }).click();
   await expect(page).toHaveURL(/#\/routes\/activity/);

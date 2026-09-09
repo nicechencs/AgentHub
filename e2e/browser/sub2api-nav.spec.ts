@@ -24,10 +24,10 @@ test('Sub2API primary nav stays hidden until Settings toggle is on; deep link st
   await expect(page.getByRole('heading', { name: 'Sub2API' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '尚未登录' })).toBeVisible();
   await expect(
-    page.getByText('用中转站账号登录，再把 Key 同步到连接列表。'),
+    page.getByText('用中转站账号登录。登录后可以把 Key 导入到已安装的 Agent。'),
   ).toBeVisible();
   await expect(page.locator('[data-sub2api-login-form]')).toBeVisible();
-  await expect(nav.getByRole('link', { name: /^Sub2API(?:$| — )/ })).toBeVisible();
+  await expect(nav.getByRole('link', { name: /^Sub2API(?:$| — )/ })).toHaveCount(0);
 
   await goPath(page, '/routes/sub2api');
   await expect(page).toHaveURL(/#\/sub2api$/);
