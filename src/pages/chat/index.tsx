@@ -440,6 +440,7 @@ export default function ChatPage() {
                         extensions={page.runtimeOps.extensions}
                         selectedSkillIds={page.runtimeOps.selectedSkillIds}
                         onToggleSkill={page.runtimeOps.toggleSkill}
+                        agentId={page.primaryAgent}
                         showSkillPicker={page.primaryAgent !== 'codex'}
                       />
                     ) : undefined

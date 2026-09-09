@@ -45,12 +45,16 @@ export function ChatRuntimeExtras(props: {
   onToggleSkill: (id: string) => void;
   /** Toolbar skill dropdown. Codex hides this — skills stay on `/` and auto-use. */
   showSkillPicker?: boolean;
+  /** When `codex`, toolbar skill control is always hidden (defense if parent forgets the prop). */
+  agentId?: string | null;
   inline?: boolean;
   modelMenuOpenNonce?: number;
 }) {
   const { t } = useI18n();
   const callableSkills = props.extensions.filter((item) => item.kind === 'skill' && item.callable);
-  const showSkillPicker = props.showSkillPicker !== false;
+  // Codex: never mount the toolbar skill control (slash menu / auto-use only).
+  const showSkillPicker =
+    props.agentId !== 'codex' && props.showSkillPicker !== false;
   const modelDisabledReason = props.frozen
     ? props.frozenReason ?? t('chat.runtimeOps.frozenDuringTurn')
     : props.catalogLoading

@@ -105,6 +105,21 @@ describe('ChatRuntimeExtras skill picker', () => {
     expect(html).not.toMatch(/>\s*技能/);
   });
 
+  it('hides the skill picker for Codex even when showSkillPicker is true', () => {
+    const html = renderMarkup(
+      extras({
+        agentId: 'codex',
+        showSkillPicker: true,
+        extensions: [
+          { id: 'skill-a', kind: 'skill', name: 'Demo Skill', callable: true, installed: true, enabled: true, loaded: true },
+        ],
+        selectedSkillIds: ['skill-a'],
+      }),
+    );
+    expect(html).not.toContain('Demo Skill');
+    expect(html).not.toMatch(/>\s*技能/);
+  });
+
   it('shows the skill picker by default when callable skills exist', () => {
     const html = renderMarkup(
       extras({
