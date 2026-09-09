@@ -20,6 +20,9 @@ describe('chat shortcut overview', () => {
     ]);
     expect(CHAT_SHORTCUT_ROWS.find((row) => row.id === 'newChat')?.keys).toBe('Ctrl+N');
     expect(CHAT_SHORTCUT_ROWS.find((row) => row.id === 'overview')?.keys).toBe('?');
+    expect(CHAT_SHORTCUT_ROWS.find((row) => row.id === 'stop')?.keys).toBe('Esc');
+    expect(translate('zh', 'chat.shortcuts.stop')).toBe('停止');
+    expect(translate('en', 'chat.shortcuts.stop')).toBe('Stop');
   });
 
   it('shows Cmd on macOS and Ctrl elsewhere', () => {

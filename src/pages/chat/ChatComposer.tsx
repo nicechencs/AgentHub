@@ -35,12 +35,13 @@ import type { AgentKey, Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
   composerEnterShouldSubmit,
+  composerFooterControl,
   composerPrimaryAction,
   composerShortcutKind,
   composerShortcutMessageKey,
   composerShouldRestoreFocus,
-  composerShowsSubmitButton,
   composerStopMessageKey,
+  composerStopTitle,
   composerSubmitMessageKey,
 } from './chat-composer-model';
 import {
@@ -181,7 +182,7 @@ export function ChatComposer({
     canSteer: Boolean(onSteer),
     canQueue: Boolean(onQueueAfterTurn),
   });
-  const showSubmit = composerShowsSubmitButton({ sending, action });
+  const footerControl = composerFooterControl({ sending, action });
   const shortcutKind = composerShortcutKind({
     blocked: blockers.length > 0,
     sending,
@@ -189,6 +190,8 @@ export function ChatComposer({
     canQueue: Boolean(onQueueAfterTurn),
   });
   const stopCopy = t(composerStopMessageKey(canceling));
+  const stopTitle = composerStopTitle({ canceling, stopLabel: stopCopy });
+  const footerSlotClass = 'h-8 w-8 shrink-0 rounded-full';
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const modelMenuDisabled = sending || connectionLocked || switchingProvider || switchingModel;
@@ -650,29 +653,28 @@ export function ChatComposer({
             <div className="min-w-0 flex-1" />
           )}
 
-          {sending ? (
+          {footerControl === 'stop' ? (
             <Button
               type="button"
-              size="sm"
+              size="icon"
               variant="dangerOutline"
-              className="shrink-0"
+              className={footerSlotClass}
               disabled={canceling}
               aria-busy={canceling}
               data-help="chat-stop"
               aria-label={stopCopy}
-              title={stopCopy}
+              aria-keyshortcuts="Escape"
+              title={stopTitle}
               onClick={onCancel}
             >
-              <Square className="h-3.5 w-3.5" />
-              {stopCopy}
+              <Square className="h-3.5 w-3.5 fill-current" />
             </Button>
-          ) : null}
-          {showSubmit ? (
+          ) : (
             <Button
               type="button"
               size="icon"
               variant={action ? 'default' : 'secondary'}
-              className="h-8 w-8 shrink-0 rounded-full"
+              className={footerSlotClass}
               disabled={!action}
               onClick={submitComposer}
               data-help="chat-send"
@@ -681,7 +683,7 @@ export function ChatComposer({
             >
               <SendHorizontal className="h-4 w-4" />
             </Button>
-          ) : null}
+          )}
         </div>
       </div>
       </div>
