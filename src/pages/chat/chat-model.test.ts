@@ -48,6 +48,8 @@ import {
   conversationSemanticTitle,
   conversationTitle,
   titleFromPrompt,
+  conversationCwdMissing,
+  canRebindConversationCwd,
   cwdShortName,
   isBlankConversationDraft,
   draftForFocusedConversation,
@@ -219,6 +221,17 @@ describe('conversationRailSelectedFill', () => {
     expect(conversationRailSelectedFill([])).toBe(
       'color-mix(in srgb, var(--accent) 28%, var(--bg-canvas))',
     );
+  });
+});
+
+describe('conversationCwdMissing', () => {
+  it('is only true when a stored path is marked gone', () => {
+    expect(conversationCwdMissing({ cwd: '/tmp', cwdMissing: true })).toBe(true);
+    expect(conversationCwdMissing({ cwd: '/tmp', cwdMissing: false })).toBe(false);
+    expect(conversationCwdMissing({ cwd: null, cwdMissing: true })).toBe(false);
+    expect(canRebindConversationCwd({ cwd: '/tmp', cwdMissing: true }, true)).toBe(true);
+    expect(canRebindConversationCwd({ cwd: '/tmp', cwdMissing: false }, true)).toBe(false);
+    expect(canRebindConversationCwd({ cwd: null }, false)).toBe(true);
   });
 });
 

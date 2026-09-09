@@ -25,6 +25,17 @@ export function createTauriChatPort(): ChatPort {
       return mapConversation(row);
     },
 
+    async openConversationFromSession(input) {
+      const row = await invoke<CoreConversation>('open_conversation_from_session', {
+        agentId: input.agentId,
+        sessionId: input.sessionId ?? null,
+        cwd: input.cwd ?? null,
+        title: input.title ?? null,
+        history: input.history,
+      });
+      return mapConversation(row);
+    },
+
     async ensureDefaultConversation(agentIds, cwd) {
       const row = await invoke<CoreConversation>('ensure_default_conversation', {
         agentIds,

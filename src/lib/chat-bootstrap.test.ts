@@ -146,6 +146,21 @@ describe('chat-bootstrap', () => {
     expect(sessionStorage.getItem(StorageKey.chatBootstrap)).toBeNull();
   });
 
+  it('accepts a session id without a working directory', () => {
+    expect(
+      setChatBootstrap({
+        agentIds: ['claude'],
+        sessionId: 'sess-1',
+        history: [{ role: 'user', content: 'hi' }],
+      }),
+    ).toBe(true);
+    expect(takeChatBootstrap()).toEqual({
+      agentIds: ['claude'],
+      sessionId: 'sess-1',
+      history: [{ role: 'user', content: 'hi' }],
+    });
+  });
+
   it('recognizes shell and projects handoff query values', () => {
     expect(isChatBootstrapHandoff('shell')).toBe(true);
     expect(isChatBootstrapHandoff('projects')).toBe(true);

@@ -158,6 +158,7 @@ describe('chat layout wiring', () => {
     expect(transcript).not.toContain('variant="default"');
     expect(source('index.tsx')).toContain('onPickStarter={page.runChatAction}');
     expect(source('index.tsx')).toContain('firstBlocker={page.blockers[0] ?? null}');
+    expect(source('index.tsx')).toContain('chat-cwd-missing');
     expect(source('index.tsx')).toContain('showBlockerBanner={page.turns.length > 0}');
     expect(source('index.tsx')).toContain('emptyTranscript={page.turns.length === 0}');
     expect(source('index.tsx')).toContain('compactSecondary={page.turns.length === 0}');
@@ -379,6 +380,8 @@ describe('chat layout wiring', () => {
     expect(sessions).toContain('restoreChatBootstrapIfUnchanged');
     expect(sessions).toContain('takeChatBootstrap');
     expect(sessions).toContain('boot.cwd');
+    expect(sessions).toContain('openConversationFromSession');
+    expect(sessions).toContain('boot.sessionId');
   });
 
   it('uses locale copy for process run details instead of internal English', () => {

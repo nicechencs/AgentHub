@@ -67,6 +67,14 @@ fn crud_and_cascade_delete() {
             .as_deref(),
         Some("sess-1")
     );
+    assert_eq!(
+        repo.find_by_native_session_id("sess-1")
+            .unwrap()
+            .unwrap()
+            .id,
+        "c1"
+    );
+    assert!(repo.find_by_native_session_id("missing").unwrap().is_none());
     let got = repo.get_conversation("c1").unwrap().expect("found");
     assert_eq!(got.agent_ids, vec![AgentId::Claude, AgentId::Codex]);
     assert_eq!(got.cwd.as_deref(), Some("/tmp"));
@@ -81,6 +89,28 @@ fn crud_and_cascade_delete() {
     assert!(repo.delete_conversation("c1").unwrap());
     assert!(repo.get_conversation("c1").unwrap().is_none());
     assert!(repo.list_messages("c1").unwrap().is_empty());
+}
+
+#[test]
+fn list_messages_keeps_insert_order_when_ids_sort_backwards() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let repo = ChatRepo::new(db);
+    let c = sample_conv("c-order", vec![AgentId::Claude]);
+    repo.create_conversation(&c).unwrap();
+
+    let mut user = sample_msg("zzz-user", "c-order", 1, ChatRole::User);
+    user.content = "先改登录页".into();
+    let mut agent = sample_msg("aaa-agent", "c-order", 1, ChatRole::Agent);
+    agent.content = "好，先看现有实现".into();
+    repo.insert_message(&user).unwrap();
+    repo.insert_message(&agent).unwrap();
+
+    let rows = repo.list_messages("c-order").unwrap();
+    assert_eq!(
+        rows.iter().map(|row| row.content.as_str()).collect::<Vec<_>>(),
+        vec!["先改登录页", "好，先看现有实现"]
+    );
 }
 
 #[test]
