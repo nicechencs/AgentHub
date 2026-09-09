@@ -145,8 +145,9 @@ describe('TicketWalletList details', () => {
         onDeleteTicket() {},
       }),
     );
-    expect(markup).not.toContain('aria-expanded');
-    expect(markup).toContain('更多操作');
+    expect(markup).toContain('aria-label="更多操作"');
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain('编辑配置');
     expect(markup).not.toContain('移入回收站');
   });
 

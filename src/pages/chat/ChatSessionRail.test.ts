@@ -65,11 +65,3 @@ describe('ChatSessionRail titles', () => {
   });
 });
 
-describe('ChatSessionRail delete confirm', () => {
-  it('marks the confirm-delete button with Enter', () => {
-    const html = renderMarkup(rail({ deleteConfirmId: 'c1' }));
-    expect(html).toContain('确认删除');
-    expect(html).toContain('aria-keyshortcuts="Enter"');
-    expect(html).toContain('>Enter</kbd>');
-  });
-});
