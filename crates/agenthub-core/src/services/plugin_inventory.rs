@@ -120,6 +120,16 @@ pub trait PluginCliRunner: Send + Sync {
     fn run_plugin(&self, program: &Path, args: &[&str]) -> CliRun {
         run_cli(program, args, CLI_TIMEOUT)
     }
+    /// Tests that only override [`run_plugin`] still intercept install/uninstall.
+    fn run_plugin_with_timeout(
+        &self,
+        program: &Path,
+        args: &[&str],
+        timeout: Duration,
+    ) -> CliRun {
+        let _ = timeout;
+        self.run_plugin(program, args)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -147,6 +157,15 @@ pub struct SystemPluginCliRunner;
 impl PluginCliRunner for SystemPluginCliRunner {
     fn run_list_json(&self, program: &Path) -> CliRun {
         run_cli(program, CLI_ARGS, CLI_TIMEOUT)
+    }
+
+    fn run_plugin_with_timeout(
+        &self,
+        program: &Path,
+        args: &[&str],
+        timeout: Duration,
+    ) -> CliRun {
+        run_cli(program, args, timeout)
     }
 }
 
@@ -643,6 +662,45 @@ pub fn parse_cli_plugin_list(
     Ok(out)
 }
 
+/// Parse `plugin list --json --available`. Keeps marketplace rows only; never
+/// treats `mcpServers` as plugin packs, and skips already-installed statuses.
+pub fn parse_cli_available_plugin_list(
+    agent: AgentId,
+    stdout: &str,
+    user_home: &Path,
+) -> Result<Vec<PluginEntry>, String> {
+    let value = extract_json_value(stdout)?;
+    let items = available_plugin_json_items(&value)?;
+    let mut out = Vec::new();
+    for item in items {
+        if item.get("mcpServers").is_some() && item.get("name").is_none() {
+            continue;
+        }
+        match json_status(item) {
+            Some("installed") | Some("enabled") | Some("disabled") => continue,
+            _ => {}
+        }
+        if let Some(entry) = plugin_from_json(agent, item, "available", user_home) {
+            out.push(entry);
+        }
+    }
+    Ok(out)
+}
+
+/// Preview a local plugin directory (Grok git/path install) without writing.
+pub fn preview_local_plugin(
+    agent: AgentId,
+    path: &Path,
+    user_home: &Path,
+) -> Result<PluginEntry, String> {
+    plugin_from_dir(agent, path, user_home)
+        .map(|mut entry| {
+            entry.source = "available".into();
+            entry
+        })
+        .ok_or_else(|| "local path is not a plugin pack".to_string())
+}
+
 fn plugin_json_items(value: &JsonValue) -> Result<Vec<&JsonValue>, String> {
     match value {
         JsonValue::Array(arr) => {
@@ -665,6 +723,31 @@ fn plugin_json_items(value: &JsonValue) -> Result<Vec<&JsonValue>, String> {
             }
             if looks_like_plugin_object(map) {
                 return Ok(vec![value]);
+            }
+            Ok(Vec::new())
+        }
+        JsonValue::Null => Ok(Vec::new()),
+        _ => Err("plugin list JSON must be an array or object".into()),
+    }
+}
+
+fn available_plugin_json_items(value: &JsonValue) -> Result<Vec<&JsonValue>, String> {
+    match value {
+        JsonValue::Array(arr) => {
+            if arr
+                .iter()
+                .any(|v| v.get("mcpServers").is_some() && v.get("name").is_none())
+            {
+                return Err("refusing to treat mcpServers as plugin rows".into());
+            }
+            Ok(arr.iter().collect())
+        }
+        JsonValue::Object(map) => {
+            if is_mcp_only_object(map) {
+                return Err("refusing to treat mcpServers as plugin rows".into());
+            }
+            if let Some(JsonValue::Array(arr)) = map.get("available") {
+                return Ok(arr.iter().collect());
             }
             Ok(Vec::new())
         }
@@ -1680,9 +1763,17 @@ fn plugin_from_dir(agent: AgentId, path: &Path, user_home: &Path) -> Option<Plug
 }
 
 fn read_plugin_manifest(dir: &Path) -> Option<JsonValue> {
-    let path = dir.join("plugin.json");
-    let text = fs::read_to_string(path).ok()?;
-    serde_json::from_str(&text).ok()
+    for path in [
+        dir.join("plugin.json"),
+        dir.join(".grok-plugin").join("plugin.json"),
+    ] {
+        if let Ok(text) = fs::read_to_string(path) {
+            if let Ok(value) = serde_json::from_str(&text) {
+                return Some(value);
+            }
+        }
+    }
+    None
 }
 
 fn discover_components(dir: &Path) -> Vec<PluginComponent> {

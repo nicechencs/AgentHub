@@ -55,5 +55,5 @@ Cursor 的 `ConfigWrite` / `AccountSwitch` / `ApiKeyAccount` 为 Unsupported：�
 
 `Skills: Full` 指共享库与各工具启用矩阵，**不等于** Chat 里为本轮指定「用于本次」。Grok 的 `Skills` 为 Full（库仍可用）；Chat「用于本次」为 Unsupported，界面也不画可点的假按钮。Codex 持续聊天才接入「用于本次」。见 [STATUS](../STATUS.md) 与 [Chat 与 Agent](../concepts/chat-and-agents.md)。
 
-能力矩阵不承载 npm 包名、安装 URL、home 路径或账号识别算法；这些是 adapter/port 数据。只读 MCP inventory 也不等于 `Mcp` 管理能力，更不等于厂商 plugin/extension 包。本机 Routes 的 models endpoint 也不改变 `ModelSelect` 状态。MCP 扫描见 [MCP inventory](mcp-inventory.md)；各家插件包与 MCP 表面见 [Agent 插件表面](agent-plugin-surfaces.md)。`/plugins` 已列出 Claude / Grok / Pi 已装包（Claude / Grok 可启用停用）；安装/卸载仍是 [提案](../proposals/plugin-management.md)。
+能力矩阵不承载 npm 包名、安装 URL、home 路径或账号识别算法；这些是 adapter/port 数据。只读 MCP inventory 也不等于 `Mcp` 管理能力，更不等于厂商 plugin/extension 包。本机 Routes 的 models endpoint 也不改变 `ModelSelect` 状态。MCP 扫描见 [MCP inventory](mcp-inventory.md)；各家插件包与 MCP 表面见 [Agent 插件表面](agent-plugin-surfaces.md)。`/plugins` 已列出 Claude / Grok / Pi 已装包；Claude / Grok 可安装/卸载/启用/停用。没有 `Capability::Plugins`。更新仍是 [提案](../proposals/plugin-management.md)。
 
