@@ -3141,7 +3141,7 @@ impl ActorWorker {
         let auto_write = ops::path_is_inside_cwd(&path, &cwd) || self.session_allow_always;
         if auto_write {
             return match ops::write_text_file_on_disk(&path, &content) {
-                Ok(()) => self.respond_jsonrpc(id, Ok(Value::Null)),
+                Ok(()) => self.respond_jsonrpc(id, Ok(json!({}))),
                 Err(error) => self.respond_jsonrpc(
                     id,
                     Err(json!({"code": -32000, "message": error.to_string()})),
@@ -3207,8 +3207,8 @@ impl ActorWorker {
             let Some((path, content)) = self.pending_fs_writes.remove(&persisted.request.id) else {
                 return Err(AppError::message("chat.runtime", "写出内容已失效，请重试"));
             };
-            ops::write_text_file_on_disk(&path, &content)?;
-            if decision == "accept_always" {
+            let write_result = ops::write_text_file_on_disk(&path, &content);
+            if decision == "accept_always" && write_result.is_ok() {
                 self.session_allow_always = true;
             }
             self.store.record_reply(
@@ -3217,7 +3217,13 @@ impl ActorWorker {
                 &reply.client_request_id,
                 &reply.request_id,
             )?;
-            self.respond_jsonrpc(server_id, Ok(Value::Null))?;
+            match write_result {
+                Ok(()) => self.respond_jsonrpc(server_id, Ok(json!({})))?,
+                Err(error) => self.respond_jsonrpc(
+                    server_id,
+                    Err(json!({"code": -32000, "message": error.to_string()})),
+                )?,
+            }
         }
         self.permission_options.remove(&persisted.request.id);
         let phase = if self
