@@ -23,12 +23,17 @@ export function isRuntimeActive(phase: RuntimeSnapshot['phase']): boolean {
 }
 
 /**
- * Continuous chat composer/send path is Codex, Grok, and Kiro.
- * Half-surface agents (`cursor`, Claude print, …) stay off this list —
- * do not invent ChatRuntime just because their interactive CLI has pickers.
+ * Continuous chat composer/send path is Codex, Grok, Kiro, and new-empty Claude
+ * (stream-json). Half-surface agents (`cursor`, Claude print+resume history, …)
+ * stay off this list — do not invent ChatRuntime just because a CLI has pickers.
  */
 export function isRuntimeChatAgent(agentId: string | null | undefined): boolean {
-  return agentId === 'codex' || agentId === 'grok' || agentId === 'kiro';
+  return (
+    agentId === 'codex' ||
+    agentId === 'grok' ||
+    agentId === 'kiro' ||
+    agentId === 'claude'
+  );
 }
 
 /**
