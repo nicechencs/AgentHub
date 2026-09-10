@@ -7,6 +7,7 @@ import {
   isProtocolProcessStep,
   phaseFromMessageStatus,
   stepSummary,
+  timelineProcessSteps,
   toolActionTone,
   type AgentProcessView,
 } from '@/lib/chat-process';
@@ -223,9 +224,7 @@ export function ChatProcessPanel({
   exitCode?: number | null;
 }) {
   const { t } = useI18n();
-  const timeline = view.steps.filter(
-    (s) => s.type !== 'text' && s.type !== 'usage' && !isProtocolProcessStep(s),
-  );
+  const timeline = timelineProcessSteps(view.steps);
   const protocolSteps = view.steps.filter(isProtocolProcessStep);
 
   const effectivePhase: AgentProcessView['phase'] =

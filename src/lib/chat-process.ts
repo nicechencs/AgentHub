@@ -285,6 +285,62 @@ export function isProtocolProcessStep(step: ProcessStep): boolean {
   return step.type === 'status';
 }
 
+function isCommandOutputRaw(step: ProcessStep): boolean {
+  return step.type === 'raw' && (step.note === 'command output' || step.note === '命令输出');
+}
+
+export function mergeToolResult(prev: string | undefined, next: string | undefined): string | undefined {
+  if (!next) return prev;
+  if (!prev) return next;
+  if (next.startsWith(prev)) return next;
+  if (prev.startsWith(next)) return prev;
+  return `${prev}${next}`;
+}
+
+/**
+ * Rows shown in the right-hand process pane: thinking, tools, errors.
+ * Codex used to emit each command stdout chunk as a raw "command output" row;
+ * fold those into 正在执行 / 已执行 so the pane is not a wall of 细节.
+ */
+export function timelineProcessSteps(steps: ProcessStep[]): ProcessStep[] {
+  const out: ProcessStep[] = [];
+  for (const step of steps) {
+    if (step.type === 'text' || step.type === 'usage' || isProtocolProcessStep(step)) continue;
+    if (isCommandOutputRaw(step)) {
+      const body = step.text;
+      if (!body?.trim()) continue;
+      const last = out[out.length - 1];
+      if (last?.type === 'tool' && classifyToolAction(last.name) === 'execute') {
+        out[out.length - 1] = {
+          ...last,
+          result: mergeToolResult(last.result, body),
+        };
+        continue;
+      }
+      out.push({
+        type: 'tool',
+        name: 'command_execution',
+        status: 'completed',
+        result: body,
+      });
+      continue;
+    }
+    if (step.type === 'tool' && classifyToolAction(step.name) === 'execute') {
+      const last = out[out.length - 1];
+      if (
+        last?.type === 'tool'
+        && classifyToolAction(last.name) === 'execute'
+        && (last.id ?? '') === (step.id ?? '')
+      ) {
+        out[out.length - 1] = mergeToolStep(last, step);
+        continue;
+      }
+    }
+    out.push(step);
+  }
+  return out;
+}
+
 function lastMatching<T>(items: T[], pred: (item: T) => boolean): T | undefined {
   for (let i = items.length - 1; i >= 0; i -= 1) {
     if (pred(items[i])) return items[i];
@@ -298,11 +354,12 @@ export function formatProcessHeadline(
   phase: ProcessPhase,
   t: TranslateFn,
 ): string {
-  const tools = steps.filter((step): step is ToolStep => step.type === 'tool');
+  const visible = timelineProcessSteps(steps);
+  const tools = visible.filter((step): step is ToolStep => step.type === 'tool');
   const lastLive = lastMatching(tools, (step) => toolActionTone(step.status) === 'live');
   if (lastLive) return formatToolStep(lastLive, t);
 
-  const lastThinking = lastMatching(steps, (step) => step.type === 'thinking');
+  const lastThinking = lastMatching(visible, (step) => step.type === 'thinking');
   if (lastThinking?.type === 'thinking' && !lastThinking.done) {
     return t('chat.process.thinking');
   }
@@ -421,9 +478,7 @@ export function formatTurnUsageFooter(
 export function hasInspectableProcess(view: AgentProcessView | undefined): boolean {
   if (!view) return false;
   if (view.stderr?.trim()) return true;
-  return view.steps.some(
-    (step) => step.type !== 'usage' && step.type !== 'text' && !isProtocolProcessStep(step),
-  );
+  return timelineProcessSteps(view.steps).length > 0;
 }
 
 /** 是否值得展示过程折叠面板 */
@@ -490,7 +545,7 @@ function mergeToolStep(prev: Extract<ProcessStep, { type: 'tool' }>, step: Extra
     name,
     input: step.input !== undefined ? step.input : prev.input,
     status: step.status || prev.status,
-    result: step.result != null && step.result !== '' ? step.result : prev.result,
+    result: mergeToolResult(prev.result, step.result),
   };
 }
 

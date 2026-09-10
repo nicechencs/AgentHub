@@ -124,6 +124,7 @@ describe('chat layout wiring', () => {
     expect(source('ChatMessageBubble.tsx')).toContain('data-help="chat-process-chip"');
     expect(source('ChatMessageBubble.tsx')).not.toContain('ChatProcessPanel');
     expect(source('ChatProcessInspectPanel.tsx')).toContain('ChatProcessPanel');
+    expect(source('ChatProcessInspectPanel.tsx')).toContain('SideInspectPanel');
   });
 
   it('grows the composer textarea with a shared cap and panel-colored shell', () => {

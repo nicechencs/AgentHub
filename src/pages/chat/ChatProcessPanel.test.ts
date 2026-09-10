@@ -78,6 +78,24 @@ describe('ChatProcessPanel human copy', () => {
     expect(protocolRunAt).toBeGreaterThan(humanRunAt);
   });
 
+  it('folds command output chunks into 已执行 instead of listing each 细节', () => {
+    const html = renderPanel(
+      view({
+        phase: 'ok',
+        steps: [
+          { type: 'raw', text: 'docs\n', note: 'command output' },
+          { type: 'raw', text: 'src\n', note: 'command output' },
+          { type: 'thinking', text: '先看目录', done: true },
+        ],
+      }),
+      'ok',
+    );
+    expect(html).toContain('已执行');
+    expect(html).toContain('先看目录');
+    expect(html).not.toContain('command output');
+    expect(html).toContain('docs');
+  });
+
   it('keeps finished thinking expanded in the inspect pane', () => {
     const html = renderPanel(
       view({
