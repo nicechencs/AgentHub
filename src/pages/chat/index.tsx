@@ -324,6 +324,10 @@ export default function ChatPage() {
               hideLastTurnRetry={Boolean(page.turnOutcome)}
               onOpenLocal={openMarkdownPreview}
               onOpenProcess={openProcessInspect}
+              onCloseProcess={preview.close}
+              inspectProcess={
+                isChatProcessInspect(preview.target) && preview.expanded ? preview.target : null
+              }
               onPickStarter={page.runChatAction}
               firstBlocker={page.blockers[0] ?? null}
               onBlockerAction={(target) => {
