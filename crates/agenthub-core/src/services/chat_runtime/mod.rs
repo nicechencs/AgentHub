@@ -2533,27 +2533,10 @@ impl ActorWorker {
                 }
             }
             "item/commandExecution/outputDelta" | "item/commandExecution/terminalOutputDelta" => {
-                let text = params
-                    .get("delta")
-                    .and_then(Value::as_str)
-                    .or_else(|| params.get("output").and_then(Value::as_str))
-                    .unwrap_or_default();
-                if !text.is_empty() {
-                    self.emit(
-                        ChatEvent::AgentProcess {
-                            turn: self.chat_turn.unwrap_or(0),
-                            agent: AgentId::Codex,
-                            step: ProcessStep::Raw {
-                                text: redact_text(text),
-                                note: Some("command output".into()),
-                            },
-                        },
-                        self.live_phase(RuntimePhase::Running),
-                    )?;
-                }
+                self.emit_command_output_delta(params)?;
             }
-            "item/started" | "item/completed" => {
-                self.remember_file_change_item(method, params.get("item"))?;
+            "item/started" | "item/completed" | "item/updated" => {
+                self.emit_codex_item(method, params.get("item"))?;
             }
             "item/fileChange/patchUpdated" => {
                 self.remember_file_change_patch(params);
@@ -2749,6 +2732,128 @@ impl ActorWorker {
         optional_json_text(params.get("reason"))
             .or_else(|| optional_json_text(params.get("grantRoot")))
             .unwrap_or_default()
+    }
+
+    fn emit_codex_item(&mut self, method: &str, item: Option<&Value>) -> Result<()> {
+        let Some(item) = item else {
+            return Ok(());
+        };
+        let ty = item.get("type").and_then(Value::as_str).unwrap_or_default();
+        match ty {
+            "fileChange" | "file_change" => self.remember_file_change_item(method, Some(item)),
+            "commandExecution" | "command_execution" => {
+                self.emit_command_execution_item(method, item)
+            }
+            "mcpToolCall" | "mcp_tool_call" => self.emit_mcp_tool_item(method, item),
+            "reasoning" => self.emit_reasoning_item(method, item),
+            _ => Ok(()),
+        }
+    }
+
+    fn emit_command_execution_item(&self, method: &str, item: &Value) -> Result<()> {
+        let id = item.get("id").and_then(Value::as_str).unwrap_or_default();
+        let command =
+            optional_json_text(item.get("command")).unwrap_or_else(|| "command".to_string());
+        let result = optional_json_text(item.get("aggregatedOutput"))
+            .or_else(|| optional_json_text(item.get("aggregated_output")));
+        self.emit_codex_tool(
+            (!id.is_empty()).then(|| id.to_string()),
+            "command_execution",
+            Some(json!({ "command": command })),
+            item_status(method, item),
+            result,
+        )
+    }
+
+    fn emit_command_output_delta(&self, params: &Value) -> Result<()> {
+        let text = params
+            .get("delta")
+            .and_then(Value::as_str)
+            .or_else(|| params.get("output").and_then(Value::as_str))
+            .unwrap_or_default();
+        if text.is_empty() {
+            return Ok(());
+        }
+        let id = params
+            .get("itemId")
+            .or_else(|| params.get("item_id"))
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        self.emit_codex_tool(
+            id,
+            "command_execution",
+            None,
+            "inProgress".to_string(),
+            Some(redact_text(text)),
+        )
+    }
+
+    fn emit_mcp_tool_item(&self, method: &str, item: &Value) -> Result<()> {
+        let id = item.get("id").and_then(Value::as_str).unwrap_or_default();
+        let name = item
+            .get("tool")
+            .and_then(Value::as_str)
+            .or_else(|| item.get("name").and_then(Value::as_str))
+            .unwrap_or("mcp")
+            .to_string();
+        let input = item
+            .get("arguments")
+            .cloned()
+            .or_else(|| item.get("input").cloned());
+        let result = optional_json_text(item.get("result"))
+            .or_else(|| optional_json_text(item.get("error")));
+        self.emit_codex_tool(
+            (!id.is_empty()).then(|| id.to_string()),
+            name,
+            input,
+            item_status(method, item),
+            result,
+        )
+    }
+
+    fn emit_reasoning_item(&self, method: &str, item: &Value) -> Result<()> {
+        let text = optional_json_text(item.get("text"))
+            .or_else(|| optional_json_text(item.get("summary")))
+            .unwrap_or_default();
+        if text.is_empty() && method != "item/completed" {
+            return Ok(());
+        }
+        self.emit(
+            ChatEvent::AgentProcess {
+                turn: self.chat_turn.unwrap_or(0),
+                agent: AgentId::Codex,
+                step: ProcessStep::Thinking {
+                    text: redact_text(&text),
+                    done: method == "item/completed",
+                },
+            },
+            self.live_phase(RuntimePhase::Running),
+        )
+    }
+
+    fn emit_codex_tool(
+        &self,
+        id: Option<String>,
+        name: impl Into<String>,
+        input: Option<Value>,
+        status: String,
+        result: Option<String>,
+    ) -> Result<()> {
+        self.emit(
+            ChatEvent::AgentProcess {
+                turn: self.chat_turn.unwrap_or(0),
+                agent: AgentId::Codex,
+                step: ProcessStep::Tool {
+                    id,
+                    name: name.into(),
+                    input,
+                    status,
+                    result,
+                },
+            },
+            self.live_phase(RuntimePhase::Running),
+        )
     }
 
     fn remember_file_change_item(&mut self, method: &str, item: Option<&Value>) -> Result<()> {
@@ -3387,6 +3492,17 @@ fn redact_json_text(value: Option<&Value>) -> String {
         None => String::new(),
     };
     redact_text(&raw)
+}
+
+fn item_status(method: &str, item: &Value) -> String {
+    item.get("status")
+        .and_then(Value::as_str)
+        .unwrap_or(if method == "item/completed" {
+            "completed"
+        } else {
+            "inProgress"
+        })
+        .to_string()
 }
 
 fn optional_json_text(value: Option<&Value>) -> Option<String> {

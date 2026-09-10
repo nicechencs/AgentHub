@@ -24,7 +24,6 @@ export function ChatTurnOutcomeBanner(props: {
         <div className="min-w-0 space-y-1">
           <p className="font-medium text-primary">{title}</p>
           <p className="text-meta text-secondary">{detail}</p>
-          <p className="text-meta text-muted">{t('chat.turnOutcome.draftKept')}</p>
         </div>
         <span className="flex shrink-0 items-center gap-1">
           <Button

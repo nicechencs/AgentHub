@@ -715,8 +715,11 @@ describe('TicketDetailPanel', () => {
       }),
     );
     expect(markup).toContain('id="ticket-detail"');
-    expect(markup).toContain('用量');
-    expect(markup).toContain('连到哪里 · 模型');
+    expect(markup).not.toContain('用量');
+    expect(markup).not.toContain('连到哪里 · 模型');
+    expect(markup).not.toContain('现在能不能用');
+    expect(markup).not.toContain('谁在用');
+    expect(markup).not.toContain('配置与记录');
     expect(markup).not.toContain('用在哪');
     expect(markup).not.toContain('导入自');
     expect(markup).not.toContain('更多');
@@ -734,7 +737,7 @@ describe('TicketDetailPanel', () => {
     expect(markup).not.toContain('5 小时已用');
     expect(markup).toContain('data-detail-table');
     expect(markup).not.toContain('<thead');
-    const usageIndex = markup.indexOf('用量');
+    const usageIndex = markup.indexOf('7 天已用');
     const protocolIndex = markup.indexOf('anthropic-messages');
     expect(usageIndex).toBeGreaterThan(-1);
     expect(protocolIndex).toBeGreaterThan(usageIndex);
@@ -888,7 +891,7 @@ describe('TicketDetailPanel', () => {
         onOpenChange() {},
       }),
     );
-    expect(markup).toContain('谁在用');
+    expect(markup).not.toContain('谁在用');
     expect(markup).toContain('Claude');
     expect(markup).toContain('当前使用');
     expect(markup).not.toContain('直连');
@@ -925,14 +928,15 @@ describe('TicketDetailPanel', () => {
     expect(markup).not.toContain('取消');
     expect(markup).toContain('收起');
     expect(markup).toContain('编辑配置');
-    expect(markup).toContain('谁在用');
+    expect(markup).not.toContain('谁在用');
     expect(markup).toContain('Codex');
     expect(markup).toContain('本机路由运行中');
     expect(markup).toContain('http://127.0.0.1:43121');
     expect(markup).toContain('接口');
     expect(markup).toContain('Claude');
-    expect(markup).toContain('连到哪里 · 模型');
-    expect(markup).toContain('配置与记录');
+    expect(markup).not.toContain('连到哪里 · 模型');
+    expect(markup).not.toContain('配置与记录');
+    expect(markup).not.toContain('现在能不能用');
     expect(markup).toContain('data-detail-table');
     expect(markup).not.toContain('<thead');
     expect(markup).not.toContain('项目');
@@ -1069,8 +1073,10 @@ describe('TicketDetailPanel', () => {
     expect(current).toContain('grok-4.6');
     expect(current).toContain('新开会话会用这个模型');
     expect(current).not.toContain('先把这份登录设为默认');
-    expect(current.indexOf('连到哪里 · 模型')).toBeLessThan(current.indexOf('默认模型'));
-    expect(current.indexOf('配置与记录')).toBeGreaterThan(current.indexOf('默认模型'));
+    expect(current).not.toContain('连到哪里 · 模型');
+    expect(current).not.toContain('配置与记录');
+    expect(current).toContain('接口');
+    expect(current.indexOf('接口')).toBeLessThan(current.indexOf('默认模型'));
 
     const other = renderWithTooltip(
       createElement(TicketDetailPanel, {
