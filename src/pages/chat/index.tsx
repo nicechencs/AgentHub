@@ -271,6 +271,7 @@ export default function ChatPage() {
         onConfirmDelete={() => void page.confirmDelete()}
         searchFocusNonce={page.searchFocusNonce}
         historyRevealNonce={page.historyRevealNonce}
+        firstUserContentById={page.firstUserContentById}
       />
 
       <div ref={preview.splitRef} className="flex min-h-0 min-w-0 flex-1 overflow-hidden">

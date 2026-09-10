@@ -54,6 +54,7 @@ export function ChatSessionRail({
   onConfirmDelete,
   searchFocusNonce = 0,
   historyRevealNonce = 0,
+  firstUserContentById,
 }: {
   open: boolean;
   listLoading: boolean;
@@ -75,6 +76,7 @@ export function ChatSessionRail({
   onConfirmDelete: () => void;
   searchFocusNonce?: number;
   historyRevealNonce?: number;
+  firstUserContentById?: Record<string, string>;
 }) {
   const { t } = useI18n();
   const width = useNavWidth({
@@ -209,9 +211,14 @@ export function ChatSessionRail({
                       />
                     ) : null}
                     <Hint
-                      label={<ConversationRailHintLabel conversation={c} />}
+                      label={
+                        <ConversationRailHintLabel
+                          conversation={c}
+                          firstUserContent={firstUserContentById?.[c.id]}
+                        />
+                      }
                       side="right"
-                      contentClassName="min-w-0 whitespace-normal break-words"
+                      contentClassName="whitespace-normal break-words [overflow-wrap:anywhere] [text-overflow:clip]"
                     >
                       <button
                         type="button"
@@ -301,30 +308,32 @@ export function ChatSessionRail({
   );
 }
 
-function ConversationRailHintLabel({ conversation }: { conversation: Conversation }) {
+function ConversationRailHintLabel({
+  conversation,
+  firstUserContent,
+}: {
+  conversation: Conversation;
+  firstUserContent?: string;
+}) {
   const { t } = useI18n();
-  const hint = conversationRailHintView(conversation, t);
+  const hint = conversationRailHintView(
+    { ...conversation, firstUserContent },
+    t,
+  );
   return (
     <span
-      className="flex min-w-0 max-w-full flex-col gap-1 whitespace-normal break-words"
+      className="block w-full whitespace-normal break-words [overflow-wrap:anywhere] [text-overflow:clip]"
       data-help="chat-session-hint"
     >
-      {conversation.agentIds.length > 0 ? (
-        <span className="inline-flex items-center gap-0.5">
-          {conversation.agentIds.map((id) => (
-            <AgentLogo key={id} agentId={id} size="sm" hint={false} />
-          ))}
-        </span>
-      ) : null}
       {hint.title ? (
         <span
-          className="min-w-0 max-w-full whitespace-pre-wrap break-all [overflow-wrap:anywhere]"
+          className="block w-full whitespace-pre-wrap break-all [overflow-wrap:anywhere] [text-overflow:clip]"
           data-help="chat-session-hint-title"
         >
           {hint.title}
         </span>
       ) : null}
-      <span className="min-w-0 max-w-full whitespace-normal break-words">
+      <span className="mt-1 block w-full whitespace-normal break-words [overflow-wrap:anywhere]">
         {hint.meta}
       </span>
     </span>

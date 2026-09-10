@@ -269,14 +269,21 @@ describe('chat layout wiring', () => {
     );
     expect(listTitle).not.toBeNull();
     const hintTitle = rail.match(
-      /className="min-w-0 max-w-full whitespace-pre-wrap break-all \[overflow-wrap:anywhere\]"\s+data-help="chat-session-hint-title"/,
+      /className="block w-full whitespace-pre-wrap break-all \[overflow-wrap:anywhere\] \[text-overflow:clip\]"\s+data-help="chat-session-hint-title"/,
     );
     expect(hintTitle).not.toBeNull();
-    expect(rail).toContain('conversationRailHintView(conversation, t)');
+    expect(rail).toContain('conversationRailHintView(');
+    expect(rail).toContain('firstUserContent');
     expect(rail).toContain('{hint.title}');
     expect(rail).not.toContain('title={conversation.title}');
+    expect(rail).not.toMatch(/function ConversationRailHintLabel[\s\S]*AgentLogo/);
     expect(rail).not.toContain('conversationSemanticTitle');
-    expect(model).toContain('const title = conversation.title.trim()');
+    expect(model).toContain('conversationRailHintTitle');
+    expect(model).toContain('titleFromPrompt');
+    expect(model).toContain('conversationSemanticPhrase');
+    expect(model).not.toMatch(
+      /export function titleFromPrompt[\s\S]*TITLE_DISPLAY_CLIP/,
+    );
     expect(model).not.toMatch(
       /conversationRailHintView[\s\S]*conversationSemanticTitle/,
     );

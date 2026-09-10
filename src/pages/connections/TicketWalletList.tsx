@@ -69,7 +69,7 @@ import {
   ContextMenuItem,
   type ContextMenuPoint,
 } from '@/components/ui/context-menu';
-import { Hint, Tip } from '@/components/ui/tooltip';
+import { Hint, Tip, TruncateTip } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
 import type { TranslateFn } from '@/lib/i18n';
@@ -785,7 +785,7 @@ function TicketRow({
               </Tip>
             )}
             {cursorLogin ? (
-              <div className="truncate text-meta text-secondary">{cursorLogin}</div>
+              <TruncateTip className="text-meta text-secondary" text={cursorLogin} />
             ) : null}
           </div>
         </div>
