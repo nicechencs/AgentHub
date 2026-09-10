@@ -192,7 +192,6 @@ export function PoolAuthorizationDetail({
       ) : (
       <div className="flex flex-col gap-3" data-pool-authorization-detail={item.key}>
         <section className="space-y-1.5">
-          <h3 className="text-body font-medium">{t('routes.pool.detail.sectionAvailability')}</h3>
           <div className="flex min-w-0 flex-wrap items-center gap-2 text-body">
             <PoolLoginMark item={item} />
             <span className="truncate font-medium text-primary">{displayTitle}</span>
@@ -214,7 +213,6 @@ export function PoolAuthorizationDetail({
 
         {hasQuota ? (
           <section className="space-y-1.5">
-            <h3 className="text-body font-medium">{t('connections.list.usage')}</h3>
             <DetailTable>
               {hasQuotaWindow(item.quota7dPct) ? (
                 <DetailTableRow label={t('connections.list.quota7dUsed')}>
@@ -251,7 +249,6 @@ export function PoolAuthorizationDetail({
         ) : null}
 
         <section className="space-y-1.5">
-          <h3 className="text-body font-medium">{t('connections.list.sectionWhere')}</h3>
           <DetailTable>
             {endpointKinds.length > 0 ? (
               <DetailTableRow label={t('routes.pool.detail.endpointTypes')}>
@@ -321,7 +318,6 @@ export function PoolAuthorizationDetail({
 
         {recordRows.length > 0 ? (
           <section className="space-y-1.5">
-            <h3 className="text-meta font-medium text-muted">{t('connections.list.sectionRecords')}</h3>
             <DetailTable>
               {recordRows.map((row) => (
                 <DetailRow

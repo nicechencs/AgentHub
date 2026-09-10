@@ -417,21 +417,8 @@ function detailAvailabilityChip(
   return null;
 }
 
-function TicketDetailSection({
-  title,
-  children,
-  quiet = false,
-}: {
-  title: string;
-  children: React.ReactNode;
-  quiet?: boolean;
-}) {
-  return (
-    <section className="space-y-1.5">
-      <h3 className={quiet ? 'text-meta font-medium text-muted' : 'text-body font-medium'}>{title}</h3>
-      {children}
-    </section>
-  );
+function TicketDetailSection({ children }: { children: React.ReactNode }) {
+  return <section className="space-y-1.5">{children}</section>;
 }
 
 function TicketDetailBody({
@@ -496,7 +483,7 @@ function TicketDetailBody({
   return (
     <div className="flex flex-col gap-3">
       {authChip || occupancy.length > 0 ? (
-        <TicketDetailSection title={t('connections.list.sectionAvailability')}>
+        <TicketDetailSection>
           <DetailTable>
             {authChip ? (
               <DetailTableRow label={t('connections.list.table.status')}>
@@ -521,7 +508,7 @@ function TicketDetailBody({
       ) : null}
 
       {showUsage ? (
-        <TicketDetailSection title={t('connections.list.usage')}>
+        <TicketDetailSection>
           <DetailTable>
             {has7d ? (
               <QuotaDetailRow
@@ -568,7 +555,7 @@ function TicketDetailBody({
       ) : null}
 
       {connection.length > 0 || showPi ? (
-        <TicketDetailSection title={t('connections.list.sectionWhere')}>
+        <TicketDetailSection>
           <DetailTable>
             {connection.map((field) => (
               <DetailRow
@@ -596,7 +583,7 @@ function TicketDetailBody({
       ) : null}
 
       {showClients ? (
-        <TicketDetailSection title={t('connections.list.sectionWho')}>
+        <TicketDetailSection>
           {bindingRows.length === 0 ? (
             <p className="text-body text-muted">{t('connections.list.clientsEmpty')}</p>
           ) : (
@@ -628,7 +615,7 @@ function TicketDetailBody({
       ) : null}
 
       {showRecords ? (
-        <TicketDetailSection quiet title={t('connections.list.sectionRecords')}>
+        <TicketDetailSection>
           {agentId && files && files.length > 0 ? (
             <TicketAuthFiles agentId={agentId} files={files} />
           ) : null}

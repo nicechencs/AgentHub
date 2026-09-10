@@ -4,16 +4,20 @@ import {
   classifyToolAction,
   formatProcessHeadline,
   formatToolStep,
+  formatTurnUsageFooter,
   formatUsageStep,
   formatVisibleUsage,
+  hasInspectableProcess,
   hasProcessDetails,
   isProtocolProcessStep,
   mergeThinkingText,
+  mergeToolResult,
   phaseFromMessageStatus,
   processKey,
   processPhaseLabel,
   reduceProcessEvent,
   stepSummary,
+  timelineProcessSteps,
   toolActionTarget,
   toolActionTone,
   usageByScope,
@@ -235,6 +239,70 @@ describe('chat-process reduceProcessEvent', () => {
         updatedAt: 0,
       }),
     ).toBe(true);
+  });
+
+  it('hasInspectableProcess ignores usage-only and empty running turns', () => {
+    expect(hasInspectableProcess(undefined)).toBe(false);
+    expect(
+      hasInspectableProcess({
+        turn: 1,
+        agent: 'codex',
+        phase: 'running',
+        stdout: '',
+        stderr: '',
+        steps: [{ type: 'usage', scope: 'turn', input: 10, output: 2 }],
+        updatedAt: 0,
+      }),
+    ).toBe(false);
+    expect(
+      hasInspectableProcess({
+        turn: 1,
+        agent: 'codex',
+        phase: 'ok',
+        stdout: '',
+        stderr: '',
+        steps: [{ type: 'thinking', text: 'plan', done: true }],
+        updatedAt: 0,
+      }),
+    ).toBe(true);
+    expect(
+      hasInspectableProcess({
+        turn: 1,
+        agent: 'codex',
+        phase: 'ok',
+        command: 'codex app-server',
+        stdout: '',
+        stderr: '',
+        steps: [{ type: 'usage', scope: 'turn', input: 10, output: 2 }],
+        updatedAt: 0,
+      }),
+    ).toBe(false);
+  });
+
+  it('folds command output raw rows into one 已执行 timeline step', () => {
+    const steps = timelineProcessSteps([
+      { type: 'raw', text: 'docs\n', note: 'command output' },
+      { type: 'raw', text: 'src\n', note: 'command output' },
+      { type: 'usage', scope: 'turn', input: 1, output: 1 },
+    ]);
+    expect(steps).toEqual([
+      {
+        type: 'tool',
+        name: 'command_execution',
+        status: 'completed',
+        result: 'docs\nsrc\n',
+      },
+    ]);
+    expect(formatProcessHeadline(
+      [
+        { type: 'raw', text: 'docs\n', note: 'command output' },
+        { type: 'raw', text: 'src\n', note: 'command output' },
+      ],
+      'ok',
+      t,
+    )).toBe('已完成 · 已执行');
+    expect(mergeToolResult('docs\n', 'src\n')).toBe('docs\nsrc\n');
+    expect(mergeToolResult('docs\nsrc\n', 'docs\nsrc\nmore')).toBe('docs\nsrc\nmore');
   });
 
   it('ignores finished/error events without mutating identity when empty', () => {
@@ -768,6 +836,8 @@ describe('chat-process reduceProcessEvent', () => {
     expect(formatVisibleUsage(steps, t)).toBe(
       '用量 当前轮 输入 100 · 输出 20 · 缓存 40 · 累计 输入 40 · 输出 4 · 44 / 1000',
     );
+    expect(formatTurnUsageFooter(steps, true, t)).toBe('');
+    expect(formatTurnUsageFooter(steps, false, t)).toBe('输入 100 · 输出 20 · 缓存 40');
     expect(stepSummary(turn!, t)).toBe('当前轮 输入 100 · 输出 20 · 缓存 40');
   });
 });

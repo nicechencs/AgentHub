@@ -96,6 +96,8 @@ describe('chat layout wiring', () => {
     expect(composer).toContain('keepComposerFocus');
     expect(composer).toContain('enterKeyHint="send"');
     expect(composer).toContain("t('chat.composer.moreOptions')");
+    expect(composer).toContain('flex min-w-0 flex-1 items-center gap-1.5 overflow-visible');
+    expect(composer).not.toContain('flex-col justify-center gap-1.5');
     expect(composer).not.toContain('chat.actions.menu');
     expect(source('use-chat-page.ts')).toContain('composerEnterShouldSubmit');
     expect(source('index.tsx')).toContain('queuedFollowUpCount');
@@ -112,6 +114,17 @@ describe('chat layout wiring', () => {
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('readMarkdownPreview');
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('chat.preview.back');
     expect(source('index.tsx')).toContain('pushChatPreview');
+  });
+
+  it('opens the turn process in the same right-hand pane', () => {
+    const page = source('index.tsx');
+    expect(page).toContain('ChatProcessInspectPanel');
+    expect(page).toContain('openChatProcessInspect');
+    expect(page).toContain('onOpenProcess');
+    expect(source('ChatMessageBubble.tsx')).toContain('data-help="chat-process-chip"');
+    expect(source('ChatMessageBubble.tsx')).not.toContain('ChatProcessPanel');
+    expect(source('ChatProcessInspectPanel.tsx')).toContain('ChatProcessPanel');
+    expect(source('ChatProcessInspectPanel.tsx')).toContain('SideInspectPanel');
   });
 
   it('grows the composer textarea with a shared cap and panel-colored shell', () => {
@@ -371,6 +384,7 @@ describe('chat layout wiring', () => {
       'This conversation only, not saved',
     );
     expect(source('ChatTurnOutcomeBanner.tsx')).toContain('turnOutcomeDetail');
+    expect(source('ChatTurnOutcomeBanner.tsx')).not.toContain('draftKept');
   });
 
   it('shows Kiro ask-or-full permission mode in session settings and the header', () => {
@@ -439,7 +453,8 @@ describe('chat layout wiring', () => {
     expect(panel).toContain("t('chat.process.exitCode'");
     expect(panel).toContain("t('chat.process.details')");
     expect(panel).toContain('formatToolStep');
-    expect(panel).toContain('formatProcessHeadline');
+    expect(source('ChatProcessInspectPanel.tsx')).toContain('formatProcessHeadline');
+    expect(source('ChatMessageBubble.tsx')).toContain('formatProcessHeadline');
     expect(panel).not.toContain('{step.name} · {step.status}');
     expect(panel).not.toContain('>stderr<');
     expect(panel).not.toContain('exit {exitCode}');
@@ -458,8 +473,9 @@ describe('chat layout wiring', () => {
     expect(translate('en', 'chat.process.details')).toBe('Details');
     expect(translate('zh', 'chat.process.usage')).toBe('用量');
     expect(translate('en', 'chat.process.usage')).toBe('Usage');
-    expect(source('ChatMessageBubble.tsx')).toContain('formatVisibleUsage');
-    expect(source('ChatProcessPanel.tsx')).toContain('formatVisibleUsage');
+    expect(source('ChatMessageBubble.tsx')).toContain('formatTurnUsageFooter');
+    expect(source('ChatMessageBubble.tsx')).not.toContain('formatVisibleUsage');
+    expect(source('ChatProcessPanel.tsx')).not.toContain('formatVisibleUsage');
     expect(translate('zh', 'chat.process.usageTurn')).toBe('当前轮');
     expect(translate('zh', 'chat.process.usageSession')).toBe('累计');
   });

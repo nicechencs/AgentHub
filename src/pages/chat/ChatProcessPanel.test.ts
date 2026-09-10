@@ -21,7 +21,7 @@ function view(partial: Partial<AgentProcessView> & Pick<AgentProcessView, 'steps
 
 function renderPanel(process: AgentProcessView, messageStatus?: string) {
   return renderToStaticMarkup(
-    createElement(ChatProcessPanel, { view: process, messageStatus, durationMs: 1500 }),
+    createElement(ChatProcessPanel, { view: process, messageStatus }),
   );
 }
 
@@ -43,7 +43,7 @@ describe('ChatProcessPanel human copy', () => {
       }),
     );
     expect(html).toContain('正在读取 README.md');
-    expect(html).toContain('▸ 正在读取 README.md');
+    expect(html).not.toContain('▸ 正在读取 README.md');
     expect(html).toContain('细节');
     expect(html).toContain('运行详情');
     expect(html).toContain('thread.started');
@@ -69,7 +69,6 @@ describe('ChatProcessPanel human copy', () => {
       }),
       'ok',
     );
-    expect(html).toContain('已完成 · 已读取 · 已修改 · 已执行');
     expect(html).toContain('已读取 a.ts');
     expect(html).toContain('已修改 a.ts');
     expect(html).toContain('已执行 ls');
@@ -77,5 +76,49 @@ describe('ChatProcessPanel human copy', () => {
     const protocolRunAt = html.indexOf('command_execution · end');
     expect(humanRunAt).toBeGreaterThan(-1);
     expect(protocolRunAt).toBeGreaterThan(humanRunAt);
+  });
+
+  it('folds command output chunks into 已执行 instead of listing each 细节', () => {
+    const html = renderPanel(
+      view({
+        phase: 'ok',
+        steps: [
+          { type: 'raw', text: 'docs\n', note: 'command output' },
+          { type: 'raw', text: 'src\n', note: 'command output' },
+          { type: 'thinking', text: '先看目录', done: true },
+        ],
+      }),
+      'ok',
+    );
+    expect(html).toContain('已执行');
+    expect(html).toContain('先看目录');
+    expect(html).not.toContain('command output');
+    expect(html).toContain('docs');
+  });
+
+  it('keeps finished thinking expanded in the inspect pane', () => {
+    const html = renderPanel(
+      view({
+        phase: 'ok',
+        steps: [{ type: 'thinking', text: '先看工作目录', done: true }],
+      }),
+      'ok',
+    );
+    expect(html).toContain('先看工作目录');
+    expect(html).toMatch(/<details[^>]*open/);
+  });
+
+  it('opens run details when the timeline is empty so the pane is not blank', () => {
+    const html = renderPanel(
+      view({
+        phase: 'ok',
+        command: 'codex app-server',
+        steps: [{ type: 'status', phase: 'starting', detail: 'thread.started' }],
+      }),
+      'ok',
+    );
+    expect(html).toContain('运行详情');
+    expect(html).toMatch(/<details[^>]*open/);
+    expect(html).toContain('codex app-server');
   });
 });
