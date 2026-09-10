@@ -17,6 +17,7 @@ import { ListSkeleton } from '@/components/ui/skeleton';
 import { agentDisplayName } from '@/config/agents';
 import { processKey, type ProcessMap } from '@/lib/chat-process';
 import type { AgentKey, ChatMessageStatus, Conversation } from '@/lib/types';
+import type { ChatProcessInspectTarget } from './chat-preview-model';
 import { cn } from '@/lib/utils';
 import type { TranslateFn } from '@/lib/i18n';
 import { formatDurationMs, type TurnGroup } from './chat-format';
@@ -54,6 +55,8 @@ export function ChatTranscript({
   hideLastTurnRetry = false,
   onOpenLocal,
   onOpenProcess,
+  onCloseProcess,
+  inspectProcess = null,
   onPickStarter,
   firstBlocker = null,
   onBlockerAction,
@@ -74,6 +77,8 @@ export function ChatTranscript({
   hideLastTurnRetry?: boolean;
   onOpenLocal?: (path: string) => boolean;
   onOpenProcess?: (turn: number, agent: AgentKey) => void;
+  onCloseProcess?: () => void;
+  inspectProcess?: ChatProcessInspectTarget | null;
   onPickStarter?: (action: ChatActionDef) => void;
   firstBlocker?: ChatSendBlocker | null;
   onBlockerAction?: (target: ChatBlockerPrimaryTarget) => void;
@@ -158,6 +163,10 @@ export function ChatTranscript({
                         localBasePath={active.cwd ?? undefined}
                         onOpenLocal={onOpenLocal}
                         onOpenProcess={onOpenProcess}
+                        onCloseProcess={onCloseProcess}
+                        processPaneOpen={
+                          inspectProcess?.turn === m.turn && inspectProcess.agent === agent
+                        }
                       />
                     );
                   })}

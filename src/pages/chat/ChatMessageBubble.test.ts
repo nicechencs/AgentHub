@@ -113,7 +113,34 @@ describe('ChatMessageBubble streaming feel', () => {
       })),
     );
     expect(html).toContain('data-help="chat-process-chip"');
+    expect(html).toContain('▸');
     expect(html).toContain('正在读取 README.md');
     expect(html).not.toContain('用量');
+  });
+
+  it('keeps a clickable process row while running even before tools arrive', () => {
+    const process: AgentProcessView = {
+      turn: 1,
+      agent: 'codex',
+      phase: 'running',
+      stdout: '',
+      stderr: '',
+      steps: [],
+      updatedAt: 1,
+    };
+    const html = renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
+        message: agentMessage(''),
+        process,
+        isLastTurn: true,
+        multiAgent: false,
+        retryDisabled: false,
+        onRetry: () => undefined,
+        onOpenProcess: () => undefined,
+      })),
+    );
+    expect(html).toContain('data-help="chat-process-chip"');
+    expect(html).toContain('▸');
+    expect(html).toContain('生成中');
   });
 });

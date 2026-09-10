@@ -9,7 +9,7 @@ import { agentDisplayName } from '@/config/agents';
 import {
   formatProcessHeadline,
   formatTurnUsageFooter,
-  hasInspectableProcess,
+  hasProcessDetails,
   phaseFromMessageStatus,
 } from '@/lib/chat-process';
 import type { AgentProcessView } from '@/lib/chat-process';
@@ -35,6 +35,8 @@ export function ChatMessageBubble({
   localBasePath,
   onOpenLocal,
   onOpenProcess,
+  onCloseProcess,
+  processPaneOpen = false,
 }: {
   message: ChatMessage;
   process?: AgentProcessView;
@@ -46,6 +48,8 @@ export function ChatMessageBubble({
   localBasePath?: string;
   onOpenLocal?: (path: string) => boolean;
   onOpenProcess?: (turn: number, agent: AgentKey) => void;
+  onCloseProcess?: () => void;
+  processPaneOpen?: boolean;
 }) {
   if (message.role === 'user') {
     return (
@@ -64,6 +68,8 @@ export function ChatMessageBubble({
       localBasePath={localBasePath}
       onOpenLocal={onOpenLocal}
       onOpenProcess={onOpenProcess}
+      onCloseProcess={onCloseProcess}
+      processPaneOpen={processPaneOpen}
     />
   );
 }
@@ -106,6 +112,8 @@ function AgentBubble({
   localBasePath,
   onOpenLocal,
   onOpenProcess,
+  onCloseProcess,
+  processPaneOpen,
 }: {
   message: ChatMessage;
   process?: AgentProcessView;
@@ -117,6 +125,8 @@ function AgentBubble({
   localBasePath?: string;
   onOpenLocal?: (path: string) => boolean;
   onOpenProcess?: (turn: number, agent: AgentKey) => void;
+  onCloseProcess?: () => void;
+  processPaneOpen: boolean;
 }) {
   const { t } = useI18n();
   const agent = message.agentId ?? 'claude';
@@ -146,12 +156,18 @@ function AgentBubble({
     ? resolvedStatus && resolvedStatus !== 'running'
       ? phaseFromMessageStatus(resolvedStatus)
       : process.phase
-    : null;
-  const processHeadline =
-    process && effectivePhase && hasInspectableProcess(process)
+    : running
+      ? 'running'
+      : null;
+  const showProcessChip = Boolean(onOpenProcess) && (
+    running || Boolean(process && hasProcessDetails(process))
+  );
+  const processHeadline = showProcessChip
+    ? process && effectivePhase
       ? formatProcessHeadline(process.steps, effectivePhase, t)
-      : '';
-  const statusText = processHeadline || (hideRetry && looksFailed)
+      : messageStatusLabel(t, resolvedStatus, process, hasContent) ?? t('chat.process.summaryGenerating')
+    : '';
+  const statusText = (hideRetry && looksFailed) || showProcessChip
     ? null
     : messageStatusLabel(t, resolvedStatus, process, hasContent);
   const activity = running ? streamingActivity(process, hasContent) : null;
@@ -166,20 +182,6 @@ function AgentBubble({
           <span className="font-medium text-secondary">{agentDisplayName(agent)}</span>
           {statusText ? <span>{statusText}</span> : null}
           {message.durationMs > 0 && <span>{formatDurationMs(message.durationMs)}</span>}
-          {processHeadline ? (
-            onOpenProcess ? (
-              <button
-                type="button"
-                className="min-w-0 truncate text-left text-meta text-muted hover:text-secondary"
-                data-help="chat-process-chip"
-                onClick={() => onOpenProcess(message.turn, agent)}
-              >
-                {processHeadline}
-              </button>
-            ) : (
-              <span>{processHeadline}</span>
-            )
-          ) : null}
           {showRetry && (
             <Hint
               label={
@@ -198,6 +200,23 @@ function AgentBubble({
             </Hint>
           )}
         </div>
+        {showProcessChip && processHeadline && onOpenProcess ? (
+          <button
+            type="button"
+            className="mb-1 inline-flex max-w-full items-center gap-1 rounded-btn px-1 py-0.5 text-left text-meta text-secondary hover:bg-hover hover:text-primary"
+            data-help="chat-process-chip"
+            aria-expanded={processPaneOpen}
+            onClick={() => {
+              if (processPaneOpen) onCloseProcess?.();
+              else onOpenProcess(message.turn, agent);
+            }}
+          >
+            <span className="shrink-0" aria-hidden>
+              {processPaneOpen ? '▾' : '▸'}
+            </span>
+            <span className="min-w-0 truncate">{processHeadline}</span>
+          </button>
+        ) : null}
         <div
           className="min-w-0 overflow-hidden text-body leading-relaxed text-primary"
           data-chat-stream-activity={activity ?? undefined}
