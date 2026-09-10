@@ -1510,6 +1510,9 @@ fn refresh_options_skips_warmed_catalog_when_idle() {
     let run = Arc::new(RunService::new(AdapterRegistry::default()));
     let runtime = Arc::new(ChatRuntime::new(db, run));
     runtime.store.enable_if_new("no-cwd").unwrap();
+    runtime.set_codex_program_for_test(std::path::PathBuf::from(
+        "/definitely-missing/codex-for-refresh-test",
+    ));
     runtime.seed_catalog_cache_for_test(
         "no-cwd",
         vec![super::types::RuntimeModelOption {

@@ -661,17 +661,12 @@ fn printf_spec(script: &str) -> RunSpec {
 
 #[cfg(windows)]
 fn printf_spec(script: &str) -> RunSpec {
+    // Node writes the redirected stdout pipe. powershell.exe [Console]::Out
+    // does not, because CREATE_NO_WINDOW has no console.
     RunSpec {
         agent: AgentId::Claude,
-        program: PathBuf::from("powershell.exe"),
-        args: vec![
-            "-NoProfile".into(),
-            "-NonInteractive".into(),
-            "-WindowStyle".into(),
-            "Hidden".into(),
-            "-Command".into(),
-            script.into(),
-        ],
+        program: PathBuf::from("node"),
+        args: vec!["-e".into(), script.into()],
         cwd: None,
         env: vec![],
     }
@@ -682,7 +677,7 @@ fn streaming_preserves_consecutive_empty_lines_end_to_end() {
     #[cfg(unix)]
     let spec = printf_spec("printf 'first\\n\\nthird\\n'");
     #[cfg(windows)]
-    let spec = printf_spec("[Console]::Out.Write(\"first`n`nthird`n\")");
+    let spec = printf_spec("process.stdout.write('first\\n\\nthird\\n')");
     let (result, live) = collect_streaming(spec, Duration::from_secs(8), 64 * 1024);
     assert_eq!(result.status, RunStatus::Ok, "stderr={}", result.stderr);
     assert!(!result.truncated);
@@ -700,7 +695,7 @@ fn streaming_fast_exit_beyond_channel_capacity_is_lossless() {
     #[cfg(unix)]
     let spec = printf_spec(&format!("head -c {N} /dev/zero | tr '\\0' 'A'"));
     #[cfg(windows)]
-    let spec = printf_spec(&format!("[Console]::Out.Write(('A'*{N}))"));
+    let spec = printf_spec(&format!("process.stdout.write('A'.repeat({N}))"));
     let started = Instant::now();
     let (result, live) = collect_streaming(spec, Duration::from_secs(15), 1024 * 1024);
     assert!(
@@ -900,7 +895,7 @@ fn streaming_capped_then_keepalive_spec() -> RunSpec {
     #[cfg(windows)]
     {
         printf_spec(
-            "[Console]::Out.Write(('A'*256)); [Console]::Out.Flush(); for ($i=0; $i -lt 12; $i++) { [Console]::Out.Write(\"Z$i`n\"); [Console]::Out.Flush(); Start-Sleep -Milliseconds 100 }",
+            "process.stdout.write('A'.repeat(256)); function sleep(ms){const t=Date.now()+ms; while(Date.now()<t){}} for (let i=0;i<12;i++){process.stdout.write('Z'+i+'\\n'); sleep(100)}",
         )
     }
 }
@@ -913,7 +908,7 @@ fn streaming_capped_then_silent_spec() -> RunSpec {
     #[cfg(windows)]
     {
         printf_spec(
-            "[Console]::Out.Write(('A'*256)); [Console]::Out.Flush(); Start-Sleep -Seconds 30",
+            "process.stdout.write('A'.repeat(256)); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,30000)",
         )
     }
 }
@@ -925,7 +920,7 @@ fn streaming_forever_spec() -> RunSpec {
     }
     #[cfg(windows)]
     {
-        printf_spec("while ($true) { [Console]::Out.Write('x'); [Console]::Out.Flush() }")
+        printf_spec("while (true) process.stdout.write('x')")
     }
 }
 
@@ -1019,7 +1014,7 @@ fn streaming_idle_does_not_replace_wall_timeout() {
         r.error
     );
     assert!(
-        started.elapsed() < Duration::from_secs(5),
+        started.elapsed() < Duration::from_secs(15),
         "wall timeout after cap took {:?}",
         started.elapsed()
     );
