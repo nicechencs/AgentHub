@@ -63,7 +63,7 @@ Use semantic surface roles:
 | Active | `bg-active` | Current page item, current preview target, current connection |
 | Overlay | panel plus shadow | Menus, popovers, dialogs, and toasts |
 
-Dark theme is a first-class scheme in `THEME.dark`, not a page-level override. Secondary, muted, and disabled stay three steps. Selected pills use `bg-raised` so they lift off the track (in dark, `bg-panel` is darker than `bg-hover` and must not be the selected fill). Filled danger actions use `danger-foreground` on `danger`.
+Dark theme is a first-class scheme in `THEME.dark`, not a page-level override. Secondary, muted, and disabled stay three steps. Selected pills use `bg-raised` so they lift off the track (in dark, `bg-panel` is darker than `bg-hover` and must not be the selected fill). Filled danger actions use `danger-foreground` on `danger`. Light-only page tints (`html[data-canvas]`) must not override `--bg-canvas` / `--bg-subtle` when `.dark` is on.
 
 The product accent is `--accent` (`bg-accent` / `text-accent` / `ring-accent`). Default is blue. A stored choice in `agenthub:accent` wins on update, including indigo. Settings exposes a small palette (purple / blue / teal / rose / orange) that writes `html[data-accent]` and only changes `--accent`. Use it for focus, links, checked switches, the in-app mark, and the one primary action. Do not hardcode an accent hex, do not use an Agent color as a page background, and do not substitute an Agent color for semantic status colors. The running window (taskbar button), tray icon, and Windows Desktop / Start-menu shortcuts that already point at this app follow the same mark. The installer package icon stays the bundled default asset.
 

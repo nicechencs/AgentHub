@@ -98,10 +98,11 @@ describe('design tokens SSOT', () => {
     expect(CANVAS_PALETTES[DEFAULT_CANVAS_ID].subtle).toBe(THEME.light['bg-subtle']);
     const css = buildCanvasOverrideCss();
     for (const id of CANVAS_IDS) {
-      expect(css).toContain(`:root[data-canvas="${id}"]`);
+      expect(css).toContain(`:root:not(.dark)[data-canvas="${id}"]`);
       expect(css).toContain(`--bg-canvas: ${CANVAS_PALETTES[id].canvas};`);
     }
     expect(css).not.toContain('html.dark[data-canvas');
+    expect(css).not.toMatch(/:root\[data-canvas="/);
   });
 
   it('emits data-accent overrides for every palette', () => {

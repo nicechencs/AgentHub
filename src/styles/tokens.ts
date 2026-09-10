@@ -515,12 +515,16 @@ export function buildAccentOverrideCss(): string {
   ]).join('\n');
 }
 
-/** `[data-canvas]` overrides page gray in light theme only. */
+/**
+ * `[data-canvas]` tints the page in light theme only.
+ * Must use `:not(.dark)`: `:root[data-canvas]` is more specific than `.dark`
+ * and would otherwise keep the light canvas on chat, settings, and the shell.
+ */
 export function buildCanvasOverrideCss(): string {
   return CANVAS_IDS.flatMap((id) => {
     const swatch = CANVAS_PALETTES[id];
     return [
-      `:root[data-canvas="${id}"] {`,
+      `:root:not(.dark)[data-canvas="${id}"] {`,
       `  --bg-canvas: ${swatch.canvas};`,
       `  --bg-subtle: ${swatch.subtle};`,
       '}',
