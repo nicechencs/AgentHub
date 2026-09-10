@@ -82,7 +82,7 @@ function RuntimeRequestCard({
           <legend className="font-medium">{question.header || question.question}</legend>
           {question.header && question.question ? <p className="text-meta text-muted">{question.question}</p> : null}
           {question.options.map((option) => (
-            <label key={option.label} className="flex cursor-pointer gap-2 rounded px-1 py-1 hover:bg-subtle">
+            <label key={option.label} className="flex cursor-pointer gap-2 rounded-btn px-1 py-1 hover:bg-hover">
               <input type="radio" name={`${request.id}:${question.id}`} disabled={sent} checked={answers[question.id]?.[0] === option.label} onChange={() => answer(question.id, option.label)} />
               <span><span>{option.label}</span>{option.description ? <span className="block text-meta text-muted">{option.description}</span> : null}</span>
             </label>

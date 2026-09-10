@@ -12,6 +12,8 @@ import {
   DEFAULT_ACCENT_ID,
   TOKEN_AGENT_IDS,
   THEME,
+  NAV,
+  contrastRatio,
   TYPE_SCALE,
   TYPE_SCALE_ALIASES,
   agentCssVar,
@@ -66,11 +68,24 @@ describe('design tokens SSOT', () => {
     expect(THEME.light['text-muted']).not.toBe(THEME.light['text-disabled']);
   });
 
+  it('keeps dark secondary, muted, and disabled as three readable steps', () => {
+    expect(THEME.dark['text-secondary']).not.toBe(THEME.dark['text-muted']);
+    expect(THEME.dark['text-muted']).not.toBe(THEME.dark['text-disabled']);
+    expect(contrastRatio(THEME.dark['text-primary'], THEME.dark['bg-panel'])).toBeGreaterThanOrEqual(12);
+    expect(contrastRatio(THEME.dark['text-secondary'], THEME.dark['bg-panel'])).toBeGreaterThanOrEqual(6);
+    expect(contrastRatio(THEME.dark['text-muted'], THEME.dark['bg-panel'])).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(THEME.dark.danger, THEME.dark['bg-panel'])).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(THEME.dark['danger-foreground'], THEME.dark.danger)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(THEME.dark.border, THEME.dark['bg-panel'])).toBeGreaterThanOrEqual(1.4);
+  });
+
   it('keeps page canvas quieter than card panel so one THEME change restyles the app', () => {
     expect(THEME.light['bg-panel']).toBe('#ffffff');
     expect(THEME.light['bg-canvas']).not.toBe(THEME.light['bg-panel']);
     expect(THEME.light['bg-subtle']).not.toBe(THEME.light['bg-canvas']);
     expect(THEME.dark['bg-canvas']).not.toBe(THEME.dark['bg-panel']);
+    expect(THEME.dark['bg-raised']).not.toBe(THEME.dark['bg-hover']);
+    expect(contrastRatio(THEME.dark['bg-raised'], THEME.dark['bg-hover'])).toBeGreaterThan(1);
   });
 
   it('keeps THEME.accent aligned with the default blue palette', () => {
@@ -83,10 +98,11 @@ describe('design tokens SSOT', () => {
     expect(CANVAS_PALETTES[DEFAULT_CANVAS_ID].subtle).toBe(THEME.light['bg-subtle']);
     const css = buildCanvasOverrideCss();
     for (const id of CANVAS_IDS) {
-      expect(css).toContain(`:root[data-canvas="${id}"]`);
+      expect(css).toContain(`:root:not(.dark)[data-canvas="${id}"]`);
       expect(css).toContain(`--bg-canvas: ${CANVAS_PALETTES[id].canvas};`);
     }
     expect(css).not.toContain('html.dark[data-canvas');
+    expect(css).not.toMatch(/:root\[data-canvas="/);
   });
 
   it('emits data-accent overrides for every palette', () => {
@@ -105,6 +121,8 @@ describe('design tokens SSOT', () => {
     expect(css).toContain(':root[data-accent="teal"]');
     expect(css).toContain(`--bg-canvas: ${THEME.light['bg-canvas']};`);
     expect(css).toContain(`--bg-canvas: ${THEME.dark['bg-canvas']};`);
+    expect(css).toContain(`--bg-raised: ${THEME.dark['bg-raised']};`);
+    expect(css).toContain(`--danger-foreground: ${THEME.dark['danger-foreground']};`);
     expect(css).toContain(`--agent-grok: ${AGENT_COLORS.grok.light};`);
     expect(css).toContain(`--agent-kimi: ${AGENT_COLORS.kimi.dark};`);
     expect(css).toContain('--radius-sm:');
@@ -194,5 +212,13 @@ describe('ICON', () => {
     expect(ICON.nav).toEqual({ px: 18, stroke: 1.6 });
     expect(ICON.chrome).toEqual({ px: 16, stroke: 1.75, className: 'h-4 w-4' });
     expect(ICON.inline).toEqual({ px: 14, stroke: 1.75, className: 'h-3.5 w-3.5' });
+  });
+});
+
+describe('NAV chrome geometry', () => {
+  it('keeps rail items at 32px and reuses the nav icon size', () => {
+    expect(NAV.itemHeight).toBe(32);
+    expect(NAV.headerHeight).toBe(44);
+    expect(NAV.icon).toEqual(ICON.nav);
   });
 });

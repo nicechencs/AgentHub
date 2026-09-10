@@ -1,12 +1,22 @@
 import * as React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { AppLogo } from '@/components/shared/AppLogo';
 import { StatusPin } from '@/components/shared/StatusPin';
 import { useAppUpdateAvailable } from '@/app/runtime';
 import { Hint } from '@/components/ui/tooltip';
 import { collapsedAfterPrimaryNavClick } from '@/components/layout/sidebar-collapse-override';
+import { NavRailHeader } from '@/components/layout/NavRailHeader';
 import { NavResizeHandle } from '@/components/layout/NavResizeHandle';
+import {
+  NAV_ICON_SIZE,
+  NAV_ICON_STROKE,
+  RailCollapseIcon,
+  RailExpandIcon,
+  navFocusClass,
+  navItemClass,
+  navListClass,
+  railMenuIcon,
+} from '@/components/layout/nav-chrome';
 import { useSidebar } from '@/components/layout/SidebarContext';
 import { useSidebarWidth } from '@/components/layout/use-sidebar-width';
 import {
@@ -25,24 +35,14 @@ import {
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { isRoutesAreaPath } from '@/pages/routes/routes-nav-items';
-const NAV_ICON_SIZE = 18;
-const MENU_ICON_CLASS = 'h-3.5 w-3.5';
-
-/** 右键菜单图标：与折叠按钮同款 PanelLeft 图标 */
-const railMenuIcon = {
-  expand: <PanelLeftOpen className={MENU_ICON_CLASS} strokeWidth={1.8} />,
-  collapse: <PanelLeftClose className={MENU_ICON_CLASS} strokeWidth={1.8} />,
-} as const;
 
 function SidebarNavLink({
   item,
   collapsed,
-  itemClass,
   notice,
 }: {
   item: SidebarNavItem;
   collapsed: boolean;
-  itemClass: (isActive: boolean) => string;
   /** Optional silent tip (e.g. app update available on Settings). */
   notice?: { label: string } | null;
 }) {
@@ -62,7 +62,7 @@ function SidebarNavLink({
       to={to}
       end={to === '/'}
       aria-label={collapsed || tip || inDevelopment ? a11yLabel : undefined}
-      className="block rounded-btn focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30"
+      className={cn('block', navFocusClass)}
       onClick={() => {
         const next = collapsedAfterPrimaryNavClick({
           itemTo: to,
@@ -74,11 +74,11 @@ function SidebarNavLink({
     >
       {({ isActive }) => {
         const node = (
-          <span className={cn(itemClass(isActive), 'relative')}>
+          <span className={cn(navItemClass(isActive, collapsed), 'relative')}>
             <span className="relative shrink-0">
               <Icon
                 size={NAV_ICON_SIZE}
-                strokeWidth={1.6}
+                strokeWidth={NAV_ICON_STROKE}
                 absoluteStrokeWidth
                 data-icon="nav"
                 className="shrink-0"
@@ -145,7 +145,7 @@ function NavGroup({
 
 /** 侧边导航：可折叠 */
 export function Sidebar() {
-  const { collapsed, setCollapsed, toggle, navVisible } = useSidebar();
+  const { collapsed, setCollapsed, navVisible } = useSidebar();
   const width = useSidebarWidth(collapsed);
   const { pathname } = useLocation();
   const { t } = useI18n();
@@ -170,18 +170,6 @@ export function Sidebar() {
     setRailMenu(null);
   }, [setCollapsed]);
 
-  const itemClass = (isActive: boolean) =>
-    cn(
-      'group relative flex h-8 w-full items-center rounded-btn text-body transition-colors duration-150',
-      collapsed ? 'justify-center' : 'gap-2.5 px-2.5',
-      isActive
-        ? 'bg-accent-subtle font-medium text-primary [&_svg]:text-accent'
-        : 'text-secondary hover:bg-hover hover:text-primary',
-      isActive &&
-        !collapsed &&
-        'before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-accent',
-    );
-
   const visibleWorkspaceNav = React.useMemo(
     () => workspaceNavItems(navVisible),
     [navVisible],
@@ -205,59 +193,21 @@ export function Sidebar() {
         style={{ width: width.width }}
         onContextMenu={openRailMenu}
       >
-        {/* 品牌 + 折叠按钮 */}
-        <div
-          className={cn(
-            'flex shrink-0 items-center border-b border-border',
-            pageRhythm.topChrome,
-            collapsed ? 'justify-center' : 'justify-between px-3',
-          )}
-        >
-          {collapsed ? (
-            <Hint label={t('nav.expandSidebar')} side="right">
-              <button
-                type="button"
-                onClick={toggle}
-                className="group relative flex h-7 w-7 shrink-0 items-center justify-center rounded-btn focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30"
-                aria-label={t('nav.expandSidebar')}
-              >
-                <span className="flex h-7 w-7 items-center justify-center rounded-btn transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0">
-                  <AppLogo size={20} className="h-5 w-5" />
-                </span>
-                <span className="absolute inset-0 flex items-center justify-center rounded-btn text-muted opacity-0 transition-opacity group-hover:bg-hover group-hover:text-primary group-hover:opacity-100 group-focus-visible:bg-hover group-focus-visible:text-primary group-focus-visible:opacity-100">
-                  <PanelLeftOpen size={18} strokeWidth={1.6} absoluteStrokeWidth data-icon="nav" />
-                </span>
-              </button>
-            </Hint>
-          ) : (
-            <>
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-btn">
-                  <AppLogo size={20} className="h-5 w-5" />
-                </span>
-                <span className="truncate text-sm font-semibold tracking-tight">AgentHub</span>
-              </div>
-              <Hint label={t('nav.collapseSidebar')} side="right">
-                <button
-                  type="button"
-                  onClick={toggle}
-                  className="flex h-7 w-7 items-center justify-center rounded-btn text-muted transition-colors hover:bg-hover hover:text-primary"
-                  aria-label={t('nav.collapseSidebar')}
-                >
-                  <PanelLeftClose size={18} strokeWidth={1.6} absoluteStrokeWidth data-icon="nav" />
-                </button>
-              </Hint>
-            </>
-          )}
-        </div>
+        <NavRailHeader
+          collapsed={collapsed}
+          title="AgentHub"
+          expandLabel={t('nav.expandSidebar')}
+          collapseLabel={t('nav.collapseSidebar')}
+          onExpand={() => setCollapsed(false)}
+          onCollapse={() => setCollapsed(true)}
+          mark={<AppLogo size={20} className="h-5 w-5" />}
+        />
 
         {/* 工作区置顶；管理区 mt-auto 贴底 */}
-        <nav
-          className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain px-2 pt-1"
-        >
+        <nav className={cn(navListClass, 'overflow-y-auto overscroll-contain')}>
           <NavGroup label={t('nav.workspace')} collapsed={collapsed}>
             {visibleWorkspaceNav.map((item) => (
-              <SidebarNavLink key={item.to} item={item} collapsed={collapsed} itemClass={itemClass} />
+              <SidebarNavLink key={item.to} item={item} collapsed={collapsed} />
             ))}
           </NavGroup>
           <NavGroup label={t('nav.manage')} collapsed={collapsed} className="mt-auto pb-2">
@@ -266,7 +216,6 @@ export function Sidebar() {
                 key={item.to}
                 item={item}
                 collapsed={collapsed}
-                itemClass={itemClass}
                 notice={item.to === '/settings' ? settingsNotice : null}
               />
             ))}
@@ -281,12 +230,12 @@ export function Sidebar() {
       <ContextMenu open={railMenu !== null} point={railMenu} onClose={closeRailMenu}>
         {collapsed ? (
           <ContextMenuItem onSelect={expandFromRailMenu}>
-            {railMenuIcon.expand}
+            <RailExpandIcon className={railMenuIcon.expand.className} strokeWidth={railMenuIcon.expand.strokeWidth} />
             {t('nav.expandSidebar')}
           </ContextMenuItem>
         ) : (
           <ContextMenuItem onSelect={collapseFromRailMenu}>
-            {railMenuIcon.collapse}
+            <RailCollapseIcon className={railMenuIcon.collapse.className} strokeWidth={railMenuIcon.collapse.strokeWidth} />
             {t('nav.collapseSidebar')}
           </ContextMenuItem>
         )}

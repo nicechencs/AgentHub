@@ -17,5 +17,9 @@ describe('SettingsRow', () => {
     expect(html).toContain('登录后自动打开');
     expect(html).toMatch(/aria-labelledby="[^"]+-label"/);
     expect(html).toMatch(/aria-describedby="[^"]+-desc"/);
+    expect(html).toContain('gap-4');
+    expect(html).toContain('py-2');
+    expect(html).not.toContain('gap-6');
+    expect(html).not.toContain('py-3');
   });
 });

@@ -1,7 +1,18 @@
 import * as React from 'react';
 import { NavLink } from 'react-router-dom';
-import { PanelLeftClose, PanelLeftOpen, Route } from 'lucide-react';
+import { Route } from 'lucide-react';
+import { NavRailHeader } from '@/components/layout/NavRailHeader';
 import { NavResizeHandle } from '@/components/layout/NavResizeHandle';
+import {
+  NAV_ICON_SIZE,
+  NAV_ICON_STROKE,
+  RailCollapseIcon,
+  RailExpandIcon,
+  navFocusClass,
+  navItemClass,
+  navListClass,
+  railMenuIcon,
+} from '@/components/layout/nav-chrome';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { ROUTES_NAV_WIDTH } from '@/components/layout/sidebar-width-model';
 import { useNavWidth } from '@/components/layout/use-sidebar-width';
@@ -22,14 +33,7 @@ import {
   type RoutesNavItem,
 } from '@/pages/routes/routes-nav-items';
 
-const NAV_ICON_SIZE = 18;
-const MENU_ICON_CLASS = 'h-3.5 w-3.5';
 const LG_QUERY = '(min-width: 1024px)';
-
-const railMenuIcon = {
-  expand: <PanelLeftOpen className={MENU_ICON_CLASS} strokeWidth={1.8} />,
-  collapse: <PanelLeftClose className={MENU_ICON_CLASS} strokeWidth={1.8} />,
-} as const;
 
 function useIsLgUp() {
   const [isLg, setIsLg] = React.useState(() =>
@@ -48,11 +52,9 @@ function useIsLgUp() {
 function RoutesNavLink({
   item,
   compact,
-  itemClass,
 }: {
   item: RoutesNavItem;
   compact: boolean;
-  itemClass: (isActive: boolean) => string;
 }) {
   const { t } = useI18n();
   const label = t(item.labelKey);
@@ -64,14 +66,14 @@ function RoutesNavLink({
     <NavLink
       to={item.to}
       aria-label={compact || inDevelopment ? a11yLabel : undefined}
-      className="block rounded-btn focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30"
+      className={cn('block', navFocusClass)}
     >
       {({ isActive }) => {
         const node = (
-          <span className={cn(itemClass(isActive), compact && 'justify-center px-0')}>
+          <span className={navItemClass(isActive, compact)}>
             <item.icon
               size={NAV_ICON_SIZE}
-              strokeWidth={1.6}
+              strokeWidth={NAV_ICON_STROKE}
               absoluteStrokeWidth
               data-icon="nav"
               className="shrink-0"
@@ -137,17 +139,6 @@ export function RoutesNav() {
     setRailMenu(null);
   }, [setRailCollapsed]);
 
-  const itemClass = (isActive: boolean) =>
-    cn(
-      'group relative flex h-8 w-full items-center gap-2.5 rounded-btn px-2.5 text-body transition-colors duration-150',
-      isActive
-        ? 'bg-accent-subtle font-medium text-primary [&_svg]:text-accent before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-accent'
-        : 'text-secondary hover:bg-hover hover:text-primary',
-    );
-
-  const railToggleClass =
-    'flex h-7 w-7 items-center justify-center rounded-btn text-muted transition-colors hover:bg-hover hover:text-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30';
-
   return (
     <>
       <aside
@@ -156,75 +147,29 @@ export function RoutesNav() {
         data-routes-nav
         onContextMenu={openRailMenu}
       >
-      <div
-        className={cn(
-          'flex shrink-0 items-center border-b border-border',
-          pageRhythm.topChrome,
-          isLg && !collapsed ? 'justify-between px-3' : 'justify-center',
-        )}
-      >
-        {isLg && !collapsed ? (
-          <>
-            <div className="flex min-w-0 items-center gap-2">
-              <Route
-                size={NAV_ICON_SIZE}
-                strokeWidth={1.6}
-                absoluteStrokeWidth
-                data-icon="nav"
-                className="shrink-0"
-              />
-              <span className={cn('min-w-0 truncate', pageRhythm.pageTitle)}>
-                {t('routes.nav.title')}
-              </span>
-            </div>
-            <Hint label={t('routes.nav.collapse')} side="right">
-              <button
-                type="button"
-                onClick={() => setRailCollapsed(true)}
-                className={railToggleClass}
-                aria-label={t('routes.nav.collapse')}
-              >
-                <PanelLeftClose size={18} strokeWidth={1.6} absoluteStrokeWidth data-icon="nav" />
-              </button>
-            </Hint>
-          </>
-        ) : (
-          <Hint label={t('routes.nav.expand')} side="right">
-            <button
-              type="button"
-              onClick={() => setRailCollapsed(false)}
-              className="group relative flex h-7 w-7 shrink-0 items-center justify-center rounded-btn focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30"
-              aria-label={t('routes.nav.expand')}
-            >
-              <span className="flex h-7 w-7 items-center justify-center rounded-btn transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0">
-                <Route
-                  size={NAV_ICON_SIZE}
-                  strokeWidth={1.6}
-                  absoluteStrokeWidth
-                  data-icon="nav"
-                />
-              </span>
-              <span className="absolute inset-0 flex items-center justify-center rounded-btn text-muted opacity-0 transition-opacity group-hover:bg-hover group-hover:text-primary group-hover:opacity-100 group-focus-visible:bg-hover group-focus-visible:text-primary group-focus-visible:opacity-100">
-                <PanelLeftOpen size={18} strokeWidth={1.6} absoluteStrokeWidth data-icon="nav" />
-              </span>
-            </button>
-          </Hint>
-        )}
-      </div>
+        <NavRailHeader
+          collapsed={compact}
+          title={t('routes.nav.title')}
+          expandLabel={t('routes.nav.expand')}
+          collapseLabel={t('routes.nav.collapse')}
+          onExpand={() => setRailCollapsed(false)}
+          onCollapse={() => setRailCollapsed(true)}
+          mark={
+            <Route
+              size={NAV_ICON_SIZE}
+              strokeWidth={NAV_ICON_STROKE}
+              absoluteStrokeWidth
+              data-icon="nav"
+              className="shrink-0"
+            />
+          }
+        />
 
-      <nav
-        aria-label={t('routes.nav.aria')}
-        className={cn('flex min-h-0 flex-1 flex-col gap-0.5 pt-1 px-2')}
-      >
-        {navItems.map((item) => (
-          <RoutesNavLink
-            key={item.to}
-            item={item}
-            compact={compact}
-            itemClass={itemClass}
-          />
-        ))}
-      </nav>
+        <nav aria-label={t('routes.nav.aria')} className={navListClass}>
+          {navItems.map((item) => (
+            <RoutesNavLink key={item.to} item={item} compact={compact} />
+          ))}
+        </nav>
       </aside>
       <NavResizeHandle
         label={t('routes.nav.resize')}
@@ -234,12 +179,12 @@ export function RoutesNav() {
       <ContextMenu open={railMenu !== null} point={railMenu} onClose={closeRailMenu}>
         {collapsed ? (
           <ContextMenuItem onSelect={expandFromRailMenu}>
-            {railMenuIcon.expand}
+            <RailExpandIcon className={railMenuIcon.expand.className} strokeWidth={railMenuIcon.expand.strokeWidth} />
             {t('routes.nav.expand')}
           </ContextMenuItem>
         ) : (
           <ContextMenuItem onSelect={collapseFromRailMenu}>
-            {railMenuIcon.collapse}
+            <RailCollapseIcon className={railMenuIcon.collapse.className} strokeWidth={railMenuIcon.collapse.strokeWidth} />
             {t('routes.nav.collapse')}
           </ContextMenuItem>
         )}

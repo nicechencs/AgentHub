@@ -200,7 +200,7 @@ export function PreferencesPanel({
                     aria-checked={selected}
                     aria-label={name}
                     className={cn(
-                      'h-6 w-6 shrink-0 rounded-full border border-black/10',
+                      'h-6 w-6 shrink-0 rounded-full border border-border',
                       selected && 'ring-2 ring-accent ring-offset-2 ring-offset-panel',
                     )}
                     style={{ backgroundColor: ACCENT_PALETTES[id].light }}
@@ -234,7 +234,7 @@ export function PreferencesPanel({
                     aria-checked={selected}
                     aria-label={name}
                     className={cn(
-                      'h-6 w-6 shrink-0 rounded-btn border border-black/10',
+                      'h-6 w-6 shrink-0 rounded-btn border border-border',
                       selected && 'ring-2 ring-accent ring-offset-2 ring-offset-panel',
                     )}
                     style={{ backgroundColor: CANVAS_PALETTES[id].canvas }}
