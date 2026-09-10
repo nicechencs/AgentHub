@@ -58,7 +58,7 @@ export function SettingsRow({
   );
 
   return (
-    <div className={cn('flex gap-6 py-3', wide ? 'items-start' : 'items-center justify-between')}>
+    <div className={cn('flex gap-4 py-2', wide ? 'items-start' : 'items-center justify-between')}>
       <div className="min-w-0 shrink-0">
         <div className="flex items-center gap-1.5">
           <p id={labelId} className="text-body">
@@ -117,7 +117,7 @@ export function SettingsSkeleton() {
       <Card>
         <CardContent className="divide-y divide-border pt-1">
           {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="flex items-center justify-between py-4">
+            <div key={i} className="flex items-center justify-between py-2">
               <div className="space-y-2">
                 <Skeleton className="h-4 w-24" />
                 <Skeleton className="h-3 w-40" />

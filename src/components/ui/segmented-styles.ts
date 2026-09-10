@@ -43,8 +43,8 @@ export function segmentedItemClass(
     'inline-flex items-center justify-center rounded-btn transition-colors',
     segmentedItemSizeClass(size),
     active
-      ? 'bg-panel font-medium text-primary shadow-sm'
-      : 'text-secondary hover:bg-panel/50 hover:text-primary',
+      ? 'bg-raised font-medium text-primary shadow-sm'
+      : 'text-secondary hover:bg-raised/50 hover:text-primary',
     options?.disabled && 'cursor-not-allowed opacity-40',
   );
 }

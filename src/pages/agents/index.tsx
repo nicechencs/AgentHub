@@ -403,7 +403,7 @@ export default function AgentsPage() {
                       key={spec.key}
                       className={cn('relative select-none', side === 'right' && 'text-right')}
                       data-col={spec.key}
-                      data-help={spec.key === 'hide' ? 'agents-hide' : undefined}
+                      data-help={spec.key === 'actions' ? 'agents-hide' : undefined}
                     >
                       {label}
                       {spec.key === AGENT_TABLE_FLEX_COLUMN ? null : (
