@@ -123,7 +123,7 @@ describe('chat runtime transport guards', () => {
       permissionOptions: [{ id: 'edits', kind: 'allow_edits_for_session' }],
     })).toBe(false);
   });
-  it('names always-allow as this process, and Codex as usually this turn', () => {
+  it('names always-allow as this conversation for Codex, Grok, and Kiro', () => {
     const request = {
       permissionOptions: [{ id: 'always', kind: 'allow_always' }],
     };
@@ -136,17 +136,17 @@ describe('chat runtime transport guards', () => {
     );
     expect(runtimeAllowAlwaysCopy({ request, agentId: 'codex' })).toEqual({
       shown: true,
-      hintKey: 'chat.runtime.allowAlwaysHintTurn',
+      hintKey: 'chat.runtime.allowAlwaysHint',
     });
     expect(runtimeAllowAlwaysCopy({ request: {}, agentId: 'codex' }).shown).toBe(false);
-    expect(runtimeAllowAlwaysHintKey('codex')).toBe('chat.runtime.allowAlwaysHintTurn');
+    expect(runtimeAllowAlwaysHintKey('codex')).toBe('chat.runtime.allowAlwaysHint');
     expect(runtimeAllowAlwaysHintKey('claude')).toBe('chat.runtime.allowAlwaysHint');
     const t: TranslateFn = (key, params) => translate('zh', key, params);
-    expect(t('chat.runtime.allowAlwaysHint')).toBe('仅当前这次进程，不保存');
-    expect(t('chat.runtime.allowAlwaysHintTurn')).toBe('仅当前这次进程，通常只记到本轮，不保存');
-    expect(translate('en', 'chat.runtime.allowAlwaysHint')).toBe('This process only, not saved');
+    expect(t('chat.runtime.allowAlwaysHint')).toBe('仅当前这次对话，不保存');
+    expect(t('chat.runtime.allowAlwaysHintTurn')).toBe('仅当前这次对话，不保存');
+    expect(translate('en', 'chat.runtime.allowAlwaysHint')).toBe('This conversation only, not saved');
     expect(translate('en', 'chat.runtime.allowAlwaysHintTurn')).toBe(
-      'This process only, usually this turn, not saved',
+      'This conversation only, not saved',
     );
   });
   it('keeps file cards on 修改文件 and maps English ACP kinds', () => {

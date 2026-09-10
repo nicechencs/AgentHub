@@ -53,17 +53,17 @@ describe('runtime allow/deny card copy', () => {
     );
     expect(html).toContain('data-help="chat-allow-always"');
     expect(html).toContain('一直允许');
-    expect(html).toContain('仅当前这次进程，不保存');
+    expect(html).toContain('仅当前这次对话，不保存');
     expect(html).not.toContain('通常只记到本轮');
     const alwaysAt = html.indexOf('一直允许');
-    const hintAt = html.indexOf('仅当前这次进程，不保存');
+    const hintAt = html.indexOf('仅当前这次对话，不保存');
     const denyAt = html.indexOf('拒绝');
     expect(alwaysAt).toBeGreaterThan(0);
     expect(hintAt).toBeGreaterThan(alwaysAt);
     expect(denyAt).toBeGreaterThan(hintAt);
   });
 
-  it('says Codex remember is usually this turn', () => {
+  it('says Codex remember lasts this conversation', () => {
     const html = renderMarkup(
       createElement(ChatRuntimeRequests, {
         requests: [command],
@@ -71,8 +71,8 @@ describe('runtime allow/deny card copy', () => {
         onReply: async () => undefined,
       }),
     );
-    expect(html).toContain('仅当前这次进程，通常只记到本轮，不保存');
-    expect(html).not.toContain('>仅当前这次进程，不保存<');
+    expect(html).toContain('仅当前这次对话，不保存');
+    expect(html).not.toContain('通常只记到本轮');
   });
 
   it('does not invent Always allow when the request has no such option', () => {
@@ -84,7 +84,7 @@ describe('runtime allow/deny card copy', () => {
       }),
     );
     expect(html).not.toContain('一直允许');
-    expect(html).not.toContain('仅当前这次进程');
+    expect(html).not.toContain('仅当前这次对话');
   });
 });
 
