@@ -93,6 +93,7 @@ impl ChatService {
             updated_at: now,
             native_session_id: None,
             sending: false,
+            first_user_content: None,
         };
         self.repo.create_conversation(&conv)?;
         Ok(conv)
@@ -120,6 +121,7 @@ impl ChatService {
             updated_at: now,
             native_session_id: None,
             sending: false,
+            first_user_content: None,
         };
         self.repo.ensure_default_conversation(&candidate)
     }

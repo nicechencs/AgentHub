@@ -214,7 +214,9 @@ export function ChatSessionRail({
                       label={
                         <ConversationRailHintLabel
                           conversation={c}
-                          firstUserContent={firstUserContentById?.[c.id]}
+                          firstUserContent={
+                            firstUserContentById?.[c.id] ?? c.firstUserContent ?? undefined
+                          }
                         />
                       }
                       side="right"

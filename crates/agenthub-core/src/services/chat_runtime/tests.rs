@@ -22,6 +22,7 @@ fn conversation(db: &Database, id: &str, messages: bool) -> Conversation {
         updated_at: now,
         native_session_id: None,
         sending: false,
+        first_user_content: None,
     };
     let repo = ChatRepo::new(db.clone());
     repo.create_conversation(&value).unwrap();
@@ -72,6 +73,7 @@ fn begin_turn_bumps_conversation_sort_time_without_renaming() {
         updated_at: "2026-01-01T00:00:00Z".into(),
         native_session_id: None,
         sending: false,
+        first_user_content: None,
     };
     let newer = Conversation {
         id: "newer".into(),
@@ -83,6 +85,7 @@ fn begin_turn_bumps_conversation_sort_time_without_renaming() {
         updated_at: "2026-06-01T00:00:00Z".into(),
         native_session_id: None,
         sending: false,
+        first_user_content: None,
     };
     repo.create_conversation(&older).unwrap();
     repo.create_conversation(&newer).unwrap();
@@ -151,6 +154,7 @@ fn begin_turn_sets_title_when_empty_and_still_bumps_sort_time() {
         updated_at: "2026-06-01T00:00:00Z".into(),
         native_session_id: None,
         sending: false,
+        first_user_content: None,
     })
     .unwrap();
     let store = super::store::RuntimeStore::new(db);
@@ -210,6 +214,7 @@ fn empty_grok_conversation_enables_runtime() {
         updated_at: now.clone(),
         native_session_id: None,
         sending: false,
+        first_user_content: None,
     };
     let legacy = Conversation {
         id: "grok-legacy".into(),
@@ -221,6 +226,7 @@ fn empty_grok_conversation_enables_runtime() {
         updated_at: now,
         native_session_id: None,
         sending: false,
+        first_user_content: None,
     };
     let repo = ChatRepo::new(db.clone());
     repo.create_conversation(&empty).unwrap();
@@ -259,6 +265,7 @@ fn empty_kiro_conversation_enables_runtime() {
         updated_at: now.clone(),
         native_session_id: None,
         sending: false,
+        first_user_content: None,
     };
     let legacy = Conversation {
         id: "kiro-legacy".into(),
@@ -270,6 +277,7 @@ fn empty_kiro_conversation_enables_runtime() {
         updated_at: now,
         native_session_id: None,
         sending: false,
+        first_user_content: None,
     };
     let repo = ChatRepo::new(db.clone());
     repo.create_conversation(&empty).unwrap();
@@ -308,6 +316,7 @@ fn empty_claude_conversation_enables_runtime() {
         updated_at: now.clone(),
         native_session_id: None,
         sending: false,
+        first_user_content: None,
     };
     let legacy = Conversation {
         id: "claude-legacy".into(),
@@ -319,6 +328,7 @@ fn empty_claude_conversation_enables_runtime() {
         updated_at: now,
         native_session_id: None,
         sending: false,
+        first_user_content: None,
     };
     let repo = ChatRepo::new(db.clone());
     repo.create_conversation(&empty).unwrap();
@@ -357,6 +367,7 @@ fn grok_legacy_continue_requires_session_and_keeps_print_path_otherwise() {
         updated_at: now.clone(),
         native_session_id: Some("sess-legacy-1".into()),
         sending: false,
+        first_user_content: None,
     };
     let no_session = Conversation {
         id: "grok-nosess".into(),
@@ -368,6 +379,7 @@ fn grok_legacy_continue_requires_session_and_keeps_print_path_otherwise() {
         updated_at: now.clone(),
         native_session_id: None,
         sending: false,
+        first_user_content: None,
     };
     let codex = Conversation {
         id: "codex-legacy".into(),
@@ -379,6 +391,7 @@ fn grok_legacy_continue_requires_session_and_keeps_print_path_otherwise() {
         updated_at: now.clone(),
         native_session_id: Some("thread-1".into()),
         sending: false,
+        first_user_content: None,
     };
     let kiro = Conversation {
         id: "kiro-legacy".into(),
@@ -390,6 +403,7 @@ fn grok_legacy_continue_requires_session_and_keeps_print_path_otherwise() {
         updated_at: now,
         native_session_id: Some("sess-kiro-1".into()),
         sending: false,
+        first_user_content: None,
     };
     let repo = ChatRepo::new(db.clone());
     repo.create_conversation(&with_session).unwrap();
@@ -519,6 +533,7 @@ fn options_for_pi_are_empty_and_do_not_enable_runtime() {
             updated_at: now,
             native_session_id: None,
             sending: false,
+        first_user_content: None,
         })
         .unwrap();
     let run = Arc::new(RunService::new(AdapterRegistry::default()));
@@ -1489,6 +1504,7 @@ fn refresh_options_skips_warmed_catalog_when_idle() {
             updated_at: now,
             native_session_id: None,
             sending: false,
+        first_user_content: None,
         })
         .unwrap();
     let run = Arc::new(RunService::new(AdapterRegistry::default()));

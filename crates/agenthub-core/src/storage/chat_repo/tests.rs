@@ -17,6 +17,7 @@ fn sample_conv(id: &str, agents: Vec<AgentId>) -> Conversation {
         updated_at: now,
         native_session_id: None,
         sending: false,
+        first_user_content: None,
     }
 }
 
@@ -89,6 +90,44 @@ fn crud_and_cascade_delete() {
     assert!(repo.delete_conversation("c1").unwrap());
     assert!(repo.get_conversation("c1").unwrap().is_none());
     assert!(repo.list_messages("c1").unwrap().is_empty());
+}
+
+#[test]
+fn list_conversations_includes_first_user_content_for_every_row() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let repo = ChatRepo::new(db);
+
+    let clipped = sample_conv("clipped", vec![AgentId::Claude]);
+    let mut clipped = clipped;
+    clipped.title = "Use your terminal to wri…".into();
+    repo.create_conversation(&clipped).unwrap();
+
+    let other = sample_conv("other", vec![AgentId::Codex]);
+    repo.create_conversation(&other).unwrap();
+
+    let mut first = sample_msg("u1", "clipped", 1, ChatRole::User);
+    first.content =
+        "Use your terminal to write exactly what I asked without clipping the title".into();
+    repo.insert_message(&first).unwrap();
+    repo.insert_message(&sample_msg("a1", "clipped", 1, ChatRole::Agent))
+        .unwrap();
+    let mut later = sample_msg("u2", "clipped", 2, ChatRole::User);
+    later.content = "later prompt".into();
+    repo.insert_message(&later).unwrap();
+
+    let listed = repo.list_conversations().unwrap();
+    let clipped_row = listed.iter().find(|c| c.id == "clipped").unwrap();
+    let other_row = listed.iter().find(|c| c.id == "other").unwrap();
+    assert_eq!(
+        clipped_row.first_user_content.as_deref(),
+        Some("Use your terminal to write exactly what I asked without clipping the title")
+    );
+    assert_eq!(clipped_row.title, "Use your terminal to wri…");
+    assert!(other_row.first_user_content.is_none());
+
+    let got = repo.get_conversation("clipped").unwrap().unwrap();
+    assert_eq!(got.first_user_content, clipped_row.first_user_content);
 }
 
 #[test]

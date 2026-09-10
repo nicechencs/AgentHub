@@ -4,7 +4,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { Conversation } from '@/lib/types';
-import { conversationSemanticTitle } from './chat-model';
+import { createTranslator } from '@/lib/i18n';
+import { conversationRailHintView, conversationSemanticTitle } from './chat-model';
 import { ChatSessionRail } from './ChatSessionRail';
 
 vi.mock('@/components/shared/LanguageProvider', async () => {
@@ -76,6 +77,39 @@ describe('ChatSessionRail titles', () => {
     expect(src).toContain('firstUserContent');
     expect(src).toContain('data-help="chat-session-hint-title"');
     expect(src).toContain('{hint.title}');
+    expect(src).not.toMatch(/function ConversationRailHintLabel[\s\S]*AgentLogo/);
+  });
+
+  it('recovers a clipped hover title for a non-active row from list first-user content', () => {
+    const prompt =
+      'Use your terminal to write exactly what I asked without clipping the title';
+    const stored = `${prompt.slice(0, 24)}…`;
+    const active = conversation({ id: 'active', title: '当前会话' });
+    const clipped = conversation({
+      id: 'clipped',
+      title: stored,
+      firstUserContent: prompt,
+    });
+    const firstUserContentById: Record<string, string> = {};
+    renderMarkup(
+      rail({
+        activeId: active.id,
+        groups: [{ key: 'today', label: '今天', items: [active, clipped] }],
+        conversations: [active, clipped],
+        filteredCount: 2,
+        firstUserContentById,
+      }),
+    );
+    const firstUserContent = firstUserContentById[clipped.id] ?? clipped.firstUserContent;
+    expect(firstUserContent).toBe(prompt);
+    const hint = conversationRailHintView(
+      { ...clipped, firstUserContent },
+      createTranslator('zh'),
+    );
+    expect(hint.title).toBe(prompt);
+    expect(hint.title).not.toMatch(/…|\.\.\./);
+    const src = readFileSync(new URL('./ChatSessionRail.tsx', import.meta.url), 'utf8');
+    expect(src).toContain('firstUserContentById?.[c.id] ?? c.firstUserContent');
     expect(src).not.toMatch(/function ConversationRailHintLabel[\s\S]*AgentLogo/);
   });
 
