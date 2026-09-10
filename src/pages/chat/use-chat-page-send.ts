@@ -14,6 +14,7 @@ import {
   chatSend,
   listChatMessages,
   listConversations,
+  updateConversation,
   runtimeCancel,
   runtimeContinueLegacy,
   runtimeReply,
@@ -25,16 +26,21 @@ import type { RuntimeRequest, RuntimeSnapshot } from '@/lib/api/chat';
 import type { ProcessMap } from '@/lib/chat-process';
 import type { AgentKey, ChatEvent, ChatMessage, Conversation } from '@/lib/types';
 import type { TurnGroup } from './chat-format';
-import { busyAgentsForSends, incomingSendingIds, liveSendingIds, retryTarget, sendBlockers } from './chat-model';
+import { busyAgentsForSends, incomingSendingIds, liveSendingIds, retryTarget, sendBlockers, titleFromPrompt } from './chat-model';
 import { isCurrentChatRequest } from './chat-request';
 import {
   appendQueuedFollowUp,
   grokShouldFlushFollowUp,
   prependQueuedFollowUp,
-  queuedFollowUpLabel,
+  removeQueuedFollowUp,
   restoreQueuedFollowUpOnCancel,
   shiftQueuedFollowUp,
+  type QueuedFollowUpItem,
 } from './chat-grok-follow-up';
+import {
+  composerCancelingVisible,
+  composerKeepsStoppingAfterCancel,
+} from './chat-composer-model';
 import { acceptsRuntimeSnapshot, isLatestRuntimeRead, isRuntimeActive, readRuntimeTransport, requestMatchesRuntime, runtimeReplyFields } from './chat-runtime-model';
 import {
   beginRuntimeStart,
@@ -55,11 +61,6 @@ import {
   RUNTIME_SNAPSHOT_POLL_ACTIVE_MS,
   RUNTIME_SNAPSHOT_POLL_BACKGROUND_MS,
 } from './chat-streaming';
-
-function titleFromPrompt(prompt: string): string {
-  const trimmed = prompt.trim();
-  return trimmed.length > 30 ? `${trimmed.slice(0, 30)}…` : trimmed;
-}
 
 /**
  * Chat 发送 / 取消 / 流式事件 / 过程面板。
@@ -125,8 +126,8 @@ export function useChatPageSend(input: {
   const runtimeReadRef = useRef(new Map<string, number>());
   const runtimeProbeRef = useRef(new Set<string>());
   const runtimeProbeCancelRef = useRef(new Set<string>());
-  const followUpsRef = useRef(new Map<string, string[]>());
-  const [followUpById, setFollowUpById] = useState<Record<string, { label: string; count: number }>>({});
+  const followUpsRef = useRef(new Map<string, QueuedFollowUpItem[]>());
+  const [followUpById, setFollowUpById] = useState<Record<string, QueuedFollowUpItem[]>>({});
 
   useEffect(() => {
     setProcessMap({});
@@ -144,20 +145,16 @@ export function useChatPageSend(input: {
   };
 
   const publishFollowUps = () => {
-    const next: Record<string, { label: string; count: number }> = {};
+    const next: Record<string, QueuedFollowUpItem[]> = {};
     for (const [id, items] of followUpsRef.current.entries()) {
-      const label = queuedFollowUpLabel(items);
-      if (!label) continue;
-      next[id] = {
-        label,
-        count: items.map((item) => item.trim()).filter(Boolean).length,
-      };
+      if (items.length === 0) continue;
+      next[id] = items;
     }
     setFollowUpById(next);
   };
 
-  const setFollowUpQueue = (conversationId: string, items: string[]) => {
-    const next = items.map((item) => item.trim()).filter(Boolean);
+  const setFollowUpQueue = (conversationId: string, items: QueuedFollowUpItem[]) => {
+    const next = items.filter((item) => item.text.trim());
     if (next.length > 0) followUpsRef.current.set(conversationId, next);
     else followUpsRef.current.delete(conversationId);
     publishFollowUps();
@@ -181,7 +178,14 @@ export function useChatPageSend(input: {
     const shifted = shiftQueuedFollowUp(followUpsRef.current.get(conversationId) ?? []);
     if (!shifted) return null;
     setFollowUpQueue(conversationId, shifted.rest);
-    return shifted.next;
+    return shifted.next.text;
+  };
+
+  const removeFollowUp = (conversationId: string, itemId: string) => {
+    setFollowUpQueue(
+      conversationId,
+      removeQueuedFollowUp(followUpsRef.current.get(conversationId) ?? [], itemId),
+    );
   };
 
   const clearFollowUp = (conversationId: string) => {
@@ -215,12 +219,15 @@ export function useChatPageSend(input: {
     publishSendingIds();
   };
 
+  const clearCancelingFor = (conversationId: string) => {
+    if (!cancelingIdsRef.current.delete(conversationId)) return;
+    setCancelingIds([...cancelingIdsRef.current]);
+  };
+
   const clearSendingFor = (conversationId: string) => {
     if (!sendingIdsRef.current.has(conversationId)) return;
     sendingIdsRef.current.delete(conversationId);
-    if (cancelingIdsRef.current.delete(conversationId)) {
-      setCancelingIds([...cancelingIdsRef.current]);
-    }
+    clearCancelingFor(conversationId);
     publishSendingIds();
   };
 
@@ -396,7 +403,13 @@ export function useChatPageSend(input: {
     [conversations, liveSendingConversationIds],
   );
   const sendingHere = Boolean(active?.id && liveSendingConversationIds.includes(active.id));
-  const cancelingHere = Boolean(active?.id && cancelingIds.includes(active.id));
+  const cancelingHere = Boolean(
+    active?.id &&
+      composerCancelingVisible({
+        localCanceling: cancelingIds.includes(active.id),
+        runtimePhase: runtime?.phase,
+      }),
+  );
 
   const blockers = useMemo(() => {
     if (!active) return [];
@@ -632,6 +645,14 @@ export function useChatPageSend(input: {
       setConversations((prev) => prev.map((item) => (
         item.id === sendConvId ? { ...item, title } : item
       )));
+      try {
+        const updated = await updateConversation(sendConvId, { title });
+        setConversations((prev) => prev.map((item) => (
+          item.id === sendConvId ? { ...item, title: updated.title || title } : item
+        )));
+      } catch {
+        /* Rust persist is the fallback if this write does not land. */
+      }
     }
 
     // A runtime-enabled snapshot is the sole decision point.  Failure to read
@@ -870,7 +891,11 @@ export function useChatPageSend(input: {
     cancelingIdsRef.current.add(id);
     setCancelingIds([...cancelingIdsRef.current]);
     try {
-      await cancelRuntimeTarget(id);
+      const result = await cancelRuntimeTarget(id);
+      if (!composerKeepsStoppingAfterCancel(result)) {
+        clearCancelingFor(id);
+        return;
+      }
       toast({
         title: t('chat.toast.cancelRequested'),
         description: t('chat.toast.cancelRequestedDesc'),
@@ -879,10 +904,7 @@ export function useChatPageSend(input: {
       });
     } catch (e) {
       toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
-    } finally {
-      if (cancelingIdsRef.current.delete(id)) {
-        setCancelingIds([...cancelingIdsRef.current]);
-      }
+      clearCancelingFor(id);
     }
   }
 
@@ -971,8 +993,11 @@ export function useChatPageSend(input: {
     handleSend,
     retryLast,
     handleCancel,
-    queuedFollowUp: activeId ? followUpById[activeId]?.label ?? null : null,
-    queuedFollowUpCount: activeId ? followUpById[activeId]?.count ?? 0 : 0,
+    queuedFollowUps: activeId ? followUpById[activeId] ?? [] : [],
+    queuedFollowUpCount: activeId ? followUpById[activeId]?.length ?? 0 : 0,
+    cancelQueuedFollowUp: (itemId: string) => {
+      if (activeId) removeFollowUp(activeId, itemId);
+    },
     clearQueuedFollowUp: () => {
       if (activeId) clearFollowUp(activeId);
     },

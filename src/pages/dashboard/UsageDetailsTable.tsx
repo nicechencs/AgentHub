@@ -18,7 +18,7 @@ import {
   useColumnWidths,
   type ColumnWidthSpec,
 } from '@/components/ui/table';
-import { Tip } from '@/components/ui/tooltip';
+import { Tip, TruncateTip } from '@/components/ui/tooltip';
 import { agentDisplayName } from '@/config/agents';
 import type { MessageKey } from '@/lib/i18n';
 import type { UsageRecord } from '@/lib/types';
@@ -220,11 +220,11 @@ export function UsageDetailsTable({ rows }: { rows: UsageRecord[] }) {
               <TableCell className="truncate whitespace-nowrap">
                 <span className="inline-flex max-w-full items-center gap-1.5">
                   <AgentDot agentId={r.agentId} />
-                  <span className="truncate">{agentDisplayName(r.agentId)}</span>
+                  <TruncateTip className="truncate" text={agentDisplayName(r.agentId)} />
                 </span>
               </TableCell>
               <TableCell className="truncate whitespace-nowrap font-mono text-xs">
-                {r.model}
+                <TruncateTip className="font-mono" text={r.model} />
               </TableCell>
               <TableCell className="truncate whitespace-nowrap text-right font-mono text-xs">
                 {r.inputTokens.toLocaleString()}

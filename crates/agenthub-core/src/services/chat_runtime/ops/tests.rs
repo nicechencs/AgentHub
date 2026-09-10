@@ -382,9 +382,100 @@ fn acp_session_prompt_params_use_prompt_not_content() {
 }
 
 #[test]
+fn codex_workspace_write_excludes_tmp_so_outside_cwd_needs_approval() {
+    let cwd = std::path::Path::new("/workspace/project");
+    let policy = codex_workspace_write_sandbox_policy(cwd);
+    assert_eq!(policy["type"], "workspaceWrite");
+    assert_eq!(policy["writableRoots"], json!(["/workspace/project"]));
+    assert_eq!(policy["networkAccess"], false);
+    assert_eq!(policy["excludeSlashTmp"], true);
+    assert_eq!(policy["excludeTmpdirEnvVar"], true);
+}
+
+#[test]
+fn grok_acp_stdio_uses_documented_agent_flags_only() {
+    assert_eq!(
+        grok_acp_stdio_args(None, None, false),
+        vec![
+            "agent".to_string(),
+            "--no-leader".to_string(),
+            "stdio".to_string()
+        ]
+    );
+    assert!(!grok_acp_stdio_args(None, None, false)
+        .iter()
+        .any(|arg| arg == "--permission-mode"));
+    assert_eq!(
+        grok_acp_stdio_args(Some("grok-4.6"), Some("high"), true),
+        vec![
+            "agent".to_string(),
+            "--no-leader".to_string(),
+            "-m".to_string(),
+            "grok-4.6".to_string(),
+            "--reasoning-effort".to_string(),
+            "high".to_string(),
+            "--always-approve".to_string(),
+            "stdio".to_string()
+        ]
+    );
+}
+
+#[test]
+fn grok_initialize_advertises_client_fs_without_terminal() {
+    let params = grok_initialize_params();
+    assert_eq!(params["protocolVersion"], 1);
+    assert_eq!(params["clientCapabilities"]["fs"]["readTextFile"], true);
+    assert_eq!(params["clientCapabilities"]["fs"]["writeTextFile"], true);
+    assert_eq!(params["clientCapabilities"]["terminal"], false);
+}
+
+#[test]
+fn path_is_inside_cwd_uses_real_directories() {
+    let cwd = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let inside_new = cwd.path().join("new-file.txt");
+    let outside_new = outside.path().join("out.txt");
+    assert!(path_is_inside_cwd(&inside_new, cwd.path()));
+    assert!(path_is_inside_cwd(
+        std::path::Path::new("relative.txt"),
+        cwd.path()
+    ));
+    assert!(!path_is_inside_cwd(&outside_new, cwd.path()));
+}
+
+#[test]
+fn acp_fs_write_payload_requires_path_and_caps_size() {
+    let (path, content) = acp_fs_write_payload(&json!({
+        "path": "/tmp/agenthub-always-allow-grok-347.txt",
+        "content": "hello"
+    }))
+    .unwrap();
+    assert_eq!(
+        path,
+        std::path::PathBuf::from("/tmp/agenthub-always-allow-grok-347.txt")
+    );
+    assert_eq!(content, "hello");
+    assert!(acp_fs_write_payload(&json!({"content": "x"})).is_err());
+    let too_big = "x".repeat(ACP_FS_WRITE_MAX_BYTES + 1);
+    assert!(acp_fs_write_payload(&json!({"path": "/tmp/x", "content": too_big})).is_err());
+}
+
+#[test]
+fn grok_session_new_disables_yolo_unless_conversation_skips_cards() {
+    let cwd = std::path::Path::new("/workspace/project");
+    let ask = grok_session_new_params(cwd, false);
+    assert_eq!(ask["cwd"], "/workspace/project");
+    assert_eq!(ask["_meta"]["yoloMode"], false);
+    assert_eq!(ask["_meta"]["autoMode"], false);
+    let skip = grok_session_new_params(cwd, true);
+    assert_eq!(skip["_meta"]["yoloMode"], true);
+    assert!(skip["_meta"].get("autoMode").is_none());
+}
+
+#[test]
 fn grok_prompt_blocks_embed_local_image() {
     // Grok/Kiro ACP image blocks require base64 `data`. A path-only / file URI
-    // block is not sent: this client advertises no fs read.
+    // block is not sent even when initialize advertises client fs.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("shot.png");
     std::fs::write(&path, b"png-bytes").unwrap();
@@ -405,7 +496,6 @@ fn grok_prompt_blocks_embed_local_image() {
         base64::engine::general_purpose::STANDARD.encode(b"png-bytes")
     );
 }
-
 
 #[test]
 fn claude_user_message_embeds_base64_image() {

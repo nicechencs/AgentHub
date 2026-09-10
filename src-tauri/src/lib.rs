@@ -3,6 +3,7 @@
 
 mod adapter_bridge_controller;
 mod adapter_control_host;
+mod chat_shortcuts;
 mod commands;
 mod exit_coordinator;
 mod file_manager;
@@ -25,9 +26,8 @@ pub fn run() {
 
     tauri::Builder::default()
         // Must be first so a second process exits before other plugins init.
-        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            crate::shell_open_chat::ingest_args(app, &args);
-            tray::show_main_window(app);
+        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            crate::shell_open_chat::ingest_second_instance(app, args, cwd);
         }))
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -50,13 +50,20 @@ pub fn run() {
             if let Err(e) = tray::setup_tray(app.handle()) {
                 tracing::warn!(error = %e, "system tray setup failed");
             }
+            if let Err(e) = chat_shortcuts::setup_new_chat_accel(app.handle()) {
+                tracing::warn!(error = %e, "chat new-chat accelerator setup failed");
+            }
             {
                 let args: Vec<String> = std::env::args().collect();
-                if let Some(raw) = crate::shell_open_chat::parse_open_chat_cwd_arg(&args) {
-                    if let Some(cwd) = crate::shell_open_chat::resolve_open_chat_cwd(&raw) {
-                        app.state::<AppState>()
-                            .set_pending_open_chat_cwd(cwd.to_string_lossy().into_owned());
-                    }
+                let fallback = std::env::current_dir()
+                    .ok()
+                    .map(|p| p.to_string_lossy().into_owned());
+                if let Some(cwd) = crate::shell_open_chat::resolve_open_chat_from_launch(
+                    &args,
+                    fallback.as_deref(),
+                ) {
+                    app.state::<AppState>()
+                        .set_pending_open_chat_cwd(cwd.to_string_lossy().into_owned());
                 }
                 let lang = crate::tray_i18n::language_from_hub(app.state::<AppState>().hub().ok());
                 crate::shell_open_chat::register_best_effort(lang);
@@ -79,6 +86,9 @@ pub fn run() {
                 );
             }
             Ok(())
+        })
+        .on_menu_event(|app, event| {
+            crate::chat_shortcuts::emit_if_new_chat(app, event.id.as_ref());
         })
         .on_window_event(|window, event| {
             if let WindowEvent::Focused(true) = event {
@@ -269,6 +279,7 @@ pub fn run() {
             commands::chat::create_conversation,
             commands::chat::ensure_default_conversation,
             commands::chat::update_conversation,
+            commands::chat::open_conversation_from_session,
             commands::chat::delete_conversation,
             commands::chat::list_chat_messages,
             commands::chat::chat_send,

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { translate } from '@/lib/i18n';
 import {
+  composerCancelingVisible,
   composerEnterShouldSubmit,
+  composerFooterControl,
+  composerKeepsStoppingAfterCancel,
   composerPrimaryAction,
   composerQueuedFollowUpView,
   composerShortcutKind,
@@ -9,6 +12,7 @@ import {
   composerShouldRestoreFocus,
   composerShowsSubmitButton,
   composerStopMessageKey,
+  composerStopTitle,
   composerSubmitMessageKey,
 } from './chat-composer-model';
 
@@ -100,6 +104,28 @@ describe('composer primary action honesty', () => {
   });
 });
 
+describe('composer footer control', () => {
+  it('shows Send when idle, even if the draft is empty', () => {
+    expect(composerFooterControl({ sending: false, action: null })).toBe('send');
+    expect(composerFooterControl({ sending: false, action: 'send' })).toBe('send');
+  });
+
+  it('shows Send while generating only when there is a real next action', () => {
+    expect(composerFooterControl({ sending: true, action: 'queue' })).toBe('send');
+    expect(composerFooterControl({ sending: true, action: 'steer' })).toBe('send');
+  });
+
+  it('shows Stop in the same slot when generating and the composer is empty or blocked', () => {
+    expect(composerFooterControl({ sending: true, action: null })).toBe('stop');
+  });
+
+  it('names Esc on Stop until cancelling', () => {
+    expect(composerStopTitle({ canceling: false, stopLabel: '停止' })).toBe('停止 · Esc');
+    expect(composerStopTitle({ canceling: false, stopLabel: 'Stop' })).toBe('Stop · Esc');
+    expect(composerStopTitle({ canceling: true, stopLabel: '正在停止' })).toBe('正在停止');
+  });
+});
+
 describe('composer shortcut and stop copy', () => {
   it('names Enter / Shift+Enter for the current real action', () => {
     expect(
@@ -167,23 +193,49 @@ describe('composer shortcut and stop copy', () => {
     expect(translate('zh', composerStopMessageKey(true))).toBe('正在停止');
     expect(translate('en', composerStopMessageKey(true))).toBe('Stopping');
   });
+
+  it('keeps 正在停止 after a real cancel request until the turn ends', () => {
+    expect(composerKeepsStoppingAfterCancel('requested')).toBe(true);
+    expect(composerKeepsStoppingAfterCancel('pending')).toBe(true);
+    expect(composerKeepsStoppingAfterCancel('none')).toBe(false);
+    expect(composerCancelingVisible({ localCanceling: true, runtimePhase: 'running' })).toBe(true);
+    expect(composerCancelingVisible({ localCanceling: false, runtimePhase: 'cancelling' })).toBe(
+      true,
+    );
+    expect(composerCancelingVisible({ localCanceling: false, runtimePhase: 'running' })).toBe(
+      false,
+    );
+  });
 });
 
 describe('queued follow-up visibility', () => {
-  it('hides an empty queue and keeps count visible when queued', () => {
+  it('hides an empty queue and keeps each line as its own item', () => {
     expect(composerQueuedFollowUpView(null)).toBeNull();
-    expect(composerQueuedFollowUpView('  ')).toBeNull();
-    expect(composerQueuedFollowUpView('第二条；第三条', 2)).toEqual({
+    expect(composerQueuedFollowUpView([])).toBeNull();
+    expect(composerQueuedFollowUpView([{ id: 'blank', text: '  ' }])).toBeNull();
+    expect(
+      composerQueuedFollowUpView([
+        { id: 'q-2', text: '第二条' },
+        { id: 'q-3', text: '第三条' },
+      ]),
+    ).toEqual({
       count: 2,
-      preview: '第二条；第三条',
+      items: [
+        { id: 'q-2', text: '第二条' },
+        { id: 'q-3', text: '第三条' },
+      ],
     });
-    expect(composerQueuedFollowUpView('只一条')).toEqual({
+    expect(composerQueuedFollowUpView([{ id: 'q-1', text: '只一条' }])).toEqual({
       count: 1,
-      preview: '只一条',
+      items: [{ id: 'q-1', text: '只一条' }],
     });
     expect(translate('zh', 'chat.composer.queuedCount', { count: 2 })).toBe('已排队 2 条');
     expect(translate('zh', 'chat.composer.queuedHint')).toBe('本轮结束后发送');
+    expect(translate('zh', 'chat.composer.cancelQueuedItem')).toBe('取消这条');
+    expect(translate('zh', 'chat.composer.cancelAllQueued')).toBe('全部取消');
     expect(translate('en', 'chat.composer.queuedCount', { count: 2 })).toBe('2 queued');
+    expect(translate('en', 'chat.composer.cancelQueuedItem')).toBe('Remove this');
+    expect(translate('en', 'chat.composer.cancelAllQueued')).toBe('Cancel all');
   });
 });
 

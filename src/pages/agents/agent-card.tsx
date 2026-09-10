@@ -38,7 +38,7 @@ import {
   isNodeTooOldUpdateNote,
   isSpecialInstallChannel,
   agentLaunchTargets,
-  agentListDetailsHint,
+  agentHonestyHint,
   isLeftoverDetailsHint,
   agentUpgradeControl,
   agentUpgradeHint,
@@ -186,7 +186,7 @@ export function AgentCard({
   const checkingUpdate = updateState === 'checking';
   const installs = listAgentInstalls(agent);
   const versions = uniqueInstallVersions(programInstalls(installs));
-  const detailsHint = agentListDetailsHint(installs);
+  const detailsHint = agentHonestyHint(agent);
   const spawn = spawnInstall(agent);
   const inAppChannel = spawn?.updateVia === 'in_app';
   const upgradable =
@@ -442,7 +442,7 @@ export function AgentCard({
       >
         {!hidden && upgradeControl.show ? (
           <Button
-            size="icon"
+            size="sm"
             variant={upgradeControl.muted ? 'outline' : 'secondary'}
             className={upgradeControl.muted ? 'text-muted' : undefined}
             disabled={busy || checkingUpdate || upgradeControl.kind === 'hint_only'}
@@ -464,6 +464,7 @@ export function AgentCard({
                 checkingUpdate && 'animate-pulse opacity-70',
               )}
             />
+            {t('agents.table.upgrade')}
           </Button>
         ) : (
           <TableEmptyCell />

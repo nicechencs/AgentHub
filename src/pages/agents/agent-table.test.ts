@@ -64,10 +64,10 @@ describe('agent table columns', () => {
     expect(start?.defaultWidth).toBeGreaterThanOrEqual(start?.minWidth ?? 0);
   });
 
-  it('keeps the upgrade column narrow for an icon-only control', () => {
+  it('keeps the upgrade column wide enough for a labeled Update button', () => {
     const upgrade = AGENT_TABLE_COLUMN_SPECS.find((spec) => spec.key === 'upgrade');
-    expect(upgrade?.defaultWidth).toBe(72);
-    expect(upgrade?.minWidth).toBe(56);
+    expect(upgrade?.defaultWidth).toBe(96);
+    expect(upgrade?.minWidth).toBe(80);
   });
 
   it('lets 说明 fill leftover width; left columns start, right columns end', () => {

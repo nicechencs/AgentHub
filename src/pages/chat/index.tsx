@@ -10,6 +10,7 @@ import { Notice } from '@/components/shared/Notice';
 import { isMarkdownFilePath } from '@/components/shared/MarkdownView';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
+import { onChatNativeShortcut } from '@/lib/api/chat';
 import { hasEscPriorityOverlay } from '@/lib/skills/preview-keys';
 import { StorageKey } from '@/lib/storage-key';
 import { cn } from '@/lib/utils';
@@ -21,10 +22,13 @@ import {
 } from './chat-kiro-model';
 import {
   chatEscapeShouldCancel,
-  chatModKShouldFocusHistory,
+  chatKeyTargetIsField,
+  chatPageShortcutAction,
   chatMainColumnClass,
   chatStageClass,
+  composerNativeEditChord,
 } from './chat-model';
+import { subscribeChatShortcutKeydown } from './chat-shortcuts';
 import { chatModShiftIShouldOpenModel } from './chat-model-labels';
 import { formatChatSessionRecord } from './chat-format';
 import { chatBusySendMode, grokLegacyContinueKind } from './chat-grok-follow-up';
@@ -43,6 +47,7 @@ import { ChatComposer } from './ChatComposer';
 import { ChatSessionHeader } from './ChatSessionHeader';
 import { ChatSessionRail } from './ChatSessionRail';
 import { ChatSettingsDialog } from './ChatSettingsDialog';
+import { ChatShortcutsDialog } from './ChatShortcutsDialog';
 import { ChatTranscript } from './ChatTranscript';
 import { ChatRuntimeRequests } from './ChatRuntimeRequests';
 import { useChatComposerSplit } from './use-chat-composer-split';
@@ -56,7 +61,7 @@ export default function ChatPage() {
     steer: page.runtimeOps.steer,
     runId: page.runtime?.runId,
     phase: page.runtime?.phase,
-    queued: Boolean(page.queuedFollowUp),
+    queued: page.queuedFollowUpCount > 0,
   });
   const split = useChatComposerSplit();
   const preview = useSideSplit<ChatPreviewTarget>({
@@ -65,6 +70,7 @@ export default function ChatPage() {
   const navigate = useNavigate();
   const { t } = useI18n();
   const [modelMenuOpenNonce, setModelMenuOpenNonce] = useState(0);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const openMarkdownPreview = useCallback(
     (next: string) => {
       if (!isMarkdownFilePath(next)) return false;
@@ -96,16 +102,32 @@ export default function ChatPage() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (
-        chatModKShouldFocusHistory({
+        chatKeyTargetIsField(e.target) &&
+        composerNativeEditChord({
           key: e.key,
+          code: e.code,
           metaKey: e.metaKey,
           ctrlKey: e.ctrlKey,
           altKey: e.altKey,
           shiftKey: e.shiftKey,
-          overlayOpen: hasEscPriorityOverlay(),
         })
       ) {
+        return;
+      }
+      const overlayOpen = hasEscPriorityOverlay();
+      const action = chatPageShortcutAction({
+        key: e.key,
+        code: e.code,
+        metaKey: e.metaKey,
+        ctrlKey: e.ctrlKey,
+        altKey: e.altKey,
+        shiftKey: e.shiftKey,
+        overlayOpen,
+        target: e.target,
+      });
+      if (action === 'history') {
         e.preventDefault();
+        e.stopPropagation();
         page.runChatAction({
           id: 'focus-history-search',
           kind: 'local',
@@ -120,11 +142,28 @@ export default function ChatPage() {
           ctrlKey: e.ctrlKey,
           altKey: e.altKey,
           shiftKey: e.shiftKey,
-          overlayOpen: hasEscPriorityOverlay(),
+          overlayOpen,
         })
       ) {
         e.preventDefault();
+        e.stopPropagation();
         setModelMenuOpenNonce((n) => n + 1);
+        return;
+      }
+      if (action === 'newChat') {
+        e.preventDefault();
+        e.stopPropagation();
+        page.runChatAction({
+          id: 'new-session',
+          kind: 'local',
+          keywords: [],
+        });
+        return;
+      }
+      if (action === 'overview') {
+        e.preventDefault();
+        e.stopPropagation();
+        setShortcutsOpen(true);
         return;
       }
       if (
@@ -133,7 +172,7 @@ export default function ChatPage() {
           sending: page.sendingHere,
           canceling: page.cancelingHere,
           previewOpen: preview.expanded || preview.mounted,
-          overlayOpen: hasEscPriorityOverlay(),
+          overlayOpen,
           defaultPrevented: e.defaultPrevented,
           composing: e.isComposing,
         })
@@ -143,8 +182,7 @@ export default function ChatPage() {
       e.preventDefault();
       void page.cancelSending();
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return subscribeChatShortcutKeydown(onKey);
   }, [
     page.cancelSending,
     page.cancelingHere,
@@ -154,9 +192,37 @@ export default function ChatPage() {
     preview.mounted,
   ]);
 
+  useEffect(() => {
+    let cancelled = false;
+    let unsub: (() => void) | undefined;
+    void onChatNativeShortcut((action) => {
+      if (cancelled || action !== 'newChat') return;
+      page.runChatAction({
+        id: 'new-session',
+        kind: 'local',
+        keywords: [],
+      });
+    })
+      .then((fn) => {
+        if (cancelled) {
+          fn();
+          return;
+        }
+        unsub = fn;
+      })
+      .catch(() => {
+        // Browser mock / unavailable: page keydown still handles Chromium.
+      });
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
+  }, [page.runChatAction]);
+
   if (page.error && page.conversations.length === 0 && !page.listLoading) {
     return (
       <div className="flex h-full items-center justify-center p-6">
+        <ChatShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
         <ErrorState error={page.error} onRetry={page.retryLoad} />
       </div>
     );
@@ -170,6 +236,7 @@ export default function ChatPage() {
   ) {
     return (
       <div className="flex h-full items-center justify-center p-6" data-help="chat-empty">
+        <ChatShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
         <EmptyState
           icon={MessagesSquare}
           title={t('chat.page.emptyTitle')}
@@ -204,6 +271,7 @@ export default function ChatPage() {
         onConfirmDelete={() => void page.confirmDelete()}
         searchFocusNonce={page.searchFocusNonce}
         historyRevealNonce={page.historyRevealNonce}
+        firstUserContentById={page.firstUserContentById}
       />
 
       <div ref={preview.splitRef} className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
@@ -255,6 +323,7 @@ export default function ChatPage() {
             />
             {chatShowsRuntimeRequestPanels(page.primaryAgent) && page.runtime?.pendingRequests.length ? (
               <ChatRuntimeRequests
+                agentId={page.primaryAgent}
                 requests={page.runtime.pendingRequests}
                 onReply={(request, decision, answers) => page.submitRuntimeRequest(request, decision, answers)}
               />
@@ -262,6 +331,37 @@ export default function ChatPage() {
 
             {page.active && (
               <>
+                {page.cwdMissing ? (
+                  <Notice tone="warning" className="mb-2">
+                    <div
+                      className="flex flex-wrap items-center justify-between gap-2"
+                      data-help="chat-cwd-missing"
+                    >
+                      <div className="min-w-0 space-y-1">
+                        <p className="font-medium text-primary">{t('chat.cwd.missing')}</p>
+                        <p className="text-meta text-secondary">{t('chat.cwd.missingDetail')}</p>
+                      </div>
+                      <div className="flex shrink-0 flex-wrap gap-2">
+                        {page.fallbackCwd ? (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => void page.pickWorkingDirectory(page.fallbackCwd)}
+                          >
+                            {t('chat.cwd.useProjectDir')}
+                          </Button>
+                        ) : null}
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => void page.pickWorkingDirectory()}
+                        >
+                          {t('chat.cwd.rebind')}
+                        </Button>
+                      </div>
+                    </div>
+                  </Notice>
+                ) : null}
                 {page.turnOutcome ? (
                   <ChatTurnOutcomeBanner
                     outcome={page.turnOutcome}
@@ -353,6 +453,7 @@ export default function ChatPage() {
                   agentsReady={page.agentsReady}
                   blockers={page.blockers}
                   showBlockerBanner={page.turns.length > 0}
+                  emptyTranscript={page.turns.length === 0}
                   connectionCaption={page.connectionCaption}
                   walletError={page.walletError}
                   onRetryWallet={() => void page.reloadWallet()}
@@ -373,8 +474,8 @@ export default function ChatPage() {
                       ? () => void page.handleSend()
                       : undefined
                   }
-                  queuedFollowUp={page.queuedFollowUp}
-                  queuedFollowUpCount={page.queuedFollowUpCount}
+                  queuedFollowUps={page.queuedFollowUps}
+                  onCancelQueuedFollowUp={page.cancelQueuedFollowUp}
                   onClearQueuedFollowUp={page.clearQueuedFollowUp}
                   focusNonce={page.composerFocusNonce}
                   modelMenuOpenNonce={modelMenuOpenNonce}
@@ -404,6 +505,12 @@ export default function ChatPage() {
                   }}
                   onPickWorkingDirectory={() => void page.pickWorkingDirectory()}
                   onDraftKeyDown={page.handleComposerKeyDown}
+                  commandSearchOpen={page.commandSearchOpen}
+                  commandIndex={page.commandIndex}
+                  actionContext={page.actionContext}
+                  extraActions={page.runtimeCommandActions}
+                  onRunAction={page.runChatAction}
+                  onHoverCommandIndex={page.setCommandIndex}
                   onPasteImages={
                     page.runtime?.enabled && page.runtimeOps.imageInput
                       ? (files) => void page.runtimeOps.pasteImages(files)
@@ -417,13 +524,6 @@ export default function ChatPage() {
                         enabled
                         inline
                         modelMenuOpenNonce={modelMenuOpenNonce}
-                        draft={page.draft}
-                        commandSearchOpen={page.commandSearchOpen}
-                        commandIndex={page.commandIndex}
-                        actionContext={page.actionContext}
-                        extraActions={page.runtimeCommandActions}
-                        onRunAction={page.runChatAction}
-                        onHoverCommandIndex={page.setCommandIndex}
                         models={page.runtimeOps.models}
                         settings={page.runtimeOps.settings}
                         frozen={page.runtimeOps.frozen}
@@ -442,6 +542,7 @@ export default function ChatPage() {
                         onToggleSkill={page.runtimeOps.toggleSkill}
                         agentId={page.primaryAgent}
                         showSkillPicker={page.primaryAgent !== 'codex'}
+                        compactSecondary={page.turns.length === 0}
                       />
                     ) : undefined
                   }
@@ -454,6 +555,7 @@ export default function ChatPage() {
           </div>
         </div>
 
+        <ChatShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
         <ChatSettingsDialog
           open={page.settingsOpen}
           onOpenChange={page.setSettingsOpen}

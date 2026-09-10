@@ -22,6 +22,7 @@ fn conversation(db: &Database, id: &str, messages: bool) -> Conversation {
         updated_at: now,
         native_session_id: None,
         sending: false,
+        first_user_content: None,
     };
     let repo = ChatRepo::new(db.clone());
     repo.create_conversation(&value).unwrap();
@@ -72,6 +73,7 @@ fn begin_turn_bumps_conversation_sort_time_without_renaming() {
         updated_at: "2026-01-01T00:00:00Z".into(),
         native_session_id: None,
         sending: false,
+        first_user_content: None,
     };
     let newer = Conversation {
         id: "newer".into(),
@@ -83,6 +85,7 @@ fn begin_turn_bumps_conversation_sort_time_without_renaming() {
         updated_at: "2026-06-01T00:00:00Z".into(),
         native_session_id: None,
         sending: false,
+        first_user_content: None,
     };
     repo.create_conversation(&older).unwrap();
     repo.create_conversation(&newer).unwrap();
@@ -151,6 +154,7 @@ fn begin_turn_sets_title_when_empty_and_still_bumps_sort_time() {
         updated_at: "2026-06-01T00:00:00Z".into(),
         native_session_id: None,
         sending: false,
+        first_user_content: None,
     })
     .unwrap();
     let store = super::store::RuntimeStore::new(db);
@@ -210,6 +214,7 @@ fn empty_grok_conversation_enables_runtime() {
         updated_at: now.clone(),
         native_session_id: None,
         sending: false,
+        first_user_content: None,
     };
     let legacy = Conversation {
         id: "grok-legacy".into(),
@@ -221,6 +226,7 @@ fn empty_grok_conversation_enables_runtime() {
         updated_at: now,
         native_session_id: None,
         sending: false,
+        first_user_content: None,
     };
     let repo = ChatRepo::new(db.clone());
     repo.create_conversation(&empty).unwrap();
@@ -259,6 +265,7 @@ fn empty_kiro_conversation_enables_runtime() {
         updated_at: now.clone(),
         native_session_id: None,
         sending: false,
+        first_user_content: None,
     };
     let legacy = Conversation {
         id: "kiro-legacy".into(),
@@ -270,6 +277,7 @@ fn empty_kiro_conversation_enables_runtime() {
         updated_at: now,
         native_session_id: None,
         sending: false,
+        first_user_content: None,
     };
     let repo = ChatRepo::new(db.clone());
     repo.create_conversation(&empty).unwrap();
@@ -308,6 +316,7 @@ fn empty_claude_conversation_enables_runtime() {
         updated_at: now.clone(),
         native_session_id: None,
         sending: false,
+        first_user_content: None,
     };
     let legacy = Conversation {
         id: "claude-legacy".into(),
@@ -319,6 +328,7 @@ fn empty_claude_conversation_enables_runtime() {
         updated_at: now,
         native_session_id: None,
         sending: false,
+        first_user_content: None,
     };
     let repo = ChatRepo::new(db.clone());
     repo.create_conversation(&empty).unwrap();
@@ -357,6 +367,7 @@ fn grok_legacy_continue_requires_session_and_keeps_print_path_otherwise() {
         updated_at: now.clone(),
         native_session_id: Some("sess-legacy-1".into()),
         sending: false,
+        first_user_content: None,
     };
     let no_session = Conversation {
         id: "grok-nosess".into(),
@@ -368,6 +379,7 @@ fn grok_legacy_continue_requires_session_and_keeps_print_path_otherwise() {
         updated_at: now.clone(),
         native_session_id: None,
         sending: false,
+        first_user_content: None,
     };
     let codex = Conversation {
         id: "codex-legacy".into(),
@@ -379,6 +391,7 @@ fn grok_legacy_continue_requires_session_and_keeps_print_path_otherwise() {
         updated_at: now.clone(),
         native_session_id: Some("thread-1".into()),
         sending: false,
+        first_user_content: None,
     };
     let kiro = Conversation {
         id: "kiro-legacy".into(),
@@ -390,6 +403,7 @@ fn grok_legacy_continue_requires_session_and_keeps_print_path_otherwise() {
         updated_at: now,
         native_session_id: Some("sess-kiro-1".into()),
         sending: false,
+        first_user_content: None,
     };
     let repo = ChatRepo::new(db.clone());
     repo.create_conversation(&with_session).unwrap();
@@ -519,6 +533,7 @@ fn options_for_pi_are_empty_and_do_not_enable_runtime() {
             updated_at: now,
             native_session_id: None,
             sending: false,
+        first_user_content: None,
         })
         .unwrap();
     let run = Arc::new(RunService::new(AdapterRegistry::default()));
@@ -627,6 +642,7 @@ fn persisted_request_is_removed_only_after_explicit_resolution() {
         detail: "printf safe".into(),
         questions: Vec::new(),
         permission_options: Vec::new(),
+        file_changes: Vec::new(),
     };
     store
         .add_request("c2", &request, "item/commandExecution/requestApproval", "7")
@@ -659,17 +675,42 @@ fn persisted_request_round_trips_allow_always_options() {
             id: "always".into(),
             kind: "allow_always".into(),
         }],
+        file_changes: Vec::new(),
     };
     store
-        .add_request(
-            "c-always",
-            &request,
-            "session/request_permission",
-            "8",
-        )
+        .add_request("c-always", &request, "session/request_permission", "8")
         .unwrap();
     assert_eq!(
         store.snapshot("c-always", None).unwrap().pending_requests,
+        vec![request]
+    );
+}
+
+#[test]
+fn persisted_request_round_trips_file_change_preview() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "c-file", false);
+    let store = super::store::RuntimeStore::new(db);
+    store.enable_if_new("c-file").unwrap();
+    let request = RuntimeRequest {
+        id: "req-file".into(),
+        run_id: "run-1".into(),
+        kind: RuntimeRequestKind::File,
+        title: "修改文件".into(),
+        detail: "/tmp/example.txt".into(),
+        questions: Vec::new(),
+        permission_options: Vec::new(),
+        file_changes: vec![super::types::RuntimeFileChange {
+            path: "/tmp/example.txt".into(),
+            kind: Some("add".into()),
+            preview: Some("ok".into()),
+        }],
+    };
+    store
+        .add_request("c-file", &request, "applyPatchApproval", "9")
+        .unwrap();
+    assert_eq!(
+        store.snapshot("c-file", None).unwrap().pending_requests,
         vec![request]
     );
 }
@@ -1288,15 +1329,22 @@ fn oversized_stdout_line_is_a_picture_too_large_error() {
         "stdout JSON line exceeds 1048576 bytes".into(),
     );
     assert_eq!(
-        super::transport_user_message(&error),
+        super::transport_user_message(crate::models::AgentId::Codex, &error),
         "图片太大，请换一张更小的图"
     );
-    let other =
-        super::codex_transport::CodexTransportError::Protocol("missing field".into());
+    let other = super::codex_transport::CodexTransportError::Protocol("missing field".into());
     assert!(
-        super::transport_user_message(&other).contains("missing field"),
+        super::transport_user_message(crate::models::AgentId::Codex, &other)
+            .contains("missing field"),
         "{}",
-        super::transport_user_message(&other)
+        super::transport_user_message(crate::models::AgentId::Codex, &other)
+    );
+    assert_eq!(
+        super::transport_user_message(
+            crate::models::AgentId::Grok,
+            &super::codex_transport::CodexTransportError::Exited
+        ),
+        "Grok 已退出"
     );
 }
 
@@ -1456,11 +1504,15 @@ fn refresh_options_skips_warmed_catalog_when_idle() {
             updated_at: now,
             native_session_id: None,
             sending: false,
+        first_user_content: None,
         })
         .unwrap();
     let run = Arc::new(RunService::new(AdapterRegistry::default()));
     let runtime = Arc::new(ChatRuntime::new(db, run));
     runtime.store.enable_if_new("no-cwd").unwrap();
+    runtime.set_codex_program_for_test(std::path::PathBuf::from(
+        "/definitely-missing/codex-for-refresh-test",
+    ));
     runtime.seed_catalog_cache_for_test(
         "no-cwd",
         vec![super::types::RuntimeModelOption {

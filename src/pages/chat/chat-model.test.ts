@@ -14,8 +14,14 @@ import {
   chatAgentPickerEmptyCopy,
   chatAgentPickerEmptyKind,
   chatEscapeShouldCancel,
+  chatKeyTargetIsField,
   chatModKShouldFocusHistory,
+  chatModNShouldStartNewChat,
+  chatPageShortcutAction,
+  chatQuestionShouldOpenShortcuts,
   composerEnterShouldSend,
+  composerNativeEditChord,
+  dialogEnterShouldConfirm,
   chatAgentPickerRows,
   chatConnectionKind,
   chatConnectionOptions,
@@ -37,9 +43,20 @@ import {
   conversationResumeCommand,
   conversationAgentLine,
   conversationRailHint,
+  conversationRailHintTitle,
+  conversationRailHintView,
   conversationRailMarkColor,
   conversationRailSelectedFill,
+  conversationSemanticPhrase,
+  conversationSemanticTitle,
   conversationTitle,
+  firstUserContentByConversation,
+  firstUserContentByListedConversations,
+  looksLikePersistedTitleClip,
+  mergeFirstUserContentById,
+  titleFromPrompt,
+  conversationCwdMissing,
+  canRebindConversationCwd,
   cwdShortName,
   isBlankConversationDraft,
   draftForFocusedConversation,
@@ -191,7 +208,91 @@ describe('conversationRailHint', () => {
         },
         t,
       ),
-    ).toBe('未设目录 · 刚刚 · 已关联官方会话 sess-1');
+    ).toBe('修登录 · 未设目录 · 刚刚 · 已关联官方会话 sess-1');
+    expect(
+      conversationRailHint(
+        {
+          title: '请在 /workspace/src/app.ts 检查问题',
+          agentIds: ['codex'],
+          cwd: '/workspace/demo-project',
+          updatedAt: new Date().toISOString(),
+          nativeSessionId: 'sess-1',
+        },
+        t,
+      ),
+    ).toContain('/workspace/src/app.ts');
+    expect(
+      conversationRailHint(
+        {
+          title: '请在 /workspace/src/app.ts 检查问题',
+          agentIds: ['codex'],
+          cwd: '/workspace/demo-project',
+          updatedAt: new Date().toISOString(),
+          nativeSessionId: null,
+        },
+        t,
+      ),
+    ).not.toMatch(/^\/workspace/);
+  });
+
+  it('exposes the complete stored title for hover, never an ellipsized clip', () => {
+    const title =
+      'Please create or edit /workspace/src/pages/chat/ChatSessionRail.tsx to add a hover title';
+    const hint = conversationRailHintView(
+      {
+        title,
+        cwd: '/workspace/demo-project',
+        updatedAt: new Date().toISOString(),
+        nativeSessionId: null,
+      },
+      t,
+    );
+    expect(hint.title).toBe(title);
+    expect(hint.title).not.toMatch(/…|\.\.\./);
+    expect(conversationSemanticTitle(title)).not.toBe(title);
+    expect(conversationSemanticTitle(title)).toMatch(/…/);
+    expect(hint.meta).toContain('/workspace/demo-project');
+  });
+
+  it('recovers a TITLE_CLIP stored title from the first user message', () => {
+    const prompt =
+      'Use your terminal to write exactly what I asked without clipping the title';
+    const stored = `${prompt.slice(0, 24)}…`;
+    expect(looksLikePersistedTitleClip(stored)).toBe(true);
+    expect(conversationRailHintTitle(stored, prompt)).toBe(prompt);
+    expect(conversationRailHintTitle(stored, prompt)).not.toMatch(/…|\.\.\./);
+    const hint = conversationRailHintView(
+      {
+        title: stored,
+        firstUserContent: prompt,
+        cwd: '/workspace/demo-project',
+        updatedAt: new Date().toISOString(),
+        nativeSessionId: null,
+      },
+      t,
+    );
+    expect(hint.title).toBe(prompt);
+    expect(hint.title).not.toMatch(/…|\.\.\./);
+  });
+
+  it('recovers a non-active clipped hover title from list first-user content, not active messages', () => {
+    const prompt =
+      'Use your terminal to write exactly what I asked without clipping the title';
+    const stored = `${prompt.slice(0, 24)}…`;
+    const listed = firstUserContentByListedConversations([
+      { id: 'inactive', firstUserContent: prompt },
+      { id: 'active', firstUserContent: null },
+    ]);
+    const fromMessages = firstUserContentByConversation([
+      { conversationId: 'active', role: 'user', content: 'only the focused chat is loaded' },
+    ]);
+    expect(fromMessages.inactive).toBeUndefined();
+    expect(conversationRailHintTitle(stored, fromMessages.inactive)).toBe(stored);
+    const merged = mergeFirstUserContentById(listed, fromMessages);
+    expect(merged.inactive).toBe(prompt);
+    expect(merged.active).toBe('only the focused chat is loaded');
+    expect(conversationRailHintTitle(stored, merged.inactive)).toBe(prompt);
+    expect(conversationRailHintTitle(stored, merged.inactive)).not.toMatch(/…|\.\.\./);
   });
 });
 
@@ -211,6 +312,17 @@ describe('conversationRailSelectedFill', () => {
     expect(conversationRailSelectedFill([])).toBe(
       'color-mix(in srgb, var(--accent) 28%, var(--bg-canvas))',
     );
+  });
+});
+
+describe('conversationCwdMissing', () => {
+  it('is only true when a stored path is marked gone', () => {
+    expect(conversationCwdMissing({ cwd: '/tmp', cwdMissing: true })).toBe(true);
+    expect(conversationCwdMissing({ cwd: '/tmp', cwdMissing: false })).toBe(false);
+    expect(conversationCwdMissing({ cwd: null, cwdMissing: true })).toBe(false);
+    expect(canRebindConversationCwd({ cwd: '/tmp', cwdMissing: true }, true)).toBe(true);
+    expect(canRebindConversationCwd({ cwd: '/tmp', cwdMissing: false }, true)).toBe(false);
+    expect(canRebindConversationCwd({ cwd: null }, false)).toBe(true);
   });
 });
 
@@ -639,6 +751,31 @@ describe('conversationTitle', () => {
     expect(conversationTitle(t, '   ')).toBe('新对话');
     expect(conversationTitle(t, '修复登录')).toBe('修复登录');
   });
+
+  it('uses a semantic phrase instead of a path-first prompt clip', () => {
+    expect(conversationSemanticTitle('Only modify /tmp/qa/ping.png')).toBe('Only modify');
+    expect(conversationSemanticTitle('请在 /workspace/src/app.ts 检查问题')).toBe('检查问题');
+    expect(conversationSemanticTitle('请帮我了解这个项目')).toBe('请帮我了解这个项目');
+    expect(conversationSemanticTitle('/workspace/foo/bar.ts')).toBe('');
+    expect(conversationTitle(t, 'Only modify /tmp/qa/ping.png')).toBe('Only modify');
+    expect(conversationTitle(t, '请在 /workspace/AgentHub-pr332 修这个')).toBe('修这个');
+    expect(conversationTitle(t, '/tmp/only-a-path')).toBe('新对话');
+    expect(titleFromPrompt('请在 /workspace/src 检查问题')).toBe('检查问题');
+    expect(titleFromPrompt('Only modify /tmp/foo')).not.toMatch(/\/tmp/);
+    const long =
+      'Use your terminal to write exactly what I asked without clipping the title';
+    expect(titleFromPrompt(long)).toBe(long);
+    expect(titleFromPrompt(long)).not.toMatch(/…|\.\.\./);
+    expect(conversationSemanticPhrase(long)).toBe(long);
+    expect(conversationSemanticTitle(long)).toMatch(/…/);
+    expect(conversationSemanticTitle(long).length).toBe(25);
+    expect(looksLikePersistedTitleClip(conversationSemanticTitle(long))).toBe(true);
+    expect(firstUserContentByConversation([
+      { conversationId: 'c1', role: 'agent', content: 'hi' },
+      { conversationId: 'c1', role: 'user', content: long },
+      { conversationId: 'c1', role: 'user', content: 'later' },
+    ])).toEqual({ c1: long });
+  });
 });
 
 describe('blockerCopy', () => {
@@ -740,6 +877,22 @@ describe('chatEscapeShouldCancel', () => {
   });
 });
 
+describe('dialogEnterShouldConfirm', () => {
+  it('confirms delete on Enter, not Shift+Enter or IME', () => {
+    expect(dialogEnterShouldConfirm({ key: 'Enter', shiftKey: false })).toBe(true);
+    expect(dialogEnterShouldConfirm({ key: 'Enter', shiftKey: true })).toBe(false);
+    expect(dialogEnterShouldConfirm({ key: 'Escape', shiftKey: false })).toBe(false);
+    expect(dialogEnterShouldConfirm({ key: 'Enter', shiftKey: false, isComposing: true })).toBe(false);
+    expect(
+      dialogEnterShouldConfirm({
+        key: 'Enter',
+        shiftKey: false,
+        nativeEvent: { keyCode: 229 },
+      }),
+    ).toBe(false);
+  });
+});
+
 describe('composerEnterShouldSend', () => {
   it('sends on Enter and keeps Shift+Enter as a newline', () => {
     expect(composerEnterShouldSend({ key: 'Enter', shiftKey: false })).toBe(true);
@@ -786,6 +939,217 @@ describe('chatModKShouldFocusHistory', () => {
     expect(chatModKShouldFocusHistory({ ...base, shiftKey: true })).toBe(false);
     expect(chatModKShouldFocusHistory({ ...base, altKey: true })).toBe(false);
     expect(chatModKShouldFocusHistory({ ...base, ctrlKey: false, metaKey: false })).toBe(false);
+  });
+});
+
+describe('chatModNShouldStartNewChat', () => {
+  const base = {
+    key: 'n',
+    metaKey: false,
+    ctrlKey: true,
+    altKey: false,
+    shiftKey: false,
+    overlayOpen: false,
+  };
+
+  it('starts a new chat with Ctrl/Cmd+N', () => {
+    expect(chatModNShouldStartNewChat(base)).toBe(true);
+    expect(chatModNShouldStartNewChat({ ...base, ctrlKey: false, metaKey: true })).toBe(true);
+    expect(chatModNShouldStartNewChat({ ...base, key: 'N' })).toBe(true);
+    expect(
+      chatModNShouldStartNewChat({ ...base, key: 'Unidentified', code: 'KeyN' }),
+    ).toBe(true);
+  });
+
+  it('yields to overlays, Shift, and Alt', () => {
+    expect(chatModNShouldStartNewChat({ ...base, overlayOpen: true })).toBe(false);
+    expect(chatModNShouldStartNewChat({ ...base, shiftKey: true })).toBe(false);
+    expect(chatModNShouldStartNewChat({ ...base, altKey: true })).toBe(false);
+    expect(chatModNShouldStartNewChat({ ...base, ctrlKey: false, metaKey: false })).toBe(false);
+    expect(chatModNShouldStartNewChat({ ...base, key: 'k' })).toBe(false);
+    expect(
+      chatModNShouldStartNewChat({ ...base, key: 'Unidentified', code: 'KeyK' }),
+    ).toBe(false);
+  });
+});
+
+describe('chatQuestionShouldOpenShortcuts', () => {
+  const base = {
+    key: '?',
+    shiftKey: false,
+    metaKey: false,
+    ctrlKey: false,
+    altKey: false,
+    overlayOpen: false,
+    typingInField: false,
+  };
+
+  it('opens the overview with ? when not typing', () => {
+    expect(chatQuestionShouldOpenShortcuts(base)).toBe(true);
+    expect(
+      chatQuestionShouldOpenShortcuts({
+        ...base,
+        key: '?',
+        code: undefined,
+        shiftKey: false,
+      }),
+    ).toBe(true);
+  });
+
+  it('opens the overview from US Shift+/ when that is how ? is typed', () => {
+    expect(
+      chatQuestionShouldOpenShortcuts({ ...base, key: '/', shiftKey: true }),
+    ).toBe(true);
+    expect(
+      chatQuestionShouldOpenShortcuts({
+        ...base,
+        key: 'Unidentified',
+        code: 'Slash',
+        shiftKey: true,
+      }),
+    ).toBe(true);
+    expect(
+      chatQuestionShouldOpenShortcuts({
+        ...base,
+        key: 'x',
+        code: 'Slash',
+        shiftKey: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('yields to fields, overlays, and modifiers', () => {
+    expect(chatQuestionShouldOpenShortcuts({ ...base, typingInField: true })).toBe(false);
+    expect(chatQuestionShouldOpenShortcuts({ ...base, overlayOpen: true })).toBe(false);
+    expect(chatQuestionShouldOpenShortcuts({ ...base, ctrlKey: true })).toBe(false);
+    expect(chatQuestionShouldOpenShortcuts({ ...base, metaKey: true })).toBe(false);
+    expect(chatQuestionShouldOpenShortcuts({ ...base, altKey: true })).toBe(false);
+    expect(chatQuestionShouldOpenShortcuts({ ...base, key: '/' })).toBe(false);
+  });
+});
+
+describe('chatPageShortcutAction', () => {
+  const textarea = { tagName: 'TEXTAREA' } as unknown as EventTarget;
+  const button = { tagName: 'BUTTON' } as unknown as EventTarget;
+  const mods = {
+    metaKey: false,
+    ctrlKey: false,
+    altKey: false,
+    shiftKey: false,
+    overlayOpen: false,
+  };
+
+  it('leaves Ctrl/Cmd+A/C/X/V to the field', () => {
+    for (const key of ['a', 'c', 'x', 'v'] as const) {
+      expect(
+        chatPageShortcutAction({
+          ...mods,
+          key,
+          code: `Key${key.toUpperCase()}`,
+          ctrlKey: true,
+          target: textarea,
+        }),
+      ).toBeNull();
+      expect(
+        composerNativeEditChord({
+          key,
+          code: `Key${key.toUpperCase()}`,
+          metaKey: false,
+          ctrlKey: true,
+          altKey: false,
+          shiftKey: false,
+        }),
+      ).toBe(
+        key === 'a' ? 'selectAll' : key === 'c' ? 'copy' : key === 'x' ? 'cut' : 'paste',
+      );
+    }
+    expect(
+      composerNativeEditChord({
+        key: 'Unidentified',
+        code: 'KeyA',
+        metaKey: true,
+        ctrlKey: false,
+        altKey: false,
+        shiftKey: false,
+      }),
+    ).toBe('selectAll');
+    expect(
+      composerNativeEditChord({
+        key: 'a',
+        code: 'KeyA',
+        metaKey: false,
+        ctrlKey: true,
+        altKey: true,
+        shiftKey: false,
+      }),
+    ).toBeNull();
+  });
+
+  it('starts a new chat from Ctrl+N even when the target is the composer textarea', () => {
+    expect(
+      chatPageShortcutAction({
+        ...mods,
+        key: 'n',
+        code: 'KeyN',
+        ctrlKey: true,
+        target: textarea,
+      }),
+    ).toBe('newChat');
+    expect(
+      chatPageShortcutAction({
+        ...mods,
+        key: 'Unidentified',
+        code: 'KeyN',
+        ctrlKey: true,
+        target: textarea,
+      }),
+    ).toBe('newChat');
+  });
+
+  it('keeps ? literal in the composer and opens the overview outside fields', () => {
+    expect(chatPageShortcutAction({ ...mods, key: '?', target: textarea })).toBeNull();
+    expect(chatPageShortcutAction({ ...mods, key: '?', target: button })).toBe('overview');
+    expect(
+      chatPageShortcutAction({
+        ...mods,
+        key: '/',
+        code: 'Slash',
+        shiftKey: true,
+        target: button,
+      }),
+    ).toBe('overview');
+    expect(
+      chatPageShortcutAction({
+        ...mods,
+        key: 'Unidentified',
+        code: 'Slash',
+        shiftKey: true,
+        target: button,
+      }),
+    ).toBe('overview');
+    expect(
+      chatPageShortcutAction({
+        ...mods,
+        key: '/',
+        code: 'Slash',
+        shiftKey: true,
+        target: textarea,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe('chatKeyTargetIsField', () => {
+  const fieldTarget = (partial: { tagName?: string; isContentEditable?: boolean }) =>
+    partial as unknown as EventTarget;
+
+  it('treats input, textarea, select, and contenteditable as fields', () => {
+    expect(chatKeyTargetIsField(fieldTarget({ tagName: 'TEXTAREA' }))).toBe(true);
+    expect(chatKeyTargetIsField(fieldTarget({ tagName: 'INPUT' }))).toBe(true);
+    expect(chatKeyTargetIsField(fieldTarget({ tagName: 'SELECT' }))).toBe(true);
+    expect(chatKeyTargetIsField(fieldTarget({ isContentEditable: true }))).toBe(true);
+    expect(chatKeyTargetIsField(fieldTarget({ tagName: 'BUTTON' }))).toBe(false);
+    expect(chatKeyTargetIsField(null)).toBe(false);
   });
 });
 

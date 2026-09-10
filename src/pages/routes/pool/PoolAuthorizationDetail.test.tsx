@@ -54,6 +54,8 @@ describe('PoolAuthorizationDetail', () => {
     expect(markup).toContain('连到哪里 · 模型');
     expect(markup).toContain('配置与记录');
     expect(markup).toContain('7 天已用');
+    expect(markup).toContain('data-detail-table');
+    expect(markup).not.toContain('<thead');
     expect(markup).toContain('2 个连接');
     expect(markup).toContain('优先级');
     expect(markup).toContain('最近使用');

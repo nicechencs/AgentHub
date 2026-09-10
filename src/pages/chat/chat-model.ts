@@ -148,6 +148,19 @@ export function conversationResumeCommand(c: Pick<Conversation, 'agentIds' | 'na
   return nativeResumeCommand(agent, c.nativeSessionId);
 }
 
+export function conversationCwdMissing(
+  conversation: Pick<Conversation, 'cwd' | 'cwdMissing'>,
+): boolean {
+  return Boolean(conversation.cwd?.trim() && conversation.cwdMissing);
+}
+
+export function canRebindConversationCwd(
+  conversation: Pick<Conversation, 'cwd' | 'cwdMissing'>,
+  runtimeLocked: boolean,
+): boolean {
+  return !runtimeLocked || conversationCwdMissing(conversation);
+}
+
 export function cwdShortName(cwd: string | null | undefined, t: TranslateFn): string {
   if (cwd == null) return t('chat.cwd.unset');
   const trimmed = cwd.trim();
@@ -738,8 +751,44 @@ export function composerEnterShouldSend(input: {
   return true;
 }
 
+export { dialogEnterShouldConfirm } from '@/lib/dialog-enter';
+
+export type ComposerNativeEditChord = 'selectAll' | 'copy' | 'cut' | 'paste';
+
+/** Ctrl/Cmd+A/C/X/V in a field must reach the native edit action. */
+export function composerNativeEditChord(input: {
+  key: string;
+  code?: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+}): ComposerNativeEditChord | null {
+  if (input.altKey || input.shiftKey) return null;
+  if (!(input.metaKey || input.ctrlKey)) return null;
+  const letter = input.key.length === 1 ? input.key.toLowerCase() : '';
+  if (letter === 'a' || input.code === 'KeyA') return 'selectAll';
+  if (letter === 'c' || input.code === 'KeyC') return 'copy';
+  if (letter === 'x' || input.code === 'KeyX') return 'cut';
+  if (letter === 'v' || input.code === 'KeyV') return 'paste';
+  return null;
+}
+
+function chatModChordMatchesLetter(
+  input: { key: string; code?: string; metaKey: boolean; ctrlKey: boolean },
+  letter: 'n' | 'k',
+  code: 'KeyN' | 'KeyK',
+): boolean {
+  if (!(input.metaKey || input.ctrlKey)) return false;
+  const upper = letter.toUpperCase();
+  if (input.key === letter || input.key === upper) return true;
+  // WebKitGTK/IME may report Unidentified or a control char; the physical code stays stable.
+  return input.code === code;
+}
+
 export function chatModKShouldFocusHistory(input: {
   key: string;
+  code?: string;
   metaKey: boolean;
   ctrlKey: boolean;
   altKey: boolean;
@@ -747,8 +796,81 @@ export function chatModKShouldFocusHistory(input: {
   overlayOpen: boolean;
 }): boolean {
   if (input.overlayOpen || input.altKey || input.shiftKey) return false;
-  if (input.key !== 'k' && input.key !== 'K') return false;
-  return input.metaKey || input.ctrlKey;
+  return chatModChordMatchesLetter(input, 'k', 'KeyK');
+}
+
+/** Cmd/Ctrl+N starts a new chat (same modifier pattern as Ctrl+K). */
+export function chatModNShouldStartNewChat(input: {
+  key: string;
+  code?: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+  overlayOpen: boolean;
+}): boolean {
+  if (input.overlayOpen || input.altKey || input.shiftKey) return false;
+  return chatModChordMatchesLetter(input, 'n', 'KeyN');
+}
+
+/** True when the event target is a field that should keep typed characters. */
+export function chatKeyTargetIsField(target: EventTarget | null): boolean {
+  if (!target || typeof target !== 'object') return false;
+  const el = target as { tagName?: string; isContentEditable?: boolean };
+  const tag = el.tagName?.toUpperCase();
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  return Boolean(el.isContentEditable);
+}
+
+/** `?` opens the shortcut overview when not typing in a field. */
+export function chatQuestionShouldOpenShortcuts(input: {
+  key: string;
+  code?: string;
+  shiftKey: boolean;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+  overlayOpen: boolean;
+  typingInField: boolean;
+}): boolean {
+  if (input.overlayOpen || input.typingInField || input.altKey || input.metaKey || input.ctrlKey) {
+    return false;
+  }
+  if (input.key === '?') return true;
+  // US `?` is Shift+/. Some webviews report key:'/' or Unidentified instead of '?'.
+  // Do not match code === 'Slash' alone (a letter key must stay a letter).
+  if (input.shiftKey && input.key === '/') return true;
+  return Boolean(
+    input.shiftKey && (input.key === 'Unidentified' || input.key === '') && input.code === 'Slash',
+  );
+}
+
+/**
+ * Page-level Chat chords. Ctrl/Cmd+N still fires when the target is the composer
+ * textarea; `?` does not (the field keeps the character).
+ */
+export function chatPageShortcutAction(input: {
+  key: string;
+  code?: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+  overlayOpen: boolean;
+  target: EventTarget | null;
+}): 'history' | 'newChat' | 'overview' | null {
+  if (composerNativeEditChord(input)) return null;
+  if (chatModKShouldFocusHistory(input)) return 'history';
+  if (chatModNShouldStartNewChat(input)) return 'newChat';
+  if (
+    chatQuestionShouldOpenShortcuts({
+      ...input,
+      typingInField: chatKeyTargetIsField(input.target),
+    })
+  ) {
+    return 'overview';
+  }
+  return null;
 }
 
 export function visibleAgentDots(agentIds: AgentKey[]): { shown: AgentKey[]; extra: number } {
@@ -785,8 +907,92 @@ export function turnComparisonChips(agents: ChatMessage[]): Array<{
     }));
 }
 
+const PATH_TOKEN = /(?:[A-Za-z]:)?(?:[\\/][^\s\\/`'"]+)+/g;
+const WEAK_LEAD = /^(?:请(?:帮我)?在|请|in|at)\s+/i;
+const WEAK_ONLY = /^(?:请(?:帮我)?在|请|in|at|only)$/i;
+/** List-row display clip only. Never persist a title built with this. */
+export const TITLE_DISPLAY_CLIP = 24;
+
+/** Path-stripped phrase. No length clip and no ellipsis glyph. */
+export function conversationSemanticPhrase(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  let next = trimmed.replace(/`[^`]+`/g, ' ').replace(PATH_TOKEN, ' ');
+  next = next.replace(/\s+/g, ' ').trim().replace(WEAK_LEAD, '').trim();
+  if (!next || WEAK_ONLY.test(next)) return '';
+  return next;
+}
+
+/** Display-only clip for the visible list line. Do not write this to storage. */
+export function conversationSemanticTitle(raw: string): string {
+  const next = conversationSemanticPhrase(raw);
+  return next.length > TITLE_DISPLAY_CLIP ? `${next.slice(0, TITLE_DISPLAY_CLIP)}…` : next;
+}
+
+/** First send: persist the full semantic phrase, never a TITLE_CLIP ellipsis. */
+export function titleFromPrompt(prompt: string): string {
+  return conversationSemanticPhrase(prompt);
+}
+
+/** Historical writers stored `${slice(24|29|30)}…`. Those rows cannot recover the tail from title alone. */
+export function looksLikePersistedTitleClip(title: string): boolean {
+  const trimmed = title.trim();
+  const match = trimmed.match(/^(.*?)(…|\.\.\.)$/u);
+  if (!match) return false;
+  const core = match[1] ?? '';
+  return core.length === 24 || core.length === 29 || core.length === 30;
+}
+
 export function conversationTitle(t: TranslateFn, title: string): string {
-  return title.trim() ? title : t('chat.title.newConversation');
+  const semantic = conversationSemanticTitle(title);
+  if (semantic) return semantic;
+  return t('chat.title.newConversation');
+}
+
+export function firstUserContentByConversation(
+  messages: readonly Pick<ChatMessage, 'conversationId' | 'role' | 'content'>[],
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const message of messages) {
+    if (message.role !== 'user') continue;
+    const text = message.content.trim();
+    if (!text || out[message.conversationId]) continue;
+    out[message.conversationId] = message.content;
+  }
+  return out;
+}
+
+/** List-side first user bodies. Used when the focused `messages` set is empty for other rows. */
+export function firstUserContentByListedConversations(
+  conversations: readonly Pick<Conversation, 'id' | 'firstUserContent'>[],
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const conversation of conversations) {
+    const text = conversation.firstUserContent?.trim();
+    if (!text || out[conversation.id]) continue;
+    out[conversation.id] = conversation.firstUserContent ?? text;
+  }
+  return out;
+}
+
+/** List first, then overlay in-memory messages so the focused chat stays live. */
+export function mergeFirstUserContentById(
+  fromList: Record<string, string>,
+  fromMessages: Record<string, string>,
+): Record<string, string> {
+  return { ...fromList, ...fromMessages };
+}
+
+export function conversationRailHintTitle(
+  storedTitle: string,
+  firstUserContent?: string | null,
+): string | null {
+  const stored = storedTitle.trim();
+  if (looksLikePersistedTitleClip(stored) && firstUserContent?.trim()) {
+    const recovered = conversationSemanticPhrase(firstUserContent);
+    if (recovered) return recovered;
+  }
+  return stored || null;
 }
 
 /** Empty title and no official session means this row has not been sent yet. */
@@ -805,11 +1011,16 @@ export function conversationAgentLine(agentIds: readonly AgentKey[]): string {
   return `${agentDisplayName(agentIds[0])} +${agentIds.length - 1}`;
 }
 
-/** Hover details for a one-line history row, excluding Agent (shown as logos). */
-export function conversationRailHint(
+export type ConversationRailHintView = {
+  /** Full semantic title for hover. Never a TITLE_CLIP ellipsis unless the user typed it. */
+  title: string | null;
+  meta: string;
+};
+
+function conversationRailHintMeta(
   conversation: Pick<
     Conversation,
-    'agentIds' | 'cwd' | 'updatedAt' | 'title' | 'nativeSessionId'
+    'cwd' | 'updatedAt' | 'title' | 'nativeSessionId'
   >,
   t: TranslateFn,
 ): string {
@@ -822,6 +1033,32 @@ export function conversationRailHint(
     parts.push(t('chat.header.nativeSession', { id: conversation.nativeSessionId }));
   }
   return parts.join(' · ');
+}
+
+/** Hover body: full title plus directory / time. Recovers TITLE_CLIP rows from the first user message. */
+export function conversationRailHintView(
+  conversation: Pick<
+    Conversation,
+    'cwd' | 'updatedAt' | 'title' | 'nativeSessionId'
+  > & { firstUserContent?: string | null },
+  t: TranslateFn,
+): ConversationRailHintView {
+  return {
+    title: conversationRailHintTitle(conversation.title, conversation.firstUserContent),
+    meta: conversationRailHintMeta(conversation, t),
+  };
+}
+
+/** Hover details for a history row, excluding Agent (shown as logos). */
+export function conversationRailHint(
+  conversation: Pick<
+    Conversation,
+    'agentIds' | 'cwd' | 'updatedAt' | 'title' | 'nativeSessionId'
+  >,
+  t: TranslateFn,
+): string {
+  const hint = conversationRailHintView(conversation, t);
+  return [hint.title, hint.meta].filter(Boolean).join(' · ');
 }
 
 /** Selected history-row mark: first Agent brand, else the nav accent. */

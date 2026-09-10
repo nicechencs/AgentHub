@@ -7,20 +7,25 @@ export function QuotaBar({
   pct,
   resetIn,
   compact = false,
+  showLabel = true,
 }: {
   label: string;
   pct?: number;
   resetIn?: string;
   /** Table cells: fill remaining width, omit reset copy. */
   compact?: boolean;
+  /** When the label already lives in a row header, hide the in-bar copy. */
+  showLabel?: boolean;
 }) {
   if (pct === undefined) return null;
   const color = pct >= 90 ? 'bg-danger' : pct >= 70 ? 'bg-warning' : 'bg-success';
   return (
-    <div className={cn('flex items-center', compact ? 'min-w-0 gap-1.5' : 'gap-2')}>
-      <span className={cn('shrink-0 text-meta text-muted', compact ? undefined : 'w-8')}>
-        {label}
-      </span>
+    <div className={cn('flex min-w-0 items-center', compact ? 'gap-1.5' : 'gap-2')}>
+      {showLabel ? (
+        <span className={cn('shrink-0 text-meta text-muted', compact ? undefined : 'w-8')}>
+          {label}
+        </span>
+      ) : null}
       <Progress
         value={pct}
         className={cn('h-1.5', compact ? 'min-w-0 flex-1' : 'w-20')}

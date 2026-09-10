@@ -5,6 +5,7 @@ import { pageRhythm } from '@/components/layout/page-rhythm';
 import { copyTextToClipboard } from '@/components/shared/CopyTextButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
+import { Hint } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
 import type { Conversation } from '@/lib/types';
@@ -14,6 +15,8 @@ import {
   autoApproveActive,
   autoApproveEffect,
   autoApproveHint,
+  canRebindConversationCwd,
+  conversationCwdMissing,
   conversationResumeCommand,
   conversationTitle,
   cwdShortName,
@@ -153,21 +156,37 @@ export function ChatSessionHeader({
           >
             <Copy className="h-3.5 w-3.5" />
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={onPickWorkingDirectory}
-            disabled={runtimeLocked}
-            data-help="chat-cwd"
-            title={runtimeLocked ? t('chat.runtimeOps.sessionLocked') : active.cwd || t('chat.header.pickCwd')}
-            className={cn('max-w-[9rem]', !active.cwd && 'text-warning')}
+          <Hint
+            label={
+              conversationCwdMissing(active)
+                ? t('chat.cwd.missing')
+                : runtimeLocked
+                  ? t('chat.runtimeOps.sessionLocked')
+                  : active.cwd || t('chat.header.pickCwd')
+            }
           >
-            <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">
-              {active.cwd ? cwdShortName(active.cwd, t) : t('chat.header.cwdUnset')}
-            </span>
-          </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={onPickWorkingDirectory}
+              disabled={!canRebindConversationCwd(active, runtimeLocked)}
+              data-help="chat-cwd"
+              className={cn(
+                'max-w-[7rem]',
+                (!active.cwd || conversationCwdMissing(active)) && 'text-warning',
+              )}
+            >
+              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">
+                {conversationCwdMissing(active)
+                  ? t('chat.header.cwdMissing')
+                  : active.cwd
+                    ? cwdShortName(active.cwd, t)
+                    : t('chat.header.cwdUnset')}
+              </span>
+            </Button>
+          </Hint>
           {active.nativeSessionId && (
             <Button
               type="button"

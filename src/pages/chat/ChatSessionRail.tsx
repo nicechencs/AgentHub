@@ -8,6 +8,8 @@ import { useNavWidth } from '@/components/layout/use-sidebar-width';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { SearchField } from '@/components/shared/SearchField';
 import { Button } from '@/components/ui/button';
+import { EnterKeyMark } from '@/components/ui/shortcut-kbd';
+import { dialogEnterShouldConfirm } from '@/lib/dialog-enter';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Hint } from '@/components/ui/tooltip';
 import {
@@ -22,7 +24,7 @@ import { StorageKey } from '@/lib/storage-key';
 import type { Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
-  conversationRailHint,
+  conversationRailHintView,
   conversationRailMarkColor,
   conversationRailSelectedFill,
   conversationTitle,
@@ -52,6 +54,7 @@ export function ChatSessionRail({
   onConfirmDelete,
   searchFocusNonce = 0,
   historyRevealNonce = 0,
+  firstUserContentById,
 }: {
   open: boolean;
   listLoading: boolean;
@@ -73,6 +76,7 @@ export function ChatSessionRail({
   onConfirmDelete: () => void;
   searchFocusNonce?: number;
   historyRevealNonce?: number;
+  firstUserContentById?: Record<string, string>;
 }) {
   const { t } = useI18n();
   const width = useNavWidth({
@@ -141,9 +145,10 @@ export function ChatSessionRail({
           <Button
             className="w-full justify-start gap-1.5"
             size="sm"
-            variant="secondary"
+            variant="default"
             disabled={agentsReady && !hasUsableAgent}
             data-help="chat-new"
+            aria-keyshortcuts="Control+N"
             onClick={onNewChat}
           >
             <Plus className="h-3.5 w-3.5" />
@@ -205,7 +210,18 @@ export function ChatSessionRail({
                         style={{ backgroundColor: conversationRailMarkColor(c.agentIds) }}
                       />
                     ) : null}
-                    <Hint label={<ConversationRailHintLabel conversation={c} />} side="right">
+                    <Hint
+                      label={
+                        <ConversationRailHintLabel
+                          conversation={c}
+                          firstUserContent={
+                            firstUserContentById?.[c.id] ?? c.firstUserContent ?? undefined
+                          }
+                        />
+                      }
+                      side="right"
+                      contentClassName="whitespace-normal break-words [overflow-wrap:anywhere] [text-overflow:clip]"
+                    >
                       <button
                         type="button"
                         data-session-id={c.id}
@@ -221,7 +237,9 @@ export function ChatSessionRail({
                           <AgentLogo agentId={c.agentIds[0]} size="sm" hint={false} />
                         ) : null}
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate">{conversationTitle(t, c.title)}</span>
+                          <span className="block truncate" data-help="chat-session-title">
+                            {conversationTitle(t, c.title)}
+                          </span>
                           <span className="block truncate text-meta text-muted">
                             {cwdShortName(c.cwd, t)}
                             {isBlankConversationDraft(c) ? ` · ${t('chat.rail.draft')}` : ''}
@@ -251,7 +269,18 @@ export function ChatSessionRail({
         )}
       </div>
       <Dialog open={Boolean(deleteConfirmId)} onOpenChange={(next) => !next && onCancelDelete()}>
-        <DialogContent>
+        <DialogContent
+          onKeyDown={(event) => {
+            if (!dialogEnterShouldConfirm({
+              key: event.key,
+              shiftKey: event.shiftKey,
+              isComposing: event.nativeEvent.isComposing,
+              nativeEvent: event.nativeEvent,
+            })) return;
+            event.preventDefault();
+            onConfirmDelete();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>
               {t('chat.rail.deleteTitle', { title: conversationTitle(t, pending?.title ?? '') })}
@@ -264,8 +293,13 @@ export function ChatSessionRail({
             <Button variant="secondary" onClick={onCancelDelete}>
               {t('common.cancel')}
             </Button>
-            <Button variant="danger" onClick={onConfirmDelete}>
+            <Button
+              variant="danger"
+              aria-keyshortcuts="Enter"
+              onClick={onConfirmDelete}
+            >
               {t('chat.rail.confirmDelete')}
+              <EnterKeyMark onAccent />
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -276,18 +310,34 @@ export function ChatSessionRail({
   );
 }
 
-function ConversationRailHintLabel({ conversation }: { conversation: Conversation }) {
+function ConversationRailHintLabel({
+  conversation,
+  firstUserContent,
+}: {
+  conversation: Conversation;
+  firstUserContent?: string;
+}) {
   const { t } = useI18n();
+  const hint = conversationRailHintView(
+    { ...conversation, firstUserContent },
+    t,
+  );
   return (
-    <span className="flex items-center gap-1.5">
-      {conversation.agentIds.length > 0 ? (
-        <span className="inline-flex items-center gap-0.5">
-          {conversation.agentIds.map((id) => (
-            <AgentLogo key={id} agentId={id} size="sm" hint={false} />
-          ))}
+    <span
+      className="block w-full whitespace-normal break-words [overflow-wrap:anywhere] [text-overflow:clip]"
+      data-help="chat-session-hint"
+    >
+      {hint.title ? (
+        <span
+          className="block w-full whitespace-pre-wrap break-all [overflow-wrap:anywhere] [text-overflow:clip]"
+          data-help="chat-session-hint-title"
+        >
+          {hint.title}
         </span>
       ) : null}
-      <span>{conversationRailHint(conversation, t)}</span>
+      <span className="mt-1 block w-full whitespace-normal break-words [overflow-wrap:anywhere]">
+        {hint.meta}
+      </span>
     </span>
   );
 }

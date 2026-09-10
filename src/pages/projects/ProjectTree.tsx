@@ -255,7 +255,7 @@ const ProjectGroupCard = memo(function ProjectGroupCard({
         <span className="min-w-0" aria-hidden />
         <div className="flex justify-end pr-3" onClick={(e) => e.stopPropagation()}>
           <Button
-            size="icon"
+            size="sm"
             variant="ghost"
             disabled={busy}
             aria-label={group.hidden ? t('projects.tree.unhide') : t('projects.tree.hide')}
@@ -263,6 +263,7 @@ const ProjectGroupCard = memo(function ProjectGroupCard({
             onClick={(e) => onToggleHideProject(group, e)}
           >
             <EyeOff className="h-3.5 w-3.5" />
+            {group.hidden ? t('projects.tree.unhide') : t('projects.tree.hide')}
           </Button>
         </div>
       </div>

@@ -8,6 +8,35 @@ vi.mock('./invoke', () => ({ invoke: invokeMock, Channel: class {} }));
 beforeEach(() => { invokeMock.mockReset(); });
 
 describe('Tauri durable chat boundary', () => {
+  it('opens a conversation from a session id without requiring cwd', async () => {
+    invokeMock.mockResolvedValueOnce({
+      id: 'conv-1',
+      title: '临时目录对话',
+      agentIds: ['claude'],
+      cwd: '/var/folders/zz/T/.tmp-dead/workspace',
+      allowDangerous: false,
+      createdAt: 't0',
+      updatedAt: 't0',
+      nativeSessionId: 'sess-1',
+      cwdMissing: true,
+    });
+    const opened = await createTauriChatPort().openConversationFromSession({
+      agentId: 'claude',
+      sessionId: 'sess-1',
+      cwd: '/var/folders/zz/T/.tmp-dead/workspace',
+      title: '临时目录对话',
+      history: [{ role: 'user', content: 'hi' }],
+    });
+    expect(opened.cwdMissing).toBe(true);
+    expect(invokeMock).toHaveBeenCalledWith('open_conversation_from_session', {
+      agentId: 'claude',
+      sessionId: 'sess-1',
+      cwd: '/var/folders/zz/T/.tmp-dead/workspace',
+      title: '临时目录对话',
+      history: [{ role: 'user', content: 'hi' }],
+    });
+  });
+
   it('preserves the replay cursor, pending request identity and gap indicator', async () => {
     const snapshot: RuntimeSnapshot = {
       conversationId: 'chat-a', enabled: true, runId: 'run-a', phase: 'waiting',

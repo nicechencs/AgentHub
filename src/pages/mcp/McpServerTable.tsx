@@ -20,7 +20,7 @@ import {
   useColumnWidths,
   type ColumnWidthSpec,
 } from '@/components/ui/table';
-import { Tip } from '@/components/ui/tooltip';
+import { TruncateTip } from '@/components/ui/tooltip';
 import { agentDisplayName } from '@/config/agents';
 import type { McpServerEntry } from '@/lib/backend/contracts/mcp-types';
 import type { AgentKey } from '@/lib/types';
@@ -121,7 +121,7 @@ function ServerTableRow({ server }: { server: McpServerEntry }) {
       <TableRow data-help="list-row">
         <TableCell className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="truncate font-medium">{server.name}</span>
+            <TruncateTip className="truncate font-medium" text={server.name} />
             {server.enabled === false ? <Badge variant="warning">{t('mcp.table.disabled')}</Badge> : null}
           </div>
         </TableCell>
@@ -130,9 +130,7 @@ function ServerTableRow({ server }: { server: McpServerEntry }) {
         </TableCell>
         <TableCell className="min-w-0">
           {endpoint ? (
-            <Tip className="block truncate font-mono text-meta text-secondary" label={endpoint}>
-              {endpoint}
-            </Tip>
+            <TruncateTip className="font-mono text-meta text-secondary" text={endpoint} />
           ) : (
             <TableEmptyCell />
           )}

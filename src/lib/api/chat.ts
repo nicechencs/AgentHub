@@ -2,11 +2,11 @@
  * Chat API façade — delegates to app runtime backend.
  */
 import { getBackend } from '@/app/runtime';
-import type { AgentKey, ChatEvent, ChatMessage, Conversation } from '@/lib/types';
+import type { AgentKey, ChatEvent, ChatHistoryTurn, ChatMessage, Conversation } from '@/lib/types';
 import type { MarkdownFilePreviewDto } from '@/lib/backend/contracts/chat-port';
 import type { RuntimeOptions, RuntimeReply, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings } from '@/lib/backend/contracts/chat-runtime';
 export type { MarkdownFilePreviewDto } from '@/lib/backend/contracts/chat-port';
-export type { RuntimeDecision, RuntimeQuestion, RuntimeRequest, RuntimeReply, RuntimeSnapshot, RuntimeOptions, RuntimeTurnSettings, RuntimeStartExtras, RuntimeModelOption, RuntimeExtensionItem } from '@/lib/backend/contracts/chat-runtime';
+export type { RuntimeDecision, RuntimeFileChange, RuntimeQuestion, RuntimeRequest, RuntimeReply, RuntimeSnapshot, RuntimeOptions, RuntimeTurnSettings, RuntimeStartExtras, RuntimeModelOption, RuntimeExtensionItem } from '@/lib/backend/contracts/chat-runtime';
 
 export type {
   CoreConversation,
@@ -31,6 +31,16 @@ export async function ensureDefaultConversation(
   cwd?: string | null,
 ): Promise<Conversation> {
   return getBackend().chat.ensureDefaultConversation(agentIds, cwd);
+}
+
+export async function openConversationFromSession(input: {
+  agentId: AgentKey;
+  sessionId?: string | null;
+  cwd?: string | null;
+  title?: string | null;
+  history: ChatHistoryTurn[];
+}): Promise<Conversation> {
+  return getBackend().chat.openConversationFromSession(input);
 }
 
 export async function updateConversation(
@@ -125,4 +135,11 @@ export async function readMarkdownPreview(
   cwd: string,
 ): Promise<MarkdownFilePreviewDto> {
   return getBackend().chat.readMarkdownPreview(path, cwd);
+}
+
+/** Desktop Ctrl/Cmd+N when the webview swallows the key. Browser mock is a no-op. */
+export async function onChatNativeShortcut(
+  handler: (action: 'newChat') => void,
+): Promise<() => void> {
+  return getBackend().chat.onNativeShortcut(handler);
 }

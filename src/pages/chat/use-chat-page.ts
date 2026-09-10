@@ -6,12 +6,19 @@ import { listChatMessages, updateConversation } from '@/lib/api/chat';
 import { pickDirectory } from '@/lib/api/settings';
 import type { AgentKey, ChatMessage } from '@/lib/types';
 import { groupByTurn } from './chat-format';
+import { forgetFallbackCwd, peekFallbackCwd } from '@/lib/chat-cwd-fallback';
 import {
   agentChatEnvReady,
   agentHasConfiguredAuth,
   agentPickerLabel as agentPickerLabelOf,
   chatAgentPickerRows,
+  chatModNShouldStartNewChat,
+  composerNativeEditChord,
+  conversationCwdMissing,
+  firstUserContentByConversation,
+  firstUserContentByListedConversations,
   filterConversations,
+  mergeFirstUserContentById,
   groupConversationsByDay,
   isChatAgentSelectable,
   selectConversationAgent,
@@ -137,6 +144,14 @@ export function useChatPage() {
   }, []);
 
   const turns = useMemo(() => groupByTurn(messages), [messages]);
+  const firstUserContentById = useMemo(
+    () =>
+      mergeFirstUserContentById(
+        firstUserContentByListedConversations(conversations),
+        firstUserContentByConversation(messages),
+      ),
+    [conversations, messages],
+  );
   const startExtrasRef = useRef<{ images?: { path: string }[]; skills?: { name: string; path: string }[] }>({});
   const runtimeOpsClearRef = useRef<() => void>(() => {});
 
@@ -332,6 +347,37 @@ export function useChatPage() {
 
   const handleComposerKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (
+        composerNativeEditChord({
+          key: e.key,
+          code: e.nativeEvent.code,
+          metaKey: e.metaKey,
+          ctrlKey: e.ctrlKey,
+          altKey: e.altKey,
+          shiftKey: e.shiftKey,
+        })
+      ) {
+        return false;
+      }
+      if (
+        chatModNShouldStartNewChat({
+          key: e.key,
+          code: e.nativeEvent.code,
+          metaKey: e.metaKey,
+          ctrlKey: e.ctrlKey,
+          altKey: e.altKey,
+          shiftKey: e.shiftKey,
+          overlayOpen: false,
+        })
+      ) {
+        e.preventDefault();
+        runChatAction({
+          id: 'new-session',
+          kind: 'local',
+          keywords: [],
+        });
+        return true;
+      }
       if (!commandSearchOpen || commandItems.length === 0) return false;
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -492,15 +538,18 @@ export function useChatPage() {
     }
   }
 
-  async function pickWorkingDirectory() {
+  async function pickWorkingDirectory(nextPath?: string | null) {
     if (!active || send.sendingHere) return;
     try {
-      const picked = await pickDirectory({
-        title: t('chat.settings.pickDirTitle'),
-        defaultPath: active.cwd ?? null,
-      });
+      const picked = nextPath?.trim()
+        ? nextPath.trim()
+        : await pickDirectory({
+            title: t('chat.settings.pickDirTitle'),
+            defaultPath: peekFallbackCwd(active.id) ?? active.cwd ?? null,
+          });
       if (picked) {
         await patchActive({ cwd: picked });
+        forgetFallbackCwd(active.id);
       }
     } catch (e) {
       toast({
@@ -595,6 +644,8 @@ export function useChatPage() {
     confirmDelete,
     patchActive,
     pickWorkingDirectory,
+    cwdMissing: active ? conversationCwdMissing(active) : false,
+    fallbackCwd: active ? peekFallbackCwd(active.id) : null,
     renameTitle,
     selectConversationAgentId,
     handleSwitchConnection: connection.handleSwitchConnection,
@@ -608,9 +659,10 @@ export function useChatPage() {
     handleSend: send.handleSend,
     retryLast: send.retryLast,
     handleCancel: send.handleCancel,
-    queuedFollowUp: send.queuedFollowUp,
+    queuedFollowUps: send.queuedFollowUps,
     queuedFollowUpCount: send.queuedFollowUpCount,
     composerFocusNonce,
+    cancelQueuedFollowUp: send.cancelQueuedFollowUp,
     clearQueuedFollowUp: send.clearQueuedFollowUp,
     continueLegacyGrok: send.continueLegacyGrok,
     runtime: activeRuntime,
@@ -629,6 +681,7 @@ export function useChatPage() {
     handleComposerKeyDown,
     searchFocusNonce,
     historyRevealNonce,
+    firstUserContentById,
     turnOutcome,
     submitRuntimeRequest: send.submitRuntimeRequest,
     steerRuntime: send.steerRuntime,

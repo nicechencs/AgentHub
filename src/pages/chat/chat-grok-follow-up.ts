@@ -1,7 +1,18 @@
 import type { RuntimePhase } from '@/lib/backend/contracts/chat-runtime';
 import { isRuntimeActive } from './chat-runtime-model';
 
-function isAcpFollowUpAgent(agentId?: string | null): boolean {
+export type QueuedFollowUpItem = {
+  id: string;
+  text: string;
+};
+
+let queuedFollowUpSeq = 0;
+
+function isQueueFollowUpAgent(agentId?: string | null): boolean {
+  return agentId === 'grok' || agentId === 'kiro' || agentId === 'claude';
+}
+
+function isAcpLegacyContinueAgent(agentId?: string | null): boolean {
   return agentId === 'grok' || agentId === 'kiro';
 }
 
@@ -29,53 +40,79 @@ export function chatBusySendMode(input: {
   return 'queue';
 }
 
-export function appendQueuedFollowUp(queue: readonly string[], prompt: string): string[] {
-  const next = prompt.trim();
-  if (!next) return [...queue];
-  return [...queue, next];
+export function createQueuedFollowUpItem(text: string, id?: string): QueuedFollowUpItem | null {
+  const next = text.trim();
+  if (!next) return null;
+  queuedFollowUpSeq += 1;
+  return { id: id ?? `queued-${queuedFollowUpSeq}`, text: next };
 }
 
-export function prependQueuedFollowUp(queue: readonly string[], prompt: string): string[] {
-  const next = prompt.trim();
-  if (!next) return [...queue];
-  return [next, ...queue];
+export function queuedFollowUpItems(queue: readonly QueuedFollowUpItem[]): QueuedFollowUpItem[] {
+  return queue.filter((item) => item.text.trim());
+}
+
+export function appendQueuedFollowUp(
+  queue: readonly QueuedFollowUpItem[],
+  prompt: string,
+  id?: string,
+): QueuedFollowUpItem[] {
+  const item = createQueuedFollowUpItem(prompt, id);
+  if (!item) return [...queue];
+  return [...queue, item];
+}
+
+export function prependQueuedFollowUp(
+  queue: readonly QueuedFollowUpItem[],
+  prompt: string,
+  id?: string,
+): QueuedFollowUpItem[] {
+  const item = createQueuedFollowUpItem(prompt, id);
+  if (!item) return [...queue];
+  return [item, ...queue];
+}
+
+export function removeQueuedFollowUp(
+  queue: readonly QueuedFollowUpItem[],
+  id: string,
+): QueuedFollowUpItem[] {
+  return queue.filter((item) => item.id !== id);
+}
+
+export function clearQueuedFollowUps(): QueuedFollowUpItem[] {
+  return [];
 }
 
 export function shiftQueuedFollowUp(
-  queue: readonly string[],
-): { next: string; rest: string[] } | null {
-  if (queue.length === 0) return null;
-  const [next, ...rest] = queue;
+  queue: readonly QueuedFollowUpItem[],
+): { next: QueuedFollowUpItem; rest: QueuedFollowUpItem[] } | null {
+  const items = queuedFollowUpItems(queue);
+  if (items.length === 0) return null;
+  const [next, ...rest] = items;
   return { next, rest };
 }
 
-export function queuedFollowUpLabel(queue: readonly string[]): string | null {
-  const items = queue.map((item) => item.trim()).filter(Boolean);
-  if (items.length === 0) return null;
-  return items.join('；');
-}
-
-export function queuedFollowUpCount(queue: readonly string[]): number {
-  return queue.map((item) => item.trim()).filter(Boolean).length;
+export function queuedFollowUpCount(queue: readonly QueuedFollowUpItem[]): number {
+  return queuedFollowUpItems(queue).length;
 }
 
 export function restoreQueuedFollowUpOnCancel(input: {
   draft: string;
-  queue: readonly string[];
-}): { draft: string; queue: string[] } {
-  if (input.queue.length === 0) return { draft: input.draft, queue: [] };
-  if (input.draft.trim()) return { draft: input.draft, queue: [...input.queue] };
-  return { draft: input.queue[0], queue: input.queue.slice(1) };
+  queue: readonly QueuedFollowUpItem[];
+}): { draft: string; queue: QueuedFollowUpItem[] } {
+  const queue = queuedFollowUpItems(input.queue);
+  if (queue.length === 0) return { draft: input.draft, queue: [] };
+  if (input.draft.trim()) return { draft: input.draft, queue: [...queue] };
+  return { draft: queue[0].text, queue: queue.slice(1) };
 }
 
-/** Grok/Kiro have no mid-turn inject. Queue only while a continuous session is generating. */
+/** Grok / Kiro / Claude have no mid-turn inject. Queue only while a continuous session is generating. */
 export function grokCanQueueFollowUp(input: {
   agentId?: string | null;
   runtimeEnabled?: boolean;
   phase?: RuntimePhase | null;
   sending: boolean;
 }): boolean {
-  if (!isAcpFollowUpAgent(input.agentId) || !input.runtimeEnabled || !input.sending) return false;
+  if (!isQueueFollowUpAgent(input.agentId) || !input.runtimeEnabled || !input.sending) return false;
   return isRuntimeActive(input.phase ?? 'idle');
 }
 
@@ -89,7 +126,7 @@ export function grokLegacyContinueKind(input: {
   nativeSessionId?: string | null;
 }): 'continue' | 'newChat' | null {
   if (!input.runtimeReady) return null;
-  if (!isAcpFollowUpAgent(input.agentId) || input.runtimeEnabled || !input.hasMessages) return null;
+  if (!isAcpLegacyContinueAgent(input.agentId) || input.runtimeEnabled || !input.hasMessages) return null;
   // Kiro session ids belong to the original ACP process. HTTP ids also cannot
   // be loaded by the CLI; keep old history without offering a lossy upgrade.
   if (input.agentId === 'kiro') return 'newChat';

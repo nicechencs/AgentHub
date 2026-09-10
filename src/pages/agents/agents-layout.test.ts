@@ -47,7 +47,7 @@ describe('agents layout wiring', () => {
     expect(detail).toContain('ChannelUninstallButton');
     expect(detail).toContain("title={t('agents.card.openConfigDirTitle')}");
     expect(detail).toContain("title={t('agents.card.openInstallDir')}");
-    expect(card).toContain('agentListDetailsHint');
+    expect(card).toContain('agentHonestyHint');
     expect(card).toContain('agentLaunchTargets');
     expect(card).toContain("t('agents.card.startCli')");
     expect(card).toContain("t('agents.card.startApp')");
@@ -100,8 +100,9 @@ describe('agents layout wiring', () => {
     expect(card).not.toContain('ListRowBody');
     expect(card).not.toContain('LIST_ROW_PAD');
     expect(card).toContain('size="sm"');
-    expect(card).toContain('size="icon"');
+    expect(card).not.toContain('size="icon"');
     expect(card).toContain('aria-label={upgradeTooltip}');
+    expect(card).toContain("t('agents.table.upgrade')");
     expect(card).not.toContain("t('agents.card.forceUpgrade')");
     expect(card).not.toContain("t('agents.card.openOfficialUpdate')");
     expect(card).not.toContain("t('agents.card.update')");

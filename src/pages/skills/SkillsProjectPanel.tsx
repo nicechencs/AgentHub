@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/table';
 import { TableSkeleton } from '@/components/ui/skeleton';
 import { useI18n } from '@/components/shared/LanguageProvider';
-import { Hint } from '@/components/ui/tooltip';
+import { Hint, Tip } from '@/components/ui/tooltip';
 import type { InstalledSkillDto } from '@/lib/api/skill';
 import type { ProjectSkillOption } from './skills-project-model';
 import { filterProjectSkillRows, projectSkillRowKey } from './skills-project-model';
@@ -186,14 +186,16 @@ export function SkillsProjectPanel(props: SkillsProjectPanelProps) {
                           {row.name}
                         </ListNameButton>
                         {row.description ? (
-                          <span className="mt-0.5 block truncate text-meta text-muted">
+                          <Tip className="mt-0.5 block truncate text-meta text-muted" label={row.description}>
                             {row.description}
-                          </span>
+                          </Tip>
                         ) : null}
                       </div>
                     </TableCell>
                     <TableCell className="font-mono text-meta text-muted">
-                      {row.rootLabel}
+                      <Tip className="block truncate" label={row.rootLabel}>
+                        {row.rootLabel}
+                      </Tip>
                     </TableCell>
                     <TableCell className="text-right">
                       <Button

@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
 import { RefreshCw, Trash2 } from 'lucide-react';
 import { DetailRow } from '@/components/shared/DetailRow';
+import {
+  DetailTable,
+  DetailTableCell,
+  DetailTableRow,
+} from '@/components/shared/DetailTable';
 import { QuotaBar } from '@/components/shared/QuotaBar';
 import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
 import { useI18n } from '@/components/shared/LanguageProvider';
@@ -210,96 +215,60 @@ export function PoolAuthorizationDetail({
         {hasQuota ? (
           <section className="space-y-1.5">
             <h3 className="text-body font-medium">{t('connections.list.usage')}</h3>
-            <div className="flex flex-col gap-1.5">
+            <DetailTable>
               {hasQuotaWindow(item.quota7dPct) ? (
-                <QuotaBar
-                  label={t('connections.list.quota7dUsed')}
-                  pct={item.quota7dPct}
-                  resetIn={item.quota7dResetIn}
-                />
+                <DetailTableRow label={t('connections.list.quota7dUsed')}>
+                  <DetailTableCell>
+                    <QuotaBar
+                      label={t('connections.list.quota7dUsed')}
+                      pct={item.quota7dPct}
+                      compact
+                      showLabel={false}
+                    />
+                  </DetailTableCell>
+                  <DetailTableCell className="whitespace-nowrap text-meta text-muted">
+                    {item.quota7dResetIn}
+                  </DetailTableCell>
+                </DetailTableRow>
               ) : null}
               {hasQuotaWindow(item.quota5hPct) ? (
-                <QuotaBar
-                  label={t('connections.list.quota5hUsed')}
-                  pct={item.quota5hPct}
-                  resetIn={item.quotaResetIn}
-                />
+                <DetailTableRow label={t('connections.list.quota5hUsed')}>
+                  <DetailTableCell>
+                    <QuotaBar
+                      label={t('connections.list.quota5hUsed')}
+                      pct={item.quota5hPct}
+                      compact
+                      showLabel={false}
+                    />
+                  </DetailTableCell>
+                  <DetailTableCell className="whitespace-nowrap text-meta text-muted">
+                    {item.quotaResetIn}
+                  </DetailTableCell>
+                </DetailTableRow>
               ) : null}
-            </div>
+            </DetailTable>
           </section>
         ) : null}
 
         <section className="space-y-1.5">
           <h3 className="text-body font-medium">{t('connections.list.sectionWhere')}</h3>
-          {endpointKinds.length > 0 ? (
-            <span className="flex min-w-0 items-start gap-1.5">
-              <span className="min-w-0 flex-1">
-                <span className="text-muted">{t('routes.pool.detail.endpointTypes')} </span>
-                <span className="inline-flex flex-col gap-0.5 align-top">
-                  {endpointKinds.map((kind) => (
-                    <PoolEndpointTypeLine
-                      key={kind}
-                      kind={kind}
-                      href={poolAuthorizationTypeHref(item.endpointHost, localEndpointPath(kind)) ?? undefined}
-                    />
-                  ))}
-                </span>
-              </span>
-            </span>
-          ) : null}
-          {whereRows.map((row) => (
-            <DetailRow
-              key={row.id}
-              label={row.label}
-              value={row.value}
-              lines={row.lines}
-              href={row.href}
-              mono={row.mono}
-              copyable={row.copyable}
-              className={row.copyable ? 'w-full' : undefined}
-            />
-          ))}
-          <div className="flex flex-col gap-1.5">
-            <p className="text-meta text-muted">{t('routes.pool.detail.models')}</p>
-            {catalogLoading ? (
-              <p className="text-meta text-secondary">…</p>
-            ) : catalogFailed ? (
-              <p className="text-meta text-secondary">{t('routes.pool.detail.modelsLoadFailed')}</p>
-            ) : catalog && catalog.models.length > 0 ? (
-              <>
-                <p className="text-body text-primary">
-                  {(modelsOpen || catalog.models.length <= 8
-                    ? catalog.models
-                    : catalog.models.slice(0, 8)
-                  ).join(', ')}
-                  <span className="ml-2 text-meta text-muted">
-                    {catalog.source === 'custom'
-                      ? t('routes.pool.detail.modelsCustom')
-                      : t('routes.pool.detail.modelsLive')}
+          <DetailTable>
+            {endpointKinds.length > 0 ? (
+              <DetailTableRow label={t('routes.pool.detail.endpointTypes')}>
+                <DetailTableCell>
+                  <span className="inline-flex flex-col gap-0.5">
+                    {endpointKinds.map((kind) => (
+                      <PoolEndpointTypeLine
+                        key={kind}
+                        kind={kind}
+                        href={poolAuthorizationTypeHref(item.endpointHost, localEndpointPath(kind)) ?? undefined}
+                      />
+                    ))}
                   </span>
-                </p>
-                {catalog.models.length > 8 ? (
-                  <button
-                    type="button"
-                    className="self-start text-meta text-muted"
-                    onClick={() => setModelsOpen((open) => !open)}
-                  >
-                    {modelsOpen
-                      ? t('common.collapse')
-                      : t('routes.pool.detail.modelsShowAll', { n: catalog.models.length })}
-                  </button>
-                ) : null}
-              </>
-            ) : (
-              <p className="text-meta text-secondary">{t('routes.pool.detail.modelsEmpty')}</p>
-            )}
-          </div>
-        </section>
-
-        {recordRows.length > 0 ? (
-          <section className="space-y-1.5">
-            <h3 className="text-meta font-medium text-muted">{t('connections.list.sectionRecords')}</h3>
-            {recordRows.map((row) => (
+                </DetailTableCell>
+              </DetailTableRow>
+            ) : null}
+            {whereRows.map((row) => (
               <DetailRow
                 key={row.id}
                 label={row.label}
@@ -308,8 +277,64 @@ export function PoolAuthorizationDetail({
                 href={row.href}
                 mono={row.mono}
                 copyable={row.copyable}
+                className={row.copyable ? 'w-full' : undefined}
               />
             ))}
+            <DetailTableRow label={t('routes.pool.detail.models')}>
+              <DetailTableCell>
+                {catalogLoading ? (
+                  <p className="text-meta text-secondary">…</p>
+                ) : catalogFailed ? (
+                  <p className="text-meta text-secondary">{t('routes.pool.detail.modelsLoadFailed')}</p>
+                ) : catalog && catalog.models.length > 0 ? (
+                  <div className="flex flex-col gap-1.5">
+                    <p className="text-body text-primary">
+                      {(modelsOpen || catalog.models.length <= 8
+                        ? catalog.models
+                        : catalog.models.slice(0, 8)
+                      ).join(', ')}
+                      <span className="ml-2 text-meta text-muted">
+                        {catalog.source === 'custom'
+                          ? t('routes.pool.detail.modelsCustom')
+                          : t('routes.pool.detail.modelsLive')}
+                      </span>
+                    </p>
+                    {catalog.models.length > 8 ? (
+                      <button
+                        type="button"
+                        className="self-start text-meta text-muted"
+                        onClick={() => setModelsOpen((open) => !open)}
+                      >
+                        {modelsOpen
+                          ? t('common.collapse')
+                          : t('routes.pool.detail.modelsShowAll', { n: catalog.models.length })}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="text-meta text-secondary">{t('routes.pool.detail.modelsEmpty')}</p>
+                )}
+              </DetailTableCell>
+            </DetailTableRow>
+          </DetailTable>
+        </section>
+
+        {recordRows.length > 0 ? (
+          <section className="space-y-1.5">
+            <h3 className="text-meta font-medium text-muted">{t('connections.list.sectionRecords')}</h3>
+            <DetailTable>
+              {recordRows.map((row) => (
+                <DetailRow
+                  key={row.id}
+                  label={row.label}
+                  value={row.value}
+                  lines={row.lines}
+                  href={row.href}
+                  mono={row.mono}
+                  copyable={row.copyable}
+                />
+              ))}
+            </DetailTable>
           </section>
         ) : null}
       </div>

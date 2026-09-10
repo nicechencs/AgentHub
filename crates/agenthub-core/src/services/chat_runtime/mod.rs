@@ -6,17 +6,20 @@
 //! normalized events to SQLite before a snapshot can expose them.
 
 mod codex_transport;
+mod file_change;
 mod ops;
 mod store;
 mod types;
 
-pub(crate) use store::{is_acp_runtime_agent, is_claude_stream_runtime_agent, is_runtime_chat_agent};
+pub(crate) use store::{
+    is_acp_runtime_agent, is_claude_stream_runtime_agent, is_runtime_chat_agent,
+};
 
 pub use types::{
-    RuntimeDecision, RuntimeEvent, RuntimeExtensionItem, RuntimeExtensionKind, RuntimeLocalImage,
-    RuntimeModelOption, RuntimeOptions, RuntimePermissionOption, RuntimePhase, RuntimeQuestion,
-    RuntimeQuestionOption, RuntimeReply, RuntimeRequest, RuntimeRequestKind, RuntimeSkillRef,
-    RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings,
+    RuntimeDecision, RuntimeEvent, RuntimeExtensionItem, RuntimeExtensionKind, RuntimeFileChange,
+    RuntimeLocalImage, RuntimeModelOption, RuntimeOptions, RuntimePermissionOption, RuntimePhase,
+    RuntimeQuestion, RuntimeQuestionOption, RuntimeReply, RuntimeRequest, RuntimeRequestKind,
+    RuntimeSkillRef, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings,
 };
 
 use std::collections::HashMap;
@@ -603,7 +606,7 @@ impl ChatRuntime {
             .and_then(|guard| guard.get(conversation_id).cloned())
     }
 
-    #[cfg(all(test, unix))]
+    #[cfg(test)]
     pub(crate) fn set_codex_program_for_test(&self, path: PathBuf) {
         if let Ok(mut guard) = self.codex_program_override.lock() {
             *guard = Some(path);
@@ -665,12 +668,7 @@ impl ChatRuntime {
         let Ok(Some(conversation)) = self.repo.get_conversation(conversation_id) else {
             return CatalogCache::default();
         };
-        let Some(cwd) = conversation
-            .cwd
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(PathBuf::from)
+        let Ok(cwd) = crate::services::chat_cwd::resolve_runtime_cwd(conversation.cwd.as_deref())
         else {
             return CatalogCache::default();
         };
@@ -853,6 +851,7 @@ fn actor_loop(
         session_effort: None,
         session_trust_all: None,
         session_allow_always: false,
+        pending_fs_writes: HashMap::new(),
     };
     worker.run();
 }
@@ -876,20 +875,27 @@ struct ActorWorker {
     last_start_request: Option<String>,
     pending_prompt_id: Option<Value>,
     permission_options: HashMap<String, Vec<RuntimePermissionOption>>,
-    /// Paths from `item/started` fileChange items, keyed by item id.
-    /// `item/fileChange/requestApproval` does not include the file list.
-    file_change_items: HashMap<String, String>,
+    /// File-change rows from `item/started` / `patchUpdated`, keyed by item id.
+    /// `item/fileChange/requestApproval` often omits the file list and snippet.
+    file_change_items: HashMap<String, Vec<RuntimeFileChange>>,
     cancel_deadline: Option<Instant>,
     session_model: Option<String>,
     session_effort: Option<String>,
     session_trust_all: Option<bool>,
     /// After the user picks session remember, later command/file approvals in
-    /// this live process are accepted without another card. Not persisted; a
-    /// new process asks again. Codex synthesizes the button. Grok / Kiro only
-    /// show it when the ACP request includes an `allow_always` kind (including
-    /// `allow_always_tool`). ACP keeps the process across turns, so the flag
-    /// survives a completed turn while that process is still open.
+    /// this conversation are accepted without another card. Not written to
+    /// SQLite; a new conversation asks again. Codex synthesizes the button
+    /// and is told `acceptForSession`. Grok / Kiro `session/request_permission`
+    /// only show it when the ACP request includes an `allow_always` kind
+    /// (including `allow_always_tool`). Host-owned Grok `fs/write_text_file`
+    /// cards synthesize the same three buttons as Codex. Codex starts a fresh
+    /// process each turn, so the flag must outlive `terminalize`. ACP usually
+    /// keeps one process across turns.
     session_allow_always: bool,
+    /// Full write body for in-flight `fs/write_text_file` cards, keyed by the
+    /// JSON-RPC request id. Content is not persisted; a dead process cannot
+    /// complete the write anyway.
+    pending_fs_writes: HashMap<String, (PathBuf, String)>,
 }
 
 impl ActorWorker {
@@ -976,7 +982,7 @@ impl ActorWorker {
 
     fn spawn_codex(&self, program: &Path, cwd: &Path) -> Result<CodexTransport> {
         CodexTransport::spawn_interruptible(program, cwd, Arc::clone(&self.abort))
-            .map_err(map_transport)
+            .map_err(|error| map_transport(self.agent, error))
     }
 
     fn ensure_start_catalog(&mut self) -> Result<CatalogCache> {
@@ -1002,12 +1008,7 @@ impl ActorWorker {
         let Ok(Some(conversation)) = self.repo.get_conversation(&self.conversation_id) else {
             return CatalogCache::default();
         };
-        let Some(cwd) = conversation
-            .cwd
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(PathBuf::from)
+        let Ok(cwd) = crate::services::chat_cwd::resolve_runtime_cwd(conversation.cwd.as_deref())
         else {
             return CatalogCache::default();
         };
@@ -1062,6 +1063,7 @@ impl ActorWorker {
             cwd,
             None,
             None,
+            false,
             Arc::clone(&self.abort),
         ) {
             Ok(t) => t,
@@ -1334,11 +1336,12 @@ impl ActorWorker {
                                 "threadId": thread_id,
                                 "cwd": cwd.to_string_lossy(),
                                 "approvalPolicy": "on-request",
-                                "sandbox": "workspace-write"
+                                "sandbox": "workspace-write",
+                                "sandboxPolicy": ops::codex_workspace_write_sandbox_policy(&cwd)
                             }),
                             CODEX_REQUEST_TIMEOUT,
                         )
-                        .map_err(map_transport)?;
+                        .map_err(|error| map_transport(self.agent, error))?;
                     self.thread_id = Some(thread_id.to_string());
                     let _ = result;
                     t
@@ -1351,11 +1354,12 @@ impl ActorWorker {
                                 "cwd": cwd.to_string_lossy(),
                                 "approvalPolicy": "on-request",
                                 "sandbox": "workspace-write",
+                                "sandboxPolicy": ops::codex_workspace_write_sandbox_policy(&cwd),
                                 "ephemeral": false
                             }),
                             CODEX_REQUEST_TIMEOUT,
                         )
-                        .map_err(map_transport)?;
+                        .map_err(|error| map_transport(self.agent, error))?;
                     self.thread_id =
                         extract_id(&result, "thread").or_else(|| extract_id(&result, "id"));
                     t
@@ -1371,11 +1375,7 @@ impl ActorWorker {
                     "clientUserMessageId": client_request_id,
                     "cwd": cwd.to_string_lossy(),
                     "approvalPolicy": "on-request",
-                    "sandboxPolicy": {
-                        "type": "workspaceWrite",
-                        "writableRoots": [cwd.to_string_lossy()],
-                        "networkAccess": false
-                    }
+                    "sandboxPolicy": ops::codex_workspace_write_sandbox_policy(&cwd)
                 });
                 if let Some(model) = settings
                     .model
@@ -1395,7 +1395,7 @@ impl ActorWorker {
                 }
                 let result = transport
                     .request("turn/start", params, CODEX_REQUEST_TIMEOUT)
-                    .map_err(map_transport)?;
+                    .map_err(|error| map_transport(self.agent, error))?;
                 self.turn_id = extract_id(&result, "turn").or_else(|| extract_id(&result, "id"));
                 let actual_run = self.turn_id.clone().unwrap_or_else(|| {
                     self.run_id
@@ -1512,11 +1512,12 @@ impl ActorWorker {
                             &cwd,
                             model,
                             effort,
+                            trust_all,
                             Arc::clone(&self.abort),
                         )
                     }
                 }
-                .map_err(map_transport)?
+                .map_err(|error| map_transport(self.agent, error))?
             };
 
             match plan {
@@ -1525,10 +1526,14 @@ impl ActorWorker {
                     let created = transport
                         .request(
                             "session/new",
-                            json!({ "cwd": cwd.to_string_lossy(), "mcpServers": [] }),
+                            if self.agent == AgentId::Grok {
+                                ops::grok_session_new_params(&cwd, trust_all)
+                            } else {
+                                ops::acp_session_new_params(&cwd)
+                            },
                             CODEX_REQUEST_TIMEOUT,
                         )
-                        .map_err(map_transport)?;
+                        .map_err(|error| map_transport(self.agent, error))?;
                     self.thread_id =
                         grok_session_id(&created).or_else(|| extract_id(&created, "session"));
                     if self.agent == AgentId::Kiro {
@@ -1571,7 +1576,7 @@ impl ActorWorker {
                     };
                     let value = transport
                         .request_discarding_history(method, load_params, CODEX_REQUEST_TIMEOUT)
-                        .map_err(map_transport)?;
+                        .map_err(|error| map_transport(self.agent, error))?;
                     if let Some(id) = grok_session_id(&value) {
                         self.thread_id = Some(id);
                     }
@@ -1614,11 +1619,10 @@ impl ActorWorker {
                     self.transport = None;
                     continue;
                 }
-                Err(error) => return Err(map_transport(error)),
+                Err(error) => return Err(map_transport(self.agent, error)),
             }
         }
     }
-
 
     fn claude_connect_and_prompt(&mut self, prompt: Value) -> Result<RuntimeSnapshot> {
         let cwd = self.conversation_cwd()?;
@@ -1665,12 +1669,12 @@ impl ActorWorker {
                 resume,
                 Arc::clone(&self.abort),
             )
-            .map_err(map_transport)?
+            .map_err(|error| map_transport(self.agent, error))?
         };
 
         transport
             .send_raw_value(&prompt)
-            .map_err(map_transport)?;
+            .map_err(|error| map_transport(self.agent, error))?;
 
         let run_id = self
             .run_id
@@ -1794,7 +1798,8 @@ impl ActorWorker {
             return Ok(());
         }
 
-        let Some(steps) = crate::utils::stream_parse::claude::parse_line(&params.to_string()) else {
+        let Some(steps) = crate::utils::stream_parse::claude::parse_line(&params.to_string())
+        else {
             return Ok(());
         };
         for step in steps {
@@ -1842,6 +1847,30 @@ impl ActorWorker {
             return Err(AppError::InvalidArg(
                 "clientRequestId must not be empty".into(),
             ));
+        }
+        if matches!(
+            persisted.request.kind,
+            RuntimeRequestKind::Command | RuntimeRequestKind::File
+        ) && ops::is_acp_fs_write_method(&persisted.server_method)
+        {
+            let decision = match reply.decision {
+                Some(RuntimeDecision::Allow) => "accept",
+                Some(RuntimeDecision::AllowAlways) => "accept_always",
+                Some(RuntimeDecision::Deny) => "decline",
+                None => {
+                    return Err(AppError::InvalidArg("approval decision is required".into()));
+                }
+            };
+            if reply
+                .answers
+                .as_ref()
+                .is_some_and(|values| !values.is_empty())
+            {
+                return Err(AppError::InvalidArg(
+                    "approval cannot include answers".into(),
+                ));
+            }
+            return self.reply_acp_fs_write(&reply, &persisted, decision);
         }
         let answers = reply.answers.filter(|values| !values.is_empty());
         let value = match persisted.request.kind {
@@ -1897,7 +1926,10 @@ impl ActorWorker {
             }
         };
         let transport = self.transport.as_mut().ok_or_else(|| {
-            AppError::message("chat.runtime.interrupted", "Codex process stopped")
+            AppError::message(
+                "chat.runtime.interrupted",
+                format!("{} 已退出", runtime_process_label(self.agent)),
+            )
         })?;
         let server_id = parse_wire_id(&persisted.server_id)?;
         // Resolve the durable control before writing the JSON-RPC response.
@@ -1913,7 +1945,7 @@ impl ActorWorker {
         )?;
         let response_result = transport
             .respond(server_id, Ok(value))
-            .map_err(transport_error);
+            .map_err(|error| transport_error(self.agent, error));
         if let Err(error) = response_result {
             self.fail_runtime(AppError::message(
                 "chat.runtime.transport",
@@ -1975,7 +2007,10 @@ impl ActorWorker {
             .clone()
             .ok_or_else(|| AppError::message("chat.runtime", "Codex turn is unavailable"))?;
         let transport = self.transport.as_mut().ok_or_else(|| {
-            AppError::message("chat.runtime.interrupted", "Codex process stopped")
+            AppError::message(
+                "chat.runtime.interrupted",
+                format!("{} 已退出", runtime_process_label(self.agent)),
+            )
         })?;
         transport
             .request(
@@ -1988,7 +2023,7 @@ impl ActorWorker {
                 }),
                 CODEX_REQUEST_TIMEOUT,
             )
-            .map_err(transport_error)?;
+            .map_err(|error| transport_error(self.agent, error))?;
         self.store
             .set_last_steer_client_request_id(&self.conversation_id, client_request_id)?;
         let turn = self.repo.next_turn(&self.conversation_id)?;
@@ -2096,10 +2131,13 @@ impl ActorWorker {
                 self.transport
                     .as_mut()
                     .ok_or_else(|| {
-                        AppError::message("chat.runtime.interrupted", "Codex process stopped")
+                        AppError::message(
+                            "chat.runtime.interrupted",
+                            format!("{} 已退出", runtime_process_label(self.agent)),
+                        )
                     })?
                     .respond(server_id, response)
-                    .map_err(map_transport)
+                    .map_err(|error| map_transport(self.agent, error))
             });
             if let Err(error) = response {
                 return self.complete_cancel(error);
@@ -2108,12 +2146,17 @@ impl ActorWorker {
         let interrupt_result = self
             .transport
             .as_mut()
-            .ok_or_else(|| AppError::message("chat.runtime.interrupted", "Codex process stopped"))
+            .ok_or_else(|| {
+                AppError::message(
+                    "chat.runtime.interrupted",
+                    format!("{} 已退出", runtime_process_label(self.agent)),
+                )
+            })
             .and_then(|transport| {
                 if is_acp_runtime_agent(Some(self.agent)) {
                     transport
                         .notify("session/cancel", Some(json!({"sessionId": thread_id})))
-                        .map_err(map_transport)
+                        .map_err(|error| map_transport(self.agent, error))
                 } else {
                     transport
                         .request(
@@ -2122,7 +2165,7 @@ impl ActorWorker {
                             CODEX_REQUEST_TIMEOUT,
                         )
                         .map(|_| ())
-                        .map_err(map_transport)
+                        .map_err(|error| map_transport(self.agent, error))
                 }
             });
         match interrupt_result {
@@ -2156,7 +2199,7 @@ impl ActorWorker {
             let event = match event {
                 Ok(event) => event,
                 Err(codex_transport::CodexTransportError::Interrupted) => return Ok(()),
-                Err(error) => return Err(transport_error(error)),
+                Err(error) => return Err(transport_error(self.agent, error)),
             };
             match event {
                 Some(CodexEvent::Request { id, method, params }) => {
@@ -2179,7 +2222,7 @@ impl ActorWorker {
                     ) {
                         self.terminalize(
                             ChatMessageStatus::Cancelled,
-                            Some("Codex process stopped"),
+                            Some(&format!("{} 已退出", runtime_process_label(self.agent))),
                             RuntimePhase::Interrupted,
                             false,
                             true,
@@ -2234,7 +2277,7 @@ impl ActorWorker {
                         id,
                         Err(json!({ "code": -32001, "message": "stale session" })),
                     )
-                    .map_err(transport_error)?;
+                    .map_err(|error| transport_error(self.agent, error))?;
             }
             return Ok(());
         }
@@ -2247,7 +2290,9 @@ impl ActorWorker {
                 } else {
                     Err(json!({ "code": -32800, "message": "cancelled" }))
                 };
-                transport.respond(id, response).map_err(transport_error)?;
+                transport
+                    .respond(id, response)
+                    .map_err(|error| transport_error(self.agent, error))?;
             }
             return Ok(());
         }
@@ -2265,9 +2310,17 @@ impl ActorWorker {
                 } else {
                     Err(json!({ "code": -32800, "message": "cancelled" }))
                 };
-                transport.respond(id, response).map_err(transport_error)?;
+                transport
+                    .respond(id, response)
+                    .map_err(|error| transport_error(self.agent, error))?;
             }
             return Ok(());
+        }
+        if ops::is_acp_fs_read_method(method) {
+            return self.handle_acp_fs_read(id, params);
+        }
+        if ops::is_acp_fs_write_method(method) {
+            return self.handle_acp_fs_write(id, params);
         }
         let run_id = params
             .get("turnId")
@@ -2285,29 +2338,44 @@ impl ActorWorker {
             if let Some(transport) = self.transport.as_mut() {
                 transport
                     .respond(id, Err(json!({"code": -32001, "message": "stale turn"})))
-                    .map_err(transport_error)?;
+                    .map_err(|error| transport_error(self.agent, error))?;
             }
             return Ok(());
         }
-        let (kind, title, detail, questions, acp_options) = match method {
+        let (kind, title, detail, questions, acp_options, file_changes) = match method {
             "session/request_permission" => {
-                let title = params
-                    .pointer("/toolCall/title")
-                    .or_else(|| params.pointer("/toolCall/kind"))
-                    .and_then(Value::as_str)
-                    .unwrap_or("需要确认")
-                    .to_string();
-                let detail = redact_json_text(
+                let file_changes = file_change::extract_file_changes(params);
+                let is_file = !file_changes.is_empty() || acp_tool_is_file_change(params);
+                let title = if is_file {
+                    "修改文件".to_string()
+                } else {
                     params
-                        .get("toolCall")
-                        .and_then(|call| call.get("rawInput").or_else(|| call.get("title"))),
-                );
+                        .pointer("/toolCall/title")
+                        .or_else(|| params.pointer("/toolCall/kind"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("需要确认")
+                        .to_string()
+                };
+                let detail = if is_file {
+                    self.file_change_request_detail(params)
+                } else {
+                    redact_json_text(
+                        params
+                            .get("toolCall")
+                            .and_then(|call| call.get("rawInput").or_else(|| call.get("title"))),
+                    )
+                };
                 (
-                    RuntimeRequestKind::Command,
+                    if is_file {
+                        RuntimeRequestKind::File
+                    } else {
+                        RuntimeRequestKind::Command
+                    },
                     title,
                     detail,
                     Vec::new(),
                     acp_permission_options(params),
+                    file_changes,
                 )
             }
             "item/commandExecution/requestApproval" | "execCommandApproval" => (
@@ -2316,6 +2384,7 @@ impl ActorWorker {
                 redact_json_text(params.get("command").or_else(|| params.get("reason"))),
                 Vec::new(),
                 acp_permission_options(params),
+                Vec::new(),
             ),
             "item/fileChange/requestApproval" | "fileChangeApproval" | "applyPatchApproval" => (
                 RuntimeRequestKind::File,
@@ -2323,6 +2392,7 @@ impl ActorWorker {
                 self.file_change_request_detail(params),
                 Vec::new(),
                 acp_permission_options(params),
+                self.file_change_request_changes(params),
             ),
             "item/tool/requestUserInput" => (
                 RuntimeRequestKind::Question,
@@ -2330,6 +2400,7 @@ impl ActorWorker {
                 String::new(),
                 parse_questions(params.get("questions")),
                 None,
+                Vec::new(),
             ),
             _ => {
                 // Unknown server requests must never be auto-approved. Reply
@@ -2340,10 +2411,13 @@ impl ActorWorker {
                             id,
                             Err(json!({"code": -32601, "message": "unsupported request"})),
                         )
-                        .map_err(transport_error)?;
+                        .map_err(|error| transport_error(self.agent, error))?;
                 }
                 self.emit_error(
-                    &format!("Codex 请求暂不支持：{method}"),
+                    &format!(
+                        "{} 请求暂不支持：{method}",
+                        runtime_process_label(self.agent)
+                    ),
                     self.live_phase(RuntimePhase::Running),
                 )?;
                 return Ok(());
@@ -2358,14 +2432,14 @@ impl ActorWorker {
                     if let Some(transport) = self.transport.as_mut() {
                         transport
                             .respond(id, Ok(response))
-                            .map_err(transport_error)?;
+                            .map_err(|error| transport_error(self.agent, error))?;
                     }
                     return Ok(());
                 }
             } else if let Some(transport) = self.transport.as_mut() {
                 transport
-                    .respond(id, Ok(json!({"decision": "accept"})))
-                    .map_err(transport_error)?;
+                    .respond(id, Ok(json!({"decision": "acceptForSession"})))
+                    .map_err(|error| transport_error(self.agent, error))?;
                 return Ok(());
             }
         }
@@ -2386,6 +2460,7 @@ impl ActorWorker {
             detail,
             questions,
             permission_options: permission_options.clone(),
+            file_changes,
         };
         self.store
             .add_request(&self.conversation_id, &request, method, &id_string)?;
@@ -2647,10 +2722,8 @@ impl ActorWorker {
         )
     }
 
-    fn file_change_request_detail(&self, params: &Value) -> String {
-        let from_params = optional_json_text(params.get("reason"))
-            .or_else(|| optional_json_text(params.get("grantRoot")))
-            .unwrap_or_default();
+    fn file_change_request_changes(&self, params: &Value) -> Vec<RuntimeFileChange> {
+        let from_params = file_change::extract_file_changes(params);
         if !from_params.is_empty() {
             return from_params;
         }
@@ -2661,7 +2734,21 @@ impl ActorWorker {
                 }
             }
         }
-        join_file_change_paths(&file_change_paths(params))
+        Vec::new()
+    }
+
+    fn file_change_request_detail(&self, params: &Value) -> String {
+        let paths: Vec<String> = self
+            .file_change_request_changes(params)
+            .into_iter()
+            .map(|change| change.path)
+            .collect();
+        if !paths.is_empty() {
+            return file_change::join_file_change_paths(&paths);
+        }
+        optional_json_text(params.get("reason"))
+            .or_else(|| optional_json_text(params.get("grantRoot")))
+            .unwrap_or_default()
     }
 
     fn remember_file_change_item(&mut self, method: &str, item: Option<&Value>) -> Result<()> {
@@ -2673,10 +2760,10 @@ impl ActorWorker {
             return Ok(());
         }
         let id = item.get("id").and_then(Value::as_str).unwrap_or_default();
-        let paths = file_change_paths(item);
-        if !id.is_empty() && !paths.is_empty() {
-            self.file_change_items
-                .insert(id.to_string(), join_file_change_paths(&paths));
+        let changes = file_change::extract_file_changes(item);
+        let paths: Vec<String> = changes.iter().map(|change| change.path.clone()).collect();
+        if !id.is_empty() && !changes.is_empty() {
+            self.file_change_items.insert(id.to_string(), changes);
         }
         let status =
             item.get("status")
@@ -2707,10 +2794,9 @@ impl ActorWorker {
         let Some(id) = params.get("itemId").and_then(Value::as_str) else {
             return;
         };
-        let paths = file_change_paths(params);
-        if !paths.is_empty() {
-            self.file_change_items
-                .insert(id.to_string(), join_file_change_paths(&paths));
+        let changes = file_change::extract_file_changes(params);
+        if !changes.is_empty() {
+            self.file_change_items.insert(id.to_string(), changes);
         }
     }
 
@@ -2870,11 +2956,7 @@ impl ActorWorker {
         self.pending_prompt_id = None;
         self.permission_options.clear();
         self.file_change_items.clear();
-        if !is_acp_runtime_agent(Some(self.agent))
-            || !self.transport.as_ref().is_some_and(CodexTransport::is_open)
-        {
-            self.session_allow_always = false;
-        }
+        self.pending_fs_writes.clear();
         if let Some(message) = error {
             if let Err(learn_err) = self
                 .store
@@ -3003,11 +3085,168 @@ impl ActorWorker {
     }
 
     fn conversation_cwd(&self) -> Result<PathBuf> {
-        self.repo
+        let stored = self
+            .repo
             .get_conversation(&self.conversation_id)?
-            .and_then(|conversation| conversation.cwd.map(PathBuf::from))
-            .map(Ok)
-            .unwrap_or_else(|| std::env::current_dir().map_err(AppError::from))
+            .and_then(|conversation| conversation.cwd);
+        crate::services::chat_cwd::resolve_runtime_cwd(stored.as_deref())
+    }
+
+    fn respond_jsonrpc(
+        &mut self,
+        id: Value,
+        response: std::result::Result<Value, Value>,
+    ) -> Result<()> {
+        let transport = self.transport.as_mut().ok_or_else(|| {
+            AppError::message(
+                "chat.runtime.interrupted",
+                format!("{} 已退出", runtime_process_label(self.agent)),
+            )
+        })?;
+        transport
+            .respond(id, response)
+            .map_err(|error| transport_error(self.agent, error))
+    }
+
+    fn handle_acp_fs_read(&mut self, id: Value, params: &Value) -> Result<()> {
+        let path = match ops::acp_fs_read_path(params) {
+            Ok(path) => path,
+            Err(error) => {
+                return self.respond_jsonrpc(
+                    id,
+                    Err(json!({"code": -32602, "message": error.to_string()})),
+                );
+            }
+        };
+        match ops::read_text_file_from_disk(&path) {
+            Ok(content) => self.respond_jsonrpc(id, Ok(json!({ "content": content }))),
+            Err(error) => self.respond_jsonrpc(
+                id,
+                Err(json!({"code": -32000, "message": error.to_string()})),
+            ),
+        }
+    }
+
+    fn handle_acp_fs_write(&mut self, id: Value, params: &Value) -> Result<()> {
+        let id_string = wire_id_string(&id);
+        let (path, content) = match ops::acp_fs_write_payload(params) {
+            Ok(payload) => payload,
+            Err(error) => {
+                return self.respond_jsonrpc(
+                    id,
+                    Err(json!({"code": -32602, "message": error.to_string()})),
+                );
+            }
+        };
+        let cwd = self.conversation_cwd()?;
+        let auto_write = ops::path_is_inside_cwd(&path, &cwd) || self.session_allow_always;
+        if auto_write {
+            return match ops::write_text_file_on_disk(&path, &content) {
+                Ok(()) => self.respond_jsonrpc(id, Ok(json!({}))),
+                Err(error) => self.respond_jsonrpc(
+                    id,
+                    Err(json!({"code": -32000, "message": error.to_string()})),
+                ),
+            };
+        }
+        let run_id = params
+            .get("turnId")
+            .and_then(Value::as_str)
+            .or(self.run_id.as_deref())
+            .ok_or_else(|| {
+                AppError::message("chat.runtime.protocol", "Codex request omitted run id")
+            })?
+            .to_string();
+        let permission_options = codex_session_permission_options();
+        let request = RuntimeRequest {
+            id: id_string.clone(),
+            run_id,
+            kind: RuntimeRequestKind::File,
+            title: "修改文件".into(),
+            detail: path.to_string_lossy().into_owned(),
+            questions: Vec::new(),
+            permission_options: permission_options.clone(),
+            file_changes: vec![RuntimeFileChange {
+                path: path.to_string_lossy().into_owned(),
+                kind: Some("write".into()),
+                preview: ops::acp_fs_write_preview(&content),
+            }],
+        };
+        self.pending_fs_writes
+            .insert(id_string.clone(), (path, content));
+        self.store.add_request(
+            &self.conversation_id,
+            &request,
+            "fs/write_text_file",
+            &id_string,
+        )?;
+        self.permission_options
+            .insert(id_string, permission_options);
+        Ok(())
+    }
+
+    fn reply_acp_fs_write(
+        &mut self,
+        reply: &RuntimeReply,
+        persisted: &store::PersistedRequest,
+        decision: &str,
+    ) -> Result<()> {
+        let server_id = parse_wire_id(&persisted.server_id)?;
+        if decision == "decline" {
+            self.pending_fs_writes.remove(&persisted.request.id);
+            self.store.record_reply(
+                &reply.conversation_id,
+                &reply.run_id,
+                &reply.client_request_id,
+                &reply.request_id,
+            )?;
+            self.respond_jsonrpc(
+                server_id,
+                Err(json!({"code": -32000, "message": "已拒绝写出"})),
+            )?;
+        } else {
+            let Some((path, content)) = self.pending_fs_writes.remove(&persisted.request.id) else {
+                return Err(AppError::message("chat.runtime", "写出内容已失效，请重试"));
+            };
+            let write_result = ops::write_text_file_on_disk(&path, &content);
+            if decision == "accept_always" && write_result.is_ok() {
+                self.session_allow_always = true;
+            }
+            self.store.record_reply(
+                &reply.conversation_id,
+                &reply.run_id,
+                &reply.client_request_id,
+                &reply.request_id,
+            )?;
+            match write_result {
+                Ok(()) => self.respond_jsonrpc(server_id, Ok(json!({})))?,
+                Err(error) => self.respond_jsonrpc(
+                    server_id,
+                    Err(json!({"code": -32000, "message": error.to_string()})),
+                )?,
+            }
+        }
+        self.permission_options.remove(&persisted.request.id);
+        let phase = if self
+            .store
+            .snapshot(&self.conversation_id, None)?
+            .pending_requests
+            .is_empty()
+        {
+            RuntimePhase::Running
+        } else {
+            RuntimePhase::Waiting
+        };
+        self.store.set_state(
+            &self.conversation_id,
+            phase,
+            self.run_id.as_deref(),
+            self.thread_id.as_deref(),
+            self.turn_id.as_deref(),
+            self.chat_turn,
+            self.message_id.as_deref(),
+        )?;
+        Ok(())
     }
 }
 
@@ -3161,28 +3400,6 @@ fn optional_json_text(value: Option<&Value>) -> Option<String> {
     }
 }
 
-fn file_change_paths(value: &Value) -> Vec<String> {
-    if let Some(rows) = value.get("changes").and_then(Value::as_array) {
-        return rows
-            .iter()
-            .filter_map(|row| row.get("path").and_then(Value::as_str))
-            .map(str::to_string)
-            .collect();
-    }
-    if let Some(map) = value.get("fileChanges").and_then(Value::as_object) {
-        return map.keys().cloned().collect();
-    }
-    Vec::new()
-}
-
-fn join_file_change_paths(paths: &[String]) -> String {
-    paths
-        .iter()
-        .map(|path| redact_text(path))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 fn parse_acp_permission_options(params: &Value) -> Vec<RuntimePermissionOption> {
     params
         .get("options")
@@ -3209,6 +3426,17 @@ fn acp_permission_options(params: &Value) -> Option<Vec<RuntimePermissionOption>
     (!options.is_empty()).then_some(options)
 }
 
+/// ACP file tools stay file cards even when the payload only named a path.
+fn acp_tool_is_file_change(params: &Value) -> bool {
+    let kind = params
+        .pointer("/toolCall/kind")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    matches!(kind.as_str(), "edit" | "delete" | "move" | "write" | "create")
+}
+
 fn codex_session_permission_options() -> Vec<RuntimePermissionOption> {
     vec![
         RuntimePermissionOption {
@@ -3229,6 +3457,7 @@ fn codex_session_permission_options() -> Vec<RuntimePermissionOption> {
 fn codex_approval_decision(decision: &str) -> &'static str {
     match decision {
         "decline" => "decline",
+        "accept_always" => "acceptForSession",
         _ => "accept",
     }
 }
@@ -3288,28 +3517,42 @@ fn acp_auto_allow_response(options: &[RuntimePermissionOption]) -> Option<Value>
         .or_else(|| acp_permission_reply(options, "accept").ok())
 }
 
-fn transport_error(error: codex_transport::CodexTransportError) -> AppError {
-    AppError::message("chat.runtime.transport", redact_text(&error.to_string()))
+fn runtime_process_label(agent: AgentId) -> &'static str {
+    match agent {
+        AgentId::Grok => "Grok",
+        AgentId::Kiro => "Kiro",
+        AgentId::Claude => "Claude",
+        _ => "Codex",
+    }
 }
 
-fn map_transport(error: codex_transport::CodexTransportError) -> AppError {
+fn transport_error(agent: AgentId, error: codex_transport::CodexTransportError) -> AppError {
+    AppError::message(
+        "chat.runtime.transport",
+        redact_text(&transport_user_message(agent, &error)),
+    )
+}
+
+fn map_transport(agent: AgentId, error: codex_transport::CodexTransportError) -> AppError {
     if matches!(error, codex_transport::CodexTransportError::Interrupted) {
         cancelled_error()
     } else {
         AppError::message(
             "chat.runtime.transport",
-            redact_text(&transport_user_message(&error)),
+            redact_text(&transport_user_message(agent, &error)),
         )
     }
 }
 
-fn transport_user_message(error: &codex_transport::CodexTransportError) -> String {
+fn transport_user_message(agent: AgentId, error: &codex_transport::CodexTransportError) -> String {
     let text = error.to_string();
     if text.contains("stdout JSON line exceeds") {
-        "图片太大，请换一张更小的图".into()
-    } else {
-        text
+        return "图片太大，请换一张更小的图".into();
     }
+    if matches!(error, codex_transport::CodexTransportError::Exited) {
+        return format!("{} 已退出", runtime_process_label(agent));
+    }
+    text.replacen("codex app-server", runtime_process_label(agent), 1)
 }
 
 fn cancelled_error() -> AppError {

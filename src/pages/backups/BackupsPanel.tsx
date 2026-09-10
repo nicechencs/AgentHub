@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Database, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { Database, MoreHorizontal, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { AgentTabStrip } from '@/components/layout/AgentTabStrip';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { WorkbenchSplitPage } from '@/components/layout/SideSplit';
@@ -11,6 +11,14 @@ import { ErrorState } from '@/components/shared/ErrorState';
 import { LIST_ROW_PAD, ListRow, ListRowBody } from '@/components/shared/ListRow';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { EnterKeyMark } from '@/components/ui/shortcut-kbd';
+import { dialogEnterShouldConfirm } from '@/lib/dialog-enter';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Tip } from '@/components/ui/tooltip';
 import {
   Dialog,
@@ -39,6 +47,7 @@ import type { AgentKey, BackupKind, BackupMeta } from '@/lib/types';
 import { BackupDetailPanel } from './backup-detail-panel';
 import {
   backupCardIdentity,
+  backupDeleteSubject,
   backupFileLabels,
   fmtAbsoluteI18n,
   fmtRelativeI18n,
@@ -394,7 +403,7 @@ export function BackupsPanel({ toolbar }: { toolbar?: ReactNode }) {
                     </>
                   )}
                   actions={(
-                    <>
+                    <div className="flex items-center gap-3">
                       <Button
                         variant="outline"
                         size="sm"
@@ -407,19 +416,32 @@ export function BackupsPanel({ toolbar }: { toolbar?: ReactNode }) {
                         <RotateCcw className="h-3.5 w-3.5" />
                         {t('common.restore')}
                       </Button>
-                      <Button
-                        variant="dangerOutline"
-                        size="sm"
-                        disabled={busyId !== null || restoreTarget !== null || deleteTarget !== null}
-                        onClick={() => {
-                          setRestoreTarget(null);
-                          setDeleteTarget(bk);
-                        }}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        {t('common.delete')}
-                      </Button>
-                    </>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            disabled={busyId !== null || restoreTarget !== null || deleteTarget !== null}
+                            aria-label={t('settings.backups.moreActions')}
+                            title={t('settings.backups.moreActions')}
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            className="text-danger focus:text-danger"
+                            onSelect={() => {
+                              setRestoreTarget(null);
+                              setDeleteTarget(bk);
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            {t('common.delete')}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   )}
                 />
               </ListRow>
@@ -463,13 +485,26 @@ export function BackupsPanel({ toolbar }: { toolbar?: ReactNode }) {
         open={deleteTarget !== null}
         onOpenChange={(open) => !open && busyId === null && setDeleteTarget(null)}
       >
-        <DialogContent>
+        <DialogContent
+          onKeyDown={(event) => {
+            if (busyId !== null) return;
+            if (!dialogEnterShouldConfirm({
+              key: event.key,
+              shiftKey: event.shiftKey,
+              isComposing: event.nativeEvent.isComposing,
+              nativeEvent: event.nativeEvent,
+            })) return;
+            event.preventDefault();
+            void handleDelete();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>{t('settings.backups.deleteTitle')}</DialogTitle>
             <DialogDescription>
               {deleteTarget &&
                 t('settings.backups.deleteDesc', {
                   name: agentDisplayName(deleteTarget.agentId),
+                  title: backupDeleteSubject(deleteTarget, t),
                   when: fmtAbsoluteI18n(deleteTarget.createdAt, lang),
                   kind: backupKindLabel(deleteTarget.kind, t),
                 })}
@@ -482,8 +517,14 @@ export function BackupsPanel({ toolbar }: { toolbar?: ReactNode }) {
             <Button variant="secondary" disabled={busyId !== null} onClick={() => setDeleteTarget(null)}>
               {t('common.cancel')}
             </Button>
-            <Button variant="danger" disabled={busyId !== null} onClick={() => void handleDelete()}>
+            <Button
+              variant="danger"
+              disabled={busyId !== null}
+              aria-keyshortcuts="Enter"
+              onClick={() => void handleDelete()}
+            >
               {busyId !== null ? t('settings.backups.deleting') : t('settings.backups.confirmDelete')}
+              {busyId === null ? <EnterKeyMark onAccent /> : null}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -14,8 +14,8 @@ use crate::models::{AgentId, ChatEvent, ChatMessage, ChatMessageStatus, ChatRole
 use crate::storage::Database;
 
 use super::types::{
-    RuntimeEvent, RuntimePhase, RuntimePermissionOption, RuntimeRequest, RuntimeRequestKind,
-    RuntimeSnapshot, RuntimeTurnSettings,
+    RuntimeEvent, RuntimeFileChange, RuntimePhase, RuntimePermissionOption, RuntimeRequest,
+    RuntimeRequestKind, RuntimeSnapshot, RuntimeTurnSettings,
 };
 
 #[derive(Clone)]
@@ -493,7 +493,7 @@ impl RuntimeStore {
                     |row| row.get(0),
                 )?;
                 if current_title.trim().is_empty() {
-                    let title = truncate_conversation_title(&user.content, 30);
+                    let title = crate::models::conversation_title_from_prompt(&user.content);
                     conn.execute(
                         "UPDATE conversations SET title = ?2, updated_at = ?3 WHERE id = ?1",
                         params![conversation_id, title, now],
@@ -734,6 +734,7 @@ impl RuntimeStore {
     ) -> Result<()> {
         let questions = serde_json::to_string(&request.questions)?;
         let options = serde_json::to_string(&request.permission_options)?;
+        let file_changes = serde_json::to_string(&request.file_changes)?;
         let now = Utc::now().to_rfc3339();
         self.db.with_conn(|conn| {
             conn.execute_batch("BEGIN IMMEDIATE")?;
@@ -742,8 +743,9 @@ impl RuntimeStore {
                     r#"
                     INSERT INTO chat_runtime_requests
                         (conversation_id, request_id, run_id, kind, title, detail,
-                         questions_json, server_method, server_id, created_at, options_json)
-                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                         questions_json, server_method, server_id, created_at, options_json,
+                         file_changes_json)
+                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
                     ON CONFLICT(conversation_id, request_id) DO NOTHING
                     "#,
                     params![
@@ -758,6 +760,7 @@ impl RuntimeStore {
                         server_id,
                         now,
                         options,
+                        file_changes,
                     ],
                 )?;
                 conn.execute(
@@ -779,7 +782,7 @@ impl RuntimeStore {
             conn.query_row(
                 r#"
                 SELECT request_id, run_id, kind, title, detail, questions_json, options_json,
-                       server_method, server_id
+                       file_changes_json, server_method, server_id
                 FROM chat_runtime_requests
                 WHERE conversation_id = ?1 AND request_id = ?2
                 "#,
@@ -787,8 +790,8 @@ impl RuntimeStore {
                 |row| {
                     Ok(PersistedRequest {
                         request: decode_request_row(row)?,
-                        server_method: row.get(7)?,
-                        server_id: row.get(8)?,
+                        server_method: row.get(8)?,
+                        server_id: row.get(9)?,
                     })
                 },
             )
@@ -805,7 +808,7 @@ impl RuntimeStore {
             let mut stmt = conn.prepare(
                 r#"
                 SELECT request_id, run_id, kind, title, detail, questions_json, options_json,
-                       server_method, server_id
+                       file_changes_json, server_method, server_id
                 FROM chat_runtime_requests
                 WHERE conversation_id = ?1
                 ORDER BY created_at ASC, request_id ASC
@@ -814,8 +817,8 @@ impl RuntimeStore {
             let rows = stmt.query_map(params![conversation_id], |row| {
                 Ok(PersistedRequest {
                     request: decode_request_row(row)?,
-                    server_method: row.get(7)?,
-                    server_id: row.get(8)?,
+                    server_method: row.get(8)?,
+                    server_id: row.get(9)?,
                 })
             })?;
             let mut out = Vec::new();
@@ -854,7 +857,8 @@ impl RuntimeStore {
     ) -> Result<Vec<RuntimeRequest>> {
         let mut stmt = conn.prepare(
             r#"
-                SELECT request_id, run_id, kind, title, detail, questions_json, options_json
+                SELECT request_id, run_id, kind, title, detail, questions_json, options_json,
+                       file_changes_json
                 FROM chat_runtime_requests
                 WHERE conversation_id = ?1
                 ORDER BY created_at ASC, request_id ASC
@@ -1251,15 +1255,6 @@ fn insert_event_conn(
     Ok(sequence)
 }
 
-fn truncate_conversation_title(input: &str, max: usize) -> String {
-    let trimmed = input.trim();
-    let mut out: String = trimmed.chars().take(max).collect();
-    if trimmed.chars().count() > max {
-        out.push('…');
-    }
-    out
-}
-
 fn finish_transaction<T>(conn: &rusqlite::Connection, result: Result<T>) -> Result<T> {
     match result {
         Ok(value) => match conn.execute_batch("COMMIT") {
@@ -1339,6 +1334,15 @@ fn decode_request_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RuntimeReques
                 Box::new(error),
             )
         })?;
+    let file_changes_json: String = row.get(7)?;
+    let file_changes: Vec<RuntimeFileChange> = serde_json::from_str(&file_changes_json)
+        .map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                7,
+                rusqlite::types::Type::Text,
+                Box::new(error),
+            )
+        })?;
     Ok(RuntimeRequest {
         id: row.get(0)?,
         run_id: row.get(1)?,
@@ -1347,5 +1351,6 @@ fn decode_request_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RuntimeReques
         detail: row.get(4)?,
         questions,
         permission_options,
+        file_changes,
     })
 }

@@ -12,17 +12,22 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 fn conversation(db: &Database, id: &str) {
+    conversation_with(db, id, AgentId::Codex, &std::env::temp_dir());
+}
+
+fn conversation_with(db: &Database, id: &str, agent: AgentId, cwd: &std::path::Path) {
     ChatRepo::new(db.clone())
         .create_conversation(&Conversation {
             id: id.into(),
             title: String::new(),
-            agent_ids: vec![AgentId::Codex],
-            cwd: Some(std::env::temp_dir().to_string_lossy().into_owned()),
+            agent_ids: vec![agent],
+            cwd: Some(cwd.to_string_lossy().into_owned()),
             allow_dangerous: false,
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:00Z".into(),
             native_session_id: None,
             sending: false,
+            first_user_content: None,
         })
         .unwrap();
 }
@@ -54,6 +59,7 @@ fn worker(db: &Database, id: &str) -> ActorWorker {
         session_effort: None,
         session_trust_all: None,
         session_allow_always: false,
+        pending_fs_writes: HashMap::new(),
     }
 }
 
@@ -140,6 +146,7 @@ fn non_retryable_notification_error_terminalizes_message_and_controls() {
                 detail: "safe".into(),
                 questions: Vec::new(),
                 permission_options: Vec::new(),
+                file_changes: Vec::new(),
             },
             "item/commandExecution/requestApproval",
             "1",
@@ -327,6 +334,9 @@ while IFS= read -r line; do
       printf '%s\n' '{"id":2,"result":{}}'
       printf '%s\n' '{"method":"turn/completed","params":{"status":"interrupted"}}'
       ;;
+    *'"decision":"acceptForSession"'*)
+      printf '%s\n' acceptForSession >> "$log"
+      ;;
     *'"decision":"accept"'*)
       printf '%s\n' accept >> "$log"
       ;;
@@ -367,6 +377,7 @@ fn stop_wins_over_late_allow_and_reply_before_stop_is_sent() {
         detail: "safe".into(),
         questions: Vec::new(),
         permission_options: Vec::new(),
+        file_changes: Vec::new(),
     };
     let (_directory, transport, log) = fake_transport();
     first_worker.transport = Some(transport);
@@ -533,6 +544,7 @@ fn empty_approval_answers_are_treated_as_absent() {
                 detail: "safe".into(),
                 questions: Vec::new(),
                 permission_options: Vec::new(),
+                file_changes: Vec::new(),
             },
             "session/request_permission",
             "server-1",
@@ -628,6 +640,7 @@ fn file_and_question_server_requests_become_pending_runtime_requests() {
     assert_eq!(snapshot.pending_requests[0].kind, RuntimeRequestKind::File);
     assert_eq!(snapshot.pending_requests[0].title, "修改文件");
     assert_eq!(snapshot.pending_requests[0].detail, "edit readme");
+    assert!(snapshot.pending_requests[0].file_changes.is_empty());
     assert_eq!(
         snapshot.pending_requests[0].permission_options,
         vec![
@@ -702,6 +715,21 @@ fn file_change_request_uses_item_started_paths_when_reason_is_empty() {
         snapshot.pending_requests[0].detail,
         "/workspace/qa-codex-filechange-scratch/probe.txt"
     );
+    assert_eq!(snapshot.pending_requests[0].file_changes.len(), 1);
+    assert_eq!(
+        snapshot.pending_requests[0].file_changes[0].path,
+        "/workspace/qa-codex-filechange-scratch/probe.txt"
+    );
+    assert_eq!(
+        snapshot.pending_requests[0].file_changes[0].kind.as_deref(),
+        Some("add")
+    );
+    assert_eq!(
+        snapshot.pending_requests[0].file_changes[0]
+            .preview
+            .as_deref(),
+        Some("FILECHANGE_OK\n")
+    );
     assert!(snapshot.events.iter().any(|event| matches!(
         &event.event,
         ChatEvent::AgentProcess {
@@ -735,6 +763,151 @@ fn apply_patch_approval_alias_becomes_file_request() {
     let snapshot = worker.store.snapshot("legacy-patch", None).unwrap();
     assert_eq!(snapshot.pending_requests[0].kind, RuntimeRequestKind::File);
     assert_eq!(snapshot.pending_requests[0].detail, "/tmp/example.txt");
+    assert_eq!(snapshot.pending_requests[0].file_changes.len(), 1);
+    assert_eq!(
+        snapshot.pending_requests[0].file_changes[0]
+            .preview
+            .as_deref(),
+        Some("ok")
+    );
+}
+
+#[test]
+fn file_change_path_only_payload_keeps_empty_preview() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "file-empty");
+    let mut worker = worker(&db, "file-empty");
+    worker.store.enable_if_new("file-empty").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .notification(
+            "item/started",
+            &json!({
+                "item": {
+                    "type": "fileChange",
+                    "id": "exec-empty",
+                    "status": "inProgress",
+                    "changes": [{
+                        "path": "/workspace/notes.md",
+                        "kind": { "type": "update" }
+                    }]
+                }
+            }),
+        )
+        .unwrap();
+    worker
+        .server_request(
+            json!("file-empty"),
+            "item/fileChange/requestApproval",
+            &json!({
+                "turnId": "run-1",
+                "itemId": "exec-empty",
+                "reason": null,
+                "grantRoot": null
+            }),
+        )
+        .unwrap();
+
+    let snapshot = worker.store.snapshot("file-empty", None).unwrap();
+    assert_eq!(snapshot.pending_requests[0].detail, "/workspace/notes.md");
+    assert_eq!(snapshot.pending_requests[0].file_changes.len(), 1);
+    assert_eq!(snapshot.pending_requests[0].file_changes[0].preview, None);
+}
+
+#[test]
+fn acp_permission_with_file_operation_keeps_protocol_diff() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "acp-file");
+    let mut worker = worker(&db, "acp-file");
+    worker.agent = AgentId::Grok;
+    worker.store.enable_if_new("acp-file").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .server_request(
+            json!("perm-file"),
+            "session/request_permission",
+            &json!({
+                "turnId": "run-1",
+                "toolCall": {
+                    "title": "edit",
+                    "kind": "edit",
+                    "rawInput": {
+                        "operation": {
+                            "type": "update_file",
+                            "path": "README.md",
+                            "diff": "@@ -1,2 +1,3 @@\n hello\n+world\n"
+                        }
+                    }
+                },
+                "options": [
+                    {"optionId": "once", "kind": "allow_once"},
+                    {"optionId": "reject", "kind": "reject_once"}
+                ]
+            }),
+        )
+        .unwrap();
+
+    let snapshot = worker.store.snapshot("acp-file", None).unwrap();
+    assert_eq!(snapshot.pending_requests[0].kind, RuntimeRequestKind::File);
+    assert_eq!(snapshot.pending_requests[0].title, "修改文件");
+    assert_eq!(snapshot.pending_requests[0].file_changes.len(), 1);
+    assert_eq!(
+        snapshot.pending_requests[0].file_changes[0].path,
+        "README.md"
+    );
+    assert_eq!(
+        snapshot.pending_requests[0].file_changes[0]
+            .preview
+            .as_deref(),
+        Some("@@ -1,2 +1,3 @@\n hello\n+world\n")
+    );
+}
+
+#[test]
+fn acp_permission_locations_path_only_stays_file_request() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "acp-path-only");
+    let mut worker = worker(&db, "acp-path-only");
+    worker.agent = AgentId::Claude;
+    worker.store.enable_if_new("acp-path-only").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .server_request(
+            json!("perm-path"),
+            "session/request_permission",
+            &json!({
+                "turnId": "run-1",
+                "toolCall": {
+                    "title": "Edit notes.md",
+                    "kind": "edit",
+                    "locations": [{ "path": "/workspace/notes.md" }]
+                },
+                "options": [
+                    {"optionId": "once", "kind": "allow_once"},
+                    {"optionId": "always", "kind": "allow_always"},
+                    {"optionId": "reject", "kind": "reject_once"}
+                ]
+            }),
+        )
+        .unwrap();
+
+    let snapshot = worker.store.snapshot("acp-path-only", None).unwrap();
+    assert_eq!(snapshot.pending_requests[0].kind, RuntimeRequestKind::File);
+    assert_eq!(snapshot.pending_requests[0].title, "修改文件");
+    assert_eq!(snapshot.pending_requests[0].detail, "/workspace/notes.md");
+    assert_eq!(snapshot.pending_requests[0].file_changes.len(), 1);
+    assert_eq!(
+        snapshot.pending_requests[0].file_changes[0].path,
+        "/workspace/notes.md"
+    );
+    assert_eq!(
+        snapshot.pending_requests[0].file_changes[0].kind.as_deref(),
+        Some("update")
+    );
+    assert_eq!(snapshot.pending_requests[0].file_changes[0].preview, None);
 }
 
 #[test]
@@ -943,7 +1116,97 @@ fn codex_allow_always_accepts_and_auto_approves_later_command() {
         .is_empty());
     std::thread::sleep(Duration::from_millis(80));
     let wire = std::fs::read_to_string(log).unwrap();
-    assert!(wire.lines().any(|line| line == "accept"));
+    assert!(
+        wire.lines().any(|line| line == "acceptForSession"),
+        "Codex remember must send acceptForSession: {wire}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn codex_allow_always_survives_turn_and_later_file_path() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "codex-file-always");
+    let mut worker = worker(&db, "codex-file-always");
+    worker.store.enable_if_new("codex-file-always").unwrap();
+    start_placeholder(&mut worker);
+    let (_directory, transport, log) = fake_transport();
+    worker.transport = Some(transport);
+    worker
+        .server_request(
+            json!("file-1"),
+            "item/fileChange/requestApproval",
+            &json!({
+                "turnId": "run-1",
+                "changes": [{"path": "/tmp/agenthub-always-allow-codex-347.txt"}]
+            }),
+        )
+        .unwrap();
+    let first = worker.store.snapshot("codex-file-always", None).unwrap();
+    assert_eq!(first.pending_requests[0].kind, RuntimeRequestKind::File);
+    worker
+        .reply(RuntimeReply {
+            conversation_id: "codex-file-always".into(),
+            run_id: "run-1".into(),
+            request_id: first.pending_requests[0].id.clone(),
+            client_request_id: "always-file-1".into(),
+            decision: Some(RuntimeDecision::AllowAlways),
+            answers: None,
+        })
+        .unwrap();
+    assert!(worker.session_allow_always);
+    worker
+        .turn_completed(&json!({"status": "completed"}))
+        .unwrap();
+    assert!(
+        worker.session_allow_always,
+        "Codex remember must survive a completed turn"
+    );
+    let (_directory2, transport2, log2) = fake_transport();
+    worker.transport = Some(transport2);
+    worker
+        .store
+        .set_state(
+            "codex-file-always",
+            RuntimePhase::Running,
+            Some("run-2"),
+            worker.thread_id.as_deref(),
+            Some("turn-2"),
+            worker.chat_turn,
+            worker.message_id.as_deref(),
+        )
+        .unwrap();
+    worker.run_id = Some("run-2".into());
+    worker
+        .server_request(
+            json!("file-2"),
+            "item/fileChange/requestApproval",
+            &json!({
+                "turnId": "run-2",
+                "changes": [{"path": "/tmp/agenthub-always-allow-codex-347-b.txt"}]
+            }),
+        )
+        .unwrap();
+    assert!(
+        worker
+            .store
+            .snapshot("codex-file-always", None)
+            .unwrap()
+            .pending_requests
+            .is_empty(),
+        "later out-of-cwd write must stay auto-approved"
+    );
+    std::thread::sleep(Duration::from_millis(80));
+    let first_wire = std::fs::read_to_string(log).unwrap();
+    let later_wire = std::fs::read_to_string(log2).unwrap();
+    assert!(
+        first_wire.lines().any(|line| line == "acceptForSession"),
+        "first remember must send acceptForSession: {first_wire}"
+    );
+    assert!(
+        later_wire.lines().any(|line| line == "acceptForSession"),
+        "later auto-allow must send acceptForSession: {later_wire}"
+    );
 }
 
 #[cfg(unix)]
@@ -1034,7 +1297,10 @@ fn acp_allow_always_forwards_option_and_auto_approves_later_in_live_process() {
             "{agent:?} remember must survive a completed ACP turn"
         );
         assert!(
-            worker.transport.as_ref().is_some_and(CodexTransport::is_open),
+            worker
+                .transport
+                .as_ref()
+                .is_some_and(CodexTransport::is_open),
             "{agent:?}"
         );
 
@@ -1770,6 +2036,7 @@ fn stop_while_waiting_for_approval_logs_stop_ok() {
                 detail: "safe".into(),
                 questions: Vec::new(),
                 permission_options: Vec::new(),
+                file_changes: Vec::new(),
             },
             "item/commandExecution/requestApproval",
             "server-wait",
@@ -1798,7 +2065,6 @@ fn stop_while_waiting_for_approval_logs_stop_ok() {
     );
 }
 
-
 #[test]
 fn claude_stream_result_completes_turn_and_keeps_session() {
     let db = Database::open_in_memory().unwrap();
@@ -1813,6 +2079,7 @@ fn claude_stream_result_completes_turn_and_keeps_session() {
             updated_at: "2026-01-01T00:00:00Z".into(),
             native_session_id: None,
             sending: false,
+            first_user_content: None,
         })
         .unwrap();
     let mut worker = worker(&db, "claude-stream");
@@ -1861,5 +2128,160 @@ fn claude_stream_result_completes_turn_and_keeps_session() {
     assert_eq!(snapshot.phase, RuntimePhase::Completed);
     let message = snapshot.current_message.unwrap();
     assert_eq!(message.status, ChatMessageStatus::Ok);
-    assert!(message.content.contains("PONG"), "content={}", message.content);
+    assert!(
+        message.content.contains("PONG"),
+        "content={}",
+        message.content
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn grok_fs_write_outside_cwd_emits_card_then_writes_on_allow() {
+    let project = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let write_path = outside.path().join("agenthub-always-allow-grok-347.txt");
+    let db = Database::open_in_memory().unwrap();
+    conversation_with(&db, "grok-fs-out", AgentId::Grok, project.path());
+    let mut worker = worker(&db, "grok-fs-out");
+    worker.agent = AgentId::Grok;
+    worker.store.enable_if_new("grok-fs-out").unwrap();
+    start_placeholder(&mut worker);
+    let (_directory, transport, _log) = fake_transport();
+    worker.transport = Some(transport);
+
+    worker
+        .server_request(
+            json!("fs-1"),
+            "fs/write_text_file",
+            &json!({
+                "sessionId": "thread-1",
+                "path": write_path.to_string_lossy(),
+                "content": "first-write"
+            }),
+        )
+        .unwrap();
+    assert!(
+        !write_path.exists(),
+        "out-of-cwd write must wait for the card"
+    );
+    let first = worker.store.snapshot("grok-fs-out", None).unwrap();
+    assert_eq!(first.pending_requests.len(), 1);
+    assert_eq!(first.pending_requests[0].kind, RuntimeRequestKind::File);
+    assert_eq!(first.pending_requests[0].title, "修改文件");
+    assert!(first.pending_requests[0]
+        .permission_options
+        .iter()
+        .any(|option| option.kind == "allow_always"));
+
+    worker
+        .reply(RuntimeReply {
+            conversation_id: "grok-fs-out".into(),
+            run_id: "run-1".into(),
+            request_id: first.pending_requests[0].id.clone(),
+            client_request_id: "allow-fs-1".into(),
+            decision: Some(RuntimeDecision::AllowAlways),
+            answers: None,
+        })
+        .unwrap();
+    assert_eq!(std::fs::read_to_string(&write_path).unwrap(), "first-write");
+    assert!(worker.session_allow_always);
+
+    let later = outside.path().join("agenthub-always-allow-grok-347-b.txt");
+    worker
+        .server_request(
+            json!("fs-2"),
+            "fs/write_text_file",
+            &json!({
+                "sessionId": "thread-1",
+                "path": later.to_string_lossy(),
+                "content": "second-write"
+            }),
+        )
+        .unwrap();
+    assert!(
+        worker
+            .store
+            .snapshot("grok-fs-out", None)
+            .unwrap()
+            .pending_requests
+            .is_empty(),
+        "later out-of-cwd write must stay auto-approved"
+    );
+    assert_eq!(std::fs::read_to_string(&later).unwrap(), "second-write");
+}
+
+#[cfg(unix)]
+#[test]
+fn grok_fs_write_inside_cwd_writes_without_card() {
+    let project = tempfile::tempdir().unwrap();
+    let write_path = project.path().join("inside.txt");
+    let db = Database::open_in_memory().unwrap();
+    conversation_with(&db, "grok-fs-in", AgentId::Grok, project.path());
+    let mut worker = worker(&db, "grok-fs-in");
+    worker.agent = AgentId::Grok;
+    worker.store.enable_if_new("grok-fs-in").unwrap();
+    start_placeholder(&mut worker);
+    let (_directory, transport, _log) = fake_transport();
+    worker.transport = Some(transport);
+
+    worker
+        .server_request(
+            json!("fs-in"),
+            "fs/write_text_file",
+            &json!({
+                "sessionId": "thread-1",
+                "path": write_path.to_string_lossy(),
+                "content": "cwd-ok"
+            }),
+        )
+        .unwrap();
+    assert!(worker
+        .store
+        .snapshot("grok-fs-in", None)
+        .unwrap()
+        .pending_requests
+        .is_empty());
+    assert_eq!(std::fs::read_to_string(&write_path).unwrap(), "cwd-ok");
+}
+
+#[cfg(unix)]
+#[test]
+fn grok_fs_write_deny_does_not_create_file() {
+    let project = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let write_path = outside.path().join("denied.txt");
+    let db = Database::open_in_memory().unwrap();
+    conversation_with(&db, "grok-fs-deny", AgentId::Grok, project.path());
+    let mut worker = worker(&db, "grok-fs-deny");
+    worker.agent = AgentId::Grok;
+    worker.store.enable_if_new("grok-fs-deny").unwrap();
+    start_placeholder(&mut worker);
+    let (_directory, transport, _log) = fake_transport();
+    worker.transport = Some(transport);
+
+    worker
+        .server_request(
+            json!("fs-deny"),
+            "fs/write_text_file",
+            &json!({
+                "sessionId": "thread-1",
+                "path": write_path.to_string_lossy(),
+                "content": "nope"
+            }),
+        )
+        .unwrap();
+    let first = worker.store.snapshot("grok-fs-deny", None).unwrap();
+    worker
+        .reply(RuntimeReply {
+            conversation_id: "grok-fs-deny".into(),
+            run_id: "run-1".into(),
+            request_id: first.pending_requests[0].id.clone(),
+            client_request_id: "deny-fs-1".into(),
+            decision: Some(RuntimeDecision::Deny),
+            answers: None,
+        })
+        .unwrap();
+    assert!(!write_path.exists());
+    assert!(!worker.session_allow_always);
 }

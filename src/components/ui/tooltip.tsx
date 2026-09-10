@@ -13,7 +13,7 @@ export const TOOLTIP_SURFACE_CLASS = [
   'max-w-[var(--tooltip-max-width)]',
   'max-h-[min(var(--tooltip-max-height),calc(100vh-16px))]',
   'overflow-x-hidden overflow-y-auto',
-  'break-words [overflow-wrap:anywhere]',
+  'whitespace-normal break-words [overflow-wrap:anywhere] [word-break:break-word] [text-overflow:clip]',
   'rounded-card border border-border bg-panel shadow-sm',
   'px-[var(--tooltip-pad-x)] py-[var(--tooltip-pad-y)]',
   'text-left font-sans text-meta font-normal leading-[var(--font-meta-leading)] text-primary',
@@ -81,8 +81,34 @@ function TooltipBody({
   contentClassName?: string;
   children: React.ReactNode;
 }) {
-  if (!contentClassName) return children;
-  return <div className={cn('min-w-0', contentClassName)}>{children}</div>;
+  return (
+    <div
+      className={cn(
+        'w-full max-w-full whitespace-normal break-words [overflow-wrap:anywhere] [word-break:break-word] [text-overflow:clip]',
+        contentClassName,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** Truncated visible cell; hover label is the complete original string. */
+export function TruncateTip({
+  text,
+  className,
+  children,
+}: {
+  text?: string | null;
+  className?: string;
+  children?: React.ReactNode;
+}) {
+  const label = text?.trim() ? text : undefined;
+  return (
+    <Tip className={cn('block min-w-0 max-w-full truncate', className)} label={label}>
+      {children ?? text}
+    </Tip>
+  );
 }
 
 /**

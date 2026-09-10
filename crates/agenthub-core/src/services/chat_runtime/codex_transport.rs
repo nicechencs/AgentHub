@@ -27,7 +27,8 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(8);
 /// Hard cap for one JSON-RPC line. ACP image blocks embed base64, and the
 /// product allows 10MB files (~13.3MB encoded) plus wrapping. Keep a bound so
 /// a runaway process cannot grow without limit. Do not send path-only image
-/// blocks: ACP requires `data`, and this client advertises no fs read.
+/// blocks: ACP requires `data`. Grok initialize advertises client fs so the
+/// CLI can delegate reads/writes; prompt images still embed `data`.
 pub(crate) const MAX_STDOUT_LINE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_STDERR_BYTES: usize = 64 * 1024;
 const WIRE_CHANNEL_CAPACITY: usize = 128;
@@ -171,7 +172,7 @@ impl CodexTransport {
         model: Option<&str>,
         effort: Option<&str>,
     ) -> Result<Self, CodexTransportError> {
-        Self::spawn_grok_with(program, cwd, model, effort, None)
+        Self::spawn_grok_with(program, cwd, model, effort, false, None)
     }
 
     pub(crate) fn spawn_grok_interruptible(
@@ -179,9 +180,10 @@ impl CodexTransport {
         cwd: &Path,
         model: Option<&str>,
         effort: Option<&str>,
+        always_approve: bool,
         abort: Arc<AtomicBool>,
     ) -> Result<Self, CodexTransportError> {
-        Self::spawn_grok_with(program, cwd, model, effort, Some(abort))
+        Self::spawn_grok_with(program, cwd, model, effort, always_approve, Some(abort))
     }
 
     #[cfg(all(test, unix))]
@@ -211,33 +213,18 @@ impl CodexTransport {
         cwd: &Path,
         model: Option<&str>,
         effort: Option<&str>,
+        always_approve: bool,
         abort: Option<Arc<AtomicBool>>,
     ) -> Result<Self, CodexTransportError> {
-        let mut args = vec!["agent".to_string(), "--no-leader".to_string()];
-        if let Some(model) = model.map(str::trim).filter(|s| !s.is_empty()) {
-            args.push("-m".into());
-            args.push(model.to_string());
-        }
-        if let Some(effort) = effort.map(str::trim).filter(|s| !s.is_empty()) {
-            args.push("--reasoning-effort".into());
-            args.push(effort.to_string());
-        }
-        args.push("stdio".into());
+        let args = super::ops::grok_acp_stdio_args(model, effort, always_approve);
+        // Official Grok ACP does not send `initialized`. That notification is
+        // `-32601` on some builds and can exit the process before any card.
         Self::spawn_with(
             program,
             &args,
             cwd,
-            Some(json!({
-                "protocolVersion": 1,
-                "clientInfo": {
-                    "name": "agenthub-chat",
-                    "version": env!("CARGO_PKG_VERSION"),
-                },
-                "capabilities": {
-                    "fs": { "readTextFile": false, "writeTextFile": false }
-                }
-            })),
-            true,
+            Some(super::ops::grok_initialize_params()),
+            false,
             abort,
             false,
         )
@@ -315,9 +302,7 @@ impl CodexTransport {
             args.push("--resume".into());
             args.push(session_id.to_string());
         }
-        Self::spawn_with(program, &args, cwd, None, false, Some(abort),
-            true,
-        )
+        Self::spawn_with(program, &args, cwd, None, false, Some(abort), true)
     }
 
     fn spawn_with(
@@ -771,14 +756,16 @@ impl CodexTransport {
             let wait = remaining.min(CHILD_POLL_INTERVAL);
             match self.wire_rx.recv_timeout(wait) {
                 Ok(event) => match event {
-                    WireEvent::Message(value) => match classify_message(value, self.claude_stream) {
-                        Ok(Some(message)) => return Ok(Some(message)),
-                        Ok(None) => continue,
-                        Err(error) => {
-                            self.shutdown();
-                            return Err(error);
+                    WireEvent::Message(value) => {
+                        match classify_message(value, self.claude_stream) {
+                            Ok(Some(message)) => return Ok(Some(message)),
+                            Ok(None) => continue,
+                            Err(error) => {
+                                self.shutdown();
+                                return Err(error);
+                            }
                         }
-                    },
+                    }
                     WireEvent::Eof => return Ok(Some(WireMessage::Eof)),
                     WireEvent::Error(error) => {
                         self.shutdown();
@@ -799,14 +786,16 @@ impl CodexTransport {
         loop {
             match self.wire_rx.try_recv() {
                 Ok(event) => match event {
-                    WireEvent::Message(value) => match classify_message(value, self.claude_stream) {
-                        Ok(Some(message)) => return Ok(Some(message)),
-                        Ok(None) => continue,
-                        Err(error) => {
-                            self.shutdown();
-                            return Err(error);
+                    WireEvent::Message(value) => {
+                        match classify_message(value, self.claude_stream) {
+                            Ok(Some(message)) => return Ok(Some(message)),
+                            Ok(None) => continue,
+                            Err(error) => {
+                                self.shutdown();
+                                return Err(error);
+                            }
                         }
-                    },
+                    }
                     WireEvent::Eof => return Ok(Some(WireMessage::Eof)),
                     WireEvent::Error(error) => {
                         self.shutdown();
