@@ -332,7 +332,7 @@ Sub2API is a separate site-management workbench, not a Routes subpage or a repla
 
 Chat is a one-conversation, one-Agent workbench with a session rail, transcript, process panel, and composer. The quality bar versus Claude Code, Cursor Chat, and the Codex app is [Chat 体验标杆](chat-experience-bar.md).
 
-- The rail supports new conversation, search by title and working directory, day grouping, selection, rename, and delete confirmation. The rail width is dragged from the separator and remembered (`agenthub:chat-rail-width`).
+- The rail supports new conversation, search by title and working directory, day grouping, selection, rename, and delete confirmation. List rows show the title only; working directory, draft, and time stay in the hover tip. The rail width is dragged from the separator and remembered (`agenthub:chat-rail-width`).
 - The current conversation header exposes Agent identity, working directory, automatic-approval state, and connection context. A missing working directory is a blocker, not an automatic modal.
 - A conversation has one active Agent. Hidden or unauthorized Agents remain visible with a reason but cannot be selected for a new send.
 - The composer validates blockers in order: hidden Agent, environment not ready, missing authorization, unknown status, then missing working directory. It renders only the first blocker with a recovery action. Sending is isolated per conversation; several conversations may generate at once.
@@ -345,7 +345,7 @@ Chat is a one-conversation, one-Agent workbench with a session rail, transcript,
 
 ### Features (Chat)
 
-- Session rail: new conversation, search by title/cwd, day grouping, rename, delete confirmation; drag-resize remembered in `agenthub:chat-rail-width`.
+- Session rail: new conversation, search by title/cwd, day grouping, rename, delete confirmation; list rows are title-only (cwd / draft / time on hover); drag-resize remembered in `agenthub:chat-rail-width`.
 - Header: Agent identity, working directory, automatic-approval state, connection context.
 - Empty transcript: invite headline only; example chips fill the draft only (draft-only note on chip hover). Composer placeholder is generic (`发消息…`); Grok / Kiro / Claude queue-only limits and Enter / Shift+Enter use hover titles on an empty session. First-use toolbar keeps needed controls and quiets image/skill labels to icons; connection label truncates with a full-name hover. Composer blocker order: hidden Agent → environment not ready → missing authorization → unknown status → missing working directory; send is the composer accent action; rail **新建对话** uses the same theme fill. Enter sends, Shift+Enter makes a new line. While generating, one bottom-right control: Send injects or queues when the draft has text and that channel exists; empty draft shows icon Stop in the same slot; Esc still stops (dialogs/menus first). Queued lines show a count; Stop stays 正在停止 and disabled until the turn ends (re-enables if the cancel request misses); the 已停止 banner hides a raw `cancelled` status word; focus stays in the composer after send. Retry creates a new turn. Several conversations may generate at once. A compact shortcuts control opens the same overview on hover or click; `?` still opens the shortcuts dialog. Delete-confirm dialogs (session rail, backups) keep Enter-to-confirm and show a return-key icon, not the word Enter.
 - Approval cards: Allow / Deny; Always allow when the request includes that option. Codex / Grok / Kiro in-process remember (not saved). File-change cards show the path.
