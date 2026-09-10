@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { openApp, openChatComposer, setWorkingDirectory } from './helpers';
+import { goNav, openApp, openChatComposer, setWorkingDirectory } from './helpers';
 
 test('empty chat starter card fills the composer without sending', async ({ page }) => {
   await openApp(page);
@@ -268,7 +268,8 @@ test('history list is a single title line; cwd stays in hover and search', async
   await expect(title).toBeVisible();
   await expect(title).toContainText('检查登录超时');
   await expect(session).not.toContainText('VPS-Hub');
-  await expect(session.locator('.text-meta')).toHaveCount(0);
+  await expect(session).toHaveText(/检查登录超时/);
+  await expect(session).not.toHaveText(/检查登录超时[\s\S]*VPS-Hub/);
   await page.screenshot({
     path: '/opt/cursor/artifacts/chat_history_single_line.png',
   });
@@ -287,6 +288,17 @@ test('history list is a single title line; cwd stays in hover and search', async
   await expect(page.locator('[data-help="chat-session-title"]')).toContainText('检查登录超时');
   await page.screenshot({
     path: '/opt/cursor/artifacts/chat_history_search_cwd.png',
+  });
+
+  await goNav(page, '设置');
+  await expect(page.getByRole('tab', { name: '偏好' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: '功能' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: '本机' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: '备份' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: '关于' })).toBeVisible();
+  await expect(page.getByRole('tab')).toHaveCount(5);
+  await page.screenshot({
+    path: '/opt/cursor/artifacts/settings_five_tabs.png',
   });
 });
 
