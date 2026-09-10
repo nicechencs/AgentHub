@@ -27,6 +27,11 @@ describe('tooltip surface contract', () => {
     expect(TOOLTIP_SURFACE_CLASS).toContain('w-max');
     expect(TOOLTIP_SURFACE_CLASS).toContain('break-words');
     expect(TOOLTIP_SURFACE_CLASS).toContain('[overflow-wrap:anywhere]');
+    expect(TOOLTIP_SURFACE_CLASS).toContain('whitespace-normal');
+    expect(TOOLTIP_SURFACE_CLASS).toContain('[text-overflow:clip]');
+    expect(TOOLTIP_SURFACE_CLASS).not.toContain('truncate');
+    expect(TOOLTIP_SURFACE_CLASS).not.toContain('text-ellipsis');
+    expect(TOOLTIP_SURFACE_CLASS).not.toContain('whitespace-nowrap');
     expect(TOOLTIP_SURFACE_CLASS).toContain('rounded-card');
     expect(TOOLTIP_SURFACE_CLASS).toContain('bg-panel');
     expect(TOOLTIP_SURFACE_CLASS).toContain('border-border');
@@ -53,7 +58,9 @@ describe('tooltip surface contract', () => {
   it('Hint contentClassName cannot override bubble chrome; delay uses TOOLTIP', () => {
     const src = readFileSync(path.join(here, 'tooltip.tsx'), 'utf8');
     expect(src).toContain('TooltipBody contentClassName={contentClassName}');
-    expect(src).not.toContain('className={contentClassName}');
+    expect(src).toContain('[text-overflow:clip]');
+    expect(src).toContain('export function TruncateTip');
+    expect(src).not.toContain("className={cn('min-w-0', contentClassName)}");
     expect(src).toContain('cn(className, TOOLTIP_SURFACE_CLASS)');
     expect(src).toContain('disableHoverableContent');
     expect(readFileSync(path.join(srcRoot, 'main.tsx'), 'utf8')).toContain(
