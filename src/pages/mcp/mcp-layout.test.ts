@@ -43,6 +43,8 @@ describe('mcp layout wiring', () => {
     expect(page).not.toContain('onInstall');
     expect(page).not.toContain('mcp.install');
     const table = source('McpServerTable.tsx');
+    expect(table).toContain('TruncateTip');
+    expect(page).toContain('TruncateTip');
     expect(table).toContain('<OpenDirButton');
     expect(table).toContain('labeled');
     expect(table).toContain('<CopyableFileName');

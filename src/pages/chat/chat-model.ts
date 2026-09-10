@@ -910,27 +910,68 @@ export function turnComparisonChips(agents: ChatMessage[]): Array<{
 const PATH_TOKEN = /(?:[A-Za-z]:)?(?:[\\/][^\s\\/`'"]+)+/g;
 const WEAK_LEAD = /^(?:请(?:帮我)?在|请|in|at)\s+/i;
 const WEAK_ONLY = /^(?:请(?:帮我)?在|请|in|at|only)$/i;
-const TITLE_CLIP = 24;
+/** List-row display clip only. Never persist a title built with this. */
+export const TITLE_DISPLAY_CLIP = 24;
 
-/** Drop filesystem paths so a prompt like "请在 /tmp/foo 检查问题" keeps 检查问题. */
-export function conversationSemanticTitle(raw: string): string {
+/** Path-stripped phrase. No length clip and no ellipsis glyph. */
+export function conversationSemanticPhrase(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return '';
   let next = trimmed.replace(/`[^`]+`/g, ' ').replace(PATH_TOKEN, ' ');
   next = next.replace(/\s+/g, ' ').trim().replace(WEAK_LEAD, '').trim();
   if (!next || WEAK_ONLY.test(next)) return '';
-  return next.length > TITLE_CLIP ? `${next.slice(0, TITLE_CLIP)}…` : next;
+  return next;
 }
 
-/** First send: store a semantic title, never a path-first clip of the prompt. */
+/** Display-only clip for the visible list line. Do not write this to storage. */
+export function conversationSemanticTitle(raw: string): string {
+  const next = conversationSemanticPhrase(raw);
+  return next.length > TITLE_DISPLAY_CLIP ? `${next.slice(0, TITLE_DISPLAY_CLIP)}…` : next;
+}
+
+/** First send: persist the full semantic phrase, never a TITLE_CLIP ellipsis. */
 export function titleFromPrompt(prompt: string): string {
-  return conversationSemanticTitle(prompt);
+  return conversationSemanticPhrase(prompt);
+}
+
+/** Historical writers stored `${slice(24|29|30)}…`. Those rows cannot recover the tail from title alone. */
+export function looksLikePersistedTitleClip(title: string): boolean {
+  const trimmed = title.trim();
+  const match = trimmed.match(/^(.*?)(…|\.\.\.)$/u);
+  if (!match) return false;
+  const core = match[1] ?? '';
+  return core.length === 24 || core.length === 29 || core.length === 30;
 }
 
 export function conversationTitle(t: TranslateFn, title: string): string {
   const semantic = conversationSemanticTitle(title);
   if (semantic) return semantic;
   return t('chat.title.newConversation');
+}
+
+export function firstUserContentByConversation(
+  messages: readonly Pick<ChatMessage, 'conversationId' | 'role' | 'content'>[],
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const message of messages) {
+    if (message.role !== 'user') continue;
+    const text = message.content.trim();
+    if (!text || out[message.conversationId]) continue;
+    out[message.conversationId] = message.content;
+  }
+  return out;
+}
+
+export function conversationRailHintTitle(
+  storedTitle: string,
+  firstUserContent?: string | null,
+): string | null {
+  const stored = storedTitle.trim();
+  if (looksLikePersistedTitleClip(stored) && firstUserContent?.trim()) {
+    const recovered = conversationSemanticPhrase(firstUserContent);
+    if (recovered) return recovered;
+  }
+  return stored || null;
 }
 
 /** Empty title and no official session means this row has not been sent yet. */
@@ -950,7 +991,7 @@ export function conversationAgentLine(agentIds: readonly AgentKey[]): string {
 }
 
 export type ConversationRailHintView = {
-  /** Complete stored title. Never clipped or ellipsized. */
+  /** Full semantic title for hover. Never a TITLE_CLIP ellipsis unless the user typed it. */
   title: string | null;
   meta: string;
 };
@@ -973,17 +1014,16 @@ function conversationRailHintMeta(
   return parts.join(' · ');
 }
 
-/** Hover body: full original title plus directory / time. Title is never sliced. */
+/** Hover body: full title plus directory / time. Recovers TITLE_CLIP rows from the first user message. */
 export function conversationRailHintView(
   conversation: Pick<
     Conversation,
     'cwd' | 'updatedAt' | 'title' | 'nativeSessionId'
-  >,
+  > & { firstUserContent?: string | null },
   t: TranslateFn,
 ): ConversationRailHintView {
-  const title = conversation.title.trim();
   return {
-    title: title || null,
+    title: conversationRailHintTitle(conversation.title, conversation.firstUserContent),
     meta: conversationRailHintMeta(conversation, t),
   };
 }

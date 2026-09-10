@@ -15,6 +15,7 @@ import {
   chatModNShouldStartNewChat,
   composerNativeEditChord,
   conversationCwdMissing,
+  firstUserContentByConversation,
   filterConversations,
   groupConversationsByDay,
   isChatAgentSelectable,
@@ -141,6 +142,10 @@ export function useChatPage() {
   }, []);
 
   const turns = useMemo(() => groupByTurn(messages), [messages]);
+  const firstUserContentById = useMemo(
+    () => firstUserContentByConversation(messages),
+    [messages],
+  );
   const startExtrasRef = useRef<{ images?: { path: string }[]; skills?: { name: string; path: string }[] }>({});
   const runtimeOpsClearRef = useRef<() => void>(() => {});
 
@@ -670,6 +675,7 @@ export function useChatPage() {
     handleComposerKeyDown,
     searchFocusNonce,
     historyRevealNonce,
+    firstUserContentById,
     turnOutcome,
     submitRuntimeRequest: send.submitRuntimeRequest,
     steerRuntime: send.steerRuntime,

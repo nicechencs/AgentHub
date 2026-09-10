@@ -1,4 +1,5 @@
 import type { ChatPort } from '@/lib/backend/contracts';
+import { titleFromPrompt } from '@/pages/chat/chat-model';
 import type { RuntimeOptions, RuntimeReply, RuntimeRequest, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings } from '@/lib/backend/contracts/chat-runtime';
 import { delay } from '@/dev/mocks/delay';
 import type {
@@ -95,8 +96,7 @@ function requireSingleAgent(agentIds: AgentKey[]): AgentKey[] {
 }
 
 function mockTitle(prompt: string) {
-  const t = prompt.trim();
-  return t.length <= 30 ? t : `${t.slice(0, 29)}…`;
+  return titleFromPrompt(prompt);
 }
 
 function mockConversationAgent(conversationId: string): AgentKey | undefined {

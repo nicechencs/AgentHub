@@ -1,8 +1,10 @@
+import { readFileSync } from 'node:fs';
 import { createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { Conversation } from '@/lib/types';
+import { conversationSemanticTitle } from './chat-model';
 import { ChatSessionRail } from './ChatSessionRail';
 
 vi.mock('@/components/shared/LanguageProvider', async () => {
@@ -57,6 +59,26 @@ function rail(partial?: Partial<Parameters<typeof ChatSessionRail>[0]>) {
 }
 
 describe('ChatSessionRail titles', () => {
+  it('keeps the list line display-clipped and wires hover to the full title helper', () => {
+    const full =
+      'Use your terminal to write exactly what I asked without clipping the title';
+    const html = renderMarkup(
+      rail({
+        groups: [{ key: 'today', label: '今天', items: [conversation({ title: full })] }],
+        conversations: [conversation({ title: full })],
+        firstUserContentById: { c1: full },
+      }),
+    );
+    expect(html).toContain('data-help="chat-session-title"');
+    expect(html).toContain(conversationSemanticTitle(full));
+    const src = readFileSync(new URL('./ChatSessionRail.tsx', import.meta.url), 'utf8');
+    expect(src).toContain('conversationRailHintView(');
+    expect(src).toContain('firstUserContent');
+    expect(src).toContain('data-help="chat-session-hint-title"');
+    expect(src).toContain('{hint.title}');
+    expect(src).not.toMatch(/function ConversationRailHintLabel[\s\S]*AgentLogo/);
+  });
+
   it('uses a semantic title on the main line and cwd on the second line', () => {
     const html = renderMarkup(rail());
     const titleAt = html.indexOf('data-help="chat-session-title"');

@@ -442,7 +442,7 @@ export function AgentCard({
       >
         {!hidden && upgradeControl.show ? (
           <Button
-            size="icon"
+            size="sm"
             variant={upgradeControl.muted ? 'outline' : 'secondary'}
             className={upgradeControl.muted ? 'text-muted' : undefined}
             disabled={busy || checkingUpdate || upgradeControl.kind === 'hint_only'}
@@ -464,6 +464,7 @@ export function AgentCard({
                 checkingUpdate && 'animate-pulse opacity-70',
               )}
             />
+            {t('agents.table.upgrade')}
           </Button>
         ) : (
           <TableEmptyCell />

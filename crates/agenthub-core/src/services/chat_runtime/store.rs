@@ -493,7 +493,7 @@ impl RuntimeStore {
                     |row| row.get(0),
                 )?;
                 if current_title.trim().is_empty() {
-                    let title = truncate_conversation_title(&user.content, 30);
+                    let title = crate::models::conversation_title_from_prompt(&user.content);
                     conn.execute(
                         "UPDATE conversations SET title = ?2, updated_at = ?3 WHERE id = ?1",
                         params![conversation_id, title, now],
@@ -1253,15 +1253,6 @@ fn insert_event_conn(
         params![conversation_id],
     )?;
     Ok(sequence)
-}
-
-fn truncate_conversation_title(input: &str, max: usize) -> String {
-    let trimmed = input.trim();
-    let mut out: String = trimmed.chars().take(max).collect();
-    if trimmed.chars().count() > max {
-        out.push('…');
-    }
-    out
 }
 
 fn finish_transaction<T>(conn: &rusqlite::Connection, result: Result<T>) -> Result<T> {

@@ -43,11 +43,15 @@ import {
   conversationResumeCommand,
   conversationAgentLine,
   conversationRailHint,
+  conversationRailHintTitle,
   conversationRailHintView,
   conversationRailMarkColor,
   conversationRailSelectedFill,
+  conversationSemanticPhrase,
   conversationSemanticTitle,
   conversationTitle,
+  firstUserContentByConversation,
+  looksLikePersistedTitleClip,
   titleFromPrompt,
   conversationCwdMissing,
   canRebindConversationCwd,
@@ -246,6 +250,27 @@ describe('conversationRailHint', () => {
     expect(conversationSemanticTitle(title)).not.toBe(title);
     expect(conversationSemanticTitle(title)).toMatch(/…/);
     expect(hint.meta).toContain('/workspace/demo-project');
+  });
+
+  it('recovers a TITLE_CLIP stored title from the first user message', () => {
+    const prompt =
+      'Use your terminal to write exactly what I asked without clipping the title';
+    const stored = `${prompt.slice(0, 24)}…`;
+    expect(looksLikePersistedTitleClip(stored)).toBe(true);
+    expect(conversationRailHintTitle(stored, prompt)).toBe(prompt);
+    expect(conversationRailHintTitle(stored, prompt)).not.toMatch(/…|\.\.\./);
+    const hint = conversationRailHintView(
+      {
+        title: stored,
+        firstUserContent: prompt,
+        cwd: '/workspace/demo-project',
+        updatedAt: new Date().toISOString(),
+        nativeSessionId: null,
+      },
+      t,
+    );
+    expect(hint.title).toBe(prompt);
+    expect(hint.title).not.toMatch(/…|\.\.\./);
   });
 });
 
@@ -715,6 +740,19 @@ describe('conversationTitle', () => {
     expect(conversationTitle(t, '/tmp/only-a-path')).toBe('新对话');
     expect(titleFromPrompt('请在 /workspace/src 检查问题')).toBe('检查问题');
     expect(titleFromPrompt('Only modify /tmp/foo')).not.toMatch(/\/tmp/);
+    const long =
+      'Use your terminal to write exactly what I asked without clipping the title';
+    expect(titleFromPrompt(long)).toBe(long);
+    expect(titleFromPrompt(long)).not.toMatch(/…|\.\.\./);
+    expect(conversationSemanticPhrase(long)).toBe(long);
+    expect(conversationSemanticTitle(long)).toMatch(/…/);
+    expect(conversationSemanticTitle(long).length).toBe(25);
+    expect(looksLikePersistedTitleClip(conversationSemanticTitle(long))).toBe(true);
+    expect(firstUserContentByConversation([
+      { conversationId: 'c1', role: 'agent', content: 'hi' },
+      { conversationId: 'c1', role: 'user', content: long },
+      { conversationId: 'c1', role: 'user', content: 'later' },
+    ])).toEqual({ c1: long });
   });
 });
 

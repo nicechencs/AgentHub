@@ -20,6 +20,7 @@ import type { McpInventory, McpServerEntry, McpSourceFile } from '@/lib/backend/
 import type { AgentKey } from '@/lib/types';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { OpenDirButton } from '@/components/shared/OpenDirButton';
+import { TruncateTip } from '@/components/ui/tooltip';
 import { groupMcpServersByAgentAndFile } from './group-servers';
 import { McpServerTable } from './McpServerTable';
 import { visibleMcpSources } from './mcp-sources';
@@ -234,15 +235,18 @@ function McpSourceEmpty({
                   <span className="text-muted">·</span>
                 </>
               ) : null}
-              <span className="truncate">{file.label}</span>
+              <TruncateTip className="truncate" text={file.label} />
             </p>
-            <p className={file.error ? 'truncate text-meta text-danger' : 'truncate text-meta text-muted'}>
-              {file.error?.trim()
-                ? file.error
-                : file.readable
-                  ? t('mcp.empty.sourceEmpty')
-                  : t('mcp.empty.sourceUnreadable')}
-            </p>
+            <TruncateTip
+              className={file.error ? 'text-meta text-danger' : 'text-meta text-muted'}
+              text={
+                file.error?.trim()
+                  ? file.error
+                  : file.readable
+                    ? t('mcp.empty.sourceEmpty')
+                    : t('mcp.empty.sourceUnreadable')
+              }
+            />
           </div>
           <OpenDirButton labeled title={file.path} onClick={() => onLocate(file.path)} />
         </div>

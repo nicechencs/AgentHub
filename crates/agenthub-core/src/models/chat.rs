@@ -416,5 +416,116 @@ pub struct MarkdownFilePreview {
     pub truncated: bool,
 }
 
+/// Persist a conversation title from the first user prompt.
+/// Path tokens are dropped; the phrase is never clipped with an ellipsis.
+pub fn conversation_title_from_prompt(prompt: &str) -> String {
+    conversation_semantic_phrase(prompt)
+}
+
+fn conversation_semantic_phrase(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let without_ticks = strip_backtick_spans(trimmed);
+    let without_paths = strip_path_tokens(&without_ticks);
+    let collapsed = collapse_ws(&without_paths);
+    let stripped = strip_weak_lead(&collapsed);
+    if stripped.is_empty() || is_weak_only(&stripped) {
+        String::new()
+    } else {
+        stripped
+    }
+}
+
+fn strip_backtick_spans(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '`' {
+            while let Some(inner) = chars.next() {
+                if inner == '`' {
+                    break;
+                }
+            }
+            out.push(' ');
+            continue;
+        }
+        out.push(ch);
+    }
+    out
+}
+
+fn strip_path_tokens(input: &str) -> String {
+    let chars: Vec<char> = input.chars().collect();
+    let mut out = String::with_capacity(chars.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if let Some(end) = match_path_token(&chars, i) {
+            out.push(' ');
+            i = end;
+        } else {
+            out.push(chars[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
+fn match_path_token(chars: &[char], start: usize) -> Option<usize> {
+    let mut i = start;
+    if i + 1 < chars.len() && chars[i].is_ascii_alphabetic() && chars[i + 1] == ':' {
+        i += 2;
+    }
+    let after_drive = i;
+    let mut segments = 0;
+    while i < chars.len() && (chars[i] == '/' || chars[i] == '\\') {
+        i += 1;
+        let seg_start = i;
+        while i < chars.len() {
+            let c = chars[i];
+            if c.is_whitespace() || matches!(c, '`' | '\'' | '"' | '/' | '\\') {
+                break;
+            }
+            i += 1;
+        }
+        if i == seg_start {
+            return None;
+        }
+        segments += 1;
+    }
+    if segments >= 1 && i > after_drive {
+        Some(i)
+    } else {
+        None
+    }
+}
+
+fn collapse_ws(input: &str) -> String {
+    input.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn strip_weak_lead(input: &str) -> String {
+    const LEADS: &[&str] = &["请帮我在", "请在", "请", "in", "at"];
+    let lower = input.to_ascii_lowercase();
+    for lead in LEADS {
+        let lead_lower = lead.to_ascii_lowercase();
+        if lower.starts_with(&lead_lower) {
+            let rest = input.get(lead.len()..).unwrap_or("");
+            if rest.starts_with(|c: char| c.is_whitespace()) {
+                return rest.trim_start().to_string();
+            }
+        }
+    }
+    input.to_string()
+}
+
+fn is_weak_only(input: &str) -> bool {
+    matches!(
+        input.to_ascii_lowercase().as_str(),
+        "请帮我在" | "请在" | "请" | "in" | "at" | "only"
+    )
+}
+
 #[cfg(test)]
 mod tests;

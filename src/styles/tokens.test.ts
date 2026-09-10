@@ -60,6 +60,12 @@ describe('design tokens SSOT', () => {
     expect(resolveChartColor('#d97757')).toBe('#d97757');
   });
 
+  it('keeps light secondary and muted one step darker for 1280 reading', () => {
+    expect(THEME.light['text-secondary']).toBe('#45454c');
+    expect(THEME.light['text-muted']).toBe('#55555d');
+    expect(THEME.light['text-muted']).not.toBe(THEME.light['text-disabled']);
+  });
+
   it('keeps page canvas quieter than card panel so one THEME change restyles the app', () => {
     expect(THEME.light['bg-panel']).toBe('#ffffff');
     expect(THEME.light['bg-canvas']).not.toBe(THEME.light['bg-panel']);
