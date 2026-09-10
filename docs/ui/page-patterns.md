@@ -3,7 +3,7 @@ title: UI 页面模式
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-09
+updated: 2026-09-10
 ---
 
 # UI Page Patterns
@@ -44,6 +44,8 @@ Routes nested paths (secondary nav):
 | Activity | `/routes/activity` | Cross-route recent request feed |
 
 Entering any `/routes*` path shows a shell-level secondary nav panel. Clicking Routes in the primary sidebar collapses that sidebar when **Collapse sidebar on Routes** is on (writes `agenthub:sidebar-collapsed`; default on). Other primary items, refresh, secondary-nav clicks, and leaving the routes area do not auto-expand or auto-collapse it. The setting is in Settings → Features. The secondary nav top-right control collapses that nav (writes `agenthub:routes-nav-collapsed`). Right-click offers expand when collapsed and collapse when expanded. While the URL is inside `/routes*`, the primary sidebar still shows the Routes entry even if `routesNavVisible` is off, so the active item remains visible; that preference itself is unchanged.
+
+Primary sidebar (expanded or icon rail) and this Routes rail share one selected / hover / collapse chrome. Settings five tabs stay a page pill bar (`?tab=preferences|features|local|backups|about`); they are not collapsed into the rail.
 
 ## 2. Application shell
 
@@ -442,12 +444,12 @@ Skills, Projects, and Plugins are full-height workbenches with a left inventory 
 
 ### Agents
 
-Agents is the lifecycle surface: installed state, runtime readiness, install/update, and environment remediation. The catalog is a field table in a full-height split. Click the Agent **name** to open the right-hand detail; start / install / hide stay on the row. If the detail pane is already open, clicking another row’s empty area switches the detail; a closed pane stays closed. A missing runtime is shown before Agent installation, with repair steps and a re-detect action. Do not offer a successful installation action while its prerequisite environment is known to be missing. Leftover `~/.agenthub/npm` copies are labeled **启动后备，非安装位置** (spawn fallback only; install via official npm into `~/.npm-global`). An incomplete DeepSeek CLI (common: `~/.local/bin/dsh` missing `@deepseek-ai/dsh-scope`) is not-ready and prompts the same official npm install — never `~/.agenthub/npm`. Uninstall entry in the detail pane is `dangerOutline`; the confirm dialog uses `danger`.
+Agents is the lifecycle surface: installed state, runtime readiness, install/update, and environment remediation. The catalog is a field table in a full-height split. Click the Agent **name** to open the right-hand detail; start / install stay labeled on the row. Hide sits in the row `⋯` menu; a hidden row shows **取消隐藏** as the labeled action. If the detail pane is already open, clicking another row’s empty area switches the detail; a closed pane stays closed. A missing runtime is shown before Agent installation, with repair steps and a re-detect action. Do not offer a successful installation action while its prerequisite environment is known to be missing. Leftover `~/.agenthub/npm` copies are labeled **启动后备，非安装位置** (spawn fallback only; install via official npm into `~/.npm-global`). An incomplete DeepSeek CLI (common: `~/.local/bin/dsh` missing `@deepseek-ai/dsh-scope`) is not-ready and prompts the same official npm install — never `~/.agenthub/npm`. Uninstall entry in the detail pane is `dangerOutline`; the confirm dialog uses `danger`.
 
 ### Features (Agents)
 
 - Lifecycle catalog table: installed state, runtime readiness, install/update, hide, environment remediation. Leftover `~/.agenthub/npm` is **启动后备，非安装位置**; incomplete DeepSeek CLI prompts official npm into `~/.npm-global`.
-- Click Agent **name** for detail; start/install/hide stay on the row; uninstall in detail is `dangerOutline` with `danger` confirm.
+- Click Agent **name** for detail; start/install stay labeled on the row; hide is in the row `⋯` menu; uninstall in detail is `dangerOutline` with `danger` confirm.
 - Missing runtime shown before Agent installation, with repair steps and re-detect.
 
 ### Agent touchpoints (Agents)

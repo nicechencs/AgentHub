@@ -102,6 +102,7 @@ describe('settings layout wiring', () => {
   it('groups preference rows into labeled sections in a stable order', () => {
     const prefs = source('PreferencesPanel.tsx');
     const shared = source('settings-shared.tsx');
+    expect(shared).toContain('flex gap-4 py-2');
     expect(shared).toContain('export function SettingsGroup');
     expect(prefs).toContain("t('settings.general.sectionAppearance')");
     expect(prefs).toContain('SettingsGroup first');

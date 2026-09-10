@@ -83,7 +83,7 @@ export function NotificationBell() {
           >
             <Bell className="h-4 w-4" />
             {alerts.length > 0 && (
-              <span className="absolute right-0.5 top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-danger px-0.5 text-meta font-medium text-white">
+              <span className="absolute right-0.5 top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-danger px-0.5 text-meta font-medium text-danger-foreground">
                 {alerts.length > 9 ? '9+' : alerts.length}
               </span>
             )}

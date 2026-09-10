@@ -11,7 +11,6 @@ export type AgentTableColumnKey =
   | 'note'
   | 'start'
   | 'upgrade'
-  | 'hide'
   | 'actions';
 
 export const AGENT_TABLE_FLEX_COLUMN: AgentTableColumnKey = 'note';
@@ -24,8 +23,7 @@ export const AGENT_TABLE_COLUMN_SPECS: ColumnWidthSpec<AgentTableColumnKey>[] = 
   // 启动命令行 + 启动应用 must stay on one row; stored widths are clamped to minWidth.
   { key: 'start', defaultWidth: 268, minWidth: 240 },
   { key: 'upgrade', defaultWidth: 96, minWidth: 80 },
-  { key: 'hide', defaultWidth: 96, minWidth: 80 },
-  { key: 'actions', defaultWidth: 128, minWidth: 96 },
+  { key: 'actions', defaultWidth: 160, minWidth: 120 },
 ];
 
 export function agentTableColumnLabel(
@@ -45,8 +43,6 @@ export function agentTableColumnLabel(
       return t('agents.table.start');
     case 'upgrade':
       return t('agents.table.upgrade');
-    case 'hide':
-      return t('agents.table.hide');
     case 'actions':
       return t('agents.table.actions');
   }

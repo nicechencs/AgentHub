@@ -170,13 +170,15 @@ export function isCanvasId(value: string): value is CanvasId {
  * Semantic theme colors. Keys map to CSS vars `--{key}`.
  * Surfaces (change here, every page follows):
  * - `bg-canvas` — page, main column, top bar
- * - `bg-panel` — cards, sidebar, dialogs, raised chrome
+ * - `bg-panel` — cards, sidebar, dialogs
+ * - `bg-raised` — lifted chrome on a track (selected tab / segmented item)
  * - `bg-subtle` — inset strips, table heads (not a second page color)
  */
 export const THEME = {
   light: {
     'bg-canvas': '#f3f3f5',
     'bg-panel': '#ffffff',
+    'bg-raised': '#ffffff',
     'bg-subtle': '#ececef',
     'bg-hover': '#ebebed',
     'bg-active': '#e4e4e7',
@@ -199,22 +201,24 @@ export const THEME = {
     'warning-subtle': '#fffbeb',
     danger: '#b91c1c',
     'danger-subtle': '#fef2f2',
+    'danger-foreground': '#ffffff',
     info: '#1d4ed8',
     'info-subtle': '#eff6ff',
   },
   dark: {
-    'bg-canvas': '#0a0a0b',
-    'bg-panel': '#121214',
-    'bg-subtle': '#1a1a1d',
-    'bg-hover': '#1e1e22',
-    'bg-active': '#2c2c31',
-    border: '#27272a',
-    'border-strong': '#3f3f46',
-    'text-primary': '#fafafa',
-    'text-secondary': '#a1a1aa',
-    'text-muted': '#a1a1aa',
-    'text-disabled': '#52525b',
-    'border-control': '#71717a',
+    'bg-canvas': '#111113',
+    'bg-panel': '#1c1c1f',
+    'bg-raised': '#3a3a41',
+    'bg-subtle': '#242428',
+    'bg-hover': '#2c2c31',
+    'bg-active': '#36363c',
+    border: '#3f3f46',
+    'border-strong': '#5a5a63',
+    'text-primary': '#f4f4f5',
+    'text-secondary': '#c4c4cc',
+    'text-muted': '#9b9ba3',
+    'text-disabled': '#6b6b73',
+    'border-control': '#8b8b93',
     accent: ACCENT_STATES[DEFAULT_ACCENT_ID].dark.fill,
     'accent-hover': ACCENT_STATES[DEFAULT_ACCENT_ID].dark.hover,
     'accent-pressed': ACCENT_STATES[DEFAULT_ACCENT_ID].dark.pressed,
@@ -225,8 +229,9 @@ export const THEME = {
     'success-subtle': '#142a20',
     warning: '#fcd34d',
     'warning-subtle': '#302510',
-    danger: '#fca5a5',
-    'danger-subtle': '#321b22',
+    danger: '#f87171',
+    'danger-subtle': '#3f1d22',
+    'danger-foreground': '#450a0a',
     info: '#93c5fd',
     'info-subtle': '#17263b',
   },
@@ -376,6 +381,41 @@ export const ICON = {
   chrome: { px: 16, stroke: 1.75, className: 'h-4 w-4' },
   inline: { px: 14, stroke: 1.75, className: 'h-3.5 w-3.5' },
 } as const;
+
+/** Rail / page-tab chrome geometry. Classes live in `nav-chrome.ts`. */
+export const NAV = {
+  itemHeight: 32,
+  headerHeight: 44,
+  icon: ICON.nav,
+} as const;
+
+/** Parse `#rrggbb` / `#rgb` for contrast checks. */
+export function hexToRgb(hex: string): [number, number, number] {
+  const raw = hex.trim().replace('#', '');
+  const full = raw.length === 3 ? raw.split('').map((c) => `${c}${c}`).join('') : raw;
+  const n = Number.parseInt(full, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function srgbChannel(value: number): number {
+  const c = value / 255;
+  return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+}
+
+/** WCAG relative luminance for a hex color. */
+export function relativeLuminance(hex: string): number {
+  const [r, g, b] = hexToRgb(hex);
+  return 0.2126 * srgbChannel(r) + 0.7152 * srgbChannel(g) + 0.0722 * srgbChannel(b);
+}
+
+/** WCAG contrast ratio between two hex colors. */
+export function contrastRatio(foreground: string, background: string): number {
+  const a = relativeLuminance(foreground);
+  const b = relativeLuminance(background);
+  const lighter = Math.max(a, b);
+  const darker = Math.min(a, b);
+  return (lighter + 0.05) / (darker + 0.05);
+}
 
 /** CSS custom property for an agent brand color. */
 export function agentCssVar(id: TokenAgentId): `var(--agent-${TokenAgentId})` {

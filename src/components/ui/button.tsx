@@ -30,7 +30,7 @@ const buttonVariants = cva(
         outline:
           'border border-border bg-transparent text-secondary hover:bg-hover hover:text-primary active:bg-active',
         ghost: 'text-secondary hover:bg-hover hover:text-primary active:bg-active',
-        danger: 'bg-danger text-white hover:bg-danger/90 active:bg-danger/80',
+        danger: 'bg-danger text-danger-foreground hover:bg-danger/90 active:bg-danger/80',
         dangerOutline:
           'border border-danger/40 text-danger hover:bg-danger/10 active:bg-danger/15',
       },

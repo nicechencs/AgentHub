@@ -33,7 +33,7 @@ describe('segmented-styles (shared track family)', () => {
   it('active item uses panel lift without accent fill', () => {
     const active = segmentedItemClass(true, 'md');
     const inactive = segmentedItemClass(false, 'sm');
-    expect(active).toContain('bg-panel');
+    expect(active).toContain('bg-raised');
     expect(active).toContain('font-medium');
     expect(active).not.toContain('bg-accent');
     expect(inactive).toContain('text-secondary');

@@ -30,8 +30,8 @@ const TabsTrigger = React.forwardRef<
       // 页级导航：固定 md 档，与 AgentTabStrip / segmentedItemClass(md) 同高
       'inline-flex items-center justify-center rounded-btn transition-colors',
       segmentedItemSizeClass('md'),
-      'text-secondary data-[state=inactive]:hover:bg-panel/50 data-[state=inactive]:hover:text-primary',
-      'data-[state=active]:bg-panel data-[state=active]:font-medium data-[state=active]:text-primary data-[state=active]:shadow-sm',
+      'text-secondary data-[state=inactive]:hover:bg-raised/50 data-[state=inactive]:hover:text-primary',
+      'data-[state=active]:bg-raised data-[state=active]:font-medium data-[state=active]:text-primary data-[state=active]:shadow-sm',
       className,
     )}
     {...props}
