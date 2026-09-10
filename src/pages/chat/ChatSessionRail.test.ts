@@ -59,7 +59,11 @@ function rail(partial?: Partial<Parameters<typeof ChatSessionRail>[0]>) {
 describe('ChatSessionRail titles', () => {
   it('uses a semantic title on the main line and cwd on the second line', () => {
     const html = renderMarkup(rail());
-    expect(html).toContain('检查问题');
+    const titleAt = html.indexOf('data-help="chat-session-title"');
+    expect(titleAt).toBeGreaterThan(0);
+    const titleSlice = html.slice(titleAt, titleAt + 180);
+    expect(titleSlice).toContain('检查问题');
+    expect(titleSlice).not.toContain('/workspace/src/app.ts');
     expect(html).not.toContain('/workspace/src/app.ts');
     expect(html).toContain('demo-project');
   });

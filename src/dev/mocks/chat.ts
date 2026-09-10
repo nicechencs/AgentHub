@@ -226,6 +226,10 @@ function mockNeedsFileChange(prompt: string): boolean {
   return /修改文件|change files|file change/i.test(prompt);
 }
 
+function mockNeedsPathOnlyFileChange(prompt: string): boolean {
+  return /仅路径|path only/i.test(prompt);
+}
+
 function appendMockRuntimeEvent(
   conversationId: string,
   event: ChatEvent,
@@ -302,6 +306,31 @@ async function playMockRuntimeTurn(input: {
     agent,
     step: { type: 'thinking', text: '规划回复结构…', done: true },
   });
+
+  if (mockNeedsPathOnlyFileChange(prompt)) {
+    const request: RuntimeRequest = {
+      id: `req-mock-${mockSeq++}`,
+      runId,
+      kind: 'file',
+      title: '修改文件',
+      detail: '/workspace/notes.md',
+      questions: [],
+      permissionOptions: [
+        { id: 'once', kind: 'allow_once' },
+        { id: 'always', kind: 'allow_always' },
+      ],
+      fileChanges: [{
+        path: '/workspace/notes.md',
+        kind: 'update',
+      }],
+    };
+    appendMockRuntimeEvent(
+      conversationId,
+      { type: 'agentProcess', turn, agent, step: { type: 'tool', name: 'fileChange', status: 'start', input: { path: '/workspace/notes.md' } } },
+      { phase: 'waiting', currentMessage: agentMessage, pendingRequests: [request] },
+    );
+    return;
+  }
 
   if (mockNeedsFileChange(prompt)) {
     const request: RuntimeRequest = {

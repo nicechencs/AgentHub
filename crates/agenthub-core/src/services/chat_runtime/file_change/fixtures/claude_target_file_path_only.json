@@ -1,0 +1,8 @@
+{
+  "toolCall": {
+    "kind": "edit",
+    "rawInput": {
+      "target_file": "/workspace/src/app.ts"
+    }
+  }
+}

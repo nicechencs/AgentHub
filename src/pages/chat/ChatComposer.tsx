@@ -421,7 +421,7 @@ export function ChatComposer({
           </div>
           <ChatShortcutsHelp />
         </div>
-        <div className="flex shrink-0 items-center gap-1.5 border-t border-border/50 px-2 py-2">
+        <div className="flex shrink-0 items-center gap-1.5 border-t border-border/50 px-2 py-1.5">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -588,7 +588,7 @@ export function ChatComposer({
                     size="sm"
                     variant="outline"
                     disabled={modelMenuDisabled}
-                    className="max-w-48"
+                    className="max-w-36"
                     data-help="chat-model"
                     aria-label={t('chat.composer.switchModel')}
                     aria-keyshortcuts="Control+Shift+I"

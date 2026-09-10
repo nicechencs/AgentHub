@@ -949,11 +949,16 @@ export function conversationAgentLine(agentIds: readonly AgentKey[]): string {
   return `${agentDisplayName(agentIds[0])} +${agentIds.length - 1}`;
 }
 
-/** Hover details for a one-line history row, excluding Agent (shown as logos). */
-export function conversationRailHint(
+export type ConversationRailHintView = {
+  /** Complete stored title. Never clipped or ellipsized. */
+  title: string | null;
+  meta: string;
+};
+
+function conversationRailHintMeta(
   conversation: Pick<
     Conversation,
-    'agentIds' | 'cwd' | 'updatedAt' | 'title' | 'nativeSessionId'
+    'cwd' | 'updatedAt' | 'title' | 'nativeSessionId'
   >,
   t: TranslateFn,
 ): string {
@@ -966,6 +971,33 @@ export function conversationRailHint(
     parts.push(t('chat.header.nativeSession', { id: conversation.nativeSessionId }));
   }
   return parts.join(' · ');
+}
+
+/** Hover body: full original title plus directory / time. Title is never sliced. */
+export function conversationRailHintView(
+  conversation: Pick<
+    Conversation,
+    'cwd' | 'updatedAt' | 'title' | 'nativeSessionId'
+  >,
+  t: TranslateFn,
+): ConversationRailHintView {
+  const title = conversation.title.trim();
+  return {
+    title: title || null,
+    meta: conversationRailHintMeta(conversation, t),
+  };
+}
+
+/** Hover details for a history row, excluding Agent (shown as logos). */
+export function conversationRailHint(
+  conversation: Pick<
+    Conversation,
+    'agentIds' | 'cwd' | 'updatedAt' | 'title' | 'nativeSessionId'
+  >,
+  t: TranslateFn,
+): string {
+  const hint = conversationRailHintView(conversation, t);
+  return [hint.title, hint.meta].filter(Boolean).join(' · ');
 }
 
 /** Selected history-row mark: first Agent brand, else the nav accent. */

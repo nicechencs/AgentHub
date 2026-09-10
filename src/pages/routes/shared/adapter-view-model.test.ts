@@ -171,7 +171,7 @@ describe('adapterProfileStoppedHint', () => {
     expect(adapterProfileStoppedHint({ route: 'local_bridge', bridgeState: 'error' })).toBeNull();
     expect(adapterProfileStoppedHint({ route: 'local_bridge' })).toEqual({
       reason: '本机转发已停止',
-      next: '点「启动」接到本机转发',
+      next: '点「开启转发」或「详情」',
     });
   });
 });
@@ -289,7 +289,7 @@ describe('managed adapter profiles view model', () => {
     expect(adapterProfilePrimaryAction({ route: 'local_bridge', bridgeState: 'degraded' }))
       .toEqual({ kind: 'stop', label: '停止' });
     expect(adapterProfilePrimaryAction({ route: 'local_bridge', bridgeState: 'stopped' }))
-      .toEqual({ kind: 'start', label: '启动' });
+      .toEqual({ kind: 'start', label: '开启转发' });
     expect(adapterProfilePrimaryAction({ route: 'local_bridge', bridgeState: 'error' }))
       .toEqual({ kind: 'start', label: '重试启动' });
     expect(adapterProfilePrimaryAction({ route: 'local_bridge', lastErrorCode: 'adapter.bridge_start' }))
@@ -307,7 +307,7 @@ describe('managed adapter profiles view model', () => {
     expect(adapterProfilePrimaryAction({
       route: 'local_bridge',
       statusUnavailable: true,
-    })).toEqual({ kind: 'start', label: '启动' });
+    })).toEqual({ kind: 'start', label: '开启转发' });
   });
 
   it('limits recovery guidance to needs_attention and separates runtime from config repair', () => {

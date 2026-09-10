@@ -1,7 +1,8 @@
 //! Copy path + already-present edit text from file-change protocol payloads.
 //!
 //! Approval cards must not invent a diff. This module only reads fields the
-//! runtime already sent (`diff`, `patch`, `content`, before/after).
+//! runtime already sent (`diff`, `patch`, `content`, before/after). Path-only
+//! payloads still yield a row so the card can show the path.
 
 use serde_json::Value;
 
@@ -26,6 +27,7 @@ const BEFORE_KEYS: &[&str] = &["before", "oldText", "old_text", "old_string"];
 pub fn extract_file_changes(value: &Value) -> Vec<RuntimeFileChange> {
     let mut out = Vec::new();
     collect_file_changes(value, &mut out, 0);
+    apply_fallback_kind(value, &mut out);
     dedupe_keep_first(out)
 }
 
@@ -45,13 +47,33 @@ fn collect_file_changes(value: &Value, out: &mut Vec<RuntimeFileChange>, depth: 
         for row in rows {
             push_change(row, None, out);
         }
-        return;
+        if !out.is_empty() {
+            return;
+        }
     }
     if let Some(map) = value.get("fileChanges").and_then(Value::as_object) {
         for (path, row) in map {
             push_change(row, Some(path.as_str()), out);
         }
-        return;
+        if !out.is_empty() {
+            return;
+        }
+    }
+    if let Some(rows) = value.get("locations").and_then(Value::as_array) {
+        for row in rows {
+            push_change(row, None, out);
+        }
+        if !out.is_empty() {
+            return;
+        }
+    }
+    if let Some(rows) = value.get("files").and_then(Value::as_array) {
+        for row in rows {
+            push_change(row, row.as_str(), out);
+        }
+        if !out.is_empty() {
+            return;
+        }
     }
     if let Some(operation) = value.get("operation") {
         push_change(operation, None, out);
@@ -71,6 +93,12 @@ fn collect_file_changes(value: &Value, out: &mut Vec<RuntimeFileChange>, depth: 
     }
     if let Some(raw) = value.pointer("/toolCall/rawInput") {
         collect_file_changes(raw, out, depth + 1);
+        if !out.is_empty() {
+            return;
+        }
+    }
+    if let Some(call) = value.get("toolCall") {
+        collect_file_changes(call, out, depth + 1);
     }
 }
 
@@ -95,16 +123,43 @@ fn push_change(value: &Value, fallback_path: Option<&str>, out: &mut Vec<Runtime
 }
 
 fn change_path(value: &Value, fallback_path: Option<&str>) -> Option<String> {
-    const PATH_KEYS: &[&str] = &["path", "file", "filePath", "file_path"];
+    const PATH_KEYS: &[&str] = &[
+        "path",
+        "file",
+        "filePath",
+        "file_path",
+        "target_file",
+        "targetFile",
+        "uri",
+        "fileUri",
+        "file_uri",
+    ];
     for key in PATH_KEYS {
-        if let Some(path) = nonempty_str(value.get(*key)) {
+        if let Some(path) = nonempty_str(value.get(*key)).and_then(|raw| normalize_path(&raw)) {
             return Some(path);
         }
     }
     fallback_path
-        .map(str::trim)
-        .filter(|path| !path.is_empty())
-        .map(str::to_string)
+        .and_then(normalize_path)
+}
+
+fn normalize_path(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Some(rest) = trimmed.strip_prefix("file://") {
+        let path = rest.strip_prefix("localhost").unwrap_or(rest);
+        let path = if path.starts_with('/') || path.starts_with('\\') {
+            path
+        } else if path.is_empty() {
+            return None;
+        } else {
+            path
+        };
+        return (!path.is_empty()).then(|| path.to_string());
+    }
+    Some(trimmed.to_string())
 }
 
 fn change_kind(value: &Value) -> Option<String> {
@@ -112,15 +167,40 @@ fn change_kind(value: &Value) -> Option<String> {
         .or_else(|| nonempty_str(value.pointer("/kind/type")))
         .or_else(|| nonempty_str(value.get("type")))
         .or_else(|| nonempty_str(value.pointer("/operation/type")))?;
-    Some(normalize_kind(&raw))
+    let normalized = normalize_kind(&raw);
+    known_file_kind(&normalized).then_some(normalized)
 }
 
 fn normalize_kind(raw: &str) -> String {
     match raw.trim().to_ascii_lowercase().as_str() {
         "add" | "create" | "create_file" | "add_file" => "add".into(),
-        "update" | "modify" | "edit" | "update_file" | "modify_file" => "update".into(),
+        "update" | "modify" | "edit" | "write" | "update_file" | "modify_file" | "write_file" => {
+            "update".into()
+        }
         "delete" | "remove" | "delete_file" | "remove_file" => "delete".into(),
         other => other.to_string(),
+    }
+}
+
+fn known_file_kind(kind: &str) -> bool {
+    matches!(kind, "add" | "update" | "delete")
+}
+
+fn apply_fallback_kind(value: &Value, out: &mut [RuntimeFileChange]) {
+    if out.iter().all(|change| change.kind.is_some()) {
+        return;
+    }
+    let Some(kind) = nonempty_str(value.pointer("/toolCall/kind"))
+        .or_else(|| nonempty_str(value.get("kind")))
+        .map(|raw| normalize_kind(&raw))
+        .filter(|kind| known_file_kind(kind))
+    else {
+        return;
+    };
+    for change in out.iter_mut() {
+        if change.kind.is_none() {
+            change.kind = Some(kind.clone());
+        }
     }
 }
 
