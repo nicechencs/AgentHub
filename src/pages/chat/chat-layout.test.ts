@@ -254,18 +254,19 @@ describe('chat layout wiring', () => {
     expect(rail).toContain('AgentLogo');
     expect(rail).toContain('hint={false}');
     expect(rail).not.toContain('conversationAgentLine');
-    expect(rail).toContain('cwdShortName');
+    expect(rail).not.toContain('cwdShortName');
     expect(rail).toContain('conversationTitle');
-    expect(rail).toContain('isBlankConversationDraft');
-    expect(rail).toContain("t('chat.rail.draft')");
+    expect(rail).not.toContain('isBlankConversationDraft');
     expect(rail).toContain("t('chat.rail.searchPlaceholder')");
+    expect(source('chat-model.ts')).toContain('isBlankConversationDraft');
+    expect(source('chat-model.ts')).toContain("t('chat.rail.draft')");
   });
 
   it('keeps the list title truncated and the hover title as the full stored string', () => {
     const rail = source('ChatSessionRail.tsx');
     const model = source('chat-model.ts');
     const listTitle = rail.match(
-      /className="block truncate" data-help="chat-session-title"/,
+      /className="min-w-0 flex-1 truncate" data-help="chat-session-title"/,
     );
     expect(listTitle).not.toBeNull();
     const hintTitle = rail.match(

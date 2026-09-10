@@ -46,11 +46,9 @@ describe('routes-nav-items', () => {
 
   it('keeps secondary-nav labels readable while accenting 18px icons', () => {
     const nav = readFileSync(path.join(dir, 'RoutesNav.tsx'), 'utf8');
-    expect(nav).toContain('bg-accent-subtle font-medium text-primary [&_svg]:text-accent');
-    expect(nav).toContain('hover:bg-hover hover:text-primary');
-    expect(nav).toContain('const NAV_ICON_SIZE = 18;');
+    expect(nav).toContain('navItemClass');
     expect(nav).toContain('size={NAV_ICON_SIZE}');
-    expect(nav).toContain('strokeWidth={1.6}');
+    expect(nav).toContain('strokeWidth={NAV_ICON_STROKE}');
     expect(nav).toContain('data-icon="nav"');
     expect(nav).toContain('absoluteStrokeWidth');
   });
@@ -70,14 +68,16 @@ describe('routes-nav-items', () => {
     expect(nav).toContain('StorageKey.routesNavCollapsed');
     expect(nav).toContain("t('routes.nav.collapse')");
     expect(nav).toContain("t('routes.nav.expand')");
-    expect(nav).toContain('PanelLeftClose');
-    expect(nav).toContain('PanelLeftOpen');
-    expect(nav).toContain('group-hover:opacity-0');
-    expect(nav).toContain('justify-between px-3');
-    expect(nav).toContain('pageRhythm.pageTitle');
+    expect(nav).toContain('NavRailHeader');
+    const header = readFileSync(path.join(dir, '../../components/layout/NavRailHeader.tsx'), 'utf8');
+    expect(header).toContain('RailCollapseIcon');
+    expect(header).toContain('RailExpandIcon');
+    expect(header).toContain('group-hover:opacity-0');
     expect(nav).toContain('<Route');
-    expect(nav.indexOf('<Route')).toBeLessThan(nav.indexOf("t('routes.nav.title')"));
+    expect(nav).toContain("title={t('routes.nav.title')}");
+    expect(header.indexOf('{identity}')).toBeLessThan(header.indexOf('{title}'));
     expect(nav).not.toContain('text-sm font-semibold tracking-tight');
+    expect(nav).not.toContain('pageRhythm.pageTitle');
     expect(nav.indexOf("t('routes.nav.title')")).toBeLessThan(nav.indexOf("t('routes.nav.collapse')"));
     expect(nav).not.toContain('expandPrimarySidebar');
     expect(nav).not.toContain("t('nav.expandSidebar')");

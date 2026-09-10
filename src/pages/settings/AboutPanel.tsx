@@ -120,7 +120,7 @@ export function AboutPanel({
       <div className="mt-4">
         <LoginInformationPanel />
       </div>
-      <p className="mt-3 text-xs text-muted">
+      <p className="mt-3 text-meta text-secondary">
         {t('settings.about.tagline')}
       </p>
     </>

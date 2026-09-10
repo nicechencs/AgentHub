@@ -148,13 +148,15 @@ describe('nav model order', () => {
 
   it('keeps active labels readable while accenting 18px navigation icons', () => {
     const sidebar = readFileSync(path.join(dir, 'Sidebar.tsx'), 'utf8');
-    expect(sidebar).toContain('bg-accent-subtle font-medium text-primary [&_svg]:text-accent');
-    expect(sidebar).toContain('hover:bg-hover hover:text-primary');
-    expect(sidebar).toContain('const NAV_ICON_SIZE = 18;');
+    const chrome = readFileSync(path.join(dir, 'nav-chrome.ts'), 'utf8');
+    expect(sidebar).toContain('navItemClass');
     expect(sidebar).toContain('size={NAV_ICON_SIZE}');
-    expect(sidebar).toContain('strokeWidth={1.6}');
+    expect(sidebar).toContain('strokeWidth={NAV_ICON_STROKE}');
     expect(sidebar).toContain('data-icon="nav"');
     expect(sidebar).toContain('absoluteStrokeWidth');
+    expect(chrome).toContain('bg-accent-subtle font-medium text-primary [&_svg]:text-accent');
+    expect(chrome).toContain('hover:bg-hover hover:text-primary');
+    expect(chrome).toContain('NAV_ICON_SIZE = NAV.icon.px');
   });
 
   it('lets the expanded rail be dragged and remembers the width', () => {

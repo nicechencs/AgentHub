@@ -100,7 +100,11 @@ describe('agents layout wiring', () => {
     expect(card).not.toContain('ListRowBody');
     expect(card).not.toContain('LIST_ROW_PAD');
     expect(card).toContain('size="sm"');
-    expect(card).not.toContain('size="icon"');
+    expect(card).toContain('size="icon"');
+    expect(card).toContain('MoreHorizontal');
+    expect(card).toContain("t('common.moreActions')");
+    expect(card).toContain("t('agents.card.hide')");
+    expect(card).not.toContain('data-col="hide"');
     expect(card).toContain('aria-label={upgradeTooltip}');
     expect(card).toContain("t('agents.table.upgrade')");
     expect(card).not.toContain("t('agents.card.forceUpgrade')");

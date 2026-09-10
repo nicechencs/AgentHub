@@ -82,7 +82,8 @@ describe('PageHeader', () => {
     expect(source('pages/chat/ChatSessionHeader.tsx')).toContain('ChromeActions');
     expect(topBar).toContain('pageRhythm.topChrome');
     expect(topBar).toContain('pageRhythm.workbenchX');
-    expect(source('components/layout/Sidebar.tsx')).toContain('pageRhythm.topChrome');
+    expect(source('components/layout/Sidebar.tsx')).toContain('NavRailHeader');
+    expect(source('components/layout/nav-chrome.ts')).toContain('pageRhythm.topChrome');
     expect(source('pages/skills/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/projects/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/settings/index.tsx')).toContain('pageRhythm.workbenchHeader');

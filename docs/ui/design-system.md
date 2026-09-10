@@ -3,7 +3,7 @@ title: UI 设计系统
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-08
+updated: 2026-09-10
 ---
 
 # UI Design System
@@ -57,10 +57,13 @@ Use semantic surface roles:
 |---|---|---|
 | Canvas | `bg-canvas` | Page, main column, and top bar |
 | Panel | `bg-panel` | Cards, sidebar, preview panel, dialog content |
+| Raised | `bg-raised` | Lifted chrome on a track (selected Settings / Skills tab, segmented item) |
 | Subtle | `bg-subtle` | Toolbars, table headings, secondary strips |
 | Hover | `bg-hover` | Pointer hover on an enabled item |
 | Active | `bg-active` | Current page item, current preview target, current connection |
 | Overlay | panel plus shadow | Menus, popovers, dialogs, and toasts |
+
+Dark theme is a first-class scheme in `THEME.dark`, not a page-level override. Secondary, muted, and disabled stay three steps. Selected pills use `bg-raised` so they lift off the track (in dark, `bg-panel` is darker than `bg-hover` and must not be the selected fill). Filled danger actions use `danger-foreground` on `danger`. Light-only page tints (`html[data-canvas]`) must not override `--bg-canvas` / `--bg-subtle` when `.dark` is on.
 
 The product accent is `--accent` (`bg-accent` / `text-accent` / `ring-accent`). Default is blue. A stored choice in `agenthub:accent` wins on update, including indigo. Settings exposes a small palette (purple / blue / teal / rose / orange) that writes `html[data-accent]` and only changes `--accent`. Use it for focus, links, checked switches, the in-app mark, and the one primary action. Do not hardcode an accent hex, do not use an Agent color as a page background, and do not substitute an Agent color for semantic status colors. The running window (taskbar button), tray icon, and Windows Desktop / Start-menu shortcuts that already point at this app follow the same mark. The installer package icon stays the bundled default asset.
 
@@ -136,7 +139,8 @@ Do not mix a fourth pixel size. Every `size="icon"` Button must have `aria-label
 - A standalone content block uses `Card default`; a toolbar or nested block uses `plain` or `subtle` to avoid double framing.
 - A management list row may have a card edge. A workbench rail or transcript row uses a page-owned active background and does not become a card.
 - Active preview and checkbox selection are separate states. Preview uses `bg-active`; batch selection uses the checkbox and toolbar. Never paint a whole selected table row with accent.
-- Tabs, segmented controls, and AgentTabStrip share the same gray track and raised active item. Keep their roles distinct.
+- Tabs, segmented controls, and AgentTabStrip share the same gray track and raised active item (`bg-raised`). Keep their roles distinct from rail navigation.
+- Primary sidebar (expanded or icon rail) and the Routes secondary rail share one chrome: `navItemClass` / `NavRailHeader` in `src/components/layout/nav-chrome.ts`. Selected rail items use `bg-accent-subtle` plus a left accent bar only when the label is visible. Settings five tabs stay a page pill bar; they are not a collapsing rail.
 
 ### 4.3 Action hierarchy
 
