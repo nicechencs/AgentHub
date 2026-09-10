@@ -43,6 +43,7 @@ import {
   conversationResumeCommand,
   conversationAgentLine,
   conversationRailHint,
+  conversationRailHintView,
   conversationRailMarkColor,
   conversationRailSelectedFill,
   conversationSemanticTitle,
@@ -201,7 +202,7 @@ describe('conversationRailHint', () => {
         },
         t,
       ),
-    ).toBe('未设目录 · 刚刚 · 已关联官方会话 sess-1');
+    ).toBe('修登录 · 未设目录 · 刚刚 · 已关联官方会话 sess-1');
     expect(
       conversationRailHint(
         {
@@ -226,6 +227,24 @@ describe('conversationRailHint', () => {
         t,
       ),
     ).not.toMatch(/^\/workspace/);
+  });
+
+  it('exposes the complete stored title for hover, never an ellipsized clip', () => {
+    const title =
+      'Please create or edit /workspace/src/pages/chat/ChatSessionRail.tsx to add a hover title';
+    const hint = conversationRailHintView(
+      {
+        title,
+        cwd: '/workspace/demo-project',
+        updatedAt: new Date().toISOString(),
+        nativeSessionId: null,
+      },
+      t,
+    );
+    expect(hint.title).toBe(title);
+    expect(hint.title).not.toMatch(/…|\.\.\./);
+    expect(conversationSemanticTitle(title)).toBe('Please create or edit');
+    expect(hint.meta).toContain('/workspace/demo-project');
   });
 });
 

@@ -242,7 +242,10 @@ describe('chat layout wiring', () => {
     expect(newAt).toBeGreaterThan(collapseAt);
     expect(searchAt).toBeGreaterThan(newAt);
     expect(listAt).toBeGreaterThan(searchAt);
-    expect(rail).toContain('conversationRailHint');
+    expect(rail).toContain('conversationRailHintView');
+    expect(rail).toContain('data-help="chat-session-hint-title"');
+    expect(rail).toContain('whitespace-pre-wrap break-all');
+    expect(rail).toContain('[overflow-wrap:anywhere]');
     expect(rail).toContain('conversationRailMarkColor');
     expect(rail).toContain('conversationRailSelectedFill');
     expect(rail).not.toContain('bg-accent-subtle');
@@ -256,6 +259,27 @@ describe('chat layout wiring', () => {
     expect(rail).toContain('isBlankConversationDraft');
     expect(rail).toContain("t('chat.rail.draft')");
     expect(rail).toContain("t('chat.rail.searchPlaceholder')");
+  });
+
+  it('keeps the list title truncated and the hover title as the full stored string', () => {
+    const rail = source('ChatSessionRail.tsx');
+    const model = source('chat-model.ts');
+    const listTitle = rail.match(
+      /className="block truncate" data-help="chat-session-title"/,
+    );
+    expect(listTitle).not.toBeNull();
+    const hintTitle = rail.match(
+      /className="min-w-0 max-w-full whitespace-pre-wrap break-all \[overflow-wrap:anywhere\]"\s+data-help="chat-session-hint-title"/,
+    );
+    expect(hintTitle).not.toBeNull();
+    expect(rail).toContain('conversationRailHintView(conversation, t)');
+    expect(rail).toContain('{hint.title}');
+    expect(rail).not.toContain('title={conversation.title}');
+    expect(rail).not.toContain('conversationSemanticTitle');
+    expect(model).toContain('const title = conversation.title.trim()');
+    expect(model).not.toMatch(
+      /conversationRailHintView[\s\S]*conversationSemanticTitle/,
+    );
   });
 
   it('confirms session delete on Enter and marks the danger button with a key icon', () => {

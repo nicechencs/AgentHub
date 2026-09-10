@@ -24,7 +24,7 @@ import { StorageKey } from '@/lib/storage-key';
 import type { Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
-  conversationRailHint,
+  conversationRailHintView,
   conversationRailMarkColor,
   conversationRailSelectedFill,
   conversationTitle,
@@ -208,7 +208,11 @@ export function ChatSessionRail({
                         style={{ backgroundColor: conversationRailMarkColor(c.agentIds) }}
                       />
                     ) : null}
-                    <Hint label={<ConversationRailHintLabel conversation={c} />} side="right">
+                    <Hint
+                      label={<ConversationRailHintLabel conversation={c} />}
+                      side="right"
+                      contentClassName="min-w-0 whitespace-normal break-words"
+                    >
                       <button
                         type="button"
                         data-session-id={c.id}
@@ -299,8 +303,12 @@ export function ChatSessionRail({
 
 function ConversationRailHintLabel({ conversation }: { conversation: Conversation }) {
   const { t } = useI18n();
+  const hint = conversationRailHintView(conversation, t);
   return (
-    <span className="flex items-center gap-1.5">
+    <span
+      className="flex min-w-0 max-w-full flex-col gap-1 whitespace-normal break-words"
+      data-help="chat-session-hint"
+    >
       {conversation.agentIds.length > 0 ? (
         <span className="inline-flex items-center gap-0.5">
           {conversation.agentIds.map((id) => (
@@ -308,7 +316,17 @@ function ConversationRailHintLabel({ conversation }: { conversation: Conversatio
           ))}
         </span>
       ) : null}
-      <span>{conversationRailHint(conversation, t)}</span>
+      {hint.title ? (
+        <span
+          className="min-w-0 max-w-full whitespace-pre-wrap break-all [overflow-wrap:anywhere]"
+          data-help="chat-session-hint-title"
+        >
+          {hint.title}
+        </span>
+      ) : null}
+      <span className="min-w-0 max-w-full whitespace-normal break-words">
+        {hint.meta}
+      </span>
     </span>
   );
 }
