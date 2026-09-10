@@ -9,7 +9,7 @@ import { agentDisplayName } from '@/config/agents';
 import {
   formatProcessHeadline,
   formatTurnUsageFooter,
-  hasProcessDetails,
+  hasInspectableProcess,
   phaseFromMessageStatus,
 } from '@/lib/chat-process';
 import type { AgentProcessView } from '@/lib/chat-process';
@@ -160,7 +160,7 @@ function AgentBubble({
       ? 'running'
       : null;
   const showProcessChip = Boolean(onOpenProcess) && (
-    running || Boolean(process && hasProcessDetails(process))
+    running || Boolean(process && hasInspectableProcess(process))
   );
   const processHeadline = showProcessChip
     ? process && effectivePhase

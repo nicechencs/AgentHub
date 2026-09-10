@@ -413,10 +413,14 @@ export function formatTurnUsageFooter(
   return formatUsageCounts(turn, t);
 }
 
-/** Timeline worth opening in the inspect pane (not usage-only, not protocol-only). */
+/**
+ * Timeline worth opening in the inspect pane.
+ * Spawn command alone is not enough — every runtime turn has that, and the pane
+ * would open to an empty body with a folded 运行详情.
+ */
 export function hasInspectableProcess(view: AgentProcessView | undefined): boolean {
   if (!view) return false;
-  if (view.command || view.stderr) return true;
+  if (view.stderr?.trim()) return true;
   return view.steps.some(
     (step) => step.type !== 'usage' && step.type !== 'text' && !isProtocolProcessStep(step),
   );

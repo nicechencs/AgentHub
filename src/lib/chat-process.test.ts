@@ -263,6 +263,18 @@ describe('chat-process reduceProcessEvent', () => {
         updatedAt: 0,
       }),
     ).toBe(true);
+    expect(
+      hasInspectableProcess({
+        turn: 1,
+        agent: 'codex',
+        phase: 'ok',
+        command: 'codex app-server',
+        stdout: '',
+        stderr: '',
+        steps: [{ type: 'usage', scope: 'turn', input: 10, output: 2 }],
+        updatedAt: 0,
+      }),
+    ).toBe(false);
   });
 
   it('ignores finished/error events without mutating identity when empty', () => {

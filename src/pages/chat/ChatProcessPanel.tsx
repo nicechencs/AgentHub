@@ -127,7 +127,7 @@ function ProcessStepRow({ step }: { step: ProcessStep }) {
     );
   }
   if (step.type === 'thinking') {
-    return <ThinkingStepRow text={step.text} done={Boolean(step.done)} />;
+    return <ThinkingStepRow text={step.text} done={Boolean(step.done)} defaultOpen />;
   }
   if (step.type === 'error') {
     return <div className="py-1 text-danger">{step.message}</div>;
@@ -154,15 +154,23 @@ function ProcessStepRow({ step }: { step: ProcessStep }) {
   return <div className="py-1 text-muted">{stepSummary(step, t)}</div>;
 }
 
-function ThinkingStepRow({ text, done }: { text: string; done: boolean }) {
+function ThinkingStepRow({
+  text,
+  done,
+  defaultOpen,
+}: {
+  text: string;
+  done: boolean;
+  defaultOpen: boolean;
+}) {
   const { t } = useI18n();
   const [elapsedMs, setElapsedMs] = useState(0);
   const startRef = useRef(Date.now());
-  const [open, setOpen] = useState(!done);
+  const [open, setOpen] = useState(defaultOpen);
 
   useEffect(() => {
     if (done) {
-      setOpen(false);
+      if (!defaultOpen) setOpen(false);
       return;
     }
     setOpen(true);
@@ -171,7 +179,7 @@ function ThinkingStepRow({ text, done }: { text: string; done: boolean }) {
     tick();
     const id = window.setInterval(tick, 1000);
     return () => window.clearInterval(id);
-  }, [done]);
+  }, [done, defaultOpen]);
 
   const label = thinkingChromeLabel(done, elapsedMs, t);
 
@@ -256,7 +264,7 @@ export function ChatProcessPanel({
         </p>
       ) : null}
       {hasRunDetails ? (
-        <details className="text-meta">
+        <details className="text-meta" open={timeline.length === 0}>
           <summary className="cursor-pointer text-muted">{t('chat.process.runDetails')}</summary>
           <div className="mt-1.5 space-y-2">
             {protocolSteps.map((step, i) => (

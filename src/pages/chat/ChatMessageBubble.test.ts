@@ -143,4 +143,31 @@ describe('ChatMessageBubble streaming feel', () => {
     expect(html).toContain('▸');
     expect(html).toContain('生成中');
   });
+
+  it('does not show a finished process row when the pane would only have the spawn command', () => {
+    const process: AgentProcessView = {
+      turn: 1,
+      agent: 'codex',
+      phase: 'ok',
+      command: 'codex app-server',
+      stdout: '',
+      stderr: '',
+      steps: [{ type: 'usage', scope: 'turn', input: 12, output: 3 }],
+      updatedAt: 1,
+    };
+    const html = renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
+        message: agentMessage('当前工作目录是：', 'ok'),
+        process,
+        isLastTurn: true,
+        multiAgent: false,
+        retryDisabled: false,
+        onRetry: () => undefined,
+        onOpenProcess: () => undefined,
+      })),
+    );
+    expect(html).not.toContain('data-help="chat-process-chip"');
+    expect(html).not.toContain('▸');
+    expect(html).toContain('输入 12 · 输出 3');
+  });
 });
