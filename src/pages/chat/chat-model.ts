@@ -957,7 +957,10 @@ export function conversationRailHint(
   >,
   t: TranslateFn,
 ): string {
+  const rawTitle = conversation.title.trim();
+  const displayTitle = conversationTitle(t, conversation.title);
   const parts = [
+    rawTitle && rawTitle !== displayTitle ? rawTitle : '',
     conversation.cwd?.trim() || t('chat.cwd.unset'),
     relativeTime(conversation.updatedAt, t),
   ].filter(Boolean);

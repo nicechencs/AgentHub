@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { Tip } from '@/components/ui/tooltip';
 import type { RuntimeDecision, RuntimeRequest } from '@/lib/api/chat';
 import { cn } from '@/lib/utils';
 import {
   canSubmitRuntimeQuestions,
   fileChangeKindLabel,
+  fileChangePreviewHintKey,
   runtimeAllowAlwaysCopy,
   runtimeFileChangePreview,
   runtimeRequestTitle,
@@ -65,15 +67,9 @@ function RuntimeRequestCard({
   };
   const title = runtimeRequestTitle(t, request);
   const always = runtimeAllowAlwaysCopy({ request, agentId });
-  const kindLabel = request.kind === 'file'
-    ? t('chat.runtime.fileChange')
-    : request.kind === 'question'
-      ? t('chat.runtime.needAnswer')
-      : t('chat.runtime.needConfirm');
   return (
     <section className="rounded-card border border-border bg-subtle p-3 text-body" aria-live="polite">
-      <p className="text-meta text-muted">{kindLabel}</p>
-      {title !== kindLabel ? <p className="mt-0.5 font-medium text-primary">{title}</p> : null}
+      <p className="font-medium text-primary">{title}</p>
       {showRequestDetail(request) ? (
         <p className={cn(
           'mt-1 whitespace-pre-wrap text-meta text-secondary',
@@ -122,21 +118,33 @@ function FileChangePreview({ request }: { request: RuntimeRequest }) {
   const { t } = useI18n();
   const preview = runtimeFileChangePreview(request);
   if (!preview.shown) return null;
+  const hintKey = fileChangePreviewHintKey(preview);
   return (
     <div
       className="mt-2 space-y-2"
-      data-help={preview.empty ? 'chat-file-change-preview-empty' : 'chat-file-change-preview'}
+      data-help={
+        preview.empty
+          ? hintKey === 'chat.runtime.fileChangePathOnly'
+            ? 'chat-file-change-preview-path-only'
+            : 'chat-file-change-preview-empty'
+          : 'chat-file-change-preview'
+      }
     >
       {preview.rows.map((row, index) => (
         <div key={`${row.path}:${index}`} className="space-y-1">
-          {row.path ? (
-            <p className="font-mono text-meta text-secondary">
-              {row.kind ? (
-                <span className="mr-2 font-sans text-muted">{fileChangeKindLabel(row.kind, t)}</span>
-              ) : null}
-              {row.path}
-            </p>
-          ) : null}
+          <p className="flex min-w-0 items-baseline gap-2 font-mono text-meta text-secondary">
+            {row.kind ? (
+              <span className="shrink-0 font-sans text-muted">{fileChangeKindLabel(row.kind, t)}</span>
+            ) : null}
+            <span className="min-w-0 flex-1">
+              <Tip
+                label={row.path || t('chat.runtime.fileChangePathMissing')}
+                className="block truncate"
+              >
+                {row.path || t('chat.runtime.fileChangePathMissing')}
+              </Tip>
+            </span>
+          </p>
           {!preview.empty && row.preview ? (
             <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-all rounded-card border border-border/60 bg-canvas px-2 py-1.5 font-mono text-meta leading-relaxed text-primary">
               {row.preview}
@@ -144,8 +152,8 @@ function FileChangePreview({ request }: { request: RuntimeRequest }) {
           ) : null}
         </div>
       ))}
-      {preview.empty ? (
-        <p className="text-meta text-muted">{t('chat.runtime.fileChangePreviewEmpty')}</p>
+      {hintKey ? (
+        <p className="text-meta text-muted">{t(hintKey)}</p>
       ) : null}
     </div>
   );

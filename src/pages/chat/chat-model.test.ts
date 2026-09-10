@@ -202,6 +202,30 @@ describe('conversationRailHint', () => {
         t,
       ),
     ).toBe('未设目录 · 刚刚 · 已关联官方会话 sess-1');
+    expect(
+      conversationRailHint(
+        {
+          title: '请在 /workspace/src/app.ts 检查问题',
+          agentIds: ['codex'],
+          cwd: '/workspace/demo-project',
+          updatedAt: new Date().toISOString(),
+          nativeSessionId: 'sess-1',
+        },
+        t,
+      ),
+    ).toContain('/workspace/src/app.ts');
+    expect(
+      conversationRailHint(
+        {
+          title: '请在 /workspace/src/app.ts 检查问题',
+          agentIds: ['codex'],
+          cwd: '/workspace/demo-project',
+          updatedAt: new Date().toISOString(),
+          nativeSessionId: null,
+        },
+        t,
+      ),
+    ).not.toMatch(/^\/workspace/);
   });
 });
 

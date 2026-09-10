@@ -997,7 +997,7 @@ export const en = {
     fleetSummary: "{total} local routes · {running} running · keep the tray running",
     action: {
       stop: "Stop",
-      start: "Start",
+      start: "Start forwarding",
       retryStart: "Retry start",
     },
     recovery: {
@@ -1939,7 +1939,7 @@ export const en = {
       description: "Logins that current rules can send through local forwarding, but that are not on the local forwarding yet.",
       descriptionDisconnected: "These logins are not on local forwarding. Each card shows why it stopped and what to do next.",
       stoppedReason: "Local forwarding is stopped",
-      stoppedNext: "Click Start to connect local forwarding",
+      stoppedNext: "Click Start forwarding or Details",
     },
   },
   dashboard: {
@@ -2846,8 +2846,12 @@ export const en = {
       allowAlwaysHint: 'This conversation only, not saved',
       allowAlwaysHintTurn: 'This conversation only, not saved',
       deny: 'Deny',
-      fileChange: 'Change files',
-      fileChangePreviewEmpty: 'No change preview',
+      fileChange: 'Modify file',
+      fileChangeCreate: 'Create file',
+      fileChangeDelete: 'Delete file',
+      fileChangePreviewEmpty: 'No path or content preview',
+      fileChangePathOnly: 'Path only — no content preview',
+      fileChangePathMissing: 'Path not provided',
       fileChangeKindAdd: 'Add',
       fileChangeKindUpdate: 'Update',
       fileChangeKindDelete: 'Delete',
@@ -2855,8 +2859,8 @@ export const en = {
       needAnswer: 'Needs your answer',
       kind: {
         read: 'Read file',
-        edit: 'Change files',
-        write: 'Change files',
+        edit: 'Modify file',
+        write: 'Modify file',
         execute: 'Run command',
         fetch: 'Fetch',
         search: 'Search',

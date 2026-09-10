@@ -37,6 +37,9 @@ describe('chat layout wiring', () => {
     expect(source('ChatRuntimeExtras.tsx')).toContain('chatModelDisplayName');
     expect(source('ChatRuntimeExtras.tsx')).toContain('chatEffortHint');
     expect(source('ChatRuntimeExtras.tsx')).toContain('data-help="chat-model"');
+    expect(source('ChatRuntimeExtras.tsx')).toContain('data-help="chat-composer-cluster"');
+    expect(source('ChatRuntimeExtras.tsx')).toContain('max-w-36');
+    expect(source('ChatComposer.tsx')).toContain('px-2 py-1.5');
     expect(source('ChatComposer.tsx')).toContain('chatModelDisplayName');
     expect(source('ChatComposer.tsx')).toContain('chatEffortHint');
     expect(translate('zh', 'chat.runtimeOps.effortHintHigh')).toBe('可能更慢');
@@ -62,6 +65,7 @@ describe('chat layout wiring', () => {
     expect(source('ChatShortcutOverview.tsx')).toContain('EnterKeyMark');
     expect(source('ChatShortcutOverview.tsx')).not.toMatch(/>Enter</);
     expect(source('ChatSessionRail.tsx')).toContain('aria-keyshortcuts="Control+N"');
+    expect(source('ChatSessionRail.tsx')).toContain('data-help="chat-session-title"');
     expect(translate('zh', 'chat.shortcuts.open')).toBe('快捷键');
     expect(translate('en', 'chat.shortcuts.open')).toBe('Shortcuts');
   });
@@ -313,9 +317,16 @@ describe('chat layout wiring', () => {
     expect(requests).toContain('always.hintKey');
     expect(requests).toContain('data-help="chat-allow-always"');
     expect(requests).toContain('runtimeFileChangePreview');
-    expect(requests).toContain('chat.runtime.fileChangePreviewEmpty');
-    expect(translate('zh', 'chat.runtime.fileChangePreviewEmpty')).toBe('暂无改动预览');
-    expect(translate('en', 'chat.runtime.fileChangePreviewEmpty')).toBe('No change preview');
+    expect(requests).toContain('fileChangePreviewHintKey');
+    expect(requests).toContain('chat.runtime.fileChangePathOnly');
+    expect(translate('zh', 'chat.runtime.fileChangePathOnly')).toBe('仅有路径，无内容预览');
+    expect(translate('en', 'chat.runtime.fileChangePathOnly')).toBe('Path only — no content preview');
+    expect(translate('zh', 'chat.runtime.fileChangePreviewEmpty')).toBe('没有路径或内容预览');
+    expect(translate('en', 'chat.runtime.fileChangePreviewEmpty')).toBe('No path or content preview');
+    expect(translate('zh', 'chat.runtime.fileChangeCreate')).toBe('新增文件');
+    expect(translate('en', 'chat.runtime.fileChangeCreate')).toBe('Create file');
+    expect(translate('zh', 'chat.runtime.fileChangeDelete')).toBe('删除文件');
+    expect(translate('en', 'chat.runtime.fileChangeDelete')).toBe('Delete file');
     expect(translate('zh', 'chat.runtime.allowAlwaysHint')).toBe('仅当前这次对话，不保存');
     expect(translate('en', 'chat.runtime.allowAlwaysHint')).toBe('This conversation only, not saved');
     expect(translate('zh', 'chat.runtime.allowAlwaysHintTurn')).toBe('仅当前这次对话，不保存');

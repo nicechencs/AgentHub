@@ -63,3 +63,28 @@ fn grok_operation_fixture_reads_nested_diff() {
         Some("@@ -1,2 +1,3 @@\n hello\n+world\n")
     );
 }
+
+#[test]
+fn acp_locations_path_only_keeps_path_without_inventing_diff() {
+    let changes = extract_file_changes(&fixture("acp_locations_path_only.json"));
+    assert_eq!(changes.len(), 1);
+    assert_eq!(changes[0].path, "/workspace/notes.md");
+    assert_eq!(changes[0].kind.as_deref(), Some("update"));
+    assert_eq!(changes[0].preview, None);
+}
+
+#[test]
+fn claude_target_file_path_only_keeps_path() {
+    let changes = extract_file_changes(&fixture("claude_target_file_path_only.json"));
+    assert_eq!(changes[0].path, "/workspace/src/app.ts");
+    assert_eq!(changes[0].kind.as_deref(), Some("update"));
+    assert_eq!(changes[0].preview, None);
+}
+
+#[test]
+fn file_uri_path_only_strips_scheme_and_keeps_delete_kind() {
+    let changes = extract_file_changes(&fixture("file_uri_path_only.json"));
+    assert_eq!(changes[0].path, "/workspace/README.md");
+    assert_eq!(changes[0].kind.as_deref(), Some("delete"));
+    assert_eq!(changes[0].preview, None);
+}

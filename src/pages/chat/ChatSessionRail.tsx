@@ -224,7 +224,9 @@ export function ChatSessionRail({
                           <AgentLogo agentId={c.agentIds[0]} size="sm" hint={false} />
                         ) : null}
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate">{conversationTitle(t, c.title)}</span>
+                          <span className="block truncate" data-help="chat-session-title">
+                            {conversationTitle(t, c.title)}
+                          </span>
                           <span className="block truncate text-meta text-muted">
                             {cwdShortName(c.cwd, t)}
                             {isBlankConversationDraft(c) ? ` · ${t('chat.rail.draft')}` : ''}

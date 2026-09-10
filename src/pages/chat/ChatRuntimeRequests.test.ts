@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import type { RuntimeRequest } from '@/lib/api/chat';
 import { ChatRuntimeRequests } from './ChatRuntimeRequests';
 import { runtimeFileChangePreview } from './chat-runtime-model';
@@ -26,7 +27,7 @@ vi.mock('@/components/shared/LanguageProvider', async () => {
 });
 
 function renderMarkup(node: ReactElement) {
-  return renderToStaticMarkup(node);
+  return renderToStaticMarkup(createElement(TooltipProvider, null, node));
 }
 
 const command: RuntimeRequest = {
@@ -113,7 +114,7 @@ describe('file change approval preview', () => {
         onReply: async () => undefined,
       }),
     );
-    expect(html).toContain('修改文件');
+    expect(html).toContain('新增文件');
     expect(html).toContain('data-help="chat-file-change-preview"');
     expect(html).toContain('FILECHANGE_OK');
     expect(html).toContain('/workspace/qa-codex-filechange-scratch/probe.txt');
@@ -164,7 +165,7 @@ describe('file change approval preview', () => {
     expect(preview.shown && preview.empty).toBe(false);
   });
 
-  it('shows an honest empty state when the fixture only has a path', () => {
+  it('shows an honest path-only card when the fixture only has a path', () => {
     const html = renderMarkup(
       createElement(ChatRuntimeRequests, {
         requests: [fileRequest([{ path: '/workspace/notes.md', kind: 'update' }], '/workspace/notes.md')],
@@ -172,9 +173,40 @@ describe('file change approval preview', () => {
         onReply: async () => undefined,
       }),
     );
-    expect(html).toContain('data-help="chat-file-change-preview-empty"');
+    expect(html).toContain('data-help="chat-file-change-preview-path-only"');
     expect(html).toContain('/workspace/notes.md');
-    expect(html).toContain('暂无改动预览');
+    expect(html).toContain('仅有路径，无内容预览');
+    expect(html).toContain('修改文件');
+    expect(html).toContain('允许');
+    expect(html).toContain('拒绝');
     expect(html).not.toContain('@@');
+    expect(html).not.toContain('暂无改动预览');
+  });
+
+  it('keeps allow/deny on a file card when even the path is missing', () => {
+    const html = renderMarkup(
+      createElement(ChatRuntimeRequests, {
+        requests: [fileRequest([], '')],
+        agentId: 'codex',
+        onReply: async () => undefined,
+      }),
+    );
+    expect(html).toContain('data-help="chat-file-change-preview-empty"');
+    expect(html).toContain('没有路径或内容预览');
+    expect(html).toContain('允许');
+    expect(html).toContain('拒绝');
+  });
+
+  it('titles a create-only path card as 新增文件', () => {
+    const html = renderMarkup(
+      createElement(ChatRuntimeRequests, {
+        requests: [fileRequest([{ path: '/tmp/new.txt', kind: 'add' }], '/tmp/new.txt')],
+        agentId: 'codex',
+        onReply: async () => undefined,
+      }),
+    );
+    expect(html).toContain('新增文件');
+    expect(html).toContain('/tmp/new.txt');
+    expect(html).toContain('仅有路径，无内容预览');
   });
 });
