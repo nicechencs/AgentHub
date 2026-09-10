@@ -1,0 +1,13 @@
+{
+  "toolCall": {
+    "title": "edit",
+    "kind": "edit",
+    "rawInput": {
+      "operation": {
+        "type": "update_file",
+        "path": "README.md",
+        "diff": "@@ -1,2 +1,3 @@\n hello\n+world\n"
+      }
+    }
+  }
+}

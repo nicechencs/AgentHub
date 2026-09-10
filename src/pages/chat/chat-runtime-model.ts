@@ -1,4 +1,4 @@
-import type { RuntimeRequest, RuntimeSnapshot } from '@/lib/api/chat';
+import type { RuntimeFileChange, RuntimeRequest, RuntimeSnapshot } from '@/lib/api/chat';
 import type { MessageKey, TranslateFn } from '@/lib/i18n';
 
 export type RuntimeTransport =
@@ -113,6 +113,24 @@ export function requestAllowsAlways(
   return (request.permissionOptions ?? []).some((option) => isRuntimeAllowAlwaysKind(option.kind));
 }
 
+/**
+ * Always-allow is conversation-local and not saved. Codex, Grok, and Kiro
+ * all remember later cards in this conversation.
+ */
+export function runtimeAllowAlwaysHintKey(_agentId?: string | null): MessageKey {
+  return 'chat.runtime.allowAlwaysHint';
+}
+
+export function runtimeAllowAlwaysCopy(input: {
+  request: Pick<RuntimeRequest, 'permissionOptions'>;
+  agentId?: string | null;
+}): { shown: boolean; hintKey: MessageKey } {
+  if (!requestAllowsAlways(input.request)) {
+    return { shown: false, hintKey: runtimeAllowAlwaysHintKey(input.agentId) };
+  }
+  return { shown: true, hintKey: runtimeAllowAlwaysHintKey(input.agentId) };
+}
+
 export function runtimeReplyFields(
   request: Pick<RuntimeRequest, 'kind'>,
   decision?: 'allow' | 'deny' | 'allow_always',
@@ -136,15 +154,104 @@ const COMMAND_TITLE_KEYS: Record<string, MessageKey> = {
   move: 'chat.runtime.kind.move',
 };
 
-/** File cards stay 修改文件. English ACP kinds map; already-Chinese titles stay. */
+/** File cards use create/modify/delete when the protocol named a single kind. */
 export function runtimeRequestTitle(
   t: TranslateFn,
-  request: Pick<RuntimeRequest, 'kind' | 'title'>,
+  request: Pick<RuntimeRequest, 'kind' | 'title' | 'fileChanges'>,
 ): string {
-  if (request.kind === 'file') return t('chat.runtime.fileChange');
+  if (request.kind === 'file') return fileChangeTitle(request, t);
   const raw = request.title.trim();
   if (request.kind === 'question') return raw || t('chat.runtime.needAnswer');
   if (!raw) return t('chat.runtime.needConfirm');
   const mapped = COMMAND_TITLE_KEYS[raw.toLowerCase()];
   return mapped ? t(mapped) : raw;
+}
+
+function fileChangeTitle(
+  request: Pick<RuntimeRequest, 'fileChanges'>,
+  t: TranslateFn,
+): string {
+  const kinds = new Set(
+    (request.fileChanges ?? [])
+      .map((change) => normalizeFileChangeKind(change.kind))
+      .filter((kind): kind is FileChangePreviewKind => Boolean(kind)),
+  );
+  if (kinds.size === 1 && kinds.has('add')) return t('chat.runtime.fileChangeCreate');
+  if (kinds.size === 1 && kinds.has('delete')) return t('chat.runtime.fileChangeDelete');
+  return t('chat.runtime.fileChange');
+}
+
+export type FileChangePreviewKind = 'add' | 'update' | 'delete';
+
+export type FileChangePreviewRow = {
+  path: string;
+  kind?: FileChangePreviewKind;
+  preview: string | null;
+};
+
+export type FileChangePreviewModel =
+  | { shown: false }
+  | { shown: true; empty: true; rows: FileChangePreviewRow[] }
+  | { shown: true; empty: false; rows: FileChangePreviewRow[] };
+
+function normalizeFileChangeKind(kind: string | undefined): FileChangePreviewKind | undefined {
+  const raw = kind?.trim().toLowerCase();
+  if (raw === 'add' || raw === 'create' || raw === 'create_file' || raw === 'add_file') return 'add';
+  if (
+    raw === 'update'
+    || raw === 'modify'
+    || raw === 'edit'
+    || raw === 'write'
+    || raw === 'update_file'
+    || raw === 'modify_file'
+    || raw === 'write_file'
+  ) {
+    return 'update';
+  }
+  if (raw === 'delete' || raw === 'remove' || raw === 'delete_file' || raw === 'remove_file') return 'delete';
+  return undefined;
+}
+
+function previewText(change: Pick<RuntimeFileChange, 'preview'>): string | null {
+  const text = change.preview;
+  if (!text || !text.trim()) return null;
+  return text;
+}
+
+/** Card preview from protocol-copied rows. Path-only rows stay honest — no fake diff. */
+export function runtimeFileChangePreview(
+  request: Pick<RuntimeRequest, 'kind' | 'detail' | 'fileChanges'>,
+): FileChangePreviewModel {
+  const rows: FileChangePreviewRow[] = (request.fileChanges ?? []).map((change) => ({
+    path: change.path.trim(),
+    kind: normalizeFileChangeKind(change.kind),
+    preview: previewText(change),
+  })).filter((row) => row.path || row.preview);
+  if (rows.length === 0 && request.kind === 'file') {
+    const paths = request.detail.split('\n').map((line) => line.trim()).filter(Boolean);
+    if (paths.length > 0) {
+      rows.push(...paths.map((path) => ({ path, preview: null })));
+    }
+  }
+  if (rows.length === 0) {
+    return request.kind === 'file' ? { shown: true, empty: true, rows: [] } : { shown: false };
+  }
+  const empty = rows.every((row) => !row.preview);
+  if (request.kind !== 'file' && empty) return { shown: false };
+  return empty ? { shown: true, empty: true, rows } : { shown: true, empty: false, rows };
+}
+
+export function fileChangePreviewHintKey(
+  preview: FileChangePreviewModel,
+): 'chat.runtime.fileChangePathOnly' | 'chat.runtime.fileChangePreviewEmpty' | null {
+  if (!preview.shown || !preview.empty) return null;
+  return preview.rows.some((row) => row.path)
+    ? 'chat.runtime.fileChangePathOnly'
+    : 'chat.runtime.fileChangePreviewEmpty';
+}
+
+export function fileChangeKindLabel(kind: FileChangePreviewKind, t: TranslateFn): string {
+  if (kind === 'add') return t('chat.runtime.fileChangeKindAdd');
+  if (kind === 'delete') return t('chat.runtime.fileChangeKindDelete');
+  return t('chat.runtime.fileChangeKindUpdate');
 }

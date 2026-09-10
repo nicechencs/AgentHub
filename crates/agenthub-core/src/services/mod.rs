@@ -11,6 +11,7 @@ pub mod adapter_secret_resolver;
 pub mod agent_service;
 pub mod agent_visibility_service;
 pub mod backup_service;
+pub mod chat_cwd;
 pub mod chat_runtime;
 pub mod chat_service;
 pub mod connection_service;

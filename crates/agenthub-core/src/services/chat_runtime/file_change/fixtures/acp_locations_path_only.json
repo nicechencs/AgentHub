@@ -1,0 +1,11 @@
+{
+  "toolCall": {
+    "title": "Edit notes.md",
+    "kind": "edit",
+    "locations": [
+      {
+        "path": "/workspace/notes.md"
+      }
+    ]
+  }
+}

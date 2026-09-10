@@ -109,7 +109,7 @@ export function AgentOverview({
                     </Tip>
                     {view.versionText ? (
                       <Tip
-                        className="min-w-0 truncate text-meta font-normal text-muted"
+                        className="min-w-0 truncate text-meta font-normal text-secondary"
                         label={view.versionText}
                       >
                         {view.versionText}

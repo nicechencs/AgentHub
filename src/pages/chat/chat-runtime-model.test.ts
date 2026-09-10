@@ -5,8 +5,12 @@ import {
   acceptsRuntimeSnapshot,
   bindRuntimeSnapshotToAgent,
   canSubmitRuntimeQuestions,
+  fileChangePreviewHintKey,
+  runtimeFileChangePreview,
   runtimeReplyFields,
   requestAllowsAlways,
+  runtimeAllowAlwaysCopy,
+  runtimeAllowAlwaysHintKey,
   runtimeRequestTitle,
   isLatestRuntimeRead,
   isRuntimeActive,
@@ -120,15 +124,96 @@ describe('chat runtime transport guards', () => {
       permissionOptions: [{ id: 'edits', kind: 'allow_edits_for_session' }],
     })).toBe(false);
   });
-  it('keeps file cards on 修改文件 and maps English ACP kinds', () => {
+  it('names always-allow as this conversation for Codex, Grok, and Kiro', () => {
+    const request = {
+      permissionOptions: [{ id: 'always', kind: 'allow_always' }],
+    };
+    expect(runtimeAllowAlwaysCopy({ request, agentId: 'grok' })).toEqual({
+      shown: true,
+      hintKey: 'chat.runtime.allowAlwaysHint',
+    });
+    expect(runtimeAllowAlwaysCopy({ request, agentId: 'kiro' }).hintKey).toBe(
+      'chat.runtime.allowAlwaysHint',
+    );
+    expect(runtimeAllowAlwaysCopy({ request, agentId: 'codex' })).toEqual({
+      shown: true,
+      hintKey: 'chat.runtime.allowAlwaysHint',
+    });
+    expect(runtimeAllowAlwaysCopy({ request: {}, agentId: 'codex' }).shown).toBe(false);
+    expect(runtimeAllowAlwaysHintKey('codex')).toBe('chat.runtime.allowAlwaysHint');
+    expect(runtimeAllowAlwaysHintKey('claude')).toBe('chat.runtime.allowAlwaysHint');
+    const t: TranslateFn = (key, params) => translate('zh', key, params);
+    expect(t('chat.runtime.allowAlwaysHint')).toBe('仅当前这次对话，不保存');
+    expect(t('chat.runtime.allowAlwaysHintTurn')).toBe('仅当前这次对话，不保存');
+    expect(translate('en', 'chat.runtime.allowAlwaysHint')).toBe('This conversation only, not saved');
+    expect(translate('en', 'chat.runtime.allowAlwaysHintTurn')).toBe(
+      'This conversation only, not saved',
+    );
+  });
+  it('keeps file cards on create/modify/delete and maps English ACP kinds', () => {
     const t: TranslateFn = (key, params) => translate('zh', key, params);
     expect(runtimeRequestTitle(t, { kind: 'file', title: 'Read' })).toBe('修改文件');
     expect(runtimeRequestTitle(t, { kind: 'file', title: '/tmp/a.ts' })).toBe('修改文件');
+    expect(runtimeRequestTitle(t, {
+      kind: 'file',
+      title: '修改文件',
+      fileChanges: [{ path: '/tmp/a.ts', kind: 'add' }],
+    })).toBe('新增文件');
+    expect(runtimeRequestTitle(t, {
+      kind: 'file',
+      title: '修改文件',
+      fileChanges: [{ path: '/tmp/a.ts', kind: 'delete' }],
+    })).toBe('删除文件');
     expect(runtimeRequestTitle(t, { kind: 'command', title: 'execute' })).toBe('执行命令');
     expect(runtimeRequestTitle(t, { kind: 'command', title: 'Read' })).toBe('读取文件');
     expect(runtimeRequestTitle(t, { kind: 'command', title: '写文件' })).toBe('写文件');
     expect(runtimeRequestTitle(t, { kind: 'command', title: '' })).toBe('需要确认');
     expect(runtimeRequestTitle(t, { kind: 'question', title: '' })).toBe('需要你的回答');
     expect(runtimeRequestTitle(t, { kind: 'question', title: '选一个模型' })).toBe('选一个模型');
+  });
+  it('builds a file preview from protocol-copied fixture rows and stays empty for path-only', () => {
+    expect(runtimeFileChangePreview({
+      kind: 'file',
+      detail: '/workspace/qa-codex-filechange-scratch/probe.txt',
+      fileChanges: [{
+        path: '/workspace/qa-codex-filechange-scratch/probe.txt',
+        kind: 'add',
+        preview: 'FILECHANGE_OK\n',
+      }],
+    })).toEqual({
+      shown: true,
+      empty: false,
+      rows: [{
+        path: '/workspace/qa-codex-filechange-scratch/probe.txt',
+        kind: 'add',
+        preview: 'FILECHANGE_OK\n',
+      }],
+    });
+    expect(runtimeFileChangePreview({
+      kind: 'file',
+      detail: '/workspace/notes.md',
+      fileChanges: [{ path: '/workspace/notes.md', kind: 'update' }],
+    })).toEqual({
+      shown: true,
+      empty: true,
+      rows: [{ path: '/workspace/notes.md', kind: 'update', preview: null }],
+    });
+    expect(runtimeFileChangePreview({
+      kind: 'file',
+      detail: '',
+      fileChanges: [],
+    })).toEqual({ shown: true, empty: true, rows: [] });
+    expect(runtimeFileChangePreview({
+      kind: 'command',
+      detail: 'ls',
+      fileChanges: [],
+    })).toEqual({ shown: false });
+    expect(fileChangePreviewHintKey({
+      shown: true,
+      empty: true,
+      rows: [{ path: '/workspace/notes.md', kind: 'update', preview: null }],
+    })).toBe('chat.runtime.fileChangePathOnly');
+    expect(fileChangePreviewHintKey({ shown: true, empty: true, rows: [] }))
+      .toBe('chat.runtime.fileChangePreviewEmpty');
   });
 });

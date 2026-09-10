@@ -21,7 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { Tip } from '@/components/ui/tooltip';
+import { Tip, TruncateTip } from '@/components/ui/tooltip';
 import {
   Select,
   SelectContent,
@@ -761,7 +761,7 @@ export default function DashboardPage() {
                       <li key={d.key} className="flex h-7 items-center gap-3">
                         <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-sm">
                           <AgentDot color={d.color} size="md" title={null} />
-                          <span className="truncate">{d.label}</span>
+                          <TruncateTip className="truncate" text={d.label} />
                         </span>
                         {d.tokens === 0 ? (
                           <span className="shrink-0 text-xs text-muted">

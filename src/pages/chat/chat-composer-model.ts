@@ -1,11 +1,12 @@
 /**
  * Chat 输入区：Enter / 排队 / 停止 / 焦点。纯函数，不碰 React。
- * 生成中没有真实补充或排队通道时，不画出可点的发送。
+ * 右下角只留一个主按钮：生成中有字则发送/排队，清空则停止。
  */
 import type { MessageKey } from '@/lib/i18n';
 
 export type ComposerSubmitAction = 'send' | 'steer' | 'queue';
 export type ComposerShortcutKind = 'send' | 'steer' | 'queue' | 'newline';
+export type ComposerFooterControl = 'send' | 'stop';
 
 /** Enter 发送；Shift+Enter 换行。中文输入法确认时不发送。 */
 export function composerEnterShouldSubmit(input: {
@@ -34,13 +35,25 @@ export function composerPrimaryAction(input: {
   return null;
 }
 
-/** 空闲时保留发送按钮（无字则禁用）。生成中没有可执行动作时不画发送。 */
+/**
+ * 右下角只留一个主按钮：空闲一律发送；生成中有可执行动作（补充/排队）则发送，
+ * 否则（空草稿或没有通道）同一位置改成停止。禁止并排。
+ */
+export function composerFooterControl(input: {
+  sending: boolean;
+  action: ComposerSubmitAction | null;
+}): ComposerFooterControl {
+  if (!input.sending) return 'send';
+  if (input.action != null) return 'send';
+  return 'stop';
+}
+
+/** 空闲时保留发送按钮（无字则禁用）。生成中没有可执行动作时改成停止。 */
 export function composerShowsSubmitButton(input: {
   sending: boolean;
   action: ComposerSubmitAction | null;
 }): boolean {
-  if (!input.sending) return true;
-  return input.action != null;
+  return composerFooterControl(input) === 'send';
 }
 
 export function composerShortcutKind(input: {
@@ -73,13 +86,34 @@ export function composerStopMessageKey(canceling: boolean): MessageKey {
   return canceling ? 'chat.composer.stopping' : 'chat.composer.stop';
 }
 
+/** Stop hover names Esc; cancelling keeps 正在停止 only. */
+export function composerStopTitle(input: { canceling: boolean; stopLabel: string }): string {
+  return input.canceling ? input.stopLabel : `${input.stopLabel} · Esc`;
+}
+
+export type ComposerCancelResult = 'pending' | 'requested' | 'none';
+
+/** Keep 正在停止 until the turn ends. A miss (`none`) must not lock the button. */
+export function composerKeepsStoppingAfterCancel(result: ComposerCancelResult): boolean {
+  return result === 'pending' || result === 'requested';
+}
+
+/** Local click or a live runtime already in cancelling. */
+export function composerCancelingVisible(input: {
+  localCanceling: boolean;
+  runtimePhase?: string | null;
+}): boolean {
+  return input.localCanceling || input.runtimePhase === 'cancelling';
+}
+
 export function composerQueuedFollowUpView(
-  label: string | null | undefined,
-  count = 0,
-): { count: number; preview: string } | null {
-  const preview = label?.trim() ?? '';
-  if (!preview) return null;
-  return { count: Math.max(count, 1), preview };
+  items: readonly { id: string; text: string }[] | null | undefined,
+): { count: number; items: { id: string; text: string }[] } | null {
+  const next = (items ?? [])
+    .map((item) => ({ id: item.id, text: item.text.trim() }))
+    .filter((item) => item.id && item.text);
+  if (next.length === 0) return null;
+  return { count: next.length, items: next };
 }
 
 export function composerShouldRestoreFocus(input: { textareaDisabled: boolean }): boolean {

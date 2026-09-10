@@ -1,4 +1,4 @@
-/** Shared chat action definitions for the menu button and `/` command search. */
+/** Shared chat action definitions for `/` command search. */
 
 export type ChatActionKind = 'local' | 'draft';
 
@@ -17,48 +17,27 @@ export interface ChatActionDef {
   keywords: string[];
 }
 
+/** Page chrome already has these; `/` only lists in-conversation actions. */
+export const CHAT_SLASH_PAGE_NAV_IDS = [
+  'open-history',
+  'focus-history-search',
+  'open-settings',
+  'open-agents',
+  'open-connections',
+] as const;
+
 export const CHAT_ACTIONS: ChatActionDef[] = [
   {
     id: 'new-session',
     kind: 'local',
     labelKey: 'newSession',
-    keywords: ['new', '新建', '会话', 'new session', '新聊天', '新对话'],
-  },
-  {
-    id: 'open-history',
-    kind: 'local',
-    labelKey: 'openHistory',
-    keywords: ['history', '历史', '记录', '会话列表', 'rail', '打开历史', '打开历史会话', 'open history'],
-  },
-  {
-    id: 'focus-history-search',
-    kind: 'local',
-    labelKey: 'focusHistorySearch',
-    keywords: ['search', '搜索', '查找', '历史搜索', 'find history', '搜索历史会话', '历史会话'],
+    keywords: ['new', '新建', '会话', 'new session', '新聊天', '新对话', '新建对话'],
   },
   {
     id: 'copy-latest-reply',
     kind: 'local',
     labelKey: 'copyLatestReply',
     keywords: ['copy', '复制', '回复', '最近回复', 'clipboard'],
-  },
-  {
-    id: 'open-settings',
-    kind: 'local',
-    labelKey: 'openSettings',
-    keywords: ['settings', '设置', '偏好', '危险模式', '工作目录'],
-  },
-  {
-    id: 'open-agents',
-    kind: 'local',
-    labelKey: 'openAgents',
-    keywords: ['agents', '代理', '智能体', '安装', 'agents page'],
-  },
-  {
-    id: 'open-connections',
-    kind: 'local',
-    labelKey: 'openConnections',
-    keywords: ['connections', '连接', '登录', '账号', 'connections page'],
   },
   {
     id: 'sample-understand-project',
@@ -190,12 +169,18 @@ export function actionMatchesQuery(action: ChatActionDef, query: string): boolea
   return tokens.every((token) => hay.includes(token));
 }
 
+/** Slash `/` lists real commands. Sample drafts stay on empty-state chips. */
+export function chatOverflowMenuActions(actions: readonly ChatActionDef[] = CHAT_ACTIONS): ChatActionDef[] {
+  return actions.filter((item) => item.kind !== 'draft');
+}
+
 export function filterChatActions(draft: string, extraActions: ChatActionDef[] = []): ChatActionDef[] {
   if (!isCommandSearchMode(draft)) return [];
   const actions = [...extraActions, ...CHAT_ACTIONS];
   const query = commandSearchQuery(draft);
-  if (!query) return actions;
-  return actions.filter((action) => actionMatchesQuery(action, query));
+  const scoped = query ? actions : actions.filter((item) => item.kind !== 'draft');
+  if (!query) return scoped;
+  return scoped.filter((action) => actionMatchesQuery(action, query));
 }
 
 export function chatActionDisabledReason(
@@ -212,4 +197,18 @@ export function clampActionIndex(index: number, length: number): number {
   if (index < 0) return length - 1;
   if (index >= length) return 0;
   return index;
+}
+
+/** Sit the slash palette just above the textarea (caret lives on line 1; `/` forbids whitespace). */
+export function slashMenuFixedPosition(input: {
+  anchorTop: number;
+  anchorLeft: number;
+  viewportHeight: number;
+  gap?: number;
+}): { left: number; bottom: number } {
+  const gap = input.gap ?? 4;
+  return {
+    left: input.anchorLeft,
+    bottom: input.viewportHeight - input.anchorTop + gap,
+  };
 }

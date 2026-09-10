@@ -160,8 +160,12 @@ done
         std::thread::sleep(Duration::from_millis(5));
     }
     assert!(ready.is_file(), "burst notifications were not flushed");
+    // ready only means the child flushed stdout. The parent reader may still
+    // be parsing; try_recv immediately after the file appears flakes on busy
+    // CI runners (got 0 of 8). Keep Duration::ZERO so this stays a try_recv.
     let mut got = 0;
-    while got < 8 {
+    let drain_deadline = Instant::now() + Duration::from_secs(2);
+    while got < 8 && Instant::now() < drain_deadline {
         match transport
             .recv_timeout(Duration::ZERO)
             .expect("zero-timeout recv")
@@ -169,7 +173,7 @@ done
             Some(CodexEvent::Notification { method, .. }) if method == "notice" => got += 1,
             Some(CodexEvent::Exited) => panic!("process exited before draining notices"),
             Some(_) => {}
-            None => break,
+            None => std::thread::sleep(Duration::from_millis(5)),
         }
     }
     assert_eq!(got, 8, "zero timeout must try_recv queued lines");
@@ -265,6 +269,56 @@ printf '%s\n' "$extra" >> "$log"
     assert!(
         !wire.contains(r#""method":"initialized""#),
         "Kiro handshake must not send initialized: {wire}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn spawn_grok_skips_initialized_and_permission_mode() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = tempdir().expect("temp directory");
+    let program = directory.path().join("fake-grok-acp");
+    std::fs::write(
+        &program,
+        r##"#!/bin/sh
+log="$(dirname "$0")/wire.log"
+printf '%s\n' "args:$*" >> "$log"
+IFS= read -r initialize
+printf '%s\n' "$initialize" >> "$log"
+printf '%s\n' '{"id":1,"result":{"initialized":true}}'
+IFS= read -r extra
+printf '%s\n' "$extra" >> "$log"
+"##,
+    )
+    .expect("fake grok script");
+    let mut permissions = std::fs::metadata(&program)
+        .expect("fake metadata")
+        .permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(&program, permissions).expect("fake executable");
+
+    let mut transport =
+        CodexTransport::spawn_grok(&program, directory.path(), None, None).expect("spawn grok");
+    transport.shutdown();
+    let wire = std::fs::read_to_string(directory.path().join("wire.log")).expect("wire log");
+    assert!(
+        wire.contains("args:agent --no-leader stdio"),
+        "Grok must use documented agent stdio flags: {wire}"
+    );
+    assert!(
+        !wire.contains("--permission-mode"),
+        "permission-mode exits Grok before a card: {wire}"
+    );
+    assert!(
+        wire.contains(r#""method":"initialize""#)
+            && wire.contains(r#""writeTextFile":true"#)
+            && wire.contains(r#""readTextFile":true"#),
+        "Grok initialize must advertise client fs: {wire}"
+    );
+    assert!(
+        !wire.contains(r#""method":"initialized""#),
+        "Grok handshake must not send initialized: {wire}"
     );
 }
 
@@ -456,16 +510,18 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
     assert!(cancel.get("id").is_none(), "cancel must be a notification");
 }
 
-
 #[test]
 fn classify_maps_claude_stream_json_to_notification() {
-    let result = classify_message(json!({
-        "type": "result",
-        "subtype": "success",
-        "is_error": false,
-        "result": "PONG",
-        "session_id": "sess-1"
-    }), true)
+    let result = classify_message(
+        json!({
+            "type": "result",
+            "subtype": "success",
+            "is_error": false,
+            "result": "PONG",
+            "session_id": "sess-1"
+        }),
+        true,
+    )
     .unwrap()
     .expect("claude result must not be skipped");
     match result {
@@ -477,11 +533,14 @@ fn classify_maps_claude_stream_json_to_notification() {
         other => panic!("unexpected {other:?}"),
     }
 
-    let assistant = classify_message(json!({
-        "type": "assistant",
-        "message": {"role": "assistant", "content": [{"type": "text", "text": "hi"}]},
-        "session_id": "sess-1"
-    }), true)
+    let assistant = classify_message(
+        json!({
+            "type": "assistant",
+            "message": {"role": "assistant", "content": [{"type": "text", "text": "hi"}]},
+            "session_id": "sess-1"
+        }),
+        true,
+    )
     .unwrap()
     .expect("assistant");
     assert!(matches!(
@@ -490,12 +549,14 @@ fn classify_maps_claude_stream_json_to_notification() {
     ));
 }
 
-
 #[test]
 fn classify_ignores_claude_types_on_jsonrpc_transport() {
     // Without claude_stream mode, Anthropic/Claude `type` must not steal the line.
     assert!(matches!(
-        classify_message(json!({"type": "assistant", "message": {"role": "assistant"}}), false),
+        classify_message(
+            json!({"type": "assistant", "message": {"role": "assistant"}}),
+            false
+        ),
         Ok(None)
     ));
     assert!(matches!(

@@ -10,9 +10,10 @@ import {
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  ArrowUp,
   Check,
   ChevronDown,
-  SendHorizontal,
+  MoreHorizontal,
   Square,
 } from 'lucide-react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
@@ -33,17 +34,29 @@ import { Hint, Tip } from '@/components/ui/tooltip';
 import { agentDisplayName } from '@/config/agents';
 import type { AgentKey, Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { composerNativeEditChord } from './chat-model';
 import {
   composerEnterShouldSubmit,
+  composerFooterControl,
   composerPrimaryAction,
-  composerQueuedFollowUpView,
   composerShortcutKind,
   composerShortcutMessageKey,
   composerShouldRestoreFocus,
-  composerShowsSubmitButton,
   composerStopMessageKey,
+  composerStopTitle,
   composerSubmitMessageKey,
 } from './chat-composer-model';
+import {
+  composerCapabilityHint,
+  composerCompactSecondary,
+  composerConnectionTooltip,
+  composerHoverHint,
+  composerInvitePlaceholder,
+  composerShowsHintRow,
+} from './chat-empty-state';
+import { ChatActionMenu } from './ChatActionMenu';
+import type { ChatActionContext, ChatActionDef } from './chat-actions';
+import { ChatShortcutsHelp } from './ChatShortcutsHelp';
 import {
   autoApproveFooter,
   blockerCopy,
@@ -60,8 +73,9 @@ import {
   type ChatConnectionPickerView,
   type ChatSendBlocker,
 } from './chat-model';
-import { kiroChatComposerPlaceholder } from './chat-kiro-model';
+import { ChatQueuedFollowUpList } from './ChatQueuedFollowUpList';
 import { chatEffortHint, chatEffortLabel, chatModelDisplayName } from './chat-model-labels';
+import type { QueuedFollowUpItem } from './chat-grok-follow-up';
 
 export function ChatComposer({
   draft,
@@ -85,8 +99,8 @@ export function ChatComposer({
   onSend,
   onSteer,
   onQueueAfterTurn,
-  queuedFollowUp = null,
-  queuedFollowUpCount = 0,
+  queuedFollowUps = [],
+  onCancelQueuedFollowUp,
   onClearQueuedFollowUp,
   onCancel,
   onSelectAgent,
@@ -108,8 +122,15 @@ export function ChatComposer({
   paneHeight = null,
   paneRef,
   showBlockerBanner = true,
+  emptyTranscript = false,
   focusNonce = 0,
   modelMenuOpenNonce = 0,
+  commandSearchOpen = false,
+  commandIndex = 0,
+  actionContext = { hasLatestReply: false, newChatAllowed: true },
+  extraActions,
+  onRunAction,
+  onHoverCommandIndex,
 }: {
   draft: string;
   setDraft: (v: string) => void;
@@ -132,8 +153,8 @@ export function ChatComposer({
   onSend: () => void;
   onSteer?: () => void;
   onQueueAfterTurn?: () => void;
-  queuedFollowUp?: string | null;
-  queuedFollowUpCount?: number;
+  queuedFollowUps?: readonly QueuedFollowUpItem[];
+  onCancelQueuedFollowUp?: (id: string) => void;
   onClearQueuedFollowUp?: () => void;
   focusNonce?: number;
   onCancel: () => void;
@@ -156,7 +177,14 @@ export function ChatComposer({
   paneHeight?: number | null;
   paneRef?: Ref<HTMLDivElement>;
   showBlockerBanner?: boolean;
+  emptyTranscript?: boolean;
   modelMenuOpenNonce?: number;
+  commandSearchOpen?: boolean;
+  commandIndex?: number;
+  actionContext?: ChatActionContext;
+  extraActions?: ChatActionDef[];
+  onRunAction?: (action: ChatActionDef) => void;
+  onHoverCommandIndex?: (index: number) => void;
 }) {
   const navigate = useNavigate();
   const { t } = useI18n();
@@ -170,15 +198,16 @@ export function ChatComposer({
     canSteer: Boolean(onSteer),
     canQueue: Boolean(onQueueAfterTurn),
   });
-  const showSubmit = composerShowsSubmitButton({ sending, action });
+  const footerControl = composerFooterControl({ sending, action });
   const shortcutKind = composerShortcutKind({
     blocked: blockers.length > 0,
     sending,
     canSteer: Boolean(onSteer),
     canQueue: Boolean(onQueueAfterTurn),
   });
-  const queueView = composerQueuedFollowUpView(queuedFollowUp, queuedFollowUpCount);
   const stopCopy = t(composerStopMessageKey(canceling));
+  const stopTitle = composerStopTitle({ canceling, stopLabel: stopCopy });
+  const footerSlotClass = 'h-8 w-8 shrink-0 rounded-full';
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const modelMenuDisabled = sending || connectionLocked || switchingProvider || switchingModel;
@@ -249,6 +278,19 @@ export function ChatComposer({
     rowCount: pickerRows.length,
   });
   const pickerEmptyCopy = pickerEmpty ? chatAgentPickerEmptyCopy(t, pickerEmpty) : null;
+  const compactSecondary = composerCompactSecondary({ emptyTranscript });
+  const capabilityHint = composerCapabilityHint(t, {
+    agentId: primaryAgent,
+    sending,
+  });
+  const shortcutHint = t(composerShortcutMessageKey(shortcutKind));
+  const hoverHint = composerHoverHint(shortcutHint, capabilityHint);
+  const showHintRow = composerShowsHintRow({ emptyTranscript });
+  const connectionHint = composerConnectionTooltip({
+    label: connectionView.label,
+    subtitle: connectionView.subtitle,
+    caption: connectionCaption,
+  });
 
   return (
     <>
@@ -301,19 +343,30 @@ export function ChatComposer({
               ? undefined
               : { minHeight: COMPOSER_TEXTAREA_MIN_PX, maxHeight: COMPOSER_TEXTAREA_MAX_PX }
           }
-          placeholder={kiroChatComposerPlaceholder(
-            t,
-            primaryAgent,
-            t('chat.composer.placeholder'),
-          )}
+          placeholder={composerInvitePlaceholder(t, { emptyTranscript })}
           rows={1}
           value={draft}
           disabled={textareaDisabled}
           enterKeyHint="send"
           aria-keyshortcuts="Enter"
+          title={hoverHint}
           onChange={(e) => setDraft(e.target.value)}
           onInput={syncTextareaHeight}
           onKeyDown={(e) => {
+            const edit = composerNativeEditChord({
+              key: e.key,
+              code: e.nativeEvent.code,
+              metaKey: e.metaKey,
+              ctrlKey: e.ctrlKey,
+              altKey: e.altKey,
+              shiftKey: e.shiftKey,
+            });
+            if (edit === 'selectAll') {
+              e.preventDefault();
+              e.currentTarget.select();
+              return;
+            }
+            if (edit) return;
             if (onDraftKeyDown?.(e)) return;
             if (!composerEnterShouldSubmit({
               key: e.key,
@@ -343,30 +396,32 @@ export function ChatComposer({
           }}
           aria-label={t('chat.composer.inputAria')}
         />
-        {queueView ? (
-          <div
-            className="mx-3 mb-1 flex items-center gap-2 rounded-btn bg-subtle px-2 py-1"
-            role="status"
-            aria-live="polite"
-          >
-            <p className="min-w-0 flex-1 truncate text-meta text-secondary">
-              {t('chat.composer.queuedCount', { count: queueView.count })}
-              {' · '}
-              {t('chat.composer.queuedHint')}
-              {'：'}
-              {queueView.preview}
-            </p>
-            {onClearQueuedFollowUp ? (
-              <Button type="button" size="sm" variant="ghost" onClick={onClearQueuedFollowUp}>
-                {t('chat.composer.clearQueuedFollowUp')}
-              </Button>
+        {onRunAction ? (
+          <ChatActionMenu
+            draft={draft}
+            commandOpen={commandSearchOpen}
+            selectedIndex={commandIndex}
+            actionContext={actionContext}
+            extraActions={extraActions}
+            onRun={onRunAction}
+            onHoverIndex={onHoverCommandIndex}
+            anchorRef={textareaRef}
+          />
+        ) : null}
+        <ChatQueuedFollowUpList
+          items={queuedFollowUps}
+          onCancelItem={onCancelQueuedFollowUp}
+          onCancelAll={onClearQueuedFollowUp}
+        />
+        <div className="flex items-center justify-between gap-2 px-4 pb-1" data-composer-shortcut="">
+          <div className="min-w-0">
+            {showHintRow ? (
+              <p className="text-meta text-muted">{shortcutHint}</p>
             ) : null}
           </div>
-        ) : null}
-        <p className="px-4 pb-1 text-meta text-muted" data-composer-shortcut="">
-          {t(composerShortcutMessageKey(shortcutKind))}
-        </p>
-        <div className="flex shrink-0 items-center gap-1.5 border-t border-border/50 px-2 py-2">
+          <ChatShortcutsHelp />
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5 border-t border-border/50 px-2 py-1.5">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -432,7 +487,7 @@ export function ChatComposer({
           </DropdownMenu>
 
           <DropdownMenu>
-            <Hint label={connectionCaption ?? undefined}>
+            <Hint label={connectionHint}>
               <DropdownMenuTrigger asChild>
                 <Button
                   type="button"
@@ -445,15 +500,10 @@ export function ChatComposer({
                     switchingProvider ||
                     Boolean(primaryAgent && hiddenIds.has(primaryAgent))
                   }
-                  className="max-w-32"
-                  aria-label={connectionCaption ?? t('chat.composer.switchConnection')}
+                  className={compactSecondary ? 'max-w-[6.5rem]' : 'max-w-28'}
+                  aria-label={connectionHint || t('chat.composer.switchConnection')}
                 >
-                  <span className="min-w-0 truncate">
-                    {connectionView.label}
-                    {connectionView.subtitle ? (
-                      <span className="text-muted"> · {connectionView.subtitle}</span>
-                    ) : null}
-                  </span>
+                  <span className="min-w-0 truncate">{connectionView.label}</span>
                   <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
                 </Button>
               </DropdownMenuTrigger>
@@ -538,7 +588,7 @@ export function ChatComposer({
                     size="sm"
                     variant="outline"
                     disabled={modelMenuDisabled}
-                    className="max-w-48"
+                    className="max-w-36"
                     data-help="chat-model"
                     aria-label={t('chat.composer.switchModel')}
                     aria-keyshortcuts="Control+Shift+I"
@@ -574,57 +624,48 @@ export function ChatComposer({
           ) : null}
 
           {effortOptions.length > 0 && onSwitchEffort ? (
-            <>
-              <Hint label={currentEffortHint ?? t('chat.runtimeOps.effort')}>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={sending || connectionLocked || switchingProvider || switchingModel}
-                      className="max-w-32"
-                      data-help="chat-effort"
-                      aria-label={t('chat.runtimeOps.effort')}
-                    >
-                      <span className="min-w-0 truncate">
-                        {currentEffort
-                          ? chatEffortLabel(currentEffort, t)
-                          : t('chat.runtimeOps.effort')}
-                      </span>
-                      <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-56">
-                    <DropdownMenuLabel>{t('chat.runtimeOps.effort')}</DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuRadioGroup
-                      value={currentEffort ?? ''}
-                      onValueChange={(id) => onSwitchEffort(id)}
-                    >
-                      {effortOptions.map((effort) => {
-                        const hint = chatEffortHint(effort, t);
-                        return (
-                          <DropdownMenuRadioItem
-                            key={effort}
-                            value={effort}
-                            disabled={sending || connectionLocked || switchingModel}
-                          >
-                            <span className="flex min-w-0 flex-1 items-baseline justify-between gap-3">
-                              <span className="truncate">{chatEffortLabel(effort, t)}</span>
-                              {hint ? <span className="shrink-0 text-meta text-muted">{hint}</span> : null}
-                            </span>
-                          </DropdownMenuRadioItem>
-                        );
-                      })}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </Hint>
-              {currentEffortHint ? (
-                <span className="text-meta text-muted">{currentEffortHint}</span>
-              ) : null}
-            </>
+            <Hint label={currentEffortHint ?? t('chat.runtimeOps.effort')}>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    disabled={sending || connectionLocked || switchingProvider || switchingModel}
+                    data-help="chat-composer-more"
+                    aria-label={t('chat.composer.moreOptions')}
+                    title={t('chat.composer.moreOptions')}
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-56">
+                  <DropdownMenuLabel>{t('chat.runtimeOps.effort')}</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuRadioGroup
+                    value={currentEffort ?? ''}
+                    onValueChange={(id) => onSwitchEffort(id)}
+                  >
+                    {effortOptions.map((effort) => {
+                      const hint = chatEffortHint(effort, t);
+                      return (
+                        <DropdownMenuRadioItem
+                          key={effort}
+                          value={effort}
+                          disabled={sending || connectionLocked || switchingModel}
+                          data-help="chat-effort"
+                        >
+                          <span className="flex min-w-0 flex-1 items-baseline justify-between gap-3">
+                            <span className="truncate">{chatEffortLabel(effort, t)}</span>
+                            {hint ? <span className="shrink-0 text-meta text-muted">{hint}</span> : null}
+                          </span>
+                        </DropdownMenuRadioItem>
+                      );
+                    })}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </Hint>
           ) : null}
 
           {runtimeControls ? (
@@ -645,38 +686,37 @@ export function ChatComposer({
             <div className="min-w-0 flex-1" />
           )}
 
-          {sending ? (
+          {footerControl === 'stop' ? (
             <Button
               type="button"
-              size="sm"
+              size="icon"
               variant="dangerOutline"
-              className="shrink-0"
+              className={footerSlotClass}
               disabled={canceling}
               aria-busy={canceling}
               data-help="chat-stop"
               aria-label={stopCopy}
-              title={stopCopy}
+              aria-keyshortcuts="Escape"
+              title={stopTitle}
               onClick={onCancel}
             >
-              <Square className="h-3.5 w-3.5" />
-              {stopCopy}
+              <Square className="h-3.5 w-3.5 fill-current" />
             </Button>
-          ) : null}
-          {showSubmit ? (
+          ) : (
             <Button
               type="button"
               size="icon"
               variant={action ? 'default' : 'secondary'}
-              className="h-8 w-8 shrink-0 rounded-full"
+              className={footerSlotClass}
               disabled={!action}
               onClick={submitComposer}
               data-help="chat-send"
               aria-label={sendHint}
-              title={sendHint}
+              title={composerHoverHint(sendHint, hoverHint)}
             >
-              <SendHorizontal className="h-4 w-4" />
+              <ArrowUp className="h-4 w-4" />
             </Button>
-          ) : null}
+          )}
         </div>
       </div>
       </div>

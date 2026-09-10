@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ImagePlus, X } from 'lucide-react';
+import { ChevronDown, ImagePlus, MoreHorizontal, Sparkles, X } from 'lucide-react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import {
@@ -13,20 +13,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Hint } from '@/components/ui/tooltip';
-import { ChatActionMenu } from './ChatActionMenu';
-import type { ChatActionContext, ChatActionDef } from './chat-actions';
 import type { RuntimeExtensionItem, RuntimeModelOption, RuntimeTurnSettings } from '@/lib/api/chat';
 import { chatEffortHint, chatEffortLabel, chatModelDisplayName } from './chat-model-labels';
 
 export function ChatRuntimeExtras(props: {
   enabled: boolean;
-  draft: string;
-  commandSearchOpen: boolean;
-  commandIndex?: number;
-  actionContext: ChatActionContext;
-  extraActions?: ChatActionDef[];
-  onRunAction: (action: ChatActionDef) => void;
-  onHoverCommandIndex?: (index: number) => void;
   models: RuntimeModelOption[];
   settings: RuntimeTurnSettings;
   frozen: boolean;
@@ -48,6 +39,7 @@ export function ChatRuntimeExtras(props: {
   /** When `codex`, toolbar skill control is always hidden (defense if parent forgets the prop). */
   agentId?: string | null;
   inline?: boolean;
+  compactSecondary?: boolean;
   modelMenuOpenNonce?: number;
 }) {
   const { t } = useI18n();
@@ -75,27 +67,10 @@ export function ChatRuntimeExtras(props: {
     if (modelDisabledReason || props.models.length === 0) return;
     setModelMenuOpen(true);
   }, [modelDisabledReason, props.modelMenuOpenNonce, props.models.length]);
-  const currentEffortHint = props.settings.effort
-    ? chatEffortHint(props.settings.effort, t)
-    : null;
   const modelTriggerHint = modelDisabledReason
     ?? `${t('chat.composer.switchModel')} · ${t('chat.composer.shortcutOpenModel')}`;
 
-  if (!props.enabled) {
-    return (
-      <div className="flex items-center gap-2 px-1 pb-1">
-        <ChatActionMenu
-          draft={props.draft}
-          commandOpen={props.commandSearchOpen}
-          selectedIndex={props.commandIndex}
-          actionContext={props.actionContext}
-          extraActions={props.extraActions}
-          onRun={props.onRunAction}
-          onHoverIndex={props.onHoverCommandIndex}
-        />
-      </div>
-    );
-  }
+  if (!props.enabled) return null;
 
   // Inline mode uses `contents` so model/effort buttons sit in the composer
   // toolbar row. Once images are attached, switch to a column: `contents`
@@ -103,9 +78,12 @@ export function ChatRuntimeExtras(props: {
   // and the removable chips get clipped (true-window #312 FAIL).
   const rootClass = props.inline
     ? props.images.length > 0
-      ? 'flex w-full min-w-0 flex-col gap-2'
+      ? 'flex w-full min-w-0 flex-col gap-1.5'
       : 'contents'
     : 'space-y-2 px-1 pb-1';
+  const controlsClass = props.inline && props.images.length === 0
+    ? 'contents'
+    : 'flex flex-wrap items-center gap-1.5';
 
   return (
     <div
@@ -135,16 +113,7 @@ export function ChatRuntimeExtras(props: {
         </div>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <ChatActionMenu
-          draft={props.draft}
-          commandOpen={props.commandSearchOpen}
-          selectedIndex={props.commandIndex}
-          actionContext={props.actionContext}
-          extraActions={props.extraActions}
-          onRun={props.onRunAction}
-          onHoverIndex={props.onHoverCommandIndex}
-        />
+      <div className={controlsClass} data-help="chat-composer-cluster">
         <Hint label={modelTriggerHint}>
           <DropdownMenu open={modelMenuOpen} onOpenChange={setModelMenuOpen}>
             <DropdownMenuTrigger asChild>
@@ -153,16 +122,17 @@ export function ChatRuntimeExtras(props: {
                 size="sm"
                 variant="outline"
                 disabled={Boolean(modelDisabledReason)}
-                className="max-w-48"
+                className="max-w-36"
                 data-help="chat-model"
                 aria-label={t('chat.composer.switchModel')}
                 aria-keyshortcuts="Control+Shift+I"
               >
-                <span className="truncate">
+                <span className="min-w-0 truncate">
                   {props.settings.model
                     ? chatModelDisplayName(props.settings.model, t)
                     : t('chat.composer.switchModel')}
                 </span>
+                <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
               </Button>
             </DropdownMenuTrigger>
             {props.models.length > 0 ? (
@@ -183,80 +153,77 @@ export function ChatRuntimeExtras(props: {
             ) : null}
           </DropdownMenu>
         </Hint>
-        <Hint label={effortDisabledReason ?? currentEffortHint ?? undefined}>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={Boolean(effortDisabledReason)}
-                data-help="chat-effort"
-                aria-label={t('chat.runtimeOps.effort')}
-              >
-                {props.settings.effort
-                  ? chatEffortLabel(props.settings.effort, t)
-                  : t('chat.runtimeOps.effort')}
-              </Button>
-            </DropdownMenuTrigger>
-            {props.efforts.length > 0 ? (
-              <DropdownMenuContent align="start" className="w-56">
-                <DropdownMenuLabel>{t('chat.runtimeOps.effort')}</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuRadioGroup
-                  value={props.settings.effort ?? ''}
-                  onValueChange={(id) => props.onSwitchEffort(id)}
+        {props.efforts.length > 0 || (showSkillPicker && callableSkills.length > 0) || props.imageInput !== false ? (
+          <Hint label={t('chat.composer.moreOptions')}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  data-help="chat-composer-more"
+                  aria-label={t('chat.composer.moreOptions')}
+                  title={t('chat.composer.moreOptions')}
                 >
-                  {props.efforts.map((effort) => {
-                    const hint = chatEffortHint(effort, t);
-                    return (
-                      <DropdownMenuRadioItem key={effort} value={effort} disabled={props.frozen}>
-                        <span className="flex min-w-0 flex-1 items-baseline justify-between gap-3">
-                          <span className="truncate">{chatEffortLabel(effort, t)}</span>
-                          {hint ? <span className="shrink-0 text-meta text-muted">{hint}</span> : null}
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-64">
+                {props.efforts.length > 0 ? (
+                  <>
+                    <DropdownMenuLabel>{t('chat.runtimeOps.effort')}</DropdownMenuLabel>
+                    <DropdownMenuRadioGroup
+                      value={props.settings.effort ?? ''}
+                      onValueChange={(id) => props.onSwitchEffort(id)}
+                    >
+                      {props.efforts.map((effort) => {
+                        const hint = chatEffortHint(effort, t);
+                        return (
+                          <DropdownMenuRadioItem
+                            key={effort}
+                            value={effort}
+                            disabled={Boolean(effortDisabledReason) || props.frozen}
+                            data-help="chat-effort"
+                          >
+                            <span className="flex min-w-0 flex-1 items-baseline justify-between gap-3">
+                              <span className="truncate">{chatEffortLabel(effort, t)}</span>
+                              {hint ? <span className="shrink-0 text-meta text-muted">{hint}</span> : null}
+                            </span>
+                          </DropdownMenuRadioItem>
+                        );
+                      })}
+                    </DropdownMenuRadioGroup>
+                  </>
+                ) : null}
+                {showSkillPicker && callableSkills.length > 0 ? (
+                  <>
+                    {props.efforts.length > 0 ? <DropdownMenuSeparator /> : null}
+                    <DropdownMenuLabel>{t('chat.runtimeOps.skill')}</DropdownMenuLabel>
+                    {callableSkills.map((item) => (
+                      <DropdownMenuItem key={item.id} onClick={() => props.onToggleSkill(item.id)}>
+                        <span className="flex min-w-0 items-center gap-2">
+                          <Sparkles className="size-3.5 shrink-0" />
+                          <span className="w-4 shrink-0">{props.selectedSkillIds.includes(item.id) ? '✓' : ''}</span>
+                          <span className="truncate">{item.name}</span>
                         </span>
-                      </DropdownMenuRadioItem>
-                    );
-                  })}
-                </DropdownMenuRadioGroup>
+                      </DropdownMenuItem>
+                    ))}
+                  </>
+                ) : null}
+                {props.imageInput !== false ? (
+                  <>
+                    {props.efforts.length > 0 || (showSkillPicker && callableSkills.length > 0) ? (
+                      <DropdownMenuSeparator />
+                    ) : null}
+                    <DropdownMenuItem onClick={props.onAddImages}>
+                      <ImagePlus className="mr-1 size-3.5" />
+                      {`${t('chat.runtimeOps.addImage')}${props.images.length > 0 ? ` · ${props.images.length}` : ''}`}
+                    </DropdownMenuItem>
+                  </>
+                ) : null}
               </DropdownMenuContent>
-            ) : null}
-          </DropdownMenu>
-        </Hint>
-        {!effortDisabledReason && currentEffortHint ? (
-          <span className="text-meta text-muted">{currentEffortHint}</span>
-        ) : null}
-        {showSkillPicker && callableSkills.length > 0 ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" size="sm" variant="outline" className="max-w-32">
-                <span className="truncate">
-                  {t('chat.runtimeOps.skill')}
-                  {props.selectedSkillIds.length > 0 ? ` · ${props.selectedSkillIds.length}` : ''}
-                </span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-64">
-              <DropdownMenuLabel>{t('chat.runtimeOps.skill')}</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {callableSkills.map((item) => (
-                <DropdownMenuItem key={item.id} onClick={() => props.onToggleSkill(item.id)}>
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span className="w-4 shrink-0">{props.selectedSkillIds.includes(item.id) ? '✓' : ''}</span>
-                    <span className="truncate">{item.name}</span>
-                  </span>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
-        {props.imageInput !== false ? (
-        <Hint label={t('chat.runtimeOps.pasteImageHint')}>
-          <Button type="button" size="sm" variant="outline" onClick={props.onAddImages}>
-            <ImagePlus className="mr-1 size-3.5" />
-            {t('chat.runtimeOps.addImage')}{props.images.length > 0 ? ` · ${props.images.length}` : ''}
-          </Button>
-        </Hint>
+            </DropdownMenu>
+          </Hint>
         ) : null}
         {!props.inline ? (
           <span className="text-meta text-muted">{t('chat.runtimeOps.otherAttachmentsBlocked')}</span>

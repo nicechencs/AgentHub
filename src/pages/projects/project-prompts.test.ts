@@ -5,6 +5,7 @@ import {
   buildSummaryPrompt,
   fitContinueRecord,
   formatContinueRecord,
+  historyTurnsFromRecord,
 } from './project-prompts';
 
 function session(partial: Partial<AgentSession> = {}): AgentSession {
@@ -23,6 +24,19 @@ function session(partial: Partial<AgentSession> = {}): AgentSession {
     ...partial,
   };
 }
+
+describe('historyTurnsFromRecord', () => {
+  it('maps excerpt turns into AgentHub history without the cwd existing', () => {
+    expect(
+      historyTurnsFromRecord(session({ cwd: '/var/folders/zz/T/.tmp-gone/workspace' }), {
+        excerpt: '---turn:user---\n先改登录\n---turn:assistant---\n先看实现',
+      }),
+    ).toEqual([
+      { role: 'user', content: '先改登录' },
+      { role: 'agent', content: '先看实现' },
+    ]);
+  });
+});
 
 describe('buildContinuePrompt', () => {
   it('falls back to the list preview when no record is loaded', () => {

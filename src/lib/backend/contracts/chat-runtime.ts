@@ -18,6 +18,13 @@ export interface RuntimePermissionOption {
   kind: string;
 }
 
+export interface RuntimeFileChange {
+  path: string;
+  kind?: string;
+  /** Protocol-provided snippet. Missing when the payload only named a path. */
+  preview?: string;
+}
+
 export interface RuntimeRequest {
   id: string;
   runId: string;
@@ -26,6 +33,7 @@ export interface RuntimeRequest {
   detail: string;
   questions: RuntimeQuestion[];
   permissionOptions?: RuntimePermissionOption[];
+  fileChanges?: RuntimeFileChange[];
 }
 
 export type RuntimeDecision = 'allow' | 'deny' | 'allow_always';

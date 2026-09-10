@@ -68,11 +68,11 @@ export function SettingsRow({
         </div>
         {description &&
           (descriptionTip ? (
-            <Tip className="mt-0.5 block text-meta text-muted" label={descriptionTip}>
+            <Tip className="mt-0.5 block text-meta text-secondary" label={descriptionTip}>
               <span id={descId}>{description}</span>
             </Tip>
           ) : (
-            <p id={descId} className="mt-0.5 text-meta text-muted">
+            <p id={descId} className="mt-0.5 text-meta text-secondary">
               {description}
             </p>
           ))}

@@ -6,6 +6,7 @@ import {
   type CoreChatMessage,
   type CoreConversation,
 } from '@/lib/backend/contracts/chat-map';
+import { onChatNativeShortcut } from './chat-shortcut-events';
 import { Channel, invoke } from './invoke';
 import type { RuntimeOptions, RuntimeSnapshot, RuntimeTurnSettings } from '@/lib/backend/contracts/chat-runtime';
 
@@ -20,6 +21,17 @@ export function createTauriChatPort(): ChatPort {
       const row = await invoke<CoreConversation>('create_conversation', {
         agentIds,
         cwd: cwd ?? null,
+      });
+      return mapConversation(row);
+    },
+
+    async openConversationFromSession(input) {
+      const row = await invoke<CoreConversation>('open_conversation_from_session', {
+        agentId: input.agentId,
+        sessionId: input.sessionId ?? null,
+        cwd: input.cwd ?? null,
+        title: input.title ?? null,
+        history: input.history,
       });
       return mapConversation(row);
     },
@@ -135,6 +147,9 @@ export function createTauriChatPort(): ChatPort {
     },
     async readMarkdownPreview(path, cwd) {
       return invoke<MarkdownFilePreviewDto>('read_markdown_preview', { path, cwd });
+    },
+    onNativeShortcut(handler) {
+      return onChatNativeShortcut(handler);
     },
   };
 }

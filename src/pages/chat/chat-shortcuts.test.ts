@@ -1,0 +1,67 @@
+import { describe, expect, it, vi } from 'vitest';
+import { translate } from '@/lib/i18n';
+import {
+  CHAT_SHORTCUT_ROWS,
+  chatShortcutChord,
+  subscribeChatShortcutKeydown,
+} from './chat-shortcuts';
+
+describe('chat shortcut overview', () => {
+  it('lists new chat and the overview itself', () => {
+    expect(CHAT_SHORTCUT_ROWS.map((row) => row.id)).toEqual([
+      'send',
+      'newline',
+      'stop',
+      'actions',
+      'history',
+      'model',
+      'newChat',
+      'overview',
+    ]);
+    expect(CHAT_SHORTCUT_ROWS.find((row) => row.id === 'newChat')?.keys).toBe('Ctrl+N');
+    expect(CHAT_SHORTCUT_ROWS.find((row) => row.id === 'overview')?.keys).toBe('?');
+    expect(CHAT_SHORTCUT_ROWS.find((row) => row.id === 'stop')?.keys).toBe('Esc');
+    expect(translate('zh', 'chat.shortcuts.stop')).toBe('停止');
+    expect(translate('en', 'chat.shortcuts.stop')).toBe('Stop');
+  });
+
+  it('shows Cmd on macOS and Ctrl elsewhere', () => {
+    expect(chatShortcutChord('Ctrl+N', 'linux')).toBe('Ctrl+N');
+    expect(chatShortcutChord('Ctrl+N', 'windows')).toBe('Ctrl+N');
+    expect(chatShortcutChord('Ctrl+N', 'macos')).toBe('Cmd+N');
+    expect(chatShortcutChord('Ctrl+Shift+I', 'macos')).toBe('Cmd+Shift+I');
+    expect(chatShortcutChord('Enter', 'macos')).toBe('Enter');
+  });
+
+  it('uses existing Chat words in both languages', () => {
+    expect(translate('zh', 'chat.shortcuts.newChat')).toBe('新建对话');
+    expect(translate('en', 'chat.shortcuts.newChat')).toBe('New chat');
+    expect(translate('zh', 'chat.shortcuts.open')).toBe('快捷键');
+    expect(translate('en', 'chat.shortcuts.open')).toBe('Shortcuts');
+    expect(translate('zh', 'chat.shortcuts.overview')).toBe('快捷键一览');
+    expect(translate('zh', 'chat.shortcuts.ime')).toBe('组字时 Enter 不发送');
+    expect(translate('en', 'chat.shortcuts.ime')).toBe('Enter does not send while composing');
+  });
+
+  it('binds keydown on the document in the capture phase', () => {
+    const add = vi.fn();
+    const remove = vi.fn();
+    const onKey = vi.fn();
+    const unsub = subscribeChatShortcutKeydown(onKey, {
+      addEventListener: add,
+      removeEventListener: remove,
+    });
+    expect(add).toHaveBeenCalledOnce();
+    expect(add.mock.calls[0]?.[0]).toBe('keydown');
+    expect(add.mock.calls[0]?.[2]).toBe(true);
+    const listener = add.mock.calls[0]?.[1] as (event: KeyboardEvent) => void;
+    const event = { key: 'n' } as KeyboardEvent;
+    listener(event);
+    listener(event);
+    expect(onKey).toHaveBeenCalledOnce();
+    expect(onKey).toHaveBeenCalledWith(event);
+    unsub();
+    expect(remove).toHaveBeenCalledOnce();
+    expect(remove.mock.calls[0]?.[2]).toBe(true);
+  });
+});

@@ -23,6 +23,11 @@ import {
   credentialKindFromClass,
 } from '@/components/shared/CredentialKindMark';
 import { DetailRow } from '@/components/shared/DetailRow';
+import {
+  DetailTable,
+  DetailTableCell,
+  DetailTableRow,
+} from '@/components/shared/DetailTable';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ListNameButton } from '@/components/shared/ListNameButton';
 import { AgentLogo } from '@/components/shared/AgentLogo';
@@ -64,7 +69,7 @@ import {
   ContextMenuItem,
   type ContextMenuPoint,
 } from '@/components/ui/context-menu';
-import { Hint, Tip } from '@/components/ui/tooltip';
+import { Hint, Tip, TruncateTip } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
 import type { TranslateFn } from '@/lib/i18n';
@@ -329,9 +334,12 @@ export function TicketDetailPanel({
 function PiDefaultModelSection({
   view,
   onSwitch,
+  embedded = false,
 }: {
   view?: PiDefaultModelView | null;
   onSwitch?: (model: string) => void;
+  /** Value cell in the inspect table; the row already has 默认模型. */
+  embedded?: boolean;
 }) {
   const { t } = useI18n();
   if (!view || view.kind === 'hidden') return null;
@@ -340,49 +348,52 @@ function PiDefaultModelSection({
       <p className="text-meta text-muted">{t('connections.list.defaultModelNeedDefault')}</p>
     );
   }
+  const picker = view.models.length > 0 ? (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={view.switching || !onSwitch}
+          className="max-w-64 justify-between"
+          aria-label={t('connections.list.defaultModel')}
+        >
+          <span className="min-w-0 truncate">
+            {view.model || t('connections.list.defaultModel')}
+          </span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-64">
+        <DropdownMenuLabel>{t('connections.list.defaultModel')}</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuRadioGroup
+          value={view.model ?? ''}
+          onValueChange={(id) => onSwitch?.(id)}
+        >
+          {view.models.map((model) => (
+            <DropdownMenuRadioItem
+              key={model}
+              value={model}
+              disabled={view.switching}
+            >
+              <span className="truncate">{model}</span>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  ) : (
+    <p className="text-meta text-secondary">
+      {view.model || t('connections.list.defaultModelEmpty')}
+    </p>
+  );
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
-      <p className="text-meta text-muted">{t('connections.list.defaultModel')}</p>
-      {view.models.length > 0 ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={view.switching || !onSwitch}
-              className="max-w-64 justify-between"
-              aria-label={t('connections.list.defaultModel')}
-            >
-              <span className="min-w-0 truncate">
-                {view.model || t('connections.list.defaultModel')}
-              </span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-64">
-            <DropdownMenuLabel>{t('connections.list.defaultModel')}</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuRadioGroup
-              value={view.model ?? ''}
-              onValueChange={(id) => onSwitch?.(id)}
-            >
-              {view.models.map((model) => (
-                <DropdownMenuRadioItem
-                  key={model}
-                  value={model}
-                  disabled={view.switching}
-                >
-                  <span className="truncate">{model}</span>
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ) : (
-        <p className="text-meta text-secondary">
-          {view.model || t('connections.list.defaultModelEmpty')}
-        </p>
+      {embedded ? null : (
+        <p className="text-meta text-muted">{t('connections.list.defaultModel')}</p>
       )}
+      {picker}
       <p className="text-meta text-muted">{t('connections.list.defaultModelTip')}</p>
     </div>
   );
@@ -472,88 +483,115 @@ function TicketDetailBody({
     || extras?.refreshTokenPreview
     || diagnostics.length > 0,
   );
+  const recordFields: TicketDetailField[] = [
+    ...timeline,
+    ...(extras?.refreshTokenPreview
+      ? [{
+          label: t('connections.list.refreshToken'),
+          value: extras.refreshTokenPreview,
+          mono: true,
+        } satisfies TicketDetailField]
+      : []),
+  ];
   return (
     <div className="flex flex-col gap-3">
       {authChip || occupancy.length > 0 ? (
         <TicketDetailSection title={t('connections.list.sectionAvailability')}>
-          {authChip ? (
-            <Badge variant={authChip.tone === 'warning' ? 'warning' : 'default'}>
-              {authChip.label}
-            </Badge>
-          ) : null}
-          {occupancy.map((field) => (
-            <DetailRow
-              key={`${field.label}:${field.value}`}
-              label={field.label}
-              value={field.value}
-              mono={field.mono}
-              copyable={field.copyable}
-            />
-          ))}
+          <DetailTable>
+            {authChip ? (
+              <DetailTableRow label={t('connections.list.table.status')}>
+                <DetailTableCell>
+                  <Badge variant={authChip.tone === 'warning' ? 'warning' : 'default'}>
+                    {authChip.label}
+                  </Badge>
+                </DetailTableCell>
+              </DetailTableRow>
+            ) : null}
+            {occupancy.map((field) => (
+              <DetailRow
+                key={`${field.label}:${field.value}`}
+                label={field.label}
+                value={field.value}
+                mono={field.mono}
+                copyable={field.copyable}
+              />
+            ))}
+          </DetailTable>
         </TicketDetailSection>
       ) : null}
 
       {showUsage ? (
         <TicketDetailSection title={t('connections.list.usage')}>
-          <div className="flex flex-col gap-1.5">
+          <DetailTable>
             {has7d ? (
-              <QuotaBar
+              <QuotaDetailRow
                 label={t('connections.list.quota7dUsed')}
                 pct={extras?.quota7dPct}
                 resetIn={extras?.quota7dResetIn}
               />
             ) : null}
             {has5h ? (
-              <QuotaBar
+              <QuotaDetailRow
                 label={t('connections.list.quota5hUsed')}
                 pct={extras?.quota5hPct}
                 resetIn={extras?.quotaResetIn}
               />
             ) : null}
             {hasCredits ? (
-              <QuotaBar
+              <QuotaDetailRow
                 label={t('connections.list.creditsUsed')}
                 pct={creditPct}
                 resetIn={extras?.creditResetIn}
-              />
-            ) : null}
-            {hasCredits && extras?.creditLimit != null ? (
-              <p className="text-meta text-secondary tabular-nums">
-                {t('connections.list.creditsUsage', {
-                  used: formatCreditAmount(extras.creditUsed ?? 0),
-                  limit: formatCreditAmount(extras.creditLimit),
-                })}
-              </p>
+              >
+                {extras?.creditLimit != null ? (
+                  <p className="text-meta text-secondary tabular-nums">
+                    {t('connections.list.creditsUsage', {
+                      used: formatCreditAmount(extras.creditUsed ?? 0),
+                      limit: formatCreditAmount(extras.creditLimit),
+                    })}
+                  </p>
+                ) : null}
+              </QuotaDetailRow>
             ) : null}
             {tokenUsage ? (
-              <p className="text-meta text-secondary">{tokenUsage}</p>
+              <DetailTableRow>
+                <DetailTableCell colSpan={2}>{tokenUsage}</DetailTableCell>
+              </DetailTableRow>
             ) : null}
             {tokenRemaining ? (
-              <DetailRow
-                label={t('connections.list.tokenRemaining')}
-                value={tokenRemaining}
-              />
+              <DetailTableRow label={t('connections.list.tokenRemaining')}>
+                <DetailTableCell colSpan={2}>{tokenRemaining}</DetailTableCell>
+              </DetailTableRow>
             ) : null}
-          </div>
+          </DetailTable>
         </TicketDetailSection>
       ) : null}
 
       {connection.length > 0 || showPi ? (
         <TicketDetailSection title={t('connections.list.sectionWhere')}>
-          {connection.map((field) => (
-            <DetailRow
-              key={`${field.label}:${field.value}`}
-              label={field.label}
-              value={field.value}
-              mono={field.mono}
-              copyable={field.copyable}
-              className={field.copyable ? 'w-full' : undefined}
-            />
-          ))}
-          <PiDefaultModelSection
-            view={piDefaultModel}
-            onSwitch={onSwitchPiDefaultModel}
-          />
+          <DetailTable>
+            {connection.map((field) => (
+              <DetailRow
+                key={`${field.label}:${field.value}`}
+                label={field.label}
+                value={field.value}
+                mono={field.mono}
+                copyable={field.copyable}
+                className={field.copyable ? 'w-full' : undefined}
+              />
+            ))}
+            {showPi ? (
+              <DetailTableRow label={t('connections.list.defaultModel')}>
+                <DetailTableCell>
+                  <PiDefaultModelSection
+                    view={piDefaultModel}
+                    onSwitch={onSwitchPiDefaultModel}
+                    embedded
+                  />
+                </DetailTableCell>
+              </DetailTableRow>
+            ) : null}
+          </DetailTable>
         </TicketDetailSection>
       ) : null}
 
@@ -562,26 +600,29 @@ function TicketDetailBody({
           {bindingRows.length === 0 ? (
             <p className="text-body text-muted">{t('connections.list.clientsEmpty')}</p>
           ) : (
-            <ul className="space-y-1">
+            <DetailTable>
               {bindingRows.map((row) => (
-                <li
+                <DetailTableRow
                   key={`${row.agentId}:${row.routeLabel ?? ''}:${row.localUrl ?? ''}`}
-                  className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 py-1"
+                  label={(
+                    <span className="inline-flex items-center gap-1.5 text-body font-medium text-primary">
+                      <AgentDot agentId={row.agentId} size="sm" title={null} />
+                      <span className="truncate">{row.agentLabel}</span>
+                    </span>
+                  )}
                 >
-                  <span className="flex min-w-[5.5rem] items-center gap-1.5 text-body font-medium">
-                    <AgentDot agentId={row.agentId} size="sm" title={null} />
-                    <span className="truncate">{row.agentLabel}</span>
-                  </span>
-                  {row.routeLabel ? (
-                    <span className="shrink-0 text-meta text-muted">{row.routeLabel}</span>
-                  ) : null}
-                  <span className="shrink-0 text-meta text-secondary">{row.status}</span>
-                  {row.localUrl ? (
-                    <span className="min-w-0 flex-1 break-all font-mono text-meta text-secondary">{row.localUrl}</span>
-                  ) : null}
-                </li>
+                  <DetailTableCell className="whitespace-nowrap text-meta text-muted">
+                    {row.routeLabel}
+                  </DetailTableCell>
+                  <DetailTableCell className="whitespace-nowrap text-meta">
+                    {row.status}
+                  </DetailTableCell>
+                  <DetailTableCell className="break-all font-mono text-meta">
+                    {row.localUrl}
+                  </DetailTableCell>
+                </DetailTableRow>
               ))}
-            </ul>
+            </DetailTable>
           )}
         </TicketDetailSection>
       ) : null}
@@ -591,20 +632,17 @@ function TicketDetailBody({
           {agentId && files && files.length > 0 ? (
             <TicketAuthFiles agentId={agentId} files={files} />
           ) : null}
-          {timeline.map((field) => (
-            <DetailRow
-              key={`${field.label}:${field.value}`}
-              label={field.label}
-              value={field.value}
-              mono={field.mono}
-            />
-          ))}
-          {extras?.refreshTokenPreview ? (
-            <DetailRow
-              label={t('connections.list.refreshToken')}
-              value={extras.refreshTokenPreview}
-              mono
-            />
+          {recordFields.length > 0 ? (
+            <DetailTable>
+              {recordFields.map((field) => (
+                <DetailRow
+                  key={`${field.label}:${field.value}`}
+                  label={field.label}
+                  value={field.value}
+                  mono={field.mono}
+                />
+              ))}
+            </DetailTable>
           ) : null}
           {diagnostics.length > 0 ? (
             <details className="group rounded-card border border-border bg-subtle/60">
@@ -612,23 +650,51 @@ function TicketDetailBody({
                 <span>{t('connections.list.more')}</span>
                 <ChevronDown className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180" aria-hidden />
               </summary>
-              <div className="grid gap-1.5 border-t border-border px-3 py-3 text-meta">
-                {diagnostics.map((field) => (
-                  <DetailRow
-                    key={`${field.label}:${field.value}`}
-                    label={field.label}
-                    value={field.value}
-                    mono={field.mono}
-                    copyable={field.copyable}
-                    className={field.copyable ? 'w-full' : undefined}
-                  />
-                ))}
+              <div className="border-t border-border px-3 py-3">
+                <DetailTable>
+                  {diagnostics.map((field) => (
+                    <DetailRow
+                      key={`${field.label}:${field.value}`}
+                      label={field.label}
+                      value={field.value}
+                      mono={field.mono}
+                      copyable={field.copyable}
+                      className={field.copyable ? 'w-full' : undefined}
+                    />
+                  ))}
+                </DetailTable>
               </div>
             </details>
           ) : null}
         </TicketDetailSection>
       ) : null}
     </div>
+  );
+}
+
+function QuotaDetailRow({
+  label,
+  pct,
+  resetIn,
+  children,
+}: {
+  label: string;
+  pct?: number;
+  resetIn?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <DetailTableRow label={label}>
+      <DetailTableCell>
+        <div className="flex min-w-0 flex-col gap-1">
+          <QuotaBar label={label} pct={pct} compact showLabel={false} />
+          {children}
+        </div>
+      </DetailTableCell>
+      <DetailTableCell className="whitespace-nowrap text-meta text-muted">
+        {resetIn}
+      </DetailTableCell>
+    </DetailTableRow>
   );
 }
 
@@ -639,6 +705,7 @@ function TicketRow({
   nativeSwitch,
   onSwitch,
   onEdit,
+  onRemoveFromCatalog,
   onShowDetail,
   onFollowDetail,
   onContextMenu,
@@ -656,6 +723,7 @@ function TicketRow({
   nativeSwitch: boolean;
   onSwitch?: (ticket: TicketView) => void;
   onEdit: (ticket: TicketView) => void;
+  onRemoveFromCatalog?: (ticket: TicketView) => void;
   onShowDetail?: (ticket: TicketView) => void;
   onFollowDetail?: (ticket: TicketView) => void;
   onContextMenu?: (event: React.MouseEvent) => void;
@@ -717,7 +785,7 @@ function TicketRow({
               </Tip>
             )}
             {cursorLogin ? (
-              <div className="truncate text-meta text-secondary">{cursorLogin}</div>
+              <TruncateTip className="text-meta text-secondary" text={cursorLogin} />
             ) : null}
           </div>
         </div>
@@ -786,7 +854,7 @@ function TicketRow({
         onClick={(event) => event.stopPropagation()}
         onPointerDown={(event) => event.stopPropagation()}
       >
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-nowrap items-center gap-2">
           {nativeSwitch ? (
             <DisabledReasonButton
               disabled={switchChip.kind === 'in-use' || switchBusy || !onSwitch}
@@ -809,12 +877,34 @@ function TicketRow({
                 : switchChip.label}
             </DisabledReasonButton>
           ) : null}
-          {editLabel ? (
-            <Button size="sm" variant="outline" onClick={() => onEdit(ticket)}>
-              <Pencil className="h-3.5 w-3.5" /> {editLabel}
-            </Button>
-          ) : null}
-          {onOpenMenu ? (
+          {editLabel || onRemoveFromCatalog ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  aria-label={t('connections.list.moreActions')}
+                  title={t('connections.list.moreActions')}
+                >
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
+                {editLabel ? (
+                  <DropdownMenuItem onSelect={() => onEdit(ticket)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                    {editLabel}
+                  </DropdownMenuItem>
+                ) : null}
+                {onRemoveFromCatalog ? (
+                  <DropdownMenuItem onSelect={() => onRemoveFromCatalog(ticket)}>
+                    <Undo2 className="h-3.5 w-3.5" />
+                    {t('connections.list.removeFromCatalog')}
+                  </DropdownMenuItem>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : onOpenMenu ? (
             <Button
               size="icon"
               variant="ghost"
@@ -1169,6 +1259,7 @@ export function TicketWalletList({
                   nativeSwitch={showsNativeSwitch(row.ticket.agentId, agentFilterId)}
                   onSwitch={onSwitchTicket}
                   onEdit={onEditTicket}
+                  onRemoveFromCatalog={canUnapply ? onRemoveFromCatalog : undefined}
                   onShowDetail={onShowDetail}
                   onFollowDetail={onFollowDetail}
                   onContextMenu={canUnapply ? (event) => {

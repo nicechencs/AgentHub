@@ -491,7 +491,16 @@ export interface Conversation {
   nativeSessionId?: string | null;
   /** True when this conversation has a live in-flight send (running message row). */
   sending?: boolean;
+  /** Stored working directory is set but no longer exists on disk. */
+  cwdMissing?: boolean;
+  /** First user message body from the conversation list. Recovers clipped titles on every row. */
+  firstUserContent?: string | null;
 }
+
+export type ChatHistoryTurn = {
+  role: ChatRole;
+  content: string;
+};
 
 export interface ChatMessage {
   id: string;
@@ -623,4 +632,10 @@ export interface ChatBootstrap {
   title?: string;
   /** 创建会话后自动填入并发送的提示词 */
   prompt?: string;
+  /** Official session id — Chat loads AgentHub history by this id. */
+  sessionId?: string | null;
+  /** Imported transcript turns for first-time open. */
+  history?: ChatHistoryTurn[];
+  /** Live project folder to offer as a rebind target when `cwd` is gone. */
+  fallbackCwd?: string | null;
 }

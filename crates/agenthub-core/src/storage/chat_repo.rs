@@ -1,6 +1,6 @@
 //! Conversations + chat_messages repository — storage boundary only.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use rusqlite::{params, OptionalExtension, Row};
 
@@ -61,6 +61,7 @@ impl ChatRepo {
 
                 if let Some(mut conversation) = existing {
                     conversation.sending = false;
+                    conversation.first_user_content = None;
                     return Ok(conversation);
                 }
 
@@ -88,6 +89,7 @@ impl ChatRepo {
     pub fn list_conversations(&self) -> Result<Vec<Conversation>> {
         self.db.with_conn(|conn| {
             let sending_ids = load_sending_ids(conn)?;
+            let first_user = load_first_user_contents(conn)?;
             let mut stmt = conn.prepare(
                 r#"
                 SELECT id, title, agent_ids, cwd, allow_dangerous, created_at, updated_at,
@@ -101,9 +103,38 @@ impl ChatRepo {
             for row in rows {
                 let mut conv = row?;
                 conv.sending = sending_ids.contains(&conv.id);
+                conv.first_user_content = first_user.get(&conv.id).cloned();
                 out.push(conv);
             }
             Ok(out)
+        })
+    }
+
+    pub fn find_by_native_session_id(&self, session_id: &str) -> Result<Option<Conversation>> {
+        let session_id = session_id.trim();
+        if session_id.is_empty() {
+            return Ok(None);
+        }
+        self.db.with_conn(|conn| {
+            let mut conv = conn
+                .query_row(
+                    r#"
+                    SELECT id, title, agent_ids, cwd, allow_dangerous, created_at, updated_at,
+                           native_session_id
+                    FROM conversations
+                    WHERE native_session_id = ?1
+                    ORDER BY updated_at DESC, id DESC
+                    LIMIT 1
+                    "#,
+                    params![session_id],
+                    map_conversation_row,
+                )
+                .optional()
+                .map_err(AppError::from)?;
+            if let Some(ref mut c) = conv {
+                attach_conversation_projections(conn, c)?;
+            }
+            Ok(conv)
         })
     }
 
@@ -123,7 +154,7 @@ impl ChatRepo {
                 .optional()
                 .map_err(AppError::from)?;
             if let Some(ref mut c) = conv {
-                c.sending = conversation_is_sending(conn, &c.id)?;
+                attach_conversation_projections(conn, c)?;
             }
             Ok(conv)
         })
@@ -216,7 +247,9 @@ impl ChatRepo {
         })
     }
 
-    /// Messages ordered by turn ASC, then id ASC (stable within a turn).
+    /// Messages ordered by turn, then insert order within a turn.
+    ///
+    /// `id` is a UUID, so `id ASC` can flip user/agent of the same turn.
     pub fn list_messages(&self, conversation_id: &str) -> Result<Vec<ChatMessage>> {
         self.db.with_conn(|conn| {
             let mut stmt = conn.prepare(
@@ -225,7 +258,7 @@ impl ChatRepo {
                        status, exit_code, duration_ms, error, created_at
                 FROM chat_messages
                 WHERE conversation_id = ?1
-                ORDER BY turn ASC, id ASC
+                ORDER BY turn ASC, rowid ASC
                 "#,
             )?;
             let rows = stmt.query_map(params![conversation_id], map_message_row)?;
@@ -310,6 +343,60 @@ impl ChatRepo {
             }
         })
     }
+}
+
+fn attach_conversation_projections(
+    conn: &rusqlite::Connection,
+    conv: &mut Conversation,
+) -> Result<()> {
+    conv.sending = conversation_is_sending(conn, &conv.id)?;
+    conv.first_user_content = conversation_first_user_content(conn, &conv.id)?;
+    Ok(())
+}
+
+fn conversation_first_user_content(
+    conn: &rusqlite::Connection,
+    conversation_id: &str,
+) -> Result<Option<String>> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT content
+        FROM chat_messages
+        WHERE conversation_id = ?1 AND role = 'user'
+        ORDER BY turn ASC, rowid ASC
+        "#,
+    )?;
+    let rows = stmt.query_map(params![conversation_id], |row| row.get::<_, String>(0))?;
+    for row in rows {
+        let content = row?;
+        if !content.trim().is_empty() {
+            return Ok(Some(content));
+        }
+    }
+    Ok(None)
+}
+
+fn load_first_user_contents(conn: &rusqlite::Connection) -> Result<HashMap<String, String>> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT conversation_id, content
+        FROM chat_messages
+        WHERE role = 'user'
+        ORDER BY turn ASC, rowid ASC
+        "#,
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    let mut out = HashMap::new();
+    for row in rows {
+        let (id, content) = row?;
+        if content.trim().is_empty() {
+            continue;
+        }
+        out.entry(id).or_insert(content);
+    }
+    Ok(out)
 }
 
 fn load_sending_ids(conn: &rusqlite::Connection) -> Result<HashSet<String>> {
@@ -432,6 +519,7 @@ fn map_conversation_row(row: &Row<'_>) -> rusqlite::Result<Conversation> {
         updated_at,
         native_session_id,
         sending: false,
+        first_user_content: None,
     })
 }
 

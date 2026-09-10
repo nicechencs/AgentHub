@@ -20,6 +20,7 @@ import type { McpInventory, McpServerEntry, McpSourceFile } from '@/lib/backend/
 import type { AgentKey } from '@/lib/types';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { OpenDirButton } from '@/components/shared/OpenDirButton';
+import { TruncateTip } from '@/components/ui/tooltip';
 import { groupMcpServersByAgentAndFile } from './group-servers';
 import { McpServerTable } from './McpServerTable';
 import { visibleMcpSources } from './mcp-sources';
@@ -170,21 +171,19 @@ export default function McpPage() {
           <EmptyState
             icon={Plug}
             title={t('mcp.empty.title')}
-            description={
-              filterAgent === 'all'
-                ? t('mcp.page.empty', { next: t('mcp.page.nextStep') })
-                : t('mcp.page.emptyAgent', { name: agentName(filterAgent) })
-            }
-            action={
-              <Button
-                size="sm"
-                variant="outline"
-                className="mt-2"
-                onClick={() => void load()}
-              >
-                {t('mcp.empty.refresh')}
-              </Button>
-            }
+            description={t('mcp.empty.oneLiner')}
+            actionLabel={t('mcp.empty.addServer')}
+            onAction={() => {
+              const path = sources[0]?.path;
+              if (path) {
+                void locateSource(path);
+                return;
+              }
+              toast({
+                title: t('mcp.empty.addServer'),
+                description: t('mcp.empty.addServerHint'),
+              });
+            }}
           />
         ) : (
           <McpServerTable
@@ -210,7 +209,18 @@ function McpSourceEmpty({
   const { t } = useI18n();
   return (
     <div className="space-y-2">
-      <p className="text-body text-secondary">{t('mcp.empty.hasSources')}</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-body text-secondary">{t('mcp.empty.oneLiner')}</p>
+        <Button
+          size="sm"
+          onClick={() => {
+            const path = sources[0]?.path;
+            if (path) onLocate(path);
+          }}
+        >
+          {t('mcp.empty.addServer')}
+        </Button>
+      </div>
       {sources.map((file) => (
         <div
           key={`${file.agent}:${file.path}`}
@@ -225,15 +235,18 @@ function McpSourceEmpty({
                   <span className="text-muted">·</span>
                 </>
               ) : null}
-              <span className="truncate">{file.label}</span>
+              <TruncateTip className="truncate" text={file.label} />
             </p>
-            <p className={file.error ? 'truncate text-meta text-danger' : 'truncate text-meta text-muted'}>
-              {file.error?.trim()
-                ? file.error
-                : file.readable
-                  ? t('mcp.empty.sourceEmpty')
-                  : t('mcp.empty.sourceUnreadable')}
-            </p>
+            <TruncateTip
+              className={file.error ? 'text-meta text-danger' : 'text-meta text-muted'}
+              text={
+                file.error?.trim()
+                  ? file.error
+                  : file.readable
+                    ? t('mcp.empty.sourceEmpty')
+                    : t('mcp.empty.sourceUnreadable')
+              }
+            />
           </div>
           <OpenDirButton labeled title={file.path} onClick={() => onLocate(file.path)} />
         </div>

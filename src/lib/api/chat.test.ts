@@ -11,6 +11,7 @@ import {
   listConversations,
   mapChatMessage,
   mapConversation,
+  openConversationFromSession,
   updateConversation,
 } from '@/lib/api/chat';
 import type { ChatEvent } from '@/lib/types';
@@ -75,6 +76,84 @@ describe('chat API (browser mock)', () => {
     const listP = listConversations();
     await vi.runAllTimersAsync();
     expect((await listP).map((c) => c.id)).toEqual([first.id]);
+  });
+
+  it('opens a session by id with dead cwd and keeps history', async () => {
+    const dead = '/var/folders/zz/T/.tmp-agenthub-missing/workspace';
+    const openP = openConversationFromSession({
+      agentId: 'claude',
+      sessionId: 'sess-missing-cwd',
+      cwd: dead,
+      title: '临时目录对话',
+      history: [
+        { role: 'user', content: '先改登录页' },
+        { role: 'agent', content: '先看现有实现' },
+      ],
+    });
+    await vi.runAllTimersAsync();
+    const conv = await openP;
+    expect(conv.nativeSessionId).toBe('sess-missing-cwd');
+    expect(conv.cwd).toBe(dead);
+    expect(conv.cwdMissing).toBe(true);
+
+    const rowsP = listChatMessages(conv.id);
+    await vi.runAllTimersAsync();
+    expect(await rowsP).toEqual([
+      expect.objectContaining({ role: 'user', content: '先改登录页' }),
+      expect.objectContaining({ role: 'agent', content: '先看现有实现' }),
+    ]);
+
+    const againP = openConversationFromSession({
+      agentId: 'claude',
+      sessionId: 'sess-missing-cwd',
+      cwd: dead,
+      title: '忽略',
+      history: [{ role: 'user', content: 'should not import' }],
+    });
+    await vi.runAllTimersAsync();
+    const again = await againP;
+    expect(again.id).toBe(conv.id);
+    const rows2P = listChatMessages(again.id);
+    await vi.runAllTimersAsync();
+    expect((await rows2P).map((row) => row.content)).toEqual(['先改登录页', '先看现有实现']);
+  });
+
+  it('rebinding a missing cwd keeps the session id and rejects clear', async () => {
+    const dead = '/var/folders/zz/T/.tmp-agenthub-missing/workspace';
+    const openP = openConversationFromSession({
+      agentId: 'claude',
+      sessionId: 'sess-missing-cwd',
+      cwd: dead,
+      title: '临时目录对话',
+      history: [{ role: 'user', content: '先改登录页' }],
+    });
+    await vi.runAllTimersAsync();
+    const conv = await openP;
+
+    const clearP = updateConversation(conv.id, { cwd: null });
+    const clearRejected = expect(clearP).rejects.toThrow(/改绑到仍存在的目录/);
+    await vi.runAllTimersAsync();
+    await clearRejected;
+
+    const reboundP = updateConversation(conv.id, { cwd: 'C:\\Users\\demo\\app' });
+    await vi.runAllTimersAsync();
+    const rebound = await reboundP;
+    expect(rebound.cwd).toBe('C:\\Users\\demo\\app');
+    expect(rebound.cwdMissing).toBe(false);
+    expect(rebound.nativeSessionId).toBe('sess-missing-cwd');
+
+    const againP = openConversationFromSession({
+      agentId: 'claude',
+      sessionId: 'sess-missing-cwd',
+      cwd: dead,
+      title: '忽略',
+      history: [{ role: 'user', content: 'should not import' }],
+    });
+    await vi.runAllTimersAsync();
+    const again = await againP;
+    expect(again.id).toBe(conv.id);
+    expect(again.nativeSessionId).toBe('sess-missing-cwd');
+    expect(again.cwd).toBe('C:\\Users\\demo\\app');
   });
 
   it('create / list / update / delete conversation', async () => {
@@ -151,6 +230,7 @@ describe('chat API (browser mock)', () => {
     await vi.runAllTimersAsync();
     const listed = await listP;
     expect(listed[0]?.title).toContain('first');
+    expect(listed[0]?.firstUserContent).toBe('first question');
   });
 
   it('chatCancel mid-send marks agent cancelled', async () => {

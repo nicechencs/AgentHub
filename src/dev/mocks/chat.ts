@@ -1,9 +1,11 @@
 import type { ChatPort } from '@/lib/backend/contracts';
-import type { RuntimeOptions, RuntimeReply, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings } from '@/lib/backend/contracts/chat-runtime';
+import { titleFromPrompt } from '@/pages/chat/chat-model';
+import type { RuntimeOptions, RuntimeReply, RuntimeRequest, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings } from '@/lib/backend/contracts/chat-runtime';
 import { delay } from '@/dev/mocks/delay';
 import type {
   AgentKey,
   ChatEvent,
+  ChatHistoryTurn,
   ChatMessage,
   ChatMessageStatus,
   Conversation,
@@ -24,6 +26,73 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+/** Browser mock cannot stat real disks; treat temp/missing sentinels as gone. */
+export function mockCwdMissing(cwd?: string | null): boolean {
+  const value = cwd?.trim() ?? '';
+  if (!value) return false;
+  return /(?:^|[\\/])\.tmp|[/\\]var[/\\]folders[/\\]|missing-cwd/i.test(value);
+}
+
+function firstUserContentOf(id: string): string | undefined {
+  return (mockMessages[id] ?? []).find((m) => m.role === 'user' && m.content.trim())?.content;
+}
+
+function withListFields(conv: Conversation): Conversation {
+  return withCwdFlag({
+    ...conv,
+    sending: mockInflight.has(conv.id),
+    firstUserContent: firstUserContentOf(conv.id) ?? null,
+  });
+}
+
+function withCwdFlag(conv: Conversation): Conversation {
+  return { ...conv, cwdMissing: mockCwdMissing(conv.cwd) };
+}
+
+function importMockHistory(
+  conversationId: string,
+  agentId: AgentKey,
+  history: ChatHistoryTurn[],
+): ChatMessage[] {
+  const createdAt = nowIso();
+  const rows: ChatMessage[] = [];
+  let turn = 0;
+  let openUser = false;
+  for (const item of history) {
+    const content = item.content.trim();
+    if (!content) continue;
+    if (item.role === 'user') {
+      turn += 1;
+      openUser = true;
+      rows.push({
+        id: `msg-mock-${mockSeq++}`,
+        conversationId,
+        turn,
+        role: 'user',
+        content,
+        status: 'ok',
+        durationMs: 0,
+        createdAt,
+      });
+    } else {
+      if (!openUser) turn += 1;
+      openUser = false;
+      rows.push({
+        id: `msg-mock-${mockSeq++}`,
+        conversationId,
+        turn,
+        role: 'agent',
+        agentId,
+        content,
+        status: 'ok',
+        durationMs: 0,
+        createdAt,
+      });
+    }
+  }
+  return rows;
+}
+
 function requireSingleAgent(agentIds: AgentKey[]): AgentKey[] {
   const seen: AgentKey[] = [];
   for (const id of agentIds) {
@@ -39,8 +108,7 @@ function requireSingleAgent(agentIds: AgentKey[]): AgentKey[] {
 }
 
 function mockTitle(prompt: string) {
-  const t = prompt.trim();
-  return t.length <= 30 ? t : `${t.slice(0, 29)}…`;
+  return titleFromPrompt(prompt);
 }
 
 function mockConversationAgent(conversationId: string): AgentKey | undefined {
@@ -162,10 +230,22 @@ function mockRuntimeStillLive(conversationId: string, runId: string): boolean {
   );
 }
 
+function mockNeedsConfirm(prompt: string): boolean {
+  return /需要确认|need confirm/i.test(prompt);
+}
+
+function mockNeedsFileChange(prompt: string): boolean {
+  return /修改文件|change files|file change/i.test(prompt);
+}
+
+function mockNeedsPathOnlyFileChange(prompt: string): boolean {
+  return /仅路径|path only/i.test(prompt);
+}
+
 function appendMockRuntimeEvent(
   conversationId: string,
   event: ChatEvent,
-  patch?: Partial<Pick<RuntimeSnapshot, 'phase' | 'currentMessage'>>,
+  patch?: Partial<Pick<RuntimeSnapshot, 'phase' | 'currentMessage' | 'pendingRequests'>>,
 ): RuntimeSnapshot | null {
   const current = runtimeSnapshots.get(conversationId);
   if (!current) return null;
@@ -199,8 +279,27 @@ async function playMockRuntimeTurn(input: {
   const { conversationId, runId, prompt, agent, turn, user } = input;
   let agentMessage = input.agentMessage;
 
+  const finishCancelled = () => {
+    const current = runtimeSnapshots.get(conversationId);
+    if (!current || current.runId !== runId || current.phase === 'cancelled') return;
+    const currentMessage = current.currentMessage
+      ? { ...current.currentMessage, status: 'cancelled' as const, error: 'cancelled' }
+      : { ...agentMessage, status: 'cancelled' as const, error: 'cancelled' };
+    persistMockRuntimeMessages(conversationId, user, currentMessage);
+    appendMockRuntimeEvent(
+      conversationId,
+      { type: 'agentFinished', turn, agent, message: currentMessage },
+      { phase: 'cancelled', currentMessage },
+    );
+    appendMockRuntimeEvent(conversationId, { type: 'finished', turn, ok: false, cancelled: true });
+    runtimeJobs.delete(conversationId);
+  };
+
   await delay(80);
-  if (!mockRuntimeStillLive(conversationId, runId)) return;
+  if (!mockRuntimeStillLive(conversationId, runId)) {
+    finishCancelled();
+    return;
+  }
   appendMockRuntimeEvent(conversationId, {
     type: 'agentProcess',
     turn,
@@ -209,7 +308,10 @@ async function playMockRuntimeTurn(input: {
   });
 
   await delay(90);
-  if (!mockRuntimeStillLive(conversationId, runId)) return;
+  if (!mockRuntimeStillLive(conversationId, runId)) {
+    finishCancelled();
+    return;
+  }
   appendMockRuntimeEvent(conversationId, {
     type: 'agentProcess',
     turn,
@@ -217,13 +319,88 @@ async function playMockRuntimeTurn(input: {
     step: { type: 'thinking', text: '规划回复结构…', done: true },
   });
 
+  if (mockNeedsPathOnlyFileChange(prompt)) {
+    const request: RuntimeRequest = {
+      id: `req-mock-${mockSeq++}`,
+      runId,
+      kind: 'file',
+      title: '修改文件',
+      detail: '/workspace/notes.md',
+      questions: [],
+      permissionOptions: [
+        { id: 'once', kind: 'allow_once' },
+        { id: 'always', kind: 'allow_always' },
+      ],
+      fileChanges: [{
+        path: '/workspace/notes.md',
+        kind: 'update',
+      }],
+    };
+    appendMockRuntimeEvent(
+      conversationId,
+      { type: 'agentProcess', turn, agent, step: { type: 'tool', name: 'fileChange', status: 'start', input: { path: '/workspace/notes.md' } } },
+      { phase: 'waiting', currentMessage: agentMessage, pendingRequests: [request] },
+    );
+    return;
+  }
+
+  if (mockNeedsFileChange(prompt)) {
+    const request: RuntimeRequest = {
+      id: `req-mock-${mockSeq++}`,
+      runId,
+      kind: 'file',
+      title: '修改文件',
+      detail: '/workspace/qa-codex-filechange-scratch/probe.txt',
+      questions: [],
+      permissionOptions: [
+        { id: 'once', kind: 'allow_once' },
+        { id: 'always', kind: 'allow_always' },
+      ],
+      fileChanges: [{
+        path: '/workspace/qa-codex-filechange-scratch/probe.txt',
+        kind: 'add',
+        preview: 'FILECHANGE_OK\n',
+      }],
+    };
+    appendMockRuntimeEvent(
+      conversationId,
+      { type: 'agentProcess', turn, agent, step: { type: 'tool', name: 'fileChange', status: 'start', input: { path: '/workspace/qa-codex-filechange-scratch/probe.txt' } } },
+      { phase: 'waiting', currentMessage: agentMessage, pendingRequests: [request] },
+    );
+    return;
+  }
+
+  if (mockNeedsConfirm(prompt)) {
+    const request: RuntimeRequest = {
+      id: `req-mock-${mockSeq++}`,
+      runId,
+      kind: 'command',
+      title: 'execute',
+      detail: 'ls',
+      questions: [],
+      permissionOptions: [
+        { id: 'once', kind: 'allow_once' },
+        { id: 'always', kind: 'allow_always' },
+      ],
+    };
+    appendMockRuntimeEvent(
+      conversationId,
+      { type: 'agentProcess', turn, agent, step: { type: 'tool', name: 'execute', status: 'start', input: { command: 'ls' } } },
+      { phase: 'waiting', currentMessage: agentMessage, pendingRequests: [request] },
+    );
+    return;
+  }
+
   const parts = [
     `【${agent} mock】收到：${prompt.slice(0, 80)}\n`,
     `这是 ${agent} 的模拟回复（浏览器 Vite 原型，未调用真实 CLI）。\n`,
   ];
   for (const part of parts) {
     await delay(120);
-    if (!mockRuntimeStillLive(conversationId, runId)) return;
+    if (!mockRuntimeStillLive(conversationId, runId)) {
+      finishCancelled();
+      return;
+    }
     agentMessage = { ...agentMessage, content: `${agentMessage.content}${part}` };
     appendMockRuntimeEvent(
       conversationId,
@@ -232,7 +409,10 @@ async function playMockRuntimeTurn(input: {
     );
   }
 
-  if (!mockRuntimeStillLive(conversationId, runId)) return;
+  if (!mockRuntimeStillLive(conversationId, runId)) {
+    finishCancelled();
+    return;
+  }
   agentMessage = { ...agentMessage, status: 'ok', durationMs: 500 };
   persistMockRuntimeMessages(conversationId, user, agentMessage);
   appendMockRuntimeEvent(
@@ -248,7 +428,7 @@ export function createMockChatPort(): ChatPort {
   return {
     async listConversations() {
       await delay(120);
-      return mockConversations.map((c) => ({ ...c, sending: mockInflight.has(c.id) }));
+      return mockConversations.map((c) => withListFields(c));
     },
 
     async createConversation(agentIds, cwd) {
@@ -265,7 +445,35 @@ export function createMockChatPort(): ChatPort {
       };
       mockConversations.unshift(conv);
       mockMessages[conv.id] = [];
-      return { ...conv };
+      return withListFields(conv);
+    },
+
+    async openConversationFromSession(input) {
+      await delay(80);
+      const sessionId = input.sessionId?.trim() || '';
+      const existing = sessionId
+        ? mockConversations.find((c) => c.nativeSessionId === sessionId)
+        : undefined;
+      if (existing) {
+        const rows = mockMessages[existing.id] ?? (mockMessages[existing.id] = []);
+        if (rows.length === 0 && input.history.length > 0) {
+          mockMessages[existing.id] = importMockHistory(existing.id, input.agentId, input.history);
+        }
+        return withListFields(existing);
+      }
+      const conv: Conversation = {
+        id: `conv-mock-${mockSeq++}`,
+        title: input.title?.trim() || '',
+        agentIds: requireSingleAgent([input.agentId]),
+        cwd: input.cwd ?? null,
+        allowDangerous: false,
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+        nativeSessionId: sessionId || null,
+      };
+      mockConversations.unshift(conv);
+      mockMessages[conv.id] = importMockHistory(conv.id, input.agentId, input.history);
+      return withListFields(conv);
     },
 
     async ensureDefaultConversation(agentIds, cwd) {
@@ -275,7 +483,7 @@ export function createMockChatPort(): ChatPort {
         (c) => c.title.trim() === '' && (mockMessages[c.id] ?? []).length === 0,
       );
       if (existing) {
-        return { ...existing, sending: mockInflight.has(existing.id) };
+        return withListFields(existing);
       }
       const conv: Conversation = {
         id: `conv-mock-${mockSeq++}`,
@@ -289,7 +497,7 @@ export function createMockChatPort(): ChatPort {
       };
       mockConversations.unshift(conv);
       mockMessages[conv.id] = [];
-      return { ...conv };
+      return withListFields(conv);
     },
 
     async updateConversation(id, patch) {
@@ -299,8 +507,14 @@ export function createMockChatPort(): ChatPort {
       const cur = mockConversations[idx];
       const agentIds = patch.agentIds ? requireSingleAgent(patch.agentIds) : cur.agentIds;
       const cwd = patch.cwd !== undefined ? patch.cwd : cur.cwd;
-      const resetNative =
-        JSON.stringify(agentIds) !== JSON.stringify(cur.agentIds) || cwd !== cur.cwd;
+      if (patch.cwd !== undefined && mockCwdMissing(cur.cwd) && !(cwd?.trim())) {
+        throw new Error('原工作目录不存在时，请改绑到仍存在的目录');
+      }
+      const agentsChanged = JSON.stringify(agentIds) !== JSON.stringify(cur.agentIds);
+      const cwdChanged = cwd !== cur.cwd;
+      const keepNativeOnCwdRebind =
+        Boolean(cur.nativeSessionId) && mockCwdMissing(cur.cwd) && cwdChanged;
+      const resetNative = agentsChanged || (cwdChanged && !keepNativeOnCwdRebind);
       const next: Conversation = {
         ...cur,
         title: patch.title ?? cur.title,
@@ -311,7 +525,7 @@ export function createMockChatPort(): ChatPort {
         updatedAt: nowIso(),
       };
       mockConversations[idx] = next;
-      return { ...next };
+      return withListFields(next);
     },
 
     async deleteConversation(id) {
@@ -746,7 +960,44 @@ export function createMockChatPort(): ChatPort {
       });
       return next;
     },
-    async runtimeReply(_reply: RuntimeReply) {},
+    async runtimeReply(reply: RuntimeReply) {
+      const current = runtimeSnapshots.get(reply.conversationId);
+      if (!current || current.runId !== reply.runId) return;
+      const remaining = (current.pendingRequests ?? []).filter((item) => item.id !== reply.requestId);
+      if (remaining.length > 0) {
+        runtimeSnapshots.set(reply.conversationId, { ...current, pendingRequests: remaining });
+        return;
+      }
+      const currentMessage = current.currentMessage
+        ? {
+            ...current.currentMessage,
+            content: `${current.currentMessage.content || ''}已按你的选择继续。\n`,
+            status: 'ok' as const,
+            durationMs: 500,
+          }
+        : null;
+      const turn = currentMessage?.turn ?? 0;
+      const agent = (currentMessage?.agentId ?? mockConversationAgent(reply.conversationId) ?? 'codex') as AgentKey;
+      const user = (mockMessages[reply.conversationId] ?? []).find(
+        (item) => item.turn === turn && item.role === 'user',
+      );
+      if (currentMessage && user) persistMockRuntimeMessages(reply.conversationId, user, currentMessage);
+      if (currentMessage) {
+        appendMockRuntimeEvent(
+          reply.conversationId,
+          { type: 'agentFinished', turn, agent, message: currentMessage },
+          { phase: 'completed', currentMessage, pendingRequests: [] },
+        );
+      } else {
+        runtimeSnapshots.set(reply.conversationId, {
+          ...current,
+          phase: 'completed',
+          pendingRequests: [],
+        });
+      }
+      appendMockRuntimeEvent(reply.conversationId, { type: 'finished', turn, ok: true, cancelled: false });
+      runtimeJobs.delete(reply.conversationId);
+    },
     async runtimeSteer() {},
     async runtimeContinueLegacy(conversationId) {
       const conv = mockConversations.find((item) => item.id === conversationId);
@@ -837,6 +1088,9 @@ export function createMockChatPort(): ChatPort {
         content: `# ${name}\n\nMock preview.`,
         truncated: false,
       };
+    },
+    async onNativeShortcut() {
+      return () => {};
     },
   };
 }

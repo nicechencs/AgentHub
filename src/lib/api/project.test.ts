@@ -151,7 +151,7 @@ describe('project API (browser mock)', () => {
     const claude = await claudeP;
     expect(claude.every((p) => p.agentId === 'claude')).toBe(true);
     expect(claude.length).toBe(1);
-    expect(claude[0].sessionCount).toBe(2);
+    expect(claude[0].sessionCount).toBe(3);
   });
 
   it('list sessions under a project', async () => {
@@ -161,7 +161,7 @@ describe('project API (browser mock)', () => {
     const sessP = listAgentProjectSessions(projects[0].id);
     await vi.runAllTimersAsync();
     const sessions = await sessP;
-    expect(sessions.length).toBe(2);
+    expect(sessions.length).toBe(3);
     expect(sessions.every((s) => s.projectId === projects[0].id)).toBe(true);
   });
 

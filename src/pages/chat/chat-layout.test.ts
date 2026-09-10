@@ -24,7 +24,11 @@ describe('chat layout wiring', () => {
     expect(source('index.tsx')).toContain('chatEscapeShouldCancel');
     expect(source('index.tsx')).toContain("e.key");
     expect(source('ChatComposer.tsx')).toContain('composerStopMessageKey');
+    expect(source('ChatComposer.tsx')).toContain('composerStopTitle');
     expect(source('ChatComposer.tsx')).toContain('data-help="chat-stop"');
+    expect(source('ChatComposer.tsx')).toContain('aria-keyshortcuts="Escape"');
+    expect(source('use-chat-page-send.ts')).toContain('composerKeepsStoppingAfterCancel');
+    expect(source('use-chat-page-send.ts')).toContain('composerCancelingVisible');
   });
 
   it('opens the model menu from Ctrl/Cmd+Shift+I and labels models in plain language', () => {
@@ -33,23 +37,51 @@ describe('chat layout wiring', () => {
     expect(source('ChatRuntimeExtras.tsx')).toContain('chatModelDisplayName');
     expect(source('ChatRuntimeExtras.tsx')).toContain('chatEffortHint');
     expect(source('ChatRuntimeExtras.tsx')).toContain('data-help="chat-model"');
+    expect(source('ChatRuntimeExtras.tsx')).toContain('data-help="chat-composer-cluster"');
+    expect(source('ChatRuntimeExtras.tsx')).toContain('max-w-36');
+    expect(source('ChatComposer.tsx')).toContain('px-2 py-1.5');
     expect(source('ChatComposer.tsx')).toContain('chatModelDisplayName');
     expect(source('ChatComposer.tsx')).toContain('chatEffortHint');
     expect(translate('zh', 'chat.runtimeOps.effortHintHigh')).toBe('可能更慢');
     expect(translate('zh', 'chat.composer.shortcutOpenModel')).toBe('Ctrl+Shift+I');
   });
 
-  it('keeps send available while a turn is in progress, with a labeled stop', () => {
+  it('starts a new chat from Ctrl/Cmd+N and opens a shortcut overview', () => {
+    const page = source('index.tsx');
+    expect(page).toContain('chatPageShortcutAction');
+    expect(page).toContain('subscribeChatShortcutKeydown');
+    expect(page).toContain('onChatNativeShortcut');
+    expect(page).toContain("id: 'new-session'");
+    expect(page).toContain('ChatShortcutsDialog');
+    expect(source('chat-shortcuts.ts')).toContain("addEventListener('keydown', wrapped, true)");
+    expect(source('use-chat-page.ts')).toContain('chatModNShouldStartNewChat');
+    expect(source('ChatComposer.tsx')).toContain('ChatShortcutsHelp');
+    expect(source('ChatShortcutsHelp.tsx')).toContain('data-help="chat-shortcuts"');
+    expect(source('ChatShortcutsHelp.tsx')).toContain('aria-keyshortcuts="?"');
+    expect(source('ChatShortcutsHelp.tsx')).toContain('aria-expanded={open}');
+    expect(source('ChatShortcutsHelp.tsx')).toContain('data-help="chat-shortcuts-popover"');
+    expect(source('ChatShortcutsDialog.tsx')).toContain('ChatShortcutOverview');
+    expect(source('ChatShortcutOverview.tsx')).toContain('CHAT_SHORTCUT_ROWS');
+    expect(source('ChatShortcutOverview.tsx')).toContain('EnterKeyMark');
+    expect(source('ChatShortcutOverview.tsx')).not.toMatch(/>Enter</);
+    expect(source('ChatSessionRail.tsx')).toContain('aria-keyshortcuts="Control+N"');
+    expect(source('ChatSessionRail.tsx')).toContain('data-help="chat-session-title"');
+    expect(translate('zh', 'chat.shortcuts.open')).toBe('快捷键');
+    expect(translate('en', 'chat.shortcuts.open')).toBe('Shortcuts');
+  });
+
+  it('keeps one footer slot that switches Send and Stop', () => {
     expect(source('index.tsx')).toContain('chatBusySendMode');
     const composer = source('ChatComposer.tsx');
     expect(composer).toContain('composerPrimaryAction');
-    expect(composer).toContain('composerShowsSubmitButton');
+    expect(composer).toContain('composerFooterControl');
+    expect(composer).toContain("footerControl === 'stop'");
     expect(composer).toContain('data-help="chat-send"');
     expect(composer).toContain('data-help="chat-stop"');
-    const stopAt = composer.indexOf('data-help="chat-stop"');
-    const sendAt = composer.indexOf('data-help="chat-send"');
-    expect(stopAt).toBeGreaterThan(0);
-    expect(sendAt).toBeGreaterThan(stopAt);
+    expect(composer).toContain('footerSlotClass');
+    expect(composer).toContain('h-8 w-8 shrink-0 rounded-full');
+    expect(composer).not.toContain('{sending ? (');
+    expect(composer).not.toContain('{showSubmit ? (');
   });
 
   it('names Enter / Shift+Enter, shows the queue, and restores composer focus', () => {
@@ -57,10 +89,14 @@ describe('chat layout wiring', () => {
     expect(composer).toContain('composerEnterShouldSubmit');
     expect(composer).toContain('composerShortcutMessageKey');
     expect(composer).toContain('data-composer-shortcut');
-    expect(composer).toContain('composerQueuedFollowUpView');
-    expect(composer).toContain('chat.composer.queuedCount');
+    expect(composer).toContain('ChatQueuedFollowUpList');
+    expect(composer).toContain('queuedFollowUps');
+    expect(source('ChatQueuedFollowUpList.tsx')).toContain('chat.composer.queuedCount');
+    expect(source('ChatQueuedFollowUpList.tsx')).toContain('cancelQueuedItem');
     expect(composer).toContain('keepComposerFocus');
     expect(composer).toContain('enterKeyHint="send"');
+    expect(composer).toContain("t('chat.composer.moreOptions')");
+    expect(composer).not.toContain('chat.actions.menu');
     expect(source('use-chat-page.ts')).toContain('composerEnterShouldSubmit');
     expect(source('index.tsx')).toContain('queuedFollowUpCount');
     expect(translate('zh', 'chat.composer.shortcutSend')).toContain('Enter 发送');
@@ -88,6 +124,11 @@ describe('chat layout wiring', () => {
     expect(composer).toContain('rounded-composer border border-border bg-panel');
     expect(composer).toContain('text-body leading-relaxed');
     expect(composer).not.toContain('leading-[1.45]');
+    expect(composer).toContain('composerNativeEditChord');
+    expect(composer).toContain("edit === 'selectAll'");
+    expect(composer).toContain('e.currentTarget.select()');
+    expect(source('index.tsx')).toContain('composerNativeEditChord');
+    expect(source('index.tsx')).toContain('chatKeyTargetIsField');
   });
 
   it('loosens chat bubble reading line-height without changing bubble chrome', () => {
@@ -109,15 +150,22 @@ describe('chat layout wiring', () => {
     const transcript = source('ChatTranscript.tsx');
     expect(transcript).toContain('chatStarterActions');
     expect(transcript).toContain('onPickStarter');
-    expect(transcript).toContain('chat.transcript.identity');
-    expect(transcript).toContain('chat.transcript.startersHint');
+    expect(transcript).toContain('emptyTranscriptCopy');
+    expect(transcript).toContain('text-display');
+    expect(source('chat-empty-state.ts')).toContain('chat.transcript.startersHint');
+    expect(source('chat-empty-state.ts')).not.toContain('chat.transcript.identity');
+    expect(source('chat-empty-state.ts')).not.toContain('chat.transcript.firstMessage');
+    expect(source('ChatTranscript.tsx')).toContain('emptyStarterChipHint');
     expect(source('ChatComposer.tsx')).toContain('focusNonce');
     expect(source('index.tsx')).toContain('focusNonce={page.composerFocusNonce}');
     expect(transcript).toContain('firstBlocker');
     expect(transcript).not.toContain('variant="default"');
     expect(source('index.tsx')).toContain('onPickStarter={page.runChatAction}');
     expect(source('index.tsx')).toContain('firstBlocker={page.blockers[0] ?? null}');
+    expect(source('index.tsx')).toContain('chat-cwd-missing');
     expect(source('index.tsx')).toContain('showBlockerBanner={page.turns.length > 0}');
+    expect(source('index.tsx')).toContain('emptyTranscript={page.turns.length === 0}');
+    expect(source('index.tsx')).toContain('compactSecondary={page.turns.length === 0}');
     expect(source('ChatComposer.tsx')).toContain('showBlockerBanner');
   });
 
@@ -157,7 +205,7 @@ describe('chat layout wiring', () => {
   it('puts the auto-approve hint to the left of send, muted and meta-sized', () => {
     const composer = source('ChatComposer.tsx');
     const hintAt = composer.indexOf('approveFooter.text');
-    const sendAt = composer.indexOf('<SendHorizontal');
+    const sendAt = composer.indexOf('<ArrowUp');
     expect(hintAt).toBeGreaterThan(0);
     expect(sendAt).toBeGreaterThan(hintAt);
     expect(composer).toContain('text-muted/35');
@@ -194,7 +242,10 @@ describe('chat layout wiring', () => {
     expect(newAt).toBeGreaterThan(collapseAt);
     expect(searchAt).toBeGreaterThan(newAt);
     expect(listAt).toBeGreaterThan(searchAt);
-    expect(rail).toContain('conversationRailHint');
+    expect(rail).toContain('conversationRailHintView');
+    expect(rail).toContain('data-help="chat-session-hint-title"');
+    expect(rail).toContain('whitespace-pre-wrap break-all');
+    expect(rail).toContain('[overflow-wrap:anywhere]');
     expect(rail).toContain('conversationRailMarkColor');
     expect(rail).toContain('conversationRailSelectedFill');
     expect(rail).not.toContain('bg-accent-subtle');
@@ -204,18 +255,87 @@ describe('chat layout wiring', () => {
     expect(rail).toContain('hint={false}');
     expect(rail).not.toContain('conversationAgentLine');
     expect(rail).toContain('cwdShortName');
+    expect(rail).toContain('conversationTitle');
     expect(rail).toContain('isBlankConversationDraft');
     expect(rail).toContain("t('chat.rail.draft')");
     expect(rail).toContain("t('chat.rail.searchPlaceholder')");
   });
 
+  it('keeps the list title truncated and the hover title as the full stored string', () => {
+    const rail = source('ChatSessionRail.tsx');
+    const model = source('chat-model.ts');
+    const listTitle = rail.match(
+      /className="block truncate" data-help="chat-session-title"/,
+    );
+    expect(listTitle).not.toBeNull();
+    const hintTitle = rail.match(
+      /className="block w-full whitespace-pre-wrap break-all \[overflow-wrap:anywhere\] \[text-overflow:clip\]"\s+data-help="chat-session-hint-title"/,
+    );
+    expect(hintTitle).not.toBeNull();
+    expect(rail).toContain('conversationRailHintView(');
+    expect(rail).toContain('firstUserContent');
+    expect(rail).toContain('firstUserContentById?.[c.id] ?? c.firstUserContent');
+    expect(rail).toContain('{hint.title}');
+    const page = source('use-chat-page.ts');
+    expect(page).toContain('firstUserContentByListedConversations');
+    expect(page).toContain('mergeFirstUserContentById');
+    expect(page).toContain('firstUserContentByConversation(messages)');
+    expect(rail).not.toContain('title={conversation.title}');
+    expect(rail).not.toMatch(/function ConversationRailHintLabel[\s\S]*AgentLogo/);
+    expect(rail).not.toContain('conversationSemanticTitle');
+    expect(model).toContain('conversationRailHintTitle');
+    expect(model).toContain('titleFromPrompt');
+    expect(model).toContain('conversationSemanticPhrase');
+    expect(model).not.toMatch(
+      /export function titleFromPrompt[\s\S]*TITLE_DISPLAY_CLIP/,
+    );
+    expect(model).not.toMatch(
+      /conversationRailHintView[\s\S]*conversationSemanticTitle/,
+    );
+  });
+
+  it('confirms session delete on Enter and marks the danger button with a key icon', () => {
+    const rail = source('ChatSessionRail.tsx');
+    expect(rail).toContain('dialogEnterShouldConfirm');
+    expect(rail).toContain('aria-keyshortcuts="Enter"');
+    expect(rail).toContain('EnterKeyMark');
+    expect(rail).not.toMatch(/>Enter</);
+    expect(rail).not.toContain('删除确认 Enter');
+    expect(rail).toContain("t('chat.rail.confirmDelete')");
+    expect(rail).toContain('variant="default"');
+    expect(rail).toContain('data-help="chat-new"');
+  });
+
   it('keeps history actions visible and focusable for runtime composers', () => {
     const actions = source('ChatActionMenu.tsx');
+    const extras = source('ChatRuntimeExtras.tsx');
+    const composer = source('ChatComposer.tsx');
     const rail = source('ChatSessionRail.tsx');
     const page = source('index.tsx');
     const hook = source('use-chat-page.ts');
     expect(actions).toContain('createPortal');
-    expect(actions).toContain('onCloseAutoFocus');
+    expect(actions).toContain('role="listbox"');
+    expect(actions).toContain('slashMenuFixedPosition');
+    expect(actions).toContain('bg-panel');
+    expect(actions).not.toContain('bg-popover');
+    expect(actions).toContain('data-help="chat-slash-menu"');
+    expect(actions).toContain('text-body leading-relaxed');
+    expect(actions).toContain('min-h-10');
+    expect(actions).toContain('max-h-80');
+    expect(actions).not.toContain('text-sm');
+    expect(actions).not.toContain('py-1.5 text-left text-sm');
+    expect(actions).not.toContain('DropdownMenu');
+    expect(actions).not.toContain('MoreHorizontal');
+    expect(source('chat-actions.ts')).not.toContain("id: 'open-history'");
+    expect(source('chat-actions.ts')).not.toContain("id: 'open-settings'");
+    expect(source('chat-actions.ts')).not.toContain("id: 'open-agents'");
+    expect(source('chat-actions.ts')).not.toContain("id: 'open-connections'");
+    expect(composer).toContain('<ChatActionMenu');
+    expect(composer).toContain('anchorRef={textareaRef}');
+    expect(extras).not.toContain('ChatActionMenu');
+    expect(extras).not.toContain('chat.actions.menu');
+    expect(page).toContain('commandSearchOpen={page.commandSearchOpen}');
+    expect(page).toContain('onRunAction={page.runChatAction}');
     expect(rail).toContain('historyRevealNonce');
     expect(rail).toContain('window.setTimeout');
     expect(rail).toContain('data-session-id');
@@ -226,11 +346,30 @@ describe('chat layout wiring', () => {
 
   it('offers always-allow on runtime permission cards', () => {
     const requests = source('ChatRuntimeRequests.tsx');
-    expect(requests).toContain('requestAllowsAlways');
+    expect(requests).toContain('runtimeAllowAlwaysCopy');
     expect(requests).toContain("submit('allow_always')");
     expect(requests).toContain('chat.runtime.allowAlways');
     expect(requests).toContain('runtimeRequestTitle');
-    expect(requests).toContain('chat.runtime.allowAlwaysHint');
+    expect(requests).toContain('always.hintKey');
+    expect(requests).toContain('data-help="chat-allow-always"');
+    expect(requests).toContain('runtimeFileChangePreview');
+    expect(requests).toContain('fileChangePreviewHintKey');
+    expect(requests).toContain('chat.runtime.fileChangePathOnly');
+    expect(translate('zh', 'chat.runtime.fileChangePathOnly')).toBe('仅有路径，无内容预览');
+    expect(translate('en', 'chat.runtime.fileChangePathOnly')).toBe('Path only — no content preview');
+    expect(translate('zh', 'chat.runtime.fileChangePreviewEmpty')).toBe('没有路径或内容预览');
+    expect(translate('en', 'chat.runtime.fileChangePreviewEmpty')).toBe('No path or content preview');
+    expect(translate('zh', 'chat.runtime.fileChangeCreate')).toBe('新增文件');
+    expect(translate('en', 'chat.runtime.fileChangeCreate')).toBe('Create file');
+    expect(translate('zh', 'chat.runtime.fileChangeDelete')).toBe('删除文件');
+    expect(translate('en', 'chat.runtime.fileChangeDelete')).toBe('Delete file');
+    expect(translate('zh', 'chat.runtime.allowAlwaysHint')).toBe('仅当前这次对话，不保存');
+    expect(translate('en', 'chat.runtime.allowAlwaysHint')).toBe('This conversation only, not saved');
+    expect(translate('zh', 'chat.runtime.allowAlwaysHintTurn')).toBe('仅当前这次对话，不保存');
+    expect(translate('en', 'chat.runtime.allowAlwaysHintTurn')).toBe(
+      'This conversation only, not saved',
+    );
+    expect(source('ChatTurnOutcomeBanner.tsx')).toContain('turnOutcomeDetail');
   });
 
   it('shows Kiro ask-or-full permission mode in session settings and the header', () => {
@@ -250,7 +389,11 @@ describe('chat layout wiring', () => {
     expect(page).toContain('chatShowsRuntimeRequestPanels');
     expect(page).toContain('chatComposerChoiceOptions');
     expect(page).toContain('data-help="chat-kiro-oneshot"');
-    expect(source('ChatComposer.tsx')).toContain('kiroChatComposerPlaceholder');
+    expect(source('ChatComposer.tsx')).toContain('composerInvitePlaceholder');
+    expect(source('ChatComposer.tsx')).toContain('composerCapabilityHint');
+    expect(source('ChatComposer.tsx')).toContain('composerHoverHint');
+    expect(source('ChatComposer.tsx')).toContain('composerShowsHintRow');
+    expect(source('ChatComposer.tsx')).toContain('composerConnectionTooltip');
     expect(source('use-chat-page.ts')).toContain('kiroChatAllowsCommandSearch');
   });
 
@@ -284,6 +427,8 @@ describe('chat layout wiring', () => {
     expect(sessions).toContain('restoreChatBootstrapIfUnchanged');
     expect(sessions).toContain('takeChatBootstrap');
     expect(sessions).toContain('boot.cwd');
+    expect(sessions).toContain('openConversationFromSession');
+    expect(sessions).toContain('boot.sessionId');
   });
 
   it('uses locale copy for process run details instead of internal English', () => {

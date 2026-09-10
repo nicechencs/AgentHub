@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { Check, Copy } from 'lucide-react';
+import { DetailTableCell, DetailTableRow, useDetailTable } from '@/components/shared/DetailTable';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { handleExternalLinkClick } from '@/lib/open-external';
 import { cn } from '@/lib/utils';
@@ -25,6 +26,7 @@ export function DetailRow({
   className?: string;
 }) {
   const { t } = useI18n();
+  const inTable = useDetailTable();
   const [copied, setCopied] = React.useState(false);
   const extra = lines?.filter((line) => line.trim()) ?? [];
   const copyText = extra.length > 0 ? [value, ...extra].join('\n') : value;
@@ -54,10 +56,9 @@ export function DetailRow({
     );
   };
 
-  return (
+  const valueBlock = (
     <span className={cn('flex min-w-0 items-start gap-1.5', className)}>
       <span className="min-w-0 flex-1">
-        <span className="text-muted">{label} </span>
         {extra.length > 0 ? (
           <span className="inline-flex flex-col gap-0.5 align-top">
             {renderValue(value)}
@@ -78,5 +79,20 @@ export function DetailRow({
         </button>
       ) : null}
     </span>
+  );
+
+  if (inTable) {
+    return (
+      <DetailTableRow label={label}>
+        <DetailTableCell>{valueBlock}</DetailTableCell>
+      </DetailTableRow>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3">
+      <span className="whitespace-nowrap text-meta text-muted">{label}</span>
+      {valueBlock}
+    </div>
   );
 }

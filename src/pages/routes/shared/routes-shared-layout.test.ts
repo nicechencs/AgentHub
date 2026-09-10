@@ -49,6 +49,12 @@ describe('routes layout wiring', () => {
     expect(list).not.toContain('routes.pool.page.chromeHint');
     expect(list).toContain('first={orphanOnly}');
     expect(list).toContain('title={orphanOnly ? undefined');
+    expect(list).toContain("t('routes.direct.titleDisconnected'");
+    expect(list).toContain("t('routes.direct.descriptionDisconnected')");
+    expect(source('pages/routes/shared/AdapterProfilesList.tsx')).toContain('adapterProfileStoppedHint');
+    expect(source('pages/routes/shared/adapter-view-model.ts')).toContain("t('routes.action.start')");
+    expect(source('lib/i18n/locales/zh.ts')).toContain('开启转发');
+    expect(source('lib/i18n/locales/en.ts')).toContain('Start forwarding');
   });
 
   it('uses a plain 详情 button on Routes and Connections (no chevron)', () => {

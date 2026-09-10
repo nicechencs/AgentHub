@@ -17,6 +17,7 @@ import {
   deleteConversation,
   ensureDefaultConversation,
   listConversations,
+  openConversationFromSession,
   updateConversation,
 } from '@/lib/api/chat';
 import {
@@ -25,6 +26,7 @@ import {
   restoreChatBootstrapIfUnchanged,
   takeChatBootstrap,
 } from '@/lib/chat-bootstrap';
+import { rememberFallbackCwd } from '@/lib/chat-cwd-fallback';
 import type { AgentKey, AgentStatus, ChatMessage, Conversation } from '@/lib/types';
 import { draftForFocusedConversation, isChatAgentSelectable, newConversationDefaults, singleAgentConversationPatch } from './chat-model';
 import { conversationListState, createSingleFlight } from './chat-request';
@@ -276,13 +278,28 @@ export function useChatPageSessions(input: {
           return;
         }
         if (activeId) draftsRef.current.set(activeId, draft);
-        const created = await createConversation(ids, boot.cwd ?? null);
-        let next = created;
-        if (boot.title) {
-          try {
-            next = await updateConversation(created.id, { title: boot.title });
-          } catch {
-            /* title 可选 */
+        const fromSession = Boolean(boot.sessionId?.trim() || boot.history?.length);
+        let next;
+        if (fromSession) {
+          next = await openConversationFromSession({
+            agentId: ids[0],
+            sessionId: boot.sessionId,
+            cwd: boot.cwd ?? null,
+            title: boot.title,
+            history: boot.history ?? [],
+          });
+          if (boot.fallbackCwd?.trim()) {
+            rememberFallbackCwd(next.id, boot.fallbackCwd);
+          }
+        } else {
+          const created = await createConversation(ids, boot.cwd ?? null);
+          next = created;
+          if (boot.title) {
+            try {
+              next = await updateConversation(created.id, { title: boot.title });
+            } catch {
+              /* title 可选 */
+            }
           }
         }
         if (cancelled) return;
@@ -293,7 +310,7 @@ export function useChatPageSessions(input: {
         });
         setActiveId(next.id);
         setMessages([]);
-        if (boot.prompt?.trim()) {
+        if (!fromSession && boot.prompt?.trim()) {
           setDraft(boot.prompt);
           toast({
             title: t('chat.toast.fromProjects'),
@@ -302,6 +319,13 @@ export function useChatPageSessions(input: {
           });
         } else {
           setDraft('');
+          if (fromSession) {
+            toast({
+              title: t('chat.toast.fromSession'),
+              description: t('chat.toast.fromSessionDesc'),
+              variant: 'success',
+            });
+          }
         }
         setSearchParams({}, { replace: true });
         applied = true;

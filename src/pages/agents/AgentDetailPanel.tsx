@@ -596,7 +596,11 @@ function InstallLocationRow({
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           {inst.spawn ? <Badge variant="success">{t('agents.card.spawnCopy')}</Badge> : null}
           {leftover ? (
-            <Badge variant="warning">{t('agents.card.leftoverDoNotLaunch')}</Badge>
+            <Badge variant="warning">
+              {inst.spawn
+                ? t('agents.card.leftoverSpawnBadge')
+                : t('agents.card.leftoverDoNotLaunch')}
+            </Badge>
           ) : null}
           {sourceLabel ? (
             <CopyableChannelName
@@ -651,7 +655,11 @@ function InstallLocationRow({
         <CopyableFileName path={inst.location} wrap="break" />
       </div>
       {leftover ? (
-        <p className="mt-1 text-meta text-warning">{t('agents.card.leftoverDoNotLaunch')}</p>
+        <p className="mt-1 text-meta text-warning">
+          {inst.spawn
+            ? t('agents.card.leftoverSpawnFallback')
+            : t('agents.card.leftoverDoNotLaunch')}
+        </p>
       ) : null}
     </li>
   );

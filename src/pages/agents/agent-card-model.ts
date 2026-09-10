@@ -301,6 +301,48 @@ function asUninstallVia(value?: string | null): UninstallVia | undefined {
   return undefined;
 }
 
+/** Leftover data-dir npm path — spawn fallback only, never an install location. */
+export function isLeftoverInstallPath(location?: string | null): boolean {
+  if (!location?.trim()) return false;
+  const n = location.replace(/\\/g, '/').toLowerCase();
+  return n.includes('/.agenthub/') && n.includes('/npm');
+}
+
+/** Detect notes for an incomplete DeepSeek Harness CLI (missing dsh-scope). */
+export function isIncompleteDshDetectNote(note: string): boolean {
+  const n = note.toLowerCase();
+  const mentionsScope = n.includes('dsh-scope');
+  const incomplete =
+    n.includes('skip')
+    || n.includes('missing')
+    || n.includes('incomplete')
+    || n.includes('不完整')
+    || n.includes('残缺')
+    || n.includes('跳过');
+  return mentionsScope && incomplete;
+}
+
+export function hasIncompleteDshDetectNotes(notes?: readonly string[] | null): boolean {
+  return (notes ?? []).some(isIncompleteDshDetectNote);
+}
+
+/** Incomplete PATH stub such as ~/.local/bin/dsh — not a healthy install copy. */
+export function isIncompleteDshCopy(
+  agentId: string,
+  location: string,
+  notes?: readonly string[] | null,
+): boolean {
+  if (agentId !== 'dsh' || !hasIncompleteDshDetectNotes(notes)) return false;
+  const loc = location.replace(/\\/g, '/').toLowerCase();
+  if ((notes ?? []).some((note) => {
+    if (!isIncompleteDshDetectNote(note)) return false;
+    return note.replace(/\\/g, '/').toLowerCase().includes(loc);
+  })) {
+    return true;
+  }
+  return /\/\.local\/bin\/dsh(?:\.|$)/.test(loc) || loc.endsWith('/.local/bin/dsh');
+}
+
 function toAgentInstall(
   agentId: string,
   kind: string,
@@ -313,15 +355,24 @@ function toAgentInstall(
     uninstallVia?: string | null;
   },
 ): AgentInstall {
-  const fallbackKind = isInstallSource(kind) ? kind : 'native';
+  const leftover = isLeftoverInstallPath(location);
+  const fallbackKind = leftover
+    ? 'leftover-agenthub'
+    : isInstallSource(kind)
+      ? kind
+      : 'native';
   const life = installLifecycle(fallbackKind, agentId);
-  const source = isInstallSource(copy?.source) ? copy.source : life.source;
+  const source = leftover
+    ? 'leftover-agenthub'
+    : isInstallSource(copy?.source)
+      ? copy.source
+      : life.source;
   return {
     source,
     location,
     version,
-    updateVia: asUpdateVia(copy?.updateVia) ?? life.updateVia,
-    uninstallVia: asUninstallVia(copy?.uninstallVia) ?? life.uninstallVia,
+    updateVia: leftover ? life.updateVia : asUpdateVia(copy?.updateVia) ?? life.updateVia,
+    uninstallVia: leftover ? life.uninstallVia : asUninstallVia(copy?.uninstallVia) ?? life.uninstallVia,
     spawn,
     kind: fallbackKind,
   };
@@ -331,13 +382,17 @@ function toAgentInstall(
 export function listAgentInstalls(
   agent: Pick<
     AgentStatus,
-    'agentId' | 'installed' | 'binPath' | 'channel' | 'version' | 'extraCopies' | 'updateVia' | 'uninstallVia'
+    'agentId' | 'installed' | 'binPath' | 'channel' | 'version' | 'extraCopies' | 'updateVia' | 'uninstallVia' | 'notes'
   >,
 ): AgentInstall[] {
   const out: AgentInstall[] = [];
   const spawnPath = agent.binPath?.trim();
   if (agent.installed && spawnPath) {
-    const kind = isInstallSource(agent.channel) ? agent.channel : 'native';
+    const kind = isLeftoverInstallPath(spawnPath)
+      ? 'leftover-agenthub'
+      : isInstallSource(agent.channel)
+        ? agent.channel
+        : 'native';
     const spawnCopy = (agent.extraCopies ?? []).find(
       (copy) => copy.path?.trim() && sameInstallPath(spawnPath, copy.path.trim()),
     );
@@ -353,6 +408,7 @@ export function listAgentInstalls(
     const location = copy.path?.trim();
     if (!location) continue;
     if (spawnPath && sameInstallPath(spawnPath, location)) continue;
+    if (isIncompleteDshCopy(agent.agentId, location, agent.notes)) continue;
     out.push(
       toAgentInstall(
         agent.agentId,
@@ -537,9 +593,38 @@ export type AgentListDetailsHint = {
   params?: { count: number };
 };
 
-/** List leftover hint is a warning — not a valid spawn path. */
+/** List leftover / incomplete-CLI hints are warnings — leftover is never an install location. */
 export function isLeftoverDetailsHint(hint: AgentListDetailsHint | null | undefined): boolean {
-  return hint?.key === 'agents.card.seeDetailsLeftover';
+  return (
+    hint?.key === 'agents.card.seeDetailsLeftover'
+    || hint?.key === 'agents.card.leftoverSpawnFallback'
+    || hint?.key === 'agents.card.incompleteCliInstallNpm'
+  );
+}
+
+/**
+ * List note: leftover spawn is a fallback only; incomplete CLI is not-ready.
+ * Never points at leftover `~/.agenthub/npm` as the install location.
+ */
+export function agentHonestyHint(
+  agent: Pick<
+    AgentStatus,
+    'agentId' | 'installed' | 'binPath' | 'channel' | 'version' | 'extraCopies' | 'updateVia' | 'uninstallVia' | 'notes'
+  >,
+): AgentListDetailsHint | null {
+  const installs = listAgentInstalls(agent);
+  if (
+    agent.agentId === 'dsh'
+    && !agent.installed
+    && hasIncompleteDshDetectNotes(agent.notes)
+  ) {
+    return { key: 'agents.card.incompleteCliInstallNpm' };
+  }
+  const spawn = installs.find((row) => row.spawn);
+  if (spawn && isLeftoverInstallSource(spawn.source)) {
+    return { key: 'agents.card.leftoverSpawnFallback' };
+  }
+  return agentListDetailsHint(installs);
 }
 
 /**

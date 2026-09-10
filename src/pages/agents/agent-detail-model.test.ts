@@ -354,6 +354,22 @@ describe('AgentDetailPanel markup', () => {
     expect(html).not.toMatch(/>native</);
   });
 
+  it('labels leftover DeepSeek spawn as a launch fallback and keeps official npm install', () => {
+    const html = renderPanel({
+      ...installed('dsh', 'leftover-agenthub'),
+      binPath: '/home/box/.agenthub/npm/bin/dsh',
+      notes: [
+        '跳过 PATH /home/box/.local/bin/dsh：命令不完整（缺少 @deepseek-ai/dsh-scope），请用官方 npm 装到 ~/.npm-global',
+      ],
+    });
+    expect(html).toContain('遗留数据目录 npm');
+    expect(html).toContain('启动后备，非安装位置');
+    expect(html).toContain('请用官方 npm 装到 ~/.npm-global');
+    expect(html).not.toContain('勿从此路径启动');
+    expect(html).toContain('npm i -g @deepseek-ai/dsh');
+    expect(html).not.toContain('应该装到 ~/.agenthub');
+  });
+
   it('labels leftover copies as leftover, not as another version', () => {
     const html = renderPanel({
       ...installed('codex', 'npm'),

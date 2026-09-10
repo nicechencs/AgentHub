@@ -1,4 +1,4 @@
-import type { AgentKey, ChatEvent, ChatMessage, Conversation } from '@/lib/types';
+import type { AgentKey, ChatEvent, ChatHistoryTurn, ChatMessage, Conversation } from '@/lib/types';
 import type { RuntimeOptions, RuntimeReply, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings } from './chat-runtime';
 
 export type MarkdownFilePreviewDto = {
@@ -12,6 +12,13 @@ export interface ChatPort {
   listConversations(): Promise<Conversation[]>;
   createConversation(agentIds: AgentKey[], cwd?: string | null): Promise<Conversation>;
   ensureDefaultConversation(agentIds: AgentKey[], cwd?: string | null): Promise<Conversation>;
+  openConversationFromSession(input: {
+    agentId: AgentKey;
+    sessionId?: string | null;
+    cwd?: string | null;
+    title?: string | null;
+    history: ChatHistoryTurn[];
+  }): Promise<Conversation>;
   updateConversation(
     id: string,
     patch: {
@@ -50,4 +57,6 @@ export interface ChatPort {
   saveChatPasteImage(input: { base64: string; extension: string; byteLength?: number }): Promise<string>;
   /** Read a markdown file under the conversation working directory for the right-hand preview. */
   readMarkdownPreview(path: string, cwd: string): Promise<MarkdownFilePreviewDto>;
+  /** Desktop menu accel (Ctrl/Cmd+N). Browser mock is a no-op. */
+  onNativeShortcut(handler: (action: 'newChat') => void): Promise<() => void>;
 }

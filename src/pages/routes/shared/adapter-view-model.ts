@@ -44,6 +44,26 @@ export function bridgeRuntimeStatusView(input: {
   return { label: t ? t('routes.runtime.stopped') : '已停止', tone: 'muted' };
 }
 
+/** Stopped / not-yet-started local forward: reason + next step. Never a green tone. */
+export function adapterProfileStoppedHint(
+  input: {
+    route: AdapterProfile['route'];
+    bridgeState?: AdapterBridgeRuntimeState;
+    statusUnavailable?: boolean;
+  },
+  t?: TranslateFn,
+): { reason: string; next: string } | null {
+  if (input.route !== 'local_bridge') return null;
+  if (input.statusUnavailable) return null;
+  if (input.bridgeState === 'running' || input.bridgeState === 'degraded') return null;
+  if (input.bridgeState === 'starting' || input.bridgeState === 'stopping') return null;
+  if (input.bridgeState === 'error') return null;
+  return {
+    reason: t ? t('routes.direct.stoppedReason') : '本机转发已停止',
+    next: t ? t('routes.direct.stoppedNext') : '点「开启转发」或「详情」',
+  };
+}
+
 export function adapterStatusDotClass(tone: AdapterStatusTone): string {
   if (tone === 'success') return 'bg-success';
   if (tone === 'warning') return 'bg-warning';
@@ -286,7 +306,7 @@ export function adapterProfilePrimaryAction(input: {
   if (input.route !== 'local_bridge') return null;
   const ownsListener = isBridgeStopCapable(input.bridgeState);
   const stopLabel = t ? t('routes.action.stop') : '停止';
-  const startLabel = t ? t('routes.action.start') : '启动';
+  const startLabel = t ? t('routes.action.start') : '开启转发';
   if (input.statusUnavailable) {
     return ownsListener
       ? { kind: 'stop', label: stopLabel }
