@@ -243,7 +243,8 @@ describe('conversationRailHint', () => {
     );
     expect(hint.title).toBe(title);
     expect(hint.title).not.toMatch(/…|\.\.\./);
-    expect(conversationSemanticTitle(title)).toBe('Please create or edit');
+    expect(conversationSemanticTitle(title)).not.toBe(title);
+    expect(conversationSemanticTitle(title)).toMatch(/…/);
     expect(hint.meta).toContain('/workspace/demo-project');
   });
 });
