@@ -33,6 +33,18 @@ export function mockCwdMissing(cwd?: string | null): boolean {
   return /(?:^|[\\/])\.tmp|[/\\]var[/\\]folders[/\\]|missing-cwd/i.test(value);
 }
 
+function firstUserContentOf(id: string): string | undefined {
+  return (mockMessages[id] ?? []).find((m) => m.role === 'user' && m.content.trim())?.content;
+}
+
+function withListFields(conv: Conversation): Conversation {
+  return withCwdFlag({
+    ...conv,
+    sending: mockInflight.has(conv.id),
+    firstUserContent: firstUserContentOf(conv.id) ?? null,
+  });
+}
+
 function withCwdFlag(conv: Conversation): Conversation {
   return { ...conv, cwdMissing: mockCwdMissing(conv.cwd) };
 }
@@ -416,9 +428,7 @@ export function createMockChatPort(): ChatPort {
   return {
     async listConversations() {
       await delay(120);
-      return mockConversations.map((c) =>
-        withCwdFlag({ ...c, sending: mockInflight.has(c.id) }),
-      );
+      return mockConversations.map((c) => withListFields(c));
     },
 
     async createConversation(agentIds, cwd) {
@@ -435,7 +445,7 @@ export function createMockChatPort(): ChatPort {
       };
       mockConversations.unshift(conv);
       mockMessages[conv.id] = [];
-      return withCwdFlag({ ...conv });
+      return withListFields(conv);
     },
 
     async openConversationFromSession(input) {
@@ -449,7 +459,7 @@ export function createMockChatPort(): ChatPort {
         if (rows.length === 0 && input.history.length > 0) {
           mockMessages[existing.id] = importMockHistory(existing.id, input.agentId, input.history);
         }
-        return withCwdFlag({ ...existing, sending: mockInflight.has(existing.id) });
+        return withListFields(existing);
       }
       const conv: Conversation = {
         id: `conv-mock-${mockSeq++}`,
@@ -463,7 +473,7 @@ export function createMockChatPort(): ChatPort {
       };
       mockConversations.unshift(conv);
       mockMessages[conv.id] = importMockHistory(conv.id, input.agentId, input.history);
-      return withCwdFlag({ ...conv });
+      return withListFields(conv);
     },
 
     async ensureDefaultConversation(agentIds, cwd) {
@@ -473,7 +483,7 @@ export function createMockChatPort(): ChatPort {
         (c) => c.title.trim() === '' && (mockMessages[c.id] ?? []).length === 0,
       );
       if (existing) {
-        return withCwdFlag({ ...existing, sending: mockInflight.has(existing.id) });
+        return withListFields(existing);
       }
       const conv: Conversation = {
         id: `conv-mock-${mockSeq++}`,
@@ -487,7 +497,7 @@ export function createMockChatPort(): ChatPort {
       };
       mockConversations.unshift(conv);
       mockMessages[conv.id] = [];
-      return withCwdFlag({ ...conv });
+      return withListFields(conv);
     },
 
     async updateConversation(id, patch) {
@@ -515,7 +525,7 @@ export function createMockChatPort(): ChatPort {
         updatedAt: nowIso(),
       };
       mockConversations[idx] = next;
-      return withCwdFlag({ ...next });
+      return withListFields(next);
     },
 
     async deleteConversation(id) {

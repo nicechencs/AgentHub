@@ -27,6 +27,7 @@ fn conversation_with(db: &Database, id: &str, agent: AgentId, cwd: &std::path::P
             updated_at: "2026-01-01T00:00:00Z".into(),
             native_session_id: None,
             sending: false,
+            first_user_content: None,
         })
         .unwrap();
 }
@@ -2078,6 +2079,7 @@ fn claude_stream_result_completes_turn_and_keeps_session() {
             updated_at: "2026-01-01T00:00:00Z".into(),
             native_session_id: None,
             sending: false,
+            first_user_content: None,
         })
         .unwrap();
     let mut worker = worker(&db, "claude-stream");

@@ -962,6 +962,27 @@ export function firstUserContentByConversation(
   return out;
 }
 
+/** List-side first user bodies. Used when the focused `messages` set is empty for other rows. */
+export function firstUserContentByListedConversations(
+  conversations: readonly Pick<Conversation, 'id' | 'firstUserContent'>[],
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const conversation of conversations) {
+    const text = conversation.firstUserContent?.trim();
+    if (!text || out[conversation.id]) continue;
+    out[conversation.id] = conversation.firstUserContent ?? text;
+  }
+  return out;
+}
+
+/** List first, then overlay in-memory messages so the focused chat stays live. */
+export function mergeFirstUserContentById(
+  fromList: Record<string, string>,
+  fromMessages: Record<string, string>,
+): Record<string, string> {
+  return { ...fromList, ...fromMessages };
+}
+
 export function conversationRailHintTitle(
   storedTitle: string,
   firstUserContent?: string | null,

@@ -16,7 +16,9 @@ import {
   composerNativeEditChord,
   conversationCwdMissing,
   firstUserContentByConversation,
+  firstUserContentByListedConversations,
   filterConversations,
+  mergeFirstUserContentById,
   groupConversationsByDay,
   isChatAgentSelectable,
   selectConversationAgent,
@@ -143,8 +145,12 @@ export function useChatPage() {
 
   const turns = useMemo(() => groupByTurn(messages), [messages]);
   const firstUserContentById = useMemo(
-    () => firstUserContentByConversation(messages),
-    [messages],
+    () =>
+      mergeFirstUserContentById(
+        firstUserContentByListedConversations(conversations),
+        firstUserContentByConversation(messages),
+      ),
+    [conversations, messages],
   );
   const startExtrasRef = useRef<{ images?: { path: string }[]; skills?: { name: string; path: string }[] }>({});
   const runtimeOpsClearRef = useRef<() => void>(() => {});
