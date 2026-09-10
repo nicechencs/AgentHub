@@ -556,7 +556,7 @@ impl ChatService {
             HashMap<AgentId, ChatMessage>,
         )> {
             if conv.title.trim().is_empty() {
-                conv.title = truncate_title(user_input, 30);
+                conv.title = crate::models::conversation_title_from_prompt(user_input);
             }
             if conv.agent_ids.len() > 1 {
                 conv.agent_ids.truncate(1);
@@ -1053,15 +1053,6 @@ fn map_run_status(status: RunStatus) -> ChatMessageStatus {
         RunStatus::Skipped => ChatMessageStatus::Skipped,
         RunStatus::Cancelled => ChatMessageStatus::Cancelled,
     }
-}
-
-fn truncate_title(s: &str, max: usize) -> String {
-    let s = s.trim();
-    if s.chars().count() <= max {
-        return s.to_string();
-    }
-    let t: String = s.chars().take(max.saturating_sub(1)).collect();
-    format!("{t}…")
 }
 
 fn dedupe_agents(agents: Vec<AgentId>) -> Vec<AgentId> {

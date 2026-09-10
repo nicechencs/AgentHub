@@ -14,6 +14,7 @@ import {
   chatSend,
   listChatMessages,
   listConversations,
+  updateConversation,
   runtimeCancel,
   runtimeContinueLegacy,
   runtimeReply,
@@ -644,6 +645,14 @@ export function useChatPageSend(input: {
       setConversations((prev) => prev.map((item) => (
         item.id === sendConvId ? { ...item, title } : item
       )));
+      try {
+        const updated = await updateConversation(sendConvId, { title });
+        setConversations((prev) => prev.map((item) => (
+          item.id === sendConvId ? { ...item, title: updated.title || title } : item
+        )));
+      } catch {
+        /* Rust persist is the fallback if this write does not land. */
+      }
     }
 
     // A runtime-enabled snapshot is the sole decision point.  Failure to read

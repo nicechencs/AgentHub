@@ -244,3 +244,29 @@ fn codex_token_usage_splits_turn_and_session_without_inventing_either() {
         other => panic!("unexpected: {other:?}"),
     }
 }
+
+#[test]
+fn conversation_title_from_prompt_keeps_full_semantic_phrase() {
+    let long = "Use your terminal to write exactly what I asked without clipping the title";
+    let title = conversation_title_from_prompt(long);
+    assert_eq!(title, long);
+    assert!(!title.contains('…'));
+    assert!(!title.contains("..."));
+}
+
+#[test]
+fn conversation_title_from_prompt_strips_paths_without_ellipsis() {
+    assert_eq!(
+        conversation_title_from_prompt("请在 /workspace/src/app.ts 检查问题"),
+        "检查问题"
+    );
+    assert_eq!(
+        conversation_title_from_prompt("Only modify /tmp/qa/ping.png"),
+        "Only modify"
+    );
+    let recovered = conversation_title_from_prompt(
+        "Please create or edit /workspace/src/pages/chat/ChatSessionRail.tsx to add a hover title",
+    );
+    assert_eq!(recovered, "Please create or edit to add a hover title");
+    assert!(!recovered.contains('…'));
+}
