@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { pageRhythm } from './page-rhythm';
 import {
   NAV_ICON_SIZE,
   NAV_ICON_STROKE,
@@ -36,6 +37,8 @@ describe('nav chrome tokens', () => {
     expect(navBrandTitleClass).toContain('text-body font-semibold');
     expect(navHeaderClass(true)).toContain('justify-center');
     expect(navHeaderClass(false)).toContain('justify-between px-3');
+    expect(navHeaderClass(false)).toContain(pageRhythm.topChrome);
+    expect(source('nav-chrome.ts')).toContain('pageRhythm.topChrome');
   });
 
   it('wires the primary sidebar and Routes rail through the same chrome', () => {

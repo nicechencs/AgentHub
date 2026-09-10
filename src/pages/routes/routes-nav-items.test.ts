@@ -74,7 +74,8 @@ describe('routes-nav-items', () => {
     expect(header).toContain('RailExpandIcon');
     expect(header).toContain('group-hover:opacity-0');
     expect(nav).toContain('<Route');
-    expect(nav.indexOf('<Route')).toBeLessThan(nav.indexOf("t('routes.nav.title')"));
+    expect(nav).toContain("title={t('routes.nav.title')}");
+    expect(header.indexOf('{identity}')).toBeLessThan(header.indexOf('{title}'));
     expect(nav).not.toContain('text-sm font-semibold tracking-tight');
     expect(nav).not.toContain('pageRhythm.pageTitle');
     expect(nav.indexOf("t('routes.nav.title')")).toBeLessThan(nav.indexOf("t('routes.nav.collapse')"));
