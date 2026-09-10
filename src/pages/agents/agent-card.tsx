@@ -5,6 +5,7 @@ import {
   Copy,
   Eye,
   EyeOff,
+  MoreHorizontal,
   RefreshCw,
   Terminal,
   X,
@@ -17,6 +18,12 @@ import { ListNameButton } from '@/components/shared/ListNameButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   TableCell,
   TableEmptyCell,
@@ -410,7 +417,7 @@ export function AgentCard({
             {launch.cliPath ? (
               <Button
                 size="sm"
-                variant="outline"
+                variant="secondary"
                 disabled={actionsBusy || launching != null}
                 onClick={() => void startProgram('cli')}
               >
@@ -421,7 +428,7 @@ export function AgentCard({
             {launch.appPath ? (
               <Button
                 size="sm"
-                variant="outline"
+                variant="secondary"
                 disabled={actionsBusy || launching != null}
                 onClick={() => void startProgram('app')}
               >
@@ -471,96 +478,101 @@ export function AgentCard({
         )}
       </TableCell>
       <TableCell
-        data-col="hide"
-        className="whitespace-nowrap text-right"
-        onClick={(event) => event.stopPropagation()}
-        onPointerDown={(event) => event.stopPropagation()}
-      >
-        {hidden ? (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={hiding}
-            title={t('agents.card.unhideTitle')}
-            onClick={() => void toggleHidden()}
-          >
-            <Eye className="h-3.5 w-3.5" />
-            {t('agents.card.unhide')}
-          </Button>
-        ) : (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={actionsBusy}
-            title={t('agents.card.hideTitle')}
-            onClick={() => void toggleHidden()}
-          >
-            <EyeOff className="h-3.5 w-3.5" />
-            {t('agents.card.hide')}
-          </Button>
-        )}
-      </TableCell>
-      <TableCell
         data-col="actions"
         className="whitespace-nowrap text-right"
         onClick={(event) => event.stopPropagation()}
         onPointerDown={(event) => event.stopPropagation()}
       >
-        {hidden ? (
-          <TableEmptyCell />
-        ) : agent.installed ? (
-          installAlongside ? (
+        <div className="flex flex-nowrap items-center justify-end gap-1.5">
+          {hidden ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={hiding}
+              title={t('agents.card.unhideTitle')}
+              data-help="agents-hide"
+              onClick={() => void toggleHidden()}
+            >
+              <Eye className="h-3.5 w-3.5" />
+              {t('agents.card.unhide')}
+            </Button>
+          ) : agent.installed ? (
+            installAlongside ? (
+              <AgentInstallButton
+                status={task?.status}
+                busy={busy}
+                channelId={selectedChannel.id}
+                onClick={() =>
+                  installFailed
+                    ? retryAction()
+                    : installGuided
+                      ? redetectAfterGuide()
+                      : openConfirm('install')
+                }
+              />
+            ) : null
+          ) : cardState === 'env_missing' ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={canOneClickEnv ? () => openConfirm('oneclick') : startOneClickEnvOnly}
+              disabled={busy}
+              title={
+                canOneClickEnv
+                  ? t('agents.card.fixThenInstall')
+                  : t('agents.card.envOnlyThenInstall')
+              }
+            >
+              <Zap className="h-3.5 w-3.5" />
+              {canOneClickEnv ? t('agents.card.fixAndInstall') : t('agents.card.fixEnv')}
+            </Button>
+          ) : (
             <AgentInstallButton
               status={task?.status}
               busy={busy}
               channelId={selectedChannel.id}
-              onClick={() =>
-                installFailed
-                  ? retryAction()
-                  : installGuided
-                    ? redetectAfterGuide()
-                    : openConfirm('install')
-              }
+              linuxUnsupported={linuxUnsupported}
+              onClick={() => {
+                if (linuxUnsupported) {
+                  toast({
+                    title: t('agents.card.linuxUnsupported'),
+                    description: t('agents.card.linuxUnsupportedHint'),
+                    variant: 'danger',
+                  });
+                  return;
+                }
+                if (installFailed) retryAction();
+                else if (installGuided) redetectAfterGuide();
+                else openConfirm('install');
+              }}
             />
-          ) : (
-            <TableEmptyCell />
-          )
-        ) : cardState === 'env_missing' ? (
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={canOneClickEnv ? () => openConfirm('oneclick') : startOneClickEnvOnly}
-            disabled={busy}
-            title={
-              canOneClickEnv
-                ? t('agents.card.fixThenInstall')
-                : t('agents.card.envOnlyThenInstall')
-            }
-          >
-            <Zap className="h-3.5 w-3.5" />
-            {canOneClickEnv ? t('agents.card.fixAndInstall') : t('agents.card.fixEnv')}
-          </Button>
-        ) : (
-          <AgentInstallButton
-            status={task?.status}
-            busy={busy}
-            channelId={selectedChannel.id}
-            linuxUnsupported={linuxUnsupported}
-            onClick={() => {
-              if (linuxUnsupported) {
-                toast({
-                  title: t('agents.card.linuxUnsupported'),
-                  description: t('agents.card.linuxUnsupportedHint'),
-                  variant: 'danger',
-                });
-                return;
-              }
-              if (installFailed) retryAction();
-              else if (installGuided) redetectAfterGuide();
-              else openConfirm('install');
-            }}
-          />
-        )}
+          )}
+          {!hidden ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  disabled={actionsBusy}
+                  aria-label={t('common.moreActions')}
+                  title={t('common.moreActions')}
+                  data-help="agents-hide"
+                >
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
+                <DropdownMenuItem
+                  disabled={actionsBusy}
+                  onSelect={() => void toggleHidden()}
+                >
+                  <EyeOff className="h-3.5 w-3.5" />
+                  {t('agents.card.hide')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
+        </div>
       </TableCell>
     </TableRow>
 

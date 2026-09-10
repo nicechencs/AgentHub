@@ -857,6 +857,7 @@ function TicketRow({
         <div className="flex flex-nowrap items-center gap-2">
           {nativeSwitch ? (
             <DisabledReasonButton
+              variant="secondary"
               disabled={switchChip.kind === 'in-use' || switchBusy || !onSwitch}
               reason={ticketSwitchDisabledReason({
                 kind: switchChip.kind,

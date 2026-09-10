@@ -113,7 +113,7 @@ describe('ChatSessionRail titles', () => {
     expect(src).not.toMatch(/function ConversationRailHintLabel[\s\S]*AgentLogo/);
   });
 
-  it('uses a semantic title on the main line and cwd on the second line', () => {
+  it('uses a single-line semantic title and keeps cwd only in the hover helper', () => {
     const html = renderMarkup(rail());
     const titleAt = html.indexOf('data-help="chat-session-title"');
     expect(titleAt).toBeGreaterThan(0);
@@ -121,7 +121,19 @@ describe('ChatSessionRail titles', () => {
     expect(titleSlice).toContain('检查问题');
     expect(titleSlice).not.toContain('/workspace/src/app.ts');
     expect(html).not.toContain('/workspace/src/app.ts');
-    expect(html).toContain('demo-project');
+    const buttonAt = html.indexOf('data-session-id="c1"');
+    const buttonEnd = html.indexOf('</button>', buttonAt);
+    expect(buttonAt).toBeGreaterThan(0);
+    expect(buttonEnd).toBeGreaterThan(buttonAt);
+    const buttonHtml = html.slice(buttonAt, buttonEnd);
+    expect(buttonHtml).toContain('data-help="chat-session-title"');
+    expect(buttonHtml).not.toContain('demo-project');
+    expect(buttonHtml).not.toContain('text-meta text-muted');
+    const hint = conversationRailHintView(conversation(), createTranslator('zh'));
+    expect(hint.meta).toContain('/workspace/demo-project');
+    const src = readFileSync(new URL('./ChatSessionRail.tsx', import.meta.url), 'utf8');
+    expect(src).toContain('conversationRailHintView(');
+    expect(src).not.toContain('cwdShortName');
   });
 
   it('paints 新建对话 with the theme fill', () => {

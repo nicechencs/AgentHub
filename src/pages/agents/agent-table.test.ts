@@ -10,7 +10,7 @@ import {
 } from './agent-table';
 
 describe('agent table columns', () => {
-  it('keeps a stable column order', () => {
+  it('keeps a stable column order without a dedicated hide column', () => {
     expect(AGENT_TABLE_COLUMN_SPECS.map((spec) => spec.key)).toEqual([
       'agent',
       'status',
@@ -18,7 +18,6 @@ describe('agent table columns', () => {
       'note',
       'start',
       'upgrade',
-      'hide',
       'actions',
     ]);
   });
@@ -33,7 +32,6 @@ describe('agent table columns', () => {
       'note',
       'start',
       'upgrade',
-      'hide',
       'actions',
     ];
     expect(keys.map((key) => agentTableColumnLabel(key, tZh))).toEqual([
@@ -43,7 +41,6 @@ describe('agent table columns', () => {
       '说明',
       '启动',
       '更新',
-      '隐藏',
       '操作',
     ]);
     expect(keys.map((key) => agentTableColumnLabel(key, tEn))).toEqual([
@@ -53,7 +50,6 @@ describe('agent table columns', () => {
       'Notes',
       'Start',
       'Update',
-      'Hide',
       'Actions',
     ]);
   });
@@ -78,7 +74,6 @@ describe('agent table columns', () => {
       'version',
       'start',
       'upgrade',
-      'hide',
       'actions',
     ]);
     expect(agentTableColumnSide('agent')).toBe('left');
@@ -87,7 +82,6 @@ describe('agent table columns', () => {
     expect(agentTableColumnSide('note')).toBe('flex');
     expect(agentTableColumnSide('start')).toBe('right');
     expect(agentTableColumnSide('upgrade')).toBe('right');
-    expect(agentTableColumnSide('hide')).toBe('right');
     expect(agentTableColumnSide('actions')).toBe('right');
   });
 });

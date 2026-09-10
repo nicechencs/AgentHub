@@ -3,7 +3,7 @@ title: UI 页面模式
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-09
+updated: 2026-09-10
 ---
 
 # UI Page Patterns
@@ -44,6 +44,8 @@ Routes nested paths (secondary nav):
 | Activity | `/routes/activity` | Cross-route recent request feed |
 
 Entering any `/routes*` path shows a shell-level secondary nav panel. Clicking Routes in the primary sidebar collapses that sidebar when **Collapse sidebar on Routes** is on (writes `agenthub:sidebar-collapsed`; default on). Other primary items, refresh, secondary-nav clicks, and leaving the routes area do not auto-expand or auto-collapse it. The setting is in Settings → Features. The secondary nav top-right control collapses that nav (writes `agenthub:routes-nav-collapsed`). Right-click offers expand when collapsed and collapse when expanded. While the URL is inside `/routes*`, the primary sidebar still shows the Routes entry even if `routesNavVisible` is off, so the active item remains visible; that preference itself is unchanged.
+
+Primary sidebar (expanded or icon rail) and this Routes rail share one selected / hover / collapse chrome. Settings five tabs stay a page pill bar (`?tab=preferences|features|local|backups|about`); they are not collapsed into the rail.
 
 ## 2. Application shell
 
@@ -330,7 +332,7 @@ Sub2API is a separate site-management workbench, not a Routes subpage or a repla
 
 Chat is a one-conversation, one-Agent workbench with a session rail, transcript, process panel, and composer. The quality bar versus Claude Code, Cursor Chat, and the Codex app is [Chat 体验标杆](chat-experience-bar.md).
 
-- The rail supports new conversation, search by title and working directory, day grouping, selection, rename, and delete confirmation. The rail width is dragged from the separator and remembered (`agenthub:chat-rail-width`).
+- The rail supports new conversation, search by title and working directory, day grouping, selection, rename, and delete confirmation. List rows show the title only; working directory, draft, and time stay in the hover tip. The rail width is dragged from the separator and remembered (`agenthub:chat-rail-width`).
 - The current conversation header exposes Agent identity, working directory, automatic-approval state, and connection context. A missing working directory is a blocker, not an automatic modal.
 - A conversation has one active Agent. Hidden or unauthorized Agents remain visible with a reason but cannot be selected for a new send.
 - The composer validates blockers in order: hidden Agent, environment not ready, missing authorization, unknown status, then missing working directory. It renders only the first blocker with a recovery action. Sending is isolated per conversation; several conversations may generate at once.
@@ -343,7 +345,7 @@ Chat is a one-conversation, one-Agent workbench with a session rail, transcript,
 
 ### Features (Chat)
 
-- Session rail: new conversation, search by title/cwd, day grouping, rename, delete confirmation; drag-resize remembered in `agenthub:chat-rail-width`.
+- Session rail: new conversation, search by title/cwd, day grouping, rename, delete confirmation; list rows are title-only (cwd / draft / time on hover); drag-resize remembered in `agenthub:chat-rail-width`.
 - Header: Agent identity, working directory, automatic-approval state, connection context.
 - Empty transcript: invite headline only; example chips fill the draft only (draft-only note on chip hover). Composer placeholder is generic (`发消息…`); Grok / Kiro / Claude queue-only limits and Enter / Shift+Enter use hover titles on an empty session. First-use toolbar keeps needed controls and quiets image/skill labels to icons; connection label truncates with a full-name hover. Composer blocker order: hidden Agent → environment not ready → missing authorization → unknown status → missing working directory; send is the composer accent action; rail **新建对话** uses the same theme fill. Enter sends, Shift+Enter makes a new line. While generating, one bottom-right control: Send injects or queues when the draft has text and that channel exists; empty draft shows icon Stop in the same slot; Esc still stops (dialogs/menus first). Queued lines show a count; Stop stays 正在停止 and disabled until the turn ends (re-enables if the cancel request misses); the 已停止 banner hides a raw `cancelled` status word; focus stays in the composer after send. Retry creates a new turn. Several conversations may generate at once. A compact shortcuts control opens the same overview on hover or click; `?` still opens the shortcuts dialog. Delete-confirm dialogs (session rail, backups) keep Enter-to-confirm and show a return-key icon, not the word Enter.
 - Approval cards: Allow / Deny; Always allow when the request includes that option. Codex / Grok / Kiro in-process remember (not saved). File-change cards show the path.
@@ -442,12 +444,12 @@ Skills, Projects, and Plugins are full-height workbenches with a left inventory 
 
 ### Agents
 
-Agents is the lifecycle surface: installed state, runtime readiness, install/update, and environment remediation. The catalog is a field table in a full-height split. Click the Agent **name** to open the right-hand detail; start / install / hide stay on the row. If the detail pane is already open, clicking another row’s empty area switches the detail; a closed pane stays closed. A missing runtime is shown before Agent installation, with repair steps and a re-detect action. Do not offer a successful installation action while its prerequisite environment is known to be missing. Leftover `~/.agenthub/npm` copies are labeled **启动后备，非安装位置** (spawn fallback only; install via official npm into `~/.npm-global`). An incomplete DeepSeek CLI (common: `~/.local/bin/dsh` missing `@deepseek-ai/dsh-scope`) is not-ready and prompts the same official npm install — never `~/.agenthub/npm`. Uninstall entry in the detail pane is `dangerOutline`; the confirm dialog uses `danger`.
+Agents is the lifecycle surface: installed state, runtime readiness, install/update, and environment remediation. The catalog is a field table in a full-height split. Click the Agent **name** to open the right-hand detail; start / install stay labeled on the row. Hide sits in the row `⋯` menu; a hidden row shows **取消隐藏** as the labeled action. If the detail pane is already open, clicking another row’s empty area switches the detail; a closed pane stays closed. A missing runtime is shown before Agent installation, with repair steps and a re-detect action. Do not offer a successful installation action while its prerequisite environment is known to be missing. Leftover `~/.agenthub/npm` copies are labeled **启动后备，非安装位置** (spawn fallback only; install via official npm into `~/.npm-global`). An incomplete DeepSeek CLI (common: `~/.local/bin/dsh` missing `@deepseek-ai/dsh-scope`) is not-ready and prompts the same official npm install — never `~/.agenthub/npm`. Uninstall entry in the detail pane is `dangerOutline`; the confirm dialog uses `danger`.
 
 ### Features (Agents)
 
 - Lifecycle catalog table: installed state, runtime readiness, install/update, hide, environment remediation. Leftover `~/.agenthub/npm` is **启动后备，非安装位置**; incomplete DeepSeek CLI prompts official npm into `~/.npm-global`.
-- Click Agent **name** for detail; start/install/hide stay on the row; uninstall in detail is `dangerOutline` with `danger` confirm.
+- Click Agent **name** for detail; start/install stay labeled on the row; hide is in the row `⋯` menu; uninstall in detail is `dangerOutline` with `danger` confirm.
 - Missing runtime shown before Agent installation, with repair steps and re-detect.
 
 ### Agent touchpoints (Agents)

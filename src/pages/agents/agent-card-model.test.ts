@@ -62,7 +62,9 @@ describe('agent-card menu wiring', () => {
     expect(card).not.toContain("t('agents.card.uninstallProgram')");
     expect(card).not.toContain("t('agents.card.uninstallConfig')");
     expect(card).not.toContain('openBinDir');
-    expect(card).not.toContain('DropdownMenu');
+    expect(card).toContain('DropdownMenu');
+    expect(card).toContain("t('agents.card.hide')");
+    expect(card).toContain("t('agents.card.unhide')");
     expect(detail).toContain('agentUninstallControl');
     expect(detail).toContain('ChannelUninstallButton');
     expect(detail).toContain("setConfirmDialog('program')");

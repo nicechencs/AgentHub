@@ -21,6 +21,7 @@ export default {
         // 命名避开 Tailwind font-size 的 base,否则 text-base 会被同时解析成文字颜色
         canvas: 'var(--bg-canvas)',
         panel: 'var(--bg-panel)',
+        raised: 'var(--bg-raised)',
         subtle: 'var(--bg-subtle)',
         hover: 'var(--bg-hover)',
         active: 'var(--bg-active)',
@@ -52,6 +53,7 @@ export default {
         danger: {
           DEFAULT: 'var(--danger)',
           subtle: 'var(--danger-subtle)',
+          foreground: 'var(--danger-foreground)',
         },
         info: {
           DEFAULT: 'var(--info)',

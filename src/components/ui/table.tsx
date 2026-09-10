@@ -27,8 +27,8 @@ export const tableStyles = {
   theadRow: 'border-b border-border bg-subtle text-left',
   th: 'px-3 py-2 text-meta font-medium text-muted',
   // 行线在顶边；最后一行的顶线就是与上一行的分隔，不能 last:border-0。
-  tr: 'border-t border-border/50 hover:bg-hover',
-  trSelected: 'bg-hover/40',
+  tr: 'border-t border-border hover:bg-hover',
+  trSelected: 'bg-hover',
   trActive: 'bg-active hover:bg-active',
   theadRowWorkbench: 'border-b border-border/70 bg-subtle/50 text-left',
   trWorkbench:
