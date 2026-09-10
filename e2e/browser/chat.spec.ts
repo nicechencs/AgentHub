@@ -251,6 +251,36 @@ test('Ctrl+N starts a new chat', async ({ page }) => {
   });
 });
 
+test('history list is a single title line; cwd stays in hover and search', async ({ page }) => {
+  await openApp(page);
+  await openChatComposer(page);
+  await setWorkingDirectory(page, 'C:\\mock\\VPS-Hub');
+
+  const composer = page.getByRole('textbox', { name: '消息输入' });
+  await composer.fill('检查登录超时');
+  await page.getByRole('button', { name: '发送' }).click();
+  await expect(page.getByRole('log').getByText('检查登录超时')).toBeVisible({
+    timeout: 20_000,
+  });
+
+  const session = page.locator('[data-session-id]').first();
+  const title = session.locator('[data-help="chat-session-title"]');
+  await expect(title).toBeVisible();
+  await expect(title).toContainText('检查登录超时');
+  await expect(session).not.toContainText('VPS-Hub');
+  await expect(session.locator('.text-meta')).toHaveCount(0);
+
+  await title.hover();
+  const hint = page.locator('[data-help="chat-session-hint"]');
+  await expect(hint).toBeVisible({ timeout: 8_000 });
+  await expect(hint).toContainText('VPS-Hub');
+  await expect(hint).toContainText('检查登录超时');
+
+  await page.getByLabel('搜索标题或工作目录').fill('VPS-Hub');
+  await expect(page.locator('[data-session-id]')).toHaveCount(1);
+  await expect(page.locator('[data-help="chat-session-title"]')).toContainText('检查登录超时');
+});
+
 test('Chat settings dialog traps Tab and restores focus after Escape', async ({ page }) => {
   await openApp(page);
   await openChatComposer(page);
