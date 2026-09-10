@@ -21,7 +21,7 @@ function view(partial: Partial<AgentProcessView> & Pick<AgentProcessView, 'steps
 
 function renderPanel(process: AgentProcessView, messageStatus?: string) {
   return renderToStaticMarkup(
-    createElement(ChatProcessPanel, { view: process, messageStatus, durationMs: 1500 }),
+    createElement(ChatProcessPanel, { view: process, messageStatus }),
   );
 }
 
@@ -43,7 +43,7 @@ describe('ChatProcessPanel human copy', () => {
       }),
     );
     expect(html).toContain('正在读取 README.md');
-    expect(html).toContain('▸ 正在读取 README.md');
+    expect(html).not.toContain('▸ 正在读取 README.md');
     expect(html).toContain('细节');
     expect(html).toContain('运行详情');
     expect(html).toContain('thread.started');
@@ -69,7 +69,6 @@ describe('ChatProcessPanel human copy', () => {
       }),
       'ok',
     );
-    expect(html).toContain('已完成 · 已读取 · 已修改 · 已执行');
     expect(html).toContain('已读取 a.ts');
     expect(html).toContain('已修改 a.ts');
     expect(html).toContain('已执行 ls');

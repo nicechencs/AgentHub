@@ -1,36 +1,70 @@
-export type ChatPreviewTarget = {
+import type { AgentKey } from '@/lib/types';
+
+export type ChatFilePreviewTarget = {
+  kind: 'file';
   stack: string[];
 };
 
-export function chatPreviewPath(target: ChatPreviewTarget | null | undefined): string {
-  if (!target?.stack.length) return '';
+export type ChatProcessInspectTarget = {
+  kind: 'process';
+  turn: number;
+  agent: AgentKey;
+};
+
+export type ChatInspectTarget = ChatFilePreviewTarget | ChatProcessInspectTarget;
+
+/** File-or-process inspect target for the chat right pane. */
+export type ChatPreviewTarget = ChatInspectTarget;
+
+export function isChatFilePreview(
+  target: ChatInspectTarget | null | undefined,
+): target is ChatFilePreviewTarget {
+  return target?.kind === 'file';
+}
+
+export function isChatProcessInspect(
+  target: ChatInspectTarget | null | undefined,
+): target is ChatProcessInspectTarget {
+  return target?.kind === 'process';
+}
+
+export function chatPreviewPath(target: ChatInspectTarget | null | undefined): string {
+  if (!isChatFilePreview(target) || !target.stack.length) return '';
   return target.stack[target.stack.length - 1] ?? '';
 }
 
-export function chatPreviewCanBack(target: ChatPreviewTarget | null | undefined): boolean {
-  return (target?.stack.length ?? 0) > 1;
+export function chatPreviewCanBack(target: ChatInspectTarget | null | undefined): boolean {
+  return isChatFilePreview(target) && target.stack.length > 1;
 }
 
-export function openChatPreviewRoot(path: string): ChatPreviewTarget {
-  return { stack: [path] };
+export function openChatPreviewRoot(path: string): ChatFilePreviewTarget {
+  return { kind: 'file', stack: [path] };
+}
+
+export function openChatProcessInspect(turn: number, agent: AgentKey): ChatProcessInspectTarget {
+  return { kind: 'process', turn, agent };
 }
 
 export function pushChatPreview(
-  target: ChatPreviewTarget | null | undefined,
+  target: ChatInspectTarget | null | undefined,
   next: string,
-): ChatPreviewTarget {
-  const stack = target?.stack ?? [];
+): ChatFilePreviewTarget {
+  if (!isChatFilePreview(target)) {
+    return openChatPreviewRoot(next);
+  }
+  const stack = target.stack;
   const current = stack[stack.length - 1];
   if (!next || next === current) {
-    return { stack: stack.length ? stack : [next] };
+    return { kind: 'file', stack: stack.length ? stack : [next] };
   }
-  return { stack: [...stack, next] };
+  return { kind: 'file', stack: [...stack, next] };
 }
 
 export function popChatPreview(
-  target: ChatPreviewTarget | null | undefined,
-): ChatPreviewTarget | null {
-  const stack = target?.stack ?? [];
+  target: ChatInspectTarget | null | undefined,
+): ChatFilePreviewTarget | null {
+  if (!isChatFilePreview(target)) return null;
+  const stack = target.stack;
   if (stack.length <= 1) return null;
-  return { stack: stack.slice(0, -1) };
+  return { kind: 'file', stack: stack.slice(0, -1) };
 }

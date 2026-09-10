@@ -398,6 +398,30 @@ export function formatVisibleUsage(steps: ProcessStep[] | undefined, t: Translat
   return `${t('chat.process.usage')} ${parts.join(' · ')}`;
 }
 
+/**
+ * After the turn ends: muted footnote under the reply.
+ * Turn-scope counts only — never session total or context window.
+ */
+export function formatTurnUsageFooter(
+  steps: ProcessStep[] | undefined,
+  running: boolean,
+  t: TranslateFn,
+): string {
+  if (running) return '';
+  const { turn } = usageByScope(steps);
+  if (!turn) return '';
+  return formatUsageCounts(turn, t);
+}
+
+/** Timeline worth opening in the inspect pane (not usage-only, not protocol-only). */
+export function hasInspectableProcess(view: AgentProcessView | undefined): boolean {
+  if (!view) return false;
+  if (view.command || view.stderr) return true;
+  return view.steps.some(
+    (step) => step.type !== 'usage' && step.type !== 'text' && !isProtocolProcessStep(step),
+  );
+}
+
 /** 是否值得展示过程折叠面板 */
 export function hasProcessDetails(view: AgentProcessView | undefined): boolean {
   if (!view) return false;

@@ -846,7 +846,7 @@ describe('messageStatusLabel', () => {
 
   it('maps terminal and unknown statuses', () => {
     expect(messageStatusLabel(t, 'failed')).toBe('失败');
-    expect(messageStatusLabel(t, 'cancelled')).toBe('已取消');
+    expect(messageStatusLabel(t, 'cancelled')).toBe('已停止');
     expect(messageStatusLabel(t, 'timeout')).toBe('超时');
     expect(messageStatusLabel(t, 'weird')).toBe('weird');
   });
