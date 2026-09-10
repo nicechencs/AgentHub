@@ -740,6 +740,108 @@ fn file_change_request_uses_item_started_paths_when_reason_is_empty() {
 }
 
 #[test]
+fn command_execution_item_and_output_delta_are_tools_not_raw_command_output() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "cmd-item");
+    let mut worker = worker(&db, "cmd-item");
+    worker.store.enable_if_new("cmd-item").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .notification(
+            "item/started",
+            &json!({
+                "item": {
+                    "type": "commandExecution",
+                    "id": "cmd-1",
+                    "status": "inProgress",
+                    "command": "ls"
+                }
+            }),
+        )
+        .unwrap();
+    worker
+        .notification(
+            "item/commandExecution/outputDelta",
+            &json!({
+                "itemId": "cmd-1",
+                "delta": "docs\n"
+            }),
+        )
+        .unwrap();
+    worker
+        .notification(
+            "item/completed",
+            &json!({
+                "item": {
+                    "type": "commandExecution",
+                    "id": "cmd-1",
+                    "status": "completed",
+                    "command": "ls",
+                    "aggregatedOutput": "docs\nsrc\n"
+                }
+            }),
+        )
+        .unwrap();
+    worker
+        .notification(
+            "item/completed",
+            &json!({
+                "item": {
+                    "type": "reasoning",
+                    "id": "rs-1",
+                    "text": "先看目录再拆任务"
+                }
+            }),
+        )
+        .unwrap();
+
+    let snapshot = worker.store.snapshot("cmd-item", None).unwrap();
+    let tools: Vec<_> = snapshot
+        .events
+        .iter()
+        .filter_map(|event| match &event.event {
+            ChatEvent::AgentProcess {
+                step: crate::models::ProcessStep::Tool {
+                    id,
+                    name,
+                    status,
+                    result,
+                    ..
+                },
+                ..
+            } => Some((id.clone(), name.clone(), status.clone(), result.clone())),
+            _ => None,
+        })
+        .collect();
+    assert!(tools.iter().any(|(id, name, status, _)| {
+        id.as_deref() == Some("cmd-1") && name == "command_execution" && status == "inProgress"
+    }));
+    assert!(tools.iter().any(|(_, name, _, result)| {
+        name == "command_execution" && result.as_deref() == Some("docs\n")
+    }));
+    assert!(tools.iter().any(|(_, name, status, result)| {
+        name == "command_execution"
+            && status == "completed"
+            && result.as_deref() == Some("docs\nsrc\n")
+    }));
+    assert!(snapshot.events.iter().any(|event| matches!(
+        &event.event,
+        ChatEvent::AgentProcess {
+            step: crate::models::ProcessStep::Thinking { text, done: true },
+            ..
+        } if text == "先看目录再拆任务"
+    )));
+    assert!(!snapshot.events.iter().any(|event| matches!(
+        &event.event,
+        ChatEvent::AgentProcess {
+            step: crate::models::ProcessStep::Raw { note: Some(note), .. },
+            ..
+        } if note == "command output"
+    )));
+}
+
+#[test]
 fn apply_patch_approval_alias_becomes_file_request() {
     let db = Database::open_in_memory().unwrap();
     conversation(&db, "legacy-patch");

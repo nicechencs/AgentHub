@@ -604,6 +604,7 @@ export default function ChatPage() {
               exitCode={inspectExitCode(page.turns, preview.target)}
               open={preview.expanded}
               onClose={preview.close}
+              width={preview.paneWidth}
               className="h-full min-w-0"
             />
           ) : null}

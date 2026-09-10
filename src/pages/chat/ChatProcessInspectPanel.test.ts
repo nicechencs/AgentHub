@@ -38,6 +38,7 @@ describe('ChatProcessInspectPanel', () => {
       ),
     );
     expect(html).toContain('data-help="chat-process-inspect"');
+    expect(html).toContain('data-side-inspect');
     expect(html).toContain('已完成 · 已读取');
     expect(html).toContain('已读取 a.ts');
   });
