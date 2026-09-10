@@ -77,4 +77,30 @@ describe('ChatProcessPanel human copy', () => {
     expect(humanRunAt).toBeGreaterThan(-1);
     expect(protocolRunAt).toBeGreaterThan(humanRunAt);
   });
+
+  it('keeps finished thinking expanded in the inspect pane', () => {
+    const html = renderPanel(
+      view({
+        phase: 'ok',
+        steps: [{ type: 'thinking', text: '先看工作目录', done: true }],
+      }),
+      'ok',
+    );
+    expect(html).toContain('先看工作目录');
+    expect(html).toMatch(/<details[^>]*open/);
+  });
+
+  it('opens run details when the timeline is empty so the pane is not blank', () => {
+    const html = renderPanel(
+      view({
+        phase: 'ok',
+        command: 'codex app-server',
+        steps: [{ type: 'status', phase: 'starting', detail: 'thread.started' }],
+      }),
+      'ok',
+    );
+    expect(html).toContain('运行详情');
+    expect(html).toMatch(/<details[^>]*open/);
+    expect(html).toContain('codex app-server');
+  });
 });
