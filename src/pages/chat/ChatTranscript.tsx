@@ -16,7 +16,7 @@ import { Hint } from '@/components/ui/tooltip';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { agentDisplayName } from '@/config/agents';
 import { processKey, type ProcessMap } from '@/lib/chat-process';
-import type { ChatMessageStatus, Conversation } from '@/lib/types';
+import type { AgentKey, ChatMessageStatus, Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import type { TranslateFn } from '@/lib/i18n';
 import { formatDurationMs, type TurnGroup } from './chat-format';
@@ -51,7 +51,9 @@ export function ChatTranscript({
   bottomRef,
   onScroll,
   onRetry,
+  hideLastTurnRetry = false,
   onOpenLocal,
+  onOpenProcess,
   onPickStarter,
   firstBlocker = null,
   onBlockerAction,
@@ -69,7 +71,9 @@ export function ChatTranscript({
   bottomRef: RefObject<HTMLDivElement>;
   onScroll: () => void;
   onRetry: () => void;
+  hideLastTurnRetry?: boolean;
   onOpenLocal?: (path: string) => boolean;
+  onOpenProcess?: (turn: number, agent: AgentKey) => void;
   onPickStarter?: (action: ChatActionDef) => void;
   firstBlocker?: ChatSendBlocker | null;
   onBlockerAction?: (target: ChatBlockerPrimaryTarget) => void;
@@ -131,6 +135,7 @@ export function ChatTranscript({
                       multiAgent={g.agents.length > 1}
                       retryDisabled={retryDisabled || sending}
                       onRetry={onRetry}
+                      hideRetry={hideLastTurnRetry}
                       localBasePath={active.cwd ?? undefined}
                       onOpenLocal={onOpenLocal}
                     />
@@ -149,8 +154,10 @@ export function ChatTranscript({
                         multiAgent={g.agents.length > 1}
                         retryDisabled={retryDisabled || sending}
                         onRetry={onRetry}
+                        hideRetry={hideLastTurnRetry}
                         localBasePath={active.cwd ?? undefined}
                         onOpenLocal={onOpenLocal}
+                        onOpenProcess={onOpenProcess}
                       />
                     );
                   })}

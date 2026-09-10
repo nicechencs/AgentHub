@@ -7,11 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Hint } from '@/components/ui/tooltip';
 import { agentDisplayName } from '@/config/agents';
 import {
-  formatVisibleUsage,
-  hasProcessDetails,
+  formatProcessHeadline,
+  formatTurnUsageFooter,
+  hasInspectableProcess,
+  phaseFromMessageStatus,
 } from '@/lib/chat-process';
 import type { AgentProcessView } from '@/lib/chat-process';
-import type { ChatMessage } from '@/lib/types';
+import type { AgentKey, ChatMessage } from '@/lib/types';
 import {
   formatChatDisplayContent,
   formatDurationMs,
@@ -21,7 +23,6 @@ import {
 } from './chat-format';
 import { messageStatusLabel } from './chat-model';
 import { streamingActivity, streamingPlaceholderKey } from './chat-streaming';
-import { ChatProcessPanel } from './ChatProcessPanel';
 
 export function ChatMessageBubble({
   message,
@@ -30,8 +31,10 @@ export function ChatMessageBubble({
   multiAgent,
   retryDisabled,
   onRetry,
+  hideRetry = false,
   localBasePath,
   onOpenLocal,
+  onOpenProcess,
 }: {
   message: ChatMessage;
   process?: AgentProcessView;
@@ -39,8 +42,10 @@ export function ChatMessageBubble({
   multiAgent: boolean;
   retryDisabled: boolean;
   onRetry: () => void;
+  hideRetry?: boolean;
   localBasePath?: string;
   onOpenLocal?: (path: string) => boolean;
+  onOpenProcess?: (turn: number, agent: AgentKey) => void;
 }) {
   if (message.role === 'user') {
     return (
@@ -55,8 +60,10 @@ export function ChatMessageBubble({
       multiAgent={multiAgent}
       retryDisabled={retryDisabled}
       onRetry={onRetry}
+      hideRetry={hideRetry}
       localBasePath={localBasePath}
       onOpenLocal={onOpenLocal}
+      onOpenProcess={onOpenProcess}
     />
   );
 }
@@ -95,8 +102,10 @@ function AgentBubble({
   multiAgent,
   retryDisabled,
   onRetry,
+  hideRetry,
   localBasePath,
   onOpenLocal,
+  onOpenProcess,
 }: {
   message: ChatMessage;
   process?: AgentProcessView;
@@ -104,8 +113,10 @@ function AgentBubble({
   multiAgent: boolean;
   retryDisabled: boolean;
   onRetry: () => void;
+  hideRetry: boolean;
   localBasePath?: string;
   onOpenLocal?: (path: string) => boolean;
+  onOpenProcess?: (turn: number, agent: AgentKey) => void;
 }) {
   const { t } = useI18n();
   const agent = message.agentId ?? 'claude';
@@ -130,20 +141,22 @@ function AgentBubble({
     (message.status === 'ok' && localized !== message.content);
   const running = message.status === 'running';
   const hasContent = Boolean(displayContent);
-  const statusText = messageStatusLabel(
-    t,
-    looksFailed && message.status === 'ok' ? 'failed' : message.status,
-    process,
-    hasContent,
-  );
+  const resolvedStatus = looksFailed && message.status === 'ok' ? 'failed' : message.status;
+  const effectivePhase = process
+    ? resolvedStatus && resolvedStatus !== 'running'
+      ? phaseFromMessageStatus(resolvedStatus)
+      : process.phase
+    : null;
+  const processHeadline =
+    process && effectivePhase && hasInspectableProcess(process)
+      ? formatProcessHeadline(process.steps, effectivePhase, t)
+      : '';
+  const statusText = processHeadline || (hideRetry && looksFailed)
+    ? null
+    : messageStatusLabel(t, resolvedStatus, process, hasContent);
   const activity = running ? streamingActivity(process, hasContent) : null;
-  const showRetry = isLastTurn && looksFailed;
-  const showProcessPanel = Boolean(
-    process &&
-      hasProcessDetails(process) &&
-      (!running || !displayContent || process.steps.length > 0 || Boolean(process.stderr)),
-  );
-  const usageText = formatVisibleUsage(process?.steps, t);
+  const showRetry = isLastTurn && looksFailed && !hideRetry;
+  const usageText = formatTurnUsageFooter(process?.steps, running, t);
 
   return (
     <div id={`chat-msg-${message.id}`} className="group flex min-w-0 gap-3">
@@ -151,9 +164,22 @@ function AgentBubble({
       <div className="relative min-w-0 flex-1 pt-0.5">
         <div className="mb-1 flex flex-wrap items-center gap-2 text-meta text-muted">
           <span className="font-medium text-secondary">{agentDisplayName(agent)}</span>
-          {statusText && <span>{statusText}</span>}
+          {statusText ? <span>{statusText}</span> : null}
           {message.durationMs > 0 && <span>{formatDurationMs(message.durationMs)}</span>}
-          {usageText ? <span>{usageText}</span> : null}
+          {processHeadline ? (
+            onOpenProcess ? (
+              <button
+                type="button"
+                className="min-w-0 truncate text-left text-meta text-muted hover:text-secondary"
+                data-help="chat-process-chip"
+                onClick={() => onOpenProcess(message.turn, agent)}
+              >
+                {processHeadline}
+              </button>
+            ) : (
+              <span>{processHeadline}</span>
+            )
+          ) : null}
           {showRetry && (
             <Hint
               label={
@@ -172,14 +198,6 @@ function AgentBubble({
             </Hint>
           )}
         </div>
-        {showProcessPanel && process ? (
-          <ChatProcessPanel
-            view={process}
-            messageStatus={looksFailed && message.status === 'ok' ? 'failed' : message.status}
-            durationMs={message.durationMs}
-            exitCode={message.exitCode}
-          />
-        ) : null}
         <div
           className="min-w-0 overflow-hidden text-body leading-relaxed text-primary"
           data-chat-stream-activity={activity ?? undefined}
@@ -203,6 +221,9 @@ function AgentBubble({
             <p className="mt-2 text-body leading-relaxed text-danger">{displayError}</p>
           )}
         </div>
+        {usageText ? (
+          <p className="mt-1 text-meta text-muted">{usageText}</p>
+        ) : null}
         {!running && (
           <CopyTextButton text={protocolDump ? '' : sanitizeCliChatText(message.content)} />
         )}

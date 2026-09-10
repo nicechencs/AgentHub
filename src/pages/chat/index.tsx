@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { onChatNativeShortcut } from '@/lib/api/chat';
 import { hasEscPriorityOverlay } from '@/lib/skills/preview-keys';
 import { StorageKey } from '@/lib/storage-key';
+import { processKey } from '@/lib/chat-process';
 import { cn } from '@/lib/utils';
 import {
   chatComposerChoiceOptions,
@@ -30,16 +31,21 @@ import {
 } from './chat-model';
 import { subscribeChatShortcutKeydown } from './chat-shortcuts';
 import { chatModShiftIShouldOpenModel } from './chat-model-labels';
-import { formatChatSessionRecord } from './chat-format';
+import { formatChatSessionRecord, type TurnGroup } from './chat-format';
 import { chatBusySendMode, grokLegacyContinueKind } from './chat-grok-follow-up';
 import { ChatMarkdownPreviewPanel } from './ChatMarkdownPreviewPanel';
+import { ChatProcessInspectPanel } from './ChatProcessInspectPanel';
 import {
   chatPreviewCanBack,
   chatPreviewPath,
+  isChatFilePreview,
+  isChatProcessInspect,
   openChatPreviewRoot,
+  openChatProcessInspect,
   popChatPreview,
   pushChatPreview,
-  type ChatPreviewTarget,
+  type ChatInspectTarget,
+  type ChatProcessInspectTarget,
 } from './chat-preview-model';
 import { ChatRuntimeExtras } from './ChatRuntimeExtras';
 import { ChatTurnOutcomeBanner } from './ChatTurnOutcomeBanner';
@@ -64,7 +70,7 @@ export default function ChatPage() {
     queued: page.queuedFollowUpCount > 0,
   });
   const split = useChatComposerSplit();
-  const preview = useSideSplit<ChatPreviewTarget>({
+  const preview = useSideSplit<ChatInspectTarget>({
     storageKey: StorageKey.chatPreviewWidth,
   });
   const navigate = useNavigate();
@@ -85,6 +91,12 @@ export default function ChatPage() {
       preview.open(pushChatPreview(preview.target, next));
     },
     [preview.open, preview.target],
+  );
+  const openProcessInspect = useCallback(
+    (turn: number, agent: string) => {
+      preview.open(openChatProcessInspect(turn, agent));
+    },
+    [preview.open],
   );
   const backMarkdownPreview = useCallback(() => {
     const previous = popChatPreview(preview.target);
@@ -309,7 +321,9 @@ export default function ChatPage() {
               bottomRef={page.bottomRef}
               onScroll={page.onTranscriptScroll}
               onRetry={() => void page.retryLast()}
+              hideLastTurnRetry={Boolean(page.turnOutcome)}
               onOpenLocal={openMarkdownPreview}
+              onOpenProcess={openProcessInspect}
               onPickStarter={page.runChatAction}
               firstBlocker={page.blockers[0] ?? null}
               onBlockerAction={(target) => {
@@ -567,7 +581,7 @@ export default function ChatPage() {
         />
       </section>
         <SideSplitFrame split={preview} resizeAria={t('chat.preview.resizeAria')}>
-          {preview.target ? (
+          {isChatFilePreview(preview.target) ? (
             <ChatMarkdownPreviewPanel
               path={chatPreviewPath(preview.target)}
               cwd={page.active?.cwd ?? ''}
@@ -579,9 +593,31 @@ export default function ChatPage() {
               onOpenLocal={openNestedMarkdown}
               className="h-full min-w-0"
             />
+          ) : isChatProcessInspect(preview.target) ? (
+            <ChatProcessInspectPanel
+              view={page.processMap[processKey(preview.target.turn, preview.target.agent)]}
+              messageStatus={inspectMessageStatus(page.turns, preview.target)}
+              exitCode={inspectExitCode(page.turns, preview.target)}
+              open={preview.expanded}
+              onClose={preview.close}
+              className="h-full min-w-0"
+            />
           ) : null}
         </SideSplitFrame>
       </div>
     </div>
   );
+}
+
+function inspectAgentMessage(turns: TurnGroup[], target: ChatProcessInspectTarget) {
+  const group = turns.find((item) => item.turn === target.turn);
+  return group?.agents.find((message) => (message.agentId ?? 'claude') === target.agent);
+}
+
+function inspectMessageStatus(turns: TurnGroup[], target: ChatProcessInspectTarget) {
+  return inspectAgentMessage(turns, target)?.status;
+}
+
+function inspectExitCode(turns: TurnGroup[], target: ChatProcessInspectTarget) {
+  return inspectAgentMessage(turns, target)?.exitCode ?? null;
 }

@@ -3,10 +3,7 @@ import { AgentThinking } from '@/components/shared/AgentThinking';
 import { SourcePreview } from '@/components/shared/SourcePreview';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import {
-  formatProcessHeadline,
   formatToolStep,
-  formatUsageStep,
-  formatVisibleUsage,
   isProtocolProcessStep,
   phaseFromMessageStatus,
   stepSummary,
@@ -14,15 +11,12 @@ import {
   type AgentProcessView,
 } from '@/lib/chat-process';
 import { looksLikeJsonObject, tryPrettyJson } from '@/lib/source-preview';
-import type { TranslateFn } from '@/lib/i18n';
 import type { ProcessStep } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
   clipProcessTail,
-  formatDurationMs,
   formatStepInput,
   isProcessActivePhase,
-  isProcessErrorPhase,
   pinElementScrollToBottom,
   thinkingChromeLabel,
 } from './chat-format';
@@ -139,7 +133,7 @@ function ProcessStepRow({ step }: { step: ProcessStep }) {
     return <div className="py-1 text-danger">{step.message}</div>;
   }
   if (step.type === 'usage') {
-    return <div className="py-1 text-muted">· {formatUsageStep(step, t)}</div>;
+    return null;
   }
   if (step.type === 'raw') {
     const body = step.text?.trim();
@@ -207,40 +201,23 @@ function ThinkingStepRow({ text, done }: { text: string; done: boolean }) {
   );
 }
 
-function summaryLabel(
-  view: AgentProcessView,
-  effectivePhase: AgentProcessView['phase'],
-  durationMs: number | undefined,
-  usageText: string,
-  t: TranslateFn,
-): string {
-  const parts = [formatProcessHeadline(view.steps, effectivePhase, t)];
-  if (usageText) parts.push(usageText);
-  if (durationMs != null && durationMs > 0) parts.push(formatDurationMs(durationMs));
-  return `▸ ${parts.join(' · ')}`;
-}
-
 /**
- * 过程面板（受控 open）：
- * - 进行中 / 失败 / 超时 → 默认展开
- * - 成功 / 取消 → 默认折叠
- * - messageStatus 优先于 process.phase（防止过程机滞后仍停在 running）
- * - 用户点击后记住选择；阶段变化时重新交给自动策略
+ * Inspect-pane body: thinking, tools, run details. Usage stays off this surface.
+ * messageStatus wins over process.phase when the turn has already ended.
  */
 export function ChatProcessPanel({
   view,
   messageStatus,
-  durationMs,
   exitCode,
 }: {
   view: AgentProcessView;
-  /** 对应气泡消息状态；终态时强制驱动折叠策略 */
   messageStatus?: string;
-  durationMs?: number;
   exitCode?: number | null;
 }) {
   const { t } = useI18n();
-  const timeline = view.steps.filter((s) => s.type !== 'text' && !isProtocolProcessStep(s));
+  const timeline = view.steps.filter(
+    (s) => s.type !== 'text' && s.type !== 'usage' && !isProtocolProcessStep(s),
+  );
   const protocolSteps = view.steps.filter(isProtocolProcessStep);
 
   const effectivePhase: AgentProcessView['phase'] =
@@ -248,25 +225,9 @@ export function ChatProcessPanel({
       ? phaseFromMessageStatus(messageStatus)
       : view.phase;
 
-  const autoOpen =
-    isProcessActivePhase(effectivePhase) || isProcessErrorPhase(effectivePhase);
-
-  const [userOpen, setUserOpen] = useState<boolean | null>(null);
-  const phaseKeyRef = useRef(effectivePhase);
-
-  // 阶段变化（含消息终态到位）时清掉手动覆盖，确保「结束后折叠」生效
-  useLayoutEffect(() => {
-    if (phaseKeyRef.current !== effectivePhase) {
-      phaseKeyRef.current = effectivePhase;
-      setUserOpen(null);
-    }
-  }, [effectivePhase]);
-
-  const open = userOpen ?? autoOpen;
   const hasRunDetails = Boolean(
     view.command || view.stderr || exitCode != null || protocolSteps.length > 0,
   );
-  const usageText = formatVisibleUsage(view.steps, t);
   const timelineRef = useRef<HTMLDivElement>(null);
   const stderrRef = useRef<HTMLPreElement>(null);
 
@@ -279,75 +240,55 @@ export function ChatProcessPanel({
   }, [view.stderr]);
 
   return (
-    <details
-      className="mb-2 text-meta text-secondary"
-      open={open}
-      onToggle={(e) => {
-        const next = e.currentTarget.open;
-        if (next !== open) {
-          setUserOpen(next);
-        }
-      }}
-    >
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 py-1 text-muted marker:content-none [&::-webkit-details-marker]:hidden">
-        <span className="font-medium text-secondary">
-          {summaryLabel(view, effectivePhase, durationMs, usageText, t)}
-        </span>
-      </summary>
-      <div className="space-y-2 pb-1">
-        {timeline.length > 0 ? (
-          <div
-            ref={timelineRef}
-            className="max-h-48 space-y-0 overflow-y-auto [overflow-anchor:none] border-l border-border pl-3"
-          >
-            {timeline.map((step, i) => (
-              <ProcessStepRow key={`${step.type}-${i}`} step={step} />
+    <div className="min-h-0 flex-1 space-y-2 overflow-auto text-meta text-secondary">
+      {timeline.length > 0 ? (
+        <div
+          ref={timelineRef}
+          className="space-y-0 [overflow-anchor:none] border-l border-border pl-3"
+        >
+          {timeline.map((step, i) => (
+            <ProcessStepRow key={`${step.type}-${i}`} step={step} />
+          ))}
+        </div>
+      ) : isProcessActivePhase(effectivePhase) ? (
+        <p className="text-muted">
+          {view.stdout.trim() ? t('chat.process.streamingText') : t('chat.process.waitingLogs')}
+        </p>
+      ) : null}
+      {hasRunDetails ? (
+        <details className="text-meta">
+          <summary className="cursor-pointer text-muted">{t('chat.process.runDetails')}</summary>
+          <div className="mt-1.5 space-y-2">
+            {protocolSteps.map((step, i) => (
+              <div key={`protocol-${i}`} className="text-muted">
+                {stepSummary(step, t)}
+              </div>
             ))}
+            {view.command ? (
+              <div>
+                <div className="mb-0.5 text-muted">{t('chat.process.command')}</div>
+                <pre className="max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-card bg-subtle px-2 py-1.5 font-mono text-meta leading-relaxed text-primary">
+                  {view.command}
+                </pre>
+              </div>
+            ) : null}
+            {view.stderr ? (
+              <div>
+                <div className="mb-0.5 text-muted">{t('chat.process.stderr')}</div>
+                <pre
+                  ref={stderrRef}
+                  className="max-h-36 overflow-auto [overflow-anchor:none] whitespace-pre-wrap break-all rounded-card bg-subtle px-2 py-1.5 font-mono text-meta leading-relaxed text-danger/90"
+                >
+                  {view.stderr}
+                </pre>
+              </div>
+            ) : null}
+            {exitCode != null ? (
+              <div className="text-muted">{t('chat.process.exitCode', { code: exitCode })}</div>
+            ) : null}
           </div>
-        ) : isProcessActivePhase(effectivePhase) ? (
-          <p className="text-muted">
-            {view.stdout.trim() ? t('chat.process.streamingText') : t('chat.process.waitingLogs')}
-          </p>
-        ) : null}
-        {hasRunDetails && (
-          <details
-            className="text-meta"
-            onClick={(e) => e.stopPropagation()}
-            onToggle={(e) => e.stopPropagation()}
-          >
-            <summary className="cursor-pointer text-muted">{t('chat.process.runDetails')}</summary>
-            <div className="mt-1.5 space-y-2">
-              {protocolSteps.map((step, i) => (
-                <div key={`protocol-${i}`} className="text-muted">
-                  {stepSummary(step, t)}
-                </div>
-              ))}
-              {view.command ? (
-                <div>
-                  <div className="mb-0.5 text-muted">{t('chat.process.command')}</div>
-                  <pre className="max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-card bg-subtle px-2 py-1.5 font-mono text-meta leading-relaxed text-primary">
-                    {view.command}
-                  </pre>
-                </div>
-              ) : null}
-              {view.stderr ? (
-                <div>
-                  <div className="mb-0.5 text-muted">{t('chat.process.stderr')}</div>
-                  <pre
-                    ref={stderrRef}
-                    className="max-h-36 overflow-auto [overflow-anchor:none] whitespace-pre-wrap break-all rounded-card bg-subtle px-2 py-1.5 font-mono text-meta leading-relaxed text-danger/90"
-                  >
-                    {view.stderr}
-                  </pre>
-                </div>
-              ) : null}
-              {exitCode != null ? (
-                <div className="text-muted">{t('chat.process.exitCode', { code: exitCode })}</div>
-              ) : null}
-            </div>
-          </details>
-        )}
-      </div>
-    </details>
+        </details>
+      ) : null}
+    </div>
   );
 }
