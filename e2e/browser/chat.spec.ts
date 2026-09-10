@@ -269,16 +269,25 @@ test('history list is a single title line; cwd stays in hover and search', async
   await expect(title).toContainText('检查登录超时');
   await expect(session).not.toContainText('VPS-Hub');
   await expect(session.locator('.text-meta')).toHaveCount(0);
+  await page.screenshot({
+    path: '/opt/cursor/artifacts/chat_history_single_line.png',
+  });
 
   await title.hover();
   const hint = page.locator('[data-help="chat-session-hint"]');
   await expect(hint).toBeVisible({ timeout: 8_000 });
   await expect(hint).toContainText('VPS-Hub');
   await expect(hint).toContainText('检查登录超时');
+  await page.screenshot({
+    path: '/opt/cursor/artifacts/chat_history_hover_cwd.png',
+  });
 
   await page.getByLabel('搜索标题或工作目录').fill('VPS-Hub');
   await expect(page.locator('[data-session-id]')).toHaveCount(1);
   await expect(page.locator('[data-help="chat-session-title"]')).toContainText('检查登录超时');
+  await page.screenshot({
+    path: '/opt/cursor/artifacts/chat_history_search_cwd.png',
+  });
 });
 
 test('Chat settings dialog traps Tab and restores focus after Escape', async ({ page }) => {
