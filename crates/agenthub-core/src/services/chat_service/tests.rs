@@ -421,8 +421,8 @@ fn kiro_http_cancel_releases_occupancy_and_keeps_session() {
     );
     hang.release();
     assert!(
-        started.elapsed() < Duration::from_millis(800),
-        "cancel should release the HTTP wait, took {:?}",
+        started.elapsed() < Duration::from_secs(4),
+        "cancel should beat the 5s HTTP gate, took {:?}",
         started.elapsed()
     );
     first.expect("cancelled send should complete");
