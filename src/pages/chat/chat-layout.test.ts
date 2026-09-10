@@ -274,7 +274,12 @@ describe('chat layout wiring', () => {
     expect(hintTitle).not.toBeNull();
     expect(rail).toContain('conversationRailHintView(');
     expect(rail).toContain('firstUserContent');
+    expect(rail).toContain('firstUserContentById?.[c.id] ?? c.firstUserContent');
     expect(rail).toContain('{hint.title}');
+    const page = source('use-chat-page.ts');
+    expect(page).toContain('firstUserContentByListedConversations');
+    expect(page).toContain('mergeFirstUserContentById');
+    expect(page).toContain('firstUserContentByConversation(messages)');
     expect(rail).not.toContain('title={conversation.title}');
     expect(rail).not.toMatch(/function ConversationRailHintLabel[\s\S]*AgentLogo/);
     expect(rail).not.toContain('conversationSemanticTitle');

@@ -230,6 +230,7 @@ describe('chat API (browser mock)', () => {
     await vi.runAllTimersAsync();
     const listed = await listP;
     expect(listed[0]?.title).toContain('first');
+    expect(listed[0]?.firstUserContent).toBe('first question');
   });
 
   it('chatCancel mid-send marks agent cancelled', async () => {

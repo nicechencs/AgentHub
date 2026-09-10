@@ -51,7 +51,9 @@ import {
   conversationSemanticTitle,
   conversationTitle,
   firstUserContentByConversation,
+  firstUserContentByListedConversations,
   looksLikePersistedTitleClip,
+  mergeFirstUserContentById,
   titleFromPrompt,
   conversationCwdMissing,
   canRebindConversationCwd,
@@ -271,6 +273,26 @@ describe('conversationRailHint', () => {
     );
     expect(hint.title).toBe(prompt);
     expect(hint.title).not.toMatch(/…|\.\.\./);
+  });
+
+  it('recovers a non-active clipped hover title from list first-user content, not active messages', () => {
+    const prompt =
+      'Use your terminal to write exactly what I asked without clipping the title';
+    const stored = `${prompt.slice(0, 24)}…`;
+    const listed = firstUserContentByListedConversations([
+      { id: 'inactive', firstUserContent: prompt },
+      { id: 'active', firstUserContent: null },
+    ]);
+    const fromMessages = firstUserContentByConversation([
+      { conversationId: 'active', role: 'user', content: 'only the focused chat is loaded' },
+    ]);
+    expect(fromMessages.inactive).toBeUndefined();
+    expect(conversationRailHintTitle(stored, fromMessages.inactive)).toBe(stored);
+    const merged = mergeFirstUserContentById(listed, fromMessages);
+    expect(merged.inactive).toBe(prompt);
+    expect(merged.active).toBe('only the focused chat is loaded');
+    expect(conversationRailHintTitle(stored, merged.inactive)).toBe(prompt);
+    expect(conversationRailHintTitle(stored, merged.inactive)).not.toMatch(/…|\.\.\./);
   });
 });
 

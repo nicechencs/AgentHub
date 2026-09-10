@@ -493,6 +493,8 @@ export interface Conversation {
   sending?: boolean;
   /** Stored working directory is set but no longer exists on disk. */
   cwdMissing?: boolean;
+  /** First user message body from the conversation list. Recovers clipped titles on every row. */
+  firstUserContent?: string | null;
 }
 
 export type ChatHistoryTurn = {

@@ -85,6 +85,10 @@ pub struct Conversation {
     /// Runtime projection: a live `status=running` message exists (not persisted).
     #[serde(default)]
     pub sending: bool,
+    /// List projection: first user message body (not persisted). Recovers
+    /// historically clipped titles on every rail row, not only the focused one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_user_content: Option<String>,
 }
 
 /// One imported transcript turn when opening a session by id.
