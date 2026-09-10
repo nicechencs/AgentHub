@@ -663,12 +663,7 @@ fn persisted_request_round_trips_allow_always_options() {
         file_changes: Vec::new(),
     };
     store
-        .add_request(
-            "c-always",
-            &request,
-            "session/request_permission",
-            "8",
-        )
+        .add_request("c-always", &request, "session/request_permission", "8")
         .unwrap();
     assert_eq!(
         store.snapshot("c-always", None).unwrap().pending_requests,
@@ -1319,15 +1314,22 @@ fn oversized_stdout_line_is_a_picture_too_large_error() {
         "stdout JSON line exceeds 1048576 bytes".into(),
     );
     assert_eq!(
-        super::transport_user_message(&error),
+        super::transport_user_message(crate::models::AgentId::Codex, &error),
         "图片太大，请换一张更小的图"
     );
-    let other =
-        super::codex_transport::CodexTransportError::Protocol("missing field".into());
+    let other = super::codex_transport::CodexTransportError::Protocol("missing field".into());
     assert!(
-        super::transport_user_message(&other).contains("missing field"),
+        super::transport_user_message(crate::models::AgentId::Codex, &other)
+            .contains("missing field"),
         "{}",
-        super::transport_user_message(&other)
+        super::transport_user_message(crate::models::AgentId::Codex, &other)
+    );
+    assert_eq!(
+        super::transport_user_message(
+            crate::models::AgentId::Grok,
+            &super::codex_transport::CodexTransportError::Exited
+        ),
+        "Grok 已退出"
     );
 }
 
