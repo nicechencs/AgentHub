@@ -977,7 +977,7 @@ export const zh = {
     fleetSummary: "{total} 个本机路由 · {running} 个运行中 · 需保持托盘运行",
     action: {
       stop: "停止",
-      start: "启动",
+      start: "开启转发",
       retryStart: "重试启动",
     },
     recovery: {
@@ -1919,7 +1919,7 @@ export const zh = {
       description: "当前规则允许本机转发、但还没接到本机转发的登录。",
       descriptionDisconnected: "这些登录还没接到本机转发。卡片上写了已停止原因和下一步。",
       stoppedReason: "本机转发已停止",
-      stoppedNext: "点「启动」接到本机转发",
+      stoppedNext: "点「开启转发」或「详情」",
     },
   },
   dashboard: {
@@ -2827,7 +2827,11 @@ export const zh = {
       allowAlwaysHintTurn: '仅当前这次对话，不保存',
       deny: '拒绝',
       fileChange: '修改文件',
-      fileChangePreviewEmpty: '暂无改动预览',
+      fileChangeCreate: '新增文件',
+      fileChangeDelete: '删除文件',
+      fileChangePreviewEmpty: '没有路径或内容预览',
+      fileChangePathOnly: '仅有路径，无内容预览',
+      fileChangePathMissing: '未提供路径',
       fileChangeKindAdd: '新增',
       fileChangeKindUpdate: '修改',
       fileChangeKindDelete: '删除',

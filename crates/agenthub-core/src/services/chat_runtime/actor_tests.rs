@@ -865,6 +865,51 @@ fn acp_permission_with_file_operation_keeps_protocol_diff() {
 }
 
 #[test]
+fn acp_permission_locations_path_only_stays_file_request() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "acp-path-only");
+    let mut worker = worker(&db, "acp-path-only");
+    worker.agent = AgentId::Claude;
+    worker.store.enable_if_new("acp-path-only").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .server_request(
+            json!("perm-path"),
+            "session/request_permission",
+            &json!({
+                "turnId": "run-1",
+                "toolCall": {
+                    "title": "Edit notes.md",
+                    "kind": "edit",
+                    "locations": [{ "path": "/workspace/notes.md" }]
+                },
+                "options": [
+                    {"optionId": "once", "kind": "allow_once"},
+                    {"optionId": "always", "kind": "allow_always"},
+                    {"optionId": "reject", "kind": "reject_once"}
+                ]
+            }),
+        )
+        .unwrap();
+
+    let snapshot = worker.store.snapshot("acp-path-only", None).unwrap();
+    assert_eq!(snapshot.pending_requests[0].kind, RuntimeRequestKind::File);
+    assert_eq!(snapshot.pending_requests[0].title, "修改文件");
+    assert_eq!(snapshot.pending_requests[0].detail, "/workspace/notes.md");
+    assert_eq!(snapshot.pending_requests[0].file_changes.len(), 1);
+    assert_eq!(
+        snapshot.pending_requests[0].file_changes[0].path,
+        "/workspace/notes.md"
+    );
+    assert_eq!(
+        snapshot.pending_requests[0].file_changes[0].kind.as_deref(),
+        Some("update")
+    );
+    assert_eq!(snapshot.pending_requests[0].file_changes[0].preview, None);
+}
+
+#[test]
 fn acp_permission_snapshot_keeps_allow_always_option() {
     let db = Database::open_in_memory().unwrap();
     conversation(&db, "always");

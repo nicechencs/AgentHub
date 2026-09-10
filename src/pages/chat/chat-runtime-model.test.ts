@@ -5,6 +5,7 @@ import {
   acceptsRuntimeSnapshot,
   bindRuntimeSnapshotToAgent,
   canSubmitRuntimeQuestions,
+  fileChangePreviewHintKey,
   runtimeFileChangePreview,
   runtimeReplyFields,
   requestAllowsAlways,
@@ -149,10 +150,20 @@ describe('chat runtime transport guards', () => {
       'This conversation only, not saved',
     );
   });
-  it('keeps file cards on 修改文件 and maps English ACP kinds', () => {
+  it('keeps file cards on create/modify/delete and maps English ACP kinds', () => {
     const t: TranslateFn = (key, params) => translate('zh', key, params);
     expect(runtimeRequestTitle(t, { kind: 'file', title: 'Read' })).toBe('修改文件');
     expect(runtimeRequestTitle(t, { kind: 'file', title: '/tmp/a.ts' })).toBe('修改文件');
+    expect(runtimeRequestTitle(t, {
+      kind: 'file',
+      title: '修改文件',
+      fileChanges: [{ path: '/tmp/a.ts', kind: 'add' }],
+    })).toBe('新增文件');
+    expect(runtimeRequestTitle(t, {
+      kind: 'file',
+      title: '修改文件',
+      fileChanges: [{ path: '/tmp/a.ts', kind: 'delete' }],
+    })).toBe('删除文件');
     expect(runtimeRequestTitle(t, { kind: 'command', title: 'execute' })).toBe('执行命令');
     expect(runtimeRequestTitle(t, { kind: 'command', title: 'Read' })).toBe('读取文件');
     expect(runtimeRequestTitle(t, { kind: 'command', title: '写文件' })).toBe('写文件');
@@ -188,9 +199,21 @@ describe('chat runtime transport guards', () => {
       rows: [{ path: '/workspace/notes.md', kind: 'update', preview: null }],
     });
     expect(runtimeFileChangePreview({
+      kind: 'file',
+      detail: '',
+      fileChanges: [],
+    })).toEqual({ shown: true, empty: true, rows: [] });
+    expect(runtimeFileChangePreview({
       kind: 'command',
       detail: 'ls',
       fileChanges: [],
     })).toEqual({ shown: false });
+    expect(fileChangePreviewHintKey({
+      shown: true,
+      empty: true,
+      rows: [{ path: '/workspace/notes.md', kind: 'update', preview: null }],
+    })).toBe('chat.runtime.fileChangePathOnly');
+    expect(fileChangePreviewHintKey({ shown: true, empty: true, rows: [] }))
+      .toBe('chat.runtime.fileChangePreviewEmpty');
   });
 });

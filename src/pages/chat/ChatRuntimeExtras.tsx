@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ImagePlus, MoreHorizontal, Sparkles, X } from 'lucide-react';
+import { ChevronDown, ImagePlus, MoreHorizontal, Sparkles, X } from 'lucide-react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import {
@@ -78,9 +78,12 @@ export function ChatRuntimeExtras(props: {
   // and the removable chips get clipped (true-window #312 FAIL).
   const rootClass = props.inline
     ? props.images.length > 0
-      ? 'flex w-full min-w-0 flex-col gap-2'
+      ? 'flex w-full min-w-0 flex-col gap-1.5'
       : 'contents'
     : 'space-y-2 px-1 pb-1';
+  const controlsClass = props.inline && props.images.length === 0
+    ? 'contents'
+    : 'flex flex-wrap items-center gap-1.5';
 
   return (
     <div
@@ -110,7 +113,7 @@ export function ChatRuntimeExtras(props: {
         </div>
       ) : null}
 
-      <div className="relative flex flex-wrap items-center gap-2">
+      <div className={controlsClass} data-help="chat-composer-cluster">
         <Hint label={modelTriggerHint}>
           <DropdownMenu open={modelMenuOpen} onOpenChange={setModelMenuOpen}>
             <DropdownMenuTrigger asChild>
@@ -119,16 +122,17 @@ export function ChatRuntimeExtras(props: {
                 size="sm"
                 variant="outline"
                 disabled={Boolean(modelDisabledReason)}
-                className="max-w-48"
+                className="max-w-36"
                 data-help="chat-model"
                 aria-label={t('chat.composer.switchModel')}
                 aria-keyshortcuts="Control+Shift+I"
               >
-                <span className="truncate">
+                <span className="min-w-0 truncate">
                   {props.settings.model
                     ? chatModelDisplayName(props.settings.model, t)
                     : t('chat.composer.switchModel')}
                 </span>
+                <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
               </Button>
             </DropdownMenuTrigger>
             {props.models.length > 0 ? (

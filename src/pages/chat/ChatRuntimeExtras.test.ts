@@ -88,6 +88,7 @@ describe('ChatRuntimeExtras image chips', () => {
   it('keeps contents layout in inline mode when there are no images', () => {
     const html = renderMarkup(extras({ inline: true, images: [] }));
     expect(html).toContain('contents');
+    expect(html).toContain('data-help="chat-composer-cluster"');
     expect(html).not.toContain('data-help="chat-image-chips"');
   });
 });

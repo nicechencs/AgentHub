@@ -2345,30 +2345,31 @@ impl ActorWorker {
         let (kind, title, detail, questions, acp_options, file_changes) = match method {
             "session/request_permission" => {
                 let file_changes = file_change::extract_file_changes(params);
-                let title = if file_changes.is_empty() {
+                let is_file = !file_changes.is_empty() || acp_tool_is_file_change(params);
+                let title = if is_file {
+                    "修改文件".to_string()
+                } else {
                     params
                         .pointer("/toolCall/title")
                         .or_else(|| params.pointer("/toolCall/kind"))
                         .and_then(Value::as_str)
                         .unwrap_or("需要确认")
                         .to_string()
-                } else {
-                    "修改文件".to_string()
                 };
-                let detail = if file_changes.is_empty() {
+                let detail = if is_file {
+                    self.file_change_request_detail(params)
+                } else {
                     redact_json_text(
                         params
                             .get("toolCall")
                             .and_then(|call| call.get("rawInput").or_else(|| call.get("title"))),
                     )
-                } else {
-                    self.file_change_request_detail(params)
                 };
                 (
-                    if file_changes.is_empty() {
-                        RuntimeRequestKind::Command
-                    } else {
+                    if is_file {
                         RuntimeRequestKind::File
+                    } else {
+                        RuntimeRequestKind::Command
                     },
                     title,
                     detail,
@@ -3423,6 +3424,17 @@ fn parse_acp_permission_options(params: &Value) -> Vec<RuntimePermissionOption> 
 fn acp_permission_options(params: &Value) -> Option<Vec<RuntimePermissionOption>> {
     let options = parse_acp_permission_options(params);
     (!options.is_empty()).then_some(options)
+}
+
+/// ACP file tools stay file cards even when the payload only named a path.
+fn acp_tool_is_file_change(params: &Value) -> bool {
+    let kind = params
+        .pointer("/toolCall/kind")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    matches!(kind.as_str(), "edit" | "delete" | "move" | "write" | "create")
 }
 
 fn codex_session_permission_options() -> Vec<RuntimePermissionOption> {

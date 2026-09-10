@@ -60,7 +60,7 @@ export function adapterProfileStoppedHint(
   if (input.bridgeState === 'error') return null;
   return {
     reason: t ? t('routes.direct.stoppedReason') : '本机转发已停止',
-    next: t ? t('routes.direct.stoppedNext') : '点「启动」接到本机转发',
+    next: t ? t('routes.direct.stoppedNext') : '点「开启转发」或「详情」',
   };
 }
 
@@ -306,7 +306,7 @@ export function adapterProfilePrimaryAction(input: {
   if (input.route !== 'local_bridge') return null;
   const ownsListener = isBridgeStopCapable(input.bridgeState);
   const stopLabel = t ? t('routes.action.stop') : '停止';
-  const startLabel = t ? t('routes.action.start') : '启动';
+  const startLabel = t ? t('routes.action.start') : '开启转发';
   if (input.statusUnavailable) {
     return ownsListener
       ? { kind: 'stop', label: stopLabel }
