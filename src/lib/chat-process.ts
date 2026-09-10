@@ -285,12 +285,15 @@ export function isProtocolProcessStep(step: ProcessStep): boolean {
   return step.type === 'status';
 }
 
-function isCommandOutputRaw(step: ProcessStep): boolean {
+function isCommandOutputRaw(step: ProcessStep): step is Extract<ProcessStep, { type: 'raw' }> {
   return step.type === 'raw' && (step.note === 'command output' || step.note === '命令输出');
 }
 
-export function mergeToolResult(prev: string | undefined, next: string | undefined): string | undefined {
-  if (!next) return prev;
+export function mergeToolResult(
+  prev: string | null | undefined,
+  next: string | null | undefined,
+): string | undefined {
+  if (!next) return prev ?? undefined;
   if (!prev) return next;
   if (next.startsWith(prev)) return next;
   if (prev.startsWith(next)) return prev;
