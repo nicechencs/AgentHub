@@ -45,6 +45,7 @@ function PayloadPreview({
         format="json"
         density={density}
         showCopy
+        compressBlankLines
         className={className}
       />
     );

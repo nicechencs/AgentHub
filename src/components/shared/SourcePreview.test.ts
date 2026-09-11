@@ -40,6 +40,14 @@ describe('SourcePreview chrome', () => {
     expect(
       readFileSync(path.join(dir, '../../pages/chat/ChatProcessPanel.tsx'), 'utf8'),
     ).toContain('<SourcePreview');
+    expect(
+      readFileSync(path.join(dir, '../../pages/chat/ChatProcessPanel.tsx'), 'utf8'),
+    ).toContain('compressBlankLines');
+    expect(source('ConfigFileCard.tsx')).not.toContain('compressBlankLines');
+    expect(source('ConfigEditor.tsx')).not.toContain('compressBlankLines');
+    expect(
+      readFileSync(path.join(dir, '../../pages/mcp/McpServerTable.tsx'), 'utf8'),
+    ).not.toContain('compressBlankLines');
   });
 
   it('does not redact or unmask in the preview layer', () => {

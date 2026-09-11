@@ -64,12 +64,12 @@ export function inferSourceFormat(input: {
 export function prepareSourcePreview(
   text: string,
   format: SourceFormat,
-  options?: { pretty?: boolean; maxChars?: number },
+  options?: { pretty?: boolean; maxChars?: number; compressBlankLines?: boolean },
 ): string {
   const pretty = options?.pretty ?? true;
   const maxChars = options?.maxChars ?? SOURCE_PREVIEW_MAX_CHARS;
   let next = pretty && format === 'json' ? tryPrettyJson(text) ?? text : text;
-  if (format === 'json') next = compressBlankLines(next);
+  if (options?.compressBlankLines && format === 'json') next = compressBlankLines(next);
   return clipPreviewText(next, maxChars);
 }
 
