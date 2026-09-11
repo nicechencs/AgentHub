@@ -6,7 +6,7 @@ import type { AgentKey, ChatEvent, ChatHistoryTurn, ChatMessage, Conversation } 
 import type { MarkdownFilePreviewDto } from '@/lib/backend/contracts/chat-port';
 import type { RuntimeOptions, RuntimeReply, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings } from '@/lib/backend/contracts/chat-runtime';
 export type { MarkdownFilePreviewDto } from '@/lib/backend/contracts/chat-port';
-export type { RuntimeDecision, RuntimeFileChange, RuntimeQuestion, RuntimeRequest, RuntimeReply, RuntimeSnapshot, RuntimeOptions, RuntimeTurnSettings, RuntimeStartExtras, RuntimeModelOption, RuntimeExtensionItem } from '@/lib/backend/contracts/chat-runtime';
+export type { RuntimeDecision, RuntimeFileChange, RuntimeQuestion, RuntimeRequest, RuntimeReply, RuntimeSnapshot, RuntimeOptions, RuntimeTurnSettings, RuntimeStartExtras, RuntimeModelOption, RuntimeExtensionItem, RuntimeChannel, RuntimeNativeCommand, RuntimePlanEntry, RuntimeHostTerminal } from '@/lib/backend/contracts/chat-runtime';
 
 export type {
   CoreConversation,
@@ -101,6 +101,9 @@ export async function runtimeSteer(conversationId: string, runId: string, prompt
 }
 export async function runtimeCancel(conversationId: string, runId: string): Promise<void> {
   return getBackend().chat.runtimeCancel(conversationId, runId);
+}
+export async function runtimeKillHostTerminal(conversationId: string, terminalId: string): Promise<void> {
+  return getBackend().chat.runtimeKillHostTerminal(conversationId, terminalId);
 }
 
 export async function setChatModel(agentId: AgentKey, model: string): Promise<void> {

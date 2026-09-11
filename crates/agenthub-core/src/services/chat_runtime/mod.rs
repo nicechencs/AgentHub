@@ -7,6 +7,7 @@
 
 mod codex_transport;
 mod file_change;
+mod host_terminal;
 mod ops;
 mod store;
 mod types;
@@ -16,10 +17,12 @@ pub(crate) use store::{
 };
 
 pub use types::{
-    RuntimeDecision, RuntimeEvent, RuntimeExtensionItem, RuntimeExtensionKind, RuntimeFileChange,
-    RuntimeLocalImage, RuntimeModelOption, RuntimeOptions, RuntimePermissionOption, RuntimePhase,
-    RuntimeQuestion, RuntimeQuestionOption, RuntimeReply, RuntimeRequest, RuntimeRequestKind,
-    RuntimeSkillRef, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings,
+    RuntimeChannel, RuntimeDecision, RuntimeEvent, RuntimeExtensionItem, RuntimeExtensionKind,
+    RuntimeFileChange, RuntimeHostTerminal, RuntimeLocalImage, RuntimeModelOption,
+    RuntimeNativeCommand, RuntimeOptions, RuntimePermissionOption, RuntimePhase, RuntimePlanEntry,
+    RuntimeQuestion, RuntimeQuestionOption, RuntimeReply,
+    RuntimeRequest, RuntimeRequestKind, RuntimeSkillRef, RuntimeSnapshot, RuntimeStartExtras,
+    RuntimeTurnSettings,
 };
 
 use std::collections::HashMap;
@@ -71,6 +74,10 @@ enum RuntimeCommand {
         run_id: String,
         result: SyncSender<Result<()>>,
     },
+    KillHostTerminal {
+        terminal_id: String,
+        result: SyncSender<Result<()>>,
+    },
     Shutdown {
         done: SyncSender<()>,
     },
@@ -89,6 +96,35 @@ struct CatalogCache {
     models: Vec<RuntimeModelOption>,
     extensions: Vec<RuntimeExtensionItem>,
     from_codex: bool,
+    native_commands: Vec<RuntimeNativeCommand>,
+    image_input: Option<bool>,
+    catalog_epoch: i64,
+    plan: Vec<RuntimePlanEntry>,
+}
+
+fn merge_catalog_cache(previous: Option<&CatalogCache>, mut fetched: CatalogCache) -> CatalogCache {
+    if let Some(previous) = previous {
+        if fetched.native_commands.is_empty() {
+            fetched.native_commands = previous.native_commands.clone();
+        }
+        if fetched.image_input.is_none() {
+            fetched.image_input = previous.image_input;
+        }
+        fetched.catalog_epoch = previous.catalog_epoch.max(fetched.catalog_epoch);
+        if fetched.plan.is_empty() {
+            fetched.plan = previous.plan.clone();
+        }
+    }
+    fetched
+}
+
+fn runtime_channel(agent: Option<AgentId>) -> RuntimeChannel {
+    match agent {
+        Some(AgentId::Grok | AgentId::Kiro) => RuntimeChannel::Acp,
+        Some(AgentId::Claude) => RuntimeChannel::StreamJson,
+        Some(AgentId::Codex) => RuntimeChannel::AppServer,
+        _ => RuntimeChannel::Legacy,
+    }
 }
 
 pub struct ChatRuntime {
@@ -97,6 +133,7 @@ pub struct ChatRuntime {
     run: Arc<RunService>,
     actors: Mutex<HashMap<String, ActorHandle>>,
     catalogs: Arc<Mutex<HashMap<String, CatalogCache>>>,
+    host_terminals: Arc<Mutex<HashMap<String, Vec<RuntimeHostTerminal>>>>,
     codex_program_override: Arc<Mutex<Option<PathBuf>>>,
 }
 
@@ -112,6 +149,7 @@ impl ChatRuntime {
             run,
             actors: Mutex::new(HashMap::new()),
             catalogs: Arc::new(Mutex::new(HashMap::new())),
+            host_terminals: Arc::new(Mutex::new(HashMap::new())),
             codex_program_override: Arc::new(Mutex::new(None)),
         }
     }
@@ -121,7 +159,18 @@ impl ChatRuntime {
         conversation_id: &str,
         after_sequence: Option<i64>,
     ) -> Result<RuntimeSnapshot> {
-        self.store.snapshot(conversation_id, after_sequence)
+        let mut snapshot = self.store.snapshot(conversation_id, after_sequence)?;
+        if let Some(cache) = self.peek_catalog(conversation_id) {
+            snapshot.catalog_epoch = cache.catalog_epoch;
+            snapshot.plan = cache.plan;
+        }
+        snapshot.host_terminals = self
+            .host_terminals
+            .lock()
+            .ok()
+            .and_then(|guard| guard.get(conversation_id).cloned())
+            .unwrap_or_default();
+        Ok(snapshot)
     }
 
     pub(crate) fn is_enabled(&self, conversation_id: &str) -> Result<bool> {
@@ -198,7 +247,7 @@ impl ChatRuntime {
             .ok_or_else(|| AppError::InvalidArg("这条对话没有可接上的会话，请新建对话".into()))?;
         self.store
             .enable_legacy_with_session(conversation_id, session_id)?;
-        self.store.snapshot(conversation_id, None)
+        self.snapshot(conversation_id, None)
     }
 
     pub fn options(&self, conversation_id: &str) -> Result<RuntimeOptions> {
@@ -243,6 +292,10 @@ impl ChatRuntime {
             }
         }
         let persistent = is_acp_runtime_agent(agent) || is_claude_stream_runtime_agent(agent);
+        let session_ready = record
+            .as_ref()
+            .and_then(|row| row.thread_id.as_deref())
+            .is_some_and(|id| !id.trim().is_empty());
         Ok(RuntimeOptions {
             conversation_id: conversation_id.to_string(),
             settings,
@@ -250,8 +303,11 @@ impl ChatRuntime {
             models,
             extensions: cache.extensions,
             models_from_codex: cache.from_codex,
-            image_input: true,
+            image_input: cache.image_input.unwrap_or(true),
             steer: !persistent,
+            transport: runtime_channel(agent),
+            native_commands: cache.native_commands,
+            session_ready,
         })
     }
 
@@ -368,7 +424,7 @@ impl ChatRuntime {
                 Err(error) => return Err(log_and_return_send_fail(conversation_id, error)),
             };
         match operation {
-            OperationState::Accepted => return self.store.snapshot(conversation_id, None),
+            OperationState::Accepted => return self.snapshot(conversation_id, None),
             OperationState::Pending => {
                 return Err(log_and_return_send_fail(
                     conversation_id,
@@ -554,6 +610,23 @@ impl ChatRuntime {
         outcome
     }
 
+    pub fn kill_host_terminal(&self, conversation_id: &str, terminal_id: &str) -> Result<()> {
+        let terminal_id = terminal_id.trim();
+        if terminal_id.is_empty() {
+            return Err(AppError::InvalidArg("terminal id must not be empty".into()));
+        }
+        let actor = self.actor_for_existing(conversation_id)?;
+        let (tx, rx) = mpsc::sync_channel(1);
+        actor
+            .tx
+            .send(RuntimeCommand::KillHostTerminal {
+                terminal_id: terminal_id.to_string(),
+                result: tx,
+            })
+            .map_err(|_| AppError::message("chat.runtime", "runtime worker stopped"))?;
+        recv_result(rx)
+    }
+
     pub fn cancel(&self, conversation_id: &str, run_id: &str) -> Result<()> {
         let actor = match self.actor_for_existing(conversation_id) {
             Ok(actor) => actor,
@@ -640,9 +713,12 @@ impl ChatRuntime {
         }
         let fetched = self.fetch_catalog(conversation_id);
         if let Ok(mut guard) = self.catalogs.lock() {
+            let fetched = merge_catalog_cache(guard.get(conversation_id), fetched);
             guard.insert(conversation_id.to_string(), fetched.clone());
+            fetched
+        } else {
+            fetched
         }
-        fetched
     }
 
     #[cfg(test)]
@@ -659,8 +735,35 @@ impl ChatRuntime {
                     models,
                     extensions,
                     from_codex: true,
+                    ..CatalogCache::default()
                 },
             );
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn seed_native_commands_for_test(
+        &self,
+        conversation_id: &str,
+        commands: Vec<RuntimeNativeCommand>,
+    ) {
+        if let Ok(mut guard) = self.catalogs.lock() {
+            let entry = guard.entry(conversation_id.to_string()).or_default();
+            if entry.native_commands != commands {
+                entry.catalog_epoch = entry.catalog_epoch.saturating_add(1);
+            }
+            entry.native_commands = commands;
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn seed_image_input_for_test(&self, conversation_id: &str, image_input: bool) {
+        if let Ok(mut guard) = self.catalogs.lock() {
+            let entry = guard.entry(conversation_id.to_string()).or_default();
+            if entry.image_input != Some(image_input) {
+                entry.catalog_epoch = entry.catalog_epoch.saturating_add(1);
+            }
+            entry.image_input = Some(image_input);
         }
     }
 
@@ -704,6 +807,7 @@ impl ChatRuntime {
             models,
             extensions,
             from_codex: true,
+            ..CatalogCache::default()
         }
     }
 
@@ -729,6 +833,7 @@ impl ChatRuntime {
             models,
             extensions: Vec::new(),
             from_codex: true,
+            ..CatalogCache::default()
         }
     }
 
@@ -745,6 +850,7 @@ impl ChatRuntime {
         let repo = self.repo.clone();
         let run = Arc::clone(&self.run);
         let catalogs = Arc::clone(&self.catalogs);
+        let host_terminals = Arc::clone(&self.host_terminals);
         let codex_program_override = Arc::clone(&self.codex_program_override);
         let abort = Arc::new(AtomicBool::new(false));
         let worker_abort = Arc::clone(&abort);
@@ -759,6 +865,7 @@ impl ChatRuntime {
                     repo,
                     run,
                     catalogs,
+                    host_terminals,
                     codex_program_override,
                     worker_abort,
                 )
@@ -818,6 +925,7 @@ fn actor_loop(
     repo: ChatRepo,
     run: Arc<RunService>,
     catalogs: Arc<Mutex<HashMap<String, CatalogCache>>>,
+    host_terminal_views: Arc<Mutex<HashMap<String, Vec<RuntimeHostTerminal>>>>,
     codex_program_override: Arc<Mutex<Option<PathBuf>>>,
     abort: Arc<AtomicBool>,
 ) {
@@ -827,12 +935,16 @@ fn actor_loop(
         .flatten()
         .unwrap_or(AgentId::Codex);
     let mut worker = ActorWorker {
-        conversation_id,
+        conversation_id: conversation_id.clone(),
         rx,
         store,
         repo,
         run,
         catalogs,
+        host_terminals: host_terminal::HostedTerminals::new(
+            conversation_id,
+            host_terminal_views,
+        ),
         codex_program_override,
         abort,
         agent,
@@ -852,6 +964,7 @@ fn actor_loop(
         session_trust_all: None,
         session_allow_always: false,
         pending_fs_writes: HashMap::new(),
+        thinking_open: false,
     };
     worker.run();
 }
@@ -863,6 +976,7 @@ struct ActorWorker {
     repo: ChatRepo,
     run: Arc<RunService>,
     catalogs: Arc<Mutex<HashMap<String, CatalogCache>>>,
+    host_terminals: host_terminal::HostedTerminals,
     codex_program_override: Arc<Mutex<Option<PathBuf>>>,
     abort: Arc<AtomicBool>,
     agent: AgentId,
@@ -896,6 +1010,7 @@ struct ActorWorker {
     /// JSON-RPC request id. Content is not persisted; a dead process cannot
     /// complete the write anyway.
     pending_fs_writes: HashMap<String, (PathBuf, String)>,
+    thinking_open: bool,
 }
 
 impl ActorWorker {
@@ -929,7 +1044,12 @@ impl ActorWorker {
                     let outcome = self.cancel(&run_id);
                     let _ = result.send(outcome);
                 }
+                Ok(RuntimeCommand::KillHostTerminal { terminal_id, result }) => {
+                    let outcome = self.kill_hosted_terminal(&terminal_id);
+                    let _ = result.send(outcome);
+                }
                 Ok(RuntimeCommand::Shutdown { done }) => {
+                    self.shutdown_host_terminals();
                     if let Some(transport) = self.transport.as_mut() {
                         transport.shutdown();
                     }
@@ -939,6 +1059,7 @@ impl ActorWorker {
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
+            self.complete_host_terminal_waits();
             if let Err(error) = self.check_cancel_deadline() {
                 self.fail_runtime(error);
             }
@@ -999,7 +1120,9 @@ impl ActorWorker {
             return Err(cancelled_error());
         }
         if let Ok(mut guard) = self.catalogs.lock() {
+            let fetched = merge_catalog_cache(guard.get(&self.conversation_id), fetched);
             guard.insert(self.conversation_id.clone(), fetched.clone());
+            return Ok(fetched);
         }
         Ok(fetched)
     }
@@ -1048,6 +1171,7 @@ impl ActorWorker {
             models,
             extensions,
             from_codex: true,
+            ..CatalogCache::default()
         }
     }
 
@@ -1083,6 +1207,7 @@ impl ActorWorker {
             models,
             extensions: Vec::new(),
             from_codex: true,
+            ..CatalogCache::default()
         }
     }
 
@@ -1161,7 +1286,7 @@ impl ActorWorker {
             self.thread_id = record.thread_id.clone();
         }
         if self.last_start_request.as_deref() == Some(client_request_id) {
-            return self.store.snapshot(&self.conversation_id, None);
+            return Ok(self.with_catalog_epoch(self.store.snapshot(&self.conversation_id, None)?));
         }
         if matches!(
             record.phase,
@@ -1310,6 +1435,7 @@ impl ActorWorker {
         self.message_id = Some(message_id);
         self.turn_id = None;
         self.run_id = Some(run_id);
+        self.clear_turn_plan();
         logging::log_chat_info(
             "send",
             &self.conversation_id,
@@ -1413,7 +1539,7 @@ impl ActorWorker {
                     self.message_id.as_deref(),
                 )?;
                 self.transport = Some(transport);
-                self.store.snapshot(&self.conversation_id, None)
+                Ok(self.with_catalog_epoch(self.store.snapshot(&self.conversation_id, None)?))
             })()
         };
         if let Err(error) = start_result {
@@ -1519,6 +1645,7 @@ impl ActorWorker {
                 }
                 .map_err(|error| map_transport(self.agent, error))?
             };
+            self.apply_initialize_capabilities(transport.initialize_result());
 
             match plan {
                 ops::AcpSessionPlan::PromptExisting => {}
@@ -1536,6 +1663,7 @@ impl ActorWorker {
                         .map_err(|error| map_transport(self.agent, error))?;
                     self.thread_id =
                         grok_session_id(&created).or_else(|| extract_id(&created, "session"));
+                    self.apply_session_model_catalog(&created);
                     if self.agent == AgentId::Kiro {
                         self.session_model = model.map(str::to_owned);
                         self.session_effort = effort.map(str::to_owned);
@@ -1608,7 +1736,7 @@ impl ActorWorker {
                         self.message_id.as_deref(),
                     )?;
                     self.transport = Some(transport);
-                    return self.store.snapshot(&self.conversation_id, None);
+                    return Ok(self.with_catalog_epoch(self.store.snapshot(&self.conversation_id, None)?));
                 }
                 Err(codex_transport::CodexTransportError::Exited)
                     if matches!(plan, ops::AcpSessionPlan::PromptExisting)
@@ -1692,7 +1820,7 @@ impl ActorWorker {
             self.message_id.as_deref(),
         )?;
         self.transport = Some(transport);
-        self.store.snapshot(&self.conversation_id, None)
+        Ok(self.with_catalog_epoch(self.store.snapshot(&self.conversation_id, None)?))
     }
 
     fn claude_stream_event(&mut self, params: &Value) -> Result<()> {
@@ -2058,6 +2186,7 @@ impl ActorWorker {
         ) {
             return Ok(());
         }
+        self.shutdown_host_terminals();
         if run_id.trim().is_empty() {
             if let Some(current) = record.run_id.clone().or_else(|| self.run_id.clone()) {
                 return self.cancel(&current);
@@ -2321,6 +2450,9 @@ impl ActorWorker {
         }
         if ops::is_acp_fs_write_method(method) {
             return self.handle_acp_fs_write(id, params);
+        }
+        if ops::is_acp_terminal_method(method) {
+            return self.handle_acp_terminal(id, method, params);
         }
         let run_id = params
             .get("turnId")
@@ -2906,6 +3038,25 @@ impl ActorWorker {
     }
 
     fn grok_session_update(&mut self, params: &Value) -> Result<()> {
+        if let Some(commands) = crate::utils::stream_parse::acp::extract_available_commands(params)
+        {
+            self.patch_catalog(|cache| {
+                cache.native_commands = commands
+                    .into_iter()
+                    .map(|command| RuntimeNativeCommand {
+                        name: command.name,
+                        description: command.description,
+                        hint: command.hint,
+                    })
+                    .collect();
+            });
+        }
+        if let Some(catalog) = crate::utils::stream_parse::acp::extract_config_catalog(params) {
+            self.apply_acp_config_catalog(catalog);
+        }
+        if let Some(entries) = crate::utils::stream_parse::acp::extract_plan(params) {
+            self.apply_acp_plan(entries);
+        }
         let envelope = json!({
             "jsonrpc": "2.0",
             "method": "session/update",
@@ -2919,8 +3070,20 @@ impl ActorWorker {
             match step {
                 ProcessStep::Text { text } => {
                     if !text.is_empty() {
+                        self.finish_open_thinking()?;
                         self.append_message(&text, self.live_phase(RuntimePhase::Running))?;
                     }
+                }
+                ProcessStep::Thinking { .. } => {
+                    self.thinking_open = true;
+                    self.emit(
+                        ChatEvent::AgentProcess {
+                            turn: self.chat_turn.unwrap_or(0),
+                            agent: self.agent,
+                            step,
+                        },
+                        self.live_phase(RuntimePhase::Running),
+                    )?;
                 }
                 other => {
                     self.emit(
@@ -2935,6 +3098,162 @@ impl ActorWorker {
             }
         }
         Ok(())
+    }
+
+    fn patch_catalog(&self, patch: impl FnOnce(&mut CatalogCache)) {
+        if let Ok(mut guard) = self.catalogs.lock() {
+            let entry = guard.entry(self.conversation_id.clone()).or_default();
+            let before_commands = entry.native_commands.clone();
+            let before_image = entry.image_input;
+            let before_models = entry.models.clone();
+            patch(entry);
+            if entry.native_commands != before_commands
+                || entry.image_input != before_image
+                || entry.models != before_models
+            {
+                entry.catalog_epoch = entry.catalog_epoch.saturating_add(1);
+            }
+        }
+    }
+
+    fn with_catalog_epoch(&self, mut snapshot: RuntimeSnapshot) -> RuntimeSnapshot {
+        if let Some(cache) = self
+            .catalogs
+            .lock()
+            .ok()
+            .and_then(|guard| guard.get(&self.conversation_id).cloned())
+        {
+            snapshot.catalog_epoch = cache.catalog_epoch;
+            snapshot.plan = cache.plan;
+        }
+        snapshot.host_terminals = self.host_terminals.snapshot();
+        snapshot
+    }
+
+    fn apply_acp_plan(&self, entries: Vec<crate::utils::stream_parse::acp::AcpPlanEntry>) {
+        if entries.is_empty() {
+            return;
+        }
+        if let Ok(mut guard) = self.catalogs.lock() {
+            guard.entry(self.conversation_id.clone()).or_default().plan = entries
+                .into_iter()
+                .map(|entry| RuntimePlanEntry {
+                    content: entry.content,
+                    status: entry.status,
+                    priority: entry.priority,
+                })
+                .collect();
+        }
+    }
+
+    fn clear_turn_plan(&self) {
+        if let Ok(mut guard) = self.catalogs.lock() {
+            if let Some(entry) = guard.get_mut(&self.conversation_id) {
+                entry.plan.clear();
+            }
+        }
+    }
+
+    fn apply_acp_config_catalog(&self, catalog: crate::utils::stream_parse::acp::AcpConfigCatalog) {
+        if catalog.models.is_empty() && catalog.efforts.is_empty() {
+            return;
+        }
+        self.patch_catalog(|cache| {
+            let efforts = if catalog.efforts.is_empty() {
+                cache
+                    .models
+                    .first()
+                    .map(|model| model.efforts.clone())
+                    .unwrap_or_default()
+            } else {
+                catalog.efforts.clone()
+            };
+            let default_effort = catalog
+                .current_effort
+                .clone()
+                .filter(|effort| efforts.iter().any(|item| item == effort))
+                .or_else(|| {
+                    cache
+                        .models
+                        .iter()
+                        .find_map(|model| model.default_effort.clone())
+                        .filter(|effort| efforts.iter().any(|item| item == effort))
+                })
+                .or_else(|| efforts.first().cloned());
+            if !catalog.models.is_empty() {
+                cache.models = catalog
+                    .models
+                    .into_iter()
+                    .map(|id| RuntimeModelOption {
+                        id,
+                        efforts: efforts.clone(),
+                        default_effort: default_effort.clone(),
+                    })
+                    .collect();
+            } else if !efforts.is_empty() {
+                for model in &mut cache.models {
+                    model.efforts = efforts.clone();
+                    if model
+                        .default_effort
+                        .as_ref()
+                        .is_none_or(|effort| !efforts.contains(effort))
+                    {
+                        model.default_effort = default_effort.clone();
+                    }
+                }
+            }
+        });
+    }
+
+    fn apply_session_model_catalog(&self, created: &Value) {
+        if let Some(catalog) = crate::utils::stream_parse::acp::extract_config_catalog(created) {
+            self.apply_acp_config_catalog(catalog);
+        }
+        let grok_models = ops::parse_grok_model_list(created);
+        if grok_models.is_empty() {
+            return;
+        }
+        self.patch_catalog(|cache| {
+            if cache.models.is_empty() {
+                cache.models = grok_models;
+            }
+        });
+    }
+
+    fn apply_initialize_capabilities(&self, initialize: Option<&Value>) {
+        let Some(initialize) = initialize else {
+            return;
+        };
+        let capabilities = initialize
+            .get("agentCapabilities")
+            .or_else(|| initialize.get("capabilities"))
+            .unwrap_or(initialize);
+        let prompt = capabilities
+            .get("promptCapabilities")
+            .or_else(|| capabilities.get("prompt_capabilities"));
+        let image = prompt
+            .and_then(|value| value.get("image"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        self.patch_catalog(|cache| cache.image_input = Some(image));
+    }
+
+    fn finish_open_thinking(&mut self) -> Result<()> {
+        if !self.thinking_open {
+            return Ok(());
+        }
+        self.thinking_open = false;
+        self.emit(
+            ChatEvent::AgentProcess {
+                turn: self.chat_turn.unwrap_or(0),
+                agent: self.agent,
+                step: ProcessStep::Thinking {
+                    text: String::new(),
+                    done: true,
+                },
+            },
+            self.live_phase(RuntimePhase::Running),
+        )
     }
 
     fn append_message(&self, text: &str, phase: RuntimePhase) -> Result<()> {
@@ -3057,6 +3376,7 @@ impl ActorWorker {
                         | RuntimePhase::Interrupted
                 )
             });
+        let _ = self.finish_open_thinking();
         self.cancel_deadline = None;
         self.pending_prompt_id = None;
         self.permission_options.clear();
@@ -3211,6 +3531,148 @@ impl ActorWorker {
         transport
             .respond(id, response)
             .map_err(|error| transport_error(self.agent, error))
+    }
+
+    fn complete_host_terminal_waits(&mut self) {
+        for (wait_id, code) in self.host_terminals.poll_exits() {
+            let _ = self.respond_jsonrpc(wait_id, Ok(json!({ "exitCode": code })));
+        }
+    }
+
+    fn kill_hosted_terminal(&mut self, terminal_id: &str) -> Result<()> {
+        let wait = self.host_terminals.kill(terminal_id)?;
+        if let Some(wait_id) = wait {
+            let code = self
+                .host_terminals
+                .output(terminal_id)
+                .ok()
+                .and_then(|(_, _, exit)| exit)
+                .unwrap_or(1);
+            let _ = self.respond_jsonrpc(wait_id, Ok(json!({ "exitCode": code })));
+        }
+        Ok(())
+    }
+
+    fn shutdown_host_terminals(&mut self) {
+        for (wait_id, code) in self.host_terminals.kill_all() {
+            let _ = self.respond_jsonrpc(wait_id, Ok(json!({ "exitCode": code })));
+        }
+    }
+
+    fn handle_acp_terminal(&mut self, id: Value, method: &str, params: &Value) -> Result<()> {
+        match method {
+            "terminal/create" => {
+                let cwd = self.conversation_cwd()?;
+                let spec = match ops::acp_terminal_create(params, &cwd) {
+                    Ok(spec) => spec,
+                    Err(error) => {
+                        return self.respond_jsonrpc(
+                            id,
+                            Err(json!({ "code": -32602, "message": error.to_string() })),
+                        );
+                    }
+                };
+                match self.host_terminals.create(spec) {
+                    Ok(terminal_id) => {
+                        self.respond_jsonrpc(id, Ok(json!({ "terminalId": terminal_id })))
+                    }
+                    Err(error) => self.respond_jsonrpc(
+                        id,
+                        Err(json!({ "code": -32000, "message": error.to_string() })),
+                    ),
+                }
+            }
+            "terminal/output" => {
+                let terminal_id = match ops::acp_terminal_id(params) {
+                    Ok(terminal_id) => terminal_id,
+                    Err(error) => {
+                        return self.respond_jsonrpc(
+                            id,
+                            Err(json!({ "code": -32602, "message": error.to_string() })),
+                        );
+                    }
+                };
+                match self.host_terminals.output(&terminal_id) {
+                    Ok((output, truncated, exit_code)) => {
+                        let mut body = json!({ "output": output, "truncated": truncated });
+                        if let Some(code) = exit_code {
+                            body["exitCode"] = json!(code);
+                        }
+                        self.respond_jsonrpc(id, Ok(body))
+                    }
+                    Err(error) => self.respond_jsonrpc(
+                        id,
+                        Err(json!({ "code": -32602, "message": error.to_string() })),
+                    ),
+                }
+            }
+            "terminal/wait_for_exit" | "terminal/waitForExit" => {
+                let terminal_id = match ops::acp_terminal_id(params) {
+                    Ok(terminal_id) => terminal_id,
+                    Err(error) => {
+                        return self.respond_jsonrpc(
+                            id,
+                            Err(json!({ "code": -32602, "message": error.to_string() })),
+                        );
+                    }
+                };
+                match self.host_terminals.begin_wait(&terminal_id, id.clone()) {
+                    Ok(Some(code)) => {
+                        self.respond_jsonrpc(id, Ok(json!({ "exitCode": code })))
+                    }
+                    Ok(None) => Ok(()),
+                    Err(error) => self.respond_jsonrpc(
+                        id,
+                        Err(json!({ "code": -32602, "message": error.to_string() })),
+                    ),
+                }
+            }
+            "terminal/kill" => {
+                let terminal_id = match ops::acp_terminal_id(params) {
+                    Ok(terminal_id) => terminal_id,
+                    Err(error) => {
+                        return self.respond_jsonrpc(
+                            id,
+                            Err(json!({ "code": -32602, "message": error.to_string() })),
+                        );
+                    }
+                };
+                match self.kill_hosted_terminal(&terminal_id) {
+                    Ok(()) => self.respond_jsonrpc(id, Ok(json!({}))),
+                    Err(error) => self.respond_jsonrpc(
+                        id,
+                        Err(json!({ "code": -32602, "message": error.to_string() })),
+                    ),
+                }
+            }
+            "terminal/release" => {
+                let terminal_id = match ops::acp_terminal_id(params) {
+                    Ok(terminal_id) => terminal_id,
+                    Err(error) => {
+                        return self.respond_jsonrpc(
+                            id,
+                            Err(json!({ "code": -32602, "message": error.to_string() })),
+                        );
+                    }
+                };
+                match self.host_terminals.release(&terminal_id) {
+                    Ok(wait) => {
+                        if let Some(wait_id) = wait {
+                            let _ = self.respond_jsonrpc(wait_id, Ok(json!({ "exitCode": 1 })));
+                        }
+                        self.respond_jsonrpc(id, Ok(json!({})))
+                    }
+                    Err(error) => self.respond_jsonrpc(
+                        id,
+                        Err(json!({ "code": -32602, "message": error.to_string() })),
+                    ),
+                }
+            }
+            other => self.respond_jsonrpc(
+                id,
+                Err(json!({ "code": -32601, "message": format!("unsupported request: {other}") })),
+            ),
+        }
     }
 
     fn handle_acp_fs_read(&mut self, id: Value, params: &Value) -> Result<()> {
@@ -3735,6 +4197,7 @@ fn fetch_kiro_catalog() -> CatalogCache {
         models,
         extensions: Vec::new(),
         from_codex: true,
+        ..CatalogCache::default()
     }
 }
 
@@ -3754,6 +4217,7 @@ fn grok_fallback_catalog() -> CatalogCache {
         models,
         extensions: Vec::new(),
         from_codex: false,
+        ..CatalogCache::default()
     }
 }
 
@@ -3775,6 +4239,7 @@ fn claude_fallback_catalog() -> CatalogCache {
         models,
         extensions: Vec::new(),
         from_codex: false,
+        ..CatalogCache::default()
     }
 }
 

@@ -51,6 +51,27 @@ export interface RuntimeSnapshot {
   gap: boolean;
   /** Full current agent message read in the same durable snapshot transaction. */
   currentMessage?: ChatMessage | null;
+  /** Bumps when the Options catalog changes. Not the command list. */
+  catalogEpoch?: number;
+  /** Current-turn ACP plan. Live chrome only — dropped on the next turn. */
+  plan?: RuntimePlanEntry[];
+  /** Live ACP host commands. One card per id; not a conversation TTY. */
+  hostTerminals?: RuntimeHostTerminal[];
+}
+
+export interface RuntimeHostTerminal {
+  id: string;
+  command: string;
+  output: string;
+  truncated?: boolean;
+  exitCode?: number | null;
+  running: boolean;
+}
+
+export interface RuntimePlanEntry {
+  content: string;
+  status?: string | null;
+  priority?: string | null;
 }
 
 export interface RuntimeReply {
@@ -101,6 +122,16 @@ export interface RuntimeStartExtras {
   skills?: RuntimeSkillRef[];
 }
 
+/** Channel this conversation is actually using. Not the 80ms snapshot. */
+export type RuntimeChannel = 'acp' | 'app-server' | 'stream-json' | 'legacy';
+
+/** Agent-declared slash command (no leading `/`). */
+export interface RuntimeNativeCommand {
+  name: string;
+  description: string;
+  hint?: string | null;
+}
+
 export interface RuntimeOptions {
   conversationId: string;
   settings: RuntimeTurnSettings;
@@ -110,4 +141,7 @@ export interface RuntimeOptions {
   modelsFromCodex: boolean;
   imageInput?: boolean;
   steer?: boolean;
+  transport?: RuntimeChannel;
+  nativeCommands?: RuntimeNativeCommand[];
+  sessionReady?: boolean;
 }

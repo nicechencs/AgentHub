@@ -12,8 +12,12 @@
 //! - home `$DSH_HOME` or `~/.dsh`
 //! - skills projection root `$DSH_HOME/skills`
 //! - API Key pool + credentials-file apply (reference name in patch, value in credentials)
+//! - credentials file shapes: reads the legacy flat `KEY: value` map and the
+//!   structured store `dsh` 0.1.5+ writes (`version` / `records` / `refs`).
+//!   Writes only `refs.<KEY>`, so `records` (the dsh web session secret) survives
 //! - home-level `cordis.patch.yml` merge for the official DeepSeek LLM plugin row
 //! - headless text run: `dsh --profile headless "<prompt>"`
+//! - interactive GUI launch: `dsh web` (alias of `--profile web`; bare `dsh` exits)
 //!
 //! ## Honest limits
 //! - Generic `write_config` only accepts the projected LLM-row shape; unknown
@@ -473,8 +477,30 @@ pub(crate) fn read_credential_value(path: &Path, key: &str) -> Result<Option<Str
     if !path.exists() {
         return Ok(None);
     }
-    let text = std::fs::read_to_string(path)?;
-    Ok(parse_flat_yaml_map(&text)?.remove(key))
+    let Some(doc) = parse_credentials_doc(&std::fs::read_to_string(path)?)? else {
+        return Ok(None);
+    };
+    // Structured store first, then the legacy flat key.
+    for scope in ["refs", ""] {
+        let container = if scope.is_empty() {
+            &doc
+        } else {
+            match doc.get(scope) {
+                Some(value) => value,
+                None => continue,
+            }
+        };
+        let Some(found) = container.get(key) else {
+            continue;
+        };
+        return match found.as_str() {
+            Some(text) => Ok(Some(text.to_string())),
+            None => Err(AppError::InvalidArg(format!(
+                "DSH credentials entry `{key}` must be a string"
+            ))),
+        };
+    }
+    Ok(None)
 }
 
 pub(crate) fn write_credential_value(path: &Path, key: &str, value: &str) -> Result<()> {
@@ -486,29 +512,79 @@ pub(crate) fn write_credential_value(path: &Path, key: &str, value: &str) -> Res
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let mut map = if path.exists() {
-        parse_flat_yaml_map(&std::fs::read_to_string(path)?)?
+    let existing = if path.exists() {
+        std::fs::read_to_string(path)?
     } else {
-        BTreeMap::new()
+        String::new()
     };
-    map.insert(key.to_string(), value.to_string());
-    let rendered = render_flat_yaml_map(&map)?;
+    let rendered = match parse_credentials_doc(&existing)? {
+        None => render_flat_yaml_map(&single_flat_entry(key, value))?,
+        Some(mut doc) => {
+            upsert_credential(&mut doc, key, value)?;
+            serde_yml::to_string(&doc).map_err(|err| {
+                AppError::InvalidArg(format!("failed to write DSH credentials YAML: {err}"))
+            })?
+        }
+    };
     atomic_write(path, rendered.as_bytes())
 }
 
-fn parse_flat_yaml_map(text: &str) -> Result<BTreeMap<String, String>> {
+/// Parse the DSH credentials file. `None` means "no document yet".
+///
+/// Both known shapes are accepted: the legacy flat `KEY: value` map this adapter
+/// writes for a fresh file, and the structured store `dsh` 0.1.5+ writes
+/// (`version` / `records` / `refs`). Values under other keys are never required
+/// to be strings — a sibling `version: 1` must not make the key unreadable.
+fn parse_credentials_doc(text: &str) -> Result<Option<serde_yml::Value>> {
     if text.trim().is_empty() {
-        return Ok(BTreeMap::new());
+        return Ok(None);
     }
     let value: serde_yml::Value = serde_yml::from_str(text).map_err(|err| {
-        AppError::InvalidArg(format!("DSH credentials YAML must be a string map: {err}"))
+        AppError::InvalidArg(format!("DSH credentials YAML is not valid YAML: {err}"))
     })?;
     if value.is_null() {
-        return Ok(BTreeMap::new());
+        return Ok(None);
     }
-    serde_yml::from_value(value).map_err(|err| {
-        AppError::InvalidArg(format!("DSH credentials YAML must be a string map: {err}"))
-    })
+    if !value.is_mapping() {
+        return Err(AppError::InvalidArg(
+            "DSH credentials YAML must be a mapping".into(),
+        ));
+    }
+    Ok(Some(value))
+}
+
+/// Write `key` without dropping the rest of the document.
+///
+/// The structured store keeps `version` and `records` — the dsh web session
+/// secret lives in `records` — so flattening it would destroy live data. A
+/// mapping we do not recognize is left untouched and reported, never rewritten.
+fn upsert_credential(doc: &mut serde_yml::Value, key: &str, value: &str) -> Result<()> {
+    let target = if doc.get("refs").is_some_and(serde_yml::Value::is_mapping) {
+        doc.get_mut("refs").expect("checked just above")
+    } else if is_scalar_mapping(doc) {
+        doc
+    } else {
+        return Err(AppError::InvalidArg(
+            "DSH credentials YAML has an unrecognized shape; refusing to rewrite it".into(),
+        ));
+    };
+    let map = target
+        .as_mapping_mut()
+        .ok_or_else(|| AppError::InvalidArg("DSH credentials YAML must be a string map".into()))?;
+    map.insert(serde_yml::Value::from(key), serde_yml::Value::from(value));
+    Ok(())
+}
+
+/// The legacy flat file: every value is a scalar.
+fn is_scalar_mapping(doc: &serde_yml::Value) -> bool {
+    doc.as_mapping()
+        .is_some_and(|map| map.values().all(|v| !v.is_mapping() && !v.is_sequence()))
+}
+
+fn single_flat_entry(key: &str, value: &str) -> BTreeMap<String, String> {
+    let mut map = BTreeMap::new();
+    map.insert(key.to_string(), value.to_string());
+    map
 }
 
 fn render_flat_yaml_map(map: &BTreeMap<String, String>) -> Result<String> {

@@ -460,7 +460,26 @@ function hideCodexAppLaunch(agentId: string, platform: HostPlatform): boolean {
   return agentId === 'codex' && platform === 'linux';
 }
 
-/** Outer card: show 启动命令行 / 启动应用 only when that program exists. */
+/** DeepSeek Harness boots `dsh web`; a bare `dsh` exits asking for --profile. */
+export function agentCliLaunchUsesWeb(agentId: string): boolean {
+  return agentId === 'dsh';
+}
+
+export function agentStartCliLabelKey(
+  agentId: string,
+): 'agents.card.startWeb' | 'agents.card.startCli' {
+  return agentCliLaunchUsesWeb(agentId) ? 'agents.card.startWeb' : 'agents.card.startCli';
+}
+
+export function agentStartCliFailedKey(
+  agentId: string,
+): 'agents.card.startWebFailed' | 'agents.card.startCliFailed' {
+  return agentCliLaunchUsesWeb(agentId)
+    ? 'agents.card.startWebFailed'
+    : 'agents.card.startCliFailed';
+}
+
+/** Outer card: show 启动命令行 / 打开网页会话 / 启动应用 only when that program exists. */
 export function agentLaunchTargets(
   agent: Pick<AgentStatus, 'agentId' | 'installed' | 'binPath' | 'channel' | 'version' | 'extraCopies'>,
   platform: HostPlatform = detectHostPlatform(),

@@ -14,6 +14,7 @@
 //!   OpenAI-style `inputTokens` includes cache; peel cachedRead/cacheCreation.
 //!   Prefer `costUsdTicks` (1e-10 USD). Do not add `reasoningTokens` to totals.
 //! - DSH: provider usage on assistant/step events; inherit model from `request/header`.
+//!   Logs are `session.vN.jsonl.zstd` (concatenated zstd frames), not plain JSONL.
 //!   Skip Token Meter heuristics (`surfaceTokens` / `estimated`). Do not scan cwd `.sessions`.
 //! - Kiro: harvest `~/.kiro/sessions/cli/*.json` turn token fields (pretty snapshot,
 //!   not JSONL). Editor session trees are out of scope.
@@ -116,23 +117,26 @@ pub(crate) fn discover_pi_files() -> Result<Vec<PathBuf>> {
 }
 
 /// Known DSH persistence roots only — never walk a random cwd `.sessions`.
+///
+/// DSH compresses by default (`session.vN.jsonl.zstd`, concatenated zstd frames),
+/// so discovery has to accept both plain and compressed generations.
 pub(crate) fn discover_dsh_files() -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
     let home = agent_home(AgentId::Dsh)?;
-    walk_jsonl(&home.join("sessions"), &mut out, None);
+    walk_session_logs(&home.join("sessions"), &mut out);
     let profiles = home.join("profiles");
     if let Ok(entries) = fs::read_dir(&profiles) {
         for ent in entries.flatten() {
             let path = ent.path();
             if path.is_dir() {
-                walk_jsonl(&path.join("sessions"), &mut out, None);
+                walk_session_logs(&path.join("sessions"), &mut out);
             }
         }
     }
     if let Ok(raw) = std::env::var("DSH_SESSION_ROOT") {
         let root = PathBuf::from(raw.trim());
         if root.is_dir() {
-            walk_jsonl(&root, &mut out, None);
+            walk_session_logs(&root, &mut out);
         }
     }
     out.retain(|p| {
@@ -296,6 +300,11 @@ pub(crate) fn session_id_from_path(path: &Path) -> Option<String> {
     if let Some(sid) = crate::usage::grok::session_id_from_updates_path(path) {
         return Some(sid);
     }
+    // DSH: sessions/<project-dir>/<session-id>/session.vN.jsonl[.zstd]; the file
+    // stem is the format generation (`session.v3`), never the session id.
+    if crate::utils::dsh_session_log::is_log_file(path) {
+        return crate::utils::dsh_session_log::session_id_from_log_path(path);
+    }
     // Pi: filename often `agent_<sessionId>.jsonl` → take after first `_`
     if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
         if let Some((_, sid)) = stem.split_once('_') {
@@ -363,6 +372,31 @@ fn walk_jsonl_inner(dir: &Path, out: &mut Vec<PathBuf>, only_name: Option<&str>)
     }
 }
 
+/// Recursively collect session logs: `*.jsonl` plus `*.jsonl.zstd` (DSH default).
+fn walk_session_logs(dir: &Path, out: &mut Vec<PathBuf>) {
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for ent in entries.flatten() {
+        let path = ent.path();
+        if path.is_dir() {
+            walk_session_logs(&path, out);
+        } else if is_session_log_name(&path) {
+            out.push(path);
+        }
+    }
+}
+
+fn is_session_log_name(path: &Path) -> bool {
+    crate::utils::zstd_jsonl::is_zstd_jsonl(path)
+        || path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.eq_ignore_ascii_case("jsonl"))
+            .unwrap_or(false)
+}
+
 pub(crate) fn line_might_have_usage_claude_like(line: &str) -> bool {
     line.contains("\"usage\"") || line.contains("\"input_tokens\"")
 }
@@ -387,16 +421,14 @@ pub(crate) fn line_might_have_usage_codex(line: &str) -> bool {
 }
 
 pub(crate) fn line_might_have_usage_dsh(line: &str) -> bool {
-    if line.contains("token-meter") || line.contains("tokenMeter") || line.contains("surfaceTokens")
-    {
-        return false;
-    }
-    (line.contains("\"usage\"")
+    // Cheap pre-filter only. DSH rows carry tool output and reasoning in the
+    // same line, so content may mention "usage" / "surfaceTokens"; shape-level
+    // rejection happens on the parsed row in `extract_dsh`.
+    line.contains("\"usage\"")
+        || line.contains("\"inputTokens\"")
+        || line.contains("\"outputTokens\"")
         || line.contains("\"input_tokens\"")
         || line.contains("\"output_tokens\"")
-        || line.contains("\"inputTokens\"")
-        || line.contains("\"outputTokens\""))
-        && !line.contains("\"estimated\":true")
 }
 
 pub(crate) fn note_dsh_model_from_line(line: &str, model: &mut Option<String>) {
@@ -405,7 +437,7 @@ pub(crate) fn note_dsh_model_from_line(line: &str, model: &mut Option<String>) {
     };
     let ty = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
     if ty == "request/header" || ty == "session" || ty.ends_with("/header") {
-        if let Some(found) = find_model(&v) {
+        if let Some(found) = crate::utils::dsh_session_log::model_from_row(&v) {
             *model = Some(found);
         }
     }
@@ -991,13 +1023,7 @@ pub(crate) fn extract_dsh(
         return Ok(None);
     }
 
-    let usage = v
-        .get("usage")
-        .or_else(|| v.pointer("/message/usage"))
-        .or_else(|| v.pointer("/response/usage"))
-        .or_else(|| v.pointer("/payload/usage"))
-        .filter(|u| u.is_object());
-    let Some(usage) = usage else {
+    let Some(usage) = dsh_usage(&v) else {
         return Ok(None);
     };
     if usage.get("estimated").and_then(|e| e.as_bool()) == Some(true) {
@@ -1030,6 +1056,7 @@ pub(crate) fn extract_dsh(
         &[
             "cache_read_input_tokens",
             "cache_read_tokens",
+            "cacheReadTokens",
             "cacheRead",
             "cached_input_tokens",
         ],
@@ -1039,6 +1066,7 @@ pub(crate) fn extract_dsh(
         &[
             "cache_creation_input_tokens",
             "cache_creation_tokens",
+            "cacheWriteTokens",
             "cacheWrite",
             "cache_write",
         ],
@@ -1047,7 +1075,7 @@ pub(crate) fn extract_dsh(
         return Ok(None);
     }
 
-    let model = find_model(&v)
+    let model = crate::utils::dsh_session_log::model_from_row(&v)
         .or_else(|| find_model_in(usage))
         .or_else(|| {
             model_hint
@@ -1089,12 +1117,28 @@ pub(crate) fn extract_dsh(
     }))
 }
 
+/// Provider usage of a DSH row.
+///
+/// v3 transcripts put it in `data.usage` (one per `assistant/message` step, no
+/// repeats per turn/step); the flat shapes are kept for older generations.
+fn dsh_usage(v: &serde_json::Value) -> Option<&serde_json::Value> {
+    v.pointer("/data/usage")
+        .or_else(|| v.get("usage"))
+        .or_else(|| v.pointer("/message/usage"))
+        .or_else(|| v.pointer("/response/usage"))
+        .or_else(|| v.pointer("/payload/usage"))
+        .filter(|u| u.is_object())
+}
+
 fn is_dsh_heuristic_usage(v: &serde_json::Value) -> bool {
     let ty = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
-    ty.contains("token-meter")
-        || ty.contains("tokenMeter")
-        || v.get("estimated").and_then(|e| e.as_bool()) == Some(true)
-        || (v.get("surfaceTokens").is_some() && v.get("usage").is_none())
+    if ty.contains("token-meter") || ty.contains("tokenMeter") {
+        return true;
+    }
+    // Token Meter rows estimate the surface without provider counts.
+    dsh_usage(v).is_none()
+        && (v.get("surfaceTokens").is_some()
+            || v.get("estimated").and_then(|e| e.as_bool()) == Some(true))
 }
 
 /// Claude / WorkBuddy generic assistant-log shape (ccusage UsageEntry).
@@ -1723,15 +1767,30 @@ fn find_ts(v: &serde_json::Value) -> Option<String> {
             }
         }
         if let Some(n) = v.get(k).and_then(|x| x.as_i64()) {
-            if let Some(dt) = chrono::DateTime::from_timestamp(n, 0) {
-                return Some(dt.to_rfc3339());
-            }
-            if let Some(dt) = chrono::DateTime::from_timestamp(n / 1000, 0) {
-                return Some(dt.to_rfc3339());
+            if let Some(ts) = epoch_to_rfc3339(n) {
+                return Some(ts);
             }
         }
     }
     None
+}
+
+/// Epoch seconds, or milliseconds for values too large to be seconds.
+///
+/// DSH stamps rows with `time` in **milliseconds** (e.g. 1789102624657). Reading
+/// that as seconds lands in the year ~58,000, and chrono accepts it, so the
+/// magnitude has to decide: 1e11 seconds is already the year 5138.
+fn epoch_to_rfc3339(value: i64) -> Option<String> {
+    const MILLIS_THRESHOLD: i64 = 100_000_000_000;
+    let (secs, nanos) = if value.abs() >= MILLIS_THRESHOLD {
+        (
+            value.div_euclid(1000),
+            value.rem_euclid(1000) as u32 * 1_000_000,
+        )
+    } else {
+        (value, 0)
+    };
+    chrono::DateTime::from_timestamp(secs, nanos).map(|dt| dt.to_rfc3339())
 }
 
 fn now_iso() -> String {

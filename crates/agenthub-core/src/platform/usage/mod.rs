@@ -11,7 +11,9 @@ pub mod sources;
 
 pub use collect::{collect_for_agent_id, collect_with_source, collect_with_source_for_agent_id};
 pub use registry::{builtin_usage_registry, UsageSourceRegistry};
-pub use source::{RawUsageEvent, TokenAccounting, UsageFileParser, UsageLineOutcome, UsageSource};
+pub use source::{
+    RawUsageEvent, TokenAccounting, UsageFileParser, UsageLineOutcome, UsageLogReader, UsageSource,
+};
 
 pub(crate) use gateway_source::{ingest_spool_dir_with, GatewaySpoolOutcome};
 

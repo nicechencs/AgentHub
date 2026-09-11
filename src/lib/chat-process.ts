@@ -409,8 +409,10 @@ export function stepSummary(step: ProcessStep, t: TranslateFn): string {
 
 export type UsageStep = Extract<ProcessStep, { type: 'usage' }>;
 
-export function usageScope(step: UsageStep): 'turn' | 'session' {
-  return step.scope === 'session' ? 'session' : 'turn';
+export function usageScope(step: UsageStep): 'turn' | 'session' | 'context' {
+  if (step.scope === 'session') return 'session';
+  if (step.scope === 'context') return 'context';
+  return 'turn';
 }
 
 export function usageByScope(steps: ProcessStep[] | undefined): {
@@ -421,9 +423,22 @@ export function usageByScope(steps: ProcessStep[] | undefined): {
   if (!steps) return out;
   for (const step of steps) {
     if (step.type !== 'usage') continue;
-    out[usageScope(step)] = step;
+    const scope = usageScope(step);
+    if (scope === 'context') continue;
+    out[scope] = step;
   }
   return out;
+}
+
+/** ACP `context_usage` window. Missing numbers stay hidden — never a fake 0. */
+export function contextWindowUsage(steps: ProcessStep[] | undefined): UsageStep | undefined {
+  if (!steps) return undefined;
+  let found: UsageStep | undefined;
+  for (const step of steps) {
+    if (step.type !== 'usage' || step.scope !== 'context') continue;
+    found = step;
+  }
+  return found;
 }
 
 function formatUsageCounts(step: UsageStep, t: TranslateFn): string {
@@ -460,7 +475,8 @@ export function formatVisibleUsage(steps: ProcessStep[] | undefined, t: Translat
 
 /**
  * After the turn ends: muted footnote under the reply.
- * Turn-scope counts only — never session total or context window.
+ * Turn-scope counts, plus ACP context window when both numbers exist.
+ * Codex session cumulative totals stay out of this line.
  */
 export function formatTurnUsageFooter(
   steps: ProcessStep[] | undefined,
@@ -469,8 +485,15 @@ export function formatTurnUsageFooter(
 ): string {
   if (running) return '';
   const { turn } = usageByScope(steps);
-  if (!turn) return '';
-  return formatUsageCounts(turn, t);
+  const windowStep = contextWindowUsage(steps);
+  const used = windowStep?.total ?? 0;
+  const window = windowStep?.contextWindow ?? 0;
+  const parts: string[] = [];
+  if (turn) parts.push(formatUsageCounts(turn, t));
+  if (used > 0 && window > 0) {
+    parts.push(t('chat.process.usageWindow', { used, window }));
+  }
+  return parts.join(' · ');
 }
 
 /**

@@ -94,7 +94,7 @@ fn prompt_complete_is_result_status() {
 #[test]
 fn unknown_acp_kind_is_empty_not_none() {
     let s = parse_line(
-        r#"{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"available_commands_update","availableCommands":[]}}}"#,
+        r#"{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"compact","description":"Compact"}]}}}"#,
     )
     .unwrap();
     assert!(s.is_empty());
@@ -195,20 +195,155 @@ fn failed_tool_update_maps_to_end() {
 }
 
 #[test]
-fn plan_update_is_status() {
-    let s = parse_line(
+fn plan_update_is_not_process_step() {
+    let payload = serde_json::json!({
+        "update": {
+            "sessionUpdate": "plan",
+            "entries": [
+                { "content": "read", "status": "completed", "priority": "high" },
+                { "content": "edit", "status": "in_progress", "priority": "medium" }
+            ]
+        }
+    });
+    assert!(parse_line(
         r#"{"method":"session/update","params":{"update":{"sessionUpdate":"plan","planContent":"1. read\n2. edit"}}}"#,
+    )
+    .unwrap()
+    .is_empty());
+    let entries = super::super::acp::extract_plan(&payload).unwrap();
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0].content, "read");
+    assert_eq!(entries[0].status.as_deref(), Some("completed"));
+    assert_eq!(entries[1].content, "edit");
+    assert_eq!(entries[1].status.as_deref(), Some("in_progress"));
+    let from_body = super::super::acp::extract_plan(&serde_json::json!({
+        "update": { "sessionUpdate": "plan", "planContent": "1. read\n2. edit" }
+    }))
+    .unwrap();
+    assert_eq!(from_body[0].content, "1. read\n2. edit");
+    assert!(super::super::acp::extract_plan(&serde_json::json!({
+        "update": { "sessionUpdate": "agent_message_chunk", "content": { "text": "hi" } }
+    }))
+    .is_none());
+}
+
+#[test]
+fn context_usage_is_usage_not_timeline_noise() {
+    let s = parse_line(
+        r#"{"method":"session/update","params":{"update":{"sessionUpdate":"context_usage","used":12345,"size":128000}}}"#,
     )
     .unwrap();
     assert!(matches!(
         &s[0],
-        ProcessStep::Status { phase, detail }
-            if phase == "running" && detail.as_deref() == Some("1. read\n2. edit")
+        ProcessStep::Usage { scope, total, context_window, input, output, .. }
+            if scope.as_deref() == Some("context")
+                && *total == Some(12345)
+                && *context_window == Some(128000)
+                && input.is_none()
+                && output.is_none()
     ));
+    assert!(parse_line(
+        r#"{"method":"session/update","params":{"update":{"sessionUpdate":"context_usage","used":0,"size":0}}}"#,
+    )
+    .unwrap()
+    .is_empty());
 }
 
 #[test]
 fn malformed_json_is_none() {
     assert!(parse_line("{not-json").is_none());
     assert!(parse_line("").is_none());
+}
+
+#[test]
+fn available_commands_update_is_catalog_not_process_step() {
+    let payload = serde_json::json!({
+        "update": {
+            "sessionUpdate": "available_commands_update",
+            "availableCommands": [
+                {
+                    "name": "compact",
+                    "description": "Compact context",
+                    "input": { "hint": "[instructions]" }
+                }
+            ]
+        }
+    });
+    let commands = super::super::acp::extract_available_commands(&payload).unwrap();
+    assert_eq!(commands.len(), 1);
+    assert_eq!(commands[0].name, "compact");
+    assert_eq!(commands[0].description, "Compact context");
+    assert_eq!(commands[0].hint.as_deref(), Some("[instructions]"));
+    assert!(extract_available_commands_is_none_for_thought());
+}
+
+fn extract_available_commands_is_none_for_thought() -> bool {
+    super::super::acp::extract_available_commands(&serde_json::json!({
+        "update": { "sessionUpdate": "agent_thought_chunk", "content": { "text": "x" } }
+    }))
+    .is_none()
+}
+
+#[test]
+fn tool_kind_without_title_maps_to_read_edit_or_execute() {
+    let read = parse_line(
+        r#"{"method":"session/update","params":{"update":{"sessionUpdate":"tool_call","toolCallId":"k1","kind":"read","rawInput":{"path":"a.rs"}}}}"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        &read[0],
+        ProcessStep::Tool { name, .. } if name == "read"
+    ));
+    let write = parse_line(
+        r#"{"method":"session/update","params":{"update":{"sessionUpdate":"tool_call","toolCallId":"k2","kind":"write","title":"a.rs"}}}"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        &write[0],
+        ProcessStep::Tool { name, .. } if name == "edit"
+    ));
+}
+
+#[test]
+fn config_option_update_is_catalog_not_process_step() {
+    let payload = serde_json::json!({
+        "update": {
+            "sessionUpdate": "config_option_update",
+            "configOptions": [
+                {
+                    "id": "model",
+                    "category": "model",
+                    "type": "select",
+                    "currentValue": "grok-4",
+                    "options": [
+                        { "value": "grok-4", "name": "Grok 4" },
+                        { "value": "grok-3", "name": "Grok 3" }
+                    ]
+                },
+                {
+                    "id": "effort",
+                    "type": "select",
+                    "current_value": "high",
+                    "options": [
+                        { "value": "low" },
+                        { "value": "high" }
+                    ]
+                }
+            ]
+        }
+    });
+    assert!(parse_line(
+        r#"{"method":"session/update","params":{"update":{"sessionUpdate":"config_option_update","configOptions":[{"id":"model","options":[{"value":"grok-4"}]}]}}}"#
+    )
+    .unwrap()
+    .is_empty());
+    let catalog = super::super::acp::extract_config_catalog(&payload).unwrap();
+    assert_eq!(catalog.models, vec!["grok-4", "grok-3"]);
+    assert_eq!(catalog.current_model.as_deref(), Some("grok-4"));
+    assert_eq!(catalog.efforts, vec!["low", "high"]);
+    assert_eq!(catalog.current_effort.as_deref(), Some("high"));
+    assert!(super::super::acp::extract_config_catalog(&serde_json::json!({
+        "update": { "sessionUpdate": "agent_message_chunk", "content": { "text": "hi" } }
+    }))
+    .is_none());
 }

@@ -56,6 +56,8 @@ import { ChatSettingsDialog } from './ChatSettingsDialog';
 import { ChatShortcutsDialog } from './ChatShortcutsDialog';
 import { ChatTranscript } from './ChatTranscript';
 import { ChatRuntimeRequests } from './ChatRuntimeRequests';
+import { ChatHostTerminals } from './ChatHostTerminals';
+import { ChatPlanBar } from './ChatPlanBar';
 import { useChatComposerSplit } from './use-chat-composer-split';
 import { useChatPage } from './use-chat-page';
 
@@ -339,11 +341,17 @@ export default function ChatPage() {
                 else void page.refreshAgents().catch(() => {});
               }}
             />
-            {chatShowsRuntimeRequestPanels(page.primaryAgent) && page.runtime?.pendingRequests.length ? (
+            {chatShowsRuntimeRequestPanels(page.runtime?.enabled) && page.runtime?.pendingRequests.length ? (
               <ChatRuntimeRequests
                 agentId={page.primaryAgent}
                 requests={page.runtime.pendingRequests}
                 onReply={(request, decision, answers) => page.submitRuntimeRequest(request, decision, answers)}
+              />
+            ) : null}
+            {page.runtime?.hostTerminals?.length ? (
+              <ChatHostTerminals
+                terminals={page.runtime.hostTerminals}
+                onKill={page.killHostTerminal}
               />
             ) : null}
 
@@ -455,6 +463,7 @@ export default function ChatPage() {
                     </Notice>
                   );
                 })()}
+                <ChatPlanBar plan={page.runtime?.plan} />
                 <ChatComposer
                   draft={page.draft}
                   setDraft={page.setDraft}
@@ -463,6 +472,8 @@ export default function ChatPage() {
                   active={page.active}
                   connectionOptions={page.connectionOptions}
                   primaryAgent={page.primaryAgent}
+                  runtimeEnabled={Boolean(page.runtime?.enabled)}
+                  steer={page.runtimeOps.steer}
                   agentPickerLabel={page.agentPickerLabel}
                   connectionView={page.connectionView}
                   switchingProvider={page.switchingProvider}

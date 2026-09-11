@@ -125,6 +125,8 @@ describe('locale key parity', () => {
     expect(translate('en', 'chat.actions.copyLatestReply')).toBe('Copy latest reply');
     expect(translate('zh', 'agents.card.startCli')).toBe('启动命令行');
     expect(translate('en', 'agents.card.startCli')).toBe('Start command line');
+    expect(translate('zh', 'agents.card.startWeb')).toBe('打开网页会话');
+    expect(translate('en', 'agents.card.startWeb')).toBe('Open web session');
     expect(translate('zh', 'dashboard.sync.everyMinutes', { minutes: 30 })).toBe(
       '每 30 分钟自动同步',
     );

@@ -293,6 +293,7 @@ pub fn run() {
             commands::chat::chat_runtime_reply,
             commands::chat::chat_runtime_steer,
             commands::chat::chat_runtime_cancel,
+            commands::chat::chat_runtime_kill_host_terminal,
             commands::chat::pick_chat_images,
             commands::chat::save_chat_paste_image,
             commands::chat::set_chat_model,

@@ -70,6 +70,11 @@ fn write_jsonl(path: &Path, lines: &[serde_json::Value]) {
     }
 }
 
+/// Writes a DSH session log: one zstd frame per row, like the real CLI.
+fn write_zstd_session(path: &Path, rows: &[&str]) {
+    crate::utils::dsh_log_fixture::write_zstd_log(path, rows);
+}
+
 fn grok_acp_chunk(session_update: &str, text: Option<&str>) -> serde_json::Value {
     let mut update = serde_json::json!({ "sessionUpdate": session_update });
     if let Some(text) = text {
@@ -595,6 +600,65 @@ fn cursor_session_index_skips_reparse_on_second_list() {
     assert_eq!(second[0].id, first[0].id);
     assert_eq!(second[0].preview, first[0].preview);
     assert_eq!(second[0].title, first[0].title);
+}
+
+#[test]
+fn dsh_excerpt_reports_truncation_when_the_budget_is_exceeded() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".dsh");
+    let log = home.join("sessions/--D-work--/session-abc/session.v3.jsonl.zstd");
+    write_zstd_session(
+        &log,
+        &[
+            r#"{"type":"session","version":3,"id":"session-abc","createdAt":1789102558446,"cwd":"D:\\work"}"#,
+            r#"{"type":"user/message","seq":8,"time":1789102623318,"data":{"content":[{"type":"text","text":"early prompt"}],"role":"user"}}"#,
+            r#"{"type":"assistant/message","seq":17,"time":1789102624657,"data":{"message":{"role":"assistant","content":[{"type":"text","text":"early reply"}]}}}"#,
+            r#"{"type":"user/message","seq":40,"time":1789102629000,"data":{"content":[{"type":"text","text":"late prompt"}],"role":"user"}}"#,
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Dsh, &home, None).unwrap();
+    let tiny = load_excerpt_with_read_cap(&rows[0].id, Some(&home), 60).unwrap();
+    assert!(
+        tiny.truncated,
+        "a decoded budget smaller than the transcript must report truncation: {}",
+        tiny.excerpt
+    );
+
+    let full = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert!(!full.truncated, "{}", full.excerpt);
+    assert!(full.excerpt.contains("early prompt"), "{}", full.excerpt);
+    assert!(full.excerpt.contains("late prompt"), "{}", full.excerpt);
+}
+
+#[test]
+fn dsh_session_index_keeps_title_and_session_id_across_lists() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".dsh");
+    let data = tempdir().unwrap();
+    let log = home.join("sessions/--D-work--/session-abc/session.v3.jsonl.zstd");
+    write_zstd_session(
+        &log,
+        &[
+            r#"{"type":"session","version":3,"id":"session-abc","createdAt":1789102558446,"cwd":"D:\\work"}"#,
+            r#"{"type":"user/message","seq":8,"time":1789102623318,"data":{"content":[{"type":"text","text":"索引里的标题"}],"role":"user"}}"#,
+            r#"{"type":"assistant/message","seq":17,"time":1789102624657,"data":{"message":{"role":"assistant","content":[{"type":"text","text":"ok"}],"source":{"kind":"model","model":"deepseek-flash"}},"usage":{"inputTokens":1,"outputTokens":2}}}"#,
+        ],
+    );
+
+    let first = list_sessions_for_agent_home(AgentId::Dsh, &home, Some(data.path())).unwrap();
+    assert_eq!(first.len(), 1);
+    assert!(data.path().join("scan-cache.db").exists());
+    assert_eq!(first[0].session_id.as_deref(), Some("session-abc"));
+    assert_eq!(first[0].message_count, Some(2));
+
+    // Second list is served from the session index cache.
+    let second = list_sessions_for_agent_home(AgentId::Dsh, &home, Some(data.path())).unwrap();
+    assert_eq!(second.len(), 1);
+    assert_eq!(second[0].title, first[0].title);
+    assert_eq!(second[0].preview, first[0].preview);
+    assert_eq!(second[0].session_id.as_deref(), Some("session-abc"));
+    assert_eq!(second[0].cwd.as_deref(), Some(r"D:\work"));
 }
 
 #[test]
@@ -2628,21 +2692,77 @@ fn project_registry_covers_all_agents() {
 }
 
 #[test]
+fn dsh_excerpt_reads_turns_from_a_compressed_log() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".dsh");
+    let session = home.join("sessions/--D-work-repo--/session-abc/session.v3.jsonl.zstd");
+    let filler = "x".repeat(8 * 1024);
+    let tool_row = format!(
+        r#"{{"type":"tool/result","seq":19,"time":1789102625149,"data":{{"content":[{{"type":"tool-result","content":[{{"type":"text","text":"{filler}"}}]}}]}}}}"#
+    );
+    write_zstd_session(
+        &session,
+        &[
+            r#"{"type":"session","version":3,"id":"session-abc","createdAt":1789102558446,"cwd":"D:\\work\\repo"}"#,
+            r#"{"type":"user/message","seq":8,"time":1789102623318,"data":{"content":[{"type":"text","text":"first dsh prompt"}],"role":"user"}}"#,
+            r#"{"type":"assistant/message","seq":17,"time":1789102624657,"data":{"message":{"role":"assistant","content":[{"type":"reasoning","text":"hidden chain of thought"},{"type":"text","text":"first dsh reply"}],"source":{"kind":"model","model":"deepseek-flash"}},"usage":{"inputTokens":12,"outputTokens":34}}}"#,
+            &tool_row,
+            r#"{"type":"user/message","seq":40,"time":1789102629000,"data":{"content":[{"type":"text","text":"second dsh prompt later"}],"role":"user"}}"#,
+            r#"{"type":"assistant/message","seq":49,"time":1789102633334,"data":{"message":{"role":"assistant","content":[{"type":"text","text":"second dsh reply later"}],"source":{"kind":"model","model":"deepseek-flash"}},"usage":{"inputTokens":5,"outputTokens":7}}}"#,
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Dsh, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert!(ex.excerpt.contains("first dsh prompt"), "{}", ex.excerpt);
+    assert!(ex.excerpt.contains("second dsh prompt later"), "{}", ex.excerpt);
+    assert!(ex.excerpt.contains("second dsh reply later"), "{}", ex.excerpt);
+    assert!(
+        !ex.excerpt.contains("hidden chain of thought"),
+        "reasoning is not transcript: {}",
+        ex.excerpt
+    );
+}
+
+#[test]
 fn list_dsh_sessions_from_home_and_profiles_not_cwd_dot_sessions() {
     let dir = tempdir().unwrap();
     let home = dir.path().join(".dsh");
-    write_session(
-        &home.join("sessions/sess-home.jsonl"),
+    // Real layout: sessions/<project-dir>/<session-id>/session.vN.jsonl.zstd
+    let home_log = home.join(
+        "sessions/--D-work-home-proj--/session-home-1/session.v3.jsonl.zstd",
+    );
+    write_zstd_session(
+        &home_log,
         &[
-            r#"{"type":"session","id":"sess-home","cwd":"/tmp/dsh-home-proj"}"#,
-            r#"{"type":"assistant/message","text":"from home"}"#,
+            r#"{"type":"session","version":3,"id":"session-home-1","createdAt":1789102558446,"cwd":"D:\\work\\home-proj","isSeeded":false}"#,
+            r#"{"type":"user/message","seq":8,"time":1789102623318,"data":{"content":[{"type":"text","text":"from home"}],"role":"user"}}"#,
+            r#"{"type":"session/title","seq":9,"time":1789102623323,"data":{"title":"home 会话","source":{"kind":"provider"}}}"#,
         ],
     );
-    write_session(
-        &home.join("profiles/headless/sessions/sess-profile.jsonl"),
+    // A fallback-only title (DSH's truncated first prompt) must not hide the
+    // fuller preview-derived title.
+    let fallback_log = home.join(
+        "sessions/--D-work-fallback-proj--/session-fallback-1/session.v3.jsonl.zstd",
+    );
+    write_zstd_session(
+        &fallback_log,
         &[
-            r#"{"type":"session","id":"sess-profile","cwd":"/tmp/dsh-profile-proj"}"#,
-            r#"{"type":"assistant/message","text":"from profile"}"#,
+            r#"{"type":"session","version":3,"id":"session-fallback-1","createdAt":1789102558446,"cwd":"D:\\work\\fallback-proj","isSeeded":false}"#,
+            r#"{"type":"user/message","seq":8,"time":1789102623318,"data":{"content":[{"type":"text","text":"你是只读调查员。目标：彻底查清这次改动的影响面"}],"role":"user"}}"#,
+            r#"{"type":"session/title","seq":9,"time":1789102623323,"data":{"title":"你是只读调查员。目标：彻底","source":{"kind":"fallback"}}}"#,
+        ],
+    );
+    let profile_log = home.join(
+        "profiles/headless/sessions/--D-work-profile-proj--/session-profile-1/session.v3.jsonl.zstd",
+    );
+    write_zstd_session(
+        &profile_log,
+        &[
+            r#"{"type":"session","version":3,"id":"session-profile-1","createdAt":1789102558446,"cwd":"D:\\work\\profile-proj","isSeeded":false}"#,
+            r#"{"type":"user/message","seq":8,"time":1789102623318,"data":{"content":[{"type":"text","text":"from profile"}],"role":"user"}}"#,
+            r#"{"type":"assistant/message","seq":17,"time":1789102624657,"data":{"message":{"role":"assistant","content":[{"type":"text","text":"ok"}],"source":{"kind":"model","model":"deepseek-flash"}},"usage":{"inputTokens":1,"outputTokens":2}}}"#,
         ],
     );
     write_session(
@@ -2655,13 +2775,35 @@ fn list_dsh_sessions_from_home_and_profiles_not_cwd_dot_sessions() {
         .iter()
         .filter_map(|s| s.session_id.as_deref())
         .collect();
-    assert!(ids.contains(&"sess-home"), "{ids:?}");
-    assert!(ids.contains(&"sess-profile"), "{ids:?}");
+    assert!(ids.contains(&"session-home-1"), "{ids:?}");
+    assert!(ids.contains(&"session-profile-1"), "{ids:?}");
     assert!(!ids.contains(&"should-not-appear"), "{ids:?}");
-    assert_eq!(sessions.len(), 2);
+    assert_eq!(sessions.len(), 3);
+    // DSH stores its own title; the file stem is only the format generation.
+    let home_session = sessions
+        .iter()
+        .find(|s| s.session_id.as_deref() == Some("session-home-1"))
+        .expect("home session");
+    assert_eq!(home_session.title, "home 会话");
+    assert_eq!(home_session.preview.as_deref(), Some("from home"));
+    assert_eq!(home_session.message_count, Some(1));
+    assert_eq!(
+        home_session.cwd.as_deref(),
+        Some(r"D:\work\home-proj"),
+        "cwd comes from the decoded session header"
+    );
+
+    let fallback_session = sessions
+        .iter()
+        .find(|s| s.session_id.as_deref() == Some("session-fallback-1"))
+        .expect("fallback session");
+    assert_eq!(
+        fallback_session.title, "你是只读调查员。目标：彻底查清这次改动的影响面",
+        "a truncated fallback title loses to the fuller preview"
+    );
 
     let projects = list_projects_for_agent_home(AgentId::Dsh, &home, None).unwrap();
-    assert_eq!(projects.len(), 2);
+    assert_eq!(projects.len(), 3);
     assert!(projects.iter().all(|p| p.session_count == 1));
 }
 
