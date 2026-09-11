@@ -20,7 +20,7 @@ export const AGENT_TABLE_COLUMN_SPECS: ColumnWidthSpec<AgentTableColumnKey>[] = 
   { key: 'status', defaultWidth: 96, minWidth: 80 },
   { key: 'version', defaultWidth: 120, minWidth: 80 },
   { key: 'note', defaultWidth: 200, minWidth: 120 },
-  // 启动命令行 + 启动应用 must stay on one row; stored widths are clamped to minWidth.
+  // 启动命令行 / 打开网页会话 + 启动应用 must stay on one row; stored widths are clamped to minWidth.
   { key: 'start', defaultWidth: 268, minWidth: 240 },
   { key: 'upgrade', defaultWidth: 96, minWidth: 80 },
   { key: 'actions', defaultWidth: 160, minWidth: 120 },

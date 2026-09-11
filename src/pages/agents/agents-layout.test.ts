@@ -49,7 +49,7 @@ describe('agents layout wiring', () => {
     expect(detail).toContain("title={t('agents.card.openInstallDir')}");
     expect(card).toContain('agentHonestyHint');
     expect(card).toContain('agentLaunchTargets');
-    expect(card).toContain("t('agents.card.startCli')");
+    expect(card).toContain('agentStartCliLabelKey');
     expect(card).toContain("t('agents.card.startApp')");
     expect(card).toContain('flex flex-nowrap items-center justify-end');
     expect(card).not.toContain('flex flex-wrap items-center justify-end');

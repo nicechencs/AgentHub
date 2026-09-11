@@ -338,6 +338,14 @@ pub async fn open_path_in_file_manager(path: String) -> Result<String, String> {
 
 const NO_LAUNCH_TARGET: &str = "未找到可启动的程序";
 
+/// Extra argv after the program. DeepSeek Harness rejects a bare `dsh`.
+fn cli_launch_args(agent: AgentId) -> &'static [&'static str] {
+    match agent {
+        AgentId::Dsh => &["web"],
+        _ => &[],
+    }
+}
+
 fn is_install_source(value: &str) -> bool {
     matches!(
         value,
@@ -489,7 +497,7 @@ pub async fn launch_agent_program(
             "launch requested"
         );
         match kind.as_str() {
-            "cli" => launch_cli(&target),
+            "cli" => launch_cli(&target, cli_launch_args(agent)),
             "app" => launch_app(&target),
             other => Err(format!("unknown launch kind: {other}")),
         }

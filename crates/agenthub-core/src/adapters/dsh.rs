@@ -14,6 +14,7 @@
 //! - API Key pool + credentials-file apply (reference name in patch, value in credentials)
 //! - home-level `cordis.patch.yml` merge for the official DeepSeek LLM plugin row
 //! - headless text run: `dsh --profile headless "<prompt>"`
+//! - interactive GUI launch: `dsh web` (alias of `--profile web`; bare `dsh` exits)
 //!
 //! ## Honest limits
 //! - Generic `write_config` only accepts the projected LLM-row shape; unknown
