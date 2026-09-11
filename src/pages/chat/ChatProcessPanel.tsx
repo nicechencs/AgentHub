@@ -283,7 +283,7 @@ export function ChatProcessPanel({
                 <div className="mb-0.5 text-muted">{t('chat.process.stderr')}</div>
                 <pre
                   ref={stderrRef}
-                  className="max-h-36 overflow-auto [overflow-anchor:none] whitespace-pre-wrap break-all rounded-card bg-subtle px-2 py-1.5 font-mono text-meta leading-relaxed text-danger/90"
+                  className="max-h-36 overflow-auto [overflow-anchor:none] whitespace-pre-wrap break-all rounded-card bg-subtle px-2 py-1.5 font-mono text-meta leading-relaxed text-primary"
                 >
                   {view.stderr}
                 </pre>

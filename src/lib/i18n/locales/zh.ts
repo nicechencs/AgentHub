@@ -2973,7 +2973,7 @@ export const zh = {
       details: "细节",
       runDetails: "运行详情",
       command: "命令",
-      stderr: "错误输出",
+      stderr: "过程日志",
       exitCode: "退出码 {code}",
       unrecognizedLine: "有一行输出没法展示",
       nonJsonLine: "有一行不是正常输出",

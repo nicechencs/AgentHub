@@ -53,7 +53,10 @@ describe('PageHeader', () => {
     expect(source('pages/skills/index.tsx')).toContain('pageRhythm.chromeActions');
     expect(source('pages/skills/index.tsx')).not.toContain('className="mb-2"');
     expect(source('components/layout/SideSplit.tsx')).toContain('paddingTop: padTop');
+    expect(source('components/layout/SideSplit.tsx')).toContain('paddingBottom: padBottom');
     expect(source('components/layout/SideSplit.tsx')).toContain('pageRhythm.workbenchPadT');
+    expect(source('pages/chat/index.tsx')).toContain('preview.mounted && pageInsetTw.mr');
+    expect(source('pages/chat/index.tsx')).toContain('padBottom={0}');
     expect(source('components/ui/tabs.tsx')).not.toContain('mt-4 focus:outline-none');
     expect(source('pages/settings/index.tsx')).toContain('pageRhythm.chrome');
   });

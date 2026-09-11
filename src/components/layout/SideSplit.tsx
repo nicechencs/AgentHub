@@ -34,11 +34,13 @@ export function SideSplitFrame<T>({
   split,
   resizeAria,
   padTop = 0,
+  padBottom = SIDE_SPLIT_FRAME_PAD_Y,
   children,
 }: {
   split: SideSplitController<T>;
   resizeAria: string;
   padTop?: number;
+  padBottom?: number;
   children: ReactNode;
 }) {
   if (!split.mounted) return null;
@@ -55,7 +57,7 @@ export function SideSplitFrame<T>({
           style={{
             width: split.paneWidth + SIDE_SPLIT_FRAME_PAD_X * 2,
             paddingTop: padTop,
-            paddingBottom: SIDE_SPLIT_FRAME_PAD_Y,
+            paddingBottom: padBottom,
             paddingLeft: SIDE_SPLIT_FRAME_PAD_X,
             paddingRight: SIDE_SPLIT_FRAME_PAD_X,
           }}

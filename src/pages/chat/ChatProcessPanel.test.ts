@@ -129,6 +129,21 @@ describe('ChatProcessPanel human copy', () => {
     expect(html).toContain('Directory');
   });
 
+  it('labels command stderr as a process log, not an error', () => {
+    const html = renderPanel(
+      view({
+        phase: 'running',
+        command: 'dsh --profile headless',
+        stderr: 'line 26: rebase onto latest main',
+        steps: [],
+      }),
+    );
+    expect(html).toContain('过程日志');
+    expect(html).not.toContain('错误输出');
+    expect(html).toContain('line 26: rebase onto latest main');
+    expect(html).not.toMatch(/text-danger/);
+  });
+
   it('opens run details when the timeline is empty so the pane is not blank', () => {
     const html = renderPanel(
       view({
