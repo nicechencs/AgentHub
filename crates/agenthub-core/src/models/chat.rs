@@ -490,6 +490,12 @@ fn match_path_token(chars: &[char], start: usize) -> Option<usize> {
     }
     let after_drive = i;
     let mut segments = 0;
+    // Mirrors the frontend's `(?:[\\/][^\s\\/`'"]+)+`: a trailing separator is
+    // not part of the token, so an empty segment ends the match at the last
+    // complete one instead of discarding the whole path. The derived title has
+    // to match the frontend character for character — see
+    // `conversation_title_from_prompt` and its mirrored fixture.
+    let mut end = after_drive;
     while i < chars.len() && (chars[i] == '/' || chars[i] == '\\') {
         i += 1;
         let seg_start = i;
@@ -501,12 +507,13 @@ fn match_path_token(chars: &[char], start: usize) -> Option<usize> {
             i += 1;
         }
         if i == seg_start {
-            return None;
+            break;
         }
         segments += 1;
+        end = i;
     }
-    if segments >= 1 && i > after_drive {
-        Some(i)
+    if segments >= 1 && end > after_drive {
+        Some(end)
     } else {
         None
     }

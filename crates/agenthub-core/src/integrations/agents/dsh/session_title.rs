@@ -14,7 +14,7 @@ use std::time::SystemTime;
 use crate::catalog::limits::PROJECT_SCAN_BYTES;
 use crate::error::Result;
 use crate::integrations::shared::projects::builtin_key;
-use crate::platform::session_title::SessionTitleSource;
+use crate::platform::session_title::{is_path_safe_session_id, SessionTitleSource};
 use crate::utils::dsh_session_log::{head_meta, is_log_file};
 use crate::utils::zstd_jsonl::read_decoded_head;
 
@@ -27,7 +27,7 @@ impl SessionTitleSource for DshSessionTitle {
 
     fn title_for(&self, home: &Path, session_id: &str) -> Result<Option<String>> {
         let session_id = session_id.trim();
-        if session_id.is_empty() {
+        if !is_path_safe_session_id(session_id) {
             return Ok(None);
         }
         for log in session_log_candidates(home, session_id) {

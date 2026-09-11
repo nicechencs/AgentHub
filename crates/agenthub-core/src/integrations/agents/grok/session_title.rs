@@ -13,7 +13,7 @@ use serde_json::Value;
 
 use crate::error::Result;
 use crate::integrations::shared::projects::builtin_key;
-use crate::platform::session_title::SessionTitleSource;
+use crate::platform::session_title::{is_path_safe_session_id, SessionTitleSource};
 
 struct GrokSessionTitle;
 
@@ -24,7 +24,7 @@ impl SessionTitleSource for GrokSessionTitle {
 
     fn title_for(&self, home: &Path, session_id: &str) -> Result<Option<String>> {
         let session_id = session_id.trim();
-        if session_id.is_empty() {
+        if !is_path_safe_session_id(session_id) {
             return Ok(None);
         }
         let Ok(projects) = fs::read_dir(home.join("sessions")) else {

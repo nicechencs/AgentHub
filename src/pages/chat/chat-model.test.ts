@@ -819,6 +819,18 @@ describe('conversationTitle', () => {
     expect(conversationSemanticPhrase('修复 `foo 的报错')).toBe('修复 `foo 的报错');
     expect(conversationSemanticPhrase('``a`')).toBe('`');
     expect(conversationSemanticPhrase('请在 /workspace/src/app.ts 检查问题')).toBe('检查问题');
+    // A trailing separator is not part of the path token, so the slash it
+    // leaves behind stays in the phrase. Mirrored in the Rust fixture; if the
+    // two drift, the adoption gate silently stops firing for such a message.
+    expect(conversationSemanticPhrase('请在 /workspace/src/ 检查问题')).toBe('/ 检查问题');
+    expect(conversationSemanticPhrase('Only modify /tmp/qa/')).toBe('Only modify /');
+    expect(conversationSemanticPhrase('/workspace/foo/')).toBe('/');
+    expect(conversationSemanticPhrase('看 /a//b 这个')).toBe('看 / 这个');
+    // Windows paths end the token the same way; the trailing separator stays.
+    expect(conversationSemanticPhrase(String.raw`修复 D:\demo\app\ 的报错`)).toBe(
+      String.raw`修复 \ 的报错`,
+    );
+    expect(conversationSemanticPhrase(String.raw`修复 D:\demo\app 的报错`)).toBe('修复 的报错');
   });
 });
 

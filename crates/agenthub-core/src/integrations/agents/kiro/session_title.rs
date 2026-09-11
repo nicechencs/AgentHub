@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use crate::error::Result;
 use crate::integrations::shared::projects::builtin_key;
-use crate::platform::session_title::SessionTitleSource;
+use crate::platform::session_title::{is_path_safe_session_id, SessionTitleSource};
 
 /// Kiro's own placeholder for a session it has not titled yet.
 const UNTITLED: &str = "New Session";
@@ -26,7 +26,7 @@ impl SessionTitleSource for KiroSessionTitle {
 
     fn title_for(&self, home: &Path, session_id: &str) -> Result<Option<String>> {
         let session_id = session_id.trim();
-        if session_id.is_empty() {
+        if !is_path_safe_session_id(session_id) {
             return Ok(None);
         }
         let dir = home.join("sessions").join("cli");
