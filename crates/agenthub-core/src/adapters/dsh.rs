@@ -116,7 +116,22 @@ impl AgentAdapter for DshAdapter {
         let env_set = std::env::var(DEFAULT_API_KEY_ENV)
             .ok()
             .is_some_and(|v| !v.trim().is_empty());
-        let file_key = read_credential_value(&creds, DEFAULT_API_KEY_ENV)?;
+        let file_key = match read_credential_value(&creds, DEFAULT_API_KEY_ENV) {
+            Ok(value) => value,
+            Err(_) => {
+                return Ok(AuthState {
+                    agent: AgentId::Dsh,
+                    kind: None,
+                    summary: "DSH credentials could not be read".into(),
+                    has_credentials: false,
+                    health: AuthHealth::Unknown,
+                    source: Some("dsh:credentials".into()),
+                    revision: auth_file_revision(&creds),
+                    also_present: Vec::new(),
+                    secret_hash: None,
+                });
+            }
+        };
         let has_file = file_key.as_ref().is_some_and(|v| !v.is_empty());
         if env_set && has_file {
             return Ok(AuthState {

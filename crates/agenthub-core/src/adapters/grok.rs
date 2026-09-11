@@ -1181,7 +1181,23 @@ fn grok_cli_args(prompt: &str, opts: &RunOptions, version: Option<&str>) -> Vec<
 }
 
 pub(crate) fn grok_auth_state(config: &Path, auth: &Path) -> Result<AuthState> {
-    if read_grok_api_key(config)?.is_some_and(|key| !key.is_empty()) {
+    let grok_key = match read_grok_api_key(config) {
+        Ok(key) => key,
+        Err(_) => {
+            return Ok(AuthState {
+                agent: AgentId::Grok,
+                kind: None,
+                summary: "config.toml could not be parsed".into(),
+                has_credentials: false,
+                health: crate::models::AuthHealth::Unknown,
+                source: Some("grok:config.toml".into()),
+                revision: auth_file_revision(config),
+                also_present: Vec::new(),
+                secret_hash: None,
+            });
+        }
+    };
+    if grok_key.is_some_and(|key| !key.is_empty()) {
         let state = AuthState {
             agent: AgentId::Grok,
             kind: Some("api_key".into()),

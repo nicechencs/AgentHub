@@ -42,6 +42,23 @@ fn kimi_for_coding_in_table() {
 }
 
 #[test]
+fn official_publishers_outside_legacy_families_are_priced() {
+    assert!(has_embedded_pricing("deepseek-chat"));
+    assert!(has_embedded_pricing("deepseek-v4-flash"));
+    assert!(has_embedded_pricing("deepseek-flash"));
+    assert!(has_embedded_pricing("zai/glm-4.7"));
+    assert!(has_embedded_pricing("glm-4.7"));
+    assert!(has_embedded_pricing("qwen-plus"));
+    let flash = rates_for("deepseek-flash");
+    let v4 = rates_for("deepseek-v4-flash");
+    assert!((flash.input - v4.input).abs() < 1e-12);
+    assert!((flash.output - v4.output).abs() < 1e-12);
+    let glm = rates_for("glm-4.7");
+    let zai = rates_for("zai/glm-4.7");
+    assert!((glm.input - zai.input).abs() < 1e-12);
+}
+
+#[test]
 fn cache_read_cheaper_than_create_for_sonnet() {
     let r = rates_for("claude-sonnet-4");
     assert!(r.cache_read < r.cache_create);

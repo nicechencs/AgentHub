@@ -113,6 +113,8 @@ describe('chat layout wiring', () => {
     expect(page).toContain('isMarkdownFilePath');
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('readMarkdownPreview');
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('chat.preview.back');
+    expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('pathTailLabel');
+    expect(source('ChatMarkdownPreviewPanel.tsx')).toContain("label={folder}");
     expect(source('index.tsx')).toContain('pushChatPreview');
   });
 
@@ -125,6 +127,14 @@ describe('chat layout wiring', () => {
     expect(source('ChatMessageBubble.tsx')).not.toContain('ChatProcessPanel');
     expect(source('ChatProcessInspectPanel.tsx')).toContain('ChatProcessPanel');
     expect(source('ChatProcessInspectPanel.tsx')).toContain('SideInspectPanel');
+  });
+
+  it('keeps the chat card and the inspect pane one sash apart, flush to the canvas gutter', () => {
+    const page = source('index.tsx');
+    expect(page).toContain('SIDE_SPLIT_FRAME_PAD_X_FLUSH');
+    expect(page).not.toContain('pageInsetTw');
+    expect(page).toContain('padBottom={0}');
+    expect(page).not.toContain('padTop={');
   });
 
   it('grows the composer textarea with a shared cap and panel-colored shell', () => {
@@ -182,7 +192,7 @@ describe('chat layout wiring', () => {
     expect(source('ChatComposer.tsx')).toContain('showBlockerBanner');
   });
 
-  it('keeps the transcript white column on the same max-w-3xl as the composer', () => {
+  it('keeps the transcript white column on the same max-w-5xl as the composer', () => {
     expect(source('index.tsx')).toContain('chatMainColumnClass');
     expect(source('index.tsx')).toContain('chatStageClass');
     expect(source('index.tsx')).toContain('pageRhythm.chatChromeX');
@@ -461,8 +471,12 @@ describe('chat layout wiring', () => {
     const panel = source('ChatProcessPanel.tsx');
     expect(panel).toContain("t('chat.process.runDetails')");
     expect(panel).toContain("t('chat.process.stderr')");
+    expect(panel).toContain("t('chat.process.resizeCommand')");
+    expect(panel).toContain("t('chat.process.resizeLog')");
     expect(panel).toContain("t('chat.process.exitCode'");
     expect(panel).toContain("t('chat.process.details')");
+    expect(panel).toContain('CopyableResizableLog');
+    expect(panel).toContain('useProcessLogHeight');
     expect(panel).toContain('formatToolStep');
     expect(source('ChatProcessInspectPanel.tsx')).toContain('formatProcessHeadline');
     expect(source('ChatMessageBubble.tsx')).toContain('formatProcessHeadline');
@@ -471,8 +485,10 @@ describe('chat layout wiring', () => {
     expect(panel).not.toContain('exit {exitCode}');
     expect(translate('zh', 'chat.process.runDetails')).toBe('运行详情');
     expect(translate('en', 'chat.process.runDetails')).toBe('Details of this run');
-    expect(translate('zh', 'chat.process.stderr')).toBe('错误输出');
-    expect(translate('en', 'chat.process.stderr')).toBe('Error output');
+    expect(translate('zh', 'chat.process.stderr')).toBe('过程日志');
+    expect(translate('en', 'chat.process.stderr')).toBe('Process log');
+    expect(translate('zh', 'chat.process.resizeCommand')).toBe('拖动调整命令高度');
+    expect(translate('zh', 'chat.process.resizeLog')).toBe('拖动调整过程日志高度');
     expect(translate('en', 'chat.process.runDetails')).not.toBe('Run details');
     expect(translate('zh', 'chat.process.toolRead')).toBe('正在读取');
     expect(translate('zh', 'chat.process.toolEdit')).toBe('正在修改');

@@ -30,6 +30,8 @@ export type SideSplitController<T> = {
   expanded: boolean;
   resizing: boolean;
   shellWidth: number;
+  /** Side pad the frame puts around the pane; see `SIDE_SPLIT_FRAME_PAD_X*`. */
+  framePadX: number;
   widthTransition: string;
   splitRef: RefObject<HTMLDivElement>;
   open: (next: T) => void;
@@ -45,10 +47,12 @@ export type SideSplitController<T> = {
 export function useSideSplit<T>(options: {
   storageKey: string;
   defaultWidth?: number;
+  framePadX?: number;
 }): SideSplitController<T> {
   const reduceMotion = usePrefersReducedMotion();
   const storageKey = options.storageKey;
   const defaultWidth = options.defaultWidth ?? SIDE_SPLIT_WIDTH_DEFAULT;
+  const framePadX = options.framePadX ?? SIDE_SPLIT_FRAME_PAD_X;
   const [target, setTarget] = useState<T | null>(null);
   const [rememberedWidth, setRememberedWidth] = useState(() =>
     readStoredSideSplitWidth(storageKey, defaultWidth),
@@ -267,7 +271,7 @@ export function useSideSplit<T>(options: {
     persistSideSplitWidth(storageKey, defaultWidth);
   }, [defaultWidth, storageKey]);
 
-  const shellWidth = expanded ? paneWidth + SIDE_SPLIT_FRAME_PAD_X * 2 : 0;
+  const shellWidth = expanded ? paneWidth + framePadX * 2 : 0;
   const widthTransition =
     !resizing && !reduceMotion ? 'motion-panel-width' : 'transition-none';
 
@@ -278,6 +282,7 @@ export function useSideSplit<T>(options: {
     expanded,
     resizing,
     shellWidth,
+    framePadX,
     widthTransition,
     splitRef,
     open,

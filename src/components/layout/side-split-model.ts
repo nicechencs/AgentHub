@@ -10,6 +10,12 @@ export const SIDE_SPLIT_WIDTH_FLOOR = 240;
 export const SIDE_SPLIT_MAIN_MIN = 380;
 export const SIDE_SPLIT_MAIN_FLOOR = 280;
 export const SIDE_SPLIT_FRAME_PAD_X = pageEdgePx.x;
+/**
+ * Frame side pad when the split host is itself on the canvas (Chat): rail,
+ * transcript column, and inspect pane are all cards, so the 8px sash alone is
+ * the gutter and the host page already supplies the canvas edge.
+ */
+export const SIDE_SPLIT_FRAME_PAD_X_FLUSH = 0;
 export const SIDE_SPLIT_FRAME_PAD_Y = pageEdgePx.previewY;
 export const SIDE_SPLIT_SEPARATOR_W = pageEdgePx.separator;
 export const SIDE_SPLIT_WIDTH_STEP = 16;

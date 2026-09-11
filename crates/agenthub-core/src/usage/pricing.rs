@@ -14,7 +14,8 @@
 //!
 //! The embedded table is an **offline snapshot** refreshed by
 //! `scripts/update-embedded-pricing.mjs` (manual `pnpm pricing:update` or daily CI).
-//! Runtime never fetches pricing. Local-only models live in
+//! Runtime never fetches pricing. Official publishers and log aliases live in
+//! `scripts/pricing/vendors.json`. Local-only rates live in
 //! `scripts/pricing/overrides.json`.
 //!
 //! `codex-auto-review` is a Codex log label, not a priced model. Cost lookup

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { MessagesSquare } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { SideSplitFrame } from '@/components/layout/SideSplit';
+import { SIDE_SPLIT_FRAME_PAD_X_FLUSH } from '@/components/layout/side-split-model';
 import { useSideSplit } from '@/components/layout/use-side-split';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
@@ -74,6 +75,7 @@ export default function ChatPage() {
   const split = useChatComposerSplit();
   const preview = useSideSplit<ChatInspectTarget>({
     storageKey: StorageKey.chatPreviewWidth,
+    framePadX: SIDE_SPLIT_FRAME_PAD_X_FLUSH,
   });
   const navigate = useNavigate();
   const { t } = useI18n();
@@ -595,7 +597,11 @@ export default function ChatPage() {
           runtimeLocked={page.runtimeLocked || page.sendingHere}
         />
       </section>
-        <SideSplitFrame split={preview} resizeAria={t('chat.preview.resizeAria')}>
+        <SideSplitFrame
+          split={preview}
+          resizeAria={t('chat.preview.resizeAria')}
+          padBottom={0}
+        >
           {isChatFilePreview(preview.target) ? (
             <ChatMarkdownPreviewPanel
               path={chatPreviewPath(preview.target)}

@@ -1,10 +1,7 @@
 import type { ReactNode } from 'react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { cn } from '@/lib/utils';
-import {
-  SIDE_SPLIT_FRAME_PAD_X,
-  SIDE_SPLIT_FRAME_PAD_Y,
-} from './side-split-model';
+import { SIDE_SPLIT_FRAME_PAD_Y } from './side-split-model';
 import type { SideSplitController } from './use-side-split';
 
 export function SideSplitSeparator<T>({
@@ -34,11 +31,13 @@ export function SideSplitFrame<T>({
   split,
   resizeAria,
   padTop = 0,
+  padBottom = SIDE_SPLIT_FRAME_PAD_Y,
   children,
 }: {
   split: SideSplitController<T>;
   resizeAria: string;
   padTop?: number;
+  padBottom?: number;
   children: ReactNode;
 }) {
   if (!split.mounted) return null;
@@ -53,11 +52,11 @@ export function SideSplitFrame<T>({
         <div
           className="box-border flex h-full min-h-0"
           style={{
-            width: split.paneWidth + SIDE_SPLIT_FRAME_PAD_X * 2,
+            width: split.paneWidth + split.framePadX * 2,
             paddingTop: padTop,
-            paddingBottom: SIDE_SPLIT_FRAME_PAD_Y,
-            paddingLeft: SIDE_SPLIT_FRAME_PAD_X,
-            paddingRight: SIDE_SPLIT_FRAME_PAD_X,
+            paddingBottom: padBottom,
+            paddingLeft: split.framePadX,
+            paddingRight: split.framePadX,
           }}
         >
           {children}

@@ -8,7 +8,7 @@
  * 窗内画布缝是 `pageEdge.canvas`。对话水平缝 `pageEdge.chat` 与页边 `inset` 同为 12；不要在消息列里再叠一层。
  *
  * ## 内容宽度（两套，docs/ui/design-system.md §3.4）
- * 1. 阅读列 `readingColumn`：Chat 消息列。固定 `max-w-3xl` 居中。
+ * 1. 阅读列 `readingColumn`：Chat 消息列。固定 `max-w-5xl` 居中。
  * 2. 贴边列：其余页。铺满主列，左右用 `pageEdge.inset`（`pageShell` / `workbenchX`）。
  * 3. 总览列 `overviewColumn`：总览、路由看板、设置表单正文（备份分栏页除外），居中 `max-w-6xl`。页签留在页头贴左，不进总览列。
  * 页标题一律贴边、同一行（大号深色标题 + 小号浅色说明），放在非对话页顶栏左侧。
@@ -113,8 +113,11 @@ export const pageRhythm = {
   ].join(' '),
   /** 常规页外壳：铺满主列，与 Skills / Projects 右缘对齐 */
   pageShell: `w-full min-w-0 ${pageInsetTw.x} ${pageInsetTw.y}`,
-  /** Chat 消息列：居中阅读宽。页头不进此列。 */
-  readingColumn: 'mx-auto w-full max-w-3xl',
+  /**
+   * Chat 消息列：居中阅读宽。页头不进此列。
+   * 对话记录与输入框共用这一档（见 `chatMainColumnClass`），改这里两者同时变。
+   */
+  readingColumn: 'mx-auto w-full max-w-5xl',
   /** 总览 / 路由看板 / 设置表单居中列（备份分栏除外），避免宽屏把内容拉成一条细线。 */
   overviewColumn: 'mx-auto w-full max-w-6xl',
   /** 侧栏品牌行与非对话页顶栏同高，横线对齐 */

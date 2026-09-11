@@ -442,44 +442,46 @@ export function ProjectConversationPreviewPanel({
                 return (
                   <li
                     key={`${index}:${turn.role}:${turn.text.slice(0, 24)}`}
-                    className={cn('flex gap-2', userish ? 'justify-end' : 'justify-start')}
+                    className="flex justify-start gap-2"
                   >
                     {userish ? (
-                      <div
-                        className="group relative min-w-0 max-w-[92%] rounded-composer bg-subtle px-3 py-2 text-body text-primary"
-                        aria-label={t('projects.preview.roleUser')}
-                      >
-                        <MarkdownView
-                          content={turn.text}
-                          variant="chat"
-                          localBasePath={cwd ?? undefined}
-                        />
-                        <CopyTextButton text={turn.text} label={t('projects.preview.copyTurn')} />
-                      </div>
+                      <span className="mt-1.5 h-2 w-2 shrink-0" aria-hidden />
                     ) : (
-                      <>
-                        <AgentDot
-                          agentId={session.agentId}
-                          color={agentMeta?.color}
-                          className="mt-1.5 shrink-0"
-                        />
-                        <div className="min-w-0 max-w-[92%] flex-1">
-                          <p className="mb-1 text-meta text-muted">
-                            {t('projects.preview.roleAssistant', {
-                              name: agentMeta?.name ?? session.agentId,
-                            })}
-                          </p>
-                          <div className="group relative rounded-composer bg-hover/60 px-3 py-2 text-body leading-relaxed text-primary">
-                            <MarkdownView
-                              content={turn.text}
-                              variant="chat"
-                              localBasePath={cwd ?? undefined}
-                            />
-                            <CopyTextButton text={turn.text} label={t('projects.preview.copyTurn')} />
-                          </div>
-                        </div>
-                      </>
+                      <AgentDot
+                        agentId={session.agentId}
+                        color={agentMeta?.color}
+                        className="mt-1.5 shrink-0"
+                      />
                     )}
+                    <div className="min-w-0 flex-1">
+                      <div className={userish ? 'ml-auto w-fit max-w-full' : 'w-full'}>
+                        <p
+                          className={cn(
+                            'mb-1 text-meta',
+                            userish ? 'text-right text-accent' : 'text-muted',
+                          )}
+                        >
+                          {userish
+                            ? t('projects.preview.roleUser')
+                            : t('projects.preview.roleAssistant', {
+                                name: agentMeta?.name ?? session.agentId,
+                              })}
+                        </p>
+                        <div
+                          className={cn(
+                            'group relative rounded-composer px-3 py-2 text-body text-primary',
+                            userish ? 'bg-subtle' : 'bg-hover/60 leading-relaxed',
+                          )}
+                        >
+                          <MarkdownView
+                            content={turn.text}
+                            variant="chat"
+                            localBasePath={cwd ?? undefined}
+                          />
+                          <CopyTextButton text={turn.text} label={t('projects.preview.copyTurn')} />
+                        </div>
+                      </div>
+                    </div>
                   </li>
                 );
               })}

@@ -82,6 +82,31 @@ describe('agent-status-store', () => {
     expect(loaded.statuses[1]).not.toHaveProperty('authHealth');
   });
 
+  it('stamps unknown health when a live auth probe throws', async () => {
+    const probeLiveAuth = vi.fn(async () => {
+      throw new Error('DSH credentials YAML must be a string map');
+    });
+    const backend = {
+      agent: {
+        listAgents: vi.fn(async () => [
+          { agentId: 'dsh', installed: true, authStatus: 'none', authLabel: '未配置', running: false },
+        ]),
+      },
+      account: { probeLiveAuth },
+    } as unknown as Backend;
+
+    const loaded = await loadAgentStatuses(backend);
+    expect(loaded.statuses[0]).toMatchObject({
+      authHealth: 'unknown',
+      authSource: 'probe-error:Error',
+    });
+    expect(liveAuthProbeForAgent(loaded, 'dsh')).toMatchObject({
+      agentId: 'dsh',
+      health: 'unknown',
+      hasCredentials: false,
+    });
+  });
+
   it('keeps deferred live probes scoped to their requested agent during an agent switch', async () => {
     const claude = deferred<{
       agentId: string;

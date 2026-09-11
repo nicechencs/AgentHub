@@ -1,0 +1,20 @@
+{
+  "$comment": "Official price publishers for the embedded table. Match LiteLLM litellm_provider, not Agent families. Aliases are generated only from these rows. dashscope is mixed: take Qwen/QwQ only (Alibaba's own models). logAliases copy an official row to a log/UI id. Runtime never fetches pricing.",
+  "providers": [
+    "openai",
+    "anthropic",
+    "deepseek",
+    "moonshot",
+    "xai",
+    "zai",
+    "gemini",
+    "minimax"
+  ],
+  "providerModelAllow": {
+    "dashscope": ["qwen", "qwq"]
+  },
+  "modes": ["chat", "responses"],
+  "logAliases": {
+    "deepseek-flash": "deepseek-v4-flash"
+  }
+}

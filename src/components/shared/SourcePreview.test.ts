@@ -25,7 +25,10 @@ describe('SourcePreview chrome', () => {
     expect(theme).toContain('var(--accent)');
     expect(theme).toContain('var(--text-secondary)');
     expect(theme).toContain('var(--info)');
+    expect(theme).toContain("t.propertyName");
+    expect(theme).toContain("fontWeight: '600'");
     expect(theme).not.toContain('sk-');
+    expect(preview).toContain("density === 'compact' ? '[&_.cm-editor]:leading-snug'");
   });
 
   it('is the JSON/TOML preview for login files, backups, MCP details, and the supplier editor', () => {
@@ -37,6 +40,7 @@ describe('SourcePreview chrome', () => {
     expect(
       readFileSync(path.join(dir, '../../pages/chat/ChatProcessPanel.tsx'), 'utf8'),
     ).toContain('<SourcePreview');
+    expect(source('SourcePreview.tsx')).toContain('compressBlankLines = true');
   });
 
   it('does not redact or unmask in the preview layer', () => {
