@@ -5,7 +5,7 @@ use crate::error::Result;
 use crate::models::AgentId;
 use crate::platform::AgentKey;
 
-use super::{SessionTitleRegistry, SessionTitleSource};
+use super::{is_path_safe_session_id, SessionTitleRegistry, SessionTitleSource};
 
 /// One known Agent title, keyed so tests can drive the registry without files.
 struct StubTitleSource {
@@ -94,4 +94,18 @@ fn explicit_order_and_legacy_agent_id_helper_are_stable() {
 
     assert_eq!(registry.supported_keys(), vec![first, second, claude]);
     assert!(registry.get_agent_id(AgentId::Claude).is_some());
+}
+
+#[test]
+fn rejects_session_ids_that_carry_path_syntax() {
+    assert!(is_path_safe_session_id("019dab0b-373c-76e2-9900-e02a4b959f91"));
+    assert!(is_path_safe_session_id("kiro-http:abc123"));
+    assert!(is_path_safe_session_id("  thread-1  "));
+
+    assert!(!is_path_safe_session_id(""));
+    assert!(!is_path_safe_session_id("  "));
+    assert!(!is_path_safe_session_id("../secrets"));
+    assert!(!is_path_safe_session_id("a/b"));
+    assert!(!is_path_safe_session_id(r"a\b"));
+    assert!(!is_path_safe_session_id(".."));
 }

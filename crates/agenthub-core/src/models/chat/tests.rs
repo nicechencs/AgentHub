@@ -290,4 +290,26 @@ fn conversation_title_from_prompt_matches_the_frontend_fixture() {
         conversation_title_from_prompt("请在 /workspace/src/app.ts 检查问题"),
         "检查问题"
     );
+    // A trailing separator is not part of the path token, so the slash it
+    // leaves behind stays in the phrase. If these drift from the frontend the
+    // adoption gate silently stops firing for such a first message.
+    assert_eq!(
+        conversation_title_from_prompt("请在 /workspace/src/ 检查问题"),
+        "/ 检查问题"
+    );
+    assert_eq!(
+        conversation_title_from_prompt("Only modify /tmp/qa/"),
+        "Only modify /"
+    );
+    assert_eq!(conversation_title_from_prompt("/workspace/foo/"), "/");
+    assert_eq!(conversation_title_from_prompt("看 /a//b 这个"), "看 / 这个");
+    // Windows paths end the token the same way; the trailing separator stays.
+    assert_eq!(
+        conversation_title_from_prompt(r"修复 D:\demo\app\ 的报错"),
+        r"修复 \ 的报错"
+    );
+    assert_eq!(
+        conversation_title_from_prompt(r"修复 D:\demo\app 的报错"),
+        "修复 的报错"
+    );
 }

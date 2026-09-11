@@ -13,7 +13,7 @@ mod source;
 mod sources;
 
 pub use registry::{empty_registry, SessionTitleRegistry};
-pub use source::SessionTitleSource;
+pub use source::{is_path_safe_session_id, SessionTitleSource};
 pub use sources::builtin_session_title_registry;
 
 #[cfg(test)]
