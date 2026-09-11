@@ -3,10 +3,10 @@ use crate::file_manager::{
     applescript_terminal_do_script, codex_app_launch_kind, enclosing_app_bundle,
     explorer_select_arg, file_manager_action, looks_like_codex_bundled_cli,
     macos_codex_app_bundle_names, normalize_open_path_input,
-    parse_windows_codex_app_id_from_registry, resolve_cli_launch_path,
+    parse_windows_codex_app_id_from_registry, powershell_invoke_command, resolve_cli_launch_path,
     windows_codex_app_id_from_package_full_name, CodexAppLaunchKind, FileManagerAction,
 };
-use agenthub_core::models::{DetectResult, DetectStatus, DetectedBinaryCopy};
+use agenthub_core::models::{AgentId, DetectResult, DetectStatus, DetectedBinaryCopy};
 use std::path::PathBuf;
 
 #[test]
@@ -101,10 +101,39 @@ fn enclosing_app_bundle_none_for_plain_cli() {
 #[test]
 fn applescript_terminal_do_script_uses_quoted_form() {
     let path = std::path::Path::new("/Users/Nice Chen/.local/bin/claude");
-    let script = applescript_terminal_do_script(path);
+    let script = applescript_terminal_do_script(path, &[]);
     assert!(script.contains("quoted form of"));
     assert!(script.contains("claude"));
     assert!(script.contains("Nice Chen"));
+    assert!(!script.contains(" & \" \" & "));
+}
+
+#[test]
+fn applescript_terminal_do_script_appends_quoted_extra_args() {
+    let path = std::path::Path::new("/usr/bin/dsh");
+    let script = applescript_terminal_do_script(path, &["web"]);
+    assert!(script.contains("quoted form of \"/usr/bin/dsh\""));
+    assert!(script.contains("quoted form of \"web\""));
+}
+
+#[test]
+fn powershell_invoke_command_quotes_program_and_extra_args() {
+    let cmd = powershell_invoke_command(std::path::Path::new(r"C:\npm\dsh.cmd"), &["web"]);
+    assert_eq!(cmd, r"& 'C:\npm\dsh.cmd' 'web'");
+}
+
+#[test]
+fn powershell_invoke_command_escapes_single_quotes() {
+    let cmd =
+        powershell_invoke_command(std::path::Path::new(r"C:\Users\O'Brien\dsh.cmd"), &["it's"]);
+    assert_eq!(cmd, r"& 'C:\Users\O''Brien\dsh.cmd' 'it''s'");
+}
+
+#[test]
+fn cli_launch_args_dsh_uses_web_alias() {
+    assert_eq!(cli_launch_args(AgentId::Dsh), &["web"]);
+    assert!(cli_launch_args(AgentId::Codex).is_empty());
+    assert!(cli_launch_args(AgentId::Claude).is_empty());
 }
 
 #[test]
