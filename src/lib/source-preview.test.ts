@@ -38,11 +38,11 @@ describe('source preview helpers', () => {
   it('pretty-prepares JSON for read-only display and clips huge payloads', () => {
     expect(prepareSourcePreview('{"a":1}', 'json')).toBe('{\n  "a": 1\n}');
     expect(prepareSourcePreview('{\n\n  "a": 1\n\n]\n}', 'json')).toBe(
-      '{\n\n  "a": 1\n\n]\n}',
+      '{\n  "a": 1\n]\n}',
     );
     expect(
-      prepareSourcePreview('{\n\n  "a": 1\n\n]\n}', 'json', { compressBlankLines: true }),
-    ).toBe('{\n  "a": 1\n]\n}');
+      prepareSourcePreview('{\n\n  "a": 1\n\n]\n}', 'json', { compressBlankLines: false }),
+    ).toBe('{\n\n  "a": 1\n\n]\n}');
     expect(prepareSourcePreview('model = "x"', 'toml')).toBe('model = "x"');
     const huge = `{"k":"${'x'.repeat(20_000)}"}`;
     const clipped = prepareSourcePreview(huge, 'json');

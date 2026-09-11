@@ -68,8 +68,9 @@ export function prepareSourcePreview(
 ): string {
   const pretty = options?.pretty ?? true;
   const maxChars = options?.maxChars ?? SOURCE_PREVIEW_MAX_CHARS;
+  const compress = options?.compressBlankLines ?? true;
   let next = pretty && format === 'json' ? tryPrettyJson(text) ?? text : text;
-  if (options?.compressBlankLines && format === 'json') next = compressBlankLines(next);
+  if (compress && format === 'json') next = compressBlankLines(next);
   return clipPreviewText(next, maxChars);
 }
 
