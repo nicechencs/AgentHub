@@ -20,6 +20,8 @@ import {
   shouldRefreshRuntimeCatalog,
   readRuntimeTransport,
   requestMatchesRuntime,
+  runtimePlanEntryTone,
+  visibleRuntimePlan,
 } from './chat-runtime-model';
 
 const snapshot = (enabled: boolean, phase: RuntimeSnapshot['phase'] = 'idle'): RuntimeSnapshot => ({
@@ -228,5 +230,14 @@ describe('chat runtime transport guards', () => {
     })).toBe('chat.runtime.fileChangePathOnly');
     expect(fileChangePreviewHintKey({ shown: true, empty: true, rows: [] }))
       .toBe('chat.runtime.fileChangePreviewEmpty');
+  });
+  it('keeps a live ACP plan out of empty rows and maps status tone', () => {
+    expect(visibleRuntimePlan(undefined)).toEqual([]);
+    expect(visibleRuntimePlan([{ content: '  ' }, { content: 'read', status: 'completed' }])).toEqual([
+      { content: 'read', status: 'completed' },
+    ]);
+    expect(runtimePlanEntryTone('in_progress')).toBe('live');
+    expect(runtimePlanEntryTone('completed')).toBe('done');
+    expect(runtimePlanEntryTone('pending')).toBe('pending');
   });
 });

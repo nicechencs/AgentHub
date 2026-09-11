@@ -475,7 +475,9 @@ describe('chat layout wiring', () => {
     expect(translate('en', 'chat.process.usage')).toBe('Usage');
     expect(source('ChatMessageBubble.tsx')).toContain('formatTurnUsageFooter');
     expect(source('ChatMessageBubble.tsx')).not.toContain('formatVisibleUsage');
+    expect(source('ChatMessageBubble.tsx')).not.toContain('ChatPlanBar');
     expect(source('ChatProcessPanel.tsx')).not.toContain('formatVisibleUsage');
+    expect(source('index.tsx')).toContain('ChatPlanBar');
     expect(translate('zh', 'chat.process.usageTurn')).toBe('当前轮');
     expect(translate('zh', 'chat.process.usageSession')).toBe('累计');
   });

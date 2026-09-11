@@ -26,15 +26,15 @@ updated: 2026-09-11
 
 细节以 [STATUS](../STATUS.md) 为准。**合入 `dev` 之前，下表「本分支」不算现行。**
 
-| 点 | `dev` / 现行 | 分支 `feat/chat-host-depth-options`（A–C，未合入） |
+| 点 | `dev` / 现行 | 分支 `feat/chat-host-depth-options`（A–G，未合入） |
 | --- | --- | --- |
 | 产品形态 | 共用 GUI 对话页。默认内嵌终端、全量原生命令菜单范围外 | 同左 |
 | 持续通道 | 新空 Codex app-server；Grok / Kiro ACP；Claude stream-json；其余一次性 | 同左 |
-| 快照 | 回合态；无 transport、无命令列表 | 同左（命令列表仍不进快照） |
-| Options | 模型、技能、写死的 `imageInput` / `steer` | 另有 `transport`、`nativeCommands`、`sessionReady`；握手可改图片 |
+| 快照 | 回合态；无 transport、无命令列表 | 另有廉价 `catalogEpoch`；当前轮 `plan`（不进气泡，换轮丢掉） |
+| Options | 模型、技能、写死的 `imageInput` / `steer` | 另有 `transport`、`nativeCommands`、`sessionReady`；握手可改图片；ACP config 可刷模型/思考 |
 | enable 白名单 | Codex / Grok / Kiro / Claude。发送看 `enabled` | **未拆**白名单。确认卡片、排队提示改读 `enabled` / `steer` |
-| Grok / Kiro ACP | 思考/工具/确认已有。`available_commands` 丢掉。不声明 `terminal` | 命令目录写入 Options；思考可标完成；工具 kind 映射。`config_option_update` / `context_usage` / `plan` 仍丢掉。仍不声明 `terminal` |
-| `/` 菜单 | Hub 动作 + 换模型/思考/技能 | 会话就绪且目录非空时列出对方斜杠命令，选中插入 `/名字 `，不代发。**目录晚到时菜单不一定马上刷新** |
+| Grok / Kiro ACP | 思考/工具/确认已有。`available_commands` 丢掉。不声明 `terminal` | 命令目录写入 Options；思考可标完成；工具 kind 映射。`config_option_update` 进 Options。`context_usage` 进用量小字；`plan` 进计划条。仍不声明 `terminal` |
+| `/` 菜单 | Hub 动作 + 换模型/思考/技能 | 会话就绪且目录非空时列出对方斜杠命令，选中插入 `/名字 `，不代发。目录世代号变化时重拉 Options |
 | 进程 | sidecar 不从本页派生 | 同左 |
 
 `StructuredStream` 仍不等于全部对话能力。Grok 技能库可用，对话里「用于本次」仍不支持。
@@ -50,7 +50,7 @@ updated: 2026-09-11
 7. 先深已接线的四家，再按梯子扩家。
 8. **本页只加深宿主与 ACP 目录。** Claude 确认通道、Pi/Kimi 持续通道归 [统一体验](chat-unified-experience.md)，不在本页另起一套。
 
-A–C 在功能分支上已实现，**未合入、未当现行。** 后续切片未授权不得开工。
+A–E、G 在功能分支上已实现，**未合入、未当现行。** F 因无 Grok/Kiro 提问证据取消。H 须单独授权。
 
 ## 非目标
 
@@ -118,14 +118,14 @@ AionUi 桌面只画界面；`aioncore` 用 ACP JSON-RPC（stdio）拉起本机 C
 
 ## ACP 事件对照（合入后仍缺的）
 
-| 对方给的 | A–C 之后 | 归哪一刀 |
+| 对方给的 | A–G 之后 | 归哪一刀 |
 | --- | --- | --- |
 | 思考 / 正文 / 工具 / 确认 | 已对齐（分支） | A–C |
-| `available_commands_update` | 写入 Options；`/` 能列，**晚到不自动刷** | D |
-| `config_option_update` | 仍丢掉 | E |
-| 结构化提问（非确认） | 未接线 | F（先有协议证据） |
-| `context_usage` / `plan` | 用量小字已有一部分；计划仍是 Status | G |
-| `terminal/*` | 仍不声明 | H（可再拆独立提案） |
+| `available_commands_update` | 写入 Options；世代号变化时重拉 `/` | D |
+| `config_option_update` | 写入 Options 模型/思考目录 | E |
+| 结构化提问（非确认） | **本刀取消**：未见 Grok/Kiro 发出提问请求。ACP 有可选 `elicitation/create`，但未声明能力、仓库无夹具。Codex `item/tool/requestUserInput` 已接线且产品闸在统一体验 | F |
+| `context_usage` / `plan` | `context_usage` 有数字才进用量小字；`plan` 进当前轮计划条 | G |
+| `terminal/*` | 仍不声明 | H（单独授权） |
 
 enable 白名单、绑快照仍看 Agent 名字，A–C 故意不拆。拆白名单放到本页宿主稳定、且统一体验不需要它之后，不单开一刀。
 
@@ -141,7 +141,7 @@ A–C 不引入伪终端，不声明 `clientCapabilities.terminal`。
 
 ## 建议切片
 
-未合入前不得把本页标成 current。A–E 在 `feat/chat-host-depth-options`；F 起未授权不得开工。
+未合入前不得把本页标成 current。A–E、G 在 `feat/chat-host-depth-options`。H 须单独授权。
 
 | 刀 | 状态 | 一句话 |
 | --- | --- | --- |
@@ -150,9 +150,9 @@ A–C 不引入伪终端，不声明 `clientCapabilities.terminal`。
 | C `/` 接协议目录 | 分支已实现 | 选中插入 `/名字 `，不代发 |
 | D 目录变更刷新 `/` | 分支已实现 | 补 C：晚到的命令要进菜单 |
 | E `config_options` | 分支已实现 | 刷模型/模式，不装终端选择器 |
-| F ACP 提问口 | 未开工 | 先有协议证据；回执不走确认 |
-| G 用量窗 / 计划条 | 未开工 | 不进气泡 |
-| H 宿主终端 | 未开工 | 可再拆独立提案；先改握手再画卡片 |
+| F ACP 提问口 | **取消** | 无 Grok/Kiro 提问夹具；不画假问答卡。ACP `elicitation/create` 未声明能力 |
+| G 用量窗 / 计划条 | 分支已实现 | `context_usage` 进用量小字；`plan` 进计划条，不进气泡 |
+| H 宿主终端 | 未开工 | 须单独授权；先改握手再画卡片 |
 | I 打开对方命令行 | 未开工 | 无机器通道的逃生口，不标成对话能力 |
 
 ```mermaid
@@ -162,13 +162,15 @@ flowchart LR
   C["C / 插入草稿"]
   D[D 刷新菜单]
   E[E 模型选项]
+  G[G 用量与计划]
   A --> C
   B --> C
   C --> D
   D --> E
+  B --> G
 ```
 
-H 不依赖 E。F / G 互不依赖。Claude 确认、Pi/Kimi 持续通道 **不在上图**，见 [本页不负责](#本页不负责)。
+H 不依赖 E。F 已取消。Claude 确认、Pi/Kimi 持续通道 **不在上图**，见 [本页不负责](#本页不负责)。
 
 依赖：`C ← B`。不要先扩 80ms 快照。不要顺手拆 enable 白名单。
 
@@ -234,11 +236,11 @@ H 不依赖 E。F / G 互不依赖。Claude 确认、Pi/Kimi 持续通道 **不�
 
 ### 切片 F — ACP 结构化提问
 
-**做：** 仅当 Grok/Kiro 确有「提问」请求（不是 `session/request_permission`）时，走现有 `pendingRequests.kind = question`，回执不走确认口。
+**结论（2026-09-11）：取消，不改代码。**
 
-**不做：** 没有协议证据就画问答卡片；把提问和允许/拒绝混成一个按钮。
+查过：Grok/Kiro 反向请求在本仓库只有 `session/request_permission`（允许/拒绝）和本机 `fs/*`。官方 ACP 另有可选 `elicitation/create`（结构化提问），但本页握手不声明该能力，Grok/Kiro 无发出该请求的真实帧或夹具。Codex 提问口是 `item/tool/requestUserInput`，界面已有，产品闸在 [统一体验](chat-unified-experience.md) / STATUS（Default 默认不发）。不得把确认口画成问答卡，也不得声明 elicitation。
 
-**开工门槛：** 附一条真实或夹具 JSON，标明方法名与字段。没有证据本刀取消，不改代码。
+若日后 Grok/Kiro 附上方法名与字段的真实/夹具 JSON，再单开一刀。
 
 ### 切片 G — 窗口用量与计划条
 
@@ -246,7 +248,7 @@ H 不依赖 E。F / G 互不依赖。Claude 确认、Pi/Kimi 持续通道 **不�
 
 **不做：** 把计划当正式回复；没有用量字段就画 0。
 
-可与 E 并行，不改同一解析分支时再并行。
+**分支实现：** `context_usage` 写成 `ProcessStep::Usage { scope: "context" }`，回合结束后与当前轮输入/输出同一条小字；全 0 不画。`plan` / `entries` 写入快照 `plan`（不进过程时间线），输入区上方画计划条，下一轮开始清空。空 `plan` 更新不抹掉已有条目。 Codex 累计窗口仍不进这条小字。
 
 ### 切片 H — 宿主终端卡片（可再拆页）
 

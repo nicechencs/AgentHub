@@ -56,6 +56,7 @@ import { ChatSettingsDialog } from './ChatSettingsDialog';
 import { ChatShortcutsDialog } from './ChatShortcutsDialog';
 import { ChatTranscript } from './ChatTranscript';
 import { ChatRuntimeRequests } from './ChatRuntimeRequests';
+import { ChatPlanBar } from './ChatPlanBar';
 import { useChatComposerSplit } from './use-chat-composer-split';
 import { useChatPage } from './use-chat-page';
 
@@ -455,6 +456,7 @@ export default function ChatPage() {
                     </Notice>
                   );
                 })()}
+                <ChatPlanBar plan={page.runtime?.plan} />
                 <ChatComposer
                   draft={page.draft}
                   setDraft={page.setDraft}

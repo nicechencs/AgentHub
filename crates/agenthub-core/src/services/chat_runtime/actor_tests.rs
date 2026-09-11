@@ -413,6 +413,90 @@ fn grok_config_option_update_fills_models_not_timeline() {
 }
 
 #[test]
+fn grok_plan_update_fills_snapshot_not_timeline() {
+    let db = Database::open_in_memory().unwrap();
+    conversation_with(&db, "grok-plan", AgentId::Grok, &std::env::temp_dir());
+    let mut worker = worker(&db, "grok-plan");
+    worker.agent = AgentId::Grok;
+    worker.store.enable_if_new("grok-plan").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .notification(
+            "session/update",
+            &json!({
+                "update": {
+                    "sessionUpdate": "plan",
+                    "entries": [
+                        { "content": "read", "status": "completed" },
+                        { "content": "edit", "status": "in_progress" }
+                    ]
+                }
+            }),
+        )
+        .unwrap();
+
+    let stored = worker.store.snapshot("grok-plan", None).unwrap();
+    assert!(!stored.events.iter().any(|event| matches!(
+        &event.event,
+        ChatEvent::AgentProcess { .. }
+    )));
+    let snapshot = worker.with_catalog_epoch(stored);
+    assert_eq!(snapshot.plan.len(), 2);
+    assert_eq!(snapshot.plan[0].content, "read");
+    assert_eq!(snapshot.plan[0].status.as_deref(), Some("completed"));
+    assert_eq!(snapshot.plan[1].content, "edit");
+    worker.clear_turn_plan();
+    let cleared = worker.with_catalog_epoch(worker.store.snapshot("grok-plan", None).unwrap());
+    assert!(cleared.plan.is_empty());
+}
+
+#[test]
+fn grok_context_usage_is_usage_step_not_status() {
+    let db = Database::open_in_memory().unwrap();
+    conversation_with(&db, "grok-ctx", AgentId::Grok, &std::env::temp_dir());
+    let mut worker = worker(&db, "grok-ctx");
+    worker.agent = AgentId::Grok;
+    worker.store.enable_if_new("grok-ctx").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .notification(
+            "session/update",
+            &json!({
+                "update": {
+                    "sessionUpdate": "context_usage",
+                    "used": 2048,
+                    "size": 128000
+                }
+            }),
+        )
+        .unwrap();
+
+    let snapshot = worker.store.snapshot("grok-ctx", None).unwrap();
+    let usage: Vec<_> = snapshot
+        .events
+        .iter()
+        .filter_map(|event| match &event.event {
+            ChatEvent::AgentProcess {
+                step: crate::models::ProcessStep::Usage {
+                    scope,
+                    total,
+                    context_window,
+                    ..
+                },
+                ..
+            } => Some((scope.clone(), *total, *context_window)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        usage,
+        vec![(Some("context".into()), Some(2048), Some(128000))]
+    );
+}
+
+#[test]
 fn grok_thought_then_text_marks_thinking_done() {
     let db = Database::open_in_memory().unwrap();
     conversation_with(&db, "grok-think", AgentId::Grok, &std::env::temp_dir());
