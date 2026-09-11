@@ -7,8 +7,10 @@ import {
   runtimeOptions,
   runtimeSetSettings,
   saveChatPasteImage,
+  type RuntimeChannel,
   type RuntimeExtensionItem,
   type RuntimeModelOption,
+  type RuntimeNativeCommand,
   type RuntimeTurnSettings,
 } from '@/lib/api/chat';
 import type { Conversation } from '@/lib/types';
@@ -61,10 +63,11 @@ export function useChatRuntimeOps(input: {
   active: Conversation | null;
   runtimeEnabled: boolean;
   turnActive: boolean;
+  catalogEpoch?: number;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
-  const { active, runtimeEnabled, turnActive } = input;
+  const { active, runtimeEnabled, turnActive, catalogEpoch = 0 } = input;
 
   const [models, setModels] = useState<RuntimeModelOption[]>([]);
   const [settings, setSettings] = useState<RuntimeTurnSettings>({});
@@ -72,8 +75,11 @@ export function useChatRuntimeOps(input: {
   const [extensions, setExtensions] = useState<RuntimeExtensionItem[]>([]);
   const [images, setImages] = useState<string[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
-  const [imageInput, setImageInput] = useState(true);
+  const [imageInput, setImageInput] = useState(false);
   const [steer, setSteer] = useState(false);
+  const [transport, setTransport] = useState<RuntimeChannel>('legacy');
+  const [nativeCommands, setNativeCommands] = useState<RuntimeNativeCommand[]>([]);
+  const [sessionReady, setSessionReady] = useState(false);
   const [loading, setLoading] = useState(false);
   const catalogRef = useRef<RuntimeCatalogMemory>({
     conversationId: null,
@@ -96,8 +102,11 @@ export function useChatRuntimeOps(input: {
       setSettings({});
       setSettingsFrozen(false);
       setExtensions([]);
-      setImageInput(true);
+      setImageInput(false);
       setSteer(false);
+      setTransport('legacy');
+      setNativeCommands([]);
+      setSessionReady(false);
       return;
     }
     const conversationId = active.id;
@@ -163,6 +172,9 @@ export function useChatRuntimeOps(input: {
       setExtensions(retained.extensions);
       setImageInput(options.imageInput !== false);
       setSteer(options.steer === true);
+      setTransport(options.transport ?? 'legacy');
+      setNativeCommands(options.nativeCommands ?? []);
+      setSessionReady(options.sessionReady === true);
     } catch (error) {
       if (
         activeRef.current?.id !== conversationId
@@ -179,7 +191,7 @@ export function useChatRuntimeOps(input: {
     } finally {
       setLoading(false);
     }
-  }, [active, runtimeEnabled, t, toast, turnActive]);
+  }, [active, runtimeEnabled, catalogEpoch, t, toast, turnActive]);
 
   useEffect(() => {
     void refresh();
@@ -396,6 +408,9 @@ export function useChatRuntimeOps(input: {
     images,
     imageInput,
     steer,
+    transport,
+    nativeCommands,
+    sessionReady,
     selectedSkillIds,
     switchModel,
     switchEffort,

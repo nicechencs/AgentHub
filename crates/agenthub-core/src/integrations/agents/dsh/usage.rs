@@ -3,7 +3,9 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::Result;
-use crate::platform::usage::{UsageFileParser, UsageLineOutcome, UsageSource};
+use crate::platform::usage::{
+    UsageFileParser, UsageLineOutcome, UsageLogReader, UsageSource,
+};
 use crate::platform::AgentKey;
 use crate::usage::session_jsonl::{
     discover_dsh_files, extract_dsh, line_might_have_usage_dsh, note_dsh_model_from_line,
@@ -39,6 +41,16 @@ impl UsageSource for DshUsageSource {
 
     fn discover_files(&self) -> Result<Vec<PathBuf>> {
         discover_dsh_files()
+    }
+
+    /// DSH logs are `session.vN.jsonl.zstd`: concatenated zstd frames, so the
+    /// default plain-text reader would see compressed bytes.
+    fn open_lines(&self, path: &Path, byte_offset: u64) -> Result<UsageLogReader> {
+        let lines = crate::utils::zstd_jsonl::open_lines(path, byte_offset)?;
+        Ok(UsageLogReader {
+            reader: lines.reader,
+            decode_error: Some(lines.errors.shared()),
+        })
     }
 
     fn begin_file(&self, _path: &Path, _byte_offset: u64) -> Box<dyn UsageFileParser> {

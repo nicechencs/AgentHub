@@ -23,7 +23,10 @@ import {
   uniqueInstallVersions,
   agentListDetailsHint,
   agentHonestyHint,
+  agentCliLaunchUsesWeb,
   agentLaunchTargets,
+  agentStartCliFailedKey,
+  agentStartCliLabelKey,
   isLeftoverInstallPath,
   isIncompleteDshCopy,
   agentLinuxInstallUnsupported,
@@ -47,16 +50,22 @@ describe('agent-card menu wiring', () => {
     expect(card).toContain('text-warning');
     expect(card).toContain('agentUpgradeControl');
     expect(card).toContain('agentLaunchTargets');
-    expect(card).toContain("t('agents.card.startCli')");
+    expect(card).toContain('agentStartCliLabelKey');
+    expect(card).toContain('agentStartCliFailedKey');
+    expect(card).toContain('agentCliLaunchUsesWeb');
     expect(card).toContain("t('agents.card.startApp')");
     expect(card).toContain('flex flex-nowrap items-center justify-end');
     expect(card).not.toContain('flex flex-wrap items-center justify-end');
     expect(zh.agents.card.startCli).toBe('启动命令行');
     expect(en.agents.card.startCli).toBe('Start command line');
+    expect(zh.agents.card.startWeb).toBe('打开网页会话');
+    expect(en.agents.card.startWeb).toBe('Open web session');
     expect(zh.agents.card.startApp).toBe('启动应用');
     expect(en.agents.card.startApp).toBe('Start app');
     expect(zh.agents.card.startCli).not.toContain('CLI');
     expect(en.agents.card.startCli).not.toContain('CLI');
+    expect(zh.agents.card.startWeb).not.toContain('CLI');
+    expect(en.agents.card.startWeb).not.toContain('CLI');
     expect(card).toContain('text-muted');
     expect(card).not.toContain('openAgentCardUninstallConfirm');
     expect(card).not.toContain("t('agents.card.uninstallProgram')");
@@ -470,6 +479,15 @@ describe('agent launch targets', () => {
         { path: '/home/box/.local/bin/dsh', kind: 'native', source: 'native' },
       ],
     })).toEqual({ cliPath: '/home/box/.agenthub/npm/bin/dsh' });
+  });
+
+  it('labels DeepSeek launch as a web session', () => {
+    expect(agentCliLaunchUsesWeb('dsh')).toBe(true);
+    expect(agentStartCliLabelKey('dsh')).toBe('agents.card.startWeb');
+    expect(agentStartCliFailedKey('dsh')).toBe('agents.card.startWebFailed');
+    expect(agentCliLaunchUsesWeb('codex')).toBe(false);
+    expect(agentStartCliLabelKey('codex')).toBe('agents.card.startCli');
+    expect(agentStartCliFailedKey('codex')).toBe('agents.card.startCliFailed');
   });
 });
 

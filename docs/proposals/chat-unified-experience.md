@@ -4,7 +4,7 @@ type: proposal
 status: proposed
 owner: maintainers
 audience: product owners and implementation agents
-updated: 2026-09-09
+updated: 2026-09-11
 ---
 
 # Chat 统一体验与跨环境开发方案
@@ -23,7 +23,7 @@ Status: proposed。用户已认可“统一界面、各家分别对接、先 Cod
 
 首个可用版本以 Codex 为主，包含发送、过程展示、真实确认、用户问答、停止、执行中补充、同机恢复和历史回放，以及经验证可用的模型/思考强度/模式、文件附件、操作菜单、已安装扩展的使用入口和任务结果。Claude 第二个接入，用于验证共用界面和接口确实适用于另一家。各项首版门槛与后续范围见下文，未验证能力不得提前宣称支持。
 
-范围外：复制 VS Code 插件完整界面或编辑器、保证 IDE 所选代码自动同步、全量原生斜杠菜单、通用文件回滚、默认内嵌终端、自动云同步、跨 Agent 原生会话转换。凭据落盘加密无必要、国产 OAuth 对接或转 API 均是项目范围外。所有 API Key 的可分享性沿用现行规则，不按 Agent 名称排除。
+范围外：复制 VS Code 插件完整界面或编辑器、保证 IDE 所选代码自动同步、全量原生斜杠菜单、通用文件回滚、默认内嵌终端、自动云同步、跨 Agent 原生会话转换。凭据落盘加密无必要、国产 OAuth 对接或转 API 均是项目范围外。所有 API Key 的可分享性沿用现行规则，不按 Agent 名称排除。不以伪终端（PTY）作为对话交互底座；在现有宿主上加深思考、命令和跨 Agent 兼容的候选见 [Chat 宿主加深](chat-host-depth.md)。
 
 ## 已核实的起点
 
@@ -357,3 +357,8 @@ B1 首次实现采用后台持有会话、SQLite 保存事件、页面按 sequen
 剩余问题与决策理由：
 下一个任务及其文件范围：
 ```
+
+## 相关页面
+
+- [Chat 宿主加深与多 Agent 兼容](chat-host-depth.md)：A–C 在功能分支（Options、ACP 目录、`/` 插入草稿）。Claude 确认通道仍以本页 S4 / B3 为准，不在宿主加深页另起一套。
+- 现行事实：[Chat 与 Agent](../concepts/chat-and-agents.md)、[当前实现状态](../STATUS.md)、[Chat 体验标杆](../ui/chat-experience-bar.md)

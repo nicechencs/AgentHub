@@ -1,4 +1,4 @@
-import type { RuntimeFileChange, RuntimeRequest, RuntimeSnapshot } from '@/lib/api/chat';
+import type { RuntimeFileChange, RuntimePlanEntry, RuntimeRequest, RuntimeSnapshot } from '@/lib/api/chat';
 import type { MessageKey, TranslateFn } from '@/lib/i18n';
 
 export type RuntimeTransport =
@@ -27,6 +27,19 @@ export function isRuntimeActive(phase: RuntimeSnapshot['phase']): boolean {
  * (stream-json). Half-surface agents (`cursor`, Claude print+resume history, …)
  * stay off this list — do not invent ChatRuntime just because a CLI has pickers.
  */
+/** True when the 80ms snapshot says the Options catalog changed. */
+export function shouldRefreshRuntimeCatalog(previousEpoch: number, nextEpoch: number): boolean {
+  return nextEpoch > previousEpoch;
+}
+
+/** Slice C will list native commands only when the session catalog is ready. */
+export function nativeCommandMenuEnabled(input: {
+  sessionReady?: boolean;
+  nativeCommands?: ReadonlyArray<{ name: string }> | null;
+}): boolean {
+  return input.sessionReady === true && (input.nativeCommands?.length ?? 0) > 0;
+}
+
 export function isRuntimeChatAgent(agentId: string | null | undefined): boolean {
   return (
     agentId === 'codex' ||
@@ -254,4 +267,28 @@ export function fileChangeKindLabel(kind: FileChangePreviewKind, t: TranslateFn)
   if (kind === 'add') return t('chat.runtime.fileChangeKindAdd');
   if (kind === 'delete') return t('chat.runtime.fileChangeKindDelete');
   return t('chat.runtime.fileChangeKindUpdate');
+}
+
+export function visibleRuntimePlan(
+  plan?: RuntimePlanEntry[] | null,
+): RuntimePlanEntry[] {
+  return (plan ?? []).filter((entry) => entry.content.trim().length > 0);
+}
+
+export type RuntimePlanTone = 'live' | 'done' | 'pending';
+
+export function runtimePlanEntryTone(status?: string | null): RuntimePlanTone {
+  const normalized = (status ?? '').trim().toLowerCase().replace(/-/g, '_');
+  if (normalized === 'completed' || normalized === 'complete' || normalized === 'done') {
+    return 'done';
+  }
+  if (
+    normalized === 'in_progress'
+    || normalized === 'inprogress'
+    || normalized === 'running'
+    || normalized === 'start'
+  ) {
+    return 'live';
+  }
+  return 'pending';
 }

@@ -8,8 +8,8 @@ export type QueuedFollowUpItem = {
 
 let queuedFollowUpSeq = 0;
 
-function isQueueFollowUpAgent(agentId?: string | null): boolean {
-  return agentId === 'grok' || agentId === 'kiro' || agentId === 'claude';
+function isQueueFollowUpAgent(steer?: boolean): boolean {
+  return steer === false;
 }
 
 function isAcpLegacyContinueAgent(agentId?: string | null): boolean {
@@ -105,14 +105,15 @@ export function restoreQueuedFollowUpOnCancel(input: {
   return { draft: queue[0].text, queue: queue.slice(1) };
 }
 
-/** Grok / Kiro / Claude have no mid-turn inject. Queue only while a continuous session is generating. */
+/** No mid-turn inject when Options.steer is off. Queue only while a continuous session is generating. */
 export function grokCanQueueFollowUp(input: {
   agentId?: string | null;
   runtimeEnabled?: boolean;
+  steer?: boolean;
   phase?: RuntimePhase | null;
   sending: boolean;
 }): boolean {
-  if (!isQueueFollowUpAgent(input.agentId) || !input.runtimeEnabled || !input.sending) return false;
+  if (!isQueueFollowUpAgent(input.steer) || !input.runtimeEnabled || !input.sending) return false;
   return isRuntimeActive(input.phase ?? 'idle');
 }
 

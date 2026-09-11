@@ -515,6 +515,9 @@ fn idle_enabled_runtime_allows_agent_and_cwd_changes() {
     assert!(options.models.is_empty());
     assert!(!options.image_input);
     assert!(!options.steer);
+    assert_eq!(options.transport, RuntimeChannel::Legacy);
+    assert!(options.native_commands.is_empty());
+    assert!(!options.session_ready);
     assert!(!store.persisted_enabled(&conv.id).unwrap());
 }
 
@@ -544,8 +547,51 @@ fn options_for_pi_are_empty_and_do_not_enable_runtime() {
     assert!(options.extensions.is_empty());
     assert!(!options.image_input);
     assert!(!options.steer);
+    assert_eq!(options.transport, RuntimeChannel::Legacy);
+    assert!(options.native_commands.is_empty());
+    assert!(!options.session_ready);
     assert!(!runtime.store.persisted_enabled("pi-empty").unwrap());
     assert!(!runtime.snapshot("pi-empty", None).unwrap().enabled);
+}
+
+#[test]
+fn grok_options_surface_seeded_native_commands_and_handshake_image() {
+    let db = Database::open_in_memory().unwrap();
+    let now = "2026-01-01T00:00:00Z".to_string();
+    ChatRepo::new(db.clone())
+        .create_conversation(&Conversation {
+            id: "grok-opts".into(),
+            title: String::new(),
+            agent_ids: vec![AgentId::Grok],
+            cwd: Some(std::env::temp_dir().to_string_lossy().into_owned()),
+            allow_dangerous: false,
+            created_at: now.clone(),
+            updated_at: now,
+            native_session_id: None,
+            sending: false,
+            first_user_content: None,
+        })
+        .unwrap();
+    let run = Arc::new(RunService::new(AdapterRegistry::default()));
+    let runtime = Arc::new(ChatRuntime::new(db, run));
+    runtime.seed_native_commands_for_test(
+        "grok-opts",
+        vec![RuntimeNativeCommand {
+            name: "compact".into(),
+            description: "Compact context".into(),
+            hint: Some("[instructions]".into()),
+        }],
+    );
+    runtime.seed_image_input_for_test("grok-opts", false);
+    let options = runtime.options("grok-opts").unwrap();
+    assert_eq!(options.transport, RuntimeChannel::Acp);
+    assert_eq!(options.native_commands.len(), 1);
+    assert_eq!(options.native_commands[0].name, "compact");
+    assert!(!options.image_input);
+    let first = runtime.snapshot("grok-opts", None).unwrap();
+    assert!(first.catalog_epoch >= 1);
+    let again = runtime.snapshot("grok-opts", None).unwrap();
+    assert_eq!(again.catalog_epoch, first.catalog_epoch);
 }
 
 #[test]

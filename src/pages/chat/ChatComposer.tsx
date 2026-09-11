@@ -131,6 +131,8 @@ export function ChatComposer({
   extraActions,
   onRunAction,
   onHoverCommandIndex,
+  runtimeEnabled = false,
+  steer = false,
 }: {
   draft: string;
   setDraft: (v: string) => void;
@@ -185,6 +187,8 @@ export function ChatComposer({
   extraActions?: ChatActionDef[];
   onRunAction?: (action: ChatActionDef) => void;
   onHoverCommandIndex?: (index: number) => void;
+  runtimeEnabled?: boolean;
+  steer?: boolean;
 }) {
   const navigate = useNavigate();
   const { t } = useI18n();
@@ -280,7 +284,8 @@ export function ChatComposer({
   const pickerEmptyCopy = pickerEmpty ? chatAgentPickerEmptyCopy(t, pickerEmpty) : null;
   const compactSecondary = composerCompactSecondary({ emptyTranscript });
   const capabilityHint = composerCapabilityHint(t, {
-    agentId: primaryAgent,
+    runtimeEnabled,
+    steer,
     sending,
   });
   const shortcutHint = t(composerShortcutMessageKey(shortcutKind));

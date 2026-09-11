@@ -421,12 +421,15 @@ fn grok_acp_stdio_uses_documented_agent_flags_only() {
 }
 
 #[test]
-fn grok_initialize_advertises_client_fs_without_terminal() {
+fn grok_initialize_advertises_client_fs_and_terminal() {
     let params = grok_initialize_params();
     assert_eq!(params["protocolVersion"], 1);
     assert_eq!(params["clientCapabilities"]["fs"]["readTextFile"], true);
     assert_eq!(params["clientCapabilities"]["fs"]["writeTextFile"], true);
-    assert_eq!(params["clientCapabilities"]["terminal"], false);
+    assert_eq!(params["clientCapabilities"]["terminal"], true);
+    assert!(is_acp_terminal_method("terminal/create"));
+    assert!(is_acp_terminal_method("terminal/waitForExit"));
+    assert!(!is_acp_terminal_method("session/request_permission"));
 }
 
 #[test]

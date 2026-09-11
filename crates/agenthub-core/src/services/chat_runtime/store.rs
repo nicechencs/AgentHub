@@ -315,6 +315,9 @@ impl RuntimeStore {
                         pending_requests: Vec::new(),
                         gap: false,
                         current_message: None,
+                        catalog_epoch: 0,
+                        plan: Vec::new(),
+                        host_terminals: Vec::new(),
                     });
                 }
                 return Ok(RuntimeSnapshot::disabled(conversation_id));
@@ -369,6 +372,9 @@ impl RuntimeStore {
                 pending_requests,
                 gap,
                 current_message,
+                catalog_epoch: 0,
+                plan: Vec::new(),
+                host_terminals: Vec::new(),
             })
         })
     }

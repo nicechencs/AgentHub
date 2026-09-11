@@ -2,8 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import { AGENT_IDS } from '@/config/agents';
-import { listChatMessages, updateConversation } from '@/lib/api/chat';
+import { listChatMessages, runtimeKillHostTerminal, updateConversation } from '@/lib/api/chat';
+import { launchAgentProgram } from '@/lib/api/install';
 import { pickDirectory } from '@/lib/api/settings';
+import {
+  agentLaunchTargets,
+  agentStartCliFailedKey,
+  agentStartCliLabelKey,
+} from '@/pages/agents/agent-card-model';
 import type { AgentKey, ChatMessage } from '@/lib/types';
 import { groupByTurn } from './chat-format';
 import { forgetFallbackCwd, peekFallbackCwd } from '@/lib/chat-cwd-fallback';
@@ -34,8 +40,12 @@ import {
   clampActionIndex,
   filterChatActions,
   isCommandSearchMode,
+  nativeCommandActions,
+  openExternalCliAction,
+  OPEN_EXTERNAL_CLI_ACTION_ID,
   type ChatActionDef,
 } from './chat-actions';
+import { nativeCommandMenuEnabled } from './chat-runtime-model';
 import { composerEnterShouldSubmit } from './chat-composer-model';
 import { lastTurnOutcome } from './chat-turn-outcome';
 import { kiroChatAllowsCommandSearch, kiroChatStance } from './chat-kiro-model';
@@ -188,6 +198,7 @@ export function useChatPage() {
     active,
     runtimeEnabled: Boolean(activeRuntime?.enabled),
     turnActive: send.sendingHere,
+    catalogEpoch: activeRuntime?.catalogEpoch ?? 0,
   });
   startExtrasRef.current = runtimeOps.startExtras;
   runtimeOpsClearRef.current = runtimeOps.clearAttachments;
@@ -210,8 +221,18 @@ export function useChatPage() {
   );
 
   const runtimeCommandActions = useMemo<ChatActionDef[]>(() => {
-    if (!send.runtime?.enabled || kiroChatStance(active?.agentIds[0])) return [];
     const actions: ChatActionDef[] = [];
+    const agentId = active?.agentIds[0];
+    const agent = agentId
+      ? agentStatus.find((item) => item.agentId === agentId)
+      : undefined;
+    if (agent && agentLaunchTargets(agent).cliPath) {
+      actions.push(openExternalCliAction({
+        label: t(agentStartCliLabelKey(agent.agentId)),
+        description: t('chat.actions.openExternalCliHint'),
+      }));
+    }
+    if (!send.runtime?.enabled || kiroChatStance(active?.agentIds[0])) return actions;
     if (!runtimeOps.frozen) {
       for (const model of runtimeOps.models) {
         actions.push({
@@ -244,17 +265,28 @@ export function useChatPage() {
         keywords: ['skill', '技能', '用于本次', item.name, item.id],
       });
     }
+    if (
+      nativeCommandMenuEnabled({
+        sessionReady: runtimeOps.sessionReady,
+        nativeCommands: runtimeOps.nativeCommands,
+      })
+    ) {
+      actions.push(...nativeCommandActions(runtimeOps.nativeCommands));
+    }
     return actions;
   }, [
     runtimeOps.currentEfforts,
     runtimeOps.extensions,
     runtimeOps.frozen,
     runtimeOps.models,
+    runtimeOps.nativeCommands,
     runtimeOps.selectedSkillIds,
+    runtimeOps.sessionReady,
     runtimeOps.settings.effort,
     runtimeOps.settings.model,
     send.runtime?.enabled,
     active?.agentIds,
+    agentStatus,
     t,
   ]);
 
@@ -283,7 +315,7 @@ export function useChatPage() {
         runtimeOps.toggleSkill(action.id.slice('runtime-skill:'.length));
         return;
       }
-      if (action.kind === 'draft' && action.draftText) {
+      if ((action.kind === 'draft' || action.kind === 'native') && action.draftText) {
         setDraft(action.draftText);
         setComposerFocusNonce((n) => n + 1);
         return;
@@ -320,6 +352,19 @@ export function useChatPage() {
         navigate('/connections');
         return;
       }
+      if (action.id === OPEN_EXTERNAL_CLI_ACTION_ID) {
+        clearCommandDraft();
+        const agentId = active?.agentIds[0];
+        if (!agentId) return;
+        void launchAgentProgram(agentId, 'cli').catch((error) => {
+          toast({
+            title: t(agentStartCliFailedKey(agentId)),
+            description: error instanceof Error ? error.message : String(error),
+            variant: 'danger',
+          });
+        });
+        return;
+      }
       if (action.id === 'copy-latest-reply') {
         const latest = [...messages].reverse().find((m) => m.role === 'agent' && m.content.trim());
         if (!latest) {
@@ -333,7 +378,7 @@ export function useChatPage() {
         clearCommandDraft();
       }
     },
-    [actionContext, draft, handleNewChat, messages, navigate, runtimeOps, setRailOpen, setSettingsOpen, t, toast],
+    [actionContext, active?.agentIds, draft, handleNewChat, messages, navigate, runtimeOps, setRailOpen, setSettingsOpen, t, toast],
   );
   const commandSearchOpen =
     isCommandSearchMode(draft) && kiroChatAllowsCommandSearch(active?.agentIds[0]);
@@ -684,6 +729,18 @@ export function useChatPage() {
     firstUserContentById,
     turnOutcome,
     submitRuntimeRequest: send.submitRuntimeRequest,
+    killHostTerminal: async (terminalId: string) => {
+      if (!active?.id) return;
+      try {
+        await runtimeKillHostTerminal(active.id, terminalId);
+      } catch (error) {
+        toast({
+          title: t('chat.runtime.stopCommandFailed'),
+          description: error instanceof Error ? error.message : String(error),
+          variant: 'danger',
+        });
+      }
+    },
     steerRuntime: send.steerRuntime,
     cancelSending: send.handleCancel,
     retryLoad,

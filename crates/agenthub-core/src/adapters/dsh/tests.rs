@@ -393,6 +393,111 @@ fn credentials_yaml_rejects_nested_maps() {
     assert!(!text.contains("sk-new"));
 }
 
+/// The shape `dsh` 0.1.5+ writes: `version` / `records` / `refs`. A sibling
+/// integer (`version: 1`) used to make the whole file unreadable, which blocked
+/// "import the local login" for DeepSeek Harness.
+const STRUCTURED_CREDENTIALS: &str = "\
+version: 1
+records:
+  client-connection/browser-session:
+    kind: browser-session
+    payload:
+      version: 1
+      secret: web-session-signing-secret
+refs:
+  DEEPSEEK_API_KEY: sk-structured-key
+";
+
+#[test]
+fn credentials_reads_structured_store_refs() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(CREDENTIALS_FILE);
+    std::fs::write(&path, STRUCTURED_CREDENTIALS).unwrap();
+    assert_eq!(
+        read_credential_value(&path, DEFAULT_API_KEY_ENV)
+            .unwrap()
+            .as_deref(),
+        Some("sk-structured-key")
+    );
+    assert_eq!(read_credential_value(&path, "absent").unwrap(), None);
+}
+
+#[test]
+fn credentials_write_updates_refs_and_keeps_records() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(CREDENTIALS_FILE);
+    std::fs::write(&path, STRUCTURED_CREDENTIALS).unwrap();
+    write_credential_value(&path, DEFAULT_API_KEY_ENV, "sk-updated").unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        text.contains("web-session-signing-secret"),
+        "records must survive a credential write: {text}"
+    );
+    assert!(text.contains("sk-updated"));
+    assert!(!text.contains("sk-structured-key"));
+    let doc: serde_yml::Value = serde_yml::from_str(&text).expect("yaml parse");
+    assert_eq!(doc.get("version").and_then(|v| v.as_i64()), Some(1));
+    assert!(
+        doc.get("records")
+            .and_then(|records| records.get("client-connection/browser-session"))
+            .and_then(|record| record.get("payload"))
+            .and_then(|payload| payload.get("secret"))
+            .is_some_and(|secret| secret.is_string()),
+        "dsh web session secret must survive: {text}"
+    );
+    assert_eq!(
+        read_credential_value(&path, DEFAULT_API_KEY_ENV)
+            .unwrap()
+            .as_deref(),
+        Some("sk-updated")
+    );
+}
+
+#[test]
+fn read_auth_and_account_read_structured_credentials() {
+    let dir = tempfile::tempdir().unwrap();
+    with_dsh_home(dir.path(), || {
+        // Isolate from a host DEEPSEEK_API_KEY (QA shells often export one).
+        let prev_key = std::env::var_os(DEFAULT_API_KEY_ENV);
+        std::env::remove_var(DEFAULT_API_KEY_ENV);
+        std::fs::write(dir.path().join(CREDENTIALS_FILE), STRUCTURED_CREDENTIALS).unwrap();
+        let auth = DshAdapter.read_auth().unwrap();
+        let account = DshAdapter.read_account().unwrap();
+        restore_env(DEFAULT_API_KEY_ENV, prev_key);
+
+        assert!(
+            auth.has_credentials,
+            "a structured refs entry is a live login"
+        );
+        assert_eq!(auth.health, AuthHealth::Configured);
+        assert_eq!(auth.source.as_deref(), Some("dsh:credentials"));
+        assert_eq!(account.agent, AgentId::Dsh);
+        assert_eq!(
+            account.credentials["api_key"].as_str(),
+            Some("sk-structured-key")
+        );
+    });
+}
+
+#[test]
+fn write_credential_value_still_creates_flat_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(CREDENTIALS_FILE);
+    write_credential_value(&path, DEFAULT_API_KEY_ENV, "sk-fresh").unwrap();
+    let doc: serde_yml::Value =
+        serde_yml::from_str(&std::fs::read_to_string(&path).unwrap()).expect("yaml parse");
+    assert_eq!(
+        doc.get(DEFAULT_API_KEY_ENV).and_then(|v| v.as_str()),
+        Some("sk-fresh")
+    );
+    assert_eq!(
+        read_credential_value(&path, DEFAULT_API_KEY_ENV)
+            .unwrap()
+            .as_deref(),
+        Some("sk-fresh")
+    );
+}
+
 #[test]
 fn upsert_llm_row_quotes_at_plugin_id_as_yaml_safe() {
     let rendered = upsert_llm_row("", &DshLlmFields::default()).unwrap();

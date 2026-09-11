@@ -5,6 +5,7 @@ import {
   Copy,
   Eye,
   EyeOff,
+  Globe,
   MoreHorizontal,
   RefreshCw,
   Terminal,
@@ -44,8 +45,11 @@ import {
   formatAgentVersion,
   isNodeTooOldUpdateNote,
   isSpecialInstallChannel,
+  agentCliLaunchUsesWeb,
   agentLaunchTargets,
   agentHonestyHint,
+  agentStartCliFailedKey,
+  agentStartCliLabelKey,
   isLeftoverDetailsHint,
   agentUpgradeControl,
   agentUpgradeHint,
@@ -223,7 +227,10 @@ export function AgentCard({
       await launchAgentProgram(agent.agentId, kind);
     } catch (error) {
       toast({
-        title: kind === 'cli' ? t('agents.card.startCliFailed') : t('agents.card.startAppFailed'),
+        title:
+          kind === 'cli'
+            ? t(agentStartCliFailedKey(agent.agentId))
+            : t('agents.card.startAppFailed'),
         description: error instanceof Error ? error.message : String(error),
         variant: 'danger',
       });
@@ -421,8 +428,12 @@ export function AgentCard({
                 disabled={actionsBusy || launching != null}
                 onClick={() => void startProgram('cli')}
               >
-                <Terminal className="h-3.5 w-3.5" />
-                {t('agents.card.startCli')}
+                {agentCliLaunchUsesWeb(agent.agentId) ? (
+                  <Globe className="h-3.5 w-3.5" />
+                ) : (
+                  <Terminal className="h-3.5 w-3.5" />
+                )}
+                {t(agentStartCliLabelKey(agent.agentId))}
               </Button>
             ) : null}
             {launch.appPath ? (

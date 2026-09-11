@@ -1,7 +1,7 @@
-{"type":"session","id":"sess-dsh-demo","cwd":"/tmp/dsh-demo","createdAt":"2026-08-15T00:00:00Z"}
-{"type":"request/header","model":"deepseek-v4-flash","provider":"deepseek-official","createdAt":"2026-08-15T00:00:01Z"}
-{"type":"assistant/message","usage":{"input_tokens":12,"output_tokens":34,"cache_read_input_tokens":2},"createdAt":"2026-08-15T00:00:02Z"}
-{"type":"token-meter","surfaceTokens":999,"estimated":true,"totalTokens":999}
-{"type":"assistant/message","usage":{"surfaceTokens":80,"estimated":true}}
-{"type":"step/end","usage":{"input_tokens":3,"output_tokens":5,"costUSD":0.001},"createdAt":"2026-08-15T00:00:03Z"}
-{"type":"assistant/message","seed":true,"usage":{"input_tokens":100,"output_tokens":100}}
+{"type":"session","version":3,"id":"session-dsh-demo","createdAt":1789102558446,"cwd":"/tmp/dsh-demo","isSeeded":false,"delegationDepth":0,"agentPreset":"standard"}
+{"type":"user/message","seq":8,"time":1789102623318,"data":{"content":[{"type":"text","text":"修一下历史记录"}],"role":"user","id":"msg-1"}}
+{"type":"request/header","seq":12,"time":1789102623320,"data":{"header":{"config":{"provider":"deepseek-official","model":"deepseek-flash","maxTokens":256000,"reasoningEffort":"high"},"adapterDefaults":{"reasoningEffort":true,"maxTokens":true}}}}
+{"type":"assistant/message","seq":17,"time":1789102624657,"data":{"turn":1,"step":1,"message":{"role":"assistant","content":[{"type":"reasoning","text":"先看仓库"},{"type":"text","text":"好"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-flash"},"id":"msg-2"},"usage":{"inputTokens":12,"outputTokens":34,"totalTokens":46,"cacheReadTokens":2,"reasoningTokens":7},"stream":[]},"surfaceOp":"append"}
+{"type":"step/end","seq":22,"time":1789102625160,"data":{"turn":1,"step":1}}
+{"type":"assistant/message","seq":30,"time":1789102626000,"data":{"turn":1,"step":2,"message":{"role":"assistant","content":[{"type":"text","text":"完成"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-flash"}},"usage":{"inputTokens":3,"outputTokens":5,"totalTokens":8,"cacheReadTokens":1,"costUSD":0.001}}}
+{"type":"session/end-seed","seq":31,"time":1789102627000,"data":{"seedLength":2}}

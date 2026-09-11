@@ -16,8 +16,12 @@ import {
   isRuntimeActive,
   isRuntimeChatAgent,
   isRuntimeSessionLocked,
+  nativeCommandMenuEnabled,
+  shouldRefreshRuntimeCatalog,
   readRuntimeTransport,
   requestMatchesRuntime,
+  runtimePlanEntryTone,
+  visibleRuntimePlan,
 } from './chat-runtime-model';
 
 const snapshot = (enabled: boolean, phase: RuntimeSnapshot['phase'] = 'idle'): RuntimeSnapshot => ({
@@ -77,6 +81,17 @@ describe('chat runtime transport guards', () => {
     expect(isRuntimeChatAgent('cursor')).toBe(false);
     expect(isRuntimeChatAgent('kiro')).toBe(true);
     expect(isRuntimeChatAgent(null)).toBe(false);
+  });
+  it('refreshes the Options catalog only when the snapshot epoch increases', () => {
+    expect(shouldRefreshRuntimeCatalog(0, 0)).toBe(false);
+    expect(shouldRefreshRuntimeCatalog(2, 2)).toBe(false);
+    expect(shouldRefreshRuntimeCatalog(2, 1)).toBe(false);
+    expect(shouldRefreshRuntimeCatalog(0, 1)).toBe(true);
+  });
+  it('lists native slash commands only when the session catalog is ready', () => {
+    expect(nativeCommandMenuEnabled({ sessionReady: false, nativeCommands: [{ name: 'compact' }] })).toBe(false);
+    expect(nativeCommandMenuEnabled({ sessionReady: true, nativeCommands: [] })).toBe(false);
+    expect(nativeCommandMenuEnabled({ sessionReady: true, nativeCommands: [{ name: 'compact' }] })).toBe(true);
   });
   it('drops leftover enabled snapshot when the conversation is no longer a continuous-chat agent', () => {
     const leftover = snapshot(true, 'idle');
@@ -215,5 +230,14 @@ describe('chat runtime transport guards', () => {
     })).toBe('chat.runtime.fileChangePathOnly');
     expect(fileChangePreviewHintKey({ shown: true, empty: true, rows: [] }))
       .toBe('chat.runtime.fileChangePreviewEmpty');
+  });
+  it('keeps a live ACP plan out of empty rows and maps status tone', () => {
+    expect(visibleRuntimePlan(undefined)).toEqual([]);
+    expect(visibleRuntimePlan([{ content: '  ' }, { content: 'read', status: 'completed' }])).toEqual([
+      { content: 'read', status: 'completed' },
+    ]);
+    expect(runtimePlanEntryTone('in_progress')).toBe('live');
+    expect(runtimePlanEntryTone('completed')).toBe('done');
+    expect(runtimePlanEntryTone('pending')).toBe('pending');
   });
 });

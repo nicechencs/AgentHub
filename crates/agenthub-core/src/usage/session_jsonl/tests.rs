@@ -653,42 +653,108 @@ fn live_pi_settings_and_session() {
 }
 
 #[test]
-fn extract_dsh_takes_provider_usage_and_skips_token_meter() {
-    let header = r#"{"type":"request/header","model":"deepseek-v4-flash"}"#;
-    let billed = r#"{"type":"assistant/message","usage":{"input_tokens":12,"output_tokens":34,"cache_read_input_tokens":2}}"#;
-    let meter = r#"{"type":"token-meter","surfaceTokens":999,"estimated":true}"#;
-    let estimated = r#"{"type":"assistant/message","usage":{"surfaceTokens":80,"estimated":true}}"#;
-    let seed = r#"{"type":"assistant/message","seed":true,"usage":{"input_tokens":100,"output_tokens":100}}"#;
+fn extract_dsh_reads_real_rows_and_skips_heuristics() {
+    // Shapes copied from a real `session.v3.jsonl.zstd` transcript: provider
+    // usage lives in `data.usage`, the model in `data.message.source.model`.
+    let header = r#"{"type":"request/header","seq":12,"time":1789102623320,"data":{"header":{"config":{"provider":"deepseek-official","model":"deepseek-flash","maxTokens":256000}}}}"#;
+    let billed = r#"{"type":"assistant/message","seq":17,"time":1789102624657,"data":{"turn":1,"step":1,"message":{"role":"assistant","content":[{"type":"text","text":"好"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-flash"}},"usage":{"inputTokens":12,"outputTokens":34,"totalTokens":46,"cacheReadTokens":2,"reasoningTokens":7}},"surfaceOp":"append"}"#;
+    // Defensive shapes: meter rows and seeded/inherited rows are billed at most
+    // once. v3 session logs on disk only carry `isSeeded` in the header plus a
+    // `session/end-seed` marker, so these guard against a future shape.
+    let estimated = r#"{"type":"token-meter","seq":20,"time":1789102625000,"data":{"surfaceTokens":999,"estimated":true}}"#;
+    let meter = r#"{"type":"token-meter","seq":21,"time":1789102625000,"data":{"surfaceTokens":999}}"#;
+    let seed = r#"{"type":"session/end-seed","seq":31,"time":1789102627000,"data":{"seedLength":2,"usage":{"inputTokens":100,"outputTokens":100}}}"#;
+    // Message content may quote our own vocabulary; that must not hide usage.
+    let quotes_surface_tokens = r#"{"type":"assistant/message","seq":40,"time":1789102628000,"data":{"message":{"role":"assistant","content":[{"type":"text","text":"projcache has surfaceTokens and estimated:true fields"}],"source":{"kind":"model","model":"deepseek-flash"}},"usage":{"inputTokens":7,"outputTokens":8}}}"#;
     let mut model = None;
     note_dsh_model_from_line(header, &mut model);
-    assert_eq!(model.as_deref(), Some("deepseek-v4-flash"));
-    let ev = extract_dsh(billed, Some("sess-dsh-demo"), model.as_deref())
+    assert_eq!(model.as_deref(), Some("deepseek-flash"));
+
+    let ev = extract_dsh(billed, Some("session-abc"), model.as_deref())
         .unwrap()
         .expect("provider usage");
     assert_eq!(ev.agent_id, AgentId::Dsh);
-    assert_eq!(ev.model, "deepseek-v4-flash");
+    assert_eq!(ev.model, "deepseek-flash");
     assert_eq!(ev.input_tokens, 12);
     assert_eq!(ev.output_tokens, 34);
     assert_eq!(ev.cache_read_tokens, 2);
+    // `time` is epoch milliseconds, not seconds.
+    assert_eq!(ev.ts, "2026-09-11T04:57:04.657+00:00");
+    assert_eq!(ev.session_id.as_deref(), Some("session-abc"));
+
+    assert!(line_might_have_usage_dsh(billed));
+    assert!(line_might_have_usage_dsh(quotes_surface_tokens));
+    let quoted = extract_dsh(quotes_surface_tokens, None, None)
+        .unwrap()
+        .expect("content quoting token words still bills");
+    assert_eq!(quoted.input_tokens, 7);
+
     assert!(extract_dsh(meter, None, None).unwrap().is_none());
     assert!(extract_dsh(estimated, None, None).unwrap().is_none());
     assert!(extract_dsh(seed, None, None).unwrap().is_none());
 }
 
 #[test]
+fn dsh_session_id_comes_from_the_session_directory() {
+    let path = std::path::Path::new(
+        "/home/box/.dsh/sessions/--D-work--/session-8ea28612/session.v3.jsonl.zstd",
+    );
+    assert_eq!(
+        session_id_from_path(path).as_deref(),
+        Some("session-8ea28612")
+    );
+    // A flat file has no session directory: do not invent an id from the stem.
+    let flat = std::path::Path::new("/home/box/.dsh/sessions/session.v3.jsonl.zstd");
+    assert_eq!(session_id_from_path(flat), None);
+}
+
+#[test]
 fn parse_dsh_fixture_collects_two_events() {
     let dir = tempdir().unwrap();
-    let path = dir.path().join("sess-dsh-demo.jsonl");
+    let path = dir.path().join("session.v3.jsonl");
     std::fs::write(path.clone(), include_str!("../fixtures/dsh_session.jsonl")).unwrap();
     let db = Database::open(&dir.path().join("t.db")).unwrap();
     let repo = UsageRepo::new(db);
     let batch = parse_file_for_agent_id(AgentId::Dsh, &path, &repo).expect("parse");
     assert_eq!(batch.events.len(), 2);
     assert!(batch.events.iter().all(|e| e.agent_id == AgentId::Dsh));
-    assert_eq!(batch.events[0].model, "deepseek-v4-flash");
+    assert_eq!(batch.events[0].model, "deepseek-flash");
+    assert_eq!(batch.events[0].cache_read_tokens, 2);
     assert_eq!(batch.events[1].output_tokens, 5);
     assert_eq!(batch.events[1].cost_usd, Some(0.001));
     assert!(batch.events.iter().all(|e| e.input_tokens < 50));
+    assert!(batch.events.iter().all(|e| e.ts.starts_with("2026-")));
+}
+
+#[test]
+fn parse_dsh_compressed_log_collects_events() {
+    let dir = tempdir().unwrap();
+    let path = dir
+        .path()
+        .join("sessions/--D-work--/session-abc/session.v3.jsonl.zstd");
+    // One zstd frame per row, the way DSH appends batches.
+    crate::utils::dsh_log_fixture::write_zstd_log(
+        &path,
+        &[
+            r#"{"type":"session","version":3,"id":"session-abc","createdAt":1789102558446,"cwd":"/tmp/dsh"}"#,
+            r#"{"type":"request/header","seq":12,"time":1789102623320,"data":{"header":{"config":{"model":"deepseek-flash"}}}}"#,
+            r#"{"type":"assistant/message","seq":17,"time":1789102624657,"data":{"turn":1,"step":1,"message":{"source":{"kind":"model","model":"deepseek-flash"}},"usage":{"inputTokens":12,"outputTokens":34,"cacheReadTokens":2}}}"#,
+        ],
+    );
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let repo = UsageRepo::new(db);
+    let batch = parse_file_for_agent_id(AgentId::Dsh, &path, &repo).expect("parse");
+    assert_eq!(
+        batch.events.len(),
+        1,
+        "compressed log must decode: {:?}",
+        batch.events
+    );
+    let ev = &batch.events[0];
+    assert_eq!(ev.model, "deepseek-flash");
+    assert_eq!(ev.input_tokens, 12);
+    assert_eq!(ev.cache_read_tokens, 2);
+    assert_eq!(ev.session_id.as_deref(), Some("session-abc"));
 }
 
 #[test]
@@ -711,6 +777,9 @@ fn discover_dsh_files_only_known_roots() {
         "{}\n",
     )
     .unwrap();
+    // DSH compresses by default; discovery must see these too.
+    let zstd_log = home.join("sessions/--D-work--/session-abc/session.v3.jsonl.zstd");
+    crate::utils::dsh_log_fixture::write_zstd_log(&zstd_log, &["{}"]);
     std::fs::write(home.join("sessions/node_modules/skip.jsonl"), "{}\n").unwrap();
     std::fs::write(home.join("sessions/cache.db/skip.jsonl"), "{}\n").unwrap();
     std::fs::write(extra.join("extra.jsonl"), "{}\n").unwrap();
@@ -737,6 +806,10 @@ fn discover_dsh_files_only_known_roots() {
     assert!(names.contains(&"keep.jsonl".into()), "{names:?}");
     assert!(names.contains(&"profile.jsonl".into()), "{names:?}");
     assert!(names.contains(&"extra.jsonl".into()), "{names:?}");
+    assert!(
+        names.contains(&"session.v3.jsonl.zstd".into()),
+        "compressed DSH logs are discoverable: {names:?}"
+    );
     assert!(!names.contains(&"skip.jsonl".into()), "{names:?}");
     assert!(!names.contains(&"random.jsonl".into()), "{names:?}");
     assert!(files.iter().all(|p| {

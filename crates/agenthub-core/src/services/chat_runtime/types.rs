@@ -138,6 +138,15 @@ pub struct RuntimeSnapshot {
     pub pending_requests: Vec<RuntimeRequest>,
     pub gap: bool,
     pub current_message: Option<ChatMessage>,
+    /// Bumps when Options catalog changes (slash commands, handshake image). Not the command list.
+    #[serde(default)]
+    pub catalog_epoch: i64,
+    /// Current-turn ACP plan. Live chrome only — not a process row, dropped on the next turn.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub plan: Vec<RuntimePlanEntry>,
+    /// Live ACP host commands. One card per terminal id; not a conversation TTY.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub host_terminals: Vec<RuntimeHostTerminal>,
 }
 
 impl RuntimeSnapshot {
@@ -152,8 +161,34 @@ impl RuntimeSnapshot {
             pending_requests: Vec::new(),
             gap: false,
             current_message: None,
+            catalog_epoch: 0,
+            plan: Vec::new(),
+            host_terminals: Vec::new(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeHostTerminal {
+    pub id: String,
+    pub command: String,
+    pub output: String,
+    #[serde(default)]
+    pub truncated: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    pub running: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimePlanEntry {
+    pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -240,6 +275,29 @@ pub struct RuntimeStartExtras {
     pub skills: Vec<RuntimeSkillRef>,
 }
 
+/// Channel this conversation is actually using. Not the 80ms snapshot.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum RuntimeChannel {
+    #[serde(rename = "acp")]
+    Acp,
+    #[serde(rename = "app-server")]
+    AppServer,
+    #[serde(rename = "stream-json")]
+    StreamJson,
+    #[serde(rename = "legacy")]
+    Legacy,
+}
+
+/// Agent-declared slash command (no leading `/`). Empty until the session is ready.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeNativeCommand {
+    pub name: String,
+    pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeOptions {
@@ -254,6 +312,12 @@ pub struct RuntimeOptions {
     pub image_input: bool,
     #[serde(default)]
     pub steer: bool,
+    #[serde(default)]
+    pub transport: RuntimeChannel,
+    #[serde(default)]
+    pub native_commands: Vec<RuntimeNativeCommand>,
+    #[serde(default)]
+    pub session_ready: bool,
 }
 
 impl RuntimeOptions {
@@ -269,6 +333,15 @@ impl RuntimeOptions {
             models_from_codex: false,
             image_input: false,
             steer: false,
+            transport: RuntimeChannel::Legacy,
+            native_commands: Vec::new(),
+            session_ready: false,
         }
+    }
+}
+
+impl Default for RuntimeChannel {
+    fn default() -> Self {
+        Self::Legacy
     }
 }

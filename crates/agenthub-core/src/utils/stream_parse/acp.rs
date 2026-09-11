@@ -36,8 +36,7 @@ pub(crate) fn decode_session_update(v: &Value) -> Vec<ProcessStep> {
             let raw_status = update.get("status").and_then(|s| s.as_str()).unwrap_or("");
             vec![ProcessStep::Tool {
                 id: first_str(update, &["toolCallId", "tool_call_id", "id"]),
-                name: first_str(update, &["title", "kind", "name"])
-                    .unwrap_or_else(|| "tool".into()),
+                name: acp_tool_name(update),
                 input: update
                     .get("rawInput")
                     .or_else(|| update.get("raw_input"))
@@ -69,32 +68,19 @@ pub(crate) fn decode_session_update(v: &Value) -> Vec<ProcessStep> {
                 detail: Some(detail),
             }]
         }
-        "plan" => {
-            let body = update
-                .get("planContent")
-                .or_else(|| update.get("plan_content"))
-                .and_then(|s| s.as_str())
-                .or_else(|| update.get("content").and_then(|s| s.as_str()))
-                .unwrap_or("");
-            vec![ProcessStep::Status {
-                phase: "running".into(),
-                detail: Some(if body.is_empty() {
-                    "plan".into()
-                } else {
-                    truncate(body, 240)
-                }),
-            }]
-        }
+        // Live chrome on the snapshot — never a process-timeline row.
+        "plan" => vec![],
+        // Catalog only — never a process-timeline row.
         "available_commands" | "available_commands_update" => vec![],
         "usage" | "token_usage" | "tokenUsage" | "tokens_used" | "turn_completed"
         | "turn_usage" | "response_completed" => usage_steps(update),
-        "context_usage"
-        | "auto_compact_started"
+        "context_usage" => context_usage_steps(update),
+        "auto_compact_started"
         | "auto_compact_completed"
         | "auto_compact"
         | "context_compact"
         | "compaction"
-        | "config_option_update" => vec![],
+        | "config_option_update" => vec![], // Catalog only — never a process-timeline row.
         "error" => {
             let message = update
                 .get("message")
@@ -107,6 +93,224 @@ pub(crate) fn decode_session_update(v: &Value) -> Vec<ProcessStep> {
         // Recognized envelope, unknown kind — do not fall back to raw JSON.
         _ => vec![],
     }
+}
+
+/// Agent-declared slash command. Not a `ProcessStep` (must not enter the timeline).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AcpAvailableCommand {
+    pub name: String,
+    pub description: String,
+    pub hint: Option<String>,
+}
+
+/// Returns `Some` when this payload is an available-commands update, even if the list is empty.
+pub(crate) fn extract_available_commands(v: &Value) -> Option<Vec<AcpAvailableCommand>> {
+    let update = v.get("update").or_else(|| v.get("data")).unwrap_or(v);
+    let uty = update
+        .get("sessionUpdate")
+        .or_else(|| update.get("session_update"))
+        .or_else(|| update.get("type"))
+        .and_then(|t| t.as_str())
+        .unwrap_or("");
+    if uty != "available_commands" && uty != "available_commands_update" {
+        return None;
+    }
+    let list = update
+        .get("availableCommands")
+        .or_else(|| update.get("available_commands"))
+        .and_then(|value| value.as_array());
+    Some(
+        list.map(|items| items.iter().filter_map(parse_available_command).collect())
+            .unwrap_or_default(),
+    )
+}
+
+/// Model/effort lists from ACP config options. Not a `ProcessStep`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct AcpConfigCatalog {
+    pub models: Vec<String>,
+    pub current_model: Option<String>,
+    pub efforts: Vec<String>,
+    pub current_effort: Option<String>,
+}
+
+/// `Some` for `config_option_update` (even if empty) or a payload that already has `configOptions`.
+pub(crate) fn extract_config_catalog(v: &Value) -> Option<AcpConfigCatalog> {
+    let update = v.get("update").or_else(|| v.get("data")).unwrap_or(v);
+    let uty = update
+        .get("sessionUpdate")
+        .or_else(|| update.get("session_update"))
+        .or_else(|| update.get("type"))
+        .and_then(|t| t.as_str())
+        .unwrap_or("");
+    let list = update
+        .get("configOptions")
+        .or_else(|| update.get("config_options"))
+        .or_else(|| v.get("configOptions"))
+        .or_else(|| v.get("config_options"))
+        .and_then(|value| value.as_array());
+    let is_update = uty == "config_option_update";
+    if !is_update && list.is_none() {
+        return None;
+    }
+    Some(config_catalog_from_options(list.map(|items| items.as_slice()).unwrap_or(&[])))
+}
+
+fn config_catalog_from_options(items: &[Value]) -> AcpConfigCatalog {
+    let mut catalog = AcpConfigCatalog::default();
+    for item in items {
+        let id = first_str(item, &["id", "category"]).unwrap_or_default();
+        let category = first_str(item, &["category"]).unwrap_or_default();
+        let kind = compact_tool_token(&id);
+        let category_kind = compact_tool_token(&category);
+        let values = select_option_values(item);
+        let current = config_current_value(item);
+        if is_model_config(&kind, &category_kind) {
+            if !values.is_empty() {
+                catalog.models = values;
+            }
+            if current.is_some() {
+                catalog.current_model = current;
+            }
+        } else if is_effort_config(&kind, &category_kind) {
+            if !values.is_empty() {
+                catalog.efforts = values;
+            }
+            if current.is_some() {
+                catalog.current_effort = current;
+            }
+        }
+    }
+    catalog
+}
+
+fn is_model_config(id: &str, category: &str) -> bool {
+    matches!(id, "model" | "models" | "modelid") || matches!(category, "model" | "models")
+}
+
+fn is_effort_config(id: &str, category: &str) -> bool {
+    matches!(
+        id,
+        "effort" | "thinking" | "reasoning" | "reasoningeffort" | "think"
+    ) || matches!(category, "effort" | "thinking" | "reasoning")
+}
+
+fn select_option_values(item: &Value) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    item.get("options")
+        .and_then(|value| value.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|row| {
+            first_str(row, &["value", "id", "name"]).filter(|s| seen.insert(s.clone()))
+        })
+        .collect()
+}
+
+fn config_current_value(item: &Value) -> Option<String> {
+    first_str(item, &["currentValue", "current_value", "selectedValue", "selected_value"])
+}
+
+/// One ACP plan row. Not a `ProcessStep`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AcpPlanEntry {
+    pub content: String,
+    pub status: Option<String>,
+    pub priority: Option<String>,
+}
+
+/// `Some` for `sessionUpdate: plan`, even when the entry list is empty.
+pub(crate) fn extract_plan(v: &Value) -> Option<Vec<AcpPlanEntry>> {
+    let update = v.get("update").or_else(|| v.get("data")).unwrap_or(v);
+    let uty = update
+        .get("sessionUpdate")
+        .or_else(|| update.get("session_update"))
+        .or_else(|| update.get("type"))
+        .and_then(|t| t.as_str())
+        .unwrap_or("");
+    if uty != "plan" {
+        return None;
+    }
+    if let Some(items) = update
+        .get("entries")
+        .or_else(|| update.get("plan"))
+        .and_then(|value| value.as_array())
+    {
+        return Some(items.iter().filter_map(parse_plan_entry).collect());
+    }
+    let body = first_str(update, &["planContent", "plan_content"])
+        .or_else(|| {
+            update
+                .get("content")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+        });
+    Some(body.into_iter().map(|content| AcpPlanEntry {
+        content,
+        status: None,
+        priority: None,
+    }).collect())
+}
+
+fn parse_plan_entry(value: &Value) -> Option<AcpPlanEntry> {
+    let content = first_str(value, &["content", "text", "title"])?;
+    Some(AcpPlanEntry {
+        content,
+        status: first_str(value, &["status"]),
+        priority: first_str(value, &["priority"]),
+    })
+}
+
+fn parse_available_command(value: &Value) -> Option<AcpAvailableCommand> {
+    let name = first_str(value, &["name", "command"])?;
+    let description = first_str(value, &["description"]).unwrap_or_default();
+    let hint = value
+        .pointer("/input/hint")
+        .and_then(|h| h.as_str())
+        .or_else(|| value.get("hint").and_then(|h| h.as_str()))
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    Some(AcpAvailableCommand {
+        name,
+        description,
+        hint,
+    })
+}
+
+fn acp_tool_name(update: &Value) -> String {
+    let title = first_str(update, &["title", "name"]);
+    let kind = first_str(update, &["kind"]);
+    if let Some(mapped) = kind.as_deref().and_then(map_acp_tool_kind) {
+        if title
+            .as_deref()
+            .is_some_and(|name| map_acp_tool_kind(name).is_some())
+        {
+            return title.unwrap();
+        }
+        return mapped.to_string();
+    }
+    title.or(kind).unwrap_or_else(|| "tool".into())
+}
+
+fn map_acp_tool_kind(kind: &str) -> Option<&'static str> {
+    match compact_tool_token(kind).as_str() {
+        "read" | "search" | "fetch" | "grep" | "view" => Some("read"),
+        "edit" | "write" | "delete" | "move" | "patch" | "create" => Some("edit"),
+        "execute" | "exec" | "command" | "terminal" | "bash" | "shell" => Some("execute"),
+        _ => None,
+    }
+}
+
+fn compact_tool_token(value: &str) -> String {
+    value
+        .trim()
+        .to_ascii_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect()
 }
 
 pub(crate) fn acp_content_text(v: &Value) -> String {
@@ -186,12 +390,77 @@ fn usage_steps(update: &Value) -> Vec<ProcessStep> {
         .unwrap_or_default()
 }
 
+/// Window used/size from `context_usage`. Skips all-zero payloads (no fake 0).
+fn context_usage_steps(update: &Value) -> Vec<ProcessStep> {
+    let usage = update
+        .get("usage")
+        .filter(|value| value.is_object())
+        .unwrap_or(update);
+    let used = first_u64(
+        usage,
+        &[
+            "used",
+            "usedTokens",
+            "used_tokens",
+            "tokenCount",
+            "token_count",
+            "current",
+            "totalTokens",
+            "total_tokens",
+            "total",
+        ],
+    );
+    let window = first_u64(
+        usage,
+        &[
+            "size",
+            "maxTokens",
+            "max_tokens",
+            "contextWindow",
+            "context_window",
+            "window",
+            "limit",
+        ],
+    );
+    if used.unwrap_or(0) == 0 && window.unwrap_or(0) == 0 {
+        return vec![];
+    }
+    vec![ProcessStep::Usage {
+        scope: Some("context".into()),
+        input: None,
+        output: None,
+        cache_read: None,
+        cache_write: None,
+        reasoning: None,
+        total: used,
+        context_window: window,
+    }]
+}
+
 pub(crate) fn first_str(v: &Value, keys: &[&str]) -> Option<String> {
     keys.iter()
         .find_map(|k| v.get(*k).and_then(|x| x.as_str()))
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string)
+}
+
+fn first_u64(v: &Value, keys: &[&str]) -> Option<u64> {
+    for key in keys {
+        let Some(value) = v.get(*key) else {
+            continue;
+        };
+        if let Some(n) = value.as_u64() {
+            return Some(n);
+        }
+        if let Some(n) = value.as_i64().and_then(|n| u64::try_from(n).ok()) {
+            return Some(n);
+        }
+        if let Some(n) = value.as_f64().and_then(|n| (n >= 0.0).then_some(n as u64)) {
+            return Some(n);
+        }
+    }
+    None
 }
 
 fn map_tool_status(raw: &str, is_update: bool) -> String {

@@ -40,19 +40,18 @@ describe('composer invite and queue-only hint', () => {
   });
 
   it('keeps capability limits off the placeholder and on a hover title', () => {
-    expect(composerShowsQueueOnlyHint('kiro')).toBe(true);
-    expect(composerShowsQueueOnlyHint('grok')).toBe(true);
-    expect(composerShowsQueueOnlyHint('claude')).toBe(true);
-    expect(composerShowsQueueOnlyHint('codex')).toBe(false);
-    expect(composerShowsQueueOnlyHint('cursor')).toBe(false);
-    expect(composerCapabilityHint(zh, { agentId: 'kiro', sending: false })).toBe(
+    expect(composerShowsQueueOnlyHint({ runtimeEnabled: true, steer: false })).toBe(true);
+    expect(composerShowsQueueOnlyHint({ runtimeEnabled: true, steer: true })).toBe(false);
+    expect(composerShowsQueueOnlyHint({ runtimeEnabled: true })).toBe(false);
+    expect(composerShowsQueueOnlyHint({ runtimeEnabled: false, steer: false })).toBe(false);
+    expect(composerCapabilityHint(zh, { runtimeEnabled: true, steer: false, sending: false })).toBe(
       '生成时不能中途补充，可排队到下一轮。',
     );
-    expect(composerCapabilityHint(en, { agentId: 'kiro', sending: false })).toBe(
+    expect(composerCapabilityHint(en, { runtimeEnabled: true, steer: false, sending: false })).toBe(
       "You can't add more mid-run; you can queue for the next turn.",
     );
-    expect(composerCapabilityHint(zh, { agentId: 'kiro', sending: true })).toBeNull();
-    expect(composerCapabilityHint(zh, { agentId: 'codex', sending: false })).toBeNull();
+    expect(composerCapabilityHint(zh, { runtimeEnabled: true, steer: false, sending: true })).toBeNull();
+    expect(composerCapabilityHint(zh, { runtimeEnabled: true, steer: true, sending: false })).toBeNull();
     expect(
       composerHoverHint('Enter 发送 · Shift+Enter 换行', '生成时不能中途补充，可排队到下一轮。'),
     ).toContain('Enter 发送');

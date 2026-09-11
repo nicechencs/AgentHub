@@ -189,24 +189,43 @@ pub(crate) fn enclosing_app_bundle(path: &std::path::Path) -> Option<&std::path:
     })
 }
 
-/// AppleScript that runs `path` in Terminal, shell-quoted via `quoted form of`.
 #[cfg_attr(not(any(test, target_os = "macos")), allow(dead_code))]
-pub(crate) fn applescript_terminal_do_script(path: &std::path::Path) -> String {
-    let escaped = path
-        .to_string_lossy()
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"");
-    format!("tell application \"Terminal\" to do script (quoted form of \"{escaped}\")")
+fn shell_escape_double(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-#[cfg(windows)]
-fn powershell_invoke_command(path: &std::path::Path) -> String {
-    let escaped = path.to_string_lossy().replace('\'', "''");
-    format!("& '{escaped}'")
+/// AppleScript that runs `path` plus extra args in Terminal.
+/// The program and each extra arg are shell-quoted via `quoted form of`.
+#[cfg_attr(not(any(test, target_os = "macos")), allow(dead_code))]
+pub(crate) fn applescript_terminal_do_script(
+    path: &std::path::Path,
+    extra_args: &[&str],
+) -> String {
+    let mut expr = format!(
+        "quoted form of \"{}\"",
+        shell_escape_double(&path.to_string_lossy())
+    );
+    for arg in extra_args {
+        expr.push_str(" & \" \" & quoted form of \"");
+        expr.push_str(&shell_escape_double(arg));
+        expr.push('"');
+    }
+    format!("tell application \"Terminal\" to do script ({expr})")
+}
+
+#[cfg(any(test, windows))]
+pub(crate) fn powershell_invoke_command(path: &std::path::Path, extra_args: &[&str]) -> String {
+    let mut cmd = format!("& '{}'", path.to_string_lossy().replace('\'', "''"));
+    for arg in extra_args {
+        cmd.push_str(" '");
+        cmd.push_str(&arg.replace('\'', "''"));
+        cmd.push('\'');
+    }
+    cmd
 }
 
 /// Start a CLI in a new terminal window.
-pub(crate) fn launch_cli(path: &std::path::Path) -> Result<(), String> {
+pub(crate) fn launch_cli(path: &std::path::Path, extra_args: &[&str]) -> Result<(), String> {
     let path = resolve_cli_launch_path(path);
     #[cfg(windows)]
     {
@@ -214,7 +233,7 @@ pub(crate) fn launch_cli(path: &std::path::Path) -> Result<(), String> {
         const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
         const DETACHED_PROCESS: u32 = 0x0000_0008;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        let invoke = powershell_invoke_command(&path);
+        let invoke = powershell_invoke_command(&path, extra_args);
         if std::process::Command::new("wt")
             .args(["powershell", "-NoLogo", "-NoExit", "-Command", &invoke])
             .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
@@ -236,7 +255,7 @@ pub(crate) fn launch_cli(path: &std::path::Path) -> Result<(), String> {
     }
     #[cfg(target_os = "macos")]
     {
-        let script = applescript_terminal_do_script(&path);
+        let script = applescript_terminal_do_script(&path, extra_args);
         std::process::Command::new("osascript")
             .args(["-e", &script])
             .spawn()
@@ -256,7 +275,7 @@ pub(crate) fn launch_cli(path: &std::path::Path) -> Result<(), String> {
             ("xterm", ["-e"].as_slice()),
         ] {
             let mut cmd = std::process::Command::new(bin);
-            cmd.args(prefix).arg(&path);
+            cmd.args(prefix).arg(&path).args(extra_args);
             if cmd.spawn().is_ok() {
                 return Ok(());
             }
@@ -268,6 +287,7 @@ pub(crate) fn launch_cli(path: &std::path::Path) -> Result<(), String> {
     #[cfg(not(any(windows, unix)))]
     {
         let _ = path;
+        let _ = extra_args;
         Err("launch cli unsupported on this platform".into())
     }
 }
