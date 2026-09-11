@@ -6,7 +6,7 @@ import type { AgentKey, ChatEvent, ChatHistoryTurn, ChatMessage, Conversation } 
 import type { MarkdownFilePreviewDto } from '@/lib/backend/contracts/chat-port';
 import type { RuntimeOptions, RuntimeReply, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings } from '@/lib/backend/contracts/chat-runtime';
 export type { MarkdownFilePreviewDto } from '@/lib/backend/contracts/chat-port';
-export type { RuntimeDecision, RuntimeFileChange, RuntimeQuestion, RuntimeRequest, RuntimeReply, RuntimeSnapshot, RuntimeOptions, RuntimeTurnSettings, RuntimeStartExtras, RuntimeModelOption, RuntimeExtensionItem } from '@/lib/backend/contracts/chat-runtime';
+export type { RuntimeDecision, RuntimeFileChange, RuntimeQuestion, RuntimeRequest, RuntimeReply, RuntimeSnapshot, RuntimeOptions, RuntimeTurnSettings, RuntimeStartExtras, RuntimeModelOption, RuntimeExtensionItem, RuntimeChannel, RuntimeNativeCommand } from '@/lib/backend/contracts/chat-runtime';
 
 export type {
   CoreConversation,

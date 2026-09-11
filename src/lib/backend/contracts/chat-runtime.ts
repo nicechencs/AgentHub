@@ -101,6 +101,16 @@ export interface RuntimeStartExtras {
   skills?: RuntimeSkillRef[];
 }
 
+/** Channel this conversation is actually using. Not the 80ms snapshot. */
+export type RuntimeChannel = 'acp' | 'app-server' | 'stream-json' | 'legacy';
+
+/** Agent-declared slash command (no leading `/`). */
+export interface RuntimeNativeCommand {
+  name: string;
+  description: string;
+  hint?: string | null;
+}
+
 export interface RuntimeOptions {
   conversationId: string;
   settings: RuntimeTurnSettings;
@@ -110,4 +120,7 @@ export interface RuntimeOptions {
   modelsFromCodex: boolean;
   imageInput?: boolean;
   steer?: boolean;
+  transport?: RuntimeChannel;
+  nativeCommands?: RuntimeNativeCommand[];
+  sessionReady?: boolean;
 }

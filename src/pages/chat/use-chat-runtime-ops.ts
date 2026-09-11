@@ -7,8 +7,10 @@ import {
   runtimeOptions,
   runtimeSetSettings,
   saveChatPasteImage,
+  type RuntimeChannel,
   type RuntimeExtensionItem,
   type RuntimeModelOption,
+  type RuntimeNativeCommand,
   type RuntimeTurnSettings,
 } from '@/lib/api/chat';
 import type { Conversation } from '@/lib/types';
@@ -72,8 +74,11 @@ export function useChatRuntimeOps(input: {
   const [extensions, setExtensions] = useState<RuntimeExtensionItem[]>([]);
   const [images, setImages] = useState<string[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
-  const [imageInput, setImageInput] = useState(true);
+  const [imageInput, setImageInput] = useState(false);
   const [steer, setSteer] = useState(false);
+  const [transport, setTransport] = useState<RuntimeChannel>('legacy');
+  const [nativeCommands, setNativeCommands] = useState<RuntimeNativeCommand[]>([]);
+  const [sessionReady, setSessionReady] = useState(false);
   const [loading, setLoading] = useState(false);
   const catalogRef = useRef<RuntimeCatalogMemory>({
     conversationId: null,
@@ -96,8 +101,11 @@ export function useChatRuntimeOps(input: {
       setSettings({});
       setSettingsFrozen(false);
       setExtensions([]);
-      setImageInput(true);
+      setImageInput(false);
       setSteer(false);
+      setTransport('legacy');
+      setNativeCommands([]);
+      setSessionReady(false);
       return;
     }
     const conversationId = active.id;
@@ -163,6 +171,9 @@ export function useChatRuntimeOps(input: {
       setExtensions(retained.extensions);
       setImageInput(options.imageInput !== false);
       setSteer(options.steer === true);
+      setTransport(options.transport ?? 'legacy');
+      setNativeCommands(options.nativeCommands ?? []);
+      setSessionReady(options.sessionReady === true);
     } catch (error) {
       if (
         activeRef.current?.id !== conversationId
@@ -396,6 +407,9 @@ export function useChatRuntimeOps(input: {
     images,
     imageInput,
     steer,
+    transport,
+    nativeCommands,
+    sessionReady,
     selectedSkillIds,
     switchModel,
     switchEffort,

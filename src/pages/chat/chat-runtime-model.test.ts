@@ -16,6 +16,7 @@ import {
   isRuntimeActive,
   isRuntimeChatAgent,
   isRuntimeSessionLocked,
+  nativeCommandMenuEnabled,
   readRuntimeTransport,
   requestMatchesRuntime,
 } from './chat-runtime-model';
@@ -77,6 +78,11 @@ describe('chat runtime transport guards', () => {
     expect(isRuntimeChatAgent('cursor')).toBe(false);
     expect(isRuntimeChatAgent('kiro')).toBe(true);
     expect(isRuntimeChatAgent(null)).toBe(false);
+  });
+  it('lists native slash commands only when the session catalog is ready', () => {
+    expect(nativeCommandMenuEnabled({ sessionReady: false, nativeCommands: [{ name: 'compact' }] })).toBe(false);
+    expect(nativeCommandMenuEnabled({ sessionReady: true, nativeCommands: [] })).toBe(false);
+    expect(nativeCommandMenuEnabled({ sessionReady: true, nativeCommands: [{ name: 'compact' }] })).toBe(true);
   });
   it('drops leftover enabled snapshot when the conversation is no longer a continuous-chat agent', () => {
     const leftover = snapshot(true, 'idle');

@@ -16,10 +16,11 @@ pub(crate) use store::{
 };
 
 pub use types::{
-    RuntimeDecision, RuntimeEvent, RuntimeExtensionItem, RuntimeExtensionKind, RuntimeFileChange,
-    RuntimeLocalImage, RuntimeModelOption, RuntimeOptions, RuntimePermissionOption, RuntimePhase,
-    RuntimeQuestion, RuntimeQuestionOption, RuntimeReply, RuntimeRequest, RuntimeRequestKind,
-    RuntimeSkillRef, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings,
+    RuntimeChannel, RuntimeDecision, RuntimeEvent, RuntimeExtensionItem, RuntimeExtensionKind,
+    RuntimeFileChange, RuntimeLocalImage, RuntimeModelOption, RuntimeNativeCommand, RuntimeOptions,
+    RuntimePermissionOption, RuntimePhase, RuntimeQuestion, RuntimeQuestionOption, RuntimeReply,
+    RuntimeRequest, RuntimeRequestKind, RuntimeSkillRef, RuntimeSnapshot, RuntimeStartExtras,
+    RuntimeTurnSettings,
 };
 
 use std::collections::HashMap;
@@ -89,6 +90,15 @@ struct CatalogCache {
     models: Vec<RuntimeModelOption>,
     extensions: Vec<RuntimeExtensionItem>,
     from_codex: bool,
+}
+
+fn runtime_channel(agent: Option<AgentId>) -> RuntimeChannel {
+    match agent {
+        Some(AgentId::Grok | AgentId::Kiro) => RuntimeChannel::Acp,
+        Some(AgentId::Claude) => RuntimeChannel::StreamJson,
+        Some(AgentId::Codex) => RuntimeChannel::AppServer,
+        _ => RuntimeChannel::Legacy,
+    }
 }
 
 pub struct ChatRuntime {
@@ -243,6 +253,10 @@ impl ChatRuntime {
             }
         }
         let persistent = is_acp_runtime_agent(agent) || is_claude_stream_runtime_agent(agent);
+        let session_ready = record
+            .as_ref()
+            .and_then(|row| row.thread_id.as_deref())
+            .is_some_and(|id| !id.trim().is_empty());
         Ok(RuntimeOptions {
             conversation_id: conversation_id.to_string(),
             settings,
@@ -252,6 +266,9 @@ impl ChatRuntime {
             models_from_codex: cache.from_codex,
             image_input: true,
             steer: !persistent,
+            transport: runtime_channel(agent),
+            native_commands: Vec::new(),
+            session_ready,
         })
     }
 
