@@ -5,7 +5,8 @@ import type { AgentProcessView } from '@/lib/chat-process';
 import { ChatProcessPanel } from './ChatProcessPanel';
 
 vi.mock('@/components/shared/SourcePreview', () => ({
-  SourcePreview: ({ value }: { value: string }) => value,
+  SourcePreview: ({ value, showCopy }: { value: string; showCopy?: boolean }) =>
+    `${showCopy ? '复制' : ''}${value}`,
 }));
 
 function view(partial: Partial<AgentProcessView> & Pick<AgentProcessView, 'steps' | 'phase'>): AgentProcessView {
@@ -106,6 +107,26 @@ describe('ChatProcessPanel human copy', () => {
     );
     expect(html).toContain('先看工作目录');
     expect(html).toMatch(/<details[^>]*open/);
+  });
+
+  it('offers one-click copy on JSON in tool details', () => {
+    const html = renderPanel(
+      view({
+        phase: 'ok',
+        steps: [
+          {
+            type: 'tool',
+            name: 'Read',
+            status: 'end',
+            input: { mode: 'Directory', path: 'D:\\foo', depth: 2 },
+          },
+        ],
+      }),
+      'ok',
+    );
+    expect(html).toContain('细节');
+    expect(html).toContain('复制');
+    expect(html).toContain('Directory');
   });
 
   it('opens run details when the timeline is empty so the pane is not blank', () => {

@@ -14,9 +14,9 @@ import type { SourceFormat } from '@/lib/source-preview';
  * with the rest of the app instead of CodeMirror's VS Code palette.
  */
 const sourceHighlight = HighlightStyle.define([
-  { tag: t.propertyName, color: 'var(--accent)' },
-  { tag: t.attributeName, color: 'var(--accent)' },
-  { tag: t.keyword, color: 'var(--accent)' },
+  { tag: t.propertyName, color: 'var(--accent)', fontWeight: '600' },
+  { tag: t.attributeName, color: 'var(--accent)', fontWeight: '600' },
+  { tag: t.keyword, color: 'var(--accent)', fontWeight: '600' },
   { tag: t.string, color: 'var(--text-secondary)' },
   { tag: t.number, color: 'var(--info)' },
   { tag: t.bool, color: 'var(--success)' },
@@ -47,7 +47,7 @@ export function sourcePreviewExtensions(format: SourceFormat) {
 }
 
 export const SOURCE_PREVIEW_CHROME = [
-  '[&_.cm-editor]:bg-canvas [&_.cm-editor]:font-mono [&_.cm-editor]:text-meta [&_.cm-editor]:text-primary [&_.cm-editor]:leading-relaxed',
+  '[&_.cm-editor]:bg-canvas [&_.cm-editor]:font-mono [&_.cm-editor]:text-meta [&_.cm-editor]:text-primary',
   '[&_.cm-gutters]:bg-canvas [&_.cm-gutters]:text-muted [&_.cm-gutters]:border-border',
   '[&_.cm-activeLine]:bg-hover [&_.cm-activeLineGutter]:bg-hover',
   '[&_.cm-matchingBracket]:bg-hover',
