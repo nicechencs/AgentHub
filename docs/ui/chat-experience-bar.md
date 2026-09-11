@@ -3,7 +3,7 @@ title: Chat 体验标杆
 type: ui
 status: current
 owner: maintainers
-updated: 2026-09-10
+updated: 2026-09-11
 ---
 
 # Chat 体验标杆
@@ -28,4 +28,4 @@ updated: 2026-09-10
 
 前沿对照日期 2026-09-09，依据各家公开文档： [Claude Code 桌面](https://code.claude.com/docs/en/desktop)、[Cursor Agent](https://cursor.com/docs/agent/overview)、[Codex app](https://developers.openai.com/codex/app)。各家能力不同；本页不承诺每家生成相同答案，也不把 Claude 批准卡片或 SDK 宿主写成已完成（B3 首片仅 stream-json 多轮+图片）。
 
-共用界面和各家对接计划仍见 [Chat 统一体验](../proposals/chat-unified-experience.md)。
+共用界面和各家对接计划仍见 [Chat 统一体验](../proposals/chat-unified-experience.md)。在现有对话页上加深思考、命令和跨 Agent 兼容（对照 AionUi 的 ACP 宿主、不以伪终端当底座）见 [Chat 宿主加深](../proposals/chat-host-depth.md)。

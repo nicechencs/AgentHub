@@ -3,7 +3,7 @@ title: 接入 Kiro（kiro-cli）Agent
 type: proposal
 status: proposed
 owner: maintainers
-updated: 2026-09-09
+updated: 2026-09-11
 audience: contributor
 ---
 
@@ -139,7 +139,7 @@ Chat 持续通道后置（**历史约束**）：当时 Kiro headless 无中途�
 
 它们覆盖数百个命令行工具（`git` / `npm` / `docker` / `aws` 等），排错也是终端侧：查 `kiro-cli --version`、`settings autocomplete.disable`、重启终端、换 shell；Inline 查 `inline status` 后再 `enable`。
 
-**AgentHub 对话页不得宣称已有 Kiro 命令补全或灰色提示**，除非真的嵌了 PTY 终端（第一波明确不做）。可选后续：只提供「打开外部终端」或文档链接，仍不把这两项标成对话页已支持。
+**AgentHub 对话页不得宣称已有 Kiro 命令补全或灰色提示**，除非真的嵌了 PTY 终端（第一波明确不做）。可选后续：只提供「打开外部终端」或文档链接，仍不把这两项标成对话页已支持。不以伪终端当对话底座的候选见 [Chat 宿主加深](chat-host-depth.md)。
 
 ## 4. 公开事实（截至 2026-09-06；≠ 本仓库已验证）
 

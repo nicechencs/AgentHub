@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: chat, adapter, and frontend contributors
 source-of-truth: ChatService/RunService, ChatEvent, stream parsers, Tauri Channel adapter, and chat process reducer
-updated: 2026-09-10
+updated: 2026-09-11
 ---
 
 # Chat 与 Agent 运行
@@ -90,6 +90,8 @@ Agent catalog/registry 描述安装、配置、账号、skills、usage、runtime
 
 - [当前实现状态](../STATUS.md)
 - [Chat 体验标杆](../ui/chat-experience-bar.md)
+- [Chat 统一体验](../proposals/chat-unified-experience.md)（提案）
+- [Chat 宿主加深与多 Agent 兼容](../proposals/chat-host-depth.md)（提案：不以伪终端当对话底座；对照 AionUi 加深 ACP 宿主）
 - [Codex Chat B2](../archive/chat-codex-b2.md)
 - [Architecture overview](../architecture/overview.md)
 - [Core and runtime](../architecture/core-runtime.md)
