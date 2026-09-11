@@ -1,6 +1,6 @@
 /** Shared chat action definitions for `/` command search. */
 
-export type ChatActionKind = 'local' | 'draft';
+export type ChatActionKind = 'local' | 'draft' | 'native';
 
 export type ChatActionId = string;
 
@@ -167,6 +167,36 @@ export function actionMatchesQuery(action: ChatActionDef, query: string): boolea
   const tokens = query.split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return true;
   return tokens.every((token) => hay.includes(token));
+}
+
+/** Insert `/name ` so the user can add args; do not send. */
+export function nativeSlashDraft(name: string): string {
+  const command = name.trim().replace(/^\/+/, '');
+  if (!command) return '/';
+  return `/${command} `;
+}
+
+export function nativeCommandActions(
+  commands: ReadonlyArray<{ name: string; description?: string; hint?: string | null }>,
+): ChatActionDef[] {
+  const seen = new Set<string>();
+  const actions: ChatActionDef[] = [];
+  for (const command of commands) {
+    const name = command.name.trim().replace(/^\/+/, '');
+    if (!name || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    const hint = command.hint?.trim() || undefined;
+    const description = [command.description?.trim(), hint].filter(Boolean).join(' · ') || undefined;
+    actions.push({
+      id: `native-command:${name}`,
+      kind: 'native',
+      label: `/${name}`,
+      description,
+      draftText: nativeSlashDraft(name),
+      keywords: [name, command.description ?? '', hint ?? '', 'slash', '命令'],
+    });
+  }
+  return actions;
 }
 
 /** Slash `/` lists real commands. Sample drafts stay on empty-state chips. */

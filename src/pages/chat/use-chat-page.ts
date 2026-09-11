@@ -34,8 +34,10 @@ import {
   clampActionIndex,
   filterChatActions,
   isCommandSearchMode,
+  nativeCommandActions,
   type ChatActionDef,
 } from './chat-actions';
+import { nativeCommandMenuEnabled } from './chat-runtime-model';
 import { composerEnterShouldSubmit } from './chat-composer-model';
 import { lastTurnOutcome } from './chat-turn-outcome';
 import { kiroChatAllowsCommandSearch, kiroChatStance } from './chat-kiro-model';
@@ -244,13 +246,23 @@ export function useChatPage() {
         keywords: ['skill', '技能', '用于本次', item.name, item.id],
       });
     }
+    if (
+      nativeCommandMenuEnabled({
+        sessionReady: runtimeOps.sessionReady,
+        nativeCommands: runtimeOps.nativeCommands,
+      })
+    ) {
+      actions.push(...nativeCommandActions(runtimeOps.nativeCommands));
+    }
     return actions;
   }, [
     runtimeOps.currentEfforts,
     runtimeOps.extensions,
     runtimeOps.frozen,
     runtimeOps.models,
+    runtimeOps.nativeCommands,
     runtimeOps.selectedSkillIds,
+    runtimeOps.sessionReady,
     runtimeOps.settings.effort,
     runtimeOps.settings.model,
     send.runtime?.enabled,
@@ -283,7 +295,7 @@ export function useChatPage() {
         runtimeOps.toggleSkill(action.id.slice('runtime-skill:'.length));
         return;
       }
-      if (action.kind === 'draft' && action.draftText) {
+      if ((action.kind === 'draft' || action.kind === 'native') && action.draftText) {
         setDraft(action.draftText);
         setComposerFocusNonce((n) => n + 1);
         return;

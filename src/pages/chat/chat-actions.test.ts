@@ -9,6 +9,8 @@ import {
   clampActionIndex,
   filterChatActions,
   isCommandSearchMode,
+  nativeCommandActions,
+  nativeSlashDraft,
   normalizeActionQuery,
   slashMenuFixedPosition,
 } from './chat-actions';
@@ -71,6 +73,24 @@ describe('chat action command search', () => {
     const extra = [{ id: 'runtime-model:gpt-spark', kind: 'local' as const, label: '换模型：gpt-spark', keywords: ['model', '模型', 'gpt-spark'] }];
     expect(filterChatActions('/model', extra).map((item) => item.id)).toContain('runtime-model:gpt-spark');
     expect(filterChatActions('\\模型', extra).map((item) => item.id)).toContain('runtime-model:gpt-spark');
+  });
+
+  it('inserts native slash commands as a trailing-space draft, not a send', () => {
+    expect(nativeSlashDraft('compact')).toBe('/compact ');
+    expect(nativeSlashDraft('/compact')).toBe('/compact ');
+    expect(nativeSlashDraft('  ')).toBe('/');
+    const extra = nativeCommandActions([
+      { name: 'compact', description: 'Compact context', hint: '[instructions]' },
+      { name: '/compact', description: 'duplicate' },
+      { name: '  ', description: 'empty' },
+    ]);
+    expect(extra.map((item) => item.id)).toEqual(['native-command:compact']);
+    expect(extra[0]?.kind).toBe('native');
+    expect(extra[0]?.draftText).toBe('/compact ');
+    expect(filterChatActions('/', extra).map((item) => item.id)).toContain('native-command:compact');
+    expect(filterChatActions('/compact', extra).map((item) => item.id)).toContain('native-command:compact');
+    expect(filterChatActions('/').map((item) => item.id)).not.toContain('native-command:compact');
+    expect(chatOverflowMenuActions(extra).some((item) => item.kind === 'native')).toBe(true);
   });
 
   it('exposes disabled reasons without wrapping as prompts', () => {
