@@ -8,7 +8,8 @@ use std::sync::Arc;
 use agenthub_core::adapters::AdapterRegistry;
 use agenthub_core::models::{AgentId, ChatEvent, ChatMessage, ChatMessageStatus, ChatRole};
 use agenthub_core::services::chat_runtime::{
-    RuntimeDecision, RuntimeEvent, RuntimePhase, RuntimeReply, RuntimeSnapshot, RuntimeStartExtras,
+    RuntimeChannel, RuntimeDecision, RuntimeEvent, RuntimePhase, RuntimeReply, RuntimeSnapshot,
+    RuntimeStartExtras,
 };
 use agenthub_core::services::{ChatService, RunService};
 use agenthub_core::storage::{ChatRepo, Database};
@@ -46,6 +47,10 @@ fn empty_codex_snapshot_enables_runtime_before_the_frontend_chooses_a_transport(
         "an empty Codex conversation must select runtime, never legacy"
     );
     assert_eq!(snapshot.phase, RuntimePhase::Idle);
+    let options = chat.runtime().options(&id).expect("runtime options");
+    assert_eq!(options.transport, RuntimeChannel::AppServer);
+    assert!(options.native_commands.is_empty());
+    assert!(!options.session_ready);
 }
 
 #[test]
@@ -90,6 +95,10 @@ fn empty_claude_snapshot_enables_runtime() {
         "an empty Claude conversation must select stream-json runtime, never legacy"
     );
     assert_eq!(snapshot.phase, RuntimePhase::Idle);
+    let options = chat.runtime().options(&id).expect("runtime options");
+    assert_eq!(options.transport, RuntimeChannel::StreamJson);
+    assert!(options.native_commands.is_empty());
+    assert!(!options.session_ready);
 }
 
 #[test]

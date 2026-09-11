@@ -339,7 +339,7 @@ export default function ChatPage() {
                 else void page.refreshAgents().catch(() => {});
               }}
             />
-            {chatShowsRuntimeRequestPanels(page.primaryAgent) && page.runtime?.pendingRequests.length ? (
+            {chatShowsRuntimeRequestPanels(page.runtime?.enabled) && page.runtime?.pendingRequests.length ? (
               <ChatRuntimeRequests
                 agentId={page.primaryAgent}
                 requests={page.runtime.pendingRequests}
@@ -463,6 +463,8 @@ export default function ChatPage() {
                   active={page.active}
                   connectionOptions={page.connectionOptions}
                   primaryAgent={page.primaryAgent}
+                  runtimeEnabled={Boolean(page.runtime?.enabled)}
+                  steer={page.runtimeOps.steer}
                   agentPickerLabel={page.agentPickerLabel}
                   connectionView={page.connectionView}
                   switchingProvider={page.switchingProvider}

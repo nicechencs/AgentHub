@@ -4,7 +4,6 @@
  * Legacy print chats stay off ChatRuntime until the user continues.
  */
 import type { TranslateFn } from '@/lib/i18n';
-import { isRuntimeChatAgent } from './chat-runtime-model';
 
 export function isKiroChatAgent(agentId: string | null | undefined): boolean {
   return agentId === 'kiro';
@@ -33,8 +32,9 @@ export function kiroChatAllowsCommandSearch(agentId: string | null | undefined):
   return kiroChatStance(agentId)?.allowCommandSearch !== false;
 }
 
-export function chatShowsRuntimeRequestPanels(agentId: string | null | undefined): boolean {
-  return isRuntimeChatAgent(agentId);
+/** Confirmation cards follow the bound snapshot, not the Agent name whitelist. */
+export function chatShowsRuntimeRequestPanels(runtimeEnabled: boolean | undefined): boolean {
+  return runtimeEnabled === true;
 }
 
 /** Composer model/effort chips follow `allowModelPicker` (enabled for Kiro). */

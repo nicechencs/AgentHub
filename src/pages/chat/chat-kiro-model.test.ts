@@ -53,10 +53,9 @@ describe('Kiro chat honesty helpers', () => {
     expect(kiroChatAllowsCommandSearch('codex')).toBe(true);
     expect(kiroChatAllowsCommandSearch('pi')).toBe(true);
     expect(kiroChatAllowsCommandSearch('grok')).toBe(true);
-    expect(chatShowsRuntimeRequestPanels('kiro')).toBe(true);
-    expect(chatShowsRuntimeRequestPanels('codex')).toBe(true);
-    expect(chatShowsRuntimeRequestPanels('grok')).toBe(true);
-    expect(chatShowsRuntimeRequestPanels('cursor')).toBe(false);
+    expect(chatShowsRuntimeRequestPanels(true)).toBe(true);
+    expect(chatShowsRuntimeRequestPanels(false)).toBe(false);
+    expect(chatShowsRuntimeRequestPanels(undefined)).toBe(false);
     expect(chatComposerChoiceOptions('kiro', ['sonnet', 'haiku'])).toEqual(['sonnet', 'haiku']);
     expect(chatComposerChoiceOptions('claude', ['sonnet', 'haiku'])).toEqual(['sonnet', 'haiku']);
   });

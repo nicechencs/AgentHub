@@ -20,9 +20,12 @@ export function emptyStarterChipHint(taskHint: string, startersHint: string): st
   return `${taskHint} · ${startersHint}`;
 }
 
-/** Grok / Kiro / Claude queue after this turn; Codex can add mid-run. */
-export function composerShowsQueueOnlyHint(agentId: string | null | undefined): boolean {
-  return agentId === 'grok' || agentId === 'kiro' || agentId === 'claude';
+/** Continuous chat without mid-turn inject. Reads Options.steer, not Agent names. */
+export function composerShowsQueueOnlyHint(input: {
+  runtimeEnabled?: boolean;
+  steer?: boolean;
+}): boolean {
+  return input.runtimeEnabled === true && input.steer === false;
 }
 
 export function composerInvitePlaceholder(
@@ -35,9 +38,9 @@ export function composerInvitePlaceholder(
 
 export function composerCapabilityHint(
   t: TranslateFn,
-  input: { agentId: string | null | undefined; sending: boolean },
+  input: { runtimeEnabled?: boolean; steer?: boolean; sending: boolean },
 ): string | null {
-  if (input.sending || !composerShowsQueueOnlyHint(input.agentId)) return null;
+  if (input.sending || !composerShowsQueueOnlyHint(input)) return null;
   return t('chat.composer.queueOnlyHint');
 }
 

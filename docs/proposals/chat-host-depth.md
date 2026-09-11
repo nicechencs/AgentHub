@@ -11,7 +11,7 @@ updated: 2026-09-11
 
 在现有对话页和各家机器通道上加深思考、命令和跨 Agent 兼容；**不以伪终端当对话底座**。对照 [AionUi](https://github.com/iOfficeAI/AionUi) 的 GUI 宿主，吸收握手定能力、统一事件、协议斜杠目录；不搬内置引擎、独立后台进程或多人协作。
 
-本页不替换 [Chat 统一体验](chat-unified-experience.md)，只补「底座已定之后如何加深」。**文档先行：本页未授权实施，不得据此改代码、改界面文案或把能力标成 Full。** 现行行为以 [STATUS](../STATUS.md) 和 [Chat 与 Agent](../concepts/chat-and-agents.md) 为准。
+本页不替换 [Chat 统一体验](chat-unified-experience.md)，只补「底座已定之后如何加深」。未合入、未验收前不得把能力标成 Full，也不得改 [STATUS](../STATUS.md) 的现行事实。切片进度见下文。
 
 ## 问题
 
@@ -143,7 +143,9 @@ AionUi 桌面只画界面；`aioncore` 用 ACP JSON-RPC（stdio）拉起本机 C
 
 A–C 不引入伪终端，不声明 `clientCapabilities.terminal`。
 
-## 建议切片（未授权、未开工）
+## 建议切片
+
+文档先行。未合入前不得把本页标成 current。切片 A 在分支 `feat/chat-host-depth-options` 实施；B / C 未开工。
 
 依赖：`C ← B`（没有目录就没有对方命令可列）。`A` 可单独先做。不要先扩 80ms 快照。不要顺手拆 enable 白名单。
 

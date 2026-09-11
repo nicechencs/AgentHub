@@ -156,6 +156,7 @@ describe('grok follow-up after the current turn', () => {
       grokCanQueueFollowUp({
         agentId: 'grok',
         runtimeEnabled: true,
+        steer: false,
         phase: 'running',
         sending: true,
       }),
@@ -164,6 +165,7 @@ describe('grok follow-up after the current turn', () => {
       grokCanQueueFollowUp({
         agentId: 'codex',
         runtimeEnabled: true,
+        steer: true,
         phase: 'running',
         sending: true,
       }),
@@ -188,6 +190,7 @@ describe('grok follow-up after the current turn', () => {
       grokCanQueueFollowUp({
         agentId: 'kiro',
         runtimeEnabled: true,
+        steer: false,
         phase: 'running',
         sending: true,
       }),
@@ -196,6 +199,7 @@ describe('grok follow-up after the current turn', () => {
       grokCanQueueFollowUp({
         agentId: 'claude',
         runtimeEnabled: true,
+        steer: false,
         phase: 'running',
         sending: true,
       }),

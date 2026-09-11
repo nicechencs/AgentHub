@@ -124,6 +124,30 @@ function mockRuntimeSteer(conversationId: string): boolean {
   return mockConversationAgent(conversationId) === 'codex';
 }
 
+function mockRuntimeChannel(agent: AgentKey | undefined): RuntimeOptions['transport'] {
+  if (agent === 'grok' || agent === 'kiro') return 'acp';
+  if (agent === 'claude') return 'stream-json';
+  if (agent === 'codex') return 'app-server';
+  return 'legacy';
+}
+
+function mockRuntimeSessionReady(conversationId: string): boolean {
+  const snapshot = runtimeSnapshots.get(conversationId);
+  return Boolean(snapshot?.enabled && snapshot.runId?.trim());
+}
+
+function mockRuntimeOptionExtras(conversationId: string): Pick<
+  RuntimeOptions,
+  'transport' | 'nativeCommands' | 'sessionReady'
+> {
+  const agent = mockConversationAgent(conversationId);
+  return {
+    transport: mockRuntimeChannel(agent),
+    nativeCommands: [],
+    sessionReady: mockRuntimeSessionReady(conversationId),
+  };
+}
+
 function mockRuntimeCatalog(agent: AgentKey | undefined): Pick<RuntimeOptions, 'models' | 'extensions'> {
   if (agent === 'claude') {
     const efforts = ['low', 'medium', 'high', 'xhigh', 'max'];
@@ -807,6 +831,9 @@ export function createMockChatPort(): ChatPort {
           settings,
           settingsFrozen: frozen,
           imageInput: cached.imageInput !== false,
+          transport: cached.transport ?? mockRuntimeOptionExtras(conversationId).transport,
+          nativeCommands: cached.nativeCommands ?? [],
+          sessionReady: cached.sessionReady ?? mockRuntimeOptionExtras(conversationId).sessionReady,
         };
       }
       // Match core: never invent a catalog mid-turn when nothing was prefetched.
@@ -820,6 +847,7 @@ export function createMockChatPort(): ChatPort {
           modelsFromCodex: false,
           imageInput: true,
           steer: mockRuntimeSteer(conversationId),
+          ...mockRuntimeOptionExtras(conversationId),
         };
       }
       const catalog = mockRuntimeCatalog(mockConversationAgent(conversationId));
@@ -832,6 +860,7 @@ export function createMockChatPort(): ChatPort {
         modelsFromCodex: false,
         imageInput: true,
         steer: mockRuntimeSteer(conversationId),
+        ...mockRuntimeOptionExtras(conversationId),
       };
       options.models = applyMockDeniedEfforts(options.models);
       runtimeOptionsCache.set(conversationId, options);

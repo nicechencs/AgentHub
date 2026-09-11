@@ -240,6 +240,29 @@ pub struct RuntimeStartExtras {
     pub skills: Vec<RuntimeSkillRef>,
 }
 
+/// Channel this conversation is actually using. Not the 80ms snapshot.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum RuntimeChannel {
+    #[serde(rename = "acp")]
+    Acp,
+    #[serde(rename = "app-server")]
+    AppServer,
+    #[serde(rename = "stream-json")]
+    StreamJson,
+    #[serde(rename = "legacy")]
+    Legacy,
+}
+
+/// Agent-declared slash command (no leading `/`). Empty until the session is ready.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeNativeCommand {
+    pub name: String,
+    pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeOptions {
@@ -254,6 +277,12 @@ pub struct RuntimeOptions {
     pub image_input: bool,
     #[serde(default)]
     pub steer: bool,
+    #[serde(default)]
+    pub transport: RuntimeChannel,
+    #[serde(default)]
+    pub native_commands: Vec<RuntimeNativeCommand>,
+    #[serde(default)]
+    pub session_ready: bool,
 }
 
 impl RuntimeOptions {
@@ -269,6 +298,15 @@ impl RuntimeOptions {
             models_from_codex: false,
             image_input: false,
             steer: false,
+            transport: RuntimeChannel::Legacy,
+            native_commands: Vec::new(),
+            session_ready: false,
         }
+    }
+}
+
+impl Default for RuntimeChannel {
+    fn default() -> Self {
+        Self::Legacy
     }
 }

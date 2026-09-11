@@ -515,6 +515,9 @@ fn idle_enabled_runtime_allows_agent_and_cwd_changes() {
     assert!(options.models.is_empty());
     assert!(!options.image_input);
     assert!(!options.steer);
+    assert_eq!(options.transport, RuntimeChannel::Legacy);
+    assert!(options.native_commands.is_empty());
+    assert!(!options.session_ready);
     assert!(!store.persisted_enabled(&conv.id).unwrap());
 }
 
@@ -544,6 +547,9 @@ fn options_for_pi_are_empty_and_do_not_enable_runtime() {
     assert!(options.extensions.is_empty());
     assert!(!options.image_input);
     assert!(!options.steer);
+    assert_eq!(options.transport, RuntimeChannel::Legacy);
+    assert!(options.native_commands.is_empty());
+    assert!(!options.session_ready);
     assert!(!runtime.store.persisted_enabled("pi-empty").unwrap());
     assert!(!runtime.snapshot("pi-empty", None).unwrap().enabled);
 }
