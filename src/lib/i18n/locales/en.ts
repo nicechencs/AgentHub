@@ -2994,6 +2994,8 @@ export const en = {
       runDetails: "Details of this run",
       command: "Command",
       stderr: "Process log",
+      resizeCommand: "Drag to resize the command",
+      resizeLog: "Drag to resize the process log",
       exitCode: "Exit code {code}",
       unrecognizedLine: "One line couldn't be shown",
       nonJsonLine: "One line wasn't normal output",

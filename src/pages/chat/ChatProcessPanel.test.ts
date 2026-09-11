@@ -144,6 +144,24 @@ describe('ChatProcessPanel human copy', () => {
     expect(html).not.toMatch(/text-danger/);
   });
 
+  it('offers copy and a remembered height drag on command and process log', () => {
+    const html = renderPanel(
+      view({
+        phase: 'running',
+        command: 'dsh --profile headless',
+        stderr: 'line 26: rebase onto latest main',
+        steps: [],
+      }),
+    );
+    expect(html).toContain('aria-label="复制"');
+    expect(html).toContain('拖动调整命令高度');
+    expect(html).toContain('拖动调整过程日志高度');
+    expect(html).toContain('cursor-row-resize');
+    expect(html).toContain('dsh --profile headless');
+    expect(html).not.toContain('max-h-24');
+    expect(html).not.toContain('max-h-36');
+  });
+
   it('opens run details when the timeline is empty so the pane is not blank', () => {
     const html = renderPanel(
       view({

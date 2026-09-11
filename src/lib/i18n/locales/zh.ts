@@ -2974,6 +2974,8 @@ export const zh = {
       runDetails: "运行详情",
       command: "命令",
       stderr: "过程日志",
+      resizeCommand: "拖动调整命令高度",
+      resizeLog: "拖动调整过程日志高度",
       exitCode: "退出码 {code}",
       unrecognizedLine: "有一行输出没法展示",
       nonJsonLine: "有一行不是正常输出",
