@@ -11,7 +11,7 @@ import {
   toolActionTone,
   type AgentProcessView,
 } from '@/lib/chat-process';
-import { looksLikeJsonObject, tryPrettyJson } from '@/lib/source-preview';
+import { looksLikeJsonObject } from '@/lib/source-preview';
 import type { ProcessStep } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
@@ -38,20 +38,19 @@ function PayloadPreview({
   density: 'preview' | 'compact';
   className?: string;
 }) {
-  if (looksLikeDiff(text)) {
-    return <DiffAwarePre text={text} className={className} />;
-  }
-  const pretty = tryPrettyJson(text);
-  if (pretty || looksLikeJsonObject(text)) {
+  if (looksLikeJsonObject(text)) {
     return (
       <SourcePreview
-        value={pretty ?? text}
+        value={text}
         format="json"
         density={density}
-        pretty={false}
+        showCopy
         className={className}
       />
     );
+  }
+  if (looksLikeDiff(text)) {
+    return <DiffAwarePre text={text} className={className} />;
   }
   return <pre className={className}>{clipProcessTail(text)}</pre>;
 }

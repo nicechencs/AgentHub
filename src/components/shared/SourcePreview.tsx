@@ -62,7 +62,10 @@ export function SourcePreview({
   return (
     <div
       id={id}
-      className={cn('min-w-0 overflow-hidden rounded-card border border-border bg-canvas', className)}
+      className={cn(
+        'min-w-0 overflow-hidden rounded-card border border-border bg-canvas text-primary',
+        className,
+      )}
     >
       {showCopy ? (
         <div className="flex justify-end border-b border-border px-1.5 py-0.5">
@@ -86,6 +89,7 @@ export function SourcePreview({
           density === 'editor' && 'max-h-80 min-h-24 [&_.cm-editor]:min-h-24',
           density === 'preview' && 'max-h-64',
           density === 'compact' && 'max-h-36',
+          density === 'compact' ? '[&_.cm-editor]:leading-snug' : '[&_.cm-editor]:leading-relaxed',
           SOURCE_PREVIEW_CHROME,
         )}
       >
