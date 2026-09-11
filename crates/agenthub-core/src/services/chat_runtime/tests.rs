@@ -588,6 +588,10 @@ fn grok_options_surface_seeded_native_commands_and_handshake_image() {
     assert_eq!(options.native_commands.len(), 1);
     assert_eq!(options.native_commands[0].name, "compact");
     assert!(!options.image_input);
+    let first = runtime.snapshot("grok-opts", None).unwrap();
+    assert!(first.catalog_epoch >= 1);
+    let again = runtime.snapshot("grok-opts", None).unwrap();
+    assert_eq!(again.catalog_epoch, first.catalog_epoch);
 }
 
 #[test]

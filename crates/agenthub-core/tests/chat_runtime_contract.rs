@@ -189,11 +189,13 @@ fn runtime_dtos_use_the_public_camel_case_wire_contract() {
         pending_requests: Vec::new(),
         current_message: None,
         gap: false,
+        catalog_epoch: 0,
     };
     let value = serde_json::to_value(&snapshot).expect("serialize snapshot");
     assert_eq!(value["conversationId"], "conversation-1");
     assert_eq!(value["runId"], "run-1");
     assert_eq!(value["lastSequence"], 7);
+    assert_eq!(value["catalogEpoch"], 0);
     assert!(value["currentMessage"].is_null());
     assert!(value.get("conversation_id").is_none());
     let restored: RuntimeSnapshot = serde_json::from_value(value).expect("round trip snapshot");

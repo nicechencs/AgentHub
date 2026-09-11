@@ -17,6 +17,7 @@ import {
   isRuntimeChatAgent,
   isRuntimeSessionLocked,
   nativeCommandMenuEnabled,
+  shouldRefreshRuntimeCatalog,
   readRuntimeTransport,
   requestMatchesRuntime,
 } from './chat-runtime-model';
@@ -78,6 +79,12 @@ describe('chat runtime transport guards', () => {
     expect(isRuntimeChatAgent('cursor')).toBe(false);
     expect(isRuntimeChatAgent('kiro')).toBe(true);
     expect(isRuntimeChatAgent(null)).toBe(false);
+  });
+  it('refreshes the Options catalog only when the snapshot epoch increases', () => {
+    expect(shouldRefreshRuntimeCatalog(0, 0)).toBe(false);
+    expect(shouldRefreshRuntimeCatalog(2, 2)).toBe(false);
+    expect(shouldRefreshRuntimeCatalog(2, 1)).toBe(false);
+    expect(shouldRefreshRuntimeCatalog(0, 1)).toBe(true);
   });
   it('lists native slash commands only when the session catalog is ready', () => {
     expect(nativeCommandMenuEnabled({ sessionReady: false, nativeCommands: [{ name: 'compact' }] })).toBe(false);
