@@ -2857,6 +2857,7 @@ export const en = {
       fileChangeKindDelete: 'Delete',
       needConfirm: 'Needs confirmation',
       needAnswer: 'Needs your answer',
+      plan: 'Plan',
       kind: {
         read: 'Read file',
         edit: 'Modify file',

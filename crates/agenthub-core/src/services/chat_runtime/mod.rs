@@ -18,7 +18,8 @@ pub(crate) use store::{
 pub use types::{
     RuntimeChannel, RuntimeDecision, RuntimeEvent, RuntimeExtensionItem, RuntimeExtensionKind,
     RuntimeFileChange, RuntimeLocalImage, RuntimeModelOption, RuntimeNativeCommand, RuntimeOptions,
-    RuntimePermissionOption, RuntimePhase, RuntimeQuestion, RuntimeQuestionOption, RuntimeReply,
+    RuntimePermissionOption, RuntimePhase, RuntimePlanEntry, RuntimeQuestion, RuntimeQuestionOption,
+    RuntimeReply,
     RuntimeRequest, RuntimeRequestKind, RuntimeSkillRef, RuntimeSnapshot, RuntimeStartExtras,
     RuntimeTurnSettings,
 };
@@ -93,6 +94,7 @@ struct CatalogCache {
     native_commands: Vec<RuntimeNativeCommand>,
     image_input: Option<bool>,
     catalog_epoch: i64,
+    plan: Vec<RuntimePlanEntry>,
 }
 
 fn merge_catalog_cache(previous: Option<&CatalogCache>, mut fetched: CatalogCache) -> CatalogCache {
@@ -104,6 +106,9 @@ fn merge_catalog_cache(previous: Option<&CatalogCache>, mut fetched: CatalogCach
             fetched.image_input = previous.image_input;
         }
         fetched.catalog_epoch = previous.catalog_epoch.max(fetched.catalog_epoch);
+        if fetched.plan.is_empty() {
+            fetched.plan = previous.plan.clone();
+        }
     }
     fetched
 }
@@ -148,10 +153,10 @@ impl ChatRuntime {
         after_sequence: Option<i64>,
     ) -> Result<RuntimeSnapshot> {
         let mut snapshot = self.store.snapshot(conversation_id, after_sequence)?;
-        snapshot.catalog_epoch = self
-            .peek_catalog(conversation_id)
-            .map(|cache| cache.catalog_epoch)
-            .unwrap_or(0);
+        if let Some(cache) = self.peek_catalog(conversation_id) {
+            snapshot.catalog_epoch = cache.catalog_epoch;
+            snapshot.plan = cache.plan;
+        }
         Ok(snapshot)
     }
 
@@ -1386,6 +1391,7 @@ impl ActorWorker {
         self.message_id = Some(message_id);
         self.turn_id = None;
         self.run_id = Some(run_id);
+        self.clear_turn_plan();
         logging::log_chat_info(
             "send",
             &self.conversation_id,
@@ -3000,6 +3006,9 @@ impl ActorWorker {
         if let Some(catalog) = crate::utils::stream_parse::acp::extract_config_catalog(params) {
             self.apply_acp_config_catalog(catalog);
         }
+        if let Some(entries) = crate::utils::stream_parse::acp::extract_plan(params) {
+            self.apply_acp_plan(entries);
+        }
         let envelope = json!({
             "jsonrpc": "2.0",
             "method": "session/update",
@@ -3060,13 +3069,40 @@ impl ActorWorker {
     }
 
     fn with_catalog_epoch(&self, mut snapshot: RuntimeSnapshot) -> RuntimeSnapshot {
-        snapshot.catalog_epoch = self
+        if let Some(cache) = self
             .catalogs
             .lock()
             .ok()
-            .and_then(|guard| guard.get(&self.conversation_id).map(|cache| cache.catalog_epoch))
-            .unwrap_or(0);
+            .and_then(|guard| guard.get(&self.conversation_id).cloned())
+        {
+            snapshot.catalog_epoch = cache.catalog_epoch;
+            snapshot.plan = cache.plan;
+        }
         snapshot
+    }
+
+    fn apply_acp_plan(&self, entries: Vec<crate::utils::stream_parse::acp::AcpPlanEntry>) {
+        if entries.is_empty() {
+            return;
+        }
+        if let Ok(mut guard) = self.catalogs.lock() {
+            guard.entry(self.conversation_id.clone()).or_default().plan = entries
+                .into_iter()
+                .map(|entry| RuntimePlanEntry {
+                    content: entry.content,
+                    status: entry.status,
+                    priority: entry.priority,
+                })
+                .collect();
+        }
+    }
+
+    fn clear_turn_plan(&self) {
+        if let Ok(mut guard) = self.catalogs.lock() {
+            if let Some(entry) = guard.get_mut(&self.conversation_id) {
+                entry.plan.clear();
+            }
+        }
     }
 
     fn apply_acp_config_catalog(&self, catalog: crate::utils::stream_parse::acp::AcpConfigCatalog) {

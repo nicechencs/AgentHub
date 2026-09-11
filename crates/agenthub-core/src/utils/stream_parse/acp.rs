@@ -68,28 +68,14 @@ pub(crate) fn decode_session_update(v: &Value) -> Vec<ProcessStep> {
                 detail: Some(detail),
             }]
         }
-        "plan" => {
-            let body = update
-                .get("planContent")
-                .or_else(|| update.get("plan_content"))
-                .and_then(|s| s.as_str())
-                .or_else(|| update.get("content").and_then(|s| s.as_str()))
-                .unwrap_or("");
-            vec![ProcessStep::Status {
-                phase: "running".into(),
-                detail: Some(if body.is_empty() {
-                    "plan".into()
-                } else {
-                    truncate(body, 240)
-                }),
-            }]
-        }
+        // Live chrome on the snapshot — never a process-timeline row.
+        "plan" => vec![],
         // Catalog only — never a process-timeline row.
         "available_commands" | "available_commands_update" => vec![],
         "usage" | "token_usage" | "tokenUsage" | "tokens_used" | "turn_completed"
         | "turn_usage" | "response_completed" => usage_steps(update),
-        "context_usage"
-        | "auto_compact_started"
+        "context_usage" => context_usage_steps(update),
+        "auto_compact_started"
         | "auto_compact_completed"
         | "auto_compact"
         | "context_compact"
@@ -225,6 +211,58 @@ fn config_current_value(item: &Value) -> Option<String> {
     first_str(item, &["currentValue", "current_value", "selectedValue", "selected_value"])
 }
 
+/// One ACP plan row. Not a `ProcessStep`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AcpPlanEntry {
+    pub content: String,
+    pub status: Option<String>,
+    pub priority: Option<String>,
+}
+
+/// `Some` for `sessionUpdate: plan`, even when the entry list is empty.
+pub(crate) fn extract_plan(v: &Value) -> Option<Vec<AcpPlanEntry>> {
+    let update = v.get("update").or_else(|| v.get("data")).unwrap_or(v);
+    let uty = update
+        .get("sessionUpdate")
+        .or_else(|| update.get("session_update"))
+        .or_else(|| update.get("type"))
+        .and_then(|t| t.as_str())
+        .unwrap_or("");
+    if uty != "plan" {
+        return None;
+    }
+    if let Some(items) = update
+        .get("entries")
+        .or_else(|| update.get("plan"))
+        .and_then(|value| value.as_array())
+    {
+        return Some(items.iter().filter_map(parse_plan_entry).collect());
+    }
+    let body = first_str(update, &["planContent", "plan_content"])
+        .or_else(|| {
+            update
+                .get("content")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+        });
+    Some(body.into_iter().map(|content| AcpPlanEntry {
+        content,
+        status: None,
+        priority: None,
+    }).collect())
+}
+
+fn parse_plan_entry(value: &Value) -> Option<AcpPlanEntry> {
+    let content = first_str(value, &["content", "text", "title"])?;
+    Some(AcpPlanEntry {
+        content,
+        status: first_str(value, &["status"]),
+        priority: first_str(value, &["priority"]),
+    })
+}
+
 fn parse_available_command(value: &Value) -> Option<AcpAvailableCommand> {
     let name = first_str(value, &["name", "command"])?;
     let description = first_str(value, &["description"]).unwrap_or_default();
@@ -352,12 +390,77 @@ fn usage_steps(update: &Value) -> Vec<ProcessStep> {
         .unwrap_or_default()
 }
 
+/// Window used/size from `context_usage`. Skips all-zero payloads (no fake 0).
+fn context_usage_steps(update: &Value) -> Vec<ProcessStep> {
+    let usage = update
+        .get("usage")
+        .filter(|value| value.is_object())
+        .unwrap_or(update);
+    let used = first_u64(
+        usage,
+        &[
+            "used",
+            "usedTokens",
+            "used_tokens",
+            "tokenCount",
+            "token_count",
+            "current",
+            "totalTokens",
+            "total_tokens",
+            "total",
+        ],
+    );
+    let window = first_u64(
+        usage,
+        &[
+            "size",
+            "maxTokens",
+            "max_tokens",
+            "contextWindow",
+            "context_window",
+            "window",
+            "limit",
+        ],
+    );
+    if used.unwrap_or(0) == 0 && window.unwrap_or(0) == 0 {
+        return vec![];
+    }
+    vec![ProcessStep::Usage {
+        scope: Some("context".into()),
+        input: None,
+        output: None,
+        cache_read: None,
+        cache_write: None,
+        reasoning: None,
+        total: used,
+        context_window: window,
+    }]
+}
+
 pub(crate) fn first_str(v: &Value, keys: &[&str]) -> Option<String> {
     keys.iter()
         .find_map(|k| v.get(*k).and_then(|x| x.as_str()))
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string)
+}
+
+fn first_u64(v: &Value, keys: &[&str]) -> Option<u64> {
+    for key in keys {
+        let Some(value) = v.get(*key) else {
+            continue;
+        };
+        if let Some(n) = value.as_u64() {
+            return Some(n);
+        }
+        if let Some(n) = value.as_i64().and_then(|n| u64::try_from(n).ok()) {
+            return Some(n);
+        }
+        if let Some(n) = value.as_f64().and_then(|n| (n >= 0.0).then_some(n as u64)) {
+            return Some(n);
+        }
+    }
+    None
 }
 
 fn map_tool_status(raw: &str, is_update: bool) -> String {

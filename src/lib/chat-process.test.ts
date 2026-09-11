@@ -20,6 +20,7 @@ import {
   timelineProcessSteps,
   toolActionTarget,
   toolActionTone,
+  contextWindowUsage,
   usageByScope,
   type ProcessMap,
 } from '@/lib/chat-process';
@@ -839,6 +840,41 @@ describe('chat-process reduceProcessEvent', () => {
     expect(formatTurnUsageFooter(steps, true, t)).toBe('');
     expect(formatTurnUsageFooter(steps, false, t)).toBe('输入 100 · 输出 20 · 缓存 40');
     expect(stepSummary(turn!, t)).toBe('当前轮 输入 100 · 输出 20 · 缓存 40');
+  });
+
+  it('shows ACP context window in the turn footer when numbers exist', () => {
+    let map: ProcessMap = {};
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'grok',
+        step: { type: 'usage', scope: 'turn', input: 10, output: 2 },
+      },
+      1,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'grok',
+        step: { type: 'usage', scope: 'context', total: 2048, contextWindow: 128000 },
+      },
+      2,
+    );
+    const steps = map['1:grok']?.steps ?? [];
+    const { turn, session } = usageByScope(steps);
+    expect(turn).toMatchObject({ input: 10, output: 2 });
+    expect(session).toBeUndefined();
+    expect(contextWindowUsage(steps)).toMatchObject({ total: 2048, contextWindow: 128000 });
+    expect(formatTurnUsageFooter(steps, false, t)).toBe('输入 10 · 输出 2 · 2048 / 128000');
+    expect(formatTurnUsageFooter(
+      [{ type: 'usage', scope: 'context', total: 0, contextWindow: 128000 }],
+      false,
+      t,
+    )).toBe('');
   });
 });
 

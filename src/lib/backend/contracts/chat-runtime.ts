@@ -53,6 +53,14 @@ export interface RuntimeSnapshot {
   currentMessage?: ChatMessage | null;
   /** Bumps when the Options catalog changes. Not the command list. */
   catalogEpoch?: number;
+  /** Current-turn ACP plan. Live chrome only — dropped on the next turn. */
+  plan?: RuntimePlanEntry[];
+}
+
+export interface RuntimePlanEntry {
+  content: string;
+  status?: string | null;
+  priority?: string | null;
 }
 
 export interface RuntimeReply {
