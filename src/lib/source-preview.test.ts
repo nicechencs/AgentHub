@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   clipPreviewText,
+  compressBlankLines,
   formatJsonPayload,
   inferSourceFormat,
   prepareSourcePreview,
@@ -36,6 +37,12 @@ describe('source preview helpers', () => {
 
   it('pretty-prepares JSON for read-only display and clips huge payloads', () => {
     expect(prepareSourcePreview('{"a":1}', 'json')).toBe('{\n  "a": 1\n}');
+    expect(prepareSourcePreview('{\n\n  "a": 1\n\n]\n}', 'json')).toBe(
+      '{\n  "a": 1\n]\n}',
+    );
+    expect(
+      prepareSourcePreview('{\n\n  "a": 1\n\n]\n}', 'json', { compressBlankLines: false }),
+    ).toBe('{\n\n  "a": 1\n\n]\n}');
     expect(prepareSourcePreview('model = "x"', 'toml')).toBe('model = "x"');
     const huge = `{"k":"${'x'.repeat(20_000)}"}`;
     const clipped = prepareSourcePreview(huge, 'json');
@@ -50,6 +57,12 @@ describe('source preview helpers', () => {
     expect(formatJsonPayload('{"a":1}')).toBe('{\n  "a": 1\n}');
     expect(formatJsonPayload('plain tool text')).toBe('plain tool text');
     expect(formatJsonPayload(null)).toBeNull();
+  });
+
+  it('collapses blank lines without touching indented JSON', () => {
+    expect(compressBlankLines('{\n\n  "a": 1\n\n}')).toBe('{\n  "a": 1\n}');
+    expect(compressBlankLines('{\r\n  \r\n  "a": 1\r\n}')).toBe('{\n  "a": 1\n}');
+    expect(compressBlankLines('{\n  "a": 1\n}')).toBe('{\n  "a": 1\n}');
   });
 
   it('clips at the requested bound', () => {

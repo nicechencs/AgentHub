@@ -7,5 +7,11 @@
   "o4-mini",
   "moonshot/kimi-k2.5",
   "grok-4",
-  "kimi-for-coding"
+  "kimi-for-coding",
+  "deepseek-chat",
+  "deepseek-v4-flash",
+  "deepseek-flash",
+  "zai/glm-4.7",
+  "glm-4.7",
+  "qwen-plus"
 ]

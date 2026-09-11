@@ -3,7 +3,7 @@ title: AgentHub 当前实现状态
 type: status
 status: current
 owner: maintainers
-updated: 2026-09-10
+updated: 2026-09-11
 ---
 
 # 当前实现状态
@@ -24,7 +24,7 @@ updated: 2026-09-10
   - **新空 Grok 会话**：持续聊天（模型/思考、图片、后续轮排队），**不支持**为本轮指定「用于本次」技能，界面也不画可点的假按钮。真实窗口验收已通过。Chat 只带官方 `grok agent --no-leader stdio` 旗标（`--permission-mode` 写在 `agent` 前或后都会让进程在出卡前退出）。`session/new` 带 `_meta.yoloMode=false`，覆盖本机 always-approve；握手按官方 ACP 声明本机可读写文件、不发 `initialized`。工作目录外写出走本机 `fs/write_text_file`：先出「修改文件」卡片再写文件，可点一直允许；目录内直接写。对方若另发 `session/request_permission`，卡片仍只带对方给的「一直允许」。会话自动批准才加 `--always-approve` 和 `_meta.yoloMode=true`。进程退出时界面写「Grok 已退出」，不写 Codex 的 app-server 字样。
   - **新空 Kiro 会话**：`kiro-cli acp` 持续通道（允许/拒绝、停止；生成时不能中途补充，可排队到下一轮）。真实窗口验收已通过（ACP 新对话；打印路径 HTTP 多轮为 Builder ID / 本机登录，不是企业 IdC）。旧对话保留原发送方式。
   - **其余 Agent 与旧会话**：仍走原发送方式。
-  - **过程面板**：主列一行过程摘要（正在读取 / 正在修改 / 正在执行，完成则已读取 / 已修改 / 已执行）。点开后在右侧栏看思考、工具行；工具名、状态和 JSON 进折叠的「细节」；命令、错误输出、退出码和状态事件仍在「运行详情」。右侧栏不随发送自动打开；点 Markdown 仍预览文件。
+  - **过程面板**：主列一行过程摘要（正在读取 / 正在修改 / 正在执行，完成则已读取 / 已修改 / 已执行）。点开后在右侧栏看思考、工具行；工具名、状态和 JSON 进折叠的「细节」；命令、过程日志、退出码和状态事件仍在「运行详情」。右侧栏不随发送自动打开；点 Markdown 仍预览文件。
   - **过程内用量**：新空 Codex 会话仍解析 `thread/tokenUsage/updated` 的当前轮 `last`（累计 `total` / 窗口只留在总览等用量页）。新空 Grok 会话解析 **当前轮**（`turn_completed.usage`）；ACP 没有会话累计字段，不把各轮相加冒充累计。解析路径已接；真窗 2026-09-09 见过部分轮次 **没有** `turn_completed.usage`，此时界面不画假数字。对话里只在本轮结束后用小字写输入 / 输出（有缓存才写缓存）；生成中不画用量。只显示协议里有的数字，不估算费用。Kiro 没有 token 累计数据源。
   - **新空 Claude 会话（B3 首片）**：走 Claude Code `-p --input-format stream-json --output-format stream-json` 持续通道（同进程多轮、本地图片 base64、模型/思考强度参数）；**不支持**生成中补充；本片**不**接可点允许/拒绝（默认 `dontAsk`，危险模式 `bypassPermissions`）。有历史的旧 Claude 会话仍走 print+resume。print 路径在已经出过 assistant 正文后不再把最终 `result` 再拼进气泡（短回复不会同一句写两遍）；只有没见过 assistant 文本时才用 `result` 当正文。Linux 真窗短回复已验不双写。见 [Claude B3](archive/chat-claude-b3.md)。
   - **停止**：点停止后按钮保持「正在停止」并禁用，直到这一轮真正结束。运行时已经是 `cancelling` 时同样显示「正在停止」。取消请求落空时恢复可点。停止横幅标题「已停止」；`error=cancelled` 不把英文 `cancelled` 写在旁边，改用「已按你的要求停止。可恢复草稿后重发。」
@@ -43,7 +43,7 @@ updated: 2026-09-10
 - 登录的来源、目标和可行写入动作由 `plan` / `bind` / `unbind` 契约表达；领域实现仍保留 Ticket / TicketPort 等内部名称。
 - 本机路由运行时在桌面进程内运行，面向兼容客户端提供 `/v1/messages`、`/v1/responses`、`/v1/chat/completions` 和 `GET /models` 等端点。Codex 与 Grok 都走 Responses 口，具体格式跟这条路由一起保存，由本机令牌选中，不根据请求正文猜测。接到 Codex / Grok 时写入的是本机令牌（按 API Key 方式）和 Responses 接口，不是上游官方登录。领域背景见 [连接与路由](concepts/connections-and-routing.md)。
 - Usage 只读解析本地 Agent 会话或日志；优先使用日志中的官方成本字段，否则使用离线内嵌价表估算。运行时不联网拉取价格，也不做汇率换算。总览趋势可按 Agent 或模型切换；悬停同时看 token 和费用。Grok 用量把 `grok-4.6` 与 `grok-4.6-build`（以及 `[grok]` / `xai/` 前缀）当成同一个公开模型。
-- Skills 页分用户技能、项目技能和市场。用户技能仍用共享目录 `~/.agents/skills/`，并可启用到各工具。安装对话框支持本地目录、系统文件窗口选择的 zip、或 git 地址（需含 `SKILL.md`）；只写入共享库，不会自动启用。项目技能从项目页已识别的工作区下拉选择，读写该项目的 `.agents/skills/`（列表也会带上 `.claude/skills` 等已有目录），安装对话框同一套来源。配置切换在修改前创建备份。Linux 真窗已走完：系统文件窗口选 zip（标题 Choose a skill zip / 选择技能 zip，ZIP 过滤）→ 源字段填入路径 → 用户技能写入共享库且不自动启用；项目技能同一套选择器，写入该项目 `.agents/skills/`，不写共享库。
+- Skills 页分用户技能、项目技能和市场。用户技能仍用共享目录 `~/.agents/skills/`，并可启用到各工具。安装对话框支持本地目录、系统文件窗口选择的 zip、或 git 地址（需含 `SKILL.md`）；只写入共享库，不会自动启用。项目技能从历史页已识别的工作区下拉选择，读写该项目的 `.agents/skills/`（列表也会带上 `.claude/skills` 等已有目录），安装对话框同一套来源。配置切换在修改前创建备份。Linux 真窗已走完：系统文件窗口选 zip（标题 Choose a skill zip / 选择技能 zip，ZIP 过滤）→ 源字段填入路径 → 用户技能写入共享库且不自动启用；项目技能同一套选择器，写入该项目 `.agents/skills/`，不写共享库。
 - MCP 页只读扫描已知 MCP server 配置；`Capability::Mcp` 对全部内置 Agent 仍为 Planned。见 [MCP inventory](reference/mcp-inventory.md)。
 - 插件页 `/plugins` 列出 Claude / Grok / Pi 的 plugin / extension 包。Claude / Grok 优先官方 CLI JSON，否则读 live 目录；Pi 读用户 `settings.json` 的 `packages`。Pi 对照本机版本与配置里的指定版本：指定了版本的 npm 包在 Pi 更新扩展时会跳过；未安装或两者不一致会在列表标出。Claude / Grok 配置里有、本机目录没有的包标未安装，不按 Pi 的指定版本规则判断，也不查商店里是否有新版本。本页不查线上最新。Claude / Grok 已装包可启用/停用，并可安装/卸载（Grok 走官方市场名、git 或本地路径，确认后才带 `--trust`；Claude 走 `name@marketplace` 与 `-y`）。卸载默认保留插件数据目录。Linux 真窗已验 Claude / Grok 安装与卸载（隔离目录 + 官方 CLI；点列表行打开详情再卸载）。没有 `Capability::Plugins`。Codex 仍为 Planned；Cursor / Kimi / WorkBuddy / DSH / ZCode / Kiro 为 Unsupported。见 [插件、MCP 与技能](concepts/plugins-and-mcp.md)。
 

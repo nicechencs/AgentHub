@@ -4,10 +4,11 @@
  *
  * Strategy (ccusage-inspired, offline-first):
  * 1. Fetch LiteLLM model_prices_and_context_window.json
- * 2. Keep only AgentHub-relevant, first-party-ish keys (no Azure/Bedrock/OpenRouter mirrors)
+ * 2. Keep official publishers in scripts/pricing/vendors.json (not Agent families).
+ *    Skip Azure/Bedrock/OpenRouter mirrors. dashscope is Qwen/QwQ only.
  * 3. Convert per-token USD → per-1M USD (pricing table unit)
- * 4. Add short aliases (date strip, 4-5 → 4.5, xai/grok-4 → grok-4)
- * 5. Overlay scripts/pricing/overrides.json (local models always win)
+ * 4. Add short aliases only from official rows (date strip, 4-5 → 4.5, xai/grok-4 → grok-4)
+ * 5. Copy logAliases, then overlay scripts/pricing/overrides.json (always win)
  * 6. Write embedded table + meta; runtime never fetches pricing
  *
  * Usage:
@@ -26,6 +27,7 @@ const OUT_JSON = join(ROOT, 'crates/agenthub-core/src/usage/embedded-pricing.jso
 const OUT_META = join(ROOT, 'crates/agenthub-core/src/usage/embedded-pricing.meta.json');
 const OVERRIDES_PATH = join(ROOT, 'scripts/pricing/overrides.json');
 const REQUIRED_KEYS_PATH = join(ROOT, 'scripts/pricing/required-keys.json');
+const VENDORS_PATH = join(ROOT, 'scripts/pricing/vendors.json');
 
 const LITELLM_URL =
   process.env.LITELLM_PRICING_URL ??
@@ -43,25 +45,70 @@ const EXCLUDE_SUFFIX =
   /(audio|realtime|tts|transcribe|diarize|search-preview|search-api|vision-preview|vision-beta)$/i;
 
 /**
- * Keep rows useful for Claude / Codex / Kimi / Grok / Pi-style model ids.
- * Applied to full key and bare segment after last '/'.
+ * @typedef {{ providers: Set<string>, providerModelAllow: Record<string, string[]>, modes: Set<string>, logAliases: Record<string, string> }} VendorConfig
  */
-function isRelevantKey(key) {
+
+function loadVendors() {
+  const raw = JSON.parse(readFileSync(VENDORS_PATH, 'utf8'));
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('scripts/pricing/vendors.json must be a JSON object');
+  }
+  if (!Array.isArray(raw.providers) || raw.providers.some((p) => typeof p !== 'string' || !p.trim())) {
+    throw new Error('vendors.json providers must be a non-empty array of strings');
+  }
+  const providerModelAllow = {};
+  const allowRaw = raw.providerModelAllow ?? {};
+  if (typeof allowRaw !== 'object' || Array.isArray(allowRaw)) {
+    throw new Error('vendors.json providerModelAllow must be an object');
+  }
+  for (const [provider, prefixes] of Object.entries(allowRaw)) {
+    if (provider.startsWith('$')) continue;
+    if (!Array.isArray(prefixes) || prefixes.some((p) => typeof p !== 'string' || !p.trim())) {
+      throw new Error(`vendors.json providerModelAllow.${provider} must be an array of strings`);
+    }
+    providerModelAllow[provider.toLowerCase()] = prefixes.map((p) => p.toLowerCase());
+  }
+  const modesRaw = Array.isArray(raw.modes) && raw.modes.length ? raw.modes : ['chat', 'responses'];
+  if (modesRaw.some((m) => typeof m !== 'string' || !m.trim())) {
+    throw new Error('vendors.json modes must be an array of strings');
+  }
+  const logAliases = {};
+  const aliasRaw = raw.logAliases ?? {};
+  if (typeof aliasRaw !== 'object' || Array.isArray(aliasRaw)) {
+    throw new Error('vendors.json logAliases must be an object');
+  }
+  for (const [from, to] of Object.entries(aliasRaw)) {
+    if (from.startsWith('$')) continue;
+    if (typeof from !== 'string' || typeof to !== 'string' || !from.trim() || !to.trim()) {
+      throw new Error('vendors.json logAliases values must be non-empty strings');
+    }
+    logAliases[from] = to;
+  }
+  return {
+    providers: new Set(raw.providers.map((p) => p.trim().toLowerCase())),
+    providerModelAllow,
+    modes: new Set(modesRaw.map((m) => m.trim())),
+    logAliases,
+  };
+}
+
+/** Official publisher row — not a reseller mirror, not an Agent-family name match. */
+function isOfficialRow(key, entry, vendors) {
+  if (!entry || typeof entry !== 'object') return false;
   if (EXCLUDE_KEY.test(key) || EXCLUDE_AWS_STYLE.test(key) || EXCLUDE_ANTHROPIC_DOT.test(key)) {
     return false;
   }
   if (EXCLUDE_SUFFIX.test(key)) return false;
   const bare = bareName(key);
   if (EXCLUDE_SUFFIX.test(bare)) return false;
-
-  return (
-    /^(claude-|gpt-4|gpt-5|o[1-4]|codex)/i.test(bare) ||
-    /^(claude-|gpt-4|gpt-5|o[1-4]|codex)/i.test(key) ||
-    /^moonshot\//i.test(key) ||
-    /^xai\/grok/i.test(key) ||
-    /^kimi-/i.test(bare) ||
-    /^grok-/i.test(bare)
-  );
+  const mode = entry.mode;
+  if (mode != null && mode !== '' && !vendors.modes.has(String(mode))) return false;
+  const provider = String(entry.litellm_provider ?? '').trim().toLowerCase();
+  if (vendors.providers.has(provider)) return true;
+  const prefixes = vendors.providerModelAllow[provider];
+  if (!prefixes || !prefixes.length) return false;
+  const bareLower = bare.toLowerCase();
+  return prefixes.some((prefix) => bareLower.startsWith(prefix));
 }
 
 function bareName(key) {
@@ -185,8 +232,9 @@ function addAlias(table, key, row, aliases) {
  * Build pricing table from LiteLLM map + overrides.
  * @param {Record<string, unknown>} litellm
  * @param {Record<string, unknown>} overridesRaw
+ * @param {VendorConfig} vendors
  */
-function buildTable(litellm, overridesRaw) {
+function buildTable(litellm, overridesRaw, vendors) {
   /** @type {Record<string, { input: number, output: number, cacheCreate?: number, cacheRead?: number }>} */
   const table = {};
   let fromLitellm = 0;
@@ -194,7 +242,7 @@ function buildTable(litellm, overridesRaw) {
 
   for (const [key, entry] of Object.entries(litellm)) {
     if (key === 'sample_spec') continue;
-    if (!isRelevantKey(key)) continue;
+    if (!isOfficialRow(key, entry, vendors)) continue;
     const row = rowFromLiteLLM(entry);
     if (!row) continue;
 
@@ -218,6 +266,18 @@ function buildTable(litellm, overridesRaw) {
 
     // Family-friendly short ids used in AgentHub logs / UI.
     // e.g. claude-sonnet-4-20250514 → also ensure claude-sonnet-4 via strip
+  }
+
+  for (const [from, to] of Object.entries(vendors.logAliases)) {
+    if (table[from]) continue;
+    const target = table[to];
+    if (!target) {
+      throw new Error(
+        `log alias ${from} → ${to} is missing the target row. ` +
+          `Fix scripts/pricing/vendors.json or the include filters.`,
+      );
+    }
+    addAlias(table, from, target, aliases);
   }
 
   // overrides win
@@ -245,7 +305,7 @@ function buildTable(litellm, overridesRaw) {
   if (missingRequired.length) {
     throw new Error(
       `pricing build missing required keys: ${missingRequired.join(', ')}. ` +
-        `Add overrides or fix include filters.`,
+        `Add overrides, logAliases, or fix vendor filters.`,
     );
   }
 
@@ -277,12 +337,13 @@ function parseArgs(argv) {
 async function main() {
   const { check, dryRun } = parseArgs(process.argv.slice(2));
   const overrides = loadOverrides();
+  const vendors = loadVendors();
   const litellm = await fetchLiteLLM();
   if (!litellm || typeof litellm !== 'object') {
     throw new Error('LiteLLM response is not an object');
   }
 
-  const { table, fromLitellm, aliasCount, overrideCount } = buildTable(litellm, overrides);
+  const { table, fromLitellm, aliasCount, overrideCount } = buildTable(litellm, overrides, vendors);
   const body = stableStringify(table);
   const meta = {
     source: LITELLM_URL,

@@ -564,11 +564,29 @@ describe('newConversationDefaults', () => {
     });
   });
 
-  it('drops agents without configured auth and falls back to a selectable one', () => {
+  it('keeps an agent when live auth is unknown rather than missing', () => {
+    const unknown = status('pi', true, false, {
+      authStatus: 'none',
+      authLabel: '未配置',
+      effectiveKind: 'none',
+    });
+    const active = conv({
+      id: 'a',
+      agentIds: ['pi'],
+      cwd: '/tmp/app',
+    });
+    expect(newConversationDefaults(active, [...agents, unknown])).toEqual({
+      agentIds: ['pi'],
+      cwd: '/tmp/app',
+    });
+  });
+
+  it('drops agents that are missing auth and falls back to a selectable one', () => {
     const none = status('pi', true, false, {
       authStatus: 'none',
       authLabel: '未配置',
       effectiveKind: 'none',
+      authHealth: 'missing',
     });
     const active = conv({
       id: 'a',
@@ -1203,6 +1221,50 @@ describe('agentHasConfiguredAuth / picker rows', () => {
     expect(agentHasConfiguredAuth(status('grok', false))).toBe(false);
   });
 
+  it('treats unknown, unset, and probe-not-ready as selectable, not missing', () => {
+    const unknown = status('dsh', true, false, {
+      effectiveKind: 'none',
+      authStatus: 'none',
+      authHealth: 'unknown',
+    });
+    const unset = status('pi', true, false, {
+      effectiveKind: 'none',
+      authStatus: 'none',
+    });
+    expect(agentHasConfiguredAuth(unknown)).toBe(true);
+    expect(agentHasConfiguredAuth(unset)).toBe(true);
+    expect(isChatAgentSelectable(unknown)).toBe(true);
+    expect(
+      chatAgentPickerRows({
+        catalogIds: ['dsh'],
+        agentStatus: [unknown],
+      }).map((row) => ({ id: row.id, selectable: row.selectable, reason: row.reason })),
+    ).toEqual([{ id: 'dsh', selectable: true, reason: null }]);
+  });
+
+  it('keeps needs_login and missing blocked unless a saved login exists', () => {
+    const missing = status('kimi', true, false, {
+      effectiveKind: 'none',
+      authStatus: 'none',
+      authLabel: '未配置',
+      authHealth: 'missing',
+    });
+    const expired = status('claude', true, false, {
+      effectiveKind: 'none',
+      authHealth: 'needs_login',
+    });
+    expect(agentHasConfiguredAuth(missing)).toBe(false);
+    expect(agentHasConfiguredAuth(expired)).toBe(false);
+    expect(agentHasConfiguredAuth(missing, { hasSavedLogin: true })).toBe(true);
+    expect(
+      chatAgentPickerRows({
+        catalogIds: ['kimi'],
+        agentStatus: [missing],
+        savedLoginAgentIds: new Set(['kimi']),
+      }).map((row) => row.selectable),
+    ).toEqual([true]);
+  });
+
   it('isChatAgentSelectable requires installed, visible, and configured auth', () => {
     expect(isChatAgentSelectable(status('claude', true))).toBe(true);
     expect(isChatAgentSelectable(status('codex', true, true))).toBe(false);
@@ -1823,7 +1885,7 @@ describe('composerUsesCssFieldSizing', () => {
 describe('chat transcript / composer surfaces', () => {
   it('shares one main-column width for transcript and composer', () => {
     expect(chatMainColumnClass).toBe(pageRhythm.readingColumn);
-    expect(chatMainColumnClass).toBe('mx-auto w-full max-w-3xl');
+    expect(chatMainColumnClass).toBe('mx-auto w-full max-w-5xl');
   });
 
   it('uses a 16px outer stage so transcript and composer share the same inset', () => {

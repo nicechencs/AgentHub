@@ -5,7 +5,8 @@ import type { AgentProcessView } from '@/lib/chat-process';
 import { ChatProcessPanel } from './ChatProcessPanel';
 
 vi.mock('@/components/shared/SourcePreview', () => ({
-  SourcePreview: ({ value }: { value: string }) => value,
+  SourcePreview: ({ value, showCopy }: { value: string; showCopy?: boolean }) =>
+    `${showCopy ? '复制' : ''}${value}`,
 }));
 
 function view(partial: Partial<AgentProcessView> & Pick<AgentProcessView, 'steps' | 'phase'>): AgentProcessView {
@@ -106,6 +107,59 @@ describe('ChatProcessPanel human copy', () => {
     );
     expect(html).toContain('先看工作目录');
     expect(html).toMatch(/<details[^>]*open/);
+  });
+
+  it('offers one-click copy on JSON in tool details', () => {
+    const html = renderPanel(
+      view({
+        phase: 'ok',
+        steps: [
+          {
+            type: 'tool',
+            name: 'Read',
+            status: 'end',
+            input: { mode: 'Directory', path: 'D:\\foo', depth: 2 },
+          },
+        ],
+      }),
+      'ok',
+    );
+    expect(html).toContain('细节');
+    expect(html).toContain('复制');
+    expect(html).toContain('Directory');
+  });
+
+  it('labels command stderr as a process log, not an error', () => {
+    const html = renderPanel(
+      view({
+        phase: 'running',
+        command: 'dsh --profile headless',
+        stderr: 'line 26: rebase onto latest main',
+        steps: [],
+      }),
+    );
+    expect(html).toContain('过程日志');
+    expect(html).not.toContain('错误输出');
+    expect(html).toContain('line 26: rebase onto latest main');
+    expect(html).not.toMatch(/text-danger/);
+  });
+
+  it('offers copy and a remembered height drag on command and process log', () => {
+    const html = renderPanel(
+      view({
+        phase: 'running',
+        command: 'dsh --profile headless',
+        stderr: 'line 26: rebase onto latest main',
+        steps: [],
+      }),
+    );
+    expect(html).toContain('aria-label="复制"');
+    expect(html).toContain('拖动调整命令高度');
+    expect(html).toContain('拖动调整过程日志高度');
+    expect(html).toContain('cursor-row-resize');
+    expect(html).toContain('dsh --profile headless');
+    expect(html).not.toContain('max-h-24');
+    expect(html).not.toContain('max-h-36');
   });
 
   it('opens run details when the timeline is empty so the pane is not blank', () => {

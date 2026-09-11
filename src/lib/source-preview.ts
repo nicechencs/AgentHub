@@ -35,6 +35,15 @@ export function clipPreviewText(text: string, max = SOURCE_PREVIEW_MAX_CHARS): s
   return `${text.slice(0, max)}\n…`;
 }
 
+/** Drop whitespace-only lines so tool JSON snippets stay dense. */
+export function compressBlankLines(text: string): string {
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/\n[^\S\n]*\n+/g, '\n')
+    .replace(/^\n+/, '')
+    .replace(/\n+$/, '');
+}
+
 export function inferSourceFormat(input: {
   text: string;
   fileName?: string | null;
@@ -55,11 +64,13 @@ export function inferSourceFormat(input: {
 export function prepareSourcePreview(
   text: string,
   format: SourceFormat,
-  options?: { pretty?: boolean; maxChars?: number },
+  options?: { pretty?: boolean; maxChars?: number; compressBlankLines?: boolean },
 ): string {
   const pretty = options?.pretty ?? true;
   const maxChars = options?.maxChars ?? SOURCE_PREVIEW_MAX_CHARS;
-  const next = pretty && format === 'json' ? tryPrettyJson(text) ?? text : text;
+  const compress = options?.compressBlankLines ?? true;
+  let next = pretty && format === 'json' ? tryPrettyJson(text) ?? text : text;
+  if (compress && format === 'json') next = compressBlankLines(next);
   return clipPreviewText(next, maxChars);
 }
 

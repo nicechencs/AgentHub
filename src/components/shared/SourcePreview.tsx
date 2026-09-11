@@ -24,6 +24,7 @@ export function SourcePreview({
   pretty = readOnly,
   onChange,
   showCopy = false,
+  compressBlankLines = true,
   density = 'preview',
   className,
   id,
@@ -35,6 +36,8 @@ export function SourcePreview({
   pretty?: boolean;
   onChange?: (value: string) => void;
   showCopy?: boolean;
+  /** Read-only JSON details drop blank lines. Editable buffers keep authored spacing. */
+  compressBlankLines?: boolean;
   /** preview = compact snippet; editor = supplier advanced config. */
   density?: 'preview' | 'editor' | 'compact';
   className?: string;
@@ -47,7 +50,9 @@ export function SourcePreview({
     fileName,
     hint: formatHint,
   });
-  const displayed = readOnly ? prepareSourcePreview(value, format, { pretty }) : value;
+  const displayed = readOnly
+    ? prepareSourcePreview(value, format, { pretty, compressBlankLines })
+    : value;
   const extensions = useMemo(() => sourcePreviewExtensions(format), [format]);
   const foldable = format === 'json' || format === 'toml';
 
@@ -62,7 +67,10 @@ export function SourcePreview({
   return (
     <div
       id={id}
-      className={cn('min-w-0 overflow-hidden rounded-card border border-border bg-canvas', className)}
+      className={cn(
+        'min-w-0 overflow-hidden rounded-card border border-border bg-canvas text-primary',
+        className,
+      )}
     >
       {showCopy ? (
         <div className="flex justify-end border-b border-border px-1.5 py-0.5">
@@ -86,6 +94,7 @@ export function SourcePreview({
           density === 'editor' && 'max-h-80 min-h-24 [&_.cm-editor]:min-h-24',
           density === 'preview' && 'max-h-64',
           density === 'compact' && 'max-h-36',
+          density === 'compact' ? '[&_.cm-editor]:leading-snug' : '[&_.cm-editor]:leading-relaxed',
           SOURCE_PREVIEW_CHROME,
         )}
       >

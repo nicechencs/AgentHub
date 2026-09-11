@@ -44,7 +44,7 @@ export const en = {
     agents: 'Agents',
     skills: 'Skills',
     mcp: 'MCP',
-    projects: 'Projects',
+    projects: 'History',
     plugins: 'Plugins',
     dashboard: 'Dashboard',
     connections: 'Connections',
@@ -134,11 +134,11 @@ export const en = {
         'Show the MCP entry in the left nav. Hiding it does not disable the page.',
       mcpNavVisibleTip:
         'Shown by default on a new install. When hidden, you can still open MCP via the URL or direct links.',
-      projectsNavVisibleLabel: 'Show Projects in sidebar',
+      projectsNavVisibleLabel: 'Show History in sidebar',
       projectsNavVisibleDescription:
-        'Show the Projects entry in the left nav. Hiding it does not disable the page.',
+        'Show the History entry in the left nav. Hiding it does not disable the page.',
       projectsNavVisibleTip:
-        'Shown by default on a new install. When hidden, you can still open Projects via the URL or direct links.',
+        'Shown by default on a new install. When hidden, you can still open History via the URL or direct links.',
       pluginsNavVisibleLabel: 'Show Plugins in sidebar',
       pluginsNavVisibleDescription:
         'In development. Show the Plugins entry in the left nav. Hiding it does not disable the page.',
@@ -2993,7 +2993,9 @@ export const en = {
       details: "Details",
       runDetails: "Details of this run",
       command: "Command",
-      stderr: "Error output",
+      stderr: "Process log",
+      resizeCommand: "Drag to resize the command",
+      resizeLog: "Drag to resize the process log",
       exitCode: "Exit code {code}",
       unrecognizedLine: "One line couldn't be shown",
       nonJsonLine: "One line wasn't normal output",
@@ -3390,7 +3392,7 @@ export const en = {
   },
   projects: {
     page: {
-      title: "Projects",
+      title: "History",
       description: "Local sessions and workspaces",
       descriptionTip:
         "View all projects or browse by agent. Matching paths are merged and marked by agent. Sort by time, agent, or name. Open folders, copy the official resume command, continue in Chat, delete, or summarize in batch. Click a session to preview the conversation on the right. Continue in Chat carries the conversation already read; it does not open the agent's TUI.",

@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StorageKey } from '@/lib/storage-key';
 import {
@@ -5,6 +8,7 @@ import {
   persistSideSplitWidth,
   readStoredSideSplitWidth,
   SIDE_SPLIT_FRAME_PAD_X,
+  SIDE_SPLIT_FRAME_PAD_X_FLUSH,
   SIDE_SPLIT_MAIN_MIN,
   SIDE_SPLIT_MAIN_FLOOR,
   SIDE_SPLIT_MAX_SHARE,
@@ -13,6 +17,12 @@ import {
   SIDE_SPLIT_WIDTH_FLOOR,
   SIDE_SPLIT_WIDTH_MIN,
 } from './side-split-model';
+
+const dir = path.dirname(fileURLToPath(import.meta.url));
+
+function source(name: string): string {
+  return readFileSync(path.join(dir, name), 'utf8');
+}
 
 function usableWidth(containerWidth: number): number {
   return Math.max(0, containerWidth - SIDE_SPLIT_SEPARATOR_W - SIDE_SPLIT_FRAME_PAD_X * 2);
@@ -62,6 +72,23 @@ describe('clampSideSplitWidth', () => {
 
   it('does not shrink a stored width before the workbench is measured', () => {
     expect(clampSideSplitWidth(700, 0)).toBe(700);
+  });
+});
+
+describe('side-split frame pad', () => {
+  it('keeps the page inset for card-hosted workbenches and lets Chat opt out', () => {
+    expect(SIDE_SPLIT_FRAME_PAD_X).toBe(12);
+    expect(SIDE_SPLIT_FRAME_PAD_X_FLUSH).toBe(0);
+  });
+
+  it('reads one pad from the controller in both the hook and the frame', () => {
+    const hook = source('use-side-split.ts');
+    const frame = source('SideSplit.tsx');
+    expect(hook).toContain('const framePadX = options.framePadX ?? SIDE_SPLIT_FRAME_PAD_X;');
+    expect(hook).toContain('paneWidth + framePadX * 2');
+    expect(frame).toContain('width: split.paneWidth + split.framePadX * 2');
+    expect(frame).toContain('paddingLeft: split.framePadX');
+    expect(frame).toContain('paddingRight: split.framePadX');
   });
 });
 

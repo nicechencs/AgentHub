@@ -43,7 +43,7 @@ export const zh = {
     agents: 'Agent',
     skills: '技能',
     mcp: 'MCP',
-    projects: '项目',
+    projects: '历史',
     plugins: '插件',
     dashboard: '总览',
     connections: '连接',
@@ -128,7 +128,7 @@ export const zh = {
       mcpNavVisibleLabel: '显示 MCP 页面',
       mcpNavVisibleDescription: '在侧栏显示入口；关闭后仍可用链接打开。',
       mcpNavVisibleTip: '新安装默认显示。隐藏侧栏入口不禁用该页；仍可通过链接打开。',
-      projectsNavVisibleLabel: '显示项目页面',
+      projectsNavVisibleLabel: '显示历史页面',
       projectsNavVisibleDescription: '在侧栏显示入口；关闭后仍可用链接打开。',
       projectsNavVisibleTip: '新安装默认显示。隐藏侧栏入口不禁用该页；仍可通过链接打开。',
       pluginsNavVisibleLabel: '显示插件页面',
@@ -2973,7 +2973,9 @@ export const zh = {
       details: "细节",
       runDetails: "运行详情",
       command: "命令",
-      stderr: "错误输出",
+      stderr: "过程日志",
+      resizeCommand: "拖动调整命令高度",
+      resizeLog: "拖动调整过程日志高度",
       exitCode: "退出码 {code}",
       unrecognizedLine: "有一行输出没法展示",
       nonJsonLine: "有一行不是正常输出",
@@ -3362,7 +3364,7 @@ export const zh = {
   },
   projects: {
     page: {
-      title: "项目",
+      title: "历史",
       description: "本机会话与工作区",
       descriptionTip:
         "可看全部或按 Agent 浏览。相同路径会合在一起并标出 Agent。可按时间、Agent 或名称排序。可打开目录、复制官方续接命令、在对话继续、删除或批量总结。单击会话在右侧分屏预览对话。在对话继续会带上已读到的对话，不直接打开对方 TUI。",

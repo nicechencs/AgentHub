@@ -9,6 +9,7 @@ import {
   type SetStateAction,
 } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useTicketWallet } from '@/app/runtime';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import { listAgents } from '@/lib/api/agent';
@@ -28,7 +29,13 @@ import {
 } from '@/lib/chat-bootstrap';
 import { rememberFallbackCwd } from '@/lib/chat-cwd-fallback';
 import type { AgentKey, AgentStatus, ChatMessage, Conversation } from '@/lib/types';
-import { draftForFocusedConversation, isChatAgentSelectable, newConversationDefaults, singleAgentConversationPatch } from './chat-model';
+import {
+  draftForFocusedConversation,
+  isChatAgentSelectable,
+  newConversationDefaults,
+  savedLoginAgentIdsFromWallet,
+  singleAgentConversationPatch,
+} from './chat-model';
 import { conversationListState, createSingleFlight } from './chat-request';
 
 /** Keep conversations created by an in-flight shell/projects handoff when list load returns stale. */
@@ -61,6 +68,11 @@ export function useChatPageSessions(input: {
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
+  const ticketWallet = useTicketWallet();
+  const savedLoginAgentIds = useMemo(
+    () => savedLoginAgentIdsFromWallet(ticketWallet.wallet),
+    [ticketWallet.wallet],
+  );
   const [searchParams, setSearchParams] = useSearchParams();
   const {
     setMessages,
@@ -98,10 +110,12 @@ export function useChatPageSessions(input: {
   );
 
   const defaultAgents = useCallback((agents: AgentStatus[]): AgentKey[] => {
-    const selectable = agents.filter((a) => isChatAgentSelectable(a)).map((a) => a.agentId);
+    const selectable = agents
+      .filter((a) => isChatAgentSelectable(a, { hasSavedLogin: savedLoginAgentIds.has(a.agentId) }))
+      .map((a) => a.agentId);
     if (selectable.length > 0) return [selectable[0]];
     return [];
-  }, []);
+  }, [savedLoginAgentIds]);
 
   /** 确保至少有一个会话；空列表时自动新建并返回完整列表。 */
   const ensureConversation = useCallback(
@@ -356,7 +370,7 @@ export function useChatPageSessions(input: {
         return;
       }
     }
-    const defaults = newConversationDefaults(active, status);
+    const defaults = newConversationDefaults(active, status, savedLoginAgentIds);
     if (defaults.agentIds.length === 0) return;
     try {
       if (activeId) draftsRef.current.set(activeId, draft);
@@ -377,7 +391,7 @@ export function useChatPageSessions(input: {
       draftsRef.current.delete(id);
       const rest = conversations.filter((c) => c.id !== id);
       if (rest.length === 0) {
-        const defaults = newConversationDefaults(active, agentStatus);
+        const defaults = newConversationDefaults(active, agentStatus, savedLoginAgentIds);
         if (defaults.agentIds.length === 0) {
           setConversations([]);
           setActiveId(null);
