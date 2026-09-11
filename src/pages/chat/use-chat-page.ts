@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
+import { useTicketWallet } from '@/app/runtime';
 import { AGENT_IDS } from '@/config/agents';
 import { listChatMessages, runtimeKillHostTerminal, updateConversation } from '@/lib/api/chat';
 import { launchAgentProgram } from '@/lib/api/install';
@@ -27,6 +28,7 @@ import {
   mergeFirstUserContentById,
   groupConversationsByDay,
   isChatAgentSelectable,
+  savedLoginAgentIdsFromWallet,
   selectConversationAgent,
 } from './chat-model';
 import { useChatPageChrome } from './use-chat-page-chrome';
@@ -134,12 +136,23 @@ export function useChatPage() {
     () => new Set(agentStatus.filter((a) => a.hidden).map((a) => a.agentId)),
     [agentStatus],
   );
+  const ticketWallet = useTicketWallet();
+  const savedLoginAgentIds = useMemo(
+    () => savedLoginAgentIdsFromWallet(ticketWallet.wallet),
+    [ticketWallet.wallet],
+  );
   const unconfiguredAuthIds = useMemo(
     () =>
       new Set(
-        agentStatus.filter((a) => a.installed && !agentHasConfiguredAuth(a)).map((a) => a.agentId),
+        agentStatus
+          .filter(
+            (a) =>
+              a.installed
+              && !agentHasConfiguredAuth(a, { hasSavedLogin: savedLoginAgentIds.has(a.agentId) }),
+          )
+          .map((a) => a.agentId),
       ),
-    [agentStatus],
+    [agentStatus, savedLoginAgentIds],
   );
   const envNotReadyIds = useMemo(
     () =>
@@ -215,9 +228,14 @@ export function useChatPage() {
   const actionContext = useMemo(
     () => ({
       hasLatestReply,
-      newChatAllowed: !(agentsReady && !agentStatus.some((a) => isChatAgentSelectable(a))),
+      newChatAllowed: !(
+        agentsReady
+        && !agentStatus.some((a) =>
+          isChatAgentSelectable(a, { hasSavedLogin: savedLoginAgentIds.has(a.agentId) }),
+        )
+      ),
     }),
-    [agentStatus, agentsReady, hasLatestReply],
+    [agentStatus, agentsReady, hasLatestReply, savedLoginAgentIds],
   );
 
   const runtimeCommandActions = useMemo<ChatActionDef[]>(() => {
@@ -474,14 +492,19 @@ export function useChatPage() {
       chatAgentPickerRows({
         catalogIds: AGENT_IDS,
         agentStatus,
+        savedLoginAgentIds,
       }),
-    [agentStatus],
+    [agentStatus, savedLoginAgentIds],
   );
   const activeHasHidden = Boolean(active?.agentIds.some((id) => hiddenIds.has(id)));
 
   const primaryAgent = active?.agentIds[0] ?? null;
 
-  const hasUsableAgent = agentsReady && agentStatus.some((a) => isChatAgentSelectable(a));
+  const hasUsableAgent =
+    agentsReady
+    && agentStatus.some((a) =>
+      isChatAgentSelectable(a, { hasSavedLogin: savedLoginAgentIds.has(a.agentId) }),
+    );
 
   const connection = useChatPageConnection({
     primaryAgent,
