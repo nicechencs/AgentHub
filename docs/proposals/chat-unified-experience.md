@@ -360,5 +360,5 @@ B1 首次实现采用后台持有会话、SQLite 保存事件、页面按 sequen
 
 ## 相关页面
 
-- [Chat 宿主加深与多 Agent 兼容](chat-host-depth.md)：文档先行、未授权实施。能力进 Options 而非 80ms 快照；Grok/Kiro ACP 对齐；`/` 接协议目录。不以伪终端当对话底座。
+- [Chat 宿主加深与多 Agent 兼容](chat-host-depth.md)：A–C 在功能分支（Options、ACP 目录、`/` 插入草稿）。Claude 确认通道仍以本页 S4 / B3 为准，不在宿主加深页另起一套。
 - 现行事实：[Chat 与 Agent](../concepts/chat-and-agents.md)、[当前实现状态](../STATUS.md)、[Chat 体验标杆](../ui/chat-experience-bar.md)
