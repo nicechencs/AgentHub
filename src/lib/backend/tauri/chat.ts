@@ -61,6 +61,12 @@ export function createTauriChatPort(): ChatPort {
       await invoke('delete_conversation', { id });
     },
 
+    async refreshAgentTitle(conversationId) {
+      const title = await invoke<string | null>('refresh_chat_agent_title', { conversationId });
+      const trimmed = title?.trim();
+      return trimmed ? trimmed : null;
+    },
+
     async listChatMessages(conversationId) {
       const rows = await invoke<CoreChatMessage[]>('list_chat_messages', { conversationId });
       return rows.map(mapChatMessage);

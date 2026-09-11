@@ -55,6 +55,7 @@ import {
   looksLikePersistedTitleClip,
   mergeFirstUserContentById,
   titleFromPrompt,
+  withConversationTitle,
   conversationCwdMissing,
   canRebindConversationCwd,
   cwdShortName,
@@ -793,6 +794,31 @@ describe('conversationTitle', () => {
       { conversationId: 'c1', role: 'user', content: long },
       { conversationId: 'c1', role: 'user', content: 'later' },
     ])).toEqual({ c1: long });
+  });
+
+  it('applies an adopted title to just that conversation row', () => {
+    const rows = [
+      { id: 'a', title: '首条消息推导值' },
+      { id: 'b', title: '另一个对话' },
+    ];
+    const next = withConversationTitle(rows, 'a', '对方起的标题');
+    expect(next.map((row) => [row.id, row.title])).toEqual([
+      ['a', '对方起的标题'],
+      ['b', '另一个对话'],
+    ]);
+    // The caller's rows are left alone, so React state updates stay pure.
+    expect(rows[0].title).toBe('首条消息推导值');
+  });
+
+  it('derives the same phrase as the Rust fixture, backticks included', () => {
+    // Shared fixture with crates/agenthub-core/src/models/chat/tests.rs. The
+    // agent-title adoption gate compares this derivation against the stored
+    // title, so a divergence here would silently stop that conversation from
+    // ever adopting the Agent's own title.
+    expect(conversationSemanticPhrase('修复 `foo` 的报错')).toBe('修复 的报错');
+    expect(conversationSemanticPhrase('修复 `foo 的报错')).toBe('修复 `foo 的报错');
+    expect(conversationSemanticPhrase('``a`')).toBe('`');
+    expect(conversationSemanticPhrase('请在 /workspace/src/app.ts 检查问题')).toBe('检查问题');
   });
 });
 

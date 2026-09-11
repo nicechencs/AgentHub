@@ -59,6 +59,14 @@ export async function deleteConversation(id: string): Promise<void> {
   return getBackend().chat.deleteConversation(id);
 }
 
+/**
+ * Adopt the title the Agent wrote in its own session store, when the
+ * conversation still carries the title derived from its first message.
+ */
+export async function refreshAgentTitle(conversationId: string): Promise<string | null> {
+  return getBackend().chat.refreshAgentTitle(conversationId);
+}
+
 export async function listChatMessages(conversationId: string): Promise<ChatMessage[]> {
   return getBackend().chat.listChatMessages(conversationId);
 }

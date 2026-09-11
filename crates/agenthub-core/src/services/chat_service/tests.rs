@@ -1775,3 +1775,135 @@ fn rebind_missing_cwd_rejects_clear_before_session_starts() {
         Some(dead)
     );
 }
+
+/// Service with a temp database, sharing the crate's `CODEX_HOME` test lock so
+/// the agent home override cannot race another test in this binary.
+fn chat_with_temp_db() -> (ChatService, tempfile::TempDir) {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(RecordingProcessRunner::new()),
+    ));
+    (ChatService::new(db, run), dir)
+}
+
+/// POINT the Codex home at a temp store carrying one titled thread.
+fn codex_home_with_title(home: &std::path::Path, thread_id: &str, title: &str) {
+    std::fs::create_dir_all(home).unwrap();
+    std::fs::write(
+        home.join("session_index.jsonl"),
+        format!(r#"{{"id":"{thread_id}","thread_name":"{title}","updated_at":"2026-01-01T00:00:00Z"}}"#),
+    )
+    .unwrap();
+}
+
+/// Conversation whose stored title is still what the first message derives.
+fn codex_conversation_with_prompt(
+    chat: &ChatService,
+    session_id: &str,
+    prompt: &str,
+) -> Conversation {
+    let conv = chat
+        .open_from_session(
+            AgentId::Codex,
+            Some(session_id.into()),
+            None,
+            None,
+            vec![ChatHistoryTurn {
+                role: ChatRole::User,
+                content: prompt.into(),
+            }],
+        )
+        .unwrap();
+    let derived = crate::models::conversation_title_from_prompt(prompt);
+    chat.update_conversation(&conv.id, Some(derived), None, None, None)
+        .unwrap()
+}
+
+#[test]
+fn adopt_agent_title_replaces_the_first_prompt_title() {
+    let _guard = crate::integrations::agents::codex::leftover::lock_codex_home();
+    let (chat, db_dir) = chat_with_temp_db();
+    let home = db_dir.path().join("codex-home");
+    codex_home_with_title(&home, "thread-a", "收窄侧栏");
+    let prev = std::env::var_os("CODEX_HOME");
+    std::env::set_var("CODEX_HOME", &home);
+
+    let conv = codex_conversation_with_prompt(&chat, "thread-a", "请帮我把侧栏收窄一点");
+
+    let adopted = chat.adopt_agent_title(&conv.id).unwrap();
+    assert_eq!(adopted.as_deref(), Some("收窄侧栏"));
+    assert_eq!(chat.get_conversation(&conv.id).unwrap().title, "收窄侧栏");
+    // Adopting once must not keep rewriting: the agent title now equals the stored one.
+    assert_eq!(chat.adopt_agent_title(&conv.id).unwrap(), None);
+
+    match prev {
+        Some(value) => std::env::set_var("CODEX_HOME", value),
+        None => std::env::remove_var("CODEX_HOME"),
+    }
+}
+
+#[test]
+fn adopt_agent_title_keeps_a_manual_rename_and_untitled_conversations() {
+    let _guard = crate::integrations::agents::codex::leftover::lock_codex_home();
+    let (chat, db_dir) = chat_with_temp_db();
+    let home = db_dir.path().join("codex-home");
+    codex_home_with_title(&home, "thread-a", "收窄侧栏");
+    let prev = std::env::var_os("CODEX_HOME");
+    std::env::set_var("CODEX_HOME", &home);
+
+    let renamed = codex_conversation_with_prompt(&chat, "thread-a", "请帮我把侧栏收窄一点");
+    chat.update_conversation(&renamed.id, Some("我自己起的名字".into()), None, None, None)
+        .unwrap();
+    assert_eq!(chat.adopt_agent_title(&renamed.id).unwrap(), None);
+    assert_eq!(chat.get_conversation(&renamed.id).unwrap().title, "我自己起的名字");
+
+    // No native session id yet: nothing to look up.
+    let draft = chat
+        .create_conversation(vec![AgentId::Codex], None)
+        .unwrap();
+    assert_eq!(chat.adopt_agent_title(&draft.id).unwrap(), None);
+
+    match prev {
+        Some(value) => std::env::set_var("CODEX_HOME", value),
+        None => std::env::remove_var("CODEX_HOME"),
+    }
+}
+
+#[test]
+fn adopt_agent_title_needs_a_session_title_source_and_a_known_session() {
+    let _guard = crate::integrations::agents::codex::leftover::lock_codex_home();
+    let (chat, db_dir) = chat_with_temp_db();
+    let home = db_dir.path().join("codex-home");
+    codex_home_with_title(&home, "thread-a", "收窄侧栏");
+    let prev = std::env::var_os("CODEX_HOME");
+    std::env::set_var("CODEX_HOME", &home);
+
+    // Claude keeps no session title, so the conversation stays as AgentHub titled it.
+    let claude = chat
+        .open_from_session(
+            AgentId::Claude,
+            Some("claude-session".into()),
+            None,
+            None,
+            vec![ChatHistoryTurn {
+                role: ChatRole::User,
+                content: "整理一下侧栏".into(),
+            }],
+        )
+        .unwrap();
+    let derived = crate::models::conversation_title_from_prompt("整理一下侧栏");
+    chat.update_conversation(&claude.id, Some(derived), None, None, None)
+        .unwrap();
+    assert_eq!(chat.adopt_agent_title(&claude.id).unwrap(), None);
+
+    // Codex session the store does not know.
+    let unknown = codex_conversation_with_prompt(&chat, "thread-unknown", "请帮我把侧栏收窄一点");
+    assert_eq!(chat.adopt_agent_title(&unknown.id).unwrap(), None);
+
+    match prev {
+        Some(value) => std::env::set_var("CODEX_HOME", value),
+        None => std::env::remove_var("CODEX_HOME"),
+    }
+}

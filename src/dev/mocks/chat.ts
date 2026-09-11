@@ -561,6 +561,12 @@ export function createMockChatPort(): ChatPort {
       mockCancel.delete(id);
     },
 
+    // No Agent CLI runs behind the browser mock, so no Agent title exists.
+    async refreshAgentTitle() {
+      await delay(20);
+      return null;
+    },
+
     async listChatMessages(conversationId) {
       await delay(80);
       return (mockMessages[conversationId] ?? []).map((m) => ({ ...m }));

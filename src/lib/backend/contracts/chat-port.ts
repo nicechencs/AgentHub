@@ -29,6 +29,12 @@ export interface ChatPort {
     },
   ): Promise<Conversation>;
   deleteConversation(id: string): Promise<void>;
+  /**
+   * Adopt the title the Agent wrote in its own session store. Resolves to the
+   * new title when the conversation was retitled, `null` when nothing may
+   * change (no Agent title, no session id, or a title the user owns).
+   */
+  refreshAgentTitle(conversationId: string): Promise<string | null>;
   listChatMessages(conversationId: string): Promise<ChatMessage[]>;
   chatSend(
     conversationId: string,

@@ -21,12 +21,13 @@ import {
   runtimeSnapshot,
   runtimeStart,
   runtimeSteer,
+  refreshAgentTitle,
 } from '@/lib/api/chat';
 import type { RuntimeRequest, RuntimeSnapshot } from '@/lib/api/chat';
 import type { ProcessMap } from '@/lib/chat-process';
 import type { AgentKey, ChatEvent, ChatMessage, Conversation } from '@/lib/types';
 import type { TurnGroup } from './chat-format';
-import { busyAgentsForSends, incomingSendingIds, liveSendingIds, retryTarget, sendBlockers, titleFromPrompt } from './chat-model';
+import { busyAgentsForSends, incomingSendingIds, liveSendingIds, retryTarget, sendBlockers, titleFromPrompt, withConversationTitle } from './chat-model';
 import { isCurrentChatRequest } from './chat-request';
 import {
   appendQueuedFollowUp,
@@ -231,6 +232,20 @@ export function useChatPageSend(input: {
     publishSendingIds();
   };
 
+  /**
+   * 一轮结束后采用对方自己写的标题（若它还在用首条消息推导出来的标题）。
+   * 后端只在标题仍归属 AgentHub 推导时才回写，这里只做尽力同步。
+   */
+  const adoptAgentTitle = async (conversationId: string) => {
+    try {
+      const title = await refreshAgentTitle(conversationId);
+      if (!title) return;
+      setConversations((prev) => withConversationTitle(prev, conversationId, title));
+    } catch {
+      /* 标题是尽力而为：拿不到就保留当前标题 */
+    }
+  };
+
   const recordRuntimeSnapshot = (snapshot: RuntimeSnapshot) => {
     const record = rememberRuntimeSnapshot(runtimeRecordsRef.current, snapshot);
     if ('currentMessage' in snapshot) {
@@ -278,6 +293,8 @@ export function useChatPageSend(input: {
       markSending(conversationId);
     } else if (canRender || (previousPhase != null && isRuntimeActive(previousPhase))) {
       clearSendingFor(conversationId);
+      // Continuous turn ended: the Agent may have titled the session by now.
+      if (wasSending) void adoptAgentTitle(conversationId);
     }
     if (
       !activePhase &&
@@ -763,6 +780,10 @@ export function useChatPageSend(input: {
 
     try {
       await chatSend(sendConvId, prompt, (ev) => applyEvent(ev, sendConvId, sendGeneration));
+      // Write the Agent title even if this conversation is no longer current.
+      // The rail still needs the new name; the DB write does not depend on the
+      // active header.
+      await adoptAgentTitle(sendConvId);
       // Events from the original generation are deliberately ignored after
       // A → B → A. If A is current again when the send finishes, use the
       // current generation for a fresh DB convergence read so the final
