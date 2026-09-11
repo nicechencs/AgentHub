@@ -1,7 +1,7 @@
 //! Agent-agnostic usage file collection (cursor + line loop).
 
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Seek, SeekFrom};
+use std::io::{BufRead, Seek, SeekFrom};
 use std::path::Path;
 
 use crate::error::{AppError, Result};
@@ -162,11 +162,10 @@ fn parse_one_file(
     let session_id = crate::usage::session_jsonl::session_id_from_path(path);
     let mut parser = source.begin_file(path, offset as u64);
 
-    let file = File::open(path)?;
-    let mut reader = BufReader::new(file);
-    if offset > 0 {
-        reader.seek(SeekFrom::Start(offset as u64))?;
-    }
+    // The source owns the physical encoding: plain logs stream from `offset`,
+    // compressed logs (DSH) decode from a frame boundary.
+    let mut log = source.open_lines(path, offset as u64)?;
+    let reader = &mut log.reader;
 
     let mut events = Vec::new();
     let mut skipped = 0u64;
@@ -189,6 +188,23 @@ fn parse_one_file(
             UsageLineOutcome::Skipped => skipped += 1,
             UsageLineOutcome::Failed => failed += 1,
         }
+    }
+
+    // A damaged frame — or an append that is still in flight — ends the decoded
+    // stream early. The rows before it are authoritative, but the file counts as
+    // failed so a short read is visible in parser health instead of passing as a
+    // complete (too small) total. A later append changes size/mtime, which
+    // rescans the file from byte 0, so nothing is lost permanently.
+    if log.had_decode_error() {
+        failed += 1;
+        tracing::warn!(
+            module = targets::USAGE,
+            code = "session_log_incomplete",
+            op = "collect_file",
+            agent = agent.as_str(),
+            path = %path_s,
+            "compressed session log could not be fully decoded; rows after that point were skipped"
+        );
     }
 
     let new_offset = {

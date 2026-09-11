@@ -340,6 +340,7 @@ fn build_kimi_session(
         };
         SessionFileMeta {
             cwd: None,
+            title: None,
             preview: None,
             message_count: None,
             size_bytes,
@@ -809,7 +810,12 @@ fn list_sessions_tree(
                 if project_id != want {
                     // Still cache for full-list reuse.
                     if let Some(store) = index.as_mut() {
-                        let title = title_from(meta.preview.as_deref(), meta.cwd.as_deref(), &path);
+                        let title = title_from(
+                            meta.title.as_deref(),
+                            meta.preview.as_deref(),
+                            meta.cwd.as_deref(),
+                            &path,
+                        );
                         store.put(
                             agent,
                             &rel,
@@ -833,7 +839,12 @@ fn list_sessions_tree(
                 }
             }
             if let Some(store) = index.as_mut() {
-                let title = title_from(meta.preview.as_deref(), meta.cwd.as_deref(), &path);
+                let title = title_from(
+                    meta.title.as_deref(),
+                    meta.preview.as_deref(),
+                    meta.cwd.as_deref(),
+                    &path,
+                );
                 store.put(
                     agent,
                     &rel,
@@ -926,6 +937,8 @@ pub(crate) fn kimi_session_dir_for_delete(path: &Path) -> Option<PathBuf> {
 
 struct SessionFileMeta {
     cwd: Option<String>,
+    /// Native title when the CLI stores one (DSH `session/title`).
+    title: Option<String>,
     preview: Option<String>,
     message_count: Option<u32>,
     size_bytes: u64,
@@ -944,7 +957,9 @@ fn session_file_meta(agent: AgentId, path: &Path) -> SessionFileMeta {
 fn list_session_head_bytes(agent: AgentId) -> u64 {
     match agent {
         // Codex session_meta is often a single huge first line.
-        AgentId::Codex => SCAN_BYTES,
+        // DSH writes the system prompt and the whole tool header before the
+        // first user/title rows, so a small head would miss both.
+        AgentId::Codex | AgentId::Dsh => SCAN_BYTES,
         _ => LIST_HEAD_BYTES,
     }
 }
@@ -962,13 +977,31 @@ fn session_file_meta_head(agent: AgentId, path: &Path, head_bytes: u64) -> Sessi
     };
     let text = read_head(path, head_bytes).unwrap_or_default();
     let cwd = extract_cwd_from_text(agent, &text);
-    let (preview, message_count) = scan_preview_from_text(&text);
+    let (mut preview, mut message_count) = scan_preview_from_text(&text);
+    let mut title = None;
+    if agent == AgentId::Dsh {
+        let dsh = crate::utils::dsh_session_log::head_meta(&text);
+        title = dsh.title;
+        if dsh.message_count.is_some() {
+            message_count = dsh.message_count;
+        }
+        // DSH's own first user message beats the generic per-line preview.
+        if let Some(text) = dsh
+            .user_texts
+            .iter()
+            .find_map(|raw| visible_transcript_text(raw))
+            .filter(|text| !is_noisy_preview(text))
+        {
+            preview = Some(truncate_chars(&text, PREVIEW_CHARS));
+        }
+    }
     let thread = extract_thread_meta(&text);
     let session_id = thread
         .own_session_id
         .or_else(|| extract_native_session_id(agent, path, &text));
     SessionFileMeta {
         cwd,
+        title,
         preview,
         message_count,
         size_bytes,
@@ -1161,6 +1194,15 @@ fn session_id_from_json_value(agent: AgentId, v: &serde_json::Value) -> Option<S
     }
 }
 
+/// File stem, trimmed, as a last-resort native id.
+fn native_file_stem(path: &Path) -> Option<String> {
+    path.file_stem()
+        .and_then(|s| s.to_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+}
+
 /// Path-derived native id when content has no field.
 fn native_session_id_from_path(agent: AgentId, path: &Path) -> Option<String> {
     match agent {
@@ -1248,12 +1290,13 @@ fn native_session_id_from_path(agent: AgentId, path: &Path) -> Option<String> {
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string()),
-        AgentId::Dsh => path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string()),
+        AgentId::Dsh => {
+            // `sessions/<project-dir>/<session-id>/session.vN.jsonl[.zstd]`: the
+            // session-owned directory is the id, the file stem is the format
+            // generation (`session.v3`).
+            crate::utils::dsh_session_log::session_id_from_log_path(path)
+                .or_else(|| native_file_stem(path))
+        }
         AgentId::Zcode | AgentId::Kiro => None,
     }
 }
@@ -1281,7 +1324,12 @@ fn build_session_from_meta(
         AgentId::Cursor => encoded_dir.and_then(cursor_actual_path),
         _ => None,
     });
-    let title = title_from(meta.preview.as_deref(), cwd.as_deref(), path);
+    let title = title_from(
+        meta.title.as_deref(),
+        meta.preview.as_deref(),
+        cwd.as_deref(),
+        path,
+    );
     let session_id = meta
         .session_id
         .or_else(|| native_session_id_from_path(agent, path));
@@ -2399,7 +2447,9 @@ fn is_primary_session_file(agent: AgentId, path: &Path) -> bool {
         AgentId::Codex => ext == "jsonl",
         // Kimi primary is agents/main/wire.jsonl (dedicated lister); keep wire.jsonl recognized.
         AgentId::Kimi => name == "wire.jsonl",
-        AgentId::Pi | AgentId::Dsh => ext == "jsonl",
+        AgentId::Pi => ext == "jsonl",
+        // DSH: `session.vN.jsonl` plain or `session.vN.jsonl.zstd` (its default).
+        AgentId::Dsh => crate::utils::dsh_session_log::is_log_file(path),
         AgentId::Claude | AgentId::WorkBuddy => {
             (ext == "jsonl" || ext == "json")
                 && !matches!(
@@ -2471,7 +2521,13 @@ fn build_session(
     build_session_from_meta(agent, home, path, project_id, meta, encoded_dir)
 }
 
-fn title_from(preview: Option<&str>, cwd: Option<&str>, path: &Path) -> String {
+fn title_from(title: Option<&str>, preview: Option<&str>, cwd: Option<&str>, path: &Path) -> String {
+    if let Some(p) = title {
+        let t = p.trim();
+        if !t.is_empty() {
+            return truncate_chars(t, 60);
+        }
+    }
     if let Some(p) = preview {
         let t = p.trim();
         if !t.is_empty() {
@@ -2928,7 +2984,8 @@ fn extract_assistant_turn(v: &serde_json::Value) -> Option<ExcerptTurn> {
     if !is_assistant {
         return None;
     }
-    let text = extract_text_from_value(v)
+    let text = crate::utils::dsh_session_log::assistant_text(v)
+        .or_else(|| extract_text_from_value(v))
         .or_else(|| v.get("payload").and_then(extract_text_from_value))?;
     let t = text.trim();
     if t.is_empty() {
@@ -3120,7 +3177,7 @@ pub(crate) fn load_excerpt_with_read_cap(
             id: id.to_string(),
             project_id,
             agent_id: agent,
-            title: title_from(preview.as_deref(), None, &abs_path),
+            title: title_from(None, preview.as_deref(), None, &abs_path),
             cwd: None,
             path: abs_path.display().to_string(),
             relative_path: rel,
@@ -3265,6 +3322,10 @@ pub(crate) fn extract_userish_text(line: &str) -> Option<String> {
         .and_then(|x| x.as_str())
         .unwrap_or("");
     let ty_l = ty.to_ascii_lowercase();
+    // DSH user rows nest the body under `data`.
+    if ty_l == "user/message" {
+        return crate::utils::dsh_session_log::user_text(&v);
+    }
     let role = v
         .get("role")
         .and_then(|r| r.as_str())
@@ -3420,6 +3481,8 @@ fn transcript_line_might_be_turn(line: &str) -> bool {
         || json_field_eq(head, "type", "user")
         || json_field_eq(head, "type", "assistant")
         || json_field_eq(head, "type", "human")
+        || json_field_eq(head, "type", "user/message")
+        || json_field_eq(head, "type", "assistant/message")
         || json_field_eq(head, "role", "user")
         || json_field_eq(head, "role", "assistant")
         || head.contains("turn.prompt")
@@ -3436,6 +3499,24 @@ fn read_jsonl_matching_windows(
     keep: impl Fn(&str) -> bool,
     cap: u64,
 ) -> (String, bool) {
+    // Compressed logs (DSH) address frames, not transcript bytes: byte windows
+    // are meaningless, so decode the whole log within the transcript budget and
+    // keep the matching rows (a DSH transcript is a few MB).
+    if crate::utils::zstd_jsonl::is_zstd_jsonl(path) {
+        let (decoded, truncated) =
+            crate::utils::zstd_jsonl::read_decoded_head_capped(path, cap).unwrap_or_default();
+        let mut out = String::new();
+        for line in decoded.lines() {
+            if line.is_empty() || !keep(line) {
+                continue;
+            }
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            out.push_str(line);
+        }
+        return (out, truncated);
+    }
     let len = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
     if len == 0 || cap == 0 {
         return (String::new(), false);
@@ -3478,18 +3559,23 @@ fn read_jsonl_matching_range(
     if max_read_bytes == 0 {
         return Some(String::new());
     }
-    let mut file = fs::File::open(path).ok()?;
-    let mut skip_partial = false;
-    if start > 0 {
-        file.seek(SeekFrom::Start(start.saturating_sub(1))).ok()?;
-        let mut prev = [0u8; 1];
-        file.read_exact(&mut prev).ok()?;
-        skip_partial = prev[0] != b'\n' && prev[0] != b'\r';
-    }
-    let mut reader = BufReader::new(file.take(max_read_bytes));
-    if skip_partial {
-        skip_rest_of_line(&mut reader);
-    }
+    // Plain transcripts only: compressed logs are handled by the caller, since
+    // their byte offsets do not address transcript bytes.
+    let mut reader: Box<dyn BufRead> = {
+        let mut file = fs::File::open(path).ok()?;
+        let mut skip_partial = false;
+        if start > 0 {
+            file.seek(SeekFrom::Start(start.saturating_sub(1))).ok()?;
+            let mut prev = [0u8; 1];
+            file.read_exact(&mut prev).ok()?;
+            skip_partial = prev[0] != b'\n' && prev[0] != b'\r';
+        }
+        let mut reader = BufReader::new(file.take(max_read_bytes));
+        if skip_partial {
+            skip_rest_of_line(&mut reader);
+        }
+        Box::new(reader)
+    };
     let mut out = String::new();
     loop {
         let (mut buf, had_nl) = read_line_prefix(&mut reader, LINE_PREFIX_BYTES)?;
@@ -3579,6 +3665,11 @@ fn skip_rest_of_line<R: BufRead>(reader: &mut R) {
 }
 
 fn read_head(path: &Path, max_bytes: u64) -> Option<String> {
+    // DSH session logs are compressed: `max_bytes` counts decoded transcript
+    // bytes, not the compressed bytes on disk.
+    if crate::utils::zstd_jsonl::is_zstd_jsonl(path) {
+        return crate::utils::zstd_jsonl::read_decoded_head(path, max_bytes);
+    }
     let file = fs::File::open(path).ok()?;
     let mut handle = file.take(max_bytes);
     let mut buf = Vec::new();

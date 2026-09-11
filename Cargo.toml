@@ -45,6 +45,9 @@ tower = { version = "0.5", features = ["timeout"] }
 futures-util = "0.3"
 async-stream = "0.3"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# DSH session logs are concatenated zstd frames (see dsh-session-persistence-jsonl).
+# No legacy/zdict features: we only decode current-format frames.
+zstd = { version = "0.13", default-features = false }
 
 # Line tables are enough for backtraces. Full debuginfo on Windows inflates
 # target/debug (PDBs + incremental objects) to tens of GB across tauri:dev and
