@@ -36,8 +36,7 @@ pub(crate) fn decode_session_update(v: &Value) -> Vec<ProcessStep> {
             let raw_status = update.get("status").and_then(|s| s.as_str()).unwrap_or("");
             vec![ProcessStep::Tool {
                 id: first_str(update, &["toolCallId", "tool_call_id", "id"]),
-                name: first_str(update, &["title", "kind", "name"])
-                    .unwrap_or_else(|| "tool".into()),
+                name: acp_tool_name(update),
                 input: update
                     .get("rawInput")
                     .or_else(|| update.get("raw_input"))
@@ -85,6 +84,7 @@ pub(crate) fn decode_session_update(v: &Value) -> Vec<ProcessStep> {
                 }),
             }]
         }
+        // Catalog only — never a process-timeline row.
         "available_commands" | "available_commands_update" => vec![],
         "usage" | "token_usage" | "tokenUsage" | "tokens_used" | "turn_completed"
         | "turn_usage" | "response_completed" => usage_steps(update),
@@ -107,6 +107,86 @@ pub(crate) fn decode_session_update(v: &Value) -> Vec<ProcessStep> {
         // Recognized envelope, unknown kind — do not fall back to raw JSON.
         _ => vec![],
     }
+}
+
+/// Agent-declared slash command. Not a `ProcessStep` (must not enter the timeline).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AcpAvailableCommand {
+    pub name: String,
+    pub description: String,
+    pub hint: Option<String>,
+}
+
+/// Returns `Some` when this payload is an available-commands update, even if the list is empty.
+pub(crate) fn extract_available_commands(v: &Value) -> Option<Vec<AcpAvailableCommand>> {
+    let update = v.get("update").or_else(|| v.get("data")).unwrap_or(v);
+    let uty = update
+        .get("sessionUpdate")
+        .or_else(|| update.get("session_update"))
+        .or_else(|| update.get("type"))
+        .and_then(|t| t.as_str())
+        .unwrap_or("");
+    if uty != "available_commands" && uty != "available_commands_update" {
+        return None;
+    }
+    let list = update
+        .get("availableCommands")
+        .or_else(|| update.get("available_commands"))
+        .and_then(|value| value.as_array());
+    Some(
+        list.map(|items| items.iter().filter_map(parse_available_command).collect())
+            .unwrap_or_default(),
+    )
+}
+
+fn parse_available_command(value: &Value) -> Option<AcpAvailableCommand> {
+    let name = first_str(value, &["name", "command"])?;
+    let description = first_str(value, &["description"]).unwrap_or_default();
+    let hint = value
+        .pointer("/input/hint")
+        .and_then(|h| h.as_str())
+        .or_else(|| value.get("hint").and_then(|h| h.as_str()))
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    Some(AcpAvailableCommand {
+        name,
+        description,
+        hint,
+    })
+}
+
+fn acp_tool_name(update: &Value) -> String {
+    let title = first_str(update, &["title", "name"]);
+    let kind = first_str(update, &["kind"]);
+    if let Some(mapped) = kind.as_deref().and_then(map_acp_tool_kind) {
+        if title
+            .as_deref()
+            .is_some_and(|name| map_acp_tool_kind(name).is_some())
+        {
+            return title.unwrap();
+        }
+        return mapped.to_string();
+    }
+    title.or(kind).unwrap_or_else(|| "tool".into())
+}
+
+fn map_acp_tool_kind(kind: &str) -> Option<&'static str> {
+    match compact_tool_token(kind).as_str() {
+        "read" | "search" | "fetch" | "grep" | "view" => Some("read"),
+        "edit" | "write" | "delete" | "move" | "patch" | "create" => Some("edit"),
+        "execute" | "exec" | "command" | "terminal" | "bash" | "shell" => Some("execute"),
+        _ => None,
+    }
+}
+
+fn compact_tool_token(value: &str) -> String {
+    value
+        .trim()
+        .to_ascii_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect()
 }
 
 pub(crate) fn acp_content_text(v: &Value) -> String {

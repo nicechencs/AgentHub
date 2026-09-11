@@ -60,6 +60,7 @@ fn worker(db: &Database, id: &str) -> ActorWorker {
         session_trust_all: None,
         session_allow_always: false,
         pending_fs_writes: HashMap::new(),
+        thinking_open: false,
     }
 }
 
@@ -305,6 +306,99 @@ fn grok_turn_completed_usage_emits_process_step() {
             ..
         }
     )));
+}
+
+#[test]
+fn grok_available_commands_update_fills_catalog_not_timeline() {
+    let db = Database::open_in_memory().unwrap();
+    conversation_with(&db, "grok-cmds", AgentId::Grok, &std::env::temp_dir());
+    let mut worker = worker(&db, "grok-cmds");
+    worker.agent = AgentId::Grok;
+    worker.store.enable_if_new("grok-cmds").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .notification(
+            "session/update",
+            &json!({
+                "update": {
+                    "sessionUpdate": "available_commands_update",
+                    "availableCommands": [{
+                        "name": "compact",
+                        "description": "Compact context",
+                        "input": { "hint": "[instructions]" }
+                    }]
+                }
+            }),
+        )
+        .unwrap();
+
+    let snapshot = worker.store.snapshot("grok-cmds", None).unwrap();
+    assert!(!snapshot.events.iter().any(|event| matches!(
+        &event.event,
+        ChatEvent::AgentProcess { .. }
+    )));
+    let cache = worker
+        .catalogs
+        .lock()
+        .unwrap()
+        .get("grok-cmds")
+        .cloned()
+        .expect("catalog");
+    assert_eq!(cache.native_commands.len(), 1);
+    assert_eq!(cache.native_commands[0].name, "compact");
+    assert_eq!(
+        cache.native_commands[0].hint.as_deref(),
+        Some("[instructions]")
+    );
+}
+
+#[test]
+fn grok_thought_then_text_marks_thinking_done() {
+    let db = Database::open_in_memory().unwrap();
+    conversation_with(&db, "grok-think", AgentId::Grok, &std::env::temp_dir());
+    let mut worker = worker(&db, "grok-think");
+    worker.agent = AgentId::Grok;
+    worker.store.enable_if_new("grok-think").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .notification(
+            "session/update",
+            &json!({
+                "update": {
+                    "sessionUpdate": "agent_thought_chunk",
+                    "content": { "type": "text", "text": "plan" }
+                }
+            }),
+        )
+        .unwrap();
+    worker
+        .notification(
+            "session/update",
+            &json!({
+                "update": {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": { "type": "text", "text": "hello" }
+                }
+            }),
+        )
+        .unwrap();
+
+    let snapshot = worker.store.snapshot("grok-think", None).unwrap();
+    let thinking: Vec<_> = snapshot
+        .events
+        .iter()
+        .filter_map(|event| match &event.event {
+            ChatEvent::AgentProcess {
+                step: crate::models::ProcessStep::Thinking { text, done },
+                ..
+            } => Some((text.as_str(), *done)),
+            _ => None,
+        })
+        .collect();
+    assert!(thinking.iter().any(|(text, done)| *text == "plan" && !*done));
+    assert!(thinking.iter().any(|(_, done)| *done));
 }
 
 #[cfg(unix)]

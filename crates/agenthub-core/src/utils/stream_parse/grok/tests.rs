@@ -94,7 +94,7 @@ fn prompt_complete_is_result_status() {
 #[test]
 fn unknown_acp_kind_is_empty_not_none() {
     let s = parse_line(
-        r#"{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"available_commands_update","availableCommands":[]}}}"#,
+        r#"{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"compact","description":"Compact"}]}}}"#,
     )
     .unwrap();
     assert!(s.is_empty());
@@ -211,4 +211,53 @@ fn plan_update_is_status() {
 fn malformed_json_is_none() {
     assert!(parse_line("{not-json").is_none());
     assert!(parse_line("").is_none());
+}
+
+#[test]
+fn available_commands_update_is_catalog_not_process_step() {
+    let payload = serde_json::json!({
+        "update": {
+            "sessionUpdate": "available_commands_update",
+            "availableCommands": [
+                {
+                    "name": "compact",
+                    "description": "Compact context",
+                    "input": { "hint": "[instructions]" }
+                }
+            ]
+        }
+    });
+    let commands = super::super::acp::extract_available_commands(&payload).unwrap();
+    assert_eq!(commands.len(), 1);
+    assert_eq!(commands[0].name, "compact");
+    assert_eq!(commands[0].description, "Compact context");
+    assert_eq!(commands[0].hint.as_deref(), Some("[instructions]"));
+    assert!(extract_available_commands_is_none_for_thought());
+}
+
+fn extract_available_commands_is_none_for_thought() -> bool {
+    super::super::acp::extract_available_commands(&serde_json::json!({
+        "update": { "sessionUpdate": "agent_thought_chunk", "content": { "text": "x" } }
+    }))
+    .is_none()
+}
+
+#[test]
+fn tool_kind_without_title_maps_to_read_edit_or_execute() {
+    let read = parse_line(
+        r#"{"method":"session/update","params":{"update":{"sessionUpdate":"tool_call","toolCallId":"k1","kind":"read","rawInput":{"path":"a.rs"}}}}"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        &read[0],
+        ProcessStep::Tool { name, .. } if name == "read"
+    ));
+    let write = parse_line(
+        r#"{"method":"session/update","params":{"update":{"sessionUpdate":"tool_call","toolCallId":"k2","kind":"write","title":"a.rs"}}}"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        &write[0],
+        ProcessStep::Tool { name, .. } if name == "edit"
+    ));
 }
