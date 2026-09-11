@@ -277,6 +277,21 @@ fn read_auth_reports_missing_file_and_env() {
 }
 
 #[test]
+fn read_auth_unreadable_credentials_is_unknown_not_error() {
+    let dir = tempfile::tempdir().unwrap();
+    with_dsh_home(dir.path(), || {
+        let prev_key = std::env::var_os(DEFAULT_API_KEY_ENV);
+        std::env::remove_var(DEFAULT_API_KEY_ENV);
+        std::fs::write(dir.path().join(CREDENTIALS_FILE), "not: [valid\n").unwrap();
+        let state = DshAdapter.read_auth().unwrap();
+        assert!(!state.has_credentials);
+        assert_eq!(state.health, AuthHealth::Unknown);
+        assert_eq!(state.source.as_deref(), Some("dsh:credentials"));
+        restore_env(DEFAULT_API_KEY_ENV, prev_key);
+    });
+}
+
+#[test]
 fn live_backup_paths_cover_patch_and_credentials() {
     let dir = tempfile::tempdir().unwrap();
     with_dsh_home(dir.path(), || {

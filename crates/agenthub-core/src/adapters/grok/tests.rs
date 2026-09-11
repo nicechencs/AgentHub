@@ -138,6 +138,19 @@ fn grok_api_key_and_missing_or_unparseable_auth_leaves_also_present_empty() {
 }
 
 #[test]
+fn grok_invalid_config_toml_is_unknown_not_error() {
+    let dir = tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let auth = dir.path().join("auth.json");
+    fs::write(&config, "api_key = [
+").unwrap();
+    let state = grok_auth_state(&config, &auth).unwrap();
+    assert_eq!(state.health, crate::models::AuthHealth::Unknown);
+    assert_eq!(state.source.as_deref(), Some("grok:config.toml"));
+    assert!(!state.has_credentials);
+}
+
+#[test]
 fn grok_write_config_points_base_url_at_loopback_and_drops_leftover_grok_model() {
     let _guard = GROK_HOME_LOCK
         .lock()

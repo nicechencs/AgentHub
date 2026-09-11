@@ -48,29 +48,69 @@ export function agentChatEnvReady(status: AgentStatus | undefined): boolean {
   return sliceAgentStatus(status).env.ready !== false;
 }
 
-/** 已绑定登录 / API Key 才算配置了授权；未配置或未登录不可选。 */
-export function agentHasConfiguredAuth(status: AgentStatus | undefined): boolean {
-  if (!status?.installed) return false;
+export type ChatAuthOptions = {
+  /** 连接页该 Agent 名下已有登录（不必是当前）。不含路由连接池专用登录。 */
+  hasSavedLogin?: boolean;
+};
+
+/** Chat 能否用这个 Agent 的授权门禁。只有确凿没有才拦。 */
+export type ChatAuthGate = 'ready' | 'missing' | 'unknown';
+
+export function savedLoginAgentIdsFromWallet(
+  wallet: TicketWallet | null | undefined,
+): ReadonlySet<AgentKey> {
+  const ids = new Set<AgentKey>();
+  if (!wallet) return ids;
+  for (const ticket of wallet.tickets) ids.add(ticket.agentId);
+  for (const binding of wallet.bindings) {
+    if (binding.active) ids.add(binding.agentId);
+  }
+  return ids;
+}
+
+/**
+ * 明确有登录 / 说不清 → 可选；确凿没有才灰掉。
+ * 探测失败、还没探测完、状态未知都算说不清。
+ */
+export function chatAgentAuthGate(
+  status: AgentStatus | undefined,
+  opts?: ChatAuthOptions,
+): ChatAuthGate {
+  if (!status?.installed) return 'missing';
   const view = sliceAgentStatus(status);
   if (view.effectiveConnection.kind !== 'unset' && view.effectiveConnection.kind !== 'none') {
-    return true;
+    return 'ready';
   }
+  if (opts?.hasSavedLogin) return 'ready';
   if (
     view.liveAuth.health === 'verified'
     || view.liveAuth.health === 'renewable'
     || view.liveAuth.health === 'configured'
   ) {
-    return true;
+    return 'ready';
   }
-  if (view.liveAuth.health === 'missing' || view.liveAuth.health === 'needs_login') return false;
-  return false;
+  if (view.liveAuth.health === 'missing' || view.liveAuth.health === 'needs_login') {
+    return 'missing';
+  }
+  return 'unknown';
 }
 
-export function isChatAgentSelectable(status: AgentStatus | undefined): boolean {
+/** 对话页可选：不是确凿没有登录。 */
+export function agentHasConfiguredAuth(
+  status: AgentStatus | undefined,
+  opts?: ChatAuthOptions,
+): boolean {
+  return chatAgentAuthGate(status, opts) !== 'missing';
+}
+
+export function isChatAgentSelectable(
+  status: AgentStatus | undefined,
+  opts?: ChatAuthOptions,
+): boolean {
   return Boolean(
     status?.installed
       && sliceAgentStatus(status).hidden !== 'hidden'
-      && agentHasConfiguredAuth(status)
+      && agentHasConfiguredAuth(status, opts)
       && agentChatEnvReady(status),
   );
 }
@@ -81,6 +121,7 @@ export function isChatAgentSelectable(status: AgentStatus | undefined): boolean 
 export function chatAgentPickerRows(input: {
   catalogIds: readonly AgentKey[];
   agentStatus: AgentStatus[];
+  savedLoginAgentIds?: ReadonlySet<AgentKey>;
 }): ChatAgentPickerRow[] {
   const byId = new Map(input.agentStatus.map((a) => [a.agentId, a]));
   const rows: ChatAgentPickerRow[] = [];
@@ -88,7 +129,9 @@ export function chatAgentPickerRows(input: {
     const status = byId.get(id);
     if (status?.installed !== true || sliceAgentStatus(status).hidden === 'hidden') continue;
     const envNotReady = !agentChatEnvReady(status);
-    const noAuth = !agentHasConfiguredAuth(status);
+    const noAuth = chatAgentAuthGate(status, {
+      hasSavedLogin: input.savedLoginAgentIds?.has(id) === true,
+    }) === 'missing';
     const reason: ChatAgentPickerReason | null = envNotReady
       ? 'envNotReady'
       : noAuth
@@ -431,12 +474,16 @@ export function singleAgentConversationPatch(
 export function newConversationDefaults(
   active: Conversation | null,
   agentStatus: AgentStatus[],
+  savedLoginAgentIds?: ReadonlySet<AgentKey>,
 ): { agentIds: AgentKey[]; cwd: string | null } {
   const hidden = new Set(agentStatus.filter((a) => a.hidden).map((a) => a.agentId));
   const uninstalled = new Set(
     agentStatus.filter((a) => a.installed === false).map((a) => a.agentId),
   );
-  const fallback = agentStatus.find((a) => isChatAgentSelectable(a))?.agentId;
+  const authOpts = (id: AgentKey): ChatAuthOptions => ({
+    hasSavedLogin: savedLoginAgentIds?.has(id) === true,
+  });
+  const fallback = agentStatus.find((a) => isChatAgentSelectable(a, authOpts(a.agentId)))?.agentId;
   const fallbackIds: AgentKey[] = fallback ? [fallback] : [];
 
   if (!active) {
@@ -446,7 +493,7 @@ export function newConversationDefaults(
   const byId = new Map(agentStatus.map((a) => [a.agentId, a]));
   const kept = active.agentIds.filter((id) => {
     if (hidden.has(id) || uninstalled.has(id)) return false;
-    return agentHasConfiguredAuth(byId.get(id));
+    return agentHasConfiguredAuth(byId.get(id), authOpts(id));
   });
 
   return {
@@ -489,11 +536,9 @@ export function chatConnectionKind(
   const kind = sliceAgentStatus(status ?? {}).effectiveConnection.kind;
   if (kind === 'account') return 'account';
   if (kind === 'api') return 'api';
-  if (agentHasConfiguredAuth(status)) {
-    const health = sliceAgentStatus(status ?? {}).liveAuth.health;
-    if (health === 'configured') return 'api';
-    return 'account';
-  }
+  const health = sliceAgentStatus(status ?? {}).liveAuth.health;
+  if (health === 'configured') return 'api';
+  if (health === 'verified' || health === 'renewable') return 'account';
   if (hasCurrentProvider) return 'api';
   return 'none';
 }

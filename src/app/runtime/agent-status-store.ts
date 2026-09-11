@@ -229,13 +229,20 @@ async function enrichWithLiveAuth(
       try {
         return await probeLiveAuthWithPort(backend.account, status.agentId, { force });
       } catch (error) {
-        // Agent detection remains useful when one auth file is inaccessible.
-        log.warn('live auth probe failed; retaining compatibility status', {
+        const code = errorCode(error);
+        // 读失败不是「没登录」。标成 unknown，Chat 不拦。
+        log.warn('live auth probe failed; treating health as unknown', {
           agentId: status.agentId,
           source: 'live-auth',
-          errorCode: errorCode(error),
+          errorCode: code,
         });
-        return undefined;
+        return {
+          agentId: status.agentId,
+          summary: 'live auth could not be determined',
+          hasCredentials: false,
+          health: 'unknown' as const,
+          source: `probe-error:${code}`,
+        };
       }
     }),
   );
