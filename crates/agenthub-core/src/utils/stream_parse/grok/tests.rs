@@ -261,3 +261,47 @@ fn tool_kind_without_title_maps_to_read_edit_or_execute() {
         ProcessStep::Tool { name, .. } if name == "edit"
     ));
 }
+
+#[test]
+fn config_option_update_is_catalog_not_process_step() {
+    let payload = serde_json::json!({
+        "update": {
+            "sessionUpdate": "config_option_update",
+            "configOptions": [
+                {
+                    "id": "model",
+                    "category": "model",
+                    "type": "select",
+                    "currentValue": "grok-4",
+                    "options": [
+                        { "value": "grok-4", "name": "Grok 4" },
+                        { "value": "grok-3", "name": "Grok 3" }
+                    ]
+                },
+                {
+                    "id": "effort",
+                    "type": "select",
+                    "current_value": "high",
+                    "options": [
+                        { "value": "low" },
+                        { "value": "high" }
+                    ]
+                }
+            ]
+        }
+    });
+    assert!(parse_line(
+        r#"{"method":"session/update","params":{"update":{"sessionUpdate":"config_option_update","configOptions":[{"id":"model","options":[{"value":"grok-4"}]}]}}}"#
+    )
+    .unwrap()
+    .is_empty());
+    let catalog = super::super::acp::extract_config_catalog(&payload).unwrap();
+    assert_eq!(catalog.models, vec!["grok-4", "grok-3"]);
+    assert_eq!(catalog.current_model.as_deref(), Some("grok-4"));
+    assert_eq!(catalog.efforts, vec!["low", "high"]);
+    assert_eq!(catalog.current_effort.as_deref(), Some("high"));
+    assert!(super::super::acp::extract_config_catalog(&serde_json::json!({
+        "update": { "sessionUpdate": "agent_message_chunk", "content": { "text": "hi" } }
+    }))
+    .is_none());
+}
