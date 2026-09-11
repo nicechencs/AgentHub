@@ -358,6 +358,17 @@ describe('chat layout wiring', () => {
     expect(hook).toContain('setHistoryRevealNonce');
   });
 
+  it('opens the Agent program outside Chat via the install façade, not a nested terminal', () => {
+    const hook = source('use-chat-page.ts');
+    expect(hook).toContain('launchAgentProgram');
+    expect(hook).toContain("from '@/lib/api/install'");
+    expect(hook).toContain('OPEN_EXTERNAL_CLI_ACTION_ID');
+    expect(hook).toContain('openExternalCliHint');
+    expect(hook).not.toContain("kind: 'app'");
+    expect(source('chat-actions.ts')).toContain('OPEN_EXTERNAL_CLI_ACTION_ID');
+    expect(source('ChatComposer.tsx')).not.toContain('xterm');
+  });
+
   it('offers always-allow on runtime permission cards', () => {
     const requests = source('ChatRuntimeRequests.tsx');
     expect(requests).toContain('runtimeAllowAlwaysCopy');

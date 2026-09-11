@@ -26,7 +26,7 @@ updated: 2026-09-11
 
 细节以 [STATUS](../STATUS.md) 为准。**合入 `dev` 之前，下表「本分支」不算现行。**
 
-| 点 | `dev` / 现行 | 分支 `feat/chat-host-depth-options`（A–G，未合入） |
+| 点 | `dev` / 现行 | 分支 `feat/chat-host-depth-options`（A–G、I，未合入） |
 | --- | --- | --- |
 | 产品形态 | 共用 GUI 对话页。默认内嵌终端、全量原生命令菜单范围外 | 同左 |
 | 持续通道 | 新空 Codex app-server；Grok / Kiro ACP；Claude stream-json；其余一次性 | 同左 |
@@ -34,7 +34,7 @@ updated: 2026-09-11
 | Options | 模型、技能、写死的 `imageInput` / `steer` | 另有 `transport`、`nativeCommands`、`sessionReady`；握手可改图片；ACP config 可刷模型/思考 |
 | enable 白名单 | Codex / Grok / Kiro / Claude。发送看 `enabled` | **未拆**白名单。确认卡片、排队提示改读 `enabled` / `steer` |
 | Grok / Kiro ACP | 思考/工具/确认已有。`available_commands` 丢掉。不声明 `terminal` | 命令目录写入 Options；思考可标完成；工具 kind 映射。`config_option_update` 进 Options。`context_usage` 进用量小字；`plan` 进计划条。仍不声明 `terminal` |
-| `/` 菜单 | Hub 动作 + 换模型/思考/技能 | 会话就绪且目录非空时列出对方斜杠命令，选中插入 `/名字 `，不代发。目录世代号变化时重拉 Options |
+| `/` 菜单 | Hub 动作 + 换模型/思考/技能 | 会话就绪且目录非空时列出对方斜杠命令，选中插入 `/名字 `，不代发。目录世代号变化时重拉 Options。有可启动的命令行时列出「启动命令行」（DeepSeek 为「打开网页会话」），在外部打开，不标成对话页能力 |
 | 进程 | sidecar 不从本页派生 | 同左 |
 
 `StructuredStream` 仍不等于全部对话能力。Grok 技能库可用，对话里「用于本次」仍不支持。
@@ -50,7 +50,7 @@ updated: 2026-09-11
 7. 先深已接线的四家，再按梯子扩家。
 8. **本页只加深宿主与 ACP 目录。** Claude 确认通道、Pi/Kimi 持续通道归 [统一体验](chat-unified-experience.md)，不在本页另起一套。
 
-A–E、G 在功能分支上已实现，**未合入、未当现行。** F 因无 Grok/Kiro 提问证据取消。H 须单独授权。
+A–E、G、I 在功能分支上已实现，**未合入、未当现行。** F 因无 Grok/Kiro 提问证据取消。H 须单独授权。
 
 ## 非目标
 
@@ -141,7 +141,7 @@ A–C 不引入伪终端，不声明 `clientCapabilities.terminal`。
 
 ## 建议切片
 
-未合入前不得把本页标成 current。A–E、G 在 `feat/chat-host-depth-options`。H 须单独授权。
+未合入前不得把本页标成 current。A–E、G、I 在 `feat/chat-host-depth-options`。H 须单独授权。
 
 | 刀 | 状态 | 一句话 |
 | --- | --- | --- |
@@ -153,7 +153,7 @@ A–C 不引入伪终端，不声明 `clientCapabilities.terminal`。
 | F ACP 提问口 | **取消** | 无 Grok/Kiro 提问夹具；不画假问答卡。ACP `elicitation/create` 未声明能力 |
 | G 用量窗 / 计划条 | 分支已实现 | `context_usage` 进用量小字；`plan` 进计划条，不进气泡 |
 | H 宿主终端 | 未开工 | 须单独授权；先改握手再画卡片 |
-| I 打开对方命令行 | 未开工 | 无机器通道的逃生口，不标成对话能力 |
+| I 打开对方命令行 | 分支已实现 | `/` 里启动对方程序；文案标明不是对话页能力 |
 
 ```mermaid
 flowchart LR
@@ -168,9 +168,10 @@ flowchart LR
   C --> D
   D --> E
   B --> G
+  I[I 打开对方命令行]
 ```
 
-H 不依赖 E。F 已取消。Claude 确认、Pi/Kimi 持续通道 **不在上图**，见 [本页不负责](#本页不负责)。
+H 不依赖 E。F 已取消。I 不依赖 G。Claude 确认、Pi/Kimi 持续通道 **不在上图**，见 [本页不负责](#本页不负责)。
 
 依赖：`C ← B`。不要先扩 80ms 快照。不要顺手拆 enable 白名单。
 
@@ -263,6 +264,8 @@ H 不依赖 E。F 已取消。Claude 确认、Pi/Kimi 持续通道 **不在上�
 **做：** 没有机器通道、或用户明确要官方界面时，提供「在外部终端打开」类入口。文案标明这不是对话页能力对齐。Kiro 提案已提过同类逃生口。
 
 **不做：** 宣称对话页已有终端补全或灰色提示；嵌进窗口的默认终端。
+
+**分支实现：** 当前会话 Agent 已有可启动的命令行时，`/` 列出与 Agents 页相同的「启动命令行」（DeepSeek 为「打开网页会话」）。选中调用已有 `launchAgentProgram(..., 'cli')`，在外部打开。说明写清这不是对话页能力。无启动路径则不画。不声明 `terminal`，不嵌终端。
 
 ## 本页不负责
 

@@ -12,6 +12,8 @@ import {
   nativeCommandActions,
   nativeSlashDraft,
   normalizeActionQuery,
+  openExternalCliAction,
+  OPEN_EXTERNAL_CLI_ACTION_ID,
   slashMenuFixedPosition,
 } from './chat-actions';
 
@@ -91,6 +93,20 @@ describe('chat action command search', () => {
     expect(filterChatActions('/compact', extra).map((item) => item.id)).toContain('native-command:compact');
     expect(filterChatActions('/').map((item) => item.id)).not.toContain('native-command:compact');
     expect(chatOverflowMenuActions(extra).some((item) => item.kind === 'native')).toBe(true);
+  });
+
+  it('lists the external command-line escape hatch without sending', () => {
+    const extra = [openExternalCliAction({
+      label: '启动命令行',
+      description: '在外部打开对方自己的界面，不是对话页里的能力。',
+    })];
+    expect(extra[0]?.id).toBe(OPEN_EXTERNAL_CLI_ACTION_ID);
+    expect(extra[0]?.kind).toBe('local');
+    expect(extra[0]?.draftText).toBeUndefined();
+    expect(filterChatActions('/', extra).map((item) => item.id)).toContain(OPEN_EXTERNAL_CLI_ACTION_ID);
+    expect(filterChatActions('/命令行', extra).map((item) => item.id)).toContain(OPEN_EXTERNAL_CLI_ACTION_ID);
+    expect(filterChatActions('/').map((item) => item.id)).not.toContain(OPEN_EXTERNAL_CLI_ACTION_ID);
+    expect(chatOverflowMenuActions(extra).some((item) => item.id === OPEN_EXTERNAL_CLI_ACTION_ID)).toBe(true);
   });
 
   it('exposes disabled reasons without wrapping as prompts', () => {
