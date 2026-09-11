@@ -6,6 +6,7 @@ mod install;
 pub(crate) mod managed;
 mod paths;
 mod project;
+mod session_title;
 mod stream;
 mod usage;
 
@@ -17,6 +18,7 @@ pub fn register(ctx: &mut IntegrationContext<'_>) {
     paths::register(ctx);
     install::register(ctx);
     project::register(ctx);
+    session_title::register(ctx);
     config::register(ctx);
     usage::register(ctx);
     stream::register(ctx);

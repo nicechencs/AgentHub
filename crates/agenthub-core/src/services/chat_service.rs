@@ -304,6 +304,74 @@ impl ChatService {
         Ok(conv)
     }
 
+    /// Adopt the Agent's own title for this conversation and return the new
+    /// title, or `None` when nothing may change.
+    ///
+    /// A title is adopted only while the stored one is still exactly what the
+    /// first user message derives (see `conversation_title_from_prompt`): a
+    /// manual rename, or an earlier adoption, is left alone. That keeps the
+    /// conversation row free of an extra "who named this" column and needs no
+    /// migration.
+    pub fn adopt_agent_title(&self, conversation_id: &str) -> Result<Option<String>> {
+        let conversation = self.get_conversation(conversation_id)?;
+        let Some(agent) = conversation.agent_ids.first().copied() else {
+            return Ok(None);
+        };
+        let Some(session_id) = self.agent_session_id(conversation_id, &conversation)? else {
+            return Ok(None);
+        };
+        let Some(source) = crate::platform::builtin_session_title_registry().get_agent_id(agent)
+        else {
+            return Ok(None);
+        };
+        let home = crate::utils::paths::agent_home(agent)?;
+        let Some(title) = source.title_for(&home, &session_id)? else {
+            return Ok(None);
+        };
+        let title = title.trim();
+        if title.is_empty() || title == conversation.title.trim() {
+            return Ok(None);
+        }
+        let derived = conversation
+            .first_user_content
+            .as_deref()
+            .map(crate::models::conversation_title_from_prompt)
+            .unwrap_or_default();
+        if derived.is_empty() || conversation.title.trim() != derived {
+            return Ok(None);
+        }
+
+        // Compare-and-set on the stored title: a manual rename that lands
+        // between the read above and this write must win, so the row keeps it.
+        let updated_at = Utc::now().to_rfc3339();
+        let stored = conversation.title.clone();
+        if !self
+            .repo
+            .update_title_if(conversation_id, &stored, title, &updated_at)?
+        {
+            return Ok(None);
+        }
+        Ok(Some(title.to_string()))
+    }
+
+    /// Session id the Agent knows this conversation by: the continuous runtime
+    /// thread first, then the native session id a print-mode run reported.
+    fn agent_session_id(
+        &self,
+        conversation_id: &str,
+        conversation: &Conversation,
+    ) -> Result<Option<String>> {
+        if let Some(id) = self.runtime.session_id(conversation_id)? {
+            return Ok(Some(id));
+        }
+        Ok(conversation
+            .native_session_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .map(ToOwned::to_owned))
+    }
+
     pub fn delete_conversation(&self, id: &str) -> Result<()> {
         let started = Instant::now();
         // Cancel any in-flight send so subprocesses stop and the active map is

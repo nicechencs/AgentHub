@@ -39,6 +39,32 @@ fn production_register_integrations_covers_all_agents_without_demo() {
     assert!(!prod.stream.contains_key(&demo));
     assert!(!prod.projects.contains_key(&demo));
     assert!(!prod.skills.contains_key(&demo));
+    assert!(prod.session_titles.get(&demo).is_none());
+}
+
+#[test]
+fn session_title_sources_cover_only_agents_that_write_their_own_title() {
+    let prod = production_integrations();
+    let titled = [AgentId::Codex, AgentId::Grok, AgentId::Kiro, AgentId::Dsh];
+    for agent in titled {
+        assert!(
+            prod.session_titles.get_agent_id(agent).is_some(),
+            "{}",
+            agent.as_str()
+        );
+    }
+    // Claude keeps no session title of its own, so it must not get a source
+    // (and neither may any other agent that never writes one).
+    for agent in AgentId::ALL {
+        if titled.contains(&agent) {
+            continue;
+        }
+        assert!(
+            prod.session_titles.get_agent_id(agent).is_none(),
+            "{}",
+            agent.as_str()
+        );
+    }
 }
 
 #[test]
@@ -59,6 +85,7 @@ fn ninth_test_only_agent_is_one_directory_plus_one_register() {
     assert!(bundle.usage.get(&key).is_none());
     assert!(bundle.stream.get(&key).is_none());
     assert!(bundle.projects.get(&key).is_none());
+    assert!(bundle.session_titles.get(&key).is_none());
     assert!(AgentId::ALL.iter().all(|id| id.as_str() != demo_agent::KEY));
 }
 

@@ -442,20 +442,27 @@ fn conversation_semantic_phrase(raw: &str) -> String {
     }
 }
 
+/// Strip `` `code` `` spans. Mirrors the frontend's ``/`[^`]+`/g`` replace:
+/// only closed pairs go away, and a lone backtick stays as written. The
+/// adoption gate compares this string with the frontend's derivation, so both
+/// implementations have to agree character for character.
 fn strip_backtick_spans(input: &str) -> String {
+    let chars: Vec<char> = input.chars().collect();
     let mut out = String::with_capacity(input.len());
-    let mut chars = input.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '`' {
-            while let Some(inner) = chars.next() {
-                if inner == '`' {
-                    break;
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '`' {
+            // `[^`]+` needs at least one non-backtick character inside.
+            if let Some(close) = (i + 1..chars.len()).find(|&j| chars[j] == '`') {
+                if close > i + 1 {
+                    out.push(' ');
+                    i = close + 1;
+                    continue;
                 }
             }
-            out.push(' ');
-            continue;
         }
-        out.push(ch);
+        out.push(chars[i]);
+        i += 1;
     }
     out
 }

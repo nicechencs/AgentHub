@@ -96,3 +96,22 @@ fn empty_agent_list_rejected_on_create() {
     let err = create_conversation_inner(&hub, vec![], None).unwrap_err();
     assert!(err.contains("empty") || err.contains("at least"));
 }
+
+#[test]
+fn refresh_chat_agent_title_returns_null_without_an_agent_title() {
+    let dir = tempdir().unwrap();
+    let hub = AgentHub::open(Some(dir.path())).unwrap();
+    let conv = create_conversation_inner(&hub, vec!["claude".into()], None).unwrap();
+
+    // No session id and no Claude title source: the command stays a no-op.
+    assert_eq!(refresh_chat_agent_title_inner(&hub, &conv.id).unwrap(), None);
+}
+
+#[test]
+fn refresh_chat_agent_title_rejects_an_unknown_conversation() {
+    let dir = tempdir().unwrap();
+    let hub = AgentHub::open(Some(dir.path())).unwrap();
+
+    let err = refresh_chat_agent_title_inner(&hub, "conv-missing").unwrap_err();
+    assert!(!err.is_empty());
+}

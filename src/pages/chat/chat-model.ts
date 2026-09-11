@@ -994,6 +994,19 @@ export function conversationTitle(t: TranslateFn, title: string): string {
   return t('chat.title.newConversation');
 }
 
+/**
+ * Apply a title the Agent wrote for itself to one row of the conversation
+ * list. The backend decides when adoption is allowed; this only places the
+ * answer where the rail and the session header read it from.
+ */
+export function withConversationTitle<T extends { id: string; title: string }>(
+  conversations: readonly T[],
+  id: string,
+  title: string,
+): T[] {
+  return conversations.map((item) => (item.id === id ? { ...item, title } : item));
+}
+
 export function firstUserContentByConversation(
   messages: readonly Pick<ChatMessage, 'conversationId' | 'role' | 'content'>[],
 ): Record<string, string> {

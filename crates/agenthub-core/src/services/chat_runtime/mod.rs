@@ -177,6 +177,18 @@ impl ChatRuntime {
         self.store.persisted_enabled(conversation_id)
     }
 
+    /// App-server / ACP session id of a started continuous conversation.
+    /// Codex threads and Grok/Kiro ACP sessions both land here; the DB
+    /// `native_session_id` stays empty for the continuous path.
+    pub(crate) fn session_id(&self, conversation_id: &str) -> Result<Option<String>> {
+        Ok(self
+            .store
+            .record(conversation_id)?
+            .and_then(|record| record.thread_id)
+            .map(|id| id.trim().to_string())
+            .filter(|id| !id.is_empty()))
+    }
+
     /// Empty Codex chats advertise `enabled` so the first send uses this path.
     /// Agent / cwd stay editable until a continuous session actually starts.
     pub(crate) fn session_locked(

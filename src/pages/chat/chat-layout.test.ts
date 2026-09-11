@@ -217,6 +217,28 @@ describe('chat layout wiring', () => {
     expect(page).not.toContain('flex min-h-0 flex-1 flex-col gap-4');
   });
 
+  it('adopts the Agent session title once a turn ends', () => {
+    const send = source('use-chat-page-send.ts');
+    expect(send).toContain('refreshAgentTitle');
+    // Continuous turn: the snapshot left the active phase.
+    expect(send).toContain('if (wasSending) void adoptAgentTitle(conversationId);');
+    // Legacy turn: adopt even if the user left the conversation, and before
+    // the convergence read so one write lands both when they stayed.
+    expect(send).toContain('await adoptAgentTitle(sendConvId);');
+    expect(send.indexOf('await adoptAgentTitle(sendConvId);')).toBeLessThan(
+      send.indexOf('if (activeIdRef.current !== sendConvId) return;'),
+    );
+    expect(send.indexOf('await adoptAgentTitle(sendConvId);')).toBeLessThan(
+      send.indexOf('const convs = await listConversations();'),
+    );
+    expect(send).toContain('const title = await refreshAgentTitle(conversationId);');
+    // The answer lands on the row through the shared helper; that helper's
+    // behavior is covered by chat-model.test.ts (this suite cannot render pages).
+    expect(send).toContain(
+      'setConversations((prev) => withConversationTitle(prev, conversationId, title));',
+    );
+  });
+
   it('lets a dragged composer pane fill leftover height', () => {
     const composer = source('ChatComposer.tsx');
     expect(composer).toContain('fillHeight');
