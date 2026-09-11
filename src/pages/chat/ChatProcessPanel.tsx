@@ -1,7 +1,16 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type Ref,
+} from 'react';
+import { Check, Copy } from 'lucide-react';
 import { AgentThinking } from '@/components/shared/AgentThinking';
 import { SourcePreview } from '@/components/shared/SourcePreview';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { Button } from '@/components/ui/button';
 import {
   formatToolStep,
   isProtocolProcessStep,
@@ -21,6 +30,87 @@ import {
   pinElementScrollToBottom,
   thinkingChromeLabel,
 } from './chat-format';
+import type { ProcessLogPane } from './chat-process-log-model';
+import { useProcessLogHeight } from './use-process-log-height';
+
+function CopyableResizableLog({
+  label,
+  text,
+  pane,
+  resizeAria,
+  preRef,
+}: {
+  label: string;
+  text: string;
+  pane: ProcessLogPane;
+  resizeAria: string;
+  preRef?: Ref<HTMLPreElement>;
+}) {
+  const { t } = useI18n();
+  const [copied, setCopied] = useState(false);
+  const height = useProcessLogHeight(pane);
+
+  const onCopy = (e: ReactMouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!text.trim()) return;
+    void navigator.clipboard.writeText(text).then(
+      () => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1200);
+      },
+      () => undefined,
+    );
+  };
+
+  return (
+    <div>
+      <div className="mb-0.5 flex items-center justify-between gap-2">
+        <span className="text-muted">{label}</span>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-7 shrink-0 px-2"
+          aria-label={t('common.copy')}
+          onClick={onCopy}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+          {copied ? t('common.copied') : t('common.copy')}
+        </Button>
+      </div>
+      <pre
+        ref={preRef}
+        style={{ height: height.paneHeight }}
+        className="overflow-auto [overflow-anchor:none] whitespace-pre-wrap break-all rounded-card bg-subtle px-2 py-1.5 font-mono text-meta leading-relaxed text-primary"
+      >
+        {text}
+      </pre>
+      <div
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label={resizeAria}
+        aria-valuenow={height.paneHeight}
+        aria-valuemin={height.valuemin}
+        tabIndex={0}
+        onPointerDown={height.onResizeStart}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          height.resetHeight();
+        }}
+        onKeyDown={height.onSeparatorKeyDown}
+        className={
+          [
+            'group relative z-10 h-2 shrink-0 cursor-row-resize touch-none bg-transparent outline-none',
+            'after:pointer-events-none after:absolute after:inset-x-0 after:top-1/2 after:h-px after:-translate-y-1/2 after:bg-transparent after:content-[""]',
+            'hover:after:bg-accent focus-visible:after:bg-accent active:after:bg-accent',
+          ].join(' ')
+        }
+      />
+    </div>
+  );
+}
 
 function looksLikeDiff(text: string): boolean {
   return (
@@ -271,23 +361,21 @@ export function ChatProcessPanel({
               </div>
             ))}
             {view.command ? (
-              <div>
-                <div className="mb-0.5 text-muted">{t('chat.process.command')}</div>
-                <pre className="max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-card bg-subtle px-2 py-1.5 font-mono text-meta leading-relaxed text-primary">
-                  {view.command}
-                </pre>
-              </div>
+              <CopyableResizableLog
+                label={t('chat.process.command')}
+                text={view.command}
+                pane="command"
+                resizeAria={t('chat.process.resizeCommand')}
+              />
             ) : null}
             {view.stderr ? (
-              <div>
-                <div className="mb-0.5 text-muted">{t('chat.process.stderr')}</div>
-                <pre
-                  ref={stderrRef}
-                  className="max-h-36 overflow-auto [overflow-anchor:none] whitespace-pre-wrap break-all rounded-card bg-subtle px-2 py-1.5 font-mono text-meta leading-relaxed text-primary"
-                >
-                  {view.stderr}
-                </pre>
-              </div>
+              <CopyableResizableLog
+                label={t('chat.process.stderr')}
+                text={view.stderr}
+                pane="stderr"
+                resizeAria={t('chat.process.resizeLog')}
+                preRef={stderrRef}
+              />
             ) : null}
             {exitCode != null ? (
               <div className="text-muted">{t('chat.process.exitCode', { code: exitCode })}</div>

@@ -470,8 +470,12 @@ describe('chat layout wiring', () => {
     const panel = source('ChatProcessPanel.tsx');
     expect(panel).toContain("t('chat.process.runDetails')");
     expect(panel).toContain("t('chat.process.stderr')");
+    expect(panel).toContain("t('chat.process.resizeCommand')");
+    expect(panel).toContain("t('chat.process.resizeLog')");
     expect(panel).toContain("t('chat.process.exitCode'");
     expect(panel).toContain("t('chat.process.details')");
+    expect(panel).toContain('CopyableResizableLog');
+    expect(panel).toContain('useProcessLogHeight');
     expect(panel).toContain('formatToolStep');
     expect(source('ChatProcessInspectPanel.tsx')).toContain('formatProcessHeadline');
     expect(source('ChatMessageBubble.tsx')).toContain('formatProcessHeadline');
@@ -482,6 +486,8 @@ describe('chat layout wiring', () => {
     expect(translate('en', 'chat.process.runDetails')).toBe('Details of this run');
     expect(translate('zh', 'chat.process.stderr')).toBe('过程日志');
     expect(translate('en', 'chat.process.stderr')).toBe('Process log');
+    expect(translate('zh', 'chat.process.resizeCommand')).toBe('拖动调整命令高度');
+    expect(translate('zh', 'chat.process.resizeLog')).toBe('拖动调整过程日志高度');
     expect(translate('en', 'chat.process.runDetails')).not.toBe('Run details');
     expect(translate('zh', 'chat.process.toolRead')).toBe('正在读取');
     expect(translate('zh', 'chat.process.toolEdit')).toBe('正在修改');

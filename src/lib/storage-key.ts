@@ -30,6 +30,8 @@ const LAYOUT_STORAGE_KEY = {
   routesActivityColumnWidths: `${PREFIX}routes-activity-column-widths`,
   dashboardUsageColumnWidths: `${PREFIX}dashboard-usage-column-widths`,
   chatComposerPaneHeight: `${PREFIX}chat-composer-pane-height`,
+  chatProcessCommandHeight: `${PREFIX}chat-process-command-height`,
+  chatProcessLogHeight: `${PREFIX}chat-process-log-height`,
   chatPreviewWidth: `${PREFIX}chat-preview-width`,
   chatRailWidth: `${PREFIX}chat-rail-width`,
   chatBootstrap: `${PREFIX}chat-bootstrap`,
