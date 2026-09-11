@@ -13,7 +13,9 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
-use crate::utils::process::{configure_process_group, poll_child, ChildPoll, ProcessControl};
+use crate::utils::process::{
+    configure_process_group, poll_child, reap_child, ChildPoll, ProcessControl,
+};
 
 use super::ops::AcpTerminalCreate;
 use super::types::RuntimeHostTerminal;
@@ -177,8 +179,12 @@ impl HostedTerminals {
             return Ok(());
         }
         match poll_child(&mut item.child, &item.control) {
-            Ok(ChildPoll::Exited(status)) => {
-                item.exit_code = Some(status.and_then(|value| value.code()).unwrap_or(1));
+            Ok(ChildPoll::Exited(observed_status)) => {
+                item.exit_code = Some(exit_code_after_poll(
+                    &mut item.child,
+                    &item.control,
+                    observed_status,
+                ));
                 self.publish();
             }
             Ok(ChildPoll::Running) => {}
@@ -224,6 +230,27 @@ impl HostedTerminal {
             running: self.exit_code.is_none(),
         }
     }
+}
+
+fn exit_code_after_poll(
+    child: &mut Child,
+    control: &ProcessControl,
+    observed_status: Option<std::process::ExitStatus>,
+) -> i32 {
+    // Unix `poll_child` uses waitid + WNOWAIT, so Exited(None) still needs a reap
+    // to recover the real status. Windows already reaped via try_wait.
+    control.cleanup_remaining_group(child);
+    let status = match observed_status {
+        Some(status) => {
+            control.disarm();
+            status
+        }
+        None => match reap_child(child, control) {
+            Ok(status) => status,
+            Err(_) => return 1,
+        },
+    };
+    status.code().unwrap_or(1)
 }
 
 fn display_command(command: &str, args: &[String]) -> String {
