@@ -2838,6 +2838,9 @@ export const zh = {
       needConfirm: '需要确认',
       needAnswer: '需要你的回答',
       plan: '计划',
+      hostCommand: '执行命令',
+      stopCommand: '停止这条',
+      stopCommandFailed: '没法停止这条命令',
       kind: {
         read: '读取文件',
         edit: '修改文件',

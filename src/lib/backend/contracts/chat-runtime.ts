@@ -55,6 +55,17 @@ export interface RuntimeSnapshot {
   catalogEpoch?: number;
   /** Current-turn ACP plan. Live chrome only — dropped on the next turn. */
   plan?: RuntimePlanEntry[];
+  /** Live ACP host commands. One card per id; not a conversation TTY. */
+  hostTerminals?: RuntimeHostTerminal[];
+}
+
+export interface RuntimeHostTerminal {
+  id: string;
+  command: string;
+  output: string;
+  truncated?: boolean;
+  exitCode?: number | null;
+  running: boolean;
 }
 
 export interface RuntimePlanEntry {

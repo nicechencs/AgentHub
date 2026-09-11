@@ -108,6 +108,9 @@ export function createTauriChatPort(): ChatPort {
     async runtimeCancel(conversationId, runId) {
       await invoke('chat_runtime_cancel', { conversationId, runId });
     },
+    async runtimeKillHostTerminal(conversationId, terminalId) {
+      await invoke('chat_runtime_kill_host_terminal', { conversationId, terminalId });
+    },
 
     async setChatModel(agentId, model) {
       await invoke('set_chat_model', { agentId, model });

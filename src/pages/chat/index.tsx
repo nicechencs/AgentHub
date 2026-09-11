@@ -56,6 +56,7 @@ import { ChatSettingsDialog } from './ChatSettingsDialog';
 import { ChatShortcutsDialog } from './ChatShortcutsDialog';
 import { ChatTranscript } from './ChatTranscript';
 import { ChatRuntimeRequests } from './ChatRuntimeRequests';
+import { ChatHostTerminals } from './ChatHostTerminals';
 import { ChatPlanBar } from './ChatPlanBar';
 import { useChatComposerSplit } from './use-chat-composer-split';
 import { useChatPage } from './use-chat-page';
@@ -345,6 +346,12 @@ export default function ChatPage() {
                 agentId={page.primaryAgent}
                 requests={page.runtime.pendingRequests}
                 onReply={(request, decision, answers) => page.submitRuntimeRequest(request, decision, answers)}
+              />
+            ) : null}
+            {page.runtime?.hostTerminals?.length ? (
+              <ChatHostTerminals
+                terminals={page.runtime.hostTerminals}
+                onKill={page.killHostTerminal}
               />
             ) : null}
 

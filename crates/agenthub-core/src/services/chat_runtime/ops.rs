@@ -453,8 +453,8 @@ pub(crate) fn grok_acp_stdio_args(
 }
 
 /// Official Grok ACP initialize. Advertise client fs so writes come to Chat
-/// as `fs/write_text_file` instead of the CLI writing first. Do not advertise
-/// `terminal` — those methods are unimplemented and a `-32601` can kill Grok.
+/// as `fs/write_text_file` instead of the CLI writing first. Advertise
+/// `terminal` only together with `terminal/*` handlers — a `-32601` can kill Grok.
 pub(crate) fn grok_initialize_params() -> Value {
     json!({
         "protocolVersion": 1,
@@ -464,7 +464,7 @@ pub(crate) fn grok_initialize_params() -> Value {
         },
         "clientCapabilities": {
             "fs": { "readTextFile": true, "writeTextFile": true },
-            "terminal": false
+            "terminal": true
         }
     })
 }
@@ -475,6 +475,109 @@ pub(crate) fn is_acp_fs_write_method(method: &str) -> bool {
 
 pub(crate) fn is_acp_fs_read_method(method: &str) -> bool {
     matches!(method, "fs/read_text_file" | "fs/readTextFile")
+}
+
+pub(crate) fn is_acp_terminal_method(method: &str) -> bool {
+    matches!(
+        method,
+        "terminal/create"
+            | "terminal/output"
+            | "terminal/wait_for_exit"
+            | "terminal/waitForExit"
+            | "terminal/kill"
+            | "terminal/release"
+    )
+}
+
+pub(crate) struct AcpTerminalCreate {
+    pub command: String,
+    pub args: Vec<String>,
+    pub cwd: std::path::PathBuf,
+    pub env: Vec<(String, String)>,
+    pub output_limit: usize,
+}
+
+pub(crate) fn acp_terminal_create(
+    params: &Value,
+    fallback_cwd: &std::path::Path,
+) -> Result<AcpTerminalCreate> {
+    let command = params
+        .get("command")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| AppError::InvalidArg("命令缺少可执行文件".into()))?
+        .to_string();
+    let args = params
+        .get("args")
+        .or_else(|| params.get("arguments"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|value| value.as_str().map(str::to_string))
+        .collect();
+    let cwd = params
+        .get("cwd")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| fallback_cwd.to_path_buf());
+    let env = acp_terminal_env(params);
+    let output_limit = params
+        .get("outputByteLimit")
+        .or_else(|| params.get("output_byte_limit"))
+        .and_then(Value::as_u64)
+        .map(|n| n as usize)
+        .filter(|n| *n > 0)
+        .unwrap_or(super::host_terminal::DEFAULT_OUTPUT_LIMIT);
+    Ok(AcpTerminalCreate {
+        command,
+        args,
+        cwd,
+        env,
+        output_limit,
+    })
+}
+
+pub(crate) fn acp_terminal_id(params: &Value) -> Result<String> {
+    params
+        .get("terminalId")
+        .or_else(|| params.get("terminal_id"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| AppError::InvalidArg("缺少终端 id".into()))
+}
+
+fn acp_terminal_env(params: &Value) -> Vec<(String, String)> {
+    if let Some(items) = params.get("env").and_then(Value::as_array) {
+        return items
+            .iter()
+            .filter_map(|row| {
+                let name = row
+                    .get("name")
+                    .or_else(|| row.get("key"))
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())?;
+                let value = row
+                    .get("value")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                Some((name.to_string(), value))
+            })
+            .collect();
+    }
+    params
+        .get("env")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .filter_map(|(key, value)| value.as_str().map(|s| (key.clone(), s.to_string())))
+        .collect()
 }
 
 pub(crate) const ACP_FS_WRITE_MAX_BYTES: usize = 10 * 1024 * 1024;

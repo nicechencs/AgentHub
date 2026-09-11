@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import { AGENT_IDS } from '@/config/agents';
-import { listChatMessages, updateConversation } from '@/lib/api/chat';
+import { listChatMessages, runtimeKillHostTerminal, updateConversation } from '@/lib/api/chat';
 import { launchAgentProgram } from '@/lib/api/install';
 import { pickDirectory } from '@/lib/api/settings';
 import {
@@ -729,6 +729,18 @@ export function useChatPage() {
     firstUserContentById,
     turnOutcome,
     submitRuntimeRequest: send.submitRuntimeRequest,
+    killHostTerminal: async (terminalId: string) => {
+      if (!active?.id) return;
+      try {
+        await runtimeKillHostTerminal(active.id, terminalId);
+      } catch (error) {
+        toast({
+          title: t('chat.runtime.stopCommandFailed'),
+          description: error instanceof Error ? error.message : String(error),
+          variant: 'danger',
+        });
+      }
+    },
     steerRuntime: send.steerRuntime,
     cancelSending: send.handleCancel,
     retryLoad,
