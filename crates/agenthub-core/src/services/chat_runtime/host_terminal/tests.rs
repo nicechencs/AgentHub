@@ -54,6 +54,38 @@ fn create_captures_output_and_exit_code() {
     assert!(!snap[0].running);
 }
 
+fn exit_spec(code: i32) -> AcpTerminalCreate {
+    let cwd = std::env::temp_dir();
+    #[cfg(windows)]
+    {
+        AcpTerminalCreate {
+            command: "cmd.exe".into(),
+            args: vec!["/C".into(), format!("exit {code}")],
+            cwd,
+            env: Vec::new(),
+            output_limit: DEFAULT_OUTPUT_LIMIT,
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        AcpTerminalCreate {
+            command: "sh".into(),
+            args: vec!["-c".into(), format!("exit {code}")],
+            cwd,
+            env: Vec::new(),
+            output_limit: DEFAULT_OUTPUT_LIMIT,
+        }
+    }
+}
+
+#[test]
+fn create_records_nonzero_exit_code() {
+    let views = Arc::new(Mutex::new(HashMap::new()));
+    let mut host = HostedTerminals::new("c-term".into(), views);
+    let id = host.create(exit_spec(7)).unwrap();
+    assert_eq!(wait_exit(&mut host, &id), 7);
+}
+
 #[test]
 fn missing_terminal_is_not_found() {
     let views = Arc::new(Mutex::new(HashMap::new()));
