@@ -127,6 +127,13 @@ describe('chat layout wiring', () => {
     expect(source('ChatProcessInspectPanel.tsx')).toContain('SideInspectPanel');
   });
 
+  it('centers the inspect sash with the same 12px gutter as other workbenches', () => {
+    const page = source('index.tsx');
+    expect(page).toContain('preview.mounted && pageInsetTw.mr');
+    expect(page).toContain('padBottom={0}');
+    expect(page).not.toContain('padTop={');
+  });
+
   it('grows the composer textarea with a shared cap and panel-colored shell', () => {
     const composer = source('ChatComposer.tsx');
     expect(composer).toContain('[field-sizing:content]');
@@ -471,8 +478,8 @@ describe('chat layout wiring', () => {
     expect(panel).not.toContain('exit {exitCode}');
     expect(translate('zh', 'chat.process.runDetails')).toBe('运行详情');
     expect(translate('en', 'chat.process.runDetails')).toBe('Details of this run');
-    expect(translate('zh', 'chat.process.stderr')).toBe('错误输出');
-    expect(translate('en', 'chat.process.stderr')).toBe('Error output');
+    expect(translate('zh', 'chat.process.stderr')).toBe('过程日志');
+    expect(translate('en', 'chat.process.stderr')).toBe('Process log');
     expect(translate('en', 'chat.process.runDetails')).not.toBe('Run details');
     expect(translate('zh', 'chat.process.toolRead')).toBe('正在读取');
     expect(translate('zh', 'chat.process.toolEdit')).toBe('正在修改');

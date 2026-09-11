@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MessagesSquare } from 'lucide-react';
-import { pageRhythm } from '@/components/layout/page-rhythm';
+import { pageInsetTw, pageRhythm } from '@/components/layout/page-rhythm';
 import { SideSplitFrame } from '@/components/layout/SideSplit';
 import { useSideSplit } from '@/components/layout/use-side-split';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -289,7 +289,12 @@ export default function ChatPage() {
       />
 
       <div ref={preview.splitRef} className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-      <section className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-card border border-border bg-canvas">
+      <section
+        className={cn(
+          'relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-card border border-border bg-canvas',
+          preview.mounted && pageInsetTw.mr,
+        )}
+      >
         <ChatSessionHeader
           active={page.active}
           railOpen={page.railOpen}
@@ -595,7 +600,11 @@ export default function ChatPage() {
           runtimeLocked={page.runtimeLocked || page.sendingHere}
         />
       </section>
-        <SideSplitFrame split={preview} resizeAria={t('chat.preview.resizeAria')}>
+        <SideSplitFrame
+          split={preview}
+          resizeAria={t('chat.preview.resizeAria')}
+          padBottom={0}
+        >
           {isChatFilePreview(preview.target) ? (
             <ChatMarkdownPreviewPanel
               path={chatPreviewPath(preview.target)}

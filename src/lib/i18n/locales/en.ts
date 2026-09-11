@@ -2993,7 +2993,7 @@ export const en = {
       details: "Details",
       runDetails: "Details of this run",
       command: "Command",
-      stderr: "Error output",
+      stderr: "Process log",
       exitCode: "Exit code {code}",
       unrecognizedLine: "One line couldn't be shown",
       nonJsonLine: "One line wasn't normal output",
