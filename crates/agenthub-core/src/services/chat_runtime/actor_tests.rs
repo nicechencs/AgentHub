@@ -355,6 +355,64 @@ fn grok_available_commands_update_fills_catalog_not_timeline() {
 }
 
 #[test]
+fn grok_config_option_update_fills_models_not_timeline() {
+    let db = Database::open_in_memory().unwrap();
+    conversation_with(&db, "grok-cfg", AgentId::Grok, &std::env::temp_dir());
+    let mut worker = worker(&db, "grok-cfg");
+    worker.agent = AgentId::Grok;
+    worker.store.enable_if_new("grok-cfg").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .notification(
+            "session/update",
+            &json!({
+                "update": {
+                    "sessionUpdate": "config_option_update",
+                    "configOptions": [{
+                        "id": "model",
+                        "category": "model",
+                        "type": "select",
+                        "currentValue": "grok-4",
+                        "options": [
+                            { "value": "grok-4" },
+                            { "value": "grok-3" }
+                        ]
+                    }, {
+                        "id": "effort",
+                        "type": "select",
+                        "options": [{ "value": "low" }, { "value": "high" }]
+                    }]
+                }
+            }),
+        )
+        .unwrap();
+
+    let snapshot = worker.store.snapshot("grok-cfg", None).unwrap();
+    assert!(!snapshot.events.iter().any(|event| matches!(
+        &event.event,
+        ChatEvent::AgentProcess { .. }
+    )));
+    let cache = worker
+        .catalogs
+        .lock()
+        .unwrap()
+        .get("grok-cfg")
+        .cloned()
+        .expect("catalog");
+    assert_eq!(
+        cache
+            .models
+            .iter()
+            .map(|model| model.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["grok-4", "grok-3"]
+    );
+    assert_eq!(cache.models[0].efforts, vec!["low", "high"]);
+    assert!(cache.catalog_epoch >= 1);
+}
+
+#[test]
 fn grok_thought_then_text_marks_thinking_done() {
     let db = Database::open_in_memory().unwrap();
     conversation_with(&db, "grok-think", AgentId::Grok, &std::env::temp_dir());

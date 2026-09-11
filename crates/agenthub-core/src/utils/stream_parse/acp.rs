@@ -94,7 +94,7 @@ pub(crate) fn decode_session_update(v: &Value) -> Vec<ProcessStep> {
         | "auto_compact"
         | "context_compact"
         | "compaction"
-        | "config_option_update" => vec![],
+        | "config_option_update" => vec![], // Catalog only — never a process-timeline row.
         "error" => {
             let message = update
                 .get("message")
@@ -137,6 +137,92 @@ pub(crate) fn extract_available_commands(v: &Value) -> Option<Vec<AcpAvailableCo
         list.map(|items| items.iter().filter_map(parse_available_command).collect())
             .unwrap_or_default(),
     )
+}
+
+/// Model/effort lists from ACP config options. Not a `ProcessStep`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct AcpConfigCatalog {
+    pub models: Vec<String>,
+    pub current_model: Option<String>,
+    pub efforts: Vec<String>,
+    pub current_effort: Option<String>,
+}
+
+/// `Some` for `config_option_update` (even if empty) or a payload that already has `configOptions`.
+pub(crate) fn extract_config_catalog(v: &Value) -> Option<AcpConfigCatalog> {
+    let update = v.get("update").or_else(|| v.get("data")).unwrap_or(v);
+    let uty = update
+        .get("sessionUpdate")
+        .or_else(|| update.get("session_update"))
+        .or_else(|| update.get("type"))
+        .and_then(|t| t.as_str())
+        .unwrap_or("");
+    let list = update
+        .get("configOptions")
+        .or_else(|| update.get("config_options"))
+        .or_else(|| v.get("configOptions"))
+        .or_else(|| v.get("config_options"))
+        .and_then(|value| value.as_array());
+    let is_update = uty == "config_option_update";
+    if !is_update && list.is_none() {
+        return None;
+    }
+    Some(config_catalog_from_options(list.map(|items| items.as_slice()).unwrap_or(&[])))
+}
+
+fn config_catalog_from_options(items: &[Value]) -> AcpConfigCatalog {
+    let mut catalog = AcpConfigCatalog::default();
+    for item in items {
+        let id = first_str(item, &["id", "category"]).unwrap_or_default();
+        let category = first_str(item, &["category"]).unwrap_or_default();
+        let kind = compact_tool_token(&id);
+        let category_kind = compact_tool_token(&category);
+        let values = select_option_values(item);
+        let current = config_current_value(item);
+        if is_model_config(&kind, &category_kind) {
+            if !values.is_empty() {
+                catalog.models = values;
+            }
+            if current.is_some() {
+                catalog.current_model = current;
+            }
+        } else if is_effort_config(&kind, &category_kind) {
+            if !values.is_empty() {
+                catalog.efforts = values;
+            }
+            if current.is_some() {
+                catalog.current_effort = current;
+            }
+        }
+    }
+    catalog
+}
+
+fn is_model_config(id: &str, category: &str) -> bool {
+    matches!(id, "model" | "models" | "modelid") || matches!(category, "model" | "models")
+}
+
+fn is_effort_config(id: &str, category: &str) -> bool {
+    matches!(
+        id,
+        "effort" | "thinking" | "reasoning" | "reasoningeffort" | "think"
+    ) || matches!(category, "effort" | "thinking" | "reasoning")
+}
+
+fn select_option_values(item: &Value) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    item.get("options")
+        .and_then(|value| value.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|row| {
+            first_str(row, &["value", "id", "name"]).filter(|s| seen.insert(s.clone()))
+        })
+        .collect()
+}
+
+fn config_current_value(item: &Value) -> Option<String> {
+    first_str(item, &["currentValue", "current_value", "selectedValue", "selected_value"])
 }
 
 fn parse_available_command(value: &Value) -> Option<AcpAvailableCommand> {

@@ -1613,6 +1613,7 @@ impl ActorWorker {
                         .map_err(|error| map_transport(self.agent, error))?;
                     self.thread_id =
                         grok_session_id(&created).or_else(|| extract_id(&created, "session"));
+                    self.apply_session_model_catalog(&created);
                     if self.agent == AgentId::Kiro {
                         self.session_model = model.map(str::to_owned);
                         self.session_effort = effort.map(str::to_owned);
@@ -2996,6 +2997,9 @@ impl ActorWorker {
                     .collect();
             });
         }
+        if let Some(catalog) = crate::utils::stream_parse::acp::extract_config_catalog(params) {
+            self.apply_acp_config_catalog(catalog);
+        }
         let envelope = json!({
             "jsonrpc": "2.0",
             "method": "session/update",
@@ -3044,8 +3048,12 @@ impl ActorWorker {
             let entry = guard.entry(self.conversation_id.clone()).or_default();
             let before_commands = entry.native_commands.clone();
             let before_image = entry.image_input;
+            let before_models = entry.models.clone();
             patch(entry);
-            if entry.native_commands != before_commands || entry.image_input != before_image {
+            if entry.native_commands != before_commands
+                || entry.image_input != before_image
+                || entry.models != before_models
+            {
                 entry.catalog_epoch = entry.catalog_epoch.saturating_add(1);
             }
         }
@@ -3059,6 +3067,72 @@ impl ActorWorker {
             .and_then(|guard| guard.get(&self.conversation_id).map(|cache| cache.catalog_epoch))
             .unwrap_or(0);
         snapshot
+    }
+
+    fn apply_acp_config_catalog(&self, catalog: crate::utils::stream_parse::acp::AcpConfigCatalog) {
+        if catalog.models.is_empty() && catalog.efforts.is_empty() {
+            return;
+        }
+        self.patch_catalog(|cache| {
+            let efforts = if catalog.efforts.is_empty() {
+                cache
+                    .models
+                    .first()
+                    .map(|model| model.efforts.clone())
+                    .unwrap_or_default()
+            } else {
+                catalog.efforts.clone()
+            };
+            let default_effort = catalog
+                .current_effort
+                .clone()
+                .filter(|effort| efforts.iter().any(|item| item == effort))
+                .or_else(|| {
+                    cache
+                        .models
+                        .iter()
+                        .find_map(|model| model.default_effort.clone())
+                        .filter(|effort| efforts.iter().any(|item| item == effort))
+                })
+                .or_else(|| efforts.first().cloned());
+            if !catalog.models.is_empty() {
+                cache.models = catalog
+                    .models
+                    .into_iter()
+                    .map(|id| RuntimeModelOption {
+                        id,
+                        efforts: efforts.clone(),
+                        default_effort: default_effort.clone(),
+                    })
+                    .collect();
+            } else if !efforts.is_empty() {
+                for model in &mut cache.models {
+                    model.efforts = efforts.clone();
+                    if model
+                        .default_effort
+                        .as_ref()
+                        .is_none_or(|effort| !efforts.contains(effort))
+                    {
+                        model.default_effort = default_effort.clone();
+                    }
+                }
+            }
+        });
+    }
+
+    fn apply_session_model_catalog(&self, created: &Value) {
+        if let Some(catalog) = crate::utils::stream_parse::acp::extract_config_catalog(created) {
+            self.apply_acp_config_catalog(catalog);
+        }
+        let grok_models = ops::parse_grok_model_list(created);
+        if grok_models.is_empty() {
+            return;
+        }
+        self.patch_catalog(|cache| {
+            if cache.models.is_empty() {
+                cache.models = grok_models;
+            }
+        });
     }
 
     fn apply_initialize_capabilities(&self, initialize: Option<&Value>) {
