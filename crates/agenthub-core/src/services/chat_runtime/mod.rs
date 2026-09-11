@@ -92,6 +92,7 @@ struct CatalogCache {
     from_codex: bool,
     native_commands: Vec<RuntimeNativeCommand>,
     image_input: Option<bool>,
+    catalog_epoch: i64,
 }
 
 fn merge_catalog_cache(previous: Option<&CatalogCache>, mut fetched: CatalogCache) -> CatalogCache {
@@ -102,6 +103,7 @@ fn merge_catalog_cache(previous: Option<&CatalogCache>, mut fetched: CatalogCach
         if fetched.image_input.is_none() {
             fetched.image_input = previous.image_input;
         }
+        fetched.catalog_epoch = previous.catalog_epoch.max(fetched.catalog_epoch);
     }
     fetched
 }
@@ -145,7 +147,12 @@ impl ChatRuntime {
         conversation_id: &str,
         after_sequence: Option<i64>,
     ) -> Result<RuntimeSnapshot> {
-        self.store.snapshot(conversation_id, after_sequence)
+        let mut snapshot = self.store.snapshot(conversation_id, after_sequence)?;
+        snapshot.catalog_epoch = self
+            .peek_catalog(conversation_id)
+            .map(|cache| cache.catalog_epoch)
+            .unwrap_or(0);
+        Ok(snapshot)
     }
 
     pub(crate) fn is_enabled(&self, conversation_id: &str) -> Result<bool> {
@@ -222,7 +229,7 @@ impl ChatRuntime {
             .ok_or_else(|| AppError::InvalidArg("这条对话没有可接上的会话，请新建对话".into()))?;
         self.store
             .enable_legacy_with_session(conversation_id, session_id)?;
-        self.store.snapshot(conversation_id, None)
+        self.snapshot(conversation_id, None)
     }
 
     pub fn options(&self, conversation_id: &str) -> Result<RuntimeOptions> {
@@ -399,7 +406,7 @@ impl ChatRuntime {
                 Err(error) => return Err(log_and_return_send_fail(conversation_id, error)),
             };
         match operation {
-            OperationState::Accepted => return self.store.snapshot(conversation_id, None),
+            OperationState::Accepted => return self.snapshot(conversation_id, None),
             OperationState::Pending => {
                 return Err(log_and_return_send_fail(
                     conversation_id,
@@ -706,20 +713,22 @@ impl ChatRuntime {
         commands: Vec<RuntimeNativeCommand>,
     ) {
         if let Ok(mut guard) = self.catalogs.lock() {
-            guard
-                .entry(conversation_id.to_string())
-                .or_default()
-                .native_commands = commands;
+            let entry = guard.entry(conversation_id.to_string()).or_default();
+            if entry.native_commands != commands {
+                entry.catalog_epoch = entry.catalog_epoch.saturating_add(1);
+            }
+            entry.native_commands = commands;
         }
     }
 
     #[cfg(test)]
     pub(crate) fn seed_image_input_for_test(&self, conversation_id: &str, image_input: bool) {
         if let Ok(mut guard) = self.catalogs.lock() {
-            guard
-                .entry(conversation_id.to_string())
-                .or_default()
-                .image_input = Some(image_input);
+            let entry = guard.entry(conversation_id.to_string()).or_default();
+            if entry.image_input != Some(image_input) {
+                entry.catalog_epoch = entry.catalog_epoch.saturating_add(1);
+            }
+            entry.image_input = Some(image_input);
         }
     }
 
@@ -1228,7 +1237,7 @@ impl ActorWorker {
             self.thread_id = record.thread_id.clone();
         }
         if self.last_start_request.as_deref() == Some(client_request_id) {
-            return self.store.snapshot(&self.conversation_id, None);
+            return Ok(self.with_catalog_epoch(self.store.snapshot(&self.conversation_id, None)?));
         }
         if matches!(
             record.phase,
@@ -1480,7 +1489,7 @@ impl ActorWorker {
                     self.message_id.as_deref(),
                 )?;
                 self.transport = Some(transport);
-                self.store.snapshot(&self.conversation_id, None)
+                Ok(self.with_catalog_epoch(self.store.snapshot(&self.conversation_id, None)?))
             })()
         };
         if let Err(error) = start_result {
@@ -1676,7 +1685,7 @@ impl ActorWorker {
                         self.message_id.as_deref(),
                     )?;
                     self.transport = Some(transport);
-                    return self.store.snapshot(&self.conversation_id, None);
+                    return Ok(self.with_catalog_epoch(self.store.snapshot(&self.conversation_id, None)?));
                 }
                 Err(codex_transport::CodexTransportError::Exited)
                     if matches!(plan, ops::AcpSessionPlan::PromptExisting)
@@ -1760,7 +1769,7 @@ impl ActorWorker {
             self.message_id.as_deref(),
         )?;
         self.transport = Some(transport);
-        self.store.snapshot(&self.conversation_id, None)
+        Ok(self.with_catalog_epoch(self.store.snapshot(&self.conversation_id, None)?))
     }
 
     fn claude_stream_event(&mut self, params: &Value) -> Result<()> {
@@ -3032,8 +3041,24 @@ impl ActorWorker {
 
     fn patch_catalog(&self, patch: impl FnOnce(&mut CatalogCache)) {
         if let Ok(mut guard) = self.catalogs.lock() {
-            patch(guard.entry(self.conversation_id.clone()).or_default());
+            let entry = guard.entry(self.conversation_id.clone()).or_default();
+            let before_commands = entry.native_commands.clone();
+            let before_image = entry.image_input;
+            patch(entry);
+            if entry.native_commands != before_commands || entry.image_input != before_image {
+                entry.catalog_epoch = entry.catalog_epoch.saturating_add(1);
+            }
         }
+    }
+
+    fn with_catalog_epoch(&self, mut snapshot: RuntimeSnapshot) -> RuntimeSnapshot {
+        snapshot.catalog_epoch = self
+            .catalogs
+            .lock()
+            .ok()
+            .and_then(|guard| guard.get(&self.conversation_id).map(|cache| cache.catalog_epoch))
+            .unwrap_or(0);
+        snapshot
     }
 
     fn apply_initialize_capabilities(&self, initialize: Option<&Value>) {

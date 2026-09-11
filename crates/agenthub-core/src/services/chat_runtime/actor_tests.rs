@@ -351,6 +351,7 @@ fn grok_available_commands_update_fills_catalog_not_timeline() {
         cache.native_commands[0].hint.as_deref(),
         Some("[instructions]")
     );
+    assert!(cache.catalog_epoch >= 1);
 }
 
 #[test]

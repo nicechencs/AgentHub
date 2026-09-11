@@ -190,6 +190,7 @@ export function useChatPage() {
     active,
     runtimeEnabled: Boolean(activeRuntime?.enabled),
     turnActive: send.sendingHere,
+    catalogEpoch: activeRuntime?.catalogEpoch ?? 0,
   });
   startExtrasRef.current = runtimeOps.startExtras;
   runtimeOpsClearRef.current = runtimeOps.clearAttachments;

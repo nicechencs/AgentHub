@@ -27,6 +27,11 @@ export function isRuntimeActive(phase: RuntimeSnapshot['phase']): boolean {
  * (stream-json). Half-surface agents (`cursor`, Claude print+resume history, …)
  * stay off this list — do not invent ChatRuntime just because a CLI has pickers.
  */
+/** True when the 80ms snapshot says the Options catalog changed. */
+export function shouldRefreshRuntimeCatalog(previousEpoch: number, nextEpoch: number): boolean {
+  return nextEpoch > previousEpoch;
+}
+
 /** Slice C will list native commands only when the session catalog is ready. */
 export function nativeCommandMenuEnabled(input: {
   sessionReady?: boolean;

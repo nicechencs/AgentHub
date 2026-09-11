@@ -138,6 +138,9 @@ pub struct RuntimeSnapshot {
     pub pending_requests: Vec<RuntimeRequest>,
     pub gap: bool,
     pub current_message: Option<ChatMessage>,
+    /// Bumps when Options catalog changes (slash commands, handshake image). Not the command list.
+    #[serde(default)]
+    pub catalog_epoch: i64,
 }
 
 impl RuntimeSnapshot {
@@ -152,6 +155,7 @@ impl RuntimeSnapshot {
             pending_requests: Vec::new(),
             gap: false,
             current_message: None,
+            catalog_epoch: 0,
         }
     }
 }

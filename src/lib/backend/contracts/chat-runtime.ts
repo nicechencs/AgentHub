@@ -51,6 +51,8 @@ export interface RuntimeSnapshot {
   gap: boolean;
   /** Full current agent message read in the same durable snapshot transaction. */
   currentMessage?: ChatMessage | null;
+  /** Bumps when the Options catalog changes. Not the command list. */
+  catalogEpoch?: number;
 }
 
 export interface RuntimeReply {

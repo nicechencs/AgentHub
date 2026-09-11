@@ -141,14 +141,14 @@ A–C 不引入伪终端，不声明 `clientCapabilities.terminal`。
 
 ## 建议切片
 
-未合入前不得把本页标成 current。A–C 在 `feat/chat-host-depth-options`；D 起未授权不得开工。
+未合入前不得把本页标成 current。A–D 在 `feat/chat-host-depth-options`；E 起未授权不得开工。
 
 | 刀 | 状态 | 一句话 |
 | --- | --- | --- |
 | A Options 能力位 | 分支已实现 | 字段进 Options，不进 80ms 快照 |
 | B ACP 事件与命令目录 | 分支已实现 | 目录进 Options，不进过程时间线 |
 | C `/` 接协议目录 | 分支已实现 | 选中插入 `/名字 `，不代发 |
-| D 目录变更刷新 `/` | **未开工** | 补 C：晚到的命令要进菜单 |
+| D 目录变更刷新 `/` | 分支已实现 | 补 C：晚到的命令要进菜单 |
 | E `config_options` | 未开工 | 刷模型/模式，不装终端选择器 |
 | F ACP 提问口 | 未开工 | 先有协议证据；回执不走确认 |
 | G 用量窗 / 计划条 | 未开工 | 不进气泡 |

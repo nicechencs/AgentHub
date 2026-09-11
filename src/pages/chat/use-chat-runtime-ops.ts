@@ -63,10 +63,11 @@ export function useChatRuntimeOps(input: {
   active: Conversation | null;
   runtimeEnabled: boolean;
   turnActive: boolean;
+  catalogEpoch?: number;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
-  const { active, runtimeEnabled, turnActive } = input;
+  const { active, runtimeEnabled, turnActive, catalogEpoch = 0 } = input;
 
   const [models, setModels] = useState<RuntimeModelOption[]>([]);
   const [settings, setSettings] = useState<RuntimeTurnSettings>({});
@@ -190,7 +191,7 @@ export function useChatRuntimeOps(input: {
     } finally {
       setLoading(false);
     }
-  }, [active, runtimeEnabled, t, toast, turnActive]);
+  }, [active, runtimeEnabled, catalogEpoch, t, toast, turnActive]);
 
   useEffect(() => {
     void refresh();
