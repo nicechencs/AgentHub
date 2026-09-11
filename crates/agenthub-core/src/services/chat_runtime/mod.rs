@@ -90,6 +90,20 @@ struct CatalogCache {
     models: Vec<RuntimeModelOption>,
     extensions: Vec<RuntimeExtensionItem>,
     from_codex: bool,
+    native_commands: Vec<RuntimeNativeCommand>,
+    image_input: Option<bool>,
+}
+
+fn merge_catalog_cache(previous: Option<&CatalogCache>, mut fetched: CatalogCache) -> CatalogCache {
+    if let Some(previous) = previous {
+        if fetched.native_commands.is_empty() {
+            fetched.native_commands = previous.native_commands.clone();
+        }
+        if fetched.image_input.is_none() {
+            fetched.image_input = previous.image_input;
+        }
+    }
+    fetched
 }
 
 fn runtime_channel(agent: Option<AgentId>) -> RuntimeChannel {
@@ -264,10 +278,10 @@ impl ChatRuntime {
             models,
             extensions: cache.extensions,
             models_from_codex: cache.from_codex,
-            image_input: true,
+            image_input: cache.image_input.unwrap_or(true),
             steer: !persistent,
             transport: runtime_channel(agent),
-            native_commands: Vec::new(),
+            native_commands: cache.native_commands,
             session_ready,
         })
     }
@@ -657,9 +671,12 @@ impl ChatRuntime {
         }
         let fetched = self.fetch_catalog(conversation_id);
         if let Ok(mut guard) = self.catalogs.lock() {
+            let fetched = merge_catalog_cache(guard.get(conversation_id), fetched);
             guard.insert(conversation_id.to_string(), fetched.clone());
+            fetched
+        } else {
+            fetched
         }
-        fetched
     }
 
     #[cfg(test)]
@@ -676,8 +693,33 @@ impl ChatRuntime {
                     models,
                     extensions,
                     from_codex: true,
+                    ..CatalogCache::default()
                 },
             );
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn seed_native_commands_for_test(
+        &self,
+        conversation_id: &str,
+        commands: Vec<RuntimeNativeCommand>,
+    ) {
+        if let Ok(mut guard) = self.catalogs.lock() {
+            guard
+                .entry(conversation_id.to_string())
+                .or_default()
+                .native_commands = commands;
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn seed_image_input_for_test(&self, conversation_id: &str, image_input: bool) {
+        if let Ok(mut guard) = self.catalogs.lock() {
+            guard
+                .entry(conversation_id.to_string())
+                .or_default()
+                .image_input = Some(image_input);
         }
     }
 
@@ -721,6 +763,7 @@ impl ChatRuntime {
             models,
             extensions,
             from_codex: true,
+            ..CatalogCache::default()
         }
     }
 
@@ -746,6 +789,7 @@ impl ChatRuntime {
             models,
             extensions: Vec::new(),
             from_codex: true,
+            ..CatalogCache::default()
         }
     }
 
@@ -869,6 +913,7 @@ fn actor_loop(
         session_trust_all: None,
         session_allow_always: false,
         pending_fs_writes: HashMap::new(),
+        thinking_open: false,
     };
     worker.run();
 }
@@ -913,6 +958,7 @@ struct ActorWorker {
     /// JSON-RPC request id. Content is not persisted; a dead process cannot
     /// complete the write anyway.
     pending_fs_writes: HashMap<String, (PathBuf, String)>,
+    thinking_open: bool,
 }
 
 impl ActorWorker {
@@ -1016,7 +1062,9 @@ impl ActorWorker {
             return Err(cancelled_error());
         }
         if let Ok(mut guard) = self.catalogs.lock() {
+            let fetched = merge_catalog_cache(guard.get(&self.conversation_id), fetched);
             guard.insert(self.conversation_id.clone(), fetched.clone());
+            return Ok(fetched);
         }
         Ok(fetched)
     }
@@ -1065,6 +1113,7 @@ impl ActorWorker {
             models,
             extensions,
             from_codex: true,
+            ..CatalogCache::default()
         }
     }
 
@@ -1100,6 +1149,7 @@ impl ActorWorker {
             models,
             extensions: Vec::new(),
             from_codex: true,
+            ..CatalogCache::default()
         }
     }
 
@@ -1536,6 +1586,7 @@ impl ActorWorker {
                 }
                 .map_err(|error| map_transport(self.agent, error))?
             };
+            self.apply_initialize_capabilities(transport.initialize_result());
 
             match plan {
                 ops::AcpSessionPlan::PromptExisting => {}
@@ -2923,6 +2974,19 @@ impl ActorWorker {
     }
 
     fn grok_session_update(&mut self, params: &Value) -> Result<()> {
+        if let Some(commands) = crate::utils::stream_parse::acp::extract_available_commands(params)
+        {
+            self.patch_catalog(|cache| {
+                cache.native_commands = commands
+                    .into_iter()
+                    .map(|command| RuntimeNativeCommand {
+                        name: command.name,
+                        description: command.description,
+                        hint: command.hint,
+                    })
+                    .collect();
+            });
+        }
         let envelope = json!({
             "jsonrpc": "2.0",
             "method": "session/update",
@@ -2936,8 +3000,20 @@ impl ActorWorker {
             match step {
                 ProcessStep::Text { text } => {
                     if !text.is_empty() {
+                        self.finish_open_thinking()?;
                         self.append_message(&text, self.live_phase(RuntimePhase::Running))?;
                     }
+                }
+                ProcessStep::Thinking { .. } => {
+                    self.thinking_open = true;
+                    self.emit(
+                        ChatEvent::AgentProcess {
+                            turn: self.chat_turn.unwrap_or(0),
+                            agent: self.agent,
+                            step,
+                        },
+                        self.live_phase(RuntimePhase::Running),
+                    )?;
                 }
                 other => {
                     self.emit(
@@ -2952,6 +3028,48 @@ impl ActorWorker {
             }
         }
         Ok(())
+    }
+
+    fn patch_catalog(&self, patch: impl FnOnce(&mut CatalogCache)) {
+        if let Ok(mut guard) = self.catalogs.lock() {
+            patch(guard.entry(self.conversation_id.clone()).or_default());
+        }
+    }
+
+    fn apply_initialize_capabilities(&self, initialize: Option<&Value>) {
+        let Some(initialize) = initialize else {
+            return;
+        };
+        let capabilities = initialize
+            .get("agentCapabilities")
+            .or_else(|| initialize.get("capabilities"))
+            .unwrap_or(initialize);
+        let prompt = capabilities
+            .get("promptCapabilities")
+            .or_else(|| capabilities.get("prompt_capabilities"));
+        let image = prompt
+            .and_then(|value| value.get("image"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        self.patch_catalog(|cache| cache.image_input = Some(image));
+    }
+
+    fn finish_open_thinking(&mut self) -> Result<()> {
+        if !self.thinking_open {
+            return Ok(());
+        }
+        self.thinking_open = false;
+        self.emit(
+            ChatEvent::AgentProcess {
+                turn: self.chat_turn.unwrap_or(0),
+                agent: self.agent,
+                step: ProcessStep::Thinking {
+                    text: String::new(),
+                    done: true,
+                },
+            },
+            self.live_phase(RuntimePhase::Running),
+        )
     }
 
     fn append_message(&self, text: &str, phase: RuntimePhase) -> Result<()> {
@@ -3074,6 +3192,7 @@ impl ActorWorker {
                         | RuntimePhase::Interrupted
                 )
             });
+        let _ = self.finish_open_thinking();
         self.cancel_deadline = None;
         self.pending_prompt_id = None;
         self.permission_options.clear();
@@ -3752,6 +3871,7 @@ fn fetch_kiro_catalog() -> CatalogCache {
         models,
         extensions: Vec::new(),
         from_codex: true,
+        ..CatalogCache::default()
     }
 }
 
@@ -3771,6 +3891,7 @@ fn grok_fallback_catalog() -> CatalogCache {
         models,
         extensions: Vec::new(),
         from_codex: false,
+        ..CatalogCache::default()
     }
 }
 
@@ -3792,6 +3913,7 @@ fn claude_fallback_catalog() -> CatalogCache {
         models,
         extensions: Vec::new(),
         from_codex: false,
+        ..CatalogCache::default()
     }
 }
 

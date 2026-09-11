@@ -555,6 +555,42 @@ fn options_for_pi_are_empty_and_do_not_enable_runtime() {
 }
 
 #[test]
+fn grok_options_surface_seeded_native_commands_and_handshake_image() {
+    let db = Database::open_in_memory().unwrap();
+    let now = "2026-01-01T00:00:00Z".to_string();
+    ChatRepo::new(db.clone())
+        .create_conversation(&Conversation {
+            id: "grok-opts".into(),
+            title: String::new(),
+            agent_ids: vec![AgentId::Grok],
+            cwd: Some(std::env::temp_dir().to_string_lossy().into_owned()),
+            allow_dangerous: false,
+            created_at: now.clone(),
+            updated_at: now,
+            native_session_id: None,
+            sending: false,
+            first_user_content: None,
+        })
+        .unwrap();
+    let run = Arc::new(RunService::new(AdapterRegistry::default()));
+    let runtime = Arc::new(ChatRuntime::new(db, run));
+    runtime.seed_native_commands_for_test(
+        "grok-opts",
+        vec![RuntimeNativeCommand {
+            name: "compact".into(),
+            description: "Compact context".into(),
+            hint: Some("[instructions]".into()),
+        }],
+    );
+    runtime.seed_image_input_for_test("grok-opts", false);
+    let options = runtime.options("grok-opts").unwrap();
+    assert_eq!(options.transport, RuntimeChannel::Acp);
+    assert_eq!(options.native_commands.len(), 1);
+    assert_eq!(options.native_commands[0].name, "compact");
+    assert!(!options.image_input);
+}
+
+#[test]
 fn started_runtime_rejects_agent_and_cwd_changes() {
     let dir = tempdir().unwrap();
     let work = dir.path().join("work");

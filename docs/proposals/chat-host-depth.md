@@ -145,7 +145,7 @@ A–C 不引入伪终端，不声明 `clientCapabilities.terminal`。
 
 ## 建议切片
 
-文档先行。未合入前不得把本页标成 current。切片 A 在分支 `feat/chat-host-depth-options` 实施；B / C 未开工。
+文档先行。未合入前不得把本页标成 current。切片 A / B 在分支 `feat/chat-host-depth-options` 实施；C 未开工。
 
 依赖：`C ← B`（没有目录就没有对方命令可列）。`A` 可单独先做。不要先扩 80ms 快照。不要顺手拆 enable 白名单。
 
