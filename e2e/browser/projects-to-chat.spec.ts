@@ -4,8 +4,8 @@ import { goNav, openApp } from './helpers';
 test('Projects continue opens Chat with a mock session prompt', async ({ page }) => {
   await openApp(page);
 
-  await goNav(page, '项目');
-  await expect(page.getByRole('heading', { name: '项目' })).toBeVisible();
+  await goNav(page, '历史');
+  await expect(page.getByRole('heading', { name: '历史' })).toBeVisible();
   await page.getByRole('tab', { name: /^Claude / }).click();
 
   const projectRow = page.getByRole('button', { name: /^app\b/ }).first();
@@ -31,8 +31,8 @@ test('Projects continue opens Chat with a mock session prompt', async ({ page })
 test('Projects continue with a missing cwd keeps history and offers rebind', async ({ page }) => {
   await openApp(page);
 
-  await goNav(page, '项目');
-  await expect(page.getByRole('heading', { name: '项目' })).toBeVisible();
+  await goNav(page, '历史');
+  await expect(page.getByRole('heading', { name: '历史' })).toBeVisible();
   await page.getByRole('tab', { name: /^Claude / }).click();
 
   const projectRow = page.getByRole('button', { name: /^app\b/ }).first();

@@ -3,7 +3,7 @@ title: UI 页面模式
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-10
+updated: 2026-09-11
 ---
 
 # UI Page Patterns
@@ -22,7 +22,7 @@ The application is organized by work and management, with Agent filtering inside
 | Workspace | Agents | `/agents` | Installed Agent catalog and lifecycle |
 | Workspace | Skills | `/skills` | User skills (shared library + this-tool), project skills by workspace, and market |
 | Workspace | MCP | `/mcp` | Read-only configuration inventory |
-| Workspace | Projects | `/projects` | Project/session tree and read-only preview |
+| Workspace | History | `/projects` | Project/session tree and read-only preview (internal name: Projects) |
 | Workspace | Plugins | `/plugins` | Installed vendor plugin / extension packs; Claude / Grok can install, uninstall, enable, or disable; Pi is list-only |
 | Manage | Dashboard | `/` | Agent status, usage, and shortcuts |
 | Manage | Connections | `/connections` | General login list; route-only entries with `home=route_pool` may be absent |

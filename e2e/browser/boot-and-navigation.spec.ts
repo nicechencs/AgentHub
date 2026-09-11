@@ -16,9 +16,9 @@ test('app boots on mock and primary navigation works', async ({ page }) => {
   await expect(nav.getByRole('link', { name: /^插件(?:$| — )/ })).toHaveCount(0);
   await expect(nav.getByRole('link', { name: /^Sub2API(?:$| — )/ })).toHaveCount(0);
 
-  await goNav(page, '项目');
+  await goNav(page, '历史');
   await expect(page).toHaveURL(/#\/projects/);
-  await expect(page.getByRole('heading', { name: '项目' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '历史' })).toBeVisible();
 
   await goNav(page, '对话');
   await expect(page).toHaveURL(/#\/chat/);
@@ -192,7 +192,7 @@ test('new install shows Routes by default; Plugins stay hidden until Settings', 
   await expect(page.getByRole('switch', { name: '打开路由时自动折叠' })).toBeChecked();
   await expect(page.getByRole('switch', { name: '显示技能页面' })).toBeChecked();
   await expect(page.getByRole('switch', { name: '显示 MCP 页面' })).toBeChecked();
-  await expect(page.getByRole('switch', { name: '显示项目页面' })).toBeChecked();
+  await expect(page.getByRole('switch', { name: '显示历史页面' })).toBeChecked();
   await expect(page.getByRole('switch', { name: '显示插件页面' })).not.toBeChecked();
   await expect(page.getByRole('switch', { name: '显示连接页面' })).toBeChecked();
   await expect(page.getByRole('switch', { name: '显示 Sub2API 页面' })).not.toBeChecked();
