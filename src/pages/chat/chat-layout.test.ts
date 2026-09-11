@@ -113,6 +113,8 @@ describe('chat layout wiring', () => {
     expect(page).toContain('isMarkdownFilePath');
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('readMarkdownPreview');
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('chat.preview.back');
+    expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('pathTailLabel');
+    expect(source('ChatMarkdownPreviewPanel.tsx')).toContain("label={folder}");
     expect(source('index.tsx')).toContain('pushChatPreview');
   });
 

@@ -7,9 +7,11 @@ import {
 import { ChevronLeft, Code2, Eye, PanelRightClose } from 'lucide-react';
 import { MarkdownView, isMarkdownFilePath, localParentDir } from '@/components/shared/MarkdownView';
 import { CopyableFileName } from '@/components/shared/CopyableFileName';
+import { pathTailLabel } from '@/components/shared/file-name-label';
 import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
+import { Tip } from '@/components/ui/tooltip';
 import { segmentedItemClass, segmentedTrackClass } from '@/components/ui/segmented-styles';
 import { readMarkdownPreview } from '@/lib/api/chat';
 import { openLocalPath } from '@/lib/open-external';
@@ -139,12 +141,24 @@ export function ChatMarkdownPreviewPanel({
               <ChevronLeft className="h-4 w-4" />
             </Button>
           ) : null}
-          <h2
-            id={titleId}
-            className="min-w-0 flex-1 truncate text-sm font-semibold leading-tight text-primary"
-          >
-            {name || t('chat.preview.titleFallback')}
-          </h2>
+          <div className="min-w-0 flex-1 basis-16">
+            <div className="flex min-w-0 items-baseline gap-2">
+              <h2
+                id={titleId}
+                className="truncate text-sm font-semibold leading-tight text-primary"
+              >
+                {name || t('chat.preview.titleFallback')}
+              </h2>
+              {folder ? (
+                <Tip
+                  label={folder}
+                  className="min-w-0 max-w-[12rem] truncate text-meta text-muted"
+                >
+                  {pathTailLabel(folder)}
+                </Tip>
+              ) : null}
+            </div>
+          </div>
           <div className={cn(segmentedTrackClass, 'shrink-0 flex-nowrap')}>
             <button
               type="button"
