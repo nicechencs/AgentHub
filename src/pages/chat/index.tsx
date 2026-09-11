@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MessagesSquare } from 'lucide-react';
-import { pageInsetTw, pageRhythm } from '@/components/layout/page-rhythm';
+import { pageRhythm } from '@/components/layout/page-rhythm';
 import { SideSplitFrame } from '@/components/layout/SideSplit';
+import { SIDE_SPLIT_FRAME_PAD_X_FLUSH } from '@/components/layout/side-split-model';
 import { useSideSplit } from '@/components/layout/use-side-split';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
@@ -74,6 +75,7 @@ export default function ChatPage() {
   const split = useChatComposerSplit();
   const preview = useSideSplit<ChatInspectTarget>({
     storageKey: StorageKey.chatPreviewWidth,
+    framePadX: SIDE_SPLIT_FRAME_PAD_X_FLUSH,
   });
   const navigate = useNavigate();
   const { t } = useI18n();
@@ -289,12 +291,7 @@ export default function ChatPage() {
       />
 
       <div ref={preview.splitRef} className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-      <section
-        className={cn(
-          'relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-card border border-border bg-canvas',
-          preview.mounted && pageInsetTw.mr,
-        )}
-      >
+      <section className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-card border border-border bg-canvas">
         <ChatSessionHeader
           active={page.active}
           railOpen={page.railOpen}

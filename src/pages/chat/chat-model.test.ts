@@ -1885,7 +1885,7 @@ describe('composerUsesCssFieldSizing', () => {
 describe('chat transcript / composer surfaces', () => {
   it('shares one main-column width for transcript and composer', () => {
     expect(chatMainColumnClass).toBe(pageRhythm.readingColumn);
-    expect(chatMainColumnClass).toBe('mx-auto w-full max-w-3xl');
+    expect(chatMainColumnClass).toBe('mx-auto w-full max-w-5xl');
   });
 
   it('uses a 16px outer stage so transcript and composer share the same inset', () => {

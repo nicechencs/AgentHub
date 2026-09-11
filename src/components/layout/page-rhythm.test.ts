@@ -62,7 +62,7 @@ describe('pageRhythm (docs/ui/design-system.md §3)', () => {
   });
 
   it('keeps Chat on the reading column and Dashboard/Settings forms on the overview column', () => {
-    expect(pageRhythm.readingColumn).toBe('mx-auto w-full max-w-3xl');
+    expect(pageRhythm.readingColumn).toBe('mx-auto w-full max-w-5xl');
     expect(pageRhythm.overviewColumn).toBe('mx-auto w-full max-w-6xl');
   });
 

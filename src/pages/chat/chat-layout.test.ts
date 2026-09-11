@@ -129,9 +129,10 @@ describe('chat layout wiring', () => {
     expect(source('ChatProcessInspectPanel.tsx')).toContain('SideInspectPanel');
   });
 
-  it('centers the inspect sash with the same 12px gutter as other workbenches', () => {
+  it('keeps the chat card and the inspect pane one sash apart, flush to the canvas gutter', () => {
     const page = source('index.tsx');
-    expect(page).toContain('preview.mounted && pageInsetTw.mr');
+    expect(page).toContain('SIDE_SPLIT_FRAME_PAD_X_FLUSH');
+    expect(page).not.toContain('pageInsetTw');
     expect(page).toContain('padBottom={0}');
     expect(page).not.toContain('padTop={');
   });
@@ -191,7 +192,7 @@ describe('chat layout wiring', () => {
     expect(source('ChatComposer.tsx')).toContain('showBlockerBanner');
   });
 
-  it('keeps the transcript white column on the same max-w-3xl as the composer', () => {
+  it('keeps the transcript white column on the same max-w-5xl as the composer', () => {
     expect(source('index.tsx')).toContain('chatMainColumnClass');
     expect(source('index.tsx')).toContain('chatStageClass');
     expect(source('index.tsx')).toContain('pageRhythm.chatChromeX');
