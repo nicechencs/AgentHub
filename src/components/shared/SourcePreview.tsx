@@ -24,7 +24,7 @@ export function SourcePreview({
   pretty = readOnly,
   onChange,
   showCopy = false,
-  compressBlankLines = false,
+  compressBlankLines = true,
   density = 'preview',
   className,
   id,
@@ -36,7 +36,7 @@ export function SourcePreview({
   pretty?: boolean;
   onChange?: (value: string) => void;
   showCopy?: boolean;
-  /** Chat tool details only; login/MCP file text keeps authored blank lines. */
+  /** Read-only JSON details drop blank lines. Editable buffers keep authored spacing. */
   compressBlankLines?: boolean;
   /** preview = compact snippet; editor = supplier advanced config. */
   density?: 'preview' | 'editor' | 'compact';
