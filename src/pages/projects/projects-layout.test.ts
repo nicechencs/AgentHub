@@ -59,11 +59,14 @@ describe('projects split layout', () => {
     const preview = source('ProjectConversationPreviewPanel.tsx');
     expect(preview).toContain("t('projects.preview.roleUser')");
     expect(preview).toContain("t('projects.preview.roleAssistant'");
-    expect(preview).toContain('justify-end');
     expect(preview).toContain('justify-start');
+    expect(preview).toContain('ml-auto w-fit max-w-full');
+    expect(preview).toContain("userish ? 'text-right text-accent' : 'text-muted'");
+    expect(preview).toContain('h-2 w-2 shrink-0');
     expect(preview).toContain('<AgentDot');
-    expect(preview).toContain('rounded-composer bg-subtle');
-    expect(preview).toContain('rounded-composer bg-hover/60');
+    expect(preview).toContain('rounded-composer');
+    expect(preview).toContain('bg-subtle');
+    expect(preview).toContain('bg-hover/60');
     expect(preview).toContain("t('projects.preview.copyRecord')");
     expect(preview).toContain("t('projects.preview.copyTurn')");
     expect(preview).toContain("t('projects.preview.truncated')");

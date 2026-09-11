@@ -1,5 +1,5 @@
 {
-  "$comment": "Hand-curated models missing or unreliable in LiteLLM. Always win over remote rows. Units: USD per 1M tokens. Refresh remote first-party rows via `pnpm pricing:update` (LiteLLM). Do not add Codex log labels here (codex-auto-review is priced via the published backend model).",
+  "$comment": "Hand-curated models missing or unreliable in LiteLLM. Always win over remote rows. Units: USD per 1M tokens. Refresh official publisher rows via `pnpm pricing:update` (LiteLLM + scripts/pricing/vendors.json). Log-id copies of an official row go in vendors.json logAliases. Do not add Codex log labels here (codex-auto-review is priced via the published backend model).",
   "kimi-for-coding": {
     "input": 0.6,
     "output": 2.5,
