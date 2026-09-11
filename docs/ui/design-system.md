@@ -83,11 +83,13 @@ There are three content systems:
 
 | System | Token/pattern | Use |
 |---|---|---|
-| Reading column | `pageRhythm.readingColumn` (`mx-auto w-full max-w-3xl`) | Chat transcript/composer, long-form reading |
+| Reading column | `pageRhythm.readingColumn` (`mx-auto w-full max-w-5xl`) | Chat transcript/composer, long-form reading |
 | Overview column | `pageRhythm.overviewColumn` (`mx-auto w-full max-w-6xl`) | Dashboard, Routes board, and Settings form (except backups split) |
 | Edge column | `pageRhythm.pageShell` / `workbenchX` from `pageEdge.inset` (currently 12px) | Tables, lists, split workbenches, Routes. Change `pageEdge.inset` in `src/components/layout/page-rhythm.ts` to retune every page edge. When a split pane is open, the list uses `workbenchXSplit` (12px left pad, 12px right margin) and the inspect pane uses the same 12px on the splitter side so the 1px rule stays centered. |
 
 Do not introduce page-private `max-w-*` values or a second left-aligned reading width. `fullBleed` describes height and scrolling behavior, not a width system. The application canvas gutter is 12px. Chat session header and conversation stage use `chatChromeX`, currently the same 12px as `workbenchX`; do not add another horizontal inset inside the transcript.
+
+Two adjacent **cards** on the canvas are separated by the 8px sash alone (`pageRhythm.sash`) — the nav rail next to the main card, and in Chat the history rail, transcript card, and inspect pane. Workbench lists are not cards: they keep the `workbenchXSplit` content inset (12px left pad, 12px right margin) and the inspect pane keeps 12px on the splitter side. Chat is on the canvas without a page card, so it passes `SIDE_SPLIT_FRAME_PAD_X_FLUSH` (`src/components/layout/side-split-model.ts`) to drop the frame pad; the inspect pane then lines up with the canvas gutter instead of doubling it.
 
 ### 3.5 Agent identity marks
 

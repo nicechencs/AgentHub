@@ -55,7 +55,7 @@ describe('PageHeader', () => {
     expect(source('components/layout/SideSplit.tsx')).toContain('paddingTop: padTop');
     expect(source('components/layout/SideSplit.tsx')).toContain('paddingBottom: padBottom');
     expect(source('components/layout/SideSplit.tsx')).toContain('pageRhythm.workbenchPadT');
-    expect(source('pages/chat/index.tsx')).toContain('preview.mounted && pageInsetTw.mr');
+    expect(source('pages/chat/index.tsx')).toContain('SIDE_SPLIT_FRAME_PAD_X_FLUSH');
     expect(source('pages/chat/index.tsx')).toContain('padBottom={0}');
     expect(source('components/ui/tabs.tsx')).not.toContain('mt-4 focus:outline-none');
     expect(source('pages/settings/index.tsx')).toContain('pageRhythm.chrome');
