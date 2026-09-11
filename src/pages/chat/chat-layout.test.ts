@@ -489,6 +489,9 @@ describe('chat layout wiring', () => {
     expect(source('ChatMessageBubble.tsx')).not.toContain('ChatPlanBar');
     expect(source('ChatProcessPanel.tsx')).not.toContain('formatVisibleUsage');
     expect(source('index.tsx')).toContain('ChatPlanBar');
+    expect(source('index.tsx')).toContain('ChatHostTerminals');
+    expect(source('ChatHostTerminals.tsx')).toContain('chat.runtime.stopCommand');
+    expect(source('ChatHostTerminals.tsx')).not.toContain('xterm');
     expect(translate('zh', 'chat.process.usageTurn')).toBe('当前轮');
     expect(translate('zh', 'chat.process.usageSession')).toBe('累计');
   });

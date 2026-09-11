@@ -1053,6 +1053,7 @@ export function createMockChatPort(): ChatPort {
       runtimeSnapshots.set(conversationId, next);
       return next;
     },
+    async runtimeKillHostTerminal(_conversationId, _terminalId) {},
     async runtimeCancel(conversationId, runId) {
       const current = runtimeSnapshots.get(conversationId);
       if (current?.runId !== runId) throw new Error('run is no longer active');

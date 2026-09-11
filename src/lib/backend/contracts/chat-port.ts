@@ -45,6 +45,7 @@ export interface ChatPort {
   runtimeReply(reply: RuntimeReply): Promise<void>;
   runtimeSteer(conversationId: string, runId: string, prompt: string, clientRequestId: string): Promise<void>;
   runtimeCancel(conversationId: string, runId: string): Promise<void>;
+  runtimeKillHostTerminal(conversationId: string, terminalId: string): Promise<void>;
   setChatModel(agentId: AgentKey, model: string): Promise<void>;
   setChatEffort(agentId: AgentKey, effort: string): Promise<void>;
   getChatModel(agentId: AgentKey): Promise<{

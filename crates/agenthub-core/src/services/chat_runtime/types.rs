@@ -144,6 +144,9 @@ pub struct RuntimeSnapshot {
     /// Current-turn ACP plan. Live chrome only — not a process row, dropped on the next turn.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub plan: Vec<RuntimePlanEntry>,
+    /// Live ACP host commands. One card per terminal id; not a conversation TTY.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub host_terminals: Vec<RuntimeHostTerminal>,
 }
 
 impl RuntimeSnapshot {
@@ -160,8 +163,22 @@ impl RuntimeSnapshot {
             current_message: None,
             catalog_epoch: 0,
             plan: Vec::new(),
+            host_terminals: Vec::new(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeHostTerminal {
+    pub id: String,
+    pub command: String,
+    pub output: String,
+    #[serde(default)]
+    pub truncated: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    pub running: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

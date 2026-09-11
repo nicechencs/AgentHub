@@ -2858,6 +2858,9 @@ export const en = {
       needConfirm: 'Needs confirmation',
       needAnswer: 'Needs your answer',
       plan: 'Plan',
+      hostCommand: 'Run command',
+      stopCommand: 'Stop this one',
+      stopCommandFailed: "Couldn't stop this command",
       kind: {
         read: 'Read file',
         edit: 'Modify file',

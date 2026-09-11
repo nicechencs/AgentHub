@@ -307,6 +307,22 @@ pub async fn chat_runtime_cancel(
     .await
 }
 
+#[tauri::command]
+pub async fn chat_runtime_kill_host_terminal(
+    state: State<'_, AppState>,
+    conversation_id: String,
+    terminal_id: String,
+) -> Result<(), String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        hub.chat()
+            .runtime()
+            .kill_host_terminal(&conversation_id, &terminal_id)
+            .map_err(|e| map_err_string("chat_runtime_kill_host_terminal", e))
+    })
+    .await
+}
+
 /// Invoke: `set_chat_model` — write the live default model for Chat.
 #[tauri::command]
 pub async fn set_chat_model(

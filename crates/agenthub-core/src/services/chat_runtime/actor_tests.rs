@@ -41,6 +41,10 @@ fn worker(db: &Database, id: &str) -> ActorWorker {
         repo: ChatRepo::new(db.clone()),
         run: Arc::new(RunService::new(AdapterRegistry::default())),
         catalogs: Arc::new(std::sync::Mutex::new(HashMap::new())),
+        host_terminals: super::host_terminal::HostedTerminals::new(
+            id.into(),
+            Arc::new(std::sync::Mutex::new(HashMap::new())),
+        ),
         codex_program_override: Arc::new(std::sync::Mutex::new(None)),
         abort: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         agent: AgentId::Codex,
@@ -494,6 +498,63 @@ fn grok_context_usage_is_usage_step_not_status() {
         usage,
         vec![(Some("context".into()), Some(2048), Some(128000))]
     );
+}
+
+#[test]
+fn grok_host_terminal_fills_snapshot_not_timeline() {
+    let db = Database::open_in_memory().unwrap();
+    conversation_with(&db, "grok-term", AgentId::Grok, &std::env::temp_dir());
+    let mut worker = worker(&db, "grok-term");
+    worker.agent = AgentId::Grok;
+    worker.store.enable_if_new("grok-term").unwrap();
+    start_placeholder(&mut worker);
+    #[cfg(windows)]
+    let spec = super::ops::AcpTerminalCreate {
+        command: "cmd.exe".into(),
+        args: vec!["/C".into(), "echo hello-host".into()],
+        cwd: std::env::temp_dir(),
+        env: Vec::new(),
+        output_limit: 1024,
+    };
+    #[cfg(not(windows))]
+    let spec = super::ops::AcpTerminalCreate {
+        command: "echo".into(),
+        args: vec!["hello-host".into()],
+        cwd: std::env::temp_dir(),
+        env: Vec::new(),
+        output_limit: 1024,
+    };
+    let id = worker.host_terminals.create(spec).unwrap();
+    for _ in 0..50 {
+        worker.host_terminals.poll_exits();
+        if worker
+            .host_terminals
+            .output(&id)
+            .ok()
+            .and_then(|(_, _, code)| code)
+            .is_some()
+        {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let stored = worker.store.snapshot("grok-term", None).unwrap();
+    assert!(!stored.events.iter().any(|event| matches!(
+        &event.event,
+        ChatEvent::AgentProcess { .. }
+    )));
+    let snapshot = worker.with_catalog_epoch(stored);
+    assert_eq!(snapshot.host_terminals.len(), 1);
+    assert_eq!(snapshot.host_terminals[0].id, id);
+    assert!(
+        snapshot.host_terminals[0]
+            .output
+            .to_ascii_lowercase()
+            .contains("hello-host"),
+        "{}",
+        snapshot.host_terminals[0].output
+    );
+    assert!(!snapshot.host_terminals[0].running);
 }
 
 #[test]

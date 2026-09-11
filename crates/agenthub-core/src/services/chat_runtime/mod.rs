@@ -7,6 +7,7 @@
 
 mod codex_transport;
 mod file_change;
+mod host_terminal;
 mod ops;
 mod store;
 mod types;
@@ -17,9 +18,9 @@ pub(crate) use store::{
 
 pub use types::{
     RuntimeChannel, RuntimeDecision, RuntimeEvent, RuntimeExtensionItem, RuntimeExtensionKind,
-    RuntimeFileChange, RuntimeLocalImage, RuntimeModelOption, RuntimeNativeCommand, RuntimeOptions,
-    RuntimePermissionOption, RuntimePhase, RuntimePlanEntry, RuntimeQuestion, RuntimeQuestionOption,
-    RuntimeReply,
+    RuntimeFileChange, RuntimeHostTerminal, RuntimeLocalImage, RuntimeModelOption,
+    RuntimeNativeCommand, RuntimeOptions, RuntimePermissionOption, RuntimePhase, RuntimePlanEntry,
+    RuntimeQuestion, RuntimeQuestionOption, RuntimeReply,
     RuntimeRequest, RuntimeRequestKind, RuntimeSkillRef, RuntimeSnapshot, RuntimeStartExtras,
     RuntimeTurnSettings,
 };
@@ -71,6 +72,10 @@ enum RuntimeCommand {
     },
     Cancel {
         run_id: String,
+        result: SyncSender<Result<()>>,
+    },
+    KillHostTerminal {
+        terminal_id: String,
         result: SyncSender<Result<()>>,
     },
     Shutdown {
@@ -128,6 +133,7 @@ pub struct ChatRuntime {
     run: Arc<RunService>,
     actors: Mutex<HashMap<String, ActorHandle>>,
     catalogs: Arc<Mutex<HashMap<String, CatalogCache>>>,
+    host_terminals: Arc<Mutex<HashMap<String, Vec<RuntimeHostTerminal>>>>,
     codex_program_override: Arc<Mutex<Option<PathBuf>>>,
 }
 
@@ -143,6 +149,7 @@ impl ChatRuntime {
             run,
             actors: Mutex::new(HashMap::new()),
             catalogs: Arc::new(Mutex::new(HashMap::new())),
+            host_terminals: Arc::new(Mutex::new(HashMap::new())),
             codex_program_override: Arc::new(Mutex::new(None)),
         }
     }
@@ -157,6 +164,12 @@ impl ChatRuntime {
             snapshot.catalog_epoch = cache.catalog_epoch;
             snapshot.plan = cache.plan;
         }
+        snapshot.host_terminals = self
+            .host_terminals
+            .lock()
+            .ok()
+            .and_then(|guard| guard.get(conversation_id).cloned())
+            .unwrap_or_default();
         Ok(snapshot)
     }
 
@@ -597,6 +610,23 @@ impl ChatRuntime {
         outcome
     }
 
+    pub fn kill_host_terminal(&self, conversation_id: &str, terminal_id: &str) -> Result<()> {
+        let terminal_id = terminal_id.trim();
+        if terminal_id.is_empty() {
+            return Err(AppError::InvalidArg("terminal id must not be empty".into()));
+        }
+        let actor = self.actor_for_existing(conversation_id)?;
+        let (tx, rx) = mpsc::sync_channel(1);
+        actor
+            .tx
+            .send(RuntimeCommand::KillHostTerminal {
+                terminal_id: terminal_id.to_string(),
+                result: tx,
+            })
+            .map_err(|_| AppError::message("chat.runtime", "runtime worker stopped"))?;
+        recv_result(rx)
+    }
+
     pub fn cancel(&self, conversation_id: &str, run_id: &str) -> Result<()> {
         let actor = match self.actor_for_existing(conversation_id) {
             Ok(actor) => actor,
@@ -820,6 +850,7 @@ impl ChatRuntime {
         let repo = self.repo.clone();
         let run = Arc::clone(&self.run);
         let catalogs = Arc::clone(&self.catalogs);
+        let host_terminals = Arc::clone(&self.host_terminals);
         let codex_program_override = Arc::clone(&self.codex_program_override);
         let abort = Arc::new(AtomicBool::new(false));
         let worker_abort = Arc::clone(&abort);
@@ -834,6 +865,7 @@ impl ChatRuntime {
                     repo,
                     run,
                     catalogs,
+                    host_terminals,
                     codex_program_override,
                     worker_abort,
                 )
@@ -893,6 +925,7 @@ fn actor_loop(
     repo: ChatRepo,
     run: Arc<RunService>,
     catalogs: Arc<Mutex<HashMap<String, CatalogCache>>>,
+    host_terminal_views: Arc<Mutex<HashMap<String, Vec<RuntimeHostTerminal>>>>,
     codex_program_override: Arc<Mutex<Option<PathBuf>>>,
     abort: Arc<AtomicBool>,
 ) {
@@ -902,12 +935,16 @@ fn actor_loop(
         .flatten()
         .unwrap_or(AgentId::Codex);
     let mut worker = ActorWorker {
-        conversation_id,
+        conversation_id: conversation_id.clone(),
         rx,
         store,
         repo,
         run,
         catalogs,
+        host_terminals: host_terminal::HostedTerminals::new(
+            conversation_id,
+            host_terminal_views,
+        ),
         codex_program_override,
         abort,
         agent,
@@ -939,6 +976,7 @@ struct ActorWorker {
     repo: ChatRepo,
     run: Arc<RunService>,
     catalogs: Arc<Mutex<HashMap<String, CatalogCache>>>,
+    host_terminals: host_terminal::HostedTerminals,
     codex_program_override: Arc<Mutex<Option<PathBuf>>>,
     abort: Arc<AtomicBool>,
     agent: AgentId,
@@ -1006,7 +1044,12 @@ impl ActorWorker {
                     let outcome = self.cancel(&run_id);
                     let _ = result.send(outcome);
                 }
+                Ok(RuntimeCommand::KillHostTerminal { terminal_id, result }) => {
+                    let outcome = self.kill_hosted_terminal(&terminal_id);
+                    let _ = result.send(outcome);
+                }
                 Ok(RuntimeCommand::Shutdown { done }) => {
+                    self.shutdown_host_terminals();
                     if let Some(transport) = self.transport.as_mut() {
                         transport.shutdown();
                     }
@@ -1016,6 +1059,7 @@ impl ActorWorker {
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
+            self.complete_host_terminal_waits();
             if let Err(error) = self.check_cancel_deadline() {
                 self.fail_runtime(error);
             }
@@ -2142,6 +2186,7 @@ impl ActorWorker {
         ) {
             return Ok(());
         }
+        self.shutdown_host_terminals();
         if run_id.trim().is_empty() {
             if let Some(current) = record.run_id.clone().or_else(|| self.run_id.clone()) {
                 return self.cancel(&current);
@@ -2405,6 +2450,9 @@ impl ActorWorker {
         }
         if ops::is_acp_fs_write_method(method) {
             return self.handle_acp_fs_write(id, params);
+        }
+        if ops::is_acp_terminal_method(method) {
+            return self.handle_acp_terminal(id, method, params);
         }
         let run_id = params
             .get("turnId")
@@ -3078,6 +3126,7 @@ impl ActorWorker {
             snapshot.catalog_epoch = cache.catalog_epoch;
             snapshot.plan = cache.plan;
         }
+        snapshot.host_terminals = self.host_terminals.snapshot();
         snapshot
     }
 
@@ -3482,6 +3531,148 @@ impl ActorWorker {
         transport
             .respond(id, response)
             .map_err(|error| transport_error(self.agent, error))
+    }
+
+    fn complete_host_terminal_waits(&mut self) {
+        for (wait_id, code) in self.host_terminals.poll_exits() {
+            let _ = self.respond_jsonrpc(wait_id, Ok(json!({ "exitCode": code })));
+        }
+    }
+
+    fn kill_hosted_terminal(&mut self, terminal_id: &str) -> Result<()> {
+        let wait = self.host_terminals.kill(terminal_id)?;
+        if let Some(wait_id) = wait {
+            let code = self
+                .host_terminals
+                .output(terminal_id)
+                .ok()
+                .and_then(|(_, _, exit)| exit)
+                .unwrap_or(1);
+            let _ = self.respond_jsonrpc(wait_id, Ok(json!({ "exitCode": code })));
+        }
+        Ok(())
+    }
+
+    fn shutdown_host_terminals(&mut self) {
+        for (wait_id, code) in self.host_terminals.kill_all() {
+            let _ = self.respond_jsonrpc(wait_id, Ok(json!({ "exitCode": code })));
+        }
+    }
+
+    fn handle_acp_terminal(&mut self, id: Value, method: &str, params: &Value) -> Result<()> {
+        match method {
+            "terminal/create" => {
+                let cwd = self.conversation_cwd()?;
+                let spec = match ops::acp_terminal_create(params, &cwd) {
+                    Ok(spec) => spec,
+                    Err(error) => {
+                        return self.respond_jsonrpc(
+                            id,
+                            Err(json!({ "code": -32602, "message": error.to_string() })),
+                        );
+                    }
+                };
+                match self.host_terminals.create(spec) {
+                    Ok(terminal_id) => {
+                        self.respond_jsonrpc(id, Ok(json!({ "terminalId": terminal_id })))
+                    }
+                    Err(error) => self.respond_jsonrpc(
+                        id,
+                        Err(json!({ "code": -32000, "message": error.to_string() })),
+                    ),
+                }
+            }
+            "terminal/output" => {
+                let terminal_id = match ops::acp_terminal_id(params) {
+                    Ok(terminal_id) => terminal_id,
+                    Err(error) => {
+                        return self.respond_jsonrpc(
+                            id,
+                            Err(json!({ "code": -32602, "message": error.to_string() })),
+                        );
+                    }
+                };
+                match self.host_terminals.output(&terminal_id) {
+                    Ok((output, truncated, exit_code)) => {
+                        let mut body = json!({ "output": output, "truncated": truncated });
+                        if let Some(code) = exit_code {
+                            body["exitCode"] = json!(code);
+                        }
+                        self.respond_jsonrpc(id, Ok(body))
+                    }
+                    Err(error) => self.respond_jsonrpc(
+                        id,
+                        Err(json!({ "code": -32602, "message": error.to_string() })),
+                    ),
+                }
+            }
+            "terminal/wait_for_exit" | "terminal/waitForExit" => {
+                let terminal_id = match ops::acp_terminal_id(params) {
+                    Ok(terminal_id) => terminal_id,
+                    Err(error) => {
+                        return self.respond_jsonrpc(
+                            id,
+                            Err(json!({ "code": -32602, "message": error.to_string() })),
+                        );
+                    }
+                };
+                match self.host_terminals.begin_wait(&terminal_id, id.clone()) {
+                    Ok(Some(code)) => {
+                        self.respond_jsonrpc(id, Ok(json!({ "exitCode": code })))
+                    }
+                    Ok(None) => Ok(()),
+                    Err(error) => self.respond_jsonrpc(
+                        id,
+                        Err(json!({ "code": -32602, "message": error.to_string() })),
+                    ),
+                }
+            }
+            "terminal/kill" => {
+                let terminal_id = match ops::acp_terminal_id(params) {
+                    Ok(terminal_id) => terminal_id,
+                    Err(error) => {
+                        return self.respond_jsonrpc(
+                            id,
+                            Err(json!({ "code": -32602, "message": error.to_string() })),
+                        );
+                    }
+                };
+                match self.kill_hosted_terminal(&terminal_id) {
+                    Ok(()) => self.respond_jsonrpc(id, Ok(json!({}))),
+                    Err(error) => self.respond_jsonrpc(
+                        id,
+                        Err(json!({ "code": -32602, "message": error.to_string() })),
+                    ),
+                }
+            }
+            "terminal/release" => {
+                let terminal_id = match ops::acp_terminal_id(params) {
+                    Ok(terminal_id) => terminal_id,
+                    Err(error) => {
+                        return self.respond_jsonrpc(
+                            id,
+                            Err(json!({ "code": -32602, "message": error.to_string() })),
+                        );
+                    }
+                };
+                match self.host_terminals.release(&terminal_id) {
+                    Ok(wait) => {
+                        if let Some(wait_id) = wait {
+                            let _ = self.respond_jsonrpc(wait_id, Ok(json!({ "exitCode": 1 })));
+                        }
+                        self.respond_jsonrpc(id, Ok(json!({})))
+                    }
+                    Err(error) => self.respond_jsonrpc(
+                        id,
+                        Err(json!({ "code": -32602, "message": error.to_string() })),
+                    ),
+                }
+            }
+            other => self.respond_jsonrpc(
+                id,
+                Err(json!({ "code": -32601, "message": format!("unsupported request: {other}") })),
+            ),
+        }
     }
 
     fn handle_acp_fs_read(&mut self, id: Value, params: &Value) -> Result<()> {
