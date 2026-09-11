@@ -2928,6 +2928,7 @@ export const en = {
       sampleExplainError: 'Sample: explain an error',
       sampleRefactorSafe: 'Sample: safe small cleanup',
       sampleGitStatus: 'Sample: review git status',
+      openExternalCliHint: 'Opens their own interface outside this page. That is not a Chat page capability.',
       disabled: {
         noReply: 'No assistant reply to copy yet',
         noAgent: 'No usable agent; cannot start a new chat',

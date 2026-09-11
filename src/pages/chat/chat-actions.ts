@@ -169,6 +169,32 @@ export function actionMatchesQuery(action: ChatActionDef, query: string): boolea
   return tokens.every((token) => hay.includes(token));
 }
 
+export const OPEN_EXTERNAL_CLI_ACTION_ID = 'open-external-cli';
+
+/** Hub action: open the Agent's own program outside Chat. Not a Chat capability. */
+export function openExternalCliAction(input: {
+  label: string;
+  description: string;
+}): ChatActionDef {
+  return {
+    id: OPEN_EXTERNAL_CLI_ACTION_ID,
+    kind: 'local',
+    label: input.label,
+    description: input.description,
+    keywords: [
+      'cli',
+      'terminal',
+      '命令行',
+      '终端',
+      '官方',
+      '外部',
+      '启动命令行',
+      '打开网页会话',
+      input.label,
+    ],
+  };
+}
+
 /** Insert `/name ` so the user can add args; do not send. */
 export function nativeSlashDraft(name: string): string {
   const command = name.trim().replace(/^\/+/, '');

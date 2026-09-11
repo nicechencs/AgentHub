@@ -2908,6 +2908,7 @@ export const zh = {
       sampleExplainError: '示例：解释报错',
       sampleRefactorSafe: '示例：安全小步整理',
       sampleGitStatus: '示例：查看 git 状态',
+      openExternalCliHint: '在外部打开对方自己的界面，不是对话页里的能力。',
       disabled: {
         noReply: '还没有可复制的回复',
         noAgent: '没有可用 Agent，没法新建对话',
