@@ -136,7 +136,8 @@ describe('ChatComposer footer control', () => {
 
 describe('ChatComposer empty invite', () => {
   it('uses a generic placeholder and keeps limits on hover titles', () => {
-    const html = renderMarkup(composer());
+    // The queue-only limit follows the runtime Options, not the agent name.
+    const html = renderMarkup(composer({ runtimeEnabled: true, steer: false }));
     expect(html).toContain('发消息…');
     expect(html).not.toContain('向 Kiro');
     expect(html).not.toContain('data-help="chat-composer-hint"');
@@ -154,6 +155,11 @@ describe('ChatComposer empty invite', () => {
     expect(html).toContain('发给 Agent…');
     expect(html).toContain('Enter 发送 · Shift+Enter 换行');
     expect(html).not.toContain('data-help="chat-composer-hint"');
+  });
+
+  it('drops the queue-only limit for a legacy session without runtime options', () => {
+    const html = renderMarkup(composer({ runtimeEnabled: false }));
+    expect(html).not.toContain('生成时不能中途补充，可排队到下一轮。');
   });
 
   it('accepts slash-menu props for Pi and Grok without a toolbar host', () => {
