@@ -1118,6 +1118,26 @@ export function createMockChatPort(): ChatPort {
     async readMarkdownPreview(path) {
       await delay(10);
       const name = path.split(/[/\\]/).pop() || 'preview.md';
+      const lower = name.toLowerCase();
+      if (lower.endsWith('.json')) {
+        return {
+          path,
+          name,
+          content: '{\n  "mock": true,\n  "file": ' + JSON.stringify(name) + '\n}\n',
+          truncated: false,
+        };
+      }
+      if (/\.(ts|tsx|js|jsx|py|rs|go)$/i.test(name)) {
+        return {
+          path,
+          name,
+          content:
+            '// mock preview\nexport function hello() {\n  return ' +
+            JSON.stringify(name) +
+            ';\n}\n',
+          truncated: false,
+        };
+      }
       return {
         path,
         name,

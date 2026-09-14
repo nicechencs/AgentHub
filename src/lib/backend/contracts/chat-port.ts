@@ -62,7 +62,7 @@ export interface ChatPort {
   }>;
   pickChatImages(title?: string): Promise<string[]>;
   saveChatPasteImage(input: { base64: string; extension: string; byteLength?: number }): Promise<string>;
-  /** Read a markdown file under the conversation working directory for the right-hand preview. */
+  /** Read a text/markdown file under the conversation working directory for the right-hand preview. */
   readMarkdownPreview(path: string, cwd: string): Promise<MarkdownFilePreviewDto>;
   /** Desktop menu accel (Ctrl/Cmd+N). Browser mock is a no-op. */
   onNativeShortcut(handler: (action: 'newChat') => void): Promise<() => void>;

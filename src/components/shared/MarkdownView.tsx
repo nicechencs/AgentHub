@@ -23,6 +23,11 @@ export const MARKDOWN_TOKEN_CHROME = [
   '[&_.md-table-shell_table]:!my-0 [&_.md-table-shell_table]:!w-full [&_.md-table-shell_table]:border-collapse [&_.md-table-shell_table]:border-hidden',
 ].join(' ');
 
+export interface MarkdownOpenLocalOptions {
+  /** 1-based line to reveal in the detail pane (from `#L12` / `:12`). */
+  line?: number;
+}
+
 export interface MarkdownViewProps {
   /** Markdown source. Empty / whitespace-only → render nothing. */
   content: string;
@@ -36,7 +41,7 @@ export interface MarkdownViewProps {
   /** Resolve relative file links against this directory (chat working directory). */
   localBasePath?: string;
   /** Return true when the local path was handled (e.g. opened in the preview pane). */
-  onOpenLocal?: (path: string) => boolean;
+  onOpenLocal?: (path: string, options?: MarkdownOpenLocalOptions) => boolean;
 }
 
 /** Minimal HAST element shape used by rehypeRewrite (avoids depending on `hast` types). */
@@ -121,6 +126,29 @@ function markdownHrefPath(url: string): string {
   return (url.trim().split('#')[0]?.split('?')[0] ?? '').trim();
 }
 
+/** Strip a trailing `:42` line suffix that is not a Windows drive letter. */
+export function stripMarkdownPathLineSuffix(path: string): string {
+  const trimmed = path.trim();
+  if (/^[A-Za-z]:[\\/]/.test(trimmed)) {
+    return trimmed.slice(0, 2) + trimmed.slice(2).replace(/:(\d+)$/, '');
+  }
+  return trimmed.replace(/:(\d+)$/, '');
+}
+
+export function parseMarkdownPathLineSuffix(path: string): number | undefined {
+  const trimmed = path.trim();
+  if (/^[A-Za-z]:[\\/]/.test(trimmed)) {
+    const m = trimmed.slice(2).match(/:(\d+)$/);
+    if (!m) return undefined;
+    const line = Number(m[1]);
+    return line > 0 ? line : undefined;
+  }
+  const m = trimmed.match(/:(\d+)$/);
+  if (!m) return undefined;
+  const line = Number(m[1]);
+  return line > 0 ? line : undefined;
+}
+
 /** Keep href only when a click can actually open or scroll something. */
 export function isActionableMarkdownHref(url: string): boolean {
   if (!isSafeMarkdownUrl(url)) return false;
@@ -133,7 +161,7 @@ export function isActionableMarkdownHref(url: string): boolean {
 /** File/folder links in agent markdown — not site-style paths like `/docs/setup`. */
 export function looksLikeMarkdownLocalPath(url: string): boolean {
   if (!isSafeMarkdownUrl(url)) return false;
-  const path = markdownHrefPath(url);
+  const path = stripMarkdownPathLineSuffix(markdownHrefPath(url));
   if (!path || path.startsWith('#') || isHttpUrl(path)) return false;
   if (path === '~' || path.startsWith('~/')) return true;
   if (path.startsWith('./') || path.startsWith('../')) return true;
@@ -157,7 +185,7 @@ export function joinLocalBasePath(basePath: string, rel: string): string {
 
 export function resolveMarkdownLocalPath(href: string, basePath?: string): string | null {
   if (!looksLikeMarkdownLocalPath(href)) return null;
-  const path = markdownHrefPath(href);
+  const path = stripMarkdownPathLineSuffix(markdownHrefPath(href));
   if (!path) return null;
   if (path === '~' || path.startsWith('~/')) return path;
   if (isAbsoluteFsPath(path)) return normalizeOpenPath(path) ?? path;
@@ -305,8 +333,25 @@ function clickElement(target: EventTarget | null): Element | null {
 export type MarkdownClickOptions = {
   localBasePath?: string;
   onError?: (err: unknown) => void;
-  onOpenLocal?: (path: string) => boolean;
+  onOpenLocal?: (path: string, options?: MarkdownOpenLocalOptions) => boolean;
 };
+
+/** Parse `#L12` / `#L12-L20` / `#line=12` from a markdown href. */
+export function parseMarkdownFileLine(href: string): number | undefined {
+  const hash = href.includes('#') ? href.slice(href.indexOf('#') + 1) : '';
+  if (!hash) return undefined;
+  const github = hash.match(/^L(\d+)(?:-L?\d+)?$/i);
+  if (github) {
+    const line = Number(github[1]);
+    return line > 0 ? line : undefined;
+  }
+  const named = hash.match(/^line=(\d+)$/i);
+  if (named) {
+    const line = Number(named[1]);
+    return line > 0 ? line : undefined;
+  }
+  return undefined;
+}
 
 /** Handle clicks before the webview/browser gets a chance to navigate. */
 export function handleMarkdownClick(
@@ -338,9 +383,12 @@ export function handleMarkdownClick(
     return;
   }
 
+  const lineFromHash = parseMarkdownFileLine(href);
+  const lineFromPath = parseMarkdownPathLineSuffix(markdownHrefPath(href));
   const local = resolveMarkdownLocalPath(href, options?.localBasePath);
   if (local) {
-    if (options?.onOpenLocal?.(local)) return;
+    const line = lineFromHash ?? lineFromPath;
+    if (options?.onOpenLocal?.(local, line ? { line } : undefined)) return;
     void openLocalPath(local).catch((err) => {
       console.error('[MarkdownView] open local failed', err);
       options?.onError?.(err);
