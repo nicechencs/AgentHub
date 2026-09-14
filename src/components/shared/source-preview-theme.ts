@@ -5,7 +5,22 @@ import {
   bracketMatching,
   syntaxHighlighting,
 } from '@codemirror/language';
+import { css } from '@codemirror/legacy-modes/mode/css';
+import { diff } from '@codemirror/legacy-modes/mode/diff';
+import { dockerFile } from '@codemirror/legacy-modes/mode/dockerfile';
+import { go } from '@codemirror/legacy-modes/mode/go';
+import { javascript, typescript } from '@codemirror/legacy-modes/mode/javascript';
+import { powerShell } from '@codemirror/legacy-modes/mode/powershell';
+import { properties } from '@codemirror/legacy-modes/mode/properties';
+import { python } from '@codemirror/legacy-modes/mode/python';
+import { ruby } from '@codemirror/legacy-modes/mode/ruby';
+import { rust } from '@codemirror/legacy-modes/mode/rust';
+import { shell } from '@codemirror/legacy-modes/mode/shell';
+import { standardSQL } from '@codemirror/legacy-modes/mode/sql';
 import { toml } from '@codemirror/legacy-modes/mode/toml';
+import { c, cpp, java } from '@codemirror/legacy-modes/mode/clike';
+import { html, xml } from '@codemirror/legacy-modes/mode/xml';
+import { yaml } from '@codemirror/legacy-modes/mode/yaml';
 import { tags as t } from '@lezer/highlight';
 import type { SourceFormat } from '@/lib/source-preview';
 
@@ -30,12 +45,60 @@ const sourceHighlight = HighlightStyle.define([
   { tag: t.brace, color: 'var(--text-muted)' },
   { tag: t.separator, color: 'var(--text-muted)' },
   { tag: t.invalid, color: 'var(--danger)' },
+  { tag: t.definition(t.variableName), color: 'var(--text-primary)' },
+  { tag: t.typeName, color: 'var(--info)' },
+  { tag: t.className, color: 'var(--info)' },
+  { tag: t.operator, color: 'var(--text-secondary)' },
 ]);
 
 function languageExtension(format: SourceFormat) {
-  if (format === 'json') return [json()];
-  if (format === 'toml') return [StreamLanguage.define(toml)];
-  return [];
+  switch (format) {
+    case 'json':
+      return [json()];
+    case 'toml':
+      return [StreamLanguage.define(toml)];
+    case 'yaml':
+      return [StreamLanguage.define(yaml)];
+    case 'javascript':
+      return [StreamLanguage.define(javascript)];
+    case 'typescript':
+      return [StreamLanguage.define(typescript)];
+    case 'python':
+      return [StreamLanguage.define(python)];
+    case 'rust':
+      return [StreamLanguage.define(rust)];
+    case 'go':
+      return [StreamLanguage.define(go)];
+    case 'java':
+      return [StreamLanguage.define(java)];
+    case 'c':
+      return [StreamLanguage.define(c)];
+    case 'cpp':
+      return [StreamLanguage.define(cpp)];
+    case 'css':
+      return [StreamLanguage.define(css)];
+    case 'html':
+      return [StreamLanguage.define(html)];
+    case 'xml':
+      return [StreamLanguage.define(xml)];
+    case 'sql':
+      return [StreamLanguage.define(standardSQL)];
+    case 'shell':
+      return [StreamLanguage.define(shell)];
+    case 'powershell':
+      return [StreamLanguage.define(powerShell)];
+    case 'dockerfile':
+      return [StreamLanguage.define(dockerFile)];
+    case 'diff':
+      return [StreamLanguage.define(diff)];
+    case 'ruby':
+      return [StreamLanguage.define(ruby)];
+    case 'properties':
+      return [StreamLanguage.define(properties)];
+    case 'text':
+    default:
+      return [];
+  }
 }
 
 export function sourcePreviewExtensions(format: SourceFormat) {
@@ -53,4 +116,7 @@ export const SOURCE_PREVIEW_CHROME = [
   '[&_.cm-matchingBracket]:bg-hover',
   '[&_.cm-cursor]:border-primary',
   '[&_.cm-foldGutter]:text-muted',
+  // Explicit reveal target (chat file open with line) — stronger than activeLine.
+  '[&_.cm-line.ah-source-line-target]:bg-accent/15',
+  '[&_.cm-gutters_.ah-source-line-target]:bg-accent/15',
 ].join(' ');

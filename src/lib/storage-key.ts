@@ -33,6 +33,8 @@ const LAYOUT_STORAGE_KEY = {
   chatProcessCommandHeight: `${PREFIX}chat-process-command-height`,
   chatProcessLogHeight: `${PREFIX}chat-process-log-height`,
   chatPreviewWidth: `${PREFIX}chat-preview-width`,
+  /** Dragged chat transcript content width (px); absent = adaptive clamp. */
+  chatContentWidth: `${PREFIX}chat-content-width`,
   chatRailWidth: `${PREFIX}chat-rail-width`,
   chatBootstrap: `${PREFIX}chat-bootstrap`,
 } as const;

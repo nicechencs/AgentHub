@@ -210,8 +210,24 @@ describe('MarkdownView content safety', () => {
       localBasePath: '/Users/demo/app',
       onOpenLocal,
     });
-    expect(onOpenLocal).toHaveBeenCalledWith('/Users/demo/app/README.md');
+    expect(onOpenLocal).toHaveBeenCalledWith('/Users/demo/app/README.md', undefined);
     expect(openLocalPathMock).not.toHaveBeenCalled();
+  });
+
+  it('passes line anchors from #L and :line into onOpenLocal', () => {
+    openLocalPathMock.mockReset();
+    const onOpenLocal = vi.fn(() => true);
+    handleMarkdownClick(clickEvent('src/lib/utils.ts#L12'), {
+      localBasePath: '/Users/demo/app',
+      onOpenLocal,
+    });
+    expect(onOpenLocal).toHaveBeenLastCalledWith('/Users/demo/app/src/lib/utils.ts', { line: 12 });
+    handleMarkdownClick(clickEvent('package.json:2'), {
+      localBasePath: '/Users/demo/app',
+      onOpenLocal,
+    });
+    expect(onOpenLocal).toHaveBeenLastCalledWith('/Users/demo/app/package.json', { line: 2 });
+    expect(isSafeMarkdownUrl('package.json:2')).toBe(true);
   });
 
   it('opens local markdown links in the file manager', async () => {

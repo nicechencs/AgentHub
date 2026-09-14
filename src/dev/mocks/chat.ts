@@ -418,6 +418,10 @@ async function playMockRuntimeTurn(input: {
   const parts = [
     `【${agent} mock】收到：${prompt.slice(0, 80)}\n`,
     `这是 ${agent} 的模拟回复（浏览器 Vite 原型，未调用真实 CLI）。\n`,
+    '\n可点击打开右侧预览：\n',
+    '- [README.md](README.md)\n',
+    '- [配置 JSON](package.json#L2)\n',
+    '- [源码行高亮](src/lib/utils.ts:12)\n\n',
   ];
   for (const part of parts) {
     await delay(120);
@@ -714,8 +718,11 @@ export function createMockChatPort(): ChatPort {
             step: { type: 'thinking', text: '规划回复结构…', done: false },
           });
           const parts = [
-            `【${agent} mock】收到：${prompt.slice(0, 80)}\n`,
-            '正在思考…\n',
+            `【${agent} mock】收到：${prompt.slice(0, 80)}\n\n`,
+            '可点击打开右侧预览：\n',
+            '- [README.md](README.md)\n',
+            '- [配置 JSON](package.json#L2)\n',
+            '- [源码行高亮](src/lib/utils.ts:12)\n\n',
             `这是 ${agent} 的模拟回复（浏览器 Vite 原型，未调用真实 CLI）。\n`,
           ];
           let content = '';
@@ -1118,6 +1125,26 @@ export function createMockChatPort(): ChatPort {
     async readMarkdownPreview(path) {
       await delay(10);
       const name = path.split(/[/\\]/).pop() || 'preview.md';
+      const lower = name.toLowerCase();
+      if (lower.endsWith('.json')) {
+        return {
+          path,
+          name,
+          content: '{\n  "mock": true,\n  "file": ' + JSON.stringify(name) + '\n}\n',
+          truncated: false,
+        };
+      }
+      if (/\.(ts|tsx|js|jsx|py|rs|go)$/i.test(name)) {
+        return {
+          path,
+          name,
+          content:
+            '// mock preview\nexport function hello() {\n  return ' +
+            JSON.stringify(name) +
+            ';\n}\n',
+          truncated: false,
+        };
+      }
       return {
         path,
         name,

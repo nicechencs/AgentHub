@@ -8,7 +8,7 @@ import { useSideSplit } from '@/components/layout/use-side-split';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { Notice } from '@/components/shared/Notice';
-import { isMarkdownFilePath } from '@/components/shared/MarkdownView';
+import type { MarkdownOpenLocalOptions } from '@/components/shared/MarkdownView';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { onChatNativeShortcut } from '@/lib/api/chat';
@@ -38,6 +38,7 @@ import { ChatMarkdownPreviewPanel } from './ChatMarkdownPreviewPanel';
 import { ChatProcessInspectPanel } from './ChatProcessInspectPanel';
 import {
   chatPreviewCanBack,
+  chatPreviewLine,
   chatPreviewPath,
   isChatFilePreview,
   isChatProcessInspect,
@@ -48,6 +49,8 @@ import {
   type ChatInspectTarget,
   type ChatProcessInspectTarget,
 } from './chat-preview-model';
+import { isPreviewableChatFilePath } from './chat-file-preview';
+import { useChatContentWidth } from './use-chat-content-width';
 import { ChatRuntimeExtras } from './ChatRuntimeExtras';
 import { ChatTurnOutcomeBanner } from './ChatTurnOutcomeBanner';
 import { ChatComposer } from './ChatComposer';
@@ -73,6 +76,7 @@ export default function ChatPage() {
     queued: page.queuedFollowUpCount > 0,
   });
   const split = useChatComposerSplit();
+  const contentWidth = useChatContentWidth();
   const preview = useSideSplit<ChatInspectTarget>({
     storageKey: StorageKey.chatPreviewWidth,
     framePadX: SIDE_SPLIT_FRAME_PAD_X_FLUSH,
@@ -81,18 +85,18 @@ export default function ChatPage() {
   const { t } = useI18n();
   const [modelMenuOpenNonce, setModelMenuOpenNonce] = useState(0);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const openMarkdownPreview = useCallback(
-    (next: string) => {
-      if (!isMarkdownFilePath(next)) return false;
-      preview.open(openChatPreviewRoot(next));
+  const openFilePreview = useCallback(
+    (next: string, options?: MarkdownOpenLocalOptions) => {
+      if (!isPreviewableChatFilePath(next)) return false;
+      preview.open(openChatPreviewRoot(next, options?.line));
       return true;
     },
     [preview.open],
   );
-  const openNestedMarkdown = useCallback(
-    (next: string) => {
-      if (!isMarkdownFilePath(next)) return;
-      preview.open(pushChatPreview(preview.target, next));
+  const openNestedFile = useCallback(
+    (next: string, options?: MarkdownOpenLocalOptions) => {
+      if (!isPreviewableChatFilePath(next)) return;
+      preview.open(pushChatPreview(preview.target, next, options?.line));
     },
     [preview.open, preview.target],
   );
@@ -102,7 +106,7 @@ export default function ChatPage() {
     },
     [preview.open],
   );
-  const backMarkdownPreview = useCallback(() => {
+  const backFilePreview = useCallback(() => {
     const previous = popChatPreview(preview.target);
     if (!previous) {
       preview.close();
@@ -304,9 +308,32 @@ export default function ChatPage() {
         />
 
         <div
+          ref={contentWidth.rootRef}
           className={cn(chatStageClass, pageRhythm.chatChromeX, 'relative')}
           data-chat-stage
         >
+          <div
+            className="ah-chat-width-handle"
+            data-side="left"
+            data-dragging={contentWidth.dragging || undefined}
+            onPointerDown={contentWidth.onPointerDown('left')}
+            onPointerMove={contentWidth.onPointerMove}
+            onPointerUp={contentWidth.onPointerUp}
+            onPointerCancel={contentWidth.onPointerCancel}
+            onLostPointerCapture={contentWidth.onPointerCancel}
+            aria-hidden
+          />
+          <div
+            className="ah-chat-width-handle"
+            data-side="right"
+            data-dragging={contentWidth.dragging || undefined}
+            onPointerDown={contentWidth.onPointerDown('right')}
+            onPointerMove={contentWidth.onPointerMove}
+            onPointerUp={contentWidth.onPointerUp}
+            onPointerCancel={contentWidth.onPointerCancel}
+            onLostPointerCapture={contentWidth.onPointerCancel}
+            aria-hidden
+          />
           <div
             ref={split.splitRef}
             className={cn(chatMainColumnClass, 'flex min-h-0 flex-1 flex-col')}
@@ -326,7 +353,7 @@ export default function ChatPage() {
               onScroll={page.onTranscriptScroll}
               onRetry={() => void page.retryLast()}
               hideLastTurnRetry={Boolean(page.turnOutcome)}
-              onOpenLocal={openMarkdownPreview}
+              onOpenLocal={openFilePreview}
               onOpenProcess={openProcessInspect}
               onCloseProcess={preview.close}
               inspectProcess={
@@ -608,10 +635,11 @@ export default function ChatPage() {
               cwd={page.active?.cwd ?? ''}
               open={preview.expanded}
               width={preview.paneWidth}
+              line={chatPreviewLine(preview.target)}
               canBack={chatPreviewCanBack(preview.target)}
-              onBack={backMarkdownPreview}
+              onBack={backFilePreview}
               onClose={preview.close}
-              onOpenLocal={openNestedMarkdown}
+              onOpenLocal={openNestedFile}
               className="h-full min-w-0"
             />
           ) : isChatProcessInspect(preview.target) ? (

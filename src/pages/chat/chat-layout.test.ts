@@ -105,13 +105,15 @@ describe('chat layout wiring', () => {
     expect(translate('zh', 'chat.composer.stopping')).toBe('正在停止');
   });
 
-  it('opens markdown files in a right-hand preview pane', () => {
+  it('opens workspace text files in a right-hand preview pane', () => {
     const page = source('index.tsx');
     expect(page).toContain('useSideSplit');
     expect(page).toContain('SideSplitFrame');
     expect(page).toContain('ChatMarkdownPreviewPanel');
-    expect(page).toContain('isMarkdownFilePath');
+    expect(page).toContain('isPreviewableChatFilePath');
+    expect(page).toContain('chatPreviewLine');
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('readMarkdownPreview');
+    expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('highlightLine');
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('chat.preview.back');
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('pathTailLabel');
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain("label={folder}");
@@ -192,10 +194,12 @@ describe('chat layout wiring', () => {
     expect(source('ChatComposer.tsx')).toContain('showBlockerBanner');
   });
 
-  it('keeps the transcript white column on the same max-w-5xl as the composer', () => {
+  it('keeps the transcript and composer on the same adaptive content column', () => {
     expect(source('index.tsx')).toContain('chatMainColumnClass');
     expect(source('index.tsx')).toContain('chatStageClass');
     expect(source('index.tsx')).toContain('pageRhythm.chatChromeX');
+    expect(source('index.tsx')).toContain('useChatContentWidth');
+    expect(source('index.tsx')).toContain('ah-chat-width-handle');
     expect(source('ChatSessionHeader.tsx')).toContain('pageRhythm.chatChromeX');
     expect(source('ChatTranscript.tsx')).not.toContain('pageRhythm.chatChromeX');
     expect(source('ChatTranscript.tsx')).not.toContain('px-6');

@@ -410,7 +410,7 @@ pub struct LiveChatModel {
     pub efforts: Vec<String>,
 }
 
-/// Local markdown file opened from a chat message link.
+/// Local text/markdown file opened from a chat message link.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MarkdownFilePreview {
