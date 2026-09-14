@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { pageRhythm } from '@/components/layout/page-rhythm';
 import { agentDisplayName } from '@/config/agents';
 import { createTranslator } from '@/lib/i18n';
 import type { BindingView, TicketView, TicketWallet } from '@/lib/backend/contracts/ticket';
@@ -1921,9 +1920,11 @@ describe('composerUsesCssFieldSizing', () => {
 });
 
 describe('chat transcript / composer surfaces', () => {
-  it('shares one main-column width for transcript and composer', () => {
-    expect(chatMainColumnClass).toBe(pageRhythm.readingColumn);
-    expect(chatMainColumnClass).toBe('mx-auto w-full max-w-5xl');
+  it('shares one adaptive main-column width for transcript and composer', () => {
+    expect(chatMainColumnClass).toContain('ah-chat-content-column');
+    expect(chatMainColumnClass).toContain('mx-auto');
+    expect(chatMainColumnClass).toContain('w-full');
+    expect(chatMainColumnClass).not.toContain('max-w-5xl');
   });
 
   it('uses a 16px outer stage so transcript and composer share the same inset', () => {

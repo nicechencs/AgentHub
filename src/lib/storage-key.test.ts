@@ -55,6 +55,7 @@ describe('StorageKey', () => {
       chatProcessCommandHeight: StorageKey.chatProcessCommandHeight,
       chatProcessLogHeight: StorageKey.chatProcessLogHeight,
       chatPreviewWidth: StorageKey.chatPreviewWidth,
+      chatContentWidth: StorageKey.chatContentWidth,
       chatRailWidth: StorageKey.chatRailWidth,
       chatBootstrap: StorageKey.chatBootstrap,
     }).toEqual({
@@ -84,6 +85,7 @@ describe('StorageKey', () => {
       chatProcessCommandHeight: 'agenthub:chat-process-command-height',
       chatProcessLogHeight: 'agenthub:chat-process-log-height',
       chatPreviewWidth: 'agenthub:chat-preview-width',
+      chatContentWidth: 'agenthub:chat-content-width',
       chatRailWidth: 'agenthub:chat-rail-width',
       chatBootstrap: 'agenthub:chat-bootstrap',
     });

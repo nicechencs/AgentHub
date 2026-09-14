@@ -589,7 +589,7 @@ fn save_chat_paste_image_inner(
     Ok(path.to_string_lossy().into_owned())
 }
 
-/// Invoke: `read_markdown_preview` — load a markdown file under the chat working directory.
+/// Invoke: `read_markdown_preview` — load a text/markdown file under the chat working directory.
 #[tauri::command]
 pub async fn read_markdown_preview(
     path: String,

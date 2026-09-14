@@ -31,7 +31,7 @@ describe('source preview helpers', () => {
     expect(inferSourceFormat({ text: 'x', fileName: 'config.toml' })).toBe('toml');
     expect(inferSourceFormat({ text: '{"a":1}' })).toBe('json');
     expect(inferSourceFormat({ text: 'export FOO=1', fileName: '.credentials.yaml' })).toBe(
-      'text',
+      'yaml',
     );
   });
 
