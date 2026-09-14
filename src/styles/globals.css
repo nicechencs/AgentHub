@@ -257,68 +257,71 @@ svg.lucide[data-icon='nav'] {
 /*
  * Chat transcript content width (Deepseek Harness-aligned).
  * Adaptive: clamp(680px, 64% column, 920px). Dragged preference sets --ah-chat-user-width.
+ * --ah-chat-content-width is the resolved axis consumed by the column and handles.
  */
-.ah-chat-content-column {
-  max-width: var(
+[data-chat-stage] {
+  --ah-chat-content-width: var(
     --ah-chat-user-width,
     clamp(680px, calc(var(--ah-chat-column-width, 0px) * 0.64), 920px)
   );
+}
+
+.ah-chat-content-column {
+  max-width: var(--ah-chat-content-width);
 }
 
 .ah-chat-width-handle {
   position: absolute;
   top: 0;
   bottom: 0;
-  z-index: 5;
-  width: 40px;
+  z-index: 8;
+  width: min(
+    40px,
+    calc((100% - var(--ah-chat-content-width)) / 2 - 48px)
+  );
   cursor: col-resize;
   touch-action: none;
 }
 
 .ah-chat-width-handle[data-side='left'] {
-  left: max(
-    24px,
-    calc(
-      50% - (var(--ah-chat-user-width, clamp(680px, calc(var(--ah-chat-column-width, 0px) * 0.64), 920px)) / 2) - 64px
-    )
-  );
+  right: calc(50% + var(--ah-chat-content-width) / 2 + 24px);
 }
 
 .ah-chat-width-handle[data-side='right'] {
-  right: max(
-    24px,
-    calc(
-      50% - (var(--ah-chat-user-width, clamp(680px, calc(var(--ah-chat-column-width, 0px) * 0.64), 920px)) / 2) - 64px
-    )
-  );
+  left: calc(50% + var(--ah-chat-content-width) / 2 + 24px);
 }
 
 .ah-chat-width-handle::after {
   content: '';
   position: absolute;
-  top: var(--ah-width-handle-pointer-y, 50%);
+  top: 0;
+  bottom: 0;
   width: 3px;
-  height: 80px;
-  margin-top: -40px;
-  border-radius: 9999px;
-  background: transparent;
+  border-radius: 3px;
+  background: linear-gradient(
+    to bottom,
+    transparent calc(var(--ah-width-handle-pointer-y, 50%) - 52px),
+    color-mix(in srgb, var(--accent) 55%, transparent)
+      calc(var(--ah-width-handle-pointer-y, 50%) - 12px),
+    color-mix(in srgb, var(--accent) 55%, transparent)
+      calc(var(--ah-width-handle-pointer-y, 50%) + 12px),
+    transparent calc(var(--ah-width-handle-pointer-y, 50%) + 52px)
+  );
   opacity: 0;
-  transition: opacity 120ms ease;
   pointer-events: none;
 }
 
 .ah-chat-width-handle[data-side='left']::after {
-  right: 0;
+  right: 16px;
 }
 
 .ah-chat-width-handle[data-side='right']::after {
-  left: 0;
+  left: 16px;
 }
 
 .ah-chat-width-handle:hover::after,
 .ah-chat-width-handle[data-dragging]::after {
   opacity: 1;
-  background: color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
 .agent-thinking-dots {

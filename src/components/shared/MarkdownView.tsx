@@ -115,7 +115,12 @@ export function isSafeMarkdownUrl(url: string): boolean {
     return !/^[a-z][a-z\d+.-]*:/i.test(candidate.replace(/\\/g, '/'));
   }
 
-  const scheme = candidate.match(/^([a-z][a-z\d+.-]*):/i)?.[1]?.toLowerCase();
+  // `src/file.ts:12` looks like a URI scheme (`file.ts:`) to the colon check.
+  // Strip a trailing line ref before classifying schemes.
+  const withoutLine = stripMarkdownPathLineSuffix(markdownHrefPath(candidate));
+  const schemeSource = withoutLine || candidate;
+
+  const scheme = schemeSource.match(/^([a-z][a-z\d+.-]*):/i)?.[1]?.toLowerCase();
   if (scheme) {
     return (scheme === 'http' || scheme === 'https') && /^https?:\/\//i.test(candidate);
   }
