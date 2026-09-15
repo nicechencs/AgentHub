@@ -1,4 +1,7 @@
 //! Shared ACP `session/update` decoding (Grok JSON-RPC and Kiro stream-json).
+//!
+//! Compatibility family: reuse this decoder across ACP agents without merging
+//! their [`crate::models::AgentId`] values. See `docs/concepts/agent-identity-families.md`.
 
 use serde_json::Value;
 

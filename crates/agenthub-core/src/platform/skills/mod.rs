@@ -10,6 +10,7 @@ mod bootstrap;
 mod catalog;
 mod classify;
 mod commit;
+mod external_agent_keys;
 mod fs_index;
 mod fs_safe;
 mod git_update;
@@ -28,6 +29,9 @@ mod time;
 mod yaml;
 pub(crate) mod zip_extract;
 
+pub use external_agent_keys::{
+    agent_id_for_skills_cli_key, is_usable_external_agent_key, skills_cli_agent_key,
+};
 pub use assignment::SkillAssignmentService;
 pub use bootstrap::{bootstrap_skill_assignments, SkillBootstrapReport};
 pub use git_update::atomic_git_skill_update;
