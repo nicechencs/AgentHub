@@ -4,14 +4,14 @@ type: proposal
 status: proposed
 owner: maintainers
 audience: product owners and implementation agents
-updated: 2026-09-11
+updated: 2026-09-15
 ---
 
 # Chat 宿主加深与多 Agent 兼容
 
 在现有对话页和各家机器通道上加深思考、命令和跨 Agent 兼容；**不以伪终端当对话底座**。对照 [AionUi](https://github.com/iOfficeAI/AionUi) 的 GUI 宿主，吸收握手定能力、统一事件、协议斜杠目录；不搬内置引擎、独立后台进程或多人协作。
 
-本页不替换 [Chat 统一体验](chat-unified-experience.md)，只补「底座已定之后如何加深」。未合入、未验收前不得把能力标成 Full，也不得改 [STATUS](../STATUS.md) 的现行事实。切片进度见下文。
+本页不替换 [Chat 统一体验](chat-unified-experience.md)，只补「底座已定之后如何加深」。A–I 已合入 `dev`；未真窗验收的项不得写成 Full。现行事实只写在 [STATUS](../STATUS.md)。切片剩余边界见下文。
 
 ## 问题
 
@@ -24,18 +24,18 @@ updated: 2026-09-11
 
 ## 当前基线
 
-细节以 [STATUS](../STATUS.md) 为准。**合入 `dev` 之前，下表「本分支」不算现行。**
+细节以 [STATUS](../STATUS.md) 为准。A–I 已在 `dev`（不再存在待合的 `feat/chat-host-depth-options` / 同名 open PR）。下表即现行代码；真窗未宣称的项仍不得写成已验收。
 
-| 点 | `dev` / 现行 | 分支 `feat/chat-host-depth-options`（A–I，未合入） |
-| --- | --- | --- |
-| 产品形态 | 共用 GUI 对话页。默认内嵌终端、全量原生命令菜单范围外 | 同左 |
-| 持续通道 | 新空 Codex app-server；Grok / Kiro ACP；Claude stream-json；其余一次性 | 同左 |
-| 快照 | 回合态；无 transport、无命令列表 | 另有廉价 `catalogEpoch`；当前轮 `plan`；进行中的宿主命令卡片 |
-| Options | 模型、技能、写死的 `imageInput` / `steer` | 另有 `transport`、`nativeCommands`、`sessionReady`；握手可改图片；ACP config 可刷模型/思考 |
-| enable 白名单 | Codex / Grok / Kiro / Claude。发送看 `enabled` | **未拆**白名单。确认卡片、排队提示改读 `enabled` / `steer` |
-| Grok / Kiro ACP | 思考/工具/确认已有。`available_commands` 丢掉。不声明 `terminal` | 命令目录写入 Options；思考可标完成；工具 kind 映射。`config_option_update` 进 Options。`context_usage` 进用量小字；`plan` 进计划条。握手声明 `terminal`，`terminal/*` 一张卡片可停这一条 |
-| `/` 菜单 | Hub 动作 + 换模型/思考/技能 | 会话就绪且目录非空时列出对方斜杠命令，选中插入 `/名字 `，不代发。目录世代号变化时重拉 Options。有可启动的命令行时列出「启动命令行」（DeepSeek 为「打开网页会话」），在外部打开，不标成对话页能力 |
-| 进程 | sidecar 不从本页派生 | 同左 |
+| 点 | `dev` 现行 |
+| --- | --- |
+| 产品形态 | 共用 GUI 对话页。默认内嵌终端、全量原生命令菜单范围外 |
+| 持续通道 | 新空 Codex app-server；Grok / Kiro ACP；Claude stream-json；其余一次性 |
+| 快照 | 回合态。另有廉价 `catalogEpoch`；当前轮 `plan`；进行中的宿主命令卡片。命令列表不进 80ms 快照 |
+| Options | `transport`、`nativeCommands`、`sessionReady`；握手可改图片；ACP config 可刷模型/思考 |
+| enable 白名单 | Codex / Grok / Kiro / Claude。**未拆**白名单。确认卡片、排队提示读 `enabled` / `steer` |
+| Grok / Kiro ACP | 命令目录写入 Options；思考可标完成；工具 kind 映射。`config_option_update` 进 Options。`context_usage` 进用量小字；`plan` 进计划条。握手可声明 `terminal`，`terminal/*` 一张卡片可停这一条 |
+| `/` 菜单 | Hub 动作立刻执行。会话就绪且目录非空时列出对方斜杠命令，选中插入 `/名字 `，不代发。目录世代号变化时重拉 Options。有可启动的命令行时列出「启动命令行」（DeepSeek 为「打开网页会话」），在外部打开，不标成对话页能力。无真窗不得写「已验收对方命令」 |
+| 进程 | sidecar 不从本页派生 |
 
 `StructuredStream` 仍不等于全部对话能力。Grok 技能库可用，对话里「用于本次」仍不支持。
 
@@ -50,7 +50,7 @@ updated: 2026-09-11
 7. 先深已接线的四家，再按梯子扩家。
 8. **本页只加深宿主与 ACP 目录。** Claude 确认通道、Pi/Kimi 持续通道归 [统一体验](chat-unified-experience.md)，不在本页另起一套。
 
-A–E、G–I 在功能分支上已实现，**未合入、未当现行。** F 因无 Grok/Kiro 提问证据取消。
+A–E、G–I 已合入 `dev`。F 因无 Grok/Kiro 提问证据取消。真窗未宣称对方斜杠命令。enable 白名单未拆。
 
 ## 非目标
 
@@ -141,19 +141,19 @@ A–C 不引入伪终端，不声明 `clientCapabilities.terminal`。
 
 ## 建议切片
 
-未合入前不得把本页标成 current。A–E、G–I 在 `feat/chat-host-depth-options`。
+本页保持 `proposed`，不得标成 current。A–E、G–I 已合入 `dev`。剩余边界（真窗斜杠、白名单、F 取消）不是 Full 契约。
 
 | 刀 | 状态 | 一句话 |
 | --- | --- | --- |
-| A Options 能力位 | 分支已实现 | 字段进 Options，不进 80ms 快照 |
-| B ACP 事件与命令目录 | 分支已实现 | 目录进 Options，不进过程时间线 |
-| C `/` 接协议目录 | 分支已实现 | 选中插入 `/名字 `，不代发 |
-| D 目录变更刷新 `/` | 分支已实现 | 补 C：晚到的命令要进菜单 |
-| E `config_options` | 分支已实现 | 刷模型/模式，不装终端选择器 |
+| A Options 能力位 | 已合入 `dev` | 字段进 Options，不进 80ms 快照 |
+| B ACP 事件与命令目录 | 已合入 `dev` | 目录进 Options，不进过程时间线 |
+| C `/` 接协议目录 | 已合入 `dev` | 选中插入 `/名字 `，不代发 |
+| D 目录变更刷新 `/` | 已合入 `dev` | 补 C：晚到的命令要进菜单 |
+| E `config_options` | 已合入 `dev` | 刷模型/模式，不装终端选择器 |
 | F ACP 提问口 | **取消** | 无 Grok/Kiro 提问夹具；不画假问答卡。ACP `elicitation/create` 未声明能力 |
-| G 用量窗 / 计划条 | 分支已实现 | `context_usage` 进用量小字；`plan` 进计划条，不进气泡 |
-| H 宿主终端 | 分支已实现 | 握手声明 terminal；一张卡片 + 停这一条。管道拉起，不是对话 TTY |
-| I 打开对方命令行 | 分支已实现 | `/` 里启动对方程序；文案标明不是对话页能力 |
+| G 用量窗 / 计划条 | 已合入 `dev` | `context_usage` 进用量小字；`plan` 进计划条，不进气泡 |
+| H 宿主终端 | 已合入 `dev` | 握手声明 terminal；一张卡片 + 停这一条。管道拉起，不是对话 TTY |
+| I 打开对方命令行 | 已合入 `dev` | `/` 里启动对方程序；文案标明不是对话页能力 |
 
 ```mermaid
 flowchart LR
@@ -250,7 +250,7 @@ H 不依赖 E，但必须与握手声明同时实现。F 已取消。I 不依赖
 
 **不做：** 把计划当正式回复；没有用量字段就画 0。
 
-**分支实现：** `context_usage` 写成 `ProcessStep::Usage { scope: "context" }`，回合结束后与当前轮输入/输出同一条小字；全 0 不画。`plan` / `entries` 写入快照 `plan`（不进过程时间线），输入区上方画计划条，下一轮开始清空。空 `plan` 更新不抹掉已有条目。 Codex 累计窗口仍不进这条小字。
+**已合入：** `context_usage` 写成 `ProcessStep::Usage { scope: "context" }`，回合结束后与当前轮输入/输出同一条小字；全 0 不画。`plan` / `entries` 写入快照 `plan`（不进过程时间线），输入区上方画计划条，下一轮开始清空。空 `plan` 更新不抹掉已有条目。 Codex 累计窗口仍不进这条小字。
 
 ### 切片 H — 宿主终端卡片（可再拆页）
 
@@ -258,7 +258,7 @@ H 不依赖 E，但必须与握手声明同时实现。F 已取消。I 不依赖
 
 **不做：** 把对话页换成 TUI。
 
-**分支实现：** 握手 `clientCapabilities.terminal = true`，与 `terminal/create|output|wait_for_exit|kill|release` 一起落地，避免未实现方法回 `-32601`。每条命令一张卡片（命令、输出、退出码），可停这一条。管道拉起并捕获输出，不是对话页 TTY。交互输入、窗口大小、完整伪终端仿真不在本刀。
+**已合入：** 握手 `clientCapabilities.terminal = true`，与 `terminal/create|output|wait_for_exit|kill|release` 一起落地，避免未实现方法回 `-32601`。每条命令一张卡片（命令、输出、退出码），可停这一条。管道拉起并捕获输出，不是对话页 TTY。交互输入、窗口大小、完整伪终端仿真不在本刀。
 
 ### 切片 I — 打开对方命令行
 
@@ -266,7 +266,7 @@ H 不依赖 E，但必须与握手声明同时实现。F 已取消。I 不依赖
 
 **不做：** 宣称对话页已有终端补全或灰色提示；嵌进窗口的默认终端。
 
-**分支实现：** 当前会话 Agent 已有可启动的命令行时，`/` 列出与 Agents 页相同的「启动命令行」（DeepSeek 为「打开网页会话」）。选中调用已有 `launchAgentProgram(..., 'cli')`，在外部打开。说明写清这不是对话页能力。无启动路径则不画。I 自己不嵌终端；宿主 `terminal/*` 见 H。
+**已合入：** 当前会话 Agent 已有可启动的命令行时，`/` 列出与 Agents 页相同的「启动命令行」（DeepSeek 为「打开网页会话」）。选中调用已有 `launchAgentProgram(..., 'cli')`，在外部打开。说明写清这不是对话页能力。无启动路径则不画。I 自己不嵌终端；宿主 `terminal/*` 见 H。
 
 ## 本页不负责
 
@@ -281,12 +281,11 @@ H 不依赖 E，但必须与握手声明同时实现。F 已取消。I 不依赖
 
 WorkBuddy / ZCode / DeepSeek 等无可靠过程流的保持受限。
 
-## 合入 A–C（过程，不是新功能）
+## 合入 A–I 之后
 
-1. PR 目标 `dev`。说明行为、范围、测试、文档。
-2. 跨层：契约 + ACP 解析，按 [AGENTS.md](../../AGENTS.md) 做独立审查（自查不算）。
-3. 合入后才改 [STATUS](../STATUS.md) 与现行概念页短摘要。
-4. 真窗：Grok/Kiro 声明斜杠命令后，`/` 能插入草稿再手发。没有真窗不得写「已验收对方命令」。
+1. 现行事实只更新 [STATUS](../STATUS.md) 与概念页短摘要；本页保持 `proposed`。
+2. 真窗：Grok/Kiro 声明斜杠命令后，`/` 能插入草稿再手发。没有真窗不得写「已验收对方命令」。
+3. 跨层改动仍按 [AGENTS.md](../../AGENTS.md) 做独立审查（自查不算）。
 
 ## 门槛
 
