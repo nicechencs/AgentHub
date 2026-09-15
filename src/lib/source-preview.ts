@@ -43,6 +43,20 @@ export function looksLikeJsonObject(text: string): boolean {
   return trimmed.startsWith('{') || trimmed.startsWith('[');
 }
 
+/** Braces/brackets plus whitespace, commas, and colons — no fields to show. */
+const JSON_STRUCTURE_ONLY = /[{}\[\]\s,:]/g;
+
+/**
+ * True when tool JSON is worth a highlighted preview.
+ * Empty text, `{}`, `[]`, and brace-only fragments stay off that chrome.
+ */
+export function hasJsonPreviewContent(text: string): boolean {
+  if (!looksLikeJsonObject(text)) return false;
+  const prepared = prepareSourcePreview(text, 'json').trim();
+  if (!prepared || prepared === '{}' || prepared === '[]') return false;
+  return prepared.replace(JSON_STRUCTURE_ONLY, '').length > 0;
+}
+
 /** Pretty-print JSON objects/arrays. Invalid or non-object JSON is left as-is. */
 export function tryPrettyJson(text: string): string | null {
   if (!looksLikeJsonObject(text)) return null;

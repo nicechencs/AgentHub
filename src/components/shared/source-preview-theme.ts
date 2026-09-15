@@ -5,6 +5,7 @@ import {
   bracketMatching,
   syntaxHighlighting,
 } from '@codemirror/language';
+import { EditorView } from '@uiw/react-codemirror';
 import { css } from '@codemirror/legacy-modes/mode/css';
 import { diff } from '@codemirror/legacy-modes/mode/diff';
 import { dockerFile } from '@codemirror/legacy-modes/mode/dockerfile';
@@ -108,6 +109,22 @@ export function sourcePreviewExtensions(format: SourceFormat) {
     bracketMatching(),
   ];
 }
+
+/** Snippets size to the document so empty/short JSON does not paint leftover line numbers. */
+export const sourcePreviewFitContentTheme = EditorView.theme({
+  '& .cm-scroller': {
+    height: 'auto !important',
+  },
+  '& .cm-content': {
+    minHeight: '0px !important',
+  },
+  '& .cm-gutters': {
+    height: 'auto',
+  },
+  '& .cm-gutter': {
+    minHeight: '0px',
+  },
+});
 
 export const SOURCE_PREVIEW_CHROME = [
   '[&_.cm-editor]:bg-canvas [&_.cm-editor]:font-mono [&_.cm-editor]:text-meta [&_.cm-editor]:text-primary',

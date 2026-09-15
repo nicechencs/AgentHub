@@ -10,7 +10,11 @@ import {
 } from '@/lib/source-preview';
 import { cn } from '@/lib/utils';
 import { foldJsonBeyondDepth } from './source-preview-fold';
-import { SOURCE_PREVIEW_CHROME, sourcePreviewExtensions } from './source-preview-theme';
+import {
+  SOURCE_PREVIEW_CHROME,
+  sourcePreviewExtensions,
+  sourcePreviewFitContentTheme,
+} from './source-preview-theme';
 
 type EditorViewLike = {
   state: {
@@ -75,7 +79,14 @@ export function SourcePreview({
   const displayed = readOnly
     ? prepareSourcePreview(value, format, { pretty, compressBlankLines, maxChars })
     : value;
-  const extensions = useMemo(() => sourcePreviewExtensions(format), [format]);
+  const fitContent = density === 'compact' || density === 'preview';
+  const extensions = useMemo(
+    () => [
+      ...sourcePreviewExtensions(format),
+      ...(fitContent ? [sourcePreviewFitContentTheme] : []),
+    ],
+    [format, fitContent],
+  );
   const foldable = format === 'json' || format === 'toml';
 
   const revealLine = (view: EditorViewLike, line: number) => {
@@ -106,6 +117,8 @@ export function SourcePreview({
       window.setTimeout(() => setCopied(false), 1200);
     }).catch(() => {});
   };
+
+  if (fitContent && readOnly && !displayed.trim()) return null;
 
   return (
     <div

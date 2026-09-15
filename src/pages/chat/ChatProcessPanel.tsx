@@ -20,7 +20,7 @@ import {
   toolActionTone,
   type AgentProcessView,
 } from '@/lib/chat-process';
-import { looksLikeJsonObject } from '@/lib/source-preview';
+import { hasJsonPreviewContent, looksLikeJsonObject } from '@/lib/source-preview';
 import type { ProcessStep } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
@@ -128,7 +128,9 @@ function PayloadPreview({
   density: 'preview' | 'compact';
   className?: string;
 }) {
+  if (!text.trim()) return null;
   if (looksLikeJsonObject(text)) {
+    if (!hasJsonPreviewContent(text)) return null;
     return (
       <SourcePreview
         value={text}
