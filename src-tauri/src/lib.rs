@@ -188,8 +188,12 @@ pub fn run() {
             commands::install::launch_agent_program,
             commands::agent_visibility::list_hidden_agents,
             commands::agent_visibility::set_agent_hidden,
-            // MCP inventory (read-only)
+            // MCP inventory + catalog / probe / write / enable
             commands::mcp::list_mcp_inventory,
+            commands::mcp::list_mcp_catalog,
+            commands::mcp::probe_mcp_server,
+            commands::mcp::upsert_mcp_server,
+            commands::mcp::set_mcp_server_enabled,
             // Plugin / extension pack inventory + enable/disable/install/uninstall (not MCP)
             commands::plugins::list_plugin_inventory,
             commands::plugins::enable_plugin,

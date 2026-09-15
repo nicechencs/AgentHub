@@ -4,12 +4,12 @@ description: AgentHub 只读 MCP 扫描的路径、格式、片段和已知缺�
 type: reference
 audience: contributor
 status: current
-updated: 2026-08-30
+updated: 2026-09-15
 ---
 
 # MCP inventory
 
-本页是 `list_mcp_inventory` 的现行契约。实现在 `crates/agenthub-core/src/services/mcp_inventory.rs`，Tauri command 为 `list_mcp_inventory`。这是 **MCP server 条目** 的检查，不是插件（extension / plugin）包，也不是 `Capability::Mcp` 管理。插件包见 [Agent 插件表面](agent-plugin-surfaces.md) 与 [插件管理提案](../proposals/plugin-management.md)。
+本页是 MCP 扫描与写入的现行契约。只读扫描仍由 `list_mcp_inventory` 提供；写入流为 `list_mcp_catalog` → `probe_mcp_server` → `upsert_mcp_server` / `set_mcp_server_enabled`（实现见 `mcp_manage.rs`）。实现在 `crates/agenthub-core/src/services/mcp_inventory.rs`，Tauri command 为 `list_mcp_inventory`。这是 **MCP server 条目** 的检查，不是插件（extension / plugin）包，也不是 `Capability::Mcp` 管理。插件包见 [Agent 插件表面](agent-plugin-surfaces.md) 与 [插件管理提案](../proposals/plugin-management.md)。
 
 ## 返回结构
 
@@ -56,6 +56,10 @@ TOML **只**读根表 `mcp_servers`（Codex 形状 `[mcp_servers.name]`）。没
 ## 片段
 
 片段最多 16KiB，内容与本机文件一致，不按字段名打码。这是用户自己的配置；列表、日志和密钥输入框仍走原有遮罩。
+
+## 写入 / 启用（首片）
+
+可写 Agent：Claude（`~/.claude.json`）、Codex（`config.toml` 的 `mcp_servers`）、Cursor、WorkBuddy。本地模板目录，无远程市场、无 OAuth。stdio 探测查 PATH；HTTP/SSE 做连通性检查。Codex 无独立 enabled：关闭 = 删除该条目。
 
 ## 当前缺口（实现事实，不是待办承诺）
 

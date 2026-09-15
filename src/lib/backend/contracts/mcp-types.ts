@@ -30,6 +30,45 @@ export interface McpInventory {
   servers: McpServerEntry[];
 }
 
+export interface McpCatalogEntry {
+  id: string;
+  name: string;
+  title: string;
+  description: string;
+  transport: string;
+  command?: string | null;
+  args: string[];
+  url?: string | null;
+  agents: string[];
+}
+
+export interface McpServerSpec {
+  name: string;
+  transport?: string;
+  command?: string | null;
+  args?: string[];
+  url?: string | null;
+  enabled?: boolean | null;
+}
+
+export interface McpProbeResult {
+  ok: boolean;
+  message: string;
+  transport: string;
+  detail?: string | null;
+}
+
+export interface McpWriteResult {
+  agent: AgentKey;
+  name: string;
+  path: string;
+  enabled: boolean;
+}
+
 export interface McpPort {
   listInventory(): Promise<McpInventory>;
+  listCatalog(): Promise<McpCatalogEntry[]>;
+  probeServer(spec: McpServerSpec): Promise<McpProbeResult>;
+  upsertServer(agent: AgentKey, spec: McpServerSpec): Promise<McpWriteResult>;
+  setServerEnabled(agent: AgentKey, name: string, enabled: boolean): Promise<McpWriteResult>;
 }
