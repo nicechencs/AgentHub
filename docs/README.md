@@ -3,7 +3,7 @@ title: AgentHub 文档索引
 type: navigation
 status: current
 owner: maintainers
-updated: 2026-09-09
+updated: 2026-09-15
 ---
 
 # AgentHub 文档
@@ -26,6 +26,7 @@ updated: 2026-09-09
 - [Adapter dogfood](guides/adapter-dogfood.md)
 - [测试与验证](guides/testing-and-validation.md)
 - [Agent 协作指南](guides/agent-workflow.md)
+- [自动化 Agent 短手册](guides/agent-short-handbook.md)
 - [release 分支保护](guides/release-branch-protection.md)
 - [故障排查](guides/troubleshooting.md)
 
@@ -41,6 +42,8 @@ updated: 2026-09-09
 - [Adapter 与本机路由](concepts/adapters-and-bridges.md)
 - [账号与授权](concepts/accounts-and-authorization.md)
 - [Chat 与 Agent](concepts/chat-and-agents.md)
+- [Chat 会话身份](concepts/chat-session-identity.md)
+- [Chat 过程事件](concepts/chat-process-events.md)
 - [插件、MCP 与技能](concepts/plugins-and-mcp.md)
 
 ### 查稳定契约

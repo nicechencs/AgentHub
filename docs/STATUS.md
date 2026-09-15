@@ -3,7 +3,7 @@ title: AgentHub 当前实现状态
 type: status
 status: current
 owner: maintainers
-updated: 2026-09-11
+updated: 2026-09-15
 ---
 
 # 当前实现状态
@@ -24,8 +24,10 @@ updated: 2026-09-11
   - **新空 Grok 会话**：持续聊天（模型/思考、图片、后续轮排队），**不支持**为本轮指定「用于本次」技能，界面也不画可点的假按钮。真实窗口验收已通过。Chat 只带官方 `grok agent --no-leader stdio` 旗标（`--permission-mode` 写在 `agent` 前或后都会让进程在出卡前退出）。`session/new` 带 `_meta.yoloMode=false`，覆盖本机 always-approve；握手按官方 ACP 声明本机可读写文件、不发 `initialized`。工作目录外写出走本机 `fs/write_text_file`：先出「修改文件」卡片再写文件，可点一直允许；目录内直接写。对方若另发 `session/request_permission`，卡片仍只带对方给的「一直允许」。会话自动批准才加 `--always-approve` 和 `_meta.yoloMode=true`。进程退出时界面写「Grok 已退出」，不写 Codex 的 app-server 字样。
   - **新空 Kiro 会话**：`kiro-cli acp` 持续通道（允许/拒绝、停止；生成时不能中途补充，可排队到下一轮）。真实窗口验收已通过（ACP 新对话；打印路径 HTTP 多轮为 Builder ID / 本机登录，不是企业 IdC）。旧对话保留原发送方式。
   - **其余 Agent 与旧会话**：仍走原发送方式。
-  - **过程面板**：主列一行过程摘要（正在读取 / 正在修改 / 正在执行，完成则已读取 / 已修改 / 已执行）。点开后在右侧栏看思考、工具行；工具名、状态和 JSON 进折叠的「细节」；命令、过程日志、退出码和状态事件仍在「运行详情」。右侧栏不随发送自动打开；点 Markdown 仍预览文件。
-  - **过程内用量**：新空 Codex 会话仍解析 `thread/tokenUsage/updated` 的当前轮 `last`（累计 `total` / 窗口只留在总览等用量页）。新空 Grok 会话解析 **当前轮**（`turn_completed.usage`）；ACP 没有会话累计字段，不把各轮相加冒充累计。解析路径已接；真窗 2026-09-09 见过部分轮次 **没有** `turn_completed.usage`，此时界面不画假数字。对话里只在本轮结束后用小字写输入 / 输出（有缓存才写缓存）；生成中不画用量。只显示协议里有的数字，不估算费用。Kiro 没有 token 累计数据源。
+  - **过程面板**：主列一行过程摘要（正在读取 / 正在修改 / 正在执行，完成则已读取 / 已修改 / 已执行）。点开后在右侧栏看思考、工具行；工具名、状态和 JSON 进折叠的「细节」；命令、过程日志、退出码和状态事件仍在「运行详情」。右侧栏不随发送自动打开；点 Markdown 仍预览文件。种类约定见 [过程事件](concepts/chat-process-events.md)。斜杠目录和模型目录更新不进过程时间线。Grok / Kiro 若推了当前轮 `plan`，输入区上方出现计划条，换轮丢掉。ACP 若声明 `terminal`，对方跑的那条命令一张卡片，可停这一条（不是对话页终端）。
+  - **过程内用量**：新空 Codex 会话仍解析 `thread/tokenUsage/updated` 的当前轮 `last`（累计 `total` / 窗口只留在总览等用量页）。新空 Grok 会话解析 **当前轮**（`turn_completed.usage`）；ACP 没有会话累计字段，不把各轮相加冒充累计。Grok / Kiro 的 `context_usage` 有数字才进用量小字（窗口用量），全 0 不画。解析路径已接；真窗 2026-09-09 见过部分轮次 **没有** `turn_completed.usage`，此时界面不画假数字。对话里只在本轮结束后用小字写输入 / 输出（有缓存才写缓存）；生成中不画用量。只显示协议里的数字，不估算费用。Kiro 没有 token 累计数据源。
+  - **`/` 菜单**：Hub 动作立刻做（新建对话、复制最近回复、按能力换模型/思考/技能）。Grok / Kiro 在会话就绪且对方声明了命令时，另列对方斜杠项：选中只插入 `/名字 `，不代发；目录变了会重拉，未就绪或未声明则不画。没有真窗证据前，不宣称「对方命令已验收」。有可启动的命令行时，`/` 可列出「启动命令行」（DeepSeek 为「打开网页会话」），在外部打开，不标成对话页能力。
+  - **本机对接与本会话**：本机持续通道按 Agent 写死：新空 Codex 走 app-server，新空 Grok / Kiro 走 ACP，新空 Claude 走 stream-json；其余与旧会话仍走原发送方式。Cursor 默认软隐藏，不在允许/拒绝之列，也不进持续聊天白名单。一次对话是否在用持续通道，看这次会话是不是上述新空路径，而不是 Settings 里另有一份「ACP 总表」。Kiro 旧对话没有切到 ACP 的入口。会话字段见 [会话身份](concepts/chat-session-identity.md)。
   - **新空 Claude 会话（B3 首片）**：走 Claude Code `-p --input-format stream-json --output-format stream-json` 持续通道（同进程多轮、本地图片 base64、模型/思考强度参数）；**不支持**生成中补充；本片**不**接可点允许/拒绝（默认 `dontAsk`，危险模式 `bypassPermissions`）。有历史的旧 Claude 会话仍走 print+resume。print 路径在已经出过 assistant 正文后不再把最终 `result` 再拼进气泡（短回复不会同一句写两遍）；只有没见过 assistant 文本时才用 `result` 当正文。Linux 真窗短回复已验不双写。见 [Claude B3](archive/chat-claude-b3.md)。
   - **对话标题**：新建对话先用首条消息提炼的短句。一轮结束后读对方写在自己会话记录里的标题并改用它：Codex（app-server 汇总的 `sqlite/*.db` 里 `local_thread_catalog.display_title`，退回 `session_index.jsonl` 的 `thread_name`）、Grok（`summary.json` 的 `generated_title`）、Kiro（`sessions/cli/<id>.json` 的 `title`）、DSH（会话日志的 `session/title` 行）。Claude 没有标题来源，保持首条消息推导。手动改过名字的对话不再被覆盖（不新增「谁起的名字」列，也不做迁移）；连续通道取运行时线程 id，旧会话取 `native_session_id`。AgentHub 不进协议里要标题。实机核对：Grok 与 Codex 的真实会话都能取到；Codex 的 `session_index.jsonl` 只收 IDE / 桌面端自己建的会话，所以优先读 `local_thread_catalog`；Kiro 常见只有 1–2 字的占位；DSH 普通发送不带会话 id，实际触发不到；Claude 无来源。
   - **停止**：点停止后按钮保持「正在停止」并禁用，直到这一轮真正结束。运行时已经是 `cancelling` 时同样显示「正在停止」。取消请求落空时恢复可点。停止横幅标题「已停止」；`error=cancelled` 不把英文 `cancelled` 写在旁边，改用「已按你的要求停止。可恢复草稿后重发。」
