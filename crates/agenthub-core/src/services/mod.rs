@@ -22,6 +22,7 @@ pub mod install_service;
 pub mod live_fingerprint;
 pub mod live_write_authority;
 pub mod mcp_inventory;
+pub mod mcp_manage;
 pub mod plugin_apply;
 pub mod plugin_inventory;
 pub mod project_service;
@@ -67,6 +68,11 @@ pub use install_service::{
 };
 pub use live_write_authority::{LiveWriteAuthority, LiveWriteGuard};
 pub use mcp_inventory::{list_mcp_inventory, McpInventory, McpServerEntry, McpSourceFile};
+pub use mcp_manage::{
+    agent_supports_mcp_write, list_mcp_catalog, probe_mcp_server, set_mcp_server_enabled,
+    upsert_mcp_server, writable_mcp_agents, McpCatalogEntry, McpProbeResult, McpServerSpec,
+    McpWriteResult,
+};
 pub use plugin_apply::{
     disable_plugin, disable_plugin_with, enable_plugin, enable_plugin_with, install_plugin,
     install_plugin_with, list_available_plugins, list_available_plugins_with,

@@ -547,7 +547,7 @@ export const en = {
         },
         mcp: {
           title: "Using MCP",
-          intro: "Lists MCP servers already found. It does not install them.",
+          intro: "Lists discovered MCP, and can probe then write local config (no OAuth).",
           step1: "Browse discovered MCP servers by Agent.",
           step2: "After you change a config in a tool, click Refresh.",
           step3: "Click this row to see the command and address. Click Folder to edit the config.",
@@ -684,7 +684,7 @@ export const en = {
   skills: {
     page: {
       title: "Skills",
-      descriptionTip: "Click a skill name to preview; cells enable it on a tool.",
+      descriptionTip: "Use Write MCP to probe a local template and write config. Or tap Folder in the list and {next}. No OAuth.",
       projectDescriptionTip: "Choose a workspace from the project list; click a name to preview, then add or delete.",
       meta: "Shared library {shared} · This tool {privateOnly}",
       projectMeta: "Project {project} · {n} skills",
@@ -3525,9 +3525,9 @@ export const en = {
   mcp: {
     page: {
       title: "MCP",
-      description: "This page only lists MCP that was found. It does not install anything.",
+      description: "Lists MCP found on this machine. You can also probe and write into Claude / Codex / Cursor / WorkBuddy.",
       descriptionTip:
-        "It does not change each tool’s own settings. To edit, tap Folder in the list and {next}.",
+        "Use Write MCP to probe a local template and write config. Or tap Folder in the list and {next}. No OAuth.",
       empty: "This page only scans and lists what it finds; it does not install. When a row appears, tap Folder and {next}.",
       emptyAgent: "No MCP found under {name}. This page only scans; it does not install.",
       nextStep: "go change that config",
@@ -3540,9 +3540,9 @@ export const en = {
     empty: {
       title: "No extra tools (MCP) found",
       all: "Add MCP in each tool's own settings, then refresh. AgentHub only displays them; it does not change those configs.",
-      oneLiner: "Add MCP in each tool's own config, then refresh to see it here.",
+      oneLiner: "Use Write MCP to probe and write local config, or add MCP in each tool’s own config and refresh.",
       addServer: "Add server",
-      addServerHint: "Open the tool's own config file, add MCP, then refresh.",
+      addServerHint: "Open Write MCP to probe a local template and write it, or edit each tool’s own config and refresh.",
       agent: "No MCP items found under {name}.",
       refresh: "Refresh",
       hasSources: "These configs were checked; they do not contain MCP items yet.",
@@ -3558,6 +3558,31 @@ export const en = {
       details: "Details",
       directory: "Folder",
       disabled: "Disabled",
+    },
+    write: {
+      open: "Write MCP",
+      title: "Write MCP",
+      description: "Probe a local template, then write into Claude / Codex / Cursor / WorkBuddy config on this machine. No OAuth.",
+      agent: "Agent",
+      template: "Template",
+      custom: "Custom",
+      name: "Name",
+      transport: "Transport",
+      command: "Command",
+      args: "Args",
+      url: "URL",
+      probe: "Probe",
+      probeOk: "Probe passed",
+      probeFail: "Probe failed",
+      save: "Write and enable",
+      saved: "Saved",
+      savedHint: "Wrote {agent} · {name}",
+      saveFail: "Could not write",
+      enabled: "Enabled",
+      disabled: "Disabled",
+      toggle: "Enable or disable",
+      toggleHint: "{agent} · {name}",
+      toggleFail: "Could not change enabled state",
     },
     toast: {
       cannotOpenDir: "Couldn't open folder",
