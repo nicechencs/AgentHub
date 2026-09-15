@@ -1,8 +1,8 @@
 {
   "source": "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
-  "fetchedAt": "2026-09-14T12:26:46.811Z",
-  "modelCount": 513,
-  "fromLitellmRows": 297,
+  "fetchedAt": "2026-09-15T11:31:09.988Z",
+  "modelCount": 515,
+  "fromLitellmRows": 299,
   "aliasKeysAdded": 211,
   "overrideKeys": 16,
   "unit": "USD per 1M tokens",
