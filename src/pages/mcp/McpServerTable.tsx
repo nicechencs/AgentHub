@@ -6,6 +6,7 @@ import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { SourcePreview } from '@/components/shared/SourcePreview';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import {
   ColumnResizeHandle,
   Table,
@@ -27,6 +28,7 @@ import type { AgentKey } from '@/lib/types';
 import type { TranslateFn } from '@/lib/i18n';
 import { StorageKey } from '@/lib/ui-preferences';
 import type { McpAgentGroup } from './group-servers';
+import { agentSupportsMcpWrite } from './writable-agents';
 
 type ColumnKey = 'name' | 'transport' | 'endpoint' | 'actions';
 
@@ -34,7 +36,7 @@ const WIDTH_SPECS: ColumnWidthSpec<ColumnKey>[] = [
   { key: 'name', defaultWidth: 200, minWidth: 120 },
   { key: 'transport', defaultWidth: 88, minWidth: 64 },
   { key: 'endpoint', defaultWidth: 360, minWidth: 160 },
-  { key: 'actions', defaultWidth: 120, minWidth: 96 },
+  { key: 'actions', defaultWidth: 168, minWidth: 120 },
 ];
 
 const COLUMN_KEYS: ColumnKey[] = ['name', 'transport', 'endpoint', 'actions'];
@@ -110,8 +112,16 @@ function FileGroupHeader({
   );
 }
 
-function ServerTableRow({ server }: { server: McpServerEntry }) {
+function ServerTableRow({
+  server,
+  onToggleEnabled,
+}: {
+  server: McpServerEntry;
+  onToggleEnabled?: (server: McpServerEntry, enabled: boolean) => void | Promise<void>;
+}) {
   const { t } = useI18n();
+  const canToggle = Boolean(onToggleEnabled) && agentSupportsMcpWrite(server.agent);
+  const [toggling, setToggling] = useState(false);
   const [open, setOpen] = useState(false);
   const detailsId = useId();
   const endpoint = endpointOf(server);
@@ -136,13 +146,29 @@ function ServerTableRow({ server }: { server: McpServerEntry }) {
           )}
         </TableCell>
         <TableCell>
-          {hasSnippet ? (
-            <DetailsToggle open={open} controlsId={detailsId} onClick={() => setOpen((v) => !v)}>
-              {t('mcp.table.details')}
-            </DetailsToggle>
-          ) : (
-            <TableEmptyCell />
-          )}
+          <div className="flex items-center gap-2">
+            {canToggle ? (
+              <Switch
+                checked={server.enabled !== false}
+                disabled={toggling}
+                aria-label={t('mcp.write.toggle')}
+                onCheckedChange={(next) => {
+                  if (!onToggleEnabled || toggling) return;
+                  setToggling(true);
+                  void Promise.resolve(onToggleEnabled(server, next)).finally(() =>
+                    setToggling(false),
+                  );
+                }}
+              />
+            ) : null}
+            {hasSnippet ? (
+              <DetailsToggle open={open} controlsId={detailsId} onClick={() => setOpen((v) => !v)}>
+                {t('mcp.table.details')}
+              </DetailsToggle>
+            ) : canToggle ? null : (
+              <TableEmptyCell />
+            )}
+          </div>
         </TableCell>
       </TableRow>
       {open && hasSnippet ? (
@@ -165,10 +191,12 @@ export function McpServerTable({
   groups,
   showAgent,
   onLocate,
+  onToggleEnabled,
 }: {
   groups: McpAgentGroup[];
   showAgent: boolean;
   onLocate: (path: string) => void;
+  onToggleEnabled?: (server: McpServerEntry, enabled: boolean) => void | Promise<void>;
 }) {
   const { t } = useI18n();
   const labels = columnLabels(t);
@@ -209,6 +237,7 @@ export function McpServerTable({
                 path={file.sourcePath}
                 servers={file.servers}
                 onLocate={onLocate}
+                onToggleEnabled={onToggleEnabled}
               />
             )),
           )}
@@ -224,12 +253,14 @@ function FragmentGroup({
   path,
   servers,
   onLocate,
+  onToggleEnabled,
 }: {
   agent: AgentKey;
   showAgent: boolean;
   path: string;
   servers: McpServerEntry[];
   onLocate: (path: string) => void;
+  onToggleEnabled?: (server: McpServerEntry, enabled: boolean) => void | Promise<void>;
 }) {
   return (
     <>
@@ -241,7 +272,11 @@ function FragmentGroup({
         onLocate={onLocate}
       />
       {servers.map((s) => (
-        <ServerTableRow key={`${s.agent}:${s.name}:${s.sourcePath}`} server={s} />
+        <ServerTableRow
+          key={`${s.agent}:${s.name}:${s.sourcePath}`}
+          server={s}
+          onToggleEnabled={onToggleEnabled}
+        />
       ))}
     </>
   );

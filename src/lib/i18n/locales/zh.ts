@@ -527,7 +527,7 @@ export const zh = {
         },
         mcp: {
           title: "怎么用「MCP」",
-          intro: "只列出已经发现的 MCP，不会安装。",
+          intro: "列出已发现的 MCP，也可探测后写入本机配置（不含 OAuth）。",
           step1: "按 Agent 查看已经发现的 MCP。",
           step2: "在各工具里改完后，点刷新更新列表。",
           step3: "点这一行看命令和地址。要改配置，点「目录」。",
@@ -664,7 +664,7 @@ export const zh = {
   skills: {
     page: {
       title: "技能",
-      descriptionTip: "单击技能名预览；格子启用到某工具。",
+      descriptionTip: "可点「写入 MCP」用本地模板探测并写入配置。也仍可点列表里的「目录」，{next}。不含 OAuth。",
       projectDescriptionTip: "从项目列表选择工作区；单击技能名预览，可添加或删除。",
       meta: "共享库 {shared} · 本工具 {privateOnly}",
       projectMeta: "项目 {project} · {n} 个技能",
@@ -3497,9 +3497,9 @@ export const zh = {
   mcp: {
     page: {
       title: "MCP",
-      description: "这一页只列出已经发现的 MCP，不会安装。",
+      description: "列出本机已发现的 MCP；也可探测后写入 Claude / Codex / Cursor / WorkBuddy。",
       descriptionTip:
-        "不会改各工具自己的设置。要动手，点列表里的「目录」，{next}。",
+        "可点「写入 MCP」用本地模板探测并写入配置。也仍可点列表里的「目录」，{next}。不含 OAuth。",
       empty: "这一页只扫描、列出找到的项，不会安装。有列表时，点「目录」，{next}。",
       emptyAgent: "「{name}」下还没有发现 MCP。这一页只扫描，不会安装。",
       nextStep: "去这份配置里改",
@@ -3512,9 +3512,9 @@ export const zh = {
     empty: {
       title: "还没有发现额外工具（MCP）",
       all: "在各工具自己的设置里添加 MCP 后点刷新。AgentHub 只展示，不会改这些配置。",
-      oneLiner: "在各工具自己的配置里添加 MCP 后刷新即可看到。",
+      oneLiner: "可点「写入 MCP」探测并写入本机配置，或到各工具自己的配置里添加后刷新。",
       addServer: "添加服务器",
-      addServerHint: "先打开各工具自己的配置文件，加上 MCP 后再刷新。",
+      addServerHint: "打开「写入 MCP」用本地模板探测并写入；或打开各工具自己的配置文件后再刷新。",
       agent: "「{name}」下还没有发现 MCP 项。",
       refresh: "刷新",
       hasSources: "已检查这些配置，里面还没有 MCP 项。",
@@ -3530,6 +3530,31 @@ export const zh = {
       details: "详情",
       directory: "目录",
       disabled: "已禁用",
+    },
+    write: {
+      open: "写入 MCP",
+      title: "写入 MCP",
+      description: "从本地模板探测后，写入 Claude / Codex / Cursor / WorkBuddy 的本机配置。不含 OAuth。",
+      agent: "Agent",
+      template: "模板",
+      custom: "自定义",
+      name: "名称",
+      transport: "连接方式",
+      command: "命令",
+      args: "参数",
+      url: "地址",
+      probe: "探测",
+      probeOk: "探测通过",
+      probeFail: "探测失败",
+      save: "写入并启用",
+      saved: "已写入",
+      savedHint: "已写入 {agent} · {name}",
+      saveFail: "写入失败",
+      enabled: "已启用",
+      disabled: "已关闭",
+      toggle: "启用或关闭",
+      toggleHint: "{agent} · {name}",
+      toggleFail: "未能切换启用状态",
     },
     toast: {
       cannotOpenDir: "无法打开目录",

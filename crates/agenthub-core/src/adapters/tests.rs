@@ -734,6 +734,11 @@ fn detect_binary_path_wins_over_leftover_agenthub_npm_prefix() {
 
 #[test]
 fn well_known_scans_user_writable_npm_for_codex_pi_dsh() {
+    // dirs::home_dir() follows HOME; serialize against tests that rewrite it.
+    let _guard = DETECT_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
     let prefix = user_writable_npm_prefix().expect("user-writable npm prefix");
     assert!(
         !is_under_agenthub_user_npm_prefix(&prefix),

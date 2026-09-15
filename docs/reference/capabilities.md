@@ -47,7 +47,7 @@ agenthub agent capabilities --markdown
 | ProjectDelete | Full | Full | Full | Full | Full | Full | Unsupported | Partial | Unsupported | Unsupported |
 | ProviderPresets | Full | Full | Full | Full | Unsupported | Unsupported | Unsupported | Partial | Unsupported | Unsupported |
 | Usage | Full | Full | Full | Full | Full | Full | Unsupported | Full | Full | Partial |
-| Mcp | Planned | Planned | Planned | Planned | Planned | Planned | Planned | Planned | Planned | Planned |
+| Mcp | Partial | Partial | Planned | Planned | Planned | Partial | Partial | Planned | Planned | Planned |
 | ModelSelect | Planned | Planned | Planned | Partial | Planned | Planned | Planned | Planned | Planned | Full |
 | SessionResume | Partial | Partial | Planned | Partial | Planned | Planned | Planned | Planned | Planned | Partial |
 
@@ -57,5 +57,5 @@ Cursor 的 `ConfigWrite` / `AccountSwitch` / `ApiKeyAccount` 为 Unsupported：�
 
 DSH 的会话日志是 `~/.dsh/sessions/--<cwd>--/<会话 id>/session.vN.jsonl.zstd`：多个 zstd 帧拼接的追加日志，token 用量写在每步 `data.usage`。`ProjectHistory` / `Usage` 按解帧后的行读取，模型名取自行内 provider 配置；会话 id 取会话目录名，平铺的单文件日志仍会读取，但只能回退到文件 stem 当 id。日志读不完整时（正在追加的尾帧，或损坏的帧），已经解出的行照常计入，并把这次读取记成失败而不是当成完整日志（`usage health` 与 collect 输出会体现）；文件继续追加后会从字节 0 重扫。
 
-能力矩阵不承载 npm 包名、安装 URL、home 路径或账号识别算法；这些是 adapter/port 数据。只读 MCP inventory 也不等于 `Mcp` 管理能力，更不等于厂商 plugin/extension 包。本机 Routes 的 models endpoint 也不改变 `ModelSelect` 状态。MCP 扫描见 [MCP inventory](mcp-inventory.md)；各家插件包与 MCP 表面见 [Agent 插件表面](agent-plugin-surfaces.md)。`/plugins` 已列出 Claude / Grok / Pi 已装包；Claude / Grok 可安装/卸载/启用/停用。没有 `Capability::Plugins`。更新仍是 [提案](../proposals/plugin-management.md)。
+能力矩阵不承载 npm 包名、安装 URL、home 路径或账号识别算法；这些是 adapter/port 数据。只读 MCP inventory 不等于完整 `Mcp` 管理能力；Claude / Codex / Cursor / WorkBuddy 已提供无 OAuth 的写入/启用切片，更不等于厂商 plugin/extension 包。本机 Routes 的 models endpoint 也不改变 `ModelSelect` 状态。MCP 扫描见 [MCP inventory](mcp-inventory.md)；各家插件包与 MCP 表面见 [Agent 插件表面](agent-plugin-surfaces.md)。`/plugins` 已列出 Claude / Grok / Pi 已装包；Claude / Grok 可安装/卸载/启用/停用。没有 `Capability::Plugins`。更新仍是 [提案](../proposals/plugin-management.md)。
 

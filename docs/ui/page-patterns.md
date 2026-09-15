@@ -21,7 +21,7 @@ The application is organized by work and management, with Agent filtering inside
 | Workspace | Chat | `/chat` | Full-height conversation workbench |
 | Workspace | Agents | `/agents` | Installed Agent catalog and lifecycle |
 | Workspace | Skills | `/skills` | User skills (shared library + this-tool), project skills by workspace, and market |
-| Workspace | MCP | `/mcp` | Read-only configuration inventory |
+| Workspace | MCP | `/mcp` | Inventory + write/enable for Claude / Codex / Cursor / WorkBuddy |
 | Workspace | History | `/projects` | Project/session tree and read-only preview (internal name: Projects) |
 | Workspace | Plugins | `/plugins` | Installed vendor plugin / extension packs; Claude / Grok can install, uninstall, enable, or disable; Pi is list-only |
 | Manage | Dashboard | `/` | Agent status, usage, and shortcuts |
@@ -466,21 +466,22 @@ Agents is the lifecycle surface: installed state, runtime readiness, install/upd
 
 ### MCP
 
-MCP is a read-only inventory of known **MCP server** configuration files. It lists Agent, server, transport, source path, and enabled status. Parse errors, missing files, and an empty inventory each get their own recoverable state. Inventory does not imply that editing or injection is supported, and it is not the plugin/extension pack manager. The current page is a standard single-column table. Plugin / extension packs live on `/plugins`.
+MCP lists known **MCP server** configuration files and can write/enable for Claude / Codex / Cursor / WorkBuddy (local templates, probe, no OAuth). It lists Agent, server, transport, source path, and enabled status. Parse errors, missing files, and an empty inventory each get their own recoverable state. Inventory does not imply that editing or injection is supported, and it is not the plugin/extension pack manager. The current page is a standard single-column table. Plugin / extension packs live on `/plugins`.
 
 ### Features (MCP)
 
-- Read-only table of known MCP server configuration files: Agent, server, transport, source path, enabled status.
+- Table of known MCP server configuration files: Agent, server, transport, source path, enabled status.
+- Write dialog: local catalog → probe → upsert into a supported Agent; enable toggle on writable rows (Codex disable removes the entry).
 - Distinct recoverable states for parse errors, missing files, and empty inventory.
 
 ### Agent touchpoints (MCP)
 
-- Inventory paths only where verified; **`Capability::Mcp` remains Planned** for all built-in Agents — inventory ≠ manage/inject.
+- Inventory paths where verified; **`Capability::Mcp` is Partial** for Claude / Codex / Cursor / WorkBuddy (write/enable, no OAuth); Planned elsewhere.
 - Bundled MCP inside a plugin pack is shown on Plugins as a component, not as rows here.
 
 ### Out of scope (MCP)
 
-- No editing or injection of MCP servers.
+- No OAuth connectors, credential encryption, or remote marketplace.
 - Not the plugin/extension pack manager (`/plugins`).
 
 ## 11. Responsive and interaction constraints

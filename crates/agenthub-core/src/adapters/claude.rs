@@ -217,7 +217,8 @@ impl AgentAdapter for ClaudeAdapter {
             SessionResume => {
                 CapabilityState::partial("Chat 后续轮次走 print+resume；终端可复制官方续接命令")
             }
-            Mcp | ModelSelect => CapabilityState::planned("待验证接入"),
+            Mcp => CapabilityState::partial("可写入本机 MCP 配置（目录/探测/启用；无 OAuth）"),
+            ModelSelect => CapabilityState::planned("待验证接入"),
         }
     }
 
