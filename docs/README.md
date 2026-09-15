@@ -22,6 +22,7 @@ updated: 2026-09-15
 ### 开发操作
 
 - [添加 Agent](guides/adding-an-agent.md)
+- [多 Agent 扩家硬约束](guides/multi-agent-support-rules.md)
 - [添加 Adapter](guides/adding-an-adapter.md)
 - [Adapter dogfood](guides/adapter-dogfood.md)
 - [测试与验证](guides/testing-and-validation.md)
@@ -42,6 +43,7 @@ updated: 2026-09-15
 - [Adapter 与本机路由](concepts/adapters-and-bridges.md)
 - [账号与授权](concepts/accounts-and-authorization.md)
 - [Chat 与 Agent](concepts/chat-and-agents.md)
+- [Agent 身份兼容族](concepts/agent-identity-families.md)
 - [Chat 会话身份](concepts/chat-session-identity.md)
 - [Chat 过程事件](concepts/chat-process-events.md)
 - [插件、MCP 与技能](concepts/plugins-and-mcp.md)
@@ -50,6 +52,10 @@ updated: 2026-09-15
 
 - [CLI 与配置](reference/cli-and-config.md)
 - [能力矩阵](reference/capabilities.md)
+- [Chat 支持深度矩阵](reference/chat-support-depth.md)
+- [Agent 启动与探测清单](reference/agent-launch-inventory.md)
+- [Chat 会话选项目录](reference/chat-session-options.md)
+- [Skills 外部 Agent 命名](reference/skills-external-agent-keys.md)
 - [本机路由 API](reference/local-route-api.md)
 - [路由兼容性](reference/route-compatibility.md)
 - [隐私与发布](reference/privacy-and-release.md)

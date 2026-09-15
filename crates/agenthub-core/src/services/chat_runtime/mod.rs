@@ -118,6 +118,8 @@ fn merge_catalog_cache(previous: Option<&CatalogCache>, mut fetched: CatalogCach
     fetched
 }
 
+/// Map product identity → transport channel. Same channel (e.g. ACP) may be
+/// shared by multiple AgentIds; identities remain distinct (identity families).
 fn runtime_channel(agent: Option<AgentId>) -> RuntimeChannel {
     match agent {
         Some(AgentId::Grok | AgentId::Kiro) => RuntimeChannel::Acp,
@@ -779,6 +781,12 @@ impl ChatRuntime {
         }
     }
 
+    /// Load model/extension catalogs for Options.
+    ///
+    /// Probe results decide membership when the live agent answers; seed/fallback
+    /// catalogs must not invent undeclared vendors or slash commands. Failure →
+    /// empty or explicit fallback — never a guessed "full" menu.
+    /// See `docs/reference/chat-session-options.md`.
     fn fetch_catalog(&self, conversation_id: &str) -> CatalogCache {
         let Ok(Some(conversation)) = self.repo.get_conversation(conversation_id) else {
             return CatalogCache::default();

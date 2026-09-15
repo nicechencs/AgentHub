@@ -4,12 +4,14 @@ description: 按稀疏端口、能力声明和目录注册把一个 Agent 接入
 type: guide
 audience: contributor
 status: current
-updated: 2026-09-08
+updated: 2026-09-15
 ---
 
 # 添加 Agent
 
 本指南适用于新增一个由 AgentHub 管理的第三方 Agent。目标是让差异停留在 adapter 和 `integrations/agents/<key>/`，平台 service、页面和通用工具不新增具体 Agent 名称分支。
+
+扩家前先扫读：[多 Agent 扩家硬约束](multi-agent-support-rules.md)、[Chat 支持深度矩阵](../reference/chat-support-depth.md)、[启动与探测清单](../reference/agent-launch-inventory.md)。目录里有 ≠ Chat 一样深；启动 argv 不要另起第二套真源。
 
 ## 1. 先确认身份和范围
 
@@ -89,7 +91,7 @@ updated: 2026-09-08
 | Connections | 导入、官方登录、API Key 写入与占用方式 |
 | Routes（board/pool/tokens/activity） | `plan`/`bind`、入池、本机令牌写回 |
 | Skills / Projects / Plugins / MCP | Skills 矩阵、ProjectHistory/Delete、插件列表或只读 MCP 路径 |
-| Chat | StructuredStream / DangerousMode / SessionResume |
+| Chat | StructuredStream / DangerousMode / SessionResume；持续深度见 [Chat 支持深度矩阵](../reference/chat-support-depth.md) |
 | Settings → 备份 | LiveBackup 快照身份 |
 | Sub2API | 仅当要从站点导入 Key 到该 Agent |
 
