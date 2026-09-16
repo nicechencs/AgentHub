@@ -4,6 +4,8 @@ export type ChatActionKind = 'local' | 'draft' | 'native';
 
 export type ChatActionId = string;
 
+export type ChatSlashGroup = 'native' | 'hub' | 'draft';
+
 export interface ChatActionDef {
   id: ChatActionId;
   kind: ChatActionKind;
@@ -14,6 +16,11 @@ export interface ChatActionDef {
   description?: string;
   /** Optional draft text for sample tasks. */
   draftText?: string;
+  /**
+   * Model / effort / skill pickers already live on the composer.
+   * Keep them searchable, but do not dump the full catalog on a bare `/`.
+   */
+  queryOnly?: boolean;
   keywords: string[];
 }
 
@@ -195,11 +202,25 @@ export function openExternalCliAction(input: {
   };
 }
 
-/** Insert `/name ` so the user can add args; do not send. */
+/** Insert `/name ` so the user can add args before sending. */
 export function nativeSlashDraft(name: string): string {
   const command = name.trim().replace(/^\/+/, '');
   if (!command) return '/';
   return `/${command} `;
+}
+
+/** Prompt sent as a normal Chat turn after picking a declared command. */
+export function nativeSlashSendText(name: string): string {
+  const command = name.trim().replace(/^\/+/, '');
+  if (!command) return '';
+  return `/${command}`;
+}
+
+/** Optional hints look like `[instructions]`; those still send `/name` as-is. */
+export function nativeCommandNeedsArgs(hint?: string | null): boolean {
+  const value = hint?.trim() ?? '';
+  if (!value) return false;
+  return !(value.startsWith('[') && value.endsWith(']'));
 }
 
 export function nativeCommandActions(
@@ -213,16 +234,23 @@ export function nativeCommandActions(
     seen.add(name.toLowerCase());
     const hint = command.hint?.trim() || undefined;
     const description = [command.description?.trim(), hint].filter(Boolean).join(' · ') || undefined;
+    const needsArgs = nativeCommandNeedsArgs(hint);
     actions.push({
       id: `native-command:${name}`,
       kind: 'native',
       label: `/${name}`,
       description,
-      draftText: nativeSlashDraft(name),
+      draftText: needsArgs ? nativeSlashDraft(name) : nativeSlashSendText(name),
       keywords: [name, command.description ?? '', hint ?? '', 'slash', '命令'],
     });
   }
   return actions;
+}
+
+export function slashActionGroup(action: ChatActionDef): ChatSlashGroup {
+  if (action.kind === 'native') return 'native';
+  if (action.kind === 'draft') return 'draft';
+  return 'hub';
 }
 
 /** Slash `/` lists real commands. Sample drafts stay on empty-state chips. */
@@ -232,11 +260,16 @@ export function chatOverflowMenuActions(actions: readonly ChatActionDef[] = CHAT
 
 export function filterChatActions(draft: string, extraActions: ChatActionDef[] = []): ChatActionDef[] {
   if (!isCommandSearchMode(draft)) return [];
-  const actions = [...extraActions, ...CHAT_ACTIONS];
   const query = commandSearchQuery(draft);
-  const scoped = query ? actions : actions.filter((item) => item.kind !== 'draft');
-  if (!query) return scoped;
-  return scoped.filter((action) => actionMatchesQuery(action, query));
+  const scoped = [...extraActions, ...CHAT_ACTIONS].filter((item) => {
+    if (item.kind === 'draft' && !query) return false;
+    if (item.queryOnly && !query) return false;
+    return !query || actionMatchesQuery(item, query);
+  });
+  const native = scoped.filter((item) => item.kind === 'native');
+  const hub = scoped.filter((item) => item.kind === 'local');
+  const drafts = scoped.filter((item) => item.kind === 'draft');
+  return [...native, ...hub, ...drafts];
 }
 
 export function chatActionDisabledReason(

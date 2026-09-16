@@ -4,7 +4,7 @@ description: Runtime Options 的 seed / 探测来源与 fail-closed 边界。
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-15
+updated: 2026-09-16
 ---
 
 # Chat 会话选项目录
@@ -29,7 +29,7 @@ Chat「模型 / 思考 / 扩展 / 斜杠原生命令」等来自会话 **Options
 | Claude | `claude_fallback_catalog`（seed） | 无活探测权威时仅用 seed |
 | Codex（及其他走 app-server 探测的路径） | `model/list`、`skills/list`、`plugin/installed` | 探测失败 → 空/缓存策略；不伪装厂商未声明的项 |
 
-原生命令目录（斜杠）由持续通道在会话就绪后注入 `native_commands`；未就绪或目录空 → UI fail-closed（不假装有对方命令）。Hub 自身动作（如新建对话）与对方命令分来源，见 STATUS / Chat 概念页。
+原生命令目录（斜杠）由持续通道在会话就绪后注入 `native_commands`；未就绪或目录空 → UI fail-closed（不假装有对方命令）。立刻执行的动作（如新建对话）与对方命令分来源，见 STATUS / Chat 概念页。
 
 ## 纪律
 
