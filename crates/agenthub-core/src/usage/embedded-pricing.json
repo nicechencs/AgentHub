@@ -1706,6 +1706,12 @@
     "cacheCreate": 5,
     "cacheRead": 0.5
   },
+  "gpt-5.5-cyber": {
+    "input": 12.5,
+    "output": 75,
+    "cacheCreate": 12.5,
+    "cacheRead": 1.25
+  },
   "gpt-5.5-pro": {
     "input": 30,
     "output": 180,
@@ -1832,6 +1838,12 @@
     "output": 75,
     "cacheCreate": 15.625,
     "cacheRead": 1.25
+  },
+  "gpt-rosalind-research": {
+    "input": 5,
+    "output": 25,
+    "cacheCreate": 5,
+    "cacheRead": 0.5
   },
   "grok-3": {
     "input": 1.25,
