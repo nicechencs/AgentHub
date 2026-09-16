@@ -369,6 +369,8 @@ describe('chat layout wiring', () => {
     expect(actions).toContain('bg-panel');
     expect(actions).not.toContain('bg-popover');
     expect(actions).toContain('data-help="chat-slash-menu"');
+    expect(actions).toContain('slashActionGroup');
+    expect(actions).toContain('chat.actions.group.');
     expect(actions).toContain('text-body leading-relaxed');
     expect(actions).toContain('min-h-10');
     expect(actions).toContain('max-h-80');
@@ -392,6 +394,8 @@ describe('chat layout wiring', () => {
     expect(page).toContain('historyRevealNonce={page.historyRevealNonce}');
     expect(hook).toContain("action.id === 'open-history'");
     expect(hook).toContain('setHistoryRevealNonce');
+    expect(hook).toContain("action.kind === 'native'");
+    expect(hook).toContain('send.sendPrompt');
   });
 
   it('opens the Agent program outside Chat via the install façade, not a nested terminal', () => {

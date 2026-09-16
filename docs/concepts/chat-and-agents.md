@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: chat, adapter, and frontend contributors
 source-of-truth: ChatService/RunService, ChatEvent, stream parsers, Tauri Channel adapter, and chat process reducer
-updated: 2026-09-15
+updated: 2026-09-16
 ---
 
 # Chat 与 Agent 运行
@@ -42,7 +42,7 @@ Kiro 会话设置里的「帮我批准 / 完全访问权限」是启动时的 `-
 | Claude stream-json | **新空** Claude 对话 |
 | 原发送方式 | 其余 Agent，以及上述各家**已有历史**的旧对话（Kiro 无切到 ACP 的入口） |
 
-「一直允许」只出现在这次请求真带了该选项时；选项照对方给的回传，不造假按钮。Cursor 默认软隐藏，不在此列。`/` 里 Hub 动作立刻执行；对方声明的斜杠命令只插入草稿。目录和模型选项放在会话 Options 里，不进过程时间线。
+「一直允许」只出现在这次请求真带了该选项时；选项照对方给的回传，不造假按钮。Cursor 默认软隐藏，不在此列。`/` 里立刻执行的动作当场做；对方声明的斜杠命令选中后当作一轮正常发出（无必填参数直接发送，有必填参数先插入 `/名字 `）。未声明不画。目录和模型选项放在会话 Options 里，不进过程时间线。
 
 ## 当前数据流
 
