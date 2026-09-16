@@ -1088,6 +1088,24 @@ export function createMockChatPort(): ChatPort {
       return next;
     },
     async runtimeKillHostTerminal(_conversationId, _terminalId) {},
+    async runtimeClearSessionAllowAlways(conversationId) {
+      const current = runtimeSnapshots.get(conversationId);
+      const next = current
+        ? { ...current, sessionAllowAlways: false }
+        : {
+            conversationId,
+            enabled: true,
+            runId: null,
+            phase: 'idle' as const,
+            lastSequence: 0,
+            events: [],
+            pendingRequests: [],
+            gap: false,
+            sessionAllowAlways: false,
+          };
+      runtimeSnapshots.set(conversationId, next);
+      return next;
+    },
     async runtimeCancel(conversationId, runId) {
       const current = runtimeSnapshots.get(conversationId);
       if (current?.runId !== runId) throw new Error('run is no longer active');

@@ -21,12 +21,13 @@ import {
   runtimeSnapshot,
   runtimeStart,
   runtimeSteer,
+  runtimeClearSessionAllowAlways,
   refreshAgentTitle,
 } from '@/lib/api/chat';
 import type { RuntimeRequest, RuntimeSnapshot } from '@/lib/api/chat';
 import type { ProcessMap } from '@/lib/chat-process';
 import type { AgentKey, ChatEvent, ChatMessage, Conversation } from '@/lib/types';
-import type { TurnGroup } from './chat-format';
+import { localizeChatFailure, type TurnGroup } from './chat-format';
 import { busyAgentsForSends, incomingSendingIds, liveSendingIds, retryTarget, sendBlockers, titleFromPrompt, withConversationTitle } from './chat-model';
 import { isCurrentChatRequest } from './chat-request';
 import {
@@ -947,7 +948,9 @@ export function useChatPageSend(input: {
 
   async function submitRuntimeRequest(request: RuntimeRequest, decision?: 'allow' | 'deny' | 'allow_always', answers?: Record<string, string[]>) {
     if (!active || !requestMatchesRuntime(request, runtimeIdRef.current)) {
-      throw new Error('stale runtime request');
+      const message = t('chat.runtime.replyStale');
+      toast({ title: message, variant: 'danger' });
+      throw new Error(message);
     }
     try {
       await runtimeReply({
@@ -958,8 +961,35 @@ export function useChatPageSend(input: {
         ...runtimeReplyFields(request, decision, answers),
       });
     } catch (error) {
-      toast({ title: error instanceof Error ? error.message : String(error), variant: 'danger' });
+      const raw = error instanceof Error ? error.message : String(error);
+      toast({
+        title: t('chat.runtime.replyFailed'),
+        description: localizeChatFailure(raw, t),
+        variant: 'danger',
+      });
       throw error;
+    }
+  }
+
+  async function clearSessionAllowAlways() {
+    if (!active) return;
+    try {
+      const snapshot = await runtimeClearSessionAllowAlways(active.id);
+      const sourceVersion = (runtimeSourceVersionRef.current.get(active.id) ?? 0) + 1;
+      runtimeSourceVersionRef.current.set(active.id, sourceVersion);
+      applyRuntimeSnapshot(
+        snapshot,
+        active.id,
+        activeGenerationRef.current,
+        sourceVersion,
+        true,
+      );
+    } catch (error) {
+      toast({
+        title: t('chat.runtime.sessionRememberedClearFailed'),
+        description: error instanceof Error ? error.message : String(error),
+        variant: 'danger',
+      });
     }
   }
 
@@ -1028,6 +1058,7 @@ export function useChatPageSend(input: {
     cancelIfSending,
     runtime,
     submitRuntimeRequest,
+    clearSessionAllowAlways,
     steerRuntime,
   };
 }
