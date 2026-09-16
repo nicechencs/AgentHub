@@ -766,6 +766,7 @@ export function useChatPage() {
     firstUserContentById,
     turnOutcome,
     submitRuntimeRequest: send.submitRuntimeRequest,
+    clearSessionAllowAlways: send.clearSessionAllowAlways,
     killHostTerminal: async (terminalId: string) => {
       if (!active?.id) return;
       try {

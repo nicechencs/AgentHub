@@ -106,8 +106,10 @@ pub async fn refresh_chat_agent_title(
     conversation_id: String,
 ) -> Result<Option<String>, String> {
     let hub = state.hub_arc()?;
-    with_hub_blocking(hub, move |hub| refresh_chat_agent_title_inner(hub, &conversation_id))
-        .await
+    with_hub_blocking(hub, move |hub| {
+        refresh_chat_agent_title_inner(hub, &conversation_id)
+    })
+    .await
 }
 
 /// Invoke: `open_conversation_from_session`
@@ -334,6 +336,21 @@ pub async fn chat_runtime_kill_host_terminal(
             .runtime()
             .kill_host_terminal(&conversation_id, &terminal_id)
             .map_err(|e| map_err_string("chat_runtime_kill_host_terminal", e))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn chat_runtime_clear_session_allow_always(
+    state: State<'_, AppState>,
+    conversation_id: String,
+) -> Result<RuntimeSnapshot, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        hub.chat()
+            .runtime()
+            .clear_session_allow_always(&conversation_id)
+            .map_err(|e| map_err_string("chat_runtime_clear_session_allow_always", e))
     })
     .await
 }
