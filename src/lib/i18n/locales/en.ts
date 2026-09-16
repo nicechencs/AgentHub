@@ -2922,6 +2922,11 @@ export const en = {
       sessionLocked: 'This session is connected to the current agent and working directory. Start a new chat to change them.',
     },
     actions: {
+      group: {
+        native: 'Their commands',
+        hub: 'Run now',
+        draft: 'Fill the input',
+      },
       newSession: 'New chat',
       copyLatestReply: 'Copy latest reply',
       sampleUnderstandProject: 'Sample: understand this project',

@@ -136,15 +136,24 @@ function mockRuntimeSessionReady(conversationId: string): boolean {
   return Boolean(snapshot?.enabled && snapshot.runId?.trim());
 }
 
+/** Declared ACP-style commands for mock Grok / Kiro after the session is ready. Do not invent lists for other agents. */
+function mockNativeCommands(agent: AgentKey | undefined): RuntimeOptions['nativeCommands'] {
+  if (agent !== 'grok' && agent !== 'kiro') return [];
+  return [
+    { name: 'compact', description: 'Compact context', hint: '[instructions]' },
+  ];
+}
+
 function mockRuntimeOptionExtras(conversationId: string): Pick<
   RuntimeOptions,
   'transport' | 'nativeCommands' | 'sessionReady'
 > {
   const agent = mockConversationAgent(conversationId);
+  const sessionReady = mockRuntimeSessionReady(conversationId);
   return {
     transport: mockRuntimeChannel(agent),
-    nativeCommands: [],
-    sessionReady: mockRuntimeSessionReady(conversationId),
+    nativeCommands: sessionReady ? mockNativeCommands(agent) : [],
+    sessionReady,
   };
 }
 
@@ -819,6 +828,7 @@ export function createMockChatPort(): ChatPort {
       const frozen = ['starting', 'running', 'waiting', 'cancelling'].includes(snapshot.phase);
       if (opts?.refresh && !frozen) runtimeOptionsCache.delete(conversationId);
       const cached = runtimeOptionsCache.get(conversationId);
+      const extras = mockRuntimeOptionExtras(conversationId);
       if (cached) {
         const models = applyMockDeniedEfforts(cached.models);
         let settings = runtimeSettings.get(conversationId) ?? cached.settings;
@@ -844,9 +854,9 @@ export function createMockChatPort(): ChatPort {
           settings,
           settingsFrozen: frozen,
           imageInput: cached.imageInput !== false,
-          transport: cached.transport ?? mockRuntimeOptionExtras(conversationId).transport,
-          nativeCommands: cached.nativeCommands ?? [],
-          sessionReady: cached.sessionReady ?? mockRuntimeOptionExtras(conversationId).sessionReady,
+          transport: extras.transport,
+          nativeCommands: extras.nativeCommands,
+          sessionReady: extras.sessionReady,
         };
       }
       // Match core: never invent a catalog mid-turn when nothing was prefetched.
@@ -986,6 +996,9 @@ export function createMockChatPort(): ChatPort {
         events: [{ sequence: 1, event }],
         pendingRequests: [],
         currentMessage,
+        catalogEpoch: mockNativeCommands(agent).length > 0
+          ? Math.max(snapshot.catalogEpoch ?? 0, 1)
+          : snapshot.catalogEpoch,
       };
       runtimeSnapshots.set(conversationId, next);
       const previous = runtimeJobs.get(conversationId);

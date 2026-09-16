@@ -1012,6 +1012,7 @@ export function useChatPageSend(input: {
     blockers,
     retry,
     handleSend,
+    sendPrompt,
     retryLast,
     handleCancel,
     queuedFollowUps: activeId ? followUpById[activeId] ?? [] : [],

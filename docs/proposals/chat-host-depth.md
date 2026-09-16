@@ -4,7 +4,7 @@ type: proposal
 status: proposed
 owner: maintainers
 audience: product owners and implementation agents
-updated: 2026-09-15
+updated: 2026-09-16
 ---
 
 # Chat 宿主加深与多 Agent 兼容
@@ -34,7 +34,7 @@ updated: 2026-09-15
 | Options | `transport`、`nativeCommands`、`sessionReady`；握手可改图片；ACP config 可刷模型/思考 |
 | enable 白名单 | Codex / Grok / Kiro / Claude。**未拆**白名单。确认卡片、排队提示读 `enabled` / `steer` |
 | Grok / Kiro ACP | 命令目录写入 Options；思考可标完成；工具 kind 映射。`config_option_update` 进 Options。`context_usage` 进用量小字；`plan` 进计划条。握手可声明 `terminal`，`terminal/*` 一张卡片可停这一条 |
-| `/` 菜单 | Hub 动作立刻执行。会话就绪且目录非空时列出对方斜杠命令，选中插入 `/名字 `，不代发。目录世代号变化时重拉 Options。有可启动的命令行时列出「启动命令行」（DeepSeek 为「打开网页会话」），在外部打开，不标成对话页能力。无真窗不得写「已验收对方命令」 |
+| `/` 菜单 | 立刻执行的动作当场做。会话就绪且目录非空时列出对方斜杠命令，选中后当作一轮正常发出（无必填参数直接发送 `/名字`；必填参数插入 `/名字 `）。目录世代号变化时重拉 Options。有可启动的命令行时列出「启动命令行」（DeepSeek 为「打开网页会话」），在外部打开，不标成对话页能力。无真窗不得写「已验收对方命令」 |
 | 进程 | sidecar 不从本页派生 |
 
 `StructuredStream` 仍不等于全部对话能力。Grok 技能库可用，对话里「用于本次」仍不支持。
@@ -45,7 +45,7 @@ updated: 2026-09-15
 2. 能力写在 `RuntimeOptions`，**不塞进 80ms 快照**。页面 chrome 读 Options；enable 白名单可暂时保留。
 3. 外接命令行默认加深 ACP（Grok / Kiro 已在用）。Codex 继续 app-server，Claude 继续 stream-json，直到该家有经验证的对等控制口。
 4. 思考以实时事件为主，会话记录为辅；不从屏幕猜正文。
-5. `/` 分来源：Hub 动作立刻执行；对方声明的斜杠命令插入 `/名字 ` 再当普通一轮发出（不是 Hub RPC，也不是往终端打字）。
+5. `/` 分来源：立刻执行的动作当场做；对方声明的斜杠命令当作一轮正常发出（不是 Hub RPC，也不是往终端打字）。
 6. 宿主终端卡片（ACP `terminal/*`）后置；第一批切片继续不声明 `terminal`。
 7. 先深已接线的四家，再按梯子扩家。
 8. **本页只加深宿主与 ACP 目录。** Claude 确认通道、Pi/Kimi 持续通道归 [统一体验](chat-unified-experience.md)，不在本页另起一套。
@@ -73,7 +73,7 @@ AionUi 桌面只画界面；`aioncore` 用 ACP JSON-RPC（stdio）拉起本机 C
 | --- | --- |
 | 页面只认统一事件 | 自带大模型引擎 |
 | 握手缺省 false；缺项隐藏 | 常驻 `aioncore` 式进程 |
-| 斜杠目录不进气泡；对方命令插入 `/名字 ` | 多人协作 / 领袖分派 |
+| 斜杠目录不进气泡；对方命令当作一轮正常发出 | 多人协作 / 领袖分派 |
 | 确认和提问两条回执 | 嵌 TUI |
 | 伪终端只给对方要跑的命令 | 为接 20 家而换掉已验收的 Codex app-server |
 
@@ -147,7 +147,7 @@ A–C 不引入伪终端，不声明 `clientCapabilities.terminal`。
 | --- | --- | --- |
 | A Options 能力位 | 已合入 `dev` | 字段进 Options，不进 80ms 快照 |
 | B ACP 事件与命令目录 | 已合入 `dev` | 目录进 Options，不进过程时间线 |
-| C `/` 接协议目录 | 已合入 `dev` | 选中插入 `/名字 `，不代发 |
+| C `/` 接协议目录 | 已合入 `dev` | 选中后当作一轮正常发出 |
 | D 目录变更刷新 `/` | 已合入 `dev` | 补 C：晚到的命令要进菜单 |
 | E `config_options` | 已合入 `dev` | 刷模型/模式，不装终端选择器 |
 | F ACP 提问口 | **取消** | 无 Grok/Kiro 提问夹具；不画假问答卡。ACP `elicitation/create` 未声明能力 |
@@ -202,15 +202,15 @@ H 不依赖 E，但必须与握手声明同时实现。F 已取消。I 不依赖
 
 ### 切片 C — `/` 接上协议目录
 
-**做：** 对方命令作为独立来源进入现有 `extraActions`。选中插入 `/名字 `（可带 hint 空格），**不**立刻 `runtimeStart`。`sessionReady === false` 或列表空则不画对方项。Hub 的新建 / 复制 / 换模型 / 技能保持立刻执行。
+**做：** 对方命令作为独立来源进入现有 `extraActions`。选中后当作一轮正常发出（无必填参数直接 `sendPrompt('/名字')`；必填参数插入 `/名字 `）。`sessionReady === false` 或列表空则不画对方项。新建 / 复制保持立刻执行；换模型 / 技能要搜到才列出。
 
-**不做：** 把插入当成「已交给 Agent」；在连接中查询对方；把 Kiro 终端选择器写进菜单；改空会话芯片。
+**不做：** 把未声明的斜杠项画进菜单；在连接中查询对方；把 Kiro 终端选择器写进菜单；改空会话芯片。
 
 **文件：** `src/pages/chat/chat-actions.ts`、`use-chat-page.ts` 的 `runtimeCommandActions`、`ChatActionMenu.tsx` / `ChatComposer.tsx`（插入草稿）。
 
 **测：** `chat-actions.test.ts`；mock Options 带一条命令时 `/` 能搜到；选中后草稿为 `/name `。
 
-**验收：** 无声明则 `/` 与现在相同。有声明则出现该项，发送仍是用户按发送。中文输入法组字规则不变。
+**验收：** 无声明则 `/` 不画对方项。有声明则出现该项，选中后当作一轮正常发出。中文输入法组字规则不变。
 
 **已知缺口（交给 D）：** Options 只在进会话、换模型、回合状态变化时重拉。对方在握手之后才推命令目录时，菜单可能仍是空的。
 

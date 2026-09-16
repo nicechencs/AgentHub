@@ -2902,6 +2902,11 @@ export const zh = {
       sessionLocked: '持续会话已接到当前 Agent 和工作目录；如需更换，请新建会话',
     },
     actions: {
+      group: {
+        native: '对方命令',
+        hub: '立刻执行',
+        draft: '填入输入框',
+      },
       newSession: '新建对话',
       copyLatestReply: '复制最近回复',
       sampleUnderstandProject: '示例：了解这个项目',

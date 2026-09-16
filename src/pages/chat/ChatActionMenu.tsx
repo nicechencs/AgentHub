@@ -5,10 +5,12 @@ import { cn } from '@/lib/utils';
 import {
   chatActionDisabledReason,
   filterChatActions,
+  slashActionGroup,
   slashMenuFixedPosition,
   type ChatActionContext,
   type ChatActionDef,
   type ChatActionDisableReason,
+  type ChatSlashGroup,
 } from './chat-actions';
 
 /** Slash `/` command palette. Anchored to the composer caret/textarea, not the empty-state. */
@@ -28,6 +30,7 @@ export function ChatActionMenu(props: {
   const disabledCopy = (reason: ChatActionDisableReason) =>
     t(`chat.actions.disabled.${reason}` as never);
 
+  const groupLabel = (group: ChatSlashGroup) => t(`chat.actions.group.${group}` as never);
   const slashItems = filterChatActions(props.draft, props.extraActions ?? []);
   const selectedIndex = props.selectedIndex ?? 0;
   const commandOpen = props.commandOpen && slashItems.length > 0;
@@ -70,32 +73,40 @@ export function ChatActionMenu(props: {
       {slashItems.map((action, index) => {
         const reason = chatActionDisabledReason(action, props.actionContext);
         const active = index === selectedIndex;
+        const group = slashActionGroup(action);
+        const showGroup = index === 0 || slashActionGroup(slashItems[index - 1]!) !== group;
         return (
-          <button
-            key={action.id}
-            type="button"
-            role="option"
-            aria-selected={active}
-            disabled={Boolean(reason)}
-            className={cn(
-              'flex min-h-10 w-full flex-col justify-center rounded-btn px-2.5 py-2 text-left text-body leading-relaxed',
-              active ? 'bg-accent text-accent-foreground' : 'text-primary hover:bg-hover',
-              reason && 'cursor-not-allowed opacity-60',
-            )}
-            onMouseEnter={() => props.onHoverIndex?.(index)}
-            onClick={() => {
-              if (reason) return;
-              props.onRun(action);
-            }}
-          >
-            <span className="font-medium leading-snug">{label(action)}</span>
-            {action.description ? (
-              <span className="mt-0.5 text-meta leading-normal text-muted">{action.description}</span>
+          <div key={action.id}>
+            {showGroup ? (
+              <div className="px-2.5 pb-1 pt-1.5 text-meta text-muted" role="presentation">
+                {groupLabel(group)}
+              </div>
             ) : null}
-            {reason ? (
-              <span className="text-meta text-muted">{disabledCopy(reason)}</span>
-            ) : null}
-          </button>
+            <button
+              type="button"
+              role="option"
+              aria-selected={active}
+              disabled={Boolean(reason)}
+              className={cn(
+                'flex min-h-10 w-full flex-col justify-center rounded-btn px-2.5 py-2 text-left text-body leading-relaxed',
+                active ? 'bg-accent text-accent-foreground' : 'text-primary hover:bg-hover',
+                reason && 'cursor-not-allowed opacity-60',
+              )}
+              onMouseEnter={() => props.onHoverIndex?.(index)}
+              onClick={() => {
+                if (reason) return;
+                props.onRun(action);
+              }}
+            >
+              <span className="font-medium leading-snug">{label(action)}</span>
+              {action.description ? (
+                <span className="mt-0.5 text-meta leading-normal text-muted">{action.description}</span>
+              ) : null}
+              {reason ? (
+                <span className="text-meta text-muted">{disabledCopy(reason)}</span>
+              ) : null}
+            </button>
+          </div>
         );
       })}
     </div>,
