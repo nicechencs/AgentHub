@@ -100,6 +100,8 @@ struct CatalogCache {
     image_input: Option<bool>,
     catalog_epoch: i64,
     plan: Vec<RuntimePlanEntry>,
+    /// Conversation-local Always allow. Survives catalog refetch; not SQLite.
+    session_allow_always: bool,
 }
 
 fn merge_catalog_cache(previous: Option<&CatalogCache>, mut fetched: CatalogCache) -> CatalogCache {
@@ -114,6 +116,8 @@ fn merge_catalog_cache(previous: Option<&CatalogCache>, mut fetched: CatalogCach
         if fetched.plan.is_empty() {
             fetched.plan = previous.plan.clone();
         }
+        fetched.session_allow_always =
+            fetched.session_allow_always || previous.session_allow_always;
     }
     fetched
 }
@@ -165,6 +169,7 @@ impl ChatRuntime {
         if let Some(cache) = self.peek_catalog(conversation_id) {
             snapshot.catalog_epoch = cache.catalog_epoch;
             snapshot.plan = cache.plan;
+            snapshot.session_allow_always = cache.session_allow_always;
         }
         snapshot.host_terminals = self
             .host_terminals
@@ -222,9 +227,16 @@ impl ChatRuntime {
 
     /// Forget warmed model/skills lists so the next idle `options()` refetch
     /// sees the login that is live now (Codex ChatGPT vs API, Grok slots).
+    /// Keep conversation-local Always allow — that is not a catalog.
     pub fn invalidate_catalogs(&self) {
         if let Ok(mut catalogs) = self.catalogs.lock() {
-            catalogs.clear();
+            for cache in catalogs.values_mut() {
+                *cache = CatalogCache {
+                    session_allow_always: cache.session_allow_always,
+                    ..CatalogCache::default()
+                };
+            }
+            catalogs.retain(|_, cache| cache.session_allow_always);
         }
     }
 
@@ -2047,12 +2059,12 @@ impl ActorWorker {
                     };
                     let value = acp_permission_reply(&options, decision)?;
                     if matches!(reply.decision, Some(RuntimeDecision::AllowAlways)) {
-                        self.session_allow_always = true;
+                        self.remember_session_allow_always();
                     }
                     value
                 } else {
                     if matches!(reply.decision, Some(RuntimeDecision::AllowAlways)) {
-                        self.session_allow_always = true;
+                        self.remember_session_allow_always();
                     }
                     json!({"decision": codex_approval_decision(decision)})
                 }
@@ -3136,6 +3148,16 @@ impl ActorWorker {
         }
     }
 
+    fn remember_session_allow_always(&mut self) {
+        self.session_allow_always = true;
+        if let Ok(mut guard) = self.catalogs.lock() {
+            guard
+                .entry(self.conversation_id.clone())
+                .or_default()
+                .session_allow_always = true;
+        }
+    }
+
     fn with_catalog_epoch(&self, mut snapshot: RuntimeSnapshot) -> RuntimeSnapshot {
         if let Some(cache) = self
             .catalogs
@@ -3145,6 +3167,10 @@ impl ActorWorker {
         {
             snapshot.catalog_epoch = cache.catalog_epoch;
             snapshot.plan = cache.plan;
+            snapshot.session_allow_always = cache.session_allow_always;
+        }
+        if self.session_allow_always {
+            snapshot.session_allow_always = true;
         }
         snapshot.host_terminals = self.host_terminals.snapshot();
         snapshot
@@ -3797,7 +3823,7 @@ impl ActorWorker {
             };
             let write_result = ops::write_text_file_on_disk(&path, &content);
             if decision == "accept_always" && write_result.is_ok() {
-                self.session_allow_always = true;
+                self.remember_session_allow_always();
             }
             self.store.record_reply(
                 &reply.conversation_id,

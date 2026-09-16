@@ -11,7 +11,8 @@ import { Notice } from '@/components/shared/Notice';
 import type { MarkdownOpenLocalOptions } from '@/components/shared/MarkdownView';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
-import { onChatNativeShortcut } from '@/lib/api/chat';
+import { onChatNativeShortcut, type RuntimeRequest } from '@/lib/api/chat';
+import type { TranslateFn } from '@/lib/i18n';
 import { hasEscPriorityOverlay } from '@/lib/skills/preview-keys';
 import { StorageKey } from '@/lib/storage-key';
 import { processKey } from '@/lib/chat-process';
@@ -19,6 +20,7 @@ import { cn } from '@/lib/utils';
 import {
   chatComposerChoiceOptions,
   chatShowsRuntimeRequestPanels,
+  isKiroChatAgent,
   kiroChatBannerCopy,
   kiroChatStance,
 } from './chat-kiro-model';
@@ -32,7 +34,7 @@ import {
 } from './chat-model';
 import { subscribeChatShortcutKeydown } from './chat-shortcuts';
 import { chatModShiftIShouldOpenModel } from './chat-model-labels';
-import { formatChatSessionRecord, type TurnGroup } from './chat-format';
+import { formatChatSessionRecord, processUserPromptPreview, type TurnGroup } from './chat-format';
 import { chatBusySendMode, grokLegacyContinueKind } from './chat-grok-follow-up';
 import { ChatMarkdownPreviewPanel } from './ChatMarkdownPreviewPanel';
 import { ChatProcessInspectPanel } from './ChatProcessInspectPanel';
@@ -62,6 +64,7 @@ import { ChatTranscript } from './ChatTranscript';
 import { ChatRuntimeRequests } from './ChatRuntimeRequests';
 import { ChatHostTerminals } from './ChatHostTerminals';
 import { ChatPlanBar } from './ChatPlanBar';
+import { runtimeRequestTitle, sessionAllowAlwaysActive } from './chat-runtime-model';
 import { useChatComposerSplit } from './use-chat-composer-split';
 import { useChatPage } from './use-chat-page';
 
@@ -383,6 +386,17 @@ export default function ChatPage() {
                 onKill={page.killHostTerminal}
               />
             ) : null}
+            {sessionAllowAlwaysActive(page.runtime) ? (
+              <p className="mb-2 text-meta text-muted" data-help="chat-session-always-allow">
+                {t('chat.runtime.sessionRemembered')}
+                {' · '}
+                {t(
+                  isKiroChatAgent(page.primaryAgent)
+                    ? 'chat.runtime.sessionRememberedHintKiro'
+                    : 'chat.runtime.sessionRememberedHint',
+                )}
+              </p>
+            ) : null}
 
             {page.active && (
               <>
@@ -647,6 +661,13 @@ export default function ChatPage() {
               view={page.processMap[processKey(preview.target.turn, preview.target.agent)]}
               messageStatus={inspectMessageStatus(page.turns, preview.target)}
               exitCode={inspectExitCode(page.turns, preview.target)}
+              userPrompt={inspectUserPrompt(page.turns, preview.target)}
+              pendingConfirm={inspectPendingConfirm(
+                page.turns,
+                preview.target,
+                page.runtime?.pendingRequests,
+                t,
+              )}
               open={preview.expanded}
               onClose={preview.close}
               width={preview.paneWidth}
@@ -662,6 +683,27 @@ export default function ChatPage() {
 function inspectAgentMessage(turns: TurnGroup[], target: ChatProcessInspectTarget) {
   const group = turns.find((item) => item.turn === target.turn);
   return group?.agents.find((message) => (message.agentId ?? 'claude') === target.agent);
+}
+
+function inspectUserPrompt(turns: TurnGroup[], target: ChatProcessInspectTarget): string | undefined {
+  const group = turns.find((item) => item.turn === target.turn);
+  const text = group?.user?.content;
+  if (!text) return undefined;
+  const preview = processUserPromptPreview(text);
+  return preview || undefined;
+}
+
+function inspectPendingConfirm(
+  turns: TurnGroup[],
+  target: ChatProcessInspectTarget,
+  requests: RuntimeRequest[] | undefined,
+  t: TranslateFn,
+): string | undefined {
+  const currentTurn = turns[turns.length - 1]?.turn;
+  if (currentTurn !== target.turn) return undefined;
+  const request = requests?.[0];
+  if (!request || request.kind === 'question') return undefined;
+  return runtimeRequestTitle(t, request);
 }
 
 function inspectMessageStatus(turns: TurnGroup[], target: ChatProcessInspectTarget) {

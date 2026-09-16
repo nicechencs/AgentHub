@@ -318,6 +318,7 @@ impl RuntimeStore {
                         catalog_epoch: 0,
                         plan: Vec::new(),
                         host_terminals: Vec::new(),
+                        session_allow_always: false,
                     });
                 }
                 return Ok(RuntimeSnapshot::disabled(conversation_id));
@@ -375,6 +376,7 @@ impl RuntimeStore {
                 catalog_epoch: 0,
                 plan: Vec::new(),
                 host_terminals: Vec::new(),
+                session_allow_always: false,
             })
         })
     }

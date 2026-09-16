@@ -1019,9 +1019,17 @@ export function createMockChatPort(): ChatPort {
       const current = runtimeSnapshots.get(reply.conversationId);
       if (!current || current.runId !== reply.runId) return;
       const remaining = (current.pendingRequests ?? []).filter((item) => item.id !== reply.requestId);
+      const remembered = reply.decision === 'allow_always' || Boolean(current.sessionAllowAlways);
       if (remaining.length > 0) {
-        runtimeSnapshots.set(reply.conversationId, { ...current, pendingRequests: remaining });
+        runtimeSnapshots.set(reply.conversationId, {
+          ...current,
+          pendingRequests: remaining,
+          sessionAllowAlways: remembered,
+        });
         return;
+      }
+      if (remembered) {
+        runtimeSnapshots.set(reply.conversationId, { ...current, sessionAllowAlways: true });
       }
       const currentMessage = current.currentMessage
         ? {
