@@ -71,6 +71,14 @@ export function clipProcessTail(text: string, limit = PROCESS_TEXT_LIMIT): strin
   return `…${text.slice(-limit)}`;
 }
 
+/** First line of what the user sent, for the process pane. */
+export function processUserPromptPreview(text: string, limit = 120): string {
+  const one = text.trim().split('\n')[0] ?? '';
+  if (!one) return '';
+  if (one.length <= limit) return one;
+  return `${one.slice(0, limit)}…`;
+}
+
 /** Drop CSI/OSC/cursor sequences so headless CLI chrome is not shown as 乱码. */
 export function stripTerminalEscapes(text: string): string {
   let out = '';

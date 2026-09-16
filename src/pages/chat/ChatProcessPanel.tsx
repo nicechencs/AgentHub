@@ -13,6 +13,7 @@ import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import {
   formatToolStep,
+  formatUsageStep,
   isProtocolProcessStep,
   phaseFromMessageStatus,
   stepSummary,
@@ -176,6 +177,14 @@ function DiffAwarePre({ text, className }: { text: string; className?: string })
   );
 }
 
+function processStepKey(step: ProcessStep, index: number): string {
+  if (step.type === 'tool') return `tool:${step.id ?? step.name}:${index}`;
+  if (step.type === 'usage') return `usage:${step.scope ?? 'turn'}:${index}`;
+  if (step.type === 'thinking') return `thinking:${index}`;
+  if (step.type === 'error') return `error:${index}`;
+  return `${step.type}:${index}`;
+}
+
 function toolHasProtocolDetails(step: Extract<ProcessStep, { type: 'tool' }>): boolean {
   return Boolean(
     step.name ||
@@ -225,7 +234,7 @@ function ProcessStepRow({ step }: { step: ProcessStep }) {
     return <div className="py-1 text-danger">{step.message}</div>;
   }
   if (step.type === 'usage') {
-    return null;
+    return <div className="py-1 text-muted">{formatUsageStep(step, t)}</div>;
   }
   if (step.type === 'raw') {
     const body = step.text?.trim();
@@ -302,21 +311,27 @@ function ThinkingStepRow({
 }
 
 /**
- * Inspect-pane body: thinking, tools, run details. Usage stays off this surface.
+ * Inspect-pane body: thinking, tools, run details.
+ * Usage, the user prompt, and waiting confirm hang here — not a second bus.
  * messageStatus wins over process.phase when the turn has already ended.
  */
 export function ChatProcessPanel({
   view,
   messageStatus,
   exitCode,
+  userPrompt,
+  pendingConfirm,
 }: {
   view: AgentProcessView;
   messageStatus?: string;
   exitCode?: number | null;
+  userPrompt?: string | null;
+  pendingConfirm?: string | null;
 }) {
   const { t } = useI18n();
   const timeline = timelineProcessSteps(view.steps);
   const protocolSteps = view.steps.filter(isProtocolProcessStep);
+  const usageSteps = view.steps.filter((step): step is Extract<ProcessStep, { type: 'usage' }> => step.type === 'usage');
 
   const effectivePhase: AgentProcessView['phase'] =
     messageStatus && messageStatus !== 'running'
@@ -331,7 +346,7 @@ export function ChatProcessPanel({
 
   useLayoutEffect(() => {
     pinElementScrollToBottom(timelineRef.current);
-  }, [view.steps]);
+  }, [view.steps, pendingConfirm, userPrompt]);
 
   useLayoutEffect(() => {
     pinElementScrollToBottom(stderrRef.current);
@@ -339,13 +354,30 @@ export function ChatProcessPanel({
 
   return (
     <div className="min-h-0 flex-1 space-y-2 overflow-auto text-meta text-secondary">
-      {timeline.length > 0 ? (
+      {timeline.length > 0 || userPrompt || pendingConfirm || usageSteps.length > 0 ? (
         <div
           ref={timelineRef}
           className="space-y-0 [overflow-anchor:none] border-l border-border pl-3"
         >
+          {userPrompt ? (
+            <div className="py-1 text-muted" data-help="chat-process-user">
+              {t('chat.process.userSaid')}
+              {' · '}
+              {userPrompt}
+            </div>
+          ) : null}
           {timeline.map((step, i) => (
-            <ProcessStepRow key={`${step.type}-${i}`} step={step} />
+            <ProcessStepRow key={processStepKey(step, i)} step={step} />
+          ))}
+          {pendingConfirm ? (
+            <div className="py-1 text-muted" data-help="chat-process-confirm">
+              {t('chat.process.waitingConfirm')}
+              {' · '}
+              {pendingConfirm}
+            </div>
+          ) : null}
+          {usageSteps.map((step, i) => (
+            <ProcessStepRow key={processStepKey(step, i)} step={step} />
           ))}
         </div>
       ) : isProcessActivePhase(effectivePhase) ? (

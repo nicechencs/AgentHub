@@ -160,6 +160,7 @@ export function ChatSettingsDialog({
                       <span className="text-meta text-muted">{t('chat.kiro.permissionFullHint')}</span>
                     </span>
                   </label>
+                  <p className="text-meta text-muted">{t('chat.kiro.permissionVsCard')}</p>
                 </fieldset>
               ) : (
                 <label className="flex items-center justify-between gap-3 text-body">
@@ -175,6 +176,7 @@ export function ChatSettingsDialog({
                     >
                       {autoApproveHint(t, approveEffect)}
                     </Tip>
+                    <span className="mt-1 block text-meta text-muted">{t('chat.settings.autoApproveVsCard')}</span>
                   </span>
                   <Switch
                     checked={approveOn}

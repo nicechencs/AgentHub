@@ -192,6 +192,7 @@ fn runtime_dtos_use_the_public_camel_case_wire_contract() {
         catalog_epoch: 0,
         plan: Vec::new(),
         host_terminals: Vec::new(),
+        session_allow_always: false,
     };
     let value = serde_json::to_value(&snapshot).expect("serialize snapshot");
     assert_eq!(value["conversationId"], "conversation-1");
