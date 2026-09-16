@@ -57,6 +57,11 @@ export interface RuntimeSnapshot {
   plan?: RuntimePlanEntry[];
   /** Live ACP host commands. One card per id; not a conversation TTY. */
   hostTerminals?: RuntimeHostTerminal[];
+  /**
+   * This conversation remembered Always allow.
+   * Not saved. Distinct from session settings auto-approve / full access.
+   */
+  sessionAllowAlways?: boolean;
 }
 
 export interface RuntimeHostTerminal {

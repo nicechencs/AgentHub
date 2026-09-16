@@ -147,6 +147,9 @@ pub struct RuntimeSnapshot {
     /// Live ACP host commands. One card per terminal id; not a conversation TTY.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub host_terminals: Vec<RuntimeHostTerminal>,
+    /// This conversation remembered Always allow. Not saved; not session settings.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub session_allow_always: bool,
 }
 
 impl RuntimeSnapshot {
@@ -164,6 +167,7 @@ impl RuntimeSnapshot {
             catalog_epoch: 0,
             plan: Vec::new(),
             host_terminals: Vec::new(),
+            session_allow_always: false,
         }
     }
 }
