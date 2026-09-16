@@ -137,7 +137,7 @@ function mockRuntimeSessionReady(conversationId: string): boolean {
 }
 
 /** Declared ACP-style commands for mock Grok / Kiro after the session is ready. Do not invent lists for other agents. */
-function mockNativeCommands(agent: AgentKey | undefined): RuntimeOptions['nativeCommands'] {
+function mockNativeCommands(agent: AgentKey | undefined): NonNullable<RuntimeOptions['nativeCommands']> {
   if (agent !== 'grok' && agent !== 'kiro') return [];
   return [
     { name: 'compact', description: 'Compact context', hint: '[instructions]' },
