@@ -308,6 +308,9 @@ export default function ChatPage() {
           onOpenSettings={() => page.setSettingsOpen(true)}
           onPickWorkingDirectory={() => void page.pickWorkingDirectory()}
           runtimeLocked={page.runtimeLocked || page.sendingHere}
+          transport={page.runtimeOps.transport}
+          runtimeEnabled={Boolean(page.runtime?.enabled)}
+          runtime={page.runtime}
         />
 
         <div
@@ -636,6 +639,10 @@ export default function ChatPage() {
           onDangerConfirmChange={page.setDangerConfirm}
           onPatch={(patch) => void page.patchActive(patch)}
           runtimeLocked={page.runtimeLocked || page.sendingHere}
+          transport={page.runtimeOps.transport}
+          runtimeEnabled={Boolean(page.runtime?.enabled)}
+          runtime={page.runtime}
+          onClearSessionAllowAlways={page.clearSessionAllowAlways}
         />
       </section>
         <SideSplitFrame

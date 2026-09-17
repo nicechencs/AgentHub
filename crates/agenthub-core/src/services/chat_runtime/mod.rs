@@ -20,9 +20,8 @@ pub use types::{
     RuntimeChannel, RuntimeDecision, RuntimeEvent, RuntimeExtensionItem, RuntimeExtensionKind,
     RuntimeFileChange, RuntimeHostTerminal, RuntimeLocalImage, RuntimeModelOption,
     RuntimeNativeCommand, RuntimeOptions, RuntimePermissionOption, RuntimePhase, RuntimePlanEntry,
-    RuntimeQuestion, RuntimeQuestionOption, RuntimeReply,
-    RuntimeRequest, RuntimeRequestKind, RuntimeSkillRef, RuntimeSnapshot, RuntimeStartExtras,
-    RuntimeTurnSettings,
+    RuntimeQuestion, RuntimeQuestionOption, RuntimeReply, RuntimeRequest, RuntimeRequestKind,
+    RuntimeSkillRef, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings,
 };
 
 use std::collections::HashMap;
@@ -76,6 +75,9 @@ enum RuntimeCommand {
     },
     KillHostTerminal {
         terminal_id: String,
+        result: SyncSender<Result<()>>,
+    },
+    ClearSessionAllowAlways {
         result: SyncSender<Result<()>>,
     },
     Shutdown {
@@ -653,6 +655,28 @@ impl ChatRuntime {
         recv_result(rx)
     }
 
+    /// Turn off conversation-local Always allow. Does not invent a card option.
+    pub fn clear_session_allow_always(&self, conversation_id: &str) -> Result<RuntimeSnapshot> {
+        match self.actor_for_existing(conversation_id) {
+            Ok(actor) => {
+                let (tx, rx) = mpsc::sync_channel(1);
+                actor
+                    .tx
+                    .send(RuntimeCommand::ClearSessionAllowAlways { result: tx })
+                    .map_err(|_| AppError::message("chat.runtime", "runtime worker stopped"))?;
+                recv_result(rx)?;
+            }
+            Err(_) => {
+                if let Ok(mut catalogs) = self.catalogs.lock() {
+                    if let Some(cache) = catalogs.get_mut(conversation_id) {
+                        cache.session_allow_always = false;
+                    }
+                }
+            }
+        }
+        self.snapshot(conversation_id, None)
+    }
+
     pub fn cancel(&self, conversation_id: &str, run_id: &str) -> Result<()> {
         let actor = match self.actor_for_existing(conversation_id) {
             Ok(actor) => actor,
@@ -973,10 +997,7 @@ fn actor_loop(
         repo,
         run,
         catalogs,
-        host_terminals: host_terminal::HostedTerminals::new(
-            conversation_id,
-            host_terminal_views,
-        ),
+        host_terminals: host_terminal::HostedTerminals::new(conversation_id, host_terminal_views),
         codex_program_override,
         abort,
         agent,
@@ -1076,9 +1097,16 @@ impl ActorWorker {
                     let outcome = self.cancel(&run_id);
                     let _ = result.send(outcome);
                 }
-                Ok(RuntimeCommand::KillHostTerminal { terminal_id, result }) => {
+                Ok(RuntimeCommand::KillHostTerminal {
+                    terminal_id,
+                    result,
+                }) => {
                     let outcome = self.kill_hosted_terminal(&terminal_id);
                     let _ = result.send(outcome);
+                }
+                Ok(RuntimeCommand::ClearSessionAllowAlways { result }) => {
+                    self.forget_session_allow_always();
+                    let _ = result.send(Ok(()));
                 }
                 Ok(RuntimeCommand::Shutdown { done }) => {
                     self.shutdown_host_terminals();
@@ -1768,7 +1796,9 @@ impl ActorWorker {
                         self.message_id.as_deref(),
                     )?;
                     self.transport = Some(transport);
-                    return Ok(self.with_catalog_epoch(self.store.snapshot(&self.conversation_id, None)?));
+                    return Ok(
+                        self.with_catalog_epoch(self.store.snapshot(&self.conversation_id, None)?)
+                    );
                 }
                 Err(codex_transport::CodexTransportError::Exited)
                     if matches!(plan, ops::AcpSessionPlan::PromptExisting)
@@ -3158,6 +3188,15 @@ impl ActorWorker {
         }
     }
 
+    fn forget_session_allow_always(&mut self) {
+        self.session_allow_always = false;
+        if let Ok(mut guard) = self.catalogs.lock() {
+            if let Some(cache) = guard.get_mut(&self.conversation_id) {
+                cache.session_allow_always = false;
+            }
+        }
+    }
+
     fn with_catalog_epoch(&self, mut snapshot: RuntimeSnapshot) -> RuntimeSnapshot {
         if let Some(cache) = self
             .catalogs
@@ -3663,9 +3702,7 @@ impl ActorWorker {
                     }
                 };
                 match self.host_terminals.begin_wait(&terminal_id, id.clone()) {
-                    Ok(Some(code)) => {
-                        self.respond_jsonrpc(id, Ok(json!({ "exitCode": code })))
-                    }
+                    Ok(Some(code)) => self.respond_jsonrpc(id, Ok(json!({ "exitCode": code }))),
                     Ok(None) => Ok(()),
                     Err(error) => self.respond_jsonrpc(
                         id,
@@ -4058,7 +4095,10 @@ fn acp_tool_is_file_change(params: &Value) -> bool {
         .unwrap_or("")
         .trim()
         .to_ascii_lowercase();
-    matches!(kind.as_str(), "edit" | "delete" | "move" | "write" | "create")
+    matches!(
+        kind.as_str(),
+        "edit" | "delete" | "move" | "write" | "create"
+    )
 }
 
 fn codex_session_permission_options() -> Vec<RuntimePermissionOption> {
