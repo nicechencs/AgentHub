@@ -74,7 +74,7 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
     projectDelete: { level: 'full' },
     providerPresets: { level: 'full' },
     usage: { level: 'full' },
-    mcp: { level: 'planned', reason: '待验证接入' },
+    mcp: { level: 'partial', reason: '可写入本机 MCP 配置（目录/探测/启用；无 OAuth）' },
     modelSelect: { level: 'partial', reason: '对话页可选模型和思考等级' },
     sessionResume: {
       level: 'partial',
