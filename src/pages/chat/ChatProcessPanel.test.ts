@@ -129,6 +129,29 @@ describe('ChatProcessPanel human copy', () => {
     expect(html).toContain('Directory');
   });
 
+  it('does not draw an empty JSON preview in tool details', () => {
+    const html = renderPanel(
+      view({
+        phase: 'ok',
+        steps: [
+          {
+            type: 'tool',
+            name: 'read',
+            status: 'end',
+            input: {},
+            result:
+              '{ "__tool_use_purpose": "Inspect ManifestSyncer symbols." }\nThe tool input does not match the tool schema: missing field `operation`',
+          },
+        ],
+      }),
+      'ok',
+    );
+    expect(html).toContain('细节');
+    expect(html).toContain('read · end');
+    expect(html).toContain('Inspect ManifestSyncer symbols.');
+    expect(html).not.toContain('{}');
+  });
+
   it('labels command stderr as a process log, not an error', () => {
     const html = renderPanel(
       view({

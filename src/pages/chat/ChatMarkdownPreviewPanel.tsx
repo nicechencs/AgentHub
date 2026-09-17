@@ -5,7 +5,13 @@ import {
   useState,
 } from 'react';
 import { ChevronLeft, Code2, Eye, PanelRightClose } from 'lucide-react';
-import { MarkdownView, isMarkdownFilePath, localParentDir } from '@/components/shared/MarkdownView';
+import {
+  MarkdownView,
+  isMarkdownFilePath,
+  localParentDir,
+  type MarkdownOpenLocalOptions,
+} from '@/components/shared/MarkdownView';
+import { SourcePreview } from '@/components/shared/SourcePreview';
 import { CopyableFileName } from '@/components/shared/CopyableFileName';
 import { pathTailLabel } from '@/components/shared/file-name-label';
 import { OpenDirButton } from '@/components/shared/OpenDirButton';
@@ -15,8 +21,10 @@ import { Tip } from '@/components/ui/tooltip';
 import { segmentedItemClass, segmentedTrackClass } from '@/components/ui/segmented-styles';
 import { readMarkdownPreview } from '@/lib/api/chat';
 import { openLocalPath } from '@/lib/open-external';
+import { CHAT_FILE_PREVIEW_MAX_CHARS } from '@/lib/source-preview';
 import { hasEscPriorityOverlay } from '@/lib/skills/preview-keys';
 import { cn } from '@/lib/utils';
+import { isPreviewableChatFilePath } from './chat-file-preview';
 
 function fileName(path: string): string {
   const parts = path.trim().split(/[/\\]/).filter(Boolean);
@@ -41,6 +49,7 @@ export function ChatMarkdownPreviewPanel({
   cwd,
   open,
   width,
+  line,
   onClose,
   onBack,
   onOpenLocal,
@@ -51,10 +60,12 @@ export function ChatMarkdownPreviewPanel({
   cwd: string;
   open: boolean;
   width?: number;
+  /** 1-based line to highlight after load (from chat file URL). */
+  line?: number;
   canBack?: boolean;
   onBack?: () => void;
   onClose: () => void;
-  onOpenLocal: (nextPath: string) => void;
+  onOpenLocal: (nextPath: string, options?: MarkdownOpenLocalOptions) => void;
   className?: string;
 }) {
   const { t } = useI18n();
@@ -66,7 +77,12 @@ export function ChatMarkdownPreviewPanel({
   const [resolvedPath, setResolvedPath] = useState(path);
   const [name, setName] = useState(fileName(path));
   const [truncated, setTruncated] = useState(false);
-  const [mode, setMode] = useState<'preview' | 'source'>('preview');
+  const markdown = isMarkdownFilePath(path);
+  const [mode, setMode] = useState<'preview' | 'source'>(markdown ? 'preview' : 'source');
+
+  useEffect(() => {
+    setMode(isMarkdownFilePath(path) ? (line && line > 0 ? 'source' : 'preview') : 'source');
+  }, [path, line]);
 
   useEffect(() => {
     if (!open || !path) return;
@@ -117,6 +133,34 @@ export function ChatMarkdownPreviewPanel({
   if (!open) return null;
 
   const folder = localParentDir(resolvedPath || path);
+  const showModeToggle = markdown;
+
+  const reload = () => {
+    const seq = ++requestSeq.current;
+    const workingDir = cwd.trim();
+    setLoading(true);
+    setError(null);
+    if (!workingDir) {
+      setError(t('chat.header.cwdUnset'));
+      setLoading(false);
+      return;
+    }
+    void readMarkdownPreview(path, workingDir)
+      .then((row) => {
+        if (requestSeq.current !== seq) return;
+        setContent(row.content);
+        setResolvedPath(row.path);
+        setName(row.name || fileName(path));
+        setTruncated(row.truncated);
+      })
+      .catch((err) => {
+        if (requestSeq.current !== seq) return;
+        setError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        if (requestSeq.current === seq) setLoading(false);
+      });
+  };
 
   return (
     <aside
@@ -126,6 +170,8 @@ export function ChatMarkdownPreviewPanel({
       )}
       style={width != null ? { width } : undefined}
       aria-labelledby={titleId}
+      data-chat-file-preview
+      data-preview-line={line ?? undefined}
     >
       <header className="shrink-0 border-b border-border">
         <div className="flex h-10 items-center gap-1.5 overflow-x-auto px-3">
@@ -157,26 +203,33 @@ export function ChatMarkdownPreviewPanel({
                   {pathTailLabel(folder)}
                 </Tip>
               ) : null}
+              {line && line > 0 ? (
+                <span className="shrink-0 text-meta text-muted" data-preview-line-label>
+                  :{line}
+                </span>
+              ) : null}
             </div>
           </div>
-          <div className={cn(segmentedTrackClass, 'shrink-0 flex-nowrap')}>
-            <button
-              type="button"
-              className={cn(segmentedItemClass(mode === 'preview', 'sm'), 'h-6 gap-1 px-2')}
-              onClick={() => setMode('preview')}
-            >
-              <Eye className="h-3.5 w-3.5" />
-              {t('chat.preview.modePreview')}
-            </button>
-            <button
-              type="button"
-              className={cn(segmentedItemClass(mode === 'source', 'sm'), 'h-6 gap-1 px-2')}
-              onClick={() => setMode('source')}
-            >
-              <Code2 className="h-3.5 w-3.5" />
-              {t('chat.preview.modeSource')}
-            </button>
-          </div>
+          {showModeToggle ? (
+            <div className={cn(segmentedTrackClass, 'shrink-0 flex-nowrap')}>
+              <button
+                type="button"
+                className={cn(segmentedItemClass(mode === 'preview', 'sm'), 'h-6 gap-1 px-2')}
+                onClick={() => setMode('preview')}
+              >
+                <Eye className="h-3.5 w-3.5" />
+                {t('chat.preview.modePreview')}
+              </button>
+              <button
+                type="button"
+                className={cn(segmentedItemClass(mode === 'source', 'sm'), 'h-6 gap-1 px-2')}
+                onClick={() => setMode('source')}
+              >
+                <Code2 className="h-3.5 w-3.5" />
+                {t('chat.preview.modeSource')}
+              </button>
+            </div>
+          ) : null}
           {folder ? (
             <OpenDirButton
               title={t('chat.preview.openDir')}
@@ -202,66 +255,55 @@ export function ChatMarkdownPreviewPanel({
         {loading ? <div className="absolute inset-y-0 left-0 w-1/3 animate-pulse bg-accent/70" /> : null}
       </div>
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-auto px-4 py-3" aria-busy={loading}>
+      <div
+        className={cn(
+          'min-h-0 min-w-0 flex-1',
+          mode === 'preview' && markdown ? 'overflow-auto px-4 py-3' : 'overflow-hidden p-0',
+        )}
+        aria-busy={loading}
+      >
         {loading ? (
-          <PreviewSkeleton />
+          <div className="px-4 py-3">
+            <PreviewSkeleton />
+          </div>
         ) : error ? (
-          <div className="space-y-2 py-6">
+          <div className="space-y-2 px-4 py-6">
             <p className="text-sm font-medium text-primary">{name}</p>
             <p className="text-sm text-danger">{t('chat.preview.failed')}</p>
             <p className="text-meta text-secondary">{error}</p>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                const seq = ++requestSeq.current;
-                const workingDir = cwd.trim();
-                setLoading(true);
-                setError(null);
-                if (!workingDir) {
-                  setError(t('chat.header.cwdUnset'));
-                  setLoading(false);
-                  return;
-                }
-                void readMarkdownPreview(path, workingDir)
-                  .then((row) => {
-                    if (requestSeq.current !== seq) return;
-                    setContent(row.content);
-                    setResolvedPath(row.path);
-                    setName(row.name || fileName(path));
-                    setTruncated(row.truncated);
-                  })
-                  .catch((err) => {
-                    if (requestSeq.current !== seq) return;
-                    setError(err instanceof Error ? err.message : String(err));
-                  })
-                  .finally(() => {
-                    if (requestSeq.current === seq) setLoading(false);
-                  });
-              }}
-            >
+            <Button size="sm" variant="secondary" onClick={reload}>
               {t('chat.preview.retry')}
             </Button>
           </div>
-        ) : mode === 'preview' ? (
+        ) : mode === 'preview' && markdown ? (
           content.trim() ? (
             <MarkdownView
               content={content}
               variant="document"
               localBasePath={folder || cwd}
-              onOpenLocal={(next) => {
-                if (!isMarkdownFilePath(next)) return false;
-                onOpenLocal(next);
+              onOpenLocal={(next, options) => {
+                if (!isPreviewableChatFilePath(next)) return false;
+                onOpenLocal(next, options);
                 return true;
               }}
             />
           ) : (
             <p className="py-6 text-sm text-muted">{t('chat.preview.emptyBody')}</p>
           )
+        ) : content.trim() ? (
+          <SourcePreview
+            value={content}
+            fileName={name}
+            readOnly
+            pretty={false}
+            compressBlankLines={false}
+            density="document"
+            highlightLine={line}
+            maxChars={CHAT_FILE_PREVIEW_MAX_CHARS}
+            className="h-full rounded-none"
+          />
         ) : (
-          <pre className="min-w-0 overflow-x-auto whitespace-pre-wrap break-words rounded-card border border-border/60 bg-subtle p-3 font-mono text-xs leading-relaxed text-primary">
-            {content}
-          </pre>
+          <p className="px-4 py-6 text-sm text-muted">{t('chat.preview.emptyBody')}</p>
         )}
       </div>
 

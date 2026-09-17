@@ -191,7 +191,27 @@ fn source_locations(agent: AgentId) -> Vec<SourceLoc> {
                 });
             }
         }
-        AgentId::Grok | AgentId::Kimi | AgentId::Dsh | AgentId::Zcode | AgentId::Kiro => {
+        AgentId::Grok => {
+            if let Ok(dir) = agent_home(AgentId::Grok) {
+                out.push(SourceLoc {
+                    path: dir.join("config.toml"),
+                    format: SourceFormat::Toml,
+                    label: "Grok config.toml",
+                });
+                // Keep JSON probes for stray files; official MCP lives in TOML.
+                out.push(SourceLoc {
+                    path: dir.join("mcp.json"),
+                    format: SourceFormat::Json,
+                    label: "探测 mcp.json",
+                });
+                out.push(SourceLoc {
+                    path: dir.join(".mcp.json"),
+                    format: SourceFormat::Json,
+                    label: "探测 .mcp.json",
+                });
+            }
+        }
+        AgentId::Kimi | AgentId::Dsh | AgentId::Zcode | AgentId::Kiro => {
             // No stable public MCP config path verified yet — still surface
             // agent home probe so UI can show "未发现已知配置文件".
             if let Ok(dir) = agent_home(agent) {
@@ -448,7 +468,7 @@ fn parse_toml_file(agent: AgentId, path: &Path) -> Result<ParsedSource, String> 
     };
     let snippet = toml_source_snippet(servers_item);
     let mut out = Vec::new();
-    // Codex: [mcp_servers.name]
+    // Codex / Grok: [mcp_servers.name]
     if let Some(table) = servers_item.as_table() {
         for (name, item) in table.iter() {
             let Some(tbl) = item.as_table() else {
@@ -473,7 +493,11 @@ fn parse_toml_file(agent: AgentId, path: &Path) -> Result<ParsedSource, String> 
                 (Some(c), _) => Some(c),
                 _ => None,
             };
-            let type_hint = tbl.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            let type_hint = tbl
+                .get("type")
+                .or_else(|| tbl.get("transport"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let server_snippet = toml_server_snippet(name, item);
             out.push(McpServerEntry {
                 agent,
@@ -487,7 +511,7 @@ fn parse_toml_file(agent: AgentId, path: &Path) -> Result<ParsedSource, String> 
                 url,
                 source_path: path.display().to_string(),
                 source_format: "toml".into(),
-                enabled: None,
+                enabled: toml_enabled(tbl),
                 snippet: server_snippet,
             });
         }
@@ -502,6 +526,13 @@ fn toml_source_snippet(servers_item: &Item) -> Option<String> {
     let mut snippet_doc = DocumentMut::new();
     snippet_doc.insert("mcp_servers", servers_item.clone());
     clip_snippet(snippet_doc.to_string())
+}
+
+fn toml_enabled(tbl: &Table) -> Option<bool> {
+    if let Some(enabled) = tbl.get("enabled").and_then(|v| v.as_bool()) {
+        return Some(enabled);
+    }
+    tbl.get("disabled").and_then(|v| v.as_bool()).map(|b| !b)
 }
 
 fn toml_server_snippet(name: &str, item: &Item) -> Option<String> {

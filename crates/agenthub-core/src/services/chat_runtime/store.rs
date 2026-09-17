@@ -318,6 +318,7 @@ impl RuntimeStore {
                         catalog_epoch: 0,
                         plan: Vec::new(),
                         host_terminals: Vec::new(),
+                        session_allow_always: false,
                     });
                 }
                 return Ok(RuntimeSnapshot::disabled(conversation_id));
@@ -375,6 +376,7 @@ impl RuntimeStore {
                 catalog_epoch: 0,
                 plan: Vec::new(),
                 host_terminals: Vec::new(),
+                session_allow_always: false,
             })
         })
     }
@@ -1277,6 +1279,11 @@ fn finish_transaction<T>(conn: &rusqlite::Connection, result: Result<T>) -> Resu
     }
 }
 
+/// Agents allowed on the continuous Chat runtime path (depth D2+).
+///
+/// Product identity stays per [`AgentId`]; this whitelist is not a merge of
+/// vendors. See `docs/reference/chat-support-depth.md` and
+/// `docs/concepts/agent-identity-families.md`.
 pub(crate) fn is_runtime_chat_agent(agent: Option<AgentId>) -> bool {
     matches!(
         agent,
@@ -1284,6 +1291,8 @@ pub(crate) fn is_runtime_chat_agent(agent: Option<AgentId>) -> bool {
     )
 }
 
+/// ACP-family continuous Chat (Grok / Kiro): shared decoder, separate identities.
+/// Do not collapse these into one `AgentId` to reuse transport helpers.
 pub(crate) fn is_acp_runtime_agent(agent: Option<AgentId>) -> bool {
     matches!(agent, Some(AgentId::Grok | AgentId::Kiro))
 }

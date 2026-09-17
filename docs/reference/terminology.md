@@ -4,7 +4,7 @@ description: AgentHub 用户界面、领域模型和内部实现术语的对应�
 type: reference
 audience: all
 status: current
-updated: 2026-09-11
+updated: 2026-09-17
 ---
 
 # 术语表
@@ -47,7 +47,7 @@ updated: 2026-09-11
 | 项目技能 | `<工作区>/.agents/skills` | 只作用于该项目的技能；Skills 页按项目列表里已识别的工作区选择 |
 | 插件 | 各家 `plugin` / `extension` 包（Claude `/plugin`、Codex `/plugins`、Grok `plugin`、Pi `pi install`） | 可安装的发行单元，常含 skills/commands/hooks，有时附带 MCP。**不是** MCP server 条目，也不是 Skills 页 |
 | 历史 | `ProjectHistory` / `/projects` | 各 Agent 的本机会话记录与工作区。侧栏入口和页面标题说「历史」；代码、路径和内部文档仍用 Projects / 项目 |
-| MCP | MCP server 条目；`/mcp` 只读 inventory | Agent 作为客户端连接的外部工具；`Capability::Mcp` 仍为 Planned |
+| MCP | MCP server 条目；`/mcp` 可盘点，部分 Agent 可写入/启用 | Agent 作为客户端连接的外部工具；Claude / Codex / Grok / Cursor / WorkBuddy 为 Partial（无 OAuth） |
 | mock backend | `src/dev/mocks` | 仅供 `pnpm dev:mock` 和 Vitest 使用的浏览器实现 |
 | Tauri adapter | `src/lib/backend/tauri` | 生产桌面 backend；唯一允许直接 `invoke` 的前端边界 |
 | fixture | test fixture | 脱敏、固定、最小的测试输入，不是用户数据备份 |

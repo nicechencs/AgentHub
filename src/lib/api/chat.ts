@@ -59,6 +59,14 @@ export async function deleteConversation(id: string): Promise<void> {
   return getBackend().chat.deleteConversation(id);
 }
 
+/**
+ * Adopt the title the Agent wrote in its own session store, when the
+ * conversation still carries the title derived from its first message.
+ */
+export async function refreshAgentTitle(conversationId: string): Promise<string | null> {
+  return getBackend().chat.refreshAgentTitle(conversationId);
+}
+
 export async function listChatMessages(conversationId: string): Promise<ChatMessage[]> {
   return getBackend().chat.listChatMessages(conversationId);
 }
@@ -104,6 +112,9 @@ export async function runtimeCancel(conversationId: string, runId: string): Prom
 }
 export async function runtimeKillHostTerminal(conversationId: string, terminalId: string): Promise<void> {
   return getBackend().chat.runtimeKillHostTerminal(conversationId, terminalId);
+}
+export async function runtimeClearSessionAllowAlways(conversationId: string): Promise<RuntimeSnapshot> {
+  return getBackend().chat.runtimeClearSessionAllowAlways(conversationId);
 }
 
 export async function setChatModel(agentId: AgentKey, model: string): Promise<void> {

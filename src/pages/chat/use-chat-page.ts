@@ -256,6 +256,7 @@ export function useChatPage() {
         actions.push({
           id: `runtime-model:${model.id}`,
           kind: 'local',
+          queryOnly: true,
           label: `${t('chat.composer.switchModel')}：${chatModelDisplayName(model.id, t)}`,
           description: model.id === runtimeOps.settings.model ? t('chat.runtimeOps.currentModel') : undefined,
           keywords: ['model', '模型', '换模型', model.id, chatModelDisplayName(model.id, t)],
@@ -266,6 +267,7 @@ export function useChatPage() {
           actions.push({
             id: `runtime-effort:${effort}`,
             kind: 'local',
+            queryOnly: true,
             label: `${t('chat.runtimeOps.effort')}：${chatEffortLabel(effort, t)}`,
             description: effort === runtimeOps.settings.effort ? t('chat.runtimeOps.currentSetting') : undefined,
             keywords: ['think', 'thinking', 'effort', '思考', '思考强度', effort, chatEffortLabel(effort, t)],
@@ -278,6 +280,7 @@ export function useChatPage() {
       actions.push({
         id: `runtime-skill:${item.id}`,
         kind: 'local',
+        queryOnly: true,
         label: `${runtimeOps.selectedSkillIds.includes(item.id) ? t('chat.runtimeOps.cancelUseForTurn') : t('chat.runtimeOps.useForTurn')}：${item.name}`,
         description: t('chat.runtimeOps.skill'),
         keywords: ['skill', '技能', '用于本次', item.name, item.id],
@@ -333,7 +336,18 @@ export function useChatPage() {
         runtimeOps.toggleSkill(action.id.slice('runtime-skill:'.length));
         return;
       }
-      if ((action.kind === 'draft' || action.kind === 'native') && action.draftText) {
+      if (action.kind === 'native' && action.draftText) {
+        const prompt = action.draftText.trim();
+        if (!prompt) return;
+        if (action.draftText.endsWith(' ')) {
+          setDraft(action.draftText);
+          setComposerFocusNonce((n) => n + 1);
+          return;
+        }
+        void send.sendPrompt(prompt, true);
+        return;
+      }
+      if (action.kind === 'draft' && action.draftText) {
         setDraft(action.draftText);
         setComposerFocusNonce((n) => n + 1);
         return;
@@ -396,7 +410,7 @@ export function useChatPage() {
         clearCommandDraft();
       }
     },
-    [actionContext, active?.agentIds, draft, handleNewChat, messages, navigate, runtimeOps, setRailOpen, setSettingsOpen, t, toast],
+    [actionContext, active?.agentIds, draft, handleNewChat, messages, navigate, runtimeOps, send, setRailOpen, setSettingsOpen, t, toast],
   );
   const commandSearchOpen =
     isCommandSearchMode(draft) && kiroChatAllowsCommandSearch(active?.agentIds[0]);
@@ -752,6 +766,7 @@ export function useChatPage() {
     firstUserContentById,
     turnOutcome,
     submitRuntimeRequest: send.submitRuntimeRequest,
+    clearSessionAllowAlways: send.clearSessionAllowAlways,
     killHostTerminal: async (terminalId: string) => {
       if (!active?.id) return;
       try {

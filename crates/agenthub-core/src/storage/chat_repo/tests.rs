@@ -310,3 +310,28 @@ fn ensure_default_is_idempotent_under_concurrent_calls() {
     assert!(results.windows(2).all(|rows| rows[0].id == rows[1].id));
     assert_eq!(repo.list_conversations().unwrap().len(), 1);
 }
+
+#[test]
+fn update_title_if_keeps_a_title_another_writer_landed_first() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let repo = ChatRepo::new(db);
+    let mut conv = sample_conv("c1", vec![AgentId::Codex]);
+    conv.title = "首条消息推导值".into();
+    repo.create_conversation(&conv).unwrap();
+
+    let now = Utc::now().to_rfc3339();
+    assert!(repo
+        .update_title_if("c1", "首条消息推导值", "对方起的标题", &now)
+        .unwrap());
+    assert_eq!(repo.get_conversation("c1").unwrap().unwrap().title, "对方起的标题");
+
+    // A manual rename between the caller's read and this write wins: the
+    // compare-and-set reports a miss and leaves the newer title alone.
+    assert!(!repo
+        .update_title_if("c1", "首条消息推导值", "对方起的标题", &now)
+        .unwrap());
+    assert_eq!(repo.get_conversation("c1").unwrap().unwrap().title, "对方起的标题");
+
+    assert!(!repo.update_title_if("missing", "x", "y", &now).unwrap());
+}

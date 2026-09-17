@@ -20,9 +20,8 @@ pub use types::{
     RuntimeChannel, RuntimeDecision, RuntimeEvent, RuntimeExtensionItem, RuntimeExtensionKind,
     RuntimeFileChange, RuntimeHostTerminal, RuntimeLocalImage, RuntimeModelOption,
     RuntimeNativeCommand, RuntimeOptions, RuntimePermissionOption, RuntimePhase, RuntimePlanEntry,
-    RuntimeQuestion, RuntimeQuestionOption, RuntimeReply,
-    RuntimeRequest, RuntimeRequestKind, RuntimeSkillRef, RuntimeSnapshot, RuntimeStartExtras,
-    RuntimeTurnSettings,
+    RuntimeQuestion, RuntimeQuestionOption, RuntimeReply, RuntimeRequest, RuntimeRequestKind,
+    RuntimeSkillRef, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings,
 };
 
 use std::collections::HashMap;
@@ -78,6 +77,9 @@ enum RuntimeCommand {
         terminal_id: String,
         result: SyncSender<Result<()>>,
     },
+    ClearSessionAllowAlways {
+        result: SyncSender<Result<()>>,
+    },
     Shutdown {
         done: SyncSender<()>,
     },
@@ -100,6 +102,8 @@ struct CatalogCache {
     image_input: Option<bool>,
     catalog_epoch: i64,
     plan: Vec<RuntimePlanEntry>,
+    /// Conversation-local Always allow. Survives catalog refetch; not SQLite.
+    session_allow_always: bool,
 }
 
 fn merge_catalog_cache(previous: Option<&CatalogCache>, mut fetched: CatalogCache) -> CatalogCache {
@@ -114,10 +118,14 @@ fn merge_catalog_cache(previous: Option<&CatalogCache>, mut fetched: CatalogCach
         if fetched.plan.is_empty() {
             fetched.plan = previous.plan.clone();
         }
+        fetched.session_allow_always =
+            fetched.session_allow_always || previous.session_allow_always;
     }
     fetched
 }
 
+/// Map product identity → transport channel. Same channel (e.g. ACP) may be
+/// shared by multiple AgentIds; identities remain distinct (identity families).
 fn runtime_channel(agent: Option<AgentId>) -> RuntimeChannel {
     match agent {
         Some(AgentId::Grok | AgentId::Kiro) => RuntimeChannel::Acp,
@@ -163,6 +171,7 @@ impl ChatRuntime {
         if let Some(cache) = self.peek_catalog(conversation_id) {
             snapshot.catalog_epoch = cache.catalog_epoch;
             snapshot.plan = cache.plan;
+            snapshot.session_allow_always = cache.session_allow_always;
         }
         snapshot.host_terminals = self
             .host_terminals
@@ -175,6 +184,18 @@ impl ChatRuntime {
 
     pub(crate) fn is_enabled(&self, conversation_id: &str) -> Result<bool> {
         self.store.persisted_enabled(conversation_id)
+    }
+
+    /// App-server / ACP session id of a started continuous conversation.
+    /// Codex threads and Grok/Kiro ACP sessions both land here; the DB
+    /// `native_session_id` stays empty for the continuous path.
+    pub(crate) fn session_id(&self, conversation_id: &str) -> Result<Option<String>> {
+        Ok(self
+            .store
+            .record(conversation_id)?
+            .and_then(|record| record.thread_id)
+            .map(|id| id.trim().to_string())
+            .filter(|id| !id.is_empty()))
     }
 
     /// Empty Codex chats advertise `enabled` so the first send uses this path.
@@ -208,9 +229,16 @@ impl ChatRuntime {
 
     /// Forget warmed model/skills lists so the next idle `options()` refetch
     /// sees the login that is live now (Codex ChatGPT vs API, Grok slots).
+    /// Keep conversation-local Always allow — that is not a catalog.
     pub fn invalidate_catalogs(&self) {
         if let Ok(mut catalogs) = self.catalogs.lock() {
-            catalogs.clear();
+            for cache in catalogs.values_mut() {
+                *cache = CatalogCache {
+                    session_allow_always: cache.session_allow_always,
+                    ..CatalogCache::default()
+                };
+            }
+            catalogs.retain(|_, cache| cache.session_allow_always);
         }
     }
 
@@ -627,6 +655,28 @@ impl ChatRuntime {
         recv_result(rx)
     }
 
+    /// Turn off conversation-local Always allow. Does not invent a card option.
+    pub fn clear_session_allow_always(&self, conversation_id: &str) -> Result<RuntimeSnapshot> {
+        match self.actor_for_existing(conversation_id) {
+            Ok(actor) => {
+                let (tx, rx) = mpsc::sync_channel(1);
+                actor
+                    .tx
+                    .send(RuntimeCommand::ClearSessionAllowAlways { result: tx })
+                    .map_err(|_| AppError::message("chat.runtime", "runtime worker stopped"))?;
+                recv_result(rx)?;
+            }
+            Err(_) => {
+                if let Ok(mut catalogs) = self.catalogs.lock() {
+                    if let Some(cache) = catalogs.get_mut(conversation_id) {
+                        cache.session_allow_always = false;
+                    }
+                }
+            }
+        }
+        self.snapshot(conversation_id, None)
+    }
+
     pub fn cancel(&self, conversation_id: &str, run_id: &str) -> Result<()> {
         let actor = match self.actor_for_existing(conversation_id) {
             Ok(actor) => actor,
@@ -767,6 +817,12 @@ impl ChatRuntime {
         }
     }
 
+    /// Load model/extension catalogs for Options.
+    ///
+    /// Probe results decide membership when the live agent answers; seed/fallback
+    /// catalogs must not invent undeclared vendors or slash commands. Failure →
+    /// empty or explicit fallback — never a guessed "full" menu.
+    /// See `docs/reference/chat-session-options.md`.
     fn fetch_catalog(&self, conversation_id: &str) -> CatalogCache {
         let Ok(Some(conversation)) = self.repo.get_conversation(conversation_id) else {
             return CatalogCache::default();
@@ -941,10 +997,7 @@ fn actor_loop(
         repo,
         run,
         catalogs,
-        host_terminals: host_terminal::HostedTerminals::new(
-            conversation_id,
-            host_terminal_views,
-        ),
+        host_terminals: host_terminal::HostedTerminals::new(conversation_id, host_terminal_views),
         codex_program_override,
         abort,
         agent,
@@ -1044,9 +1097,16 @@ impl ActorWorker {
                     let outcome = self.cancel(&run_id);
                     let _ = result.send(outcome);
                 }
-                Ok(RuntimeCommand::KillHostTerminal { terminal_id, result }) => {
+                Ok(RuntimeCommand::KillHostTerminal {
+                    terminal_id,
+                    result,
+                }) => {
                     let outcome = self.kill_hosted_terminal(&terminal_id);
                     let _ = result.send(outcome);
+                }
+                Ok(RuntimeCommand::ClearSessionAllowAlways { result }) => {
+                    self.forget_session_allow_always();
+                    let _ = result.send(Ok(()));
                 }
                 Ok(RuntimeCommand::Shutdown { done }) => {
                     self.shutdown_host_terminals();
@@ -1736,7 +1796,9 @@ impl ActorWorker {
                         self.message_id.as_deref(),
                     )?;
                     self.transport = Some(transport);
-                    return Ok(self.with_catalog_epoch(self.store.snapshot(&self.conversation_id, None)?));
+                    return Ok(
+                        self.with_catalog_epoch(self.store.snapshot(&self.conversation_id, None)?)
+                    );
                 }
                 Err(codex_transport::CodexTransportError::Exited)
                     if matches!(plan, ops::AcpSessionPlan::PromptExisting)
@@ -2027,12 +2089,12 @@ impl ActorWorker {
                     };
                     let value = acp_permission_reply(&options, decision)?;
                     if matches!(reply.decision, Some(RuntimeDecision::AllowAlways)) {
-                        self.session_allow_always = true;
+                        self.remember_session_allow_always();
                     }
                     value
                 } else {
                     if matches!(reply.decision, Some(RuntimeDecision::AllowAlways)) {
-                        self.session_allow_always = true;
+                        self.remember_session_allow_always();
                     }
                     json!({"decision": codex_approval_decision(decision)})
                 }
@@ -2611,6 +2673,9 @@ impl ActorWorker {
             "session/update" | "session_update" | "_x.ai/session/update" => {
                 self.grok_session_update(params)?;
             }
+            "_kiro.dev/commands/available" => {
+                self.apply_kiro_available_commands(params);
+            }
             "_x.ai/session/prompt_complete" => {
                 self.turn_completed(params)?;
             }
@@ -3037,19 +3102,37 @@ impl ActorWorker {
         }
     }
 
+    fn apply_native_commands(
+        &self,
+        commands: Vec<crate::utils::stream_parse::acp::AcpAvailableCommand>,
+    ) {
+        self.patch_catalog(|cache| {
+            cache.native_commands = commands
+                .into_iter()
+                .map(|command| RuntimeNativeCommand {
+                    name: command.name,
+                    description: command.description,
+                    hint: command.hint,
+                })
+                .collect();
+        });
+    }
+
+    /// Kiro declares slash commands on this vendor notification after
+    /// `session/new`. Standard ACP `available_commands_update` is still
+    /// accepted via [`Self::grok_session_update`]. Skills/prompts are ignored.
+    fn apply_kiro_available_commands(&self, params: &Value) {
+        if let Some(commands) =
+            crate::utils::stream_parse::acp::extract_kiro_available_commands(params)
+        {
+            self.apply_native_commands(commands);
+        }
+    }
+
     fn grok_session_update(&mut self, params: &Value) -> Result<()> {
         if let Some(commands) = crate::utils::stream_parse::acp::extract_available_commands(params)
         {
-            self.patch_catalog(|cache| {
-                cache.native_commands = commands
-                    .into_iter()
-                    .map(|command| RuntimeNativeCommand {
-                        name: command.name,
-                        description: command.description,
-                        hint: command.hint,
-                    })
-                    .collect();
-            });
+            self.apply_native_commands(commands);
         }
         if let Some(catalog) = crate::utils::stream_parse::acp::extract_config_catalog(params) {
             self.apply_acp_config_catalog(catalog);
@@ -3116,6 +3199,25 @@ impl ActorWorker {
         }
     }
 
+    fn remember_session_allow_always(&mut self) {
+        self.session_allow_always = true;
+        if let Ok(mut guard) = self.catalogs.lock() {
+            guard
+                .entry(self.conversation_id.clone())
+                .or_default()
+                .session_allow_always = true;
+        }
+    }
+
+    fn forget_session_allow_always(&mut self) {
+        self.session_allow_always = false;
+        if let Ok(mut guard) = self.catalogs.lock() {
+            if let Some(cache) = guard.get_mut(&self.conversation_id) {
+                cache.session_allow_always = false;
+            }
+        }
+    }
+
     fn with_catalog_epoch(&self, mut snapshot: RuntimeSnapshot) -> RuntimeSnapshot {
         if let Some(cache) = self
             .catalogs
@@ -3125,6 +3227,10 @@ impl ActorWorker {
         {
             snapshot.catalog_epoch = cache.catalog_epoch;
             snapshot.plan = cache.plan;
+            snapshot.session_allow_always = cache.session_allow_always;
+        }
+        if self.session_allow_always {
+            snapshot.session_allow_always = true;
         }
         snapshot.host_terminals = self.host_terminals.snapshot();
         snapshot
@@ -3617,9 +3723,7 @@ impl ActorWorker {
                     }
                 };
                 match self.host_terminals.begin_wait(&terminal_id, id.clone()) {
-                    Ok(Some(code)) => {
-                        self.respond_jsonrpc(id, Ok(json!({ "exitCode": code })))
-                    }
+                    Ok(Some(code)) => self.respond_jsonrpc(id, Ok(json!({ "exitCode": code }))),
                     Ok(None) => Ok(()),
                     Err(error) => self.respond_jsonrpc(
                         id,
@@ -3777,7 +3881,7 @@ impl ActorWorker {
             };
             let write_result = ops::write_text_file_on_disk(&path, &content);
             if decision == "accept_always" && write_result.is_ok() {
-                self.session_allow_always = true;
+                self.remember_session_allow_always();
             }
             self.store.record_reply(
                 &reply.conversation_id,
@@ -4012,7 +4116,10 @@ fn acp_tool_is_file_change(params: &Value) -> bool {
         .unwrap_or("")
         .trim()
         .to_ascii_lowercase();
-    matches!(kind.as_str(), "edit" | "delete" | "move" | "write" | "create")
+    matches!(
+        kind.as_str(),
+        "edit" | "delete" | "move" | "write" | "create"
+    )
 }
 
 fn codex_session_permission_options() -> Vec<RuntimePermissionOption> {

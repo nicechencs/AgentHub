@@ -410,7 +410,7 @@ pub struct LiveChatModel {
     pub efforts: Vec<String>,
 }
 
-/// Local markdown file opened from a chat message link.
+/// Local text/markdown file opened from a chat message link.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MarkdownFilePreview {
@@ -442,20 +442,27 @@ fn conversation_semantic_phrase(raw: &str) -> String {
     }
 }
 
+/// Strip `` `code` `` spans. Mirrors the frontend's ``/`[^`]+`/g`` replace:
+/// only closed pairs go away, and a lone backtick stays as written. The
+/// adoption gate compares this string with the frontend's derivation, so both
+/// implementations have to agree character for character.
 fn strip_backtick_spans(input: &str) -> String {
+    let chars: Vec<char> = input.chars().collect();
     let mut out = String::with_capacity(input.len());
-    let mut chars = input.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '`' {
-            while let Some(inner) = chars.next() {
-                if inner == '`' {
-                    break;
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '`' {
+            // `[^`]+` needs at least one non-backtick character inside.
+            if let Some(close) = (i + 1..chars.len()).find(|&j| chars[j] == '`') {
+                if close > i + 1 {
+                    out.push(' ');
+                    i = close + 1;
+                    continue;
                 }
             }
-            out.push(' ');
-            continue;
         }
-        out.push(ch);
+        out.push(chars[i]);
+        i += 1;
     }
     out
 }
@@ -483,6 +490,12 @@ fn match_path_token(chars: &[char], start: usize) -> Option<usize> {
     }
     let after_drive = i;
     let mut segments = 0;
+    // Mirrors the frontend's `(?:[\\/][^\s\\/`'"]+)+`: a trailing separator is
+    // not part of the token, so an empty segment ends the match at the last
+    // complete one instead of discarding the whole path. The derived title has
+    // to match the frontend character for character — see
+    // `conversation_title_from_prompt` and its mirrored fixture.
+    let mut end = after_drive;
     while i < chars.len() && (chars[i] == '/' || chars[i] == '\\') {
         i += 1;
         let seg_start = i;
@@ -494,12 +507,13 @@ fn match_path_token(chars: &[char], start: usize) -> Option<usize> {
             i += 1;
         }
         if i == seg_start {
-            return None;
+            break;
         }
         segments += 1;
+        end = i;
     }
-    if segments >= 1 && i > after_drive {
-        Some(i)
+    if segments >= 1 && end > after_drive {
+        Some(end)
     } else {
         None
     }

@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { pageRhythm } from '@/components/layout/page-rhythm';
 import { agentDisplayName } from '@/config/agents';
 import { createTranslator } from '@/lib/i18n';
 import type { BindingView, TicketView, TicketWallet } from '@/lib/backend/contracts/ticket';
@@ -55,6 +54,7 @@ import {
   looksLikePersistedTitleClip,
   mergeFirstUserContentById,
   titleFromPrompt,
+  withConversationTitle,
   conversationCwdMissing,
   canRebindConversationCwd,
   cwdShortName,
@@ -793,6 +793,43 @@ describe('conversationTitle', () => {
       { conversationId: 'c1', role: 'user', content: long },
       { conversationId: 'c1', role: 'user', content: 'later' },
     ])).toEqual({ c1: long });
+  });
+
+  it('applies an adopted title to just that conversation row', () => {
+    const rows = [
+      { id: 'a', title: '首条消息推导值' },
+      { id: 'b', title: '另一个对话' },
+    ];
+    const next = withConversationTitle(rows, 'a', '对方起的标题');
+    expect(next.map((row) => [row.id, row.title])).toEqual([
+      ['a', '对方起的标题'],
+      ['b', '另一个对话'],
+    ]);
+    // The caller's rows are left alone, so React state updates stay pure.
+    expect(rows[0].title).toBe('首条消息推导值');
+  });
+
+  it('derives the same phrase as the Rust fixture, backticks included', () => {
+    // Shared fixture with crates/agenthub-core/src/models/chat/tests.rs. The
+    // agent-title adoption gate compares this derivation against the stored
+    // title, so a divergence here would silently stop that conversation from
+    // ever adopting the Agent's own title.
+    expect(conversationSemanticPhrase('修复 `foo` 的报错')).toBe('修复 的报错');
+    expect(conversationSemanticPhrase('修复 `foo 的报错')).toBe('修复 `foo 的报错');
+    expect(conversationSemanticPhrase('``a`')).toBe('`');
+    expect(conversationSemanticPhrase('请在 /workspace/src/app.ts 检查问题')).toBe('检查问题');
+    // A trailing separator is not part of the path token, so the slash it
+    // leaves behind stays in the phrase. Mirrored in the Rust fixture; if the
+    // two drift, the adoption gate silently stops firing for such a message.
+    expect(conversationSemanticPhrase('请在 /workspace/src/ 检查问题')).toBe('/ 检查问题');
+    expect(conversationSemanticPhrase('Only modify /tmp/qa/')).toBe('Only modify /');
+    expect(conversationSemanticPhrase('/workspace/foo/')).toBe('/');
+    expect(conversationSemanticPhrase('看 /a//b 这个')).toBe('看 / 这个');
+    // Windows paths end the token the same way; the trailing separator stays.
+    expect(conversationSemanticPhrase(String.raw`修复 D:\demo\app\ 的报错`)).toBe(
+      String.raw`修复 \ 的报错`,
+    );
+    expect(conversationSemanticPhrase(String.raw`修复 D:\demo\app 的报错`)).toBe('修复 的报错');
   });
 });
 
@@ -1883,9 +1920,11 @@ describe('composerUsesCssFieldSizing', () => {
 });
 
 describe('chat transcript / composer surfaces', () => {
-  it('shares one main-column width for transcript and composer', () => {
-    expect(chatMainColumnClass).toBe(pageRhythm.readingColumn);
-    expect(chatMainColumnClass).toBe('mx-auto w-full max-w-5xl');
+  it('shares one adaptive main-column width for transcript and composer', () => {
+    expect(chatMainColumnClass).toContain('ah-chat-content-column');
+    expect(chatMainColumnClass).toContain('mx-auto');
+    expect(chatMainColumnClass).toContain('w-full');
+    expect(chatMainColumnClass).not.toContain('max-w-5xl');
   });
 
   it('uses a 16px outer stage so transcript and composer share the same inset', () => {

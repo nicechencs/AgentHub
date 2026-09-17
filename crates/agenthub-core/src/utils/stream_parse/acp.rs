@@ -1,4 +1,7 @@
 //! Shared ACP `session/update` decoding (Grok JSON-RPC and Kiro stream-json).
+//!
+//! Compatibility family: reuse this decoder across ACP agents without merging
+//! their [`crate::models::AgentId`] values. See `docs/concepts/agent-identity-families.md`.
 
 use serde_json::Value;
 
@@ -123,6 +126,17 @@ pub(crate) fn extract_available_commands(v: &Value) -> Option<Vec<AcpAvailableCo
         list.map(|items| items.iter().filter_map(parse_available_command).collect())
             .unwrap_or_default(),
     )
+}
+
+/// Kiro ACP vendor notification `_kiro.dev/commands/available` (not standard
+/// `available_commands_update`). Only `commands[]` are slash items. `prompts`
+/// (skills), `tools`, and `mcpServers` stay out of the `/` native group.
+///
+/// `Some` when `commands` is present, even if the list is empty (fail-closed).
+pub(crate) fn extract_kiro_available_commands(v: &Value) -> Option<Vec<AcpAvailableCommand>> {
+    let payload = v.get("data").or_else(|| v.get("params")).unwrap_or(v);
+    let list = payload.get("commands").and_then(|value| value.as_array())?;
+    Some(list.iter().filter_map(parse_available_command).collect())
 }
 
 /// Model/effort lists from ACP config options. Not a `ProcessStep`.
@@ -264,17 +278,22 @@ fn parse_plan_entry(value: &Value) -> Option<AcpPlanEntry> {
 }
 
 fn parse_available_command(value: &Value) -> Option<AcpAvailableCommand> {
-    let name = first_str(value, &["name", "command"])?;
+    let raw = first_str(value, &["name", "command"])?;
+    let name = raw.trim_start_matches('/').trim();
+    if name.is_empty() {
+        return None;
+    }
     let description = first_str(value, &["description"]).unwrap_or_default();
     let hint = value
         .pointer("/input/hint")
+        .or_else(|| value.pointer("/meta/hint"))
         .and_then(|h| h.as_str())
         .or_else(|| value.get("hint").and_then(|h| h.as_str()))
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string);
     Some(AcpAvailableCommand {
-        name,
+        name: name.to_string(),
         description,
         hint,
     })

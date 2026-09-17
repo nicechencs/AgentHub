@@ -10,10 +10,13 @@ import {
   filterChatActions,
   isCommandSearchMode,
   nativeCommandActions,
+  nativeCommandNeedsArgs,
   nativeSlashDraft,
+  nativeSlashSendText,
   normalizeActionQuery,
   openExternalCliAction,
   OPEN_EXTERNAL_CLI_ACTION_ID,
+  slashActionGroup,
   slashMenuFixedPosition,
 } from './chat-actions';
 
@@ -72,27 +75,61 @@ describe('chat action command search', () => {
   });
 
   it('mixes runtime commands into slash search', () => {
-    const extra = [{ id: 'runtime-model:gpt-spark', kind: 'local' as const, label: '换模型：gpt-spark', keywords: ['model', '模型', 'gpt-spark'] }];
+    const extra = [{
+      id: 'runtime-model:gpt-spark',
+      kind: 'local' as const,
+      queryOnly: true,
+      label: '换模型：gpt-spark',
+      keywords: ['model', '模型', 'gpt-spark'],
+    }];
+    expect(filterChatActions('/', extra).map((item) => item.id)).not.toContain('runtime-model:gpt-spark');
     expect(filterChatActions('/model', extra).map((item) => item.id)).toContain('runtime-model:gpt-spark');
     expect(filterChatActions('\\模型', extra).map((item) => item.id)).toContain('runtime-model:gpt-spark');
   });
 
-  it('inserts native slash commands as a trailing-space draft, not a send', () => {
+  it('lists native slash commands ahead of Hub actions, and sends optional-hint names as a turn', () => {
     expect(nativeSlashDraft('compact')).toBe('/compact ');
     expect(nativeSlashDraft('/compact')).toBe('/compact ');
     expect(nativeSlashDraft('  ')).toBe('/');
+    expect(nativeSlashSendText('compact')).toBe('/compact');
+    expect(nativeCommandNeedsArgs('[instructions]')).toBe(false);
+    expect(nativeCommandNeedsArgs('path')).toBe(true);
     const extra = nativeCommandActions([
       { name: 'compact', description: 'Compact context', hint: '[instructions]' },
       { name: '/compact', description: 'duplicate' },
       { name: '  ', description: 'empty' },
+      { name: 'mode', description: 'Switch mode', hint: 'name' },
     ]);
-    expect(extra.map((item) => item.id)).toEqual(['native-command:compact']);
+    expect(extra.map((item) => item.id)).toEqual(['native-command:compact', 'native-command:mode']);
     expect(extra[0]?.kind).toBe('native');
-    expect(extra[0]?.draftText).toBe('/compact ');
-    expect(filterChatActions('/', extra).map((item) => item.id)).toContain('native-command:compact');
+    expect(extra[0]?.draftText).toBe('/compact');
+    expect(extra[1]?.draftText).toBe('/mode ');
+    expect(slashActionGroup(extra[0]!)).toBe('native');
+    expect(filterChatActions('/', extra).map((item) => item.id)[0]).toBe('native-command:compact');
+    expect(filterChatActions('/', extra).map((item) => item.id)).toContain('new-session');
     expect(filterChatActions('/compact', extra).map((item) => item.id)).toContain('native-command:compact');
     expect(filterChatActions('/').map((item) => item.id)).not.toContain('native-command:compact');
     expect(chatOverflowMenuActions(extra).some((item) => item.kind === 'native')).toBe(true);
+  });
+
+  it('merges Kiro-style leading-slash names without dumping skills onto bare /', () => {
+    const extra = nativeCommandActions([
+      { name: '/context', description: 'Add context', hint: 'path' },
+      { name: '/compact', description: 'Compact context', hint: '[instructions]' },
+    ]);
+    expect(extra.map((item) => item.id)).toEqual([
+      'native-command:context',
+      'native-command:compact',
+    ]);
+    expect(extra[0]?.draftText).toBe('/context ');
+    expect(extra[1]?.draftText).toBe('/compact');
+    expect(filterChatActions('/', extra).map((item) => item.id)).toEqual([
+      'native-command:context',
+      'native-command:compact',
+      'new-session',
+      'copy-latest-reply',
+    ]);
+    expect(filterChatActions('/', extra).some((item) => /skill|技能|my-skill/i.test(item.id + item.label))).toBe(false);
   });
 
   it('lists the external command-line escape hatch without sending', () => {

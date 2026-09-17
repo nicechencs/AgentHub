@@ -1,12 +1,14 @@
 import { agentDisplayName } from '@/config/agents';
+import type { AgentProcessView } from '@/lib/chat-process';
+import type { MessageKey, TranslateFn } from '@/lib/i18n';
+import { formatSessionRecordText } from '@/lib/session-record-text';
 import {
   clipPreviewText,
   formatJsonPayload,
   looksLikeJsonObject,
   tryPrettyJson,
 } from '@/lib/source-preview';
-import { formatSessionRecordText } from '@/lib/session-record-text';
-import type { MessageKey, TranslateFn } from '@/lib/i18n';
+import type { ChatMessage } from '@/lib/types';
 
 const CHAT_FAILURE_KEY = {
   missingEnv: 'chat.failure.missingEnv',
@@ -18,9 +20,10 @@ const CHAT_FAILURE_KEY = {
   sendFailed: 'chat.failure.sendFailed',
   garbledOutput: 'chat.failure.garbledOutput',
   interrupted: 'chat.turnOutcome.interruptedHint',
+  permissionAlways: 'chat.failure.permissionAlways',
+  permissionOnce: 'chat.failure.permissionOnce',
+  agentExited: 'chat.failure.agentExited',
 } as const satisfies Record<string, MessageKey>;
-import type { AgentProcessView } from '@/lib/chat-process';
-import type { ChatMessage } from '@/lib/types';
 
 export type TurnGroup = {
   turn: number;
@@ -69,6 +72,14 @@ export function pinElementScrollToBottom(
 export function clipProcessTail(text: string, limit = PROCESS_TEXT_LIMIT): string {
   if (text.length <= limit) return text;
   return `…${text.slice(-limit)}`;
+}
+
+/** First line of what the user sent, for the process pane. */
+export function processUserPromptPreview(text: string, limit = 120): string {
+  const one = text.trim().split('\n')[0] ?? '';
+  if (!one) return '';
+  if (one.length <= limit) return one;
+  return `${one.slice(0, limit)}…`;
 }
 
 /** Drop CSI/OSC/cursor sequences so headless CLI chrome is not shown as 乱码. */
@@ -546,6 +557,28 @@ export function localizeChatFailure(text: string, t?: TranslateFn): string {
     || hay.includes('非 json')
   ) {
     return copy('garbledOutput', '有一段输出没法展示。可以重试。');
+  }
+  if (
+    hay.includes('不能一直允许')
+    || hay.includes('cannot always allow')
+    || hay.includes("can't be always")
+  ) {
+    return copy('permissionAlways', '这次操作不能一直允许。请点允许或拒绝。');
+  }
+  if (
+    hay.includes('没有提供一次性允许')
+    || hay.includes('no one-time allow')
+    || hay.includes('无法安全批准')
+  ) {
+    return copy('permissionOnce', '对方没给一次性允许，没法替你点允许。请拒绝或等新的确认。');
+  }
+  if (
+    hay.includes('已退出')
+    || hay.includes('has quit')
+    || hay.includes('runtime is no longer connected')
+    || hay.includes('runtime worker stopped')
+  ) {
+    return copy('agentExited', '对方已退出。请新建对话再试。');
   }
   return text;
 }

@@ -52,8 +52,8 @@ flowchart LR
 - `models` / `domain`：DTO、领域值和协议图；不做 I/O。
 - `services`：Account、Provider、Connection、Ticket、Chat、Run、Usage 等业务编排。
 - `storage`：SQLite schema、迁移、repository。
-- `adapters` / `integrations`：Agent 特有路径、配置、账号、运行和流解析贡献。
-- `platform`：catalog、capability、configuration、lifecycle、skills、usage 等平台能力。MCP 目前只有 service 级只读 inventory。厂商 plugin/extension 包由页面与 inventory 列出（Claude / Grok / Pi）；Claude / Grok 可安装/卸载/启用/停用。没有 `Capability::Plugins`。
+- `adapters` / `integrations`：Agent 特有路径、配置、账号、运行、流解析和会话标题来源贡献。
+- `platform`：catalog、capability、configuration、lifecycle、session title、skills、usage 等平台能力。MCP 目前只有 service 级只读 inventory。厂商 plugin/extension 包由页面与 inventory 列出（Claude / Grok / Pi）；Claude / Grok 可安装/卸载/启用/停用。没有 `Capability::Plugins`。
 - `bridge`：loopback listener、默认授权池与 Messages/Responses/Chat 转换；当前是进程内运行时。
 - `runtime` / `utils`：共享运行时检测、进程、路径、脱敏与流解析工具。
 

@@ -29,6 +29,12 @@ export interface ChatPort {
     },
   ): Promise<Conversation>;
   deleteConversation(id: string): Promise<void>;
+  /**
+   * Adopt the title the Agent wrote in its own session store. Resolves to the
+   * new title when the conversation was retitled, `null` when nothing may
+   * change (no Agent title, no session id, or a title the user owns).
+   */
+  refreshAgentTitle(conversationId: string): Promise<string | null>;
   listChatMessages(conversationId: string): Promise<ChatMessage[]>;
   chatSend(
     conversationId: string,
@@ -46,6 +52,7 @@ export interface ChatPort {
   runtimeSteer(conversationId: string, runId: string, prompt: string, clientRequestId: string): Promise<void>;
   runtimeCancel(conversationId: string, runId: string): Promise<void>;
   runtimeKillHostTerminal(conversationId: string, terminalId: string): Promise<void>;
+  runtimeClearSessionAllowAlways(conversationId: string): Promise<RuntimeSnapshot>;
   setChatModel(agentId: AgentKey, model: string): Promise<void>;
   setChatEffort(agentId: AgentKey, effort: string): Promise<void>;
   getChatModel(agentId: AgentKey): Promise<{
@@ -56,7 +63,7 @@ export interface ChatPort {
   }>;
   pickChatImages(title?: string): Promise<string[]>;
   saveChatPasteImage(input: { base64: string; extension: string; byteLength?: number }): Promise<string>;
-  /** Read a markdown file under the conversation working directory for the right-hand preview. */
+  /** Read a text/markdown file under the conversation working directory for the right-hand preview. */
   readMarkdownPreview(path: string, cwd: string): Promise<MarkdownFilePreviewDto>;
   /** Desktop menu accel (Ctrl/Cmd+N). Browser mock is a no-op. */
   onNativeShortcut(handler: (action: 'newChat') => void): Promise<() => void>;

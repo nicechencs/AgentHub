@@ -96,3 +96,24 @@ describe('Tauri durable chat boundary', () => {
     ]);
   });
 });
+
+describe('Agent session title boundary', () => {
+  it('asks core to adopt the Agent title for one conversation', async () => {
+    invokeMock.mockResolvedValueOnce('收窄侧栏');
+
+    const title = await createTauriChatPort().refreshAgentTitle('conv-1');
+
+    expect(title).toBe('收窄侧栏');
+    expect(invokeMock).toHaveBeenCalledWith('refresh_chat_agent_title', {
+      conversationId: 'conv-1',
+    });
+  });
+
+  it('treats a missing or blank core answer as no title', async () => {
+    invokeMock.mockResolvedValueOnce(null);
+    expect(await createTauriChatPort().refreshAgentTitle('conv-1')).toBeNull();
+
+    invokeMock.mockResolvedValueOnce('   ');
+    expect(await createTauriChatPort().refreshAgentTitle('conv-1')).toBeNull();
+  });
+});

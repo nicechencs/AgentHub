@@ -98,7 +98,15 @@ function RuntimeRequestCard({
               <Button size="sm" variant="outline" disabled={sent} onClick={() => submit('allow_always')}>
                 {t('chat.runtime.allowAlways')}
               </Button>
-              <span className="text-meta text-muted">{t(always.hintKey)}</span>
+              <span className="text-meta text-muted">
+                {t(always.hintKey)}
+                {' · '}
+                {t(
+                  agentId === 'kiro'
+                    ? 'chat.runtime.allowAlwaysVsSettingsKiro'
+                    : 'chat.runtime.allowAlwaysVsSettings',
+                )}
+              </span>
             </span>
           ) : null}
           <Button size="sm" variant="ghost" disabled={sent} onClick={() => submit('deny')}>{t('chat.runtime.deny')}</Button>

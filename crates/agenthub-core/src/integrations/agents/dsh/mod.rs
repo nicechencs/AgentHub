@@ -5,6 +5,7 @@ mod config;
 mod install;
 mod paths;
 mod project;
+mod session_title;
 mod usage;
 
 use crate::integrations::shared::register::{register_fn_detector, register_skills_from_home};
@@ -15,6 +16,7 @@ pub fn register(ctx: &mut IntegrationContext<'_>) {
     paths::register(ctx);
     install::register(ctx);
     project::register(ctx);
+    session_title::register(ctx);
     config::register(ctx);
     usage::register(ctx);
     register_fn_detector(ctx, AgentId::Dsh, crate::adapters::detect_dsh_installation);

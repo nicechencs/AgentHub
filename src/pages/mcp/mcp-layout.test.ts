@@ -29,7 +29,7 @@ describe('mcp layout wiring', () => {
     expect(table).not.toContain('h-6 px-1.5 text-xs');
   });
 
-  it('says the page only scans and points at the existing folder button', () => {
+  it('wires write/enable without an install flow', () => {
     const page = source('index.tsx');
     expect(page).not.toContain("t('common.inDevelopment')");
     expect(page).toContain("t('mcp.page.description')");
@@ -38,7 +38,9 @@ describe('mcp layout wiring', () => {
     expect(page).toContain("t('mcp.page.nextStep')");
     expect(page).toContain('visibleMcpSources');
     expect(page).toContain('McpSourceEmpty');
-    expect(page).toContain("t('mcp.empty.addServerHint')");
+    expect(page).toContain('McpWriteDialog');
+    expect(page).toContain("t('mcp.write.open')");
+    expect(page).toContain('onToggleEnabled');
     expect(page).not.toContain('installMcp');
     expect(page).not.toContain('onInstall');
     expect(page).not.toContain('mcp.install');
@@ -48,5 +50,7 @@ describe('mcp layout wiring', () => {
     expect(table).toContain('<OpenDirButton');
     expect(table).toContain('labeled');
     expect(table).toContain('<CopyableFileName');
+    expect(table).toContain('Switch');
+    expect(table).toContain('agentSupportsMcpWrite');
   });
 });

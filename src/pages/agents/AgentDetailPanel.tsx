@@ -52,6 +52,11 @@ import {
   missingCatalogChannels,
   missingChannelStatusKey,
 } from './agent-detail-model';
+import {
+  agentChatConnectHintKey,
+  agentNewChatConnectKind,
+  chatConnectLabelKey,
+} from '../chat/chat-connect-model';
 import { localizeInstallCopy } from './install-labels';
 
 function CopyableChannelName({
@@ -122,6 +127,20 @@ function EndpointTypesField({ agentId }: { agentId: string }) {
             ))}
           </span>
         )}
+      </dd>
+    </div>
+  );
+}
+
+function NewChatConnectField({ agentId }: { agentId: string }) {
+  const { t } = useI18n();
+  const kind = agentNewChatConnectKind(agentId);
+  return (
+    <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-meta" data-help="agent-new-chat-connect">
+      <dt className="text-muted">{t('agents.detail.newChatConnect')}</dt>
+      <dd className="min-w-0">
+        <p className="text-secondary">{t(chatConnectLabelKey(kind))}</p>
+        <p className="mt-0.5 text-muted">{t(agentChatConnectHintKey(kind))}</p>
       </dd>
     </div>
   );
@@ -402,6 +421,7 @@ export function AgentDetailPanel({
           copyText={copyableChannelCommand(agent.agentId, spawn?.source ?? agent.channel, t)}
         />
         <EndpointTypesField agentId={agent.agentId} />
+        <NewChatConnectField agentId={agent.agentId} />
       </dl>
 
       <section className="mt-4">

@@ -595,6 +595,46 @@ fn grok_options_surface_seeded_native_commands_and_handshake_image() {
 }
 
 #[test]
+fn kiro_options_keep_injected_native_commands_across_catalog_refresh() {
+    let db = Database::open_in_memory().unwrap();
+    let now = "2026-01-01T00:00:00Z".to_string();
+    ChatRepo::new(db.clone())
+        .create_conversation(&Conversation {
+            id: "kiro-opts".into(),
+            title: String::new(),
+            agent_ids: vec![AgentId::Kiro],
+            cwd: Some(std::env::temp_dir().to_string_lossy().into_owned()),
+            allow_dangerous: false,
+            created_at: now.clone(),
+            updated_at: now,
+            native_session_id: None,
+            sending: false,
+            first_user_content: None,
+        })
+        .unwrap();
+    let run = Arc::new(RunService::new(AdapterRegistry::default()));
+    let runtime = Arc::new(ChatRuntime::new(db, run));
+    let empty = runtime.options("kiro-opts").unwrap();
+    assert_eq!(empty.transport, RuntimeChannel::Acp);
+    assert!(empty.native_commands.is_empty());
+    assert!(!empty.session_ready);
+
+    runtime.seed_native_commands_for_test(
+        "kiro-opts",
+        vec![RuntimeNativeCommand {
+            name: "context".into(),
+            description: "Add context".into(),
+            hint: Some("path".into()),
+        }],
+    );
+    let refreshed = runtime.refresh_options("kiro-opts").unwrap();
+    assert_eq!(refreshed.transport, RuntimeChannel::Acp);
+    assert_eq!(refreshed.native_commands.len(), 1);
+    assert_eq!(refreshed.native_commands[0].name, "context");
+    assert!(!refreshed.session_ready);
+}
+
+#[test]
 fn started_runtime_rejects_agent_and_cwd_changes() {
     let dir = tempdir().unwrap();
     let work = dir.path().join("work");

@@ -10,6 +10,7 @@ pub mod install;
 pub mod lifecycle;
 pub mod paths;
 pub mod projects;
+pub mod session_title;
 pub mod skills;
 pub mod stream;
 pub mod usage;
@@ -49,6 +50,10 @@ pub use paths::{
 pub use projects::{
     builtin_project_registry, empty_registry as empty_project_registry, ProjectScanContext,
     ProjectSource, ProjectSourceRegistry,
+};
+pub use session_title::{
+    builtin_session_title_registry, empty_registry as empty_session_title_registry,
+    SessionTitleRegistry, SessionTitleSource,
 };
 pub use stream::{
     builtin_stream_registry, has_stream_parser, StreamParseError, StreamParser,

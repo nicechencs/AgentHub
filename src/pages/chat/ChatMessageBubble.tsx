@@ -2,7 +2,7 @@ import { AgentLogo } from '@/components/shared/AgentLogo';
 import { AgentThinking } from '@/components/shared/AgentThinking';
 import { CopyTextButton } from '@/components/shared/CopyTextButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
-import { MarkdownView } from '@/components/shared/MarkdownView';
+import { MarkdownView, type MarkdownOpenLocalOptions } from '@/components/shared/MarkdownView';
 import { Button } from '@/components/ui/button';
 import { Hint } from '@/components/ui/tooltip';
 import { agentDisplayName } from '@/config/agents';
@@ -46,7 +46,7 @@ export function ChatMessageBubble({
   onRetry: () => void;
   hideRetry?: boolean;
   localBasePath?: string;
-  onOpenLocal?: (path: string) => boolean;
+  onOpenLocal?: (path: string, options?: MarkdownOpenLocalOptions) => boolean;
   onOpenProcess?: (turn: number, agent: AgentKey) => void;
   onCloseProcess?: () => void;
   processPaneOpen?: boolean;
@@ -81,7 +81,7 @@ function UserBubble({
 }: {
   message: ChatMessage;
   localBasePath?: string;
-  onOpenLocal?: (path: string) => boolean;
+  onOpenLocal?: (path: string, options?: MarkdownOpenLocalOptions) => boolean;
 }) {
   return (
     <div className="flex justify-end">
@@ -123,7 +123,7 @@ function AgentBubble({
   onRetry: () => void;
   hideRetry: boolean;
   localBasePath?: string;
-  onOpenLocal?: (path: string) => boolean;
+  onOpenLocal?: (path: string, options?: MarkdownOpenLocalOptions) => boolean;
   onOpenProcess?: (turn: number, agent: AgentKey) => void;
   onCloseProcess?: () => void;
   processPaneOpen: boolean;

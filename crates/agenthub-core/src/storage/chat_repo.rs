@@ -160,6 +160,30 @@ impl ChatRepo {
         })
     }
 
+    /// Replace a conversation title only while the row still holds `expected`.
+    /// Returns `false` when another writer (a manual rename) landed first, so
+    /// the caller can abandon its own title instead of clobbering it.
+    pub fn update_title_if(
+        &self,
+        id: &str,
+        expected: &str,
+        title: &str,
+        updated_at: &str,
+    ) -> Result<bool> {
+        self.db.with_conn(|conn| {
+            let n = conn.execute(
+                r#"
+                UPDATE conversations
+                SET title = ?3,
+                    updated_at = ?4
+                WHERE id = ?1 AND title = ?2
+                "#,
+                params![id, expected, title, updated_at],
+            )?;
+            Ok(n > 0)
+        })
+    }
+
     pub fn update_conversation(&self, record: &Conversation) -> Result<()> {
         let agent_ids = serde_json::to_string(&record.agent_ids)?;
         let allow = if record.allow_dangerous { 1 } else { 0 };

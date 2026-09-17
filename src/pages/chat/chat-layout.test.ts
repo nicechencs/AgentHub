@@ -105,13 +105,15 @@ describe('chat layout wiring', () => {
     expect(translate('zh', 'chat.composer.stopping')).toBe('正在停止');
   });
 
-  it('opens markdown files in a right-hand preview pane', () => {
+  it('opens workspace text files in a right-hand preview pane', () => {
     const page = source('index.tsx');
     expect(page).toContain('useSideSplit');
     expect(page).toContain('SideSplitFrame');
     expect(page).toContain('ChatMarkdownPreviewPanel');
-    expect(page).toContain('isMarkdownFilePath');
+    expect(page).toContain('isPreviewableChatFilePath');
+    expect(page).toContain('chatPreviewLine');
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('readMarkdownPreview');
+    expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('highlightLine');
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('chat.preview.back');
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('pathTailLabel');
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain("label={folder}");
@@ -192,10 +194,12 @@ describe('chat layout wiring', () => {
     expect(source('ChatComposer.tsx')).toContain('showBlockerBanner');
   });
 
-  it('keeps the transcript white column on the same max-w-5xl as the composer', () => {
+  it('keeps the transcript and composer on the same adaptive content column', () => {
     expect(source('index.tsx')).toContain('chatMainColumnClass');
     expect(source('index.tsx')).toContain('chatStageClass');
     expect(source('index.tsx')).toContain('pageRhythm.chatChromeX');
+    expect(source('index.tsx')).toContain('useChatContentWidth');
+    expect(source('index.tsx')).toContain('ah-chat-width-handle');
     expect(source('ChatSessionHeader.tsx')).toContain('pageRhythm.chatChromeX');
     expect(source('ChatTranscript.tsx')).not.toContain('pageRhythm.chatChromeX');
     expect(source('ChatTranscript.tsx')).not.toContain('px-6');
@@ -215,6 +219,28 @@ describe('chat layout wiring', () => {
     expect(page).not.toContain('hover:after:bg-accent');
     expect(page).not.toContain('-my-2');
     expect(page).not.toContain('flex min-h-0 flex-1 flex-col gap-4');
+  });
+
+  it('adopts the Agent session title once a turn ends', () => {
+    const send = source('use-chat-page-send.ts');
+    expect(send).toContain('refreshAgentTitle');
+    // Continuous turn: the snapshot left the active phase.
+    expect(send).toContain('if (wasSending) void adoptAgentTitle(conversationId);');
+    // Legacy turn: adopt even if the user left the conversation, and before
+    // the convergence read so one write lands both when they stayed.
+    expect(send).toContain('await adoptAgentTitle(sendConvId);');
+    expect(send.indexOf('await adoptAgentTitle(sendConvId);')).toBeLessThan(
+      send.indexOf('if (activeIdRef.current !== sendConvId) return;'),
+    );
+    expect(send.indexOf('await adoptAgentTitle(sendConvId);')).toBeLessThan(
+      send.indexOf('const convs = await listConversations();'),
+    );
+    expect(send).toContain('const title = await refreshAgentTitle(conversationId);');
+    // The answer lands on the row through the shared helper; that helper's
+    // behavior is covered by chat-model.test.ts (this suite cannot render pages).
+    expect(send).toContain(
+      'setConversations((prev) => withConversationTitle(prev, conversationId, title));',
+    );
   });
 
   it('lets a dragged composer pane fill leftover height', () => {
@@ -343,6 +369,8 @@ describe('chat layout wiring', () => {
     expect(actions).toContain('bg-panel');
     expect(actions).not.toContain('bg-popover');
     expect(actions).toContain('data-help="chat-slash-menu"');
+    expect(actions).toContain('slashActionGroup');
+    expect(actions).toContain('chat.actions.group.');
     expect(actions).toContain('text-body leading-relaxed');
     expect(actions).toContain('min-h-10');
     expect(actions).toContain('max-h-80');
@@ -366,6 +394,8 @@ describe('chat layout wiring', () => {
     expect(page).toContain('historyRevealNonce={page.historyRevealNonce}');
     expect(hook).toContain("action.id === 'open-history'");
     expect(hook).toContain('setHistoryRevealNonce');
+    expect(hook).toContain("action.kind === 'native'");
+    expect(hook).toContain('send.sendPrompt');
   });
 
   it('opens the Agent program outside Chat via the install façade, not a nested terminal', () => {

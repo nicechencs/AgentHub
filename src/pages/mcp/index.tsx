@@ -14,7 +14,7 @@ import { useToast } from '@/components/ui/toast';
 import { agentDisplayName } from '@/config/agents';
 import { filterByPageVisibleAgent } from '@/lib/agent-visibility';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
-import { listMcpInventory } from '@/lib/api/mcp';
+import { listMcpInventory, setMcpServerEnabled } from '@/lib/api/mcp';
 import { openPathInFileManager } from '@/lib/api/skill';
 import type { McpInventory, McpServerEntry, McpSourceFile } from '@/lib/backend/contracts/mcp-types';
 import type { AgentKey } from '@/lib/types';
@@ -24,6 +24,7 @@ import { TruncateTip } from '@/components/ui/tooltip';
 import { groupMcpServersByAgentAndFile } from './group-servers';
 import { McpServerTable } from './McpServerTable';
 import { visibleMcpSources } from './mcp-sources';
+import { McpWriteDialog } from './McpWriteDialog';
 
 function agentName(id: AgentKey): string {
   return agentDisplayName(id);
@@ -37,6 +38,7 @@ export default function McpPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | string | null>(null);
   const [filterAgent, setFilterAgent] = useState<AgentTabId>('all');
+  const [writeOpen, setWriteOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -110,7 +112,27 @@ export default function McpPage() {
     return visible.filter((file) => file.agent === filterAgent);
   }, [data, filterAgent, hiddenIds, installedIds, agentsLoading]);
 
-  async function locateSource(path: string) {
+  async function onToggleEnabled(server: McpServerEntry, enabled: boolean) {
+    try {
+      await setMcpServerEnabled(server.agent, server.name, enabled);
+      toast({
+        title: enabled ? t('mcp.write.enabled') : t('mcp.write.disabled'),
+        description: t('mcp.write.toggleHint', {
+          agent: agentName(server.agent),
+          name: server.name,
+        }),
+      });
+      await load();
+    } catch (e) {
+      toast({
+        title: t('mcp.write.toggleFail'),
+        description: e instanceof Error ? e.message : String(e),
+        variant: 'danger',
+      });
+    }
+  }
+
+    async function locateSource(path: string) {
     try {
       await openPathInFileManager(path);
     } catch (e) {
@@ -148,6 +170,9 @@ export default function McpPage() {
           aria-label={t('mcp.page.filterAria')}
         />
         <div className={pageRhythm.chromeActions}>
+          <Button size="sm" onClick={() => setWriteOpen(true)}>
+            {t('mcp.write.open')}
+          </Button>
           <PageRefreshButton
             loading={loading}
             onClick={() => void load()}
@@ -166,6 +191,7 @@ export default function McpPage() {
             sources={sources}
             showAgent={filterAgent === 'all'}
             onLocate={locateSource}
+            onWrite={() => setWriteOpen(true)}
           />
         ) : servers.length === 0 ? (
           <EmptyState
@@ -173,26 +199,24 @@ export default function McpPage() {
             title={t('mcp.empty.title')}
             description={t('mcp.empty.oneLiner')}
             actionLabel={t('mcp.empty.addServer')}
-            onAction={() => {
-              const path = sources[0]?.path;
-              if (path) {
-                void locateSource(path);
-                return;
-              }
-              toast({
-                title: t('mcp.empty.addServer'),
-                description: t('mcp.empty.addServerHint'),
-              });
-            }}
+            onAction={() => setWriteOpen(true)}
           />
         ) : (
           <McpServerTable
             groups={agentGroups}
             showAgent={filterAgent === 'all'}
             onLocate={locateSource}
+            onToggleEnabled={onToggleEnabled}
           />
         )}
       </PageSection>
+
+      <McpWriteDialog
+        open={writeOpen}
+        onOpenChange={setWriteOpen}
+        defaultAgent={filterAgent}
+        onWritten={() => void load()}
+      />
     </div>
   );
 }
@@ -201,24 +225,20 @@ function McpSourceEmpty({
   sources,
   showAgent,
   onLocate,
+  onWrite,
 }: {
   sources: McpSourceFile[];
   showAgent: boolean;
   onLocate: (path: string) => void;
+  onWrite: () => void;
 }) {
   const { t } = useI18n();
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-body text-secondary">{t('mcp.empty.oneLiner')}</p>
-        <Button
-          size="sm"
-          onClick={() => {
-            const path = sources[0]?.path;
-            if (path) onLocate(path);
-          }}
-        >
-          {t('mcp.empty.addServer')}
+        <Button size="sm" onClick={onWrite}>
+          {t('mcp.write.open')}
         </Button>
       </div>
       {sources.map((file) => (
