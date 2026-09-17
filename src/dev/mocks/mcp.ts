@@ -157,7 +157,7 @@ export function createMockMcpPort(): McpPort {
           command: spec.command ?? null,
           url: spec.url ?? null,
           sourcePath: `mock://${agent}/mcp`,
-          sourceFormat: agent === 'codex' ? 'toml' : 'json',
+          sourceFormat: agent === 'codex' || agent === 'grok' ? 'toml' : 'json',
           enabled: spec.enabled !== false,
           snippet: name,
         });

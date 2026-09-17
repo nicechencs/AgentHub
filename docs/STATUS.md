@@ -3,7 +3,7 @@ title: AgentHub 当前实现状态
 type: status
 status: current
 owner: maintainers
-updated: 2026-09-16
+updated: 2026-09-17
 ---
 
 # 当前实现状态
@@ -47,7 +47,7 @@ updated: 2026-09-16
 - 本机路由运行时在桌面进程内运行，面向兼容客户端提供 `/v1/messages`、`/v1/responses`、`/v1/chat/completions` 和 `GET /models` 等端点。Codex 与 Grok 都走 Responses 口，具体格式跟这条路由一起保存，由本机令牌选中，不根据请求正文猜测。接到 Codex / Grok 时写入的是本机令牌（按 API Key 方式）和 Responses 接口，不是上游官方登录。领域背景见 [连接与路由](concepts/connections-and-routing.md)。
 - Usage 只读解析本地 Agent 会话或日志；优先使用日志中的官方成本字段，否则使用离线内嵌价表估算。运行时不联网拉取价格，也不做汇率换算。总览趋势可按 Agent 或模型切换；悬停同时看 token 和费用。Grok 用量把 `grok-4.6` 与 `grok-4.6-build`（以及 `[grok]` / `xai/` 前缀）当成同一个公开模型。
 - Skills 页分用户技能、项目技能和市场。用户技能仍用共享目录 `~/.agents/skills/`，并可启用到各工具。安装对话框支持本地目录、系统文件窗口选择的 zip、或 git 地址（需含 `SKILL.md`）；只写入共享库，不会自动启用。项目技能从历史页已识别的工作区下拉选择，读写该项目的 `.agents/skills/`（列表也会带上 `.claude/skills` 等已有目录），安装对话框同一套来源。配置切换在修改前创建备份。Linux 真窗已走完：系统文件窗口选 zip（标题 Choose a skill zip / 选择技能 zip，ZIP 过滤）→ 源字段填入路径 → 用户技能写入共享库且不自动启用；项目技能同一套选择器，写入该项目 `.agents/skills/`，不写共享库。
-- MCP 页可扫描本机 MCP，并对 Claude / Codex / Cursor / WorkBuddy 提供目录模板 → 探测 → 写入 / 启用（无 OAuth）。`Capability::Mcp` 对这四家为 Partial，其余仍为 Planned。见 [MCP inventory](reference/mcp-inventory.md)。
+- MCP 页可扫描本机 MCP，并对 Claude / Codex / Grok / Cursor / WorkBuddy 提供目录模板 → 探测 → 写入 / 启用（无 OAuth）。`Capability::Mcp` 对这五家为 Partial，其余仍为 Planned。Grok 读/写用户级 `config.toml` 的 `[mcp_servers]`；关闭写 `enabled = false`，不删条目。见 [MCP inventory](reference/mcp-inventory.md)。
 - 插件页 `/plugins` 列出 Claude / Grok / Pi 的 plugin / extension 包。Claude / Grok 优先官方 CLI JSON，否则读 live 目录；Pi 读用户 `settings.json` 的 `packages`。Pi 对照本机版本与配置里的指定版本：指定了版本的 npm 包在 Pi 更新扩展时会跳过；未安装或两者不一致会在列表标出。Claude / Grok 配置里有、本机目录没有的包标未安装，不按 Pi 的指定版本规则判断，也不查商店里是否有新版本。本页不查线上最新。Claude / Grok 已装包可启用/停用，并可安装/卸载（Grok 走官方市场名、git 或本地路径，确认后才带 `--trust`；Claude 走 `name@marketplace` 与 `-y`）。卸载默认保留插件数据目录。Linux 真窗已验 Claude / Grok 安装与卸载（隔离目录 + 官方 CLI；点列表行打开详情再卸载）。没有 `Capability::Plugins`。Codex 仍为 Planned；Cursor / Kimi / WorkBuddy / DSH / ZCode / Kiro 为 Unsupported。见 [插件、MCP 与技能](concepts/plugins-and-mcp.md)。
 
 ## 验证与发布
@@ -71,7 +71,7 @@ updated: 2026-09-16
 - `AdapterRouteService::plan()` 是 Adapter / route 的唯一产品决策者。`adapter-capability-contract.json` 是它对冻结入参的只读投影；Rust 测试在 JSON 与内核输出不一致时失败。browser mock 只按来源特征查表并维护内存状态；凭据可用性必须精确匹配；未命中 fail-closed 为 unsupported，不回退 classify。route / support / ruleId / gateKind / canApply 的产品正确性在 Rust；Vitest 覆盖查表、脱敏、内存 apply 和页面听从 plan。见 [Adapter 路线内核](architecture/adapter-route-kernel.md)。
 - 不落地 sccache，也不把 `agenthub-core` 拆成多个 crate。CI 使用 `Swatinem/rust-cache`。Windows worktree 不得共享 `target/`。2026-08-25 的热缓存过滤测试约 3.5 秒、冷 worktree 首次编译依赖约 42 秒是历史快照，不是当前固定规模；过程见 [单一内核提案归档](archive/single-kernel-projections.md)。
 - DeepSeek Harness 的 StructuredStream 仍是规划项。检测/启动会跳过缺 `@deepseek-ai/dsh-scope` 的 PATH 残缺命令（常见是 `~/.local/bin/dsh`），优先完整的常见 npm 目录；遗留 `~/.agenthub/npm` 不是安装目标，但树完整时可以用来启动。Agents 页把遗留副本标成启动后备而不是安装位置；残缺命令提示用官方 npm 装到 `~/.npm-global`，不会推荐 `~/.agenthub/npm`。已落地部分以源码和集成文档为准。写入 `cordis.patch.yml` 时，以 `@` 开头的插件 id（以及其它 YAML 指示符）经 `yaml_quote` 加引号，避免无界面 dsh 因非法 YAML 退出。
-- 插件包更新、Codex/Pi 安装仍是提案，不从 MCP inventory 推导。Claude / Grok 已装包可启用/停用/安装/卸载；Pi 只列已装包。见 [插件管理](proposals/plugin-management.md)。MCP 写入已落地首片：Claude / Codex / Cursor / WorkBuddy 可探测并写入本机配置；Codex 关闭即删除条目。其余 Agent 与 OAuth Connector 仍不做。
+- 插件包更新、Codex/Pi 安装仍是提案，不从 MCP inventory 推导。Claude / Grok 已装包可启用/停用/安装/卸载；Pi 只列已装包。见 [插件管理](proposals/plugin-management.md)。MCP 写入已落地：Claude / Codex / Grok / Cursor / WorkBuddy 可探测并写入本机配置；Codex 关闭即删除条目，Grok 关闭写 `enabled = false`。其余 Agent 与 OAuth Connector 仍不做。
 - Codex 安装、外部渠道 Chat 调用与连接/路由模块化审查见 [Codex 安装与模块化审查](archive/codex-install-modularity-review.md)（2026-08-27）。
 - npm 渠道安装写到检测会扫的用户前缀（`~/.npm-global`，Windows 为 `%APPDATA%\npm`）。`~/.agenthub` 以及其中的 `npm` 只是遗留，不是安装目标。DeepSeek Harness 在 PATH 残缺且遗留 prefix 树完整时，可以用这份遗留副本启动；界面不会把它写成安装位置。
 - WorkBuddy 本机安装只打开官网安装页，界面给中文指引，不当成「安装失败」。真失败时「重试」是主按钮；失败面板先显示诊断，不把 npm 下载进度当正文。

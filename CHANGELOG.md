@@ -17,6 +17,9 @@
 
 ## [Unreleased]
 
+### 新增
+- MCP：Grok 可从本页探测并写入 `config.toml`；关闭时改 `enabled`，不删条目
+
 ## [0.4.18] - 2026-09-11
 
 ### 新增

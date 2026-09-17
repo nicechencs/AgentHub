@@ -3511,7 +3511,7 @@ export const zh = {
   mcp: {
     page: {
       title: "MCP",
-      description: "列出本机已发现的 MCP；也可探测后写入 Claude / Codex / Cursor / WorkBuddy。",
+      description: "列出本机已发现的 MCP；也可探测后写入 Claude / Codex / Grok / Cursor / WorkBuddy。",
       descriptionTip:
         "可点「写入 MCP」用本地模板探测并写入配置。也仍可点列表里的「目录」，{next}。不含 OAuth。",
       empty: "这一页只扫描、列出找到的项，不会安装。有列表时，点「目录」，{next}。",
@@ -3548,7 +3548,7 @@ export const zh = {
     write: {
       open: "写入 MCP",
       title: "写入 MCP",
-      description: "从本地模板探测后，写入 Claude / Codex / Cursor / WorkBuddy 的本机配置。不含 OAuth。",
+      description: "从本地模板探测后，写入 Claude / Codex / Grok / Cursor / WorkBuddy 的本机配置。不含 OAuth。",
       agent: "Agent",
       template: "模板",
       custom: "自定义",

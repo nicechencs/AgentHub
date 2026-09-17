@@ -3539,7 +3539,7 @@ export const en = {
   mcp: {
     page: {
       title: "MCP",
-      description: "Lists MCP found on this machine. You can also probe and write into Claude / Codex / Cursor / WorkBuddy.",
+      description: "Lists MCP found on this machine. You can also probe and write into Claude / Codex / Grok / Cursor / WorkBuddy.",
       descriptionTip:
         "Use Write MCP to probe a local template and write config. Or tap Folder in the list and {next}. No OAuth.",
       empty: "This page only scans and lists what it finds; it does not install. When a row appears, tap Folder and {next}.",
@@ -3576,7 +3576,7 @@ export const en = {
     write: {
       open: "Write MCP",
       title: "Write MCP",
-      description: "Probe a local template, then write into Claude / Codex / Cursor / WorkBuddy config on this machine. No OAuth.",
+      description: "Probe a local template, then write into Claude / Codex / Grok / Cursor / WorkBuddy config on this machine. No OAuth.",
       agent: "Agent",
       template: "Template",
       custom: "Custom",
