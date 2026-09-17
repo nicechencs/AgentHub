@@ -12,6 +12,12 @@ import type { Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { isKiroChatAgent } from './chat-kiro-model';
 import {
+  chatConnectLabelKey,
+  sessionChatConnectKind,
+} from './chat-connect-model';
+import { sessionAllowAlwaysActive } from './chat-runtime-model';
+import type { RuntimeChannel, RuntimeSnapshot } from '@/lib/api/chat';
+import {
   autoApproveActive,
   autoApproveEffect,
   autoApproveHint,
@@ -31,6 +37,9 @@ export function ChatSessionHeader({
   onOpenSettings,
   onPickWorkingDirectory,
   runtimeLocked = false,
+  transport = null,
+  runtimeEnabled = false,
+  runtime = null,
 }: {
   active: Conversation | null;
   railOpen: boolean;
@@ -40,6 +49,9 @@ export function ChatSessionHeader({
   onOpenSettings: () => void;
   onPickWorkingDirectory: () => void;
   runtimeLocked?: boolean;
+  transport?: RuntimeChannel | null;
+  runtimeEnabled?: boolean;
+  runtime?: Pick<RuntimeSnapshot, 'sessionAllowAlways'> | null;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -61,6 +73,12 @@ export function ChatSessionHeader({
   const selectedAgent = active?.agentIds[0] ?? null;
   const approveOn = autoApproveActive(Boolean(active?.allowDangerous), selectedAgent);
   const kiroPermissions = isKiroChatAgent(selectedAgent);
+  const connectKind = sessionChatConnectKind({
+    agentId: selectedAgent,
+    transport,
+    runtimeEnabled,
+  });
+  const sessionAlways = sessionAllowAlwaysActive(runtime);
 
   async function commit() {
     if (cancelledRef.current) {
@@ -187,6 +205,18 @@ export function ChatSessionHeader({
               </span>
             </Button>
           </Hint>
+          <Hint label={t('chat.connect.sessionTitle')}>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={onOpenSettings}
+              data-help="chat-session-connect"
+              className="text-muted"
+            >
+              {t(chatConnectLabelKey(connectKind))}
+            </Button>
+          </Hint>
           {active.nativeSessionId && (
             <Button
               type="button"
@@ -217,6 +247,23 @@ export function ChatSessionHeader({
               <span className="truncate">{shortenId(active.nativeSessionId, 10)}</span>
             </Button>
           )}
+          {sessionAlways ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={onOpenSettings}
+              title={
+                kiroPermissions
+                  ? t('chat.runtime.sessionRememberedOnHintKiro')
+                  : t('chat.runtime.sessionRememberedOnHint')
+              }
+              data-help="chat-header-always-allow"
+              className="text-muted"
+            >
+              {t('chat.runtime.sessionRemembered')}
+            </Button>
+          ) : null}
           {kiroPermissions ? (
             <Button
               type="button"
