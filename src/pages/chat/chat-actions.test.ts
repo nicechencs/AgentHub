@@ -112,6 +112,26 @@ describe('chat action command search', () => {
     expect(chatOverflowMenuActions(extra).some((item) => item.kind === 'native')).toBe(true);
   });
 
+  it('merges Kiro-style leading-slash names without dumping skills onto bare /', () => {
+    const extra = nativeCommandActions([
+      { name: '/context', description: 'Add context', hint: 'path' },
+      { name: '/compact', description: 'Compact context', hint: '[instructions]' },
+    ]);
+    expect(extra.map((item) => item.id)).toEqual([
+      'native-command:context',
+      'native-command:compact',
+    ]);
+    expect(extra[0]?.draftText).toBe('/context ');
+    expect(extra[1]?.draftText).toBe('/compact');
+    expect(filterChatActions('/', extra).map((item) => item.id)).toEqual([
+      'native-command:context',
+      'native-command:compact',
+      'new-session',
+      'copy-latest-reply',
+    ]);
+    expect(filterChatActions('/', extra).some((item) => /skill|技能|my-skill/i.test(item.id + item.label))).toBe(false);
+  });
+
   it('lists the external command-line escape hatch without sending', () => {
     const extra = [openExternalCliAction({
       label: '启动命令行',

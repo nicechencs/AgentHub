@@ -359,6 +359,122 @@ fn grok_available_commands_update_fills_catalog_not_timeline() {
 }
 
 #[test]
+fn kiro_vendor_commands_available_fills_catalog_not_timeline() {
+    let db = Database::open_in_memory().unwrap();
+    conversation_with(&db, "kiro-cmds", AgentId::Kiro, &std::env::temp_dir());
+    let mut worker = worker(&db, "kiro-cmds");
+    worker.agent = AgentId::Kiro;
+    worker.store.enable_if_new("kiro-cmds").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .notification(
+            "_kiro.dev/commands/available",
+            &json!({
+                "sessionId": "sess-kiro",
+                "commands": [{
+                    "name": "/context",
+                    "description": "Add context",
+                    "meta": { "hint": "path" }
+                }, {
+                    "name": "/compact",
+                    "description": "Compact context",
+                    "meta": { "hint": "[instructions]" }
+                }],
+                "prompts": [{
+                    "name": "my-skill",
+                    "description": "A skill",
+                    "serverName": "skill:config"
+                }],
+                "tools": [{ "name": "read" }],
+                "mcpServers": []
+            }),
+        )
+        .unwrap();
+
+    let snapshot = worker.store.snapshot("kiro-cmds", None).unwrap();
+    assert!(!snapshot.events.iter().any(|event| matches!(
+        &event.event,
+        ChatEvent::AgentProcess { .. }
+    )));
+    let cache = worker
+        .catalogs
+        .lock()
+        .unwrap()
+        .get("kiro-cmds")
+        .cloned()
+        .expect("catalog");
+    assert_eq!(
+        cache
+            .native_commands
+            .iter()
+            .map(|command| command.name.as_str())
+            .collect::<Vec<_>>(),
+        ["context", "compact"]
+    );
+    assert_eq!(cache.native_commands[0].hint.as_deref(), Some("path"));
+    assert_eq!(
+        cache.native_commands[1].hint.as_deref(),
+        Some("[instructions]")
+    );
+    assert!(cache.catalog_epoch >= 1);
+
+    worker
+        .notification(
+            "_kiro.dev/commands/available",
+            &json!({
+                "sessionId": "sess-kiro",
+                "commands": [],
+                "prompts": [{ "name": "my-skill" }]
+            }),
+        )
+        .unwrap();
+    let cleared = worker
+        .catalogs
+        .lock()
+        .unwrap()
+        .get("kiro-cmds")
+        .cloned()
+        .expect("catalog");
+    assert!(cleared.native_commands.is_empty());
+}
+
+#[test]
+fn kiro_standard_available_commands_update_also_fills_catalog() {
+    let db = Database::open_in_memory().unwrap();
+    conversation_with(&db, "kiro-acp-cmds", AgentId::Kiro, &std::env::temp_dir());
+    let mut worker = worker(&db, "kiro-acp-cmds");
+    worker.agent = AgentId::Kiro;
+    worker.store.enable_if_new("kiro-acp-cmds").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .notification(
+            "session/update",
+            &json!({
+                "update": {
+                    "sessionUpdate": "available_commands_update",
+                    "availableCommands": [{
+                        "name": "compact",
+                        "description": "Compact context"
+                    }]
+                }
+            }),
+        )
+        .unwrap();
+
+    let cache = worker
+        .catalogs
+        .lock()
+        .unwrap()
+        .get("kiro-acp-cmds")
+        .cloned()
+        .expect("catalog");
+    assert_eq!(cache.native_commands.len(), 1);
+    assert_eq!(cache.native_commands[0].name, "compact");
+}
+
+#[test]
 fn grok_config_option_update_fills_models_not_timeline() {
     let db = Database::open_in_memory().unwrap();
     conversation_with(&db, "grok-cfg", AgentId::Grok, &std::env::temp_dir());

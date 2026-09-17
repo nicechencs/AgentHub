@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: chat and core contributors
 source-of-truth: ProcessStep, ChatEvent, RuntimeSnapshot
-updated: 2026-09-16
+updated: 2026-09-17
 ---
 
 # Chat 过程事件
@@ -33,7 +33,7 @@ updated: 2026-09-16
 
 下列进 Options 或专用条，**禁止**推进过程时间线冒充「对方做了一步」：
 
-- 斜杠命令目录（`available_commands` / `nativeCommands`）
+- 斜杠命令目录（`available_commands` / Kiro `_kiro.dev/commands/available` / `nativeCommands`）
 - ACP `config_option_update`（模型 / 思考目录）
 - 世代号 `catalogEpoch`（只用来重拉 Options）
 

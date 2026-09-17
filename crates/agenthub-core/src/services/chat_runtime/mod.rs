@@ -2673,6 +2673,9 @@ impl ActorWorker {
             "session/update" | "session_update" | "_x.ai/session/update" => {
                 self.grok_session_update(params)?;
             }
+            "_kiro.dev/commands/available" => {
+                self.apply_kiro_available_commands(params);
+            }
             "_x.ai/session/prompt_complete" => {
                 self.turn_completed(params)?;
             }
@@ -3099,19 +3102,37 @@ impl ActorWorker {
         }
     }
 
+    fn apply_native_commands(
+        &self,
+        commands: Vec<crate::utils::stream_parse::acp::AcpAvailableCommand>,
+    ) {
+        self.patch_catalog(|cache| {
+            cache.native_commands = commands
+                .into_iter()
+                .map(|command| RuntimeNativeCommand {
+                    name: command.name,
+                    description: command.description,
+                    hint: command.hint,
+                })
+                .collect();
+        });
+    }
+
+    /// Kiro declares slash commands on this vendor notification after
+    /// `session/new`. Standard ACP `available_commands_update` is still
+    /// accepted via [`Self::grok_session_update`]. Skills/prompts are ignored.
+    fn apply_kiro_available_commands(&self, params: &Value) {
+        if let Some(commands) =
+            crate::utils::stream_parse::acp::extract_kiro_available_commands(params)
+        {
+            self.apply_native_commands(commands);
+        }
+    }
+
     fn grok_session_update(&mut self, params: &Value) -> Result<()> {
         if let Some(commands) = crate::utils::stream_parse::acp::extract_available_commands(params)
         {
-            self.patch_catalog(|cache| {
-                cache.native_commands = commands
-                    .into_iter()
-                    .map(|command| RuntimeNativeCommand {
-                        name: command.name,
-                        description: command.description,
-                        hint: command.hint,
-                    })
-                    .collect();
-            });
+            self.apply_native_commands(commands);
         }
         if let Some(catalog) = crate::utils::stream_parse::acp::extract_config_catalog(params) {
             self.apply_acp_config_catalog(catalog);
