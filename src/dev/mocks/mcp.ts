@@ -104,5 +104,83 @@ export function createMockMcpPort(): McpPort {
       await delay(150);
       return structuredClone(DEMO);
     },
+    async listCatalog() {
+      await delay(80);
+      return [
+        {
+          id: 'memory',
+          name: 'memory',
+          title: 'Memory',
+          description: 'In-process memory (stdio)',
+          transport: 'stdio',
+          command: 'npx',
+          args: ['-y', '@modelcontextprotocol/server-memory'],
+          url: null,
+          agents: ['claude', 'codex', 'cursor', 'workbuddy'],
+        },
+      ];
+    },
+    async probeServer(spec) {
+      await delay(80);
+      const transport = spec.transport || 'stdio';
+      if (transport === 'stdio') {
+        const cmd = (spec.command || '').trim();
+        return {
+          ok: Boolean(cmd),
+          message: cmd ? `stdio command present: ${cmd}` : 'stdio command missing',
+          transport,
+          detail: null,
+        };
+      }
+      const url = (spec.url || '').trim();
+      return {
+        ok: Boolean(url),
+        message: url ? `url accepted: ${url}` : 'url missing',
+        transport,
+        detail: null,
+      };
+    },
+    async upsertServer(agent, spec) {
+      await delay(100);
+      const name = spec.name.trim();
+      const existing = DEMO.servers.find((s) => s.agent === agent && s.name === name);
+      if (existing) {
+        existing.enabled = spec.enabled !== false;
+        existing.transport = spec.transport || existing.transport;
+        existing.command = spec.command ?? existing.command;
+        existing.url = spec.url ?? existing.url;
+      } else {
+        DEMO.servers.push({
+          agent,
+          name,
+          transport: spec.transport || 'stdio',
+          command: spec.command ?? null,
+          url: spec.url ?? null,
+          sourcePath: `mock://${agent}/mcp`,
+          sourceFormat: agent === 'codex' || agent === 'grok' ? 'toml' : 'json',
+          enabled: spec.enabled !== false,
+          snippet: name,
+        });
+      }
+      return {
+        agent,
+        name,
+        path: `mock://${agent}/mcp`,
+        enabled: spec.enabled !== false,
+      };
+    },
+    async setServerEnabled(agent, name, enabled) {
+      await delay(80);
+      const existing = DEMO.servers.find((s) => s.agent === agent && s.name === name);
+      if (!existing) {
+        throw new Error(`MCP server not found: ${agent}/${name}`);
+      }
+      if (agent === 'codex' && !enabled) {
+        DEMO.servers = DEMO.servers.filter((s) => !(s.agent === agent && s.name === name));
+        return { agent, name, path: existing.sourcePath, enabled: false };
+      }
+      existing.enabled = enabled;
+      return { agent, name, path: existing.sourcePath, enabled };
+    },
   };
 }

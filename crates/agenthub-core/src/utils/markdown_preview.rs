@@ -1,7 +1,8 @@
-//! Read a markdown file for in-app preview (chat right pane).
+//! Read a workspace text/markdown file for in-app chat preview (right pane).
 //!
-//! The file must live under the conversation working directory, use a markdown
-//! extension, and not be reached through a symlink or Windows reparse point.
+//! The file must live under the conversation working directory, use a
+//! previewable text extension, and not be reached through a symlink or
+//! Windows reparse point.
 
 use std::fs;
 use std::io::Read;
@@ -14,16 +15,116 @@ use crate::utils::paths::expand_user_path;
 
 const MARKDOWN_EXTS: &[&str] = &["md", "mdx", "markdown"];
 
+/// Common source / config / prose extensions opened in the chat detail pane.
+const TEXT_PREVIEW_EXTS: &[&str] = &[
+    "md",
+    "mdx",
+    "markdown",
+    "txt",
+    "text",
+    "log",
+    "json",
+    "jsonc",
+    "json5",
+    "toml",
+    "yaml",
+    "yml",
+    "xml",
+    "html",
+    "htm",
+    "css",
+    "scss",
+    "less",
+    "js",
+    "jsx",
+    "mjs",
+    "cjs",
+    "ts",
+    "tsx",
+    "mts",
+    "cts",
+    "py",
+    "pyi",
+    "rs",
+    "go",
+    "java",
+    "kt",
+    "kts",
+    "c",
+    "h",
+    "cc",
+    "cpp",
+    "cxx",
+    "hpp",
+    "hxx",
+    "cs",
+    "swift",
+    "rb",
+    "php",
+    "sh",
+    "bash",
+    "zsh",
+    "fish",
+    "ps1",
+    "bat",
+    "cmd",
+    "sql",
+    "graphql",
+    "gql",
+    "r",
+    "lua",
+    "pl",
+    "pm",
+    "vue",
+    "svelte",
+    "astro",
+    "ini",
+    "cfg",
+    "conf",
+    "env",
+    "properties",
+    "gitignore",
+    "dockerignore",
+    "editorconfig",
+    "dockerfile",
+    "makefile",
+    "cmake",
+    "gradle",
+    "csv",
+    "tsv",
+    "svg",
+];
+
 pub fn is_markdown_path(path: &Path) -> bool {
+    path_has_ext(path, MARKDOWN_EXTS)
+}
+
+pub fn is_previewable_text_path(path: &Path) -> bool {
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if matches!(
+        name.as_str(),
+        "dockerfile" | "makefile" | "gemfile" | "rakefile" | "procfile" | "cmakelists.txt"
+    ) {
+        return true;
+    }
+    path_has_ext(path, TEXT_PREVIEW_EXTS)
+}
+
+fn path_has_ext(path: &Path, allowed: &[&str]) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| {
-            MARKDOWN_EXTS
+            allowed
                 .iter()
-                .any(|allowed| ext.eq_ignore_ascii_case(allowed))
+                .any(|candidate| ext.eq_ignore_ascii_case(candidate))
         })
 }
 
+/// Read a markdown or other text file under `cwd` for the chat preview pane.
 pub fn read_markdown_file_preview(path: &str, cwd: &str) -> Result<MarkdownFilePreview> {
     if cwd.trim().is_empty() {
         return Err(AppError::InvalidArg("working directory is required".into()));
@@ -39,9 +140,9 @@ pub fn read_markdown_file_preview(path: &str, cwd: &str) -> Result<MarkdownFileP
     } else {
         cwd_raw.join(path_raw)
     };
-    if !is_markdown_path(&candidate) {
+    if !is_previewable_text_path(&candidate) {
         return Err(AppError::InvalidArg(
-            "only markdown files can be previewed".into(),
+            "only text or markdown files can be previewed".into(),
         ));
     }
 
@@ -55,7 +156,7 @@ pub fn read_markdown_file_preview(path: &str, cwd: &str) -> Result<MarkdownFileP
     }
     if !meta.is_file() {
         return Err(AppError::NotFound(format!(
-            "markdown file not found: {}",
+            "file not found: {}",
             candidate.display()
         )));
     }
@@ -71,7 +172,16 @@ pub fn read_markdown_file_preview(path: &str, cwd: &str) -> Result<MarkdownFileP
     let mut buf = String::new();
     let cap = SKILL_MARKDOWN_PREVIEW_CHARS.saturating_add(1);
     let mut limited = (&mut file).take(cap as u64);
-    limited.read_to_string(&mut buf)?;
+    limited.read_to_string(&mut buf).map_err(|err| {
+        if err.kind() == std::io::ErrorKind::InvalidData {
+            AppError::InvalidArg(format!(
+                "file is not valid UTF-8 text: {}",
+                file_canon.display()
+            ))
+        } else {
+            AppError::from(err)
+        }
+    })?;
     let truncated = buf.chars().count() > SKILL_MARKDOWN_PREVIEW_CHARS;
     if truncated {
         buf = buf.chars().take(SKILL_MARKDOWN_PREVIEW_CHARS).collect();

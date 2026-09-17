@@ -261,7 +261,8 @@ impl AgentAdapter for WorkBuddyAdapter {
                 CapabilityState::unsupported("CLI 仅提供 text 输出，无结构化事件流")
             }
             ProviderPresets => CapabilityState::unsupported("暂无内置 WorkBuddy provider 预设"),
-            Mcp | ModelSelect | SessionResume => CapabilityState::planned("待验证接入"),
+            Mcp => CapabilityState::partial("可写入本机 MCP 配置（目录/探测/启用；无 OAuth）"),
+            ModelSelect | SessionResume => CapabilityState::planned("待验证接入"),
         }
     }
 

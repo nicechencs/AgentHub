@@ -3,6 +3,8 @@ import type { AgentKey } from '@/lib/types';
 export type ChatFilePreviewTarget = {
   kind: 'file';
   stack: string[];
+  /** 1-based line on the top-of-stack file (Deepseek Harness openFile.line). */
+  line?: number;
 };
 
 export type ChatProcessInspectTarget = {
@@ -33,12 +35,22 @@ export function chatPreviewPath(target: ChatInspectTarget | null | undefined): s
   return target.stack[target.stack.length - 1] ?? '';
 }
 
+export function chatPreviewLine(target: ChatInspectTarget | null | undefined): number | undefined {
+  if (!isChatFilePreview(target)) return undefined;
+  const line = target.line;
+  return typeof line === 'number' && line > 0 ? line : undefined;
+}
+
 export function chatPreviewCanBack(target: ChatInspectTarget | null | undefined): boolean {
   return isChatFilePreview(target) && target.stack.length > 1;
 }
 
-export function openChatPreviewRoot(path: string): ChatFilePreviewTarget {
-  return { kind: 'file', stack: [path] };
+export function openChatPreviewRoot(path: string, line?: number): ChatFilePreviewTarget {
+  return {
+    kind: 'file',
+    stack: [path],
+    ...(typeof line === 'number' && line > 0 ? { line } : {}),
+  };
 }
 
 export function openChatProcessInspect(turn: number, agent: AgentKey): ChatProcessInspectTarget {
@@ -48,16 +60,28 @@ export function openChatProcessInspect(turn: number, agent: AgentKey): ChatProce
 export function pushChatPreview(
   target: ChatInspectTarget | null | undefined,
   next: string,
+  line?: number,
 ): ChatFilePreviewTarget {
   if (!isChatFilePreview(target)) {
-    return openChatPreviewRoot(next);
+    return openChatPreviewRoot(next, line);
   }
   const stack = target.stack;
   const current = stack[stack.length - 1];
   if (!next || next === current) {
-    return { kind: 'file', stack: stack.length ? stack : [next] };
+    const samePath = { kind: 'file' as const, stack: stack.length ? stack : [next] };
+    if (typeof line === 'number' && line > 0) return { ...samePath, line };
+    if (target.line != null) return { ...samePath, line: target.line };
+    return samePath;
   }
-  return { kind: 'file', stack: [...stack, next] };
+  return openChatPreviewRootFromStack([...stack, next], line);
+}
+
+function openChatPreviewRootFromStack(stack: string[], line?: number): ChatFilePreviewTarget {
+  return {
+    kind: 'file',
+    stack,
+    ...(typeof line === 'number' && line > 0 ? { line } : {}),
+  };
 }
 
 export function popChatPreview(

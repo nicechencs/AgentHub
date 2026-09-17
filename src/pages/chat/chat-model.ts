@@ -2,7 +2,6 @@
  * Chat 页纯函数：会话分组 / 发送前置 / 展示文案。
  * 不 import React、不碰 lib/api。
  */
-import { pageRhythm } from '@/components/layout/page-rhythm';
 import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
 import { sliceAgentStatus } from '@/lib/backend/contracts/agent-status-view';
 import type {
@@ -994,6 +993,19 @@ export function conversationTitle(t: TranslateFn, title: string): string {
   return t('chat.title.newConversation');
 }
 
+/**
+ * Apply a title the Agent wrote for itself to one row of the conversation
+ * list. The backend decides when adoption is allowed; this only places the
+ * answer where the rail and the session header read it from.
+ */
+export function withConversationTitle<T extends { id: string; title: string }>(
+  conversations: readonly T[],
+  id: string,
+  title: string,
+): T[] {
+  return conversations.map((item) => (item.id === id ? { ...item, title } : item));
+}
+
 export function firstUserContentByConversation(
   messages: readonly Pick<ChatMessage, 'conversationId' | 'role' | 'content'>[],
 ): Record<string, string> {
@@ -1204,8 +1216,8 @@ export function composerUsesCssFieldSizing(css?: CssSupports | null): boolean {
   return typeof api?.supports === 'function' && api.supports('field-sizing', 'content');
 }
 
-/** 对话记录与 composer 共用的主列宽（`pageRhythm.readingColumn`）。 */
-export const chatMainColumnClass = pageRhythm.readingColumn;
+/** 对话记录与 composer 共用的主列宽（自适应 + 可拖拽，见 `use-chat-content-width`）。 */
+export const chatMainColumnClass = 'ah-chat-content-column mx-auto w-full min-w-0';
 
 /** 对话记录与输入壳外侧上下 16px；水平缝由页面上的 `chatChromeX` 提供，与页边 12px 对齐。 */
 export const chatStageClass = 'flex min-h-0 flex-1 flex-col py-4';

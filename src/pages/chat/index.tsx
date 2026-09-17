@@ -8,10 +8,11 @@ import { useSideSplit } from '@/components/layout/use-side-split';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { Notice } from '@/components/shared/Notice';
-import { isMarkdownFilePath } from '@/components/shared/MarkdownView';
+import type { MarkdownOpenLocalOptions } from '@/components/shared/MarkdownView';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
-import { onChatNativeShortcut } from '@/lib/api/chat';
+import { onChatNativeShortcut, type RuntimeRequest } from '@/lib/api/chat';
+import type { TranslateFn } from '@/lib/i18n';
 import { hasEscPriorityOverlay } from '@/lib/skills/preview-keys';
 import { StorageKey } from '@/lib/storage-key';
 import { processKey } from '@/lib/chat-process';
@@ -19,6 +20,7 @@ import { cn } from '@/lib/utils';
 import {
   chatComposerChoiceOptions,
   chatShowsRuntimeRequestPanels,
+  isKiroChatAgent,
   kiroChatBannerCopy,
   kiroChatStance,
 } from './chat-kiro-model';
@@ -32,12 +34,13 @@ import {
 } from './chat-model';
 import { subscribeChatShortcutKeydown } from './chat-shortcuts';
 import { chatModShiftIShouldOpenModel } from './chat-model-labels';
-import { formatChatSessionRecord, type TurnGroup } from './chat-format';
+import { formatChatSessionRecord, processUserPromptPreview, type TurnGroup } from './chat-format';
 import { chatBusySendMode, grokLegacyContinueKind } from './chat-grok-follow-up';
 import { ChatMarkdownPreviewPanel } from './ChatMarkdownPreviewPanel';
 import { ChatProcessInspectPanel } from './ChatProcessInspectPanel';
 import {
   chatPreviewCanBack,
+  chatPreviewLine,
   chatPreviewPath,
   isChatFilePreview,
   isChatProcessInspect,
@@ -48,6 +51,8 @@ import {
   type ChatInspectTarget,
   type ChatProcessInspectTarget,
 } from './chat-preview-model';
+import { isPreviewableChatFilePath } from './chat-file-preview';
+import { useChatContentWidth } from './use-chat-content-width';
 import { ChatRuntimeExtras } from './ChatRuntimeExtras';
 import { ChatTurnOutcomeBanner } from './ChatTurnOutcomeBanner';
 import { ChatComposer } from './ChatComposer';
@@ -59,6 +64,7 @@ import { ChatTranscript } from './ChatTranscript';
 import { ChatRuntimeRequests } from './ChatRuntimeRequests';
 import { ChatHostTerminals } from './ChatHostTerminals';
 import { ChatPlanBar } from './ChatPlanBar';
+import { runtimeRequestTitle, sessionAllowAlwaysActive } from './chat-runtime-model';
 import { useChatComposerSplit } from './use-chat-composer-split';
 import { useChatPage } from './use-chat-page';
 
@@ -73,6 +79,7 @@ export default function ChatPage() {
     queued: page.queuedFollowUpCount > 0,
   });
   const split = useChatComposerSplit();
+  const contentWidth = useChatContentWidth();
   const preview = useSideSplit<ChatInspectTarget>({
     storageKey: StorageKey.chatPreviewWidth,
     framePadX: SIDE_SPLIT_FRAME_PAD_X_FLUSH,
@@ -81,18 +88,18 @@ export default function ChatPage() {
   const { t } = useI18n();
   const [modelMenuOpenNonce, setModelMenuOpenNonce] = useState(0);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const openMarkdownPreview = useCallback(
-    (next: string) => {
-      if (!isMarkdownFilePath(next)) return false;
-      preview.open(openChatPreviewRoot(next));
+  const openFilePreview = useCallback(
+    (next: string, options?: MarkdownOpenLocalOptions) => {
+      if (!isPreviewableChatFilePath(next)) return false;
+      preview.open(openChatPreviewRoot(next, options?.line));
       return true;
     },
     [preview.open],
   );
-  const openNestedMarkdown = useCallback(
-    (next: string) => {
-      if (!isMarkdownFilePath(next)) return;
-      preview.open(pushChatPreview(preview.target, next));
+  const openNestedFile = useCallback(
+    (next: string, options?: MarkdownOpenLocalOptions) => {
+      if (!isPreviewableChatFilePath(next)) return;
+      preview.open(pushChatPreview(preview.target, next, options?.line));
     },
     [preview.open, preview.target],
   );
@@ -102,7 +109,7 @@ export default function ChatPage() {
     },
     [preview.open],
   );
-  const backMarkdownPreview = useCallback(() => {
+  const backFilePreview = useCallback(() => {
     const previous = popChatPreview(preview.target);
     if (!previous) {
       preview.close();
@@ -301,12 +308,38 @@ export default function ChatPage() {
           onOpenSettings={() => page.setSettingsOpen(true)}
           onPickWorkingDirectory={() => void page.pickWorkingDirectory()}
           runtimeLocked={page.runtimeLocked || page.sendingHere}
+          transport={page.runtimeOps.transport}
+          runtimeEnabled={Boolean(page.runtime?.enabled)}
+          runtime={page.runtime}
         />
 
         <div
+          ref={contentWidth.rootRef}
           className={cn(chatStageClass, pageRhythm.chatChromeX, 'relative')}
           data-chat-stage
         >
+          <div
+            className="ah-chat-width-handle"
+            data-side="left"
+            data-dragging={contentWidth.dragging || undefined}
+            onPointerDown={contentWidth.onPointerDown('left')}
+            onPointerMove={contentWidth.onPointerMove}
+            onPointerUp={contentWidth.onPointerUp}
+            onPointerCancel={contentWidth.onPointerCancel}
+            onLostPointerCapture={contentWidth.onPointerCancel}
+            aria-hidden
+          />
+          <div
+            className="ah-chat-width-handle"
+            data-side="right"
+            data-dragging={contentWidth.dragging || undefined}
+            onPointerDown={contentWidth.onPointerDown('right')}
+            onPointerMove={contentWidth.onPointerMove}
+            onPointerUp={contentWidth.onPointerUp}
+            onPointerCancel={contentWidth.onPointerCancel}
+            onLostPointerCapture={contentWidth.onPointerCancel}
+            aria-hidden
+          />
           <div
             ref={split.splitRef}
             className={cn(chatMainColumnClass, 'flex min-h-0 flex-1 flex-col')}
@@ -326,7 +359,7 @@ export default function ChatPage() {
               onScroll={page.onTranscriptScroll}
               onRetry={() => void page.retryLast()}
               hideLastTurnRetry={Boolean(page.turnOutcome)}
-              onOpenLocal={openMarkdownPreview}
+              onOpenLocal={openFilePreview}
               onOpenProcess={openProcessInspect}
               onCloseProcess={preview.close}
               inspectProcess={
@@ -355,6 +388,17 @@ export default function ChatPage() {
                 terminals={page.runtime.hostTerminals}
                 onKill={page.killHostTerminal}
               />
+            ) : null}
+            {sessionAllowAlwaysActive(page.runtime) ? (
+              <p className="mb-2 text-meta text-muted" data-help="chat-session-always-allow">
+                {t('chat.runtime.sessionRemembered')}
+                {' · '}
+                {t(
+                  isKiroChatAgent(page.primaryAgent)
+                    ? 'chat.runtime.sessionRememberedHintKiro'
+                    : 'chat.runtime.sessionRememberedHint',
+                )}
+              </p>
             ) : null}
 
             {page.active && (
@@ -595,6 +639,10 @@ export default function ChatPage() {
           onDangerConfirmChange={page.setDangerConfirm}
           onPatch={(patch) => void page.patchActive(patch)}
           runtimeLocked={page.runtimeLocked || page.sendingHere}
+          transport={page.runtimeOps.transport}
+          runtimeEnabled={Boolean(page.runtime?.enabled)}
+          runtime={page.runtime}
+          onClearSessionAllowAlways={page.clearSessionAllowAlways}
         />
       </section>
         <SideSplitFrame
@@ -608,10 +656,11 @@ export default function ChatPage() {
               cwd={page.active?.cwd ?? ''}
               open={preview.expanded}
               width={preview.paneWidth}
+              line={chatPreviewLine(preview.target)}
               canBack={chatPreviewCanBack(preview.target)}
-              onBack={backMarkdownPreview}
+              onBack={backFilePreview}
               onClose={preview.close}
-              onOpenLocal={openNestedMarkdown}
+              onOpenLocal={openNestedFile}
               className="h-full min-w-0"
             />
           ) : isChatProcessInspect(preview.target) ? (
@@ -619,6 +668,13 @@ export default function ChatPage() {
               view={page.processMap[processKey(preview.target.turn, preview.target.agent)]}
               messageStatus={inspectMessageStatus(page.turns, preview.target)}
               exitCode={inspectExitCode(page.turns, preview.target)}
+              userPrompt={inspectUserPrompt(page.turns, preview.target)}
+              pendingConfirm={inspectPendingConfirm(
+                page.turns,
+                preview.target,
+                page.runtime?.pendingRequests,
+                t,
+              )}
               open={preview.expanded}
               onClose={preview.close}
               width={preview.paneWidth}
@@ -634,6 +690,27 @@ export default function ChatPage() {
 function inspectAgentMessage(turns: TurnGroup[], target: ChatProcessInspectTarget) {
   const group = turns.find((item) => item.turn === target.turn);
   return group?.agents.find((message) => (message.agentId ?? 'claude') === target.agent);
+}
+
+function inspectUserPrompt(turns: TurnGroup[], target: ChatProcessInspectTarget): string | undefined {
+  const group = turns.find((item) => item.turn === target.turn);
+  const text = group?.user?.content;
+  if (!text) return undefined;
+  const preview = processUserPromptPreview(text);
+  return preview || undefined;
+}
+
+function inspectPendingConfirm(
+  turns: TurnGroup[],
+  target: ChatProcessInspectTarget,
+  requests: RuntimeRequest[] | undefined,
+  t: TranslateFn,
+): string | undefined {
+  const currentTurn = turns[turns.length - 1]?.turn;
+  if (currentTurn !== target.turn) return undefined;
+  const request = requests?.[0];
+  if (!request || request.kind === 'question') return undefined;
+  return runtimeRequestTitle(t, request);
 }
 
 function inspectMessageStatus(turns: TurnGroup[], target: ChatProcessInspectTarget) {

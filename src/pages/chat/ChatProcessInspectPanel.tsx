@@ -8,6 +8,8 @@ export function ChatProcessInspectPanel({
   view,
   messageStatus,
   exitCode,
+  userPrompt,
+  pendingConfirm,
   open,
   onClose,
   width,
@@ -16,6 +18,8 @@ export function ChatProcessInspectPanel({
   view: AgentProcessView | undefined;
   messageStatus?: string;
   exitCode?: number | null;
+  userPrompt?: string | null;
+  pendingConfirm?: string | null;
   open: boolean;
   onClose: () => void;
   width?: number;
@@ -43,7 +47,13 @@ export function ChatProcessInspectPanel({
     >
       <div data-help="chat-process-inspect" className="flex min-h-0 min-w-0 flex-1 flex-col">
         {view ? (
-          <ChatProcessPanel view={view} messageStatus={messageStatus} exitCode={exitCode} />
+          <ChatProcessPanel
+            view={view}
+            messageStatus={messageStatus}
+            exitCode={exitCode}
+            userPrompt={userPrompt}
+            pendingConfirm={pendingConfirm}
+          />
         ) : (
           <p className="text-meta text-muted">{t('chat.process.waitingLogs')}</p>
         )}

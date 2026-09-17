@@ -4,6 +4,7 @@ mod adapter_facade;
 mod install;
 mod paths;
 mod project;
+mod session_title;
 mod stream;
 mod usage;
 
@@ -17,6 +18,7 @@ pub fn register(ctx: &mut IntegrationContext<'_>) {
     paths::register(ctx);
     install::register(ctx);
     project::register(ctx);
+    session_title::register(ctx);
     stream::register(ctx);
     usage::register(ctx);
     register_fn_detector(

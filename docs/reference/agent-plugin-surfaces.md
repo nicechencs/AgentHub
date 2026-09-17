@@ -4,7 +4,7 @@ description: 各内置 Agent 的 MCP、厂商 Plugin 与技能目录、安装/�
 type: reference
 audience: contributor
 status: current
-updated: 2026-09-08
+updated: 2026-09-17
 ---
 
 # Agent 插件表面
@@ -44,7 +44,7 @@ updated: 2026-09-08
 |---|---|---|---|---|---|---|
 | Claude | `~/.claude.json` 的 `mcpServers`；`<claude-home>/settings.json` | `claude mcp add/list`；会话 `/mcp` | `/plugin` 市场；`enabledPlugins`；数据 `~/.claude/plugins/` | `~/.claude/skills` | Planned | Full |
 | Codex | `~/.codex/config.toml` 的 `[mcp_servers.<name>]` | `codex mcp add/list`；TUI `/mcp` | `/plugins` 与 `codex plugin`；缓存 `~/.codex/plugins/cache/` | `~/.codex/skills` | Planned | Full |
-| Grok | `~/.grok/config.toml` 的 `[mcp_servers.<name>]` | `grok mcp add/list/remove/doctor` | `grok plugin` / marketplace；`~/.grok/plugins/` | `~/.grok/skills` | Planned | Full |
+| Grok | `~/.grok/config.toml` 的 `[mcp_servers.<name>]` | `grok mcp add/list/remove/doctor` | `grok plugin` / marketplace；`~/.grok/plugins/` | `~/.grok/skills` | Partial | Full |
 | Cursor | `~/.cursor/mcp.json` 的 `mcpServers` | IDE MCP 设置；改 JSON 后重载 | CLI **无**插件包系统；IDE 扩展市场不是 cursor-agent | `~/.cursor/skills-cursor` | Planned | Full |
 | Pi | `~/.pi/agent/mcp.json`（或 `$PI_CODING_AGENT_DIR`） | 扩展/适配器读取该文件；热更因发行而异 | `pi install` 装的是 Pi 扩展，不是 MCP server | `~/.pi/agent/skills` | Planned | Full |
 | WorkBuddy | `<config>/.mcp.json` | 未验证稳定 CLI | 未验证 | `<config>/skills` | Planned | Full |
@@ -108,7 +108,7 @@ updated: 2026-09-08
 - 卸载：`grok mcp remove <name>`。
 - 诊断：`grok mcp list`、`grok mcp doctor [name]`（可 `--json`）。
 - 密钥：`${VAR}` 展开；OAuth token 在 `~/.grok/mcp_credentials.json`。
-- **AgentHub inventory 今天不读这份 TOML**，只探 `~/.grok/mcp.json`。
+- AgentHub inventory 读用户级 `config.toml` 的 `[mcp_servers]`，并继续探测 `mcp.json` / `.mcp.json`。不读项目级 `.grok/config.toml`。MCP 页可探测并写入该用户级 TOML；关闭写 `enabled = false`，不删条目。
 
 **Plugin 包**
 

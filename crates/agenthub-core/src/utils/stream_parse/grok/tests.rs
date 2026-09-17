@@ -285,6 +285,45 @@ fn extract_available_commands_is_none_for_thought() -> bool {
 }
 
 #[test]
+fn kiro_vendor_commands_available_is_catalog_not_process_step() {
+    let payload = serde_json::json!({
+        "sessionId": "sess-1",
+        "commands": [
+            {
+                "name": "/context",
+                "description": "Add context",
+                "meta": { "hint": "path" }
+            },
+            { "name": "/", "description": "empty name" }
+        ],
+        "prompts": [
+            {
+                "name": "my-skill",
+                "description": "A skill",
+                "serverName": "skill:config"
+            }
+        ],
+        "tools": [{ "name": "read" }],
+        "mcpServers": []
+    });
+    let commands = super::super::acp::extract_kiro_available_commands(&payload).unwrap();
+    assert_eq!(commands.len(), 1);
+    assert_eq!(commands[0].name, "context");
+    assert_eq!(commands[0].description, "Add context");
+    assert_eq!(commands[0].hint.as_deref(), Some("path"));
+    assert!(super::super::acp::extract_available_commands(&payload).is_none());
+    assert!(super::super::acp::extract_kiro_available_commands(&serde_json::json!({
+        "prompts": [{ "name": "my-skill" }]
+    }))
+    .is_none());
+    let empty = super::super::acp::extract_kiro_available_commands(&serde_json::json!({
+        "commands": []
+    }))
+    .unwrap();
+    assert!(empty.is_empty());
+}
+
+#[test]
 fn tool_kind_without_title_maps_to_read_edit_or_execute() {
     let read = parse_line(
         r#"{"method":"session/update","params":{"update":{"sessionUpdate":"tool_call","toolCallId":"k1","kind":"read","rawInput":{"path":"a.rs"}}}}"#,

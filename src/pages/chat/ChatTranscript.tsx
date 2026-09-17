@@ -7,6 +7,7 @@ import {
   TestTube2,
   type LucideIcon,
 } from 'lucide-react';
+import type { MarkdownOpenLocalOptions } from '@/components/shared/MarkdownView';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
@@ -75,7 +76,7 @@ export function ChatTranscript({
   onScroll: () => void;
   onRetry: () => void;
   hideLastTurnRetry?: boolean;
-  onOpenLocal?: (path: string) => boolean;
+  onOpenLocal?: (path: string, options?: MarkdownOpenLocalOptions) => boolean;
   onOpenProcess?: (turn: number, agent: AgentKey) => void;
   onCloseProcess?: () => void;
   inspectProcess?: ChatProcessInspectTarget | null;

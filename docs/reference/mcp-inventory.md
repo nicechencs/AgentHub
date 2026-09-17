@@ -4,12 +4,12 @@ description: AgentHub 只读 MCP 扫描的路径、格式、片段和已知缺�
 type: reference
 audience: contributor
 status: current
-updated: 2026-08-30
+updated: 2026-09-17
 ---
 
 # MCP inventory
 
-本页是 `list_mcp_inventory` 的现行契约。实现在 `crates/agenthub-core/src/services/mcp_inventory.rs`，Tauri command 为 `list_mcp_inventory`。这是 **MCP server 条目** 的检查，不是插件（extension / plugin）包，也不是 `Capability::Mcp` 管理。插件包见 [Agent 插件表面](agent-plugin-surfaces.md) 与 [插件管理提案](../proposals/plugin-management.md)。
+本页是 MCP 扫描与写入的现行契约。只读扫描仍由 `list_mcp_inventory` 提供；写入流为 `list_mcp_catalog` → `probe_mcp_server` → `upsert_mcp_server` / `set_mcp_server_enabled`（实现见 `mcp_manage.rs`）。实现在 `crates/agenthub-core/src/services/mcp_inventory.rs`，Tauri command 为 `list_mcp_inventory`。这是 **MCP server 条目** 的检查，不是插件（extension / plugin）包，也不是 `Capability::Mcp` 管理。插件包见 [Agent 插件表面](agent-plugin-surfaces.md) 与 [插件管理提案](../proposals/plugin-management.md)。
 
 ## 返回结构
 
@@ -22,13 +22,14 @@ updated: 2026-08-30
 
 ## 扫描位置
 
-路径经 `home_dir()` / `agent_home()` 解析，因此 Claude 的 `CLAUDE_CONFIG_DIR`、Pi 的 `PI_CODING_AGENT_DIR`、WorkBuddy 的 `WORKBUDDY_CONFIG_DIR`、ZCode 的 `ZCODE_HOME` 会被尊重。**不**扫描项目目录下的 `.mcp.json` / `.cursor/mcp.json` / `.grok/config.toml`。
+路径经 `home_dir()` / `agent_home()` 解析，因此 Claude 的 `CLAUDE_CONFIG_DIR`、Pi 的 `PI_CODING_AGENT_DIR`、WorkBuddy 的 `WORKBUDDY_CONFIG_DIR`、ZCode 的 `ZCODE_HOME`、Grok 的 `GROK_HOME` 会被尊重。**不**扫描项目目录下的 `.mcp.json` / `.cursor/mcp.json` / `.grok/config.toml`。
 
 | Agent | 文件 | 格式 | 标签 |
 |---|---|---|---|
 | Claude | `~/.claude.json` | JSON | Claude 全局 |
 | Claude | `<claude-home>/settings.json` | JSON | Claude settings.json |
 | Codex | `<codex-home>/config.toml` | TOML | Codex config.toml |
+| Grok | `<grok-home>/config.toml` | TOML | Grok config.toml |
 | WorkBuddy | `<workbuddy-config>/.mcp.json` | JSON | WorkBuddy .mcp.json |
 | Cursor | `~/.cursor/mcp.json` | JSON | Cursor ~/.cursor/mcp.json |
 | Cursor | `<cursor-home>/mcp.json`（与上一行相同则合并，只保留第一份） | JSON | Cursor agent mcp.json |
@@ -49,13 +50,17 @@ JSON 接受：
 
 根对象若含 `theme` / `model` / `permissions` / `env` / `hooks` / `enabledPlugins` / `projects` / `userID` / `oauthAccount`，不把它当裸 server map，避免把 Claude `settings.json` 整份当成 MCP。
 
-TOML **只**读根表 `mcp_servers`（Codex 形状 `[mcp_servers.name]`）。没有该键则零条 server，不算解析错误。
+TOML **只**读根表 `mcp_servers`（Codex / Grok 形状 `[mcp_servers.name]`）。没有该键则零条 server，不算解析错误。
 
-传输分类：显式 `type`/`transport` 含 sse / http / streamablehttp；否则有 `command` 视为 stdio；否则有 `url` 视为 http；否则 `unknown`。`enabled` 来自 `enabled` 或取反后的 `disabled`；Codex TOML 当前不填 enabled。
+传输分类：显式 `type`/`transport` 含 sse / http / streamablehttp；否则有 `command` 视为 stdio；否则有 `url` 视为 http；否则 `unknown`。`enabled` 来自 `enabled` 或取反后的 `disabled`（JSON 与 TOML 相同）；没有这些键则空。
 
 ## 片段
 
 片段最多 16KiB，内容与本机文件一致，不按字段名打码。这是用户自己的配置；列表、日志和密钥输入框仍走原有遮罩。
+
+## 写入 / 启用（首片）
+
+可写 Agent：Claude（`~/.claude.json`）、Codex（`config.toml` 的 `mcp_servers`）、Grok（`config.toml` 的 `mcp_servers`）、Cursor、WorkBuddy。本地模板目录，无远程市场、无 OAuth。stdio 探测查 PATH；HTTP/SSE 做连通性检查。Codex 无独立 enabled：关闭 = 删除该条目。Grok 关闭写 `enabled = false`，保留条目和 `env`。Grok 可写 stdio 与 HTTP/SSE。
 
 ## 当前缺口（实现事实，不是待办承诺）
 
@@ -63,7 +68,6 @@ TOML **只**读根表 `mcp_servers`（Codex 形状 `[mcp_servers.name]`）。没
 
 | 缺口 | 证据 |
 |---|---|
-| 不读 Grok `~/.grok/config.toml` 的 `[mcp_servers]` | Grok 官方配置是 TOML；scanner 只探 JSON `mcp.json` |
 | 不读项目级 MCP（`.mcp.json`、`.cursor/mcp.json`、`.codex/config.toml`、`.grok/config.toml`） | 有意：stdio server 会拉起本机进程，项目文件默认不可信 |
 | 不枚举 Claude `enabledPlugins` / `~/.claude/plugins/` | 那是 Plugin 包，不是 `mcpServers` 条目 |
 | 不枚举 Codex `~/.codex/plugins/cache/` 或 `codex plugin` | Plugin 市场与 `[mcp_servers]` 分离 |

@@ -144,6 +144,13 @@ export function runtimeAllowAlwaysCopy(input: {
   return { shown: true, hintKey: runtimeAllowAlwaysHintKey(input.agentId) };
 }
 
+/** True when this conversation already remembered Always allow. */
+export function sessionAllowAlwaysActive(
+  snapshot?: Pick<RuntimeSnapshot, 'sessionAllowAlways'> | null,
+): boolean {
+  return snapshot?.sessionAllowAlways === true;
+}
+
 export function runtimeReplyFields(
   request: Pick<RuntimeRequest, 'kind'>,
   decision?: 'allow' | 'deny' | 'allow_always',

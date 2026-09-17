@@ -18,6 +18,7 @@ use crate::platform::detection::DetectorRegistry;
 use crate::platform::install::InstallContributionRegistry;
 use crate::platform::paths::AgentPathRegistry;
 use crate::platform::projects::ProjectSourceRegistry;
+use crate::platform::session_title::SessionTitleRegistry;
 use crate::platform::skills::SkillTargetRegistry;
 use crate::platform::stream::StreamParserRegistry;
 use crate::platform::usage::UsageSourceRegistry;
@@ -30,6 +31,7 @@ pub struct IntegrationContext<'a> {
     pub usage: &'a mut UsageSourceRegistry,
     pub stream: &'a mut StreamParserRegistry,
     pub projects: &'a mut ProjectSourceRegistry,
+    pub session_titles: &'a mut SessionTitleRegistry,
     pub detectors: &'a mut DetectorRegistry,
     pub skills: &'a mut SkillTargetRegistry,
 }
@@ -42,6 +44,7 @@ pub struct ProductionIntegrations {
     pub usage: UsageSourceRegistry,
     pub stream: StreamParserRegistry,
     pub projects: ProjectSourceRegistry,
+    pub session_titles: SessionTitleRegistry,
     pub detectors: DetectorRegistry,
     pub skills: SkillTargetRegistry,
 }
@@ -55,6 +58,7 @@ impl ProductionIntegrations {
             usage: UsageSourceRegistry::new(),
             stream: StreamParserRegistry::new(),
             projects: ProjectSourceRegistry::new(),
+            session_titles: SessionTitleRegistry::new(),
             detectors: DetectorRegistry::new(),
             skills: SkillTargetRegistry::new(),
         }
@@ -68,6 +72,7 @@ impl ProductionIntegrations {
             usage: &mut self.usage,
             stream: &mut self.stream,
             projects: &mut self.projects,
+            session_titles: &mut self.session_titles,
             detectors: &mut self.detectors,
             skills: &mut self.skills,
         }

@@ -3,7 +3,7 @@ title: AgentHub 当前实现状态
 type: status
 status: current
 owner: maintainers
-updated: 2026-09-11
+updated: 2026-09-17
 ---
 
 # 当前实现状态
@@ -24,12 +24,15 @@ updated: 2026-09-11
   - **新空 Grok 会话**：持续聊天（模型/思考、图片、后续轮排队），**不支持**为本轮指定「用于本次」技能，界面也不画可点的假按钮。真实窗口验收已通过。Chat 只带官方 `grok agent --no-leader stdio` 旗标（`--permission-mode` 写在 `agent` 前或后都会让进程在出卡前退出）。`session/new` 带 `_meta.yoloMode=false`，覆盖本机 always-approve；握手按官方 ACP 声明本机可读写文件、不发 `initialized`。工作目录外写出走本机 `fs/write_text_file`：先出「修改文件」卡片再写文件，可点一直允许；目录内直接写。对方若另发 `session/request_permission`，卡片仍只带对方给的「一直允许」。会话自动批准才加 `--always-approve` 和 `_meta.yoloMode=true`。进程退出时界面写「Grok 已退出」，不写 Codex 的 app-server 字样。
   - **新空 Kiro 会话**：`kiro-cli acp` 持续通道（允许/拒绝、停止；生成时不能中途补充，可排队到下一轮）。真实窗口验收已通过（ACP 新对话；打印路径 HTTP 多轮为 Builder ID / 本机登录，不是企业 IdC）。旧对话保留原发送方式。
   - **其余 Agent 与旧会话**：仍走原发送方式。
-  - **过程面板**：主列一行过程摘要（正在读取 / 正在修改 / 正在执行，完成则已读取 / 已修改 / 已执行）。点开后在右侧栏看思考、工具行；工具名、状态和 JSON 进折叠的「细节」；命令、过程日志、退出码和状态事件仍在「运行详情」。右侧栏不随发送自动打开；点 Markdown 仍预览文件。
-  - **过程内用量**：新空 Codex 会话仍解析 `thread/tokenUsage/updated` 的当前轮 `last`（累计 `total` / 窗口只留在总览等用量页）。新空 Grok 会话解析 **当前轮**（`turn_completed.usage`）；ACP 没有会话累计字段，不把各轮相加冒充累计。解析路径已接；真窗 2026-09-09 见过部分轮次 **没有** `turn_completed.usage`，此时界面不画假数字。对话里只在本轮结束后用小字写输入 / 输出（有缓存才写缓存）；生成中不画用量。只显示协议里有的数字，不估算费用。Kiro 没有 token 累计数据源。
+  - **过程面板**：主列一行过程摘要（正在读取 / 正在修改 / 正在执行，完成则已读取 / 已修改 / 已执行）。点开后在右侧栏看你说了什么、思考、工具行、等待允许或拒绝、本轮用量；工具名、状态和 JSON 进折叠的「细节」；命令、过程日志、退出码和状态事件仍在「运行详情」。允许 / 拒绝按钮仍在卡片上，不在过程行上造假按钮。右侧栏不随发送自动打开；点 Markdown 仍预览文件。种类约定见 [过程事件](concepts/chat-process-events.md)。斜杠目录和模型目录更新不进过程时间线。Grok / Kiro 若推了当前轮 `plan`，输入区上方出现计划条，换轮丢掉。ACP 若声明 `terminal`，对方跑的那条命令一张卡片，可停这一条（不是对话页终端）。仍约 80ms 读快照，过程行按序号增量挂现有面板，不另开总线。
+  - **过程内用量**：新空 Codex 会话仍解析 `thread/tokenUsage/updated` 的当前轮 `last`（累计 `total` / 窗口只留在总览等用量页）。新空 Grok 会话解析 **当前轮**（`turn_completed.usage`）；ACP 没有会话累计字段，不把各轮相加冒充累计。Grok / Kiro 的 `context_usage` 有数字才进用量小字（窗口用量），全 0 不画。解析路径已接；真窗 2026-09-09 见过部分轮次 **没有** `turn_completed.usage`，此时界面不画假数字。对话里只在本轮结束后用小字写输入 / 输出（有缓存才写缓存）；生成中不画用量。只显示协议里的数字，不估算费用。Kiro 没有 token 累计数据源。
+  - **`/` 菜单**：立刻执行的动作（新建对话、复制最近回复；换模型/思考/技能要搜到才列出，避免把整份目录摊在 `/` 上）。Grok / Kiro 会话就绪且对方声明了命令时，另列对方斜杠项：选中后当作一轮正常发出（无必填参数则直接发送 `/名字`；必填参数则插入 `/名字 ` 供补全后再发）。Grok 走标准 ACP `available_commands_update`；Kiro 走 `_kiro.dev/commands/available` 的 `commands[]`（不把技能/工具目录摊进 `/`）。目录变了会重拉；未就绪或未声明则不画，不猜菜单。Kiro 就绪会话「对方命令」Linux 真窗已 PASS（修复 tip `daed5ccf`，现行 tip 仍含该修复）：列出对方声明的斜杠项，裸 `/` 不摊技能目录；记录见 `/workspace/qa-issues/CHAT-SLASH-PR365-RETEST-daed5ccf.md`。本条只记这次验过的展示，不把选中发送或其它 Agent 写成已验收。有可启动的命令行时，`/` 可列出「启动命令行」（DeepSeek 为「打开网页会话」），在外部打开，不标成对话页能力。
+  - **本机对接与本会话**：本机持续通道按 Agent 写死：新空 Codex 走 app-server，新空 Grok / Kiro 走 ACP，新空 Claude 走 stream-json；其余与旧会话仍走原发送方式。Cursor 默认软隐藏，不在允许/拒绝之列，也不进持续聊天白名单。**Agents 详情**写这份 Agent 的新对话怎么接（ACP / 持续对话 / 原来的发送方式），不是一份可改的「ACP 总表」。**Chat 顶栏和会话设置**写这次对话实际在走哪条；点了卡片上的一直允许之后，会话设置里可以关掉「本会话已一直允许」（不能在这里假装打开）。一次对话是否在用持续通道，看这次会话是不是上述新空路径。Kiro 旧对话没有切到 ACP 的入口。会话字段见 [会话身份](concepts/chat-session-identity.md)。
   - **新空 Claude 会话（B3 首片）**：走 Claude Code `-p --input-format stream-json --output-format stream-json` 持续通道（同进程多轮、本地图片 base64、模型/思考强度参数）；**不支持**生成中补充；本片**不**接可点允许/拒绝（默认 `dontAsk`，危险模式 `bypassPermissions`）。有历史的旧 Claude 会话仍走 print+resume。print 路径在已经出过 assistant 正文后不再把最终 `result` 再拼进气泡（短回复不会同一句写两遍）；只有没见过 assistant 文本时才用 `result` 当正文。Linux 真窗短回复已验不双写。见 [Claude B3](archive/chat-claude-b3.md)。
+  - **对话标题**：新建对话先用首条消息提炼的短句。一轮结束后读对方写在自己会话记录里的标题并改用它：Codex（app-server 汇总的 `sqlite/*.db` 里 `local_thread_catalog.display_title`，退回 `session_index.jsonl` 的 `thread_name`）、Grok（`summary.json` 的 `generated_title`）、Kiro（`sessions/cli/<id>.json` 的 `title`）、DSH（会话日志的 `session/title` 行）。Claude 没有标题来源，保持首条消息推导。手动改过名字的对话不再被覆盖（不新增「谁起的名字」列，也不做迁移）；连续通道取运行时线程 id，旧会话取 `native_session_id`。AgentHub 不进协议里要标题。实机核对：Grok 与 Codex 的真实会话都能取到；Codex 的 `session_index.jsonl` 只收 IDE / 桌面端自己建的会话，所以优先读 `local_thread_catalog`；Kiro 常见只有 1–2 字的占位；DSH 普通发送不带会话 id，实际触发不到；Claude 无来源。
   - **停止**：点停止后按钮保持「正在停止」并禁用，直到这一轮真正结束。运行时已经是 `cancelling` 时同样显示「正在停止」。取消请求落空时恢复可点。停止横幅标题「已停止」；`error=cancelled` 不把英文 `cancelled` 写在旁边，改用「已按你的要求停止。可恢复草稿后重发。」
   - **图片附件**：ChatRuntime 持续聊天（Codex / Grok / Kiro / 新空 Claude）露出「添加图片」；浏览器演示里新空 Claude 同样露出。有历史的旧 Claude 仍 print+resume、**无**图片按钮。普通文件 / `@` 未接。
-  - **允许 / 拒绝 / 一直允许**（仅 Codex / Grok / Kiro 持续聊天；Cursor 不在此列）。卡片始终有允许和拒绝。「一直允许」只在这次请求带了该选项时出现（Codex 命令/文件卡片会补上；Grok / Kiro 只认对方给的 `allow_always`，Kiro 常见是 `allow_always_tool`）。待处理请求上的选项会入库，快照或重开后卡片仍可点。点了「一直允许」之后，**三家都在本机记住后续确认**，只限当前这次对话，不写进数据库：Codex 发给对方 `acceptForSession`，新一轮即使新起进程也不会再对同类命令/文件出卡；Grok / Kiro 同一条 ACP 进程可跨轮。点的时候仍把对方给的选项回传；后面没有允许选项的请求仍出卡片，不会造假按钮。Kiro 会话设置里的「完全访问权限」是另一条（启动时 `--trust-all-tools`），不是卡片上的「一直允许」。机制见 [Chat 与 Agent](concepts/chat-and-agents.md#允许-拒绝-一直允许)。
+  - **允许 / 拒绝 / 一直允许**（仅 Codex / Grok / Kiro 持续聊天；Cursor 不在此列）。卡片始终有允许和拒绝。「一直允许」只在这次请求带了该选项时出现（Codex 命令/文件卡片会补上；Grok / Kiro 只认对方给的 `allow_always`，Kiro 常见是 `allow_always_tool`）。待处理请求上的选项会入库，快照或重开后卡片仍可点。点了「一直允许」之后，**三家都在本机记住后续确认**，只限当前这次对话，不写进数据库：Codex 发给对方 `acceptForSession`，新一轮即使新起进程也不会再对同类命令/文件出卡；Grok / Kiro 同一条 ACP 进程可跨轮。点过之后对话里写「本会话已一直允许」，并标明这不是会话设置里的自动批准 / 完全访问权限；会话设置里可以关掉记住，不能从设置里假装打开。点的时候仍把对方给的选项回传；后面没有允许选项的请求仍出卡片，不会造假按钮。回传失败时用中文写「没法回传允许或拒绝」，不把英文协议句直接摊在卡片上。Kiro 会话设置里的「完全访问权限」是另一条（启动时 `--trust-all-tools`），不是卡片上的「一直允许」。机制见 [Chat 与 Agent](concepts/chat-and-agents.md#允许-拒绝-一直允许)。
 
 ## Backend 边界
 
@@ -44,7 +47,7 @@ updated: 2026-09-11
 - 本机路由运行时在桌面进程内运行，面向兼容客户端提供 `/v1/messages`、`/v1/responses`、`/v1/chat/completions` 和 `GET /models` 等端点。Codex 与 Grok 都走 Responses 口，具体格式跟这条路由一起保存，由本机令牌选中，不根据请求正文猜测。接到 Codex / Grok 时写入的是本机令牌（按 API Key 方式）和 Responses 接口，不是上游官方登录。领域背景见 [连接与路由](concepts/connections-and-routing.md)。
 - Usage 只读解析本地 Agent 会话或日志；优先使用日志中的官方成本字段，否则使用离线内嵌价表估算。运行时不联网拉取价格，也不做汇率换算。总览趋势可按 Agent 或模型切换；悬停同时看 token 和费用。Grok 用量把 `grok-4.6` 与 `grok-4.6-build`（以及 `[grok]` / `xai/` 前缀）当成同一个公开模型。
 - Skills 页分用户技能、项目技能和市场。用户技能仍用共享目录 `~/.agents/skills/`，并可启用到各工具。安装对话框支持本地目录、系统文件窗口选择的 zip、或 git 地址（需含 `SKILL.md`）；只写入共享库，不会自动启用。项目技能从历史页已识别的工作区下拉选择，读写该项目的 `.agents/skills/`（列表也会带上 `.claude/skills` 等已有目录），安装对话框同一套来源。配置切换在修改前创建备份。Linux 真窗已走完：系统文件窗口选 zip（标题 Choose a skill zip / 选择技能 zip，ZIP 过滤）→ 源字段填入路径 → 用户技能写入共享库且不自动启用；项目技能同一套选择器，写入该项目 `.agents/skills/`，不写共享库。
-- MCP 页只读扫描已知 MCP server 配置；`Capability::Mcp` 对全部内置 Agent 仍为 Planned。见 [MCP inventory](reference/mcp-inventory.md)。
+- MCP 页可扫描本机 MCP，并对 Claude / Codex / Grok / Cursor / WorkBuddy 提供目录模板 → 探测 → 写入 / 启用（无 OAuth）。`Capability::Mcp` 对这五家为 Partial，其余仍为 Planned。Grok 读/写用户级 `config.toml` 的 `[mcp_servers]`；关闭写 `enabled = false`，不删条目。见 [MCP inventory](reference/mcp-inventory.md)。
 - 插件页 `/plugins` 列出 Claude / Grok / Pi 的 plugin / extension 包。Claude / Grok 优先官方 CLI JSON，否则读 live 目录；Pi 读用户 `settings.json` 的 `packages`。Pi 对照本机版本与配置里的指定版本：指定了版本的 npm 包在 Pi 更新扩展时会跳过；未安装或两者不一致会在列表标出。Claude / Grok 配置里有、本机目录没有的包标未安装，不按 Pi 的指定版本规则判断，也不查商店里是否有新版本。本页不查线上最新。Claude / Grok 已装包可启用/停用，并可安装/卸载（Grok 走官方市场名、git 或本地路径，确认后才带 `--trust`；Claude 走 `name@marketplace` 与 `-y`）。卸载默认保留插件数据目录。Linux 真窗已验 Claude / Grok 安装与卸载（隔离目录 + 官方 CLI；点列表行打开详情再卸载）。没有 `Capability::Plugins`。Codex 仍为 Planned；Cursor / Kimi / WorkBuddy / DSH / ZCode / Kiro 为 Unsupported。见 [插件、MCP 与技能](concepts/plugins-and-mcp.md)。
 
 ## 验证与发布
@@ -68,7 +71,7 @@ updated: 2026-09-11
 - `AdapterRouteService::plan()` 是 Adapter / route 的唯一产品决策者。`adapter-capability-contract.json` 是它对冻结入参的只读投影；Rust 测试在 JSON 与内核输出不一致时失败。browser mock 只按来源特征查表并维护内存状态；凭据可用性必须精确匹配；未命中 fail-closed 为 unsupported，不回退 classify。route / support / ruleId / gateKind / canApply 的产品正确性在 Rust；Vitest 覆盖查表、脱敏、内存 apply 和页面听从 plan。见 [Adapter 路线内核](architecture/adapter-route-kernel.md)。
 - 不落地 sccache，也不把 `agenthub-core` 拆成多个 crate。CI 使用 `Swatinem/rust-cache`。Windows worktree 不得共享 `target/`。2026-08-25 的热缓存过滤测试约 3.5 秒、冷 worktree 首次编译依赖约 42 秒是历史快照，不是当前固定规模；过程见 [单一内核提案归档](archive/single-kernel-projections.md)。
 - DeepSeek Harness 的 StructuredStream 仍是规划项。检测/启动会跳过缺 `@deepseek-ai/dsh-scope` 的 PATH 残缺命令（常见是 `~/.local/bin/dsh`），优先完整的常见 npm 目录；遗留 `~/.agenthub/npm` 不是安装目标，但树完整时可以用来启动。Agents 页把遗留副本标成启动后备而不是安装位置；残缺命令提示用官方 npm 装到 `~/.npm-global`，不会推荐 `~/.agenthub/npm`。已落地部分以源码和集成文档为准。写入 `cordis.patch.yml` 时，以 `@` 开头的插件 id（以及其它 YAML 指示符）经 `yaml_quote` 加引号，避免无界面 dsh 因非法 YAML 退出。
-- 插件包更新、Codex/Pi 安装仍是提案，不从 MCP inventory 推导。Claude / Grok 已装包可启用/停用/安装/卸载；Pi 只列已装包。见 [插件管理](proposals/plugin-management.md)。MCP 写入同样未做，且是另一条线。
+- 插件包更新、Codex/Pi 安装仍是提案，不从 MCP inventory 推导。Claude / Grok 已装包可启用/停用/安装/卸载；Pi 只列已装包。见 [插件管理](proposals/plugin-management.md)。MCP 写入已落地：Claude / Codex / Grok / Cursor / WorkBuddy 可探测并写入本机配置；Codex 关闭即删除条目，Grok 关闭写 `enabled = false`。其余 Agent 与 OAuth Connector 仍不做。
 - Codex 安装、外部渠道 Chat 调用与连接/路由模块化审查见 [Codex 安装与模块化审查](archive/codex-install-modularity-review.md)（2026-08-27）。
 - npm 渠道安装写到检测会扫的用户前缀（`~/.npm-global`，Windows 为 `%APPDATA%\npm`）。`~/.agenthub` 以及其中的 `npm` 只是遗留，不是安装目标。DeepSeek Harness 在 PATH 残缺且遗留 prefix 树完整时，可以用这份遗留副本启动；界面不会把它写成安装位置。
 - WorkBuddy 本机安装只打开官网安装页，界面给中文指引，不当成「安装失败」。真失败时「重试」是主按钮；失败面板先显示诊断，不把 npm 下载进度当正文。

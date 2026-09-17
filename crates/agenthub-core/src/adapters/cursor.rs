@@ -494,7 +494,8 @@ impl AgentAdapter for CursorAdapter {
             ProjectDelete => CapabilityState::unsupported("无安全浅删契约"),
             ProviderPresets => CapabilityState::unsupported("无 provider 配置契约"),
             Usage => CapabilityState::unsupported("IDE 内部用量库，明确范围外"),
-            Mcp | ModelSelect | SessionResume => CapabilityState::planned("待验证接入"),
+            Mcp => CapabilityState::partial("可写入本机 MCP 配置（目录/探测/启用；无 OAuth）"),
+            ModelSelect | SessionResume => CapabilityState::planned("待验证接入"),
         }
     }
 

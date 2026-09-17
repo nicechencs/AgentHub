@@ -1,7 +1,9 @@
 use std::fs;
 
 use crate::catalog::limits::SKILL_MARKDOWN_PREVIEW_CHARS;
-use crate::utils::markdown_preview::{is_markdown_path, read_markdown_file_preview};
+use crate::utils::markdown_preview::{
+    is_markdown_path, is_previewable_text_path, read_markdown_file_preview,
+};
 use crate::utils::test_temp::real_tempdir;
 
 #[test]
@@ -11,6 +13,14 @@ fn detects_markdown_extensions() {
     assert!(is_markdown_path(std::path::Path::new("doc.markdown")));
     assert!(!is_markdown_path(std::path::Path::new("src/foo.ts")));
     assert!(!is_markdown_path(std::path::Path::new("docs")));
+}
+
+#[test]
+fn detects_previewable_text_extensions() {
+    assert!(is_previewable_text_path(std::path::Path::new("src/foo.ts")));
+    assert!(is_previewable_text_path(std::path::Path::new("config.json")));
+    assert!(is_previewable_text_path(std::path::Path::new("Dockerfile")));
+    assert!(!is_previewable_text_path(std::path::Path::new("photo.png")));
 }
 
 #[test]
@@ -36,13 +46,24 @@ fn resolves_relative_path_against_cwd() {
 }
 
 #[test]
-fn rejects_non_markdown() {
+fn reads_typescript_under_cwd() {
     let dir = real_tempdir();
     let file = dir.path().join("main.ts");
-    fs::write(&file, "export {}\n").unwrap();
+    fs::write(&file, "export const n = 1;\n").unwrap();
+    let preview =
+        read_markdown_file_preview(file.to_str().unwrap(), dir.path().to_str().unwrap()).unwrap();
+    assert_eq!(preview.name, "main.ts");
+    assert_eq!(preview.content, "export const n = 1;\n");
+}
+
+#[test]
+fn rejects_non_previewable_binary_ext() {
+    let dir = real_tempdir();
+    let file = dir.path().join("photo.png");
+    fs::write(&file, [0u8, 1, 2, 3]).unwrap();
     let err = read_markdown_file_preview(file.to_str().unwrap(), dir.path().to_str().unwrap())
         .unwrap_err();
-    assert!(err.to_string().contains("markdown"));
+    assert!(err.to_string().contains("text or markdown"));
 }
 
 #[test]

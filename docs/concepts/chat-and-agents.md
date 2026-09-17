@@ -5,14 +5,14 @@ status: current
 owner: maintainers
 audience: chat, adapter, and frontend contributors
 source-of-truth: ChatService/RunService, ChatEvent, stream parsers, Tauri Channel adapter, and chat process reducer
-updated: 2026-09-11
+updated: 2026-09-16
 ---
 
 # Chat 与 Agent 运行
 
 ## 产品形态
 
-Chat 是 AgentHub 里的运行工作台。当前一个会话对应一个 Agent；同一 turn 内的过程状态仍以 `(turn, agent)` 隔离。发送按会话隔离，多个会话可以同时生成。
+Chat 是 AgentHub 里的运行工作台。当前一个会话对应一个 Agent；同一 turn 内的过程状态仍以 `(turn, agent)` 隔离。发送按会话隔离，多个会话可以同时生成。会话是谁（Agent、工作目录、Hub id、对方原生 id、何时新建/续聊）见 [会话身份](chat-session-identity.md)。过程步骤种类见 [过程事件](chat-process-events.md)。
 
 - **新空 Codex 会话**：app-server 持续聊天；会话级模型/思考强度、最小操作菜单、本地图片附件、「用于本次」技能已落地（见 [B2](../archive/chat-codex-b2.md)）。计划模式未做；文本问答等上游默认稳定后再跟，不打开 under-development 开关、也不造假卡片；Linux AgentHub Chat 不可用 Codex Computer Use。Claude B3 首片见下。
 - **新空 Grok 会话**：持续聊天，可选模型和思考等级，支持图片与后续轮排队。不能为本轮指定「用于本次」技能（与 Codex 不同；界面也不画出可点的假按钮）。生成时不能中途补充，只能排队到下一轮。
@@ -27,9 +27,25 @@ Chat 是 AgentHub 里的运行工作台。当前一个会话对应一个 Agent�
 两件不同的事：
 
 1. **记住这次卡片上的选项。** 待处理请求的选项会写入 SQLite。快照或进程重开后，尚未回复的卡片仍显示同一组按钮（包括这次能不能点「一直允许」）。Codex / Grok / Kiro 都这样。
-2. **点了「一直允许」之后，后面的确认还问不问。** Codex / Grok / Kiro 都由 AgentHub 在**当前这次对话**里记住，不写进数据库。发给 Codex 的「一直允许」是 `acceptForSession`；一轮结束会新起 `codex app-server`，但本机标记还在，后续同类命令/文件（含另一条工作目录外路径）不再出卡。Grok / Kiro 走 ACP：`session/request_permission` 这次请求自己带了 `allow_always`（Kiro 常见是 `allow_always_tool` / `allow_always_tool_args`）才显示「一直允许」，点了会把对方给的选项回传，并且本机对后续确认自动点允许（同一条 ACP 进程，通常跨多轮）。Grok 工作目录外的本机 `fs/write_text_file` 由 Chat 先出「修改文件」卡片（允许 / 一直允许 / 拒绝）再写文件，点了一直允许后同一对话里后续同类写出不再出卡。没有允许选项时仍出卡片，不会补一个假的「一直允许」。新对话再问。
+2. **点了「一直允许」之后，后面的确认还问不问。** Codex / Grok / Kiro 都由 AgentHub 在**当前这次对话**里记住，不写进数据库。发给 Codex 的「一直允许」是 `acceptForSession`；一轮结束会新起 `codex app-server`，但本机标记还在，后续同类命令/文件（含另一条工作目录外路径）不再出卡。Grok / Kiro 走 ACP：`session/request_permission` 这次请求自己带了 `allow_always`（Kiro 常见是 `allow_always_tool` / `allow_always_tool_args`）才显示「一直允许」，点了会把对方给的选项回传，并且本机对后续确认自动点允许（同一条 ACP 进程，通常跨多轮）。Grok 工作目录外的本机 `fs/write_text_file` 由 Chat 先出「修改文件」卡片（允许 / 一直允许 / 拒绝）再写文件，点了一直允许后同一对话里后续同类写出不再出卡。没有允许选项时仍出卡片，不会补一个假的「一直允许」。点过之后对话里写「本会话已一直允许」，并标明这不是会话设置里的自动批准 / 完全访问权限。新对话再问。
 
-Kiro 会话设置里的「帮我批准 / 完全访问权限」是启动时的 `--trust-all-tools`，对话开始后不能改；它不是确认卡片上的「一直允许」。跨页事实表见 [STATUS](../STATUS.md)。
+Kiro 会话设置里的「帮我批准 / 完全访问权限」是启动时的 `--trust-all-tools`，对话开始后不能改；它不是确认卡片上的「一直允许」。会话设置里「本会话已一直允许」可以关掉记住，不能从这里假装打开。跨页事实表见 [STATUS](../STATUS.md)。
+
+## 本机对接与这次会话
+
+本机有哪些持续通道，是按 Agent 写死的名单，不是用户可改的「ACP 总表」。界面上分两层：
+
+- **Agents 详情「新对话」**：这份 Agent 开新对话时走 ACP / 持续对话 / 原来的发送方式。隐藏 Agent 后 Chat 不会用它开新对话。
+- **Chat 顶栏和会话设置「这次对话怎么接」**：这场对话实际在走哪条。旧 Kiro 等仍走原来的发送方式时，这里会和「新对话」不一致。
+
+| 本机对接 | 用在哪次会话 |
+| --- | --- |
+| Codex app-server | **新空** Codex 对话 |
+| Grok / Kiro ACP | **新空** Grok / Kiro 对话 |
+| Claude stream-json | **新空** Claude 对话 |
+| 原发送方式 | 其余 Agent，以及上述各家**已有历史**的旧对话（Kiro 无切到 ACP 的入口） |
+
+「一直允许」只出现在这次请求真带了该选项时；选项照对方给的回传，不造假按钮。点过之后可在会话设置关掉「本会话已一直允许」，不能从设置里假装打开。Cursor 默认软隐藏，不在此列。`/` 里立刻执行的动作当场做；对方声明的斜杠命令选中后当作一轮正常发出（无必填参数直接发送，有必填参数先插入 `/名字 `）。未声明不画。目录和模型选项放在会话 Options 里，不进过程时间线。
 
 ## 当前数据流
 
@@ -91,7 +107,9 @@ Agent catalog/registry 描述安装、配置、账号、skills、usage、runtime
 - [当前实现状态](../STATUS.md)
 - [Chat 体验标杆](../ui/chat-experience-bar.md)
 - [Chat 统一体验](../proposals/chat-unified-experience.md)（提案）
-- [Chat 宿主加深与多 Agent 兼容](../proposals/chat-host-depth.md)（提案：不以伪终端当对话底座；对照 AionUi 加深 ACP 宿主）
+- [Chat 会话身份](chat-session-identity.md)
+- [Chat 过程事件](chat-process-events.md)
+- [Chat 宿主加深与多 Agent 兼容](../proposals/chat-host-depth.md)（提案：A–I 已合入 `dev`；不以伪终端当对话底座。剩余边界见该页，不得标成 Full）
 - [Codex Chat B2](../archive/chat-codex-b2.md)
 - [Architecture overview](../architecture/overview.md)
 - [Core and runtime](../architecture/core-runtime.md)

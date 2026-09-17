@@ -29,6 +29,10 @@ describe('SourcePreview chrome', () => {
     expect(theme).toContain("fontWeight: '600'");
     expect(theme).not.toContain('sk-');
     expect(preview).toContain("density === 'compact' ? '[&_.cm-editor]:leading-snug'");
+    expect(preview).toContain('if (fitContent && readOnly && !displayed.trim()) return null');
+    expect(preview).toContain('sourcePreviewFitContentTheme');
+    expect(theme).toContain('sourcePreviewFitContentTheme');
+    expect(theme).toContain("height: 'auto !important'");
   });
 
   it('is the JSON/TOML preview for login files, backups, MCP details, and the supplier editor', () => {

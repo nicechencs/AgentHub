@@ -164,6 +164,90 @@ env = {{ API_KEY = "sk-secret", DEBUG = "1" }}
 }
 
 #[test]
+fn parses_grok_toml_mcp_servers_with_enabled_and_nested_env() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let mut f = fs::File::create(&path).unwrap();
+    writeln!(
+        f,
+        r#"
+[models]
+default = "grok"
+
+[mcp_servers.nx_mcp]
+command = "C:\\tools\\python.exe"
+args = ["-m", "nx_mcp.server"]
+enabled = true
+
+[mcp_servers.nx_mcp.env]
+NX_MCP_WORKSPACE = "C:\\nx-workspace"
+
+[mcp_servers.remote]
+url = "https://mcp.example.invalid/api"
+transport = "http"
+enabled = false
+"#
+    )
+    .unwrap();
+    let parsed = parse_toml_file(AgentId::Grok, &path).unwrap();
+    assert_eq!(parsed.entries.len(), 2);
+    let nx = parsed.entries.iter().find(|e| e.name == "nx_mcp").unwrap();
+    assert_eq!(nx.agent, AgentId::Grok);
+    assert_eq!(nx.transport, "stdio");
+    assert_eq!(nx.enabled, Some(true));
+    assert_eq!(
+        nx.command.as_deref(),
+        Some(r"C:\tools\python.exe -m nx_mcp.server")
+    );
+    let snippet = parsed.snippet.expect("toml mcp snippet");
+    assert!(snippet.contains("nx_mcp"), "{snippet}");
+    assert!(snippet.contains("NX_MCP_WORKSPACE"), "{snippet}");
+    assert!(!snippet.contains("grok"), "{snippet}");
+    let remote = parsed.entries.iter().find(|e| e.name == "remote").unwrap();
+    assert_eq!(remote.transport, "http");
+    assert_eq!(remote.enabled, Some(false));
+    assert_eq!(
+        remote.url.as_deref(),
+        Some("https://mcp.example.invalid/api")
+    );
+}
+
+#[test]
+fn toml_disabled_key_inverts_to_enabled_false() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let mut f = fs::File::create(&path).unwrap();
+    writeln!(
+        f,
+        r#"
+[mcp_servers.legacy]
+command = "echo"
+disabled = true
+"#
+    )
+    .unwrap();
+    let parsed = parse_toml_file(AgentId::Grok, &path).unwrap();
+    assert_eq!(parsed.entries.len(), 1);
+    assert_eq!(parsed.entries[0].enabled, Some(false));
+}
+
+#[test]
+fn grok_source_locations_include_config_toml() {
+    let locs = source_locations(AgentId::Grok);
+    assert!(
+        locs.iter().any(|loc| {
+            loc.path.ends_with("config.toml") && loc.label == "Grok config.toml"
+        }),
+        "expected Grok config.toml, got {:?}",
+        locs.iter()
+            .map(|loc| (loc.path.display().to_string(), loc.label))
+            .collect::<Vec<_>>()
+    );
+    assert!(locs.iter().any(|loc| loc.label == "探测 mcp.json"));
+    assert!(locs.iter().any(|loc| loc.label == "探测 .mcp.json"));
+}
+
+#[test]
 fn cursor_source_locations_collapse_default_home_duplicate() {
     let locs = source_locations(AgentId::Cursor);
     assert_eq!(

@@ -24,6 +24,14 @@ import {
   autoApproveHint,
   canRebindConversationCwd,
 } from './chat-model';
+import {
+  agentNewChatConnectKind,
+  chatConnectLabelKey,
+  sessionChatConnectHintKey,
+  sessionChatConnectKind,
+} from './chat-connect-model';
+import { sessionAllowAlwaysActive } from './chat-runtime-model';
+import type { RuntimeChannel, RuntimeSnapshot } from '@/lib/api/chat';
 
 export function ChatSettingsDialog({
   open,
@@ -33,6 +41,10 @@ export function ChatSettingsDialog({
   onDangerConfirmChange,
   onPatch,
   runtimeLocked = false,
+  transport = null,
+  runtimeEnabled = false,
+  runtime = null,
+  onClearSessionAllowAlways,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -41,6 +53,10 @@ export function ChatSettingsDialog({
   onDangerConfirmChange: (open: boolean) => void;
   onPatch: (patch: { cwd?: string | null; allowDangerous?: boolean }) => void;
   runtimeLocked?: boolean;
+  transport?: RuntimeChannel | null;
+  runtimeEnabled?: boolean;
+  runtime?: Pick<RuntimeSnapshot, 'sessionAllowAlways'> | null;
+  onClearSessionAllowAlways?: () => Promise<void> | void;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -53,6 +69,13 @@ export function ChatSettingsDialog({
   const kiroPermissions = isKiroChatAgent(selectedAgent);
   const permissionLocked = kiroPermissions && runtimeLocked;
   const cwdLocked = !canRebindConversationCwd(active ?? { cwd: null }, runtimeLocked);
+  const connectKind = sessionChatConnectKind({
+    agentId: selectedAgent,
+    transport,
+    runtimeEnabled,
+  });
+  const agentConnectKind = agentNewChatConnectKind(selectedAgent);
+  const sessionAlways = sessionAllowAlwaysActive(runtime);
 
   useEffect(() => {
     setCwdDraft(active?.cwd ?? '');
@@ -123,6 +146,48 @@ export function ChatSettingsDialog({
                   </Button>
                 </div>
               </div>
+              <div className="space-y-1" data-help="chat-session-connect">
+                <p className="text-body font-medium">{t('chat.connect.sessionTitle')}</p>
+                <p className="text-body">{t(chatConnectLabelKey(connectKind))}</p>
+                <p className="text-meta text-muted">{t(sessionChatConnectHintKey(connectKind))}</p>
+                {agentConnectKind !== connectKind ? (
+                  <p className="text-meta text-muted">
+                    {t('chat.connect.agentTitle')}
+                    {' · '}
+                    {t(chatConnectLabelKey(agentConnectKind))}
+                  </p>
+                ) : null}
+              </div>
+              {connectKind !== 'legacy' ? (
+                <label className="flex items-center justify-between gap-3 text-body" data-help="chat-session-always-allow-setting">
+                  <span>
+                    <span className="block font-medium">{t('chat.runtime.sessionRemembered')}</span>
+                    <span className="mt-1 block text-meta text-muted">
+                      {sessionAlways
+                        ? t(
+                            kiroPermissions
+                              ? 'chat.runtime.sessionRememberedOnHintKiro'
+                              : 'chat.runtime.sessionRememberedOnHint',
+                          )
+                        : t('chat.runtime.sessionRememberedOff')}
+                    </span>
+                  </span>
+                  <Switch
+                    checked={sessionAlways}
+                    disabled={!sessionAlways}
+                    aria-label={t('chat.runtime.sessionRemembered')}
+                    title={
+                      sessionAlways
+                        ? t('chat.runtime.sessionRememberedClear')
+                        : t('chat.runtime.sessionRememberedOff')
+                    }
+                    onCheckedChange={(checked) => {
+                      if (checked || !sessionAlways) return;
+                      void onClearSessionAllowAlways?.();
+                    }}
+                  />
+                </label>
+              ) : null}
               {kiroPermissions ? (
                 <fieldset className="space-y-2" disabled={permissionLocked}>
                   <legend className="text-body font-medium">{t('chat.kiro.permissionTitle')}</legend>
@@ -160,6 +225,7 @@ export function ChatSettingsDialog({
                       <span className="text-meta text-muted">{t('chat.kiro.permissionFullHint')}</span>
                     </span>
                   </label>
+                  <p className="text-meta text-muted">{t('chat.kiro.permissionVsCard')}</p>
                 </fieldset>
               ) : (
                 <label className="flex items-center justify-between gap-3 text-body">
@@ -175,6 +241,7 @@ export function ChatSettingsDialog({
                     >
                       {autoApproveHint(t, approveEffect)}
                     </Tip>
+                    <span className="mt-1 block text-meta text-muted">{t('chat.settings.autoApproveVsCard')}</span>
                   </span>
                   <Switch
                     checked={approveOn}

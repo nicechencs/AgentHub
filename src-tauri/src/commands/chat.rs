@@ -95,6 +95,23 @@ pub async fn update_conversation(
     .await
 }
 
+/// Invoke: `refresh_chat_agent_title`
+///
+/// Adopt the title the Agent wrote in its own session store. Returns the new
+/// title when the conversation was retitled, `null` when nothing may change
+/// (no Agent title, no session id, or a title the user owns).
+#[tauri::command]
+pub async fn refresh_chat_agent_title(
+    state: State<'_, AppState>,
+    conversation_id: String,
+) -> Result<Option<String>, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        refresh_chat_agent_title_inner(hub, &conversation_id)
+    })
+    .await
+}
+
 /// Invoke: `open_conversation_from_session`
 #[tauri::command]
 pub async fn open_conversation_from_session(
@@ -323,6 +340,21 @@ pub async fn chat_runtime_kill_host_terminal(
     .await
 }
 
+#[tauri::command]
+pub async fn chat_runtime_clear_session_allow_always(
+    state: State<'_, AppState>,
+    conversation_id: String,
+) -> Result<RuntimeSnapshot, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        hub.chat()
+            .runtime()
+            .clear_session_allow_always(&conversation_id)
+            .map_err(|e| map_err_string("chat_runtime_clear_session_allow_always", e))
+    })
+    .await
+}
+
 /// Invoke: `set_chat_model` — write the live default model for Chat.
 #[tauri::command]
 pub async fn set_chat_model(
@@ -421,6 +453,12 @@ fn update_conversation_inner(
     hub.chat()
         .update_conversation(id, title, agents, cwd_patch, allow_dangerous)
         .map_err(|e| map_err_string("update_conversation", e))
+}
+
+fn refresh_chat_agent_title_inner(hub: &AgentHub, id: &str) -> Result<Option<String>, String> {
+    hub.chat()
+        .adopt_agent_title(id)
+        .map_err(|e| map_err_string("refresh_chat_agent_title", e))
 }
 
 fn open_conversation_from_session_inner(
@@ -568,7 +606,7 @@ fn save_chat_paste_image_inner(
     Ok(path.to_string_lossy().into_owned())
 }
 
-/// Invoke: `read_markdown_preview` — load a markdown file under the chat working directory.
+/// Invoke: `read_markdown_preview` — load a text/markdown file under the chat working directory.
 #[tauri::command]
 pub async fn read_markdown_preview(
     path: String,

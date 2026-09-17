@@ -136,15 +136,24 @@ function mockRuntimeSessionReady(conversationId: string): boolean {
   return Boolean(snapshot?.enabled && snapshot.runId?.trim());
 }
 
+/** Declared ACP-style commands for mock Grok / Kiro after the session is ready. Do not invent lists for other agents. */
+function mockNativeCommands(agent: AgentKey | undefined): NonNullable<RuntimeOptions['nativeCommands']> {
+  if (agent !== 'grok' && agent !== 'kiro') return [];
+  return [
+    { name: 'compact', description: 'Compact context', hint: '[instructions]' },
+  ];
+}
+
 function mockRuntimeOptionExtras(conversationId: string): Pick<
   RuntimeOptions,
   'transport' | 'nativeCommands' | 'sessionReady'
 > {
   const agent = mockConversationAgent(conversationId);
+  const sessionReady = mockRuntimeSessionReady(conversationId);
   return {
     transport: mockRuntimeChannel(agent),
-    nativeCommands: [],
-    sessionReady: mockRuntimeSessionReady(conversationId),
+    nativeCommands: sessionReady ? mockNativeCommands(agent) : [],
+    sessionReady,
   };
 }
 
@@ -418,6 +427,10 @@ async function playMockRuntimeTurn(input: {
   const parts = [
     `【${agent} mock】收到：${prompt.slice(0, 80)}\n`,
     `这是 ${agent} 的模拟回复（浏览器 Vite 原型，未调用真实 CLI）。\n`,
+    '\n可点击打开右侧预览：\n',
+    '- [README.md](README.md)\n',
+    '- [配置 JSON](package.json#L2)\n',
+    '- [源码行高亮](src/lib/utils.ts:12)\n\n',
   ];
   for (const part of parts) {
     await delay(120);
@@ -559,6 +572,12 @@ export function createMockChatPort(): ChatPort {
       delete mockMessages[id];
       mockInflight.delete(id);
       mockCancel.delete(id);
+    },
+
+    // No Agent CLI runs behind the browser mock, so no Agent title exists.
+    async refreshAgentTitle() {
+      await delay(20);
+      return null;
     },
 
     async listChatMessages(conversationId) {
@@ -708,8 +727,11 @@ export function createMockChatPort(): ChatPort {
             step: { type: 'thinking', text: '规划回复结构…', done: false },
           });
           const parts = [
-            `【${agent} mock】收到：${prompt.slice(0, 80)}\n`,
-            '正在思考…\n',
+            `【${agent} mock】收到：${prompt.slice(0, 80)}\n\n`,
+            '可点击打开右侧预览：\n',
+            '- [README.md](README.md)\n',
+            '- [配置 JSON](package.json#L2)\n',
+            '- [源码行高亮](src/lib/utils.ts:12)\n\n',
             `这是 ${agent} 的模拟回复（浏览器 Vite 原型，未调用真实 CLI）。\n`,
           ];
           let content = '';
@@ -806,6 +828,7 @@ export function createMockChatPort(): ChatPort {
       const frozen = ['starting', 'running', 'waiting', 'cancelling'].includes(snapshot.phase);
       if (opts?.refresh && !frozen) runtimeOptionsCache.delete(conversationId);
       const cached = runtimeOptionsCache.get(conversationId);
+      const extras = mockRuntimeOptionExtras(conversationId);
       if (cached) {
         const models = applyMockDeniedEfforts(cached.models);
         let settings = runtimeSettings.get(conversationId) ?? cached.settings;
@@ -831,9 +854,9 @@ export function createMockChatPort(): ChatPort {
           settings,
           settingsFrozen: frozen,
           imageInput: cached.imageInput !== false,
-          transport: cached.transport ?? mockRuntimeOptionExtras(conversationId).transport,
-          nativeCommands: cached.nativeCommands ?? [],
-          sessionReady: cached.sessionReady ?? mockRuntimeOptionExtras(conversationId).sessionReady,
+          transport: extras.transport,
+          nativeCommands: extras.nativeCommands,
+          sessionReady: extras.sessionReady,
         };
       }
       // Match core: never invent a catalog mid-turn when nothing was prefetched.
@@ -973,6 +996,9 @@ export function createMockChatPort(): ChatPort {
         events: [{ sequence: 1, event }],
         pendingRequests: [],
         currentMessage,
+        catalogEpoch: mockNativeCommands(agent).length > 0
+          ? Math.max(snapshot.catalogEpoch ?? 0, 1)
+          : snapshot.catalogEpoch,
       };
       runtimeSnapshots.set(conversationId, next);
       const previous = runtimeJobs.get(conversationId);
@@ -993,9 +1019,17 @@ export function createMockChatPort(): ChatPort {
       const current = runtimeSnapshots.get(reply.conversationId);
       if (!current || current.runId !== reply.runId) return;
       const remaining = (current.pendingRequests ?? []).filter((item) => item.id !== reply.requestId);
+      const remembered = reply.decision === 'allow_always' || Boolean(current.sessionAllowAlways);
       if (remaining.length > 0) {
-        runtimeSnapshots.set(reply.conversationId, { ...current, pendingRequests: remaining });
+        runtimeSnapshots.set(reply.conversationId, {
+          ...current,
+          pendingRequests: remaining,
+          sessionAllowAlways: remembered,
+        });
         return;
+      }
+      if (remembered) {
+        runtimeSnapshots.set(reply.conversationId, { ...current, sessionAllowAlways: true });
       }
       const currentMessage = current.currentMessage
         ? {
@@ -1054,6 +1088,24 @@ export function createMockChatPort(): ChatPort {
       return next;
     },
     async runtimeKillHostTerminal(_conversationId, _terminalId) {},
+    async runtimeClearSessionAllowAlways(conversationId) {
+      const current = runtimeSnapshots.get(conversationId);
+      const next = current
+        ? { ...current, sessionAllowAlways: false }
+        : {
+            conversationId,
+            enabled: true,
+            runId: null,
+            phase: 'idle' as const,
+            lastSequence: 0,
+            events: [],
+            pendingRequests: [],
+            gap: false,
+            sessionAllowAlways: false,
+          };
+      runtimeSnapshots.set(conversationId, next);
+      return next;
+    },
     async runtimeCancel(conversationId, runId) {
       const current = runtimeSnapshots.get(conversationId);
       if (current?.runId !== runId) throw new Error('run is no longer active');
@@ -1112,6 +1164,26 @@ export function createMockChatPort(): ChatPort {
     async readMarkdownPreview(path) {
       await delay(10);
       const name = path.split(/[/\\]/).pop() || 'preview.md';
+      const lower = name.toLowerCase();
+      if (lower.endsWith('.json')) {
+        return {
+          path,
+          name,
+          content: '{\n  "mock": true,\n  "file": ' + JSON.stringify(name) + '\n}\n',
+          truncated: false,
+        };
+      }
+      if (/\.(ts|tsx|js|jsx|py|rs|go)$/i.test(name)) {
+        return {
+          path,
+          name,
+          content:
+            '// mock preview\nexport function hello() {\n  return ' +
+            JSON.stringify(name) +
+            ';\n}\n',
+          truncated: false,
+        };
+      }
       return {
         path,
         name,

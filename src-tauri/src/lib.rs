@@ -188,8 +188,12 @@ pub fn run() {
             commands::install::launch_agent_program,
             commands::agent_visibility::list_hidden_agents,
             commands::agent_visibility::set_agent_hidden,
-            // MCP inventory (read-only)
+            // MCP inventory + catalog / probe / write / enable
             commands::mcp::list_mcp_inventory,
+            commands::mcp::list_mcp_catalog,
+            commands::mcp::probe_mcp_server,
+            commands::mcp::upsert_mcp_server,
+            commands::mcp::set_mcp_server_enabled,
             // Plugin / extension pack inventory + enable/disable/install/uninstall (not MCP)
             commands::plugins::list_plugin_inventory,
             commands::plugins::enable_plugin,
@@ -279,6 +283,7 @@ pub fn run() {
             commands::chat::create_conversation,
             commands::chat::ensure_default_conversation,
             commands::chat::update_conversation,
+            commands::chat::refresh_chat_agent_title,
             commands::chat::open_conversation_from_session,
             commands::chat::delete_conversation,
             commands::chat::list_chat_messages,
@@ -294,6 +299,7 @@ pub fn run() {
             commands::chat::chat_runtime_steer,
             commands::chat::chat_runtime_cancel,
             commands::chat::chat_runtime_kill_host_terminal,
+            commands::chat::chat_runtime_clear_session_allow_always,
             commands::chat::pick_chat_images,
             commands::chat::save_chat_paste_image,
             commands::chat::set_chat_model,

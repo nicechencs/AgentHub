@@ -3,6 +3,7 @@ import {
   clipPreviewText,
   compressBlankLines,
   formatJsonPayload,
+  hasJsonPreviewContent,
   inferSourceFormat,
   prepareSourcePreview,
   tryPrettyJson,
@@ -31,7 +32,7 @@ describe('source preview helpers', () => {
     expect(inferSourceFormat({ text: 'x', fileName: 'config.toml' })).toBe('toml');
     expect(inferSourceFormat({ text: '{"a":1}' })).toBe('json');
     expect(inferSourceFormat({ text: 'export FOO=1', fileName: '.credentials.yaml' })).toBe(
-      'text',
+      'yaml',
     );
   });
 
@@ -63,6 +64,18 @@ describe('source preview helpers', () => {
     expect(compressBlankLines('{\n\n  "a": 1\n\n}')).toBe('{\n  "a": 1\n}');
     expect(compressBlankLines('{\r\n  \r\n  "a": 1\r\n}')).toBe('{\n  "a": 1\n}');
     expect(compressBlankLines('{\n  "a": 1\n}')).toBe('{\n  "a": 1\n}');
+  });
+
+  it('keeps empty JSON off the highlighted preview chrome', () => {
+    expect(hasJsonPreviewContent('')).toBe(false);
+    expect(hasJsonPreviewContent('   ')).toBe(false);
+    expect(hasJsonPreviewContent('not json')).toBe(false);
+    expect(hasJsonPreviewContent('{}')).toBe(false);
+    expect(hasJsonPreviewContent('[]')).toBe(false);
+    expect(hasJsonPreviewContent('{\n\n\n\n}')).toBe(false);
+    expect(hasJsonPreviewContent('{\n\n\n\n')).toBe(false);
+    expect(hasJsonPreviewContent('{"path":"a.ts"}')).toBe(true);
+    expect(hasJsonPreviewContent('{"__tool_use_purpose":"inspect"}')).toBe(true);
   });
 
   it('clips at the requested bound', () => {
