@@ -4,6 +4,7 @@ import type { AgentKey } from '@/lib/types';
 export const MCP_WRITE_AGENTS: readonly AgentKey[] = [
   'claude',
   'codex',
+  'grok',
   'cursor',
   'workbuddy',
 ];

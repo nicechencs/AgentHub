@@ -3,7 +3,7 @@ title: UI 页面模式
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-16
+updated: 2026-09-17
 ---
 
 # UI Page Patterns
@@ -21,7 +21,7 @@ The application is organized by work and management, with Agent filtering inside
 | Workspace | Chat | `/chat` | Full-height conversation workbench |
 | Workspace | Agents | `/agents` | Installed Agent catalog and lifecycle |
 | Workspace | Skills | `/skills` | User skills (shared library + this-tool), project skills by workspace, and market |
-| Workspace | MCP | `/mcp` | Inventory + write/enable for Claude / Codex / Cursor / WorkBuddy |
+| Workspace | MCP | `/mcp` | Inventory + write/enable for Claude / Codex / Grok / Cursor / WorkBuddy |
 | Workspace | History | `/projects` | Project/session tree and read-only preview (internal name: Projects) |
 | Workspace | Plugins | `/plugins` | Installed vendor plugin / extension packs; Claude / Grok can install, uninstall, enable, or disable; Pi is list-only |
 | Manage | Dashboard | `/` | Agent status, usage, and shortcuts |
@@ -466,17 +466,17 @@ Agents is the lifecycle surface: installed state, runtime readiness, install/upd
 
 ### MCP
 
-MCP lists known **MCP server** configuration files and can write/enable for Claude / Codex / Cursor / WorkBuddy (local templates, probe, no OAuth). It lists Agent, server, transport, source path, and enabled status. Parse errors, missing files, and an empty inventory each get their own recoverable state. Inventory does not imply that editing or injection is supported, and it is not the plugin/extension pack manager. The current page is a standard single-column table. Plugin / extension packs live on `/plugins`.
+MCP lists known **MCP server** configuration files and can write/enable for Claude / Codex / Grok / Cursor / WorkBuddy (local templates, probe, no OAuth). It lists Agent, server, transport, source path, and enabled status. Parse errors, missing files, and an empty inventory each get their own recoverable state. Inventory does not imply that editing or injection is supported, and it is not the plugin/extension pack manager. The current page is a standard single-column table. Plugin / extension packs live on `/plugins`.
 
 ### Features (MCP)
 
 - Table of known MCP server configuration files: Agent, server, transport, source path, enabled status.
-- Write dialog: local catalog → probe → upsert into a supported Agent; enable toggle on writable rows (Codex disable removes the entry).
+- Write dialog: local catalog → probe → upsert into a supported Agent; enable toggle on writable rows (Codex disable removes the entry; Grok disable sets `enabled = false`).
 - Distinct recoverable states for parse errors, missing files, and empty inventory.
 
 ### Agent touchpoints (MCP)
 
-- Inventory paths where verified; **`Capability::Mcp` is Partial** for Claude / Codex / Cursor / WorkBuddy (write/enable, no OAuth); Planned elsewhere.
+- Inventory paths where verified; **`Capability::Mcp` is Partial** for Claude / Codex / Grok / Cursor / WorkBuddy (write/enable, no OAuth); Planned elsewhere.
 - Bundled MCP inside a plugin pack is shown on Plugins as a component, not as rows here.
 
 ### Out of scope (MCP)

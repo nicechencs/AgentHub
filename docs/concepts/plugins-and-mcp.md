@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: product, frontend, and core contributors
 source-of-truth: SkillService, mcp_inventory.rs, plugin_inventory.rs, vendor plugin CLIs, and linked reference pages
-updated: 2026-09-11
+updated: 2026-09-17
 ---
 
 # 插件、MCP 与技能
@@ -17,7 +17,7 @@ updated: 2026-09-11
 | 用户界面 | 对象 | 典型厂商入口 | AgentHub 当前 |
 |---|---|---|---|
 | **插件** | 可安装的 **extension / plugin 包**（常打包 skills、commands、agents、hooks，有时附带 MCP） | Claude `/plugin`、Codex `/plugins`、Grok `plugin`、Pi `pi install` | **列表** `/plugins`（Claude / Grok / Pi）；**安装/卸载/启用/停用**仅 Claude / Grok。无 `Capability::Plugins` |
-| **MCP** | Agent 作为客户端去连接的 **MCP server 条目** | `claude mcp`、`codex mcp`、`grok mcp`、`~/.cursor/mcp.json` | `/mcp` 可盘点；Claude / Codex / Cursor / WorkBuddy 可探测并写入/启用（无 OAuth）。`Capability::Mcp` 对这四家 Partial |
+| **MCP** | Agent 作为客户端去连接的 **MCP server 条目** | `claude mcp`、`codex mcp`、`grok mcp`、`~/.cursor/mcp.json` | `/mcp` 可盘点；Claude / Codex / Grok / Cursor / WorkBuddy 可探测并写入/启用（无 OAuth）。`Capability::Mcp` 对这五家 Partial |
 | **技能** | 带 `SKILL.md` 的技能目录 | 各家 `skills/` 目录 | **已管理** `/skills`：用户技能共享源 `~/.agents/skills/`；项目技能在所选工作区的 `.agents/skills/` |
 
 插件包里可以**含有** MCP，但安装/卸载的对象是整个包。不要把 `/mcp` 改名为插件页，也不要用 MCP inventory 冒充已安装插件列表。
@@ -29,7 +29,7 @@ Goose 把 MCP 叫做 “extension”。那是 Goose 的用词。AgentHub 的「�
 ## 当前产品表面
 
 - **Skills**（`/skills`）管理用户技能（共享库与各工具目录）和项目技能（按历史页已识别的工作区选择）。`Capability::Skills` 由 adapter 声明；Kimi 为 Partial（共享库里的技能会直接生效，不必再同步一份）。
-- **MCP**（`/mcp`）列出已发现的 server 名、传输、命令/地址、来源文件；可对 Claude / Codex / Cursor / WorkBuddy 探测并写入本机配置、启用或关闭（Codex 关闭即删除）。不等于插件已安装，也不含 OAuth。
+- **MCP**（`/mcp`）列出已发现的 server 名、传输、命令/地址、来源文件；可对 Claude / Codex / Grok / Cursor / WorkBuddy 探测并写入本机配置、启用或关闭（Codex 关闭即删除；Grok 关闭写 `enabled = false`）。不等于插件已安装，也不含 OAuth。
 - **插件**（`/plugins`）列出 Claude / Grok / Pi 已装包：Claude / Grok 优先官方 CLI JSON，否则读 live 目录（`~/.claude/plugins/` + `enabledPlugins`，`~/.grok/plugins/`）。Pi 无 list JSON，读用户 `~/.pi/agent/settings.json` 的 `packages`（及 npm/git 安装目录）。Pi 对照本机版本与配置里的指定版本；指定了版本的 npm 包在 Pi 更新时会跳过，本页不查线上最新。Claude / Grok 已装包可启用/停用，并可安装/卸载：Grok 从官方市场列表、git 或本地路径安装，确认后才调用 `grok plugin install --trust`；Claude 安装 `name@marketplace`（确认后 `-y`）。卸载默认保留插件数据目录。Pi 装上即加载，没有包级启用，也不能从本页安装。设置「显示插件页面」只藏侧栏入口。附带 MCP 只作为包内组件。主栏不展示技能目录、MCP 配置或其他扫描来源。Codex 仍为 Planned；Cursor / Kimi / WorkBuddy / DSH / ZCode / Kiro 明确不支持。
 - 厂商 Plugin 市场也不是 Skills 市场（`skills.sh` / `skillhub.cn`）。
 

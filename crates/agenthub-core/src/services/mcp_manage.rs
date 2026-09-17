@@ -78,6 +78,7 @@ pub fn writable_mcp_agents() -> &'static [AgentId] {
     &[
         AgentId::Claude,
         AgentId::Codex,
+        AgentId::Grok,
         AgentId::Cursor,
         AgentId::WorkBuddy,
     ]
@@ -167,6 +168,7 @@ pub fn upsert_mcp_server(agent: AgentId, spec: &McpServerSpec) -> Result<McpWrit
             upsert_json_server(workbuddy_primary_path()?, agent, spec, &transport, enabled)
         }
         AgentId::Codex => write_codex_toml(spec, &transport, enabled),
+        AgentId::Grok => write_grok_toml(spec, &transport, enabled),
         _ => unreachable!("ensure_writable"),
     }
 }
@@ -183,6 +185,7 @@ pub fn set_mcp_server_enabled(
         AgentId::Cursor => set_json_enabled(cursor_primary_path()?, agent, name, enabled),
         AgentId::WorkBuddy => set_json_enabled(workbuddy_primary_path()?, agent, name, enabled),
         AgentId::Codex => set_codex_enabled(name, enabled),
+        AgentId::Grok => set_grok_enabled(name, enabled),
         _ => unreachable!("ensure_writable"),
     }
 }
@@ -425,6 +428,10 @@ fn codex_primary_path() -> Result<PathBuf> {
     Ok(agent_home(AgentId::Codex)?.join("config.toml"))
 }
 
+fn grok_primary_path() -> Result<PathBuf> {
+    Ok(agent_home(AgentId::Grok)?.join("config.toml"))
+}
+
 fn upsert_json_server(
     path: PathBuf,
     agent: AgentId,
@@ -576,8 +583,17 @@ fn write_json_pretty(path: &Path, value: &JsonValue) -> Result<()> {
 }
 
 fn write_codex_toml(spec: &McpServerSpec, transport: &str, enabled: bool) -> Result<McpWriteResult> {
+    write_codex_toml_at(&codex_primary_path()?, spec, transport, enabled)
+}
+
+fn write_codex_toml_at(
+    path: &Path,
+    spec: &McpServerSpec,
+    transport: &str,
+    enabled: bool,
+) -> Result<McpWriteResult> {
     if !enabled {
-        return set_codex_enabled(spec.name.trim(), false);
+        return set_codex_enabled_at(path, spec.name.trim(), false);
     }
     if transport != "stdio" {
         return Err(AppError::message(
@@ -592,26 +608,13 @@ fn write_codex_toml(spec: &McpServerSpec, transport: &str, enabled: bool) -> Res
         .filter(|s| !s.is_empty())
         .ok_or_else(|| AppError::message("mcp.write.command", "stdio 需要 command"))?;
 
-    let path = codex_primary_path()?;
-    let mut doc = read_toml_doc(&path)?;
-    let servers = doc
-        .entry("mcp_servers")
-        .or_insert(Item::Table(Table::new()))
-        .as_table_mut()
-        .ok_or_else(|| AppError::message("mcp.write.codex.shape", "mcp_servers 必须是表"))?;
-    servers.set_implicit(true);
-
+    let mut doc = read_toml_doc(path)?;
+    let servers = toml_mcp_servers_mut(&mut doc, "mcp.write.codex.shape")?;
     let mut table = Table::new();
     table.insert("command", value(command));
-    if !spec.args.is_empty() {
-        let mut arr = Array::new();
-        for arg in &spec.args {
-            arr.push(arg.as_str());
-        }
-        table.insert("args", Item::Value(toml_edit::Value::Array(arr)));
-    }
+    insert_toml_args(&mut table, &spec.args);
     servers.insert(spec.name.trim(), Item::Table(table));
-    write_toml_doc(&path, &doc)?;
+    write_toml_doc(path, &doc)?;
     Ok(McpWriteResult {
         agent: AgentId::Codex,
         name: spec.name.trim().to_string(),
@@ -621,7 +624,10 @@ fn write_codex_toml(spec: &McpServerSpec, transport: &str, enabled: bool) -> Res
 }
 
 fn set_codex_enabled(name: &str, enabled: bool) -> Result<McpWriteResult> {
-    let path = codex_primary_path()?;
+    set_codex_enabled_at(&codex_primary_path()?, name, enabled)
+}
+
+fn set_codex_enabled_at(path: &Path, name: &str, enabled: bool) -> Result<McpWriteResult> {
     if enabled {
         return Err(AppError::message(
             "mcp.enable.codex",
@@ -634,7 +640,7 @@ fn set_codex_enabled(name: &str, enabled: bool) -> Result<McpWriteResult> {
             format!("还没有 Codex 配置文件：{}", path.display()),
         ));
     }
-    let mut doc = read_toml_doc(&path)?;
+    let mut doc = read_toml_doc(path)?;
     let Some(servers) = doc.get_mut("mcp_servers").and_then(|i| i.as_table_mut()) else {
         return Err(AppError::message(
             "mcp.enable.missing",
@@ -647,13 +653,147 @@ fn set_codex_enabled(name: &str, enabled: bool) -> Result<McpWriteResult> {
             format!("配置里没有「{name}」"),
         ));
     }
-    write_toml_doc(&path, &doc)?;
+    write_toml_doc(path, &doc)?;
     Ok(McpWriteResult {
         agent: AgentId::Codex,
         name: name.to_string(),
         path: path.display().to_string(),
         enabled: false,
     })
+}
+
+fn write_grok_toml(spec: &McpServerSpec, transport: &str, enabled: bool) -> Result<McpWriteResult> {
+    write_grok_toml_at(&grok_primary_path()?, spec, transport, enabled)
+}
+
+fn write_grok_toml_at(
+    path: &Path,
+    spec: &McpServerSpec,
+    transport: &str,
+    enabled: bool,
+) -> Result<McpWriteResult> {
+    let name = spec.name.trim();
+    let mut doc = read_toml_doc(path)?;
+    let servers = toml_mcp_servers_mut(&mut doc, "mcp.write.grok.shape")?;
+    if !servers.contains_key(name) {
+        servers.insert(name, Item::Table(Table::new()));
+    }
+    let table = servers.get_mut(name).and_then(Item::as_table_mut).ok_or_else(|| {
+        AppError::message("mcp.write.grok.shape", format!("「{name}」必须是表"))
+    })?;
+    apply_grok_server_fields(table, spec, transport, enabled)?;
+    write_toml_doc(path, &doc)?;
+    Ok(McpWriteResult {
+        agent: AgentId::Grok,
+        name: name.to_string(),
+        path: path.display().to_string(),
+        enabled,
+    })
+}
+
+fn set_grok_enabled(name: &str, enabled: bool) -> Result<McpWriteResult> {
+    set_grok_enabled_at(&grok_primary_path()?, name, enabled)
+}
+
+fn set_grok_enabled_at(path: &Path, name: &str, enabled: bool) -> Result<McpWriteResult> {
+    if !path.exists() {
+        return Err(AppError::message(
+            "mcp.enable.missing",
+            format!("还没有 Grok 配置文件：{}", path.display()),
+        ));
+    }
+    let mut doc = read_toml_doc(path)?;
+    let Some(servers) = doc.get_mut("mcp_servers").and_then(|i| i.as_table_mut()) else {
+        return Err(AppError::message(
+            "mcp.enable.missing",
+            format!("配置里没有「{name}」"),
+        ));
+    };
+    let Some(table) = servers.get_mut(name).and_then(Item::as_table_mut) else {
+        return Err(AppError::message(
+            "mcp.enable.missing",
+            format!("配置里没有「{name}」"),
+        ));
+    };
+    table.insert("enabled", value(enabled));
+    table.remove("disabled");
+    write_toml_doc(path, &doc)?;
+    Ok(McpWriteResult {
+        agent: AgentId::Grok,
+        name: name.to_string(),
+        path: path.display().to_string(),
+        enabled,
+    })
+}
+
+fn toml_mcp_servers_mut<'a>(
+    doc: &'a mut DocumentMut,
+    err_code: &'static str,
+) -> Result<&'a mut Table> {
+    let servers = doc
+        .entry("mcp_servers")
+        .or_insert(Item::Table(Table::new()))
+        .as_table_mut()
+        .ok_or_else(|| AppError::message(err_code, "mcp_servers 必须是表"))?;
+    servers.set_implicit(true);
+    Ok(servers)
+}
+
+fn insert_toml_args(table: &mut Table, args: &[String]) {
+    if args.is_empty() {
+        table.remove("args");
+        return;
+    }
+    let mut arr = Array::new();
+    for arg in args {
+        arr.push(arg.as_str());
+    }
+    table.insert("args", Item::Value(toml_edit::Value::Array(arr)));
+}
+
+fn apply_grok_server_fields(
+    table: &mut Table,
+    spec: &McpServerSpec,
+    transport: &str,
+    enabled: bool,
+) -> Result<()> {
+    match transport {
+        "stdio" => {
+            let command = spec
+                .command
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| AppError::message("mcp.write.command", "stdio 需要 command"))?;
+            table.insert("command", value(command));
+            insert_toml_args(table, &spec.args);
+            table.remove("url");
+            table.remove("type");
+            table.remove("transport");
+        }
+        "http" | "sse" => {
+            let url = spec
+                .url
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| AppError::message("mcp.write.url", "HTTP/SSE 需要 url"))?;
+            table.insert("url", value(url));
+            table.insert("transport", value(transport));
+            table.remove("command");
+            table.remove("args");
+            table.remove("type");
+        }
+        other => {
+            return Err(AppError::message(
+                "mcp.write.grok.transport",
+                format!("暂不支持写入传输「{other}」"),
+            ));
+        }
+    }
+    table.insert("enabled", value(enabled));
+    table.remove("disabled");
+    Ok(())
 }
 
 fn read_toml_doc(path: &Path) -> Result<DocumentMut> {
@@ -684,53 +824,4 @@ fn write_toml_doc(path: &Path, doc: &DocumentMut) -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::tempdir;
-
-    #[test]
-    fn catalog_lists_stdio_templates() {
-        let rows = list_mcp_catalog();
-        assert!(rows.iter().any(|r| r.id == "filesystem"));
-        assert!(rows.iter().all(|r| r.transport == "stdio"));
-    }
-
-    #[test]
-    fn json_upsert_and_disable_roundtrip() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join(".claude.json");
-        let spec = McpServerSpec {
-            name: "memory".into(),
-            transport: "stdio".into(),
-            command: Some("npx".into()),
-            args: vec!["-y".into(), "@modelcontextprotocol/server-memory".into()],
-            url: None,
-            enabled: Some(true),
-        };
-        upsert_json_server(path.clone(), AgentId::Claude, &spec, "stdio", true).unwrap();
-        let text = fs::read_to_string(&path).unwrap();
-        assert!(text.contains("mcpServers"));
-        assert!(text.contains("memory"));
-        set_json_enabled(path.clone(), AgentId::Claude, "memory", false).unwrap();
-        let value: JsonValue = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(
-            value["mcpServers"]["memory"]["enabled"],
-            JsonValue::Bool(false)
-        );
-    }
-
-    #[test]
-    fn rejects_bad_names() {
-        assert!(validate_name("").is_err());
-        assert!(validate_name("bad name").is_err());
-        assert!(validate_name("ok_name-1").is_ok());
-    }
-
-    #[test]
-    fn parses_http_authority() {
-        let (s, h, p) = parse_http_host_port("https://example.com/mcp").unwrap();
-        assert_eq!((s.as_str(), h.as_str(), p), ("https", "example.com", 443));
-        let (s, h, p) = parse_http_host_port("http://127.0.0.1:8080/x").unwrap();
-        assert_eq!((s.as_str(), h.as_str(), p), ("http", "127.0.0.1", 8080));
-    }
-}
+mod tests;
