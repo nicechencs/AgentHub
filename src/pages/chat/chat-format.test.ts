@@ -20,6 +20,7 @@ import {
   resolvePiChatCurrentModel,
   sanitizeCliChatText,
   shouldFetchChatRemoteModels,
+  groupByTurn,
   thinkingChromeLabel,
 } from './chat-format';
 
@@ -141,6 +142,30 @@ describe('chat-format thinking chrome', () => {
     expect(formatDurationMs(12)).toBe('12ms');
     expect(formatDurationMs(1500)).toBe('1.5s');
     expect(formatDurationMs(65_000)).toBe('1m 5s');
+  });
+
+  it('groups user and agent messages by turn so the outline can jump to a prompt', () => {
+    const userFirst = chatMsg({ id: 'u1', role: 'user', content: 'first', turn: 2 });
+    const agentOnly = chatMsg({
+      id: 'a2',
+      role: 'agent',
+      agentId: 'claude',
+      content: 'no user',
+      turn: 1,
+    });
+    const userLater = chatMsg({ id: 'u1b', role: 'user', content: 'overwrite', turn: 2 });
+    const agentReply = chatMsg({
+      id: 'a1',
+      role: 'agent',
+      agentId: 'claude',
+      content: 'ok',
+      turn: 2,
+    });
+    expect(groupByTurn([userFirst, agentOnly, userLater, agentReply])).toEqual([
+      { turn: 1, agents: [agentOnly] },
+      { turn: 2, user: userLater, agents: [agentReply] },
+    ]);
+    expect(groupByTurn([])).toEqual([]);
   });
 
   it('thinkingChromeLabel matches live / thought-for / done copy', () => {

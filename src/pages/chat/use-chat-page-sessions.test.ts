@@ -30,4 +30,11 @@ describe('mergeHandoffConversations', () => {
     const loaded = [conv('a'), conv('b')];
     expect(mergeHandoffConversations([], loaded)).toBe(loaded);
   });
+
+  it('returns the loaded list identity when the handoff session is already present', () => {
+    const folder = conv('folder', 'D:\\work\\app');
+    const existing = conv('existing');
+    const loaded = [folder, existing];
+    expect(mergeHandoffConversations([folder], loaded)).toBe(loaded);
+  });
 });

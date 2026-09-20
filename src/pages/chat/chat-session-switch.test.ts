@@ -64,6 +64,8 @@ describe('sessionSwitchNeighbors', () => {
     expect(sessionSwitchNeighbors(sessions, 'b')).toEqual({ prevId: 'a', nextId: 'c' });
     expect(sessionSwitchNeighbors(sessions, 'a')).toEqual({ prevId: 'c', nextId: 'b' });
     expect(sessionSwitchNeighbors([{ id: 'a' }], 'a')).toEqual({ prevId: null, nextId: null });
+    expect(sessionSwitchNeighbors(sessions, null)).toEqual({ prevId: 'c', nextId: 'a' });
+    expect(sessionSwitchNeighbors([], 'a')).toEqual({ prevId: null, nextId: null });
   });
 });
 
@@ -94,6 +96,14 @@ describe('chatSessionSwitchShortcutAction', () => {
     expect(chatSessionSwitchShortcutAction({ ...base, key: 'ArrowUp', altKey: false })).toBeNull();
     expect(chatSessionSwitchShortcutAction({ ...base, key: 'ArrowUp', ctrlKey: true })).toBeNull();
     expect(chatSessionSwitchShortcutAction({ ...base, key: 'ArrowUp', overlayOpen: true })).toBeNull();
+    expect(chatSessionSwitchShortcutAction({ ...base, key: 'ArrowUp', shiftKey: true })).toBeNull();
+    expect(chatSessionSwitchShortcutAction({ ...base, key: 'ArrowDown', metaKey: true })).toBeNull();
+  });
+
+  it('reads ArrowDown from code when key is unidentified', () => {
+    expect(
+      chatSessionSwitchShortcutAction({ ...base, key: 'Unidentified', code: 'ArrowDown' }),
+    ).toBe('next');
   });
 });
 
@@ -149,5 +159,38 @@ describe('collapsed session switcher', () => {
     expect(html).not.toContain('data-help="chat-session-connect"');
     expect(html).toContain('data-help="chat-settings"');
     expect(html).toContain('会话设置');
+  });
+
+  it('disables prev/next when the filtered list has one session', () => {
+    const html = renderToStaticMarkup(
+      createElement(TooltipProvider, null, header({ sessions: [conv()] })),
+    );
+    expect(html).toContain('data-help="chat-session-switch"');
+    expect(html).toContain('disabled=""');
+    expect(html).toContain('aria-keyshortcuts="Alt+ArrowUp"');
+    expect(html).toContain('aria-keyshortcuts="Alt+ArrowDown"');
+  });
+
+  it('shows the unset folder name when the current session has no working directory', () => {
+    const html = renderToStaticMarkup(
+      createElement(
+        TooltipProvider,
+        null,
+        header({
+          active: conv({ cwd: null }),
+          sessions: [conv({ cwd: null }), conv({ id: 'b', title: '下一场', cwd: 'D:\\work\\other' })],
+        }),
+      ),
+    );
+    expect(html).toContain('未设目录');
+    expect(html).toContain('修登录');
+  });
+
+  it('falls back to the title button when the history list is empty', () => {
+    const html = renderToStaticMarkup(
+      createElement(TooltipProvider, null, header({ sessions: [] })),
+    );
+    expect(html).not.toContain('data-help="chat-session-switch"');
+    expect(html).toContain('修登录');
   });
 });

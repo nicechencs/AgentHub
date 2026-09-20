@@ -1,10 +1,10 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { ProcessMap } from '@/lib/chat-process';
 import type { ProcessStep } from '@/lib/types';
-import { ChatTurnEditList } from './ChatEditPreviewPanel';
+import { ChatEditPreviewPanel, ChatTurnEditList } from './ChatEditPreviewPanel';
 import {
   extractEditFilesFromSteps,
   extractTurnEdits,
@@ -14,6 +14,11 @@ import {
   turnEditDiffText,
   turnEditHasInlineDiff,
 } from './chat-edit-preview';
+
+vi.mock('@/components/shared/SourcePreview', () => ({
+  SourcePreview: ({ value, fileName }: { value: string; fileName: string }) =>
+    `PREVIEW:${fileName}:${value}`,
+}));
 
 function tool(
   name: string,
@@ -188,6 +193,56 @@ describe('extractEditFilesFromSteps', () => {
       extractEditFilesFromSteps([tool('Write src/named.ts', 'end')]),
     ).toEqual([{ path: 'src/named.ts', status: 'done' }]);
   });
+
+  it('reads locations[], files[], and file:// without localhost', () => {
+    expect(
+      extractEditFilesFromSteps([
+        tool('apply_patch', 'end', {
+          locations: [{ path: 'src/c.ts', old_text: 'c1', new_text: 'c2' }],
+        }),
+      ]),
+    ).toEqual([{ path: 'src/c.ts', status: 'done', before: 'c1', after: 'c2' }]);
+    expect(
+      extractEditFilesFromSteps([
+        tool('Write', 'end', { files: ['src/a.ts', { filePath: 'src/b.ts' }] }),
+      ]),
+    ).toEqual([
+      { path: 'src/a.ts', status: 'done' },
+      { path: 'src/b.ts', status: 'done' },
+    ]);
+    expect(
+      extractEditFilesFromSteps([
+        tool('Edit', 'end', { uri: 'file:///workspace/notes.md' }),
+      ]),
+    ).toEqual([{ path: '/workspace/notes.md', status: 'done' }]);
+  });
+
+  it('ignores a bare string, a space-only name, and invalid JSON results', () => {
+    expect(extractEditFilesFromSteps([tool('Write', 'end', 'hello world')])).toEqual([]);
+    expect(extractEditFilesFromSteps([tool('Write readme', 'end')])).toEqual([]);
+    expect(
+      extractEditFilesFromSteps([
+        tool('Write', 'end', { path: 'notes.md' }, '{not-json'),
+      ]),
+    ).toEqual([{ path: 'notes.md', status: 'done' }]);
+  });
+
+  it('stops walking nested item wrappers after three levels', () => {
+    expect(
+      extractEditFilesFromSteps([
+        tool('Write', 'end', {
+          item: { item: { item: { item: { path: 'too-deep.ts' } } } },
+        }),
+      ]),
+    ).toEqual([]);
+    expect(
+      extractEditFilesFromSteps([
+        tool('Write', 'end', {
+          item: { item: { path: 'ok.ts' } },
+        }),
+      ]),
+    ).toEqual([{ path: 'ok.ts', status: 'done' }]);
+  });
 });
 
 describe('extractTurnEdits', () => {
@@ -209,6 +264,17 @@ describe('extractTurnEdits', () => {
 
   it('returns an empty list when there is no process map', () => {
     expect(extractTurnEdits({})).toEqual([]);
+    expect(latestProcessTurn({})).toBeNull();
+    expect(latestProcessTurn({
+      'x:codex': {
+        agent: 'codex',
+        phase: 'ok',
+        stdout: '',
+        stderr: '',
+        updatedAt: 1,
+        steps: [],
+      } as unknown as ProcessMap[string],
+    })).toBeNull();
   });
 });
 
@@ -228,6 +294,8 @@ describe('simple diff', () => {
   it('sameEditPath treats slash variants as one file', () => {
     expect(sameEditPath('src\\a.ts', 'src/a.ts')).toBe(true);
     expect(sameEditPath('src/a.ts', 'src/b.ts')).toBe(false);
+    expect(sameEditPath('src/a.ts/', 'src/a.ts')).toBe(true);
+    expect(sameEditPath('  src/a.ts  ', 'src/a.ts')).toBe(true);
   });
 
   it('turnEditDiffText prefers a real patch over inventing one', () => {
@@ -264,6 +332,7 @@ describe('ChatTurnEditList', () => {
             { path: 'src/a.ts', status: 'live' },
             { path: 'src/b.ts', status: 'done' },
           ],
+          selectedPath: 'src\\a.ts',
           onSelect: () => undefined,
         }),
       ),
@@ -274,5 +343,66 @@ describe('ChatTurnEditList', () => {
     expect(html).toContain('已修改');
     expect(html).toContain('src/a.ts');
     expect(html).toContain('src/b.ts');
+    expect(html).toContain('aria-current="true"');
+  });
+
+  it('draws nothing when this turn has no edited files', () => {
+    expect(
+      renderToStaticMarkup(
+        createElement(ChatTurnEditList, { files: [], onSelect: () => undefined }),
+      ),
+    ).toBe('');
+  });
+});
+
+describe('ChatEditPreviewPanel', () => {
+  it('returns nothing when the pane is closed', () => {
+    expect(
+      renderToStaticMarkup(
+        createElement(ChatEditPreviewPanel, {
+          file: { path: 'src/a.ts', status: 'done', before: 'a', after: 'b' },
+          open: false,
+          onClose: () => undefined,
+        }),
+      ),
+    ).toBe('');
+  });
+
+  it('renders a diff preview from old and new text', () => {
+    const html = renderToStaticMarkup(
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(ChatEditPreviewPanel, {
+          file: { path: 'src/app.ts', status: 'done', before: 'old', after: 'new' },
+          open: true,
+          width: 360,
+          onClose: () => undefined,
+        }),
+      ),
+    );
+    expect(html).toContain('data-chat-edit-preview');
+    expect(html).toContain('app.ts');
+    expect(html).toContain('查看修改');
+    expect(html).toContain('PREVIEW:app.ts.diff:');
+    expect(html).toContain('-old');
+    expect(html).toContain('+new');
+    expect(html).toContain('收起');
+  });
+
+  it('shows the empty-body hint when there is no patch', () => {
+    const html = renderToStaticMarkup(
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(ChatEditPreviewPanel, {
+          file: { path: 'src/a.ts', status: 'live' },
+          open: true,
+          onClose: () => undefined,
+        }),
+      ),
+    );
+    expect(html).toContain('没有内容');
+    expect(html).not.toContain('PREVIEW:');
   });
 });

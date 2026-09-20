@@ -45,6 +45,11 @@ describe('promptTickMagnification', () => {
     expect(above).toEqual(below);
     expect(above).toEqual([...above].sort((left, right) => right - left));
   });
+
+  it('treats non-finite distances as outside the bulge', () => {
+    expect(promptTickMagnification(Number.NaN)).toBe(0);
+    expect(promptTickMagnification(Number.POSITIVE_INFINITY)).toBe(0);
+  });
 });
 
 describe('outlinePromptPreview', () => {
@@ -53,6 +58,11 @@ describe('outlinePromptPreview', () => {
     expect(outlinePromptPreview('a'.repeat(120))).toBe('a'.repeat(120));
     expect(outlinePromptPreview('a'.repeat(121))).toBe(`${'a'.repeat(120)}…`);
     expect(outlinePromptPreview('   \n\t  ')).toBe('');
+  });
+
+  it('honors a custom clip limit', () => {
+    expect(outlinePromptPreview('abcdefghij', 6)).toBe('abcdef…');
+    expect(outlinePromptPreview('short', 6)).toBe('short');
   });
 });
 
@@ -67,6 +77,11 @@ describe('outlinePromptsFromTurns', () => {
       { id: 'u1', preview: 'first' },
       { id: 'u2', preview: 'second line' },
     ]);
+  });
+
+  it('returns nothing when every turn is agent-only or empty', () => {
+    expect(outlinePromptsFromTurns([])).toEqual([]);
+    expect(outlinePromptsFromTurns([{ turn: 1, agents: [] }])).toEqual([]);
   });
 });
 
@@ -85,6 +100,8 @@ describe('outlineTickSize', () => {
     expect(outlineTickSize(true, 0)).toEqual({ width: 18, height: 2 });
     expect(outlineTickSize(false, 1)).toEqual({ width: 26, height: 4 });
     expect(outlineTickSize(true, 1)).toEqual({ width: 26, height: 4 });
+    expect(outlineTickSize(false, 0.5)).toEqual({ width: 18, height: 3 });
+    expect(outlineTickSize(true, 0.5)).toEqual({ width: 22, height: 3 });
   });
 });
 
@@ -101,11 +118,18 @@ describe('resolveActivePromptId', () => {
     expect(resolveActivePromptId(prompts, [100, 200, 300], 50)).toBeNull();
     expect(resolveActivePromptId([], [], 100)).toBeNull();
   });
+
+  it('skips missing or non-finite tops and keeps the last valid mark', () => {
+    expect(resolveActivePromptId(prompts, [100, Number.NaN, 300], 300)).toBe('c');
+    expect(resolveActivePromptId(prompts, [undefined as unknown as number, 200], 200)).toBe('b');
+    expect(resolveActivePromptId(prompts, [Number.POSITIVE_INFINITY, 200, 50], 80)).toBe('c');
+  });
 });
 
 describe('outline jump scroll', () => {
   it('places the target 8px below the container top', () => {
     expect(planOutlineJumpScroll(80, 40, 200)).toBe(152);
+    expect(planOutlineJumpScroll(80, 40, 200, 0)).toBe(160);
   });
 
   it('writes that offset onto the container after a start-aligned jump', () => {

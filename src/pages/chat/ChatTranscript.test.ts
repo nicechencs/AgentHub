@@ -161,5 +161,25 @@ describe('ChatTranscript surfaces', () => {
     expect(html).not.toContain('rounded-composer bg-panel');
     expect(html).not.toContain('rounded-composer bg-canvas');
     expect(html).toContain('hello from chat');
+    expect(html).toContain('id="chat-msg-m-user"');
+  });
+
+  it('anchors each sent prompt so the outline can jump to it', () => {
+    const first = userMessage('first prompt');
+    const second = {
+      ...userMessage('second prompt'),
+      id: 'm-user-2',
+      turn: 2,
+    };
+    const html = renderTranscript([
+      { turn: 1, user: first, agents: [] },
+      { turn: 2, user: second, agents: [] },
+    ]);
+    expect(html).toContain('id="chat-msg-m-user"');
+    expect(html).toContain('id="chat-msg-m-user-2"');
+    expect(html).toContain('first prompt');
+    expect(html).toContain('second prompt');
+    expect(html).toContain('pointer-events-none');
+    expect(html).not.toContain('data-testid="chat-outline-rail"');
   });
 });

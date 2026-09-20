@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   chatPreviewCanBack,
+  chatPreviewLine,
   chatPreviewPath,
   isChatEditPreview,
   isChatFilePreview,
@@ -45,6 +46,20 @@ describe('chat preview stack', () => {
     expect(popChatPreview(process)).toBeNull();
     expect(pushChatPreview(process, '/repo/README.md')).toEqual(
       openChatPreviewRoot('/repo/README.md'),
+    );
+  });
+
+  it('keeps a 1-based line only on file previews', () => {
+    expect(chatPreviewLine(openChatPreviewRoot('/repo/README.md', 12))).toBe(12);
+    expect(chatPreviewLine(openChatPreviewRoot('/repo/README.md', 0))).toBeUndefined();
+    expect(chatPreviewLine(openChatPreviewRoot('/repo/README.md', -1))).toBeUndefined();
+    expect(chatPreviewLine(openChatEditPreview('src/a.ts'))).toBeUndefined();
+    expect(chatPreviewLine(null)).toBeUndefined();
+    const same = pushChatPreview(openChatPreviewRoot('/repo/README.md', 3), '/repo/README.md', 9);
+    expect(chatPreviewLine(same)).toBe(9);
+    expect(chatPreviewPath(same)).toBe('/repo/README.md');
+    expect(pushChatPreview(null, '/repo/README.md', 4)).toEqual(
+      openChatPreviewRoot('/repo/README.md', 4),
     );
   });
 

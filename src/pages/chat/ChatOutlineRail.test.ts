@@ -71,4 +71,27 @@ describe('ChatOutlineRail markup', () => {
     });
     expect(html).not.toContain('chat-outline-rail');
   });
+
+  it('keeps a measure wrapper when two prompts are too narrow to draw ticks', () => {
+    const html = renderRail({ turns: turns('first', 'second'), measuredWidth: 719 });
+    expect(html).toContain('pointer-events-none');
+    expect(html).not.toContain('data-testid="chat-outline-rail"');
+  });
+
+  it('skips agent-only turns and still jumps by the user message id', () => {
+    const html = renderRail({
+      turns: [
+        { turn: 1, user: user('u1', 'first'), agents: [] },
+        { turn: 2, agents: [] },
+        { turn: 3, user: user('u3', 'third'), agents: [] },
+      ],
+      measuredWidth: 800,
+    });
+    expect(html).toContain('data-testid="chat-outline-tick-u1"');
+    expect(html).toContain('data-testid="chat-outline-tick-u3"');
+    expect(html).not.toContain('chat-outline-tick-u2');
+    expect(html).toContain('1 / 2：first');
+    expect(html).toContain('2 / 2：third');
+    expect(html).not.toContain('data-testid="chat-outline-preview"');
+  });
 });

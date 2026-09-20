@@ -1083,3 +1083,64 @@ describe('chat-process human tool labels', () => {
     expect(isProtocolProcessStep({ type: 'tool', name: 'Read', status: 'start' })).toBe(false);
   });
 });
+
+describe('thinking / tools pane helpers', () => {
+  it('keeps thinking-only timelines off the tool chip', () => {
+    const thinking = [{ type: 'thinking' as const, text: 'plan', done: false }];
+    expect(latestThinkingStep(thinking)?.text).toBe('plan');
+    expect(latestThinkingStep([])).toBeUndefined();
+    expect(latestThinkingStep(undefined)).toBeUndefined();
+    expect(timelineHasToolRow(thinking)).toBe(false);
+    expect(showBubbleThinkingBar(thinking, false)).toBe(true);
+    expect(formatProcessHeadline(thinking, 'running', t)).toBe('思考中');
+    expect(thinkingElapsedMs(undefined, 1000)).toBe(0);
+    expect(thinkingElapsedMs({
+      turn: 1,
+      agent: 'codex',
+      phase: 'running',
+      stdout: '',
+      stderr: '',
+      steps: thinking,
+      updatedAt: 1,
+    }, 1000)).toBe(0);
+    expect(thinkingElapsedMs({
+      turn: 1,
+      agent: 'codex',
+      phase: 'ok',
+      stdout: '',
+      stderr: '',
+      steps: thinking,
+      updatedAt: 1,
+      thinkingStartedAt: 500,
+      thinkingDurationMs: -12,
+    }, 900)).toBe(0);
+  });
+
+  it('folds same-id execute updates and skips blank command output', () => {
+    expect(timelineProcessSteps([
+      { type: 'raw', text: '   ', note: 'command output' },
+      { type: 'tool', id: 'run-1', name: 'Bash', status: 'start', input: { command: 'ls' } },
+      { type: 'tool', id: 'run-1', name: 'Bash', status: 'end', result: 'docs' },
+      { type: 'status', phase: 'starting', detail: 'thread.started' },
+      { type: 'usage', scope: 'turn', input: 1, output: 1 },
+    ])).toEqual([
+      {
+        type: 'tool',
+        id: 'run-1',
+        name: 'Bash',
+        status: 'end',
+        input: { command: 'ls' },
+        result: 'docs',
+      },
+    ]);
+    expect(timelineHasToolRow([
+      { type: 'tool', name: 'Bash', status: 'end' },
+      { type: 'error', message: 'boom' },
+    ])).toBe(true);
+    expect(formatProcessHeadline(
+      [{ type: 'tool', name: 'Bash', status: 'error', input: { command: 'ls' } }],
+      'failed',
+      t,
+    )).toBe('没法执行 ls');
+  });
+});
