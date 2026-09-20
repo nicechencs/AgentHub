@@ -15,6 +15,7 @@ import {
   formatToolStep,
   formatUsageStep,
   isProtocolProcessStep,
+  latestThinkingStep,
   phaseFromMessageStatus,
   stepSummary,
   timelineProcessSteps,
@@ -194,13 +195,21 @@ function toolHasProtocolDetails(step: Extract<ProcessStep, { type: 'tool' }>): b
   );
 }
 
-function ProcessStepRow({ step }: { step: ProcessStep }) {
+function ProcessStepRow({
+  step,
+  thinkingStartedAt,
+  thinkingDurationMs,
+}: {
+  step: ProcessStep;
+  thinkingStartedAt?: number;
+  thinkingDurationMs?: number;
+}) {
   const { t } = useI18n();
   if (step.type === 'tool') {
     const input = formatStepInput(step.input);
     const live = toolActionTone(step.status) === 'live';
     return (
-      <div className="py-1">
+      <div className="py-1" data-help="chat-process-tool">
         <div
           className={cn(
             'font-medium text-secondary',
@@ -228,7 +237,15 @@ function ProcessStepRow({ step }: { step: ProcessStep }) {
     );
   }
   if (step.type === 'thinking') {
-    return <ThinkingStepRow text={step.text} done={Boolean(step.done)} defaultOpen />;
+    return (
+      <ThinkingStepRow
+        text={step.text}
+        done={Boolean(step.done)}
+        defaultOpen
+        startedAt={thinkingStartedAt}
+        durationMs={thinkingDurationMs}
+      />
+    );
   }
   if (step.type === 'error') {
     return <div className="py-1 text-danger">{step.message}</div>;
@@ -259,15 +276,24 @@ function ThinkingStepRow({
   text,
   done,
   defaultOpen,
+  startedAt,
+  durationMs,
 }: {
   text: string;
   done: boolean;
   defaultOpen: boolean;
+  startedAt?: number;
+  durationMs?: number;
 }) {
   const { t } = useI18n();
-  const [elapsedMs, setElapsedMs] = useState(0);
-  const startRef = useRef(Date.now());
+  const startRef = useRef(startedAt ?? Date.now());
+  const [now, setNow] = useState(() => Date.now());
   const [open, setOpen] = useState(defaultOpen);
+  const bodyRef = useRef<HTMLPreElement>(null);
+
+  useEffect(() => {
+    if (startedAt != null) startRef.current = startedAt;
+  }, [startedAt]);
 
   useEffect(() => {
     if (done) {
@@ -275,20 +301,26 @@ function ThinkingStepRow({
       return;
     }
     setOpen(true);
-    startRef.current = Date.now();
-    const tick = () => setElapsedMs(Math.max(0, Date.now() - startRef.current));
+    const tick = () => setNow(Date.now());
     tick();
     const id = window.setInterval(tick, 1000);
     return () => window.clearInterval(id);
   }, [done, defaultOpen]);
 
+  const elapsedMs = done
+    ? (durationMs ?? 0)
+    : Math.max(0, now - startRef.current);
   const label = thinkingChromeLabel(done, elapsedMs, t);
-
   const body = clipProcessTail(text);
+
+  useLayoutEffect(() => {
+    if (!done) pinElementScrollToBottom(bodyRef.current);
+  }, [body, done]);
 
   return (
     <details
       className="py-1"
+      data-help="chat-process-thinking"
       open={open}
       onToggle={(e) => {
         e.stopPropagation();
@@ -304,7 +336,12 @@ function ThinkingStepRow({
         )}
       </summary>
       {body ? (
-        <div className="mt-0.5 whitespace-pre-wrap break-words italic text-muted">{body}</div>
+        <pre
+          ref={bodyRef}
+          className="mt-0.5 max-h-40 overflow-auto [overflow-anchor:none] whitespace-pre-wrap break-words italic text-muted"
+        >
+          {body}
+        </pre>
       ) : null}
     </details>
   );
@@ -343,6 +380,7 @@ export function ChatProcessPanel({
   );
   const timelineRef = useRef<HTMLDivElement>(null);
   const stderrRef = useRef<HTMLPreElement>(null);
+  const latestThinking = latestThinkingStep(timeline);
 
   useLayoutEffect(() => {
     pinElementScrollToBottom(timelineRef.current);
@@ -367,7 +405,20 @@ export function ChatProcessPanel({
             </div>
           ) : null}
           {timeline.map((step, i) => (
-            <ProcessStepRow key={processStepKey(step, i)} step={step} />
+            <ProcessStepRow
+              key={processStepKey(step, i)}
+              step={step}
+              thinkingStartedAt={
+                step.type === 'thinking' && step === latestThinking
+                  ? view.thinkingStartedAt
+                  : undefined
+              }
+              thinkingDurationMs={
+                step.type === 'thinking' && step === latestThinking
+                  ? view.thinkingDurationMs
+                  : undefined
+              }
+            />
           ))}
           {pendingConfirm ? (
             <div className="py-1 text-muted" data-help="chat-process-confirm">
