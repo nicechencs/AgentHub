@@ -28,12 +28,8 @@ import type { Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { sessionSwitchNeighbors } from './chat-session-switch';
 import { isKiroChatAgent } from './chat-kiro-model';
-import {
-  chatConnectLabelKey,
-  sessionChatConnectKind,
-} from './chat-connect-model';
 import { sessionAllowAlwaysActive } from './chat-runtime-model';
-import type { RuntimeChannel, RuntimeSnapshot } from '@/lib/api/chat';
+import type { RuntimeSnapshot } from '@/lib/api/chat';
 import {
   autoApproveActive,
   autoApproveEffect,
@@ -57,8 +53,6 @@ export function ChatSessionHeader({
   onOpenSettings,
   onPickWorkingDirectory,
   runtimeLocked = false,
-  transport = null,
-  runtimeEnabled = false,
   runtime = null,
 }: {
   active: Conversation | null;
@@ -72,8 +66,6 @@ export function ChatSessionHeader({
   onOpenSettings: () => void;
   onPickWorkingDirectory: () => void;
   runtimeLocked?: boolean;
-  transport?: RuntimeChannel | null;
-  runtimeEnabled?: boolean;
   runtime?: Pick<RuntimeSnapshot, 'sessionAllowAlways'> | null;
 }) {
   const { t } = useI18n();
@@ -96,11 +88,6 @@ export function ChatSessionHeader({
   const selectedAgent = active?.agentIds[0] ?? null;
   const approveOn = autoApproveActive(Boolean(active?.allowDangerous), selectedAgent);
   const kiroPermissions = isKiroChatAgent(selectedAgent);
-  const connectKind = sessionChatConnectKind({
-    agentId: selectedAgent,
-    transport,
-    runtimeEnabled,
-  });
   const sessionAlways = sessionAllowAlwaysActive(runtime);
 
   async function commit() {
@@ -233,18 +220,6 @@ export function ChatSessionHeader({
                     ? cwdShortName(active.cwd, t)
                     : t('chat.header.cwdUnset')}
               </span>
-            </Button>
-          </Hint>
-          <Hint label={t('chat.connect.sessionTitle')}>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={onOpenSettings}
-              data-help="chat-session-connect"
-              className="text-muted"
-            >
-              {t(chatConnectLabelKey(connectKind))}
             </Button>
           </Hint>
           {active.nativeSessionId && (

@@ -350,8 +350,6 @@ export default function ChatPage() {
           onOpenSettings={() => page.setSettingsOpen(true)}
           onPickWorkingDirectory={() => void page.pickWorkingDirectory()}
           runtimeLocked={page.runtimeLocked || page.sendingHere}
-          transport={page.runtimeOps.transport}
-          runtimeEnabled={Boolean(page.runtime?.enabled)}
           runtime={page.runtime}
         />
 
