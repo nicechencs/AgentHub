@@ -18,6 +18,7 @@ describe('chat layout wiring', () => {
     expect(page).not.toContain('flex min-w-0 flex-1 flex-col bg-panel');
     expect(source('ChatMessageBubble.tsx')).toContain('formatChatDisplayContent');
     expect(source('ChatTranscript.tsx')).toContain('overflow-x-hidden overflow-y-auto');
+    expect(source('ChatTranscript.tsx')).toContain('key={g.user.id}');
   });
 
   it('lets Escape stop an in-flight turn', () => {
@@ -535,6 +536,13 @@ describe('chat layout wiring', () => {
     expect(source('ChatMessageBubble.tsx')).not.toContain('ChatPlanBar');
     expect(source('ChatProcessPanel.tsx')).not.toContain('formatVisibleUsage');
     expect(source('index.tsx')).toContain('ChatPlanBar');
+    expect(source('ChatPlanBar.tsx')).toContain('aria-expanded={open}');
+    expect(source('ChatPlanBar.tsx')).toContain('chat.runtime.planProgress');
+    expect(source('ChatPlanBar.tsx')).toContain('runtimePlanStatusKey');
+    expect(translate('zh', 'chat.runtime.planStatusLive')).toBe('进行中');
+    expect(translate('zh', 'chat.runtime.planCollapse')).toBe('收起计划');
+    expect(source('use-chat-page-send.ts')).toContain('recordSnapshotPollFailure');
+    expect(source('index.tsx')).toContain('chat.runtime.snapshotStale');
     expect(source('index.tsx')).toContain('ChatHostTerminals');
     expect(source('ChatHostTerminals.tsx')).toContain('chat.runtime.stopCommand');
     expect(source('ChatHostTerminals.tsx')).not.toContain('xterm');

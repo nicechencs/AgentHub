@@ -136,6 +136,7 @@ export function ChatTranscript({
                 <div key={g.turn} className="space-y-4">
                   {g.user && (
                     <ChatMessageBubble
+                      key={g.user.id}
                       message={g.user}
                       isLastTurn={g.turn === lastTurn}
                       multiAgent={g.agents.length > 1}
