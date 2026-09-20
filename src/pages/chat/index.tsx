@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MessagesSquare } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
@@ -31,8 +31,10 @@ import {
   chatMainColumnClass,
   chatStageClass,
   composerNativeEditChord,
+  filterConversations,
 } from './chat-model';
 import { subscribeChatShortcutKeydown } from './chat-shortcuts';
+import { useChatSessionSwitch } from './use-chat-session-switch';
 import { chatModShiftIShouldOpenModel } from './chat-model-labels';
 import { formatChatSessionRecord, processUserPromptPreview, type TurnGroup } from './chat-format';
 import { chatBusySendMode, grokLegacyContinueKind } from './chat-grok-follow-up';
@@ -242,6 +244,16 @@ export default function ChatPage() {
     };
   }, [page.runChatAction]);
 
+  const switchSessions = useMemo(
+    () => filterConversations(page.conversations, page.railQuery),
+    [page.conversations, page.railQuery],
+  );
+  useChatSessionSwitch({
+    sessions: switchSessions,
+    currentId: page.activeId,
+    onFocus: page.focusConversation,
+  });
+
   if (page.error && page.conversations.length === 0 && !page.listLoading) {
     return (
       <div className="flex h-full items-center justify-center p-6">
@@ -303,8 +315,11 @@ export default function ChatPage() {
           active={page.active}
           railOpen={page.railOpen}
           recordText={formatChatSessionRecord(page.turns, t('common.you'))}
+          sessions={switchSessions}
+          sendingConversationIds={page.sendingConversationIds}
           onExpandRail={() => page.setRailOpen(true)}
           onRename={page.renameTitle}
+          onFocus={page.focusConversation}
           onOpenSettings={() => page.setSettingsOpen(true)}
           onPickWorkingDirectory={() => void page.pickWorkingDirectory()}
           runtimeLocked={page.runtimeLocked || page.sendingHere}

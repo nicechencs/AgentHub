@@ -14,6 +14,8 @@ export const CHAT_SHORTCUT_ROWS: readonly ChatShortcutRow[] = [
   { id: 'stop', keys: 'Esc', actionKey: 'chat.shortcuts.stop' },
   { id: 'actions', keys: '/', actionKey: 'chat.shortcuts.actions' },
   { id: 'history', keys: 'Ctrl+K', actionKey: 'chat.shortcuts.history' },
+  { id: 'prevSession', keys: 'Alt+↑', actionKey: 'chat.shortcuts.prevSession' },
+  { id: 'nextSession', keys: 'Alt+↓', actionKey: 'chat.shortcuts.nextSession' },
   { id: 'model', keys: 'Ctrl+Shift+I', actionKey: 'chat.shortcuts.model' },
   { id: 'newChat', keys: 'Ctrl+N', actionKey: 'chat.shortcuts.newChat' },
   { id: 'overview', keys: '?', actionKey: 'chat.shortcuts.overview' },
