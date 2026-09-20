@@ -63,6 +63,16 @@ import {
   RUNTIME_SNAPSHOT_POLL_ACTIVE_MS,
   RUNTIME_SNAPSHOT_POLL_BACKGROUND_MS,
 } from './chat-streaming';
+import {
+  beginSnapshotSyncRetry,
+  idleSnapshotSync,
+  recordSnapshotPollFailure,
+  recordSnapshotPollSuccess,
+  snapshotSyncBannerDelayMs,
+  snapshotSyncForConversation,
+  snapshotSyncShowsBanner,
+  type SnapshotSyncState,
+} from './chat-snapshot-sync';
 
 /**
  * Chat 发送 / 取消 / 流式事件 / 过程面板。
@@ -117,6 +127,8 @@ export function useChatPageSend(input: {
   const [cancelingIds, setCancelingIds] = useState<string[]>([]);
   const [processMap, setProcessMap] = useState<ProcessMap>({});
   const [runtime, setRuntime] = useState<RuntimeSnapshot | null>(null);
+  const [snapshotSync, setSnapshotSync] = useState<SnapshotSyncState>(idleSnapshotSync);
+  const [snapshotRetryNonce, setSnapshotRetryNonce] = useState(0);
   const runtimeSequenceRef = useRef(new Map<string, number>());
   const runtimeRecordsRef = useRef(new Map<string, RuntimeRunRecord>());
   const runtimeViewsRef = useRef(new Map<string, RuntimeConversationView>());
@@ -162,25 +174,33 @@ export function useChatPageSend(input: {
     publishFollowUps();
   };
 
-  const appendFollowUp = (conversationId: string, prompt: string) => {
+  const appendFollowUp = (
+    conversationId: string,
+    prompt: string,
+    extras?: QueuedFollowUpItem['extras'],
+  ) => {
     setFollowUpQueue(
       conversationId,
-      appendQueuedFollowUp(followUpsRef.current.get(conversationId) ?? [], prompt),
+      appendQueuedFollowUp(followUpsRef.current.get(conversationId) ?? [], prompt, undefined, extras),
     );
   };
 
-  const prependFollowUp = (conversationId: string, prompt: string) => {
+  const prependFollowUp = (
+    conversationId: string,
+    prompt: string,
+    extras?: QueuedFollowUpItem['extras'],
+  ) => {
     setFollowUpQueue(
       conversationId,
-      prependQueuedFollowUp(followUpsRef.current.get(conversationId) ?? [], prompt),
+      prependQueuedFollowUp(followUpsRef.current.get(conversationId) ?? [], prompt, undefined, extras),
     );
   };
 
-  const dequeueFollowUp = (conversationId: string): string | null => {
+  const dequeueFollowUp = (conversationId: string): QueuedFollowUpItem | null => {
     const shifted = shiftQueuedFollowUp(followUpsRef.current.get(conversationId) ?? []);
     if (!shifted) return null;
     setFollowUpQueue(conversationId, shifted.rest);
-    return shifted.next.text;
+    return shifted.next;
   };
 
   const removeFollowUp = (conversationId: string, itemId: string) => {
@@ -281,6 +301,9 @@ export function useChatPageSend(input: {
     const canRender =
       applyUi &&
       acceptsRuntimeSnapshot(activeIdRef.current, activeGenerationRef.current, conversationId, generation);
+    if (conversationId === activeIdRef.current) {
+      setSnapshotSync((previous) => recordSnapshotPollSuccess(previous, conversationId));
+    }
     if (canRender && snapshot.currentMessage) {
       setMessages((previous) => upsertRuntimeMessage(previous, snapshot.currentMessage!));
     }
@@ -359,8 +382,8 @@ export function useChatPageSend(input: {
           },
         );
       } catch (error) {
-        if (!disposed && isLatestRuntimeRead(readId, runtimeReadRef.current.get(id) ?? 0) && runtime?.enabled) {
-          toast({ title: error instanceof Error ? error.message : String(error), variant: 'danger' });
+        if (!disposed && isLatestRuntimeRead(readId, runtimeReadRef.current.get(id) ?? 0)) {
+          setSnapshotSync((previous) => recordSnapshotPollFailure(previous, id, error, Date.now()));
         }
       } finally {
         inFlight = false;
@@ -371,7 +394,20 @@ export function useChatPageSend(input: {
     if (!shouldPoll) return () => { disposed = true; };
     const timer = window.setInterval(() => void read(), RUNTIME_SNAPSHOT_POLL_ACTIVE_MS);
     return () => { disposed = true; window.clearInterval(timer); };
-  }, [activeId, activeAgentId, runtime?.enabled, runtime?.phase]);
+  }, [activeId, activeAgentId, runtime?.enabled, runtime?.phase, snapshotRetryNonce]);
+
+  useEffect(() => {
+    setSnapshotSync((previous) => snapshotSyncForConversation(activeId, previous));
+  }, [activeId]);
+
+  useEffect(() => {
+    const delay = snapshotSyncBannerDelayMs(snapshotSync, Date.now());
+    if (delay == null) return;
+    const timer = window.setTimeout(() => {
+      setSnapshotSync((previous) => ({ ...previous }));
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [snapshotSync.conversationId, snapshotSync.failures, snapshotSync.firstFailedAt]);
 
   // Background runs stay owned by their conversations. Poll them so a terminal
   // snapshot can release that session without a page-wide sending lock.
@@ -550,11 +586,11 @@ export function useChatPageSend(input: {
     }
   }
 
-  async function dispatchQueuedFollowUp(conversationId: string, prompt: string) {
-    const text = prompt.trim();
+  async function dispatchQueuedFollowUp(conversationId: string, item: QueuedFollowUpItem) {
+    const text = item.text.trim();
     if (!text) return;
     if (activeIdRef.current === conversationId && !sendingIdsRef.current.has(conversationId)) {
-      await sendPrompt(text, false);
+      await sendPrompt(text, false, item.extras ?? {});
       return;
     }
     markSending(conversationId);
@@ -562,7 +598,7 @@ export function useChatPageSend(input: {
     const applyUi = conversationId === activeIdRef.current;
     const fail = (error: unknown) => {
       clearSendingFor(conversationId);
-      prependFollowUp(conversationId, text);
+      prependFollowUp(conversationId, text, item.extras);
       toast({
         title: error instanceof Error ? error.message : String(error),
         variant: 'danger',
@@ -585,7 +621,7 @@ export function useChatPageSend(input: {
       try {
         await enqueueRuntimeSnapshot(
           conversationId,
-          () => runtimeStart(conversationId, text, crypto.randomUUID()),
+          () => runtimeStart(conversationId, text, crypto.randomUUID(), item.extras),
           (snapshot, sourceVersion) => {
             applyRuntimeSnapshot(
               snapshot,
@@ -614,12 +650,17 @@ export function useChatPageSend(input: {
     }
   }
 
-  async function sendPrompt(prompt: string, clearDraft: boolean) {
+  async function sendPrompt(
+    prompt: string,
+    clearDraft: boolean,
+    extrasOverride?: QueuedFollowUpItem['extras'],
+  ) {
     if (!active) return;
     if (sendingIdsRef.current.has(active.id)) {
       const next = prompt.trim();
       if (!next) return;
-      appendFollowUp(active.id, next);
+      appendFollowUp(active.id, next, getStartExtras?.());
+      clearStartExtras?.();
       if (clearDraft) setDraft('');
       toast({
         title: t('chat.toast.queuedAfterTurn'),
@@ -644,7 +685,8 @@ export function useChatPageSend(input: {
     markSending(sendConvId);
     if (clearDraft) setDraft('');
     const turnGuess = messages.reduce((max, m) => Math.max(max, m.turn), 0) + 1;
-    const localUserId = `local-user-${Date.now()}`;
+    const extras = extrasOverride !== undefined ? extrasOverride : getStartExtras?.();
+    const localUserId = crypto.randomUUID();
     setMessages((prev) => [
       ...prev,
       {
@@ -722,7 +764,7 @@ export function useChatPageSend(input: {
       try {
         await enqueueRuntimeSnapshot(
           sendConvId,
-          () => runtimeStart(sendConvId, prompt, crypto.randomUUID(), getStartExtras?.()),
+          () => runtimeStart(sendConvId, prompt, localUserId, extras),
           async (nextSnapshot, sourceVersion) => {
             const currentStartRecord = runtimeRecordsRef.current.get(sendConvId);
             if (currentStartRecord?.cancelRequested && nextSnapshot.runId && isRuntimeActive(nextSnapshot.phase)) {
@@ -1020,6 +1062,12 @@ export function useChatPageSend(input: {
     }
   }
 
+  async function retryRuntimeSnapshot() {
+    if (!activeId) return;
+    setSnapshotSync((previous) => beginSnapshotSyncRetry(previous));
+    setSnapshotRetryNonce((current) => current + 1);
+  }
+
   async function steerRuntime(prompt: string): Promise<boolean> {
     if (!active || !runtime?.enabled || !runtimeIdRef.current || !prompt.trim()) return false;
     try {
@@ -1057,6 +1105,9 @@ export function useChatPageSend(input: {
     adoptInflight,
     cancelIfSending,
     runtime,
+    snapshotSync,
+    snapshotBannerVisible: snapshotSyncShowsBanner(snapshotSync, Date.now()),
+    retryRuntimeSnapshot,
     submitRuntimeRequest,
     clearSessionAllowAlways,
     steerRuntime,

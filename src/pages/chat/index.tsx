@@ -442,6 +442,24 @@ export default function ChatPage() {
                     onRestoreDraft={() => page.setDraft(page.turnOutcome?.prompt ?? '')}
                   />
                 ) : null}
+                {page.snapshotBannerVisible ? (
+                  <Notice tone="warning" className="mb-2">
+                    <div className="flex flex-wrap items-start justify-between gap-2" data-help="chat-snapshot-stale">
+                      <div className="min-w-0 space-y-1">
+                        <p className="font-medium text-primary">{t('chat.runtime.snapshotStale')}</p>
+                        <p className="text-meta text-secondary">{t('chat.runtime.snapshotStaleHint')}</p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => void page.retryRuntimeSnapshot()}
+                      >
+                        {t('chat.runtime.snapshotRetry')}
+                      </Button>
+                    </div>
+                  </Notice>
+                ) : null}
                 {(() => {
                   const stance = kiroChatStance(page.primaryAgent);
                   if (!stance?.showBanner) return null;

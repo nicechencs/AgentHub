@@ -131,6 +131,7 @@ fn begin_turn_bumps_conversation_sort_time_without_renaming() {
             }]
         })
         .unwrap();
+    assert_eq!(user.id, "user-1");
 
     let listed = repo.list_conversations().unwrap();
     assert_eq!(listed[0].id, "older");

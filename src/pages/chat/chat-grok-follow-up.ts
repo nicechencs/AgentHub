@@ -1,9 +1,15 @@
 import type { RuntimePhase } from '@/lib/backend/contracts/chat-runtime';
 import { isRuntimeActive } from './chat-runtime-model';
 
+export type QueuedFollowUpExtras = {
+  images?: { path: string }[];
+  skills?: { name: string; path: string }[];
+};
+
 export type QueuedFollowUpItem = {
   id: string;
   text: string;
+  extras?: QueuedFollowUpExtras;
 };
 
 let queuedFollowUpSeq = 0;
@@ -40,11 +46,17 @@ export function chatBusySendMode(input: {
   return 'queue';
 }
 
-export function createQueuedFollowUpItem(text: string, id?: string): QueuedFollowUpItem | null {
+export function createQueuedFollowUpItem(
+  text: string,
+  id?: string,
+  extras?: QueuedFollowUpExtras,
+): QueuedFollowUpItem | null {
   const next = text.trim();
   if (!next) return null;
   queuedFollowUpSeq += 1;
-  return { id: id ?? `queued-${queuedFollowUpSeq}`, text: next };
+  const item: QueuedFollowUpItem = { id: id ?? `queued-${queuedFollowUpSeq}`, text: next };
+  if (extras) item.extras = extras;
+  return item;
 }
 
 export function queuedFollowUpItems(queue: readonly QueuedFollowUpItem[]): QueuedFollowUpItem[] {
@@ -55,8 +67,9 @@ export function appendQueuedFollowUp(
   queue: readonly QueuedFollowUpItem[],
   prompt: string,
   id?: string,
+  extras?: QueuedFollowUpExtras,
 ): QueuedFollowUpItem[] {
-  const item = createQueuedFollowUpItem(prompt, id);
+  const item = createQueuedFollowUpItem(prompt, id, extras);
   if (!item) return [...queue];
   return [...queue, item];
 }
@@ -65,8 +78,9 @@ export function prependQueuedFollowUp(
   queue: readonly QueuedFollowUpItem[],
   prompt: string,
   id?: string,
+  extras?: QueuedFollowUpExtras,
 ): QueuedFollowUpItem[] {
-  const item = createQueuedFollowUpItem(prompt, id);
+  const item = createQueuedFollowUpItem(prompt, id, extras);
   if (!item) return [...queue];
   return [item, ...queue];
 }

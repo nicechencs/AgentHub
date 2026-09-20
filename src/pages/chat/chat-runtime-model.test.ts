@@ -21,6 +21,8 @@ import {
   readRuntimeTransport,
   requestMatchesRuntime,
   runtimePlanEntryTone,
+  runtimePlanProgress,
+  runtimePlanStatusKey,
   visibleRuntimePlan,
 } from './chat-runtime-model';
 
@@ -239,5 +241,15 @@ describe('chat runtime transport guards', () => {
     expect(runtimePlanEntryTone('in_progress')).toBe('live');
     expect(runtimePlanEntryTone('completed')).toBe('done');
     expect(runtimePlanEntryTone('pending')).toBe('pending');
+    expect(runtimePlanEntryTone('failed')).toBe('failed');
+    expect(runtimePlanProgress([
+      { content: 'read', status: 'completed' },
+      { content: 'edit', status: 'in_progress' },
+      { content: 'test', status: 'pending' },
+      { content: 'broken', status: 'failed' },
+    ])).toEqual({ total: 4, done: 1, live: 1, pending: 1, failed: 1 });
+    expect(runtimePlanStatusKey('in_progress')).toBe('chat.runtime.planStatusLive');
+    expect(translate('zh', runtimePlanStatusKey('completed'))).toBe('已完成');
+    expect(translate('zh', 'chat.runtime.planProgress', { done: 1, total: 3 })).toBe('1/3 已完成');
   });
 });

@@ -748,6 +748,8 @@ export function useChatPage() {
     clearQueuedFollowUp: send.clearQueuedFollowUp,
     continueLegacyGrok: send.continueLegacyGrok,
     runtime: activeRuntime,
+    snapshotBannerVisible: send.snapshotBannerVisible,
+    retryRuntimeSnapshot: send.retryRuntimeSnapshot,
     runtimeLocked: isRuntimeSessionLocked(activeRuntime, {
       conversationId: active?.id,
       nativeSessionId: active?.nativeSessionId,

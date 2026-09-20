@@ -1439,7 +1439,7 @@ impl ActorWorker {
         let now = Utc::now().to_rfc3339();
         let message_id = format!("msg-{}", Uuid::new_v4());
         let mut user = ChatMessage {
-            id: format!("msg-{}", Uuid::new_v4()),
+            id: client_request_id.to_string(),
             conversation_id: self.conversation_id.clone(),
             turn: 0,
             role: ChatRole::User,
