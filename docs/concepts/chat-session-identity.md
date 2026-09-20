@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: chat and core contributors
 source-of-truth: Conversation / ChatService / chat_runtime thread_id
-updated: 2026-09-15
+updated: 2026-09-20
 ---
 
 # Chat 会话身份
@@ -31,7 +31,7 @@ updated: 2026-09-15
 | --- | --- |
 | 对话页「新建对话」 | 插入新行：`native_session_id` 为空，直到对方给出会话 id。 |
 | 点开历史列表里已有行 | 续同一 `conversations.id`。持续通道用运行时线程；旧会话用已存的 `native_session_id` 解释标题和续聊。 |
-| 按对方会话 id 打开（`open_from_session`） | 先用 `native_session_id` 查找：命中则续该行（空记录可补导入历史）；未命中再新建并写入该 id。 |
+| 按对方会话 id 打开（`open_from_session`） | 先用 `native_session_id` 查找：命中则续该行（空记录可补导入历史）；未命中再新建并写入该 id。同一 Agent、同一工作目录但对方会话不同，仍是新开一条。 |
 | 默认空会话 `ensure_default_conversation` | 避免初始化重复插行；显式新建仍始终插入。 |
 | CLI `agenthub run` | 不复用对话页会话表。 |
 

@@ -156,6 +156,38 @@ describe('chat API (browser mock)', () => {
     expect(again.cwd).toBe('C:\\Users\\demo\\app');
   });
 
+  it('opens a new conversation when the official session is not already in Chat', async () => {
+    const createdP = createConversation(['claude'], 'D:\\demo\\chen\\2026\\AgentHub');
+    await vi.runAllTimersAsync();
+    const created = await createdP;
+
+    const openP = openConversationFromSession({
+      agentId: 'claude',
+      sessionId: 'sess-history',
+      cwd: 'D:\\demo\\chen\\2026\\AgentHub',
+      title: '历史里的那场',
+      history: [{ role: 'user', content: '接着改登录页' }],
+    });
+    await vi.runAllTimersAsync();
+    const opened = await openP;
+    expect(opened.id).not.toBe(created.id);
+    expect(opened.nativeSessionId).toBe('sess-history');
+
+    const againP = openConversationFromSession({
+      agentId: 'claude',
+      sessionId: 'sess-history',
+      cwd: 'D:\\demo\\chen\\2026\\AgentHub',
+      title: '忽略',
+      history: [],
+    });
+    await vi.runAllTimersAsync();
+    expect((await againP).id).toBe(opened.id);
+
+    const listP = listConversations();
+    await vi.runAllTimersAsync();
+    expect((await listP).map((row) => row.id).sort()).toEqual([created.id, opened.id].sort());
+  });
+
   it('create / list / update / delete conversation', async () => {
     const createP = createConversation(['claude'], 'D:\\demo');
     await vi.runAllTimersAsync();

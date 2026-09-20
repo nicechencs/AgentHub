@@ -142,4 +142,12 @@ describe('collapsed session switcher', () => {
     expect(html).not.toContain('data-help="chat-session-switch"');
     expect(html).toContain('修登录');
   });
+
+  it('does not show connect copy in the header', () => {
+    const html = renderToStaticMarkup(createElement(TooltipProvider, null, header({ railOpen: true })));
+    expect(html).not.toContain('这次对话怎么接');
+    expect(html).not.toContain('data-help="chat-session-connect"');
+    expect(html).toContain('data-help="chat-settings"');
+    expect(html).toContain('会话设置');
+  });
 });

@@ -456,6 +456,22 @@ describe('chat layout wiring', () => {
     expect(header).toContain('chat.kiro.permissionFull');
   });
 
+  it('keeps connect kind in session settings, not the header', () => {
+    const header = source('ChatSessionHeader.tsx');
+    const settings = source('ChatSettingsDialog.tsx');
+    expect(header).not.toContain('chat.connect.sessionTitle');
+    expect(header).not.toContain('data-help="chat-session-connect"');
+    expect(header).toContain('data-help="chat-settings"');
+    expect(settings).toContain('data-help="chat-session-connect"');
+    expect(settings).not.toContain('sessionChatConnectHintKey');
+    expect(settings).not.toContain('chat.settings.autoApproveVsCard');
+    expect(settings).not.toContain('chat.kiro.permissionVsCard');
+    expect(translate('zh', 'chat.connect.sessionTitle')).toBe('这次对话');
+    expect(translate('en', 'chat.connect.sessionTitle')).toBe('This chat');
+    expect(translate('zh', 'chat.settings.description')).toBe('工作目录和自动批准');
+    expect(translate('en', 'chat.settings.description')).toBe('Working folder and auto-approve');
+  });
+
   it('wires chat capability helpers and the Kiro composer placeholder', () => {
     const page = source('index.tsx');
     expect(page).toContain('kiroChatStance');
@@ -503,6 +519,7 @@ describe('chat layout wiring', () => {
     expect(sessions).toContain('takeChatBootstrap');
     expect(sessions).toContain('boot.cwd');
     expect(sessions).toContain('openConversationFromSession');
+    expect(sessions).toContain('handoffConversationFlight');
     expect(sessions).toContain('boot.sessionId');
   });
 

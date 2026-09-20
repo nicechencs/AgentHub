@@ -38,6 +38,8 @@ import {
 } from './chat-model';
 import { conversationListState, createSingleFlight } from './chat-request';
 
+const handoffConversationFlight = createSingleFlight<Conversation>();
+
 /** Keep conversations created by an in-flight shell/projects handoff when list load returns stale. */
 export function mergeHandoffConversations(
   prev: Conversation[],
@@ -295,13 +297,15 @@ export function useChatPageSessions(input: {
         const fromSession = Boolean(boot.sessionId?.trim() || boot.history?.length);
         let next;
         if (fromSession) {
-          next = await openConversationFromSession({
-            agentId: ids[0],
-            sessionId: boot.sessionId,
-            cwd: boot.cwd ?? null,
-            title: boot.title,
-            history: boot.history ?? [],
-          });
+          next = await handoffConversationFlight(() =>
+            openConversationFromSession({
+              agentId: ids[0],
+              sessionId: boot.sessionId,
+              cwd: boot.cwd ?? null,
+              title: boot.title,
+              history: boot.history ?? [],
+            }),
+          );
           if (boot.fallbackCwd?.trim()) {
             rememberFallbackCwd(next.id, boot.fallbackCwd);
           }
