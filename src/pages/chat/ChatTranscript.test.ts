@@ -162,6 +162,15 @@ describe('ChatTranscript surfaces', () => {
     expect(html).not.toContain('rounded-composer bg-canvas');
     expect(html).toContain('hello from chat');
     expect(html).toContain('id="chat-msg-m-user"');
+    expect(html).not.toContain('data-testid="chat-outline-rail"');
+    expect(html).not.toContain('role="tablist"');
+  });
+
+  it('does not mount an outline for an empty transcript or a single user message', () => {
+    expect(renderTranscript([])).not.toContain('data-testid="chat-outline-rail"');
+    expect(renderTranscript([
+      { turn: 1, user: userMessage('hello from chat'), agents: [] },
+    ])).not.toContain('chat-outline-rail');
   });
 
   it('anchors each sent prompt so the outline can jump to it', () => {
@@ -180,6 +189,7 @@ describe('ChatTranscript surfaces', () => {
     expect(html).toContain('first prompt');
     expect(html).toContain('second prompt');
     expect(html).toContain('pointer-events-none');
+    // Unmeasured panel width is 0, so the 720px gate still hides the ticks.
     expect(html).not.toContain('data-testid="chat-outline-rail"');
   });
 });

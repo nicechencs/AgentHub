@@ -3,6 +3,8 @@ import type { ChatMessage } from '@/lib/types';
 import type { TurnGroup } from './chat-format';
 import {
   OUTLINE_MAGNIFY_RADIUS,
+  OUTLINE_MIN_PANEL_WIDTH_PX,
+  OUTLINE_MIN_PROMPTS,
   applyOutlineJumpOffset,
   outlinePromptPreview,
   outlinePromptsFromTurns,
@@ -86,10 +88,24 @@ describe('outlinePromptsFromTurns', () => {
 });
 
 describe('shouldShowChatOutline', () => {
-  it('requires the setting, two prompts, and a 720px panel', () => {
-    expect(shouldShowChatOutline({ enabled: true, promptCount: 2, panelWidth: 720 })).toBe(true);
-    expect(shouldShowChatOutline({ enabled: true, promptCount: 1, panelWidth: 900 })).toBe(false);
-    expect(shouldShowChatOutline({ enabled: true, promptCount: 2, panelWidth: 719 })).toBe(false);
+  it('locks the gates at preference on, two user prompts, and 720px', () => {
+    expect(OUTLINE_MIN_PROMPTS).toBe(2);
+    expect(OUTLINE_MIN_PANEL_WIDTH_PX).toBe(720);
+  });
+
+  it('shows only when preference, prompt count, and panel width all hold', () => {
+    const shown = { enabled: true, promptCount: 2, panelWidth: 720 };
+    expect(shouldShowChatOutline(shown)).toBe(true);
+    expect(shouldShowChatOutline({ ...shown, promptCount: 3, panelWidth: 721 })).toBe(true);
+
+    expect(shouldShowChatOutline({ ...shown, enabled: false })).toBe(false);
+    expect(shouldShowChatOutline({ ...shown, promptCount: 0 })).toBe(false);
+    expect(shouldShowChatOutline({ ...shown, promptCount: 1 })).toBe(false);
+    expect(shouldShowChatOutline({ ...shown, panelWidth: 0 })).toBe(false);
+    expect(shouldShowChatOutline({ ...shown, panelWidth: 719 })).toBe(false);
+
+    expect(shouldShowChatOutline({ enabled: false, promptCount: 1, panelWidth: 719 })).toBe(false);
+    expect(shouldShowChatOutline({ enabled: true, promptCount: 5, panelWidth: 719 })).toBe(false);
     expect(shouldShowChatOutline({ enabled: false, promptCount: 5, panelWidth: 900 })).toBe(false);
   });
 });
