@@ -579,8 +579,15 @@ describe('chat layout wiring', () => {
     expect(source('ChatTranscript.tsx')).toContain('ChatOutlineRail');
     expect(source('ChatTranscript.tsx')).toContain('relative flex min-h-0 flex-1 flex-col');
     expect(source('ChatTranscript.tsx')).toContain('onJumpToOutline');
+    expect(source('ChatTranscript.tsx')).toContain('measuredWidth={outlinePanel.width}');
+    expect(source('ChatTranscript.tsx')).toContain('enabled={outlineOn}');
+    expect(source('ChatTranscript.tsx')).toContain('useOutlinePanelWidth');
+    expect(source('ChatOutlineRail.tsx')).toContain('data-chat-outline-measure');
+    expect(source('ChatOutlineRail.tsx')).toContain('if (!isEnabled) return null');
+    expect(source('ChatOutlineRail.tsx')).not.toContain('prompts.length < 2) return null');
     expect(source('ChatSessionRail.tsx')).not.toContain('ChatOutlineRail');
     expect(source('index.tsx')).toContain('onJumpToOutline={page.jumpToOutlinePrompt}');
+    expect(source('index.tsx')).toContain('data-chat-stage');
     expect(source('use-chat-page.ts')).toContain('jumpToOutlinePrompt');
     expect(source('use-chat-page.ts')).toContain('stickToBottomRef.current = false');
     expect(source('use-chat-page.ts')).toContain("scrollIntoView({ block: 'start' })");

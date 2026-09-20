@@ -62,6 +62,21 @@ export function shouldShowChatOutline(input: {
   );
 }
 
+/** Chat stage (the wide panel), not the inner adaptive content column. */
+export const OUTLINE_PANEL_SELECTOR = '[data-chat-stage]';
+
+export function outlinePanelElement(node: Element | null): Element | null {
+  if (!node) return null;
+  return node.closest(OUTLINE_PANEL_SELECTOR) ?? node;
+}
+
+export function readOutlinePanelWidth(node: Element | null): number {
+  const panel = outlinePanelElement(node);
+  if (!panel) return 0;
+  const width = panel.getBoundingClientRect().width;
+  return Number.isFinite(width) ? width : 0;
+}
+
 export function outlineTickSize(isActive: boolean, magnification: number): {
   width: number;
   height: number;

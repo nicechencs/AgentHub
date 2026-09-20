@@ -3,7 +3,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type MouseEvent,
   type PointerEvent,
@@ -16,9 +15,11 @@ import type { TurnGroup } from './chat-format';
 import { createChatOutlineHoverIntent } from './chat-outline-hover';
 import {
   OUTLINE_READING_LINE_PX,
+  outlinePanelElement,
   outlinePromptsFromTurns,
   outlineTickSize,
   promptTickMagnification,
+  readOutlinePanelWidth,
   resolveActivePromptId,
   shouldShowChatOutline,
   type ChatOutlinePrompt,
@@ -48,7 +49,10 @@ export function ChatOutlineRail({
   const isEnabled = enabled ?? prefEnabled;
   const [observedWidth, setObservedWidth] = useState(0);
   const panelWidth = measuredWidth ?? observedWidth;
-  const measureRef = useRef<HTMLDivElement>(null);
+  const [measureNode, setMeasureNode] = useState<HTMLDivElement | null>(null);
+  const assignMeasureRef = useCallback((node: HTMLDivElement | null) => {
+    setMeasureNode((prev) => (prev === node ? prev : node));
+  }, []);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -68,14 +72,21 @@ export function ChatOutlineRail({
 
   useEffect(() => {
     if (measuredWidth != null) return;
-    const node = measureRef.current;
-    if (!node || typeof ResizeObserver === 'undefined') return;
-    const apply = () => setObservedWidth(node.getBoundingClientRect().width);
-    const observer = new ResizeObserver(apply);
-    observer.observe(node);
+    const node = measureNode;
+    if (!node) return;
+    const apply = () => {
+      const next = readOutlinePanelWidth(node);
+      setObservedWidth((prev) => (prev === next ? prev : next));
+    };
     apply();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', apply);
+      return () => window.removeEventListener('resize', apply);
+    }
+    const observer = new ResizeObserver(apply);
+    observer.observe(outlinePanelElement(node) ?? node);
     return () => observer.disconnect();
-  }, [measuredWidth]);
+  }, [measuredWidth, measureNode]);
 
   const readActivePrompt = useCallback(() => {
     const container = scrollRef?.current;
@@ -134,10 +145,14 @@ export function ChatOutlineRail({
     if (!visible) hoverIntent.leave();
   }, [hoverIntent, visible]);
 
-  if (!isEnabled || prompts.length < 2) return null;
+  if (!isEnabled) return null;
 
   return (
-    <div ref={measureRef} className="pointer-events-none absolute inset-0">
+    <div
+      ref={assignMeasureRef}
+      className="pointer-events-none absolute inset-0"
+      data-chat-outline-measure
+    >
       {visible ? (
         <div
           role="tablist"

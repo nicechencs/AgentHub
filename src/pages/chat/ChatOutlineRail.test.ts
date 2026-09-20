@@ -139,8 +139,9 @@ describe('ChatOutlineRail visibility gates', () => {
 });
 
 describe('ChatOutlineRail markup', () => {
-  it('does not draw a rail for one user message', () => {
+  it('keeps the measure host mounted for one user message so width can attach', () => {
     const html = renderRail({ turns: turns('only one'), measuredWidth: 800 });
+    expect(html).toContain('data-chat-outline-measure');
     expect(html).not.toContain('chat-outline-rail');
     expect(html).not.toContain('role="tablist"');
   });
