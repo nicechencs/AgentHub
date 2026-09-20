@@ -476,6 +476,7 @@ describe('chat layout wiring', () => {
     expect(page).toContain('runtimeReady: page.runtime != null');
     expect(page).toContain('legacyNewChatAction');
     expect(page).toContain('handleNewChat');
+    expect(page).toContain('onNewChat={(cwd) => void page.handleNewChat(cwd)}');
   });
 
   it('uses shared Button for chrome icons and composer chips', () => {

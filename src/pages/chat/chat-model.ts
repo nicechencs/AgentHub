@@ -11,6 +11,7 @@ import type {
 } from '@/lib/backend/contracts/ticket';
 import type { TranslateFn } from '@/lib/i18n';
 import { processPhaseLabel, type AgentProcessView } from '@/lib/chat-process';
+import { folderNameFromCwd } from '@/lib/open-chat-cwd';
 import { nativeResumeCommand } from '@/lib/session-resume';
 import {
   activeBindingForAgent,
@@ -174,8 +175,6 @@ export type ConversationWorkspaceGroup = {
   key: string;
   label: string;
   cwd: string | null;
-  /** Full path under the short name when two workspaces share that name. */
-  pathLabel: string | null;
   items: Conversation[];
 };
 
@@ -205,13 +204,14 @@ export function cwdShortName(cwd: string | null | undefined, t: TranslateFn): st
   if (cwd == null) return t('chat.cwd.unset');
   const trimmed = cwd.trim();
   if (!trimmed) return t('chat.cwd.unset');
+  const name = folderNameFromCwd(trimmed);
+  if (name && name !== '.' && name !== '..') return name;
   const stripped = trimmed.replace(/[\\/]+$/, '');
   if (!stripped) {
     // POSIX 根 `/`（或 `///`）去尾分隔后为空，仍应显示 `/`
     return trimmed.includes('/') ? '/' : t('chat.cwd.unset');
   }
-  const parts = stripped.split(/[\\/]/);
-  return parts[parts.length - 1] || t('chat.cwd.unset');
+  return t('chat.cwd.unset');
 }
 
 export function filterConversations(convs: Conversation[], query: string): Conversation[] {
@@ -270,19 +270,8 @@ export function groupConversationsByWorkspace(
       key,
       label: key === UNSET_WORKSPACE_KEY ? t('chat.header.cwdUnset') : cwdShortName(cwd, t),
       cwd,
-      pathLabel: null,
       items: sortedItems,
     });
-  }
-
-  const shortNameCounts = new Map<string, number>();
-  for (const group of groups) {
-    if (group.key === UNSET_WORKSPACE_KEY) continue;
-    shortNameCounts.set(group.label, (shortNameCounts.get(group.label) ?? 0) + 1);
-  }
-  for (const group of groups) {
-    if (group.key === UNSET_WORKSPACE_KEY || !group.cwd) continue;
-    if ((shortNameCounts.get(group.label) ?? 0) > 1) group.pathLabel = group.cwd;
   }
 
   return groups.sort((a, b) => {

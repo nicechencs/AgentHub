@@ -360,7 +360,7 @@ export function useChatPageSessions(input: {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot when from= is set
   }, [searchParams]);
 
-  async function handleNewChat() {
+  async function handleNewChat(cwdOverride?: string | null) {
     let status = agentStatus;
     if (!agentsReady) {
       try {
@@ -374,7 +374,10 @@ export function useChatPageSessions(input: {
     if (defaults.agentIds.length === 0) return;
     try {
       if (activeId) draftsRef.current.set(activeId, draft);
-      const conv = await createConversation(defaults.agentIds, defaults.cwd);
+      const conv = await createConversation(
+        defaults.agentIds,
+        cwdOverride === undefined ? defaults.cwd : cwdOverride,
+      );
       setConversations((prev) => [conv, ...prev]);
       setActiveId(conv.id);
       setMessages([]);

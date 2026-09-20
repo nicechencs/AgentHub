@@ -2718,6 +2718,7 @@ export const zh = {
       expandHistory: "展开历史",
       resize: "拖动调整历史宽度",
       newChat: "新建对话",
+      newChatInWorkspace: "在此工作目录新建对话",
       newChatDisabled: "请先安装或取消隐藏 Agent",
       searchPlaceholder: "搜索标题或工作目录",
       searchAria: "搜索标题或工作目录",

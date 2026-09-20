@@ -326,7 +326,7 @@ export default function ChatPage() {
         hasUsableAgent={page.hasUsableAgent}
         deleteConfirmId={page.deleteConfirmId}
         onToggleRail={() => page.setRailOpen(false)}
-        onNewChat={() => void page.handleNewChat()}
+        onNewChat={(cwd) => void page.handleNewChat(cwd)}
         onFocus={page.focusConversation}
         onRequestDelete={page.setDeleteConfirmId}
         onCancelDelete={() => page.setDeleteConfirmId(null)}

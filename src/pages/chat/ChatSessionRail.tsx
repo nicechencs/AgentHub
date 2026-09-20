@@ -67,7 +67,7 @@ export function ChatSessionRail({
   hasUsableAgent: boolean;
   deleteConfirmId: string | null;
   onToggleRail: () => void;
-  onNewChat: () => void;
+  onNewChat: (cwd?: string | null) => void;
   onFocus: (id: string) => void;
   onRequestDelete: (id: string) => void;
   onCancelDelete: () => void;
@@ -202,10 +202,11 @@ export function ChatSessionRail({
               data-help="chat-workspace-group"
               data-workspace-key={group.key}
             >
+              <div className="group flex items-center gap-0.5 pr-1">
               <Hint label={group.cwd ?? group.label}>
               <button
                 type="button"
-                className="flex w-full items-center gap-1 px-2 pb-1 pt-1.5 text-left text-meta font-medium text-muted"
+                className="flex min-w-0 flex-1 items-center gap-1 px-2 pb-1 pt-1.5 text-left text-meta font-medium text-muted"
                 aria-expanded={expanded}
                 onClick={() => {
                   setCollapsedKeys((prev) => {
@@ -221,18 +222,31 @@ export function ChatSessionRail({
                 ) : (
                   <ChevronRight className="h-3.5 w-3.5 shrink-0" />
                 )}
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate" data-help="chat-workspace-group-label">
-                    {group.label}
-                  </span>
-                  {group.pathLabel ? (
-                    <span className="block truncate font-normal" data-help="chat-workspace-group-path">
-                      {group.pathLabel}
-                    </span>
-                  ) : null}
+                <span className="min-w-0 flex-1 truncate" data-help="chat-workspace-group-label">
+                  {group.label}
                 </span>
               </button>
               </Hint>
+              {group.cwd ? (
+                <Hint label={t('chat.rail.newChatInWorkspace')}>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6 shrink-0 text-muted opacity-0 transition-opacity hover:text-primary group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100"
+                    disabled={agentsReady && !hasUsableAgent}
+                    data-help="chat-workspace-new"
+                    aria-label={t('chat.rail.newChatInWorkspace')}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onNewChat(group.cwd);
+                    }}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                </Hint>
+              ) : null}
+              </div>
               {expanded ? group.items.map((c) => {
                 const selected = activeId === c.id;
                 const sending = sendingConversationIds.includes(c.id);

@@ -355,6 +355,18 @@ describe('cwdShortName', () => {
     expect(cwdShortName('/', t)).toBe('/');
     expect(cwdShortName('///', t)).toBe('/');
   });
+
+  it('uses the folder name when the path ends with a current-dir segment', () => {
+    expect(cwdShortName('D:\\projects\\demo\\.', t)).toBe('demo');
+    expect(cwdShortName('/home/user/proj/.', t)).toBe('proj');
+    expect(cwdShortName('C:\\.', t)).toBe('C:');
+  });
+
+  it('does not show a lone dot as the workspace name', () => {
+    expect(cwdShortName('.', t)).toBe('未设目录');
+    expect(cwdShortName('./', t)).toBe('未设目录');
+    expect(cwdShortName('.\\', t)).toBe('未设目录');
+  });
 });
 
 describe('filterConversations', () => {
@@ -398,7 +410,6 @@ describe('groupConversationsByWorkspace', () => {
     expect(groups[0].key).toBe(conversationWorkspaceKey('D:\\projects\\Demo'));
     expect(groups[0].label).toBe('Demo');
     expect(groups[0].cwd).toBe('D:\\projects\\Demo');
-    expect(groups[0].pathLabel).toBeNull();
     expect(groups[0].items.map((c) => c.id)).toEqual(['a', 'b']);
   });
 
@@ -434,12 +445,21 @@ describe('groupConversationsByWorkspace', () => {
     expect(groups[0].items.map((c) => c.id)).toEqual(['new-app', 'old-app']);
   });
 
-  it('shows the full path when two workspaces share a short name', () => {
+  it('keeps colliding folder names as the short label; full path stays on cwd', () => {
     const alice = conv({ id: 'alice', cwd: '/home/alice/app', updatedAt: at(16) });
     const bob = conv({ id: 'bob', cwd: '/home/bob/app', updatedAt: at(15) });
     const groups = groupConversationsByWorkspace([alice, bob], t);
     expect(groups.map((g) => g.label)).toEqual(['app', 'app']);
-    expect(groups.map((g) => g.pathLabel)).toEqual(['/home/alice/app', '/home/bob/app']);
+    expect(groups.map((g) => g.cwd)).toEqual(['/home/alice/app', '/home/bob/app']);
+  });
+
+  it('merges a trailing current-dir segment into the same folder group', () => {
+    const dotted = conv({ id: 'dot', cwd: 'D:\\projects\\Demo\\.', updatedAt: at(16) });
+    const plain = conv({ id: 'plain', cwd: 'D:\\projects\\Demo', updatedAt: at(15) });
+    const groups = groupConversationsByWorkspace([dotted, plain], t);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].label).toBe('Demo');
+    expect(groups[0].items.map((c) => c.id)).toEqual(['dot', 'plain']);
   });
 });
 
