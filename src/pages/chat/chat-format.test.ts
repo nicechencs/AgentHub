@@ -148,6 +148,9 @@ describe('chat-format thinking chrome', () => {
     expect(thinkingChromeLabel(false, 3200, t)).toBe('思考中 · 3.2s');
     expect(thinkingChromeLabel(true, 3200, t)).toBe('思考了 3.2s');
     expect(thinkingChromeLabel(true, 0, t)).toBe('思考完成');
+    const tEn = createTranslator('en');
+    expect(thinkingChromeLabel(false, 3200, tEn)).toBe('Thinking · 3.2s');
+    expect(thinkingChromeLabel(true, 3200, tEn)).toBe('Thought for 3.2s');
   });
 
   it('pins process/thinking overflow to the newest line', () => {

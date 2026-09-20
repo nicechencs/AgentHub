@@ -10,13 +10,17 @@ import {
   hasInspectableProcess,
   hasProcessDetails,
   isProtocolProcessStep,
+  latestThinkingStep,
   mergeThinkingText,
   mergeToolResult,
   phaseFromMessageStatus,
   processKey,
   processPhaseLabel,
   reduceProcessEvent,
+  showBubbleThinkingBar,
   stepSummary,
+  thinkingElapsedMs,
+  timelineHasToolRow,
   timelineProcessSteps,
   toolActionTarget,
   toolActionTone,
@@ -622,6 +626,97 @@ describe('chat-process reduceProcessEvent', () => {
     expect(map['1:grok']?.steps[1]).toMatchObject({ type: 'tool', status: 'end', result: 'ok' });
   });
 
+  it('stamps thinking start and freezes duration when the episode ends', () => {
+    let map: ProcessMap = reduceProcessEvent(
+      {},
+      { type: 'agentStarted', turn: 1, agent: 'grok', command: 'x' },
+      1000,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'grok',
+        step: { type: 'thinking', text: 'Hel', done: false },
+      },
+      2000,
+    );
+    expect(map['1:grok']?.thinkingStartedAt).toBe(2000);
+    expect(map['1:grok']?.thinkingDurationMs).toBeUndefined();
+    expect(thinkingElapsedMs(map['1:grok'], 3500)).toBe(1500);
+    expect(latestThinkingStep(map['1:grok']?.steps)).toMatchObject({ done: false });
+    expect(showBubbleThinkingBar(map['1:grok']?.steps, false)).toBe(true);
+    expect(showBubbleThinkingBar(map['1:grok']?.steps, true)).toBe(false);
+
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'grok',
+        step: { type: 'thinking', text: 'lo', done: false },
+      },
+      2800,
+    );
+    expect(map['1:grok']?.thinkingStartedAt).toBe(2000);
+
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'grok',
+        step: { type: 'tool', id: 't1', name: 'Read', status: 'start' },
+      },
+      5200,
+    );
+    expect(map['1:grok']?.thinkingDurationMs).toBe(3200);
+    expect(thinkingElapsedMs(map['1:grok'], 9000)).toBe(3200);
+    expect(timelineHasToolRow(map['1:grok']?.steps)).toBe(true);
+  });
+
+  it('starts a new thinking timer after a tool', () => {
+    let map: ProcessMap = reduceProcessEvent(
+      {},
+      { type: 'agentStarted', turn: 1, agent: 'grok', command: 'x' },
+      1,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'grok',
+        step: { type: 'thinking', text: 'first', done: false },
+      },
+      100,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'grok',
+        step: { type: 'tool', id: 't1', name: 'Read', status: 'start' },
+      },
+      400,
+    );
+    map = reduceProcessEvent(
+      map,
+      {
+        type: 'agentProcess',
+        turn: 1,
+        agent: 'grok',
+        step: { type: 'thinking', text: 'second', done: false },
+      },
+      900,
+    );
+    expect(map['1:grok']?.thinkingStartedAt).toBe(900);
+    expect(map['1:grok']?.thinkingDurationMs).toBeUndefined();
+    expect(thinkingElapsedMs(map['1:grok'], 1400)).toBe(500);
+  });
+
   it('agentFinished marks leftover thinking done', () => {
     let map: ProcessMap = reduceProcessEvent(
       {},
@@ -646,9 +741,11 @@ describe('chat-process reduceProcessEvent', () => {
         agent: 'grok',
         message: finishedMsg({ status: 'ok', content: 'done', agentId: 'grok' }),
       },
-      3,
+      5002,
     );
     expect(map['1:grok']?.steps[0]).toMatchObject({ type: 'thinking', done: true });
+    expect(map['1:grok']?.thinkingStartedAt).toBe(2);
+    expect(map['1:grok']?.thinkingDurationMs).toBe(5000);
   });
 
   it('finished finalizes still-active process views for the turn', () => {
