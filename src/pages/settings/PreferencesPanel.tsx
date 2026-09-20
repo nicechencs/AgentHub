@@ -22,6 +22,10 @@ import { notifyUsageSettingsChanged } from '@/lib/usage-sync';
 import { cn } from '@/lib/utils';
 import { ACCENT_IDS, ACCENT_PALETTES, CANVAS_IDS, CANVAS_PALETTES } from '@/styles/tokens';
 import {
+  loadChatOutlineEnabled,
+  saveChatOutlineEnabled,
+} from '@/pages/chat/chat-outline-pref';
+import {
   createSettingsPersistenceTracker,
   mergeSettingsResponse,
   persistSettingsPatch,
@@ -70,6 +74,7 @@ export function PreferencesPanel({
   const { t, setLanguage } = useI18n();
   const [accent, setAccent] = useState(loadStoredAccent);
   const [canvas, setCanvas] = useState(loadStoredCanvas);
+  const [chatOutlineEnabled, setChatOutlineEnabled] = useState(loadChatOutlineEnabled);
   const usageBaselineRef = useRef(settings.usageCollectIntervalMin);
   const persistenceTrackerRef = useRef<ReturnType<typeof createSettingsPersistenceTracker> | null>(null);
 
@@ -247,6 +252,18 @@ export function PreferencesPanel({
               );
             })}
           </div>
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.general.chatOutlineLabel')}
+          description={t('settings.general.chatOutlineDescription')}
+        >
+          <Switch
+            checked={chatOutlineEnabled}
+            onCheckedChange={(v) => {
+              setChatOutlineEnabled(v);
+              saveChatOutlineEnabled(v);
+            }}
+          />
         </SettingsRow>
       </SettingsGroup>
       <SettingsGroup title={t('settings.general.sectionLaunch')}>

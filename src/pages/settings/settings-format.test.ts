@@ -179,6 +179,22 @@ describe('settings-format i18n helpers', () => {
   it('labels preference groups in the active language', () => {
     expect(tZh('settings.general.sectionAppearance')).toBe('语言与外观');
     expect(tEn('settings.general.sectionAppearance')).toBe('Language and appearance');
+    expect(tZh('settings.general.chatOutlineLabel')).toBe('聊天大纲');
+    expect(tEn('settings.general.chatOutlineLabel')).toBe('Chat outline');
+    expect(tZh('settings.general.chatOutlineDescription')).toBe(
+      '显示用于在提示词之间跳转的大纲',
+    );
+    expect(tEn('settings.general.chatOutlineDescription')).toBe(
+      'Show an outline for jumping between prompts',
+    );
+    expect(tZh('chat.outline.aria')).toBe('聊天大纲');
+    expect(tEn('chat.outline.aria')).toBe('Chat outline');
+    expect(tZh('chat.outline.tick', { n: 1, total: 2, preview: 'hello' })).toBe(
+      '1 / 2：hello',
+    );
+    expect(tEn('chat.outline.tick', { n: 1, total: 2, preview: 'hello' })).toBe(
+      '1 of 2: hello',
+    );
     expect(tZh('settings.general.sectionLaunch')).toBe('启动与关闭');
     expect(tEn('settings.general.sectionLaunch')).toBe('Launch and close');
     expect(tZh('settings.general.sectionSidebarNav')).toBe('侧栏菜单');

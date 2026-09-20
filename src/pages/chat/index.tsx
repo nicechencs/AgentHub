@@ -397,6 +397,7 @@ export default function ChatPage() {
               scrollRef={page.transcriptRef}
               bottomRef={page.bottomRef}
               onScroll={page.onTranscriptScroll}
+              onJumpToOutline={page.jumpToOutlinePrompt}
               onRetry={() => void page.retryLast()}
               hideLastTurnRetry={Boolean(page.turnOutcome)}
               onOpenLocal={openFilePreview}
