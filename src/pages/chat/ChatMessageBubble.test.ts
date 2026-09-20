@@ -150,6 +150,69 @@ describe('ChatMessageBubble streaming feel', () => {
     expect(html).not.toContain('done thinking body');
   });
 
+  it('hides the thinking bar once the reply body arrives', () => {
+    const process: AgentProcessView = {
+      turn: 1,
+      agent: 'codex',
+      phase: 'running',
+      stdout: '',
+      stderr: '',
+      steps: [{ type: 'thinking', text: 'secret plan', done: true }],
+      updatedAt: 1,
+      thinkingStartedAt: 1,
+      thinkingDurationMs: 1200,
+    };
+    const html = renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
+        message: agentMessage('第一段正文'),
+        process,
+        isLastTurn: true,
+        multiAgent: false,
+        retryDisabled: false,
+        onRetry: () => undefined,
+        onOpenProcess: () => undefined,
+      })),
+    );
+    expect(html).not.toContain('data-help="chat-thinking-bar"');
+    expect(html).not.toContain('secret plan');
+    expect(html).toContain('第一段正文');
+  });
+
+  it('shows the thinking bar and a tool chip together before any body', () => {
+    const process: AgentProcessView = {
+      turn: 1,
+      agent: 'codex',
+      phase: 'running',
+      stdout: '',
+      stderr: '',
+      steps: [
+        { type: 'thinking', text: 'secret plan', done: false },
+        { type: 'tool', name: 'Read', status: 'start', input: { path: 'README.md' } },
+      ],
+      updatedAt: 1,
+      thinkingStartedAt: Date.now() - 1500,
+    };
+    const html = renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
+        message: agentMessage(''),
+        process,
+        isLastTurn: true,
+        multiAgent: false,
+        retryDisabled: false,
+        onRetry: () => undefined,
+        onOpenProcess: () => undefined,
+      })),
+    );
+    expect(html).toContain('data-help="chat-thinking-bar"');
+    expect(html).toContain('data-help="chat-process-chip"');
+    expect(html).toContain('正在读取 README.md');
+    expect(html).not.toContain('secret plan');
+    const barAt = html.indexOf('data-help="chat-thinking-bar"');
+    const chipAt = html.indexOf('data-help="chat-process-chip"');
+    expect(barAt).toBeGreaterThan(-1);
+    expect(chipAt).toBeGreaterThan(barAt);
+  });
+
   it('opens process details from a one-line chip', () => {
     const process: AgentProcessView = {
       turn: 1,

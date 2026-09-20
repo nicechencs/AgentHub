@@ -196,5 +196,33 @@ describe('ChatSessionRail titles', () => {
     expect(html).toContain('bg-accent');
     expect(html).not.toContain('删除确认 Enter');
   });
+
+  it('keeps two working-directory groups and an unset group on separate headers', () => {
+    const app = conversation({ id: 'app', cwd: '/workspace/demo-project', title: '修登录' });
+    const other = conversation({ id: 'other', cwd: '/tmp/other', title: '另一场' });
+    const unset = conversation({ id: 'unset', cwd: null, title: '未设' });
+    const html = renderMarkup(
+      rail({
+        groups: [
+          workspaceGroup([app]),
+          workspaceGroup([other], { key: 'path:/tmp/other', label: 'other', cwd: '/tmp/other' }),
+          workspaceGroup([unset], { key: 'unset', label: '未设置工作目录', cwd: null }),
+        ],
+        conversations: [app, other, unset],
+        filteredCount: 3,
+      }),
+    );
+    expect(html.split('data-help="chat-workspace-group"')).toHaveLength(4);
+    expect(html).toContain('demo-project');
+    expect(html).toContain('other');
+    expect(html).toContain('未设置工作目录');
+    expect(html).toContain('data-session-id="app"');
+    expect(html).toContain('data-session-id="other"');
+    expect(html).toContain('data-session-id="unset"');
+    expect(html.split('data-help="chat-workspace-new"')).toHaveLength(3);
+    const unsetAt = html.indexOf('data-session-id="unset"');
+    const unsetGroup = html.slice(html.lastIndexOf('data-help="chat-workspace-group"', unsetAt), unsetAt);
+    expect(unsetGroup).not.toContain('data-help="chat-workspace-new"');
+  });
 });
 

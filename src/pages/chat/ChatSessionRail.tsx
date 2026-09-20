@@ -160,7 +160,7 @@ export function ChatSessionRail({
             disabled={agentsReady && !hasUsableAgent}
             data-help="chat-new"
             aria-keyshortcuts="Control+N"
-            onClick={onNewChat}
+            onClick={() => onNewChat()}
           >
             <Plus className="h-3.5 w-3.5" />
             {t('chat.rail.newChat')}

@@ -122,4 +122,27 @@ describe('chat outline hover intent', () => {
       scheduleCount: 2,
     });
   });
+
+  it('does not activate a pending tick after dispose, and move without enter is idle', () => {
+    const scheduler = createFakeScheduler();
+    const activations: Array<number | null> = [];
+    const intent = createChatOutlineHoverIntent({
+      activate: (index) => activations.push(index),
+      schedule: scheduler.schedule,
+      cancel: scheduler.cancel,
+    });
+
+    intent.pointAt(1);
+    intent.move({ x: 40, y: 20 });
+    intent.dispose();
+    scheduler.runPending();
+    expect(activations).toEqual([]);
+
+    intent.enter({ x: 10, y: 10 });
+    intent.pointAt(2);
+    intent.move({ x: 11, y: 10 });
+    expect(scheduler.scheduleCount()).toBe(2);
+    scheduler.runPending();
+    expect(activations).toEqual([2]);
+  });
 });
