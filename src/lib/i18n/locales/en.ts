@@ -2738,6 +2738,7 @@ export const en = {
       expandHistory: "Expand history",
       resize: "Resize history",
       newChat: "New chat",
+      newChatInWorkspace: "New chat in this folder",
       newChatDisabled: "Install or unhide an agent first",
       searchPlaceholder: "Search title or folder",
       searchAria: "Search title or folder",

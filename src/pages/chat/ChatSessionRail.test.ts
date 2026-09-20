@@ -47,7 +47,6 @@ function workspaceGroup(
     key: cwd ? `path:${cwd}` : 'unset',
     label: cwd ? 'demo-project' : '未设置工作目录',
     cwd,
-    pathLabel: null,
     items,
     ...partial,
   };
@@ -167,15 +166,27 @@ describe('ChatSessionRail titles', () => {
     expect(src).toContain('ChevronRight');
   });
 
-  it('shows the full path when two workspaces share a short name', () => {
+  it('hides a plus on the folder until hover, then starts a chat in that folder', () => {
+    const html = renderMarkup(rail());
+    const src = readFileSync(new URL('./ChatSessionRail.tsx', import.meta.url), 'utf8');
+    expect(html).toContain('data-help="chat-workspace-new"');
+    expect(src).toContain('group-hover:opacity-100');
+    expect(src).toContain('onNewChat(group.cwd)');
+    expect(html).toContain('opacity-0');
+  });
+
+  it('puts the folder path on hover, not in the group header', () => {
     const item = conversation();
-    const html = renderMarkup(
-      rail({
-        groups: [workspaceGroup([item], { pathLabel: '/home/alice/demo-project' })],
-      }),
-    );
-    expect(html).toContain('data-help="chat-workspace-group-path"');
-    expect(html).toContain('/home/alice/demo-project');
+    const html = renderMarkup(rail({ groups: [workspaceGroup([item])] }));
+    const src = readFileSync(new URL('./ChatSessionRail.tsx', import.meta.url), 'utf8');
+    expect(src).toContain('Hint label={group.cwd ?? group.label}');
+    expect(src).not.toContain('chat-workspace-group-path');
+    expect(html).toContain('data-help="chat-workspace-group-label"');
+    expect(html).toContain('demo-project');
+    const labelStart = html.indexOf('data-help="chat-workspace-group-label"');
+    const labelHtml = html.slice(labelStart, labelStart + 180);
+    expect(labelHtml).toContain('demo-project');
+    expect(labelHtml).not.toContain('/workspace/demo-project');
   });
 
   it('paints 新建对话 with the theme fill', () => {

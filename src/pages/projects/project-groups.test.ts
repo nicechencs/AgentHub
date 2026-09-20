@@ -84,6 +84,7 @@ describe('groupProjectsByPath', () => {
 
   it('normalizes Windows slash, case, and trailing separators', () => {
     expect(normalizeProjectMergePath('C:\\Users\\demo\\app\\')).toBe('c:/users/demo/app');
+    expect(normalizeProjectMergePath('C:\\Users\\demo\\app\\.')).toBe('c:/users/demo/app');
     expect(normalizeProjectMergePath('\\\\Server\\Share\\App\\')).toBe('//server/share/app');
     expect(projectMergeKey(claudeApp)).toBe(projectMergeKey(grokApp));
   });
@@ -103,6 +104,7 @@ describe('groupProjectsByPath', () => {
     });
     expect(normalizeProjectMergePath('/work/App')).toBe('/work/App');
     expect(normalizeProjectMergePath('/work/app/')).toBe('/work/app');
+    expect(normalizeProjectMergePath('/work/app/.')).toBe('/work/app');
     expect(projectMergeKey(upper)).not.toBe(projectMergeKey(lower));
     expect(groupProjectsByPath([upper, lower], true)).toHaveLength(2);
   });

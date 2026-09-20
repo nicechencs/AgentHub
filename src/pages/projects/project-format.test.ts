@@ -29,6 +29,15 @@ describe('displayTitle', () => {
     expect(displayTitle({ title: 'app', alias: '   ' })).toBe('app');
     expect(displayTitle({ title: 'app' })).toBe('app');
   });
+
+  it('uses the folder name when the stored title is a current-dir dot', () => {
+    expect(
+      displayTitle({
+        title: '.',
+        actualPath: 'C:\\Users\\demo\\AgentHub\\.',
+      }),
+    ).toBe('AgentHub');
+  });
 });
 
 describe('projectDisplayPath', () => {
