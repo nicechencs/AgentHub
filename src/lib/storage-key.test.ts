@@ -90,6 +90,10 @@ describe('StorageKey', () => {
       chatBootstrap: 'agenthub:chat-bootstrap',
     });
   });
+
+  it('stores the chat outline toggle on the kebab catalog', () => {
+    expect(StorageKey.chatOutlineEnabled).toBe('agenthub:chat-outline-enabled');
+  });
 });
 
 describe('readStorageItem', () => {

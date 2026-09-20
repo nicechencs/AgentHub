@@ -110,6 +110,8 @@ export const zh = {
       canvasMint: '薄荷',
       canvasSand: '沙色',
       canvasLilac: '淡紫',
+      chatOutlineLabel: '聊天大纲',
+      chatOutlineDescription: '显示用于在提示词之间跳转的大纲',
       autoStartLabel: '开机自启',
       autoStartDescription: '登录后启动',
       autoStartTip:
@@ -2745,6 +2747,10 @@ export const zh = {
       resumeCommandCopied: "已复制会话",
       resumeCommandCopiedHint: "粘贴到终端即可继续这场对话",
       noResumeCommand: "没有可复制的会话",
+    },
+    outline: {
+      aria: "聊天大纲",
+      tick: "{n} / {total}：{preview}",
     },
     preview: {
       titleFallback: "预览",

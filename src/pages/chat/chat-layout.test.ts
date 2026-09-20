@@ -574,4 +574,15 @@ describe('chat layout wiring', () => {
     expect(translate('zh', 'chat.process.usageTurn')).toBe('当前轮');
     expect(translate('zh', 'chat.process.usageSession')).toBe('累计');
   });
+
+  it('stacks the chat outline on the transcript, not the session rail', () => {
+    expect(source('ChatTranscript.tsx')).toContain('ChatOutlineRail');
+    expect(source('ChatTranscript.tsx')).toContain('relative flex min-h-0 flex-1 flex-col');
+    expect(source('ChatTranscript.tsx')).toContain('onJumpToOutline');
+    expect(source('ChatSessionRail.tsx')).not.toContain('ChatOutlineRail');
+    expect(source('index.tsx')).toContain('onJumpToOutline={page.jumpToOutlinePrompt}');
+    expect(source('use-chat-page.ts')).toContain('jumpToOutlinePrompt');
+    expect(source('use-chat-page.ts')).toContain('stickToBottomRef.current = false');
+    expect(source('use-chat-page.ts')).toContain("scrollIntoView({ block: 'start' })");
+  });
 });
