@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { AgentThinking } from '@/components/shared/AgentThinking';
 import { CopyTextButton } from '@/components/shared/CopyTextButton';
@@ -10,7 +11,11 @@ import {
   formatProcessHeadline,
   formatTurnUsageFooter,
   hasInspectableProcess,
+  latestThinkingStep,
   phaseFromMessageStatus,
+  showBubbleThinkingBar,
+  thinkingElapsedMs,
+  timelineHasToolRow,
 } from '@/lib/chat-process';
 import type { AgentProcessView } from '@/lib/chat-process';
 import type { AgentKey, ChatMessage } from '@/lib/types';
@@ -20,6 +25,7 @@ import {
   localizeChatFailure,
   looksLikeChatProtocolDump,
   sanitizeCliChatText,
+  thinkingChromeLabel,
 } from './chat-format';
 import { messageStatusLabel } from './chat-model';
 import { streamingActivity, streamingPlaceholderKey } from './chat-streaming';
@@ -159,20 +165,31 @@ function AgentBubble({
     : running
       ? 'running'
       : null;
+  const thinking = latestThinkingStep(process?.steps);
+  const showThinkingBar = showBubbleThinkingBar(process?.steps, hasContent);
   const showProcessChip = Boolean(onOpenProcess) && (
     running || Boolean(process && hasInspectableProcess(process))
-  );
+  ) && (!showThinkingBar || timelineHasToolRow(process?.steps));
   const processHeadline = showProcessChip
     ? process && effectivePhase
       ? formatProcessHeadline(process.steps, effectivePhase, t)
       : messageStatusLabel(t, resolvedStatus, process, hasContent) ?? t('chat.process.summaryGenerating')
     : '';
-  const statusText = (hideRetry && looksFailed) || showProcessChip
+  const statusText = (hideRetry && looksFailed) || showProcessChip || showThinkingBar
     ? null
     : messageStatusLabel(t, resolvedStatus, process, hasContent);
   const activity = running ? streamingActivity(process, hasContent) : null;
   const showRetry = isLastTurn && looksFailed && !hideRetry;
   const usageText = formatTurnUsageFooter(process?.steps, running, t);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!showThinkingBar || thinking?.done) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [showThinkingBar, thinking?.done]);
+  const thinkingLabel = thinking
+    ? thinkingChromeLabel(Boolean(thinking.done), thinkingElapsedMs(process, now), t)
+    : '';
 
   return (
     <div id={`chat-msg-${message.id}`} className="group flex min-w-0 gap-3">
@@ -200,6 +217,29 @@ function AgentBubble({
             </Hint>
           )}
         </div>
+        {showThinkingBar && thinkingLabel ? (
+          <button
+            type="button"
+            className="mb-1 inline-flex max-w-full items-center gap-1 rounded-btn px-1 py-0.5 text-left text-meta text-secondary hover:bg-hover hover:text-primary"
+            data-help="chat-thinking-bar"
+            aria-expanded={processPaneOpen}
+            disabled={!onOpenProcess}
+            onClick={() => {
+              if (!onOpenProcess) return;
+              if (processPaneOpen) onCloseProcess?.();
+              else onOpenProcess(message.turn, agent);
+            }}
+          >
+            <span className="shrink-0" aria-hidden>
+              {processPaneOpen ? '▾' : '▸'}
+            </span>
+            {thinking?.done ? (
+              <span className="min-w-0 truncate">{thinkingLabel}</span>
+            ) : (
+              <AgentThinking label={thinkingLabel} showTimer={false} />
+            )}
+          </button>
+        ) : null}
         {showProcessChip && processHeadline && onOpenProcess ? (
           <button
             type="button"
@@ -231,11 +271,11 @@ function AgentBubble({
               />
               {running ? <span className="chat-stream-caret" aria-hidden /> : null}
             </div>
-          ) : running ? (
+          ) : running && !showThinkingBar ? (
             <AgentThinking label={t(streamingPlaceholderKey(process))} />
-          ) : (
+          ) : !running ? (
             <span className="text-muted">{displayError || t('chat.bubble.noOutput')}</span>
-          )}
+          ) : null}
           {displayError && (looksFailed || message.status !== 'ok') && displayContent && (
             <p className="mt-2 text-body leading-relaxed text-danger">{displayError}</p>
           )}

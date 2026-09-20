@@ -5,7 +5,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { Conversation } from '@/lib/types';
 import { createTranslator } from '@/lib/i18n';
-import { conversationRailHintView, conversationSemanticTitle } from './chat-model';
+import {
+  conversationRailHintView,
+  conversationSemanticTitle,
+  type ConversationWorkspaceGroup,
+} from './chat-model';
 import { ChatSessionRail } from './ChatSessionRail';
 
 vi.mock('@/components/shared/LanguageProvider', async () => {
@@ -34,12 +38,26 @@ function renderMarkup(node: ReactElement) {
   return renderToStaticMarkup(createElement(TooltipProvider, null, node));
 }
 
+function workspaceGroup(
+  items: Conversation[],
+  partial?: Partial<ConversationWorkspaceGroup>,
+): ConversationWorkspaceGroup {
+  const cwd = items[0]?.cwd ?? null;
+  return {
+    key: cwd ? `path:${cwd}` : 'unset',
+    label: cwd ? 'demo-project' : '未设置工作目录',
+    cwd,
+    items,
+    ...partial,
+  };
+}
+
 function rail(partial?: Partial<Parameters<typeof ChatSessionRail>[0]>) {
   const item = conversation();
   return createElement(ChatSessionRail, {
     open: true,
     listLoading: false,
-    groups: [{ key: 'today', label: '今天', items: [item] }],
+    groups: [workspaceGroup([item])],
     conversations: [item],
     filteredCount: 1,
     query: '',
@@ -65,7 +83,7 @@ describe('ChatSessionRail titles', () => {
       'Use your terminal to write exactly what I asked without clipping the title';
     const html = renderMarkup(
       rail({
-        groups: [{ key: 'today', label: '今天', items: [conversation({ title: full })] }],
+        groups: [workspaceGroup([conversation({ title: full })])],
         conversations: [conversation({ title: full })],
         firstUserContentById: { c1: full },
       }),
@@ -94,7 +112,7 @@ describe('ChatSessionRail titles', () => {
     renderMarkup(
       rail({
         activeId: active.id,
-        groups: [{ key: 'today', label: '今天', items: [active, clipped] }],
+        groups: [workspaceGroup([active, clipped])],
         conversations: [active, clipped],
         filteredCount: 2,
         firstUserContentById,
@@ -133,7 +151,42 @@ describe('ChatSessionRail titles', () => {
     expect(hint.meta).toContain('/workspace/demo-project');
     const src = readFileSync(new URL('./ChatSessionRail.tsx', import.meta.url), 'utf8');
     expect(src).toContain('conversationRailHintView(');
-    expect(src).not.toContain('cwdShortName');
+    expect(src).toContain('data-help="chat-workspace-group-label"');
+  });
+
+  it('groups sessions under a collapsible working-directory header', () => {
+    const html = renderMarkup(rail());
+    expect(html).toContain('data-help="chat-workspace-group"');
+    expect(html).toContain('data-help="chat-workspace-group-label"');
+    expect(html).toContain('demo-project');
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).not.toContain('今天');
+    const src = readFileSync(new URL('./ChatSessionRail.tsx', import.meta.url), 'utf8');
+    expect(src).toContain('ChevronDown');
+    expect(src).toContain('ChevronRight');
+  });
+
+  it('hides a plus on the folder until hover, then starts a chat in that folder', () => {
+    const html = renderMarkup(rail());
+    const src = readFileSync(new URL('./ChatSessionRail.tsx', import.meta.url), 'utf8');
+    expect(html).toContain('data-help="chat-workspace-new"');
+    expect(src).toContain('group-hover:opacity-100');
+    expect(src).toContain('onNewChat(group.cwd)');
+    expect(html).toContain('opacity-0');
+  });
+
+  it('puts the folder path on hover, not in the group header', () => {
+    const item = conversation();
+    const html = renderMarkup(rail({ groups: [workspaceGroup([item])] }));
+    const src = readFileSync(new URL('./ChatSessionRail.tsx', import.meta.url), 'utf8');
+    expect(src).toContain('Hint label={group.cwd ?? group.label}');
+    expect(src).not.toContain('chat-workspace-group-path');
+    expect(html).toContain('data-help="chat-workspace-group-label"');
+    expect(html).toContain('demo-project');
+    const labelStart = html.indexOf('data-help="chat-workspace-group-label"');
+    const labelHtml = html.slice(labelStart, labelStart + 180);
+    expect(labelHtml).toContain('demo-project');
+    expect(labelHtml).not.toContain('/workspace/demo-project');
   });
 
   it('paints 新建对话 with the theme fill', () => {
@@ -142,6 +195,40 @@ describe('ChatSessionRail titles', () => {
     expect(html).toContain('data-btn="default"');
     expect(html).toContain('bg-accent');
     expect(html).not.toContain('删除确认 Enter');
+  });
+
+  it('keeps two working-directory groups and an unset group on separate headers', () => {
+    const app = conversation({ id: 'app', cwd: '/workspace/demo-project', title: '修登录' });
+    const other = conversation({ id: 'other', cwd: '/tmp/other', title: '另一场' });
+    const unset = conversation({ id: 'unset', cwd: null, title: '未设' });
+    const html = renderMarkup(
+      rail({
+        groups: [
+          workspaceGroup([app]),
+          workspaceGroup([other], { key: 'path:/tmp/other', label: 'other', cwd: '/tmp/other' }),
+          workspaceGroup([unset], { key: 'unset', label: '未设置工作目录', cwd: null }),
+        ],
+        conversations: [app, other, unset],
+        filteredCount: 3,
+      }),
+    );
+    expect(html.split('data-help="chat-workspace-group"')).toHaveLength(4);
+    expect(html).toContain('demo-project');
+    expect(html).toContain('other');
+    expect(html).toContain('未设置工作目录');
+    expect(html).toContain('data-session-id="app"');
+    expect(html).toContain('data-session-id="other"');
+    expect(html).toContain('data-session-id="unset"');
+    expect(html.split('data-help="chat-workspace-new"')).toHaveLength(3);
+    const unsetAt = html.indexOf('data-session-id="unset"');
+    const unsetGroup = html.slice(html.lastIndexOf('data-help="chat-workspace-group"', unsetAt), unsetAt);
+    expect(unsetGroup).not.toContain('data-help="chat-workspace-new"');
+  });
+
+  it('starts the main new chat without passing the click event as a folder', () => {
+    const src = readFileSync(new URL('./ChatSessionRail.tsx', import.meta.url), 'utf8');
+    expect(src).toContain('onClick={() => onNewChat()}');
+    expect(src).not.toContain('onClick={onNewChat}');
   });
 });
 

@@ -20,6 +20,7 @@ import {
   resolvePiChatCurrentModel,
   sanitizeCliChatText,
   shouldFetchChatRemoteModels,
+  groupByTurn,
   thinkingChromeLabel,
 } from './chat-format';
 
@@ -143,11 +144,38 @@ describe('chat-format thinking chrome', () => {
     expect(formatDurationMs(65_000)).toBe('1m 5s');
   });
 
+  it('groups user and agent messages by turn so the outline can jump to a prompt', () => {
+    const userFirst = chatMsg({ id: 'u1', role: 'user', content: 'first', turn: 2 });
+    const agentOnly = chatMsg({
+      id: 'a2',
+      role: 'agent',
+      agentId: 'claude',
+      content: 'no user',
+      turn: 1,
+    });
+    const userLater = chatMsg({ id: 'u1b', role: 'user', content: 'overwrite', turn: 2 });
+    const agentReply = chatMsg({
+      id: 'a1',
+      role: 'agent',
+      agentId: 'claude',
+      content: 'ok',
+      turn: 2,
+    });
+    expect(groupByTurn([userFirst, agentOnly, userLater, agentReply])).toEqual([
+      { turn: 1, agents: [agentOnly] },
+      { turn: 2, user: userLater, agents: [agentReply] },
+    ]);
+    expect(groupByTurn([])).toEqual([]);
+  });
+
   it('thinkingChromeLabel matches live / thought-for / done copy', () => {
     expect(thinkingChromeLabel(false, 0, t)).toBe('思考中 · 0ms');
     expect(thinkingChromeLabel(false, 3200, t)).toBe('思考中 · 3.2s');
     expect(thinkingChromeLabel(true, 3200, t)).toBe('思考了 3.2s');
     expect(thinkingChromeLabel(true, 0, t)).toBe('思考完成');
+    const tEn = createTranslator('en');
+    expect(thinkingChromeLabel(false, 3200, tEn)).toBe('Thinking · 3.2s');
+    expect(thinkingChromeLabel(true, 3200, tEn)).toBe('Thought for 3.2s');
   });
 
   it('pins process/thinking overflow to the newest line', () => {

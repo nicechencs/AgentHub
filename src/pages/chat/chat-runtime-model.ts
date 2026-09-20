@@ -282,7 +282,7 @@ export function visibleRuntimePlan(
   return (plan ?? []).filter((entry) => entry.content.trim().length > 0);
 }
 
-export type RuntimePlanTone = 'live' | 'done' | 'pending';
+export type RuntimePlanTone = 'live' | 'done' | 'pending' | 'failed';
 
 export function runtimePlanEntryTone(status?: string | null): RuntimePlanTone {
   const normalized = (status ?? '').trim().toLowerCase().replace(/-/g, '_');
@@ -297,5 +297,51 @@ export function runtimePlanEntryTone(status?: string | null): RuntimePlanTone {
   ) {
     return 'live';
   }
+  if (
+    normalized === 'failed'
+    || normalized === 'error'
+    || normalized === 'cancelled'
+    || normalized === 'canceled'
+  ) {
+    return 'failed';
+  }
   return 'pending';
+}
+
+export type RuntimePlanProgress = {
+  total: number;
+  done: number;
+  live: number;
+  pending: number;
+  failed: number;
+};
+
+/** Counts from protocol status only. Missing status counts as pending. */
+export function runtimePlanProgress(
+  plan?: RuntimePlanEntry[] | null,
+): RuntimePlanProgress {
+  const entries = visibleRuntimePlan(plan);
+  const progress: RuntimePlanProgress = {
+    total: entries.length,
+    done: 0,
+    live: 0,
+    pending: 0,
+    failed: 0,
+  };
+  for (const entry of entries) {
+    const tone = runtimePlanEntryTone(entry.status);
+    if (tone === 'done') progress.done += 1;
+    else if (tone === 'live') progress.live += 1;
+    else if (tone === 'failed') progress.failed += 1;
+    else progress.pending += 1;
+  }
+  return progress;
+}
+
+export function runtimePlanStatusKey(status?: string | null): MessageKey {
+  const tone = runtimePlanEntryTone(status);
+  if (tone === 'done') return 'chat.runtime.planStatusDone';
+  if (tone === 'live') return 'chat.runtime.planStatusLive';
+  if (tone === 'failed') return 'chat.runtime.planStatusFailed';
+  return 'chat.runtime.planStatusPending';
 }

@@ -13,7 +13,15 @@ export type ChatProcessInspectTarget = {
   agent: AgentKey;
 };
 
-export type ChatInspectTarget = ChatFilePreviewTarget | ChatProcessInspectTarget;
+export type ChatEditPreviewTarget = {
+  kind: 'edit';
+  path: string;
+};
+
+export type ChatInspectTarget =
+  | ChatFilePreviewTarget
+  | ChatProcessInspectTarget
+  | ChatEditPreviewTarget;
 
 /** File-or-process inspect target for the chat right pane. */
 export type ChatPreviewTarget = ChatInspectTarget;
@@ -30,7 +38,14 @@ export function isChatProcessInspect(
   return target?.kind === 'process';
 }
 
+export function isChatEditPreview(
+  target: ChatInspectTarget | null | undefined,
+): target is ChatEditPreviewTarget {
+  return target?.kind === 'edit';
+}
+
 export function chatPreviewPath(target: ChatInspectTarget | null | undefined): string {
+  if (isChatEditPreview(target)) return target.path;
   if (!isChatFilePreview(target) || !target.stack.length) return '';
   return target.stack[target.stack.length - 1] ?? '';
 }
@@ -55,6 +70,10 @@ export function openChatPreviewRoot(path: string, line?: number): ChatFilePrevie
 
 export function openChatProcessInspect(turn: number, agent: AgentKey): ChatProcessInspectTarget {
   return { kind: 'process', turn, agent };
+}
+
+export function openChatEditPreview(path: string): ChatEditPreviewTarget {
+  return { kind: 'edit', path };
 }
 
 export function pushChatPreview(

@@ -128,7 +128,8 @@ impl ChatService {
 
     /// Open or create an AgentHub conversation keyed by official session id.
     /// History comes from the store (or is imported once). Missing cwd is kept
-    /// for display and never fails this call.
+    /// for display and never fails this call. Same Agent and working directory
+    /// without that session id still create a new row.
     pub fn open_from_session(
         &self,
         agent_id: AgentId,

@@ -16,6 +16,8 @@ export type ProcessPhase =
   | 'cancelled'
   | 'timeout';
 
+export type ThinkingStep = Extract<ProcessStep, { type: 'thinking' }>;
+
 export type AgentProcessView = {
   turn: number;
   agent: AgentKey;
@@ -26,6 +28,10 @@ export type AgentProcessView = {
   /** Structured steps (tool / thinking / status / raw / usage). Cap in reducer. */
   steps: ProcessStep[];
   updatedAt: number;
+  /** Wall-clock when the current/last thinking episode started. */
+  thinkingStartedAt?: number;
+  /** Frozen duration for the last thinking episode once it finishes. */
+  thinkingDurationMs?: number;
 };
 
 export type ProcessMap = Record<string, AgentProcessView>;
@@ -344,6 +350,39 @@ export function timelineProcessSteps(steps: ProcessStep[]): ProcessStep[] {
   return out;
 }
 
+export function isThinkingStep(step: ProcessStep): step is ThinkingStep {
+  return step.type === 'thinking';
+}
+
+export function latestThinkingStep(steps: ProcessStep[] | undefined): ThinkingStep | undefined {
+  const found = lastMatching(steps ?? [], isThinkingStep);
+  return found && isThinkingStep(found) ? found : undefined;
+}
+
+/** Live timer, or the frozen duration after thinking ends. */
+export function thinkingElapsedMs(view: AgentProcessView | undefined, now: number): number {
+  if (!view?.thinkingStartedAt) return 0;
+  if (view.thinkingDurationMs != null) return Math.max(0, view.thinkingDurationMs);
+  return Math.max(0, now - view.thinkingStartedAt);
+}
+
+/** Main-column chrome: thinking exists and the assistant body has not arrived. */
+export function showBubbleThinkingBar(
+  steps: ProcessStep[] | undefined,
+  hasContent: boolean,
+): boolean {
+  if (hasContent) return false;
+  return latestThinkingStep(steps) != null;
+}
+
+export function timelineHasToolRow(steps: ProcessStep[] | undefined): boolean {
+  return timelineProcessSteps(steps ?? []).some(
+    (step) => step.type === 'tool' || step.type === 'error' || step.type === 'raw',
+  );
+}
+
+function lastMatching<T, S extends T>(items: T[], pred: (item: T) => item is S): S | undefined;
+function lastMatching<T>(items: T[], pred: (item: T) => boolean): T | undefined;
 function lastMatching<T>(items: T[], pred: (item: T) => boolean): T | undefined {
   for (let i = items.length - 1; i >= 0; i -= 1) {
     if (pred(items[i])) return items[i];
@@ -549,6 +588,45 @@ function markLastThinkingDone(steps: ProcessStep[]): ProcessStep[] {
   return steps;
 }
 
+function freezeThinkingDuration(
+  view: Pick<AgentProcessView, 'thinkingStartedAt' | 'thinkingDurationMs'>,
+  now: number,
+): Pick<AgentProcessView, 'thinkingStartedAt' | 'thinkingDurationMs'> {
+  if (view.thinkingStartedAt == null || view.thinkingDurationMs != null) {
+    return {
+      thinkingStartedAt: view.thinkingStartedAt,
+      thinkingDurationMs: view.thinkingDurationMs,
+    };
+  }
+  return {
+    thinkingStartedAt: view.thinkingStartedAt,
+    thinkingDurationMs: Math.max(0, now - view.thinkingStartedAt),
+  };
+}
+
+function stampThinkingTiming(
+  prev: AgentProcessView,
+  step: ProcessStep,
+  now: number,
+): Pick<AgentProcessView, 'thinkingStartedAt' | 'thinkingDurationMs'> {
+  if (step.type === 'thinking') {
+    const last = prev.steps[prev.steps.length - 1];
+    const mergeIntoOpen = last?.type === 'thinking' && !last.done;
+    const startedAt = mergeIntoOpen ? (prev.thinkingStartedAt ?? now) : now;
+    if (step.done) {
+      return { thinkingStartedAt: startedAt, thinkingDurationMs: Math.max(0, now - startedAt) };
+    }
+    return { thinkingStartedAt: startedAt, thinkingDurationMs: undefined };
+  }
+  if (prev.thinkingStartedAt != null && prev.thinkingDurationMs == null) {
+    return freezeThinkingDuration(prev, now);
+  }
+  return {
+    thinkingStartedAt: prev.thinkingStartedAt,
+    thinkingDurationMs: prev.thinkingDurationMs,
+  };
+}
+
 /**
  * Codex `item.updated` reasoning is a full snapshot; Grok/Pi/Claude thinking
  * chunks are deltas. If the new text already contains the previous text as a
@@ -686,6 +764,8 @@ export function reduceProcessEvent(map: ProcessMap, ev: ChatEvent, now = Date.no
         stdout: prev?.stdout ?? '',
         stderr: prev?.stderr ?? '',
         steps: prev?.steps ?? [],
+        thinkingStartedAt: prev?.thinkingStartedAt,
+        thinkingDurationMs: prev?.thinkingDurationMs,
         updatedAt: now,
       },
     };
@@ -728,6 +808,7 @@ export function reduceProcessEvent(map: ProcessMap, ev: ChatEvent, now = Date.no
         ...prev,
         phase: prev.phase === 'queued' || prev.phase === 'starting' ? 'running' : prev.phase,
         steps: pushStep(prev.steps, ev.step),
+        ...stampThinkingTiming(prev, ev.step, now),
         updatedAt: now,
       },
     };
@@ -744,6 +825,7 @@ export function reduceProcessEvent(map: ProcessMap, ev: ChatEvent, now = Date.no
         phase: phaseFromMessageStatus(ev.message.status),
         stdout: content || prev.stdout,
         steps: markLastThinkingDone(prev.steps),
+        ...freezeThinkingDuration(prev, now),
         updatedAt: now,
       },
     };
@@ -765,6 +847,7 @@ export function reduceProcessEvent(map: ProcessMap, ev: ChatEvent, now = Date.no
           // 生产取消时 ok=true；缺省 cancelled 当 false，兼容旧事件
           phase: ev.cancelled ? 'cancelled' : ev.ok ? 'ok' : 'failed',
           steps: markLastThinkingDone(view.steps),
+          ...freezeThinkingDuration(view, now),
           updatedAt: now,
         };
         changed = true;

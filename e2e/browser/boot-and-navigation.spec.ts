@@ -20,7 +20,7 @@ test('app boots on mock and primary navigation works', async ({ page }) => {
   await expect(page).toHaveURL(/#\/projects/);
   await expect(page.getByRole('heading', { name: '历史' })).toBeVisible();
 
-  await goNav(page, '对话');
+  await goNav(page, '工作区');
   await expect(page).toHaveURL(/#\/chat/);
   await expect(
     page.getByRole('textbox', { name: '消息输入' }).or(page.getByText('还没有可对话的 Agent')),
@@ -172,7 +172,7 @@ test('page title sits in the top bar; Chat has neither title nor in-app notifica
   expect(Math.abs(createBox!.y + createBox!.height / 2 - (leadBox!.y + leadBox!.height / 2))).toBeLessThanOrEqual(8);
   expect(Math.abs(leadBox!.y - connectionsTop)).toBeLessThanOrEqual(12);
 
-  await goNav(page, '对话');
+  await goNav(page, '工作区');
   await expect(page).toHaveURL(/#\/chat/);
   await expect(page.getByRole('button', { name: '通知' })).toHaveCount(0);
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(0);

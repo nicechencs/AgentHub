@@ -1,4 +1,5 @@
 import type { ChatPort, MarkdownFilePreviewDto } from '@/lib/backend/contracts';
+import { createConversationCwd } from '@/lib/open-chat-cwd';
 import {
   mapChatMessage,
   mapConversation,
@@ -20,7 +21,7 @@ export function createTauriChatPort(): ChatPort {
     async createConversation(agentIds, cwd) {
       const row = await invoke<CoreConversation>('create_conversation', {
         agentIds,
-        cwd: cwd ?? null,
+        cwd: createConversationCwd(cwd),
       });
       return mapConversation(row);
     },

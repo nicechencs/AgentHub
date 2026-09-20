@@ -27,7 +27,6 @@ import {
 import {
   agentNewChatConnectKind,
   chatConnectLabelKey,
-  sessionChatConnectHintKey,
   sessionChatConnectKind,
 } from './chat-connect-model';
 import { sessionAllowAlwaysActive } from './chat-runtime-model';
@@ -114,14 +113,14 @@ export function ChatSettingsDialog({
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent>
-          <DialogHeader>
+          <DialogHeader className="mb-2">
             <DialogTitle>{t('chat.settings.title')}</DialogTitle>
-            <DialogDescription>{t('chat.settings.description')}</DialogDescription>
+            <DialogDescription className="sr-only">{t('chat.settings.description')}</DialogDescription>
           </DialogHeader>
           {active && (
-            <div className="space-y-4 py-2">
+            <div className="space-y-3">
               <div>
-                <label className="mb-1.5 flex items-center gap-1.5 text-meta text-muted">
+                <label className="mb-1 flex items-center gap-1.5 text-meta text-muted">
                   <FolderOpen className="h-3.5 w-3.5" />
                   {t('chat.settings.cwd')}
                 </label>
@@ -146,23 +145,27 @@ export function ChatSettingsDialog({
                   </Button>
                 </div>
               </div>
-              <div className="space-y-1" data-help="chat-session-connect">
-                <p className="text-body font-medium">{t('chat.connect.sessionTitle')}</p>
-                <p className="text-body">{t(chatConnectLabelKey(connectKind))}</p>
-                <p className="text-meta text-muted">{t(sessionChatConnectHintKey(connectKind))}</p>
-                {agentConnectKind !== connectKind ? (
-                  <p className="text-meta text-muted">
-                    {t('chat.connect.agentTitle')}
-                    {' · '}
-                    {t(chatConnectLabelKey(agentConnectKind))}
-                  </p>
-                ) : null}
+              <div
+                className="flex items-baseline justify-between gap-3"
+                data-help="chat-session-connect"
+              >
+                <span className="text-meta text-muted">{t('chat.connect.sessionTitle')}</span>
+                <p className="text-right text-body">
+                  {t(chatConnectLabelKey(connectKind))}
+                  {agentConnectKind !== connectKind ? (
+                    <span className="mt-0.5 block text-meta text-muted">
+                      {t('chat.connect.agentTitle')}
+                      {' · '}
+                      {t(chatConnectLabelKey(agentConnectKind))}
+                    </span>
+                  ) : null}
+                </p>
               </div>
               {connectKind !== 'legacy' ? (
                 <label className="flex items-center justify-between gap-3 text-body" data-help="chat-session-always-allow-setting">
                   <span>
-                    <span className="block font-medium">{t('chat.runtime.sessionRemembered')}</span>
-                    <span className="mt-1 block text-meta text-muted">
+                    <span className="block">{t('chat.runtime.sessionRemembered')}</span>
+                    <span className="text-meta text-muted">
                       {sessionAlways
                         ? t(
                             kiroPermissions
@@ -189,30 +192,31 @@ export function ChatSettingsDialog({
                 </label>
               ) : null}
               {kiroPermissions ? (
-                <fieldset className="space-y-2" disabled={permissionLocked}>
-                  <legend className="text-body font-medium">{t('chat.kiro.permissionTitle')}</legend>
+                <fieldset className="space-y-1.5" disabled={permissionLocked}>
+                  <legend className="text-meta text-muted">{t('chat.kiro.permissionTitle')}</legend>
                   {permissionLocked ? (
                     <p className="text-meta text-muted">{t('chat.kiro.settingsLocked')}</p>
                   ) : null}
-                  <label className="flex cursor-pointer items-start gap-2 rounded px-1 py-1 hover:bg-subtle">
+                  <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 hover:bg-subtle">
                     <input
                       type="radio"
                       name={`kiro-permission-${active.id}`}
-                      className="mt-1"
                       checked={!approveOn}
                       disabled={permissionLocked}
                       onChange={() => onPatch({ allowDangerous: false })}
                     />
                     <span>
-                      <span className="block font-medium">{t('chat.kiro.permissionAsk')}</span>
-                      <span className="text-meta text-muted">{t('chat.kiro.permissionAskHint')}</span>
+                      {t('chat.kiro.permissionAsk')}
+                      <span className="text-meta text-muted">
+                        {' · '}
+                        {t('chat.kiro.permissionAskHint')}
+                      </span>
                     </span>
                   </label>
-                  <label className="flex cursor-pointer items-start gap-2 rounded px-1 py-1 hover:bg-subtle">
+                  <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 hover:bg-subtle">
                     <input
                       type="radio"
                       name={`kiro-permission-${active.id}`}
-                      className="mt-1"
                       checked={approveOn}
                       disabled={permissionLocked}
                       onChange={() => {
@@ -221,16 +225,18 @@ export function ChatSettingsDialog({
                       }}
                     />
                     <span>
-                      <span className="block font-medium">{t('chat.kiro.permissionFull')}</span>
-                      <span className="text-meta text-muted">{t('chat.kiro.permissionFullHint')}</span>
+                      {t('chat.kiro.permissionFull')}
+                      <span className="text-meta text-muted">
+                        {' · '}
+                        {t('chat.kiro.permissionFullHint')}
+                      </span>
                     </span>
                   </label>
-                  <p className="text-meta text-muted">{t('chat.kiro.permissionVsCard')}</p>
                 </fieldset>
               ) : (
                 <label className="flex items-center justify-between gap-3 text-body">
                   <span>
-                    <span className="block font-medium">{t('chat.settings.autoApprove')}</span>
+                    <span className="block">{t('chat.settings.autoApprove')}</span>
                     <Tip
                       className="text-meta text-muted"
                       label={
@@ -241,7 +247,6 @@ export function ChatSettingsDialog({
                     >
                       {autoApproveHint(t, approveEffect)}
                     </Tip>
-                    <span className="mt-1 block text-meta text-muted">{t('chat.settings.autoApproveVsCard')}</span>
                   </span>
                   <Switch
                     checked={approveOn}
@@ -259,7 +264,7 @@ export function ChatSettingsDialog({
               )}
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="mt-4">
             <Button variant="secondary" onClick={() => onOpenChange(false)}>
               {t('chat.settings.done')}
             </Button>

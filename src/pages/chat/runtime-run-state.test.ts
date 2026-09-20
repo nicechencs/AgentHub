@@ -111,6 +111,17 @@ describe('runtime state across visits and async sources', () => {
     });
     expect(messages).toHaveLength(1);
     expect(messages[0].content).toBe('haha');
+
+    const user = upsertRuntimeMessage([], {
+      id: 'client-1', conversationId: 'a', turn: 1, role: 'user',
+      content: 'hello', status: 'ok', durationMs: 0, createdAt: '',
+    });
+    const sameUser = upsertRuntimeMessage(user, {
+      id: 'client-1', conversationId: 'a', turn: 1, role: 'user',
+      content: 'hello', status: 'ok', durationMs: 0, createdAt: '',
+    });
+    expect(sameUser).toHaveLength(1);
+    expect(sameUser[0].id).toBe('client-1');
   });
 
   it('serializes a start response ahead of a later poll and rejects an older rewind', async () => {

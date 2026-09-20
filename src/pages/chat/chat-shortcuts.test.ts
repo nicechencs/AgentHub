@@ -14,15 +14,23 @@ describe('chat shortcut overview', () => {
       'stop',
       'actions',
       'history',
+      'prevSession',
+      'nextSession',
       'model',
       'newChat',
       'overview',
     ]);
     expect(CHAT_SHORTCUT_ROWS.find((row) => row.id === 'newChat')?.keys).toBe('Ctrl+N');
+    expect(CHAT_SHORTCUT_ROWS.find((row) => row.id === 'prevSession')?.keys).toBe('Alt+↑');
+    expect(CHAT_SHORTCUT_ROWS.find((row) => row.id === 'nextSession')?.keys).toBe('Alt+↓');
     expect(CHAT_SHORTCUT_ROWS.find((row) => row.id === 'overview')?.keys).toBe('?');
     expect(CHAT_SHORTCUT_ROWS.find((row) => row.id === 'stop')?.keys).toBe('Esc');
     expect(translate('zh', 'chat.shortcuts.stop')).toBe('停止');
     expect(translate('en', 'chat.shortcuts.stop')).toBe('Stop');
+    expect(translate('zh', 'chat.shortcuts.prevSession')).toBe('上一条会话');
+    expect(translate('en', 'chat.shortcuts.prevSession')).toBe('Previous session');
+    expect(translate('zh', 'chat.shortcuts.nextSession')).toBe('下一条会话');
+    expect(translate('en', 'chat.shortcuts.nextSession')).toBe('Next session');
   });
 
   it('shows Cmd on macOS and Ctrl elsewhere', () => {

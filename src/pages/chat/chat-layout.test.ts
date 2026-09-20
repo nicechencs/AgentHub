@@ -18,6 +18,7 @@ describe('chat layout wiring', () => {
     expect(page).not.toContain('flex min-w-0 flex-1 flex-col bg-panel');
     expect(source('ChatMessageBubble.tsx')).toContain('formatChatDisplayContent');
     expect(source('ChatTranscript.tsx')).toContain('overflow-x-hidden overflow-y-auto');
+    expect(source('ChatTranscript.tsx')).toContain('key={g.user.id}');
   });
 
   it('lets Escape stop an in-flight turn', () => {
@@ -118,6 +119,12 @@ describe('chat layout wiring', () => {
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('pathTailLabel');
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain("label={folder}");
     expect(source('index.tsx')).toContain('pushChatPreview');
+    expect(source('index.tsx')).toContain('extractTurnEdits');
+    expect(source('index.tsx')).toContain('ChatTurnEditList');
+    expect(source('index.tsx')).toContain('ChatEditPreviewPanel');
+    expect(source('index.tsx')).toContain('openChatEditPreview');
+    expect(translate('zh', 'chat.preview.viewEdit')).toBe('查看修改');
+    expect(translate('en', 'chat.preview.viewEdit')).toBe('View edits');
   });
 
   it('opens the turn process in the same right-hand pane', () => {
@@ -303,7 +310,8 @@ describe('chat layout wiring', () => {
     expect(rail).toContain('AgentLogo');
     expect(rail).toContain('hint={false}');
     expect(rail).not.toContain('conversationAgentLine');
-    expect(rail).not.toContain('cwdShortName');
+    expect(rail).toContain('data-help="chat-workspace-group"');
+    expect(rail).toContain('aria-expanded');
     expect(rail).toContain('conversationTitle');
     expect(rail).not.toContain('isBlankConversationDraft');
     expect(rail).toContain("t('chat.rail.searchPlaceholder')");
@@ -448,6 +456,22 @@ describe('chat layout wiring', () => {
     expect(header).toContain('chat.kiro.permissionFull');
   });
 
+  it('keeps connect kind in session settings, not the header', () => {
+    const header = source('ChatSessionHeader.tsx');
+    const settings = source('ChatSettingsDialog.tsx');
+    expect(header).not.toContain('chat.connect.sessionTitle');
+    expect(header).not.toContain('data-help="chat-session-connect"');
+    expect(header).toContain('data-help="chat-settings"');
+    expect(settings).toContain('data-help="chat-session-connect"');
+    expect(settings).not.toContain('sessionChatConnectHintKey');
+    expect(settings).not.toContain('chat.settings.autoApproveVsCard');
+    expect(settings).not.toContain('chat.kiro.permissionVsCard');
+    expect(translate('zh', 'chat.connect.sessionTitle')).toBe('这次对话');
+    expect(translate('en', 'chat.connect.sessionTitle')).toBe('This chat');
+    expect(translate('zh', 'chat.settings.description')).toBe('工作目录和自动批准');
+    expect(translate('en', 'chat.settings.description')).toBe('Working folder and auto-approve');
+  });
+
   it('wires chat capability helpers and the Kiro composer placeholder', () => {
     const page = source('index.tsx');
     expect(page).toContain('kiroChatStance');
@@ -468,6 +492,7 @@ describe('chat layout wiring', () => {
     expect(page).toContain('runtimeReady: page.runtime != null');
     expect(page).toContain('legacyNewChatAction');
     expect(page).toContain('handleNewChat');
+    expect(page).toContain('onNewChat={(cwd) => void page.handleNewChat(cwd)}');
   });
 
   it('uses shared Button for chrome icons and composer chips', () => {
@@ -494,6 +519,7 @@ describe('chat layout wiring', () => {
     expect(sessions).toContain('takeChatBootstrap');
     expect(sessions).toContain('boot.cwd');
     expect(sessions).toContain('openConversationFromSession');
+    expect(sessions).toContain('handoffConversationFlight');
     expect(sessions).toContain('boot.sessionId');
   });
 
@@ -535,10 +561,39 @@ describe('chat layout wiring', () => {
     expect(source('ChatMessageBubble.tsx')).not.toContain('ChatPlanBar');
     expect(source('ChatProcessPanel.tsx')).not.toContain('formatVisibleUsage');
     expect(source('index.tsx')).toContain('ChatPlanBar');
+    expect(source('ChatPlanBar.tsx')).toContain('aria-expanded={open}');
+    expect(source('ChatPlanBar.tsx')).toContain('chat.runtime.planProgress');
+    expect(source('ChatPlanBar.tsx')).toContain('runtimePlanStatusKey');
+    expect(translate('zh', 'chat.runtime.planStatusLive')).toBe('进行中');
+    expect(translate('zh', 'chat.runtime.planCollapse')).toBe('收起计划');
+    expect(source('use-chat-page-send.ts')).toContain('recordSnapshotPollFailure');
+    expect(source('index.tsx')).toContain('chat.runtime.snapshotStale');
     expect(source('index.tsx')).toContain('ChatHostTerminals');
     expect(source('ChatHostTerminals.tsx')).toContain('chat.runtime.stopCommand');
     expect(source('ChatHostTerminals.tsx')).not.toContain('xterm');
     expect(translate('zh', 'chat.process.usageTurn')).toBe('当前轮');
     expect(translate('zh', 'chat.process.usageSession')).toBe('累计');
+  });
+
+  it('stacks the chat outline on the transcript, not the session rail', () => {
+    expect(source('ChatTranscript.tsx')).toContain('ChatOutlineRail');
+    expect(source('ChatTranscript.tsx')).toContain('relative flex min-h-0 flex-1 flex-col');
+    expect(source('ChatTranscript.tsx')).toContain('onJumpToOutline');
+    expect(source('ChatTranscript.tsx')).toContain('measuredWidth={outlinePanel.width}');
+    expect(source('ChatTranscript.tsx')).toContain('enabled={outlineOn}');
+    expect(source('ChatTranscript.tsx')).toContain('useOutlinePanelWidth');
+    expect(source('ChatTranscript.tsx')).toContain('onJumpToPrompt={onJumpToOutline}');
+    expect(source('ChatOutlineRail.tsx')).toContain('data-chat-outline-measure');
+    expect(source('ChatOutlineRail.tsx')).toContain('outlinePanelWidthReady');
+    expect(source('ChatOutlineRail.tsx')).toContain('if (!isEnabled) return null');
+    expect(source('ChatOutlineRail.tsx')).not.toContain('prompts.length < 2) return null');
+    expect(source('ChatOutlineRail.tsx')).toContain('onJumpToPrompt={onJumpToPrompt}');
+    expect(source('use-chat-outline.ts')).toContain('outlinePanelWidthReady');
+    expect(source('ChatSessionRail.tsx')).not.toContain('ChatOutlineRail');
+    expect(source('index.tsx')).toContain('onJumpToOutline={page.jumpToOutlinePrompt}');
+    expect(source('index.tsx')).toContain('data-chat-stage');
+    expect(source('use-chat-page.ts')).toContain('jumpToOutlinePrompt');
+    expect(source('use-chat-page.ts')).toContain('stickToBottomRef.current = false');
+    expect(source('use-chat-page.ts')).toContain("scrollIntoView({ block: 'start' })");
   });
 });

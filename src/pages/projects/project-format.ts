@@ -1,11 +1,30 @@
 import type { TranslateFn } from '@/lib/i18n';
+import { folderNameFromCwd } from '@/lib/open-chat-cwd';
 import { restoreProjectWorkspacePath } from '@/lib/path-open';
 import { nativeResumeCommand as planResumeCommand } from '@/lib/session-resume';
 import type { AgentProject, AgentSession } from '@/lib/types';
 
-export function displayTitle(p: Pick<AgentProject, 'title' | 'alias'>): string {
-  const a = p.alias?.trim();
-  return a || p.title;
+function usableName(raw?: string | null): string {
+  const name = raw?.trim() ?? '';
+  if (!name || name === '.' || name === '..') return '';
+  return name;
+}
+
+export function displayTitle(
+  p: Pick<AgentProject, 'title' | 'alias'> &
+    Partial<Pick<AgentProject, 'agentId' | 'actualPath' | 'relativePath' | 'storagePath'>>,
+): string {
+  const alias = usableName(p.alias);
+  if (alias) return alias;
+  const title = usableName(p.title);
+  if (title) return title;
+  const path =
+    restoreProjectWorkspacePath(p)
+    || p.actualPath?.trim()
+    || p.relativePath?.trim()
+    || p.storagePath?.trim()
+    || '';
+  return usableName(folderNameFromCwd(path)) || p.title;
 }
 
 /** Restored address for display. Click-to-open still requires a verified actualPath. */
