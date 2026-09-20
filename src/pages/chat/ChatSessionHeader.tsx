@@ -1,15 +1,32 @@
 import { useEffect, useRef, useState } from 'react';
-import { Copy, FolderOpen, PanelLeftOpen, Settings2, ShieldAlert, Terminal } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronUp,
+  ChevronsUpDown,
+  Copy,
+  FolderOpen,
+  PanelLeftOpen,
+  Settings2,
+  ShieldAlert,
+  Terminal,
+} from 'lucide-react';
 import { ChromeActions } from '@/components/layout/ChromeActions';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { copyTextToClipboard } from '@/components/shared/CopyTextButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Hint } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
 import type { Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { sessionSwitchNeighbors } from './chat-session-switch';
 import { isKiroChatAgent } from './chat-kiro-model';
 import {
   chatConnectLabelKey,
@@ -32,8 +49,11 @@ export function ChatSessionHeader({
   active,
   railOpen,
   recordText,
+  sessions,
+  sendingConversationIds = [],
   onExpandRail,
   onRename,
+  onFocus,
   onOpenSettings,
   onPickWorkingDirectory,
   runtimeLocked = false,
@@ -44,8 +64,11 @@ export function ChatSessionHeader({
   active: Conversation | null;
   railOpen: boolean;
   recordText?: string;
+  sessions: readonly Conversation[];
+  sendingConversationIds?: readonly string[];
   onExpandRail: () => void;
   onRename: (next: string) => Promise<boolean>;
+  onFocus: (id: string) => void;
   onOpenSettings: () => void;
   onPickWorkingDirectory: () => void;
   runtimeLocked?: boolean;
@@ -114,7 +137,14 @@ export function ChatSessionHeader({
         </Button>
       )}
       <div className="min-w-0 flex-1">
-        {active && editing ? (
+        {!railOpen && sessions.length > 0 ? (
+          <ChatSessionSwitcher
+            sessions={sessions}
+            active={active}
+            sendingConversationIds={sendingConversationIds}
+            onFocus={onFocus}
+          />
+        ) : active && editing ? (
           <Input
             ref={inputRef}
             value={draftTitle}
@@ -310,4 +340,101 @@ export function ChatSessionHeader({
 
 function shortenId(id: string, max: number): string {
   return id.length <= max ? id : `${id.slice(0, max - 1)}…`;
+}
+
+function SendingDot({ sending }: { sending: boolean }) {
+  if (!sending) return null;
+  return (
+    <span aria-hidden className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-accent" data-sending="" />
+  );
+}
+
+function ChatSessionSwitcher({
+  sessions,
+  active,
+  sendingConversationIds,
+  onFocus,
+}: {
+  sessions: readonly Conversation[];
+  active: Conversation | null;
+  sendingConversationIds: readonly string[];
+  onFocus: (id: string) => void;
+}) {
+  const { t } = useI18n();
+  const neighbors = sessionSwitchNeighbors(sessions, active?.id ?? null);
+  const title = active ? conversationTitle(t, active.title) : t('chat.header.conversation');
+  const cwdLabel = active ? cwdShortName(active.cwd, t) : t('chat.cwd.unset');
+  const sendingHere = Boolean(active && sendingConversationIds.includes(active.id));
+
+  return (
+    <div className="flex min-w-0 items-center gap-0.5" data-help="chat-session-switch">
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="text-muted"
+        disabled={!neighbors.prevId}
+        title={t('chat.shortcuts.prevSession')}
+        aria-label={t('chat.shortcuts.prevSession')}
+        aria-keyshortcuts="Alt+ArrowUp"
+        onClick={() => {
+          if (neighbors.prevId) onFocus(neighbors.prevId);
+        }}
+      >
+        <ChevronUp className="h-4 w-4" />
+      </Button>
+      <DropdownMenu modal={false}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="min-w-0 max-w-xs justify-start px-1.5"
+            aria-label={t('chat.header.switchSession')}
+          >
+            <SendingDot sending={sendingHere} />
+            <span className="min-w-0 truncate font-semibold text-primary">{title}</span>
+            <span className="min-w-0 truncate text-meta font-normal text-muted">{cwdLabel}</span>
+            <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="max-h-72 min-w-[16rem] overflow-y-auto">
+          {sessions.map((session) => {
+            const selected = active?.id === session.id;
+            const sending = sendingConversationIds.includes(session.id);
+            return (
+              <DropdownMenuItem
+                key={session.id}
+                className={cn('items-start', selected && 'font-medium')}
+                onSelect={() => onFocus(session.id)}
+              >
+                <SendingDot sending={sending} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{conversationTitle(t, session.title)}</span>
+                  <span className="block truncate text-meta text-muted">
+                    {cwdShortName(session.cwd, t)}
+                  </span>
+                </span>
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="text-muted"
+        disabled={!neighbors.nextId}
+        title={t('chat.shortcuts.nextSession')}
+        aria-label={t('chat.shortcuts.nextSession')}
+        aria-keyshortcuts="Alt+ArrowDown"
+        onClick={() => {
+          if (neighbors.nextId) onFocus(neighbors.nextId);
+        }}
+      >
+        <ChevronDown className="h-4 w-4" />
+      </Button>
+    </div>
+  );
 }

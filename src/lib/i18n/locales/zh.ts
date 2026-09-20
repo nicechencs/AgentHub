@@ -2733,6 +2733,7 @@ export const zh = {
     header: {
       conversation: "对话",
       titleAria: "会话标题",
+      switchSession: "切换会话",
       pickCwd: "点击选择工作目录",
       cwdUnset: "未设置工作目录",
       cwdMissing: "目录已不存在",
@@ -2803,6 +2804,8 @@ export const zh = {
       stop: "停止",
       actions: "更多操作",
       history: "搜索历史会话",
+      prevSession: "上一条会话",
+      nextSession: "下一条会话",
       model: "换模型",
       newChat: "新建对话",
       overview: "快捷键一览",

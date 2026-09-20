@@ -2753,6 +2753,7 @@ export const en = {
     header: {
       conversation: "Chat",
       titleAria: "Conversation title",
+      switchSession: "Switch session",
       pickCwd: "Click to choose a working directory",
       cwdUnset: "Working directory not set",
       cwdMissing: "Folder is gone",
@@ -2823,6 +2824,8 @@ export const en = {
       stop: "Stop",
       actions: "More actions",
       history: "Search history",
+      prevSession: "Previous session",
+      nextSession: "Next session",
       model: "Change model",
       newChat: "New chat",
       overview: "Shortcut overview",
