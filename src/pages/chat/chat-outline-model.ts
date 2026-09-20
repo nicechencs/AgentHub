@@ -58,8 +58,14 @@ export function shouldShowChatOutline(input: {
   return (
     input.enabled &&
     input.promptCount >= OUTLINE_MIN_PROMPTS &&
+    outlinePanelWidthReady(input.panelWidth) &&
     input.panelWidth >= OUTLINE_MIN_PANEL_WIDTH_PX
   );
+}
+
+/** 0 / NaN means “not measured yet”. Do not treat an empty host as a mounted rail. */
+export function outlinePanelWidthReady(width: number | null | undefined): width is number {
+  return typeof width === 'number' && Number.isFinite(width) && width > 0;
 }
 
 /** Chat stage (the wide panel), not the inner adaptive content column. */

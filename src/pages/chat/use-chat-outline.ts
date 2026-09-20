@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { outlinePanelElement, readOutlinePanelWidth } from './chat-outline-model';
+import {
+  outlinePanelElement,
+  outlinePanelWidthReady,
+  readOutlinePanelWidth,
+} from './chat-outline-model';
 import {
   loadChatOutlineEnabled,
   subscribeChatOutlineEnabled,
@@ -27,7 +31,7 @@ export function useOutlinePanelWidth(enabled: boolean, override?: number): {
   }, []);
 
   useEffect(() => {
-    if (override != null || !enabled) return;
+    if (outlinePanelWidthReady(override) || !enabled) return;
     const node = hostNode;
     if (!node) return;
     const apply = () => {
@@ -44,5 +48,8 @@ export function useOutlinePanelWidth(enabled: boolean, override?: number): {
     return () => observer.disconnect();
   }, [enabled, hostNode, override]);
 
-  return { width: override ?? observed, assignRef };
+  return {
+    width: outlinePanelWidthReady(override) ? override : observed,
+    assignRef,
+  };
 }

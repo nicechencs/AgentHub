@@ -7,6 +7,7 @@ import {
   OUTLINE_MIN_PROMPTS,
   applyOutlineJumpOffset,
   outlinePanelElement,
+  outlinePanelWidthReady,
   outlinePromptPreview,
   outlinePromptsFromTurns,
   outlineTickSize,
@@ -109,6 +110,14 @@ describe('shouldShowChatOutline', () => {
     expect(shouldShowChatOutline({ enabled: false, promptCount: 1, panelWidth: 719 })).toBe(false);
     expect(shouldShowChatOutline({ enabled: true, promptCount: 5, panelWidth: 719 })).toBe(false);
     expect(shouldShowChatOutline({ enabled: false, promptCount: 5, panelWidth: 900 })).toBe(false);
+    expect(shouldShowChatOutline({ enabled: true, promptCount: 2, panelWidth: 0 })).toBe(false);
+  });
+
+  it('does not treat a zero-width empty host as a measured panel', () => {
+    expect(outlinePanelWidthReady(0)).toBe(false);
+    expect(outlinePanelWidthReady(Number.NaN)).toBe(false);
+    expect(outlinePanelWidthReady(undefined)).toBe(false);
+    expect(outlinePanelWidthReady(720)).toBe(true);
   });
 });
 

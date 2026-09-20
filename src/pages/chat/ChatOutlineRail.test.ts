@@ -151,10 +151,20 @@ describe('ChatOutlineRail markup', () => {
     expect(html).toContain('data-testid="chat-outline-rail"');
     expect(html).toContain('role="tablist"');
     expect(html).toContain('role="tab"');
+    expect(html).toContain('type="button"');
     expect(html).toContain('data-testid="chat-outline-tick-u1"');
     expect(html).toContain('data-testid="chat-outline-tick-u2"');
     expect(html).toContain('1 / 2：first');
     expect(html).toContain('2 / 2：second');
+  });
+
+  it('does not treat a zero-width empty host as a mounted rail', () => {
+    const html = renderRail({ turns: turns('first', 'second'), measuredWidth: 0 });
+    expect(html).toContain('data-chat-outline-measure');
+    expect(html).not.toContain('chat-outline-rail');
+    expect(html).not.toContain('role="tablist"');
+    expect(html).not.toContain('role="tab"');
+    expect(html).not.toContain('chat-outline-tick-');
   });
 
   it('hides the rail when the panel is narrower than 720px', () => {

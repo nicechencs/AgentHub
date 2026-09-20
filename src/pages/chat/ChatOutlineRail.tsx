@@ -16,6 +16,7 @@ import { createChatOutlineHoverIntent } from './chat-outline-hover';
 import {
   OUTLINE_READING_LINE_PX,
   outlinePanelElement,
+  outlinePanelWidthReady,
   outlinePromptsFromTurns,
   outlineTickSize,
   promptTickMagnification,
@@ -48,7 +49,8 @@ export function ChatOutlineRail({
   const [prefEnabled] = useState(loadChatOutlineEnabled);
   const isEnabled = enabled ?? prefEnabled;
   const [observedWidth, setObservedWidth] = useState(0);
-  const panelWidth = measuredWidth ?? observedWidth;
+  const hasMeasuredWidth = outlinePanelWidthReady(measuredWidth);
+  const panelWidth = hasMeasuredWidth ? measuredWidth : observedWidth;
   const [measureNode, setMeasureNode] = useState<HTMLDivElement | null>(null);
   const assignMeasureRef = useCallback((node: HTMLDivElement | null) => {
     setMeasureNode((prev) => (prev === node ? prev : node));
@@ -71,7 +73,7 @@ export function ChatOutlineRail({
   useEffect(() => () => hoverIntent.dispose(), [hoverIntent]);
 
   useEffect(() => {
-    if (measuredWidth != null) return;
+    if (hasMeasuredWidth) return;
     const node = measureNode;
     if (!node) return;
     const apply = () => {
@@ -86,7 +88,7 @@ export function ChatOutlineRail({
     const observer = new ResizeObserver(apply);
     observer.observe(outlinePanelElement(node) ?? node);
     return () => observer.disconnect();
-  }, [measuredWidth, measureNode]);
+  }, [hasMeasuredWidth, measureNode]);
 
   const readActivePrompt = useCallback(() => {
     const container = scrollRef?.current;
