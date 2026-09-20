@@ -39,7 +39,7 @@ export const zh = {
   nav: {
     workspace: '工作区',
     manage: '管理',
-    chat: '对话',
+    chat: '工作区',
     agents: 'Agent',
     skills: '技能',
     mcp: 'MCP',
