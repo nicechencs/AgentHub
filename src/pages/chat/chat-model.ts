@@ -23,6 +23,7 @@ import type {
   ChatMessageStatus,
   Conversation,
 } from '@/lib/types';
+import { normalizeProjectMergePath } from '@/pages/projects/project-groups';
 import { relativeTime, type TurnGroup } from './chat-format';
 import { streamingStatusKey } from './chat-streaming';
 
@@ -166,19 +167,16 @@ export function chatAgentPickerEmptyCopy(t: TranslateFn, kind: ChatPickerEmptyKi
   return { text: t('chat.picker.none'), action: t('chat.picker.goAgents') };
 }
 
-export type ConversationDayKey = 'today' | 'yesterday' | 'week' | 'earlier';
+/** Conversations without a working directory share this rail group. */
+export const UNSET_WORKSPACE_KEY = 'unset';
 
-export type ConversationDayGroup = {
-  key: ConversationDayKey;
+export type ConversationWorkspaceGroup = {
+  key: string;
   label: string;
+  cwd: string | null;
+  /** Full path under the short name when two workspaces share that name. */
+  pathLabel: string | null;
   items: Conversation[];
-};
-
-const DAY_KEYS: Record<ConversationDayKey, 'chat.day.today' | 'chat.day.yesterday' | 'chat.day.week' | 'chat.day.earlier'> = {
-  today: 'chat.day.today',
-  yesterday: 'chat.day.yesterday',
-  week: 'chat.day.week',
-  earlier: 'chat.day.earlier',
 };
 
 const RETRY_STATUSES = new Set<ChatMessageStatus>(['failed', 'cancelled', 'timeout']);
@@ -226,51 +224,72 @@ export function filterConversations(convs: Conversation[], query: string): Conve
   });
 }
 
-function startOfLocalDay(ms: number): Date {
-  const d = new Date(ms);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
 function parseUpdatedAt(iso: string): number {
   const t = Date.parse(iso.includes('T') ? iso : `${iso.replace(' ', 'T')}Z`);
   return Number.isNaN(t) ? 0 : t;
 }
 
-export function groupConversationsByDay(
+function trimmedConversationCwd(cwd: string | null | undefined): string | null {
+  const trimmed = cwd?.trim();
+  return trimmed ? trimmed : null;
+}
+
+/** Same merge key as history-page path groups: Windows case-insensitive, POSIX not. */
+export function conversationWorkspaceKey(cwd: string | null | undefined): string {
+  const trimmed = trimmedConversationCwd(cwd);
+  if (!trimmed) return UNSET_WORKSPACE_KEY;
+  return `path:${normalizeProjectMergePath(trimmed)}`;
+}
+
+function compareConversationsByUpdatedAt(a: Conversation, b: Conversation): number {
+  return parseUpdatedAt(b.updatedAt) - parseUpdatedAt(a.updatedAt) || a.id.localeCompare(b.id);
+}
+
+/**
+ * Group Hub conversations by working directory. Sessions without a folder stay
+ * in one unset group and never mix with path groups.
+ */
+export function groupConversationsByWorkspace(
   convs: Conversation[],
-  nowMs: number,
   t: TranslateFn,
-): ConversationDayGroup[] {
-  const today = startOfLocalDay(nowMs);
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const week = new Date(today);
-  week.setDate(week.getDate() - 6);
-
-  const todayStart = today.getTime();
-  const yesterdayStart = yesterday.getTime();
-  const weekStart = week.getTime();
-
-  const buckets: Record<ConversationDayKey, Conversation[]> = {
-    today: [],
-    yesterday: [],
-    week: [],
-    earlier: [],
-  };
-
-  for (const c of convs) {
-    const ts = parseUpdatedAt(c.updatedAt);
-    if (ts >= todayStart) buckets.today.push(c);
-    else if (ts >= yesterdayStart) buckets.yesterday.push(c);
-    else if (ts >= weekStart) buckets.week.push(c);
-    else buckets.earlier.push(c);
+): ConversationWorkspaceGroup[] {
+  const buckets = new Map<string, Conversation[]>();
+  for (const conversation of convs) {
+    const key = conversationWorkspaceKey(conversation.cwd);
+    const list = buckets.get(key);
+    if (list) list.push(conversation);
+    else buckets.set(key, [conversation]);
   }
 
-  const order: ConversationDayKey[] = ['today', 'yesterday', 'week', 'earlier'];
-  return order
-    .filter((key) => buckets[key].length > 0)
-    .map((key) => ({ key, label: t(DAY_KEYS[key]), items: buckets[key] }));
+  const groups: ConversationWorkspaceGroup[] = [];
+  for (const [key, items] of buckets) {
+    const sortedItems = [...items].sort(compareConversationsByUpdatedAt);
+    const primary = sortedItems[0];
+    const cwd = trimmedConversationCwd(primary?.cwd);
+    groups.push({
+      key,
+      label: key === UNSET_WORKSPACE_KEY ? t('chat.header.cwdUnset') : cwdShortName(cwd, t),
+      cwd,
+      pathLabel: null,
+      items: sortedItems,
+    });
+  }
+
+  const shortNameCounts = new Map<string, number>();
+  for (const group of groups) {
+    if (group.key === UNSET_WORKSPACE_KEY) continue;
+    shortNameCounts.set(group.label, (shortNameCounts.get(group.label) ?? 0) + 1);
+  }
+  for (const group of groups) {
+    if (group.key === UNSET_WORKSPACE_KEY || !group.cwd) continue;
+    if ((shortNameCounts.get(group.label) ?? 0) > 1) group.pathLabel = group.cwd;
+  }
+
+  return groups.sort((a, b) => {
+    const aTs = parseUpdatedAt(a.items[0]?.updatedAt ?? '');
+    const bTs = parseUpdatedAt(b.items[0]?.updatedAt ?? '');
+    return bTs - aTs || a.label.localeCompare(b.label) || a.key.localeCompare(b.key);
+  });
 }
 
 export function sendBlockers(input: {

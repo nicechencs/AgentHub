@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import { Loader2, PanelLeftClose, Plus, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ChevronDown, ChevronRight, Loader2, PanelLeftClose, Plus, Trash2 } from 'lucide-react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { NavResizeHandle } from '@/components/layout/NavResizeHandle';
 import { pageRhythm } from '@/components/layout/page-rhythm';
@@ -28,7 +28,7 @@ import {
   conversationRailMarkColor,
   conversationRailSelectedFill,
   conversationTitle,
-  type ConversationDayGroup,
+  type ConversationWorkspaceGroup,
 } from './chat-model';
 
 export function ChatSessionRail({
@@ -56,7 +56,7 @@ export function ChatSessionRail({
 }: {
   open: boolean;
   listLoading: boolean;
-  groups: ConversationDayGroup[];
+  groups: ConversationWorkspaceGroup[];
   conversations: Conversation[];
   filteredCount: number;
   query: string;
@@ -85,6 +85,8 @@ export function ChatSessionRail({
   const pending = conversations.find((c) => c.id === deleteConfirmId) ?? null;
   const railRef = useRef<HTMLElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(() => new Set());
+  const searching = Boolean(query.trim());
   useEffect(() => {
     if (!open || !searchFocusNonce) return;
     const timer = window.setTimeout(() => {
@@ -93,6 +95,17 @@ export function ChatSessionRail({
     }, 0);
     return () => window.clearTimeout(timer);
   }, [open, searchFocusNonce]);
+  useEffect(() => {
+    if (!activeId) return;
+    const key = groups.find((group) => group.items.some((item) => item.id === activeId))?.key;
+    if (!key) return;
+    setCollapsedKeys((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+  }, [activeId, groups, historyRevealNonce]);
   useEffect(() => {
     if (!open || !historyRevealNonce) return;
     const timer = window.setTimeout(() => {
@@ -180,12 +193,47 @@ export function ChatSessionRail({
             <p className="text-meta text-muted">{t('chat.rail.noMatch')}</p>
           </div>
         ) : (
-          groups.map((group) => (
-            <div key={group.key} className="mb-2">
-              <div className={cn('px-2 pb-1 pt-1.5', pageRhythm.sectionEyebrow)}>
-                {group.label}
-              </div>
-              {group.items.map((c) => {
+          groups.map((group) => {
+            const expanded = searching || !collapsedKeys.has(group.key);
+            return (
+            <div
+              key={group.key}
+              className="mb-2"
+              data-help="chat-workspace-group"
+              data-workspace-key={group.key}
+            >
+              <Hint label={group.cwd ?? group.label}>
+              <button
+                type="button"
+                className="flex w-full items-center gap-1 px-2 pb-1 pt-1.5 text-left text-meta font-medium text-muted"
+                aria-expanded={expanded}
+                onClick={() => {
+                  setCollapsedKeys((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(group.key)) next.delete(group.key);
+                    else next.add(group.key);
+                    return next;
+                  });
+                }}
+              >
+                {expanded ? (
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                ) : (
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                )}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate" data-help="chat-workspace-group-label">
+                    {group.label}
+                  </span>
+                  {group.pathLabel ? (
+                    <span className="block truncate font-normal" data-help="chat-workspace-group-path">
+                      {group.pathLabel}
+                    </span>
+                  ) : null}
+                </span>
+              </button>
+              </Hint>
+              {expanded ? group.items.map((c) => {
                 const selected = activeId === c.id;
                 const sending = sendingConversationIds.includes(c.id);
                 return (
@@ -255,9 +303,10 @@ export function ChatSessionRail({
                     </Button>
                   </div>
                 );
-              })}
+              }) : null}
             </div>
-          ))
+          );
+          })
         )}
       </div>
       <Dialog open={Boolean(deleteConfirmId)} onOpenChange={(next) => !next && onCancelDelete()}>

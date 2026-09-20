@@ -40,7 +40,7 @@ export const en = {
   nav: {
     workspace: 'Workspace',
     manage: 'Manage',
-    chat: 'Chat',
+    chat: 'Workspace',
     agents: 'Agents',
     skills: 'Skills',
     mcp: 'MCP',
