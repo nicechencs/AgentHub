@@ -202,11 +202,11 @@ export function ChatSessionRail({
               data-help="chat-workspace-group"
               data-workspace-key={group.key}
             >
+              <Hint label={group.cwd ?? group.label} className="block w-full">
               <button
                 type="button"
                 className="flex w-full items-center gap-1 px-2 pb-1 pt-1.5 text-left text-meta font-medium text-muted"
                 aria-expanded={expanded}
-                title={group.cwd ?? group.label}
                 onClick={() => {
                   setCollapsedKeys((prev) => {
                     const next = new Set(prev);
@@ -232,6 +232,7 @@ export function ChatSessionRail({
                   ) : null}
                 </span>
               </button>
+              </Hint>
               {expanded ? group.items.map((c) => {
                 const selected = activeId === c.id;
                 const sending = sendingConversationIds.includes(c.id);
