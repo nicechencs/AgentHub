@@ -141,7 +141,7 @@ pub struct RuntimeSnapshot {
     /// Bumps when Options catalog changes (slash commands, handshake image). Not the command list.
     #[serde(default)]
     pub catalog_epoch: i64,
-    /// Current-turn ACP plan. Live chrome only — not a process row, dropped on the next turn.
+    /// Current-turn plan. Live chrome only — not a process row, dropped on the next turn.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub plan: Vec<RuntimePlanEntry>,
     /// Live ACP host commands. One card per terminal id; not a conversation TTY.
@@ -193,6 +193,9 @@ pub struct RuntimePlanEntry {
     pub status: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub priority: Option<String>,
+    /// Vendor task id when the Agent sent one. Matching only; not shown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

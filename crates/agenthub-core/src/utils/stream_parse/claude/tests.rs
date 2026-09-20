@@ -76,3 +76,187 @@ fn deltas_then_result_does_not_double_assistant_text() {
     let _ = s.feed(OutputStream::Stdout, ndjson);
     assert_eq!(s.assistant_text(), "PONGC");
 }
+
+#[test]
+fn todo_write_is_plan_not_process_step() {
+    let payload = serde_json::json!({
+        "type": "assistant",
+        "message": {
+            "role": "assistant",
+            "content": [{
+                "type": "tool_use",
+                "id": "toolu_1",
+                "name": "TodoWrite",
+                "input": {
+                    "todos": [
+                        { "content": "read", "status": "completed", "priority": "high" },
+                        { "content": "edit", "status": "in_progress" },
+                        { "content": "  " },
+                        { "content": "test", "status": "pending" }
+                    ]
+                }
+            }]
+        }
+    });
+    let steps = parse_line(&payload.to_string()).unwrap();
+    assert!(steps.is_empty(), "{steps:?}");
+    let ops = super::extract_todo_plan(&payload);
+    assert_eq!(ops.len(), 1);
+    match &ops[0] {
+        super::ClaudePlanOp::Replace(entries) => {
+            assert_eq!(entries.len(), 3);
+            assert_eq!(entries[0].content, "read");
+            assert_eq!(entries[0].status.as_deref(), Some("completed"));
+            assert_eq!(entries[1].status.as_deref(), Some("in_progress"));
+            assert_eq!(entries[2].content, "test");
+        }
+        other => panic!("expected replace, got {other:?}"),
+    }
+}
+
+#[test]
+fn task_create_and_update_are_plan_patches() {
+    let create = serde_json::json!({
+        "type": "assistant",
+        "message": {
+            "content": [{
+                "type": "tool_use",
+                "id": "toolu_create",
+                "name": "TaskCreate",
+                "input": { "subject": "build auth", "activeForm": "Building auth" }
+            }]
+        }
+    });
+    let ops = super::extract_todo_plan(&create);
+    assert_eq!(
+        ops,
+        vec![super::ClaudePlanOp::Create {
+            tool_use_id: Some("toolu_create".into()),
+            content: "build auth".into(),
+            status: Some("pending".into()),
+            id: None,
+            priority: None,
+        }]
+    );
+    let update = serde_json::json!({
+        "type": "tool_use",
+        "id": "toolu_upd",
+        "name": "TaskUpdate",
+        "input": { "taskId": "task-1", "status": "in_progress" }
+    });
+    assert_eq!(
+        super::extract_todo_plan(&update),
+        vec![super::ClaudePlanOp::Update {
+            id: "task-1".into(),
+            status: Some("in_progress".into()),
+            content: None,
+            priority: None,
+        }]
+    );
+}
+
+#[test]
+fn task_create_result_binds_id() {
+    let payload = serde_json::json!({
+        "type": "user",
+        "tool_use_result": { "task": { "id": "task-9", "subject": "build auth" } },
+        "message": {
+            "content": [{
+                "type": "tool_result",
+                "tool_use_id": "toolu_create",
+                "content": "created"
+            }]
+        }
+    });
+    assert!(parse_line(&payload.to_string()).unwrap().is_empty());
+    assert_eq!(
+        super::extract_todo_plan(&payload),
+        vec![super::ClaudePlanOp::BindId {
+            tool_use_id: "toolu_create".into(),
+            id: "task-9".into(),
+        }]
+    );
+}
+
+#[test]
+fn todo_write_result_is_not_process_step() {
+    let payload = serde_json::json!({
+        "type": "user",
+        "tool_use_result": {
+            "oldTodos": [{ "content": "read", "status": "pending" }],
+            "newTodos": [{ "content": "read", "status": "completed" }]
+        },
+        "message": {
+            "content": [{
+                "type": "tool_result",
+                "tool_use_id": "toolu_todo",
+                "content": "Todos have been modified successfully."
+            }]
+        }
+    });
+    assert!(parse_line(&payload.to_string()).unwrap().is_empty());
+}
+
+#[test]
+fn task_list_result_replaces_plan() {
+    let payload = serde_json::json!({
+        "type": "user",
+        "tool_use_result": {
+            "tasks": [
+                { "id": "t1", "subject": "read", "status": "completed" },
+                { "id": "t2", "subject": "edit", "status": "in_progress" }
+            ]
+        },
+        "message": {
+            "content": [{
+                "type": "tool_result",
+                "tool_use_id": "toolu_list",
+                "content": "listed"
+            }]
+        }
+    });
+    assert!(parse_line(&payload.to_string()).unwrap().is_empty());
+    match &super::extract_todo_plan(&payload)[0] {
+        super::ClaudePlanOp::Replace(entries) => {
+            assert_eq!(entries.len(), 2);
+            assert_eq!(entries[0].id.as_deref(), Some("t1"));
+            assert_eq!(entries[1].content, "edit");
+        }
+        other => panic!("expected replace, got {other:?}"),
+    }
+}
+
+#[test]
+fn empty_todo_write_is_replace_with_no_rows() {
+    let payload = serde_json::json!({
+        "type": "assistant",
+        "message": {
+            "content": [{
+                "type": "tool_use",
+                "name": "TodoWrite",
+                "input": { "todos": [] }
+            }]
+        }
+    });
+    assert_eq!(
+        super::extract_todo_plan(&payload),
+        vec![super::ClaudePlanOp::Replace(vec![])]
+    );
+}
+
+#[test]
+fn bash_tool_use_still_emits_process_step() {
+    let steps = parse_line(
+        r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"ls"}}]}}"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        &steps[0],
+        ProcessStep::Tool { name, .. } if name == "Bash"
+    ));
+    assert!(super::extract_todo_plan(&serde_json::json!({
+        "type": "assistant",
+        "message": { "content": [{ "type": "tool_use", "name": "Bash", "input": { "command": "ls" } }] }
+    }))
+    .is_empty());
+}
