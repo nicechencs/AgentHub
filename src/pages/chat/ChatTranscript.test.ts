@@ -2,6 +2,7 @@ import { createElement, createRef, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import type { AgentProcessView } from '@/lib/chat-process';
 import type { ChatMessage, Conversation } from '@/lib/types';
 import { chatTranscriptSurfaceClass } from './chat-model';
 import { ChatTranscript } from './ChatTranscript';
@@ -99,6 +100,57 @@ describe('ChatTranscript surfaces', () => {
     expect(html).not.toContain('发送第一条消息');
     expect(html).not.toContain('了解这个项目');
     expect(html).not.toContain('示例只填入输入框，由你发送');
+  });
+
+  it('puts a clickable thinking bar on the assistant bubble before any body', () => {
+    const process: AgentProcessView = {
+      turn: 1,
+      agent: 'claude',
+      phase: 'running',
+      stdout: '',
+      stderr: '',
+      steps: [{ type: 'thinking', text: 'hidden thinking', done: false }],
+      updatedAt: 1,
+      thinkingStartedAt: Date.now() - 1500,
+    };
+    const html = renderMarkup(
+      createElement(ChatTranscript, {
+        active: conversation(),
+        turns: [
+          {
+            turn: 1,
+            user: userMessage('hello from chat'),
+            agents: [
+              {
+                id: 'm-agent',
+                conversationId: 'c1',
+                turn: 1,
+                role: 'agent',
+                agentId: 'claude',
+                content: '',
+                status: 'running',
+                durationMs: 0,
+                createdAt: '2026-08-16T00:00:00.000Z',
+              },
+            ],
+          },
+        ],
+        processMap: { '1:claude': process },
+        listLoading: false,
+        messagesLoading: false,
+        sending: true,
+        retryDisabled: false,
+        scrollRef: createRef<HTMLDivElement>(),
+        bottomRef: createRef<HTMLDivElement>(),
+        onScroll: () => undefined,
+        onRetry: () => undefined,
+        onOpenProcess: () => undefined,
+      }),
+    );
+    expect(html).toContain('data-help="chat-thinking-bar"');
+    expect(html).toContain('思考中');
+    expect(html).not.toContain('hidden thinking');
+    expect(html).not.toContain('正在想');
   });
 
   it('does not paint a panel card once a turn exists', () => {

@@ -91,6 +91,65 @@ describe('ChatMessageBubble streaming feel', () => {
     expect(html).not.toContain('已停止');
   });
 
+  it('shows a clickable thinking bar instead of three dots when thinking has no body yet', () => {
+    const process: AgentProcessView = {
+      turn: 1,
+      agent: 'codex',
+      phase: 'running',
+      stdout: '',
+      stderr: '',
+      steps: [{ type: 'thinking', text: 'secret plan that must not enter the bubble', done: false }],
+      updatedAt: 1,
+      thinkingStartedAt: Date.now() - 3200,
+    };
+    const html = renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
+        message: agentMessage(''),
+        process,
+        isLastTurn: true,
+        multiAgent: false,
+        retryDisabled: false,
+        onRetry: () => undefined,
+        onOpenProcess: () => undefined,
+      })),
+    );
+    expect(html).toContain('data-help="chat-thinking-bar"');
+    expect(html).toContain('思考中');
+    expect(html).toContain('▸');
+    expect(html).not.toContain('正在想');
+    expect(html).not.toContain('secret plan that must not enter the bubble');
+    expect(html).not.toContain('data-help="chat-process-chip"');
+  });
+
+  it('shows 思考了 after thinking ends and before the reply body', () => {
+    const process: AgentProcessView = {
+      turn: 1,
+      agent: 'codex',
+      phase: 'running',
+      stdout: '',
+      stderr: '',
+      steps: [{ type: 'thinking', text: 'done thinking body', done: true }],
+      updatedAt: 1,
+      thinkingStartedAt: 1,
+      thinkingDurationMs: 3200,
+    };
+    const html = renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
+        message: agentMessage(''),
+        process,
+        isLastTurn: true,
+        multiAgent: false,
+        retryDisabled: false,
+        onRetry: () => undefined,
+        onOpenProcess: () => undefined,
+      })),
+    );
+    expect(html).toContain('data-help="chat-thinking-bar"');
+    expect(html).toContain('思考了 3.2s');
+    expect(html).not.toContain('正在写');
+    expect(html).not.toContain('done thinking body');
+  });
+
   it('opens process details from a one-line chip', () => {
     const process: AgentProcessView = {
       turn: 1,
