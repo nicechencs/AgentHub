@@ -28,6 +28,7 @@ import {
   takeChatBootstrap,
 } from '@/lib/chat-bootstrap';
 import { rememberFallbackCwd } from '@/lib/chat-cwd-fallback';
+import { newChatCwdArg } from '@/lib/open-chat-cwd';
 import type { AgentKey, AgentStatus, ChatMessage, Conversation } from '@/lib/types';
 import {
   draftForFocusedConversation,
@@ -378,9 +379,10 @@ export function useChatPageSessions(input: {
     if (defaults.agentIds.length === 0) return;
     try {
       if (activeId) draftsRef.current.set(activeId, draft);
+      const cwd = newChatCwdArg(cwdOverride);
       const conv = await createConversation(
         defaults.agentIds,
-        cwdOverride === undefined ? defaults.cwd : cwdOverride,
+        cwd === undefined ? defaults.cwd : cwd,
       );
       setConversations((prev) => [conv, ...prev]);
       setActiveId(conv.id);
