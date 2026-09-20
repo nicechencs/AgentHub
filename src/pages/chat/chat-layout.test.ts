@@ -119,6 +119,12 @@ describe('chat layout wiring', () => {
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('pathTailLabel');
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain("label={folder}");
     expect(source('index.tsx')).toContain('pushChatPreview');
+    expect(source('index.tsx')).toContain('extractTurnEdits');
+    expect(source('index.tsx')).toContain('ChatTurnEditList');
+    expect(source('index.tsx')).toContain('ChatEditPreviewPanel');
+    expect(source('index.tsx')).toContain('openChatEditPreview');
+    expect(translate('zh', 'chat.preview.viewEdit')).toBe('查看修改');
+    expect(translate('en', 'chat.preview.viewEdit')).toBe('View edits');
   });
 
   it('opens the turn process in the same right-hand pane', () => {
