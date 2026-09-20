@@ -38,14 +38,23 @@ import { useChatSessionSwitch } from './use-chat-session-switch';
 import { chatModShiftIShouldOpenModel } from './chat-model-labels';
 import { formatChatSessionRecord, processUserPromptPreview, type TurnGroup } from './chat-format';
 import { chatBusySendMode, grokLegacyContinueKind } from './chat-grok-follow-up';
+import { ChatEditPreviewPanel, ChatTurnEditList } from './ChatEditPreviewPanel';
 import { ChatMarkdownPreviewPanel } from './ChatMarkdownPreviewPanel';
 import { ChatProcessInspectPanel } from './ChatProcessInspectPanel';
+import {
+  extractTurnEdits,
+  sameEditPath,
+  turnEditHasInlineDiff,
+  type TurnEditFile,
+} from './chat-edit-preview';
 import {
   chatPreviewCanBack,
   chatPreviewLine,
   chatPreviewPath,
+  isChatEditPreview,
   isChatFilePreview,
   isChatProcessInspect,
+  openChatEditPreview,
   openChatPreviewRoot,
   openChatProcessInspect,
   popChatPreview,
@@ -119,6 +128,24 @@ export default function ChatPage() {
     }
     preview.open(previous);
   }, [preview.close, preview.open, preview.target]);
+  const turnEdits = useMemo(() => extractTurnEdits(page.processMap), [page.processMap]);
+  const openTurnEdit = useCallback(
+    (file: TurnEditFile) => {
+      if (turnEditHasInlineDiff(file)) {
+        preview.open(openChatEditPreview(file.path));
+        return;
+      }
+      preview.open(openChatPreviewRoot(file.path));
+    },
+    [preview.open],
+  );
+  const editPreviewPath = isChatEditPreview(preview.target) ? preview.target.path : '';
+  const selectedEdit = editPreviewPath
+    ? turnEdits.find((file) => sameEditPath(file.path, editPreviewPath)) ?? null
+    : null;
+  const showEditDiff = Boolean(
+    selectedEdit && turnEditHasInlineDiff(selectedEdit),
+  );
 
   useEffect(() => {
     preview.reset();
@@ -543,6 +570,11 @@ export default function ChatPage() {
                   );
                 })()}
                 <ChatPlanBar plan={page.runtime?.plan} />
+                <ChatTurnEditList
+                  files={turnEdits}
+                  selectedPath={preview.expanded ? chatPreviewPath(preview.target) : ''}
+                  onSelect={openTurnEdit}
+                />
                 <ChatComposer
                   draft={page.draft}
                   setDraft={page.setDraft}
@@ -683,7 +715,7 @@ export default function ChatPage() {
           resizeAria={t('chat.preview.resizeAria')}
           padBottom={0}
         >
-          {isChatFilePreview(preview.target) ? (
+          {isChatFilePreview(preview.target) || (isChatEditPreview(preview.target) && !showEditDiff) ? (
             <ChatMarkdownPreviewPanel
               path={chatPreviewPath(preview.target)}
               cwd={page.active?.cwd ?? ''}
@@ -694,6 +726,14 @@ export default function ChatPage() {
               onBack={backFilePreview}
               onClose={preview.close}
               onOpenLocal={openNestedFile}
+              className="h-full min-w-0"
+            />
+          ) : showEditDiff && selectedEdit ? (
+            <ChatEditPreviewPanel
+              file={selectedEdit}
+              open={preview.expanded}
+              width={preview.paneWidth}
+              onClose={preview.close}
               className="h-full min-w-0"
             />
           ) : isChatProcessInspect(preview.target) ? (

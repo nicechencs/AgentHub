@@ -20,7 +20,7 @@ test('path-only file approval stays readable without inventing a diff', async ({
   const card = page.locator('[data-help="chat-file-change-preview-path-only"]');
   await expect(card).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText('修改文件', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('/workspace/notes.md', { exact: true })).toBeVisible();
+  await expect(card.getByText('/workspace/notes.md', { exact: true })).toBeVisible();
   await expect(page.getByText('仅有路径，无内容预览')).toBeVisible();
   await expect(page.getByRole('button', { name: '允许', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '一直允许' })).toBeVisible();

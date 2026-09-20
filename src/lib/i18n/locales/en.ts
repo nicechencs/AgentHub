@@ -2777,6 +2777,7 @@ export const en = {
       failed: "Couldn't open",
       emptyBody: "Nothing to show",
       truncatedSuffix: " · Truncated",
+      viewEdit: "View edits",
     },
     composer: {
       placeholder: "Message an agent…",
