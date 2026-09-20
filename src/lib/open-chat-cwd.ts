@@ -1,5 +1,21 @@
 import type { ChatBootstrap } from '@/lib/types';
 
+/**
+ * New-chat cwd for persist / IPC. Only a folder path or explicit null.
+ * Click events and other objects are dropped so JSON.stringify never sees a cycle.
+ */
+export function newChatCwdArg(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value === 'string') return value;
+  return undefined;
+}
+
+/** Wire / invoke shape: never pass a non-string through JSON.stringify. */
+export function createConversationCwd(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
+}
+
 /** Last path segment for a folder chosen in the OS file manager. */
 export function folderNameFromCwd(cwd: string): string {
   const trimmed = cwd.trim().replace(/[\\/]+$/, '');

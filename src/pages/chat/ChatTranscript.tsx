@@ -39,6 +39,7 @@ import {
 import { emptyStarterChipHint, emptyTranscriptCopy } from './chat-empty-state';
 import { ChatMessageBubble } from './ChatMessageBubble';
 import { ChatOutlineRail } from './ChatOutlineRail';
+import { useChatOutlineEnabled, useOutlinePanelWidth } from './use-chat-outline';
 
 export function ChatTranscript({
   active,
@@ -63,6 +64,8 @@ export function ChatTranscript({
   firstBlocker = null,
   onBlockerAction,
   onJumpToOutline,
+  measuredWidth,
+  outlineEnabled,
 }: {
   active: Conversation | null;
   turns: TurnGroup[];
@@ -86,8 +89,12 @@ export function ChatTranscript({
   firstBlocker?: ChatSendBlocker | null;
   onBlockerAction?: (target: ChatBlockerPrimaryTarget) => void;
   onJumpToOutline?: (messageId: string) => void;
+  measuredWidth?: number;
+  outlineEnabled?: boolean;
 }) {
   const { t } = useI18n();
+  const outlineOn = useChatOutlineEnabled(outlineEnabled);
+  const outlinePanel = useOutlinePanelWidth(outlineOn && Boolean(active), measuredWidth);
   if (listLoading && !active) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6">
@@ -101,7 +108,11 @@ export function ChatTranscript({
   const lastTurn = turns[turns.length - 1]?.turn;
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
+    <div
+      ref={outlinePanel.assignRef}
+      className="relative flex min-h-0 flex-1 flex-col"
+      data-chat-outline-host
+    >
       <div
         ref={scrollRef}
         onScroll={onScroll}
@@ -188,6 +199,8 @@ export function ChatTranscript({
         turns={turns}
         scrollRef={scrollRef}
         onJumpToPrompt={onJumpToOutline}
+        measuredWidth={outlinePanel.width}
+        enabled={outlineOn}
       />
     </div>
   );

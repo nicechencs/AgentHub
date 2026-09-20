@@ -224,5 +224,11 @@ describe('ChatSessionRail titles', () => {
     const unsetGroup = html.slice(html.lastIndexOf('data-help="chat-workspace-group"', unsetAt), unsetAt);
     expect(unsetGroup).not.toContain('data-help="chat-workspace-new"');
   });
+
+  it('starts the main new chat without passing the click event as a folder', () => {
+    const src = readFileSync(new URL('./ChatSessionRail.tsx', import.meta.url), 'utf8');
+    expect(src).toContain('onClick={() => onNewChat()}');
+    expect(src).not.toContain('onClick={onNewChat}');
+  });
 });
 

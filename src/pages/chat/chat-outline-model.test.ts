@@ -6,11 +6,14 @@ import {
   OUTLINE_MIN_PANEL_WIDTH_PX,
   OUTLINE_MIN_PROMPTS,
   applyOutlineJumpOffset,
+  outlinePanelElement,
+  outlinePanelWidthReady,
   outlinePromptPreview,
   outlinePromptsFromTurns,
   outlineTickSize,
   planOutlineJumpScroll,
   promptTickMagnification,
+  readOutlinePanelWidth,
   resolveActivePromptId,
   shouldShowChatOutline,
   type ChatOutlinePrompt,
@@ -107,6 +110,39 @@ describe('shouldShowChatOutline', () => {
     expect(shouldShowChatOutline({ enabled: false, promptCount: 1, panelWidth: 719 })).toBe(false);
     expect(shouldShowChatOutline({ enabled: true, promptCount: 5, panelWidth: 719 })).toBe(false);
     expect(shouldShowChatOutline({ enabled: false, promptCount: 5, panelWidth: 900 })).toBe(false);
+    expect(shouldShowChatOutline({ enabled: true, promptCount: 2, panelWidth: 0 })).toBe(false);
+  });
+
+  it('does not treat a zero-width empty host as a measured panel', () => {
+    expect(outlinePanelWidthReady(0)).toBe(false);
+    expect(outlinePanelWidthReady(Number.NaN)).toBe(false);
+    expect(outlinePanelWidthReady(undefined)).toBe(false);
+    expect(outlinePanelWidthReady(720)).toBe(true);
+  });
+});
+
+describe('outline panel measurement', () => {
+  it('prefers the chat stage ancestor over the inner host', () => {
+    const stage = { id: 'stage' };
+    const host = {
+      closest: (selector: string) => (selector === '[data-chat-stage]' ? stage : null),
+    };
+    expect(outlinePanelElement(host as unknown as Element)).toBe(stage);
+  });
+
+  it('falls back to the host when no stage ancestor exists', () => {
+    const host = { closest: () => null };
+    expect(outlinePanelElement(host as unknown as Element)).toBe(host);
+    expect(outlinePanelElement(null)).toBeNull();
+  });
+
+  it('reads the stage width used for the mount gate', () => {
+    const stage = {
+      closest: () => stage,
+      getBoundingClientRect: () => ({ width: 1100 }),
+    };
+    expect(readOutlinePanelWidth(stage as unknown as Element)).toBe(1100);
+    expect(readOutlinePanelWidth(null)).toBe(0);
   });
 });
 

@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import {
   consumePendingOpenChatCwd,
+  createConversationCwd,
   folderNameFromCwd,
+  newChatCwdArg,
   shellOpenChatBootstrap,
   shellOpenChatHref,
 } from './open-chat-cwd';
@@ -23,6 +25,25 @@ describe('folderNameFromCwd', () => {
 
   it('returns empty for blank input', () => {
     expect(folderNameFromCwd('   ')).toBe('');
+  });
+});
+
+describe('newChatCwdArg', () => {
+  it('keeps a folder path or explicit null and drops click events', () => {
+    expect(newChatCwdArg('/workspace')).toBe('/workspace');
+    expect(newChatCwdArg(null)).toBeNull();
+    expect(newChatCwdArg(undefined)).toBeUndefined();
+    const cyclic: { target?: unknown } = {};
+    cyclic.target = cyclic;
+    expect(() => JSON.stringify(cyclic)).toThrow(/circular|cyclic/i);
+    expect(newChatCwdArg(cyclic)).toBeUndefined();
+    expect(() => JSON.stringify({
+      agentIds: ['grok'],
+      cwd: createConversationCwd(cyclic),
+    })).not.toThrow();
+    expect(createConversationCwd(cyclic)).toBeNull();
+    expect(createConversationCwd('/workspace')).toBe('/workspace');
+    expect(createConversationCwd(null)).toBeNull();
   });
 });
 
@@ -84,5 +105,14 @@ describe('App open-chat wiring', () => {
     expect(app).toMatch(
       /HashRouter `useNavigate` changes identity with pathname; do not resubscribe\.\s*\n\s*\}, \[\]\);/,
     );
+  });
+
+  it('omits non-string cwd before create-conversation persist and IPC', () => {
+    const dir = path.dirname(fileURLToPath(import.meta.url));
+    const api = readFileSync(path.resolve(dir, 'api/chat.ts'), 'utf8');
+    const tauri = readFileSync(path.resolve(dir, 'backend/tauri/chat.ts'), 'utf8');
+    expect(api).toContain('createConversationCwd');
+    expect(tauri).toContain('createConversationCwd');
+    expect(tauri).toContain('cwd: createConversationCwd(cwd)');
   });
 });

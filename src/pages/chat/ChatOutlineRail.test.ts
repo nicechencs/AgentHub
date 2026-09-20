@@ -94,17 +94,21 @@ describe('ChatOutlineRail visibility gates', () => {
       { turn: 2, agents: [] },
       { turn: 3, agents: [] },
     ];
-    expect(hasOutline(renderRail({ turns: oneUser, measuredWidth: 800, enabled: true }))).toBe(false);
-    expect(renderRail({ turns: oneUser, measuredWidth: 800, enabled: true })).toBe('');
+    const html = renderRail({ turns: oneUser, measuredWidth: 800, enabled: true });
+    expect(hasOutline(html)).toBe(false);
+    expect(html).toContain('data-chat-outline-measure');
+    expect(html).not.toContain('role="tablist"');
   });
 
-  it('returns nothing when the setting is off or there are fewer than two user messages', () => {
+  it('returns nothing when the setting is off, and keeps a measure host for one user message', () => {
     expect(renderRail({
       turns: turns('first', 'second'),
       measuredWidth: 800,
       enabled: false,
     })).toBe('');
-    expect(renderRail({ turns: turns('only one'), measuredWidth: 800 })).toBe('');
+    const one = renderRail({ turns: turns('only one'), measuredWidth: 800 });
+    expect(hasOutline(one)).toBe(false);
+    expect(one).toContain('data-chat-outline-measure');
   });
 
   describe('stored preference when enabled is omitted', () => {
@@ -139,8 +143,9 @@ describe('ChatOutlineRail visibility gates', () => {
 });
 
 describe('ChatOutlineRail markup', () => {
-  it('does not draw a rail for one user message', () => {
+  it('keeps the measure host mounted for one user message so width can attach', () => {
     const html = renderRail({ turns: turns('only one'), measuredWidth: 800 });
+    expect(html).toContain('data-chat-outline-measure');
     expect(html).not.toContain('chat-outline-rail');
     expect(html).not.toContain('role="tablist"');
   });
@@ -150,10 +155,20 @@ describe('ChatOutlineRail markup', () => {
     expect(html).toContain('data-testid="chat-outline-rail"');
     expect(html).toContain('role="tablist"');
     expect(html).toContain('role="tab"');
+    expect(html).toContain('type="button"');
     expect(html).toContain('data-testid="chat-outline-tick-u1"');
     expect(html).toContain('data-testid="chat-outline-tick-u2"');
     expect(html).toContain('1 / 2：first');
     expect(html).toContain('2 / 2：second');
+  });
+
+  it('does not treat a zero-width empty host as a mounted rail', () => {
+    const html = renderRail({ turns: turns('first', 'second'), measuredWidth: 0 });
+    expect(html).toContain('data-chat-outline-measure');
+    expect(html).not.toContain('chat-outline-rail');
+    expect(html).not.toContain('role="tablist"');
+    expect(html).not.toContain('role="tab"');
+    expect(html).not.toContain('chat-outline-tick-');
   });
 
   it('hides the rail when the panel is narrower than 720px', () => {
