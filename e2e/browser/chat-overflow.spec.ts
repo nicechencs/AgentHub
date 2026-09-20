@@ -10,7 +10,8 @@ test('selected Agent has no duplicate overflow menu; other entries stay', async 
   await expect(composer.getByRole('button', { name: '更多操作' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '更多操作' })).toHaveCount(0);
 
-  await expect(page.getByRole('button', { name: '新建对话' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '新建对话', exact: true })).toBeVisible();
+  await expect(page.locator('[data-help="chat-new"]')).toHaveCount(1);
   await expect(page.getByLabel('搜索标题或工作目录')).toBeVisible();
   await expect(page.getByRole('button', { name: '会话设置' })).toBeVisible();
 

@@ -366,6 +366,8 @@ describe('cwdShortName', () => {
     expect(cwdShortName('.', t)).toBe('未设目录');
     expect(cwdShortName('./', t)).toBe('未设目录');
     expect(cwdShortName('.\\', t)).toBe('未设目录');
+    expect(cwdShortName('..', t)).toBe('未设目录');
+    expect(cwdShortName('../', t)).toBe('未设目录');
   });
 });
 
@@ -460,6 +462,34 @@ describe('groupConversationsByWorkspace', () => {
     expect(groups).toHaveLength(1);
     expect(groups[0].label).toBe('Demo');
     expect(groups[0].items.map((c) => c.id)).toEqual(['dot', 'plain']);
+  });
+
+  it('returns no groups for an empty list and uses id when updated times match', () => {
+    expect(groupConversationsByWorkspace([], t)).toEqual([]);
+    const a = conv({ id: 'b-row', cwd: '/tmp/a', updatedAt: at(10) });
+    const b = conv({ id: 'a-row', cwd: '/tmp/a', updatedAt: at(10) });
+    const groups = groupConversationsByWorkspace([a, b], t);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].items.map((c) => c.id)).toEqual(['a-row', 'b-row']);
+  });
+
+  it('does not merge a Windows folder with a POSIX folder of the same name', () => {
+    const win = conv({ id: 'win', cwd: 'D:\\tmp\\app', updatedAt: at(16) });
+    const posix = conv({ id: 'posix', cwd: '/tmp/app', updatedAt: at(15) });
+    const groups = groupConversationsByWorkspace([win, posix], t);
+    expect(groups).toHaveLength(2);
+    expect(groups.map((g) => g.cwd)).toEqual(['D:\\tmp\\app', '/tmp/app']);
+    expect(groups.map((g) => g.label)).toEqual(['app', 'app']);
+  });
+});
+
+describe('conversationWorkspaceKey', () => {
+  it('uses one unset key for missing or blank working directories', () => {
+    expect(conversationWorkspaceKey(null)).toBe(UNSET_WORKSPACE_KEY);
+    expect(conversationWorkspaceKey(undefined)).toBe(UNSET_WORKSPACE_KEY);
+    expect(conversationWorkspaceKey('')).toBe(UNSET_WORKSPACE_KEY);
+    expect(conversationWorkspaceKey('   ')).toBe(UNSET_WORKSPACE_KEY);
+    expect(conversationWorkspaceKey('/tmp/app')).toMatch(/^path:/);
   });
 });
 
