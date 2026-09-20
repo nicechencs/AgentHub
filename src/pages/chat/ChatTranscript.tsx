@@ -38,6 +38,7 @@ import {
 } from './chat-actions';
 import { emptyStarterChipHint, emptyTranscriptCopy } from './chat-empty-state';
 import { ChatMessageBubble } from './ChatMessageBubble';
+import { ChatOutlineRail } from './ChatOutlineRail';
 
 export function ChatTranscript({
   active,
@@ -61,6 +62,7 @@ export function ChatTranscript({
   onPickStarter,
   firstBlocker = null,
   onBlockerAction,
+  onJumpToOutline,
 }: {
   active: Conversation | null;
   turns: TurnGroup[];
@@ -83,6 +85,7 @@ export function ChatTranscript({
   onPickStarter?: (action: ChatActionDef) => void;
   firstBlocker?: ChatSendBlocker | null;
   onBlockerAction?: (target: ChatBlockerPrimaryTarget) => void;
+  onJumpToOutline?: (messageId: string) => void;
 }) {
   const { t } = useI18n();
   if (listLoading && !active) {
@@ -98,65 +101,47 @@ export function ChatTranscript({
   const lastTurn = turns[turns.length - 1]?.turn;
 
   return (
-    <div
-      ref={scrollRef}
-      onScroll={onScroll}
-      role="log"
-      aria-live="polite"
-      aria-relevant="additions text"
-      aria-busy={messagesLoading || sending ? 'true' : undefined}
-      className={cn('min-h-0 flex-1 overflow-x-hidden overflow-y-auto', chatTranscriptSurfaceClass)}
-      data-chat-transcript
-    >
-      {messagesLoading && turns.length === 0 ? (
-        <div className="flex h-full flex-col justify-center p-6">
-          <ListSkeleton rows={3} className="mx-auto w-full max-w-2xl" />
-        </div>
-      ) : messagesError && turns.length === 0 ? (
-        <div className="flex h-full items-center justify-center p-6">
-          <ErrorState
-            error={messagesError}
-            title={t('chat.transcript.loadFailed')}
-            onRetry={onRetryMessages ?? (() => {})}
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions text"
+        aria-busy={messagesLoading || sending ? 'true' : undefined}
+        className={cn('min-h-0 flex-1 overflow-x-hidden overflow-y-auto', chatTranscriptSurfaceClass)}
+        data-chat-transcript
+      >
+        {messagesLoading && turns.length === 0 ? (
+          <div className="flex h-full flex-col justify-center p-6">
+            <ListSkeleton rows={3} className="mx-auto w-full max-w-2xl" />
+          </div>
+        ) : messagesError && turns.length === 0 ? (
+          <div className="flex h-full items-center justify-center p-6">
+            <ErrorState
+              error={messagesError}
+              title={t('chat.transcript.loadFailed')}
+              onRetry={onRetryMessages ?? (() => {})}
+            />
+          </div>
+        ) : turns.length === 0 ? (
+          <EmptyTranscriptStart
+            sending={sending}
+            firstBlocker={firstBlocker}
+            onBlockerAction={onBlockerAction}
+            onPickStarter={onPickStarter}
           />
-        </div>
-      ) : turns.length === 0 ? (
-        <EmptyTranscriptStart
-          sending={sending}
-          firstBlocker={firstBlocker}
-          onBlockerAction={onBlockerAction}
-          onPickStarter={onPickStarter}
-        />
-      ) : (
-        <div className="min-h-full" data-chat-transcript-surface>
-          <div className="space-y-6 py-4">
-            {turns.map((g) => {
-              const chips = g.agents.length >= 2 ? turnComparisonChips(g.agents) : [];
-              return (
-                <div key={g.turn} className="space-y-4">
-                  {g.user && (
-                    <ChatMessageBubble
-                      key={g.user.id}
-                      message={g.user}
-                      isLastTurn={g.turn === lastTurn}
-                      multiAgent={g.agents.length > 1}
-                      retryDisabled={retryDisabled || sending}
-                      onRetry={onRetry}
-                      hideRetry={hideLastTurnRetry}
-                      localBasePath={active.cwd ?? undefined}
-                      onOpenLocal={onOpenLocal}
-                    />
-                  )}
-                  {chips.length > 0 && (
-                    <ComparisonBar chips={chips} />
-                  )}
-                  {g.agents.map((m) => {
-                    const agent = m.agentId ?? 'claude';
-                    return (
+        ) : (
+          <div className="min-h-full" data-chat-transcript-surface>
+            <div className="space-y-6 py-4">
+              {turns.map((g) => {
+                const chips = g.agents.length >= 2 ? turnComparisonChips(g.agents) : [];
+                return (
+                  <div key={g.turn} className="space-y-4">
+                    {g.user && (
                       <ChatMessageBubble
-                        key={m.id}
-                        message={m}
-                        process={processMap[processKey(m.turn, agent)]}
+                        key={g.user.id}
+                        message={g.user}
                         isLastTurn={g.turn === lastTurn}
                         multiAgent={g.agents.length > 1}
                         retryDisabled={retryDisabled || sending}
@@ -164,21 +149,46 @@ export function ChatTranscript({
                         hideRetry={hideLastTurnRetry}
                         localBasePath={active.cwd ?? undefined}
                         onOpenLocal={onOpenLocal}
-                        onOpenProcess={onOpenProcess}
-                        onCloseProcess={onCloseProcess}
-                        processPaneOpen={
-                          inspectProcess?.turn === m.turn && inspectProcess.agent === agent
-                        }
                       />
-                    );
-                  })}
-                </div>
-              );
-            })}
-            <div ref={bottomRef} />
+                    )}
+                    {chips.length > 0 && (
+                      <ComparisonBar chips={chips} />
+                    )}
+                    {g.agents.map((m) => {
+                      const agent = m.agentId ?? 'claude';
+                      return (
+                        <ChatMessageBubble
+                          key={m.id}
+                          message={m}
+                          process={processMap[processKey(m.turn, agent)]}
+                          isLastTurn={g.turn === lastTurn}
+                          multiAgent={g.agents.length > 1}
+                          retryDisabled={retryDisabled || sending}
+                          onRetry={onRetry}
+                          hideRetry={hideLastTurnRetry}
+                          localBasePath={active.cwd ?? undefined}
+                          onOpenLocal={onOpenLocal}
+                          onOpenProcess={onOpenProcess}
+                          onCloseProcess={onCloseProcess}
+                          processPaneOpen={
+                            inspectProcess?.turn === m.turn && inspectProcess.agent === agent
+                          }
+                        />
+                      );
+                    })}
+                  </div>
+                );
+              })}
+              <div ref={bottomRef} />
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
+      <ChatOutlineRail
+        turns={turns}
+        scrollRef={scrollRef}
+        onJumpToPrompt={onJumpToOutline}
+      />
     </div>
   );
 }

@@ -111,6 +111,8 @@ export const en = {
       canvasMint: 'Mint',
       canvasSand: 'Sand',
       canvasLilac: 'Lilac',
+      chatOutlineLabel: 'Chat outline',
+      chatOutlineDescription: 'Show an outline for jumping between prompts',
       autoStartLabel: 'Launch at login',
       autoStartDescription: 'Start after you sign in',
       autoStartTip:
@@ -2765,6 +2767,10 @@ export const en = {
       resumeCommandCopied: "Session copied",
       resumeCommandCopiedHint: "Paste in the terminal to continue this chat",
       noResumeCommand: "No session to copy",
+    },
+    outline: {
+      aria: "Chat outline",
+      tick: "{n} of {total}: {preview}",
     },
     preview: {
       titleFallback: "Preview",
