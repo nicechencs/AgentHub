@@ -56,8 +56,16 @@ impl ClaudeStreamParser {
             "user" => Some(parse_user_tool_results(&v)),
             "result" => Some(self.parse_result(&v)),
             "content_block_delta" | "stream_event" => self.parse_deltaish(&v),
-            "tool_use" => Some(vec![tool_from_obj(&v, "start")]),
-            "tool_result" => Some(vec![tool_result_from_obj(&v)]),
+            "tool_use" => Some(if is_claude_plan_tool_name(tool_name(&v)) {
+                vec![]
+            } else {
+                vec![tool_from_obj(&v, "start")]
+            }),
+            "tool_result" => Some(if is_claude_plan_result(&v) {
+                vec![]
+            } else {
+                vec![tool_result_from_obj(&v)]
+            }),
             "error" => {
                 let message = v
                     .get("error")
@@ -145,7 +153,11 @@ impl ClaudeStreamParser {
                             });
                         }
                     }
-                    "tool_use" => steps.push(tool_from_obj(block, "start")),
+                    "tool_use" => {
+                        if !is_claude_plan_tool_name(tool_name(block)) {
+                            steps.push(tool_from_obj(block, "start"));
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -225,6 +237,7 @@ pub fn parse_line(line: &str) -> Option<Vec<ProcessStep>> {
 
 fn parse_user_tool_results(v: &Value) -> Vec<ProcessStep> {
     let mut steps = Vec::new();
+    let parent_plan_result = looks_like_plan_output(v);
     let content = v
         .pointer("/message/content")
         .or_else(|| v.get("content"))
@@ -232,12 +245,20 @@ fn parse_user_tool_results(v: &Value) -> Vec<ProcessStep> {
         .unwrap_or(Value::Null);
     if let Some(arr) = content.as_array() {
         for block in arr {
-            if block.get("type").and_then(|t| t.as_str()) == Some("tool_result") {
-                steps.push(tool_result_from_obj(block));
+            if block.get("type").and_then(|t| t.as_str()) != Some("tool_result") {
+                continue;
             }
+            if is_claude_plan_result(block) || (parent_plan_result && tool_name(block).is_empty()) {
+                continue;
+            }
+            steps.push(tool_result_from_obj(block));
         }
     }
     steps
+}
+
+fn tool_name(v: &Value) -> &str {
+    v.get("name").and_then(|name| name.as_str()).unwrap_or("")
 }
 
 fn tool_from_obj(v: &Value, status: &str) -> ProcessStep {
@@ -298,6 +319,302 @@ fn tool_result_from_obj(v: &Value) -> ProcessStep {
             }
         }),
     }
+}
+
+/// One Claude todo / Task tool row. Not a `ProcessStep`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ClaudePlanEntry {
+    pub content: String,
+    pub status: Option<String>,
+    pub priority: Option<String>,
+    pub id: Option<String>,
+}
+
+/// Mutations from TodoWrite / Task* tool_use and matching results.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ClaudePlanOp {
+    Replace(Vec<ClaudePlanEntry>),
+    Create {
+        tool_use_id: Option<String>,
+        content: String,
+        status: Option<String>,
+        id: Option<String>,
+        priority: Option<String>,
+    },
+    Update {
+        id: String,
+        status: Option<String>,
+        content: Option<String>,
+        priority: Option<String>,
+    },
+    BindId {
+        tool_use_id: String,
+        id: String,
+    },
+}
+
+/// TodoWrite replaces the list; TaskCreate/TaskUpdate patch it. Not a process row.
+pub(crate) fn extract_todo_plan(v: &Value) -> Vec<ClaudePlanOp> {
+    if let Some(event) = v.get("event") {
+        let nested = extract_todo_plan(event);
+        if !nested.is_empty() {
+            return nested;
+        }
+    }
+    let mut ops = Vec::new();
+    for_each_tool_use(v, |block| {
+        if let Some(op) = plan_op_from_tool_use(block) {
+            ops.push(op);
+        }
+    });
+    ops.extend(plan_ops_from_results(v));
+    ops
+}
+
+pub(crate) fn is_claude_plan_tool_name(name: &str) -> bool {
+    plan_tool_kind(name).is_some()
+}
+
+pub(crate) fn plan_tool_use_ids(v: &Value) -> Vec<String> {
+    let mut ids = Vec::new();
+    for_each_tool_use(v, |block| {
+        if !is_claude_plan_tool_name(tool_name(block)) {
+            return;
+        }
+        if let Some(id) = first_str(block, &["id", "tool_use_id"]) {
+            ids.push(id);
+        }
+    });
+    ids
+}
+
+fn is_claude_plan_result(v: &Value) -> bool {
+    is_claude_plan_tool_name(tool_name(v)) || looks_like_plan_output(v)
+}
+
+fn plan_tool_kind(name: &str) -> Option<&'static str> {
+    let compact = name
+        .trim()
+        .to_ascii_lowercase()
+        .replace(['_', '-', ' '], "");
+    match compact.as_str() {
+        "todowrite" => Some("write"),
+        "todoread" => Some("read"),
+        "taskcreate" => Some("create"),
+        "taskupdate" => Some("update"),
+        "taskget" => Some("get"),
+        "tasklist" => Some("list"),
+        _ => None,
+    }
+}
+
+fn for_each_tool_use(v: &Value, mut visit: impl FnMut(&Value)) {
+    let ty = v.get("type").and_then(Value::as_str).unwrap_or("");
+    if ty == "tool_use" {
+        visit(v);
+        return;
+    }
+    if let Some(block) = v.get("content_block") {
+        if block.get("type").and_then(Value::as_str) == Some("tool_use") {
+            visit(block);
+        }
+    }
+    let content = v.pointer("/message/content").or_else(|| v.get("content"));
+    if let Some(items) = content.and_then(Value::as_array) {
+        for block in items {
+            if block.get("type").and_then(Value::as_str) == Some("tool_use") {
+                visit(block);
+            }
+        }
+    }
+}
+
+fn plan_op_from_tool_use(block: &Value) -> Option<ClaudePlanOp> {
+    let kind = plan_tool_kind(tool_name(block))?;
+    let input = block.get("input").unwrap_or(&Value::Null);
+    match kind {
+        "write" => {
+            let entries = input
+                .get("todos")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(parse_plan_entry)
+                .collect::<Vec<_>>();
+            Some(ClaudePlanOp::Replace(entries))
+        }
+        "create" => {
+            let content = first_str(input, &["subject", "content", "text", "title"])?;
+            Some(ClaudePlanOp::Create {
+                tool_use_id: first_str(block, &["id", "tool_use_id"]),
+                content,
+                status: first_str(input, &["status"]).or_else(|| Some("pending".into())),
+                id: first_str(input, &["taskId", "id", "task_id"]),
+                priority: first_str(input, &["priority"]),
+            })
+        }
+        "update" => {
+            let id = first_str(input, &["taskId", "id", "task_id"])?;
+            Some(ClaudePlanOp::Update {
+                id,
+                status: first_str(input, &["status"]),
+                content: first_str(input, &["subject", "content", "text", "title"]),
+                priority: first_str(input, &["priority"]),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn plan_ops_from_results(v: &Value) -> Vec<ClaudePlanOp> {
+    let mut ops = Vec::new();
+    let parent_result = v
+        .get("tool_use_result")
+        .or_else(|| v.pointer("/message/tool_use_result"));
+    let content = v.pointer("/message/content").or_else(|| v.get("content"));
+    if let Some(items) = content.and_then(Value::as_array) {
+        for block in items {
+            if block.get("type").and_then(Value::as_str) != Some("tool_result") {
+                continue;
+            }
+            collect_result_ops(block, parent_result, &mut ops);
+        }
+    } else if v.get("type").and_then(Value::as_str) == Some("tool_result") {
+        collect_result_ops(v, parent_result, &mut ops);
+    }
+    ops
+}
+
+fn collect_result_ops(block: &Value, parent_result: Option<&Value>, ops: &mut Vec<ClaudePlanOp>) {
+    if let Some(tool_use_id) = first_str(block, &["tool_use_id"]) {
+        if let Some(id) = task_id_from(parent_result).or_else(|| task_id_from(Some(block))) {
+            ops.push(ClaudePlanOp::BindId { tool_use_id, id });
+        }
+    }
+    if let Some(entries) = tasks_from_payload(parent_result).or_else(|| tasks_from_value(block)) {
+        if !entries.is_empty() {
+            ops.push(ClaudePlanOp::Replace(entries));
+        }
+    }
+}
+
+fn task_id_from(payload: Option<&Value>) -> Option<String> {
+    payload
+        .and_then(structured_task_output)?
+        .pointer("/task/id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn tasks_from_payload(payload: Option<&Value>) -> Option<Vec<ClaudePlanEntry>> {
+    let parsed = payload.and_then(structured_task_output)?;
+    let items = parsed.get("tasks").and_then(Value::as_array)?;
+    let entries = items
+        .iter()
+        .filter_map(parse_plan_entry)
+        .collect::<Vec<_>>();
+    (!entries.is_empty()).then_some(entries)
+}
+
+fn looks_like_plan_output(v: &Value) -> bool {
+    payload_has_plan_shape(v)
+        || v.get("tool_use_result")
+            .is_some_and(payload_has_plan_shape)
+        || v.pointer("/message/tool_use_result")
+            .is_some_and(payload_has_plan_shape)
+        || v.get("content")
+            .and_then(parse_jsonish)
+            .is_some_and(|value| payload_has_plan_shape(&value))
+        || v.get("output")
+            .and_then(parse_jsonish)
+            .is_some_and(|value| payload_has_plan_shape(&value))
+}
+
+fn payload_has_plan_shape(v: &Value) -> bool {
+    v.get("task").is_some()
+        || v.get("tasks").is_some()
+        || v.get("oldTodos").is_some()
+        || v.get("newTodos").is_some()
+        || v.get("old_todos").is_some()
+        || v.get("new_todos").is_some()
+        || v.get("updatedFields").is_some()
+        || v.get("updated_fields").is_some()
+        || ((v.get("taskId").is_some() || v.get("task_id").is_some())
+            && (v.get("success").is_some() || v.get("status").is_some()))
+}
+
+fn structured_task_output(v: &Value) -> Option<Value> {
+    if payload_has_plan_shape(v) {
+        return Some(v.clone());
+    }
+    if let Some(direct) = v.get("tool_use_result") {
+        if payload_has_plan_shape(direct) {
+            return Some(direct.clone());
+        }
+    }
+    let content = v.get("content").or_else(|| v.get("output"))?;
+    parse_jsonish(content).filter(payload_has_plan_shape)
+}
+
+fn tasks_from_value(v: &Value) -> Option<Vec<ClaudePlanEntry>> {
+    let parsed = structured_task_output(v)?;
+    let items = parsed.get("tasks").and_then(Value::as_array)?;
+    let entries = items
+        .iter()
+        .filter_map(parse_plan_entry)
+        .collect::<Vec<_>>();
+    (!entries.is_empty()).then_some(entries)
+}
+
+fn parse_plan_entry(value: &Value) -> Option<ClaudePlanEntry> {
+    let content = first_str(value, &["content", "subject", "text", "title"])?;
+    Some(ClaudePlanEntry {
+        content,
+        status: first_str(value, &["status"]),
+        priority: first_str(value, &["priority"]),
+        id: first_str(value, &["id", "taskId", "task_id"]),
+    })
+}
+
+fn parse_jsonish(content: &Value) -> Option<Value> {
+    match content {
+        Value::Object(_) => Some(content.clone()),
+        Value::String(text) => serde_json::from_str(text).ok(),
+        Value::Array(items) => {
+            let text = items
+                .iter()
+                .filter_map(|item| {
+                    if item.get("type").and_then(Value::as_str) == Some("text") {
+                        item.get("text").and_then(Value::as_str)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<String>();
+            if text.trim().is_empty() {
+                None
+            } else {
+                serde_json::from_str(&text).ok()
+            }
+        }
+        _ => None,
+    }
+}
+
+fn first_str(value: &Value, keys: &[&str]) -> Option<String> {
+    for key in keys {
+        if let Some(text) = value
+            .get(*key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+        {
+            return Some(text.to_string());
+        }
+    }
+    None
 }
 
 #[cfg(test)]

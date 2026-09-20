@@ -53,7 +53,7 @@ export interface RuntimeSnapshot {
   currentMessage?: ChatMessage | null;
   /** Bumps when the Options catalog changes. Not the command list. */
   catalogEpoch?: number;
-  /** Current-turn ACP plan. Live chrome only — dropped on the next turn. */
+  /** Current-turn plan. Chrome only — dropped on the next turn. */
   plan?: RuntimePlanEntry[];
   /** Live ACP host commands. One card per id; not a conversation TTY. */
   hostTerminals?: RuntimeHostTerminal[];
@@ -77,6 +77,8 @@ export interface RuntimePlanEntry {
   content: string;
   status?: string | null;
   priority?: string | null;
+  /** Vendor task id when the Agent sent one. Matching only; not shown. */
+  id?: string | null;
 }
 
 export interface RuntimeReply {

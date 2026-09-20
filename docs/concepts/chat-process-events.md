@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: chat and core contributors
 source-of-truth: ProcessStep, ChatEvent, RuntimeSnapshot
-updated: 2026-09-17
+updated: 2026-09-20
 ---
 
 # Chat 过程事件
@@ -37,7 +37,7 @@ updated: 2026-09-17
 - ACP `config_option_update`（模型 / 思考目录）
 - 世代号 `catalogEpoch`（只用来重拉 Options）
 
-`plan` 走当前轮计划条，换轮丢掉。宿主 `terminal/*` 走命令卡片，不是对话 TTY。
+`plan` 走当前轮计划条，换轮丢掉。Grok / Kiro 的 ACP `sessionUpdate: plan`，以及 Claude 新对话的 TodoWrite / TaskCreate / TaskUpdate / TaskList，都进这条，不进过程时间线。宿主 `terminal/*` 走命令卡片，不是对话 TTY。
 
 ## 本波边界
 

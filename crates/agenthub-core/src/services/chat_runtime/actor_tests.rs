@@ -2651,6 +2651,175 @@ fn claude_stream_result_completes_turn_and_keeps_session() {
     );
 }
 
+#[test]
+fn claude_todo_write_fills_snapshot_not_timeline() {
+    let db = Database::open_in_memory().unwrap();
+    conversation_with(&db, "claude-plan", AgentId::Claude, &std::env::temp_dir());
+    let mut worker = worker(&db, "claude-plan");
+    worker.agent = AgentId::Claude;
+    worker.store.enable_if_new("claude-plan").unwrap();
+    start_placeholder(&mut worker);
+
+    worker
+        .notification(
+            "claude/stream",
+            &json!({
+                "type": "assistant",
+                "session_id": "claude-sess-plan",
+                "message": {
+                    "role": "assistant",
+                    "content": [{
+                        "type": "tool_use",
+                        "id": "toolu_todo",
+                        "name": "TodoWrite",
+                        "input": {
+                            "todos": [
+                                { "content": "read", "status": "completed" },
+                                { "content": "edit", "status": "in_progress" }
+                            ]
+                        }
+                    }]
+                }
+            }),
+        )
+        .unwrap();
+
+    let stored = worker.store.snapshot("claude-plan", None).unwrap();
+    assert!(!stored.events.iter().any(|event| matches!(
+        &event.event,
+        ChatEvent::AgentProcess { .. }
+    )));
+    let snapshot = worker.with_catalog_epoch(stored);
+    assert_eq!(snapshot.plan.len(), 2);
+    assert_eq!(snapshot.plan[0].content, "read");
+    assert_eq!(snapshot.plan[0].status.as_deref(), Some("completed"));
+    assert_eq!(snapshot.plan[1].content, "edit");
+    assert_eq!(snapshot.plan[1].status.as_deref(), Some("in_progress"));
+
+    worker
+        .notification(
+            "claude/stream",
+            &json!({
+                "type": "assistant",
+                "message": {
+                    "content": [{
+                        "type": "tool_use",
+                        "id": "toolu_create",
+                        "name": "TaskCreate",
+                        "input": { "subject": "write tests" }
+                    }]
+                }
+            }),
+        )
+        .unwrap();
+    worker
+        .notification(
+            "claude/stream",
+            &json!({
+                "type": "user",
+                "tool_use_result": { "task": { "id": "task-2", "subject": "write tests" } },
+                "message": {
+                    "content": [{
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_create",
+                        "content": "created"
+                    }]
+                }
+            }),
+        )
+        .unwrap();
+    worker
+        .notification(
+            "claude/stream",
+            &json!({
+                "type": "assistant",
+                "message": {
+                    "content": [{
+                        "type": "tool_use",
+                        "name": "TaskUpdate",
+                        "input": { "taskId": "task-2", "status": "in_progress" }
+                    }]
+                }
+            }),
+        )
+        .unwrap();
+
+    worker
+        .notification(
+            "claude/stream",
+            &json!({
+                "type": "user",
+                "tool_use_result": {
+                    "oldTodos": [{ "content": "read", "status": "pending" }],
+                    "newTodos": [{ "content": "read", "status": "completed" }]
+                },
+                "message": {
+                    "content": [{
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_todo",
+                        "content": "Todos have been modified successfully."
+                    }]
+                }
+            }),
+        )
+        .unwrap();
+    worker
+        .notification(
+            "claude/stream",
+            &json!({
+                "type": "assistant",
+                "message": {
+                    "content": [{
+                        "type": "tool_use",
+                        "id": "toolu_bash",
+                        "name": "Bash",
+                        "input": { "command": "ls" }
+                    }]
+                }
+            }),
+        )
+        .unwrap();
+    worker
+        .notification(
+            "claude/stream",
+            &json!({
+                "type": "assistant",
+                "message": {
+                    "content": [{
+                        "type": "tool_use",
+                        "name": "TodoWrite",
+                        "input": { "todos": [] }
+                    }]
+                }
+            }),
+        )
+        .unwrap();
+
+    let patched = worker.with_catalog_epoch(worker.store.snapshot("claude-plan", None).unwrap());
+    assert_eq!(patched.plan.len(), 3);
+    assert_eq!(patched.plan[2].content, "write tests");
+    assert_eq!(patched.plan[2].id.as_deref(), Some("task-2"));
+    assert_eq!(patched.plan[2].status.as_deref(), Some("in_progress"));
+    assert!(patched.events.iter().any(|event| matches!(
+        &event.event,
+        ChatEvent::AgentProcess {
+            step: crate::models::ProcessStep::Tool { name, .. },
+            ..
+        } if name == "Bash"
+    )));
+    assert!(!patched.events.iter().any(|event| matches!(
+        &event.event,
+        ChatEvent::AgentProcess {
+            step: crate::models::ProcessStep::Tool { name, .. },
+            ..
+        } if name == "TodoWrite" || name == "TaskCreate" || name == "TaskUpdate" || name == "tool"
+    )));
+
+    worker.clear_turn_plan();
+    let cleared = worker.with_catalog_epoch(worker.store.snapshot("claude-plan", None).unwrap());
+    assert!(cleared.plan.is_empty());
+}
+
 #[cfg(unix)]
 #[test]
 fn grok_fs_write_outside_cwd_emits_card_then_writes_on_allow() {

@@ -3,7 +3,7 @@ title: AgentHub 当前实现状态
 type: status
 status: current
 owner: maintainers
-updated: 2026-09-17
+updated: 2026-09-20
 ---
 
 # 当前实现状态
@@ -24,7 +24,7 @@ updated: 2026-09-17
   - **新空 Grok 会话**：持续聊天（模型/思考、图片、后续轮排队），**不支持**为本轮指定「用于本次」技能，界面也不画可点的假按钮。真实窗口验收已通过。Chat 只带官方 `grok agent --no-leader stdio` 旗标（`--permission-mode` 写在 `agent` 前或后都会让进程在出卡前退出）。`session/new` 带 `_meta.yoloMode=false`，覆盖本机 always-approve；握手按官方 ACP 声明本机可读写文件、不发 `initialized`。工作目录外写出走本机 `fs/write_text_file`：先出「修改文件」卡片再写文件，可点一直允许；目录内直接写。对方若另发 `session/request_permission`，卡片仍只带对方给的「一直允许」。会话自动批准才加 `--always-approve` 和 `_meta.yoloMode=true`。进程退出时界面写「Grok 已退出」，不写 Codex 的 app-server 字样。
   - **新空 Kiro 会话**：`kiro-cli acp` 持续通道（允许/拒绝、停止；生成时不能中途补充，可排队到下一轮）。真实窗口验收已通过（ACP 新对话；打印路径 HTTP 多轮为 Builder ID / 本机登录，不是企业 IdC）。旧对话保留原发送方式。
   - **其余 Agent 与旧会话**：仍走原发送方式。
-  - **过程面板**：主列一行过程摘要（正在读取 / 正在修改 / 正在执行，完成则已读取 / 已修改 / 已执行）。点开后在右侧栏看你说了什么、思考、工具行、等待允许或拒绝、本轮用量；工具名、状态和 JSON 进折叠的「细节」；命令、过程日志、退出码和状态事件仍在「运行详情」。允许 / 拒绝按钮仍在卡片上，不在过程行上造假按钮。右侧栏不随发送自动打开；点 Markdown 仍预览文件。种类约定见 [过程事件](concepts/chat-process-events.md)。斜杠目录和模型目录更新不进过程时间线。Grok / Kiro 若推了当前轮 `plan`，输入区上方出现计划条，换轮丢掉。ACP 若声明 `terminal`，对方跑的那条命令一张卡片，可停这一条（不是对话页终端）。仍约 80ms 读快照，过程行按序号增量挂现有面板，不另开总线。
+  - **过程面板**：主列一行过程摘要（正在读取 / 正在修改 / 正在执行，完成则已读取 / 已修改 / 已执行）。点开后在右侧栏看你说了什么、思考、工具行、等待允许或拒绝、本轮用量；工具名、状态和 JSON 进折叠的「细节」；命令、过程日志、退出码和状态事件仍在「运行详情」。允许 / 拒绝按钮仍在卡片上，不在过程行上造假按钮。右侧栏不随发送自动打开；点 Markdown 仍预览文件。种类约定见 [过程事件](concepts/chat-process-events.md)。斜杠目录和模型目录更新不进过程时间线。Grok / Kiro 若推了当前轮 `plan`，或 Claude 新对话用 TodoWrite / Task 工具更新了任务清单，输入区上方出现计划条，换轮丢掉。ACP 若声明 `terminal`，对方跑的那条命令一张卡片，可停这一条（不是对话页终端）。仍约 80ms 读快照，过程行按序号增量挂现有面板，不另开总线。
   - **过程内用量**：新空 Codex 会话仍解析 `thread/tokenUsage/updated` 的当前轮 `last`（累计 `total` / 窗口只留在总览等用量页）。新空 Grok 会话解析 **当前轮**（`turn_completed.usage`）；ACP 没有会话累计字段，不把各轮相加冒充累计。Grok / Kiro 的 `context_usage` 有数字才进用量小字（窗口用量），全 0 不画。解析路径已接；真窗 2026-09-09 见过部分轮次 **没有** `turn_completed.usage`，此时界面不画假数字。对话里只在本轮结束后用小字写输入 / 输出（有缓存才写缓存）；生成中不画用量。只显示协议里的数字，不估算费用。Kiro 没有 token 累计数据源。
   - **`/` 菜单**：立刻执行的动作（新建对话、复制最近回复；换模型/思考/技能要搜到才列出，避免把整份目录摊在 `/` 上）。Grok / Kiro 会话就绪且对方声明了命令时，另列对方斜杠项：选中后当作一轮正常发出（无必填参数则直接发送 `/名字`；必填参数则插入 `/名字 ` 供补全后再发）。Grok 走标准 ACP `available_commands_update`；Kiro 走 `_kiro.dev/commands/available` 的 `commands[]`（不把技能/工具目录摊进 `/`）。目录变了会重拉；未就绪或未声明则不画，不猜菜单。Kiro 就绪会话「对方命令」Linux 真窗已 PASS（修复 tip `daed5ccf`，现行 tip 仍含该修复）：列出对方声明的斜杠项，裸 `/` 不摊技能目录；记录见 `/workspace/qa-issues/CHAT-SLASH-PR365-RETEST-daed5ccf.md`。本条只记这次验过的展示，不把选中发送或其它 Agent 写成已验收。有可启动的命令行时，`/` 可列出「启动命令行」（DeepSeek 为「打开网页会话」），在外部打开，不标成对话页能力。
   - **本机对接与本会话**：本机持续通道按 Agent 写死：新空 Codex 走 app-server，新空 Grok / Kiro 走 ACP，新空 Claude 走 stream-json；其余与旧会话仍走原发送方式。Cursor 默认软隐藏，不在允许/拒绝之列，也不进持续聊天白名单。**Agents 详情**写这份 Agent 的新对话怎么接（ACP / 持续对话 / 原来的发送方式），不是一份可改的「ACP 总表」。**Chat 顶栏和会话设置**写这次对话实际在走哪条；点了卡片上的一直允许之后，会话设置里可以关掉「本会话已一直允许」（不能在这里假装打开）。一次对话是否在用持续通道，看这次会话是不是上述新空路径。Kiro 旧对话没有切到 ACP 的入口。会话字段见 [会话身份](concepts/chat-session-identity.md)。
