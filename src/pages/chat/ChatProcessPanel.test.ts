@@ -102,11 +102,73 @@ describe('ChatProcessPanel human copy', () => {
       view({
         phase: 'ok',
         steps: [{ type: 'thinking', text: '先看工作目录', done: true }],
+        thinkingStartedAt: 1,
+        thinkingDurationMs: 3200,
       }),
       'ok',
     );
     expect(html).toContain('先看工作目录');
+    expect(html).toContain('思考了 3.2s');
+    expect(html).toContain('data-help="chat-process-thinking"');
     expect(html).toMatch(/<details[^>]*open/);
+  });
+
+  it('shows a thinking fold without a tool row when no tools ran', () => {
+    const html = renderPanel(
+      view({
+        phase: 'running',
+        steps: [{ type: 'thinking', text: 'only thinking', done: false }],
+        thinkingStartedAt: Date.now() - 800,
+      }),
+    );
+    expect(html).toContain('data-help="chat-process-thinking"');
+    expect(html).toContain('only thinking');
+    expect(html).not.toContain('data-help="chat-process-tool"');
+  });
+
+  it('keeps an error on the tools timeline, not inside the thinking fold', () => {
+    const html = renderPanel(
+      view({
+        phase: 'failed',
+        steps: [
+          { type: 'thinking', text: 'tried', done: true },
+          { type: 'error', message: 'disk full' },
+        ],
+        thinkingStartedAt: 1,
+        thinkingDurationMs: 400,
+      }),
+      'failed',
+    );
+    expect(html).toContain('data-help="chat-process-thinking"');
+    expect(html).toContain('tried');
+    expect(html).toContain('disk full');
+    expect(html).toContain('text-danger');
+    const thinkingAt = html.indexOf('data-help="chat-process-thinking"');
+    const errorAt = html.indexOf('disk full');
+    expect(errorAt).toBeGreaterThan(thinkingAt);
+  });
+
+  it('keeps thinking as a fold separate from tool rows and pins live text', () => {
+    const html = renderPanel(
+      view({
+        phase: 'running',
+        steps: [
+          { type: 'thinking', text: '先看目录再改', done: false },
+          { type: 'tool', name: 'Read', status: 'start', input: { path: 'README.md' } },
+        ],
+        thinkingStartedAt: Date.now() - 3200,
+      }),
+    );
+    expect(html).toContain('data-help="chat-process-thinking"');
+    expect(html).toContain('data-help="chat-process-tool"');
+    expect(html).toContain('思考中');
+    expect(html).toContain('正在读取 README.md');
+    expect(html).toContain('[overflow-anchor:none]');
+    expect(html).toContain('max-h-40');
+    const thinkingAt = html.indexOf('data-help="chat-process-thinking"');
+    const toolAt = html.indexOf('data-help="chat-process-tool"');
+    expect(thinkingAt).toBeGreaterThan(-1);
+    expect(toolAt).toBeGreaterThan(thinkingAt);
   });
 
   it('offers one-click copy on JSON in tool details', () => {

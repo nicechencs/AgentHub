@@ -102,6 +102,10 @@ struct CatalogCache {
     image_input: Option<bool>,
     catalog_epoch: i64,
     plan: Vec<RuntimePlanEntry>,
+    /// TaskCreate tool_use id → subject, until the result assigns a task id.
+    pending_plan_creates: Vec<(String, String)>,
+    /// Plan-tool `tool_use` ids this turn, so matching results stay off the timeline.
+    plan_tool_use_ids: Vec<String>,
     /// Conversation-local Always allow. Survives catalog refetch; not SQLite.
     session_allow_always: bool,
 }
@@ -117,11 +121,135 @@ fn merge_catalog_cache(previous: Option<&CatalogCache>, mut fetched: CatalogCach
         fetched.catalog_epoch = previous.catalog_epoch.max(fetched.catalog_epoch);
         if fetched.plan.is_empty() {
             fetched.plan = previous.plan.clone();
+            fetched.pending_plan_creates = previous.pending_plan_creates.clone();
+            fetched.plan_tool_use_ids = previous.plan_tool_use_ids.clone();
         }
         fetched.session_allow_always =
             fetched.session_allow_always || previous.session_allow_always;
     }
     fetched
+}
+
+fn apply_claude_plan_op(
+    cache: &mut CatalogCache,
+    op: crate::utils::stream_parse::claude::ClaudePlanOp,
+) {
+    use crate::utils::stream_parse::claude::ClaudePlanOp;
+    match op {
+        ClaudePlanOp::Replace(entries) => {
+            let next: Vec<RuntimePlanEntry> = entries
+                .into_iter()
+                .filter(|entry| !entry.content.trim().is_empty())
+                .map(|entry| RuntimePlanEntry {
+                    content: entry.content,
+                    status: entry.status,
+                    priority: entry.priority,
+                    id: entry.id,
+                })
+                .collect();
+            if next.is_empty() {
+                return;
+            }
+            cache.plan = next;
+            cache.pending_plan_creates.clear();
+        }
+        ClaudePlanOp::Create {
+            tool_use_id,
+            content,
+            status,
+            id,
+            priority,
+        } => {
+            let content = content.trim();
+            if content.is_empty() {
+                return;
+            }
+            if let Some(existing_id) = id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                if let Some(existing) = cache
+                    .plan
+                    .iter_mut()
+                    .find(|entry| entry.id.as_deref() == Some(existing_id))
+                {
+                    existing.content = content.to_string();
+                    if status.is_some() {
+                        existing.status = status;
+                    }
+                    if priority.is_some() {
+                        existing.priority = priority;
+                    }
+                    return;
+                }
+            }
+            cache.plan.push(RuntimePlanEntry {
+                content: content.to_string(),
+                status: status.or_else(|| Some("pending".into())),
+                priority,
+                id: id.filter(|value| !value.trim().is_empty()),
+            });
+            if let Some(tool_use_id) = tool_use_id.filter(|value| !value.is_empty()) {
+                cache
+                    .pending_plan_creates
+                    .push((tool_use_id, content.to_string()));
+            }
+        }
+        ClaudePlanOp::Update {
+            id,
+            status,
+            content,
+            priority,
+        } => {
+            let id = id.trim();
+            if id.is_empty() {
+                return;
+            }
+            let deleted = status.as_deref().is_some_and(|value| {
+                matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "deleted" | "removed"
+                )
+            });
+            if deleted {
+                cache.plan.retain(|entry| entry.id.as_deref() != Some(id));
+                return;
+            }
+            if let Some(existing) = cache
+                .plan
+                .iter_mut()
+                .find(|entry| entry.id.as_deref() == Some(id))
+            {
+                if let Some(status) = status {
+                    existing.status = Some(status);
+                }
+                if let Some(content) = content.filter(|value| !value.trim().is_empty()) {
+                    existing.content = content;
+                }
+                if let Some(priority) = priority {
+                    existing.priority = Some(priority);
+                }
+            }
+        }
+        ClaudePlanOp::BindId { tool_use_id, id } => {
+            let Some(pos) = cache
+                .pending_plan_creates
+                .iter()
+                .position(|(pending, _)| pending == &tool_use_id)
+            else {
+                return;
+            };
+            let (_, subject) = cache.pending_plan_creates.remove(pos);
+            if let Some(entry) = cache
+                .plan
+                .iter_mut()
+                .find(|entry| entry.id.is_none() && entry.content == subject)
+            {
+                entry.id = Some(id);
+            }
+        }
+    }
 }
 
 /// Map product identity → transport channel. Same channel (e.g. ACP) may be
@@ -1439,7 +1567,7 @@ impl ActorWorker {
         let now = Utc::now().to_rfc3339();
         let message_id = format!("msg-{}", Uuid::new_v4());
         let mut user = ChatMessage {
-            id: format!("msg-{}", Uuid::new_v4()),
+            id: client_request_id.to_string(),
             conversation_id: self.conversation_id.clone(),
             turn: 0,
             role: ChatRole::User,
@@ -1906,6 +2034,12 @@ impl ActorWorker {
             }
         }
 
+        self.remember_claude_plan_tools(params);
+        let plan_ops = crate::utils::stream_parse::claude::extract_todo_plan(params);
+        if !plan_ops.is_empty() {
+            self.apply_claude_plan(plan_ops);
+        }
+
         let ty = params.get("type").and_then(Value::as_str).unwrap_or("");
         if ty == "result" {
             let is_err = params
@@ -1919,6 +2053,9 @@ impl ActorWorker {
             if let Some(steps) = crate::utils::stream_parse::claude::parse_line(&params.to_string())
             {
                 for step in steps {
+                    if self.drops_claude_plan_process(&step) {
+                        continue;
+                    }
                     match step {
                         ProcessStep::Text { text } => {
                             if !text.is_empty() {
@@ -1993,6 +2130,9 @@ impl ActorWorker {
             return Ok(());
         };
         for step in steps {
+            if self.drops_claude_plan_process(&step) {
+                continue;
+            }
             match step {
                 ProcessStep::Text { text } => {
                     if !text.is_empty() {
@@ -3247,15 +3387,62 @@ impl ActorWorker {
                     content: entry.content,
                     status: entry.status,
                     priority: entry.priority,
+                    id: None,
                 })
                 .collect();
         }
+    }
+
+    fn apply_claude_plan(&self, ops: Vec<crate::utils::stream_parse::claude::ClaudePlanOp>) {
+        if ops.is_empty() {
+            return;
+        }
+        if let Ok(mut guard) = self.catalogs.lock() {
+            let cache = guard.entry(self.conversation_id.clone()).or_default();
+            for op in ops {
+                apply_claude_plan_op(cache, op);
+            }
+        }
+    }
+
+    fn remember_claude_plan_tools(&self, params: &Value) {
+        let ids = crate::utils::stream_parse::claude::plan_tool_use_ids(params);
+        if ids.is_empty() {
+            return;
+        }
+        if let Ok(mut guard) = self.catalogs.lock() {
+            let cache = guard.entry(self.conversation_id.clone()).or_default();
+            for id in ids {
+                if !cache.plan_tool_use_ids.iter().any(|existing| existing == &id) {
+                    cache.plan_tool_use_ids.push(id);
+                }
+            }
+        }
+    }
+
+    fn drops_claude_plan_process(&self, step: &ProcessStep) -> bool {
+        let ProcessStep::Tool { id, name, .. } = step else {
+            return false;
+        };
+        if crate::utils::stream_parse::claude::is_claude_plan_tool_name(name) {
+            return true;
+        }
+        let Some(id) = id.as_deref() else {
+            return false;
+        };
+        self.catalogs.lock().ok().is_some_and(|guard| {
+            guard
+                .get(&self.conversation_id)
+                .is_some_and(|cache| cache.plan_tool_use_ids.iter().any(|known| known == id))
+        })
     }
 
     fn clear_turn_plan(&self) {
         if let Ok(mut guard) = self.catalogs.lock() {
             if let Some(entry) = guard.get_mut(&self.conversation_id) {
                 entry.plan.clear();
+                entry.pending_plan_creates.clear();
+                entry.plan_tool_use_ids.clear();
             }
         }
     }

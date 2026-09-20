@@ -95,6 +95,8 @@ describe('settings layout wiring', () => {
     expect(prefs).not.toContain("aria-label={t('settings.general.autoStartLabel')}");
     expect(prefs).not.toContain("aria-label={t('settings.general.closeToTrayLabel')}");
     expect(prefs).not.toContain("aria-label={t('settings.data.usageIntervalLabel')}");
+    expect(prefs).toContain("t('settings.general.chatOutlineLabel')");
+    expect(prefs).not.toContain("aria-label={t('settings.general.chatOutlineLabel')}");
     expect(shared).toContain('aria-labelledby');
     expect(shared).toContain('aria-describedby');
   });

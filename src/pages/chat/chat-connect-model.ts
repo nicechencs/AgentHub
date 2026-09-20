@@ -37,12 +37,6 @@ export function chatConnectLabelKey(kind: ChatConnectKind): MessageKey {
   return 'chat.connect.legacy';
 }
 
-export function sessionChatConnectHintKey(kind: ChatConnectKind): MessageKey {
-  if (kind === 'acp') return 'chat.connect.sessionHintAcp';
-  if (kind === 'continuous') return 'chat.connect.sessionHintContinuous';
-  return 'chat.connect.sessionHintLegacy';
-}
-
 export function agentChatConnectHintKey(kind: ChatConnectKind): MessageKey {
   if (kind === 'acp') return 'chat.connect.agentHintAcp';
   if (kind === 'continuous') return 'chat.connect.agentHintContinuous';

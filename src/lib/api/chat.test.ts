@@ -63,6 +63,17 @@ describe('chat API (browser mock)', () => {
     await rejected;
   });
 
+  it('createConversation drops a cyclic click-event cwd instead of throwing', async () => {
+    const cyclic: { target?: unknown } = {};
+    cyclic.target = cyclic;
+    expect(() => JSON.stringify(cyclic)).toThrow(/circular|cyclic/i);
+    const createP = createConversation(['claude'], cyclic as unknown as string);
+    await vi.runAllTimersAsync();
+    const created = await createP;
+    expect(created.agentIds).toEqual(['claude']);
+    expect(created.cwd).toBeNull();
+  });
+
   it('ensureDefaultConversation reuses the initial blank conversation', async () => {
     const firstP = ensureDefaultConversation(['claude']);
     await vi.runAllTimersAsync();
@@ -154,6 +165,38 @@ describe('chat API (browser mock)', () => {
     expect(again.id).toBe(conv.id);
     expect(again.nativeSessionId).toBe('sess-missing-cwd');
     expect(again.cwd).toBe('C:\\Users\\demo\\app');
+  });
+
+  it('opens a new conversation when the official session is not already in Chat', async () => {
+    const createdP = createConversation(['claude'], 'D:\\demo\\chen\\2026\\AgentHub');
+    await vi.runAllTimersAsync();
+    const created = await createdP;
+
+    const openP = openConversationFromSession({
+      agentId: 'claude',
+      sessionId: 'sess-history',
+      cwd: 'D:\\demo\\chen\\2026\\AgentHub',
+      title: '历史里的那场',
+      history: [{ role: 'user', content: '接着改登录页' }],
+    });
+    await vi.runAllTimersAsync();
+    const opened = await openP;
+    expect(opened.id).not.toBe(created.id);
+    expect(opened.nativeSessionId).toBe('sess-history');
+
+    const againP = openConversationFromSession({
+      agentId: 'claude',
+      sessionId: 'sess-history',
+      cwd: 'D:\\demo\\chen\\2026\\AgentHub',
+      title: '忽略',
+      history: [],
+    });
+    await vi.runAllTimersAsync();
+    expect((await againP).id).toBe(opened.id);
+
+    const listP = listConversations();
+    await vi.runAllTimersAsync();
+    expect((await listP).map((row) => row.id).sort()).toEqual([created.id, opened.id].sort());
   });
 
   it('create / list / update / delete conversation', async () => {

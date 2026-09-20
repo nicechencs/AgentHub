@@ -102,6 +102,10 @@ describe('queued follow-up items', () => {
     expect(queuedFollowUpCount(queued)).toBe(2);
     expect(queuedFollowUpCount([{ id: 'blank', text: '  ' }, { id: 'q-3', text: '第三条' }])).toBe(1);
     expect(shiftQueuedFollowUp([])).toBeNull();
+    const withImage = appendQueuedFollowUp([], '带图', 'q-img', {
+      images: [{ path: '/tmp/a.png' }],
+    });
+    expect(withImage[0]?.extras).toEqual({ images: [{ path: '/tmp/a.png' }] });
   });
 
   it('cancels one item without joining the rest', () => {

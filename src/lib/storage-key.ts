@@ -100,6 +100,8 @@ export const StorageKey = {
   projectsListSort: `${PREFIX}projects-list-sort`,
   /** Last workspace chosen on the project-skills tab. */
   skillsProjectWorkspace: `${PREFIX}skills-project-workspace`,
+  /** Chat transcript outline (tick rail); default on. */
+  chatOutlineEnabled: `${PREFIX}chat-outline-enabled`,
   ...LAYOUT_STORAGE_KEY,
 } as const;
 

@@ -31,7 +31,11 @@ function isWindowsWorkspacePath(path: string): boolean {
 /** Unify separators and trailing slashes without conflating POSIX case variants. */
 export function normalizeProjectMergePath(path: string): string {
   const slashUnified = path.replace(/\\/g, '/');
-  const normalized = slashUnified.replace(/\/+$/, '') || '/';
+  let normalized = slashUnified.replace(/\/+$/, '') || '/';
+  // Explorer / PathBuf often keep a trailing `/.` current-dir segment.
+  while (normalized.endsWith('/.') && normalized.length > 2) {
+    normalized = normalized.slice(0, -2).replace(/\/+$/, '') || '/';
+  }
   return isWindowsWorkspacePath(path) ? normalized.toLowerCase() : normalized;
 }
 

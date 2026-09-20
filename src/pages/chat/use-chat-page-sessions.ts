@@ -28,6 +28,7 @@ import {
   takeChatBootstrap,
 } from '@/lib/chat-bootstrap';
 import { rememberFallbackCwd } from '@/lib/chat-cwd-fallback';
+import { newChatCwdArg } from '@/lib/open-chat-cwd';
 import type { AgentKey, AgentStatus, ChatMessage, Conversation } from '@/lib/types';
 import {
   draftForFocusedConversation,
@@ -37,6 +38,8 @@ import {
   singleAgentConversationPatch,
 } from './chat-model';
 import { conversationListState, createSingleFlight } from './chat-request';
+
+const handoffConversationFlight = createSingleFlight<Conversation>();
 
 /** Keep conversations created by an in-flight shell/projects handoff when list load returns stale. */
 export function mergeHandoffConversations(
@@ -295,13 +298,15 @@ export function useChatPageSessions(input: {
         const fromSession = Boolean(boot.sessionId?.trim() || boot.history?.length);
         let next;
         if (fromSession) {
-          next = await openConversationFromSession({
-            agentId: ids[0],
-            sessionId: boot.sessionId,
-            cwd: boot.cwd ?? null,
-            title: boot.title,
-            history: boot.history ?? [],
-          });
+          next = await handoffConversationFlight(() =>
+            openConversationFromSession({
+              agentId: ids[0],
+              sessionId: boot.sessionId,
+              cwd: boot.cwd ?? null,
+              title: boot.title,
+              history: boot.history ?? [],
+            }),
+          );
           if (boot.fallbackCwd?.trim()) {
             rememberFallbackCwd(next.id, boot.fallbackCwd);
           }
@@ -360,7 +365,7 @@ export function useChatPageSessions(input: {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot when from= is set
   }, [searchParams]);
 
-  async function handleNewChat() {
+  async function handleNewChat(cwdOverride?: string | null) {
     let status = agentStatus;
     if (!agentsReady) {
       try {
@@ -374,7 +379,11 @@ export function useChatPageSessions(input: {
     if (defaults.agentIds.length === 0) return;
     try {
       if (activeId) draftsRef.current.set(activeId, draft);
-      const conv = await createConversation(defaults.agentIds, defaults.cwd);
+      const cwd = newChatCwdArg(cwdOverride);
+      const conv = await createConversation(
+        defaults.agentIds,
+        cwd === undefined ? defaults.cwd : cwd,
+      );
       setConversations((prev) => [conv, ...prev]);
       setActiveId(conv.id);
       setMessages([]);

@@ -82,7 +82,7 @@ export async function addClaudeApiKeyAndSwitch(page: Page): Promise<void> {
 }
 
 export async function openChatComposer(page: Page): Promise<void> {
-  await goNav(page, '对话');
+  await goNav(page, '工作区');
   await expect(page.getByRole('textbox', { name: '消息输入' })).toBeVisible({
     timeout: 20_000,
   });

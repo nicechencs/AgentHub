@@ -1716,6 +1716,48 @@ fn rebind_missing_cwd_allowed_after_session_starts() {
 }
 
 #[test]
+fn open_from_session_creates_when_native_id_is_new() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir.path().join("t.db")).unwrap();
+    let run = Arc::new(RunService::with_runner(
+        deterministic_registry(),
+        Arc::new(RecordingProcessRunner::new()),
+    ));
+    let chat = ChatService::new(db, run);
+    let existing = chat
+        .create_conversation(vec![AgentId::Claude], Some("/work/app".into()))
+        .unwrap();
+
+    let opened = chat
+        .open_from_session(
+            AgentId::Claude,
+            Some("sess-history".into()),
+            Some("/work/app".into()),
+            Some("历史里的那场".into()),
+            vec![ChatHistoryTurn {
+                role: ChatRole::User,
+                content: "接着改登录页".into(),
+            }],
+        )
+        .unwrap();
+    assert_ne!(opened.id, existing.id);
+    assert_eq!(opened.native_session_id.as_deref(), Some("sess-history"));
+    assert_eq!(chat.list_conversations().unwrap().len(), 2);
+
+    let again = chat
+        .open_from_session(
+            AgentId::Claude,
+            Some("sess-history".into()),
+            Some("/work/app".into()),
+            Some("忽略".into()),
+            vec![],
+        )
+        .unwrap();
+    assert_eq!(again.id, opened.id);
+    assert_eq!(chat.list_conversations().unwrap().len(), 2);
+}
+
+#[test]
 fn rebind_missing_cwd_rejects_clear() {
     let dir = tempdir().unwrap();
     let db = Database::open(&dir.path().join("t.db")).unwrap();

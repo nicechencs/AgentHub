@@ -5,6 +5,7 @@ import {
   acceptsRuntimeSnapshot,
   bindRuntimeSnapshotToAgent,
   canSubmitRuntimeQuestions,
+  fileChangeKindLabel,
   fileChangePreviewHintKey,
   runtimeFileChangePreview,
   runtimeReplyFields,
@@ -21,6 +22,8 @@ import {
   readRuntimeTransport,
   requestMatchesRuntime,
   runtimePlanEntryTone,
+  runtimePlanProgress,
+  runtimePlanStatusKey,
   visibleRuntimePlan,
 } from './chat-runtime-model';
 
@@ -239,5 +242,53 @@ describe('chat runtime transport guards', () => {
     expect(runtimePlanEntryTone('in_progress')).toBe('live');
     expect(runtimePlanEntryTone('completed')).toBe('done');
     expect(runtimePlanEntryTone('pending')).toBe('pending');
+    expect(runtimePlanEntryTone('failed')).toBe('failed');
+    expect(runtimePlanProgress([
+      { content: 'read', status: 'completed' },
+      { content: 'edit', status: 'in_progress' },
+      { content: 'test', status: 'pending' },
+      { content: 'broken', status: 'failed' },
+    ])).toEqual({ total: 4, done: 1, live: 1, pending: 1, failed: 1 });
+    expect(runtimePlanStatusKey('in_progress')).toBe('chat.runtime.planStatusLive');
+    expect(translate('zh', runtimePlanStatusKey('completed'))).toBe('已完成');
+    expect(translate('zh', 'chat.runtime.planProgress', { done: 1, total: 3 })).toBe('1/3 已完成');
+    expect(runtimePlanEntryTone('complete')).toBe('done');
+    expect(runtimePlanEntryTone('DONE')).toBe('done');
+    expect(runtimePlanEntryTone('in-progress')).toBe('live');
+    expect(runtimePlanEntryTone('inprogress')).toBe('live');
+    expect(runtimePlanEntryTone('running')).toBe('live');
+    expect(runtimePlanEntryTone('start')).toBe('live');
+    expect(runtimePlanEntryTone('error')).toBe('failed');
+    expect(runtimePlanEntryTone('cancelled')).toBe('failed');
+    expect(runtimePlanEntryTone('canceled')).toBe('failed');
+    expect(runtimePlanEntryTone(null)).toBe('pending');
+    expect(runtimePlanEntryTone('')).toBe('pending');
+    expect(runtimePlanProgress(null)).toEqual({
+      total: 0, done: 0, live: 0, pending: 0, failed: 0,
+    });
+    expect(runtimePlanProgress([{ content: '   ' }])).toEqual({
+      total: 0, done: 0, live: 0, pending: 0, failed: 0,
+    });
+    expect(runtimePlanStatusKey('canceled')).toBe('chat.runtime.planStatusFailed');
+    expect(fileChangeKindLabel('add', (key, params) => translate('zh', key, params))).toBe('新增');
+    expect(fileChangeKindLabel('delete', (key, params) => translate('zh', key, params))).toBe('删除');
+    expect(fileChangeKindLabel('update', (key, params) => translate('zh', key, params))).toBe('修改');
+    expect(runtimeFileChangePreview({
+      kind: 'file',
+      detail: '',
+      fileChanges: [
+        { path: 'a.ts', kind: 'create_file' },
+        { path: 'b.ts', kind: 'write' },
+        { path: 'c.ts', kind: 'remove_file' },
+      ],
+    })).toEqual({
+      shown: true,
+      empty: true,
+      rows: [
+        { path: 'a.ts', kind: 'add', preview: null },
+        { path: 'b.ts', kind: 'update', preview: null },
+        { path: 'c.ts', kind: 'delete', preview: null },
+      ],
+    });
   });
 });

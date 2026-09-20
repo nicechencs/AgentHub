@@ -13,6 +13,7 @@ import {
 } from '@/pages/agents/agent-card-model';
 import type { AgentKey, ChatMessage } from '@/lib/types';
 import { groupByTurn } from './chat-format';
+import { applyOutlineJumpOffset } from './chat-outline-model';
 import { forgetFallbackCwd, peekFallbackCwd } from '@/lib/chat-cwd-fallback';
 import {
   agentChatEnvReady,
@@ -26,7 +27,7 @@ import {
   firstUserContentByListedConversations,
   filterConversations,
   mergeFirstUserContentById,
-  groupConversationsByDay,
+  groupConversationsByWorkspace,
   isChatAgentSelectable,
   savedLoginAgentIdsFromWallet,
   selectConversationAgent,
@@ -593,6 +594,15 @@ export function useChatPage() {
     stickToBottomRef.current = dist <= STICK_THRESHOLD_PX;
   }, []);
 
+  const jumpToOutlinePrompt = useCallback((messageId: string) => {
+    stickToBottomRef.current = false;
+    const container = transcriptRef.current;
+    const target = document.getElementById(`chat-msg-${messageId}`);
+    if (!container || !target) return;
+    target.scrollIntoView({ block: 'start' });
+    applyOutlineJumpOffset(container, target);
+  }, []);
+
   useEffect(() => {
     if (!stickToBottomRef.current) return;
     bottomRef.current?.scrollIntoView({ block: 'nearest' });
@@ -600,7 +610,7 @@ export function useChatPage() {
 
   const railGroups = useMemo(() => {
     const filtered = filterConversations(conversations, railQuery);
-    return groupConversationsByDay(filtered, Date.now(), t);
+    return groupConversationsByWorkspace(filtered, t);
   }, [conversations, railQuery, t]);
 
   const filteredCount = useMemo(
@@ -722,6 +732,7 @@ export function useChatPage() {
     transcriptRef,
     bottomRef,
     onTranscriptScroll,
+    jumpToOutlinePrompt,
     handleNewChat,
     confirmDelete,
     patchActive,
@@ -748,6 +759,8 @@ export function useChatPage() {
     clearQueuedFollowUp: send.clearQueuedFollowUp,
     continueLegacyGrok: send.continueLegacyGrok,
     runtime: activeRuntime,
+    snapshotBannerVisible: send.snapshotBannerVisible,
+    retryRuntimeSnapshot: send.retryRuntimeSnapshot,
     runtimeLocked: isRuntimeSessionLocked(activeRuntime, {
       conversationId: active?.id,
       nativeSessionId: active?.nativeSessionId,

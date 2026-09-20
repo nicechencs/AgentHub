@@ -4,7 +4,7 @@ description: 每家 Agent 的探测/启动与 Chat 宿主深度对照；与 Capa
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-15
+updated: 2026-09-20
 ---
 
 # Chat 支持深度矩阵
@@ -35,7 +35,7 @@ updated: 2026-09-15
 
 | Agent | D0 | Chat 主档 | `RuntimeChannel`（新空） | D3 摘要（新空持续会话） | 备注 |
 |---|---|---|---|---|---|
-| Claude | 有 | **D2** 新空；有历史仍 **D1** print+resume | `stream-json` | 模型/思考、图片；**无**允许/拒绝卡（`dontAsk` / 危险 `bypassPermissions`）；无「用于本次」 | 见 STATUS / Claude B3 |
+| Claude | 有 | **D2** 新空；有历史仍 **D1** print+resume | `stream-json` | 模型/思考、图片；TodoWrite / Task 任务清单进计划条；**无**允许/拒绝卡（`dontAsk` / 危险 `bypassPermissions`）；无「用于本次」 | 见 STATUS / Claude B3 |
 | Codex | 有 | **D2** 新空 | `app-server` | 允许/拒绝/一直允许、模型/思考、图片、「用于本次」、斜杠动态菜单；计划模式未做；CU 无产品路径 | 最深 |
 | Grok | 有 | **D2** 新空 | `acp` | 允许/拒绝（对方选项）、模型/思考、图片；**无**「用于本次」；生成中不可补充（可排队） | ACP 族 |
 | Kiro | 有 | **D2** 新空 ACP；旧会话 **D1** | `acp` | 允许/拒绝、停止；模型/思考/权限启动后固定；生成中不可补充 | ACP 族；旧 headless 不切 ACP |
