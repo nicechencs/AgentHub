@@ -63,6 +63,17 @@ describe('chat API (browser mock)', () => {
     await rejected;
   });
 
+  it('createConversation drops a cyclic click-event cwd instead of throwing', async () => {
+    const cyclic: { target?: unknown } = {};
+    cyclic.target = cyclic;
+    expect(() => JSON.stringify(cyclic)).toThrow(/circular|cyclic/i);
+    const createP = createConversation(['claude'], cyclic as unknown as string);
+    await vi.runAllTimersAsync();
+    const created = await createP;
+    expect(created.agentIds).toEqual(['claude']);
+    expect(created.cwd).toBeNull();
+  });
+
   it('ensureDefaultConversation reuses the initial blank conversation', async () => {
     const firstP = ensureDefaultConversation(['claude']);
     await vi.runAllTimersAsync();

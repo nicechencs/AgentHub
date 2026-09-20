@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StorageKey } from '@/lib/storage-key';
-import { loadChatOutlineEnabled, saveChatOutlineEnabled } from './chat-outline-pref';
+import {
+  loadChatOutlineEnabled,
+  saveChatOutlineEnabled,
+  subscribeChatOutlineEnabled,
+} from './chat-outline-pref';
 
 const store = new Map<string, string>();
 
@@ -34,5 +38,17 @@ describe('chat outline preference', () => {
     saveChatOutlineEnabled(true);
     expect(store.get(StorageKey.chatOutlineEnabled)).toBe('1');
     expect(loadChatOutlineEnabled()).toBe(true);
+  });
+
+  it('notifies subscribers so a mounted rail can restore after toggle', () => {
+    const seen: boolean[] = [];
+    const stop = subscribeChatOutlineEnabled((value) => {
+      seen.push(value);
+    });
+    saveChatOutlineEnabled(false);
+    saveChatOutlineEnabled(true);
+    stop();
+    saveChatOutlineEnabled(false);
+    expect(seen).toEqual([false, true]);
   });
 });

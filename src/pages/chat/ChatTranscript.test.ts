@@ -24,11 +24,11 @@ function conversation(): Conversation {
   };
 }
 
-function userMessage(content: string): ChatMessage {
+function userMessage(content: string, id = 'm-user', turn = 1): ChatMessage {
   return {
-    id: 'm-user',
+    id,
     conversationId: 'c1',
-    turn: 1,
+    turn,
     role: 'user',
     content,
     status: 'ok',
@@ -191,5 +191,87 @@ describe('ChatTranscript surfaces', () => {
     expect(html).toContain('pointer-events-none');
     // Unmeasured panel width is 0, so the 720px gate still hides the ticks.
     expect(html).not.toContain('data-testid="chat-outline-rail"');
+  });
+
+  it('mounts the outline rail when the setting, two prompts, and a 720px panel hold', () => {
+    const html = renderMarkup(
+      createElement(ChatTranscript, {
+        active: conversation(),
+        turns: [
+          { turn: 1, user: userMessage('first prompt', 'u1', 1), agents: [] },
+          { turn: 2, user: userMessage('second prompt', 'u2', 2), agents: [] },
+        ],
+        processMap: {},
+        listLoading: false,
+        messagesLoading: false,
+        sending: false,
+        retryDisabled: false,
+        scrollRef: createRef<HTMLDivElement>(),
+        bottomRef: createRef<HTMLDivElement>(),
+        onScroll: () => undefined,
+        onRetry: () => undefined,
+        measuredWidth: 720,
+        outlineEnabled: true,
+      }),
+    );
+    expect(html).toContain('data-testid="chat-outline-rail"');
+    expect(html).toContain('role="tablist"');
+    expect(html).toContain('role="tab"');
+    expect(html).toContain('type="button"');
+    expect(html).toContain('data-testid="chat-outline-tick-u1"');
+    expect(html).toContain('data-testid="chat-outline-tick-u2"');
+    expect(html).toContain('1 / 2：first prompt');
+    expect(html).toContain('2 / 2：second prompt');
+    expect(html).toContain('data-chat-outline-host');
+  });
+
+  it('does not count an empty measure host as the outline', () => {
+    const html = renderMarkup(
+      createElement(ChatTranscript, {
+        active: conversation(),
+        turns: [
+          { turn: 1, user: userMessage('first prompt', 'u1', 1), agents: [] },
+          { turn: 2, user: userMessage('second prompt', 'u2', 2), agents: [] },
+        ],
+        processMap: {},
+        listLoading: false,
+        messagesLoading: false,
+        sending: false,
+        retryDisabled: false,
+        scrollRef: createRef<HTMLDivElement>(),
+        bottomRef: createRef<HTMLDivElement>(),
+        onScroll: () => undefined,
+        onRetry: () => undefined,
+        measuredWidth: 0,
+        outlineEnabled: true,
+      }),
+    );
+    expect(html).toContain('data-chat-outline-host');
+    expect(html).toContain('data-chat-outline-measure');
+    expect(html).not.toContain('chat-outline-rail');
+    expect(html).not.toContain('role="tablist"');
+    expect(html).not.toContain('chat-outline-tick-');
+  });
+
+  it('does not mount the rail ticks when only one user message exists', () => {
+    const html = renderMarkup(
+      createElement(ChatTranscript, {
+        active: conversation(),
+        turns: [{ turn: 1, user: userMessage('only one', 'u1'), agents: [] }],
+        processMap: {},
+        listLoading: false,
+        messagesLoading: false,
+        sending: false,
+        retryDisabled: false,
+        scrollRef: createRef<HTMLDivElement>(),
+        bottomRef: createRef<HTMLDivElement>(),
+        onScroll: () => undefined,
+        onRetry: () => undefined,
+        measuredWidth: 900,
+        outlineEnabled: true,
+      }),
+    );
+    expect(html).toContain('data-chat-outline-host');
+    expect(html).not.toContain('chat-outline-rail');
   });
 });

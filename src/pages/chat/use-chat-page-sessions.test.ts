@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { Conversation } from '@/lib/types';
 import { mergeHandoffConversations } from './use-chat-page-sessions';
@@ -36,5 +37,14 @@ describe('mergeHandoffConversations', () => {
     const existing = conv('existing');
     const loaded = [folder, existing];
     expect(mergeHandoffConversations([folder], loaded)).toBe(loaded);
+  });
+});
+
+describe('handleNewChat cwd', () => {
+  it('sanitizes the new-chat folder before createConversation', () => {
+    const src = readFileSync(new URL('./use-chat-page-sessions.ts', import.meta.url), 'utf8');
+    expect(src).toContain('newChatCwdArg');
+    expect(src).toContain('cwd === undefined ? defaults.cwd : cwd');
+    expect(src).not.toContain('cwdOverride === undefined ? defaults.cwd : cwdOverride');
   });
 });
