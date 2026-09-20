@@ -355,7 +355,8 @@ export function isThinkingStep(step: ProcessStep): step is ThinkingStep {
 }
 
 export function latestThinkingStep(steps: ProcessStep[] | undefined): ThinkingStep | undefined {
-  return lastMatching(steps ?? [], isThinkingStep);
+  const found = lastMatching(steps ?? [], isThinkingStep);
+  return found && isThinkingStep(found) ? found : undefined;
 }
 
 /** Live timer, or the frozen duration after thinking ends. */
@@ -380,6 +381,8 @@ export function timelineHasToolRow(steps: ProcessStep[] | undefined): boolean {
   );
 }
 
+function lastMatching<T, S extends T>(items: T[], pred: (item: T) => item is S): S | undefined;
+function lastMatching<T>(items: T[], pred: (item: T) => boolean): T | undefined;
 function lastMatching<T>(items: T[], pred: (item: T) => boolean): T | undefined {
   for (let i = items.length - 1; i >= 0; i -= 1) {
     if (pred(items[i])) return items[i];
