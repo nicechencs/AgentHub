@@ -2756,6 +2756,7 @@ export const zh = {
       failed: "无法打开",
       emptyBody: "没有内容",
       truncatedSuffix: " · 已截断",
+      viewEdit: "查看修改",
     },
     composer: {
       placeholder: "发给 Agent…",

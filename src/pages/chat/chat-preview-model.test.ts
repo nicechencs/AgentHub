@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   chatPreviewCanBack,
   chatPreviewPath,
+  isChatEditPreview,
   isChatFilePreview,
   isChatProcessInspect,
+  openChatEditPreview,
   openChatPreviewRoot,
   openChatProcessInspect,
   popChatPreview,
@@ -42,6 +44,18 @@ describe('chat preview stack', () => {
     expect(chatPreviewCanBack(process)).toBe(false);
     expect(popChatPreview(process)).toBeNull();
     expect(pushChatPreview(process, '/repo/README.md')).toEqual(
+      openChatPreviewRoot('/repo/README.md'),
+    );
+  });
+
+  it('opens an edit preview by path without a back stack', () => {
+    const target = openChatEditPreview('src/a.ts');
+    expect(isChatEditPreview(target)).toBe(true);
+    expect(isChatFilePreview(target)).toBe(false);
+    expect(chatPreviewPath(target)).toBe('src/a.ts');
+    expect(chatPreviewCanBack(target)).toBe(false);
+    expect(popChatPreview(target)).toBeNull();
+    expect(pushChatPreview(target, '/repo/README.md')).toEqual(
       openChatPreviewRoot('/repo/README.md'),
     );
   });
