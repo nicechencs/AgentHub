@@ -26,7 +26,7 @@ import {
   firstUserContentByListedConversations,
   filterConversations,
   mergeFirstUserContentById,
-  groupConversationsByDay,
+  groupConversationsByWorkspace,
   isChatAgentSelectable,
   savedLoginAgentIdsFromWallet,
   selectConversationAgent,
@@ -600,7 +600,7 @@ export function useChatPage() {
 
   const railGroups = useMemo(() => {
     const filtered = filterConversations(conversations, railQuery);
-    return groupConversationsByDay(filtered, Date.now(), t);
+    return groupConversationsByWorkspace(filtered, t);
   }, [conversations, railQuery, t]);
 
   const filteredCount = useMemo(

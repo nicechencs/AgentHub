@@ -61,7 +61,9 @@ import {
   isBlankConversationDraft,
   draftForFocusedConversation,
   filterConversations,
-  groupConversationsByDay,
+  conversationWorkspaceKey,
+  groupConversationsByWorkspace,
+  UNSET_WORKSPACE_KEY,
   isChatAgentSelectable,
   liveSendingIds,
   incomingSendingIds,
@@ -375,41 +377,69 @@ describe('filterConversations', () => {
   });
 });
 
-describe('groupConversationsByDay', () => {
-  // 本地时区 2026-08-16 15:00
-  const now = new Date(2026, 7, 16, 15, 0, 0, 0).getTime();
-
-  function at(y: number, m: number, d: number, h = 12): string {
-    return new Date(y, m, d, h, 0, 0, 0).toISOString();
+describe('groupConversationsByWorkspace', () => {
+  function at(day: number, hour = 12): string {
+    return new Date(Date.UTC(2026, 7, day, hour, 0, 0)).toISOString();
   }
 
-  it('buckets across local-day boundaries and drops empty groups', () => {
-    const today = conv({ id: 't', title: 'today', updatedAt: at(2026, 7, 16, 1) });
-    const yesterday = conv({ id: 'y', title: 'yest', updatedAt: at(2026, 7, 15, 23) });
-    const week = conv({ id: 'w', title: 'week', updatedAt: at(2026, 7, 11, 8) });
-    const earlier = conv({ id: 'e', title: 'old', updatedAt: at(2026, 7, 9, 8) });
-    const groups = groupConversationsByDay([today, yesterday, week, earlier], now, t);
-
-    expect(groups.map((g) => g.key)).toEqual(['today', 'yesterday', 'week', 'earlier']);
-    expect(groups.map((g) => g.label)).toEqual(['今天', '昨天', '近 7 天', '更早']);
-    expect(groups.map((g) => g.items.map((c) => c.id))).toEqual([['t'], ['y'], ['w'], ['e']]);
-  });
-
-  it('keeps input order inside a group and omits empty buckets', () => {
-    const a = conv({ id: 'a', updatedAt: at(2026, 7, 16, 14) });
-    const b = conv({ id: 'b', updatedAt: at(2026, 7, 16, 10) });
-    const groups = groupConversationsByDay([a, b], now, t);
+  it('merges the same working directory across Windows case and slash variants', () => {
+    const newer = conv({
+      id: 'a',
+      cwd: 'D:\\projects\\Demo',
+      updatedAt: at(16, 15),
+    });
+    const older = conv({
+      id: 'b',
+      cwd: 'd:/projects/demo/',
+      updatedAt: at(15, 10),
+    });
+    const groups = groupConversationsByWorkspace([older, newer], t);
     expect(groups).toHaveLength(1);
-    expect(groups[0].key).toBe('today');
+    expect(groups[0].key).toBe(conversationWorkspaceKey('D:\\projects\\Demo'));
+    expect(groups[0].label).toBe('Demo');
+    expect(groups[0].cwd).toBe('D:\\projects\\Demo');
+    expect(groups[0].pathLabel).toBeNull();
     expect(groups[0].items.map((c) => c.id)).toEqual(['a', 'b']);
   });
 
-  it('puts today-minus-6 in week and today-minus-7 in earlier', () => {
-    const sixDays = conv({ id: 's', updatedAt: at(2026, 7, 10, 12) });
-    const sevenDays = conv({ id: 'v', updatedAt: at(2026, 7, 9, 12) });
-    const groups = groupConversationsByDay([sixDays, sevenDays], now, t);
-    expect(groups.find((g) => g.key === 'week')?.items.map((c) => c.id)).toEqual(['s']);
-    expect(groups.find((g) => g.key === 'earlier')?.items.map((c) => c.id)).toEqual(['v']);
+  it('keeps POSIX paths with different case in separate groups', () => {
+    const upper = conv({ id: 'A', cwd: '/tmp/App', updatedAt: at(16) });
+    const lower = conv({ id: 'B', cwd: '/tmp/app', updatedAt: at(15) });
+    const groups = groupConversationsByWorkspace([upper, lower], t);
+    expect(groups.map((g) => g.cwd)).toEqual(['/tmp/App', '/tmp/app']);
+    expect(groups[0].key).not.toBe(groups[1].key);
+  });
+
+  it('puts sessions without a working directory in one unset group', () => {
+    const withDir = conv({ id: 'dir', cwd: '/tmp/app', updatedAt: at(16) });
+    const empty = conv({ id: 'empty', cwd: '   ', updatedAt: at(15) });
+    const missing = conv({ id: 'missing', cwd: null, updatedAt: at(14) });
+    const groups = groupConversationsByWorkspace([withDir, empty, missing], t);
+    expect(groups.map((g) => g.key)).toEqual([
+      conversationWorkspaceKey('/tmp/app'),
+      UNSET_WORKSPACE_KEY,
+    ]);
+    expect(groups[1].label).toBe('未设置工作目录');
+    expect(groups[1].cwd).toBeNull();
+    expect(groups[1].items.map((c) => c.id)).toEqual(['empty', 'missing']);
+    expect(groups[0].items.map((c) => c.id)).toEqual(['dir']);
+  });
+
+  it('sorts groups and items by updated time, newest first', () => {
+    const olderApp = conv({ id: 'old-app', cwd: '/tmp/app', updatedAt: at(10) });
+    const newerApp = conv({ id: 'new-app', cwd: '/tmp/app', updatedAt: at(16) });
+    const other = conv({ id: 'other', cwd: '/tmp/other', updatedAt: at(12) });
+    const groups = groupConversationsByWorkspace([olderApp, other, newerApp], t);
+    expect(groups.map((g) => g.cwd)).toEqual(['/tmp/app', '/tmp/other']);
+    expect(groups[0].items.map((c) => c.id)).toEqual(['new-app', 'old-app']);
+  });
+
+  it('shows the full path when two workspaces share a short name', () => {
+    const alice = conv({ id: 'alice', cwd: '/home/alice/app', updatedAt: at(16) });
+    const bob = conv({ id: 'bob', cwd: '/home/bob/app', updatedAt: at(15) });
+    const groups = groupConversationsByWorkspace([alice, bob], t);
+    expect(groups.map((g) => g.label)).toEqual(['app', 'app']);
+    expect(groups.map((g) => g.pathLabel)).toEqual(['/home/alice/app', '/home/bob/app']);
   });
 });
 
@@ -597,6 +627,26 @@ describe('newConversationDefaults', () => {
       agentIds: ['claude'],
       cwd: '/tmp/app',
     });
+  });
+
+  it('places a new session in the current workspace group', () => {
+    const active = conv({
+      id: 'a',
+      agentIds: ['claude'],
+      cwd: '/tmp/app',
+      updatedAt: '2026-08-16T10:00:00.000Z',
+    });
+    const defaults = newConversationDefaults(active, agents);
+    const created = conv({
+      id: 'new',
+      agentIds: defaults.agentIds,
+      cwd: defaults.cwd,
+      updatedAt: '2026-08-16T12:00:00.000Z',
+    });
+    const groups = groupConversationsByWorkspace([created, active], t);
+    expect(defaults.cwd).toBe('/tmp/app');
+    expect(groups).toHaveLength(1);
+    expect(groups[0].items.map((c) => c.id)).toEqual(['new', 'a']);
   });
 });
 

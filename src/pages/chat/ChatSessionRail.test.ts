@@ -5,7 +5,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { Conversation } from '@/lib/types';
 import { createTranslator } from '@/lib/i18n';
-import { conversationRailHintView, conversationSemanticTitle } from './chat-model';
+import {
+  conversationRailHintView,
+  conversationSemanticTitle,
+  type ConversationWorkspaceGroup,
+} from './chat-model';
 import { ChatSessionRail } from './ChatSessionRail';
 
 vi.mock('@/components/shared/LanguageProvider', async () => {
@@ -34,12 +38,27 @@ function renderMarkup(node: ReactElement) {
   return renderToStaticMarkup(createElement(TooltipProvider, null, node));
 }
 
+function workspaceGroup(
+  items: Conversation[],
+  partial?: Partial<ConversationWorkspaceGroup>,
+): ConversationWorkspaceGroup {
+  const cwd = items[0]?.cwd ?? null;
+  return {
+    key: cwd ? `path:${cwd}` : 'unset',
+    label: cwd ? 'demo-project' : '未设置工作目录',
+    cwd,
+    pathLabel: null,
+    items,
+    ...partial,
+  };
+}
+
 function rail(partial?: Partial<Parameters<typeof ChatSessionRail>[0]>) {
   const item = conversation();
   return createElement(ChatSessionRail, {
     open: true,
     listLoading: false,
-    groups: [{ key: 'today', label: '今天', items: [item] }],
+    groups: [workspaceGroup([item])],
     conversations: [item],
     filteredCount: 1,
     query: '',
@@ -65,7 +84,7 @@ describe('ChatSessionRail titles', () => {
       'Use your terminal to write exactly what I asked without clipping the title';
     const html = renderMarkup(
       rail({
-        groups: [{ key: 'today', label: '今天', items: [conversation({ title: full })] }],
+        groups: [workspaceGroup([conversation({ title: full })])],
         conversations: [conversation({ title: full })],
         firstUserContentById: { c1: full },
       }),
@@ -94,7 +113,7 @@ describe('ChatSessionRail titles', () => {
     renderMarkup(
       rail({
         activeId: active.id,
-        groups: [{ key: 'today', label: '今天', items: [active, clipped] }],
+        groups: [workspaceGroup([active, clipped])],
         conversations: [active, clipped],
         filteredCount: 2,
         firstUserContentById,
@@ -133,7 +152,30 @@ describe('ChatSessionRail titles', () => {
     expect(hint.meta).toContain('/workspace/demo-project');
     const src = readFileSync(new URL('./ChatSessionRail.tsx', import.meta.url), 'utf8');
     expect(src).toContain('conversationRailHintView(');
-    expect(src).not.toContain('cwdShortName');
+    expect(src).toContain('data-help="chat-workspace-group-label"');
+  });
+
+  it('groups sessions under a collapsible working-directory header', () => {
+    const html = renderMarkup(rail());
+    expect(html).toContain('data-help="chat-workspace-group"');
+    expect(html).toContain('data-help="chat-workspace-group-label"');
+    expect(html).toContain('demo-project');
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).not.toContain('今天');
+    const src = readFileSync(new URL('./ChatSessionRail.tsx', import.meta.url), 'utf8');
+    expect(src).toContain('ChevronDown');
+    expect(src).toContain('ChevronRight');
+  });
+
+  it('shows the full path when two workspaces share a short name', () => {
+    const item = conversation();
+    const html = renderMarkup(
+      rail({
+        groups: [workspaceGroup([item], { pathLabel: '/home/alice/demo-project' })],
+      }),
+    );
+    expect(html).toContain('data-help="chat-workspace-group-path"');
+    expect(html).toContain('/home/alice/demo-project');
   });
 
   it('paints 新建对话 with the theme fill', () => {

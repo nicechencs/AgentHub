@@ -304,7 +304,8 @@ describe('chat layout wiring', () => {
     expect(rail).toContain('AgentLogo');
     expect(rail).toContain('hint={false}');
     expect(rail).not.toContain('conversationAgentLine');
-    expect(rail).not.toContain('cwdShortName');
+    expect(rail).toContain('data-help="chat-workspace-group"');
+    expect(rail).toContain('aria-expanded');
     expect(rail).toContain('conversationTitle');
     expect(rail).not.toContain('isBlankConversationDraft');
     expect(rail).toContain("t('chat.rail.searchPlaceholder')");
