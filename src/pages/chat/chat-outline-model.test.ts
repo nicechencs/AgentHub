@@ -6,10 +6,12 @@ import {
   OUTLINE_MIN_PANEL_WIDTH_PX,
   OUTLINE_MIN_PROMPTS,
   applyOutlineJumpOffset,
+  OUTLINE_RAIL_INSET_PX,
   outlinePanelElement,
   outlinePanelWidthReady,
   outlinePromptPreview,
   outlinePromptsFromTurns,
+  outlineRailLeftOffset,
   outlineTickSize,
   planOutlineJumpScroll,
   promptTickMagnification,
@@ -143,6 +145,24 @@ describe('outline panel measurement', () => {
     };
     expect(readOutlinePanelWidth(stage as unknown as Element)).toBe(1100);
     expect(readOutlinePanelWidth(null)).toBe(0);
+  });
+});
+
+describe('outlineRailLeftOffset', () => {
+  it('pins the rail to the stage left edge plus the inset', () => {
+    expect(OUTLINE_RAIL_INSET_PX).toBe(4);
+    const host = { getBoundingClientRect: () => ({ left: 220 }) };
+    const stage = { getBoundingClientRect: () => ({ left: 40 }) };
+    expect(outlineRailLeftOffset(host, stage)).toBe(-176);
+    expect(outlineRailLeftOffset(host, stage, 2)).toBe(-178);
+  });
+
+  it('uses the inset when host and stage share an edge, or either is missing', () => {
+    const edge = { getBoundingClientRect: () => ({ left: 12 }) };
+    expect(outlineRailLeftOffset(edge, edge)).toBe(OUTLINE_RAIL_INSET_PX);
+    expect(outlineRailLeftOffset(null, edge)).toBe(OUTLINE_RAIL_INSET_PX);
+    expect(outlineRailLeftOffset(edge, null)).toBe(OUTLINE_RAIL_INSET_PX);
+    expect(outlineRailLeftOffset(null, null)).toBe(OUTLINE_RAIL_INSET_PX);
   });
 });
 

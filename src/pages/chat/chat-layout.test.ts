@@ -585,9 +585,14 @@ describe('chat layout wiring', () => {
     expect(source('ChatTranscript.tsx')).toContain('onJumpToPrompt={onJumpToOutline}');
     expect(source('ChatOutlineRail.tsx')).toContain('data-chat-outline-measure');
     expect(source('ChatOutlineRail.tsx')).toContain('outlinePanelWidthReady');
+    expect(source('ChatOutlineRail.tsx')).toContain('outlineRailLeftOffset');
     expect(source('ChatOutlineRail.tsx')).toContain('if (!isEnabled) return null');
     expect(source('ChatOutlineRail.tsx')).not.toContain('prompts.length < 2) return null');
     expect(source('ChatOutlineRail.tsx')).toContain('onJumpToPrompt={onJumpToPrompt}');
+    expect(source('ChatOutlineRail.tsx')).toContain('Hint');
+    expect(source('ChatOutlineRail.tsx')).toContain('side="right"');
+    expect(source('ChatOutlineRail.tsx')).not.toContain('chat-outline-preview');
+    expect(source('ChatOutlineRail.tsx')).not.toContain('flexGrow: 1');
     expect(source('use-chat-outline.ts')).toContain('outlinePanelWidthReady');
     expect(source('ChatSessionRail.tsx')).not.toContain('ChatOutlineRail');
     expect(source('index.tsx')).toContain('onJumpToOutline={page.jumpToOutlinePrompt}');
