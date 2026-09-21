@@ -2026,7 +2026,7 @@ fn acp_cancel_deadline_terminalizes_without_a_server_response() {
     assert!(snapshot.events.iter().any(|event| {
         matches!(
             &event.event,
-            ChatEvent::Error { message } if message.contains("请新建对话")
+            ChatEvent::Error { message } if message.contains("已中断当前生成")
         )
     }));
     assert!(!snapshot
@@ -2135,37 +2135,14 @@ fn acp_stop_reasons_never_default_to_success() {
 }
 
 #[test]
-fn dead_kiro_process_rejects_existing_session_without_replacing_thread_id() {
-    let db = Database::open_in_memory().unwrap();
-    conversation(&db, "dead-kiro");
-    let mut worker = worker(&db, "dead-kiro");
-    worker.agent = AgentId::Kiro;
-    worker.store.enable_if_new("dead-kiro").unwrap();
-    worker.thread_id = Some("kiro-session-1".into());
-    worker
-        .store
-        .set_state(
-            "dead-kiro",
-            RuntimePhase::Completed,
-            None,
-            worker.thread_id.as_deref(),
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-    let error = worker.acp_connect_and_prompt(Vec::new()).unwrap_err();
-    assert!(error.to_string().contains("新建对话"));
-    assert_eq!(worker.thread_id.as_deref(), Some("kiro-session-1"));
+fn dead_kiro_process_plans_a_new_session_in_the_same_conversation() {
     assert_eq!(
-        worker
-            .store
-            .record("dead-kiro")
-            .unwrap()
-            .unwrap()
-            .thread_id
-            .as_deref(),
-        Some("kiro-session-1")
+        super::ops::acp_session_plan(AgentId::Kiro, false, true),
+        super::ops::AcpSessionPlan::New
+    );
+    assert_eq!(
+        super::ops::acp_session_plan(AgentId::Kiro, true, true),
+        super::ops::AcpSessionPlan::PromptExisting
     );
 }
 

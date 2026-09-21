@@ -29,10 +29,6 @@ function renderBubble(message: ChatMessage, process?: AgentProcessView) {
     createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
       message,
       process,
-      isLastTurn: true,
-      multiAgent: false,
-      retryDisabled: false,
-      onRetry: () => undefined,
     }) as ReactElement),
   );
 }
@@ -76,19 +72,11 @@ describe('ChatMessageBubble streaming feel', () => {
     expect(done).not.toContain('累计');
   });
 
-  it('hides the bubble retry when the stop banner already has it', () => {
-    const html = renderToStaticMarkup(
-      createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
-        message: agentMessage('', 'cancelled'),
-        isLastTurn: true,
-        multiAgent: false,
-        retryDisabled: false,
-        hideRetry: true,
-        onRetry: () => undefined,
-      })),
-    );
-    expect(html).not.toContain('重试');
-    expect(html).not.toContain('已停止');
+  it('does not show retry on a failed or stopped reply', () => {
+    const cancelled = renderBubble(agentMessage('', 'cancelled'));
+    const failed = renderBubble(agentMessage('', 'failed'));
+    expect(cancelled).not.toContain('重试');
+    expect(failed).not.toContain('重试');
   });
 
   it('shows a clickable thinking bar instead of three dots when thinking has no body yet', () => {
@@ -106,10 +94,7 @@ describe('ChatMessageBubble streaming feel', () => {
       createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
         message: agentMessage(''),
         process,
-        isLastTurn: true,
-        multiAgent: false,
-        retryDisabled: false,
-        onRetry: () => undefined,
+
         onOpenProcess: () => undefined,
       })),
     );
@@ -137,10 +122,7 @@ describe('ChatMessageBubble streaming feel', () => {
       createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
         message: agentMessage(''),
         process,
-        isLastTurn: true,
-        multiAgent: false,
-        retryDisabled: false,
-        onRetry: () => undefined,
+
         onOpenProcess: () => undefined,
       })),
     );
@@ -166,10 +148,6 @@ describe('ChatMessageBubble streaming feel', () => {
       createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
         message: agentMessage('第一段正文'),
         process,
-        isLastTurn: true,
-        multiAgent: false,
-        retryDisabled: false,
-        onRetry: () => undefined,
         onOpenProcess: () => undefined,
       })),
     );
@@ -196,10 +174,6 @@ describe('ChatMessageBubble streaming feel', () => {
       createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
         message: agentMessage(''),
         process,
-        isLastTurn: true,
-        multiAgent: false,
-        retryDisabled: false,
-        onRetry: () => undefined,
         onOpenProcess: () => undefined,
       })),
     );
@@ -227,10 +201,7 @@ describe('ChatMessageBubble streaming feel', () => {
       createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
         message: agentMessage(''),
         process,
-        isLastTurn: true,
-        multiAgent: false,
-        retryDisabled: false,
-        onRetry: () => undefined,
+
         onOpenProcess: () => undefined,
       })),
     );
@@ -254,10 +225,7 @@ describe('ChatMessageBubble streaming feel', () => {
       createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
         message: agentMessage(''),
         process,
-        isLastTurn: true,
-        multiAgent: false,
-        retryDisabled: false,
-        onRetry: () => undefined,
+
         onOpenProcess: () => undefined,
       })),
     );
@@ -281,10 +249,7 @@ describe('ChatMessageBubble streaming feel', () => {
       createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
         message: agentMessage('当前工作目录是：', 'ok'),
         process,
-        isLastTurn: true,
-        multiAgent: false,
-        retryDisabled: false,
-        onRetry: () => undefined,
+
         onOpenProcess: () => undefined,
       })),
     );

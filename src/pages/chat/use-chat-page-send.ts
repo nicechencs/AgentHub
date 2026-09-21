@@ -27,8 +27,8 @@ import {
 import type { RuntimeRequest, RuntimeSnapshot } from '@/lib/api/chat';
 import type { ProcessMap } from '@/lib/chat-process';
 import type { AgentKey, ChatEvent, ChatMessage, Conversation } from '@/lib/types';
-import { localizeChatFailure, type TurnGroup } from './chat-format';
-import { busyAgentsForSends, incomingSendingIds, liveSendingIds, retryTarget, sendBlockers, titleFromPrompt, withConversationTitle } from './chat-model';
+import { localizeChatFailure } from './chat-format';
+import { busyAgentsForSends, incomingSendingIds, liveSendingIds, sendBlockers, titleFromPrompt, withConversationTitle } from './chat-model';
 import { isCurrentChatRequest } from './chat-request';
 import {
   appendQueuedFollowUp,
@@ -94,7 +94,6 @@ export function useChatPageSend(input: {
   loadMessages: (id: string) => Promise<ChatMessage[]>;
   draft: string;
   setDraft: Dispatch<SetStateAction<string>>;
-  turns: TurnGroup[];
   getStartExtras?: () => { images?: { path: string }[]; skills?: { name: string; path: string }[] };
   clearStartExtras?: () => void;
 }) {
@@ -116,7 +115,6 @@ export function useChatPageSend(input: {
     loadMessages,
     draft,
     setDraft,
-    turns,
     getStartExtras,
     clearStartExtras,
   } = input;
@@ -475,8 +473,6 @@ export function useChatPageSend(input: {
       agentsReady,
     });
   }, [active, hiddenIds, envNotReadyIds, unconfiguredAuthIds, agentsReady]);
-
-  const retry = useMemo(() => retryTarget(turns, sendingHere), [turns, sendingHere]);
 
   function applyEvent(
     ev: ChatEvent,
@@ -890,12 +886,6 @@ export function useChatPageSend(input: {
     await sendPrompt(draft.trim(), true);
   }
 
-  async function retryLast() {
-    const target = retryTarget(turns, sendingHere);
-    if (!target) return;
-    await sendPrompt(target.prompt, false);
-  }
-
   async function cancelRuntimeTarget(conversationId: string): Promise<'pending' | 'requested' | 'none'> {
     if (runtimeProbeRef.current.has(conversationId)) {
       runtimeProbeCancelRef.current.add(conversationId);
@@ -1088,10 +1078,8 @@ export function useChatPageSend(input: {
     busyAgentIds,
     processMap,
     blockers,
-    retry,
     handleSend,
     sendPrompt,
-    retryLast,
     handleCancel,
     queuedFollowUps: activeId ? followUpById[activeId] ?? [] : [],
     queuedFollowUpCount: activeId ? followUpById[activeId]?.length ?? 0 : 0,

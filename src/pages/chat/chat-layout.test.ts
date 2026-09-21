@@ -442,8 +442,8 @@ describe('chat layout wiring', () => {
     expect(translate('en', 'chat.runtime.allowAlwaysHintTurn')).toBe(
       'This conversation only, not saved',
     );
-    expect(source('ChatTurnOutcomeBanner.tsx')).toContain('turnOutcomeDetail');
-    expect(source('ChatTurnOutcomeBanner.tsx')).not.toContain('draftKept');
+    expect(source('index.tsx')).not.toContain('ChatTurnOutcomeBanner');
+    expect(source('ChatMessageBubble.tsx')).not.toContain('chat.bubble.retry');
   });
 
   it('shows Kiro ask-or-full permission mode in session settings and the header', () => {
@@ -451,7 +451,7 @@ describe('chat layout wiring', () => {
     const header = source('ChatSessionHeader.tsx');
     expect(settings).toContain('chat.kiro.permissionAsk');
     expect(settings).toContain('chat.kiro.permissionFull');
-    expect(settings).toContain('chat.kiro.settingsLocked');
+    expect(settings).not.toContain('chat.kiro.settingsLocked');
     expect(header).toContain('chat.kiro.permissionAsk');
     expect(header).toContain('chat.kiro.permissionFull');
   });

@@ -50,12 +50,9 @@ export function ChatTranscript({
   messagesError,
   onRetryMessages,
   sending,
-  retryDisabled,
   scrollRef,
   bottomRef,
   onScroll,
-  onRetry,
-  hideLastTurnRetry = false,
   onOpenLocal,
   onOpenProcess,
   onCloseProcess,
@@ -75,12 +72,9 @@ export function ChatTranscript({
   messagesError?: unknown;
   onRetryMessages?: () => void;
   sending: boolean;
-  retryDisabled: boolean;
   scrollRef: RefObject<HTMLDivElement>;
   bottomRef: RefObject<HTMLDivElement>;
   onScroll: () => void;
-  onRetry: () => void;
-  hideLastTurnRetry?: boolean;
   onOpenLocal?: (path: string, options?: MarkdownOpenLocalOptions) => boolean;
   onOpenProcess?: (turn: number, agent: AgentKey) => void;
   onCloseProcess?: () => void;
@@ -104,8 +98,6 @@ export function ChatTranscript({
   }
 
   if (!active) return <div className="min-h-0 flex-1" />;
-
-  const lastTurn = turns[turns.length - 1]?.turn;
 
   return (
     <div
@@ -153,11 +145,6 @@ export function ChatTranscript({
                       <ChatMessageBubble
                         key={g.user.id}
                         message={g.user}
-                        isLastTurn={g.turn === lastTurn}
-                        multiAgent={g.agents.length > 1}
-                        retryDisabled={retryDisabled || sending}
-                        onRetry={onRetry}
-                        hideRetry={hideLastTurnRetry}
                         localBasePath={active.cwd ?? undefined}
                         onOpenLocal={onOpenLocal}
                       />
@@ -172,11 +159,6 @@ export function ChatTranscript({
                           key={m.id}
                           message={m}
                           process={processMap[processKey(m.turn, agent)]}
-                          isLastTurn={g.turn === lastTurn}
-                          multiAgent={g.agents.length > 1}
-                          retryDisabled={retryDisabled || sending}
-                          onRetry={onRetry}
-                          hideRetry={hideLastTurnRetry}
                           localBasePath={active.cwd ?? undefined}
                           onOpenLocal={onOpenLocal}
                           onOpenProcess={onOpenProcess}
