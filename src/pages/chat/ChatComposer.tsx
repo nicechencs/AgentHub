@@ -426,7 +426,7 @@ export function ChatComposer({
           </div>
           <ChatShortcutsHelp />
         </div>
-        <div className="flex shrink-0 items-center gap-1.5 border-t border-border/50 px-2 py-1.5">
+        <div className="flex shrink-0 items-center gap-1.5 border-t border-border/50 px-3 py-1.5">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button

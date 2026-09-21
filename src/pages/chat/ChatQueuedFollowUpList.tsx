@@ -18,7 +18,7 @@ export function ChatQueuedFollowUpList({
   if (!view) return null;
   return (
     <div
-      className="mx-3 mb-1 space-y-1 rounded-btn bg-subtle px-2 py-1"
+      className="mx-4 mb-1 space-y-1 rounded-btn bg-subtle px-2 py-1"
       data-help="chat-queued-follow-ups"
     >
       <div className="flex items-center gap-2">
