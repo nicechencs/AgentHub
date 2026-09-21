@@ -352,7 +352,7 @@ fn acp_session_plan_reuses_live_kiro_and_skips_cross_process_load() {
     );
     assert_eq!(
         acp_session_plan(AgentId::Kiro, false, true),
-        AcpSessionPlan::Unavailable
+        AcpSessionPlan::New
     );
     assert_eq!(
         acp_session_plan(AgentId::Kiro, false, false),
@@ -370,6 +370,42 @@ fn acp_session_plan_reuses_live_kiro_and_skips_cross_process_load() {
         acp_session_plan(AgentId::Grok, false, false),
         AcpSessionPlan::New
     );
+}
+
+#[test]
+fn acp_session_settings_changed_detects_model_effort_or_trust() {
+    assert!(!acp_session_settings_changed(
+        Some("a"),
+        Some("high"),
+        Some(false),
+        Some("a"),
+        Some("high"),
+        false,
+    ));
+    assert!(acp_session_settings_changed(
+        Some("a"),
+        Some("high"),
+        Some(false),
+        Some("b"),
+        Some("high"),
+        false,
+    ));
+    assert!(acp_session_settings_changed(
+        Some("a"),
+        Some("high"),
+        Some(false),
+        Some("a"),
+        Some("low"),
+        false,
+    ));
+    assert!(acp_session_settings_changed(
+        Some("a"),
+        Some("high"),
+        Some(false),
+        Some("a"),
+        Some("high"),
+        true,
+    ));
 }
 
 #[test]

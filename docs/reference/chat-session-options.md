@@ -4,7 +4,7 @@ description: Runtime Options 的 seed / 探测来源与 fail-closed 边界。
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-20
+updated: 2026-09-21
 ---
 
 # Chat 会话选项目录
@@ -25,7 +25,7 @@ Chat「模型 / 思考 / 扩展 / 斜杠原生命令」等来自会话 **Options
 | Agent（会话绑定） | 模型等目录来源 | 失败时 |
 |---|---|---|
 | Grok | 活进程 `_x.ai/models/list`；否则 `grok_fallback_catalog` | 回退 seed；空则不当作「已探测权威全表」 |
-| Kiro | `fetch_kiro_catalog` | 按实现回退；启动后设置常冻结（换模型需新会话，见 STATUS） |
+| Kiro | `fetch_kiro_catalog` | 按实现回退；生成中冻结，结束后可换模型/思考/权限（下一轮重新拉起进程，见 STATUS） |
 | Claude | `claude_fallback_catalog`（seed） | 无活探测权威时仅用 seed |
 | Codex（及其他走 app-server 探测的路径） | `model/list`、`skills/list`、`plugin/installed` | 探测失败 → 空/缓存策略；不伪装厂商未声明的项 |
 
@@ -34,7 +34,7 @@ Chat「模型 / 思考 / 扩展 / 斜杠原生命令」等来自会话 **Options
 ## 纪律
 
 1. **未知模型**：不因用户手输就写成「已支持」；继承默认选项的规则须在代码注释与产品文案中可解释。  
-2. **launch vs 会话中**：Kiro 等「开始后固定」是产品事实；不要做成中途假切换。  
+2. **launch vs 会话中**：生成中不改正在跑的一轮；Kiro / Grok 换模型或权限会在下一轮重新拉起进程，不要假装当前进程已切换。  
 3. **与深度矩阵**：只有 D2+ 会话才期望丰富 Options；D1 legacy 不假装有 app-server 目录。  
 
 相关：[Chat 支持深度矩阵](chat-support-depth.md)、[身份兼容族](../concepts/agent-identity-families.md)。

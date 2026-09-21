@@ -65,7 +65,6 @@ import {
 import { isPreviewableChatFilePath } from './chat-file-preview';
 import { useChatContentWidth } from './use-chat-content-width';
 import { ChatRuntimeExtras } from './ChatRuntimeExtras';
-import { ChatTurnOutcomeBanner } from './ChatTurnOutcomeBanner';
 import { ChatComposer } from './ChatComposer';
 import { ChatSessionHeader } from './ChatSessionHeader';
 import { ChatSessionRail } from './ChatSessionRail';
@@ -393,13 +392,10 @@ export default function ChatPage() {
               messagesError={page.messagesError}
               onRetryMessages={page.retryMessages}
               sending={page.sending}
-              retryDisabled={page.blockers.length > 0}
               scrollRef={page.transcriptRef}
               bottomRef={page.bottomRef}
               onScroll={page.onTranscriptScroll}
               onJumpToOutline={page.jumpToOutlinePrompt}
-              onRetry={() => void page.retryLast()}
-              hideLastTurnRetry={Boolean(page.turnOutcome)}
               onOpenLocal={openFilePreview}
               onOpenProcess={openProcessInspect}
               onCloseProcess={preview.close}
@@ -474,14 +470,6 @@ export default function ChatPage() {
                       </div>
                     </div>
                   </Notice>
-                ) : null}
-                {page.turnOutcome ? (
-                  <ChatTurnOutcomeBanner
-                    outcome={page.turnOutcome}
-                    retryDisabled={page.blockers.length > 0 || page.sending}
-                    onRetry={() => void page.retryLast()}
-                    onRestoreDraft={() => page.setDraft(page.turnOutcome?.prompt ?? '')}
-                  />
                 ) : null}
                 {page.snapshotBannerVisible ? (
                   <Notice tone="warning" className="mb-2">
@@ -666,7 +654,6 @@ export default function ChatPage() {
                         models={page.runtimeOps.models}
                         settings={page.runtimeOps.settings}
                         frozen={page.runtimeOps.frozen}
-                        frozenReason={page.primaryAgent === 'kiro' ? t('chat.kiro.settingsLocked') : undefined}
                         catalogLoading={page.runtimeOps.loading}
                         efforts={page.runtimeOps.currentEfforts}
                         onSwitchModel={(id) => void page.runtimeOps.switchModel(id)}
@@ -703,6 +690,7 @@ export default function ChatPage() {
           onDangerConfirmChange={page.setDangerConfirm}
           onPatch={(patch) => void page.patchActive(patch)}
           runtimeLocked={page.runtimeLocked || page.sendingHere}
+          turnActive={page.sendingHere}
           transport={page.runtimeOps.transport}
           runtimeEnabled={Boolean(page.runtime?.enabled)}
           runtime={page.runtime}

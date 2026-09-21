@@ -4,8 +4,6 @@ import { AgentThinking } from '@/components/shared/AgentThinking';
 import { CopyTextButton } from '@/components/shared/CopyTextButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { MarkdownView, type MarkdownOpenLocalOptions } from '@/components/shared/MarkdownView';
-import { Button } from '@/components/ui/button';
-import { Hint } from '@/components/ui/tooltip';
 import { agentDisplayName } from '@/config/agents';
 import {
   formatProcessHeadline,
@@ -33,11 +31,6 @@ import { streamingActivity, streamingPlaceholderKey } from './chat-streaming';
 export function ChatMessageBubble({
   message,
   process,
-  isLastTurn,
-  multiAgent,
-  retryDisabled,
-  onRetry,
-  hideRetry = false,
   localBasePath,
   onOpenLocal,
   onOpenProcess,
@@ -46,11 +39,6 @@ export function ChatMessageBubble({
 }: {
   message: ChatMessage;
   process?: AgentProcessView;
-  isLastTurn: boolean;
-  multiAgent: boolean;
-  retryDisabled: boolean;
-  onRetry: () => void;
-  hideRetry?: boolean;
   localBasePath?: string;
   onOpenLocal?: (path: string, options?: MarkdownOpenLocalOptions) => boolean;
   onOpenProcess?: (turn: number, agent: AgentKey) => void;
@@ -66,11 +54,6 @@ export function ChatMessageBubble({
     <AgentBubble
       message={message}
       process={process}
-      isLastTurn={isLastTurn}
-      multiAgent={multiAgent}
-      retryDisabled={retryDisabled}
-      onRetry={onRetry}
-      hideRetry={hideRetry}
       localBasePath={localBasePath}
       onOpenLocal={onOpenLocal}
       onOpenProcess={onOpenProcess}
@@ -110,11 +93,6 @@ function UserBubble({
 function AgentBubble({
   message,
   process,
-  isLastTurn,
-  multiAgent,
-  retryDisabled,
-  onRetry,
-  hideRetry,
   localBasePath,
   onOpenLocal,
   onOpenProcess,
@@ -123,11 +101,6 @@ function AgentBubble({
 }: {
   message: ChatMessage;
   process?: AgentProcessView;
-  isLastTurn: boolean;
-  multiAgent: boolean;
-  retryDisabled: boolean;
-  onRetry: () => void;
-  hideRetry: boolean;
   localBasePath?: string;
   onOpenLocal?: (path: string, options?: MarkdownOpenLocalOptions) => boolean;
   onOpenProcess?: (turn: number, agent: AgentKey) => void;
@@ -175,11 +148,10 @@ function AgentBubble({
       ? formatProcessHeadline(process.steps, effectivePhase, t)
       : messageStatusLabel(t, resolvedStatus, process, hasContent) ?? t('chat.process.summaryGenerating')
     : '';
-  const statusText = (hideRetry && looksFailed) || showProcessChip || showThinkingBar
+  const statusText = showProcessChip || showThinkingBar
     ? null
     : messageStatusLabel(t, resolvedStatus, process, hasContent);
   const activity = running ? streamingActivity(process, hasContent) : null;
-  const showRetry = isLastTurn && looksFailed && !hideRetry;
   const usageText = formatTurnUsageFooter(process?.steps, running, t);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -199,23 +171,6 @@ function AgentBubble({
           <span className="font-medium text-secondary">{agentDisplayName(agent)}</span>
           {statusText ? <span>{statusText}</span> : null}
           {message.durationMs > 0 && <span>{formatDurationMs(message.durationMs)}</span>}
-          {showRetry && (
-            <Hint
-              label={
-                multiAgent ? t('chat.bubble.retryAllHint') : undefined
-              }
-            >
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={retryDisabled}
-                onClick={onRetry}
-              >
-                {t('chat.bubble.retry')}
-              </Button>
-            </Hint>
-          )}
         </div>
         {showThinkingBar && thinkingLabel ? (
           <button
