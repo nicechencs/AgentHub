@@ -1,6 +1,7 @@
 import { createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { StorageKey } from '@/lib/storage-key';
 import type { ChatMessage } from '@/lib/types';
 import type { TurnGroup } from './chat-format';
@@ -34,11 +35,15 @@ function renderRail(props: {
   enabled?: boolean;
 }): string {
   return renderToStaticMarkup(
-    createElement(ChatOutlineRail, {
-      turns: props.turns,
-      measuredWidth: props.measuredWidth,
-      ...(props.enabled === undefined ? {} : { enabled: props.enabled }),
-    }) as ReactElement,
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(ChatOutlineRail, {
+        turns: props.turns,
+        measuredWidth: props.measuredWidth,
+        ...(props.enabled === undefined ? {} : { enabled: props.enabled }),
+      }),
+    ) as ReactElement,
   );
 }
 
@@ -160,6 +165,9 @@ describe('ChatOutlineRail markup', () => {
     expect(html).toContain('data-testid="chat-outline-tick-u2"');
     expect(html).toContain('1 / 2：first');
     expect(html).toContain('2 / 2：second');
+    expect(html).toContain('left:4px');
+    expect(html).not.toContain('flex-grow:1');
+    expect(html).not.toContain('data-testid="chat-outline-preview"');
   });
 
   it('does not treat a zero-width empty host as a mounted rail', () => {

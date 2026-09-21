@@ -102,7 +102,7 @@ export function ChatTranscript({
   return (
     <div
       ref={outlinePanel.assignRef}
-      className="relative flex min-h-0 flex-1 flex-col"
+      className="relative flex min-h-0 flex-1 flex-col overflow-visible"
       data-chat-outline-host
     >
       <div
