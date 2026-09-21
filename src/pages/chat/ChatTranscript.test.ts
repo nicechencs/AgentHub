@@ -183,11 +183,11 @@ describe('ChatTranscript surfaces', () => {
     expect(html).toContain('first prompt');
     expect(html).toContain('second prompt');
     expect(html).toContain('pointer-events-none');
-    // Unmeasured panel width is 0, so the 720px gate still hides the ticks.
+    // Unmeasured panel width is 0, so the 768px gate still hides the ticks.
     expect(html).not.toContain('data-testid="chat-outline-rail"');
   });
 
-  it('mounts the outline rail when the setting, two prompts, and a 720px panel hold', () => {
+  it('mounts the outline rail when the setting, two prompts, and a 768px panel hold', () => {
     const html = renderMarkup(
       createElement(ChatTranscript, {
         active: conversation(),
@@ -202,7 +202,7 @@ describe('ChatTranscript surfaces', () => {
         scrollRef: createRef<HTMLDivElement>(),
         bottomRef: createRef<HTMLDivElement>(),
         onScroll: () => undefined,
-        measuredWidth: 720,
+        measuredWidth: 768,
         outlineEnabled: true,
       }),
     );

@@ -93,24 +93,24 @@ describe('outlinePromptsFromTurns', () => {
 });
 
 describe('shouldShowChatOutline', () => {
-  it('locks the gates at preference on, two user prompts, and 720px', () => {
+  it('locks the gates at preference on, two user prompts, and 768px', () => {
     expect(OUTLINE_MIN_PROMPTS).toBe(2);
-    expect(OUTLINE_MIN_PANEL_WIDTH_PX).toBe(720);
+    expect(OUTLINE_MIN_PANEL_WIDTH_PX).toBe(768);
   });
 
   it('shows only when preference, prompt count, and panel width all hold', () => {
-    const shown = { enabled: true, promptCount: 2, panelWidth: 720 };
+    const shown = { enabled: true, promptCount: 2, panelWidth: 768 };
     expect(shouldShowChatOutline(shown)).toBe(true);
-    expect(shouldShowChatOutline({ ...shown, promptCount: 3, panelWidth: 721 })).toBe(true);
+    expect(shouldShowChatOutline({ ...shown, promptCount: 3, panelWidth: 769 })).toBe(true);
 
     expect(shouldShowChatOutline({ ...shown, enabled: false })).toBe(false);
     expect(shouldShowChatOutline({ ...shown, promptCount: 0 })).toBe(false);
     expect(shouldShowChatOutline({ ...shown, promptCount: 1 })).toBe(false);
     expect(shouldShowChatOutline({ ...shown, panelWidth: 0 })).toBe(false);
-    expect(shouldShowChatOutline({ ...shown, panelWidth: 719 })).toBe(false);
+    expect(shouldShowChatOutline({ ...shown, panelWidth: 767 })).toBe(false);
 
-    expect(shouldShowChatOutline({ enabled: false, promptCount: 1, panelWidth: 719 })).toBe(false);
-    expect(shouldShowChatOutline({ enabled: true, promptCount: 5, panelWidth: 719 })).toBe(false);
+    expect(shouldShowChatOutline({ enabled: false, promptCount: 1, panelWidth: 767 })).toBe(false);
+    expect(shouldShowChatOutline({ enabled: true, promptCount: 5, panelWidth: 767 })).toBe(false);
     expect(shouldShowChatOutline({ enabled: false, promptCount: 5, panelWidth: 900 })).toBe(false);
     expect(shouldShowChatOutline({ enabled: true, promptCount: 2, panelWidth: 0 })).toBe(false);
   });
@@ -150,10 +150,10 @@ describe('outline panel measurement', () => {
 
 describe('outlineRailLeftOffset', () => {
   it('pins the rail to the stage left edge plus the inset', () => {
-    expect(OUTLINE_RAIL_INSET_PX).toBe(4);
+    expect(OUTLINE_RAIL_INSET_PX).toBe(8);
     const host = { getBoundingClientRect: () => ({ left: 220 }) };
     const stage = { getBoundingClientRect: () => ({ left: 40 }) };
-    expect(outlineRailLeftOffset(host, stage)).toBe(-176);
+    expect(outlineRailLeftOffset(host, stage)).toBe(-172);
     expect(outlineRailLeftOffset(host, stage, 2)).toBe(-178);
   });
 
@@ -168,12 +168,12 @@ describe('outlineRailLeftOffset', () => {
 
 describe('outlineTickSize', () => {
   it('grows from the resting or current width toward the magnified size', () => {
-    expect(outlineTickSize(false, 0)).toEqual({ width: 10, height: 2 });
-    expect(outlineTickSize(true, 0)).toEqual({ width: 18, height: 2 });
-    expect(outlineTickSize(false, 1)).toEqual({ width: 26, height: 4 });
-    expect(outlineTickSize(true, 1)).toEqual({ width: 26, height: 4 });
-    expect(outlineTickSize(false, 0.5)).toEqual({ width: 18, height: 3 });
-    expect(outlineTickSize(true, 0.5)).toEqual({ width: 22, height: 3 });
+    expect(outlineTickSize(false, 0)).toEqual({ width: 8, height: 2 });
+    expect(outlineTickSize(true, 0)).toEqual({ width: 12, height: 2 });
+    expect(outlineTickSize(false, 1)).toEqual({ width: 16, height: 4 });
+    expect(outlineTickSize(true, 1)).toEqual({ width: 16, height: 4 });
+    expect(outlineTickSize(false, 0.5)).toEqual({ width: 12, height: 3 });
+    expect(outlineTickSize(true, 0.5)).toEqual({ width: 14, height: 3 });
   });
 });
 

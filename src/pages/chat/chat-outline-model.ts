@@ -2,17 +2,17 @@ import type { TurnGroup } from './chat-format';
 
 export const OUTLINE_MAGNIFY_RADIUS = 3;
 export const OUTLINE_MIN_PROMPTS = 2;
-export const OUTLINE_MIN_PANEL_WIDTH_PX = 720;
+export const OUTLINE_MIN_PANEL_WIDTH_PX = 768;
 export const OUTLINE_READING_LINE_PX = 8;
 export const OUTLINE_PREVIEW_LIMIT = 120;
 /** Gap from the chat stage’s left edge — keep the tick column on the page edge. */
-export const OUTLINE_RAIL_INSET_PX = 4;
+export const OUTLINE_RAIL_INSET_PX = 8;
 
 export const OUTLINE_TICK = {
-  restWidth: 10,
+  restWidth: 8,
   restHeight: 2,
-  activeWidth: 18,
-  magnifiedWidth: 26,
+  activeWidth: 12,
+  magnifiedWidth: 16,
   magnifiedHeight: 4,
 } as const;
 

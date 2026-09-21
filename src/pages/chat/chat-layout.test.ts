@@ -40,7 +40,8 @@ describe('chat layout wiring', () => {
     expect(source('ChatRuntimeExtras.tsx')).toContain('data-help="chat-model"');
     expect(source('ChatRuntimeExtras.tsx')).toContain('data-help="chat-composer-cluster"');
     expect(source('ChatRuntimeExtras.tsx')).toContain('max-w-36');
-    expect(source('ChatComposer.tsx')).toContain('px-2 py-1.5');
+    expect(source('ChatComposer.tsx')).toContain('border-t border-border/50 px-3 py-1.5');
+    expect(source('ChatComposer.tsx')).not.toContain('border-t border-border/50 px-2 py-1.5');
     expect(source('ChatComposer.tsx')).toContain('chatModelDisplayName');
     expect(source('ChatComposer.tsx')).toContain('chatEffortHint');
     expect(translate('zh', 'chat.runtimeOps.effortHintHigh')).toBe('可能更慢');
