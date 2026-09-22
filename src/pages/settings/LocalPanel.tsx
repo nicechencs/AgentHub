@@ -14,6 +14,11 @@ import {
 import { useToast } from '@/components/ui/toast';
 import { openLogsDir } from '@/lib/api/settings';
 import { openPathInFileManager } from '@/lib/api/skill';
+import {
+  DEFAULT_LOG_RETENTION_DAYS,
+  MAX_LOG_RETENTION_DAYS,
+  MIN_LOG_RETENTION_DAYS,
+} from '@/lib/backend/contracts/app-limits';
 import type { AppSettings, LogLevel } from '@/lib/types';
 import { persistSettingsPatch } from './settings-persist';
 import {
@@ -130,8 +135,8 @@ export function LocalPanel({
           >
             <Input
               type="number"
-              min={1}
-              max={365}
+              min={MIN_LOG_RETENTION_DAYS}
+              max={MAX_LOG_RETENTION_DAYS}
               className="w-20"
               value={settings.logRetentionDays}
               onFocus={() => {
@@ -140,7 +145,7 @@ export function LocalPanel({
               onChange={(e) => {
                 const n = parseInt(e.target.value, 10);
                 if (Number.isNaN(n)) {
-                  patch({ logRetentionDays: 14 });
+                  patch({ logRetentionDays: DEFAULT_LOG_RETENTION_DAYS });
                   return;
                 }
                 patch({ logRetentionDays: clampLogRetentionDays(n) });

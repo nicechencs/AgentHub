@@ -11,7 +11,11 @@ import {
   type CoreAccountSwitchResult,
 } from '@/lib/backend/contracts/account-map';
 import { unsupportedError } from '@/lib/backend/contracts/errors';
-import { OAUTH_WAIT_TIMEOUT_SECS } from '@/lib/backend/contracts/oauth-constants';
+import {
+  OAUTH_DEVICE_POLL_INTERVAL_SECS,
+  OAUTH_PKCE_LISTEN_TIMEOUT_SECS,
+  OAUTH_WAIT_TIMEOUT_SECS,
+} from '@/lib/backend/contracts/oauth-constants';
 import type { AgentKey } from '@/lib/types';
 import { logger } from '@/lib/logger';
 import { invoke } from './invoke';
@@ -189,9 +193,11 @@ export function createTauriAccountPort(): AccountPort {
       const opt = key ? options.find((o) => o.id === key) : undefined;
       if (opt?.flow === 'deviceCode') {
         const start = await this.startDeviceOAuth(agentId, opt.id);
-        const deadline = Date.now() + (start.expiresInSecs || 900) * 1000;
+        const deadline = Date.now() + (start.expiresInSecs || OAUTH_PKCE_LISTEN_TIMEOUT_SECS) * 1000;
         while (Date.now() < deadline) {
-          await new Promise((r) => setTimeout(r, (start.intervalSecs || 5) * 1000));
+          await new Promise((r) =>
+            setTimeout(r, (start.intervalSecs || OAUTH_DEVICE_POLL_INTERVAL_SECS) * 1000),
+          );
           const poll = await this.pollDeviceOAuth(start.state);
           if (poll.status === 'complete') return this.finishDeviceOAuth(start.state);
           if (poll.status === 'failed' || poll.status === 'expired') {
@@ -201,7 +207,7 @@ export function createTauriAccountPort(): AccountPort {
         throw unsupportedError('OAuth 授权', '设备码授权超时');
       }
       const start = await this.startOAuth(agentId, true, key);
-      const deadline = Date.now() + (start.expiresInSecs || 900) * 1000;
+      const deadline = Date.now() + (start.expiresInSecs || OAUTH_PKCE_LISTEN_TIMEOUT_SECS) * 1000;
       while (Date.now() < deadline) {
         const remainingSecs = Math.max(1, Math.ceil((deadline - Date.now()) / 1000));
         const wait = await this.waitOAuth(

@@ -49,7 +49,7 @@ pub fn run(hub: &AgentHub, args: RunArgs, format: OutputFormat) -> Result<()> {
         dry_run: args.dry_run,
         skip_missing: true,
         allow_dangerous: args.allow_dangerous,
-        max_output_bytes: 2 * 1024 * 1024,
+        max_output_bytes: agenthub_core::catalog::limits::DEFAULT_RUN_MAX_OUTPUT_BYTES,
         // CLI multi-run stays human-readable text (no NDJSON process parse).
         process_mode: agenthub_core::models::ProcessMode::Text,
         native_session_id: None,
