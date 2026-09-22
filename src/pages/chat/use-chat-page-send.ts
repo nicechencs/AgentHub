@@ -882,8 +882,8 @@ export function useChatPageSend(input: {
     }
   }
 
-  async function handleSend() {
-    await sendPrompt(draft.trim(), true);
+  async function handleSend(promptOverride?: string) {
+    await sendPrompt((promptOverride ?? draft).trim(), true);
   }
 
   async function cancelRuntimeTarget(conversationId: string): Promise<'pending' | 'requested' | 'none'> {

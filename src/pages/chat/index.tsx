@@ -588,11 +588,11 @@ export default function ChatPage() {
                   walletError={page.walletError}
                   onRetryWallet={() => void page.reloadWallet()}
                   onRetryStatus={() => void page.refreshAgents().catch(() => {})}
-                  onSend={() => void page.handleSend()}
+                  onSend={(text) => void page.handleSend(text)}
                   onSteer={
                     busySend === 'steer'
-                      ? () => {
-                          const value = page.draft;
+                      ? (text) => {
+                          const value = text ?? page.draft;
                           void page.steerRuntime(value).then((ok) => {
                             if (ok) page.setDraft('');
                           }).catch(() => {});
@@ -601,7 +601,7 @@ export default function ChatPage() {
                   }
                   onQueueAfterTurn={
                     busySend === 'queue'
-                      ? () => void page.handleSend()
+                      ? (text) => void page.handleSend(text)
                       : undefined
                   }
                   focusNonce={page.composerFocusNonce}

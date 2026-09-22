@@ -2893,6 +2893,8 @@ export const en = {
       planStatusFailed: 'Failed',
       planExpand: 'Expand plan',
       planCollapse: 'Collapse plan',
+      expandRow: 'Expandable',
+      collapseRow: 'Collapse',
       snapshotStale: "Couldn't update this chat",
       snapshotStaleHint: 'Showing the last content we have. Retry to read again.',
       snapshotRetry: 'Retry',

@@ -2873,6 +2873,8 @@ export const zh = {
       planStatusFailed: '失败',
       planExpand: '展开计划',
       planCollapse: '收起计划',
+      expandRow: '可展开',
+      collapseRow: '收起',
       snapshotStale: '没法更新这场对话',
       snapshotStaleHint: '停在最后看到的内容。点重试再读一次。',
       snapshotRetry: '重试',

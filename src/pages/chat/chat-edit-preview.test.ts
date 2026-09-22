@@ -368,11 +368,13 @@ describe('ChatTurnEditList', () => {
       ),
     );
     expect(html).toContain('data-help="chat-turn-edits"');
+    expect(html).toContain('data-help="chat-expand-affordance"');
     expect(html).toContain('查看修改');
     expect(html).toContain('正在修改');
     expect(html).toContain('已修改');
     expect(html).toContain('src/a.ts');
     expect(html).toContain('src/b.ts');
+    expect(html).toContain('可展开');
     expect(html).toContain('aria-current="true"');
   });
 
@@ -413,7 +415,7 @@ describe('ChatEditPreviewPanel', () => {
     );
     expect(html).toContain('data-chat-edit-preview');
     expect(html).toContain('app.ts');
-    expect(html).toContain('查看修改');
+    expect(html).toContain('src');
     expect(html).toContain('PREVIEW:app.ts.diff:');
     expect(html).toContain('-old');
     expect(html).toContain('+new');

@@ -13,7 +13,7 @@ import {
 } from '@/components/shared/MarkdownView';
 import { SourcePreview } from '@/components/shared/SourcePreview';
 import { CopyableFileName } from '@/components/shared/CopyableFileName';
-import { pathTailLabel } from '@/components/shared/file-name-label';
+import { previewHeaderParts } from '@/components/shared/file-name-label';
 import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
@@ -188,27 +188,27 @@ export function ChatMarkdownPreviewPanel({
             </Button>
           ) : null}
           <div className="min-w-0 flex-1 basis-16">
-            <div className="flex min-w-0 items-baseline gap-2">
+            <Tip
+              label={resolvedPath || path}
+              className="inline-flex min-w-0 max-w-full items-baseline gap-2"
+            >
               <h2
                 id={titleId}
-                className="truncate text-sm font-semibold leading-tight text-primary"
+                className="max-w-[70%] shrink-0 truncate text-sm font-semibold leading-tight text-primary"
               >
                 {name || t('chat.preview.titleFallback')}
               </h2>
               {folder ? (
-                <Tip
-                  label={folder}
-                  className="min-w-0 max-w-[12rem] truncate text-meta text-muted"
-                >
-                  {pathTailLabel(folder)}
-                </Tip>
+                <span className="min-w-0 truncate text-meta text-muted">
+                  {previewHeaderParts(resolvedPath || path, name).directoryLabel}
+                </span>
               ) : null}
               {line && line > 0 ? (
                 <span className="shrink-0 text-meta text-muted" data-preview-line-label>
                   :{line}
                 </span>
               ) : null}
-            </div>
+            </Tip>
           </div>
           {showModeToggle ? (
             <div className={cn(segmentedTrackClass, 'shrink-0 flex-nowrap')}>

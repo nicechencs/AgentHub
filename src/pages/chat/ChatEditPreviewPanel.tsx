@@ -2,13 +2,14 @@ import { useEffect, useId } from 'react';
 import { PanelRightClose } from 'lucide-react';
 import { SourcePreview } from '@/components/shared/SourcePreview';
 import { CopyableFileName } from '@/components/shared/CopyableFileName';
-import { pathTailLabel } from '@/components/shared/file-name-label';
+import { pathTailLabel, previewHeaderParts } from '@/components/shared/file-name-label';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { Tip } from '@/components/ui/tooltip';
 import { CHAT_FILE_PREVIEW_MAX_CHARS } from '@/lib/source-preview';
 import { hasEscPriorityOverlay } from '@/lib/skills/preview-keys';
 import { cn } from '@/lib/utils';
+import { ChatExpandAffordance } from './ChatExpandAffordance';
 import {
   sameEditPath,
   turnEditDiffText,
@@ -49,14 +50,19 @@ export function ChatTurnEditList({
               <button
                 type="button"
                 className={cn(
-                  'flex w-full min-w-0 items-baseline gap-2 rounded-btn px-1 py-0.5 text-left hover:bg-hover',
+                  'group flex w-full min-w-0 items-center gap-1.5 rounded-btn px-1 py-0.5 text-left hover:bg-hover',
                   file.status === 'live' && 'agent-progress-running font-medium text-primary',
                   file.status === 'done' && 'text-secondary',
                   selected && 'bg-hover',
                 )}
+                aria-expanded={selected}
                 aria-current={selected ? 'true' : undefined}
                 onClick={() => onSelect(file)}
               >
+                <ChatExpandAffordance
+                  expanded={selected}
+                  label={selected ? t('chat.runtime.collapseRow') : t('chat.runtime.expandRow')}
+                />
                 <span className="shrink-0 text-muted">{statusLabel}</span>
                 <Tip label={file.path} className="min-w-0 flex-1 truncate font-mono">
                   {pathTailLabel(file.path)}
@@ -85,7 +91,8 @@ export function ChatEditPreviewPanel({
 }) {
   const { t } = useI18n();
   const titleId = useId();
-  const name = fileName(file.path);
+  const header = previewHeaderParts(file.path);
+  const name = header.fileName || fileName(file.path);
   const diff = turnEditDiffText(file) ?? '';
 
   useEffect(() => {
@@ -115,17 +122,26 @@ export function ChatEditPreviewPanel({
       <header className="shrink-0 border-b border-border">
         <div className="flex h-10 items-center gap-1.5 overflow-x-auto px-3">
           <div className="min-w-0 flex-1 basis-16">
-            <div className="flex min-w-0 items-baseline gap-2">
+            <Tip
+              label={header.fullPath || name || t('chat.preview.viewEdit')}
+              className="inline-flex min-w-0 max-w-full items-baseline gap-2"
+            >
               <h2
                 id={titleId}
-                className="truncate text-sm font-semibold leading-tight text-primary"
+                className="max-w-[70%] shrink-0 truncate text-sm font-semibold leading-tight text-primary"
               >
                 {name || t('chat.preview.viewEdit')}
               </h2>
-              <span className="min-w-0 truncate text-meta text-muted">
-                {t('chat.preview.viewEdit')}
-              </span>
-            </div>
+              {header.directoryLabel ? (
+                <span className="min-w-0 truncate text-meta text-muted">
+                  {header.directoryLabel}
+                </span>
+              ) : (
+                <span className="min-w-0 truncate text-meta text-muted">
+                  {t('chat.preview.viewEdit')}
+                </span>
+              )}
+            </Tip>
           </div>
           <Button
             size="icon"

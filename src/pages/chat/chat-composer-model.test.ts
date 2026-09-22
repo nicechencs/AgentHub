@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { translate } from '@/lib/i18n';
 import {
   composerCancelingVisible,
+  composerDraftAfterSuccessfulSend,
   composerEnterShouldSubmit,
+  composerLiveSendText,
   composerFooterControl,
   composerKeepsStoppingAfterCancel,
   composerPrimaryAction,
@@ -236,6 +238,43 @@ describe('queued follow-up visibility', () => {
     expect(translate('en', 'chat.composer.queuedCount', { count: 2 })).toBe('2 queued');
     expect(translate('en', 'chat.composer.cancelQueuedItem')).toBe('Remove this');
     expect(translate('en', 'chat.composer.cancelAllQueued')).toBe('Cancel all');
+  });
+});
+
+describe('composer clear-on-send', () => {
+  it('prefers the live textarea over a stale React draft', () => {
+    expect(
+      composerLiveSendText({
+        textareaValue: 'Write a plan and then summarize. Do not edit files.',
+        draft: 'Write a plan and then ',
+      }),
+    ).toBe('Write a plan and then summarize. Do not edit files.');
+    expect(composerLiveSendText({ draft: 'hello' })).toBe('hello');
+  });
+
+  it('drops a sent prompt leftover, including a residual suffix', () => {
+    const sent = 'Write a 3-step plan and then summarize. Do not edit files.';
+    expect(composerDraftAfterSuccessfulSend({ draft: sent, sent })).toBe('');
+    expect(
+      composerDraftAfterSuccessfulSend({ draft: 'summarize. Do not edit files.', sent }),
+    ).toBe('');
+    expect(composerDraftAfterSuccessfulSend({ draft: 'Write a 3-step plan', sent })).toBe('');
+    expect(composerDraftAfterSuccessfulSend({ draft: '  ', sent })).toBe('');
+  });
+
+  it('keeps text typed after a successful send', () => {
+    expect(
+      composerDraftAfterSuccessfulSend({
+        draft: 'first prompt follow-up',
+        sent: 'first prompt',
+      }),
+    ).toBe(' follow-up');
+    expect(
+      composerDraftAfterSuccessfulSend({
+        draft: 'another question',
+        sent: 'first prompt',
+      }),
+    ).toBe('another question');
   });
 });
 

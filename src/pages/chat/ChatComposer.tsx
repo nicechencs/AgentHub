@@ -36,8 +36,10 @@ import type { AgentKey, Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { composerNativeEditChord } from './chat-model';
 import {
+  composerDraftAfterSuccessfulSend,
   composerEnterShouldSubmit,
   composerFooterControl,
+  composerLiveSendText,
   composerPrimaryAction,
   composerShortcutKind,
   composerShortcutMessageKey,
@@ -147,9 +149,9 @@ export function ChatComposer({
   walletError?: unknown;
   onRetryWallet?: () => void;
   onRetryStatus?: () => void;
-  onSend: () => void;
-  onSteer?: () => void;
-  onQueueAfterTurn?: () => void;
+  onSend: (text?: string) => void;
+  onSteer?: (text?: string) => void;
+  onQueueAfterTurn?: (text?: string) => void;
   focusNonce?: number;
   onCancel: () => void;
   onSelectAgent: (id: AgentKey) => void;
@@ -205,6 +207,7 @@ export function ChatComposer({
   const stopTitle = composerStopTitle({ canceling, stopLabel: stopCopy });
   const footerSlotClass = 'h-8 w-8 shrink-0 rounded-full';
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const sentTextRef = useRef<string | null>(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const modelMenuDisabled = sending || connectionLocked || switchingProvider || switchingModel;
   const currentEffortHint = currentEffort ? chatEffortHint(currentEffort, t) : null;
@@ -250,13 +253,52 @@ export function ChatComposer({
     if (!composerShouldRestoreFocus({ textareaDisabled })) return;
     textareaRef.current?.focus();
   }, [textareaDisabled]);
+  const applyDraft = useCallback((next: string) => {
+    const sent = sentTextRef.current;
+    if (sent) {
+      const kept = composerDraftAfterSuccessfulSend({ draft: next, sent });
+      if (kept === '') {
+        setDraft('');
+        return;
+      }
+      sentTextRef.current = null;
+      setDraft(kept);
+      return;
+    }
+    setDraft(next);
+  }, [setDraft]);
+  useEffect(() => {
+    const sent = sentTextRef.current;
+    if (!sent) return;
+    if (draft === sent) {
+      sentTextRef.current = null;
+      return;
+    }
+    const id = window.setTimeout(() => {
+      if (sentTextRef.current === sent) sentTextRef.current = null;
+    }, 250);
+    return () => window.clearTimeout(id);
+  }, [draft]);
   const submitComposer = useCallback(() => {
-    if (action === 'steer') onSteer?.();
-    else if (action === 'queue') onQueueAfterTurn?.();
-    else if (action === 'send') onSend();
+    const live = composerLiveSendText({
+      textareaValue: textareaRef.current?.value,
+      draft,
+    });
+    if (action === 'steer') {
+      sentTextRef.current = live.trim();
+      onSteer?.(live);
+    } else if (action === 'queue') {
+      sentTextRef.current = live.trim();
+      setDraft('');
+      onQueueAfterTurn?.(live);
+    } else if (action === 'send') {
+      sentTextRef.current = live.trim();
+      setDraft('');
+      onSend(live);
+    }
     keepComposerFocus();
     requestAnimationFrame(keepComposerFocus);
-  }, [action, keepComposerFocus, onQueueAfterTurn, onSend, onSteer]);
+  }, [action, draft, keepComposerFocus, onQueueAfterTurn, onSend, onSteer]);
   const droppedImages = useCallback((files: FileList | null | undefined) => {
     if (!onPasteImages) return false;
     const images = Array.from(files ?? []).filter((file) => file.type.startsWith('image/'));
@@ -347,7 +389,7 @@ export function ChatComposer({
           enterKeyHint="send"
           aria-keyshortcuts="Enter"
           title={hoverHint}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => applyDraft(e.target.value)}
           onInput={syncTextareaHeight}
           onKeyDown={(e) => {
             const edit = composerNativeEditChord({
