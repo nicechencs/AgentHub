@@ -2,6 +2,7 @@
 //!
 //! - [`limits`]: timeouts, scan caps, default TTL values
 //! - [`market`]: remote skill market endpoints / UA
+//! - [`repo`]: public repository URL
 //!
 //! **Install channels** (npm packages, native script URLs, GUI catalog DTOs) live in
 //! [`crate::platform::install`] — contribution registry is the single allowlist.
@@ -15,6 +16,7 @@
 pub mod install;
 pub mod limits;
 pub mod market;
+pub mod repo;
 
 pub use limits::*;
 pub use market::{
@@ -23,3 +25,4 @@ pub use market::{
     skills_sh_home_url, skills_sh_search_url, skills_sh_user_agent, SkillMarketSource,
     DEFAULT_SKILLHUB_LIMIT, DEFAULT_SKILLS_SH_LIMIT,
 };
+pub use repo::{agenthub_user_agent, GITHUB_REPOSITORY_URL};

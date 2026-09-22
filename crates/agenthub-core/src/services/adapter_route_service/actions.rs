@@ -1,5 +1,6 @@
 use serde_json::Value;
 
+use crate::catalog::GITHUB_REPOSITORY_URL;
 use crate::models::{
     AdapterAction, AdapterCapabilityDecision, AdapterCredentialClass, AdapterEvidence,
     AdapterPlanChange, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest,
@@ -1137,9 +1138,9 @@ pub(super) fn deepseek_dsh_evidence() -> AdapterEvidence {
 pub(super) fn adapter_compatibility_evidence() -> AdapterEvidence {
     AdapterEvidence {
         label: "AgentHub：厂商、API 与 OAuth 适配规则".into(),
-        url:
-            "https://github.com/nicechencs/AgentHub/blob/release/docs/provider-api-oauth-adaptation.md"
-                .into(),
+        url: format!(
+            "{GITHUB_REPOSITORY_URL}/blob/release/docs/provider-api-oauth-adaptation.md"
+        ),
         verified_at: VERIFIED_AT.into(),
     }
 }

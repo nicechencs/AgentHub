@@ -13,6 +13,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::catalog::agenthub_user_agent;
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{EnvStatus, EnvStatusKind, RuntimeId, RuntimeUpdateInfo, RuntimeUpdateState};
@@ -407,10 +408,7 @@ fn http_get(url: &str, accept: &str) -> std::result::Result<String, String> {
         }
     }
     let agent = builder.build();
-    let user_agent = format!(
-        "AgentHub/{} (+https://github.com/nicechencs/AgentHub)",
-        env!("CARGO_PKG_VERSION")
-    );
+    let user_agent = agenthub_user_agent();
     let response = agent
         .get(url)
         .set("User-Agent", &user_agent)
