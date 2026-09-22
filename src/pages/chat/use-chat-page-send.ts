@@ -43,6 +43,7 @@ import {
   composerCancelingVisible,
   composerDraftAfterCancel,
   composerKeepsStoppingAfterCancel,
+  composerQueueableFollowUpText,
 } from './chat-composer-model';
 import { acceptsRuntimeSnapshot, isLatestRuntimeRead, isRuntimeActive, readRuntimeTransport, requestMatchesRuntime, runtimeReplyFields } from './chat-runtime-model';
 import {
@@ -181,7 +182,13 @@ export function useChatPageSend(input: {
   ) => {
     setFollowUpQueue(
       conversationId,
-      appendQueuedFollowUp(followUpsRef.current.get(conversationId) ?? [], prompt, undefined, extras),
+      appendQueuedFollowUp(
+        followUpsRef.current.get(conversationId) ?? [],
+        prompt,
+        undefined,
+        extras,
+        lastSentPromptRef.current.get(conversationId),
+      ),
     );
   };
 
@@ -655,8 +662,14 @@ export function useChatPageSend(input: {
   ) {
     if (!active) return;
     if (sendingIdsRef.current.has(active.id)) {
-      const next = prompt.trim();
-      if (!next) return;
+      const next = composerQueueableFollowUpText({
+        text: prompt,
+        lastSent: lastSentPromptRef.current.get(active.id),
+      });
+      if (!next) {
+        if (clearDraft) setDraft('');
+        return;
+      }
       appendFollowUp(active.id, next, getStartExtras?.());
       clearStartExtras?.();
       if (clearDraft) setDraft('');

@@ -36,11 +36,14 @@ import type { AgentKey, Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { composerNativeEditChord } from './chat-model';
 import {
-  composerDraftAfterSuccessfulSend,
+  COMPOSER_SEND_SETTLE_MS,
   composerEnterShouldSubmit,
   composerFooterControl,
+  composerIsResidualOfSent,
   composerLiveSendText,
   composerPrimaryAction,
+  composerQueueableFollowUpText,
+  composerShouldHoldSendLock,
   composerShortcutKind,
   composerShortcutMessageKey,
   composerShouldRestoreFocus,
@@ -208,6 +211,7 @@ export function ChatComposer({
   const footerSlotClass = 'h-8 w-8 shrink-0 rounded-full';
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sentTextRef = useRef<string | null>(null);
+  const sentSettleUntilRef = useRef(0);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const modelMenuDisabled = sending || connectionLocked || switchingProvider || switchingModel;
   const currentEffortHint = currentEffort ? chatEffortHint(currentEffort, t) : null;
@@ -253,21 +257,34 @@ export function ChatComposer({
     if (!composerShouldRestoreFocus({ textareaDisabled })) return;
     textareaRef.current?.focus();
   }, [textareaDisabled]);
+  const clearComposerAfterSubmit = useCallback((submitted: string) => {
+    sentTextRef.current = submitted;
+    sentSettleUntilRef.current = performance.now() + COMPOSER_SEND_SETTLE_MS;
+    setDraft('');
+  }, [setDraft]);
   const applyDraft = useCallback((next: string) => {
     const sent = sentTextRef.current;
     if (sent) {
-      const kept = composerDraftAfterSuccessfulSend({ draft: next, sent });
-      if (kept === '') {
-        // Parent already restored the sent prompt after stop/failure — keep it.
-        if (draft.trim() === sent.trim()) {
-          sentTextRef.current = null;
-          return;
-        }
+      // Parent already restored the sent prompt after stop/failure — keep it.
+      if (draft.trim() === sent.trim() && composerIsResidualOfSent({ text: next, sent })) {
+        sentTextRef.current = null;
+        return;
+      }
+      const lock = composerShouldHoldSendLock({
+        now: performance.now(),
+        settleUntil: sentSettleUntilRef.current,
+        next,
+        sent,
+      });
+      if (lock.hold) {
+        sentTextRef.current = lock.sent;
+        const el = textareaRef.current;
+        if (el) el.value = '';
         setDraft('');
         return;
       }
       sentTextRef.current = null;
-      setDraft(kept);
+      setDraft(lock.draft);
       return;
     }
     setDraft(next);
@@ -275,35 +292,42 @@ export function ChatComposer({
   useEffect(() => {
     const sent = sentTextRef.current;
     if (!sent) return;
-    if (draft === sent) {
-      sentTextRef.current = null;
-      return;
-    }
-    const id = window.setTimeout(() => {
-      if (sentTextRef.current === sent) sentTextRef.current = null;
-    }, 250);
-    return () => window.clearTimeout(id);
+    // Stop / failure restored the exact submitted prompt. Unlock so the user can edit it.
+    if (draft.trim() === sent.trim()) sentTextRef.current = null;
   }, [draft]);
   const submitComposer = useCallback(() => {
     const live = composerLiveSendText({
       textareaValue: textareaRef.current?.value,
       draft,
     });
+    const payload = live.trim();
+    if (!payload) return;
+    const sent = sentTextRef.current;
+    const settling = sent != null && performance.now() < sentSettleUntilRef.current;
+    if (
+      sent &&
+      composerQueueableFollowUpText({ text: payload, lastSent: sent, settling }) == null
+    ) {
+      const el = textareaRef.current;
+      if (el) el.value = '';
+      clearComposerAfterSubmit(sent);
+      keepComposerFocus();
+      requestAnimationFrame(keepComposerFocus);
+      return;
+    }
     if (action === 'steer') {
-      sentTextRef.current = live.trim();
+      clearComposerAfterSubmit(payload);
       onSteer?.(live);
     } else if (action === 'queue') {
-      sentTextRef.current = live.trim();
-      setDraft('');
+      clearComposerAfterSubmit(payload);
       onQueueAfterTurn?.(live);
     } else if (action === 'send') {
-      sentTextRef.current = live.trim();
-      setDraft('');
+      clearComposerAfterSubmit(payload);
       onSend(live);
     }
     keepComposerFocus();
     requestAnimationFrame(keepComposerFocus);
-  }, [action, draft, keepComposerFocus, onQueueAfterTurn, onSend, onSteer]);
+  }, [action, clearComposerAfterSubmit, draft, keepComposerFocus, onQueueAfterTurn, onSend, onSteer]);
   const droppedImages = useCallback((files: FileList | null | undefined) => {
     if (!onPasteImages) return false;
     const images = Array.from(files ?? []).filter((file) => file.type.startsWith('image/'));

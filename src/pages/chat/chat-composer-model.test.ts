@@ -3,9 +3,13 @@ import { translate } from '@/lib/i18n';
 import {
   composerCancelingVisible,
   composerDraftAfterCancel,
+  COMPOSER_SEND_SETTLE_MS,
   composerDraftAfterSuccessfulSend,
   composerEnterShouldSubmit,
+  composerIsResidualOfSent,
   composerLiveSendText,
+  composerQueueableFollowUpText,
+  composerShouldHoldSendLock,
   composerFooterControl,
   composerKeepsStoppingAfterCancel,
   composerPrimaryAction,
@@ -300,6 +304,84 @@ describe('composer clear-on-send', () => {
         sent: 'first prompt',
       }),
     ).toBe('another question');
+  });
+
+  it('does not treat a trailing fragment of the just-sent prompt as queueable', () => {
+    const sent = "I'll write a short 3-step UI retest plan and show it before doing any work.";
+    const leftover = 'doing any work.';
+    expect(composerIsResidualOfSent({ text: leftover, sent })).toBe(true);
+    expect(composerIsResidualOfSent({ text: sent, sent })).toBe(true);
+    expect(composerIsResidualOfSent({ text: "I'll write a short 3-step", sent })).toBe(true);
+    expect(composerIsResidualOfSent({ text: 'doing any', sent })).toBe(true);
+    expect(composerIsResidualOfSent({ text: '下一句', sent })).toBe(false);
+    expect(composerQueueableFollowUpText({ text: leftover, lastSent: sent })).toBeNull();
+    expect(composerQueueableFollowUpText({ text: sent, lastSent: sent })).toBeNull();
+    expect(composerQueueableFollowUpText({ text: '  ', lastSent: sent })).toBeNull();
+    expect(
+      composerQueueableFollowUpText({
+        text: 'please inspect the preview header next',
+        lastSent: sent,
+      }),
+    ).toBe('please inspect the preview header next');
+  });
+
+  it('holds late controlled-input leftovers in the same send burst', () => {
+    const sent = "I'll write a short 3-step UI retest plan and show it before doing any work.";
+    const prefix = "I'll write a short 3-step UI retest plan and show it before ";
+    expect(
+      composerShouldHoldSendLock({
+        now: 10,
+        settleUntil: COMPOSER_SEND_SETTLE_MS,
+        next: 'doing any work.',
+        sent,
+      }),
+    ).toEqual({ hold: true, sent, draft: '' });
+    expect(
+      composerShouldHoldSendLock({
+        now: 10,
+        settleUntil: COMPOSER_SEND_SETTLE_MS,
+        next: prefix + 'doing any work.',
+        sent: prefix,
+      }),
+    ).toEqual({ hold: true, sent: (prefix + 'doing any work.').trim(), draft: '' });
+    expect(
+      composerShouldHoldSendLock({
+        now: COMPOSER_SEND_SETTLE_MS + 50,
+        settleUntil: COMPOSER_SEND_SETTLE_MS,
+        next: 'doing any work.',
+        sent,
+      }),
+    ).toEqual({ hold: true, sent, draft: '' });
+    expect(
+      composerShouldHoldSendLock({
+        now: 10,
+        settleUntil: COMPOSER_SEND_SETTLE_MS,
+        next: '下一句',
+        sent,
+      }),
+    ).toEqual({ hold: false, sent: '', draft: '下一句' });
+    expect(
+      composerShouldHoldSendLock({
+        now: COMPOSER_SEND_SETTLE_MS + 50,
+        settleUntil: COMPOSER_SEND_SETTLE_MS,
+        next: 'please inspect the preview header next',
+        sent,
+      }),
+    ).toEqual({
+      hold: false,
+      sent: '',
+      draft: 'please inspect the preview header next',
+    });
+    expect(composerQueueableFollowUpText({
+      text: 'doing',
+      lastSent: sent,
+      settling: true,
+    })).toBeNull();
+    expect(composerQueueableFollowUpText({
+      text: '下一句',
+      lastSent: sent,
+      settling: true,
+    })).toBe('下一句');
   });
 });
 
