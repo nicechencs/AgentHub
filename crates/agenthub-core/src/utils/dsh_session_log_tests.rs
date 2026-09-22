@@ -90,7 +90,10 @@ fn model_from_row_reads_header_config_and_message_source() {
         "type": "assistant/message",
         "data": { "message": { "source": { "kind": "model", "provider": "deepseek-official", "model": "deepseek-v4-pro" } } }
     });
-    assert_eq!(model_from_row(&assistant).as_deref(), Some("deepseek-v4-pro"));
+    assert_eq!(
+        model_from_row(&assistant).as_deref(),
+        Some("deepseek-v4-pro")
+    );
 
     let session = json!({"type": "session", "id": "session-abc", "cwd": "D:\\work"});
     assert_eq!(model_from_row(&session), None);

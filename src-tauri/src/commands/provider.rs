@@ -18,7 +18,9 @@ use agenthub_core::AgentHub;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
-use crate::commands::{invalidate_runtime_catalogs, map_err_string, parse_agent, parse_agent_opt, with_hub_blocking};
+use crate::commands::{
+    invalidate_runtime_catalogs, map_err_string, parse_agent, parse_agent_opt, with_hub_blocking,
+};
 use crate::state::AppState;
 
 const REDACTED_MARKER: &str = "***";

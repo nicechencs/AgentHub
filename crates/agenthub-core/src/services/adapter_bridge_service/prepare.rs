@@ -256,9 +256,7 @@ impl AdapterBridgeService {
             ),
             BridgeUpstreamProtocol::CodexResponsesOauth
             | BridgeUpstreamProtocol::XaiResponsesOauth
-            | BridgeUpstreamProtocol::KiroHttp => {
-                request.source_kind == AdapterSourceKind::Account
-            }
+            | BridgeUpstreamProtocol::KiroHttp => request.source_kind == AdapterSourceKind::Account,
         };
         if source_ok
             && request.target_agent_id == rule.target_agent

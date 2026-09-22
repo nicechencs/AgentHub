@@ -52,11 +52,24 @@ fn newest_row_wins_when_codex_renames_a_thread() {
 #[test]
 fn unknown_thread_ids_and_missing_stores_have_no_title() {
     let home = tempdir().unwrap();
-    assert_eq!(CodexSessionTitle.title_for(home.path(), "thread-a").unwrap(), None);
+    assert_eq!(
+        CodexSessionTitle
+            .title_for(home.path(), "thread-a")
+            .unwrap(),
+        None
+    );
 
     index(home.path(), &[r#"{"id":"thread-b","thread_name":"other"}"#]);
-    assert_eq!(CodexSessionTitle.title_for(home.path(), "thread-a").unwrap(), None);
-    assert_eq!(CodexSessionTitle.title_for(home.path(), "   ").unwrap(), None);
+    assert_eq!(
+        CodexSessionTitle
+            .title_for(home.path(), "thread-a")
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        CodexSessionTitle.title_for(home.path(), "   ").unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -194,9 +207,18 @@ fn unrelated_files_and_broken_databases_are_skipped() {
         .execute_batch("CREATE TABLE unrelated (id TEXT);")
         .unwrap();
 
-    assert_eq!(CodexSessionTitle.title_for(home.path(), "thread-a").unwrap(), None);
+    assert_eq!(
+        CodexSessionTitle
+            .title_for(home.path(), "thread-a")
+            .unwrap(),
+        None
+    );
 
-    catalog(home.path(), "codex-dev.db", &[("thread-a", "later db wins", "")]);
+    catalog(
+        home.path(),
+        "codex-dev.db",
+        &[("thread-a", "later db wins", "")],
+    );
     assert_eq!(
         CodexSessionTitle
             .title_for(home.path(), "thread-a")

@@ -37,7 +37,10 @@ fn unknown_valid_key_registers_and_resolves_a_title() {
     let key = AgentKey::parse("title-test-agent").unwrap();
     let mut registry = SessionTitleRegistry::new();
     registry
-        .register(Arc::new(StubTitleSource::new(key.clone(), Some("side quest"))))
+        .register(Arc::new(StubTitleSource::new(
+            key.clone(),
+            Some("side quest"),
+        )))
         .unwrap();
 
     let source = registry.get(&key).expect("unknown valid key is registered");
@@ -98,7 +101,9 @@ fn explicit_order_and_legacy_agent_id_helper_are_stable() {
 
 #[test]
 fn rejects_session_ids_that_carry_path_syntax() {
-    assert!(is_path_safe_session_id("019dab0b-373c-76e2-9900-e02a4b959f91"));
+    assert!(is_path_safe_session_id(
+        "019dab0b-373c-76e2-9900-e02a4b959f91"
+    ));
     assert!(is_path_safe_session_id("kiro-http:abc123"));
     assert!(is_path_safe_session_id("  thread-1  "));
 

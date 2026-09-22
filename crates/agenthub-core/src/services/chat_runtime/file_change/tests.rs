@@ -7,8 +7,8 @@ fn fixture(name: &str) -> Value {
         "{}/src/services/chat_runtime/file_change/fixtures/{name}",
         env!("CARGO_MANIFEST_DIR")
     );
-    let text = std::fs::read_to_string(&local)
-        .unwrap_or_else(|error| panic!("read {local}: {error}"));
+    let text =
+        std::fs::read_to_string(&local).unwrap_or_else(|error| panic!("read {local}: {error}"));
     serde_json::from_str(&text).unwrap_or_else(|error| panic!("parse {name}: {error}"))
 }
 

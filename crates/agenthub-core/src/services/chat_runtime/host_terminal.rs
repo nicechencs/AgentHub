@@ -77,8 +77,18 @@ impl HostedTerminals {
         }
         let output = Arc::new(Mutex::new(String::new()));
         let truncated = Arc::new(AtomicBool::new(false));
-        spawn_pipe_reader(child.stdout.take(), Arc::clone(&output), Arc::clone(&truncated), spec.output_limit);
-        spawn_pipe_reader(child.stderr.take(), Arc::clone(&output), Arc::clone(&truncated), spec.output_limit);
+        spawn_pipe_reader(
+            child.stdout.take(),
+            Arc::clone(&output),
+            Arc::clone(&truncated),
+            spec.output_limit,
+        );
+        spawn_pipe_reader(
+            child.stderr.take(),
+            Arc::clone(&output),
+            Arc::clone(&truncated),
+            spec.output_limit,
+        );
         let id = Uuid::new_v4().to_string();
         let label = display_command(&spec.command, &spec.args);
         self.items.insert(
@@ -100,11 +110,19 @@ impl HostedTerminals {
     pub(crate) fn output(&mut self, terminal_id: &str) -> Result<(String, bool, Option<i32>)> {
         self.poll_one(terminal_id)?;
         let item = self.get(terminal_id)?;
-        let text = item.output.lock().map(|guard| guard.clone()).unwrap_or_default();
+        let text = item
+            .output
+            .lock()
+            .map(|guard| guard.clone())
+            .unwrap_or_default();
         Ok((text, item.truncated.load(Ordering::SeqCst), item.exit_code))
     }
 
-    pub(crate) fn begin_wait(&mut self, terminal_id: &str, request_id: Value) -> Result<Option<i32>> {
+    pub(crate) fn begin_wait(
+        &mut self,
+        terminal_id: &str,
+        request_id: Value,
+    ) -> Result<Option<i32>> {
         self.poll_one(terminal_id)?;
         let item = self.get_mut(terminal_id)?;
         if let Some(code) = item.exit_code {
@@ -159,7 +177,11 @@ impl HostedTerminals {
         let mut completed = Vec::new();
         for id in ids {
             if let Ok(Some(wait_id)) = self.kill(&id) {
-                let code = self.items.get(&id).and_then(|item| item.exit_code).unwrap_or(1);
+                let code = self
+                    .items
+                    .get(&id)
+                    .and_then(|item| item.exit_code)
+                    .unwrap_or(1);
                 completed.push((wait_id, code));
             }
         }
@@ -167,10 +189,7 @@ impl HostedTerminals {
     }
 
     pub(crate) fn snapshot(&self) -> Vec<RuntimeHostTerminal> {
-        self.items
-            .iter()
-            .map(|(id, item)| item.view(id))
-            .collect()
+        self.items.iter().map(|(id, item)| item.view(id)).collect()
     }
 
     fn poll_one(&mut self, terminal_id: &str) -> Result<()> {
@@ -197,19 +216,21 @@ impl HostedTerminals {
     }
 
     fn take_wait(&mut self, terminal_id: &str) -> Option<Value> {
-        self.items.get_mut(terminal_id).and_then(|item| item.wait_id.take())
+        self.items
+            .get_mut(terminal_id)
+            .and_then(|item| item.wait_id.take())
     }
 
     fn get(&self, terminal_id: &str) -> Result<&HostedTerminal> {
-        self.items.get(terminal_id).ok_or_else(|| {
-            AppError::NotFound(format!("terminal not found: {terminal_id}"))
-        })
+        self.items
+            .get(terminal_id)
+            .ok_or_else(|| AppError::NotFound(format!("terminal not found: {terminal_id}")))
     }
 
     fn get_mut(&mut self, terminal_id: &str) -> Result<&mut HostedTerminal> {
-        self.items.get_mut(terminal_id).ok_or_else(|| {
-            AppError::NotFound(format!("terminal not found: {terminal_id}"))
-        })
+        self.items
+            .get_mut(terminal_id)
+            .ok_or_else(|| AppError::NotFound(format!("terminal not found: {terminal_id}")))
     }
 
     fn publish(&self) {
@@ -224,7 +245,11 @@ impl HostedTerminal {
         RuntimeHostTerminal {
             id: id.to_string(),
             command: self.command.clone(),
-            output: self.output.lock().map(|guard| guard.clone()).unwrap_or_default(),
+            output: self
+                .output
+                .lock()
+                .map(|guard| guard.clone())
+                .unwrap_or_default(),
             truncated: self.truncated.load(Ordering::SeqCst),
             exit_code: self.exit_code,
             running: self.exit_code.is_none(),

@@ -134,7 +134,8 @@ pub fn preview_plugin_install_with(
         InstallSource::Marketplace { name, marketplace } => {
             let rows = list_available_plugins_with(ctx, agent)?;
             if let Some(row) = rows.into_iter().find(|row| {
-                row.name == name && marketplace_matches(row.marketplace.as_deref(), marketplace.as_deref())
+                row.name == name
+                    && marketplace_matches(row.marketplace.as_deref(), marketplace.as_deref())
             }) {
                 return Ok(row);
             }
@@ -229,10 +230,12 @@ enum InstallSource {
 impl InstallSource {
     fn cli_source(&self) -> String {
         match self {
-            Self::Marketplace { name, marketplace } => match (agent_spec_needs_marketplace(name), marketplace) {
-                (true, Some(market)) => format!("{name}@{market}"),
-                _ => name.clone(),
-            },
+            Self::Marketplace { name, marketplace } => {
+                match (agent_spec_needs_marketplace(name), marketplace) {
+                    (true, Some(market)) => format!("{name}@{market}"),
+                    _ => name.clone(),
+                }
+            }
             Self::Git(raw) => raw.clone(),
             Self::Local(path) => path.to_string_lossy().into_owned(),
         }
@@ -257,7 +260,9 @@ fn classify_install_source(agent: AgentId, raw: &str) -> Result<InstallSource, S
     match agent {
         AgentId::Claude => {
             if looks_like_local_path(source) || looks_like_git_source(source) {
-                return Err("Claude install accepts name@marketplace, not a git URL or local path".into());
+                return Err(
+                    "Claude install accepts name@marketplace, not a git URL or local path".into(),
+                );
             }
             if source.contains(['/', '\\']) {
                 return Err("invalid plugin source".into());
