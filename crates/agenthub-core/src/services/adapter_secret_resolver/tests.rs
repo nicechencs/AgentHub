@@ -376,11 +376,11 @@ fn pi_kimi_source_reference_materializes_and_scrubs_slot() {
 fn pi_anthropic_reads_auth_token_api_key_env_or_top_level_and_rejects_masked() {
     for (settings, expected) in [
         (
-            json!({"env": { ANTHROPIC_AUTH_TOKEN_ENV: "sk-auth-token" }}),
+            json!({"env": { (ANTHROPIC_AUTH_TOKEN_ENV): "sk-auth-token" }}),
             "sk-auth-token",
         ),
         (
-            json!({"env": { ANTHROPIC_API_KEY_ENV: "sk-api-key" }}),
+            json!({"env": { (ANTHROPIC_API_KEY_ENV): "sk-api-key" }}),
             "sk-api-key",
         ),
         (json!({"apiKey": "sk-top-level"}), "sk-top-level"),
@@ -404,8 +404,8 @@ fn pi_anthropic_reads_auth_token_api_key_env_or_top_level_and_rejects_masked() {
     }
 
     for settings in [
-        json!({"env": { ANTHROPIC_AUTH_TOKEN_ENV: "" }}),
-        json!({"env": { ANTHROPIC_API_KEY_ENV: "***" }}),
+        json!({"env": { (ANTHROPIC_AUTH_TOKEN_ENV): "" }}),
+        json!({"env": { (ANTHROPIC_API_KEY_ENV): "***" }}),
         json!({"apiKey": CONNECTION_SECRET_MARKER}),
         json!({}),
     ] {
@@ -817,7 +817,7 @@ fn openai_provider_and_xai_account_materialize_and_scrub() {
     let source = provider(
         "openai-source",
         AgentId::Codex,
-        json!({"env": { OPENAI_API_KEY_ENV: "sk-openai-secret" }}),
+        json!({"env": { (OPENAI_API_KEY_ENV): "sk-openai-secret" }}),
         json!({"preset": "openai"}),
     );
     let (_dir, resolver) = resolver_with(source.clone());
@@ -837,7 +837,7 @@ fn openai_provider_and_xai_account_materialize_and_scrub() {
     let scrubbed = resolver
         .scrub_for_backfill(
             &target,
-            &json!({"models": {"providers": { OPENAI_PI_PROVIDER_SLOT: { "apiKey": "sk-openai-secret" } }}}),
+            &json!({"models": {"providers": { (OPENAI_PI_PROVIDER_SLOT): { "apiKey": "sk-openai-secret" } }}}),
         )
         .unwrap();
     assert_eq!(
@@ -884,7 +884,7 @@ fn grok_native_reference_materializes_and_scrubs_toml_api_key() {
     let source = provider(
         "openai-grok-source",
         AgentId::Codex,
-        json!({"env": { OPENAI_API_KEY_ENV: "sk-grok-secret" }}),
+        json!({"env": { (OPENAI_API_KEY_ENV): "sk-grok-secret" }}),
         json!({"preset": "openai"}),
     );
     let (_dir, resolver) = resolver_with(source);
@@ -955,7 +955,7 @@ fn glm_and_deepseek_pi_custom_slots_materialize_and_scrub() {
     let glm_source = provider(
         "glm-source",
         AgentId::Claude,
-        json!({"env": { ANTHROPIC_AUTH_TOKEN_ENV: "glm-pi-secret" }}),
+        json!({"env": { (ANTHROPIC_AUTH_TOKEN_ENV): "glm-pi-secret" }}),
         json!({"preset": "glm-coding-plan"}),
     );
     let (_dir, resolver) = resolver_with(glm_source.clone());
@@ -1497,7 +1497,7 @@ fn glm_provider_and_deepseek_account_materialize_and_scrub_by_rule_url() {
     let source = provider(
         "glm-source",
         AgentId::Claude,
-        json!({"env": { ANTHROPIC_AUTH_TOKEN_ENV: "glm-secret" }}),
+        json!({"env": { (ANTHROPIC_AUTH_TOKEN_ENV): "glm-secret" }}),
         json!({"preset": "glm-coding-plan"}),
     );
     let (_dir, resolver) = resolver_with(source.clone());

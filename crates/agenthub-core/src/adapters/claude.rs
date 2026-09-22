@@ -6,6 +6,9 @@ use crate::models::{
     LiveAccount, RunOptions, RunSpec,
 };
 use crate::runtime;
+use crate::services::adapter_route_constants::{
+    ANTHROPIC_API_KEY_ENV, ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV,
+};
 use crate::utils::atomic::atomic_write;
 use crate::utils::expiry::{is_expired, parse_expiry_epoch_secs};
 use crate::utils::paths::{agent_home, home_dir};
@@ -196,7 +199,7 @@ impl AgentAdapter for ClaudeAdapter {
             serde_json::json!({
                 "format": "api_key",
                 "api_key": key,
-                "env_key": "ANTHROPIC_AUTH_TOKEN",
+                "env_key": ANTHROPIC_AUTH_TOKEN_ENV,
             }),
             "API Key",
             serde_json::json!({ "source": "manual" }),
@@ -407,7 +410,7 @@ fn read_claude_settings_json(path: &Path) -> Result<Option<serde_json::Value>> {
 
 fn claude_settings_token(settings: &serde_json::Value) -> Option<(String, String)> {
     let env = settings.get("env")?.as_object()?;
-    for key in ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"] {
+    for key in [ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_API_KEY_ENV] {
         if let Some(token) = env.get(key).and_then(|v| v.as_str()) {
             if !token.is_empty() {
                 return Some((key.to_string(), token.to_string()));
@@ -420,7 +423,7 @@ fn claude_settings_token(settings: &serde_json::Value) -> Option<(String, String
 fn claude_settings_base_url(settings: &serde_json::Value) -> Option<String> {
     settings
         .get("env")
-        .and_then(|env| env.get("ANTHROPIC_BASE_URL"))
+        .and_then(|env| env.get(ANTHROPIC_BASE_URL_ENV))
         .and_then(|v| v.as_str())
         .map(str::trim)
         .filter(|s| !s.is_empty())
@@ -518,7 +521,7 @@ fn apply_claude_api_key_credentials(path: &Path, credentials: &serde_json::Value
     let env_key = credentials
         .get("env_key")
         .and_then(|v| v.as_str())
-        .unwrap_or("ANTHROPIC_AUTH_TOKEN");
+        .unwrap_or(ANTHROPIC_AUTH_TOKEN_ENV);
     let base_url = credentials.get("base_url").and_then(|v| v.as_str());
     if !path.exists() {
         if let Some(content) = credentials.get("content").and_then(|v| v.as_str()) {
@@ -553,7 +556,7 @@ fn write_claude_settings_token(
         .as_object_mut()
         .ok_or_else(|| AppError::InvalidArg("Claude settings.json env must be an object".into()))?;
     // Keep one auth field active.
-    for k in ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"] {
+    for k in [ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_API_KEY_ENV] {
         if k != env_key {
             env_obj.remove(k);
         }
@@ -562,7 +565,7 @@ fn write_claude_settings_token(
     let base_url = base_url.map(str::trim).filter(|s| !s.is_empty());
     if let Some(base_url) = base_url {
         env_obj.insert(
-            "ANTHROPIC_BASE_URL".to_string(),
+            ANTHROPIC_BASE_URL_ENV.to_string(),
             serde_json::Value::String(base_url.to_string()),
         );
     }
@@ -611,9 +614,9 @@ fn clear_claude_settings_api_auth(path: &Path) -> Result<()> {
     };
     let mut changed = false;
     for k in [
-        "ANTHROPIC_AUTH_TOKEN",
-        "ANTHROPIC_API_KEY",
-        "ANTHROPIC_BASE_URL",
+        ANTHROPIC_AUTH_TOKEN_ENV,
+        ANTHROPIC_API_KEY_ENV,
+        ANTHROPIC_BASE_URL_ENV,
     ] {
         if env_obj.remove(k).is_some() {
             changed = true;

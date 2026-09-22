@@ -463,7 +463,7 @@ pub(super) fn valid_local_token_projection(provider: &Provider) -> bool {
             .settings_config
             .get("auth")
             .and_then(Value::as_object)
-            .and_then(|auth| auth.get("OPENAI_API_KEY"))
+            .and_then(|auth| auth.get(OPENAI_API_KEY_ENV))
             .and_then(Value::as_str)
             .is_some_and(|token| usable_secret(token).is_some())
 }

@@ -8,6 +8,7 @@ use crate::models::{
     LiveAccount, RunOptions, RunSpec,
 };
 use crate::runtime;
+use crate::services::adapter_route_constants::OPENAI_API_KEY_ENV;
 use crate::utils::atomic::{atomic_write, with_restored_files};
 use crate::utils::paths::{agent_home, home_dir};
 
@@ -71,7 +72,7 @@ impl AgentAdapter for CodexAdapter {
         }
         if let Some(api_key) = read_live_openai_api_key(&auth_path)? {
             if let Some(obj) = raw.as_object_mut() {
-                obj.insert("auth".into(), json!({ "OPENAI_API_KEY": api_key }));
+                obj.insert("auth".into(), json!({ (OPENAI_API_KEY_ENV): api_key }));
             }
         }
         Ok(AgentConfig {
@@ -307,7 +308,7 @@ pub(crate) fn codex_auth_state(auth: &Path) -> AuthState {
         }
     };
     let api_key = body
-        .get("OPENAI_API_KEY")
+        .get(OPENAI_API_KEY_ENV)
         .and_then(|v| v.as_str())
         .map(str::trim)
         .filter(|s| !s.is_empty());
@@ -317,7 +318,7 @@ pub(crate) fn codex_auth_state(auth: &Path) -> AuthState {
         let state = AuthState {
             agent: AgentId::Codex,
             kind: Some("api_key".into()),
-            summary: "OPENAI_API_KEY present in auth.json".into(),
+            summary: format!("{OPENAI_API_KEY_ENV} present in auth.json"),
             has_credentials: true,
             health: crate::models::AuthHealth::Configured,
             source: Some("codex:auth.json".into()),
@@ -395,7 +396,7 @@ fn read_live_openai_api_key(path: &Path) -> Result<Option<String>> {
     let text = std::fs::read_to_string(path)?;
     let body: Value = serde_json::from_str(&text)?;
     Ok(body
-        .get("OPENAI_API_KEY")
+        .get(OPENAI_API_KEY_ENV)
         .and_then(|v| v.as_str())
         .map(str::trim)
         .filter(|s| !s.is_empty())
@@ -405,7 +406,7 @@ fn read_live_openai_api_key(path: &Path) -> Result<Option<String>> {
 /// Pull API key from provider settings_config (AgentHub + dual-shape aliases).
 fn extract_settings_openai_api_key(raw: &Value) -> Option<String> {
     let auth = raw.get("auth")?;
-    auth.get("OPENAI_API_KEY")
+    auth.get(OPENAI_API_KEY_ENV)
         .and_then(|v| v.as_str())
         .map(str::trim)
         .filter(|s| !s.is_empty())
@@ -528,7 +529,7 @@ pub(crate) fn normalize_oauth_credentials(credentials: &Value) -> Result<Value> 
 
     let body = json!({
         "auth_mode": "chatgpt",
-        "OPENAI_API_KEY": null,
+        (OPENAI_API_KEY_ENV): null,
         "tokens": tokens,
         "last_refresh": last_refresh,
     });

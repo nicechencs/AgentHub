@@ -17,23 +17,19 @@ use crate::services::adapter_route_constants::{
     GLM_CODEX_BASE_URL, GLM_CODEX_DEFAULT_MODEL, GLM_CODEX_PROVIDER_PREFIX,
     GLM_CODEX_PROVIDER_SLUG, GLM_CODEX_RULE_ID, GLM_PI_BASE_URL, GLM_PI_PROVIDER_SLOT,
     GLM_PI_RULE_ID, KIMI_CLAUDE_DEFAULT_MODEL, KIMI_CLAUDE_RULE_ID, KIMI_GROK_BASE_URL,
-    KIMI_GROK_DEFAULT_MODEL, KIMI_PI_BASE_URL, KIMI_PI_PROVIDER_SLOT, OPENAI_GROK_BASE_URL,
-    OPENAI_GROK_DEFAULT_MODEL, OPENAI_PI_PROVIDER_SLOT, XAI_PI_PROVIDER_SLOT,
+    KIMI_GROK_DEFAULT_MODEL, KIMI_PI_BASE_URL, KIMI_PI_PROVIDER_SLOT, OPENAI_API_KEY_ENV,
+    OPENAI_GROK_BASE_URL, OPENAI_GROK_DEFAULT_MODEL, OPENAI_PI_PROVIDER_SLOT, XAI_PI_PROVIDER_SLOT,
+};
+
+pub(super) use crate::services::adapter_route_constants::{
+    ANTHROPIC_PI_RULE_ID, CLAUDE_SUBSCRIPTION_PI_RULE_ID, CODEX_SUBSCRIPTION_PI_RULE_ID,
+    DEEPSEEK_DSH_RULE_ID, GROK_SUBSCRIPTION_PI_RULE_ID, KIMI_GROK_RULE_ID, KIMI_PI_RULE_ID,
+    OPENAI_GROK_RULE_ID, OPENAI_PI_RULE_ID, XAI_PI_RULE_ID,
 };
 
 use super::GeneratedApplySpec;
 
 pub(super) const RULE_ID: &str = KIMI_CLAUDE_RULE_ID;
-pub(super) const KIMI_PI_RULE_ID: &str = "kimi-membership-to-pi-v1";
-pub(super) const ANTHROPIC_PI_RULE_ID: &str = "anthropic-api-to-pi-v1";
-pub(super) const OPENAI_PI_RULE_ID: &str = "openai-api-to-pi-v1";
-pub(super) const XAI_PI_RULE_ID: &str = "xai-api-to-pi-v1";
-pub(super) const CLAUDE_SUBSCRIPTION_PI_RULE_ID: &str = "claude-subscription-to-pi-v1";
-pub(super) const CODEX_SUBSCRIPTION_PI_RULE_ID: &str = "codex-subscription-to-pi-v1";
-pub(super) const GROK_SUBSCRIPTION_PI_RULE_ID: &str = "grok-subscription-to-pi-v1";
-pub(super) const KIMI_GROK_RULE_ID: &str = "kimi-membership-to-grok-v1";
-pub(super) const OPENAI_GROK_RULE_ID: &str = "openai-api-to-grok-v1";
-pub(super) const DEEPSEEK_DSH_RULE_ID: &str = "deepseek-api-to-dsh-v1";
 pub(super) const RULE_VERSION: &str = "1";
 pub(super) const CLAUDE_PROVIDER_PREFIX: &str = "claude-kimi-adapter";
 pub(super) const CLAUDE_GLM_PROVIDER_PREFIX: &str = "claude-glm-adapter";
@@ -449,7 +445,7 @@ pub(super) fn codex_native_spec(
             settings_config: json!({
                 "format": "toml",
                 "content": content,
-                "auth": { "OPENAI_API_KEY": CONNECTION_SECRET_MARKER },
+                "auth": { (OPENAI_API_KEY_ENV): CONNECTION_SECRET_MARKER },
             }),
             meta: generated_meta(rule_id, &profile_id, source_kind, source_id, None),
             is_current: false,

@@ -7,12 +7,19 @@ use crate::models::{
     AdapterSourceKind, AdapterSupport, AgentId,
 };
 use crate::services::adapter_route_constants::{
-    ANTHROPIC_AUTH_TOKEN_ENV, CONNECTION_SECRET_MARKER, DEEPSEEK_CLAUDE_BASE_URL,
-    DEEPSEEK_CLAUDE_RULE_ID, DEEPSEEK_CODEX_BASE_URL, DEEPSEEK_CODEX_RULE_ID,
+    ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV, ANTHROPIC_CODEX_RULE_ID,
+    ANTHROPIC_PI_RULE_ID, CLAUDE_SUBSCRIPTION_PI_RULE_ID, CODEX_CLAUDE_RESPONSES_RULE_ID,
+    CODEX_CODEX_RULE_ID, CODEX_DSH_RULE_ID, CODEX_GROK_RULE_ID, CODEX_KIMI_RULE_ID,
+    CODEX_SUBSCRIPTION_PI_RULE_ID, CONNECTION_SECRET_MARKER, DEEPSEEK_CLAUDE_BASE_URL,
+    DEEPSEEK_CLAUDE_RULE_ID, DEEPSEEK_CODEX_BASE_URL, DEEPSEEK_CODEX_RULE_ID, DEEPSEEK_DSH_RULE_ID,
     DEEPSEEK_PI_PROVIDER_SLOT, DEEPSEEK_PI_RULE_ID, DSH_DEEPSEEK_PROVIDER_SLOT,
     GLM_CLAUDE_BASE_URL, GLM_CLAUDE_RULE_ID, GLM_CODEX_BASE_URL, GLM_CODEX_RULE_ID,
-    GLM_PI_PROVIDER_SLOT, GLM_PI_RULE_ID, KIMI_CLAUDE_BASE_URL, KIMI_CLAUDE_RULE_ID,
-    KIMI_GROK_BASE_URL, OPENAI_GROK_BASE_URL,
+    GLM_PI_PROVIDER_SLOT, GLM_PI_RULE_ID, GROK_CLAUDE_RULE_ID, GROK_CODEX_RULE_ID,
+    GROK_SUBSCRIPTION_PI_RULE_ID, KIMI_CLAUDE_BASE_URL, KIMI_CLAUDE_RULE_ID, KIMI_CODEX_RULE_ID,
+    KIMI_GROK_BASE_URL, KIMI_GROK_RULE_ID, KIMI_PI_RULE_ID, KIRO_CLAUDE_RULE_ID,
+    KIRO_CODEX_RULE_ID, KIRO_GROK_RULE_ID, OPENAI_CLAUDE_RULE_ID, OPENAI_CODEX_RULE_ID,
+    OPENAI_DSH_BRIDGE_RULE_ID, OPENAI_GROK_BASE_URL, OPENAI_GROK_BRIDGE_RULE_ID,
+    OPENAI_GROK_RULE_ID, OPENAI_KIMI_BRIDGE_RULE_ID, OPENAI_PI_RULE_ID, XAI_PI_RULE_ID,
 };
 use crate::storage::AccountRepo;
 
@@ -104,19 +111,19 @@ pub(super) fn subscription_account_secret_open(
         || !matches!(
             analysis.rule_id.as_deref(),
             Some(
-                "claude-subscription-to-pi-v1"
-                    | "codex-subscription-to-pi-v1"
-                    | "grok-subscription-to-pi-v1"
-                    | "codex-subscription-to-claude-responses-v1"
-                    | "grok-subscription-to-claude-v1"
-                    | "grok-subscription-to-codex-v1"
-                    | "codex-subscription-to-codex-v1"
-                    | "codex-subscription-to-grok-v1"
-                    | "codex-subscription-to-kimi-v1"
-                    | "codex-subscription-to-dsh-v1"
-                    | "kiro-to-claude-v1"
-                    | "kiro-to-codex-v1"
-                    | "kiro-to-grok-v1"
+                CLAUDE_SUBSCRIPTION_PI_RULE_ID
+                    | CODEX_SUBSCRIPTION_PI_RULE_ID
+                    | GROK_SUBSCRIPTION_PI_RULE_ID
+                    | CODEX_CLAUDE_RESPONSES_RULE_ID
+                    | GROK_CLAUDE_RULE_ID
+                    | GROK_CODEX_RULE_ID
+                    | CODEX_CODEX_RULE_ID
+                    | CODEX_GROK_RULE_ID
+                    | CODEX_KIMI_RULE_ID
+                    | CODEX_DSH_RULE_ID
+                    | KIRO_CLAUDE_RULE_ID
+                    | KIRO_CODEX_RULE_ID
+                    | KIRO_GROK_RULE_ID
             )
         )
     {
@@ -202,51 +209,49 @@ pub(crate) fn bind_implementation_open(
             AdapterSupport::Experimental,
         )
         | (
-            Some("kimi-membership-to-pi-v1"),
+            Some(KIMI_PI_RULE_ID),
             AdapterSourceKind::Provider | AdapterSourceKind::Account,
             AgentId::Pi,
             AdapterRoute::ConfigSync,
             AdapterSupport::Stable,
         )
         | (
-            Some("kimi-membership-to-codex-v1")
-            | Some("anthropic-api-to-codex-v1")
-            | Some("openai-api-to-codex-v1"),
+            Some(KIMI_CODEX_RULE_ID) | Some(ANTHROPIC_CODEX_RULE_ID) | Some(OPENAI_CODEX_RULE_ID),
             AdapterSourceKind::Provider | AdapterSourceKind::Account,
             AgentId::Codex,
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
         )
         | (
-            Some("openai-api-to-claude-v1"),
+            Some(OPENAI_CLAUDE_RULE_ID),
             AdapterSourceKind::Provider | AdapterSourceKind::Account,
             AgentId::Claude,
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
         )
         | (
-            Some("openai-api-to-grok-bridge-v1"),
+            Some(OPENAI_GROK_BRIDGE_RULE_ID),
             AdapterSourceKind::Provider | AdapterSourceKind::Account,
             AgentId::Grok,
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
         )
         | (
-            Some("openai-api-to-kimi-bridge-v1"),
+            Some(OPENAI_KIMI_BRIDGE_RULE_ID),
             AdapterSourceKind::Provider | AdapterSourceKind::Account,
             AgentId::Kimi,
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
         )
         | (
-            Some("openai-api-to-dsh-bridge-v1"),
+            Some(OPENAI_DSH_BRIDGE_RULE_ID),
             AdapterSourceKind::Provider | AdapterSourceKind::Account,
             AgentId::Dsh,
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
         )
         | (
-            Some("anthropic-api-to-pi-v1") | Some("openai-api-to-pi-v1") | Some("xai-api-to-pi-v1"),
+            Some(ANTHROPIC_PI_RULE_ID) | Some(OPENAI_PI_RULE_ID) | Some(XAI_PI_RULE_ID),
             AdapterSourceKind::Provider | AdapterSourceKind::Account,
             AgentId::Pi,
             AdapterRoute::ConfigSync,
@@ -260,9 +265,9 @@ pub(crate) fn bind_implementation_open(
             AdapterSupport::Experimental,
         )
         | (
-            Some("claude-subscription-to-pi-v1")
-            | Some("codex-subscription-to-pi-v1")
-            | Some("grok-subscription-to-pi-v1"),
+            Some(CLAUDE_SUBSCRIPTION_PI_RULE_ID)
+            | Some(CODEX_SUBSCRIPTION_PI_RULE_ID)
+            | Some(GROK_SUBSCRIPTION_PI_RULE_ID),
             AdapterSourceKind::Account,
             AgentId::Pi,
             AdapterRoute::ConfigSync,
@@ -276,84 +281,84 @@ pub(crate) fn bind_implementation_open(
             AdapterSupport::Experimental,
         )
         | (
-            Some("codex-subscription-to-claude-responses-v1"),
+            Some(CODEX_CLAUDE_RESPONSES_RULE_ID),
             AdapterSourceKind::Account,
             AgentId::Claude,
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
         )
         | (
-            Some("grok-subscription-to-claude-v1"),
+            Some(GROK_CLAUDE_RULE_ID),
             AdapterSourceKind::Account,
             AgentId::Claude,
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
         )
         | (
-            Some("grok-subscription-to-codex-v1"),
+            Some(GROK_CODEX_RULE_ID),
             AdapterSourceKind::Account,
             AgentId::Codex,
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
         )
         | (
-            Some("codex-subscription-to-codex-v1"),
+            Some(CODEX_CODEX_RULE_ID),
             AdapterSourceKind::Account,
             AgentId::Codex,
             AdapterRoute::NativeEndpoint,
             AdapterSupport::Stable,
         )
         | (
-            Some("codex-subscription-to-grok-v1"),
+            Some(CODEX_GROK_RULE_ID),
             AdapterSourceKind::Account,
             AgentId::Grok,
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
         )
         | (
-            Some("codex-subscription-to-kimi-v1"),
+            Some(CODEX_KIMI_RULE_ID),
             AdapterSourceKind::Account,
             AgentId::Kimi,
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
         )
         | (
-            Some("codex-subscription-to-dsh-v1"),
+            Some(CODEX_DSH_RULE_ID),
             AdapterSourceKind::Account,
             AgentId::Dsh,
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
         )
         | (
-            Some("kiro-to-claude-v1"),
+            Some(KIRO_CLAUDE_RULE_ID),
             AdapterSourceKind::Account,
             AgentId::Claude,
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
         )
         | (
-            Some("kiro-to-codex-v1"),
+            Some(KIRO_CODEX_RULE_ID),
             AdapterSourceKind::Account,
             AgentId::Codex,
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
         )
         | (
-            Some("kiro-to-grok-v1"),
+            Some(KIRO_GROK_RULE_ID),
             AdapterSourceKind::Account,
             AgentId::Grok,
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
         )
         | (
-            Some("kimi-membership-to-grok-v1") | Some("openai-api-to-grok-v1"),
+            Some(KIMI_GROK_RULE_ID) | Some(OPENAI_GROK_RULE_ID),
             AdapterSourceKind::Provider | AdapterSourceKind::Account,
             AgentId::Grok,
             AdapterRoute::NativeEndpoint,
             AdapterSupport::Experimental,
         )
         | (
-            Some("deepseek-api-to-dsh-v1"),
+            Some(DEEPSEEK_DSH_RULE_ID),
             AdapterSourceKind::Provider,
             AgentId::Dsh,
             AdapterRoute::ConfigSync,
@@ -434,7 +439,7 @@ pub(super) fn actions_for(
                     "set_env",
                     "Claude Code",
                     "使用 Claude Code 的认证环境变量名。",
-                    Some("ANTHROPIC_AUTH_TOKEN"),
+                    Some(ANTHROPIC_AUTH_TOKEN_ENV),
                     false,
                 ),
                 action(
@@ -599,7 +604,9 @@ pub(super) fn actions_for(
                 "set_env",
                 "Claude Code",
                 "写入 Claude Code 的本机地址 Base URL 与本机 bearer；不会写入上游 OAuth token。",
-                Some("ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN"),
+                Some(&format!(
+                    "{ANTHROPIC_BASE_URL_ENV} / {ANTHROPIC_AUTH_TOKEN_ENV}"
+                )),
                 false,
             ),
         ],
@@ -616,7 +623,9 @@ pub(super) fn actions_for(
                 "set_env",
                 "Claude Code",
                 "写入 Claude Code 的本机地址 Base URL 与本机 bearer；不会写入上游 OAuth token。",
-                Some("ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN"),
+                Some(&format!(
+                    "{ANTHROPIC_BASE_URL_ENV} / {ANTHROPIC_AUTH_TOKEN_ENV}"
+                )),
                 false,
             ),
         ]
@@ -683,7 +692,9 @@ pub(super) fn actions_for(
                 "set_env",
                 "Claude Code",
                 "写入 Claude 的本机地址和本机令牌。",
-                Some("ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN"),
+                Some(&format!(
+                    "{ANTHROPIC_BASE_URL_ENV} / {ANTHROPIC_AUTH_TOKEN_ENV}"
+                )),
                 false,
             ),
         ],
@@ -1138,9 +1149,7 @@ pub(super) fn deepseek_dsh_evidence() -> AdapterEvidence {
 pub(super) fn adapter_compatibility_evidence() -> AdapterEvidence {
     AdapterEvidence {
         label: "AgentHub：厂商、API 与 OAuth 适配规则".into(),
-        url: format!(
-            "{GITHUB_REPOSITORY_URL}/blob/release/docs/provider-api-oauth-adaptation.md"
-        ),
+        url: format!("{GITHUB_REPOSITORY_URL}/blob/release/docs/provider-api-oauth-adaptation.md"),
         verified_at: VERIFIED_AT.into(),
     }
 }

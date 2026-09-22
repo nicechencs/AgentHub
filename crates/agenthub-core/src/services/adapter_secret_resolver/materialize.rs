@@ -83,7 +83,7 @@ impl AdapterSecretResolver {
             document["model_providers"][slug]["experimental_bearer_token"] =
                 toml_edit::value(api_key.as_str());
             materialized.settings_config["content"] = Value::String(document.to_string());
-            materialized.settings_config["auth"]["OPENAI_API_KEY"] = Value::String(api_key);
+            materialized.settings_config["auth"][OPENAI_API_KEY_ENV] = Value::String(api_key);
             return Ok(materialized);
         }
 
@@ -217,14 +217,14 @@ impl AdapterSecretResolver {
                 .and_then(Value::as_object_mut)
                 .ok_or_else(invalid_reference)?;
             if auth
-                .get("OPENAI_API_KEY")
+                .get(OPENAI_API_KEY_ENV)
                 .and_then(Value::as_str)
                 .is_none_or(|value| value.trim().is_empty())
             {
                 return Err(invalid_reference());
             }
             auth.insert(
-                "OPENAI_API_KEY".into(),
+                OPENAI_API_KEY_ENV.into(),
                 Value::String(CONNECTION_SECRET_MARKER.into()),
             );
             return Ok(scrubbed);
@@ -627,7 +627,7 @@ impl AdapterSecretResolver {
                 .settings_config
                 .get("auth")
                 .and_then(Value::as_object)
-                .and_then(|auth| auth.get("OPENAI_API_KEY"))
+                .and_then(|auth| auth.get(OPENAI_API_KEY_ENV))
                 .and_then(Value::as_str)
                 != Some(CONNECTION_SECRET_MARKER)
         {
