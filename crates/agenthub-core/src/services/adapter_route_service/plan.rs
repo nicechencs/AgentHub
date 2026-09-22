@@ -4,9 +4,12 @@ use crate::models::{
     AdapterRouteRequest, AdapterServiceImpact, AgentId,
 };
 use crate::services::adapter_route_constants::{
-    claude_native_base_url, ANTHROPIC_AUTH_TOKEN_ENV, DEEPSEEK_CODEX_BASE_URL,
-    DSH_DEEPSEEK_PROVIDER_SLOT, GLM_CODEX_BASE_URL, GLM_CODEX_RULE_ID, KIMI_CLAUDE_BASE_URL,
-    KIMI_GROK_BASE_URL, KIMI_GROK_DEFAULT_MODEL, OPENAI_GROK_BASE_URL, OPENAI_GROK_DEFAULT_MODEL,
+    claude_native_base_url, ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV,
+    ANTHROPIC_CODEX_RULE_ID, CLAUDE_SUBSCRIPTION_PI_RULE_ID, CODEX_SUBSCRIPTION_PI_RULE_ID,
+    DEEPSEEK_API_KEY_ENV, DEEPSEEK_CODEX_BASE_URL, DSH_DEEPSEEK_PROVIDER_SLOT, GLM_CODEX_BASE_URL,
+    GLM_CODEX_RULE_ID, GROK_CODEX_RULE_ID, GROK_SUBSCRIPTION_PI_RULE_ID, KIMI_CLAUDE_BASE_URL,
+    KIMI_GROK_BASE_URL, KIMI_GROK_DEFAULT_MODEL, KIMI_GROK_RULE_ID, OPENAI_CODEX_RULE_ID,
+    OPENAI_GROK_BASE_URL, OPENAI_GROK_DEFAULT_MODEL,
 };
 
 use super::actions::*;
@@ -73,9 +76,9 @@ impl AdapterRouteService {
                 let secret_field = if matches!(
                     analysis.rule_id.as_deref(),
                     Some(
-                        "claude-subscription-to-pi-v1"
-                            | "codex-subscription-to-pi-v1"
-                            | "grok-subscription-to-pi-v1"
+                        CLAUDE_SUBSCRIPTION_PI_RULE_ID
+                            | CODEX_SUBSCRIPTION_PI_RULE_ID
+                            | GROK_SUBSCRIPTION_PI_RULE_ID
                     )
                 ) {
                     "auth"
@@ -94,16 +97,16 @@ impl AdapterRouteService {
                 AdapterServiceImpact::None,
                 vec![
                     change("dsh", "provider", Some(DSH_DEEPSEEK_PROVIDER_SLOT), false),
-                    change("dsh", "apiKeyEnv", Some("DEEPSEEK_API_KEY"), false),
+                    change("dsh", "apiKeyEnv", Some(DEEPSEEK_API_KEY_ENV), false),
                     change("dsh", "apiKey", None, true),
                 ],
             ),
             AdapterRoute::LocalBridge if request.target_agent_id == AgentId::Codex => {
-                let provider = if analysis.rule_id.as_deref() == Some("anthropic-api-to-codex-v1") {
+                let provider = if analysis.rule_id.as_deref() == Some(ANTHROPIC_CODEX_RULE_ID) {
                     "AgentHub Anthropic 本机路由"
-                } else if analysis.rule_id.as_deref() == Some("openai-api-to-codex-v1") {
+                } else if analysis.rule_id.as_deref() == Some(OPENAI_CODEX_RULE_ID) {
                     "AgentHub OpenAI 本机路由"
-                } else if analysis.rule_id.as_deref() == Some("grok-subscription-to-codex-v1") {
+                } else if analysis.rule_id.as_deref() == Some(GROK_CODEX_RULE_ID) {
                     "AgentHub Grok 本机路由"
                 } else if analysis.rule_id.as_deref()
                     == Some(crate::models::CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID)
@@ -151,12 +154,11 @@ impl AdapterRouteService {
                 }
             }
             AdapterRoute::NativeEndpoint if request.target_agent_id == AgentId::Grok => {
-                let (base_url, model) =
-                    if analysis.rule_id.as_deref() == Some("kimi-membership-to-grok-v1") {
-                        (KIMI_GROK_BASE_URL, KIMI_GROK_DEFAULT_MODEL)
-                    } else {
-                        (OPENAI_GROK_BASE_URL, OPENAI_GROK_DEFAULT_MODEL)
-                    };
+                let (base_url, model) = if analysis.rule_id.as_deref() == Some(KIMI_GROK_RULE_ID) {
+                    (KIMI_GROK_BASE_URL, KIMI_GROK_DEFAULT_MODEL)
+                } else {
+                    (OPENAI_GROK_BASE_URL, OPENAI_GROK_DEFAULT_MODEL)
+                };
                 (
                     AdapterServiceImpact::None,
                     vec![
@@ -172,11 +174,11 @@ impl AdapterRouteService {
                 vec![
                     change(
                         "claude",
-                        "ANTHROPIC_BASE_URL",
+                        ANTHROPIC_BASE_URL_ENV,
                         Some("http://127.0.0.1:<本机端口>"),
                         false,
                     ),
-                    change("claude", "ANTHROPIC_AUTH_TOKEN", None, true),
+                    change("claude", ANTHROPIC_AUTH_TOKEN_ENV, None, true),
                 ],
             ),
             AdapterRoute::LocalBridge if request.target_agent_id == AgentId::Grok => (

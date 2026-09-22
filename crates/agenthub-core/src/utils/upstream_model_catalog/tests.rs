@@ -136,3 +136,50 @@ fn wanted_models_replace_live_including_deletes() {
         vec!["gpt-5.4", "my-model"]
     );
 }
+
+#[test]
+fn catalog_env_pointer_tails_match_route_constants() {
+    use crate::services::adapter_route_constants::{
+        ANTHROPIC_API_KEY_ENV, ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV,
+        DEEPSEEK_API_KEY_ENV, OPENAI_API_KEY_ENV, OPENAI_BASE_URL_ENV, XAI_API_KEY_ENV,
+    };
+
+    let expected = [
+        ("/env/ANTHROPIC_BASE_URL", ANTHROPIC_BASE_URL_ENV),
+        ("/env/OPENAI_BASE_URL", OPENAI_BASE_URL_ENV),
+        ("/env/ANTHROPIC_AUTH_TOKEN", ANTHROPIC_AUTH_TOKEN_ENV),
+        ("/env/ANTHROPIC_API_KEY", ANTHROPIC_API_KEY_ENV),
+        ("/env/OPENAI_API_KEY", OPENAI_API_KEY_ENV),
+        ("/auth/OPENAI_API_KEY", OPENAI_API_KEY_ENV),
+        ("/env/XAI_API_KEY", XAI_API_KEY_ENV),
+        ("/env/DEEPSEEK_API_KEY", DEEPSEEK_API_KEY_ENV),
+    ];
+    let known = [
+        ANTHROPIC_BASE_URL_ENV,
+        ANTHROPIC_AUTH_TOKEN_ENV,
+        ANTHROPIC_API_KEY_ENV,
+        OPENAI_BASE_URL_ENV,
+        OPENAI_API_KEY_ENV,
+        XAI_API_KEY_ENV,
+        DEEPSEEK_API_KEY_ENV,
+    ];
+    for (pointer, env) in expected {
+        assert!(
+            super::BASE_POINTERS.contains(&pointer) || super::KEY_POINTERS.contains(&pointer),
+            "{pointer} missing from catalog pointers"
+        );
+        assert_eq!(pointer.rsplit('/').next(), Some(env));
+    }
+    for pointer in super::BASE_POINTERS.iter().chain(super::KEY_POINTERS) {
+        let tail = pointer.rsplit('/').next().expect("pointer segment");
+        if !known.contains(&tail) {
+            continue;
+        }
+        assert!(
+            expected
+                .iter()
+                .any(|(item, env)| item == pointer && *env == tail),
+            "{pointer} tail is an env constant but was not checked"
+        );
+    }
+}

@@ -22,6 +22,13 @@ use super::{
 use crate::models::{
     AdapterGateKind, AdapterMaturity, AdapterRoute, AdapterSupport, AgentId, TicketSurface,
 };
+use crate::services::adapter_route_constants::{
+    ANTHROPIC_PI_RULE_ID, CLAUDE_SUBSCRIPTION_PI_RULE_ID, CODEX_SUBSCRIPTION_PI_RULE_ID,
+    DEEPSEEK_CLAUDE_RULE_ID, DEEPSEEK_CODEX_RULE_ID, DEEPSEEK_DSH_RULE_ID, DEEPSEEK_PI_RULE_ID,
+    GLM_CLAUDE_RULE_ID, GLM_CODEX_RULE_ID, GLM_PI_RULE_ID, GROK_SUBSCRIPTION_PI_RULE_ID,
+    KIMI_CLAUDE_RULE_ID, KIMI_GROK_RULE_ID, KIMI_PI_RULE_ID, OPENAI_GROK_RULE_ID,
+    OPENAI_PI_RULE_ID, XAI_PI_RULE_ID,
+};
 
 /// Shared public reason for the experimental Codex / ChatGPT subscription →
 /// Claude Code Responses edge. Mock UI and core analyze must keep this string
@@ -44,10 +51,10 @@ pub const CODEX_SUBSCRIPTION_TO_GROK_REASON: &str = "Codex 官方登录会经本
 pub const CODEX_SUBSCRIPTION_TO_KIMI_REASON: &str = "Codex 官方登录会经本机路由接到 Kimi。";
 pub const CODEX_SUBSCRIPTION_TO_DSH_REASON: &str =
     "Codex 官方登录会经本机路由接到 DeepSeek Harness。";
-pub const CODEX_SUBSCRIPTION_TO_GROK_RULE_ID: &str = "codex-subscription-to-grok-v1";
-pub const CODEX_SUBSCRIPTION_TO_KIMI_RULE_ID: &str = "codex-subscription-to-kimi-v1";
-pub const CODEX_SUBSCRIPTION_TO_DSH_RULE_ID: &str = "codex-subscription-to-dsh-v1";
-pub const CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID: &str = "claude-subscription-to-codex-v1";
+pub use crate::services::adapter_route_constants::CLAUDE_CODEX_RULE_ID as CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID;
+pub use crate::services::adapter_route_constants::CODEX_DSH_RULE_ID as CODEX_SUBSCRIPTION_TO_DSH_RULE_ID;
+pub use crate::services::adapter_route_constants::CODEX_GROK_RULE_ID as CODEX_SUBSCRIPTION_TO_GROK_RULE_ID;
+pub use crate::services::adapter_route_constants::CODEX_KIMI_RULE_ID as CODEX_SUBSCRIPTION_TO_KIMI_RULE_ID;
 
 /// Closed reason: Grok login is not a supported upstream for Kimi.
 pub const GROK_SUBSCRIPTION_TO_KIMI_REASON: &str =
@@ -381,7 +388,7 @@ const CODEX_NATIVE_API_LIMITS: &[&str] = &[
 
 /// Official Codex / ChatGPT OAuth used on Codex itself.
 pub const CODEX_SUBSCRIPTION_TO_CODEX_REASON: &str = "用这份官方登录接到 Codex。";
-pub const CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID: &str = "codex-subscription-to-codex-v1";
+pub use crate::services::adapter_route_constants::CODEX_CODEX_RULE_ID as CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID;
 
 const CODEX_OFFICIAL_SELF_LIMITS: &[&str] = &[
     "会把这份官方登录写进 Codex；不会改到本机路由。",
@@ -538,7 +545,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         can_apply: true,
         reason: "用这份 Kimi Code 会员接到 Claude，只改地址和模型。",
         limitations: KIMI_CLAUDE_LIMITS,
-        rule_id: "kimi-membership-to-claude-v1",
+        rule_id: KIMI_CLAUDE_RULE_ID,
         verified_at: VERIFIED_AT,
         gates: AdapterCapabilityGates::all_open(),
         multi_account: false,
@@ -557,7 +564,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         can_apply: true,
         reason: "用这份 GLM 会员接到 Codex，只改地址和模型。",
         limitations: CODEX_NATIVE_API_LIMITS,
-        rule_id: "glm-coding-plan-to-codex-v1",
+        rule_id: GLM_CODEX_RULE_ID,
         verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
         multi_account: false,
@@ -576,7 +583,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         can_apply: true,
         reason: "用这份 DeepSeek Key 接到 Codex，只改地址和模型。",
         limitations: CODEX_NATIVE_API_LIMITS,
-        rule_id: "deepseek-api-to-codex-v1",
+        rule_id: DEEPSEEK_CODEX_RULE_ID,
         verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
         multi_account: false,
@@ -596,7 +603,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         can_apply: true,
         reason: "把这份 Kimi Code 会员写进 Pi 认的登录位置。",
         limitations: KIMI_PI_LIMITS,
-        rule_id: "kimi-membership-to-pi-v1",
+        rule_id: KIMI_PI_RULE_ID,
         verified_at: VERIFIED_AT,
         gates: AdapterCapabilityGates::all_open(),
         multi_account: false,
@@ -615,7 +622,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         can_apply: true,
         reason: "把这份 Anthropic API Key 写进 Pi 认的登录位置。",
         limitations: ANTHROPIC_PI_LIMITS,
-        rule_id: "anthropic-api-to-pi-v1",
+        rule_id: ANTHROPIC_PI_RULE_ID,
         verified_at: VERIFIED_AT,
         gates: AdapterCapabilityGates::all_open(),
         multi_account: false,
@@ -635,7 +642,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         can_apply: true,
         reason: "把这份 OpenAI API Key 写进 Pi 认的登录位置。",
         limitations: OPENAI_PI_LIMITS,
-        rule_id: "openai-api-to-pi-v1",
+        rule_id: OPENAI_PI_RULE_ID,
         verified_at: VERIFIED_AT,
         gates: AdapterCapabilityGates::all_open(),
         multi_account: false,
@@ -659,7 +666,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         can_apply: true,
         reason: "把这份 xAI API Key 写进 Pi 认的登录位置。",
         limitations: XAI_PI_LIMITS,
-        rule_id: "xai-api-to-pi-v1",
+        rule_id: XAI_PI_RULE_ID,
         verified_at: VERIFIED_AT,
         gates: AdapterCapabilityGates::all_open(),
         multi_account: false,
@@ -678,7 +685,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         can_apply: true,
         reason: "把这份 GLM Coding Plan 写进 Pi 认的登录位置。",
         limitations: GLM_PI_LIMITS,
-        rule_id: "glm-coding-plan-to-pi-v1",
+        rule_id: GLM_PI_RULE_ID,
         verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
         multi_account: false,
@@ -697,7 +704,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         can_apply: true,
         reason: "把这份 DeepSeek API 写进 Pi 认的登录位置。",
         limitations: DEEPSEEK_PI_LIMITS,
-        rule_id: "deepseek-api-to-pi-v1",
+        rule_id: DEEPSEEK_PI_RULE_ID,
         verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
         multi_account: false,
@@ -716,7 +723,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         can_apply: true,
         reason: "用这份 GLM Coding Plan 接到 Claude，只改地址和模型。",
         limitations: GLM_CLAUDE_LIMITS,
-        rule_id: "glm-coding-plan-to-claude-v1",
+        rule_id: GLM_CLAUDE_RULE_ID,
         verified_at: VERIFIED_AT,
         gates: AdapterCapabilityGates::all_open(),
         multi_account: false,
@@ -735,7 +742,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         can_apply: true,
         reason: "用这份 DeepSeek API 接到 Claude，只改地址和模型。",
         limitations: DEEPSEEK_CLAUDE_LIMITS,
-        rule_id: "deepseek-api-to-claude-v1",
+        rule_id: DEEPSEEK_CLAUDE_RULE_ID,
         verified_at: VERIFIED_AT,
         gates: AdapterCapabilityGates::all_open(),
         multi_account: false,
@@ -754,7 +761,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         can_apply: true,
         reason: "把这份 DeepSeek Key 写进 DeepSeek Harness 认的登录位置。",
         limitations: DEEPSEEK_DSH_LIMITS,
-        rule_id: "deepseek-api-to-dsh-v1",
+        rule_id: DEEPSEEK_DSH_RULE_ID,
         verified_at: VERIFIED_AT,
         gates: AdapterCapabilityGates::all_open(),
         multi_account: false,
@@ -773,7 +780,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         can_apply: true,
         reason: CLAUDE_SUBSCRIPTION_TO_PI_REASON,
         limitations: SUBSCRIPTION_PI_APPLY_LIMITS,
-        rule_id: "claude-subscription-to-pi-v1",
+        rule_id: CLAUDE_SUBSCRIPTION_PI_RULE_ID,
         verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
         multi_account: false,
@@ -792,7 +799,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         can_apply: true,
         reason: CODEX_SUBSCRIPTION_TO_PI_REASON,
         limitations: SUBSCRIPTION_PI_APPLY_LIMITS,
-        rule_id: "codex-subscription-to-pi-v1",
+        rule_id: CODEX_SUBSCRIPTION_PI_RULE_ID,
         verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
         multi_account: false,
@@ -811,7 +818,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         can_apply: true,
         reason: CODEX_SUBSCRIPTION_TO_PI_REASON,
         limitations: SUBSCRIPTION_PI_APPLY_LIMITS,
-        rule_id: "codex-subscription-to-pi-v1",
+        rule_id: CODEX_SUBSCRIPTION_PI_RULE_ID,
         verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
         multi_account: false,
@@ -830,7 +837,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         can_apply: true,
         reason: GROK_SUBSCRIPTION_TO_PI_REASON,
         limitations: SUBSCRIPTION_PI_APPLY_LIMITS,
-        rule_id: "grok-subscription-to-pi-v1",
+        rule_id: GROK_SUBSCRIPTION_PI_RULE_ID,
         verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
         multi_account: false,
@@ -849,7 +856,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         can_apply: true,
         reason: "用这份 Kimi Code 会员接到 Grok，只改地址和模型。",
         limitations: GROK_NATIVE_LIMITS,
-        rule_id: "kimi-membership-to-grok-v1",
+        rule_id: KIMI_GROK_RULE_ID,
         verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
         multi_account: false,
@@ -868,7 +875,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         can_apply: true,
         reason: "用这份 OpenAI Key 接到 Grok，只改地址和模型。",
         limitations: GROK_NATIVE_LIMITS,
-        rule_id: "openai-api-to-grok-v1",
+        rule_id: OPENAI_GROK_RULE_ID,
         verified_at: "2026-08-15",
         gates: AdapterCapabilityGates::all_open(),
         multi_account: false,

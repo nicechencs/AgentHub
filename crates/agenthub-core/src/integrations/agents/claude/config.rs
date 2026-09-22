@@ -8,6 +8,9 @@ use serde_json::{Map, Value};
 use crate::error::{AppError, Result};
 use crate::models::AgentId;
 use crate::platform::AgentKey;
+use crate::services::adapter_route_constants::{
+    ANTHROPIC_API_KEY_ENV, ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV,
+};
 
 use crate::platform::config::sources::util::{
     field, finish_apply, get_str_map, json_object_or_empty, plan_from_maps, redact_secrets,
@@ -82,7 +85,7 @@ impl ClaudeConfigProjector {
                     ConfigValueType::String,
                     false,
                     false,
-                    Some("ANTHROPIC_BASE_URL"),
+                    Some(ANTHROPIC_BASE_URL_ENV),
                 ),
                 field(
                     "apiKey",
@@ -96,7 +99,10 @@ impl ClaudeConfigProjector {
                     "claudeAuthEnv",
                     "Auth env name",
                     ConfigValueType::Enum {
-                        options: vec!["ANTHROPIC_AUTH_TOKEN".into(), "ANTHROPIC_API_KEY".into()],
+                        options: vec![
+                            ANTHROPIC_AUTH_TOKEN_ENV.into(),
+                            ANTHROPIC_API_KEY_ENV.into(),
+                        ],
                     },
                     false,
                     false,
@@ -175,20 +181,20 @@ impl ClaudeConfigProjector {
             .cloned()
             .unwrap_or_default();
         let token = env
-            .get("ANTHROPIC_AUTH_TOKEN")
+            .get(ANTHROPIC_AUTH_TOKEN_ENV)
             .and_then(|v| v.as_str())
             .unwrap_or("");
         let api_key = env
-            .get("ANTHROPIC_API_KEY")
+            .get(ANTHROPIC_API_KEY_ENV)
             .and_then(|v| v.as_str())
             .unwrap_or("");
         let alias_key = first_str(root, &["apiKey", "api_key"]).unwrap_or_default();
         let auth_env = if !token.is_empty() {
-            "ANTHROPIC_AUTH_TOKEN"
+            ANTHROPIC_AUTH_TOKEN_ENV
         } else if !api_key.is_empty() {
-            "ANTHROPIC_API_KEY"
+            ANTHROPIC_API_KEY_ENV
         } else {
-            "ANTHROPIC_AUTH_TOKEN"
+            ANTHROPIC_AUTH_TOKEN_ENV
         };
         let raw_key = if !token.is_empty() {
             token.to_string()
@@ -205,7 +211,7 @@ impl ClaudeConfigProjector {
 
         let mut values = BTreeMap::new();
         let base = env
-            .get("ANTHROPIC_BASE_URL")
+            .get(ANTHROPIC_BASE_URL_ENV)
             .and_then(|v| v.as_str())
             .map(str::trim)
             .filter(|s| !s.is_empty())
@@ -267,16 +273,16 @@ impl ClaudeConfigProjector {
 
         let auth_env = get_str_map(desired, "claudeAuthEnv")
             .or_else(|| get_str_map(current, "claudeAuthEnv"))
-            .unwrap_or_else(|| "ANTHROPIC_AUTH_TOKEN".into());
-        if auth_env != "ANTHROPIC_AUTH_TOKEN" && auth_env != "ANTHROPIC_API_KEY" {
+            .unwrap_or_else(|| ANTHROPIC_AUTH_TOKEN_ENV.into());
+        if auth_env != ANTHROPIC_AUTH_TOKEN_ENV && auth_env != ANTHROPIC_API_KEY_ENV {
             return Err(AppError::InvalidArg(
                 "claudeAuthEnv must be ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY".into(),
             ));
         }
-        let other = if auth_env == "ANTHROPIC_AUTH_TOKEN" {
-            "ANTHROPIC_API_KEY"
+        let other = if auth_env == ANTHROPIC_AUTH_TOKEN_ENV {
+            ANTHROPIC_API_KEY_ENV
         } else {
-            "ANTHROPIC_AUTH_TOKEN"
+            ANTHROPIC_AUTH_TOKEN_ENV
         };
         env.remove(other);
 
@@ -285,9 +291,9 @@ impl ClaudeConfigProjector {
         if let Some(base) = get_str_map(desired, "baseUrl") {
             let t = base.trim();
             if t.is_empty() {
-                env.remove("ANTHROPIC_BASE_URL");
+                env.remove(ANTHROPIC_BASE_URL_ENV);
             } else {
-                env.insert("ANTHROPIC_BASE_URL".into(), Value::String(t.to_string()));
+                env.insert(ANTHROPIC_BASE_URL_ENV.into(), Value::String(t.to_string()));
             }
         }
 
@@ -319,17 +325,17 @@ impl ClaudeConfigProjector {
             }
         }
         // Ensure auth env key name is selected
-        if env.contains_key("ANTHROPIC_AUTH_TOKEN") || env.contains_key("ANTHROPIC_API_KEY") {
+        if env.contains_key(ANTHROPIC_AUTH_TOKEN_ENV) || env.contains_key(ANTHROPIC_API_KEY_ENV) {
             // move secret to selected name if needed
-            if auth_env == "ANTHROPIC_AUTH_TOKEN" {
-                if let Some(v) = env.remove("ANTHROPIC_API_KEY") {
-                    if !env.contains_key("ANTHROPIC_AUTH_TOKEN") {
-                        env.insert("ANTHROPIC_AUTH_TOKEN".into(), v);
+            if auth_env == ANTHROPIC_AUTH_TOKEN_ENV {
+                if let Some(v) = env.remove(ANTHROPIC_API_KEY_ENV) {
+                    if !env.contains_key(ANTHROPIC_AUTH_TOKEN_ENV) {
+                        env.insert(ANTHROPIC_AUTH_TOKEN_ENV.into(), v);
                     }
                 }
-            } else if let Some(v) = env.remove("ANTHROPIC_AUTH_TOKEN") {
-                if !env.contains_key("ANTHROPIC_API_KEY") {
-                    env.insert("ANTHROPIC_API_KEY".into(), v);
+            } else if let Some(v) = env.remove(ANTHROPIC_AUTH_TOKEN_ENV) {
+                if !env.contains_key(ANTHROPIC_API_KEY_ENV) {
+                    env.insert(ANTHROPIC_API_KEY_ENV.into(), v);
                 }
             }
         }
@@ -385,17 +391,17 @@ impl ClaudeConfigProjector {
 
         if !desired_cleared_url
             && env
-                .get("ANTHROPIC_BASE_URL")
+                .get(ANTHROPIC_BASE_URL_ENV)
                 .and_then(Value::as_str)
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .is_none()
         {
             if let Some(url) = first_str(&root, &["baseURL", "baseUrl", "base_url"]) {
-                env.insert("ANTHROPIC_BASE_URL".into(), Value::String(url));
+                env.insert(ANTHROPIC_BASE_URL_ENV.into(), Value::String(url));
             }
         }
-        if !env.contains_key("ANTHROPIC_AUTH_TOKEN") && !env.contains_key("ANTHROPIC_API_KEY") {
+        if !env.contains_key(ANTHROPIC_AUTH_TOKEN_ENV) && !env.contains_key(ANTHROPIC_API_KEY_ENV) {
             if let Some(key) = first_str(&root, &["apiKey", "api_key"]) {
                 env.insert(auth_env.clone(), Value::String(key));
             }

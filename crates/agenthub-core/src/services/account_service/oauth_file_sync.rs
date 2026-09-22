@@ -13,6 +13,7 @@ use crate::adapters::AgentAdapter;
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{Account, AccountKind, AgentId, LiveAccount};
+use crate::services::adapter_route_constants::OPENAI_API_KEY_ENV;
 
 use super::oauth_owner::oauth_grant_is_hub_owned;
 use super::surface::*;
@@ -23,7 +24,7 @@ const OAUTH_FILE_SYNC_NEEDS_ATTENTION: &str = "needs_attention";
 
 const REFRESH_KEYS: &[&str] = &["refresh_token", "refreshToken", "refresh"];
 const ACCESS_KEYS: &[&str] = &["access_token", "accessToken", "access"];
-const API_KEY_KEYS: &[&str] = &["api_key", "OPENAI_API_KEY"];
+const API_KEY_KEYS: &[&str] = &["api_key", OPENAI_API_KEY_ENV];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum OauthFileSyncAction {
