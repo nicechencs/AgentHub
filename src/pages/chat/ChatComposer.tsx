@@ -44,6 +44,7 @@ import {
   composerPrimaryAction,
   composerQueueableFollowUpText,
   composerShouldHoldSendLock,
+  composerShouldKeepRestoredSent,
   composerShortcutKind,
   composerShortcutMessageKey,
   composerShouldRestoreFocus,
@@ -212,6 +213,8 @@ export function ChatComposer({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sentTextRef = useRef<string | null>(null);
   const sentSettleUntilRef = useRef(0);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const modelMenuDisabled = sending || connectionLocked || switchingProvider || switchingModel;
   const currentEffortHint = currentEffort ? chatEffortHint(currentEffort, t) : null;
@@ -266,8 +269,11 @@ export function ChatComposer({
     const sent = sentTextRef.current;
     if (sent) {
       // Parent already restored the sent prompt after stop/failure — keep it.
-      if (draft.trim() === sent.trim() && composerIsResidualOfSent({ text: next, sent })) {
+      // Read draftRef so a late onChange after setDraft(sent) does not use a stale ''.
+      if (composerShouldKeepRestoredSent({ draft: draftRef.current, sent })) {
         sentTextRef.current = null;
+        if (composerIsResidualOfSent({ text: next, sent })) return;
+        setDraft(next);
         return;
       }
       const lock = composerShouldHoldSendLock({
@@ -278,8 +284,6 @@ export function ChatComposer({
       });
       if (lock.hold) {
         sentTextRef.current = lock.sent;
-        const el = textareaRef.current;
-        if (el) el.value = '';
         setDraft('');
         return;
       }
@@ -288,12 +292,12 @@ export function ChatComposer({
       return;
     }
     setDraft(next);
-  }, [draft, setDraft]);
+  }, [setDraft]);
   useEffect(() => {
     const sent = sentTextRef.current;
     if (!sent) return;
     // Stop / failure restored the exact submitted prompt. Unlock so the user can edit it.
-    if (draft.trim() === sent.trim()) sentTextRef.current = null;
+    if (composerShouldKeepRestoredSent({ draft, sent })) sentTextRef.current = null;
   }, [draft]);
   const submitComposer = useCallback(() => {
     const live = composerLiveSendText({

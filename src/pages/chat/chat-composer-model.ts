@@ -161,6 +161,16 @@ export function composerQueueableFollowUpText(input: {
   return text;
 }
 
+/** Parent put the just-sent prompt back (stop / failure). That is not leftover. */
+export function composerShouldKeepRestoredSent(input: {
+  draft: string;
+  sent: string;
+}): boolean {
+  const draft = input.draft.trim();
+  const sent = input.sent.trim();
+  return Boolean(sent) && draft === sent;
+}
+
 /**
  * After send: drop residual / same-burst leftovers; absorb a late completion of
  * the submitted payload into the lock; keep a real follow-up that is not in `sent`.

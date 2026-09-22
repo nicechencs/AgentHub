@@ -10,6 +10,7 @@ import {
   composerLiveSendText,
   composerQueueableFollowUpText,
   composerShouldHoldSendLock,
+  composerShouldKeepRestoredSent,
   composerFooterControl,
   composerKeepsStoppingAfterCancel,
   composerPrimaryAction,
@@ -265,6 +266,27 @@ describe('composer clear-on-send', () => {
     ).toBe('');
     expect(composerDraftAfterSuccessfulSend({ draft: 'Write a 3-step plan', sent })).toBe('');
     expect(composerDraftAfterSuccessfulSend({ draft: '  ', sent })).toBe('');
+  });
+
+  it('keeps a stop-restored sent prompt and does not treat it as leftover', () => {
+    expect(
+      composerShouldKeepRestoredSent({
+        draft: 'e2e mock stop',
+        sent: 'e2e mock stop',
+      }),
+    ).toBe(true);
+    expect(
+      composerShouldKeepRestoredSent({
+        draft: '',
+        sent: 'e2e mock stop',
+      }),
+    ).toBe(false);
+    expect(
+      composerQueueableFollowUpText({
+        text: 'e2e mock stop',
+        lastSent: 'e2e mock stop',
+      }),
+    ).toBeNull();
   });
 
   it('restores the sent prompt on stop when the box is empty', () => {
