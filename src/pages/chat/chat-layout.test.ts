@@ -97,8 +97,13 @@ describe('chat layout wiring', () => {
     expect(source('ChatQueuedFollowUpList.tsx')).toContain('chat.composer.queuedCount');
     expect(source('ChatQueuedFollowUpList.tsx')).toContain('cancelQueuedItem');
     expect(composer).toContain('keepComposerFocus');
-    expect(composer).toContain('composerDraftAfterSuccessfulSend');
+    expect(composer).toContain('composerShouldHoldSendLock');
+    expect(composer).toContain('composerQueueableFollowUpText');
+    expect(composer).toContain('COMPOSER_SEND_SETTLE_MS');
     expect(composer).toContain('composerLiveSendText');
+    expect(composer).not.toContain(', 250)');
+    expect(source('use-chat-page-send.ts')).toContain('composerQueueableFollowUpText');
+    expect(source('chat-grok-follow-up.ts')).toContain('composerQueueableFollowUpText');
     expect(composer).toContain('enterKeyHint="send"');
     expect(composer).toContain("t('chat.composer.moreOptions')");
     expect(composer).toContain('flex min-w-0 flex-1 items-center gap-1.5 overflow-visible');

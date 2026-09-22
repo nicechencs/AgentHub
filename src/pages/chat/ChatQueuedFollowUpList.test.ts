@@ -2,6 +2,7 @@ import { createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { ChatQueuedFollowUpList } from './ChatQueuedFollowUpList';
+import { appendQueuedFollowUp } from './chat-grok-follow-up';
 
 vi.mock('@/components/shared/LanguageProvider', async () => {
   const { createTranslator } = await import('@/lib/i18n');
@@ -35,6 +36,15 @@ describe('queued follow-up list', () => {
     expect(html).toContain('全部取消');
     expect(html.match(/取消这条/g)?.length).toBe(2);
     expect(html).toContain('data-help="chat-queued-follow-ups"');
+  });
+
+  it('does not render a leftover suffix that the enqueue path rejected', () => {
+    const sent = "I'll write a short 3-step UI retest plan and show it before doing any work.";
+    const items = appendQueuedFollowUp([], 'doing any work.', 'q-residual', undefined, sent);
+    const html = renderMarkup(createElement(ChatQueuedFollowUpList, { items }));
+    expect(items).toEqual([]);
+    expect(html).toBe('');
+    expect(html).not.toContain('doing any work.');
   });
 
   it('hides an empty queue', () => {

@@ -128,6 +128,66 @@ export function composerLiveSendText(input: {
   return input.textareaValue ?? input.draft;
 }
 
+/** Hold the just-sent payload long enough for late key/IME events to drain. */
+export const COMPOSER_SEND_SETTLE_MS = 400;
+
+/** Growing tail leftovers shorter than this still match as residual during settle. */
+export const COMPOSER_GROWING_RESIDUAL_MIN = 8;
+
+/** Exact / prefix / suffix leftovers of the submitted payload — never a new follow-up. */
+export function composerIsResidualOfSent(input: { text: string; sent: string }): boolean {
+  const text = input.text.trim();
+  const sent = input.sent.trim();
+  if (!text) return true;
+  if (!sent) return false;
+  if (text === sent || sent.endsWith(text) || sent.startsWith(text)) return true;
+  // "doing any" while sent ends with "doing any work." — same burst, not a new line.
+  if (text.length >= COMPOSER_GROWING_RESIDUAL_MIN && sent.includes(text)) return true;
+  return false;
+}
+
+/**
+ * Queue only a real next line. A leftover fragment of `lastSent` must not enqueue.
+ */
+export function composerQueueableFollowUpText(input: {
+  text: string;
+  lastSent?: string | null;
+  settling?: boolean;
+}): string | null {
+  const text = input.text.trim();
+  if (!text) return null;
+  if (input.lastSent && composerIsResidualOfSent({ text, sent: input.lastSent })) return null;
+  if (input.settling && input.lastSent?.includes(text)) return null;
+  return text;
+}
+
+/**
+ * After send: drop residual / same-burst leftovers; absorb a late completion of
+ * the submitted payload into the lock; keep a real follow-up that is not in `sent`.
+ */
+export function composerShouldHoldSendLock(input: {
+  now: number;
+  settleUntil: number;
+  next: string;
+  sent: string;
+}): { hold: boolean; sent: string; draft: string } {
+  const sent = input.sent.trim();
+  const nextTrim = input.next.trim();
+  const inSettle = input.now < input.settleUntil;
+  if (!nextTrim) return { hold: Boolean(sent), sent, draft: '' };
+  if (!sent) return { hold: false, sent: '', draft: input.next };
+  if (composerIsResidualOfSent({ text: nextTrim, sent })) {
+    return { hold: true, sent, draft: '' };
+  }
+  if (nextTrim.startsWith(sent)) {
+    return { hold: true, sent: nextTrim, draft: '' };
+  }
+  if (inSettle && sent.includes(nextTrim)) {
+    return { hold: true, sent, draft: '' };
+  }
+  return { hold: false, sent: '', draft: input.next };
+}
+
 /**
  * After a successful send, drop leftover draft that is still the sent prompt
  * (or a prefix / suffix of it). Keep only text typed after send.
@@ -140,11 +200,9 @@ export function composerDraftAfterSuccessfulSend(input: {
   const sent = input.sent;
   if (!draft.trim()) return '';
   if (!sent.trim()) return draft;
+  if (composerIsResidualOfSent({ text: draft, sent })) return '';
   const draftTrim = draft.trim();
   const sentTrim = sent.trim();
-  if (draftTrim === sentTrim) return '';
-  if (sentTrim.endsWith(draftTrim)) return '';
-  if (sentTrim.startsWith(draftTrim)) return '';
   if (draftTrim.startsWith(sentTrim)) {
     const idx = draft.indexOf(sentTrim);
     return idx >= 0 ? draft.slice(idx + sentTrim.length) : '';
