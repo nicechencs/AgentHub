@@ -138,7 +138,7 @@ impl Default for RunOptions {
             dry_run: false,
             skip_missing: true,
             allow_dangerous: false,
-            max_output_bytes: 2 * 1024 * 1024,
+            max_output_bytes: crate::catalog::limits::DEFAULT_RUN_MAX_OUTPUT_BYTES,
             process_mode: ProcessMode::Text,
             native_session_id: None,
             model: None,

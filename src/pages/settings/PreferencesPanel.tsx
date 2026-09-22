@@ -18,6 +18,7 @@ import type { AppSettings } from '@/lib/types';
 import { loadStoredAccent, persistAccent } from '@/lib/accent';
 import { loadStoredCanvas, persistCanvas } from '@/lib/canvas';
 import { applyTheme } from '@/lib/theme';
+import { MAX_USAGE_COLLECT_INTERVAL_MIN } from '@/lib/backend/contracts/app-limits';
 import { notifyUsageSettingsChanged } from '@/lib/usage-sync';
 import { cn } from '@/lib/utils';
 import { ACCENT_IDS, ACCENT_PALETTES, CANVAS_IDS, CANVAS_PALETTES } from '@/styles/tokens';
@@ -360,7 +361,7 @@ export function PreferencesPanel({
           <Input
             type="number"
             min={0}
-            max={24 * 60}
+            max={MAX_USAGE_COLLECT_INTERVAL_MIN}
             className="w-20"
             value={settings.usageCollectIntervalMin}
             onFocus={() => {

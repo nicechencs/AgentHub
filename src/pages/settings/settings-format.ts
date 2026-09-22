@@ -1,3 +1,8 @@
+import {
+  MAX_LOG_RETENTION_DAYS,
+  MAX_USAGE_COLLECT_INTERVAL_MIN,
+  MIN_LOG_RETENTION_DAYS,
+} from '@/lib/backend/contracts/app-limits';
 import type { MessageKey, TranslateFn } from '@/lib/i18n';
 import type { OptionalNavId } from '@/lib/ui-preferences';
 import type { LogLevel, SkillMarketSource } from '@/lib/types';
@@ -100,11 +105,11 @@ export function logLevelOptionLabel(level: LogLevel, t: TranslateFn): string {
 }
 
 export function clampLogRetentionDays(n: number): number {
-  return Math.min(365, Math.max(1, n));
+  return Math.min(MAX_LOG_RETENTION_DAYS, Math.max(MIN_LOG_RETENTION_DAYS, n));
 }
 
 export function clampUsageIntervalMin(n: number): number {
-  return Math.min(24 * 60, Math.max(0, n));
+  return Math.min(MAX_USAGE_COLLECT_INTERVAL_MIN, Math.max(0, n));
 }
 
 /** 设置 → 侧栏：每个可开关入口的文案。顺序由 OPTIONAL_NAV_IDS 决定。 */

@@ -12,6 +12,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 
+use crate::catalog::limits::SQLITE_BUSY_TIMEOUT_MS;
 use crate::error::Result;
 use crate::models::AgentId;
 
@@ -163,7 +164,7 @@ fn open_cache(data_dir: &Path) -> Result<SessionIndexStore> {
     };
     fs::create_dir_all(&data_dir)?;
     let conn = Connection::open(data_dir.join(DB_FILE))?;
-    conn.busy_timeout(Duration::from_millis(5000))?;
+    conn.busy_timeout(Duration::from_millis(SQLITE_BUSY_TIMEOUT_MS))?;
     let _ = conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;");
     init_schema(&conn)?;
     import_legacy_json(&conn, &data_dir);

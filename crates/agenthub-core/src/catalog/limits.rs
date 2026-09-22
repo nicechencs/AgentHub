@@ -88,12 +88,21 @@ pub const PI_NODE_MIN_MAJOR: u64 = 22;
 pub const PI_NODE_MIN_MINOR: u64 = 19;
 /// Default log file retention days.
 pub const DEFAULT_LOG_RETENTION_DAYS: u32 = 14;
+/// Inclusive lower bound for `log_retention_days`.
+pub const MIN_LOG_RETENTION_DAYS: u32 = 1;
+/// Inclusive upper bound for `log_retention_days`.
+pub const MAX_LOG_RETENTION_DAYS: u32 = 365;
 /// Default foreground usage collect interval (minutes). `0` = manual only.
 pub const DEFAULT_USAGE_COLLECT_INTERVAL_MIN: u32 = 30;
 /// Max allowed usage collect interval (minutes) — matches frontend `normalizeIntervalMin`.
 pub const MAX_USAGE_COLLECT_INTERVAL_MIN: u32 = 24 * 60;
 /// Debounce for skills filesystem watcher (GUI).
 pub const SKILL_FS_DEBOUNCE: Duration = Duration::from_millis(450);
+
+// --- Storage ---
+
+/// Product SQLite busy_timeout in milliseconds. Shared by Duration and PRAGMA.
+pub const SQLITE_BUSY_TIMEOUT_MS: u64 = 5000;
 
 // --- Skill preview ---
 

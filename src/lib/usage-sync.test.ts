@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { MAX_USAGE_COLLECT_INTERVAL_MIN } from '@/lib/backend/contracts/app-limits';
 import { createTranslator } from '@/lib/i18n';
 import {
   buildUsageSyncStatusLine,
@@ -21,7 +22,7 @@ describe('normalizeIntervalMin', () => {
 
   it('floors and clamps', () => {
     expect(normalizeIntervalMin(30.9)).toBe(30);
-    expect(normalizeIntervalMin(99999)).toBe(24 * 60);
+    expect(normalizeIntervalMin(99999)).toBe(MAX_USAGE_COLLECT_INTERVAL_MIN);
   });
 });
 

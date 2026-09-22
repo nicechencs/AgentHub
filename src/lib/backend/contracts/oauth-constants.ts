@@ -9,6 +9,9 @@ export const OAUTH_WAIT_TIMEOUT_SECS = 120;
 /** PKCE listener lifetime. Wait-page countdown must match this, not the poll chunk. */
 export const OAUTH_PKCE_LISTEN_TIMEOUT_SECS = 900;
 
+/** Device-code poll fallback interval. Aligns with crates/agenthub-core/src/oauth/device.rs DEFAULT_POLL_INTERVAL_SECS. */
+export const OAUTH_DEVICE_POLL_INTERVAL_SECS = 5;
+
 /** Another official login took the shared loopback port. */
 export const OFFICIAL_LOGIN_SUPERSEDED = 'oauth.superseded';
 

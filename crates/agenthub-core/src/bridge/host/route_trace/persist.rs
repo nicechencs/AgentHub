@@ -14,6 +14,7 @@ use rusqlite::{params, Connection};
 use super::{
     trace_matches_query, RouteRequestTrace, RouteTracePage, RouteTraceQuery, ROUTE_TRACE_CAP,
 };
+use crate::catalog::limits::SQLITE_BUSY_TIMEOUT_MS;
 use crate::logging::{parse_retention_days, targets};
 use crate::storage::peek_settings;
 
@@ -139,7 +140,7 @@ fn open_inner(path: &Path, fallback_retention_days: u32) -> crate::error::Result
         fs::create_dir_all(parent)?;
     }
     let conn = Connection::open(path)?;
-    conn.busy_timeout(Duration::from_millis(5000))?;
+    conn.busy_timeout(Duration::from_millis(SQLITE_BUSY_TIMEOUT_MS))?;
     let _ = conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;");
     init_schema(&conn)?;
     let db = RouteTraceDb {
@@ -266,7 +267,7 @@ fn prune_older_than(conn: &Connection, retention_days: u32) -> crate::error::Res
 pub(super) fn query_at_path(path: &Path, query: &RouteTraceQuery) -> RouteTracePage {
     match Connection::open(path) {
         Ok(conn) => {
-            let _ = conn.busy_timeout(Duration::from_millis(5000));
+            let _ = conn.busy_timeout(Duration::from_millis(SQLITE_BUSY_TIMEOUT_MS));
             query_or_empty(&conn, path, query)
         }
         Err(error) => {
