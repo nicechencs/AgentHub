@@ -98,7 +98,9 @@ describe('chat layout wiring', () => {
     expect(source('ChatQueuedFollowUpList.tsx')).toContain('cancelQueuedItem');
     expect(composer).toContain('keepComposerFocus');
     expect(composer).toContain('composerShouldHoldSendLock');
+    expect(composer).toContain('composerShouldKeepRestoredSent');
     expect(composer).toContain('composerQueueableFollowUpText');
+    expect(source('use-chat-page-send.ts')).toContain('cancelRequested');
     expect(composer).toContain('COMPOSER_SEND_SETTLE_MS');
     expect(composer).toContain('composerLiveSendText');
     expect(composer).not.toContain(', 250)');

@@ -758,14 +758,11 @@ export function useChatPageSend(input: {
       return;
     }
     if (runtimeProbeCancelRef.current.delete(sendConvId)) {
-      // The request was cancelled while the transport decision was pending.
-      // No new runtime turn or legacy process has been started yet.
-      clearSendingFor(sendConvId);
-      if (isCurrentChatRequest(activeIdRef.current, activeGenerationRef.current, sendConvId, sendGeneration)) {
-        setDraft(prompt);
-        setMessages((prev) => prev.filter((message) => message.id !== localUserId));
-      }
-      return;
+      // Stop arrived during the title write / transport probe. Keep the user
+      // line and continue into start so the run can honor cancelRequested
+      // (deleting the turn here hid the 已停止 hint).
+      const record = runtimeRecordsRef.current.get(sendConvId);
+      if (record) record.cancelRequested = true;
     }
     if (transport.kind === 'runtime') {
       beginRuntimeStart(
@@ -833,6 +830,9 @@ export function useChatPageSend(input: {
       return;
     }
 
+    if (runtimeRecordsRef.current.get(sendConvId)?.cancelRequested) {
+      await chatCancel(sendConvId).catch(() => {});
+    }
     try {
       await chatSend(sendConvId, prompt, (ev) => applyEvent(ev, sendConvId, sendGeneration));
       // Write the Agent title even if this conversation is no longer current.
@@ -905,6 +905,8 @@ export function useChatPageSend(input: {
   async function cancelRuntimeTarget(conversationId: string): Promise<'pending' | 'requested' | 'none'> {
     if (runtimeProbeRef.current.has(conversationId)) {
       runtimeProbeCancelRef.current.add(conversationId);
+      const record = runtimeRecordsRef.current.get(conversationId);
+      if (record) record.cancelRequested = true;
       return 'pending';
     }
     let target = requestRuntimeCancel(runtimeRecordsRef.current, conversationId);
@@ -963,11 +965,19 @@ export function useChatPageSend(input: {
     });
     if (nextDraft !== draft) setDraft(nextDraft);
     setFollowUpQueue(id, restored.queue);
+    runtimeProbeCancelRef.current.add(id);
+    const existing = runtimeRecordsRef.current.get(id);
+    if (existing) existing.cancelRequested = true;
     cancelingIdsRef.current.add(id);
     setCancelingIds([...cancelingIdsRef.current]);
     try {
       const result = await cancelRuntimeTarget(id);
-      if (!composerKeepsStoppingAfterCancel(result)) {
+      if (result === 'none' && sendingIdsRef.current.has(id)) {
+        // Send is past markSending but not yet beginRuntimeStart (title persist).
+        const record = runtimeRecordsRef.current.get(id);
+        if (record) record.cancelRequested = true;
+        runtimeProbeCancelRef.current.add(id);
+      } else if (!composerKeepsStoppingAfterCancel(result)) {
         clearCancelingFor(id);
         return;
       }
