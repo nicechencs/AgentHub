@@ -54,6 +54,10 @@ describe('ChatTurnProcessList', () => {
     expect(html).toContain('已读取 README.md');
     expect(html).toContain('已修改 src/a.ts');
     expect(html).toContain('已执行 ls');
+    expect(html).toContain('data-help="chat-expand-affordance"');
+    expect(html).toContain('可展开');
+    expect(html).not.toContain('▸');
+    expect(html).not.toContain('▾');
     expect(html).not.toContain('secret plan');
     expect(html).not.toContain('已完成 · 已读取');
   });

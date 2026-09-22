@@ -17,6 +17,7 @@ import {
   sameEditPath,
   type TurnEditFile,
 } from './chat-edit-preview';
+import { ChatExpandAffordance } from './ChatExpandAffordance';
 import { thinkingChromeLabel } from './chat-format';
 
 export function ChatTurnProcessList({
@@ -194,11 +195,13 @@ function ProcessRowButton({
   onClick: () => void;
   children: ReactNode;
 }) {
+  const { t } = useI18n();
+  const hint = expanded ? t('chat.runtime.collapseRow') : t('chat.runtime.expandRow');
   return (
     <button
       type="button"
       className={cn(
-        'inline-flex max-w-full items-center gap-1 rounded-btn px-1 py-0.5 text-left text-meta text-secondary hover:bg-hover hover:text-primary',
+        'group inline-flex max-w-full items-center gap-1.5 rounded-btn px-1 py-0.5 text-left text-meta text-secondary hover:bg-hover hover:text-primary',
         live && 'agent-progress-running font-medium text-primary',
         current && 'bg-hover',
       )}
@@ -208,9 +211,7 @@ function ProcessRowButton({
       disabled={disabled}
       onClick={onClick}
     >
-      <span className="shrink-0" aria-hidden>
-        {expanded ? '▾' : '▸'}
-      </span>
+      <ChatExpandAffordance expanded={expanded} label={hint} />
       {children}
     </button>
   );

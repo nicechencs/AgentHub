@@ -100,7 +100,8 @@ describe('ChatMessageBubble streaming feel', () => {
     );
     expect(html).toContain('data-help="chat-thinking-bar"');
     expect(html).toContain('思考中');
-    expect(html).toContain('▸');
+    expect(html).toContain('data-help="chat-expand-affordance"');
+    expect(html).toContain('可展开');
     expect(html).not.toContain('正在想');
     expect(html).not.toContain('secret plan that must not enter the bubble');
     expect(html).not.toContain('data-help="chat-process-chip"');
@@ -264,7 +265,7 @@ describe('ChatMessageBubble streaming feel', () => {
       })),
     );
     expect(html).toContain('data-help="chat-process-chip"');
-    expect(html).toContain('▸');
+    expect(html).toContain('data-help="chat-expand-affordance"');
     expect(html).toContain('正在读取 README.md');
     expect(html).not.toContain('用量');
   });
@@ -288,7 +289,7 @@ describe('ChatMessageBubble streaming feel', () => {
       })),
     );
     expect(html).toContain('data-help="chat-process-chip"');
-    expect(html).toContain('▸');
+    expect(html).toContain('data-help="chat-expand-affordance"');
     expect(html).toContain('生成中');
   });
 
@@ -312,7 +313,7 @@ describe('ChatMessageBubble streaming feel', () => {
       })),
     );
     expect(html).not.toContain('data-help="chat-process-chip"');
-    expect(html).not.toContain('▸');
+    expect(html).not.toContain('data-help="chat-expand-affordance"');
     expect(html).toContain('输入 12 · 输出 3');
   });
 });

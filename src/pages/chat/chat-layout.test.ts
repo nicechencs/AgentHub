@@ -97,6 +97,8 @@ describe('chat layout wiring', () => {
     expect(source('ChatQueuedFollowUpList.tsx')).toContain('chat.composer.queuedCount');
     expect(source('ChatQueuedFollowUpList.tsx')).toContain('cancelQueuedItem');
     expect(composer).toContain('keepComposerFocus');
+    expect(composer).toContain('composerDraftAfterSuccessfulSend');
+    expect(composer).toContain('composerLiveSendText');
     expect(composer).toContain('enterKeyHint="send"');
     expect(composer).toContain("t('chat.composer.moreOptions')");
     expect(composer).toContain('flex min-w-0 flex-1 items-center gap-1.5 overflow-visible');
@@ -118,8 +120,8 @@ describe('chat layout wiring', () => {
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('readMarkdownPreview');
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('highlightLine');
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('chat.preview.back');
-    expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('pathTailLabel');
-    expect(source('ChatMarkdownPreviewPanel.tsx')).toContain("label={folder}");
+    expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('previewHeaderParts');
+    expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('directoryLabel');
     expect(source('index.tsx')).toContain('pushChatPreview');
     expect(source('index.tsx')).toContain('findTurnEditFile');
     expect(source('index.tsx')).not.toContain('ChatTurnEditList');
@@ -139,6 +141,9 @@ describe('chat layout wiring', () => {
     expect(source('ChatTurnProcessList.tsx')).toContain('help="chat-process-chip"');
     expect(source('ChatTurnProcessList.tsx')).toContain('help="chat-thinking-bar"');
     expect(source('ChatTurnProcessList.tsx')).toContain('data-help={help}');
+    expect(source('ChatTurnProcessList.tsx')).toContain('ChatExpandAffordance');
+    expect(source('ChatPlanBar.tsx')).toContain('ChatExpandAffordance');
+    expect(source('ChatEditPreviewPanel.tsx')).toContain('ChatExpandAffordance');
     expect(source('ChatMessageBubble.tsx')).not.toContain('ChatProcessPanel');
     expect(source('ChatProcessInspectPanel.tsx')).toContain('ChatProcessPanel');
     expect(source('ChatProcessInspectPanel.tsx')).toContain('SideInspectPanel');
@@ -580,6 +585,9 @@ describe('chat layout wiring', () => {
     expect(source('ChatPlanBar.tsx')).toContain('runtimePlanStatusKey');
     expect(translate('zh', 'chat.runtime.planStatusLive')).toBe('进行中');
     expect(translate('zh', 'chat.runtime.planCollapse')).toBe('收起计划');
+    expect(translate('zh', 'chat.runtime.expandRow')).toBe('可展开');
+    expect(translate('en', 'chat.runtime.expandRow')).toBe('Expandable');
+    expect(translate('zh', 'chat.runtime.collapseRow')).toBe('收起');
     expect(source('use-chat-page-send.ts')).toContain('recordSnapshotPollFailure');
     expect(source('index.tsx')).toContain('chat.runtime.snapshotStale');
     expect(source('index.tsx')).toContain('ChatHostTerminals');

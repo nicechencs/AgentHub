@@ -119,3 +119,35 @@ export function composerQueuedFollowUpView(
 export function composerShouldRestoreFocus(input: { textareaDisabled: boolean }): boolean {
   return !input.textareaDisabled;
 }
+
+/** Prefer the live textarea so rapid typing + Enter does not send a stale React draft. */
+export function composerLiveSendText(input: {
+  textareaValue?: string | null;
+  draft: string;
+}): string {
+  return input.textareaValue ?? input.draft;
+}
+
+/**
+ * After a successful send, drop leftover draft that is still the sent prompt
+ * (or a prefix / suffix of it). Keep only text typed after send.
+ */
+export function composerDraftAfterSuccessfulSend(input: {
+  draft: string;
+  sent: string;
+}): string {
+  const draft = input.draft;
+  const sent = input.sent;
+  if (!draft.trim()) return '';
+  if (!sent.trim()) return draft;
+  const draftTrim = draft.trim();
+  const sentTrim = sent.trim();
+  if (draftTrim === sentTrim) return '';
+  if (sentTrim.endsWith(draftTrim)) return '';
+  if (sentTrim.startsWith(draftTrim)) return '';
+  if (draftTrim.startsWith(sentTrim)) {
+    const idx = draft.indexOf(sentTrim);
+    return idx >= 0 ? draft.slice(idx + sentTrim.length) : '';
+  }
+  return draft;
+}

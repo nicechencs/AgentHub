@@ -2,10 +2,11 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { RuntimePlanEntry } from '@/lib/api/chat';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { ChatPlanBar } from './ChatPlanBar';
 
 function renderPlan(plan?: RuntimePlanEntry[] | null): string {
-  return renderToStaticMarkup(createElement(ChatPlanBar, { plan }));
+  return renderToStaticMarkup(createElement(TooltipProvider, null, createElement(ChatPlanBar, { plan })));
 }
 
 describe('ChatPlanBar', () => {
@@ -35,6 +36,7 @@ describe('ChatPlanBar', () => {
     expect(html).toContain('test');
     expect(html).toContain('broken');
     expect(html).toContain('收起计划');
+    expect(html).toContain('data-help="chat-expand-affordance"');
     expect(html).not.toContain('  ');
   });
 

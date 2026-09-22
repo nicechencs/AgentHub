@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { ChevronDown } from 'lucide-react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { cn } from '@/lib/utils';
 import type { RuntimePlanEntry } from '@/lib/api/chat';
+import { ChatExpandAffordance } from './ChatExpandAffordance';
 import {
   runtimePlanEntryTone,
   runtimePlanProgress,
@@ -26,7 +26,7 @@ export function ChatPlanBar({ plan }: { plan?: RuntimePlanEntry[] | null }) {
     >
       <button
         type="button"
-        className="flex w-full min-w-0 items-center gap-2 text-left"
+        className="group flex w-full min-w-0 items-center gap-2 text-left"
         aria-expanded={open}
         aria-controls={open || live ? listId : undefined}
         onClick={() => setOpen((current) => !current)}
@@ -43,13 +43,10 @@ export function ChatPlanBar({ plan }: { plan?: RuntimePlanEntry[] | null }) {
               : null}
           </span>
         </span>
-        <ChevronDown
-          className={cn('h-4 w-4 shrink-0 text-muted transition-transform', open && 'rotate-180')}
-          aria-hidden
+        <ChatExpandAffordance
+          expanded={open}
+          label={open ? t('chat.runtime.planCollapse') : t('chat.runtime.planExpand')}
         />
-        <span className="sr-only">
-          {open ? t('chat.runtime.planCollapse') : t('chat.runtime.planExpand')}
-        </span>
       </button>
       {open ? (
         <ol id={listId} className="mt-2 space-y-1">
