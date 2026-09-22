@@ -8,6 +8,18 @@ fn user_agent_includes_package_version() {
         "UA should embed CARGO_PKG_VERSION: {ua}"
     );
     assert!(ua.starts_with("AgentHub/"));
+    assert!(
+        ua.contains(super::super::GITHUB_REPOSITORY_URL),
+        "UA should embed GITHUB_REPOSITORY_URL: {ua}"
+    );
+    assert!(
+        !ua.contains("demo_chen"),
+        "UA must not use the demo_chen slug: {ua}"
+    );
+    assert!(
+        !ua.contains("+https://github.com/agenthub"),
+        "UA must not use the short github.com/agenthub slug: {ua}"
+    );
 }
 
 #[test]

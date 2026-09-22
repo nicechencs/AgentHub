@@ -15,7 +15,6 @@ pub const DEFAULT_SKILLHUB_LIMIT: usize = 40;
 const DEFAULT_SKILLS_SH_BASE: &str = "https://skills.sh";
 const DEFAULT_SKILLHUB_API_BASE: &str = "https://api.skillhub.cn";
 const DEFAULT_SKILLHUB_HOME: &str = "https://skillhub.cn";
-const REPO_URL: &str = "https://github.com/demo_chen/AgentHub";
 
 /// User preference for which remote market to use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -167,7 +166,7 @@ pub fn skillhub_download_url(slug: &str, version: Option<&str>) -> String {
 
 /// User-Agent using the crate package version (not a hardcoded 0.1).
 pub fn skills_sh_user_agent() -> String {
-    format!("AgentHub/{} (+{REPO_URL})", env!("CARGO_PKG_VERSION"))
+    super::agenthub_user_agent()
 }
 
 /// Alias for shared market HTTP UA (skills.sh + skillhub).
