@@ -94,7 +94,10 @@ describe('connections layout wiring', () => {
     expect(list).toContain('{refreshButton}');
     expect(list).toContain('{deleteButton}');
     expect(list).not.toContain('footer={actions}');
-    expect(list).toContain('TicketDetailSection');
+    expect(list).not.toContain('TicketDetailSection');
+    expect(list).toContain('<DetailTable>');
+    expect(list.indexOf('</DetailTable>')).toBeLessThan(list.indexOf('<TicketAuthFiles'));
+    expect(list).toContain('min-w-0 max-w-full flex-col gap-1.5 overflow-hidden');
     expect(list).toContain('SortHandle');
     expect(page).toContain('inspectActiveTicketId');
   });

@@ -2752,6 +2752,10 @@ export const en = {
       deleteTitle: "Delete “{title}”?",
       deleteDesc: "Messages are deleted too. A reply in progress is stopped first.",
       confirmDelete: "Delete",
+      openFolder: "Open folder",
+      openFolderFailed: "Couldn't open folder",
+      pin: "Pin to top",
+      unpin: "Unpin",
     },
     header: {
       conversation: "Chat",

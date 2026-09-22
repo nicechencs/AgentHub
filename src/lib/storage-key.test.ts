@@ -94,6 +94,10 @@ describe('StorageKey', () => {
   it('stores the chat outline toggle on the kebab catalog', () => {
     expect(StorageKey.chatOutlineEnabled).toBe('agenthub:chat-outline-enabled');
   });
+
+  it('stores pinned chat workspace groups on the kebab catalog', () => {
+    expect(StorageKey.chatWorkspacePins).toBe('agenthub:chat-workspace-pins');
+  });
 });
 
 describe('readStorageItem', () => {

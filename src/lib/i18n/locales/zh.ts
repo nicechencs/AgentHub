@@ -2732,6 +2732,10 @@ export const zh = {
       deleteTitle: "删除「{title}」？",
       deleteDesc: "消息记录将一并删除；正在生成的回复会先停止。",
       confirmDelete: "确认删除",
+      openFolder: "打开工作目录",
+      openFolderFailed: "打开工作目录失败",
+      pin: "置顶",
+      unpin: "取消置顶",
     },
     header: {
       conversation: "对话",

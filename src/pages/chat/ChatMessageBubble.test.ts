@@ -132,11 +132,46 @@ describe('ChatMessageBubble streaming feel', () => {
     expect(html).not.toContain('done thinking body');
   });
 
-  it('hides the thinking bar once the reply body arrives', () => {
+  it('keeps thinking, read, edit, and execute rows in history after the reply body arrives', () => {
     const process: AgentProcessView = {
       turn: 1,
       agent: 'codex',
-      phase: 'running',
+      phase: 'ok',
+      stdout: '',
+      stderr: '',
+      steps: [
+        { type: 'thinking', text: 'secret plan', done: true },
+        { type: 'tool', name: 'Read', status: 'end', input: { path: 'README.md' } },
+        { type: 'tool', name: 'Write', status: 'end', input: { path: 'src/a.ts' } },
+        { type: 'tool', name: 'Bash', status: 'end', input: { command: 'ls' } },
+      ],
+      updatedAt: 1,
+      thinkingStartedAt: 1,
+      thinkingDurationMs: 1200,
+    };
+    const html = renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
+        message: agentMessage('第一段正文', 'ok'),
+        process,
+        onOpenProcess: () => undefined,
+        onSelectEdit: () => undefined,
+      })),
+    );
+    expect(html).toContain('data-help="chat-thinking-bar"');
+    expect(html).toContain('思考了 1.2s');
+    expect(html).toContain('已读取 README.md');
+    expect(html).toContain('已修改 src/a.ts');
+    expect(html).toContain('已执行 ls');
+    expect(html).not.toContain('secret plan');
+    expect(html).not.toContain('已完成 · 已读取');
+    expect(html).toContain('第一段正文');
+  });
+
+  it('keeps 失败, 已停止, and 超时 beside process rows', () => {
+    const process: AgentProcessView = {
+      turn: 1,
+      agent: 'codex',
+      phase: 'ok',
       stdout: '',
       stderr: '',
       steps: [{ type: 'thinking', text: 'secret plan', done: true }],
@@ -144,16 +179,39 @@ describe('ChatMessageBubble streaming feel', () => {
       thinkingStartedAt: 1,
       thinkingDurationMs: 1200,
     };
-    const html = renderToStaticMarkup(
+    const cancelled = renderToStaticMarkup(
       createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
-        message: agentMessage('第一段正文'),
+        message: { ...agentMessage('', 'cancelled'), error: 'cancelled' },
         process,
         onOpenProcess: () => undefined,
       })),
     );
-    expect(html).not.toContain('data-help="chat-thinking-bar"');
-    expect(html).not.toContain('secret plan');
-    expect(html).toContain('第一段正文');
+    expect(cancelled).toContain('已停止');
+    expect(cancelled).toContain('思考了 1.2s');
+    const failed = renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
+        message: agentMessage('部分输出', 'failed'),
+        process,
+        onOpenProcess: () => undefined,
+      })),
+    );
+    expect(failed).toContain('失败');
+    const timeout = renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
+        message: agentMessage('', 'timeout'),
+        process,
+        onOpenProcess: () => undefined,
+      })),
+    );
+    expect(timeout).toContain('超时');
+    const done = renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
+        message: agentMessage('第一段正文', 'ok'),
+        process,
+        onOpenProcess: () => undefined,
+      })),
+    );
+    expect(done).not.toContain('已完成');
   });
 
   it('shows the thinking bar and a tool chip together before any body', () => {

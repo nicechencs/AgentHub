@@ -112,8 +112,12 @@ export function sourcePreviewExtensions(format: SourceFormat) {
 
 /** Snippets size to the document so empty/short JSON does not paint leftover line numbers. */
 export const sourcePreviewFitContentTheme = EditorView.theme({
+  '&': {
+    maxWidth: '100%',
+  },
   '& .cm-scroller': {
     height: 'auto !important',
+    maxWidth: '100%',
   },
   '& .cm-content': {
     minHeight: '0px !important',
@@ -127,7 +131,7 @@ export const sourcePreviewFitContentTheme = EditorView.theme({
 });
 
 export const SOURCE_PREVIEW_CHROME = [
-  '[&_.cm-editor]:bg-canvas [&_.cm-editor]:font-mono [&_.cm-editor]:text-meta [&_.cm-editor]:text-primary',
+  '[&_.cm-editor]:w-full [&_.cm-editor]:max-w-full [&_.cm-editor]:bg-canvas [&_.cm-editor]:font-mono [&_.cm-editor]:text-meta [&_.cm-editor]:text-primary',
   '[&_.cm-gutters]:bg-canvas [&_.cm-gutters]:text-muted [&_.cm-gutters]:border-border',
   '[&_.cm-activeLine]:bg-hover [&_.cm-activeLineGutter]:bg-hover',
   '[&_.cm-matchingBracket]:bg-hover',

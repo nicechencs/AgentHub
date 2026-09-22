@@ -8,6 +8,7 @@ import { ChatEditPreviewPanel, ChatTurnEditList } from './ChatEditPreviewPanel';
 import {
   extractEditFilesFromSteps,
   extractTurnEdits,
+  findTurnEditFile,
   formatSimpleDiff,
   latestProcessTurn,
   sameEditPath,
@@ -264,6 +265,35 @@ describe('extractTurnEdits', () => {
 
   it('returns an empty list when there is no process map', () => {
     expect(extractTurnEdits({})).toEqual([]);
+    expect(findTurnEditFile({
+      ...mapWith([tool('Write', 'end', { path: 'src/a.ts', before: 'old', after: 'new' })], 1, 'codex'),
+      ...mapWith([tool('Write', 'end', { path: 'src/b.ts' })], 2, 'grok'),
+    }, 'src/a.ts')).toEqual({
+      path: 'src/a.ts',
+      status: 'done',
+      before: 'old',
+      after: 'new',
+    });
+    expect(findTurnEditFile({}, 'src/a.ts')).toBeNull();
+    const repeated = {
+      ...mapWith([tool('Write', 'end', { path: 'src/a.ts', before: 'old', after: 'new' })], 1, 'codex'),
+      ...mapWith([tool('Write', 'end', { path: 'src/a.ts' })], 2, 'codex'),
+    };
+    expect(findTurnEditFile(repeated, 'src/a.ts', 1)).toEqual({
+      path: 'src/a.ts',
+      status: 'done',
+      before: 'old',
+      after: 'new',
+    });
+    expect(findTurnEditFile(repeated, 'src/a.ts')).toEqual({
+      path: 'src/a.ts',
+      status: 'done',
+    });
+    const olderBare = {
+      ...mapWith([tool('Write', 'end', { path: 'src/a.ts' })], 1, 'codex'),
+      ...mapWith([tool('Write', 'end', { path: 'src/a.ts', before: 'old', after: 'new' })], 2, 'codex'),
+    };
+    expect(findTurnEditFile(olderBare, 'src/a.ts', 1)?.before).toBe('old');
     expect(latestProcessTurn({})).toBeNull();
     expect(latestProcessTurn({
       'x:codex': {
