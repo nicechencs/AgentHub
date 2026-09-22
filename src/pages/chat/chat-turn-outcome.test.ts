@@ -61,7 +61,7 @@ describe('lastTurnOutcome', () => {
   });
 
   it('does not show a raw cancelled status word as the stop reason', () => {
-    const hint = '已按你的要求停止。可恢复草稿后重发。';
+    const hint = '已按你的要求停止。可以直接在这场对话里继续发送。';
     expect(
       turnOutcomeDetail({ kind: 'cancelled', errorText: 'cancelled' }, (text) => text, hint),
     ).toBe(hint);

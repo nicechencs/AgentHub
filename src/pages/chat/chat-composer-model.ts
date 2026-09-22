@@ -151,3 +151,18 @@ export function composerDraftAfterSuccessfulSend(input: {
   }
   return draft;
 }
+
+/**
+ * Stop / cancel: keep what the user already typed, else the queued line,
+ * else the prompt that was just sent so they can resend.
+ */
+export function composerDraftAfterCancel(input: {
+  draft: string;
+  queuedDraft?: string;
+  lastSent?: string;
+}): string {
+  if (input.draft.trim()) return input.draft;
+  const queued = input.queuedDraft?.trim() ?? '';
+  if (queued) return input.queuedDraft ?? queued;
+  return input.lastSent ?? '';
+}

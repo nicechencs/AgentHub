@@ -194,7 +194,10 @@ function AgentBubble({
           ) : running && !hasTimeline ? (
             <AgentThinking label={t(streamingPlaceholderKey(process))} />
           ) : !running ? (
-            <span className="text-muted">{displayError || t('chat.bubble.noOutput')}</span>
+            <span className="text-muted">
+              {displayError
+                || (cancelledPlaceholder ? t('chat.turnOutcome.cancelledHint') : t('chat.bubble.noOutput'))}
+            </span>
           ) : null}
           {displayError && (looksFailed || message.status !== 'ok') && displayContent && (
             <p className="mt-2 text-body leading-relaxed text-danger">{displayError}</p>

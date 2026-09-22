@@ -188,6 +188,7 @@ describe('ChatMessageBubble streaming feel', () => {
       })),
     );
     expect(cancelled).toContain('已停止');
+    expect(cancelled).toContain('已按你的要求停止。可以直接在这场对话里继续发送。');
     expect(cancelled).toContain('思考了 1.2s');
     const failed = renderToStaticMarkup(
       createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
