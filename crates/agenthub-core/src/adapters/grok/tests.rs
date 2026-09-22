@@ -142,8 +142,12 @@ fn grok_invalid_config_toml_is_unknown_not_error() {
     let dir = tempdir().unwrap();
     let config = dir.path().join("config.toml");
     let auth = dir.path().join("auth.json");
-    fs::write(&config, "api_key = [
-").unwrap();
+    fs::write(
+        &config,
+        "api_key = [
+",
+    )
+    .unwrap();
     let state = grok_auth_state(&config, &auth).unwrap();
     assert_eq!(state.health, crate::models::AuthHealth::Unknown);
     assert_eq!(state.source.as_deref(), Some("grok:config.toml"));

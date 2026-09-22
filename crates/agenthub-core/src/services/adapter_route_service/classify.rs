@@ -385,9 +385,7 @@ impl AdapterRouteService {
                         label: RouteSourceLabel::XaiGrokSubscription,
                         reason_hint: None,
                     })
-                } else if account.agent_id == AgentId::Kiro
-                    && account.kind == AccountKind::ApiKey
-                {
+                } else if account.agent_id == AgentId::Kiro && account.kind == AccountKind::ApiKey {
                     Ok(SourceIdentity {
                         product: AdapterSourceProduct::Kiro,
                         credential: AdapterCredentialClass::ApiKey,

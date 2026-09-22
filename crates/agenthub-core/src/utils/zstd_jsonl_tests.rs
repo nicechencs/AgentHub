@@ -133,7 +133,10 @@ fn torn_trailing_frame_keeps_complete_rows() {
     assert!(rows.len() >= 2, "complete frames survive: {rows:?}");
     assert_eq!(rows[0], "{\"seq\":1}");
     assert_eq!(rows[1], "{\"seq\":2}");
-    assert!(rows.len() <= 3, "torn row never becomes a full line: {rows:?}");
+    assert!(
+        rows.len() <= 3,
+        "torn row never becomes a full line: {rows:?}"
+    );
     // A torn tail is reported like damage: the two are indistinguishable from
     // the decoded stream, and the caller must not treat a short read as a
     // complete log. The next collect rescans once the append lands.

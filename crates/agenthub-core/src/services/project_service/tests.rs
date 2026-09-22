@@ -2716,8 +2716,16 @@ fn dsh_excerpt_reads_turns_from_a_compressed_log() {
     assert_eq!(rows.len(), 1);
     let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
     assert!(ex.excerpt.contains("first dsh prompt"), "{}", ex.excerpt);
-    assert!(ex.excerpt.contains("second dsh prompt later"), "{}", ex.excerpt);
-    assert!(ex.excerpt.contains("second dsh reply later"), "{}", ex.excerpt);
+    assert!(
+        ex.excerpt.contains("second dsh prompt later"),
+        "{}",
+        ex.excerpt
+    );
+    assert!(
+        ex.excerpt.contains("second dsh reply later"),
+        "{}",
+        ex.excerpt
+    );
     assert!(
         !ex.excerpt.contains("hidden chain of thought"),
         "reasoning is not transcript: {}",
@@ -2730,9 +2738,7 @@ fn list_dsh_sessions_from_home_and_profiles_not_cwd_dot_sessions() {
     let dir = tempdir().unwrap();
     let home = dir.path().join(".dsh");
     // Real layout: sessions/<project-dir>/<session-id>/session.vN.jsonl.zstd
-    let home_log = home.join(
-        "sessions/--D-work-home-proj--/session-home-1/session.v3.jsonl.zstd",
-    );
+    let home_log = home.join("sessions/--D-work-home-proj--/session-home-1/session.v3.jsonl.zstd");
     write_zstd_session(
         &home_log,
         &[
@@ -2743,9 +2749,8 @@ fn list_dsh_sessions_from_home_and_profiles_not_cwd_dot_sessions() {
     );
     // A fallback-only title (DSH's truncated first prompt) must not hide the
     // fuller preview-derived title.
-    let fallback_log = home.join(
-        "sessions/--D-work-fallback-proj--/session-fallback-1/session.v3.jsonl.zstd",
-    );
+    let fallback_log =
+        home.join("sessions/--D-work-fallback-proj--/session-fallback-1/session.v3.jsonl.zstd");
     write_zstd_session(
         &fallback_log,
         &[

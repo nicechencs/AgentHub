@@ -3,9 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::Result;
-use crate::platform::usage::{
-    UsageFileParser, UsageLineOutcome, UsageLogReader, UsageSource,
-};
+use crate::platform::usage::{UsageFileParser, UsageLineOutcome, UsageLogReader, UsageSource};
 use crate::platform::AgentKey;
 use crate::usage::session_jsonl::{
     discover_dsh_files, extract_dsh, line_might_have_usage_dsh, note_dsh_model_from_line,

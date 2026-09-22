@@ -330,9 +330,9 @@ impl AgentAdapter for KiroAdapter {
             Usage => CapabilityState::partial("读 kiro-cli 会话里的 token；日志没写时总览是 0"),
             Mcp => CapabilityState::planned("待路径核实"),
             ModelSelect => CapabilityState::full(),
-            SessionResume => {
-                CapabilityState::partial("新对话走持续通道，可点允许、一直允许或拒绝；生成时不能中途补充")
-            }
+            SessionResume => CapabilityState::partial(
+                "新对话走持续通道，可点允许、一直允许或拒绝；生成时不能中途补充",
+            ),
         }
     }
 

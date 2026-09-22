@@ -3369,7 +3369,11 @@ impl ActorWorker {
         if let Ok(mut guard) = self.catalogs.lock() {
             let cache = guard.entry(self.conversation_id.clone()).or_default();
             for id in ids {
-                if !cache.plan_tool_use_ids.iter().any(|existing| existing == &id) {
+                if !cache
+                    .plan_tool_use_ids
+                    .iter()
+                    .any(|existing| existing == &id)
+                {
                     cache.plan_tool_use_ids.push(id);
                 }
             }

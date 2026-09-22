@@ -537,7 +537,7 @@ fn options_for_pi_are_empty_and_do_not_enable_runtime() {
             updated_at: now,
             native_session_id: None,
             sending: false,
-        first_user_content: None,
+            first_user_content: None,
         })
         .unwrap();
     let run = Arc::new(RunService::new(AdapterRegistry::default()));
@@ -1591,7 +1591,7 @@ fn refresh_options_skips_warmed_catalog_when_idle() {
             updated_at: now,
             native_session_id: None,
             sending: false,
-        first_user_content: None,
+            first_user_content: None,
         })
         .unwrap();
     let run = Arc::new(RunService::new(AdapterRegistry::default()));

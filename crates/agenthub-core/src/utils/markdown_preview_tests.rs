@@ -18,7 +18,9 @@ fn detects_markdown_extensions() {
 #[test]
 fn detects_previewable_text_extensions() {
     assert!(is_previewable_text_path(std::path::Path::new("src/foo.ts")));
-    assert!(is_previewable_text_path(std::path::Path::new("config.json")));
+    assert!(is_previewable_text_path(std::path::Path::new(
+        "config.json"
+    )));
     assert!(is_previewable_text_path(std::path::Path::new("Dockerfile")));
     assert!(!is_previewable_text_path(std::path::Path::new("photo.png")));
 }

@@ -139,8 +139,7 @@ fn change_path(value: &Value, fallback_path: Option<&str>) -> Option<String> {
             return Some(path);
         }
     }
-    fallback_path
-        .and_then(normalize_path)
+    fallback_path.and_then(normalize_path)
 }
 
 fn normalize_path(raw: &str) -> Option<String> {
@@ -213,9 +212,9 @@ fn change_preview(value: &Value) -> Option<String> {
     let after = first_text(value, AFTER_KEYS);
     let before = first_text(value, BEFORE_KEYS);
     match (before, after) {
-        (Some(before), Some(after)) => {
-            Some(truncate_preview(&redact_text(&format!("{before}\n\n{after}"))))
-        }
+        (Some(before), Some(after)) => Some(truncate_preview(&redact_text(&format!(
+            "{before}\n\n{after}"
+        )))),
         (None, Some(after)) => Some(truncate_preview(&redact_text(&after))),
         (Some(before), None) => Some(truncate_preview(&redact_text(&before))),
         (None, None) => None,

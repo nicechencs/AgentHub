@@ -73,11 +73,7 @@ pub async fn preview_plugin_install(agent: String, source: String) -> Result<Plu
 
 /// Invoke: `install_plugin` — official CLI after UI confirm (`--trust` / `-y`).
 #[tauri::command]
-pub async fn install_plugin(
-    agent: String,
-    source: String,
-    confirmed: bool,
-) -> Result<(), String> {
+pub async fn install_plugin(agent: String, source: String, confirmed: bool) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let agent = parse_agent(&agent)?;
         install_plugin_impl(agent, &source, PluginInstallOptions { confirmed })
