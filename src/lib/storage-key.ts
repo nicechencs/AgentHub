@@ -102,6 +102,8 @@ export const StorageKey = {
   skillsProjectWorkspace: `${PREFIX}skills-project-workspace`,
   /** Chat transcript outline (tick rail); default on. */
   chatOutlineEnabled: `${PREFIX}chat-outline-enabled`,
+  /** Pinned workspace group keys in the chat history rail. */
+  chatWorkspacePins: `${PREFIX}chat-workspace-pins`,
   ...LAYOUT_STORAGE_KEY,
 } as const;
 

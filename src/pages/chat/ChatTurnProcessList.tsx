@@ -1,0 +1,217 @@
+import { useEffect, useState, type ReactNode } from 'react';
+import { AgentThinking } from '@/components/shared/AgentThinking';
+import { useI18n } from '@/components/shared/LanguageProvider';
+import {
+  classifyToolAction,
+  formatToolStep,
+  latestThinkingStep,
+  thinkingElapsedMs,
+  toolActionTone,
+  transcriptTimelineSteps,
+  type AgentProcessView,
+} from '@/lib/chat-process';
+import type { AgentKey, ProcessStep } from '@/lib/types';
+import { cn } from '@/lib/utils';
+import {
+  extractEditFilesFromSteps,
+  sameEditPath,
+  type TurnEditFile,
+} from './chat-edit-preview';
+import { thinkingChromeLabel } from './chat-format';
+
+export function ChatTurnProcessList({
+  process,
+  turn,
+  agent,
+  running,
+  processPaneOpen = false,
+  selectedEditPath = '',
+  selectedEditTurn,
+  onOpenProcess,
+  onCloseProcess,
+  onSelectEdit,
+}: {
+  process?: AgentProcessView;
+  turn: number;
+  agent: AgentKey;
+  running: boolean;
+  processPaneOpen?: boolean;
+  selectedEditPath?: string;
+  selectedEditTurn?: number;
+  onOpenProcess?: (turn: number, agent: AgentKey) => void;
+  onCloseProcess?: () => void;
+  onSelectEdit?: (file: TurnEditFile, turn: number) => void;
+}) {
+  const { t } = useI18n();
+  const timeline = transcriptTimelineSteps(process?.steps);
+  const editFiles = extractEditFilesFromSteps(process?.steps ?? []);
+  const latestThinking = latestThinkingStep(timeline);
+  const liveThinking = Boolean(latestThinking && !latestThinking.done);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!liveThinking) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [liveThinking]);
+
+  const openProcess = () => {
+    if (!onOpenProcess) return;
+    if (processPaneOpen) onCloseProcess?.();
+    else onOpenProcess(turn, agent);
+  };
+
+  if (timeline.length === 0) {
+    if (!running || !onOpenProcess) return null;
+    return (
+      <ol className="mb-1 space-y-0.5" data-help="chat-turn-process">
+        <li>
+          <ProcessRowButton
+            help="chat-process-chip"
+            expanded={processPaneOpen}
+            live
+            onClick={openProcess}
+          >
+            {t('chat.process.summaryGenerating')}
+          </ProcessRowButton>
+        </li>
+      </ol>
+    );
+  }
+
+  return (
+    <ol className="mb-1 space-y-0.5" data-help="chat-turn-process">
+      {timeline.map((step, index) => {
+        const key = processRowKey(step, index);
+        if (step.type === 'thinking') {
+          const latest = step === latestThinking;
+          const done = Boolean(step.done);
+          const elapsed = latest && process ? thinkingElapsedMs(process, now) : 0;
+          const label = thinkingChromeLabel(done, elapsed, t);
+          return (
+            <li key={key}>
+              <ProcessRowButton
+                help="chat-thinking-bar"
+                expanded={processPaneOpen}
+                live={!done}
+                disabled={!onOpenProcess}
+                onClick={openProcess}
+              >
+                {done ? (
+                  <span className="min-w-0 truncate">{label}</span>
+                ) : (
+                  <AgentThinking label={label} showTimer={false} />
+                )}
+              </ProcessRowButton>
+            </li>
+          );
+        }
+        if (step.type === 'tool') {
+          const live = toolActionTone(step.status) === 'live';
+          const stepFiles = editFilesForStep(step, editFiles);
+          const rows = stepFiles.length > 0 ? stepFiles : [null];
+          return rows.map((editFile, fileIndex) => {
+            const selected = Boolean(
+              editFile
+              && selectedEditPath
+              && sameEditPath(selectedEditPath, editFile.path)
+              && (typeof selectedEditTurn !== 'number' || selectedEditTurn === turn),
+            );
+            const openEdit = Boolean(editFile && onSelectEdit);
+            const label = editFile && stepFiles.length > 1
+              ? formatToolStep({ ...step, input: { path: editFile.path } }, t)
+              : formatToolStep(step, t);
+            return (
+              <li key={stepFiles.length > 1 ? `${key}:${fileIndex}:${editFile?.path}` : key}>
+                <ProcessRowButton
+                  help="chat-process-chip"
+                  expanded={openEdit ? selected : processPaneOpen}
+                  live={live}
+                  current={selected}
+                  disabled={!onOpenProcess && !openEdit}
+                  onClick={() => {
+                    if (openEdit && editFile) onSelectEdit?.(editFile, turn);
+                    else openProcess();
+                  }}
+                >
+                  <span className="min-w-0 truncate">{label}</span>
+                </ProcessRowButton>
+              </li>
+            );
+          });
+        }
+        if (step.type === 'error') {
+          return (
+            <li key={key}>
+              <ProcessRowButton
+                help="chat-process-chip"
+                expanded={processPaneOpen}
+                onClick={openProcess}
+                disabled={!onOpenProcess}
+              >
+                <span className="min-w-0 truncate">{step.message}</span>
+              </ProcessRowButton>
+            </li>
+          );
+        }
+        return null;
+      })}
+    </ol>
+  );
+}
+
+function editFilesForStep(
+  step: Extract<ProcessStep, { type: 'tool' }>,
+  files: TurnEditFile[],
+): TurnEditFile[] {
+  if (classifyToolAction(step.name) !== 'edit') return [];
+  return extractEditFilesFromSteps([step]).map(
+    (item) => files.find((file) => sameEditPath(file.path, item.path)) ?? item,
+  );
+}
+
+function processRowKey(step: ProcessStep, index: number): string {
+  if (step.type === 'tool') return `tool:${step.id ?? step.name}:${index}`;
+  if (step.type === 'thinking') return `thinking:${index}`;
+  if (step.type === 'error') return `error:${index}`;
+  return `${step.type}:${index}`;
+}
+
+function ProcessRowButton({
+  help,
+  expanded,
+  live = false,
+  current = false,
+  disabled = false,
+  onClick,
+  children,
+}: {
+  help: string;
+  expanded: boolean;
+  live?: boolean;
+  current?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        'inline-flex max-w-full items-center gap-1 rounded-btn px-1 py-0.5 text-left text-meta text-secondary hover:bg-hover hover:text-primary',
+        live && 'agent-progress-running font-medium text-primary',
+        current && 'bg-hover',
+      )}
+      data-help={help}
+      aria-expanded={expanded}
+      aria-current={current ? 'true' : undefined}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <span className="shrink-0" aria-hidden>
+        {expanded ? '▾' : '▸'}
+      </span>
+      {children}
+    </button>
+  );
+}

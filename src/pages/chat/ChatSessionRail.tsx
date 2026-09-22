@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Loader2, PanelLeftClose, Plus, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronDown, ChevronRight, FolderOpen, Loader2, PanelLeftClose, Pin, Plus, Trash2 } from 'lucide-react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { NavResizeHandle } from '@/components/layout/NavResizeHandle';
 import { pageRhythm } from '@/components/layout/page-rhythm';
@@ -8,9 +8,13 @@ import { useNavWidth } from '@/components/layout/use-sidebar-width';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { SearchField } from '@/components/shared/SearchField';
 import { Button } from '@/components/ui/button';
+import { ContextMenu, ContextMenuItem, type ContextMenuPoint } from '@/components/ui/context-menu';
 import { EnterKeyMark } from '@/components/ui/shortcut-kbd';
 import { dialogEnterShouldConfirm } from '@/lib/dialog-enter';
+import { openLocalPath } from '@/lib/open-external';
+import { normalizeOpenPath } from '@/lib/path-open';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useToast } from '@/components/ui/toast';
 import { Hint } from '@/components/ui/tooltip';
 import {
   Dialog,
@@ -30,6 +34,12 @@ import {
   conversationTitle,
   type ConversationWorkspaceGroup,
 } from './chat-model';
+import {
+  applyWorkspacePins,
+  loadChatWorkspacePins,
+  saveChatWorkspacePins,
+  toggleWorkspacePinKeys,
+} from './chat-workspace-pins';
 
 export function ChatSessionRail({
   open,
@@ -77,6 +87,7 @@ export function ChatSessionRail({
   firstUserContentById?: Record<string, string>;
 }) {
   const { t } = useI18n();
+  const { toast } = useToast();
   const width = useNavWidth({
     collapsed: !open,
     storageKey: StorageKey.chatRailWidth,
@@ -86,7 +97,28 @@ export function ChatSessionRail({
   const railRef = useRef<HTMLElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(() => new Set());
+  const [pinKeys, setPinKeys] = useState<string[]>(loadChatWorkspacePins);
+  const [workspaceMenu, setWorkspaceMenu] = useState<
+    (ContextMenuPoint & { key: string; path: string | null }) | null
+  >(null);
+  const pinnedKeys = new Set(pinKeys);
+  const orderedGroups = applyWorkspacePins(groups, pinKeys);
   const searching = Boolean(query.trim());
+  const closeWorkspaceMenu = useCallback(() => setWorkspaceMenu(null), []);
+  const openWorkspaceFolder = useCallback(
+    async (cwd: string) => {
+      try {
+        await openLocalPath(cwd);
+      } catch (err) {
+        toast({
+          title: t('chat.rail.openFolderFailed'),
+          description: err instanceof Error ? err.message : String(err),
+          variant: 'danger',
+        });
+      }
+    },
+    [t, toast],
+  );
   useEffect(() => {
     if (!open || !searchFocusNonce) return;
     const timer = window.setTimeout(() => {
@@ -193,7 +225,7 @@ export function ChatSessionRail({
             <p className="text-meta text-muted">{t('chat.rail.noMatch')}</p>
           </div>
         ) : (
-          groups.map((group) => {
+          orderedGroups.map((group) => {
             const expanded = searching || !collapsedKeys.has(group.key);
             return (
             <div
@@ -202,7 +234,18 @@ export function ChatSessionRail({
               data-help="chat-workspace-group"
               data-workspace-key={group.key}
             >
-              <div className="group flex items-center gap-0.5 pr-1">
+              <div
+                className="group flex items-center gap-0.5 pr-1"
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  setWorkspaceMenu({
+                    x: event.clientX,
+                    y: event.clientY,
+                    key: group.key,
+                    path: normalizeOpenPath(group.cwd),
+                  });
+                }}
+              >
               <Hint label={group.cwd ?? group.label}>
               <button
                 type="button"
@@ -225,6 +268,13 @@ export function ChatSessionRail({
                 <span className="min-w-0 flex-1 truncate" data-help="chat-workspace-group-label">
                   {group.label}
                 </span>
+                {pinnedKeys.has(group.key) ? (
+                  <Pin
+                    className="h-3 w-3 shrink-0 text-muted"
+                    aria-hidden
+                    data-help="chat-workspace-pinned"
+                  />
+                ) : null}
               </button>
               </Hint>
               {group.cwd ? (
@@ -323,6 +373,38 @@ export function ChatSessionRail({
           })
         )}
       </div>
+      <ContextMenu open={workspaceMenu !== null} point={workspaceMenu} onClose={closeWorkspaceMenu}>
+        <ContextMenuItem
+          data-help="chat-workspace-pin"
+          onSelect={() => {
+            const key = workspaceMenu?.key;
+            setWorkspaceMenu(null);
+            if (!key) return;
+            const next = toggleWorkspacePinKeys(pinKeys, key);
+            setPinKeys(next);
+            saveChatWorkspacePins(next);
+          }}
+        >
+          <Pin className="h-3.5 w-3.5" />
+          {workspaceMenu && pinnedKeys.has(workspaceMenu.key)
+            ? t('chat.rail.unpin')
+            : t('chat.rail.pin')}
+        </ContextMenuItem>
+        {workspaceMenu?.path ? (
+          <ContextMenuItem
+            data-help="chat-workspace-open"
+            onSelect={() => {
+              const path = workspaceMenu.path;
+              setWorkspaceMenu(null);
+              if (!path) return;
+              void openWorkspaceFolder(path);
+            }}
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
+            {t('chat.rail.openFolder')}
+          </ContextMenuItem>
+        ) : null}
+      </ContextMenu>
       <Dialog open={Boolean(deleteConfirmId)} onOpenChange={(next) => !next && onCancelDelete()}>
         <DialogContent
           onKeyDown={(event) => {

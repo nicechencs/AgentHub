@@ -18,7 +18,7 @@ export function ChatQueuedFollowUpList({
   if (!view) return null;
   return (
     <div
-      className="mx-4 mb-1 space-y-1 rounded-btn bg-subtle px-2 py-1"
+      className="mb-2 rounded-card border border-border bg-subtle px-3 py-2 text-meta"
       data-help="chat-queued-follow-ups"
     >
       <div className="flex items-center gap-2">
@@ -33,7 +33,7 @@ export function ChatQueuedFollowUpList({
           </Button>
         ) : null}
       </div>
-      <ul className="space-y-1">
+      <ul className="mt-1.5 space-y-1">
         {view.items.map((item) => (
           <li key={item.id} className="flex items-center gap-2">
             <p className="min-w-0 flex-1 truncate text-meta text-primary">{item.text}</p>

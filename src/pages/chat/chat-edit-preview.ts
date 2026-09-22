@@ -121,6 +121,38 @@ export function extractTurnEdits(processMap: ProcessMap, turn?: number): TurnEdi
   return files;
 }
 
+/**
+ * Diff for a history row. The clicked turn wins when it already has a diff;
+ * otherwise the newest match, so an older row can still open one.
+ */
+export function findTurnEditFile(
+  processMap: ProcessMap,
+  path: string,
+  preferTurn?: number,
+): TurnEditFile | null {
+  const needle = path.trim();
+  if (!needle) return null;
+  const turns = [...new Set(
+    Object.values(processMap)
+      .map((view) => view.turn)
+      .filter((turn): turn is number => typeof turn === 'number'),
+  )].sort((a, b) => b - a);
+  const matchOn = (turn: number) =>
+    extractTurnEdits(processMap, turn).find((file) => sameEditPath(file.path, needle)) ?? null;
+  if (typeof preferTurn === 'number') {
+    const preferred = matchOn(preferTurn);
+    if (preferred && turnEditHasInlineDiff(preferred)) return preferred;
+    const newest = turns.reduce<TurnEditFile | null>((found, turn) => found ?? matchOn(turn), null);
+    if (newest && turnEditHasInlineDiff(newest)) return newest;
+    return preferred ?? newest;
+  }
+  for (const turn of turns) {
+    const found = matchOn(turn);
+    if (found) return found;
+  }
+  return null;
+}
+
 function filesFromToolStep(step: ToolStep): CollectedEdit[] {
   const fromInput = collectEdits(step.input, 0);
   const parsedResult = parseMaybeJson(step.result);

@@ -78,7 +78,6 @@ export function PoolAuthorizationDetail({
   const whereRows = fieldRows.filter((row) => row.id === 'subscription' || row.id === 'endpoint');
   const recordRows = fieldRows.filter((row) => row.id !== 'subscription' && row.id !== 'endpoint');
   const displayTitle = poolAuthorizationLoginLabel(item);
-  const hasQuota = hasQuotaWindow(item.quota7dPct) || hasQuotaWindow(item.quota5hPct);
   const canEditKey = Boolean(editTarget?.provider.id) && item.kind === 'apikey';
   const canEditOauth = poolAuthorizationOauthEditable(item);
   const editLabel = canEditKey
@@ -211,128 +210,120 @@ export function PoolAuthorizationDetail({
           ) : null}
         </section>
 
-        {hasQuota ? (
-          <section className="space-y-1.5">
-            <DetailTable>
-              {hasQuotaWindow(item.quota7dPct) ? (
-                <DetailTableRow label={t('connections.list.quota7dUsed')}>
-                  <DetailTableCell>
-                    <QuotaBar
-                      label={t('connections.list.quota7dUsed')}
-                      pct={item.quota7dPct}
-                      compact
-                      showLabel={false}
-                    />
-                  </DetailTableCell>
-                  <DetailTableCell className="whitespace-nowrap text-meta text-muted">
-                    {item.quota7dResetIn}
-                  </DetailTableCell>
-                </DetailTableRow>
-              ) : null}
-              {hasQuotaWindow(item.quota5hPct) ? (
-                <DetailTableRow label={t('connections.list.quota5hUsed')}>
-                  <DetailTableCell>
-                    <QuotaBar
-                      label={t('connections.list.quota5hUsed')}
-                      pct={item.quota5hPct}
-                      compact
-                      showLabel={false}
-                    />
-                  </DetailTableCell>
-                  <DetailTableCell className="whitespace-nowrap text-meta text-muted">
-                    {item.quotaResetIn}
-                  </DetailTableCell>
-                </DetailTableRow>
-              ) : null}
-            </DetailTable>
-          </section>
-        ) : null}
-
-        <section className="space-y-1.5">
-          <DetailTable>
-            {endpointKinds.length > 0 ? (
-              <DetailTableRow label={t('routes.pool.detail.endpointTypes')}>
-                <DetailTableCell>
-                  <span className="inline-flex flex-col gap-0.5">
-                    {endpointKinds.map((kind) => (
-                      <PoolEndpointTypeLine
-                        key={kind}
-                        kind={kind}
-                        href={poolAuthorizationTypeHref(item.endpointHost, localEndpointPath(kind)) ?? undefined}
-                      />
-                    ))}
-                  </span>
-                </DetailTableCell>
-              </DetailTableRow>
-            ) : null}
-            {whereRows.map((row) => (
-              <DetailRow
-                key={row.id}
-                label={row.label}
-                value={row.value}
-                lines={row.lines}
-                href={row.href}
-                mono={row.mono}
-                copyable={row.copyable}
-                className={row.copyable ? 'w-full' : undefined}
-              />
-            ))}
-            <DetailTableRow label={t('routes.pool.detail.models')}>
+        <DetailTable>
+          {hasQuotaWindow(item.quota7dPct) ? (
+            <DetailTableRow label={t('connections.list.quota7dUsed')}>
               <DetailTableCell>
-                {catalogLoading ? (
-                  <p className="text-meta text-secondary">…</p>
-                ) : catalogFailed ? (
-                  <p className="text-meta text-secondary">{t('routes.pool.detail.modelsLoadFailed')}</p>
-                ) : catalog && catalog.models.length > 0 ? (
-                  <div className="flex flex-col gap-1.5">
-                    <p className="text-body text-primary">
-                      {(modelsOpen || catalog.models.length <= 8
-                        ? catalog.models
-                        : catalog.models.slice(0, 8)
-                      ).join(', ')}
-                      <span className="ml-2 text-meta text-muted">
-                        {catalog.source === 'custom'
-                          ? t('routes.pool.detail.modelsCustom')
-                          : t('routes.pool.detail.modelsLive')}
-                      </span>
-                    </p>
-                    {catalog.models.length > 8 ? (
-                      <button
-                        type="button"
-                        className="self-start text-meta text-muted"
-                        onClick={() => setModelsOpen((open) => !open)}
-                      >
-                        {modelsOpen
-                          ? t('common.collapse')
-                          : t('routes.pool.detail.modelsShowAll', { n: catalog.models.length })}
-                      </button>
-                    ) : null}
-                  </div>
-                ) : (
-                  <p className="text-meta text-secondary">{t('routes.pool.detail.modelsEmpty')}</p>
-                )}
+                <div className="flex min-w-0 items-center gap-2">
+                  <QuotaBar
+                    label={t('connections.list.quota7dUsed')}
+                    pct={item.quota7dPct}
+                    compact
+                    showLabel={false}
+                  />
+                  {item.quota7dResetIn ? (
+                    <span className="shrink-0 whitespace-nowrap text-meta text-muted">
+                      {item.quota7dResetIn}
+                    </span>
+                  ) : null}
+                </div>
               </DetailTableCell>
             </DetailTableRow>
-          </DetailTable>
-        </section>
-
-        {recordRows.length > 0 ? (
-          <section className="space-y-1.5">
-            <DetailTable>
-              {recordRows.map((row) => (
-                <DetailRow
-                  key={row.id}
-                  label={row.label}
-                  value={row.value}
-                  lines={row.lines}
-                  href={row.href}
-                  mono={row.mono}
-                  copyable={row.copyable}
-                />
-              ))}
-            </DetailTable>
-          </section>
-        ) : null}
+          ) : null}
+          {hasQuotaWindow(item.quota5hPct) ? (
+            <DetailTableRow label={t('connections.list.quota5hUsed')}>
+              <DetailTableCell>
+                <div className="flex min-w-0 items-center gap-2">
+                  <QuotaBar
+                    label={t('connections.list.quota5hUsed')}
+                    pct={item.quota5hPct}
+                    compact
+                    showLabel={false}
+                  />
+                  {item.quotaResetIn ? (
+                    <span className="shrink-0 whitespace-nowrap text-meta text-muted">
+                      {item.quotaResetIn}
+                    </span>
+                  ) : null}
+                </div>
+              </DetailTableCell>
+            </DetailTableRow>
+          ) : null}
+          {endpointKinds.length > 0 ? (
+            <DetailTableRow label={t('routes.pool.detail.endpointTypes')}>
+              <DetailTableCell>
+                <span className="inline-flex flex-col gap-0.5">
+                  {endpointKinds.map((kind) => (
+                    <PoolEndpointTypeLine
+                      key={kind}
+                      kind={kind}
+                      href={poolAuthorizationTypeHref(item.endpointHost, localEndpointPath(kind)) ?? undefined}
+                    />
+                  ))}
+                </span>
+              </DetailTableCell>
+            </DetailTableRow>
+          ) : null}
+          {whereRows.map((row) => (
+            <DetailRow
+              key={row.id}
+              label={row.label}
+              value={row.value}
+              lines={row.lines}
+              href={row.href}
+              mono={row.mono}
+              copyable={row.copyable}
+              className={row.copyable ? 'w-full' : undefined}
+            />
+          ))}
+          <DetailTableRow label={t('routes.pool.detail.models')}>
+            <DetailTableCell>
+              {catalogLoading ? (
+                <p className="text-meta text-secondary">…</p>
+              ) : catalogFailed ? (
+                <p className="text-meta text-secondary">{t('routes.pool.detail.modelsLoadFailed')}</p>
+              ) : catalog && catalog.models.length > 0 ? (
+                <div className="flex flex-col gap-1.5">
+                  <p className="text-body text-primary">
+                    {(modelsOpen || catalog.models.length <= 8
+                      ? catalog.models
+                      : catalog.models.slice(0, 8)
+                    ).join(', ')}
+                    <span className="ml-2 text-meta text-muted">
+                      {catalog.source === 'custom'
+                        ? t('routes.pool.detail.modelsCustom')
+                        : t('routes.pool.detail.modelsLive')}
+                    </span>
+                  </p>
+                  {catalog.models.length > 8 ? (
+                    <button
+                      type="button"
+                      className="self-start text-meta text-muted"
+                      onClick={() => setModelsOpen((open) => !open)}
+                    >
+                      {modelsOpen
+                        ? t('common.collapse')
+                        : t('routes.pool.detail.modelsShowAll', { n: catalog.models.length })}
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="text-meta text-secondary">{t('routes.pool.detail.modelsEmpty')}</p>
+              )}
+            </DetailTableCell>
+          </DetailTableRow>
+          {recordRows.map((row) => (
+            <DetailRow
+              key={row.id}
+              label={row.label}
+              value={row.value}
+              lines={row.lines}
+              href={row.href}
+              mono={row.mono}
+              copyable={row.copyable}
+            />
+          ))}
+        </DetailTable>
       </div>
       )}
     </SideInspectPanel>

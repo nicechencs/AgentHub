@@ -16,6 +16,8 @@ export type ChatProcessInspectTarget = {
 export type ChatEditPreviewTarget = {
   kind: 'edit';
   path: string;
+  /** Clicked turn. A later turn that touched the same path must not replace this diff. */
+  turn?: number;
 };
 
 export type ChatInspectTarget =
@@ -72,8 +74,8 @@ export function openChatProcessInspect(turn: number, agent: AgentKey): ChatProce
   return { kind: 'process', turn, agent };
 }
 
-export function openChatEditPreview(path: string): ChatEditPreviewTarget {
-  return { kind: 'edit', path };
+export function openChatEditPreview(path: string, turn?: number): ChatEditPreviewTarget {
+  return typeof turn === 'number' ? { kind: 'edit', path, turn } : { kind: 'edit', path };
 }
 
 export function pushChatPreview(

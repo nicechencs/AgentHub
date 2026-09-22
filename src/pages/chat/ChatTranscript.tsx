@@ -37,6 +37,7 @@ import {
   type ChatStarterCopyKey,
 } from './chat-actions';
 import { emptyStarterChipHint, emptyTranscriptCopy } from './chat-empty-state';
+import type { TurnEditFile } from './chat-edit-preview';
 import { ChatMessageBubble } from './ChatMessageBubble';
 import { ChatOutlineRail } from './ChatOutlineRail';
 import { useChatOutlineEnabled, useOutlinePanelWidth } from './use-chat-outline';
@@ -57,6 +58,9 @@ export function ChatTranscript({
   onOpenProcess,
   onCloseProcess,
   inspectProcess = null,
+  selectedEditPath = '',
+  selectedEditTurn,
+  onSelectEdit,
   onPickStarter,
   firstBlocker = null,
   onBlockerAction,
@@ -79,6 +83,9 @@ export function ChatTranscript({
   onOpenProcess?: (turn: number, agent: AgentKey) => void;
   onCloseProcess?: () => void;
   inspectProcess?: ChatProcessInspectTarget | null;
+  selectedEditPath?: string;
+  selectedEditTurn?: number;
+  onSelectEdit?: (file: TurnEditFile, turn: number) => void;
   onPickStarter?: (action: ChatActionDef) => void;
   firstBlocker?: ChatSendBlocker | null;
   onBlockerAction?: (target: ChatBlockerPrimaryTarget) => void;
@@ -166,6 +173,9 @@ export function ChatTranscript({
                           processPaneOpen={
                             inspectProcess?.turn === m.turn && inspectProcess.agent === agent
                           }
+                          selectedEditPath={selectedEditPath}
+                          selectedEditTurn={selectedEditTurn}
+                          onSelectEdit={onSelectEdit}
                         />
                       );
                     })}

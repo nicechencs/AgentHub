@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
-import CodeMirror from '@uiw/react-codemirror';
+import CodeMirror, { EditorView } from '@uiw/react-codemirror';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import {
@@ -83,7 +83,7 @@ export function SourcePreview({
   const extensions = useMemo(
     () => [
       ...sourcePreviewExtensions(format),
-      ...(fitContent ? [sourcePreviewFitContentTheme] : []),
+      ...(fitContent ? [sourcePreviewFitContentTheme, EditorView.lineWrapping] : []),
     ],
     [format, fitContent],
   );

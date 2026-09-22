@@ -73,9 +73,7 @@ import {
   type ChatConnectionPickerView,
   type ChatSendBlocker,
 } from './chat-model';
-import { ChatQueuedFollowUpList } from './ChatQueuedFollowUpList';
 import { chatEffortHint, chatEffortLabel, chatModelDisplayName } from './chat-model-labels';
-import type { QueuedFollowUpItem } from './chat-grok-follow-up';
 
 export function ChatComposer({
   draft,
@@ -99,9 +97,6 @@ export function ChatComposer({
   onSend,
   onSteer,
   onQueueAfterTurn,
-  queuedFollowUps = [],
-  onCancelQueuedFollowUp,
-  onClearQueuedFollowUp,
   onCancel,
   onSelectAgent,
   onSwitchConnection,
@@ -155,9 +150,6 @@ export function ChatComposer({
   onSend: () => void;
   onSteer?: () => void;
   onQueueAfterTurn?: () => void;
-  queuedFollowUps?: readonly QueuedFollowUpItem[];
-  onCancelQueuedFollowUp?: (id: string) => void;
-  onClearQueuedFollowUp?: () => void;
   focusNonce?: number;
   onCancel: () => void;
   onSelectAgent: (id: AgentKey) => void;
@@ -413,11 +405,6 @@ export function ChatComposer({
             anchorRef={textareaRef}
           />
         ) : null}
-        <ChatQueuedFollowUpList
-          items={queuedFollowUps}
-          onCancelItem={onCancelQueuedFollowUp}
-          onCancelAll={onClearQueuedFollowUp}
-        />
         <div className="flex items-center justify-between gap-2 px-4 pb-1" data-composer-shortcut="">
           <div className="min-w-0">
             {showHintRow ? (

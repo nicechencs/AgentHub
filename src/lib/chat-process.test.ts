@@ -22,6 +22,7 @@ import {
   thinkingElapsedMs,
   timelineHasToolRow,
   timelineProcessSteps,
+  transcriptTimelineSteps,
   toolActionTarget,
   toolActionTone,
   contextWindowUsage,
@@ -1137,6 +1138,13 @@ describe('thinking / tools pane helpers', () => {
       { type: 'tool', name: 'Bash', status: 'end' },
       { type: 'error', message: 'boom' },
     ])).toBe(true);
+    expect(transcriptTimelineSteps([
+      { type: 'thinking', text: 'plan', done: true },
+      { type: 'tool', name: 'Read', status: 'end', input: { path: 'a.ts' } },
+      { type: 'tool', name: 'Write', status: 'end', input: { path: 'b.ts' } },
+      { type: 'usage', scope: 'turn', input: 1, output: 1 },
+      { type: 'status', phase: 'ok' },
+    ]).map((step) => step.type)).toEqual(['thinking', 'tool', 'tool']);
     expect(formatProcessHeadline(
       [{ type: 'tool', name: 'Bash', status: 'error', input: { command: 'ls' } }],
       'failed',

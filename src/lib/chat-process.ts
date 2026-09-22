@@ -381,6 +381,13 @@ export function timelineHasToolRow(steps: ProcessStep[] | undefined): boolean {
   );
 }
 
+/** Main-column rows: thinking, tools, and errors in the order they arrived. */
+export function transcriptTimelineSteps(steps: ProcessStep[] | undefined): ProcessStep[] {
+  return timelineProcessSteps(steps ?? []).filter(
+    (step) => step.type === 'thinking' || step.type === 'tool' || step.type === 'error',
+  );
+}
+
 function lastMatching<T, S extends T>(items: T[], pred: (item: T) => item is S): S | undefined;
 function lastMatching<T>(items: T[], pred: (item: T) => boolean): T | undefined;
 function lastMatching<T>(items: T[], pred: (item: T) => boolean): T | undefined {

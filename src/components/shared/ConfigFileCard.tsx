@@ -37,7 +37,7 @@ export function ConfigFileCard({
   };
 
   return (
-    <div className="overflow-hidden rounded-card border border-border bg-subtle/60">
+    <div className="min-w-0 max-w-full overflow-hidden rounded-card border border-border bg-subtle/60">
       <div className="flex items-center justify-between gap-2 px-3 py-2">
         <CopyableFileName path={path} name={name} className="min-w-0 flex-1" />
         <div className="flex shrink-0 items-center gap-1">
