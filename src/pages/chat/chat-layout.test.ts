@@ -586,6 +586,8 @@ describe('chat layout wiring', () => {
     expect(source('index.tsx')).toContain('ChatPlanBar');
     expect(source('ChatPlanBar.tsx')).toContain('aria-expanded={open}');
     expect(source('ChatPlanBar.tsx')).toContain('chat.runtime.planProgress');
+    expect(source('ChatPlanBar.tsx')).not.toContain('mt-0.5 block');
+    expect(source('ChatPlanBar.tsx')).toContain('` · ${summary}`');
     expect(source('ChatPlanBar.tsx')).toContain('runtimePlanStatusKey');
     expect(translate('zh', 'chat.runtime.planStatusLive')).toBe('进行中');
     expect(translate('zh', 'chat.runtime.planCollapse')).toBe('收起计划');

@@ -10,14 +10,24 @@ import {
   visibleRuntimePlan,
 } from './chat-runtime-model';
 
-export function ChatPlanBar({ plan }: { plan?: RuntimePlanEntry[] | null }) {
+export function ChatPlanBar({
+  plan,
+  defaultOpen = true,
+}: {
+  plan?: RuntimePlanEntry[] | null;
+  defaultOpen?: boolean;
+}) {
   const { t } = useI18n();
   const entries = visibleRuntimePlan(plan);
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(defaultOpen);
   if (entries.length === 0) return null;
   const progress = runtimePlanProgress(entries);
-  const live = entries.find((entry) => runtimePlanEntryTone(entry.status) === 'live');
   const listId = 'chat-plan-bar-list';
+  const summary = [
+    t('chat.runtime.planProgress', { done: progress.done, total: progress.total }),
+    progress.live > 0 ? `${t('chat.runtime.planStatusLive')} ${progress.live}` : null,
+    progress.failed > 0 ? `${t('chat.runtime.planStatusFailed')} ${progress.failed}` : null,
+  ].filter(Boolean).join(' · ');
   return (
     <section
       className="mb-2 rounded-card border border-border bg-subtle px-3 py-2 text-meta"
@@ -28,20 +38,12 @@ export function ChatPlanBar({ plan }: { plan?: RuntimePlanEntry[] | null }) {
         type="button"
         className="group flex w-full min-w-0 items-center gap-2 text-left"
         aria-expanded={open}
-        aria-controls={open || live ? listId : undefined}
+        aria-controls={open ? listId : undefined}
         onClick={() => setOpen((current) => !current)}
       >
-        <span className="min-w-0 flex-1">
+        <span className="min-w-0 flex-1 truncate">
           <span className="font-medium text-secondary">{t('chat.runtime.plan')}</span>
-          <span className="mt-0.5 block text-muted">
-            {t('chat.runtime.planProgress', { done: progress.done, total: progress.total })}
-            {progress.live > 0
-              ? ` · ${t('chat.runtime.planStatusLive')} ${progress.live}`
-              : null}
-            {progress.failed > 0
-              ? ` · ${t('chat.runtime.planStatusFailed')} ${progress.failed}`
-              : null}
-          </span>
+          <span className="text-muted">{` · ${summary}`}</span>
         </span>
         <ChatExpandAffordance
           expanded={open}
@@ -71,11 +73,6 @@ export function ChatPlanBar({ plan }: { plan?: RuntimePlanEntry[] | null }) {
             );
           })}
         </ol>
-      ) : live ? (
-        <p id={listId} className="mt-2 min-w-0 font-medium text-primary">
-          <span className="text-muted">{t(runtimePlanStatusKey(live.status))} · </span>
-          {live.content}
-        </p>
       ) : null}
     </section>
   );
