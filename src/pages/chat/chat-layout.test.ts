@@ -462,6 +462,10 @@ describe('chat layout wiring', () => {
     );
     expect(source('index.tsx')).not.toContain('ChatTurnOutcomeBanner');
     expect(source('ChatMessageBubble.tsx')).not.toContain('chat.bubble.retry');
+    expect(source('ChatMessageBubble.tsx')).toContain("t('chat.turnOutcome.cancelledHint')");
+    expect(translate('zh', 'chat.turnOutcome.cancelledHint')).toBe(
+      '已按你的要求停止。可以直接在这场对话里继续发送。',
+    );
   });
 
   it('shows Kiro ask-or-full permission mode in session settings and the header', () => {

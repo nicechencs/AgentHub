@@ -258,6 +258,11 @@ export function ChatComposer({
     if (sent) {
       const kept = composerDraftAfterSuccessfulSend({ draft: next, sent });
       if (kept === '') {
+        // Parent already restored the sent prompt after stop/failure — keep it.
+        if (draft.trim() === sent.trim()) {
+          sentTextRef.current = null;
+          return;
+        }
         setDraft('');
         return;
       }
@@ -266,7 +271,7 @@ export function ChatComposer({
       return;
     }
     setDraft(next);
-  }, [setDraft]);
+  }, [draft, setDraft]);
   useEffect(() => {
     const sent = sentTextRef.current;
     if (!sent) return;

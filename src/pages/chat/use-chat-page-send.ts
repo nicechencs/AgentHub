@@ -41,6 +41,7 @@ import {
 } from './chat-grok-follow-up';
 import {
   composerCancelingVisible,
+  composerDraftAfterCancel,
   composerKeepsStoppingAfterCancel,
 } from './chat-composer-model';
 import { acceptsRuntimeSnapshot, isLatestRuntimeRead, isRuntimeActive, readRuntimeTransport, requestMatchesRuntime, runtimeReplyFields } from './chat-runtime-model';
@@ -139,6 +140,7 @@ export function useChatPageSend(input: {
   const runtimeProbeRef = useRef(new Set<string>());
   const runtimeProbeCancelRef = useRef(new Set<string>());
   const followUpsRef = useRef(new Map<string, QueuedFollowUpItem[]>());
+  const lastSentPromptRef = useRef(new Map<string, string>());
   const [followUpById, setFollowUpById] = useState<Record<string, QueuedFollowUpItem[]>>({});
 
   useEffect(() => {
@@ -678,6 +680,7 @@ export function useChatPageSend(input: {
 
     const sendConvId = active.id;
     const sendGeneration = activeGenerationRef.current;
+    lastSentPromptRef.current.set(sendConvId, prompt);
     markSending(sendConvId);
     if (clearDraft) setDraft('');
     const turnGuess = messages.reduce((max, m) => Math.max(max, m.turn), 0) + 1;
@@ -940,7 +943,12 @@ export function useChatPageSend(input: {
       draft,
       queue: followUpsRef.current.get(id) ?? [],
     });
-    if (restored.draft !== draft) setDraft(restored.draft);
+    const nextDraft = composerDraftAfterCancel({
+      draft,
+      queuedDraft: restored.draft,
+      lastSent: lastSentPromptRef.current.get(id) ?? '',
+    });
+    if (nextDraft !== draft) setDraft(nextDraft);
     setFollowUpQueue(id, restored.queue);
     cancelingIdsRef.current.add(id);
     setCancelingIds([...cancelingIdsRef.current]);

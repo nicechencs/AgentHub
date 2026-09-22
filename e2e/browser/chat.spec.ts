@@ -153,10 +153,11 @@ test('Stop stays 正在停止 until the mock turn ends', async ({ page }) => {
   await expect(stop).toBeVisible();
   await stop.click();
   await expect(page.getByRole('button', { name: '停止', exact: true })).toHaveCount(0);
-  await expect(page.getByText('已按你的要求停止。可恢复草稿后重发。')).toBeVisible({
+  await expect(page.getByText('已按你的要求停止。可以直接在这场对话里继续发送。')).toBeVisible({
     timeout: 10_000,
   });
   await expect(page.getByRole('main').getByText('已停止', { exact: true })).toBeVisible();
+  await expect(composer).toHaveValue('e2e mock stop');
 });
 
 test('shortcut overview opens from the composer and lists new-chat keys', async ({ page }) => {

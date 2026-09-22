@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { translate } from '@/lib/i18n';
 import {
   composerCancelingVisible,
+  composerDraftAfterCancel,
   composerDraftAfterSuccessfulSend,
   composerEnterShouldSubmit,
   composerLiveSendText,
@@ -260,6 +261,30 @@ describe('composer clear-on-send', () => {
     ).toBe('');
     expect(composerDraftAfterSuccessfulSend({ draft: 'Write a 3-step plan', sent })).toBe('');
     expect(composerDraftAfterSuccessfulSend({ draft: '  ', sent })).toBe('');
+  });
+
+  it('restores the sent prompt on stop when the box is empty', () => {
+    expect(
+      composerDraftAfterCancel({
+        draft: '',
+        queuedDraft: '',
+        lastSent: 'e2e mock stop',
+      }),
+    ).toBe('e2e mock stop');
+    expect(
+      composerDraftAfterCancel({
+        draft: 'already typing',
+        queuedDraft: 'queued',
+        lastSent: 'e2e mock stop',
+      }),
+    ).toBe('already typing');
+    expect(
+      composerDraftAfterCancel({
+        draft: '',
+        queuedDraft: 'queued line',
+        lastSent: 'e2e mock stop',
+      }),
+    ).toBe('queued line');
   });
 
   it('keeps text typed after a successful send', () => {
