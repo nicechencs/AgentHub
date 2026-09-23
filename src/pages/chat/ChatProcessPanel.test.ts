@@ -97,6 +97,29 @@ describe('ChatProcessPanel human copy', () => {
     expect(html).toContain('docs');
   });
 
+  it('marks the step the transcript switched to without dropping the others', () => {
+    const html = renderToStaticMarkup(
+      createElement(ChatProcessPanel, {
+        view: view({
+          phase: 'ok',
+          steps: [
+            { type: 'thinking', text: '先看工作目录', done: true },
+            { type: 'tool', name: 'Bash', status: 'end', input: { command: 'ls' } },
+          ],
+          thinkingStartedAt: 1,
+          thinkingDurationMs: 3200,
+        }),
+        messageStatus: 'ok',
+        activeStepKey: 'step:1',
+      }),
+    );
+    expect(html).toContain('先看工作目录');
+    expect(html).toContain('已执行 ls');
+    expect(html).toContain('data-process-step-active="true"');
+    expect(html.indexOf('先看工作目录')).toBeLessThan(html.indexOf('data-process-step-active="true"'));
+    expect(html.indexOf('data-process-step-active="true"')).toBeLessThan(html.indexOf('已执行 ls'));
+  });
+
   it('keeps finished thinking expanded in the inspect pane', () => {
     const html = renderPanel(
       view({

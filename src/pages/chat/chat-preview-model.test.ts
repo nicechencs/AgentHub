@@ -10,6 +10,9 @@ import {
   openChatPreviewRoot,
   openChatProcessInspect,
   popChatPreview,
+  processInspectRowAction,
+  processInspectStepIndex,
+  processInspectStepKey,
   pushChatPreview,
 } from './chat-preview-model';
 
@@ -38,7 +41,8 @@ describe('chat preview stack', () => {
   });
 
   it('opens process inspect separately from the file stack', () => {
-    const process = openChatProcessInspect(2, 'codex');
+    const process = openChatProcessInspect(2, 'codex', 'step:1');
+    expect(process.stepKey).toBe('step:1');
     expect(isChatProcessInspect(process)).toBe(true);
     expect(isChatFilePreview(process)).toBe(false);
     expect(chatPreviewPath(process)).toBe('');
@@ -73,6 +77,16 @@ describe('chat preview stack', () => {
     expect(pushChatPreview(target, '/repo/README.md')).toEqual(
       openChatPreviewRoot('/repo/README.md'),
     );
+  });
+
+  it('keeps the detail open when moving to another step and closes only the current one', () => {
+    expect(processInspectStepKey(0)).toBe('step:0');
+    expect(processInspectStepIndex('step:1')).toBe(1);
+    expect(processInspectStepIndex('generating')).toBeNull();
+    expect(processInspectRowAction(true, 'step:0', 'step:1')).toBe('focus');
+    expect(processInspectRowAction(true, 'step:0', 'step:0')).toBe('close');
+    expect(processInspectRowAction(false, 'step:0', 'step:0')).toBe('focus');
+    expect(processInspectRowAction(true, null, 'step:0')).toBe('focus');
   });
 
   it('keeps the clicked turn on an edit preview', () => {

@@ -160,6 +160,40 @@ test('Stop stays 正在停止 until the mock turn ends', async ({ page }) => {
   await expect(composer).toHaveValue('e2e mock stop');
 });
 
+test('switching thinking and execute keeps the detail pane open', async ({ page }) => {
+  await openApp(page);
+  await openChatComposer(page);
+  await setWorkingDirectory(page);
+
+  const composer = page.getByRole('textbox', { name: '消息输入' });
+  await composer.fill('需要确认');
+  await page.getByRole('button', { name: '发送' }).click();
+
+  const thinking = page.locator('[data-help="chat-thinking-bar"]');
+  const execute = page.locator('[data-help="chat-process-chip"]').filter({ hasText: '正在执行' });
+  await expect(thinking).toBeVisible({ timeout: 15_000 });
+  await expect(execute).toBeVisible();
+
+  const detail = page.locator('[data-help="chat-process-inspect"]');
+  await thinking.click();
+  await expect(detail).toBeVisible();
+  await expect(thinking).toHaveAttribute('aria-expanded', 'true');
+
+  await execute.click();
+  await expect(detail).toBeVisible();
+  await expect(execute).toHaveAttribute('aria-expanded', 'true');
+  await expect(thinking).toHaveAttribute('aria-expanded', 'false');
+  await expect(detail.locator('[data-process-step-active="true"]')).toContainText('正在执行');
+
+  await thinking.click();
+  await expect(detail).toBeVisible();
+  await expect(thinking).toHaveAttribute('aria-expanded', 'true');
+  await expect(execute).toHaveAttribute('aria-expanded', 'false');
+
+  await thinking.click();
+  await expect(detail).toHaveCount(0);
+});
+
 test('shortcut overview opens from the composer and lists new-chat keys', async ({ page }) => {
   await openApp(page);
   await openChatComposer(page);

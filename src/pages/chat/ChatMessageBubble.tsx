@@ -30,6 +30,7 @@ export function ChatMessageBubble({
   onOpenProcess,
   onCloseProcess,
   processPaneOpen = false,
+  selectedStepKey = null,
   selectedEditPath = '',
   selectedEditTurn,
   onSelectEdit,
@@ -38,9 +39,10 @@ export function ChatMessageBubble({
   process?: AgentProcessView;
   localBasePath?: string;
   onOpenLocal?: (path: string, options?: MarkdownOpenLocalOptions) => boolean;
-  onOpenProcess?: (turn: number, agent: AgentKey) => void;
+  onOpenProcess?: (turn: number, agent: AgentKey, stepKey: string) => void;
   onCloseProcess?: () => void;
   processPaneOpen?: boolean;
+  selectedStepKey?: string | null;
   selectedEditPath?: string;
   selectedEditTurn?: number;
   onSelectEdit?: (file: TurnEditFile, turn: number) => void;
@@ -59,6 +61,7 @@ export function ChatMessageBubble({
       onOpenProcess={onOpenProcess}
       onCloseProcess={onCloseProcess}
       processPaneOpen={processPaneOpen}
+      selectedStepKey={selectedStepKey}
       selectedEditPath={selectedEditPath}
       selectedEditTurn={selectedEditTurn}
       onSelectEdit={onSelectEdit}
@@ -101,6 +104,7 @@ function AgentBubble({
   onOpenProcess,
   onCloseProcess,
   processPaneOpen,
+  selectedStepKey,
   selectedEditPath,
   selectedEditTurn,
   onSelectEdit,
@@ -109,9 +113,10 @@ function AgentBubble({
   process?: AgentProcessView;
   localBasePath?: string;
   onOpenLocal?: (path: string, options?: MarkdownOpenLocalOptions) => boolean;
-  onOpenProcess?: (turn: number, agent: AgentKey) => void;
+  onOpenProcess?: (turn: number, agent: AgentKey, stepKey: string) => void;
   onCloseProcess?: () => void;
   processPaneOpen: boolean;
+  selectedStepKey: string | null;
   selectedEditPath: string;
   selectedEditTurn?: number;
   onSelectEdit?: (file: TurnEditFile, turn: number) => void;
@@ -170,6 +175,7 @@ function AgentBubble({
             agent={agent}
             running={running}
             processPaneOpen={processPaneOpen}
+            selectedStepKey={selectedStepKey}
             selectedEditPath={selectedEditPath}
             selectedEditTurn={selectedEditTurn}
             onOpenProcess={onOpenProcess}
