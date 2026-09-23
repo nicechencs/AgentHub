@@ -24,7 +24,12 @@ import {
   toolActionTone,
   type AgentProcessView,
 } from '@/lib/chat-process';
-import { highlightDetailTokens, highlightSourceTokens, type SourceToken } from '@/components/shared/source-highlight';
+import {
+  highlightDetailLines,
+  highlightSourceTokens,
+  type HighlightLine,
+  type SourceToken,
+} from '@/components/shared/source-highlight';
 import { hasJsonPreviewContent, looksLikeJsonObject } from '@/lib/source-preview';
 import type { ProcessStep } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -127,13 +132,39 @@ function TokenSpans({
   format?: 'shell';
   fileName?: string | null;
 }) {
-  const tokens = format === 'shell'
-    ? highlightSourceTokens(text, 'shell')
-    : highlightDetailTokens(text, fileName);
-  if (!tokens) return text;
-  return tokens.map((token, index) => (
-    <TokenSpan key={index} token={token} />
-  ));
+  const tokens = format === 'shell' ? highlightSourceTokens(text, 'shell') : null;
+  const lines = tokens ? null : highlightDetailLines(text, fileName);
+  if (tokens) {
+    return tokens.map((token, index) => <TokenSpan key={index} token={token} />);
+  }
+  if (!lines) return text;
+  return <HighlightedLines lines={lines} />;
+}
+
+function HighlightedLines({ lines }: { lines: HighlightLine[] }) {
+  return (
+    <div className="overflow-auto rounded-btn border border-border bg-subtle font-mono text-meta leading-[18px] text-primary">
+      {lines.map((line, index) => (
+        <div
+          key={index}
+          className={cn(
+            'min-h-[18px] whitespace-pre-wrap break-words px-3',
+            line.kind === 'add' && 'chat-diff-add',
+            line.kind === 'remove' && 'chat-diff-remove',
+            line.kind === 'meta' && 'text-muted',
+            index === 0 && 'pt-2',
+            index === lines.length - 1 && 'pb-2',
+          )}
+        >
+          {line.tokens.length === 0
+            ? ' '
+            : line.tokens.map((token, tokenIndex) => (
+              <TokenSpan key={tokenIndex} token={token} />
+            ))}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function TokenSpan({ token }: { token: SourceToken }) {
@@ -166,14 +197,12 @@ function PayloadPreview({
     );
   }
   const clipped = clipProcessTail(text);
-  const tokens = highlightDetailTokens(clipped, fileName);
-  if (tokens) {
+  const lines = highlightDetailLines(clipped, fileName);
+  if (lines) {
     return (
-      <pre className={cn('whitespace-pre-wrap break-words font-mono text-meta text-primary', className)}>
-        {tokens.map((token, index) => (
-          <TokenSpan key={index} token={token} />
-        ))}
-      </pre>
+      <div className={className}>
+        <HighlightedLines lines={lines} />
+      </div>
     );
   }
   return <pre className={cn('whitespace-pre-wrap break-words text-primary', className)}>{clipped}</pre>;
@@ -310,7 +339,7 @@ function ThinkingStepRow({
   const startRef = useRef(startedAt ?? Date.now());
   const [now, setNow] = useState(() => Date.now());
   const [open, setOpen] = useState(defaultOpen);
-  const bodyRef = useRef<HTMLPreElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (startedAt != null) startRef.current = startedAt;
@@ -357,12 +386,12 @@ function ThinkingStepRow({
         )}
       </summary>
       {body ? (
-        <pre
+        <div
           ref={bodyRef}
-          className="mt-0.5 max-h-40 overflow-auto [overflow-anchor:none] whitespace-pre-wrap break-words text-primary leading-relaxed"
+          className="mt-1 max-h-40 overflow-auto rounded-btn border border-border bg-subtle px-3 py-2 text-body leading-relaxed text-primary [overflow-anchor:none] [overflow-wrap:anywhere]"
         >
           {body}
-        </pre>
+        </div>
       ) : null}
     </details>
   );

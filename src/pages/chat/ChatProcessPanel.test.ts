@@ -139,6 +139,8 @@ describe('ChatProcessPanel human copy', () => {
     );
     expect(html).toContain('tok-keyword');
     expect(html).toContain('>const<');
+    expect(html).toContain('chat-diff-add');
+    expect(html).toContain('chat-diff-remove');
     expect(html).toContain('tok-inserted');
     expect(html).toContain('tok-deleted');
     expect(html).toContain('tok-number');
@@ -157,7 +159,8 @@ describe('ChatProcessPanel human copy', () => {
     expect(html).toContain('先看工作目录');
     expect(html).toContain('思考了 3.2s');
     expect(html).toContain('data-help="chat-process-thinking"');
-    expect(html).toContain('break-words text-primary leading-relaxed');
+    expect(html).toContain('text-body leading-relaxed text-primary');
+    expect(html).toContain('bg-subtle px-3 py-2');
     expect(html).not.toContain('italic text-muted');
     expect(html).toMatch(/<details[^>]*open/);
   });
