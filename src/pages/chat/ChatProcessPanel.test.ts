@@ -139,6 +139,8 @@ describe('ChatProcessPanel human copy', () => {
     );
     expect(html).toContain('tok-keyword');
     expect(html).toContain('>const<');
+    expect(html).toContain('chat-line-number');
+    expect(html).toContain('拖动调整代码高度');
     expect(html).toContain('chat-diff-add');
     expect(html).toContain('chat-diff-remove');
     expect(html).toContain('tok-inserted');
@@ -216,7 +218,8 @@ describe('ChatProcessPanel human copy', () => {
     expect(html).toContain('思考中');
     expect(html).toContain('正在读取 README.md');
     expect(html).toContain('[overflow-anchor:none]');
-    expect(html).toContain('max-h-40');
+    expect(html).toContain('拖动调整思考高度');
+    expect(html).toContain('拖动调整 JSON 高度');
     const thinkingAt = html.indexOf('data-help="chat-process-thinking"');
     const toolAt = html.indexOf('data-help="chat-process-tool"');
     expect(thinkingAt).toBeGreaterThan(-1);

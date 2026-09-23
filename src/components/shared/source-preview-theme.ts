@@ -153,7 +153,7 @@ export const sourcePreviewFitContentTheme = EditorView.theme({
 
 export const SOURCE_PREVIEW_CHROME = [
   '[&_.cm-editor]:w-full [&_.cm-editor]:max-w-full [&_.cm-editor]:bg-canvas [&_.cm-editor]:font-mono [&_.cm-editor]:text-meta [&_.cm-editor]:text-primary',
-  '[&_.cm-gutters]:bg-canvas [&_.cm-gutters]:text-muted [&_.cm-gutters]:border-border',
+  '[&_.cm-gutters]:select-none [&_.cm-gutters]:bg-canvas [&_.cm-gutters]:text-muted [&_.cm-gutters]:border-border',
   '[&_.cm-activeLine]:bg-hover [&_.cm-activeLineGutter]:bg-hover',
   '[&_.cm-matchingBracket]:bg-hover',
   '[&_.cm-cursor]:border-primary',

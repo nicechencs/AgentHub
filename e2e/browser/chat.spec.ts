@@ -178,9 +178,9 @@ test('switching thinking and execute keeps the detail pane open', async ({ page 
   await thinking.click();
   await expect(detail).toBeVisible();
   await expect(thinking).toHaveAttribute('aria-expanded', 'true');
-  const thinkingBody = detail.locator('[data-help="chat-process-thinking"] pre');
-  await expect(thinkingBody).toHaveClass(/text-primary/);
-  await expect(thinkingBody).not.toHaveClass(/italic/);
+  const thinkingBody = detail.locator('[data-help="chat-process-thinking"] [style*="height"]');
+  await expect(thinkingBody).toBeVisible();
+  await expect(detail.getByRole('separator', { name: '拖动调整思考高度' })).toBeVisible();
 
   await execute.click();
   await expect(detail).toBeVisible();
@@ -211,6 +211,13 @@ test('code detail highlights keywords apart from comments', async ({ page }) => 
   const comment = page.locator('.cm-content span').filter({ hasText: 'mock preview' });
   await expect(keyword).toBeVisible({ timeout: 15_000 });
   await expect(comment).toBeVisible();
+  await expect(page.locator('.cm-lineNumbers')).toBeVisible();
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  const preview = page.locator('[data-chat-file-preview]');
+  await preview.getByRole('button', { name: '复制', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('export function hello');
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied.startsWith('// mock preview')).toBe(true);
   const keywordColor = await keyword.evaluate((el) => getComputedStyle(el).color);
   const commentColor = await comment.evaluate((el) => getComputedStyle(el).color);
   expect(keywordColor).not.toBe(commentColor);

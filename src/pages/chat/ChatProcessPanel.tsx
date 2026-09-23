@@ -8,10 +8,12 @@ import {
   type Ref,
 } from 'react';
 import { Check, Copy } from 'lucide-react';
+import { copyTextToClipboard } from '@/components/shared/CopyTextButton';
 import { AgentThinking } from '@/components/shared/AgentThinking';
 import { SourcePreview } from '@/components/shared/SourcePreview';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/toast';
 import {
   formatToolStep,
   formatUsageStep,
@@ -44,6 +46,66 @@ import {
 import type { ProcessLogPane } from './chat-process-log-model';
 import { useProcessLogHeight } from './use-process-log-height';
 
+function HeightSeparator({
+  label,
+  paneHeight,
+  valuemin,
+  onResizeStart,
+  onSeparatorKeyDown,
+  resetHeight,
+}: {
+  label: string;
+  paneHeight: number;
+  valuemin: number;
+  onResizeStart: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onSeparatorKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => void;
+  resetHeight: () => void;
+}) {
+  return (
+    <div
+      role="separator"
+      aria-orientation="horizontal"
+      aria-label={label}
+      aria-valuenow={paneHeight}
+      aria-valuemin={valuemin}
+      tabIndex={0}
+      onPointerDown={onResizeStart}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        resetHeight();
+      }}
+      onKeyDown={onSeparatorKeyDown}
+      className={
+        [
+          'group relative z-10 h-2 shrink-0 cursor-row-resize touch-none bg-transparent outline-none',
+          'after:pointer-events-none after:absolute after:inset-x-0 after:top-1/2 after:h-px after:-translate-y-1/2 after:bg-transparent after:content-[""]',
+          'hover:after:bg-accent focus-visible:after:bg-accent active:after:bg-accent',
+        ].join(' ')
+      }
+    />
+  );
+}
+
+function ResizableRegion({
+  pane,
+  label,
+  className,
+  children,
+}: {
+  pane: ProcessLogPane;
+  label: string;
+  className?: string;
+  children: (height: number) => ReactNode;
+}) {
+  const height = useProcessLogHeight(pane);
+  return (
+    <div className={className}>
+      {children(height.paneHeight)}
+      <HeightSeparator label={label} {...height} />
+    </div>
+  );
+}
+
 function CopyableResizableLog({
   label,
   text,
@@ -58,6 +120,7 @@ function CopyableResizableLog({
   preRef?: Ref<HTMLPreElement>;
 }) {
   const { t } = useI18n();
+  const { toast } = useToast();
   const [copied, setCopied] = useState(false);
   const height = useProcessLogHeight(pane);
 
@@ -65,12 +128,12 @@ function CopyableResizableLog({
     e.preventDefault();
     e.stopPropagation();
     if (!text.trim()) return;
-    void navigator.clipboard.writeText(text).then(
+    void copyTextToClipboard(text).then(
       () => {
         setCopied(true);
         window.setTimeout(() => setCopied(false), 1200);
       },
-      () => undefined,
+      () => toast({ title: t('common.copyFailed'), variant: 'danger' }),
     );
   };
 
@@ -98,27 +161,7 @@ function CopyableResizableLog({
       >
         {pane === 'command' ? <TokenSpans text={text} format="shell" /> : text}
       </pre>
-      <div
-        role="separator"
-        aria-orientation="horizontal"
-        aria-label={resizeAria}
-        aria-valuenow={height.paneHeight}
-        aria-valuemin={height.valuemin}
-        tabIndex={0}
-        onPointerDown={height.onResizeStart}
-        onDoubleClick={(e) => {
-          e.stopPropagation();
-          height.resetHeight();
-        }}
-        onKeyDown={height.onSeparatorKeyDown}
-        className={
-          [
-            'group relative z-10 h-2 shrink-0 cursor-row-resize touch-none bg-transparent outline-none',
-            'after:pointer-events-none after:absolute after:inset-x-0 after:top-1/2 after:h-px after:-translate-y-1/2 after:bg-transparent after:content-[""]',
-            'hover:after:bg-accent focus-visible:after:bg-accent active:after:bg-accent',
-          ].join(' ')
-        }
-      />
+      <HeightSeparator label={resizeAria} {...height} />
     </div>
   );
 }
@@ -138,17 +181,55 @@ function TokenSpans({
     return tokens.map((token, index) => <TokenSpan key={index} token={token} />);
   }
   if (!lines) return text;
-  return <HighlightedLines lines={lines} />;
+  return <HighlightedLines lines={lines} source={text} />;
 }
 
-function HighlightedLines({ lines }: { lines: HighlightLine[] }) {
+function HighlightedLines({
+  lines,
+  source,
+  bodyHeight,
+}: {
+  lines: HighlightLine[];
+  source: string;
+  bodyHeight?: number;
+}) {
+  const { t } = useI18n();
+  const { toast } = useToast();
+  const [copied, setCopied] = useState(false);
+  const digits = Math.max(2, String(lines.length).length);
+  const onCopy = (e: ReactMouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!source.trim()) return;
+    void copyTextToClipboard(source).then(
+      () => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1200);
+      },
+      () => toast({ title: t('common.copyFailed'), variant: 'danger' }),
+    );
+  };
   return (
-    <div className="overflow-auto rounded-btn border border-border bg-subtle font-mono text-meta leading-[18px] text-primary">
+    <div className="overflow-hidden rounded-btn border border-border bg-subtle font-mono text-meta leading-[18px] text-primary">
+      <div className="flex justify-end border-b border-border px-1 py-0.5">
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-7 shrink-0 px-2"
+          aria-label={t('common.copy')}
+          onClick={onCopy}
+        >
+          {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+          {copied ? t('common.copied') : t('common.copy')}
+        </Button>
+      </div>
+      <div className="overflow-auto" style={bodyHeight != null ? { height: bodyHeight } : undefined}>
       {lines.map((line, index) => (
         <div
           key={index}
           className={cn(
-            'min-h-[18px] whitespace-pre-wrap break-words px-3',
+            'flex min-h-[18px]',
             line.kind === 'add' && 'chat-diff-add',
             line.kind === 'remove' && 'chat-diff-remove',
             line.kind === 'meta' && 'text-muted',
@@ -156,13 +237,19 @@ function HighlightedLines({ lines }: { lines: HighlightLine[] }) {
             index === lines.length - 1 && 'pb-2',
           )}
         >
-          {line.tokens.length === 0
-            ? ' '
-            : line.tokens.map((token, tokenIndex) => (
-              <TokenSpan key={tokenIndex} token={token} />
-            ))}
+          <span className="chat-line-number" aria-hidden>
+            {String(index + 1).padStart(digits, ' ')}
+          </span>
+          <div className="min-w-0 flex-1 whitespace-pre-wrap break-words pr-3">
+            {line.tokens.length === 0
+              ? ' '
+              : line.tokens.map((token, tokenIndex) => (
+                <TokenSpan key={tokenIndex} token={token} />
+              ))}
+          </div>
         </div>
       ))}
+      </div>
     </div>
   );
 }
@@ -183,29 +270,45 @@ function PayloadPreview({
   className?: string;
   fileName?: string | null;
 }) {
+  const { t } = useI18n();
   if (!text.trim()) return null;
   if (looksLikeJsonObject(text)) {
     if (!hasJsonPreviewContent(text)) return null;
     return (
-      <SourcePreview
-        value={text}
-        format="json"
-        density={density}
-        showCopy
-        className={className}
-      />
+      <ResizableRegion pane="json" label={t('chat.process.resizeJson')} className={className}>
+        {(height) => (
+          <SourcePreview
+            value={text}
+            format="json"
+            density={density}
+            showCopy
+            bodyHeight={height}
+          />
+        )}
+      </ResizableRegion>
     );
   }
   const clipped = clipProcessTail(text);
   const lines = highlightDetailLines(clipped, fileName);
   if (lines) {
     return (
-      <div className={className}>
-        <HighlightedLines lines={lines} />
-      </div>
+      <ResizableRegion pane="code" label={t('chat.process.resizeCode')} className={className}>
+        {(height) => <HighlightedLines lines={lines} source={clipped} bodyHeight={height} />}
+      </ResizableRegion>
     );
   }
-  return <pre className={cn('whitespace-pre-wrap break-words text-primary', className)}>{clipped}</pre>;
+  return (
+    <ResizableRegion pane="code" label={t('chat.process.resizeCode')} className={className}>
+      {(height) => (
+        <pre
+          style={{ height }}
+          className="overflow-auto whitespace-pre-wrap break-words rounded-btn border border-border bg-subtle px-3 py-2 font-mono text-meta text-primary"
+        >
+          {clipped}
+        </pre>
+      )}
+    </ResizableRegion>
+  );
 }
 
 function processStepKey(step: ProcessStep, index: number): string {
@@ -311,9 +414,16 @@ function ProcessStepRow({
         {body ? (
           <details className="mt-0.5 text-meta" onClick={(e) => e.stopPropagation()}>
             <summary className="cursor-pointer text-muted">{t('chat.process.details')}</summary>
-            <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap break-all text-primary">
-              {clipProcessTail(body)}
-            </pre>
+            <ResizableRegion pane="code" label={t('chat.process.resizeCode')}>
+              {(height) => (
+                <pre
+                  style={{ height }}
+                  className="mt-1 overflow-auto whitespace-pre-wrap break-all text-primary"
+                >
+                  {clipProcessTail(body)}
+                </pre>
+              )}
+            </ResizableRegion>
           </details>
         ) : null}
       </div>
@@ -386,12 +496,17 @@ function ThinkingStepRow({
         )}
       </summary>
       {body ? (
-        <div
-          ref={bodyRef}
-          className="mt-1 max-h-40 overflow-auto rounded-btn border border-border bg-subtle px-3 py-2 text-body leading-relaxed text-primary [overflow-anchor:none] [overflow-wrap:anywhere]"
-        >
-          {body}
-        </div>
+        <ResizableRegion pane="thinking" label={t('chat.process.resizeThinking')}>
+          {(height) => (
+            <div
+              ref={bodyRef}
+              style={{ height }}
+              className="mt-1 overflow-auto rounded-btn border border-border bg-subtle px-3 py-2 text-body leading-relaxed text-primary [overflow-anchor:none] [overflow-wrap:anywhere]"
+            >
+              {body}
+            </div>
+          )}
+        </ResizableRegion>
       ) : null}
     </details>
   );
