@@ -4,7 +4,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { ChevronLeft, Code2, Eye, PanelRightClose } from 'lucide-react';
+import { Check, ChevronLeft, Code2, Copy, Eye, PanelRightClose } from 'lucide-react';
 import {
   MarkdownView,
   isMarkdownFilePath,
@@ -13,11 +13,13 @@ import {
 } from '@/components/shared/MarkdownView';
 import { SourcePreview } from '@/components/shared/SourcePreview';
 import { CopyableFileName } from '@/components/shared/CopyableFileName';
+import { copyTextToClipboard } from '@/components/shared/CopyTextButton';
 import { previewHeaderParts } from '@/components/shared/file-name-label';
 import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { Tip } from '@/components/ui/tooltip';
+import { useToast } from '@/components/ui/toast';
 import { segmentedItemClass, segmentedTrackClass } from '@/components/ui/segmented-styles';
 import { readMarkdownPreview } from '@/lib/api/chat';
 import { openLocalPath } from '@/lib/open-external';
@@ -69,6 +71,7 @@ export function ChatMarkdownPreviewPanel({
   className?: string;
 }) {
   const { t } = useI18n();
+  const { toast } = useToast();
   const titleId = useId();
   const requestSeq = useRef(0);
   const [loading, setLoading] = useState(false);
@@ -77,6 +80,7 @@ export function ChatMarkdownPreviewPanel({
   const [resolvedPath, setResolvedPath] = useState(path);
   const [name, setName] = useState(fileName(path));
   const [truncated, setTruncated] = useState(false);
+  const [copied, setCopied] = useState(false);
   const markdown = isMarkdownFilePath(path);
   const [mode, setMode] = useState<'preview' | 'source'>(markdown ? 'preview' : 'source');
 
@@ -129,6 +133,17 @@ export function ChatMarkdownPreviewPanel({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, canBack, onBack, onClose]);
+
+  const onCopyContent = () => {
+    if (!content.trim()) return;
+    void copyTextToClipboard(content).then(
+      () => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1200);
+      },
+      () => toast({ title: t('common.copyFailed'), variant: 'danger' }),
+    );
+  };
 
   if (!open) return null;
 
@@ -238,6 +253,18 @@ export function ChatMarkdownPreviewPanel({
               }}
             />
           ) : null}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 shrink-0 px-2"
+            aria-label={t('common.copy')}
+            title={t('common.copy')}
+            disabled={!content.trim() || loading}
+            onClick={onCopyContent}
+          >
+            {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+            {copied ? t('common.copied') : t('common.copy')}
+          </Button>
           <Button
             size="icon"
             variant="ghost"

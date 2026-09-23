@@ -1,6 +1,6 @@
 import { readStorageItem, removeStorageItem, StorageKey } from '@/lib/storage-key';
 
-export type ProcessLogPane = 'command' | 'stderr';
+export type ProcessLogPane = 'command' | 'stderr' | 'code' | 'json' | 'thinking';
 
 export const PROCESS_LOG_HEIGHT_STEP = 16;
 export const PROCESS_LOG_HEIGHT_STEP_LARGE = 48;
@@ -17,6 +17,24 @@ export const PROCESS_LOG_SPECS = {
     defaultHeight: 280,
     minHeight: 120,
     maxHeight: 720,
+  },
+  code: {
+    storageKey: StorageKey.chatProcessCodeHeight,
+    defaultHeight: 180,
+    minHeight: 72,
+    maxHeight: 640,
+  },
+  json: {
+    storageKey: StorageKey.chatProcessJsonHeight,
+    defaultHeight: 160,
+    minHeight: 72,
+    maxHeight: 640,
+  },
+  thinking: {
+    storageKey: StorageKey.chatProcessThinkingHeight,
+    defaultHeight: 160,
+    minHeight: 72,
+    maxHeight: 480,
   },
 } as const;
 

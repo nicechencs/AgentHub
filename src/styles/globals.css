@@ -507,13 +507,20 @@ svg.lucide[data-icon='nav'] {
   background: transparent;
 }
 
-[data-help='chat-process-inspect'] .cm-gutters {
-  display: none;
-}
-
 [data-help='chat-process-inspect'] .cm-editor,
 [data-help='chat-process-inspect'] .cm-gutters {
   background: transparent;
+}
+
+.chat-line-number {
+  width: 2.25rem;
+  flex-shrink: 0;
+  padding-right: 0.75rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  opacity: 0.6;
+  user-select: none;
 }
 
 [data-help='chat-process-inspect'] .cm-activeLine,

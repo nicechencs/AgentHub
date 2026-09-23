@@ -32,6 +32,9 @@ const LAYOUT_STORAGE_KEY = {
   chatComposerPaneHeight: `${PREFIX}chat-composer-pane-height`,
   chatProcessCommandHeight: `${PREFIX}chat-process-command-height`,
   chatProcessLogHeight: `${PREFIX}chat-process-log-height`,
+  chatProcessCodeHeight: `${PREFIX}chat-process-code-height`,
+  chatProcessJsonHeight: `${PREFIX}chat-process-json-height`,
+  chatProcessThinkingHeight: `${PREFIX}chat-process-thinking-height`,
   chatPreviewWidth: `${PREFIX}chat-preview-width`,
   /** Dragged chat transcript content width (px); absent = adaptive clamp. */
   chatContentWidth: `${PREFIX}chat-content-width`,
