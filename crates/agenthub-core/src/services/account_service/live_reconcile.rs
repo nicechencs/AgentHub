@@ -11,6 +11,7 @@ use crate::models::{
 use crate::services::adapter_projection::{
     classify_account_live, leftover_live_flag, should_skip_live_reconcile, LiveOrigin,
 };
+use crate::services::adapter_route_constants::OPENAI_API_KEY_ENV;
 use crate::storage::{AdapterProfileRepo, ConnectionTrashRepo, ProviderRepo};
 
 use super::surface::*;
@@ -799,7 +800,7 @@ fn live_is_api_key_shaped(live: &LiveAccount) -> bool {
         .filter(|value| value.is_object())
         .unwrap_or(&live.credentials);
     let has_key = body
-        .get("OPENAI_API_KEY")
+        .get(OPENAI_API_KEY_ENV)
         .and_then(|value| value.as_str())
         .map(str::trim)
         .is_some_and(|key| !key.is_empty());

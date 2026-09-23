@@ -273,7 +273,6 @@ export function TicketDetailPanel({
       piDefaultModel={piDefaultModel}
       onSwitchPiDefaultModel={onSwitchPiDefaultModel}
       extras={extras}
-      hasQuota={hasQuota}
       has7d={has7d}
       has5h={has5h}
       hasCredits={hasCredits}
@@ -310,7 +309,7 @@ export function TicketDetailPanel({
           </>
         )}
       >
-        <div id={id} data-ticket-detail={ticket?.id ?? id}>
+        <div id={id} className="min-w-0" data-ticket-detail={ticket?.id ?? id}>
           {body}
         </div>
       </SideInspectPanel>
@@ -417,15 +416,10 @@ function detailAvailabilityChip(
   return null;
 }
 
-function TicketDetailSection({ children }: { children: React.ReactNode }) {
-  return <section className="space-y-1.5">{children}</section>;
-}
-
 function TicketDetailBody({
   piDefaultModel,
   onSwitchPiDefaultModel,
   extras,
-  hasQuota,
   has7d,
   has5h,
   hasCredits,
@@ -443,7 +437,6 @@ function TicketDetailBody({
   extras?: TicketDetailExtras | null;
   piDefaultModel?: PiDefaultModelView | null;
   onSwitchPiDefaultModel?: (model: string) => void;
-  hasQuota: boolean;
   has7d: boolean;
   has5h: boolean;
   hasCredits: boolean;
@@ -463,13 +456,7 @@ function TicketDetailBody({
   const occupancy = overview.filter((field) => occupancyField(field, t));
   const connection = overview.filter((field) => !occupancyField(field, t));
   const showPi = Boolean(piDefaultModel && piDefaultModel.kind !== 'hidden');
-  const showUsage = hasQuota || Boolean(tokenRemaining) || Boolean(tokenUsage);
-  const showRecords = Boolean(
-    (agentId && files && files.length > 0)
-    || timeline.length > 0
-    || extras?.refreshTokenPreview
-    || diagnostics.length > 0,
-  );
+  const hasFiles = Boolean(agentId && files && files.length > 0);
   const recordFields: TicketDetailField[] = [
     ...timeline,
     ...(extras?.refreshTokenPreview
@@ -480,180 +467,171 @@ function TicketDetailBody({
         } satisfies TicketDetailField]
       : []),
   ];
+  const hasMainTable = Boolean(
+    authChip
+    || occupancy.length > 0
+    || has7d
+    || has5h
+    || hasCredits
+    || tokenUsage
+    || tokenRemaining
+    || connection.length > 0
+    || showPi
+    || showClients
+    || recordFields.length > 0,
+  );
   return (
-    <div className="flex flex-col gap-3">
-      {authChip || occupancy.length > 0 ? (
-        <TicketDetailSection>
-          <DetailTable>
-            {authChip ? (
-              <DetailTableRow label={t('connections.list.table.status')}>
-                <DetailTableCell>
-                  <Badge variant={authChip.tone === 'warning' ? 'warning' : 'default'}>
-                    {authChip.label}
-                  </Badge>
-                </DetailTableCell>
-              </DetailTableRow>
-            ) : null}
-            {occupancy.map((field) => (
-              <DetailRow
-                key={`${field.label}:${field.value}`}
-                label={field.label}
-                value={field.value}
-                mono={field.mono}
-                copyable={field.copyable}
-              />
-            ))}
-          </DetailTable>
-        </TicketDetailSection>
-      ) : null}
-
-      {showUsage ? (
-        <TicketDetailSection>
-          <DetailTable>
-            {has7d ? (
-              <QuotaDetailRow
-                label={t('connections.list.quota7dUsed')}
-                pct={extras?.quota7dPct}
-                resetIn={extras?.quota7dResetIn}
-              />
-            ) : null}
-            {has5h ? (
-              <QuotaDetailRow
-                label={t('connections.list.quota5hUsed')}
-                pct={extras?.quota5hPct}
-                resetIn={extras?.quotaResetIn}
-              />
-            ) : null}
-            {hasCredits ? (
-              <QuotaDetailRow
-                label={t('connections.list.creditsUsed')}
-                pct={creditPct}
-                resetIn={extras?.creditResetIn}
-              >
-                {extras?.creditLimit != null ? (
-                  <p className="text-meta text-secondary tabular-nums">
-                    {t('connections.list.creditsUsage', {
-                      used: formatCreditAmount(extras.creditUsed ?? 0),
-                      limit: formatCreditAmount(extras.creditLimit),
-                    })}
-                  </p>
-                ) : null}
-              </QuotaDetailRow>
-            ) : null}
-            {tokenUsage ? (
-              <DetailTableRow>
-                <DetailTableCell colSpan={2}>{tokenUsage}</DetailTableCell>
-              </DetailTableRow>
-            ) : null}
-            {tokenRemaining ? (
-              <DetailTableRow label={t('connections.list.tokenRemaining')}>
-                <DetailTableCell colSpan={2}>{tokenRemaining}</DetailTableCell>
-              </DetailTableRow>
-            ) : null}
-          </DetailTable>
-        </TicketDetailSection>
-      ) : null}
-
-      {connection.length > 0 || showPi ? (
-        <TicketDetailSection>
-          <DetailTable>
-            {connection.map((field) => (
-              <DetailRow
-                key={`${field.label}:${field.value}`}
-                label={field.label}
-                value={field.value}
-                mono={field.mono}
-                copyable={field.copyable}
-                className={field.copyable ? 'w-full' : undefined}
-              />
-            ))}
-            {showPi ? (
-              <DetailTableRow label={t('connections.list.defaultModel')}>
-                <DetailTableCell>
-                  <PiDefaultModelSection
-                    view={piDefaultModel}
-                    onSwitch={onSwitchPiDefaultModel}
-                    embedded
-                  />
-                </DetailTableCell>
-              </DetailTableRow>
-            ) : null}
-          </DetailTable>
-        </TicketDetailSection>
-      ) : null}
-
-      {showClients ? (
-        <TicketDetailSection>
-          {bindingRows.length === 0 ? (
-            <p className="text-body text-muted">{t('connections.list.clientsEmpty')}</p>
-          ) : (
-            <DetailTable>
-              {bindingRows.map((row) => (
-                <DetailTableRow
-                  key={`${row.agentId}:${row.routeLabel ?? ''}:${row.localUrl ?? ''}`}
-                  label={(
-                    <span className="inline-flex items-center gap-1.5 text-body font-medium text-primary">
-                      <AgentDot agentId={row.agentId} size="sm" title={null} />
-                      <span className="truncate">{row.agentLabel}</span>
-                    </span>
-                  )}
-                >
-                  <DetailTableCell className="whitespace-nowrap text-meta text-muted">
-                    {row.routeLabel}
-                  </DetailTableCell>
-                  <DetailTableCell className="whitespace-nowrap text-meta">
-                    {row.status}
-                  </DetailTableCell>
-                  <DetailTableCell className="break-all font-mono text-meta">
-                    {row.localUrl}
-                  </DetailTableCell>
-                </DetailTableRow>
-              ))}
-            </DetailTable>
-          )}
-        </TicketDetailSection>
-      ) : null}
-
-      {showRecords ? (
-        <TicketDetailSection>
-          {agentId && files && files.length > 0 ? (
-            <TicketAuthFiles agentId={agentId} files={files} />
+    <div className="flex min-w-0 flex-col gap-3">
+      {hasMainTable ? (
+        <DetailTable>
+          {authChip ? (
+            <DetailTableRow label={t('connections.list.table.status')}>
+              <DetailTableCell>
+                <Badge variant={authChip.tone === 'warning' ? 'warning' : 'default'}>
+                  {authChip.label}
+                </Badge>
+              </DetailTableCell>
+            </DetailTableRow>
           ) : null}
-          {recordFields.length > 0 ? (
+          {occupancy.map((field) => (
+            <DetailRow
+              key={`${field.label}:${field.value}`}
+              label={field.label}
+              value={field.value}
+              mono={field.mono}
+              copyable={field.copyable}
+            />
+          ))}
+          {has7d ? (
+            <QuotaDetailRow
+              label={t('connections.list.quota7dUsed')}
+              pct={extras?.quota7dPct}
+              resetIn={extras?.quota7dResetIn}
+            />
+          ) : null}
+          {has5h ? (
+            <QuotaDetailRow
+              label={t('connections.list.quota5hUsed')}
+              pct={extras?.quota5hPct}
+              resetIn={extras?.quotaResetIn}
+            />
+          ) : null}
+          {hasCredits ? (
+            <QuotaDetailRow
+              label={t('connections.list.creditsUsed')}
+              pct={creditPct}
+              resetIn={extras?.creditResetIn}
+            >
+              {extras?.creditLimit != null ? (
+                <p className="text-meta text-secondary tabular-nums">
+                  {t('connections.list.creditsUsage', {
+                    used: formatCreditAmount(extras.creditUsed ?? 0),
+                    limit: formatCreditAmount(extras.creditLimit),
+                  })}
+                </p>
+              ) : null}
+            </QuotaDetailRow>
+          ) : null}
+          {tokenUsage ? (
+            <DetailTableRow label={t('connections.list.usage')}>
+              <DetailTableCell className="tabular-nums">{tokenUsage}</DetailTableCell>
+            </DetailTableRow>
+          ) : null}
+          {tokenRemaining ? (
+            <DetailTableRow label={t('connections.list.tokenRemaining')}>
+              <DetailTableCell>{tokenRemaining}</DetailTableCell>
+            </DetailTableRow>
+          ) : null}
+          {connection.map((field) => (
+            <DetailRow
+              key={`${field.label}:${field.value}`}
+              label={field.label}
+              value={field.value}
+              mono={field.mono}
+              copyable={field.copyable}
+              className={field.copyable ? 'w-full' : undefined}
+            />
+          ))}
+          {showPi ? (
+            <DetailTableRow label={t('connections.list.defaultModel')}>
+              <DetailTableCell>
+                <PiDefaultModelSection
+                  view={piDefaultModel}
+                  onSwitch={onSwitchPiDefaultModel}
+                  embedded
+                />
+              </DetailTableCell>
+            </DetailTableRow>
+          ) : null}
+          {showClients && bindingRows.length === 0 ? (
+            <DetailTableRow label={t('connections.list.clientsTitle')}>
+              <DetailTableCell>
+                <span className="text-muted">{t('connections.list.clientsEmpty')}</span>
+              </DetailTableCell>
+            </DetailTableRow>
+          ) : null}
+          {showClients
+            ? bindingRows.map((row) => (
+              <DetailTableRow
+                key={`${row.agentId}:${row.routeLabel ?? ''}:${row.localUrl ?? ''}`}
+                label={(
+                  <span className="flex min-w-0 max-w-full items-center gap-1.5 text-body font-medium text-primary">
+                    <AgentDot agentId={row.agentId} size="sm" title={null} className="shrink-0" />
+                    <span className="min-w-0 truncate">{row.agentLabel}</span>
+                  </span>
+                )}
+              >
+                <DetailTableCell>
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <span className="text-meta">{row.status}</span>
+                    {row.routeLabel ? (
+                      <span className="text-meta text-muted">{row.routeLabel}</span>
+                    ) : null}
+                    {row.localUrl ? (
+                      <span className="break-all font-mono text-meta">{row.localUrl}</span>
+                    ) : null}
+                  </div>
+                </DetailTableCell>
+              </DetailTableRow>
+            ))
+            : null}
+          {recordFields.map((field) => (
+            <DetailRow
+              key={`${field.label}:${field.value}`}
+              label={field.label}
+              value={field.value}
+              mono={field.mono}
+            />
+          ))}
+        </DetailTable>
+      ) : null}
+      {hasFiles && agentId && files ? (
+        <div className="flex min-w-0 max-w-full flex-col gap-1.5 overflow-hidden">
+          <p className="text-meta text-muted">{t('connections.list.authFilesTitle')}</p>
+          <TicketAuthFiles agentId={agentId} files={files} />
+        </div>
+      ) : null}
+      {diagnostics.length > 0 ? (
+        <details className="group rounded-card border border-border bg-subtle/60">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-meta font-medium text-secondary marker:content-none [&::-webkit-details-marker]:hidden">
+            <span>{t('connections.list.more')}</span>
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180" aria-hidden />
+          </summary>
+          <div className="border-t border-border px-3 py-3">
             <DetailTable>
-              {recordFields.map((field) => (
+              {diagnostics.map((field) => (
                 <DetailRow
                   key={`${field.label}:${field.value}`}
                   label={field.label}
                   value={field.value}
                   mono={field.mono}
+                  copyable={field.copyable}
+                  className={field.copyable ? 'w-full' : undefined}
                 />
               ))}
             </DetailTable>
-          ) : null}
-          {diagnostics.length > 0 ? (
-            <details className="group rounded-card border border-border bg-subtle/60">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-meta font-medium text-secondary marker:content-none [&::-webkit-details-marker]:hidden">
-                <span>{t('connections.list.more')}</span>
-                <ChevronDown className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180" aria-hidden />
-              </summary>
-              <div className="border-t border-border px-3 py-3">
-                <DetailTable>
-                  {diagnostics.map((field) => (
-                    <DetailRow
-                      key={`${field.label}:${field.value}`}
-                      label={field.label}
-                      value={field.value}
-                      mono={field.mono}
-                      copyable={field.copyable}
-                      className={field.copyable ? 'w-full' : undefined}
-                    />
-                  ))}
-                </DetailTable>
-              </div>
-            </details>
-          ) : null}
-        </TicketDetailSection>
+          </div>
+        </details>
       ) : null}
     </div>
   );
@@ -674,12 +652,14 @@ function QuotaDetailRow({
     <DetailTableRow label={label}>
       <DetailTableCell>
         <div className="flex min-w-0 flex-col gap-1">
-          <QuotaBar label={label} pct={pct} compact showLabel={false} />
+          <div className="flex min-w-0 items-center gap-2">
+            <QuotaBar label={label} pct={pct} compact showLabel={false} />
+            {resetIn ? (
+              <span className="shrink-0 whitespace-nowrap text-meta text-muted">{resetIn}</span>
+            ) : null}
+          </div>
           {children}
         </div>
-      </DetailTableCell>
-      <DetailTableCell className="whitespace-nowrap text-meta text-muted">
-        {resetIn}
       </DetailTableCell>
     </DetailTableRow>
   );

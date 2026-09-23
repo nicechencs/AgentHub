@@ -2,7 +2,8 @@
 
 use agenthub_core::services::{
     list_mcp_catalog as list_mcp_catalog_impl, list_mcp_inventory as list_mcp_inventory_impl,
-    probe_mcp_server as probe_mcp_server_impl, set_mcp_server_enabled as set_mcp_server_enabled_impl,
+    probe_mcp_server as probe_mcp_server_impl,
+    set_mcp_server_enabled as set_mcp_server_enabled_impl,
     upsert_mcp_server as upsert_mcp_server_impl, McpCatalogEntry, McpInventory, McpProbeResult,
     McpServerSpec, McpWriteResult,
 };
@@ -26,14 +27,19 @@ pub async fn list_mcp_catalog() -> Result<Vec<McpCatalogEntry>, String> {
 /// Invoke: `probe_mcp_server` — stdio PATH / HTTP connect check (no OAuth).
 #[tauri::command]
 pub async fn probe_mcp_server(spec: McpServerSpec) -> Result<McpProbeResult, String> {
-    tauri::async_runtime::spawn_blocking(move || probe_mcp_server_impl(&spec).map_err(|e| e.to_string()))
-        .await
-        .map_err(|e| format!("probe_mcp_server join error: {e}"))?
+    tauri::async_runtime::spawn_blocking(move || {
+        probe_mcp_server_impl(&spec).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("probe_mcp_server join error: {e}"))?
 }
 
 /// Invoke: `upsert_mcp_server` — write MCP into a supported Agent config.
 #[tauri::command]
-pub async fn upsert_mcp_server(agent: String, spec: McpServerSpec) -> Result<McpWriteResult, String> {
+pub async fn upsert_mcp_server(
+    agent: String,
+    spec: McpServerSpec,
+) -> Result<McpWriteResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let agent = parse_agent(&agent)?;
         upsert_mcp_server_impl(agent, &spec).map_err(|e| e.to_string())

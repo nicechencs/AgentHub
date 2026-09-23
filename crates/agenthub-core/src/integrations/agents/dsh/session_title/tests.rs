@@ -91,7 +91,13 @@ fn keeps_only_real_titles_and_ignores_unknown_sessions() {
     let dir = session_dir(&home.path().join("sessions"), "--c--demo--", "session-a");
     write_log(&dir, "session.v1.jsonl", &[FALLBACK_ROW]);
 
-    assert_eq!(DshSessionTitle.title_for(home.path(), "session-a").unwrap(), None);
-    assert_eq!(DshSessionTitle.title_for(home.path(), "session-b").unwrap(), None);
+    assert_eq!(
+        DshSessionTitle.title_for(home.path(), "session-a").unwrap(),
+        None
+    );
+    assert_eq!(
+        DshSessionTitle.title_for(home.path(), "session-b").unwrap(),
+        None
+    );
     assert_eq!(DshSessionTitle.title_for(home.path(), "").unwrap(), None);
 }

@@ -2521,7 +2521,12 @@ fn build_session(
     build_session_from_meta(agent, home, path, project_id, meta, encoded_dir)
 }
 
-fn title_from(title: Option<&str>, preview: Option<&str>, cwd: Option<&str>, path: &Path) -> String {
+fn title_from(
+    title: Option<&str>,
+    preview: Option<&str>,
+    cwd: Option<&str>,
+    path: &Path,
+) -> String {
     if let Some(p) = title {
         let t = p.trim();
         if !t.is_empty() {

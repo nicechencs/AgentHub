@@ -13,7 +13,8 @@ use crate::integrations::agents::codex::leftover::{
 use crate::models::AgentId;
 use crate::platform::AgentKey;
 use crate::services::adapter_route_constants::{
-    normalized_http_host, OPENAI_API_ENDPOINT_NEEDLE, OPENROUTER_API_ENDPOINT_NEEDLE,
+    normalized_http_host, OPENAI_API_ENDPOINT_NEEDLE, OPENAI_API_KEY_ENV,
+    OPENROUTER_API_ENDPOINT_NEEDLE,
 };
 use crate::utils::atomic::{atomic_write, with_restored_files};
 use crate::utils::loopback::is_loopback_base_url;
@@ -54,7 +55,9 @@ impl CodexConfigProjector {
                     "OpenAI API Key",
                     ConfigValueType::Secret,
                     false,
-                    Some("auth.json OPENAI_API_KEY (not stored in config.toml)"),
+                    Some(&format!(
+                        "auth.json {OPENAI_API_KEY_ENV} (not stored in config.toml)"
+                    )),
                     crate::platform::config::AUTH_OPENAI_API_KEY_STORAGE,
                 ),
                 field(
@@ -183,7 +186,7 @@ impl CodexConfigProjector {
         }
         let v: Value = serde_json::from_str(&text)
             .map_err(|e| AppError::InvalidArg(format!("invalid Codex auth.json: {e}")))?;
-        Ok(v.get("OPENAI_API_KEY")
+        Ok(v.get(OPENAI_API_KEY_ENV)
             .and_then(|x| x.as_str())
             .map(str::trim)
             .filter(|s| !s.is_empty())
@@ -485,7 +488,7 @@ impl AgentConfigProjector for CodexConfigProjector {
         };
         let api_key = base_raw
             .and_then(|v| v.get("auth"))
-            .and_then(|a| a.get("OPENAI_API_KEY"))
+            .and_then(|a| a.get(OPENAI_API_KEY_ENV))
             .and_then(|v| v.as_str());
         let current_values = Self::extract(&doc, api_key);
         let merged = Self::merge_toml(doc, &current_values, desired)?;
@@ -497,16 +500,16 @@ impl AgentConfigProjector for CodexConfigProjector {
             if !secret_unchanged(Some(&key)) {
                 out.as_object_mut()
                     .unwrap()
-                    .insert("auth".into(), json!({ "OPENAI_API_KEY": key.trim() }));
+                    .insert("auth".into(), json!({ (OPENAI_API_KEY_ENV): key.trim() }));
             } else if let Some(prev) = api_key.filter(|s| !s.is_empty()) {
                 out.as_object_mut()
                     .unwrap()
-                    .insert("auth".into(), json!({ "OPENAI_API_KEY": prev }));
+                    .insert("auth".into(), json!({ (OPENAI_API_KEY_ENV): prev }));
             }
         } else if let Some(prev) = api_key.filter(|s| !s.is_empty()) {
             out.as_object_mut()
                 .unwrap()
-                .insert("auth".into(), json!({ "OPENAI_API_KEY": prev }));
+                .insert("auth".into(), json!({ (OPENAI_API_KEY_ENV): prev }));
         }
         Ok(out)
     }

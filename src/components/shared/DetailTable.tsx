@@ -20,7 +20,7 @@ export function DetailTable({
 }) {
   return (
     <DetailTableContext.Provider value={true}>
-      <table className={cn('w-full border-collapse text-body', className)} data-detail-table="">
+      <table className={cn('w-full max-w-full table-fixed border-collapse text-body', className)} data-detail-table="">
         <tbody>{children}</tbody>
       </table>
     </DetailTableContext.Provider>
@@ -33,7 +33,7 @@ export function DetailTableRow({
   className,
 }: {
   label?: React.ReactNode;
-  children: React.ReactNode;
+  children?: React.ReactNode;
   className?: string;
 }) {
   return (
@@ -41,7 +41,7 @@ export function DetailTableRow({
       {label !== undefined ? (
         <th
           scope="row"
-          className="w-[1%] whitespace-nowrap py-1 pr-3 text-left align-top text-meta font-normal text-muted"
+          className="w-[9.5rem] max-w-[40%] overflow-hidden break-words py-1.5 pr-3 text-left align-top text-meta font-normal text-muted"
         >
           {label}
         </th>
@@ -62,7 +62,7 @@ export function DetailTableCell({
 }) {
   return (
     <td
-      className={cn('min-w-0 py-1 align-top text-secondary', className)}
+      className={cn('min-w-0 py-1.5 align-top text-secondary', className)}
       colSpan={colSpan}
     >
       {children}

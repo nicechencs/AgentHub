@@ -37,6 +37,7 @@ import {
   type ChatStarterCopyKey,
 } from './chat-actions';
 import { emptyStarterChipHint, emptyTranscriptCopy } from './chat-empty-state';
+import type { TurnEditFile } from './chat-edit-preview';
 import { ChatMessageBubble } from './ChatMessageBubble';
 import { ChatOutlineRail } from './ChatOutlineRail';
 import { useChatOutlineEnabled, useOutlinePanelWidth } from './use-chat-outline';
@@ -50,16 +51,16 @@ export function ChatTranscript({
   messagesError,
   onRetryMessages,
   sending,
-  retryDisabled,
   scrollRef,
   bottomRef,
   onScroll,
-  onRetry,
-  hideLastTurnRetry = false,
   onOpenLocal,
   onOpenProcess,
   onCloseProcess,
   inspectProcess = null,
+  selectedEditPath = '',
+  selectedEditTurn,
+  onSelectEdit,
   onPickStarter,
   firstBlocker = null,
   onBlockerAction,
@@ -75,16 +76,16 @@ export function ChatTranscript({
   messagesError?: unknown;
   onRetryMessages?: () => void;
   sending: boolean;
-  retryDisabled: boolean;
   scrollRef: RefObject<HTMLDivElement>;
   bottomRef: RefObject<HTMLDivElement>;
   onScroll: () => void;
-  onRetry: () => void;
-  hideLastTurnRetry?: boolean;
   onOpenLocal?: (path: string, options?: MarkdownOpenLocalOptions) => boolean;
-  onOpenProcess?: (turn: number, agent: AgentKey) => void;
+  onOpenProcess?: (turn: number, agent: AgentKey, stepKey: string) => void;
   onCloseProcess?: () => void;
   inspectProcess?: ChatProcessInspectTarget | null;
+  selectedEditPath?: string;
+  selectedEditTurn?: number;
+  onSelectEdit?: (file: TurnEditFile, turn: number) => void;
   onPickStarter?: (action: ChatActionDef) => void;
   firstBlocker?: ChatSendBlocker | null;
   onBlockerAction?: (target: ChatBlockerPrimaryTarget) => void;
@@ -105,12 +106,10 @@ export function ChatTranscript({
 
   if (!active) return <div className="min-h-0 flex-1" />;
 
-  const lastTurn = turns[turns.length - 1]?.turn;
-
   return (
     <div
       ref={outlinePanel.assignRef}
-      className="relative flex min-h-0 flex-1 flex-col"
+      className="relative flex min-h-0 flex-1 flex-col overflow-visible"
       data-chat-outline-host
     >
       <div
@@ -153,11 +152,6 @@ export function ChatTranscript({
                       <ChatMessageBubble
                         key={g.user.id}
                         message={g.user}
-                        isLastTurn={g.turn === lastTurn}
-                        multiAgent={g.agents.length > 1}
-                        retryDisabled={retryDisabled || sending}
-                        onRetry={onRetry}
-                        hideRetry={hideLastTurnRetry}
                         localBasePath={active.cwd ?? undefined}
                         onOpenLocal={onOpenLocal}
                       />
@@ -167,23 +161,25 @@ export function ChatTranscript({
                     )}
                     {g.agents.map((m) => {
                       const agent = m.agentId ?? 'claude';
+                      const processPaneOpen = Boolean(
+                        inspectProcess
+                        && inspectProcess.turn === m.turn
+                        && inspectProcess.agent === agent,
+                      );
                       return (
                         <ChatMessageBubble
                           key={m.id}
                           message={m}
                           process={processMap[processKey(m.turn, agent)]}
-                          isLastTurn={g.turn === lastTurn}
-                          multiAgent={g.agents.length > 1}
-                          retryDisabled={retryDisabled || sending}
-                          onRetry={onRetry}
-                          hideRetry={hideLastTurnRetry}
                           localBasePath={active.cwd ?? undefined}
                           onOpenLocal={onOpenLocal}
                           onOpenProcess={onOpenProcess}
                           onCloseProcess={onCloseProcess}
-                          processPaneOpen={
-                            inspectProcess?.turn === m.turn && inspectProcess.agent === agent
-                          }
+                          processPaneOpen={processPaneOpen}
+                          selectedStepKey={processPaneOpen ? (inspectProcess?.stepKey ?? null) : null}
+                          selectedEditPath={selectedEditPath}
+                          selectedEditTurn={selectedEditTurn}
+                          onSelectEdit={onSelectEdit}
                         />
                       );
                     })}

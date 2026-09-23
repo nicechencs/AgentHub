@@ -1,21 +1,12 @@
-import { useEffect, useState } from 'react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { AgentThinking } from '@/components/shared/AgentThinking';
 import { CopyTextButton } from '@/components/shared/CopyTextButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { MarkdownView, type MarkdownOpenLocalOptions } from '@/components/shared/MarkdownView';
-import { Button } from '@/components/ui/button';
-import { Hint } from '@/components/ui/tooltip';
 import { agentDisplayName } from '@/config/agents';
 import {
-  formatProcessHeadline,
   formatTurnUsageFooter,
-  hasInspectableProcess,
-  latestThinkingStep,
-  phaseFromMessageStatus,
-  showBubbleThinkingBar,
-  thinkingElapsedMs,
-  timelineHasToolRow,
+  transcriptTimelineSteps,
 } from '@/lib/chat-process';
 import type { AgentProcessView } from '@/lib/chat-process';
 import type { AgentKey, ChatMessage } from '@/lib/types';
@@ -25,37 +16,36 @@ import {
   localizeChatFailure,
   looksLikeChatProtocolDump,
   sanitizeCliChatText,
-  thinkingChromeLabel,
 } from './chat-format';
+import type { TurnEditFile } from './chat-edit-preview';
 import { messageStatusLabel } from './chat-model';
+import { ChatTurnProcessList } from './ChatTurnProcessList';
 import { streamingActivity, streamingPlaceholderKey } from './chat-streaming';
 
 export function ChatMessageBubble({
   message,
   process,
-  isLastTurn,
-  multiAgent,
-  retryDisabled,
-  onRetry,
-  hideRetry = false,
   localBasePath,
   onOpenLocal,
   onOpenProcess,
   onCloseProcess,
   processPaneOpen = false,
+  selectedStepKey = null,
+  selectedEditPath = '',
+  selectedEditTurn,
+  onSelectEdit,
 }: {
   message: ChatMessage;
   process?: AgentProcessView;
-  isLastTurn: boolean;
-  multiAgent: boolean;
-  retryDisabled: boolean;
-  onRetry: () => void;
-  hideRetry?: boolean;
   localBasePath?: string;
   onOpenLocal?: (path: string, options?: MarkdownOpenLocalOptions) => boolean;
-  onOpenProcess?: (turn: number, agent: AgentKey) => void;
+  onOpenProcess?: (turn: number, agent: AgentKey, stepKey: string) => void;
   onCloseProcess?: () => void;
   processPaneOpen?: boolean;
+  selectedStepKey?: string | null;
+  selectedEditPath?: string;
+  selectedEditTurn?: number;
+  onSelectEdit?: (file: TurnEditFile, turn: number) => void;
 }) {
   if (message.role === 'user') {
     return (
@@ -66,16 +56,15 @@ export function ChatMessageBubble({
     <AgentBubble
       message={message}
       process={process}
-      isLastTurn={isLastTurn}
-      multiAgent={multiAgent}
-      retryDisabled={retryDisabled}
-      onRetry={onRetry}
-      hideRetry={hideRetry}
       localBasePath={localBasePath}
       onOpenLocal={onOpenLocal}
       onOpenProcess={onOpenProcess}
       onCloseProcess={onCloseProcess}
       processPaneOpen={processPaneOpen}
+      selectedStepKey={selectedStepKey}
+      selectedEditPath={selectedEditPath}
+      selectedEditTurn={selectedEditTurn}
+      onSelectEdit={onSelectEdit}
     />
   );
 }
@@ -110,29 +99,27 @@ function UserBubble({
 function AgentBubble({
   message,
   process,
-  isLastTurn,
-  multiAgent,
-  retryDisabled,
-  onRetry,
-  hideRetry,
   localBasePath,
   onOpenLocal,
   onOpenProcess,
   onCloseProcess,
   processPaneOpen,
+  selectedStepKey,
+  selectedEditPath,
+  selectedEditTurn,
+  onSelectEdit,
 }: {
   message: ChatMessage;
   process?: AgentProcessView;
-  isLastTurn: boolean;
-  multiAgent: boolean;
-  retryDisabled: boolean;
-  onRetry: () => void;
-  hideRetry: boolean;
   localBasePath?: string;
   onOpenLocal?: (path: string, options?: MarkdownOpenLocalOptions) => boolean;
-  onOpenProcess?: (turn: number, agent: AgentKey) => void;
+  onOpenProcess?: (turn: number, agent: AgentKey, stepKey: string) => void;
   onCloseProcess?: () => void;
   processPaneOpen: boolean;
+  selectedStepKey: string | null;
+  selectedEditPath: string;
+  selectedEditTurn?: number;
+  onSelectEdit?: (file: TurnEditFile, turn: number) => void;
 }) {
   const { t } = useI18n();
   const agent = message.agentId ?? 'claude';
@@ -158,38 +145,19 @@ function AgentBubble({
   const running = message.status === 'running';
   const hasContent = Boolean(displayContent);
   const resolvedStatus = looksFailed && message.status === 'ok' ? 'failed' : message.status;
-  const effectivePhase = process
-    ? resolvedStatus && resolvedStatus !== 'running'
-      ? phaseFromMessageStatus(resolvedStatus)
-      : process.phase
-    : running
-      ? 'running'
-      : null;
-  const thinking = latestThinkingStep(process?.steps);
-  const showThinkingBar = showBubbleThinkingBar(process?.steps, hasContent);
-  const showProcessChip = Boolean(onOpenProcess) && (
-    running || Boolean(process && hasInspectableProcess(process))
-  ) && (!showThinkingBar || timelineHasToolRow(process?.steps));
-  const processHeadline = showProcessChip
-    ? process && effectivePhase
-      ? formatProcessHeadline(process.steps, effectivePhase, t)
-      : messageStatusLabel(t, resolvedStatus, process, hasContent) ?? t('chat.process.summaryGenerating')
-    : '';
-  const statusText = (hideRetry && looksFailed) || showProcessChip || showThinkingBar
+  const hasTimeline = transcriptTimelineSteps(process?.steps).length > 0;
+  const showProcessList = Boolean(onOpenProcess) && (
+    running || hasTimeline
+  );
+  const terminalFailure =
+    resolvedStatus === 'failed' ||
+    resolvedStatus === 'cancelled' ||
+    resolvedStatus === 'timeout';
+  const statusText = showProcessList && !terminalFailure
     ? null
     : messageStatusLabel(t, resolvedStatus, process, hasContent);
   const activity = running ? streamingActivity(process, hasContent) : null;
-  const showRetry = isLastTurn && looksFailed && !hideRetry;
   const usageText = formatTurnUsageFooter(process?.steps, running, t);
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!showThinkingBar || thinking?.done) return;
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, [showThinkingBar, thinking?.done]);
-  const thinkingLabel = thinking
-    ? thinkingChromeLabel(Boolean(thinking.done), thinkingElapsedMs(process, now), t)
-    : '';
 
   return (
     <div id={`chat-msg-${message.id}`} className="group flex min-w-0 gap-3">
@@ -199,63 +167,21 @@ function AgentBubble({
           <span className="font-medium text-secondary">{agentDisplayName(agent)}</span>
           {statusText ? <span>{statusText}</span> : null}
           {message.durationMs > 0 && <span>{formatDurationMs(message.durationMs)}</span>}
-          {showRetry && (
-            <Hint
-              label={
-                multiAgent ? t('chat.bubble.retryAllHint') : undefined
-              }
-            >
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={retryDisabled}
-                onClick={onRetry}
-              >
-                {t('chat.bubble.retry')}
-              </Button>
-            </Hint>
-          )}
         </div>
-        {showThinkingBar && thinkingLabel ? (
-          <button
-            type="button"
-            className="mb-1 inline-flex max-w-full items-center gap-1 rounded-btn px-1 py-0.5 text-left text-meta text-secondary hover:bg-hover hover:text-primary"
-            data-help="chat-thinking-bar"
-            aria-expanded={processPaneOpen}
-            disabled={!onOpenProcess}
-            onClick={() => {
-              if (!onOpenProcess) return;
-              if (processPaneOpen) onCloseProcess?.();
-              else onOpenProcess(message.turn, agent);
-            }}
-          >
-            <span className="shrink-0" aria-hidden>
-              {processPaneOpen ? '▾' : '▸'}
-            </span>
-            {thinking?.done ? (
-              <span className="min-w-0 truncate">{thinkingLabel}</span>
-            ) : (
-              <AgentThinking label={thinkingLabel} showTimer={false} />
-            )}
-          </button>
-        ) : null}
-        {showProcessChip && processHeadline && onOpenProcess ? (
-          <button
-            type="button"
-            className="mb-1 inline-flex max-w-full items-center gap-1 rounded-btn px-1 py-0.5 text-left text-meta text-secondary hover:bg-hover hover:text-primary"
-            data-help="chat-process-chip"
-            aria-expanded={processPaneOpen}
-            onClick={() => {
-              if (processPaneOpen) onCloseProcess?.();
-              else onOpenProcess(message.turn, agent);
-            }}
-          >
-            <span className="shrink-0" aria-hidden>
-              {processPaneOpen ? '▾' : '▸'}
-            </span>
-            <span className="min-w-0 truncate">{processHeadline}</span>
-          </button>
+        {showProcessList ? (
+          <ChatTurnProcessList
+            process={process}
+            turn={message.turn}
+            agent={agent}
+            running={running}
+            processPaneOpen={processPaneOpen}
+            selectedStepKey={selectedStepKey}
+            selectedEditPath={selectedEditPath}
+            selectedEditTurn={selectedEditTurn}
+            onOpenProcess={onOpenProcess}
+            onCloseProcess={onCloseProcess}
+            onSelectEdit={onSelectEdit}
+          />
         ) : null}
         <div
           className="min-w-0 overflow-hidden text-body leading-relaxed text-primary"
@@ -271,10 +197,13 @@ function AgentBubble({
               />
               {running ? <span className="chat-stream-caret" aria-hidden /> : null}
             </div>
-          ) : running && !showThinkingBar ? (
+          ) : running && !hasTimeline ? (
             <AgentThinking label={t(streamingPlaceholderKey(process))} />
           ) : !running ? (
-            <span className="text-muted">{displayError || t('chat.bubble.noOutput')}</span>
+            <span className="text-muted">
+              {displayError
+                || (cancelledPlaceholder ? t('chat.turnOutcome.cancelledHint') : t('chat.bubble.noOutput'))}
+            </span>
           ) : null}
           {displayError && (looksFailed || message.status !== 'ok') && displayContent && (
             <p className="mt-2 text-body leading-relaxed text-danger">{displayError}</p>

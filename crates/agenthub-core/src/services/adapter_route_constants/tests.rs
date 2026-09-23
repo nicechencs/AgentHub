@@ -414,3 +414,58 @@ fn malformed_or_ambiguous_toml_does_not_fall_back_to_a_provider() {
     assert!(openai_compat_base_url(&malformed).is_none());
     assert!(!is_openai_api_marker(Some("openai"), &malformed));
 }
+
+#[test]
+fn published_and_declared_rule_ids_stay_unique_and_aligned() {
+    fn duplicates(ids: &[&str]) -> Vec<String> {
+        let mut seen = std::collections::BTreeSet::new();
+        let mut dupes = Vec::new();
+        for id in ids {
+            if !seen.insert(*id) {
+                dupes.push((*id).to_owned());
+            }
+        }
+        dupes
+    }
+
+    let published_dupes = duplicates(PUBLISHED_ROUTE_RULE_IDS);
+    assert!(
+        published_dupes.is_empty(),
+        "PUBLISHED_ROUTE_RULE_IDS duplicates: {published_dupes:?}"
+    );
+    let declared_dupes = duplicates(DECLARED_ROUTE_RULE_IDS);
+    assert!(
+        declared_dupes.is_empty(),
+        "DECLARED_ROUTE_RULE_IDS duplicates: {declared_dupes:?}"
+    );
+    for id in PUBLISHED_ROUTE_RULE_IDS {
+        assert!(
+            DECLARED_ROUTE_RULE_IDS.contains(id),
+            "{id} is published but missing from DECLARED_ROUTE_RULE_IDS"
+        );
+    }
+    assert!(
+        DECLARED_ROUTE_RULE_IDS.contains(&CODEX_CODEX_RULE_ID),
+        "CODEX_CODEX_RULE_ID must stay declared"
+    );
+    assert!(
+        !PUBLISHED_ROUTE_RULE_IDS.contains(&CODEX_CODEX_RULE_ID),
+        "CODEX_CODEX_RULE_ID is an account switch and must not be published"
+    );
+    assert!(
+        DECLARED_ROUTE_RULE_IDS.contains(&CLAUDE_CODEX_RULE_ID),
+        "CLAUDE_CODEX_RULE_ID must stay declared"
+    );
+    assert!(
+        !PUBLISHED_ROUTE_RULE_IDS.contains(&CLAUDE_CODEX_RULE_ID),
+        "CLAUDE_CODEX_RULE_ID is not applyable yet"
+    );
+    assert!(
+        DECLARED_ROUTE_RULE_IDS.contains(&CODEX_CLAUDE_APP_SERVER_RULE_ID),
+        "CODEX_CLAUDE_APP_SERVER_RULE_ID must stay declared"
+    );
+    assert!(
+        !PUBLISHED_ROUTE_RULE_IDS.contains(&CODEX_CLAUDE_APP_SERVER_RULE_ID),
+        "CODEX_CLAUDE_APP_SERVER_RULE_ID is a closed candidate"
+    );
+}

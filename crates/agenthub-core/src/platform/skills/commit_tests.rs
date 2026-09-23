@@ -936,7 +936,9 @@ fn install_skill_service_from_zip_with_single_top_level_dir() {
     let (_db_dir, db) = tmp_db();
     let svc = SkillService::with_db(skills_root.clone(), reg, db.clone());
 
-    let skill = svc.install_skill(zip_path.to_str().unwrap(), false).unwrap();
+    let skill = svc
+        .install_skill(zip_path.to_str().unwrap(), false)
+        .unwrap();
     assert_eq!(skill.id, "qa-zip-pkg");
     assert_eq!(skill.name, "Zip Demo");
     assert!(skills_root.join("qa-zip-pkg").join("SKILL.md").is_file());

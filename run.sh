@@ -68,7 +68,8 @@ read_dev_port() {
   if [[ "$port" =~ ^[0-9]+$ ]]; then
     printf '%s\n' "$port"
   else
-    printf '5173\n'
+    printf '[ERROR] Could not read port from scripts/dev-runtime.json\n' >&2
+    return 1
   fi
 }
 
@@ -144,7 +145,7 @@ collect_dev_pids() {
 
 stop_dev_processes() {
   local port pid still
-  port="$(read_dev_port)"
+  port="$(read_dev_port)" || fail "Could not read port from scripts/dev-runtime.json"
   info "Stopping leftover AgentHub desktop/dev processes (port $port)..."
   collect_dev_pids "$port"
   if [[ ${#PIDS[@]} -eq 0 ]]; then

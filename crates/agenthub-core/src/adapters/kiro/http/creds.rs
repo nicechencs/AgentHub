@@ -75,7 +75,12 @@ impl KiroHttpRouteParams {
         );
         let oidc = pointer_string(
             credentials,
-            &["/client_id", "/clientId", "/body/client_id", "/body/clientId"],
+            &[
+                "/client_id",
+                "/clientId",
+                "/body/client_id",
+                "/body/clientId",
+            ],
         )
         .is_some()
             && pointer_string(
@@ -88,13 +93,14 @@ impl KiroHttpRouteParams {
                 ],
             )
             .is_some();
-        let origin = pointer_string(credentials, &["/origin", "/body/origin"]).unwrap_or_else(|| {
-            if oidc {
-                "KIRO_CLI".into()
-            } else {
-                "AI_EDITOR".into()
-            }
-        });
+        let origin =
+            pointer_string(credentials, &["/origin", "/body/origin"]).unwrap_or_else(|| {
+                if oidc {
+                    "KIRO_CLI".into()
+                } else {
+                    "AI_EDITOR".into()
+                }
+            });
         Self {
             region,
             profile_arn,

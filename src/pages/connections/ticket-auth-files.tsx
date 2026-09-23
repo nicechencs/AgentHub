@@ -64,22 +64,19 @@ export function TicketAuthFiles({
   };
 
   return (
-    <section className="space-y-1.5">
-      <h3 className="text-sm font-medium">{t('connections.list.authFilesTitle')}</h3>
-      <ul className="flex flex-col gap-2">
-        {files.map((file) => (
-          <li key={file.name}>
-            <ConfigFileCard
-              name={file.name}
-              path={resolveCredentialFilePath(file.name, livePaths, agentId)}
-              content={file.content}
-              copyLabel={t('connections.list.copyFile')}
-              opening={opening === file.name}
-              onOpen={() => void openFile(file.name)}
-            />
-          </li>
-        ))}
-      </ul>
-    </section>
+    <ul className="flex min-w-0 flex-col gap-2">
+      {files.map((file) => (
+        <li key={file.name} className="min-w-0">
+          <ConfigFileCard
+            name={file.name}
+            path={resolveCredentialFilePath(file.name, livePaths, agentId)}
+            content={file.content}
+            copyLabel={t('connections.list.copyFile')}
+            opening={opening === file.name}
+            onOpen={() => void openFile(file.name)}
+          />
+        </li>
+      ))}
+    </ul>
   );
 }

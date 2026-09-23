@@ -42,10 +42,9 @@ pub(crate) fn is_log_file(path: &Path) -> bool {
         return true;
     }
     // Generations are `session.vN.jsonl`; nothing else is a primary transcript.
-    stem.strip_prefix("session.v")
-        .is_some_and(|generation| {
-            !generation.is_empty() && generation.chars().all(|c| c.is_ascii_digit())
-        })
+    stem.strip_prefix("session.v").is_some_and(|generation| {
+        !generation.is_empty() && generation.chars().all(|c| c.is_ascii_digit())
+    })
 }
 
 /// Session id of a DSH log path: `…/--<cwd>--/<session-id>/session.vN.jsonl[.zstd]`.

@@ -20,7 +20,10 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
 
-use crate::catalog::limits::DEFAULT_LOG_RETENTION_DAYS as DEFAULT_RETENTION_DAYS;
+use crate::catalog::limits::{
+    DEFAULT_LOG_RETENTION_DAYS as DEFAULT_RETENTION_DAYS,
+    MAX_LOG_RETENTION_DAYS as MAX_RETENTION_DAYS, MIN_LOG_RETENTION_DAYS as MIN_RETENTION_DAYS,
+};
 use crate::error::{AppError, Result};
 use crate::utils::paths::{db_path, ensure_data_layout, logs_dir, resolve_data_dir};
 use crate::utils::redact::redact_text;
@@ -52,8 +55,6 @@ pub mod targets {
 }
 
 const DEFAULT_LEVEL: &str = "info";
-const MIN_RETENTION_DAYS: u32 = 1;
-const MAX_RETENTION_DAYS: u32 = 365;
 const LOG_FILENAME_PREFIX: &str = "agenthub";
 const LOG_FILENAME_SUFFIX: &str = "log";
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pathTailLabel, splitFileLabel } from './file-name-label';
+import { pathTailLabel, previewHeaderParts, splitFileLabel } from './file-name-label';
 
 describe('splitFileLabel', () => {
   it('keeps one line: directory prefix + file name', () => {
@@ -36,6 +36,27 @@ describe('splitFileLabel', () => {
     expect(pathTailLabel('D:\\demo\\chen\\2026\\AgentHub', 3)).toBe('…\\chen\\2026\\AgentHub');
     expect(pathTailLabel('')).toBe('');
     expect(pathTailLabel('   ')).toBe('');
+  });
+
+  it('keeps the filename first and a tail-first directory for preview chrome', () => {
+    expect(previewHeaderParts('/workspace/qa-codex-filechange-scratch/probe.txt')).toEqual({
+      fileName: 'probe.txt',
+      directory: '/workspace/qa-codex-filechange-scratch/',
+      directoryLabel: '…/qa-codex-filechange-scratch',
+      fullPath: '/workspace/qa-codex-filechange-scratch/probe.txt',
+    });
+    expect(previewHeaderParts('D:\\demo\\chen\\2026\\AgentHub\\src\\app.ts', 'app.ts')).toEqual({
+      fileName: 'app.ts',
+      directory: 'D:\\demo\\chen\\2026\\AgentHub\\src\\',
+      directoryLabel: '…\\src',
+      fullPath: 'D:\\demo\\chen\\2026\\AgentHub\\src\\app.ts',
+    });
+    expect(previewHeaderParts('README.md')).toEqual({
+      fileName: 'README.md',
+      directory: '',
+      directoryLabel: '',
+      fullPath: 'README.md',
+    });
   });
 
   it('falls back to the last path segment when the name is missing', () => {

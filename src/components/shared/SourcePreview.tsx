@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
-import CodeMirror from '@uiw/react-codemirror';
+import CodeMirror, { EditorView } from '@uiw/react-codemirror';
+import { copyTextToClipboard } from '@/components/shared/CopyTextButton';
 import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/toast';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import {
   inferSourceFormat,
@@ -49,6 +51,7 @@ export function SourcePreview({
   id,
   highlightLine,
   maxChars,
+  bodyHeight,
 }: {
   value: string;
   format?: SourceFormat | string | null;
@@ -67,8 +70,11 @@ export function SourcePreview({
   highlightLine?: number | null;
   /** Override clip length (chat file preview uses a larger cap). */
   maxChars?: number;
+  /** Fixed scroll height for a resizable snippet. Omit to keep the density cap. */
+  bodyHeight?: number;
 }) {
   const { t } = useI18n();
+  const { toast } = useToast();
   const [copied, setCopied] = useState(false);
   const editorRef = useRef<EditorViewLike | null>(null);
   const format = inferSourceFormat({
@@ -83,7 +89,7 @@ export function SourcePreview({
   const extensions = useMemo(
     () => [
       ...sourcePreviewExtensions(format),
-      ...(fitContent ? [sourcePreviewFitContentTheme] : []),
+      ...(fitContent ? [sourcePreviewFitContentTheme, EditorView.lineWrapping] : []),
     ],
     [format, fitContent],
   );
@@ -112,10 +118,13 @@ export function SourcePreview({
 
   const onCopy = () => {
     if (!displayed.trim()) return;
-    void navigator.clipboard.writeText(displayed).then(() => {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1200);
-    }).catch(() => {});
+    void copyTextToClipboard(displayed).then(
+      () => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1200);
+      },
+      () => toast({ title: t('common.copyFailed'), variant: 'danger' }),
+    );
   };
 
   if (fitContent && readOnly && !displayed.trim()) return null;
@@ -128,6 +137,7 @@ export function SourcePreview({
         density === 'document' && 'h-full border-0 bg-transparent',
         className,
       )}
+      data-source-preview=""
       data-highlight-line={highlightLine ?? undefined}
     >
       {showCopy ? (
@@ -147,11 +157,12 @@ export function SourcePreview({
         </div>
       ) : null}
       <div
+        style={bodyHeight != null ? { height: bodyHeight } : undefined}
         className={cn(
           'overflow-auto',
-          density === 'editor' && 'max-h-80 min-h-24 [&_.cm-editor]:min-h-24',
-          density === 'preview' && 'max-h-64',
-          density === 'compact' && 'max-h-36',
+          bodyHeight == null && density === 'editor' && 'max-h-80 min-h-24 [&_.cm-editor]:min-h-24',
+          bodyHeight == null && density === 'preview' && 'max-h-64',
+          bodyHeight == null && density === 'compact' && 'max-h-36',
           density === 'document' && 'h-full max-h-none',
           density === 'compact' ? '[&_.cm-editor]:leading-snug' : '[&_.cm-editor]:leading-relaxed',
           SOURCE_PREVIEW_CHROME,

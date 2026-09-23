@@ -235,9 +235,8 @@ disabled = true
 fn grok_source_locations_include_config_toml() {
     let locs = source_locations(AgentId::Grok);
     assert!(
-        locs.iter().any(|loc| {
-            loc.path.ends_with("config.toml") && loc.label == "Grok config.toml"
-        }),
+        locs.iter()
+            .any(|loc| { loc.path.ends_with("config.toml") && loc.label == "Grok config.toml" }),
         "expected Grok config.toml, got {:?}",
         locs.iter()
             .map(|loc| (loc.path.display().to_string(), loc.label))

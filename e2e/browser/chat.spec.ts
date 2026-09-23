@@ -153,10 +153,74 @@ test('Stop stays 正在停止 until the mock turn ends', async ({ page }) => {
   await expect(stop).toBeVisible();
   await stop.click();
   await expect(page.getByRole('button', { name: '停止', exact: true })).toHaveCount(0);
-  await expect(page.getByText('已按你的要求停止。可恢复草稿后重发。')).toBeVisible({
+  await expect(page.getByText('已按你的要求停止。可以直接在这场对话里继续发送。')).toBeVisible({
     timeout: 10_000,
   });
   await expect(page.getByRole('main').getByText('已停止', { exact: true })).toBeVisible();
+  await expect(composer).toHaveValue('e2e mock stop');
+});
+
+test('switching thinking and execute keeps the detail pane open', async ({ page }) => {
+  await openApp(page);
+  await openChatComposer(page);
+  await setWorkingDirectory(page);
+
+  const composer = page.getByRole('textbox', { name: '消息输入' });
+  await composer.fill('需要确认');
+  await page.getByRole('button', { name: '发送' }).click();
+
+  const thinking = page.locator('[data-help="chat-thinking-bar"]');
+  const execute = page.locator('[data-help="chat-process-chip"]').filter({ hasText: '正在执行' });
+  await expect(thinking).toBeVisible({ timeout: 15_000 });
+  await expect(execute).toBeVisible();
+
+  const detail = page.locator('[data-help="chat-process-inspect"]');
+  await thinking.click();
+  await expect(detail).toBeVisible();
+  await expect(thinking).toHaveAttribute('aria-expanded', 'true');
+  const thinkingBody = detail.locator('[data-help="chat-process-thinking"] [style*="height"]');
+  await expect(thinkingBody).toBeVisible();
+  await expect(detail.getByRole('separator', { name: '拖动调整思考高度' })).toBeVisible();
+
+  await execute.click();
+  await expect(detail).toBeVisible();
+  await expect(execute).toHaveAttribute('aria-expanded', 'true');
+  await expect(thinking).toHaveAttribute('aria-expanded', 'false');
+  await expect(detail.locator('[data-process-step-active="true"]')).toContainText('正在执行');
+
+  await thinking.click();
+  await expect(detail).toBeVisible();
+  await expect(thinking).toHaveAttribute('aria-expanded', 'true');
+  await expect(execute).toHaveAttribute('aria-expanded', 'false');
+
+  await thinking.click();
+  await expect(detail).toHaveCount(0);
+});
+
+test('code detail highlights keywords apart from comments', async ({ page }) => {
+  await openApp(page);
+  await openChatComposer(page);
+  await setWorkingDirectory(page);
+
+  const composer = page.getByRole('textbox', { name: '消息输入' });
+  await composer.fill('看源码');
+  await page.getByRole('button', { name: '发送' }).click();
+  await page.getByRole('link', { name: '源码行高亮' }).click({ timeout: 15_000 });
+
+  const keyword = page.locator('.cm-content span').filter({ hasText: /^export$/ });
+  const comment = page.locator('.cm-content span').filter({ hasText: 'mock preview' });
+  await expect(keyword).toBeVisible({ timeout: 15_000 });
+  await expect(comment).toBeVisible();
+  await expect(page.locator('.cm-lineNumbers')).toBeVisible();
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  const preview = page.locator('[data-chat-file-preview]');
+  await preview.getByRole('button', { name: '复制', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('export function hello');
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied.startsWith('// mock preview')).toBe(true);
+  const keywordColor = await keyword.evaluate((el) => getComputedStyle(el).color);
+  const commentColor = await comment.evaluate((el) => getComputedStyle(el).color);
+  expect(keywordColor).not.toBe(commentColor);
 });
 
 test('shortcut overview opens from the composer and lists new-chat keys', async ({ page }) => {

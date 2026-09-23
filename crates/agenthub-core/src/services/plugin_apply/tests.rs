@@ -128,7 +128,14 @@ fn grok_lists(path: &Path) -> (Vec<String>, Vec<String>) {
     (field("enabled"), field("disabled"))
 }
 
-fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf, PathBuf, PathBuf) {
+fn fixture() -> (
+    tempfile::TempDir,
+    PathBuf,
+    PathBuf,
+    PathBuf,
+    PathBuf,
+    PathBuf,
+) {
     let dir = tempdir().unwrap();
     let user_home = dir.path().to_path_buf();
     let claude_home = dir.path().join("claude");

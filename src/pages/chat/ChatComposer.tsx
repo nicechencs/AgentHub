@@ -36,9 +36,15 @@ import type { AgentKey, Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { composerNativeEditChord } from './chat-model';
 import {
+  COMPOSER_SEND_SETTLE_MS,
   composerEnterShouldSubmit,
   composerFooterControl,
+  composerIsResidualOfSent,
+  composerLiveSendText,
   composerPrimaryAction,
+  composerQueueableFollowUpText,
+  composerShouldHoldSendLock,
+  composerShouldKeepRestoredSent,
   composerShortcutKind,
   composerShortcutMessageKey,
   composerShouldRestoreFocus,
@@ -73,9 +79,7 @@ import {
   type ChatConnectionPickerView,
   type ChatSendBlocker,
 } from './chat-model';
-import { ChatQueuedFollowUpList } from './ChatQueuedFollowUpList';
 import { chatEffortHint, chatEffortLabel, chatModelDisplayName } from './chat-model-labels';
-import type { QueuedFollowUpItem } from './chat-grok-follow-up';
 
 export function ChatComposer({
   draft,
@@ -99,9 +103,6 @@ export function ChatComposer({
   onSend,
   onSteer,
   onQueueAfterTurn,
-  queuedFollowUps = [],
-  onCancelQueuedFollowUp,
-  onClearQueuedFollowUp,
   onCancel,
   onSelectAgent,
   onSwitchConnection,
@@ -152,12 +153,9 @@ export function ChatComposer({
   walletError?: unknown;
   onRetryWallet?: () => void;
   onRetryStatus?: () => void;
-  onSend: () => void;
-  onSteer?: () => void;
-  onQueueAfterTurn?: () => void;
-  queuedFollowUps?: readonly QueuedFollowUpItem[];
-  onCancelQueuedFollowUp?: (id: string) => void;
-  onClearQueuedFollowUp?: () => void;
+  onSend: (text?: string) => void;
+  onSteer?: (text?: string) => void;
+  onQueueAfterTurn?: (text?: string) => void;
   focusNonce?: number;
   onCancel: () => void;
   onSelectAgent: (id: AgentKey) => void;
@@ -213,6 +211,10 @@ export function ChatComposer({
   const stopTitle = composerStopTitle({ canceling, stopLabel: stopCopy });
   const footerSlotClass = 'h-8 w-8 shrink-0 rounded-full';
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const sentTextRef = useRef<string | null>(null);
+  const sentSettleUntilRef = useRef(0);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const modelMenuDisabled = sending || connectionLocked || switchingProvider || switchingModel;
   const currentEffortHint = currentEffort ? chatEffortHint(currentEffort, t) : null;
@@ -258,13 +260,78 @@ export function ChatComposer({
     if (!composerShouldRestoreFocus({ textareaDisabled })) return;
     textareaRef.current?.focus();
   }, [textareaDisabled]);
+  const clearComposerAfterSubmit = useCallback((submitted: string) => {
+    sentTextRef.current = submitted;
+    sentSettleUntilRef.current = performance.now() + COMPOSER_SEND_SETTLE_MS;
+    setDraft('');
+  }, [setDraft]);
+  const applyDraft = useCallback((next: string) => {
+    const sent = sentTextRef.current;
+    if (sent) {
+      // Parent already restored the sent prompt after stop/failure — keep it.
+      // Read draftRef so a late onChange after setDraft(sent) does not use a stale ''.
+      if (composerShouldKeepRestoredSent({ draft: draftRef.current, sent })) {
+        sentTextRef.current = null;
+        if (composerIsResidualOfSent({ text: next, sent })) return;
+        setDraft(next);
+        return;
+      }
+      const lock = composerShouldHoldSendLock({
+        now: performance.now(),
+        settleUntil: sentSettleUntilRef.current,
+        next,
+        sent,
+      });
+      if (lock.hold) {
+        sentTextRef.current = lock.sent;
+        setDraft('');
+        return;
+      }
+      sentTextRef.current = null;
+      setDraft(lock.draft);
+      return;
+    }
+    setDraft(next);
+  }, [setDraft]);
+  useEffect(() => {
+    const sent = sentTextRef.current;
+    if (!sent) return;
+    // Stop / failure restored the exact submitted prompt. Unlock so the user can edit it.
+    if (composerShouldKeepRestoredSent({ draft, sent })) sentTextRef.current = null;
+  }, [draft]);
   const submitComposer = useCallback(() => {
-    if (action === 'steer') onSteer?.();
-    else if (action === 'queue') onQueueAfterTurn?.();
-    else if (action === 'send') onSend();
+    const live = composerLiveSendText({
+      textareaValue: textareaRef.current?.value,
+      draft,
+    });
+    const payload = live.trim();
+    if (!payload) return;
+    const sent = sentTextRef.current;
+    const settling = sent != null && performance.now() < sentSettleUntilRef.current;
+    if (
+      sent &&
+      composerQueueableFollowUpText({ text: payload, lastSent: sent, settling }) == null
+    ) {
+      const el = textareaRef.current;
+      if (el) el.value = '';
+      clearComposerAfterSubmit(sent);
+      keepComposerFocus();
+      requestAnimationFrame(keepComposerFocus);
+      return;
+    }
+    if (action === 'steer') {
+      clearComposerAfterSubmit(payload);
+      onSteer?.(live);
+    } else if (action === 'queue') {
+      clearComposerAfterSubmit(payload);
+      onQueueAfterTurn?.(live);
+    } else if (action === 'send') {
+      clearComposerAfterSubmit(payload);
+      onSend(live);
+    }
     keepComposerFocus();
     requestAnimationFrame(keepComposerFocus);
-  }, [action, keepComposerFocus, onQueueAfterTurn, onSend, onSteer]);
+  }, [action, clearComposerAfterSubmit, draft, keepComposerFocus, onQueueAfterTurn, onSend, onSteer]);
   const droppedImages = useCallback((files: FileList | null | undefined) => {
     if (!onPasteImages) return false;
     const images = Array.from(files ?? []).filter((file) => file.type.startsWith('image/'));
@@ -355,7 +422,7 @@ export function ChatComposer({
           enterKeyHint="send"
           aria-keyshortcuts="Enter"
           title={hoverHint}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => applyDraft(e.target.value)}
           onInput={syncTextareaHeight}
           onKeyDown={(e) => {
             const edit = composerNativeEditChord({
@@ -413,11 +480,6 @@ export function ChatComposer({
             anchorRef={textareaRef}
           />
         ) : null}
-        <ChatQueuedFollowUpList
-          items={queuedFollowUps}
-          onCancelItem={onCancelQueuedFollowUp}
-          onCancelAll={onClearQueuedFollowUp}
-        />
         <div className="flex items-center justify-between gap-2 px-4 pb-1" data-composer-shortcut="">
           <div className="min-w-0">
             {showHintRow ? (
@@ -426,7 +488,7 @@ export function ChatComposer({
           </div>
           <ChatShortcutsHelp />
         </div>
-        <div className="flex shrink-0 items-center gap-1.5 border-t border-border/50 px-2 py-1.5">
+        <div className="flex shrink-0 items-center gap-1.5 border-t border-border/50 px-3 py-1.5">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button

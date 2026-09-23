@@ -13,8 +13,7 @@ use std::path::Path;
 pub fn zstd_frames(rows: &[&str]) -> Vec<u8> {
     let mut out = Vec::new();
     for row in rows {
-        let mut encoder =
-            zstd::stream::write::Encoder::new(Vec::new(), 3).expect("zstd encoder");
+        let mut encoder = zstd::stream::write::Encoder::new(Vec::new(), 3).expect("zstd encoder");
         encoder.write_all(row.as_bytes()).expect("write row");
         encoder.write_all(b"\n").expect("write newline");
         out.extend_from_slice(&encoder.finish().expect("finish frame"));

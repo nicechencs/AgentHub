@@ -144,13 +144,19 @@ model = "grok-4.6rok-4.6"
 #[test]
 fn collapse_doubled_model_id_halves_exact_concat() {
     assert_eq!(collapse_doubled_model_id("grok-4.6grok-4.6"), "grok-4.6");
-    assert_eq!(collapse_doubled_model_id("  grok-4.6grok-4.6  "), "grok-4.6");
+    assert_eq!(
+        collapse_doubled_model_id("  grok-4.6grok-4.6  "),
+        "grok-4.6"
+    );
     assert_eq!(
         collapse_doubled_model_id("grok-4.6grok-4.6grok-4.6grok-4.6"),
         "grok-4.6"
     );
     assert_eq!(collapse_doubled_model_id("grok-4.6"), "grok-4.6");
-    assert_eq!(collapse_doubled_model_id("grok-4.6rok-4.6"), "grok-4.6rok-4.6");
+    assert_eq!(
+        collapse_doubled_model_id("grok-4.6rok-4.6"),
+        "grok-4.6rok-4.6"
+    );
 }
 
 #[test]

@@ -195,7 +195,6 @@ export function useChatPage() {
     loadMessages,
     draft,
     setDraft,
-    turns,
     getStartExtras: () => startExtrasRef.current,
     clearStartExtras: () => runtimeOpsClearRef.current(),
   });
@@ -728,7 +727,6 @@ export function useChatPage() {
     blockers: send.blockers,
     railGroups,
     filteredCount,
-    retry: send.retry,
     transcriptRef,
     bottomRef,
     onTranscriptScroll,
@@ -750,7 +748,6 @@ export function useChatPage() {
     currentEffort: connection.currentEffort,
     switchingModel: connection.switchingModel,
     handleSend: send.handleSend,
-    retryLast: send.retryLast,
     handleCancel: send.handleCancel,
     queuedFollowUps: send.queuedFollowUps,
     queuedFollowUpCount: send.queuedFollowUpCount,
@@ -777,7 +774,6 @@ export function useChatPage() {
     searchFocusNonce,
     historyRevealNonce,
     firstUserContentById,
-    turnOutcome,
     submitRuntimeRequest: send.submitRuntimeRequest,
     clearSessionAllowAlways: send.clearSessionAllowAlways,
     killHostTerminal: async (terminalId: string) => {

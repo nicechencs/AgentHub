@@ -76,6 +76,7 @@ use std::time::Duration;
 
 use rusqlite::Connection;
 
+use crate::catalog::limits::SQLITE_BUSY_TIMEOUT_MS;
 use crate::error::{AppError, Result};
 use crate::models::AppSettings;
 
@@ -125,7 +126,7 @@ impl Database {
         // rather than trusting a potentially outdated backup.
         {
             let conn = Connection::open(db_path)?;
-            conn.busy_timeout(Duration::from_millis(5000))?;
+            conn.busy_timeout(Duration::from_millis(SQLITE_BUSY_TIMEOUT_MS))?;
             chat_runtime_backup::before_upgrade(&conn, db_path)?;
         }
         for attempt in 0..migrations::MIGRATION_RETRY_ATTEMPTS {
@@ -158,13 +159,13 @@ impl Database {
     fn from_connection(conn: Connection) -> Result<Self> {
         // The C busy handler is what SQLite actually waits on; keep the PRAGMA
         // as well so `PRAGMA busy_timeout` readers observe the same value.
-        conn.busy_timeout(Duration::from_millis(5000))?;
-        conn.execute_batch(
+        conn.busy_timeout(Duration::from_millis(SQLITE_BUSY_TIMEOUT_MS))?;
+        conn.execute_batch(&format!(
             r#"
             PRAGMA foreign_keys = ON;
-            PRAGMA busy_timeout = 5000;
-            "#,
-        )?;
+            PRAGMA busy_timeout = {SQLITE_BUSY_TIMEOUT_MS};
+            "#
+        ))?;
         set_wal_journal_mode(&conn)?;
         let db = Self {
             conn: Arc::new(Mutex::new(conn)),

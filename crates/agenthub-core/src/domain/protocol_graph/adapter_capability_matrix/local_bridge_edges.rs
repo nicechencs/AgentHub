@@ -56,7 +56,7 @@ impl LocalBridgeEdge {
 }
 
 pub const KIMI_CODEX_EDGE: LocalBridgeEdge = LocalBridgeEdge {
-    rule_id: "kimi-membership-to-codex-v1",
+    rule_id: crate::services::adapter_route_constants::KIMI_CODEX_RULE_ID,
     source: AdapterSourceProduct::KimiCodeMembership,
     credential: AdapterCredentialClass::ApiKey,
     transport: AdapterUpstreamTransport::LocalBridgeChatCompletions,
@@ -74,7 +74,7 @@ pub const KIMI_CODEX_EDGE: LocalBridgeEdge = LocalBridgeEdge {
 };
 
 pub const ANTHROPIC_CODEX_EDGE: LocalBridgeEdge = LocalBridgeEdge {
-    rule_id: "anthropic-api-to-codex-v1",
+    rule_id: crate::services::adapter_route_constants::ANTHROPIC_CODEX_RULE_ID,
     source: AdapterSourceProduct::AnthropicApi,
     credential: AdapterCredentialClass::ApiKey,
     transport: AdapterUpstreamTransport::LocalBridgeAnthropicMessages,
@@ -92,7 +92,7 @@ pub const ANTHROPIC_CODEX_EDGE: LocalBridgeEdge = LocalBridgeEdge {
 };
 
 pub const OPENAI_CODEX_EDGE: LocalBridgeEdge = LocalBridgeEdge {
-    rule_id: "openai-api-to-codex-v1",
+    rule_id: crate::services::adapter_route_constants::OPENAI_CODEX_RULE_ID,
     source: AdapterSourceProduct::OpenaiApi,
     credential: AdapterCredentialClass::ApiKey,
     transport: AdapterUpstreamTransport::LocalBridgeChatCompletions,
@@ -110,7 +110,7 @@ pub const OPENAI_CODEX_EDGE: LocalBridgeEdge = LocalBridgeEdge {
 };
 
 pub const OPENAI_CLAUDE_EDGE: LocalBridgeEdge = LocalBridgeEdge {
-    rule_id: "openai-api-to-claude-v1",
+    rule_id: crate::services::adapter_route_constants::OPENAI_CLAUDE_RULE_ID,
     source: AdapterSourceProduct::OpenaiApi,
     credential: AdapterCredentialClass::ApiKey,
     transport: AdapterUpstreamTransport::LocalBridgeChatCompletions,
@@ -128,7 +128,7 @@ pub const OPENAI_CLAUDE_EDGE: LocalBridgeEdge = LocalBridgeEdge {
 };
 
 pub const OPENAI_GROK_BRIDGE_EDGE: LocalBridgeEdge = LocalBridgeEdge {
-    rule_id: "openai-api-to-grok-bridge-v1",
+    rule_id: crate::services::adapter_route_constants::OPENAI_GROK_BRIDGE_RULE_ID,
     source: AdapterSourceProduct::OpenaiApi,
     credential: AdapterCredentialClass::ApiKey,
     transport: AdapterUpstreamTransport::LocalBridgeChatCompletions,
@@ -182,7 +182,7 @@ pub const OPENAI_DSH_BRIDGE_EDGE: LocalBridgeEdge = LocalBridgeEdge {
 };
 
 pub const GROK_CLAUDE_EDGE: LocalBridgeEdge = LocalBridgeEdge {
-    rule_id: "grok-subscription-to-claude-v1",
+    rule_id: crate::services::adapter_route_constants::GROK_CLAUDE_RULE_ID,
     source: AdapterSourceProduct::XaiGrokSubscription,
     credential: AdapterCredentialClass::OauthOther,
     transport: AdapterUpstreamTransport::XaiResponsesOauth,
@@ -200,7 +200,7 @@ pub const GROK_CLAUDE_EDGE: LocalBridgeEdge = LocalBridgeEdge {
 };
 
 pub const GROK_CODEX_EDGE: LocalBridgeEdge = LocalBridgeEdge {
-    rule_id: "grok-subscription-to-codex-v1",
+    rule_id: crate::services::adapter_route_constants::GROK_CODEX_RULE_ID,
     source: AdapterSourceProduct::XaiGrokSubscription,
     credential: AdapterCredentialClass::OauthOther,
     transport: AdapterUpstreamTransport::XaiResponsesOauth,
@@ -219,7 +219,7 @@ pub const GROK_CODEX_EDGE: LocalBridgeEdge = LocalBridgeEdge {
 
 /// Closed App Server candidate. Not a live writer.
 pub const CODEX_CLAUDE_APP_SERVER_EDGE: LocalBridgeEdge = LocalBridgeEdge {
-    rule_id: "codex-subscription-to-claude-app-server-v0",
+    rule_id: crate::services::adapter_route_constants::CODEX_CLAUDE_APP_SERVER_RULE_ID,
     source: AdapterSourceProduct::CodexChatGptSubscription,
     credential: AdapterCredentialClass::OauthAuthJson,
     transport: AdapterUpstreamTransport::CodexAppServer,
@@ -237,7 +237,7 @@ pub const CODEX_CLAUDE_APP_SERVER_EDGE: LocalBridgeEdge = LocalBridgeEdge {
 };
 
 pub const CODEX_CLAUDE_RESPONSES_EDGE: LocalBridgeEdge = LocalBridgeEdge {
-    rule_id: "codex-subscription-to-claude-responses-v1",
+    rule_id: crate::services::adapter_route_constants::CODEX_CLAUDE_RESPONSES_RULE_ID,
     source: AdapterSourceProduct::CodexChatGptSubscription,
     credential: AdapterCredentialClass::OauthAuthJson,
     transport: AdapterUpstreamTransport::CodexResponsesOauth,
@@ -255,7 +255,7 @@ pub const CODEX_CLAUDE_RESPONSES_EDGE: LocalBridgeEdge = LocalBridgeEdge {
 };
 
 pub const CODEX_CLAUDE_OAUTH_OTHER_EDGE: LocalBridgeEdge = LocalBridgeEdge {
-    rule_id: "codex-subscription-to-claude-responses-v1",
+    rule_id: crate::services::adapter_route_constants::CODEX_CLAUDE_RESPONSES_RULE_ID,
     source: AdapterSourceProduct::CodexChatGptSubscription,
     credential: AdapterCredentialClass::OauthOther,
     transport: AdapterUpstreamTransport::CodexResponsesOauth,
@@ -400,7 +400,7 @@ pub const CLAUDE_CODEX_EDGE: LocalBridgeEdge = LocalBridgeEdge {
 };
 
 pub const KIRO_CLAUDE_API_EDGE: LocalBridgeEdge = LocalBridgeEdge {
-    rule_id: "kiro-to-claude-v1",
+    rule_id: crate::services::adapter_route_constants::KIRO_CLAUDE_RULE_ID,
     source: AdapterSourceProduct::Kiro,
     credential: AdapterCredentialClass::ApiKey,
     transport: AdapterUpstreamTransport::LocalBridgeKiroHttp,
@@ -418,7 +418,7 @@ pub const KIRO_CLAUDE_API_EDGE: LocalBridgeEdge = LocalBridgeEdge {
 };
 
 pub const KIRO_CLAUDE_OAUTH_EDGE: LocalBridgeEdge = LocalBridgeEdge {
-    rule_id: "kiro-to-claude-v1",
+    rule_id: crate::services::adapter_route_constants::KIRO_CLAUDE_RULE_ID,
     source: AdapterSourceProduct::Kiro,
     credential: AdapterCredentialClass::OauthOther,
     transport: AdapterUpstreamTransport::LocalBridgeKiroHttp,
@@ -436,7 +436,7 @@ pub const KIRO_CLAUDE_OAUTH_EDGE: LocalBridgeEdge = LocalBridgeEdge {
 };
 
 pub const KIRO_CODEX_API_EDGE: LocalBridgeEdge = LocalBridgeEdge {
-    rule_id: "kiro-to-codex-v1",
+    rule_id: crate::services::adapter_route_constants::KIRO_CODEX_RULE_ID,
     source: AdapterSourceProduct::Kiro,
     credential: AdapterCredentialClass::ApiKey,
     transport: AdapterUpstreamTransport::LocalBridgeKiroHttp,
@@ -454,7 +454,7 @@ pub const KIRO_CODEX_API_EDGE: LocalBridgeEdge = LocalBridgeEdge {
 };
 
 pub const KIRO_CODEX_OAUTH_EDGE: LocalBridgeEdge = LocalBridgeEdge {
-    rule_id: "kiro-to-codex-v1",
+    rule_id: crate::services::adapter_route_constants::KIRO_CODEX_RULE_ID,
     source: AdapterSourceProduct::Kiro,
     credential: AdapterCredentialClass::OauthOther,
     transport: AdapterUpstreamTransport::LocalBridgeKiroHttp,
@@ -472,7 +472,7 @@ pub const KIRO_CODEX_OAUTH_EDGE: LocalBridgeEdge = LocalBridgeEdge {
 };
 
 pub const KIRO_GROK_API_EDGE: LocalBridgeEdge = LocalBridgeEdge {
-    rule_id: "kiro-to-grok-v1",
+    rule_id: crate::services::adapter_route_constants::KIRO_GROK_RULE_ID,
     source: AdapterSourceProduct::Kiro,
     credential: AdapterCredentialClass::ApiKey,
     transport: AdapterUpstreamTransport::LocalBridgeKiroHttp,
@@ -490,7 +490,7 @@ pub const KIRO_GROK_API_EDGE: LocalBridgeEdge = LocalBridgeEdge {
 };
 
 pub const KIRO_GROK_OAUTH_EDGE: LocalBridgeEdge = LocalBridgeEdge {
-    rule_id: "kiro-to-grok-v1",
+    rule_id: crate::services::adapter_route_constants::KIRO_GROK_RULE_ID,
     source: AdapterSourceProduct::Kiro,
     credential: AdapterCredentialClass::OauthOther,
     transport: AdapterUpstreamTransport::LocalBridgeKiroHttp,

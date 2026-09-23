@@ -1,19 +1,34 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   isPiRefreshProvider,
   OFFICIAL_LOGIN_SUPERSEDED,
+  OAUTH_DEVICE_POLL_INTERVAL_SECS,
   OAUTH_PKCE_LISTEN_TIMEOUT_SECS,
   OAUTH_WAIT_TIMEOUT_SECS,
   PI_REFRESH_PROVIDER_ALIASES,
   PI_REFRESH_PROVIDERS,
 } from './oauth-constants';
 
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
+
 describe('oauth wait windows', () => {
   it('keeps the poll chunk shorter than the PKCE listener', () => {
     expect(OAUTH_WAIT_TIMEOUT_SECS).toBe(120);
     expect(OAUTH_PKCE_LISTEN_TIMEOUT_SECS).toBe(900);
+    expect(OAUTH_DEVICE_POLL_INTERVAL_SECS).toBe(5);
     expect(OAUTH_PKCE_LISTEN_TIMEOUT_SECS).toBeGreaterThan(OAUTH_WAIT_TIMEOUT_SECS);
     expect(OFFICIAL_LOGIN_SUPERSEDED).toBe('oauth.superseded');
+  });
+
+  it('aligns the device-code poll fallback with core DEFAULT_POLL_INTERVAL_SECS', () => {
+    const deviceRs = readFileSync(
+      path.join(root, 'crates/agenthub-core/src/oauth/device.rs'),
+      'utf8',
+    );
+    expect(deviceRs).toContain('const DEFAULT_POLL_INTERVAL_SECS: u64 = 5');
   });
 });
 

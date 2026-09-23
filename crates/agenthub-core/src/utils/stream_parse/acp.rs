@@ -167,7 +167,9 @@ pub(crate) fn extract_config_catalog(v: &Value) -> Option<AcpConfigCatalog> {
     if !is_update && list.is_none() {
         return None;
     }
-    Some(config_catalog_from_options(list.map(|items| items.as_slice()).unwrap_or(&[])))
+    Some(config_catalog_from_options(
+        list.map(|items| items.as_slice()).unwrap_or(&[]),
+    ))
 }
 
 fn config_catalog_from_options(items: &[Value]) -> AcpConfigCatalog {
@@ -222,7 +224,15 @@ fn select_option_values(item: &Value) -> Vec<String> {
 }
 
 fn config_current_value(item: &Value) -> Option<String> {
-    first_str(item, &["currentValue", "current_value", "selectedValue", "selected_value"])
+    first_str(
+        item,
+        &[
+            "currentValue",
+            "current_value",
+            "selectedValue",
+            "selected_value",
+        ],
+    )
 }
 
 /// One ACP plan row. Not a `ProcessStep`.
@@ -252,20 +262,23 @@ pub(crate) fn extract_plan(v: &Value) -> Option<Vec<AcpPlanEntry>> {
     {
         return Some(items.iter().filter_map(parse_plan_entry).collect());
     }
-    let body = first_str(update, &["planContent", "plan_content"])
-        .or_else(|| {
-            update
-                .get("content")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(str::to_string)
-        });
-    Some(body.into_iter().map(|content| AcpPlanEntry {
-        content,
-        status: None,
-        priority: None,
-    }).collect())
+    let body = first_str(update, &["planContent", "plan_content"]).or_else(|| {
+        update
+            .get("content")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    });
+    Some(
+        body.into_iter()
+            .map(|content| AcpPlanEntry {
+                content,
+                status: None,
+                priority: None,
+            })
+            .collect(),
+    )
 }
 
 fn parse_plan_entry(value: &Value) -> Option<AcpPlanEntry> {

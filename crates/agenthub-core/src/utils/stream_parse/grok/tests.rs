@@ -312,10 +312,12 @@ fn kiro_vendor_commands_available_is_catalog_not_process_step() {
     assert_eq!(commands[0].description, "Add context");
     assert_eq!(commands[0].hint.as_deref(), Some("path"));
     assert!(super::super::acp::extract_available_commands(&payload).is_none());
-    assert!(super::super::acp::extract_kiro_available_commands(&serde_json::json!({
-        "prompts": [{ "name": "my-skill" }]
-    }))
-    .is_none());
+    assert!(
+        super::super::acp::extract_kiro_available_commands(&serde_json::json!({
+            "prompts": [{ "name": "my-skill" }]
+        }))
+        .is_none()
+    );
     let empty = super::super::acp::extract_kiro_available_commands(&serde_json::json!({
         "commands": []
     }))
@@ -381,8 +383,10 @@ fn config_option_update_is_catalog_not_process_step() {
     assert_eq!(catalog.current_model.as_deref(), Some("grok-4"));
     assert_eq!(catalog.efforts, vec!["low", "high"]);
     assert_eq!(catalog.current_effort.as_deref(), Some("high"));
-    assert!(super::super::acp::extract_config_catalog(&serde_json::json!({
-        "update": { "sessionUpdate": "agent_message_chunk", "content": { "text": "hi" } }
-    }))
-    .is_none());
+    assert!(
+        super::super::acp::extract_config_catalog(&serde_json::json!({
+            "update": { "sessionUpdate": "agent_message_chunk", "content": { "text": "hi" } }
+        }))
+        .is_none()
+    );
 }

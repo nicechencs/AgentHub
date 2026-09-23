@@ -18,9 +18,6 @@ use super::{AdapterApplyService, ApplySnapshot, GeneratedApplySpec};
 pub(super) use super::specs::*;
 
 pub(super) const RULE_ID: &str = KIMI_CLAUDE_RULE_ID;
-pub(super) const KIMI_PI_RULE_ID: &str = "kimi-membership-to-pi-v1";
-pub(super) const KIMI_GROK_RULE_ID: &str = "kimi-membership-to-grok-v1";
-pub(super) const DEEPSEEK_DSH_RULE_ID: &str = "deepseek-api-to-dsh-v1";
 pub(super) const PREVIOUS_CURRENT_ID: &str = "previousCurrentId";
 pub(super) const PREVIOUS_BACKUP_ID: &str = "previousBackupId";
 

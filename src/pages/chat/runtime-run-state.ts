@@ -55,12 +55,13 @@ export function beginRuntimeStart(
   conversationId: string,
   lastSequence: number,
 ): RuntimeRunRecord {
+  const previous = records.get(conversationId);
   const next: RuntimeRunRecord = {
     enabled: true,
     runId: null,
     phase: 'starting',
     pendingStart: true,
-    cancelRequested: false,
+    cancelRequested: Boolean(previous?.cancelRequested),
     lastSequence,
   };
   records.set(conversationId, next);

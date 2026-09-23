@@ -137,8 +137,11 @@ pub fn list_mcp_catalog() -> Vec<McpCatalogEntry> {
 
 pub fn probe_mcp_server(spec: &McpServerSpec) -> Result<McpProbeResult> {
     validate_name(&spec.name)?;
-    let transport =
-        normalize_transport(&spec.transport, spec.command.as_deref(), spec.url.as_deref());
+    let transport = normalize_transport(
+        &spec.transport,
+        spec.command.as_deref(),
+        spec.url.as_deref(),
+    );
     match transport.as_str() {
         "stdio" => Ok(probe_stdio(spec)),
         "http" | "sse" => probe_http(spec, &transport),
@@ -155,8 +158,11 @@ pub fn upsert_mcp_server(agent: AgentId, spec: &McpServerSpec) -> Result<McpWrit
     ensure_writable(agent)?;
     validate_name(&spec.name)?;
     let enabled = spec.enabled.unwrap_or(true);
-    let transport =
-        normalize_transport(&spec.transport, spec.command.as_deref(), spec.url.as_deref());
+    let transport = normalize_transport(
+        &spec.transport,
+        spec.command.as_deref(),
+        spec.url.as_deref(),
+    );
     match agent {
         AgentId::Claude => {
             upsert_json_server(claude_primary_path()?, agent, spec, &transport, enabled)
@@ -173,11 +179,7 @@ pub fn upsert_mcp_server(agent: AgentId, spec: &McpServerSpec) -> Result<McpWrit
     }
 }
 
-pub fn set_mcp_server_enabled(
-    agent: AgentId,
-    name: &str,
-    enabled: bool,
-) -> Result<McpWriteResult> {
+pub fn set_mcp_server_enabled(agent: AgentId, name: &str, enabled: bool) -> Result<McpWriteResult> {
     ensure_writable(agent)?;
     validate_name(name)?;
     match agent {
@@ -340,9 +342,9 @@ fn probe_http(spec: &McpServerSpec, transport: &str) -> Result<McpProbeResult> {
     }
     let addr = format!("{host}:{port}");
     let start = Instant::now();
-    let mut addrs = addr.to_socket_addrs().map_err(|e| {
-        AppError::message("mcp.probe.resolve", format!("无法解析主机：{e}"))
-    })?;
+    let mut addrs = addr
+        .to_socket_addrs()
+        .map_err(|e| AppError::message("mcp.probe.resolve", format!("无法解析主机：{e}")))?;
     let sock = addrs
         .next()
         .ok_or_else(|| AppError::message("mcp.probe.resolve", "无法解析主机"))?;
@@ -506,9 +508,9 @@ fn set_json_enabled(
 ) -> Result<McpWriteResult> {
     let mut root = read_json_object(&path)?;
     let servers = json_servers_map_mut(&mut root)?;
-    let entry = servers.get_mut(name).ok_or_else(|| {
-        AppError::message("mcp.enable.missing", format!("配置里没有「{name}」"))
-    })?;
+    let entry = servers
+        .get_mut(name)
+        .ok_or_else(|| AppError::message("mcp.enable.missing", format!("配置里没有「{name}」")))?;
     let obj = entry.as_object_mut().ok_or_else(|| {
         AppError::message(
             "mcp.enable.shape",
@@ -530,9 +532,8 @@ fn read_json_object(path: &Path) -> Result<JsonMap<String, JsonValue>> {
     if !path.exists() {
         return Ok(JsonMap::new());
     }
-    let text = fs::read_to_string(path).map_err(|e| {
-        AppError::message("mcp.read", format!("读不到 {}: {e}", path.display()))
-    })?;
+    let text = fs::read_to_string(path)
+        .map_err(|e| AppError::message("mcp.read", format!("读不到 {}: {e}", path.display())))?;
     if text.trim().is_empty() {
         return Ok(JsonMap::new());
     }
@@ -582,7 +583,11 @@ fn write_json_pretty(path: &Path, value: &JsonValue) -> Result<()> {
     Ok(())
 }
 
-fn write_codex_toml(spec: &McpServerSpec, transport: &str, enabled: bool) -> Result<McpWriteResult> {
+fn write_codex_toml(
+    spec: &McpServerSpec,
+    transport: &str,
+    enabled: bool,
+) -> Result<McpWriteResult> {
     write_codex_toml_at(&codex_primary_path()?, spec, transport, enabled)
 }
 
@@ -678,9 +683,10 @@ fn write_grok_toml_at(
     if !servers.contains_key(name) {
         servers.insert(name, Item::Table(Table::new()));
     }
-    let table = servers.get_mut(name).and_then(Item::as_table_mut).ok_or_else(|| {
-        AppError::message("mcp.write.grok.shape", format!("「{name}」必须是表"))
-    })?;
+    let table = servers
+        .get_mut(name)
+        .and_then(Item::as_table_mut)
+        .ok_or_else(|| AppError::message("mcp.write.grok.shape", format!("「{name}」必须是表")))?;
     apply_grok_server_fields(table, spec, transport, enabled)?;
     write_toml_doc(path, &doc)?;
     Ok(McpWriteResult {
@@ -800,9 +806,8 @@ fn read_toml_doc(path: &Path) -> Result<DocumentMut> {
     if !path.exists() {
         return Ok(DocumentMut::new());
     }
-    let text = fs::read_to_string(path).map_err(|e| {
-        AppError::message("mcp.read", format!("读不到 {}: {e}", path.display()))
-    })?;
+    let text = fs::read_to_string(path)
+        .map_err(|e| AppError::message("mcp.read", format!("读不到 {}: {e}", path.display())))?;
     text.parse().map_err(|e| {
         AppError::message(
             "mcp.read.toml",

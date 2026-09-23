@@ -120,7 +120,6 @@ fn build_run_spec_resume_id_before_prompt() {
     assert_eq!(spec.args.last().map(String::as_str), Some("ok"));
 }
 
-
 #[test]
 fn build_run_spec_model_and_effort_before_prompt() {
     let mut opts = RunOptions::default();

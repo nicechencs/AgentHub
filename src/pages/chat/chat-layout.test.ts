@@ -40,7 +40,8 @@ describe('chat layout wiring', () => {
     expect(source('ChatRuntimeExtras.tsx')).toContain('data-help="chat-model"');
     expect(source('ChatRuntimeExtras.tsx')).toContain('data-help="chat-composer-cluster"');
     expect(source('ChatRuntimeExtras.tsx')).toContain('max-w-36');
-    expect(source('ChatComposer.tsx')).toContain('px-2 py-1.5');
+    expect(source('ChatComposer.tsx')).toContain('border-t border-border/50 px-3 py-1.5');
+    expect(source('ChatComposer.tsx')).not.toContain('border-t border-border/50 px-2 py-1.5');
     expect(source('ChatComposer.tsx')).toContain('chatModelDisplayName');
     expect(source('ChatComposer.tsx')).toContain('chatEffortHint');
     expect(translate('zh', 'chat.runtimeOps.effortHintHigh')).toBe('可能更慢');
@@ -90,11 +91,21 @@ describe('chat layout wiring', () => {
     expect(composer).toContain('composerEnterShouldSubmit');
     expect(composer).toContain('composerShortcutMessageKey');
     expect(composer).toContain('data-composer-shortcut');
-    expect(composer).toContain('ChatQueuedFollowUpList');
-    expect(composer).toContain('queuedFollowUps');
+    expect(source('index.tsx')).toContain('ChatQueuedFollowUpList');
+    expect(source('index.tsx')).toContain('queuedFollowUps');
+    expect(composer).not.toContain('ChatQueuedFollowUpList');
     expect(source('ChatQueuedFollowUpList.tsx')).toContain('chat.composer.queuedCount');
     expect(source('ChatQueuedFollowUpList.tsx')).toContain('cancelQueuedItem');
     expect(composer).toContain('keepComposerFocus');
+    expect(composer).toContain('composerShouldHoldSendLock');
+    expect(composer).toContain('composerShouldKeepRestoredSent');
+    expect(composer).toContain('composerQueueableFollowUpText');
+    expect(source('use-chat-page-send.ts')).toContain('cancelRequested');
+    expect(composer).toContain('COMPOSER_SEND_SETTLE_MS');
+    expect(composer).toContain('composerLiveSendText');
+    expect(composer).not.toContain(', 250)');
+    expect(source('use-chat-page-send.ts')).toContain('composerQueueableFollowUpText');
+    expect(source('chat-grok-follow-up.ts')).toContain('composerQueueableFollowUpText');
     expect(composer).toContain('enterKeyHint="send"');
     expect(composer).toContain("t('chat.composer.moreOptions')");
     expect(composer).toContain('flex min-w-0 flex-1 items-center gap-1.5 overflow-visible');
@@ -116,11 +127,13 @@ describe('chat layout wiring', () => {
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('readMarkdownPreview');
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('highlightLine');
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('chat.preview.back');
-    expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('pathTailLabel');
-    expect(source('ChatMarkdownPreviewPanel.tsx')).toContain("label={folder}");
+    expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('previewHeaderParts');
+    expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('directoryLabel');
     expect(source('index.tsx')).toContain('pushChatPreview');
-    expect(source('index.tsx')).toContain('extractTurnEdits');
-    expect(source('index.tsx')).toContain('ChatTurnEditList');
+    expect(source('index.tsx')).toContain('findTurnEditFile');
+    expect(source('index.tsx')).not.toContain('ChatTurnEditList');
+    expect(source('ChatTranscript.tsx')).toContain('onSelectEdit');
+    expect(source('ChatMessageBubble.tsx')).toContain('ChatTurnProcessList');
     expect(source('index.tsx')).toContain('ChatEditPreviewPanel');
     expect(source('index.tsx')).toContain('openChatEditPreview');
     expect(translate('zh', 'chat.preview.viewEdit')).toBe('查看修改');
@@ -132,7 +145,12 @@ describe('chat layout wiring', () => {
     expect(page).toContain('ChatProcessInspectPanel');
     expect(page).toContain('openChatProcessInspect');
     expect(page).toContain('onOpenProcess');
-    expect(source('ChatMessageBubble.tsx')).toContain('data-help="chat-process-chip"');
+    expect(source('ChatTurnProcessList.tsx')).toContain('help="chat-process-chip"');
+    expect(source('ChatTurnProcessList.tsx')).toContain('help="chat-thinking-bar"');
+    expect(source('ChatTurnProcessList.tsx')).toContain('data-help={help}');
+    expect(source('ChatTurnProcessList.tsx')).toContain('ChatExpandAffordance');
+    expect(source('ChatPlanBar.tsx')).toContain('ChatExpandAffordance');
+    expect(source('ChatEditPreviewPanel.tsx')).toContain('ChatExpandAffordance');
     expect(source('ChatMessageBubble.tsx')).not.toContain('ChatProcessPanel');
     expect(source('ChatProcessInspectPanel.tsx')).toContain('ChatProcessPanel');
     expect(source('ChatProcessInspectPanel.tsx')).toContain('SideInspectPanel');
@@ -311,6 +329,13 @@ describe('chat layout wiring', () => {
     expect(rail).toContain('hint={false}');
     expect(rail).not.toContain('conversationAgentLine');
     expect(rail).toContain('data-help="chat-workspace-group"');
+    expect(rail).toContain('onContextMenu=');
+    expect(rail).toContain('normalizeOpenPath(group.cwd)');
+    expect(rail).toContain("t('chat.rail.openFolder')");
+    expect(rail).toContain("t('chat.rail.pin')");
+    expect(rail).toContain('data-help="chat-workspace-open"');
+    expect(rail).toContain('data-help="chat-workspace-pin"');
+    expect(rail).toContain('applyWorkspacePins');
     expect(rail).toContain('aria-expanded');
     expect(rail).toContain('conversationTitle');
     expect(rail).not.toContain('isBlankConversationDraft');
@@ -442,8 +467,12 @@ describe('chat layout wiring', () => {
     expect(translate('en', 'chat.runtime.allowAlwaysHintTurn')).toBe(
       'This conversation only, not saved',
     );
-    expect(source('ChatTurnOutcomeBanner.tsx')).toContain('turnOutcomeDetail');
-    expect(source('ChatTurnOutcomeBanner.tsx')).not.toContain('draftKept');
+    expect(source('index.tsx')).not.toContain('ChatTurnOutcomeBanner');
+    expect(source('ChatMessageBubble.tsx')).not.toContain('chat.bubble.retry');
+    expect(source('ChatMessageBubble.tsx')).toContain("t('chat.turnOutcome.cancelledHint')");
+    expect(translate('zh', 'chat.turnOutcome.cancelledHint')).toBe(
+      '已按你的要求停止。可以直接在这场对话里继续发送。',
+    );
   });
 
   it('shows Kiro ask-or-full permission mode in session settings and the header', () => {
@@ -451,7 +480,7 @@ describe('chat layout wiring', () => {
     const header = source('ChatSessionHeader.tsx');
     expect(settings).toContain('chat.kiro.permissionAsk');
     expect(settings).toContain('chat.kiro.permissionFull');
-    expect(settings).toContain('chat.kiro.settingsLocked');
+    expect(settings).not.toContain('chat.kiro.settingsLocked');
     expect(header).toContain('chat.kiro.permissionAsk');
     expect(header).toContain('chat.kiro.permissionFull');
   });
@@ -535,7 +564,8 @@ describe('chat layout wiring', () => {
     expect(panel).toContain('useProcessLogHeight');
     expect(panel).toContain('formatToolStep');
     expect(source('ChatProcessInspectPanel.tsx')).toContain('formatProcessHeadline');
-    expect(source('ChatMessageBubble.tsx')).toContain('formatProcessHeadline');
+    expect(source('ChatTurnProcessList.tsx')).toContain('formatToolStep');
+    expect(source('ChatTurnProcessList.tsx')).toContain('transcriptTimelineSteps');
     expect(panel).not.toContain('{step.name} · {step.status}');
     expect(panel).not.toContain('>stderr<');
     expect(panel).not.toContain('exit {exitCode}');
@@ -563,9 +593,14 @@ describe('chat layout wiring', () => {
     expect(source('index.tsx')).toContain('ChatPlanBar');
     expect(source('ChatPlanBar.tsx')).toContain('aria-expanded={open}');
     expect(source('ChatPlanBar.tsx')).toContain('chat.runtime.planProgress');
+    expect(source('ChatPlanBar.tsx')).not.toContain('mt-0.5 block');
+    expect(source('ChatPlanBar.tsx')).toContain('` · ${summary}`');
     expect(source('ChatPlanBar.tsx')).toContain('runtimePlanStatusKey');
     expect(translate('zh', 'chat.runtime.planStatusLive')).toBe('进行中');
     expect(translate('zh', 'chat.runtime.planCollapse')).toBe('收起计划');
+    expect(translate('zh', 'chat.runtime.expandRow')).toBe('可展开');
+    expect(translate('en', 'chat.runtime.expandRow')).toBe('Expandable');
+    expect(translate('zh', 'chat.runtime.collapseRow')).toBe('收起');
     expect(source('use-chat-page-send.ts')).toContain('recordSnapshotPollFailure');
     expect(source('index.tsx')).toContain('chat.runtime.snapshotStale');
     expect(source('index.tsx')).toContain('ChatHostTerminals');
@@ -585,9 +620,14 @@ describe('chat layout wiring', () => {
     expect(source('ChatTranscript.tsx')).toContain('onJumpToPrompt={onJumpToOutline}');
     expect(source('ChatOutlineRail.tsx')).toContain('data-chat-outline-measure');
     expect(source('ChatOutlineRail.tsx')).toContain('outlinePanelWidthReady');
+    expect(source('ChatOutlineRail.tsx')).toContain('outlineRailLeftOffset');
     expect(source('ChatOutlineRail.tsx')).toContain('if (!isEnabled) return null');
     expect(source('ChatOutlineRail.tsx')).not.toContain('prompts.length < 2) return null');
     expect(source('ChatOutlineRail.tsx')).toContain('onJumpToPrompt={onJumpToPrompt}');
+    expect(source('ChatOutlineRail.tsx')).toContain('Hint');
+    expect(source('ChatOutlineRail.tsx')).toContain('side="right"');
+    expect(source('ChatOutlineRail.tsx')).not.toContain('chat-outline-preview');
+    expect(source('ChatOutlineRail.tsx')).not.toContain('flexGrow: 1');
     expect(source('use-chat-outline.ts')).toContain('outlinePanelWidthReady');
     expect(source('ChatSessionRail.tsx')).not.toContain('ChatOutlineRail');
     expect(source('index.tsx')).toContain('onJumpToOutline={page.jumpToOutlinePrompt}');

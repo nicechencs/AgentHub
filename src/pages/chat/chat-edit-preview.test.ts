@@ -8,6 +8,7 @@ import { ChatEditPreviewPanel, ChatTurnEditList } from './ChatEditPreviewPanel';
 import {
   extractEditFilesFromSteps,
   extractTurnEdits,
+  findTurnEditFile,
   formatSimpleDiff,
   latestProcessTurn,
   sameEditPath,
@@ -264,6 +265,35 @@ describe('extractTurnEdits', () => {
 
   it('returns an empty list when there is no process map', () => {
     expect(extractTurnEdits({})).toEqual([]);
+    expect(findTurnEditFile({
+      ...mapWith([tool('Write', 'end', { path: 'src/a.ts', before: 'old', after: 'new' })], 1, 'codex'),
+      ...mapWith([tool('Write', 'end', { path: 'src/b.ts' })], 2, 'grok'),
+    }, 'src/a.ts')).toEqual({
+      path: 'src/a.ts',
+      status: 'done',
+      before: 'old',
+      after: 'new',
+    });
+    expect(findTurnEditFile({}, 'src/a.ts')).toBeNull();
+    const repeated = {
+      ...mapWith([tool('Write', 'end', { path: 'src/a.ts', before: 'old', after: 'new' })], 1, 'codex'),
+      ...mapWith([tool('Write', 'end', { path: 'src/a.ts' })], 2, 'codex'),
+    };
+    expect(findTurnEditFile(repeated, 'src/a.ts', 1)).toEqual({
+      path: 'src/a.ts',
+      status: 'done',
+      before: 'old',
+      after: 'new',
+    });
+    expect(findTurnEditFile(repeated, 'src/a.ts')).toEqual({
+      path: 'src/a.ts',
+      status: 'done',
+    });
+    const olderBare = {
+      ...mapWith([tool('Write', 'end', { path: 'src/a.ts' })], 1, 'codex'),
+      ...mapWith([tool('Write', 'end', { path: 'src/a.ts', before: 'old', after: 'new' })], 2, 'codex'),
+    };
+    expect(findTurnEditFile(olderBare, 'src/a.ts', 1)?.before).toBe('old');
     expect(latestProcessTurn({})).toBeNull();
     expect(latestProcessTurn({
       'x:codex': {
@@ -338,11 +368,13 @@ describe('ChatTurnEditList', () => {
       ),
     );
     expect(html).toContain('data-help="chat-turn-edits"');
+    expect(html).toContain('data-help="chat-expand-affordance"');
     expect(html).toContain('查看修改');
     expect(html).toContain('正在修改');
     expect(html).toContain('已修改');
     expect(html).toContain('src/a.ts');
     expect(html).toContain('src/b.ts');
+    expect(html).toContain('可展开');
     expect(html).toContain('aria-current="true"');
   });
 
@@ -383,7 +415,7 @@ describe('ChatEditPreviewPanel', () => {
     );
     expect(html).toContain('data-chat-edit-preview');
     expect(html).toContain('app.ts');
-    expect(html).toContain('查看修改');
+    expect(html).toContain('src');
     expect(html).toContain('PREVIEW:app.ts.diff:');
     expect(html).toContain('-old');
     expect(html).toContain('+new');

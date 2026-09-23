@@ -832,15 +832,15 @@ fn leftover_agenthub_npm_is_never_the_spawn_target() {
         result.extra_copies
     );
     assert!(
-        result
-            .notes
-            .iter()
-            .any(|n| n.contains("不是安装位置")),
+        result.notes.iter().any(|n| n.contains("不是安装位置")),
         "leftover extra must not be an install location: {:?}",
         result.notes
     );
     assert!(
-        result.notes.iter().all(|n| !n.contains("往 ~/.agenthub/npm 安装")),
+        result
+            .notes
+            .iter()
+            .all(|n| !n.contains("往 ~/.agenthub/npm 安装")),
         "must not recommend leftover as install destination: {:?}",
         result.notes
     );
@@ -1004,10 +1004,7 @@ fn detect_dsh_prefers_complete_leftover_prefix_over_incomplete_local_bin() {
         result.notes
     );
     assert!(
-        result
-            .extra_copies
-            .iter()
-            .all(|c| c.path != stub),
+        result.extra_copies.iter().all(|c| c.path != stub),
         "incomplete ~/.local/bin/dsh must not appear as a healthy extra: {:?}",
         result.extra_copies
     );

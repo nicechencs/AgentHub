@@ -426,11 +426,7 @@ impl ChatRuntime {
         let record = self.store.record(conversation_id)?;
         let frozen = record
             .as_ref()
-            .is_some_and(|record| ops::phase_freezes_settings(record.phase))
-            || (agent == Some(AgentId::Kiro)
-                && record
-                    .as_ref()
-                    .is_some_and(|record| record.thread_id.is_some()));
+            .is_some_and(|record| ops::phase_freezes_settings(record.phase));
         let cache = self.load_catalog(conversation_id, refresh);
         let models = self.effective_models(&cache.models);
         let mut settings = self.store.turn_settings(conversation_id)?;
@@ -474,7 +470,6 @@ impl ChatRuntime {
     ) -> Result<RuntimeTurnSettings> {
         self.store.enable_if_new(conversation_id)?;
         // Reject active turns before spawning a catalog process.
-        let agent = self.store.conversation_agent(conversation_id)?;
         if let Some(record) = self.store.record(conversation_id)? {
             if ops::phase_freezes_settings(record.phase) {
                 return Err(AppError::InvalidArg(
@@ -483,19 +478,6 @@ impl ChatRuntime {
             }
         }
         let prior = self.store.turn_settings(conversation_id)?;
-        if agent == Some(AgentId::Kiro)
-            && self
-                .store
-                .record(conversation_id)?
-                .is_some_and(|record| record.thread_id.is_some())
-        {
-            if requested != prior {
-                return Err(AppError::InvalidArg(
-                    "Kiro 会话创建后不能修改模型或思考强度，请新建对话".into(),
-                ));
-            }
-            return Ok(prior);
-        }
         let cache = self.load_catalog(conversation_id, false);
         let models = self.effective_models(&cache.models);
         let effective = ops::validate_turn_settings(&requested, &models, &prior)?;
@@ -1411,11 +1393,7 @@ impl ActorWorker {
             transport.shutdown();
         }
         self.transport = None;
-        let message = if self.agent == AgentId::Kiro {
-            "取消请求超时，当前对话已中断，请新建对话"
-        } else {
-            "取消请求超时，已中断当前生成"
-        };
+        let message = "取消请求超时，已中断当前生成";
         logging::log_chat_error(
             "stop_fail",
             &self.conversation_id,
@@ -1504,35 +1482,6 @@ impl ActorWorker {
         } else {
             None
         };
-        if self.agent == AgentId::Kiro
-            && self.thread_id.is_some()
-            && self.transport.as_ref().is_some_and(CodexTransport::is_open)
-        {
-            let settings = self.store.turn_settings(&self.conversation_id)?;
-            let model = settings
-                .model
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty());
-            let effort = settings
-                .effort
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty());
-            let trust_all = self
-                .repo
-                .get_conversation(&self.conversation_id)?
-                .is_some_and(|conversation| conversation.allow_dangerous);
-            if self.session_model.as_deref() != model
-                || self.session_effort.as_deref() != effort
-                || self.session_trust_all != Some(trust_all)
-            {
-                return Err(AppError::message(
-                    "chat.runtime.settings",
-                    "Kiro 会话设置已固定，请新建对话后修改模型、思考强度或权限",
-                ));
-            }
-        }
         let cache = self.ensure_start_catalog()?;
         let models = {
             let denied = self.store.list_denied_efforts().unwrap_or_default();
@@ -1781,23 +1730,18 @@ impl ActorWorker {
         let mut retried_after_exit = false;
         loop {
             let live = self.transport.as_ref().is_some_and(CodexTransport::is_open);
-            let plan = ops::acp_session_plan(self.agent, live, self.thread_id.is_some());
-            if matches!(plan, ops::AcpSessionPlan::Unavailable) {
-                return Err(AppError::message(
-                    "chat.runtime.interrupted",
-                    "Kiro 会话所在进程已停止，请新建对话后继续",
-                ));
-            }
-            if self.agent == AgentId::Kiro
-                && matches!(plan, ops::AcpSessionPlan::PromptExisting)
-                && (self.session_model.as_deref() != model
-                    || self.session_effort.as_deref() != effort
-                    || self.session_trust_all != Some(trust_all))
+            let mut plan = ops::acp_session_plan(self.agent, live, self.thread_id.is_some());
+            if live
+                && ops::acp_session_settings_changed(
+                    self.session_model.as_deref(),
+                    self.session_effort.as_deref(),
+                    self.session_trust_all,
+                    model,
+                    effort,
+                    trust_all,
+                )
             {
-                return Err(AppError::message(
-                    "chat.runtime.settings",
-                    "Kiro 会话设置已固定，请新建对话后修改模型、思考强度或权限",
-                ));
+                plan = ops::AcpSessionPlan::New;
             }
             let mut transport = if matches!(plan, ops::AcpSessionPlan::PromptExisting) {
                 self.transport.take().ok_or_else(|| {
@@ -1852,11 +1796,6 @@ impl ActorWorker {
                     self.thread_id =
                         grok_session_id(&created).or_else(|| extract_id(&created, "session"));
                     self.apply_session_model_catalog(&created);
-                    if self.agent == AgentId::Kiro {
-                        self.session_model = model.map(str::to_owned);
-                        self.session_effort = effort.map(str::to_owned);
-                        self.session_trust_all = Some(trust_all);
-                    }
                 }
                 ops::AcpSessionPlan::LoadThenPrompt => {
                     let session_id = self.thread_id.clone().ok_or_else(|| {
@@ -1881,23 +1820,32 @@ impl ActorWorker {
                         .get("loadSession")
                         .is_some_and(|value| acp_capability_present(Some(value)));
                     let method = if supports_resume {
-                        "session/resume"
+                        Some("session/resume")
                     } else if supports_load {
-                        "session/load"
+                        Some("session/load")
                     } else {
-                        return Err(AppError::message(
-                            "chat.runtime.protocol",
-                            "Grok 不支持恢复已有会话，请新建对话",
-                        ));
+                        None
                     };
-                    let value = transport
-                        .request_discarding_history(method, load_params, CODEX_REQUEST_TIMEOUT)
-                        .map_err(|error| map_transport(self.agent, error))?;
-                    if let Some(id) = grok_session_id(&value) {
-                        self.thread_id = Some(id);
+                    if let Some(method) = method {
+                        let value = transport
+                            .request_discarding_history(method, load_params, CODEX_REQUEST_TIMEOUT)
+                            .map_err(|error| map_transport(self.agent, error))?;
+                        if let Some(id) = grok_session_id(&value) {
+                            self.thread_id = Some(id);
+                        }
+                    } else {
+                        let created = transport
+                            .request(
+                                "session/new",
+                                ops::grok_session_new_params(&cwd, trust_all),
+                                CODEX_REQUEST_TIMEOUT,
+                            )
+                            .map_err(|error| map_transport(self.agent, error))?;
+                        self.thread_id =
+                            grok_session_id(&created).or_else(|| extract_id(&created, "session"));
+                        self.apply_session_model_catalog(&created);
                     }
                 }
-                ops::AcpSessionPlan::Unavailable => unreachable!("handled above"),
             }
 
             let session_id = self
@@ -1908,6 +1856,9 @@ impl ActorWorker {
             match transport.begin_request("session/prompt", prompt_params) {
                 Ok(prompt_id) => {
                     self.pending_prompt_id = Some(prompt_id);
+                    self.session_model = model.map(str::to_owned);
+                    self.session_effort = effort.map(str::to_owned);
+                    self.session_trust_all = Some(trust_all);
                     let run_id = self
                         .run_id
                         .clone()
@@ -1930,7 +1881,6 @@ impl ActorWorker {
                 }
                 Err(codex_transport::CodexTransportError::Exited)
                     if matches!(plan, ops::AcpSessionPlan::PromptExisting)
-                        && self.agent != AgentId::Kiro
                         && !retried_after_exit =>
                 {
                     retried_after_exit = true;
@@ -2573,10 +2523,13 @@ impl ActorWorker {
                                 false,
                                 false,
                             )?;
-                            if let Some(transport) = self.transport.as_mut() {
-                                transport.shutdown();
+                            if self
+                                .transport
+                                .as_ref()
+                                .is_some_and(|transport| !transport.is_open())
+                            {
+                                self.transport = None;
                             }
-                            self.transport = None;
                         } else {
                             self.turn_completed(
                                 &result.unwrap_or(json!({ "status": "completed" })),
@@ -2903,10 +2856,13 @@ impl ActorWorker {
                         false,
                         false,
                     )?;
-                    if let Some(transport) = self.transport.as_mut() {
-                        transport.shutdown();
+                    if self
+                        .transport
+                        .as_ref()
+                        .is_some_and(|transport| !transport.is_open())
+                    {
+                        self.transport = None;
                     }
-                    self.transport = None;
                 }
             }
             _ => {}
@@ -3413,7 +3369,11 @@ impl ActorWorker {
         if let Ok(mut guard) = self.catalogs.lock() {
             let cache = guard.entry(self.conversation_id.clone()).or_default();
             for id in ids {
-                if !cache.plan_tool_use_ids.iter().any(|existing| existing == &id) {
+                if !cache
+                    .plan_tool_use_ids
+                    .iter()
+                    .any(|existing| existing == &id)
+                {
                     cache.plan_tool_use_ids.push(id);
                 }
             }
