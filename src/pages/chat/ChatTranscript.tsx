@@ -80,7 +80,7 @@ export function ChatTranscript({
   bottomRef: RefObject<HTMLDivElement>;
   onScroll: () => void;
   onOpenLocal?: (path: string, options?: MarkdownOpenLocalOptions) => boolean;
-  onOpenProcess?: (turn: number, agent: AgentKey) => void;
+  onOpenProcess?: (turn: number, agent: AgentKey, stepKey: string) => void;
   onCloseProcess?: () => void;
   inspectProcess?: ChatProcessInspectTarget | null;
   selectedEditPath?: string;
@@ -161,6 +161,11 @@ export function ChatTranscript({
                     )}
                     {g.agents.map((m) => {
                       const agent = m.agentId ?? 'claude';
+                      const processPaneOpen = Boolean(
+                        inspectProcess
+                        && inspectProcess.turn === m.turn
+                        && inspectProcess.agent === agent,
+                      );
                       return (
                         <ChatMessageBubble
                           key={m.id}
@@ -170,9 +175,8 @@ export function ChatTranscript({
                           onOpenLocal={onOpenLocal}
                           onOpenProcess={onOpenProcess}
                           onCloseProcess={onCloseProcess}
-                          processPaneOpen={
-                            inspectProcess?.turn === m.turn && inspectProcess.agent === agent
-                          }
+                          processPaneOpen={processPaneOpen}
+                          selectedStepKey={processPaneOpen ? (inspectProcess?.stepKey ?? null) : null}
                           selectedEditPath={selectedEditPath}
                           selectedEditTurn={selectedEditTurn}
                           onSelectEdit={onSelectEdit}

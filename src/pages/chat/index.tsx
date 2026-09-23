@@ -114,8 +114,8 @@ export default function ChatPage() {
     [preview.open, preview.target],
   );
   const openProcessInspect = useCallback(
-    (turn: number, agent: string) => {
-      preview.open(openChatProcessInspect(turn, agent));
+    (turn: number, agent: string, stepKey: string) => {
+      preview.open(openChatProcessInspect(turn, agent, stepKey));
     },
     [preview.open],
   );
@@ -735,6 +735,7 @@ export default function ChatPage() {
                 page.runtime?.pendingRequests,
                 t,
               )}
+              activeStepKey={preview.target.stepKey}
               open={preview.expanded}
               onClose={preview.close}
               width={preview.paneWidth}

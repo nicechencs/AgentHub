@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
   type Ref,
 } from 'react';
 import { Check, Copy } from 'lucide-react';
@@ -25,6 +26,7 @@ import {
 import { hasJsonPreviewContent, looksLikeJsonObject } from '@/lib/source-preview';
 import type { ProcessStep } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { processInspectStepIndex } from './chat-preview-model';
 import {
   clipProcessTail,
   formatStepInput,
@@ -195,6 +197,23 @@ function toolHasProtocolDetails(step: Extract<ProcessStep, { type: 'tool' }>): b
   );
 }
 
+function ProcessStepFrame({
+  active,
+  children,
+}: {
+  active: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      data-process-step-active={active ? 'true' : undefined}
+      className={cn(active && 'rounded-btn bg-hover')}
+    >
+      {children}
+    </div>
+  );
+}
+
 function ProcessStepRow({
   step,
   thinkingStartedAt,
@@ -358,12 +377,15 @@ export function ChatProcessPanel({
   exitCode,
   userPrompt,
   pendingConfirm,
+  activeStepKey = null,
 }: {
   view: AgentProcessView;
   messageStatus?: string;
   exitCode?: number | null;
   userPrompt?: string | null;
   pendingConfirm?: string | null;
+  /** Transcript step to keep in view. The pane itself stays open across switches. */
+  activeStepKey?: string | null;
 }) {
   const { t } = useI18n();
   const timeline = timelineProcessSteps(view.steps);
@@ -381,10 +403,28 @@ export function ChatProcessPanel({
   const timelineRef = useRef<HTMLDivElement>(null);
   const stderrRef = useRef<HTMLPreElement>(null);
   const latestThinking = latestThinkingStep(timeline);
+  const activeIndex = processInspectStepIndex(activeStepKey);
+  let transcriptIndex = -1;
+  const timelineRows = timeline.map((step, index) => {
+    const inTranscript = step.type === 'thinking' || step.type === 'tool' || step.type === 'error';
+    if (inTranscript) transcriptIndex += 1;
+    return {
+      step,
+      index,
+      active: inTranscript && activeIndex != null && transcriptIndex === activeIndex,
+    };
+  });
 
   useLayoutEffect(() => {
-    pinElementScrollToBottom(timelineRef.current);
-  }, [view.steps, pendingConfirm, userPrompt]);
+    const root = timelineRef.current;
+    if (!root) return;
+    const active = root.querySelector('[data-process-step-active="true"]');
+    if (active instanceof HTMLElement) {
+      active.scrollIntoView({ block: 'nearest' });
+      return;
+    }
+    pinElementScrollToBottom(root);
+  }, [view.steps, pendingConfirm, userPrompt, activeStepKey]);
 
   useLayoutEffect(() => {
     pinElementScrollToBottom(stderrRef.current);
@@ -404,21 +444,22 @@ export function ChatProcessPanel({
               {userPrompt}
             </div>
           ) : null}
-          {timeline.map((step, i) => (
-            <ProcessStepRow
-              key={processStepKey(step, i)}
-              step={step}
-              thinkingStartedAt={
-                step.type === 'thinking' && step === latestThinking
-                  ? view.thinkingStartedAt
-                  : undefined
-              }
-              thinkingDurationMs={
-                step.type === 'thinking' && step === latestThinking
-                  ? view.thinkingDurationMs
-                  : undefined
-              }
-            />
+          {timelineRows.map(({ step, index, active }) => (
+            <ProcessStepFrame key={processStepKey(step, index)} active={active}>
+              <ProcessStepRow
+                step={step}
+                thinkingStartedAt={
+                  step.type === 'thinking' && step === latestThinking
+                    ? view.thinkingStartedAt
+                    : undefined
+                }
+                thinkingDurationMs={
+                  step.type === 'thinking' && step === latestThinking
+                    ? view.thinkingDurationMs
+                    : undefined
+                }
+              />
+            </ProcessStepFrame>
           ))}
           {pendingConfirm ? (
             <div className="py-1 text-muted" data-help="chat-process-confirm">

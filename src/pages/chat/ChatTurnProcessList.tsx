@@ -19,6 +19,11 @@ import {
 } from './chat-edit-preview';
 import { ChatExpandAffordance } from './ChatExpandAffordance';
 import { thinkingChromeLabel } from './chat-format';
+import {
+  PROCESS_INSPECT_GENERATING_KEY,
+  processInspectRowAction,
+  processInspectStepKey,
+} from './chat-preview-model';
 
 export function ChatTurnProcessList({
   process,
@@ -26,6 +31,7 @@ export function ChatTurnProcessList({
   agent,
   running,
   processPaneOpen = false,
+  selectedStepKey = null,
   selectedEditPath = '',
   selectedEditTurn,
   onOpenProcess,
@@ -37,9 +43,11 @@ export function ChatTurnProcessList({
   agent: AgentKey;
   running: boolean;
   processPaneOpen?: boolean;
+  /** Step currently shown in the detail pane. Only set while that pane is open. */
+  selectedStepKey?: string | null;
   selectedEditPath?: string;
   selectedEditTurn?: number;
-  onOpenProcess?: (turn: number, agent: AgentKey) => void;
+  onOpenProcess?: (turn: number, agent: AgentKey, stepKey: string) => void;
   onCloseProcess?: () => void;
   onSelectEdit?: (file: TurnEditFile, turn: number) => void;
 }) {
@@ -56,10 +64,13 @@ export function ChatTurnProcessList({
     return () => window.clearInterval(id);
   }, [liveThinking]);
 
-  const openProcess = () => {
+  const openProcess = (stepKey: string) => {
     if (!onOpenProcess) return;
-    if (processPaneOpen) onCloseProcess?.();
-    else onOpenProcess(turn, agent);
+    if (processInspectRowAction(processPaneOpen, selectedStepKey, stepKey) === 'close') {
+      onCloseProcess?.();
+      return;
+    }
+    onOpenProcess(turn, agent, stepKey);
   };
 
   if (timeline.length === 0) {
@@ -69,9 +80,9 @@ export function ChatTurnProcessList({
         <li>
           <ProcessRowButton
             help="chat-process-chip"
-            expanded={processPaneOpen}
+            expanded={processPaneOpen && selectedStepKey === PROCESS_INSPECT_GENERATING_KEY}
             live
-            onClick={openProcess}
+            onClick={() => openProcess(PROCESS_INSPECT_GENERATING_KEY)}
           >
             {t('chat.process.summaryGenerating')}
           </ProcessRowButton>
@@ -84,6 +95,8 @@ export function ChatTurnProcessList({
     <ol className="mb-1 space-y-0.5" data-help="chat-turn-process">
       {timeline.map((step, index) => {
         const key = processRowKey(step, index);
+        const stepKey = processInspectStepKey(index);
+        const stepOpen = processPaneOpen && selectedStepKey === stepKey;
         if (step.type === 'thinking') {
           const latest = step === latestThinking;
           const done = Boolean(step.done);
@@ -93,10 +106,11 @@ export function ChatTurnProcessList({
             <li key={key}>
               <ProcessRowButton
                 help="chat-thinking-bar"
-                expanded={processPaneOpen}
+                expanded={stepOpen}
+                current={stepOpen}
                 live={!done}
                 disabled={!onOpenProcess}
-                onClick={openProcess}
+                onClick={() => openProcess(stepKey)}
               >
                 {done ? (
                   <span className="min-w-0 truncate">{label}</span>
@@ -126,13 +140,13 @@ export function ChatTurnProcessList({
               <li key={stepFiles.length > 1 ? `${key}:${fileIndex}:${editFile?.path}` : key}>
                 <ProcessRowButton
                   help="chat-process-chip"
-                  expanded={openEdit ? selected : processPaneOpen}
+                  expanded={openEdit ? selected : stepOpen}
                   live={live}
-                  current={selected}
+                  current={openEdit ? selected : stepOpen}
                   disabled={!onOpenProcess && !openEdit}
                   onClick={() => {
                     if (openEdit && editFile) onSelectEdit?.(editFile, turn);
-                    else openProcess();
+                    else openProcess(stepKey);
                   }}
                 >
                   <span className="min-w-0 truncate">{label}</span>
@@ -146,8 +160,9 @@ export function ChatTurnProcessList({
             <li key={key}>
               <ProcessRowButton
                 help="chat-process-chip"
-                expanded={processPaneOpen}
-                onClick={openProcess}
+                expanded={stepOpen}
+                current={stepOpen}
+                onClick={() => openProcess(stepKey)}
                 disabled={!onOpenProcess}
               >
                 <span className="min-w-0 truncate">{step.message}</span>

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { AgentProcessView } from '@/lib/chat-process';
 import { ChatTurnProcessList } from './ChatTurnProcessList';
+import { processInspectStepKey } from './chat-preview-model';
 
 vi.mock('@/components/shared/LanguageProvider', async () => {
   const { createTranslator } = await import('@/lib/i18n');
@@ -109,6 +110,30 @@ describe('ChatTurnProcessList', () => {
     );
     expect(html).toContain('已修改 src/a.ts');
     expect(html).not.toContain('aria-current="true"');
+  });
+
+  it('marks only the open step as expanded so another step can take over', () => {
+    const html = renderMarkup(
+      createElement(ChatTurnProcessList, {
+        process: processView([
+          { type: 'thinking', text: 'secret plan', done: true },
+          { type: 'tool', name: 'Bash', status: 'end', input: { command: 'ls' } },
+        ], 'ok'),
+        turn: 1,
+        agent: 'codex',
+        running: false,
+        processPaneOpen: true,
+        selectedStepKey: processInspectStepKey(0),
+        onOpenProcess: () => undefined,
+      }),
+    );
+    const thinking = html.slice(html.indexOf('chat-thinking-bar'), html.indexOf('chat-process-chip'));
+    const execute = html.slice(html.indexOf('chat-process-chip'));
+    expect(thinking).toContain('aria-expanded="true"');
+    expect(thinking).not.toContain('aria-expanded="false"');
+    expect(execute).toContain('aria-expanded="false"');
+    expect(execute).toContain('已执行 ls');
+    expect(execute).not.toContain('aria-expanded="true"');
   });
 
   it('keeps a generating row when the turn is running with no steps yet', () => {
