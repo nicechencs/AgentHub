@@ -1,7 +1,9 @@
+import { ContentCopyButton } from '@/components/shared/CopyTextButton';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import type { RuntimeHostTerminal } from '@/lib/api/chat';
 import { cn } from '@/lib/utils';
+import { ResizableRegion, SNIPPET_SURFACE } from './ChatResizableRegion';
 
 export function ChatHostTerminals({
   terminals,
@@ -20,12 +22,19 @@ export function ChatHostTerminals({
           className="rounded-card border border-border bg-subtle p-3 text-body"
           data-help="chat-host-terminal"
         >
-          <p className="font-medium text-primary">{t('chat.runtime.hostCommand')}</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="font-medium text-primary">{t('chat.runtime.hostCommand')}</p>
+            <ContentCopyButton text={terminal.output || terminal.command} />
+          </div>
           <p className="mt-1 font-mono text-meta text-secondary">{terminal.command}</p>
           {terminal.output.trim() ? (
-            <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap break-all rounded-card border border-border/60 bg-canvas px-2 py-1.5 font-mono text-meta leading-relaxed text-primary">
-              {terminal.output}
-            </pre>
+            <ResizableRegion pane="code" label={t('chat.process.resizeCode')} className="mt-2">
+              {(height) => (
+                <pre style={{ height }} className={cn(SNIPPET_SURFACE, 'px-3 py-2')}>
+                  {terminal.output}
+                </pre>
+              )}
+            </ResizableRegion>
           ) : null}
           {terminal.exitCode != null ? (
             <p className="mt-1 text-meta text-muted">
