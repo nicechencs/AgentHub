@@ -29,28 +29,49 @@ import type { SourceFormat } from '@/lib/source-preview';
  * Highlight colors use design tokens so the editor follows light/dark
  * with the rest of the app instead of CodeMirror's VS Code palette.
  */
+/**
+ * Keyword, string, number, and names stay apart.
+ * The same roles are repeated as `.tok-*` in globals.css for inline snippets.
+ */
 const sourceHighlight = HighlightStyle.define([
+  { tag: t.keyword, color: 'var(--danger)', fontWeight: '600' },
   { tag: t.propertyName, color: 'var(--accent)', fontWeight: '600' },
-  { tag: t.attributeName, color: 'var(--accent)', fontWeight: '600' },
-  { tag: t.keyword, color: 'var(--accent)', fontWeight: '600' },
-  { tag: t.string, color: 'var(--text-secondary)' },
-  { tag: t.number, color: 'var(--info)' },
+  { tag: t.attributeName, color: 'var(--accent)' },
+  { tag: t.string, color: 'var(--info)' },
+  { tag: t.special(t.string), color: 'var(--info)' },
+  { tag: t.regexp, color: 'var(--info)' },
+  { tag: t.number, color: 'var(--accent-text)' },
   { tag: t.bool, color: 'var(--success)' },
   { tag: t.atom, color: 'var(--success)' },
   { tag: t.null, color: 'var(--text-muted)', fontStyle: 'italic' },
   { tag: t.comment, color: 'var(--text-muted)', fontStyle: 'italic' },
   { tag: t.lineComment, color: 'var(--text-muted)', fontStyle: 'italic' },
-  { tag: t.punctuation, color: 'var(--text-muted)' },
-  { tag: t.bracket, color: 'var(--text-muted)' },
-  { tag: t.squareBracket, color: 'var(--text-muted)' },
-  { tag: t.brace, color: 'var(--text-muted)' },
-  { tag: t.separator, color: 'var(--text-muted)' },
-  { tag: t.invalid, color: 'var(--danger)' },
-  { tag: t.definition(t.variableName), color: 'var(--text-primary)' },
-  { tag: t.typeName, color: 'var(--info)' },
-  { tag: t.className, color: 'var(--info)' },
+  { tag: t.punctuation, color: 'var(--text-secondary)' },
+  { tag: t.bracket, color: 'var(--text-secondary)' },
+  { tag: t.squareBracket, color: 'var(--text-secondary)' },
+  { tag: t.brace, color: 'var(--text-secondary)' },
+  { tag: t.separator, color: 'var(--text-secondary)' },
   { tag: t.operator, color: 'var(--text-secondary)' },
+  { tag: t.definition(t.variableName), color: 'var(--accent)' },
+  { tag: t.function(t.variableName), color: 'var(--accent)' },
+  { tag: t.typeName, color: 'var(--warning)' },
+  { tag: t.className, color: 'var(--warning)' },
+  { tag: t.tagName, color: 'var(--success)' },
+  { tag: t.inserted, color: 'var(--success)' },
+  { tag: t.deleted, color: 'var(--danger)' },
+  { tag: t.meta, color: 'var(--info)' },
+  { tag: t.invalid, color: 'var(--danger)' },
 ]);
+
+export function sourceLanguageParser(format: SourceFormat) {
+  const [ext] = languageExtension(format);
+  if (!ext || typeof ext !== 'object') return null;
+  const record = ext as {
+    parser?: { parse: (input: string) => unknown };
+    language?: { parser?: { parse: (input: string) => unknown } };
+  };
+  return record.language?.parser ?? record.parser ?? null;
+}
 
 function languageExtension(format: SourceFormat) {
   switch (format) {

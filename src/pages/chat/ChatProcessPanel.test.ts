@@ -120,6 +120,30 @@ describe('ChatProcessPanel human copy', () => {
     expect(html.indexOf('data-process-step-active="true"')).toBeLessThan(html.indexOf('已执行 ls'));
   });
 
+  it('highlights keywords inside a changed file shown in the detail', () => {
+    const html = renderToStaticMarkup(
+      createElement(ChatProcessPanel, {
+        view: view({
+          phase: 'ok',
+          steps: [{
+            type: 'tool',
+            name: 'Write',
+            status: 'end',
+            input: { path: 'src/app.ts' },
+            result: '@@ -1 +1 @@\n-const n = 0;\n+const n = 1;\n',
+          }],
+        }),
+        messageStatus: 'ok',
+        activeStepKey: 'step:0',
+      }),
+    );
+    expect(html).toContain('tok-keyword');
+    expect(html).toContain('>const<');
+    expect(html).toContain('tok-inserted');
+    expect(html).toContain('tok-deleted');
+    expect(html).toContain('tok-number');
+  });
+
   it('keeps finished thinking expanded in the inspect pane', () => {
     const html = renderPanel(
       view({
@@ -133,6 +157,8 @@ describe('ChatProcessPanel human copy', () => {
     expect(html).toContain('先看工作目录');
     expect(html).toContain('思考了 3.2s');
     expect(html).toContain('data-help="chat-process-thinking"');
+    expect(html).toContain('break-words text-primary leading-relaxed');
+    expect(html).not.toContain('italic text-muted');
     expect(html).toMatch(/<details[^>]*open/);
   });
 
@@ -265,7 +291,10 @@ describe('ChatProcessPanel human copy', () => {
     expect(html).toContain('拖动调整命令高度');
     expect(html).toContain('拖动调整过程日志高度');
     expect(html).toContain('cursor-row-resize');
-    expect(html).toContain('dsh --profile headless');
+    expect(html).toContain('dsh');
+    expect(html).toContain('--profile');
+    expect(html).toContain('headless');
+    expect(html).toContain('tok-propertyName');
     expect(html).not.toContain('max-h-24');
     expect(html).not.toContain('max-h-36');
   });

@@ -403,6 +403,58 @@ svg.lucide[data-icon='nav'] {
   }
 }
 
+.tok-keyword {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.tok-string,
+.tok-string2 {
+  color: var(--info);
+}
+
+.tok-number,
+.tok-literal {
+  color: var(--accent-text);
+}
+
+.tok-comment {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.tok-propertyName,
+.tok-attributeName,
+.tok-variableName.tok-definition {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.tok-typeName,
+.tok-className {
+  color: var(--warning);
+}
+
+.tok-bool,
+.tok-atom,
+.tok-inserted {
+  color: var(--success);
+}
+
+.tok-deleted,
+.tok-invalid {
+  color: var(--danger);
+}
+
+.tok-meta {
+  color: var(--info);
+}
+
+.tok-operator,
+.tok-punctuation {
+  color: var(--text-secondary);
+}
+
 .agent-progress-running {
   background-image: linear-gradient(
     100deg,

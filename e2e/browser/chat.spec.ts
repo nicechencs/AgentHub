@@ -178,6 +178,9 @@ test('switching thinking and execute keeps the detail pane open', async ({ page 
   await thinking.click();
   await expect(detail).toBeVisible();
   await expect(thinking).toHaveAttribute('aria-expanded', 'true');
+  const thinkingBody = detail.locator('[data-help="chat-process-thinking"] pre');
+  await expect(thinkingBody).toHaveClass(/text-primary/);
+  await expect(thinkingBody).not.toHaveClass(/italic/);
 
   await execute.click();
   await expect(detail).toBeVisible();
@@ -192,6 +195,25 @@ test('switching thinking and execute keeps the detail pane open', async ({ page 
 
   await thinking.click();
   await expect(detail).toHaveCount(0);
+});
+
+test('code detail highlights keywords apart from comments', async ({ page }) => {
+  await openApp(page);
+  await openChatComposer(page);
+  await setWorkingDirectory(page);
+
+  const composer = page.getByRole('textbox', { name: '消息输入' });
+  await composer.fill('看源码');
+  await page.getByRole('button', { name: '发送' }).click();
+  await page.getByRole('link', { name: '源码行高亮' }).click({ timeout: 15_000 });
+
+  const keyword = page.locator('.cm-content span').filter({ hasText: /^export$/ });
+  const comment = page.locator('.cm-content span').filter({ hasText: 'mock preview' });
+  await expect(keyword).toBeVisible({ timeout: 15_000 });
+  await expect(comment).toBeVisible();
+  const keywordColor = await keyword.evaluate((el) => getComputedStyle(el).color);
+  const commentColor = await comment.evaluate((el) => getComputedStyle(el).color);
+  expect(keywordColor).not.toBe(commentColor);
 });
 
 test('shortcut overview opens from the composer and lists new-chat keys', async ({ page }) => {
