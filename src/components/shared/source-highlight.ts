@@ -128,6 +128,37 @@ function highlightDiffCode(text: string, format: SourceFormat): SourceToken[] | 
   return out.some((token) => token.className) ? out : null;
 }
 
+export type HighlightLine = {
+  kind: 'add' | 'remove' | 'meta' | 'plain';
+  tokens: SourceToken[];
+};
+
+/** Group highlighted tokens into rows so a diff line can take a background wash. */
+export function highlightDetailLines(text: string, fileName?: string | null): HighlightLine[] | null {
+  const tokens = highlightDetailTokens(text, fileName);
+  if (!tokens) return null;
+  const rows: SourceToken[][] = [[]];
+  for (const token of tokens) {
+    const parts = token.text.split('\n');
+    parts.forEach((part, index) => {
+      if (index > 0) rows.push([]);
+      if (part) rows[rows.length - 1].push({ text: part, className: token.className });
+    });
+  }
+  return rows.map((line) => ({ kind: detailLineKind(line), tokens: line }));
+}
+
+function detailLineKind(tokens: SourceToken[]): HighlightLine['kind'] {
+  const first = tokens[0];
+  if (!first?.className) return 'plain';
+  if (first.className === 'tok-inserted' || first.text.startsWith('+') && first.className.includes('inserted')) {
+    return 'add';
+  }
+  if (first.className === 'tok-deleted' || first.className.includes('deleted')) return 'remove';
+  if (first.className === 'tok-meta' || first.className.includes('meta')) return 'meta';
+  return 'plain';
+}
+
 /** Highlight a detail snippet. JSON stays with the editor preview. */
 export function highlightDetailTokens(text: string, fileName?: string | null): SourceToken[] | null {
   if (!text.trim() || looksLikeJsonObject(text)) return null;

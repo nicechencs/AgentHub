@@ -128,6 +128,7 @@ export function SourcePreview({
         density === 'document' && 'h-full border-0 bg-transparent',
         className,
       )}
+      data-source-preview=""
       data-highlight-line={highlightLine ?? undefined}
     >
       {showCopy ? (
