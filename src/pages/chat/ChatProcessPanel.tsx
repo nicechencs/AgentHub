@@ -20,9 +20,11 @@ import {
   phaseFromMessageStatus,
   stepSummary,
   timelineProcessSteps,
+  toolActionTarget,
   toolActionTone,
   type AgentProcessView,
 } from '@/lib/chat-process';
+import { highlightDetailTokens, highlightSourceTokens, type SourceToken } from '@/components/shared/source-highlight';
 import { hasJsonPreviewContent, looksLikeJsonObject } from '@/lib/source-preview';
 import type { ProcessStep } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -89,7 +91,7 @@ function CopyableResizableLog({
         style={{ height: height.paneHeight }}
         className="overflow-auto [overflow-anchor:none] whitespace-pre-wrap break-all rounded-card bg-subtle px-2 py-1.5 font-mono text-meta leading-relaxed text-primary"
       >
-        {text}
+        {pane === 'command' ? <TokenSpans text={text} format="shell" /> : text}
       </pre>
       <div
         role="separator"
@@ -116,21 +118,39 @@ function CopyableResizableLog({
   );
 }
 
-function looksLikeDiff(text: string): boolean {
-  return (
-    /^(?:diff --git|@@ |--- |\+\+\+ )/m.test(text) ||
-    (text.includes('\n+') && text.includes('\n-') && /^(?:[+-](?![+-])).+/m.test(text))
-  );
+function TokenSpans({
+  text,
+  format,
+  fileName,
+}: {
+  text: string;
+  format?: 'shell';
+  fileName?: string | null;
+}) {
+  const tokens = format === 'shell'
+    ? highlightSourceTokens(text, 'shell')
+    : highlightDetailTokens(text, fileName);
+  if (!tokens) return text;
+  return tokens.map((token, index) => (
+    <TokenSpan key={index} token={token} />
+  ));
+}
+
+function TokenSpan({ token }: { token: SourceToken }) {
+  if (!token.className) return token.text;
+  return <span className={token.className}>{token.text}</span>;
 }
 
 function PayloadPreview({
   text,
   density,
   className,
+  fileName,
 }: {
   text: string;
   density: 'preview' | 'compact';
   className?: string;
+  fileName?: string | null;
 }) {
   if (!text.trim()) return null;
   if (looksLikeJsonObject(text)) {
@@ -145,39 +165,18 @@ function PayloadPreview({
       />
     );
   }
-  if (looksLikeDiff(text)) {
-    return <DiffAwarePre text={text} className={className} />;
+  const clipped = clipProcessTail(text);
+  const tokens = highlightDetailTokens(clipped, fileName);
+  if (tokens) {
+    return (
+      <pre className={cn('whitespace-pre-wrap break-words font-mono text-meta text-primary', className)}>
+        {tokens.map((token, index) => (
+          <TokenSpan key={index} token={token} />
+        ))}
+      </pre>
+    );
   }
-  return <pre className={className}>{clipProcessTail(text)}</pre>;
-}
-
-/** Render tool/stderr text; highlight unified-diff style lines when present. */
-function DiffAwarePre({ text, className }: { text: string; className?: string }) {
-  const { t } = useI18n();
-
-  const lines = text.split('\n').slice(0, 200);
-  return (
-    <pre className={cn(className, 'space-y-0')}>
-      {lines.map((line, i) => {
-        const tone =
-          line.startsWith('+') && !line.startsWith('+++')
-            ? 'text-success'
-            : line.startsWith('-') && !line.startsWith('---')
-              ? 'text-danger'
-              : line.startsWith('@@')
-                ? 'text-info'
-                : 'text-secondary';
-        return (
-          <div key={i} className={cn('whitespace-pre-wrap break-all', tone)}>
-            {line || ' '}
-          </div>
-        );
-      })}
-      {text.split('\n').length > 200 ? (
-        <div className="text-muted">{t('chat.process.truncated')}</div>
-      ) : null}
-    </pre>
-  );
+  return <pre className={cn('whitespace-pre-wrap break-words text-primary', className)}>{clipped}</pre>;
 }
 
 function processStepKey(step: ProcessStep, index: number): string {
@@ -216,38 +215,41 @@ function ProcessStepFrame({
 
 function ProcessStepRow({
   step,
+  active = false,
   thinkingStartedAt,
   thinkingDurationMs,
 }: {
   step: ProcessStep;
+  active?: boolean;
   thinkingStartedAt?: number;
   thinkingDurationMs?: number;
 }) {
   const { t } = useI18n();
   if (step.type === 'tool') {
     const input = formatStepInput(step.input);
+    const fileName = toolActionTarget(step.name, step.input);
     const live = toolActionTone(step.status) === 'live';
     return (
       <div className="py-1" data-help="chat-process-tool">
         <div
           className={cn(
-            'font-medium text-secondary',
+            'font-medium text-primary',
             live && 'agent-progress-running',
           )}
         >
           {formatToolStep(step, t)}
         </div>
         {toolHasProtocolDetails(step) ? (
-          <details className="mt-0.5 text-meta" onClick={(e) => e.stopPropagation()}>
+          <details className="mt-0.5 text-meta" open={active} onClick={(e) => e.stopPropagation()}>
             <summary className="cursor-pointer text-muted">{t('chat.process.details')}</summary>
             <div className="mt-1 space-y-1">
               <div className="text-muted">
                 {step.name}
                 {step.status ? ` · ${step.status}` : ''}
               </div>
-              {input ? <PayloadPreview text={input} density="compact" /> : null}
+              {input ? <PayloadPreview text={input} density="compact" fileName={fileName} /> : null}
               {step.result ? (
-                <PayloadPreview text={step.result} density="compact" className="mt-1" />
+                <PayloadPreview text={step.result} density="compact" fileName={fileName} className="mt-1" />
               ) : null}
             </div>
           </details>
@@ -280,7 +282,7 @@ function ProcessStepRow({
         {body ? (
           <details className="mt-0.5 text-meta" onClick={(e) => e.stopPropagation()}>
             <summary className="cursor-pointer text-muted">{t('chat.process.details')}</summary>
-            <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap break-all text-muted">
+            <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap break-all text-primary">
               {clipProcessTail(body)}
             </pre>
           </details>
@@ -347,17 +349,17 @@ function ThinkingStepRow({
         if (next !== open) setOpen(next);
       }}
     >
-      <summary className="cursor-pointer list-none text-secondary marker:content-none [&::-webkit-details-marker]:hidden">
+      <summary className="cursor-pointer list-none text-primary marker:content-none [&::-webkit-details-marker]:hidden">
         {done ? (
           label
         ) : (
-          <AgentThinking label={label} showTimer={false} />
+          <AgentThinking label={label} showTimer={false} className="text-meta text-primary" />
         )}
       </summary>
       {body ? (
         <pre
           ref={bodyRef}
-          className="mt-0.5 max-h-40 overflow-auto [overflow-anchor:none] whitespace-pre-wrap break-words italic text-muted"
+          className="mt-0.5 max-h-40 overflow-auto [overflow-anchor:none] whitespace-pre-wrap break-words text-primary leading-relaxed"
         >
           {body}
         </pre>
@@ -431,23 +433,26 @@ export function ChatProcessPanel({
   }, [view.stderr]);
 
   return (
-    <div className="min-h-0 flex-1 space-y-2 overflow-auto text-meta text-secondary">
+    <div className="min-h-0 flex-1 space-y-2 overflow-auto text-meta text-primary">
       {timeline.length > 0 || userPrompt || pendingConfirm || usageSteps.length > 0 ? (
         <div
           ref={timelineRef}
           className="space-y-0 [overflow-anchor:none] border-l border-border pl-3"
         >
           {userPrompt ? (
-            <div className="py-1 text-muted" data-help="chat-process-user">
-              {t('chat.process.userSaid')}
-              {' · '}
-              {userPrompt}
+            <div className="py-1" data-help="chat-process-user">
+              <span className="text-muted">
+                {t('chat.process.userSaid')}
+                {' · '}
+              </span>
+              <span>{userPrompt}</span>
             </div>
           ) : null}
           {timelineRows.map(({ step, index, active }) => (
             <ProcessStepFrame key={processStepKey(step, index)} active={active}>
               <ProcessStepRow
                 step={step}
+                active={active}
                 thinkingStartedAt={
                   step.type === 'thinking' && step === latestThinking
                     ? view.thinkingStartedAt
@@ -462,10 +467,12 @@ export function ChatProcessPanel({
             </ProcessStepFrame>
           ))}
           {pendingConfirm ? (
-            <div className="py-1 text-muted" data-help="chat-process-confirm">
-              {t('chat.process.waitingConfirm')}
-              {' · '}
-              {pendingConfirm}
+            <div className="py-1" data-help="chat-process-confirm">
+              <span className="text-muted">
+                {t('chat.process.waitingConfirm')}
+                {' · '}
+              </span>
+              <span>{pendingConfirm}</span>
             </div>
           ) : null}
           {usageSteps.map((step, i) => (
