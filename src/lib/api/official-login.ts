@@ -23,7 +23,11 @@ import {
   type OfficialLoginPoll,
   type OfficialLoginSession,
 } from '@/lib/backend/contracts/official-login-session';
-import { OAUTH_WAIT_TIMEOUT_SECS } from '@/lib/backend/contracts/oauth-constants';
+import {
+  OAUTH_DEVICE_POLL_INTERVAL_SECS,
+  OAUTH_PKCE_LISTEN_TIMEOUT_SECS,
+  OAUTH_WAIT_TIMEOUT_SECS,
+} from '@/lib/backend/contracts/oauth-constants';
 import type { OAuthLoginOption } from '@/lib/backend/contracts/account-port';
 import type { Account, AgentKey } from '@/lib/types';
 
@@ -67,10 +71,11 @@ export async function waitOfficialLogin(
   session: OfficialLoginSession,
   isCurrent: () => boolean = () => true,
 ): Promise<OfficialLoginPoll> {
-  const deadlineMs = Date.now() + Math.max(1, session.expiresInSecs || 900) * 1000;
+  const deadlineMs =
+    Date.now() + Math.max(1, session.expiresInSecs || OAUTH_PKCE_LISTEN_TIMEOUT_SECS) * 1000;
 
   if (session.flow === 'deviceCode') {
-    const intervalMs = Math.max(2, session.intervalSecs || 5) * 1000;
+    const intervalMs = Math.max(2, session.intervalSecs || OAUTH_DEVICE_POLL_INTERVAL_SECS) * 1000;
     while (isCurrent() && Date.now() < deadlineMs) {
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
       if (!isCurrent()) return { phase: 'cancelled' };

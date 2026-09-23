@@ -662,7 +662,8 @@ fn extract_dsh_reads_real_rows_and_skips_heuristics() {
     // once. v3 session logs on disk only carry `isSeeded` in the header plus a
     // `session/end-seed` marker, so these guard against a future shape.
     let estimated = r#"{"type":"token-meter","seq":20,"time":1789102625000,"data":{"surfaceTokens":999,"estimated":true}}"#;
-    let meter = r#"{"type":"token-meter","seq":21,"time":1789102625000,"data":{"surfaceTokens":999}}"#;
+    let meter =
+        r#"{"type":"token-meter","seq":21,"time":1789102625000,"data":{"surfaceTokens":999}}"#;
     let seed = r#"{"type":"session/end-seed","seq":31,"time":1789102627000,"data":{"seedLength":2,"usage":{"inputTokens":100,"outputTokens":100}}}"#;
     // Message content may quote our own vocabulary; that must not hide usage.
     let quotes_surface_tokens = r#"{"type":"assistant/message","seq":40,"time":1789102628000,"data":{"message":{"role":"assistant","content":[{"type":"text","text":"projcache has surfaceTokens and estimated:true fields"}],"source":{"kind":"model","model":"deepseek-flash"}},"usage":{"inputTokens":7,"outputTokens":8}}}"#;

@@ -62,7 +62,8 @@ fn unquote(raw: &str) -> String {
 
 /// Empty Explorer `%V` / `%1` expands to `\.`, `.`, or a lone slash — not a folder.
 fn is_bare_dot_or_slash(s: &str) -> bool {
-    s.trim_matches(|c| c == '/' || c == '\\' || c == '.').is_empty()
+    s.trim_matches(|c| c == '/' || c == '\\' || c == '.')
+        .is_empty()
 }
 
 /// Folder to use as the chat working directory. Files resolve to their parent.
@@ -329,10 +330,7 @@ pub(crate) fn register_best_effort(lang: TrayUiLanguage) {
     let Some(exe) = resolve_shell_register_exe(current.as_deref(), appimage.as_deref()) else {
         return;
     };
-    let force = matches!(
-        std::env::var("AGENTHUB_REGISTER_SHELL").as_deref(),
-        Ok("1")
-    );
+    let force = matches!(std::env::var("AGENTHUB_REGISTER_SHELL").as_deref(), Ok("1"));
     if !should_write_shell_registration(&exe, force) {
         tracing::info!(
             target: "gui",

@@ -11,11 +11,15 @@ export type ChatProcessInspectTarget = {
   kind: 'process';
   turn: number;
   agent: AgentKey;
+  /** Transcript step this detail is showing. Absent on older targets. */
+  stepKey?: string;
 };
 
 export type ChatEditPreviewTarget = {
   kind: 'edit';
   path: string;
+  /** Clicked turn. A later turn that touched the same path must not replace this diff. */
+  turn?: number;
 };
 
 export type ChatInspectTarget =
@@ -68,12 +72,46 @@ export function openChatPreviewRoot(path: string, line?: number): ChatFilePrevie
   };
 }
 
-export function openChatProcessInspect(turn: number, agent: AgentKey): ChatProcessInspectTarget {
-  return { kind: 'process', turn, agent };
+export function openChatProcessInspect(
+  turn: number,
+  agent: AgentKey,
+  stepKey?: string,
+): ChatProcessInspectTarget {
+  return stepKey
+    ? { kind: 'process', turn, agent, stepKey }
+    : { kind: 'process', turn, agent };
 }
 
-export function openChatEditPreview(path: string): ChatEditPreviewTarget {
-  return { kind: 'edit', path };
+/** Transcript row for one thinking / tool / error step. Shared with the detail pane. */
+export function processInspectStepKey(index: number): string {
+  return `step:${index}`;
+}
+
+/** Placeholder row shown before the first process step arrives. */
+export const PROCESS_INSPECT_GENERATING_KEY = 'generating';
+
+/** Index encoded by `processInspectStepKey`, or null for the generating row. */
+export function processInspectStepIndex(stepKey: string | null | undefined): number | null {
+  if (!stepKey?.startsWith('step:')) return null;
+  const raw = stepKey.slice('step:'.length);
+  if (!/^\d+$/.test(raw)) return null;
+  return Number(raw);
+}
+
+/**
+ * The open detail stays up while the user moves to another step.
+ * Clicking the step that is already showing closes it.
+ */
+export function processInspectRowAction(
+  paneOpen: boolean,
+  selectedStepKey: string | null | undefined,
+  stepKey: string,
+): 'close' | 'focus' {
+  return paneOpen && selectedStepKey === stepKey ? 'close' : 'focus';
+}
+
+export function openChatEditPreview(path: string, turn?: number): ChatEditPreviewTarget {
+  return typeof turn === 'number' ? { kind: 'edit', path, turn } : { kind: 'edit', path };
 }
 
 export function pushChatPreview(

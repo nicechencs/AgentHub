@@ -1,5 +1,9 @@
 import { getVersion } from '@tauri-apps/api/app';
 import type { SettingsPort } from '@/lib/backend/contracts';
+import {
+  DEFAULT_LOG_RETENTION_DAYS,
+  DEFAULT_USAGE_COLLECT_INTERVAL_MIN,
+} from '@/lib/backend/contracts/app-limits';
 import { sanitizeGuiLast4 } from '@/lib/backend/contracts/settings-port';
 import { UNKNOWN_APP_VERSION } from '@/lib/app-version';
 import { logger } from '@/lib/logger';
@@ -75,9 +79,9 @@ const DEFAULTS: AppSettings = {
   dataDir: '~/.agenthub',
   logsDir: '~/.agenthub/logs',
   logLevel: 'info',
-  logRetentionDays: 14,
+  logRetentionDays: DEFAULT_LOG_RETENTION_DAYS,
   skillMarketSource: 'auto',
-  usageCollectIntervalMin: 30,
+  usageCollectIntervalMin: DEFAULT_USAGE_COLLECT_INTERVAL_MIN,
   keepLiveFileCopies: true,
   warnDuplicateRouteCredential: true,
   updateDuplicateRouteUrl: true,
@@ -294,7 +298,7 @@ export function createTauriSettingsPort(): SettingsPort {
           theme,
           language: mapLanguageToUi(core.language),
           logLevel: parseLogLevel(core.logLevel),
-          logRetentionDays: core.logRetentionDays || 14,
+          logRetentionDays: core.logRetentionDays || DEFAULT_LOG_RETENTION_DAYS,
           skillMarketSource: parseSkillMarketSource(core.skillMarketSource),
           // Core is source of truth for close-to-tray (Rust window handler reads it).
           closeToTray: resolveCloseToTray(core.closeToTray, local.closeToTray),

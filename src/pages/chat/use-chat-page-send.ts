@@ -27,8 +27,8 @@ import {
 import type { RuntimeRequest, RuntimeSnapshot } from '@/lib/api/chat';
 import type { ProcessMap } from '@/lib/chat-process';
 import type { AgentKey, ChatEvent, ChatMessage, Conversation } from '@/lib/types';
-import { localizeChatFailure, type TurnGroup } from './chat-format';
-import { busyAgentsForSends, incomingSendingIds, liveSendingIds, retryTarget, sendBlockers, titleFromPrompt, withConversationTitle } from './chat-model';
+import { localizeChatFailure } from './chat-format';
+import { busyAgentsForSends, incomingSendingIds, liveSendingIds, sendBlockers, titleFromPrompt, withConversationTitle } from './chat-model';
 import { isCurrentChatRequest } from './chat-request';
 import {
   appendQueuedFollowUp,
@@ -41,7 +41,9 @@ import {
 } from './chat-grok-follow-up';
 import {
   composerCancelingVisible,
+  composerDraftAfterCancel,
   composerKeepsStoppingAfterCancel,
+  composerQueueableFollowUpText,
 } from './chat-composer-model';
 import { acceptsRuntimeSnapshot, isLatestRuntimeRead, isRuntimeActive, readRuntimeTransport, requestMatchesRuntime, runtimeReplyFields } from './chat-runtime-model';
 import {
@@ -94,7 +96,6 @@ export function useChatPageSend(input: {
   loadMessages: (id: string) => Promise<ChatMessage[]>;
   draft: string;
   setDraft: Dispatch<SetStateAction<string>>;
-  turns: TurnGroup[];
   getStartExtras?: () => { images?: { path: string }[]; skills?: { name: string; path: string }[] };
   clearStartExtras?: () => void;
 }) {
@@ -116,7 +117,6 @@ export function useChatPageSend(input: {
     loadMessages,
     draft,
     setDraft,
-    turns,
     getStartExtras,
     clearStartExtras,
   } = input;
@@ -141,6 +141,7 @@ export function useChatPageSend(input: {
   const runtimeProbeRef = useRef(new Set<string>());
   const runtimeProbeCancelRef = useRef(new Set<string>());
   const followUpsRef = useRef(new Map<string, QueuedFollowUpItem[]>());
+  const lastSentPromptRef = useRef(new Map<string, string>());
   const [followUpById, setFollowUpById] = useState<Record<string, QueuedFollowUpItem[]>>({});
 
   useEffect(() => {
@@ -181,7 +182,13 @@ export function useChatPageSend(input: {
   ) => {
     setFollowUpQueue(
       conversationId,
-      appendQueuedFollowUp(followUpsRef.current.get(conversationId) ?? [], prompt, undefined, extras),
+      appendQueuedFollowUp(
+        followUpsRef.current.get(conversationId) ?? [],
+        prompt,
+        undefined,
+        extras,
+        lastSentPromptRef.current.get(conversationId),
+      ),
     );
   };
 
@@ -476,8 +483,6 @@ export function useChatPageSend(input: {
     });
   }, [active, hiddenIds, envNotReadyIds, unconfiguredAuthIds, agentsReady]);
 
-  const retry = useMemo(() => retryTarget(turns, sendingHere), [turns, sendingHere]);
-
   function applyEvent(
     ev: ChatEvent,
     sendConvId: string,
@@ -657,8 +662,14 @@ export function useChatPageSend(input: {
   ) {
     if (!active) return;
     if (sendingIdsRef.current.has(active.id)) {
-      const next = prompt.trim();
-      if (!next) return;
+      const next = composerQueueableFollowUpText({
+        text: prompt,
+        lastSent: lastSentPromptRef.current.get(active.id),
+      });
+      if (!next) {
+        if (clearDraft) setDraft('');
+        return;
+      }
       appendFollowUp(active.id, next, getStartExtras?.());
       clearStartExtras?.();
       if (clearDraft) setDraft('');
@@ -682,6 +693,7 @@ export function useChatPageSend(input: {
 
     const sendConvId = active.id;
     const sendGeneration = activeGenerationRef.current;
+    lastSentPromptRef.current.set(sendConvId, prompt);
     markSending(sendConvId);
     if (clearDraft) setDraft('');
     const turnGuess = messages.reduce((max, m) => Math.max(max, m.turn), 0) + 1;
@@ -746,14 +758,11 @@ export function useChatPageSend(input: {
       return;
     }
     if (runtimeProbeCancelRef.current.delete(sendConvId)) {
-      // The request was cancelled while the transport decision was pending.
-      // No new runtime turn or legacy process has been started yet.
-      clearSendingFor(sendConvId);
-      if (isCurrentChatRequest(activeIdRef.current, activeGenerationRef.current, sendConvId, sendGeneration)) {
-        setDraft(prompt);
-        setMessages((prev) => prev.filter((message) => message.id !== localUserId));
-      }
-      return;
+      // Stop arrived during the title write / transport probe. Keep the user
+      // line and continue into start so the run can honor cancelRequested
+      // (deleting the turn here hid the 已停止 hint).
+      const record = runtimeRecordsRef.current.get(sendConvId);
+      if (record) record.cancelRequested = true;
     }
     if (transport.kind === 'runtime') {
       beginRuntimeStart(
@@ -821,6 +830,9 @@ export function useChatPageSend(input: {
       return;
     }
 
+    if (runtimeRecordsRef.current.get(sendConvId)?.cancelRequested) {
+      await chatCancel(sendConvId).catch(() => {});
+    }
     try {
       await chatSend(sendConvId, prompt, (ev) => applyEvent(ev, sendConvId, sendGeneration));
       // Write the Agent title even if this conversation is no longer current.
@@ -886,19 +898,15 @@ export function useChatPageSend(input: {
     }
   }
 
-  async function handleSend() {
-    await sendPrompt(draft.trim(), true);
-  }
-
-  async function retryLast() {
-    const target = retryTarget(turns, sendingHere);
-    if (!target) return;
-    await sendPrompt(target.prompt, false);
+  async function handleSend(promptOverride?: string) {
+    await sendPrompt((promptOverride ?? draft).trim(), true);
   }
 
   async function cancelRuntimeTarget(conversationId: string): Promise<'pending' | 'requested' | 'none'> {
     if (runtimeProbeRef.current.has(conversationId)) {
       runtimeProbeCancelRef.current.add(conversationId);
+      const record = runtimeRecordsRef.current.get(conversationId);
+      if (record) record.cancelRequested = true;
       return 'pending';
     }
     let target = requestRuntimeCancel(runtimeRecordsRef.current, conversationId);
@@ -950,13 +958,26 @@ export function useChatPageSend(input: {
       draft,
       queue: followUpsRef.current.get(id) ?? [],
     });
-    if (restored.draft !== draft) setDraft(restored.draft);
+    const nextDraft = composerDraftAfterCancel({
+      draft,
+      queuedDraft: restored.draft,
+      lastSent: lastSentPromptRef.current.get(id) ?? '',
+    });
+    if (nextDraft !== draft) setDraft(nextDraft);
     setFollowUpQueue(id, restored.queue);
+    runtimeProbeCancelRef.current.add(id);
+    const existing = runtimeRecordsRef.current.get(id);
+    if (existing) existing.cancelRequested = true;
     cancelingIdsRef.current.add(id);
     setCancelingIds([...cancelingIdsRef.current]);
     try {
       const result = await cancelRuntimeTarget(id);
-      if (!composerKeepsStoppingAfterCancel(result)) {
+      if (result === 'none' && sendingIdsRef.current.has(id)) {
+        // Send is past markSending but not yet beginRuntimeStart (title persist).
+        const record = runtimeRecordsRef.current.get(id);
+        if (record) record.cancelRequested = true;
+        runtimeProbeCancelRef.current.add(id);
+      } else if (!composerKeepsStoppingAfterCancel(result)) {
         clearCancelingFor(id);
         return;
       }
@@ -1088,10 +1109,8 @@ export function useChatPageSend(input: {
     busyAgentIds,
     processMap,
     blockers,
-    retry,
     handleSend,
     sendPrompt,
-    retryLast,
     handleCancel,
     queuedFollowUps: activeId ? followUpById[activeId] ?? [] : [],
     queuedFollowUpCount: activeId ? followUpById[activeId]?.length ?? 0 : 0,

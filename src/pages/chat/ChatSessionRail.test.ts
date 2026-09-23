@@ -230,5 +230,33 @@ describe('ChatSessionRail titles', () => {
     expect(src).toContain('onClick={() => onNewChat()}');
     expect(src).not.toContain('onClick={onNewChat}');
   });
+
+  it('opens the working directory from a folder header context menu', () => {
+    const src = readFileSync(new URL('./ChatSessionRail.tsx', import.meta.url), 'utf8');
+    const t = createTranslator('zh');
+    expect(src).toContain('onContextMenu={(event) => {');
+    expect(src).toContain('normalizeOpenPath(group.cwd)');
+    expect(src).toContain('<ContextMenu open={workspaceMenu !== null}');
+    expect(src).toContain("t('chat.rail.openFolder')");
+    expect(src).toContain('openLocalPath(cwd)');
+    expect(src).toContain('data-help="chat-workspace-open"');
+    expect(src).toContain('workspaceMenu?.path');
+    expect(t('chat.rail.openFolder')).toBe('打开工作目录');
+    expect(createTranslator('en')('chat.rail.openFolder')).toBe('Open folder');
+  });
+
+  it('pins a folder from the same context menu and lifts it above recency', () => {
+    const src = readFileSync(new URL('./ChatSessionRail.tsx', import.meta.url), 'utf8');
+    const t = createTranslator('zh');
+    expect(src).toContain('toggleWorkspacePinKeys(pinKeys, key)');
+    expect(src).toContain('applyWorkspacePins(groups, pinKeys)');
+    expect(src).toContain("t('chat.rail.pin')");
+    expect(src).toContain("t('chat.rail.unpin')");
+    expect(src).toContain('data-help="chat-workspace-pin"');
+    expect(src).toContain('data-help="chat-workspace-pinned"');
+    expect(t('chat.rail.pin')).toBe('置顶');
+    expect(t('chat.rail.unpin')).toBe('取消置顶');
+    expect(createTranslator('en')('chat.rail.pin')).toBe('Pin to top');
+  });
 });
 

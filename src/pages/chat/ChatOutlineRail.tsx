@@ -9,15 +9,18 @@ import {
   type RefObject,
 } from 'react';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { Hint } from '@/components/ui/tooltip';
 import { usePrefersReducedMotion } from '@/lib/motion';
 import { cn } from '@/lib/utils';
 import type { TurnGroup } from './chat-format';
 import { createChatOutlineHoverIntent } from './chat-outline-hover';
 import {
+  OUTLINE_RAIL_INSET_PX,
   OUTLINE_READING_LINE_PX,
   outlinePanelElement,
   outlinePanelWidthReady,
   outlinePromptsFromTurns,
+  outlineRailLeftOffset,
   outlineTickSize,
   promptTickMagnification,
   readOutlinePanelWidth,
@@ -29,7 +32,6 @@ import { loadChatOutlineEnabled } from './chat-outline-pref';
 
 const RAIL_WIDTH_PX = 36;
 const SLOT_HEIGHT_PX = 8;
-const PREVIEW_GAP_PX = 4;
 
 export function ChatOutlineRail({
   turns,
@@ -58,6 +60,7 @@ export function ChatOutlineRail({
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [railLeft, setRailLeft] = useState(OUTLINE_RAIL_INSET_PX);
   const prefersReducedMotion = usePrefersReducedMotion();
 
   const hoverIntent = useMemo(
@@ -73,12 +76,15 @@ export function ChatOutlineRail({
   useEffect(() => () => hoverIntent.dispose(), [hoverIntent]);
 
   useEffect(() => {
-    if (hasMeasuredWidth) return;
     const node = measureNode;
     if (!node) return;
     const apply = () => {
-      const next = readOutlinePanelWidth(node);
-      setObservedWidth((prev) => (prev === next ? prev : next));
+      if (!hasMeasuredWidth) {
+        const next = readOutlinePanelWidth(node);
+        setObservedWidth((prev) => (prev === next ? prev : next));
+      }
+      const nextLeft = outlineRailLeftOffset(node, outlinePanelElement(node));
+      setRailLeft((prev) => (prev === nextLeft ? prev : nextLeft));
     };
     apply();
     if (typeof ResizeObserver === 'undefined') {
@@ -86,8 +92,14 @@ export function ChatOutlineRail({
       return () => window.removeEventListener('resize', apply);
     }
     const observer = new ResizeObserver(apply);
-    observer.observe(outlinePanelElement(node) ?? node);
-    return () => observer.disconnect();
+    const stage = outlinePanelElement(node);
+    if (stage && stage !== node) observer.observe(stage);
+    observer.observe(node);
+    window.addEventListener('resize', apply);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', apply);
+    };
   }, [hasMeasuredWidth, measureNode]);
 
   const readActivePrompt = useCallback(() => {
@@ -152,7 +164,7 @@ export function ChatOutlineRail({
   return (
     <div
       ref={assignMeasureRef}
-      className="pointer-events-none absolute inset-0"
+      className="pointer-events-none absolute inset-0 overflow-visible"
       data-chat-outline-measure
     >
       {visible ? (
@@ -160,8 +172,8 @@ export function ChatOutlineRail({
           role="tablist"
           aria-label={t('chat.outline.aria')}
           data-testid="chat-outline-rail"
-          className="pointer-events-auto absolute bottom-[10%] top-[10%] z-[2] flex flex-col items-center justify-center"
-          style={{ left: 8, width: RAIL_WIDTH_PX }}
+          className="pointer-events-auto absolute bottom-[10%] top-[10%] z-[2] flex flex-col items-start justify-center overflow-visible"
+          style={{ left: railLeft, width: RAIL_WIDTH_PX }}
           onPointerEnter={handlePointerEnterRail}
           onPointerMove={handlePointerMoveRail}
           onPointerLeave={handlePointerLeaveRail}
@@ -227,49 +239,36 @@ const ChatOutlineTick = memo(function ChatOutlineTick({
 
   return (
     <div
-      className="relative flex min-h-0 items-center justify-center"
+      className="relative flex min-h-0 items-center justify-start"
       style={{
         width: RAIL_WIDTH_PX,
         flexBasis: SLOT_HEIGHT_PX,
-        flexGrow: 1,
         flexShrink: 1,
       }}
       onPointerEnter={() => onHover(index)}
     >
-      <button
-        type="button"
-        role="tab"
-        aria-selected={isActive}
-        aria-label={label}
-        data-testid={`chat-outline-tick-${prompt.id}`}
-        className="flex h-full w-full cursor-pointer items-center justify-start bg-transparent pl-1 outline-none"
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={handleJump}
-        onFocus={() => onFocusChange(index, true)}
-        onBlur={() => onFocusChange(index, false)}
-      >
-        <span
-          className={cn(
-            'block rounded-full transition-[width,height,background-color] duration-[140ms] ease-out motion-reduce:transition-none',
-            hasAttention ? 'bg-primary' : isActive ? 'bg-muted' : 'bg-border',
-          )}
-          style={{ width: size.width, height: size.height }}
-        />
-      </button>
-      {hasAttention ? (
-        <div
-          aria-hidden
-          data-testid="chat-outline-preview"
-          className="pointer-events-none absolute top-1/2 z-[3] h-12 overflow-hidden rounded-card border border-border bg-panel px-3 py-1.5 shadow-md"
-          style={{
-            left: RAIL_WIDTH_PX + PREVIEW_GAP_PX,
-            width: 260,
-            marginTop: -24,
-          }}
+      <Hint label={prompt.preview} side="right" sideOffset={4}>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={isActive}
+          aria-label={label}
+          data-testid={`chat-outline-tick-${prompt.id}`}
+          className="flex h-full w-full cursor-pointer items-center justify-start bg-transparent outline-none"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={handleJump}
+          onFocus={() => onFocusChange(index, true)}
+          onBlur={() => onFocusChange(index, false)}
         >
-          <p className="line-clamp-2 text-meta text-primary">{prompt.preview}</p>
-        </div>
-      ) : null}
+          <span
+            className={cn(
+              'block rounded-full transition-[width,height,background-color] duration-[140ms] ease-out motion-reduce:transition-none',
+              hasAttention ? 'bg-primary' : isActive ? 'bg-muted' : 'bg-border',
+            )}
+            style={{ width: size.width, height: size.height }}
+          />
+        </button>
+      </Hint>
     </div>
   );
 });

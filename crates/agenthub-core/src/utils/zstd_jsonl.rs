@@ -186,10 +186,7 @@ fn is_frame_magic(bytes: &[u8]) -> bool {
         return true;
     }
     // Skippable frames: 0x184D2A50..=0x184D2A5F, little endian on disk.
-    (0x50..=0x5f).contains(&bytes[0])
-        && bytes[1] == 0x2a
-        && bytes[2] == 0x4d
-        && bytes[3] == 0x18
+    (0x50..=0x5f).contains(&bytes[0]) && bytes[1] == 0x2a && bytes[2] == 0x4d && bytes[3] == 0x18
 }
 
 /// Ends the decoded stream at a torn/unreadable frame, recording that it did.

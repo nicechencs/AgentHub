@@ -11,6 +11,7 @@ use crate::logging::{self, targets};
 use crate::models::AgentId;
 use crate::platform::paths::resolve_agent_home;
 use crate::platform::AgentKey;
+use crate::services::adapter_route_constants::{ANTHROPIC_API_KEY_ENV, ANTHROPIC_AUTH_TOKEN_ENV};
 use crate::services::{LiveWriteAuthority, LiveWriteGuard};
 use crate::storage::Database;
 use crate::utils::redact::redact_text;
@@ -323,7 +324,7 @@ fn scrub_unknown_native(doc: &mut NormalizedConfigDocument) {
     // JSON root: redact known secret env keys under env.
     if let Some(obj) = doc.unknown_native.as_object_mut() {
         if let Some(env) = obj.get_mut("env").and_then(|e| e.as_object_mut()) {
-            for key in ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"] {
+            for key in [ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_API_KEY_ENV] {
                 if env
                     .get(key)
                     .and_then(|v| v.as_str())

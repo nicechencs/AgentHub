@@ -24,6 +24,7 @@ use crate::logging::targets;
 #[allow(unused_imports)]
 use crate::models::BackupKind;
 use crate::models::{AdapterBindingHealNotice, AgentConfig, AgentId, Provider, ProviderInput};
+use crate::services::adapter_route_constants::{ANTHROPIC_API_KEY_ENV, ANTHROPIC_AUTH_TOKEN_ENV};
 use crate::services::{
     AdapterSecretResolver, BackupService, ConnectionService, LiveWriteAuthority,
 };
@@ -216,11 +217,11 @@ pub(super) fn live_config_is_empty(raw: &serde_json::Value) -> bool {
             if env.as_object().is_some_and(serde_json::Map::is_empty) {
                 return true;
             }
-            !env.get("ANTHROPIC_AUTH_TOKEN")
+            !env.get(ANTHROPIC_AUTH_TOKEN_ENV)
                 .and_then(|value| value.as_str())
                 .is_some_and(|value| !value.is_empty())
                 && !env
-                    .get("ANTHROPIC_API_KEY")
+                    .get(ANTHROPIC_API_KEY_ENV)
                     .and_then(|value| value.as_str())
                     .is_some_and(|value| !value.is_empty())
         }

@@ -806,9 +806,7 @@ fn setup_guide_open_failure_does_not_claim_page_opened() {
         Some(setup_guide_open_failed_diagnosis())
     );
     assert!(
-        out.logs
-            .iter()
-            .any(|line| line.contains("打开安装页失败")),
+        out.logs.iter().any(|line| line.contains("打开安装页失败")),
         "logs={:?}",
         out.logs
     );

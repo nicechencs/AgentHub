@@ -1,5 +1,8 @@
 use super::*;
 use crate::bridge::BridgeLocalSurface;
+use crate::services::adapter_route_constants::{
+    ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV, OPENAI_API_KEY_ENV,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BridgeProjection {
@@ -65,10 +68,10 @@ pub(super) fn projected_provider_input(
     if projection_of(rule.target_agent) == BridgeProjection::ClaudeEnv {
         let mut env = serde_json::Map::new();
         env.insert(
-            "ANTHROPIC_BASE_URL".into(),
+            ANTHROPIC_BASE_URL_ENV.into(),
             json!(format!("http://127.0.0.1:{port}")),
         );
-        env.insert("ANTHROPIC_AUTH_TOKEN".into(), json!(local_bearer));
+        env.insert(ANTHROPIC_AUTH_TOKEN_ENV.into(), json!(local_bearer));
         crate::models::apply_claude_live_model_env(&mut env, model, context_window_tokens);
         let mut settings = json!({ "env": env });
         let id = crate::models::strip_claude_context_marker(model);
@@ -103,7 +106,7 @@ pub(super) fn projected_provider_input(
             settings_config: json!({
                 "format": "toml",
                 "content": grok_bridge_toml(&rule, port, local_bearer),
-                "auth": { "OPENAI_API_KEY": local_bearer },
+                "auth": { (OPENAI_API_KEY_ENV): local_bearer },
             }),
             meta: generated_provider_meta(profile, &rule),
             is_current: false,
@@ -121,7 +124,7 @@ pub(super) fn projected_provider_input(
             settings_config: json!({
                 "format": "toml",
                 "content": kimi_bridge_toml(&rule, port, local_bearer),
-                "auth": { "OPENAI_API_KEY": local_bearer },
+                "auth": { (OPENAI_API_KEY_ENV): local_bearer },
             }),
             meta: generated_provider_meta(profile, &rule),
             is_current: false,
@@ -156,7 +159,7 @@ pub(super) fn projected_provider_input(
         settings_config: json!({
             "format": "toml",
             "content": codex_bridge_toml(&rule, port),
-            "auth": { "OPENAI_API_KEY": local_bearer },
+            "auth": { (OPENAI_API_KEY_ENV): local_bearer },
         }),
         meta: generated_provider_meta(profile, &rule),
         is_current: false,
@@ -270,12 +273,12 @@ pub(super) fn validate_generated_provider(
             .and_then(Value::as_object)
             .ok_or_else(invalid_projection)?;
         let base_url = env
-            .get("ANTHROPIC_BASE_URL")
+            .get(ANTHROPIC_BASE_URL_ENV)
             .and_then(Value::as_str)
             .ok_or_else(invalid_projection)?;
         if !base_url.starts_with("http://127.0.0.1:")
             || env
-                .get("ANTHROPIC_AUTH_TOKEN")
+                .get(ANTHROPIC_AUTH_TOKEN_ENV)
                 .and_then(Value::as_str)
                 .is_none_or(|token| token.trim().is_empty())
         {
@@ -389,7 +392,7 @@ pub(super) fn local_bearer_from_provider(provider: &Provider) -> Result<String> 
             .settings_config
             .get("env")
             .and_then(Value::as_object)
-            .and_then(|env| env.get("ANTHROPIC_AUTH_TOKEN"))
+            .and_then(|env| env.get(ANTHROPIC_AUTH_TOKEN_ENV))
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|value| !value.is_empty() && *value != "***")
@@ -419,7 +422,7 @@ pub(super) fn local_bearer_from_provider(provider: &Provider) -> Result<String> 
         .settings_config
         .get("auth")
         .and_then(Value::as_object)
-        .and_then(|auth| auth.get("OPENAI_API_KEY"))
+        .and_then(|auth| auth.get(OPENAI_API_KEY_ENV))
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty() && *value != "***")

@@ -38,12 +38,12 @@ import { useChatSessionSwitch } from './use-chat-session-switch';
 import { chatModShiftIShouldOpenModel } from './chat-model-labels';
 import { formatChatSessionRecord, processUserPromptPreview, type TurnGroup } from './chat-format';
 import { chatBusySendMode, grokLegacyContinueKind } from './chat-grok-follow-up';
-import { ChatEditPreviewPanel, ChatTurnEditList } from './ChatEditPreviewPanel';
+import { ChatEditPreviewPanel } from './ChatEditPreviewPanel';
+import { ChatQueuedFollowUpList } from './ChatQueuedFollowUpList';
 import { ChatMarkdownPreviewPanel } from './ChatMarkdownPreviewPanel';
 import { ChatProcessInspectPanel } from './ChatProcessInspectPanel';
 import {
-  extractTurnEdits,
-  sameEditPath,
+  findTurnEditFile,
   turnEditHasInlineDiff,
   type TurnEditFile,
 } from './chat-edit-preview';
@@ -65,7 +65,6 @@ import {
 import { isPreviewableChatFilePath } from './chat-file-preview';
 import { useChatContentWidth } from './use-chat-content-width';
 import { ChatRuntimeExtras } from './ChatRuntimeExtras';
-import { ChatTurnOutcomeBanner } from './ChatTurnOutcomeBanner';
 import { ChatComposer } from './ChatComposer';
 import { ChatSessionHeader } from './ChatSessionHeader';
 import { ChatSessionRail } from './ChatSessionRail';
@@ -115,8 +114,8 @@ export default function ChatPage() {
     [preview.open, preview.target],
   );
   const openProcessInspect = useCallback(
-    (turn: number, agent: string) => {
-      preview.open(openChatProcessInspect(turn, agent));
+    (turn: number, agent: string, stepKey: string) => {
+      preview.open(openChatProcessInspect(turn, agent, stepKey));
     },
     [preview.open],
   );
@@ -128,20 +127,20 @@ export default function ChatPage() {
     }
     preview.open(previous);
   }, [preview.close, preview.open, preview.target]);
-  const turnEdits = useMemo(() => extractTurnEdits(page.processMap), [page.processMap]);
   const openTurnEdit = useCallback(
-    (file: TurnEditFile) => {
+    (file: TurnEditFile, turn: number) => {
       if (turnEditHasInlineDiff(file)) {
-        preview.open(openChatEditPreview(file.path));
+        preview.open(openChatEditPreview(file.path, turn));
         return;
       }
       preview.open(openChatPreviewRoot(file.path));
     },
     [preview.open],
   );
-  const editPreviewPath = isChatEditPreview(preview.target) ? preview.target.path : '';
+  const editPreview = isChatEditPreview(preview.target) ? preview.target : null;
+  const editPreviewPath = editPreview?.path ?? '';
   const selectedEdit = editPreviewPath
-    ? turnEdits.find((file) => sameEditPath(file.path, editPreviewPath)) ?? null
+    ? findTurnEditFile(page.processMap, editPreviewPath, editPreview?.turn)
     : null;
   const showEditDiff = Boolean(
     selectedEdit && turnEditHasInlineDiff(selectedEdit),
@@ -393,19 +392,19 @@ export default function ChatPage() {
               messagesError={page.messagesError}
               onRetryMessages={page.retryMessages}
               sending={page.sending}
-              retryDisabled={page.blockers.length > 0}
               scrollRef={page.transcriptRef}
               bottomRef={page.bottomRef}
               onScroll={page.onTranscriptScroll}
               onJumpToOutline={page.jumpToOutlinePrompt}
-              onRetry={() => void page.retryLast()}
-              hideLastTurnRetry={Boolean(page.turnOutcome)}
               onOpenLocal={openFilePreview}
               onOpenProcess={openProcessInspect}
               onCloseProcess={preview.close}
               inspectProcess={
                 isChatProcessInspect(preview.target) && preview.expanded ? preview.target : null
               }
+              selectedEditPath={preview.expanded ? editPreviewPath : ''}
+              selectedEditTurn={preview.expanded ? editPreview?.turn : undefined}
+              onSelectEdit={openTurnEdit}
               onPickStarter={page.runChatAction}
               firstBlocker={page.blockers[0] ?? null}
               onBlockerAction={(target) => {
@@ -474,14 +473,6 @@ export default function ChatPage() {
                       </div>
                     </div>
                   </Notice>
-                ) : null}
-                {page.turnOutcome ? (
-                  <ChatTurnOutcomeBanner
-                    outcome={page.turnOutcome}
-                    retryDisabled={page.blockers.length > 0 || page.sending}
-                    onRetry={() => void page.retryLast()}
-                    onRestoreDraft={() => page.setDraft(page.turnOutcome?.prompt ?? '')}
-                  />
                 ) : null}
                 {page.snapshotBannerVisible ? (
                   <Notice tone="warning" className="mb-2">
@@ -569,10 +560,10 @@ export default function ChatPage() {
                   );
                 })()}
                 <ChatPlanBar plan={page.runtime?.plan} />
-                <ChatTurnEditList
-                  files={turnEdits}
-                  selectedPath={preview.expanded ? chatPreviewPath(preview.target) : ''}
-                  onSelect={openTurnEdit}
+                <ChatQueuedFollowUpList
+                  items={page.queuedFollowUps}
+                  onCancelItem={page.cancelQueuedFollowUp}
+                  onCancelAll={page.clearQueuedFollowUp}
                 />
                 <ChatComposer
                   draft={page.draft}
@@ -597,11 +588,11 @@ export default function ChatPage() {
                   walletError={page.walletError}
                   onRetryWallet={() => void page.reloadWallet()}
                   onRetryStatus={() => void page.refreshAgents().catch(() => {})}
-                  onSend={() => void page.handleSend()}
+                  onSend={(text) => void page.handleSend(text)}
                   onSteer={
                     busySend === 'steer'
-                      ? () => {
-                          const value = page.draft;
+                      ? (text) => {
+                          const value = text ?? page.draft;
                           void page.steerRuntime(value).then((ok) => {
                             if (ok) page.setDraft('');
                           }).catch(() => {});
@@ -610,12 +601,9 @@ export default function ChatPage() {
                   }
                   onQueueAfterTurn={
                     busySend === 'queue'
-                      ? () => void page.handleSend()
+                      ? (text) => void page.handleSend(text)
                       : undefined
                   }
-                  queuedFollowUps={page.queuedFollowUps}
-                  onCancelQueuedFollowUp={page.cancelQueuedFollowUp}
-                  onClearQueuedFollowUp={page.clearQueuedFollowUp}
                   focusNonce={page.composerFocusNonce}
                   modelMenuOpenNonce={modelMenuOpenNonce}
                   onCancel={() => void page.cancelSending()}
@@ -666,7 +654,6 @@ export default function ChatPage() {
                         models={page.runtimeOps.models}
                         settings={page.runtimeOps.settings}
                         frozen={page.runtimeOps.frozen}
-                        frozenReason={page.primaryAgent === 'kiro' ? t('chat.kiro.settingsLocked') : undefined}
                         catalogLoading={page.runtimeOps.loading}
                         efforts={page.runtimeOps.currentEfforts}
                         onSwitchModel={(id) => void page.runtimeOps.switchModel(id)}
@@ -703,6 +690,7 @@ export default function ChatPage() {
           onDangerConfirmChange={page.setDangerConfirm}
           onPatch={(patch) => void page.patchActive(patch)}
           runtimeLocked={page.runtimeLocked || page.sendingHere}
+          turnActive={page.sendingHere}
           transport={page.runtimeOps.transport}
           runtimeEnabled={Boolean(page.runtime?.enabled)}
           runtime={page.runtime}
@@ -747,6 +735,7 @@ export default function ChatPage() {
                 page.runtime?.pendingRequests,
                 t,
               )}
+              activeStepKey={preview.target.stepKey}
               open={preview.expanded}
               onClose={preview.close}
               width={preview.paneWidth}

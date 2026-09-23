@@ -830,3 +830,25 @@ fn claude_subscription_to_codex_is_preview_local_bridge_from_catalog() {
         "Claude → Codex is ③-open; reason must not say product-closed"
     );
 }
+
+#[test]
+fn every_matrix_rule_id_is_declared() {
+    use crate::services::adapter_route_constants::DECLARED_ROUTE_RULE_IDS;
+    for cell in ADAPTER_CAPABILITY_MATRIX {
+        if cell.rule_id.is_empty() {
+            continue;
+        }
+        assert!(
+            DECLARED_ROUTE_RULE_IDS.contains(&cell.rule_id),
+            "{}",
+            cell.rule_id
+        );
+    }
+    for edge in LOCAL_BRIDGE_EDGES {
+        assert!(
+            DECLARED_ROUTE_RULE_IDS.contains(&edge.rule_id),
+            "{}",
+            edge.rule_id
+        );
+    }
+}

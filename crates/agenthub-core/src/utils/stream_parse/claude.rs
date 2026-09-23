@@ -520,8 +520,7 @@ fn tasks_from_payload(payload: Option<&Value>) -> Option<Vec<ClaudePlanEntry>> {
 
 fn looks_like_plan_output(v: &Value) -> bool {
     payload_has_plan_shape(v)
-        || v.get("tool_use_result")
-            .is_some_and(payload_has_plan_shape)
+        || v.get("tool_use_result").is_some_and(payload_has_plan_shape)
         || v.pointer("/message/tool_use_result")
             .is_some_and(payload_has_plan_shape)
         || v.get("content")

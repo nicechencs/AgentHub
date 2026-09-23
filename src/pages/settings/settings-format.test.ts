@@ -1,4 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import {
+  MAX_LOG_RETENTION_DAYS,
+  MAX_USAGE_COLLECT_INTERVAL_MIN,
+  MIN_LOG_RETENTION_DAYS,
+} from '@/lib/backend/contracts/app-limits';
 import { createTranslator } from '@/lib/i18n';
 import { OPTIONAL_NAV_IDS } from '@/lib/ui-preferences';
 import {
@@ -216,11 +221,11 @@ describe('settings-format i18n helpers', () => {
   });
 
   it('clamps retention days and usage interval', () => {
-    expect(clampLogRetentionDays(0)).toBe(1);
+    expect(clampLogRetentionDays(0)).toBe(MIN_LOG_RETENTION_DAYS);
     expect(clampLogRetentionDays(14)).toBe(14);
-    expect(clampLogRetentionDays(400)).toBe(365);
+    expect(clampLogRetentionDays(400)).toBe(MAX_LOG_RETENTION_DAYS);
     expect(clampUsageIntervalMin(-1)).toBe(0);
     expect(clampUsageIntervalMin(30)).toBe(30);
-    expect(clampUsageIntervalMin(2000)).toBe(24 * 60);
+    expect(clampUsageIntervalMin(2000)).toBe(MAX_USAGE_COLLECT_INTERVAL_MIN);
   });
 });

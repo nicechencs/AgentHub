@@ -45,3 +45,23 @@ function baseName(path: string): string {
   const slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
   return slash >= 0 ? path.slice(slash + 1) : path;
 }
+
+/**
+ * Preview chrome: keep the basename readable and show a tail-first directory
+ * so a long path does not CSS-ellipsis away the useful parent folder.
+ */
+export function previewHeaderParts(path: string, name = ''): {
+  fileName: string;
+  directory: string;
+  directoryLabel: string;
+  fullPath: string;
+} {
+  const { directory, fileName } = splitFileLabel(path, name);
+  const folder = directory.replace(/[\\/]+$/, '');
+  return {
+    fileName,
+    directory,
+    directoryLabel: folder ? pathTailLabel(folder, 1) : '',
+    fullPath: path.trim(),
+  };
+}

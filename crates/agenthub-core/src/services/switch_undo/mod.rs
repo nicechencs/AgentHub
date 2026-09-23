@@ -9,6 +9,7 @@ use serde_json::json;
 
 use crate::error::{AppError, Result};
 use crate::models::AgentId;
+use crate::services::adapter_route_constants::{ANTHROPIC_BASE_URL_ENV, OPENAI_BASE_URL_ENV};
 use crate::storage::{set_setting_on_conn, Database};
 
 pub const PROVIDER_UNDO_PREFIX: &str = "provider.undo";
@@ -129,8 +130,8 @@ pub fn extract_probe_url(settings: &serde_json::Value) -> Option<String> {
                 const KEYS: &[&str] = &[
                     "base_url",
                     "baseUrl",
-                    "ANTHROPIC_BASE_URL",
-                    "OPENAI_BASE_URL",
+                    ANTHROPIC_BASE_URL_ENV,
+                    OPENAI_BASE_URL_ENV,
                     "url",
                 ];
                 for key in KEYS {

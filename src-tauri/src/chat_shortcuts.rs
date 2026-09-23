@@ -92,12 +92,8 @@ fn build_new_chat_menu<R: Runtime>(
     let copy = PredefinedMenuItem::copy(app, Some(edit.copy))?;
     let paste = PredefinedMenuItem::paste(app, Some(edit.paste))?;
     let select_all = PredefinedMenuItem::select_all(app, Some(edit.select_all))?;
-    let edit_menu = Submenu::with_items(
-        app,
-        edit.submenu,
-        true,
-        &[&cut, &copy, &paste, &select_all],
-    )?;
+    let edit_menu =
+        Submenu::with_items(app, edit.submenu, true, &[&cut, &copy, &paste, &select_all])?;
     let item = MenuItem::with_id(
         app,
         MENU_NEW_CHAT,

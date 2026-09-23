@@ -10,6 +10,7 @@ export function ChatProcessInspectPanel({
   exitCode,
   userPrompt,
   pendingConfirm,
+  activeStepKey,
   open,
   onClose,
   width,
@@ -20,6 +21,7 @@ export function ChatProcessInspectPanel({
   exitCode?: number | null;
   userPrompt?: string | null;
   pendingConfirm?: string | null;
+  activeStepKey?: string | null;
   open: boolean;
   onClose: () => void;
   width?: number;
@@ -53,6 +55,7 @@ export function ChatProcessInspectPanel({
             exitCode={exitCode}
             userPrompt={userPrompt}
             pendingConfirm={pendingConfirm}
+            activeStepKey={activeStepKey}
           />
         ) : (
           <p className="text-meta text-muted">{t('chat.process.waitingLogs')}</p>

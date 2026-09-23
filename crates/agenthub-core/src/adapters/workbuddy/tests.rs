@@ -464,15 +464,9 @@ fn cf_bundle_executable_name_reads_xml_plist() {
 "#,
     )
     .unwrap();
-    assert_eq!(
-        cf_bundle_executable_name(&tmp).as_deref(),
-        Some("Electron")
-    );
+    assert_eq!(cf_bundle_executable_name(&tmp).as_deref(), Some("Electron"));
     let bins = macos_workbuddy_binaries(&tmp);
-    assert_eq!(
-        bins[0],
-        tmp.join("Contents").join("MacOS").join("Electron")
-    );
+    assert_eq!(bins[0], tmp.join("Contents").join("MacOS").join("Electron"));
     assert!(bins
         .iter()
         .any(|p| p.file_name().and_then(|n| n.to_str()) == Some("WorkBuddy")));

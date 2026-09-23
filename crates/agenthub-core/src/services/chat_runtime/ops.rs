@@ -688,14 +688,11 @@ pub(crate) enum AcpSessionPlan {
     New,
     /// Fresh process, try `session/load` then prompt.
     LoadThenPrompt,
-    /// Kiro sessions cannot be reattached after the ACP process exits. Keep
-    /// the durable id and ask the user to start a new conversation.
-    Unavailable,
 }
 
 /// Kiro ACP `session/load` after the previous process exited hangs or kills the
-/// new process. Reuse the live process; if it is gone, keep the session id and
-/// ask the user to start a new conversation.
+/// new process. Reuse the live process; if it is gone, start `session/new` in
+/// this same AgentHub conversation instead of asking for a new chat.
 pub(crate) fn acp_session_plan(
     agent: AgentId,
     live_transport: bool,
@@ -705,12 +702,23 @@ pub(crate) fn acp_session_plan(
         return AcpSessionPlan::PromptExisting;
     }
     if has_session_id && agent == AgentId::Kiro {
-        return AcpSessionPlan::Unavailable;
+        return AcpSessionPlan::New;
     }
     if has_session_id && agent != AgentId::Kiro {
         return AcpSessionPlan::LoadThenPrompt;
     }
     AcpSessionPlan::New
+}
+
+pub(crate) fn acp_session_settings_changed(
+    session_model: Option<&str>,
+    session_effort: Option<&str>,
+    session_trust_all: Option<bool>,
+    model: Option<&str>,
+    effort: Option<&str>,
+    trust_all: bool,
+) -> bool {
+    session_model != model || session_effort != effort || session_trust_all != Some(trust_all)
 }
 
 pub(crate) fn grok_prompt_blocks(prompt: &str, images: &[RuntimeLocalImage]) -> Result<Vec<Value>> {

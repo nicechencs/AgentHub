@@ -737,6 +737,7 @@ describe('TicketDetailPanel', () => {
     expect(markup).not.toContain('5 小时已用');
     expect(markup).toContain('data-detail-table');
     expect(markup).not.toContain('<thead');
+    expect(markup.split('data-detail-table').length - 1).toBe(1);
     const usageIndex = markup.indexOf('7 天已用');
     const protocolIndex = markup.indexOf('anthropic-messages');
     expect(usageIndex).toBeGreaterThan(-1);
@@ -752,7 +753,10 @@ describe('TicketDetailPanel', () => {
         onDelete() {},
       }),
     );
+    expect(markup).toContain('用量');
     expect(markup).toContain('输入 1.2M · 输出 89.0K');
+    expect(markup).toMatch(/<th[^>]*>[\s\S]*?用量[\s\S]*?<\/th>/);
+    expect(markup).not.toContain('colspan="2"');
     expect(markup).not.toContain('1234567');
     expect(markup).not.toContain('1,234,567');
   });
@@ -1031,6 +1035,13 @@ describe('TicketDetailPanel', () => {
       }),
     );
     expect(markup).toContain('相关文件');
+    expect(markup).not.toMatch(/<th[^>]*>(?:(?!<\/th>)[\s\S])*相关文件(?:(?!<\/th>)[\s\S])*<\/th>/);
+    expect(markup).not.toMatch(/<h3[^>]*>[\s\S]*?相关文件[\s\S]*?<\/h3>/);
+    const filesLabelAt = markup.indexOf('相关文件');
+    const previewAt = markup.indexOf('auth.json');
+    expect(filesLabelAt).toBeGreaterThan(-1);
+    expect(previewAt).toBeGreaterThan(filesLabelAt);
+    expect(markup).toContain('min-w-0 max-w-full');
     expect(markup).toContain('auth.json');
     expect(markup).toContain('config.toml');
     expect(markup).toContain('a@example.com');

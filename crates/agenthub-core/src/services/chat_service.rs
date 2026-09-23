@@ -7,7 +7,9 @@ use std::time::Instant;
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::catalog::limits::{CHAT_RUN_IDLE_TIMEOUT, CHAT_RUN_MAX_TIMEOUT};
+use crate::catalog::limits::{
+    CHAT_RUN_IDLE_TIMEOUT, CHAT_RUN_MAX_TIMEOUT, DEFAULT_RUN_MAX_OUTPUT_BYTES,
+};
 use crate::error::{AppError, Result};
 use crate::logging::{self, targets};
 use crate::models::{
@@ -674,7 +676,7 @@ impl ChatService {
                 dry_run: false,
                 skip_missing: true,
                 allow_dangerous: conv.allow_dangerous,
-                max_output_bytes: 2 * 1024 * 1024,
+                max_output_bytes: DEFAULT_RUN_MAX_OUTPUT_BYTES,
                 // Claude/Codex → stream-json / --json; others remain text.
                 process_mode: crate::models::ProcessMode::Auto,
                 native_session_id: resume_id.clone(),

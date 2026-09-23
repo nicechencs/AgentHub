@@ -14,7 +14,7 @@ use crate::models::{AgentId, ChatEvent, ChatMessage, ChatMessageStatus, ChatRole
 use crate::storage::Database;
 
 use super::types::{
-    RuntimeEvent, RuntimeFileChange, RuntimePhase, RuntimePermissionOption, RuntimeRequest,
+    RuntimeEvent, RuntimeFileChange, RuntimePermissionOption, RuntimePhase, RuntimeRequest,
     RuntimeRequestKind, RuntimeSnapshot, RuntimeTurnSettings,
 };
 
@@ -1334,11 +1334,7 @@ fn decode_request_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RuntimeReques
     })?;
     let questions_json: String = row.get(5)?;
     let questions = serde_json::from_str(&questions_json).map_err(|error| {
-        rusqlite::Error::FromSqlConversionFailure(
-            5,
-            rusqlite::types::Type::Text,
-            Box::new(error),
-        )
+        rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(error))
     })?;
     let options_json: String = row.get(6)?;
     let permission_options: Vec<RuntimePermissionOption> = serde_json::from_str(&options_json)
@@ -1350,8 +1346,8 @@ fn decode_request_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RuntimeReques
             )
         })?;
     let file_changes_json: String = row.get(7)?;
-    let file_changes: Vec<RuntimeFileChange> = serde_json::from_str(&file_changes_json)
-        .map_err(|error| {
+    let file_changes: Vec<RuntimeFileChange> =
+        serde_json::from_str(&file_changes_json).map_err(|error| {
             rusqlite::Error::FromSqlConversionFailure(
                 7,
                 rusqlite::types::Type::Text,

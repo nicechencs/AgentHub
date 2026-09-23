@@ -29,10 +29,6 @@ function renderBubble(message: ChatMessage, process?: AgentProcessView) {
     createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
       message,
       process,
-      isLastTurn: true,
-      multiAgent: false,
-      retryDisabled: false,
-      onRetry: () => undefined,
     }) as ReactElement),
   );
 }
@@ -76,19 +72,11 @@ describe('ChatMessageBubble streaming feel', () => {
     expect(done).not.toContain('累计');
   });
 
-  it('hides the bubble retry when the stop banner already has it', () => {
-    const html = renderToStaticMarkup(
-      createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
-        message: agentMessage('', 'cancelled'),
-        isLastTurn: true,
-        multiAgent: false,
-        retryDisabled: false,
-        hideRetry: true,
-        onRetry: () => undefined,
-      })),
-    );
-    expect(html).not.toContain('重试');
-    expect(html).not.toContain('已停止');
+  it('does not show retry on a failed or stopped reply', () => {
+    const cancelled = renderBubble(agentMessage('', 'cancelled'));
+    const failed = renderBubble(agentMessage('', 'failed'));
+    expect(cancelled).not.toContain('重试');
+    expect(failed).not.toContain('重试');
   });
 
   it('shows a clickable thinking bar instead of three dots when thinking has no body yet', () => {
@@ -106,16 +94,14 @@ describe('ChatMessageBubble streaming feel', () => {
       createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
         message: agentMessage(''),
         process,
-        isLastTurn: true,
-        multiAgent: false,
-        retryDisabled: false,
-        onRetry: () => undefined,
+
         onOpenProcess: () => undefined,
       })),
     );
     expect(html).toContain('data-help="chat-thinking-bar"');
     expect(html).toContain('思考中');
-    expect(html).toContain('▸');
+    expect(html).toContain('data-help="chat-expand-affordance"');
+    expect(html).toContain('可展开');
     expect(html).not.toContain('正在想');
     expect(html).not.toContain('secret plan that must not enter the bubble');
     expect(html).not.toContain('data-help="chat-process-chip"');
@@ -137,10 +123,7 @@ describe('ChatMessageBubble streaming feel', () => {
       createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
         message: agentMessage(''),
         process,
-        isLastTurn: true,
-        multiAgent: false,
-        retryDisabled: false,
-        onRetry: () => undefined,
+
         onOpenProcess: () => undefined,
       })),
     );
@@ -150,11 +133,46 @@ describe('ChatMessageBubble streaming feel', () => {
     expect(html).not.toContain('done thinking body');
   });
 
-  it('hides the thinking bar once the reply body arrives', () => {
+  it('keeps thinking, read, edit, and execute rows in history after the reply body arrives', () => {
     const process: AgentProcessView = {
       turn: 1,
       agent: 'codex',
-      phase: 'running',
+      phase: 'ok',
+      stdout: '',
+      stderr: '',
+      steps: [
+        { type: 'thinking', text: 'secret plan', done: true },
+        { type: 'tool', name: 'Read', status: 'end', input: { path: 'README.md' } },
+        { type: 'tool', name: 'Write', status: 'end', input: { path: 'src/a.ts' } },
+        { type: 'tool', name: 'Bash', status: 'end', input: { command: 'ls' } },
+      ],
+      updatedAt: 1,
+      thinkingStartedAt: 1,
+      thinkingDurationMs: 1200,
+    };
+    const html = renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
+        message: agentMessage('第一段正文', 'ok'),
+        process,
+        onOpenProcess: () => undefined,
+        onSelectEdit: () => undefined,
+      })),
+    );
+    expect(html).toContain('data-help="chat-thinking-bar"');
+    expect(html).toContain('思考了 1.2s');
+    expect(html).toContain('已读取 README.md');
+    expect(html).toContain('已修改 src/a.ts');
+    expect(html).toContain('已执行 ls');
+    expect(html).not.toContain('secret plan');
+    expect(html).not.toContain('已完成 · 已读取');
+    expect(html).toContain('第一段正文');
+  });
+
+  it('keeps 失败, 已停止, and 超时 beside process rows', () => {
+    const process: AgentProcessView = {
+      turn: 1,
+      agent: 'codex',
+      phase: 'ok',
       stdout: '',
       stderr: '',
       steps: [{ type: 'thinking', text: 'secret plan', done: true }],
@@ -162,20 +180,40 @@ describe('ChatMessageBubble streaming feel', () => {
       thinkingStartedAt: 1,
       thinkingDurationMs: 1200,
     };
-    const html = renderToStaticMarkup(
+    const cancelled = renderToStaticMarkup(
       createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
-        message: agentMessage('第一段正文'),
+        message: { ...agentMessage('', 'cancelled'), error: 'cancelled' },
         process,
-        isLastTurn: true,
-        multiAgent: false,
-        retryDisabled: false,
-        onRetry: () => undefined,
         onOpenProcess: () => undefined,
       })),
     );
-    expect(html).not.toContain('data-help="chat-thinking-bar"');
-    expect(html).not.toContain('secret plan');
-    expect(html).toContain('第一段正文');
+    expect(cancelled).toContain('已停止');
+    expect(cancelled).toContain('已按你的要求停止。可以直接在这场对话里继续发送。');
+    expect(cancelled).toContain('思考了 1.2s');
+    const failed = renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
+        message: agentMessage('部分输出', 'failed'),
+        process,
+        onOpenProcess: () => undefined,
+      })),
+    );
+    expect(failed).toContain('失败');
+    const timeout = renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
+        message: agentMessage('', 'timeout'),
+        process,
+        onOpenProcess: () => undefined,
+      })),
+    );
+    expect(timeout).toContain('超时');
+    const done = renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
+        message: agentMessage('第一段正文', 'ok'),
+        process,
+        onOpenProcess: () => undefined,
+      })),
+    );
+    expect(done).not.toContain('已完成');
   });
 
   it('shows the thinking bar and a tool chip together before any body', () => {
@@ -196,10 +234,6 @@ describe('ChatMessageBubble streaming feel', () => {
       createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
         message: agentMessage(''),
         process,
-        isLastTurn: true,
-        multiAgent: false,
-        retryDisabled: false,
-        onRetry: () => undefined,
         onOpenProcess: () => undefined,
       })),
     );
@@ -227,15 +261,12 @@ describe('ChatMessageBubble streaming feel', () => {
       createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
         message: agentMessage(''),
         process,
-        isLastTurn: true,
-        multiAgent: false,
-        retryDisabled: false,
-        onRetry: () => undefined,
+
         onOpenProcess: () => undefined,
       })),
     );
     expect(html).toContain('data-help="chat-process-chip"');
-    expect(html).toContain('▸');
+    expect(html).toContain('data-help="chat-expand-affordance"');
     expect(html).toContain('正在读取 README.md');
     expect(html).not.toContain('用量');
   });
@@ -254,15 +285,12 @@ describe('ChatMessageBubble streaming feel', () => {
       createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
         message: agentMessage(''),
         process,
-        isLastTurn: true,
-        multiAgent: false,
-        retryDisabled: false,
-        onRetry: () => undefined,
+
         onOpenProcess: () => undefined,
       })),
     );
     expect(html).toContain('data-help="chat-process-chip"');
-    expect(html).toContain('▸');
+    expect(html).toContain('data-help="chat-expand-affordance"');
     expect(html).toContain('生成中');
   });
 
@@ -281,15 +309,12 @@ describe('ChatMessageBubble streaming feel', () => {
       createElement(TooltipProvider, null, createElement(ChatMessageBubble, {
         message: agentMessage('当前工作目录是：', 'ok'),
         process,
-        isLastTurn: true,
-        multiAgent: false,
-        retryDisabled: false,
-        onRetry: () => undefined,
+
         onOpenProcess: () => undefined,
       })),
     );
     expect(html).not.toContain('data-help="chat-process-chip"');
-    expect(html).not.toContain('▸');
+    expect(html).not.toContain('data-help="chat-expand-affordance"');
     expect(html).toContain('输入 12 · 输出 3');
   });
 });

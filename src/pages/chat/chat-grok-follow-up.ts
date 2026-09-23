@@ -1,4 +1,5 @@
 import type { RuntimePhase } from '@/lib/backend/contracts/chat-runtime';
+import { composerQueueableFollowUpText } from './chat-composer-model';
 import { isRuntimeActive } from './chat-runtime-model';
 
 export type QueuedFollowUpExtras = {
@@ -68,8 +69,11 @@ export function appendQueuedFollowUp(
   prompt: string,
   id?: string,
   extras?: QueuedFollowUpExtras,
+  lastSent?: string,
 ): QueuedFollowUpItem[] {
-  const item = createQueuedFollowUpItem(prompt, id, extras);
+  const text = composerQueueableFollowUpText({ text: prompt, lastSent });
+  if (!text) return [...queue];
+  const item = createQueuedFollowUpItem(text, id, extras);
   if (!item) return [...queue];
   return [...queue, item];
 }

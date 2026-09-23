@@ -45,7 +45,7 @@ describe('Kiro chat honesty helpers', () => {
     expect(t('chat.kiro.permissionAsk')).toBe('帮我批准');
     expect(t('chat.kiro.permissionFull')).toBe('完全访问权限');
     expect(t('chat.kiro.settingsLocked')).toContain('权限');
-    expect(t('chat.kiro.settingsLocked')).toContain('请新建对话');
+    expect(t('chat.kiro.settingsLocked')).not.toContain('请新建对话');
   });
 
   it('keeps runtime request panels and command search on for Kiro', () => {

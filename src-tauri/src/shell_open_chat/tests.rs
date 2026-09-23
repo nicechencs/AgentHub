@@ -319,11 +319,8 @@ fn launch_falls_back_to_process_cwd_when_explorer_path_is_unusable() {
     let fallback = folder.to_str().unwrap();
 
     assert_eq!(
-        resolve_open_chat_from_launch(
-            &["agenthub-gui", OPEN_CHAT_FLAG, r"\."],
-            Some(fallback)
-        )
-        .as_deref(),
+        resolve_open_chat_from_launch(&["agenthub-gui", OPEN_CHAT_FLAG, r"\."], Some(fallback))
+            .as_deref(),
         Some(folder.as_path())
     );
     assert_eq!(

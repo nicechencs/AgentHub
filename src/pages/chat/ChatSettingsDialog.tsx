@@ -40,6 +40,7 @@ export function ChatSettingsDialog({
   onDangerConfirmChange,
   onPatch,
   runtimeLocked = false,
+  turnActive = false,
   transport = null,
   runtimeEnabled = false,
   runtime = null,
@@ -52,6 +53,7 @@ export function ChatSettingsDialog({
   onDangerConfirmChange: (open: boolean) => void;
   onPatch: (patch: { cwd?: string | null; allowDangerous?: boolean }) => void;
   runtimeLocked?: boolean;
+  turnActive?: boolean;
   transport?: RuntimeChannel | null;
   runtimeEnabled?: boolean;
   runtime?: Pick<RuntimeSnapshot, 'sessionAllowAlways'> | null;
@@ -66,7 +68,7 @@ export function ChatSettingsDialog({
   const approveEnabled = approveEffect !== 'none';
   const approveOn = autoApproveActive(Boolean(active?.allowDangerous), selectedAgent);
   const kiroPermissions = isKiroChatAgent(selectedAgent);
-  const permissionLocked = kiroPermissions && runtimeLocked;
+  const permissionLocked = kiroPermissions && turnActive;
   const cwdLocked = !canRebindConversationCwd(active ?? { cwd: null }, runtimeLocked);
   const connectKind = sessionChatConnectKind({
     agentId: selectedAgent,
@@ -194,9 +196,6 @@ export function ChatSettingsDialog({
               {kiroPermissions ? (
                 <fieldset className="space-y-1.5" disabled={permissionLocked}>
                   <legend className="text-meta text-muted">{t('chat.kiro.permissionTitle')}</legend>
-                  {permissionLocked ? (
-                    <p className="text-meta text-muted">{t('chat.kiro.settingsLocked')}</p>
-                  ) : null}
                   <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 hover:bg-subtle">
                     <input
                       type="radio"

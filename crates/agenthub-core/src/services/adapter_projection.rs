@@ -8,6 +8,7 @@ use serde_json::Value;
 
 use crate::integrations::agents::codex::leftover;
 use crate::models::{AccountKind, AdapterProfile, AdapterRoute, AgentId, Provider};
+use crate::services::adapter_route_constants::ANTHROPIC_AUTH_TOKEN_ENV;
 use crate::services::switch_undo::extract_probe_url;
 use crate::utils::loopback::is_loopback_base_url;
 
@@ -252,7 +253,7 @@ fn extract_local_bearer_token(value: &Value) -> Option<String> {
         Value::Array(items) => items.iter().find_map(extract_local_bearer_token),
         Value::Object(map) => {
             for key in [
-                "ANTHROPIC_AUTH_TOKEN",
+                ANTHROPIC_AUTH_TOKEN_ENV,
                 "api_key",
                 "apiKey",
                 "token",

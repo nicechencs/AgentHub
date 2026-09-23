@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::adapters::AdapterRegistry;
+use crate::catalog::agenthub_user_agent;
 use crate::catalog::install::{
     native_ps1_url, native_setup_url, native_sh_url, npm_package, official_version_probe,
     OfficialVersionProbe,
@@ -750,10 +751,7 @@ fn http_get(url: &str, accept: &str) -> std::result::Result<String, String> {
         }
     }
     let agent = builder.build();
-    let ua = format!(
-        "AgentHub/{} (+https://github.com/agenthub)",
-        env!("CARGO_PKG_VERSION")
-    );
+    let ua = agenthub_user_agent();
     let resp = agent
         .get(url)
         .set("User-Agent", &ua)

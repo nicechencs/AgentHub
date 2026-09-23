@@ -3,6 +3,7 @@
  * Actual timers live in UsageSyncProvider; this module stays pure/testable.
  */
 
+import { MAX_USAGE_COLLECT_INTERVAL_MIN } from '@/lib/backend/contracts/app-limits';
 import type { TranslateFn } from '@/lib/i18n';
 import { loadString, saveString, StorageKey } from '@/lib/ui-preferences';
 
@@ -36,7 +37,7 @@ export function saveLastCollectAt(at: number): void {
 export function normalizeIntervalMin(raw: unknown): number {
   const n = typeof raw === 'number' ? raw : Number(raw);
   if (!Number.isFinite(n) || n <= 0) return 0;
-  return Math.min(24 * 60, Math.floor(n));
+  return Math.min(MAX_USAGE_COLLECT_INTERVAL_MIN, Math.floor(n));
 }
 
 /** Automatic collection retry policy. Keep transient failures away from the

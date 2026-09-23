@@ -12,8 +12,10 @@
 //!   (+ `--trust-all-tools` when dangerous; TERM=dumb so Unix color does not leak)
 //! - Chat model/effort: `--model` / `--effort` from live prefs (HTTP list or CLI)
 //! - Chat Auto: `--agent-engine v2 --output-format stream-json` (v1 rejects it)
-//! - subsequent turns: keep the ACP process and `session/prompt` (Kiro
-//!   `session/load` after the process exits hangs or dies); print path still `--resume-id`
+//! - subsequent turns: keep the ACP process and `session/prompt`. If the
+//!   process exits or model/effort/permissions change, spawn a new ACP
+//!   process in the same AgentHub conversation (`session/load` after exit
+//!   hangs or dies). Print path still `--resume-id`
 //! - auth: env `KIRO_API_KEY` / import `kiro-cli login` (sqlite + SSO cache);
 //!   Connections official login spawns `kiro-cli login --license free` then imports;
 //!   refresh compares expiry and can write sqlite; HTTP also refreshes OIDC/Desktop
@@ -328,9 +330,9 @@ impl AgentAdapter for KiroAdapter {
             Usage => CapabilityState::partial("读 kiro-cli 会话里的 token；日志没写时总览是 0"),
             Mcp => CapabilityState::planned("待路径核实"),
             ModelSelect => CapabilityState::full(),
-            SessionResume => {
-                CapabilityState::partial("新对话走持续通道，可点允许、一直允许或拒绝；生成时不能中途补充")
-            }
+            SessionResume => CapabilityState::partial(
+                "新对话走持续通道，可点允许、一直允许或拒绝；生成时不能中途补充",
+            ),
         }
     }
 

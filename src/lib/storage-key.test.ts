@@ -54,6 +54,9 @@ describe('StorageKey', () => {
       chatComposerPaneHeight: StorageKey.chatComposerPaneHeight,
       chatProcessCommandHeight: StorageKey.chatProcessCommandHeight,
       chatProcessLogHeight: StorageKey.chatProcessLogHeight,
+      chatProcessCodeHeight: StorageKey.chatProcessCodeHeight,
+      chatProcessJsonHeight: StorageKey.chatProcessJsonHeight,
+      chatProcessThinkingHeight: StorageKey.chatProcessThinkingHeight,
       chatPreviewWidth: StorageKey.chatPreviewWidth,
       chatContentWidth: StorageKey.chatContentWidth,
       chatRailWidth: StorageKey.chatRailWidth,
@@ -84,6 +87,9 @@ describe('StorageKey', () => {
       chatComposerPaneHeight: 'agenthub:chat-composer-pane-height',
       chatProcessCommandHeight: 'agenthub:chat-process-command-height',
       chatProcessLogHeight: 'agenthub:chat-process-log-height',
+      chatProcessCodeHeight: 'agenthub:chat-process-code-height',
+      chatProcessJsonHeight: 'agenthub:chat-process-json-height',
+      chatProcessThinkingHeight: 'agenthub:chat-process-thinking-height',
       chatPreviewWidth: 'agenthub:chat-preview-width',
       chatContentWidth: 'agenthub:chat-content-width',
       chatRailWidth: 'agenthub:chat-rail-width',
@@ -93,6 +99,10 @@ describe('StorageKey', () => {
 
   it('stores the chat outline toggle on the kebab catalog', () => {
     expect(StorageKey.chatOutlineEnabled).toBe('agenthub:chat-outline-enabled');
+  });
+
+  it('stores pinned chat workspace groups on the kebab catalog', () => {
+    expect(StorageKey.chatWorkspacePins).toBe('agenthub:chat-workspace-pins');
   });
 });
 

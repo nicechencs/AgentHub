@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { translate } from '@/lib/i18n';
 import {
   composerCancelingVisible,
+  composerDraftAfterCancel,
+  COMPOSER_SEND_SETTLE_MS,
+  composerDraftAfterSuccessfulSend,
   composerEnterShouldSubmit,
+  composerIsResidualOfSent,
+  composerLiveSendText,
+  composerQueueableFollowUpText,
+  composerShouldHoldSendLock,
+  composerShouldKeepRestoredSent,
   composerFooterControl,
   composerKeepsStoppingAfterCancel,
   composerPrimaryAction,
@@ -236,6 +244,166 @@ describe('queued follow-up visibility', () => {
     expect(translate('en', 'chat.composer.queuedCount', { count: 2 })).toBe('2 queued');
     expect(translate('en', 'chat.composer.cancelQueuedItem')).toBe('Remove this');
     expect(translate('en', 'chat.composer.cancelAllQueued')).toBe('Cancel all');
+  });
+});
+
+describe('composer clear-on-send', () => {
+  it('prefers the live textarea over a stale React draft', () => {
+    expect(
+      composerLiveSendText({
+        textareaValue: 'Write a plan and then summarize. Do not edit files.',
+        draft: 'Write a plan and then ',
+      }),
+    ).toBe('Write a plan and then summarize. Do not edit files.');
+    expect(composerLiveSendText({ draft: 'hello' })).toBe('hello');
+  });
+
+  it('drops a sent prompt leftover, including a residual suffix', () => {
+    const sent = 'Write a 3-step plan and then summarize. Do not edit files.';
+    expect(composerDraftAfterSuccessfulSend({ draft: sent, sent })).toBe('');
+    expect(
+      composerDraftAfterSuccessfulSend({ draft: 'summarize. Do not edit files.', sent }),
+    ).toBe('');
+    expect(composerDraftAfterSuccessfulSend({ draft: 'Write a 3-step plan', sent })).toBe('');
+    expect(composerDraftAfterSuccessfulSend({ draft: '  ', sent })).toBe('');
+  });
+
+  it('keeps a stop-restored sent prompt and does not treat it as leftover', () => {
+    expect(
+      composerShouldKeepRestoredSent({
+        draft: 'e2e mock stop',
+        sent: 'e2e mock stop',
+      }),
+    ).toBe(true);
+    expect(
+      composerShouldKeepRestoredSent({
+        draft: '',
+        sent: 'e2e mock stop',
+      }),
+    ).toBe(false);
+    expect(
+      composerQueueableFollowUpText({
+        text: 'e2e mock stop',
+        lastSent: 'e2e mock stop',
+      }),
+    ).toBeNull();
+  });
+
+  it('restores the sent prompt on stop when the box is empty', () => {
+    expect(
+      composerDraftAfterCancel({
+        draft: '',
+        queuedDraft: '',
+        lastSent: 'e2e mock stop',
+      }),
+    ).toBe('e2e mock stop');
+    expect(
+      composerDraftAfterCancel({
+        draft: 'already typing',
+        queuedDraft: 'queued',
+        lastSent: 'e2e mock stop',
+      }),
+    ).toBe('already typing');
+    expect(
+      composerDraftAfterCancel({
+        draft: '',
+        queuedDraft: 'queued line',
+        lastSent: 'e2e mock stop',
+      }),
+    ).toBe('queued line');
+  });
+
+  it('keeps text typed after a successful send', () => {
+    expect(
+      composerDraftAfterSuccessfulSend({
+        draft: 'first prompt follow-up',
+        sent: 'first prompt',
+      }),
+    ).toBe(' follow-up');
+    expect(
+      composerDraftAfterSuccessfulSend({
+        draft: 'another question',
+        sent: 'first prompt',
+      }),
+    ).toBe('another question');
+  });
+
+  it('does not treat a trailing fragment of the just-sent prompt as queueable', () => {
+    const sent = "I'll write a short 3-step UI retest plan and show it before doing any work.";
+    const leftover = 'doing any work.';
+    expect(composerIsResidualOfSent({ text: leftover, sent })).toBe(true);
+    expect(composerIsResidualOfSent({ text: sent, sent })).toBe(true);
+    expect(composerIsResidualOfSent({ text: "I'll write a short 3-step", sent })).toBe(true);
+    expect(composerIsResidualOfSent({ text: 'doing any', sent })).toBe(true);
+    expect(composerIsResidualOfSent({ text: '下一句', sent })).toBe(false);
+    expect(composerQueueableFollowUpText({ text: leftover, lastSent: sent })).toBeNull();
+    expect(composerQueueableFollowUpText({ text: sent, lastSent: sent })).toBeNull();
+    expect(composerQueueableFollowUpText({ text: '  ', lastSent: sent })).toBeNull();
+    expect(
+      composerQueueableFollowUpText({
+        text: 'please inspect the preview header next',
+        lastSent: sent,
+      }),
+    ).toBe('please inspect the preview header next');
+  });
+
+  it('holds late controlled-input leftovers in the same send burst', () => {
+    const sent = "I'll write a short 3-step UI retest plan and show it before doing any work.";
+    const prefix = "I'll write a short 3-step UI retest plan and show it before ";
+    expect(
+      composerShouldHoldSendLock({
+        now: 10,
+        settleUntil: COMPOSER_SEND_SETTLE_MS,
+        next: 'doing any work.',
+        sent,
+      }),
+    ).toEqual({ hold: true, sent, draft: '' });
+    expect(
+      composerShouldHoldSendLock({
+        now: 10,
+        settleUntil: COMPOSER_SEND_SETTLE_MS,
+        next: prefix + 'doing any work.',
+        sent: prefix,
+      }),
+    ).toEqual({ hold: true, sent: (prefix + 'doing any work.').trim(), draft: '' });
+    expect(
+      composerShouldHoldSendLock({
+        now: COMPOSER_SEND_SETTLE_MS + 50,
+        settleUntil: COMPOSER_SEND_SETTLE_MS,
+        next: 'doing any work.',
+        sent,
+      }),
+    ).toEqual({ hold: true, sent, draft: '' });
+    expect(
+      composerShouldHoldSendLock({
+        now: 10,
+        settleUntil: COMPOSER_SEND_SETTLE_MS,
+        next: '下一句',
+        sent,
+      }),
+    ).toEqual({ hold: false, sent: '', draft: '下一句' });
+    expect(
+      composerShouldHoldSendLock({
+        now: COMPOSER_SEND_SETTLE_MS + 50,
+        settleUntil: COMPOSER_SEND_SETTLE_MS,
+        next: 'please inspect the preview header next',
+        sent,
+      }),
+    ).toEqual({
+      hold: false,
+      sent: '',
+      draft: 'please inspect the preview header next',
+    });
+    expect(composerQueueableFollowUpText({
+      text: 'doing',
+      lastSent: sent,
+      settling: true,
+    })).toBeNull();
+    expect(composerQueueableFollowUpText({
+      text: '下一句',
+      lastSent: sent,
+      settling: true,
+    })).toBe('下一句');
   });
 });
 

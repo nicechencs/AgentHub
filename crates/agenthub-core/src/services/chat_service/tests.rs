@@ -1835,7 +1835,9 @@ fn codex_home_with_title(home: &std::path::Path, thread_id: &str, title: &str) {
     std::fs::create_dir_all(home).unwrap();
     std::fs::write(
         home.join("session_index.jsonl"),
-        format!(r#"{{"id":"{thread_id}","thread_name":"{title}","updated_at":"2026-01-01T00:00:00Z"}}"#),
+        format!(
+            r#"{{"id":"{thread_id}","thread_name":"{title}","updated_at":"2026-01-01T00:00:00Z"}}"#
+        ),
     )
     .unwrap();
 }
@@ -1899,7 +1901,10 @@ fn adopt_agent_title_keeps_a_manual_rename_and_untitled_conversations() {
     chat.update_conversation(&renamed.id, Some("我自己起的名字".into()), None, None, None)
         .unwrap();
     assert_eq!(chat.adopt_agent_title(&renamed.id).unwrap(), None);
-    assert_eq!(chat.get_conversation(&renamed.id).unwrap().title, "我自己起的名字");
+    assert_eq!(
+        chat.get_conversation(&renamed.id).unwrap().title,
+        "我自己起的名字"
+    );
 
     // No native session id yet: nothing to look up.
     let draft = chat

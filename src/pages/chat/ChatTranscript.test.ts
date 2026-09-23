@@ -50,11 +50,9 @@ function renderTranscript(turns: { turn: number; user?: ChatMessage; agents: Cha
       listLoading: false,
       messagesLoading: false,
       sending: false,
-      retryDisabled: false,
       scrollRef: createRef<HTMLDivElement>(),
       bottomRef: createRef<HTMLDivElement>(),
       onScroll: () => undefined,
-      onRetry: () => undefined,
     }),
   );
 }
@@ -86,11 +84,9 @@ describe('ChatTranscript surfaces', () => {
         listLoading: false,
         messagesLoading: false,
         sending: false,
-        retryDisabled: false,
         scrollRef: createRef<HTMLDivElement>(),
         bottomRef: createRef<HTMLDivElement>(),
         onScroll: () => undefined,
-        onRetry: () => undefined,
         firstBlocker: { kind: 'noCwd' },
       }),
     );
@@ -139,11 +135,9 @@ describe('ChatTranscript surfaces', () => {
         listLoading: false,
         messagesLoading: false,
         sending: true,
-        retryDisabled: false,
         scrollRef: createRef<HTMLDivElement>(),
         bottomRef: createRef<HTMLDivElement>(),
         onScroll: () => undefined,
-        onRetry: () => undefined,
         onOpenProcess: () => undefined,
       }),
     );
@@ -151,6 +145,66 @@ describe('ChatTranscript surfaces', () => {
     expect(html).toContain('思考中');
     expect(html).not.toContain('hidden thinking');
     expect(html).not.toContain('正在想');
+  });
+
+  it('keeps read / edit / execute rows on the assistant turn in history', () => {
+    const process: AgentProcessView = {
+      turn: 1,
+      agent: 'claude',
+      phase: 'ok',
+      stdout: '',
+      stderr: '',
+      steps: [
+        { type: 'thinking', text: 'hidden thinking', done: true },
+        { type: 'tool', name: 'Read', status: 'end', input: { path: 'README.md' } },
+        { type: 'tool', name: 'Write', status: 'end', input: { path: 'src/a.ts' } },
+        { type: 'tool', name: 'Bash', status: 'end', input: { command: 'ls' } },
+      ],
+      updatedAt: 1,
+      thinkingStartedAt: 1,
+      thinkingDurationMs: 1500,
+    };
+    const html = renderMarkup(
+      createElement(ChatTranscript, {
+        active: conversation(),
+        turns: [
+          {
+            turn: 1,
+            user: userMessage('hello from chat'),
+            agents: [
+              {
+                id: 'm-agent',
+                conversationId: 'c1',
+                turn: 1,
+                role: 'agent',
+                agentId: 'claude',
+                content: '第一段正文',
+                status: 'ok',
+                durationMs: 0,
+                createdAt: '2026-08-16T00:00:00.000Z',
+              },
+            ],
+          },
+        ],
+        processMap: { '1:claude': process },
+        listLoading: false,
+        messagesLoading: false,
+        sending: false,
+        scrollRef: createRef<HTMLDivElement>(),
+        bottomRef: createRef<HTMLDivElement>(),
+        onScroll: () => undefined,
+        onOpenProcess: () => undefined,
+        onSelectEdit: () => undefined,
+      }),
+    );
+    expect(html).toContain('data-help="chat-turn-process"');
+    expect(html).toContain('思考了 1.5s');
+    expect(html).toContain('已读取 README.md');
+    expect(html).toContain('已修改 src/a.ts');
+    expect(html).toContain('已执行 ls');
+    expect(html).toContain('第一段正文');
+    expect(html).not.toContain('hidden thinking');
+    expect(html).not.toContain('已完成 · 已读取');
   });
 
   it('does not paint a panel card once a turn exists', () => {
@@ -189,11 +243,11 @@ describe('ChatTranscript surfaces', () => {
     expect(html).toContain('first prompt');
     expect(html).toContain('second prompt');
     expect(html).toContain('pointer-events-none');
-    // Unmeasured panel width is 0, so the 720px gate still hides the ticks.
+    // Unmeasured panel width is 0, so the 768px gate still hides the ticks.
     expect(html).not.toContain('data-testid="chat-outline-rail"');
   });
 
-  it('mounts the outline rail when the setting, two prompts, and a 720px panel hold', () => {
+  it('mounts the outline rail when the setting, two prompts, and a 768px panel hold', () => {
     const html = renderMarkup(
       createElement(ChatTranscript, {
         active: conversation(),
@@ -205,12 +259,10 @@ describe('ChatTranscript surfaces', () => {
         listLoading: false,
         messagesLoading: false,
         sending: false,
-        retryDisabled: false,
         scrollRef: createRef<HTMLDivElement>(),
         bottomRef: createRef<HTMLDivElement>(),
         onScroll: () => undefined,
-        onRetry: () => undefined,
-        measuredWidth: 720,
+        measuredWidth: 768,
         outlineEnabled: true,
       }),
     );
@@ -237,11 +289,9 @@ describe('ChatTranscript surfaces', () => {
         listLoading: false,
         messagesLoading: false,
         sending: false,
-        retryDisabled: false,
         scrollRef: createRef<HTMLDivElement>(),
         bottomRef: createRef<HTMLDivElement>(),
         onScroll: () => undefined,
-        onRetry: () => undefined,
         measuredWidth: 0,
         outlineEnabled: true,
       }),
@@ -262,11 +312,9 @@ describe('ChatTranscript surfaces', () => {
         listLoading: false,
         messagesLoading: false,
         sending: false,
-        retryDisabled: false,
         scrollRef: createRef<HTMLDivElement>(),
         bottomRef: createRef<HTMLDivElement>(),
         onScroll: () => undefined,
-        onRetry: () => undefined,
         measuredWidth: 900,
         outlineEnabled: true,
       }),

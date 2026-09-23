@@ -37,6 +37,7 @@ use crate::models::{
     LiveAccount, RunOptions, RunSpec,
 };
 use crate::runtime;
+use crate::services::adapter_route_constants::DSH_API_KEY_ENV;
 use crate::utils::atomic::{atomic_write, with_restored_files};
 use crate::utils::paths::{agent_home, first_env_path};
 
@@ -50,7 +51,7 @@ pub const SCOPE_PACKAGE: &str = "@deepseek-ai/dsh-scope";
 pub const HOME_PATCH_FILE: &str = "cordis.patch.yml";
 pub const CREDENTIALS_FILE: &str = ".credentials.yaml";
 pub const LLM_PLUGIN_ID: &str = "@deepseek-ai/dsh-llm-deepseek";
-pub const DEFAULT_API_KEY_ENV: &str = "DEEPSEEK_API_KEY";
+pub const DEFAULT_API_KEY_ENV: &str = DSH_API_KEY_ENV;
 pub const DEFAULT_PROVIDER: &str = "deepseek-official";
 pub const DEFAULT_MODEL: &str = "deepseek-v4-flash";
 pub const DEFAULT_BASE_URL: &str = "https://api.deepseek.com";

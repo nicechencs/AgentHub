@@ -147,7 +147,9 @@ fn list_messages_keeps_insert_order_when_ids_sort_backwards() {
 
     let rows = repo.list_messages("c-order").unwrap();
     assert_eq!(
-        rows.iter().map(|row| row.content.as_str()).collect::<Vec<_>>(),
+        rows.iter()
+            .map(|row| row.content.as_str())
+            .collect::<Vec<_>>(),
         vec!["先改登录页", "好，先看现有实现"]
     );
 }
@@ -324,14 +326,20 @@ fn update_title_if_keeps_a_title_another_writer_landed_first() {
     assert!(repo
         .update_title_if("c1", "首条消息推导值", "对方起的标题", &now)
         .unwrap());
-    assert_eq!(repo.get_conversation("c1").unwrap().unwrap().title, "对方起的标题");
+    assert_eq!(
+        repo.get_conversation("c1").unwrap().unwrap().title,
+        "对方起的标题"
+    );
 
     // A manual rename between the caller's read and this write wins: the
     // compare-and-set reports a miss and leaves the newer title alone.
     assert!(!repo
         .update_title_if("c1", "首条消息推导值", "对方起的标题", &now)
         .unwrap());
-    assert_eq!(repo.get_conversation("c1").unwrap().unwrap().title, "对方起的标题");
+    assert_eq!(
+        repo.get_conversation("c1").unwrap().unwrap().title,
+        "对方起的标题"
+    );
 
     assert!(!repo.update_title_if("missing", "x", "y", &now).unwrap());
 }

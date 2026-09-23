@@ -108,6 +108,22 @@ describe('queued follow-up items', () => {
     expect(withImage[0]?.extras).toEqual({ images: [{ path: '/tmp/a.png' }] });
   });
 
+  it('does not queue a trailing fragment of the just-sent prompt', () => {
+    const sent = "I'll write a short 3-step UI retest plan and show it before doing any work.";
+    expect(appendQueuedFollowUp([], 'doing any work.', 'q-residual', undefined, sent)).toEqual([]);
+    expect(appendQueuedFollowUp([], sent, 'q-dup', undefined, sent)).toEqual([]);
+    expect(appendQueuedFollowUp([], '  doing any work.  ', 'q-pad', undefined, sent)).toEqual([]);
+    expect(
+      appendQueuedFollowUp(
+        [],
+        'please inspect the preview header next',
+        'q-ok',
+        undefined,
+        sent,
+      ).map((item) => item.text),
+    ).toEqual(['please inspect the preview header next']);
+  });
+
   it('cancels one item without joining the rest', () => {
     const queued = appendQueuedFollowUp(
       appendQueuedFollowUp([{ id: 'q-1', text: '第一条' }], '第二条', 'q-2'),

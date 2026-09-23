@@ -338,10 +338,10 @@ fn grok_available_commands_update_fills_catalog_not_timeline() {
         .unwrap();
 
     let snapshot = worker.store.snapshot("grok-cmds", None).unwrap();
-    assert!(!snapshot.events.iter().any(|event| matches!(
-        &event.event,
-        ChatEvent::AgentProcess { .. }
-    )));
+    assert!(!snapshot
+        .events
+        .iter()
+        .any(|event| matches!(&event.event, ChatEvent::AgentProcess { .. })));
     let cache = worker
         .catalogs
         .lock()
@@ -393,10 +393,10 @@ fn kiro_vendor_commands_available_fills_catalog_not_timeline() {
         .unwrap();
 
     let snapshot = worker.store.snapshot("kiro-cmds", None).unwrap();
-    assert!(!snapshot.events.iter().any(|event| matches!(
-        &event.event,
-        ChatEvent::AgentProcess { .. }
-    )));
+    assert!(!snapshot
+        .events
+        .iter()
+        .any(|event| matches!(&event.event, ChatEvent::AgentProcess { .. })));
     let cache = worker
         .catalogs
         .lock()
@@ -509,10 +509,10 @@ fn grok_config_option_update_fills_models_not_timeline() {
         .unwrap();
 
     let snapshot = worker.store.snapshot("grok-cfg", None).unwrap();
-    assert!(!snapshot.events.iter().any(|event| matches!(
-        &event.event,
-        ChatEvent::AgentProcess { .. }
-    )));
+    assert!(!snapshot
+        .events
+        .iter()
+        .any(|event| matches!(&event.event, ChatEvent::AgentProcess { .. })));
     let cache = worker
         .catalogs
         .lock()
@@ -557,10 +557,10 @@ fn grok_plan_update_fills_snapshot_not_timeline() {
         .unwrap();
 
     let stored = worker.store.snapshot("grok-plan", None).unwrap();
-    assert!(!stored.events.iter().any(|event| matches!(
-        &event.event,
-        ChatEvent::AgentProcess { .. }
-    )));
+    assert!(!stored
+        .events
+        .iter()
+        .any(|event| matches!(&event.event, ChatEvent::AgentProcess { .. })));
     let snapshot = worker.with_catalog_epoch(stored);
     assert_eq!(snapshot.plan.len(), 2);
     assert_eq!(snapshot.plan[0].content, "read");
@@ -599,12 +599,13 @@ fn grok_context_usage_is_usage_step_not_status() {
         .iter()
         .filter_map(|event| match &event.event {
             ChatEvent::AgentProcess {
-                step: crate::models::ProcessStep::Usage {
-                    scope,
-                    total,
-                    context_window,
-                    ..
-                },
+                step:
+                    crate::models::ProcessStep::Usage {
+                        scope,
+                        total,
+                        context_window,
+                        ..
+                    },
                 ..
             } => Some((scope.clone(), *total, *context_window)),
             _ => None,
@@ -655,10 +656,10 @@ fn grok_host_terminal_fills_snapshot_not_timeline() {
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
     let stored = worker.store.snapshot("grok-term", None).unwrap();
-    assert!(!stored.events.iter().any(|event| matches!(
-        &event.event,
-        ChatEvent::AgentProcess { .. }
-    )));
+    assert!(!stored
+        .events
+        .iter()
+        .any(|event| matches!(&event.event, ChatEvent::AgentProcess { .. })));
     let snapshot = worker.with_catalog_epoch(stored);
     assert_eq!(snapshot.host_terminals.len(), 1);
     assert_eq!(snapshot.host_terminals[0].id, id);
@@ -717,7 +718,9 @@ fn grok_thought_then_text_marks_thinking_done() {
             _ => None,
         })
         .collect();
-    assert!(thinking.iter().any(|(text, done)| *text == "plan" && !*done));
+    assert!(thinking
+        .iter()
+        .any(|(text, done)| *text == "plan" && !*done));
     assert!(thinking.iter().any(|(_, done)| *done));
 }
 
@@ -1216,13 +1219,14 @@ fn command_execution_item_and_output_delta_are_tools_not_raw_command_output() {
         .iter()
         .filter_map(|event| match &event.event {
             ChatEvent::AgentProcess {
-                step: crate::models::ProcessStep::Tool {
-                    id,
-                    name,
-                    status,
-                    result,
-                    ..
-                },
+                step:
+                    crate::models::ProcessStep::Tool {
+                        id,
+                        name,
+                        status,
+                        result,
+                        ..
+                    },
                 ..
             } => Some((id.clone(), name.clone(), status.clone(), result.clone())),
             _ => None,
@@ -2026,7 +2030,7 @@ fn acp_cancel_deadline_terminalizes_without_a_server_response() {
     assert!(snapshot.events.iter().any(|event| {
         matches!(
             &event.event,
-            ChatEvent::Error { message } if message.contains("请新建对话")
+            ChatEvent::Error { message } if message.contains("已中断当前生成")
         )
     }));
     assert!(!snapshot
@@ -2135,37 +2139,14 @@ fn acp_stop_reasons_never_default_to_success() {
 }
 
 #[test]
-fn dead_kiro_process_rejects_existing_session_without_replacing_thread_id() {
-    let db = Database::open_in_memory().unwrap();
-    conversation(&db, "dead-kiro");
-    let mut worker = worker(&db, "dead-kiro");
-    worker.agent = AgentId::Kiro;
-    worker.store.enable_if_new("dead-kiro").unwrap();
-    worker.thread_id = Some("kiro-session-1".into());
-    worker
-        .store
-        .set_state(
-            "dead-kiro",
-            RuntimePhase::Completed,
-            None,
-            worker.thread_id.as_deref(),
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-    let error = worker.acp_connect_and_prompt(Vec::new()).unwrap_err();
-    assert!(error.to_string().contains("新建对话"));
-    assert_eq!(worker.thread_id.as_deref(), Some("kiro-session-1"));
+fn dead_kiro_process_plans_a_new_session_in_the_same_conversation() {
     assert_eq!(
-        worker
-            .store
-            .record("dead-kiro")
-            .unwrap()
-            .unwrap()
-            .thread_id
-            .as_deref(),
-        Some("kiro-session-1")
+        super::ops::acp_session_plan(AgentId::Kiro, false, true),
+        super::ops::AcpSessionPlan::New
+    );
+    assert_eq!(
+        super::ops::acp_session_plan(AgentId::Kiro, true, true),
+        super::ops::AcpSessionPlan::PromptExisting
     );
 }
 
@@ -2685,10 +2666,10 @@ fn claude_todo_write_fills_snapshot_not_timeline() {
         .unwrap();
 
     let stored = worker.store.snapshot("claude-plan", None).unwrap();
-    assert!(!stored.events.iter().any(|event| matches!(
-        &event.event,
-        ChatEvent::AgentProcess { .. }
-    )));
+    assert!(!stored
+        .events
+        .iter()
+        .any(|event| matches!(&event.event, ChatEvent::AgentProcess { .. })));
     let snapshot = worker.with_catalog_epoch(stored);
     assert_eq!(snapshot.plan.len(), 2);
     assert_eq!(snapshot.plan[0].content, "read");

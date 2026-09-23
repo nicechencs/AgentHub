@@ -79,6 +79,35 @@ pub const DEEPSEEK_PI_PROVIDER_SLOT: &str = "deepseek";
 pub const GLM_PI_RULE_ID: &str = "glm-coding-plan-to-pi-v1";
 pub const DEEPSEEK_PI_RULE_ID: &str = "deepseek-api-to-pi-v1";
 
+/// Kimi Code membership → Pi.
+pub const KIMI_PI_RULE_ID: &str = "kimi-membership-to-pi-v1";
+/// Anthropic API Key → Pi.
+pub const ANTHROPIC_PI_RULE_ID: &str = "anthropic-api-to-pi-v1";
+/// OpenAI API Key → Pi.
+pub const OPENAI_PI_RULE_ID: &str = "openai-api-to-pi-v1";
+/// xAI API Key → Pi.
+pub const XAI_PI_RULE_ID: &str = "xai-api-to-pi-v1";
+/// Claude official subscription → Pi. Not a configurable OAuth stand-in.
+pub const CLAUDE_SUBSCRIPTION_PI_RULE_ID: &str = "claude-subscription-to-pi-v1";
+/// Codex / ChatGPT official subscription → Pi. Not a configurable OAuth stand-in.
+pub const CODEX_SUBSCRIPTION_PI_RULE_ID: &str = "codex-subscription-to-pi-v1";
+/// Grok official subscription → Pi. Not a configurable OAuth stand-in.
+pub const GROK_SUBSCRIPTION_PI_RULE_ID: &str = "grok-subscription-to-pi-v1";
+/// DeepSeek API Key → DeepSeek Harness.
+pub const DEEPSEEK_DSH_RULE_ID: &str = "deepseek-api-to-dsh-v1";
+/// Kimi Code membership → Codex.
+pub const KIMI_CODEX_RULE_ID: &str = "kimi-membership-to-codex-v1";
+/// Anthropic API Key → Codex.
+pub const ANTHROPIC_CODEX_RULE_ID: &str = "anthropic-api-to-codex-v1";
+/// Codex / ChatGPT official subscription → Claude Responses.
+pub const CODEX_CLAUDE_RESPONSES_RULE_ID: &str = "codex-subscription-to-claude-responses-v1";
+/// Codex / ChatGPT official subscription → Codex. Account switch, not a generated login.
+pub const CODEX_CODEX_RULE_ID: &str = "codex-subscription-to-codex-v1";
+/// Claude official subscription → Codex. Gates closed; not applyable yet.
+pub const CLAUDE_CODEX_RULE_ID: &str = "claude-subscription-to-codex-v1";
+/// Codex / ChatGPT official subscription → Claude via App Server. Closed candidate, version 0.
+pub const CODEX_CLAUDE_APP_SERVER_RULE_ID: &str = "codex-subscription-to-claude-app-server-v0";
+
 /// Pi `models.json` provider slot for an explicit Anthropic API key.
 pub const ANTHROPIC_PI_PROVIDER_SLOT: &str = "anthropic";
 
@@ -191,8 +220,9 @@ pub const GLM_CODING_RESPONSES_NEEDLE: &str = "open.bigmodel.cn/api/v1";
 /// Official DeepSeek HTTP host.
 pub const DEEPSEEK_API_ENDPOINT_NEEDLE: &str = "api.deepseek.com";
 
-/// Rule ids defined in this module. Append when adding a `*_RULE_ID`.
-/// Secret-resolver matchers must cover each applyable projection.
+/// Each entry must be applyable and recognized by secret resolution.
+/// `every_published_rule_id_is_recognized_by_a_secret_matcher` enforces that
+/// and skips [`CODEX_CODEX_RULE_ID`] (account switch, not a generated login).
 pub const PUBLISHED_ROUTE_RULE_IDS: &[&str] = &[
     KIMI_CLAUDE_RULE_ID,
     GLM_CLAUDE_RULE_ID,
@@ -216,6 +246,60 @@ pub const PUBLISHED_ROUTE_RULE_IDS: &[&str] = &[
     CODEX_DSH_RULE_ID,
     GLM_PI_RULE_ID,
     DEEPSEEK_PI_RULE_ID,
+    KIMI_PI_RULE_ID,
+    ANTHROPIC_PI_RULE_ID,
+    OPENAI_PI_RULE_ID,
+    XAI_PI_RULE_ID,
+    CLAUDE_SUBSCRIPTION_PI_RULE_ID,
+    CODEX_SUBSCRIPTION_PI_RULE_ID,
+    GROK_SUBSCRIPTION_PI_RULE_ID,
+    DEEPSEEK_DSH_RULE_ID,
+    KIMI_CODEX_RULE_ID,
+    ANTHROPIC_CODEX_RULE_ID,
+    CODEX_CLAUDE_RESPONSES_RULE_ID,
+];
+
+/// Every [`PUBLISHED_ROUTE_RULE_IDS`] entry, plus rules that are named but
+/// not applyable: [`CODEX_CODEX_RULE_ID`] (account switch),
+/// [`CLAUDE_CODEX_RULE_ID`] (gates closed), and
+/// [`CODEX_CLAUDE_APP_SERVER_RULE_ID`] (closed App Server candidate).
+pub const DECLARED_ROUTE_RULE_IDS: &[&str] = &[
+    KIMI_CLAUDE_RULE_ID,
+    GLM_CLAUDE_RULE_ID,
+    DEEPSEEK_CLAUDE_RULE_ID,
+    GLM_CODEX_RULE_ID,
+    DEEPSEEK_CODEX_RULE_ID,
+    KIMI_GROK_RULE_ID,
+    OPENAI_GROK_RULE_ID,
+    OPENAI_CLAUDE_RULE_ID,
+    OPENAI_GROK_BRIDGE_RULE_ID,
+    OPENAI_CODEX_RULE_ID,
+    OPENAI_KIMI_BRIDGE_RULE_ID,
+    OPENAI_DSH_BRIDGE_RULE_ID,
+    GROK_CLAUDE_RULE_ID,
+    GROK_CODEX_RULE_ID,
+    KIRO_CLAUDE_RULE_ID,
+    KIRO_CODEX_RULE_ID,
+    KIRO_GROK_RULE_ID,
+    CODEX_GROK_RULE_ID,
+    CODEX_KIMI_RULE_ID,
+    CODEX_DSH_RULE_ID,
+    GLM_PI_RULE_ID,
+    DEEPSEEK_PI_RULE_ID,
+    KIMI_PI_RULE_ID,
+    ANTHROPIC_PI_RULE_ID,
+    OPENAI_PI_RULE_ID,
+    XAI_PI_RULE_ID,
+    CLAUDE_SUBSCRIPTION_PI_RULE_ID,
+    CODEX_SUBSCRIPTION_PI_RULE_ID,
+    GROK_SUBSCRIPTION_PI_RULE_ID,
+    DEEPSEEK_DSH_RULE_ID,
+    KIMI_CODEX_RULE_ID,
+    ANTHROPIC_CODEX_RULE_ID,
+    CODEX_CLAUDE_RESPONSES_RULE_ID,
+    CODEX_CODEX_RULE_ID,
+    CLAUDE_CODEX_RULE_ID,
+    CODEX_CLAUDE_APP_SERVER_RULE_ID,
 ];
 
 /// OpenAI env key accepted when reading a source provider.
@@ -234,7 +318,7 @@ pub const DSH_DEEPSEEK_PROVIDER_SLOT: &str = "deepseek-official";
 pub const DSH_DEFAULT_MODEL: &str = "deepseek-v4-flash";
 
 /// Env / credentials reference name written into the DSH home patch.
-pub const DSH_API_KEY_ENV: &str = "DEEPSEEK_API_KEY";
+pub const DSH_API_KEY_ENV: &str = DEEPSEEK_API_KEY_ENV;
 
 /// Claude native_endpoint base URL for a writable rule. Unknown rules stay closed.
 pub(crate) fn claude_native_base_url(rule_id: &str) -> Option<&'static str> {

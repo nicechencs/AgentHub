@@ -6,7 +6,9 @@ use agenthub_core::models::{Account, AccountSwitchResult, AuthState};
 use agenthub_core::AgentHub;
 use tauri::State;
 
-use crate::commands::{invalidate_runtime_catalogs, map_err_string, parse_agent, with_hub_blocking};
+use crate::commands::{
+    invalidate_runtime_catalogs, map_err_string, parse_agent, with_hub_blocking,
+};
 use crate::state::AppState;
 
 /// Invoke: `list_accounts`

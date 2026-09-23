@@ -29,28 +29,49 @@ import type { SourceFormat } from '@/lib/source-preview';
  * Highlight colors use design tokens so the editor follows light/dark
  * with the rest of the app instead of CodeMirror's VS Code palette.
  */
+/**
+ * Keyword, string, number, and names stay apart.
+ * The same roles are repeated as `.tok-*` in globals.css for inline snippets.
+ */
 const sourceHighlight = HighlightStyle.define([
-  { tag: t.propertyName, color: 'var(--accent)', fontWeight: '600' },
-  { tag: t.attributeName, color: 'var(--accent)', fontWeight: '600' },
-  { tag: t.keyword, color: 'var(--accent)', fontWeight: '600' },
-  { tag: t.string, color: 'var(--text-secondary)' },
-  { tag: t.number, color: 'var(--info)' },
-  { tag: t.bool, color: 'var(--success)' },
-  { tag: t.atom, color: 'var(--success)' },
-  { tag: t.null, color: 'var(--text-muted)', fontStyle: 'italic' },
-  { tag: t.comment, color: 'var(--text-muted)', fontStyle: 'italic' },
-  { tag: t.lineComment, color: 'var(--text-muted)', fontStyle: 'italic' },
-  { tag: t.punctuation, color: 'var(--text-muted)' },
-  { tag: t.bracket, color: 'var(--text-muted)' },
-  { tag: t.squareBracket, color: 'var(--text-muted)' },
-  { tag: t.brace, color: 'var(--text-muted)' },
-  { tag: t.separator, color: 'var(--text-muted)' },
+  { tag: t.keyword, color: 'var(--syntax-keyword, var(--danger))' },
+  { tag: t.propertyName, color: 'var(--syntax-property, var(--accent))', fontWeight: '600' },
+  { tag: t.attributeName, color: 'var(--syntax-property, var(--accent))' },
+  { tag: t.string, color: 'var(--syntax-string, var(--info))' },
+  { tag: t.special(t.string), color: 'var(--syntax-string, var(--info))' },
+  { tag: t.regexp, color: 'var(--syntax-string, var(--info))' },
+  { tag: t.number, color: 'var(--syntax-number, var(--accent-text))' },
+  { tag: t.bool, color: 'var(--syntax-literal, var(--success))' },
+  { tag: t.atom, color: 'var(--syntax-literal, var(--success))' },
+  { tag: t.null, color: 'var(--syntax-literal, var(--text-muted))' },
+  { tag: t.comment, color: 'var(--syntax-comment, var(--text-muted))' },
+  { tag: t.lineComment, color: 'var(--syntax-comment, var(--text-muted))' },
+  { tag: t.punctuation, color: 'var(--syntax-punctuation, var(--text-secondary))' },
+  { tag: t.bracket, color: 'var(--syntax-punctuation, var(--text-secondary))' },
+  { tag: t.squareBracket, color: 'var(--syntax-punctuation, var(--text-secondary))' },
+  { tag: t.brace, color: 'var(--syntax-punctuation, var(--text-secondary))' },
+  { tag: t.separator, color: 'var(--syntax-punctuation, var(--text-secondary))' },
+  { tag: t.operator, color: 'var(--syntax-operator, var(--text-secondary))' },
+  { tag: t.definition(t.variableName), color: 'var(--syntax-function, var(--accent))' },
+  { tag: t.function(t.variableName), color: 'var(--syntax-function, var(--accent))' },
+  { tag: t.typeName, color: 'var(--syntax-type, var(--warning))' },
+  { tag: t.className, color: 'var(--syntax-type, var(--warning))' },
+  { tag: t.tagName, color: 'var(--syntax-tag, var(--success))' },
+  { tag: t.inserted, color: 'var(--syntax-inserted, var(--text-primary))' },
+  { tag: t.deleted, color: 'var(--syntax-deleted, var(--text-primary))' },
+  { tag: t.meta, color: 'var(--syntax-comment, var(--info))' },
   { tag: t.invalid, color: 'var(--danger)' },
-  { tag: t.definition(t.variableName), color: 'var(--text-primary)' },
-  { tag: t.typeName, color: 'var(--info)' },
-  { tag: t.className, color: 'var(--info)' },
-  { tag: t.operator, color: 'var(--text-secondary)' },
 ]);
+
+export function sourceLanguageParser(format: SourceFormat) {
+  const [ext] = languageExtension(format);
+  if (!ext || typeof ext !== 'object') return null;
+  const record = ext as {
+    parser?: { parse: (input: string) => unknown };
+    language?: { parser?: { parse: (input: string) => unknown } };
+  };
+  return record.language?.parser ?? record.parser ?? null;
+}
 
 function languageExtension(format: SourceFormat) {
   switch (format) {
@@ -112,8 +133,12 @@ export function sourcePreviewExtensions(format: SourceFormat) {
 
 /** Snippets size to the document so empty/short JSON does not paint leftover line numbers. */
 export const sourcePreviewFitContentTheme = EditorView.theme({
+  '&': {
+    maxWidth: '100%',
+  },
   '& .cm-scroller': {
     height: 'auto !important',
+    maxWidth: '100%',
   },
   '& .cm-content': {
     minHeight: '0px !important',
@@ -127,8 +152,8 @@ export const sourcePreviewFitContentTheme = EditorView.theme({
 });
 
 export const SOURCE_PREVIEW_CHROME = [
-  '[&_.cm-editor]:bg-canvas [&_.cm-editor]:font-mono [&_.cm-editor]:text-meta [&_.cm-editor]:text-primary',
-  '[&_.cm-gutters]:bg-canvas [&_.cm-gutters]:text-muted [&_.cm-gutters]:border-border',
+  '[&_.cm-editor]:w-full [&_.cm-editor]:max-w-full [&_.cm-editor]:bg-canvas [&_.cm-editor]:font-mono [&_.cm-editor]:text-meta [&_.cm-editor]:text-primary',
+  '[&_.cm-gutters]:select-none [&_.cm-gutters]:bg-canvas [&_.cm-gutters]:text-muted [&_.cm-gutters]:border-border',
   '[&_.cm-activeLine]:bg-hover [&_.cm-activeLineGutter]:bg-hover',
   '[&_.cm-matchingBracket]:bg-hover',
   '[&_.cm-cursor]:border-primary',

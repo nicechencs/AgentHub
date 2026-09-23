@@ -104,7 +104,10 @@ fn refresh_chat_agent_title_returns_null_without_an_agent_title() {
     let conv = create_conversation_inner(&hub, vec!["claude".into()], None).unwrap();
 
     // No session id and no Claude title source: the command stays a no-op.
-    assert_eq!(refresh_chat_agent_title_inner(&hub, &conv.id).unwrap(), None);
+    assert_eq!(
+        refresh_chat_agent_title_inner(&hub, &conv.id).unwrap(),
+        None
+    );
 }
 
 #[test]

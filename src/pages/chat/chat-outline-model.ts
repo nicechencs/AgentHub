@@ -2,15 +2,17 @@ import type { TurnGroup } from './chat-format';
 
 export const OUTLINE_MAGNIFY_RADIUS = 3;
 export const OUTLINE_MIN_PROMPTS = 2;
-export const OUTLINE_MIN_PANEL_WIDTH_PX = 720;
+export const OUTLINE_MIN_PANEL_WIDTH_PX = 768;
 export const OUTLINE_READING_LINE_PX = 8;
 export const OUTLINE_PREVIEW_LIMIT = 120;
+/** Gap from the chat stage’s left edge — keep the tick column on the page edge. */
+export const OUTLINE_RAIL_INSET_PX = 8;
 
 export const OUTLINE_TICK = {
-  restWidth: 10,
+  restWidth: 8,
   restHeight: 2,
-  activeWidth: 18,
-  magnifiedWidth: 26,
+  activeWidth: 12,
+  magnifiedWidth: 16,
   magnifiedHeight: 4,
 } as const;
 
@@ -81,6 +83,22 @@ export function readOutlinePanelWidth(node: Element | null): number {
   if (!panel) return 0;
   const width = panel.getBoundingClientRect().width;
   return Number.isFinite(width) ? width : 0;
+}
+
+/**
+ * Pin the tick column to the chat stage’s left edge. The rail lives inside the
+ * centered message column, so this is usually a negative offset.
+ */
+export function outlineRailLeftOffset(
+  host: { getBoundingClientRect(): { left: number } } | null | undefined,
+  stage: { getBoundingClientRect(): { left: number } } | null | undefined,
+  insetPx = OUTLINE_RAIL_INSET_PX,
+): number {
+  if (!host || !stage) return insetPx;
+  const hostLeft = host.getBoundingClientRect().left;
+  const stageLeft = stage.getBoundingClientRect().left;
+  if (!Number.isFinite(hostLeft) || !Number.isFinite(stageLeft)) return insetPx;
+  return stageLeft - hostLeft + insetPx;
 }
 
 export function outlineTickSize(isActive: boolean, magnification: number): {

@@ -33,7 +33,11 @@ fn reads_the_title_kiro_stored_for_the_session() {
 #[test]
 fn matches_the_file_stem_when_the_record_omits_its_session_id() {
     let home = tempdir().unwrap();
-    cli_session(home.path(), "session-a", r#"{"cwd":"C:\\demo","title":"tidy the rail"}"#);
+    cli_session(
+        home.path(),
+        "session-a",
+        r#"{"cwd":"C:\\demo","title":"tidy the rail"}"#,
+    );
 
     assert_eq!(
         KiroSessionTitle
@@ -52,10 +56,29 @@ fn kiro_placeholders_and_unknown_sessions_have_no_title() {
         "session-a",
         r#"{"session_id":"session-a","title":"New Session"}"#,
     );
-    cli_session(home.path(), "session-b", r#"{"session_id":"session-b","title":"  "}"#);
+    cli_session(
+        home.path(),
+        "session-b",
+        r#"{"session_id":"session-b","title":"  "}"#,
+    );
 
-    assert_eq!(KiroSessionTitle.title_for(home.path(), "session-a").unwrap(), None);
-    assert_eq!(KiroSessionTitle.title_for(home.path(), "session-b").unwrap(), None);
-    assert_eq!(KiroSessionTitle.title_for(home.path(), "session-c").unwrap(), None);
+    assert_eq!(
+        KiroSessionTitle
+            .title_for(home.path(), "session-a")
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        KiroSessionTitle
+            .title_for(home.path(), "session-b")
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        KiroSessionTitle
+            .title_for(home.path(), "session-c")
+            .unwrap(),
+        None
+    );
     assert_eq!(KiroSessionTitle.title_for(home.path(), "  ").unwrap(), None);
 }

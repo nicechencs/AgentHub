@@ -44,6 +44,17 @@ describe('runtime run ownership', () => {
     expect(records.get('a')?.cancelRequested).toBe(true);
   });
 
+  it('keeps a stop requested before start when the start record is created', () => {
+    const records = new Map<string, RuntimeRunRecord>();
+    rememberRuntimeSnapshot(records, snapshot('a', 'idle', null));
+    expect(requestRuntimeCancel(records, 'a')).toEqual({ kind: 'none' });
+    const idle = records.get('a');
+    if (idle) idle.cancelRequested = true;
+    beginRuntimeStart(records, 'a', 0);
+    expect(records.get('a')?.cancelRequested).toBe(true);
+    expect(records.get('a')?.pendingStart).toBe(true);
+  });
+
   it('does not route a terminal runtime to legacy cancel', () => {
     const records = new Map<string, RuntimeRunRecord>();
     rememberRuntimeSnapshot(records, snapshot('a', 'completed', 'run-a'));
