@@ -2,6 +2,7 @@ import { useEffect, useId } from 'react';
 import { PanelRightClose } from 'lucide-react';
 import { SourcePreview } from '@/components/shared/SourcePreview';
 import { CopyableFileName } from '@/components/shared/CopyableFileName';
+import { ContentCopyButton } from '@/components/shared/CopyTextButton';
 import { pathTailLabel, previewHeaderParts } from '@/components/shared/file-name-label';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
@@ -143,6 +144,7 @@ export function ChatEditPreviewPanel({
               )}
             </Tip>
           </div>
+          <ContentCopyButton text={diff} />
           <Button
             size="icon"
             variant="ghost"

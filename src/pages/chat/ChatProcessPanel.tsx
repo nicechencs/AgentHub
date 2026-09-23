@@ -3,17 +3,13 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type Ref,
 } from 'react';
-import { Check, Copy } from 'lucide-react';
-import { copyTextToClipboard } from '@/components/shared/CopyTextButton';
+import { ContentCopyButton } from '@/components/shared/CopyTextButton';
 import { AgentThinking } from '@/components/shared/AgentThinking';
 import { SourcePreview } from '@/components/shared/SourcePreview';
 import { useI18n } from '@/components/shared/LanguageProvider';
-import { Button } from '@/components/ui/button';
-import { useToast } from '@/components/ui/toast';
 import {
   formatToolStep,
   formatUsageStep,
@@ -44,67 +40,8 @@ import {
   thinkingChromeLabel,
 } from './chat-format';
 import type { ProcessLogPane } from './chat-process-log-model';
+import { HeightSeparator, ResizableRegion, SNIPPET_SURFACE } from './ChatResizableRegion';
 import { useProcessLogHeight } from './use-process-log-height';
-
-function HeightSeparator({
-  label,
-  paneHeight,
-  valuemin,
-  onResizeStart,
-  onSeparatorKeyDown,
-  resetHeight,
-}: {
-  label: string;
-  paneHeight: number;
-  valuemin: number;
-  onResizeStart: (e: React.PointerEvent<HTMLDivElement>) => void;
-  onSeparatorKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => void;
-  resetHeight: () => void;
-}) {
-  return (
-    <div
-      role="separator"
-      aria-orientation="horizontal"
-      aria-label={label}
-      aria-valuenow={paneHeight}
-      aria-valuemin={valuemin}
-      tabIndex={0}
-      onPointerDown={onResizeStart}
-      onDoubleClick={(e) => {
-        e.stopPropagation();
-        resetHeight();
-      }}
-      onKeyDown={onSeparatorKeyDown}
-      className={
-        [
-          'group relative z-10 h-2 shrink-0 cursor-row-resize touch-none bg-transparent outline-none',
-          'after:pointer-events-none after:absolute after:inset-x-0 after:top-1/2 after:h-px after:-translate-y-1/2 after:bg-transparent after:content-[""]',
-          'hover:after:bg-accent focus-visible:after:bg-accent active:after:bg-accent',
-        ].join(' ')
-      }
-    />
-  );
-}
-
-function ResizableRegion({
-  pane,
-  label,
-  className,
-  children,
-}: {
-  pane: ProcessLogPane;
-  label: string;
-  className?: string;
-  children: (height: number) => ReactNode;
-}) {
-  const height = useProcessLogHeight(pane);
-  return (
-    <div className={className}>
-      {children(height.paneHeight)}
-      <HeightSeparator label={label} {...height} />
-    </div>
-  );
-}
 
 function CopyableResizableLog({
   label,
@@ -119,45 +56,18 @@ function CopyableResizableLog({
   resizeAria: string;
   preRef?: Ref<HTMLPreElement>;
 }) {
-  const { t } = useI18n();
-  const { toast } = useToast();
-  const [copied, setCopied] = useState(false);
   const height = useProcessLogHeight(pane);
-
-  const onCopy = (e: ReactMouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!text.trim()) return;
-    void copyTextToClipboard(text).then(
-      () => {
-        setCopied(true);
-        window.setTimeout(() => setCopied(false), 1200);
-      },
-      () => toast({ title: t('common.copyFailed'), variant: 'danger' }),
-    );
-  };
 
   return (
     <div>
       <div className="mb-0.5 flex items-center justify-between gap-2">
         <span className="text-muted">{label}</span>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          className="h-7 shrink-0 px-2"
-          aria-label={t('common.copy')}
-          onClick={onCopy}
-          onPointerDown={(e) => e.stopPropagation()}
-        >
-          {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
-          {copied ? t('common.copied') : t('common.copy')}
-        </Button>
+        <ContentCopyButton text={text} />
       </div>
       <pre
         ref={preRef}
         style={{ height: height.paneHeight }}
-        className="overflow-auto [overflow-anchor:none] whitespace-pre-wrap break-all rounded-card bg-subtle px-2 py-1.5 font-mono text-meta leading-relaxed text-primary"
+        className={cn(SNIPPET_SURFACE, 'px-3 py-2')}
       >
         {pane === 'command' ? <TokenSpans text={text} format="shell" /> : text}
       </pre>
@@ -193,36 +103,11 @@ function HighlightedLines({
   source: string;
   bodyHeight?: number;
 }) {
-  const { t } = useI18n();
-  const { toast } = useToast();
-  const [copied, setCopied] = useState(false);
   const digits = Math.max(2, String(lines.length).length);
-  const onCopy = (e: ReactMouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!source.trim()) return;
-    void copyTextToClipboard(source).then(
-      () => {
-        setCopied(true);
-        window.setTimeout(() => setCopied(false), 1200);
-      },
-      () => toast({ title: t('common.copyFailed'), variant: 'danger' }),
-    );
-  };
   return (
     <div className="overflow-hidden rounded-btn border border-border bg-subtle font-mono text-meta leading-[18px] text-primary">
       <div className="flex justify-end border-b border-border px-1 py-0.5">
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          className="h-7 shrink-0 px-2"
-          aria-label={t('common.copy')}
-          onClick={onCopy}
-        >
-          {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
-          {copied ? t('common.copied') : t('common.copy')}
-        </Button>
+        <ContentCopyButton text={source} />
       </div>
       <div className="overflow-auto" style={bodyHeight != null ? { height: bodyHeight } : undefined}>
       {lines.map((line, index) => (
@@ -302,7 +187,7 @@ function PayloadPreview({
       {(height) => (
         <pre
           style={{ height }}
-          className="overflow-auto whitespace-pre-wrap break-words rounded-btn border border-border bg-subtle px-3 py-2 font-mono text-meta text-primary"
+          className={cn(SNIPPET_SURFACE, 'px-3 py-2')}
         >
           {clipped}
         </pre>

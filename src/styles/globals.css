@@ -503,10 +503,6 @@ svg.lucide[data-icon='nav'] {
   background: var(--syntax-diff-remove, rgba(248, 81, 73, 0.1));
 }
 
-[data-help='chat-process-inspect'] [data-source-preview] {
-  background: transparent;
-}
-
 [data-help='chat-process-inspect'] .cm-editor,
 [data-help='chat-process-inspect'] .cm-gutters {
   background: transparent;
