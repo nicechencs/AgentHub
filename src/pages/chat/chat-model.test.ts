@@ -1034,13 +1034,15 @@ describe('chatEscapeShouldCancel', () => {
   });
 
   it('does not stop the turn when Esc is for a title rename field', () => {
-    expect(chatEscapeTargetExemptsCancel({ tagName: 'INPUT' })).toBe(true);
-    expect(chatEscapeTargetExemptsCancel({ tagName: 'SELECT' })).toBe(true);
-    expect(chatEscapeTargetExemptsCancel({ tagName: 'TEXTAREA' })).toBe(false);
-    expect(chatEscapeTargetExemptsCancel({
+    const field = (partial: { tagName?: string; closest?: (sel: string) => unknown }) =>
+      partial as unknown as EventTarget;
+    expect(chatEscapeTargetExemptsCancel(field({ tagName: 'INPUT' }))).toBe(true);
+    expect(chatEscapeTargetExemptsCancel(field({ tagName: 'SELECT' }))).toBe(true);
+    expect(chatEscapeTargetExemptsCancel(field({ tagName: 'TEXTAREA' }))).toBe(false);
+    expect(chatEscapeTargetExemptsCancel(field({
       tagName: 'DIV',
       closest: (sel: string) => (sel.includes('data-chat-title-edit') ? {} : null),
-    })).toBe(true);
+    }))).toBe(true);
     expect(chatEscapeTargetExemptsCancel(null)).toBe(false);
   });
 });
