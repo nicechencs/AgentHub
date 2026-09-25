@@ -20,6 +20,8 @@ export type ChatEditPreviewTarget = {
   path: string;
   /** Clicked turn. A later turn that touched the same path must not replace this diff. */
   turn?: number;
+  /** Clicked tool step. Another edit of the same path in this turn must not replace this diff. */
+  stepId?: string;
 };
 
 export type ChatInspectTarget =
@@ -110,8 +112,17 @@ export function processInspectRowAction(
   return paneOpen && selectedStepKey === stepKey ? 'close' : 'focus';
 }
 
-export function openChatEditPreview(path: string, turn?: number): ChatEditPreviewTarget {
-  return typeof turn === 'number' ? { kind: 'edit', path, turn } : { kind: 'edit', path };
+export function openChatEditPreview(
+  path: string,
+  turn?: number,
+  stepId?: string,
+): ChatEditPreviewTarget {
+  return {
+    kind: 'edit',
+    path,
+    ...(typeof turn === 'number' ? { turn } : {}),
+    ...(stepId?.trim() ? { stepId: stepId.trim() } : {}),
+  };
 }
 
 export function pushChatPreview(

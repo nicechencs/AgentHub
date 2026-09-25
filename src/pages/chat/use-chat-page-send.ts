@@ -667,7 +667,13 @@ export function useChatPageSend(input: {
         lastSent: lastSentPromptRef.current.get(active.id),
       });
       if (!next) {
-        if (clearDraft) setDraft('');
+        if (prompt.trim()) {
+          toast({
+            title: t('chat.toast.followUpKept'),
+            variant: 'warning',
+            duration: 2500,
+          });
+        }
         return;
       }
       appendFollowUp(active.id, next, getStartExtras?.());

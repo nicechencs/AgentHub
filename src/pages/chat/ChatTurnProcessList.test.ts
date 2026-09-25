@@ -93,6 +93,40 @@ describe('ChatTurnProcessList', () => {
     expect(html.split('aria-current="true"')).toHaveLength(2);
   });
 
+  it('keeps two edits of the same file as separate rows with location', () => {
+    const html = renderMarkup(
+      createElement(ChatTurnProcessList, {
+        process: processView([
+          {
+            type: 'tool',
+            id: 'edit-1',
+            name: 'StrReplace',
+            status: 'end',
+            input: { path: 'src/a.ts', old_string: 'one', new_string: 'two' },
+          },
+          {
+            type: 'tool',
+            id: 'edit-2',
+            name: 'StrReplace',
+            status: 'end',
+            input: { path: 'src/a.ts', old_string: 'two', new_string: 'three' },
+          },
+        ], 'ok'),
+        turn: 1,
+        agent: 'codex',
+        running: false,
+        selectedEditPath: 'src/a.ts',
+        selectedEditTurn: 1,
+        selectedEditStepId: 'edit-1',
+        onOpenProcess: () => undefined,
+        onSelectEdit: () => undefined,
+      }),
+    );
+    expect(html.match(/已修改 src\/a\.ts/g)?.length).toBe(2);
+    expect(html).toContain('+1 −1');
+    expect(html.split('aria-current="true"')).toHaveLength(2);
+  });
+
   it('does not mark the same path current on a different turn', () => {
     const html = renderMarkup(
       createElement(ChatTurnProcessList, {

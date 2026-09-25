@@ -70,8 +70,9 @@ export function appendQueuedFollowUp(
   id?: string,
   extras?: QueuedFollowUpExtras,
   lastSent?: string,
+  settling?: boolean,
 ): QueuedFollowUpItem[] {
-  const text = composerQueueableFollowUpText({ text: prompt, lastSent });
+  const text = composerQueueableFollowUpText({ text: prompt, lastSent, settling });
   if (!text) return [...queue];
   const item = createQueuedFollowUpItem(text, id, extras);
   if (!item) return [...queue];

@@ -92,5 +92,11 @@ describe('chat preview stack', () => {
   it('keeps the clicked turn on an edit preview', () => {
     expect(openChatEditPreview('src/a.ts', 2)).toEqual({ kind: 'edit', path: 'src/a.ts', turn: 2 });
     expect(openChatEditPreview('src/a.ts')).toEqual({ kind: 'edit', path: 'src/a.ts' });
+    expect(openChatEditPreview('src/a.ts', 2, 'tool-1')).toEqual({
+      kind: 'edit',
+      path: 'src/a.ts',
+      turn: 2,
+      stepId: 'tool-1',
+    });
   });
 });

@@ -3205,6 +3205,7 @@ export const en = {
       cancelRequestedDesc: "Stopping the current generation. It will show as stopped when it ends.",
       steered: "Added",
       queuedAfterTurn: "Send after this turn",
+      followUpKept: "This matches what you just sent. It stays in the box.",
       legacyContinued: "Continued with the new chat style",
       legacyContinueFail: "Couldn't resume that session. Start a new chat.",
       multiAgentMigrationFailed: "Some older chats could not be auto-migrated to a single agent. Try again later.",

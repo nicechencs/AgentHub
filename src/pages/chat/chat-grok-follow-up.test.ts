@@ -108,11 +108,11 @@ describe('queued follow-up items', () => {
     expect(withImage[0]?.extras).toEqual({ images: [{ path: '/tmp/a.png' }] });
   });
 
-  it('does not queue a trailing fragment of the just-sent prompt', () => {
+  it('does not queue a trailing fragment of the just-sent prompt while settling', () => {
     const sent = "I'll write a short 3-step UI retest plan and show it before doing any work.";
-    expect(appendQueuedFollowUp([], 'doing any work.', 'q-residual', undefined, sent)).toEqual([]);
-    expect(appendQueuedFollowUp([], sent, 'q-dup', undefined, sent)).toEqual([]);
-    expect(appendQueuedFollowUp([], '  doing any work.  ', 'q-pad', undefined, sent)).toEqual([]);
+    expect(appendQueuedFollowUp([], 'doing any work.', 'q-residual', undefined, sent, true)).toEqual([]);
+    expect(appendQueuedFollowUp([], sent, 'q-dup', undefined, sent, true)).toEqual([]);
+    expect(appendQueuedFollowUp([], '  doing any work.  ', 'q-pad', undefined, sent, true)).toEqual([]);
     expect(
       appendQueuedFollowUp(
         [],
@@ -120,8 +120,15 @@ describe('queued follow-up items', () => {
         'q-ok',
         undefined,
         sent,
+        true,
       ).map((item) => item.text),
     ).toEqual(['please inspect the preview header next']);
+    expect(
+      appendQueuedFollowUp([], sent, 'q-resend', undefined, sent).map((item) => item.text),
+    ).toEqual([sent]);
+    expect(
+      appendQueuedFollowUp([], 'doing any work.', 'q-after', undefined, sent).map((item) => item.text),
+    ).toEqual(['doing any work.']);
   });
 
   it('cancels one item without joining the rest', () => {
