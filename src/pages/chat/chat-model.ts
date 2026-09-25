@@ -773,7 +773,20 @@ export function messageStatusLabel(
   }
 }
 
-/** Esc stops the in-flight turn unless a dialog, preview, or IME already owns it. */
+/** Esc on a title rename / non-composer field must not also stop the turn. */
+export function chatEscapeTargetExemptsCancel(target: EventTarget | null): boolean {
+  if (!target || typeof target !== 'object') return false;
+  const el = target as {
+    tagName?: string;
+    closest?: (selectors: string) => unknown;
+  };
+  const tag = el.tagName?.toUpperCase();
+  if (tag === 'INPUT' || tag === 'SELECT') return true;
+  if (typeof el.closest === 'function' && el.closest('[data-chat-title-edit]')) return true;
+  return false;
+}
+
+/** Esc stops the in-flight turn unless a dialog, preview, rename, or IME already owns it. */
 export function chatEscapeShouldCancel(input: {
   key: string;
   sending: boolean;
@@ -782,9 +795,16 @@ export function chatEscapeShouldCancel(input: {
   overlayOpen: boolean;
   defaultPrevented: boolean;
   composing?: boolean;
+  targetExempt?: boolean;
 }): boolean {
   if (input.key !== 'Escape') return false;
-  if (input.composing || input.defaultPrevented || input.overlayOpen || input.previewOpen) {
+  if (
+    input.composing
+    || input.defaultPrevented
+    || input.overlayOpen
+    || input.previewOpen
+    || input.targetExempt
+  ) {
     return false;
   }
   return input.sending && !input.canceling;

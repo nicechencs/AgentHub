@@ -79,6 +79,10 @@ describe('hasEscPriorityOverlay', () => {
   it('detects open menu', () => {
     expect(hasEscPriorityOverlay(mockRoot(['[role="menu"][data-state="open"]']))).toBe(true);
   });
+
+  it('detects an open slash listbox', () => {
+    expect(hasEscPriorityOverlay(mockRoot(['[role="listbox"][data-state="open"]']))).toBe(true);
+  });
 });
 
 describe('shouldIgnoreListKeyboard', () => {

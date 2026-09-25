@@ -68,6 +68,7 @@ export function ChatActionMenu(props: {
       style={{ left: palettePos.left, bottom: palettePos.bottom }}
       role="listbox"
       aria-label={t('chat.shortcuts.actions')}
+      data-state="open"
       data-help="chat-slash-menu"
     >
       {slashItems.map((action, index) => {

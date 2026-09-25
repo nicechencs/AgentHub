@@ -13,6 +13,14 @@ export type TurnEditFile = {
   before?: string;
   after?: string;
   diff?: string;
+  /** Tool step this edit came from. Absent on path-aggregated summaries. */
+  stepId?: string;
+};
+
+export type TurnEditRowDetail = {
+  location?: string;
+  plus?: number;
+  minus?: number;
 };
 
 const PATH_KEYS = [
@@ -89,20 +97,41 @@ export function formatSimpleDiff(before: string, after: string, path = ''): stri
   return lines.join('\n');
 }
 
-export function extractEditFilesFromSteps(steps: ProcessStep[]): TurnEditFile[] {
+export function extractEditFilesFromSteps(
+  steps: ProcessStep[],
+  options?: { mergeByPath?: boolean },
+): TurnEditFile[] {
+  const mergeByPath = options?.mergeByPath !== false;
   const files: TurnEditFile[] = [];
-  for (const step of steps) {
+  for (const [index, step] of steps.entries()) {
     if (step.type !== 'tool') continue;
     if (classifyToolAction(step.name) !== 'edit') continue;
     const tone = toolActionTone(step.status);
     if (tone === 'failed') continue;
     const status: TurnEditStatus = tone === 'live' ? 'live' : 'done';
     const collected = filesFromToolStep(step);
+    const stepId = step.id?.trim() || `step:${index}`;
     for (const item of collected) {
-      upsertEditFile(files, { ...item, status });
+      const next = mergeByPath ? { ...item, status } : { ...item, status, stepId };
+      if (mergeByPath) upsertEditFile(files, next);
+      else files.push(next);
     }
   }
   return files;
+}
+
+/** One tool step's edits, never remapped onto a later write of the same path. */
+export function extractStepEditFiles(
+  step: ProcessStep,
+  index = 0,
+): TurnEditFile[] {
+  const stepId = step.type === 'tool'
+    ? (step.id?.trim() || `step:${index}`)
+    : `step:${index}`;
+  return extractEditFilesFromSteps([step], { mergeByPath: false }).map((file) => ({
+    ...file,
+    stepId,
+  }));
 }
 
 /** This turn's 正在修改 / 已修改 files. Defaults to the latest turn in the map. */
@@ -129,11 +158,24 @@ export function findTurnEditFile(
   processMap: ProcessMap,
   path: string,
   preferTurn?: number,
+  stepId?: string,
 ): TurnEditFile | null {
   const needle = path.trim();
   if (!needle) return null;
+  const views = Object.values(processMap);
+  if (stepId?.trim()) {
+    const want = stepId.trim();
+    const inTurn = typeof preferTurn === 'number'
+      ? views.filter((view) => view.turn === preferTurn)
+      : views;
+    for (const view of inTurn) {
+      const found = extractEditFilesFromSteps(view.steps, { mergeByPath: false })
+        .find((file) => file.stepId === want && sameEditPath(file.path, needle));
+      if (found) return found;
+    }
+  }
   const turns = [...new Set(
-    Object.values(processMap)
+    views
       .map((view) => view.turn)
       .filter((turn): turn is number => typeof turn === 'number'),
   )].sort((a, b) => b - a);
@@ -151,6 +193,44 @@ export function findTurnEditFile(
     if (found) return found;
   }
   return null;
+}
+
+/** First hunk start and +/- counts for a process row. */
+export function turnEditRowDetail(file: Pick<TurnEditFile, 'before' | 'after' | 'diff' | 'path'>): TurnEditRowDetail {
+  const patch = turnEditDiffText(file);
+  if (!patch) return {};
+  return parseDiffRowDetail(patch);
+}
+
+export function formatTurnEditRowDetail(file: Pick<TurnEditFile, 'before' | 'after' | 'diff' | 'path'>): string {
+  const detail = turnEditRowDetail(file);
+  let out = '';
+  if (detail.location) out += `:${detail.location}`;
+  if (detail.plus != null || detail.minus != null) {
+    out += ` +${detail.plus ?? 0} −${detail.minus ?? 0}`;
+  }
+  return out;
+}
+
+function parseDiffRowDetail(patch: string): TurnEditRowDetail {
+  const hunk = patch.match(/^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/m);
+  const location = hunk?.[2];
+  let plus = 0;
+  let minus = 0;
+  for (const line of patch.split('\n')) {
+    if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('diff ') || line.startsWith('index ')) {
+      continue;
+    }
+    if (line.startsWith('+')) plus += 1;
+    else if (line.startsWith('-')) minus += 1;
+  }
+  const out: TurnEditRowDetail = {};
+  if (location) out.location = location;
+  if (plus > 0 || minus > 0) {
+    out.plus = plus;
+    out.minus = minus;
+  }
+  return out;
 }
 
 function filesFromToolStep(step: ToolStep): CollectedEdit[] {
