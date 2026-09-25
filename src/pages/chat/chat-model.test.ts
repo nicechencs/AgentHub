@@ -13,6 +13,7 @@ import {
   chatAgentPickerEmptyCopy,
   chatAgentPickerEmptyKind,
   chatEscapeShouldCancel,
+  chatEscapeTargetExemptsCancel,
   chatKeyTargetIsField,
   chatModKShouldFocusHistory,
   chatModNShouldStartNewChat,
@@ -1029,6 +1030,18 @@ describe('chatEscapeShouldCancel', () => {
     expect(chatEscapeShouldCancel({ ...idle, canceling: true })).toBe(false);
     expect(chatEscapeShouldCancel({ ...idle, sending: false })).toBe(false);
     expect(chatEscapeShouldCancel({ ...idle, key: 'Enter' })).toBe(false);
+    expect(chatEscapeShouldCancel({ ...idle, targetExempt: true })).toBe(false);
+  });
+
+  it('does not stop the turn when Esc is for a title rename field', () => {
+    expect(chatEscapeTargetExemptsCancel({ tagName: 'INPUT' })).toBe(true);
+    expect(chatEscapeTargetExemptsCancel({ tagName: 'SELECT' })).toBe(true);
+    expect(chatEscapeTargetExemptsCancel({ tagName: 'TEXTAREA' })).toBe(false);
+    expect(chatEscapeTargetExemptsCancel({
+      tagName: 'DIV',
+      closest: (sel: string) => (sel.includes('data-chat-title-edit') ? {} : null),
+    })).toBe(true);
+    expect(chatEscapeTargetExemptsCancel(null)).toBe(false);
   });
 });
 

@@ -13,7 +13,8 @@ import {
 import type { AgentKey, ProcessStep } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
-  extractEditFilesFromSteps,
+  extractStepEditFiles,
+  formatTurnEditRowDetail,
   sameEditPath,
   type TurnEditFile,
 } from './chat-edit-preview';
@@ -34,6 +35,7 @@ export function ChatTurnProcessList({
   selectedStepKey = null,
   selectedEditPath = '',
   selectedEditTurn,
+  selectedEditStepId,
   onOpenProcess,
   onCloseProcess,
   onSelectEdit,
@@ -47,13 +49,13 @@ export function ChatTurnProcessList({
   selectedStepKey?: string | null;
   selectedEditPath?: string;
   selectedEditTurn?: number;
+  selectedEditStepId?: string;
   onOpenProcess?: (turn: number, agent: AgentKey, stepKey: string) => void;
   onCloseProcess?: () => void;
   onSelectEdit?: (file: TurnEditFile, turn: number) => void;
 }) {
   const { t } = useI18n();
   const timeline = transcriptTimelineSteps(process?.steps);
-  const editFiles = extractEditFilesFromSteps(process?.steps ?? []);
   const latestThinking = latestThinkingStep(timeline);
   const liveThinking = Boolean(latestThinking && !latestThinking.done);
   const [now, setNow] = useState(() => Date.now());
@@ -123,19 +125,22 @@ export function ChatTurnProcessList({
         }
         if (step.type === 'tool') {
           const live = toolActionTone(step.status) === 'live';
-          const stepFiles = editFilesForStep(step, editFiles);
+          const stepFiles = editFilesForStep(step, process?.steps ?? []);
           const rows = stepFiles.length > 0 ? stepFiles : [null];
           return rows.map((editFile, fileIndex) => {
             const selected = Boolean(
               editFile
               && selectedEditPath
               && sameEditPath(selectedEditPath, editFile.path)
-              && (typeof selectedEditTurn !== 'number' || selectedEditTurn === turn),
+              && (typeof selectedEditTurn !== 'number' || selectedEditTurn === turn)
+              && (!selectedEditStepId || selectedEditStepId === editFile.stepId),
             );
             const openEdit = Boolean(editFile && onSelectEdit);
-            const label = editFile && stepFiles.length > 1
+            const baseLabel = editFile && stepFiles.length > 1
               ? formatToolStep({ ...step, input: { path: editFile.path } }, t)
               : formatToolStep(step, t);
+            const detail = editFile ? formatTurnEditRowDetail(editFile) : '';
+            const label = `${baseLabel}${detail}`;
             return (
               <li key={stepFiles.length > 1 ? `${key}:${fileIndex}:${editFile?.path}` : key}>
                 <ProcessRowButton
@@ -178,12 +183,11 @@ export function ChatTurnProcessList({
 
 function editFilesForStep(
   step: Extract<ProcessStep, { type: 'tool' }>,
-  files: TurnEditFile[],
+  steps: ProcessStep[],
 ): TurnEditFile[] {
   if (classifyToolAction(step.name) !== 'edit') return [];
-  return extractEditFilesFromSteps([step]).map(
-    (item) => files.find((file) => sameEditPath(file.path, item.path)) ?? item,
-  );
+  const index = steps.indexOf(step);
+  return extractStepEditFiles(step, index >= 0 ? index : 0);
 }
 
 function processRowKey(step: ProcessStep, index: number): string {

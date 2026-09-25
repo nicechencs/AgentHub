@@ -147,7 +147,9 @@ export function composerIsResidualOfSent(input: { text: string; sent: string }):
 }
 
 /**
- * Queue only a real next line. A leftover fragment of `lastSent` must not enqueue.
+ * Queue a real next line. Residual / prefix leftovers of `lastSent` are only
+ * dropped during the post-submit settle window (late IME / double-Enter).
+ * After settle, the same prompt is a new send or follow-up.
  */
 export function composerQueueableFollowUpText(input: {
   text: string;
@@ -156,8 +158,9 @@ export function composerQueueableFollowUpText(input: {
 }): string | null {
   const text = input.text.trim();
   if (!text) return null;
+  if (!input.settling) return text;
   if (input.lastSent && composerIsResidualOfSent({ text, sent: input.lastSent })) return null;
-  if (input.settling && input.lastSent?.includes(text)) return null;
+  if (input.lastSent?.includes(text)) return null;
   return text;
 }
 
@@ -172,8 +175,9 @@ export function composerShouldKeepRestoredSent(input: {
 }
 
 /**
- * After send: drop residual / same-burst leftovers; absorb a late completion of
- * the submitted payload into the lock; keep a real follow-up that is not in `sent`.
+ * After send: only during the settle window, drop residual / same-burst leftovers
+ * and absorb a late completion of the submitted payload. After settle the lock
+ * must release so the user can retype or resend the same prompt.
  */
 export function composerShouldHoldSendLock(input: {
   now: number;
@@ -184,18 +188,34 @@ export function composerShouldHoldSendLock(input: {
   const sent = input.sent.trim();
   const nextTrim = input.next.trim();
   const inSettle = input.now < input.settleUntil;
-  if (!nextTrim) return { hold: Boolean(sent), sent, draft: '' };
-  if (!sent) return { hold: false, sent: '', draft: input.next };
+  if (!sent || !inSettle) return { hold: false, sent: '', draft: input.next };
+  if (!nextTrim) return { hold: true, sent, draft: '' };
   if (composerIsResidualOfSent({ text: nextTrim, sent })) {
     return { hold: true, sent, draft: '' };
   }
   if (nextTrim.startsWith(sent)) {
     return { hold: true, sent: nextTrim, draft: '' };
   }
-  if (inSettle && sent.includes(nextTrim)) {
+  if (sent.includes(nextTrim)) {
     return { hold: true, sent, draft: '' };
   }
   return { hold: false, sent: '', draft: input.next };
+}
+
+/**
+ * Steer ack: clear only the submitted line on success; restore it on reject
+ * unless the user already typed something else.
+ */
+export function composerDraftAfterSteerAck(input: {
+  ok: boolean;
+  draft: string;
+  steered: string;
+}): string {
+  if (!input.ok) return input.draft.trim() ? input.draft : input.steered;
+  if (!input.draft.trim() || composerIsResidualOfSent({ text: input.draft, sent: input.steered })) {
+    return '';
+  }
+  return input.draft;
 }
 
 /**

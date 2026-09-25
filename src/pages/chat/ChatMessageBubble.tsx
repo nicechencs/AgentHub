@@ -33,6 +33,7 @@ export function ChatMessageBubble({
   selectedStepKey = null,
   selectedEditPath = '',
   selectedEditTurn,
+  selectedEditStepId,
   onSelectEdit,
 }: {
   message: ChatMessage;
@@ -45,6 +46,7 @@ export function ChatMessageBubble({
   selectedStepKey?: string | null;
   selectedEditPath?: string;
   selectedEditTurn?: number;
+  selectedEditStepId?: string;
   onSelectEdit?: (file: TurnEditFile, turn: number) => void;
 }) {
   if (message.role === 'user') {
@@ -64,6 +66,7 @@ export function ChatMessageBubble({
       selectedStepKey={selectedStepKey}
       selectedEditPath={selectedEditPath}
       selectedEditTurn={selectedEditTurn}
+      selectedEditStepId={selectedEditStepId}
       onSelectEdit={onSelectEdit}
     />
   );
@@ -107,6 +110,7 @@ function AgentBubble({
   selectedStepKey,
   selectedEditPath,
   selectedEditTurn,
+  selectedEditStepId,
   onSelectEdit,
 }: {
   message: ChatMessage;
@@ -119,6 +123,7 @@ function AgentBubble({
   selectedStepKey: string | null;
   selectedEditPath: string;
   selectedEditTurn?: number;
+  selectedEditStepId?: string;
   onSelectEdit?: (file: TurnEditFile, turn: number) => void;
 }) {
   const { t } = useI18n();
@@ -178,6 +183,7 @@ function AgentBubble({
             selectedStepKey={selectedStepKey}
             selectedEditPath={selectedEditPath}
             selectedEditTurn={selectedEditTurn}
+            selectedEditStepId={selectedEditStepId}
             onOpenProcess={onOpenProcess}
             onCloseProcess={onCloseProcess}
             onSelectEdit={onSelectEdit}
