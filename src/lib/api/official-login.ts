@@ -30,6 +30,7 @@ import {
 } from '@/lib/backend/contracts/oauth-constants';
 import type { OAuthLoginOption } from '@/lib/backend/contracts/account-port';
 import type { Account, AgentKey } from '@/lib/types';
+import type { RouteSchedulePolicy } from '@/lib/backend/contracts/adapter';
 
 export type { OfficialLoginPoll, OfficialLoginSession };
 
@@ -99,10 +100,11 @@ export async function waitOfficialLogin(
 export async function finishOfficialLogin(
   session: OfficialLoginSession,
   poolOwned = false,
+  schedulePolicy?: RouteSchedulePolicy,
 ): Promise<Account> {
   if (session.flow === 'deviceCode') {
     return poolOwned
-      ? finishDeviceOAuth(session.sessionId, true)
+      ? finishDeviceOAuth(session.sessionId, true, schedulePolicy)
       : finishDeviceOAuth(session.sessionId);
   }
   return finishOAuth(session.sessionId);

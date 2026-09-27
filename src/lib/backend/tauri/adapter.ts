@@ -246,7 +246,12 @@ export function createTauriAdapterPort(): AdapterPort {
     },
     async syncConnectionAuthorizations(request?: SyncConnectionAuthorizationsRequest) {
       return invokeAdapter<SyncConnectionAuthorizationsResult>('sync_connection_authorizations', request
-        ? { request: { sources: request.sources.map((source) => ({ ...source })) } }
+        ? {
+            request: {
+              sources: request.sources.map((source) => ({ ...source })),
+              ...(request.schedulePolicy ? { schedulePolicy: request.schedulePolicy } : {}),
+            },
+          }
         : {});
     },
     async enrollNativeToGateway(profileId) {

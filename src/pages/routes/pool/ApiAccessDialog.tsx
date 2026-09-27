@@ -71,6 +71,8 @@ import {
 import { requestRemoteModels } from '@/pages/providers/remote-models-request';
 import { parseCustomModelList } from './pool-authorization-detail';
 import { savePoolApiAccess } from './save-pool-api-access';
+import { PoolSchedulePolicyCreateControl } from './PoolSchedulePolicyCreateControl';
+import type { RouteSchedulePolicy } from '@/lib/backend/contracts/adapter';
 
 function requestErrorMessage(error: unknown): string {
   if (typeof error === 'string' && error.trim()) return error.trim();
@@ -229,6 +231,8 @@ export function ApiAccessForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detectNone, setDetectNone] = useState(false);
+  const [schedulePolicy, setSchedulePolicy] =
+    useState<RouteSchedulePolicy>('priority_failover');
   const choices = useMemo(() => poolApiChoices(agents), [agents]);
   const selectedVendor = useMemo(
     () => API_VENDORS.find((item) => item.id === vendorId) ?? null,
@@ -407,6 +411,7 @@ export function ApiAccessForm({
               sourceId,
               targetAgentId,
               surface,
+              schedulePolicy,
             });
           },
           setSourceCustomModels,
@@ -450,6 +455,13 @@ export function ApiAccessForm({
 
   const fields = (
         <div className="flex flex-col gap-3">
+          {!editing ? (
+            <PoolSchedulePolicyCreateControl
+              value={schedulePolicy}
+              onChange={setSchedulePolicy}
+              disabled={saving}
+            />
+          ) : null}
           <label className="flex flex-col gap-1.5">
             <span className="text-xs text-muted">{t('routes.pool.page.apiVendors')}</span>
             <Select value={vendorId || undefined} onValueChange={selectVendor}>

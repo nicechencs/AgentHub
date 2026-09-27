@@ -1,9 +1,32 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createMockAccountPort, resetMockAccounts } from './account';
+import {
+  createMockAccountPort,
+  getMockAccountById,
+  resetMockAccounts,
+} from './account';
+import {
+  createMockAdapterPort,
+  resetMockAdapters,
+} from './adapter';
+import {
+  getMockProviderById,
+  removeMockProvider,
+  resetMockProviders,
+  upsertMockProvider,
+} from './provider';
 
 describe('mock OAuth sessions', () => {
+  const resolver = {
+    getAccountById: getMockAccountById,
+    getProviderById: getMockProviderById,
+    upsertGeneratedProvider: upsertMockProvider,
+    removeGeneratedProvider: removeMockProvider,
+  };
+
   beforeEach(() => {
     resetMockAccounts();
+    resetMockAdapters();
+    resetMockProviders();
   });
 
   it('finishOAuth uses the started agent instead of hardcoding claude', async () => {
@@ -64,6 +87,41 @@ describe('mock OAuth sessions', () => {
     expect(acc.agentId).toBe('grok');
     expect(acc.kind).toBe('oauth');
     expect((await accounts.listAccounts('pi')).some((row) => row.account.id === acc.id)).toBe(false);
+  });
+
+  it('pool-owned finishDeviceOAuth enrolls with create-only RoundRobin schedulePolicy', async () => {
+    const accounts = createMockAccountPort();
+    const adapter = createMockAdapterPort(resolver);
+
+    const start = await accounts.startDeviceOAuth('grok', 'xai', true);
+    await accounts.pollDeviceOAuth(start.state);
+    await accounts.pollDeviceOAuth(start.state);
+    const acc = await accounts.finishDeviceOAuth(start.state, true, 'round_robin');
+
+    expect(acc.home).toBe('route_pool');
+    expect(getMockAccountById(acc.id)?.home).toBe('route_pool');
+
+    const listed = await adapter.listDefaultRoutePools();
+    const grokPool = listed.pools.find((pool) => (
+      pool.targetAgentId === 'grok' && pool.surface === 'responses'
+    ));
+    expect(grokPool).toBeTruthy();
+    expect(grokPool?.schedulePolicy).toBe('round_robin');
+    expect(grokPool?.members).toEqual([
+      expect.objectContaining({ sourceKind: 'account', sourceId: acc.id, enabled: true }),
+    ]);
+
+    // Create-only: a second pool-owned finish must not overwrite an existing policy.
+    const start2 = await accounts.startDeviceOAuth('grok', 'xai', true);
+    await accounts.pollDeviceOAuth(start2.state);
+    await accounts.pollDeviceOAuth(start2.state);
+    const acc2 = await accounts.finishDeviceOAuth(start2.state, true, 'priority_failover');
+    const listed2 = await adapter.listDefaultRoutePools();
+    const grokPool2 = listed2.pools.find((pool) => (
+      pool.targetAgentId === 'grok' && pool.surface === 'responses'
+    ));
+    expect(grokPool2?.schedulePolicy).toBe('round_robin');
+    expect(grokPool2?.members.some((m) => m.sourceId === acc2.id)).toBe(true);
   });
 
   it('rejects unknown state instead of finishing as claude or pi', async () => {

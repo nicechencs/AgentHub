@@ -1680,7 +1680,7 @@ async fn start_local_gateway_entries(
                 .is_some();
             let runtime = host.start(spec).await.map_err(map_bridge_host_error)?;
             let port = runtime.port;
-            let enrollment = with_hub_blocking(hub.clone(), {
+            let enrolled_pool = match with_hub_blocking(hub.clone(), {
                 let pool_id = pool_id.clone();
                 move |hub| {
                     hub.route_pools()
@@ -1688,12 +1688,44 @@ async fn start_local_gateway_entries(
                         .map_err(|error| map_err_string("enroll_local_gateway", error))
                 }
             })
-            .await;
-            if let Err(error) = enrollment {
-                if !was_running {
-                    let _ = host.stop(&pool_id).await;
+            .await
+            {
+                Ok(pool) => pool,
+                Err(error) => {
+                    if !was_running {
+                        let _ = host.stop(&pool_id).await;
+                    }
+                    return Err(error);
                 }
-                return Err(error);
+            };
+            // First successful enroll: replace the legacy non-indexed listener
+            // with an indexed spec so create-time schedulePolicy is live. Seed
+            // any prior live index. Later policy edits use hot-apply, not rebuild.
+            let prior = host
+                .live_route_index(&pool_id)
+                .map_err(map_bridge_host_error)?;
+            let indexed = with_hub_blocking(hub.clone(), {
+                let enrolled_pool = enrolled_pool.clone();
+                let prior = prior.clone();
+                move |hub| {
+                    Ok(hub.adapter_bridge().pool_listener_spec_with_prior(
+                        &enrolled_pool,
+                        flags,
+                        prior.as_ref(),
+                    ))
+                }
+            })
+            .await?;
+            match host.start(indexed.clone()).await {
+                Ok(_) => {}
+                Err(BridgeHostError::ConflictingStart) => {
+                    match host.stop(&pool_id).await {
+                        Ok(_) | Err(BridgeHostError::NotRunning) => {}
+                        Err(error) => return Err(map_bridge_host_error(error)),
+                    }
+                    host.start(indexed).await.map_err(map_bridge_host_error)?;
+                }
+                Err(error) => return Err(map_bridge_host_error(error)),
             }
             Ok(runtime.profile_id)
         }
@@ -1837,41 +1869,32 @@ async fn restart_pool_listener_for_token(
     restart_pool_listener_if_running(hub, host, pool_id).await
 }
 
-/// After an account quota snapshot is persisted, rebuild any running default-pool
-/// listeners that include that account so live ranking re-annotates remaining %.
-/// Same stop/start path as [`restart_pool_listener_if_running`] / schedule-policy edits.
-/// Profile-keyed (non-pool-id) enroll listeners are not force-restarted here.
+/// Quota refresh hot-applies via [`BridgeRuntimeHost::apply_account_quota`].
+/// This helper remains only for tests that still name the old path; it does not
+/// stop/start listeners.
+#[cfg(test)]
 pub(crate) async fn restart_pools_for_account_if_running(
     hub: Arc<AgentHub>,
     host: &BridgeRuntimeHost,
     account_id: String,
 ) -> Result<(), String> {
     let account_id_for_lookup = account_id.clone();
-    let pool_ids = with_hub_blocking(hub.clone(), move |hub| {
-        let mut ids = Vec::new();
-        for pool in hub
-            .route_pools()
-            .list_default_pools()
-            .map_err(|error| map_err_string("list_default_pools", error))?
-        {
-            let members = hub
-                .route_pools()
-                .list_members(&pool.id)
-                .map_err(|error| map_err_string("list_members", error))?;
-            let belongs = members.iter().any(|member| {
-                member.source_kind == AdapterSourceKind::Account
-                    && member.source_id == account_id_for_lookup
-            });
-            if belongs {
-                ids.push(pool.id);
-            }
-        }
-        Ok(ids)
+    let hint = with_hub_blocking(hub, move |hub| {
+        let account = hub
+            .accounts()
+            .get(&account_id_for_lookup, None)
+            .map_err(|error| map_err_string("get_account", error))?;
+        Ok(agenthub_core::services::account_quota::member_quota_hint_now(&account.extra))
     })
     .await?;
-    for pool_id in pool_ids {
-        restart_pool_listener_if_running(hub.clone(), host, pool_id).await?;
-    }
+    host.apply_account_quota(
+        &account_id,
+        hint.remaining_pct,
+        hint.reset_at,
+        hint.fresh_until,
+        hint.credit,
+    )
+    .map_err(|err| err.to_string())?;
     Ok(())
 }
 

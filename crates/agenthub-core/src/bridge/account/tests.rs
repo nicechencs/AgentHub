@@ -1033,3 +1033,43 @@ fn sticky_evicts_when_over_cap() {
     assert!(after.iter().any(|key| key == "k-new"));
     assert_eq!(before.iter().filter(|key| !after.contains(key)).count(), 1);
 }
+
+#[test]
+fn apply_schedule_policy_keeps_sticky_and_resets_rr_cursor() {
+    let picker = AccountPicker::with_policy(
+        vec![
+            member("acc-a", "token-a", MemberHealth::Renewable).with_schedule(0, 0),
+            member("acc-b", "token-b", MemberHealth::Renewable).with_schedule(0, 1),
+        ],
+        false,
+        None,
+        RouteSchedulePolicy::PriorityFailover,
+    );
+    let both = candidates(&["acc-a", "acc-b"]);
+    let first = picker
+        .pick_from_candidates(&both, None, &[])
+        .expect("priority picks lead");
+    assert_eq!(first.source_id, "acc-a");
+    let key = route_scoped_affinity_key("route-a", "codex", "sticky-policy");
+    picker.record_sticky(&key, &first, both.first().expect("cand"));
+
+    assert!(picker.apply_schedule_policy(RouteSchedulePolicy::RoundRobin));
+    assert!(!picker.apply_schedule_policy(RouteSchedulePolicy::RoundRobin));
+    assert_eq!(picker.schedule_policy(), RouteSchedulePolicy::RoundRobin);
+
+    let sticky = picker
+        .pick_from_candidates(&both, Some(&key), &[])
+        .expect("sticky survives policy hot-apply");
+    assert_eq!(sticky.source_id, "acc-a");
+
+    let unbound_a = picker
+        .pick_from_candidates(&both, None, &[])
+        .expect("rr after sticky");
+    let unbound_b = picker
+        .pick_from_candidates(&both, None, &[])
+        .expect("rr rotates");
+    assert_ne!(
+        unbound_a.source_id, unbound_b.source_id,
+        "RR cursor reset + rotate among unbound picks"
+    );
+}

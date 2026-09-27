@@ -395,6 +395,10 @@ pub struct SyncConnectionSource {
 #[serde(rename_all = "camelCase")]
 pub struct SyncConnectionAuthorizationsRequest {
     pub sources: Vec<SyncConnectionSource>,
+    /// Applied only when sync creates a missing default pool.
+    /// Omitted keeps `priority_failover`. Existing pools are not overwritten.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule_policy: Option<RouteSchedulePolicy>,
 }
 
 /// How many connection-page authorizations were enrolled into default pools.

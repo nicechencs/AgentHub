@@ -178,8 +178,9 @@ pub async fn refresh_account_token(
 }
 
 /// Invoke: `refresh_account_quota` — force 5h/7d upstream quota probe for OAuth.
-/// Persists the snapshot, then rebuilds running default-pool listeners that
-/// include this account so live ranking sees the new remaining % (B3).
+/// Persists the snapshot, then hot-applies the quota hint into every live
+/// listener that contains this account (pool-keyed and profile-keyed). Sticky
+/// and continuation stay; no stop/start.
 #[tauri::command]
 pub async fn refresh_account_quota(
     state: State<'_, AppState>,
@@ -190,19 +191,23 @@ pub async fn refresh_account_quota(
     let host = state.bridge_host();
     let agent = parse_agent(&agent_id)?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
-    let account = with_hub_blocking(hub.clone(), move |hub| {
-        hub.accounts()
+    let (account, hint) = with_hub_blocking(hub.clone(), move |hub| {
+        let account = hub
+            .accounts()
             .refresh_quota(&id_or_label, agent)
-            .map(|a| a.redacted())
-            .map_err(|e| map_err_string("refresh_account_quota", e))
+            .map_err(|e| map_err_string("refresh_account_quota", e))?;
+        let hint = agenthub_core::services::account_quota::member_quota_hint_now(&account.extra);
+        Ok((account.redacted(), hint))
     })
     .await?;
-    crate::adapter_bridge_controller::restart_pools_for_account_if_running(
-        hub,
-        &host,
-        account.id.clone(),
+    host.apply_account_quota(
+        &account.id,
+        hint.remaining_pct,
+        hint.reset_at,
+        hint.fresh_until,
+        hint.credit,
     )
-    .await?;
+    .map_err(|err| err.to_string())?;
     Ok(account)
 }
 

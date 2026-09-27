@@ -1,6 +1,7 @@
 import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import type { Provider } from '@/lib/types';
 import { ApiAccessDialog, ApiAccessForm } from './ApiAccessDialog';
 
@@ -29,12 +30,16 @@ const PROVIDER: Provider = {
 
 function render(edit?: { provider: Provider; endpointKinds: readonly ['responses_codex'] }) {
   return renderToStaticMarkup(
-    createElement(ApiAccessDialog, {
-      open: true,
-      agents: ['claude', 'codex', 'grok'],
-      edit: edit ?? null,
-      onOpenChange() {},
-    }),
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(ApiAccessDialog, {
+        open: true,
+        agents: ['claude', 'codex', 'grok'],
+        edit: edit ?? null,
+        onOpenChange() {},
+      }),
+    ),
   );
 }
 
@@ -51,19 +56,25 @@ describe('ApiAccessDialog', () => {
     expect(markup).toContain('var(--agent-grok)');
     expect(markup).toContain('type="checkbox"');
     expect(markup).not.toContain('添加时已定好，编辑时不能改');
+    expect(markup).toContain('data-pool-schedule-create');
+    expect(markup).toContain('只在新建默认连接池时生效');
   });
 
   it('shows the current API type above the locked hint when editing', () => {
     const markup = renderToStaticMarkup(
-      createElement(ApiAccessForm, {
-        layout: 'inline',
-        agents: ['claude', 'codex', 'grok'],
-        edit: {
-          provider: PROVIDER,
-          endpointKinds: ['responses_codex'],
-        },
-        onCancel() {},
-      }),
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(ApiAccessForm, {
+          layout: 'inline',
+          agents: ['claude', 'codex', 'grok'],
+          edit: {
+            provider: PROVIDER,
+            endpointKinds: ['responses_codex'],
+          },
+          onCancel() {},
+        }),
+      ),
     );
     expect(markup).toContain('端点类型');
     expect(markup).not.toContain('接口类型');
@@ -75,5 +86,6 @@ describe('ApiAccessDialog', () => {
     expect(markup).not.toContain('/v1/messages');
     expect(markup).not.toContain('/v1/chat/completions');
     expect(markup).not.toContain('填完服务地址和 API Key 后，会自动侦测可用接口类型');
+    expect(markup).not.toContain('data-pool-schedule-create');
   });
 });
