@@ -1,5 +1,6 @@
+import { presentLogin, type LoginPresentation } from '@/components/login-kernel';
 import { agentDisplayName } from '@/config/agents';
-import type { TranslateFn } from '@/lib/i18n';
+import { translate as translateMessage, type TranslateFn } from '@/lib/i18n';
 import {
   localEndpointBrandAgentId,
   localEndpointPath,
@@ -210,14 +211,36 @@ export function poolAuthorizationTypeHref(
   }
 }
 
-/** List / detail title: custom API Key rows show the domain only. */
+function zhT(key: Parameters<TranslateFn>[0], params?: Parameters<TranslateFn>[1]): string {
+  return translateMessage('zh', key, params);
+}
+
+/** Shared identity for one pool login. Secret tails stay off this input. */
+export function poolAuthorizationLoginPresentation(
+  item: Pick<PoolAuthorizationItem, 'sourceKind' | 'sourceId' | 'agentId' | 'identityLabel' | 'title' | 'kind' | 'endpointMode' | 'endpointHost' | 'authHealth' | 'authStatus'>,
+  t?: TranslateFn,
+): LoginPresentation {
+  return presentLogin({
+    sourceKind: item.sourceKind === 'provider' ? 'provider' : 'account',
+    sourceId: item.sourceId,
+    agentId: item.agentId,
+    kind: item.kind,
+    label: item.title,
+    identityLabel: item.kind === 'oauth' ? item.identityLabel : undefined,
+    endpointHost: item.endpointHost,
+    endpointMode: item.endpointMode,
+    authHealth: item.authHealth,
+    authStatus: item.authStatus,
+    credentialKind: item.kind,
+  }, t ?? zhT);
+}
+
+/** List / detail title from the shared login identity. */
 export function poolAuthorizationLoginLabel(
-  item: Pick<PoolAuthorizationItem, 'identityLabel' | 'title' | 'kind' | 'endpointMode' | 'endpointHost'>,
+  item: Pick<PoolAuthorizationItem, 'sourceKind' | 'sourceId' | 'agentId' | 'identityLabel' | 'title' | 'kind' | 'endpointMode' | 'endpointHost' | 'authHealth' | 'authStatus'>,
+  t?: TranslateFn,
 ): string {
-  if (item.kind === 'apikey' && item.endpointMode === 'custom') {
-    return poolAuthorizationDomain(item.endpointHost) || item.identityLabel || item.title;
-  }
-  return item.identityLabel ?? item.title;
+  return poolAuthorizationLoginPresentation(item, t).identity.primary;
 }
 
 export function poolAuthorizationDetailRows(

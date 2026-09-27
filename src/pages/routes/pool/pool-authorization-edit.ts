@@ -1,13 +1,30 @@
+import { toLoginSaveResult, type LoginSaveResult } from '@/components/login-kernel';
 import type { AdapterSourceKind, ForkedConnectionAuthorization } from '@/lib/backend/contracts/adapter';
+import type { AgentKey } from '@/lib/types';
 import { parsePriorityInput } from './api-access-model';
 
 export type PoolOauthEditItem = {
   kind: string;
   sourceKind: AdapterSourceKind;
   sourceId: string;
+  agentId?: AgentKey;
   addedHere: boolean;
   priority?: number | null;
 };
+
+/** Forked source mapped for the shared login result. Priority stays on the pool save. */
+export function loginResultFromOauthPoolSave(
+  result: Pick<ForkedConnectionAuthorization, 'sourceKind' | 'sourceId' | 'copied'>,
+  agentId: AgentKey,
+): LoginSaveResult {
+  return toLoginSaveResult({
+    kind: 'oauth',
+    mutation: result.copied ? 'created' : 'updated',
+    sourceKind: result.sourceKind === 'provider' ? 'provider' : 'account',
+    sourceId: result.sourceId,
+    agentId,
+  });
+}
 
 export function poolAuthorizationOauthEditable(item: {
   kind: string;

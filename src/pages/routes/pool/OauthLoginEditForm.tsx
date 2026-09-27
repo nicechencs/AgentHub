@@ -11,7 +11,9 @@ import {
   setSourceCustomModels,
 } from '@/lib/api/adapter';
 import type { SourceModelCatalog } from '@/lib/backend/contracts/adapter';
+import type { LoginSaveResult } from '@/components/login-kernel';
 import {
+  loginResultFromOauthPoolSave,
   saveOauthPoolLogin,
   type PoolOauthEditItem,
   type SaveOauthPoolLoginResult,
@@ -26,7 +28,7 @@ export function OauthLoginEditForm({
   item: PoolOauthEditItem;
   catalog?: SourceModelCatalog | null;
   onCancel: () => void;
-  onSaved: (result: SaveOauthPoolLoginResult) => void;
+  onSaved: (result: SaveOauthPoolLoginResult, loginResult?: LoginSaveResult) => void;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -57,7 +59,10 @@ export function OauthLoginEditForm({
           setRouteAuthorizationPriority,
         },
       );
-      onSaved(result);
+      onSaved(
+        result,
+        item.agentId ? loginResultFromOauthPoolSave(result, item.agentId) : undefined,
+      );
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       setError(message);
