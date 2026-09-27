@@ -23,7 +23,10 @@ describe('chat layout wiring', () => {
 
   it('lets Escape stop an in-flight turn', () => {
     expect(source('index.tsx')).toContain('chatEscapeShouldCancel');
+    expect(source('index.tsx')).toContain('chatEscapeTargetExemptsCancel');
     expect(source('index.tsx')).toContain("e.key");
+    expect(source('ChatActionMenu.tsx')).toContain('data-state="open"');
+    expect(source('ChatSessionHeader.tsx')).toContain('data-chat-title-edit');
     expect(source('ChatComposer.tsx')).toContain('composerStopMessageKey');
     expect(source('ChatComposer.tsx')).toContain('composerStopTitle');
     expect(source('ChatComposer.tsx')).toContain('data-help="chat-stop"');
@@ -100,6 +103,10 @@ describe('chat layout wiring', () => {
     expect(composer).toContain('composerShouldHoldSendLock');
     expect(composer).toContain('composerShouldKeepRestoredSent');
     expect(composer).toContain('composerQueueableFollowUpText');
+    expect(composer).toContain('composerDraftAfterSteerAck');
+    expect(composer).toContain('releaseSendLock');
+    expect(source('index.tsx')).toContain('key={page.active.id}');
+    expect(source('use-chat-page-send.ts')).toContain('chat.toast.followUpKept');
     expect(source('use-chat-page-send.ts')).toContain('cancelRequested');
     expect(composer).toContain('COMPOSER_SEND_SETTLE_MS');
     expect(composer).toContain('composerLiveSendText');
@@ -131,8 +138,11 @@ describe('chat layout wiring', () => {
     expect(source('ChatMarkdownPreviewPanel.tsx')).toContain('directoryLabel');
     expect(source('index.tsx')).toContain('pushChatPreview');
     expect(source('index.tsx')).toContain('findTurnEditFile');
+    expect(source('index.tsx')).toContain('selectedEditStepId');
     expect(source('index.tsx')).not.toContain('ChatTurnEditList');
     expect(source('ChatTranscript.tsx')).toContain('onSelectEdit');
+    expect(source('ChatTurnProcessList.tsx')).toContain('extractStepEditFiles');
+    expect(source('ChatTurnProcessList.tsx')).toContain('formatTurnEditRowDetail');
     expect(source('ChatMessageBubble.tsx')).toContain('ChatTurnProcessList');
     expect(source('index.tsx')).toContain('ChatEditPreviewPanel');
     expect(source('index.tsx')).toContain('openChatEditPreview');
