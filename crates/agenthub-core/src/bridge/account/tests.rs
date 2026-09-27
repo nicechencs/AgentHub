@@ -771,6 +771,100 @@ fn stale_quota_behaves_as_missing_for_ranking() {
 }
 
 #[test]
+fn refreshed_quota_updates_live_ranking_without_rebuild() {
+    // Bake quota A (thin) / B (healthy) at listener start, then hot-apply a
+    // refreshed snapshot (as refresh_account_quota → rebuild/apply must) and
+    // prove the next pick uses the new remaining %.
+    let fresh = std::time::SystemTime::now() + std::time::Duration::from_secs(600);
+    let picker = AccountPicker::with_policy(
+        vec![
+            member("acc-a", "token-a", MemberHealth::Renewable)
+                .with_schedule(0, 0)
+                .with_quota_remaining(Some(10.0))
+                .with_quota_fresh_until(Some(fresh)),
+            member("acc-b", "token-b", MemberHealth::Renewable)
+                .with_schedule(0, 1)
+                .with_quota_remaining(Some(80.0))
+                .with_quota_fresh_until(Some(fresh)),
+        ],
+        false,
+        None,
+        RouteSchedulePolicy::PriorityFailover,
+    );
+    let both = candidates(&["acc-a", "acc-b"]);
+    assert_eq!(
+        picker
+            .pick_from_candidates(&both, None, &[])
+            .expect("baked: higher remaining wins")
+            .source_id,
+        "acc-b"
+    );
+
+    assert!(picker.apply_member_quota("acc-a", Some(90.0), None, Some(fresh), false,));
+    assert!(picker.apply_member_quota("acc-b", Some(5.0), None, Some(fresh), false,));
+    assert_eq!(
+        picker
+            .pick_from_candidates(&both, None, &[])
+            .expect("after refresh: new remaining wins")
+            .source_id,
+        "acc-a"
+    );
+}
+
+#[test]
+fn rebuilt_picker_with_refreshed_quota_changes_ranking() {
+    // Same scenario via the restart path: a new start-spec re-annotates
+    // remaining % and the rebuilt picker ranks on the new values.
+    let fresh = std::time::SystemTime::now() + std::time::Duration::from_secs(600);
+    let before = AccountPicker::with_policy(
+        vec![
+            member("acc-a", "token-a", MemberHealth::Renewable)
+                .with_schedule(0, 0)
+                .with_quota_remaining(Some(10.0))
+                .with_quota_fresh_until(Some(fresh)),
+            member("acc-b", "token-b", MemberHealth::Renewable)
+                .with_schedule(0, 1)
+                .with_quota_remaining(Some(80.0))
+                .with_quota_fresh_until(Some(fresh)),
+        ],
+        false,
+        None,
+        RouteSchedulePolicy::PriorityFailover,
+    );
+    let both = candidates(&["acc-a", "acc-b"]);
+    assert_eq!(
+        before
+            .pick_from_candidates(&both, None, &[])
+            .expect("before rebuild")
+            .source_id,
+        "acc-b"
+    );
+
+    let after = AccountPicker::with_policy(
+        vec![
+            member("acc-a", "token-a", MemberHealth::Renewable)
+                .with_schedule(0, 0)
+                .with_quota_remaining(Some(90.0))
+                .with_quota_fresh_until(Some(fresh)),
+            member("acc-b", "token-b", MemberHealth::Renewable)
+                .with_schedule(0, 1)
+                .with_quota_remaining(Some(5.0))
+                .with_quota_fresh_until(Some(fresh)),
+        ],
+        false,
+        None,
+        RouteSchedulePolicy::PriorityFailover,
+    );
+    assert_eq!(
+        after
+            .pick_from_candidates(&both, None, &[])
+            .expect("after rebuild with refreshed bake")
+            .source_id,
+        "acc-a"
+    );
+}
+
+#[test]
 fn better_priority_beats_a_healthier_quota() {
     let picker = AccountPicker::with_policy(
         vec![

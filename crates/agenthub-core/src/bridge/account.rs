@@ -44,6 +44,27 @@ impl MemberHealth {
     }
 }
 
+/// Live quota cell shared across [`PickedMember`] clones so a refresh can
+/// update remaining % without rebuilding the picker (preserves sticky).
+#[derive(Debug, Clone, Copy)]
+struct MemberQuotaLive {
+    remaining_pct: Option<f64>,
+    reset_at: Option<SystemTime>,
+    fresh_until: Option<SystemTime>,
+    credit: bool,
+}
+
+impl MemberQuotaLive {
+    fn missing() -> Self {
+        Self {
+            remaining_pct: None,
+            reset_at: None,
+            fresh_until: None,
+            credit: false,
+        }
+    }
+}
+
 /// One resolved pool member. `auth` is a shared cell so 401 reload can
 /// replace the bearer in place without restarting the listener.
 #[derive(Clone)]
@@ -60,15 +81,8 @@ pub struct PickedMember {
     /// must not be treated as zero. See `account_quota::member_quota_hint_from_extra`.
     /// Live ranking must call [`Self::effective_quota_remaining_pct`] so TTL /
     /// window expiry after listener start still behaves as missing.
-    quota_remaining_pct: Option<f64>,
-    /// Snapshot window reset used as a quota-cooldown hint and as a live
-    /// staleness signal when it elapses.
-    quota_reset_at: Option<SystemTime>,
-    /// When set, the baked remaining percent is only live until this instant
-    /// (typically `quotaUpdatedAt + ACCOUNT_QUOTA_CACHE_TTL`).
-    quota_fresh_until: Option<SystemTime>,
-    /// Credit-style account (no 5h/7d percent). Selects the credit default.
-    quota_credit: bool,
+    /// Shared cell: [`Self::apply_quota_hint`] updates ranking without rebuild.
+    quota: Arc<Mutex<MemberQuotaLive>>,
     pub(crate) kiro_http: Option<KiroHttpRouteParams>,
     health: Arc<Mutex<MemberHealth>>,
     concurrency: Arc<Semaphore>,
@@ -86,7 +100,7 @@ impl std::fmt::Debug for PickedMember {
             .field("reload", &self.reload.is_some())
             .field("priority", &self.priority)
             .field("position", &self.position)
-            .field("quota_remaining_pct", &self.quota_remaining_pct)
+            .field("quota_remaining_pct", &self.quota_remaining_pct())
             .field("health", &self.health())
             .finish()
     }
@@ -111,10 +125,7 @@ impl PickedMember {
             reload,
             priority: 0,
             position: 0,
-            quota_remaining_pct: None,
-            quota_reset_at: None,
-            quota_fresh_until: None,
-            quota_credit: false,
+            quota: Arc::new(Mutex::new(MemberQuotaLive::missing())),
             kiro_http: None,
             health: Arc::new(Mutex::new(health)),
             concurrency: Arc::new(Semaphore::new(4)),
@@ -138,52 +149,84 @@ impl PickedMember {
     }
 
     /// Remaining percent for the tie-break. Non-finite values are dropped.
-    pub fn with_quota_remaining(mut self, pct: Option<f64>) -> Self {
-        self.quota_remaining_pct = finite_pct(pct);
+    pub fn with_quota_remaining(self, pct: Option<f64>) -> Self {
+        if let Ok(mut guard) = self.quota.lock() {
+            guard.remaining_pct = finite_pct(pct);
+        }
         self
     }
 
     pub fn with_quota_hint(
-        mut self,
+        self,
         remaining_pct: Option<f64>,
         reset_at: Option<SystemTime>,
         credit: bool,
     ) -> Self {
-        self.quota_remaining_pct = finite_pct(remaining_pct);
-        self.quota_reset_at = reset_at;
-        self.quota_credit = credit;
+        if let Ok(mut guard) = self.quota.lock() {
+            guard.remaining_pct = finite_pct(remaining_pct);
+            guard.reset_at = reset_at;
+            guard.credit = credit;
+        }
         self
     }
 
-    pub fn with_quota_fresh_until(mut self, until: Option<SystemTime>) -> Self {
-        self.quota_fresh_until = until;
+    pub fn with_quota_fresh_until(self, until: Option<SystemTime>) -> Self {
+        if let Ok(mut guard) = self.quota.lock() {
+            guard.fresh_until = until;
+        }
         self
+    }
+
+    /// Hot-apply a refreshed quota snapshot into a running member.
+    /// Shared across clones so the next pick sees the new remaining %.
+    pub fn apply_quota_hint(
+        &self,
+        remaining_pct: Option<f64>,
+        reset_at: Option<SystemTime>,
+        fresh_until: Option<SystemTime>,
+        credit: bool,
+    ) {
+        if let Ok(mut guard) = self.quota.lock() {
+            *guard = MemberQuotaLive {
+                remaining_pct: finite_pct(remaining_pct),
+                reset_at,
+                fresh_until,
+                credit,
+            };
+        }
     }
 
     /// Remaining percent for ranking. Missing, TTL-expired, or past-window
     /// snapshots behave as absent so the prior stable order is kept.
     pub fn effective_quota_remaining_pct(&self) -> Option<f64> {
-        let pct = finite_pct(self.quota_remaining_pct)?;
+        let Ok(guard) = self.quota.lock() else {
+            return None;
+        };
+        let pct = finite_pct(guard.remaining_pct)?;
         let now = SystemTime::now();
-        if self.quota_fresh_until.is_some_and(|until| until <= now) {
+        if guard.fresh_until.is_some_and(|until| until <= now) {
             return None;
         }
-        if self.quota_reset_at.is_some_and(|reset| reset <= now) {
+        if guard.reset_at.is_some_and(|reset| reset <= now) {
             return None;
         }
         Some(pct)
     }
 
     pub fn quota_remaining_pct(&self) -> Option<f64> {
-        self.quota_remaining_pct
+        self.quota.lock().ok().and_then(|guard| guard.remaining_pct)
     }
 
     pub fn quota_reset_at(&self) -> Option<SystemTime> {
-        self.quota_reset_at
+        self.quota.lock().ok().and_then(|guard| guard.reset_at)
+    }
+
+    pub fn quota_fresh_until(&self) -> Option<SystemTime> {
+        self.quota.lock().ok().and_then(|guard| guard.fresh_until)
     }
 
     pub fn quota_credit(&self) -> bool {
-        self.quota_credit
+        self.quota.lock().map(|guard| guard.credit).unwrap_or(false)
     }
 
     pub fn health(&self) -> MemberHealth {
@@ -615,6 +658,29 @@ impl AccountPicker {
         }
     }
 
+    /// Hot-apply a refreshed quota snapshot onto a live member.
+    /// Returns true when a matching member was updated. Sticky / continuation
+    /// state is untouched.
+    pub fn apply_member_quota(
+        &self,
+        source_id: &str,
+        remaining_pct: Option<f64>,
+        reset_at: Option<SystemTime>,
+        fresh_until: Option<SystemTime>,
+        credit: bool,
+    ) -> bool {
+        let Some(member) = self
+            .inner
+            .members
+            .iter()
+            .find(|member| member.source_id == source_id)
+        else {
+            return false;
+        };
+        member.apply_quota_hint(remaining_pct, reset_at, fresh_until, credit);
+        true
+    }
+
     pub fn health_of(&self, source_id: &str) -> Option<MemberHealth> {
         self.inner
             .members
@@ -927,11 +993,7 @@ fn cmp_schedule(
         .then(left.member.source_id.cmp(&right.member.source_id))
 }
 
-fn cmp_quota_remaining(
-    left: &PickedMember,
-    right: &PickedMember,
-    use_quota: bool,
-) -> CmpOrdering {
+fn cmp_quota_remaining(left: &PickedMember, right: &PickedMember, use_quota: bool) -> CmpOrdering {
     if !use_quota {
         return CmpOrdering::Equal;
     }

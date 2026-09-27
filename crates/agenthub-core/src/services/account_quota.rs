@@ -1190,8 +1190,8 @@ pub fn member_quota_hint_from_extra(extra: &Value, now: DateTime<Utc>) -> Member
         .and_then(|value| value.as_str())
         .and_then(parse_rfc3339);
     let fresh_until = updated.and_then(|at| {
-        let ttl =
-            ChronoDuration::from_std(ACCOUNT_QUOTA_CACHE_TTL).unwrap_or(ChronoDuration::minutes(10));
+        let ttl = ChronoDuration::from_std(ACCOUNT_QUOTA_CACHE_TTL)
+            .unwrap_or(ChronoDuration::minutes(10));
         utc_to_system_time(at + ttl)
     });
     let credit =

@@ -178,6 +178,8 @@ pub async fn refresh_account_token(
 }
 
 /// Invoke: `refresh_account_quota` — force 5h/7d upstream quota probe for OAuth.
+/// Persists the snapshot, then rebuilds running default-pool listeners that
+/// include this account so live ranking sees the new remaining % (B3).
 #[tauri::command]
 pub async fn refresh_account_quota(
     state: State<'_, AppState>,
@@ -185,15 +187,23 @@ pub async fn refresh_account_quota(
     id_or_label: String,
 ) -> Result<Account, String> {
     let hub = state.hub_arc()?;
+    let host = state.bridge_host();
     let agent = parse_agent(&agent_id)?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
-    with_hub_blocking(hub, move |hub| {
+    let account = with_hub_blocking(hub.clone(), move |hub| {
         hub.accounts()
             .refresh_quota(&id_or_label, agent)
             .map(|a| a.redacted())
             .map_err(|e| map_err_string("refresh_account_quota", e))
     })
-    .await
+    .await?;
+    crate::adapter_bridge_controller::restart_pools_for_account_if_running(
+        hub,
+        &host,
+        account.id.clone(),
+    )
+    .await?;
+    Ok(account)
 }
 
 fn list_accounts_inner(hub: &AgentHub, agent_id: Option<&str>) -> Result<Vec<Account>, String> {

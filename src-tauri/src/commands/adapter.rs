@@ -647,7 +647,11 @@ pub async fn attach_pool_owned_authorization(
         let surface = RouteDownstreamSurface::parse(&surface).ok_or_else(|| {
             "invalid route pool surface, expected: messages|responses|chat_completions".to_string()
         })?;
-        let policy = match schedule_policy.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        let policy = match schedule_policy
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
             None => None,
             Some(raw) => Some(RouteSchedulePolicy::parse(raw).ok_or_else(|| {
                 "invalid schedule_policy, expected: priority_failover|round_robin".to_string()
