@@ -37,6 +37,7 @@ import { cn } from '@/lib/utils';
 import { composerNativeEditChord } from './chat-model';
 import {
   COMPOSER_SEND_SETTLE_MS,
+  composerDraftAfterSteerAck,
   composerEnterShouldSubmit,
   composerFooterControl,
   composerIsResidualOfSent,
@@ -154,7 +155,7 @@ export function ChatComposer({
   onRetryWallet?: () => void;
   onRetryStatus?: () => void;
   onSend: (text?: string) => void;
-  onSteer?: (text?: string) => void;
+  onSteer?: (text?: string) => void | boolean | Promise<boolean | void>;
   onQueueAfterTurn?: (text?: string) => void;
   focusNonce?: number;
   onCancel: () => void;
@@ -213,6 +214,7 @@ export function ChatComposer({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sentTextRef = useRef<string | null>(null);
   const sentSettleUntilRef = useRef(0);
+  const [sendLockEpoch, setSendLockEpoch] = useState(0);
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
@@ -260,11 +262,31 @@ export function ChatComposer({
     if (!composerShouldRestoreFocus({ textareaDisabled })) return;
     textareaRef.current?.focus();
   }, [textareaDisabled]);
+  const releaseSendLock = useCallback(() => {
+    sentTextRef.current = null;
+    sentSettleUntilRef.current = 0;
+  }, []);
+  useEffect(() => {
+    releaseSendLock();
+  }, [active.id, releaseSendLock]);
+  useEffect(() => {
+    if (!sending) releaseSendLock();
+  }, [releaseSendLock, sending]);
   const clearComposerAfterSubmit = useCallback((submitted: string) => {
     sentTextRef.current = submitted;
     sentSettleUntilRef.current = performance.now() + COMPOSER_SEND_SETTLE_MS;
+    setSendLockEpoch((epoch) => epoch + 1);
     setDraft('');
   }, [setDraft]);
+  useEffect(() => {
+    if (!sentTextRef.current) return;
+    const remaining = Math.max(0, sentSettleUntilRef.current - performance.now());
+    const id = window.setTimeout(() => {
+      sentTextRef.current = null;
+      sentSettleUntilRef.current = 0;
+    }, remaining);
+    return () => window.clearTimeout(id);
+  }, [sendLockEpoch]);
   const applyDraft = useCallback((next: string) => {
     const sent = sentTextRef.current;
     if (sent) {
@@ -320,8 +342,30 @@ export function ChatComposer({
       return;
     }
     if (action === 'steer') {
-      clearComposerAfterSubmit(payload);
-      onSteer?.(live);
+      const steered = payload;
+      void Promise.resolve(onSteer?.(live)).then((ok) => {
+        const next = composerDraftAfterSteerAck({
+          ok: ok !== false,
+          draft: draftRef.current,
+          steered,
+        });
+        if (ok === false) {
+          if (next !== draftRef.current) setDraft(next);
+          releaseSendLock();
+          return;
+        }
+        if (!next.trim()) clearComposerAfterSubmit(steered);
+        else setDraft(next);
+        releaseSendLock();
+      }).catch(() => {
+        const next = composerDraftAfterSteerAck({
+          ok: false,
+          draft: draftRef.current,
+          steered,
+        });
+        if (next !== draftRef.current) setDraft(next);
+        releaseSendLock();
+      });
     } else if (action === 'queue') {
       clearComposerAfterSubmit(payload);
       onQueueAfterTurn?.(live);
@@ -331,7 +375,17 @@ export function ChatComposer({
     }
     keepComposerFocus();
     requestAnimationFrame(keepComposerFocus);
-  }, [action, clearComposerAfterSubmit, draft, keepComposerFocus, onQueueAfterTurn, onSend, onSteer]);
+  }, [
+    action,
+    clearComposerAfterSubmit,
+    draft,
+    keepComposerFocus,
+    onQueueAfterTurn,
+    onSend,
+    onSteer,
+    releaseSendLock,
+    setDraft,
+  ]);
   const droppedImages = useCallback((files: FileList | null | undefined) => {
     if (!onPasteImages) return false;
     const images = Array.from(files ?? []).filter((file) => file.type.startsWith('image/'));

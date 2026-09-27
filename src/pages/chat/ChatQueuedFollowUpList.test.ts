@@ -40,7 +40,7 @@ describe('queued follow-up list', () => {
 
   it('does not render a leftover suffix that the enqueue path rejected', () => {
     const sent = "I'll write a short 3-step UI retest plan and show it before doing any work.";
-    const items = appendQueuedFollowUp([], 'doing any work.', 'q-residual', undefined, sent);
+    const items = appendQueuedFollowUp([], 'doing any work.', 'q-residual', undefined, sent, true);
     const html = renderMarkup(createElement(ChatQueuedFollowUpList, { items }));
     expect(items).toEqual([]);
     expect(html).toBe('');

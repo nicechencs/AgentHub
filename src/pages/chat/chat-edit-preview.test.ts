@@ -7,9 +7,11 @@ import type { ProcessStep } from '@/lib/types';
 import { ChatEditPreviewPanel, ChatTurnEditList } from './ChatEditPreviewPanel';
 import {
   extractEditFilesFromSteps,
+  extractStepEditFiles,
   extractTurnEdits,
   findTurnEditFile,
   formatSimpleDiff,
+  formatTurnEditRowDetail,
   latestProcessTurn,
   sameEditPath,
   turnEditDiffText,
@@ -80,6 +82,36 @@ describe('extractEditFilesFromSteps', () => {
       { path: 'lib\\b.ts', status: 'done' },
       { path: '/workspace/README.md', status: 'done' },
     ]);
+  });
+
+  it('keeps two edits of the same path when not merging', () => {
+    const first = {
+      ...tool('StrReplace', 'end', {
+        path: 'src/a.ts',
+        old_string: 'one',
+        new_string: 'two',
+      }),
+      id: 'edit-1',
+    };
+    const second = {
+      ...tool('StrReplace', 'end', {
+        path: 'src/a.ts',
+        old_string: 'two',
+        new_string: 'three',
+      }),
+      id: 'edit-2',
+    };
+    const files = extractEditFilesFromSteps([first, second], { mergeByPath: false });
+    expect(files).toEqual([
+      { path: 'src/a.ts', status: 'done', before: 'one', after: 'two', stepId: 'edit-1' },
+      { path: 'src/a.ts', status: 'done', before: 'two', after: 'three', stepId: 'edit-2' },
+    ]);
+    expect(extractStepEditFiles(first, 0)[0]?.after).toBe('two');
+    expect(extractStepEditFiles(second, 1)[0]?.after).toBe('three');
+    const processMap = mapWith([first, second]);
+    expect(findTurnEditFile(processMap, 'src/a.ts', 1, 'edit-1')?.after).toBe('two');
+    expect(findTurnEditFile(processMap, 'src/a.ts', 1, 'edit-2')?.after).toBe('three');
+    expect(formatTurnEditRowDetail(files[0]!)).toContain('+1 −1');
   });
 
   it('dedupes the same path and keeps the later status', () => {
@@ -319,6 +351,15 @@ describe('simple diff', () => {
         '+new',
       ].join('\n'),
     );
+  });
+
+  it('names the first hunk and +/- on a process row', () => {
+    expect(formatTurnEditRowDetail({
+      path: 'src/a.ts',
+      before: 'keep\nold\nend',
+      after: 'keep\nnew\nend',
+    })).toBe(':2 +1 −1');
+    expect(formatTurnEditRowDetail({ path: 'src/a.ts' })).toBe('');
   });
 
   it('sameEditPath treats slash variants as one file', () => {

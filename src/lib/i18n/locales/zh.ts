@@ -3184,6 +3184,7 @@ export const zh = {
       cancelRequestedDesc: "正在停止当前生成，结束后会显示已停止。",
       steered: "已补充",
       queuedAfterTurn: "本轮结束后发送",
+      followUpKept: "这条和刚发出的重复，还留在输入框",
       legacyContinued: "已用新方式继续",
       legacyContinueFail: "没法接上原来的会话，请新建对话",
       multiAgentMigrationFailed: "部分历史会话未能自动整理为单 Agent，可稍后重试",
