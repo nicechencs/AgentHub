@@ -298,6 +298,34 @@ describe('Tauri adapter route port', () => {
     expect(JSON.stringify(attached)).not.toContain('hubToken');
   });
 
+  it('forwards optional schedulePolicy on attach_pool_owned_authorization', async () => {
+    invokeMock.mockResolvedValueOnce({
+      id: 'pool-1',
+      targetAgentId: 'codex',
+      surface: 'responses',
+      dialect: 'codex',
+      unifiedGatewayEnrolled: true,
+      schedulePolicy: 'round_robin',
+      members: [],
+    });
+    const port = createTauriAdapterPort();
+    const attached = await port.attachPoolOwnedAuthorization({
+      sourceKind: 'account',
+      sourceId: 'acc-1',
+      targetAgentId: 'codex',
+      surface: 'responses',
+      schedulePolicy: 'round_robin',
+    });
+    expect(attached.schedulePolicy).toBe('round_robin');
+    expect(invokeMock).toHaveBeenCalledWith('attach_pool_owned_authorization', {
+      sourceKind: 'account',
+      sourceId: 'acc-1',
+      targetAgentId: 'codex',
+      surface: 'responses',
+      schedulePolicy: 'round_robin',
+    });
+  });
+
   it('forwards fork_connection_authorization', async () => {
     invokeMock.mockResolvedValueOnce({
       sourceKind: 'account',
@@ -326,6 +354,24 @@ describe('Tauri adapter route port', () => {
       sourceKind: 'account',
       sourceId: 'oauth-1',
       enabled: false,
+    });
+  });
+
+  it('forwards set_route_pool_schedule_policy', async () => {
+    invokeMock.mockResolvedValueOnce({
+      id: 'pool-1',
+      targetAgentId: 'codex',
+      surface: 'responses',
+      dialect: 'codex',
+      schedulePolicy: 'round_robin',
+      members: [],
+    });
+    const port = createTauriAdapterPort();
+    const overview = await port.setRoutePoolSchedulePolicy('pool-1', 'round_robin');
+    expect(overview.schedulePolicy).toBe('round_robin');
+    expect(invokeMock).toHaveBeenCalledWith('set_route_pool_schedule_policy', {
+      poolId: 'pool-1',
+      schedulePolicy: 'round_robin',
     });
   });
 

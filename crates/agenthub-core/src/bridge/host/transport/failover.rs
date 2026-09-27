@@ -17,7 +17,7 @@ use crate::bridge::account::PickedMember;
 use crate::bridge::grok_cli::{is_reasoning_decode_failure, strip_encrypted_reasoning};
 use crate::bridge::route_index::DispatchCandidate;
 use crate::bridge::upstream_class::{
-    classify_http, cooldown_from_retry_after, FailoverDecision, UpstreamErrorClass,
+    classify_http, cooldown_for_class, FailoverDecision, UpstreamErrorClass,
 };
 
 use super::super::admission::AdmittedRequest;
@@ -560,7 +560,13 @@ pub async fn send_upstream_v2(
                     break;
                 }
                 FailoverDecision::CooldownAndFailover => {
-                    let duration = cooldown_from_retry_after(retry_after.as_ref());
+                    let duration = cooldown_for_class(
+                        class,
+                        retry_after.as_ref(),
+                        Some(err_text.as_ref()),
+                        member.quota_reset_at(),
+                        member.quota_credit(),
+                    );
                     let model = match class {
                         UpstreamErrorClass::QuotaModel => Some(public_model),
                         _ => None,
