@@ -1,6 +1,7 @@
 /**
  * Ticket add menu and dialog-open helpers (Connections page).
  */
+import { canAddApiKey, canStartOfficialLogin } from '@/components/login-kernel';
 import { agentDisplayName } from '@/config/agents';
 import type { AgentKey } from '@/lib/types';
 import type { TranslateFn } from '@/lib/i18n';
@@ -26,7 +27,7 @@ export const TICKET_ADD_ACTIONS: Array<{ kind: TicketAddKind; label: string }> =
 ];
 
 export function agentSupportsTicketApiKey(id: AgentKey): boolean {
-  return id !== 'cursor';
+  return canAddApiKey(id);
 }
 
 export function ticketAddActionsForAgent(
@@ -71,7 +72,10 @@ export function buildTicketAddMenu(
   return agentIds.map((id) => ({
     id,
     name: agentDisplayName(id),
-    actions: ticketAddActionsForAgent(oauth.has(id), agentSupportsTicketApiKey(id)),
+    actions: ticketAddActionsForAgent(
+      canStartOfficialLogin(id, [...oauth]),
+      canAddApiKey(id),
+    ),
   }));
 }
 
