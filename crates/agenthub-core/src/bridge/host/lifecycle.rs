@@ -15,6 +15,7 @@ use crate::bridge::route_index::EffectiveRouteIndex;
 use crate::bridge::runtime::{
     BridgeRuntimeState, BridgeRuntimeStatus, BridgeStartSpec, BridgeUpstreamStatus,
 };
+use crate::models::RouteSchedulePolicy;
 
 use super::gateway::{
     BridgeHostError, CleanupCompletion, EdgeRuntime, EdgeState, Gateway, GatewayRegistry,
@@ -298,6 +299,76 @@ impl BridgeRuntimeHost {
             }
         }
         Ok(())
+    }
+
+    /// Hot-apply a pool schedule onto every live runtime keyed by that pool id
+    /// or whose route index `route_id` is that pool. Profile-keyed enroll
+    /// listeners are included. Sticky, continuation, cooldown, and health stay.
+    /// The stored spec is updated so a later identical `start` stays idempotent.
+    /// Does not stop or restart the listener.
+    pub fn apply_pool_schedule_policy(
+        &self,
+        pool_id: &str,
+        policy: RouteSchedulePolicy,
+    ) -> Result<usize, BridgeHostError> {
+        let pool_id = pool_id.trim();
+        if pool_id.is_empty() {
+            return Ok(0);
+        }
+        let mut registry = self.gateway.lock()?;
+        let mut updated = 0;
+        for runtime in registry.runtimes.values_mut() {
+            if !runtime_matches_pool(runtime, pool_id) {
+                continue;
+            }
+            runtime.spec.schedule_policy = policy;
+            runtime.state.account_picker.apply_schedule_policy(policy);
+            updated += 1;
+        }
+        Ok(updated)
+    }
+
+    /// Hot-apply one account's quota hint onto every live listener that contains
+    /// it. Ranking changes on the next pick. Sticky and continuation stay.
+    /// Stored member specs are updated so a later identical `start` stays idempotent.
+    pub fn apply_account_quota(
+        &self,
+        source_id: &str,
+        remaining_pct: Option<f64>,
+        reset_at: Option<SystemTime>,
+        fresh_until: Option<SystemTime>,
+        credit: bool,
+    ) -> Result<usize, BridgeHostError> {
+        let source_id = source_id.trim();
+        if source_id.is_empty() {
+            return Ok(0);
+        }
+        let mut registry = self.gateway.lock()?;
+        let mut updated = 0;
+        for runtime in registry.runtimes.values_mut() {
+            let picker_hit = runtime.state.account_picker.apply_member_quota(
+                source_id,
+                remaining_pct,
+                reset_at,
+                fresh_until,
+                credit,
+            );
+            let mut spec_hit = false;
+            for member in &mut runtime.spec.members {
+                if member.source_id != source_id {
+                    continue;
+                }
+                member.quota_remaining_pct = remaining_pct.filter(|value| value.is_finite());
+                member.quota_reset_at = reset_at;
+                member.quota_fresh_until = fresh_until;
+                member.quota_credit = credit;
+                spec_hit = true;
+            }
+            if picker_hit || spec_hit {
+                updated += 1;
+            }
+        }
+        Ok(updated)
     }
 
     fn profile_gate(&self, profile_id: &str) -> Result<Arc<AsyncMutex<()>>, BridgeHostError> {
@@ -746,6 +817,22 @@ fn log_socket_result(
             "bridge listener stopped"
         );
     }
+}
+
+fn runtime_matches_pool(runtime: &super::gateway::EdgeRuntime, pool_id: &str) -> bool {
+    if runtime.spec.profile_id == pool_id {
+        return true;
+    }
+    runtime
+        .spec
+        .route_index
+        .as_ref()
+        .is_some_and(|index| index.route_id == pool_id)
+        || runtime
+            .state
+            .route_index
+            .as_ref()
+            .is_some_and(|index| index.route_id == pool_id)
 }
 
 fn validate_start_spec(spec: &BridgeStartSpec) -> Result<Url, BridgeHostError> {

@@ -134,12 +134,22 @@ pub async fn oauth_device_complete(
     state: State<'_, AppState>,
     oauth_state: String,
     pool_owned: Option<bool>,
+    schedule_policy: Option<String>,
 ) -> Result<Account, String> {
     let hub = state.hub_arc()?;
     let target = oauth::device_oauth_agent(&oauth_state)
         .map_err(|e| map_err_string("oauth_device_complete", e))?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(target).await;
     let pool_owned = pool_owned.unwrap_or(false);
+    // Parse before persist so an invalid value cannot leave a hidden unattached login.
+    let parsed_policy = match schedule_policy.as_deref() {
+        None => None,
+        Some(raw) => Some(
+            agenthub_core::models::RouteSchedulePolicy::parse(raw).ok_or_else(|| {
+                "invalid schedule_policy, expected: priority_failover|round_robin".to_string()
+            })?,
+        ),
+    };
     with_hub_blocking(hub, move |hub| {
         let current = oauth::device_oauth_agent(&oauth_state)
             .map_err(|e| map_err_string("oauth_device_complete", e))?;
@@ -158,6 +168,7 @@ pub async fn oauth_device_complete(
                 hub.route_pools(),
                 &oauth_state,
                 surface,
+                parsed_policy,
             )
         } else {
             oauth::complete_device_oauth(hub.accounts(), &oauth_state)

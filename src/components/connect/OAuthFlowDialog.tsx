@@ -43,6 +43,7 @@ import { OAUTH_PKCE_LISTEN_TIMEOUT_SECS } from '@/lib/backend/contracts/oauth-co
 import { AGENT_MAP } from '@/config/agents';
 import { openExternalLink } from '@/lib/open-external';
 import type { Account, AgentKey } from '@/lib/types';
+import type { RouteSchedulePolicy } from '@/lib/backend/contracts/adapter';
 import type { TranslateFn } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
@@ -93,6 +94,7 @@ export function OAuthFlowDialog({
   onStored,
   offerSwitch = true,
   poolOwned = false,
+  schedulePolicy,
   successDescription,
 }: {
   agentId: AgentKey;
@@ -105,6 +107,8 @@ export function OAuthFlowDialog({
   offerSwitch?: boolean;
   /** Mark device-code OAuth as owned by the Routes authorization pool. */
   poolOwned?: boolean;
+  /** Create-time schedule for pool-owned device completion; ignored when not poolOwned. */
+  schedulePolicy?: RouteSchedulePolicy;
   successDescription?: string;
 }) {
   const { t } = useI18n();
@@ -239,7 +243,7 @@ export function OAuthFlowDialog({
         setStep('error');
         return;
       }
-      const acc = await finishOfficialLogin(started, poolOwned);
+      const acc = await finishOfficialLogin(started, poolOwned, schedulePolicy);
       if (!isCurrent()) return;
       setAccount(acc);
       setStep('done');

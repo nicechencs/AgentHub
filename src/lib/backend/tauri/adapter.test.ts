@@ -410,6 +410,22 @@ describe('Tauri adapter route port', () => {
     });
   });
 
+  it('forwards schedulePolicy on sync_connection_authorizations when creating with RoundRobin', async () => {
+    invokeMock.mockResolvedValueOnce({ added: 1, skipped: 0 });
+    const port = createTauriAdapterPort();
+
+    await expect(port.syncConnectionAuthorizations({
+      sources: [{ sourceKind: 'provider', sourceId: 'kimi-1' }],
+      schedulePolicy: 'round_robin',
+    })).resolves.toEqual({ added: 1, skipped: 0 });
+    expect(invokeMock).toHaveBeenCalledWith('sync_connection_authorizations', {
+      request: {
+        sources: [{ sourceKind: 'provider', sourceId: 'kimi-1' }],
+        schedulePolicy: 'round_robin',
+      },
+    });
+  });
+
   it('forwards an empty argument object when syncing all connections', async () => {
     invokeMock.mockResolvedValueOnce({ added: 2, skipped: 1 });
     const port = createTauriAdapterPort();

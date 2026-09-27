@@ -1804,6 +1804,8 @@ export const en = {
         roundRobinHint: "Rotate among eligible logins with the same priority, transport, and dialect.",
         saved: "Scheduling updated",
         saveFailed: "Couldn't update scheduling",
+        createLabel: "Scheduling for new pools",
+        createHint: "Applies only when creating a new default pool. Existing pools keep their current scheduling.",
       },
       memberOff: "Off",
       availabilityReady: "Ready",

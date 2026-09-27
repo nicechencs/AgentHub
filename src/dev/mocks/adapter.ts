@@ -16,6 +16,7 @@ import {
   type LocalGatewayStatus,
   type RoutePoolDialect,
   type RoutePoolSurface,
+  type RouteSchedulePolicy,
   type RouteTracePage,
   type RouteTraceQuery,
 } from '@/lib/backend/contracts/adapter';
@@ -293,6 +294,67 @@ export function seedMockDefaultRoutePools(pools: readonly DefaultRoutePoolOvervi
       listedModels: [...(pool.listedModels ?? [])],
     }));
   }
+}
+
+/**
+ * Device-OAuth pool-owned enroll for browser mocks.
+ * Mirrors production `attach_pool_owned_authorization_with_policy` create-only
+ * semantics enough that Grok finish (UI skips second attach) still applies
+ * an optional schedulePolicy when the default pool is first created.
+ */
+export function mockAttachPoolOwnedAccount(
+  accountId: string,
+  schedulePolicy?: RouteSchedulePolicy,
+): DefaultRoutePoolOverview | null {
+  const account = getMockAccountById(accountId);
+  if (!account) return null;
+  const surface = mockWriterSurface(account.agentId);
+  if (!surface) return null;
+  if (!(MOCK_POOL_WRITERS as readonly string[]).includes(account.agentId)) {
+    return null;
+  }
+  const targetAgentId = account.agentId as DefaultRoutePoolOverview['targetAgentId'];
+  upsertMockAccount({ ...account, home: 'route_pool' });
+
+  let overview: DefaultRoutePoolOverview | null = null;
+  for (const state of adapterStates) {
+    if (!state.routePoolV2) continue;
+    const poolAgent = mockChatWriter(targetAgentId, surface, state.shareChatCompletions);
+    const dialect = mockWriterDialect(poolAgent);
+    let pool = state.defaultPools.find((item) => (
+      item.targetAgentId === poolAgent && item.surface === surface
+    ));
+    if (!pool) {
+      pool = {
+        id: `pool-${poolAgent}-${surface}`,
+        targetAgentId: poolAgent,
+        surface,
+        dialect,
+        unifiedGatewayEnrolled: false,
+        schedulePolicy: schedulePolicy === 'round_robin'
+          ? 'round_robin'
+          : 'priority_failover',
+        members: [],
+        listedModels: [],
+      };
+      state.defaultPools.push(pool);
+    }
+    if (!pool.members.some((member) => (
+      member.sourceKind === 'account' && member.sourceId === accountId
+    ))) {
+      pool.members.push({
+        sourceKind: 'account',
+        sourceId: accountId,
+        enabled: true,
+      });
+    }
+    overview = {
+      ...pool,
+      members: pool.members.map((member) => ({ ...member })),
+      listedModels: [...(pool.listedModels ?? [])],
+    };
+  }
+  return overview;
 }
 
 function applyBindingToState(
@@ -994,6 +1056,9 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
               surface: target.surface,
               dialect: target.dialect,
               unifiedGatewayEnrolled: false,
+              schedulePolicy: request?.schedulePolicy === 'round_robin'
+                ? 'round_robin'
+                : 'priority_failover',
               members: [],
               listedModels: [],
             };

@@ -709,7 +709,9 @@ pub async fn set_route_authorization_enabled(
 }
 
 /// Set one pool's schedule. Unknown values fail closed.
-/// Persists then rebuilds the running pool listener so live routing matches.
+/// Persists then hot-applies to every live runtime matching the pool id or
+/// route_index.route_id (including profile-keyed enroll listeners). Sticky,
+/// continuation, cooldown, and health stay; no stop/start.
 #[tauri::command]
 pub async fn set_route_pool_schedule_policy(
     state: State<'_, AppState>,
@@ -718,23 +720,20 @@ pub async fn set_route_pool_schedule_policy(
 ) -> Result<DefaultRoutePoolOverview, GuiError> {
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
     let host = state.bridge_host();
-    let overview = with_hub_blocking(hub.clone(), move |hub| {
+    let (overview, policy) = with_hub_blocking(hub.clone(), move |hub| {
         let policy = RouteSchedulePolicy::parse(&schedule_policy).ok_or_else(|| {
             "invalid schedule_policy, expected: priority_failover|round_robin".to_string()
         })?;
-        hub.route_pools()
+        let overview = hub
+            .route_pools()
             .set_schedule_policy(&pool_id, policy)
-            .map_err(|err| map_err_string("set_route_pool_schedule_policy", err))
+            .map_err(|err| map_err_string("set_route_pool_schedule_policy", err))?;
+        Ok::<_, String>((overview, policy))
     })
     .await
     .map_err(adapter_error_from_string)?;
-    crate::adapter_bridge_controller::restart_pool_listener_if_running(
-        hub,
-        &host,
-        overview.id.clone(),
-    )
-    .await
-    .map_err(adapter_error_from_string)?;
+    host.apply_pool_schedule_policy(&overview.id, policy)
+        .map_err(|err| adapter_error_from_string(err.to_string()))?;
     Ok(overview)
 }
 
@@ -807,9 +806,10 @@ pub async fn sync_connection_authorizations(
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
     with_hub_blocking(hub, move |hub| {
         let result = match request.as_ref() {
-            Some(request) => hub
-                .route_pools()
-                .sync_connection_authorizations_selected(Some(&request.sources)),
+            Some(request) => hub.route_pools().sync_connection_authorizations_selected(
+                Some(&request.sources),
+                request.schedule_policy,
+            ),
             None => hub.route_pools().sync_connection_authorizations(),
         };
         result.map_err(|err| map_err_string("sync_connection_authorizations", err))
