@@ -131,7 +131,7 @@ export function composerLiveSendText(input: {
 /** Hold the just-sent payload long enough for late key/IME events to drain. */
 export const COMPOSER_SEND_SETTLE_MS = 400;
 
-/** Growing tail leftovers shorter than this still match as residual during settle. */
+/** Text must reach this length before the settle lock treats it as a residual. */
 export const COMPOSER_GROWING_RESIDUAL_MIN = 8;
 
 /** Exact / prefix / suffix leftovers of the submitted payload — never a new follow-up. */
@@ -190,6 +190,14 @@ export function composerShouldHoldSendLock(input: {
   const inSettle = input.now < input.settleUntil;
   if (!sent || !inSettle) return { hold: false, sent: '', draft: input.next };
   if (!nextTrim) return { hold: true, sent, draft: '' };
+  // A user can intentionally type the same line again to queue or resend it.
+  // Let the submit path keep it visible and explain that it is a duplicate.
+  if (nextTrim === sent) return { hold: false, sent: '', draft: input.next };
+  // A single short key can match anywhere in the previous prompt. Treat short
+  // text as a new line until it grows enough to identify a real late residual.
+  if (nextTrim.length < COMPOSER_GROWING_RESIDUAL_MIN) {
+    return { hold: false, sent: '', draft: input.next };
+  }
   if (composerIsResidualOfSent({ text: nextTrim, sent })) {
     return { hold: true, sent, draft: '' };
   }
@@ -212,10 +220,93 @@ export function composerDraftAfterSteerAck(input: {
   steered: string;
 }): string {
   if (!input.ok) return input.draft.trim() ? input.draft : input.steered;
-  if (!input.draft.trim() || composerIsResidualOfSent({ text: input.draft, sent: input.steered })) {
-    return '';
+  if (!input.draft.trim()) return '';
+  const draftTrim = input.draft.trim();
+  const steeredTrim = input.steered.trim();
+  if (draftTrim === steeredTrim) return '';
+  if (steeredTrim && draftTrim.startsWith(steeredTrim)) {
+    const index = input.draft.indexOf(steeredTrim);
+    return index >= 0 ? input.draft.slice(index + steeredTrim.length) : '';
   }
   return input.draft;
+}
+
+export type ComposerSteerRequest = {
+  id: number;
+  epoch: number;
+  activeId: string;
+};
+
+export type ComposerSteerGate = {
+  activeId: string;
+  epoch: number;
+  mounted: boolean;
+  nextRequestId: number;
+  pending: ComposerSteerRequest | null;
+};
+
+/** Keep an in-flight steer request scoped to the composer instance and conversation. */
+export function createComposerSteerGate(activeId: string): ComposerSteerGate {
+  return {
+    activeId,
+    epoch: 0,
+    mounted: false,
+    nextRequestId: 0,
+    pending: null,
+  };
+}
+
+/** A session change makes an older acknowledgement unable to change the current draft. */
+export function composerSteerGateSetActive(gate: ComposerSteerGate, activeId: string): void {
+  if (gate.activeId === activeId) return;
+  gate.activeId = activeId;
+  composerSteerGateInvalidate(gate);
+}
+
+/** A completed or stopped turn makes any old steer acknowledgement stale. */
+export function composerSteerGateInvalidate(gate: ComposerSteerGate): void {
+  gate.epoch += 1;
+  gate.pending = null;
+}
+
+export function composerSteerGateMount(gate: ComposerSteerGate): void {
+  gate.mounted = true;
+}
+
+export function composerSteerGateUnmount(gate: ComposerSteerGate): void {
+  gate.mounted = false;
+  gate.pending = null;
+}
+
+/** A second Enter waits for the existing steer acknowledgement. */
+export function composerSteerGateBegin(
+  gate: ComposerSteerGate,
+  activeId: string,
+): ComposerSteerRequest | null {
+  if (!gate.mounted || gate.activeId !== activeId || gate.pending) return null;
+  const request = {
+    id: gate.nextRequestId + 1,
+    epoch: gate.epoch,
+    activeId,
+  };
+  gate.nextRequestId = request.id;
+  gate.pending = request;
+  return request;
+}
+
+/** Settle only the still-pending request for the still-active composer session. */
+export function composerSteerGateSettle(
+  gate: ComposerSteerGate,
+  request: ComposerSteerRequest,
+): boolean {
+  if (
+    !gate.mounted
+    || gate.pending !== request
+    || gate.epoch !== request.epoch
+    || gate.activeId !== request.activeId
+  ) return false;
+  gate.pending = null;
+  return true;
 }
 
 /**

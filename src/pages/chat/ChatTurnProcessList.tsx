@@ -36,6 +36,7 @@ export function ChatTurnProcessList({
   selectedEditPath = '',
   selectedEditTurn,
   selectedEditStepId,
+  selectedEditAgent,
   onOpenProcess,
   onCloseProcess,
   onSelectEdit,
@@ -50,6 +51,7 @@ export function ChatTurnProcessList({
   selectedEditPath?: string;
   selectedEditTurn?: number;
   selectedEditStepId?: string;
+  selectedEditAgent?: AgentKey;
   onOpenProcess?: (turn: number, agent: AgentKey, stepKey: string) => void;
   onCloseProcess?: () => void;
   onSelectEdit?: (file: TurnEditFile, turn: number) => void;
@@ -125,7 +127,7 @@ export function ChatTurnProcessList({
         }
         if (step.type === 'tool') {
           const live = toolActionTone(step.status) === 'live';
-          const stepFiles = editFilesForStep(step, process?.steps ?? []);
+          const stepFiles = editFilesForStep(step, process?.steps ?? [], agent);
           const rows = stepFiles.length > 0 ? stepFiles : [null];
           return rows.map((editFile, fileIndex) => {
             const selected = Boolean(
@@ -133,6 +135,7 @@ export function ChatTurnProcessList({
               && selectedEditPath
               && sameEditPath(selectedEditPath, editFile.path)
               && (typeof selectedEditTurn !== 'number' || selectedEditTurn === turn)
+              && (!selectedEditAgent || selectedEditAgent === agent)
               && (!selectedEditStepId || selectedEditStepId === editFile.stepId),
             );
             const openEdit = Boolean(editFile && onSelectEdit);
@@ -184,10 +187,11 @@ export function ChatTurnProcessList({
 function editFilesForStep(
   step: Extract<ProcessStep, { type: 'tool' }>,
   steps: ProcessStep[],
+  agent: AgentKey,
 ): TurnEditFile[] {
   if (classifyToolAction(step.name) !== 'edit') return [];
   const index = steps.indexOf(step);
-  return extractStepEditFiles(step, index >= 0 ? index : 0);
+  return extractStepEditFiles(step, index >= 0 ? index : 0, agent);
 }
 
 function processRowKey(step: ProcessStep, index: number): string {
