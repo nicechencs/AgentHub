@@ -1,9 +1,11 @@
 use axum::http::{HeaderValue, StatusCode};
 
+use std::time::{Duration, SystemTime};
+
 use super::{
-    classify_connect_timeout, classify_connect_unavailable, classify_http,
+    classify_connect_timeout, classify_connect_unavailable, classify_http, cooldown_for_class,
     cooldown_from_retry_after, parse_retry_after, FailoverDecision, UpstreamErrorClass,
-    DEFAULT_COOLDOWN,
+    CREDIT_DEFAULT_COOLDOWN, DEFAULT_COOLDOWN, MAX_COOLDOWN, QUOTA_DEFAULT_COOLDOWN,
 };
 
 #[test]
@@ -140,6 +142,123 @@ fn retry_after_delta_seconds_and_missing_default() {
     assert_eq!(
         cooldown_from_retry_after(Some(&HeaderValue::from_static("0"))),
         DEFAULT_COOLDOWN
+    );
+}
+
+#[test]
+fn quota_retry_after_wins_over_body_and_reset() {
+    let header = HeaderValue::from_static("30");
+    let reset = SystemTime::now() + Duration::from_secs(20 * 60);
+    assert_eq!(
+        cooldown_for_class(
+            UpstreamErrorClass::QuotaAccount,
+            Some(&header),
+            Some(r#"{"error":{"resets_in_seconds":90}}"#),
+            Some(reset),
+            true,
+        ),
+        Duration::from_secs(30)
+    );
+}
+
+#[test]
+fn quota_missing_retry_after_uses_reset_at() {
+    let reset = SystemTime::now() + Duration::from_secs(20 * 60);
+    let got = cooldown_for_class(
+        UpstreamErrorClass::QuotaModel,
+        None,
+        None,
+        Some(reset),
+        false,
+    );
+    assert!(got >= Duration::from_secs(19 * 60));
+    assert!(got <= Duration::from_secs(21 * 60));
+    let zero = HeaderValue::from_static("0");
+    let from_zero = cooldown_for_class(
+        UpstreamErrorClass::QuotaAccount,
+        Some(&zero),
+        None,
+        Some(reset),
+        false,
+    );
+    assert!(from_zero >= Duration::from_secs(19 * 60));
+}
+
+#[test]
+fn quota_body_reset_beats_snapshot_reset() {
+    let reset = SystemTime::now() + Duration::from_secs(20 * 60);
+    assert_eq!(
+        cooldown_for_class(
+            UpstreamErrorClass::QuotaAccount,
+            None,
+            Some(r#"{"resets_in_seconds":90}"#),
+            Some(reset),
+            false,
+        ),
+        Duration::from_secs(90)
+    );
+}
+
+#[test]
+fn quota_missing_hints_uses_capped_class_default() {
+    assert_eq!(
+        cooldown_for_class(UpstreamErrorClass::QuotaAccount, None, None, None, false),
+        QUOTA_DEFAULT_COOLDOWN
+    );
+    assert_eq!(
+        cooldown_for_class(UpstreamErrorClass::QuotaModel, None, None, None, true),
+        CREDIT_DEFAULT_COOLDOWN
+    );
+    assert_eq!(
+        cooldown_for_class(
+            UpstreamErrorClass::QuotaAccount,
+            None,
+            Some("insufficient credit"),
+            None,
+            false,
+        ),
+        CREDIT_DEFAULT_COOLDOWN
+    );
+    assert!(QUOTA_DEFAULT_COOLDOWN <= MAX_COOLDOWN);
+    assert!(CREDIT_DEFAULT_COOLDOWN <= MAX_COOLDOWN);
+    assert_eq!(
+        cooldown_for_class(
+            UpstreamErrorClass::QuotaAccount,
+            Some(&HeaderValue::from_static("7200")),
+            None,
+            None,
+            false,
+        ),
+        MAX_COOLDOWN
+    );
+}
+
+#[test]
+fn non_quota_cooldown_stays_short() {
+    let reset = SystemTime::now() + Duration::from_secs(20 * 60);
+    assert_eq!(
+        cooldown_for_class(
+            UpstreamErrorClass::Transient,
+            None,
+            Some(r#"{"resets_in_seconds":90}"#),
+            Some(reset),
+            true,
+        ),
+        DEFAULT_COOLDOWN
+    );
+    assert_eq!(
+        cooldown_for_class(UpstreamErrorClass::Request, None, None, None, false),
+        cooldown_from_retry_after(None)
+    );
+    assert_eq!(
+        cooldown_for_class(
+            UpstreamErrorClass::Transient,
+            Some(&HeaderValue::from_static("30")),
+            None,
+            None,
+            false,
+        ),
+        Duration::from_secs(30)
     );
 }
 

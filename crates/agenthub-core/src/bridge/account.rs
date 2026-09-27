@@ -8,7 +8,7 @@ use std::cmp::Ordering as CmpOrdering;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use axum::http::HeaderValue;
 use sha2::{Digest, Sha256};
@@ -56,6 +56,13 @@ pub struct PickedMember {
     pub reload: Option<UpstreamAuthReload>,
     pub priority: i64,
     pub position: i64,
+    /// Remaining quota percent when known. `None` is missing or stale and
+    /// must not be treated as zero. See `account_quota::member_quota_hint_from_extra`.
+    quota_remaining_pct: Option<f64>,
+    /// Snapshot window reset used only as a quota-cooldown hint.
+    quota_reset_at: Option<SystemTime>,
+    /// Credit-style account (no 5h/7d percent). Selects the credit default.
+    quota_credit: bool,
     pub(crate) kiro_http: Option<KiroHttpRouteParams>,
     health: Arc<Mutex<MemberHealth>>,
     concurrency: Arc<Semaphore>,
@@ -73,6 +80,7 @@ impl std::fmt::Debug for PickedMember {
             .field("reload", &self.reload.is_some())
             .field("priority", &self.priority)
             .field("position", &self.position)
+            .field("quota_remaining_pct", &self.quota_remaining_pct)
             .field("health", &self.health())
             .finish()
     }
@@ -97,6 +105,9 @@ impl PickedMember {
             reload,
             priority: 0,
             position: 0,
+            quota_remaining_pct: None,
+            quota_reset_at: None,
+            quota_credit: false,
             kiro_http: None,
             health: Arc::new(Mutex::new(health)),
             concurrency: Arc::new(Semaphore::new(4)),
@@ -117,6 +128,36 @@ impl PickedMember {
         self.priority = priority;
         self.position = position;
         self
+    }
+
+    /// Remaining percent for the tie-break. Non-finite values are dropped.
+    pub fn with_quota_remaining(mut self, pct: Option<f64>) -> Self {
+        self.quota_remaining_pct = finite_pct(pct);
+        self
+    }
+
+    pub fn with_quota_hint(
+        mut self,
+        remaining_pct: Option<f64>,
+        reset_at: Option<SystemTime>,
+        credit: bool,
+    ) -> Self {
+        self.quota_remaining_pct = finite_pct(remaining_pct);
+        self.quota_reset_at = reset_at;
+        self.quota_credit = credit;
+        self
+    }
+
+    pub fn quota_remaining_pct(&self) -> Option<f64> {
+        self.quota_remaining_pct
+    }
+
+    pub fn quota_reset_at(&self) -> Option<SystemTime> {
+        self.quota_reset_at
+    }
+
+    pub fn quota_credit(&self) -> bool {
+        self.quota_credit
     }
 
     pub fn health(&self) -> MemberHealth {
@@ -166,6 +207,9 @@ pub struct BridgeMemberSpec {
     pub health: MemberHealth,
     pub priority: i64,
     pub position: i64,
+    pub quota_remaining_pct: Option<f64>,
+    pub quota_reset_at: Option<SystemTime>,
+    pub quota_credit: bool,
     pub(crate) kiro_http: Option<KiroHttpRouteParams>,
 }
 
@@ -191,8 +235,23 @@ impl BridgeMemberSpec {
             health,
             priority,
             position,
+            quota_remaining_pct: None,
+            quota_reset_at: None,
+            quota_credit: false,
             kiro_http: None,
         }
+    }
+
+    pub fn with_quota_hint(
+        mut self,
+        remaining_pct: Option<f64>,
+        reset_at: Option<SystemTime>,
+        credit: bool,
+    ) -> Self {
+        self.quota_remaining_pct = finite_pct(remaining_pct);
+        self.quota_reset_at = reset_at;
+        self.quota_credit = credit;
+        self
     }
 
     pub(crate) fn with_kiro_http(mut self, params: Option<KiroHttpRouteParams>) -> Self {
@@ -214,6 +273,7 @@ impl std::fmt::Debug for BridgeMemberSpec {
             .field("health", &self.health)
             .field("priority", &self.priority)
             .field("position", &self.position)
+            .field("quota_remaining_pct", &self.quota_remaining_pct)
             .finish()
     }
 }
@@ -231,6 +291,11 @@ impl From<&BridgeMemberSpec> for PickedMember {
         )
         .with_schedule(spec.priority, spec.position)
         .with_kiro_http(spec.kiro_http.clone())
+        .with_quota_hint(
+            spec.quota_remaining_pct,
+            spec.quota_reset_at,
+            spec.quota_credit,
+        )
     }
 }
 
@@ -806,12 +871,28 @@ fn sticky_still_valid(
         && binding.auth_fingerprint == member.authorization_fingerprint()
 }
 
+/// Priority first (lower number wins), then remaining quota when **both**
+/// sides have a finite score (higher remaining wins), then position, then id.
+/// A missing score compares equal so the prior stable order is kept. Quota
+/// never runs before sticky / continuation; those return earlier.
 fn cmp_schedule(left: &EligibleMember<'_>, right: &EligibleMember<'_>) -> CmpOrdering {
     left.member
         .priority
         .cmp(&right.member.priority)
+        .then(cmp_quota_remaining(left.member, right.member))
         .then(left.member.position.cmp(&right.member.position))
         .then(left.member.source_id.cmp(&right.member.source_id))
+}
+
+fn cmp_quota_remaining(left: &PickedMember, right: &PickedMember) -> CmpOrdering {
+    match (left.quota_remaining_pct, right.quota_remaining_pct) {
+        (Some(left_pct), Some(right_pct)) => right_pct.total_cmp(&left_pct),
+        _ => CmpOrdering::Equal,
+    }
+}
+
+fn finite_pct(pct: Option<f64>) -> Option<f64> {
+    pct.filter(|value| value.is_finite())
 }
 
 fn pick_priority_failover(eligible: &[EligibleMember<'_>]) -> Option<PickedMember> {

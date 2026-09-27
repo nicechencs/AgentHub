@@ -225,6 +225,13 @@ export function createTauriAdapterPort(): AdapterPort {
         priority,
       });
     },
+    async setRoutePoolSchedulePolicy(poolId, schedulePolicy) {
+      const wire = await invokeAdapter<DefaultRoutePoolOverviewWire>('set_route_pool_schedule_policy', {
+        poolId,
+        schedulePolicy,
+      });
+      return mapDefaultRoutePoolOverview(wire);
+    },
     async removeRouteAuthorization(sourceKind, sourceId) {
       return invokeAdapter<number>('remove_route_authorization', {
         sourceKind,

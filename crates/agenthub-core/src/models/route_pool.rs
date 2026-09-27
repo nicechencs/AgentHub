@@ -370,6 +370,9 @@ pub struct DefaultRoutePoolOverview {
     pub surface: RouteDownstreamSurface,
     pub dialect: RouteDownstreamDialect,
     pub unified_gateway_enrolled: bool,
+    /// Absent on older payloads means priority failover.
+    #[serde(default)]
+    pub schedule_policy: RouteSchedulePolicy,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gateway_port: Option<u16>,
     pub members: Vec<RouteMemberOverview>,

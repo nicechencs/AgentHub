@@ -1005,21 +1005,22 @@ fn bridge_member_spec(
     position: i64,
     protocol: BridgeUpstreamProtocol,
 ) -> BridgeMemberSpec {
-    hub.adapter_bridge().with_kiro_http_route_params(
-        BridgeMemberSpec::new(
-            ticket_id,
-            source_kind.as_str(),
-            source_id,
-            label,
-            auth,
-            reload,
-            health,
-            priority,
-            position,
-        ),
-        source_kind,
-        protocol,
-    )
+    hub.adapter_bridge()
+        .annotate_member_quota(hub.adapter_bridge().with_kiro_http_route_params(
+            BridgeMemberSpec::new(
+                ticket_id,
+                source_kind.as_str(),
+                source_id,
+                label,
+                auth,
+                reload,
+                health,
+                priority,
+                position,
+            ),
+            source_kind,
+            protocol,
+        ))
 }
 
 fn resolve_start_members(

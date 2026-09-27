@@ -776,6 +776,9 @@ impl AdapterBridgeRuntimeMaterial {
             health: MemberHealth::Renewable,
             priority: 0,
             position: 0,
+            quota_remaining_pct: None,
+            quota_reset_at: None,
+            quota_credit: false,
             kiro_http: self.kiro_http.clone(),
         }]);
         spec
@@ -1324,7 +1327,8 @@ impl AdapterBridgeService {
                 pool.downstream_dialect,
             ),
         )
-        .with_pair_adapter_flags(flags.0, flags.1);
+        .with_pair_adapter_flags(flags.0, flags.1)
+        .with_schedule_policy(pool.schedule_policy);
         // The v1 host has one upstream URL per listener. Never put a login
         // for a different endpoint into its picker: v1 would send that login's
         // key to the lead endpoint. The indexed host routes each member to its
@@ -1363,7 +1367,7 @@ impl AdapterBridgeService {
                 } else {
                     MemberHealth::NeedsLogin
                 };
-                Some(BridgeMemberSpec {
+                Some(self.annotate_member_quota(BridgeMemberSpec {
                     ticket_id: ticket_id(member.source_kind, &member.source_id),
                     source_kind: member.source_kind.as_str().to_owned(),
                     source_id: member.source_id.clone(),
@@ -1373,6 +1377,9 @@ impl AdapterBridgeService {
                     health,
                     priority: member.priority,
                     position: member.position,
+                    quota_remaining_pct: None,
+                    quota_reset_at: None,
+                    quota_credit: false,
                     kiro_http: if member_protocol == BridgeUpstreamProtocol::KiroHttp {
                         self.secrets
                             .resolve_kiro_http_params(member.source_kind, &member.source_id)
@@ -1380,11 +1387,27 @@ impl AdapterBridgeService {
                     } else {
                         None
                     },
-                })
+                }))
             })
             .collect();
         spec = spec.with_members(member_specs);
         spec
+    }
+
+    /// Copy the account's last quota snapshot onto a member spec.
+    /// Missing or stale snapshots stay unset so the picker keeps stable order.
+    pub fn annotate_member_quota(&self, spec: BridgeMemberSpec) -> BridgeMemberSpec {
+        if spec.source_kind != AdapterSourceKind::Account.as_str() {
+            return spec;
+        }
+        let Ok(Some(account)) = self.secrets.accounts.get_by_id(&spec.source_id) else {
+            return spec;
+        };
+        let hint = crate::services::account_quota::member_quota_hint_from_extra(
+            &account.extra,
+            chrono::Utc::now(),
+        );
+        spec.with_quota_hint(hint.remaining_pct, hint.reset_at, hint.credit)
     }
 
     fn member_display_label(&self, member: &RouteMember) -> String {
@@ -1605,6 +1628,7 @@ fn placeholder_pool_spec(
         ),
     )
     .with_pair_adapter_flags(flags.0, flags.1)
+    .with_schedule_policy(pool.schedule_policy)
 }
 
 fn rule_for_member_product(

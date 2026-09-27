@@ -11,8 +11,9 @@ use agenthub_core::models::{
     ticket_id, AdapterApplyPlan, AdapterApplyResult, AdapterProfile, AdapterProfileFilter,
     AdapterProfileMode, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind,
     AgentId, DefaultRoutePoolList, DefaultRoutePoolOverview, ForkedConnectionAuthorization,
-    LocalTokenRecord, RouteDownstreamSurface, SyncConnectionAuthorizationsResult, TicketBinding,
-    TicketBindingRoute, TicketPlanRequest, TicketWallet,
+    LocalTokenRecord, RouteDownstreamSurface, RouteSchedulePolicy,
+    SyncConnectionAuthorizationsResult, TicketBinding, TicketBindingRoute, TicketPlanRequest,
+    TicketWallet,
 };
 use agenthub_core::utils::upstream_model_catalog::SourceModelCatalog;
 use agenthub_core::AgentHub;
@@ -685,6 +686,26 @@ pub async fn set_route_authorization_enabled(
         hub.route_pools()
             .set_authorization_enabled(source_kind, &source_id, enabled)
             .map_err(|err| map_err_string("set_route_authorization_enabled", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Set one pool's schedule. Unknown values fail closed.
+#[tauri::command]
+pub async fn set_route_pool_schedule_policy(
+    state: State<'_, AppState>,
+    pool_id: String,
+    schedule_policy: String,
+) -> Result<DefaultRoutePoolOverview, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        let policy = RouteSchedulePolicy::parse(&schedule_policy).ok_or_else(|| {
+            "invalid schedule_policy, expected: priority_failover|round_robin".to_string()
+        })?;
+        hub.route_pools()
+            .set_schedule_policy(&pool_id, policy)
+            .map_err(|err| map_err_string("set_route_pool_schedule_policy", err))
     })
     .await
     .map_err(adapter_error_from_string)

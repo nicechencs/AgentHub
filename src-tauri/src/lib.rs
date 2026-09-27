@@ -148,6 +148,7 @@ pub fn run() {
             commands::adapter::fork_connection_authorization,
             commands::adapter::set_route_authorization_enabled,
             commands::adapter::set_route_authorization_priority,
+            commands::adapter::set_route_pool_schedule_policy,
             commands::adapter::remove_route_authorization,
             commands::adapter::recycle_route_membership,
             commands::adapter::sync_connection_authorizations,

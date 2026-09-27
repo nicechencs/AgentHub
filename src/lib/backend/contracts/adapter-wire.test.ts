@@ -493,6 +493,7 @@ describe('Adapter Rust wire mappers', () => {
     });
     expect(JSON.stringify(listed)).not.toContain('hubToken');
     expect(listed.pools[0]?.unifiedGatewayEnrolled).toBe(true);
+    expect(listed.pools[0]?.schedulePolicy).toBe('priority_failover');
   });
 
   it('maps unifiedGatewayEnrolled from wire', () => {
@@ -522,6 +523,22 @@ describe('Adapter Rust wire mappers', () => {
       }],
     });
     expect(listed.pools[0]?.unifiedGatewayEnrolled).toBe(false);
+    expect(listed.pools[0]?.schedulePolicy).toBe('priority_failover');
+  });
+
+  it('maps round_robin schedule policy', () => {
+    const listed = mapDefaultRoutePoolList({
+      enabled: true,
+      pools: [{
+        id: 'pool-rr',
+        targetAgentId: 'codex',
+        surface: 'responses',
+        dialect: 'codex',
+        schedulePolicy: 'round_robin',
+        members: [],
+      }],
+    });
+    expect(listed.pools[0]?.schedulePolicy).toBe('round_robin');
   });
 
   it('maps loopback entry keys for the tokens page', () => {

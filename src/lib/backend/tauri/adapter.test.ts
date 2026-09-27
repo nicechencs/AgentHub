@@ -329,6 +329,24 @@ describe('Tauri adapter route port', () => {
     });
   });
 
+  it('forwards set_route_pool_schedule_policy', async () => {
+    invokeMock.mockResolvedValueOnce({
+      id: 'pool-1',
+      targetAgentId: 'codex',
+      surface: 'responses',
+      dialect: 'codex',
+      schedulePolicy: 'round_robin',
+      members: [],
+    });
+    const port = createTauriAdapterPort();
+    const overview = await port.setRoutePoolSchedulePolicy('pool-1', 'round_robin');
+    expect(overview.schedulePolicy).toBe('round_robin');
+    expect(invokeMock).toHaveBeenCalledWith('set_route_pool_schedule_policy', {
+      poolId: 'pool-1',
+      schedulePolicy: 'round_robin',
+    });
+  });
+
   it('forwards set_route_authorization_priority', async () => {
     invokeMock.mockResolvedValueOnce(1);
     const port = createTauriAdapterPort();
