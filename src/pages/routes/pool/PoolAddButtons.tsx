@@ -3,11 +3,13 @@
  * 官方登录只提供支持的三个 Agent；添加 API Key 时先填服务地址和 Key，再勾选接口类型。
  * 这里加入的登录只给连接池用，不会出现在连接页。
  */
-import { useCallback, useEffect, useMemo, useState, type MutableRefObject, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from 'react';
 import { agentDisplayName } from '@/config/agents';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { OAuthFlowDialog } from '@/components/connect/OAuthFlowDialog';
+import { officialLoginDiscovery } from '@/components/connect/official-login-discovery';
+import { canStartOfficialLogin, canSyncConnectionToPool } from '@/components/login-kernel';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
 import {
@@ -18,7 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import type { AgentKey } from '@/lib/types';
+import type { Account, AgentKey } from '@/lib/types';
 import { attachPoolOwnedAuthorization, syncConnectionAuthorizations } from '@/lib/api/adapter';
 import type {
   AdapterSourceKind,
@@ -28,7 +30,9 @@ import type {
 } from '@/lib/backend/contracts';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import { sourceKindLabel } from '@/pages/routes/shared/adapter-create-flow';
-import { isPoolShareableLogin } from '@/pages/connections/ticket-pool-import';
+import { openExternalLink } from '@/lib/open-external';
+import { officialLoginSuccessView } from '@/lib/backend/contracts/official-login-session';
+import { createPoolOfficialLoginPersistence } from './official-login-persistence';
 import { cn } from '@/lib/utils';
 import { ApiAccessDialog } from './ApiAccessDialog';
 import { PoolSchedulePolicyCreateControl } from './PoolSchedulePolicyCreateControl';
@@ -51,7 +55,7 @@ export function poolOAuthChoices(
 ): PoolOAuthChoice[] {
   return OAUTH_AGENTS.map((agentId) => ({
     agentId,
-    available: agents.includes(agentId) && oauthAgents.includes(agentId),
+    available: agents.includes(agentId) && canStartOfficialLogin(agentId, oauthAgents),
   }));
 }
 
@@ -75,8 +79,13 @@ export function poolSyncCandidates(
     pools.flatMap((pool) => pool.members.map((member) => `${member.sourceKind}:${member.sourceId}`)),
   );
   return entries
-    .filter((entry) => isPoolShareableLogin({ agentId: entry.agentId, kind: entry.kind }))
-    .filter((entry) => entry.account?.home !== 'route_pool' && entry.provider?.home !== 'route_pool')
+    .filter((entry) => canSyncConnectionToPool({
+      agentId: entry.agentId,
+      kind: entry.kind,
+      home: entry.account?.home === 'route_pool' || entry.provider?.home === 'route_pool'
+        ? 'route_pool'
+        : undefined,
+    }))
     .map((entry) => {
       const sourceKind = entry.source;
       const sourceId = entry.id;
@@ -198,6 +207,15 @@ export function PoolAddButtons({
   const [selectedSyncKeys, setSelectedSyncKeys] = useState<Set<string>>(new Set());
   const [schedulePolicy, setSchedulePolicy] =
     useState<RouteSchedulePolicy>('priority_failover');
+  const schedulePolicyRef = useRef(schedulePolicy);
+  schedulePolicyRef.current = schedulePolicy;
+  const oauthAccountRef = useRef<Account | null>(null);
+  const oauthPersistence = useMemo(() => createPoolOfficialLoginPersistence({
+    schedulePolicy: () => schedulePolicyRef.current,
+    onAccount: (account) => {
+      oauthAccountRef.current = account;
+    },
+  }), []);
   const oauthChoices = useMemo(
     () => poolOAuthChoices(agents, oauthAgents),
     [agents, oauthAgents],
@@ -411,16 +429,21 @@ export function PoolAddButtons({
       {oauthAgentId ? (
         <OAuthFlowDialog
           agentId={oauthAgentId}
+          agentName={agentDisplayName(oauthAgentId)}
           open
           offerSwitch={false}
-          poolOwned
-          schedulePolicy={schedulePolicy}
+          persistence={oauthPersistence}
+          discovery={officialLoginDiscovery}
+          openLink={openExternalLink}
+          describeSuccess={() => (
+            oauthAccountRef.current ? officialLoginSuccessView(oauthAccountRef.current) : null
+          )}
           successDescription={t('routes.pool.page.oauthSaved')}
           onOpenChange={(open) => {
             if (open) return;
             setOauthAgentId(null);
           }}
-          onStored={(account) => {
+          onStored={(result) => {
             const agentId = oauthAgentId;
             // Grok device-code completion attaches to the authorization pool
             // inside the backend operation, so a second async attach would
@@ -431,7 +454,7 @@ export function PoolAddButtons({
             }
             void attachAuthorization(
               'account',
-              account.id,
+              result.source.sourceId,
               agentId,
               poolSurfaceForOAuth(agentId),
             );

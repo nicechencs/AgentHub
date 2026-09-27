@@ -10,6 +10,19 @@ import {
   type OAuthFlowToken,
 } from '@/components/connect/OAuthFlowDialog';
 import { validateManualCallbackUrl } from '@/lib/backend/contracts/official-login-session';
+import {
+  cancelOfficialLogin,
+  finishOfficialLogin,
+  startOfficialLogin,
+} from '@/lib/api/official-login';
+import { createConnectionsOfficialLoginPersistence } from '@/pages/connections/official-login-persistence';
+import { createPoolOfficialLoginPersistence } from '@/pages/routes/pool/official-login-persistence';
+
+vi.mock('@/lib/api/official-login', () => ({
+  startOfficialLogin: vi.fn(),
+  finishOfficialLogin: vi.fn(),
+  cancelOfficialLogin: vi.fn(),
+}));
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -101,7 +114,10 @@ describe('validateManualCallbackUrl', () => {
 describe('official login wait page copy', () => {
   it('does not print raw session state or auth.json paths', () => {
     const src = readFileSync(
-      path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../connect/OAuthFlowDialog.tsx'),
+      path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        '../login-kernel/OfficialLoginFlow.tsx',
+      ),
       'utf8',
     );
     expect(src).not.toContain('state: {');
@@ -110,11 +126,78 @@ describe('official login wait page copy', () => {
     expect(src).not.toContain('opt.authJsonKey');
     expect(src).toContain("officialLoginFooter(step");
     expect(src).toContain("t('chrome.error.retry')");
-    expect(src).toContain('startOfficialLogin(agentId, selected, false');
+    expect(src).toContain('persistenceRef.current.start(agentId, selected)');
+    expect(src).toContain('persistenceRef.current.finish(started)');
+    expect(src).not.toContain('startOfficialLogin');
+    expect(src).not.toContain('finishOfficialLogin');
+    expect(src).not.toContain('poolOwned');
+    expect(src).not.toContain('schedulePolicy');
+    expect(src).not.toContain("@/lib/api");
     expect(src).toContain('officialLoginActionUrl');
     expect(src).toContain("t('connect.oauth.copyAuthLink')");
     expect(src).toContain("t('connect.oauth.openBrowser')");
     expect(src).not.toContain('void openExternalLink(url).catch(() => {});');
     expect(src).not.toContain("t('connect.oauth.openAuthPage')");
+  });
+});
+
+describe('official login persistence adapters', () => {
+  it('keeps Connections and the pool on different save calls and returns only a login result', async () => {
+    const session = {
+      sessionId: 'session-1',
+      flow: 'pkce' as const,
+      agentId: 'claude',
+      optionId: 'claude',
+      intervalSecs: 5,
+      expiresInSecs: 30,
+    };
+    const account = {
+      id: 'account-1',
+      agentId: 'claude',
+      kind: 'oauth' as const,
+      label: 'user@example.com',
+      isCurrent: false,
+      tokenValid: true,
+    };
+    vi.mocked(startOfficialLogin).mockResolvedValue(session);
+    vi.mocked(finishOfficialLogin).mockResolvedValue(account);
+    vi.mocked(cancelOfficialLogin).mockResolvedValue(undefined);
+
+    const connections = createConnectionsOfficialLoginPersistence();
+    await connections.start('claude', {
+      id: 'claude',
+      agentId: 'claude',
+      label: 'Claude',
+      description: '',
+      flow: 'pkce',
+    });
+    expect(startOfficialLogin).toHaveBeenLastCalledWith('claude', expect.objectContaining({ id: 'claude' }), false);
+    const saved = await connections.finish(session);
+    expect(finishOfficialLogin).toHaveBeenLastCalledWith(session);
+    expect(saved).toEqual({
+      kind: 'oauth',
+      mutation: 'created',
+      source: { sourceKind: 'account', sourceId: 'account-1', agentId: 'claude' },
+    });
+    expect(saved).not.toHaveProperty('priority');
+
+    const pool = createPoolOfficialLoginPersistence({ schedulePolicy: () => 'round_robin' });
+    await pool.start('grok', {
+      id: 'grok',
+      agentId: 'grok',
+      label: 'Grok',
+      description: '',
+      flow: 'deviceCode',
+    });
+    expect(startOfficialLogin).toHaveBeenLastCalledWith(
+      'grok',
+      expect.objectContaining({ id: 'grok' }),
+      false,
+      true,
+    );
+    await pool.finish(session);
+    expect(finishOfficialLogin).toHaveBeenLastCalledWith(session, true, 'round_robin');
+    await pool.cancel(session);
+    expect(cancelOfficialLogin).toHaveBeenCalledWith(session);
   });
 });
