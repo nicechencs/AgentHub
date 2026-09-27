@@ -1,7 +1,9 @@
 import type { AccountPort } from '@/lib/backend/contracts';
 import { wrapBareAccount } from '@/lib/backend/contracts/account-map';
+import type { RouteSchedulePolicy } from '@/lib/backend/contracts/adapter';
 import { delay, randomLatency } from '@/dev/mocks/delay';
 import type { Account, AgentKey } from '@/lib/types';
+import { mockAttachPoolOwnedAccount } from './adapter';
 import { moveMockAccountToTrash } from './trash';
 
 const mockState: Record<AgentKey, Account[]> = {
@@ -367,9 +369,16 @@ export function createMockAccountPort(): AccountPort {
       return { state, status: 'complete' as const, error: null };
     },
 
-    async finishDeviceOAuth(state, _poolOwned = false, _schedulePolicy) {
+    async finishDeviceOAuth(state, poolOwned = false, schedulePolicy?: RouteSchedulePolicy) {
       const session = requireOAuthSession(state);
-      return this.completeOAuth(session.agentId, session.providerKey);
+      const owned = poolOwned || Boolean(session.poolOwned);
+      const account = await this.completeOAuth(session.agentId, session.providerKey);
+      if (owned) {
+        mockAttachPoolOwnedAccount(account.id, schedulePolicy);
+        const enrolled = getMockAccountById(account.id);
+        return enrolled ? { ...enrolled } : account;
+      }
+      return account;
     },
 
     async completeOAuth(agentId, providerKey) {

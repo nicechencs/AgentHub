@@ -392,14 +392,14 @@ export function PoolAddButtons({
             onClick={() => selectOAuthAgent(choice.agentId)}
           />
         ))}
-      
+
         <div className="mt-3 px-1">
           <PoolSchedulePolicyCreateControl
             value={schedulePolicy}
             onChange={setSchedulePolicy}
           />
         </div>
-</ChoiceDialog>
+      </ChoiceDialog>
 
       <ApiAccessDialog
         open={apiAccessOpen}
