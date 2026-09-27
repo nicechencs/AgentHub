@@ -463,7 +463,8 @@
   "deepseek-coder": {
     "input": 0.14,
     "output": 0.28,
-    "cacheCreate": 0.14
+    "cacheCreate": 0.14,
+    "cacheRead": 0.014
   },
   "deepseek-flash": {
     "input": 0.3,
@@ -474,7 +475,8 @@
   "deepseek-r1": {
     "input": 0.55,
     "output": 2.19,
-    "cacheCreate": 0.55
+    "cacheCreate": 0.55,
+    "cacheRead": 0.14
   },
   "deepseek-reasoner": {
     "input": 0.28,
@@ -491,7 +493,8 @@
   "deepseek-v3.2": {
     "input": 0.28,
     "output": 0.4,
-    "cacheCreate": 0.28
+    "cacheCreate": 0.28,
+    "cacheRead": 0.028
   },
   "deepseek-v4-flash": {
     "input": 0.3,
@@ -520,7 +523,8 @@
   "deepseek/deepseek-coder": {
     "input": 0.14,
     "output": 0.28,
-    "cacheCreate": 0.14
+    "cacheCreate": 0.14,
+    "cacheRead": 0.014
   },
   "deepseek/deepseek-flash": {
     "input": 0.3,
@@ -531,7 +535,8 @@
   "deepseek/deepseek-r1": {
     "input": 0.55,
     "output": 2.19,
-    "cacheCreate": 0.55
+    "cacheCreate": 0.55,
+    "cacheRead": 0.14
   },
   "deepseek/deepseek-reasoner": {
     "input": 0.28,
@@ -548,7 +553,8 @@
   "deepseek/deepseek-v3.2": {
     "input": 0.28,
     "output": 0.4,
-    "cacheCreate": 0.28
+    "cacheCreate": 0.28,
+    "cacheRead": 0.028
   },
   "deepseek/deepseek-v4-flash": {
     "input": 0.3,
@@ -2055,6 +2061,15 @@
     "outputAbove200k": 5,
     "cacheReadAbove200k": 0.4
   },
+  "grok-4.20-0309": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
   "grok-4.20-0309-non-reasoning": {
     "input": 1.25,
     "output": 2.5,
@@ -2073,6 +2088,24 @@
     "outputAbove200k": 5,
     "cacheReadAbove200k": 0.4
   },
+  "grok-4.20-beta": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "grok-4.20-beta-0309": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
   "grok-4.20-beta-0309-non-reasoning": {
     "input": 1.25,
     "output": 2.5,
@@ -2083,6 +2116,105 @@
     "cacheReadAbove200k": 0.4
   },
   "grok-4.20-beta-0309-reasoning": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "grok-4.20-beta-latest": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "grok-4.20-beta-latest-non-reasoning": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "grok-4.20-beta-latest-reasoning": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "grok-4.20-beta-non-reasoning": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "grok-4.20-beta-reasoning": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "grok-4.20-experimental-beta-0304": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "grok-4.20-experimental-beta-0304-non-reasoning": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "grok-4.20-experimental-beta-0304-reasoning": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "grok-4.20-experimental-beta-latest": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "grok-4.20-experimental-beta-non-reasoning-latest": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "grok-4.20-experimental-beta-reasoning-latest": {
     "input": 1.25,
     "output": 2.5,
     "cacheCreate": 1.25,
@@ -2118,6 +2250,33 @@
     "outputAbove200k": 5,
     "cacheReadAbove200k": 0.4
   },
+  "grok-4.20-multi-agent-beta-latest": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "grok-4.20-multi-agent-experimental-beta-0304": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "grok-4.20-multi-agent-experimental-beta-latest": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
   "grok-4.20-multi-agent-latest": {
     "input": 1.25,
     "output": 2.5,
@@ -2136,6 +2295,15 @@
     "outputAbove200k": 5,
     "cacheReadAbove200k": 0.4
   },
+  "grok-4.20-non-reasoning-gv2": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
   "grok-4.20-non-reasoning-latest": {
     "input": 1.25,
     "output": 2.5,
@@ -2146,6 +2314,15 @@
     "cacheReadAbove200k": 0.4
   },
   "grok-4.20-reasoning": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "grok-4.20-reasoning-gv2": {
     "input": 1.25,
     "output": 2.5,
     "cacheCreate": 1.25,
@@ -2200,6 +2377,15 @@
     "cacheReadAbove200k": 0.6
   },
   "grok-4.6": {
+    "input": 2,
+    "output": 6,
+    "cacheCreate": 2,
+    "cacheRead": 0.5,
+    "inputAbove200k": 4,
+    "outputAbove200k": 12,
+    "cacheReadAbove200k": 1
+  },
+  "grok-4.7": {
     "input": 2,
     "output": 6,
     "cacheCreate": 2,
@@ -3063,6 +3249,15 @@
     "outputAbove200k": 5,
     "cacheReadAbove200k": 0.4
   },
+  "xai/grok-4.20-0309": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
   "xai/grok-4.20-0309-non-reasoning": {
     "input": 1.25,
     "output": 2.5,
@@ -3081,6 +3276,24 @@
     "outputAbove200k": 5,
     "cacheReadAbove200k": 0.4
   },
+  "xai/grok-4.20-beta": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "xai/grok-4.20-beta-0309": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
   "xai/grok-4.20-beta-0309-non-reasoning": {
     "input": 1.25,
     "output": 2.5,
@@ -3091,6 +3304,105 @@
     "cacheReadAbove200k": 0.4
   },
   "xai/grok-4.20-beta-0309-reasoning": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "xai/grok-4.20-beta-latest": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "xai/grok-4.20-beta-latest-non-reasoning": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "xai/grok-4.20-beta-latest-reasoning": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "xai/grok-4.20-beta-non-reasoning": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "xai/grok-4.20-beta-reasoning": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "xai/grok-4.20-experimental-beta-0304": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "xai/grok-4.20-experimental-beta-0304-non-reasoning": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "xai/grok-4.20-experimental-beta-0304-reasoning": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "xai/grok-4.20-experimental-beta-latest": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "xai/grok-4.20-experimental-beta-non-reasoning-latest": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "xai/grok-4.20-experimental-beta-reasoning-latest": {
     "input": 1.25,
     "output": 2.5,
     "cacheCreate": 1.25,
@@ -3126,6 +3438,33 @@
     "outputAbove200k": 5,
     "cacheReadAbove200k": 0.4
   },
+  "xai/grok-4.20-multi-agent-beta-latest": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "xai/grok-4.20-multi-agent-experimental-beta-0304": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "xai/grok-4.20-multi-agent-experimental-beta-latest": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
   "xai/grok-4.20-multi-agent-latest": {
     "input": 1.25,
     "output": 2.5,
@@ -3144,6 +3483,15 @@
     "outputAbove200k": 5,
     "cacheReadAbove200k": 0.4
   },
+  "xai/grok-4.20-non-reasoning-gv2": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
   "xai/grok-4.20-non-reasoning-latest": {
     "input": 1.25,
     "output": 2.5,
@@ -3154,6 +3502,15 @@
     "cacheReadAbove200k": 0.4
   },
   "xai/grok-4.20-reasoning": {
+    "input": 1.25,
+    "output": 2.5,
+    "cacheCreate": 1.25,
+    "cacheRead": 0.2,
+    "inputAbove200k": 2.5,
+    "outputAbove200k": 5,
+    "cacheReadAbove200k": 0.4
+  },
+  "xai/grok-4.20-reasoning-gv2": {
     "input": 1.25,
     "output": 2.5,
     "cacheCreate": 1.25,
@@ -3208,6 +3565,15 @@
     "cacheReadAbove200k": 0.6
   },
   "xai/grok-4.6": {
+    "input": 2,
+    "output": 6,
+    "cacheCreate": 2,
+    "cacheRead": 0.5,
+    "inputAbove200k": 4,
+    "outputAbove200k": 12,
+    "cacheReadAbove200k": 1
+  },
+  "xai/grok-4.7": {
     "input": 2,
     "output": 6,
     "cacheCreate": 2,
