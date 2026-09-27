@@ -994,6 +994,9 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
               surface: target.surface,
               dialect: target.dialect,
               unifiedGatewayEnrolled: false,
+              schedulePolicy: request?.schedulePolicy === 'round_robin'
+                ? 'round_robin'
+                : 'priority_failover',
               members: [],
               listedModels: [],
             };

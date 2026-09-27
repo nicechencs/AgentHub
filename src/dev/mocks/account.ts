@@ -367,7 +367,7 @@ export function createMockAccountPort(): AccountPort {
       return { state, status: 'complete' as const, error: null };
     },
 
-    async finishDeviceOAuth(state, _poolOwned = false) {
+    async finishDeviceOAuth(state, _poolOwned = false, _schedulePolicy) {
       const session = requireOAuthSession(state);
       return this.completeOAuth(session.agentId, session.providerKey);
     },

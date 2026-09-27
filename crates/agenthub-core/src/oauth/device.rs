@@ -14,7 +14,7 @@ use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
     authorization_is_route_pool_home, set_authorization_route_pool_home, Account, AccountInput,
-    AccountKind, AdapterSourceKind, AgentId, RouteDownstreamSurface,
+    AccountKind, AdapterSourceKind, AgentId, RouteDownstreamSurface, RouteSchedulePolicy,
 };
 use crate::services::{AccountService, RoutePoolService};
 
@@ -551,6 +551,7 @@ pub fn complete_device_oauth_and_attach_pool(
     route_pools: &RoutePoolService,
     state: &str,
     surface: RouteDownstreamSurface,
+    schedule_policy: Option<RouteSchedulePolicy>,
 ) -> Result<Account> {
     let (agent, pool_owned) = device_oauth_context(state)?;
     if !pool_owned {
@@ -560,17 +561,19 @@ pub fn complete_device_oauth_and_attach_pool(
     }
 
     // Check the feature gate and materialize the default pool before writing
-    // the account. This makes a disabled pool fail without any persisted
-    // OAuth row, while the later attach path handles remaining DB failures.
-    route_pools.ensure_default_pool(agent, surface)?;
+    // the account. Policy is create-only: an existing default keeps its
+    // current scheduling. A disabled pool fails without any persisted OAuth
+    // row, while the later attach path handles remaining DB failures.
+    route_pools.ensure_default_pool_with_policy(agent, surface, schedule_policy)?;
     let existing_ids = accounts.account_ids(agent)?;
     let account = complete_device_oauth_inner(accounts, state, true)?;
 
-    match route_pools.attach_pool_owned_authorization(
+    match route_pools.attach_pool_owned_authorization_with_policy(
         agent,
         surface,
         AdapterSourceKind::Account,
         &account.id,
+        schedule_policy,
     ) {
         Ok(_) => Ok(account),
         Err(error) => {

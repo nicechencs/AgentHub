@@ -1162,6 +1162,10 @@ impl MemberQuotaHint {
     }
 }
 
+pub fn member_quota_hint_now(extra: &Value) -> MemberQuotaHint {
+    member_quota_hint_from_extra(extra, Utc::now())
+}
+
 pub fn member_quota_hint_from_extra(extra: &Value, now: DateTime<Utc>) -> MemberQuotaHint {
     if !extra.is_object() || quota_extra_is_stale(extra, now) {
         return MemberQuotaHint::missing();

@@ -1,4 +1,5 @@
 import type { Account, AgentKey } from '@/lib/types';
+import type { RouteSchedulePolicy } from '@/lib/backend/contracts/adapter';
 import type { AccountAuthView } from './account-map';
 import { normalizeAuthHealth, type AuthHealth } from './auth-state';
 
@@ -183,7 +184,11 @@ export interface AccountPort {
     poolOwned?: boolean,
   ): Promise<DeviceOAuthStartInfo>;
   pollDeviceOAuth(state: string): Promise<DeviceOAuthPollInfo>;
-  finishDeviceOAuth(state: string, poolOwned?: boolean): Promise<Account>;
+  finishDeviceOAuth(
+    state: string,
+    poolOwned?: boolean,
+    schedulePolicy?: RouteSchedulePolicy,
+  ): Promise<Account>;
   /**
    * Convenience: start + wait + finish for agents that support OAuth.
    * Prefer start/wait/finish for UI progress. Mock may implement only this.

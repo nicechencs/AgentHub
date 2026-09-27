@@ -172,10 +172,11 @@ export function createTauriAccountPort(): AccountPort {
       return invoke('oauth_device_poll', { oauthState: state });
     },
 
-    async finishDeviceOAuth(state, poolOwned = false) {
+    async finishDeviceOAuth(state, poolOwned = false, schedulePolicy) {
       const row = await invoke<CoreAccount>('oauth_device_complete', {
         oauthState: state,
         ...(poolOwned ? { poolOwned: true } : {}),
+        ...(schedulePolicy ? { schedulePolicy } : {}),
       });
       return mapCoreAccountView(row).account;
     },

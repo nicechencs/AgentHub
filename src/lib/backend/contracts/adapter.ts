@@ -442,6 +442,8 @@ export interface SyncConnectionSource {
 /** Optional selection for route-pool enrollment; omitted means all eligible rows. */
 export interface SyncConnectionAuthorizationsRequest {
   sources: SyncConnectionSource[];
+  /** Applied only when sync creates a missing default pool. Existing pools keep their policy. */
+  schedulePolicy?: RouteSchedulePolicy;
 }
 
 export interface SyncConnectionAuthorizationsResult {

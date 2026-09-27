@@ -24,13 +24,14 @@ import type {
   AdapterSourceKind,
   DefaultRoutePoolOverview,
   RoutePoolSurface,
-  SyncConnectionSource,
+  RouteSchedulePolicy, SyncConnectionSource,
 } from '@/lib/backend/contracts';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import { sourceKindLabel } from '@/pages/routes/shared/adapter-create-flow';
 import { isPoolShareableLogin } from '@/pages/connections/ticket-pool-import';
 import { cn } from '@/lib/utils';
 import { ApiAccessDialog } from './ApiAccessDialog';
+import { PoolSchedulePolicyCreateControl } from './PoolSchedulePolicyCreateControl';
 import { type PoolAccessAgent } from './api-access-model';
 
 export type { PoolAccessAgent, PoolApiChoice } from './api-access-model';
@@ -195,6 +196,8 @@ export function PoolAddButtons({
   const [syncOpen, setSyncOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [selectedSyncKeys, setSelectedSyncKeys] = useState<Set<string>>(new Set());
+  const [schedulePolicy, setSchedulePolicy] =
+    useState<RouteSchedulePolicy>('priority_failover');
   const oauthChoices = useMemo(
     () => poolOAuthChoices(agents, oauthAgents),
     [agents, oauthAgents],
@@ -215,6 +218,7 @@ export function PoolAddButtons({
         sourceId,
         targetAgentId,
         surface,
+        schedulePolicy,
       });
       toast({ title: t('routes.pool.page.added'), variant: 'success' });
       onChanged?.();
@@ -233,7 +237,7 @@ export function PoolAddButtons({
       const sources: SyncConnectionSource[] = syncCandidates
         .filter((candidate) => !candidate.alreadySynced && selectedSyncKeys.has(candidate.key))
         .map(({ sourceKind, sourceId }) => ({ sourceKind, sourceId }));
-      const result = await syncConnectionAuthorizations({ sources });
+      const result = await syncConnectionAuthorizations({ sources, schedulePolicy });
       setSyncOpen(false);
       toast({
         title: result.added > 0
@@ -347,6 +351,11 @@ export function PoolAddButtons({
               <p className="text-sm text-muted">{t('routes.pool.page.syncNone')}</p>
             )}
           </div>
+          <PoolSchedulePolicyCreateControl
+            value={schedulePolicy}
+            onChange={setSchedulePolicy}
+            disabled={syncing}
+          />
           <DialogFooter>
             <Button
               type="button"
@@ -383,7 +392,14 @@ export function PoolAddButtons({
             onClick={() => selectOAuthAgent(choice.agentId)}
           />
         ))}
-      </ChoiceDialog>
+      
+        <div className="mt-3 px-1">
+          <PoolSchedulePolicyCreateControl
+            value={schedulePolicy}
+            onChange={setSchedulePolicy}
+          />
+        </div>
+</ChoiceDialog>
 
       <ApiAccessDialog
         open={apiAccessOpen}
@@ -398,6 +414,7 @@ export function PoolAddButtons({
           open
           offerSwitch={false}
           poolOwned
+          schedulePolicy={schedulePolicy}
           successDescription={t('routes.pool.page.oauthSaved')}
           onOpenChange={(open) => {
             if (open) return;

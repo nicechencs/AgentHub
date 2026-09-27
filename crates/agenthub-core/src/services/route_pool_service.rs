@@ -729,15 +729,19 @@ impl RoutePoolService {
     ///
     /// The no-argument form is retained for the existing bulk-sync behavior.
     pub fn sync_connection_authorizations(&self) -> Result<SyncConnectionAuthorizationsResult> {
-        self.sync_connection_authorizations_selected(None)
+        self.sync_connection_authorizations_selected(None, None)
     }
 
     /// Enroll only the selected Connections source rows. The source's Agent is
     /// always read from the stored row, so a client cannot redirect a source to
     /// another Agent or surface by changing the request.
+    ///
+    /// `schedule_policy` applies only when a default pool is first created.
+    /// An existing pool keeps its current policy. `None` is priority failover.
     pub fn sync_connection_authorizations_selected(
         &self,
         selected: Option<&[SyncConnectionSource]>,
+        schedule_policy: Option<RouteSchedulePolicy>,
     ) -> Result<SyncConnectionAuthorizationsResult> {
         self.require_enabled()?;
         let profiles = self.profiles.list_filtered(&Default::default())?;
@@ -787,6 +791,7 @@ impl RoutePoolService {
                         &targets,
                         AdapterSourceKind::Account,
                         &account.id,
+                        schedule_policy,
                     )? {
                         true => added = added.saturating_add(1),
                         false => skipped = skipped.saturating_add(1),
@@ -815,6 +820,7 @@ impl RoutePoolService {
                         &targets,
                         AdapterSourceKind::Provider,
                         &provider.id,
+                        schedule_policy,
                     )? {
                         true => added = added.saturating_add(1),
                         false => skipped = skipped.saturating_add(1),
@@ -844,6 +850,7 @@ impl RoutePoolService {
         targets: &[(AgentId, RouteDownstreamSurface)],
         source_kind: AdapterSourceKind,
         source_id: &str,
+        schedule_policy: Option<RouteSchedulePolicy>,
     ) -> Result<bool> {
         if targets.is_empty() {
             return Ok(false);
@@ -852,7 +859,9 @@ impl RoutePoolService {
         let targets = collapse_chat_targets(targets, shared);
         let mut added_any = false;
         for (agent_id, surface) in &targets {
-            let pool = self.ensure_default_pool(*agent_id, *surface)?;
+            // Create-only. An existing default pool keeps the policy it already has.
+            let pool =
+                self.ensure_default_pool_with_policy(*agent_id, *surface, schedule_policy)?;
             let members = self.pools.list_members(&pool.id)?;
             if members
                 .iter()

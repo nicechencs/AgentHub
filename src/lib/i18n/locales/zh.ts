@@ -1784,6 +1784,8 @@ export const zh = {
         roundRobinHint: "在同一优先级、同一传输、同一协议的合格登录之间轮流。",
         saved: "调度已更新",
         saveFailed: "没法更新调度",
+        createLabel: "新建池调度",
+        createHint: "只在新建默认连接池时生效；已有池保持当前调度不变。",
       },
       memberOff: "已停用",
       availabilityReady: "可用",

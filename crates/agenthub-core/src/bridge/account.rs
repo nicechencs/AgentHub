@@ -421,7 +421,9 @@ struct AccountPickerInner {
     multi_account: bool,
     isolate_sink: Option<MemberHealthSink>,
     cooldowns: Mutex<MemberCooldowns>,
-    schedule_policy: RouteSchedulePolicy,
+    /// Interior mutability so a live edge can change policy without rebuild.
+    /// Reads fail closed to priority failover if the lock is poisoned.
+    schedule_policy: Mutex<RouteSchedulePolicy>,
     sticky: Mutex<BoundedTtlMap<String, StickyBinding>>,
     /// Round-robin cursors keyed by isomorphic group (priority + transport + dialect).
     /// Distinct from the v1 [`AccountPicker::pick_new`] cursor.
@@ -458,7 +460,7 @@ impl AccountPicker {
                 cursor: AtomicUsize::new(0),
                 multi_account,
                 isolate_sink,
-                schedule_policy,
+                schedule_policy: Mutex::new(schedule_policy),
                 cooldowns: Mutex::new(MemberCooldowns {
                     member: HashMap::new(),
                     member_model: HashMap::new(),
@@ -485,6 +487,32 @@ impl AccountPicker {
 
     pub fn multi_account(&self) -> bool {
         self.inner.multi_account
+    }
+
+    pub fn schedule_policy(&self) -> RouteSchedulePolicy {
+        self.inner
+            .schedule_policy
+            .lock()
+            .map(|guard| *guard)
+            .unwrap_or(RouteSchedulePolicy::PriorityFailover)
+    }
+
+    /// Hot-apply scheduling in place. Sticky bindings, cooldowns, health, and
+    /// member quota stay. The round-robin cursor resets only when the policy
+    /// value actually changes.
+    pub fn apply_schedule_policy(&self, policy: RouteSchedulePolicy) -> bool {
+        let Ok(mut guard) = self.inner.schedule_policy.lock() else {
+            return false;
+        };
+        if *guard == policy {
+            return false;
+        }
+        *guard = policy;
+        drop(guard);
+        if let Ok(mut cursors) = self.inner.rr_cursors.lock() {
+            cursors.clear();
+        }
+        true
     }
 
     pub fn members(&self) -> &[PickedMember] {
@@ -556,7 +584,7 @@ impl AccountPicker {
                 StickyLookup::Miss => {}
             }
         }
-        let picked = match self.inner.schedule_policy {
+        let picked = match self.schedule_policy() {
             RouteSchedulePolicy::RoundRobin => self.pick_round_robin(&eligible),
             RouteSchedulePolicy::PriorityFailover => pick_priority_failover(&eligible),
         }?;

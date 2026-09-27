@@ -1285,10 +1285,13 @@ fn selected_connection_sync_enrolls_only_requested_sources() {
 
     let service = RoutePoolService::new(db);
     let result = service
-        .sync_connection_authorizations_selected(Some(&[SyncConnectionSource {
-            source_kind: AdapterSourceKind::Account,
-            source_id: "account-selected".into(),
-        }]))
+        .sync_connection_authorizations_selected(
+            Some(&[SyncConnectionSource {
+                source_kind: AdapterSourceKind::Account,
+                source_id: "account-selected".into(),
+            }]),
+            None,
+        )
         .unwrap();
     assert_eq!(result.added, 1);
     assert_eq!(result.skipped, 0);
