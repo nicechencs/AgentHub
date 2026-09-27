@@ -178,6 +178,9 @@ pub async fn refresh_account_token(
 }
 
 /// Invoke: `refresh_account_quota` — force 5h/7d upstream quota probe for OAuth.
+/// Persists the snapshot, then hot-applies the quota hint into every live
+/// listener that contains this account (pool-keyed and profile-keyed). Sticky
+/// and continuation stay; no stop/start.
 #[tauri::command]
 pub async fn refresh_account_quota(
     state: State<'_, AppState>,
@@ -185,15 +188,27 @@ pub async fn refresh_account_quota(
     id_or_label: String,
 ) -> Result<Account, String> {
     let hub = state.hub_arc()?;
+    let host = state.bridge_host();
     let agent = parse_agent(&agent_id)?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
-    with_hub_blocking(hub, move |hub| {
-        hub.accounts()
+    let (account, hint) = with_hub_blocking(hub.clone(), move |hub| {
+        let account = hub
+            .accounts()
             .refresh_quota(&id_or_label, agent)
-            .map(|a| a.redacted())
-            .map_err(|e| map_err_string("refresh_account_quota", e))
+            .map_err(|e| map_err_string("refresh_account_quota", e))?;
+        let hint = agenthub_core::services::account_quota::member_quota_hint_now(&account.extra);
+        Ok((account.redacted(), hint))
     })
-    .await
+    .await?;
+    host.apply_account_quota(
+        &account.id,
+        hint.remaining_pct,
+        hint.reset_at,
+        hint.fresh_until,
+        hint.credit,
+    )
+    .map_err(|err| err.to_string())?;
+    Ok(account)
 }
 
 fn list_accounts_inner(hub: &AgentHub, agent_id: Option<&str>) -> Result<Vec<Account>, String> {

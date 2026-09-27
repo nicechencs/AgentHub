@@ -1,10 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Copy } from 'lucide-react';
+import { useEffect, useMemo, useRef } from 'react';
 import CodeMirror, { EditorView } from '@uiw/react-codemirror';
-import { copyTextToClipboard } from '@/components/shared/CopyTextButton';
-import { Button } from '@/components/ui/button';
-import { useToast } from '@/components/ui/toast';
-import { useI18n } from '@/components/shared/LanguageProvider';
+import { ContentCopyButton } from '@/components/shared/CopyTextButton';
 import {
   inferSourceFormat,
   prepareSourcePreview,
@@ -73,9 +69,6 @@ export function SourcePreview({
   /** Fixed scroll height for a resizable snippet. Omit to keep the density cap. */
   bodyHeight?: number;
 }) {
-  const { t } = useI18n();
-  const { toast } = useToast();
-  const [copied, setCopied] = useState(false);
   const editorRef = useRef<EditorViewLike | null>(null);
   const format = inferSourceFormat({
     text: value,
@@ -116,24 +109,14 @@ export function SourcePreview({
     window.requestAnimationFrame(() => revealLine(view, highlightLine));
   }, [highlightLine, displayed]);
 
-  const onCopy = () => {
-    if (!displayed.trim()) return;
-    void copyTextToClipboard(displayed).then(
-      () => {
-        setCopied(true);
-        window.setTimeout(() => setCopied(false), 1200);
-      },
-      () => toast({ title: t('common.copyFailed'), variant: 'danger' }),
-    );
-  };
-
   if (fitContent && readOnly && !displayed.trim()) return null;
 
   return (
     <div
       id={id}
       className={cn(
-        'min-w-0 overflow-hidden rounded-card border border-border bg-canvas text-primary',
+        'min-w-0 border border-border text-primary',
+        bodyHeight != null ? 'overflow-hidden rounded-btn bg-subtle' : 'overflow-hidden rounded-card bg-canvas',
         density === 'document' && 'h-full border-0 bg-transparent',
         className,
       )}
@@ -142,18 +125,7 @@ export function SourcePreview({
     >
       {showCopy ? (
         <div className="flex justify-end border-b border-border px-1.5 py-0.5">
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="h-7 shrink-0 px-2"
-            title={t('common.copy')}
-            aria-label={t('common.copy')}
-            onClick={onCopy}
-          >
-            {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
-            {copied ? t('common.copied') : t('common.copy')}
-          </Button>
+          <ContentCopyButton text={displayed} />
         </div>
       ) : null}
       <div

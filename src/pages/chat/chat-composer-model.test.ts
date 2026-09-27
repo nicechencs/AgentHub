@@ -3,7 +3,15 @@ import { translate } from '@/lib/i18n';
 import {
   composerCancelingVisible,
   composerDraftAfterCancel,
+  composerDraftAfterSteerAck,
+  composerSteerGateBegin,
+  composerSteerGateInvalidate,
+  composerSteerGateMount,
+  composerSteerGateSetActive,
+  composerSteerGateSettle,
+  composerSteerGateUnmount,
   COMPOSER_SEND_SETTLE_MS,
+  createComposerSteerGate,
   composerDraftAfterSuccessfulSend,
   composerEnterShouldSubmit,
   composerIsResidualOfSent,
@@ -237,6 +245,10 @@ describe('queued follow-up visibility', () => {
       count: 1,
       items: [{ id: 'q-1', text: '只一条' }],
     });
+    expect(translate('zh', 'chat.toast.followUpKept')).toBe('这条和刚发出的重复，还留在输入框');
+    expect(translate('en', 'chat.toast.followUpKept')).toBe(
+      'This matches what you just sent. It stays in the box.',
+    );
     expect(translate('zh', 'chat.composer.queuedCount', { count: 2 })).toBe('已排队 2 条');
     expect(translate('zh', 'chat.composer.queuedHint')).toBe('本轮结束后发送');
     expect(translate('zh', 'chat.composer.cancelQueuedItem')).toBe('取消这条');
@@ -285,8 +297,15 @@ describe('composer clear-on-send', () => {
       composerQueueableFollowUpText({
         text: 'e2e mock stop',
         lastSent: 'e2e mock stop',
+        settling: true,
       }),
     ).toBeNull();
+    expect(
+      composerQueueableFollowUpText({
+        text: 'e2e mock stop',
+        lastSent: 'e2e mock stop',
+      }),
+    ).toBe('e2e mock stop');
   });
 
   it('restores the sent prompt on stop when the box is empty', () => {
@@ -336,8 +355,10 @@ describe('composer clear-on-send', () => {
     expect(composerIsResidualOfSent({ text: "I'll write a short 3-step", sent })).toBe(true);
     expect(composerIsResidualOfSent({ text: 'doing any', sent })).toBe(true);
     expect(composerIsResidualOfSent({ text: '下一句', sent })).toBe(false);
-    expect(composerQueueableFollowUpText({ text: leftover, lastSent: sent })).toBeNull();
-    expect(composerQueueableFollowUpText({ text: sent, lastSent: sent })).toBeNull();
+    expect(composerQueueableFollowUpText({ text: leftover, lastSent: sent, settling: true })).toBeNull();
+    expect(composerQueueableFollowUpText({ text: sent, lastSent: sent, settling: true })).toBeNull();
+    expect(composerQueueableFollowUpText({ text: leftover, lastSent: sent })).toBe(leftover);
+    expect(composerQueueableFollowUpText({ text: sent, lastSent: sent })).toBe(sent);
     expect(composerQueueableFollowUpText({ text: '  ', lastSent: sent })).toBeNull();
     expect(
       composerQueueableFollowUpText({
@@ -362,6 +383,38 @@ describe('composer clear-on-send', () => {
       composerShouldHoldSendLock({
         now: 10,
         settleUntil: COMPOSER_SEND_SETTLE_MS,
+        next: 'P',
+        sent: 'Please inspect the preview header',
+      }),
+    ).toEqual({ hold: false, sent: '', draft: 'P' });
+    expect(
+      composerShouldHoldSendLock({
+        now: 10,
+        settleUntil: COMPOSER_SEND_SETTLE_MS,
+        next: 'e',
+        sent: 'Please inspect the preview header',
+      }),
+    ).toEqual({ hold: false, sent: '', draft: 'e' });
+    expect(
+      composerShouldHoldSendLock({
+        now: 10,
+        settleUntil: COMPOSER_SEND_SETTLE_MS,
+        next: 'r',
+        sent: 'Please inspect the preview header',
+      }),
+    ).toEqual({ hold: false, sent: '', draft: 'r' });
+    expect(
+      composerShouldHoldSendLock({
+        now: 10,
+        settleUntil: COMPOSER_SEND_SETTLE_MS,
+        next: sent,
+        sent,
+      }),
+    ).toEqual({ hold: false, sent: '', draft: sent });
+    expect(
+      composerShouldHoldSendLock({
+        now: 10,
+        settleUntil: COMPOSER_SEND_SETTLE_MS,
         next: prefix + 'doing any work.',
         sent: prefix,
       }),
@@ -373,7 +426,23 @@ describe('composer clear-on-send', () => {
         next: 'doing any work.',
         sent,
       }),
-    ).toEqual({ hold: true, sent, draft: '' });
+    ).toEqual({ hold: false, sent: '', draft: 'doing any work.' });
+    expect(
+      composerShouldHoldSendLock({
+        now: COMPOSER_SEND_SETTLE_MS + 50,
+        settleUntil: COMPOSER_SEND_SETTLE_MS,
+        next: sent,
+        sent,
+      }),
+    ).toEqual({ hold: false, sent: '', draft: sent });
+    expect(
+      composerShouldHoldSendLock({
+        now: COMPOSER_SEND_SETTLE_MS + 50,
+        settleUntil: COMPOSER_SEND_SETTLE_MS,
+        next: 'P',
+        sent: 'Please inspect the preview header',
+      }),
+    ).toEqual({ hold: false, sent: '', draft: 'P' });
     expect(
       composerShouldHoldSendLock({
         now: 10,
@@ -404,6 +473,90 @@ describe('composer clear-on-send', () => {
       lastSent: sent,
       settling: true,
     })).toBe('下一句');
+  });
+});
+
+describe('composer steer ack draft', () => {
+  it('clears the steered line after ack and restores it on reject', () => {
+    expect(
+      composerDraftAfterSteerAck({
+        ok: true,
+        draft: 'add a log line',
+        steered: 'add a log line',
+      }),
+    ).toBe('');
+    expect(
+      composerDraftAfterSteerAck({
+        ok: false,
+        draft: '',
+        steered: 'add a log line',
+      }),
+    ).toBe('add a log line');
+    expect(
+      composerDraftAfterSteerAck({
+        ok: false,
+        draft: 'typed more',
+        steered: 'add a log line',
+      }),
+    ).toBe('typed more');
+    expect(
+      composerDraftAfterSteerAck({
+        ok: true,
+        draft: 'typed more after steer',
+        steered: 'add a log line',
+      }),
+    ).toBe('typed more after steer');
+    expect(
+      composerDraftAfterSteerAck({
+        ok: true,
+        draft: 'add a log line then run the test',
+        steered: 'add a log line',
+      }),
+    ).toBe(' then run the test');
+    expect(
+      composerDraftAfterSteerAck({
+        ok: true,
+        draft: 'run tests',
+        steered: 'run tests and fix failures',
+      }),
+    ).toBe('run tests');
+    expect(
+      composerDraftAfterSteerAck({
+        ok: true,
+        draft: 'fix failures',
+        steered: 'run tests and fix failures',
+      }),
+    ).toBe('fix failures');
+  });
+
+  it('admits one pending request and rejects an old session acknowledgement', () => {
+    const gate = createComposerSteerGate('conversation-a');
+    composerSteerGateMount(gate);
+    const first = composerSteerGateBegin(gate, 'conversation-a');
+    expect(first).not.toBeNull();
+    expect(composerSteerGateBegin(gate, 'conversation-a')).toBeNull();
+
+    composerSteerGateSetActive(gate, 'conversation-b');
+    const second = composerSteerGateBegin(gate, 'conversation-b');
+    expect(second).not.toBeNull();
+    expect(composerSteerGateSettle(gate, first!)).toBe(false);
+    expect(composerSteerGateSettle(gate, second!)).toBe(true);
+
+    composerSteerGateUnmount(gate);
+    expect(composerSteerGateSettle(gate, second!)).toBe(false);
+  });
+
+  it('invalidates an old acknowledgement when the same conversation turn ends', () => {
+    const gate = createComposerSteerGate('conversation-a');
+    composerSteerGateMount(gate);
+    const previousTurn = composerSteerGateBegin(gate, 'conversation-a');
+    expect(previousTurn).not.toBeNull();
+
+    composerSteerGateInvalidate(gate);
+    const nextTurn = composerSteerGateBegin(gate, 'conversation-a');
+    expect(nextTurn).not.toBeNull();
+    expect(composerSteerGateSettle(gate, previousTurn!)).toBe(false);
+    expect(composerSteerGateSettle(gate, nextTurn!)).toBe(true);
   });
 });
 

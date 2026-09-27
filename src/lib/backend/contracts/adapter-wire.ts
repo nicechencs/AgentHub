@@ -3,7 +3,7 @@ import {
   mapCoreProvider,
   type CoreProvider,
 } from './provider-map';
-import type { AdapterAction, AdapterApplyPlan, AdapterApplyResult, AdapterBridgeInboundRequest, AdapterBridgeRouteTrace, AdapterBridgeRuntimeState, AdapterBridgeRuntimeStatus, AdapterEvidence, AdapterGateKind, AdapterMaturity, AdapterPlanChange, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis, AdapterServiceImpact, AdapterSourceKind, AdapterSupport, DefaultRoutePoolList, DefaultRoutePoolOverview, LocalTokenProbeOutcome, LocalTokenProbeResult, LocalTokenRecord, RouteMemberOverview, RouteTraceConversion, RouteTraceLocalAuth, RouteTraceMember, RouteTracePool, RouteTracePoolAttempt, RouteTraceStageStatus, RouteTraceStep, RouteTraceDelivery, RouteTraceUpstream, RouteTraceUpstreamAuth, RouteTraceUpstreamRequest, RouteTraceStageId, RoutePoolDialect, RoutePoolSurface } from './adapter';
+import type { AdapterAction, AdapterApplyPlan, AdapterApplyResult, AdapterBridgeInboundRequest, AdapterBridgeRouteTrace, AdapterBridgeRuntimeState, AdapterBridgeRuntimeStatus, AdapterEvidence, AdapterGateKind, AdapterMaturity, AdapterPlanChange, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis, AdapterServiceImpact, AdapterSourceKind, AdapterSupport, DefaultRoutePoolList, DefaultRoutePoolOverview, LocalTokenProbeOutcome, LocalTokenProbeResult, LocalTokenRecord, RouteMemberOverview, RouteTraceConversion, RouteTraceLocalAuth, RouteTraceMember, RouteTracePool, RouteTracePoolAttempt, RouteTraceStageStatus, RouteTraceStep, RouteTraceDelivery, RouteTraceUpstream, RouteTraceUpstreamAuth, RouteTraceUpstreamRequest, RouteTraceStageId, RoutePoolDialect, RoutePoolSurface, RouteSchedulePolicy } from './adapter';
 
 /** Exact camelCase shape serialized by Rust's `AdapterProfile`. */
 export interface AdapterProfileWire {
@@ -985,6 +985,7 @@ export interface DefaultRoutePoolOverviewWire {
   surface: string;
   dialect: string;
   unifiedGatewayEnrolled?: boolean;
+  schedulePolicy?: string;
   gatewayPort?: number | null;
   members?: RouteMemberOverviewWire[];
   listedModels?: string[];
@@ -994,6 +995,13 @@ export interface DefaultRoutePoolListWire {
   enabled: boolean;
   pools?: DefaultRoutePoolOverviewWire[];
   chatCompletionsShared?: boolean;
+}
+
+function mapSchedulePolicy(value: string | undefined): RouteSchedulePolicy {
+  if (value === undefined || value === '') return 'priority_failover';
+  if (value === 'round_robin') return 'round_robin';
+  if (value === 'priority_failover') return 'priority_failover';
+  return invalidWireValue('schedulePolicy', value);
 }
 
 function mapPoolSurface(value: string): RoutePoolSurface {
@@ -1055,6 +1063,7 @@ export function mapDefaultRoutePoolOverview(wire: DefaultRoutePoolOverviewWire):
     surface: mapPoolSurface(wire.surface),
     dialect: mapPoolDialect(wire.dialect),
     unifiedGatewayEnrolled: wire.unifiedGatewayEnrolled === true,
+    schedulePolicy: mapSchedulePolicy(wire.schedulePolicy),
     gatewayPort: port,
     members: (wire.members ?? []).map(mapMemberOverview),
     listedModels: listed,

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ContentCopyButton } from '@/components/shared/CopyTextButton';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Tip } from '@/components/ui/tooltip';
@@ -12,6 +13,7 @@ import {
   runtimeFileChangePreview,
   runtimeRequestTitle,
 } from './chat-runtime-model';
+import { ResizableRegion, SNIPPET_SURFACE } from './ChatResizableRegion';
 
 type ReplyHandler = (request: RuntimeRequest, decision?: RuntimeDecision, answers?: Record<string, string[]>) => Promise<void>;
 
@@ -154,9 +156,18 @@ function FileChangePreview({ request }: { request: RuntimeRequest }) {
             </span>
           </p>
           {!preview.empty && row.preview ? (
-            <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-all rounded-card border border-border/60 bg-canvas px-2 py-1.5 font-mono text-meta leading-relaxed text-primary">
-              {row.preview}
-            </pre>
+            <div className="space-y-1">
+              <div className="flex justify-end">
+                <ContentCopyButton text={row.preview} />
+              </div>
+              <ResizableRegion pane="code" label={t('chat.process.resizeCode')}>
+                {(height) => (
+                  <pre style={{ height }} className={cn(SNIPPET_SURFACE, 'px-3 py-2')}>
+                    {row.preview}
+                  </pre>
+                )}
+              </ResizableRegion>
+            </div>
           ) : null}
         </div>
       ))}

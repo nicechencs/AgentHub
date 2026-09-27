@@ -14,6 +14,7 @@ import {
 } from '@/lib/backend/contracts/live-auth-probe-cache';
 import { unwrapAccounts } from '@/lib/backend/contracts/account-map';
 import type { Account, AgentKey } from '@/lib/types';
+import type { RouteSchedulePolicy } from '@/lib/backend/contracts/adapter';
 import { OAUTH_WAIT_TIMEOUT_SECS } from '@/lib/backend/contracts/oauth-constants';
 
 export type {
@@ -164,9 +165,13 @@ export async function pollDeviceOAuth(state: string): Promise<DeviceOAuthPollInf
   return getBackend().account.pollDeviceOAuth(state);
 }
 
-export async function finishDeviceOAuth(state: string, poolOwned = false): Promise<Account> {
+export async function finishDeviceOAuth(
+  state: string,
+  poolOwned = false,
+  schedulePolicy?: RouteSchedulePolicy,
+): Promise<Account> {
   const account = poolOwned
-    ? await getBackend().account.finishDeviceOAuth(state, true)
+    ? await getBackend().account.finishDeviceOAuth(state, true, schedulePolicy)
     : await getBackend().account.finishDeviceOAuth(state);
   authStateChanged(account.agentId);
   return account;

@@ -384,6 +384,8 @@ export function adapterCommandError(fields: {
 
 export type RoutePoolSurface = 'messages' | 'responses' | 'chat_completions';
 export type RoutePoolDialect = 'claude' | 'codex' | 'grok' | 'kimi' | 'dsh' | 'generic';
+/** Pool schedule. Absent on older payloads means priority failover. */
+export type RouteSchedulePolicy = 'priority_failover' | 'round_robin';
 
 export type MemberAvailability = 'ready' | 'cooling' | 'isolated' | 'disabled';
 
@@ -408,6 +410,8 @@ export interface DefaultRoutePoolOverview {
   surface: RoutePoolSurface;
   dialect: RoutePoolDialect;
   unifiedGatewayEnrolled: boolean;
+  /** Absent means priority failover. Round robin stays inside one isomorphic group. */
+  schedulePolicy?: RouteSchedulePolicy;
   gatewayPort?: number | null;
   members: RouteMemberOverview[];
   listedModels?: string[];
@@ -425,6 +429,8 @@ export interface AttachPoolOwnedAuthorizationRequest {
   sourceId: string;
   targetAgentId: AgentKey;
   surface: RoutePoolSurface;
+  /** Applied only when the default pool is first created. Omitted → priority_failover. */
+  schedulePolicy?: RouteSchedulePolicy;
 }
 
 /** One credential-free Connections row selected for route-pool enrollment. */
@@ -436,6 +442,8 @@ export interface SyncConnectionSource {
 /** Optional selection for route-pool enrollment; omitted means all eligible rows. */
 export interface SyncConnectionAuthorizationsRequest {
   sources: SyncConnectionSource[];
+  /** Applied only when sync creates a missing default pool. Existing pools keep their policy. */
+  schedulePolicy?: RouteSchedulePolicy;
 }
 
 export interface SyncConnectionAuthorizationsResult {
@@ -567,6 +575,10 @@ export interface AdapterPort {
     sourceId: string,
     priority: number,
   ): Promise<number>;
+  setRoutePoolSchedulePolicy(
+    poolId: string,
+    schedulePolicy: RouteSchedulePolicy,
+  ): Promise<DefaultRoutePoolOverview>;
   removeRouteAuthorization(
     sourceKind: AdapterSourceKind,
     sourceId: string,

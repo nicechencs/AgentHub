@@ -16,6 +16,7 @@ import {
   type LocalGatewayStatus,
   type RoutePoolDialect,
   type RoutePoolSurface,
+  type RouteSchedulePolicy,
   type RouteTracePage,
   type RouteTraceQuery,
 } from '@/lib/backend/contracts/adapter';
@@ -293,6 +294,67 @@ export function seedMockDefaultRoutePools(pools: readonly DefaultRoutePoolOvervi
       listedModels: [...(pool.listedModels ?? [])],
     }));
   }
+}
+
+/**
+ * Device-OAuth pool-owned enroll for browser mocks.
+ * Mirrors production `attach_pool_owned_authorization_with_policy` create-only
+ * semantics enough that Grok finish (UI skips second attach) still applies
+ * an optional schedulePolicy when the default pool is first created.
+ */
+export function mockAttachPoolOwnedAccount(
+  accountId: string,
+  schedulePolicy?: RouteSchedulePolicy,
+): DefaultRoutePoolOverview | null {
+  const account = getMockAccountById(accountId);
+  if (!account) return null;
+  const surface = mockWriterSurface(account.agentId);
+  if (!surface) return null;
+  if (!(MOCK_POOL_WRITERS as readonly string[]).includes(account.agentId)) {
+    return null;
+  }
+  const targetAgentId = account.agentId as DefaultRoutePoolOverview['targetAgentId'];
+  upsertMockAccount({ ...account, home: 'route_pool' });
+
+  let overview: DefaultRoutePoolOverview | null = null;
+  for (const state of adapterStates) {
+    if (!state.routePoolV2) continue;
+    const poolAgent = mockChatWriter(targetAgentId, surface, state.shareChatCompletions);
+    const dialect = mockWriterDialect(poolAgent);
+    let pool = state.defaultPools.find((item) => (
+      item.targetAgentId === poolAgent && item.surface === surface
+    ));
+    if (!pool) {
+      pool = {
+        id: `pool-${poolAgent}-${surface}`,
+        targetAgentId: poolAgent,
+        surface,
+        dialect,
+        unifiedGatewayEnrolled: false,
+        schedulePolicy: schedulePolicy === 'round_robin'
+          ? 'round_robin'
+          : 'priority_failover',
+        members: [],
+        listedModels: [],
+      };
+      state.defaultPools.push(pool);
+    }
+    if (!pool.members.some((member) => (
+      member.sourceKind === 'account' && member.sourceId === accountId
+    ))) {
+      pool.members.push({
+        sourceKind: 'account',
+        sourceId: accountId,
+        enabled: true,
+      });
+    }
+    overview = {
+      ...pool,
+      members: pool.members.map((member) => ({ ...member })),
+      listedModels: [...(pool.listedModels ?? [])],
+    };
+  }
+  return overview;
 }
 
 function applyBindingToState(
@@ -741,6 +803,9 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
           surface,
           dialect,
           unifiedGatewayEnrolled: false,
+          schedulePolicy: request.schedulePolicy === 'round_robin'
+            ? 'round_robin'
+            : 'priority_failover',
           members: [],
           listedModels: [],
         };
@@ -850,6 +915,30 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         }
       }
       return changed;
+    },
+    async setRoutePoolSchedulePolicy(poolId, schedulePolicy) {
+      await delay(20);
+      if (!state.routePoolV2) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: 'route_pool_v2 is disabled',
+          retryable: false,
+        });
+      }
+      const pool = state.defaultPools.find((item) => item.id === poolId);
+      if (!pool) {
+        throw adapterCommandError({
+          code: 'not_found',
+          message: 'route pool not found',
+          retryable: false,
+        });
+      }
+      pool.schedulePolicy = schedulePolicy;
+      return {
+        ...pool,
+        members: pool.members.map((member) => ({ ...member })),
+        listedModels: [...(pool.listedModels ?? [])],
+      };
     },
     async setRouteAuthorizationPriority(sourceKind, sourceId, priority) {
       await delay(20);
@@ -967,6 +1056,9 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
               surface: target.surface,
               dialect: target.dialect,
               unifiedGatewayEnrolled: false,
+              schedulePolicy: request?.schedulePolicy === 'round_robin'
+                ? 'round_robin'
+                : 'priority_failover',
               members: [],
               listedModels: [],
             };

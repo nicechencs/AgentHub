@@ -776,6 +776,10 @@ impl AdapterBridgeRuntimeMaterial {
             health: MemberHealth::Renewable,
             priority: 0,
             position: 0,
+            quota_remaining_pct: None,
+            quota_reset_at: None,
+            quota_fresh_until: None,
+            quota_credit: false,
             kiro_http: self.kiro_http.clone(),
         }]);
         spec
@@ -1239,6 +1243,17 @@ impl AdapterBridgeService {
     /// Enabled pool members supply listed models and upstream auth so a token
     /// test can reach a model; missing members stay a placeholder.
     pub fn pool_listener_spec(&self, pool: &RoutePool, flags: (bool, bool)) -> BridgeStartSpec {
+        self.pool_listener_spec_with_prior(pool, flags, None)
+    }
+
+    /// Like [`Self::pool_listener_spec`]. `prior` seeds last-successful
+    /// capability snapshots so a partial catalog refresh cannot empty the index.
+    pub fn pool_listener_spec_with_prior(
+        &self,
+        pool: &RoutePool,
+        flags: (bool, bool),
+        prior: Option<&EffectiveRouteIndex>,
+    ) -> BridgeStartSpec {
         let surface = match pool.downstream_surface {
             RouteDownstreamSurface::Messages => BridgeLocalSurface::Messages,
             RouteDownstreamSurface::ChatCompletions => BridgeLocalSurface::ChatCompletions,
@@ -1258,7 +1273,14 @@ impl AdapterBridgeService {
             .filter(|member| member.enabled)
             .collect::<Vec<_>>();
         let Some(lead) = members.first() else {
-            return placeholder_pool_spec(pool, surface, token, port, flags);
+            return self.finish_pool_listener_spec(
+                placeholder_pool_spec(pool, surface, token, port, flags),
+                pool,
+                &[],
+                Vec::new(),
+                Vec::new(),
+                prior,
+            );
         };
         let product = self
             .routes
@@ -1296,7 +1318,7 @@ impl AdapterBridgeService {
             .unwrap_or_else(|| {
                 listed_models_for_bridge(product, pool.target_agent_id, &model, custom, &configured)
             });
-        let mut spec = BridgeStartSpec::new(
+        let spec = BridgeStartSpec::new(
             pool.id.clone(),
             port,
             token,
@@ -1324,67 +1346,217 @@ impl AdapterBridgeService {
                 pool.downstream_dialect,
             ),
         )
-        .with_pair_adapter_flags(flags.0, flags.1);
+        .with_pair_adapter_flags(flags.0, flags.1)
+        .with_schedule_policy(pool.schedule_policy);
         // The v1 host has one upstream URL per listener. Never put a login
         // for a different endpoint into its picker: v1 would send that login's
         // key to the lead endpoint. The indexed host routes each member to its
-        // own endpoint; the legacy host deliberately keeps only same-endpoint
-        // members until it is upgraded.
-        let member_specs = members
-            .iter()
-            .filter_map(|member| {
-                let member_product = self
-                    .routes
-                    .classify_source_product(member.source_kind, &member.source_id)
-                    .unwrap_or(AdapterSourceProduct::Other);
-                let member_rule = rule_for_member_product(member_product, pool.target_agent_id)?;
-                let (member_url, _, _, member_protocol, _) = prepare::openai_source_upstream(
-                    self,
-                    &member_rule,
-                    member.source_kind,
-                    &member.source_id,
+        // own endpoint, so an attached route index keeps every enabled member.
+        let mut legacy_member_specs = Vec::new();
+        let mut indexed_member_specs = Vec::new();
+        for member in &members {
+            let member_product = self
+                .routes
+                .classify_source_product(member.source_kind, &member.source_id)
+                .unwrap_or(AdapterSourceProduct::Other);
+            let Some(member_rule) = rule_for_member_product(member_product, pool.target_agent_id)
+            else {
+                continue;
+            };
+            let (member_url, _, _, member_protocol, _) = prepare::openai_source_upstream(
+                self,
+                &member_rule,
+                member.source_kind,
+                &member.source_id,
+            );
+            let same_endpoint =
+                same_upstream_endpoint(&url, protocol, &member_url, member_protocol);
+            if !same_endpoint {
+                tracing::warn!(
+                    target: "core.adapter",
+                    pool_id = %pool.id,
+                    source_id = %member.source_id,
+                    "skipping a different upstream endpoint in legacy pool listener"
                 );
-                if !same_upstream_endpoint(&url, protocol, &member_url, member_protocol) {
-                    tracing::warn!(
-                        target: "core.adapter",
-                        pool_id = %pool.id,
-                        source_id = %member.source_id,
-                        "skipping a different upstream endpoint in legacy pool listener"
-                    );
-                    return None;
-                }
-                let member_auth = self
-                    .resolve_member_auth(member_rule.rule_id, member.source_kind, &member.source_id)
-                    .ok()
-                    .filter(|item| item.has_token())
-                    .unwrap_or_else(|| ResolvedAuth::bearer(""));
-                let health = if member_auth.has_token() {
-                    MemberHealth::Renewable
+            }
+            let member_auth = self
+                .resolve_member_auth(member_rule.rule_id, member.source_kind, &member.source_id)
+                .ok()
+                .filter(|item| item.has_token())
+                .unwrap_or_else(|| ResolvedAuth::bearer(""));
+            let health = if member_auth.has_token() {
+                MemberHealth::Renewable
+            } else {
+                MemberHealth::NeedsLogin
+            };
+            let built = self.annotate_member_quota(BridgeMemberSpec {
+                ticket_id: ticket_id(member.source_kind, &member.source_id),
+                source_kind: member.source_kind.as_str().to_owned(),
+                source_id: member.source_id.clone(),
+                label: self.member_display_label(member),
+                auth: member_auth,
+                reload: None,
+                health,
+                priority: member.priority,
+                position: member.position,
+                quota_remaining_pct: None,
+                quota_reset_at: None,
+                quota_fresh_until: None,
+                quota_credit: false,
+                kiro_http: if member_protocol == BridgeUpstreamProtocol::KiroHttp {
+                    self.secrets
+                        .resolve_kiro_http_params(member.source_kind, &member.source_id)
+                        .ok()
                 } else {
-                    MemberHealth::NeedsLogin
-                };
-                Some(BridgeMemberSpec {
-                    ticket_id: ticket_id(member.source_kind, &member.source_id),
-                    source_kind: member.source_kind.as_str().to_owned(),
-                    source_id: member.source_id.clone(),
-                    label: self.member_display_label(member),
-                    auth: member_auth,
-                    reload: None,
-                    health,
-                    priority: member.priority,
-                    position: member.position,
-                    kiro_http: if member_protocol == BridgeUpstreamProtocol::KiroHttp {
-                        self.secrets
-                            .resolve_kiro_http_params(member.source_kind, &member.source_id)
-                            .ok()
-                    } else {
-                        None
-                    },
-                })
-            })
+                    None
+                },
+            });
+            if same_endpoint {
+                legacy_member_specs.push(built.clone());
+            }
+            indexed_member_specs.push(built);
+        }
+        self.finish_pool_listener_spec(
+            spec,
+            pool,
+            &members,
+            legacy_member_specs,
+            indexed_member_specs,
+            prior,
+        )
+    }
+
+    /// Attach a default-pool route index when the pool is enrolled and route
+    /// index support is on. No [`AdapterProfile`] is required. Otherwise the
+    /// legacy same-endpoint member list is kept and policy stays display-only.
+    fn finish_pool_listener_spec(
+        &self,
+        spec: BridgeStartSpec,
+        pool: &RoutePool,
+        members: &[crate::models::RouteMember],
+        legacy_member_specs: Vec<BridgeMemberSpec>,
+        indexed_member_specs: Vec<BridgeMemberSpec>,
+        prior: Option<&EffectiveRouteIndex>,
+    ) -> BridgeStartSpec {
+        if self.route_pools.index_enabled() && pool.unified_gateway_enrolled {
+            let index = self.default_pool_route_index(pool, members, prior);
+            let endpoint = index_endpoint_key(match pool.downstream_surface {
+                RouteDownstreamSurface::Messages => BridgeLocalSurface::Messages,
+                RouteDownstreamSurface::ChatCompletions => BridgeLocalSurface::ChatCompletions,
+                RouteDownstreamSurface::Responses => BridgeLocalSurface::Responses,
+            });
+            return spec
+                .with_listed_models(index.list_models(endpoint))
+                .with_route_index(index)
+                .with_members(indexed_member_specs);
+        }
+        spec.with_members(legacy_member_specs)
+    }
+
+    /// Build an [`EffectiveRouteIndex`] directly from a default pool.
+    fn default_pool_route_index(
+        &self,
+        pool: &RoutePool,
+        members: &[crate::models::RouteMember],
+        prior: Option<&EffectiveRouteIndex>,
+    ) -> EffectiveRouteIndex {
+        let surface = match pool.downstream_surface {
+            RouteDownstreamSurface::Messages => BridgeLocalSurface::Messages,
+            RouteDownstreamSurface::ChatCompletions => BridgeLocalSurface::ChatCompletions,
+            RouteDownstreamSurface::Responses => BridgeLocalSurface::Responses,
+        };
+        let endpoint = index_endpoint_key(surface);
+        let prior_snapshots = prior.map(EffectiveRouteIndex::capability_snapshots);
+        let listings: Vec<MemberListing> = members
+            .iter()
+            .map(|member| self.listing_for_pool_member(pool, member))
             .collect();
-        spec = spec.with_members(member_specs);
-        spec
+        let index = index_from_member_listings(
+            pool.id.clone(),
+            pool.policy_revision.max(0) as u64,
+            endpoint,
+            &listings,
+            prior_snapshots.as_deref(),
+        );
+        if self.route_pools.mixed_provider_enabled() {
+            let rules = self.route_pools.list_rules(&pool.id).unwrap_or_default();
+            index.with_mixed_provider_rules(true, rules)
+        } else {
+            index
+        }
+    }
+
+    fn listing_for_pool_member(
+        &self,
+        pool: &RoutePool,
+        member: &crate::models::RouteMember,
+    ) -> MemberListing {
+        let product = self
+            .routes
+            .classify_source_product(member.source_kind, &member.source_id)
+            .unwrap_or(AdapterSourceProduct::Other);
+        let provider = index_provider_key(product);
+        let Some(rule) = rule_for_member_product(product, pool.target_agent_id) else {
+            return MemberListing {
+                member_id: member.source_id.clone(),
+                listed_models: Vec::new(),
+                upstream_provider: provider.to_owned(),
+                upstream_dialect: provider.to_owned(),
+                upstream_endpoint: String::new(),
+                transport_key: String::new(),
+                snapshot_ok: false,
+            };
+        };
+        let snapshot_ok = self
+            .resolve_member_auth(rule.rule_id, member.source_kind, &member.source_id)
+            .map(|auth| auth.has_token())
+            .unwrap_or(false);
+        if !snapshot_ok {
+            return MemberListing {
+                member_id: member.source_id.clone(),
+                listed_models: Vec::new(),
+                upstream_provider: provider.to_owned(),
+                upstream_dialect: provider.to_owned(),
+                upstream_endpoint: rule.upstream_base_url.to_owned(),
+                transport_key: index_transport_key(rule.protocol).to_owned(),
+                snapshot_ok: false,
+            };
+        }
+        let (url, model, configured, protocol, _) =
+            prepare::openai_source_upstream(self, &rule, member.source_kind, &member.source_id);
+        let custom = crate::services::adapter_route_constants::is_custom_openai_compat_url(&url);
+        MemberListing {
+            member_id: member.source_id.clone(),
+            listed_models: listed_models_for_bridge(
+                product,
+                rule.target_agent,
+                &model,
+                custom,
+                &configured,
+            ),
+            upstream_provider: provider.to_owned(),
+            upstream_dialect: provider.to_owned(),
+            upstream_endpoint: url,
+            transport_key: index_transport_key(protocol).to_owned(),
+            snapshot_ok: true,
+        }
+    }
+
+    /// Copy the account's last quota snapshot onto a member spec.
+    /// Missing or stale snapshots stay unset so the picker keeps stable order.
+    pub fn annotate_member_quota(&self, spec: BridgeMemberSpec) -> BridgeMemberSpec {
+        if spec.source_kind != AdapterSourceKind::Account.as_str() {
+            return spec;
+        }
+        let Ok(Some(account)) = self.secrets.accounts.get_by_id(&spec.source_id) else {
+            return spec;
+        };
+        let hint = crate::services::account_quota::member_quota_hint_from_extra(
+            &account.extra,
+            chrono::Utc::now(),
+        );
+        spec.with_quota_hint(hint.remaining_pct, hint.reset_at, hint.credit)
+            .with_quota_fresh_until(hint.fresh_until)
     }
 
     fn member_display_label(&self, member: &RouteMember) -> String {
@@ -1605,6 +1777,7 @@ fn placeholder_pool_spec(
         ),
     )
     .with_pair_adapter_flags(flags.0, flags.1)
+    .with_schedule_policy(pool.schedule_policy)
 }
 
 fn rule_for_member_product(

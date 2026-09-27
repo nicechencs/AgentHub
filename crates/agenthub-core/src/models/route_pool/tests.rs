@@ -131,6 +131,7 @@ fn default_overview_json_never_includes_hub_token() {
         surface: RouteDownstreamSurface::Responses,
         dialect: RouteDownstreamDialect::Codex,
         unified_gateway_enrolled: true,
+        schedule_policy: RouteSchedulePolicy::PriorityFailover,
         gateway_port: Some(43121),
         members: vec![crate::models::RouteMemberOverview {
             id: "member-1".into(),
@@ -156,6 +157,16 @@ fn default_overview_json_never_includes_hub_token() {
     )
     .expect("wire");
     assert!(from_wire.unified_gateway_enrolled);
+    assert_eq!(
+        from_wire.schedule_policy,
+        RouteSchedulePolicy::PriorityFailover
+    );
+    let round = serde_json::from_str::<crate::models::DefaultRoutePoolOverview>(
+        r#"{"id":"pool-1","targetAgentId":"codex","surface":"responses","dialect":"codex","unifiedGatewayEnrolled":true,"schedulePolicy":"round_robin","members":[]}"#,
+    )
+    .expect("round robin wire");
+    assert_eq!(round.schedule_policy, RouteSchedulePolicy::RoundRobin);
+    assert!(json.contains("schedulePolicy"));
 }
 
 #[test]

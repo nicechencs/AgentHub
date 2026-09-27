@@ -225,6 +225,13 @@ export function createTauriAdapterPort(): AdapterPort {
         priority,
       });
     },
+    async setRoutePoolSchedulePolicy(poolId, schedulePolicy) {
+      const wire = await invokeAdapter<DefaultRoutePoolOverviewWire>('set_route_pool_schedule_policy', {
+        poolId,
+        schedulePolicy,
+      });
+      return mapDefaultRoutePoolOverview(wire);
+    },
     async removeRouteAuthorization(sourceKind, sourceId) {
       return invokeAdapter<number>('remove_route_authorization', {
         sourceKind,
@@ -239,7 +246,12 @@ export function createTauriAdapterPort(): AdapterPort {
     },
     async syncConnectionAuthorizations(request?: SyncConnectionAuthorizationsRequest) {
       return invokeAdapter<SyncConnectionAuthorizationsResult>('sync_connection_authorizations', request
-        ? { request: { sources: request.sources.map((source) => ({ ...source })) } }
+        ? {
+            request: {
+              sources: request.sources.map((source) => ({ ...source })),
+              ...(request.schedulePolicy ? { schedulePolicy: request.schedulePolicy } : {}),
+            },
+          }
         : {});
     },
     async enrollNativeToGateway(profileId) {

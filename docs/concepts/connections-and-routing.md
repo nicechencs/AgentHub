@@ -70,7 +70,7 @@ unbind(binding)        → 停桥（若有）、恢复上一份 live、保留登
 - 连接池页另有「从连接同步」，可一次加入连接页里可分享的登录（所有 API Key；Claude / Codex / Grok 官方登录仍按已登记的接法）。已经在池里的会跳过。国产官方登录不进入候选。
 - Routes 管理本机转发 runtime：固定 loopback 入口、本机令牌、默认池成员、模型名单、启停、自动恢复、失败详情和解绑。连接池列出这份登录在本机转发里怎么用；从池中移除只改成员，不删登录。
 - 接到本机转发后，目标客户端只认一个 loopback 口和一把本机令牌。默认每个目标 Agent/surface 一个池；往池里增删合格登录不改客户端配置。Codex 与 Grok 共用 `/v1/responses`，具体格式跟路由一起保存，由本机令牌选中，不根据请求正文猜测。接到 Codex 时写入 Responses + 本机 API Key（进 `auth.json`）；接到 Grok 时写入 `api_backend = "responses"` 和本机令牌。这不是 Codex↔Grok 双向转换开关。Kiro 登录可作为上游接到 Claude / Codex / Grok；endpoint 与 SSE 见 [本机路由 API](../reference/local-route-api.md)。
-- 调度留在本机网关：先解析模型和协议，再从合格成员里按默认 `priority_failover` 选择；`GET /models` 与实际请求共用同一份 resolver。未声明等价关系时，不会把请求发到另一个供应商。
+- 调度留在本机网关：先解析模型和协议，再从合格成员里按默认 `priority_failover` 选择；池可以改为 `round_robin`，只在同构合格成员间轮询。已知剩余配额只做同分，不覆盖粘性。`GET /models` 与实际请求共用同一份 resolver。未声明等价关系时，不会把请求发到另一个供应商。矩阵 `multi_account=false` 不关闭已入索引的 `v2_pool` 多成员。
 - 官方直连（`native_endpoint` / `config_sync`）不自动入池。Routes 对仍可改成本机转发的直连提供「交给本机网关」。
 - 生成的本机令牌只给目标客户端使用，上游登录信息留在 Hub；不监听公网，不做多人共享或转售。
 

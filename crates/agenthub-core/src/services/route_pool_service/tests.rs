@@ -3,7 +3,7 @@ use crate::models::{
     AdapterApplyPlan, AdapterGateKind, AdapterMaturity, AdapterProfile, AdapterProfileMode,
     AdapterProfileStatus, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis,
     AdapterServiceImpact, AdapterSourceKind, AdapterSupport, AgentId, Provider,
-    RouteDownstreamSurface, FEATURE_CODEX_INGRESS_GROK_UPSTREAM,
+    RouteDownstreamSurface, RouteSchedulePolicy, FEATURE_CODEX_INGRESS_GROK_UPSTREAM,
     FEATURE_GROK_INGRESS_CODEX_UPSTREAM, FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2,
     FEATURE_ROUTE_POOL_V2, LOCAL_GATEWAY_DESIRED_RUNNING,
 };
@@ -58,6 +58,89 @@ fn local_gateway_desired_running_defaults_off_and_remembers_on() {
     assert!(service.local_gateway_desired_running().unwrap());
     service.set_local_gateway_desired_running(false).unwrap();
     assert!(!service.local_gateway_desired_running().unwrap());
+}
+
+#[test]
+fn create_pool_round_robin_round_trips_and_can_be_edited() {
+    let (_dir, _db, service, profiles) = tmp();
+    let created = service
+        .ensure_default_pool_with_policy(
+            AgentId::Codex,
+            RouteDownstreamSurface::Responses,
+            Some(RouteSchedulePolicy::RoundRobin),
+        )
+        .unwrap();
+    assert_eq!(created.schedule_policy, RouteSchedulePolicy::RoundRobin);
+    let again = service
+        .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
+        .unwrap();
+    assert_eq!(again.id, created.id);
+    assert_eq!(
+        again.schedule_policy,
+        RouteSchedulePolicy::RoundRobin,
+        "a later default create must not reset an existing policy"
+    );
+    let overview = service
+        .set_schedule_policy(&created.id, RouteSchedulePolicy::PriorityFailover)
+        .unwrap();
+    assert_eq!(
+        overview.schedule_policy,
+        RouteSchedulePolicy::PriorityFailover
+    );
+    let stored = service.get(&created.id).unwrap().unwrap();
+    assert_eq!(
+        stored.schedule_policy,
+        RouteSchedulePolicy::PriorityFailover
+    );
+    assert!(stored.policy_revision > created.policy_revision);
+
+    let profile = bridge_profile("legacy-rr", "src-1", AgentId::Grok, true);
+    profiles.create(&profile).unwrap();
+    let legacy = service
+        .create_legacy_pool_with_policy(
+            &profile,
+            "ahb_legacy-rr",
+            false,
+            Some(RouteSchedulePolicy::RoundRobin),
+        )
+        .unwrap();
+    assert_eq!(legacy.schedule_policy, RouteSchedulePolicy::RoundRobin);
+    let legacy_overview = service
+        .set_schedule_policy(&legacy.id, RouteSchedulePolicy::RoundRobin)
+        .unwrap();
+    assert_eq!(
+        legacy_overview.schedule_policy,
+        RouteSchedulePolicy::RoundRobin
+    );
+}
+
+#[test]
+fn attach_with_policy_can_create_round_robin_default_pool() {
+    let (_dir, db, service, _profiles) = tmp();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "codex-api-rr".into(),
+            agent_id: AgentId::Codex,
+            name: "Codex API RR".into(),
+            settings_config: json!({"apiKey": "secret"}),
+            meta: json!({"preset": "custom"}),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    let overview = service
+        .attach_pool_owned_authorization_with_policy(
+            AgentId::Codex,
+            RouteDownstreamSurface::Responses,
+            AdapterSourceKind::Provider,
+            "codex-api-rr",
+            Some(RouteSchedulePolicy::RoundRobin),
+        )
+        .unwrap();
+    assert_eq!(overview.schedule_policy, RouteSchedulePolicy::RoundRobin);
+    let stored = service.get(&overview.id).unwrap().unwrap();
+    assert_eq!(stored.schedule_policy, RouteSchedulePolicy::RoundRobin);
 }
 
 #[test]
@@ -1202,10 +1285,13 @@ fn selected_connection_sync_enrolls_only_requested_sources() {
 
     let service = RoutePoolService::new(db);
     let result = service
-        .sync_connection_authorizations_selected(Some(&[SyncConnectionSource {
-            source_kind: AdapterSourceKind::Account,
-            source_id: "account-selected".into(),
-        }]))
+        .sync_connection_authorizations_selected(
+            Some(&[SyncConnectionSource {
+                source_kind: AdapterSourceKind::Account,
+                source_id: "account-selected".into(),
+            }]),
+            None,
+        )
         .unwrap();
     assert_eq!(result.added, 1);
     assert_eq!(result.skipped, 0);

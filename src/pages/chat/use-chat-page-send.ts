@@ -44,6 +44,7 @@ import {
   composerDraftAfterCancel,
   composerKeepsStoppingAfterCancel,
   composerQueueableFollowUpText,
+  COMPOSER_SEND_SETTLE_MS,
 } from './chat-composer-model';
 import { acceptsRuntimeSnapshot, isLatestRuntimeRead, isRuntimeActive, readRuntimeTransport, requestMatchesRuntime, runtimeReplyFields } from './chat-runtime-model';
 import {
@@ -142,6 +143,7 @@ export function useChatPageSend(input: {
   const runtimeProbeCancelRef = useRef(new Set<string>());
   const followUpsRef = useRef(new Map<string, QueuedFollowUpItem[]>());
   const lastSentPromptRef = useRef(new Map<string, string>());
+  const lastSentAtRef = useRef(new Map<string, number>());
   const [followUpById, setFollowUpById] = useState<Record<string, QueuedFollowUpItem[]>>({});
 
   useEffect(() => {
@@ -598,6 +600,8 @@ export function useChatPageSend(input: {
       await sendPrompt(text, false, item.extras ?? {});
       return;
     }
+    lastSentPromptRef.current.set(conversationId, text);
+    lastSentAtRef.current.set(conversationId, performance.now());
     markSending(conversationId);
     const generation = activeGenerationRef.current;
     const applyUi = conversationId === activeIdRef.current;
@@ -662,12 +666,23 @@ export function useChatPageSend(input: {
   ) {
     if (!active) return;
     if (sendingIdsRef.current.has(active.id)) {
+      const lastSent = lastSentPromptRef.current.get(active.id);
       const next = composerQueueableFollowUpText({
         text: prompt,
-        lastSent: lastSentPromptRef.current.get(active.id),
+        lastSent,
+        settling: performance.now() < (lastSentAtRef.current.get(active.id) ?? 0) + COMPOSER_SEND_SETTLE_MS,
       });
       if (!next) {
-        if (clearDraft) setDraft('');
+        if (clearDraft) {
+          setDraft((current) => current.trim() ? current : prompt);
+        }
+        if (prompt.trim()) {
+          toast({
+            title: t('chat.toast.followUpKept'),
+            variant: 'warning',
+            duration: 2500,
+          });
+        }
         return;
       }
       appendFollowUp(active.id, next, getStartExtras?.());
@@ -694,6 +709,7 @@ export function useChatPageSend(input: {
     const sendConvId = active.id;
     const sendGeneration = activeGenerationRef.current;
     lastSentPromptRef.current.set(sendConvId, prompt);
+    lastSentAtRef.current.set(sendConvId, performance.now());
     markSending(sendConvId);
     if (clearDraft) setDraft('');
     const turnGuess = messages.reduce((max, m) => Math.max(max, m.turn), 0) + 1;

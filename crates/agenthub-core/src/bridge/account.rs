@@ -8,7 +8,7 @@ use std::cmp::Ordering as CmpOrdering;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use axum::http::HeaderValue;
 use sha2::{Digest, Sha256};
@@ -44,6 +44,27 @@ impl MemberHealth {
     }
 }
 
+/// Live quota cell shared across [`PickedMember`] clones so a refresh can
+/// update remaining % without rebuilding the picker (preserves sticky).
+#[derive(Debug, Clone, Copy)]
+struct MemberQuotaLive {
+    remaining_pct: Option<f64>,
+    reset_at: Option<SystemTime>,
+    fresh_until: Option<SystemTime>,
+    credit: bool,
+}
+
+impl MemberQuotaLive {
+    fn missing() -> Self {
+        Self {
+            remaining_pct: None,
+            reset_at: None,
+            fresh_until: None,
+            credit: false,
+        }
+    }
+}
+
 /// One resolved pool member. `auth` is a shared cell so 401 reload can
 /// replace the bearer in place without restarting the listener.
 #[derive(Clone)]
@@ -56,6 +77,12 @@ pub struct PickedMember {
     pub reload: Option<UpstreamAuthReload>,
     pub priority: i64,
     pub position: i64,
+    /// Remaining quota percent when known. `None` is missing or stale and
+    /// must not be treated as zero. See `account_quota::member_quota_hint_from_extra`.
+    /// Live ranking must call [`Self::effective_quota_remaining_pct`] so TTL /
+    /// window expiry after listener start still behaves as missing.
+    /// Shared cell: [`Self::apply_quota_hint`] updates ranking without rebuild.
+    quota: Arc<Mutex<MemberQuotaLive>>,
     pub(crate) kiro_http: Option<KiroHttpRouteParams>,
     health: Arc<Mutex<MemberHealth>>,
     concurrency: Arc<Semaphore>,
@@ -73,6 +100,7 @@ impl std::fmt::Debug for PickedMember {
             .field("reload", &self.reload.is_some())
             .field("priority", &self.priority)
             .field("position", &self.position)
+            .field("quota_remaining_pct", &self.quota_remaining_pct())
             .field("health", &self.health())
             .finish()
     }
@@ -97,6 +125,7 @@ impl PickedMember {
             reload,
             priority: 0,
             position: 0,
+            quota: Arc::new(Mutex::new(MemberQuotaLive::missing())),
             kiro_http: None,
             health: Arc::new(Mutex::new(health)),
             concurrency: Arc::new(Semaphore::new(4)),
@@ -117,6 +146,87 @@ impl PickedMember {
         self.priority = priority;
         self.position = position;
         self
+    }
+
+    /// Remaining percent for the tie-break. Non-finite values are dropped.
+    pub fn with_quota_remaining(self, pct: Option<f64>) -> Self {
+        if let Ok(mut guard) = self.quota.lock() {
+            guard.remaining_pct = finite_pct(pct);
+        }
+        self
+    }
+
+    pub fn with_quota_hint(
+        self,
+        remaining_pct: Option<f64>,
+        reset_at: Option<SystemTime>,
+        credit: bool,
+    ) -> Self {
+        if let Ok(mut guard) = self.quota.lock() {
+            guard.remaining_pct = finite_pct(remaining_pct);
+            guard.reset_at = reset_at;
+            guard.credit = credit;
+        }
+        self
+    }
+
+    pub fn with_quota_fresh_until(self, until: Option<SystemTime>) -> Self {
+        if let Ok(mut guard) = self.quota.lock() {
+            guard.fresh_until = until;
+        }
+        self
+    }
+
+    /// Hot-apply a refreshed quota snapshot into a running member.
+    /// Shared across clones so the next pick sees the new remaining %.
+    pub fn apply_quota_hint(
+        &self,
+        remaining_pct: Option<f64>,
+        reset_at: Option<SystemTime>,
+        fresh_until: Option<SystemTime>,
+        credit: bool,
+    ) {
+        if let Ok(mut guard) = self.quota.lock() {
+            *guard = MemberQuotaLive {
+                remaining_pct: finite_pct(remaining_pct),
+                reset_at,
+                fresh_until,
+                credit,
+            };
+        }
+    }
+
+    /// Remaining percent for ranking. Missing, TTL-expired, or past-window
+    /// snapshots behave as absent so the prior stable order is kept.
+    pub fn effective_quota_remaining_pct(&self) -> Option<f64> {
+        let Ok(guard) = self.quota.lock() else {
+            return None;
+        };
+        let pct = finite_pct(guard.remaining_pct)?;
+        let now = SystemTime::now();
+        if guard.fresh_until.is_some_and(|until| until <= now) {
+            return None;
+        }
+        if guard.reset_at.is_some_and(|reset| reset <= now) {
+            return None;
+        }
+        Some(pct)
+    }
+
+    pub fn quota_remaining_pct(&self) -> Option<f64> {
+        self.quota.lock().ok().and_then(|guard| guard.remaining_pct)
+    }
+
+    pub fn quota_reset_at(&self) -> Option<SystemTime> {
+        self.quota.lock().ok().and_then(|guard| guard.reset_at)
+    }
+
+    pub fn quota_fresh_until(&self) -> Option<SystemTime> {
+        self.quota.lock().ok().and_then(|guard| guard.fresh_until)
+    }
+
+    pub fn quota_credit(&self) -> bool {
+        self.quota.lock().map(|guard| guard.credit).unwrap_or(false)
     }
 
     pub fn health(&self) -> MemberHealth {
@@ -166,6 +276,10 @@ pub struct BridgeMemberSpec {
     pub health: MemberHealth,
     pub priority: i64,
     pub position: i64,
+    pub quota_remaining_pct: Option<f64>,
+    pub quota_reset_at: Option<SystemTime>,
+    pub quota_fresh_until: Option<SystemTime>,
+    pub quota_credit: bool,
     pub(crate) kiro_http: Option<KiroHttpRouteParams>,
 }
 
@@ -191,8 +305,29 @@ impl BridgeMemberSpec {
             health,
             priority,
             position,
+            quota_remaining_pct: None,
+            quota_reset_at: None,
+            quota_fresh_until: None,
+            quota_credit: false,
             kiro_http: None,
         }
+    }
+
+    pub fn with_quota_hint(
+        mut self,
+        remaining_pct: Option<f64>,
+        reset_at: Option<SystemTime>,
+        credit: bool,
+    ) -> Self {
+        self.quota_remaining_pct = finite_pct(remaining_pct);
+        self.quota_reset_at = reset_at;
+        self.quota_credit = credit;
+        self
+    }
+
+    pub fn with_quota_fresh_until(mut self, until: Option<SystemTime>) -> Self {
+        self.quota_fresh_until = until;
+        self
     }
 
     pub(crate) fn with_kiro_http(mut self, params: Option<KiroHttpRouteParams>) -> Self {
@@ -214,6 +349,7 @@ impl std::fmt::Debug for BridgeMemberSpec {
             .field("health", &self.health)
             .field("priority", &self.priority)
             .field("position", &self.position)
+            .field("quota_remaining_pct", &self.quota_remaining_pct)
             .finish()
     }
 }
@@ -231,6 +367,12 @@ impl From<&BridgeMemberSpec> for PickedMember {
         )
         .with_schedule(spec.priority, spec.position)
         .with_kiro_http(spec.kiro_http.clone())
+        .with_quota_hint(
+            spec.quota_remaining_pct,
+            spec.quota_reset_at,
+            spec.quota_credit,
+        )
+        .with_quota_fresh_until(spec.quota_fresh_until)
     }
 }
 
@@ -279,7 +421,9 @@ struct AccountPickerInner {
     multi_account: bool,
     isolate_sink: Option<MemberHealthSink>,
     cooldowns: Mutex<MemberCooldowns>,
-    schedule_policy: RouteSchedulePolicy,
+    /// Interior mutability so a live edge can change policy without rebuild.
+    /// Reads fail closed to priority failover if the lock is poisoned.
+    schedule_policy: Mutex<RouteSchedulePolicy>,
     sticky: Mutex<BoundedTtlMap<String, StickyBinding>>,
     /// Round-robin cursors keyed by isomorphic group (priority + transport + dialect).
     /// Distinct from the v1 [`AccountPicker::pick_new`] cursor.
@@ -316,7 +460,7 @@ impl AccountPicker {
                 cursor: AtomicUsize::new(0),
                 multi_account,
                 isolate_sink,
-                schedule_policy,
+                schedule_policy: Mutex::new(schedule_policy),
                 cooldowns: Mutex::new(MemberCooldowns {
                     member: HashMap::new(),
                     member_model: HashMap::new(),
@@ -343,6 +487,32 @@ impl AccountPicker {
 
     pub fn multi_account(&self) -> bool {
         self.inner.multi_account
+    }
+
+    pub fn schedule_policy(&self) -> RouteSchedulePolicy {
+        self.inner
+            .schedule_policy
+            .lock()
+            .map(|guard| *guard)
+            .unwrap_or(RouteSchedulePolicy::PriorityFailover)
+    }
+
+    /// Hot-apply scheduling in place. Sticky bindings, cooldowns, health, and
+    /// member quota stay. The round-robin cursor resets only when the policy
+    /// value actually changes.
+    pub fn apply_schedule_policy(&self, policy: RouteSchedulePolicy) -> bool {
+        let Ok(mut guard) = self.inner.schedule_policy.lock() else {
+            return false;
+        };
+        if *guard == policy {
+            return false;
+        }
+        *guard = policy;
+        drop(guard);
+        if let Ok(mut cursors) = self.inner.rr_cursors.lock() {
+            cursors.clear();
+        }
+        true
     }
 
     pub fn members(&self) -> &[PickedMember] {
@@ -414,7 +584,7 @@ impl AccountPicker {
                 StickyLookup::Miss => {}
             }
         }
-        let picked = match self.inner.schedule_policy {
+        let picked = match self.schedule_policy() {
             RouteSchedulePolicy::RoundRobin => self.pick_round_robin(&eligible),
             RouteSchedulePolicy::PriorityFailover => pick_priority_failover(&eligible),
         }?;
@@ -514,6 +684,29 @@ impl AccountPicker {
         {
             member.set_health(health);
         }
+    }
+
+    /// Hot-apply a refreshed quota snapshot onto a live member.
+    /// Returns true when a matching member was updated. Sticky / continuation
+    /// state is untouched.
+    pub fn apply_member_quota(
+        &self,
+        source_id: &str,
+        remaining_pct: Option<f64>,
+        reset_at: Option<SystemTime>,
+        fresh_until: Option<SystemTime>,
+        credit: bool,
+    ) -> bool {
+        let Some(member) = self
+            .inner
+            .members
+            .iter()
+            .find(|member| member.source_id == source_id)
+        else {
+            return false;
+        };
+        member.apply_quota_hint(remaining_pct, reset_at, fresh_until, credit);
+        true
     }
 
     pub fn health_of(&self, source_id: &str) -> Option<MemberHealth> {
@@ -620,8 +813,9 @@ impl AccountPicker {
     }
 
     fn pick_round_robin(&self, eligible: &[EligibleMember<'_>]) -> Option<PickedMember> {
+        let use_quota = rank_with_quota(eligible);
         let mut ordered: Vec<&EligibleMember<'_>> = eligible.iter().collect();
-        ordered.sort_by(|left, right| cmp_schedule(left, right));
+        ordered.sort_by(|left, right| cmp_schedule(left, right, use_quota));
         let lead = *ordered.first()?;
         let group: Vec<&EligibleMember<'_>> = ordered
             .iter()
@@ -806,17 +1000,59 @@ fn sticky_still_valid(
         && binding.auth_fingerprint == member.authorization_fingerprint()
 }
 
-fn cmp_schedule(left: &EligibleMember<'_>, right: &EligibleMember<'_>) -> CmpOrdering {
+/// Priority first (lower number wins), then remaining quota when the ranking
+/// round applies quota (see [`rank_with_quota`]), then position, then id.
+/// Quota never runs before sticky / continuation; those return earlier.
+///
+/// Sort key is always a total order: `(priority, quota_key_or_sentinel,
+/// position, source_id)`. When any eligible member is missing/stale quota,
+/// every member gets the same quota sentinel so prior position order stays
+/// stable and mixed Some/None cannot form a `sort_by` cycle.
+fn cmp_schedule(
+    left: &EligibleMember<'_>,
+    right: &EligibleMember<'_>,
+    use_quota: bool,
+) -> CmpOrdering {
     left.member
         .priority
         .cmp(&right.member.priority)
+        .then(cmp_quota_remaining(left.member, right.member, use_quota))
         .then(left.member.position.cmp(&right.member.position))
         .then(left.member.source_id.cmp(&right.member.source_id))
 }
 
+fn cmp_quota_remaining(left: &PickedMember, right: &PickedMember, use_quota: bool) -> CmpOrdering {
+    if !use_quota {
+        return CmpOrdering::Equal;
+    }
+    match (
+        left.effective_quota_remaining_pct(),
+        right.effective_quota_remaining_pct(),
+    ) {
+        (Some(left_pct), Some(right_pct)) => right_pct.total_cmp(&left_pct),
+        // use_quota implies every member has a live score; Equal is only a
+        // defensive fallback and must not reintroduce mixed-None cycles.
+        _ => CmpOrdering::Equal,
+    }
+}
+
+/// Quota ranks only when every eligible member still has a live score.
+/// Otherwise missing/stale behaves as absent and position keeps order.
+fn rank_with_quota(eligible: &[EligibleMember<'_>]) -> bool {
+    !eligible.is_empty()
+        && eligible
+            .iter()
+            .all(|item| item.member.effective_quota_remaining_pct().is_some())
+}
+
+fn finite_pct(pct: Option<f64>) -> Option<f64> {
+    pct.filter(|value| value.is_finite())
+}
+
 fn pick_priority_failover(eligible: &[EligibleMember<'_>]) -> Option<PickedMember> {
+    let use_quota = rank_with_quota(eligible);
     let mut ordered: Vec<&EligibleMember<'_>> = eligible.iter().collect();
-    ordered.sort_by(|left, right| cmp_schedule(left, right));
+    ordered.sort_by(|left, right| cmp_schedule(left, right, use_quota));
     ordered.first().map(|item| item.member.clone())
 }
 

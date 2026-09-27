@@ -21,6 +21,38 @@ const runtimeSettings = new Map<string, RuntimeTurnSettings>();
 const runtimeDeniedEfforts = new Map<string, Set<string>>();
 const runtimeOptionsCache = new Map<string, RuntimeOptions>();
 const runtimeJobs = new Map<string, { runId: string; aborted: boolean }>();
+let mockRuntimeSteerDeferred = false;
+let mockRuntimeSteerCallCount = 0;
+let mockRuntimeSteerResolvers: Array<() => void> = [];
+const mockRuntimeStartPrompts: Array<{ conversationId: string; prompt: string }> = [];
+
+/** Browser E2E control only. Production never imports this mock module. */
+export function configureMockRuntimeSteerForTest(input: { deferred: boolean }): void {
+  mockRuntimeSteerDeferred = input.deferred;
+  mockRuntimeSteerCallCount = 0;
+  if (!input.deferred) {
+    const resolvers = mockRuntimeSteerResolvers;
+    mockRuntimeSteerResolvers = [];
+    resolvers.forEach((resolve) => resolve());
+  }
+}
+
+/** Browser E2E inspection only. */
+export function mockRuntimeSteerTestState(): { calls: number; pending: number } {
+  return { calls: mockRuntimeSteerCallCount, pending: mockRuntimeSteerResolvers.length };
+}
+
+/** Browser E2E release only. */
+export function releaseMockRuntimeSteersForTest(): void {
+  const resolvers = mockRuntimeSteerResolvers;
+  mockRuntimeSteerResolvers = [];
+  resolvers.forEach((resolve) => resolve());
+}
+
+/** Browser E2E inspection only. */
+export function mockRuntimeStartTestState(): Array<{ conversationId: string; prompt: string }> {
+  return [...mockRuntimeStartPrompts];
+}
 
 function nowIso() {
   return new Date().toISOString();
@@ -250,6 +282,8 @@ export function resetChatMock() {
   runtimeDeniedEfforts.clear();
   for (const job of runtimeJobs.values()) job.aborted = true;
   runtimeJobs.clear();
+  mockRuntimeStartPrompts.length = 0;
+  configureMockRuntimeSteerForTest({ deferred: false });
 }
 
 function mockRuntimeStillLive(conversationId: string, runId: string): boolean {
@@ -959,6 +993,7 @@ export function createMockChatPort(): ChatPort {
         learnMockThinkingUnsupported(conversationId, message);
         throw new Error(message);
       }
+      mockRuntimeStartPrompts.push({ conversationId, prompt });
       const runId = `run-mock-${mockSeq++}`;
       const conv = mockConversations.find((item) => item.id === conversationId);
       const agent = conv?.agentIds[0] ?? 'codex';
@@ -1061,7 +1096,13 @@ export function createMockChatPort(): ChatPort {
       appendMockRuntimeEvent(reply.conversationId, { type: 'finished', turn, ok: true, cancelled: false });
       runtimeJobs.delete(reply.conversationId);
     },
-    async runtimeSteer() {},
+    async runtimeSteer() {
+      mockRuntimeSteerCallCount += 1;
+      if (!mockRuntimeSteerDeferred) return;
+      await new Promise<void>((resolve) => {
+        mockRuntimeSteerResolvers.push(resolve);
+      });
+    },
     async runtimeContinueLegacy(conversationId) {
       const conv = mockConversations.find((item) => item.id === conversationId);
       if (!conv) throw new Error(`conversation not found: ${conversationId}`);
