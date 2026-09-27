@@ -37,12 +37,19 @@ import { cn } from '@/lib/utils';
 import { composerNativeEditChord } from './chat-model';
 import {
   COMPOSER_SEND_SETTLE_MS,
+  composerDraftAfterSteerAck,
   composerEnterShouldSubmit,
   composerFooterControl,
   composerIsResidualOfSent,
   composerLiveSendText,
   composerPrimaryAction,
-  composerQueueableFollowUpText,
+  composerSteerGateBegin,
+  composerSteerGateInvalidate,
+  composerSteerGateMount,
+  composerSteerGateSetActive,
+  composerSteerGateSettle,
+  composerSteerGateUnmount,
+  createComposerSteerGate,
   composerShouldHoldSendLock,
   composerShouldKeepRestoredSent,
   composerShortcutKind,
@@ -154,7 +161,7 @@ export function ChatComposer({
   onRetryWallet?: () => void;
   onRetryStatus?: () => void;
   onSend: (text?: string) => void;
-  onSteer?: (text?: string) => void;
+  onSteer?: (text?: string) => void | boolean | Promise<boolean | void>;
   onQueueAfterTurn?: (text?: string) => void;
   focusNonce?: number;
   onCancel: () => void;
@@ -213,8 +220,12 @@ export function ChatComposer({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sentTextRef = useRef<string | null>(null);
   const sentSettleUntilRef = useRef(0);
+  const [sendLockEpoch, setSendLockEpoch] = useState(0);
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  const steerGateRef = useRef(createComposerSteerGate(active.id));
+  const wasSendingRef = useRef(sending);
+  composerSteerGateSetActive(steerGateRef.current, active.id);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const modelMenuDisabled = sending || connectionLocked || switchingProvider || switchingModel;
   const currentEffortHint = currentEffort ? chatEffortHint(currentEffort, t) : null;
@@ -255,16 +266,48 @@ export function ChatComposer({
     return () => window.removeEventListener('resize', onResize);
   }, [syncTextareaHeight]);
 
+  useEffect(() => {
+    composerSteerGateMount(steerGateRef.current);
+    return () => {
+      composerSteerGateUnmount(steerGateRef.current);
+    };
+  }, []);
+
   const textareaDisabled = hiddenBlocked;
   const keepComposerFocus = useCallback(() => {
     if (!composerShouldRestoreFocus({ textareaDisabled })) return;
     textareaRef.current?.focus();
   }, [textareaDisabled]);
+  const releaseSendLock = useCallback(() => {
+    sentTextRef.current = null;
+    sentSettleUntilRef.current = 0;
+  }, []);
+  useEffect(() => {
+    releaseSendLock();
+  }, [active.id, releaseSendLock]);
+  useEffect(() => {
+    const wasSending = wasSendingRef.current;
+    wasSendingRef.current = sending;
+    if (!sending) {
+      releaseSendLock();
+      if (wasSending) composerSteerGateInvalidate(steerGateRef.current);
+    }
+  }, [releaseSendLock, sending]);
   const clearComposerAfterSubmit = useCallback((submitted: string) => {
     sentTextRef.current = submitted;
     sentSettleUntilRef.current = performance.now() + COMPOSER_SEND_SETTLE_MS;
+    setSendLockEpoch((epoch) => epoch + 1);
     setDraft('');
   }, [setDraft]);
+  useEffect(() => {
+    if (!sentTextRef.current) return;
+    const remaining = Math.max(0, sentSettleUntilRef.current - performance.now());
+    const id = window.setTimeout(() => {
+      sentTextRef.current = null;
+      sentSettleUntilRef.current = 0;
+    }, remaining);
+    return () => window.clearTimeout(id);
+  }, [sendLockEpoch]);
   const applyDraft = useCallback((next: string) => {
     const sent = sentTextRef.current;
     if (sent) {
@@ -306,22 +349,25 @@ export function ChatComposer({
     });
     const payload = live.trim();
     if (!payload) return;
-    const sent = sentTextRef.current;
-    const settling = sent != null && performance.now() < sentSettleUntilRef.current;
-    if (
-      sent &&
-      composerQueueableFollowUpText({ text: payload, lastSent: sent, settling }) == null
-    ) {
-      const el = textareaRef.current;
-      if (el) el.value = '';
-      clearComposerAfterSubmit(sent);
-      keepComposerFocus();
-      requestAnimationFrame(keepComposerFocus);
-      return;
-    }
     if (action === 'steer') {
-      clearComposerAfterSubmit(payload);
-      onSteer?.(live);
+      const steered = payload;
+      if (!onSteer) return;
+      const request = composerSteerGateBegin(steerGateRef.current, active.id);
+      if (!request) return;
+      const settleSteer = (ok: boolean) => {
+        if (!composerSteerGateSettle(steerGateRef.current, request)) return;
+        const next = composerDraftAfterSteerAck({
+          ok,
+          draft: draftRef.current,
+          steered,
+        });
+        if (next !== draftRef.current) setDraft(next);
+        releaseSendLock();
+      };
+      void Promise.resolve()
+        .then(() => onSteer(live))
+        .then((ok) => settleSteer(ok !== false))
+        .catch(() => settleSteer(false));
     } else if (action === 'queue') {
       clearComposerAfterSubmit(payload);
       onQueueAfterTurn?.(live);
@@ -331,7 +377,18 @@ export function ChatComposer({
     }
     keepComposerFocus();
     requestAnimationFrame(keepComposerFocus);
-  }, [action, clearComposerAfterSubmit, draft, keepComposerFocus, onQueueAfterTurn, onSend, onSteer]);
+  }, [
+    action,
+    clearComposerAfterSubmit,
+    draft,
+    keepComposerFocus,
+    onQueueAfterTurn,
+    onSend,
+    onSteer,
+    releaseSendLock,
+    setDraft,
+    active.id,
+  ]);
   const droppedImages = useCallback((files: FileList | null | undefined) => {
     if (!onPasteImages) return false;
     const images = Array.from(files ?? []).filter((file) => file.type.startsWith('image/'));

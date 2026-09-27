@@ -26,6 +26,7 @@ import {
 } from './chat-kiro-model';
 import {
   chatEscapeShouldCancel,
+  chatEscapeTargetExemptsCancel,
   chatKeyTargetIsField,
   chatPageShortcutAction,
   chatMainColumnClass,
@@ -130,7 +131,7 @@ export default function ChatPage() {
   const openTurnEdit = useCallback(
     (file: TurnEditFile, turn: number) => {
       if (turnEditHasInlineDiff(file)) {
-        preview.open(openChatEditPreview(file.path, turn));
+        preview.open(openChatEditPreview(file.path, turn, file.stepId, file.agent));
         return;
       }
       preview.open(openChatPreviewRoot(file.path));
@@ -140,7 +141,13 @@ export default function ChatPage() {
   const editPreview = isChatEditPreview(preview.target) ? preview.target : null;
   const editPreviewPath = editPreview?.path ?? '';
   const selectedEdit = editPreviewPath
-    ? findTurnEditFile(page.processMap, editPreviewPath, editPreview?.turn)
+    ? findTurnEditFile(
+      page.processMap,
+      editPreviewPath,
+      editPreview?.turn,
+      editPreview?.stepId,
+      editPreview?.agent,
+    )
     : null;
   const showEditDiff = Boolean(
     selectedEdit && turnEditHasInlineDiff(selectedEdit),
@@ -166,6 +173,7 @@ export default function ChatPage() {
         return;
       }
       const overlayOpen = hasEscPriorityOverlay();
+      const targetExempt = chatEscapeTargetExemptsCancel(e.target);
       const action = chatPageShortcutAction({
         key: e.key,
         code: e.code,
@@ -226,6 +234,7 @@ export default function ChatPage() {
           overlayOpen,
           defaultPrevented: e.defaultPrevented,
           composing: e.isComposing,
+          targetExempt,
         })
       ) {
         return;
@@ -404,6 +413,8 @@ export default function ChatPage() {
               }
               selectedEditPath={preview.expanded ? editPreviewPath : ''}
               selectedEditTurn={preview.expanded ? editPreview?.turn : undefined}
+              selectedEditStepId={preview.expanded ? editPreview?.stepId : undefined}
+              selectedEditAgent={preview.expanded ? editPreview?.agent : undefined}
               onSelectEdit={openTurnEdit}
               onPickStarter={page.runChatAction}
               firstBlocker={page.blockers[0] ?? null}
@@ -566,6 +577,7 @@ export default function ChatPage() {
                   onCancelAll={page.clearQueuedFollowUp}
                 />
                 <ChatComposer
+                  key={page.active.id}
                   draft={page.draft}
                   setDraft={page.setDraft}
                   sending={page.sendingHere}
@@ -591,12 +603,7 @@ export default function ChatPage() {
                   onSend={(text) => void page.handleSend(text)}
                   onSteer={
                     busySend === 'steer'
-                      ? (text) => {
-                          const value = text ?? page.draft;
-                          void page.steerRuntime(value).then((ok) => {
-                            if (ok) page.setDraft('');
-                          }).catch(() => {});
-                        }
+                      ? (text) => page.steerRuntime(text ?? page.draft)
                       : undefined
                   }
                   onQueueAfterTurn={

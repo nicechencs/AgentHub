@@ -136,6 +136,7 @@ export function ChatSessionHeader({
             ref={inputRef}
             value={draftTitle}
             aria-label={t('chat.header.titleAria')}
+            data-chat-title-edit=""
             className="h-7 max-w-xs font-semibold"
             onChange={(e) => setDraftTitle(e.target.value)}
             onKeyDown={(e) => {

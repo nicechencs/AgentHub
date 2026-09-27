@@ -60,6 +60,8 @@ export function ChatTranscript({
   inspectProcess = null,
   selectedEditPath = '',
   selectedEditTurn,
+  selectedEditStepId,
+  selectedEditAgent,
   onSelectEdit,
   onPickStarter,
   firstBlocker = null,
@@ -85,6 +87,8 @@ export function ChatTranscript({
   inspectProcess?: ChatProcessInspectTarget | null;
   selectedEditPath?: string;
   selectedEditTurn?: number;
+  selectedEditStepId?: string;
+  selectedEditAgent?: AgentKey;
   onSelectEdit?: (file: TurnEditFile, turn: number) => void;
   onPickStarter?: (action: ChatActionDef) => void;
   firstBlocker?: ChatSendBlocker | null;
@@ -179,6 +183,8 @@ export function ChatTranscript({
                           selectedStepKey={processPaneOpen ? (inspectProcess?.stepKey ?? null) : null}
                           selectedEditPath={selectedEditPath}
                           selectedEditTurn={selectedEditTurn}
+                          selectedEditStepId={selectedEditStepId}
+                          selectedEditAgent={selectedEditAgent}
                           onSelectEdit={onSelectEdit}
                         />
                       );
