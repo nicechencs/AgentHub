@@ -7,9 +7,11 @@ import type { ProcessStep } from '@/lib/types';
 import { ChatEditPreviewPanel, ChatTurnEditList } from './ChatEditPreviewPanel';
 import {
   extractEditFilesFromSteps,
+  extractStepEditFiles,
   extractTurnEdits,
   findTurnEditFile,
   formatSimpleDiff,
+  formatTurnEditRowDetail,
   latestProcessTurn,
   sameEditPath,
   turnEditDiffText,
@@ -80,6 +82,36 @@ describe('extractEditFilesFromSteps', () => {
       { path: 'lib\\b.ts', status: 'done' },
       { path: '/workspace/README.md', status: 'done' },
     ]);
+  });
+
+  it('keeps two edits of the same path when not merging', () => {
+    const first = {
+      ...tool('StrReplace', 'end', {
+        path: 'src/a.ts',
+        old_string: 'one',
+        new_string: 'two',
+      }),
+      id: 'edit-1',
+    };
+    const second = {
+      ...tool('StrReplace', 'end', {
+        path: 'src/a.ts',
+        old_string: 'two',
+        new_string: 'three',
+      }),
+      id: 'edit-2',
+    };
+    const files = extractEditFilesFromSteps([first, second], { mergeByPath: false });
+    expect(files).toEqual([
+      { path: 'src/a.ts', status: 'done', before: 'one', after: 'two', stepId: 'edit-1' },
+      { path: 'src/a.ts', status: 'done', before: 'two', after: 'three', stepId: 'edit-2' },
+    ]);
+    expect(extractStepEditFiles(first, 0)[0]?.after).toBe('two');
+    expect(extractStepEditFiles(second, 1)[0]?.after).toBe('three');
+    const processMap = mapWith([first, second]);
+    expect(findTurnEditFile(processMap, 'src/a.ts', 1, 'edit-1')?.after).toBe('two');
+    expect(findTurnEditFile(processMap, 'src/a.ts', 1, 'edit-2')?.after).toBe('three');
+    expect(formatTurnEditRowDetail(files[0]!)).toContain('+1 −1');
   });
 
   it('dedupes the same path and keeps the later status', () => {
@@ -259,7 +291,7 @@ describe('extractTurnEdits', () => {
       'src/b.ts',
     ]);
     expect(extractTurnEdits(processMap, 1)).toEqual([
-      { path: 'old.ts', status: 'done' },
+      { path: 'old.ts', status: 'done', agent: 'codex' },
     ]);
   });
 
@@ -271,6 +303,7 @@ describe('extractTurnEdits', () => {
     }, 'src/a.ts')).toEqual({
       path: 'src/a.ts',
       status: 'done',
+      agent: 'codex',
       before: 'old',
       after: 'new',
     });
@@ -282,12 +315,14 @@ describe('extractTurnEdits', () => {
     expect(findTurnEditFile(repeated, 'src/a.ts', 1)).toEqual({
       path: 'src/a.ts',
       status: 'done',
+      agent: 'codex',
       before: 'old',
       after: 'new',
     });
     expect(findTurnEditFile(repeated, 'src/a.ts')).toEqual({
       path: 'src/a.ts',
       status: 'done',
+      agent: 'codex',
     });
     const olderBare = {
       ...mapWith([tool('Write', 'end', { path: 'src/a.ts' })], 1, 'codex'),
@@ -306,6 +341,25 @@ describe('extractTurnEdits', () => {
       } as unknown as ProcessMap[string],
     })).toBeNull();
   });
+
+  it('uses the selected agent for anonymous same-step edits in one turn', () => {
+    const processMap: ProcessMap = {
+      ...mapWith([
+        tool('Write', 'end', { path: 'src/a.ts', before: 'codex before', after: 'codex after' }),
+      ], 1, 'codex'),
+      ...mapWith([
+        tool('Write', 'end', { path: 'src/a.ts', before: 'grok before', after: 'grok after' }),
+      ], 1, 'grok'),
+    };
+
+    expect(findTurnEditFile(processMap, 'src/a.ts', 1, 'step:0', 'grok')).toMatchObject({
+      path: 'src/a.ts',
+      agent: 'grok',
+      before: 'grok before',
+      after: 'grok after',
+      stepId: 'step:0',
+    });
+  });
 });
 
 describe('simple diff', () => {
@@ -319,6 +373,15 @@ describe('simple diff', () => {
         '+new',
       ].join('\n'),
     );
+  });
+
+  it('names the first hunk and +/- on a process row', () => {
+    expect(formatTurnEditRowDetail({
+      path: 'src/a.ts',
+      before: 'keep\nold\nend',
+      after: 'keep\nnew\nend',
+    })).toBe(':2 +1 −1');
+    expect(formatTurnEditRowDetail({ path: 'src/a.ts' })).toBe('');
   });
 
   it('sameEditPath treats slash variants as one file', () => {
