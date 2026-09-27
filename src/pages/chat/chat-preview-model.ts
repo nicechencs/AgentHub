@@ -22,6 +22,8 @@ export type ChatEditPreviewTarget = {
   turn?: number;
   /** Clicked tool step. Another edit of the same path in this turn must not replace this diff. */
   stepId?: string;
+  /** Clicked agent process. A same-step edit from another agent must not replace this diff. */
+  agent?: AgentKey;
 };
 
 export type ChatInspectTarget =
@@ -116,12 +118,14 @@ export function openChatEditPreview(
   path: string,
   turn?: number,
   stepId?: string,
+  agent?: AgentKey,
 ): ChatEditPreviewTarget {
   return {
     kind: 'edit',
     path,
     ...(typeof turn === 'number' ? { turn } : {}),
     ...(stepId?.trim() ? { stepId: stepId.trim() } : {}),
+    ...(agent ? { agent } : {}),
   };
 }
 

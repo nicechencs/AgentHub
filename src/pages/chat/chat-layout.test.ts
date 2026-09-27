@@ -102,7 +102,6 @@ describe('chat layout wiring', () => {
     expect(composer).toContain('keepComposerFocus');
     expect(composer).toContain('composerShouldHoldSendLock');
     expect(composer).toContain('composerShouldKeepRestoredSent');
-    expect(composer).toContain('composerQueueableFollowUpText');
     expect(composer).toContain('composerDraftAfterSteerAck');
     expect(composer).toContain('releaseSendLock');
     expect(source('index.tsx')).toContain('key={page.active.id}');

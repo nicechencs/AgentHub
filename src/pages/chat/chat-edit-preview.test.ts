@@ -291,7 +291,7 @@ describe('extractTurnEdits', () => {
       'src/b.ts',
     ]);
     expect(extractTurnEdits(processMap, 1)).toEqual([
-      { path: 'old.ts', status: 'done' },
+      { path: 'old.ts', status: 'done', agent: 'codex' },
     ]);
   });
 
@@ -303,6 +303,7 @@ describe('extractTurnEdits', () => {
     }, 'src/a.ts')).toEqual({
       path: 'src/a.ts',
       status: 'done',
+      agent: 'codex',
       before: 'old',
       after: 'new',
     });
@@ -314,12 +315,14 @@ describe('extractTurnEdits', () => {
     expect(findTurnEditFile(repeated, 'src/a.ts', 1)).toEqual({
       path: 'src/a.ts',
       status: 'done',
+      agent: 'codex',
       before: 'old',
       after: 'new',
     });
     expect(findTurnEditFile(repeated, 'src/a.ts')).toEqual({
       path: 'src/a.ts',
       status: 'done',
+      agent: 'codex',
     });
     const olderBare = {
       ...mapWith([tool('Write', 'end', { path: 'src/a.ts' })], 1, 'codex'),
@@ -337,6 +340,25 @@ describe('extractTurnEdits', () => {
         steps: [],
       } as unknown as ProcessMap[string],
     })).toBeNull();
+  });
+
+  it('uses the selected agent for anonymous same-step edits in one turn', () => {
+    const processMap: ProcessMap = {
+      ...mapWith([
+        tool('Write', 'end', { path: 'src/a.ts', before: 'codex before', after: 'codex after' }),
+      ], 1, 'codex'),
+      ...mapWith([
+        tool('Write', 'end', { path: 'src/a.ts', before: 'grok before', after: 'grok after' }),
+      ], 1, 'grok'),
+    };
+
+    expect(findTurnEditFile(processMap, 'src/a.ts', 1, 'step:0', 'grok')).toMatchObject({
+      path: 'src/a.ts',
+      agent: 'grok',
+      before: 'grok before',
+      after: 'grok after',
+      stepId: 'step:0',
+    });
   });
 });
 

@@ -1,6 +1,44 @@
 import { expect, test } from '@playwright/test';
 import { goNav, openApp, openChatComposer, setWorkingDirectory } from './helpers';
 
+const mockChatModulePath = '/src/dev/mocks/chat.ts';
+
+async function selectComposerAgent(page: import('@playwright/test').Page, name: RegExp) {
+  const composer = page.locator('[data-help="chat-composer"]');
+  await composer.getByRole('button', { name: /Claude|Grok|Codex|Kiro/ }).first().click();
+  const option = page.getByRole('menuitemradio', { name });
+  await expect(option).toBeVisible();
+  await option.click();
+}
+
+async function configureMockRuntimeSteer(page: import('@playwright/test').Page, deferred: boolean) {
+  await page.evaluate(async ({ path, nextDeferred }) => {
+    const mock = await import(/* @vite-ignore */ path);
+    mock.configureMockRuntimeSteerForTest({ deferred: nextDeferred });
+  }, { path: mockChatModulePath, nextDeferred: deferred });
+}
+
+async function mockRuntimeSteerState(page: import('@playwright/test').Page) {
+  return page.evaluate(async (path) => {
+    const mock = await import(/* @vite-ignore */ path);
+    return mock.mockRuntimeSteerTestState();
+  }, mockChatModulePath);
+}
+
+async function releaseMockRuntimeSteers(page: import('@playwright/test').Page) {
+  await page.evaluate(async (path) => {
+    const mock = await import(/* @vite-ignore */ path);
+    mock.releaseMockRuntimeSteersForTest();
+  }, mockChatModulePath);
+}
+
+async function mockRuntimeStartState(page: import('@playwright/test').Page) {
+  return page.evaluate(async (path) => {
+    const mock = await import(/* @vite-ignore */ path);
+    return mock.mockRuntimeStartTestState();
+  }, mockChatModulePath);
+}
+
 test('empty chat starter card fills the composer without sending', async ({ page }) => {
   await openApp(page);
   await openChatComposer(page);
@@ -75,6 +113,95 @@ test('Chat sends a prompt and shows the mock reply', async ({ page }) => {
 
   await expect(page.getByRole('log').getByText('e2e mock ping')).toBeVisible();
   await expect(page.getByRole('log').getByText(/模拟回复/)).toBeVisible({ timeout: 20_000 });
+});
+
+test('a duplicate follow-up stays in the composer and explains why', async ({ page }) => {
+  await openApp(page);
+  await openChatComposer(page);
+  await setWorkingDirectory(page);
+
+  const composer = page.getByRole('textbox', { name: '消息输入' });
+  const prompt = 'e2e mock ping';
+  const send = page.getByRole('button', { name: '发送' });
+  await expect(page.getByText('Enter 发送 · Shift+Enter 换行')).toHaveCount(0);
+  await expect(composer).toHaveAttribute('title', /Enter 发送/);
+  await expect(send).toBeDisabled();
+  await composer.fill(prompt);
+  await expect(send).toBeEnabled();
+  await send.click();
+  await expect(composer).toBeFocused();
+  await expect(page.getByRole('button', { name: '停止', exact: true })).toBeVisible();
+  await expect(page.getByText('Enter 排队 · Shift+Enter 换行')).toBeVisible();
+
+  await composer.fill(prompt);
+  await expect(page.getByRole('button', { name: '本轮结束后发送' })).toBeVisible();
+  await composer.press('Enter');
+
+  await expect(composer).toHaveValue(prompt);
+  await expect(page.getByRole('status').filter({ hasText: '这条和刚发出的重复，还留在输入框' })).toBeVisible();
+  await expect(page.locator('[data-help="chat-queued-follow-ups"]')).toHaveCount(0);
+});
+
+test('a pending Codex supplement accepts one request and cannot change a later conversation', async ({ page }) => {
+  await openApp(page);
+  await openChatComposer(page);
+  await setWorkingDirectory(page);
+  await configureMockRuntimeSteer(page, true);
+  await selectComposerAgent(page, /Codex/);
+
+  const composer = page.getByRole('textbox', { name: '消息输入' });
+  await composer.fill('e2e pending Codex run');
+  await page.getByRole('button', { name: '发送' }).click();
+  await expect(page.getByText('Enter 补充 · Shift+Enter 换行')).toBeVisible();
+
+  await composer.fill('e2e first supplement');
+  await expect(page.getByRole('button', { name: '补充' })).toBeVisible();
+  await composer.press('Enter');
+  await composer.press('Enter');
+  await expect.poll(() => mockRuntimeSteerState(page)).toEqual({ calls: 1, pending: 1 });
+  await expect(composer).toHaveValue('e2e first supplement');
+
+  await page.locator('[data-help="chat-new"]').click();
+  await expect.poll(() => page.locator('[data-session-id]').count()).toBe(2);
+  await expect(composer).toHaveValue('');
+  await composer.fill('conversation B draft');
+
+  await releaseMockRuntimeSteers(page);
+  await expect(page.getByRole('status').filter({ hasText: '已补充' })).toBeVisible();
+  await page.evaluate(() => new Promise<void>((resolve) => window.setTimeout(resolve, 0)));
+  await expect(composer).toHaveValue('conversation B draft');
+  await expect.poll(() => mockRuntimeSteerState(page)).toEqual({ calls: 1, pending: 0 });
+});
+
+test('a background queued follow-up restores its own prompt when stopped', async ({ page }) => {
+  await openApp(page);
+  await openChatComposer(page);
+  await setWorkingDirectory(page);
+
+  const composer = page.getByRole('textbox', { name: '消息输入' });
+  const firstPrompt = 'e2e background first prompt';
+  const queuedPrompt = 'e2e background queued prompt';
+  await composer.fill(firstPrompt);
+  await page.getByRole('button', { name: '发送' }).click();
+  await expect(page.getByText('Enter 排队 · Shift+Enter 换行')).toBeVisible();
+  await composer.fill(queuedPrompt);
+  await composer.press('Enter');
+  await expect(page.locator('[data-help="chat-queued-follow-ups"]')).toBeVisible();
+
+  const firstConversationId = await page
+    .locator('[data-session-id][data-selected="true"]')
+    .getAttribute('data-session-id');
+  expect(firstConversationId).toBeTruthy();
+  await page.locator('[data-help="chat-new"]').click();
+  await expect.poll(() => page.locator('[data-session-id]').count()).toBe(2);
+  await expect.poll(async () => (
+    await mockRuntimeStartState(page)
+  ).some((item) => item.prompt === queuedPrompt)).toBe(true);
+
+  await page.locator(`[data-session-id="${firstConversationId}"]`).click();
+  await expect(page.locator('[data-help="chat-stop"]')).toBeVisible();
+  await page.locator('[data-help="chat-stop"]').click();
+  await expect(composer).toHaveValue(queuedPrompt);
 });
 
 test('Shift+Enter inserts a new line without sending', async ({ page }) => {

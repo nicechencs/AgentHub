@@ -4,7 +4,14 @@ import {
   composerCancelingVisible,
   composerDraftAfterCancel,
   composerDraftAfterSteerAck,
+  composerSteerGateBegin,
+  composerSteerGateInvalidate,
+  composerSteerGateMount,
+  composerSteerGateSetActive,
+  composerSteerGateSettle,
+  composerSteerGateUnmount,
   COMPOSER_SEND_SETTLE_MS,
+  createComposerSteerGate,
   composerDraftAfterSuccessfulSend,
   composerEnterShouldSubmit,
   composerIsResidualOfSent,
@@ -376,6 +383,38 @@ describe('composer clear-on-send', () => {
       composerShouldHoldSendLock({
         now: 10,
         settleUntil: COMPOSER_SEND_SETTLE_MS,
+        next: 'P',
+        sent: 'Please inspect the preview header',
+      }),
+    ).toEqual({ hold: false, sent: '', draft: 'P' });
+    expect(
+      composerShouldHoldSendLock({
+        now: 10,
+        settleUntil: COMPOSER_SEND_SETTLE_MS,
+        next: 'e',
+        sent: 'Please inspect the preview header',
+      }),
+    ).toEqual({ hold: false, sent: '', draft: 'e' });
+    expect(
+      composerShouldHoldSendLock({
+        now: 10,
+        settleUntil: COMPOSER_SEND_SETTLE_MS,
+        next: 'r',
+        sent: 'Please inspect the preview header',
+      }),
+    ).toEqual({ hold: false, sent: '', draft: 'r' });
+    expect(
+      composerShouldHoldSendLock({
+        now: 10,
+        settleUntil: COMPOSER_SEND_SETTLE_MS,
+        next: sent,
+        sent,
+      }),
+    ).toEqual({ hold: false, sent: '', draft: sent });
+    expect(
+      composerShouldHoldSendLock({
+        now: 10,
+        settleUntil: COMPOSER_SEND_SETTLE_MS,
         next: prefix + 'doing any work.',
         sent: prefix,
       }),
@@ -467,6 +506,57 @@ describe('composer steer ack draft', () => {
         steered: 'add a log line',
       }),
     ).toBe('typed more after steer');
+    expect(
+      composerDraftAfterSteerAck({
+        ok: true,
+        draft: 'add a log line then run the test',
+        steered: 'add a log line',
+      }),
+    ).toBe(' then run the test');
+    expect(
+      composerDraftAfterSteerAck({
+        ok: true,
+        draft: 'run tests',
+        steered: 'run tests and fix failures',
+      }),
+    ).toBe('run tests');
+    expect(
+      composerDraftAfterSteerAck({
+        ok: true,
+        draft: 'fix failures',
+        steered: 'run tests and fix failures',
+      }),
+    ).toBe('fix failures');
+  });
+
+  it('admits one pending request and rejects an old session acknowledgement', () => {
+    const gate = createComposerSteerGate('conversation-a');
+    composerSteerGateMount(gate);
+    const first = composerSteerGateBegin(gate, 'conversation-a');
+    expect(first).not.toBeNull();
+    expect(composerSteerGateBegin(gate, 'conversation-a')).toBeNull();
+
+    composerSteerGateSetActive(gate, 'conversation-b');
+    const second = composerSteerGateBegin(gate, 'conversation-b');
+    expect(second).not.toBeNull();
+    expect(composerSteerGateSettle(gate, first!)).toBe(false);
+    expect(composerSteerGateSettle(gate, second!)).toBe(true);
+
+    composerSteerGateUnmount(gate);
+    expect(composerSteerGateSettle(gate, second!)).toBe(false);
+  });
+
+  it('invalidates an old acknowledgement when the same conversation turn ends', () => {
+    const gate = createComposerSteerGate('conversation-a');
+    composerSteerGateMount(gate);
+    const previousTurn = composerSteerGateBegin(gate, 'conversation-a');
+    expect(previousTurn).not.toBeNull();
+
+    composerSteerGateInvalidate(gate);
+    const nextTurn = composerSteerGateBegin(gate, 'conversation-a');
+    expect(nextTurn).not.toBeNull();
+    expect(composerSteerGateSettle(gate, previousTurn!)).toBe(false);
+    expect(composerSteerGateSettle(gate, nextTurn!)).toBe(true);
   });
 });
 

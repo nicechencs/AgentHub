@@ -146,6 +146,27 @@ describe('ChatTurnProcessList', () => {
     expect(html).not.toContain('aria-current="true"');
   });
 
+  it('does not mark another agent\'s anonymous same-step edit as current', () => {
+    const html = renderMarkup(
+      createElement(ChatTurnProcessList, {
+        process: processView([
+          { type: 'tool', name: 'Write', status: 'end', input: { path: 'src/a.ts' } },
+        ], 'ok'),
+        turn: 1,
+        agent: 'grok',
+        running: false,
+        selectedEditPath: 'src/a.ts',
+        selectedEditTurn: 1,
+        selectedEditStepId: 'step:0',
+        selectedEditAgent: 'codex',
+        onOpenProcess: () => undefined,
+        onSelectEdit: () => undefined,
+      }),
+    );
+    expect(html).toContain('已修改 src/a.ts');
+    expect(html).not.toContain('aria-current="true"');
+  });
+
   it('marks only the open step as expanded so another step can take over', () => {
     const html = renderMarkup(
       createElement(ChatTurnProcessList, {

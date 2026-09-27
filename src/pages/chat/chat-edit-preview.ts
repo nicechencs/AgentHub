@@ -3,13 +3,15 @@ import {
   toolActionTone,
   type ProcessMap,
 } from '@/lib/chat-process';
-import type { ProcessStep } from '@/lib/types';
+import type { AgentKey, ProcessStep } from '@/lib/types';
 
 export type TurnEditStatus = 'live' | 'done';
 
 export type TurnEditFile = {
   path: string;
   status: TurnEditStatus;
+  /** Agent process that yielded this edit, when known. */
+  agent?: AgentKey;
   before?: string;
   after?: string;
   diff?: string;
@@ -99,7 +101,7 @@ export function formatSimpleDiff(before: string, after: string, path = ''): stri
 
 export function extractEditFilesFromSteps(
   steps: ProcessStep[],
-  options?: { mergeByPath?: boolean },
+  options?: { mergeByPath?: boolean; agent?: AgentKey },
 ): TurnEditFile[] {
   const mergeByPath = options?.mergeByPath !== false;
   const files: TurnEditFile[] = [];
@@ -112,7 +114,12 @@ export function extractEditFilesFromSteps(
     const collected = filesFromToolStep(step);
     const stepId = step.id?.trim() || `step:${index}`;
     for (const item of collected) {
-      const next = mergeByPath ? { ...item, status } : { ...item, status, stepId };
+      const next = {
+        ...item,
+        status,
+        ...(options?.agent ? { agent: options.agent } : {}),
+        ...(!mergeByPath ? { stepId } : {}),
+      };
       if (mergeByPath) upsertEditFile(files, next);
       else files.push(next);
     }
@@ -124,11 +131,12 @@ export function extractEditFilesFromSteps(
 export function extractStepEditFiles(
   step: ProcessStep,
   index = 0,
+  agent?: AgentKey,
 ): TurnEditFile[] {
   const stepId = step.type === 'tool'
     ? (step.id?.trim() || `step:${index}`)
     : `step:${index}`;
-  return extractEditFilesFromSteps([step], { mergeByPath: false }).map((file) => ({
+  return extractEditFilesFromSteps([step], { mergeByPath: false, agent }).map((file) => ({
     ...file,
     stepId,
   }));
@@ -143,7 +151,7 @@ export function extractTurnEdits(processMap: ProcessMap, turn?: number): TurnEdi
     .sort((a, b) => a.updatedAt - b.updatedAt);
   const files: TurnEditFile[] = [];
   for (const view of views) {
-    for (const file of extractEditFilesFromSteps(view.steps)) {
+    for (const file of extractEditFilesFromSteps(view.steps, { agent: view.agent })) {
       upsertEditFile(files, file);
     }
   }
@@ -151,25 +159,41 @@ export function extractTurnEdits(processMap: ProcessMap, turn?: number): TurnEdi
 }
 
 /**
- * Diff for a history row. The clicked turn wins when it already has a diff;
- * otherwise the newest match, so an older row can still open one.
+ * Diff for a history row. Agent-bound targets stay in their selected process;
+ * legacy targets retain the path-and-turn fallback.
  */
 export function findTurnEditFile(
   processMap: ProcessMap,
   path: string,
   preferTurn?: number,
   stepId?: string,
+  agent?: AgentKey,
 ): TurnEditFile | null {
   const needle = path.trim();
   if (!needle) return null;
   const views = Object.values(processMap);
+  if (agent) {
+    const matchingViews = views.filter((view) => (
+      view.agent === agent
+      && (typeof preferTurn !== 'number' || view.turn === preferTurn)
+    ));
+    for (const view of matchingViews) {
+      const found = extractEditFilesFromSteps(view.steps, { mergeByPath: false, agent: view.agent })
+        .find((file) => (
+          sameEditPath(file.path, needle)
+          && (!stepId?.trim() || file.stepId === stepId.trim())
+        ));
+      if (found) return found;
+    }
+    return null;
+  }
   if (stepId?.trim()) {
     const want = stepId.trim();
     const inTurn = typeof preferTurn === 'number'
       ? views.filter((view) => view.turn === preferTurn)
       : views;
     for (const view of inTurn) {
-      const found = extractEditFilesFromSteps(view.steps, { mergeByPath: false })
+      const found = extractEditFilesFromSteps(view.steps, { mergeByPath: false, agent: view.agent })
         .find((file) => file.stepId === want && sameEditPath(file.path, needle));
       if (found) return found;
     }
@@ -397,6 +421,7 @@ function upsertEditFile(files: TurnEditFile[], next: TurnEditFile): void {
   files[index] = {
     path: next.path || prev.path,
     status: next.status,
+    agent: next.agent ?? prev.agent,
     before: next.before ?? prev.before,
     after: next.after ?? prev.after,
     diff: next.diff ?? prev.diff,
