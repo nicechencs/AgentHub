@@ -101,6 +101,10 @@ describe('presentLogin status', () => {
       label: '需要重新登录',
       tone: 'danger',
     });
+    expect(presentLogin(identity({ authHealth: undefined, authStatus: 'expiring' }), t).status).toEqual({
+      label: '即将过期',
+      tone: 'warning',
+    });
     expect(presentLogin(identity({ authHealth: undefined, authStatus: 'none' }), t).status).toEqual({
       label: '未登录',
       tone: 'muted',

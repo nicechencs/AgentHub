@@ -96,6 +96,13 @@ export function presentLoginStatus(
   input: LoginStatusInput,
   t: TranslateFn,
 ): LoginPresentation['status'] {
+  // Legacy AuthStatus.expiring has no AuthHealth twin; keep Connections list semantics.
+  if (!input.authHealth && input.authStatus === 'expiring') {
+    return {
+      label: t('chrome.authStatus.expiring'),
+      tone: 'warning',
+    };
+  }
   const health = statusHealth(input);
   return {
     label: authHealthLabel(health, t),

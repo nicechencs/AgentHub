@@ -842,6 +842,10 @@ describe('ticket detail fields', () => {
       label: '需要重新登录',
       tone: 'danger',
     });
+    expect(ticketAuthChip({ authStatus: 'expiring' })).toEqual({
+      label: '即将过期',
+      tone: 'warning',
+    });
     expect(ticketAuthChip({ authStatus: 'none' })).toEqual({
       label: '未登录',
       tone: 'muted',
