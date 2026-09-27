@@ -778,6 +778,7 @@ impl AdapterBridgeRuntimeMaterial {
             position: 0,
             quota_remaining_pct: None,
             quota_reset_at: None,
+            quota_fresh_until: None,
             quota_credit: false,
             kiro_http: self.kiro_http.clone(),
         }]);
@@ -1379,6 +1380,7 @@ impl AdapterBridgeService {
                     position: member.position,
                     quota_remaining_pct: None,
                     quota_reset_at: None,
+                    quota_fresh_until: None,
                     quota_credit: false,
                     kiro_http: if member_protocol == BridgeUpstreamProtocol::KiroHttp {
                         self.secrets
@@ -1408,6 +1410,7 @@ impl AdapterBridgeService {
             chrono::Utc::now(),
         );
         spec.with_quota_hint(hint.remaining_pct, hint.reset_at, hint.credit)
+            .with_quota_fresh_until(hint.fresh_until)
     }
 
     fn member_display_label(&self, member: &RouteMember) -> String {

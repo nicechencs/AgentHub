@@ -115,6 +115,35 @@ fn create_pool_round_robin_round_trips_and_can_be_edited() {
 }
 
 #[test]
+fn attach_with_policy_can_create_round_robin_default_pool() {
+    let (_dir, db, service, _profiles) = tmp();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "codex-api-rr".into(),
+            agent_id: AgentId::Codex,
+            name: "Codex API RR".into(),
+            settings_config: json!({"apiKey": "secret"}),
+            meta: json!({"preset": "custom"}),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    let overview = service
+        .attach_pool_owned_authorization_with_policy(
+            AgentId::Codex,
+            RouteDownstreamSurface::Responses,
+            AdapterSourceKind::Provider,
+            "codex-api-rr",
+            Some(RouteSchedulePolicy::RoundRobin),
+        )
+        .unwrap();
+    assert_eq!(overview.schedule_policy, RouteSchedulePolicy::RoundRobin);
+    let stored = service.get(&overview.id).unwrap().unwrap();
+    assert_eq!(stored.schedule_policy, RouteSchedulePolicy::RoundRobin);
+}
+
+#[test]
 fn flag_off_is_fail_closed() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("flag-off.db")).unwrap();

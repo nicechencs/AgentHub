@@ -429,6 +429,8 @@ export interface AttachPoolOwnedAuthorizationRequest {
   sourceId: string;
   targetAgentId: AgentKey;
   surface: RoutePoolSurface;
+  /** Applied only when the default pool is first created. Omitted → priority_failover. */
+  schedulePolicy?: RouteSchedulePolicy;
 }
 
 /** One credential-free Connections row selected for route-pool enrollment. */

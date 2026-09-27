@@ -1837,7 +1837,7 @@ async fn restart_pool_listener_for_token(
     restart_pool_listener_if_running(hub, host, pool_id).await
 }
 
-async fn restart_pool_listener_if_running(
+pub(crate) async fn restart_pool_listener_if_running(
     hub: Arc<AgentHub>,
     host: &BridgeRuntimeHost,
     pool_id: String,

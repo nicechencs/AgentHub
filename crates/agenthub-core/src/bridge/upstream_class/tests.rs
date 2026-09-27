@@ -200,6 +200,52 @@ fn quota_body_reset_beats_snapshot_reset() {
 }
 
 #[test]
+fn quota_body_accepts_reset_after_seconds_spelling() {
+    let reset = SystemTime::now() + Duration::from_secs(20 * 60);
+    assert_eq!(
+        cooldown_for_class(
+            UpstreamErrorClass::QuotaAccount,
+            None,
+            Some(r#"{"error":{"reset_after_seconds":90}}"#),
+            Some(reset),
+            false,
+        ),
+        Duration::from_secs(90)
+    );
+    assert_eq!(
+        cooldown_for_class(
+            UpstreamErrorClass::QuotaModel,
+            None,
+            Some(r#"{"resetAfterSeconds":45}"#),
+            Some(reset),
+            false,
+        ),
+        Duration::from_secs(45)
+    );
+}
+
+#[test]
+fn quota_body_accepts_reset_at_spelling() {
+    let far = SystemTime::now() + Duration::from_secs(20 * 60);
+    let near_secs = (SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("epoch")
+        + Duration::from_secs(120))
+    .as_secs();
+    let got = cooldown_for_class(
+        UpstreamErrorClass::QuotaAccount,
+        None,
+        Some(&format!(r#"{{"error":{{"reset_at":{near_secs}}}}}"#)),
+        Some(far),
+        false,
+    );
+    assert!(
+        got >= Duration::from_secs(60) && got <= Duration::from_secs(150),
+        "reset_at unix seconds should beat snapshot, got {got:?}"
+    );
+}
+
+#[test]
 fn quota_missing_hints_uses_capped_class_default() {
     assert_eq!(
         cooldown_for_class(UpstreamErrorClass::QuotaAccount, None, None, None, false),

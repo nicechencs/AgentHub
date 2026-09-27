@@ -541,6 +541,20 @@ describe('Adapter Rust wire mappers', () => {
     expect(listed.pools[0]?.schedulePolicy).toBe('round_robin');
   });
 
+  it('rejects unknown non-empty schedulePolicy wire values', () => {
+    expect(() => mapDefaultRoutePoolList({
+      enabled: true,
+      pools: [{
+        id: 'pool-bad',
+        targetAgentId: 'codex',
+        surface: 'responses',
+        dialect: 'codex',
+        schedulePolicy: 'least_conn',
+        members: [],
+      }],
+    })).toThrow(/schedulePolicy/);
+  });
+
   it('maps loopback entry keys for the tokens page', () => {
     expect(mapLocalTokenRecord({ poolId: 'pool-1', token: 'ahb_secret' })).toEqual({
       id: 'pool-1',

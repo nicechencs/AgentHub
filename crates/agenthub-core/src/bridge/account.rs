@@ -58,9 +58,15 @@ pub struct PickedMember {
     pub position: i64,
     /// Remaining quota percent when known. `None` is missing or stale and
     /// must not be treated as zero. See `account_quota::member_quota_hint_from_extra`.
+    /// Live ranking must call [`Self::effective_quota_remaining_pct`] so TTL /
+    /// window expiry after listener start still behaves as missing.
     quota_remaining_pct: Option<f64>,
-    /// Snapshot window reset used only as a quota-cooldown hint.
+    /// Snapshot window reset used as a quota-cooldown hint and as a live
+    /// staleness signal when it elapses.
     quota_reset_at: Option<SystemTime>,
+    /// When set, the baked remaining percent is only live until this instant
+    /// (typically `quotaUpdatedAt + ACCOUNT_QUOTA_CACHE_TTL`).
+    quota_fresh_until: Option<SystemTime>,
     /// Credit-style account (no 5h/7d percent). Selects the credit default.
     quota_credit: bool,
     pub(crate) kiro_http: Option<KiroHttpRouteParams>,
@@ -107,6 +113,7 @@ impl PickedMember {
             position: 0,
             quota_remaining_pct: None,
             quota_reset_at: None,
+            quota_fresh_until: None,
             quota_credit: false,
             kiro_http: None,
             health: Arc::new(Mutex::new(health)),
@@ -146,6 +153,25 @@ impl PickedMember {
         self.quota_reset_at = reset_at;
         self.quota_credit = credit;
         self
+    }
+
+    pub fn with_quota_fresh_until(mut self, until: Option<SystemTime>) -> Self {
+        self.quota_fresh_until = until;
+        self
+    }
+
+    /// Remaining percent for ranking. Missing, TTL-expired, or past-window
+    /// snapshots behave as absent so the prior stable order is kept.
+    pub fn effective_quota_remaining_pct(&self) -> Option<f64> {
+        let pct = finite_pct(self.quota_remaining_pct)?;
+        let now = SystemTime::now();
+        if self.quota_fresh_until.is_some_and(|until| until <= now) {
+            return None;
+        }
+        if self.quota_reset_at.is_some_and(|reset| reset <= now) {
+            return None;
+        }
+        Some(pct)
     }
 
     pub fn quota_remaining_pct(&self) -> Option<f64> {
@@ -209,6 +235,7 @@ pub struct BridgeMemberSpec {
     pub position: i64,
     pub quota_remaining_pct: Option<f64>,
     pub quota_reset_at: Option<SystemTime>,
+    pub quota_fresh_until: Option<SystemTime>,
     pub quota_credit: bool,
     pub(crate) kiro_http: Option<KiroHttpRouteParams>,
 }
@@ -237,6 +264,7 @@ impl BridgeMemberSpec {
             position,
             quota_remaining_pct: None,
             quota_reset_at: None,
+            quota_fresh_until: None,
             quota_credit: false,
             kiro_http: None,
         }
@@ -251,6 +279,11 @@ impl BridgeMemberSpec {
         self.quota_remaining_pct = finite_pct(remaining_pct);
         self.quota_reset_at = reset_at;
         self.quota_credit = credit;
+        self
+    }
+
+    pub fn with_quota_fresh_until(mut self, until: Option<SystemTime>) -> Self {
+        self.quota_fresh_until = until;
         self
     }
 
@@ -296,6 +329,7 @@ impl From<&BridgeMemberSpec> for PickedMember {
             spec.quota_reset_at,
             spec.quota_credit,
         )
+        .with_quota_fresh_until(spec.quota_fresh_until)
     }
 }
 
@@ -685,8 +719,9 @@ impl AccountPicker {
     }
 
     fn pick_round_robin(&self, eligible: &[EligibleMember<'_>]) -> Option<PickedMember> {
+        let use_quota = rank_with_quota(eligible);
         let mut ordered: Vec<&EligibleMember<'_>> = eligible.iter().collect();
-        ordered.sort_by(|left, right| cmp_schedule(left, right));
+        ordered.sort_by(|left, right| cmp_schedule(left, right, use_quota));
         let lead = *ordered.first()?;
         let group: Vec<&EligibleMember<'_>> = ordered
             .iter()
@@ -871,24 +906,53 @@ fn sticky_still_valid(
         && binding.auth_fingerprint == member.authorization_fingerprint()
 }
 
-/// Priority first (lower number wins), then remaining quota when **both**
-/// sides have a finite score (higher remaining wins), then position, then id.
-/// A missing score compares equal so the prior stable order is kept. Quota
-/// never runs before sticky / continuation; those return earlier.
-fn cmp_schedule(left: &EligibleMember<'_>, right: &EligibleMember<'_>) -> CmpOrdering {
+/// Priority first (lower number wins), then remaining quota when the ranking
+/// round applies quota (see [`rank_with_quota`]), then position, then id.
+/// Quota never runs before sticky / continuation; those return earlier.
+///
+/// Sort key is always a total order: `(priority, quota_key_or_sentinel,
+/// position, source_id)`. When any eligible member is missing/stale quota,
+/// every member gets the same quota sentinel so prior position order stays
+/// stable and mixed Some/None cannot form a `sort_by` cycle.
+fn cmp_schedule(
+    left: &EligibleMember<'_>,
+    right: &EligibleMember<'_>,
+    use_quota: bool,
+) -> CmpOrdering {
     left.member
         .priority
         .cmp(&right.member.priority)
-        .then(cmp_quota_remaining(left.member, right.member))
+        .then(cmp_quota_remaining(left.member, right.member, use_quota))
         .then(left.member.position.cmp(&right.member.position))
         .then(left.member.source_id.cmp(&right.member.source_id))
 }
 
-fn cmp_quota_remaining(left: &PickedMember, right: &PickedMember) -> CmpOrdering {
-    match (left.quota_remaining_pct, right.quota_remaining_pct) {
+fn cmp_quota_remaining(
+    left: &PickedMember,
+    right: &PickedMember,
+    use_quota: bool,
+) -> CmpOrdering {
+    if !use_quota {
+        return CmpOrdering::Equal;
+    }
+    match (
+        left.effective_quota_remaining_pct(),
+        right.effective_quota_remaining_pct(),
+    ) {
         (Some(left_pct), Some(right_pct)) => right_pct.total_cmp(&left_pct),
+        // use_quota implies every member has a live score; Equal is only a
+        // defensive fallback and must not reintroduce mixed-None cycles.
         _ => CmpOrdering::Equal,
     }
+}
+
+/// Quota ranks only when every eligible member still has a live score.
+/// Otherwise missing/stale behaves as absent and position keeps order.
+fn rank_with_quota(eligible: &[EligibleMember<'_>]) -> bool {
+    !eligible.is_empty()
+        && eligible
+            .iter()
+            .all(|item| item.member.effective_quota_remaining_pct().is_some())
 }
 
 fn finite_pct(pct: Option<f64>) -> Option<f64> {
@@ -896,8 +960,9 @@ fn finite_pct(pct: Option<f64>) -> Option<f64> {
 }
 
 fn pick_priority_failover(eligible: &[EligibleMember<'_>]) -> Option<PickedMember> {
+    let use_quota = rank_with_quota(eligible);
     let mut ordered: Vec<&EligibleMember<'_>> = eligible.iter().collect();
-    ordered.sort_by(|left, right| cmp_schedule(left, right));
+    ordered.sort_by(|left, right| cmp_schedule(left, right, use_quota));
     ordered.first().map(|item| item.member.clone())
 }
 

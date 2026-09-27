@@ -568,9 +568,29 @@ impl RoutePoolService {
         source_kind: AdapterSourceKind,
         source_id: &str,
     ) -> Result<DefaultRoutePoolOverview> {
+        self.attach_pool_owned_authorization_with_policy(
+            target_agent_id,
+            surface,
+            source_kind,
+            source_id,
+            None,
+        )
+    }
+
+    /// Like [`Self::attach_pool_owned_authorization`], but an optional
+    /// `schedule_policy` is applied when the default pool is first created.
+    /// Omitted keeps the backward-compatible `priority_failover` default.
+    pub fn attach_pool_owned_authorization_with_policy(
+        &self,
+        target_agent_id: AgentId,
+        surface: RouteDownstreamSurface,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+        schedule_policy: Option<RouteSchedulePolicy>,
+    ) -> Result<DefaultRoutePoolOverview> {
         self.require_enabled()?;
         let pool_agent = self.writer_agent_for_pool(target_agent_id, surface)?;
-        let pool = self.ensure_default_pool(pool_agent, surface)?;
+        let pool = self.ensure_default_pool_with_policy(pool_agent, surface, schedule_policy)?;
         let members = self.pools.list_members(&pool.id)?;
         let added_member = if !members
             .iter()

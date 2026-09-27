@@ -998,8 +998,10 @@ export interface DefaultRoutePoolListWire {
 }
 
 function mapSchedulePolicy(value: string | undefined): RouteSchedulePolicy {
+  if (value === undefined || value === '') return 'priority_failover';
   if (value === 'round_robin') return 'round_robin';
-  return 'priority_failover';
+  if (value === 'priority_failover') return 'priority_failover';
+  return invalidWireValue('schedulePolicy', value);
 }
 
 function mapPoolSurface(value: string): RoutePoolSurface {

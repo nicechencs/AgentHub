@@ -715,6 +715,62 @@ fn missing_quota_keeps_stable_order() {
 }
 
 #[test]
+fn mixed_quota_three_member_order_is_transitive() {
+    // A pos0 q10, B pos1 missing, C pos2 q90 — the pre-fix pairwise
+    // comparator formed A < B < C < A under sort_by. With the total-order
+    // key, mixed missing disables quota ranking and position wins → A.
+    let picker = AccountPicker::with_policy(
+        vec![
+            member("acc-a", "token-a", MemberHealth::Renewable)
+                .with_schedule(0, 0)
+                .with_quota_remaining(Some(10.0)),
+            member("acc-b", "token-b", MemberHealth::Renewable).with_schedule(0, 1),
+            member("acc-c", "token-c", MemberHealth::Renewable)
+                .with_schedule(0, 2)
+                .with_quota_remaining(Some(90.0)),
+        ],
+        false,
+        None,
+        RouteSchedulePolicy::PriorityFailover,
+    );
+    assert_eq!(
+        picker
+            .pick_from_candidates(&candidates(&["acc-a", "acc-b", "acc-c"]), None, &[])
+            .expect("mixed missing keeps position order")
+            .source_id,
+        "acc-a"
+    );
+}
+
+#[test]
+fn stale_quota_behaves_as_missing_for_ranking() {
+    let expired = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
+    let picker = AccountPicker::with_policy(
+        vec![
+            member("acc-a", "token-a", MemberHealth::Renewable)
+                .with_schedule(0, 1)
+                .with_quota_remaining(Some(99.0))
+                .with_quota_fresh_until(Some(expired)),
+            member("acc-b", "token-b", MemberHealth::Renewable)
+                .with_schedule(0, 0)
+                .with_quota_remaining(Some(1.0)),
+        ],
+        false,
+        None,
+        RouteSchedulePolicy::PriorityFailover,
+    );
+    // acc-a's baked 99% is stale → treated as missing → mixed missing disables
+    // quota ranking → position 0 (acc-b) wins over position 1.
+    assert_eq!(
+        picker
+            .pick_from_candidates(&candidates(&["acc-a", "acc-b"]), None, &[])
+            .expect("stale quota must not outrank by baked pct")
+            .source_id,
+        "acc-b"
+    );
+}
+
+#[test]
 fn better_priority_beats_a_healthier_quota() {
     let picker = AccountPicker::with_policy(
         vec![

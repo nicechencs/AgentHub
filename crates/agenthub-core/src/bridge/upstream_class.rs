@@ -165,7 +165,7 @@ pub fn cooldown_from_retry_after(value: Option<&HeaderValue>) -> Duration {
 /// Non-quota classes keep [`cooldown_from_retry_after`] (header or 2s).
 /// `QuotaAccount` / `QuotaModel` use, in order:
 /// 1. HTTP `Retry-After` when it parses to a non-zero duration
-/// 2. body reset hints (`resets_in_seconds` / `resets_at`, including `error.*`)
+/// 2. body reset hints (`resets_in_seconds` / `reset_after_seconds` / `resets_at` / `reset_at`, including `error.*`)
 /// 3. the account snapshot reset (`reset_at`) when it is still in the future
 /// 4. [`CREDIT_DEFAULT_COOLDOWN`] when the account or body is credit exhaustion,
 ///    otherwise [`QUOTA_DEFAULT_COOLDOWN`]
@@ -217,9 +217,11 @@ fn clamp_cooldown(duration: Duration) -> Duration {
     }
 }
 
-/// Provider reset already shaped like the quota parsers: `resets_in_seconds`
-/// or `resets_at` (unix seconds, unix millis, or RFC3339), at the top level
-/// or under `error`.
+/// Provider reset already shaped like the quota parsers. Accepts the same
+/// spellings as `account_quota::parse_reset_field` / `rate_limit_json_to_codex_raw`:
+/// relative `resets_in_seconds` / `reset_after_seconds` (and camelCase), and
+/// absolute `resets_at` / `reset_at` (unix seconds, unix millis, or RFC3339),
+/// at the top level or under `error`.
 fn body_reset_after(body: &str) -> Option<Duration> {
     let value: Value = serde_json::from_str(body.trim()).ok()?;
     reset_after_in(&value).or_else(|| value.get("error").and_then(reset_after_in))
@@ -229,13 +231,19 @@ fn reset_after_in(value: &Value) -> Option<Duration> {
     if let Some(secs) = json_u64(
         value
             .get("resets_in_seconds")
-            .or_else(|| value.get("resetsInSeconds")),
+            .or_else(|| value.get("resetsInSeconds"))
+            .or_else(|| value.get("reset_after_seconds"))
+            .or_else(|| value.get("resetAfterSeconds")),
     ) {
         if secs > 0 {
             return Some(Duration::from_secs(secs));
         }
     }
-    let at = value.get("resets_at").or_else(|| value.get("resetsAt"))?;
+    let at = value
+        .get("resets_at")
+        .or_else(|| value.get("resetsAt"))
+        .or_else(|| value.get("reset_at"))
+        .or_else(|| value.get("resetAt"))?;
     let when = json_reset_instant(at)?;
     let wait = when.duration_since(SystemTime::now()).ok()?;
     if wait.is_zero() {

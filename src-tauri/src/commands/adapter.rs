@@ -638,6 +638,7 @@ pub async fn attach_pool_owned_authorization(
     source_id: String,
     target_agent_id: String,
     surface: String,
+    schedule_policy: Option<String>,
 ) -> Result<DefaultRoutePoolOverview, GuiError> {
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
     with_hub_blocking(hub, move |hub| {
@@ -646,8 +647,20 @@ pub async fn attach_pool_owned_authorization(
         let surface = RouteDownstreamSurface::parse(&surface).ok_or_else(|| {
             "invalid route pool surface, expected: messages|responses|chat_completions".to_string()
         })?;
+        let policy = match schedule_policy.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            None => None,
+            Some(raw) => Some(RouteSchedulePolicy::parse(raw).ok_or_else(|| {
+                "invalid schedule_policy, expected: priority_failover|round_robin".to_string()
+            })?),
+        };
         hub.route_pools()
-            .attach_pool_owned_authorization(target_agent_id, surface, source_kind, &source_id)
+            .attach_pool_owned_authorization_with_policy(
+                target_agent_id,
+                surface,
+                source_kind,
+                &source_id,
+                policy,
+            )
             .map_err(|err| map_err_string("attach_pool_owned_authorization", err))
     })
     .await
@@ -692,6 +705,7 @@ pub async fn set_route_authorization_enabled(
 }
 
 /// Set one pool's schedule. Unknown values fail closed.
+/// Persists then rebuilds the running pool listener so live routing matches.
 #[tauri::command]
 pub async fn set_route_pool_schedule_policy(
     state: State<'_, AppState>,
@@ -699,7 +713,8 @@ pub async fn set_route_pool_schedule_policy(
     schedule_policy: String,
 ) -> Result<DefaultRoutePoolOverview, GuiError> {
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
-    with_hub_blocking(hub, move |hub| {
+    let host = state.bridge_host();
+    let overview = with_hub_blocking(hub.clone(), move |hub| {
         let policy = RouteSchedulePolicy::parse(&schedule_policy).ok_or_else(|| {
             "invalid schedule_policy, expected: priority_failover|round_robin".to_string()
         })?;
@@ -708,7 +723,15 @@ pub async fn set_route_pool_schedule_policy(
             .map_err(|err| map_err_string("set_route_pool_schedule_policy", err))
     })
     .await
-    .map_err(adapter_error_from_string)
+    .map_err(adapter_error_from_string)?;
+    crate::adapter_bridge_controller::restart_pool_listener_if_running(
+        hub,
+        &host,
+        overview.id.clone(),
+    )
+    .await
+    .map_err(adapter_error_from_string)?;
+    Ok(overview)
 }
 
 /// Set priority on every default-pool membership of one login.

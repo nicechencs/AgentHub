@@ -1146,6 +1146,8 @@ fn parse_rfc3339(s: &str) -> Option<DateTime<Utc>> {
 pub struct MemberQuotaHint {
     pub remaining_pct: Option<f64>,
     pub reset_at: Option<SystemTime>,
+    /// Absolute instant after which a baked remaining percent must rank as missing.
+    pub fresh_until: Option<SystemTime>,
     pub credit: bool,
 }
 
@@ -1154,6 +1156,7 @@ impl MemberQuotaHint {
         Self {
             remaining_pct: None,
             reset_at: None,
+            fresh_until: None,
             credit: false,
         }
     }
@@ -1181,11 +1184,22 @@ pub fn member_quota_hint_from_extra(extra: &Value, now: DateTime<Utc>) -> Member
         .or_else(|| future_reset(extra, "quota7dResetAt", now))
         .or_else(|| future_reset(extra, "creditResetAt", now))
         .and_then(utc_to_system_time);
+    let updated = extra
+        .get("quotaUpdatedAt")
+        .or_else(|| extra.get("codex_usage_updated_at"))
+        .and_then(|value| value.as_str())
+        .and_then(parse_rfc3339);
+    let fresh_until = updated.and_then(|at| {
+        let ttl =
+            ChronoDuration::from_std(ACCOUNT_QUOTA_CACHE_TTL).unwrap_or(ChronoDuration::minutes(10));
+        utc_to_system_time(at + ttl)
+    });
     let credit =
         used_5h.is_none() && used_7d.is_none() && credit_limit.is_some_and(|limit| limit > 0.0);
     MemberQuotaHint {
         remaining_pct,
         reset_at,
+        fresh_until,
         credit,
     }
 }
