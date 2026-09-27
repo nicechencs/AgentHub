@@ -1,6 +1,6 @@
 /** Adapter route preview and the narrow, supported apply façade. */
 import { getBackend, refreshRuntimeReadModels } from '@/app/runtime';
-import type { AdapterApplyPlan, AdapterApplyRequest, AdapterApplyResult, AdapterBridgeRuntimeStatus, AdapterProfile, AdapterProfileFilter, AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind, AttachPoolOwnedAuthorizationRequest, DefaultRoutePoolList, DefaultRoutePoolOverview, ForkedConnectionAuthorization, SyncConnectionAuthorizationsRequest, SyncConnectionAuthorizationsResult } from '@/lib/backend/contracts/adapter';
+import type { AdapterApplyPlan, AdapterApplyRequest, AdapterApplyResult, AdapterBridgeRuntimeStatus, AdapterProfile, AdapterProfileFilter, AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind, AttachPoolOwnedAuthorizationRequest, DefaultRoutePoolList, DefaultRoutePoolOverview, ForkedConnectionAuthorization, RouteSchedulePolicy, SyncConnectionAuthorizationsRequest, SyncConnectionAuthorizationsResult } from '@/lib/backend/contracts/adapter';
 
 export type {
   AdapterAction,
@@ -141,6 +141,14 @@ export async function setRouteAuthorizationEnabled(
   enabled: boolean,
 ): Promise<number> {
   return getBackend().adapter.setRouteAuthorizationEnabled(sourceKind, sourceId, enabled);
+}
+
+/** Set one pool's schedule. Round robin stays inside one isomorphic group. */
+export async function setRoutePoolSchedulePolicy(
+  poolId: string,
+  schedulePolicy: RouteSchedulePolicy,
+): Promise<DefaultRoutePoolOverview> {
+  return getBackend().adapter.setRoutePoolSchedulePolicy(poolId, schedulePolicy);
 }
 
 /** Set this login's priority in every default pool it belongs to. */

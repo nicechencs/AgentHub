@@ -472,10 +472,32 @@ impl RoutePoolService {
             surface: pool.downstream_surface,
             dialect: pool.downstream_dialect,
             unified_gateway_enrolled: pool.unified_gateway_enrolled,
+            schedule_policy: pool.schedule_policy,
             gateway_port: pool.gateway_port,
             members: member_overviews,
             listed_models,
         })
+    }
+
+    /// Persist the pool's schedule. Existing default stays `priority_failover`
+    /// until this or an explicit create policy says otherwise.
+    pub fn set_schedule_policy(
+        &self,
+        pool_id: &str,
+        policy: RouteSchedulePolicy,
+    ) -> Result<DefaultRoutePoolOverview> {
+        self.require_enabled()?;
+        let mut pool = self
+            .pools
+            .get_pool(pool_id)?
+            .ok_or_else(|| AppError::NotFound(format!("route pool not found: {pool_id}")))?;
+        if pool.schedule_policy != policy {
+            pool.schedule_policy = policy;
+            pool.policy_revision = pool.policy_revision.saturating_add(1);
+            pool.updated_at = now();
+            pool = self.pools.update_pool(&pool)?;
+        }
+        self.overview_from_pool(&pool)
     }
 
     /// `plan()` then refuse unless the matrix allows a local-bridge write now.
@@ -546,9 +568,29 @@ impl RoutePoolService {
         source_kind: AdapterSourceKind,
         source_id: &str,
     ) -> Result<DefaultRoutePoolOverview> {
+        self.attach_pool_owned_authorization_with_policy(
+            target_agent_id,
+            surface,
+            source_kind,
+            source_id,
+            None,
+        )
+    }
+
+    /// Like [`Self::attach_pool_owned_authorization`], but an optional
+    /// `schedule_policy` is applied when the default pool is first created.
+    /// Omitted keeps the backward-compatible `priority_failover` default.
+    pub fn attach_pool_owned_authorization_with_policy(
+        &self,
+        target_agent_id: AgentId,
+        surface: RouteDownstreamSurface,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+        schedule_policy: Option<RouteSchedulePolicy>,
+    ) -> Result<DefaultRoutePoolOverview> {
         self.require_enabled()?;
         let pool_agent = self.writer_agent_for_pool(target_agent_id, surface)?;
-        let pool = self.ensure_default_pool(pool_agent, surface)?;
+        let pool = self.ensure_default_pool_with_policy(pool_agent, surface, schedule_policy)?;
         let members = self.pools.list_members(&pool.id)?;
         let added_member = if !members
             .iter()
@@ -829,6 +871,18 @@ impl RoutePoolService {
         target_agent_id: AgentId,
         surface: RouteDownstreamSurface,
     ) -> Result<RoutePool> {
+        self.ensure_default_pool_with_policy(target_agent_id, surface, None)
+    }
+
+    /// Create the default pool when missing. `schedule_policy` applies only
+    /// on create; an existing default keeps the policy it already has.
+    /// `None` is `priority_failover`.
+    pub fn ensure_default_pool_with_policy(
+        &self,
+        target_agent_id: AgentId,
+        surface: RouteDownstreamSurface,
+        schedule_policy: Option<RouteSchedulePolicy>,
+    ) -> Result<RoutePool> {
         self.require_enabled()?;
         let existing = self
             .pools
@@ -843,7 +897,7 @@ impl RoutePoolService {
             downstream_surface: surface,
             downstream_dialect: RouteDownstreamDialect::for_agent(target_agent_id),
             hub_token: generate_hub_token()?,
-            schedule_policy: RouteSchedulePolicy::PriorityFailover,
+            schedule_policy: schedule_policy.unwrap_or_default(),
             is_default: true,
             unified_gateway_enrolled: false,
             policy_revision: 1,
@@ -1398,6 +1452,14 @@ impl RoutePoolService {
     }
 
     fn project_one(&self, profile: &AdapterProfile) -> Result<RoutePool> {
+        self.project_one_with_policy(profile, None)
+    }
+
+    fn project_one_with_policy(
+        &self,
+        profile: &AdapterProfile,
+        schedule_policy: Option<RouteSchedulePolicy>,
+    ) -> Result<RoutePool> {
         let Some(surface) = RouteDownstreamSurface::for_agent(profile.target_agent_id) else {
             return Err(AppError::Unsupported(format!(
                 "agent {} has no local-bridge surface",
@@ -1415,7 +1477,7 @@ impl RoutePoolService {
             downstream_surface: surface,
             downstream_dialect: RouteDownstreamDialect::for_agent(profile.target_agent_id),
             hub_token: generate_hub_token()?,
-            schedule_policy: RouteSchedulePolicy::PriorityFailover,
+            schedule_policy: schedule_policy.unwrap_or_default(),
             is_default: false,
             unified_gateway_enrolled: false,
             policy_revision: 1,
@@ -1436,6 +1498,16 @@ impl RoutePoolService {
         hub_token: &str,
         is_default: bool,
     ) -> Result<RoutePool> {
+        self.create_legacy_pool_with_policy(profile, hub_token, is_default, None)
+    }
+
+    pub fn create_legacy_pool_with_policy(
+        &self,
+        profile: &AdapterProfile,
+        hub_token: &str,
+        is_default: bool,
+        schedule_policy: Option<RouteSchedulePolicy>,
+    ) -> Result<RoutePool> {
         self.require_enabled()?;
         let Some(surface) = RouteDownstreamSurface::for_agent(profile.target_agent_id) else {
             return Err(AppError::Unsupported(format!(
@@ -1450,7 +1522,7 @@ impl RoutePoolService {
             downstream_surface: surface,
             downstream_dialect: RouteDownstreamDialect::for_agent(profile.target_agent_id),
             hub_token: hub_token.to_owned(),
-            schedule_policy: RouteSchedulePolicy::PriorityFailover,
+            schedule_policy: schedule_policy.unwrap_or_default(),
             is_default,
             unified_gateway_enrolled: false,
             policy_revision: 1,

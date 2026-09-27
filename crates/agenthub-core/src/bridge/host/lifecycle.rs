@@ -791,7 +791,9 @@ fn same_spec(left: &BridgeStartSpec, right: &BridgeStartSpec) -> bool {
         && left.schedule_policy == right.schedule_policy
 }
 
-fn member_fingerprint(spec: &BridgeStartSpec) -> Vec<(String, String, String)> {
+fn member_fingerprint(
+    spec: &BridgeStartSpec,
+) -> Vec<(String, String, String, Option<u64>, Option<u64>)> {
     spec.members
         .iter()
         .map(|member| {
@@ -799,6 +801,18 @@ fn member_fingerprint(spec: &BridgeStartSpec) -> Vec<(String, String, String)> {
                 member.ticket_id.clone(),
                 member.source_id.clone(),
                 member.auth.token(),
+                // Quota-relevant fields so a refreshed snapshot forces rebuild
+                // instead of reusing a listener that baked a stale percentage.
+                member
+                    .quota_remaining_pct
+                    .filter(|value| value.is_finite())
+                    .map(|value| value.to_bits()),
+                member.quota_fresh_until.and_then(|until| {
+                    until
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .ok()
+                        .map(|duration| duration.as_secs())
+                }),
             )
         })
         .collect()

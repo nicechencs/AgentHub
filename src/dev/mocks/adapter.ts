@@ -741,6 +741,9 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
           surface,
           dialect,
           unifiedGatewayEnrolled: false,
+          schedulePolicy: request.schedulePolicy === 'round_robin'
+            ? 'round_robin'
+            : 'priority_failover',
           members: [],
           listedModels: [],
         };
@@ -850,6 +853,30 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         }
       }
       return changed;
+    },
+    async setRoutePoolSchedulePolicy(poolId, schedulePolicy) {
+      await delay(20);
+      if (!state.routePoolV2) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: 'route_pool_v2 is disabled',
+          retryable: false,
+        });
+      }
+      const pool = state.defaultPools.find((item) => item.id === poolId);
+      if (!pool) {
+        throw adapterCommandError({
+          code: 'not_found',
+          message: 'route pool not found',
+          retryable: false,
+        });
+      }
+      pool.schedulePolicy = schedulePolicy;
+      return {
+        ...pool,
+        members: pool.members.map((member) => ({ ...member })),
+        listedModels: [...(pool.listedModels ?? [])],
+      };
     },
     async setRouteAuthorizationPriority(sourceKind, sourceId, priority) {
       await delay(20);

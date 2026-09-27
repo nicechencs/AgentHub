@@ -1131,6 +1131,139 @@ fn parse_rfc3339(s: &str) -> Option<DateTime<Utc>> {
         .map(|d| d.with_timezone(&Utc))
 }
 
+/// Quota snapshot copied onto a picker member at start-spec build.
+///
+/// `remaining_pct` is the tie-break score (higher is healthier). `None` means
+/// missing or stale: callers must not invent 0.
+///
+/// Metric: `quota5h_pct` / `quota7d_pct` store upstream *used* percent
+/// (Codex `used_percent`, Claude `utilization`). Remaining is `100 - used`.
+/// Prefer 5h when present, else 7d, else credit `(limit - used) / limit * 100`
+/// when both credit fields are present. `credit` is set only when the account
+/// has no 5h/7d percent, so a quota 429 can use the longer credit default.
+/// `reset_at` prefers a future 5h reset, else 7d, else credit.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MemberQuotaHint {
+    pub remaining_pct: Option<f64>,
+    pub reset_at: Option<SystemTime>,
+    /// Absolute instant after which a baked remaining percent must rank as missing.
+    pub fresh_until: Option<SystemTime>,
+    pub credit: bool,
+}
+
+impl MemberQuotaHint {
+    pub fn missing() -> Self {
+        Self {
+            remaining_pct: None,
+            reset_at: None,
+            fresh_until: None,
+            credit: false,
+        }
+    }
+}
+
+pub fn member_quota_hint_from_extra(extra: &Value, now: DateTime<Utc>) -> MemberQuotaHint {
+    if !extra.is_object() || quota_extra_is_stale(extra, now) {
+        return MemberQuotaHint::missing();
+    }
+    let used_5h = number_as_f64(extra.get("quota5hPct"));
+    let used_7d = number_as_f64(extra.get("quota7dPct"));
+    let credit_used = number_as_f64(extra.get("creditUsed"));
+    let credit_limit = number_as_f64(extra.get("creditLimit"));
+    let remaining_pct = if let Some(used) = used_5h {
+        Some(remaining_from_used_pct(used))
+    } else if let Some(used) = used_7d {
+        Some(remaining_from_used_pct(used))
+    } else {
+        match (credit_used, credit_limit) {
+            (Some(used), Some(limit)) => credit_remaining_pct(used, limit),
+            _ => None,
+        }
+    };
+    let reset_at = future_reset(extra, "quota5hResetAt", now)
+        .or_else(|| future_reset(extra, "quota7dResetAt", now))
+        .or_else(|| future_reset(extra, "creditResetAt", now))
+        .and_then(utc_to_system_time);
+    let updated = extra
+        .get("quotaUpdatedAt")
+        .or_else(|| extra.get("codex_usage_updated_at"))
+        .and_then(|value| value.as_str())
+        .and_then(parse_rfc3339);
+    let fresh_until = updated.and_then(|at| {
+        let ttl = ChronoDuration::from_std(ACCOUNT_QUOTA_CACHE_TTL)
+            .unwrap_or(ChronoDuration::minutes(10));
+        utc_to_system_time(at + ttl)
+    });
+    let credit =
+        used_5h.is_none() && used_7d.is_none() && credit_limit.is_some_and(|limit| limit > 0.0);
+    MemberQuotaHint {
+        remaining_pct,
+        reset_at,
+        fresh_until,
+        credit,
+    }
+}
+
+fn remaining_from_used_pct(used: f64) -> f64 {
+    (100.0 - used).clamp(0.0, 100.0)
+}
+
+fn credit_remaining_pct(used: f64, limit: f64) -> Option<f64> {
+    if !used.is_finite() || !limit.is_finite() || limit <= 0.0 {
+        return None;
+    }
+    Some(((limit - used) / limit * 100.0).clamp(0.0, 100.0))
+}
+
+fn quota_extra_is_stale(extra: &Value, now: DateTime<Utc>) -> bool {
+    // Same freshness rule as `quota_is_stale`: a rolled window or a missing
+    // `quotaUpdatedAt` is not a live score. Leftover percents must not rank.
+    if extra_reset_elapsed_value(extra, "quota5hResetAt", now)
+        || extra_reset_elapsed_value(extra, "quota7dResetAt", now)
+    {
+        return true;
+    }
+    let Some(updated) = extra
+        .get("quotaUpdatedAt")
+        .or_else(|| extra.get("codex_usage_updated_at"))
+        .and_then(|value| value.as_str())
+        .and_then(parse_rfc3339)
+    else {
+        return true;
+    };
+    let ttl =
+        ChronoDuration::from_std(ACCOUNT_QUOTA_CACHE_TTL).unwrap_or(ChronoDuration::minutes(10));
+    now.signed_duration_since(updated) >= ttl
+}
+
+fn extra_reset_elapsed_value(extra: &Value, key: &str, now: DateTime<Utc>) -> bool {
+    extra
+        .get(key)
+        .and_then(|value| value.as_str())
+        .and_then(parse_rfc3339)
+        .is_some_and(|at| at <= now)
+}
+
+fn future_reset(extra: &Value, key: &str, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
+    let at = extra
+        .get(key)
+        .and_then(|value| value.as_str())
+        .and_then(parse_rfc3339)?;
+    if at > now {
+        Some(at)
+    } else {
+        None
+    }
+}
+
+fn utc_to_system_time(at: DateTime<Utc>) -> Option<SystemTime> {
+    let secs = at.timestamp();
+    if secs < 0 {
+        return None;
+    }
+    UNIX_EPOCH.checked_add(std::time::Duration::from_secs(secs as u64))
+}
+
 /// Map Claude `/api/oauth/usage` → 5h / 7d.
 pub fn parse_claude_oauth_usage(body: &Value, now: DateTime<Utc>) -> QuotaSnapshot {
     let mut snap = QuotaSnapshot {

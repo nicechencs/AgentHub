@@ -4055,6 +4055,10 @@ fn pool_member(id: &str, token: &str) -> BridgeMemberSpec {
         health: MemberHealth::Renewable,
         priority: 0,
         position: 0,
+        quota_remaining_pct: None,
+        quota_reset_at: None,
+        quota_fresh_until: None,
+        quota_credit: false,
         kiro_http: None,
     }
 }

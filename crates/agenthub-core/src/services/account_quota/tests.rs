@@ -589,6 +589,50 @@ fn oauth_account_with_extra(extra: Value) -> Account {
 }
 
 #[test]
+fn member_quota_hint_prefers_remaining_5h_then_7d_then_credit() {
+    let now = Utc::now();
+    let fresh = now.to_rfc3339();
+    let reset = (now + ChronoDuration::minutes(20)).to_rfc3339();
+    let five = member_quota_hint_from_extra(
+        &json!({
+            "quotaUpdatedAt": fresh,
+            "quota5hPct": 80.0,
+            "quota7dPct": 10.0,
+            "quota5hResetAt": reset,
+        }),
+        now,
+    );
+    assert_eq!(five.remaining_pct, Some(20.0));
+    assert!(five.reset_at.is_some());
+    assert!(!five.credit);
+
+    let weekly = member_quota_hint_from_extra(
+        &json!({
+            "quotaUpdatedAt": fresh,
+            "quota7dPct": 25.0,
+        }),
+        now,
+    );
+    assert_eq!(weekly.remaining_pct, Some(75.0));
+
+    let credit = member_quota_hint_from_extra(
+        &json!({
+            "quotaUpdatedAt": fresh,
+            "creditUsed": 25.0,
+            "creditLimit": 100.0,
+            "creditResetAt": reset,
+        }),
+        now,
+    );
+    assert_eq!(credit.remaining_pct, Some(75.0));
+    assert!(credit.credit);
+
+    let stale = member_quota_hint_from_extra(&json!({ "quota5hPct": 1.0 }), now);
+    assert_eq!(stale.remaining_pct, None);
+    assert!(!stale.credit);
+}
+
+#[test]
 fn quota_is_stale_when_updated_at_missing_even_if_pct_fields_exist() {
     let acc = oauth_account_with_extra(json!({
         "quota5hPct": 40,

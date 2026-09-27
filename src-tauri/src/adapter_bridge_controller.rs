@@ -1005,21 +1005,22 @@ fn bridge_member_spec(
     position: i64,
     protocol: BridgeUpstreamProtocol,
 ) -> BridgeMemberSpec {
-    hub.adapter_bridge().with_kiro_http_route_params(
-        BridgeMemberSpec::new(
-            ticket_id,
-            source_kind.as_str(),
-            source_id,
-            label,
-            auth,
-            reload,
-            health,
-            priority,
-            position,
-        ),
-        source_kind,
-        protocol,
-    )
+    hub.adapter_bridge()
+        .annotate_member_quota(hub.adapter_bridge().with_kiro_http_route_params(
+            BridgeMemberSpec::new(
+                ticket_id,
+                source_kind.as_str(),
+                source_id,
+                label,
+                auth,
+                reload,
+                health,
+                priority,
+                position,
+            ),
+            source_kind,
+            protocol,
+        ))
 }
 
 fn resolve_start_members(
@@ -1836,7 +1837,45 @@ async fn restart_pool_listener_for_token(
     restart_pool_listener_if_running(hub, host, pool_id).await
 }
 
-async fn restart_pool_listener_if_running(
+/// After an account quota snapshot is persisted, rebuild any running default-pool
+/// listeners that include that account so live ranking re-annotates remaining %.
+/// Same stop/start path as [`restart_pool_listener_if_running`] / schedule-policy edits.
+/// Profile-keyed (non-pool-id) enroll listeners are not force-restarted here.
+pub(crate) async fn restart_pools_for_account_if_running(
+    hub: Arc<AgentHub>,
+    host: &BridgeRuntimeHost,
+    account_id: String,
+) -> Result<(), String> {
+    let account_id_for_lookup = account_id.clone();
+    let pool_ids = with_hub_blocking(hub.clone(), move |hub| {
+        let mut ids = Vec::new();
+        for pool in hub
+            .route_pools()
+            .list_default_pools()
+            .map_err(|error| map_err_string("list_default_pools", error))?
+        {
+            let members = hub
+                .route_pools()
+                .list_members(&pool.id)
+                .map_err(|error| map_err_string("list_members", error))?;
+            let belongs = members.iter().any(|member| {
+                member.source_kind == AdapterSourceKind::Account
+                    && member.source_id == account_id_for_lookup
+            });
+            if belongs {
+                ids.push(pool.id);
+            }
+        }
+        Ok(ids)
+    })
+    .await?;
+    for pool_id in pool_ids {
+        restart_pool_listener_if_running(hub.clone(), host, pool_id).await?;
+    }
+    Ok(())
+}
+
+pub(crate) async fn restart_pool_listener_if_running(
     hub: Arc<AgentHub>,
     host: &BridgeRuntimeHost,
     pool_id: String,

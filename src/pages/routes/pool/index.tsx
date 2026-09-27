@@ -74,6 +74,7 @@ import {
 import { ConnectionTrashButton } from '@/pages/connections/ConnectionTrashButton';
 import { useOAuthLoginAgents } from '@/pages/connections/use-oauth-login-agents';
 import { PoolAddButtons } from './PoolAddButtons';
+import { PoolSchedulePolicies } from './PoolSchedulePolicyControl';
 import { PoolAuthorizationDetail } from './PoolAuthorizationDetail';
 import { PoolAuthorizationList } from './PoolAuthorizationList';
 import {
@@ -529,6 +530,7 @@ export default function RoutesPoolPage() {
             <>
               {authorizations.length > 0 ? (
                 <PageSection first>
+                  <PoolSchedulePolicies pools={defaultPools} onChanged={reloadAll} />
                   <PoolAuthorizationList
                     items={authorizations}
                     activeKey={inspectAuthorizationKey(inspectTarget)}

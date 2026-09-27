@@ -90,7 +90,7 @@ updated: 2026-08-29
 | `CODEX_CHAT_LIMITS` | 目标 Agent 指向本机，上游 Codex 官方登录不写入对方；过期需重新同步，Hub 不自动刷新。接到 Grok 时写 `api_backend = "responses"` 和本机令牌。 |
 | `CLAUDE_CODEX_LIMITS` | Codex 指向本机，上游 Claude 订阅 token 不写入 Codex；规则未完成、thinking 无签名时降级关闭，过期需重新同步。 |
 
-所有 LocalBridge cell 当前 `multi_account = false`；不能据此推导多账号轮询或后台自动刷新已经可用。
+所有 LocalBridge cell 当前 `multi_account = false`。这不关闭已入索引的同口池多成员（`v2_pool`）。不能据此推导矩阵边已经打开多账号轮询，也不能推导后台自动刷新已经可用。
 
 ## Fail-closed 情况
 
