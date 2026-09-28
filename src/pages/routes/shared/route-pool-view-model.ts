@@ -10,7 +10,9 @@ import type {
   RoutePoolDialect,
   RoutePoolSurface,
 } from '@/lib/backend/contracts/adapter';
-import { authHealthLabel, type AuthHealth } from '@/lib/backend/contracts/auth-state';
+import type { AuthHealth } from '@/lib/backend/contracts/auth-state';
+import { presentLogin } from '@/components/login-kernel';
+import { translate as translateMessage } from '@/lib/i18n';
 import type { TicketView } from '@/lib/backend/contracts/ticket';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import type { ConnectionKind } from '@/lib/connection-kind';
@@ -270,23 +272,23 @@ function poolAuthorizationItem(
 
 /** Login-status chip for one authorization row. */
 export function poolAuthorizationStatusView(
-  item: Pick<PoolAuthorizationItem, 'authHealth' | 'authStatus'>,
+  item: Pick<PoolAuthorizationItem, 'authHealth' | 'authStatus'> & Partial<
+    Pick<PoolAuthorizationItem, 'sourceKind' | 'sourceId' | 'agentId' | 'title' | 'kind'>
+  >,
   t?: TranslateFn,
-): { label: string; tone: 'success' | 'warning' | 'danger' | 'info' | 'muted' } {
-  const health: AuthHealth = item.authHealth
-    ?? (item.authStatus === 'expired'
-      ? 'needs_login'
-      : item.authStatus === 'none'
-        ? 'missing'
-        : item.authStatus === 'expiring'
-          ? 'unknown'
-          : 'unknown');
-  const tone = health === 'needs_login'
-    ? 'danger'
-    : health === 'missing' || health === 'unknown'
-      ? 'muted'
-      : 'success';
-  return { label: authHealthLabel(health, t), tone };
+): { label: string; tone: 'success' | 'warning' | 'danger' | 'muted' } {
+  const translate = t ?? ((key, params) => translateMessage('zh', key, params));
+  const kind = item.kind ?? 'oauth';
+  return presentLogin({
+    sourceKind: item.sourceKind === 'provider' ? 'provider' : 'account',
+    sourceId: item.sourceId ?? 'login',
+    agentId: item.agentId ?? '',
+    kind,
+    label: item.title ?? '',
+    authHealth: item.authHealth,
+    authStatus: item.authStatus,
+    credentialKind: kind,
+  }, translate).status;
 }
 
 export type PoolAuthorizationDeleteStep = 'removeMembership' | 'deleteSource' | 'recycleMembership';

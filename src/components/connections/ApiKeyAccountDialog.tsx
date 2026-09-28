@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { SecretInput } from '@/components/shared/SecretInput';
+import { ApiKeyLoginFields } from '@/components/login-kernel';
 import { Hint } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
@@ -206,21 +206,16 @@ export function ApiKeyAccountDialog({
             />
           </label>
 
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-muted">
-              {t('connections.apiKeyDialog.key')}
-            </span>
-            <SecretInput
-              value={key}
-              onChange={setKey}
-              placeholder={isEdit
-                ? t('connections.apiKeyDialog.keyPlaceholderEdit')
-                : t('connections.apiKeyDialog.keyPlaceholderAdd')}
-            />
-            {isEdit ? (
-              <p className="text-meta text-muted">{t('connections.apiKeyDialog.keyHint')}</p>
-            ) : null}
-          </label>
+          <ApiKeyLoginFields
+            value={{ secret: key, endpoint: baseUrl }}
+            onChange={(next) => setKey(next.secret)}
+            showEndpoint={false}
+            secretLabel={t('connections.apiKeyDialog.key')}
+            secretPlaceholder={isEdit
+              ? t('connections.apiKeyDialog.keyPlaceholderEdit')
+              : t('connections.apiKeyDialog.keyPlaceholderAdd')}
+            secretHint={isEdit ? t('connections.apiKeyDialog.keyHint') : undefined}
+          />
 
           {showClaudeEnv && !isEdit ? (
             <label className="flex flex-col gap-1.5">
@@ -257,18 +252,14 @@ export function ApiKeyAccountDialog({
                   autoComplete="off"
                 />
               </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs text-muted">
-                  {t('connections.apiKeyDialog.endpoint')}
-                </span>
-                <Input
-                  value={baseUrl}
-                  onChange={(e) => setBaseUrl(e.target.value)}
-                  placeholder={t('connections.apiKeyDialog.endpointPlaceholder')}
-                  autoComplete="off"
-                />
-                <p className="text-meta text-muted">{t('connections.apiKeyDialog.endpointHint')}</p>
-              </label>
+              <ApiKeyLoginFields
+                value={{ secret: key, endpoint: baseUrl }}
+                onChange={(next) => setBaseUrl(next.endpoint)}
+                showSecret={false}
+                endpointLabel={t('connections.apiKeyDialog.endpoint')}
+                endpointPlaceholder={t('connections.apiKeyDialog.endpointPlaceholder')}
+                endpointHint={t('connections.apiKeyDialog.endpointHint')}
+              />
             </>
           ) : null}
 

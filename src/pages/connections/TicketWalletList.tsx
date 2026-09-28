@@ -408,12 +408,16 @@ function detailAvailabilityChip(
   t: TranslateFn,
 ) {
   if (!extras) return null;
-  if (extras.authStatus || extras.secretTail?.trim()) return ticketAuthChip(extras, t);
-  if (!extras.authLabel) return null;
-  const chip = ticketAuthChip(extras, t);
-  if (!chip) return null;
-  if (chip.tone === 'warning' || chip.label === t('connections.list.authConfigured')) return chip;
-  return null;
+  return ticketAuthChip(extras, t);
+}
+
+function ticketAuthBadgeVariant(
+  tone: 'success' | 'warning' | 'danger' | 'muted',
+): 'success' | 'warning' | 'danger' | 'default' {
+  if (tone === 'success') return 'success';
+  if (tone === 'danger') return 'danger';
+  if (tone === 'warning') return 'warning';
+  return 'default';
 }
 
 function TicketDetailBody({
@@ -487,7 +491,7 @@ function TicketDetailBody({
           {authChip ? (
             <DetailTableRow label={t('connections.list.table.status')}>
               <DetailTableCell>
-                <Badge variant={authChip.tone === 'warning' ? 'warning' : 'default'}>
+                <Badge variant={ticketAuthBadgeVariant(authChip.tone)}>
                   {authChip.label}
                 </Badge>
               </DetailTableCell>
@@ -773,7 +777,7 @@ function TicketRow({
       ) : null}
       <TableCell data-col="status" className="whitespace-nowrap">
         {authChip ? (
-          <Badge variant={authChip.tone === 'warning' ? 'warning' : 'default'}>
+          <Badge variant={ticketAuthBadgeVariant(authChip.tone)}>
             {authChip.label}
           </Badge>
         ) : (

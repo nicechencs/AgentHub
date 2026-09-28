@@ -35,7 +35,7 @@ import {
   formatPoolTimestamp,
   poolAuthorizationColumnLabel,
   poolAuthorizationEndpointKinds,
-  poolAuthorizationLoginLabel,
+  poolAuthorizationLoginPresentation,
   poolAuthorizationQuotaParts,
   poolAuthorizationVisibleColumns,
   type PoolAuthorizationColumnKey,
@@ -207,24 +207,30 @@ function renderColumn(
         <TableEmptyCell />
       );
     case 'login': {
-      const loginLabel = poolAuthorizationLoginLabel(item);
+      const login = poolAuthorizationLoginPresentation(item, ctx.t);
+      const loginLabel = login.identity.primary;
       return (
         <div className="flex min-w-0 items-center gap-2">
           {ctx.sortHandle}
           <PoolLoginMark item={item} />
-          {ctx.onShowDetail ? (
-            <ListNameButton
-              hint={loginLabel}
-              data-pool-login-name={item.key}
-              onClick={() => ctx.onShowDetail?.(item)}
-            >
-              {loginLabel}
-            </ListNameButton>
-          ) : (
-            <Tip className="truncate text-body font-medium" label={loginLabel}>
-              {loginLabel}
-            </Tip>
-          )}
+          <div className="min-w-0">
+            {ctx.onShowDetail ? (
+              <ListNameButton
+                hint={loginLabel}
+                data-pool-login-name={item.key}
+                onClick={() => ctx.onShowDetail?.(item)}
+              >
+                {loginLabel}
+              </ListNameButton>
+            ) : (
+              <Tip className="truncate text-body font-medium" label={loginLabel}>
+                {loginLabel}
+              </Tip>
+            )}
+            {login.identity.secondary ? (
+              <p className="truncate text-meta text-secondary">{login.identity.secondary}</p>
+            ) : null}
+          </div>
         </div>
       );
     }

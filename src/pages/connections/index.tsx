@@ -21,6 +21,10 @@ import {
   type TicketView,
 } from '@/lib/api/tickets';
 import { OAuthFlowDialog } from '@/components/connect/OAuthFlowDialog';
+import { officialLoginDiscovery } from '@/components/connect/official-login-discovery';
+import { officialLoginSuccessView } from '@/lib/backend/contracts/official-login-session';
+import { openExternalLink } from '@/lib/open-external';
+import { createConnectionsOfficialLoginPersistence } from './official-login-persistence';
 import {
   buildResumeConnectUrl,
   consumeConnectIntent,
@@ -207,6 +211,12 @@ export default function ConnectionsPage() {
   );
   const inspect = useSideSplit<ConnectionInspect>({ storageKey: CONNECTIONS_INSPECT_WIDTH_KEY });
   const [oauthOpen, setOauthOpen] = useState(false);
+  const oauthAccountRef = useRef<Account | null>(null);
+  const oauthPersistence = useMemo(() => createConnectionsOfficialLoginPersistence({
+    onAccount: (account) => {
+      oauthAccountRef.current = account;
+    },
+  }), []);
   const [discoveryProbe, setDiscoveryProbe] = useState<LiveAuthProbe | null>(null);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [discoveryDismissed, setDiscoveryDismissed] = useState(false);
@@ -987,7 +997,14 @@ export default function ConnectionsPage() {
 
       <OAuthFlowDialog
         agentId={addAgentId}
+        agentName={agentDisplayName(addAgentId)}
         open={oauthOpen}
+        persistence={oauthPersistence}
+        discovery={officialLoginDiscovery}
+        openLink={openExternalLink}
+        describeSuccess={() => (
+          oauthAccountRef.current ? officialLoginSuccessView(oauthAccountRef.current) : null
+        )}
         onOpenChange={(open) => {
           if (shouldIgnoreMenuDialogDismiss(ignoreMenuDialogDismissRef.current, open)) return;
           setOauthOpen(open);
@@ -995,11 +1012,11 @@ export default function ConnectionsPage() {
         onStored={() => {
           void loadWallet();
         }}
-        onCompleted={(account) => {
+        onCompleted={(result) => {
           setOauthOpen(false);
           void (async () => {
             try {
-              await switchAccount(account.agentId, account.id);
+              await switchAccount(result.source.agentId, result.source.sourceId);
               toast({ title: t('connect.oauth.success'), variant: 'success' });
               await poolReload().catch(() => {});
               await loadWallet();
