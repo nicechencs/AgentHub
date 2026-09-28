@@ -444,6 +444,11 @@ export interface AppSettings {
    * a new one. Default on.
    */
   updateDuplicateRouteUrl: boolean;
+  /**
+   * Connections: automatically import this computer's detected official / local
+   * logins. Default on. Manual import UI shows only when this is off.
+   */
+  autoImportLocalLogin: boolean;
   appVersion: string;
 }
 

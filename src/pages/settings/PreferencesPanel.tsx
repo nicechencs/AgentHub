@@ -295,6 +295,21 @@ export function PreferencesPanel({
           />
         </SettingsRow>
       </SettingsGroup>
+      <SettingsGroup title={t('settings.general.sectionConnections')}>
+        <SettingsRow
+          label={t('settings.general.autoImportLocalLoginLabel')}
+          description={t('settings.general.autoImportLocalLoginDescription')}
+          descriptionTip={t('settings.general.autoImportLocalLoginTip')}
+        >
+          <Switch
+            checked={settings.autoImportLocalLogin !== false}
+            onCheckedChange={(v) => {
+              patch({ autoImportLocalLogin: v });
+              void persist({ autoImportLocalLogin: v });
+            }}
+          />
+        </SettingsRow>
+      </SettingsGroup>
       <SettingsGroup title={t('settings.general.sectionRoutes')}>
         <SettingsRow
           label={t('settings.general.warnDuplicateRouteCredentialLabel')}

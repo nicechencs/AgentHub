@@ -204,6 +204,66 @@ describe('createTauriSettingsPort closeToTray', () => {
     expect(localStorage.getItem(StorageKey.theme)).toBe('system');
   });
 
+  it('updateSettings writes auto_import_local_login via set_setting', async () => {
+    invokeMock.mockImplementation(async (cmd: string, args?: { key?: string; value?: string }) => {
+      if (cmd === 'set_setting') {
+        return;
+      }
+      if (cmd === 'get_app_settings') {
+        return {
+          theme: 'system',
+          language: 'zh-CN',
+          logLevel: 'info',
+          logRetentionDays: 14,
+          autoImportLocalLogin: false,
+        };
+      }
+      if (cmd === 'get_path_info') {
+        return {
+          dataDir: 'D:/data',
+          dbPath: 'D:/data/agenthub.db',
+          backupsDir: 'D:/data/backups',
+          logsDir: 'D:/data/logs',
+        };
+      }
+      throw new Error(`unexpected invoke: ${cmd} ${JSON.stringify(args)}`);
+    });
+
+    const port = createTauriSettingsPort();
+    const saved = await port.updateSettings({ autoImportLocalLogin: false });
+    expect(saved.autoImportLocalLogin).toBe(false);
+    expect(invokeMock).toHaveBeenCalledWith('set_setting', {
+      key: 'auto_import_local_login',
+      value: 'false',
+    });
+  });
+
+  it('getSettings defaults autoImportLocalLogin on when core omits it', async () => {
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === 'get_app_settings') {
+        return {
+          theme: 'system',
+          language: 'zh-CN',
+          logLevel: 'info',
+          logRetentionDays: 14,
+        };
+      }
+      if (cmd === 'get_path_info') {
+        return {
+          dataDir: 'D:/data',
+          dbPath: 'D:/data/agenthub.db',
+          backupsDir: 'D:/data/backups',
+          logsDir: 'D:/data/logs',
+        };
+      }
+      throw new Error(`unexpected invoke: ${cmd}`);
+    });
+
+    const port = createTauriSettingsPort();
+    const s = await port.getSettings();
+    expect(s.autoImportLocalLogin).toBe(true);
+  });
+
   it('serializes concurrent updateSettings writes through one lane', async () => {
     // Core mirrors the last applied close_to_tray so phase-2 getSettings
     // reflects whatever the core actually stored.

@@ -1067,6 +1067,7 @@ export function TicketWalletList({
   onAddKey,
   onImportLogin,
   onOauth,
+  includeImportLogin = true,
   onClearAgentFilter,
   installedAgentIds,
   oauthLoginAgents: oauthLoginAgentsProp,
@@ -1087,6 +1088,7 @@ export function TicketWalletList({
   onAddKey?: (agentId: AgentKey) => void;
   onImportLogin?: (agentId: AgentKey) => void;
   onOauth?: (agentId: AgentKey) => void;
+  includeImportLogin?: boolean;
   onClearAgentFilter?: () => void;
   installedAgentIds?: readonly AgentKey[];
   oauthLoginAgents?: readonly AgentKey[] | null;
@@ -1158,8 +1160,8 @@ export function TicketWalletList({
   );
   const oauthLoginAgents = oauthLoginAgentsProp ?? fetchedOauthLoginAgents;
   const addAgents = React.useMemo(
-    () => buildTicketAddMenu(installedAgentIds, oauthLoginAgents),
-    [installedAgentIds, oauthLoginAgents],
+    () => buildTicketAddMenu(installedAgentIds, oauthLoginAgents, includeImportLogin),
+    [installedAgentIds, oauthLoginAgents, includeImportLogin],
   );
 
   const renderAddMenu = (variant?: 'default' | 'outline' | 'secondary') => (

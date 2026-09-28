@@ -62,6 +62,14 @@ fn log_level_and_retention_roundtrip_and_validation() {
     assert!(svc.get_all().unwrap().close_to_tray);
     assert!(svc.set("close_to_tray", "maybe").is_err());
     assert!(svc.get_all().unwrap().close_to_tray);
+
+    assert!(svc.get_all().unwrap().auto_import_local_login);
+    svc.set("auto_import_local_login", "false").unwrap();
+    assert!(!svc.get_all().unwrap().auto_import_local_login);
+    svc.set("auto_import_local_login", "1").unwrap();
+    assert!(svc.get_all().unwrap().auto_import_local_login);
+    assert!(svc.set("auto_import_local_login", "maybe").is_err());
+    assert!(svc.get_all().unwrap().auto_import_local_login);
 }
 
 #[test]

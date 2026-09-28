@@ -129,6 +129,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "00036_chat_runtime_file_changes",
         include_str!("00036_chat_runtime_file_changes.sql"),
     ),
+    (
+        "00037_auto_import_local_login",
+        include_str!("00037_auto_import_local_login.sql"),
+    ),
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {

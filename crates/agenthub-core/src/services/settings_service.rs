@@ -17,6 +17,7 @@ pub const SETTINGS_WHITELIST: &[&str] = &[
     "keep_live_file_copies",
     "warn_duplicate_route_credential",
     "update_duplicate_route_url",
+    "auto_import_local_login",
 ];
 
 /// Read-only keys: `config get` may return them; `config set` always rejects.
@@ -93,7 +94,8 @@ impl SettingsService {
                 "close_to_tray"
                 | "keep_live_file_copies"
                 | "warn_duplicate_route_credential"
-                | "update_duplicate_route_url" => normalize_bool_setting(value)?,
+                | "update_duplicate_route_url"
+                | "auto_import_local_login" => normalize_bool_setting(value)?,
                 "usage_collect_interval_min" => {
                     parse_usage_collect_interval_min(value)?.to_string()
                 }

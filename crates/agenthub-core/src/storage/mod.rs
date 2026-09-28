@@ -255,6 +255,9 @@ impl Database {
         if let Some(v) = self.get_setting("update_duplicate_route_url")? {
             s.update_duplicate_route_url = parse_stored_bool(&v);
         }
+        if let Some(v) = self.get_setting("auto_import_local_login")? {
+            s.auto_import_local_login = parse_stored_bool(&v);
+        }
         Ok(s)
     }
 }

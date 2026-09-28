@@ -28,6 +28,7 @@ const DEFAULTS: AppSettings = {
   keepLiveFileCopies: true,
   warnDuplicateRouteCredential: true,
   updateDuplicateRouteUrl: true,
+  autoImportLocalLogin: true,
   // Tracks package.json via Vite inject — no hand-maintained semver.
   appVersion: packageAppVersion(),
 };
@@ -79,6 +80,10 @@ function loadState(): AppSettings {
       typeof stored.updateDuplicateRouteUrl === 'boolean'
         ? stored.updateDuplicateRouteUrl
         : DEFAULTS.updateDuplicateRouteUrl,
+    autoImportLocalLogin:
+      typeof stored.autoImportLocalLogin === 'boolean'
+        ? stored.autoImportLocalLogin
+        : DEFAULTS.autoImportLocalLogin,
     dataDir: stored.dataDir ?? DEFAULTS.dataDir,
     logsDir: stored.logsDir ?? DEFAULTS.logsDir,
     logLevel,
