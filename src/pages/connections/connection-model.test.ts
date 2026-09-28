@@ -7,6 +7,7 @@ import {
   countByKind,
   deleteConnectionDialogDescription,
   deleteConnectionToastDescription,
+  deleteCurrentSwitchTargets,
   filterConnectionEntries,
   beginExclusiveBusyIds,
   endExclusiveBusyIds,
@@ -209,10 +210,28 @@ describe('connection-model', () => {
       const dialog = deleteConnectionDialogDescription({ isCurrent: current });
       const toast = deleteConnectionToastDescription({ isCurrent: current });
       expect(dialog).toContain('移入回收站');
-      expect(dialog).toContain(current ? '当前连接可能仍继续生效' : '不会修改本机配置文件');
+      expect(dialog).toContain(current ? '直到你切换到别的登录' : '不会修改本机配置文件');
+      expect(dialog).not.toContain('可能');
       expect(toast).toContain('已移入回收站');
-      expect(toast).toContain(current ? '当前连接可能仍继续生效' : '本机配置未修改');
+      expect(toast).toContain(current ? '直到你切换到别的登录' : '本机配置未修改');
+      expect(toast).not.toContain('可能');
     }
+    expect(deleteConnectionDialogDescription({ isCurrent: true, agentName: 'Claude Code' }))
+      .toContain('Claude Code 本机正在用这份登录');
+  });
+
+  it('offers other logins of the same Agent before deleting the current one', () => {
+    const tickets = [
+      { id: 'a', agentId: 'claude' as const },
+      { id: 'b', agentId: 'claude' as const },
+      { id: 'c', agentId: 'codex' as const },
+      { id: 'd', agentId: 'claude' as const },
+    ];
+    const current = new Set(['a']);
+    expect(deleteCurrentSwitchTargets(tickets[0], tickets, (x) => current.has(x.id)).map((x) => x.id))
+      .toEqual(['b', 'd']);
+    expect(deleteCurrentSwitchTargets({ id: 'z', agentId: 'cursor' as const }, tickets, () => false))
+      .toEqual([]);
   });
 
   it('shows a Chinese empty reason when 导入授权 has no live probe', () => {

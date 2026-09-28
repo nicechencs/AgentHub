@@ -71,6 +71,7 @@ import { useConnectionPageActions } from './use-connection-page-actions';
 import { usePiDefaultModel } from './use-pi-default-model';
 import {
   deleteConnectionDialogDescription,
+  deleteCurrentSwitchTargets,
   liveAuthCoexistenceNotice,
   liveAuthImportGate,
   liveApiKeyImportGate,
@@ -805,6 +806,17 @@ export default function ConnectionsPage() {
     );
   }
 
+
+  const deleteIsCurrent = deleteTicket
+    ? extrasForTicket(deleteTicket)?.isCurrent === true
+    : false;
+  const deleteSwitchTargets = deleteTicket && deleteIsCurrent && wallet
+    ? deleteCurrentSwitchTargets(
+      deleteTicket,
+      wallet.tickets,
+      (ticket) => extrasForTicket(ticket)?.isCurrent === true,
+    )
+    : [];
   return (
     <>
     <WorkbenchSplitPage
@@ -1050,11 +1062,30 @@ export default function ConnectionsPage() {
             <DialogDescription>
               {deleteTicket
                 ? `${deleteTicket.label} · ${deleteConnectionDialogDescription({
-                    isCurrent: extrasForTicket(deleteTicket)?.isCurrent === true,
+                    isCurrent: deleteIsCurrent,
+                    agentName: agentDisplayName(deleteTicket.agentId),
                   }, t)}`
                 : ''}
             </DialogDescription>
           </DialogHeader>
+          {deleteSwitchTargets.length > 0 ? (
+            <div className="space-y-1.5">
+              <p className="text-meta text-secondary">{t('connections.delete.switchFirst')}</p>
+              <div className="flex flex-wrap gap-2">
+                {deleteSwitchTargets.map((target) => (
+                  <Button
+                    key={target.id}
+                    size="sm"
+                    variant="outline"
+                    disabled={deleteBusy || switchingTicketId != null}
+                    onClick={() => void handleSwitchTicket(target)}
+                  >
+                    {t('connections.delete.switchTo', { label: target.label })}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <DialogFooter>
             <Button variant="secondary" disabled={deleteBusy} onClick={() => setDeleteTicket(null)}>
               {t('common.cancel')}

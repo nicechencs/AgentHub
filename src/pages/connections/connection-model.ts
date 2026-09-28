@@ -113,13 +113,34 @@ export function providerDisplayLabel(p: Provider): string {
  * never implies that the agent's local config/auth file was cleared.
  */
 export function deleteConnectionDialogDescription(
-  entry: Pick<ConnectionEntry, 'isCurrent'>,
+  entry: Pick<ConnectionEntry, 'isCurrent'> & { agentName?: string },
   t?: TranslateFn,
 ): string {
   if (entry.isCurrent) {
-    return t ? t('connections.delete.dialogCurrent') : '会移入回收站；本机配置不会被清除，当前连接可能仍继续生效。';
+    const agent = entry.agentName?.trim() || 'Agent';
+    return t
+      ? t('connections.delete.dialogCurrent', { agent })
+      : `会移入回收站。${agent} 本机正在用这份登录，删除后仍会继续用，直到你切换到别的登录。`;
   }
   return t ? t('connections.delete.dialogOther') : '会移入回收站；不会修改本机配置文件。';
+}
+
+/**
+ * Deleting the login the Agent is using right now: other logins of the same
+ * Agent the user can switch to first. Cursor cannot write a login back.
+ */
+export function deleteCurrentSwitchTargets<T extends { id: string; agentId: AgentKey }>(
+  deleting: T,
+  tickets: readonly T[],
+  isCurrent: (ticket: T) => boolean,
+  limit = 3,
+): T[] {
+  if (deleting.agentId === 'cursor') return [];
+  return tickets
+    .filter((ticket) => ticket.id !== deleting.id
+      && ticket.agentId === deleting.agentId
+      && !isCurrent(ticket))
+    .slice(0, limit);
 }
 
 export function deleteConnectionToastDescription(
@@ -127,7 +148,7 @@ export function deleteConnectionToastDescription(
   t?: TranslateFn,
 ): string {
   if (entry.isCurrent) {
-    return t ? t('connections.delete.toastCurrent') : '已移入回收站；本机配置未清除，当前连接可能仍继续生效。';
+    return t ? t('connections.delete.toastCurrent') : '已移入回收站。本机仍在用这份登录，直到你切换到别的登录。';
   }
   return t ? t('connections.delete.toastOther') : '已移入回收站；本机配置未修改。';
 }
