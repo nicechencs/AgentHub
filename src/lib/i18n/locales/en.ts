@@ -2285,7 +2285,7 @@ export const en = {
       more: "More",
       refreshToken: "Renewal login info",
       moveToTrash: "Move to trash",
-      moveToTrashCurrentTip: "Move to trash; the local connection may still apply",
+      moveToTrashCurrentTip: "Move to trash; the local connection still applies until you switch to another login",
       editConfig: "Edit config",
       editKey: "Edit key",
       unrecognized: "Unrecognized",

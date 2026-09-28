@@ -1418,7 +1418,7 @@ describe('handleTicketAddMenuSelect', () => {
     expect(onMenuClose).toHaveBeenCalledOnce();
   });
 
-  it('opens the import dialog for 导入授权 instead of failing silently', () => {
+  it('opens the import dialog for 导入本机登录 instead of failing silently', () => {
     const event = { preventDefault: vi.fn() };
     const onImportLogin = vi.fn();
     handleTicketAddMenuSelect(event, 'import-login', 'claude', { onImportLogin });

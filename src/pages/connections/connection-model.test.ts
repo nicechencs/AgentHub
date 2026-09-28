@@ -234,7 +234,7 @@ describe('connection-model', () => {
       .toEqual([]);
   });
 
-  it('shows a Chinese empty reason when 导入授权 has no live probe', () => {
+  it('shows a Chinese empty reason when 导入本机登录 has no live probe', () => {
     expect(liveAuthImportGate(null, false, 'claude')).toEqual({
       enabled: false,
       reason: '没法确认这台电脑上的登录，暂时不能导入',
@@ -411,7 +411,7 @@ describe('connection-model', () => {
       });
       expect(liveApiKeyImportGate(oauthAlsoApiKey, false, 'claude')).toEqual({
         enabled: false,
-        reason: '这台电脑上是官方登录。请改用「导入授权」。',
+        reason: '这台电脑上是官方登录。请改用「导入本机登录」。',
       });
     });
 
@@ -470,7 +470,7 @@ describe('connection-model', () => {
     });
     expect(
       liveApiKeyImportGate({ agentId: 'claude', kind: 'oauth', hasCredentials: true }, false, 'claude'),
-    ).toEqual({ enabled: false, reason: '这台电脑上是官方登录。请改用「导入授权」。' });
+    ).toEqual({ enabled: false, reason: '这台电脑上是官方登录。请改用「导入本机登录」。' });
     expect(
       liveApiKeyImportGate({ agentId: 'claude', kind: 'api_key', hasCredentials: false }, false, 'claude')
         .enabled,

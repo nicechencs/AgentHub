@@ -249,7 +249,7 @@ export function liveApiKeyImportGate(
     return { enabled: true, reason: '' };
   }
   if (kind === 'oauth' || kind === 'file-auth' || kind === 'file-auth.json') {
-    return { enabled: false, reason: t ? t('connections.list.isOauthImportLogin') : '这台电脑上是官方登录。请改用「导入授权」。' };
+    return { enabled: false, reason: t ? t('connections.list.isOauthImportLogin') : '这台电脑上是官方登录。请改用「导入本机登录」。' };
   }
   if (kind === 'desktop-login') {
     return { enabled: false, reason: t ? t('connections.list.desktopNoApiKey') : '这是桌面版登录，没法直接导入 API Key' };

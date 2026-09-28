@@ -125,7 +125,7 @@ export function dispatchTicketAddAction(
 }
 
 /**
- * Menu item select for 导入授权 / 添加 API Key.
+ * Menu item select for 导入本机登录 / 添加 API Key.
  * preventDefault keeps the menu mounted through the click so the Dialog is
  * not dismissed and the pointer cannot hit the segmented filter underneath.
  * Close is delayed until after the click settles — timeout 0 unmounts the

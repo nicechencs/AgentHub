@@ -2265,7 +2265,7 @@ export const zh = {
       more: "更多",
       refreshToken: "续期用的登录信息",
       moveToTrash: "移入回收站",
-      moveToTrashCurrentTip: "移入回收站；本机连接可能仍继续生效",
+      moveToTrashCurrentTip: "移入回收站；本机连接仍继续生效，直到你切换到别的登录",
       editConfig: "编辑配置",
       editKey: "编辑密钥",
       unrecognized: "未识别",
