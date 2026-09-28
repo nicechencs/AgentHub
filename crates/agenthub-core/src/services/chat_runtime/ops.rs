@@ -653,6 +653,13 @@ pub(crate) fn path_is_inside_cwd(path: &Path, cwd: &Path) -> bool {
     } else {
         cwd.join(path)
     };
+    // The write follows links: a symlink (even dangling) or a second hard link
+    // at the target can land outside the working directory, so it asks first.
+    if let Ok(meta) = std::fs::symlink_metadata(&absolute) {
+        if meta.file_type().is_symlink() || has_other_hard_links(&meta) {
+            return false;
+        }
+    }
     let resolved = match absolute.canonicalize() {
         Ok(path) => path,
         Err(_) => match absolute
@@ -664,6 +671,17 @@ pub(crate) fn path_is_inside_cwd(path: &Path, cwd: &Path) -> bool {
         },
     };
     resolved.starts_with(&cwd)
+}
+
+#[cfg(unix)]
+fn has_other_hard_links(meta: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    meta.is_file() && meta.nlink() > 1
+}
+
+#[cfg(not(unix))]
+fn has_other_hard_links(_meta: &std::fs::Metadata) -> bool {
+    false
 }
 
 /// Grok `session/new`. `_meta.yoloMode` is the ACP always-approve switch;
@@ -692,7 +710,10 @@ pub(crate) enum AcpSessionPlan {
 
 /// Kiro ACP `session/load` after the previous process exited hangs or kills the
 /// new process. Reuse the live process; if it is gone, start `session/new` in
-/// this same AgentHub conversation instead of asking for a new chat.
+/// this same AgentHub conversation instead of asking for a new chat (the
+/// runtime then carries earlier turns into the prompt). A settings change
+/// that needs a new process is planned as `live_transport = false`, so Grok
+/// reloads its session rather than starting an empty one.
 pub(crate) fn acp_session_plan(
     agent: AgentId,
     live_transport: bool,

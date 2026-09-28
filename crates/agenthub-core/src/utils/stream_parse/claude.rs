@@ -616,5 +616,310 @@ fn first_str(value: &Value, keys: &[&str]) -> Option<String> {
     None
 }
 
+// ---------------------------------------------------------------------------
+// `--include-partial-messages` support (verified against Claude Code 2.1.283).
+//
+// With partial messages on, stdout carries raw Anthropic stream events wrapped as
+// `{"type":"stream_event","event":{...},"parent_tool_use_id":null,...}`:
+// `message_start` (carries `message.id`) → `content_block_start {index, content_block}`
+// → `content_block_delta {index, delta:{type:"text_delta",text} | {type:"thinking_delta",
+// thinking} | {type:"input_json_delta",partial_json} | {type:"signature_delta"}}` →
+// `content_block_stop` → `message_delta` → `message_stop`.
+//
+// Claude Code still emits the complete `assistant` line, one per finished content block
+// (each carries a single block and the same `message.id`), right before that block's
+// `content_block_stop`. On interrupt it emits a snapshot `assistant` line holding the text
+// streamed so far. Callers that render deltas must therefore strip already-streamed text
+// from those `assistant` lines ([`ClaudePartialDedup`]).
+// ---------------------------------------------------------------------------
+
+/// Inner Anthropic event of a `stream_event` line.
+pub fn partial_event(value: &Value) -> Option<&Value> {
+    if value.get("type").and_then(Value::as_str) != Some("stream_event") {
+        return None;
+    }
+    value.get("event")
+}
+
+fn partial_delta<'a>(value: &'a Value, delta_type: &str) -> Option<&'a Value> {
+    let event = partial_event(value)?;
+    if event.get("type").and_then(Value::as_str) != Some("content_block_delta") {
+        return None;
+    }
+    let delta = event.get("delta")?;
+    (delta.get("type").and_then(Value::as_str) == Some(delta_type)).then_some(delta)
+}
+
+/// Non-empty text of a `stream_event` / `content_block_delta` / `text_delta` line.
+pub fn partial_text_delta(value: &Value) -> Option<String> {
+    partial_delta(value, "text_delta")?
+        .get("text")
+        .and_then(Value::as_str)
+        .filter(|t| !t.is_empty())
+        .map(str::to_string)
+}
+
+/// Non-empty thinking of a `stream_event` / `content_block_delta` / `thinking_delta` line.
+///
+/// Claude Code may send empty `thinking` (display mode `updates` / redacted summaries);
+/// those return `None`.
+pub fn partial_thinking_delta(value: &Value) -> Option<String> {
+    partial_delta(value, "thinking_delta")?
+        .get("thinking")
+        .and_then(Value::as_str)
+        .filter(|t| !t.is_empty())
+        .map(str::to_string)
+}
+
+/// `message.id` announced by a `stream_event` / `message_start` line.
+pub fn partial_message_start_id(value: &Value) -> Option<String> {
+    let event = partial_event(value)?;
+    if event.get("type").and_then(Value::as_str) != Some("message_start") {
+        return None;
+    }
+    event
+        .pointer("/message/id")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+/// `message.id` of a complete `assistant` line.
+pub fn assistant_message_id(value: &Value) -> Option<String> {
+    if value.get("type").and_then(Value::as_str) != Some("assistant") {
+        return None;
+    }
+    value
+        .pointer("/message/id")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+/// Line belongs to a sub-agent (Task tool) rather than the main conversation.
+pub fn is_subagent_line(value: &Value) -> bool {
+    value
+        .get("parent_tool_use_id")
+        .is_some_and(|p| !p.is_null())
+}
+
+/// `result` produced by a `control_request` `interrupt`.
+///
+/// Claude Code reports it as `subtype:"error_during_execution"`, `is_error:true`,
+/// `terminal_reason:"aborted_streaming"` (no `result` text). Callers should treat it as
+/// cancelled, not failed, once they have sent an interrupt.
+pub fn is_interrupted_result(value: &Value) -> bool {
+    value.get("type").and_then(Value::as_str) == Some("result")
+        && value
+            .get("terminal_reason")
+            .and_then(Value::as_str)
+            .is_some_and(|r| r.starts_with("aborted"))
+}
+
+/// NDJSON line (no trailing newline) that asks a stream-json Claude process to stop the
+/// current turn. The process answers with
+/// `{"type":"control_response","response":{"subtype":"success","request_id":..,...}}`,
+/// then a snapshot `assistant` line, a `user` "[Request interrupted by user]" line and an
+/// interrupted `result`; it stays alive for the next user message.
+pub fn interrupt_request_line(request_id: &str) -> String {
+    serde_json::json!({
+        "type": "control_request",
+        "request_id": request_id,
+        "request": { "subtype": "interrupt" },
+    })
+    .to_string()
+}
+
+/// `request_id` of a successful `control_response` line.
+#[allow(dead_code)] // the transport skips control_response lines; kept for diagnostics and tests
+pub fn control_response_success_id(value: &Value) -> Option<String> {
+    if value.get("type").and_then(Value::as_str) != Some("control_response") {
+        return None;
+    }
+    let response = value.get("response")?;
+    if response.get("subtype").and_then(Value::as_str) != Some("success") {
+        return None;
+    }
+    response
+        .get("request_id")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PartialBlockKind {
+    Text,
+    Thinking,
+}
+
+impl PartialBlockKind {
+    fn from_block_type(ty: &str) -> Option<Self> {
+        match ty {
+            "text" => Some(Self::Text),
+            "thinking" => Some(Self::Thinking),
+            _ => None,
+        }
+    }
+
+    fn field(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Thinking => "thinking",
+        }
+    }
+}
+
+#[derive(Debug)]
+struct PartialBlock {
+    index: u64,
+    kind: PartialBlockKind,
+    streamed: String,
+    consumed: bool,
+}
+
+/// Per-conversation dedup between partial deltas and complete `assistant` lines.
+///
+/// Feed every stdout JSON value in order to [`ClaudePartialDedup::filter`] and hand the
+/// returned value (if any) to [`parse_line`]. Without partial events it is a pass-through.
+#[derive(Debug, Default)]
+pub struct ClaudePartialDedup {
+    message_id: Option<String>,
+    blocks: Vec<PartialBlock>,
+}
+
+impl ClaudePartialDedup {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Forget streamed state (new turn, cancel, process restart).
+    pub fn reset(&mut self) {
+        self.message_id = None;
+        self.blocks.clear();
+    }
+
+    /// Returns what to pass to [`parse_line`], or `None` to drop the line.
+    ///
+    /// - `stream_event` text / thinking deltas: recorded and passed through (non-empty only;
+    ///   `parse_line` already renders them as `Text` / `Thinking`).
+    /// - other `stream_event` lines (`message_start`, `content_block_start/stop`,
+    ///   `input_json_delta`, `signature_delta`, `message_delta`, `message_stop`): recorded
+    ///   where relevant and dropped.
+    /// - `assistant` with the streamed `message.id`: text / thinking blocks lose the prefix
+    ///   already streamed (empty blocks are removed; tool_use blocks are kept). `None` when
+    ///   nothing is left.
+    /// - `result`: clears state and passes through.
+    /// - anything else: passed through unchanged.
+    pub fn filter(&mut self, value: &Value) -> Option<Value> {
+        if let Some(event) = partial_event(value) {
+            return self.observe_stream_event(value, event);
+        }
+        match value.get("type").and_then(Value::as_str) {
+            Some("assistant") => self.strip_assistant(value),
+            Some("result") => {
+                self.reset();
+                Some(value.clone())
+            }
+            _ => Some(value.clone()),
+        }
+    }
+
+    fn observe_stream_event(&mut self, line: &Value, event: &Value) -> Option<Value> {
+        match event.get("type").and_then(Value::as_str).unwrap_or("") {
+            "message_start" => {
+                self.reset();
+                self.message_id = partial_message_start_id(line);
+                None
+            }
+            "content_block_start" => {
+                let index = event.get("index").and_then(Value::as_u64);
+                let kind = event
+                    .pointer("/content_block/type")
+                    .and_then(Value::as_str)
+                    .and_then(PartialBlockKind::from_block_type);
+                if let (Some(index), Some(kind)) = (index, kind) {
+                    self.blocks.retain(|b| b.index != index);
+                    self.blocks.push(PartialBlock {
+                        index,
+                        kind,
+                        streamed: String::new(),
+                        consumed: false,
+                    });
+                }
+                None
+            }
+            "content_block_delta" => {
+                let (kind, text) = partial_text_delta(line)
+                    .map(|t| (PartialBlockKind::Text, t))
+                    .or_else(|| {
+                        partial_thinking_delta(line).map(|t| (PartialBlockKind::Thinking, t))
+                    })?;
+                let index = event.get("index").and_then(Value::as_u64).unwrap_or(0);
+                match self.blocks.iter_mut().find(|b| b.index == index) {
+                    Some(block) if block.kind == kind => block.streamed.push_str(&text),
+                    Some(_) => {}
+                    None => self.blocks.push(PartialBlock {
+                        index,
+                        kind,
+                        streamed: text,
+                        consumed: false,
+                    }),
+                }
+                Some(line.clone())
+            }
+            _ => None,
+        }
+    }
+
+    fn strip_assistant(&mut self, value: &Value) -> Option<Value> {
+        let Some(id) = assistant_message_id(value) else {
+            return Some(value.clone());
+        };
+        if self.message_id.as_deref() != Some(id.as_str()) || self.blocks.is_empty() {
+            return Some(value.clone());
+        }
+        let Some(content) = value.pointer("/message/content").and_then(Value::as_array) else {
+            return Some(value.clone());
+        };
+        let mut kept = Vec::with_capacity(content.len());
+        for block in content {
+            let kind = block
+                .get("type")
+                .and_then(Value::as_str)
+                .and_then(PartialBlockKind::from_block_type);
+            let Some(kind) = kind else {
+                kept.push(block.clone());
+                continue;
+            };
+            let full = block
+                .get(kind.field())
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let Some(streamed) = self
+                .blocks
+                .iter_mut()
+                .find(|b| b.kind == kind && !b.consumed)
+            else {
+                if !full.is_empty() {
+                    kept.push(block.clone());
+                }
+                continue;
+            };
+            streamed.consumed = true;
+            // Streamed text is authoritative; only the unseen tail (if any) is new.
+            let rest = full.strip_prefix(streamed.streamed.as_str()).unwrap_or("");
+            if !rest.is_empty() {
+                let mut tail = block.clone();
+                tail[kind.field()] = Value::String(rest.to_string());
+                kept.push(tail);
+            }
+        }
+        if kept.is_empty() {
+            return None;
+        }
+        let mut out = value.clone();
+        out["message"]["content"] = Value::Array(kept);
+        Some(out)
+    }
+}
+
 #[cfg(test)]
 mod tests;

@@ -24,7 +24,7 @@ pub use types::{
     RuntimeSkillRef, RuntimeSnapshot, RuntimeStartExtras, RuntimeTurnSettings,
 };
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
@@ -44,6 +44,7 @@ use crate::models::{
 use crate::services::RunService;
 use crate::storage::{ChatRepo, Database};
 use crate::utils::redact::redact_text;
+use crate::utils::stream_parse::claude;
 
 use self::codex_transport::{CodexEvent, CodexTransport};
 use self::store::{OperationState, RuntimeStore};
@@ -108,6 +109,8 @@ struct CatalogCache {
     plan_tool_use_ids: Vec<String>,
     /// Conversation-local Always allow. Survives catalog refetch; not SQLite.
     session_allow_always: bool,
+    /// Catalog lists were cleared by a login change; the next idle load refetches.
+    stale: bool,
 }
 
 fn merge_catalog_cache(previous: Option<&CatalogCache>, mut fetched: CatalogCache) -> CatalogCache {
@@ -268,6 +271,9 @@ pub struct ChatRuntime {
     repo: ChatRepo,
     run: Arc<RunService>,
     actors: Mutex<HashMap<String, ActorHandle>>,
+    /// Conversations whose worker is being torn down. `actor()` must not
+    /// start a replacement until `shutdown` has seen the old one finish.
+    closing: Mutex<HashSet<String>>,
     catalogs: Arc<Mutex<HashMap<String, CatalogCache>>>,
     host_terminals: Arc<Mutex<HashMap<String, Vec<RuntimeHostTerminal>>>>,
     codex_program_override: Arc<Mutex<Option<PathBuf>>>,
@@ -284,6 +290,7 @@ impl ChatRuntime {
             repo: ChatRepo::new(db),
             run,
             actors: Mutex::new(HashMap::new()),
+            closing: Mutex::new(HashSet::new()),
             catalogs: Arc::new(Mutex::new(HashMap::new())),
             host_terminals: Arc::new(Mutex::new(HashMap::new())),
             codex_program_override: Arc::new(Mutex::new(None)),
@@ -357,16 +364,21 @@ impl ChatRuntime {
 
     /// Forget warmed model/skills lists so the next idle `options()` refetch
     /// sees the login that is live now (Codex ChatGPT vs API, Grok slots).
-    /// Keep conversation-local Always allow — that is not a catalog.
+    /// Keep the running turn's plan and conversation-local Always allow —
+    /// those are not catalogs. The epoch moves forward so Options re-pulls.
     pub fn invalidate_catalogs(&self) {
         if let Ok(mut catalogs) = self.catalogs.lock() {
             for cache in catalogs.values_mut() {
                 *cache = CatalogCache {
+                    catalog_epoch: cache.catalog_epoch.saturating_add(1),
+                    plan: std::mem::take(&mut cache.plan),
+                    pending_plan_creates: std::mem::take(&mut cache.pending_plan_creates),
+                    plan_tool_use_ids: std::mem::take(&mut cache.plan_tool_use_ids),
                     session_allow_always: cache.session_allow_always,
+                    stale: true,
                     ..CatalogCache::default()
                 };
             }
-            catalogs.retain(|_, cache| cache.session_allow_always);
         }
     }
 
@@ -792,7 +804,25 @@ impl ChatRuntime {
             Ok(actor) => actor,
             Err(error) => return Err(log_and_return_stop_fail(conversation_id, error)),
         };
-        actor.abort.store(true, Ordering::SeqCst);
+        // A running Claude turn is stopped by an interrupt message on its
+        // live process; the abort flag would tear that process down first.
+        // Starting (spawn / first write may block) still aborts.
+        let soft_stop = is_claude_stream_runtime_agent(
+            self.store
+                .conversation_agent(conversation_id)
+                .ok()
+                .flatten(),
+        ) && self
+            .store
+            .record(conversation_id)
+            .ok()
+            .flatten()
+            .is_some_and(|record| {
+                matches!(record.phase, RuntimePhase::Running | RuntimePhase::Waiting)
+            });
+        if !soft_stop {
+            actor.abort.store(true, Ordering::SeqCst);
+        }
         let (tx, rx) = mpsc::sync_channel(1);
         if actor
             .tx
@@ -814,21 +844,37 @@ impl ChatRuntime {
     /// The worker owns process teardown and will not receive any new events
     /// after the shutdown command has been acknowledged by the worker.
     pub(crate) fn shutdown(&self, conversation_id: &str) {
-        if let Ok(mut actors) = self.actors.lock() {
-            if let Some(actor) = actors.remove(conversation_id) {
-                actor.abort.store(true, Ordering::SeqCst);
-                let (done_tx, done_rx) = mpsc::sync_channel(1);
-                if actor
-                    .tx
-                    .send(RuntimeCommand::Shutdown { done: done_tx })
-                    .is_ok()
-                {
-                    // Wait until the worker confirms process teardown. A timeout
-                    // here used to continue deleting the conversation while the
-                    // child was still running.
-                    let _ = done_rx.recv();
+        // Release the routing table before waiting: other conversations must
+        // keep start/reply/cancel while this worker tears down its process.
+        let actor = match self.actors.lock() {
+            Ok(mut actors) => {
+                let actor = actors.remove(conversation_id);
+                if actor.is_some() {
+                    if let Ok(mut closing) = self.closing.lock() {
+                        closing.insert(conversation_id.to_string());
+                    }
                 }
+                actor
             }
+            Err(_) => None,
+        };
+        let Some(actor) = actor else {
+            return;
+        };
+        actor.abort.store(true, Ordering::SeqCst);
+        let (done_tx, done_rx) = mpsc::sync_channel(1);
+        if actor
+            .tx
+            .send(RuntimeCommand::Shutdown { done: done_tx })
+            .is_ok()
+        {
+            // Wait until the worker confirms process teardown. A timeout
+            // here used to continue deleting the conversation while the
+            // child was still running.
+            let _ = done_rx.recv();
+        }
+        if let Ok(mut closing) = self.closing.lock() {
+            closing.remove(conversation_id);
         }
     }
 
@@ -864,7 +910,9 @@ impl ChatRuntime {
         if !refresh || frozen {
             if let Ok(guard) = self.catalogs.lock() {
                 if let Some(cache) = guard.get(conversation_id) {
-                    return cache.clone();
+                    if frozen || !cache.stale {
+                        return cache.clone();
+                    }
                 }
             }
             if frozen {
@@ -1011,6 +1059,18 @@ impl ChatRuntime {
         if let Some(actor) = actors.get(conversation_id) {
             return Ok(actor.clone());
         }
+        // Lock order: actors, then closing (same as `shutdown`).
+        if self
+            .closing
+            .lock()
+            .map_err(|_| AppError::message("chat.runtime.lock", "runtime closing set poisoned"))?
+            .contains(conversation_id)
+        {
+            return Err(AppError::message(
+                "chat.runtime.closing",
+                "这场对话正在关闭，请稍后再试",
+            ));
+        }
         let (tx, rx) = mpsc::sync_channel(32);
         let store = self.store.clone();
         let repo = self.repo.clone();
@@ -1125,8 +1185,10 @@ fn actor_loop(
         session_model: None,
         session_effort: None,
         session_trust_all: None,
-        session_allow_always: false,
+        allow_always_grants: HashSet::new(),
         pending_fs_writes: HashMap::new(),
+        pending_grants: HashMap::new(),
+        claude_dedup: claude::ClaudePartialDedup::new(),
         thinking_open: false,
     };
     worker.run();
@@ -1159,20 +1221,25 @@ struct ActorWorker {
     session_model: Option<String>,
     session_effort: Option<String>,
     session_trust_all: Option<bool>,
-    /// After the user picks session remember, later command/file approvals in
-    /// this conversation are accepted without another card. Not written to
-    /// SQLite; a new conversation asks again. Codex synthesizes the button
-    /// and is told `acceptForSession`. Grok / Kiro `session/request_permission`
-    /// only show it when the ACP request includes an `allow_always` kind
-    /// (including `allow_always_tool`). Host-owned Grok `fs/write_text_file`
-    /// cards synthesize the same three buttons as Codex. Codex starts a fresh
-    /// process each turn, so the flag must outlive `terminalize`. ACP usually
-    /// keeps one process across turns.
-    session_allow_always: bool,
+    /// What the user chose "Always allow" for in this conversation, keyed by
+    /// `allow_always_grant`: every file change, or one exact command/tool call.
+    /// A file grant never approves commands and one command never approves
+    /// another. Not written to SQLite; a new conversation asks again. Codex
+    /// synthesizes the button and is told `acceptForSession`. Grok / Kiro
+    /// `session/request_permission` only show it when the ACP request includes
+    /// an `allow_always` kind (including `allow_always_tool`). Host-owned Grok
+    /// `fs/write_text_file` cards synthesize the same three buttons as Codex.
+    /// Codex starts a fresh process each turn, so grants must outlive
+    /// `terminalize`. ACP usually keeps one process across turns.
+    allow_always_grants: HashSet<String>,
     /// Full write body for in-flight `fs/write_text_file` cards, keyed by the
     /// JSON-RPC request id. Content is not persisted; a dead process cannot
     /// complete the write anyway.
     pending_fs_writes: HashMap<String, (PathBuf, String)>,
+    /// "Always allow" scope of each open card, from its raw request.
+    pending_grants: HashMap<String, String>,
+    /// Claude partial deltas vs. the complete `assistant` line of this turn.
+    claude_dedup: claude::ClaudePartialDedup,
     thinking_open: bool,
 }
 
@@ -1707,7 +1774,7 @@ impl ActorWorker {
         start_result
     }
 
-    fn acp_connect_and_prompt(&mut self, prompt_blocks: Vec<Value>) -> Result<RuntimeSnapshot> {
+    fn acp_connect_and_prompt(&mut self, mut prompt_blocks: Vec<Value>) -> Result<RuntimeSnapshot> {
         let cwd = self.conversation_cwd()?;
         let settings = self.store.turn_settings(&self.conversation_id)?;
         let model = settings
@@ -1730,8 +1797,7 @@ impl ActorWorker {
         let mut retried_after_exit = false;
         loop {
             let live = self.transport.as_ref().is_some_and(CodexTransport::is_open);
-            let mut plan = ops::acp_session_plan(self.agent, live, self.thread_id.is_some());
-            if live
+            let settings_changed = live
                 && ops::acp_session_settings_changed(
                     self.session_model.as_deref(),
                     self.session_effort.as_deref(),
@@ -1739,10 +1805,12 @@ impl ActorWorker {
                     model,
                     effort,
                     trust_all,
-                )
-            {
-                plan = ops::AcpSessionPlan::New;
-            }
+                );
+            let plan = ops::acp_session_plan(
+                self.agent,
+                live && !settings_changed,
+                self.thread_id.is_some(),
+            );
             let mut transport = if matches!(plan, ops::AcpSessionPlan::PromptExisting) {
                 self.transport.take().ok_or_else(|| {
                     AppError::message("chat.runtime.transport", "ACP process stopped")
@@ -1779,9 +1847,13 @@ impl ActorWorker {
             };
             self.apply_initialize_capabilities(transport.initialize_result());
 
+            // A session the Agent no longer remembers is being replaced.
+            let replaced_session = self.thread_id.clone();
+            let mut started_fresh = false;
             match plan {
                 ops::AcpSessionPlan::PromptExisting => {}
                 ops::AcpSessionPlan::New => {
+                    started_fresh = true;
                     let created = transport
                         .request(
                             "session/new",
@@ -1826,14 +1898,27 @@ impl ActorWorker {
                     } else {
                         None
                     };
-                    if let Some(method) = method {
-                        let value = transport
-                            .request_discarding_history(method, load_params, CODEX_REQUEST_TIMEOUT)
-                            .map_err(|error| map_transport(self.agent, error))?;
-                        if let Some(id) = grok_session_id(&value) {
-                            self.thread_id = Some(id);
-                        }
-                    } else {
+                    // The Agent refusing to load (not a dead process) falls back to
+                    // a fresh session that carries the earlier turns.
+                    let loaded = match method {
+                        Some(method) => match transport.request_discarding_history(
+                            method,
+                            load_params,
+                            CODEX_REQUEST_TIMEOUT,
+                        ) {
+                            Ok(value) => {
+                                if let Some(id) = grok_session_id(&value) {
+                                    self.thread_id = Some(id);
+                                }
+                                true
+                            }
+                            Err(codex_transport::CodexTransportError::Server { .. }) => false,
+                            Err(error) => return Err(map_transport(self.agent, error)),
+                        },
+                        None => false,
+                    };
+                    if !loaded {
+                        started_fresh = true;
                         let created = transport
                             .request(
                                 "session/new",
@@ -1852,6 +1937,9 @@ impl ActorWorker {
                 .thread_id
                 .clone()
                 .ok_or_else(|| AppError::message("chat.runtime.protocol", "session id omitted"))?;
+            if started_fresh && replaced_session.is_some_and(|previous| previous != session_id) {
+                self.carry_history_into(&mut prompt_blocks)?;
+            }
             let prompt_params = ops::acp_session_prompt_params(&session_id, prompt_blocks.clone());
             match transport.begin_request("session/prompt", prompt_params) {
                 Ok(prompt_id) => {
@@ -1890,6 +1978,36 @@ impl ActorWorker {
                 Err(error) => return Err(map_transport(self.agent, error)),
             }
         }
+    }
+
+    /// The Agent is on a fresh session but this conversation already has
+    /// turns: prefix earlier turns to the text block, the same way the
+    /// original send path rebuilds context after a resume failure.
+    fn carry_history_into(&self, prompt_blocks: &mut [Value]) -> Result<()> {
+        let Some(current_turn) = self.chat_turn else {
+            return Ok(());
+        };
+        let history: Vec<ChatMessage> = self
+            .repo
+            .list_messages(&self.conversation_id)?
+            .into_iter()
+            .filter(|message| message.turn < current_turn)
+            .collect();
+        if history.is_empty() {
+            return Ok(());
+        }
+        let Some(text) = prompt_blocks
+            .iter_mut()
+            .find(|block| block.get("type").and_then(Value::as_str) == Some("text"))
+            .and_then(|block| block.get_mut("text"))
+        else {
+            return Ok(());
+        };
+        let prompt = text.as_str().unwrap_or_default().to_string();
+        *text = Value::String(crate::services::chat_service::build_agent_prompt(
+            &history, self.agent, &prompt,
+        ));
+        Ok(())
     }
 
     fn claude_connect_and_prompt(&mut self, prompt: Value) -> Result<RuntimeSnapshot> {
@@ -1940,6 +2058,7 @@ impl ActorWorker {
             .map_err(|error| map_transport(self.agent, error))?
         };
 
+        self.claude_dedup.reset();
         transport
             .send_raw_value(&prompt)
             .map_err(|error| map_transport(self.agent, error))?;
@@ -1984,6 +2103,18 @@ impl ActorWorker {
             }
         }
 
+        // Subagent deltas are not this reply's text; their complete lines
+        // still arrive as before.
+        if claude::partial_event(params).is_some() && claude::is_subagent_line(params) {
+            return Ok(());
+        }
+        // Partial deltas carry the reply as it is written; drop the parts of
+        // the complete `assistant` line that were already streamed.
+        let Some(filtered) = self.claude_dedup.filter(params) else {
+            return Ok(());
+        };
+        let params = &filtered;
+
         self.remember_claude_plan_tools(params);
         let plan_ops = crate::utils::stream_parse::claude::extract_todo_plan(params);
         if !plan_ops.is_empty() {
@@ -2000,10 +2131,20 @@ impl ActorWorker {
                     .get("subtype")
                     .and_then(Value::as_str)
                     .is_some_and(|s| s.contains("error"));
+            // An interrupt ends with `is_error: true` +
+            // `terminal_reason: "aborted_streaming"`: that is a stop, not a failure.
+            let cancel_requested = claude::is_interrupted_result(params)
+                || self
+                    .store
+                    .record(&self.conversation_id)?
+                    .is_some_and(|record| record.phase == RuntimePhase::Cancelling)
+                || self.cancel_deadline.is_some();
             if let Some(steps) = crate::utils::stream_parse::claude::parse_line(&params.to_string())
             {
                 for step in steps {
-                    if self.drops_claude_plan_process(&step) {
+                    if self.drops_claude_plan_process(&step)
+                        || (cancel_requested && matches!(step, ProcessStep::Error { .. }))
+                    {
                         continue;
                     }
                     match step {
@@ -2034,7 +2175,16 @@ impl ActorWorker {
                     }
                 }
             }
-            if is_err {
+            if cancel_requested {
+                self.terminalize(
+                    ChatMessageStatus::Cancelled,
+                    None,
+                    RuntimePhase::Cancelled,
+                    false,
+                    true,
+                )?;
+                self.log_stop_ok();
+            } else if is_err {
                 let message = params
                     .get("error")
                     .and_then(Value::as_str)
@@ -2048,28 +2198,13 @@ impl ActorWorker {
                     false,
                 )?;
             } else {
-                let cancel_requested = self
-                    .store
-                    .record(&self.conversation_id)?
-                    .is_some_and(|record| record.phase == RuntimePhase::Cancelling)
-                    || self.cancel_deadline.is_some();
-                if cancel_requested {
-                    self.terminalize(
-                        ChatMessageStatus::Cancelled,
-                        None,
-                        RuntimePhase::Cancelled,
-                        false,
-                        true,
-                    )?;
-                } else {
-                    self.terminalize(
-                        ChatMessageStatus::Ok,
-                        None,
-                        RuntimePhase::Completed,
-                        true,
-                        false,
-                    )?;
-                }
+                self.terminalize(
+                    ChatMessageStatus::Ok,
+                    None,
+                    RuntimePhase::Completed,
+                    true,
+                    false,
+                )?;
             }
             // Keep the process alive for the next user turn.
             return Ok(());
@@ -2179,12 +2314,12 @@ impl ActorWorker {
                     };
                     let value = acp_permission_reply(&options, decision)?;
                     if matches!(reply.decision, Some(RuntimeDecision::AllowAlways)) {
-                        self.remember_session_allow_always();
+                        self.remember_allow_always(&persisted.request);
                     }
                     value
                 } else {
                     if matches!(reply.decision, Some(RuntimeDecision::AllowAlways)) {
-                        self.remember_session_allow_always();
+                        self.remember_allow_always(&persisted.request);
                     }
                     json!({"decision": codex_approval_decision(decision)})
                 }
@@ -2388,6 +2523,20 @@ impl ActorWorker {
             return Ok(());
         }
         if is_claude_stream_runtime_agent(Some(self.agent)) {
+            // Ask Claude to stop and keep the process for the next turn; its
+            // interrupted `result` closes the turn. No result before the
+            // deadline → `check_cancel_deadline` kills the process.
+            let interrupted = !self.aborted()
+                && self.transport.as_mut().is_some_and(|transport| {
+                    let line = claude::interrupt_request_line(&format!("stop-{}", Uuid::new_v4()));
+                    serde_json::from_str::<Value>(&line)
+                        .ok()
+                        .is_some_and(|value| transport.send_raw_value(&value).is_ok())
+                });
+            if interrupted {
+                self.cancel_deadline = Some(Instant::now() + ACP_CANCEL_DEADLINE);
+                return Ok(());
+            }
             if let Some(transport) = self.transport.as_mut() {
                 transport.shutdown();
             }
@@ -2545,6 +2694,19 @@ impl ActorWorker {
 
     fn server_request(&mut self, id: Value, method: &str, params: &Value) -> Result<()> {
         let id_string = wire_id_string(&id);
+        // A second request reusing an open card's id (or `1` vs `"1"`) must not
+        // replace what that card approves, including its "Always allow" scope.
+        if self.pending_fs_writes.contains_key(&id_string)
+            || self
+                .store
+                .request(&self.conversation_id, &id_string)?
+                .is_some()
+        {
+            return self.respond_jsonrpc(
+                id,
+                Err(json!({"code": -32600, "message": "duplicate request id"})),
+            );
+        }
         let phase = self
             .store
             .record(&self.conversation_id)?
@@ -2630,9 +2792,9 @@ impl ActorWorker {
             return Ok(());
         }
         let (kind, title, detail, questions, acp_options, file_changes) = match method {
-            "session/request_permission" => {
+            "session/request_permission" if is_acp_runtime_agent(Some(self.agent)) => {
                 let file_changes = file_change::extract_file_changes(params);
-                let is_file = !file_changes.is_empty() || acp_tool_is_file_change(params);
+                let is_file = acp_permission_is_file_change(params, !file_changes.is_empty());
                 let title = if is_file {
                     "修改文件".to_string()
                 } else {
@@ -2646,11 +2808,7 @@ impl ActorWorker {
                 let detail = if is_file {
                     self.file_change_request_detail(params)
                 } else {
-                    redact_json_text(
-                        params
-                            .get("toolCall")
-                            .and_then(|call| call.get("rawInput").or_else(|| call.get("title"))),
-                    )
+                    acp_command_detail(params)
                 };
                 (
                     if is_file {
@@ -2710,8 +2868,10 @@ impl ActorWorker {
                 return Ok(());
             }
         };
-        if self.session_allow_always
-            && matches!(kind, RuntimeRequestKind::Command | RuntimeRequestKind::File)
+        let grant = allow_always_grant(method, kind, params);
+        if grant
+            .as_ref()
+            .is_some_and(|grant| self.allow_always_grants.contains(grant))
         {
             if is_acp_runtime_agent(Some(self.agent)) {
                 let options = acp_options.clone().unwrap_or_default();
@@ -2751,6 +2911,9 @@ impl ActorWorker {
         };
         self.store
             .add_request(&self.conversation_id, &request, method, &id_string)?;
+        if let Some(grant) = grant {
+            self.pending_grants.insert(id_string.clone(), grant);
+        }
         if !permission_options.is_empty() {
             self.permission_options
                 .insert(id_string, permission_options);
@@ -2759,6 +2922,11 @@ impl ActorWorker {
     }
 
     fn notification(&mut self, method: &str, params: &Value) -> Result<()> {
+        if is_codex_turn_notification(method)
+            && !self.codex_notification_is_current(method, params)?
+        {
+            return Ok(());
+        }
         match method {
             "claude/stream" => {
                 self.claude_stream_event(params)?;
@@ -2839,8 +3007,10 @@ impl ActorWorker {
                 self.turn_completed(params)?;
             }
             "error" => {
-                let message =
-                    redact_json_text(params.get("message").or_else(|| params.get("error")));
+                // App-server shape: `{ error: TurnError { message, .. }, willRetry }`.
+                let message = error_text(params.get("error"))
+                    .or_else(|| error_text(params.get("message")))
+                    .unwrap_or_else(|| "Codex 运行失败".into());
                 let will_retry = params
                     .get("willRetry")
                     .or_else(|| params.get("error").and_then(|error| error.get("willRetry")))
@@ -2868,6 +3038,45 @@ impl ActorWorker {
             _ => {}
         }
         Ok(())
+    }
+
+    /// A Codex turn notification belongs to the open turn: same thread, same
+    /// turn, and the turn has not ended. A late one (after `error` ended the
+    /// turn, or from an older turn) would otherwise write the phase back to
+    /// running or publish a second Finished.
+    fn codex_notification_is_current(&self, method: &str, params: &Value) -> Result<bool> {
+        let thread = params.get("threadId").and_then(Value::as_str);
+        if thread
+            .zip(self.thread_id.as_deref())
+            .is_some_and(|(incoming, current)| incoming != current)
+        {
+            return Ok(false);
+        }
+        if method != "turn/started" {
+            let turn = params
+                .get("turnId")
+                .and_then(Value::as_str)
+                .or_else(|| params.pointer("/turn/id").and_then(Value::as_str));
+            if turn
+                .zip(self.turn_id.as_deref())
+                .is_some_and(|(incoming, current)| incoming != current)
+            {
+                return Ok(false);
+            }
+        }
+        let phase = self
+            .store
+            .record(&self.conversation_id)?
+            .map(|record| record.phase);
+        Ok(matches!(
+            phase,
+            Some(
+                RuntimePhase::Starting
+                    | RuntimePhase::Running
+                    | RuntimePhase::Waiting
+                    | RuntimePhase::Cancelling
+            )
+        ))
     }
 
     fn turn_completed(&mut self, params: &Value) -> Result<()> {
@@ -2923,9 +3132,13 @@ impl ActorWorker {
                 RuntimePhase::Failed,
                 false,
                 false,
-                Some(redact_json_text(
-                    params.get("error").or_else(|| params.get("message")),
-                )),
+                // App-server puts the failure on `turn.error` (`TurnError`).
+                Some(
+                    error_text(params.pointer("/turn/error"))
+                        .or_else(|| error_text(params.get("error")))
+                        .or_else(|| error_text(params.get("message")))
+                        .unwrap_or_else(|| "生成失败".into()),
+                ),
             ),
             Some("max_tokens") | Some("max_turn_requests") | Some("refusal") => (
                 ChatMessageStatus::Failed,
@@ -3295,8 +3508,16 @@ impl ActorWorker {
         }
     }
 
-    fn remember_session_allow_always(&mut self) {
-        self.session_allow_always = true;
+    /// Remember "Always allow" for this request's scope only. A request with
+    /// no stable scope (e.g. a command without its text) is answered but not
+    /// remembered, so the next one still asks.
+    fn remember_allow_always(&mut self, request: &RuntimeRequest) {
+        // Scope comes from the raw request seen by this worker. After a
+        // restart it is gone: the card is answered but nothing is remembered.
+        let Some(grant) = self.pending_grants.remove(&request.id) else {
+            return;
+        };
+        self.allow_always_grants.insert(grant);
         if let Ok(mut guard) = self.catalogs.lock() {
             guard
                 .entry(self.conversation_id.clone())
@@ -3306,7 +3527,7 @@ impl ActorWorker {
     }
 
     fn forget_session_allow_always(&mut self) {
-        self.session_allow_always = false;
+        self.allow_always_grants.clear();
         if let Ok(mut guard) = self.catalogs.lock() {
             if let Some(cache) = guard.get_mut(&self.conversation_id) {
                 cache.session_allow_always = false;
@@ -3325,7 +3546,7 @@ impl ActorWorker {
             snapshot.plan = cache.plan;
             snapshot.session_allow_always = cache.session_allow_always;
         }
-        if self.session_allow_always {
+        if !self.allow_always_grants.is_empty() {
             snapshot.session_allow_always = true;
         }
         snapshot.host_terminals = self.host_terminals.snapshot();
@@ -3538,11 +3759,7 @@ impl ActorWorker {
         let Some(id) = self.message_id.as_deref() else {
             return Ok(None);
         };
-        Ok(self
-            .repo
-            .list_messages(&self.conversation_id)?
-            .into_iter()
-            .find(|message| message.id == id))
+        self.store.message(&self.conversation_id, id)
     }
 
     fn fail_runtime(&mut self, error: AppError) {
@@ -3629,12 +3846,19 @@ impl ActorWorker {
                         | RuntimePhase::Interrupted
                 )
             });
-        let _ = self.finish_open_thinking();
         self.cancel_deadline = None;
         self.pending_prompt_id = None;
         self.permission_options.clear();
         self.file_change_items.clear();
         self.pending_fs_writes.clear();
+        self.pending_grants.clear();
+        // A turn ends once. Codex sends `error` and then `turn/completed`;
+        // the second must not re-publish Finished or overwrite the error.
+        if already_terminal {
+            self.thinking_open = false;
+            return Ok(());
+        }
+        let _ = self.finish_open_thinking();
         if let Some(message) = error {
             if let Err(learn_err) = self
                 .store
@@ -3681,9 +3905,7 @@ impl ActorWorker {
             self.run_id.as_deref(),
             &events,
         )?;
-        if !already_terminal {
-            self.log_terminal_outcome(status, cancelled, error);
-        }
+        self.log_terminal_outcome(status, cancelled, error);
         Ok(())
     }
 
@@ -3957,7 +4179,8 @@ impl ActorWorker {
             }
         };
         let cwd = self.conversation_cwd()?;
-        let auto_write = ops::path_is_inside_cwd(&path, &cwd) || self.session_allow_always;
+        let auto_write = ops::path_is_inside_cwd(&path, &cwd)
+            || self.allow_always_grants.contains(FILE_CHANGE_GRANT);
         if auto_write {
             return match ops::write_text_file_on_disk(&path, &content) {
                 Ok(()) => self.respond_jsonrpc(id, Ok(json!({}))),
@@ -3992,6 +4215,8 @@ impl ActorWorker {
         };
         self.pending_fs_writes
             .insert(id_string.clone(), (path, content));
+        self.pending_grants
+            .insert(id_string.clone(), FILE_CHANGE_GRANT.to_string());
         self.store.add_request(
             &self.conversation_id,
             &request,
@@ -4028,7 +4253,7 @@ impl ActorWorker {
             };
             let write_result = ops::write_text_file_on_disk(&path, &content);
             if decision == "accept_always" && write_result.is_ok() {
-                self.remember_session_allow_always();
+                self.remember_allow_always(&persisted.request);
             }
             self.store.record_reply(
                 &reply.conversation_id,
@@ -4207,6 +4432,43 @@ fn redact_json_text(value: Option<&Value>) -> String {
     redact_text(&raw)
 }
 
+/// Readable, redacted text of a protocol error: a string, or an object's
+/// `message`. Never a raw JSON dump; `None` when nothing usable is present.
+/// Codex app-server notifications that belong to one turn.
+fn is_codex_turn_notification(method: &str) -> bool {
+    matches!(
+        method,
+        "turn/started"
+            | "turn/completed"
+            | "error"
+            | "item/agentMessage/delta"
+            | "item/reasoning/summaryTextDelta"
+            | "item/reasoning/textDelta"
+            | "item/commandExecution/outputDelta"
+            | "item/commandExecution/terminalOutputDelta"
+            | "item/started"
+            | "item/completed"
+            | "item/updated"
+            | "item/fileChange/patchUpdated"
+            | "thread/tokenUsage/updated"
+            | "thread/token_usage/updated"
+    )
+}
+
+fn error_text(value: Option<&Value>) -> Option<String> {
+    let text = match value? {
+        Value::String(text) => text.clone(),
+        Value::Object(map) => ["message", "additionalDetails"]
+            .iter()
+            .find_map(|key| map.get(*key).and_then(Value::as_str))
+            .map(str::to_owned)?,
+        Value::Null => return None,
+        other => other.to_string(),
+    };
+    let text = text.trim();
+    (!text.is_empty()).then(|| redact_text(text))
+}
+
 fn item_status(method: &str, item: &Value) -> String {
     item.get("status")
         .and_then(Value::as_str)
@@ -4267,6 +4529,239 @@ fn acp_tool_is_file_change(params: &Value) -> bool {
         kind.as_str(),
         "edit" | "delete" | "move" | "write" | "create"
     )
+}
+
+/// Grant for every file change in this conversation (matches the documented
+/// "later out-of-cwd paths stay allowed").
+const FILE_CHANGE_GRANT: &str = "file";
+
+/// Scope an "Always allow" choice covers, built from the raw request (not
+/// the redacted card text, so two commands differing only in a secret never
+/// share a grant). File changes share one grant; a command or other tool call
+/// is remembered by a digest of its exact content. `None` = not rememberable.
+fn allow_always_grant(method: &str, kind: RuntimeRequestKind, params: &Value) -> Option<String> {
+    let identity = match kind {
+        RuntimeRequestKind::File => return Some(FILE_CHANGE_GRANT.to_string()),
+        RuntimeRequestKind::Question => return None,
+        RuntimeRequestKind::Command if method == "session/request_permission" => {
+            let identity = acp_command_identity(params);
+            let call = identity.get("toolCall")?.as_object()?;
+            let title = call
+                .get("title")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim();
+            let has_more = identity.as_object().is_some_and(|map| map.len() > 1)
+                || call
+                    .iter()
+                    .any(|(key, value)| key != "kind" && key != "title" && !value.is_null());
+            if title.is_empty() && !has_more {
+                return None;
+            }
+            json!(["acp", identity]).to_string()
+        }
+        RuntimeRequestKind::Command => {
+            let command = match params.get("command")? {
+                Value::String(text) if !text.trim().is_empty() => json!(text.trim()),
+                Value::Array(parts) if !parts.is_empty() => json!(parts),
+                _ => return None,
+            };
+            json!(["codex", command, params.get("cwd")]).to_string()
+        }
+    };
+    use sha2::{Digest, Sha256};
+    Some(format!("command:{:x}", Sha256::digest(identity.as_bytes())))
+}
+
+/// What an ACP permission request asks to run: the whole request minus the
+/// per-call ids and the answer options. Used as the "Always allow" scope and
+/// as the command card text, so nothing the agent sent is left out of either.
+fn acp_command_identity(params: &Value) -> Value {
+    let mut identity = params.clone();
+    if let Some(map) = identity.as_object_mut() {
+        map.retain(|key, value| !acp_envelope_value_is_plain(key, value));
+        if let Some(Value::Object(call)) = map.get_mut("toolCall") {
+            call.retain(|key, value| {
+                !(matches!(key.as_str(), "toolCallId" | "status") && value.is_string())
+            });
+        }
+    }
+    identity
+}
+
+/// A `session/request_permission` envelope field in its plain protocol
+/// shape: string ids and `options` holding only `{optionId, kind, name}`
+/// strings. Anything else is treated as request content.
+fn acp_envelope_value_is_plain(key: &str, value: &Value) -> bool {
+    match key {
+        "sessionId" | "turnId" => value.is_string(),
+        "options" => value.as_array().is_some_and(|options| {
+            options.iter().all(|option| {
+                option.as_object().is_some_and(|option| {
+                    option.iter().all(|(key, value)| {
+                        matches!(key.as_str(), "optionId" | "kind" | "name") && value.is_string()
+                    })
+                })
+            })
+        }),
+        _ => false,
+    }
+}
+
+/// Command card text: `rawInput` (or the title) when that is all the call
+/// carries; otherwise the whole request, so a command hidden in `locations`
+/// or a sibling key is shown before the user approves it.
+fn acp_command_detail(params: &Value) -> String {
+    let identity = acp_command_identity(params);
+    let call = identity.get("toolCall").and_then(Value::as_object);
+    let plain = identity.as_object().is_some_and(|map| map.len() == 1)
+        && call.is_some_and(|call| {
+            call.iter().all(|(key, value)| {
+                matches!(key.as_str(), "kind" | "title" | "rawInput") || value.is_null()
+            })
+        });
+    if plain {
+        let call = call.expect("checked above");
+        redact_json_text(
+            call.get("rawInput")
+                .filter(|value| !value.is_null())
+                .or_else(|| call.get("title")),
+        )
+    } else {
+        redact_json_text(Some(&identity))
+    }
+}
+
+/// ACP permission is a file card only for file tools whose whole `toolCall`
+/// only names files and their new content. A command or other tool, or a
+/// file-shaped call that also carries anything else, stays a command card, so
+/// a file-change "Always allow" can never approve it.
+fn acp_permission_is_file_change(params: &Value, has_file_changes: bool) -> bool {
+    let kind = params
+        .pointer("/toolCall/kind")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
+    let envelope_only = params.as_object().is_some_and(|map| {
+        map.iter()
+            .all(|(key, value)| key == "toolCall" || acp_envelope_value_is_plain(key, value))
+    });
+    if !envelope_only || !acp_tool_call_is_file_only(params.get("toolCall")) {
+        return false;
+    }
+    acp_tool_is_file_change(params) || (kind.is_empty() && has_file_changes)
+}
+
+/// Keys a file-only tool call may carry, at any depth.
+const ACP_FILE_KEYS: &[&str] = &[
+    "path",
+    "file",
+    "filePath",
+    "file_path",
+    "target_file",
+    "uri",
+    "abs_path",
+    "line",
+    "content",
+    "contents",
+    "text",
+    "diff",
+    "patch",
+    "edits",
+    "old_string",
+    "new_string",
+    "oldText",
+    "newText",
+    "old_text",
+    "new_text",
+    "old_str",
+    "new_str",
+    "replace_all",
+    "source",
+    "destination",
+    "from",
+    "to",
+    "oldPath",
+    "newPath",
+    "old_path",
+    "new_path",
+    "operation",
+    "operations",
+    "changes",
+    "type",
+    "kind",
+];
+
+/// `kind` / `type` values that describe a file edit (or an ACP content block).
+const ACP_FILE_VERBS: &[&str] = &[
+    "edit",
+    "update",
+    "update_file",
+    "create",
+    "create_file",
+    "delete",
+    "delete_file",
+    "move",
+    "move_file",
+    "rename",
+    "write",
+    "write_file",
+    "add",
+    "add_file",
+    "diff",
+    "content",
+    "text",
+];
+
+/// The whole `toolCall` is a file edit: only ACP envelope fields at the top,
+/// and `rawInput` / `locations` / `content` hold nothing but file keys. A bare
+/// string input, `command`, `argv`, an unknown key, or a non-file `kind`
+/// value anywhere makes it a command card.
+fn acp_tool_call_is_file_only(call: Option<&Value>) -> bool {
+    const ENVELOPE: &[&str] = &[
+        "toolCallId",
+        "title",
+        "kind",
+        "status",
+        "rawInput",
+        "locations",
+        "content",
+    ];
+    let Some(Value::Object(call)) = call else {
+        return false;
+    };
+    call.iter().all(|(key, value)| {
+        ENVELOPE.contains(&key.as_str())
+            && match key.as_str() {
+                "toolCallId" | "title" | "status" => value.is_string() || value.is_null(),
+                "kind" => value.as_str().is_some_and(|kind| {
+                    ACP_FILE_VERBS.contains(&kind.trim().to_ascii_lowercase().as_str())
+                }),
+                "rawInput" => {
+                    value.is_null() || (value.is_object() && acp_value_is_file_only(value))
+                }
+                _ => value.is_null() || acp_value_is_file_only(value),
+            }
+    })
+}
+
+fn acp_value_is_file_only(value: &Value) -> bool {
+    match value {
+        Value::Object(map) => map.iter().all(|(key, value)| {
+            ACP_FILE_KEYS.contains(&key.as_str())
+                && match (key.as_str(), value) {
+                    ("kind" | "type", Value::String(verb)) => {
+                        ACP_FILE_VERBS.contains(&verb.trim().to_ascii_lowercase().as_str())
+                    }
+                    (_, Value::Object(_) | Value::Array(_)) => acp_value_is_file_only(value),
+                    _ => true,
+                }
+        }),
+        Value::Array(items) => items
+            .iter()
+            .all(|item| item.is_object() && acp_value_is_file_only(item)),
+        _ => false,
+    }
 }
 
 fn codex_session_permission_options() -> Vec<RuntimePermissionOption> {
