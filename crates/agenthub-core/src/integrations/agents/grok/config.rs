@@ -15,7 +15,8 @@ use crate::models::AgentId;
 use crate::platform::AgentKey;
 use crate::utils::atomic::atomic_write;
 use crate::utils::grok_toml::{
-    active_model_alias, ensure_grok_model_shape, EnsureGrokModelShapeOptions,
+    active_model_alias, active_model_provider, active_provider_field, ensure_grok_model_shape,
+    ensure_grok_provider_table, EnsureGrokModelShapeOptions,
 };
 
 use crate::platform::config::sources::util::{
@@ -24,7 +25,7 @@ use crate::platform::config::sources::util::{
 };
 use crate::platform::config::AgentConfigProjector;
 use crate::platform::config::{
-    AgentConfigSchema, ConfigValidationResult, ConfigValueType, NativeConfigFormat,
+    AgentConfigSchema, ConfigValidationResult, ConfigValueType, NativeConfigFormat, SECRET_REDACTED,
 };
 use crate::platform::config::{ConfigApplyResult, ConfigChangePlan, NormalizedConfigDocument};
 
@@ -71,7 +72,7 @@ impl GrokConfigProjector {
                     ConfigValueType::String,
                     false,
                     false,
-                    Some("api_backend in [model.<alias>]"),
+                    Some("api_backend in [model_providers.*]"),
                 ),
             ],
         }
@@ -133,9 +134,13 @@ impl GrokConfigProjector {
         values.insert(
             "baseUrl".into(),
             string_val(
-                entry
-                    .and_then(|table| table.get("base_url"))
-                    .and_then(Item::as_str)
+                active_provider_field(doc, "base_url")
+                    .as_deref()
+                    .or_else(|| {
+                        entry
+                            .and_then(|table| table.get("base_url"))
+                            .and_then(Item::as_str)
+                    })
                     .or_else(|| doc.get("base_url").and_then(Item::as_str)),
             ),
         );
@@ -151,9 +156,13 @@ impl GrokConfigProjector {
         values.insert(
             "apiBackend".into(),
             string_val(
-                entry
-                    .and_then(|table| table.get("api_backend"))
-                    .and_then(Item::as_str),
+                active_provider_field(doc, "api_backend")
+                    .as_deref()
+                    .or_else(|| {
+                        entry
+                            .and_then(|table| table.get("api_backend"))
+                            .and_then(Item::as_str)
+                    }),
             ),
         );
         values
@@ -162,41 +171,138 @@ impl GrokConfigProjector {
     fn merge(mut doc: DocumentMut, desired: &BTreeMap<String, Value>) -> Result<DocumentMut> {
         let alias = active_model_alias(&doc);
         Self::ensure_shape(&mut doc, &alias)?;
-        let entry = doc["model"]
-            .as_table_mut()
-            .and_then(|models| models.get_mut(&alias))
-            .and_then(Item::as_table_mut)
-            .ok_or_else(|| AppError::InvalidArg(format!("Grok model.{alias} must be a table")))?;
+        let provider = active_model_provider(&doc).unwrap_or_else(|| "proxy".into());
+        {
+            let _ = ensure_grok_provider_table(&mut doc, &provider)?;
+        }
         if let Some(model) = get_str_map(desired, "model") {
             let t = model.trim();
-            if t.is_empty() {
-                entry.remove("model");
-            } else {
-                entry["model"] = toml_edit::value(t);
+            if let Some(entry) = doc["model"]
+                .as_table_mut()
+                .and_then(|models| models.get_mut(&alias))
+                .and_then(Item::as_table_mut)
+            {
+                if t.is_empty() {
+                    entry.remove("model");
+                } else {
+                    entry["model"] = toml_edit::value(t);
+                }
             }
         }
         if let Some(base) = get_str_map(desired, "baseUrl") {
             let t = base.trim();
+            let provider_table = ensure_grok_provider_table(&mut doc, &provider)?;
             if t.is_empty() {
-                entry.remove("base_url");
+                provider_table.remove("base_url");
             } else {
-                entry["base_url"] = toml_edit::value(t);
+                provider_table["base_url"] = toml_edit::value(t);
             }
         }
+        let mut wrote_usable_key = false;
         if let Some(key) = get_str_map(desired, "apiKey") {
             if !secret_unchanged(Some(&key)) {
-                entry["api_key"] = toml_edit::value(key.trim());
+                let key = key.trim();
+                wrote_usable_key = !crate::utils::redact::is_unusable_secret(key);
+                if let Some(entry) = doc["model"]
+                    .as_table_mut()
+                    .and_then(|models| models.get_mut(&alias))
+                    .and_then(Item::as_table_mut)
+                {
+                    entry["api_key"] = toml_edit::value(key);
+                }
+                restore_redacted_provider_keys(&mut doc, &provider, key);
             }
         }
         if let Some(backend) = get_str_map(desired, "apiBackend") {
             let t = backend.trim();
+            let provider_table = ensure_grok_provider_table(&mut doc, &provider)?;
             if t.is_empty() {
-                entry.remove("api_backend");
+                provider_table.remove("api_backend");
             } else {
-                entry["api_backend"] = toml_edit::value(t);
+                provider_table["api_backend"] = toml_edit::value(t);
             }
         }
+        let drop_env_key = wrote_usable_key || active_entry_has_usable_key(&doc, &alias);
+        if let Some(entry) = doc["model"]
+            .as_table_mut()
+            .and_then(|models| models.get_mut(&alias))
+            .and_then(Item::as_table_mut)
+        {
+            entry.remove("base_url");
+            entry.remove("api_backend");
+            if drop_env_key {
+                entry.remove("env_key");
+            }
+        }
+        doc.remove("base_url");
+        if drop_env_key {
+            doc.remove("env_key");
+        }
+        if doc.get("auth").and_then(Item::as_table).is_none() {
+            doc.remove("auth");
+            doc["auth"] = toml_edit::table();
+        }
+        doc["auth"]["preferred_method"] = toml_edit::value("api_key");
+        drop_redacted_api_keys(&mut doc);
         Ok(doc)
+    }
+}
+
+fn active_entry_has_usable_key(doc: &DocumentMut, alias: &str) -> bool {
+    doc.get("model")
+        .and_then(Item::as_table)
+        .and_then(|models| models.get(alias))
+        .and_then(Item::as_table)
+        .and_then(|entry| entry.get("api_key"))
+        .and_then(Item::as_str)
+        .is_some_and(|key| !crate::utils::redact::is_unusable_secret(key))
+}
+
+fn restore_redacted_provider_keys(doc: &mut DocumentMut, provider: &str, key: &str) {
+    let Some(models) = doc.get_mut("model").and_then(Item::as_table_mut) else {
+        return;
+    };
+    for (_, item) in models.iter_mut() {
+        let Some(entry) = item.as_table_mut() else {
+            continue;
+        };
+        if entry
+            .get("model_provider")
+            .and_then(Item::as_str)
+            .map(str::trim)
+            == Some(provider)
+            && entry.get("api_key").and_then(Item::as_str) == Some(SECRET_REDACTED)
+        {
+            entry["api_key"] = toml_edit::value(key);
+            entry.remove("env_key");
+        }
+    }
+}
+
+fn drop_redacted_api_keys(doc: &mut DocumentMut) {
+    if doc
+        .get("api_key")
+        .and_then(Item::as_str)
+        .is_some_and(|key| key == SECRET_REDACTED)
+    {
+        doc.remove("api_key");
+    }
+    for root in ["model", "model_providers"] {
+        let Some(tables) = doc.get_mut(root).and_then(Item::as_table_mut) else {
+            continue;
+        };
+        for (_, item) in tables.iter_mut() {
+            let Some(table) = item.as_table_mut() else {
+                continue;
+            };
+            if table
+                .get("api_key")
+                .and_then(Item::as_str)
+                .is_some_and(|key| key == SECRET_REDACTED)
+            {
+                table.remove("api_key");
+            }
+        }
     }
 }
 
@@ -224,6 +330,19 @@ impl AgentConfigProjector for GrokConfigProjector {
                 if let Some(entry) = item.as_table_mut() {
                     if entry.get("api_key").and_then(Item::as_str).is_some() {
                         entry["api_key"] =
+                            toml_edit::value(crate::platform::config::SECRET_REDACTED);
+                    }
+                }
+            }
+        }
+        if let Some(providers) = safe_doc
+            .get_mut("model_providers")
+            .and_then(Item::as_table_mut)
+        {
+            for (_, item) in providers.iter_mut() {
+                if let Some(provider) = item.as_table_mut() {
+                    if provider.get("api_key").and_then(Item::as_str).is_some() {
+                        provider["api_key"] =
                             toml_edit::value(crate::platform::config::SECRET_REDACTED);
                     }
                 }
@@ -329,6 +448,9 @@ impl AgentConfigProjector for GrokConfigProjector {
         Ok(json!({ "format": "toml", "content": merged.to_string() }))
     }
 }
+
+#[cfg(test)]
+mod tests;
 
 pub fn register(ctx: &mut crate::integrations::IntegrationContext<'_>) {
     ctx.config

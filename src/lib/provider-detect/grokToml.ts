@@ -1,7 +1,7 @@
 /**
  * Grok Build config.toml detection helpers.
  *
- * Grok's user config is a model registry (`[models]` plus
+ * Grok's user config is a model registry (`[models]`, provider tables, and
  * `[model."<alias>"]`), not the legacy top-level model/base_url/api_key shape.
  * This intentionally remains a small, tolerant reader like codexToml.ts; the
  * complete TOML is preserved and the Rust projector is the authoritative
@@ -61,6 +61,15 @@ function sectionBody(text: string, header: string): string {
 function stringValue(body: string, key: string): string {
   const re = new RegExp(`^\\s*${escapeRegExp(key)}\\s*=\\s*["']([^"']*)["']`, 'm');
   return body.match(re)?.[1]?.trim() ?? '';
+}
+
+function isUsableApiKey(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === '***') return false;
+  // The shipped example uses a human placeholder. Do not put that prose in
+  // the API Key field when the whole example is pasted into the dialog.
+  if (/替换|your[-_ ]?api[-_ ]?key|^x{4,}$|<[^>]+>/i.test(trimmed)) return false;
+  return !/[\u4e00-\u9fff]/.test(trimmed);
 }
 
 function modelAlias(text: string): string {
@@ -123,13 +132,35 @@ function pickPreferredBaseUrl(urls: string[]): string | undefined {
   return custom ?? cleaned[0];
 }
 
-function collectGrokBaseUrls(text: string): string[] {
+interface GrokBaseUrlCandidates {
+  activeProvider?: string;
+  activeModel?: string;
+  fallback: string[];
+}
+
+function collectGrokBaseUrls(text: string): GrokBaseUrlCandidates {
   const urls: string[] = [];
   const push = (url: string) => {
     const trimmed = url.trim();
     if (trimmed && !urls.includes(trimmed)) urls.push(trimmed);
   };
+  const activeAlias = modelAlias(text);
+  const activeHeader = modelTableHeader(text, activeAlias);
+  const activeBody = sectionBody(text, activeHeader);
+  const activeProvider = activeBody ? stringValue(activeBody, 'model_provider') : '';
+  const activeModel = activeBody ? stringValue(activeBody, 'base_url') : '';
+  let activeProviderUrl: string | undefined;
+  if (activeProvider) {
+    const providerUrl = stringValue(
+      sectionBody(text, `model_providers.${activeProvider}`),
+      'base_url',
+    );
+    if (providerUrl) {
+      activeProviderUrl = providerUrl;
+    }
+  }
   for (const header of modelTableHeaders(text)) {
+    if (header === activeHeader) continue;
     const url = stringValue(sectionBody(text, header), 'base_url');
     if (url) push(url);
   }
@@ -139,7 +170,11 @@ function collectGrokBaseUrls(text: string): string[] {
   for (const raw of loose) {
     push(raw.replace(/[),.;]+$/g, ''));
   }
-  return urls;
+  return {
+    activeProvider: activeProviderUrl,
+    activeModel: activeModel || undefined,
+    fallback: urls,
+  };
 }
 
 export function extractGrokDetectFields(text: string): GrokDetectFields | null {
@@ -152,12 +187,17 @@ export function extractGrokDetectFields(text: string): GrokDetectFields | null {
   const body = sectionBody(source, modelTableHeader(source, alias));
   const model = body ? stringValue(body, 'model') || undefined : undefined;
   const collected = collectGrokBaseUrls(source);
-  if (exportBase) collected.unshift(exportBase);
-  const baseUrl = pickPreferredBaseUrl(collected);
+  const fallback = exportBase
+    ? [exportBase, ...collected.fallback]
+    : collected.fallback;
+  // The active model's provider is authoritative. Other aliases may point to
+  // a different provider, so their custom URL must not override this choice.
+  const baseUrl =
+    collected.activeProvider || collected.activeModel || pickPreferredBaseUrl(fallback);
   const tableKey = body ? stringValue(body, 'api_key') : '';
   const rawKey =
-    (tableKey && tableKey !== '***' ? tableKey : '') ||
-    (exportKey && exportKey !== '***' ? exportKey : '');
+    (isUsableApiKey(tableKey) ? tableKey : '') ||
+    (isUsableApiKey(exportKey ?? '') ? exportKey : '');
   const apiKey = rawKey || undefined;
   const rawConfigText = stripGrokPasteNoise(source).trim();
   return {

@@ -12,8 +12,9 @@ use crate::models::{
 use crate::runtime;
 use crate::utils::atomic::atomic_write;
 use crate::utils::grok_toml::{
-    active_model_alias, extract_api_key_overlay, merge_api_key_overlay, overlay_from_credentials,
-    overlay_into_credentials,
+    active_model_alias, active_model_provider_table_mut, active_provider_field,
+    extract_api_key_overlay, extract_api_key_overlay_for_alias, merge_api_key_overlay,
+    overlay_from_credentials, overlay_into_credentials,
 };
 use crate::utils::paths::{agent_home, home_dir};
 use crate::utils::process::apply_no_window;
@@ -170,8 +171,10 @@ impl AgentAdapter for GrokAdapter {
                 write_verified_json_object(&auth_path, &body)?;
                 // Official OAuth must win over leftover inline credentials.
                 clear_grok_field(&home.join("config.toml"), "api_key")?;
+                clear_grok_field(&home.join("config.toml"), "env_key")?;
                 // Relay base_url would keep traffic off official endpoint.
                 clear_grok_field(&home.join("config.toml"), "base_url")?;
+                clear_grok_api_key_preference(&home.join("config.toml"))?;
                 Ok(())
             }
             "grok_bundle" => {
@@ -1364,22 +1367,35 @@ fn grok_config_has_api_key_field(path: &Path) -> bool {
     let Ok(doc) = text.parse::<toml_edit::DocumentMut>() else {
         return false;
     };
-    let alias = active_model_alias(&doc);
-    let nested = doc
-        .get("model")
-        .and_then(Item::as_table)
-        .and_then(|models| models.get(&alias))
-        .and_then(Item::as_table)
-        .and_then(|entry| entry.get("api_key"))
+    document_has_nonempty_field(&doc, "api_key")
+}
+
+fn document_has_nonempty_field(doc: &DocumentMut, key: &str) -> bool {
+    if doc
+        .get(key)
         .and_then(Item::as_str)
-        .map(str::trim)
-        .is_some_and(|key| !key.is_empty());
-    nested
-        || doc
-            .get("api_key")
-            .and_then(Item::as_str)
-            .map(str::trim)
-            .is_some_and(|key| !key.is_empty())
+        .is_some_and(|value| !value.trim().is_empty())
+    {
+        return true;
+    }
+    let Some(models) = doc.get("model").and_then(Item::as_table) else {
+        return false;
+    };
+    if key == "api_key" || key == "env_key" {
+        return models.iter().any(|(_, item)| {
+            item.as_table()
+                .and_then(|entry| entry.get(key))
+                .and_then(Item::as_str)
+                .is_some_and(|value| !value.trim().is_empty())
+        });
+    }
+    let alias = active_model_alias(doc);
+    models
+        .get(&alias)
+        .and_then(Item::as_table)
+        .and_then(|entry| entry.get(key))
+        .and_then(Item::as_str)
+        .is_some_and(|value| !value.trim().is_empty())
 }
 
 pub(crate) fn read_grok_live_base_url() -> Option<String> {
@@ -1418,14 +1434,27 @@ fn read_grok_inline_field(path: &Path, key: &str) -> Result<Option<String>> {
         .parse::<DocumentMut>()
         .map_err(|e| AppError::InvalidArg(format!("invalid Grok config.toml: {e}")))?;
     let alias = active_model_alias(&doc);
-    Ok(doc
-        .get("model")
-        .and_then(Item::as_table)
-        .and_then(|models| models.get(&alias))
-        .and_then(Item::as_table)
-        .and_then(|entry| entry.get(key))
-        .and_then(Item::as_str)
-        .map(str::to_owned)
+    let provider_value = if matches!(key, "base_url" | "api_backend") {
+        active_provider_field(&doc, key)
+    } else {
+        None
+    };
+    Ok(provider_value
+        .or_else(|| {
+            doc.get("model")
+                .and_then(Item::as_table)
+                .and_then(|models| models.get(&alias))
+                .and_then(Item::as_table)
+                .and_then(|entry| entry.get(key))
+                .and_then(Item::as_str)
+                .map(str::to_owned)
+        })
+        .or_else(|| {
+            doc.get("model")
+                .and_then(Item::as_str)
+                .filter(|_| key == "model")
+                .map(str::to_owned)
+        })
         .or_else(|| doc.get(key).and_then(Item::as_str).map(str::to_owned)))
 }
 
@@ -1447,13 +1476,43 @@ fn apply_grok_api_key_credentials(path: &Path, credentials: &Value) -> Result<()
         .get("api_key")
         .and_then(|v| v.as_str())
         .map(str::trim)
-        .filter(|s| !s.is_empty())
+        .filter(|s| !s.is_empty() && !crate::utils::redact::is_unusable_secret(s))
         .ok_or_else(|| AppError::InvalidArg("Grok api_key is required".into()))?;
-    let overlay = overlay_from_credentials(credentials);
     let snapshot = credentials
         .get("content")
         .and_then(|v| v.as_str())
         .unwrap_or("");
+    let mut overlay = overlay_from_credentials(credentials);
+    // Older saved accounts stored the native TOML only under `content`.
+    // Recover its active alias/provider fields when the flattened overlay is
+    // absent, while always taking the actual key from the account row.
+    if !snapshot.trim().is_empty() {
+        if let Ok(snapshot_doc) = snapshot.parse::<DocumentMut>() {
+            let snapshot_overlay = if overlay.alias.trim().is_empty() {
+                extract_api_key_overlay(&snapshot_doc)
+            } else {
+                extract_api_key_overlay_for_alias(&snapshot_doc, overlay.alias.trim())
+            };
+            if overlay.alias.trim().is_empty() {
+                overlay.alias = snapshot_overlay.alias;
+            }
+            if overlay.model_provider.is_none() {
+                overlay.model_provider = snapshot_overlay.model_provider;
+            }
+            if overlay.model.is_none() {
+                overlay.model = snapshot_overlay.model;
+            }
+            if overlay.base_url.is_none() {
+                overlay.base_url = snapshot_overlay.base_url;
+            }
+            if overlay.api_backend.is_none() {
+                overlay.api_backend = snapshot_overlay.api_backend;
+            }
+            if overlay.context_window.is_none() {
+                overlay.context_window = snapshot_overlay.context_window;
+            }
+        }
+    }
     let live = match std::fs::read_to_string(path) {
         Ok(content) => content,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => snapshot.to_string(),
@@ -1535,7 +1594,22 @@ fn clear_grok_field(path: &Path, key: &str) -> Result<()> {
     if key == "api_key" && doc.remove("env_key").is_some() {
         changed = true;
     }
-    if let Some(entry) = doc
+    if key == "api_key" || key == "env_key" {
+        // Any model entry with an inline key is used before the login session.
+        if let Some(models) = doc.get_mut("model").and_then(Item::as_table_mut) {
+            for (_, item) in models.iter_mut() {
+                let Some(entry) = item.as_table_mut() else {
+                    continue;
+                };
+                if entry.remove(key).is_some() {
+                    changed = true;
+                }
+                if key == "api_key" && entry.remove("env_key").is_some() {
+                    changed = true;
+                }
+            }
+        }
+    } else if let Some(entry) = doc
         .get_mut("model")
         .and_then(Item::as_table_mut)
         .and_then(|models| models.get_mut(&alias))
@@ -1544,21 +1618,59 @@ fn clear_grok_field(path: &Path, key: &str) -> Result<()> {
         if entry.remove(key).is_some() {
             changed = true;
         }
-        if key == "api_key" && entry.remove("env_key").is_some() {
-            changed = true;
+    }
+    if key == "base_url" {
+        if let Some(provider) = active_model_provider_table_mut(&mut doc) {
+            if provider.remove("base_url").is_some() {
+                changed = true;
+            }
         }
     }
     if !changed {
         return Ok(());
     }
     atomic_write(path, doc.to_string().as_bytes())?;
-    if read_grok_inline_field(path, key)?.is_some() {
+    let still_present = if key == "api_key" || key == "env_key" {
+        let text = std::fs::read_to_string(path)?;
+        let written = text.parse::<DocumentMut>().map_err(|error| {
+            AppError::InvalidArg(format!("existing Grok config.toml is invalid: {error}"))
+        })?;
+        document_has_nonempty_field(&written, key)
+            || (key == "api_key" && document_has_nonempty_field(&written, "env_key"))
+    } else {
+        read_grok_inline_field(path, key)?.is_some()
+    };
+    if still_present {
         return Err(AppError::message(
             "account.verify",
             format!("Grok {key} still present after clear"),
         ));
     }
     Ok(())
+}
+
+/// OAuth must not leave an explicit API key preference behind. Keep the auth
+/// table and every other auth setting intact; Grok's own OAuth default applies
+/// when this one preference is absent.
+fn clear_grok_api_key_preference(path: &Path) -> Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+    let live = std::fs::read_to_string(path)?;
+    if live.trim().is_empty() {
+        return Ok(());
+    }
+    let mut doc = live
+        .parse::<DocumentMut>()
+        .map_err(|e| AppError::InvalidArg(format!("existing Grok config.toml is invalid: {e}")))?;
+    let Some(auth) = doc.get_mut("auth").and_then(Item::as_table_mut) else {
+        return Ok(());
+    };
+    if auth.get("preferred_method").and_then(Item::as_str) != Some("api_key") {
+        return Ok(());
+    }
+    auth.remove("preferred_method");
+    atomic_write(path, doc.to_string().as_bytes())
 }
 
 #[cfg(test)]

@@ -1366,6 +1366,104 @@ api_key = "new-secret"
 }
 
 #[test]
+fn grok_toml_writer_merges_auth_preference_and_keeps_other_auth_keys() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        r#"[models]
+default = "old"
+
+[auth]
+preferred_method = "old"
+keep_this = "yes"
+
+[model_providers.old]
+base_url = "https://old.example/v1"
+
+[model."old"]
+model = "old"
+model_provider = "old"
+
+[mcp_servers.demo]
+command = "demo"
+"#,
+    )
+    .unwrap();
+    let grok = AgentConfig {
+        agent: AgentId::Grok,
+        raw: json!({"format": "toml", "content": r#"[models]
+default = "grok-4.7"
+
+[auth]
+preferred_method = "api_key"
+
+[model_providers.proxy]
+base_url = "https://relay.example/v1"
+api_backend = "responses"
+
+[model."grok-4.7"]
+model = "grok-4.7"
+model_provider = "proxy"
+api_key = "fixture-key"
+"#}),
+    };
+
+    write_toml_config(AgentId::Grok, &path, &grok).unwrap();
+
+    let stored = std::fs::read_to_string(&path).unwrap();
+    let parsed: toml_edit::DocumentMut = stored.parse().unwrap();
+    assert_eq!(parsed["models"]["default"].as_str(), Some("grok-4.7"));
+    assert_eq!(parsed["auth"]["preferred_method"].as_str(), Some("api_key"));
+    assert_eq!(parsed["auth"]["keep_this"].as_str(), Some("yes"));
+    assert_eq!(
+        parsed["model_providers"]["proxy"]["base_url"].as_str(),
+        Some("https://relay.example/v1")
+    );
+    assert!(parsed["model_providers"].get("old").is_none());
+    assert_eq!(
+        parsed["model"]["grok-4.7"]["api_key"].as_str(),
+        Some("fixture-key")
+    );
+    assert!(parsed["mcp_servers"].get("demo").is_some());
+}
+
+#[test]
+fn grok_toml_writer_sets_api_key_preference_without_deleting_auth() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        r#"[auth]
+preferred_method = "old"
+keep_this = "yes"
+
+[mcp_servers.demo]
+command = "demo"
+"#,
+    )
+    .unwrap();
+    let grok = AgentConfig {
+        agent: AgentId::Grok,
+        raw: json!({"format": "toml", "content": r#"[models]
+default = "grok"
+
+[model."grok"]
+model = "grok-4.5"
+api_key = "xai-xxxxxxxx"
+"#}),
+    };
+
+    write_toml_config(AgentId::Grok, &path, &grok).unwrap();
+
+    let stored = std::fs::read_to_string(&path).unwrap();
+    let parsed: toml_edit::DocumentMut = stored.parse().unwrap();
+    assert_eq!(parsed["auth"]["preferred_method"].as_str(), Some("api_key"));
+    assert_eq!(parsed["auth"]["keep_this"].as_str(), Some("yes"));
+    assert!(parsed["mcp_servers"].get("demo").is_some());
+}
+
+#[test]
 fn toml_writer_accepts_ccswitch_config_alias() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");

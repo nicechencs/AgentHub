@@ -204,6 +204,88 @@ describe('applySmartPaste', () => {
     expect(r.configText).toContain('supports_backend_search = true');
   });
 
+  it('uses the active model provider URL before other aliases during Grok paste detection', () => {
+    const r = applySmartPaste(
+      'grok',
+      [
+        '[models]',
+        'default = "grok-4.7"',
+        'web_search = "grok-4.7"',
+        '',
+        '[model_providers.xai]',
+        'base_url = "https://api.x.ai/v1"',
+        'api_backend = "responses"',
+        '',
+        '[model_providers.proxy]',
+        'base_url = "https://api.qooo.io/v1"',
+        'api_backend = "responses"',
+        '',
+        '[model."grok-4.7"]',
+        'model = "grok-4.7"',
+        'model_provider = "xai"',
+        'api_key = "***"',
+        '',
+        '[model."grok-4.5"]',
+        'model = "grok-4.5"',
+        'model_provider = "proxy"',
+        'api_key = "***"',
+        '',
+      ].join('\n'),
+    );
+
+    expect(r.vars.model).toBe('grok-4.7');
+    expect(r.vars.baseUrl).toBe('https://api.x.ai/v1');
+    expect(r.configText).toContain('https://api.qooo.io/v1');
+  });
+
+  it('uses the active alias inline official URL before another alias custom URL', () => {
+    const r = applySmartPaste(
+      'grok',
+      [
+        '[models]',
+        'default = "grok-4.7"',
+        'web_search = "grok-4.7"',
+        '',
+        '[model."grok-4.7"]',
+        'model = "grok-4.7"',
+        'base_url = "https://api.x.ai/v1"',
+        'api_key = "***"',
+        '',
+        '[model."grok-4.5"]',
+        'model = "grok-4.5"',
+        'base_url = "https://proxy.example.com/v1"',
+        'api_key = "***"',
+        '',
+      ].join('\n'),
+    );
+
+    expect(r.vars.baseUrl).toBe('https://api.x.ai/v1');
+  });
+
+  it('uses the active alias inline custom URL even when another alias appears first', () => {
+    const r = applySmartPaste(
+      'grok',
+      [
+        '[models]',
+        'default = "grok-4.7"',
+        'web_search = "grok-4.7"',
+        '',
+        '[model."grok-4.5"]',
+        'model = "grok-4.5"',
+        'base_url = "https://other-proxy.example.com/v1"',
+        'api_key = "***"',
+        '',
+        '[model."grok-4.7"]',
+        'model = "grok-4.7"',
+        'base_url = "https://active-proxy.example.com/v1"',
+        'api_key = "***"',
+        '',
+      ].join('\n'),
+    );
+
+    expect(r.vars.baseUrl).toBe('https://active-proxy.example.com/v1');
+  });
+
   it('keeps grok api_backend, extra models, and endpoints when paste omits base_url', () => {
     const paste = [
       '[models]',
@@ -269,7 +351,7 @@ describe('applySmartPaste', () => {
     expect(r.configText).not.toMatch(/export\s+XAI_API_KEY/i);
     expect(r.configText).toContain('api_backend = "responses"');
     const backends = r.configText.match(/api_backend\s*=\s*"responses"/g) ?? [];
-    expect(backends.length).toBeGreaterThanOrEqual(2);
+    expect(backends).toHaveLength(1);
   });
 
   it('extracts grok TOML from mixed paste with 格式1 and export lines', () => {
@@ -308,7 +390,7 @@ describe('applySmartPaste', () => {
     expect(r.configText).toContain('[auth]');
     expect(r.configText).toContain('api_backend = "responses"');
     const backends = r.configText.match(/api_backend\s*=\s*"responses"/g) ?? [];
-    expect(backends.length).toBeGreaterThanOrEqual(2);
+    expect(backends).toHaveLength(2);
   });
 });
 
