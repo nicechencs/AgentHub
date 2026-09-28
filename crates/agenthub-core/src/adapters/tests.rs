@@ -2614,7 +2614,7 @@ api_key = "old"
 "#,
     )
     .unwrap();
-    kimi::write_kimi_api_key(&path, "sk-new-key").unwrap();
+    kimi::write_kimi_api_key(&path, "sk-new-key", None, None).unwrap();
     let text = std::fs::read_to_string(&path).unwrap();
     assert!(text.contains("sk-new-key"), "{text}");
     assert!(
@@ -2626,6 +2626,83 @@ api_key = "old"
     assert!(text.contains("max_context_size = 131072"), "{text}");
     assert!(text.contains("type = \"openai\""), "{text}");
     assert!(text.contains("default_provider = \"moonshot\""), "{text}");
+}
+
+#[test]
+fn write_kimi_api_key_uses_account_provider_instead_of_live_default() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        r#"default_provider = "relay"
+default_model = "kimi-k2"
+
+[providers.relay]
+base_url = "https://relay.example/v1"
+api_key = "sk-relay"
+
+[providers.moonshot]
+base_url = "https://api.moonshot.cn/v1"
+api_key = "sk-old"
+"#,
+    )
+    .unwrap();
+    kimi::apply_kimi_api_key_credentials(
+        &path,
+        &json!({
+            "format": "api_key",
+            "api_key": "sk-account",
+            "providerSlug": "moonshot",
+            "base_url": "https://api.moonshot.cn/v1",
+            "model": "kimi-k2",
+        }),
+    )
+    .unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("default_provider = \"moonshot\""), "{text}");
+    assert!(text.contains("api_key = \"sk-account\""), "{text}");
+    assert!(text.contains("api_key = \"sk-relay\""), "{text}");
+    assert!(text.contains("https://api.moonshot.cn/v1"), "{text}");
+    let doc: toml_edit::DocumentMut = text.parse().unwrap();
+    let moonshot_key = doc["providers"]["moonshot"]["api_key"].as_str();
+    assert_eq!(moonshot_key, Some("sk-account"));
+}
+
+#[test]
+fn kimi_new_account_provider_infers_type_after_its_base_url() {
+    for (url, expected_type) in [
+        ("https://api.moonshot.cn/v1", "kimi"),
+        ("https://relay.example/anthropic", "anthropic"),
+        ("https://relay.example/v1/responses", "openai_responses"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            "default_provider = \"relay\"\n\n[providers.relay]\nbase_url = \"https://relay.example/v1\"\napi_key = \"sk-relay\"\n",
+        )
+        .unwrap();
+        kimi::apply_kimi_api_key_credentials(
+            &path,
+            &json!({
+                "api_key": "sk-account",
+                "providerSlug": "next",
+                "base_url": url,
+            }),
+        )
+        .unwrap();
+        let doc: toml_edit::DocumentMut = std::fs::read_to_string(&path).unwrap().parse().unwrap();
+        assert_eq!(doc["default_provider"].as_str(), Some("next"));
+        assert_eq!(doc["providers"]["next"]["base_url"].as_str(), Some(url));
+        assert_eq!(
+            doc["providers"]["next"]["type"].as_str(),
+            Some(expected_type)
+        );
+        assert_eq!(
+            doc["providers"]["relay"]["api_key"].as_str(),
+            Some("sk-relay")
+        );
+    }
 }
 
 #[test]
@@ -2641,7 +2718,7 @@ api_key = "old"
 "#,
     )
     .unwrap();
-    kimi::write_kimi_api_key(&path, "sk-new-key").unwrap();
+    kimi::write_kimi_api_key(&path, "sk-new-key", None, None).unwrap();
     let text = std::fs::read_to_string(&path).unwrap();
     assert!(text.contains("type = \"kimi\""), "{text}");
 }

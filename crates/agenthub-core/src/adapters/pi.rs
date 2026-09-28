@@ -1,8 +1,11 @@
 use std::path::{Path, PathBuf};
 
+use jsonc_parser::{cst::CstRootNode, ParseOptions};
+
 use super::pi_auth::{
-    apply_pi_api_key_to_dir, combined_live_account, expand_auth_to_live_accounts, merge_auth_json,
-    pi_config_dir, read_auth_json, write_verified_auth_json,
+    apply_pi_api_key_to_dir, combined_live_account, expand_auth_to_live_accounts,
+    is_pi_builtin_auth_slot, merge_auth_json, pi_config_dir, read_auth_json,
+    write_verified_auth_json,
 };
 use super::{
     api_key_live_account, auth_file_revision, detect_binary_with_env, inspect_auth_credentials,
@@ -136,7 +139,7 @@ impl AgentAdapter for PiAdapter {
 
         let settings = read_json_object_or_empty(&settings_path)?;
         let models = if models_path.exists() {
-            Some(read_json_object_or_empty(&models_path)?)
+            Some(read_pi_models_object_or_empty(&models_path)?)
         } else {
             None
         };
@@ -214,13 +217,20 @@ impl AgentAdapter for PiAdapter {
                 }
                 // Merge provider keys so switching one OAuth account does not
                 // wipe other providers already stored in auth.json.
-                let merged = merge_auth_json(&body)?;
-                write_verified_auth_json(&pi_config_dir()?.join("auth.json"), &merged)?;
-                if let Some(slot) = pi_slot_from_account(account) {
-                    pin_pi_live_slot(&slot)?;
-                    assign_pi_default_model_for_slot(&slot)?;
-                }
-                Ok(())
+                let dir = pi_config_dir()?;
+                let auth_path = dir.join("auth.json");
+                let settings_path = dir.join("settings.json");
+                let models_path = dir.join("models.json");
+                with_restored_files(&[&auth_path, &settings_path, &models_path], || {
+                    let merged = merge_auth_json(&body)?;
+                    write_verified_auth_json(&auth_path, &merged)?;
+                    if let Some(slot) = pi_slot_from_account(account) {
+                        clear_pi_official_slot_model_override(&dir, &slot, true)?;
+                        pin_pi_live_slot(&slot)?;
+                        assign_pi_default_model_for_slot(&slot)?;
+                    }
+                    Ok(())
+                })
             }
             "api_key" => {
                 let key = account
@@ -235,12 +245,19 @@ impl AgentAdapter for PiAdapter {
                     .and_then(|v| v.as_str())
                     .or_else(|| account.extra.get("provider").and_then(|v| v.as_str()))
                     .unwrap_or("");
-                apply_pi_api_key_to_dir(&pi_config_dir()?, provider, key)?;
-                if !provider.trim().is_empty() {
-                    pin_pi_live_slot(provider.trim())?;
-                    assign_pi_default_model_for_slot(provider.trim())?;
-                }
-                Ok(())
+                let dir = pi_config_dir()?;
+                let auth_path = dir.join("auth.json");
+                let settings_path = dir.join("settings.json");
+                let models_path = dir.join("models.json");
+                with_restored_files(&[&auth_path, &settings_path, &models_path], || {
+                    apply_pi_api_key_to_dir(&dir, provider, key)?;
+                    if !provider.trim().is_empty() {
+                        clear_pi_official_slot_model_override(&dir, provider.trim(), true)?;
+                        pin_pi_live_slot(provider.trim())?;
+                        assign_pi_default_model_for_slot(provider.trim())?;
+                    }
+                    Ok(())
+                })
             }
             other => Err(AppError::InvalidArg(format!(
                 "unsupported Pi account credential format: {other}"
@@ -617,6 +634,41 @@ fn read_json_object_or_empty(path: &Path) -> Result<serde_json::Value> {
     Ok(value)
 }
 
+fn parse_pi_models_jsonc(path: &Path, text: &str) -> Result<CstRootNode> {
+    let options = ParseOptions {
+        allow_comments: true,
+        allow_trailing_commas: true,
+        allow_loose_object_property_names: false,
+        allow_missing_commas: false,
+        allow_single_quoted_strings: false,
+        allow_hexadecimal_numbers: false,
+        allow_unary_plus_numbers: false,
+        allow_bare_decimal_point_numbers: false,
+        allow_non_finite_numbers: false,
+        allow_extended_string_escapes: false,
+    };
+    let root = CstRootNode::parse(text, &options).map_err(|error| {
+        AppError::InvalidArg(format!("{} has invalid JSONC: {error}", path.display()))
+    })?;
+    if root.object_value().is_none() {
+        return Err(AppError::InvalidArg(format!(
+            "{} must be a JSON object",
+            path.display()
+        )));
+    }
+    Ok(root)
+}
+
+fn read_pi_models_object_or_empty(path: &Path) -> Result<serde_json::Value> {
+    if !path.exists() {
+        return Ok(serde_json::json!({}));
+    }
+    let text = std::fs::read_to_string(path)?;
+    let root = parse_pi_models_jsonc(path, &text)?;
+    root.to_serde_value()
+        .ok_or_else(|| AppError::InvalidArg(format!("{} must be a JSON object", path.display())))
+}
+
 const REDACTED_MARKER: &str = "***";
 
 pub(crate) fn pi_slot_from_account(account: &LiveAccount) -> Option<String> {
@@ -775,7 +827,7 @@ pub(crate) fn assign_pi_default_model_for_slot(slot: &str) -> Result<()> {
     let settings =
         read_json_object_or_empty(&dir.join("settings.json")).unwrap_or(serde_json::json!({}));
     let models_doc =
-        read_json_object_or_empty(&dir.join("models.json")).unwrap_or(serde_json::json!({}));
+        read_pi_models_object_or_empty(&dir.join("models.json")).unwrap_or(serde_json::json!({}));
     let auth = read_auth_json().unwrap_or(serde_json::json!({}));
     let catalog = pi_slot_model_catalog(slot, &models_doc, &auth);
     let stored = nonempty_json_str(&settings, "defaultModel");
@@ -792,6 +844,55 @@ pub(crate) fn assign_pi_default_model_for_slot(slot: &str) -> Result<()> {
     } else {
         Ok(())
     }
+}
+
+/// Drop a models.json override of a built-in auth.json slot.
+///
+/// Pi applies `models.json` `baseUrl` on top of a built-in provider and keeps
+/// that provider's models. Official login stored in `auth.json` does not remove
+/// the override, so the slot keeps sending traffic to the relay until the
+/// entry is gone.
+fn clear_pi_official_slot_model_override(dir: &Path, slot: &str, activating: bool) -> Result<()> {
+    let slot = slot.trim();
+    if slot.is_empty() || !is_pi_builtin_auth_slot(slot) {
+        return Ok(());
+    }
+    let path = dir.join("models.json");
+    if !path.exists() {
+        return Ok(());
+    }
+    let text = std::fs::read_to_string(&path)?;
+    let root = parse_pi_models_jsonc(&path, &text)?;
+    let mut removed_models = Vec::new();
+    let mut removed = false;
+    // A hand-edited JSONC file can contain duplicate providers or slot keys.
+    // Remove every matching entry so none can keep the relay endpoint active.
+    for provider_prop in root.object_value().unwrap().properties() {
+        if provider_prop.decoded_name().as_deref() != Some("providers") {
+            continue;
+        }
+        if let Some(providers) = provider_prop.object_value() {
+            while let Some(override_entry) = providers.get(slot) {
+                if let Some(entry) = override_entry.to_serde_value() {
+                    removed_models.extend(collect_pi_entry_model_ids(&entry));
+                }
+                override_entry.remove();
+                removed = true;
+            }
+        }
+    }
+    if !removed {
+        return Ok(());
+    }
+    atomic_write(&path, root.to_string().as_bytes())?;
+    let settings = read_json_object_or_empty(&dir.join("settings.json"))?;
+    if (activating || nonempty_json_str(&settings, "defaultProvider").as_deref() == Some(slot))
+        && nonempty_json_str(&settings, "defaultModel")
+            .is_some_and(|model| removed_models.iter().any(|removed| removed == &model))
+    {
+        clear_pi_default_model(dir)?;
+    }
+    Ok(())
 }
 
 /// Make this auth.json slot the only live Pi default. Drop leftover models that
@@ -848,6 +949,10 @@ fn collect_pi_slot_model_ids(models: &serde_json::Value, slot: &str) -> Vec<Stri
     let Some(entry) = providers.get(slot) else {
         return Vec::new();
     };
+    collect_pi_entry_model_ids(entry)
+}
+
+fn collect_pi_entry_model_ids(entry: &serde_json::Value) -> Vec<String> {
     let Some(items) = entry.get("models").and_then(|value| value.as_array()) else {
         return Vec::new();
     };
@@ -1057,7 +1162,7 @@ pub(crate) fn pi_live_chat_model() -> crate::models::LiveChatModel {
     let settings =
         read_json_object_or_empty(&dir.join("settings.json")).unwrap_or(serde_json::json!({}));
     let models_doc =
-        read_json_object_or_empty(&dir.join("models.json")).unwrap_or(serde_json::json!({}));
+        read_pi_models_object_or_empty(&dir.join("models.json")).unwrap_or(serde_json::json!({}));
     let auth = read_auth_json().unwrap_or(serde_json::json!({}));
     let slot = nonempty_json_str(&settings, "defaultProvider").unwrap_or_default();
     let stored = nonempty_json_str(&settings, "defaultModel");
@@ -1111,7 +1216,7 @@ fn write_pi_config(config: &AgentConfig) -> Result<()> {
         .get("models")
         .or_else(|| raw.get("providers").map(|_| &config.raw))
         .map(|desired_models| {
-            let live_models = read_json_object_or_empty(&models_path)?;
+            let live_models = read_pi_models_object_or_empty(&models_path)?;
             merge_pi_models(&live_models, desired_models)
         })
         .transpose()?;
@@ -1165,6 +1270,22 @@ fn write_pi_config(config: &AgentConfig) -> Result<()> {
         }
         if let Some(auth) = merged_auth {
             write_json_value(&auth_path, &auth)?;
+        }
+        if let Some(auth_obj) = raw.get("auth").and_then(|value| value.as_object()) {
+            let desired_providers = raw
+                .get("models")
+                .and_then(|models| models.get("providers"))
+                .and_then(|providers| providers.as_object())
+                .or_else(|| {
+                    raw.get("providers")
+                        .and_then(|providers| providers.as_object())
+                });
+            for slot in auth_obj.keys() {
+                if desired_providers.is_some_and(|providers| providers.contains_key(slot)) {
+                    continue;
+                }
+                clear_pi_official_slot_model_override(&dir, slot, false)?;
+            }
         }
         Ok(())
     })

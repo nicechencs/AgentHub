@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { officialApiDefaults } from '@/config/official-api';
 import {
   applyFormVars,
   collapseDoubledModelId,
@@ -126,6 +127,65 @@ describe('provider-detect fields', () => {
     expect(next).toContain('model = "gpt-5.1-codex"');
     expect(next).toContain('base_url = "https://new.example.com/openai"');
     expect(next).not.toContain('sk-should-not-land-in-toml');
+  });
+
+  it('keeps the Codex official scaffold free of a custom provider pointer', () => {
+    const official = officialApiDefaults('codex');
+    expect(official).toBeTruthy();
+    const scaffold = official?.scaffoldText ?? '';
+    const extracted = extractFormVars('codex', scaffold, 'toml');
+    expect(extracted.providerSlug).toBe('');
+    const next = applyFormVars('codex', scaffold, 'toml', {
+      ...extracted,
+      baseUrl: official?.baseUrl ?? '',
+      model: official?.model ?? '',
+    });
+    expect(next).toContain('model = "gpt-5.1-codex"');
+    expect(next).not.toMatch(/model_provider\s*=/);
+    expect(next).not.toContain('[model_providers.');
+  });
+
+  it('treats a retained Codex provider table without a pointer as official', () => {
+    const toml = [
+      'model = "gpt-5.1-codex"',
+      '',
+      '[model_providers.old_relay]',
+      'base_url = "https://relay.example/v1"',
+      '',
+    ].join('\n');
+    const vars = extractFormVars('codex', toml, 'toml');
+    expect(vars.providerSlug).toBe('');
+    expect(vars.baseUrl).toBe('');
+    const next = applyFormVars('codex', toml, 'toml', vars);
+    expect(next).not.toMatch(/^model_provider\s*=/m);
+    expect(next).toContain('[model_providers.old_relay]');
+  });
+
+  it('starts a blank Codex official config without a custom provider table', () => {
+    const next = applyFormVars('codex', '', 'toml', {
+      ...EMPTY_FORM_VARS,
+      model: 'gpt-5.1-codex',
+      providerSlug: '',
+    });
+    expect(next).not.toMatch(/model_provider\s*=/);
+    expect(next).not.toContain('[model_providers.');
+    expect(extractFormVars('codex', next, 'toml').providerSlug).toBe('');
+  });
+
+  it('uses a custom Codex provider when an address is supplied without a slug', () => {
+    const official = officialApiDefaults('codex')?.scaffoldText ?? '';
+    for (const source of ['', official]) {
+      const next = applyFormVars('codex', source, 'toml', {
+        ...EMPTY_FORM_VARS,
+        model: 'gpt-5.1-codex',
+        baseUrl: 'https://relay.example/v1',
+        providerSlug: '',
+      });
+      expect(next).toContain('model_provider = "custom"');
+      expect(next).toContain('[model_providers.custom]');
+      expect(next).toContain('base_url = "https://relay.example/v1"');
+      expect(extractFormVars('codex', next, 'toml').providerSlug).toBe('custom');
+    }
   });
 
   it('extracts Grok Build fields from the active nested model table', () => {
