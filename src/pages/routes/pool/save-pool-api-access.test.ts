@@ -48,7 +48,13 @@ describe('savePoolApiAccess', () => {
       deps,
     );
 
-    expect(result).toEqual({ saved: 2, errors: [] });
+    expect(result.saved).toBe(2);
+    expect(result.errors).toEqual([]);
+    expect(result.batch.saved.map((row) => [row.source.sourceId, row.mutation])).toEqual(
+      upserted.map((item) => [item.id, 'created']),
+    );
+    expect(JSON.stringify(result.batch)).not.toContain('sk-test');
+    expect(result.batch.saved[0]).not.toHaveProperty('priority');
     expect(upserted.map((item) => [item.agentId, item.name])).toEqual([
       ['claude', 'api.deepseek.com /v1/messages'],
       ['grok', 'api.deepseek.com /v1/chat/completions'],
@@ -121,7 +127,8 @@ describe('savePoolApiAccess', () => {
       },
       deps,
     );
-    expect(result).toEqual({ saved: 2, errors: [] });
+    expect({ saved: result.saved, errors: result.errors }).toEqual({ saved: 2, errors: [] });
+    expect(result.batch.saved).toHaveLength(2);
     expect(catalogs).toHaveLength(2);
     expect(catalogs[0]?.[1]).toEqual(['gpt-4o', 'custom-1']);
     expect(priorities.map((item) => item[1])).toEqual([3, 3]);
@@ -153,7 +160,8 @@ describe('savePoolApiAccess', () => {
       },
       deps,
     );
-    expect(result).toEqual({ saved: 1, errors: [] });
+    expect({ saved: result.saved, errors: result.errors }).toEqual({ saved: 1, errors: [] });
+    expect(result.batch.saved.map((row) => row.mutation)).toEqual(['updated']);
     expect(upserted).toEqual(['prov-1']);
     expect(attached).not.toHaveBeenCalled();
   });

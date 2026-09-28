@@ -13,6 +13,7 @@ import {
   poolAuthorizationEndpointHref,
   poolAuthorizationLinkIconColors,
   poolAuthorizationLoginLabel,
+  poolAuthorizationLoginPresentation,
   poolAuthorizationTypeHref,
   poolAuthorizationQuotaParts,
   poolAuthorizationVisibleColumns,
@@ -118,7 +119,9 @@ describe('pool authorization detail fields', () => {
       endpointHost: 'https://openrouter.ai/api/v1',
     });
     expect(poolAuthorizationDomain(custom.endpointHost)).toBe('openrouter.ai');
-    expect(poolAuthorizationLoginLabel(custom)).toBe('openrouter.ai');
+    expect(poolAuthorizationLoginLabel(custom)).toBe('OpenRouter');
+    expect(poolAuthorizationLoginPresentation(custom).identity.secondary).toContain('openrouter.ai');
+    expect(poolAuthorizationLoginPresentation(custom).identity.secondary).not.toContain('/api/v1');
     expect(poolAuthorizationDetailRows(custom, t).find((row) => row.id === 'endpoint')?.value)
       .toBe('openrouter.ai');
     expect(poolAuthorizationEndpointHref(custom.endpointHost)).toBe('https://openrouter.ai/api/v1');

@@ -1310,7 +1310,7 @@ describe('TicketWalletList switch action', () => {
 });
 
 describe('TicketWalletList header health chip', () => {
-  it('shows 已配置 and never 未验证', () => {
+  it('shows the shared renewable status and never 未验证', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
@@ -1320,13 +1320,14 @@ describe('TicketWalletList header health chip', () => {
         onDeleteTicket() {},
       }),
     );
-    expect(markup).toContain('已配置');
+    expect(markup).toContain('可续期');
     expect(markup).not.toContain('尚未验证');
     expect(markup).not.toContain('未验证');
-    expect(markup).not.toContain('可续期');
+    expect(markup).not.toContain('优先级');
+    expect(markup).not.toContain('priority');
   });
 
-  it('shows 已配置 instead of the refresh-token tail', () => {
+  it('shows renewable status instead of the refresh-token tail', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
@@ -1336,9 +1337,8 @@ describe('TicketWalletList header health chip', () => {
         onDeleteTicket() {},
       }),
     );
-    expect(markup).toContain('已配置');
+    expect(markup).toContain('可续期');
     expect(markup).not.toContain('**JF6Q');
-    expect(markup).not.toContain('可续期');
     expect(markup).not.toContain('未验证');
   });
 
