@@ -4,7 +4,7 @@ description: AgentHub 用户界面、领域模型和内部实现术语的对应�
 type: reference
 audience: all
 status: current
-updated: 2026-09-20
+updated: 2026-09-28
 ---
 
 # 术语表

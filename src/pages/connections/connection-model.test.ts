@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { connectSourceKey, type ConnectionUsage, type ConnectionUsageMap } from '@/lib/connect-flow/types';
-import type { Account, Provider } from '@/lib/types';
+import type { Account, AgentKey, Provider } from '@/lib/types';
 import {
   accountToEntry,
   authStatusOfAccount,
@@ -221,16 +221,16 @@ describe('connection-model', () => {
   });
 
   it('offers other logins of the same Agent before deleting the current one', () => {
-    const tickets = [
-      { id: 'a', agentId: 'claude' as const },
-      { id: 'b', agentId: 'claude' as const },
-      { id: 'c', agentId: 'codex' as const },
-      { id: 'd', agentId: 'claude' as const },
+    const tickets: Array<{ id: string; agentId: AgentKey }> = [
+      { id: 'a', agentId: 'claude' },
+      { id: 'b', agentId: 'claude' },
+      { id: 'c', agentId: 'codex' },
+      { id: 'd', agentId: 'claude' },
     ];
     const current = new Set(['a']);
     expect(deleteCurrentSwitchTargets(tickets[0], tickets, (x) => current.has(x.id)).map((x) => x.id))
       .toEqual(['b', 'd']);
-    expect(deleteCurrentSwitchTargets({ id: 'z', agentId: 'cursor' as const }, tickets, () => false))
+    expect(deleteCurrentSwitchTargets({ id: 'z', agentId: 'cursor' }, tickets, () => false))
       .toEqual([]);
   });
 

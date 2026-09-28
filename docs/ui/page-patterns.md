@@ -3,7 +3,7 @@ title: UI 页面模式
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-21
+updated: 2026-09-28
 ---
 
 # UI Page Patterns

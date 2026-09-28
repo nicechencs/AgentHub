@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: product, frontend, and core contributors
 source-of-truth: Ticket/Connection services, adapter planner contracts, and product boundary decisions
-updated: 2026-09-08
+updated: 2026-09-28
 ---
 
 # Connections、Routes 与绑定
