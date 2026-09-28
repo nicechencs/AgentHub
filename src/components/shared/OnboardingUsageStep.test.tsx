@@ -16,7 +16,7 @@ describe('OnboardingUsageStep', () => {
     expect(markup).toContain('data-onboarding-step="usage"');
     expect(markup).toContain('data-onboarding-choice="routes"');
     expect(markup).toContain('data-onboarding-choice="sub2api"');
-    expect(markup).toContain('本地路由');
+    expect(markup).toContain('路由');
     expect(markup).toContain('Sub2API 站点');
     expect(markup).toContain('可在设置里重新打开');
   });

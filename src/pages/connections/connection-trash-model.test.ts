@@ -175,7 +175,7 @@ describe('humanizeTrashLabel', () => {
       }),
     });
     const label = humanizeTrashLabel(item);
-    expect(label).toBe('本机路由');
+    expect(label).toBe('本机转发');
     assertNoInternalLeak(label);
   });
 
@@ -193,8 +193,8 @@ describe('humanizeTrashLabel', () => {
         email: 'user@x.ai',
       }),
     });
-    expect(humanizeTrashLabel(item)).toBe('本机路由 · user@x.ai');
-    expect(humanizeTrashLabel(item, createTranslator('en'))).toBe('Local route · user@x.ai');
+    expect(humanizeTrashLabel(item)).toBe('本机转发 · user@x.ai');
+    expect(humanizeTrashLabel(item, createTranslator('en'))).toBe('Local forwarding · user@x.ai');
   });
 
   it('never prints a raw uuid or grok-live id used as the label', () => {
@@ -202,14 +202,14 @@ describe('humanizeTrashLabel', () => {
     const uuidLabel = humanizeTrashLabel(
       trash({ id: 't-uuid', sourceId: uuid, label: uuid }),
     );
-    expect(uuidLabel).toBe('本机路由');
+    expect(uuidLabel).toBe('本机转发');
     expect(uuidLabel).not.toContain(uuid);
 
     const liveId = 'grok-live-452e70db-ffff';
     const liveLabel = humanizeTrashLabel(
       trash({ id: 't-live', sourceId: liveId, label: liveId }),
     );
-    expect(liveLabel).toBe('本机路由');
+    expect(liveLabel).toBe('本机转发');
     expect(liveLabel).not.toContain(liveId);
   });
 
@@ -250,7 +250,7 @@ describe('humanizeTrashLabel', () => {
       }),
     });
     const label = humanizeTrashLabel(item);
-    expect(label).toBe('本机路由 · user@x.ai');
+    expect(label).toBe('本机转发 · user@x.ai');
     assertNoInternalLeak(label);
   });
 });

@@ -80,7 +80,7 @@ describe('ActivityMonitoringPanel', () => {
       traceError: new Error('backend down'),
       onRetryTraces: () => {},
     }));
-    expect(markup).toContain('无法读取本机路由');
+    expect(markup).toContain('无法读取路由');
     expect(markup).not.toContain('还没有请求记录');
     expect(markup).not.toContain('data-table-shell');
   });
@@ -98,7 +98,7 @@ describe('ActivityMonitoringPanel', () => {
     }));
     expect(markup).toContain('data-table-shell="default"');
     expect(markup).toContain('data-activity-trace-error');
-    expect(markup).toContain('无法读取本机路由');
+    expect(markup).toContain('无法读取路由');
     expect(markup).toContain('重试');
   });
 

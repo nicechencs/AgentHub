@@ -375,7 +375,7 @@ export function useChatPageSessions(input: {
         return;
       }
     }
-    const defaults = newConversationDefaults(active, status, savedLoginAgentIds);
+    const defaults = newConversationDefaults(active, status, savedLoginAgentIds, conversations);
     if (defaults.agentIds.length === 0) return;
     try {
       if (activeId) draftsRef.current.set(activeId, draft);
@@ -400,7 +400,7 @@ export function useChatPageSessions(input: {
       draftsRef.current.delete(id);
       const rest = conversations.filter((c) => c.id !== id);
       if (rest.length === 0) {
-        const defaults = newConversationDefaults(active, agentStatus, savedLoginAgentIds);
+        const defaults = newConversationDefaults(active, agentStatus, savedLoginAgentIds, rest);
         if (defaults.agentIds.length === 0) {
           setConversations([]);
           setActiveId(null);

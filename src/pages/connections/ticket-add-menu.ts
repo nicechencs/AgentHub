@@ -50,6 +50,22 @@ export function ticketAddActionLabel(kind: TicketAddKind, t?: TranslateFn): stri
   return t('connections.list.addApiKey');
 }
 
+/** One-line "what this does" under each add-menu item. */
+export function ticketAddActionDescription(kind: TicketAddKind, t: TranslateFn): string {
+  if (kind === 'import-login') return t('connections.list.importLoginDesc');
+  if (kind === 'oauth') return t('connections.list.addOauthDesc');
+  return t('connections.list.addApiKeyDesc');
+}
+
+/** Discovery found a login on this computer for this Agent → call out the import item. */
+export function ticketAddImportHighlighted(
+  kind: TicketAddKind,
+  agentId: AgentKey,
+  detectedAgentId: AgentKey | null | undefined,
+): boolean {
+  return kind === 'import-login' && detectedAgentId != null && agentId === detectedAgentId;
+}
+
 export interface TicketAddMenuAgent {
   id: AgentKey;
   name: string;
@@ -109,13 +125,13 @@ export function dispatchTicketAddAction(
 }
 
 /**
- * Menu item select for 导入授权 / 添加 API Key.
+ * Menu item select for 导入本机登录 / 添加 API Key.
  * preventDefault keeps the menu mounted through the click so the Dialog is
  * not dismissed and the pointer cannot hit the segmented filter underneath.
  * Close is delayed until after the click settles — timeout 0 unmounts the
  * submenu in time for the same click to hit AgentTabStrip (silence).
  */
-/** Expanded 添加授权 stays open after click-to-expand; Escape still closes it. */
+/** Expanded 添加登录 stays open after click-to-expand; Escape still closes it. */
 export function ticketAddMenuClosesOnKey(key: string): boolean {
   return key === 'Escape' || key === 'Esc';
 }

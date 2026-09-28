@@ -206,7 +206,7 @@ describe('binding usage text', () => {
     const kimiBindings = wallet.bindings.filter((b) => b.ticketId === 'provider:kimi-1');
     expect(formatTicketUsageText(kimiBindings, 'kimi')).toContain('正用于：');
     expect(formatTicketUsageText(kimiBindings, 'kimi')).toContain('Rewrite config');
-    expect(formatTicketUsageText(kimiBindings, 'kimi')).toContain('Local route · 运行中');
+    expect(formatTicketUsageText(kimiBindings, 'kimi')).toContain('Local forwarding · 运行中');
     expect(formatTicketUsageText([])).toBe('未使用');
     expect(formatTicketUsageText([], 'codex')).toBe(`${agentDisplayName('codex')} · 未使用`);
     expect(formatTicketUsageText([], undefined, undefined, 1, true)).toBe('使用中');
@@ -253,7 +253,7 @@ describe('binding usage text', () => {
     const rows = buildTicketWalletRows(wallet);
     const kimi = rows.find((row) => row.ticket.id === 'provider:kimi-1');
     expect(kimi?.usageText).toContain('2 份同类登录可轮换');
-    expect(kimi?.usageText).toContain('Local route');
+    expect(kimi?.usageText).toContain('Local forwarding');
     expect(kimi?.usageText).toContain('运行中');
     const ant = rows.find((row) => row.ticket.id === 'provider:ant-1');
     expect(ant?.usageText).not.toContain('可轮换');
@@ -697,7 +697,7 @@ describe('ticket detail fields', () => {
       { label: '地址', value: 'openrouter.ai', mono: true, copyable: true },
     ]));
     expect(advanced).toEqual(expect.arrayContaining([
-      { label: '本机路由', value: 'Claude', mono: true },
+      { label: '本机转发', value: 'Claude', mono: true },
     ]));
   });
 
@@ -708,7 +708,7 @@ describe('ticket detail fields', () => {
       undefined,
       [bridgeBinding('account:oauth-codex', 'codex')],
     ).advanced).toEqual(expect.arrayContaining([
-      { label: '本机路由', value: 'Codex', mono: true },
+      { label: '本机转发', value: 'Codex', mono: true },
     ]));
     expect(buildTicketDetailFields(
       ticket({ id: 'account:oauth-grok', sourceKind: 'account', sourceId: 'oauth-grok', agentId: 'grok', credentialClass: 'oauth', speaks: ['openai-responses'] }),
@@ -716,7 +716,7 @@ describe('ticket detail fields', () => {
       undefined,
       [bridgeBinding('account:oauth-grok', 'grok')],
     ).advanced).toEqual(expect.arrayContaining([
-      { label: '本机路由', value: 'Grok', mono: true },
+      { label: '本机转发', value: 'Grok', mono: true },
     ]));
     expect(buildTicketDetailFields(
       ticket({ id: 'account:oauth-codex-kimi', sourceKind: 'account', sourceId: 'oauth-codex-kimi', agentId: 'codex', credentialClass: 'oauth', speaks: ['openai-responses'] }),
@@ -724,7 +724,7 @@ describe('ticket detail fields', () => {
       undefined,
       [bridgeBinding('account:oauth-codex-kimi', 'kimi')],
     ).advanced).toEqual(expect.arrayContaining([
-      { label: '本机路由', value: 'Kimi', mono: true },
+      { label: '本机转发', value: 'Kimi', mono: true },
     ]));
   });
 
@@ -746,7 +746,7 @@ describe('ticket detail fields', () => {
       ],
     );
     expect(mixed).toEqual(expect.arrayContaining([
-      { label: '本机路由', value: 'Claude · Codex', mono: true },
+      { label: '本机转发', value: 'Claude · Codex', mono: true },
     ]));
 
     const { advanced: openrouter } = buildTicketDetailFields(
@@ -764,7 +764,7 @@ describe('ticket detail fields', () => {
       ],
     );
     expect(openrouter).toEqual(expect.arrayContaining([
-      { label: '本机路由', value: 'Claude · Codex', mono: true },
+      { label: '本机转发', value: 'Claude · Codex', mono: true },
     ]));
   });
 
@@ -1043,7 +1043,7 @@ describe('ticket detail fields', () => {
       wallet.bindings.filter((binding) => binding.ticketId === 'provider:kimi-1'),
     )).toEqual([
       { agent: agentDisplayName('claude'), status: '当前使用' },
-      { agent: 'http://127.0.0.1:8123/v1/responses', status: '本机路由运行中' },
+      { agent: 'http://127.0.0.1:8123/v1/responses', status: '本机转发运行中' },
     ]);
     expect(formatTicketBindingDetailLines(
       wallet.bindings.filter((binding) => binding.ticketId === 'account:oauth-1'),
@@ -1072,8 +1072,8 @@ describe('ticket detail fields', () => {
       {
         agentId: 'codex',
         agentLabel: agentDisplayName('codex'),
-        status: '本机路由运行中',
-        routeLabel: 'Local route',
+        status: '本机转发运行中',
+        routeLabel: 'Local forwarding',
         localUrl: 'http://127.0.0.1:8123/v1/responses',
       },
     ]);
@@ -1084,7 +1084,7 @@ describe('ticket detail fields', () => {
       active: true,
       profileId: 'p2',
       bridge: { port: 8123, running: false },
-    })).toBe('本机路由已停止');
+    })).toBe('本机转发已停止');
     expect(humanizeTicketAuthLabel('可续期·未验证')).toBe('可续期');
     expect(humanizeTicketAuthLabel('已配置·未验证')).toBe('已配置');
     expect(humanizeTicketAuthLabel('可续期')).toBe('可续期');
@@ -1418,7 +1418,7 @@ describe('handleTicketAddMenuSelect', () => {
     expect(onMenuClose).toHaveBeenCalledOnce();
   });
 
-  it('opens the import dialog for 导入授权 instead of failing silently', () => {
+  it('opens the import dialog for 导入本机登录 instead of failing silently', () => {
     const event = { preventDefault: vi.fn() };
     const onImportLogin = vi.fn();
     handleTicketAddMenuSelect(event, 'import-login', 'claude', { onImportLogin });
@@ -1445,7 +1445,7 @@ describe('handleTicketAddMenuSelect', () => {
 });
 
 describe('ticketAddMenuClosesOnKey', () => {
-  it('closes the expanded 添加授权 menu on Escape', () => {
+  it('closes the expanded 添加登录 menu on Escape', () => {
     expect(ticketAddMenuClosesOnKey('Escape')).toBe(true);
     expect(ticketAddMenuClosesOnKey('Esc')).toBe(true);
     expect(ticketAddMenuClosesOnKey('Enter')).toBe(false);
@@ -1576,7 +1576,7 @@ describe('ticket wallet labels with translator', () => {
     const rows = buildTicketWalletRows(wallet, { t });
     const kimi = rows.find((r) => r.ticket.id === 'provider:kimi-1');
     expect(kimi?.usageText).toContain('Rewrite config');
-    expect(kimi?.usageText).toContain('Local route');
+    expect(kimi?.usageText).toContain('Local forwarding');
     expect(kimi?.usageText).not.toContain('改配置');
   });
 });

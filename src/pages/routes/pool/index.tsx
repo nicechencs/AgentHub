@@ -49,6 +49,7 @@ import {
 } from '@/pages/routes/shared/adapter-view-model';
 import { EditRouteDialog } from '@/pages/routes/shared/EditRouteDialog';
 import { RouteDetailPanel } from '@/pages/routes/shared/RouteDetailPanel';
+import { RoutesStartChecklist } from '@/pages/routes/shared/RoutesStartChecklist';
 import { WriteClientConfigDialog } from '@/pages/routes/shared/WriteClientConfigDialog';
 import { buildRouteGraph } from '@/pages/routes/shared/route-graph-model';
 import {
@@ -522,8 +523,14 @@ export default function RoutesPoolPage() {
               icon={Boxes}
               title={t('routes.pool.page.emptyTitle')}
               description={t('routes.pool.page.emptyDescription')}
-              actionLabel={t('routes.pool.page.syncFromConnections')}
-              onAction={() => syncOpenerRef.current?.()}
+              action={
+                <>
+                  <Button size="sm" className="mt-2" onClick={() => syncOpenerRef.current?.()}>
+                    {t('routes.pool.page.syncFromConnections')}
+                  </Button>
+                  <RoutesStartChecklist className="mt-3" />
+                </>
+              }
             />
           ) : null}
           {pageView === 'list' || (hasContent && pageView !== 'loading' && pageView !== 'list_error') ? (

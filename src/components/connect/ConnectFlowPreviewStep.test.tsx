@@ -98,7 +98,7 @@ describe('ConnectFlowPreviewStep Grok→Claude markup', () => {
       showImportHint: false,
       onGoImport: () => undefined,
     }));
-    expect(html).toContain('本机路由');
+    expect(html).toContain('本机转发');
     expect(html).not.toContain('实验');
     expect(html).toContain('用这份 Grok 登录接到 /v1/messages。');
     expect(html).toContain('关掉会进托盘，路由继续跑。');

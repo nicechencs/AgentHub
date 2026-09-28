@@ -78,7 +78,7 @@ describe('locale key parity', () => {
     expect(translate('en', 'dashboard.sync.manualOnly')).toBe('Manual collect only');
     expect(translate('zh', 'connect.select.maturityStable')).toBe('稳定');
     expect(translate('en', 'connect.select.maturityStable')).toBe('Stable');
-    expect(translate('en', 'kind.route.localRoute')).toBe('Local route');
+    expect(translate('en', 'kind.route.localRoute')).toBe('Local forwarding');
     expect(translate('zh', 'connections.providerDialog.remoteModelsLoading')).toBe(
       '正在拉取模型…',
     );
@@ -125,8 +125,8 @@ describe('locale key parity', () => {
     expect(translate('en', 'chat.actions.copyLatestReply')).toBe('Copy latest reply');
     expect(translate('zh', 'chat.actions.group.hub')).toBe('立刻执行');
     expect(translate('en', 'chat.actions.group.hub')).toBe('Run now');
-    expect(translate('zh', 'chat.actions.group.native')).toBe('对方命令');
-    expect(translate('en', 'chat.actions.group.native')).toBe('Their commands');
+    expect(translate('zh', 'chat.actions.group.native')).toBe('Agent 自带命令');
+    expect(translate('en', 'chat.actions.group.native')).toBe('Agent commands');
     expect(translate('zh', 'agents.card.startCli')).toBe('启动命令行');
     expect(translate('en', 'agents.card.startCli')).toBe('Start command line');
     expect(translate('zh', 'agents.card.startWeb')).toBe('打开网页会话');

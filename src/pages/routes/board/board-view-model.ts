@@ -424,8 +424,8 @@ export function boardFleetSummary(
         })
       : t('routes.fleetSummary', { total: rows.length, running })
     : needsAttention > 0
-      ? `${rows.length} 个本机路由 · ${running} 个运行中 · ${needsAttention} 个需要处理`
-      : `${rows.length} 个本机路由 · ${running} 个运行中 · 需保持托盘运行`;
+      ? `${rows.length} 条路由 · ${running} 条运行中 · ${needsAttention} 条需要处理`
+      : `${rows.length} 条路由 · ${running} 条运行中 · 需保持托盘运行`;
   return { total: rows.length, running, needsAttention, label };
 }
 
