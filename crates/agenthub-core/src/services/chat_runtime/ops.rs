@@ -653,6 +653,13 @@ pub(crate) fn path_is_inside_cwd(path: &Path, cwd: &Path) -> bool {
     } else {
         cwd.join(path)
     };
+    // The write follows links: a symlink (even dangling) or a second hard link
+    // at the target can land outside the working directory, so it asks first.
+    if let Ok(meta) = std::fs::symlink_metadata(&absolute) {
+        if meta.file_type().is_symlink() || has_other_hard_links(&meta) {
+            return false;
+        }
+    }
     let resolved = match absolute.canonicalize() {
         Ok(path) => path,
         Err(_) => match absolute
@@ -664,6 +671,17 @@ pub(crate) fn path_is_inside_cwd(path: &Path, cwd: &Path) -> bool {
         },
     };
     resolved.starts_with(&cwd)
+}
+
+#[cfg(unix)]
+fn has_other_hard_links(meta: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    meta.is_file() && meta.nlink() > 1
+}
+
+#[cfg(not(unix))]
+fn has_other_hard_links(_meta: &std::fs::Metadata) -> bool {
+    false
 }
 
 /// Grok `session/new`. `_meta.yoloMode` is the ACP always-approve switch;

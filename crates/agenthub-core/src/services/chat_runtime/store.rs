@@ -10,7 +10,7 @@ use chrono::Utc;
 use rusqlite::{params, OptionalExtension};
 
 use crate::error::{AppError, Result};
-use crate::models::{AgentId, ChatEvent, ChatMessage, ChatMessageStatus, ChatRole, ProcessStep};
+use crate::models::{AgentId, ChatEvent, ChatMessage, ChatMessageStatus, ChatRole};
 use crate::storage::Database;
 
 use super::types::{
@@ -391,9 +391,11 @@ impl RuntimeStore {
         let now = Utc::now().to_rfc3339();
         self.db.with_conn(|conn| {
             conn.execute_batch("BEGIN IMMEDIATE")?;
+            // Thinking deltas stay one row each: the page merges them by its
+            // own last process step, and a server-side merge across a usage or
+            // body row made a poller show the thought twice.
             let result = (|| {
-                let event = merge_trailing_thinking_conn(conn, conversation_id, event)?;
-                let event_json = serde_json::to_string(&event)?;
+                let event_json = serde_json::to_string(event)?;
                 insert_event_conn(conn, conversation_id, phase, run_id, &event_json, &now)
             })();
             finish_transaction(conn, result)
@@ -1243,79 +1245,6 @@ fn update_chat_message_conn(conn: &rusqlite::Connection, message: &ChatMessage) 
 
 /// Delete the newest event row when it is a body chunk of the same turn,
 /// agent and stream as `event`.
-/// Consecutive open thinking deltas of one turn and agent share one row that
-/// holds the text so far. Pollers that saw the earlier row get a longer text
-/// with the same prefix, which the page replaces in place
-/// (`mergeThinkingText`); a late reader still gets the whole thought. Long
-/// thinking can no longer push tool steps out of the kept window.
-fn merge_trailing_thinking_conn(
-    conn: &rusqlite::Connection,
-    conversation_id: &str,
-    event: &ChatEvent,
-) -> Result<ChatEvent> {
-    let ChatEvent::AgentProcess {
-        turn,
-        agent,
-        step: ProcessStep::Thinking { text, done: false },
-    } = event
-    else {
-        return Ok(event.clone());
-    };
-    let last: Option<(i64, String)> = conn
-        .query_row(
-            r#"
-            SELECT sequence, event_json FROM chat_runtime_events
-            WHERE conversation_id = ?1
-            ORDER BY sequence DESC LIMIT 1
-            "#,
-            params![conversation_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()?;
-    let Some((sequence, json)) = last else {
-        return Ok(event.clone());
-    };
-    let Ok(ChatEvent::AgentProcess {
-        turn: last_turn,
-        agent: last_agent,
-        step: ProcessStep::Thinking {
-            text: previous,
-            done: false,
-        },
-    }) = serde_json::from_str::<ChatEvent>(&json)
-    else {
-        return Ok(event.clone());
-    };
-    if last_turn != *turn || last_agent != *agent {
-        return Ok(event.clone());
-    }
-    conn.execute(
-        "DELETE FROM chat_runtime_events WHERE conversation_id = ?1 AND sequence = ?2",
-        params![conversation_id, sequence],
-    )?;
-    Ok(ChatEvent::AgentProcess {
-        turn: *turn,
-        agent: *agent,
-        step: ProcessStep::Thinking {
-            text: merge_thinking_text(&previous, text),
-            done: false,
-        },
-    })
-}
-
-/// Same rule as the page's `mergeThinkingText`: Codex may send a snapshot of
-/// the whole thought (replace), a replayed shorter prefix (keep), or a delta
-/// (append).
-fn merge_thinking_text(previous: &str, next: &str) -> String {
-    if next.starts_with(previous) {
-        next.to_string()
-    } else if previous.starts_with(next) {
-        previous.to_string()
-    } else {
-        format!("{previous}{next}")
-    }
-}
-
 fn drop_trailing_chunk_conn(
     conn: &rusqlite::Connection,
     conversation_id: &str,

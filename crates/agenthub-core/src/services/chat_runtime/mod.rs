@@ -2694,6 +2694,19 @@ impl ActorWorker {
 
     fn server_request(&mut self, id: Value, method: &str, params: &Value) -> Result<()> {
         let id_string = wire_id_string(&id);
+        // A second request reusing an open card's id (or `1` vs `"1"`) must not
+        // replace what that card approves, including its "Always allow" scope.
+        if self.pending_fs_writes.contains_key(&id_string)
+            || self
+                .store
+                .request(&self.conversation_id, &id_string)?
+                .is_some()
+        {
+            return self.respond_jsonrpc(
+                id,
+                Err(json!({"code": -32600, "message": "duplicate request id"})),
+            );
+        }
         let phase = self
             .store
             .record(&self.conversation_id)?
@@ -2779,7 +2792,7 @@ impl ActorWorker {
             return Ok(());
         }
         let (kind, title, detail, questions, acp_options, file_changes) = match method {
-            "session/request_permission" => {
+            "session/request_permission" if is_acp_runtime_agent(Some(self.agent)) => {
                 let file_changes = file_change::extract_file_changes(params);
                 let is_file = acp_permission_is_file_change(params, !file_changes.is_empty());
                 let title = if is_file {
@@ -4569,14 +4582,74 @@ fn acp_permission_is_file_change(params: &Value, has_file_changes: bool) -> bool
         .and_then(Value::as_str)
         .unwrap_or("")
         .trim();
-    let runs_command = ["command", "cmd", "commandLine", "script"]
-        .iter()
-        .any(|key| {
-            params
-                .pointer(&format!("/toolCall/rawInput/{key}"))
-                .is_some()
-        });
-    acp_tool_is_file_change(params) || (kind.is_empty() && has_file_changes && !runs_command)
+    if !acp_input_is_file_only(params.pointer("/toolCall/rawInput")) {
+        return false;
+    }
+    acp_tool_is_file_change(params) || (kind.is_empty() && has_file_changes)
+}
+
+/// Tool input that only names files and their new content (possibly nested,
+/// e.g. Grok `operation: {type, path, diff}`). Anything else (a bare string,
+/// `command`, `argv`, unknown keys) may run code, so the card is a command
+/// card whatever `kind` claims.
+fn acp_input_is_file_only(input: Option<&Value>) -> bool {
+    const FILE_KEYS: &[&str] = &[
+        "path",
+        "file",
+        "filePath",
+        "file_path",
+        "target_file",
+        "uri",
+        "abs_path",
+        "content",
+        "contents",
+        "text",
+        "diff",
+        "patch",
+        "edits",
+        "old_string",
+        "new_string",
+        "oldText",
+        "newText",
+        "old_text",
+        "new_text",
+        "old_str",
+        "new_str",
+        "replace_all",
+        "source",
+        "destination",
+        "from",
+        "to",
+        "oldPath",
+        "newPath",
+        "old_path",
+        "new_path",
+        "operation",
+        "operations",
+        "changes",
+        "type",
+        "kind",
+    ];
+    fn file_only(value: &Value) -> bool {
+        match value {
+            Value::Object(map) => map
+                .iter()
+                .all(|(key, value)| FILE_KEYS.contains(&key.as_str()) && nested_ok(value)),
+            Value::Array(items) => items.iter().all(|item| item.is_object() && file_only(item)),
+            _ => false,
+        }
+    }
+    fn nested_ok(value: &Value) -> bool {
+        match value {
+            Value::Object(_) | Value::Array(_) => file_only(value),
+            _ => true,
+        }
+    }
+    match input {
+        None | Some(Value::Null) => true,
+        Some(value @ Value::Object(_)) => file_only(value),
+        Some(_) => false,
+    }
 }
 
 fn codex_session_permission_options() -> Vec<RuntimePermissionOption> {
