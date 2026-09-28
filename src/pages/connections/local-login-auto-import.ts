@@ -4,6 +4,7 @@
  */
 import type { AgentKey } from '@/lib/types';
 import {
+  isLiveAuthDiscoveryDeferred,
   liveApiKeyImportGate,
   liveAuthDiscoveryKind,
   liveAuthImportGate,
@@ -36,6 +37,26 @@ export function planLocalLoginAutoImport(input: {
 }): AgentKey[] {
   if (!resolveAutoImportLocalLogin(input.autoImportLocalLogin)) return [];
   return input.agentIds.filter((id) => !input.alreadyTried.has(id));
+}
+
+/**
+ * Stamp an agent only after a conclusive probe. Thrown probes and deferred
+ * inventory must stay retryable so a later ready snapshot can still import.
+ */
+export function shouldRememberAutoImportAttempt(input: {
+  probeOk: boolean;
+  poolState: ConnectionInventoryDiscoveryState;
+  probe?: LiveAuthProbeLike | null;
+  accountsFailed?: boolean;
+  providersFailed?: boolean;
+}): boolean {
+  if (!input.probeOk) return false;
+  return !isLiveAuthDiscoveryDeferred({
+    poolState: input.poolState,
+    probe: input.probe,
+    accountsFailed: input.accountsFailed,
+    providersFailed: input.providersFailed,
+  });
 }
 
 export function canAutoImportProbe(input: {

@@ -4,6 +4,7 @@ import {
   planLocalLoginAutoImport,
   resolveAutoImportLocalLogin,
   shouldAutoImportDiscoveredLogin,
+  shouldRememberAutoImportAttempt,
   showConnectionsImportLoginAction,
 } from './local-login-auto-import';
 import { ticketAddActionsForAgent, buildTicketAddMenu } from './ticket-add-menu';
@@ -61,6 +62,25 @@ describe('auto-import this computer login preference', () => {
       accounts: [{ kind: 'oauth' }],
       providers: [],
     })).toBe(false);
+  });
+
+  it('does not remember a failed or deferred probe as already tried', () => {
+    expect(shouldRememberAutoImportAttempt({
+      probeOk: false,
+      poolState: 'ready',
+      probe: { agentId: 'claude', kind: 'oauth', hasCredentials: true },
+    })).toBe(false);
+    expect(shouldRememberAutoImportAttempt({
+      probeOk: true,
+      poolState: 'partial',
+      probe: { agentId: 'claude', kind: 'oauth', hasCredentials: true },
+      accountsFailed: true,
+    })).toBe(false);
+    expect(shouldRememberAutoImportAttempt({
+      probeOk: true,
+      poolState: 'ready',
+      probe: { agentId: 'claude', kind: 'oauth', hasCredentials: true },
+    })).toBe(true);
   });
 
   it('does not auto-import leftover local-route projections', () => {

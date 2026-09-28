@@ -111,6 +111,7 @@ import {
   canAutoImportProbe,
   planLocalLoginAutoImport,
   resolveAutoImportLocalLogin,
+  shouldRememberAutoImportAttempt,
   showConnectionsImportLoginAction,
 } from './local-login-auto-import';
 
@@ -350,6 +351,7 @@ export default function ConnectionsPage() {
 
   useEffect(() => {
     if (!resolveAutoImportLocalLogin(autoImportLocalLogin)) return;
+    if (loading) return;
     if (pool.state !== 'ready' && pool.state !== 'partial') return;
     if (loginImportOpen || pendingGuide?.intent === 'import-login') return;
     const pending = planLocalLoginAutoImport({
@@ -366,22 +368,35 @@ export default function ConnectionsPage() {
       for (const agentId of pending) {
         if (autoImportGen.current !== generation) return;
         if (autoImportTriedRef.current.has(agentId)) continue;
-        autoImportTriedRef.current.add(agentId);
-        let probe: LiveAuthProbe;
+        let probe: LiveAuthProbe | null = null;
+        let probeOk = false;
         try {
           probe = await probeLiveAuth(agentId);
+          probeOk = true;
         } catch {
-          continue;
+          probe = null;
         }
         if (autoImportGen.current !== generation) return;
+        const accountsFailed = Boolean(pool.errors.accounts);
+        const providersFailed = Boolean(pool.errors.providers);
+        if (!shouldRememberAutoImportAttempt({
+          probeOk,
+          poolState: pool.state,
+          probe,
+          accountsFailed,
+          providersFailed,
+        })) {
+          continue;
+        }
+        autoImportTriedRef.current.add(agentId);
         if (!canAutoImportProbe({
           agentId,
           poolState: pool.state,
           probe,
           accounts: accountsForAgent(pool.accounts, agentId),
           providers: providersForAgent(pool.providers, agentId),
-          accountsFailed: Boolean(pool.errors.accounts),
-          providersFailed: Boolean(pool.errors.providers),
+          accountsFailed,
+          providersFailed,
         })) {
           continue;
         }
@@ -420,6 +435,7 @@ export default function ConnectionsPage() {
     })();
   }, [
     autoImportLocalLogin,
+    loading,
     loginImportOpen,
     loadWallet,
     manageAuthAgentIds,
