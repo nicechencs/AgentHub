@@ -2808,11 +2808,7 @@ impl ActorWorker {
                 let detail = if is_file {
                     self.file_change_request_detail(params)
                 } else {
-                    redact_json_text(
-                        params
-                            .get("toolCall")
-                            .and_then(|call| call.get("rawInput").or_else(|| call.get("title"))),
-                    )
+                    acp_command_detail(params)
                 };
                 (
                     if is_file {
@@ -4548,17 +4544,21 @@ fn allow_always_grant(method: &str, kind: RuntimeRequestKind, params: &Value) ->
         RuntimeRequestKind::File => return Some(FILE_CHANGE_GRANT.to_string()),
         RuntimeRequestKind::Question => return None,
         RuntimeRequestKind::Command if method == "session/request_permission" => {
-            let call = params.get("toolCall")?;
+            let identity = acp_command_identity(params);
+            let call = identity.get("toolCall")?.as_object()?;
             let title = call
                 .get("title")
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .trim();
-            let input = call.get("rawInput").filter(|value| !value.is_null());
-            if title.is_empty() && input.is_none() {
+            let has_more = identity.as_object().is_some_and(|map| map.len() > 1)
+                || call
+                    .iter()
+                    .any(|(key, value)| key != "kind" && key != "title" && !value.is_null());
+            if title.is_empty() && !has_more {
                 return None;
             }
-            json!(["acp", call.get("kind"), title, input]).to_string()
+            json!(["acp", identity]).to_string()
         }
         RuntimeRequestKind::Command => {
             let command = match params.get("command")? {
@@ -4573,6 +4573,51 @@ fn allow_always_grant(method: &str, kind: RuntimeRequestKind, params: &Value) ->
     Some(format!("command:{:x}", Sha256::digest(identity.as_bytes())))
 }
 
+/// What an ACP permission request asks to run: the whole request minus the
+/// per-call ids and the answer options. Used as the "Always allow" scope and
+/// as the command card text, so nothing the agent sent is left out of either.
+fn acp_command_identity(params: &Value) -> Value {
+    let mut identity = params.clone();
+    if let Some(map) = identity.as_object_mut() {
+        for key in ["sessionId", "turnId", "options"] {
+            map.remove(key);
+        }
+        if let Some(Value::Object(call)) = map.get_mut("toolCall") {
+            call.remove("toolCallId");
+            call.remove("status");
+        }
+    }
+    identity
+}
+
+/// Command card text: `rawInput` (or the title) when that is all the call
+/// carries; otherwise the whole request, so a command hidden in `locations`
+/// or a sibling key is shown before the user approves it.
+fn acp_command_detail(params: &Value) -> String {
+    let identity = acp_command_identity(params);
+    let call = identity.get("toolCall").and_then(Value::as_object);
+    let plain = identity.as_object().is_some_and(|map| map.len() == 1)
+        && call.is_some_and(|call| {
+            call.iter().all(|(key, value)| {
+                matches!(key.as_str(), "kind" | "title" | "rawInput") || value.is_null()
+            })
+        });
+    if plain {
+        let call = call.expect("checked above");
+        redact_json_text(
+            call.get("rawInput")
+                .filter(|value| !value.is_null())
+                .or_else(|| call.get("title")),
+        )
+    } else {
+        redact_json_text(Some(&identity))
+    }
+}
+
+/// Top-level keys of a `session/request_permission` that may sit beside a
+/// file-only `toolCall`.
+const ACP_PERMISSION_ENVELOPE: &[&str] = &["sessionId", "turnId", "toolCall", "options"];
+
 /// ACP permission is a file card only for file tools whose whole `toolCall`
 /// only names files and their new content. A command or other tool, or a
 /// file-shaped call that also carries anything else, stays a command card, so
@@ -4583,7 +4628,11 @@ fn acp_permission_is_file_change(params: &Value, has_file_changes: bool) -> bool
         .and_then(Value::as_str)
         .unwrap_or("")
         .trim();
-    if !acp_tool_call_is_file_only(params.get("toolCall")) {
+    let envelope_only = params.as_object().is_some_and(|map| {
+        map.keys()
+            .all(|key| ACP_PERMISSION_ENVELOPE.contains(&key.as_str()))
+    });
+    if !envelope_only || !acp_tool_call_is_file_only(params.get("toolCall")) {
         return false;
     }
     acp_tool_is_file_change(params) || (kind.is_empty() && has_file_changes)
