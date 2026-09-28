@@ -388,12 +388,16 @@ impl RuntimeStore {
         run_id: Option<&str>,
         event: &ChatEvent,
     ) -> Result<i64> {
-        let event_json = serde_json::to_string(event)?;
         let now = Utc::now().to_rfc3339();
         self.db.with_conn(|conn| {
             conn.execute_batch("BEGIN IMMEDIATE")?;
-            let result =
-                (|| insert_event_conn(conn, conversation_id, phase, run_id, &event_json, &now))();
+            // Thinking deltas stay one row each: the page merges them by its
+            // own last process step, and a server-side merge across a usage or
+            // body row made a poller show the thought twice.
+            let result = (|| {
+                let event_json = serde_json::to_string(event)?;
+                insert_event_conn(conn, conversation_id, phase, run_id, &event_json, &now)
+            })();
             finish_transaction(conn, result)
         })
     }
@@ -401,6 +405,12 @@ impl RuntimeStore {
     /// Update an existing chat message and append its corresponding runtime
     /// event under one SQLite transaction.  A snapshot can therefore never
     /// expose a delta whose durable history update is still pending.
+    ///
+    /// Consecutive body deltas of one turn keep a single `AgentChunk` row: the
+    /// previous chunk row is replaced by this one under a new sequence, so the
+    /// 2048-row window keeps process steps instead of thousands of deltas.
+    /// The full body lives in `currentMessage`; the chunk only signals that
+    /// text is streaming.
     pub(crate) fn append_message_event(
         &self,
         conversation_id: &str,
@@ -415,9 +425,25 @@ impl RuntimeStore {
             conn.execute_batch("BEGIN IMMEDIATE")?;
             let result = (|| {
                 update_chat_message_conn(conn, message)?;
+                if matches!(event, ChatEvent::AgentChunk { .. }) {
+                    drop_trailing_chunk_conn(conn, conversation_id, event)?;
+                }
                 insert_event_conn(conn, conversation_id, phase, run_id, &event_json, &now)
             })();
             finish_transaction(conn, result)
+        })
+    }
+
+    /// Read one chat message of this conversation by id.
+    pub(crate) fn message(
+        &self,
+        conversation_id: &str,
+        message_id: &str,
+    ) -> Result<Option<ChatMessage>> {
+        self.db.with_conn(|conn| {
+            Ok(self
+                .current_message_conn(conn, Some(message_id))?
+                .filter(|message| message.conversation_id == conversation_id))
         })
     }
 
@@ -1217,6 +1243,54 @@ fn update_chat_message_conn(conn: &rusqlite::Connection, message: &ChatMessage) 
     Ok(())
 }
 
+/// Delete the newest event row when it is a body chunk of the same turn,
+/// agent and stream as `event`.
+fn drop_trailing_chunk_conn(
+    conn: &rusqlite::Connection,
+    conversation_id: &str,
+    event: &ChatEvent,
+) -> Result<()> {
+    let ChatEvent::AgentChunk {
+        turn,
+        agent,
+        stream,
+        ..
+    } = event
+    else {
+        return Ok(());
+    };
+    let last: Option<(i64, String)> = conn
+        .query_row(
+            r#"
+            SELECT sequence, event_json FROM chat_runtime_events
+            WHERE conversation_id = ?1
+            ORDER BY sequence DESC LIMIT 1
+            "#,
+            params![conversation_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let Some((sequence, json)) = last else {
+        return Ok(());
+    };
+    let same_run = matches!(
+        serde_json::from_str::<ChatEvent>(&json),
+        Ok(ChatEvent::AgentChunk {
+            turn: last_turn,
+            agent: last_agent,
+            stream: last_stream,
+            ..
+        }) if last_turn == *turn && last_agent == *agent && last_stream == *stream
+    );
+    if same_run {
+        conn.execute(
+            "DELETE FROM chat_runtime_events WHERE conversation_id = ?1 AND sequence = ?2",
+            params![conversation_id, sequence],
+        )?;
+    }
+    Ok(())
+}
+
 fn insert_event_conn(
     conn: &rusqlite::Connection,
     conversation_id: &str,
@@ -1249,13 +1323,17 @@ fn insert_event_conn(
         "#,
         params![conversation_id, phase.as_str(), run_id, sequence, now],
     )?;
+    // Keep the newest 2048 rows, not the newest 2048 sequence numbers:
+    // merged body chunks leave sequence holes that must not evict history.
     conn.execute(
         r#"
         DELETE FROM chat_runtime_events
         WHERE conversation_id = ?1
           AND sequence <= (
-            SELECT COALESCE(MAX(sequence), 0) - 2048
-            FROM chat_runtime_events WHERE conversation_id = ?1
+            SELECT sequence FROM chat_runtime_events
+            WHERE conversation_id = ?1
+            ORDER BY sequence DESC
+            LIMIT 1 OFFSET 2048
           )
         "#,
         params![conversation_id],

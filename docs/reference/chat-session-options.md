@@ -4,7 +4,7 @@ description: Runtime Options 的 seed / 探测来源与 fail-closed 边界。
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-21
+updated: 2026-09-28
 ---
 
 # Chat 会话选项目录
@@ -34,7 +34,7 @@ Chat「模型 / 思考 / 扩展 / 斜杠原生命令」等来自会话 **Options
 ## 纪律
 
 1. **未知模型**：不因用户手输就写成「已支持」；继承默认选项的规则须在代码注释与产品文案中可解释。  
-2. **launch vs 会话中**：生成中不改正在跑的一轮；Kiro / Grok 换模型或权限会在下一轮重新拉起进程，不要假装当前进程已切换。  
+2. **launch vs 会话中**：生成中不改正在跑的一轮；Kiro / Grok 换模型或权限会在下一轮重新拉起进程，不要假装当前进程已切换。Grok 重新拉起后接回原会话（`session/load`，不支持时新开并带上之前的对话）；Kiro 新开会话并带上之前的对话，不能悄悄丢掉上下文。  
 3. **与深度矩阵**：只有 D2+ 会话才期望丰富 Options；D1 legacy 不假装有 app-server 目录。  
 
 相关：[Chat 支持深度矩阵](chat-support-depth.md)、[身份兼容族](../concepts/agent-identity-families.md)。
