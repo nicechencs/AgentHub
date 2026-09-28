@@ -982,7 +982,15 @@ export default function ConnectionsPage() {
             <Notice tone="warning">{activeImportGate.reason}</Notice>
           ) : null}
           {importCoexistenceNotice ? (
-            <Notice tone="warning">{importCoexistenceNotice}</Notice>
+            <Notice tone="warning">
+              <details>
+                <summary className="cursor-pointer">
+                  {t('connections.list.coexistSummary')}{' '}
+                  <span className="text-muted">{t('connections.list.coexistDetails')}</span>
+                </summary>
+                <p className="mt-1">{importCoexistenceNotice}</p>
+              </details>
+            </Notice>
           ) : null}
           <DialogFooter>
             <Button

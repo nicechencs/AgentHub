@@ -128,37 +128,37 @@ export const en = {
         'Only the Routes item auto-collapses the sidebar. Other pages, refresh, and moving inside Routes leave it as you left it. The collapse control always works.',
       skillsNavVisibleLabel: 'Show Skills in sidebar',
       skillsNavVisibleDescription:
-        'Show the Skills entry in the left nav. Hiding it does not disable the page.',
+        'Skills (prompts, scripts) installed for each agent.',
       skillsNavVisibleTip:
         'Shown by default on a new install. When hidden, you can still open Skills via the URL or direct links.',
       mcpNavVisibleLabel: 'Show MCP in sidebar',
       mcpNavVisibleDescription:
-        'Show the MCP entry in the left nav. Hiding it does not disable the page.',
+        'External tools agents can call.',
       mcpNavVisibleTip:
         'Shown by default on a new install. When hidden, you can still open MCP via the URL or direct links.',
       projectsNavVisibleLabel: 'Show History in sidebar',
       projectsNavVisibleDescription:
-        'Show the History entry in the left nav. Hiding it does not disable the page.',
+        'Past sessions of each agent on this computer.',
       projectsNavVisibleTip:
         'Shown by default on a new install. When hidden, you can still open History via the URL or direct links.',
       pluginsNavVisibleLabel: 'Show Plugins in sidebar',
       pluginsNavVisibleDescription:
-        'In development. Show the Plugins entry in the left nav. Hiding it does not disable the page.',
+        'In development. Plugin packages for each agent.',
       pluginsNavVisibleTip:
         'Hidden by default on a new install. When hidden, you can still open Plugins via the URL or direct links.',
       connectionsNavVisibleLabel: 'Show Connections in sidebar',
       connectionsNavVisibleDescription:
-        'Show the Connections entry in the left nav. Hiding it does not disable the page.',
+        'Logins and API Keys for each agent.',
       connectionsNavVisibleTip:
         'Shown by default on a new install. When hidden, you can still open Connections via the URL or direct links.',
       sub2apiNavVisibleLabel: 'Show Sub2API page',
       sub2apiNavVisibleDescription:
-        'Show the Sub2API entry in the left nav. Hiding it does not disable the page.',
+        'API Keys from your Sub2API relay site.',
       sub2apiNavVisibleTip:
         'Hidden by default on a new install. When hidden, you can still open Sub2API via the URL or direct links.',
       routesNavVisibleLabel: 'Show Routes in sidebar',
       routesNavVisibleDescription:
-        'Show the Routes entry in the left nav. Hiding it does not disable the page.',
+        'Local forwarding so several tools can share a login.',
       routesNavVisibleTip:
         'Shown by default on a new install. When hidden, you can still open Routes via the URL or direct links.',
       warnDuplicateRouteCredentialLabel: 'Warn on reused keys',
@@ -621,28 +621,28 @@ export const en = {
         settingsPreferences: {
           title: "Using Preferences",
           intro: "Language, appearance, and sync interval.",
-          step1: "Five tabs: Preferences, Features, This computer, Backups, and About.",
+          step1: "You are on Preferences. Other settings are in the tabs next to it.",
           step2: "Language, theme, accent, and page background take effect immediately.",
           step3: "The usage collect interval is here.",
         },
         settingsFeatures: {
           title: "Using Features",
           intro: "Which pages appear in the sidebar.",
-          step1: "Five tabs: Preferences, Features, This computer, Backups, and About.",
+          step1: "You are on Features. Other settings are in the tabs next to it.",
           step2: "Show or hide pages other than Chat, Agents, Dashboard, and Settings.",
           step3: "Whether clicking Routes collapses the sidebar.",
         },
         settingsLocal: {
           title: "Using This computer",
           intro: "Data folder and logs.",
-          step1: "Five tabs: Preferences, Features, This computer, Backups, and About.",
+          step1: "You are on This computer. Other settings are in the tabs next to it.",
           step2: "Open the data folder from here.",
           step3: "Change the log level and how many days to keep logs.",
         },
         settingsBackups: {
           title: "Using Backups",
           intro: "Configuration snapshots for each Agent.",
-          step1: "Five tabs: Preferences, Features, This computer, Backups, and About.",
+          step1: "You are on Backups. Other settings are in the tabs next to it.",
           step2: "Keep local config copies on switch and sync is on by default.",
           step3: "Click Back up to create one.",
           step4: "Click this snapshot to inspect files on the right. Then click Next.",
@@ -651,7 +651,7 @@ export const en = {
         settingsAbout: {
           title: "Using About",
           intro: "Version, updates, and reporting a problem.",
-          step1: "Five tabs: Preferences, Features, This computer, Backups, and About.",
+          step1: "You are on About. Other settings are in the tabs next to it.",
           step2: "See the version and check for updates.",
           step3: "Report a problem here, or use the chat icon at the top right.",
         },
@@ -2366,6 +2366,8 @@ export const en = {
       isOauthImportLogin: "This computer has an official login. Use Import this computer's login instead.",
       desktopNoApiKey: "This is a desktop login; an API Key can't be imported directly",
       noApiKeyToImport: "No API Key found to import",
+      coexistSummary: "This computer has two logins; only the one in use is imported.",
+      coexistDetails: "Details",
       coexistGeneric: "This computer has both an API Key and an official login, in different places. Import only takes the one currently in use; the other stays on this computer.",
       coexistPi: "Pi has both an API Key and an official login. Import writes them as separate providers and does not guess a current account.",
       coexistClaude: "This computer has both an API Key and an official login. Claude prefers the Key (API billing) and holds back the subscription. Import only takes this Key. To use the subscription, remove the Key from local config first.",
