@@ -1311,6 +1311,20 @@ describe('buildTicketAddMenu', () => {
     ]);
   });
 
+  it('omits 导入本机登录 when auto-import is on', () => {
+    expect(
+      buildTicketAddMenu(['claude', 'kimi'], ['claude'], false).map((item) =>
+        item.actions.map((a) => a.kind),
+      ),
+    ).toEqual([
+      ['oauth', 'api-key'],
+      ['api-key'],
+    ]);
+    expect(
+      ticketAddActionsForAgent(true, true, false).map((item) => item.kind),
+    ).toEqual(['oauth', 'api-key']);
+  });
+
   it('hides official login until the account port says the Agent supports it', () => {
     expect(
       buildTicketAddMenu(['claude', 'kimi']).map((item) => item.actions.map((a) => a.kind)),

@@ -52,6 +52,12 @@ fn database_open_creates_schema_and_settings_roundtrip() {
             .update_duplicate_route_url,
         "default update_duplicate_route_url is true"
     );
+    assert!(
+        db.load_app_settings()
+            .expect("load auto import")
+            .auto_import_local_login,
+        "default auto_import_local_login is true"
+    );
     db.set_setting("keep_live_file_copies", "false")
         .expect("set copies off");
     assert!(
@@ -73,12 +79,21 @@ fn database_open_creates_schema_and_settings_roundtrip() {
             .expect("load update url off")
             .update_duplicate_route_url
     );
+    db.set_setting("auto_import_local_login", "false")
+        .expect("set auto import off");
+    assert!(
+        !db.load_app_settings()
+            .expect("load auto import off")
+            .auto_import_local_login
+    );
     db.set_setting("keep_live_file_copies", "true")
         .expect("set copies on");
     db.set_setting("warn_duplicate_route_credential", "true")
         .expect("set warn on");
     db.set_setting("update_duplicate_route_url", "true")
         .expect("set update url on");
+    db.set_setting("auto_import_local_login", "true")
+        .expect("set auto import on");
     db.set_setting("close_to_tray", "false").expect("set close");
     assert!(!db.load_app_settings().expect("load false").close_to_tray);
     db.set_setting("close_to_tray", "true")

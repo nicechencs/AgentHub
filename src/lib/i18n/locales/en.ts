@@ -169,6 +169,11 @@ export const en = {
       updateDuplicateRouteUrlDescription: 'Adding the same address for the same tool updates the old route instead of adding one',
       updateDuplicateRouteUrlTip:
         'When on, the same URL under the same client updates the existing route instead of creating another. Turn off to allow another route with the same URL.',
+      autoImportLocalLoginLabel: "Auto-import this computer's login",
+      autoImportLocalLoginDescription:
+        'When on, Connections automatically adds logins already on this computer',
+      autoImportLocalLoginTip:
+        'On by default. While on, Connections hides “Import this computer\'s login”. Turn it off to import yourself.',
       skillMarketLabel: 'Skill market',
       skillMarketDescription: 'Remote skill source',
       skillMarketTip:
@@ -178,6 +183,7 @@ export const en = {
       skillMarketSkillhub: 'skillhub.cn',
       sectionAppearance: 'Language and appearance',
       sectionLaunch: 'Launch and close',
+      sectionConnections: 'Connections',
       sectionSidebarNav: 'Sidebar pages',
       sectionSidebar: 'Sidebar',
       sectionRoutes: 'Routes',
@@ -576,7 +582,7 @@ export const en = {
           title: "Using Connections",
           intro: "The login list shared across tools.",
           step1: "Filter logins by Agent.",
-          step2: "Add a login here: Import this computer's login, Official login, or API Key.",
+          step2: "Add Official login or API Key here. Logins on this computer are imported automatically by default.",
           step3: "Click this row to open details on the right. Then click Next.",
           step4: "This is the detail pane. Related files and sign-in status are here.",
           step5: "Deleted logins go to the trash and are kept for 30 days.",
@@ -2164,6 +2170,7 @@ export const en = {
       confirm: "Import",
       importing: "Importing…",
       toastOk: "Imported this computer's login",
+      toastOkMany: "Imported {n} login(s) from this computer",
       toastOkDesc: "{label} is in the list",
       toastOkCoexist: "{label} is in the list. The other login on this computer was not imported.",
       toastFail: "Import failed",

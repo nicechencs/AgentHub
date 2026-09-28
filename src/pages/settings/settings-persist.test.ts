@@ -20,6 +20,7 @@ const baseSettings: AppSettings = {
   keepLiveFileCopies: true,
   warnDuplicateRouteCredential: true,
   updateDuplicateRouteUrl: true,
+  autoImportLocalLogin: true,
   appVersion: 'test',
 };
 

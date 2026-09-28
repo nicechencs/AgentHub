@@ -33,8 +33,10 @@ export function agentSupportsTicketApiKey(id: AgentKey): boolean {
 export function ticketAddActionsForAgent(
   oauthLogin = false,
   apiKey = true,
+  includeImportLogin = true,
 ): Array<{ kind: TicketAddKind; label: string }> {
   return TICKET_ADD_ACTIONS.filter((item) => {
+    if (item.kind === 'import-login') return includeImportLogin;
     if (item.kind === 'oauth') return oauthLogin;
     if (item.kind === 'api-key') return apiKey;
     return true;
@@ -82,17 +84,21 @@ function oauthLoginSet(
 export function buildTicketAddMenu(
   agentIds?: readonly AgentKey[] | null,
   oauthLoginAgents?: ReadonlySet<string> | readonly string[] | null,
+  includeImportLogin = true,
 ): TicketAddMenuAgent[] {
   if (!agentIds || agentIds.length === 0) return [];
   const oauth = oauthLoginSet(oauthLoginAgents);
-  return agentIds.map((id) => ({
-    id,
-    name: agentDisplayName(id),
-    actions: ticketAddActionsForAgent(
-      canStartOfficialLogin(id, [...oauth]),
-      canAddApiKey(id),
-    ),
-  }));
+  return agentIds
+    .map((id) => ({
+      id,
+      name: agentDisplayName(id),
+      actions: ticketAddActionsForAgent(
+        canStartOfficialLogin(id, [...oauth]),
+        canAddApiKey(id),
+        includeImportLogin,
+      ),
+    }))
+    .filter((item) => item.actions.length > 0);
 }
 
 /** When an Agent tab is selected, skip the agent picker and use that Agent's actions. */
