@@ -14,7 +14,7 @@ import type {
 
 export function routeLabel(route: AdapterRouteAnalysis['route'], t?: TranslateFn): string {
   if (route === 'native_endpoint') return t ? t('routes.create.route.nativeEndpoint') : '直接写入';
-  if (route === 'local_bridge') return t ? t('routes.create.route.localBridge') : '本机路由';
+  if (route === 'local_bridge') return t ? t('routes.create.route.localBridge') : '本机转发';
   if (route === 'config_sync') return t ? t('routes.create.route.configSync') : '用这份登录';
   return t ? t('routes.create.route.unsupported') : '当前不支持';
 }
@@ -214,10 +214,10 @@ export function adapterPreviewOutcome(input: {
   }
   if (input.canApply && input.route === 'local_bridge') {
     return {
-      title: t ? t('routes.create.preview.localTitle') : '可接上 · 本机路由',
+      title: t ? t('routes.create.preview.localTitle') : '可接上 · 本机转发',
       badgeLabel: t ? t('routes.create.preview.applyBadge') : '可应用',
       badgeVariant: 'success',
-      nextStep: t ? t('routes.create.preview.localNext') : '确认后创建本机路由，需保持托盘运行。',
+      nextStep: t ? t('routes.create.preview.localNext') : '确认后创建路由并开启本机转发，需保持托盘运行。',
     };
   }
   if (input.canApply && (input.route === 'native_endpoint' || input.route === 'config_sync')) {
@@ -248,7 +248,7 @@ export function adapterServiceImpactLabel(
   impact: AdapterApplyPlan['serviceImpact'] | null | undefined,
 ): string {
   return impact === 'requires_local_bridge'
-    ? '本机路由'
+    ? '本机转发'
     : '无需本地服务';
 }
 
@@ -271,7 +271,7 @@ export function adapterApplyCommit(result: Pick<AdapterApplyResult, 'profile'>, 
 } {
   return {
     successMessage: result.profile.route === 'local_bridge'
-      ? (t ? t('routes.create.apply.localCreated') : '本机路由已创建并启动，已切到 Codex。')
+      ? (t ? t('routes.create.apply.localCreated') : '路由已创建，本机转发已开启，已切到 Codex。')
       : (t ? t('routes.create.apply.applied') : '已接到目标工具。'),
     shouldProbeBridge: result.profile.route === 'local_bridge',
     shouldRefresh: true,

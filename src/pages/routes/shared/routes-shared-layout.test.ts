@@ -151,7 +151,7 @@ describe('routes layout wiring', () => {
     );
     expect(emptyBlock).toContain("t('routes.pool.page.emptyTitle')");
     expect(emptyBlock).toContain("t('routes.pool.page.syncFromConnections')");
-    expect(emptyBlock).toContain('actionLabel');
+    expect(emptyBlock).toContain('RoutesStartChecklist');
     expect(emptyBlock).not.toContain("t('routes.create.action')");
   });
 });

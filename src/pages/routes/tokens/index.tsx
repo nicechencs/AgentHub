@@ -40,6 +40,7 @@ import {
   setLocalTokenName,
 } from '@/lib/api/adapter';
 import type { LocalTokenRecord } from '@/lib/backend/contracts/adapter';
+import { RoutesStartChecklist } from '@/pages/routes/shared/RoutesStartChecklist';
 import { ROUTES_INSPECT_WIDTH_KEY } from '@/pages/routes/shared/route-inspect';
 import { useAdapterResources } from '@/pages/routes/shared/use-bridge-resources';
 import { useRoutePoolState } from '@/pages/routes/shared/use-route-pool-state';
@@ -467,14 +468,23 @@ export default function RoutesTokensPage() {
           title={t('routes.tokens.emptyTitle')}
           description={t('routes.tokens.emptyDescription')}
           action={
-            <Button
-              size="sm"
-              variant="outline"
-              className="mt-2"
-              onClick={() => navigate(ROUTES_POOL_PATH)}
-            >
-              {t('routes.nav.goToPool')}
-            </Button>
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-2"
+                onClick={() => navigate(ROUTES_POOL_PATH)}
+              >
+                {t('routes.nav.goToPool')}
+              </Button>
+              <RoutesStartChecklist
+                className="mt-3"
+                done={{
+                  pool: localGateway.hasEnrolledLogins,
+                  forward: localGateway.running,
+                }}
+              />
+            </>
           }
         />
       ) : (

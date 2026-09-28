@@ -56,7 +56,7 @@ pub async fn create_conversation(
 ) -> Result<ConversationWire, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
-        create_conversation_inner(hub, agent_ids, cwd).map(wire_conversation)
+        create_conversation_inner(hub, agent_ids, cwd_or_home(cwd)).map(wire_conversation)
     })
     .await
 }
@@ -70,7 +70,7 @@ pub async fn ensure_default_conversation(
 ) -> Result<ConversationWire, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
-        ensure_default_conversation_inner(hub, agent_ids, cwd).map(wire_conversation)
+        ensure_default_conversation_inner(hub, agent_ids, cwd_or_home(cwd)).map(wire_conversation)
     })
     .await
 }
@@ -406,6 +406,18 @@ fn list_conversations_inner(hub: &AgentHub) -> Result<Vec<Conversation>, String>
     hub.chat()
         .list_conversations()
         .map_err(|e| map_err_string("list_conversations", e))
+}
+
+/// New chats without a folder start in the user's home so the first message can
+/// be sent right away. The UI already passes the active / last folder when it has one.
+fn cwd_or_home(cwd: Option<String>) -> Option<String> {
+    if cwd.as_deref().is_some_and(|c| !c.trim().is_empty()) {
+        return cwd;
+    }
+    agenthub_core::utils::paths::home_dir()
+        .ok()
+        .map(|home| home.to_string_lossy().into_owned())
+        .or(cwd)
 }
 
 fn create_conversation_inner(

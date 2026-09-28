@@ -66,13 +66,13 @@ describe('translate / interpolate', () => {
     expect(translate('en', 'common.save')).toBe('Save');
     expect(translate('zh', 'common.save')).toBe('保存');
     const t = createTranslator('en');
-    expect(t('nav.chat')).toBe('Workspace');
+    expect(t('nav.chat')).toBe('Chat');
     expect(t('nav.routes')).toBe('Routes');
     expect(t('routes.page.title')).toBe('Routes');
     expect(t('nav.dashboard')).toBe('Dashboard');
     expect(t('dashboard.page.title')).toBe('Dashboard');
     expect(t('chat.connection.leftoverUnavailable')).toBe(
-      'Local route is gone. Reconnect it in Connections.',
+      'This local forwarding is gone. Reconnect it in Connections.',
     );
     const zhNav = createTranslator('zh');
     expect(zhNav('nav.dashboard')).toBe('总览');
@@ -81,16 +81,16 @@ describe('translate / interpolate', () => {
     expect(zhNav('nav.routes')).toBe('路由');
     expect(zhNav('routes.page.title')).toBe('路由');
     expect(zhNav('nav.settings')).toBe('设置');
-    expect(zhNav('nav.chat')).toBe('工作区');
+    expect(zhNav('nav.chat')).toBe('对话');
     expect(zhNav('nav.agents')).toBe('Agent');
     expect(zhNav('chrome.onboarding.enterDashboard')).toBe('进入总览');
     expect(zhNav('chrome.onboarding.skipGuide')).toBe('跳过引导');
-    expect(zhNav('chrome.onboarding.usageRoutesTitle')).toBe('本地路由');
+    expect(zhNav('chrome.onboarding.usageRoutesTitle')).toBe('路由');
     expect(zhNav('chrome.onboarding.usageSub2apiTitle')).toBe('Sub2API 站点');
     expect(zhNav('chat.blocker.goConnections')).toBe('去连接页');
     expect(zhNav('chat.connection.add')).toBe('去连接页添加');
     expect(zhNav('chat.connection.leftoverUnavailable')).toBe(
-      '本机路由已失效，请到连接页重新接上',
+      '这条本机转发已失效，请到连接页重新接上',
     );
   });
 });

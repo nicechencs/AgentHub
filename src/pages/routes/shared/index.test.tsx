@@ -475,7 +475,7 @@ describe('Bridges page', () => {
       canApplyLocalBridge: true,
       onEnrollNative: vi.fn(),
     });
-    expect(shown).toContain('交给本机网关');
+    expect(shown).toContain('改用本机转发');
   });
 
   it('shows recent inbound requests newest first, and empty copy when none', () => {

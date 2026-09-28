@@ -78,7 +78,7 @@ describe('locale key parity', () => {
     expect(translate('en', 'dashboard.sync.manualOnly')).toBe('Manual collect only');
     expect(translate('zh', 'connect.select.maturityStable')).toBe('稳定');
     expect(translate('en', 'connect.select.maturityStable')).toBe('Stable');
-    expect(translate('en', 'kind.route.localRoute')).toBe('Local route');
+    expect(translate('en', 'kind.route.localRoute')).toBe('Local forwarding');
     expect(translate('zh', 'connections.providerDialog.remoteModelsLoading')).toBe(
       '正在拉取模型…',
     );

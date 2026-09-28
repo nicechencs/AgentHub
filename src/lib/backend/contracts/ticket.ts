@@ -468,7 +468,7 @@ export function bindingRouteUsageLabel(route: BindingRoute, t?: TranslateFn): st
 /** Route label for Dashboard card meta. */
 export function bindingRouteDashboardLabel(route: BindingRoute, t?: TranslateFn): string {
   if (route === 'reshape') return t ? t('connections.list.routeReshape') : 'Rewrite config';
-  if (route === 'bridge') return t ? t('kind.route.localRoute') : 'Local route';
+  if (route === 'bridge') return t ? t('kind.route.localRoute') : 'Local forwarding';
   return '';
 }
 

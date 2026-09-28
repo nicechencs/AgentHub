@@ -118,3 +118,14 @@ fn refresh_chat_agent_title_rejects_an_unknown_conversation() {
     let err = refresh_chat_agent_title_inner(&hub, "conv-missing").unwrap_err();
     assert!(!err.is_empty());
 }
+
+#[test]
+fn cwd_or_home_keeps_a_folder_and_fills_home_when_missing() {
+    assert_eq!(cwd_or_home(Some("/tmp/app".into())).as_deref(), Some("/tmp/app"));
+    let Ok(home) = agenthub_core::utils::paths::home_dir() else {
+        return;
+    };
+    let home = home.to_string_lossy().into_owned();
+    assert_eq!(cwd_or_home(None).as_deref(), Some(home.as_str()));
+    assert_eq!(cwd_or_home(Some("  ".into())).as_deref(), Some(home.as_str()));
+}

@@ -36,7 +36,7 @@ import {
   type ChatActionDef,
   type ChatStarterCopyKey,
 } from './chat-actions';
-import { emptyStarterChipHint, emptyTranscriptCopy } from './chat-empty-state';
+import { emptyShowsStarters, emptyStarterChipHint, emptyTranscriptCopy } from './chat-empty-state';
 import type { TurnEditFile } from './chat-edit-preview';
 import { ChatMessageBubble } from './ChatMessageBubble';
 import { ChatOutlineRail } from './ChatOutlineRail';
@@ -230,6 +230,7 @@ function EmptyTranscriptStart({
   const starters = chatStarterActions();
   const copy = emptyTranscriptCopy(t);
   const blocker = firstBlocker ? blockerCopy(t, firstBlocker) : null;
+  const showStarters = emptyShowsStarters({ sending, blockerKind: firstBlocker?.kind });
   return (
     <div className="flex h-full flex-col justify-end px-1 pb-3 pt-8">
       <div className="w-full">
@@ -247,7 +248,8 @@ function EmptyTranscriptStart({
               {blocker.primaryAction}
             </Button>
           </div>
-        ) : !sending ? (
+        ) : null}
+        {showStarters ? (
           <div className="mt-3">
             <div
               className="flex flex-wrap gap-2"

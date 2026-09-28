@@ -16,6 +16,18 @@ export function emptyTranscriptCopy(t: TranslateFn): EmptyTranscriptCopy {
   };
 }
 
+/**
+ * Starter chips stay next to the folder button: picking a folder is one click,
+ * not a reason to hide what the user can ask. Other blockers replace the chips.
+ */
+export function emptyShowsStarters(input: {
+  sending: boolean;
+  blockerKind: string | null | undefined;
+}): boolean {
+  if (input.sending) return false;
+  return !input.blockerKind || input.blockerKind === 'noCwd';
+}
+
 export function emptyStarterChipHint(taskHint: string, startersHint: string): string {
   return `${taskHint} · ${startersHint}`;
 }

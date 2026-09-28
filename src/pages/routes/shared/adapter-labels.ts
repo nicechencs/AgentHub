@@ -105,7 +105,7 @@ function localizeAdapterCopy(raw: string, t?: TranslateFn): string {
     /generated bridge provider has an invalid projection/i.test(trimmed)
     || trimmed.includes('配置不完整')
   ) {
-    return copy('invalidProjection', '这条本机路由的配置不完整，无法启动。请点重试，或删除后重建。');
+    return copy('invalidProjection', '这条路由的配置不完整，无法启动。请点重试，或删除后重建。');
   }
   if (
     /failed to bind loopback bridge listener|address already in use/i.test(trimmed)
@@ -117,7 +117,7 @@ function localizeAdapterCopy(raw: string, t?: TranslateFn): string {
     /adapter profile is not a supported local bridge/i.test(trimmed)
     || trimmed.includes('本机路由已失效')
   ) {
-    return copy('unsupportedBridge', '这条本机路由已失效，无法启动。请删除后重建。');
+    return copy('unsupportedBridge', '这条路由已失效，无法启动。请删除后重建。');
   }
   if (
     /unknown custom relay provider/i.test(trimmed)

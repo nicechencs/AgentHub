@@ -934,7 +934,7 @@ describe('TicketDetailPanel', () => {
     expect(markup).toContain('编辑配置');
     expect(markup).not.toContain('谁在用');
     expect(markup).toContain('Codex');
-    expect(markup).toContain('本机路由运行中');
+    expect(markup).toContain('本机转发运行中');
     expect(markup).toContain('http://127.0.0.1:43121');
     expect(markup).toContain('接口');
     expect(markup).toContain('Claude');
