@@ -692,7 +692,10 @@ pub(crate) enum AcpSessionPlan {
 
 /// Kiro ACP `session/load` after the previous process exited hangs or kills the
 /// new process. Reuse the live process; if it is gone, start `session/new` in
-/// this same AgentHub conversation instead of asking for a new chat.
+/// this same AgentHub conversation instead of asking for a new chat (the
+/// runtime then carries earlier turns into the prompt). A settings change
+/// that needs a new process is planned as `live_transport = false`, so Grok
+/// reloads its session rather than starting an empty one.
 pub(crate) fn acp_session_plan(
     agent: AgentId,
     live_transport: bool,

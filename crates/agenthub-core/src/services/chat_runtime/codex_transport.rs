@@ -287,6 +287,9 @@ impl CodexTransport {
             "--output-format".into(),
             "stream-json".into(),
             "--verbose".into(),
+            // Stream the reply as it is written; ChatRuntime dedups the
+            // complete `assistant` line against the deltas.
+            "--include-partial-messages".into(),
             "--permission-mode".into(),
             permission_mode.to_string(),
         ];
@@ -977,7 +980,7 @@ fn is_claude_stream_type(ty: &str) -> bool {
     // this transport's dialect and would pollute shared classification if gated wrong.
     matches!(
         ty,
-        "system" | "assistant" | "user" | "result" | "stream_event" | "error"
+        "system" | "assistant" | "user" | "result" | "stream_event" | "error" | "control_response"
     )
 }
 
@@ -1018,14 +1021,8 @@ fn read_stdout(stdout: impl Read, tx: SyncSender<WireEvent>, stop: Arc<AtomicBoo
                     );
                     return;
                 }
-                if line.last() != Some(&b'\n') {
-                    send_wire_event(
-                        &tx,
-                        &stop,
-                        WireEvent::Error("incomplete stdout JSON line".into()),
-                    );
-                    return;
-                }
+                // A final line without a trailing newline is still parsed;
+                // the next read returns 0 and reports Eof.
                 if line.last() == Some(&b'\n') {
                     line.pop();
                 }
@@ -1037,14 +1034,15 @@ fn read_stdout(stdout: impl Read, tx: SyncSender<WireEvent>, stop: Arc<AtomicBoo
                 }
                 match serde_json::from_slice::<Value>(&line) {
                     Ok(value) => send_wire_event(&tx, &stop, WireEvent::Message(value)),
-                    Err(error) => {
-                        send_wire_event(
-                            &tx,
-                            &stop,
-                            WireEvent::Error(format!("invalid stdout JSON: {error}")),
-                        );
-                        return;
-                    }
+                    // CLIs sometimes print banners or warnings to stdout. Skip
+                    // the line instead of ending the whole conversation, and
+                    // never log its content because it may contain secrets.
+                    Err(_) => tracing::warn!(
+                        module = targets::CHAT,
+                        op = "stdout_skip",
+                        bytes = line.len(),
+                        "skipped a non-JSON stdout line"
+                    ),
                 }
             }
             Err(error) => {

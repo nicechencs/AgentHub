@@ -572,3 +572,51 @@ fn classify_ignores_claude_types_on_jsonrpc_transport() {
         Ok(Some(WireMessage::Response { .. }))
     ));
 }
+
+fn drain_stdout(input: &[u8]) -> Vec<WireEvent> {
+    let (tx, rx) = mpsc::sync_channel(16);
+    let stop = Arc::new(AtomicBool::new(false));
+    read_stdout(input, tx, stop);
+    rx.try_iter().collect()
+}
+
+#[test]
+fn read_stdout_skips_non_json_lines_and_keeps_reading() {
+    let events = drain_stdout(
+        b"WARNING: something noisy sk-not-a-key\n{\"a\":1}\r\n  \nnot json either\n{\"b\":2}\n",
+    );
+    assert!(matches!(
+        events.as_slice(),
+        [WireEvent::Message(a), WireEvent::Message(b), WireEvent::Eof]
+            if *a == json!({"a": 1}) && *b == json!({"b": 2})
+    ));
+}
+
+#[test]
+fn read_stdout_delivers_final_json_line_without_newline() {
+    let events = drain_stdout(b"{\"a\":1}\n{\"b\":2}");
+    assert!(matches!(
+        events.as_slice(),
+        [WireEvent::Message(a), WireEvent::Message(b), WireEvent::Eof]
+            if *a == json!({"a": 1}) && *b == json!({"b": 2})
+    ));
+
+    let events = drain_stdout(b"{\"a\":1}\n{\"b\":");
+    assert!(matches!(
+        events.as_slice(),
+        [WireEvent::Message(a), WireEvent::Eof] if *a == json!({"a": 1})
+    ));
+}
+
+#[test]
+fn read_stdout_still_fails_on_overlong_line() {
+    let mut input = b"{\"a\":1}\n".to_vec();
+    input.extend(vec![b'x'; MAX_STDOUT_LINE_BYTES + 2]);
+    input.extend_from_slice(b"\n{\"b\":2}\n");
+    let events = drain_stdout(&input);
+    assert!(matches!(
+        events.as_slice(),
+        [WireEvent::Message(a), WireEvent::Error(message)]
+            if *a == json!({"a": 1}) && message.contains("exceeds")
+    ));
+}
