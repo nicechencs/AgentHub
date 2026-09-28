@@ -26,7 +26,7 @@ pub use types::{
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -52,6 +52,9 @@ use self::store::{OperationState, RuntimeStore};
 const CODEX_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const CODEX_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const ACP_CANCEL_DEADLINE: Duration = Duration::from_secs(10);
+/// A kept Codex app-server with no turn for this long is stopped; the next
+/// send starts a new one and resumes the thread.
+const CODEX_IDLE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
 enum RuntimeCommand {
     Start {
@@ -277,6 +280,9 @@ pub struct ChatRuntime {
     catalogs: Arc<Mutex<HashMap<String, CatalogCache>>>,
     host_terminals: Arc<Mutex<HashMap<String, Vec<RuntimeHostTerminal>>>>,
     codex_program_override: Arc<Mutex<Option<PathBuf>>>,
+    /// Bumped on every login change. A kept Codex process started under an
+    /// older value is replaced before (or right after) its next turn.
+    codex_generation: Arc<AtomicU64>,
 }
 
 impl ChatRuntime {
@@ -294,6 +300,7 @@ impl ChatRuntime {
             catalogs: Arc::new(Mutex::new(HashMap::new())),
             host_terminals: Arc::new(Mutex::new(HashMap::new())),
             codex_program_override: Arc::new(Mutex::new(None)),
+            codex_generation: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -366,7 +373,10 @@ impl ChatRuntime {
     /// sees the login that is live now (Codex ChatGPT vs API, Grok slots).
     /// Keep the running turn's plan and conversation-local Always allow —
     /// those are not catalogs. The epoch moves forward so Options re-pulls.
+    /// Kept Codex processes still hold the old login: they are stopped when
+    /// idle, or once the running turn ends.
     pub fn invalidate_catalogs(&self) {
+        self.codex_generation.fetch_add(1, Ordering::SeqCst);
         if let Ok(mut catalogs) = self.catalogs.lock() {
             for cache in catalogs.values_mut() {
                 *cache = CatalogCache {
@@ -804,22 +814,24 @@ impl ChatRuntime {
             Ok(actor) => actor,
             Err(error) => return Err(log_and_return_stop_fail(conversation_id, error)),
         };
-        // A running Claude turn is stopped by an interrupt message on its
-        // live process; the abort flag would tear that process down first.
+        // A running Claude or Codex turn is stopped by an interrupt on its
+        // kept process; the abort flag would tear that process down first.
         // Starting (spawn / first write may block) still aborts.
-        let soft_stop = is_claude_stream_runtime_agent(
-            self.store
-                .conversation_agent(conversation_id)
-                .ok()
-                .flatten(),
-        ) && self
+        let agent = self
             .store
-            .record(conversation_id)
+            .conversation_agent(conversation_id)
             .ok()
-            .flatten()
-            .is_some_and(|record| {
-                matches!(record.phase, RuntimePhase::Running | RuntimePhase::Waiting)
-            });
+            .flatten();
+        let soft_stop = (is_claude_stream_runtime_agent(agent)
+            || runtime_channel(agent) == RuntimeChannel::AppServer)
+            && self
+                .store
+                .record(conversation_id)
+                .ok()
+                .flatten()
+                .is_some_and(|record| {
+                    matches!(record.phase, RuntimePhase::Running | RuntimePhase::Waiting)
+                });
         if !soft_stop {
             actor.abort.store(true, Ordering::SeqCst);
         }
@@ -1078,6 +1090,7 @@ impl ChatRuntime {
         let catalogs = Arc::clone(&self.catalogs);
         let host_terminals = Arc::clone(&self.host_terminals);
         let codex_program_override = Arc::clone(&self.codex_program_override);
+        let codex_generation = Arc::clone(&self.codex_generation);
         let abort = Arc::new(AtomicBool::new(false));
         let worker_abort = Arc::clone(&abort);
         let id = conversation_id.to_string();
@@ -1093,6 +1106,7 @@ impl ChatRuntime {
                     catalogs,
                     host_terminals,
                     codex_program_override,
+                    codex_generation,
                     worker_abort,
                 )
             })
@@ -1153,6 +1167,7 @@ fn actor_loop(
     catalogs: Arc<Mutex<HashMap<String, CatalogCache>>>,
     host_terminal_views: Arc<Mutex<HashMap<String, Vec<RuntimeHostTerminal>>>>,
     codex_program_override: Arc<Mutex<Option<PathBuf>>>,
+    codex_generation: Arc<AtomicU64>,
     abort: Arc<AtomicBool>,
 ) {
     let agent = store
@@ -1190,6 +1205,10 @@ fn actor_loop(
         pending_grants: HashMap::new(),
         claude_dedup: claude::ClaudePartialDedup::new(),
         thinking_open: false,
+        codex_generation,
+        codex_live: None,
+        codex_restart_pending: false,
+        codex_idle_timeout: CODEX_IDLE_TIMEOUT,
     };
     worker.run();
 }
@@ -1229,8 +1248,10 @@ struct ActorWorker {
     /// `session/request_permission` only show it when the ACP request includes
     /// an `allow_always` kind (including `allow_always_tool`). Host-owned Grok
     /// `fs/write_text_file` cards synthesize the same three buttons as Codex.
-    /// Codex starts a fresh process each turn, so grants must outlive
-    /// `terminalize`. ACP usually keeps one process across turns.
+    /// Grants outlive `terminalize` and a restarted process: Codex keeps one
+    /// app-server across turns but may be restarted (exit, login change,
+    /// idle timeout), and its own `acceptForSession` memory dies with it.
+    /// ACP usually keeps one process across turns.
     allow_always_grants: HashSet<String>,
     /// Full write body for in-flight `fs/write_text_file` cards, keyed by the
     /// JSON-RPC request id. Content is not persisted; a dead process cannot
@@ -1241,6 +1262,27 @@ struct ActorWorker {
     /// Claude partial deltas vs. the complete `assistant` line of this turn.
     claude_dedup: claude::ClaudePartialDedup,
     thinking_open: bool,
+    /// Shared with `ChatRuntime`; see `ChatRuntime::codex_generation`.
+    codex_generation: Arc<AtomicU64>,
+    /// How the kept Codex process in `transport` was started. Only valid
+    /// while `transport` is open; a spawn always replaces it.
+    codex_live: Option<CodexLive>,
+    /// Clearing Always allow must also clear Codex's own session approvals:
+    /// restart as soon as no turn is running.
+    codex_restart_pending: bool,
+    codex_idle_timeout: Duration,
+}
+
+/// A Codex app-server kept across turns of one conversation.
+struct CodexLive {
+    program: PathBuf,
+    cwd: PathBuf,
+    generation: u64,
+    /// The conversation's thread is loaded in this process. False after a
+    /// spawn or `thread/closed`; the next turn resumes it first.
+    thread_loaded: bool,
+    /// Set when a turn ends; `None` while a turn runs.
+    idle_since: Option<Instant>,
 }
 
 impl ActorWorker {
@@ -1305,6 +1347,7 @@ impl ActorWorker {
                     self.fail_runtime(error);
                 }
             }
+            self.reap_codex_process();
         }
         if let Some(transport) = self.transport.as_mut() {
             transport.shutdown();
@@ -1572,13 +1615,6 @@ impl ActorWorker {
         self.last_start_request = Some(client_request_id.to_string());
         self.store
             .set_last_client_request_id(&self.conversation_id, client_request_id)?;
-        if !is_acp_runtime_agent(Some(self.agent))
-            && !is_claude_stream_runtime_agent(Some(self.agent))
-        {
-            if let Some(mut transport) = self.transport.take() {
-                transport.shutdown();
-            }
-        }
 
         let now = Utc::now().to_rfc3339();
         let message_id = format!("msg-{}", Uuid::new_v4());
@@ -1652,99 +1688,7 @@ impl ActorWorker {
         } else if is_claude_stream_runtime_agent(Some(self.agent)) {
             self.claude_connect_and_prompt(claude_prompt.expect("claude prompt prepared"))
         } else {
-            (|| {
-                let cwd = self.conversation_cwd()?;
-                let program = self.codex_program()?;
-                let mut transport = if let Some(thread_id) = self.thread_id.as_deref() {
-                    // The transport itself is always a fresh process; thread/resume
-                    // reattaches it to Codex's durable native thread.
-                    let mut t = self.spawn_codex(&program, &cwd)?;
-                    let result = t
-                        .request(
-                            "thread/resume",
-                            json!({
-                                "threadId": thread_id,
-                                "cwd": cwd.to_string_lossy(),
-                                "approvalPolicy": "on-request",
-                                "sandbox": "workspace-write",
-                                "sandboxPolicy": ops::codex_workspace_write_sandbox_policy(&cwd)
-                            }),
-                            CODEX_REQUEST_TIMEOUT,
-                        )
-                        .map_err(|error| map_transport(self.agent, error))?;
-                    self.thread_id = Some(thread_id.to_string());
-                    let _ = result;
-                    t
-                } else {
-                    let mut t = self.spawn_codex(&program, &cwd)?;
-                    let result = t
-                        .request(
-                            "thread/start",
-                            json!({
-                                "cwd": cwd.to_string_lossy(),
-                                "approvalPolicy": "on-request",
-                                "sandbox": "workspace-write",
-                                "sandboxPolicy": ops::codex_workspace_write_sandbox_policy(&cwd),
-                                "ephemeral": false
-                            }),
-                            CODEX_REQUEST_TIMEOUT,
-                        )
-                        .map_err(|error| map_transport(self.agent, error))?;
-                    self.thread_id =
-                        extract_id(&result, "thread").or_else(|| extract_id(&result, "id"));
-                    t
-                };
-                let thread_id = self.thread_id.clone().ok_or_else(|| {
-                    AppError::message("chat.runtime.protocol", "Codex omitted thread id")
-                })?;
-                let settings = self.store.turn_settings(&self.conversation_id)?;
-                let input = ops::build_turn_input(prompt, &extras.images, &extras.skills)?;
-                let mut params = json!({
-                    "threadId": thread_id,
-                    "input": input,
-                    "clientUserMessageId": client_request_id,
-                    "cwd": cwd.to_string_lossy(),
-                    "approvalPolicy": "on-request",
-                    "sandboxPolicy": ops::codex_workspace_write_sandbox_policy(&cwd)
-                });
-                if let Some(model) = settings
-                    .model
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                {
-                    params["model"] = json!(model);
-                }
-                if let Some(effort) = settings
-                    .effort
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                {
-                    params["effort"] = json!(effort);
-                }
-                let result = transport
-                    .request("turn/start", params, CODEX_REQUEST_TIMEOUT)
-                    .map_err(|error| map_transport(self.agent, error))?;
-                self.turn_id = extract_id(&result, "turn").or_else(|| extract_id(&result, "id"));
-                let actual_run = self.turn_id.clone().unwrap_or_else(|| {
-                    self.run_id
-                        .clone()
-                        .unwrap_or_else(|| format!("run-{}", Uuid::new_v4()))
-                });
-                self.run_id = Some(actual_run.clone());
-                self.store.set_state(
-                    &self.conversation_id,
-                    RuntimePhase::Running,
-                    Some(&actual_run),
-                    self.thread_id.as_deref(),
-                    self.turn_id.as_deref(),
-                    self.chat_turn,
-                    self.message_id.as_deref(),
-                )?;
-                self.transport = Some(transport);
-                Ok(self.with_catalog_epoch(self.store.snapshot(&self.conversation_id, None)?))
-            })()
+            self.codex_connect_and_start(prompt, client_request_id, extras)
         };
         if let Err(error) = start_result {
             if is_cancelled_error(&error) {
@@ -1772,6 +1716,231 @@ impl ActorWorker {
             return Err(error);
         }
         start_result
+    }
+
+    /// Start a Codex turn on the kept app-server, or on a new one when the
+    /// kept one is gone or no longer matches (login, program, folder). A
+    /// thread is resumed only in a new process or after `thread/closed`;
+    /// model and thinking travel with `turn/start`.
+    fn codex_connect_and_start(
+        &mut self,
+        prompt: &str,
+        client_request_id: &str,
+        extras: &RuntimeStartExtras,
+    ) -> Result<RuntimeSnapshot> {
+        let cwd = self.conversation_cwd()?;
+        let program = self.codex_program()?;
+        let generation = self.codex_generation.load(Ordering::SeqCst);
+        let reusable = !self.codex_restart_pending
+            && self.transport.as_ref().is_some_and(CodexTransport::is_open)
+            && self.codex_live.as_ref().is_some_and(|live| {
+                live.generation == generation && live.program == program && live.cwd == cwd
+            });
+        if !reusable {
+            self.stop_codex_process();
+        }
+        let settings = self.store.turn_settings(&self.conversation_id)?;
+        let input = ops::build_turn_input(prompt, &extras.images, &extras.skills)?;
+        let mut retried = false;
+        loop {
+            let fresh = self.transport.is_none();
+            if fresh {
+                let transport = self.spawn_codex(&program, &cwd)?;
+                self.transport = Some(transport);
+                self.codex_live = Some(CodexLive {
+                    program: program.clone(),
+                    cwd: cwd.clone(),
+                    generation,
+                    thread_loaded: false,
+                    idle_since: None,
+                });
+                self.codex_restart_pending = false;
+            }
+            if let Some(live) = self.codex_live.as_mut() {
+                live.idle_since = None;
+            }
+            match self.codex_load_and_start_turn(&cwd, &settings, &input, client_request_id) {
+                Ok(result) => {
+                    self.turn_id =
+                        extract_id(&result, "turn").or_else(|| extract_id(&result, "id"));
+                    break;
+                }
+                // Codex dropped the thread: resume it and try once more.
+                Err(codex_transport::CodexTransportError::Server { error })
+                    if !retried && codex_thread_not_loaded(&error) =>
+                {
+                    retried = true;
+                    if let Some(live) = self.codex_live.as_mut() {
+                        live.thread_loaded = false;
+                    }
+                }
+                // The kept process died while idle: one more try on a new one.
+                Err(
+                    codex_transport::CodexTransportError::Exited
+                    | codex_transport::CodexTransportError::Io(_),
+                ) if !retried && !fresh => {
+                    retried = true;
+                    self.stop_codex_process();
+                }
+                Err(error) => return Err(map_transport(self.agent, error)),
+            }
+        }
+        let actual_run = self.turn_id.clone().unwrap_or_else(|| {
+            self.run_id
+                .clone()
+                .unwrap_or_else(|| format!("run-{}", Uuid::new_v4()))
+        });
+        self.run_id = Some(actual_run.clone());
+        self.store.set_state(
+            &self.conversation_id,
+            RuntimePhase::Running,
+            Some(&actual_run),
+            self.thread_id.as_deref(),
+            self.turn_id.as_deref(),
+            self.chat_turn,
+            self.message_id.as_deref(),
+        )?;
+        Ok(self.with_catalog_epoch(self.store.snapshot(&self.conversation_id, None)?))
+    }
+
+    /// `thread/start` or `thread/resume` when this process has not loaded
+    /// the thread yet, then `turn/start`. Returns the `turn/start` result.
+    fn codex_load_and_start_turn(
+        &mut self,
+        cwd: &Path,
+        settings: &RuntimeTurnSettings,
+        input: &[Value],
+        client_request_id: &str,
+    ) -> std::result::Result<Value, codex_transport::CodexTransportError> {
+        let loaded = self
+            .codex_live
+            .as_ref()
+            .is_some_and(|live| live.thread_loaded);
+        let transport = self
+            .transport
+            .as_mut()
+            .ok_or(codex_transport::CodexTransportError::Exited)?;
+        if !loaded {
+            if let Some(thread_id) = self.thread_id.clone() {
+                // A new process (or one that closed the thread) reattaches
+                // to Codex's durable native thread.
+                transport.request(
+                    "thread/resume",
+                    json!({
+                        "threadId": thread_id,
+                        "cwd": cwd.to_string_lossy(),
+                        "approvalPolicy": "on-request",
+                        "sandbox": "workspace-write",
+                        "sandboxPolicy": ops::codex_workspace_write_sandbox_policy(cwd)
+                    }),
+                    CODEX_REQUEST_TIMEOUT,
+                )?;
+            } else {
+                let result = transport.request(
+                    "thread/start",
+                    json!({
+                        "cwd": cwd.to_string_lossy(),
+                        "approvalPolicy": "on-request",
+                        "sandbox": "workspace-write",
+                        "sandboxPolicy": ops::codex_workspace_write_sandbox_policy(cwd),
+                        "ephemeral": false
+                    }),
+                    CODEX_REQUEST_TIMEOUT,
+                )?;
+                self.thread_id =
+                    extract_id(&result, "thread").or_else(|| extract_id(&result, "id"));
+            }
+            if let Some(live) = self.codex_live.as_mut() {
+                live.thread_loaded = true;
+            }
+        }
+        let thread_id = self.thread_id.clone().ok_or_else(|| {
+            codex_transport::CodexTransportError::Protocol("Codex omitted thread id".into())
+        })?;
+        let mut params = json!({
+            "threadId": thread_id,
+            "input": input,
+            "clientUserMessageId": client_request_id,
+            "cwd": cwd.to_string_lossy(),
+            "approvalPolicy": "on-request",
+            "sandboxPolicy": ops::codex_workspace_write_sandbox_policy(cwd)
+        });
+        if let Some(model) = settings
+            .model
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            params["model"] = json!(model);
+        }
+        if let Some(effort) = settings
+            .effort
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            params["effort"] = json!(effort);
+        }
+        self.transport
+            .as_mut()
+            .ok_or(codex_transport::CodexTransportError::Exited)?
+            .request("turn/start", params, CODEX_REQUEST_TIMEOUT)
+    }
+
+    fn is_codex_app_server(&self) -> bool {
+        runtime_channel(Some(self.agent)) == RuntimeChannel::AppServer
+    }
+
+    fn codex_turn_active(&self) -> bool {
+        self.store
+            .record(&self.conversation_id)
+            .ok()
+            .flatten()
+            .is_some_and(|record| {
+                matches!(
+                    record.phase,
+                    RuntimePhase::Starting
+                        | RuntimePhase::Running
+                        | RuntimePhase::Waiting
+                        | RuntimePhase::Cancelling
+                )
+            })
+    }
+
+    fn stop_codex_process(&mut self) {
+        if let Some(mut transport) = self.transport.take() {
+            transport.shutdown();
+        }
+        self.codex_live = None;
+        self.codex_restart_pending = false;
+    }
+
+    /// Stop the kept Codex process when no turn is running and it is stale
+    /// (login changed, Always allow cleared) or idle too long. The next send
+    /// starts a new one and resumes the thread.
+    fn reap_codex_process(&mut self) {
+        if !self.is_codex_app_server() {
+            return;
+        }
+        let Some(live) = self.codex_live.as_ref() else {
+            return;
+        };
+        if self.transport.is_none() {
+            self.codex_live = None;
+            return;
+        }
+        let stale = self.codex_restart_pending
+            || live.generation != self.codex_generation.load(Ordering::SeqCst);
+        let idle_expired = live
+            .idle_since
+            .is_some_and(|since| since.elapsed() >= self.codex_idle_timeout);
+        if !stale && !idle_expired {
+            return;
+        }
+        if self.codex_turn_active() {
+            return;
+        }
+        self.stop_codex_process();
     }
 
     fn acp_connect_and_prompt(&mut self, mut prompt_blocks: Vec<Value>) -> Result<RuntimeSnapshot> {
@@ -2592,23 +2761,22 @@ impl ActorWorker {
                         .request(
                             "turn/interrupt",
                             json!({"threadId": thread_id, "turnId": turn_id}),
-                            CODEX_REQUEST_TIMEOUT,
+                            ACP_CANCEL_DEADLINE,
                         )
                         .map(|_| ())
                         .map_err(|error| map_transport(self.agent, error))
                 }
             });
         match interrupt_result {
-            Ok(_) if is_acp_runtime_agent(Some(self.agent)) && !self.aborted() => {
+            // Keep the process: `turn/completed(interrupted)` (Codex) or the
+            // prompt response (ACP) closes the turn as stopped. Nothing
+            // before the deadline → `check_cancel_deadline` kills it.
+            Ok(_) if !self.aborted() => {
                 self.cancel_deadline = Some(Instant::now() + ACP_CANCEL_DEADLINE);
                 self.log_stop_ok();
                 Ok(())
             }
-            Ok(_) if self.aborted() => self.finish_user_stop(),
-            Ok(_) => {
-                self.log_stop_ok();
-                Ok(())
-            }
+            Ok(_) => self.finish_user_stop(),
             Err(error) => self.complete_cancel(error),
         }
     }
@@ -2711,8 +2879,10 @@ impl ActorWorker {
             .store
             .record(&self.conversation_id)?
             .map(|record| record.phase);
+        // ACP names the session `sessionId`; Codex app-server `threadId`.
         let session_mismatch = params
             .get("sessionId")
+            .or_else(|| params.get("threadId"))
             .and_then(Value::as_str)
             .zip(self.thread_id.as_deref())
             .is_some_and(|(incoming, current)| incoming != current);
@@ -2742,7 +2912,9 @@ impl ActorWorker {
             }
             return Ok(());
         }
-        if is_acp_runtime_agent(Some(self.agent))
+        // A kept process can ask after its turn ended (late approval). With
+        // no turn to attach it to, cancel it instead of opening a card.
+        if (is_acp_runtime_agent(Some(self.agent)) || self.is_codex_app_server())
             && !matches!(
                 phase,
                 Some(RuntimePhase::Starting | RuntimePhase::Running | RuntimePhase::Waiting)
@@ -2939,6 +3111,16 @@ impl ActorWorker {
             }
             "_x.ai/session/prompt_complete" => {
                 self.turn_completed(params)?;
+            }
+            "thread/closed" => {
+                // Codex unloaded the thread from the kept process; the next
+                // turn resumes it first.
+                let thread = params.get("threadId").and_then(Value::as_str);
+                if thread.is_none() || thread == self.thread_id.as_deref() {
+                    if let Some(live) = self.codex_live.as_mut() {
+                        live.thread_loaded = false;
+                    }
+                }
             }
             "turn/started" => {
                 if let Some(id) = extract_id(params, "turn").or_else(|| {
@@ -3172,14 +3354,8 @@ impl ActorWorker {
                 Some("ACP 响应缺少 stopReason".into()),
             ),
         };
-        self.terminalize(message_status, error.as_deref(), phase, ok, cancelled)?;
-        if !is_acp_runtime_agent(Some(self.agent)) {
-            if let Some(transport) = self.transport.as_mut() {
-                transport.shutdown();
-            }
-            self.transport = None;
-        }
-        Ok(())
+        // Codex and ACP keep their process for the next turn.
+        self.terminalize(message_status, error.as_deref(), phase, ok, cancelled)
     }
 
     fn emit(&self, event: ChatEvent, phase: RuntimePhase) -> Result<()> {
@@ -3528,6 +3704,12 @@ impl ActorWorker {
 
     fn forget_session_allow_always(&mut self) {
         self.allow_always_grants.clear();
+        // The kept Codex process still remembers `acceptForSession`; only a
+        // new process forgets it. Restart now when idle, else after the turn.
+        if self.is_codex_app_server() && self.codex_live.is_some() {
+            self.codex_restart_pending = true;
+            self.reap_codex_process();
+        }
         if let Ok(mut guard) = self.catalogs.lock() {
             if let Some(cache) = guard.get_mut(&self.conversation_id) {
                 cache.session_allow_always = false;
@@ -3847,6 +4029,9 @@ impl ActorWorker {
                 )
             });
         self.cancel_deadline = None;
+        if let Some(live) = self.codex_live.as_mut() {
+            live.idle_since = Some(Instant::now());
+        }
         self.pending_prompt_id = None;
         self.permission_options.clear();
         self.file_change_items.clear();
@@ -4455,6 +4640,18 @@ fn is_codex_turn_notification(method: &str) -> bool {
     )
 }
 
+/// `turn/start` refused because the thread is not loaded in this process
+/// (Codex 0.154: `thread not found: <id>`).
+fn codex_thread_not_loaded(error: &Value) -> bool {
+    let message = error
+        .get("message")
+        .and_then(Value::as_str)
+        .or_else(|| error.as_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    message.contains("thread not found") || message.contains("thread not loaded")
+}
+
 fn error_text(value: Option<&Value>) -> Option<String> {
     let text = match value? {
         Value::String(text) => text.clone(),
@@ -4994,5 +5191,7 @@ fn claude_fallback_catalog() -> CatalogCache {
 
 #[cfg(test)]
 mod actor_tests;
+#[cfg(test)]
+mod codex_live_tests;
 #[cfg(test)]
 mod tests;
