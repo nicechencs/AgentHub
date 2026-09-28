@@ -67,6 +67,10 @@ fn worker(db: &Database, id: &str) -> ActorWorker {
         pending_grants: HashMap::new(),
         claude_dedup: Default::default(),
         thinking_open: false,
+        codex_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        codex_live: None,
+        codex_restart_pending: false,
+        codex_idle_timeout: CODEX_IDLE_TIMEOUT,
     }
 }
 
