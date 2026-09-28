@@ -4579,15 +4579,33 @@ fn allow_always_grant(method: &str, kind: RuntimeRequestKind, params: &Value) ->
 fn acp_command_identity(params: &Value) -> Value {
     let mut identity = params.clone();
     if let Some(map) = identity.as_object_mut() {
-        for key in ["sessionId", "turnId", "options"] {
-            map.remove(key);
-        }
+        map.retain(|key, value| !acp_envelope_value_is_plain(key, value));
         if let Some(Value::Object(call)) = map.get_mut("toolCall") {
-            call.remove("toolCallId");
-            call.remove("status");
+            call.retain(|key, value| {
+                !(matches!(key.as_str(), "toolCallId" | "status") && value.is_string())
+            });
         }
     }
     identity
+}
+
+/// A `session/request_permission` envelope field in its plain protocol
+/// shape: string ids and `options` holding only `{optionId, kind, name}`
+/// strings. Anything else is treated as request content.
+fn acp_envelope_value_is_plain(key: &str, value: &Value) -> bool {
+    match key {
+        "sessionId" | "turnId" => value.is_string(),
+        "options" => value.as_array().is_some_and(|options| {
+            options.iter().all(|option| {
+                option.as_object().is_some_and(|option| {
+                    option.iter().all(|(key, value)| {
+                        matches!(key.as_str(), "optionId" | "kind" | "name") && value.is_string()
+                    })
+                })
+            })
+        }),
+        _ => false,
+    }
 }
 
 /// Command card text: `rawInput` (or the title) when that is all the call
@@ -4614,10 +4632,6 @@ fn acp_command_detail(params: &Value) -> String {
     }
 }
 
-/// Top-level keys of a `session/request_permission` that may sit beside a
-/// file-only `toolCall`.
-const ACP_PERMISSION_ENVELOPE: &[&str] = &["sessionId", "turnId", "toolCall", "options"];
-
 /// ACP permission is a file card only for file tools whose whole `toolCall`
 /// only names files and their new content. A command or other tool, or a
 /// file-shaped call that also carries anything else, stays a command card, so
@@ -4629,8 +4643,8 @@ fn acp_permission_is_file_change(params: &Value, has_file_changes: bool) -> bool
         .unwrap_or("")
         .trim();
     let envelope_only = params.as_object().is_some_and(|map| {
-        map.keys()
-            .all(|key| ACP_PERMISSION_ENVELOPE.contains(&key.as_str()))
+        map.iter()
+            .all(|(key, value)| key == "toolCall" || acp_envelope_value_is_plain(key, value))
     });
     if !envelope_only || !acp_tool_call_is_file_only(params.get("toolCall")) {
         return false;
