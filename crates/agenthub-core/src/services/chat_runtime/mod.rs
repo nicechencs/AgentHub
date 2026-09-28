@@ -4573,82 +4573,131 @@ fn allow_always_grant(method: &str, kind: RuntimeRequestKind, params: &Value) ->
     Some(format!("command:{:x}", Sha256::digest(identity.as_bytes())))
 }
 
-/// ACP permission is a file card only for file tools. A command or other tool
-/// whose payload happens to carry `path` / `locations` stays a command card,
-/// so a file-change "Always allow" can never approve it.
+/// ACP permission is a file card only for file tools whose whole `toolCall`
+/// only names files and their new content. A command or other tool, or a
+/// file-shaped call that also carries anything else, stays a command card, so
+/// a file-change "Always allow" can never approve it.
 fn acp_permission_is_file_change(params: &Value, has_file_changes: bool) -> bool {
     let kind = params
         .pointer("/toolCall/kind")
         .and_then(Value::as_str)
         .unwrap_or("")
         .trim();
-    if !acp_input_is_file_only(params.pointer("/toolCall/rawInput")) {
+    if !acp_tool_call_is_file_only(params.get("toolCall")) {
         return false;
     }
     acp_tool_is_file_change(params) || (kind.is_empty() && has_file_changes)
 }
 
-/// Tool input that only names files and their new content (possibly nested,
-/// e.g. Grok `operation: {type, path, diff}`). Anything else (a bare string,
-/// `command`, `argv`, unknown keys) may run code, so the card is a command
-/// card whatever `kind` claims.
-fn acp_input_is_file_only(input: Option<&Value>) -> bool {
-    const FILE_KEYS: &[&str] = &[
-        "path",
-        "file",
-        "filePath",
-        "file_path",
-        "target_file",
-        "uri",
-        "abs_path",
-        "content",
-        "contents",
-        "text",
-        "diff",
-        "patch",
-        "edits",
-        "old_string",
-        "new_string",
-        "oldText",
-        "newText",
-        "old_text",
-        "new_text",
-        "old_str",
-        "new_str",
-        "replace_all",
-        "source",
-        "destination",
-        "from",
-        "to",
-        "oldPath",
-        "newPath",
-        "old_path",
-        "new_path",
-        "operation",
-        "operations",
-        "changes",
-        "type",
+/// Keys a file-only tool call may carry, at any depth.
+const ACP_FILE_KEYS: &[&str] = &[
+    "path",
+    "file",
+    "filePath",
+    "file_path",
+    "target_file",
+    "uri",
+    "abs_path",
+    "line",
+    "content",
+    "contents",
+    "text",
+    "diff",
+    "patch",
+    "edits",
+    "old_string",
+    "new_string",
+    "oldText",
+    "newText",
+    "old_text",
+    "new_text",
+    "old_str",
+    "new_str",
+    "replace_all",
+    "source",
+    "destination",
+    "from",
+    "to",
+    "oldPath",
+    "newPath",
+    "old_path",
+    "new_path",
+    "operation",
+    "operations",
+    "changes",
+    "type",
+    "kind",
+];
+
+/// `kind` / `type` values that describe a file edit (or an ACP content block).
+const ACP_FILE_VERBS: &[&str] = &[
+    "edit",
+    "update",
+    "update_file",
+    "create",
+    "create_file",
+    "delete",
+    "delete_file",
+    "move",
+    "move_file",
+    "rename",
+    "write",
+    "write_file",
+    "add",
+    "add_file",
+    "diff",
+    "content",
+    "text",
+];
+
+/// The whole `toolCall` is a file edit: only ACP envelope fields at the top,
+/// and `rawInput` / `locations` / `content` hold nothing but file keys. A bare
+/// string input, `command`, `argv`, an unknown key, or a non-file `kind`
+/// value anywhere makes it a command card.
+fn acp_tool_call_is_file_only(call: Option<&Value>) -> bool {
+    const ENVELOPE: &[&str] = &[
+        "toolCallId",
+        "title",
         "kind",
+        "status",
+        "rawInput",
+        "locations",
+        "content",
     ];
-    fn file_only(value: &Value) -> bool {
-        match value {
-            Value::Object(map) => map
-                .iter()
-                .all(|(key, value)| FILE_KEYS.contains(&key.as_str()) && nested_ok(value)),
-            Value::Array(items) => items.iter().all(|item| item.is_object() && file_only(item)),
-            _ => false,
-        }
-    }
-    fn nested_ok(value: &Value) -> bool {
-        match value {
-            Value::Object(_) | Value::Array(_) => file_only(value),
-            _ => true,
-        }
-    }
-    match input {
-        None | Some(Value::Null) => true,
-        Some(value @ Value::Object(_)) => file_only(value),
-        Some(_) => false,
+    let Some(Value::Object(call)) = call else {
+        return false;
+    };
+    call.iter().all(|(key, value)| {
+        ENVELOPE.contains(&key.as_str())
+            && match key.as_str() {
+                "toolCallId" | "title" | "status" => value.is_string() || value.is_null(),
+                "kind" => value.as_str().is_some_and(|kind| {
+                    ACP_FILE_VERBS.contains(&kind.trim().to_ascii_lowercase().as_str())
+                }),
+                "rawInput" => {
+                    value.is_null() || (value.is_object() && acp_value_is_file_only(value))
+                }
+                _ => value.is_null() || acp_value_is_file_only(value),
+            }
+    })
+}
+
+fn acp_value_is_file_only(value: &Value) -> bool {
+    match value {
+        Value::Object(map) => map.iter().all(|(key, value)| {
+            ACP_FILE_KEYS.contains(&key.as_str())
+                && match (key.as_str(), value) {
+                    ("kind" | "type", Value::String(verb)) => {
+                        ACP_FILE_VERBS.contains(&verb.trim().to_ascii_lowercase().as_str())
+                    }
+                    (_, Value::Object(_) | Value::Array(_)) => acp_value_is_file_only(value),
+                    _ => true,
+                }
+        }),
+        Value::Array(items) => items
+            .iter()
+            .all(|item| item.is_object() && acp_value_is_file_only(item)),
+        _ => false,
     }
 }
 
